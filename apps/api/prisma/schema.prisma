@@ -448,8 +448,7 @@ model User {
   // Payroll relations
   payrollPeriodsCreated             PayrollPeriod[]             @relation("PayrollPeriodCreator")
   payrollPeriodsApproved            PayrollPeriod[]             @relation("PayrollPeriodApprover")
-  // PKG & Portfolio relations
-  pkgAssessed                       PKGEvaluation[]             @relation("PKGAssessor")
+  // Portfolio relations
   portfoliosReviewed                Portfolio[]                 @relation("PortfolioReviewer")
   portfolioComments                 PortfolioComment[]
   ibadahVerified                    DailyIbadahRecord[]         @relation("IbadahVerifier")
@@ -666,8 +665,7 @@ model Unit {
   laundryTransactions    LaundryTransaction[]
   // Payroll relations
   payrollPeriods         PayrollPeriod[]
-  // PKG, Portfolio & Islamic relations
-  pkgPeriods             PKGPeriod[]
+  // Portfolio & Islamic relations
   islamicEvents          IslamicEvent[]
   dailyIbadahTargets     DailyIbadahTarget[]
   ibadahLeaderboards     IbadahLeaderboard[]
@@ -860,8 +858,6 @@ model Teacher {
   musyrifs                 Musyrif[]
   // Non-formal Education
   instructedCourses        Course[]            @relation("TeacherCourseInstructor")
-  // PKG relations
-  pkgEvaluations           PKGEvaluation[]
   assignments              Assignment[]
 
   @@index([unitId])
@@ -928,8 +924,7 @@ model AcademicYear {
   p5Projects            P5Project[]
   scholarshipRecipients ScholarshipRecipient[]
   merdekaAssessments    MerdekaAssessment[]
-  // PKG & Portfolio relations
-  pkgPeriods            PKGPeriod[]
+  // Portfolio relations
   portfolios            Portfolio[]
   // Rapor Pesantren relations
   raporPesantren        RaporPesantren[]
@@ -5813,118 +5808,6 @@ model PayrollItem {
   @@map("payroll_items")
 }
 
-// =====================================
-// PKG - PENILAIAN KINERJA GURU
-// =====================================
-
-/// PKGPeriod - Periode Penilaian Kinerja Guru (tahunan)
-model PKGPeriod {
-  id             String   @id @default(uuid())
-  unitId         String   @map("unit_id")
-  academicYearId String   @map("academic_year_id")
-  name           String // e.g., "PKG Semester 1 2024/2025"
-  startDate      DateTime @map("start_date")
-  endDate        DateTime @map("end_date")
-  status         String   @default("DRAFT") // DRAFT, ACTIVE, COMPLETED, ARCHIVED
-  description    String?
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  unit         Unit            @relation(fields: [unitId], references: [id])
-  academicYear AcademicYear    @relation(fields: [academicYearId], references: [id])
-  evaluations  PKGEvaluation[]
-
-  @@index([unitId])
-  @@index([academicYearId])
-  @@map("pkg_periods")
-}
-
-/// PKGEvaluation - Hasil Evaluasi PKG per Guru
-model PKGEvaluation {
-  id         String  @id @default(uuid())
-  periodId   String  @map("period_id")
-  teacherId  String  @map("teacher_id")
-  assessorId String? @map("assessor_id") // Penilai (Kepala Sekolah)
-
-  // 4 Kompetensi Utama (Nilai 1-4)
-  pedagogikScore   Decimal? @map("pedagogik_score") @db.Decimal(3, 2)
-  kepribadianScore Decimal? @map("kepribadian_score") @db.Decimal(3, 2)
-  sosialScore      Decimal? @map("sosial_score") @db.Decimal(3, 2)
-  profesionalScore Decimal? @map("profesional_score") @db.Decimal(3, 2)
-
-  // Total score and grade
-  totalScore     Decimal? @map("total_score") @db.Decimal(5, 2) // Nilai akhir (0-100)
-  grade          String? // A (Amat Baik), B (Baik), C (Cukup), D (Kurang)
-  creditPoints   Decimal? @map("credit_points") @db.Decimal(5, 2) // Angka Kredit
-  recommendation String? // Rekomendasi (LANJUT, PEMBINAAN, PKB)
-
-  // Status & Timeline
-  status           String    @default("DRAFT") // DRAFT, SELF_ASSESSMENT, OBSERVATION, REVIEW, APPROVED
-  selfAssessmentAt DateTime? @map("self_assessment_at")
-  observedAt       DateTime? @map("observed_at")
-  approvedAt       DateTime? @map("approved_at")
-
-  notes     String?
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  period    PKGPeriod     @relation(fields: [periodId], references: [id])
-  teacher   Teacher       @relation(fields: [teacherId], references: [id])
-  assessor  User?         @relation("PKGAssessor", fields: [assessorId], references: [id])
-  details   PKGDetail[]
-  documents PKGDocument[]
-
-  @@unique([periodId, teacherId])
-  @@index([periodId])
-  @@index([teacherId])
-  @@map("pkg_evaluations")
-}
-
-/// PKGDetail - Detail Penilaian per Kompetensi
-model PKGDetail {
-  id            String @id @default(uuid())
-  evaluationId  String @map("evaluation_id")
-  competency    String // PEDAGOGIK, KEPRIBADIAN, SOSIAL, PROFESIONAL
-  indicator     String // Kode indikator (P1, P2, K1, S1, PR1, dst)
-  indicatorName String @map("indicator_name") // Nama indikator lengkap
-
-  // Penilaian
-  selfScore     Int?    @map("self_score") // Nilai dari guru (1-4)
-  assessorScore Int?    @map("assessor_score") // Nilai dari penilai (1-4)
-  finalScore    Int?    @map("final_score") // Nilai akhir
-  evidence      String? // Bukti/catatan
-  notes         String?
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  evaluation PKGEvaluation @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
-
-  @@index([evaluationId])
-  @@map("pkg_details")
-}
-
-/// PKGDocument - Dokumen Pendukung PKG
-model PKGDocument {
-  id           String @id @default(uuid())
-  evaluationId String @map("evaluation_id")
-  name         String
-  type         String // RPP, SILABUS, NILAI, SERTIFIKAT, KEHADIRAN, LAINNYA
-  fileUrl      String @map("file_url")
-  fileSize     Int?   @map("file_size")
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  evaluation PKGEvaluation @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
-
-  @@index([evaluationId])
-  @@map("pkg_documents")
-}
 
 // =====================================
 // STUDENT PORTFOLIO

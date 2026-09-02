@@ -225,7 +225,7 @@ export const createIslamicEventSchema = z.object({
   activities: z.string().max(2000).optional(),
   isHoliday: z.boolean().default(false),
   isRecurring: z.boolean().default(true),
-  scheduleAdjustment: z.record(z.string(), z.any()).optional(),
+  scheduleAdjustment: z.record(z.any()).optional(),
 });
 
 export const updateIslamicEventSchema = createIslamicEventSchema.partial();

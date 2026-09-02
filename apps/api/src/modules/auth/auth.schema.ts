@@ -27,7 +27,7 @@ export const registerSchema = z.object({
     .regex(/[A-Z]/, 'Password must contain uppercase letter')
     .regex(/[a-z]/, 'Password must contain lowercase letter')
     .regex(/[0-9]/, 'Password must contain number'),
-  roleCode: z.nativeEnum(RoleCode, { message: 'Invalid role code' }).optional(),
+  roleCode: z.nativeEnum(RoleCode, { errorMap: () => ({ message: 'Invalid role code' }) }).optional(),
   // DEPRECATED: Legacy `role` field. Use `roleCode` instead.
   // Accepted for backward compatibility with pre-migration API clients.
   // Restricted to the known legacy UserRole enum values so that invalid

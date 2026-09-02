@@ -8,7 +8,7 @@ export const CreateBusinessUnitSchema = z
     name: z.string().min(1, 'Name is required').max(255),
     code: z.string().min(1, 'Code is required').max(50),
     type: z.nativeEnum(BusinessUnitType, {
-      message: 'Invalid business unit type',
+      errorMap: () => ({ message: 'Invalid business unit type' }),
     }),
     description: z.string().optional(),
     managerId: z.string().uuid().optional(),
@@ -22,7 +22,7 @@ export const UpdateBusinessUnitSchema = z
     code: z.string().min(1).max(50).optional(),
     type: z
       .nativeEnum(BusinessUnitType, {
-        message: 'Invalid business unit type',
+        errorMap: () => ({ message: 'Invalid business unit type' }),
       })
       .optional(),
     description: z.string().optional(),

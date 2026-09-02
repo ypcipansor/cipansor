@@ -8,6 +8,13 @@ import {
 } from '@prisma/client';
 
 export const complaintsService = {
+  getComplaintUnit: async (id: string) => {
+    return prisma.complaint.findUnique({
+      where: { id },
+      select: { unitId: true },
+    });
+  },
+
   create: async (data: {
     unitId: string;
     userId: string;

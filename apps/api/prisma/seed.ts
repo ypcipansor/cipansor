@@ -7797,58 +7797,6 @@ async function main() {
     });
   }
 
-  // PKG periods & evaluations for teachers
-  const pkgPeriod = await prisma.pKGPeriod.create({
-    data: {
-      unitId: smpIt.id,
-      academicYearId: academicYear.id,
-      name: 'Penilaian Kinerja Guru (PKG) Ganjil 2026',
-      startDate: new Date('2026-06-01'),
-      endDate: new Date('2026-06-30'),
-      status: 'CLOSED',
-    },
-  });
-
-  if (teacherPesantren) {
-    const pkgEval = await prisma.pKGEvaluation.create({
-      data: {
-        periodId: pkgPeriod.id,
-        teacherId: teacherPesantren.id,
-        assessorId: adminPesantrenUser.id,
-        pedagogikScore: new Prisma.Decimal(3.5),
-        kepribadianScore: new Prisma.Decimal(3.8),
-        sosialScore: new Prisma.Decimal(3.6),
-        profesionalScore: new Prisma.Decimal(3.7),
-        totalScore: new Prisma.Decimal(88.5),
-        grade: 'A',
-        recommendation: 'LANJUT',
-        status: 'APPROVED',
-        notes: 'Sangat baik dalam penguasaan kelas dan pemanfaatan media ajar digital.',
-        approvedAt: new Date(),
-      },
-    });
-
-    await prisma.pKGDetail.create({
-      data: {
-        evaluationId: pkgEval.id,
-        competency: 'PEDAGOGIK',
-        indicator: 'P1',
-        indicatorName: 'Menguasai karakteristik peserta didik',
-        assessorScore: 4,
-        finalScore: 4,
-        notes: 'Mampu memetakan kesiapan belajar peserta didik dengan sangat presisi.',
-      },
-    });
-
-    await prisma.pKGDocument.create({
-      data: {
-        evaluationId: pkgEval.id,
-        name: 'Modul Ajar Matematika K-Merdeka',
-        type: 'RPP',
-        fileUrl: '/documents/pkg/modul-mtk.pdf',
-      },
-    });
-  }
 
   // Dashboard history snapshots
   await prisma.dashboardHistory.create({

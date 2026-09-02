@@ -67,7 +67,7 @@ export const studentStatsSchema = z.object({
     male: z.number().int(),
     female: z.number().int(),
   }),
-  byGrade: z.record(z.string(), z.number().int()),
+  byGrade: z.record(z.number().int()),
   byUnit: z.array(
     z.object({
       unitId: z.string(),
@@ -75,7 +75,7 @@ export const studentStatsSchema = z.object({
       count: z.number().int(),
     })
   ),
-  byStatus: z.record(z.string(), z.number().int()),
+  byStatus: z.record(z.number().int()),
   trend: z.array(
     z.object({
       period: z.string(),
@@ -187,7 +187,6 @@ export const attendanceStatsSchema = z.object({
     totalSick: z.number().int(),
   }),
   byStatus: z.record(
-    z.string(),
     z.object({
       count: z.number().int(),
       percentage: z.number(),
@@ -364,7 +363,7 @@ export const psbStatsSchema = z.object({
     })
   ),
   demographics: z.object({
-    byGender: z.record(z.string(), z.number().int()),
+    byGender: z.record(z.number().int()),
     byOriginSchool: z.array(
       z.object({
         schoolName: z.string(),

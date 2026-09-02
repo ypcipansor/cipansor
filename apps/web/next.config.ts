@@ -5,7 +5,6 @@ const nextConfig: NextConfig = {
   // Enable React Compiler (experimental - only in development for safety)
   reactCompiler: process.env.NODE_ENV === "development",
 
-
   // Standalone output is for the Docker image (the Dockerfile sets
   // BUILD_STANDALONE=1 and runs `node server.js`). For everything else — local
   // dev, `next start`, and the e2e/CI server — leave it unset so `next start`
@@ -40,6 +39,16 @@ const nextConfig: NextConfig = {
    */
   async redirects() {
     return [
+      {
+        source: "/pkg",
+        destination: "/kinerja",
+        permanent: true,
+      },
+      {
+        source: "/pkg/:path*",
+        destination: "/kinerja",
+        permanent: true,
+      },
       {
         source: "/public/ppdb",
         destination: "/public/spmb",

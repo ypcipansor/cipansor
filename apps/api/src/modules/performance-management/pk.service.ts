@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { PlanStatus, CascadingCategory, PerformanceAgreement } from '@prisma/client';
 import { Errors } from '@/middleware/error';
+import { seesAllUnits } from '@/utils/resolve-unit-id';
 
 /**
  * Perjanjian Kinerja (PK) — performance agreements with cascading
@@ -87,6 +88,95 @@ export class PerformanceAgreementService {
     });
   }
 
+  async getSupervisors(caller?: { roleCode?: string | null; role?: string | null; unitId?: string | null }) {
+    const now = new Date();
+    const canSeeAll = caller ? seesAllUnits(caller) : true;
+    const targetUnitId = !canSeeAll ? (caller?.unitId ?? 'none') : undefined;
+
+    return prisma.user.findMany({
+      where: {
+        isActive: true,
+        userRoles: {
+          some: {
+            isActive: true,
+            ...(targetUnitId ? { unitId: targetUnitId } : {}),
+            OR: [
+              { expiresAt: null },
+              { expiresAt: { gt: now } },
+            ],
+            role: {
+              code: {
+                in: [
+                  'SUPER_ADMIN',
+                  'YAYASAN_PEMBINA',
+                  'YAYASAN_KETUA',
+                  'YAYASAN_SEKRETARIS',
+                  'YAYASAN_BENDAHARA',
+                  'YAYASAN_ANGGOTA',
+                  'YAYASAN_PENGAWAS',
+                  'TKQ_ADMIN',
+                  'SDIT_ADMIN',
+                  'SMPIT_ADMIN',
+                  'SMAQ_ADMIN',
+                  'TKQ_GURU',
+                  'SDIT_GURU',
+                  'SMPIT_GURU',
+                  'SMAQ_GURU',
+                  'TKQ_KEPALA_SEKOLAH',
+                  'SDIT_KEPALA_SEKOLAH',
+                  'SMPIT_KEPALA_SEKOLAH',
+                  'SMAQ_KEPALA_SEKOLAH',
+                  'TKQ_WAKASEK',
+                  'SDIT_WAKASEK',
+                  'SMPIT_WAKASEK',
+                  'SMAQ_WAKASEK',
+                  'TKQ_WALI_KELAS',
+                  'SDIT_WALI_KELAS',
+                  'SMPIT_WALI_KELAS',
+                  'SMAQ_WALI_KELAS',
+                  'SMPIT_GURU_BK',
+                  'SMAQ_GURU_BK',
+                  'PESANTREN_PENGASUH',
+                  'PESANTREN_DIREKTUR',
+                  'USTADZ',
+                  'MUSYRIF',
+                  'MUSYRIFAH',
+                  'MUHAFIDZ',
+                  'MUHAFIDZAH',
+                  'MURABBI',
+                  'WALI_KAMAR',
+                  'PT_REKTOR',
+                  'PT_WAKIL_REKTOR',
+                  'PT_DEKAN',
+                  'PT_KAPRODI',
+                  'PT_DOSEN',
+                  'TKQ_TATA_USAHA',
+                  'SDIT_TATA_USAHA',
+                  'SMPIT_TATA_USAHA',
+                  'SMAQ_TATA_USAHA',
+                  'TKQ_BENDAHARA',
+                  'SDIT_BENDAHARA',
+                  'SMPIT_BENDAHARA',
+                  'SMAQ_BENDAHARA',
+                  'PESANTREN_TATA_USAHA',
+                  'PT_TATA_USAHA',
+                  'PT_STAF_AKADEMIK',
+                  'BUSINESS_MANAGER',
+                ],
+              },
+            },
+          },
+        },
+      },
+      select: {
+        id: true,
+        name: true,
+        unit: { select: { id: true, name: true } },
+      },
+      orderBy: { name: 'asc' },
+    });
+  }
+
   async getPKs(userId: string, query: { status?: string }) {
     const status =
       query.status && Object.values(PlanStatus).includes(query.status as PlanStatus)
@@ -103,6 +193,9 @@ export class PerformanceAgreementService {
         supervisor: { select: { id: true, name: true } },
         strategicPlan: { select: { id: true, title: true } },
         indicators: true,
+        evaluations: {
+          orderBy: [{ year: 'desc' }, { month: 'desc' }],
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -125,6 +218,51 @@ export class PerformanceAgreementService {
           orderBy: [{ year: 'desc' }, { month: 'desc' }],
         },
       },
+    });
+  }
+
+  async deletePK(
+    id: string,
+    caller:
+      | string
+      | { id: string; isAdmin?: boolean; roleCode?: string | null; unitId?: string | null },
+    isAdminLegacy?: boolean
+  ) {
+    const callerObj =
+      typeof caller === 'string'
+        ? { id: caller, isAdmin: !!isAdminLegacy, roleCode: undefined, unitId: null }
+        : caller;
+
+    return prisma.$transaction(async (tx) => {
+      if (typeof tx.$queryRaw === 'function') {
+        await tx.$queryRaw`SELECT id FROM "performance_agreements" WHERE id = ${id} FOR UPDATE`;
+      }
+
+      const pk = await tx.performanceAgreement.findUnique({
+        where: { id },
+        include: {
+          user: { select: { id: true, unitId: true } },
+        },
+      });
+      if (!pk) throw Errors.notFound('PK');
+
+      if (pk.status === PlanStatus.APPROVED || pk.status === PlanStatus.PROPOSED) {
+        throw Errors.conflict('Only DRAFT performance agreements can be deleted');
+      }
+
+      const isOwner = pk.userId === callerObj.id;
+      const isSuperAdmin = callerObj.roleCode === 'SUPER_ADMIN';
+      const isSameUnitAdmin =
+        !!callerObj.isAdmin &&
+        callerObj.unitId !== null &&
+        callerObj.unitId !== undefined &&
+        pk.user?.unitId === callerObj.unitId;
+
+      if (!isOwner && !isSuperAdmin && !isSameUnitAdmin) {
+        throw Errors.forbidden('You do not have permission to delete this performance agreement');
+      }
+
+      return tx.performanceAgreement.delete({ where: { id } });
     });
   }
 

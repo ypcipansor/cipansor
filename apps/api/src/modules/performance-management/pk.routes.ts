@@ -15,7 +15,11 @@ const leadership = () =>
   authorize(
     RoleCode.SUPER_ADMIN,
     RoleCode.YAYASAN_KETUA,
+    RoleCode.YAYASAN_PEMBINA,
     RoleCode.YAYASAN_PENGAWAS,
+    RoleCode.YAYASAN_SEKRETARIS,
+    RoleCode.YAYASAN_BENDAHARA,
+    RoleCode.YAYASAN_ANGGOTA,
     RoleCode.TKQ_ADMIN,
     RoleCode.SDIT_ADMIN,
     RoleCode.SMPIT_ADMIN,
@@ -24,6 +28,12 @@ const leadership = () =>
     RoleCode.SDIT_KEPALA_SEKOLAH,
     RoleCode.SMPIT_KEPALA_SEKOLAH,
     RoleCode.SMAQ_KEPALA_SEKOLAH,
+    RoleCode.PESANTREN_PENGASUH,
+    RoleCode.PESANTREN_DIREKTUR,
+    RoleCode.PT_REKTOR,
+    RoleCode.PT_WAKIL_REKTOR,
+    RoleCode.PT_DEKAN,
+    RoleCode.PT_KAPRODI,
     'UNIT_ADMIN' // Legacy pre-migration token value
   );
 
@@ -32,21 +42,24 @@ router.get('/dashboard', leadership(), analyticsController.getDashboard);
 router.get('/dashboard/drilldown/:unitId', leadership(), analyticsController.getDrilldown);
 router.get('/reports/consolidated', leadership(), analyticsController.getConsolidatedReport);
 
+// Supervisors list for creating PK (authenticated users can fetch candidate supervisors)
+router.get('/supervisors', pkController.listSupervisors);
+
 // Master data: behavioral values (SAFTI)
 router.get('/settings/behavioral-values', evalController.listBehavioralValues);
 router.post(
   '/settings/behavioral-values',
-  authorize(UserRole.SUPER_ADMIN),
+  authorize(RoleCode.SUPER_ADMIN),
   evalController.createBehavioralValue
 );
 router.put(
   '/settings/behavioral-values/:id',
-  authorize(UserRole.SUPER_ADMIN),
+  authorize(RoleCode.SUPER_ADMIN),
   evalController.updateBehavioralValue
 );
 router.delete(
   '/settings/behavioral-values/:id',
-  authorize(UserRole.SUPER_ADMIN),
+  authorize(RoleCode.SUPER_ADMIN),
   evalController.deleteBehavioralValue
 );
 
@@ -67,6 +80,7 @@ router.get('/', pkController.listPKs);
 router.post('/', pkController.createPK);
 router.get('/:id', pkController.getPK);
 router.put('/:id', pkController.updatePK);
+router.delete('/:id', pkController.deletePK);
 router.post('/:id/propose', pkController.proposePK);
 router.post('/:id/approve', pkController.approvePK);
 router.post('/:id/reject', pkController.rejectPK);

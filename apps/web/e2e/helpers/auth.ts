@@ -20,6 +20,7 @@ const ROLE_CODE_TO_SEED: Record<string, SeedRole> = {
   SDIT_ADMIN: 'adminSdit',
   TEACHER: 'teacher',
   SDIT_GURU: 'teacher',
+  SDIT_SISWA: 'student',
   PARENT: 'parent',
   STUDENT: 'student',
 };

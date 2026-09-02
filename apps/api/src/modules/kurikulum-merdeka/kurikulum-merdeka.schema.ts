@@ -71,7 +71,7 @@ export const createLearningOutcomeSchema = z.object({
   subjectId: z.string().uuid('Invalid subject ID'),
   code: z.string().min(1, 'Code is required').max(50),
   description: z.string().min(1, 'Description is required').max(5000),
-  elements: z.record(z.string(), z.any()).optional(),
+  elements: z.record(z.any()).optional(),
   isActive: z.boolean().default(true),
 });
 
@@ -80,7 +80,7 @@ export const updateLearningOutcomeSchema = z.object({
   subjectId: z.string().uuid().optional(),
   code: z.string().min(1).max(50).optional(),
   description: z.string().min(1).max(5000).optional(),
-  elements: z.record(z.string(), z.any()).nullable().optional(),
+  elements: z.record(z.any()).nullable().optional(),
   isActive: z.boolean().optional(),
 });
 
@@ -100,7 +100,7 @@ export const createLearningObjectiveSchema = z.object({
   learningOutcomeId: z.string().uuid('Invalid learning outcome ID'),
   code: z.string().min(1, 'Code is required').max(50),
   description: z.string().min(1, 'Description is required').max(5000),
-  indicators: z.record(z.string(), z.any()).optional(),
+  indicators: z.record(z.any()).optional(),
   sequence: z.number().int().min(1).default(1),
   isActive: z.boolean().default(true),
 });
@@ -109,7 +109,7 @@ export const updateLearningObjectiveSchema = z.object({
   learningOutcomeId: z.string().uuid().optional(),
   code: z.string().min(1).max(50).optional(),
   description: z.string().min(1).max(5000).optional(),
-  indicators: z.record(z.string(), z.any()).nullable().optional(),
+  indicators: z.record(z.any()).nullable().optional(),
   sequence: z.number().int().min(1).optional(),
   isActive: z.boolean().optional(),
 });
@@ -138,12 +138,12 @@ export const createTeachingModuleSchema = z.object({
   objectives: z.string().min(1, 'Objectives is required').max(5000),
   prerequisites: z.string().max(2000).optional(),
   targetLearners: z.string().max(2000).optional(),
-  materials: z.record(z.string(), z.any()).optional(),
-  activities: z.record(z.string(), z.any()).optional(),
-  assessmentPlan: z.record(z.string(), z.any()).optional(),
-  differentiation: z.record(z.string(), z.any()).optional(),
+  materials: z.record(z.any()).optional(),
+  activities: z.record(z.any()).optional(),
+  assessmentPlan: z.record(z.any()).optional(),
+  differentiation: z.record(z.any()).optional(),
   reflection: z.string().max(3000).optional(),
-  attachments: z.record(z.string(), z.any()).optional(),
+  attachments: z.record(z.any()).optional(),
   isPublished: z.boolean().default(false),
 });
 
@@ -156,12 +156,12 @@ export const updateTeachingModuleSchema = z.object({
   objectives: z.string().min(1).max(5000).optional(),
   prerequisites: z.string().max(2000).nullable().optional(),
   targetLearners: z.string().max(2000).nullable().optional(),
-  materials: z.record(z.string(), z.any()).nullable().optional(),
-  activities: z.record(z.string(), z.any()).nullable().optional(),
-  assessmentPlan: z.record(z.string(), z.any()).nullable().optional(),
-  differentiation: z.record(z.string(), z.any()).nullable().optional(),
+  materials: z.record(z.any()).nullable().optional(),
+  activities: z.record(z.any()).nullable().optional(),
+  assessmentPlan: z.record(z.any()).nullable().optional(),
+  differentiation: z.record(z.any()).nullable().optional(),
   reflection: z.string().max(3000).nullable().optional(),
-  attachments: z.record(z.string(), z.any()).nullable().optional(),
+  attachments: z.record(z.any()).nullable().optional(),
   isPublished: z.boolean().optional(),
 });
 
@@ -205,10 +205,10 @@ export const createP5ProjectSchema = z.object({
   classId: z.string().uuid().optional(),
   title: z.string().min(1, 'Title is required').max(255),
   description: z.string().min(1, 'Description is required').max(5000),
-  objectives: z.record(z.string(), z.any()).optional(),
+  objectives: z.record(z.any()).optional(),
   dimensions: z.array(P5DimensionCodeEnum).min(1, 'At least one dimension is required'),
-  activities: z.record(z.string(), z.any()).optional(),
-  schedule: z.record(z.string(), z.any()).optional(),
+  activities: z.record(z.any()).optional(),
+  schedule: z.record(z.any()).optional(),
   startDate: z.string().datetime().or(z.date()),
   endDate: z.string().datetime().or(z.date()),
   supervisorId: z.string().uuid('Invalid supervisor ID'),
@@ -220,10 +220,10 @@ export const updateP5ProjectSchema = z.object({
   classId: z.string().uuid().nullable().optional(),
   title: z.string().min(1).max(255).optional(),
   description: z.string().min(1).max(5000).optional(),
-  objectives: z.record(z.string(), z.any()).nullable().optional(),
+  objectives: z.record(z.any()).nullable().optional(),
   dimensions: z.array(P5DimensionCodeEnum).min(1).optional(),
-  activities: z.record(z.string(), z.any()).nullable().optional(),
-  schedule: z.record(z.string(), z.any()).nullable().optional(),
+  activities: z.record(z.any()).nullable().optional(),
+  schedule: z.record(z.any()).nullable().optional(),
   startDate: z.string().datetime().or(z.date()).optional(),
   endDate: z.string().datetime().or(z.date()).optional(),
   supervisorId: z.string().uuid().optional(),
@@ -298,7 +298,7 @@ export const createMerdekaAssessmentSchema = z.object({
   duration: z.number().int().min(1).optional(),
   maxScore: z.number().min(0).max(999).default(100),
   weight: z.number().min(0).max(9.99).default(1),
-  rubric: z.record(z.string(), z.any()).optional(),
+  rubric: z.record(z.any()).optional(),
   status: ProjectStatusEnum.default('DRAFT'),
 });
 
@@ -314,7 +314,7 @@ export const updateMerdekaAssessmentSchema = z.object({
   duration: z.number().int().min(1).nullable().optional(),
   maxScore: z.number().min(0).max(999).optional(),
   weight: z.number().min(0).max(9.99).optional(),
-  rubric: z.record(z.string(), z.any()).nullable().optional(),
+  rubric: z.record(z.any()).nullable().optional(),
   status: ProjectStatusEnum.optional(),
 });
 
@@ -334,7 +334,7 @@ export const createMerdekaResultSchema = z.object({
   percentage: z.number().min(0).max(100).optional(),
   grade: z.string().max(20).optional(),
   feedback: z.string().max(5000).optional(),
-  attachments: z.record(z.string(), z.any()).optional(),
+  attachments: z.record(z.any()).optional(),
   gradedById: z.string().uuid('Invalid grader ID'),
 });
 
@@ -343,7 +343,7 @@ export const updateMerdekaResultSchema = z.object({
   percentage: z.number().min(0).max(100).nullable().optional(),
   grade: z.string().max(20).nullable().optional(),
   feedback: z.string().max(5000).nullable().optional(),
-  attachments: z.record(z.string(), z.any()).nullable().optional(),
+  attachments: z.record(z.any()).nullable().optional(),
 });
 
 // ==================== TYPE EXPORTS ====================

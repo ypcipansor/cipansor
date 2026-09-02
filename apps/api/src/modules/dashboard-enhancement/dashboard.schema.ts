@@ -93,7 +93,7 @@ export const createMetricSnapshotSchema = z.object({
   academicYearId: z.string().uuid().optional(),
   metricType: MetricTypeEnum,
   metricValue: z.number(),
-  metricData: z.record(z.string(), z.any()).optional(),
+  metricData: z.record(z.any()).optional(),
   periodType: PeriodTypeEnum,
   periodDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 });

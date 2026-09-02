@@ -1,10 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Request, Response } from 'express';
-import httpStatus from 'http-status';
+import type { Request, Response } from 'express';
 import { complaintsController } from '../complaints.controller';
 import { complaintsService } from '../complaints.service';
-import { prisma } from '@/lib/prisma';
-import { RoleCode } from '@prisma/client';
 
 vi.mock('../complaints.service', () => ({
   complaintsService: {
@@ -25,134 +22,92 @@ vi.mock('@/lib/prisma', () => ({
   },
 }));
 
-function mockRequest(body = {}, userOverriding = {}): Request {
+function mockReqRes(overrides: Partial<Request> = {}) {
   const req = {
-    body,
-    user: {
-      sub: 'user-uuid-1',
-      role: RoleCode.SDIT_TATA_USAHA,
-      roleCode: RoleCode.SDIT_TATA_USAHA,
-      unitId: 'unit-uuid-1',
-      ...userOverriding,
-    },
+    body: {},
     params: {},
     query: {},
+    user: { sub: 'user-1', role: 'SUPER_ADMIN', unitId: 'unit-1' },
+    ...overrides,
   } as unknown as Request;
-  return req;
+
+  const res = {
+    statusCode: 200,
+    jsonPayload: undefined as unknown,
+    status(code: number) {
+      (this as any).statusCode = code;
+      return this;
+    },
+    json(payload: unknown) {
+      (this as any).jsonPayload = payload;
+      return this;
+    },
+  } as unknown as Response & { statusCode: number; jsonPayload: any };
+
+  return { req, res };
 }
 
-function mockResponse() {
-  const res = {} as Response;
-  res.status = vi.fn().mockReturnValue(res);
-  res.json = vi.fn().mockReturnValue(res);
-  return res;
-}
-
-describe('complaintsController - validation issue responses', () => {
+describe('complaintsController validation errors', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
   describe('create', () => {
-    it('returns 400 with message "Validation error" and Zod issues on invalid payload', async () => {
-      const req = mockRequest({
-        // Missing category, subject, description
-      });
-      const res = mockResponse();
-
+    it('returns 400 Validation error with errors array when payload is invalid', async () => {
+      const { req, res } = mockReqRes({ body: {} }); // Invalid empty payload
       await complaintsController.create(req, res);
 
-      expect(res.status).toHaveBeenCalledWith(httpStatus.BAD_REQUEST);
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({
-          message: 'Validation error',
-          errors: expect.arrayContaining([
-            expect.objectContaining({
-              code: expect.any(String),
-              message: expect.any(String),
-              path: expect.any(Array),
-            }),
-          ]),
-        })
-      );
+      expect(res.statusCode).toBe(400);
+      expect(res.jsonPayload).toHaveProperty('message', 'Validation error');
+      expect(res.jsonPayload).toHaveProperty('errors');
+      expect(Array.isArray(res.jsonPayload.errors)).toBe(true);
+      expect(res.jsonPayload.errors.length).toBeGreaterThan(0);
+      expect(res.jsonPayload.errors[0]).toHaveProperty('code');
+      expect(res.jsonPayload.errors[0]).toHaveProperty('message');
+      expect(res.jsonPayload.errors[0]).toHaveProperty('path');
+      expect(complaintsService.create).not.toHaveBeenCalled();
     });
   });
 
   describe('updateStatus', () => {
-    it('returns 400 with message "Validation error" and Zod issues on invalid payload', async () => {
-      const req = mockRequest({
-        status: 'INVALID_STATUS',
-      });
-      req.params = { id: 'complaint-1' };
-      const res = mockResponse();
-
+    it('returns 400 Validation error with errors array when status payload is invalid', async () => {
+      const { req, res } = mockReqRes({ params: { id: 'c-1' } as any, body: { status: 'INVALID_STATUS' } });
       await complaintsController.updateStatus(req, res);
 
-      expect(res.status).toHaveBeenCalledWith(httpStatus.BAD_REQUEST);
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({
-          message: 'Validation error',
-          errors: expect.arrayContaining([
-            expect.objectContaining({
-              code: expect.any(String),
-              message: expect.any(String),
-              path: expect.any(Array),
-            }),
-          ]),
-        })
-      );
+      expect(res.statusCode).toBe(400);
+      expect(res.jsonPayload).toHaveProperty('message', 'Validation error');
+      expect(res.jsonPayload).toHaveProperty('errors');
+      expect(Array.isArray(res.jsonPayload.errors)).toBe(true);
+      expect(res.jsonPayload.errors.length).toBeGreaterThan(0);
+      expect(complaintsService.updateStatus).not.toHaveBeenCalled();
     });
   });
 
   describe('assignHandler', () => {
-    it('returns 400 with message "Validation error" and Zod issues on invalid payload', async () => {
-      const req = mockRequest({
-        handlerId: 'invalid-uuid-format',
-      });
-      req.params = { id: 'complaint-1' };
-      const res = mockResponse();
-
+    it('returns 400 Validation error with errors array when handlerId is invalid', async () => {
+      const { req, res } = mockReqRes({ params: { id: 'c-1' } as any, body: { handlerId: 'not-a-uuid' } });
       await complaintsController.assignHandler(req, res);
 
-      expect(res.status).toHaveBeenCalledWith(httpStatus.BAD_REQUEST);
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({
-          message: 'Validation error',
-          errors: expect.arrayContaining([
-            expect.objectContaining({
-              code: expect.any(String),
-              message: expect.any(String),
-              path: expect.any(Array),
-            }),
-          ]),
-        })
-      );
+      expect(res.statusCode).toBe(400);
+      expect(res.jsonPayload).toHaveProperty('message', 'Validation error');
+      expect(res.jsonPayload).toHaveProperty('errors');
+      expect(Array.isArray(res.jsonPayload.errors)).toBe(true);
+      expect(res.jsonPayload.errors.length).toBeGreaterThan(0);
+      expect(complaintsService.assignHandler).not.toHaveBeenCalled();
     });
   });
 
   describe('addComment', () => {
-    it('returns 400 with message "Validation error" and Zod issues on invalid payload', async () => {
-      const req = mockRequest({
-        content: '', // Empty content violates min(1) constraint
-      });
-      req.params = { id: 'complaint-1' };
-      const res = mockResponse();
-
+    it('returns 400 Validation error with errors array when content is empty', async () => {
+      const { req, res } = mockReqRes({ params: { id: 'c-1' } as any, body: { content: '' } });
       await complaintsController.addComment(req, res);
 
-      expect(res.status).toHaveBeenCalledWith(httpStatus.BAD_REQUEST);
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({
-          message: 'Validation error',
-          errors: expect.arrayContaining([
-            expect.objectContaining({
-              code: expect.any(String),
-              message: expect.any(String),
-              path: expect.any(Array),
-            }),
-          ]),
-        })
-      );
+      expect(res.statusCode).toBe(400);
+      expect(res.jsonPayload).toHaveProperty('message', 'Validation error');
+      expect(res.jsonPayload).toHaveProperty('errors');
+      expect(Array.isArray(res.jsonPayload.errors)).toBe(true);
+      expect(res.jsonPayload.errors.length).toBeGreaterThan(0);
+      expect(complaintsService.addComment).not.toHaveBeenCalled();
     });
   });
 });

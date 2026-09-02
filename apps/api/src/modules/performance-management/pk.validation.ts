@@ -1,13 +1,7 @@
 import { z } from 'zod';
+import { createPKSchema } from '@cipansor/shared';
 
-export const createPKSchema = z.object({
-  strategicPlanId: z.string().uuid().optional(),
-  supervisorId: z.string().uuid().optional(),
-  supervisorPkId: z.string().uuid().optional(),
-  periodStart: z.string().datetime(),
-  periodEnd: z.string().datetime(),
-  notes: z.string().optional(),
-});
+export { createPKSchema };
 
 // Status is deliberately NOT updatable here — it only changes through the
 // propose/approve/reject workflow endpoints.

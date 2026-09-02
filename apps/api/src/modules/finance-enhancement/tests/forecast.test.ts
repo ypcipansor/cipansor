@@ -41,7 +41,9 @@ describe('Finance Forecasting Logic', () => {
     });
 
     // 2. Pending Invoices (Inflow): 5M next month
+    // Set date to 15th to avoid end-of-month rollover issues (e.g., Aug 31 -> Oct 1)
     const nextMonth = new Date();
+    nextMonth.setDate(15);
     nextMonth.setMonth(nextMonth.getMonth() + 1);
 
     (prisma.invoice.findMany as any).mockResolvedValue([

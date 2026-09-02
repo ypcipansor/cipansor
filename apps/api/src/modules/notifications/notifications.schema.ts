@@ -42,7 +42,7 @@ export const createNotificationSchema = z.object({
 
   link: z.string().url().optional(),
   imageUrl: z.string().url().optional(),
-  data: z.record(z.string(), z.unknown()).optional(),
+  data: z.record(z.unknown()).optional(),
   scheduledAt: z.coerce.date().optional(),
 });
 

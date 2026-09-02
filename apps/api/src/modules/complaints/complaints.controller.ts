@@ -8,7 +8,6 @@ import {
   addCommentSchema,
   assignHandlerSchema,
 } from './complaints.schema';
-import { prisma } from '@/lib/prisma';
 import { requireUser } from '@/middleware/auth';
 
 export const complaintsController = {
@@ -18,7 +17,7 @@ export const complaintsController = {
       if (!validation.success) {
         return res.status(httpStatus.BAD_REQUEST).json({
           message: 'Validation error',
-          errors: validation.error.issues,
+          errors: validation.error.errors,
         });
       }
 
@@ -99,7 +98,7 @@ export const complaintsController = {
       if (!validation.success) {
         return res.status(httpStatus.BAD_REQUEST).json({
           message: 'Validation error',
-          errors: validation.error.issues,
+          errors: validation.error.errors,
         });
       }
 
@@ -108,10 +107,7 @@ export const complaintsController = {
       const { status, resolution } = validation.data;
 
       // Existence and Unit Authorization Check
-      const existingComplaint = await prisma.complaint.findUnique({
-        where: { id },
-        select: { unitId: true },
-      });
+      const existingComplaint = await complaintsService.getComplaintUnit(id);
 
       if (!existingComplaint) {
         return res.status(httpStatus.NOT_FOUND).json({ message: 'Complaint not found' });
@@ -140,7 +136,7 @@ export const complaintsController = {
       if (!validation.success) {
         return res.status(httpStatus.BAD_REQUEST).json({
           message: 'Validation error',
-          errors: validation.error.issues,
+          errors: validation.error.errors,
         });
       }
 
@@ -149,10 +145,7 @@ export const complaintsController = {
       const { handlerId } = validation.data;
 
       // Existence and Unit Authorization Check
-      const existingComplaint = await prisma.complaint.findUnique({
-        where: { id },
-        select: { unitId: true },
-      });
+      const existingComplaint = await complaintsService.getComplaintUnit(id);
 
       if (!existingComplaint) {
         return res.status(httpStatus.NOT_FOUND).json({ message: 'Complaint not found' });
@@ -179,7 +172,7 @@ export const complaintsController = {
       if (!validation.success) {
         return res.status(httpStatus.BAD_REQUEST).json({
           message: 'Validation error',
-          errors: validation.error.issues,
+          errors: validation.error.errors,
         });
       }
 

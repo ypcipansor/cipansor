@@ -95,7 +95,7 @@ export const createEventSchema = z.object({
   externalLink: z.string().url().optional(),
 
   // Metadata
-  metadata: z.record(z.string(), z.any()).optional(),
+  metadata: z.record(z.any()).optional(),
 });
 
 export const updateEventSchema = createEventSchema

@@ -22,7 +22,7 @@ export const createLandSchema = z.object({
   address: z.string().min(5, 'Alamat minimal 5 karakter').max(500),
   area: z.coerce.number().positive('Luas harus lebih dari 0'),
   ownership: z.nativeEnum(LandOwnership, {
-    message: 'Status kepemilikan tidak valid',
+    errorMap: () => ({ message: 'Status kepemilikan tidak valid' }),
   }),
   certificateNo: z.string().max(100).optional().nullable(),
   certificateDate: z.coerce.date().optional().nullable(),
@@ -55,7 +55,7 @@ export const createBuildingSchema = z.object({
   buildingArea: z.coerce.number().positive('Luas bangunan harus lebih dari 0'),
   yearBuilt: z.coerce.number().int().min(1900).max(new Date().getFullYear()).optional().nullable(),
   condition: z.nativeEnum(BuildingCondition, {
-    message: 'Kondisi gedung tidak valid',
+    errorMap: () => ({ message: 'Kondisi gedung tidak valid' }),
   }),
   lastRenovation: z.coerce.date().optional().nullable(),
   notes: z.string().max(1000).optional().nullable(),
@@ -112,9 +112,9 @@ export const createRoomSchema = z.object({
     .optional()
     .nullable(),
   condition: z.nativeEnum(BuildingCondition, {
-    message: 'Kondisi ruangan tidak valid',
+    errorMap: () => ({ message: 'Kondisi ruangan tidak valid' }),
   }),
-  facilities: z.record(z.string(), z.any()).optional().nullable(),
+  facilities: z.record(z.any()).optional().nullable(),
   isActive: z.boolean().default(true),
 });
 

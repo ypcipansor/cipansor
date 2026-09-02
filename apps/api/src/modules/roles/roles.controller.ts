@@ -145,7 +145,7 @@ export class RolesController {
 
       const result = await rolesService.switchRole(userId, input.roleAssignmentId);
 
-      // Generate new tokens with the new active role
+      // Generate new tokens with the new active role and its assigned unit
       const tokens = generateTokenPair({
         id: result.user.id,
         sub: result.user.id,
@@ -153,7 +153,7 @@ export class RolesController {
         role: result.user.role ?? '',
         roleCode: result.activeRole.role.code,
         roleId: result.activeRole.roleId,
-        unitId: result.user.unitId,
+        unitId: result.activeRole.unitId ?? result.user.unitId,
         permissions: (result.activeRole.role.permissions as string[]) ?? [],
       });
 

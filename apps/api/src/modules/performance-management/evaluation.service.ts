@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma';
-import { PlanStatus, PerformanceRating } from '@prisma/client';
+import { PlanStatus, PerformanceRating, Prisma } from '@prisma/client';
 import { Errors } from '@/middleware/error';
 import { pkService } from './pk.service';
 
@@ -47,6 +47,15 @@ export class EvaluationService {
     pkService.assertAccess(pk, callerId, isAdmin);
     if (pk.status !== PlanStatus.APPROVED) {
       throw Errors.badRequest('Cannot evaluate a PK that is not APPROVED');
+    }
+
+    // Validate that month and year fall within the PK agreement period
+    const evalDate = new Date(data.year, data.month - 1, 1);
+    const startMonthDate = new Date(pk.periodStart.getFullYear(), pk.periodStart.getMonth(), 1);
+    const endMonthDate = new Date(pk.periodEnd.getFullYear(), pk.periodEnd.getMonth(), 1);
+
+    if (evalDate < startMonthDate || evalDate > endMonthDate) {
+      throw Errors.badRequest('Evaluation month and year must fall within the PK agreement period');
     }
 
     const behaviorValues = await this.getBehavioralValues();
@@ -106,16 +115,32 @@ export class EvaluationService {
     });
   }
 
-  /** Loads an evaluation and checks it is still editable by the caller. */
-  private async loadEditableEvaluation(evaluationId: string, callerId: string, isAdmin: boolean) {
-    const evaluation = await prisma.pKEvaluation.findUnique({
+  /** Loads an evaluation inside a transaction and locks the parent PerformanceAgreement row. */
+  private async loadEditableEvaluationInTx(
+    evaluationId: string,
+    callerId: string,
+    isAdmin: boolean,
+    tx: Prisma.TransactionClient,
+    opts: { ownerOnly?: boolean; supervisorOnly?: boolean } = {}
+  ) {
+    const initialEval = await tx.pKEvaluation.findUnique({
+      where: { id: evaluationId },
+      select: { pkId: true },
+    });
+    if (!initialEval) throw Errors.notFound('Evaluation');
+
+    if (typeof tx.$queryRaw === 'function') {
+      await tx.$queryRaw`SELECT id FROM "performance_agreements" WHERE id = ${initialEval.pkId} FOR UPDATE`;
+    }
+
+    const evaluation = await tx.pKEvaluation.findUnique({
       where: { id: evaluationId },
       include: { pk: true },
     });
     if (!evaluation) throw Errors.notFound('Evaluation');
-    pkService.assertAccess(evaluation.pk, callerId, isAdmin);
+    pkService.assertAccess(evaluation.pk, callerId, isAdmin, opts);
     if (evaluation.status === PlanStatus.APPROVED) {
-      throw Errors.badRequest('An approved evaluation can no longer be edited');
+      throw Errors.conflict('An approved evaluation can no longer be edited');
     }
     return evaluation;
   }
@@ -127,35 +152,37 @@ export class EvaluationService {
     isAdmin: boolean,
     data: { realization: number; activities?: string }
   ) {
-    await this.loadEditableEvaluation(evaluationId, callerId, isAdmin);
+    return prisma.$transaction(async (tx) => {
+      await this.loadEditableEvaluationInTx(evaluationId, callerId, isAdmin, tx);
 
-    const detail = await prisma.pKIndicatorEvaluation.findUnique({
-      where: { evaluationId_indicatorId: { evaluationId, indicatorId } },
-      include: { indicator: true },
+      const detail = await tx.pKIndicatorEvaluation.findUnique({
+        where: { evaluationId_indicatorId: { evaluationId, indicatorId } },
+        include: { indicator: true },
+      });
+      if (!detail) throw Errors.notFound('Indicator detail for this evaluation');
+
+      // Score the month: realization vs target, capped at 100.
+      const target = detail.indicator.target;
+      let score = 0;
+      if (target > 0) {
+        score = Math.min(100, (data.realization / target) * 100);
+      } else if (target === 0 && data.realization === 0) {
+        score = 100;
+      }
+
+      const updated = await tx.pKIndicatorEvaluation.update({
+        where: { id: detail.id },
+        data: {
+          realization: data.realization,
+          activities: data.activities,
+          score,
+        },
+        include: { indicator: true },
+      });
+
+      await this.recalculateEvaluationScores(evaluationId, tx);
+      return updated;
     });
-    if (!detail) throw Errors.notFound('Indicator detail for this evaluation');
-
-    // Score the month: realization vs target, capped at 100.
-    const target = detail.indicator.target;
-    let score = 0;
-    if (target > 0) {
-      score = Math.min(100, (data.realization / target) * 100);
-    } else if (target === 0 && data.realization === 0) {
-      score = 100;
-    }
-
-    const updated = await prisma.pKIndicatorEvaluation.update({
-      where: { id: detail.id },
-      data: {
-        realization: data.realization,
-        activities: data.activities,
-        score,
-      },
-      include: { indicator: true },
-    });
-
-    await this.recalculateEvaluationScores(evaluationId);
-    return updated;
   }
 
   async updateBehaviorScore(
@@ -165,24 +192,32 @@ export class EvaluationService {
     isAdmin: boolean,
     data: { score: number; notes?: string }
   ) {
-    await this.loadEditableEvaluation(evaluationId, callerId, isAdmin);
+    return prisma.$transaction(async (tx) => {
+      await this.loadEditableEvaluationInTx(evaluationId, callerId, isAdmin, tx, {
+        supervisorOnly: true,
+      });
 
-    const detail = await prisma.pKBehaviorEvaluation.findUnique({
-      where: { evaluationId_behaviorValueId: { evaluationId, behaviorValueId } },
+      const detail = await tx.pKBehaviorEvaluation.findUnique({
+        where: { evaluationId_behaviorValueId: { evaluationId, behaviorValueId } },
+      });
+      if (!detail) throw Errors.notFound('Behavior detail for this evaluation');
+
+      const updated = await tx.pKBehaviorEvaluation.update({
+        where: { id: detail.id },
+        data: { score: data.score, notes: data.notes },
+      });
+
+      await this.recalculateEvaluationScores(evaluationId, tx);
+      return updated;
     });
-    if (!detail) throw Errors.notFound('Behavior detail for this evaluation');
-
-    const updated = await prisma.pKBehaviorEvaluation.update({
-      where: { id: detail.id },
-      data: { score: data.score, notes: data.notes },
-    });
-
-    await this.recalculateEvaluationScores(evaluationId);
-    return updated;
   }
 
-  async recalculateEvaluationScores(evaluationId: string) {
-    const evaluation = await prisma.pKEvaluation.findUnique({
+  async recalculateEvaluationScores(
+    evaluationId: string,
+    txClient?: Prisma.TransactionClient | typeof prisma
+  ) {
+    const client = txClient || prisma;
+    const evaluation = await client.pKEvaluation.findUnique({
       where: { id: evaluationId },
       include: {
         indicatorDetails: { include: { indicator: true } },
@@ -212,42 +247,70 @@ export class EvaluationService {
           ) / totalBehaviorWeight
         : 0;
 
-    // Overall: 70% performance, 30% behavior.
-    const overallScore = performanceScore * 0.7 + behaviorScore * 0.3;
+    // Overall: 60% performance, 40% behavior (as per Cipansor SAFTI standard).
+    const overallScore = performanceScore * 0.6 + behaviorScore * 0.4;
 
-    await prisma.pKEvaluation.update({
+    await client.pKEvaluation.update({
       where: { id: evaluationId },
       data: { performanceScore, behaviorScore, overallScore },
     });
   }
 
-  async approveEvaluation(id: string, callerId: string, isAdmin: boolean) {
-    const evaluation = await prisma.pKEvaluation.findUnique({
-      where: { id },
-      include: { pk: true },
-    });
-    if (!evaluation) throw Errors.notFound('Evaluation');
-    pkService.assertAccess(evaluation.pk, callerId, isAdmin, { supervisorOnly: true });
-    if (evaluation.status === PlanStatus.APPROVED) {
-      throw Errors.conflict('Evaluation already approved');
-    }
+  async approveEvaluation(id: string, callerId: string, isAdmin: boolean, feedback?: string) {
+    return prisma.$transaction(async (tx) => {
+      const evaluation = await tx.pKEvaluation.findUnique({
+        where: { id },
+        include: { pk: true },
+      });
+      if (!evaluation) throw Errors.notFound('Evaluation');
+      pkService.assertAccess(evaluation.pk, callerId, isAdmin, { supervisorOnly: true });
 
-    const updated = await prisma.pKEvaluation.update({
-      where: { id },
-      data: { status: PlanStatus.APPROVED },
-    });
+      // Acquire an explicit row lock on the PerformanceAgreement row to serialize concurrent approvals for the same PK
+      if (typeof tx.$queryRaw === 'function') {
+        await tx.$queryRaw`SELECT id FROM "performance_agreements" WHERE id = ${evaluation.pkId} FOR UPDATE`;
+      }
 
-    await this.syncToPKAndTalent(evaluation.pkId);
-    return updated;
+      // Atomic conditional update ensuring status is not already APPROVED
+      const updateResult = await tx.pKEvaluation.updateMany({
+        where: {
+          id,
+          status: { not: PlanStatus.APPROVED },
+        },
+        data: {
+          status: PlanStatus.APPROVED,
+          feedback: feedback !== undefined ? feedback : evaluation.feedback,
+        },
+      });
+
+      if (updateResult.count === 0) {
+        throw Errors.conflict('Evaluation already approved');
+      }
+
+      await this.syncToPKAndTalentInTx(tx, evaluation.pkId);
+      return tx.pKEvaluation.findUnique({
+        where: { id },
+        include: {
+          pk: {
+            include: {
+              user: { select: { id: true, name: true } },
+              supervisor: { select: { id: true, name: true } },
+            },
+          },
+          indicatorDetails: { include: { indicator: true } },
+          behaviorDetails: { include: { behaviorValue: true } },
+        },
+      });
+    });
   }
 
   /**
    * After an evaluation is approved: roll YTD realizations up into the
    * PK indicators, refresh the PK's aggregate scores, and mirror the
-   * result into the talent matrix when a talent profile exists.
+   * result into the talent matrix when a talent profile exists. Executed
+   * within the approval Prisma transaction client for full atomicity.
    */
-  private async syncToPKAndTalent(pkId: string) {
-    const pk = await prisma.performanceAgreement.findUnique({
+  private async syncToPKAndTalentInTx(tx: Prisma.TransactionClient, pkId: string) {
+    const pk = await tx.performanceAgreement.findUnique({
       where: { id: pkId },
       include: {
         indicators: {
@@ -268,10 +331,10 @@ export class EvaluationService {
     // 1. YTD realization per indicator (sum of approved monthly entries).
     for (const indicator of pk.indicators) {
       const totalRealization = indicator.evaluations.reduce(
-        (sum, ev) => sum + ev.realization,
+        (sum: number, ev: any) => sum + ev.realization,
         0
       );
-      await prisma.pKIndicator.update({
+      await tx.pKIndicator.update({
         where: { id: indicator.id },
         data: { realization: totalRealization },
       });
@@ -282,13 +345,13 @@ export class EvaluationService {
     if (approvedCount === 0) return;
 
     const avgPerformance =
-      pk.evaluations.reduce((sum, ev) => sum + ev.performanceScore, 0) / approvedCount;
+      pk.evaluations.reduce((sum: number, ev: any) => sum + ev.performanceScore, 0) / approvedCount;
     const avgBehavior =
-      pk.evaluations.reduce((sum, ev) => sum + ev.behaviorScore, 0) / approvedCount;
+      pk.evaluations.reduce((sum: number, ev: any) => sum + ev.behaviorScore, 0) / approvedCount;
     const avgOverall =
-      pk.evaluations.reduce((sum, ev) => sum + ev.overallScore, 0) / approvedCount;
+      pk.evaluations.reduce((sum: number, ev: any) => sum + ev.overallScore, 0) / approvedCount;
 
-    await prisma.performanceAgreement.update({
+    await tx.performanceAgreement.update({
       where: { id: pkId },
       data: {
         totalScore: avgPerformance,
@@ -301,7 +364,7 @@ export class EvaluationService {
     //    when the PK has no supervisor rather than inventing one.
     if (!pk.supervisorId) return;
 
-    const talentProfile = await prisma.talentProfile.findUnique({
+    const talentProfile = await tx.talentProfile.findUnique({
       where: { userId: pk.userId },
       include: { assessments: { orderBy: { assessedAt: 'desc' }, take: 1 } },
     });
@@ -317,8 +380,6 @@ export class EvaluationService {
     const period = `PK Sync ${pk.periodStart.getFullYear()} (${pkId.slice(0, 8)})`;
     const assessmentData = {
       performanceRating: rating,
-      // Potential is a human judgement: carry the latest assessed value
-      // forward instead of fabricating one (same convention as PKG sync).
       potentialRating: talentProfile.assessments[0]?.potentialRating ?? PerformanceRating.MEETS,
       overallScore: avgOverall,
       feedback:
@@ -327,15 +388,13 @@ export class EvaluationService {
       assessedAt: new Date(),
     };
 
-    // One assessment per PK: update the previous sync instead of stacking
-    // a new row on every monthly approval.
-    const existing = await prisma.talentAssessment.findFirst({
+    const existing = await tx.talentAssessment.findFirst({
       where: { talentId: talentProfile.id, period },
     });
     if (existing) {
-      await prisma.talentAssessment.update({ where: { id: existing.id }, data: assessmentData });
+      await tx.talentAssessment.update({ where: { id: existing.id }, data: assessmentData });
     } else {
-      await prisma.talentAssessment.create({
+      await tx.talentAssessment.create({
         data: {
           talentId: talentProfile.id,
           assessorId: pk.supervisorId,

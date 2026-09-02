@@ -63,7 +63,7 @@ export const createMenuSchema = z.object({
   dessert: z.string().max(200).optional(),
   beverage: z.string().max(200).optional(),
   calories: z.number().int().positive().optional(),
-  nutritionalInfo: z.record(z.string(), z.any()).optional(),
+  nutritionalInfo: z.record(z.any()).optional(),
   isVegetarian: z.boolean().default(false),
   allergens: z.array(z.string()).optional(),
   notes: z.string().max(500).optional(),
