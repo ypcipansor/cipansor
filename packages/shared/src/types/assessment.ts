@@ -255,6 +255,11 @@ export interface RaportMerdekaPdfData {
     nama: string;
     nip?: string | null;
   };
+  pimpinanUnit?: {
+    nama: string;
+    jabatan?: string | null;
+    nip?: string | null;
+  };
   intrakurikuler: {
     kelompokUmum: Array<{
       subjectName: string;

@@ -11,6 +11,8 @@
 
 import { Request, Response, NextFunction } from 'express';
 import { RaportMerdekaPdfData } from '@cipansor/shared';
+import { prisma } from '../../lib/prisma';
+import { ApiError, ErrorCode } from '../../middleware/error';
 import { RaportMerdekaService, PROFIL_PELAJAR_PANCASILA } from './raport-merdeka.service';
 import { ApiResponse } from '../../utils/response';
 import { generateRaportMerdekaPdfBuffer } from '../../utils/generate-raport-merdeka-pdf';
@@ -81,6 +83,27 @@ export class RaportMerdekaController {
   }
 
   /**
+   * Helper: Validate student unit scope
+   */
+  private static async validateStudentScope(user: any, studentId: string) {
+    if (!user) return;
+    if (user.role === 'SUPER_ADMIN' || user.roleCode === 'SUPER_ADMIN') return;
+
+    const student = await prisma.student.findUnique({
+      where: { id: studentId },
+      select: { unitId: true },
+    });
+
+    if (!student) {
+      throw new ApiError(ErrorCode.NOT_FOUND, 'Siswa tidak ditemukan');
+    }
+
+    if (user.unitId && student.unitId !== user.unitId) {
+      throw new ApiError(ErrorCode.FORBIDDEN, 'Anda tidak memiliki akses ke siswa di unit lain');
+    }
+  }
+
+  /**
    * Generate Raport Merdeka for a student
    */
   static async generateStudentRaport(req: Request, res: Response, next: NextFunction) {
@@ -94,6 +117,8 @@ export class RaportMerdekaController {
           message: 'academicYearId dan semester harus diisi',
         });
       }
+
+      await RaportMerdekaController.validateStudentScope(req.user, studentId);
 
       const raport = await RaportMerdekaService.generateRaportMerdeka(
         studentId,
@@ -148,6 +173,8 @@ export class RaportMerdekaController {
           message: 'academicYearId dan semester harus diisi',
         });
       }
+
+      await RaportMerdekaController.validateStudentScope(req.user, studentId);
 
       const raportData = await RaportMerdekaService.generateRaportMerdeka(
         studentId,

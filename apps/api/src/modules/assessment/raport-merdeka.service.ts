@@ -143,10 +143,29 @@ export class RaportMerdekaService {
    * Includes: Intrakurikuler, Projek P5, Ekstrakurikuler
    */
   static async generateRaportMerdeka(studentId: string, academicYearId: string, semester: number) {
+    // Helper: Determine Fase from class level or unit type
+    const getFaseFromClassLevel = (levelStr?: string, unitTypeStr?: string): string => {
+      const levelNum = parseInt((levelStr || '').replace(/\D/g, ''), 10);
+      if (unitTypeStr === 'PAUD' || unitTypeStr === 'TK') return 'Fondasi';
+      if (levelNum === 1 || levelNum === 2) return 'A';
+      if (levelNum === 3 || levelNum === 4) return 'B';
+      if (levelNum === 5 || levelNum === 6) return 'C';
+      if (levelNum >= 7 && levelNum <= 9) return 'D';
+      if (levelNum === 10) return 'E';
+      if (levelNum === 11 || levelNum === 12) return 'F';
+      if (unitTypeStr === 'SMP') return 'D';
+      if (unitTypeStr === 'SMA' || unitTypeStr === 'SMK' || unitTypeStr === 'MA') return 'E-F';
+      if (unitTypeStr === 'SD') return 'A-C';
+      return 'D';
+    };
+
     // Get student data with enrollment
     const student = await prisma.student.findUnique({
       where: { id: studentId },
-      include: {
+      select: {
+        id: true,
+        nis: true,
+        nisn: true,
         user: { select: { name: true } },
         unit: { select: { id: true, name: true, type: true } },
         enrollments: {
@@ -195,7 +214,7 @@ export class RaportMerdekaService {
       },
     });
 
-    // Get grades with scores
+    // Get grades with scores filtered by semester
     const grades = await prisma.grade.findMany({
       where: {
         studentId,
@@ -254,6 +273,7 @@ export class RaportMerdekaService {
 
     // Get academic year info
     const academicYear = enrollment.class.academicYear;
+    const computedFase = getFaseFromClassLevel(enrollment.class.level, student.unit.type);
 
     return {
       raportFormat: 'KURIKULUM_MERDEKA',
@@ -263,8 +283,13 @@ export class RaportMerdekaService {
         nisn: student.nisn,
         nama: student.user.name,
         kelas: enrollment.class.name,
+        fase: computedFase,
         unit: student.unit.name,
         unitType: student.unit.type,
+      },
+      pimpinanUnit: {
+        nama: 'Kepala Sekolah / Pesantren',
+        jabatan: `Kepala ${student.unit.name}`,
       },
       tahunAjaran: {
         id: academicYear.id,

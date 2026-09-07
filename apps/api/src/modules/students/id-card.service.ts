@@ -114,17 +114,16 @@ export class StudentIdCardService {
       const payloadString = Buffer.from(payloadPart, 'base64url').toString('utf8');
       const payload = JSON.parse(payloadString);
 
-      // Verify HMAC signature supporting legacy 8-char and current 16-char lengths
-      if (receivedHmac.length !== 8 && receivedHmac.length !== 16) {
-        return { valid: false, message: 'Panjang tanda tangan HMAC tidak valid' };
+      // Strict 16-character HMAC verification only (reject legacy or non-HMAC QR codes)
+      if (receivedHmac.length !== 16) {
+        return { valid: false, message: 'Format QR Code tidak valid (wajib HMAC 16 karakter)' };
       }
 
-      const fullHmac = crypto
+      const expectedHmac = crypto
         .createHmac('sha256', this.getHmacSecret())
         .update(payloadString)
-        .digest('hex');
-
-      const expectedHmac = fullHmac.substring(0, receivedHmac.length);
+        .digest('hex')
+        .substring(0, 16);
 
       // Secure constant-time comparison to prevent timing attacks
       const expectedBuffer = Buffer.from(expectedHmac, 'utf8');

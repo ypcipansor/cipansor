@@ -117,11 +117,14 @@ export default function RaportMerdekaPage() {
   const [selectedStudentId, setSelectedStudentId] = useState<string>("");
   const [academicYearId, setAcademicYearId] = useState<string>("");
   const [semester, setSemester] = useState<string>("1");
+  const [studentSearch, setStudentSearch] = useState<string>("");
 
   const { data: students } = useQuery({
-    queryKey: ["students-list", currentUnit?.id],
+    queryKey: ["students-list", currentUnit?.id, studentSearch],
     queryFn: async () => {
-      const res = await api.get("/students", { params: { limit: 100 } });
+      const res = await api.get("/students", {
+        params: { search: studentSearch || undefined, limit: 100 },
+      });
       return res.data.data;
     },
   });
@@ -674,6 +677,13 @@ export default function RaportMerdekaPage() {
                 <div className="grid gap-4 md:grid-cols-3">
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Pilih Siswa</label>
+                    <input
+                      type="text"
+                      placeholder="Cari siswa..."
+                      className="w-full text-xs px-2 py-1 mb-1 border rounded"
+                      value={studentSearch}
+                      onChange={(e) => setStudentSearch(e.target.value)}
+                    />
                     <Select value={selectedStudentId} onValueChange={setSelectedStudentId}>
                       <SelectTrigger>
                         <SelectValue placeholder="Pilih Siswa" />

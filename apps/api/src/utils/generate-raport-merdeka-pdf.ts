@@ -176,7 +176,7 @@ export async function generateRaportMerdekaPdfBuffer(data: RaportMerdekaPdfData)
     currentPage.drawText(item.predikat, { x: MARGIN + colW.no + colW.subject + colW.score + 6, y: y - 12, size: 8, font: fontHelveticaBold });
 
     let descY = y - 10;
-    for (const line of descLines.slice(0, 3)) {
+    for (const line of descLines) {
       currentPage.drawText(line, {
         x: MARGIN + colW.no + colW.subject + colW.score + colW.predicate + 5,
         y: descY,
@@ -191,70 +191,80 @@ export async function generateRaportMerdekaPdfBuffer(data: RaportMerdekaPdfData)
 
   y -= 15;
 
+  // Ensure enough space for Ekstrakurikuler, Kehadiran, Catatan & Signatures
+  if (y < MARGIN + 180) {
+    currentPage = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+    y = drawHeader(
+      currentPage,
+      'Laporan Hasil Belajar (Lanjutan)',
+      `${data.siswa.unit} Cipansor`
+    );
+  }
+
   // B. EKSTRAKURIKULER & KEHADIRAN
-  page1.drawText('B. Ekstrakurikuler & Kehadiran', { x: MARGIN, y, size: 10, font: fontHelveticaBold });
+  currentPage.drawText('B. Ekstrakurikuler & Kehadiran', { x: MARGIN, y, size: 10, font: fontHelveticaBold });
   y -= 15;
 
   const halfW = (tableWidth - 10) / 2;
 
-  // Ekstrakurikuler Table
-  page1.drawRectangle({ x: MARGIN, y: y - 45, width: halfW, height: 45, borderColor: rgb(0.5, 0.5, 0.5), borderWidth: 0.5 });
-  page1.drawText('Ekstrakurikuler', { x: MARGIN + 5, y: y - 12, size: 8, font: fontHelveticaBold });
-  page1.drawText('Predikat', { x: MARGIN + halfW - 45, y: y - 12, size: 8, font: fontHelveticaBold });
-  page1.drawLine({ start: { x: MARGIN, y: y - 16 }, end: { x: MARGIN + halfW, y: y - 16 }, thickness: 0.5 });
-
   const eks = data.ekstrakurikuler ?? [];
+  const eksBoxHeight = Math.max(45, eks.length * 14 + 20);
+
+  // Ekstrakurikuler Table
+  currentPage.drawRectangle({ x: MARGIN, y: y - eksBoxHeight, width: halfW, height: eksBoxHeight, borderColor: rgb(0.5, 0.5, 0.5), borderWidth: 0.5 });
+  currentPage.drawText('Ekstrakurikuler', { x: MARGIN + 5, y: y - 12, size: 8, font: fontHelveticaBold });
+  currentPage.drawText('Predikat', { x: MARGIN + halfW - 45, y: y - 12, size: 8, font: fontHelveticaBold });
+  currentPage.drawLine({ start: { x: MARGIN, y: y - 16 }, end: { x: MARGIN + halfW, y: y - 16 }, thickness: 0.5 });
+
   let eksY = y - 26;
   if (eks.length === 0) {
-    page1.drawText('- Belum ada data ekstrakurikuler -', { x: MARGIN + 5, y: eksY, size: 7.5, font: fontHelveticaOblique });
+    currentPage.drawText('- Belum ada data ekstrakurikuler -', { x: MARGIN + 5, y: eksY, size: 7.5, font: fontHelveticaOblique });
   } else {
-    for (const e of eks.slice(0, 2)) {
-      page1.drawText(e.nama, { x: MARGIN + 5, y: eksY, size: 8, font: fontHelvetica });
-      page1.drawText(e.predikat, { x: MARGIN + halfW - 40, y: eksY, size: 8, font: fontHelveticaBold });
+    for (const e of eks) {
+      currentPage.drawText(e.nama, { x: MARGIN + 5, y: eksY, size: 8, font: fontHelvetica });
+      currentPage.drawText(e.predikat, { x: MARGIN + halfW - 40, y: eksY, size: 8, font: fontHelveticaBold });
       eksY -= 12;
     }
   }
 
   // Kehadiran Table
   const attX = MARGIN + halfW + 10;
-  page1.drawRectangle({ x: attX, y: y - 45, width: halfW, height: 45, borderColor: rgb(0.5, 0.5, 0.5), borderWidth: 0.5 });
-  page1.drawText('Kehadiran', { x: attX + 5, y: y - 12, size: 8, font: fontHelveticaBold });
-  page1.drawLine({ start: { x: attX, y: y - 16 }, end: { x: attX + halfW, y: y - 16 }, thickness: 0.5 });
+  currentPage.drawRectangle({ x: attX, y: y - eksBoxHeight, width: halfW, height: eksBoxHeight, borderColor: rgb(0.5, 0.5, 0.5), borderWidth: 0.5 });
+  currentPage.drawText('Kehadiran', { x: attX + 5, y: y - 12, size: 8, font: fontHelveticaBold });
+  currentPage.drawLine({ start: { x: attX, y: y - 16 }, end: { x: attX + halfW, y: y - 16 }, thickness: 0.5 });
 
   const keh = data.kehadiran ?? {};
-  page1.drawText(`Sakit : ${keh.sakit ?? 0} hari`, { x: attX + 5, y: y - 26, size: 7.5, font: fontHelvetica });
-  page1.drawText(`Izin  : ${keh.izin ?? 0} hari`, { x: attX + 80, y: y - 26, size: 7.5, font: fontHelvetica });
-  page1.drawText(`Tanpa Keterangan (Alpa) : ${keh.alpa ?? 0} hari`, { x: attX + 5, y: y - 38, size: 7.5, font: fontHelvetica });
+  currentPage.drawText(`Sakit : ${keh.sakit ?? 0} hari`, { x: attX + 5, y: y - 26, size: 7.5, font: fontHelvetica });
+  currentPage.drawText(`Izin  : ${keh.izin ?? 0} hari`, { x: attX + 80, y: y - 26, size: 7.5, font: fontHelvetica });
+  currentPage.drawText(`Tanpa Keterangan (Alpa) : ${keh.alpa ?? 0} hari`, { x: attX + 5, y: y - 38, size: 7.5, font: fontHelvetica });
 
-  y -= 60;
+  y -= eksBoxHeight + 15;
 
   // Catatan Wali Kelas
   if (data.catatanWaliKelas) {
-    page1.drawText('Catatan Wali Kelas:', { x: MARGIN, y, size: 8.5, font: fontHelveticaBold });
+    currentPage.drawText('Catatan Wali Kelas:', { x: MARGIN, y, size: 8.5, font: fontHelveticaBold });
     y -= 12;
     const catLines = wrapText(data.catatanWaliKelas, tableWidth - 10, fontHelveticaOblique, 8);
-    for (const l of catLines.slice(0, 2)) {
-      page1.drawText(l, { x: MARGIN + 5, y, size: 8, font: fontHelveticaOblique });
+    for (const l of catLines) {
+      currentPage.drawText(l, { x: MARGIN + 5, y, size: 8, font: fontHelveticaOblique });
       y -= 10;
     }
     y -= 5;
   }
 
   // Signatures Page 1
-  const sigY = MARGIN + 50;
-  page1.drawText('Mengetahui,', { x: MARGIN + 20, y: sigY + 40, size: 8.5, font: fontHelvetica });
-  page1.drawText('Orang Tua / Wali', { x: MARGIN + 20, y: sigY + 30, size: 8.5, font: fontHelvetica });
-  page1.drawLine({ start: { x: MARGIN + 10, y: sigY - 10 }, end: { x: MARGIN + 140, y: sigY - 10 }, thickness: 0.5 });
+  const sigY = Math.max(MARGIN + 50, y - 60);
+  currentPage.drawText('Mengetahui,', { x: MARGIN + 20, y: sigY + 40, size: 8.5, font: fontHelvetica });
+  currentPage.drawText('Orang Tua / Wali', { x: MARGIN + 20, y: sigY + 30, size: 8.5, font: fontHelvetica });
+  currentPage.drawLine({ start: { x: MARGIN + 10, y: sigY - 10 }, end: { x: MARGIN + 140, y: sigY - 10 }, thickness: 0.5 });
 
   const rightSigX = PAGE_WIDTH - MARGIN - 140;
-  page1.drawText(`Bogor, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, { x: rightSigX, y: sigY + 40, size: 8.5, font: fontHelvetica });
-  page1.drawText('Wali Kelas', { x: rightSigX, y: sigY + 30, size: 8.5, font: fontHelvetica });
-  page1.drawText(data.waliKelas.nama, { x: rightSigX, y: sigY - 8, size: 8.5, font: fontHelveticaBold });
+  currentPage.drawText(`Bogor, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, { x: rightSigX, y: sigY + 40, size: 8.5, font: fontHelvetica });
+  currentPage.drawText('Wali Kelas', { x: rightSigX, y: sigY + 30, size: 8.5, font: fontHelvetica });
+  currentPage.drawText(data.waliKelas.nama, { x: rightSigX, y: sigY - 8, size: 8.5, font: fontHelveticaBold });
   if (data.waliKelas.nip) {
-    page1.drawText(`NIP. ${data.waliKelas.nip}`, { x: rightSigX, y: sigY - 18, size: 7.5, font: fontHelvetica });
+    currentPage.drawText(`NIP. ${data.waliKelas.nip}`, { x: rightSigX, y: sigY - 18, size: 7.5, font: fontHelvetica });
   }
-
-  page1.drawText('Halaman 1 dari 2', { x: PAGE_WIDTH - MARGIN - 70, y: MARGIN, size: 7.5, font: fontHelveticaOblique, color: rgb(0.5, 0.5, 0.5) });
 
   // ---------------- PAGE 2: PESANTREN (TAHFIDZ & P5) ----------------
   const page2 = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
@@ -341,9 +351,12 @@ export async function generateRaportMerdekaPdfBuffer(data: RaportMerdekaPdfData)
 
   // Signatures Page 2
   const sigY2 = MARGIN + 50;
+  const pimpinanNama = data.pimpinanUnit?.nama || 'Kepala Sekolah / Pesantren';
+  const pimpinanJabatan = data.pimpinanUnit?.jabatan || 'Kepala Pesantren';
+
   page2.drawText('Mengetahui,', { x: MARGIN + 20, y: sigY2 + 40, size: 8.5, font: fontHelvetica });
-  page2.drawText('Kepala Pesantren', { x: MARGIN + 20, y: sigY2 + 30, size: 8.5, font: fontHelvetica });
-  page2.drawText('KH. Abdullah, Lc', { x: MARGIN + 20, y: sigY2 - 8, size: 8.5, font: fontHelveticaBold });
+  page2.drawText(pimpinanJabatan, { x: MARGIN + 20, y: sigY2 + 30, size: 8.5, font: fontHelvetica });
+  page2.drawText(pimpinanNama, { x: MARGIN + 20, y: sigY2 - 8, size: 8.5, font: fontHelveticaBold });
 
   page2.drawText(`Bogor, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, { x: rightSigX, y: sigY2 + 40, size: 8.5, font: fontHelvetica });
   page2.drawText('Musyrif / Wali Kelas', { x: rightSigX, y: sigY2 + 30, size: 8.5, font: fontHelvetica });

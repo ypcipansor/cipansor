@@ -28,17 +28,15 @@ describe('StudentIdCardService HMAC QR Code', () => {
     expect(verification.expired).toBe(false);
   });
 
-  it('successfully verifies a legacy 8-char HMAC QR code string', () => {
+  it('rejects legacy 8-char HMAC or un-signed QR code string', () => {
     const qrData16 = StudentIdCardService.generateQRCodeData(mockStudent);
     const [payloadPart, hmac16] = qrData16.replace('cipansor://', '').split('#');
     const legacyQrData = `cipansor://${payloadPart}#${hmac16.substring(0, 8)}`;
 
     const verification = StudentIdCardService.verifyQRCodeData(legacyQrData);
 
-    expect(verification.valid).toBe(true);
-    expect(verification.studentId).toBe(mockStudent.id);
-    expect(verification.nis).toBe(mockStudent.nis);
-    expect(verification.expired).toBe(false);
+    expect(verification.valid).toBe(false);
+    expect(verification.message).toMatch(/wajib HMAC 16 karakter/);
   });
 
   it('rejects tampered QR code payload with invalid HMAC signature', () => {
