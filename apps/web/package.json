@@ -88,7 +88,7 @@
     "@types/react-dom": "19.2.7",
     "@vitejs/plugin-react": "6.1.1",
     "babel-plugin-react-compiler": "1.0.0",
-    "eslint": "^9",
+    "eslint": "^10",
     "eslint-config-next": "16.3.4",
     "jsdom": "^30.0.1",
     "otplib": "13.5.0",
