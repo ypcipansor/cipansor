@@ -51,7 +51,7 @@ export class StudentIdCardService {
         'STUDENT_CARD_HMAC_SECRET or JWT_SECRET environment variable must be set in production.'
       );
     }
-    return secret || 'cipansor-student-card-secret-key-2026';
+    return secret || '';
   }
 
   /**

@@ -288,7 +288,7 @@ export class RaportMerdekaService {
         unitType: student.unit.type,
       },
       pimpinanUnit: {
-        nama: 'Kepala Sekolah / Pesantren',
+        nama: '',
         jabatan: `Kepala ${student.unit.name}`,
       },
       tahunAjaran: {

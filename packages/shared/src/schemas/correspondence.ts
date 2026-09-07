@@ -155,7 +155,7 @@ export type SubmitLetterSchemaInput = z.infer<typeof submitLetterSchema>;
 
 export const updateLetterSchema = z.object({
   type: z.nativeEnum(LetterType).optional(),
-  classificationId: z.string().uuid().optional(),
+  classificationId: z.string().uuid().optional().nullable(),
   date: z.string().optional(),
   receivedAt: z.string().optional(),
   subject: z.string().min(1).optional(),

@@ -7,9 +7,17 @@ const PAGE_WIDTH = 595.28; // A4 width
 const PAGE_HEIGHT = 841.89; // A4 height
 const MARGIN = 40;
 
+function sanitizeWinAnsiText(text: string | null | undefined): string {
+  if (!text) return '';
+  // Normalize and strip non-WinAnsi characters to prevent pdf-lib Helvetica rendering errors for non-ASCII/Arabic text
+  return text.normalize('NFD').replace(/[^\x20-\x7E\xA0-\xFF]/g, '').trim();
+}
+
 function wrapText(text: string, maxWidth: number, font: PDFFont, fontSize: number): string[] {
   if (!text) return [];
-  const words = text.split(/\s+/).filter(Boolean);
+  const safeText = sanitizeWinAnsiText(text);
+  if (!safeText) return [];
+  const words = safeText.split(/\s+/).filter(Boolean);
   const lines: string[] = [];
   let currentLine = '';
 
@@ -297,17 +305,18 @@ export async function generateRaportMerdekaPdfBuffer(data: RaportMerdekaPdfData)
 
   const thf = data.tahfidz ?? {};
   page2.drawRectangle({ x: MARGIN, y: y2 - 45, width: tableWidth, height: 45, borderColor: rgb(0.7, 0.7, 0.7), borderWidth: 0.5 });
-  page2.drawText(`Total Hafalan   : ${thf.totalJuz ?? 0} Juz`, { x: MARGIN + 10, y: y2 - 15, size: 8.5, font: fontHelveticaBold });
-  page2.drawText(`Surah Terakhir : ${thf.surahTerakhir ?? '-'}`, { x: MARGIN + 10, y: y2 - 32, size: 8.5, font: fontHelvetica });
-  page2.drawText(`Status Capaian : ${thf.statusCapaian ?? 'TERCAPAI'}`, { x: PAGE_WIDTH / 2 + 10, y: y2 - 15, size: 8.5, font: fontHelveticaBold, color: rgb(0, 0.4, 0.8) });
+  page2.drawText(sanitizeWinAnsiText(`Total Hafalan   : ${thf.totalJuz ?? 0} Juz`), { x: MARGIN + 10, y: y2 - 15, size: 8.5, font: fontHelveticaBold });
+  page2.drawText(sanitizeWinAnsiText(`Surah Terakhir : ${thf.surahTerakhir ?? '-'}`), { x: MARGIN + 10, y: y2 - 32, size: 8.5, font: fontHelvetica });
+  page2.drawText(sanitizeWinAnsiText(`Status Capaian : ${thf.statusCapaian ?? 'TERCAPAI'}`), { x: PAGE_WIDTH / 2 + 10, y: y2 - 15, size: 8.5, font: fontHelveticaBold, color: rgb(0, 0.4, 0.8) });
   if (thf.catatan) {
-    page2.drawText(`Catatan: ${thf.catatan.slice(0, 50)}`, { x: PAGE_WIDTH / 2 + 10, y: y2 - 32, size: 8, font: fontHelveticaOblique });
+    page2.drawText(sanitizeWinAnsiText(`Catatan: ${thf.catatan}`), { x: PAGE_WIDTH / 2 + 10, y: y2 - 32, size: 8, font: fontHelveticaOblique });
   }
 
   y2 -= 60;
 
   // D. PROJEK P5
-  page2.drawRectangle({
+  let currentP5Page = page2;
+  currentP5Page.drawRectangle({
     x: MARGIN,
     y: y2 - 20,
     width: tableWidth,
@@ -316,32 +325,37 @@ export async function generateRaportMerdekaPdfBuffer(data: RaportMerdekaPdfData)
     borderColor: rgb(0.4, 0.2, 0.6),
     borderWidth: 0.5,
   });
-  page2.drawText('D. Projek Penguatan Profil Pelajar Pancasila (P5)', { x: MARGIN + 8, y: y2 - 14, size: 9.5, font: fontHelveticaBold, color: rgb(0.3, 0.1, 0.5) });
+  currentP5Page.drawText('D. Projek Penguatan Profil Pelajar Pancasila (P5)', { x: MARGIN + 8, y: y2 - 14, size: 9.5, font: fontHelveticaBold, color: rgb(0.3, 0.1, 0.5) });
   y2 -= 30;
 
   const p5List = data.projekP5 ?? [];
   if (p5List.length === 0) {
-    page2.drawText('- Belum ada data projek P5 -', { x: MARGIN + 10, y: y2 - 10, size: 8, font: fontHelveticaOblique });
+    currentP5Page.drawText('- Belum ada data projek P5 -', { x: MARGIN + 10, y: y2 - 10, size: 8, font: fontHelveticaOblique });
     y2 -= 25;
   } else {
-    for (const p5 of p5List.slice(0, 2)) {
-      page2.drawText(`Tema: ${p5.tema}`, { x: MARGIN, y: y2, size: 8.5, font: fontHelveticaBold });
+    for (const p5 of p5List) {
+      if (y2 < MARGIN + 100) {
+        currentP5Page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+        y2 = drawHeader(currentP5Page, 'Laporan Perkembangan Pesantren & P5 (Lanjutan)', `${data.siswa.unit} Cipansor`);
+      }
+
+      currentP5Page.drawText(sanitizeWinAnsiText(`Tema: ${p5.tema}`), { x: MARGIN, y: y2, size: 8.5, font: fontHelveticaBold });
       y2 -= 12;
-      page2.drawText(`Judul Projek: ${p5.judul}`, { x: MARGIN, y: y2, size: 8, font: fontHelveticaBold });
+      currentP5Page.drawText(sanitizeWinAnsiText(`Judul Projek: ${p5.judul}`), { x: MARGIN, y: y2, size: 8, font: fontHelveticaBold });
       y2 -= 14;
 
       if (p5.deskripsiProyek) {
         const descLines = wrapText(p5.deskripsiProyek, tableWidth, fontHelvetica, 7.5);
-        for (const dl of descLines.slice(0, 2)) {
-          page2.drawText(dl, { x: MARGIN, y: y2, size: 7.5, font: fontHelvetica });
+        for (const dl of descLines) {
+          currentP5Page.drawText(sanitizeWinAnsiText(dl), { x: MARGIN, y: y2, size: 7.5, font: fontHelvetica });
           y2 -= 9;
         }
       }
 
       if (p5.dimensiTerkait && p5.dimensiTerkait.length > 0) {
         y2 -= 4;
-        for (const dim of p5.dimensiTerkait.slice(0, 3)) {
-          page2.drawText(`• ${dim.dimensiName} : ${dim.capaian ?? 'Berkembang Sesuai Harapan'}`, { x: MARGIN + 10, y: y2, size: 7.5, font: fontHelveticaBold });
+        for (const dim of p5.dimensiTerkait) {
+          currentP5Page.drawText(sanitizeWinAnsiText(`• ${dim.dimensiName} : ${dim.capaian ?? 'Berkembang Sesuai Harapan'}`), { x: MARGIN + 10, y: y2, size: 7.5, font: fontHelveticaBold });
           y2 -= 10;
         }
       }
@@ -351,12 +365,16 @@ export async function generateRaportMerdekaPdfBuffer(data: RaportMerdekaPdfData)
 
   // Signatures Page 2
   const sigY2 = MARGIN + 50;
-  const pimpinanNama = data.pimpinanUnit?.nama || 'Kepala Sekolah / Pesantren';
+  const pimpinanNama = data.pimpinanUnit?.nama || '';
   const pimpinanJabatan = data.pimpinanUnit?.jabatan || 'Kepala Pesantren';
 
   page2.drawText('Mengetahui,', { x: MARGIN + 20, y: sigY2 + 40, size: 8.5, font: fontHelvetica });
   page2.drawText(pimpinanJabatan, { x: MARGIN + 20, y: sigY2 + 30, size: 8.5, font: fontHelvetica });
-  page2.drawText(pimpinanNama, { x: MARGIN + 20, y: sigY2 - 8, size: 8.5, font: fontHelveticaBold });
+  if (pimpinanNama) {
+    page2.drawText(pimpinanNama, { x: MARGIN + 20, y: sigY2 - 8, size: 8.5, font: fontHelveticaBold });
+  } else {
+    page2.drawLine({ start: { x: MARGIN + 10, y: sigY2 - 10 }, end: { x: MARGIN + 140, y: sigY2 - 10 }, thickness: 0.5 });
+  }
 
   page2.drawText(`Bogor, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, { x: rightSigX, y: sigY2 + 40, size: 8.5, font: fontHelvetica });
   page2.drawText('Musyrif / Wali Kelas', { x: rightSigX, y: sigY2 + 30, size: 8.5, font: fontHelvetica });

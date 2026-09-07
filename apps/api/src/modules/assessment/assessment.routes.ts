@@ -920,7 +920,6 @@ router.get('/raport-merdeka/capaian', RaportMerdekaController.getCapaianMapping)
  */
 router.get('/raport-merdeka/students/:studentId', authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER), RaportMerdekaController.generateStudentRaport);
 router.get('/raport-merdeka/students/:studentId/pdf', authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER), RaportMerdekaController.exportStudentRaportPdf);
-router.post('/raport-merdeka/pdf', authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER), RaportMerdekaController.exportRaportPdfFromBody);
 
 /**
  * @swagger

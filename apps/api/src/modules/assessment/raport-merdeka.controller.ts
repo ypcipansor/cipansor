@@ -193,40 +193,6 @@ export class RaportMerdekaController {
     }
   }
 
-  /**
-   * Export Raport Merdeka PDF from request body
-   */
-  static async exportRaportPdfFromBody(req: Request, res: Response, next: NextFunction) {
-    try {
-      const { studentId, academicYearId, semester, customData } = req.body;
-
-      let raportData = customData;
-      if (!raportData && studentId && academicYearId && semester) {
-        raportData = await RaportMerdekaService.generateRaportMerdeka(
-          studentId,
-          academicYearId,
-          parseInt(String(semester), 10)
-        );
-      }
-
-      if (!raportData) {
-        return res.status(400).json({
-          success: false,
-          message: 'Data raport tidak lengkap',
-        });
-      }
-
-      const pdfBuffer = await generateRaportMerdekaPdfBuffer(raportData as any);
-
-      const studentName = raportData?.siswa?.nama || 'Siswa';
-      const fileName = `Raport_Merdeka_${studentName.replace(/\s+/g, '_')}.pdf`;
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `inline; filename="${fileName}"`);
-      return res.send(pdfBuffer);
-    } catch (error) {
-      next(error);
-    }
-  }
 
   /**
    * Get score to capaian mapping

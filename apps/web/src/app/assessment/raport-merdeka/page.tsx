@@ -82,6 +82,17 @@ interface P5Dimension {
   elements: string[];
 }
 
+interface StudentItem {
+  id: string;
+  nis: string;
+  user?: { name?: string | null };
+}
+
+interface AcademicYearItem {
+  id: string;
+  name: string;
+}
+
 export default function RaportMerdekaPage() {
   const { data: currentUnit } = useCurrentUnit();
   const [selectedTab, setSelectedTab] = useState("overview");
@@ -119,7 +130,7 @@ export default function RaportMerdekaPage() {
   const [semester, setSemester] = useState<string>("1");
   const [studentSearch, setStudentSearch] = useState<string>("");
 
-  const { data: students } = useQuery({
+  const { data: students } = useQuery<StudentItem[]>({
     queryKey: ["students-list", currentUnit?.id, studentSearch],
     queryFn: async () => {
       const res = await api.get("/students", {
@@ -129,7 +140,7 @@ export default function RaportMerdekaPage() {
     },
   });
 
-  const { data: academicYears } = useQuery({
+  const { data: academicYears } = useQuery<AcademicYearItem[]>({
     queryKey: ["academic-years-list"],
     queryFn: async () => {
       const res = await api.get("/academic-years");
@@ -159,7 +170,7 @@ export default function RaportMerdekaPage() {
       );
 
       const selectedStudent = Array.isArray(students)
-        ? students.find((s: any) => s.id === selectedStudentId)
+        ? students.find((s) => s.id === selectedStudentId)
         : null;
       const studentName = selectedStudent?.user?.name || "Siswa";
 
@@ -690,7 +701,7 @@ export default function RaportMerdekaPage() {
                       </SelectTrigger>
                       <SelectContent>
                         {Array.isArray(students) &&
-                          students.map((s: any) => (
+                          students.map((s) => (
                             <SelectItem key={s.id} value={s.id}>
                               {s.user?.name || s.nis} ({s.nis})
                             </SelectItem>
@@ -707,7 +718,7 @@ export default function RaportMerdekaPage() {
                       </SelectTrigger>
                       <SelectContent>
                         {Array.isArray(academicYears) &&
-                          academicYears.map((ay: any) => (
+                          academicYears.map((ay) => (
                             <SelectItem key={ay.id} value={ay.id}>
                               {ay.name}
                             </SelectItem>
