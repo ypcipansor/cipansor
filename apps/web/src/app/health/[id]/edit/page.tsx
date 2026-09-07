@@ -184,7 +184,7 @@ function EditHealthRecordPageContent({ params }: PageProps) {
             Edit Rekam Kesehatan
           </h1>
           <p className="text-muted-foreground">
-            Santri: {record.student?.name} ({record.student?.nis})
+            Santri: {record.student?.name} ({record.student?.nisn || record.student?.nik || "-"})
           </p>
         </div>
       </div>

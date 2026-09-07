@@ -240,7 +240,7 @@ export default function EditTahfidzPage() {
                           <span>
                             {(selectedStudent as any).user?.name ||
                               (selectedStudent as any).name}{" "}
-                            ({selectedStudent.nis})
+                            ({(selectedStudent as any).nisn || (selectedStudent as any).nik || "-"})
                           </span>
                         ) : (
                           <span className="text-muted-foreground">
@@ -276,7 +276,7 @@ export default function EditTahfidzPage() {
                                 <div>
                                   <p className="font-medium">{student.name}</p>
                                   <p className="text-sm text-muted-foreground">
-                                    {student.nis}
+                                    {(student as any).nisn || (student as any).nik || "-"}
                                   </p>
                                 </div>
                               </CommandItem>

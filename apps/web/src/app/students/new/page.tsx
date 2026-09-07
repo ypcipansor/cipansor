@@ -106,11 +106,21 @@ export default function NewStudentPage() {
             </CardHeader>
             <CardContent className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="nis">NIS (Student ID) *</Label>
-                <Input id="nis" {...register("nis")} />
-                {errors.nis && (
+                <Label htmlFor="nisn">NISN</Label>
+                <Input id="nisn" {...register("nisn")} />
+                {errors.nisn && (
                   <p className="text-sm text-destructive">
-                    {errors.nis.message}
+                    {errors.nisn.message}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="nik">NIK</Label>
+                <Input id="nik" {...register("nik")} />
+                {errors.nik && (
+                  <p className="text-sm text-destructive">
+                    {errors.nik.message}
                   </p>
                 )}
               </div>

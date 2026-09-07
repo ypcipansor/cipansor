@@ -273,7 +273,7 @@ export default function HealthDetailPage({ params }: PageProps) {
                     {record.student?.user?.name || record.student?.name}
                   </h3>
                   <p className="text-sm text-muted-foreground">
-                    {record.student?.nis}
+                    {record.student?.nisn || record.student?.nik || "-"}
                   </p>
                 </div>
               </div>

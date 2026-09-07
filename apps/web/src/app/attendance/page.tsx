@@ -316,7 +316,7 @@ export default function AttendancePage() {
                       })}
                     </TableCell>
                     <TableCell className="font-mono">
-                      {attendance.student?.nis || "-"}
+                      {attendance.student?.nisn || attendance.student?.nik || "-"}
                     </TableCell>
                     <TableCell>{attendance.student?.name || "-"}</TableCell>
                     <TableCell>{attendance.class?.name || "-"}</TableCell>

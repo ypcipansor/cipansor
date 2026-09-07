@@ -59,11 +59,11 @@ export default function ClassDetailPage() {
 
   const enrollmentColumns: ColumnDef<ClassEnrollment>[] = [
     {
-      accessorKey: "student.nis",
-      header: "NIS",
+      accessorKey: "student.nisn",
+      header: "NISN/NIK",
       cell: ({ row }) => (
         <span className="font-mono text-sm">
-          {row.original.student?.nis || "-"}
+          {row.original.student?.nisn || row.original.student?.nik || "-"}
         </span>
       ),
     },

@@ -344,7 +344,7 @@ export default function TahfidzPage() {
                           {record.student?.user?.name || "-"}
                         </p>
                         <p className="text-sm text-muted-foreground">
-                          {record.student?.nis}
+                          {record.student?.nisn || record.student?.nik || "-"}
                         </p>
                       </div>
                     </TableCell>

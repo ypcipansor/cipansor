@@ -111,7 +111,7 @@ function RecordAttendanceContent() {
         return {
           studentId: enrollment.student.id,
           name: enrollment.student.user?.name || enrollment.student.name || "",
-          nis: enrollment.student.nis || "",
+          nis: enrollment.student.nisn || enrollment.student.nik || "",
           status: existing?.status || ("PRESENT" as AttendanceStatus),
           notes: existing?.notes || "",
         };
