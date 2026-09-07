@@ -24,11 +24,11 @@ test.describe('Public Card Verification, Raport Merdeka & E-Office Edit Letter F
     await page.waitForLoadState('domcontentloaded', { timeout: 10000 });
     await expect(page.locator('h1')).toContainText('Raport Kurikulum Merdeka');
 
-    // Switch to Generate Raport tab
-    await page.click('button:has-text("Generate Raport")');
+    // Switch to Generate Raport tab using exact tab trigger selector
+    await page.click('[role="tab"]:has-text("Generate Raport")');
 
     const studentSearchInput = page.locator('input[placeholder="Cari siswa..."]');
-    await expect(studentSearchInput).toBeVisible();
+    await expect(studentSearchInput).toBeVisible({ timeout: 10000 });
     await studentSearchInput.fill('Ahmad');
   });
 });
