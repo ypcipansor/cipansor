@@ -1,4 +1,5 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/auth.fixture';
+import { loginAs } from './helpers/auth-api';
 
 test.describe('Public Card Verification, Raport Merdeka & E-Office Edit Letter Flow', () => {
   test('public verify card page loads and verifies QR code inputs', async ({ page }) => {
@@ -16,7 +17,11 @@ test.describe('Public Card Verification, Raport Merdeka & E-Office Edit Letter F
   });
 
   test('raport merdeka page loads and supports student search', async ({ page }) => {
+    await loginAs(page, 'superAdmin');
+    await page.waitForTimeout(1000);
+
     await page.goto('/assessment/raport-merdeka');
+    await page.waitForLoadState('domcontentloaded', { timeout: 10000 });
     await expect(page.locator('h1')).toContainText('Raport Kurikulum Merdeka');
 
     // Switch to Generate Raport tab
