@@ -69,7 +69,8 @@ export class WalletService {
       where.student = {
         OR: [
           { user: { name: { contains: search, mode: 'insensitive' } } },
-          { nis: { contains: search, mode: 'insensitive' } },
+          { nisn: { contains: search, mode: 'insensitive' } },
+          { nik: { contains: search, mode: 'insensitive' } },
         ],
       };
     }
@@ -119,7 +120,8 @@ export class WalletService {
         id: w.id,
         studentId: w.studentId,
         studentName: w.student.user.name,
-        studentNis: w.student.nis,
+        studentNisn: w.student.nisn,
+        studentNik: w.student.nik,
         unitName: w.student.unit?.name,
         className: w.student.enrollments[0]?.class?.name,
         balance: Number(w.balance),
@@ -142,123 +144,109 @@ export class WalletService {
     return this.getOrCreateWallet(studentId);
   }
 
-    /**
-     * Top up wallet
-     */
-    async topUp(input: TopUpWalletInput, createdById?: string) {
-      const { studentId, amount, description, paymentMethod = 'CASH' } = input;
-  
-      return prisma.$transaction(async (tx) => {
-        // Get or create wallet
-        let wallet = await tx.santriWallet.findUnique({
-          where: { studentId },
+  /**
+   * Top up wallet
+   */
+  async topUp(input: TopUpWalletInput, createdById?: string) {
+    const { studentId, amount, description, paymentMethod = 'CASH' } = input;
+
+    return prisma.$transaction(async (tx) => {
+      let wallet = await tx.santriWallet.findUnique({
+        where: { studentId },
+        include: { student: { select: { unitId: true, user: { select: { name: true } } } } },
+      });
+
+      if (!wallet) {
+        wallet = await tx.santriWallet.create({
+          data: { studentId, balance: 0 },
           include: { student: { select: { unitId: true, user: { select: { name: true } } } } },
         });
-  
-        if (!wallet) {
-          wallet = await tx.santriWallet.create({
-            data: { studentId, balance: 0 },
-            include: { student: { select: { unitId: true, user: { select: { name: true } } } } },
+      }
+
+      const balanceBefore = Number(wallet.balance);
+      const balanceAfter = balanceBefore + amount;
+
+      const updatedWallet = await tx.santriWallet.update({
+        where: { id: wallet.id },
+        data: {
+          balance: balanceAfter,
+          lastTopUp: new Date(),
+        },
+      });
+
+      const transaction = await tx.walletTransaction.create({
+        data: {
+          walletId: wallet.id,
+          type: 'TOPUP',
+          amount,
+          balanceBefore,
+          balanceAfter,
+          description: description || 'Top up saldo',
+          createdById,
+        },
+      });
+
+      if (wallet.student?.unitId) {
+        const unitId = wallet.student.unitId;
+        const studentName = wallet.student.user?.name || 'Santri';
+        const isBank = ['BANK_TRANSFER', 'QRIS'].includes(paymentMethod);
+        const assetMappingKey = isBank ? ACCOUNT_MAPPING_KEYS.BANK : ACCOUNT_MAPPING_KEYS.CASH;
+        const assetFallbackCode = isBank ? '1102' : '1101';
+        const assetFallbackName = isBank ? 'Bank' : 'Kas';
+
+        const assetAccount = await getAccountOrFallback(
+          unitId,
+          assetMappingKey,
+          assetFallbackCode,
+          assetFallbackName
+        );
+
+        const liabilityAccount = await getAccountOrFallback(
+          unitId,
+          ACCOUNT_MAPPING_KEYS.WALLET_LIABILITY,
+          '2102',
+          'Titipan Uang Saku'
+        );
+
+        if (assetAccount && liabilityAccount) {
+          const desc = `Top up e-wallet ${studentName} (${paymentMethod})`;
+
+          await tx.journalEntry.create({
+            data: {
+              unitId,
+              accountId: assetAccount.id,
+              date: new Date(),
+              description: desc,
+              debit: amount,
+              credit: 0,
+              reference: transaction.id,
+              referenceType: JournalReferenceType.PAYMENT,
+              createdById: createdById || 'SYSTEM',
+            },
+          });
+
+          await tx.journalEntry.create({
+            data: {
+              unitId,
+              accountId: liabilityAccount.id,
+              date: new Date(),
+              description: desc,
+              debit: 0,
+              credit: amount,
+              reference: transaction.id,
+              referenceType: JournalReferenceType.PAYMENT,
+              createdById: createdById || 'SYSTEM',
+            },
           });
         }
-  
-        const balanceBefore = Number(wallet.balance);
-        const balanceAfter = balanceBefore + amount;
-  
-        // Update wallet
-        const updatedWallet = await tx.santriWallet.update({
-          where: { id: wallet.id },
-          data: {
-            balance: balanceAfter,
-            lastTopUp: new Date(),
-          },
-        });
-  
-        // Create transaction record
-        const transaction = await tx.walletTransaction.create({
-          data: {
-            walletId: wallet.id,
-            type: 'TOPUP',
-            amount,
-            balanceBefore,
-            balanceAfter,
-            description: description || 'Top up saldo',
-            createdById,
-          },
-        });
-  
-        // =================================================================
-        // INTEGRATION: Create Journal Entry for Accounting
-        // =================================================================
-        if (wallet.student?.unitId) {
-          const unitId = wallet.student.unitId;
-          const studentName = wallet.student.user?.name || 'Santri';
-          const isBank = ['BANK_TRANSFER', 'QRIS'].includes(paymentMethod);
-          const assetMappingKey = isBank ? ACCOUNT_MAPPING_KEYS.BANK : ACCOUNT_MAPPING_KEYS.CASH;
-          const assetFallbackCode = isBank ? '1102' : '1101';
-          const assetFallbackName = isBank ? 'Bank' : 'Kas';
-  
-          // 1. Determine Debit Account (Asset)
-          const assetAccount = await getAccountOrFallback(
-            unitId,
-            assetMappingKey,
-            assetFallbackCode,
-            assetFallbackName
-          );
-  
-          // 2. Determine Credit Account (Liability - Titipan)
-          const liabilityAccount = await getAccountOrFallback(
-            unitId,
-            ACCOUNT_MAPPING_KEYS.WALLET_LIABILITY,
-            '2102', // Typically current liability for Titipan
-            'Titipan Uang Saku'
-          );
-  
-          if (assetAccount && liabilityAccount) {
-            const desc = `Top up e-wallet ${studentName} (${paymentMethod})`;
-  
-            // Debit Entry (Asset increases)
-            await tx.journalEntry.create({
-              data: {
-                unitId,
-                accountId: assetAccount.id,
-                date: new Date(),
-                description: desc,
-                debit: amount,
-                credit: 0,
-                reference: transaction.id,
-                referenceType: JournalReferenceType.PAYMENT,
-                createdById: createdById || 'SYSTEM',
-              },
-            });
-  
-            // Credit Entry (Liability increases)
-            await tx.journalEntry.create({
-              data: {
-                unitId,
-                accountId: liabilityAccount.id,
-                date: new Date(),
-                description: desc,
-                debit: 0,
-                credit: amount,
-                reference: transaction.id,
-                referenceType: JournalReferenceType.PAYMENT,
-                createdById: createdById || 'SYSTEM',
-              },
-            });
-          } else {
-            console.warn(
-              `Accounting Integration: Missing accounts for Wallet TopUp in unit ${unitId}. Asset: ${!!assetAccount}, Liability: ${!!liabilityAccount}`
-            );
-          }
-        }
-  
-        return { wallet: updatedWallet, transaction };
-      });
-    }
+      }
+
+      return { wallet: updatedWallet, transaction };
+    });
+  }
 
   /**
-   * Deduct from wallet (purchase)
+   * Deduct from wallet
    */
   async deduct(input: DeductWalletInput, createdById?: string) {
     const { studentId, amount, description, referenceType, reference } = input;
@@ -279,13 +267,11 @@ export class WalletService {
 
       const balanceAfter = balanceBefore - amount;
 
-      // Update wallet
       const updatedWallet = await tx.santriWallet.update({
         where: { id: wallet.id },
         data: { balance: balanceAfter },
       });
 
-      // Create transaction record
       const transaction = await tx.walletTransaction.create({
         data: {
           walletId: wallet.id,
@@ -315,7 +301,6 @@ export class WalletService {
     }
 
     return prisma.$transaction(async (tx) => {
-      // Get source wallet
       const fromWallet = await tx.santriWallet.findUnique({
         where: { studentId: fromStudentId },
         include: { student: { include: { user: { select: { name: true } } } } },
@@ -330,7 +315,6 @@ export class WalletService {
         throw new Error(`Saldo tidak mencukupi. Saldo: Rp ${fromBalanceBefore.toLocaleString()}`);
       }
 
-      // Get or create destination wallet
       let toWallet = await tx.santriWallet.findUnique({
         where: { studentId: toStudentId },
         include: { student: { include: { user: { select: { name: true } } } } },
@@ -347,7 +331,6 @@ export class WalletService {
       const fromBalanceAfter = fromBalanceBefore - amount;
       const toBalanceAfter = toBalanceBefore + amount;
 
-      // Update wallets
       await tx.santriWallet.update({
         where: { id: fromWallet.id },
         data: { balance: fromBalanceAfter },
@@ -358,7 +341,6 @@ export class WalletService {
         data: { balance: toBalanceAfter },
       });
 
-      // Create transaction records
       const fromTransaction = await tx.walletTransaction.create({
         data: {
           walletId: fromWallet.id,
@@ -409,13 +391,11 @@ export class WalletService {
       const balanceBefore = Number(wallet.balance);
       const balanceAfter = balanceBefore + amount;
 
-      // Update wallet
       const updatedWallet = await tx.santriWallet.update({
         where: { id: wallet.id },
         data: { balance: balanceAfter },
       });
 
-      // Create transaction record
       const transaction = await tx.walletTransaction.create({
         data: {
           walletId: wallet.id,

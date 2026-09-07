@@ -451,7 +451,7 @@ export const transactionService = {
         where,
         include: {
           student: {
-            select: { id: true, nis: true, user: { select: { name: true } } },
+            select: { id: true, nisn: true, nik: true, user: { select: { name: true } } },
           },
           cashier: { select: { id: true, name: true } },
           items: {
@@ -483,7 +483,7 @@ export const transactionService = {
         student: {
           select: {
             id: true,
-            nis: true,
+            nisn: true, nik: true,
             user: { select: { name: true } },
             wallet: { select: { balance: true } },
           },
@@ -673,7 +673,7 @@ export const transactionService = {
         },
         include: {
           student: {
-            select: { id: true, nis: true, user: { select: { name: true } } },
+            select: { id: true, nisn: true, nik: true, user: { select: { name: true } } },
           },
           cashier: { select: { id: true, name: true } },
           items: true,

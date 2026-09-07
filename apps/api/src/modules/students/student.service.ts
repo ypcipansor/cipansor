@@ -16,16 +16,17 @@ export class StudentService {
     query: ListStudentsQuery,
     currentUser: { role: string; roleCode?: string | null; unitId: string | null }
   ) {
-    const { page, limit, search, unitId, classId, gender } = query;
+    const { page, limit, search, unitId, classId, gender, status } = query;
     const skip = (page - 1) * limit;
 
     const where: Prisma.StudentWhereInput = {
       deletedAt: null,
     };
 
-    // Unit filter. seesAllUnits() covers both the yayasan board (no unitId at
-    // all, so this used to resolve to 'none' and return nothing) and the
-    // boarding/shared-service staff, whose santri span several academic units.
+    if (status) {
+      where.status = status.toLowerCase();
+    }
+
     if (!seesAllUnits(currentUser)) {
       where.unitId = currentUser.unitId || 'none';
     } else if (unitId) {
@@ -48,8 +49,8 @@ export class StudentService {
     if (search) {
       where.OR = [
         { user: { name: { contains: search, mode: 'insensitive' } } },
-        { nis: { contains: search, mode: 'insensitive' } },
         { nisn: { contains: search, mode: 'insensitive' } },
+        { nik: { contains: search, mode: 'insensitive' } },
       ];
     }
 
@@ -92,10 +93,8 @@ export class StudentService {
       prisma.student.count({ where }),
     ]);
 
-    // Map response to match shared types/frontend expectations
-    // Specifically ensuring currentClass has 'grade' mapped from 'level'
     const mappedStudents = students.map((student) => {
-      const currentEnrollment = student.enrollments[0]; // active enrollment due to filter
+      const currentEnrollment = student.enrollments[0];
       const currentClass = currentEnrollment?.class
         ? {
             id: currentEnrollment.class.id,
@@ -108,7 +107,6 @@ export class StudentService {
       return {
         ...student,
         currentClass,
-        // Flatten user properties if needed, but existing FE likely expects nested user
       };
     });
 
@@ -121,6 +119,44 @@ export class StudentService {
         totalPages: Math.ceil(total / limit),
       },
     };
+  }
+
+  /**
+   * Find internal alumnus student by NIK or NISN for re-enrollment / onboarding
+   */
+  async findInternalAlumniByIdentifier(identifier: string) {
+    if (!identifier || identifier.trim().length === 0) {
+      return null;
+    }
+
+    const clean = identifier.trim();
+
+    const student = await prisma.student.findFirst({
+      where: {
+        deletedAt: null,
+        OR: [{ nik: clean }, { nisn: clean }],
+      },
+      include: {
+        user: { select: { id: true, name: true, email: true } },
+        unit: { select: { id: true, name: true, type: true } },
+        parents: {
+          include: {
+            parent: {
+              select: {
+                id: true,
+                name: true,
+                phone: true,
+                email: true,
+                occupation: true,
+                nik: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    return student;
   }
 
   /**
@@ -169,7 +205,6 @@ export class StudentService {
           },
           take: 1,
         },
-        // We fetch a preview list, but calculate totals separately
         violations: {
           take: 5,
           orderBy: { occurredAt: 'desc' },
@@ -178,7 +213,6 @@ export class StudentService {
           take: 5,
           orderBy: { visitDate: 'desc' },
         },
-        // Latest growth measurement (carries WHO Z-scores + nutrition status)
         growthRecords: {
           take: 1,
           orderBy: { recordDate: 'desc' },
@@ -197,8 +231,6 @@ export class StudentService {
       throw Errors.notFound('Student');
     }
 
-    // Parallel aggregation queries for accurate totals
-    // Using aggregation for better performance than pulling all records
     const [violationStats, invoiceStats] = await Promise.all([
       prisma.violation.aggregate({
         where: { studentId: id },
@@ -211,7 +243,6 @@ export class StudentService {
       }),
     ]);
 
-    // Find active enrollment for current class
     const currentEnrollment = student.enrollments.find((e) => e.status === 'active');
     const currentClass = currentEnrollment?.class
       ? {
@@ -223,13 +254,11 @@ export class StudentService {
         }
       : null;
 
-    // Calculate summaries from aggregation results
     const totalViolationPoints = violationStats._sum.points || 0;
     const unpaidInvoicesCount = invoiceStats._count.id;
     const unpaidInvoicesTotal =
       (Number(invoiceStats._sum.amount) || 0) - (Number(invoiceStats._sum.paidAmount) || 0);
 
-    // Boarding info
     const boarding = student.roomAssignments[0]
       ? {
           dormitoryName: student.roomAssignments[0].room.dormitory.name,
@@ -256,8 +285,6 @@ export class StudentService {
 
   /**
    * Get complete student profile (Student 360 view).
-   * Aggregate summaries only — detailed counseling/medical data stays behind
-   * their own permission-guarded endpoints.
    */
   async getCompleteProfile(id: string) {
     const student = await prisma.student.findFirst({
@@ -318,7 +345,6 @@ export class StudentService {
       }),
     ]);
 
-    // Academic summary — normalize each grade to a percentage
     const toPercentage = (g: (typeof grades)[number]) => {
       if (g.percentage !== null) return Number(g.percentage);
       const max = Number(g.maxScore) || 100;
@@ -329,7 +355,6 @@ export class StudentService {
       values.length > 0 ? values.reduce((sum, v) => sum + v, 0) / values.length : 0;
     const averageGrade = Math.round(average(percentages) * 100) / 100;
 
-    // Trend: newer half vs older half of the recent grades (>2 point swing)
     let trend: 'UP' | 'DOWN' | 'STABLE' = 'STABLE';
     if (percentages.length >= 4) {
       const mid = Math.floor(percentages.length / 2);
@@ -338,7 +363,6 @@ export class StudentService {
       else if (diff < -2) trend = 'DOWN';
     }
 
-    // Attendance summary (last 30 days)
     const countFor = (status: string) =>
       attendanceByStatus.find((row) => row.status === status)?._count.id ?? 0;
     const totalDays = attendanceByStatus.reduce((sum, row) => sum + row._count.id, 0);
@@ -372,20 +396,65 @@ export class StudentService {
   }
 
   /**
-   * Create new student (with user account)
+   * Mark student as graduated (Alumni)
    */
-  async create(input: CreateStudentInput) {
-    // Check if NIS already exists
-    const existingNis = await prisma.student.findFirst({
-      where: { nis: input.nis },
+  async graduateStudent(id: string, graduateYear?: number) {
+    const student = await prisma.student.findFirst({
+      where: { id, deletedAt: null },
     });
 
-    if (existingNis) {
-      throw Errors.conflict('NIS already exists');
+    if (!student) {
+      throw Errors.notFound('Student');
     }
 
-    // Check if email exists (if provided)
-    const emailToCheck = input.email || `${input.nis}@student.cipansor.local`;
+    const currentYear = graduateYear || new Date().getFullYear();
+
+    return prisma.$transaction(async (tx) => {
+      await tx.classEnrollment.updateMany({
+        where: { studentId: id, status: 'active' },
+        data: { status: 'completed' },
+      });
+
+      const updated = await tx.student.update({
+        where: { id },
+        data: {
+          status: 'alumni',
+          graduateYear: currentYear,
+        },
+        include: {
+          user: { select: { id: true, name: true, email: true } },
+          unit: { select: { id: true, name: true } },
+        },
+      });
+
+      return updated;
+    });
+  }
+
+  /**
+   * Create new student
+   */
+  async create(input: CreateStudentInput) {
+    if (input.nisn) {
+      const existingNisn = await prisma.student.findFirst({
+        where: { nisn: input.nisn, deletedAt: null },
+      });
+      if (existingNisn) {
+        throw Errors.conflict('NISN already exists');
+      }
+    }
+
+    if (input.nik) {
+      const existingNik = await prisma.student.findFirst({
+        where: { nik: input.nik, deletedAt: null },
+      });
+      if (existingNik) {
+        throw Errors.conflict('NIK already exists');
+      }
+    }
+
+    const emailToCheck =
+      input.email || `${input.nisn || input.nik || randomUUID()}@student.cipansor.local`;
     const existingEmail = await prisma.user.findFirst({
       where: { email: emailToCheck },
     });
@@ -394,7 +463,6 @@ export class StudentService {
       throw Errors.conflict('Email already registered');
     }
 
-    // Check unit exists
     if (!input.unitId) {
       throw Errors.badRequest('Unit ID is required');
     }
@@ -407,27 +475,17 @@ export class StudentService {
       throw Errors.notFound('Unit');
     }
 
-    const unitId = input.unitId; // TypeScript narrowing
-
-    // Generate email if not provided
-    const email = input.email || `${input.nis}@student.cipansor.local`;
-
-    // Whether this pupil gets an account at all. TK Qur'an pupils never do —
-    // they are four to six years old — so the row created below is an identity
-    // carrying their name, with no credential and no ability to sign in.
-    // Without this, adding a TK pupil through the UI issued them a password.
+    const unitId = input.unitId;
+    const email = emailToCheck;
     const withLogin = studentsHoldLogins(unit.type);
 
-    // Students are issued a password to reset later rather than choosing one.
     const passwordHash = withLogin
       ? await hashPassword(
           input.password ?? `Aa1${randomUUID().replace(/-/g, '').slice(0, 12)}`
         )
       : null;
 
-    // Create user and student in transaction
     const student = await prisma.$transaction(async (tx) => {
-      // Create user account
       const user = await tx.user.create({
         data: {
           name: input.name,
@@ -439,13 +497,15 @@ export class StudentService {
         },
       });
 
-      // Create student profile
       const student = await tx.student.create({
         data: {
           userId: user.id,
           unitId,
-          nis: input.nis,
-          nisn: input.nisn,
+          nisn: input.nisn || null,
+          nik: input.nik || null,
+          noKK: input.noKK || null,
+          noAkta: input.noAkta || null,
+          kipNumber: input.kipNumber || null,
           gender: input.gender as Gender,
           birthPlace: input.birthPlace,
           birthDate: input.birthDate,
@@ -453,6 +513,8 @@ export class StudentService {
           parentName: input.parentName,
           parentPhone: input.parentPhone,
           parentEmail: input.parentEmail,
+          entryYear: new Date().getFullYear(),
+          status: 'active',
         },
         include: {
           user: {
@@ -471,10 +533,6 @@ export class StudentService {
         },
       });
 
-      // Link the guardian for real. Before this, parentName/parentPhone were
-      // stored on the student row and nowhere else, so every santri added
-      // through the admin form was an orphan relationally: the wali had no
-      // account, no StudentParent row, and no unit scope.
       await linkGuardian(tx as unknown as GuardianClient, {
         studentId: student.id,
         name: input.parentName,
@@ -482,7 +540,6 @@ export class StudentService {
         email: input.parentEmail,
       });
 
-      // Enroll in class if provided
       if (input.classId) {
         const classExists = await tx.class.findFirst({
           where: { id: input.classId, deletedAt: null, unitId },
@@ -518,19 +575,25 @@ export class StudentService {
       throw Errors.notFound('Student');
     }
 
-    // Check NIS uniqueness if changing
-    if (input.nis && input.nis !== student.nis) {
-      const existingNis = await prisma.student.findFirst({
-        where: { nis: input.nis, id: { not: id } },
+    if (input.nisn && input.nisn !== student.nisn) {
+      const existingNisn = await prisma.student.findFirst({
+        where: { nisn: input.nisn, id: { not: id }, deletedAt: null },
       });
-      if (existingNis) {
-        throw Errors.conflict('NIS already in use');
+      if (existingNisn) {
+        throw Errors.conflict('NISN already in use');
       }
     }
 
-    // Update in transaction
+    if (input.nik && input.nik !== student.nik) {
+      const existingNik = await prisma.student.findFirst({
+        where: { nik: input.nik, id: { not: id }, deletedAt: null },
+      });
+      if (existingNik) {
+        throw Errors.conflict('NIK already in use');
+      }
+    }
+
     const updated = await prisma.$transaction(async (tx) => {
-      // Update user name if provided
       if (input.name) {
         await tx.user.update({
           where: { id: student.userId },
@@ -538,12 +601,14 @@ export class StudentService {
         });
       }
 
-      // Update student
       return tx.student.update({
         where: { id },
         data: {
-          nis: input.nis,
           nisn: input.nisn,
+          nik: input.nik,
+          noKK: input.noKK,
+          noAkta: input.noAkta,
+          kipNumber: input.kipNumber,
           gender: input.gender as Gender | undefined,
           birthPlace: input.birthPlace,
           birthDate: input.birthDate,
@@ -552,6 +617,7 @@ export class StudentService {
           parentPhone: input.parentPhone,
           parentEmail: input.parentEmail,
           photoUrl: input.photoUrl,
+          status: input.status ? input.status.toLowerCase() : undefined,
         },
         include: {
           user: {
@@ -586,7 +652,6 @@ export class StudentService {
       throw Errors.notFound('Student');
     }
 
-    // Soft delete both student and user
     await prisma.$transaction([
       prisma.student.update({
         where: { id },

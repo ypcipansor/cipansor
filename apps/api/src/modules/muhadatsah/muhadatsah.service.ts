@@ -3,19 +3,11 @@ import { Errors } from '@/middleware/error';
 import { UserRole, Prisma } from '@prisma/client';
 import { seesAllUnits } from '@/utils/resolve-unit-id';
 
-// Status enum
 type MuhadatsahStatus = 'SCHEDULED' | 'COMPLETED' | 'CANCELLED';
 
-// User type from JwtPayload
 interface AuthenticatedUser {
   sub: string;
   role: string;
-  /**
-   * RoleCode granular. Wajib ada agar scoping bisa memakai seesAllUnits():
-   * `role` legacy memetakan setiap YAYASAN_* menjadi 'UNIT_ADMIN', sehingga
-   * pemeriksaan yang ditulis atas `role` menggolongkan pengurus yayasan
-   * sebagai admin unit — itulah yang menyembunyikan datanya.
-   */
   roleCode?: string | null;
   unitId: string | null;
 }
@@ -39,7 +31,7 @@ interface CreateMuhadatsahInput {
   partnerId?: string;
   scheduledAt: string;
   topic?: string;
-  language: string; // Arabic, English
+  language: string;
 }
 
 interface UpdateMuhadatsahInput {
@@ -61,10 +53,6 @@ interface EvaluateMuhadatsahInput {
 }
 
 export class MuhadatsahService {
-  // ==================
-  // CRUD METHODS
-  // ==================
-
   async list(query: ListMuhadatsahQuery, currentUser: AuthenticatedUser) {
     const {
       page,
@@ -82,7 +70,6 @@ export class MuhadatsahService {
 
     const where: Prisma.MuhadatsahWhereInput = {};
 
-    // Unit-based access control
     if (!seesAllUnits(currentUser)) {
       where.unitId = currentUser.unitId || 'none';
     } else if (unitId) {
@@ -149,14 +136,16 @@ export class MuhadatsahService {
         ...r,
         student: {
           id: r.student.id,
-          nis: r.student.nis,
+          nisn: r.student.nisn,
+          nik: r.student.nik,
           name: r.student.user.name,
           class: r.student.enrollments[0]?.class || null,
         },
         partner: r.partner
           ? {
               id: r.partner.id,
-              nis: r.partner.nis,
+              nisn: r.partner.nisn,
+              nik: r.partner.nik,
               name: r.partner.user.name,
             }
           : null,
@@ -207,7 +196,8 @@ export class MuhadatsahService {
       ...record,
       student: {
         id: record.student.id,
-        nis: record.student.nis,
+        nisn: record.student.nisn,
+        nik: record.student.nik,
         name: record.student.user.name,
         email: record.student.user.email,
         class: record.student.enrollments[0]?.class || null,
@@ -215,7 +205,8 @@ export class MuhadatsahService {
       partner: record.partner
         ? {
             id: record.partner.id,
-            nis: record.partner.nis,
+            nisn: record.partner.nisn,
+            nik: record.partner.nik,
             name: record.partner.user.name,
           }
         : null,
@@ -229,18 +220,15 @@ export class MuhadatsahService {
   }
 
   async create(input: CreateMuhadatsahInput, currentUser: AuthenticatedUser) {
-    // Access check
     if (currentUser.role !== UserRole.SUPER_ADMIN && input.unitId !== currentUser.unitId) {
       throw Errors.forbidden('Cannot create muhadatsah for another unit');
     }
 
-    // Verify student exists
     const student = await prisma.student.findUnique({ where: { id: input.studentId } });
     if (!student || student.deletedAt) {
       throw Errors.notFound('Student not found');
     }
 
-    // Verify partner if provided
     if (input.partnerId) {
       const partner = await prisma.student.findUnique({ where: { id: input.partnerId } });
       if (!partner || partner.deletedAt) {
@@ -291,10 +279,6 @@ export class MuhadatsahService {
     return { success: true };
   }
 
-  // ==================
-  // EVALUATION
-  // ==================
-
   async evaluate(id: string, input: EvaluateMuhadatsahInput, currentUser: AuthenticatedUser) {
     const record = await this.getById(id, currentUser);
 
@@ -306,14 +290,12 @@ export class MuhadatsahService {
       throw Errors.conflict('Cannot evaluate a cancelled muhadatsah');
     }
 
-    // Calculate total score and grade
     const totalScore = Math.round(
       (input.fluencyScore + input.grammarScore + input.vocabularyScore + input.pronunciationScore) /
         4
     );
     const grade = this.calculateGrade(totalScore);
 
-    // Get evaluator's teacher ID
     const teacher = await prisma.teacher.findFirst({
       where: { userId: currentUser.sub },
     });
@@ -354,10 +336,6 @@ export class MuhadatsahService {
     return updated;
   }
 
-  // ==================
-  // QUERIES
-  // ==================
-
   async getUpcoming(unitId: string, limit: number = 10) {
     const now = new Date();
 
@@ -387,13 +365,15 @@ export class MuhadatsahService {
       ...r,
       student: {
         id: r.student.id,
-        nis: r.student.nis,
+        nisn: r.student.nisn,
+        nik: r.student.nik,
         name: r.student.user.name,
       },
       partner: r.partner
         ? {
             id: r.partner.id,
-            nis: r.partner.nis,
+            nisn: r.partner.nisn,
+            nik: r.partner.nik,
             name: r.partner.user.name,
           }
         : null,
@@ -505,7 +485,8 @@ export class MuhadatsahService {
       return {
         studentId: p.studentId,
         name: student?.user.name || 'Unknown',
-        nis: student?.nis || '',
+        nisn: student?.nisn || null,
+        nik: student?.nik || null,
         class: student?.enrollments[0]?.class?.name || null,
         averageScore: p._avg.totalScore || 0,
         totalSessions: p._count.id,
@@ -514,7 +495,6 @@ export class MuhadatsahService {
   }
 
   async matchPartners(unitId: string, language: string) {
-    // Find students who don't have a scheduled muhadatsah yet this week
     const weekStart = new Date();
     weekStart.setDate(weekStart.getDate() - weekStart.getDay());
     weekStart.setHours(0, 0, 0, 0);
@@ -522,7 +502,6 @@ export class MuhadatsahService {
     const weekEnd = new Date(weekStart);
     weekEnd.setDate(weekEnd.getDate() + 7);
 
-    // Get students who already have muhadatsah this week
     const scheduledThisWeek = await prisma.muhadatsah.findMany({
       where: {
         unitId,
@@ -539,7 +518,6 @@ export class MuhadatsahService {
       if (s.partnerId) scheduledStudentIds.add(s.partnerId);
     });
 
-    // Get available students
     const availableStudents = await prisma.student.findMany({
       where: {
         unitId,
@@ -558,15 +536,12 @@ export class MuhadatsahService {
 
     return availableStudents.map((s) => ({
       id: s.id,
-      nis: s.nis,
+      nisn: s.nisn,
+      nik: s.nik,
       name: s.user.name,
       class: s.enrollments[0]?.class || null,
     }));
   }
-
-  // ==================
-  // HELPERS
-  // ==================
 
   private calculateGrade(score: number): string {
     if (score >= 90) return 'A';

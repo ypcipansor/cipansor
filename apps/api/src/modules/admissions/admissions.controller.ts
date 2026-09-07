@@ -163,15 +163,15 @@ export async function updateRegistrantStatus(req: Request, res: Response, next: 
 export async function enrollRegistrant(req: Request, res: Response, next: NextFunction) {
   try {
     const schema = z.object({
-      nis: z.string().min(1),
       nisn: z.string().optional(),
+      nik: z.string().optional(),
       classId: z.string().optional(),
       roomId: z.string().optional(),
     });
     const data = schema.parse(req.body);
     const result = await service.enrollRegistrant(req.params.id, {
-      nis: data.nis,
       nisn: data.nisn,
+      nik: data.nik,
       classId: data.classId,
       roomId: data.roomId,
     });
@@ -243,47 +243,19 @@ export async function deleteRegistrantDocument(req: Request, res: Response, next
 // PUBLIC CONTROLLERS (no authentication)
 // =====================================
 
-/**
- * Return the single most-relevant currently-active admission period for a
- * public landing page / registration form. Exposed WITHOUT authentication so
- * the public PPDB page (`apps/web/src/app/public/spmb/page.tsx`) can bootstrap
- * the registration form. Returns `null` inside `data` when no period is
- * active (the frontend handles this by showing a "pendaftaran belum dibuka"
- * message).
- *
- * Intentionally LEAKS only: id, name, startDate, endDate, registrationFee,
- * requirements, unit name and academic year name — never registrant counts,
- * internal notes, or any PII.
- */
 export async function getPublicActiveAdmissionPeriod(
   _req: Request,
   res: Response,
   next: NextFunction
 ) {
   try {
-    // The projection whitelist and the three-tier "open, then next, then most
-    // recently closed" fallback both live in the service now, because the
-    // public chatbot needs the same answer and a second copy of that fallback
-    // is how the wrong-wave bug comes back. See `findPublicActivePeriod`.
     const period = await service.findPublicActivePeriod();
-
     res.json({ success: true, data: period });
   } catch (error) {
     next(error);
   }
 }
 
-/**
- * Public unit list for the unauthenticated SPMB form's "unit tujuan" dropdown.
- *
- * The form previously called the authenticated `GET /units`, which 401s for an
- * anonymous visitor — leaving prospective parents with an empty dropdown on the
- * page the landing hero sends them to.
- *
- * Projection whitelist: id, name, type. Nothing else. Anything added here is
- * exposed to anonymous callers, so do not widen it to include contact details,
- * counts, or the foundation relation.
- */
 export async function getPublicUnits(_req: Request, res: Response, next: NextFunction) {
   try {
     const { prisma } = await import('../../lib/prisma');
@@ -298,28 +270,10 @@ export async function getPublicUnits(_req: Request, res: Response, next: NextFun
   }
 }
 
-/**
- * Public registrant creation endpoint used by the unauthenticated PPDB form.
- * Validates + persists the same way as `createRegistrant`, but the response
- * is trimmed to non-sensitive identification fields so a public caller can't
- * enumerate internal columns (status history, test scores, etc.) by varying
- * payload shape.
- */
 export async function createPublicRegistrant(req: Request, res: Response, next: NextFunction) {
   try {
     const data = createRegistrantSchema.parse(req.body);
 
-    // Guard: the public endpoint must only accept submissions for periods
-    // that are currently ACTIVE and within their registration window.
-    // Without this, any caller who has (or guesses) a valid period UUID
-    // can submit registrations after the period has been closed by an
-    // admin — bypassing the intended admission lifecycle. The companion
-    // `getPublicActiveAdmissionPeriod` filters by `isActive: true`, but
-    // that only protects UI-driven flows; direct API callers need a
-    // server-side check here. Validation lives at the controller (not
-    // the service) so the authenticated `createRegistrant` endpoint —
-    // used by admins who legitimately need to backfill registrants for
-    // closed periods — continues to work unchanged.
     const { prisma } = await import('../../lib/prisma');
     const period = await prisma.admissionPeriod.findUnique({
       where: { id: data.admissionPeriodId },
@@ -351,14 +305,6 @@ export async function createPublicRegistrant(req: Request, res: Response, next: 
   }
 }
 
-/**
- * Public PPDB tracking endpoint (`GET /admissions/public/track`). Looks a
- * registrant up by registration number + birth date (two-factor lookup, see
- * `getRegistrantTrackingInfo`) and returns only the whitelisted projection
- * selected there — selection progress, scores, and document verification
- * state. Never expose parent contact data, addresses, or internal notes here:
- * this endpoint is reachable without a session (rate-limited per IP).
- */
 export async function trackPublicRegistrantStatus(req: Request, res: Response, next: NextFunction) {
   try {
     const { registrationNo, birthDate } = trackRegistrantQuerySchema.parse(req.query);
@@ -377,15 +323,8 @@ export async function trackPublicRegistrantStatus(req: Request, res: Response, n
 export async function getPriorityLeads(req: Request, res: Response, next: NextFunction) {
   try {
     const { unitId } = req.query;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const user = requireUser(req);
 
-    // Unit-level authorization: a UNIT_ADMIN / STAFF must not be able to
-    // query another unit's priority leads by guessing/knowing its unitId,
-    // nor by omitting `unitId` entirely (which would otherwise return
-    // leads across ALL units — see lead-scoring.service.ts where
-    // `unitId` is only spread when truthy). SUPER_ADMIN can scope to
-    // any (or all) unit(s).
     let effectiveUnitId = unitId as string | undefined;
     if (user && user.role !== 'SUPER_ADMIN') {
       if (!user.unitId) {
@@ -394,7 +333,6 @@ export async function getPriorityLeads(req: Request, res: Response, next: NextFu
       if (effectiveUnitId && effectiveUnitId !== user.unitId) {
         throw Errors.forbidden('Access to this unit is not allowed');
       }
-      // Force-scope to the caller's own unit when none was provided.
       effectiveUnitId = user.unitId;
     }
 

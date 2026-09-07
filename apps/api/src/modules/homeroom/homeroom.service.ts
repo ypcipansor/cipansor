@@ -197,7 +197,7 @@ export class HomeroomService {
       },
       select: {
         id: true,
-        nis: true,
+        nisn: true, nik: true,
         birthDate: true,
         user: { select: { name: true } },
       },
@@ -226,7 +226,7 @@ export class HomeroomService {
           student: {
             id: student.id,
             name: student.user.name,
-            nis: student.nis,
+            nis: student.nisn || student.nik || "-",
           },
           date: dob,
           daysUntil: diffDays,

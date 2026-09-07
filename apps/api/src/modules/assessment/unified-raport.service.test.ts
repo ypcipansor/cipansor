@@ -35,8 +35,8 @@ describe('UnifiedRaportService Integration', () => {
     id: 's1',
     user: { name: 'Ahmad' },
     unit: { name: 'SD IT Cipansor', address: 'Cianjur', logoUrl: '/logo.png', id: 'u1' },
-    nis: '1001',
     nisn: '0012345678',
+    nik: '3201000000000001',
     unitId: 'u1',
     enrollments: [
       {
@@ -96,7 +96,6 @@ describe('UnifiedRaportService Integration', () => {
     (RaportMerdekaService.generateRaportMerdeka as any).mockResolvedValue(mockMerdeka);
     (raporPesantrenService.generateRaporPesantren as any).mockResolvedValue(mockPesantren);
 
-    // Mock analytics dependencies
     (prisma.academicYear.findUnique as any).mockResolvedValue({
       startDate: new Date('2024-07-01'),
       endDate: new Date('2025-06-30'),
@@ -110,7 +109,6 @@ describe('UnifiedRaportService Integration', () => {
     const result = await UnifiedRaportService.generateUnifiedRaport('s1', 'ay1', 1);
 
     expect(result.student.name).toBe('Ahmad');
-    expect(result.student.nis).toBe('1001');
     expect(result.student.nisn).toBe('0012345678');
     expect(result.school.name).toBe('SD IT Cipansor');
     expect(result.meta.academicYear).toBe('2024/2025');
@@ -126,7 +124,6 @@ describe('UnifiedRaportService Integration', () => {
     expect(typeof result.remarks.recommendation).toBe('string');
     expect(result.signatures.homeroomTeacher).toBe('Ustadz Fulan');
 
-    // Verify parallel execution with correct parameters
     expect(RaportMerdekaService.generateRaportMerdeka).toHaveBeenCalledWith('s1', 'ay1', 1);
     expect(raporPesantrenService.generateRaporPesantren).toHaveBeenCalledWith({
       studentId: 's1',

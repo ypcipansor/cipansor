@@ -98,7 +98,7 @@ export async function getCompletenessReport(filters: CompletenessFilters) {
     return {
       id: student.id,
       name: student.user.name,
-      nis: student.nis,
+      nis: student.nisn || student.nik || "-",
       unit: student.unit?.name,
       class: student.enrollments[0]?.class?.name || '-',
       completeness,
@@ -163,7 +163,7 @@ export async function getDapodikReady(filters: { unitId?: string }) {
     },
     students: readyStudents.map((s) => ({
       id: s.id,
-      nis: s.nis,
+      nis: s.nisn || s.nik || "-",
       nisn: s.nisn,
       nik: s.nik,
       name: s.user.name,

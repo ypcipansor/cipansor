@@ -53,7 +53,8 @@ export interface MedicalRecord {
   // Relations
   student?: {
     id: string;
-    nis: string;
+    nisn?: string | null;
+    nik?: string | null;
     name?: string; // Derived from user
     user?: {
       id: string;

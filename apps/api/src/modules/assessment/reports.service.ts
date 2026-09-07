@@ -261,7 +261,7 @@ export async function generateSkhun(
     student: {
       id: student.id,
       name: student.user.name,
-      nis: student.nis,
+      nis: student.nisn || student.nik || "-",
       nisn: student.nisn,
       birthPlace: student.birthPlace,
       birthDate: student.birthDate,
@@ -454,7 +454,7 @@ export async function generateTranscript(
     student: {
       id: student.id,
       name: student.user.name,
-      nis: student.nis,
+      nis: student.nisn || student.nik || "-",
       nisn: student.nisn,
       birthPlace: student.birthPlace,
       birthDate: student.birthDate,

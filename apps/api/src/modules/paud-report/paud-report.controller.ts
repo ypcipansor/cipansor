@@ -412,7 +412,7 @@ function generateReportHtml(
       </tr>
       <tr>
         <td>NIS</td>
-        <td>: ${student.nis || '-'}</td>
+        <td>: ${(student.nisn || student.nik || "-") || '-'}</td>
       </tr>
       <tr>
         <td>Tempat, Tanggal Lahir</td>

@@ -18,36 +18,6 @@ import { seesAllUnits } from '@/utils/resolve-unit-id';
 // ROOM ACCESS
 // =====================================
 
-/**
- * Throws unless the user has a reason to see the santri inside this room.
- *
- * The check this replaces was `room.dormitory.unitId !== user.unitId` — it
- * asked who *owns the building*, which is a different question. An asrama
- * houses santri from every school: the seed alone puts SD IT, SMP IT and SMA
- * Qur'an santri into dormitories recorded under SMP IT, because
- * `Dormitory.unitId` can only name one unit and someone had to pick. So the
- * old check refused a musyrif the very kamar they supervise, and refused the
- * yayasan board outright (their unitId is null, and it matches nothing).
- *
- * It also protected nothing. `/rooms/:id/occupancy` carries the same role
- * guard, had no unit check at all, and returns the same roster — so the 403
- * turned away the people with a legitimate claim while the data stayed one
- * route away for everyone else. Both now come through here.
- *
- * The reasons, cheapest first:
- *   - foundation and boarding-wide roles see every unit by remit;
- *   - the unit that runs the asrama keeps its view of it;
- *   - a unit's staff may see a room that houses that unit's own santri;
- *   - a musyrif assigned to the room, or to its asrama, supervises it.
- *
- * The last one rarely fires today, because the boarding roleCodes short-circuit
- * on the first. It is here because an explicit assignment is the durable reason
- * — it holds for a guru registered as musyrif without a boarding roleCode, and
- * it does not depend on CROSS_UNIT_SCOPE_ROLES staying complete.
- *
- * Missing rooms are reported as 404 before any of this, matching the previous
- * behaviour: existence was never the secret being kept.
- */
 export async function assertRoomAccess(
   user: {
     id: string;
@@ -83,8 +53,6 @@ export async function assertRoomAccess(
     where: {
       isActive: true,
       musyrif: { userId: user.id },
-      // A null roomId on the assignment means the whole asrama, which is how
-      // getStudentsByMusyrif reads it too.
       OR: [{ roomId }, { roomId: null, dormitoryId: room.dormitoryId }],
     },
     select: { id: true },
@@ -100,7 +68,6 @@ export async function assertRoomAccess(
 
 export async function createDormitory(data: CreateDormitoryDto) {
   return prisma.dormitory.create({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     data: data as any,
     include: { unit: true },
   });
@@ -110,16 +77,10 @@ export async function getDormitories(query: QueryDormitoryDto) {
   const { unitId, gender, search, page, limit } = query;
   const skip = (page - 1) * limit;
 
-  // Composed with AND because both the unit filter and the search need their
-  // own OR; as sibling keys in one object the second would have replaced the
-  // first, and searching within a unit would have quietly ignored the unit.
   const where: Prisma.DormitoryWhereInput = {
     deletedAt: null,
     ...(gender && { gender }),
     AND: [
-      // "Asrama untuk unit X" is not `unitId = X`. The asrama is run at
-      // foundation level and houses santri from several schools, so the useful
-      // answer is: run by that unit, or lived in by that unit's santri.
       ...(unitId
         ? [
             {
@@ -211,7 +172,6 @@ export async function deleteDormitory(id: string) {
 
 export async function createRoom(data: CreateRoomDto) {
   return prisma.room.create({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     data: data as any,
     include: { dormitory: { select: { id: true, name: true, code: true } } },
   });
@@ -281,7 +241,6 @@ export async function updateRoom(id: string, data: UpdateRoomDto) {
 }
 
 export async function deleteRoom(id: string) {
-  // Soft delete by deactivating
   return prisma.room.update({
     where: { id },
     data: { isActive: false },
@@ -292,23 +251,6 @@ export async function deleteRoom(id: string) {
 // ROOM ASSIGNMENT SERVICE
 // =====================================
 
-/**
- * Whether a unit's santri board, which at Cipansor depends on the stage.
- *
- * - TK Qur'an: never. The pupils are far too young; they go home daily.
- * - SD IT: some board, some do not. Both are normal.
- * - SMP IT and SMA Qur'an: boarding is compulsory, so a santri there without
- *   an active bed is a gap in the data rather than a santri who lives at home.
- *
- * Nothing encoded this, and an older seed left a TK santri holding a bed in
- * Asrama Putri Al-Hikmah. That stayed invisible while facility counts read
- * `dormitory.unitId`; now that they read occupancy, TK Qur'an would have
- * reported an asrama it does not have.
- *
- * PERGURUAN_TINGGI and OTHER are OPTIONAL rather than NONE deliberately: the
- * foundation has not said, and refusing something it never forbade would be the
- * worse guess — a ma'had for mahasiswa then needs no code change.
- */
 export type BoardingPolicy = 'NONE' | 'OPTIONAL' | 'MANDATORY';
 
 export const BOARDING_POLICY: Record<UnitType, BoardingPolicy> = {
@@ -318,16 +260,11 @@ export const BOARDING_POLICY: Record<UnitType, BoardingPolicy> = {
   [UnitType.SMA_QURAN]: 'MANDATORY',
   [UnitType.PESANTREN]: 'MANDATORY',
   [UnitType.PERGURUAN_TINGGI]: 'OPTIONAL',
-  // Kantin, laundry, koperasi — no santri of their own.
   [UnitType.UNIT_USAHA]: 'NONE',
   [UnitType.OTHER]: 'OPTIONAL',
 };
 
 export async function createRoomAssignment(data: CreateRoomAssignmentDto) {
-  // Who may sleep here was never checked: any studentId and any roomId were
-  // accepted, so a TK santri could hold a bed and a santriwati could be placed
-  // in the asrama putra. Both are caught here rather than in the UI, which is
-  // not the only caller.
   const [student, room] = await Promise.all([
     prisma.student.findUnique({
       where: { id: data.studentId },
@@ -356,14 +293,12 @@ export async function createRoomAssignment(data: CreateRoomAssignmentDto) {
     );
   }
 
-  // Deactivate any existing assignment for this student
   await prisma.roomAssignment.updateMany({
     where: { studentId: data.studentId, isActive: true },
     data: { isActive: false, endedAt: new Date() },
   });
 
   return prisma.roomAssignment.create({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     data: data as any,
     include: {
       room: {
@@ -468,7 +403,6 @@ export async function endRoomAssignment(id: string) {
 }
 
 export async function getStudentsByMusyrif(userId: string) {
-  // 1. Get Musyrif profile
   const musyrif = await prisma.musyrif.findFirst({
     where: { userId },
     include: {
@@ -482,12 +416,9 @@ export async function getStudentsByMusyrif(userId: string) {
     return [];
   }
 
-  // 2. Collect scope
   const dormitoryIds = musyrif.assignments.filter((a) => !a.roomId).map((a) => a.dormitoryId);
-
   const roomIds = musyrif.assignments.filter((a) => a.roomId).map((a) => a.roomId as string);
 
-  // 3. Find students
   const roomAssignments = await prisma.roomAssignment.findMany({
     where: {
       isActive: true,
@@ -516,7 +447,8 @@ export async function getStudentsByMusyrif(userId: string) {
   return roomAssignments.map((ra) => ({
     id: ra.student.id,
     name: ra.student.user.name,
-    nis: ra.student.nis,
+    nisn: ra.student.nisn,
+    nik: ra.student.nik,
     photo: ra.student.photoUrl,
     class: ra.student.enrollments[0]?.class.name || '-',
     room: ra.room.name,
@@ -548,7 +480,6 @@ export async function getRoomOccupancy(roomId: string) {
 }
 
 export async function getRoomSocialAnalytics(roomId: string) {
-  // Only consider violations from the last 6 months for current room dynamics
   const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000);
 
   const room = await prisma.room.findUnique({
@@ -563,7 +494,7 @@ export async function getRoomSocialAnalytics(roomId: string) {
               violations: {
                 where: { occurredAt: { gte: sixMonthsAgo } },
                 orderBy: { createdAt: 'desc' },
-                take: 50, // Limit per student to prevent excessive memory usage
+                take: 50,
               },
               medicalRecords: {
                 select: { id: true },
@@ -592,17 +523,10 @@ export async function getRoomSocialAnalytics(roomId: string) {
     };
   });
 
-  // Calculate room harmony score (simplified)
-  // Higher violations = lower harmony.
-  // Use a logarithmic-inspired scale so a single high-violation member
-  // doesn't crash the score to 0 for the entire room.
   const totalViolations = members.reduce((sum, m) => sum + m.riskScore, 0);
   const avgViolationPoints = totalViolations / Math.max(1, members.length);
-  // Scale: 0 pts → 100, ~10 pts → ~82, ~50 pts → ~37, ~100 pts → ~14, ~250+ pts → ~0
   const harmonyScore = Math.round(Math.max(0, 100 * Math.exp(-avgViolationPoints / 50)) * 100) / 100;
 
-  // Enhanced: Detect "Murojaah Social Contagion" (Positive peer influence)
-  // If many members have high tahfidz progress, it boosts the room status.
   const topMemorizers = room.assignments.filter(a => (a.student as any).tahfidzRecords?.length > 10).length;
   const peerInfluenceBonus = Math.min(10, topMemorizers * 2);
 

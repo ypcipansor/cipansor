@@ -213,7 +213,7 @@ async function generateStudentReport(
   });
 
   return students.map((s) => ({
-    nis: s.nis,
+    nis: s.nisn || s.nik || "-",
     name: s.user?.name || '',
     gender: s.gender,
     birthDate: s.birthDate?.toISOString().split('T')[0] || '',

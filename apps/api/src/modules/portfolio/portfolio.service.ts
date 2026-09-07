@@ -70,7 +70,7 @@ export async function createPortfolio(data: CreatePortfolioDto) {
       student: {
         select: {
           id: true,
-          nis: true,
+          nisn: true, nik: true,
           user: { select: { name: true } },
         },
       },
@@ -132,7 +132,7 @@ export async function getPortfolios(params: {
         student: {
           select: {
             id: true,
-            nis: true,
+            nisn: true, nik: true,
             user: { select: { name: true } },
             unit: { select: { id: true, name: true } },
           },
@@ -167,7 +167,7 @@ export async function getPortfolioById(id: string) {
       student: {
         select: {
           id: true,
-          nis: true,
+          nisn: true, nik: true,
           user: { select: { name: true, email: true } },
           unit: { select: { id: true, name: true } },
         },
@@ -195,7 +195,7 @@ export async function updatePortfolio(id: string, data: Partial<CreatePortfolioD
       student: {
         select: {
           id: true,
-          nis: true,
+          nisn: true, nik: true,
           user: { select: { name: true } },
         },
       },
@@ -321,7 +321,7 @@ export async function reviewPortfolio(
       student: {
         select: {
           id: true,
-          nis: true,
+          nisn: true, nik: true,
           user: { select: { name: true } },
         },
       },
@@ -395,7 +395,7 @@ export async function getStudentShowcase(studentId: string) {
     where: { id: studentId },
     select: {
       id: true,
-      nis: true,
+      nisn: true, nik: true,
       user: { select: { name: true } },
       unit: { select: { name: true } },
       photoUrl: true,

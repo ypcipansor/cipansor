@@ -25,6 +25,20 @@ export const list = asyncHandler(async (req: Request, res: Response) => {
 });
 
 /**
+ * Lookup internal alumni by NIK or NISN for re-enrollment
+ * GET /api/students/alumni/lookup
+ */
+export const lookupAlumni = asyncHandler(async (req: Request, res: Response) => {
+  const { identifier } = req.query;
+  const student = await studentService.findInternalAlumniByIdentifier(String(identifier || ''));
+
+  res.json({
+    success: true,
+    data: student,
+  });
+});
+
+/**
  * Get student by ID
  * GET /api/students/:id
  */
@@ -63,6 +77,22 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
   res.status(201).json({
     success: true,
     data: student,
+  });
+});
+
+/**
+ * Mark student as graduated
+ * POST /api/students/:id/graduate
+ */
+export const graduate = asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { graduateYear } = req.body;
+  const student = await studentService.graduateStudent(id, graduateYear ? Number(graduateYear) : undefined);
+
+  res.json({
+    success: true,
+    data: student,
+    message: 'Santri berhasil dinyatakan lulus',
   });
 });
 

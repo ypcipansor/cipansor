@@ -18,7 +18,8 @@ export interface Attendance {
   student?: {
     id: string;
     name?: string;
-    nis?: string;
+    nisn?: string | null;
+    nik?: string | null;
     user?: {
       id: string;
       name: string;

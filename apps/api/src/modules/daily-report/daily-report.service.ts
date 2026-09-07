@@ -105,7 +105,7 @@ export const dailyReportService = {
             select: {
               id: true,
               nisn: true,
-              nis: true,
+              nisn: true, nik: true,
               user: { select: { id: true, name: true } },
             },
           },
@@ -140,7 +140,7 @@ export const dailyReportService = {
           select: {
             id: true,
             nisn: true,
-            nis: true,
+            nisn: true, nik: true,
             birthDate: true,
             user: { select: { id: true, name: true } },
             enrollments: {

@@ -165,7 +165,7 @@ export async function listRecords(query: ListRecordsQuery) {
             targetUnit: true,
           },
         },
-        student: { select: { id: true, nis: true, user: { select: { name: true } } } },
+        student: { select: { id: true, nisn: true, nik: true, user: { select: { name: true } } } },
         verifier: { select: { id: true, name: true } },
       },
       orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
@@ -191,7 +191,7 @@ export async function getRecordById(id: string) {
     where: { id },
     include: {
       target: true,
-      student: { select: { id: true, nis: true, user: { select: { name: true } } } },
+      student: { select: { id: true, nisn: true, nik: true, user: { select: { name: true } } } },
       verifier: { select: { id: true, name: true } },
     },
   });
@@ -217,7 +217,7 @@ export async function createRecord(data: CreateRecordInput) {
     } as any,
     include: {
       target: { select: { id: true, name: true, category: true, points: true } },
-      student: { select: { id: true, nis: true, user: { select: { name: true } } } },
+      student: { select: { id: true, nisn: true, nik: true, user: { select: { name: true } } } },
     },
   });
 }
@@ -246,7 +246,7 @@ export async function updateRecord(id: string, data: UpdateRecordInput) {
     },
     include: {
       target: { select: { id: true, name: true, category: true, points: true } },
-      student: { select: { id: true, nis: true, user: { select: { name: true } } } },
+      student: { select: { id: true, nisn: true, nik: true, user: { select: { name: true } } } },
     },
   });
 }
@@ -578,7 +578,7 @@ export async function getLeaderboard(query: LeaderboardQuery) {
       rank: index + 1,
       studentId: entry.studentId,
       studentName: student?.user.name || 'Unknown',
-      nis: student?.nis || '',
+      nis: (student?.nisn || student?.nik || "-") || '',
       className: student?.enrollments[0]?.class.name || '',
       totalPoints: (entry._sum.pointsEarned || 0) + (entry._sum.bonusEarned || 0),
       bonusPoints: entry._sum.bonusEarned || 0,

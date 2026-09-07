@@ -13,9 +13,6 @@ import {
 } from '@cipansor/shared';
 
 export class AssignmentsService {
-  /**
-   * Create an assignment
-   */
   async create(input: CreateAssignmentRequest) {
     const {
       unitId,
@@ -53,9 +50,6 @@ export class AssignmentsService {
     return assignment;
   }
 
-  /**
-   * Find assignments with filters
-   */
   async findAll(query: {
     unitId?: string;
     academicYearId?: string;
@@ -136,9 +130,6 @@ export class AssignmentsService {
     };
   }
 
-  /**
-   * Find one assignment
-   */
   async findOne(id: string) {
     const assignment = await prisma.assignment.findUnique({
       where: { id },
@@ -153,9 +144,6 @@ export class AssignmentsService {
     return assignment;
   }
 
-  /**
-   * Update assignment
-   */
   async update(id: string, input: UpdateAssignmentRequest) {
     const { title, description, type, dueDate, attachments } = input;
 
@@ -174,18 +162,12 @@ export class AssignmentsService {
     return updated;
   }
 
-  /**
-   * Delete assignment
-   */
   async delete(id: string) {
     await this.findOne(id);
     await prisma.assignment.delete({ where: { id } });
     return { message: 'Assignment deleted' };
   }
 
-  /**
-   * Submit assignment
-   */
   async submit(assignmentId: string, input: SubmitAssignmentRequest) {
     const { studentId, content, attachments } = input;
 
@@ -221,9 +203,6 @@ export class AssignmentsService {
     return submission;
   }
 
-  /**
-   * Grade submission
-   */
   async grade(assignmentId: string, studentId: string, input: GradeSubmissionRequest) {
     const { grade, feedback } = input;
 
@@ -244,9 +223,6 @@ export class AssignmentsService {
     return submission;
   }
 
-  /**
-   * Get submissions for an assignment
-   */
   async getSubmissions(assignmentId: string) {
     const submissions = await prisma.assignmentSubmission.findMany({
       where: { assignmentId },
@@ -254,7 +230,8 @@ export class AssignmentsService {
         student: {
           select: {
             id: true,
-            nis: true,
+            nisn: true,
+            nik: true,
             photoUrl: true,
             user: { select: { name: true } },
           },
@@ -267,7 +244,8 @@ export class AssignmentsService {
       ...s,
       student: {
         id: s.student.id,
-        nis: s.student.nis,
+        nisn: s.student.nisn,
+        nik: s.student.nik,
         name: s.student.user.name,
         photoUrl: s.student.photoUrl,
       },

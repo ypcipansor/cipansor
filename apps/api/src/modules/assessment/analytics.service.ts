@@ -288,7 +288,7 @@ export class AssessmentAnalyticsService {
   static async getIntegratedRiskAlerts(unitId: string, academicYearId: string) {
     const students = await prisma.student.findMany({
       where: { unitId, status: 'active' },
-      select: { id: true, nis: true, user: { select: { name: true } } },
+      select: { id: true, nisn: true, nik: true, user: { select: { name: true } } },
     });
 
     if (students.length === 0) return [];
@@ -390,7 +390,7 @@ export class AssessmentAnalyticsService {
       alerts.push({
         studentId: student.id,
         name: student.user.name,
-        nis: student.nis,
+        nis: student.nisn || student.nik || "-",
         score: Math.round(score * 100) / 100,
         alerts: reasons,
         priority: reasons.length >= 3 ? 'CRITICAL' : 'HIGH',

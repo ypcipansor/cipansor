@@ -13,18 +13,10 @@ import type {
 import { GRADE_LABELS } from './sanad-certificate.schema';
 import { certificateVerificationUrl } from '@/utils/verification-url';
 
-// ============================================
-// CONSTANTS
-// ============================================
-
 const JUZ_NAMES: Record<number, string> = {
   1: 'Juz Amma',
   30: 'Juz 30',
 };
-
-// ============================================
-// HELPER FUNCTIONS
-// ============================================
 
 function generateCertificateNumber(): string {
   const year = new Date().getFullYear();
@@ -40,10 +32,6 @@ function generateVerificationCode(): string {
 function getJuzName(juz: number): string {
   return JUZ_NAMES[juz] || `Juz ${juz}`;
 }
-
-// ============================================
-// LIST SANAD RECORDS
-// ============================================
 
 export async function findAllSanadRecords(
   query: ListSanadQuery,
@@ -69,7 +57,6 @@ export async function findAllSanadRecords(
         { teacher: { name: { contains: search, mode: 'insensitive' } } },
       ],
     }),
-    // Filter by unit if not super admin
     ...(context.unitId && {
       enrollment: {
         student: { unitId: context.unitId },
@@ -89,7 +76,8 @@ export async function findAllSanadRecords(
             student: {
               select: {
                 id: true,
-                nis: true,
+                nisn: true,
+                nik: true,
                 photoUrl: true,
                 user: { select: { name: true } },
               },
@@ -114,10 +102,6 @@ export async function findAllSanadRecords(
   };
 }
 
-// ============================================
-// GET SANAD BY ID
-// ============================================
-
 export async function findSanadById(id: string) {
   const record = await prisma.sanadRecord.findUnique({
     where: { id },
@@ -127,8 +111,8 @@ export async function findSanadById(id: string) {
           student: {
             select: {
               id: true,
-              nis: true,
               nisn: true,
+              nik: true,
               photoUrl: true,
               birthDate: true,
               birthPlace: true,
@@ -150,12 +134,7 @@ export async function findSanadById(id: string) {
   return record;
 }
 
-// ============================================
-// CREATE SANAD RECORD
-// ============================================
-
 export async function createSanadRecord(input: CreateSanadInput, _context: { userId: string }) {
-  // Validate enrollment exists
   const enrollment = await prisma.takhosusEnrollment.findUnique({
     where: { id: input.enrollmentId },
     select: { id: true, studentId: true },
@@ -165,7 +144,6 @@ export async function createSanadRecord(input: CreateSanadInput, _context: { use
     throw new Error('Enrollment not found');
   }
 
-  // Validate teacher exists
   const teacher = await prisma.user.findUnique({
     where: { id: input.teacherId },
     select: { id: true, role: true },
@@ -175,7 +153,6 @@ export async function createSanadRecord(input: CreateSanadInput, _context: { use
     throw new Error('Teacher not found');
   }
 
-  // Check for duplicate (same enrollment + juz)
   const existing = await prisma.sanadRecord.findUnique({
     where: {
       enrollmentId_juz: {
@@ -206,7 +183,8 @@ export async function createSanadRecord(input: CreateSanadInput, _context: { use
           student: {
             select: {
               id: true,
-              nis: true,
+              nisn: true,
+              nik: true,
               user: { select: { name: true } },
             },
           },
@@ -216,10 +194,6 @@ export async function createSanadRecord(input: CreateSanadInput, _context: { use
     },
   });
 }
-
-// ============================================
-// UPDATE SANAD RECORD
-// ============================================
 
 export async function updateSanadRecord(
   id: string,
@@ -247,7 +221,8 @@ export async function updateSanadRecord(
           student: {
             select: {
               id: true,
-              nis: true,
+              nisn: true,
+              nik: true,
               user: { select: { name: true } },
             },
           },
@@ -257,10 +232,6 @@ export async function updateSanadRecord(
     },
   });
 }
-
-// ============================================
-// DELETE SANAD RECORD
-// ============================================
 
 export async function deleteSanadRecord(id: string) {
   const record = await prisma.sanadRecord.findUnique({
@@ -274,10 +245,6 @@ export async function deleteSanadRecord(id: string) {
 
   return prisma.sanadRecord.delete({ where: { id } });
 }
-
-// ============================================
-// BULK CREATE SANAD RECORDS
-// ============================================
 
 export async function bulkCreateSanadRecords(
   input: BulkCreateSanadInput,
@@ -304,10 +271,6 @@ export async function bulkCreateSanadRecords(
 
   return results;
 }
-
-// ============================================
-// GET STUDENT SANAD SUMMARY
-// ============================================
 
 export async function getStudentSanadSummary(studentId: string) {
   const enrollment = await prisma.takhosusEnrollment.findFirst({
@@ -347,20 +310,12 @@ export async function getStudentSanadSummary(studentId: string) {
   };
 }
 
-// ============================================
-// GENERATE CERTIFICATE
-// ============================================
-
 export async function generateCertificate(
   input: GenerateCertificateInput,
   context: { userId: string }
 ) {
   const sanad = await findSanadById(input.sanadId);
 
-  // Persist the certificate so `verifyCertificate` can honestly attest it
-  // later. One certificate per (student, juz): regenerating reuses the
-  // existing number/verification code instead of minting a new identity for
-  // the same attainment.
   const title = `Sertifikat Sanad ${getJuzName(sanad.juz)} (Juz ${sanad.juz})`;
   let certificate = await prisma.digitalCertificate.findFirst({
     where: {
@@ -371,10 +326,6 @@ export async function generateCertificate(
   });
 
   if (!certificate) {
-    // Minted before the create so the stored verificationUrl can carry it. The
-    // URL used to be the bare page with no `?code=`, which made every
-    // certificate's "verify" link identical and left the scanner to retype the
-    // number by hand off the paper.
     const newCertificateNumber = generateCertificateNumber();
     certificate = await prisma.digitalCertificate.create({
       data: {
@@ -397,13 +348,12 @@ export async function generateCertificate(
   const certificateNumber = certificate.certificateNumber;
   const verificationCode = certificate.qrCode;
 
-  // Generate certificate data
   const certificateData = {
     certificateNumber,
     verificationCode,
     sanadId: sanad.id,
     studentName: sanad.enrollment.student.user?.name || 'Unknown',
-    studentNis: sanad.enrollment.student.nis,
+    studentNisn: sanad.enrollment.student.nisn || sanad.enrollment.student.nik || '-',
     juz: sanad.juz,
     juzName: getJuzName(sanad.juz),
     grade: sanad.grade as SanadGrade,
@@ -421,10 +371,6 @@ export async function generateCertificate(
 
   return certificateData;
 }
-
-// ============================================
-// GENERATE CERTIFICATE HTML
-// ============================================
 
 export function generateCertificateHtml(
   certificateData: Awaited<ReturnType<typeof generateCertificate>>
@@ -604,7 +550,7 @@ export function generateCertificateHtml(
       <div class="content">
         <p>Dengan ini menyatakan bahwa:</p>
         <div class="student-name">${certificateData.studentName}</div>
-        <p>NIS: ${certificateData.studentNis}</p>
+        <p>NISN: ${certificateData.studentNisn}</p>
         
         <p style="margin-top: 20px;">Telah menyelesaikan hafalan Al-Qur'an</p>
         <div class="juz-info">${certificateData.juzName} (Juz ${certificateData.juz})</div>
@@ -666,17 +612,6 @@ export function generateCertificateHtml(
   `.trim();
 }
 
-// ============================================
-// VERIFY CERTIFICATE
-// ============================================
-
-/**
- * Verify a certificate against the persisted `DigitalCertificate` records.
- * A certificate is valid only if its number exists in the database (and, when
- * a verification code is supplied, the code matches). This endpoint is
- * public, so the returned projection is limited to what is printed on the
- * certificate itself — never internal IDs or contact data.
- */
 export async function verifyCertificate(input: VerifyCertificateInput) {
   const { certificateNumber, verificationCode } = input;
 
@@ -723,26 +658,15 @@ export async function verifyCertificate(input: VerifyCertificateInput) {
   };
 }
 
-// ============================================
-// SANAD TREE (Silsilah / Isnad)
-// ============================================
-
 export interface SanadTreeNode {
   id: string;
   name: string;
   role: 'TEACHER' | 'STUDENT';
-  /** Distinct juz certified under the parent teacher (student nodes only). */
   juzCount?: number;
-  /** Year of the most recent certification under the parent teacher. */
   certifiedYear?: number;
   children: SanadTreeNode[];
 }
 
-/**
- * Build the transmission tree (silsilah) from certification records:
- * teacher → certified students, chained when a certified student later
- * certifies others. Single query + in-memory adjacency map.
- */
 export async function getSanadTree(): Promise<SanadTreeNode[]> {
   const records = await prisma.sanadRecord.findMany({
     select: {
@@ -759,13 +683,12 @@ export async function getSanadTree(): Promise<SanadTreeNode[]> {
     },
   });
 
-  // Aggregate edges per (teacher, student) pair
   interface Edge {
     juz: Set<number>;
     lastCertifiedAt: Date;
   }
   const names = new Map<string, string>();
-  const edges = new Map<string, Map<string, Edge>>(); // teacherId -> studentId -> Edge
+  const edges = new Map<string, Map<string, Edge>>();
   const studentIds = new Set<string>();
 
   for (const record of records) {
@@ -802,7 +725,7 @@ export async function getSanadTree(): Promise<SanadTreeNode[]> {
     if (childEdges && !visited.has(userId)) {
       const nextVisited = new Set(visited).add(userId);
       for (const [studentId, studentEdge] of childEdges) {
-        if (nextVisited.has(studentId)) continue; // cycle guard
+        if (nextVisited.has(studentId)) continue;
         children.push(buildNode(studentId, nextVisited, studentEdge));
       }
       children.sort((a, b) => a.name.localeCompare(b.name));
@@ -821,7 +744,6 @@ export async function getSanadTree(): Promise<SanadTreeNode[]> {
     };
   };
 
-  // Roots: teachers who were never certified as students themselves
   const roots = [...edges.keys()]
     .filter((teacherId) => !studentIds.has(teacherId))
     .map((teacherId) => buildNode(teacherId, new Set()))
@@ -829,10 +751,6 @@ export async function getSanadTree(): Promise<SanadTreeNode[]> {
 
   return roots;
 }
-
-// ============================================
-// EXPORT SERVICE
-// ============================================
 
 export const SanadCertificateService = {
   findAllSanadRecords,

@@ -208,7 +208,7 @@ async function findAllAssessments(
         student: {
           select: {
             id: true,
-            nis: true,
+            nisn: true, nik: true,
             user: { select: { name: true } },
           },
         },
@@ -245,7 +245,7 @@ async function findAssessmentById(id: string) {
       student: {
         select: {
           id: true,
-          nis: true,
+          nisn: true, nik: true,
           user: { select: { name: true } },
         },
       },
@@ -302,7 +302,7 @@ async function createAssessment(input: CreatePAUDAssessmentInput, assessedById: 
       student: {
         select: {
           id: true,
-          nis: true,
+          nisn: true, nik: true,
           user: { select: { name: true } },
         },
       },
@@ -438,7 +438,7 @@ async function updateAssessment(id: string, input: UpdatePAUDAssessmentInput) {
       student: {
         select: {
           id: true,
-          nis: true,
+          nisn: true, nik: true,
           user: { select: { name: true } },
         },
       },
@@ -537,7 +537,7 @@ async function findAllNarrativeReports(
         student: {
           select: {
             id: true,
-            nis: true,
+            nisn: true, nik: true,
             user: { select: { name: true } },
           },
         },
@@ -569,7 +569,7 @@ async function findNarrativeReportById(id: string) {
       student: {
         select: {
           id: true,
-          nis: true,
+          nisn: true, nik: true,
           user: { select: { name: true } },
         },
       },
@@ -630,7 +630,7 @@ async function createNarrativeReport(input: CreatePAUDNarrativeReportInput, crea
       student: {
         select: {
           id: true,
-          nis: true,
+          nisn: true, nik: true,
           user: { select: { name: true } },
         },
       },
@@ -811,7 +811,7 @@ async function getClassSummary(query: ClassSummaryQuery) {
     where: { unitId, deletedAt: null },
     select: {
       id: true,
-      nis: true,
+      nisn: true, nik: true,
       user: { select: { name: true } },
     },
   });
@@ -845,7 +845,7 @@ async function getClassSummary(query: ClassSummaryQuery) {
     return {
       student: {
         id: student.id,
-        nis: student.nis,
+        nis: student.nisn || student.nik || "-",
         name: student.user.name,
       },
       totalAssessments: studentAssessments.length,
