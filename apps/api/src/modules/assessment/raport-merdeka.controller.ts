@@ -128,7 +128,8 @@ export class RaportMerdekaController {
       const raports = await RaportMerdekaService.generateBulkRaportMerdeka(
         classId,
         academicYearId as string,
-        parseInt(semester as string, 10)
+        parseInt(semester as string, 10),
+        req.user
       );
 
       return res.json(ApiResponse.success(raports, 'Raport Merdeka kelas berhasil digenerate'));

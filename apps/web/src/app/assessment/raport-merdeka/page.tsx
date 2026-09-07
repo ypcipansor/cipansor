@@ -806,95 +806,84 @@ export default function RaportMerdekaPage() {
                   {/* Content - Academic */}
                   <div className="space-y-4">
                     <h4 className="font-bold text-sm">A. Nilai Akademik</h4>
-                    <table className="w-full border-collapse border border-black text-xs">
-                      <thead>
-                        <tr className="bg-gray-100">
-                          <th className="border border-black p-2 w-8">No</th>
-                          <th className="border border-black p-2 w-[25%] font-bold text-left">
-                            Mata Pelajaran
-                          </th>
-                          <th className="border border-black p-2 w-12 font-bold">
-                            Nilai Akhir
-                          </th>
-                          <th className="border border-black p-2 font-bold text-left">
-                            Capaian Kompetensi
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr className="align-top">
-                          <td className="border border-black p-2 text-center">
-                            1
-                          </td>
-                          <td className="border border-black p-2 font-medium">
-                            Pendidikan Agama Islam
-                          </td>
-                          <td className="border border-black p-2 text-center font-bold">
-                            88
-                          </td>
-                          <td className="border border-black p-2">
-                            <div className="space-y-1">
-                              <p>
-                                <span className="font-semibold">
-                                  Menunjukkan penguasaan yang sangat baik
-                                </span>{" "}
-                                dalam memahami rukun iman dan rukun islam.
-                              </p>
-                              <p className="text-gray-600 italic">
-                                Perlu bimbingan dalam mempraktikkan bacaan
-                                tajwid secara konsisten.
-                              </p>
-                            </div>
-                          </td>
-                        </tr>
-                        <tr className="align-top">
-                          <td className="border border-black p-2 text-center">
-                            2
-                          </td>
-                          <td className="border border-black p-2 font-medium">
-                            Bahasa Indonesia
-                          </td>
-                          <td className="border border-black p-2 text-center font-bold">
-                            92
-                          </td>
-                          <td className="border border-black p-2">
-                            <div className="space-y-1">
-                              <p>
-                                <span className="font-semibold">
-                                  Menunjukkan penguasaan yang sangat baik
-                                </span>{" "}
-                                dalam menulis teks deskripsi dan narasi.
-                              </p>
-                            </div>
-                          </td>
-                        </tr>
-                        <tr className="align-top">
-                          <td className="border border-black p-2 text-center">
-                            3
-                          </td>
-                          <td className="border border-black p-2 font-medium">
-                            Matematika
-                          </td>
-                          <td className="border border-black p-2 text-center font-bold">
-                            78
-                          </td>
-                          <td className="border border-black p-2">
-                            <div className="space-y-1">
-                              <p>
-                                <span className="font-semibold">
-                                  Menunjukkan penguasaan yang baik
-                                </span>{" "}
-                                dalam operasi bilangan bulat.
-                              </p>
-                              <p className="text-gray-600 italic">
-                                Perlu bimbingan dalam menyelesaikan persamaan
-                                linear satu variabel.
-                              </p>
-                            </div>
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
+                    {reportLoading ? (
+                      <div className="flex items-center justify-center p-8 text-muted-foreground">
+                        <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                        Memuat nilai akademik...
+                      </div>
+                    ) : (
+                      <table className="w-full border-collapse border border-black text-xs">
+                        <thead>
+                          <tr className="bg-gray-100">
+                            <th className="border border-black p-2 w-8">No</th>
+                            <th className="border border-black p-2 w-[25%] font-bold text-left">
+                              Mata Pelajaran
+                            </th>
+                            <th className="border border-black p-2 w-12 font-bold">
+                              Nilai Akhir
+                            </th>
+                            <th className="border border-black p-2 font-bold text-left">
+                              Capaian Kompetensi
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {studentReportData?.akademik && studentReportData.akademik.length > 0 ? (
+                            studentReportData.akademik.map((item: { mapel: string; nilaiAkhir: number; capaian: string }, idx: number) => (
+                              <tr key={idx} className="align-top">
+                                <td className="border border-black p-2 text-center">
+                                  {idx + 1}
+                                </td>
+                                <td className="border border-black p-2 font-medium">
+                                  {item.mapel}
+                                </td>
+                                <td className="border border-black p-2 text-center font-bold">
+                                  {item.nilaiAkhir}
+                                </td>
+                                <td className="border border-black p-2">
+                                  <p>{item.capaian}</p>
+                                </td>
+                              </tr>
+                            ))
+                          ) : (
+                            <>
+                              <tr className="align-top">
+                                <td className="border border-black p-2 text-center">1</td>
+                                <td className="border border-black p-2 font-medium">Pendidikan Agama Islam</td>
+                                <td className="border border-black p-2 text-center font-bold">88</td>
+                                <td className="border border-black p-2">
+                                  <div className="space-y-1">
+                                    <p><span className="font-semibold">Menunjukkan penguasaan yang sangat baik</span> dalam memahami rukun iman dan rukun islam.</p>
+                                    <p className="text-gray-600 italic">Perlu bimbingan dalam mempraktikkan bacaan tajwid secara konsisten.</p>
+                                  </div>
+                                </td>
+                              </tr>
+                              <tr className="align-top">
+                                <td className="border border-black p-2 text-center">2</td>
+                                <td className="border border-black p-2 font-medium">Bahasa Indonesia</td>
+                                <td className="border border-black p-2 text-center font-bold">92</td>
+                                <td className="border border-black p-2">
+                                  <div className="space-y-1">
+                                    <p><span className="font-semibold">Menunjukkan penguasaan yang sangat baik</span> dalam menulis teks deskripsi dan narasi.</p>
+                                  </div>
+                                </td>
+                              </tr>
+                              <tr className="align-top">
+                                <td className="border border-black p-2 text-center">3</td>
+                                <td className="border border-black p-2 font-medium">Matematika</td>
+                                <td className="border border-black p-2 text-center font-bold">78</td>
+                                <td className="border border-black p-2">
+                                  <div className="space-y-1">
+                                    <p><span className="font-semibold">Menunjukkan penguasaan yang baik</span> dalam operasi bilangan bulat.</p>
+                                    <p className="text-gray-600 italic">Perlu bimbingan dalam menyelesaikan persamaan linear satu variabel.</p>
+                                  </div>
+                                </td>
+                              </tr>
+                            </>
+                          )}
+                        </tbody>
+                      </table>
+                    )}
                   </div>
 
                   {/* Content - Extracurricular */}
@@ -916,31 +905,31 @@ export default function RaportMerdekaPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        <tr>
-                          <td className="border border-black p-2 text-center">
-                            1
-                          </td>
-                          <td className="border border-black p-2">Pramuka</td>
-                          <td className="border border-black p-2 text-center">
-                            Baik
-                          </td>
-                          <td className="border border-black p-2">
-                            Mampu mengikuti kegiatan kepramukaan dengan
-                            disiplin.
-                          </td>
-                        </tr>
-                        <tr>
-                          <td className="border border-black p-2 text-center">
-                            2
-                          </td>
-                          <td className="border border-black p-2">Futsal</td>
-                          <td className="border border-black p-2 text-center">
-                            Sangat Baik
-                          </td>
-                          <td className="border border-black p-2">
-                            Menunjukkan bakat kepemimpinan dalam tim.
-                          </td>
-                        </tr>
+                        {studentReportData?.ekstrakurikuler && studentReportData.ekstrakurikuler.length > 0 ? (
+                          studentReportData.ekstrakurikuler.map((ekstra: { nama: string; predikat: string; keterangan: string }, idx: number) => (
+                            <tr key={idx}>
+                              <td className="border border-black p-2 text-center">{idx + 1}</td>
+                              <td className="border border-black p-2">{ekstra.nama}</td>
+                              <td className="border border-black p-2 text-center">{ekstra.predikat}</td>
+                              <td className="border border-black p-2">{ekstra.keterangan}</td>
+                            </tr>
+                          ))
+                        ) : (
+                          <>
+                            <tr>
+                              <td className="border border-black p-2 text-center">1</td>
+                              <td className="border border-black p-2">Pramuka</td>
+                              <td className="border border-black p-2 text-center">Baik</td>
+                              <td className="border border-black p-2">Mampu mengikuti kegiatan kepramukaan dengan disiplin.</td>
+                            </tr>
+                            <tr>
+                              <td className="border border-black p-2 text-center">2</td>
+                              <td className="border border-black p-2">Futsal</td>
+                              <td className="border border-black p-2 text-center">Sangat Baik</td>
+                              <td className="border border-black p-2">Menunjukkan bakat kepemimpinan dalam tim.</td>
+                            </tr>
+                          </>
+                        )}
                       </tbody>
                     </table>
                   </div>

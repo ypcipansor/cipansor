@@ -238,11 +238,27 @@ export class RaportMerdekaService {
       },
     });
 
-    // Get grades with scores filtered by semester
+    // Define semester date range from academic year
+    const ayStartDate = new Date(enrollment.class.academicYear.startDate);
+    const ayEndDate = new Date(enrollment.class.academicYear.endDate);
+    const semStartDate =
+      semester === 1
+        ? ayStartDate
+        : new Date(ayStartDate.getFullYear() + 1, 0, 1);
+    const semEndDate =
+      semester === 1
+        ? new Date(ayStartDate.getFullYear(), 11, 31)
+        : ayEndDate;
+
+    // Get grades with scores filtered by semester date range
     const grades = await prisma.grade.findMany({
       where: {
         studentId,
         academicYearId,
+        gradedAt: {
+          gte: semStartDate,
+          lte: semEndDate,
+        },
       },
       include: {
         exam: true,
@@ -736,18 +752,26 @@ export class RaportMerdekaService {
   static async generateBulkRaportMerdeka(
     classId: string,
     academicYearId: string,
-    semester: number
+    semester: number,
+    user?: any
   ) {
-    // Get class with academic year check
+    // Get class with academic year check and unit scope check
     const classInfo = await prisma.class.findUnique({
       where: { id: classId },
       select: {
+        unitId: true,
         academicYearId: true,
       },
     });
 
     if (!classInfo || classInfo.academicYearId !== academicYearId) {
       throw new ApiError(ErrorCode.NOT_FOUND, 'Kelas tidak ditemukan untuk tahun ajaran ini');
+    }
+
+    if (user && user.role !== 'SUPER_ADMIN' && user.roleCode !== 'SUPER_ADMIN') {
+      if (user.unitId && classInfo.unitId !== user.unitId) {
+        throw new ApiError(ErrorCode.FORBIDDEN, 'Anda tidak memiliki akses ke kelas di unit lain');
+      }
     }
 
     const enrollments = await prisma.classEnrollment.findMany({
@@ -762,7 +786,7 @@ export class RaportMerdekaService {
 
     const reports = await Promise.all(
       enrollments.map((enrollment) =>
-        this.generateRaportMerdeka(enrollment.student.id, academicYearId, semester)
+        this.generateRaportMerdeka(enrollment.student.id, academicYearId, semester, user)
       )
     );
 

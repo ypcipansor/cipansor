@@ -363,24 +363,35 @@ export async function generateRaportMerdekaPdfBuffer(data: RaportMerdekaPdfData)
     }
   }
 
-  // Signatures Page 2
-  const sigY2 = MARGIN + 50;
+  // Signatures for Pesantren & P5 section drawn on last active P5 page
+  const sigY2 = Math.max(MARGIN + 50, y2 - 60);
   const pimpinanNama = data.pimpinanUnit?.nama || '';
   const pimpinanJabatan = data.pimpinanUnit?.jabatan || 'Kepala Pesantren';
 
-  page2.drawText('Mengetahui,', { x: MARGIN + 20, y: sigY2 + 40, size: 8.5, font: fontHelvetica });
-  page2.drawText(pimpinanJabatan, { x: MARGIN + 20, y: sigY2 + 30, size: 8.5, font: fontHelvetica });
+  currentP5Page.drawText('Mengetahui,', { x: MARGIN + 20, y: sigY2 + 40, size: 8.5, font: fontHelvetica });
+  currentP5Page.drawText(pimpinanJabatan, { x: MARGIN + 20, y: sigY2 + 30, size: 8.5, font: fontHelvetica });
   if (pimpinanNama) {
-    page2.drawText(pimpinanNama, { x: MARGIN + 20, y: sigY2 - 8, size: 8.5, font: fontHelveticaBold });
+    currentP5Page.drawText(pimpinanNama, { x: MARGIN + 20, y: sigY2 - 8, size: 8.5, font: fontHelveticaBold });
   } else {
-    page2.drawLine({ start: { x: MARGIN + 10, y: sigY2 - 10 }, end: { x: MARGIN + 140, y: sigY2 - 10 }, thickness: 0.5 });
+    currentP5Page.drawLine({ start: { x: MARGIN + 10, y: sigY2 - 10 }, end: { x: MARGIN + 140, y: sigY2 - 10 }, thickness: 0.5 });
   }
 
-  page2.drawText(`Bogor, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, { x: rightSigX, y: sigY2 + 40, size: 8.5, font: fontHelvetica });
-  page2.drawText('Musyrif / Wali Kelas', { x: rightSigX, y: sigY2 + 30, size: 8.5, font: fontHelvetica });
-  page2.drawText(data.waliKelas.nama, { x: rightSigX, y: sigY2 - 8, size: 8.5, font: fontHelveticaBold });
+  currentP5Page.drawText(`Bogor, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, { x: rightSigX, y: sigY2 + 40, size: 8.5, font: fontHelvetica });
+  currentP5Page.drawText('Musyrif / Wali Kelas', { x: rightSigX, y: sigY2 + 30, size: 8.5, font: fontHelvetica });
+  currentP5Page.drawText(data.waliKelas.nama, { x: rightSigX, y: sigY2 - 8, size: 8.5, font: fontHelveticaBold });
 
-  page2.drawText('Halaman 2 dari 2', { x: PAGE_WIDTH - MARGIN - 70, y: MARGIN, size: 7.5, font: fontHelveticaOblique, color: rgb(0.5, 0.5, 0.5) });
+  // Add dynamic page numbers across all pages in document
+  const totalPages = pdfDoc.getPageCount();
+  const allPages = pdfDoc.getPages();
+  for (let i = 0; i < totalPages; i++) {
+    allPages[i].drawText(`Halaman ${i + 1} dari ${totalPages}`, {
+      x: PAGE_WIDTH - MARGIN - 70,
+      y: MARGIN,
+      size: 7.5,
+      font: fontHelveticaOblique,
+      color: rgb(0.5, 0.5, 0.5),
+    });
+  }
 
   const pdfBytes = await pdfDoc.save();
   return Buffer.from(pdfBytes);
