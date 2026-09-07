@@ -552,6 +552,180 @@ export const CorrespondenceService = {
   },
 
   /**
+   * Update a letter draft or a returned draft (REVISION_NEEDED).
+   */
+  async updateLetter(
+    letterId: string,
+    data: UpdateLetterInput,
+    userId: string,
+    actor: LetterActor
+  ) {
+    await assertLetterAccess(actor, letterId);
+
+    // Validate participant eligibility if reviewer/recipient/cc arrays are provided
+    const participantsToValidate = [
+      ...(data.reviewerIds || []),
+      ...(data.recipientIds || []),
+      ...ccUserIds(data.ccRecipients),
+    ];
+    if (participantsToValidate.length > 0) {
+      await this.validateParticipantEligibility(participantsToValidate, actor);
+    }
+
+    return await prisma.$transaction(async (tx) => {
+      // Row lock letter for update
+      await tx.$executeRaw`SELECT id FROM letters WHERE id = ${letterId} FOR UPDATE`;
+
+      const letter = await tx.letter.findUnique({
+        where: { id: letterId },
+        select: {
+          id: true,
+          status: true,
+          createdById: true,
+          unitId: true,
+          type: true,
+          nature: true,
+          recipients: { where: { isCC: false }, select: { userId: true } },
+          signatures: { select: { id: true } },
+        },
+      });
+
+      if (!letter) {
+        throw Errors.notFound('Surat tidak ditemukan');
+      }
+
+      // Check letter status: editing is only permitted for DRAFT or REVISION_NEEDED
+      if (
+        letter.status !== DbLetterStatus.DRAFT &&
+        letter.status !== DbLetterStatus.REVISION_NEEDED
+      ) {
+        throw Errors.badRequest(
+          'Hanya surat berstatus DRAFT atau REVISION_NEEDED yang dapat diubah.'
+        );
+      }
+
+      if (letter.signatures && letter.signatures.length > 0) {
+        throw Errors.badRequest(
+          'Surat yang sudah memiliki tanda tangan elektronik tidak dapat diubah.'
+        );
+      }
+
+      // Authorization check: creator, unit correspondence role, executive foundation roles, or SUPER_ADMIN
+      const isCreator = actor.id === letter.createdById;
+      const isExecutive =
+        actor.roleCode === RoleCode.YAYASAN_KETUA ||
+        actor.roleCode === RoleCode.YAYASAN_SEKRETARIS ||
+        actor.roleCode === RoleCode.SUPER_ADMIN;
+
+      if (!isCreator && !isExecutive && !handlesUnitCorrespondence(actor)) {
+        throw Errors.forbidden('Anda tidak berwenang mengubah surat ini.');
+      }
+
+      const targetType = (data.type as DbLetterType | undefined) ?? letter.type;
+      const targetNature = (data.nature as DbLetterNature | undefined) ?? letter.nature;
+      assertNatureAllowed(targetType, targetNature);
+
+      // Build update payload
+      const updateData: Prisma.LetterUpdateInput = {};
+
+      if (data.type !== undefined) updateData.type = data.type as DbLetterType;
+      if (data.classificationId !== undefined) updateData.classificationId = data.classificationId;
+      if (data.date !== undefined) updateData.date = new Date(data.date);
+      if (data.receivedAt !== undefined) updateData.receivedAt = data.receivedAt ? new Date(data.receivedAt) : null;
+      if (data.subject !== undefined) updateData.subject = data.subject;
+      if (data.content !== undefined) updateData.content = data.content;
+      if (data.fileUrl !== undefined) updateData.fileUrl = data.fileUrl;
+      if (data.urgency !== undefined) updateData.urgency = data.urgency as any;
+      if (data.nature !== undefined) updateData.nature = data.nature as any;
+      if (data.senderName !== undefined) updateData.senderName = data.senderName;
+      if (data.senderTitle !== undefined) updateData.senderTitle = data.senderTitle;
+      if (data.senderInstance !== undefined) updateData.senderInstance = data.senderInstance;
+      if (data.recipientName !== undefined) updateData.recipientName = data.recipientName;
+      if (data.recipientInstance !== undefined) updateData.recipientInstance = data.recipientInstance;
+
+      await tx.letter.update({
+        where: { id: letterId },
+        data: updateData,
+      });
+
+      // Update Reviewers if provided
+      if (data.reviewerIds) {
+        const uniqueReviewers = Array.from(new Set(data.reviewerIds));
+        await tx.letterReviewer.deleteMany({ where: { letterId } });
+        if (uniqueReviewers.length > 0) {
+          await tx.letterReviewer.createMany({
+            data: uniqueReviewers.map((reviewerId, index) => ({
+              letterId,
+              reviewerId,
+              order: index + 1,
+              status: 'PENDING',
+              isSigner: false,
+            })),
+          });
+        }
+      }
+
+      // Update Recipients if provided
+      if (data.recipientIds) {
+        const uniqueRecipients = Array.from(new Set(data.recipientIds));
+        await tx.letterRecipient.deleteMany({ where: { letterId, isCC: false } });
+        if (uniqueRecipients.length > 0) {
+          await tx.letterRecipient.createMany({
+            data: uniqueRecipients.map((recipientId) => ({
+              letterId,
+              userId: recipientId,
+              unitId: letter.unitId,
+              isCC: false,
+            })),
+          });
+        }
+      }
+
+      // Update CC Recipients if provided
+      if (data.ccRecipients) {
+        await tx.letterRecipient.deleteMany({ where: { letterId, isCC: true } });
+        const primaryRecipientIds = data.recipientIds ?? letter.recipients.map((r) => r.userId).filter((id): id is string => !!id);
+        const ccRows = buildCcRows(letterId, letter.unitId, data.ccRecipients, primaryRecipientIds);
+        if (ccRows.length > 0) {
+          await tx.letterRecipient.createMany({ data: ccRows });
+        }
+      }
+
+      // Update Attachments if provided
+      if (data.attachments) {
+        await tx.letterAttachment.deleteMany({ where: { letterId } });
+        if (data.attachments.length > 0) {
+          await tx.letterAttachment.createMany({
+            data: data.attachments.map((att, index) => ({
+              letterId,
+              name: att.name,
+              fileUrl: att.fileUrl,
+              mimeType: att.mimeType ?? null,
+              sizeBytes: att.sizeBytes ?? null,
+              order: index + 1,
+              uploadedById: userId,
+            })),
+          });
+        }
+      }
+
+      await recordFlow(tx, {
+        letterId,
+        actorId: userId,
+        action: letter.status === DbLetterStatus.REVISION_NEEDED ? LetterFlowAction.RESUBMITTED : LetterFlowAction.CREATED,
+        fromStatus: letter.status,
+        toStatus: letter.status,
+        note: 'Naskah surat diperbarui',
+      });
+
+      return await tx.letter.findUnique({
+        where: { id: letterId },
+        include: LETTER_PDF_RELATIONS,
+      });
+    });
+  },
+
+  /**
    * `unitId` is an optional *narrowing* on top of what `actor` may see — not
    * the access rule itself. Foundation and cross-unit roles have no unit of
    * their own, so `undefined` means "every unit they are entitled to", not

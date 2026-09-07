@@ -44,9 +44,17 @@ const DEFAULT_CONFIG: IdCardConfig = {
 };
 
 export class StudentIdCardService {
+  static getHmacSecret(): string {
+    return (
+      process.env.STUDENT_CARD_HMAC_SECRET ||
+      process.env.JWT_SECRET ||
+      'cipansor-student-card-secret-key-2026'
+    );
+  }
+
   /**
    * Generate QR Code data string
-   * Contains encrypted student data for verification
+   * Signed with HMAC-SHA256 server secret to prevent tampering
    */
   static generateQRCodeData(studentData: {
     id: string;
@@ -66,20 +74,22 @@ export class StudentIdCardService {
       exp: studentData.validUntil.getTime(),
     };
 
-    // Create hash for integrity verification
-    const hash = crypto
-      .createHash('sha256')
-      .update(JSON.stringify(payload))
-      .digest('hex')
-      .substring(0, 8);
+    const payloadString = JSON.stringify(payload);
 
-    // Format: cipansor://{base64_payload}#{hash}
-    const base64Payload = Buffer.from(JSON.stringify(payload)).toString('base64url');
-    return `cipansor://${base64Payload}#${hash}`;
+    // Create HMAC-SHA256 signature for integrity & authenticity verification
+    const hmacSignature = crypto
+      .createHmac('sha256', this.getHmacSecret())
+      .update(payloadString)
+      .digest('hex')
+      .substring(0, 16);
+
+    // Format: cipansor://{base64_payload}#{hmacSignature}
+    const base64Payload = Buffer.from(payloadString).toString('base64url');
+    return `cipansor://${base64Payload}#${hmacSignature}`;
   }
 
   /**
-   * Verify QR Code data
+   * Verify QR Code data using HMAC-SHA256 signature
    */
   static verifyQRCodeData(qrData: string): {
     valid: boolean;
@@ -89,27 +99,35 @@ export class StudentIdCardService {
     message: string;
   } {
     try {
-      if (!qrData.startsWith('cipansor://')) {
+      if (!qrData || !qrData.startsWith('cipansor://')) {
         return { valid: false, message: 'Format QR Code tidak valid' };
       }
 
-      const [payloadPart, hash] = qrData.replace('cipansor://', '').split('#');
+      const [payloadPart, receivedHmac] = qrData.replace('cipansor://', '').split('#');
 
-      if (!payloadPart || !hash) {
+      if (!payloadPart || !receivedHmac) {
         return { valid: false, message: 'Data QR Code tidak lengkap' };
       }
 
-      const payload = JSON.parse(Buffer.from(payloadPart, 'base64url').toString('utf8'));
+      const payloadString = Buffer.from(payloadPart, 'base64url').toString('utf8');
+      const payload = JSON.parse(payloadString);
 
-      // Verify hash
-      const expectedHash = crypto
-        .createHash('sha256')
-        .update(JSON.stringify(payload))
+      // Verify HMAC signature
+      const expectedHmac = crypto
+        .createHmac('sha256', this.getHmacSecret())
+        .update(payloadString)
         .digest('hex')
-        .substring(0, 8);
+        .substring(0, 16);
 
-      if (hash !== expectedHash) {
-        return { valid: false, message: 'QR Code tidak valid (hash mismatch)' };
+      // Secure constant-time comparison to prevent timing attacks
+      const expectedBuffer = Buffer.from(expectedHmac, 'utf8');
+      const receivedBuffer = Buffer.from(receivedHmac, 'utf8');
+
+      if (
+        expectedBuffer.length !== receivedBuffer.length ||
+        !crypto.timingSafeEqual(expectedBuffer, receivedBuffer)
+      ) {
+        return { valid: false, message: 'QR Code tidak valid (tanda tangan HMAC tidak cocok)' };
       }
 
       // Check expiry
@@ -119,7 +137,7 @@ export class StudentIdCardService {
           studentId: payload.sid,
           nis: payload.nis,
           expired: true,
-          message: 'Kartu pelajar sudah expired',
+          message: 'Kartu pelajar sudah kedaluwarsa (expired)',
         };
       }
 
@@ -128,10 +146,10 @@ export class StudentIdCardService {
         studentId: payload.sid,
         nis: payload.nis,
         expired: false,
-        message: 'Kartu pelajar valid',
+        message: 'Kartu pelajar valid dan terverifikasi',
       };
     } catch {
-      return { valid: false, message: 'Gagal memproses QR Code' };
+      return { valid: false, message: 'Gagal memproses verifikasi QR Code' };
     }
   }
 
@@ -288,24 +306,7 @@ export class StudentIdCardService {
         // QR Code
         qrCode: {
           data: qrCodeData,
-          /**
-           * Deliberately null: there is no student-card verification page.
-           *
-           * This used to be `https://cipansor.app/verify?q=<payload>` — a
-           * domain the yayasan does not own, and a path this app has never
-           * routed. Pointing it at a real host would only have moved the 404,
-           * so rather than dress up a dead link the field now says plainly
-           * that the destination does not exist. Nothing consumes it today.
-           *
-           * Building that page is a decision, not a repair, and it needs one
-           * thing settled first: `generateQRCodeData` signs the payload with a
-           * bare `sha256(payload)` truncated to 8 hex characters and no secret,
-           * so anyone who reads one card can mint a payload that verifies.
-           * A verification page over an unkeyed hash would attest nothing —
-           * that wants an HMAC keyed on a server-side secret before it is worth
-           * publishing.
-           */
-          verificationUrl: null,
+          verificationUrl: `/public/verify-card?data=${encodeURIComponent(qrCodeData)}`,
         },
       },
     };

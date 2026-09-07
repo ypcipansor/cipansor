@@ -12,6 +12,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { RaportMerdekaService, PROFIL_PELAJAR_PANCASILA } from './raport-merdeka.service';
 import { ApiResponse } from '../../utils/response';
+import { generateRaportMerdekaPdfBuffer } from '../../utils/generate-raport-merdeka-pdf';
 
 export class RaportMerdekaController {
   /**
@@ -127,6 +128,73 @@ export class RaportMerdekaController {
       );
 
       return res.json(ApiResponse.success(raports, 'Raport Merdeka kelas berhasil digenerate'));
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Export Raport Merdeka as Vector PDF
+   */
+  static async exportStudentRaportPdf(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { studentId } = req.params;
+      const { academicYearId, semester } = req.query;
+
+      if (!academicYearId || !semester) {
+        return res.status(400).json({
+          success: false,
+          message: 'academicYearId dan semester harus diisi',
+        });
+      }
+
+      const raportData = await RaportMerdekaService.generateRaportMerdeka(
+        studentId,
+        academicYearId as string,
+        parseInt(semester as string, 10)
+      );
+
+      const pdfBuffer = await generateRaportMerdekaPdfBuffer(raportData as any);
+
+      const fileName = `Raport_Merdeka_${raportData.siswa.nama.replace(/\s+/g, '_')}.pdf`;
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="${fileName}"`);
+      return res.send(pdfBuffer);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Export Raport Merdeka PDF from request body
+   */
+  static async exportRaportPdfFromBody(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { studentId, academicYearId, semester, customData } = req.body;
+
+      let raportData = customData;
+      if (!raportData && studentId && academicYearId && semester) {
+        raportData = await RaportMerdekaService.generateRaportMerdeka(
+          studentId,
+          academicYearId,
+          parseInt(String(semester), 10)
+        );
+      }
+
+      if (!raportData) {
+        return res.status(400).json({
+          success: false,
+          message: 'Data raport tidak lengkap',
+        });
+      }
+
+      const pdfBuffer = await generateRaportMerdekaPdfBuffer(raportData as any);
+
+      const studentName = raportData?.siswa?.nama || 'Siswa';
+      const fileName = `Raport_Merdeka_${studentName.replace(/\s+/g, '_')}.pdf`;
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="${fileName}"`);
+      return res.send(pdfBuffer);
     } catch (error) {
       next(error);
     }

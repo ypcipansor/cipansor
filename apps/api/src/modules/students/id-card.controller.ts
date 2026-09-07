@@ -117,16 +117,16 @@ export class IdCardController {
    */
   static async verifyQRCodeGet(req: Request, res: Response, next: NextFunction) {
     try {
-      const { q } = req.query;
+      const q = (req.query.q || req.query.data) as string | undefined;
 
       if (!q) {
         return res.status(400).json({
           success: false,
-          message: 'Parameter q (QR data) harus diisi',
+          message: 'Parameter q atau data (QR data) harus diisi',
         });
       }
 
-      const result = await StudentIdCardService.validateAndGetStudent(q as string);
+      const result = await StudentIdCardService.validateAndGetStudent(q);
 
       return res.json(ApiResponse.success(result, result.message));
     } catch (error) {

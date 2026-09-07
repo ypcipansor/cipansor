@@ -919,6 +919,8 @@ router.get('/raport-merdeka/capaian', RaportMerdekaController.getCapaianMapping)
  *         description: Complete Raport Merdeka with intrakurikuler, P5, ekstrakurikuler
  */
 router.get('/raport-merdeka/students/:studentId', RaportMerdekaController.generateStudentRaport);
+router.get('/raport-merdeka/students/:studentId/pdf', RaportMerdekaController.exportStudentRaportPdf);
+router.post('/raport-merdeka/pdf', RaportMerdekaController.exportRaportPdfFromBody);
 
 /**
  * @swagger

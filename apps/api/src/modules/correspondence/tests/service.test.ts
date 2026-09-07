@@ -457,6 +457,111 @@ describe('CorrespondenceService', () => {
     });
   });
 
+  describe('updateLetter', () => {
+    const adminActor = { id: 'tu-1', roleCode: 'SDIT_TATA_USAHA', unitId: 'unit-1' };
+    const draftLetter = (over: Record<string, unknown> = {}) => ({
+      id: 'letter-edit-1',
+      unitId: 'unit-1',
+      createdById: 'tu-1',
+      status: 'DRAFT',
+      direction: 'OUTGOING',
+      type: 'SURAT_DINAS',
+      nature: 'PUBLIC',
+      subject: 'Judul Lama',
+      reviewers: [],
+      recipients: [],
+      dispositions: [],
+      signatures: [],
+      ...over,
+    });
+
+    it('updates subject, content and reviewers for a DRAFT letter', async () => {
+      vi.mocked(prisma.letter.findUnique).mockResolvedValue({
+        ...draftLetter(),
+        signatures: [],
+        recipients: [],
+        dispositions: [],
+      } as any);
+      vi.mocked(prisma.letter.update).mockResolvedValue({} as any);
+
+      const result = await CorrespondenceService.updateLetter(
+        'letter-edit-1',
+        { subject: 'Judul Baru', content: 'Isi Baru' },
+        'tu-1',
+        adminActor as any
+      );
+
+      expect(prisma.letter.update).toHaveBeenCalledWith({
+        where: { id: 'letter-edit-1' },
+        data: expect.objectContaining({
+          subject: 'Judul Baru',
+          content: 'Isi Baru',
+        }),
+      });
+      expect(result).toBeDefined();
+    });
+
+    it('allows updating a letter in REVISION_NEEDED status', async () => {
+      vi.mocked(prisma.letter.findUnique).mockResolvedValue({
+        ...draftLetter({ status: 'REVISION_NEEDED' }),
+        signatures: [],
+        recipients: [],
+        dispositions: [],
+      } as any);
+      vi.mocked(prisma.letter.update).mockResolvedValue({} as any);
+
+      await CorrespondenceService.updateLetter(
+        'letter-edit-1',
+        { subject: 'Judul Setelah Revisi' },
+        'tu-1',
+        adminActor as any
+      );
+
+      expect(prisma.letter.update).toHaveBeenCalledWith({
+        where: { id: 'letter-edit-1' },
+        data: expect.objectContaining({ subject: 'Judul Setelah Revisi' }),
+      });
+    });
+
+    it('rejects update if letter is in SIGNED or PENDING_REVIEW status', async () => {
+      vi.mocked(prisma.letter.findUnique).mockResolvedValue({
+        ...draftLetter({ status: 'PENDING_REVIEW' }),
+        signatures: [],
+        recipients: [],
+        dispositions: [],
+      } as any);
+
+      await expect(
+        CorrespondenceService.updateLetter(
+          'letter-edit-1',
+          { subject: 'Mencoba Edit' },
+          'tu-1',
+          adminActor as any
+        )
+      ).rejects.toThrow(/DRAFT atau REVISION_NEEDED/);
+      expect(prisma.letter.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects update if user is unauthorized', async () => {
+      vi.mocked(prisma.letter.findUnique).mockResolvedValue({
+        ...draftLetter({ createdById: 'owner-other' }),
+        signatures: [],
+        recipients: [],
+        dispositions: [],
+      } as any);
+
+      await expect(
+        CorrespondenceService.updateLetter(
+          'letter-edit-1',
+          { subject: 'Mencoba Edit' },
+          'unauthorized-user',
+          { id: 'unauthorized-user', roleCode: 'SDIT_GURU', unitId: 'unit-1' } as any
+        )
+      ).rejects.toThrow(/tidak memiliki akses/);
+      expect(prisma.letter.update).not.toHaveBeenCalled();
+    });
+  });
+
   describe('Resubmit and archive', () => {
     const accessRow = (over: Record<string, unknown>) => ({
       id: 'letter-1',

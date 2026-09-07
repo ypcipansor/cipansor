@@ -47,8 +47,6 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useCurrentUnit } from "@/hooks";
-import html2canvas from "html2canvas-pro";
-import jsPDF from "jspdf";
 import { toast } from "sonner";
 
 // P5 Dimension Icons
@@ -117,48 +115,100 @@ export default function RaportMerdekaPage() {
   });
 
   const handleExportPDF = async () => {
-    if (!reportRef.current) return;
-
     try {
       setIsExporting(true);
-      const canvas = await html2canvas(reportRef.current, {
-        scale: 2, // Higher quality
-        useCORS: true,
-        logging: false,
-        backgroundColor: "#ffffff",
-      });
 
-      const imgData = canvas.toDataURL("image/png");
-      const pdf = new jsPDF("p", "mm", "a4");
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
+      const response = await api.post(
+        "/assessment/raport-merdeka/pdf",
+        {
+          customData: {
+            siswa: {
+              nama: "Ahmad Fulan",
+              nis: "12345",
+              nisn: "0012345678",
+              kelas: "VII A",
+              unit: currentUnit?.name || "SMP",
+              fase: "D",
+            },
+            tahunAjaran: {
+              tahun: "2024/2025",
+              semester: 1,
+              semesterLabel: "Semester 1 (Ganjil)",
+            },
+            waliKelas: {
+              nama: "Nama Wali Kelas, S.Pd",
+              nip: "19800101 200501 1 001",
+            },
+            intrakurikuler: {
+              kelompokUmum: [
+                {
+                  subjectName: "Pendidikan Agama Islam",
+                  nilaiAkhir: 88,
+                  predikat: "B",
+                  levelCapaian: "BAIK",
+                  deskripsi: "Menunjukkan penguasaan yang sangat baik dalam memahami rukun iman dan rukun islam.",
+                },
+                {
+                  subjectName: "Bahasa Indonesia",
+                  nilaiAkhir: 92,
+                  predikat: "A",
+                  levelCapaian: "SANGAT BAIK",
+                  deskripsi: "Menunjukkan penguasaan yang sangat baik dalam menulis teks deskripsi dan narasi.",
+                },
+                {
+                  subjectName: "Matematika",
+                  nilaiAkhir: 78,
+                  predikat: "B",
+                  levelCapaian: "BAIK",
+                  deskripsi: "Menunjukkan penguasaan yang baik dalam operasi bilangan bulat.",
+                },
+              ],
+              kelompokPesantren: [],
+            },
+            projekP5: [
+              {
+                tema: "Gaya Hidup Berkelanjutan",
+                judul: "Pengolahan Sampah Organik Pesantren",
+                deskripsiProyek: "Projek pembuatan kompos dari sisa makanan dan dedaunan di lingkungan pesantren.",
+                dimensiTerkait: [
+                  { dimensiName: "Beriman, Bertakwa & Berakhlak Mulia", capaian: "Sangat Berkembang" },
+                  { dimensiName: "Gotong Royong", capaian: "Berkembang Sesuai Harapan" },
+                ],
+              },
+            ],
+            ekstrakurikuler: [
+              { nama: "Pramuka", predikat: "Baik", keterangan: "Mampu mengikuti kegiatan kepramukaan dengan disiplin." },
+              { nama: "Futsal", predikat: "Sangat Baik", keterangan: "Menunjukkan bakat kepemimpinan dalam tim." },
+            ],
+            tahfidz: {
+              totalJuz: 1.5,
+              surahTerakhir: "QS. Al-Mulk ayat 1-30",
+              statusCapaian: "TERCAPAI",
+              catatan: "Sangat lancar dalam mengulang hafalan (Mumtaz).",
+            },
+            kehadiran: {
+              hadir: 95,
+              sakit: 1,
+              izin: 0,
+              alpa: 0,
+            },
+            catatanWaliKelas: "Ananda Ahmad Fulan menunjukkan perkembangan belajar dan karakter yang sangat baik.",
+          },
+        },
+        { responseType: "blob" }
+      );
 
-      // Calculate scaling to fit A4 width
-      const imgProps = pdf.getImageProperties(imgData);
-      const pdfHeightCalculated = (imgProps.height * pdfWidth) / imgProps.width;
+      const blob = new Blob([response.data], { type: "application/pdf" });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `Raport_Merdeka_Ahmad_Fulan.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
 
-      // If height > A4, we might need multiple pages, but for now let's just fit width or auto-page (advanced)
-      // For this MVP preview which is A4-sized visually, we just place it.
-      // Since our preview might be multiple pages (scroll), html2canvas captures essentialy one long image.
-      // A better approach for multi-page is capturing each "page" div separately, but let's stick to single long capture for now or simplified.
-      // Actually, if we want "Premium" multi-page PDF, we should capture separate page elements.
-      // Let's assume the reportRef wraps the container of pages.
-
-      // Simple strategy: One long page or just fit (it will shrink if too long).
-      // Let's go with adding image.
-
-      if (pdfHeightCalculated > pdfHeight) {
-        // crude pagination or just long page? PDF doesn't support infinite height easily without custom format.
-        // Let's force it to fit for now or just save as is.
-        // Better: Create new page per A4 section.
-        // Implementation detail: User sees ONE preview. We can export that.
-        pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeightCalculated);
-      } else {
-        pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeightCalculated);
-      }
-
-      pdf.save(`Raport_Merdeka_Ahmad_Fulan.pdf`);
-      toast.success("Raport berhasil diexport!");
+      toast.success("Raport vector PDF berhasil diexport!");
     } catch (error) {
       console.error(error);
       toast.error("Gagal export PDF");

@@ -152,3 +152,26 @@ export const submitLetterSchema = z.object({
 });
 
 export type SubmitLetterSchemaInput = z.infer<typeof submitLetterSchema>;
+
+export const updateLetterSchema = z.object({
+  type: z.nativeEnum(LetterType).optional(),
+  classificationId: z.string().uuid().optional(),
+  date: z.string().optional(),
+  receivedAt: z.string().optional(),
+  subject: z.string().min(1).optional(),
+  content: z.string().optional(),
+  fileUrl: z.string().url().optional().nullable(),
+  urgency: z.nativeEnum(LetterUrgency).optional(),
+  nature: z.nativeEnum(LetterNature).optional(),
+  senderName: z.string().optional().nullable(),
+  senderTitle: z.string().optional().nullable(),
+  senderInstance: z.string().optional().nullable(),
+  recipientName: z.string().optional().nullable(),
+  recipientInstance: z.string().optional().nullable(),
+  reviewerIds: z.array(z.string().uuid()).optional(),
+  recipientIds: z.array(z.string().uuid()).optional(),
+  ccRecipients: z.array(letterCcSchema).max(30).optional(),
+  attachments: z.array(letterAttachmentSchema).max(20).optional(),
+});
+
+export type UpdateLetterSchemaInput = z.infer<typeof updateLetterSchema>;
