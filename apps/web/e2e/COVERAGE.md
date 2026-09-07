@@ -382,8 +382,6 @@ History of the stabilization (all root-caused, no suppressions):
 | `/hr/payroll/periods` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `/hr/payroll/periods/[id]` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `/hr/payroll/staff-salary` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `/hr/talenta` | academic-integrated, integration-flow | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 |
-| `/hr/talenta/succession` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `/hr/teachers/compliance` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
 
 ### `/ibadah`
@@ -823,8 +821,8 @@ History of the stabilization (all root-caused, no suppressions):
 | `/talenta` | talenta | ✅ | 🟡 | 🟡 | 🟡 | 🟡 |
 | `/talenta/[id]` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `/talenta/analytics` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `/talenta/matrix` | talent-matrix-new | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 |
-| `/talenta/succession` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `/talenta/matrix` | talent-matrix-new, integration-flow | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 |
+| `/talenta/succession` | academic-integrated | 🟡 | ❌ | 🟡 | 🟡 | ❌ |
 
 ### `/tata-laksana`
 

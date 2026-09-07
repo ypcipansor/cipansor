@@ -356,9 +356,6 @@ describe("navigation — every app page is reachable from some menu", () => {
     "/ppdb": "legacy duplicate of /admissions, pending the SPMB route rename",
     "/ppdb/registrations":
       "legacy duplicate of /admissions, pending the SPMB route rename",
-    "/hr/talenta/succession":
-      "standalone copy of the Succession Planning tab already on /hr/talenta; " +
-      "kept only for links already sent out, and a deletion candidate",
   };
 
   /** Reached from a list page's action button, never from a menu. */
