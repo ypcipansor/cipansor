@@ -61,12 +61,29 @@ export class StudentOnboardingOrchestrator {
         unitCode = unit.type.toUpperCase();
       }
 
-      const existingStudent = registrant.email
-        ? await tx.student.findFirst({
-            where: { user: { email: registrant.email }, deletedAt: null },
+      let existingStudent = null;
+
+      if (registrant.isInternalAlumni) {
+        if (registrant.previousStudentId) {
+          existingStudent = await tx.student.findFirst({
+            where: { id: registrant.previousStudentId, deletedAt: null },
             include: { user: true },
-          })
-        : null;
+          });
+        }
+        if (!existingStudent && (registrant.internalNisn || registrant.internalNik)) {
+          const conditions: any[] = [];
+          if (registrant.internalNisn) conditions.push({ nisn: registrant.internalNisn });
+          if (registrant.internalNik) conditions.push({ nik: registrant.internalNik });
+
+          existingStudent = await tx.student.findFirst({
+            where: {
+              deletedAt: null,
+              OR: conditions,
+            },
+            include: { user: true },
+          });
+        }
+      }
 
       let user;
       let student;

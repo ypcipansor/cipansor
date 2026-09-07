@@ -86,8 +86,16 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
  */
 export const graduate = asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { graduateYear } = req.body;
-  const student = await studentService.graduateStudent(id, graduateYear ? Number(graduateYear) : undefined);
+  const { graduateYear, graduationDate } = req.body;
+
+  let year: number | undefined;
+  if (graduateYear) {
+    year = Number(graduateYear);
+  } else if (graduationDate) {
+    year = new Date(graduationDate).getFullYear();
+  }
+
+  const student = await studentService.graduateStudent(id, year);
 
   res.json({
     success: true,

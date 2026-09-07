@@ -32,6 +32,7 @@ vi.mock('../../../../src/lib/prisma', () => {
     },
     classEnrollment: {
       create: vi.fn(),
+      updateMany: vi.fn(),
     },
     $transaction: vi.fn((callback) => callback(prismaClient)),
   };
@@ -108,6 +109,65 @@ describe('StudentService', () => {
       await expect(studentService.findById('invalid-id')).rejects.toThrow(
         Errors.notFound('Student')
       );
+    });
+  });
+
+  describe('findInternalAlumniByIdentifier', () => {
+    it('should return alumnus student when found by NISN or NIK with alumni status', async () => {
+      const mockAlumnus = {
+        id: 'student-alumni-1',
+        nisn: '1234567890',
+        nik: '3201123456780001',
+        status: 'alumni',
+        user: { id: 'user-1', name: 'Alumnus Student', email: 'alumnus@cipansor.local' },
+        unit: { id: 'unit-1', name: 'SD IT', type: 'SD_IT' },
+      };
+
+      vi.mocked(prisma.student.findFirst).mockResolvedValue(mockAlumnus as any);
+
+      const result = await studentService.findInternalAlumniByIdentifier('1234567890');
+
+      expect(prisma.student.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            deletedAt: null,
+            status: 'alumni',
+            OR: [{ nik: '1234567890' }, { nisn: '1234567890' }],
+          }),
+        })
+      );
+      expect(result).toEqual(mockAlumnus);
+    });
+
+    it('should return null when identifier is empty', async () => {
+      const result = await studentService.findInternalAlumniByIdentifier('   ');
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('graduateStudent', () => {
+    it('should mark student as alumni and complete active class enrollments', async () => {
+      const mockStudent = { id: 'student-active-1', status: 'active' };
+      const mockUpdatedStudent = {
+        id: 'student-active-1',
+        status: 'alumni',
+        graduateYear: 2026,
+        user: { id: 'user-1', name: 'Graduating Student', email: 'grad@cipansor.local' },
+        unit: { id: 'unit-1', name: 'SMA Qur\'an' },
+      };
+
+      vi.mocked(prisma.student.findFirst).mockResolvedValue(mockStudent as any);
+      vi.mocked(prisma.student.update).mockResolvedValue(mockUpdatedStudent as any);
+
+      const result = await studentService.graduateStudent('student-active-1', 2026);
+
+      expect(prisma.student.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'student-active-1' },
+          data: { status: 'alumni', graduateYear: 2026 },
+        })
+      );
+      expect(result).toEqual(mockUpdatedStudent);
     });
   });
 });

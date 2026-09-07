@@ -60,29 +60,33 @@ export async function bulkImportStudents(
         continue;
       }
 
-      const identifier = row.nisn || row.nik;
-      if (!identifier) {
+      if (!row.nisn && !row.nik) {
         result.errors.push({ row: i + 1, error: `NISN atau NIK harus diisi` });
         result.failed++;
         continue;
       }
 
-      // Check if student already exists
+      const conditions: Prisma.StudentWhereInput[] = [];
+      if (row.nisn) conditions.push({ nisn: row.nisn });
+      if (row.nik) conditions.push({ nik: row.nik });
+
+      // Check if student already exists by NISN or NIK
       const existing = await prisma.student.findFirst({
-        where: { OR: [{ nisn: identifier }, { nik: identifier }] },
+        where: { OR: conditions },
       });
 
       if (existing) {
-        result.errors.push({ row: i + 1, error: `Siswa dengan NISN/NIK "${identifier}" sudah ada` });
+        result.errors.push({ row: i + 1, error: `Siswa dengan NISN/NIK tsb sudah ada` });
         result.failed++;
         continue;
       }
 
+      const emailLocal = row.nisn || row.nik || 'student';
       // Create user and student in transaction
       await (prisma as any).$transaction(async (tx: any) => {
         const user = await tx.user.create({
           data: {
-            email: row.email || `${identifier}@student.cipansor.or.id`,
+            email: row.email || `${emailLocal}@student.cipansor.or.id`,
             name: row.name,
             phone: row.phone,
             role: 'STUDENT',

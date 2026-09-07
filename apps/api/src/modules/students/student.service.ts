@@ -134,23 +134,21 @@ export class StudentService {
     const student = await prisma.student.findFirst({
       where: {
         deletedAt: null,
+        status: 'alumni',
         OR: [{ nik: clean }, { nisn: clean }],
       },
-      include: {
+      select: {
+        id: true,
+        nisn: true,
+        nik: true,
+        gender: true,
+        birthPlace: true,
+        birthDate: true,
+        entryYear: true,
+        graduateYear: true,
+        status: true,
         user: { select: { id: true, name: true, email: true } },
         unit: { select: { id: true, name: true, type: true } },
-        parents: {
-          include: {
-            parent: {
-              select: {
-                id: true,
-                name: true,
-                phone: true,
-                email: true,
-              },
-            },
-          },
-        },
       },
     });
 

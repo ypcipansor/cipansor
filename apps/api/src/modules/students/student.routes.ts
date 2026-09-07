@@ -31,7 +31,7 @@ router.get(
 
 router.get(
   '/alumni/lookup',
-  hasPermission(PERMISSIONS.STUDENT_VIEW),
+  hasPermission(PERMISSIONS.STUDENT_CREATE),
   controller.lookupAlumni
 );
 

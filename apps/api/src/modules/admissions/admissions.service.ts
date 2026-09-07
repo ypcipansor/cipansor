@@ -326,6 +326,20 @@ async function createRegistrantOnce(data: CreateRegistrantExtendedInput) {
         parentPhone,
         parentEmail,
         parentOccupation,
+        fatherNik: data.fatherNik,
+        fatherOccupation: data.fatherOccupation,
+        fatherIncomeRange: data.fatherIncomeRange,
+        motherNik: data.motherNik,
+        motherOccupation: data.motherOccupation,
+        motherIncomeRange: data.motherIncomeRange,
+        guardianName: data.guardianName,
+        guardianNik: data.guardianNik,
+        guardianOccupation: data.guardianOccupation,
+        guardianPhone: data.guardianPhone,
+        isInternalAlumni: data.isInternalAlumni ?? false,
+        previousStudentId: data.previousStudentId,
+        internalNisn: data.internalNisn,
+        internalNik: data.internalNik,
         notes: data.notes,
         source: data.source,
         campaignId: data.campaignId,
@@ -517,25 +531,42 @@ export async function enrollRegistrant(
       throw new Error('Registrant must be accepted before enrollment');
     }
 
-    const existingUser = registrant.email
-      ? await tx.user.findUnique({
-          where: { email: registrant.email },
-          include: { student: true },
-        })
-      : null;
+    let existingStudent = null;
+
+    if (registrant.isInternalAlumni) {
+      if (registrant.previousStudentId) {
+        existingStudent = await tx.student.findFirst({
+          where: { id: registrant.previousStudentId, deletedAt: null },
+          include: { user: true },
+        });
+      }
+      if (!existingStudent && (registrant.internalNisn || registrant.internalNik)) {
+        const conditions: Prisma.StudentWhereInput[] = [];
+        if (registrant.internalNisn) conditions.push({ nisn: registrant.internalNisn });
+        if (registrant.internalNik) conditions.push({ nik: registrant.internalNik });
+
+        existingStudent = await tx.student.findFirst({
+          where: {
+            deletedAt: null,
+            OR: conditions,
+          },
+          include: { user: true },
+        });
+      }
+    }
 
     let user;
     let student;
 
-    if (existingUser && existingUser.student) {
-      user = existingUser;
+    if (existingStudent) {
+      user = existingStudent.user;
       student = await tx.student.update({
-        where: { id: existingUser.student.id },
+        where: { id: existingStudent.id },
         data: {
           unitId: registrant.admissionPeriod.unitId,
           status: 'active',
-          nisn: studentData.nisn,
-          nik: studentData.nik,
+          nisn: studentData.nisn || existingStudent.nisn,
+          nik: studentData.nik || existingStudent.nik,
           graduateYear: null,
         },
       });
@@ -544,55 +575,62 @@ export async function enrollRegistrant(
         where: { studentId: student.id, status: 'active' },
         data: { status: 'completed' },
       });
-    } else if (existingUser) {
-      user = existingUser;
-
-      student = await tx.student.create({
-        data: {
-          userId: user.id,
-          unitId: registrant.admissionPeriod.unitId,
-          nisn: studentData.nisn,
-          nik: studentData.nik,
-          gender: registrant.gender,
-          birthPlace: registrant.birthPlace,
-          birthDate: registrant.birthDate,
-          address: registrant.address,
-          parentName: registrant.parentName,
-          parentPhone: registrant.parentPhone,
-          parentEmail: registrant.parentEmail,
-          status: 'active',
-          entryYear: new Date().getFullYear(),
-        },
-      });
     } else {
-      user = await tx.user.create({
-        data: {
-          name: registrant.fullName,
-          email: registrant.email || `${studentData.nisn || randomBytes(8).toString('hex')}@student.cipansor.or.id`,
-          passwordHash: prehashedPassword,
-          role: 'STUDENT',
-          unitId: registrant.admissionPeriod.unitId,
-          isActive: true,
-        },
-      });
+      const existingUser = registrant.email
+        ? await tx.user.findUnique({
+            where: { email: registrant.email },
+          })
+        : null;
 
-      student = await tx.student.create({
-        data: {
-          userId: user.id,
-          unitId: registrant.admissionPeriod.unitId,
-          nisn: studentData.nisn,
-          nik: studentData.nik,
-          gender: registrant.gender,
-          birthPlace: registrant.birthPlace,
-          birthDate: registrant.birthDate,
-          address: registrant.address,
-          parentName: registrant.parentName,
-          parentPhone: registrant.parentPhone,
-          parentEmail: registrant.parentEmail,
-          status: 'active',
-          entryYear: new Date().getFullYear(),
-        },
-      });
+      if (existingUser) {
+        user = existingUser;
+        student = await tx.student.create({
+          data: {
+            userId: user.id,
+            unitId: registrant.admissionPeriod.unitId,
+            nisn: studentData.nisn,
+            nik: studentData.nik,
+            gender: registrant.gender,
+            birthPlace: registrant.birthPlace,
+            birthDate: registrant.birthDate,
+            address: registrant.address,
+            parentName: registrant.parentName,
+            parentPhone: registrant.parentPhone,
+            parentEmail: registrant.parentEmail,
+            status: 'active',
+            entryYear: new Date().getFullYear(),
+          },
+        });
+      } else {
+        user = await tx.user.create({
+          data: {
+            name: registrant.fullName,
+            email: registrant.email || `${studentData.nisn || randomBytes(8).toString('hex')}@student.cipansor.or.id`,
+            passwordHash: prehashedPassword,
+            role: 'STUDENT',
+            unitId: registrant.admissionPeriod.unitId,
+            isActive: true,
+          },
+        });
+
+        student = await tx.student.create({
+          data: {
+            userId: user.id,
+            unitId: registrant.admissionPeriod.unitId,
+            nisn: studentData.nisn,
+            nik: studentData.nik,
+            gender: registrant.gender,
+            birthPlace: registrant.birthPlace,
+            birthDate: registrant.birthDate,
+            address: registrant.address,
+            parentName: registrant.parentName,
+            parentPhone: registrant.parentPhone,
+            parentEmail: registrant.parentEmail,
+            status: 'active',
+            entryYear: new Date().getFullYear(),
+          },
+        });
+      }
     }
 
     if (studentData.classId) {

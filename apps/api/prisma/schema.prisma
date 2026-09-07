@@ -1016,7 +1016,7 @@ model Student {
   id           String   @id @default(uuid())
   userId       String   @unique @map("user_id")
   unitId       String   @map("unit_id")
-  nisn         String? // Nomor Induk Siswa Nasional
+  nisn         String?  @unique // Nomor Induk Siswa Nasional
   gender       Gender
   birthPlace   String   @map("birth_place")
   birthDate    DateTime @map("birth_date")
@@ -1030,7 +1030,7 @@ model Student {
   graduateYear Int?     @map("graduate_year")
 
   // === PHASE 8: Indonesia Compliance Fields (Dapodik/EMIS) ===
-  nik         String? // NIK (16 digit)
+  nik         String? @unique // NIK (16 digit)
   noAkta      String? @map("no_akta") // Nomor Akta Lahir
   noKK        String? @map("no_kk") // Nomor Kartu Keluarga (16 digit)
   religion    String  @default("ISLAM") // Agama
@@ -1693,6 +1693,22 @@ model Registrant {
   parentPhone       String          @map("parent_phone")
   parentEmail       String?         @map("parent_email")
   parentOccupation  String?         @map("parent_occupation")
+  // Parent & Guardian detailed compliance fields
+  fatherNik         String?         @map("father_nik")
+  fatherOccupation  String?         @map("father_occupation")
+  fatherIncomeRange String?         @map("father_income_range")
+  motherNik         String?         @map("mother_nik")
+  motherOccupation  String?         @map("mother_occupation")
+  motherIncomeRange String?         @map("mother_income_range")
+  guardianName      String?         @map("guardian_name")
+  guardianNik       String?         @map("guardian_nik")
+  guardianOccupation String?        @map("guardian_occupation")
+  guardianPhone     String?         @map("guardian_phone")
+  // Internal alumni re-enrollment flags
+  isInternalAlumni  Boolean         @default(false) @map("is_internal_alumni")
+  previousStudentId String?         @map("previous_student_id")
+  internalNisn      String?         @map("internal_nisn")
+  internalNik       String?         @map("internal_nik")
   // Selection process
   status            AdmissionStatus @default(REGISTERED)
   testScore         Decimal?        @map("test_score") @db.Decimal(5, 2)
