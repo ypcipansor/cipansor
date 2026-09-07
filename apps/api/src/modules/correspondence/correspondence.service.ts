@@ -629,7 +629,7 @@ export const CorrespondenceService = {
       const updateData: Prisma.LetterUpdateInput = {};
 
       if (data.type !== undefined) updateData.type = data.type as DbLetterType;
-      if (data.classificationId !== undefined) updateData.classificationId = data.classificationId;
+      if (data.classificationId !== undefined) updateData.classification = data.classificationId ? { connect: { id: data.classificationId } } : undefined;
       if (data.date !== undefined) updateData.date = new Date(data.date);
       if (data.receivedAt !== undefined) updateData.receivedAt = data.receivedAt ? new Date(data.receivedAt) : null;
       if (data.subject !== undefined) updateData.subject = data.subject;
