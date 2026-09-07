@@ -255,7 +255,7 @@ test.describe("Student Management - Create", () => {
     // Check for required fields (use specific labels to avoid matching
     // "Parent Name" / multiple inputs).
     await expect(page.getByLabel(/full name|nama lengkap/i)).toBeVisible();
-    await expect(page.getByLabel(/nis/i).first()).toBeVisible();
+    await expect(page.getByLabel(/nisn|nik/i).first()).toBeVisible();
   });
 
   test("should validate required fields", async ({ page }) => {
@@ -314,7 +314,12 @@ test.describe("Student Management - Create", () => {
 
     // Fill all required fields (target inputs by id to avoid ambiguity).
     await page.locator("#name").fill(studentData.nama);
-    await page.locator("#nis").fill(studentData.nisn);
+    const nisnInput = page.locator("#nisn");
+    if (await nisnInput.isVisible({ timeout: 1000 }).catch(() => false)) {
+      await nisnInput.fill(studentData.nisn);
+    } else {
+      await page.locator("#nis").fill(studentData.nisn);
+    }
     await page.locator("#birthDate").fill("2012-05-10");
     await page.locator("#birthPlace").fill("Bandung");
     await page.locator("#address").fill("Jl. Test No. 123, Bandung");

@@ -29,7 +29,7 @@ test.describe("End-to-End: Rapor Ganda (Unified Raport) Generation", () => {
       const students = await apiRequest<{
         data: Array<{ id: string; nis: string; user?: { name: string }; name?: string }>;
       }>(session, "GET", `/students?classId=${cls.id}&limit=100`);
-      for (const s of students.data ?? []) {
+      for (const s of (students.data as Array<any>) ?? []) {
         const raport = await apiRequest<{
           data: {
             academic?: { intrakurikuler?: { kelompokUmum?: Array<{ subjectName: string }> } };
@@ -45,7 +45,7 @@ test.describe("End-to-End: Rapor Ganda (Unified Raport) Generation", () => {
           picked = {
             className: cls.name,
             studentName: s.user?.name ?? s.name ?? "",
-            nis: s.nis,
+            nis: s.nis ?? s.nisn ?? s.nik ?? "",
             subjectName: subject,
             homeroom: raport!.data.signatures?.homeroomTeacher ?? "",
           };
