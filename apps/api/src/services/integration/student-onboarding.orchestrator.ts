@@ -1,7 +1,6 @@
 import { randomUUID } from 'crypto';
 import { prisma } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
-import { PaymentStatus, Registrant } from '@prisma/client';
 import {
   syncParentRoleAssignments,
   type ParentScopeClient,
@@ -62,7 +61,7 @@ export class StudentOnboardingOrchestrator {
         unitCode = unit.type.toUpperCase();
       }
 
-      let existingStudent = registrant.email
+      const existingStudent = registrant.email
         ? await tx.student.findFirst({
             where: { user: { email: registrant.email }, deletedAt: null },
             include: { user: true },

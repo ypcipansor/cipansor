@@ -58,6 +58,7 @@ export async function getRaporConfig(unitId: string): Promise<RaporConfig> {
       const parsed = typeof setting.value === 'string' ? JSON.parse(setting.value) : setting.value;
       return { unitId, ...parsed };
     } catch {
+      // Fall through to default config if parsing fails
     }
   }
 

@@ -1424,7 +1424,6 @@ async function main() {
       data: {
         userId: user.id,
         unitId: studentData.unitId,
-        nis: `2024${String(i + 1).padStart(4, '0')}`,
         nisn: `00${String(i + 1).padStart(8, '0')}`,
         gender: studentData.gender,
         birthPlace: 'Sukabumi',
@@ -1506,7 +1505,6 @@ async function main() {
       data: {
         userId: identity.id,
         unitId: tkQuran.id,
-        nis: `2024TK${String(i + 1).padStart(2, '0')}`,
         nisn: `01${String(i + 1).padStart(8, '0')}`,
         gender: data.gender,
         birthPlace: 'Tasikmalaya',
@@ -1662,7 +1660,6 @@ async function main() {
         data: {
           userId: demo.id,
           unitId: demo.unitId,
-          nis: String(++demoNis),
           nisn: `00${String(demoNis).padStart(8, '0')}`,
           gender: Gender.MALE,
           birthPlace: 'Tasikmalaya',
@@ -1758,7 +1755,6 @@ async function main() {
       data: {
         userId: bahtiarTk.id,
         unitId: tkQuran.id,
-        nis: '2024TKB1',
         nisn: '0120000001',
         gender: Gender.FEMALE,
         birthPlace: 'Tasikmalaya',
@@ -1819,7 +1815,6 @@ async function main() {
       data: {
         userId: siblingUser.id,
         unitId: sibling.unit.id,
-        nis: sibling.nis,
         nisn: `013${sibling.nis.slice(-5)}`,
         gender: sibling.gender,
         birthPlace: 'Tasikmalaya',
