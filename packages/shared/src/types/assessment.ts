@@ -236,6 +236,17 @@ export interface ExamAnalyticsData extends GradeStats {
   }[];
 }
 
+export interface AssessmentStudentItem {
+  id: string;
+  nis: string;
+  user?: { name?: string | null };
+}
+
+export interface AssessmentAcademicYearItem {
+  id: string;
+  name: string;
+}
+
 export interface RaportMerdekaPdfData {
   siswa: {
     nama: string;

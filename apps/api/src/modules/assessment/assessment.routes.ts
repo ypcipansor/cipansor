@@ -4,7 +4,7 @@ import * as reportsController from './reports.controller';
 import { RaportMerdekaController } from './raport-merdeka.controller';
 import { P5ProjectController } from './p5-project.controller';
 import { UnifiedRaportController } from './unified-raport.controller';
-import { authenticate, authorize } from '@/middleware/auth';
+import { authenticate, authorize, isTeacherOrAbove } from '@/middleware/auth';
 import { UserRole, RoleCode } from '@prisma/client';
 
 const router = Router();
@@ -918,8 +918,8 @@ router.get('/raport-merdeka/capaian', RaportMerdekaController.getCapaianMapping)
  *       200:
  *         description: Complete Raport Merdeka with intrakurikuler, P5, ekstrakurikuler
  */
-router.get('/raport-merdeka/students/:studentId', authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER), RaportMerdekaController.generateStudentRaport);
-router.get('/raport-merdeka/students/:studentId/pdf', authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER), RaportMerdekaController.exportStudentRaportPdf);
+router.get('/raport-merdeka/students/:studentId', isTeacherOrAbove, RaportMerdekaController.generateStudentRaport);
+router.get('/raport-merdeka/students/:studentId/pdf', isTeacherOrAbove, RaportMerdekaController.exportStudentRaportPdf);
 
 /**
  * @swagger

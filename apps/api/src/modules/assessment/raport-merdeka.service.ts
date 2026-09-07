@@ -139,10 +139,34 @@ export class RaportMerdekaService {
   }
 
   /**
+   * Validate student unit scope
+   */
+  static async validateStudentScope(user: any, studentId: string) {
+    if (!user) return;
+    if (user.role === 'SUPER_ADMIN' || user.roleCode === 'SUPER_ADMIN') return;
+
+    const student = await prisma.student.findUnique({
+      where: { id: studentId },
+      select: { unitId: true },
+    });
+
+    if (!student) {
+      throw new ApiError(ErrorCode.NOT_FOUND, 'Siswa tidak ditemukan');
+    }
+
+    if (user.unitId && student.unitId !== user.unitId) {
+      throw new ApiError(ErrorCode.FORBIDDEN, 'Anda tidak memiliki akses ke siswa di unit lain');
+    }
+  }
+
+  /**
    * Generate Raport Merdeka for a student
    * Includes: Intrakurikuler, Projek P5, Ekstrakurikuler
    */
-  static async generateRaportMerdeka(studentId: string, academicYearId: string, semester: number) {
+  static async generateRaportMerdeka(studentId: string, academicYearId: string, semester: number, user?: any) {
+    if (user) {
+      await this.validateStudentScope(user, studentId);
+    }
     // Helper: Determine Fase from class level or unit type
     const getFaseFromClassLevel = (levelStr?: string, unitTypeStr?: string): string => {
       const levelNum = parseInt((levelStr || '').replace(/\D/g, ''), 10);

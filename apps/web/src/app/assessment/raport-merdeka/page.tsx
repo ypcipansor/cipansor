@@ -47,6 +47,8 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useCurrentUnit } from "@/hooks";
+import { useRaportMerdekaStudentData } from "@/hooks/use-kurikulum-merdeka";
+import { AssessmentStudentItem, AssessmentAcademicYearItem } from "@cipansor/shared";
 import { toast } from "sonner";
 
 // P5 Dimension Icons
@@ -82,22 +84,16 @@ interface P5Dimension {
   elements: string[];
 }
 
-interface StudentItem {
-  id: string;
-  nis: string;
-  user?: { name?: string | null };
-}
-
-interface AcademicYearItem {
-  id: string;
-  name: string;
-}
-
 export default function RaportMerdekaPage() {
   const { data: currentUnit } = useCurrentUnit();
   const [selectedTab, setSelectedTab] = useState("overview");
   const reportRef = useRef<HTMLDivElement>(null);
   const [isExporting, setIsExporting] = useState(false);
+
+  const [selectedStudentId, setSelectedStudentId] = useState<string>("");
+  const [academicYearId, setAcademicYearId] = useState<string>("");
+  const [semester, setSemester] = useState<string>("1");
+  const [studentSearch, setStudentSearch] = useState<string>("");
 
   // Fetch P5 dimensions
   const { data: p5Dimensions, isLoading: p5Loading } = useQuery<P5Dimension[]>({
@@ -107,6 +103,12 @@ export default function RaportMerdekaPage() {
       return res.data.data;
     },
   });
+
+  const { data: studentReportData, isLoading: reportLoading } = useRaportMerdekaStudentData(
+    selectedStudentId,
+    academicYearId,
+    semester
+  );
 
   // Fetch CP mappings for reference
   const { data: cpMtk } = useQuery({
@@ -125,12 +127,7 @@ export default function RaportMerdekaPage() {
     },
   });
 
-  const [selectedStudentId, setSelectedStudentId] = useState<string>("");
-  const [academicYearId, setAcademicYearId] = useState<string>("");
-  const [semester, setSemester] = useState<string>("1");
-  const [studentSearch, setStudentSearch] = useState<string>("");
-
-  const { data: students } = useQuery<StudentItem[]>({
+  const { data: students } = useQuery<AssessmentStudentItem[]>({
     queryKey: ["students-list", currentUnit?.id, studentSearch],
     queryFn: async () => {
       const res = await api.get("/students", {
@@ -140,7 +137,7 @@ export default function RaportMerdekaPage() {
     },
   });
 
-  const { data: academicYears } = useQuery<AcademicYearItem[]>({
+  const { data: academicYears } = useQuery<AssessmentAcademicYearItem[]>({
     queryKey: ["academic-years-list"],
     queryFn: async () => {
       const res = await api.get("/academic-years");
@@ -788,21 +785,21 @@ export default function RaportMerdekaPage() {
                   <div className="grid grid-cols-2 gap-x-8 gap-y-1 text-xs mb-6">
                     <div className="grid grid-cols-[100px_1fr]">
                       <div>Nama Peserta Didik</div>
-                      <div className="font-semibold">: Ahmad Fulan</div>
+                      <div className="font-semibold">: {studentReportData?.siswa?.nama || "Ahmad Fulan"}</div>
                       <div>NIS / NISN</div>
-                      <div>: 12345 / 0012345678</div>
+                      <div>: {studentReportData?.siswa?.nis || "12345"} / {studentReportData?.siswa?.nisn || "-"}</div>
                       <div>Sekolah</div>
-                      <div>: SMP Cipansor</div>
+                      <div>: {studentReportData?.siswa?.unit || currentUnit?.name || "SMP Cipansor"}</div>
                     </div>
                     <div className="grid grid-cols-[100px_1fr]">
                       <div>Kelas</div>
-                      <div>: VII A</div>
+                      <div>: {studentReportData?.siswa?.kelas || "VII A"}</div>
                       <div>Fase</div>
-                      <div>: D</div>
+                      <div>: {studentReportData?.siswa?.fase || "D"}</div>
                       <div>Semester</div>
-                      <div>: 1 (Ganjil)</div>
+                      <div>: {semester} ({semester === "1" ? "Ganjil" : "Genap"})</div>
                       <div>Tahun Pelajaran</div>
-                      <div>: 2024/2025</div>
+                      <div>: {studentReportData?.tahunAjaran?.tahun || "2024/2025"}</div>
                     </div>
                   </div>
 

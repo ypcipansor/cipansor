@@ -83,27 +83,6 @@ export class RaportMerdekaController {
   }
 
   /**
-   * Helper: Validate student unit scope
-   */
-  private static async validateStudentScope(user: any, studentId: string) {
-    if (!user) return;
-    if (user.role === 'SUPER_ADMIN' || user.roleCode === 'SUPER_ADMIN') return;
-
-    const student = await prisma.student.findUnique({
-      where: { id: studentId },
-      select: { unitId: true },
-    });
-
-    if (!student) {
-      throw new ApiError(ErrorCode.NOT_FOUND, 'Siswa tidak ditemukan');
-    }
-
-    if (user.unitId && student.unitId !== user.unitId) {
-      throw new ApiError(ErrorCode.FORBIDDEN, 'Anda tidak memiliki akses ke siswa di unit lain');
-    }
-  }
-
-  /**
    * Generate Raport Merdeka for a student
    */
   static async generateStudentRaport(req: Request, res: Response, next: NextFunction) {
@@ -118,12 +97,11 @@ export class RaportMerdekaController {
         });
       }
 
-      await RaportMerdekaController.validateStudentScope(req.user, studentId);
-
       const raport = await RaportMerdekaService.generateRaportMerdeka(
         studentId,
         academicYearId as string,
-        parseInt(semester as string, 10)
+        parseInt(semester as string, 10),
+        req.user
       );
 
       return res.json(ApiResponse.success(raport, 'Raport Merdeka berhasil digenerate'));
@@ -174,12 +152,11 @@ export class RaportMerdekaController {
         });
       }
 
-      await RaportMerdekaController.validateStudentScope(req.user, studentId);
-
       const raportData = await RaportMerdekaService.generateRaportMerdeka(
         studentId,
         academicYearId as string,
-        parseInt(semester as string, 10)
+        parseInt(semester as string, 10),
+        req.user
       );
 
       const pdfBuffer = await generateRaportMerdekaPdfBuffer(raportData as RaportMerdekaPdfData);

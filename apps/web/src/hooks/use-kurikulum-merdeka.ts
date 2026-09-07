@@ -417,6 +417,27 @@ export function useLearningPhases(params?: UseLearningPhasesParams) {
   });
 }
 
+export function useRaportMerdekaStudentData(
+  studentId?: string,
+  academicYearId?: string,
+  semester?: string | number
+) {
+  return useQuery({
+    queryKey: ["raport-merdeka-student", studentId, academicYearId, semester],
+    queryFn: async () => {
+      if (!studentId || !academicYearId || !semester) return null;
+      const response = await api.get<ApiResponse<any>>(
+        `/assessment/raport-merdeka/students/${studentId}`,
+        {
+          params: { academicYearId, semester },
+        }
+      );
+      return response.data.data;
+    },
+    enabled: !!studentId && !!academicYearId && !!semester,
+  });
+}
+
 export function useLearningPhase(id: string) {
   return useQuery({
     queryKey: ["learning-phases", id],
