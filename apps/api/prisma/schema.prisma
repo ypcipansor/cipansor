@@ -1016,7 +1016,6 @@ model Student {
   id           String   @id @default(uuid())
   userId       String   @unique @map("user_id")
   unitId       String   @map("unit_id")
-  nis          String   @unique // Nomor Induk Siswa
   nisn         String? // Nomor Induk Siswa Nasional
   gender       Gender
   birthPlace   String   @map("birth_place")
@@ -1195,7 +1194,6 @@ model Student {
   assignmentSubmissions       AssignmentSubmission[]
   examAttempts                ExamAttempt[]
 
-  @@index([nis])
   @@index([unitId])
   @@index([status])
   @@index([provinceId])

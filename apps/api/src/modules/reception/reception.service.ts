@@ -20,7 +20,8 @@ import { Prisma, VisitStatus, PackageStatus } from '@prisma/client';
 // student.class) the web client consumes.
 type PrismaStudentShape = {
   user: { name: string } | null;
-  nis: string;
+  nisn: string | null;
+  nik: string | null;
   enrollments: { class: { name: string } }[];
 } | null;
 

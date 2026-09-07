@@ -651,7 +651,7 @@ export class TahfidzService {
       return {
         studentId: ts.studentId,
         studentName: studentDetail?.user?.name || '-',
-        nis: studentDetail?.nis || '-',
+        nis: studentDetail?.nisn || studentDetail?.nik || '-',
         totalAyah: ts._sum.totalAyah || 0,
         completedJuz: studentJuzCounts.length,
       };

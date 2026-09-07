@@ -119,6 +119,7 @@ function formatStudentInfo(student: NonNullable<StudentWithRelations>) {
   return {
     id: student.id,
     name: student.user.name,
+    nis: student.nisn || student.nik || '-',
     nisn: student.nisn || undefined,
     nik: student.nik || undefined,
     gender: student.gender,
@@ -1067,6 +1068,7 @@ export async function getRaporPesantrenById(id: string): Promise<RaporPesantren 
     student: {
       id: rapor.student.id,
       name: rapor.student.user.name,
+      nis: rapor.student.nisn || rapor.student.nik || '-',
       nisn: rapor.student.nisn || undefined,
       nik: rapor.student.nik || undefined,
       gender: rapor.student.gender,
@@ -1162,6 +1164,7 @@ export async function getLegerPesantren(query: GetLegerQuery): Promise<LegerItem
         id: '',
         studentId: student.id,
         studentName: student.user.name,
+        studentNis: student.nisn || student.nik || '-',
         studentNisn: student.nisn || undefined,
         studentNik: student.nik || undefined,
         tahfidzScore: 0,
@@ -1198,6 +1201,7 @@ export async function getLegerPesantren(query: GetLegerQuery): Promise<LegerItem
       id: rapor.id,
       studentId: student.id,
       studentName: student.user.name,
+      studentNis: student.nisn || student.nik || '-',
       studentNisn: student.nisn || undefined,
       studentNik: student.nik || undefined,
 

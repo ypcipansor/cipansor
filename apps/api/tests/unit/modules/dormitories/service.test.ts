@@ -101,7 +101,8 @@ describe('DormitoryService', () => {
       expect(result[0]).toEqual({
         id: 'student-1',
         name: 'Ahmad',
-        nis: '12345',
+        nisn: undefined,
+        nik: undefined,
         photo: 'pic.jpg',
         class: '10 A',
         room: 'Room 101',
@@ -110,7 +111,8 @@ describe('DormitoryService', () => {
       expect(result[1]).toEqual({
         id: 'student-2',
         name: 'Budi',
-        nis: '67890',
+        nisn: undefined,
+        nik: undefined,
         photo: null,
         class: '-',
         room: 'Room 102',

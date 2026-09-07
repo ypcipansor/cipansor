@@ -106,8 +106,8 @@ export const simaanService = {
         student: {
           select: {
             id: true,
-            nisn: true, nik: true,
             nisn: true,
+              nik: true,
             user: { select: { id: true, name: true } },
           },
         },

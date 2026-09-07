@@ -18,7 +18,8 @@ export interface BulkImportResult {
 }
 
 export interface StudentImportRow {
-  nis: string;
+  nisn?: string;
+  nik?: string;
   name: string;
   email?: string;
   phone?: string;
@@ -59,13 +60,20 @@ export async function bulkImportStudents(
         continue;
       }
 
+      const identifier = row.nisn || row.nik;
+      if (!identifier) {
+        result.errors.push({ row: i + 1, error: `NISN atau NIK harus diisi` });
+        result.failed++;
+        continue;
+      }
+
       // Check if student already exists
       const existing = await prisma.student.findFirst({
-        where: { nis: row.nis },
+        where: { OR: [{ nisn: identifier }, { nik: identifier }] },
       });
 
       if (existing) {
-        result.errors.push({ row: i + 1, error: `NIS "${row.nis}" sudah ada` });
+        result.errors.push({ row: i + 1, error: `Siswa dengan NISN/NIK "${identifier}" sudah ada` });
         result.failed++;
         continue;
       }
@@ -74,7 +82,7 @@ export async function bulkImportStudents(
       await (prisma as any).$transaction(async (tx: any) => {
         const user = await tx.user.create({
           data: {
-            email: row.email || `${row.nis}@student.cipansor.or.id`,
+            email: row.email || `${identifier}@student.cipansor.or.id`,
             name: row.name,
             phone: row.phone,
             role: 'STUDENT',
@@ -87,7 +95,8 @@ export async function bulkImportStudents(
           data: {
             userId: user.id,
             unitId: unit!.id,
-            nis: row.nis,
+            nisn: row.nisn || null,
+            nik: row.nik || null,
             gender: row.gender,
             birthPlace: row.birthDate ? 'Unknown' : 'Unknown', // Required field
             birthDate: row.birthDate ? new Date(row.birthDate) : new Date(),
@@ -265,7 +274,7 @@ export async function sendMassNotification(
  * Bulk attendance import
  */
 export interface BulkAttendanceRow {
-  nis: string;
+  nisnOrNik: string;
   date: string;
   status: 'present' | 'absent' | 'late' | 'excused';
   notes?: string;
@@ -284,12 +293,12 @@ export async function bulkImportAttendance(rows: BulkAttendanceRow[]): Promise<B
 
     try {
       const student = await prisma.student.findFirst({
-        where: { nis: row.nis },
+        where: { OR: [{ nisn: row.nisnOrNik }, { nik: row.nisnOrNik }] },
         include: { enrollments: { where: { status: 'active' }, take: 1 } },
       });
 
       if (!student) {
-        result.errors.push({ row: i + 1, error: `NIS "${row.nis}" tidak ditemukan` });
+        result.errors.push({ row: i + 1, error: `Siswa "${row.nisnOrNik}" tidak ditemukan` });
         result.failed++;
         continue;
       }
@@ -298,7 +307,7 @@ export async function bulkImportAttendance(rows: BulkAttendanceRow[]): Promise<B
       if (!classId) {
         result.errors.push({
           row: i + 1,
-          error: `Siswa "${row.nis}" tidak terdaftar di kelas manapun`,
+          error: `Siswa "${row.nisnOrNik}" tidak terdaftar di kelas manapun`,
         });
         result.failed++;
         continue;

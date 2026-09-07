@@ -147,8 +147,6 @@ export class StudentService {
                 name: true,
                 phone: true,
                 email: true,
-                occupation: true,
-                nik: true,
               },
             },
           },

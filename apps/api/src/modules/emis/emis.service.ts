@@ -168,7 +168,7 @@ export class EmisService {
           },
         },
       },
-      orderBy: [{ nis: 'asc' }],
+      orderBy: [{ nisn: 'asc' }],
     });
 
     // Transform to EMIS format

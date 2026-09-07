@@ -109,8 +109,8 @@ export async function findAllReports(
         student: {
           select: {
             id: true,
-            nisn: true, nik: true,
             nisn: true,
+            nik: true,
             photoUrl: true,
             user: { select: { name: true } },
           },
@@ -156,8 +156,8 @@ export async function findReportById(id: string, context: ReportAccessContext) {
       student: {
         select: {
           id: true,
-          nisn: true, nik: true,
           nisn: true,
+          nik: true,
           photoUrl: true,
           birthDate: true,
           birthPlace: true,

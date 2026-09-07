@@ -296,6 +296,7 @@ export interface RaporPesantren {
     name: string;
     nis: string;
     nisn?: string;
+    nik?: string;
     gender: string;
     birthDate?: string;
     photo?: string;

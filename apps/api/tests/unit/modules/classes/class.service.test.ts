@@ -144,7 +144,8 @@ describe('Class Service', () => {
           student: {
             select: {
               id: true,
-              nis: true,
+              nisn: true,
+              nik: true,
               gender: true,
               user: {
                 select: {
