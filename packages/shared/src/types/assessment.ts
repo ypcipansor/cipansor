@@ -235,3 +235,68 @@ export interface ExamAnalyticsData extends GradeStats {
     score: number;
   }[];
 }
+
+export interface RaportMerdekaPdfData {
+  siswa: {
+    nama: string;
+    nis: string;
+    nisn?: string | null;
+    kelas: string;
+    unit: string;
+    unitType?: string | null;
+    fase?: string | null;
+  };
+  tahunAjaran: {
+    tahun: string;
+    semester: number;
+    semesterLabel: string;
+  };
+  waliKelas: {
+    nama: string;
+    nip?: string | null;
+  };
+  intrakurikuler: {
+    kelompokUmum: Array<{
+      subjectName: string;
+      nilaiAkhir: number;
+      predikat: string;
+      levelCapaian: string;
+      deskripsi: string;
+    }>;
+    kelompokPesantren: Array<{
+      subjectName: string;
+      nilaiAkhir: number;
+      predikat: string;
+      levelCapaian: string;
+      deskripsi: string;
+    }>;
+  };
+  projekP5?: Array<{
+    tema: string;
+    judul: string;
+    deskripsiProyek?: string;
+    dimensiTerkait?: Array<{
+      dimensiName: string;
+      capaian?: string;
+      deskripsi?: string;
+    }>;
+  }>;
+  ekstrakurikuler?: Array<{
+    nama: string;
+    predikat: string;
+    keterangan: string;
+  }>;
+  tahfidz?: {
+    totalJuz?: number;
+    surahTerakhir?: string;
+    statusCapaian?: string;
+    catatan?: string;
+  };
+  kehadiran?: {
+    hadir?: number;
+    sakit?: number;
+    izin?: number;
+    alpa?: number;
+  };
+  catatanWaliKelas?: string;
+}

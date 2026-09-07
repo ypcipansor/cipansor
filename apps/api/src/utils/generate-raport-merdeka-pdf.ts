@@ -1,69 +1,7 @@
 import { PDFDocument, StandardFonts, rgb, PDFFont, PDFPage } from 'pdf-lib';
+import { RaportMerdekaPdfData } from '@cipansor/shared';
 
-export interface RaportMerdekaPdfData {
-  siswa: {
-    nama: string;
-    nis: string;
-    nisn?: string | null;
-    kelas: string;
-    unit: string;
-    unitType?: string | null;
-    fase?: string | null;
-  };
-  tahunAjaran: {
-    tahun: string;
-    semester: number;
-    semesterLabel: string;
-  };
-  waliKelas: {
-    nama: string;
-    nip?: string | null;
-  };
-  intrakurikuler: {
-    kelompokUmum: Array<{
-      subjectName: string;
-      nilaiAkhir: number;
-      predikat: string;
-      levelCapaian: string;
-      deskripsi: string;
-    }>;
-    kelompokPesantren: Array<{
-      subjectName: string;
-      nilaiAkhir: number;
-      predikat: string;
-      levelCapaian: string;
-      deskripsi: string;
-    }>;
-  };
-  projekP5?: Array<{
-    tema: string;
-    judul: string;
-    deskripsiProyek?: string;
-    dimensiTerkait?: Array<{
-      dimensiName: string;
-      capaian?: string;
-      deskripsi?: string;
-    }>;
-  }>;
-  ekstrakurikuler?: Array<{
-    nama: string;
-    predikat: string;
-    keterangan: string;
-  }>;
-  tahfidz?: {
-    totalJuz?: number;
-    surahTerakhir?: string;
-    statusCapaian?: string;
-    catatan?: string;
-  };
-  kehadiran?: {
-    hadir?: number;
-    sakit?: number;
-    izin?: number;
-    alpa?: number;
-  };
-  catatanWaliKelas?: string;
-}
+export { RaportMerdekaPdfData };
 
 const PAGE_WIDTH = 595.28; // A4 width
 const PAGE_HEIGHT = 841.89; // A4 height
@@ -187,16 +125,43 @@ export async function generateRaportMerdekaPdfBuffer(data: RaportMerdekaPdfData)
     ...(data.intrakurikuler?.kelompokPesantren ?? []),
   ];
 
+  let currentPage = page1;
   let itemNo = 1;
-  for (const item of allSubjects.slice(0, 10)) {
+
+  for (const item of allSubjects) {
     const descLines = wrapText(item.deskripsi, colW.desc - 10, fontHelvetica, 7.5);
     const rowHeight = Math.max(20, descLines.length * 9 + 8);
 
-    if (y - rowHeight < MARGIN + 120) {
-      break; // preserve space for extracurricular and signatures
+    if (y - rowHeight < MARGIN + 80) {
+      // Add new page for remaining subject rows
+      currentPage = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+      y = drawHeader(
+        currentPage,
+        'Laporan Hasil Belajar (Lanjutan)',
+        `${data.siswa.unit} Cipansor`
+      );
+
+      // Redraw Table Header on new page
+      currentPage.drawRectangle({
+        x: MARGIN,
+        y: y - 18,
+        width: tableWidth,
+        height: 18,
+        color: rgb(0.92, 0.94, 0.96),
+        borderColor: rgb(0, 0, 0),
+        borderWidth: 0.5,
+      });
+
+      currentPage.drawText('No', { x: MARGIN + 5, y: y - 12, size: 8, font: fontHelveticaBold });
+      currentPage.drawText('Mata Pelajaran', { x: MARGIN + colW.no + 5, y: y - 12, size: 8, font: fontHelveticaBold });
+      currentPage.drawText('Nilai', { x: MARGIN + colW.no + colW.subject + 5, y: y - 12, size: 8, font: fontHelveticaBold });
+      currentPage.drawText('Pred', { x: MARGIN + colW.no + colW.subject + colW.score + 2, y: y - 12, size: 8, font: fontHelveticaBold });
+      currentPage.drawText('Capaian Kompetensi', { x: MARGIN + colW.no + colW.subject + colW.score + colW.predicate + 5, y: y - 12, size: 8, font: fontHelveticaBold });
+
+      y -= 18;
     }
 
-    page1.drawRectangle({
+    currentPage.drawRectangle({
       x: MARGIN,
       y: y - rowHeight,
       width: tableWidth,
@@ -205,14 +170,14 @@ export async function generateRaportMerdekaPdfBuffer(data: RaportMerdekaPdfData)
       borderWidth: 0.5,
     });
 
-    page1.drawText(String(itemNo++), { x: MARGIN + 8, y: y - 12, size: 8, font: fontHelvetica });
-    page1.drawText(item.subjectName.slice(0, 24), { x: MARGIN + colW.no + 5, y: y - 12, size: 8, font: fontHelveticaBold });
-    page1.drawText(String(item.nilaiAkhir), { x: MARGIN + colW.no + colW.subject + 8, y: y - 12, size: 8, font: fontHelveticaBold });
-    page1.drawText(item.predikat, { x: MARGIN + colW.no + colW.subject + colW.score + 6, y: y - 12, size: 8, font: fontHelveticaBold });
+    currentPage.drawText(String(itemNo++), { x: MARGIN + 8, y: y - 12, size: 8, font: fontHelvetica });
+    currentPage.drawText(item.subjectName.slice(0, 24), { x: MARGIN + colW.no + 5, y: y - 12, size: 8, font: fontHelveticaBold });
+    currentPage.drawText(String(item.nilaiAkhir), { x: MARGIN + colW.no + colW.subject + 8, y: y - 12, size: 8, font: fontHelveticaBold });
+    currentPage.drawText(item.predikat, { x: MARGIN + colW.no + colW.subject + colW.score + 6, y: y - 12, size: 8, font: fontHelveticaBold });
 
     let descY = y - 10;
     for (const line of descLines.slice(0, 3)) {
-      page1.drawText(line, {
+      currentPage.drawText(line, {
         x: MARGIN + colW.no + colW.subject + colW.score + colW.predicate + 5,
         y: descY,
         size: 7.5,

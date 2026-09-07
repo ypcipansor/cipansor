@@ -45,11 +45,13 @@ const DEFAULT_CONFIG: IdCardConfig = {
 
 export class StudentIdCardService {
   static getHmacSecret(): string {
-    return (
-      process.env.STUDENT_CARD_HMAC_SECRET ||
-      process.env.JWT_SECRET ||
-      'cipansor-student-card-secret-key-2026'
-    );
+    const secret = process.env.STUDENT_CARD_HMAC_SECRET || process.env.JWT_SECRET;
+    if (!secret && process.env.NODE_ENV === 'production') {
+      throw new Error(
+        'STUDENT_CARD_HMAC_SECRET or JWT_SECRET environment variable must be set in production.'
+      );
+    }
+    return secret || 'cipansor-student-card-secret-key-2026';
   }
 
   /**
@@ -112,12 +114,17 @@ export class StudentIdCardService {
       const payloadString = Buffer.from(payloadPart, 'base64url').toString('utf8');
       const payload = JSON.parse(payloadString);
 
-      // Verify HMAC signature
-      const expectedHmac = crypto
+      // Verify HMAC signature supporting legacy 8-char and current 16-char lengths
+      if (receivedHmac.length !== 8 && receivedHmac.length !== 16) {
+        return { valid: false, message: 'Panjang tanda tangan HMAC tidak valid' };
+      }
+
+      const fullHmac = crypto
         .createHmac('sha256', this.getHmacSecret())
         .update(payloadString)
-        .digest('hex')
-        .substring(0, 16);
+        .digest('hex');
+
+      const expectedHmac = fullHmac.substring(0, receivedHmac.length);
 
       // Secure constant-time comparison to prevent timing attacks
       const expectedBuffer = Buffer.from(expectedHmac, 'utf8');

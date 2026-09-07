@@ -10,6 +10,7 @@
  */
 
 import { Request, Response, NextFunction } from 'express';
+import { RaportMerdekaPdfData } from '@cipansor/shared';
 import { RaportMerdekaService, PROFIL_PELAJAR_PANCASILA } from './raport-merdeka.service';
 import { ApiResponse } from '../../utils/response';
 import { generateRaportMerdekaPdfBuffer } from '../../utils/generate-raport-merdeka-pdf';
@@ -154,7 +155,7 @@ export class RaportMerdekaController {
         parseInt(semester as string, 10)
       );
 
-      const pdfBuffer = await generateRaportMerdekaPdfBuffer(raportData as any);
+      const pdfBuffer = await generateRaportMerdekaPdfBuffer(raportData as RaportMerdekaPdfData);
 
       const fileName = `Raport_Merdeka_${raportData.siswa.nama.replace(/\s+/g, '_')}.pdf`;
       res.setHeader('Content-Type', 'application/pdf');

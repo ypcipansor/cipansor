@@ -18,9 +18,22 @@ describe('StudentIdCardService HMAC QR Code', () => {
     expect(qrData).toMatch(/^cipansor:\/\/[A-Za-z0-9_-]+#[a-f0-9]{16}$/);
   });
 
-  it('successfully verifies a valid HMAC QR code string', () => {
+  it('successfully verifies a valid 16-char HMAC QR code string', () => {
     const qrData = StudentIdCardService.generateQRCodeData(mockStudent);
     const verification = StudentIdCardService.verifyQRCodeData(qrData);
+
+    expect(verification.valid).toBe(true);
+    expect(verification.studentId).toBe(mockStudent.id);
+    expect(verification.nis).toBe(mockStudent.nis);
+    expect(verification.expired).toBe(false);
+  });
+
+  it('successfully verifies a legacy 8-char HMAC QR code string', () => {
+    const qrData16 = StudentIdCardService.generateQRCodeData(mockStudent);
+    const [payloadPart, hmac16] = qrData16.replace('cipansor://', '').split('#');
+    const legacyQrData = `cipansor://${payloadPart}#${hmac16.substring(0, 8)}`;
+
+    const verification = StudentIdCardService.verifyQRCodeData(legacyQrData);
 
     expect(verification.valid).toBe(true);
     expect(verification.studentId).toBe(mockStudent.id);

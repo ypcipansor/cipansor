@@ -114,95 +114,57 @@ export default function RaportMerdekaPage() {
     },
   });
 
+  const [selectedStudentId, setSelectedStudentId] = useState<string>("");
+  const [academicYearId, setAcademicYearId] = useState<string>("");
+  const [semester, setSemester] = useState<string>("1");
+
+  const { data: students } = useQuery({
+    queryKey: ["students-list", currentUnit?.id],
+    queryFn: async () => {
+      const res = await api.get("/students", { params: { limit: 100 } });
+      return res.data.data;
+    },
+  });
+
+  const { data: academicYears } = useQuery({
+    queryKey: ["academic-years-list"],
+    queryFn: async () => {
+      const res = await api.get("/academic-years");
+      return res.data.data;
+    },
+  });
+
   const handleExportPDF = async () => {
+    if (!selectedStudentId) {
+      toast.error("Pilih siswa terlebih dahulu");
+      return;
+    }
+    if (!academicYearId) {
+      toast.error("Pilih tahun ajaran terlebih dahulu");
+      return;
+    }
+
     try {
       setIsExporting(true);
 
-      const response = await api.post(
-        "/assessment/raport-merdeka/pdf",
+      const response = await api.get(
+        `/assessment/raport-merdeka/students/${selectedStudentId}/pdf`,
         {
-          customData: {
-            siswa: {
-              nama: "Ahmad Fulan",
-              nis: "12345",
-              nisn: "0012345678",
-              kelas: "VII A",
-              unit: currentUnit?.name || "SMP",
-              fase: "D",
-            },
-            tahunAjaran: {
-              tahun: "2024/2025",
-              semester: 1,
-              semesterLabel: "Semester 1 (Ganjil)",
-            },
-            waliKelas: {
-              nama: "Nama Wali Kelas, S.Pd",
-              nip: "19800101 200501 1 001",
-            },
-            intrakurikuler: {
-              kelompokUmum: [
-                {
-                  subjectName: "Pendidikan Agama Islam",
-                  nilaiAkhir: 88,
-                  predikat: "B",
-                  levelCapaian: "BAIK",
-                  deskripsi: "Menunjukkan penguasaan yang sangat baik dalam memahami rukun iman dan rukun islam.",
-                },
-                {
-                  subjectName: "Bahasa Indonesia",
-                  nilaiAkhir: 92,
-                  predikat: "A",
-                  levelCapaian: "SANGAT BAIK",
-                  deskripsi: "Menunjukkan penguasaan yang sangat baik dalam menulis teks deskripsi dan narasi.",
-                },
-                {
-                  subjectName: "Matematika",
-                  nilaiAkhir: 78,
-                  predikat: "B",
-                  levelCapaian: "BAIK",
-                  deskripsi: "Menunjukkan penguasaan yang baik dalam operasi bilangan bulat.",
-                },
-              ],
-              kelompokPesantren: [],
-            },
-            projekP5: [
-              {
-                tema: "Gaya Hidup Berkelanjutan",
-                judul: "Pengolahan Sampah Organik Pesantren",
-                deskripsiProyek: "Projek pembuatan kompos dari sisa makanan dan dedaunan di lingkungan pesantren.",
-                dimensiTerkait: [
-                  { dimensiName: "Beriman, Bertakwa & Berakhlak Mulia", capaian: "Sangat Berkembang" },
-                  { dimensiName: "Gotong Royong", capaian: "Berkembang Sesuai Harapan" },
-                ],
-              },
-            ],
-            ekstrakurikuler: [
-              { nama: "Pramuka", predikat: "Baik", keterangan: "Mampu mengikuti kegiatan kepramukaan dengan disiplin." },
-              { nama: "Futsal", predikat: "Sangat Baik", keterangan: "Menunjukkan bakat kepemimpinan dalam tim." },
-            ],
-            tahfidz: {
-              totalJuz: 1.5,
-              surahTerakhir: "QS. Al-Mulk ayat 1-30",
-              statusCapaian: "TERCAPAI",
-              catatan: "Sangat lancar dalam mengulang hafalan (Mumtaz).",
-            },
-            kehadiran: {
-              hadir: 95,
-              sakit: 1,
-              izin: 0,
-              alpa: 0,
-            },
-            catatanWaliKelas: "Ananda Ahmad Fulan menunjukkan perkembangan belajar dan karakter yang sangat baik.",
-          },
-        },
-        { responseType: "blob" }
+          params: { academicYearId, semester },
+          responseType: "blob",
+        }
       );
+
+      const selectedStudent = Array.isArray(students)
+        ? students.find((s: any) => s.id === selectedStudentId)
+        : null;
+      const studentName = selectedStudent?.user?.name || "Siswa";
 
       const blob = new Blob([response.data], { type: "application/pdf" });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.setAttribute("download", `Raport_Merdeka_Ahmad_Fulan.pdf`);
+      link.setAttribute("download", `Raport_Merdeka_${studentName.replace(/\s+/g, "_")}.pdf`);
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -711,38 +673,42 @@ export default function RaportMerdekaPage() {
               <CardContent className="space-y-4">
                 <div className="grid gap-4 md:grid-cols-3">
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Kelas</label>
-                    <Select>
+                    <label className="text-sm font-medium">Pilih Siswa</label>
+                    <Select value={selectedStudentId} onValueChange={setSelectedStudentId}>
                       <SelectTrigger>
-                        <SelectValue placeholder="Pilih Kelas" />
+                        <SelectValue placeholder="Pilih Siswa" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="7a">VII A</SelectItem>
-                        <SelectItem value="7b">VII B</SelectItem>
-                        <SelectItem value="8a">VIII A</SelectItem>
-                        <SelectItem value="8b">VIII B</SelectItem>
-                        <SelectItem value="9a">IX A</SelectItem>
-                        <SelectItem value="9b">IX B</SelectItem>
+                        {Array.isArray(students) &&
+                          students.map((s: any) => (
+                            <SelectItem key={s.id} value={s.id}>
+                              {s.user?.name || s.nis} ({s.nis})
+                            </SelectItem>
+                          ))}
                       </SelectContent>
                     </Select>
                   </div>
 
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Tahun Ajaran</label>
-                    <Select>
+                    <Select value={academicYearId} onValueChange={setAcademicYearId}>
                       <SelectTrigger>
                         <SelectValue placeholder="Pilih Tahun" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="2024/2025">2024/2025</SelectItem>
-                        <SelectItem value="2023/2024">2023/2024</SelectItem>
+                        {Array.isArray(academicYears) &&
+                          academicYears.map((ay: any) => (
+                            <SelectItem key={ay.id} value={ay.id}>
+                              {ay.name}
+                            </SelectItem>
+                          ))}
                       </SelectContent>
                     </Select>
                   </div>
 
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Semester</label>
-                    <Select>
+                    <Select value={semester} onValueChange={setSemester}>
                       <SelectTrigger>
                         <SelectValue placeholder="Pilih Semester" />
                       </SelectTrigger>

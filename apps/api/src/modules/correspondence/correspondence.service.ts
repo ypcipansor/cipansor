@@ -621,6 +621,21 @@ export const CorrespondenceService = {
         throw Errors.forbidden('Anda tidak berwenang mengubah surat ini.');
       }
 
+      // If letter already has an assigned letterNumber, forbid changing type or classificationId to prevent number category mismatches
+      const fullLetter = await tx.letter.findUnique({
+        where: { id: letterId },
+        select: { letterNumber: true },
+      });
+
+      if (fullLetter?.letterNumber) {
+        if (data.type !== undefined && data.type !== letter.type) {
+          throw Errors.badRequest('Jenis surat tidak dapat diubah karena nomor surat sudah terbit.');
+        }
+        if (data.classificationId !== undefined) {
+          throw Errors.badRequest('Klasifikasi surat tidak dapat diubah karena nomor surat sudah terbit.');
+        }
+      }
+
       const targetType = (data.type as DbLetterType | undefined) ?? letter.type;
       const targetNature = (data.nature as DbLetterNature | undefined) ?? letter.nature;
       assertNatureAllowed(targetType, targetNature);
@@ -677,6 +692,16 @@ export const CorrespondenceService = {
               unitId: letter.unitId,
               isCC: false,
             })),
+          });
+        }
+        // If CC recipients were NOT provided in this update, remove any CC rows for users promoted to primary recipients
+        if (!data.ccRecipients && uniqueRecipients.length > 0) {
+          await tx.letterRecipient.deleteMany({
+            where: {
+              letterId,
+              isCC: true,
+              userId: { in: uniqueRecipients },
+            },
           });
         }
       }
