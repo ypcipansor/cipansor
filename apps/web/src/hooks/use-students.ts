@@ -6,6 +6,7 @@ export interface Student {
   id: string;
   nis: string;
   nisn?: string;
+  nik?: string;
   name: string;
   gender: "MALE" | "FEMALE";
   birthDate: string;
@@ -139,7 +140,9 @@ export interface StudentListParams {
 }
 
 export interface CreateStudentData {
-  nis: string;
+  nis?: string;
+  nisn?: string;
+  nik?: string;
   name: string;
   gender: "MALE" | "FEMALE";
   birthDate: string;
@@ -175,6 +178,7 @@ export function useStudents(params: StudentListParams = {}) {
         ...body,
         data: (body.data ?? []).map((s) => ({
           ...s,
+          nis: s.nis ?? s.nisn ?? s.nik ?? "",
           name: s.name ?? (s as { user?: { name?: string } }).user?.name ?? "",
         })),
       } as PaginatedResponse<Student>;
@@ -282,6 +286,7 @@ export function useStudentsByClass(classId: string) {
       // it onto `name` so dropdowns don't render blank labels (see useStudents).
       return (response.data.data ?? []).map((s) => ({
         ...s,
+        nis: s.nis ?? s.nisn ?? s.nik ?? "",
         name: s.name ?? (s as { user?: { name?: string } }).user?.name ?? "",
       }));
     },
