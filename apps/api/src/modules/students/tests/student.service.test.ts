@@ -50,6 +50,9 @@ vi.mock('@/lib/prisma', () => ({
       updateMany: vi.fn(),
       create: vi.fn(),
     },
+    alumni: {
+      upsert: vi.fn(),
+    },
     $transaction: vi.fn((callback) => callback(prisma)),
   },
 }));
@@ -176,7 +179,17 @@ describe('StudentService', () => {
 
   describe('graduation and alumni lookup', () => {
     it('should mark student as graduated alumni', async () => {
-      const mockStudent = { id: 's1', status: 'active' };
+      const mockStudent = {
+        id: 's1',
+        unitId: 'u1',
+        status: 'active',
+        gender: 'MALE',
+        birthPlace: 'Jakarta',
+        birthDate: new Date(),
+        parentPhone: '08123456789',
+        address: 'Jl. Test',
+        user: { name: 'Student 1', email: 's1@cipansor.local' },
+      };
       (prisma.student.findFirst as any).mockResolvedValue(mockStudent);
       (prisma.student.update as any).mockResolvedValue({ id: 's1', status: 'alumni', graduateYear: 2026 });
 
