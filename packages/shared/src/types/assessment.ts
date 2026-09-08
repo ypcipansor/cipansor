@@ -33,6 +33,40 @@ export enum GradeType {
   TAHFIDZ = "TAHFIDZ",
 }
 
+export enum QuestionType {
+  MULTIPLE_CHOICE = "MULTIPLE_CHOICE",
+  ESSAY = "ESSAY",
+  TRUE_FALSE = "TRUE_FALSE",
+}
+
+export interface Question {
+  id: string;
+  bankId?: string;
+  type: QuestionType;
+  content: string;
+  options?: any;
+  answerKey?: any;
+  explanation?: string;
+  points: number;
+  order: number;
+}
+
+export interface QuestionBank {
+  id: string;
+  unitId?: string;
+  teacherId?: string;
+  subjectId?: string;
+  title: string;
+  description?: string;
+  isActive?: boolean;
+  createdAt?: string | Date;
+  updatedAt?: string | Date;
+  teacherRel?: { user: { name: string } };
+  subject?: { name: string; code: string };
+  questions?: Question[];
+  _count?: { questions: number; exams?: number };
+}
+
 export interface Exam {
   id: string;
   unitId: string;
@@ -59,6 +93,7 @@ export interface Exam {
   class?: { id: string; name: string; level: string };
   teacher?: { id: string; user: { id: string; name: string | null } };
   academicYear?: { id: string; name: string };
+  questionBank?: QuestionBank;
   grades?: Grade[];
   _count?: { grades: number };
 }
