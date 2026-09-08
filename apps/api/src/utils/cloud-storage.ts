@@ -1,14 +1,52 @@
-import { BlobServiceClient, generateBlobSASQueryParameters, BlobSASPermissions, StorageSharedKeyCredential } from '@azure/storage-blob';
+import {
+  BlobServiceClient,
+  generateBlobSASQueryParameters,
+  BlobSASPermissions,
+  StorageSharedKeyCredential,
+  type BlobSASSignatureValues,
+} from '@azure/storage-blob';
 import { logger } from '@/lib/logger';
 
 export interface StorageUploadResult {
+  /** Stable URL. For a private Azure container this is the raw blob URL (no SAS) — never a persisted expiry. */
   url: string;
   provider: 'azure' | 'local';
   filename: string;
+  /** Present only for Azure uploads: the container the blob lives in. */
+  containerName?: string;
+  /** Present only for Azure uploads: the blob name within the container. */
+  blobName?: string;
+}
+
+/** Public containers use blob-level access and need no SAS; everything else is private. */
+function isPublicContainer(containerName: string): boolean {
+  return containerName === 'media-public';
+}
+
+interface ResolvedCredentials {
+  accountName: string;
+  accountKey: string;
+}
+
+/** Resolve the account name + key from env vars, falling back to the connection string. */
+function resolveCredentials(connectionString: string): ResolvedCredentials {
+  const envName = process.env.AZURE_STORAGE_ACCOUNT;
+  const envKey = process.env.AZURE_STORAGE_KEY;
+  if (envName && envKey) return { accountName: envName, accountKey: envKey };
+
+  const accountName = envName ?? connectionString.match(/AccountName=([^;]+)/)?.[1];
+  const accountKey = envKey ?? connectionString.match(/AccountKey=([^;]+)/)?.[1];
+  if (!accountName || !accountKey) {
+    throw new Error('Kunci kredensial Azure Storage wajib dikonfigurasi untuk container privat.');
+  }
+  return { accountName, accountKey };
 }
 
 /**
- * Upload a local file to Cloud Storage (Azure Blob Storage if configured, otherwise local disk)
+ * Upload a local file to Cloud Storage (Azure Blob Storage if configured, otherwise local disk).
+ *
+ * For private containers the raw blob URL is returned (WITHOUT a SAS), so the caller never persists
+ * a short-lived signed link. Access to private blobs is granted at request time via {@link generateSasUrl}.
  */
 export async function uploadToCloudStorage(
   localFilePath: string,
@@ -22,10 +60,9 @@ export async function uploadToCloudStorage(
     try {
       const blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
       const containerClient = blobServiceClient.getContainerClient(containerName);
-      // Set container access to blob level for public media or private for sensitive documents
-      const isPublicContainer = containerName === 'media-public';
+      const publicContainer = isPublicContainer(containerName);
       await containerClient.createIfNotExists({
-        access: isPublicContainer ? 'blob' : undefined,
+        access: publicContainer ? 'blob' : undefined,
       });
 
       const blockBlobClient = containerClient.getBlockBlobClient(filename);
@@ -35,43 +72,6 @@ export async function uploadToCloudStorage(
         },
       });
 
-      let azureBlobUrl = blockBlobClient.url;
-
-      // Extract account name and key from connection string if env vars are not set
-      let accountName = process.env.AZURE_STORAGE_ACCOUNT;
-      let accountKey = process.env.AZURE_STORAGE_KEY;
-
-      if (!accountName || !accountKey) {
-        const accountNameMatch = connectionString.match(/AccountName=([^;]+)/);
-        const accountKeyMatch = connectionString.match(/AccountKey=([^;]+)/);
-        if (accountNameMatch) accountName = accountNameMatch[1];
-        if (accountKeyMatch) accountKey = accountKeyMatch[1];
-      }
-
-      // If container is private, generate a SAS URL with 24-hour expiry
-      if (!isPublicContainer) {
-        if (!accountName || !accountKey) {
-          throw new Error('Kunci kredensial Azure Storage wajib dikonfigurasi untuk container privat.');
-        }
-
-        const sharedKeyCredential = new StorageSharedKeyCredential(
-          accountName,
-          accountKey
-        );
-        const sasToken = generateBlobSASQueryParameters(
-          {
-            containerName,
-            blobName: filename,
-            permissions: BlobSASPermissions.parse('r'),
-            startsOn: new Date(),
-            expiresOn: new Date(new Date().valueOf() + 24 * 60 * 60 * 1000),
-          },
-          sharedKeyCredential
-        ).toString();
-
-        azureBlobUrl = `${blockBlobClient.url}?${sasToken}`;
-      }
-
       logger.info('File uploaded to Azure Blob Storage', {
         filename,
         container: containerName,
@@ -79,9 +79,11 @@ export async function uploadToCloudStorage(
       });
 
       return {
-        url: azureBlobUrl,
+        url: blockBlobClient.url,
         provider: 'azure',
         filename,
+        containerName,
+        blobName: filename,
       };
     } catch (error) {
       logger.error('Azure Blob Storage upload failed', { error, filename });
@@ -95,6 +97,38 @@ export async function uploadToCloudStorage(
     provider: 'local',
     filename,
   };
+}
+
+/**
+ * Generate a short-lived SAS URL for a private blob, used at download/request time.
+ *
+ * A SAS is minted fresh on every call instead of being stored, so a link that has expired (or was
+ * never going to be used) is never persisted. `expiresInMinutes` defaults to a short window (60 min).
+ */
+export async function generateSasUrl(
+  containerName: string,
+  blobName: string,
+  expiresInMinutes: number = 60
+): Promise<string> {
+  const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
+  if (!connectionString || !connectionString.includes('AccountKey=')) {
+    throw new Error('Kredensial Azure Storage (connection string) wajib dikonfigurasi untuk membuat SAS.');
+  }
+
+  const { accountName, accountKey } = resolveCredentials(connectionString);
+  const sharedKeyCredential = new StorageSharedKeyCredential(accountName, accountKey);
+  const values: BlobSASSignatureValues = {
+    containerName,
+    blobName,
+    permissions: BlobSASPermissions.parse('r'),
+    startsOn: new Date(),
+    expiresOn: new Date(Date.now() + expiresInMinutes * 60 * 1000),
+  };
+  const sasToken = generateBlobSASQueryParameters(values, sharedKeyCredential).toString();
+
+  const blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
+  const containerClient = blobServiceClient.getContainerClient(containerName);
+  return `${containerClient.getBlockBlobClient(blobName).url}?${sasToken}`;
 }
 
 /**
