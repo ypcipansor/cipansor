@@ -60,10 +60,7 @@ export const courseService = {
       });
 
       if (!course) throw new Error('Course not found');
-      if (
-        course.maxParticipants != null &&
-        course._count.enrollments >= course.maxParticipants
-      ) {
+      if (course.maxParticipants != null && course._count.enrollments >= course.maxParticipants) {
         throw new Error('Kuota peserta kursus sudah penuh');
       }
 
@@ -114,6 +111,7 @@ export const courseService = {
             status: 'PENDING',
             studentId: data.studentId || null,
             paymentTypeId: paymentType.id,
+            unitId: course.unitId,
             notes: `Biaya pendaftaran kursus ${course.name} untuk ${data.externalName || 'Siswa Internal'}`,
           } as any,
         });

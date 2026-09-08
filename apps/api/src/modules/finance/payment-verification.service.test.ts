@@ -4,7 +4,13 @@ import { Prisma } from '@prisma/client';
 vi.mock('../../lib/prisma', () => {
   const mockPrisma = {
     invoice: { findUnique: vi.fn(), update: vi.fn() },
-    payment: { create: vi.fn(), findUnique: vi.fn(), findMany: vi.fn(), count: vi.fn(), update: vi.fn() },
+    payment: {
+      create: vi.fn(),
+      findUnique: vi.fn(),
+      findMany: vi.fn(),
+      count: vi.fn(),
+      update: vi.fn(),
+    },
     studentParent: { findUnique: vi.fn() },
     journalEntry: { create: vi.fn() },
     $transaction: vi.fn(),
@@ -38,6 +44,7 @@ const baseInvoice = {
   amount: new Prisma.Decimal(500000),
   paidAmount: new Prisma.Decimal(0),
   invoiceNumber: 'INV-001',
+  unitId: 'unit-1',
   student: {
     id: 'student-1',
     userId: 'student-user-1',

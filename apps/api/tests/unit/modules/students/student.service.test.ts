@@ -139,7 +139,7 @@ describe('StudentService', () => {
           }),
         })
       );
-      expect(result).toEqual(mockAlumnus);
+      expect(result).toEqual({ ...mockAlumnus, nis: '1234567890' });
     });
 
     it('should return null when identifier is empty', async () => {
@@ -160,14 +160,14 @@ describe('StudentService', () => {
         parentPhone: '08123456789',
         address: 'Jl. Test',
         user: { name: 'Graduating Student', email: 'grad@cipansor.local' },
-        unit: { id: 'unit-1', name: 'SMA Qur\'an' },
+        unit: { id: 'unit-1', name: "SMA Qur'an" },
       };
       const mockUpdatedStudent = {
         id: 'student-active-1',
         status: 'alumni',
         graduateYear: 2026,
         user: { id: 'user-1', name: 'Graduating Student', email: 'grad@cipansor.local' },
-        unit: { id: 'unit-1', name: 'SMA Qur\'an' },
+        unit: { id: 'unit-1', name: "SMA Qur'an" },
       };
 
       vi.mocked(prisma.student.findFirst).mockResolvedValue(mockStudent as any);

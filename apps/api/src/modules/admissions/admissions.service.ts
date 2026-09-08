@@ -538,7 +538,7 @@ export async function enrollRegistrant(
     if (registrant.isInternalAlumni) {
       if (registrant.previousStudentId) {
         existingStudent = await tx.student.findFirst({
-          where: { id: registrant.previousStudentId, deletedAt: null },
+          where: { id: registrant.previousStudentId, status: 'alumni', deletedAt: null },
           include: { user: true },
         });
       }
@@ -550,6 +550,7 @@ export async function enrollRegistrant(
         existingStudent = await tx.student.findFirst({
           where: {
             deletedAt: null,
+            status: 'alumni',
             OR: conditions,
           },
           include: { user: true },
@@ -585,13 +586,22 @@ export async function enrollRegistrant(
       });
 
       const { resolveLegacyRoleToRoleCode } = await import('../auth/auth.service');
-      const targetRoleCode = resolveLegacyRoleToRoleCode('STUDENT', registrant.admissionPeriod.unit.type);
+      const targetRoleCode = resolveLegacyRoleToRoleCode(
+        'STUDENT',
+        registrant.admissionPeriod.unit.type
+      );
       if (targetRoleCode) {
         const studentRole = await tx.role.findFirst({ where: { code: targetRoleCode } });
         if (studentRole) {
+          // Deactivate the old unit's assignment so getUserRoles stops exposing it;
+          // setting only isPrimary:false left a stale active assignment behind.
           await tx.userRoleAssignment.updateMany({
-            where: { userId: user.id, isPrimary: true },
-            data: { isPrimary: false },
+            where: {
+              userId: user.id,
+              isActive: true,
+              unitId: { not: registrant.admissionPeriod.unitId },
+            },
+            data: { isPrimary: false, isActive: false },
           });
           await tx.userRoleAssignment.create({
             data: {
@@ -613,30 +623,86 @@ export async function enrollRegistrant(
 
       if (existingUser) {
         user = existingUser;
-        student = await tx.student.create({
-          data: {
-            userId: user.id,
-            unitId: registrant.admissionPeriod.unitId,
-            nisn: studentData.nisn,
-            nik: studentData.nik,
-            gender: registrant.gender,
-            birthPlace: registrant.birthPlace,
-            birthDate: registrant.birthDate,
-            address: registrant.address,
-            parentName: registrant.parentName,
-            parentPhone: registrant.parentPhone,
-            parentEmail: registrant.parentEmail,
-            status: 'active',
-            entryYear: new Date().getFullYear(),
-          },
+        // Student.userId is unique: if this user already owns a student record,
+        // creating another would fail with P2002. Reactivate the existing record
+        // instead of re-creating it.
+        const existingStudentForUser = await tx.student.findUnique({
+          where: { userId: user.id },
         });
+
+        if (existingStudentForUser) {
+          student = await tx.student.update({
+            where: { id: existingStudentForUser.id },
+            data: {
+              unitId: registrant.admissionPeriod.unitId,
+              status: 'active',
+              nisn: studentData.nisn || existingStudentForUser.nisn,
+              nik: studentData.nik || existingStudentForUser.nik,
+              graduateYear: null,
+            },
+          });
+
+          await tx.classEnrollment.updateMany({
+            where: { studentId: student.id, status: 'active' },
+            data: { status: 'completed' },
+          });
+        } else {
+          student = await tx.student.create({
+            data: {
+              userId: user.id,
+              unitId: registrant.admissionPeriod.unitId,
+              nisn: studentData.nisn,
+              nik: studentData.nik,
+              gender: registrant.gender,
+              birthPlace: registrant.birthPlace,
+              birthDate: registrant.birthDate,
+              address: registrant.address,
+              parentName: registrant.parentName,
+              parentPhone: registrant.parentPhone,
+              parentEmail: registrant.parentEmail,
+              status: 'active',
+              entryYear: new Date().getFullYear(),
+            },
+          });
+        }
+
+        // Ensure the target unit has an active primary student assignment; the
+        // legacy `role` field is no longer written on new flows.
+        const { resolveLegacyRoleToRoleCode } = await import('../auth/auth.service');
+        const targetRoleCode = resolveLegacyRoleToRoleCode(
+          'STUDENT',
+          registrant.admissionPeriod.unit.type
+        );
+        if (targetRoleCode) {
+          const studentRole = await tx.role.findFirst({ where: { code: targetRoleCode } });
+          if (studentRole) {
+            await tx.userRoleAssignment.updateMany({
+              where: {
+                userId: user.id,
+                isActive: true,
+                unitId: { not: registrant.admissionPeriod.unitId },
+              },
+              data: { isPrimary: false, isActive: false },
+            });
+            await tx.userRoleAssignment.create({
+              data: {
+                userId: user.id,
+                roleId: studentRole.id,
+                unitId: registrant.admissionPeriod.unitId,
+                isPrimary: true,
+                isActive: true,
+              },
+            });
+          }
+        }
       } else {
         user = await tx.user.create({
           data: {
             name: registrant.fullName,
-            email: registrant.email || `${studentData.nisn || randomBytes(8).toString('hex')}@student.cipansor.or.id`,
+            email:
+              registrant.email ||
+              `${studentData.nisn || randomBytes(8).toString('hex')}@student.cipansor.or.id`,
             passwordHash: prehashedPassword,
-            role: 'STUDENT',
             unitId: registrant.admissionPeriod.unitId,
             isActive: true,
           },
@@ -661,7 +727,10 @@ export async function enrollRegistrant(
         });
 
         const { resolveLegacyRoleToRoleCode } = await import('../auth/auth.service');
-        const targetRoleCode = resolveLegacyRoleToRoleCode('STUDENT', registrant.admissionPeriod.unit.type);
+        const targetRoleCode = resolveLegacyRoleToRoleCode(
+          'STUDENT',
+          registrant.admissionPeriod.unit.type
+        );
         if (targetRoleCode) {
           const studentRole = await tx.role.findFirst({ where: { code: targetRoleCode } });
           if (studentRole) {

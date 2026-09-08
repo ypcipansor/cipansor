@@ -6,7 +6,12 @@ import { prisma } from '@/lib/prisma';
 import { hashPassword } from '@/lib/password';
 import { Errors } from '@/middleware/error';
 import { UserRole, Gender, Prisma } from '@prisma/client';
-import type { ListStudentsQuery, CreateStudentInput, UpdateStudentInput } from './student.schema';
+import type {
+  ListStudentsQuery,
+  CreateStudentInput,
+  UpdateStudentInput,
+  GraduateStudentInput,
+} from './student.schema';
 
 export class StudentService {
   /**
@@ -107,6 +112,7 @@ export class StudentService {
       return {
         ...student,
         currentClass,
+        nis: student.nisn || student.nik || '-',
       };
     });
 
@@ -158,7 +164,13 @@ export class StudentService {
       },
     });
 
-    return student;
+    if (!student) {
+      return null;
+    }
+    return {
+      ...student,
+      nis: student.nisn || student.nik || '-',
+    };
   }
 
   /**
@@ -272,6 +284,7 @@ export class StudentService {
     return {
       ...student,
       currentClass,
+      nis: student.nisn || student.nik || '-',
       summary: {
         walletBalance: student.wallet ? Number(student.wallet.balance) : 0,
         violationPoints: totalViolationPoints,
@@ -372,6 +385,7 @@ export class StudentService {
 
     return {
       ...student,
+      nis: student.nisn || student.nik || '-',
       parents: student.parents.map((link) => ({
         id: link.parent.id,
         name: link.parent.name,
@@ -399,8 +413,11 @@ export class StudentService {
 
   /**
    * Mark student as graduated (Alumni)
+   *
+   * Business rule: `graduateYear` wins over `graduationDate` when both are provided,
+   * otherwise the graduation year is derived from the date (or the current year).
    */
-  async graduateStudent(id: string, graduateYear?: number, graduationDate?: Date) {
+  async graduateStudent(id: string, input?: GraduateStudentInput | number) {
     const student = await prisma.student.findFirst({
       where: { id, deletedAt: null },
       include: { user: true, unit: true },
@@ -410,8 +427,12 @@ export class StudentService {
       throw Errors.notFound('Student');
     }
 
-    const effectiveDate = graduationDate || new Date();
-    const currentYear = graduateYear || effectiveDate.getFullYear();
+    // Accept both the new object contract and the legacy `(id, year)` shape.
+    const graduateYear = typeof input === 'number' ? input : input?.graduateYear;
+    const graduationDate = typeof input === 'number' ? undefined : input?.graduationDate;
+
+    const effectiveDate = graduationDate ? new Date(graduationDate) : new Date();
+    const currentYear = graduateYear ?? effectiveDate.getFullYear();
 
     return prisma.$transaction(async (tx) => {
       await tx.classEnrollment.updateMany({
@@ -510,9 +531,7 @@ export class StudentService {
     const withLogin = studentsHoldLogins(unit.type);
 
     const passwordHash = withLogin
-      ? await hashPassword(
-          input.password ?? `Aa1${randomUUID().replace(/-/g, '').slice(0, 12)}`
-        )
+      ? await hashPassword(input.password ?? `Aa1${randomUUID().replace(/-/g, '').slice(0, 12)}`)
       : null;
 
     const student = await prisma.$transaction(async (tx) => {

@@ -79,7 +79,9 @@ export default function StudentsPage() {
       accessorKey: "nis",
       header: "NIS",
       cell: ({ row }) => (
-        <span className="font-mono text-sm">{row.original.nis}</span>
+        <span className="font-mono text-sm">
+          {row.original.nisn || row.original.nik || "-"}
+        </span>
       ),
     },
     {

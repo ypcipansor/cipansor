@@ -664,6 +664,7 @@ model Unit {
   p5Projects             P5Project[]
   merdekaAssessments     MerdekaAssessment[]
   journalEntries         JournalEntry[]
+  invoices               Invoice[]
   // Canteen relations
   canteenCategories      CanteenCategory[]
   canteenItems           CanteenItem[]
@@ -1528,17 +1529,23 @@ model Invoice {
   paidAmount    Decimal       @default(0) @map("paid_amount") @db.Decimal(15, 2)
   period        String? // e.g., "Januari 2024" for monthly payments
   notes         String?
+  // Snapshot of the unit that billed this invoice — stable across re-enrollment,
+  // so historical finance stays in its original unit even if the student's
+  // UnitId later changes.
+  unitId        String?       @map("unit_id")
   createdAt     DateTime      @default(now()) @map("created_at")
   updatedAt     DateTime      @updatedAt @map("updated_at")
 
   // Relations
   student     Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
   paymentType PaymentType @relation(fields: [paymentTypeId], references: [id])
+  unit        Unit?       @relation(fields: [unitId], references: [id])
   payments    Payment[]
 
   @@index([studentId])
   @@index([status])
   @@index([dueDate])
+  @@index([unitId])
   @@map("invoices")
 }
 

@@ -1,10 +1,7 @@
 import { randomUUID } from 'crypto';
 import { prisma } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
-import {
-  syncParentRoleAssignments,
-  type ParentScopeClient,
-} from '@/utils/parent-scope';
+import { syncParentRoleAssignments, type ParentScopeClient } from '@/utils/parent-scope';
 import { assertAdmissionFeeSettled } from '@/utils/admission-fee-gate';
 import { resolveLegacyRoleToRoleCode } from '@/modules/auth/auth.service';
 
@@ -87,7 +84,9 @@ export class StudentOnboardingOrchestrator {
         }
 
         if (!existingStudent) {
-          throw Errors.badRequest('Referenced internal alumnus record not found or student is not in alumni status');
+          throw Errors.badRequest(
+            'Referenced internal alumnus record not found or student is not in alumni status'
+          );
         }
       }
 
@@ -132,9 +131,11 @@ export class StudentOnboardingOrchestrator {
         if (targetRoleCode) {
           const studentRole = await tx.role.findFirst({ where: { code: targetRoleCode } });
           if (studentRole) {
+            // Deactivate the old unit's assignment so getUserRoles stops exposing it;
+            // setting only isPrimary:false left a stale active assignment behind.
             await tx.userRoleAssignment.updateMany({
-              where: { userId: user.id, isPrimary: true },
-              data: { isPrimary: false },
+              where: { userId: user.id, isActive: true, unitId: { not: unitId } },
+              data: { isPrimary: false, isActive: false },
             });
             await tx.userRoleAssignment.create({
               data: {
@@ -148,7 +149,16 @@ export class StudentOnboardingOrchestrator {
           }
         }
       } else {
-        const email = registrant.email || `${cleanName}.${randomUUID().slice(0, 8)}@student.cipansor.local`;
+        let email =
+          registrant.email || `${cleanName}.${randomUUID().slice(0, 8)}@student.cipansor.local`;
+        // If the registrant's email is already claimed (parent/staff/other account),
+        // reuse is wrong (P2002 on User.email) — fall back to a unique student address.
+        if (registrant.email) {
+          const emailOwner = await tx.user.findUnique({ where: { email: registrant.email } });
+          if (emailOwner) {
+            email = `${cleanName}.${randomUUID().slice(0, 8)}@student.cipansor.local`;
+          }
+        }
 
         user = await tx.user.create({
           data: {
@@ -157,7 +167,6 @@ export class StudentOnboardingOrchestrator {
             passwordHash,
             resetTokenHash: crypto.createHash('sha256').update(resetToken).digest('hex'),
             resetTokenExpiresAt: resetTokenExpiry,
-            role: 'STUDENT',
             unitId,
             isActive: true,
           },
@@ -232,7 +241,6 @@ export class StudentOnboardingOrchestrator {
               passwordHash: parentPasswordHash,
               resetTokenHash: crypto.createHash('sha256').update(parentResetToken).digest('hex'),
               resetTokenExpiresAt: parentResetTokenExpiry,
-              role: 'PARENT',
               isActive: true,
             },
           });

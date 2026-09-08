@@ -1,5 +1,12 @@
 import { prisma } from '../../lib/prisma';
-import { PaymentStatus, PaymentMethod, PaymentVerificationStatus, Prisma, NotificationType, UserRole } from '@prisma/client';
+import {
+  PaymentStatus,
+  PaymentMethod,
+  PaymentVerificationStatus,
+  Prisma,
+  NotificationType,
+  UserRole,
+} from '@prisma/client';
 import * as notificationService from '../notifications/notifications.service';
 import { eventBus } from '@/lib/event-bus';
 import { AccountType, JournalReferenceType } from '@cipansor/shared';
@@ -101,7 +108,10 @@ export async function deletePaymentType(id: string) {
 // INVOICE SERVICE
 // =====================================
 
-async function generateInvoiceNumber(unitId?: string, tx?: Prisma.TransactionClient): Promise<string> {
+async function generateInvoiceNumber(
+  unitId?: string,
+  tx?: Prisma.TransactionClient
+): Promise<string> {
   const year = new Date().getFullYear();
   const month = String(new Date().getMonth() + 1).padStart(2, '0');
 
@@ -133,6 +143,14 @@ export async function createInvoice(data: CreateInvoiceDto, tx?: Prisma.Transact
       const invoiceNumber = await generateInvoiceNumber(undefined, tx);
 
       const { studentId, paymentTypeId, ...invoiceData } = data;
+
+      // Snapshot the billing unit at invoice creation so historical finance stays
+      // in the unit that billed it even if the student is later re-enrolled
+      // elsewhere (which would change students.unit_id).
+      const invoiceStudent = await dbClient.student.findUnique({
+        where: { id: studentId },
+        select: { unitId: true },
+      });
 
       let finalAmount = new Prisma.Decimal(data.amount);
       const scholarships = await dbClient.scholarshipRecipient.findMany({
@@ -170,6 +188,7 @@ export async function createInvoice(data: CreateInvoiceDto, tx?: Prisma.Transact
           invoiceNumber,
           amount: finalAmount.lt(0) ? 0 : finalAmount,
           dueDate: new Date(data.dueDate),
+          unitId: invoiceStudent?.unitId ?? null,
           student: { connect: { id: studentId } },
           paymentType: { connect: { id: paymentTypeId } },
         },
@@ -378,7 +397,7 @@ export async function createPayment(data: CreatePaymentDto, userId: string = 'SY
       },
     });
 
-    if (invoice.paymentType.accountId && invoice.student.unitId) {
+    if (invoice.paymentType.accountId && invoice.unitId) {
       const isBank = ['BANK_TRANSFER', 'VIRTUAL_ACCOUNT', 'QRIS', 'EWALLET'].includes(
         payment.method
       );
@@ -387,7 +406,7 @@ export async function createPayment(data: CreatePaymentDto, userId: string = 'SY
       const fallbackName = isBank ? 'Bank' : 'Kas';
 
       const assetAccount = await getAccountOrFallback(
-        invoice.student.unitId,
+        invoice.unitId,
         mappingKey,
         fallbackCode,
         fallbackName
@@ -398,7 +417,7 @@ export async function createPayment(data: CreatePaymentDto, userId: string = 'SY
 
         await tx.journalEntry.create({
           data: {
-            unitId: invoice.student.unitId,
+            unitId: invoice.unitId,
             accountId: assetAccount.id,
             date: new Date(),
             description: `${descriptionPrefix} (${payment.method})`,
@@ -412,7 +431,7 @@ export async function createPayment(data: CreatePaymentDto, userId: string = 'SY
 
         await tx.journalEntry.create({
           data: {
-            unitId: invoice.student.unitId,
+            unitId: invoice.unitId,
             accountId: invoice.paymentType.accountId,
             date: new Date(),
             description: `Pendapatan ${invoice.paymentType.name} - ${invoice.student.user.name}`,
@@ -519,7 +538,7 @@ export async function submitPaymentProof(
         studentId_parentId: { studentId: invoice.student.id, parentId: currentUser.sub },
       },
     });
-    if (!link) throw new Error('Access denied: not your child\'s invoice');
+    if (!link) throw new Error("Access denied: not your child's invoice");
   } else if (currentUser.role === UserRole.STUDENT) {
     if (invoice.student.userId !== currentUser.sub) {
       throw new Error('Access denied: not your invoice');
@@ -571,9 +590,7 @@ export async function getPendingVerifications(
 
   const where: Prisma.PaymentWhereInput = {
     verificationStatus: status,
-    ...(seesAllUnits(currentUser)
-      ? {}
-      : { invoice: { student: { unitId: currentUser.unitId ?? 'none' } } }),
+    ...(seesAllUnits(currentUser) ? {} : { invoice: { unitId: currentUser.unitId ?? 'none' } }),
   };
 
   const [payments, total] = await Promise.all([
@@ -633,7 +650,7 @@ export async function verifyPayment(
 
     if (
       currentUser.role !== UserRole.SUPER_ADMIN &&
-      payment.invoice.student.unitId !== currentUser.unitId
+      (payment.invoice.unitId ?? payment.invoice.student.unitId) !== currentUser.unitId
     ) {
       throw new Error('Access denied: payment belongs to another unit');
     }
@@ -689,13 +706,13 @@ export async function verifyPayment(
       data: { paidAmount: newPaidAmount, status: newStatus },
     });
 
-    if (invoice.paymentType.accountId && invoice.student.unitId) {
+    if (invoice.paymentType.accountId && invoice.unitId) {
       const isBank = ['BANK_TRANSFER', 'VIRTUAL_ACCOUNT', 'QRIS', 'EWALLET'].includes(
         payment.method
       );
       const mappingKey = isBank ? ACCOUNT_MAPPING_KEYS.BANK : ACCOUNT_MAPPING_KEYS.CASH;
       const assetAccount = await getAccountOrFallback(
-        invoice.student.unitId,
+        invoice.unitId,
         mappingKey,
         isBank ? '1102' : '1101',
         isBank ? 'Bank' : 'Kas'
@@ -703,7 +720,7 @@ export async function verifyPayment(
       if (assetAccount) {
         await tx.journalEntry.create({
           data: {
-            unitId: invoice.student.unitId,
+            unitId: invoice.unitId,
             accountId: assetAccount.id,
             date: new Date(),
             description: `Pembayaran ${invoice.invoiceNumber} (${payment.method})`,
@@ -716,7 +733,7 @@ export async function verifyPayment(
         });
         await tx.journalEntry.create({
           data: {
-            unitId: invoice.student.unitId,
+            unitId: invoice.unitId,
             accountId: invoice.paymentType.accountId,
             date: new Date(),
             description: `Pendapatan ${invoice.paymentType.name} - ${invoice.student.user.name}`,
@@ -767,8 +784,7 @@ export async function verifyPayment(
         currency: 'IDR',
         minimumFractionDigits: 0,
       });
-      const isApproved =
-        payment.verificationStatus === PaymentVerificationStatus.FINAL_APPROVED;
+      const isApproved = payment.verificationStatus === PaymentVerificationStatus.FINAL_APPROVED;
       const isRejected = payment.verificationStatus === PaymentVerificationStatus.REJECTED;
       if (isApproved || isRejected) {
         await Promise.allSettled(
@@ -906,7 +922,7 @@ export async function getUnitFinanceStats(unitId: string, month?: string) {
 
   const invoices = await prisma.invoice.findMany({
     where: {
-      student: { unitId },
+      unitId,
       ...dateFilter,
     },
   });
@@ -917,7 +933,7 @@ export async function getUnitFinanceStats(unitId: string, month?: string) {
 
   const byStatus = await prisma.invoice.groupBy({
     by: ['status'],
-    where: { student: { unitId }, ...dateFilter },
+    where: { unitId, ...dateFilter },
     _count: true,
     _sum: { amount: true },
   });
@@ -955,7 +971,9 @@ export async function getFinancialSummary() {
         invoice: {
           select: {
             invoiceNumber: true,
-            student: { select: { id: true, nisn: true, nik: true, user: { select: { name: true } } } },
+            student: {
+              select: { id: true, nisn: true, nik: true, user: { select: { name: true } } },
+            },
           },
         },
       },
@@ -981,7 +999,10 @@ export async function getFinancialSummary() {
 
     const name = inv.paymentType?.name ?? 'Lainnya';
     const bucket = byType.get(name) ?? { total: zero, paid: zero };
-    byType.set(name, { total: bucket.total.add(inv.amount), paid: bucket.paid.add(inv.paidAmount) });
+    byType.set(name, {
+      total: bucket.total.add(inv.amount),
+      paid: bucket.paid.add(inv.paidAmount),
+    });
   }
 
   return {
@@ -1004,7 +1025,7 @@ export async function getFinancialSummary() {
 export async function getStudentOutstandingBalances(unitId: string) {
   const invoices = await prisma.invoice.findMany({
     where: {
-      student: { unitId },
+      unitId,
       status: { in: [PaymentStatus.PENDING, PaymentStatus.PARTIAL] },
       dueDate: { lt: new Date() },
     },
@@ -1033,6 +1054,7 @@ export async function getStudentOutstandingBalances(unitId: string) {
       studentMap.set(inv.studentId, {
         studentId: inv.studentId,
         studentName: inv.student.user.name,
+        nis: inv.student.nisn || inv.student.nik || '-',
         studentNisn: inv.student.nisn,
         studentNik: inv.student.nik,
         className: inv.student.enrollments[0]?.class?.name || '-',
@@ -1063,6 +1085,7 @@ export interface SppMatrixQuery {
 export interface StudentSppRow {
   studentId: string;
   studentName: string;
+  nis?: string;
   studentNisn?: string | null;
   studentNik?: string | null;
   className: string;
@@ -1140,6 +1163,7 @@ export async function getSppMatrix(query: SppMatrixQuery) {
   const invoices = await prisma.invoice.findMany({
     where: {
       studentId: { in: studentIds },
+      ...(unitId ? { unitId } : {}),
       paymentTypeId: sppPaymentType.id,
       dueDate: {
         gte: startDate,
@@ -1195,6 +1219,7 @@ export async function getSppMatrix(query: SppMatrixQuery) {
     return {
       studentId: student.id,
       studentName: student.user.name,
+      nis: student.nisn || student.nik || '-',
       studentNisn: student.nisn,
       studentNik: student.nik,
       className: student.enrollments[0]?.class?.name || '-',
@@ -1307,6 +1332,7 @@ export async function generateBulkSppInvoices(data: {
           amount: paymentType.amount,
           dueDate,
           period,
+          unitId: student.unitId,
           notes: `Tagihan ${paymentType.name} untuk ${period}`,
         },
       });
@@ -1364,13 +1390,11 @@ export async function generateRecurringBills() {
   }
 
   for (const student of activeStudents) {
-    const applicableTypes = paymentTypes.filter(
-      (pt) => pt.unitId === student.unitId
-    );
+    const applicableTypes = paymentTypes.filter((pt) => pt.unitId === student.unitId);
 
     for (const paymentType of applicableTypes) {
       processed++;
-      
+
       const existing = await prisma.invoice.findFirst({
         where: {
           studentId: student.id,
@@ -1392,6 +1416,7 @@ export async function generateRecurringBills() {
             amount: paymentType.amount,
             dueDate,
             period,
+            unitId: student.unitId,
             notes: `Tagihan ${paymentType.name} otomatis untuk ${period}`,
           },
         });
@@ -1415,14 +1440,19 @@ export async function calculateInvoiceAmounts(
   const db = tx || prisma;
   if (studentId) {
     const recipients = await db.scholarshipRecipient.findMany({
-      where: { studentId }
+      where: { studentId },
     });
   }
   return { amount: originalAmount, discount: 0 };
 }
 
-export function validateScholarshipDiscount(data: { componentId?: string | null; paymentTypeId?: string | null }) {
+export function validateScholarshipDiscount(data: {
+  componentId?: string | null;
+  paymentTypeId?: string | null;
+}) {
   if (!data.componentId && !data.paymentTypeId) {
-    throw new Error("Data Integrity Error: At least one of componentId or paymentTypeId must be set to prevent duplicate orphaned discounts.");
+    throw new Error(
+      'Data Integrity Error: At least one of componentId or paymentTypeId must be set to prevent duplicate orphaned discounts.'
+    );
   }
 }

@@ -191,7 +191,11 @@ describe('StudentService', () => {
         user: { name: 'Student 1', email: 's1@cipansor.local' },
       };
       (prisma.student.findFirst as any).mockResolvedValue(mockStudent);
-      (prisma.student.update as any).mockResolvedValue({ id: 's1', status: 'alumni', graduateYear: 2026 });
+      (prisma.student.update as any).mockResolvedValue({
+        id: 's1',
+        status: 'alumni',
+        graduateYear: 2026,
+      });
 
       const result = await service.graduateStudent('s1', 2026);
 
@@ -204,7 +208,12 @@ describe('StudentService', () => {
     });
 
     it('should find internal alumni by NIK or NISN', async () => {
-      const mockStudent = { id: 's1', nisn: '0012345678', nik: '3201000000000001', status: 'alumni' };
+      const mockStudent = {
+        id: 's1',
+        nisn: '0012345678',
+        nik: '3201000000000001',
+        status: 'alumni',
+      };
       (prisma.student.findFirst as any).mockResolvedValue(mockStudent);
 
       const result = await service.findInternalAlumniByIdentifier('0012345678');
@@ -216,7 +225,10 @@ describe('StudentService', () => {
           }),
         })
       );
-      expect(result).toEqual(mockStudent);
+      expect(result).toEqual({
+        ...mockStudent,
+        nis: '0012345678',
+      });
     });
   });
 });

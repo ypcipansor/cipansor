@@ -1,7 +1,12 @@
 import { Request, Response } from 'express';
 import { asyncHandler } from '@/middleware/error';
 import { studentService } from './student.service';
-import { ListStudentsQuery, CreateStudentInput, UpdateStudentInput } from './student.schema';
+import {
+  ListStudentsQuery,
+  CreateStudentInput,
+  UpdateStudentInput,
+  GraduateStudentInput,
+} from './student.schema';
 
 /**
  * List students
@@ -92,20 +97,9 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
  */
 export const graduate = asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { graduateYear, graduationDate } = req.body;
+  const input: GraduateStudentInput = req.body;
 
-  let year: number | undefined;
-  let dateObj: Date | undefined;
-
-  if (graduationDate) {
-    dateObj = new Date(graduationDate);
-    year = dateObj.getFullYear();
-  }
-  if (graduateYear) {
-    year = Number(graduateYear);
-  }
-
-  const student = await studentService.graduateStudent(id, year, dateObj);
+  const student = await studentService.graduateStudent(id, input);
 
   res.json({
     success: true,
