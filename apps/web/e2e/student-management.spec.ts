@@ -294,7 +294,7 @@ test.describe("Student Management - Create", () => {
     const timestamp = Date.now();
     const studentData = {
       nama: `Test Student ${timestamp}`,
-      nisn: `TEST${timestamp.toString().slice(-10)}`,
+      nisn: timestamp.toString().slice(-10),
     };
 
     // Atomically open a Radix select, pick the first option, and confirm it

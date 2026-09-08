@@ -39,7 +39,7 @@ test.describe("Integration: Student → Attendance → Report Flow", () => {
 
     const timestamp = Date.now();
     const studentName = `Integration Test Student ${timestamp}`;
-    const studentNISN = `INT${timestamp.toString().slice(-10)}`;
+    const studentNISN = timestamp.toString().slice(-10);
 
     // Fill every required field (name, nisn, gender, birthDate, birthPlace,
     // address, unit, parentName, parentPhone) so submit passes validation.

@@ -24,7 +24,7 @@ test.describe("Student Graduation Flow", () => {
 
     // Create a fresh active student carrying a permanent identifier (NISN) so
     // the create-student contract (at least one of NISN/NIK) is satisfied.
-    const nisn = `00${String(suffix).slice(-10)}`;
+    const nisn = String(suffix).slice(-10);
     const created = await apiRequest<{ data: { id: string; status: string } }>(
       session,
       "POST",
