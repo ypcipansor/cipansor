@@ -1030,8 +1030,6 @@ model Student {
   entryYear    Int?     @map("entry_year")
   graduateYear Int?     @map("graduate_year")
 
-  legacyNis   String? @map("legacy_nis") // Legacy NIS backup from migration
-
   // === PHASE 8: Indonesia Compliance Fields (Dapodik/EMIS) ===
   nik         String? @unique // NIK (16 digit)
   noAkta      String? @map("no_akta") // Nomor Akta Lahir

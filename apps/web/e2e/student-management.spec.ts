@@ -86,12 +86,12 @@ test.describe("Student Management - List & View", () => {
     if (await searchInput.isVisible({ timeout: 3000 }).catch(() => false)) {
       // Data-agnostic: derive a search term from a real seeded student rather
       // than hardcoding a name that may not exist.
-      const rows = page.locator('table tbody tr');
+      const rows = page.locator("table tbody tr");
       if ((await rows.count()) === 0) {
         test.skip(true, "No students to search");
         return;
       }
-      // Search matches name/NIS, so derive the term from the first row's *name*
+      // Search matches name/NISN, so derive the term from the first row's *name*
       // cell (rendered in a font-medium element). Deriving it from arbitrary
       // row text (status, unit, action-button labels) could yield a token the
       // query can't match — which narrows the table to zero rows and leaves a
@@ -111,7 +111,8 @@ test.describe("Student Management - List & View", () => {
       // land before asserting, otherwise the table may still show stale rows.
       const searchResponse = page
         .waitForResponse(
-          (r) => /\/students(\?|$)/.test(r.url()) && r.request().method() === "GET",
+          (r) =>
+            /\/students(\?|$)/.test(r.url()) && r.request().method() === "GET",
           { timeout: 10000 },
         )
         .catch(() => null);
@@ -300,7 +301,9 @@ test.describe("Student Management - Create", () => {
     // closed. Retried as a unit — under parallel workers on a production build,
     // interacting before hydration (or before async options load) silently drops
     // the value and leaves overlays that block the next control.
-    const pickFirstOption = async (trigger: import("@playwright/test").Locator) => {
+    const pickFirstOption = async (
+      trigger: import("@playwright/test").Locator,
+    ) => {
       await expect(async () => {
         await trigger.click();
         const option = page.getByRole("option").first();
@@ -315,11 +318,8 @@ test.describe("Student Management - Create", () => {
     // Fill all required fields (target inputs by id to avoid ambiguity).
     await page.locator("#name").fill(studentData.nama);
     const nisnInput = page.locator("#nisn");
-    if (await nisnInput.isVisible({ timeout: 1000 }).catch(() => false)) {
-      await nisnInput.fill(studentData.nisn);
-    } else {
-      await page.locator("#nis").fill(studentData.nisn);
-    }
+    await expect(nisnInput).toBeVisible();
+    await nisnInput.fill(studentData.nisn);
     await page.locator("#birthDate").fill("2012-05-10");
     await page.locator("#birthPlace").fill("Bandung");
     await page.locator("#address").fill("Jl. Test No. 123, Bandung");

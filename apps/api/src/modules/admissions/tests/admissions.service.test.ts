@@ -14,6 +14,7 @@ vi.mock('@/lib/prisma', () => ({
       findMany: vi.fn(),
       findUnique: vi.fn(),
       create: vi.fn(),
+      update: vi.fn(),
     },
     paymentType: {
       findFirst: vi.fn(),
@@ -23,6 +24,36 @@ vi.mock('@/lib/prisma', () => ({
     invoice: {
       create: vi.fn(),
       findFirst: vi.fn(),
+    },
+    user: {
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+    },
+    student: {
+      findFirst: vi.fn(),
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+    },
+    classEnrollment: {
+      updateMany: vi.fn(),
+      create: vi.fn(),
+    },
+    role: {
+      findFirst: vi.fn(),
+    },
+    userRoleAssignment: {
+      updateMany: vi.fn(),
+      create: vi.fn(),
+      upsert: vi.fn(),
+      findMany: vi.fn(),
+    },
+    roomAssignment: {
+      create: vi.fn(),
+    },
+    admissionWave: {
+      updateMany: vi.fn(),
     },
     $transaction: vi.fn((cb) => cb(prisma)),
   },
@@ -85,5 +116,154 @@ describe('Admissions Service', () => {
     // real Student record exists. Creating it here would require a non-null
     // studentId that doesn't yet exist.
     expect(prisma.invoice.create).not.toHaveBeenCalled();
+  });
+
+  describe('enrollRegistrant', () => {
+    function buildRegistrant(overrides: Record<string, any> = {}) {
+      return {
+        id: 'reg-1',
+        status: 'ACCEPTED',
+        isInternalAlumni: false,
+        previousStudentId: null,
+        internalNisn: null,
+        internalNik: null,
+        email: null,
+        fullName: 'Budi Santoso',
+        gender: 'MALE',
+        birthPlace: 'Jakarta',
+        birthDate: new Date('2010-01-01'),
+        address: 'Jl. Test',
+        parentName: 'Ayah Budi',
+        parentPhone: '08123456789',
+        parentEmail: null,
+        nisn: '0012345678',
+        nik: '3201000000000001',
+        waveId: null,
+        admissionPeriod: {
+          unitId: 'unit-1',
+          registrationFee: 0,
+          unit: { id: 'unit-1', type: 'SMP_IT' },
+        },
+        ...overrides,
+      };
+    }
+
+    it('should fall back to the registrant NISN/NIK when creating a brand-new student', async () => {
+      const mockStudent = {
+        id: 'student-1',
+        nisn: '0012345678',
+        nik: '3201000000000001',
+      };
+      vi.mocked(prisma.registrant.findUnique).mockResolvedValue(buildRegistrant() as any);
+      vi.mocked(prisma.user.create).mockResolvedValue({ id: 'user-1' } as any);
+      vi.mocked(prisma.student.create).mockResolvedValue(mockStudent as any);
+      vi.mocked(prisma.role.findFirst).mockResolvedValue({
+        id: 'role-1',
+        code: 'SMPIT_SISWA',
+      } as any);
+      vi.mocked(prisma.userRoleAssignment.create).mockResolvedValue({ id: 'ura-1' } as any);
+
+      await service.enrollRegistrant('reg-1', {});
+
+      // Issue #1: student creation inherits the registrant's NISN/NIK when the
+      // enrollment payload omits them.
+      expect(prisma.student.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            nisn: '0012345678',
+            nik: '3201000000000001',
+          }),
+        })
+      );
+      // A brand-new user has no prior assignment, so a plain create is correct.
+      expect(prisma.userRoleAssignment.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            userId: 'user-1',
+            roleId: 'role-1',
+            unitId: 'unit-1',
+          }),
+        })
+      );
+    });
+
+    it('should deactivate only the STUDENT role and upsert on re-enrollment to the same unit', async () => {
+      const mockStudent = {
+        id: 'student-1',
+        nisn: '0012345678',
+        nik: '3201000000000001',
+      };
+      vi.mocked(prisma.registrant.findUnique).mockResolvedValue(
+        buildRegistrant({ email: 'budi@example.com' }) as any
+      );
+      // Existing user, but this user has no student record yet.
+      vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: 'user-1' } as any);
+      vi.mocked(prisma.student.findUnique).mockResolvedValue(null);
+      vi.mocked(prisma.student.create).mockResolvedValue(mockStudent as any);
+      vi.mocked(prisma.role.findFirst).mockResolvedValue({
+        id: 'role-1',
+        code: 'SMPIT_SISWA',
+      } as any);
+      vi.mocked(prisma.userRoleAssignment.upsert).mockResolvedValue({ id: 'ura-1' } as any);
+
+      await service.enrollRegistrant('reg-1', {});
+
+      // Issue #2: only the STUDENT role assignment is deactivated in other units,
+      // so a re-enrolling student keeps active teacher/staff roles.
+      expect(prisma.userRoleAssignment.updateMany).toHaveBeenCalledWith({
+        where: {
+          userId: 'user-1',
+          roleId: 'role-1',
+          isActive: true,
+          unitId: { not: 'unit-1' },
+        },
+        data: { isPrimary: false, isActive: false },
+      });
+
+      // Issue #3: upsert (not create) on the (userId, roleId, unitId) key so
+      // re-enrolling into the same unit reactivates the row instead of P2002.
+      expect(prisma.userRoleAssignment.upsert).toHaveBeenCalledWith({
+        where: {
+          userId_roleId_unitId: { userId: 'user-1', roleId: 'role-1', unitId: 'unit-1' },
+        },
+        create: {
+          userId: 'user-1',
+          roleId: 'role-1',
+          unitId: 'unit-1',
+          isPrimary: true,
+          isActive: true,
+        },
+        update: {
+          isPrimary: true,
+          isActive: true,
+        },
+      });
+    });
+
+    it('should throw when enrolling a non-TK student without any permanent identifier', async () => {
+      vi.mocked(prisma.registrant.findUnique).mockResolvedValue(
+        buildRegistrant({
+          nisn: null,
+          nik: null,
+          internalNisn: null,
+          internalNik: null,
+        }) as any
+      );
+      vi.mocked(prisma.user.create).mockResolvedValue({ id: 'user-1' } as any);
+      vi.mocked(prisma.student.create).mockResolvedValue({
+        id: 'student-1',
+        nisn: null,
+        nik: null,
+      } as any);
+      vi.mocked(prisma.role.findFirst).mockResolvedValue({
+        id: 'role-1',
+        code: 'SMPIT_SISWA',
+      } as any);
+      vi.mocked(prisma.userRoleAssignment.create).mockResolvedValue({ id: 'ura-1' } as any);
+
+      await expect(service.enrollRegistrant('reg-1', {})).rejects.toThrow(
+        'NISN atau NIK wajib diisi untuk menerima siswa'
+      );
+    });
   });
 });

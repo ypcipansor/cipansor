@@ -330,7 +330,7 @@ function RaporPesantrenPageContent() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>NIS</TableHead>
+                        <TableHead>NISN</TableHead>
                         <TableHead>Nama Santri</TableHead>
                         <TableHead>Kelas</TableHead>
                         <TableHead>Tahun Ajaran</TableHead>
@@ -345,7 +345,7 @@ function RaporPesantrenPageContent() {
                       {rapors.map((rapor) => (
                         <TableRow key={rapor.id}>
                           <TableCell className="font-mono">
-                            {rapor.studentNis}
+                            {rapor.studentNisn}
                           </TableCell>
                           <TableCell className="font-medium">
                             {rapor.studentName}

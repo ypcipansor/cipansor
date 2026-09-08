@@ -264,7 +264,7 @@ export default function DailyReportPage() {
                             {report.student?.user?.name}
                           </CardTitle>
                           <CardDescription className="text-xs">
-                            {report.student?.nis}
+                            {report.student?.nisn}
                           </CardDescription>
                         </div>
                       </div>

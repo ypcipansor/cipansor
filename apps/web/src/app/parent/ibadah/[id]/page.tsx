@@ -56,7 +56,7 @@ interface IbadahStats {
 
 interface StudentProfile {
   id: string;
-  nis: string;
+  nisn: string;
   user: {
     name: string;
   };

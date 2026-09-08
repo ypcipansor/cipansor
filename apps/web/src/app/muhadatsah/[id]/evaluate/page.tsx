@@ -312,7 +312,7 @@ export default function EvaluateMuhadatsahPage() {
                   <div className="flex-1">
                     <p className="font-medium">{muhadatsah.student?.name}</p>
                     <p className="text-sm text-muted-foreground">
-                      {muhadatsah.student?.nis}
+                      {muhadatsah.student?.nisn}
                     </p>
                   </div>
                   <Badge variant="outline">Santri 1</Badge>
@@ -333,7 +333,7 @@ export default function EvaluateMuhadatsahPage() {
                     <div className="flex-1">
                       <p className="font-medium">{muhadatsah.partner?.name}</p>
                       <p className="text-sm text-muted-foreground">
-                        {muhadatsah.partner?.nis}
+                        {muhadatsah.partner?.nisn}
                       </p>
                     </div>
                     <Badge variant="outline">Partner</Badge>

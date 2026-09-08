@@ -49,7 +49,7 @@ import {
 // Types
 interface StudentAttendance {
   studentId: string;
-  nis: string;
+  nisn: string;
   name: string;
   gender: "MALE" | "FEMALE";
   status: AttendanceStatus;
@@ -117,7 +117,7 @@ function QuickAttendancePageContent() {
       const initialAttendances: StudentAttendance[] =
         homeroomClass.students.map((student: HomeroomStudent) => ({
           studentId: student.id,
-          nis: student.nis,
+          nisn: student.nisn,
           name: student.name,
           gender: student.gender,
           status: AttendanceStatus.PRESENT,
@@ -136,7 +136,7 @@ function QuickAttendancePageContent() {
       const updatedAttendances: StudentAttendance[] =
         existingAttendance.attendances.map((att) => ({
           studentId: att.studentId,
-          nis: att.student?.nis || "",
+          nisn: att.student?.nisn || "",
           name: att.student?.name || "",
           gender: att.student?.gender || "MALE",
           status: att.status,
@@ -359,7 +359,7 @@ function QuickAttendancePageContent() {
             {/* Header */}
             <div className="grid grid-cols-12 gap-2 py-2 px-3 bg-muted rounded-lg text-sm font-medium">
               <div className="col-span-1">No</div>
-              <div className="col-span-2">NIS</div>
+              <div className="col-span-2">NISN</div>
               <div className="col-span-3">Nama</div>
               <div className="col-span-3">Status</div>
               <div className="col-span-3">Keterangan</div>
@@ -375,7 +375,7 @@ function QuickAttendancePageContent() {
                   {index + 1}
                 </div>
                 <div className="col-span-2 font-mono text-sm">
-                  {student.nis}
+                  {student.nisn}
                 </div>
                 <div className="col-span-3">
                   <div className="flex items-center gap-2">

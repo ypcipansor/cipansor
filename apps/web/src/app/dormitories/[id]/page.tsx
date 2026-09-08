@@ -475,7 +475,7 @@ function DormitoryDetailPageContent({
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>NIS</TableHead>
+                          <TableHead>NISN</TableHead>
                           <TableHead>Nama</TableHead>
                           <TableHead>Tanggal Masuk</TableHead>
                           <TableHead className="text-right">Aksi</TableHead>

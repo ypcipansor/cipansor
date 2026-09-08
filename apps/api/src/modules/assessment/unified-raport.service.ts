@@ -84,7 +84,6 @@ export class UnifiedRaportService {
       student: {
         id: student.id,
         name: student.user.name,
-        nis: student.nisn || student.nik || "-",
         nisn: student.nisn,
         class: enrollment.class.name,
         gradeLevel: enrollment.class.level,

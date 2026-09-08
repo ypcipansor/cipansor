@@ -8,7 +8,7 @@ export interface Bill {
   student?: {
     id: string;
     name: string;
-    nis: string;
+    nisn: string;
     class?: {
       id: string;
       name: string;
@@ -385,7 +385,7 @@ export interface SppMatrixMonth {
 export interface StudentSppRow {
   studentId: string;
   studentName: string;
-  nis: string;
+  nisn: string;
   className: string;
   months: {
     [month: string]: SppMatrixMonth;

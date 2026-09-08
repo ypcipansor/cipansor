@@ -6,6 +6,7 @@ import {
   CreateStudentInput,
   UpdateStudentInput,
   GraduateStudentInput,
+  AlumniLookupQuery,
 } from './student.schema';
 
 /**
@@ -34,7 +35,7 @@ export const list = asyncHandler(async (req: Request, res: Response) => {
  * GET /api/students/alumni/lookup
  */
 export const lookupAlumni = asyncHandler(async (req: Request, res: Response) => {
-  const { identifier } = req.query;
+  const { identifier } = (res.locals.validatedQuery || req.query) as AlumniLookupQuery;
   const currentUser = req.user
     ? { role: req.user.role, roleCode: req.user.roleCode, unitId: req.user.unitId }
     : undefined;

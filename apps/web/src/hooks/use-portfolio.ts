@@ -39,7 +39,7 @@ export interface Portfolio {
   updatedAt: string;
   student?: {
     id: string;
-    nis: string;
+    nisn: string;
     user: { name: string; email?: string };
     unit?: { id: string; name: string };
   };
@@ -99,7 +99,7 @@ export interface PortfolioStatistics {
 export interface StudentShowcase {
   student: {
     id: string;
-    nis: string;
+    nisn: string;
     user: { name: string };
     unit: { name: string };
     photoUrl?: string;

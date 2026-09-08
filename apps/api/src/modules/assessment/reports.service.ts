@@ -9,7 +9,6 @@ interface SkhunData {
   student: {
     id: string;
     name: string;
-    nis: string;
     nisn: string | null;
     birthPlace: string | null;
     birthDate: Date | null;
@@ -47,7 +46,6 @@ interface TranscriptData {
   student: {
     id: string;
     name: string;
-    nis: string;
     nisn: string | null;
     birthPlace: string | null;
     birthDate: Date | null;
@@ -261,7 +259,6 @@ export async function generateSkhun(
     student: {
       id: student.id,
       name: student.user.name,
-      nis: student.nisn || student.nik || "-",
       nisn: student.nisn,
       birthPlace: student.birthPlace,
       birthDate: student.birthDate,
@@ -454,7 +451,6 @@ export async function generateTranscript(
     student: {
       id: student.id,
       name: student.user.name,
-      nis: student.nisn || student.nik || "-",
       nisn: student.nisn,
       birthPlace: student.birthPlace,
       birthDate: student.birthDate,

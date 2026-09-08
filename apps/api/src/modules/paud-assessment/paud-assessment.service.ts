@@ -845,7 +845,7 @@ async function getClassSummary(query: ClassSummaryQuery) {
     return {
       student: {
         id: student.id,
-        nis: student.nisn || student.nik || "-",
+        nisn: student.nisn || student.nik || "-",
         name: student.user.name,
       },
       totalAssessments: studentAssessments.length,

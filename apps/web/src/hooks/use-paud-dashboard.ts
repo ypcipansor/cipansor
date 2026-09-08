@@ -19,7 +19,7 @@ export interface PAUDDashboardStats {
 export interface ClassSummaryStudent {
   id: string;
   name: string;
-  nis?: string;
+  nisn?: string;
   assessmentCount: number;
   averageLevel: string;
   aspects: {
@@ -46,7 +46,7 @@ export interface StudentAssessmentSummary {
   student: {
     id: string;
     name: string;
-    nis?: string;
+    nisn?: string;
     className?: string;
   };
   totalAssessments: number;
@@ -66,7 +66,7 @@ export interface PAUDNarrativeReport {
   student?: {
     id: string;
     name: string;
-    nis?: string;
+    nisn?: string;
   };
   academicYearId: string;
   semester: string;

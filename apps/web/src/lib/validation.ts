@@ -185,19 +185,6 @@ export const nik = (
 });
 
 /**
- * NIS validation
- */
-export const nis = (message = "Format NIS tidak valid"): ValidationRule => ({
-  validate: (value) => {
-    if (!value || typeof value !== "string") return true;
-    // NIS typically 10-12 digits
-    const nisRegex = /^[0-9]{10,12}$/;
-    return nisRegex.test(value.replace(/\D/g, ""));
-  },
-  message,
-});
-
-/**
  * NISN validation (National Student ID - 10 digits)
  */
 export const nisn = (

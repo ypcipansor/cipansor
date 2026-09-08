@@ -198,7 +198,7 @@ export default function NewCertificatePage() {
                             studentsData?.data?.map((student: any) => (
                               <SelectItem key={student.id} value={student.id}>
                                 {student.name || student.user?.name} -{" "}
-                                {student.nis}
+                                {student.nisn}
                               </SelectItem>
                             ))
                           )}

@@ -118,7 +118,7 @@ export interface KitabProgress {
   studentId: string;
   student?: {
     id: string;
-    nis: string;
+    nisn: string;
     name: string;
     classEnrollment?: {
       class: {
@@ -162,7 +162,7 @@ export interface KitabStatistics {
 export interface StudentKitabReport {
   student: {
     id: string;
-    nis: string;
+    nisn: string;
     name: string;
   };
   progresses: KitabProgress[];

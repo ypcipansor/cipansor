@@ -178,8 +178,8 @@ export default function ReportCardDetailPage() {
                   </dd>
                 </div>
                 <div className="flex justify-between">
-                  <dt className="text-muted-foreground">NIS</dt>
-                  <dd className="font-mono">{reportCard.student?.nis}</dd>
+                  <dt className="text-muted-foreground">NISN</dt>
+                  <dd className="font-mono">{reportCard.student?.nisn}</dd>
                 </div>
                 <div className="flex justify-between">
                   <dt className="text-muted-foreground">NISN</dt>

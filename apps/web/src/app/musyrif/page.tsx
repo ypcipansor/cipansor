@@ -101,7 +101,7 @@ function MusyrifDashboardContent() {
   const filteredStudents = (students || []).filter(
     (s) =>
       s.name.toLowerCase().includes(search.toLowerCase()) ||
-      s.nis.includes(search) ||
+      s.nisn.includes(search) ||
       s.room.toLowerCase().includes(search.toLowerCase()),
   );
 
@@ -335,7 +335,7 @@ function MusyrifDashboardContent() {
           <div className="relative">
             <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Cari nama, NIS, atau kamar..."
+              placeholder="Cari nama, NISN, atau kamar..."
               className="pl-9"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -374,7 +374,7 @@ function MusyrifDashboardContent() {
                           </Badge>
                         </div>
                         <p className="text-xs text-muted-foreground truncate">
-                          {student.nis} • Kelas {student.class}
+                          {student.nisn} • Kelas {student.class}
                         </p>
                       </div>
                     </div>

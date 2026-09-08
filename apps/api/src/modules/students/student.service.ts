@@ -112,7 +112,6 @@ export class StudentService {
       return {
         ...student,
         currentClass,
-        nis: student.nisn || student.nik || '-',
       };
     });
 
@@ -146,7 +145,14 @@ export class StudentService {
       OR: [{ nik: clean }, { nisn: clean }],
     };
 
-    // Internal alumni re-enrollment lookup allows searching across lower units within the yayasan
+    // Internal alumni re-enrollment lookup is scoped the same way as the
+    // student list: only foundation/board and cross-unit roles (see
+    // seesAllUnits) may search across all units. A user pinned to one unit must
+    // not be able to pull another unit's alumni identity to re-enroll them.
+    if (!currentUser || !seesAllUnits(currentUser)) {
+      where.unitId = currentUser?.unitId || 'none';
+    }
+
     const student = await prisma.student.findFirst({
       where,
       select: {
@@ -169,7 +175,6 @@ export class StudentService {
     }
     return {
       ...student,
-      nis: student.nisn || student.nik || '-',
     };
   }
 
@@ -284,7 +289,6 @@ export class StudentService {
     return {
       ...student,
       currentClass,
-      nis: student.nisn || student.nik || '-',
       summary: {
         walletBalance: student.wallet ? Number(student.wallet.balance) : 0,
         violationPoints: totalViolationPoints,
@@ -385,7 +389,6 @@ export class StudentService {
 
     return {
       ...student,
-      nis: student.nisn || student.nik || '-',
       parents: student.parents.map((link) => ({
         id: link.parent.id,
         name: link.parent.name,
@@ -438,6 +441,13 @@ export class StudentService {
       await tx.classEnrollment.updateMany({
         where: { studentId: id, status: 'active' },
         data: { status: 'completed' },
+      });
+
+      // Free the dormitory bed on graduation so the room roster no longer shows
+      // the graduate and the assignment cannot be reused while still active.
+      await tx.roomAssignment.updateMany({
+        where: { studentId: id, isActive: true },
+        data: { isActive: false, endedAt: new Date() },
       });
 
       const updated = await tx.student.update({
@@ -645,6 +655,34 @@ export class StudentService {
     const targetStatus = input.status ? this.mapCanonicalStatus(input.status) : undefined;
 
     if (targetStatus === 'alumni') {
+      // Apply any profile changes BEFORE graduating. A single update() that
+      // carries status 'alumni' together with name/identifier/profile edits would
+      // otherwise lose everything after the graduation early-return. graduateStudent
+      // re-reads the student, so it picks up the updated values for the alumni record.
+      if (input.name) {
+        await prisma.user.update({
+          where: { id: student.userId },
+          data: { name: input.name },
+        });
+      }
+      await prisma.student.update({
+        where: { id },
+        data: {
+          nisn: input.nisn,
+          nik: input.nik,
+          noKK: input.noKK,
+          noAkta: input.noAkta,
+          kipNumber: input.kipNumber,
+          gender: input.gender as Gender | undefined,
+          birthPlace: input.birthPlace,
+          birthDate: input.birthDate,
+          address: input.address,
+          parentName: input.parentName,
+          parentPhone: input.parentPhone,
+          parentEmail: input.parentEmail,
+          photoUrl: input.photoUrl,
+        },
+      });
       return this.graduateStudent(id);
     }
 

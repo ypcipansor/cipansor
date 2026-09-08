@@ -50,7 +50,7 @@ export default function ParentReportCardsPage() {
     return (
       childrenData?.map((c) => ({
         id: c.id,
-        nis: c.nis,
+        nisn: c.nisn,
         name: c.name,
         gender: c.gender,
         photo: c.photoUrl || null,
@@ -211,7 +211,7 @@ export default function ParentReportCardsPage() {
               <div className="space-y-1">
                 <h2 className="text-2xl font-bold">{currentChild.name}</h2>
                 <p className="text-muted-foreground font-mono">
-                  {currentChild.nis}
+                  {currentChild.nisn}
                 </p>
                 <div className="flex gap-2">
                   <Badge variant="secondary">{currentChild.class.name}</Badge>

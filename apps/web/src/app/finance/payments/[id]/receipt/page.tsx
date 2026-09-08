@@ -198,8 +198,8 @@ export default function PaymentReceiptPage({ params }: ReceiptPageProps) {
                   </span>
                 </div>
                 <div className="grid grid-cols-[140px,1fr] gap-2">
-                  <span>NIS</span>
-                  <span>: {payment.bill?.student?.nis || "-"}</span>
+                  <span>NISN</span>
+                  <span>: {payment.bill?.student?.nisn || "-"}</span>
                 </div>
                 <div className="grid grid-cols-[140px,1fr] gap-2">
                   <span>Kelas</span>

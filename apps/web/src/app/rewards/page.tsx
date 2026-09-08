@@ -251,7 +251,7 @@ function RewardsPageContent() {
                               {reward.student?.name}
                             </p>
                             <p className="text-sm text-muted-foreground">
-                              {reward.student?.nis}
+                              {reward.student?.nisn}
                             </p>
                           </div>
                         </TableCell>

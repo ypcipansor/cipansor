@@ -294,7 +294,7 @@ export default function P5ProjectDetailPage() {
             {row.original.student?.user?.name || "-"}
           </p>
           <p className="text-sm text-muted-foreground">
-            {row.original.student?.nis}
+            {row.original.student?.nisn}
           </p>
         </div>
       ),
@@ -666,7 +666,7 @@ export default function P5ProjectDetailPage() {
                       )
                       .map((student) => (
                         <SelectItem key={student.id} value={student.id}>
-                          {student.name} ({student.nis})
+                          {student.name} ({student.nisn})
                         </SelectItem>
                       ))}
                   </SelectContent>

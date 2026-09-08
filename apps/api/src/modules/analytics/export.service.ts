@@ -82,7 +82,8 @@ export async function exportAttendanceData(options: ExportOptions) {
 
   return attendances.map((att) => ({
     date: att.date.toISOString().split('T')[0],
-    studentNis: att.student.nisn || att.student.nik || "-",
+    studentNisn: att.student.nisn,
+    studentNik: att.student.nik,
     studentName: att.student.user.name,
     class: att.student.enrollments[0]?.class?.name || '-',
     status: att.status,
@@ -116,7 +117,8 @@ export async function exportFinanceData(options: ExportOptions) {
 
   return invoices.map((inv) => ({
     invoiceNumber: inv.invoiceNumber,
-    studentNis: inv.student.nisn || inv.student.nik || "-",
+    studentNisn: inv.student.nisn,
+    studentNik: inv.student.nik,
     studentName: inv.student.user.name,
     paymentType: inv.paymentType.name,
     amount: Number(inv.amount),
@@ -154,7 +156,8 @@ export async function exportTahfidzData(options: ExportOptions) {
 
   return records.map((rec) => ({
     date: rec.recordedAt.toISOString().split('T')[0],
-    studentNis: rec.student.nisn || rec.student.nik || "-",
+    studentNisn: rec.student.nisn,
+    studentNik: rec.student.nik,
     studentName: rec.student.user.name,
     activityType: rec.activityType,
     surahName: rec.surahName || '-',

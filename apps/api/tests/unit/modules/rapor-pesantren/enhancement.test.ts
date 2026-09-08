@@ -74,9 +74,9 @@ describe('Rapor Pesantren Enhancements', () => {
     it('should calculate ranks based on overallScore', async () => {
       // Setup mock data
       const mockEnrollments = [
-        { student: { id: 's1', user: { name: 'Alice' }, nis: '123' } },
-        { student: { id: 's2', user: { name: 'Bob' }, nis: '124' } },
-        { student: { id: 's3', user: { name: 'Charlie' }, nis: '125' } },
+        { student: { id: 's1', user: { name: 'Alice' }, nisn: '123' } },
+        { student: { id: 's2', user: { name: 'Bob' }, nisn: '124' } },
+        { student: { id: 's3', user: { name: 'Charlie' }, nisn: '125' } },
       ];
 
       const mockRapors = [

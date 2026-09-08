@@ -249,7 +249,7 @@ function PermitsPageContent() {
                         <div>
                           <p className="font-medium">{permit.student?.name}</p>
                           <p className="text-xs text-muted-foreground">
-                            {permit.student?.nis}
+                            {permit.student?.nisn}
                           </p>
                         </div>
                       </TableCell>

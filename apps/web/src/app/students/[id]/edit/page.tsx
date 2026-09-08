@@ -34,7 +34,7 @@ import Link from "next/link";
 import { getEffectiveRole } from "@/lib/rbac";
 
 const studentSchema = z.object({
-  nis: z.string().min(1, "NIS is required"),
+  nisn: z.string().min(1, "NISN is required"),
   name: z.string().min(1, "Name is required"),
   gender: z.enum(["MALE", "FEMALE"], { required_error: "Gender is required" }),
   birthDate: z.string().min(1, "Birth date is required"),
@@ -72,7 +72,7 @@ export default function EditStudentPage() {
   useEffect(() => {
     if (student) {
       reset({
-        nis: student.nis,
+        nisn: student.nisn,
         name: student.name,
         gender: student.gender,
         birthDate: student.birthDate.split("T")[0],
@@ -152,11 +152,11 @@ export default function EditStudentPage() {
             </CardHeader>
             <CardContent className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="nis">NIS (Student ID) *</Label>
-                <Input id="nis" {...register("nis")} />
-                {errors.nis && (
+                <Label htmlFor="nisn">NISN (Student ID) *</Label>
+                <Input id="nisn" {...register("nisn")} />
+                {errors.nisn && (
                   <p className="text-sm text-destructive">
-                    {errors.nis.message}
+                    {errors.nisn.message}
                   </p>
                 )}
               </div>

@@ -27,19 +27,19 @@ export class AssessmentAnalyticsService {
       rewards,
       attendance,
       ibadahPoints,
-      examAttempts
+      examAttempts,
     ] = await Promise.all([
       // 1. Academic: Average of all subject percentages
       prisma.grade.aggregate({
         where: { studentId, academicYearId },
-        _avg: { percentage: true }
+        _avg: { percentage: true },
       }),
 
       // 2. Tahfidz: Progress against target (cumulative, not year-scoped)
       prisma.tahfidzRecord.aggregate({
         where: { studentId },
         _sum: { totalAyah: true },
-        _max: { juz: true }
+        _max: { juz: true },
       }),
 
       // 3. Behavior (Violations): Total violation points within academic year
@@ -48,7 +48,7 @@ export class AssessmentAnalyticsService {
           studentId,
           ...(yearStart && yearEnd ? { occurredAt: { gte: yearStart, lte: yearEnd } } : {}),
         },
-        _sum: { points: true }
+        _sum: { points: true },
       }),
 
       // 3.5 Behavior (Rewards): Total reward points within academic year.
@@ -59,7 +59,7 @@ export class AssessmentAnalyticsService {
           studentId,
           ...(yearStart && yearEnd ? { givenAt: { gte: yearStart, lte: yearEnd } } : {}),
         },
-        _sum: { points: true }
+        _sum: { points: true },
       }),
 
       // 4. Attendance: Presence percentage within academic year
@@ -79,7 +79,7 @@ export class AssessmentAnalyticsService {
           isCompleted: true,
           ...(yearStart && yearEnd ? { date: { gte: yearStart, lte: yearEnd } } : {}),
         },
-        _sum: { pointsEarned: true }
+        _sum: { pointsEarned: true },
       }),
 
       // 6. CBT Performance: Mastery trends
@@ -90,7 +90,7 @@ export class AssessmentAnalyticsService {
           status: { in: ['COMPLETED', 'NEEDS_REVIEW'] },
         },
         select: { score: true, exam: { select: { maxScore: true } } },
-      })
+      }),
     ]);
 
     // Calculate sub-scores (scaled 0-100)
@@ -100,12 +100,15 @@ export class AssessmentAnalyticsService {
     const hasAcademicData = academicGrades._avg.percentage !== null;
     const hasTahfidzData = tahfidzProgress._max.juz !== null;
     const hasRawAttendanceData = attendance.length > 0;
-    const hasIbadahData = ibadahPoints._sum.pointsEarned !== null && Number(ibadahPoints._sum.pointsEarned) > 0;
+    const hasIbadahData =
+      ibadahPoints._sum.pointsEarned !== null && Number(ibadahPoints._sum.pointsEarned) > 0;
 
     const academicScore = hasAcademicData ? Number(academicGrades._avg.percentage) : null;
 
     // Tahfidz score: assuming 30 juz is 100% for high level
-    const tahfidzScore = hasTahfidzData ? Math.min(100, ((tahfidzProgress._max.juz || 0) / 30) * 100) : null;
+    const tahfidzScore = hasTahfidzData
+      ? Math.min(100, ((tahfidzProgress._max.juz || 0) / 30) * 100)
+      : null;
 
     // Behavior score: starting at 100, subtract violation points and add reward points.
     // Unlike grades or attendance (where records are created per student),
@@ -124,15 +127,25 @@ export class AssessmentAnalyticsService {
     // Attendance score
     // SICK and EXCUSED are counted as partial presence (50% weight) since they are
     // legitimate absences that shouldn't penalize students the same as unexcused ones.
-    const attMap: any = attendance.reduce((acc: any, curr: any) => ({ ...acc, [curr.status]: curr._count._all }), {});
-    const totalDays = Object.values(attMap).reduce((a: any, b: any) => (a as number) + (b as number), 0) as number;
+    const attMap: any = attendance.reduce(
+      (acc: any, curr: any) => ({ ...acc, [curr.status]: curr._count._all }),
+      {}
+    );
+    const totalDays = Object.values(attMap).reduce(
+      (a: any, b: any) => (a as number) + (b as number),
+      0
+    ) as number;
     const presentDays = ((attMap['PRESENT'] as number) || 0) + ((attMap['LATE'] as number) || 0);
     const excusedDays = ((attMap['SICK'] as number) || 0) + ((attMap['EXCUSED'] as number) || 0);
     const hasAttendanceData = hasRawAttendanceData && totalDays > 0;
-    const attendanceScore = hasAttendanceData ? ((presentDays + excusedDays * 0.5) / totalDays) * 100 : null;
+    const attendanceScore = hasAttendanceData
+      ? ((presentDays + excusedDays * 0.5) / totalDays) * 100
+      : null;
 
     // Ibadah score (relative to an arbitrary yearly target of 3000 pts)
-    const ibadahScore = hasIbadahData ? Math.min(100, (Number(ibadahPoints._sum.pointsEarned) / 3000) * 100) : null;
+    const ibadahScore = hasIbadahData
+      ? Math.min(100, (Number(ibadahPoints._sum.pointsEarned) / 3000) * 100)
+      : null;
 
     // 6. CBT Mastery Score
     // Filter out attempts with null scores (edge cases like direct DB updates
@@ -165,29 +178,40 @@ export class AssessmentAnalyticsService {
       { score: ibadahScore, weight: 0.1 },
       { score: cbtScore, weight: 0.2 },
     ];
-    const activeWeights = weights.filter(w => w.score !== null);
+    const activeWeights = weights.filter((w) => w.score !== null);
     const totalWeight = activeWeights.reduce((sum, w) => sum + w.weight, 0);
     // Re-normalize: divide each weight by totalWeight so partial data is scaled
     // back to 0-100 instead of being penalized for missing dimensions.
-    const normalizedScore = totalWeight > 0
-      ? activeWeights.reduce((sum, w) => sum + (w.score! * (w.weight / totalWeight)), 0)
-      : 0;
+    const normalizedScore =
+      totalWeight > 0
+        ? activeWeights.reduce((sum, w) => sum + w.score! * (w.weight / totalWeight), 0)
+        : 0;
 
-    const dimensionsWithData = [hasAcademicData, hasTahfidzData, hasBehaviorData, hasAttendanceData, hasIbadahData, hasCBTData].filter(Boolean).length;
-    const dataCompleteness = dimensionsWithData >= 5 ? 'COMPLETE' : dimensionsWithData >= 2 ? 'PARTIAL' : 'INSUFFICIENT';
+    const dimensionsWithData = [
+      hasAcademicData,
+      hasTahfidzData,
+      hasBehaviorData,
+      hasAttendanceData,
+      hasIbadahData,
+      hasCBTData,
+    ].filter(Boolean).length;
+    const dataCompleteness =
+      dimensionsWithData >= 5 ? 'COMPLETE' : dimensionsWithData >= 2 ? 'PARTIAL' : 'INSUFFICIENT';
 
-    const roundOrNull = (v: number | null) => v !== null ? Math.round(v * 100) / 100 : null;
+    const roundOrNull = (v: number | null) => (v !== null ? Math.round(v * 100) / 100 : null);
 
     // When data is insufficient (only behavior with no other dimensions),
     // return 0 instead of a misleading renormalized score.
-    const finalScore = dataCompleteness === 'INSUFFICIENT' ? 0 : Math.round(normalizedScore * 100) / 100;
+    const finalScore =
+      dataCompleteness === 'INSUFFICIENT' ? 0 : Math.round(normalizedScore * 100) / 100;
 
     const baseInterpretation = this.getHolisticInterpretation(finalScore);
-    const interpretation = dataCompleteness === 'INSUFFICIENT'
-      ? 'Dhoif (Perlu Bimbingan/Needs Improvement)'
-      : dataCompleteness === 'PARTIAL'
-        ? `${baseInterpretation} — Data Sebagian (${dimensionsWithData}/6 dimensi)`
-        : baseInterpretation;
+    const interpretation =
+      dataCompleteness === 'INSUFFICIENT'
+        ? 'Dhoif (Perlu Bimbingan/Needs Improvement)'
+        : dataCompleteness === 'PARTIAL'
+          ? `${baseInterpretation} — Data Sebagian (${dimensionsWithData}/6 dimensi)`
+          : baseInterpretation;
 
     const breakdown = {
       academic: roundOrNull(academicScore),
@@ -230,26 +254,31 @@ export class AssessmentAnalyticsService {
     breakdown: Record<string, number | null>,
     dataCompleteness: string
   ): string {
-    const genericMessage = "Pertahankan prestasi dan terus kembangkan potensi diri di segala aspek.";
+    const genericMessage =
+      'Pertahankan prestasi dan terus kembangkan potensi diri di segala aspek.';
     const entries: [string, number][] = Object.entries(breakdown)
       .filter(([, v]) => v !== null && v !== undefined)
       .map(([k, v]) => [k, Number(v)] as [string, number]);
     if (entries.length === 0 || dataCompleteness === 'INSUFFICIENT') {
       return genericMessage;
     }
-    const lowest = entries.reduce((a, b) => a[1] <= b[1] ? a : b, entries[0]);
+    const lowest = entries.reduce((a, b) => (a[1] <= b[1] ? a : b), entries[0]);
 
     if (lowest[1] >= 80) {
       return genericMessage;
     }
 
     const recommendations: Record<string, string> = {
-      academic: "Fokus pada peningkatan jam belajar mandiri dan konsultasi dengan guru mata pelajaran yang nilainya masih di bawah KKM.",
-      tahfidz: "Tingkatkan intensitas murojaah harian dan pastikan setoran ziyadah konsisten sesuai target juz per semester.",
-      behavior: "Perlu bimbingan intensif dalam kedisiplinan dan kepatuhan terhadap tata tertib pesantren.",
-      attendance: "Tingkatkan kedisiplinan dalam kehadiran di kelas dan kegiatan wajib lainnya.",
-      ibadah: "Meningkatkan kesadaran dalam menjalankan ibadah yaumiyah secara mandiri dan tepat waktu.",
-      cbt: "Latih kemampuan mengerjakan soal ujian berbasis komputer secara berkala untuk meningkatkan ketajaman analisis."
+      academic:
+        'Fokus pada peningkatan jam belajar mandiri dan konsultasi dengan guru mata pelajaran yang nilainya masih di bawah KKM.',
+      tahfidz:
+        'Tingkatkan intensitas murojaah harian dan pastikan setoran ziyadah konsisten sesuai target juz per semester.',
+      behavior:
+        'Perlu bimbingan intensif dalam kedisiplinan dan kepatuhan terhadap tata tertib pesantren.',
+      attendance: 'Tingkatkan kedisiplinan dalam kehadiran di kelas dan kegiatan wajib lainnya.',
+      ibadah:
+        'Meningkatkan kesadaran dalam menjalankan ibadah yaumiyah secara mandiri dan tepat waktu.',
+      cbt: 'Latih kemampuan mengerjakan soal ujian berbasis komputer secara berkala untuk meningkatkan ketajaman analisis.',
     };
 
     return recommendations[lowest[0]] || genericMessage;
@@ -340,7 +369,10 @@ export class AssessmentAnalyticsService {
     ]);
 
     const academicMap = new Map<string, number | null>(
-      gradeAggs.map((g) => [g.studentId, g._avg.percentage !== null ? Number(g._avg.percentage) : null])
+      gradeAggs.map((g) => [
+        g.studentId,
+        g._avg.percentage !== null ? Number(g._avg.percentage) : null,
+      ])
     );
     const violationMap = new Map<string, number>(
       violationAggs.map((v) => [v.studentId, Number(v._sum.points || 0)])
@@ -355,7 +387,7 @@ export class AssessmentAnalyticsService {
     const alerts: Array<{
       studentId: string;
       name: string;
-      nis: string;
+      nisn: string | null;
       score: number;
       alerts: string[];
       priority: 'CRITICAL' | 'HIGH';
@@ -363,7 +395,10 @@ export class AssessmentAnalyticsService {
 
     for (const student of students) {
       const academic = academicMap.get(student.id) ?? null;
-      const behavior = Math.max(0, Math.min(100, 100 - (violationMap.get(student.id) || 0) + (rewardMap.get(student.id) || 0)));
+      const behavior = Math.max(
+        0,
+        Math.min(100, 100 - (violationMap.get(student.id) || 0) + (rewardMap.get(student.id) || 0))
+      );
       const tahfidzJuz = tahfidzMap.get(student.id);
       const tahfidz =
         tahfidzJuz !== null && tahfidzJuz !== undefined
@@ -390,7 +425,7 @@ export class AssessmentAnalyticsService {
       alerts.push({
         studentId: student.id,
         name: student.user.name,
-        nis: student.nisn || student.nik || "-",
+        nisn: student.nisn,
         score: Math.round(score * 100) / 100,
         alerts: reasons,
         priority: reasons.length >= 3 ? 'CRITICAL' : 'HIGH',
@@ -409,18 +444,18 @@ export class AssessmentAnalyticsService {
       prisma.grade.groupBy({
         by: ['subjectId'],
         where: { academicYearId, student: { unitId } },
-        _avg: { percentage: true }
+        _avg: { percentage: true },
       }),
       // 2. Tahfidz progress summary for unit
       prisma.tahfidzRecord.aggregate({
         where: { student: { unitId } },
         _avg: { juz: true },
-        _count: { id: true }
+        _count: { id: true },
       }),
       // 3. Student count
       prisma.student.count({
-        where: { unitId, status: 'active' }
-      })
+        where: { unitId, status: 'active' },
+      }),
     ]);
 
     return {
@@ -428,10 +463,10 @@ export class AssessmentAnalyticsService {
       academicYearId,
       studentCount: enrollmentCount,
       averageJuz: Math.round(Number(tahfidzStats._avg.juz || 0) * 10) / 10,
-      subjectAverages: avgScores.map(s => ({
+      subjectAverages: avgScores.map((s) => ({
         subjectId: s.subjectId,
-        averagePercentage: Math.round(Number(s._avg.percentage || 0) * 100) / 100
-      }))
+        averagePercentage: Math.round(Number(s._avg.percentage || 0) * 100) / 100,
+      })),
     };
   }
 }

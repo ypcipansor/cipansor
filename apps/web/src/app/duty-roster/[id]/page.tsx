@@ -58,7 +58,7 @@ interface StudentAssignment {
   studentId: string;
   student: {
     id: string;
-    nis: string;
+    nisn: string;
     name: string;
     class: { id: string; name: string };
   };
@@ -439,7 +439,7 @@ function DutyRosterDetailPageContent() {
                     <div>
                       <p className="font-medium">{assignment.student.name}</p>
                       <p className="text-sm text-muted-foreground">
-                        {assignment.student.nis} •{" "}
+                        {assignment.student.nisn} •{" "}
                         {assignment.student.class.name}
                       </p>
                     </div>

@@ -65,7 +65,7 @@ export interface ExtracurricularEnrollment {
   studentId: string;
   student?: {
     id: string;
-    nis: string;
+    nisn: string;
     name: string;
     currentClass?: {
       id: string;
@@ -117,7 +117,7 @@ export interface ExtracurricularAchievement {
     student?: {
       id: string;
       name: string;
-      nis: string;
+      nisn: string;
     };
   }>;
   certificate?: string; // URL to certificate image

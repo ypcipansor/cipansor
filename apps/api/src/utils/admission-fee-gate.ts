@@ -6,7 +6,7 @@ import { Errors } from '@/middleware/error';
  * Enrollment gated only on `status === 'ACCEPTED'`. Being accepted is an
  * academic decision; it is not the same as having completed daftar ulang. So
  * an accepted registrant became a full student — account, class enrolment,
- * wallet, medical record, NIS — before paying anything, and the fee owed
+ * wallet, medical record, NISN — before paying anything, and the fee owed
  * (AdmissionPeriod.registrationFee) had no counterpart recording settlement.
  *
  * Two enrolment paths exist (the orchestrator and psb.service.enrollRegistrant)

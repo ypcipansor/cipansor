@@ -19,7 +19,6 @@ interface EmisExportOptions {
 interface EmisStudentData {
   no: number;
   nisn: string;
-  nis: string;
   nama: string;
   tempatLahir: string;
   tanggalLahir: string;
@@ -180,7 +179,6 @@ export class EmisService {
       return {
         no: index + 1,
         nisn: student.nisn || '',
-        nis: student.nisn || student.nik || "-",
         nama: student.user.name,
         tempatLahir: student.birthPlace,
         tanggalLahir: this.formatDate(student.birthDate),
@@ -195,7 +193,7 @@ export class EmisService {
         status: student.status,
         tahunMasuk: student.entryYear,
         tahunLulus: student.graduateYear,
-        nisLokal: student.nisn || student.nik || "-",
+        nisLokal: student.nisn || student.nik || '-',
       };
     });
 

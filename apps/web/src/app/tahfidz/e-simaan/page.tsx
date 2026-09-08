@@ -120,9 +120,9 @@ export default function ESimaanPage() {
                   <SelectValue placeholder="Pilih santri" />
                 </SelectTrigger>
                 <SelectContent>
-                  {students.map((s: { id: string; user?: { name?: string }; nis?: string }) => (
+                  {students.map((s: { id: string; user?: { name?: string }; nisn?: string }) => (
                     <SelectItem key={s.id} value={s.id}>
-                      {s.user?.name || s.nis || s.id}
+                      {s.user?.name || s.nisn || s.id}
                     </SelectItem>
                   ))}
                 </SelectContent>

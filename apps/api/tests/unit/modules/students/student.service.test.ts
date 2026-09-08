@@ -34,6 +34,9 @@ vi.mock('../../../../src/lib/prisma', () => {
       create: vi.fn(),
       updateMany: vi.fn(),
     },
+    roomAssignment: {
+      updateMany: vi.fn(),
+    },
     alumni: {
       upsert: vi.fn(),
     },
@@ -139,7 +142,7 @@ describe('StudentService', () => {
           }),
         })
       );
-      expect(result).toEqual({ ...mockAlumnus, nis: '1234567890' });
+      expect(result).toEqual({ ...mockAlumnus, nisn: '1234567890' });
     });
 
     it('should return null when identifier is empty', async () => {
@@ -175,6 +178,14 @@ describe('StudentService', () => {
 
       const result = await studentService.graduateStudent('student-active-1', 2026);
 
+      expect(prisma.classEnrollment.updateMany).toHaveBeenCalledWith({
+        where: { studentId: 'student-active-1', status: 'active' },
+        data: { status: 'completed' },
+      });
+      expect(prisma.roomAssignment.updateMany).toHaveBeenCalledWith({
+        where: { studentId: 'student-active-1', isActive: true },
+        data: { isActive: false, endedAt: expect.any(Date) },
+      });
       expect(prisma.student.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'student-active-1' },

@@ -75,7 +75,7 @@ export interface SimaanExam {
   updatedAt: string;
   student?: {
     id: string;
-    nis: string;
+    nisn: string;
     photoUrl?: string | null;
     user?: {
       name: string;

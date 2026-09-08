@@ -107,14 +107,14 @@ function MuhadatsahPageContent() {
     if (!record) return false;
     const query = searchQuery.toLowerCase();
     const studentName = record.student?.name || "";
-    const studentNis = record.student?.nis || "";
+    const studentNisn = record.student?.nisn || "";
     const partnerName = record.partner?.name || "";
     const topic = record.topic || "";
 
     return (
       topic.toLowerCase().includes(query) ||
       studentName.toLowerCase().includes(query) ||
-      studentNis.toLowerCase().includes(query) ||
+      studentNisn.toLowerCase().includes(query) ||
       partnerName.toLowerCase().includes(query)
     );
   });
@@ -537,7 +537,7 @@ function MuhadatsahPageContent() {
                         <div className="flex-1">
                           <div className="font-medium">{partner.name}</div>
                           <div className="text-sm text-muted-foreground">
-                            {partner.nis} • {partner.class?.name}
+                            {partner.nisn} • {partner.class?.name}
                           </div>
                         </div>
                         <Button size="sm" variant="outline">
@@ -696,7 +696,7 @@ function MuhadatsahPageContent() {
                       <div>
                         <div className="font-medium">{performer.name}</div>
                         <div className="text-sm text-muted-foreground">
-                          {performer.nis} • {performer.class}
+                          {performer.nisn} • {performer.class}
                         </div>
                       </div>
                     </div>

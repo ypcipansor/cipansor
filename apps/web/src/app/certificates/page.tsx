@@ -106,7 +106,7 @@ export default function CertificatesPage() {
         <div>
           <div className="font-medium">{row.original.student?.name || "-"}</div>
           <div className="text-sm text-muted-foreground">
-            {row.original.student?.nis || "-"}
+            {row.original.student?.nisn || "-"}
           </div>
         </div>
       ),

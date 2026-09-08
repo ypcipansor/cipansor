@@ -17,7 +17,6 @@ export const TRANSPORT_MODES = [
 export interface StudentComplianceData {
   id: string;
   name: string;
-  nis: string;
   nisn?: string;
   nik?: string;
   noAkta?: string;
@@ -118,7 +117,7 @@ export interface DapodikReadyReport {
   issues: {
     studentId: string;
     studentName: string;
-    nis: string;
+    nisn: string;
     missingFields: string[];
   }[];
 }

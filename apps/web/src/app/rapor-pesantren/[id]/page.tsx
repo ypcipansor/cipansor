@@ -138,7 +138,7 @@ function RaporDetailPageContent() {
                 <h2 className="text-2xl font-bold">{rapor.student.name}</h2>
                 <div className="text-muted-foreground space-y-1">
                   <p>
-                    NIS: {rapor.student.nis}{" "}
+                    NISN: {rapor.student.nisn}{" "}
                     {rapor.student.nisn && `| NISN: ${rapor.student.nisn}`}
                   </p>
                   <p>Kelas: {rapor.student.class.name}</p>

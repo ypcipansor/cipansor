@@ -274,7 +274,7 @@ export interface P5Assessment {
     user: {
       name: string;
     };
-    nis: string;
+    nisn: string;
     class?: {
       name: string;
     };
@@ -353,7 +353,7 @@ export interface MerdekaAssessmentResult {
     user: {
       name: string;
     };
-    nis: string;
+    nisn: string;
   };
   score?: number;
   percentage?: number;

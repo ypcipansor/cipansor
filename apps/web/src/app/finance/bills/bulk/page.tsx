@@ -371,7 +371,7 @@ export default function BulkBillsPage() {
                           aria-label="Select all students"
                         />
                       </TableHead>
-                      <TableHead>NIS</TableHead>
+                      <TableHead>NISN</TableHead>
                       <TableHead>Nama</TableHead>
                       <TableHead>Kelas</TableHead>
                       <TableHead>Unit</TableHead>
@@ -390,7 +390,7 @@ export default function BulkBillsPage() {
                           />
                         </TableCell>
                         <TableCell className="font-mono text-sm">
-                          {student.nis}
+                          {student.nisn}
                         </TableCell>
                         <TableCell className="font-medium">
                           {student.name}

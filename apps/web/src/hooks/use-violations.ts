@@ -29,7 +29,7 @@ export interface Violation {
   student?: {
     id: string;
     name: string;
-    nis: string;
+    nisn: string;
     class?: { name: string };
     unit?: { name: string };
   };

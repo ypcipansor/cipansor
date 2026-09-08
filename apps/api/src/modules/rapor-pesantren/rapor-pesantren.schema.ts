@@ -294,7 +294,6 @@ export interface RaporPesantren {
   student: {
     id: string;
     name: string;
-    nis: string;
     nisn?: string;
     nik?: string;
     gender: string;
@@ -355,7 +354,8 @@ export interface LegerItem {
   id: string; // Rapor ID
   studentId: string;
   studentName: string;
-  studentNis: string;
+  studentNisn: string | null;
+  studentNik?: string | null;
 
   // Component Scores
   tahfidzScore: number;

@@ -1,7 +1,7 @@
 import { randomBytes } from 'crypto';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../../lib/prisma';
-import { Prisma, AdmissionStatus, Gender } from '@prisma/client';
+import { Prisma, AdmissionStatus, Gender, UnitType } from '@prisma/client';
 import * as financeService from '../finance/finance.service';
 import {
   CreateAdmissionPeriodInput,
@@ -298,11 +298,26 @@ export async function createRegistrant(data: CreateRegistrantExtendedInput) {
   throw lastError;
 }
 
+// Placeholder names the admission form defaults to when a parent field is left
+// blank. They must never win over a name the applicant actually filled in.
+const PARENT_NAME_PLACEHOLDERS = new Set(['Wali', 'Ibu', '']);
+
+function isRealParentName(name?: string): name is string {
+  return Boolean(name && !PARENT_NAME_PLACEHOLDERS.has(name.trim()));
+}
+
 async function createRegistrantOnce(data: CreateRegistrantExtendedInput) {
   return prisma.$transaction(async (tx) => {
     const registrationNo = await generateRegistrationNo(data.admissionPeriodId, tx);
 
-    const parentName = data.fatherName || data.motherName;
+    // Prioritize the name that was actually filled in over a defaulted
+    // placeholder ("Wali" / "Ibu"), so a mother-only registration doesn't store
+    // a placeholder as the consolidated parent name.
+    const parentName = isRealParentName(data.fatherName)
+      ? data.fatherName!.trim()
+      : isRealParentName(data.motherName)
+        ? data.motherName!.trim()
+        : (data.fatherName || data.motherName || '');
     const parentPhone = data.fatherPhone || data.motherPhone || '';
     const parentEmail = data.fatherEmail && data.fatherEmail !== '' ? data.fatherEmail : undefined;
     const parentOccupation = data.fatherOccupation || data.motherOccupation;
@@ -574,8 +589,8 @@ export async function enrollRegistrant(
         data: {
           unitId: registrant.admissionPeriod.unitId,
           status: 'active',
-          nisn: studentData.nisn || registrant.internalNisn || existingStudent.nisn,
-          nik: studentData.nik || registrant.internalNik || existingStudent.nik,
+          nisn: studentData.nisn || registrant.nisn || registrant.internalNisn || existingStudent.nisn,
+          nik: studentData.nik || registrant.nik || registrant.internalNik || existingStudent.nik,
           graduateYear: null,
         },
       });
@@ -593,21 +608,36 @@ export async function enrollRegistrant(
       if (targetRoleCode) {
         const studentRole = await tx.role.findFirst({ where: { code: targetRoleCode } });
         if (studentRole) {
-          // Deactivate the old unit's assignment so getUserRoles stops exposing it;
-          // setting only isPrimary:false left a stale active assignment behind.
+          // Deactivate the old unit's STUDENT assignment so getUserRoles stops
+          // exposing it; only touch STUDENT roles so a re-enrolling alumnus keeps
+          // other active roles (e.g. teacher/staff) in other units.
           await tx.userRoleAssignment.updateMany({
             where: {
               userId: user.id,
+              roleId: studentRole.id,
               isActive: true,
               unitId: { not: registrant.admissionPeriod.unitId },
             },
             data: { isPrimary: false, isActive: false },
           });
-          await tx.userRoleAssignment.create({
-            data: {
+          // Upsert on the (userId, roleId, unitId) unique key so re-enrolling into
+          // the same unit reactivates the existing assignment instead of P2002.
+          await tx.userRoleAssignment.upsert({
+            where: {
+              userId_roleId_unitId: {
+                userId: user.id,
+                roleId: studentRole.id,
+                unitId: registrant.admissionPeriod.unitId,
+              },
+            },
+            create: {
               userId: user.id,
               roleId: studentRole.id,
               unitId: registrant.admissionPeriod.unitId,
+              isPrimary: true,
+              isActive: true,
+            },
+            update: {
               isPrimary: true,
               isActive: true,
             },
@@ -636,8 +666,8 @@ export async function enrollRegistrant(
             data: {
               unitId: registrant.admissionPeriod.unitId,
               status: 'active',
-              nisn: studentData.nisn || existingStudentForUser.nisn,
-              nik: studentData.nik || existingStudentForUser.nik,
+              nisn: studentData.nisn || registrant.nisn || registrant.internalNisn || existingStudentForUser.nisn,
+              nik: studentData.nik || registrant.nik || registrant.internalNik || existingStudentForUser.nik,
               graduateYear: null,
             },
           });
@@ -651,8 +681,8 @@ export async function enrollRegistrant(
             data: {
               userId: user.id,
               unitId: registrant.admissionPeriod.unitId,
-              nisn: studentData.nisn,
-              nik: studentData.nik,
+              nisn: studentData.nisn || registrant.nisn || registrant.internalNisn,
+              nik: studentData.nik || registrant.nik || registrant.internalNik,
               gender: registrant.gender,
               birthPlace: registrant.birthPlace,
               birthDate: registrant.birthDate,
@@ -676,19 +706,35 @@ export async function enrollRegistrant(
         if (targetRoleCode) {
           const studentRole = await tx.role.findFirst({ where: { code: targetRoleCode } });
           if (studentRole) {
+            // Only deactivate the STUDENT role's assignment in other units so a
+            // re-enrolling student keeps other active roles (teacher/staff).
             await tx.userRoleAssignment.updateMany({
               where: {
                 userId: user.id,
+                roleId: studentRole.id,
                 isActive: true,
                 unitId: { not: registrant.admissionPeriod.unitId },
               },
               data: { isPrimary: false, isActive: false },
             });
-            await tx.userRoleAssignment.create({
-              data: {
+            // Upsert on the (userId, roleId, unitId) unique key so re-enrolling into
+            // the same unit reactivates the existing assignment instead of P2002.
+            await tx.userRoleAssignment.upsert({
+              where: {
+                userId_roleId_unitId: {
+                  userId: user.id,
+                  roleId: studentRole.id,
+                  unitId: registrant.admissionPeriod.unitId,
+                },
+              },
+              create: {
                 userId: user.id,
                 roleId: studentRole.id,
                 unitId: registrant.admissionPeriod.unitId,
+                isPrimary: true,
+                isActive: true,
+              },
+              update: {
                 isPrimary: true,
                 isActive: true,
               },
@@ -712,8 +758,8 @@ export async function enrollRegistrant(
           data: {
             userId: user.id,
             unitId: registrant.admissionPeriod.unitId,
-            nisn: studentData.nisn,
-            nik: studentData.nik,
+            nisn: studentData.nisn || registrant.nisn || registrant.internalNisn,
+            nik: studentData.nik || registrant.nik || registrant.internalNik,
             gender: registrant.gender,
             birthPlace: registrant.birthPlace,
             birthDate: registrant.birthDate,
@@ -746,6 +792,19 @@ export async function enrollRegistrant(
           }
         }
       }
+    }
+
+    // Lifelong-identifier rule: an active student must carry a permanent NISN or
+    // NIK. TK_QURAN is the documented exception — young children may not yet have
+    // a NISN assigned and the school does not always collect their NIK at
+    // enrollment. Non-TK units that reach this point with neither identifier
+    // would silently create a student with no way to be identified long-term.
+    if (
+      !student.nisn &&
+      !student.nik &&
+      registrant.admissionPeriod.unit.type !== UnitType.TK_QURAN
+    ) {
+      throw Errors.badRequest('NISN atau NIK wajib diisi untuk menerima siswa');
     }
 
     if (studentData.classId) {

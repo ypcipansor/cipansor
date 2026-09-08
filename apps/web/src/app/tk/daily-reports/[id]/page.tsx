@@ -205,7 +205,7 @@ export default function DailyReportDetailPage() {
                         {report.student?.user?.name || "-"}
                       </h3>
                       <p className="text-muted-foreground">
-                        NIS: {report.student?.nis || "-"}
+                        NISN: {report.student?.nisn || "-"}
                       </p>
                       <p className="text-muted-foreground capitalize">
                         {report.unitType.toLowerCase().replace("_", " ")}

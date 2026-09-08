@@ -93,7 +93,7 @@ describe('generateCertificate persistence', () => {
     enrollment: {
       student: {
         id: 'student-1',
-        nis: '12345',
+        nisn: '12345',
         user: { name: 'Santri Fulan' },
         unit: { id: 'unit-1', name: 'SMA Quran Cipansor' },
       },

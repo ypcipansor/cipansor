@@ -75,7 +75,7 @@ describe('StudentOnboardingOrchestrator', () => {
         $queryRaw: vi.fn().mockResolvedValue([]),
         $executeRaw: vi.fn().mockResolvedValue(1),
         student: { 
-          create: vi.fn().mockResolvedValue({ id: 'stud-1', nis: 'NIS-2026-SMP-0001' }),
+          create: vi.fn().mockResolvedValue({ id: 'stud-1', nisn: 'NISN-2026-SMP-0001' }),
         },
         studentParent: { 
           create: vi.fn().mockResolvedValue({ id: 'sp-1' }),

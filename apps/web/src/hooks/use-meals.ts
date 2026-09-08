@@ -51,7 +51,7 @@ export interface MealAttendance {
   studentId: string;
   student?: {
     id: string;
-    nis: string;
+    nisn: string;
     name: string;
   };
   mealType: MealType;

@@ -414,7 +414,7 @@ export default function ExtracurricularDetailPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>NIS</TableHead>
+                      <TableHead>NISN</TableHead>
                       <TableHead>Nama Siswa</TableHead>
                       <TableHead>Kelas</TableHead>
                       <TableHead>Tanggal Daftar</TableHead>
@@ -424,7 +424,7 @@ export default function ExtracurricularDetailPage() {
                   <TableBody>
                     {pendingEnrollments.map((enrollment) => (
                       <TableRow key={enrollment.id}>
-                        <TableCell>{enrollment.student?.nis}</TableCell>
+                        <TableCell>{enrollment.student?.nisn}</TableCell>
                         <TableCell className="font-medium">
                           {enrollment.student?.name}
                         </TableCell>
@@ -501,7 +501,7 @@ export default function ExtracurricularDetailPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>NIS</TableHead>
+                      <TableHead>NISN</TableHead>
                       <TableHead>Nama Siswa</TableHead>
                       <TableHead>Kelas</TableHead>
                       <TableHead>Bergabung</TableHead>
@@ -511,7 +511,7 @@ export default function ExtracurricularDetailPage() {
                   <TableBody>
                     {approvedEnrollments.map((enrollment) => (
                       <TableRow key={enrollment.id}>
-                        <TableCell>{enrollment.student?.nis}</TableCell>
+                        <TableCell>{enrollment.student?.nisn}</TableCell>
                         <TableCell className="font-medium">
                           {enrollment.student?.name}
                         </TableCell>

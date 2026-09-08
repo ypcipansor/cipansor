@@ -31,7 +31,7 @@ export interface DutyAssignment {
   notes?: string;
   student: {
     id: string;
-    nis: string;
+    nisn: string;
     name: string;
     class: {
       id: string;
@@ -45,7 +45,7 @@ export interface DutyAssignment {
   };
   substitute?: {
     id: string;
-    nis: string;
+    nisn: string;
     name: string;
   };
   completedAt?: string;

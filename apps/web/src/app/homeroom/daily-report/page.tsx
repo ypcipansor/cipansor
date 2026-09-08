@@ -87,7 +87,7 @@ type StudentReportData = z.infer<typeof studentReportSchema>;
 interface StudentReport {
   studentId: string;
   studentName: string;
-  nis: string;
+  nisn: string;
   data: StudentReportData;
 }
 
@@ -393,7 +393,7 @@ export default function HomeroomDailyReportPage() {
                                 <div>
                                   <p className="font-medium">{student.name}</p>
                                   <p className="text-xs text-muted-foreground">
-                                    {student.nis}
+                                    {student.nisn}
                                   </p>
                                 </div>
                               </div>

@@ -487,7 +487,7 @@ export default function KitabDetailPage() {
                               {progress.student?.name}
                             </p>
                             <p className="text-sm text-muted-foreground">
-                              {progress.student?.nis}
+                              {progress.student?.nisn}
                             </p>
                           </div>
                         </TableCell>
@@ -612,7 +612,7 @@ export default function KitabDetailPage() {
                                 {progress.student?.name}
                               </p>
                               <p className="text-sm text-muted-foreground">
-                                {progress.student?.nis}
+                                {progress.student?.nisn}
                               </p>
                             </div>
                             {progress.score && (

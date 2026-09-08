@@ -594,7 +594,7 @@ function StudentReportTable({
 }: {
   data: Array<{
     id: string;
-    nis: string;
+    nisn: string;
     name: string;
     gender: string;
     status: string;
@@ -607,7 +607,7 @@ function StudentReportTable({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>NIS</TableHead>
+            <TableHead>NISN</TableHead>
             <TableHead>Nama</TableHead>
             <TableHead>Gender</TableHead>
             <TableHead>Status</TableHead>
@@ -628,7 +628,7 @@ function StudentReportTable({
           ) : (
             data.map((student) => (
               <TableRow key={student.id}>
-                <TableCell className="font-mono">{student.nis}</TableCell>
+                <TableCell className="font-mono">{student.nisn}</TableCell>
                 <TableCell className="font-medium">{student.name}</TableCell>
                 <TableCell>
                   <Badge
@@ -676,7 +676,7 @@ function AttendanceReportView({
     data: Array<{
       studentId: string;
       studentName: string;
-      nis: string;
+      nisn: string;
       className: string;
       totalDays: number;
       present: number;
@@ -739,7 +739,7 @@ function AttendanceReportView({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>NIS</TableHead>
+              <TableHead>NISN</TableHead>
               <TableHead>Nama</TableHead>
               <TableHead>Kelas</TableHead>
               <TableHead className="text-right">Hadir</TableHead>
@@ -763,7 +763,7 @@ function AttendanceReportView({
             ) : (
               data.data.map((item) => (
                 <TableRow key={item.studentId}>
-                  <TableCell className="font-mono">{item.nis}</TableCell>
+                  <TableCell className="font-mono">{item.nisn}</TableCell>
                   <TableCell className="font-medium">
                     {item.studentName}
                   </TableCell>
@@ -815,7 +815,7 @@ function TahfidzReportView({
     data: Array<{
       studentId: string;
       studentName: string;
-      nis: string;
+      nisn: string;
       className: string;
       totalJuz: number;
       totalSurah: number;
@@ -875,7 +875,7 @@ function TahfidzReportView({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>NIS</TableHead>
+              <TableHead>NISN</TableHead>
               <TableHead>Nama</TableHead>
               <TableHead>Kelas</TableHead>
               <TableHead className="text-right">Juz</TableHead>
@@ -897,7 +897,7 @@ function TahfidzReportView({
             ) : (
               data.data.map((item) => (
                 <TableRow key={item.studentId}>
-                  <TableCell className="font-mono">{item.nis}</TableCell>
+                  <TableCell className="font-mono">{item.nisn}</TableCell>
                   <TableCell className="font-medium">
                     {item.studentName}
                   </TableCell>

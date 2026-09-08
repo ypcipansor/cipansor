@@ -55,7 +55,7 @@ import { cn } from "@/lib/utils";
 interface StudentAttendance {
   studentId: string;
   name: string;
-  nis: string;
+  nisn: string;
   status: AttendanceStatus;
   notes: string;
 }
@@ -111,7 +111,7 @@ function RecordAttendanceContent() {
         return {
           studentId: enrollment.student.id,
           name: enrollment.student.user?.name || enrollment.student.name || "",
-          nis: enrollment.student.nisn || enrollment.student.nik || "",
+          nisn: enrollment.student.nisn || enrollment.student.nik || "",
           status: existing?.status || ("PRESENT" as AttendanceStatus),
           notes: existing?.notes || "",
         };
@@ -392,7 +392,7 @@ function RecordAttendanceContent() {
                         <div className="flex-1 min-w-0">
                           <p className="font-medium truncate">{student.name}</p>
                           <p className="text-sm text-muted-foreground">
-                            {student.nis}
+                            {student.nisn}
                           </p>
                         </div>
                         <div className="flex items-center gap-2">

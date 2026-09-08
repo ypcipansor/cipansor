@@ -557,7 +557,7 @@ function SppMatrixPageContent() {
                             {student.studentName}
                           </Link>
                           <p className="text-xs text-muted-foreground">
-                            {student.nis}
+                            {student.nisn}
                           </p>
                         </div>
                       </TableCell>

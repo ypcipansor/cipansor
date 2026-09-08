@@ -167,7 +167,7 @@ const api = {
   ): Promise<
     Array<{
       id: string;
-      nis: string;
+      nisn: string;
       name: string;
       walletBalance?: number;
     }>
@@ -180,7 +180,7 @@ const api = {
     const json = await res.json();
     return json.data.map((s: any) => ({
       id: s.id,
-      nis: s.nis,
+      nisn: s.nisn,
       name: s.user?.name || s.name,
       walletBalance: s.wallet?.balance,
     }));
@@ -207,7 +207,7 @@ function CanteenPageContent() {
   const [studentSearch, setStudentSearch] = useState("");
   const [selectedStudent, setSelectedStudent] = useState<{
     id: string;
-    nis: string;
+    nisn: string;
     name: string;
     walletBalance?: number;
   } | null>(null);
@@ -888,7 +888,7 @@ function CanteenPageContent() {
             <div className="space-y-2">
               <Label>Santri (opsional)</Label>
               <Input
-                placeholder="Cari santri berdasarkan nama atau NIS..."
+                placeholder="Cari santri berdasarkan nama atau NISN..."
                 value={studentSearch}
                 onChange={(e) => {
                   setStudentSearch(e.target.value);
@@ -914,7 +914,7 @@ function CanteenPageContent() {
                         <div>
                           <span className="font-medium">{student.name}</span>
                           <span className="text-sm text-muted-foreground ml-2">
-                            ({student.nis})
+                            ({student.nisn})
                           </span>
                         </div>
                         {student.walletBalance !== undefined && (
@@ -931,7 +931,7 @@ function CanteenPageContent() {
                   <div>
                     <p className="font-medium">{selectedStudent.name}</p>
                     <p className="text-sm text-muted-foreground">
-                      NIS: {selectedStudent.nis}
+                      NISN: {selectedStudent.nisn}
                     </p>
                   </div>
                   {selectedStudent.walletBalance !== undefined && (

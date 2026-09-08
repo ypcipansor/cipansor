@@ -17,7 +17,7 @@ export interface Wallet {
   student?: {
     id: string;
     name: string;
-    nis: string;
+    nisn: string;
     class?: {
       id: string;
       name: string;

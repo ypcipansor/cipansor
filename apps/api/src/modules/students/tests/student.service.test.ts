@@ -50,6 +50,9 @@ vi.mock('@/lib/prisma', () => ({
       updateMany: vi.fn(),
       create: vi.fn(),
     },
+    roomAssignment: {
+      updateMany: vi.fn(),
+    },
     alumni: {
       upsert: vi.fn(),
     },
@@ -203,6 +206,10 @@ describe('StudentService', () => {
         where: { studentId: 's1', status: 'active' },
         data: { status: 'completed' },
       });
+      expect(prisma.roomAssignment.updateMany).toHaveBeenCalledWith({
+        where: { studentId: 's1', isActive: true },
+        data: { isActive: false, endedAt: expect.any(Date) },
+      });
       expect(result.status).toBe('alumni');
       expect(result.graduateYear).toBe(2026);
     });
@@ -227,7 +234,7 @@ describe('StudentService', () => {
       );
       expect(result).toEqual({
         ...mockStudent,
-        nis: '0012345678',
+        nisn: '0012345678',
       });
     });
   });

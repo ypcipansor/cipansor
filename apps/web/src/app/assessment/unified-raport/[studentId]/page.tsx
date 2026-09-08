@@ -77,8 +77,8 @@ function UnifiedRaportPageContent({ params: paramsPromise }: { params: Promise<{
               <p className="font-semibold">{raport.student.class}</p>
             </div>
             <div>
-              <p className="text-xs text-muted-foreground uppercase font-bold">NIS / NISN</p>
-              <p className="font-semibold">{raport.student.nis} / {raport.student.nisn || '-'}</p>
+              <p className="text-xs text-muted-foreground uppercase font-bold">NISN / NISN</p>
+              <p className="font-semibold">{raport.student.nisn} / {raport.student.nisn || '-'}</p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground uppercase font-bold">Semester</p>

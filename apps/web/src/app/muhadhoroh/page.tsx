@@ -103,7 +103,7 @@ function MuhadhorohPageContent() {
   const filteredRecords = records.filter((record) => {
     if (!searchQuery) return true;
     const query = searchQuery.toLowerCase();
-    const studentIdentifier = record.student?.nisn || record.student?.nik || record.student?.nis || "";
+    const studentIdentifier = record.student?.nisn || record.student?.nik || record.student?.nisn || "";
     return (
       record.topic?.toLowerCase().includes(query) ||
       record.student?.name.toLowerCase().includes(query) ||
@@ -295,7 +295,7 @@ function MuhadhorohPageContent() {
                             {record.student?.name}
                           </div>
                           <div className="text-sm text-muted-foreground">
-                            {record.student?.nisn || record.student?.nik || record.student?.nis || "-"} •{" "}
+                            {record.student?.nisn || record.student?.nik || record.student?.nisn || "-"} •{" "}
                             {record.student?.class?.name}
                           </div>
                         </div>
@@ -567,7 +567,7 @@ function MuhadhorohPageContent() {
                       <div>
                         <div className="font-medium">{performer.name}</div>
                         <div className="text-sm text-muted-foreground">
-                          {performer.nis || "-"} • {performer.class}
+                          {performer.nisn || "-"} • {performer.class}
                         </div>
                       </div>
                     </div>

@@ -306,7 +306,7 @@ function HomeroomDashboardPageContent() {
                           <div>
                             <p className="font-medium">{item.student.name}</p>
                             <p className="text-sm text-muted-foreground">
-                              NIS: {item.student.nis}
+                              NISN: {item.student.nisn}
                             </p>
                           </div>
                         </div>
@@ -529,7 +529,7 @@ function HomeroomDashboardPageContent() {
                   <thead>
                     <tr className="border-b">
                       <th className="text-left py-3 px-2">No</th>
-                      <th className="text-left py-3 px-2">NIS</th>
+                      <th className="text-left py-3 px-2">NISN</th>
                       <th className="text-left py-3 px-2">Nama Siswa</th>
                       {/* <th className="text-center py-3 px-2">Kehadiran</th>
                       <th className="text-center py-3 px-2">Rata-rata Nilai</th> */}
@@ -544,7 +544,7 @@ function HomeroomDashboardPageContent() {
                       >
                         <td className="py-3 px-2">{index + 1}</td>
                         <td className="py-3 px-2 font-mono text-sm">
-                          {student.nis}
+                          {student.nisn}
                         </td>
                         <td className="py-3 px-2">
                           <div className="flex items-center gap-2">

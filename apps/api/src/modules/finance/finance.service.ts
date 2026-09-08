@@ -373,6 +373,7 @@ export async function createPayment(data: CreatePaymentDto, userId: string = 'SY
               },
             },
             paymentType: { select: { id: true, name: true } },
+            unit: { select: { id: true, name: true } },
           },
         },
       },
@@ -477,14 +478,22 @@ export async function createPayment(data: CreatePaymentDto, userId: string = 'SY
       include: { unit: { select: { id: true, name: true } } },
     });
 
+    // Attribute the event to the invoice's own unit snapshot (invoice.unitId) so
+    // a historical payment stays in the unit that billed it even if the student
+    // has since moved units. Fall back to the student's current unit when the
+    // invoice has no snapshot.
+    const unitId = payment.invoice.unitId ?? studentWithUnit?.unitId ?? '';
+    const unitName =
+      (payment.invoice.unitId ? payment.invoice.unit?.name : studentWithUnit?.unit?.name) || '';
+
     if (studentWithUnit) {
       eventBus.emit('finance:payment-received', {
         id: payment.id,
         invoiceId: payment.invoiceId,
         studentId: payment.invoice.studentId,
         studentName: payment.invoice.student.user.name,
-        unitId: studentWithUnit.unitId,
-        unitName: studentWithUnit.unit?.name || '',
+        unitId,
+        unitName,
         amount: payment.amount.toNumber(),
         paymentMethod: payment.method,
         paidAt: payment.paidAt || new Date(),
@@ -1054,7 +1063,7 @@ export async function getStudentOutstandingBalances(unitId: string) {
       studentMap.set(inv.studentId, {
         studentId: inv.studentId,
         studentName: inv.student.user.name,
-        nis: inv.student.nisn || inv.student.nik || '-',
+        nisn: inv.student.nisn || inv.student.nik || '-',
         studentNisn: inv.student.nisn,
         studentNik: inv.student.nik,
         className: inv.student.enrollments[0]?.class?.name || '-',
@@ -1085,7 +1094,6 @@ export interface SppMatrixQuery {
 export interface StudentSppRow {
   studentId: string;
   studentName: string;
-  nis?: string;
   studentNisn?: string | null;
   studentNik?: string | null;
   className: string;
@@ -1219,7 +1227,7 @@ export async function getSppMatrix(query: SppMatrixQuery) {
     return {
       studentId: student.id,
       studentName: student.user.name,
-      nis: student.nisn || student.nik || '-',
+      nisn: student.nisn || student.nik || '-',
       studentNisn: student.nisn,
       studentNik: student.nik,
       className: student.enrollments[0]?.class?.name || '-',

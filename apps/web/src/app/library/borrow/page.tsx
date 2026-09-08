@@ -337,7 +337,7 @@ function BorrowBookContent() {
                                       variant="secondary"
                                       className="shrink-0"
                                     >
-                                      {selectedStudent.nis}
+                                      {selectedStudent.nisn}
                                     </Badge>
                                   </div>
                                 ) : (
@@ -350,7 +350,7 @@ function BorrowBookContent() {
                           <PopoverContent className="w-full p-0" align="start">
                             <Command>
                               <CommandInput
-                                placeholder="Cari nama atau NIS..."
+                                placeholder="Cari nama atau NISN..."
                                 value={studentSearch}
                                 onValueChange={setStudentSearch}
                               />
@@ -377,7 +377,7 @@ function BorrowBookContent() {
                                             {student.name}
                                           </span>
                                           <span className="text-sm text-muted-foreground">
-                                            NIS: {student.nis} ·{" "}
+                                            NISN: {student.nisn} ·{" "}
                                             {student.currentClass?.name ||
                                               "Tanpa Kelas"}
                                           </span>
@@ -406,7 +406,7 @@ function BorrowBookContent() {
                             {selectedStudent.name}
                           </p>
                           <p className="text-sm text-muted-foreground">
-                            NIS: {selectedStudent.nis} ·{" "}
+                            NISN: {selectedStudent.nisn} ·{" "}
                             {selectedStudent.currentClass?.name ||
                               "Tanpa Kelas"}
                           </p>

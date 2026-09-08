@@ -76,8 +76,8 @@ export default function StudentsPage() {
 
   const columns: ColumnDef<Student>[] = [
     {
-      accessorKey: "nis",
-      header: "NIS",
+      accessorKey: "nisn",
+      header: "NISN",
       cell: ({ row }) => (
         <span className="font-mono text-sm">
           {row.original.nisn || row.original.nik || "-"}
@@ -194,7 +194,7 @@ export default function StudentsPage() {
         <div className="flex flex-col gap-4 md:flex-row md:items-center">
           <div className="w-full md:w-80">
             <SearchInput
-              placeholder="Search by name or NIS..."
+              placeholder="Search by name or NISN..."
               value={search}
               onChange={setSearch}
             />

@@ -188,7 +188,7 @@ function PaymentsPageContent() {
                             {payment.bill?.student?.name}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            {payment.bill?.student?.nis}
+                            {payment.bill?.student?.nisn}
                           </p>
                         </div>
                       </TableCell>

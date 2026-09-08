@@ -280,7 +280,7 @@ export default function AttendancePage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Tanggal</TableHead>
-                <TableHead>NIS</TableHead>
+                <TableHead>NISN</TableHead>
                 <TableHead>Nama Siswa</TableHead>
                 <TableHead>Kelas</TableHead>
                 <TableHead>Status</TableHead>

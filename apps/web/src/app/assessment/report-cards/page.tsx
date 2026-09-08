@@ -69,7 +69,7 @@ export default function ReportCardsPage() {
       const searchLower = search.toLowerCase();
       return (
         report.student?.user?.name?.toLowerCase().includes(searchLower) ||
-        report.student?.nis?.toLowerCase().includes(searchLower)
+        report.student?.nisn?.toLowerCase().includes(searchLower)
       );
     }
     return true;
@@ -227,7 +227,7 @@ export default function ReportCardsPage() {
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
-                  placeholder="Cari nama atau NIS santri..."
+                  placeholder="Cari nama atau NISN santri..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   className="pl-9"
@@ -275,7 +275,7 @@ export default function ReportCardsPage() {
                     className="rounded border-gray-300"
                   />
                 </TableHead>
-                <TableHead>NIS</TableHead>
+                <TableHead>NISN</TableHead>
                 <TableHead>Nama Santri</TableHead>
                 <TableHead>Kelas</TableHead>
                 <TableHead>Semester</TableHead>
@@ -304,7 +304,7 @@ export default function ReportCardsPage() {
                       />
                     </TableCell>
                     <TableCell className="font-mono text-sm">
-                      {report.student?.nis}
+                      {report.student?.nisn}
                     </TableCell>
                     <TableCell className="font-medium">
                       {report.student?.user?.name || "-"}

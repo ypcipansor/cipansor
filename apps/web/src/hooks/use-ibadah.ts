@@ -73,7 +73,7 @@ export interface IbadahRecord {
   student?: {
     id: string;
     name: string;
-    nis: string;
+    nisn: string;
     class?: { name: string };
     dormRoom?: { name: string };
   };
@@ -98,7 +98,7 @@ export interface IbadahLeaderboard {
   student?: {
     id: string;
     name: string;
-    nis: string;
+    nisn: string;
     class?: { name: string };
     dormRoom?: { name: string };
     avatar?: string;

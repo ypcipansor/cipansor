@@ -239,7 +239,7 @@ export default function CertificateDetailPage({
                         "N/A"}
                     </h3>
                     <p className="text-sm text-muted-foreground">
-                      {certificate.student?.nis || "-"}
+                      {certificate.student?.nisn || "-"}
                     </p>
                     <p className="text-sm text-muted-foreground">
                       {certificate.student?.class?.name || "-"}

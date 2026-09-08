@@ -18,7 +18,7 @@ import { Users, ChevronRight, Star } from "lucide-react";
 interface Child {
   id: string;
   name: string;
-  nis: string;
+  nisn: string;
   currentClass?: {
     name: string;
   };

@@ -125,7 +125,7 @@ export default function StudentDetailPage() {
       <div className="space-y-6">
         <PageHeader
           title={student.name}
-          description={`NIS: ${student.nisn || student.nik || "-"}`}
+          description={`NISN: ${student.nisn || student.nik || "-"}`}
         >
           <Button variant="outline" asChild>
             <Link href="/students">

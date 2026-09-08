@@ -133,7 +133,7 @@ function VisitForm({ onSuccess }: { onSuccess: () => void }) {
   const studentOptions =
     studentsData?.data?.map((s) => ({
       value: s.id,
-      label: `${s.name} (${s.nis})`,
+      label: `${s.name} (${s.nisn})`,
     })) || [];
 
   const onSubmit = async (data: CreateStudentVisitInput) => {
@@ -250,7 +250,7 @@ function VisitRow({ visit }: { visit: StudentVisit }) {
       <TableCell>
         <div className="font-medium">{visit.student?.name}</div>
         <div className="text-xs text-muted-foreground">
-          {visit.student?.nis}
+          {visit.student?.nisn}
         </div>
       </TableCell>
       <TableCell>

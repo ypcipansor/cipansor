@@ -58,7 +58,7 @@ export interface PAUDAssessment {
   // Relations
   student?: {
     id: string;
-    nis: string;
+    nisn: string;
     user?: { name: string };
     photoUrl?: string;
   };
@@ -118,7 +118,7 @@ export interface PAUDNarrativeReport {
   // Relations
   student?: {
     id: string;
-    nis: string;
+    nisn: string;
     user?: { name: string };
   };
   academicYear?: {
@@ -139,7 +139,7 @@ export interface StudentProgressSummary {
   semester?: string;
   student: {
     id: string;
-    nis: string;
+    nisn: string;
     user?: { name: string };
     photoUrl?: string | null;
   };
@@ -166,7 +166,7 @@ export interface ClassProgressSummary {
   students: Array<{
     student: {
       id: string;
-      nis: string;
+      nisn: string;
       name: string;
     };
     totalAssessments: number;

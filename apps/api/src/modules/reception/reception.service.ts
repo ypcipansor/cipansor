@@ -27,7 +27,7 @@ type PrismaStudentShape = {
 
 function mapStudent(s: PrismaStudentShape) {
   if (!s) return undefined;
-  return { name: s.user?.name ?? '', nis: s.nisn || s.nik || "-", class: s.enrollments?.[0]?.class };
+  return { name: s.user?.name ?? '', nisn: s.nisn || s.nik || "-", class: s.enrollments?.[0]?.class };
 }
 
 const toStudentVisit = (v: Record<string, unknown> & { student?: PrismaStudentShape }): StudentVisit =>

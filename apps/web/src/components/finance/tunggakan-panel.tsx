@@ -147,7 +147,7 @@ export function TunggakanPanel() {
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
-                    placeholder="Cari nama santri atau NIS..."
+                    placeholder="Cari nama santri atau NISN..."
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     className="pl-10"
@@ -245,7 +245,7 @@ export function TunggakanPanel() {
                     <TableRow key={student.id}>
                       <TableCell>
                         <div className="font-medium">{student.user?.name}</div>
-                        <div className="text-xs text-muted-foreground">NIS: {student.nis}</div>
+                        <div className="text-xs text-muted-foreground">NISN: {student.nisn}</div>
                       </TableCell>
                       <TableCell>
                         {student.enrollments?.[0]?.class?.name || "-"}

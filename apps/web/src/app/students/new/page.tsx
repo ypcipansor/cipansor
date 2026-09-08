@@ -31,12 +31,18 @@ import { toast } from "sonner";
 import { Loader2, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 
-import { createStudentSchema, type CreateStudentInput } from "@cipansor/shared";
+import {
+  createStudentSchema,
+  permanentIdentifierRefine,
+  type CreateStudentInput,
+} from "@cipansor/shared";
 import { getEffectiveRole } from "@/lib/rbac";
 
 // Use strict validation from shared
 // We can extend here if needed for UI-specific validaton (e.g. terms acceptance)
-const studentSchema = createStudentSchema;
+const studentSchema = createStudentSchema.superRefine(
+  permanentIdentifierRefine,
+);
 
 type StudentForm = CreateStudentInput;
 

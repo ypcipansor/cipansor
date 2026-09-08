@@ -9,6 +9,7 @@ import {
   updateStudentSchema,
   graduateStudentSchema,
   listStudentsQuerySchema,
+  alumniLookupQuerySchema,
   studentIdParamSchema,
 } from './student.schema';
 
@@ -33,6 +34,7 @@ router.get(
 router.get(
   '/alumni/lookup',
   hasPermission(PERMISSIONS.STUDENT_CREATE),
+  validateQuery(alumniLookupQuerySchema),
   controller.lookupAlumni
 );
 

@@ -42,7 +42,7 @@ export interface TKNarrativeReport {
   excusedDays: number;
   student?: {
     id: string;
-    nis: string;
+    nisn: string;
     user?: { name: string };
     photoUrl?: string;
     birthDate?: string;

@@ -133,7 +133,7 @@ function PackageForm({ onSuccess }: { onSuccess: () => void }) {
   const studentOptions =
     studentsData?.data?.map((s) => ({
       value: s.id,
-      label: `${s.name} (${s.nis})`,
+      label: `${s.name} (${s.nisn})`,
     })) || [];
 
   const onSubmit = async (data: CreateStudentPackageInput) => {
@@ -245,7 +245,7 @@ function PackageRow({ pkg }: { pkg: StudentPackage }) {
       <TableCell>{safeFormat(new Date(pkg.createdAt), "HH:mm")}</TableCell>
       <TableCell>
         <div className="font-medium">{pkg.student?.name}</div>
-        <div className="text-xs text-muted-foreground">{pkg.student?.nis}</div>
+        <div className="text-xs text-muted-foreground">{pkg.student?.nisn}</div>
       </TableCell>
       <TableCell>{pkg.senderName}</TableCell>
       <TableCell>{pkg.expedition}</TableCell>

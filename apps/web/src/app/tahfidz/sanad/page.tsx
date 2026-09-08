@@ -73,9 +73,9 @@ export default function SanadPage() {
         "-",
     },
     {
-      accessorKey: "nis",
-      header: "NIS",
-      cell: ({ row }) => row.original.enrollment?.student?.nis || "-",
+      accessorKey: "nisn",
+      header: "NISN",
+      cell: ({ row }) => row.original.enrollment?.student?.nisn || "-",
     },
     {
       accessorKey: "juz",

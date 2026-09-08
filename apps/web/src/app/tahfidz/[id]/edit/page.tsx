@@ -253,7 +253,7 @@ export default function EditTahfidzPage() {
                     <PopoverContent className="w-[400px] p-0">
                       <Command>
                         <CommandInput
-                          placeholder="Cari nama atau NIS santri..."
+                          placeholder="Cari nama atau NISN santri..."
                           value={studentSearch}
                           onValueChange={setStudentSearch}
                         />

@@ -302,8 +302,8 @@ function PermitDetailPageContent() {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <p className="text-sm text-muted-foreground">NIS</p>
-                <p className="font-medium">{permit.student?.nis}</p>
+                <p className="text-sm text-muted-foreground">NISN</p>
+                <p className="font-medium">{permit.student?.nisn}</p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Kelas</p>

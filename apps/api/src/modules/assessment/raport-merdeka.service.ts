@@ -259,7 +259,6 @@ export class RaportMerdekaService {
       raportFormat: 'KURIKULUM_MERDEKA',
       siswa: {
         id: student.id,
-        nis: student.nisn || student.nik || "-",
         nisn: student.nisn,
         nama: student.user.name,
         kelas: enrollment.class.name,

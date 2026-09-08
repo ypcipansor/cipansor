@@ -224,7 +224,7 @@ export default function ChildrenPage() {
                 <div className="flex-1">
                   <p className="font-medium">{child.name}</p>
                   <p className="text-sm text-muted-foreground">
-                    {child.nis} •{" "}
+                    {child.nisn} •{" "}
                     {relationLabels[child.relation] || child.relation}
                   </p>
                 </div>
@@ -246,7 +246,7 @@ export default function ChildrenPage() {
               <div>
                 <CardTitle>{selectedChild.name}</CardTitle>
                 <CardDescription className="flex items-center gap-2 mt-1">
-                  <Badge variant="secondary">{selectedChild.nis}</Badge>
+                  <Badge variant="secondary">{selectedChild.nisn}</Badge>
                   {selectedChild.currentClass && (
                     <Badge variant="outline">
                       {selectedChild.currentClass.name}
@@ -292,9 +292,9 @@ export default function ChildrenPage() {
                   <div className="space-y-4">
                     <div>
                       <label className="text-sm font-medium text-muted-foreground">
-                        NIS
+                        NISN
                       </label>
-                      <p className="mt-1">{selectedChild.nis}</p>
+                      <p className="mt-1">{selectedChild.nisn}</p>
                     </div>
                     {selectedChild.nisn && (
                       <div>

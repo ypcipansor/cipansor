@@ -369,7 +369,7 @@ export default function CounselingPage() {
                             )}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            {record.student?.nis} •{" "}
+                            {record.student?.nisn} •{" "}
                             {record.student?.currentClass?.name || "-"}
                           </p>
                         </div>

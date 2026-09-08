@@ -31,7 +31,7 @@ describe('Murojaah Service Performance', () => {
     // Mock student
     vi.mocked(prisma.student.findUnique).mockResolvedValue({
       id: studentId,
-      nis: '12345',
+      nisn: '12345',
       user: { name: 'Test Student' },
     } as any);
 

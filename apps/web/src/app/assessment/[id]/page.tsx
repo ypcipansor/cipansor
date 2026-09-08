@@ -380,7 +380,7 @@ export default function AssessmentDetailPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[50px]">No</TableHead>
-                    <TableHead>NIS</TableHead>
+                    <TableHead>NISN</TableHead>
                     <TableHead>Nama Santri</TableHead>
                     <TableHead className="text-center">Nilai</TableHead>
                     <TableHead className="text-center">Trend</TableHead>
@@ -404,7 +404,7 @@ export default function AssessmentDetailPage() {
                             {index + 1}
                           </TableCell>
                           <TableCell className="font-mono text-sm">
-                            {grade.student?.nis}
+                            {grade.student?.nisn}
                           </TableCell>
                           <TableCell className="font-medium">
                             {grade.student?.user?.name}

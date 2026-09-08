@@ -469,7 +469,7 @@ export default function IbadahPage() {
                                 {record.student?.name || "-"}
                               </p>
                               <p className="text-xs text-muted-foreground">
-                                {record.student?.nis} •{" "}
+                                {record.student?.nisn} •{" "}
                                 {record.student?.class?.name}
                               </p>
                             </div>
@@ -793,7 +793,7 @@ export default function IbadahPage() {
                             {entry.student?.name}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            {entry.student?.class?.name} • {entry.student?.nis}
+                            {entry.student?.class?.name} • {entry.student?.nisn}
                           </p>
                         </div>
 

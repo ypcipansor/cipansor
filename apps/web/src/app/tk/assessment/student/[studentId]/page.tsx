@@ -124,7 +124,7 @@ export default function StudentProgressDashboardPage() {
         <PageHeader
           title="Progress Perkembangan"
           description={
-            student ? `${student.name} - ${student.nis}` : "Loading..."
+            student ? `${student.name} - ${student.nisn}` : "Loading..."
           }
           actions={
             <div className="flex items-center gap-4">
@@ -166,7 +166,7 @@ export default function StudentProgressDashboardPage() {
               )}
               <div className="text-center md:text-left flex-1">
                 <h2 className="text-2xl font-bold">{student?.name}</h2>
-                <p className="text-muted-foreground">NIS: {student?.nis}</p>
+                <p className="text-muted-foreground">NISN: {student?.nisn}</p>
                 <div className="flex flex-wrap gap-2 mt-2 justify-center md:justify-start">
                   {student?.currentClass && (
                     <Badge variant="outline">{student.currentClass.name}</Badge>

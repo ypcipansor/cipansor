@@ -218,7 +218,7 @@ export default function CreateSimaanPage() {
                         <SelectContent>
                           {students?.data?.map((student) => (
                             <SelectItem key={student.id} value={student.id}>
-                              {student.name} ({student.nis})
+                              {student.name} ({student.nisn})
                             </SelectItem>
                           ))}
                         </SelectContent>

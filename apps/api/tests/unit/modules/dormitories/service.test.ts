@@ -60,7 +60,7 @@ describe('DormitoryService', () => {
         {
           student: {
             id: 'student-1',
-            nis: '12345',
+            nisn: '12345',
             gender: 'MALE',
             photoUrl: 'pic.jpg',
             user: { name: 'Ahmad', email: 'ahmad@example.com' },
@@ -71,7 +71,7 @@ describe('DormitoryService', () => {
         {
           student: {
             id: 'student-2',
-            nis: '67890',
+            nisn: '67890',
             gender: 'MALE',
             photoUrl: null,
             user: { name: 'Budi', email: 'budi@example.com' },
@@ -101,7 +101,7 @@ describe('DormitoryService', () => {
       expect(result[0]).toEqual({
         id: 'student-1',
         name: 'Ahmad',
-        nisn: undefined,
+        nisn: '12345',
         nik: undefined,
         photo: 'pic.jpg',
         class: '10 A',
@@ -111,7 +111,7 @@ describe('DormitoryService', () => {
       expect(result[1]).toEqual({
         id: 'student-2',
         name: 'Budi',
-        nisn: undefined,
+        nisn: '67890',
         nik: undefined,
         photo: null,
         class: '-',
@@ -144,10 +144,7 @@ describe('DormitoryService', () => {
 
     it('lets a foundation role through without reading the room', async () => {
       await expect(
-        assertRoomAccess(
-          { id: 'u1', roleCode: RoleCode.YAYASAN_KETUA, unitId: null },
-          ROOM_ID
-        )
+        assertRoomAccess({ id: 'u1', roleCode: RoleCode.YAYASAN_KETUA, unitId: null }, ROOM_ID)
       ).resolves.toBeUndefined();
 
       expect(prisma.room.findUnique).not.toHaveBeenCalled();
@@ -157,22 +154,16 @@ describe('DormitoryService', () => {
       mockRoom();
 
       await expect(
-        assertRoomAccess(
-          { id: 'u2', roleCode: RoleCode.SMPIT_GURU, unitId: 'unit-smpit' },
-          ROOM_ID
-        )
+        assertRoomAccess({ id: 'u2', roleCode: RoleCode.SMPIT_GURU, unitId: 'unit-smpit' }, ROOM_ID)
       ).resolves.toBeUndefined();
     });
 
     // The case the old `dormitory.unitId !== user.unitId` check got wrong.
-    it('lets a unit through when the room houses that unit\'s santri', async () => {
+    it("lets a unit through when the room houses that unit's santri", async () => {
       mockRoom(['unit-sdit']);
 
       await expect(
-        assertRoomAccess(
-          { id: 'u3', roleCode: RoleCode.SDIT_GURU, unitId: 'unit-sdit' },
-          ROOM_ID
-        )
+        assertRoomAccess({ id: 'u3', roleCode: RoleCode.SDIT_GURU, unitId: 'unit-sdit' }, ROOM_ID)
       ).resolves.toBeUndefined();
 
       expect(prisma.musyrifAssignment.findFirst).not.toHaveBeenCalled();
@@ -186,10 +177,7 @@ describe('DormitoryService', () => {
       } as any);
 
       await expect(
-        assertRoomAccess(
-          { id: 'u4', roleCode: RoleCode.SMAQ_GURU, unitId: 'unit-smaq' },
-          ROOM_ID
-        )
+        assertRoomAccess({ id: 'u4', roleCode: RoleCode.SMAQ_GURU, unitId: 'unit-smaq' }, ROOM_ID)
       ).resolves.toBeUndefined();
     });
 
@@ -198,10 +186,7 @@ describe('DormitoryService', () => {
       vi.mocked(prisma.musyrifAssignment.findFirst).mockResolvedValue(null);
 
       await expect(
-        assertRoomAccess(
-          { id: 'u5', roleCode: RoleCode.SMAQ_GURU, unitId: 'unit-smaq' },
-          ROOM_ID
-        )
+        assertRoomAccess({ id: 'u5', roleCode: RoleCode.SMAQ_GURU, unitId: 'unit-smaq' }, ROOM_ID)
       ).rejects.toThrow(/not allowed/i);
     });
 
@@ -209,10 +194,7 @@ describe('DormitoryService', () => {
       vi.mocked(prisma.room.findUnique).mockResolvedValue(null);
 
       await expect(
-        assertRoomAccess(
-          { id: 'u6', roleCode: RoleCode.SMAQ_GURU, unitId: 'unit-smaq' },
-          ROOM_ID
-        )
+        assertRoomAccess({ id: 'u6', roleCode: RoleCode.SMAQ_GURU, unitId: 'unit-smaq' }, ROOM_ID)
       ).rejects.toThrow(/not found/i);
     });
   });
@@ -220,11 +202,7 @@ describe('DormitoryService', () => {
   describe('createRoomAssignment', () => {
     const payload = { studentId: 'student-1', roomId: 'room-1' };
 
-    const mockPair = (
-      studentUnitType: string,
-      studentGender: string,
-      dormGender: string
-    ) => {
+    const mockPair = (studentUnitType: string, studentGender: string, dormGender: string) => {
       vi.mocked(prisma.student.findUnique).mockResolvedValue({
         gender: studentGender,
         unit: { name: 'Unit Uji', type: studentUnitType },
@@ -259,9 +237,7 @@ describe('DormitoryService', () => {
     it('refuses a santri whose gender does not match the asrama', async () => {
       mockPair('SMP_IT', 'MALE', 'FEMALE');
 
-      await expect(createRoomAssignment(payload as never)).rejects.toThrow(
-        /jenis kelamin/i
-      );
+      await expect(createRoomAssignment(payload as never)).rejects.toThrow(/jenis kelamin/i);
       expect(prisma.roomAssignment.create).not.toHaveBeenCalled();
     });
 

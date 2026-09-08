@@ -647,7 +647,6 @@ CREATE TABLE "students" (
     "id" TEXT NOT NULL,
     "user_id" TEXT NOT NULL,
     "unit_id" TEXT NOT NULL,
-    "nis" TEXT NOT NULL,
     "nisn" TEXT,
     "gender" "Gender" NOT NULL,
     "birth_place" TEXT NOT NULL,
@@ -5905,10 +5904,8 @@ CREATE UNIQUE INDEX "classes_unit_id_academic_year_id_name_key" ON "classes"("un
 CREATE UNIQUE INDEX "students_user_id_key" ON "students"("user_id");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "students_nis_key" ON "students"("nis");
 
 -- CreateIndex
-CREATE INDEX "students_nis_idx" ON "students"("nis");
 
 -- CreateIndex
 CREATE INDEX "students_unit_id_idx" ON "students"("unit_id");

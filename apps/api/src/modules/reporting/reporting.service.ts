@@ -130,7 +130,7 @@ class ReportingService {
 
     return {
       records: students.map((s) => ({
-        nis: s.nisn || s.nik || "-",
+        nisn: s.nisn || s.nik || "-",
         name: s.user.name,
         email: s.user.email,
         phone: s.user.phone,

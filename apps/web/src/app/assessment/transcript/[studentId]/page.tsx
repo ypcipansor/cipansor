@@ -19,7 +19,6 @@ interface TranscriptData {
   student: {
     id: string;
     name: string;
-    nis: string;
     nisn: string | null;
     birthPlace: string | null;
     birthDate: string | null;
@@ -228,9 +227,9 @@ function TranscriptPrintPageContent() {
                   </span>
                 </div>
                 <div className="flex">
-                  <span className="w-28 text-gray-600">NIS / NISN</span>
+                  <span className="w-28 text-gray-600">NISN / NISN</span>
                   <span>
-                    : {transcript.student.nis} /{" "}
+                    : {transcript.student.nisn} /{" "}
                     {transcript.student.nisn ?? "-"}
                   </span>
                 </div>

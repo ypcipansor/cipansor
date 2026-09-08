@@ -578,7 +578,7 @@ export async function getLeaderboard(query: LeaderboardQuery) {
       rank: index + 1,
       studentId: entry.studentId,
       studentName: student?.user.name || 'Unknown',
-      nis: (student?.nisn || student?.nik || "-") || '',
+      nisn: (student?.nisn || student?.nik || "-") || '',
       className: student?.enrollments[0]?.class.name || '',
       totalPoints: (entry._sum.pointsEarned || 0) + (entry._sum.bonusEarned || 0),
       bonusPoints: entry._sum.bonusEarned || 0,

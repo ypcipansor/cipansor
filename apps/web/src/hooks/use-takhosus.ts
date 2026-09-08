@@ -74,7 +74,7 @@ export interface SanadRecord {
     student?: {
       id: string;
       name: string;
-      nis: string;
+      nisn: string;
       user?: { id: string; name: string };
     };
   };

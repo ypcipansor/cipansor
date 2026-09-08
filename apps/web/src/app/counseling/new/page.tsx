@@ -44,7 +44,7 @@ export default function NewCounselingPage() {
   const [selectedStudent, setSelectedStudent] = useState<{
     id: string;
     name: string;
-    nis: string;
+    nisn?: string;
     parentName: string;
     parentPhone: string;
     currentClass?: { name: string };
@@ -115,15 +115,13 @@ export default function NewCounselingPage() {
               <User className="h-5 w-5" />
               Informasi Siswa
             </CardTitle>
-            <CardDescription>
-              Pilih siswa yang akan dikonseling
-            </CardDescription>
+            <CardDescription>Pilih siswa yang akan dikonseling</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label>Cari Siswa *</Label>
               <Input
-                placeholder="Ketik nama atau NIS siswa..."
+                placeholder="Ketik nama atau NISN siswa..."
                 value={studentSearch}
                 onChange={(e) => setStudentSearch(e.target.value)}
               />
@@ -147,7 +145,7 @@ export default function NewCounselingPage() {
                           setSelectedStudent({
                             id: student.id,
                             name: student.name,
-                            nis: student.nis,
+                            nisn: student.nisn,
                             parentName: student.parentName,
                             parentPhone: student.parentPhone,
                             currentClass: student.currentClass,
@@ -157,7 +155,7 @@ export default function NewCounselingPage() {
                       >
                         <p className="font-medium">{student.name}</p>
                         <p className="text-sm text-muted-foreground">
-                          NIS: {student.nis} •{" "}
+                          NISN: {student.nisn} •{" "}
                           {student.currentClass?.name || "-"}
                         </p>
                       </button>
@@ -173,7 +171,7 @@ export default function NewCounselingPage() {
                   <div>
                     <p className="font-semibold">{selectedStudent.name}</p>
                     <p className="text-sm text-muted-foreground">
-                      NIS: {selectedStudent.nis} •{" "}
+                      NISN: {selectedStudent.nisn} •{" "}
                       {selectedStudent.currentClass?.name || "-"}
                     </p>
                     <p className="text-sm text-muted-foreground mt-1">
@@ -199,9 +197,7 @@ export default function NewCounselingPage() {
         <Card>
           <CardHeader>
             <CardTitle>Detail Sesi</CardTitle>
-            <CardDescription>
-              Informasi mengenai sesi konseling
-            </CardDescription>
+            <CardDescription>Informasi mengenai sesi konseling</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
@@ -224,7 +220,11 @@ export default function NewCounselingPage() {
                 <Select
                   defaultValue="ACADEMIC"
                   onValueChange={(v) =>
-                    setValue("category", v as CreateCounselingInput["category"], { shouldValidate: true })
+                    setValue(
+                      "category",
+                      v as CreateCounselingInput["category"],
+                      { shouldValidate: true },
+                    )
                   }
                 >
                   <SelectTrigger>
@@ -276,7 +276,9 @@ export default function NewCounselingPage() {
                 <Input
                   id="scheduledAt"
                   type="datetime-local"
-                  {...register("scheduledAt", { required: "Jadwal wajib diisi" })}
+                  {...register("scheduledAt", {
+                    required: "Jadwal wajib diisi",
+                  })}
                 />
               </div>
               <div className="space-y-2">

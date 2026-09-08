@@ -43,7 +43,7 @@ import {
 // Fallback demo data for when API returns empty
 const FALLBACK_STUDENT = {
   id: "",
-  nis: "—",
+  nisn: "—",
   name: "Loading...",
   gender: "MALE" as const,
   birthDate: "2011-01-01",
@@ -293,7 +293,7 @@ function StudentDetailPageContent() {
                 <h2 className="text-2xl font-bold">
                   {student.name || (student as any).user?.name || "—"}
                 </h2>
-                <p className="text-muted-foreground font-mono">{student.nis}</p>
+                <p className="text-muted-foreground font-mono">{student.nisn}</p>
                 <div className="flex gap-2 mt-2">
                   <Badge
                     variant={

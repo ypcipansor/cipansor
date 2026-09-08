@@ -64,7 +64,7 @@ interface WalletData {
   id: string;
   studentId: string; // Ensure studentId is part of the interface
   studentName: string;
-  studentNis: string;
+  studentNisn: string;
   unitName?: string;
   className?: string;
   balance: number;
@@ -465,7 +465,7 @@ function WalletPageContent() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>NIS</TableHead>
+                      <TableHead>NISN</TableHead>
                       <TableHead>Nama Santri</TableHead>
                       <TableHead>Kelas</TableHead>
                       <TableHead className="text-right">Saldo</TableHead>
@@ -477,7 +477,7 @@ function WalletPageContent() {
                     {walletsData?.data.map((wallet) => (
                       <TableRow key={wallet.id}>
                         <TableCell className="font-mono">
-                          {wallet.studentNis}
+                          {wallet.studentNisn}
                         </TableCell>
                         <TableCell className="font-medium">
                           {wallet.studentName}

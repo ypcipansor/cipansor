@@ -51,11 +51,15 @@ export async function calculateCampaignROI(unitId?: string) {
         status: 'PAID',
       },
       select: {
+        unitId: true,
         paidAmount: true,
         student: {
           select: {
             registrants: {
-              select: { campaignId: true },
+              select: {
+                campaignId: true,
+                admissionPeriod: { select: { unitId: true } },
+              },
               orderBy: { createdAt: 'asc' },
             },
           },
@@ -86,7 +90,15 @@ export async function calculateCampaignROI(unitId?: string) {
 
   // Add revenue from students
   studentRevenueData.forEach((inv) => {
-    const cid = inv.student?.registrants?.[0]?.campaignId;
+    const registrants = inv.student?.registrants ?? [];
+    // Attribute the invoice to the registration whose admission period matches
+    // the invoice's unit snapshot (correct attribution after a student has
+    // progressed across units), rather than always using the oldest
+    // registration. Fall back to the first registrant when there is no snapshot.
+    const registrant =
+      registrants.find((r) => inv.unitId && r.admissionPeriod?.unitId === inv.unitId) ??
+      registrants[0];
+    const cid = registrant?.campaignId;
     if (cid) {
       revenueMap.set(cid, (revenueMap.get(cid) || 0) + Number(inv.paidAmount));
     }
@@ -198,11 +210,14 @@ export async function getMonthlyAttributedRevenue(unitId?: string, months = 6) {
     where: {
       paidAt: { gte: start },
       invoice: {
+        // Filter on the invoice's own unit snapshot, not the student's
+        // registrations, so a payment from a previous unit is not attributed to
+        // a different unit after the student has progressed across units.
+        ...(unitId ? { unitId } : {}),
         student: {
           registrants: {
             some: {
               campaignId: { not: null },
-              ...(unitId ? { admissionPeriod: { unitId } } : {}),
             },
           },
         },

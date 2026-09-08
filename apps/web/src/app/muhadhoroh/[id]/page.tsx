@@ -238,7 +238,7 @@ export default function MuhadhorohDetailPage({ params }: PageProps) {
                     {muhadhoroh.student?.name}
                   </h3>
                   <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
-                    <span>NIS: {muhadhoroh.student?.nis}</span>
+                    <span>NISN: {muhadhoroh.student?.nisn}</span>
                     {muhadhoroh.student?.class && (
                       <Badge variant="outline">
                         {muhadhoroh.student.class.name}

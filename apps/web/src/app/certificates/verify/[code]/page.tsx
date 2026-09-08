@@ -181,9 +181,9 @@ export default function VerifyCertificatePage({
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">NIS</span>
+                  <span className="text-muted-foreground">NISN</span>
                   <span className="font-medium">
-                    {certificate.student?.nis || "-"}
+                    {certificate.student?.nisn || "-"}
                   </span>
                 </div>
                 {certificate.student?.class && (

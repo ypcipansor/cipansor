@@ -26,7 +26,6 @@ export interface MuhadhorohRecord {
   };
   student?: {
     id: string;
-    nis: string;
     nisn?: string;
     nik?: string;
     name: string;
@@ -57,7 +56,6 @@ export interface MuhadhorohStats {
 export interface TopPerformer {
   studentId: string;
   name: string;
-  nis: string;
   nisn?: string;
   nik?: string;
   class: string | null;

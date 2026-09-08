@@ -326,7 +326,7 @@ export default function CounselingDetailPage({
                 <div>
                   <p className="font-medium">{record.student?.user?.name}</p>
                   <p className="text-sm text-muted-foreground">
-                    {record.student?.nis}
+                    {record.student?.nisn}
                   </p>
                 </div>
               </div>

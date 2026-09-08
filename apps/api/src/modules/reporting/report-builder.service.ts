@@ -54,7 +54,7 @@ export interface ReportResult {
 // Available fields per report type
 const REPORT_FIELDS: Record<ReportType, ReportField[]> = {
   students: [
-    { key: 'nis', label: 'NIS', type: 'string', category: 'Identitas' },
+    { key: 'nisn', label: 'NISN', type: 'string', category: 'Identitas' },
     { key: 'name', label: 'Nama', type: 'string', category: 'Identitas' },
     { key: 'gender', label: 'Jenis Kelamin', type: 'string', category: 'Identitas' },
     { key: 'birthDate', label: 'Tanggal Lahir', type: 'date', category: 'Identitas' },
@@ -213,7 +213,8 @@ async function generateStudentReport(
   });
 
   return students.map((s) => ({
-    nis: s.nisn || s.nik || "-",
+    nisn: s.nisn,
+    nik: s.nik,
     name: s.user?.name || '',
     gender: s.gender,
     birthDate: s.birthDate?.toISOString().split('T')[0] || '',

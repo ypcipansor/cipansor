@@ -146,7 +146,7 @@ function GradeSimaanPageContent({
             </CardHeader>
             <CardContent className="space-y-4">
               <DetailItem label="Santri" value={exam.student?.user?.name} />
-              <DetailItem label="NIS" value={exam.student?.nis} />
+              <DetailItem label="NISN" value={exam.student?.nisn} />
               <Separator />
               <DetailItem label="Jenis" value={exam.simaanType} />
               <DetailItem

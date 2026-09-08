@@ -188,7 +188,7 @@ function AssignRoomPageContent({
                     <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
                       id="search"
-                      placeholder="Nama atau NIS..."
+                      placeholder="Nama atau NISN..."
                       className="pl-10"
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
@@ -216,7 +216,7 @@ function AssignRoomPageContent({
                 <div className="py-8 text-center text-muted-foreground">
                   {search
                     ? "Tidak ada santri ditemukan"
-                    : "Masukkan nama atau NIS untuk mencari"}
+                    : "Masukkan nama atau NISN untuk mencari"}
                 </div>
               ) : (
                 <div className="rounded-md border">
@@ -224,7 +224,7 @@ function AssignRoomPageContent({
                     <TableHeader>
                       <TableRow>
                         <TableHead className="w-12"></TableHead>
-                        <TableHead>NIS</TableHead>
+                        <TableHead>NISN</TableHead>
                         <TableHead>Nama</TableHead>
                         <TableHead>Jenis Kelamin</TableHead>
                         <TableHead>Kelas</TableHead>
@@ -248,7 +248,7 @@ function AssignRoomPageContent({
                               className="h-4 w-4"
                             />
                           </TableCell>
-                          <TableCell>{student.nis}</TableCell>
+                          <TableCell>{student.nisn}</TableCell>
                           <TableCell className="font-medium">
                             {student.name}
                           </TableCell>

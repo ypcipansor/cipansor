@@ -7,7 +7,7 @@ export interface Permit {
   student?: {
     id: string;
     name: string;
-    nis: string;
+    nisn: string;
     gender?: "MALE" | "FEMALE";
     class?: {
       id: string;

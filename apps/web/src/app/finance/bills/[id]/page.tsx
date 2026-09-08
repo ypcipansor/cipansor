@@ -354,8 +354,8 @@ function BillDetailPageContent({
                 <p className="font-medium">{bill.student?.name}</p>
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">NIS</p>
-                <p className="font-medium font-mono">{bill.student?.nis}</p>
+                <p className="text-sm text-muted-foreground">NISN</p>
+                <p className="font-medium font-mono">{bill.student?.nisn}</p>
               </div>
             </div>
             <Button variant="outline" size="sm" asChild>

@@ -25,7 +25,7 @@ export interface CounselingSession {
   studentId: string;
   student?: {
     id: string;
-    nis: string;
+    nisn: string;
     user?: {
       name: string;
     };
