@@ -559,14 +559,20 @@ export async function enrollRegistrant(
     let student;
 
     if (existingStudent) {
-      user = existingStudent.user;
+      user = await tx.user.update({
+        where: { id: existingStudent.userId },
+        data: {
+          unitId: registrant.admissionPeriod.unitId,
+        },
+      });
+
       student = await tx.student.update({
         where: { id: existingStudent.id },
         data: {
           unitId: registrant.admissionPeriod.unitId,
           status: 'active',
-          nisn: studentData.nisn || existingStudent.nisn,
-          nik: studentData.nik || existingStudent.nik,
+          nisn: studentData.nisn || registrant.internalNisn || existingStudent.nisn,
+          nik: studentData.nik || registrant.internalNik || existingStudent.nik,
           graduateYear: null,
         },
       });

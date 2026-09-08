@@ -120,6 +120,7 @@ export class WalletService {
         id: w.id,
         studentId: w.studentId,
         studentName: w.student.user.name,
+        nis: w.student.nisn || w.student.nik || "-",
         studentNisn: w.student.nisn,
         studentNik: w.student.nik,
         unitName: w.student.unit?.name,

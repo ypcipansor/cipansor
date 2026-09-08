@@ -89,7 +89,15 @@ export class StudentOnboardingOrchestrator {
       let student;
 
       if (existingStudent) {
-        user = existingStudent.user;
+        user = await tx.user.update({
+          where: { id: existingStudent.userId },
+          data: {
+            unitId,
+            resetTokenHash: crypto.createHash('sha256').update(resetToken).digest('hex'),
+            resetTokenExpiresAt: resetTokenExpiry,
+          },
+        });
+
         student = await tx.student.update({
           where: { id: existingStudent.id },
           data: {
@@ -104,6 +112,8 @@ export class StudentOnboardingOrchestrator {
             parentName: registrant.parentName,
             parentPhone: registrant.parentPhone,
             parentEmail: registrant.parentEmail,
+            nisn: registrant.internalNisn || existingStudent.nisn,
+            nik: registrant.internalNik || existingStudent.nik,
           },
         });
 
@@ -133,6 +143,8 @@ export class StudentOnboardingOrchestrator {
             status: 'active',
             unitId,
             entryYear: year,
+            nisn: registrant.internalNisn || null,
+            nik: registrant.internalNik || null,
             gender: registrant.gender,
             birthPlace: registrant.birthPlace,
             birthDate: registrant.birthDate,

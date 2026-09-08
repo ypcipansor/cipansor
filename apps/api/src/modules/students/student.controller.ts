@@ -30,7 +30,13 @@ export const list = asyncHandler(async (req: Request, res: Response) => {
  */
 export const lookupAlumni = asyncHandler(async (req: Request, res: Response) => {
   const { identifier } = req.query;
-  const student = await studentService.findInternalAlumniByIdentifier(String(identifier || ''));
+  const currentUser = req.user
+    ? { role: req.user.role, roleCode: req.user.roleCode, unitId: req.user.unitId }
+    : undefined;
+  const student = await studentService.findInternalAlumniByIdentifier(
+    String(identifier || ''),
+    currentUser
+  );
 
   res.json({
     success: true,

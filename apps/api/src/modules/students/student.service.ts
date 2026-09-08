@@ -124,19 +124,30 @@ export class StudentService {
   /**
    * Find internal alumnus student by NIK or NISN for re-enrollment / onboarding
    */
-  async findInternalAlumniByIdentifier(identifier: string) {
+  async findInternalAlumniByIdentifier(
+    identifier: string,
+    currentUser?: { role: string; roleCode?: string | null; unitId: string | null }
+  ) {
     if (!identifier || identifier.trim().length === 0) {
       return null;
     }
 
     const clean = identifier.trim();
 
+    const where: Prisma.StudentWhereInput = {
+      deletedAt: null,
+      status: 'alumni',
+      OR: [{ nik: clean }, { nisn: clean }],
+    };
+
+    if (currentUser && !seesAllUnits(currentUser)) {
+      if (currentUser.unitId) {
+        where.unitId = currentUser.unitId;
+      }
+    }
+
     const student = await prisma.student.findFirst({
-      where: {
-        deletedAt: null,
-        status: 'alumni',
-        OR: [{ nik: clean }, { nisn: clean }],
-      },
+      where,
       select: {
         id: true,
         nisn: true,
@@ -147,7 +158,7 @@ export class StudentService {
         entryYear: true,
         graduateYear: true,
         status: true,
-        user: { select: { id: true, name: true, email: true } },
+        user: { select: { id: true, name: true } },
         unit: { select: { id: true, name: true, type: true } },
       },
     });
@@ -397,6 +408,7 @@ export class StudentService {
   async graduateStudent(id: string, graduateYear?: number) {
     const student = await prisma.student.findFirst({
       where: { id, deletedAt: null },
+      include: { user: true, unit: true },
     });
 
     if (!student) {
@@ -423,6 +435,32 @@ export class StudentService {
         },
       });
 
+      // Upsert Alumni record to keep alumni module synchronized
+      const registrationNo = `ALM-${currentYear}-${id.slice(0, 8).toUpperCase()}`;
+      await tx.alumni.upsert({
+        where: { studentId: id },
+        create: {
+          studentId: id,
+          unitId: student.unitId,
+          registrationNo,
+          name: student.user.name,
+          gender: student.gender,
+          birthPlace: student.birthPlace,
+          birthDate: student.birthDate,
+          graduationYear: currentYear,
+          graduationDate: new Date(),
+          email: student.user.email,
+          phone: student.parentPhone,
+          address: student.address,
+          status: 'ACTIVE',
+        },
+        update: {
+          graduationYear: currentYear,
+          graduationDate: new Date(),
+          status: 'ACTIVE',
+        },
+      });
+
       return updated;
     });
   }
@@ -433,18 +471,24 @@ export class StudentService {
   async create(input: CreateStudentInput) {
     if (input.nisn) {
       const existingNisn = await prisma.student.findFirst({
-        where: { nisn: input.nisn, deletedAt: null },
+        where: { nisn: input.nisn },
       });
       if (existingNisn) {
+        if (existingNisn.deletedAt) {
+          throw Errors.conflict('NISN belongs to a soft-deleted student record. Please restore or contact administrator.');
+        }
         throw Errors.conflict('NISN already exists');
       }
     }
 
     if (input.nik) {
       const existingNik = await prisma.student.findFirst({
-        where: { nik: input.nik, deletedAt: null },
+        where: { nik: input.nik },
       });
       if (existingNik) {
+        if (existingNik.deletedAt) {
+          throw Errors.conflict('NIK belongs to a soft-deleted student record. Please restore or contact administrator.');
+        }
         throw Errors.conflict('NIK already exists');
       }
     }
@@ -613,7 +657,7 @@ export class StudentService {
           parentPhone: input.parentPhone,
           parentEmail: input.parentEmail,
           photoUrl: input.photoUrl,
-          status: input.status ? input.status.toLowerCase() : undefined,
+          status: input.status ? this.mapCanonicalStatus(input.status) : undefined,
         },
         include: {
           user: {
@@ -639,6 +683,15 @@ export class StudentService {
   /**
    * Delete student (soft delete)
    */
+  private mapCanonicalStatus(status: string): string {
+    const s = status.toLowerCase();
+    if (s === 'graduated' || s === 'alumni') return 'alumni';
+    if (s === 'dropped_out' || s === 'dropped') return 'dropped';
+    if (s === 'transferred') return 'transferred';
+    if (s === 'inactive') return 'inactive';
+    return 'active';
+  }
+
   async delete(id: string) {
     const student = await prisma.student.findFirst({
       where: { id, deletedAt: null },

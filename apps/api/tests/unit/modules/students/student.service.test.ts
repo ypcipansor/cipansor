@@ -34,6 +34,9 @@ vi.mock('../../../../src/lib/prisma', () => {
       create: vi.fn(),
       updateMany: vi.fn(),
     },
+    alumni: {
+      upsert: vi.fn(),
+    },
     $transaction: vi.fn((callback) => callback(prismaClient)),
   };
   return { prisma: prismaClient };
@@ -147,7 +150,18 @@ describe('StudentService', () => {
 
   describe('graduateStudent', () => {
     it('should mark student as alumni and complete active class enrollments', async () => {
-      const mockStudent = { id: 'student-active-1', status: 'active' };
+      const mockStudent = {
+        id: 'student-active-1',
+        unitId: 'unit-1',
+        status: 'active',
+        gender: 'MALE',
+        birthPlace: 'Jakarta',
+        birthDate: new Date(),
+        parentPhone: '08123456789',
+        address: 'Jl. Test',
+        user: { name: 'Graduating Student', email: 'grad@cipansor.local' },
+        unit: { id: 'unit-1', name: 'SMA Qur\'an' },
+      };
       const mockUpdatedStudent = {
         id: 'student-active-1',
         status: 'alumni',

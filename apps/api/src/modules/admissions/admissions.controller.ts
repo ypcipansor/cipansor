@@ -272,7 +272,17 @@ export async function getPublicUnits(_req: Request, res: Response, next: NextFun
 
 export async function createPublicRegistrant(req: Request, res: Response, next: NextFunction) {
   try {
-    const data = createRegistrantSchema.parse(req.body);
+    const rawData = createRegistrantSchema.parse(req.body);
+
+    // Strip/reject security sensitive internal alumni flags for public registration
+    const { isInternalAlumni, previousStudentId, internalNisn, internalNik, ...sanitizedData } = rawData;
+    const data = {
+      ...sanitizedData,
+      isInternalAlumni: false,
+      previousStudentId: undefined,
+      internalNisn: undefined,
+      internalNik: undefined,
+    };
 
     const { prisma } = await import('../../lib/prisma');
     const period = await prisma.admissionPeriod.findUnique({
