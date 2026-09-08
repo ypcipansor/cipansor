@@ -1,12 +1,14 @@
 "use client";
 
 import {
-  ColumnDef,
+  type ColumnDef as TanStackColumnDef,
+  createSortedRowModel,
   flexRender,
-  getCoreRowModel,
-  useReactTable,
-  SortingState,
-  getSortedRowModel,
+  stockFeatures,
+  tableFeatures,
+  useTable,
+  type RowData,
+  type SortingState,
 } from "@tanstack/react-table";
 import {
   Table,
@@ -23,8 +25,18 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 
-interface DataTableProps<TData, TValue> {
-  columns: ColumnDef<TData, TValue>[];
+const features = tableFeatures({
+  ...stockFeatures,
+  sortedRowModel: createSortedRowModel(),
+});
+
+type TableFeatures = typeof features;
+
+export type ColumnDef<TData extends RowData, TValue = unknown> =
+  TanStackColumnDef<TableFeatures, TData, TValue>;
+
+interface DataTableProps<TData extends RowData> {
+  columns: ColumnDef<TData>[];
   data: TData[];
   pagination?: {
     page: number;
@@ -38,21 +50,20 @@ interface DataTableProps<TData, TValue> {
   onRowClick?: (row: TData) => void;
 }
 
-export function DataTable<TData, TValue>({
+export function DataTable<TData extends RowData>({
   columns,
   data,
   pagination,
   isLoading,
   onRowClick,
-}: DataTableProps<TData, TValue>) {
+}: DataTableProps<TData>) {
   const [sorting, setSorting] = useState<SortingState>([]);
 
-  const table = useReactTable({
+  const table = useTable({
+    features,
     data,
     columns,
-    getCoreRowModel: getCoreRowModel(),
     onSortingChange: setSorting,
-    getSortedRowModel: getSortedRowModel(),
     state: {
       sorting,
     },
