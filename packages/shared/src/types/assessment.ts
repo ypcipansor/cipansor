@@ -330,6 +330,7 @@ export interface RaportMerdekaPdfData {
   }>;
   tahfidz?: {
     totalJuz?: number;
+    targetCapaian?: string;
     surahTerakhir?: string;
     statusCapaian?: string;
     catatan?: string;
@@ -341,4 +342,5 @@ export interface RaportMerdekaPdfData {
     alpa?: number;
   };
   catatanWaliKelas?: string;
+  tanggalCetak?: string;
 }

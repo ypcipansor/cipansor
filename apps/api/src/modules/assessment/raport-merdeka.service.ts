@@ -12,6 +12,9 @@
 
 import { prisma } from '../../lib/prisma';
 import { ApiError, ErrorCode } from '../../middleware/error';
+import { isTeacherOrAboveRoleCode } from '../../middleware/auth';
+import { RoleCode } from '@prisma/client';
+import type { JwtPayload } from '../../lib/jwt';
 import { P5ProjectService } from './p5-project.service';
 
 // Profil Pelajar Pancasila - 6 Dimensi
@@ -139,12 +142,23 @@ export class RaportMerdekaService {
   }
 
   /**
-   * Validate student unit scope (supports cross-unit educator assignments)
+   * Validate student unit scope (supports cross-unit educator assignments).
+   *
+   * Access rules:
+   * - SUPER_ADMIN bypasses scoping.
+   * - A user whose `unitId` matches the student's unit is fine.
+   * - A user with NO `unitId` must NOT bypass scoping — they are treated as a
+   *   cross-unit accessor and must prove an educator/admin assignment or a
+   *   teacher record in the student's unit (otherwise an empty unitId was a
+   *   free pass to every unit).
+   * - Cross-unit access is only granted to educator/admin roles
+   *   (`isTeacherOrAboveRoleCode`); a non-educator assignment (e.g. a parent
+   *   or business staff role) does not open a raport.
    */
-  static async validateStudentScope(user: any, studentId: string) {
+  static async validateStudentScope(user: JwtPayload | undefined, studentId: string) {
     if (!user) return;
     const userRoleCode = user.roleCode || user.role;
-    if (userRoleCode === 'SUPER_ADMIN') return;
+    if (userRoleCode === RoleCode.SUPER_ADMIN || userRoleCode === 'SUPER_ADMIN') return;
 
     const student = await prisma.student.findUnique({
       where: { id: studentId },
@@ -155,40 +169,44 @@ export class RaportMerdekaService {
       throw new ApiError(ErrorCode.NOT_FOUND, 'Siswa tidak ditemukan');
     }
 
-    if (user.unitId && student.unitId !== user.unitId) {
-      const userId = user.id || user.sub;
+    // A user with no unitId is treated as cross-unit. An empty unitId must
+    // never be a bypass — it can only pass if an explicit assignment exists.
+    const isCrossUnit = !user.unitId || student.unitId !== user.unitId;
+    if (!isCrossUnit) return;
 
-      const now = new Date();
+    const userId = user.id || user.sub;
+    const now = new Date();
 
-      // 1. Check if user has active, non-expired UserRoleAssignment in target student unit or global with educator/admin role
-      const userRoleInUnit = await prisma.userRoleAssignment.findFirst({
-        where: {
-          userId,
-          isActive: true,
-          AND: [
-            { OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
-            { OR: [{ unitId: student.unitId }, { unitId: null }] },
-          ],
-        },
-      });
+    // 1. Active, non-expired UserRoleAssignment in the target student unit
+    //    (or a global/unit-less one) whose role is an educator/admin RoleCode.
+    const userRoleInUnit = await prisma.userRoleAssignment.findFirst({
+      where: {
+        userId,
+        isActive: true,
+        AND: [
+          { OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
+          { OR: [{ unitId: student.unitId }, { unitId: null }] },
+        ],
+      },
+      include: { role: { select: { code: true } } },
+    });
 
-      if (userRoleInUnit) return;
+    if (userRoleInUnit && isTeacherOrAboveRoleCode(userRoleInUnit.role.code)) return;
 
-      // 2. Check if teacher record is assigned to student's unit or class/exam
-      const teacherAssignment = await prisma.teacher.findFirst({
-        where: {
-          userId,
-          OR: [
-            { unitId: student.unitId },
-            { homeroomClasses: { some: { unitId: student.unitId } } },
-            { exams: { some: { unitId: student.unitId } } },
-          ],
-        },
-      });
+    // 2. Check if teacher record is assigned to student's unit or class/exam
+    const teacherAssignment = await prisma.teacher.findFirst({
+      where: {
+        userId,
+        OR: [
+          { unitId: student.unitId },
+          { homeroomClasses: { some: { unitId: student.unitId } } },
+          { exams: { some: { unitId: student.unitId } } },
+        ],
+      },
+    });
 
-      if (!teacherAssignment) {
-        throw new ApiError(ErrorCode.FORBIDDEN, 'Anda tidak memiliki akses ke siswa di unit lain');
-      }
+    if (!teacherAssignment) {
+      throw new ApiError(ErrorCode.FORBIDDEN, 'Anda tidak memiliki akses ke siswa di unit lain');
     }
   }
 
@@ -196,7 +214,7 @@ export class RaportMerdekaService {
    * Generate Raport Merdeka for a student
    * Includes: Intrakurikuler, Projek P5, Ekstrakurikuler
    */
-  static async generateRaportMerdeka(studentId: string, academicYearId: string, semester: number, user?: any) {
+  static async generateRaportMerdeka(studentId: string, academicYearId: string, semester: number, user?: JwtPayload) {
     if (user) {
       await this.validateStudentScope(user, studentId);
     }
@@ -271,9 +289,13 @@ export class RaportMerdekaService {
       },
     });
 
-    // Calculate academic year midpoint to accurately bound Semester 1 and Semester 2 windows.
-    // This ensures Semester 1 grades entered in early January before mid-year break
-    // are correctly captured in Semester 1 rather than bleeding into Semester 2.
+    // Calculate academic year midpoint to bound Semester 1 and Semester 2.
+    // Note: `Grade` has NO `semester` column (verified against the Prisma
+    // schema), so a grade cannot be attributed to a semester directly. Instead
+    // we classify each grade by the assessment's OWN date — `exam.scheduledAt`
+    // when the grade came from an exam, otherwise `gradedAt` — so a Semester 1
+    // result entered late (e.g. graded in January) is still counted in Semester
+    // 1 rather than bleeding into Semester 2 based purely on when it was typed.
     const ayStartDate = new Date(enrollment.class.academicYear.startDate);
     const ayEndDate = new Date(enrollment.class.academicYear.endDate);
     const ayMidpoint = new Date((ayStartDate.getTime() + ayEndDate.getTime()) / 2);
@@ -281,20 +303,23 @@ export class RaportMerdekaService {
     const semStartDate = semester === 1 ? ayStartDate : ayMidpoint;
     const semEndDate = semester === 1 ? ayMidpoint : ayEndDate;
 
-    // Get grades for this student and academic year within the calculated semester window
-    const grades = await prisma.grade.findMany({
+    // Fetch all grades for the year, then classify in memory using the
+    // assessment's own date. Keeps the window check away from `gradedAt` for
+    // exam-linked grades.
+    const yearGrades = await prisma.grade.findMany({
       where: {
         studentId,
         academicYearId,
-        gradedAt: {
-          gte: semStartDate,
-          lte: semEndDate,
-        },
       },
       include: {
         exam: true,
         subject: true,
       },
+    });
+
+    const grades = yearGrades.filter((grade) => {
+      const effectiveDate = grade.exam?.scheduledAt ?? grade.gradedAt;
+      return effectiveDate >= semStartDate && effectiveDate <= semEndDate;
     });
 
     // Group grades by subject
@@ -784,18 +809,15 @@ export class RaportMerdekaService {
     classId: string,
     academicYearId: string,
     semester: number,
-    user?: any
+    user?: JwtPayload
   ) {
-    // Enforce educator authority check for bulk raport generation
+    // Enforce educator authority check for bulk raport generation using the
+    // canonical teacher-or-above RoleCode group shared with the middleware —
+    // not a hand-rolled `endsWith('_GURU')` fragment that drifts from the real
+    // role vocabulary.
     if (user) {
       const roleCode = user.roleCode || user.role;
-      const isTeacherOrAdmin =
-        roleCode === 'SUPER_ADMIN' ||
-        ['UNIT_ADMIN', 'TEACHER', 'SDIT_GURU', 'SMP_GURU', 'SMA_GURU', 'TKQ_GURU', 'TPQ_GURU', 'MADIN_GURU'].some(
-          (prefix) => roleCode.includes(prefix) || roleCode.endsWith('_GURU') || roleCode.endsWith('_ADMIN') || roleCode.endsWith('_KEPALA_SEKOLAH')
-        );
-
-      if (!isTeacherOrAdmin) {
+      if (roleCode !== RoleCode.SUPER_ADMIN && !isTeacherOrAboveRoleCode(roleCode)) {
         throw new ApiError(
           ErrorCode.FORBIDDEN,
           'Akses ditolak. Hanya pendidik dan pengelola yang dapat mengakses raport kelas.'
@@ -829,9 +851,15 @@ export class RaportMerdekaService {
               { OR: [{ unitId: classInfo.unitId }, { unitId: null }] },
             ],
           },
+          include: { role: { select: { code: true } } },
         });
 
-        if (!userRoleInUnit) {
+        // Cross-unit access requires an educator/admin assignment (same
+        // canonical RoleCode group the middleware uses) — not just any role on
+        // the roster. A parent/business-staff role must not open a class raport.
+        const hasEducatorRoleInUnit =
+          userRoleInUnit && isTeacherOrAboveRoleCode(userRoleInUnit.role.code);
+        if (!hasEducatorRoleInUnit) {
           const teacherAssignment = await prisma.teacher.findFirst({
             where: {
               userId,

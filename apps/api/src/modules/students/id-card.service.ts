@@ -10,6 +10,9 @@
 
 import { prisma } from '../../lib/prisma';
 import { ApiError, ErrorCode } from '../../middleware/error';
+import { config as appConfig } from '../../config';
+import { RoleCode, Prisma } from '@prisma/client';
+import type { JwtPayload } from '../../lib/jwt';
 import * as crypto from 'crypto';
 
 // ID Card template types
@@ -44,14 +47,17 @@ const DEFAULT_CONFIG: IdCardConfig = {
 };
 
 export class StudentIdCardService {
+  /**
+   * The dedicated secret that signs student-card QR codes.
+   *
+   * Deliberately NOT the JWT secret: student cards are physical and long-lived,
+   * so rotating session/credential secrets must never invalidate cards that are
+   * still inside their validity period. Production fails to boot without a real
+   * `STUDENT_CARD_HMAC_SECRET` (enforced at config load), and there is no
+   * runtime fallback here.
+   */
   static getHmacSecret(): string {
-    const secret = process.env.STUDENT_CARD_HMAC_SECRET || process.env.JWT_SECRET;
-    if (!secret && process.env.NODE_ENV === 'production') {
-      throw new Error(
-        'STUDENT_CARD_HMAC_SECRET or JWT_SECRET environment variable must be set in production.'
-      );
-    }
-    return secret || '';
+    return appConfig.studentCard.hmacSecret;
   }
 
   /**
@@ -67,12 +73,16 @@ export class StudentIdCardService {
     unitName: string;
     validUntil: Date;
   }): string {
-    // Create verification payload
+    // Create verification payload. Deliberately minimal: only what the verifier
+    // needs (student id, NIS, expiry). The student is re-fetched from the DB on
+    // verification, so nisn/unit are redundant here — and every extra byte
+    // pushes the QR onto a higher symbol order, which is what made the printed
+    // card unscannable (a ~200-byte JSON payload at 64px was under 1.5px per
+    // module). A leaner payload keeps the symbol small so a larger render can
+    // actually be read.
     const payload = {
       sid: studentData.id,
       nis: studentData.nis,
-      nisn: studentData.nisn ?? '',
-      uid: studentData.unitId,
       exp: studentData.validUntil.getTime(),
     };
 
@@ -312,7 +322,11 @@ export class StudentIdCardService {
         // QR Code
         qrCode: {
           data: qrCodeData,
-          verificationUrl: `${(process.env.BASE_URL || 'https://cipansor.or.id').replace(/\/$/, '')}/public/verify-card?data=${encodeURIComponent(qrCodeData)}`,
+          // The QR is scanned by an outsider (security guard, parent, dinas) —
+          // exactly the `config.publicSiteUrl` audience. Never build this from
+          // an inline env fallback: BASE_URL names no host in particular, and
+          // the guess was wrong twice already.
+          verificationUrl: `${appConfig.publicSiteUrl}/public/verify-card?data=${encodeURIComponent(qrCodeData)}`,
         },
       },
     };
@@ -480,11 +494,64 @@ export class StudentIdCardService {
   }
 
   /**
-   * Bulk regenerate ID cards for active students in a unit or class
+   * Bulk regenerate ID cards for active students in a unit or class.
+   *
+   * Scope is enforced against the calling user:
+   * - SUPER_ADMIN may regenerate any unit/class, or all students (no filter).
+   * - Any other role MUST pass `unitId` equal to their own unit; without a
+   *   filter, or with a different unit, the request is rejected with 403. If a
+   *   `classId` is supplied, the class must belong to the user's unit.
+   *
+   * Without this, an account scoped to a single unit could empty both filters
+   * (or name another unit) and regenerate — and leak — the cards and the
+   * parent data of every student in the system.
    */
-  static async bulkRegenerateActiveCards(unitId?: string, classId?: string) {
-    const whereClause: any = { deletedAt: null };
-    if (unitId) whereClause.unitId = unitId;
+  static async bulkRegenerateActiveCards(unitId?: string, classId?: string, user?: JwtPayload) {
+    const userRoleCode = user?.roleCode || user?.role;
+    const userUnitId = user?.unitId;
+    const isSuperAdmin = userRoleCode === RoleCode.SUPER_ADMIN || userRoleCode === 'SUPER_ADMIN';
+
+    if (!isSuperAdmin) {
+      if (!userUnitId) {
+        throw new ApiError(
+          ErrorCode.FORBIDDEN,
+          'Akun terbatas unit wajib memiliki unit. Hubungi administrator.'
+        );
+      }
+      if (!unitId) {
+        throw new ApiError(
+          ErrorCode.FORBIDDEN,
+          'Akun terbatas unit wajib menyebutkan unitId saat meregenerasi kartu.'
+        );
+      }
+      if (unitId !== userUnitId) {
+        throw new ApiError(
+          ErrorCode.FORBIDDEN,
+          'Anda tidak memiliki akses untuk meregenerasi kartu di unit lain.'
+        );
+      }
+      if (classId) {
+        const cls = await prisma.class.findUnique({
+          where: { id: classId },
+          select: { unitId: true },
+        });
+        if (!cls || cls.unitId !== userUnitId) {
+          throw new ApiError(
+            ErrorCode.FORBIDDEN,
+            'Anda tidak memiliki akses ke kelas di unit lain.'
+          );
+        }
+      }
+    }
+
+    const whereClause: Prisma.StudentWhereInput = { deletedAt: null };
+    if (unitId) {
+      whereClause.unitId = unitId;
+    } else if (!isSuperAdmin && userUnitId) {
+      // Guarded: a unit-scoped user reaching here is guaranteed to have a
+      // unitId (we threw above otherwise), and this narrows the type.
+      whereClause.unitId = userUnitId;
+    }
     if (classId) {
       whereClause.enrollments = {
         some: { classId, status: 'active' },

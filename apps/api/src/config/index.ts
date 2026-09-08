@@ -38,6 +38,39 @@ export function resolveJwtSecret(secret: string | undefined, env: string | undef
 }
 
 /**
+ * The secret that signs printed student-card QR codes.
+ *
+ * This is deliberately NOT the JWT signer. Student cards are physical and
+ * long-lived: a card printed once must keep verifying for its whole validity
+ * period, which is typically a full academic year. Rotating JWT credentials
+ * (the session/signing key) must therefore have no effect on cards already in
+ * circulation — otherwise every rotation instantly invalidates every printed
+ * card. A dedicated signer means card validity is controlled by the card's own
+ * expiry, not by when staff next rotate their session secrets.
+ *
+ * Production refuses to boot without a real value (same rules as JWT_SECRET),
+ * so a card that silently signs with a placeholder can never ship. Outside
+ * production we fall back to a dev-only default so local development and unit
+ * tests keep working without an .env key.
+ */
+const DEV_STUDENT_CARD_HMAC_SECRET = 'dev-student-card-hmac-secret-not-for-production';
+
+export function resolveStudentCardHmacSecret(
+  secret: string | undefined,
+  env: string | undefined
+): string {
+  if (env === 'production') {
+    const issues = findSecretIssues({ studentCardHmacSecret: secret });
+    const issue = issues.find((i) => i.variable === 'STUDENT_CARD_HMAC_SECRET');
+    if (issue) {
+      throw new Error(`STUDENT_CARD_HMAC_SECRET ${issue.reason}`);
+    }
+    return secret as string;
+  }
+  return secret || DEV_STUDENT_CARD_HMAC_SECRET;
+}
+
+/**
  * Angka uang dari env, memaafkan koma desimal.
  *
  * `parseFloat('0,19')` bernilai **0**, bukan 0,19 — ia berhenti di koma. Nilai
@@ -66,6 +99,21 @@ export const config = {
     // transparently via /auth/refresh (see apps/web/src/lib/api.ts).
     expiresIn: process.env.JWT_EXPIRES_IN || '15m',
     refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '30d',
+  },
+
+  /**
+   * The dedicated signer for student-card QR codes (see
+   * `resolveStudentCardHmacSecret` above). Kept separate from JWT so that
+   * rotating session credentials never invalidates already-printed physical
+   * cards.
+   */
+  studentCard: {
+    get hmacSecret(): string {
+      return resolveStudentCardHmacSecret(
+        process.env.STUDENT_CARD_HMAC_SECRET,
+        process.env.NODE_ENV
+      );
+    },
   },
 
   bcrypt: {

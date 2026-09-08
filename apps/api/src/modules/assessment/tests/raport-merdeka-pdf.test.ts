@@ -133,9 +133,12 @@ describe('RaportMerdekaController.exportStudentRaportPdf', () => {
 
     const next = vi.fn();
 
-    await RaportMerdekaController.exportStudentRaportPdf(req, res, next);
-
-    expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'application/pdf');
+    // asyncHandler fire-and-forgets the wrapped promise, so await the
+    // async effect via waitFor rather than trusting the wrapper's return.
+    RaportMerdekaController.exportStudentRaportPdf(req, res, next);
+    await vi.waitFor(() => {
+      expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'application/pdf');
+    });
     expect(resHeaders['Content-Type']).toBe('application/pdf');
     expect(resHeaders['Content-Disposition']).toContain('Raport_Merdeka_Ahmad_Fulan.pdf');
     expect(res.send).toHaveBeenCalled();

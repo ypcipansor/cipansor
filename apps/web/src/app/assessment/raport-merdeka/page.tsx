@@ -876,17 +876,23 @@ export default function RaportMerdekaPage() {
                     <div className="border border-black w-1/2 text-xs">
                       <div className="grid grid-cols-[1fr_60px] border-b border-black last:border-0">
                         <div className="p-2 border-r border-black">Sakit</div>
-                        <div className="p-2 text-center">1 hari</div>
+                        <div className="p-2 text-center">
+                          {studentReportData?.kehadiran?.sakit ?? "-"} hari
+                        </div>
                       </div>
                       <div className="grid grid-cols-[1fr_60px] border-b border-black last:border-0">
                         <div className="p-2 border-r border-black">Izin</div>
-                        <div className="p-2 text-center">0 hari</div>
+                        <div className="p-2 text-center">
+                          {studentReportData?.kehadiran?.izin ?? "-"} hari
+                        </div>
                       </div>
                       <div className="grid grid-cols-[1fr_60px] border-b border-black last:border-0">
                         <div className="p-2 border-r border-black">
                           Tanpa Keterangan
                         </div>
-                        <div className="p-2 text-center">0 hari</div>
+                        <div className="p-2 text-center">
+                          {studentReportData?.kehadiran?.alpa ?? "-"} hari
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -902,15 +908,19 @@ export default function RaportMerdekaPage() {
                       <p className="border-b border-black min-w-[150px] inline-block"></p>
                     </div>
                     <div className="text-center">
-                      <p>Bogor, 20 Desember 2024</p>
+                      <p>
+                        {studentReportData?.tanggalCetak
+                          ? `Bogor, ${new Date(studentReportData.tanggalCetak).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}`
+                          : "Bogor, ........................"}
+                      </p>
                       <p>Wali Kelas</p>
                       <br />
                       <br />
                       <br />
                       <p className="font-bold underline">
-                        Nama Wali Kelas, S.Pd
+                        {studentReportData?.waliKelas?.nama ?? "-"}
                       </p>
-                      <p>NIP. 19800101 200501 1 001</p>
+                      <p>NIP. {studentReportData?.waliKelas?.nip ?? "-"}</p>
                     </div>
                   </div>
                 </div>
@@ -941,7 +951,7 @@ export default function RaportMerdekaPage() {
                         D. Tahfidz Al-Qur'an
                       </h4>
                       <Badge className="bg-green-600">
-                        Target: Juz 30 & 29
+                        Target: {studentReportData?.tahfidz?.targetCapaian ?? "-"}
                       </Badge>
                     </div>
 
@@ -951,10 +961,10 @@ export default function RaportMerdekaPage() {
                           Capaian Hafalan (Ziyadah)
                         </div>
                         <div className="text-3xl font-bold text-green-700">
-                          1.5 Juz
+                          {studentReportData?.tahfidz?.totalJuz ?? "-"} Juz
                         </div>
                         <p className="text-sm">
-                          Terakhir: QS. Al-Mulk ayat 1-30
+                          Terakhir: {studentReportData?.tahfidz?.surahTerakhir ?? "-"}
                         </p>
                       </div>
                       <div className="border rounded p-4 space-y-2">
@@ -962,10 +972,10 @@ export default function RaportMerdekaPage() {
                           Predikat Murojaah
                         </div>
                         <div className="text-3xl font-bold text-blue-700">
-                          Mumtaz
+                          {studentReportData?.tahfidz?.statusCapaian ?? "-"}
                         </div>
                         <p className="text-sm">
-                          Sangat lancar dalam mengulang hafalan lama.
+                          {studentReportData?.tahfidz?.catatan ?? "-"}
                         </p>
                       </div>
                     </div>
@@ -985,27 +995,28 @@ export default function RaportMerdekaPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        <tr>
-                          <td className="border border-black p-2">
-                            Kelancaran (Fashohah)
-                          </td>
-                          <td className="border border-black p-2 text-center font-bold">
-                            A
-                          </td>
-                          <td className="border border-black p-2">
-                            Mampu membaca dengan sangat lancar dan fasih.
-                          </td>
-                        </tr>
-                        <tr>
-                          <td className="border border-black p-2">Tajwid</td>
-                          <td className="border border-black p-2 text-center font-bold">
-                            B
-                          </td>
-                          <td className="border border-black p-2">
-                            Penerapan hukum bacaan sudah baik, perlu ketelitian
-                            mad lazim.
-                          </td>
-                        </tr>
+                        {selectedStudentId && studentReportData?.tahfidz ? (
+                          <tr>
+                            <td
+                              colSpan={3}
+                              className="border border-black p-4 text-center text-muted-foreground"
+                            >
+                              Rincian aspek penilaian tahfidz belum tersedia.
+                              Ringkasan capaian dapat dilihat di atas.
+                            </td>
+                          </tr>
+                        ) : (
+                          <tr>
+                            <td
+                              colSpan={3}
+                              className="border border-black p-4 text-center text-muted-foreground"
+                            >
+                              {selectedStudentId
+                                ? "Belum ada data tahfidz untuk siswa ini."
+                                : "Pilih siswa untuk melihat capaian tahfidz."}
+                            </td>
+                          </tr>
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -1016,20 +1027,6 @@ export default function RaportMerdekaPage() {
                       <h4 className="font-bold text-blue-900">
                         E. Kepribadian & Akhlak (Behavior)
                       </h4>
-                      <div className="flex gap-2">
-                        <Badge
-                          variant="outline"
-                          className="border-green-500 text-green-700 bg-green-50"
-                        >
-                          +150 Poin
-                        </Badge>
-                        <Badge
-                          variant="outline"
-                          className="border-red-500 text-red-700 bg-red-50"
-                        >
-                          -10 Poin
-                        </Badge>
-                      </div>
                     </div>
 
                     <table className="w-full border-collapse border border-black text-xs">
@@ -1046,43 +1043,13 @@ export default function RaportMerdekaPage() {
                       </thead>
                       <tbody>
                         <tr>
-                          <td className="border border-black p-2 text-center">
-                            1
-                          </td>
-                          <td className="border border-black p-2 font-medium">
-                            Kedisiplinan
-                          </td>
-                          <td className="border border-black p-2">
-                            Sangat disiplin dalam sholat berjamaah.{" "}
-                            <span className="text-green-600 font-semibold">
-                              (+50 Poin)
-                            </span>
-                          </td>
-                        </tr>
-                        <tr>
-                          <td className="border border-black p-2 text-center">
-                            2
-                          </td>
-                          <td className="border border-black p-2 font-medium">
-                            Kebersihan
-                          </td>
-                          <td className="border border-black p-2">
-                            Lupa merapikan tempat tidur pada pekan ke-3.{" "}
-                            <span className="text-red-600 font-semibold">
-                              (-10 Poin)
-                            </span>
-                          </td>
-                        </tr>
-                        <tr>
-                          <td className="border border-black p-2 text-center">
-                            3
-                          </td>
-                          <td className="border border-black p-2 font-medium">
-                            Sosial
-                          </td>
-                          <td className="border border-black p-2">
-                            Sering membantu teman yang sakit. Ananda memiliki
-                            jiwa sosial yang tinggi.
+                          <td
+                            colSpan={3}
+                            className="border border-black p-4 text-center text-muted-foreground"
+                          >
+                            {selectedStudentId
+                              ? "Belum ada catatan perilaku untuk siswa ini."
+                              : "Pilih siswa untuk melihat catatan perilaku."}
                           </td>
                         </tr>
                       </tbody>
@@ -1099,19 +1066,19 @@ export default function RaportMerdekaPage() {
                         <div className="text-muted-foreground">
                           Sholat Berjamaah
                         </div>
-                        <div className="text-lg font-bold">95%</div>
+                        <div className="text-lg font-bold">-</div>
                       </div>
                       <div className="border p-2 rounded">
                         <div className="text-muted-foreground">
                           Sholat Dhuha
                         </div>
-                        <div className="text-lg font-bold">80%</div>
+                        <div className="text-lg font-bold">-</div>
                       </div>
                       <div className="border p-2 rounded">
                         <div className="text-muted-foreground">
                           Puasa Sunnah
                         </div>
-                        <div className="text-lg font-bold">Senin-Kamis</div>
+                        <div className="text-lg font-bold">-</div>
                       </div>
                     </div>
                   </div>
@@ -1124,15 +1091,23 @@ export default function RaportMerdekaPage() {
                       <br />
                       <br />
                       <br />
-                      <p className="font-bold underline">KH. Abdullah, Lc</p>
+                      <p className="font-bold underline">
+                        {studentReportData?.pimpinanUnit?.nama ?? "-"}
+                      </p>
                     </div>
                     <div className="text-center">
-                      <p>Bogor, 20 Desember 2024</p>
-                      <p>Musyrif Kamar</p>
+                      <p>
+                        {studentReportData?.tanggalCetak
+                          ? `Bogor, ${new Date(studentReportData.tanggalCetak).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}`
+                          : "Bogor, ........................"}
+                      </p>
+                      <p>Wali Kelas</p>
                       <br />
                       <br />
                       <br />
-                      <p className="font-bold underline">Ustadz Ahmad</p>
+                      <p className="font-bold underline">
+                        {studentReportData?.waliKelas?.nama ?? "-"}
+                      </p>
                     </div>
                   </div>
 

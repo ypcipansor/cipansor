@@ -26,6 +26,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useStudents, Student } from "@/hooks/use-students";
 import { useClasses } from "@/hooks/use-classes";
 import { useUnits } from "@/hooks/use-units";
+import { useRegenerateStudentCards } from "@/hooks/use-regenerate-student-cards";
+import { useAuthStore } from "@/stores/auth";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import {
@@ -45,6 +47,7 @@ import {
   Scan,
   AlertTriangle,
   Loader2,
+  RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { QRCodeSVG } from "qrcode.react";
@@ -60,16 +63,13 @@ import { QRCodeSVG } from "qrcode.react";
  *
  * `qrcode.react` was already a dependency of this app and simply unused here.
  *
- * It encodes the NIS alone, deliberately. The old payload was a JSON object
- * carrying nis, name, unit and year — around 90 characters, which forces a
- * version-6 symbol of 41×41 modules. At the 48px this card allots (roughly
- * 12mm on an ID-1 card) that is about 0.3mm per module: below what a phone
- * camera resolves, so a "real" QR at that size would still have been
- * unscannable, just honestly so. The NIS fits in a version-1 symbol at 21×21,
- * and it is the identifier staff can act on — the name and unit are already
- * printed in plain text beside it.
+ * The payload is the signed verification string (`cipansor://…`, a JSON object
+ * + 16-char HMAC). A JSON payload is ~100+ bytes and lands on a version-6/7
+ * symbol (41–45 modules); at the old 64px render that is under 1.5px per
+ * module, which a phone camera cannot resolve. We therefore render it at 120px
+ * — roughly 32mm on a CR80 card — scannable even with the higher symbol order.
  */
-function StudentQRCode({ value, size = 64 }: { value: string; size?: number }) {
+function StudentQRCode({ value, size = 120 }: { value: string; size?: number }) {
   return (
     <QRCodeSVG
       value={value}
@@ -176,11 +176,11 @@ function StudentIDCard({
         </div>
 
         {/* QR Code */}
-        <div className="shrink-0 bg-white p-1 rounded min-w-[66px] min-h-[66px] flex items-center justify-center">
+        <div className="shrink-0 bg-white p-1 rounded min-w-[126px] min-h-[126px] flex items-center justify-center">
           {cardLoading || !qrPayload ? (
-            <Skeleton className="h-[64px] w-[64px] rounded" />
+            <Skeleton className="h-[120px] w-[120px] rounded" />
           ) : (
-            <StudentQRCode value={qrPayload} size={64} />
+            <StudentQRCode value={qrPayload} size={120} />
           )}
         </div>
       </div>
@@ -335,6 +335,31 @@ export default function StudentIDCardPage() {
     selectedStudents.includes(s.id),
   );
 
+  const { user } = useAuthStore();
+  const regenerateMutation = useRegenerateStudentCards();
+  const isSuperAdmin = user?.role === "SUPER_ADMIN";
+  const canRegenerate =
+    (isSuperAdmin || !!selectedUnitId || !!selectedClassId) &&
+    (isSuperAdmin || user?.permissions?.includes("STUDENT_UPDATE"));
+
+  const handleRegenerate = () => {
+    if (!canRegenerate) {
+      toast.error("Pilih unit atau kelas untuk meregenerasi kartu.");
+      return;
+    }
+    if (
+      !window.confirm(
+        "Regenerasi semua kartu pelajar pada filter ini? Kartu lama akan dibuat ulang sehingga perlu dicetak ulang.",
+      )
+    ) {
+      return;
+    }
+    regenerateMutation.mutate({
+      unitId: selectedUnitId || undefined,
+      classId: selectedClassId || undefined,
+    });
+  };
+
   return (
     <MainLayout>
       <div className="space-y-6">
@@ -350,6 +375,22 @@ export default function StudentIDCardPage() {
             </p>
           </div>
           <div className="flex gap-2">
+            {canRegenerate && (
+              <Button
+                variant="outline"
+                onClick={handleRegenerate}
+                disabled={regenerateMutation.isPending}
+              >
+                <RefreshCw
+                  className={`h-4 w-4 mr-2 ${
+                    regenerateMutation.isPending ? "animate-spin" : ""
+                  }`}
+                />
+                {regenerateMutation.isPending
+                  ? "Meregenerasi..."
+                  : "Regenerasi Kartu"}
+              </Button>
+            )}
             <Button
               variant="default"
               onClick={handlePrint}

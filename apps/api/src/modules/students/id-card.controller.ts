@@ -140,7 +140,11 @@ export class IdCardController {
   static async bulkRegenerateCards(req: Request, res: Response, next: NextFunction) {
     try {
       const { unitId, classId } = req.body;
-      const result = await StudentIdCardService.bulkRegenerateActiveCards(unitId, classId);
+      const result = await StudentIdCardService.bulkRegenerateActiveCards(
+        unitId,
+        classId,
+        req.user
+      );
 
       return res.json(ApiResponse.success(result, 'Kartu pelajar berhasil diregenerasi secara masal'));
     } catch (error) {
