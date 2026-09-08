@@ -46,9 +46,21 @@ test.describe("Single Sign-On (SSO) Buttons", () => {
   });
 
   test("should handle requiresTwoFactor branch during SSO callback", async ({ page }) => {
+    // The login page rejects an SSO callback that arrives without the handshake
+    // state it stored when the user initiated the flow (in sessionStorage).
+    // Plant it the way the Google/Microsoft button click does, so the callback
+    // is accepted and the ssoLogin request fires.
+    //
+    // The goto deliberately adds a query string. From the beforeEach's already
+    // loaded /login, a goto that only changes the hash stays in the same
+    // document, so the hashchange-driven callback reads an empty hash and is
+    // rejected. A query-string change forces a fresh full page load, which
+    // preserves the #id_token hash and re-runs the init script that seeds the
+    // provider.
     await page.addInitScript(() => {
       localStorage.clear();
       sessionStorage.clear();
+      sessionStorage.setItem("sso_provider", "google");
     });
 
     await page.route("**/api/auth/sso/login", async (route) => {
@@ -65,7 +77,7 @@ test.describe("Single Sign-On (SSO) Buttons", () => {
       });
     });
 
-    await page.goto("/login#id_token=valid_mock_token&provider=google");
+    await page.goto("/login?sso=1#id_token=valid_mock_token&provider=google");
 
     await expect(
       page.getByText(/Two-Factor Authentication/i).first()

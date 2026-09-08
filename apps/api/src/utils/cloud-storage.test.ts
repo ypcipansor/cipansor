@@ -36,6 +36,7 @@ vi.mock('@azure/storage-blob', () => {
       }),
     },
     StorageSharedKeyCredential: vi.fn().mockImplementation(function (
+      this: { accountName: string; accountKey: string },
       accountName: string,
       accountKey: string
     ) {
