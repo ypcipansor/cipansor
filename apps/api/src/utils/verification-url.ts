@@ -30,6 +30,26 @@ import { config } from '../config';
  * `/certificates/verify/[code]`: it sits behind the session wall, so a link
  * built from it asks a dinas office to sign in to a pesantren's staff portal.
  */
+/**
+ * Tempat keaslian sebuah naskah dinas diperiksa.
+ *
+ * Tanpa nomor apa pun di dalamnya, dan itu disengaja. Halaman itu memeriksa
+ * berkas yang **diunggah**: sebuah tautan yang membawa nomor surat atau token
+ * hanya dapat menjawab "ada surat yang pernah ditandatangani", bukan "surat
+ * yang Anda pegang inilah surat itu" — dan celah persis itulah yang membuat
+ * halaman verifikasi berbasis token dihapus (lihat EOFFICE_ESIGN_PLAN §1).
+ *
+ * Berkas ini ada karena empat pemanggil pernah mengarang jawabannya
+ * sendiri-sendiri; penghasil naskah menjadi yang kelima, membaca
+ * `NEXT_PUBLIC_SITE_URL` — sebuah variabel milik aplikasi web — dari dalam API,
+ * tempat variabel itu tidak pernah didefinisikan. Cadangannya kebetulan benar,
+ * yang berarti alamat pada setiap naskah resmi selama ini benar karena
+ * kebetulan.
+ */
+export function letterVerificationUrl(): string {
+  return `${config.publicSiteUrl}/public/verify-letter`;
+}
+
 export function certificateVerificationUrl(certificateNumber: string): string {
   return `${config.publicSiteUrl}/public/verify-sanad?code=${encodeURIComponent(certificateNumber)}`;
 }

@@ -3,6 +3,7 @@ import { authenticate, authorize } from '@/middleware/auth';
 import { validate, validateQuery } from '@/middleware/validate';
 import { UserRole } from '@prisma/client';
 import * as controller from './sanad-certificate.controller';
+import { requireTurnstile } from '@/middleware/turnstile';
 import {
   listSanadQuerySchema,
   createSanadSchema,
@@ -135,7 +136,14 @@ router.get('/students/:studentId/summary', authenticate, controller.getStudentSa
  *       200:
  *         description: Certificate verification result
  */
-router.post('/verify', validate(verifyCertificateSchema), controller.verifyCertificate);
+// Verifikasi sanad publik, sebangun dengan /esign/verify-pdf yang sudah
+// dijaga. Tanpa gerbang ini ia menjadi oracle yang dapat disapu berulang.
+router.post(
+  '/verify',
+  requireTurnstile('verify-sanad'),
+  validate(verifyCertificateSchema),
+  controller.verifyCertificate
+);
 
 /**
  * @openapi

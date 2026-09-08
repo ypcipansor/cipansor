@@ -38,6 +38,7 @@ import {
   BookCheck,
   ClipboardList,
   MessageSquare,
+  MessagesSquare,
   Languages,
   Sparkles,
   Trophy,
@@ -301,6 +302,11 @@ const teacherNavigation: NavGroup[] = [
     title: "Informasi",
     items: [
       {
+        title: "E-Office (Persuratan)",
+        href: "/e-office",
+        icon: Mail,
+      },
+      {
         title: "Pengumuman",
         href: "/announcements",
         icon: Bell,
@@ -368,6 +374,11 @@ const staffNavigation: NavGroup[] = [
         title: "SPMB (Penerimaan)",
         href: "/spmb",
         icon: UserPlus,
+      },
+      {
+        title: "E-Office (Persuratan)",
+        href: "/e-office",
+        icon: Mail,
       },
       {
         title: "Keuangan",
@@ -625,6 +636,11 @@ const yayasanNavigation: NavGroup[] = [
         title: "Foundation",
         href: "/foundation",
         icon: Building2,
+      },
+      {
+        title: "E-Office (Persuratan)",
+        href: "/e-office",
+        icon: Mail,
       },
       {
         title: "Units",
@@ -1392,6 +1408,17 @@ const adminNavigation: NavGroup[] = [
         roleCodes: ["SUPER_ADMIN"],
         roles: ["SUPER_ADMIN"],
       },
+      {
+        // Riwayat tanya-jawab asisten publik. Dikunci ke SUPER_ADMIN dengan
+        // alasan yang lebih keras daripada persona di atasnya: isinya kalimat
+        // yang benar-benar diketik pengunjung, dan terhapus sendiri setelah 90
+        // hari.
+        title: "Riwayat Percakapan",
+        href: "/settings/chatbot/percakapan",
+        icon: MessagesSquare,
+        roleCodes: ["SUPER_ADMIN"],
+        roles: ["SUPER_ADMIN"],
+      },
     ],
   },
 ];
@@ -1517,6 +1544,11 @@ const kepalaSekolahNavigation: NavGroup[] = [
     title: "Operations",
     items: [
       {
+        title: "E-Office (Persuratan)",
+        href: "/e-office",
+        icon: Mail,
+      },
+      {
         title: "Notifications",
         href: "/notifications",
         icon: Bell,
@@ -1603,6 +1635,7 @@ const pesantrenPimpinanNavigation: NavGroup[] = [
   {
     title: "Informasi",
     items: [
+      { title: "E-Office (Persuratan)", href: "/e-office", icon: Mail },
       { title: "Pengumuman", href: "/announcements", icon: Bell },
       {
         title: "Aduan & Aspirasi",
@@ -1677,6 +1710,7 @@ const pesantrenPengasuhanNavigation: NavGroup[] = [
   {
     title: "Informasi",
     items: [
+      { title: "E-Office (Persuratan)", href: "/e-office", icon: Mail },
       { title: "Pengumuman", href: "/announcements", icon: Bell },
       {
         title: "Aduan & Aspirasi",
@@ -1746,7 +1780,10 @@ const ptPimpinanNavigation: NavGroup[] = [
   },
   {
     title: "Informasi",
-    items: [{ title: "Pengumuman", href: "/announcements", icon: Bell }],
+    items: [
+      { title: "E-Office (Persuratan)", href: "/e-office", icon: Mail },
+      { title: "Pengumuman", href: "/announcements", icon: Bell },
+    ],
   },
 ];
 
@@ -1791,6 +1828,7 @@ const ptDosenNavigation: NavGroup[] = [
   {
     title: "Informasi",
     items: [
+      { title: "E-Office (Persuratan)", href: "/e-office", icon: Mail },
       { title: "Pengumuman", href: "/announcements", icon: Bell },
       {
         title: "Aduan & Aspirasi",

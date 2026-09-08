@@ -18,6 +18,7 @@ import {
   AlertTitle,
 } from "@/components/ui/alert";
 import { ChatbotPersonaEditor } from "@/components/settings/chatbot-persona-editor";
+import { ChatbotUsageCard } from "@/components/settings/chatbot-usage-card";
 
 function ChatbotSettingsContent() {
   const { user } = useAuthStore();
@@ -34,7 +35,14 @@ function ChatbotSettingsContent() {
       </div>
 
       {isSuperAdmin ? (
-        <ChatbotPersonaEditor />
+        <>
+          {/* Pemakaian ditaruh DI ATAS penyunting persona, bukan di bawahnya:
+              yang pertama ingin diketahui orang yang membuka halaman ini
+              adalah berapa yang sudah terpakai bulan ini, bukan gaya
+              bicaranya. */}
+          <ChatbotUsageCard />
+          <ChatbotPersonaEditor />
+        </>
       ) : (
         <Alert variant="destructive">
           <ShieldAlert className="h-4 w-4" />

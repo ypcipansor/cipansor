@@ -802,3 +802,83 @@ describe("e2e selectors — no loose text= selector can collide with the sidebar
     expect(collisions).toEqual([]);
   });
 });
+
+/**
+ * Correspondence reaches every internal role, and no external one.
+ *
+ * Naskah dinas is not one office's tool: a guru raises a permit, tata usaha
+ * registers what arrives, a kepala sekolah parafs, the ketua yayasan signs.
+ * Anyone on the staff side has some part in it, so the menu entry belongs in
+ * every internal role's navigation — while santri, orang tua, komite and alumni
+ * have no business inside the yayasan's internal correspondence at all.
+ *
+ * Asserted per RoleCode against the real navigation the app builds, so this
+ * stays true when a role is added or its tree is rearranged — not against the
+ * literal arrays, which is where a drift would hide.
+ */
+describe("e-office menu coverage", () => {
+  const INTERNAL = [
+    "SUPER_ADMIN",
+    "YAYASAN_KETUA",
+    "YAYASAN_SEKRETARIS",
+    "YAYASAN_BENDAHARA",
+    "YAYASAN_PEMBINA",
+    "YAYASAN_PENGAWAS",
+    "SMPIT_ADMIN",
+    "SMPIT_KEPALA_SEKOLAH",
+    "SMPIT_WAKASEK",
+    "SMPIT_GURU",
+    "SMPIT_WALI_KELAS",
+    "SMPIT_TATA_USAHA",
+    "SMPIT_BENDAHARA",
+    "TKQ_GURU",
+    "TKQ_TATA_USAHA",
+    "PESANTREN_DIREKTUR",
+    "PESANTREN_PENGASUH",
+    "PESANTREN_TATA_USAHA",
+    "USTADZ",
+    "MUSYRIF",
+    "PT_REKTOR",
+    "PT_DEKAN",
+    "PT_DOSEN",
+    "PT_TATA_USAHA",
+    "PUSTAKAWAN",
+    "PERAWAT",
+  ];
+
+  /** No part in the yayasan's internal correspondence. */
+  const EXTERNAL = [
+    "SMPIT_SISWA",
+    "SMAQ_SISWA",
+    "PT_MAHASISWA",
+    "SMPIT_ORANG_TUA",
+    "TKQ_ORANG_TUA",
+    "SMPIT_KOMITE",
+    "SMPIT_ALUMNI",
+    "PT_ALUMNI",
+  ];
+
+  function hasEOffice(roleCode: string): boolean {
+    return getNavigationForRoleCode(roleCode).some((group) =>
+      group.items.some((item) => item.href === "/e-office"),
+    );
+  }
+
+  it.each(INTERNAL)("%s sees E-Office in the sidebar", (roleCode) => {
+    expect(hasEOffice(roleCode)).toBe(true);
+  });
+
+  it.each(EXTERNAL)("%s does not", (roleCode) => {
+    expect(hasEOffice(roleCode)).toBe(false);
+  });
+
+  /**
+   * A menu entry that the route guard then refuses is worse than no entry: the
+   * user clicks their own sidebar and lands on /unauthorized.
+   */
+  it.each(INTERNAL)("%s is also allowed through to /e-office", (roleCode) => {
+    const legacy = roleCode === "SUPER_ADMIN" ? "SUPER_ADMIN" : deriveLegacyRole(roleCode);
+    expect(legacy, `${roleCode} has no legacy role mapping`).toBeTruthy();
+    expect(canAccessRoute(legacy as never, "/e-office")).toBe(true);
+  });
+});

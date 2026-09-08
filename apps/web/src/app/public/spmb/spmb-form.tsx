@@ -33,6 +33,10 @@ import {
   Gender,
 } from "@/hooks/use-admissions";
 import { usePublicUnits } from "@/hooks/use-units";
+import {
+  TurnstileWidget,
+  useTurnstile,
+} from "@/components/security/turnstile-widget";
 import { getPeriodWindow } from "@/lib/admission-period";
 import { RegistrationTracker } from "@/components/admissions/registration-tracker";
 import { DocumentCaptureField } from "@/components/admissions/document-capture-field";
@@ -165,6 +169,7 @@ export function SpmbForm({
   const { data: activePeriod } = useActivePeriod();
   const { data: units = [] } = usePublicUnits();
   const createRegistration = useCreateRegistration();
+  const turnstile = useTurnstile();
   const searchParams = useSearchParams();
 
   const periodWindow = getPeriodWindow(activePeriod);
@@ -364,7 +369,7 @@ export function SpmbForm({
     if (activeRegistration) {
       return handleRetryUpload();
     }
-
+    if (!turnstile.ready) return;
     setIsSubmitting(true);
     try {
       const admissionPeriodId = formData.periodId || activePeriod?.id;
@@ -417,6 +422,8 @@ export function SpmbForm({
       if (formData.source) payload.source = formData.source;
       if (formData.campaignId) payload.campaignId = formData.campaignId;
 
+      if (turnstile.token) payload.turnstileToken = turnstile.token;
+
       const result = await createRegistration.mutateAsync(payload);
       const createdRegistrantId = result?.id || result?.data?.id;
       const registrationToken = result?.registrationToken || result?.data?.registrationToken;
@@ -457,6 +464,8 @@ export function SpmbForm({
     } catch (error: any) {
       const msg = error?.response?.data?.message || "Gagal mengirim pendaftaran. Silakan coba lagi.";
       toast.error(msg);
+      // Token sekali pakai; percobaan berikutnya butuh tantangan baru.
+      turnstile.refresh();
     } finally {
       setIsSubmitting(false);
     }
@@ -1311,6 +1320,14 @@ export function SpmbForm({
                       </div>
                     )}
                   </CardContent>
+                  {currentStep === steps.length - 1 && (
+                    <div className="px-6 pb-2">
+                      <TurnstileWidget
+                        action="spmb-daftar"
+                        {...turnstile.widgetProps}
+                      />
+                    </div>
+                  )}
                   <CardFooter className="flex justify-between">
                     <Button
                       variant="outline"
@@ -1326,7 +1343,10 @@ export function SpmbForm({
                         <ChevronRight className="h-4 w-4 ml-2" />
                       </Button>
                     ) : (
-                      <Button onClick={handleSubmit} disabled={isSubmitting}>
+                      <Button
+                        onClick={handleSubmit}
+                        disabled={isSubmitting || !turnstile.ready}
+                      >
                         {isSubmitting ? "Mengirim..." : "Kirim Pendaftaran"}
                       </Button>
                     )}

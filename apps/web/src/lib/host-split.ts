@@ -42,12 +42,13 @@ export const PUBLIC_PATH_PREFIXES = [
   "/wakaf-infaq",
   "/kontak",
   /**
-   * Where a letter's printed QR code points.
+   * Where a letter's printed QR code used to point.
    *
-   * This one is load-bearing in a way the others are not: the URLs are on paper
-   * already, in the hands of dinas offices and wali santri. They must keep
-   * resolving on the apex for as long as those letters exist, so `/verifikasi`
-   * can never migrate to the portal.
+   * Load-bearing in a way the others are not: the URLs are on paper already, in
+   * the hands of dinas offices and wali santri. The page they opened has been
+   * retired in favour of uploading the document itself, but the path must keep
+   * resolving on the apex — now as a 308 to /public/verify-letter — for as long
+   * as those letters exist. It can never migrate to the portal.
    */
   "/verifikasi",
 ];

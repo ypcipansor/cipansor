@@ -408,8 +408,8 @@ export default function CreateSimaanPage() {
                           Penguji * ({watchExaminerIds.length} dipilih)
                         </FormLabel>
                       </div>
-                      <ScrollArea className="h-[200px] border rounded-lg p-4">
-                        <div className="space-y-3">
+                      <ScrollArea className="h-[200px] border rounded-lg">
+                        <div className="space-y-3 p-4">
                           {teachers?.data?.map((teacher) => (
                             <div
                               key={teacher.id}

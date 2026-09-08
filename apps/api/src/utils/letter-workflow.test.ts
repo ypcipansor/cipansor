@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { LetterStatus } from '@prisma/client';
+import { LetterDirection, LetterStatus } from '@prisma/client';
 import {
   assertMayArchive,
+  assertMayDispatch,
   assertMayResubmit,
   assertMayReview,
   nextRung,
@@ -179,6 +180,60 @@ describe('returning a draft and sending it back up', () => {
       { id: 'r1', reviewerId: 'ketua', order: 1, status: 'APPROVED', isSigner: true },
     ];
     expect(statusAfterResubmit(solo)).toBe(LetterStatus.READY_TO_SIGN);
+  });
+});
+
+/**
+ * Pengiriman adalah langkah yang selama ini tidak ada, dan kata "SENT" dipakai
+ * untuk hal yang berlawanan: surat *masuk* yang selesai diverifikasi.
+ */
+describe('pencatatan pengiriman', () => {
+  it('mencatat pengiriman naskah keluar yang sudah ditandatangani', () => {
+    expect(() =>
+      assertMayDispatch(LetterDirection.OUTGOING, LetterStatus.SIGNED, false)
+    ).not.toThrow();
+  });
+
+  // Surat yang sama diantar ke beberapa alamat, atau dikirim ulang karena yang
+  // pertama tidak sampai. Buku ekspedisi menyimpan setiap percobaannya.
+  it('mengizinkan pengiriman susulan atas surat yang sudah berstatus terkirim', () => {
+    expect(() =>
+      assertMayDispatch(LetterDirection.OUTGOING, LetterStatus.SENT, false)
+    ).not.toThrow();
+  });
+
+  it('menolak surat masuk', () => {
+    expect(() =>
+      assertMayDispatch(LetterDirection.INCOMING, LetterStatus.DISPOSED, false)
+    ).toThrow(/diterima, bukan dikirim/);
+  });
+
+  it.each([
+    LetterStatus.DRAFT,
+    LetterStatus.PENDING_REVIEW,
+    LetterStatus.REVISION_NEEDED,
+    LetterStatus.READY_TO_SIGN,
+  ])('menolak naskah berstatus %s karena belum ditandatangani', (status) => {
+    expect(() => assertMayDispatch(LetterDirection.OUTGOING, status, false)).toThrow(
+      /belum ditandatangani/
+    );
+  });
+
+  it('menolak surat yang sudah diarsipkan', () => {
+    expect(() =>
+      assertMayDispatch(LetterDirection.OUTGOING, LetterStatus.ARCHIVED, false)
+    ).toThrow(/sudah diarsipkan/);
+  });
+
+  /**
+   * Salinan yang telanjur beredar tetap dicetak — bercap DICABUT — tetapi
+   * mengirimkan salinan baru dari naskah yang sudah ditarik adalah perbuatan
+   * baru, dan yang ini ditolak.
+   */
+  it('menolak naskah yang tanda tangannya sudah dicabut', () => {
+    expect(() =>
+      assertMayDispatch(LetterDirection.OUTGOING, LetterStatus.SIGNED, true)
+    ).toThrow(/sudah dicabut/);
   });
 });
 

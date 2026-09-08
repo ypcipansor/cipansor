@@ -22,6 +22,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  BarChart3,
   Mail,
   Send,
   FileText,
@@ -41,8 +42,10 @@ import {
 
 import { id as localeId } from "date-fns/locale";
 import {
+  LETTER_URGENCY_LABELS,
   LetterDirection,
   LetterStatus,
+  LetterUrgency,
   type LetterDetail,
 } from "@cipansor/shared";
 import Link from "next/link";
@@ -129,6 +132,15 @@ export default function EOfficeMainPage() {
     return <Badge className={c.className}>{c.label}</Badge>;
   };
 
+  /**
+   * Derajat kecepatan, dengan istilah yang sama di seluruh aplikasi.
+   *
+   * Peta di sini dahulu menyebut IMMEDIATE sebagai "Penting" dan URGENT sebagai
+   * "Segera" — menggeser artinya satu tingkat terhadap formulir pembuatan surat
+   * dan terhadap skema, sehingga surat "Segera" tampil sebagai "Penting" dan
+   * "Amat Segera" tampil sebagai "Segera". Pada naskah dinas, derajat kecepatan
+   * menentukan tenggat penyampaian.
+   */
   const getUrgencyBadge = (urgency: string) => {
     const config: Record<string, string> = {
       URGENT: "bg-red-100 text-red-800 border-red-200",
@@ -139,11 +151,7 @@ export default function EOfficeMainPage() {
       <span
         className={`text-xs px-2 py-0.5 rounded border ${config[urgency] || config.NORMAL}`}
       >
-        {urgency === "URGENT"
-          ? "Segera"
-          : urgency === "IMMEDIATE"
-            ? "Penting"
-            : "Biasa"}
+        {LETTER_URGENCY_LABELS[urgency as LetterUrgency] ?? urgency}
       </span>
     );
   };
@@ -259,6 +267,17 @@ export default function EOfficeMainPage() {
                 <RefreshCw className="h-6 w-6 animate-spin mr-2" />
                 Memuat grafik...
               </div>
+            ) : !statsData?.chart?.length ? (
+              /* Recharts draws nothing for an empty series, and "nothing" here
+                 is 300px of blank card that reads as a broken chart. */
+              <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-center text-muted-foreground">
+                <BarChart3 className="h-8 w-8 opacity-40" aria-hidden="true" />
+                <p className="text-sm font-medium">Belum ada data tren</p>
+                <p className="text-xs">
+                  Grafik muncul setelah ada surat masuk atau keluar yang tercatat
+                  dalam enam bulan terakhir.
+                </p>
+              </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart
@@ -343,15 +362,15 @@ export default function EOfficeMainPage() {
 
         <Card
           className="cursor-pointer hover:bg-primary/5 transition-colors border-2 border-dashed"
-          onClick={() => router.push("/e-office/inbox?status=pending")}
+          onClick={() => router.push("/e-office/inbox?scope=personal")}
         >
           <CardContent className="flex flex-col items-center justify-center p-6 gap-2">
             <div className="p-3 bg-yellow-100 rounded-full">
               <Users className="h-6 w-6 text-yellow-600" />
             </div>
-            <span className="font-medium">Disposisi</span>
+            <span className="font-medium">Disposisi Saya</span>
             <span className="text-xs text-muted-foreground text-center">
-              Lihat surat yang perlu didisposisi
+              Surat yang perlu Anda tindak lanjuti
             </span>
           </CardContent>
         </Card>
@@ -543,35 +562,15 @@ export default function EOfficeMainPage() {
         </Card>
       </div>
 
-      {/* Tips / Help Section */}
-      <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
-        <CardContent className="p-6">
-          <div className="flex items-start gap-4">
-            <div className="p-3 bg-blue-100 rounded-full">
-              <FileText className="h-6 w-6 text-blue-600" />
-            </div>
-            <div>
-              <h3 className="font-semibold text-blue-900">
-                Tips Penggunaan E-Office
-              </h3>
-              <ul className="mt-2 space-y-1 text-sm text-blue-800">
-                <li>• Gunakan nomor agenda untuk melacak surat masuk</li>
-                <li>
-                  • Disposisikan surat ke pegawai yang berwenang untuk tindak
-                  lanjut
-                </li>
-                <li>
-                  • Arsipkan surat yang sudah selesai diproses untuk dokumentasi
-                </li>
-                <li>
-                  • Gunakan filter sifat surat (Segera/Penting/Biasa) untuk
-                  prioritas
-                </li>
-              </ul>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      {/*
+        Kotak "Tips Penggunaan E-Office" dihapus dari sini.
+
+        Empat butirnya menerangkan cara memakai sistem kepada petugas yang sudah
+        membukanya, dan salah satu butir menyebut "filter sifat surat
+        (Segera/Penting/Biasa)" — menyebut derajat kecepatan sebagai sifat, dan
+        menjanjikan penyaring yang memang tidak ada. Penyaring statusnya kini
+        benar-benar ada, di daftar suratnya, tempat ia dipakai.
+      */}
     </div>
   );
 }

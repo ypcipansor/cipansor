@@ -5,30 +5,42 @@ import {
   LetterStatus as DbLetterStatus,
   LetterType as DbLetterType,
   LetterNature as DbLetterNature,
+  RoleCode,
 } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import {
   CreateLetterInput,
   CreateDispositionInput,
+  DispatchLetterSchemaInput,
+  LetterCcInput,
+  LETTER_DISPATCH_CHANNEL_LABELS,
   LetterDirection,
   LetterStatus,
   UpdateLetterInput,
+  EXCLUDED_CORRESPONDENCE_ROLES,
 } from '@cipansor/shared';
 import { eventBus } from '@/lib/event-bus';
+import { verifyLetterByToken } from '@/utils/letter-verification';
 import {
   assertLetterAccess,
+  handlesUnitCorrespondence,
   letterScopeWhere,
   type LetterActor,
 } from '@/utils/letter-access';
+import { seesAllUnits } from '@/utils/resolve-unit-id';
 import {
   assertMayArchive,
+  assertMayDispatch,
   assertMayResubmit,
   assertMayReview,
+  nextRung,
   statusAfterApproval,
   statusAfterResubmit,
   type ReviewerRung,
 } from '@/utils/letter-workflow';
+import { LETTER_PDF_RELATIONS } from '@/utils/generate-letter-pdf';
 import { AGENDA_TYPE_CODE, assertNatureAllowed } from '@/utils/letter-naskah';
+import { Errors } from '@/middleware/error';
 
 /** Anything that can run a query — the live client or a transaction handle. */
 type Db = Prisma.TransactionClient | PrismaClient;
@@ -84,11 +96,71 @@ async function recordFlow(
  */
 const DEFAULT_AGENDA_FORMAT = '[NO]/[TYPE]/Y-CPS/[ROMAN]/[YEAR]';
 
+/** Pengguna internal yang disebut dalam daftar tembusan, tanpa duplikat. */
+function ccUserIds(cc?: LetterCcInput[] | null): string[] {
+  return Array.from(
+    new Set((cc ?? []).map((c) => c.userId).filter((id): id is string => !!id))
+  );
+}
+
+/**
+ * Baris-baris tembusan yang akan ditulis, dalam urutan yang disusun penulisnya.
+ *
+ * Dua penyaringan, keduanya karena naskahnya mencetak daftar bernomor:
+ * seseorang yang sudah menjadi penerima utama tidak dicatat lagi sebagai
+ * tembusan — ia menerima surat ini *atau* salinannya — dan nama yang sama
+ * tidak ditulis dua kali, sebab dua baris untuk satu pihak akan tercetak
+ * sebagai dua nomor untuk satu orang.
+ */
+function buildCcRows(
+  letterId: string,
+  unitId: string,
+  cc: LetterCcInput[] | undefined | null,
+  primaryRecipientIds?: string[] | null
+): Array<{
+  letterId: string;
+  userId: string | null;
+  unitId: string;
+  externalName: string | null;
+  isCC: true;
+  order: number;
+}> {
+  const primary = new Set(primaryRecipientIds ?? []);
+  const seen = new Set<string>();
+  const rows: ReturnType<typeof buildCcRows> = [];
+
+  for (const entry of cc ?? []) {
+    const key = entry.userId
+      ? `u:${entry.userId}`
+      : `e:${(entry.externalName ?? '').trim().toLowerCase()}`;
+    if (key === 'e:') continue;
+    if (entry.userId && primary.has(entry.userId)) continue;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    rows.push({
+      letterId,
+      userId: entry.userId ?? null,
+      unitId,
+      externalName: entry.userId ? null : (entry.externalName ?? '').trim(),
+      isCC: true,
+      order: rows.length + 1,
+    });
+  }
+
+  return rows;
+}
+
 export const CorrespondenceService = {
   // Helper: Generate Auto Number
-  async generateNumber(unitId: string, type: string, academicYearId: string): Promise<string> {
+  async generateNumber(
+    unitId: string,
+    type: string,
+    academicYearId: string,
+    db: Db = prisma
+  ): Promise<string> {
     // 1. Find Agenda Config
-    let agenda = await prisma.agendaNumber.findUnique({
+    let agenda = await db.agendaNumber.findUnique({
       where: {
         unitId_academicYearId_type: {
           unitId,
@@ -100,7 +172,7 @@ export const CorrespondenceService = {
 
     // 2. Create if not exists
     if (!agenda) {
-      agenda = await prisma.agendaNumber.create({
+      agenda = await db.agendaNumber.create({
         data: {
           unitId,
           academicYearId,
@@ -112,7 +184,7 @@ export const CorrespondenceService = {
     }
 
     // 3. Increment (Atomic)
-    const updatedAgenda = await prisma.agendaNumber.update({
+    const updatedAgenda = await db.agendaNumber.update({
       where: { id: agenda.id },
       data: { lastNumber: { increment: 1 } },
     });
@@ -134,12 +206,140 @@ export const CorrespondenceService = {
     return formatted;
   },
 
-  async createLetter(data: CreateLetterInput, userId: string) {
+  /**
+   * Validate that all supplied user IDs exist, are active, have active internal roles, and fall within permitted unit scope.
+   */
+  async validateParticipantEligibility(userIds: string[], actor?: LetterActor) {
+    if (!userIds || userIds.length === 0) return;
+
+    const uniqueIds = Array.from(new Set(userIds));
+    const now = new Date();
+
+    const users = await prisma.user.findMany({
+      where: {
+        id: { in: uniqueIds },
+        isActive: true,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        unitId: true,
+        teacher: { select: { nip: true } },
+        staff: { select: { nip: true } },
+        userRoles: {
+          where: {
+            isActive: true,
+            role: {
+              code: {
+                notIn: EXCLUDED_CORRESPONDENCE_ROLES as unknown as RoleCode[],
+              },
+            },
+            OR: [{ expiresAt: null }, { expiresAt: { gte: now } }],
+          },
+          select: { unitId: true, role: { select: { code: true } } },
+        },
+      },
+    });
+
+    if (users.length !== uniqueIds.length) {
+      throw Errors.badRequest('Satu atau lebih penerima/pemeriksa tidak ditemukan atau tidak aktif');
+    }
+
+    const actorSeesAll = actor ? seesAllUnits(actor) : true;
+
+    for (const u of users) {
+      const isInternal = u.userRoles && u.userRoles.length > 0;
+      if (!isInternal) {
+        throw Errors.badRequest(`Pengguna ${u.id} tidak memiliki peran internal yang sah`);
+      }
+
+      // Enforce unit scope based on active role assignments or legacy user unitId
+      if (!actorSeesAll && actor?.unitId) {
+        const matchesUserUnit = u.unitId === actor.unitId || u.unitId === null;
+        const matchesRoleUnit = u.userRoles.some((ur) => ur.unitId === actor.unitId || ur.unitId === null);
+        if (!matchesUserUnit && !matchesRoleUnit) {
+          throw Errors.forbidden(`Pengguna ${u.id} berada di luar unit Anda`);
+        }
+      }
+    }
+  },
+
+  async createLetter(data: CreateLetterInput, userId: string, actor?: LetterActor) {
+    if (!actor || !actor.roleCode) {
+      throw Errors.forbidden('Peran Anda tidak berwenang untuk membuat surat dinas');
+    }
+
+    // Executive foundation roles authorized to issue correspondence
+    const isFoundationExecutive =
+      actor.roleCode === RoleCode.YAYASAN_KETUA || actor.roleCode === RoleCode.YAYASAN_SEKRETARIS;
+    const isCorrespondenceRole = handlesUnitCorrespondence(actor);
+    const isSuperAdmin = actor.roleCode === RoleCode.SUPER_ADMIN;
+
+    // Allowlist: ONLY unit correspondence roles (tata usaha, kepsek, admin unit), executive foundation roles (Ketua/Sekretaris), and SUPER_ADMIN.
+    // Oversight-only roles (YAYASAN_PEMBINA, YAYASAN_PENGAWAS, YAYASAN_ANGGOTA) do NOT have creation authority.
+    const isAuthorizedCreator = isCorrespondenceRole || isFoundationExecutive || isSuperAdmin;
+
+    if (!isAuthorizedCreator) {
+      throw Errors.forbidden('Peran Anda tidak berwenang untuk membuat surat dinas');
+    }
+
+    // Validate reviewer and recipient eligibility
+    const participantsToValidate = [
+      ...(data.reviewerIds || []),
+      ...(data.recipientIds || []),
+      // Penerima tembusan internal adalah penerima juga: ia akan dapat membaca
+      // surat ini. Melewatkannya dari pemeriksaan kelayakan berarti tembusan
+      // menjadi jalan memberi akses kepada peran yang justru dikecualikan.
+      // Tembusan ke pihak luar tidak diperiksa — ia hanya nama yang tercetak,
+      // dan tidak membuka apa pun.
+      ...ccUserIds(data.ccRecipients),
+    ];
+    if (participantsToValidate.length > 0) {
+      await this.validateParticipantEligibility(participantsToValidate, actor);
+    }
+
+    // Client is only allowed to request initial status DRAFT or PENDING_REVIEW
+    if (data.status !== LetterStatus.DRAFT && data.status !== LetterStatus.PENDING_REVIEW) {
+      throw Errors.badRequest('Status awal surat hanya dapat berupa DRAFT atau PENDING_REVIEW');
+    }
+
+    // Outgoing letters submitted in PENDING_REVIEW must have at least one reviewer assigned
+    if (data.direction === 'OUTGOING' && data.status === LetterStatus.PENDING_REVIEW && (!data.reviewerIds || data.reviewerIds.length === 0)) {
+      throw Errors.badRequest('Surat keluar berstatus PENDING_REVIEW wajib memilih minimal satu pemeriksa');
+    }
+
+    // Single-unit bypass is strictly reserved for Executive Foundation Roles and SUPER_ADMIN.
+    const isFoundationBypass = isFoundationExecutive || isSuperAdmin;
+
+    if (!isFoundationBypass) {
+      if (!actor.unitId) {
+        throw Errors.forbidden('Akun Anda tidak terhubung dengan unit kerja yang valid.');
+      }
+      if (data.unitId && data.unitId !== actor.unitId) {
+        throw Errors.forbidden('Anda tidak berwenang membuat surat untuk unit lain');
+      }
+    }
+
+    const targetUnitId = isFoundationBypass ? (data.unitId || actor.unitId) : actor.unitId;
+
+    if (!targetUnitId) {
+      throw Errors.badRequest('Unit ID wajib diisi');
+    }
+
     // Jenis naskah menentukan sifat mana yang sah dan buku nomor mana yang
     // dipakai. Divalidasi sebelum apa pun ditulis: menolak setelah nomor
     // agenda terlanjur naik akan meninggalkan lubang di buku agenda.
     const type = (data.type as DbLetterType | undefined) ?? DbLetterType.SURAT_DINAS;
     assertNatureAllowed(type, data.nature as unknown as DbLetterNature);
+
+    // Incoming letters do not enter review unless reviewerIds are provided.
+    // If an incoming letter is submitted without reviewers, set status based on recipient assignment.
+    let initialStatus = data.status as DbLetterStatus;
+    if (data.direction === 'INCOMING' && initialStatus === DbLetterStatus.PENDING_REVIEW && (!data.reviewerIds || data.reviewerIds.length === 0)) {
+      initialStatus = data.recipientIds && data.recipientIds.length > 0
+        ? DbLetterStatus.DISPOSED
+        : DbLetterStatus.DRAFT;
+    }
 
     // Get active academic year
     const activeYear = await prisma.academicYear.findFirst({
@@ -147,32 +347,28 @@ export const CorrespondenceService = {
     });
     const academicYearId = activeYear?.id || 'DEFAULT';
 
-    // Generate number if missing
-    let agendaNumber = data.agendaNumber;
-    let letterNumber = data.letterNumber;
+    const result = await prisma.$transaction(async (tx) => {
+      // Generate number inside transaction so rollback cancels increment on failure
+      let agendaNumber = data.agendaNumber;
+      let letterNumber = data.letterNumber;
 
-    if (data.direction === 'INCOMING' && !agendaNumber) {
-      agendaNumber = await this.generateNumber(data.unitId, 'INCOMING', academicYearId);
-    } else if (data.direction === 'OUTGOING' && !letterNumber) {
-      // Typically only generated when status is READY or SIGNED, but we'll allow draft numbering if needed
-      // Or just leave it empty for DRAFT
-      if (data.status !== 'DRAFT') {
-        // Per jenis, not one shared counter: on paper an SK has its own agenda
-        // book, and sharing a counter would make SK numbers skip every time an
-        // ordinary letter went out.
-        letterNumber = await this.generateNumber(
-          data.unitId,
-          AGENDA_TYPE_CODE[type],
-          academicYearId
-        );
+      if (data.direction === 'INCOMING' && !agendaNumber) {
+        agendaNumber = await this.generateNumber(targetUnitId, 'INCOMING', academicYearId, tx);
+      } else if (data.direction === 'OUTGOING' && !letterNumber) {
+        if (initialStatus !== 'DRAFT') {
+          letterNumber = await this.generateNumber(
+            targetUnitId,
+            AGENDA_TYPE_CODE[type],
+            academicYearId,
+            tx
+          );
+        }
       }
-    }
 
-    return await prisma.$transaction(async (tx) => {
       // Create Letter
       const letter = await tx.letter.create({
         data: {
-          unitId: data.unitId,
+          unitId: targetUnitId,
           direction: data.direction as any, // Enum mapping might need care
           type,
           classificationId: data.classificationId,
@@ -185,7 +381,7 @@ export const CorrespondenceService = {
           fileUrl: data.fileUrl,
           urgency: data.urgency as any,
           nature: data.nature as any,
-          status: data.status as any,
+          status: initialStatus,
           senderName: data.senderName,
           senderTitle: data.senderTitle,
           senderInstance: data.senderInstance,
@@ -195,31 +391,76 @@ export const CorrespondenceService = {
         },
       });
 
-      // Add Reviewers
+      // Add Reviewers (deduplicated)
       if (data.reviewerIds && data.reviewerIds.length > 0) {
+        const uniqueReviewerIds = Array.from(new Set(data.reviewerIds));
         await tx.letterReviewer.createMany({
-          data: data.reviewerIds.map((reviewerId, index) => ({
+          data: uniqueReviewerIds.map((reviewerId, index) => ({
             letterId: letter.id,
             reviewerId: reviewerId,
             order: index + 1,
             status: 'PENDING',
-            isSigner: index === data.reviewerIds!.length - 1, // Last one is signer
+            isSigner: false, // Default to false so dynamic review-and-forward can take place
           })),
         });
       }
 
       // Add Recipients
       if (data.recipientIds && data.recipientIds.length > 0) {
+        const uniqueRecipients = Array.from(new Set(data.recipientIds));
         await tx.letterRecipient.createMany({
-          data: data.recipientIds.map((recipientId) => ({
+          data: uniqueRecipients.map((recipientId) => ({
             letterId: letter.id,
             userId: recipientId,
-            unitId: data.unitId,
+            unitId: targetUnitId,
             isCC: false,
           })),
         });
       }
 
+      /**
+       * Tembusan.
+       *
+       * `isCC` ada di skema sejak awal dan satu-satunya penulisannya di seluruh
+       * kode adalah `isCC: false` di atas — kolom yang tidak pernah bernilai
+       * true adalah kolom yang tidak ada.
+       *
+       * Siapa pun yang sudah menjadi penerima utama tidak dicatat lagi sebagai
+       * tembusan: seseorang menerima surat ini *atau* salinannya, dan dua baris
+       * untuk orang yang sama akan mencetak namanya dua kali di kaki naskah.
+       */
+      const ccRows = buildCcRows(
+        letter.id,
+        targetUnitId,
+        data.ccRecipients,
+        data.recipientIds
+      );
+      if (ccRows.length > 0) {
+        await tx.letterRecipient.createMany({ data: ccRows });
+      }
+
+      /**
+       * Lampiran.
+       *
+       * Urutannya adalah urutan yang disusun pembuatnya, dan ia disimpan:
+       * naskahnya mengumumkan "Lampiran : 2 (dua) berkas", dan daftar bernomor
+       * yang urutannya berubah-ubah setiap kali dibaca bukan daftar.
+       */
+      if (data.attachments && data.attachments.length > 0) {
+        await tx.letterAttachment.createMany({
+          data: data.attachments.map((att, index) => ({
+            letterId: letter.id,
+            name: att.name,
+            fileUrl: att.fileUrl,
+            mimeType: att.mimeType ?? null,
+            sizeBytes: att.sizeBytes ?? null,
+            order: index + 1,
+            uploadedById: userId,
+          })),
+        });
+      }
+
+      // Record CREATED flow event first
       await recordFlow(tx, {
         letterId: letter.id,
         actorId: userId,
@@ -228,9 +469,7 @@ export const CorrespondenceService = {
         note: letter.subject,
       });
 
-      // A draft that is created straight into review has been submitted, and
-      // saying so keeps the history readable: otherwise the first approval
-      // appears with nothing before it explaining why anyone was reviewing.
+      // Record SUBMITTED if created straight into review
       if (letter.status !== DbLetterStatus.DRAFT && data.reviewerIds?.length) {
         await recordFlow(tx, {
           letterId: letter.id,
@@ -240,8 +479,76 @@ export const CorrespondenceService = {
         });
       }
 
-      return letter;
+      const createdDispositionsToNotify: Array<{ id: string; recipientId: string }> = [];
+
+      // Create live Dispositions ONLY when initial status is DISPOSED
+      if (data.direction === 'INCOMING' && initialStatus === DbLetterStatus.DISPOSED && data.recipientIds?.length) {
+        const uniqueRecipients = Array.from(new Set(data.recipientIds));
+        for (const recipientId of uniqueRecipients) {
+          const existingDisp = await tx.disposition.findFirst({
+            where: { letterId: letter.id, recipientId, status: { not: 'COMPLETED' } },
+          });
+
+          if (!existingDisp) {
+            const createdDisp = await tx.disposition.create({
+              data: {
+                letterId: letter.id,
+                senderId: userId,
+                recipientId,
+                instruction: 'Surat Masuk Diteruskan',
+                status: 'PENDING',
+              },
+            });
+
+            await recordFlow(tx, {
+              letterId: letter.id,
+              actorId: userId,
+              action: LetterFlowAction.DISPOSED,
+              targetId: recipientId,
+              fromStatus: letter.status,
+              toStatus: DbLetterStatus.DISPOSED,
+              note: 'Surat Masuk Diteruskan',
+            });
+
+            createdDispositionsToNotify.push({ id: createdDisp.id, recipientId });
+          }
+        }
+      }
+
+      return { letter, createdDispositionsToNotify };
     });
+
+    // Post-commit: Notify first reviewer if letter created directly in PENDING_REVIEW
+    const uniqueReviewers = data.reviewerIds ? Array.from(new Set(data.reviewerIds)) : [];
+    if (result.letter.status === DbLetterStatus.PENDING_REVIEW && uniqueReviewers.length) {
+      const firstReviewerId = uniqueReviewers[0];
+      eventBus.emit('notification:send', {
+        userId: firstReviewerId,
+        unitId: result.letter.unitId,
+        type: 'REMINDER',
+        title: 'Konsep Surat Perlu Ditinjau',
+        message: `Konsep surat "${result.letter.subject}" diajukan kepada Anda untuk ditinjau.`,
+        data: { letterId: result.letter.id, link: `/e-office/letter/${result.letter.id}` },
+      });
+    }
+
+    // Post-commit: Notify recipients for automatic dispositions
+    for (const disp of result.createdDispositionsToNotify) {
+      eventBus.emit('notification:send', {
+        userId: disp.recipientId,
+        type: 'REMINDER',
+        title: 'Disposisi Baru',
+        message: 'Anda menerima terusan surat masuk baru.',
+        data: {
+          entityId: disp.id,
+          entityType: 'DISPOSITION',
+          letterId: result.letter.id,
+          link: `/e-office/letter/${result.letter.id}`,
+        },
+      });
+    }
+
+    return result.letter;
   },
 
   /**
@@ -341,12 +648,25 @@ export const CorrespondenceService = {
     return await prisma.letter.findUnique({
       where: { id },
       include: {
-        unit: true,
+        /**
+         * Unit, lampiran, dan penerima — bentuk yang sama persis dengan yang
+         * dibaca jalur penandatanganan.
+         *
+         * Halaman ini juga yang memberi makan `resolveLetterPdf`, jadi kalau
+         * kedua jalur mengambil relasi yang berbeda, naskah yang dicetak
+         * berbeda dari naskah yang di-hash dan verifikasi publik menyebut surat
+         * yang sah sebagai berubah. Satu tetapan, dipakai keduanya.
+         */
+        ...LETTER_PDF_RELATIONS,
         classification: true,
         createdBy: { select: { name: true } },
         reviewers: {
           include: {
             reviewer: {
+              // NIP tetap di sini: halaman surat hanya terbuka bagi yang sudah
+              // masuk dan berhak membacanya, dan nomor induk memang keterangan
+              // internal. Yang dihapus adalah NIP pada naskah yang beredar dan
+              // pada halaman verifikasi publik, bukan NIP di meja sendiri.
               select: {
                 name: true,
                 teacher: { select: { nip: true } },
@@ -356,17 +676,27 @@ export const CorrespondenceService = {
           },
           orderBy: { order: 'asc' },
         },
-        recipients: {
-          include: {
-            user: { select: { name: true } },
-          },
+        // Buku ekspedisi naskah ini, terbaru di atas: yang dicari petugas
+        // hampir selalu pengiriman terakhir.
+        dispatches: {
+          include: { dispatchedBy: { select: { name: true } } },
+          orderBy: { dispatchedAt: 'desc' },
         },
+        /**
+         * Oldest first, like the flow history below it.
+         *
+         * The disposition trail is read as a story — this official forwarded it
+         * to that one, who forwarded it on — and newest-first told it backwards
+         * while drawing a connector line that implied forwards. It also decided
+         * which disposition `activeDisposition` picked when someone held more
+         * than one; oldest-outstanding is the one that should be acted on first.
+         */
         dispositions: {
           include: {
             sender: { select: { name: true } },
             recipient: { select: { name: true } },
           },
-          orderBy: { createdAt: 'desc' },
+          orderBy: { createdAt: 'asc' },
         },
         // Oldest first: this is read as a story, and a story told backwards
         // makes the reader reconstruct the order themselves.
@@ -388,20 +718,46 @@ export const CorrespondenceService = {
          * caller has already passed `assertLetterAccess` above, so this adds
          * nothing they could not already read.
          */
+        /**
+         * Permohonan pencabutan ikut bersama suratnya.
+         *
+         * Halaman suratnya sendiri adalah tempat pejabat berwenang akan
+         * melihatnya — pemberitahuan pun mengarahkannya ke sana — sehingga
+         * permohonan tidak memerlukan menu tersendiri untuk sampai ke mejanya.
+         */
+        revocationRequests: {
+          include: {
+            requester: { select: { id: true, name: true, email: true } },
+            decidedBy: { select: { name: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 20,
+        },
         signatures: {
           select: {
             id: true,
             signedAt: true,
             verificationToken: true,
             algorithm: true,
-            // A revoked signature must not print as a valid one.
+            // A revoked signature must not print as a valid one — and the
+            // reason travels with it, so the letter's own page can say why
+            // instead of leaving the reader to find out from the public
+            // verification form.
+            // Kewenangan mencabut diukur terhadap jabatan penandatangan saat
+            // menandatangani, jadi antarmuka pun perlu membacanya untuk
+            // menawarkan tombol yang sama dengan yang akan diterima server.
+            signerRoleCode: true,
             revokedAt: true,
+            revokedReason: true,
+            revokedByRoleCode: true,
+            revokedBy: { select: { name: true } },
+            // Dipakai pencetakan salinan bercap: naskah yang dihasilkan ulang
+            // harus terbukti masih sama persis dengan yang di-hash saat
+            // ditandatangani sebelum boleh dicap dan diserahkan.
+            pdfHash: true,
             signer: {
-              select: {
-                name: true,
-                teacher: { select: { nip: true } },
-                staff: { select: { nip: true } },
-              },
+              // Nama saja: naskah tidak lagi mencetak NIP.
+              select: { name: true },
             },
           },
           orderBy: { signedAt: 'asc' },
@@ -414,16 +770,29 @@ export const CorrespondenceService = {
     letterId: string,
     reviewerId: string,
     action: 'APPROVE' | 'REJECT',
-    notes?: string
+    notes?: string,
+    nextReviewerId?: string,
+    isFinalSigner?: boolean,
+    actor?: LetterActor
   ) {
+    if (nextReviewerId) {
+      await this.validateParticipantEligibility([nextReviewerId], actor);
+    }
     const result = await prisma.$transaction(async (tx) => {
-      // The whole ladder is read, not just the caller's own rung: whether this
-      // reviewer may act at all depends on the rungs below them. The previous
-      // version fetched only the caller's row, which is why the signer could
-      // sign a draft the sekretaris had never opened.
+      // Row locking to serialize concurrent review requests on the same letter
+      await tx.$executeRaw`SELECT id FROM letters WHERE id = ${letterId} FOR UPDATE`;
+
       const letter = await tx.letter.findUnique({
         where: { id: letterId },
-        select: { id: true, status: true, createdById: true, reviewers: true },
+        select: {
+          id: true,
+          status: true,
+          createdById: true,
+          direction: true,
+          unitId: true,
+          reviewers: true,
+          recipients: { select: { userId: true } },
+        },
       });
       if (!letter) throw new Error('Letter not found');
 
@@ -437,10 +806,179 @@ export const CorrespondenceService = {
 
       const mine = assertMayReview(letter.status, ladder, reviewerId);
 
-      const nextStatus =
+      let updatedLadder: ReviewerRung[] = [...ladder];
+
+      if (action === 'APPROVE') {
+        if (nextReviewerId === reviewerId) {
+          throw new Error('Tidak dapat meneruskan surat kepada diri sendiri.');
+        }
+
+        // Validate that an approval specifies either a nextReviewerId, isFinalSigner, or an existing signer
+        const hasExistingSigner = updatedLadder.some((r) => r.isSigner);
+        if (!nextReviewerId && !isFinalSigner && !hasExistingSigner) {
+          throw new Error('Harus memilih pejabat penerus atau menandai sebagai penandatangan akhir.');
+        }
+
+        if (isFinalSigner) {
+          // Transactionally ensure exactly one active final signer
+          await tx.letterReviewer.updateMany({
+            where: { letterId },
+            data: { isSigner: false },
+          });
+          updatedLadder = updatedLadder.map((r) => ({ ...r, isSigner: false }));
+        }
+
+        // If approving and nextReviewerId is provided, add or update the next reviewer dynamically
+        if (nextReviewerId) {
+          const existingNext = letter.reviewers.find((r) => r.reviewerId === nextReviewerId);
+          const nonSigners = letter.reviewers.filter((r) => !r.isSigner && r.id !== existingNext?.id);
+          const maxNonSignerOrder = Math.max(...nonSigners.map((r) => r.order), mine.order, 0);
+          const newNextOrder = maxNonSignerOrder + 1;
+
+          if (existingNext) {
+            const updatedIsSigner = isFinalSigner ? true : existingNext.isSigner;
+            await tx.letterReviewer.update({
+              where: { id: existingNext.id },
+              data: {
+                order: newNextOrder,
+                status: 'PENDING',
+                reviewedAt: null,
+                isSigner: updatedIsSigner,
+              },
+            });
+            updatedLadder = updatedLadder.map((r) =>
+              r.id === existingNext.id
+                ? { ...r, order: newNextOrder, status: 'PENDING', isSigner: updatedIsSigner }
+                : r
+            );
+          } else {
+            const newRung = await tx.letterReviewer.create({
+              data: {
+                letterId,
+                reviewerId: nextReviewerId,
+                order: newNextOrder,
+                status: 'PENDING',
+                isSigner: !!isFinalSigner,
+              },
+            });
+            updatedLadder.push({
+              id: newRung.id,
+              reviewerId: nextReviewerId,
+              order: newNextOrder,
+              status: 'PENDING',
+              isSigner: !!isFinalSigner,
+            });
+          }
+
+          // If nextReviewerId is NOT marked as final signer, move any existing signer to sit AFTER nextReviewerId
+          if (!isFinalSigner) {
+            const existingSigners = letter.reviewers.filter((r) => r.isSigner && r.id !== existingNext?.id);
+            for (const signer of existingSigners) {
+              const shiftedOrder = newNextOrder + 1;
+              await tx.letterReviewer.update({
+                where: { id: signer.id },
+                data: { order: shiftedOrder },
+              });
+              updatedLadder = updatedLadder.map((r) =>
+                r.id === signer.id ? { ...r, order: shiftedOrder } : r
+              );
+            }
+          }
+        } else if (isFinalSigner) {
+          // Mark current reviewer as signer if specified (restoring flag after bulk reset even if previously a signer)
+          updatedLadder = updatedLadder.map((r) =>
+            r.reviewerId === reviewerId ? { ...r, isSigner: true } : r
+          );
+          await tx.letterReviewer.update({
+            where: { id: mine.id },
+            data: { isSigner: true },
+          });
+        }
+      }
+
+      let nextStatus =
         action === 'APPROVE'
-          ? statusAfterApproval(ladder, reviewerId)
+          ? statusAfterApproval(updatedLadder, reviewerId)
           : DbLetterStatus.REVISION_NEEDED;
+
+      const reviewFinished = action === 'APPROVE' && !nextRung(updatedLadder.map((r) => r.reviewerId === reviewerId ? { ...r, status: 'APPROVED' } : r));
+      const disposedRecipients: string[] = [];
+
+      if (action === 'APPROVE') {
+        if (letter.direction === 'INCOMING' && reviewFinished) {
+          /**
+           * A2 & A6: penyelesaian review surat masuk tidak menuntut penanda
+           * tangan. Ada penerima → DISPOSED; tidak ada → surat itu selesai.
+           *
+           * Sebelumnya "selesai" ditulis sebagai **SENT**, dan itu keliru dalam
+           * arti yang paling harfiah: sebuah surat *masuk* dicatat sebagai
+           * terkirim. Statusnya tampil "Terkirim" di daftar surat, penyaring
+           * status menghitungnya bersama surat keluar, dan satu-satunya keadaan
+           * yang seharusnya berarti "naskah ini sudah meninggalkan kantor"
+           * justru paling sering diisi oleh surat yang baru saja tiba.
+           *
+           * ARCHIVED, karena itulah yang sebenarnya terjadi: surat masuk yang
+           * sudah diverifikasi dan tidak perlu diteruskan kepada siapa pun sudah
+           * selesai perjalanannya, dan yang tersisa hanyalah menyimpannya.
+           * Peristiwanya dicatat tersendiri di bawah, supaya riwayat alurnya
+           * menyebut siapa yang menutup surat itu dan atas dasar apa — bukan
+           * berpindah status tanpa keterangan.
+           */
+          const hasRecipients = letter.recipients && letter.recipients.length > 0;
+          nextStatus = hasRecipients ? DbLetterStatus.DISPOSED : DbLetterStatus.ARCHIVED;
+
+          if (!hasRecipients) {
+            await recordFlow(tx, {
+              letterId: letter.id,
+              actorId: reviewerId,
+              action: LetterFlowAction.ARCHIVED,
+              fromStatus: letter.status,
+              toStatus: DbLetterStatus.ARCHIVED,
+              note: 'Selesai diverifikasi tanpa disposisi; surat langsung diarsipkan.',
+            });
+          }
+
+          // When review finishes for an INCOMING letter with recipients, create live Disposition tasks
+          if (hasRecipients) {
+            const uniqueRecipientIds = Array.from(
+              new Set(letter.recipients.map((r) => r.userId).filter(Boolean))
+            ) as string[];
+
+            for (const recipientId of uniqueRecipientIds) {
+              const existingDisp = await tx.disposition.findFirst({
+                where: { letterId: letter.id, recipientId, status: { not: 'COMPLETED' } },
+              });
+
+              if (!existingDisp) {
+                await tx.disposition.create({
+                  data: {
+                    letterId: letter.id,
+                    senderId: reviewerId,
+                    recipientId,
+                    instruction: 'Surat Masuk Diteruskan',
+                    status: 'PENDING',
+                  },
+                });
+
+                await recordFlow(tx, {
+                  letterId: letter.id,
+                  actorId: reviewerId,
+                  action: LetterFlowAction.DISPOSED,
+                  targetId: recipientId,
+                  fromStatus: letter.status,
+                  toStatus: DbLetterStatus.DISPOSED,
+                  note: 'Surat Masuk Diteruskan',
+                });
+
+                disposedRecipients.push(recipientId);
+              }
+            }
+          }
+        } else if (nextStatus === DbLetterStatus.SIGNED) {
+          // Review approval alone must NEVER set status directly to SIGNED for outgoing letters — signing requires E-Sign passphrase via esign.service.
+          nextStatus = DbLetterStatus.READY_TO_SIGN;
+        }
+      }
 
       await tx.letterReviewer.update({
         where: { id: mine.id },
@@ -465,12 +1003,10 @@ export const CorrespondenceService = {
             : nextStatus === DbLetterStatus.SIGNED
               ? LetterFlowAction.SIGNED
               : LetterFlowAction.APPROVED,
-        // Returning a draft is addressed to its author; the history should say
-        // who it went back to, not only who sent it back.
-        targetId: action === 'REJECT' ? letter.createdById : null,
+        targetId: action === 'REJECT' ? letter.createdById : nextReviewerId || null,
         fromStatus: letter.status,
         toStatus: nextStatus,
-        note: notes,
+        note: notes ? (nextReviewerId ? `${notes} [Diteruskan]` : notes) : (nextReviewerId ? 'Diteruskan ke peninjau berikutnya' : null),
       });
 
       return {
@@ -479,6 +1015,7 @@ export const CorrespondenceService = {
         rejected: action === 'REJECT',
         authorId: letter.createdById,
         status: nextStatus,
+        disposedRecipients,
       };
     });
 
@@ -501,6 +1038,40 @@ export const CorrespondenceService = {
       });
     }
 
+    // Post-commit: notify recipients for automatic dispositions created upon incoming review completion
+    if (result.disposedRecipients && result.disposedRecipients.length > 0) {
+      const letter = await prisma.letter.findUnique({
+        where: { id: letterId },
+        select: { subject: true, unitId: true },
+      });
+      for (const recipientId of result.disposedRecipients) {
+        eventBus.emit('notification:send', {
+          userId: recipientId,
+          unitId: letter?.unitId,
+          type: 'REMINDER',
+          title: 'Disposisi Baru',
+          message: `Anda menerima disposisi baru untuk surat "${letter?.subject ?? ''}".`,
+          data: { letterId, link: `/e-office/letter/${letterId}` },
+        });
+      }
+    }
+
+    // Post-commit: when a letter is forwarded to a next reviewer, notify that official.
+    if (action === 'APPROVE' && nextReviewerId) {
+      const letter = await prisma.letter.findUnique({
+        where: { id: letterId },
+        select: { subject: true, unitId: true },
+      });
+      eventBus.emit('notification:send', {
+        userId: nextReviewerId,
+        unitId: letter?.unitId,
+        type: 'REMINDER',
+        title: 'Konsep Surat Perlu Ditinjau',
+        message: `Konsep surat "${letter?.subject ?? ''}" diteruskan kepada Anda untuk ditinjau.`,
+        data: { letterId, link: `/e-office/letter/${letterId}` },
+      });
+    }
+
     // Post-commit: when a letter has been signed, notify its creator so they can
     // proceed (dispatch/archive). Done outside the transaction so the listener
     // sees the committed SIGNED status.
@@ -510,7 +1081,6 @@ export const CorrespondenceService = {
         select: { createdById: true, unitId: true, subject: true, letterNumber: true },
       });
       if (letter) {
-        const { eventBus } = await import('@/lib/event-bus');
         eventBus.emit('notification:send', {
           userId: letter.createdById,
           unitId: letter.unitId,
@@ -525,6 +1095,142 @@ export const CorrespondenceService = {
     }
 
     return { success: true };
+  },
+
+  /**
+   * Submit an existing DRAFT letter into review (PENDING_REVIEW).
+   *
+   * Only the creator can submit their draft, and only when at least one
+   * reviewer is assigned.
+   */
+  async submitForReview(
+    letterId: string,
+    actor: LetterActor,
+    note?: string,
+    reviewerIds?: string[]
+  ) {
+    await assertLetterAccess(actor, letterId);
+
+    if (reviewerIds && reviewerIds.length > 0) {
+      await this.validateParticipantEligibility(reviewerIds, actor);
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const letter = await tx.letter.findUnique({
+        where: { id: letterId },
+        select: {
+          id: true,
+          status: true,
+          createdById: true,
+          direction: true,
+          type: true,
+          unitId: true,
+          letterNumber: true,
+          subject: true,
+          reviewers: {
+            orderBy: { order: 'asc' },
+          },
+        },
+      });
+      if (!letter) throw Errors.notFound('Letter not found');
+
+      // A7: If reviewerIds parameter was not supplied, validate eligibility of stored draft reviewers
+      if ((!reviewerIds || reviewerIds.length === 0) && letter.reviewers.length > 0) {
+        const storedReviewerIds = letter.reviewers.map((r) => r.reviewerId);
+        await this.validateParticipantEligibility(storedReviewerIds, actor);
+      }
+
+      if (letter.createdById !== actor.id) {
+        throw Errors.forbidden('Hanya pembuat surat yang dapat mengajukan konsep untuk ditinjau');
+      }
+
+      if (letter.status !== DbLetterStatus.DRAFT) {
+        throw Errors.badRequest('Hanya surat berstatus DRAFT yang dapat diajukan untuk ditinjau');
+      }
+
+      let currentReviewers = letter.reviewers;
+
+      // If new reviewerIds are provided, assign them to the draft
+      if (reviewerIds && reviewerIds.length > 0) {
+        const uniqueReviewerIds = Array.from(new Set(reviewerIds));
+        await tx.letterReviewer.deleteMany({ where: { letterId } });
+        await tx.letterReviewer.createMany({
+          data: uniqueReviewerIds.map((reviewerId, index) => ({
+            letterId,
+            reviewerId,
+            order: index + 1,
+            status: 'PENDING',
+            isSigner: false,
+          })),
+        });
+        currentReviewers = uniqueReviewerIds.map((rId, index) => ({
+          id: `rev-${rId}`,
+          reviewerId: rId,
+          order: index + 1,
+          status: 'PENDING',
+          isSigner: false,
+        })) as any;
+      }
+
+      if (!currentReviewers || currentReviewers.length === 0) {
+        throw Errors.badRequest('Konsep surat harus memiliki minimal satu pemeriksa sebelum diajukan');
+      }
+
+      // Guard: atomic state transition from DRAFT -> PENDING_REVIEW
+      const updated = await tx.letter.updateMany({
+        where: { id: letterId, status: DbLetterStatus.DRAFT },
+        data: { status: DbLetterStatus.PENDING_REVIEW },
+      });
+
+      if (updated.count === 0) {
+        throw Errors.badRequest('Surat sudah diajukan atau tidak lagi berstatus DRAFT');
+      }
+
+      const nextStatus = DbLetterStatus.PENDING_REVIEW;
+
+      // Allocate letterNumber only AFTER atomic update succeeded
+      let letterNumber = letter.letterNumber;
+      if (letter.direction === 'OUTGOING' && !letterNumber) {
+        const activeYear = await tx.academicYear.findFirst({
+          where: { isActive: true },
+        });
+        const academicYearId = activeYear?.id || 'DEFAULT';
+        const typeKey = AGENDA_TYPE_CODE[letter.type as DbLetterType] || 'SKET';
+        letterNumber = await this.generateNumber(letter.unitId, typeKey, academicYearId, tx);
+
+        await tx.letter.update({
+          where: { id: letterId },
+          data: { letterNumber },
+        });
+      }
+
+      await recordFlow(tx, {
+        letterId,
+        actorId: actor.id,
+        action: LetterFlowAction.SUBMITTED,
+        fromStatus: DbLetterStatus.DRAFT,
+        toStatus: nextStatus,
+        note: note || 'Mengajukan konsep surat untuk ditinjau',
+      });
+
+      const sortedReviewers = [...currentReviewers].sort((a, b) => a.order - b.order);
+      const firstReviewerId = sortedReviewers[0]?.reviewerId;
+
+      return { id: letterId, status: nextStatus, firstReviewerId, subject: letter.subject };
+    });
+
+    // Post-commit: Notify first reviewer when draft is submitted for review
+    if (result.firstReviewerId) {
+      eventBus.emit('notification:send', {
+        userId: result.firstReviewerId,
+        type: 'REMINDER',
+        title: 'Konsep Surat Perlu Ditinjau',
+        message: `Konsep surat "${result.subject}" diajukan kepada Anda untuk ditinjau.`,
+        data: { letterId, link: `/e-office/letter/${letterId}` },
+      });
+    }
+
+    return { id: result.id, status: result.status };
   },
 
   /**
@@ -583,6 +1289,210 @@ export const CorrespondenceService = {
   },
 
   /**
+   * Ganti seluruh daftar tembusan sebuah naskah.
+   *
+   * Mengganti, bukan menambah satu per satu, karena yang dikirim antarmuka
+   * adalah daftar utuh sesudah disunting — dan urutan adalah bagian dari
+   * daftarnya, bukan keterangan tambahan. Menambah dan menghapus per baris
+   * akan memerlukan dua endpoint lagi dan tetap tidak dapat memindahkan urutan.
+   *
+   * **Hanya selama naskah belum ditandatangani.** Tembusan tercetak di kaki
+   * naskah, dan byte naskah yang ditandatangani sudah diarsipkan (PR-3): kalau
+   * daftar ini boleh berubah sesudahnya, basis data akan menyebut tembusan yang
+   * tidak ada pada lembar yang beredar — dan lembar itulah yang dipegang orang.
+   */
+  async updateLetterCc(letterId: string, actor: LetterActor, cc: LetterCcInput[]) {
+    await assertLetterAccess(actor, letterId);
+
+    const internalIds = ccUserIds(cc);
+    if (internalIds.length > 0) {
+      await this.validateParticipantEligibility(internalIds, actor);
+    }
+
+    return await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT id FROM letters WHERE id = ${letterId} FOR UPDATE`;
+
+      const letter = await tx.letter.findUnique({
+        where: { id: letterId },
+        select: {
+          id: true,
+          status: true,
+          unitId: true,
+          createdById: true,
+          recipients: { where: { isCC: false }, select: { userId: true } },
+          signatures: { select: { id: true } },
+        },
+      });
+      if (!letter) throw Errors.notFound('Surat tidak ditemukan');
+
+      if (letter.signatures.length > 0) {
+        throw Errors.badRequest(
+          'Naskah ini sudah ditandatangani; daftar tembusannya tercetak pada lembar ' +
+            'yang beredar dan tidak dapat diubah lagi.'
+        );
+      }
+
+      const isCreator = actor.id === letter.createdById;
+      const isExecutive =
+        actor.roleCode === RoleCode.YAYASAN_KETUA ||
+        actor.roleCode === RoleCode.YAYASAN_SEKRETARIS ||
+        actor.roleCode === RoleCode.SUPER_ADMIN;
+      if (!isCreator && !isExecutive && !handlesUnitCorrespondence(actor)) {
+        throw Errors.forbidden('Anda tidak berwenang mengubah tembusan surat ini.');
+      }
+
+      // Hanya baris tembusan yang diganti. Penerima utama adalah daftar yang
+      // berbeda, dan menghapusnya di sini akan mencabut akses orang yang
+      // memang berhak membaca surat ini.
+      await tx.letterRecipient.deleteMany({ where: { letterId, isCC: true } });
+
+      const rows = buildCcRows(
+        letterId,
+        letter.unitId,
+        cc,
+        letter.recipients.map((r) => r.userId).filter((id): id is string => !!id)
+      );
+      if (rows.length > 0) {
+        await tx.letterRecipient.createMany({ data: rows });
+      }
+
+      return { id: letterId, count: rows.length };
+    });
+  },
+
+  /**
+   * Catat bahwa sebuah naskah keluar benar-benar dikirim.
+   *
+   * Inilah langkah yang selama ini hilang. Surat keluar berjalan
+   * DRAFT → PENDING_REVIEW → READY_TO_SIGN → SIGNED → ARCHIVED, dan saat
+   * naskahnya diserahkan kepada kurir — satu-satunya saat yang menjadi alasan
+   * buku agenda surat keluar ada — tidak tercatat di mana pun. Status SENT ada
+   * di skema sejak awal, tetapi yang mengisinya justru surat *masuk*
+   * (`processReview`, kini diperbaiki).
+   *
+   * Yang disimpan bukan sekadar penanda "sudah dikirim": tanggal, saluran,
+   * kepada siapa diserahkan, nomor resi, dan tanda terimanya. Ketika penerima
+   * menyatakan tidak menerima surat, kelimanya itulah jawabannya — dan sebuah
+   * kolom boolean tidak menjawab satu pun.
+   *
+   * Kewenangannya sama dengan pengarsipan: pembuat surat, petugas persuratan
+   * unit, atau pejabat yayasan. Pengiriman adalah perbuatan tata usaha, bukan
+   * perbuatan penanda tangan.
+   */
+  async dispatchLetter(
+    letterId: string,
+    actor: LetterActor,
+    input: DispatchLetterSchemaInput
+  ) {
+    await assertLetterAccess(actor, letterId);
+
+    const existing = await prisma.letter.findUnique({
+      where: { id: letterId },
+      select: { createdById: true },
+    });
+    if (!existing) throw Errors.notFound('Surat tidak ditemukan');
+
+    const isCreator = actor.id === existing.createdById;
+    const isExecutive =
+      actor.roleCode === RoleCode.YAYASAN_KETUA ||
+      actor.roleCode === RoleCode.YAYASAN_SEKRETARIS ||
+      actor.roleCode === RoleCode.SUPER_ADMIN;
+
+    if (!isCreator && !isExecutive && !handlesUnitCorrespondence(actor)) {
+      throw Errors.forbidden('Anda tidak berwenang mencatat pengiriman surat ini.');
+    }
+
+    const dispatchedAt = input.dispatchedAt ? new Date(input.dispatchedAt) : new Date();
+
+    const result = await prisma.$transaction(async (tx) => {
+      // Sejalan dengan pengarsipan dan review: dua petugas yang mencatat
+      // pengiriman surat yang sama pada saat yang sama tidak boleh saling
+      // menimpa `sentAt`.
+      await tx.$executeRaw`SELECT id FROM letters WHERE id = ${letterId} FOR UPDATE`;
+
+      const letter = await tx.letter.findUnique({
+        where: { id: letterId },
+        select: {
+          id: true,
+          status: true,
+          direction: true,
+          sentAt: true,
+          subject: true,
+          unitId: true,
+          createdById: true,
+          signatures: {
+            select: { revokedAt: true },
+            orderBy: { signedAt: 'asc' },
+          },
+        },
+      });
+      if (!letter) throw Errors.notFound('Surat tidak ditemukan');
+
+      const latestSignature = letter.signatures.at(-1) ?? null;
+      assertMayDispatch(letter.direction, letter.status, !!latestSignature?.revokedAt);
+
+      const dispatch = await tx.letterDispatch.create({
+        data: {
+          letterId,
+          dispatchedById: actor.id,
+          dispatchedAt,
+          channel: input.channel,
+          receivedByName: input.receivedByName ?? null,
+          trackingNumber: input.trackingNumber ?? null,
+          receiptUrl: input.receiptUrl ?? null,
+          note: input.note ?? null,
+        },
+      });
+
+      await tx.letter.update({
+        where: { id: letterId },
+        data: {
+          status: DbLetterStatus.SENT,
+          // Pengiriman pertama, dan hanya yang pertama. Surat yang diantar ke
+          // beberapa alamat atau dikirim ulang karena tidak sampai tetap
+          // "keluar dari kantor" pada tanggal yang pertama itu; setiap
+          // percobaannya tetap tersimpan sebagai barisnya sendiri.
+          sentAt: letter.sentAt ?? dispatchedAt,
+        },
+      });
+
+      const channelLabel = LETTER_DISPATCH_CHANNEL_LABELS[input.channel] ?? input.channel;
+      await recordFlow(tx, {
+        letterId,
+        actorId: actor.id,
+        action: LetterFlowAction.SENT,
+        fromStatus: letter.status,
+        toStatus: DbLetterStatus.SENT,
+        note: input.receivedByName
+          ? `Dikirim lewat ${channelLabel}, diterima ${input.receivedByName}.`
+          : `Dikirim lewat ${channelLabel}.`,
+      });
+
+      return { letter, dispatch, sentAt: letter.sentAt ?? dispatchedAt };
+    });
+
+    // Pembuat surat berhak tahu naskahnya sudah keluar; yang mencatat
+    // pengirimannya hampir selalu petugas tata usaha, bukan dia.
+    if (result.letter.createdById !== actor.id) {
+      eventBus.emit('notification:send', {
+        userId: result.letter.createdById,
+        unitId: result.letter.unitId,
+        type: 'INFO',
+        title: 'Surat Sudah Dikirim',
+        message: `Surat "${result.letter.subject}" tercatat sudah dikirim.`,
+        data: { letterId, link: `/e-office/letter/${letterId}` },
+      });
+    }
+
+    return {
+      id: letterId,
+      status: DbLetterStatus.SENT,
+      sentAt: result.sentAt,
+      dispatch: result.dispatch,
+    };
+  },
+
+  /**
    * Close a letter's journey.
    *
    * The end of the chain the tata usaha described: the last official to hold
@@ -594,12 +1504,24 @@ export const CorrespondenceService = {
   async archiveLetter(letterId: string, actor: LetterActor, note?: string) {
     await assertLetterAccess(actor, letterId);
 
+    // B4: Restrict archive authorization to creator, correspondence role, executive foundation roles, or super admin
+    const isCreator = actor.id === (await prisma.letter.findUnique({ where: { id: letterId }, select: { createdById: true } }))?.createdById;
+    const isExecutive = actor.roleCode === RoleCode.YAYASAN_KETUA || actor.roleCode === RoleCode.YAYASAN_SEKRETARIS || actor.roleCode === RoleCode.SUPER_ADMIN;
+    const isCorrRole = handlesUnitCorrespondence(actor);
+
+    if (!isCreator && !isExecutive && !isCorrRole) {
+      throw Errors.forbidden('Anda tidak berwenang mengarsipkan surat ini.');
+    }
+
     return await prisma.$transaction(async (tx) => {
+      // A4: Lock letter row to serialize concurrent disposition and archive operations
+      await tx.$executeRaw`SELECT id FROM letters WHERE id = ${letterId} FOR UPDATE`;
+
       const letter = await tx.letter.findUnique({
         where: { id: letterId },
         select: { id: true, status: true },
       });
-      if (!letter) throw new Error('Letter not found');
+      if (!letter) throw Errors.notFound('Surat tidak ditemukan');
 
       assertMayArchive(letter.status);
 
@@ -643,63 +1565,116 @@ export const CorrespondenceService = {
       );
     }
 
-    const disposition = await prisma.$transaction(async (tx) => {
-      const created = await tx.disposition.create({
-        data: {
-          letterId: data.letterId,
-          senderId: data.senderId,
-          recipientId: data.recipientId,
-          instruction: data.instruction,
-          deadline: data.deadline ? new Date(data.deadline) : null,
-          parentDispositionId: data.parentDispositionId,
-          status: 'PENDING',
-          notes: data.notes,
-        },
+    const rawRecipients = data.recipientIds && data.recipientIds.length > 0
+      ? data.recipientIds
+      : data.recipientId
+        ? [data.recipientId]
+        : [];
+
+    // Deduplicate recipient IDs to prevent duplicate dispositions for the same person
+    const recipients = Array.from(new Set(rawRecipients));
+
+    if (recipients.length === 0) {
+      throw new Error('Minimal satu penerima disposisi harus ditentukan.');
+    }
+
+    await this.validateParticipantEligibility(recipients, actor);
+
+    const { allDispositions, newlyCreatedDispositions } = await prisma.$transaction(async (tx) => {
+      // Row lock letter for concurrent disposition protection
+      await tx.$executeRaw`SELECT id FROM letters WHERE id = ${letter.id} FOR UPDATE`;
+
+      // Re-read letter status under row lock to prevent race conditions with concurrent archive operations
+      const txLetter = await tx.letter.findUnique({
+        where: { id: letter.id },
+        select: { id: true, status: true, direction: true, unitId: true },
       });
 
-      // The transition an empty `if (status === 'SENT' || 'ARCHIVED') {}` stub
-      // used to stand in for, so no letter ever left the status it was created
-      // with. Only incoming letters are disposed; an outgoing letter's chain
-      // is its reviewers.
+      if (!txLetter) throw Errors.notFound('Surat tidak ditemukan');
+
+      if (txLetter.status === DbLetterStatus.ARCHIVED) {
+        throw new Error(
+          'Surat sudah diarsipkan; buka kembali arsipnya sebelum mendisposisikan.'
+        );
+      }
+
+      const allDispositions = [];
+      const newlyCreatedDispositions = [];
+
+      for (const targetRecipientId of recipients) {
+        // A5: Deduplicate only identical dispositions (same letter, recipient, sender, instruction)
+        const existingDisp = await tx.disposition.findFirst({
+          where: {
+            letterId: txLetter.id,
+            recipientId: targetRecipientId,
+            senderId: data.senderId,
+            instruction: data.instruction,
+            status: { not: 'COMPLETED' },
+          },
+        });
+        if (existingDisp) {
+          allDispositions.push(existingDisp);
+          continue;
+        }
+
+        const created = await tx.disposition.create({
+          data: {
+            letterId: data.letterId,
+            senderId: data.senderId,
+            recipientId: targetRecipientId,
+            instruction: data.instruction,
+            deadline: data.deadline ? new Date(data.deadline) : null,
+            parentDispositionId: data.parentDispositionId,
+            status: 'PENDING',
+            notes: data.notes,
+          },
+        });
+
+        await recordFlow(tx, {
+          letterId: txLetter.id,
+          actorId: data.senderId,
+          action: LetterFlowAction.DISPOSED,
+          targetId: targetRecipientId,
+          fromStatus: txLetter.status,
+          toStatus:
+            txLetter.direction === 'INCOMING' ? DbLetterStatus.DISPOSED : txLetter.status,
+          note: data.instruction,
+        });
+
+        allDispositions.push(created);
+        newlyCreatedDispositions.push(created);
+      }
+
       if (
-        letter.direction === 'INCOMING' &&
-        letter.status !== DbLetterStatus.DISPOSED
+        txLetter.direction === 'INCOMING' &&
+        txLetter.status !== DbLetterStatus.DISPOSED
       ) {
         await tx.letter.update({
-          where: { id: letter.id },
+          where: { id: txLetter.id },
           data: { status: DbLetterStatus.DISPOSED },
         });
       }
 
-      await recordFlow(tx, {
-        letterId: letter.id,
-        actorId: data.senderId,
-        action: LetterFlowAction.DISPOSED,
-        targetId: data.recipientId,
-        fromStatus: letter.status,
-        toStatus:
-          letter.direction === 'INCOMING' ? DbLetterStatus.DISPOSED : letter.status,
-        note: data.instruction,
+      return { allDispositions, newlyCreatedDispositions };
+    });
+
+    // Notify ONLY Newly Created Dispositions
+    for (const disp of newlyCreatedDispositions) {
+      eventBus.emit('notification:send', {
+        userId: disp.recipientId,
+        type: 'REMINDER',
+        title: 'Disposisi Baru',
+        message: `Anda menerima disposisi baru: "${data.instruction}"`,
+        data: {
+          entityId: disp.id,
+          entityType: 'DISPOSITION',
+          letterId: letter.id,
+          link: `/e-office/letter/${letter.id}`,
+        },
       });
+    }
 
-      return created;
-    });
-
-    // Notify Recipient
-    eventBus.emit('notification:send', {
-      userId: data.recipientId,
-      type: 'REMINDER',
-      title: 'Disposisi Baru',
-      message: `Anda menerima disposisi baru: "${data.instruction}"`,
-      data: {
-        entityId: disposition.id,
-        entityType: 'DISPOSITION',
-        letterId: letter.id,
-        link: `/e-office/letter/${letter.id}`,
-      },
-    });
-
-    return disposition;
+    return allDispositions;
   },
 
   async updateDispositionStatus(id: string, status: string, notes?: string, userId?: string) {
@@ -758,6 +1733,116 @@ export const CorrespondenceService = {
     }
 
     return updatedDisposition;
+  },
+
+  /**
+   * Search / list eligible correspondence participants (teachers, staff, foundation officers)
+   * accessible to authenticated E-Office participants.
+   */
+  async getParticipants(
+    params: { search?: string; unitId?: string; limit?: number },
+    actor?: LetterActor
+  ) {
+    if (!actor || !actor.roleCode) {
+      throw Errors.forbidden('Anda tidak memiliki akses ke direktori persuratan');
+    }
+
+    // Deny external roles (students, parents, alumni, komite)
+    if ((EXCLUDED_CORRESPONDENCE_ROLES as readonly string[]).includes(actor.roleCode)) {
+      throw Errors.forbidden('Anda tidak memiliki akses ke direktori persuratan');
+    }
+
+    const limit = Math.min(params.limit || 100, 200);
+    const now = new Date();
+
+    // Derive unit scope according to seesAllUnits policy:
+    // Cross-unit personnel and foundation roles can see participants across units or specify query.unitId.
+    // Unit-pinned roles are restricted to their assigned unitId regardless of query.unitId.
+    const actorSeesAll = actor ? seesAllUnits(actor) : true;
+    const effectiveUnitId = actorSeesAll ? params.unitId : (actor?.unitId ?? params.unitId);
+
+    const where: Prisma.UserWhereInput = {
+      isActive: true,
+      deletedAt: null, // A8: Exclude soft-deleted users
+      // Candidates must have an active non-external role assignment
+      userRoles: {
+        some: {
+          isActive: true,
+          role: {
+            code: {
+              notIn: EXCLUDED_CORRESPONDENCE_ROLES as unknown as RoleCode[],
+            },
+          },
+          OR: [{ expiresAt: null }, { expiresAt: { gte: now } }],
+        },
+      },
+    };
+
+    const and: Prisma.UserWhereInput[] = [];
+
+    if (effectiveUnitId) {
+      // A3: Match unit by legacy user unitId OR active role assignment unitId
+      and.push({
+        OR: [
+          { unitId: effectiveUnitId },
+          { unitId: null },
+          { userRoles: { some: { unitId: effectiveUnitId, isActive: true } } },
+        ],
+      });
+    }
+
+    if (params.search) {
+      and.push({
+        OR: [
+          { name: { contains: params.search, mode: 'insensitive' } },
+          { email: { contains: params.search, mode: 'insensitive' } },
+        ],
+      });
+    }
+
+    if (and.length > 0) {
+      where.AND = and;
+    }
+
+    const users = await prisma.user.findMany({
+      where,
+      take: limit,
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        unitId: true,
+        unit: { select: { name: true } },
+        teacher: { select: { nip: true } },
+        staff: { select: { nip: true, position: true } },
+        userRoles: {
+          where: {
+            isActive: true,
+            role: {
+              code: {
+                notIn: EXCLUDED_CORRESPONDENCE_ROLES as unknown as RoleCode[],
+              },
+            },
+            OR: [{ expiresAt: null }, { expiresAt: { gte: now } }],
+          },
+          select: { role: { select: { code: true } } },
+          orderBy: [{ isPrimary: 'desc' }],
+          take: 1,
+        },
+      },
+    });
+
+    return users.map((u) => ({
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      unitId: u.unitId,
+      unitName: u.unit?.name ?? null,
+      roleCode: u.userRoles[0]?.role?.code ?? null,
+      nip: u.teacher?.nip || u.staff?.nip || null,
+      position: u.staff?.position || null,
+    }));
   },
 
   /** `unitId` undefined = foundation-wide totals (see getLetters). */
@@ -855,4 +1940,8 @@ export const CorrespondenceService = {
       chart: Array.from(chartMap.values()),
     };
   },
+
+  /**
+   * Public verification for signed letters via token and optional uploaded PDF buffer
+   */
 };

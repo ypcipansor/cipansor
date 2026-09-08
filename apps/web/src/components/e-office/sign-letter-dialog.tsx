@@ -10,6 +10,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { useSignLetter } from "@/hooks/use-esign";
+import { getPublicVerifyUrl } from "@/config/site";
 import { PenLine, ShieldCheck } from "lucide-react";
 
 /**
@@ -38,10 +39,10 @@ export function SignLetterDialog({
   const [passphrase, setPassphrase] = useState("");
   const [token, setToken] = useState<string | null>(null);
 
-  const verifyUrl =
-    token && typeof window !== "undefined"
-      ? `${window.location.origin}/verifikasi/${token}`
-      : null;
+  const publicVerifyUrl =
+    typeof window !== "undefined"
+      ? getPublicVerifyUrl(window.location.origin)
+      : getPublicVerifyUrl("https://cipansor.or.id");
 
   async function submit() {
     try {
@@ -113,26 +114,17 @@ export function SignLetterDialog({
               Surat telah ditandatangani
             </div>
 
-            {verifyUrl && (
+            {token && (
               <>
                 <div className="flex justify-center rounded-lg bg-white p-4">
-                  {/* QR hanya memuat URL verifikasi — bukan tanda tangan,
-                      bukan isi surat. */}
-                  <QRCodeCanvas value={verifyUrl} size={180} level="M" />
+                  <QRCodeCanvas value={token} size={180} level="M" />
                 </div>
                 <p className="break-all text-xs text-muted-foreground">
-                  {verifyUrl}
+                  Verifikasi keaslian: {publicVerifyUrl}
                 </p>
-                {/*
-                  Dulu tertulis "Bubuhkan QR ini pada naskah" — instruksi yang
-                  kini justru menyesatkan: QR sudah tercetak sendiri pada
-                  naskah, dan penandatangan yang menurutinya akan menempelkan
-                  QR kedua di atas surat yang sudah lengkap.
-                */}
                 <p className="text-xs text-muted-foreground">
                   QR ini sudah tercetak pada naskah suratnya — cukup unduh
-                  PDF-nya. Siapa pun yang memindainya dapat memeriksa keaslian
-                  surat tanpa perlu masuk ke sistem.
+                  PDF-nya. Untuk memverifikasi keaslian, unggah file PDF pada portal {publicVerifyUrl}.
                 </p>
               </>
             )}

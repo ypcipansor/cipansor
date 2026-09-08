@@ -6,7 +6,6 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -105,16 +104,29 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
         )}
       </div>
 
-      {/* Navigation.
-          `min-h-0` is load-bearing, not cosmetic. A flex child defaults to
-          `min-height: auto`, which refuses to shrink below its content height,
-          so this ScrollArea grew to the full height of the menu (~4800px) and
-          the Radix viewport inside it — `overflow-y: scroll` — had nothing left
-          to scroll. The aside is `h-screen` with `overflow: visible`, so every
-          item past the fold simply spilled off-screen and was unreachable:
-          no scrollbar, no wheel, no keyboard. Constraining the flex child is
-          what lets the viewport actually scroll. */}
-      <ScrollArea className="min-h-0 flex-1 px-3 py-4">
+      {/* Navigation — gulir bawaan peramban, bukan `ScrollArea` Radix — dan ini hasil
+          pengukuran, bukan selera.
+
+          Di build produksi, posisi ibu jari Radix di sini hanya ditulis SEKALI
+          per sesi gulir. Diukur dengan MutationObserver pada atribut `style`
+          ibu jarinya, tiga sesi berturut-turut yang masing-masing memutar roda
+          empat kali: satu penulisan per sesi, selalu pada peristiwa gulir
+          PERTAMA. Isinya turun 0→1200, 1200→2400, 2400→3600, sementara ibu
+          jarinya berhenti di 44px, 222px, 399px dari trek 609px. Hasilnya
+          persis keluhan yang dilaporkan: bilahnya tertinggal jauh sementara
+          menunya sudah mentok bawah, lalu meloncat menyusul saat putaran
+          berikutnya dimulai. Gelung rAF pelacaknya (`addUnlinkedScrollListener`)
+          tidak pernah berjalan — `requestAnimationFrame` nol panggilan selama
+          seluruh gulir. Komponen yang sama di luar Next merender dengan benar,
+          jadi cacatnya muncul dari kombinasinya, bukan dari komponennya saja.
+
+          `min-h-0` tetap penting: anak flex tidak mau menyusut di bawah tinggi
+          isinya tanpa itu, dan menu ~4800px ini akan meluber keluar layar
+          alih-alih bergulir.
+
+          `overscroll-contain` menahan gulir agar tidak merembet ke induknya
+          begitu menyentuh ujung. */}
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-4 pl-3 pr-1 thin-scrollbar">
         {navigation.map((group, index) => (
           <NavGroupComponent
             key={group.title}
@@ -124,7 +136,7 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
             showSeparator={index > 0}
           />
         ))}
-      </ScrollArea>
+      </div>
 
       {/* Footer */}
       <div className="border-t p-4">

@@ -128,3 +128,78 @@ add new events to the `AppEvents` interface with a payload type.
 See nested `AGENTS.md` files: `apps/api/AGENTS.md`, `apps/web/AGENTS.md`,
 `packages/shared/AGENTS.md`, `apps/api/prisma/AGENTS.md`. Known technical debt and
 the remaining build-green roadmap live in `docs/KNOWN_ISSUES.md`.
+
+## Committed skills and hooks
+
+`.claude/` carries the automation this repo relies on, and it is checked in so
+every session gets it.
+
+**These files are kept current without asking.** Standing permission from the
+user (2026-07-24, widened 2026-09-05) covers **adding, changing and deleting**
+anything in `.claude/`, `AGENTS.md`, `CLAUDE.md` and the per-area guides — new
+files where one is missing, and removal of files that guard a flow that no
+longer exists. The reason is the same one that put them here: a stale guide is
+not neutral, it actively misleads, and a skill for a workflow we deleted is a
+trap for whoever reads it next.
+
+Three conditions, none of them loosened by that permission: it goes through a
+branch and a PR like any other change, **never straight to `main`**; a deletion
+must say in the PR body *why*, because what is gone is invisible on screen; and
+before removing anything, prove it is unused — grep for callers, check
+`settings.json` for a hook registration — rather than assuming.
+
+| | |
+|---|---|
+| `skills/gate` | the quality gate AGENTS.md requires before pushing |
+| `skills/stack` | bring the local Postgres + Redis stack up |
+| `skills/screenshot-roles` | render real components for before/after shots |
+| `skills/sync-records` | move findings out of the transcript and into files |
+| `hooks/guard.sh` | PreToolUse — blocks a full-file Write to `schema.prisma` and a push to `main` |
+| `hooks/session-bootstrap.sh` | SessionStart — installs deps, generates the Prisma client, builds shared |
+| `hooks/pre-compact-sync.sh` | PreCompact — pauses `/compact` when there is new work the durable records do not yet reflect |
+| `hooks/sync_stamp.py` | shared by the hook above and the `sync-records` skill: one definition of "the records are level" |
+| `hooks/stop-sync-baseline.sh` | SessionStart — records the HEAD sha the session started from, so the Stop hook has something to compare against |
+| `hooks/stop-sync-records.sh` | Stop — asks for a `sync-records` pass once, at the first resting point after the session has produced commits |
+
+**Why the compaction hook exists.** Compaction discards the transcript, and only
+files survive it. Findings were reaching `memory/`, the plan and the ROADMAP
+only because the user remembered to ask, every single time. The hook asks
+instead: it exits 2, which hands control back for a `sync-records` pass, and
+lets the retry through — so it can nag but can never wedge a session.
+`/compact skip-sync` bypasses it deliberately.
+
+**What "level" means is work, not time** (corrected 2026-09-05). The stamp used
+to expire after thirty minutes, which asked for a second pass over a session
+that had produced nothing new. `sync_stamp.py` now compares git HEAD plus the
+working tree, so `/compact` is quiet until something actually changes; a
+six-hour ceiling remains for findings that never touch git. The
+`sync-records` skill writes the stamp itself as its last step — before that, a
+pass the user ran directly did nothing to quiet the next `/compact`, which was
+backwards.
+
+**Auto-compaction is blocked only when there is headroom below it**, and the
+interlock is the setting itself: with `autoCompactWindow` under 800k there is
+room to run the pass, so the hook pauses once; unset, or at the model's own
+window, it never touches auto — refusing at the context wall would strand the
+session. A blocked compaction is *cancelled, not deferred* (undocumented, but
+reported consistently), which is safe here only because the condition persists
+and the next turn triggers a fresh attempt that the stamp lets through. A manual
+`/compact` has no such retry, which is why it costs a second keystroke.
+
+**Why there is a `Stop` hook too.** The compaction hook only guards the
+compaction door. A session that finishes without ever being compacted never
+passes through it — and those are exactly the sessions that leave findings in
+the transcript alone. `stop-sync-records.sh` closes that gap.
+
+It is deliberately hard to trigger, because `Stop` fires at the end of *every*
+turn and a reminder that appears every turn teaches everyone to ignore hook
+messages. It stays quiet unless all five hold: not already continuing from its
+own block (`stop_hook_active` — this is what makes a loop impossible), not yet
+asked this session, at least one commit since the session began, no pending
+changes to tracked files (a resting point, not mid-edit), and no durable record
+touched since the session began. One reminder per session, then never again.
+`CLAUDE_SKIP_STOP_SYNC=1` turns it off.
+
+Both `Stop` and `PreCompact` fail open on everything else — unreadable input, an
+unreadable git tree, an unwritable stamp directory. A hook that breaks a session
+is worse than a hook that misses a reminder.

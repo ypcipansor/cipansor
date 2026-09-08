@@ -23,10 +23,32 @@ export interface LlmCompletionRequest {
   temperature: number;
 }
 
+/**
+ * What the call consumed, when the provider says so.
+ *
+ * Optional because it genuinely is: the OpenAI wire format specifies `usage`,
+ * but gateways in front of a model may strip it, and the local stub has nothing
+ * to report. A caller that treats a missing block as zero turns an unmeasured
+ * call into a free one — see `ChatbotUsageDaily.unmeteredRequests` for the
+ * column that exists to keep those two apart.
+ */
+export interface LlmUsage {
+  promptTokens: number;
+  completionTokens: number;
+  /**
+   * Bagian dari `promptTokens` yang dilayani dari cache penyedia, bila ia
+   * melaporkannya. Ditagih jauh lebih murah, jadi memisahkannya adalah
+   * satu-satunya cara taksiran biaya berhenti menjadi batas atas.
+   */
+  cachedPromptTokens?: number;
+}
+
 export interface LlmCompletionResult {
   text: string;
   /** Concrete model that answered, echoed back for eval comparisons. */
   model: string;
+  /** Absent when the provider reported none. Never inferred from the text. */
+  usage?: LlmUsage;
 }
 
 export interface LlmProvider {

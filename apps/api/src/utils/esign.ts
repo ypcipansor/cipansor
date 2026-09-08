@@ -290,6 +290,114 @@ export function verifySignature(
   }
 }
 
+/** Tandatangani hash byte PDF secara langsung dengan Ed25519. */
+export function signPdfHash(
+  material: EncryptedKeyMaterial,
+  passphrase: string,
+  pdfHashHex: string
+): string {
+  const privateKey = unsealPrivateKey(material, passphrase);
+  const signature = crypto.sign(null, Buffer.from(pdfHashHex, 'utf8'), privateKey);
+  return signature.toString('base64');
+}
+
+/**
+ * Bentuk kanonik pernyataan pencabutan.
+ *
+ * Pencabutan adalah pernyataan kriptografis, bukan kolom status. Sebuah CRL pun
+ * struktur data yang ditandatangani dan diberi stempel waktu (RFC 5280), dan
+ * karena itu pencabutan di sini pun ditandatangani: dengan begitu halaman
+ * verifikasi publik dapat *membuktikan* bahwa surat ini dicabut oleh pejabat
+ * yang namanya tercantum, bukan sekadar mempercayai satu baris basis data.
+ *
+ * Yang diikat: tanda tangan mana yang dicabut, oleh siapa, dalam jabatan apa,
+ * kapan, dan dengan alasan apa. Mengubah salah satunya membatalkan tanda
+ * tangannya — termasuk mengubah alasan yang telanjur dibaca publik.
+ */
+export interface RevocationStatement {
+  signatureId: string;
+  letterId: string;
+  revokedById: string;
+  revokedByRoleCode: string | null;
+  revokedAt: Date;
+  reason: string;
+}
+
+export function canonicalRevocation(r: RevocationStatement): string {
+  return [
+    `signature:${r.signatureId}`,
+    `letter:${r.letterId}`,
+    `by:${r.revokedById}`,
+    `role:${r.revokedByRoleCode ?? '-'}`,
+    `at:${r.revokedAt.toISOString()}`,
+    `reason:${r.reason}`,
+  ].join('\n');
+}
+
+/** Tandatangani pernyataan pencabutan dengan kunci pencabutnya sendiri. */
+export function signRevocation(
+  material: EncryptedKeyMaterial,
+  passphrase: string,
+  statement: RevocationStatement
+): SignResult {
+  const canonical = canonicalRevocation(statement);
+  const digest = digestOf(canonical);
+  const privateKey = unsealPrivateKey(material, passphrase);
+  const signature = crypto.sign(null, Buffer.from(canonical, 'utf8'), privateKey);
+  return {
+    algorithm: ESIGN_ALGORITHM,
+    publicKey: material.publicKey,
+    digest,
+    signature: signature.toString('base64'),
+  };
+}
+
+/** Benarkah pencabutan ini dinyatakan oleh pemegang kunci itu? */
+export function verifyRevocation(
+  publicKeyBase64: string,
+  statement: RevocationStatement,
+  signatureBase64: string
+): boolean {
+  try {
+    const publicKey = crypto.createPublicKey({
+      key: Buffer.from(publicKeyBase64, 'base64'),
+      type: 'spki',
+      format: 'der',
+    });
+    return crypto.verify(
+      null,
+      Buffer.from(canonicalRevocation(statement), 'utf8'),
+      publicKey,
+      Buffer.from(signatureBase64, 'base64')
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Verifikasi tanda tangan Ed25519 atas hash byte PDF. */
+export function verifyPdfHashSignature(
+  publicKeyBase64: string,
+  pdfHashHex: string,
+  signatureBase64: string
+): boolean {
+  try {
+    const publicKey = crypto.createPublicKey({
+      key: Buffer.from(publicKeyBase64, 'base64'),
+      type: 'spki',
+      format: 'der',
+    });
+    return crypto.verify(
+      null,
+      Buffer.from(pdfHashHex, 'utf8'),
+      publicKey,
+      Buffer.from(signatureBase64, 'base64')
+    );
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Token verifikasi yang dimuat QR.
  *
