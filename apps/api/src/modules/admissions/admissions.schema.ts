@@ -36,6 +36,8 @@ export const createRegistrantSchema = z.object({
   birthDate: z.string().datetime(),
   address: z.string().min(5),
 
+  nisn: z.string().optional(),
+  nik: z.string().optional(),
   nationalId: z.string().optional(),
   familyCardNumber: z.string().optional(),
 
@@ -53,14 +55,14 @@ export const createRegistrantSchema = z.object({
   graduationYear: z.number().int().optional(),
 
   // Extended parent & guardian details for Dapodik/EMIS compliance & internal re-enrollment
-  fatherName: z.string().min(1).max(100),
+  fatherName: z.string().min(1).max(100).optional().default('Wali'),
   fatherNik: z.string().optional(),
   fatherOccupation: z.string().optional(),
   fatherIncomeRange: z.string().optional(),
   fatherPhone: z.string().optional(),
   fatherEmail: z.string().email().optional().or(z.literal('')),
 
-  motherName: z.string().min(1).max(100),
+  motherName: z.string().min(1).max(100).optional().default('Ibu'),
   motherNik: z.string().optional(),
   motherOccupation: z.string().optional(),
   motherIncomeRange: z.string().optional(),

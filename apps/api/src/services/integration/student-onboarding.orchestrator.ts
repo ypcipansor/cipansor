@@ -6,6 +6,7 @@ import {
   type ParentScopeClient,
 } from '@/utils/parent-scope';
 import { assertAdmissionFeeSettled } from '@/utils/admission-fee-gate';
+import { resolveLegacyRoleToRoleCode } from '@/modules/auth/auth.service';
 
 export class StudentOnboardingOrchestrator {
   /**
@@ -66,7 +67,7 @@ export class StudentOnboardingOrchestrator {
       if (registrant.isInternalAlumni) {
         if (registrant.previousStudentId) {
           existingStudent = await tx.student.findFirst({
-            where: { id: registrant.previousStudentId, deletedAt: null },
+            where: { id: registrant.previousStudentId, status: 'alumni', deletedAt: null },
             include: { user: true },
           });
         }
@@ -78,10 +79,15 @@ export class StudentOnboardingOrchestrator {
           existingStudent = await tx.student.findFirst({
             where: {
               deletedAt: null,
+              status: 'alumni',
               OR: conditions,
             },
             include: { user: true },
           });
+        }
+
+        if (!existingStudent) {
+          throw Errors.badRequest('Referenced internal alumnus record not found or student is not in alumni status');
         }
       }
 
@@ -121,6 +127,26 @@ export class StudentOnboardingOrchestrator {
           where: { studentId: student.id, status: 'active' },
           data: { status: 'completed' },
         });
+
+        const targetRoleCode = resolveLegacyRoleToRoleCode('STUDENT', unit?.type);
+        if (targetRoleCode) {
+          const studentRole = await tx.role.findFirst({ where: { code: targetRoleCode } });
+          if (studentRole) {
+            await tx.userRoleAssignment.updateMany({
+              where: { userId: user.id, isPrimary: true },
+              data: { isPrimary: false },
+            });
+            await tx.userRoleAssignment.create({
+              data: {
+                userId: user.id,
+                roleId: studentRole.id,
+                unitId,
+                isPrimary: true,
+                isActive: true,
+              },
+            });
+          }
+        }
       } else {
         const email = registrant.email || `${cleanName}.${randomUUID().slice(0, 8)}@student.cipansor.local`;
 
@@ -143,8 +169,8 @@ export class StudentOnboardingOrchestrator {
             status: 'active',
             unitId,
             entryYear: year,
-            nisn: registrant.internalNisn || null,
-            nik: registrant.internalNik || null,
+            nisn: registrant.nisn || registrant.internalNisn || null,
+            nik: registrant.nik || registrant.internalNik || null,
             gender: registrant.gender,
             birthPlace: registrant.birthPlace,
             birthDate: registrant.birthDate,
@@ -154,6 +180,22 @@ export class StudentOnboardingOrchestrator {
             parentEmail: registrant.parentEmail,
           },
         });
+
+        const targetRoleCode = resolveLegacyRoleToRoleCode('STUDENT', unit?.type);
+        if (targetRoleCode) {
+          const studentRole = await tx.role.findFirst({ where: { code: targetRoleCode } });
+          if (studentRole) {
+            await tx.userRoleAssignment.create({
+              data: {
+                userId: user.id,
+                roleId: studentRole.id,
+                unitId,
+                isPrimary: true,
+                isActive: true,
+              },
+            });
+          }
+        }
       }
 
       await tx.registrant.update({

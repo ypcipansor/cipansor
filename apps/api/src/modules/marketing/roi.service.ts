@@ -44,8 +44,10 @@ export async function calculateCampaignROI(unitId?: string) {
     prisma.invoice.findMany({
       where: {
         student: {
-          registrant: {
-            campaignId: { in: campaignIds },
+          registrants: {
+            some: {
+              campaignId: { in: campaignIds },
+            },
           },
         },
         status: 'PAID',
@@ -54,7 +56,7 @@ export async function calculateCampaignROI(unitId?: string) {
         paidAmount: true,
         student: {
           select: {
-            registrant: {
+            registrants: {
               select: { campaignId: true }
             }
           }
@@ -83,7 +85,7 @@ export async function calculateCampaignROI(unitId?: string) {
 
   // Add revenue from students
   studentRevenueData.forEach(inv => {
-    const cid = inv.student?.registrant?.campaignId;
+    const cid = inv.student?.registrants?.[0]?.campaignId;
     if (cid) {
       revenueMap.set(cid, (revenueMap.get(cid) || 0) + Number(inv.paidAmount));
     }
@@ -198,9 +200,11 @@ export async function getMonthlyAttributedRevenue(unitId?: string, months = 6) {
       paidAt: { gte: start },
       invoice: {
         student: {
-          registrant: {
-            campaignId: { not: null },
-            ...(unitId ? { admissionPeriod: { unitId } } : {}),
+          registrants: {
+            some: {
+              campaignId: { not: null },
+              ...(unitId ? { admissionPeriod: { unitId } } : {}),
+            },
           },
         },
       },

@@ -140,12 +140,7 @@ export class StudentService {
       OR: [{ nik: clean }, { nisn: clean }],
     };
 
-    if (currentUser && !seesAllUnits(currentUser)) {
-      if (currentUser.unitId) {
-        where.unitId = currentUser.unitId;
-      }
-    }
-
+    // Internal alumni re-enrollment lookup allows searching across lower units within the yayasan
     const student = await prisma.student.findFirst({
       where,
       select: {
@@ -405,7 +400,7 @@ export class StudentService {
   /**
    * Mark student as graduated (Alumni)
    */
-  async graduateStudent(id: string, graduateYear?: number) {
+  async graduateStudent(id: string, graduateYear?: number, graduationDate?: Date) {
     const student = await prisma.student.findFirst({
       where: { id, deletedAt: null },
       include: { user: true, unit: true },
@@ -415,7 +410,8 @@ export class StudentService {
       throw Errors.notFound('Student');
     }
 
-    const currentYear = graduateYear || new Date().getFullYear();
+    const effectiveDate = graduationDate || new Date();
+    const currentYear = graduateYear || effectiveDate.getFullYear();
 
     return prisma.$transaction(async (tx) => {
       await tx.classEnrollment.updateMany({
@@ -448,7 +444,7 @@ export class StudentService {
           birthPlace: student.birthPlace,
           birthDate: student.birthDate,
           graduationYear: currentYear,
-          graduationDate: new Date(),
+          graduationDate: effectiveDate,
           email: student.user.email,
           phone: student.parentPhone,
           address: student.address,
@@ -456,7 +452,7 @@ export class StudentService {
         },
         update: {
           graduationYear: currentYear,
-          graduationDate: new Date(),
+          graduationDate: effectiveDate,
           status: 'ACTIVE',
         },
       });
@@ -474,9 +470,6 @@ export class StudentService {
         where: { nisn: input.nisn },
       });
       if (existingNisn) {
-        if (existingNisn.deletedAt) {
-          throw Errors.conflict('NISN belongs to a soft-deleted student record. Please restore or contact administrator.');
-        }
         throw Errors.conflict('NISN already exists');
       }
     }
@@ -486,9 +479,6 @@ export class StudentService {
         where: { nik: input.nik },
       });
       if (existingNik) {
-        if (existingNik.deletedAt) {
-          throw Errors.conflict('NIK belongs to a soft-deleted student record. Please restore or contact administrator.');
-        }
         throw Errors.conflict('NIK already exists');
       }
     }
@@ -617,7 +607,7 @@ export class StudentService {
 
     if (input.nisn && input.nisn !== student.nisn) {
       const existingNisn = await prisma.student.findFirst({
-        where: { nisn: input.nisn, id: { not: id }, deletedAt: null },
+        where: { nisn: input.nisn, id: { not: id } },
       });
       if (existingNisn) {
         throw Errors.conflict('NISN already in use');
@@ -626,11 +616,17 @@ export class StudentService {
 
     if (input.nik && input.nik !== student.nik) {
       const existingNik = await prisma.student.findFirst({
-        where: { nik: input.nik, id: { not: id }, deletedAt: null },
+        where: { nik: input.nik, id: { not: id } },
       });
       if (existingNik) {
         throw Errors.conflict('NIK already in use');
       }
+    }
+
+    const targetStatus = input.status ? this.mapCanonicalStatus(input.status) : undefined;
+
+    if (targetStatus === 'alumni') {
+      return this.graduateStudent(id);
     }
 
     const updated = await prisma.$transaction(async (tx) => {
@@ -657,7 +653,7 @@ export class StudentService {
           parentPhone: input.parentPhone,
           parentEmail: input.parentEmail,
           photoUrl: input.photoUrl,
-          status: input.status ? this.mapCanonicalStatus(input.status) : undefined,
+          status: targetStatus,
         },
         include: {
           user: {

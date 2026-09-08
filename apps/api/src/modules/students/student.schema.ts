@@ -26,6 +26,12 @@ export const createStudentSchema = sharedCreateSchema.extend({
 // Update student
 export const updateStudentSchema = sharedUpdateSchema;
 
+// Graduate student
+export const graduateStudentSchema = z.object({
+  graduateYear: z.coerce.number().int().min(1990).max(2100).optional(),
+  graduationDate: z.coerce.date().optional(),
+});
+
 // ID param
 export const studentIdParamSchema = z.object({
   id: z.string().uuid('Invalid student ID'),
@@ -35,3 +41,4 @@ export const studentIdParamSchema = z.object({
 export type ListStudentsQuery = z.infer<typeof listStudentsQuerySchema>;
 export type CreateStudentInput = z.infer<typeof createStudentSchema>;
 export type UpdateStudentInput = z.infer<typeof updateStudentSchema>;
+export type GraduateStudentInput = z.infer<typeof graduateStudentSchema>;

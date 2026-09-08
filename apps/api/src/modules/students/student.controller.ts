@@ -95,13 +95,17 @@ export const graduate = asyncHandler(async (req: Request, res: Response) => {
   const { graduateYear, graduationDate } = req.body;
 
   let year: number | undefined;
+  let dateObj: Date | undefined;
+
+  if (graduationDate) {
+    dateObj = new Date(graduationDate);
+    year = dateObj.getFullYear();
+  }
   if (graduateYear) {
     year = Number(graduateYear);
-  } else if (graduationDate) {
-    year = new Date(graduationDate).getFullYear();
   }
 
-  const student = await studentService.graduateStudent(id, year);
+  const student = await studentService.graduateStudent(id, year, dateObj);
 
   res.json({
     success: true,

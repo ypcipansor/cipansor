@@ -326,6 +326,8 @@ async function createRegistrantOnce(data: CreateRegistrantExtendedInput) {
         parentPhone,
         parentEmail,
         parentOccupation,
+        nisn: data.nisn || data.internalNisn,
+        nik: data.nik || data.nationalId || data.internalNik,
         fatherNik: data.fatherNik,
         fatherOccupation: data.fatherOccupation,
         fatherIncomeRange: data.fatherIncomeRange,
@@ -581,6 +583,27 @@ export async function enrollRegistrant(
         where: { studentId: student.id, status: 'active' },
         data: { status: 'completed' },
       });
+
+      const { resolveLegacyRoleToRoleCode } = await import('../auth/auth.service');
+      const targetRoleCode = resolveLegacyRoleToRoleCode('STUDENT', registrant.admissionPeriod.unit.type);
+      if (targetRoleCode) {
+        const studentRole = await tx.role.findFirst({ where: { code: targetRoleCode } });
+        if (studentRole) {
+          await tx.userRoleAssignment.updateMany({
+            where: { userId: user.id, isPrimary: true },
+            data: { isPrimary: false },
+          });
+          await tx.userRoleAssignment.create({
+            data: {
+              userId: user.id,
+              roleId: studentRole.id,
+              unitId: registrant.admissionPeriod.unitId,
+              isPrimary: true,
+              isActive: true,
+            },
+          });
+        }
+      }
     } else {
       const existingUser = registrant.email
         ? await tx.user.findUnique({
@@ -636,6 +659,23 @@ export async function enrollRegistrant(
             entryYear: new Date().getFullYear(),
           },
         });
+
+        const { resolveLegacyRoleToRoleCode } = await import('../auth/auth.service');
+        const targetRoleCode = resolveLegacyRoleToRoleCode('STUDENT', registrant.admissionPeriod.unit.type);
+        if (targetRoleCode) {
+          const studentRole = await tx.role.findFirst({ where: { code: targetRoleCode } });
+          if (studentRole) {
+            await tx.userRoleAssignment.create({
+              data: {
+                userId: user.id,
+                roleId: studentRole.id,
+                unitId: registrant.admissionPeriod.unitId,
+                isPrimary: true,
+                isActive: true,
+              },
+            });
+          }
+        }
       }
     }
 

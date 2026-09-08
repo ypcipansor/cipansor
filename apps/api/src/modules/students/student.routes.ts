@@ -7,6 +7,7 @@ import { PERMISSIONS } from '../roles/permissions';
 import {
   createStudentSchema,
   updateStudentSchema,
+  graduateStudentSchema,
   listStudentsQuerySchema,
   studentIdParamSchema,
 } from './student.schema';
@@ -86,6 +87,7 @@ router.post(
   '/:id/graduate',
   hasPermission(PERMISSIONS.STUDENT_UPDATE),
   validateParams(studentIdParamSchema),
+  validate(graduateStudentSchema),
   controller.graduate
 );
 

@@ -1029,6 +1029,8 @@ model Student {
   entryYear    Int?     @map("entry_year")
   graduateYear Int?     @map("graduate_year")
 
+  legacyNis   String? @map("legacy_nis") // Legacy NIS backup from migration
+
   // === PHASE 8: Indonesia Compliance Fields (Dapodik/EMIS) ===
   nik         String? @unique // NIK (16 digit)
   noAkta      String? @map("no_akta") // Nomor Akta Lahir
@@ -1120,7 +1122,7 @@ model Student {
   rewards                     Reward[]
   invoices                    Invoice[]
   borrowings                  Borrowing[]
-  registrant                  Registrant? // Link dari pendaftaran PSB
+  registrants                 Registrant[] // Link dari pendaftaran PSB/re-enrollment
   medicalRecords              MedicalRecord[]
   medicationUsage             MedicationUsageLog[]
   grades                      Grade[]
@@ -1693,6 +1695,8 @@ model Registrant {
   parentPhone       String          @map("parent_phone")
   parentEmail       String?         @map("parent_email")
   parentOccupation  String?         @map("parent_occupation")
+  nisn              String?         @map("nisn")
+  nik               String?         @map("nik")
   // Parent & Guardian detailed compliance fields
   fatherNik         String?         @map("father_nik")
   fatherOccupation  String?         @map("father_occupation")
@@ -1725,7 +1729,7 @@ model Registrant {
   registrationFeeAmount   Decimal?  @map("registration_fee_amount") @db.Decimal(12, 2)
   registrationFeeVerifiedById String? @map("registration_fee_verified_by_id")
   registrationFeeNote     String?   @map("registration_fee_note") @db.Text
-  studentId         String?         @unique @map("student_id") // Link ke student jika sudah enrolled
+  studentId         String?         @map("student_id") // Link ke student jika sudah enrolled (non-unique to allow multi-unit progression)
   campaignId        String?         @map("campaign_id")
   source            String?
   createdAt         DateTime        @default(now()) @map("created_at")
