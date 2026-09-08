@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { CorrespondenceService } from '../correspondence.service';
 import { prisma } from '@/lib/prisma';
 import { LETTER_PDF_RELATIONS } from '@/utils/generate-letter-pdf';
+import { LetterType } from '@cipansor/shared';
 
 // Mock dependencies
 vi.mock('@/lib/prisma', () => ({
@@ -32,6 +33,7 @@ vi.mock('@/lib/prisma', () => ({
     },
     letterAttachment: {
       createMany: vi.fn(),
+      deleteMany: vi.fn(),
     },
     letterDispatch: {
       create: vi.fn(),
@@ -558,6 +560,227 @@ describe('CorrespondenceService', () => {
           { id: 'unauthorized-user', roleCode: 'SDIT_GURU', unitId: 'unit-1' } as any
         )
       ).rejects.toThrow(/tidak memiliki akses/);
+      expect(prisma.letter.update).not.toHaveBeenCalled();
+    });
+
+    it('updates recipientIds (primary recipients)', async () => {
+      vi.mocked(prisma.letter.findUnique).mockResolvedValue({
+        ...draftLetter(),
+        signatures: [],
+        recipients: [],
+        dispositions: [],
+      } as any);
+      vi.mocked(prisma.letter.update).mockResolvedValue({} as any);
+      vi.mocked(prisma.user.findMany).mockResolvedValue([
+        { id: 'u-1', unitId: 'unit-1', userRoles: [{ unitId: 'unit-1', role: { code: 'SDIT_GURU' } }] },
+        { id: 'u-2', unitId: 'unit-1', userRoles: [{ unitId: 'unit-1', role: { code: 'SDIT_GURU' } }] },
+      ] as any);
+
+      await CorrespondenceService.updateLetter(
+        'letter-edit-1',
+        { recipientIds: ['u-1', 'u-2', 'u-1'] },
+        'tu-1',
+        adminActor as any
+      );
+
+      expect(prisma.letterRecipient.deleteMany).toHaveBeenCalledWith({
+        where: { letterId: 'letter-edit-1', isCC: false },
+      });
+      expect(prisma.letterRecipient.createMany).toHaveBeenCalledWith({
+        data: [
+          { letterId: 'letter-edit-1', userId: 'u-1', unitId: 'unit-1', isCC: false },
+          { letterId: 'letter-edit-1', userId: 'u-2', unitId: 'unit-1', isCC: false },
+        ],
+      });
+    });
+
+    it('updates ccRecipients (tembusan) including external parties', async () => {
+      vi.mocked(prisma.letter.findUnique).mockResolvedValue({
+        ...draftLetter(),
+        signatures: [],
+        recipients: [],
+        dispositions: [],
+      } as any);
+      vi.mocked(prisma.letter.update).mockResolvedValue({} as any);
+      vi.mocked(prisma.user.findMany).mockResolvedValue([
+        { id: 'u-3', unitId: 'unit-1', userRoles: [{ unitId: 'unit-1', role: { code: 'SDIT_GURU' } }] },
+      ] as any);
+
+      await CorrespondenceService.updateLetter(
+        'letter-edit-1',
+        { ccRecipients: [{ userId: 'u-3' }, { externalName: 'Kepala KUA' }] },
+        'tu-1',
+        adminActor as any
+      );
+
+      expect(prisma.letterRecipient.deleteMany).toHaveBeenCalledWith({
+        where: { letterId: 'letter-edit-1', isCC: true },
+      });
+      expect(prisma.letterRecipient.createMany).toHaveBeenCalledWith({
+        data: expect.arrayContaining([
+          expect.objectContaining({
+            letterId: 'letter-edit-1',
+            userId: 'u-3',
+            unitId: 'unit-1',
+            externalName: null,
+            isCC: true,
+            order: 1,
+          }),
+          expect.objectContaining({
+            letterId: 'letter-edit-1',
+            userId: null,
+            unitId: 'unit-1',
+            externalName: 'Kepala KUA',
+            isCC: true,
+            order: 2,
+          }),
+        ]),
+      });
+    });
+
+    it('updates attachments', async () => {
+      vi.mocked(prisma.letter.findUnique).mockResolvedValue({
+        ...draftLetter(),
+        signatures: [],
+        recipients: [],
+        dispositions: [],
+      } as any);
+      vi.mocked(prisma.letter.update).mockResolvedValue({} as any);
+
+      await CorrespondenceService.updateLetter(
+        'letter-edit-1',
+        {
+          attachments: [
+            {
+              name: 'SK.png',
+              fileUrl: '/uploads/SK.png',
+              mimeType: 'image/png',
+              sizeBytes: 2048,
+            },
+          ],
+        },
+        'tu-1',
+        adminActor as any
+      );
+
+      expect(prisma.letterAttachment.deleteMany).toHaveBeenCalledWith({
+        where: { letterId: 'letter-edit-1' },
+      });
+      expect(prisma.letterAttachment.createMany).toHaveBeenCalledWith({
+        data: [
+          expect.objectContaining({
+            letterId: 'letter-edit-1',
+            name: 'SK.png',
+            fileUrl: '/uploads/SK.png',
+            mimeType: 'image/png',
+            sizeBytes: 2048,
+            order: 1,
+            uploadedById: 'tu-1',
+          }),
+        ],
+      });
+    });
+
+    it('rejects changing type when letterNumber is already issued', async () => {
+      vi.mocked(prisma.letter.findUnique).mockResolvedValue({
+        ...draftLetter({ letterNumber: '003/SURAT/Y-CPS' }),
+        signatures: [],
+        recipients: [],
+        dispositions: [],
+      } as any);
+      vi.mocked(prisma.letter.update).mockResolvedValue({} as any);
+
+      await expect(
+        CorrespondenceService.updateLetter(
+          'letter-edit-1',
+          { type: LetterType.SURAT_UNDANGAN },
+          'tu-1',
+          adminActor as any
+        )
+      ).rejects.toThrow(/nomor surat sudah terbit/);
+      expect(prisma.letter.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects changing classificationId when letterNumber is already issued', async () => {
+      vi.mocked(prisma.letter.findUnique).mockResolvedValue({
+        ...draftLetter({ letterNumber: '003/SURAT/Y-CPS' }),
+        signatures: [],
+        recipients: [],
+        dispositions: [],
+      } as any);
+      vi.mocked(prisma.letter.update).mockResolvedValue({} as any);
+
+      await expect(
+        CorrespondenceService.updateLetter(
+          'letter-edit-1',
+          { classificationId: 'classification-1' },
+          'tu-1',
+          adminActor as any
+        )
+      ).rejects.toThrow(/nomor surat sudah terbit/);
+      expect(prisma.letter.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects update when the letter already has electronic signatures', async () => {
+      vi.mocked(prisma.letter.findUnique).mockResolvedValue({
+        ...draftLetter(),
+        signatures: [{ id: 'sig-1' }],
+        recipients: [],
+        dispositions: [],
+      } as any);
+      vi.mocked(prisma.letter.update).mockResolvedValue({} as any);
+
+      await expect(
+        CorrespondenceService.updateLetter(
+          'letter-edit-1',
+          { subject: 'Mencoba Edit' },
+          'tu-1',
+          adminActor as any
+        )
+      ).rejects.toThrow(/tanda tangan elektronik/);
+      expect(prisma.letter.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects empty reviewerIds on a REVISION_NEEDED letter', async () => {
+      vi.mocked(prisma.letter.findUnique).mockResolvedValue({
+        ...draftLetter({ status: 'REVISION_NEEDED' }),
+        signatures: [],
+        recipients: [],
+        dispositions: [],
+      } as any);
+      vi.mocked(prisma.letter.update).mockResolvedValue({} as any);
+
+      await expect(
+        CorrespondenceService.updateLetter(
+          'letter-edit-1',
+          { reviewerIds: [] },
+          'tu-1',
+          adminActor as any
+        )
+      ).rejects.toThrow(/minimal satu pemeriksa/);
+      // The base update is applied first, then the reviewer guard throws.
+      expect(prisma.letter.update).toHaveBeenCalled();
+      expect(prisma.letterReviewer.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('validates participant eligibility and rejects unknown/inactive recipients', async () => {
+      vi.mocked(prisma.letter.findUnique).mockResolvedValue({
+        ...draftLetter(),
+        signatures: [],
+        recipients: [],
+        dispositions: [],
+      } as any);
+      // Only one of the two requested users resolves -> eligibility check fails.
+      vi.mocked(prisma.user.findMany).mockResolvedValue([{ id: 'u-1' }] as any);
+
+      await expect(
+        CorrespondenceService.updateLetter(
+          'letter-edit-1',
+          { recipientIds: ['u-1', 'u-2'] },
+          'tu-1',
+          adminActor as any
+        )
+      ).rejects.toThrow(/tidak ditemukan atau tidak aktif/);
       expect(prisma.letter.update).not.toHaveBeenCalled();
     });
   });

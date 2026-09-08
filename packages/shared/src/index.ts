@@ -36,5 +36,6 @@ export * from "./types/quality";
 export * from "./types/library";
 export * from "./types/supplier";
 export * from "./types/assignment";
+export * from "./types/student-id-card";
 export * from "./roles";
 export * from "./types/demo-accounts";

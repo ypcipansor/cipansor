@@ -10,6 +10,7 @@ import {
   listStudentsQuerySchema,
   studentIdParamSchema,
 } from './student.schema';
+import { bulkRegenerateCardsSchema } from '@cipansor/shared';
 
 const router = Router();
 
@@ -154,6 +155,7 @@ router.get(
 router.post(
   '/id-cards/bulk-regenerate',
   hasPermission(PERMISSIONS.STUDENT_UPDATE),
+  validate(bulkRegenerateCardsSchema),
   IdCardController.bulkRegenerateCards
 );
 

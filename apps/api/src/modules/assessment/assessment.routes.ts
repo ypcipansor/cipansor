@@ -794,8 +794,8 @@ router.post('/p5-projects/assessments/bulk', P5ProjectController.bulkUpsertAsses
 
 // ==================== UNIFIED RAPORT ====================
 
-router.get('/unified-raport/students/:studentId', UnifiedRaportController.generateUnifiedRaport);
-router.get('/unified-raport/print/:studentId', UnifiedRaportController.getPrintData);
+router.get('/unified-raport/students/:studentId', isTeacherOrAbove, UnifiedRaportController.generateUnifiedRaport);
+router.get('/unified-raport/print/:studentId', isTeacherOrAbove, UnifiedRaportController.getPrintData);
 
 // ==================== RAPORT MERDEKA (KURIKULUM MERDEKA) ====================
 

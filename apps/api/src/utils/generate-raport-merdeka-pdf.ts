@@ -11,13 +11,13 @@ const PAGE_HEIGHT = 841.89; // A4 height
 const MARGIN = 40;
 
 /**
- * Unicode font used for body text so Arabic script (student names, Qur'an
- * surah names, pesantren notes) is drawn instead of being silently stripped.
- * Loaded once and reused. Falls back to a blank (ASCII-only Helvetica) when
- * the font asset is missing, preserving the previous stripe-if-unsupported
- * behaviour rather than crashing.
+ * Raw TTF bytes for the Unicode font, cached so we only read the file once.
+ * The PDFFont instance itself must NOT be cached module-wide: a font embedded
+ * into one PDFDocument is bound to that document, and re-using it in a later
+ * document produces an invalid resource and drops the glyphs. We therefore
+ * cache the bytes and call `embedFont` freshly for every PDFDocument.
  */
-let unicodeFont: PDFFont | null = null;
+let unicodeFontBytes: Buffer | null = null;
 
 const FONT_CANDIDATE_PATHS = [
   // src/src, and dist/utils when the build copies assets
@@ -28,21 +28,24 @@ const FONT_CANDIDATE_PATHS = [
 ];
 
 async function loadUnicodeFont(pdfDoc: PDFDocument): Promise<PDFFont | null> {
-  if (unicodeFont) return unicodeFont;
   // pdf-lib needs fontkit registered before it can subset/embed a custom TTF.
   if (!(pdfDoc as unknown as { fontkit?: unknown }).fontkit) {
     pdfDoc.registerFontkit(fontkit);
   }
-  for (const fontPath of FONT_CANDIDATE_PATHS) {
-    try {
-      if (fs.existsSync(fontPath)) {
-        const bytes = fs.readFileSync(fontPath);
-        unicodeFont = await pdfDoc.embedFont(new Uint8Array(bytes), { subset: true });
-        return unicodeFont;
+  if (!unicodeFontBytes) {
+    for (const fontPath of FONT_CANDIDATE_PATHS) {
+      try {
+        if (fs.existsSync(fontPath)) {
+          unicodeFontBytes = fs.readFileSync(fontPath);
+          break;
+        }
+      } catch {
+        // Try the next candidate path.
       }
-    } catch {
-      // Try the next candidate path.
     }
+  }
+  if (unicodeFontBytes) {
+    return pdfDoc.embedFont(new Uint8Array(unicodeFontBytes), { subset: true });
   }
   return null;
 }
@@ -55,21 +58,31 @@ async function loadUnicodeFont(pdfDoc: PDFDocument): Promise<PDFFont | null> {
  * Unicode font could be loaded we fall back to the historical strip of
  * non-WinAnsi characters, because pdf-lib's built-in Helvetica cannot encode
  * them and would otherwise throw.
+ *
+ * `keepUnicode` must be `true` exactly when the drawing font is a custom
+ * Unicode TTF for this document; it is passed per document because the font
+ * is embedded per document.
  */
-function toSafeText(text: string | null | undefined): string {
+function toSafeText(text: string | null | undefined, keepUnicode = false): string {
   if (!text) return '';
   // Strip ASCII control chars (C0 + DEL) before collapsing whitespace. The
   // range must be a literal here so the \x00-\x1F control escapes are
   // explicit; eslint's no-control-regex flags them, hence the disable.
   // eslint-disable-next-line no-control-regex
   const normalized = text.normalize('NFD').replace(/[\x00-\x1F\x7F]/g, ' ').replace(/\s+/g, ' ').trim();
-  if (unicodeFont) return normalized;
+  if (keepUnicode) return normalized;
   return normalized.replace(/[^\x20-\x7E\xA0-\xFF]/g, '').trim();
 }
 
-function wrapText(text: string, maxWidth: number, font: PDFFont, fontSize: number): string[] {
+function wrapText(
+  text: string,
+  maxWidth: number,
+  font: PDFFont,
+  fontSize: number,
+  keepUnicode = false
+): string[] {
   if (!text) return [];
-  const safeText = toSafeText(text);
+  const safeText = toSafeText(text, keepUnicode);
   if (!safeText) return [];
   const words = safeText.split(/\s+/).filter(Boolean);
   const lines: string[] = [];
@@ -104,6 +117,13 @@ export async function generateRaportMerdekaPdfBuffer(data: RaportMerdekaPdfData)
   const bodyFont = fontUnicode ?? fontHelvetica;
   const bodyFontBold = fontUnicode ?? fontHelveticaBold;
   const bodyFontOblique = fontUnicode ?? fontHelveticaOblique;
+
+  // Per-document text sanitizer: the unicode font is embedded per document, so
+  // the "keep Arabic" flag also lives per document.
+  const hasUnicodeFont = !!fontUnicode;
+  const safeText = (text: string | null | undefined) => toSafeText(text, hasUnicodeFont);
+  const safeWrap = (text: string, maxWidth: number, font: PDFFont, fontSize: number) =>
+    wrapText(text, maxWidth, font, fontSize, hasUnicodeFont);
 
   // Helper for drawing header on each page
   const drawHeader = (page: PDFPage, title: string, subtitle: string) => {
@@ -153,13 +173,13 @@ export async function generateRaportMerdekaPdfBuffer(data: RaportMerdekaPdfData)
   const col2X = PAGE_WIDTH / 2 + 10;
   let infoY = y - 15;
 
-  page1.drawText(toSafeText(`Nama Peserta Didik : ${data.siswa.nama}`), { x: col1X, y: infoY, size: 9, font: bodyFontBold });
-  page1.drawText(toSafeText(`Kelas / Fase : ${data.siswa.kelas} / ${data.siswa.fase ?? 'D'}`), { x: col2X, y: infoY, size: 9, font: bodyFont });
+  page1.drawText(safeText(`Nama Peserta Didik : ${data.siswa.nama}`), { x: col1X, y: infoY, size: 9, font: bodyFontBold });
+  page1.drawText(safeText(`Kelas / Fase : ${data.siswa.kelas} / ${data.siswa.fase ?? 'D'}`), { x: col2X, y: infoY, size: 9, font: bodyFont });
   infoY -= 14;
-  page1.drawText(toSafeText(`NIS / NISN          : ${data.siswa.nis} / ${data.siswa.nisn ?? '-'}`), { x: col1X, y: infoY, size: 9, font: bodyFont });
-  page1.drawText(toSafeText(`Semester / TA: ${data.tahunAjaran.semesterLabel} / ${data.tahunAjaran.tahun}`), { x: col2X, y: infoY, size: 9, font: bodyFont });
+  page1.drawText(safeText(`NIS / NISN          : ${data.siswa.nis} / ${data.siswa.nisn ?? '-'}`), { x: col1X, y: infoY, size: 9, font: bodyFont });
+  page1.drawText(safeText(`Semester / TA: ${data.tahunAjaran.semesterLabel} / ${data.tahunAjaran.tahun}`), { x: col2X, y: infoY, size: 9, font: bodyFont });
   infoY -= 14;
-  page1.drawText(toSafeText(`Sekolah / Unit       : ${data.siswa.unit}`), { x: col1X, y: infoY, size: 9, font: bodyFont });
+  page1.drawText(safeText(`Sekolah / Unit       : ${data.siswa.unit}`), { x: col1X, y: infoY, size: 9, font: bodyFont });
 
   y -= 65;
 
@@ -198,7 +218,7 @@ export async function generateRaportMerdekaPdfBuffer(data: RaportMerdekaPdfData)
   let itemNo = 1;
 
   for (const item of allSubjects) {
-    const descLines = wrapText(item.deskripsi, colW.desc - 10, bodyFont, 7.5);
+    const descLines = safeWrap(item.deskripsi, colW.desc - 10, bodyFont, 7.5);
     const rowHeight = Math.max(20, descLines.length * 9 + 8);
 
     if (y - rowHeight < MARGIN + 80) {
@@ -240,13 +260,13 @@ export async function generateRaportMerdekaPdfBuffer(data: RaportMerdekaPdfData)
     });
 
     currentPage.drawText(String(itemNo++), { x: MARGIN + 8, y: y - 12, size: 8, font: bodyFont });
-    currentPage.drawText(toSafeText(item.subjectName.slice(0, 24)), { x: MARGIN + colW.no + 5, y: y - 12, size: 8, font: bodyFontBold });
+    currentPage.drawText(safeText(item.subjectName.slice(0, 24)), { x: MARGIN + colW.no + 5, y: y - 12, size: 8, font: bodyFontBold });
     currentPage.drawText(String(item.nilaiAkhir), { x: MARGIN + colW.no + colW.subject + 8, y: y - 12, size: 8, font: bodyFontBold });
-    currentPage.drawText(toSafeText(item.predikat), { x: MARGIN + colW.no + colW.subject + colW.score + 6, y: y - 12, size: 8, font: bodyFontBold });
+    currentPage.drawText(safeText(item.predikat), { x: MARGIN + colW.no + colW.subject + colW.score + 6, y: y - 12, size: 8, font: bodyFontBold });
 
     let descY = y - 10;
     for (const line of descLines) {
-      currentPage.drawText(toSafeText(line), {
+      currentPage.drawText(safeText(line), {
         x: MARGIN + colW.no + colW.subject + colW.score + colW.predicate + 5,
         y: descY,
         size: 7.5,
@@ -290,8 +310,8 @@ export async function generateRaportMerdekaPdfBuffer(data: RaportMerdekaPdfData)
     currentPage.drawText('- Belum ada data ekstrakurikuler -', { x: MARGIN + 5, y: eksY, size: 7.5, font: bodyFontOblique });
   } else {
     for (const e of eks) {
-      currentPage.drawText(toSafeText(e.nama), { x: MARGIN + 5, y: eksY, size: 8, font: bodyFont });
-      currentPage.drawText(toSafeText(e.predikat), { x: MARGIN + halfW - 40, y: eksY, size: 8, font: bodyFontBold });
+      currentPage.drawText(safeText(e.nama), { x: MARGIN + 5, y: eksY, size: 8, font: bodyFont });
+      currentPage.drawText(safeText(e.predikat), { x: MARGIN + halfW - 40, y: eksY, size: 8, font: bodyFontBold });
       eksY -= 12;
     }
   }
@@ -313,7 +333,7 @@ export async function generateRaportMerdekaPdfBuffer(data: RaportMerdekaPdfData)
   if (data.catatanWaliKelas) {
     currentPage.drawText('Catatan Wali Kelas:', { x: MARGIN, y, size: 8.5, font: bodyFontBold });
     y -= 12;
-    const catLines = wrapText(data.catatanWaliKelas, tableWidth - 10, bodyFontOblique, 8);
+    const catLines = safeWrap(data.catatanWaliKelas, tableWidth - 10, bodyFontOblique, 8);
     for (const l of catLines) {
       currentPage.drawText(l, { x: MARGIN + 5, y, size: 8, font: bodyFontOblique });
       y -= 10;
@@ -330,9 +350,9 @@ export async function generateRaportMerdekaPdfBuffer(data: RaportMerdekaPdfData)
   const rightSigX = PAGE_WIDTH - MARGIN - 140;
   currentPage.drawText(`Bogor, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, { x: rightSigX, y: sigY + 40, size: 8.5, font: bodyFont });
   currentPage.drawText('Wali Kelas', { x: rightSigX, y: sigY + 30, size: 8.5, font: bodyFont });
-  currentPage.drawText(toSafeText(data.waliKelas.nama), { x: rightSigX, y: sigY - 8, size: 8.5, font: bodyFontBold });
+  currentPage.drawText(safeText(data.waliKelas.nama), { x: rightSigX, y: sigY - 8, size: 8.5, font: bodyFontBold });
   if (data.waliKelas.nip) {
-    currentPage.drawText(toSafeText(`NIP. ${data.waliKelas.nip}`), { x: rightSigX, y: sigY - 18, size: 7.5, font: bodyFont });
+    currentPage.drawText(safeText(`NIP. ${data.waliKelas.nip}`), { x: rightSigX, y: sigY - 18, size: 7.5, font: bodyFont });
   }
 
   // ---------------- PAGE 2: PESANTREN (TAHFIDZ & P5) ----------------
@@ -343,7 +363,7 @@ export async function generateRaportMerdekaPdfBuffer(data: RaportMerdekaPdfData)
     `${data.siswa.unit} Cipansor`
   );
 
-  page2.drawText(toSafeText(`Nama Peserta Didik: ${data.siswa.nama} (${data.siswa.kelas})`), {
+  page2.drawText(safeText(`Nama Peserta Didik: ${data.siswa.nama} (${data.siswa.kelas})`), {
     x: MARGIN,
     y: y2,
     size: 9,
@@ -366,11 +386,11 @@ export async function generateRaportMerdekaPdfBuffer(data: RaportMerdekaPdfData)
 
   const thf = data.tahfidz ?? {};
   page2.drawRectangle({ x: MARGIN, y: y2 - 45, width: tableWidth, height: 45, borderColor: rgb(0.7, 0.7, 0.7), borderWidth: 0.5 });
-  page2.drawText(toSafeText(`Total Hafalan   : ${thf.totalJuz ?? 0} Juz`), { x: MARGIN + 10, y: y2 - 15, size: 8.5, font: bodyFontBold });
-  page2.drawText(toSafeText(`Surah Terakhir : ${thf.surahTerakhir ?? '-'}`), { x: MARGIN + 10, y: y2 - 32, size: 8.5, font: bodyFont });
-  page2.drawText(toSafeText(`Status Capaian : ${thf.statusCapaian ?? 'TERCAPAI'}`), { x: PAGE_WIDTH / 2 + 10, y: y2 - 15, size: 8.5, font: bodyFontBold, color: rgb(0, 0.4, 0.8) });
+  page2.drawText(safeText(`Total Hafalan   : ${thf.totalJuz ?? 0} Juz`), { x: MARGIN + 10, y: y2 - 15, size: 8.5, font: bodyFontBold });
+  page2.drawText(safeText(`Surah Terakhir : ${thf.surahTerakhir ?? '-'}`), { x: MARGIN + 10, y: y2 - 32, size: 8.5, font: bodyFont });
+  page2.drawText(safeText(`Status Capaian : ${thf.statusCapaian ?? 'TERCAPAI'}`), { x: PAGE_WIDTH / 2 + 10, y: y2 - 15, size: 8.5, font: bodyFontBold, color: rgb(0, 0.4, 0.8) });
   if (thf.catatan) {
-    page2.drawText(toSafeText(`Catatan: ${thf.catatan}`), { x: PAGE_WIDTH / 2 + 10, y: y2 - 32, size: 8, font: bodyFontOblique });
+    page2.drawText(safeText(`Catatan: ${thf.catatan}`), { x: PAGE_WIDTH / 2 + 10, y: y2 - 32, size: 8, font: bodyFontOblique });
   }
 
   y2 -= 60;
@@ -400,7 +420,7 @@ export async function generateRaportMerdekaPdfBuffer(data: RaportMerdekaPdfData)
     for (const p5 of p5List) {
       // Estimate the real content height from the actual wrapped description
       // lines plus the number of dimensions, instead of a flat 100pt guess.
-      const descLines = p5.deskripsiProyek ? wrapText(p5.deskripsiProyek, tableWidth, bodyFont, 7.5) : [];
+      const descLines = p5.deskripsiProyek ? safeWrap(p5.deskripsiProyek, tableWidth, bodyFont, 7.5) : [];
       const dimensionsCount = p5.dimensiTerkait?.length ?? 0;
       const estimatedHeight =
         12 + // Tema line
@@ -415,9 +435,9 @@ export async function generateRaportMerdekaPdfBuffer(data: RaportMerdekaPdfData)
         y2 = drawHeader(currentP5Page, 'Laporan Perkembangan Pesantren & P5 (Lanjutan)', `${data.siswa.unit} Cipansor`);
       }
 
-      currentP5Page.drawText(toSafeText(`Tema: ${p5.tema}`), { x: MARGIN, y: y2, size: 8.5, font: bodyFontBold });
+      currentP5Page.drawText(safeText(`Tema: ${p5.tema}`), { x: MARGIN, y: y2, size: 8.5, font: bodyFontBold });
       y2 -= 12;
-      currentP5Page.drawText(toSafeText(`Judul Projek: ${p5.judul}`), { x: MARGIN, y: y2, size: 8, font: bodyFontBold });
+      currentP5Page.drawText(safeText(`Judul Projek: ${p5.judul}`), { x: MARGIN, y: y2, size: 8, font: bodyFontBold });
       y2 -= 14;
 
       for (const dl of descLines) {
@@ -425,7 +445,7 @@ export async function generateRaportMerdekaPdfBuffer(data: RaportMerdekaPdfData)
           currentP5Page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
           y2 = drawHeader(currentP5Page, 'Laporan Perkembangan Pesantren & P5 (Lanjutan)', `${data.siswa.unit} Cipansor`);
         }
-        currentP5Page.drawText(toSafeText(dl), { x: MARGIN, y: y2, size: 7.5, font: bodyFont });
+        currentP5Page.drawText(safeText(dl), { x: MARGIN, y: y2, size: 7.5, font: bodyFont });
         y2 -= 9;
       }
 
@@ -436,7 +456,7 @@ export async function generateRaportMerdekaPdfBuffer(data: RaportMerdekaPdfData)
             currentP5Page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
             y2 = drawHeader(currentP5Page, 'Laporan Perkembangan Pesantren & P5 (Lanjutan)', `${data.siswa.unit} Cipansor`);
           }
-          currentP5Page.drawText(toSafeText(`• ${dim.dimensiName} : ${dim.capaian ?? 'Berkembang Sesuai Harapan'}`), { x: MARGIN + 10, y: y2, size: 7.5, font: bodyFontBold });
+          currentP5Page.drawText(safeText(`• ${dim.dimensiName} : ${dim.capaian ?? 'Berkembang Sesuai Harapan'}`), { x: MARGIN + 10, y: y2, size: 7.5, font: bodyFontBold });
           y2 -= 10;
         }
       }
@@ -450,16 +470,16 @@ export async function generateRaportMerdekaPdfBuffer(data: RaportMerdekaPdfData)
   const pimpinanJabatan = data.pimpinanUnit?.jabatan || 'Kepala Pesantren';
 
   currentP5Page.drawText('Mengetahui,', { x: MARGIN + 20, y: sigY2 + 40, size: 8.5, font: bodyFont });
-  currentP5Page.drawText(toSafeText(pimpinanJabatan), { x: MARGIN + 20, y: sigY2 + 30, size: 8.5, font: bodyFont });
+  currentP5Page.drawText(safeText(pimpinanJabatan), { x: MARGIN + 20, y: sigY2 + 30, size: 8.5, font: bodyFont });
   if (pimpinanNama) {
-    currentP5Page.drawText(toSafeText(pimpinanNama), { x: MARGIN + 20, y: sigY2 - 8, size: 8.5, font: bodyFontBold });
+    currentP5Page.drawText(safeText(pimpinanNama), { x: MARGIN + 20, y: sigY2 - 8, size: 8.5, font: bodyFontBold });
   } else {
     currentP5Page.drawLine({ start: { x: MARGIN + 10, y: sigY2 - 10 }, end: { x: MARGIN + 140, y: sigY2 - 10 }, thickness: 0.5 });
   }
 
   currentP5Page.drawText(`Bogor, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, { x: rightSigX, y: sigY2 + 40, size: 8.5, font: bodyFont });
   currentP5Page.drawText('Musyrif / Wali Kelas', { x: rightSigX, y: sigY2 + 30, size: 8.5, font: bodyFont });
-  currentP5Page.drawText(toSafeText(data.waliKelas.nama), { x: rightSigX, y: sigY2 - 8, size: 8.5, font: bodyFontBold });
+  currentP5Page.drawText(safeText(data.waliKelas.nama), { x: rightSigX, y: sigY2 - 8, size: 8.5, font: bodyFontBold });
 
   // Add dynamic page numbers across all pages in document
   const totalPages = pdfDoc.getPageCount();

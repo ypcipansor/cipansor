@@ -109,6 +109,30 @@ const NILAI_TO_CAPAIAN: Record<
   },
 };
 
+/**
+ * Semester date range for an academic year.
+ *
+ * The Indonesian school year runs July–June. Semester 1 (Ganjil) spans the
+ * school-year start through Dec 31 of that calendar year; Semester 2 (Genap)
+ * spans Jan 1 of the following calendar year through the school-year end.
+ *
+ * Both grade classification and attendance must use the SAME boundary so a
+ * grade in early January is not counted in one semester while the attendance
+ * for those same days is counted in the other.
+ */
+function getSemesterDateRange(
+  academicYear: { startDate: Date | string; endDate: Date | string },
+  semester: number
+): { startDate: Date; endDate: Date } {
+  const startDate = new Date(academicYear.startDate);
+  const endDate = new Date(academicYear.endDate);
+  const sem1End = new Date(startDate.getFullYear(), 11, 31);
+  const sem2Start = new Date(startDate.getFullYear() + 1, 0, 1);
+  return semester === 1
+    ? { startDate, endDate: sem1End }
+    : { startDate: sem2Start, endDate };
+}
+
 export class RaportMerdekaService {
   /**
    * Get all P5 dimensions
@@ -289,19 +313,18 @@ export class RaportMerdekaService {
       },
     });
 
-    // Calculate academic year midpoint to bound Semester 1 and Semester 2.
-    // Note: `Grade` has NO `semester` column (verified against the Prisma
-    // schema), so a grade cannot be attributed to a semester directly. Instead
-    // we classify each grade by the assessment's OWN date — `exam.scheduledAt`
-    // when the grade came from an exam, otherwise `gradedAt` — so a Semester 1
-    // result entered late (e.g. graded in January) is still counted in Semester
-    // 1 rather than bleeding into Semester 2 based purely on when it was typed.
-    const ayStartDate = new Date(enrollment.class.academicYear.startDate);
-    const ayEndDate = new Date(enrollment.class.academicYear.endDate);
-    const ayMidpoint = new Date((ayStartDate.getTime() + ayEndDate.getTime()) / 2);
-
-    const semStartDate = semester === 1 ? ayStartDate : ayMidpoint;
-    const semEndDate = semester === 1 ? ayMidpoint : ayEndDate;
+    // Bound Semester 1 and Semester 2 with the SAME boundary used by the
+    // attendance summary. Note: `Grade` has NO `semester` column (verified
+    // against the Prisma schema), so a grade cannot be attributed to a
+    // semester directly. Instead we classify each grade by the assessment's
+    // own date — `exam.scheduledAt` when the grade came from an exam,
+    // otherwise `gradedAt` — using the shared semester date range so grades
+    // and attendance never disagree about which side of the boundary a date
+    // falls on.
+    const { startDate: semStartDate, endDate: semEndDate } = getSemesterDateRange(
+      enrollment.class.academicYear,
+      semester
+    );
 
     // Fetch all grades for the year, then classify in memory using the
     // assessment's own date. Keeps the window check away from `gradedAt` for
@@ -603,15 +626,10 @@ export class RaportMerdekaService {
       };
     }
 
-    // Define semester date range
-    const startDate =
-      semester === 1
-        ? academicYear.startDate
-        : new Date(academicYear.startDate.getFullYear() + 1, 0, 1);
-    const endDate =
-      semester === 1
-        ? new Date(academicYear.startDate.getFullYear(), 11, 31)
-        : academicYear.endDate;
+    // Define semester date range using the same boundary as grade
+    // classification, so a date in early January is in the same semester for
+    // both values and attendance.
+    const { startDate, endDate } = getSemesterDateRange(academicYear, semester);
 
     const attendance = await prisma.attendance.groupBy({
       by: ['status'],

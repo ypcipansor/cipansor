@@ -60,8 +60,16 @@ export const updateStudentSchema = z.object({
   classId: z.string().uuid().optional().nullable(),
 });
 
+// ==================== BULK REGENERATE ID CARDS ====================
+
+export const bulkRegenerateCardsSchema = z.object({
+  unitId: z.string().uuid("unitId harus berupa UUID").optional(),
+  classId: z.string().uuid("classId harus berupa UUID").optional(),
+});
+
 // ==================== TYPES ====================
 
 export type ListStudentsQuery = z.infer<typeof listStudentsQuerySchema>;
 export type CreateStudentInput = z.infer<typeof createStudentSchema>;
 export type UpdateStudentInput = z.infer<typeof updateStudentSchema>;
+export type BulkRegenerateCardsInput = z.infer<typeof bulkRegenerateCardsSchema>;

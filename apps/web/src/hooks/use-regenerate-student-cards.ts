@@ -1,22 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import api, { ApiResponse } from "@/lib/api";
 import { toast } from "sonner";
-
-interface RegenerateCardsResult {
-  totalRegenerated: number;
-  regeneratedAt: string;
-  cards: Array<{
-    cardData: {
-      student: { name: string; nis: string };
-      qrCode: { data: string };
-    };
-  }>;
-}
-
-interface RegenerateCardsInput {
-  unitId?: string;
-  classId?: string;
-}
+import type { RegenerateCardsInput, RegenerateCardsResult } from "@cipansor/shared";
 
 /**
  * Regenerate every active student ID card in the current unit/class filter.
