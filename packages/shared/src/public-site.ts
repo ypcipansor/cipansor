@@ -68,6 +68,13 @@ export const siteConfig = {
   },
 } as const;
 
+export const PUBLIC_VERIFY_URL_PATH = "/public/verify-letter";
+
+export function getPublicVerifyUrl(baseUrl?: string): string {
+  const root = baseUrl || siteConfig.url;
+  return `${root.replace(/\/$/, "")}${PUBLIC_VERIFY_URL_PATH}`;
+}
+
 export const addressLines = [
   siteConfig.contact.address.street,
   siteConfig.contact.address.village,

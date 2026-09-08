@@ -1,4 +1,4 @@
-import { LetterStatus } from '@prisma/client';
+import { LetterDirection, LetterStatus } from '@prisma/client';
 
 /**
  * The rules that decide whether a letter may move, kept apart from the code
@@ -147,6 +147,60 @@ export function statusAfterResubmit(reviewers: readonly ReviewerRung[]): LetterS
   const turn = nextRung(fresh);
   if (!turn) return LetterStatus.READY_TO_SIGN;
   return turn.isSigner ? LetterStatus.READY_TO_SIGN : LetterStatus.PENDING_REVIEW;
+}
+
+/**
+ * May this letter be recorded as dispatched?
+ *
+ * Dispatch is the step the flow never had. An outgoing letter ran
+ * DRAFT → PENDING_REVIEW → READY_TO_SIGN → SIGNED → ARCHIVED, so the moment it
+ * actually left the office — the one moment a buku agenda surat keluar exists
+ * to record — was written nowhere. Meanwhile SENT was being applied to
+ * *incoming* letters whose review finished, which is the same word meaning the
+ * opposite thing, and every "surat terkirim" figure counted them.
+ *
+ * Three refusals, each for a different reason:
+ *
+ * - An incoming letter is received, never sent. Recording a dispatch on one is
+ *   how the previous inversion happened.
+ * - A letter that is not yet signed has nothing to hand over. A courier
+ *   carrying an unsigned naskah out of the building is precisely the mistake
+ *   the ladder exists to prevent, and the system should not be the thing that
+ *   records it as done.
+ * - A withdrawn naskah must not be dispatched *again*. It may already have
+ *   circulated — that is history, and the stamped copy explains itself — but
+ *   sending a fresh copy of a letter the yayasan has retracted is a new act,
+ *   and this one refuses it.
+ *
+ * Re-dispatch from SENT is allowed on purpose: the same letter goes to several
+ * addressees, and a first delivery that never arrived is re-sent. The buku
+ * ekspedisi keeps every attempt; `Letter.sentAt` keeps the first.
+ */
+export function assertMayDispatch(
+  direction: LetterDirection,
+  letterStatus: LetterStatus,
+  signatureRevoked: boolean
+): void {
+  if (direction !== LetterDirection.OUTGOING) {
+    throw new WorkflowError(
+      'Hanya surat keluar yang dicatat pengirimannya. Surat masuk diterima, bukan dikirim.'
+    );
+  }
+  if (signatureRevoked) {
+    throw new WorkflowError(
+      'Naskah ini sudah dicabut dan tidak boleh dikirimkan lagi.'
+    );
+  }
+  if (letterStatus === LetterStatus.ARCHIVED) {
+    throw new WorkflowError(
+      'Surat ini sudah diarsipkan; pengirimannya tidak dapat dicatat lagi.'
+    );
+  }
+  if (letterStatus !== LetterStatus.SIGNED && letterStatus !== LetterStatus.SENT) {
+    throw new WorkflowError(
+      `Surat berstatus ${letterStatus} belum ditandatangani, sehingga belum dapat dikirim.`
+    );
+  }
 }
 
 /** Terminal states — an archived letter is done, and stays done. */

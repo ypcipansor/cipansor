@@ -493,10 +493,17 @@ model User {
   letterFlowTargeted   LetterFlowEvent[] @relation("LetterFlowTarget")
   signingKey           UserSigningKey?
   approvedSigningKeys  UserSigningKey[]  @relation("SigningKeyApprover")
+  revokedSigningKeys   UserSigningKey[]  @relation("SigningKeyRevoker")
   signingKeyRequests   SigningKeyRequest[] @relation("SigningKeyRequester")
   signingKeyDecisions  SigningKeyRequest[] @relation("SigningKeyDecider")
+  identity             UserIdentity?       @relation("IdentitySubject")
+  verifiedIdentities   UserIdentity[]      @relation("IdentityVerifier")
   letterSignatures     LetterSignature[] @relation("LetterSigner")
   revokedSignatures    LetterSignature[] @relation("LetterSignatureRevoker")
+  revocationRequests   LetterRevocationRequest[] @relation("LetterRevocationRequester")
+  revocationDecisions  LetterRevocationRequest[] @relation("LetterRevocationDecider")
+  letterDispatches     LetterDispatch[]  @relation("LetterDispatcher")
+  letterAttachments    LetterAttachment[] @relation("LetterAttachmentUploader")
 
   // Risk Management
   createdRisks        Risk[]             @relation("RiskCreator")
@@ -5400,7 +5407,7 @@ model CanteenCategory {
   businessUnit BusinessUnit? @relation(fields: [businessUnitId], references: [id])
   items        CanteenItem[]
 
-  @@unique([unitId, businessUnitId, name]) // DB enforces NULLS NOT DISTINCT (see migration 2df27db); arg unsupported in Prisma 7 schema syntax
+  @@unique([unitId, businessUnitId, name]) // TIDAK unik saat businessUnitId NULL: Postgres menganggap NULL berbeda, jadi dua baris NULL bernama sama diterima (dibuktikan di prod 2026-09-05). Klaim NULLS NOT DISTINCT sebelumnya keliru.
   @@index([businessUnitId])
   @@index([unitId])
   @@map("canteen_categories")
@@ -5433,7 +5440,7 @@ model CanteenItem {
   transactionItems CanteenTransactionItem[]
   stockMovements   CanteenStockMovement[]
 
-  @@unique([unitId, businessUnitId, code]) // DB enforces NULLS NOT DISTINCT (see migration 2df27db); arg unsupported in Prisma 7 schema syntax
+  @@unique([unitId, businessUnitId, code]) // TIDAK unik saat businessUnitId NULL: Postgres menganggap NULL berbeda, jadi dua baris NULL bernama sama diterima (dibuktikan di prod 2026-09-05). Klaim NULLS NOT DISTINCT sebelumnya keliru.
   @@index([unitId])
   @@index([businessUnitId])
   @@index([categoryId])
@@ -5545,7 +5552,7 @@ model LaundryPricing {
   businessUnit BusinessUnit?        @relation(fields: [businessUnitId], references: [id])
   transactions LaundryTransaction[]
 
-  @@unique([unitId, businessUnitId, name]) // DB enforces NULLS NOT DISTINCT (see migration 2df27db); arg unsupported in Prisma 7 schema syntax
+  @@unique([unitId, businessUnitId, name]) // TIDAK unik saat businessUnitId NULL: Postgres menganggap NULL berbeda, jadi dua baris NULL bernama sama diterima (dibuktikan di prod 2026-09-05). Klaim NULLS NOT DISTINCT sebelumnya keliru.
   @@index([businessUnitId])
   @@index([unitId])
   @@map("laundry_pricings")
@@ -6210,6 +6217,204 @@ model ChatbotPersona {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("chatbot_personas")
+}
+
+/// ChatbotUsageDaily — berapa banyak yang benar-benar dibelanjakan asisten
+/// publik, dijumlahkan per hari per model.
+///
+/// Endpoint `/api/chatbot/public/ask` terbuka untuk siapa pun di internet dan
+/// membelanjakan uang pada setiap panggilan. Pembatas 10/menit per IP dan
+/// Turnstile membatasi *laju*-nya; tidak ada satu pun dari keduanya yang
+/// memberi tahu bahwa tagihannya sedang menanjak. Tabel inilah yang menjawab
+/// itu, dan `chatbot-spend.job.ts` yang membacanya.
+///
+/// **Agregat harian, bukan satu baris per pertanyaan.** Satu baris per
+/// panggilan akan menumbuhkan tabel tanpa batas dan menyimpan jejak
+/// pertanyaan-demi-pertanyaan milik pengunjung anonim — data yang tidak kami
+/// perlukan untuk menjawab "berapa biayanya bulan ini". Bentuk ini terbatas
+/// dengan sendirinya: satu baris per hari per model.
+///
+/// Jawaban yang dilayani dari cache **tidak** dicatat di sini. Yang dihitung
+/// tabel ini adalah panggilan yang benar-benar sampai ke penyedia, karena
+/// hanya itu yang ditagih.
+model ChatbotUsageDaily {
+  id String @id @default(uuid())
+
+  /// Tanggal WIB pemakaiannya, bukan UTC — tagihan dibaca orang yang hidup di
+  /// Asia/Jakarta, dan pekerjaan penjadwalnya juga berjalan di zona itu.
+  date  DateTime @db.Date
+  /// Model yang menjawab, seperti yang dikembalikan penyedia. Menjadi bagian
+  /// kunci karena harganya melekat pada model, bukan pada layanannya.
+  model String
+
+  /// Panggilan yang sampai ke penyedia dan berhasil.
+  requests         Int @default(0)
+  promptTokens     Int @default(0) @map("prompt_tokens")
+  completionTokens Int @default(0) @map("completion_tokens")
+
+  /// Bagian dari `promptTokens` yang dilayani dari cache milik PENYEDIA, yang
+  /// ditagih jauh lebih murah (Azure: 0,028 lawan 0,19 USD per 1 juta).
+  ///
+  /// DIKOREKSI 2026-09-04: kolom ini semula didokumentasikan akan selalu nol,
+  /// karena satu jawaban yang diperiksa tidak memuat
+  /// `prompt_tokens_details.cached_tokens`. Kesimpulan itu terlalu luas dari
+  /// satu pengamatan — jawaban itu kebetulan tidak kena cache. Produksi hari
+  /// yang sama mencatat 2.304 dari 8.589 token masukan berasal dari cache,
+  /// jadi tarif cache memang terpakai dan medannya memang dilaporkan, hanya
+  /// tidak pada setiap jawaban.
+  ///
+  /// Nol tetap mungkin dan tetap bermakna: ia berarti "tidak ada yang kena
+  /// cache bulan ini", dan `estimateCost` membacanya sebagai tanda bahwa
+  /// taksirannya condong ke atas — bukan sebagai kepastian bahwa penyedianya
+  /// bisu.
+  cachedPromptTokens Int @default(0) @map("cached_prompt_tokens")
+
+  /// Panggilan berhasil yang jawabannya tidak menyertakan blok `usage`.
+  ///
+  /// Ada gerbang yang menghilangkannya. Tanpa kolom ini, panggilan seperti itu
+  /// akan tampak gratis dan taksiran biayanya menjadi bohong yang meyakinkan;
+  /// dengan kolom ini, taksirannya dapat dinyatakan apa adanya — sebagai batas
+  /// bawah, bukan angka pasti.
+  unmeteredRequests Int @default(0) @map("unmetered_requests")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([date, model])
+  @@index([date])
+  @@map("chatbot_usage_daily")
+}
+
+/// ChatbotConversation - satu sesi tanya-jawab dengan asisten publik.
+///
+/// Sampai sekarang isi percakapannya sengaja TIDAK disimpan: pengunjung
+/// mengetikkan hal pribadi ke kotak obrolan ("anak saya bernama…"), dan log
+/// adalah tempat yang salah untuk itu berakhir. Menyimpannya kini menjadi
+/// keputusan sadar dengan tiga pagar yang membuatnya bertanggung jawab:
+/// hanya Super Admin yang bisa membacanya, isinya dihapus otomatis setelah 90
+/// hari, dan tidak ada IP maupun sidik jari peramban yang ikut disimpan —
+/// cukup untuk memperbaiki jawaban yang keliru, tidak cukup untuk melacak
+/// orang.
+model ChatbotConversation {
+  id String @id @default(uuid())
+
+  /// Pengenal yang dibuat peramban, satu per jendela obrolan yang dibuka.
+  /// Unik supaya giliran kedua dan seterusnya menempel pada percakapan yang
+  /// sama alih-alih membuat baris baru.
+  clientId String @unique @map("client_id")
+
+  startedAt     DateTime @default(now()) @map("started_at")
+  lastMessageAt DateTime @default(now()) @map("last_message_at")
+
+  /// Dihitung saat menulis, bukan saat membaca: daftar percakapan mengurutkan
+  /// dan menyaring dengan angka ini, dan menghitung ulang relasi untuk setiap
+  /// baris di halaman daftar adalah kueri N+1 yang menunggu terjadi.
+  messageCount Int @default(0) @map("message_count")
+
+  messages ChatbotMessage[]
+
+  @@index([lastMessageAt])
+  @@map("chatbot_conversations")
+}
+
+/// ChatbotMessage - satu giliran, entah dari pengunjung atau dari asisten.
+/// Nasib satu penerusan pertanyaan ke halo@cipansor.or.id.
+///
+/// Suratnya TIDAK dikirim di dalam permintaan HTTP penanya. Barisnya ditulis
+/// lebih dulu dan jawabannya dikembalikan seketika; pengirimannya dicoba
+/// sesudah itu, dan diulang oleh penjadwal bila gagal. Inilah antrian tahan
+/// lama yang memang tepat di sini — berbeda dari obrolannya sendiri, penanya
+/// tidak sedang menunggui surat itu terkirim.
+enum ChatbotEscalationStatus {
+  /// Menunggu percobaan pertama, atau menunggu percobaan ulang.
+  PENDING
+  SENT
+  /// Sudah menyerah setelah batas percobaan. Ditinjau manusia, bukan dibuang.
+  FAILED
+}
+
+/// Pertanyaan yang tidak bisa dijawab asisten, diteruskan ke tim atas
+/// persetujuan penanyanya.
+///
+/// Isinya DATA PRIBADI yang diberikan sukarela: nama, telepon, WhatsApp,
+/// surel. Karena itu tiga pagar yang sama seperti riwayat percakapan berlaku —
+/// hanya SUPER_ADMIN yang boleh membacanya lewat API, ia terhapus otomatis
+/// setelah 90 hari, dan tidak ada IP maupun sidik jari peramban yang ikut
+/// disimpan. Persetujuannya sendiri dicatat dengan stempel waktu, karena
+/// "pernah setuju" tanpa kapan bukan catatan persetujuan.
+model ChatbotEscalation {
+  id String @id @default(uuid())
+
+  /// Percakapan asalnya, bila widget-nya mengirimkannya. Sengaja BUKAN relasi:
+  /// percakapan terhapus setelah 90 hari lewat jalurnya sendiri, dan penerusan
+  /// yang belum terkirim tidak boleh ikut terhapus bersamanya.
+  conversationId String? @map("conversation_id")
+
+  name     String
+  email    String
+  /// Keduanya opsional: memaksa dua nomor pada orang yang hanya punya satu
+  /// membuat ia mengarang salah satunya, dan nomor karangan lebih buruk
+  /// daripada kolom kosong.
+  phone    String?
+  whatsapp String?
+
+  /// Pertanyaan yang hendak diteruskan, sebagaimana diketik penanyanya.
+  question String
+
+  /// Kapan penanya menyatakan berkenan diteruskan. Wajib, dan disimpan sebagai
+  /// waktu — bukan boolean — karena UU PDP menuntut bukti kapan persetujuan
+  /// diberikan, bukan sekadar bahwa ia ada.
+  consentAt DateTime @map("consent_at")
+
+  status   ChatbotEscalationStatus @default(PENDING)
+  /// Berapa kali pengiriman sudah dicoba. Membatasi pengulangan, dan menjadi
+  /// petunjuk pertama ketika satu baris tersangkut.
+  attempts Int                     @default(0)
+  /// Alasan kegagalan terakhir, untuk dibaca manusia. Tanpa ini, sebuah baris
+  /// FAILED tidak memberi tahu apa pun tentang cara memperbaikinya.
+  lastError String?                 @map("last_error")
+  sentAt    DateTime?               @map("sent_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  /// Penjadwal memindai baris yang belum terkirim menurut umurnya.
+  @@index([status, createdAt])
+  @@index([createdAt])
+  @@map("chatbot_escalations")
+}
+
+model ChatbotMessage {
+  id             String              @id @default(uuid())
+  conversationId String              @map("conversation_id")
+  conversation   ChatbotConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  /// "user" atau "assistant". Peran "system" tidak pernah muncul di sini:
+  /// scaffold keamanan tinggal di kode dan tidak pernah datang dari peramban.
+  role    String
+  content String @db.Text
+
+  /// Sumber yang dikutip asisten, apa adanya seperti yang dikirim ke widget.
+  /// Disimpan supaya pertanyaan "dari mana angka itu?" masih bisa dijawab
+  /// berbulan-bulan kemudian, ketika korpusnya sudah berubah.
+  sources Json?
+
+  /// Benar bila jawabannya adalah penolakan yang ditulis tangan — pertanyaan
+  /// yang tidak menarik satu potongan pun. Inilah yang dibaca untuk menemukan
+  /// lubang di basis pengetahuan.
+  refused Boolean @default(false)
+
+  /// Benar bila jawabannya dilayani dari cache dan tidak menelan biaya.
+  fromCache Boolean @default(false) @map("from_cache")
+
+  /// Model yang menjawab, bila ada. Kosong untuk giliran pengunjung.
+  model String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([conversationId, createdAt])
+  @@index([createdAt])
+  @@map("chatbot_messages")
 }
 
 /// RaporPesantren - Rapor Pesantren Terintegrasi
@@ -7025,6 +7230,34 @@ enum LetterNature {
   STRICTLY_CONFIDENTIAL // Sangat Rahasia
 }
 
+/// Dari mana byte naskah yang ditandatangani itu berasal.
+///
+/// Bukan rincian teknis. Kedua jalur menghasilkan jaminan yang **berbeda**, dan
+/// halaman verifikasi publik yang mengaburkan bedanya lebih buruk daripada yang
+/// mengakuinya:
+///
+/// - `GENERATED` — sistem yang menyusun naskahnya dari isian formulir. Metadata
+///   di buku agenda dan isi dokumennya berasal dari satu sumber, jadi keduanya
+///   tidak mungkin berselisih.
+/// - `UPLOADED` — penyusun menulisnya di pengolah kata, mengekspor PDF, lalu
+///   mengunggahnya. Byte-nya tetap di-hash, ditandatangani, dan diarsipkan
+///   dengan cara yang persis sama — yang tidak dapat dijamin siapa pun adalah
+///   bahwa *Perihal* di buku agenda sama dengan yang tertulis di dalam PDF-nya.
+///   Tidak ada pemeriksaan yang dapat menemukan itu; yang ada hanyalah bahwa
+///   seluruh pemeriksa dalam tangga persetujuan dan penanda tangan melihat PDF
+///   yang sesungguhnya sebelum bertindak.
+///
+/// Seluruh baris hari ini bernilai `GENERATED`, dan itu pernyataan yang benar
+/// dan dapat ditunjukkan, bukan asumsi: satu-satunya sumber byte yang
+/// ditandatangani adalah `generateLetterPdfBuffer` di `esign.service.ts`.
+/// `Letter.fileUrl` — berkas yang diunggah lewat "Upload File Naskah" —
+/// **tidak** pernah menjadi byte yang ditandatangani, dan kolom ini ada
+/// sebagian justru untuk membuat kenyataan itu terbaca alih-alih tersembunyi.
+enum LetterAuthoringTrack {
+  GENERATED
+  UPLOADED
+}
+
 enum LetterStatus {
   DRAFT // Konsep
   PENDING_REVIEW // Menunggu Paraf/Review
@@ -7047,6 +7280,7 @@ enum LetterFlowAction {
   DISPOSED // Didisposisikan ke pejabat berikutnya
   DISPOSITION_UPDATED // Penerima disposisi memperbarui/menyelesaikan tindak lanjut
   SENT // Surat keluar dikirim
+  SIGNATURE_REVOKED // Tanda tangan elektronik dicabut — surat tidak lagi berlaku
   ARCHIVED // Surat diarsipkan — akhir alur
 }
 
@@ -7125,15 +7359,49 @@ model UserSigningKey {
   approvedAt          DateTime? @map("approved_at")
   expiresAt           DateTime? @map("expires_at")
 
+  /// Pencabutan dicatat lengkap dengan pelakunya. Mencabut wewenang
+  /// menandatangani adalah tindakan yang harus dapat dipertanggungjawabkan
+  /// kepada orang tertentu, bukan kepada "sistem".
   revokedAt           DateTime? @map("revoked_at")
   revokedReason       String?   @map("revoked_reason") @db.Text
+  /// Sebab pencabutan menurut RFC 5280 §5.3.1.
+  ///
+  /// Bukan hiasan: hanya KEY_COMPROMISE yang membuat surat-surat yang telanjur
+  /// ditandatangani menjadi meragukan. Untuk pejabat yang berhenti atau kunci
+  /// yang diterbitkan ulang, surat-surat itu tetap sah dan memang harus tetap
+  /// sah. Tanpa kode ini, keduanya tampak sama di mata petugas yang mencabut.
+  revocationCode      SigningKeyRevocationCode? @map("revocation_code")
+  revokedById         String?   @map("revoked_by_id")
   createdAt           DateTime  @default(now()) @map("created_at")
   updatedAt           DateTime  @updatedAt @map("updated_at")
 
   user       User  @relation(fields: [userId], references: [id], onDelete: Cascade)
   approvedBy User? @relation("SigningKeyApprover", fields: [approvedById], references: [id])
+  revokedBy  User? @relation("SigningKeyRevoker", fields: [revokedById], references: [id])
 
   @@map("user_signing_keys")
+}
+
+/// Sebab pencabutan kunci, mengikuti RFC 5280 §5.3.1.
+///
+/// Adobe AATL (ICA6.a) menuntut kemampuan mencabut "segera setelah kehilangan,
+/// pengungkapan, atau kompromi lain atas kunci privat pelanggan, ketika ada
+/// masalah keamanan atau integritas, atau ketika keterangan yang disertifikasi
+/// berubah" — tiga keadaan yang berbeda akibatnya, dan itulah yang dibedakan
+/// kode-kode ini.
+enum SigningKeyRevocationCode {
+  /// Passphrase atau kunci privatnya diduga bocor. SATU-SATUNYA sebab yang
+  /// membuat surat-surat yang telanjur ditandatangani menjadi meragukan.
+  KEY_COMPROMISE
+  /// Pemegangnya berhenti menjabat atau wewenang menandatanganinya dicabut.
+  /// Surat-surat yang lalu tetap sah — memang begitu yang dikehendaki.
+  AFFILIATION_CHANGED
+  /// Diterbitkan ulang; kunci ini digantikan yang baru.
+  SUPERSEDED
+  /// Tidak lagi dipakai, tanpa dugaan kebocoran.
+  CESSATION_OF_OPERATION
+  /// Kekeliruan penerbitan — kunci ini semestinya tidak pernah terbit.
+  PRIVILEGE_WITHDRAWN
 }
 
 /// SigningKeyRequest - Pengajuan Penerbitan / Perpanjangan Kunci Tanda Tangan
@@ -7143,6 +7411,107 @@ model UserSigningKey {
 /// ini menyimpan pengajuan beserta putusannya, dan tidak pernah dihapus —
 /// riwayat siapa memberi wewenang menandatangani, kapan, dan untuk berapa
 /// lama, adalah bagian dari pertanggungjawaban.
+/// UserIdentity - Identitas yang menjadi dasar sebuah kunci tanda tangan
+///
+/// Sebuah tanda tangan elektronik mengikat kepada **orang**, dan ia hanya
+/// mengikat sejauh penerbitnya tahu siapa orang itu. Sebelum tabel ini, kunci
+/// diterbitkan kepada sebuah baris `User` yang identitasnya hanya nama dan
+/// surel — sehingga tanda tangan membuktikan "seseorang yang tahu passphrase
+/// kunci yang kami terbitkan untuk user-id X", dan tidak ada apa pun di sistem
+/// yang menyatakan siapa X di dunia nyata.
+///
+/// Ruas-ruasnya mengikuti apa yang dikumpulkan penerbit sertifikat sungguhan:
+/// nama sesuai kartu identitas, NIK, tempat dan tanggal lahir. Dalam sertifikat
+/// X.509, NIK inilah yang menjadi `serialNumber` subjeknya dengan bentuk
+/// `IDCID-<NIK>` menurut ETSI EN 319 412-2 — jadi menyimpannya sekarang bukan
+/// persiapan spekulatif, melainkan ruas yang sama yang akan dipakai bila
+/// yayasan kelak memakai PSrE.
+///
+/// Melekat pada pengguna, bukan pada kunci: identitas seseorang bertahan
+/// melewati setiap penerbitan ulang dan perpanjangan kuncinya.
+model UserIdentity {
+  id     String @id @default(uuid())
+  userId String @unique @map("user_id")
+
+  /// Nama sebagaimana tertulis pada kartu identitas — bukan nama panggilan,
+  /// dan bukan nama pada akun, yang boleh saja disingkat.
+  legalName String @map("legal_name")
+  /// NIK, 16 digit.
+  ///
+  /// Unik: satu nomor induk kependudukan tidak boleh menjadi dasar dua akun
+  /// penandatangan. Tanpa itu, seseorang yang punya dua akun dapat memegang
+  /// dua kunci yang sama-sama mengaku dirinya, dan pencabutan salah satunya
+  /// tidak menghentikan yang lain.
+  nik        String    @unique
+  birthPlace String    @map("birth_place")
+  birthDate  DateTime  @map("birth_date") @db.Date
+
+  /// Kapan seorang Super Admin menyatakan identitas ini benar.
+  ///
+  /// Kosong berarti belum diverifikasi, dan kunci tidak boleh terbit. Setiap
+  /// perubahan pada keempat ruas di atas mengosongkannya kembali: verifikasi
+  /// menyatakan data *yang itu* sudah dicocokkan, bukan bahwa orangnya pernah
+  /// diperiksa sekali seumur hidup.
+  verifiedAt   DateTime? @map("verified_at")
+  verifiedById String?   @map("verified_by_id")
+  /// Catatan penyetuju saat mencocokkan — inilah artefak yang lestari.
+  ///
+  /// Bukan gambarnya. Pindaian KTP adalah data pribadi bersifat spesifik yang
+  /// harus dijaga selama ia disimpan; catatan bahwa seorang pejabat tertentu
+  /// telah mencocokkannya pada tanggal tertentu, terhadap berkas ber-hash
+  /// tertentu, menjawab pertanyaan yang sama — berukuran beberapa baris, dan
+  /// tidak menjadi sasaran bila basis data ini bocor.
+  verificationNote   String?                     @map("verification_note") @db.Text
+
+  /// Berkas foto KTP, selama masa hidupnya yang pendek.
+  ///
+  /// Disimpan **di luar** `public/uploads`. Direktori itu disajikan di balik
+  /// `uploadsAuth`, yang menurut komentarnya sendiri adalah autentikasi dan
+  /// bukan otorisasi: setiap token yang sah membuka setiap berkas di sana. Foto
+  /// KTP karena itu tidak boleh melewatinya — ia hanya boleh terbaca oleh Super
+  /// Admin yang sedang memutuskan, lewat endpoint yang memeriksanya dan
+  /// mencatat setiap pembacaan.
+  ///
+  /// **Ditolak → dihapus seketika. Disetujui → disimpan sampai `ktpRetainUntil`.**
+  ///
+  /// Pengajuan yang ditolak tidak menerbitkan kunci, sehingga berkasnya tidak
+  /// membuktikan apa pun lagi, dan data pribadi yang disimpan tanpa keperluan
+  /// hanyalah kewajiban tanpa manfaat.
+  ///
+  /// Pengajuan yang disetujui lain persoalannya. Menghapusnya saat itu juga
+  /// membuat pertanyaan "tunjukkan kartu yang Anda periksa" tidak dapat
+  /// dijawab — dan justru pertanyaan itulah yang membuat bukti registrasi
+  /// disimpan dalam praktik yang baku: eIDAS Ps. 24.2(h) mewajibkan
+  /// penyelenggara menyimpan informasi registrasi "untuk keperluan pembuktian
+  /// dalam proses hukum", dan CA/Browser Forum menetapkan **tujuh tahun
+  /// setelah sertifikat berhenti berlaku**. Hash saja tidak menggantikannya:
+  /// ia dapat memutuskan apakah sebuah salinan identik, tetapi tidak dapat
+  /// memunculkan kembali apa yang diperiksa.
+  ///
+  /// Yang tetap berlaku: **pemohon kehilangan aksesnya begitu diputuskan.** Ia
+  /// sudah memegang kartunya sendiri, sehingga menutup jalur baca itu tidak
+  /// merugikannya dan menghapus satu jalan penyadapan bila sesinya dibajak.
+  /// Hanya Super Admin yang dapat membukanya, lewat satu endpoint yang
+  /// mencatat setiap pembacaan.
+  ktpFileName   String?   @map("ktp_file_name")
+  ktpSha256     String?   @map("ktp_sha256")
+  ktpUploadedAt DateTime? @map("ktp_uploaded_at")
+  /// Batas simpan berkasnya. Lewat tanggal ini ia dihapus oleh
+  /// `db:purge-identity-documents`, dan `ktpDeletedAt` mencatat bahwa itu
+  /// benar-benar terjadi — kolom kosong tidak dapat membedakan "sudah dihapus"
+  /// dari "tidak pernah ada".
+  ktpRetainUntil DateTime? @map("ktp_retain_until")
+  ktpDeletedAt   DateTime? @map("ktp_deleted_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user       User  @relation("IdentitySubject", fields: [userId], references: [id], onDelete: Cascade)
+  verifiedBy User? @relation("IdentityVerifier", fields: [verifiedById], references: [id])
+
+  @@map("user_identities")
+}
+
 model SigningKeyRequest {
   id       String                @id @default(uuid())
   userId   String                @map("user_id")
@@ -7205,19 +7574,139 @@ model LetterSignature {
   /// disisir lewat halaman verifikasi publik.
   verificationToken String    @unique @map("verification_token")
   signedAt          DateTime  @default(now()) @map("signed_at")
+
+  /// Hash byte SHA-256 dari PDF final dan tanda tangan Ed25519 atas hash tersebut.
+  pdfHash           String?   @unique @map("pdf_hash")
+  pdfSignature      String?   @map("pdf_signature") @db.Text
+  /// Jabatan yang dipegang penandatangan SAAT menandatangani.
+  ///
+  /// Kewenangan mencabut diukur terhadap jabatan ini, bukan terhadap jabatan
+  /// orang itu hari ini — sebuah SK yang ditandatangani Ketua tetap naskah
+  /// Ketua walaupun penandatangannya kini menjabat yang lain.
+  signerRoleCode    String?   @map("signer_role_code")
+
   /// Pencabutan tidak menghapus baris: surat yang pernah beredar harus tetap
   /// dapat dijelaskan statusnya kepada yang memindai QR-nya.
   revokedAt         DateTime? @map("revoked_at")
   revokedReason     String?   @map("revoked_reason") @db.Text
   revokedById       String?   @map("revoked_by_id")
+  revokedByRoleCode String?   @map("revoked_by_role_code")
+
+  /// Tanda tangan Ed25519 pencabut atas pernyataan pencabutannya.
+  ///
+  /// Pencabutan adalah pernyataan kriptografis, bukan sekadar kolom status —
+  /// sebuah CRL pun struktur data yang ditandatangani (RFC 5280). Dengan ini,
+  /// halaman verifikasi publik *membuktikan* pencabutannya, bukan sekadar
+  /// mengklaimnya, dan sebuah sesi yang tertinggal terbuka tidak cukup untuk
+  /// menarik surat resmi.
+  revocationDigest    String? @map("revocation_digest")
+  revocationSignature String? @map("revocation_signature") @db.Text
+  revocationPublicKey String? @map("revocation_public_key") @db.Text
 
   letter    Letter @relation(fields: [letterId], references: [id], onDelete: Cascade)
   signer    User   @relation("LetterSigner", fields: [signerId], references: [id])
   revokedBy User?  @relation("LetterSignatureRevoker", fields: [revokedById], references: [id])
+  revocationRequests LetterRevocationRequest[]
+  /// Byte naskah yang benar-benar ditandatangani — lihat LetterSignedDocument.
+  document  LetterSignedDocument?
 
   @@unique([letterId, signerId])
   @@index([letterId])
+  @@index([pdfHash])
   @@map("letter_signatures")
+}
+
+/// Byte PDF yang benar-benar ditandatangani, disimpan apa adanya.
+///
+/// Sebelum ini tidak ada berkas yang disimpan sama sekali: setiap unduhan
+/// membuat ulang naskahnya, dan verifikasi publik bergantung pada janji bahwa
+/// `generateLetterPdfBuffer` akan menghasilkan byte yang persis sama selamanya.
+/// Janji itu tidak dapat ditepati oleh perangkat lunak yang hidup. Menaikkan
+/// versi `pdf-lib`, mengubah satu spasi di kop surat, atau mendarat di build ICU
+/// yang berbeda akan mengubah byte-nya — dan **seluruh surat yang pernah
+/// ditandatangani gagal verifikasi sekaligus**, semuanya diumumkan kepada
+/// publik sebagai naskah yang telah diubah. Repositori ini menerima pembaruan
+/// dependensi setiap minggu, jadi ini bukan bahaya hipotetis.
+///
+/// Karena itu byte-nya diarsipkan pada saat penandatanganan, di dalam transaksi
+/// yang sama, dan unduhan dilayani dari arsip ini. Naskah yang sudah
+/// ditandatangani tidak pernah dirender ulang.
+///
+/// **Tabel tersendiri, bukan kolom pada `LetterSignature`.** Sebuah kolom
+/// `Bytes` akan ikut terbaca oleh setiap kueri yang tidak menyebutkan `select`,
+/// dan ikut menghuni halaman yang sama dengan kolom-kolom yang dibaca daftar
+/// surat. Arsip hanya dibaca ketika berkasnya memang diminta.
+model LetterSignedDocument {
+  id          String @id @default(uuid())
+  signatureId String @unique @map("signature_id")
+
+  /// Byte PDF final, apa adanya. Inilah yang di-hash menjadi `pdfHash`.
+  bytes    Bytes
+  /// Salinan hash-nya, supaya arsip dapat memeriksa dirinya sendiri sebelum
+  /// disajikan — sebuah berkas yang rusak di penyimpanan tidak boleh keluar
+  /// diam-diam sebagai naskah resmi.
+  sha256   String
+  byteSize Int    @map("byte_size")
+
+  /// Yang menghasilkan byte ini, untuk menelusuri perbedaan di kemudian hari.
+  /// Naskah lama yang byte-nya tidak lagi dapat dibuat ulang tetap dapat
+  /// dijelaskan: build inilah yang membuatnya.
+  generator String
+
+  archivedAt DateTime @default(now()) @map("archived_at")
+
+  signature LetterSignature @relation(fields: [signatureId], references: [id], onDelete: Cascade)
+
+  @@map("letter_signed_documents")
+}
+
+/// LetterRevocationRequest - Permohonan Pencabutan Naskah Dinas
+///
+/// Mengajukan dan memutuskan adalah dua perbuatan yang berbeda, oleh dua pihak
+/// yang berbeda. Itu bukan birokrasi tambahan melainkan bentuk yang sudah
+/// dipakai di mana-mana: pemilik sertifikat *mengajukan* pencabutan dengan
+/// alasan tertulis, penerbitnya yang *memutuskan* (RFC 5280; prosedur BSrE
+/// persis begitu).
+///
+/// Tanpa ini, petugas tata usaha yang menemukan nomor surat ganda tidak punya
+/// saluran apa pun — sedangkan dialah yang paling mungkin menemukannya lebih
+/// dahulu daripada pejabat yang berwenang mencabutnya.
+model LetterRevocationRequest {
+  id          String @id @default(uuid())
+  letterId    String @map("letter_id")
+  signatureId String @map("signature_id")
+  requesterId String @map("requester_id")
+
+  /// Dibaca publik bila permohonannya disetujui, karena inilah yang menjadi
+  /// alasan pencabutan pada halaman verifikasi.
+  reason        String  @db.Text
+  /// Berkas pendukung — bukti nomor ganda, surat pengganti, notulen rapat.
+  attachmentUrl String? @map("attachment_url")
+
+  status       LetterRevocationRequestStatus @default(PENDING)
+  decidedById  String?   @map("decided_by_id")
+  decidedAt    DateTime? @map("decided_at")
+  decisionNote String?   @db.Text @map("decision_note")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  letter    Letter          @relation(fields: [letterId], references: [id], onDelete: Cascade)
+  signature LetterSignature @relation(fields: [signatureId], references: [id], onDelete: Cascade)
+  requester User            @relation("LetterRevocationRequester", fields: [requesterId], references: [id])
+  decidedBy User?           @relation("LetterRevocationDecider", fields: [decidedById], references: [id])
+
+  @@index([letterId])
+  @@index([status])
+  @@map("letter_revocation_requests")
+}
+
+enum LetterRevocationRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  /// Ditarik kembali oleh pemohonnya sebelum diputuskan.
+  WITHDRAWN
 }
 
 /// FilingClassification - Kode Klasifikasi Arsip (Pola Klasifikasi)
@@ -7276,12 +7765,22 @@ model Letter {
   urgency           LetterUrgency   @default(NORMAL)
   nature            LetterNature    @default(PUBLIC)
   status            LetterStatus    @default(DRAFT)
+  /// Jalur penyusunan naskah — lihat LetterAuthoringTrack.
+  authoringTrack    LetterAuthoringTrack @default(GENERATED) @map("authoring_track")
   // External Parties (if not linked to User/Unit)
   senderName        String?         @map("sender_name") // Pengirim (External)
   senderTitle       String?         @map("sender_title")
   senderInstance    String?         @map("sender_instance") // Instansi Pengirim
   recipientName     String?         @map("recipient_name") // Penerima (External)
   recipientInstance String?         @map("recipient_instance")
+  /// Kapan naskah ini benar-benar keluar dari kantor.
+  ///
+  /// Terpisah dari `date` (tanggal yang tercetak pada naskah) dan dari
+  /// `updatedAt`: buku agenda surat keluar mencatat tanggal *pengiriman*, dan
+  /// tanpa kolom ini tidak ada satu pun angka "surat terkirim" yang dapat
+  /// dipertanggungjawabkan. Diisi pada pengiriman pertama dan tidak diubah
+  /// oleh pengiriman susulan — lihat LetterDispatch.
+  sentAt            DateTime?       @map("sent_at")
 
   // Relations
   unit           Unit                  @relation(fields: [unitId], references: [id])
@@ -7293,6 +7792,9 @@ model Letter {
   dispositions   Disposition[]         @relation("LetterDispositions")
   flowEvents     LetterFlowEvent[]
   signatures     LetterSignature[]
+  revocationRequests LetterRevocationRequest[]
+  attachments    LetterAttachment[]
+  dispatches     LetterDispatch[]
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -7301,6 +7803,7 @@ model Letter {
   @@index([direction])
   @@index([status])
   @@index([date])
+  @@index([sentAt])
   @@map("letters")
 }
 
@@ -7331,8 +7834,28 @@ model LetterRecipient {
   id        String    @id @default(uuid())
   letterId  String    @map("letter_id")
   userId    String?   @map("user_id") // Penerima Internal User
-  unitId    String?   @map("unit_id") // Penerima Unit
+  /// Unit **penerbit** surat, bukan unit penerima.
+  ///
+  /// Komentarnya dulu berbunyi "Penerima Unit", dan itu menggambarkan fitur
+  /// yang tidak pernah dibuat: satu-satunya penulis kolom ini mengisinya dengan
+  /// unit asal suratnya sendiri. Karena itu tidak ada satu pun baris yang
+  /// pernah menunjuk unit sebagai penerima, dan membaca kolom ini sebagai
+  /// penerima akan mencetak nama yayasan sendiri sebagai tembusannya sendiri.
+  /// Tembusan kepada sebuah unit ditulis sebagai `externalName`, atau kepada
+  /// pejabat unit itu lewat `userId`.
+  unitId    String?   @map("unit_id")
   isCC      Boolean   @default(false) @map("is_cc") // Tembusan
+  /// Penerima di luar sistem — nama ditulis tangan oleh penyusun.
+  ///
+  /// Tembusan naskah dinas sering ditujukan kepada pihak yang tidak punya akun
+  /// di sini sama sekali: Kepala KUA, Ketua RW, dinas terkait. Tanpa kolom ini
+  /// tembusan hanya bisa ditujukan ke dalam, dan penyusun terpaksa menuliskan
+  /// sisanya di badan surat. Satu baris tembusan berisi `userId` **atau**
+  /// `externalName`, tidak pernah keduanya.
+  externalName String? @map("external_name")
+  /// Urutan sebagaimana tercetak. Tembusan adalah daftar bernomor, dan nomor
+  /// yang berubah-ubah setiap kali halaman dimuat bukan nomor.
+  order     Int       @default(0)
   readAt    DateTime? @map("read_at")
   createdAt DateTime  @default(now()) @map("created_at")
 
@@ -7341,9 +7864,81 @@ model LetterRecipient {
   user   User?  @relation(fields: [userId], references: [id])
   unit   Unit?  @relation(fields: [unitId], references: [id])
 
-  @@index([letterId])
+  @@index([letterId, order])
   @@index([userId])
   @@map("letter_recipients")
+}
+
+/// LetterAttachment - Daftar lampiran naskah dinas
+///
+/// `Letter.fileUrl` adalah berkas naskahnya sendiri (pindaian surat masuk,
+/// atau naskah yang diunggah), satu berkas dan bukan daftar. Lampiran adalah
+/// hal yang berbeda: berkas-berkas yang *menyertai* naskah, dan yang
+/// keberadaannya diumumkan pada kepala surat sebagai "Lampiran : 2 (dua)
+/// berkas". Tanpa tabel ini surat keluar tidak dapat melampirkan apa pun, dan
+/// baris "Lampiran" pada setiap naskah tercetak "-" apa pun keadaannya.
+model LetterAttachment {
+  id       String  @id @default(uuid())
+  letterId String  @map("letter_id")
+  /// Nama sebagaimana dibaca pengarsip, bukan nama berkas di penyimpanan.
+  name     String
+  fileUrl  String  @map("file_url")
+  mimeType String? @map("mime_type")
+  sizeBytes Int?   @map("size_bytes")
+  /// Urutan sebagaimana disebut dalam naskah; lampiran adalah daftar bernomor.
+  order    Int     @default(1)
+
+  uploadedById String? @map("uploaded_by_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  letter     Letter @relation(fields: [letterId], references: [id], onDelete: Cascade)
+  uploadedBy User?  @relation("LetterAttachmentUploader", fields: [uploadedById], references: [id])
+
+  @@index([letterId, order])
+  @@map("letter_attachments")
+}
+
+/// Cara sebuah naskah keluar dari kantor.
+enum LetterDispatchChannel {
+  HAND_DELIVERY // Diantar langsung / diserahkan kepada yang bersangkutan
+  COURIER // Kurir / ekspedisi
+  POST // Pos
+  EMAIL // Surel
+  WHATSAPP
+  OTHER
+}
+
+/// LetterDispatch - Buku ekspedisi surat keluar
+///
+/// Yang dicatat sebuah buku ekspedisi bukan "surat ini sudah dikirim"
+/// melainkan *kapan*, *lewat apa*, *kepada siapa diserahkan*, dan *apa bukti
+/// terimanya*. Status SENT saja tidak menjawab satu pun dari itu, dan ketika
+/// penerima menyatakan tidak menerima surat, jawabannya justru ada di
+/// keempatnya.
+///
+/// Satu naskah boleh punya lebih dari satu baris: surat yang sama diantar ke
+/// beberapa alamat, atau dikirim ulang karena yang pertama tidak sampai.
+/// `Letter.sentAt` tetap menunjuk pengiriman pertama.
+model LetterDispatch {
+  id             String                @id @default(uuid())
+  letterId       String                @map("letter_id")
+  dispatchedById String                @map("dispatched_by_id")
+  dispatchedAt   DateTime              @map("dispatched_at")
+  channel        LetterDispatchChannel
+  /// Kepada siapa naskahnya diserahkan — orang, bukan instansi tujuan surat.
+  receivedByName String?               @map("received_by_name")
+  /// Nomor resi ekspedisi, bila ada.
+  trackingNumber String?               @map("tracking_number")
+  /// Tanda terima terpindai.
+  receiptUrl     String?               @map("receipt_url")
+  note           String?               @db.Text
+  createdAt      DateTime              @default(now()) @map("created_at")
+
+  letter       Letter @relation(fields: [letterId], references: [id], onDelete: Cascade)
+  dispatchedBy User   @relation("LetterDispatcher", fields: [dispatchedById], references: [id])
+
+  @@index([letterId, dispatchedAt])
+  @@map("letter_dispatches")
 }
 
 /// Disposition - Disposisi Surat

@@ -292,6 +292,7 @@ export class StudentOnboardingOrchestrator {
         resetToken,
         parentUserId: parentUser ? parentUser.id : undefined,
         parentEmail: parentUser && parentResetToken ? parentUser.email : undefined,
+        parentName: parentUser ? parentUser.name : undefined,
         parentResetToken,
         studentName: registrant.fullName
       };
@@ -337,8 +338,12 @@ export class StudentOnboardingOrchestrator {
           email: r.email,
           token: r.resetToken,
           userId: r.userId,
+          // `name` greets the recipient; `title` is the notification subject.
+          // They are not interchangeable — see EmailSendResetTokenEvent.
+          name: r.studentName,
           title: 'Set Your Password',
           message: 'Please set your password using the link provided.',
+          data: { expiresInHours: 24 },
         });
 
         if (r.parentUserId && r.parentResetToken) {
@@ -352,8 +357,10 @@ export class StudentOnboardingOrchestrator {
             email: r.parentEmail,
             token: r.parentResetToken,
             userId: r.parentUserId,
+            name: r.parentName,
             title: 'Set Your Parent Password',
             message: 'Please set your parent account password using the link provided.',
+            data: { expiresInHours: 24 },
           });
         } else if (r.parentUserId) {
           eventBus.emit('notification:send', {

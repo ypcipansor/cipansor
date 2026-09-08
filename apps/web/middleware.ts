@@ -17,7 +17,21 @@ import { hostSplitActionFor, isPortalHost } from "@/lib/host-split";
 // Public routes that don't require authentication.
 // "/unauthorized" is the access-denied page ProtectedRoute redirects to; it
 // must stay reachable for any user (otherwise RBAC would bounce them off it).
-const publicRoutes = ["/login", "/", "/unauthorized"];
+//
+// "/reset-password" is here for the same reason a login form is: the person
+// arriving on it cannot sign in — they are holding a link e-mailed to them.
+// Leaving it out is what made every "set your password" e-mail land on
+// "/login?redirect=/reset-password" with the token discarded; the page existed
+// nowhere and the redirect hid that fact.
+//
+// THERE IS DELIBERATELY NO SELF-SERVICE "lupa password" PAGE. A reset is
+// started by an admin who has identified the person, not by anyone who can type
+// an e-mail address into a public form. That keeps the mail-sending trigger
+// behind the session wall and off the open internet.
+//
+// Portal-only: not in PUBLIC_PATH_PREFIXES, so the apex answers 404 for it,
+// which is right for an account action.
+const publicRoutes = ["/login", "/", "/unauthorized", "/reset-password"];
 
 /**
  * Public marketing pages, reachable with no session at all.
@@ -38,18 +52,17 @@ const publicPrefixes = [
   "/wakaf-infaq",
   "/kontak",
   /**
-   * The page a letter's QR opens.
+   * The path a letter's printed QR used to open.
    *
-   * It is scanned by people who have no account here — a dinas office, a wali
-   * santri, a prospective partner — so putting it behind the login wall makes
-   * the whole e-sign feature unreachable by exactly the people it exists for.
-   * The API side was already public (esign.routes.ts registers /verify/:token
-   * before `authenticate`); this was the half that was missed, and the effect
-   * was a QR that led to a login form.
+   * The page itself is gone: a token attests that *some* letter was signed,
+   * never that the document in your hand is that letter, so a forger could keep
+   * the genuine QR and edit the body while the page still answered that the
+   * letter was valid. Verification now means uploading the PDF itself at
+   * /public/verify-letter, and next.config.ts 308s this path there.
    *
-   * What is protected here is not access but the answer: `verifyByToken` never
-   * returns the letter body, and returns the perihal only for a letter of
-   * nature Biasa.
+   * The prefix stays public because the redirect must reach people who have no
+   * account here — a dinas office, a wali santri — and the letters carrying the
+   * old URL are already on paper.
    */
   "/verifikasi",
 ];

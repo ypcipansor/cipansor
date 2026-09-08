@@ -165,6 +165,14 @@ router.get(
 );
 router.put('/settings/channels', isSuperAdmin, controller.updateChannelPolicy);
 
+// Which mail transport is configured, and the From/Reply-To it sends under.
+// Read-only and admin-scoped: it names mailboxes and a host, never a credential.
+router.get(
+  '/settings/email-transport',
+  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
+  controller.getEmailTransport
+);
+
 // Templates (Admin Only)
 router.get(
   '/templates',

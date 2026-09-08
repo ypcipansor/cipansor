@@ -620,6 +620,111 @@ export class AuthService {
   }
 
   // ==========================================
+  // Password reset (the "lupa password" flow)
+  // ==========================================
+  //
+  // `resetTokenHash` and `resetTokenExpiresAt` have been on `users` since the
+  // onboarding orchestrator started minting tokens for new santri and wali
+  // accounts. Nothing could redeem them: there was no endpoint and no page, so
+  // every "set your password" e-mail led to the login wall. These two methods
+  // are the missing half.
+  //
+  // The token itself is never stored — only its SHA-256 — so a database dump
+  // does not hand anyone a working reset link.
+
+  /**
+   * Mint a reset token for one account, for an admin to have e-mailed.
+   *
+   * Admin-only by design (see `sendPasswordResetSchema`), which is why this
+   * takes a user id and reports real errors: there is no anonymous caller to
+   * hide the account's existence from, and an admin who mistypes deserves to be
+   * told rather than left watching nothing happen.
+   */
+  async issuePasswordResetToken(userId: string): Promise<{
+    userId: string;
+    email: string;
+    name: string;
+    token: string;
+    expiresInHours: number;
+  }> {
+    const user = await prisma.user.findFirst({
+      where: { id: userId, deletedAt: null },
+      select: { id: true, email: true, name: true, passwordHash: true, isActive: true },
+    });
+
+    if (!user) {
+      throw Errors.notFound('User');
+    }
+
+    if (!user.isActive) {
+      throw Errors.badRequest('Akun ini nonaktif — aktifkan lebih dulu sebelum mengirim tautan reset');
+    }
+
+    // An identity row with no login cannot have its password reset.
+    if (!user.passwordHash) {
+      throw Errors.badRequest('Data ini tidak memiliki akun login');
+    }
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresInHours = 1;
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        resetTokenHash: crypto.createHash('sha256').update(token).digest('hex'),
+        resetTokenExpiresAt: new Date(Date.now() + expiresInHours * 60 * 60 * 1000),
+      },
+    });
+
+    return { userId: user.id, email: user.email, name: user.name, token, expiresInHours };
+  }
+
+  /**
+   * Redeem a reset token and set the new password.
+   *
+   * Deliberately gives one undifferentiated error for "no such token",
+   * "already used" and "expired": telling them apart only helps someone
+   * guessing.
+   */
+  async resetPassword(token: string, newPassword: string) {
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+    const user = await prisma.user.findFirst({
+      where: {
+        resetTokenHash: tokenHash,
+        resetTokenExpiresAt: { gt: new Date() },
+        deletedAt: null,
+        isActive: true,
+      },
+      select: { id: true },
+    });
+
+    if (!user) {
+      throw Errors.badRequest('Link reset tidak valid atau sudah kedaluwarsa');
+    }
+
+    const passwordHash = await hashPassword(newPassword);
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash,
+        // Single use. Without this the same link keeps working until it
+        // expires, which is an hour of anyone who read the inbox being able to
+        // take the account back.
+        resetTokenHash: null,
+        resetTokenExpiresAt: null,
+      },
+    });
+
+    // Whoever asked for this reset may be locking someone else out on purpose.
+    // Ending every existing session is the point.
+    await prisma.refreshToken.deleteMany({ where: { userId: user.id } });
+
+    return { message: 'Password berhasil diperbarui. Silakan masuk dengan password baru Anda.' };
+  }
+
+  // ==========================================
   // 2FA Methods
   // ==========================================
 

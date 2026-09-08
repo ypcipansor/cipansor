@@ -37,6 +37,24 @@ export function resolveJwtSecret(secret: string | undefined, env: string | undef
   return secret || DEFAULT_JWT_SECRET;
 }
 
+/**
+ * Angka uang dari env, memaafkan koma desimal.
+ *
+ * `parseFloat('0,19')` bernilai **0**, bukan 0,19 — ia berhenti di koma. Nilai
+ * ini diisi tangan oleh orang yang menulis harga dalam bahasa Indonesia, di
+ * mana `0,19` adalah bentuk yang wajar, dan kekeliruannya tidak akan pernah
+ * kelihatan: harga nol berarti "belum berharga", dan sistemnya diam-diam
+ * berhenti membandingkan apa pun. Satu penggantian karakter menutup itu.
+ *
+ * Nilai yang tidak berbentuk angka sama sekali tetap menjadi 0, dan 0 adalah
+ * keadaan yang sudah punya perilakunya sendiri — pemberitahuan konfigurasi
+ * sebulan sekali, bukan kesenyapan.
+ */
+function parsePrice(raw: string | undefined): number {
+  const value = parseFloat((raw || '0').replace(',', '.'));
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
 export const config = {
   env: process.env.NODE_ENV || 'development',
   port: parseInt(process.env.PORT || '3001', 10),
@@ -108,6 +126,80 @@ export const config = {
     },
   },
 
+  /**
+   * Cloudflare Turnstile — pembuktian "bukan bot" untuk endpoint yang terbuka
+   * bagi siapa pun tanpa kredensial.
+   *
+   * `secretKey` sengaja tidak punya nilai bawaan. Kunci rahasia yang punya
+   * nilai bawaan adalah kunci yang tidak pernah gagal keras ketika lupa
+   * dipasang — ia hanya menolak setiap pengunjung dengan alasan yang
+   * membingungkan, atau lebih buruk, meloloskan semuanya sambil tampak aktif.
+   * Tanpa kunci, `enabled` bernilai false dan gerbangnya melapor "mati" secara
+   * eksplisit; itu keadaan yang dapat dibaca di log dan diuji, bukan ditebak.
+   *
+   * Site key-nya TIDAK ada di sini: ia milik peramban, dibakar ke dalam bundel
+   * web lewat `NEXT_PUBLIC_TURNSTILE_SITE_KEY` pada waktu build. Kedua kunci
+   * ini berpasangan, jadi memasang salah satunya saja menghasilkan kegagalan
+   * yang membingungkan — lihat catatan di `.env.example`.
+   */
+  turnstile: {
+    /**
+     * Keduanya getter, bukan nilai yang dibekukan saat impor.
+     *
+     * `config` dibaca sekali ketika modulnya dimuat, jadi sebuah field biasa
+     * akan memotret `process.env` pada saat itu dan tidak pernah berubah lagi.
+     * Uji yang menyalakan dan mematikan gerbang ini lewat `vi.stubEnv` akan
+     * diam-diam menguji potret yang sama dua kali — hijau, dan tidak
+     * membuktikan apa pun.
+     */
+    get secretKey(): string | undefined {
+      return process.env.TURNSTILE_SECRET_KEY;
+    },
+    get enabled(): boolean {
+      return Boolean(process.env.TURNSTILE_SECRET_KEY);
+    },
+    /**
+     * Batas waktu memanggil siteverify Cloudflare.
+     *
+     * Pendek dengan sengaja: gerbang ini duduk di depan halaman masuk, jadi
+     * setiap milidetiknya dibayar oleh orang yang sedang menunggu. Bila
+     * Cloudflare tidak menjawab dalam tempo ini, permintaannya diteruskan
+     * (lihat `verifyTurnstileToken`) — jadi angka ini membatasi lamanya
+     * menunggu, bukan ketatnya pemeriksaan.
+     */
+    timeoutMs: parseInt(process.env.TURNSTILE_TIMEOUT_MS || '4000', 10),
+    /**
+     * Hostname yang boleh menerbitkan token, dan mengapa daftar ini wajib ada.
+     *
+     * Site key kita **publik** — ia dibakar ke dalam bundel web dan dapat
+     * dibaca siapa pun yang membuka Sumber Halaman. Tidak ada yang mencegah
+     * orang lain menempelkan widget dengan site key yang sama di domainnya
+     * sendiri, menyelesaikan tantangannya di sana, lalu membelanjakan
+     * tokennya ke API ini. Yang membedakan token itu dari token pengunjung
+     * kita hanyalah satu field yang dikembalikan siteverify: `hostname`,
+     * yaitu tempat tantangannya benar-benar diselesaikan. Membuangnya —
+     * seperti yang kita lakukan sampai 2026-09-04 — berarti site key publik
+     * itu sekaligus menjadi izin masuk bagi siapa saja yang mau memasangnya.
+     *
+     * **`localhost` sengaja TIDAK ada di daftar bawaan.** Menyertakannya akan
+     * membuka persis lubang yang daftar ini tutup: penyerang cukup menyajikan
+     * halaman berisi site key kita dari `localhost` miliknya sendiri, dan
+     * Cloudflare akan melaporkan hostname itu apa adanya. Pengembangan tidak
+     * membutuhkannya — tanpa `TURNSTILE_SECRET_KEY` gerbangnya mati sebelum
+     * pemeriksaan ini tercapai.
+     */
+    get allowedHostnames(): string[] {
+      const raw = process.env.TURNSTILE_ALLOWED_HOSTNAMES;
+      if (raw && raw.trim().length > 0) {
+        return raw
+          .split(',')
+          .map((h) => h.trim().toLowerCase())
+          .filter((h) => h.length > 0);
+      }
+      return ['cipansor.or.id', 'www.cipansor.or.id', 'portal.cipansor.or.id'];
+    },
+  },
+
   log: {
     level: process.env.LOG_LEVEL || 'debug',
   },
@@ -116,6 +208,58 @@ export const config = {
     accountSid: process.env.TWILIO_ACCOUNT_SID,
     authToken: process.env.TWILIO_AUTH_TOKEN,
     phoneNumber: process.env.TWILIO_PHONE_NUMBER,
+  },
+
+  /**
+   * Outgoing mail identity, shared by every transport.
+   *
+   * `from` is the mailbox the yayasan sends *from* and nobody reads;
+   * `replyTo` is the one a human answers. Keeping them separate is the whole
+   * point — a wali who hits "Reply" on a tagihan reminder must reach
+   * halo@, not a noreply@ mailbox that discards them.
+   */
+  mail: {
+    from: process.env.MAIL_FROM || '"Yayasan Pesantren Cipansor" <noreply@cipansor.or.id>',
+    replyTo: process.env.MAIL_REPLY_TO || 'halo@cipansor.or.id',
+  },
+
+  /**
+   * Gmail API transport (preferred).
+   *
+   * A Google Cloud **service account** with domain-wide delegation, which
+   * impersonates `sender` and calls `gmail.users.messages.send`. Preferred over
+   * SMTP + app password because there is no password to leak: the credential is
+   * an RSA key the Workspace admin can revoke, scoped to `gmail.send` alone, and
+   * it cannot be used to read mail or sign in anywhere.
+   *
+   * Inert until both the account e-mail and the key are present, so an
+   * unconfigured deployment falls through to SMTP and then to log-only.
+   */
+  gmail: {
+    serviceAccountEmail: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '',
+    // Private keys carry real newlines. Env files cannot, so the value is
+    // stored with literal \n and unescaped here.
+    serviceAccountKey: (process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
+    // The Workspace mailbox the service account acts as. Must be a real user or
+    // alias in the domain, or Google answers 400 unauthorized_client.
+    sender: process.env.GMAIL_SENDER || 'noreply@cipansor.or.id',
+  },
+
+  smtp: {
+    host: process.env.SMTP_HOST || '',
+    port: parseInt(process.env.SMTP_PORT || '587', 10),
+    secure: process.env.SMTP_SECURE === 'true', // true for 465, false for 587
+    user: process.env.SMTP_USER || '',
+    pass: process.env.SMTP_PASS || '',
+    // NOTE: no `from`/`replyTo` here. The sending identity belongs to
+    // `config.mail` and is the same whichever transport carries the message —
+    // keeping a second copy under `smtp` is how the two drift apart, and how
+    // the reply address ends up correct on one path and not the other.
+    oauth2: {
+      clientId: process.env.SMTP_OAUTH_CLIENT_ID,
+      clientSecret: process.env.SMTP_OAUTH_CLIENT_SECRET,
+      refreshToken: process.env.SMTP_OAUTH_REFRESH_TOKEN,
+    },
   },
 
   /**
@@ -150,6 +294,72 @@ export const config = {
     temperature: parseFloat(process.env.CHATBOT_TEMPERATURE || '0.2'),
     /** Turns of prior conversation replayed to the model, oldest dropped first. */
     maxHistoryTurns: parseInt(process.env.CHATBOT_MAX_HISTORY_TURNS || '6', 10),
+
+    /**
+     * Coba ulang ketika penyedia menjawab "sebentar", bukan "salah".
+     *
+     * Azure AI Foundry membatasi permintaan dan token per menit; sentuhan pada
+     * batas itu datang sebagai HTTP 429 dengan `Retry-After`. Tiga percobaan
+     * dengan backoff full-jitter menutup lonjakan pendek tanpa mengubah satu
+     * gangguan panjang menjadi penantian panjang — lihat `chatbot/retry.ts`
+     * untuk apa yang TIDAK diulang, dan kenapa.
+     */
+    retry: {
+      /** Termasuk percobaan pertama. Setel 1 untuk mematikan pengulangan. */
+      maxAttempts: parseInt(process.env.CHATBOT_RETRY_MAX_ATTEMPTS || '3', 10),
+      baseDelayMs: parseInt(process.env.CHATBOT_RETRY_BASE_MS || '500', 10),
+      maxDelayMs: parseInt(process.env.CHATBOT_RETRY_MAX_DELAY_MS || '8000', 10),
+      /**
+       * Batas waktu SELURUH rangkaian percobaan, bukan per percobaan.
+       *
+       * 90 detik dipilih dari langit-langit di atas kita, bukan dari selera:
+       * Cloudflare memutus permintaan yang belum dijawab pada 100 detik dengan
+       * galat 524, dan jawaban yang tiba sesudah itu tidak pernah sampai ke
+       * siapa pun. Anggaran ini harus tetap di bawahnya.
+       */
+      budgetMs: parseInt(process.env.CHATBOT_RETRY_BUDGET_MS || '90000', 10),
+    },
+
+    /**
+     * Pembatas kesejajaran di depan penyedia — lihat `chatbot/throttle.ts`.
+     *
+     * Coba ulang menolong satu permintaan yang menabrak batas; ini mencegah
+     * kita sendiri yang menyebabkan batas itu tersentuh.
+     */
+    /**
+     * Penerusan pertanyaan ke tim ketika asisten tidak bisa menjawab.
+     *
+     * `to` sengaja dibiarkan kosong secara bawaan dan diselesaikan di tempat
+     * pemakaiannya menjadi `config.mail.replyTo`: kotak masuk yang sama yang
+     * sudah menerima balasan surat kita adalah tempat yang benar untuk
+     * pertanyaan ini, dan menyalin alamatnya ke sini akan membuat dua sumber
+     * kebenaran yang harus sepakat selamanya.
+     */
+    escalation: {
+      to: process.env.CHATBOT_ESCALATION_TO || '',
+      /**
+       * Jauh lebih ketat daripada 10/menit milik obrolan, dan alasannya
+       * berbeda: yang ini menulis baris basis data DAN mengirim surat ke kotak
+       * masuk yang dibaca manusia. Sebuah skrip yang berhasil menembusnya tidak
+       * menghabiskan uang, ia menghabiskan perhatian petugas — dan perhatian
+       * yang sudah habis tidak pulih dengan menambah kuota.
+       */
+      rateLimit: {
+        windowMs: parseInt(process.env.CHATBOT_ESCALATION_WINDOW_MS || '3600000', 10),
+        maxRequests: parseInt(process.env.CHATBOT_ESCALATION_MAX || '3', 10),
+      },
+    },
+
+    throttle: {
+      maxConcurrent: parseInt(process.env.CHATBOT_MAX_CONCURRENT || '3', 10),
+      maxQueue: parseInt(process.env.CHATBOT_QUEUE_MAX || '20', 10),
+      /**
+       * Penanya menunggu di layar, jadi antriannya pendek dengan sengaja.
+       * Sesudah ini kita menjawab "sedang sibuk" — jawaban cepat yang jelas
+       * lebih baik daripada penantian panjang yang berakhir sama.
+       */
+      maxWaitMs: parseInt(process.env.CHATBOT_QUEUE_WAIT_MS || '10000', 10),
+    },
     /**
      * House style (greeting, tone, emoji, closing). Additive persona only — it
      * is appended below the safety scaffold and can never revoke a rule, so it
@@ -178,6 +388,48 @@ export const config = {
     rateLimit: {
       windowMs: parseInt(process.env.CHATBOT_RATE_LIMIT_WINDOW_MS || '60000', 10),
       maxRequests: parseInt(process.env.CHATBOT_RATE_LIMIT_MAX_REQUESTS || '10', 10),
+    },
+    /**
+     * What the assistant is allowed to cost in a month, and what a token costs.
+     *
+     * The limiter above caps the RATE. Nothing in it notices a bill climbing —
+     * a bounded rate sustained for a month is still a bill, and a rate we
+     * considered generous was chosen without ever having measured what a month
+     * of real traffic spends. This block is what `jobs/chatbot-spend.job.ts`
+     * compares against.
+     *
+     * **Prices are per one million tokens and default to 0 — deliberately not
+     * to a guess.** The price belongs to the model and the region, both of
+     * which are env configuration here (`chatbot-design.md` §1 keeps the model
+     * swappable on purpose), so this file cannot know it; a plausible default
+     * would produce an authoritative-looking figure that is simply wrong.
+     * Unpriced is therefore a state the job REPORTS rather than a state in
+     * which it goes quiet — see the job for what it sends instead.
+     */
+    spend: {
+      inputPricePerMillionTokens: parsePrice(process.env.CHATBOT_PRICE_INPUT_PER_MTOK),
+      outputPricePerMillionTokens: parsePrice(process.env.CHATBOT_PRICE_OUTPUT_PER_MTOK),
+      /**
+       * Harga token masukan yang dilayani dari cache milik PENYEDIA.
+       *
+       * Terpasang lengkap, dan hari ini tidak pernah terpakai: deployment
+       * DeepSeek-V4-Flash-0731 di Azure AI Foundry mengembalikan `usage` berisi
+       * `prompt_tokens`, `completion_tokens`, `total_tokens` dan
+       * `audio_prompt_tokens` saja — tidak ada `prompt_tokens_details`, tidak
+       * ada `prompt_cache_hit_tokens` (diperiksa langsung 2026-09-04). Selama
+       * begitu, setiap token masukan dihitung pada harga penuh dan taksirannya
+       * menjadi BATAS ATAS. Untuk sebuah peringatan anggaran, arah galat itu
+       * yang benar: ia berbunyi terlalu awal, bukan terlambat.
+       */
+      cachedInputPricePerMillionTokens: parsePrice(
+        process.env.CHATBOT_PRICE_CACHED_INPUT_PER_MTOK
+      ),
+      /** Label only — no conversion happens anywhere. Set it to whatever the invoice is in. */
+      currency: process.env.CHATBOT_PRICE_CURRENCY || 'USD',
+      /** 0 disables the budget comparison; the monthly volume report still goes out. */
+      monthlyBudget: parsePrice(process.env.CHATBOT_MONTHLY_BUDGET),
+      /** Empty falls back to `config.mail.replyTo`, which is a real monitored mailbox. */
+      alertTo: process.env.CHATBOT_SPEND_ALERT_TO || '',
     },
   },
 } as const;

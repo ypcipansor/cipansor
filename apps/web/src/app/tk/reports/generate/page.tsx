@@ -374,8 +374,8 @@ export default function GenerateTKReportPage() {
                       </Button>
                     </div>
 
-                    <ScrollArea className="h-[300px] rounded-md border p-4">
-                      <div className="space-y-2">
+                    <ScrollArea className="h-[300px] rounded-md border">
+                      <div className="space-y-2 p-4">
                         {students.data.map((student) => (
                           <div
                             key={student.id}

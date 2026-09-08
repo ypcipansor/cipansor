@@ -56,7 +56,7 @@ const { contact } = siteConfig;
  * Built once at module load. The corpus is a few dozen entries derived from
  * constants — there is nothing to invalidate and no I/O to repeat.
  */
-export const knowledgeBase: KnowledgeEntry[] = [
+const baseEntries: KnowledgeEntry[] = [
   {
     id: 'profil-umum',
     title: `Tentang ${siteConfig.legalName}`,
@@ -169,6 +169,63 @@ export const knowledgeBase: KnowledgeEntry[] = [
     ],
   },
 ];
+
+/**
+ * Entri "hub" yang menjadi label topik ketika asisten harus menyebutkan apa
+ * saja yang bisa ia jawab.
+ *
+ * Dipilih, bukan seluruh korpus: korpusnya memuat satu entri per unit dan satu
+ * per program, sehingga daftar lengkapnya panjang dan justru sulit dibaca.
+ * Yang disebut adalah kepalanya. Idnya dijaga uji — menghapus salah satu entri
+ * ini memerahkan suite alih-alih diam-diam memendekkan rambu petunjuknya.
+ */
+export const TOPIC_HUB_IDS = [
+  'profil-umum',
+  'unit-ikhtisar',
+  'program-ikhtisar',
+  'spmb-cara-daftar',
+  'donasi-ikhtisar',
+  'kontak',
+] as const;
+
+/** Judul entri hub, urut seperti TOPIC_HUB_IDS, untuk dirangkai jadi kalimat. */
+export function topicLabels(): string[] {
+  return TOPIC_HUB_IDS.map((id) => baseEntries.find((e) => e.id === id)?.title).filter(
+    (title): title is string => Boolean(title)
+  );
+}
+
+/**
+ * Daftar isi korpus — dibangun DARI korpus, bukan ditulis tangan.
+ *
+ * Pertanyaan paling wajar yang bisa diajukan orang kepada sebuah asisten
+ * ("kamu bisa bantu apa?", "ada informasi apa saja?") justru yang paling pasti
+ * gagal sebelum entri ini ada: kata-kata seperti `ada`, `apa` dan `saja` adalah
+ * kata henti, sehingga yang tersisa dari "ada informasi apa saja" hanyalah
+ * satu kata — "informasi" — dan tidak ada satu pun entri yang membahasnya.
+ * Nol potongan terambil, dan asisten jatuh ke penolakan tanpa pernah menyentuh
+ * model. Dilaporkan pengguna 2026-09-04, dengan tangkapan layarnya.
+ *
+ * Dibangun dari `baseEntries` supaya ia tidak bisa berbohong: entri yang
+ * ditambah atau dihapus mengubah daftar ini pada saat yang sama.
+ */
+const indexEntry: KnowledgeEntry = {
+  id: 'bantuan-ikhtisar',
+  title: 'Informasi yang tersedia di asisten ini',
+  text: [
+    `Asisten ini memberikan informasi umum tentang ${siteConfig.name}.`,
+    `Informasi yang tersedia meliputi: ${topicLabels().join(', ')}.`,
+    'Tersedia pula informasi pendaftaran santri baru (SPMB) yang terkini:',
+    'apakah pendaftaran sedang dibuka, biaya pendaftarannya, dan tanggal penutupannya.',
+    `Untuk hal di luar itu, informasi dapat diminta langsung ke ${contact.phone} atau WhatsApp ${contact.whatsapp}.`,
+  ].join(' '),
+  aliases: [
+    'informasi apa saja bisa ditanyakan bantuan bantu topik cakupan layanan daftar isi menu pilihan kemampuan',
+    'what can you do help topics information available overview index capabilities ask about',
+  ],
+};
+
+export const knowledgeBase: KnowledgeEntry[] = [...baseEntries, indexEntry];
 
 /** Lookup used by the service to attach source metadata to an answer. */
 export const knowledgeById = new Map(knowledgeBase.map((e) => [e.id, e]));

@@ -21,8 +21,12 @@ than overwriting.
   see `../src/lib/prisma.ts`. Standalone scripts/seeds use
   `createPrismaClient()` from `./client.ts` (never `new PrismaClient()` directly,
   which won't have a connection in Prisma 7).
-- `@@unique(..., nullsNotDistinct: true)` is no longer valid schema syntax; the
-  DB-level constraint is preserved via migration `2df27db`.
+- `@@unique(..., nullsNotDistinct: true)` is no longer valid schema syntax, and
+  **it was never replaced.** The three canteen/laundry uniques are plain UNIQUE
+  indexes, so a NULL `businessUnitId` makes rows distinct: two categories in the
+  same unit with the same name both insert. Proven against production
+  2026-09-05 — the old claim that a migration preserved the constraint was
+  false, and `2df27db` is a commit that widened the key, not a migration.
 - Every relation needs both sides (Prisma 7 validates strictly).
 
 ## Workflow
@@ -42,5 +46,9 @@ pnpm --filter api db:seed             # tsx prisma/seed.ts (uses createPrismaCli
 - `schema.prisma` — models + enums (single source of truth for the DB).
 - `prisma.config.ts` — Prisma 7 config (schema path, datasource url, seed cmd).
 - `client.ts` — `createPrismaClient()` factory for seeds/scripts.
-- `migrations/` — SQL migration history (don't hand-edit applied migrations).
+- `migrations/` — SQL migration history. Squashed to a single `0_init` baseline
+  on 2026-09-05: the previous 27 directories could never replay from an empty
+  database (P3006 on `complaints`), which is why production had no
+  `_prisma_migrations` table at all. `migrate deploy` works from empty now;
+  don't hand-edit `0_init`.
 - `seed.ts`, `seeds/*` — seed data (admin user, roles, reference data).

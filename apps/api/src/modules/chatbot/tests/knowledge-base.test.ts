@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { donationConfig, educationUnits, siteConfig } from '@cipansor/shared';
-import { knowledgeBase, knowledgeById } from '../knowledge-base';
+import {
+  TOPIC_HUB_IDS,
+  knowledgeBase,
+  knowledgeById,
+  topicLabels,
+} from '../knowledge-base';
 
 describe('knowledge base', () => {
   it('derives every unit entry from the shared config', () => {
@@ -47,5 +52,31 @@ describe('knowledge base', () => {
     for (const entry of knowledgeBase) {
       expect(entry.text.length, `entry ${entry.id} is too short to be useful`).toBeGreaterThan(40);
     }
+  });
+});
+
+describe('rambu petunjuk topik', () => {
+  it('setiap id hub benar-benar ada di korpus', () => {
+    // Ini penjaga yang menanggung beban. `topicLabels()` MENYARING id yang
+    // tidak ditemukan, jadi menghapus satu entri hub tidak akan meledak — ia
+    // hanya memendekkan daftar yang dibacakan asisten kepada pengunjung, diam
+    // -diam. Uji inilah yang mengubahnya jadi kegagalan yang terlihat.
+    for (const id of TOPIC_HUB_IDS) {
+      expect(knowledgeById.get(id), `entri hub hilang: ${id}`).toBeDefined();
+    }
+    expect(topicLabels()).toHaveLength(TOPIC_HUB_IDS.length);
+  });
+
+  it('daftar isi dibangun dari korpus, bukan ditulis tangan', () => {
+    // Kalau ia ditulis tangan, entri baru tidak akan pernah muncul di dalamnya
+    // dan asisten akan menyebut daftar yang makin lama makin tidak benar.
+    const index = knowledgeById.get('bantuan-ikhtisar')!;
+    for (const label of topicLabels()) {
+      expect(index.text).toContain(label);
+    }
+  });
+
+  it('entri daftar isi ikut terindeks seperti entri lain', () => {
+    expect(knowledgeBase.some((e) => e.id === 'bantuan-ikhtisar')).toBe(true);
   });
 });

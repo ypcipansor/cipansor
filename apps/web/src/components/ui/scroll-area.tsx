@@ -5,6 +5,17 @@ import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area";
 
 import { cn } from "@/lib/utils";
 
+/**
+ * Jangan pasang padding VERTIKAL pada `<ScrollArea>` — taruh di dalam.
+ *
+ * Bilah gulirnya `position: absolute` di dalam Root, jadi `h-full` miliknya
+ * dihitung terhadap kotak padding Root, sementara viewport yang bergulir
+ * mengisi kotak konten. `py-4` di Root membuat trek 32px lebih tinggi daripada
+ * yang digulirnya, dan ibu jari tidak pernah sejajar dengan isinya.
+ * `scroll-area.guard.test.ts` memaku aturan ini beserta angka ukurannya.
+ * Padding horizontal (`pr-4` dan kawan-kawan) tidak apa-apa.
+ */
+
 function ScrollArea({
   className,
   children,

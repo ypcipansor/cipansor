@@ -71,6 +71,17 @@ services:
       # missing .env degrades to correct rather than to localhost.
       PUBLIC_SITE_URL: ${PUBLIC_SITE_URL:-https://cipansor.or.id}
       PORTAL_URL: ${PORTAL_URL:-https://portal.cipansor.or.id}
+      PUBLIC_VERIFY_RATE_LIMIT_MAX: ${PUBLIC_VERIFY_RATE_LIMIT_MAX:-30}
+      # Turnstile. Harus disebut namanya di sini: sebuah variabel yang ada di
+      # .env tetapi tidak dienumerasi pada blok ini TIDAK PERNAH sampai ke
+      # dalam kontainer, dan gerbangnya akan diam-diam mati sementara .env
+      # tampak sudah benar. Kosong = gerbang mati (sah untuk pengembangan).
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+      TURNSTILE_TIMEOUT_MS: ${TURNSTILE_TIMEOUT_MS:-4000}
+      # Dienumerasikan meski biasanya kosong: sebuah variabel yang ada di .env
+      # tapi tidak disebut di sini TIDAK PERNAH sampai ke kontainer, dan
+      # tuas yang tidak tersambung lebih buruk daripada tuas yang tidak ada.
+      TURNSTILE_ALLOWED_HOSTNAMES: ${TURNSTILE_ALLOWED_HOSTNAMES:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       # Marks the whole deployment as a demo, lifting the mandatory 2FA wall so
@@ -102,12 +113,63 @@ services:
       # limit is tunable without a rebuild.
       CHATBOT_RATE_LIMIT_WINDOW_MS: ${CHATBOT_RATE_LIMIT_WINDOW_MS:-60000}
       CHATBOT_RATE_LIMIT_MAX_REQUESTS: ${CHATBOT_RATE_LIMIT_MAX_REQUESTS:-10}
+      # Harga token, anggaran bulanan dan tujuan peringatannya. Per-deployment
+      # sepenuhnya: harganya milik model dan wilayah yang dipilih di atas, dan
+      # anggarannya keputusan yayasan — tidak ada satu pun yang pantas menjadi
+      # nilai bawaan di config/index.ts. Tanpa baris-baris ini, nilai di .env
+      # tidak akan pernah sampai ke kontainer.
+      CHATBOT_PRICE_INPUT_PER_MTOK: ${CHATBOT_PRICE_INPUT_PER_MTOK:-0}
+      CHATBOT_PRICE_OUTPUT_PER_MTOK: ${CHATBOT_PRICE_OUTPUT_PER_MTOK:-0}
+      CHATBOT_PRICE_CACHED_INPUT_PER_MTOK: ${CHATBOT_PRICE_CACHED_INPUT_PER_MTOK:-0}
+      CHATBOT_PRICE_CURRENCY: ${CHATBOT_PRICE_CURRENCY:-USD}
+      CHATBOT_MONTHLY_BUDGET: ${CHATBOT_MONTHLY_BUDGET:-0}
+      CHATBOT_SPEND_ALERT_TO: ${CHATBOT_SPEND_ALERT_TO:-}
+      # Outgoing mail identity, shared by every transport.
+      #
+      # NOTE THE ABSENCE OF QUOTES around the MAIL_FROM default. Compose does
+      # not strip them: written as ${MAIL_FROM:-'"Name" <a@b>'} the container
+      # receives the apostrophes as part of the value, and nodemailer parses the
+      # display name as "' Name'". Verified with `docker compose config`.
+      MAIL_FROM: ${MAIL_FROM:-Yayasan Pesantren Cipansor <noreply@cipansor.or.id>}
+      MAIL_REPLY_TO: ${MAIL_REPLY_TO:-halo@cipansor.or.id}
+      # Gmail API transport (preferred — no password anywhere).
+      # A service account with domain-wide delegation, impersonating GMAIL_SENDER.
+      # See docs/EMAIL_SETUP.md for how these three are produced.
+      GOOGLE_SERVICE_ACCOUNT_EMAIL: ${GOOGLE_SERVICE_ACCOUNT_EMAIL:-}
+      GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: ${GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY:-}
+      GMAIL_SENDER: ${GMAIL_SENDER:-noreply@cipansor.or.id}
+      # SMTP fallback, used only when the Gmail credentials above are absent.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-noreply@cipansor.or.id}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_OAUTH_CLIENT_ID: ${SMTP_OAUTH_CLIENT_ID:-}
+      SMTP_OAUTH_CLIENT_SECRET: ${SMTP_OAUTH_CLIENT_SECRET:-}
+      SMTP_OAUTH_REFRESH_TOKEN: ${SMTP_OAUTH_REFRESH_TOKEN:-}
+      # Cap on reset-link requests per 15 minutes, per IP.
+      PASSWORD_RESET_RATE_LIMIT_MAX: ${PASSWORD_RESET_RATE_LIMIT_MAX:-5}
+      # How long a KTP scan is kept after the key it justified expires. The
+      # default matches the CA/Browser Forum's seven years and is what the code
+      # falls back to; it is enumerated anyway, because a value the yayasan
+      # lowers in .env and never reaches the container is the worst of both —
+      # a shortened retention that was only ever shortened on paper.
+      IDENTITY_DOCUMENT_RETENTION_YEARS: ${IDENTITY_DOCUMENT_RETENTION_YEARS:-7}
     volumes:
       # User uploads (santri photos, e-simaan recordings, attachments) are
       # written to public/uploads and served from /uploads. Without a volume
       # they sit on the container's writable layer and every redeploy deletes
       # them, leaving the database holding fileUrl rows that 404 forever.
       - api_uploads:/app/apps/api/public/uploads
+      # Scans of KTP, kept as the registration evidence behind every signing
+      # key. This one is not a convenience: the database records a retention
+      # deadline seven years past the key's expiry and the verification note
+      # says the document was seen, so a redeploy that silently deleted the
+      # file would leave the system asserting an evidence trail it can no
+      # longer produce. Separate from api_uploads because the two have
+      # different rules — /uploads is served statically behind authentication,
+      # this is served by nothing.
+      - api_identity:/app/apps/api/private/identity
     ports:
       - "127.0.0.1:${API_PORT:-3001}:3001"
     depends_on:
@@ -141,6 +203,11 @@ services:
         # "true" shows the demo-login credential panel on /login. Enable for
         # demo deployments, leave unset for a real launch.
         NEXT_PUBLIC_SHOW_DEMO_LOGIN: ${NEXT_PUBLIC_SHOW_DEMO_LOGIN:-false}
+        # Site key Turnstile. Dibakar ke dalam bundel klien di sini dan hanya
+        # di sini — menyuntingnya di .env produksi tidak berpengaruh sampai
+        # image web dibangun ulang. Kosong = widget tidak dirender sama sekali,
+        # yang berpasangan dengan TURNSTILE_SECRET_KEY kosong di sisi API.
+        NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${NEXT_PUBLIC_TURNSTILE_SITE_KEY-}
     container_name: cipansor-web
     restart: unless-stopped
     logging: *default-logging
@@ -229,6 +296,9 @@ volumes:
   redis_data:
   # User uploads. Must outlive the container — see the api service's volumes.
   api_uploads:
+  # KTP scans. Outlives the container for the same reason, and must be included
+  # in any backup that claims to cover the signing keys' evidence trail.
+  api_identity:
   # Survives redeploys so the optimised landing-page images stay warm.
   web-image-cache:
 

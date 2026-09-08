@@ -1,4 +1,4 @@
-import { LetterNature, LetterType } from "./correspondence";
+import { LetterNature, LetterType, LetterUrgency } from "./correspondence";
 
 /**
  * Jenis naskah dan sifat yang boleh menyertainya.
@@ -56,6 +56,28 @@ export const LETTER_NATURE_LABELS: Record<LetterNature, string> = {
   [LetterNature.LIMITED]: "Terbatas",
   [LetterNature.CONFIDENTIAL]: "Rahasia",
   [LetterNature.STRICTLY_CONFIDENTIAL]: "Sangat Rahasia",
+};
+
+/**
+ * Derajat kecepatan penyampaian — bukan derajat kerahasiaan.
+ *
+ * Sumber kebenaran tunggal, dan ia diperlukan. Istilah yang sama pernah ditulis
+ * tiga cara berbeda di tiga halaman: formulir pembuatan surat memakai
+ * Biasa/Segera/Amat Segera (benar, sesuai skema), beranda menyebut IMMEDIATE
+ * sebagai "Penting" dan URGENT sebagai "Segera" (menggeser artinya satu tingkat
+ * — sebuah surat "Segera" tampil sebagai "Penting", dan "Amat Segera" tampil
+ * sebagai "Segera"), sedangkan daftar surat menampilkan enum mentahnya dalam
+ * bahasa Inggris. Pada naskah dinas, derajat kecepatan menentukan tenggat
+ * penyampaian; menggesernya satu tingkat bukan soal gaya bahasa.
+ *
+ * ANRI mengenal empat derajat — Kilat, Sangat Segera, Segera, Biasa. Skema
+ * hanya menyimpan tiga; itu tercatat sebagai kekurangan di
+ * `docs/EOFFICE_ESIGN_PLAN.md` §2.7 dan bukan urusan peta ini.
+ */
+export const LETTER_URGENCY_LABELS: Record<LetterUrgency, string> = {
+  [LetterUrgency.NORMAL]: "Biasa",
+  [LetterUrgency.IMMEDIATE]: "Segera",
+  [LetterUrgency.URGENT]: "Amat Segera",
 };
 
 export function naturesForType(type: LetterType): readonly LetterNature[] {

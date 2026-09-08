@@ -1,7 +1,16 @@
 import { Request, Response } from 'express';
 import { asyncHandler } from '@/middleware/error';
 import { authService } from './auth.service';
-import { LoginInput, RegisterInput, RefreshTokenInput, ChangePasswordInput } from './auth.schema';
+import {
+  LoginInput,
+  RegisterInput,
+  RefreshTokenInput,
+  ChangePasswordInput,
+  SendPasswordResetInput,
+  ResetPasswordInput,
+} from './auth.schema';
+import { eventBus } from '@/lib/event-bus';
+import { logger } from '@/lib/logger';
 
 /**
  * Login
@@ -164,5 +173,56 @@ export const disableTwoFactor = asyncHandler(async (req: Request, res: Response)
 export const getTwoFactorStatus = asyncHandler(async (req: Request, res: Response) => {
   const userId = req.user!.sub;
   const result = await authService.getTwoFactorStatus(userId);
+  res.json({ success: true, data: result });
+});
+
+/**
+ * E-mail a password reset link to one user
+ * POST /api/auth/send-password-reset  (admin only)
+ *
+ * The only way a reset starts. Someone who has forgotten their password
+ * contacts an admin, who identifies them and triggers this; there is no public
+ * form, so nothing unauthenticated can make this system send mail.
+ */
+export const sendPasswordReset = asyncHandler(async (req: Request, res: Response) => {
+  const { userId }: SendPasswordResetInput = req.body;
+
+  const reset = await authService.issuePasswordResetToken(userId);
+
+  // Fire-and-forget: a mail outage must not roll back a token that has already
+  // been recorded, and the admin gets told what to check instead.
+  eventBus.emit('email:send_reset_token', {
+    email: reset.email,
+    token: reset.token,
+    userId: reset.userId,
+    name: reset.name,
+    title: 'Reset Password',
+    message: 'Silakan setel ulang password Anda melalui tautan berikut.',
+    data: { expiresInHours: reset.expiresInHours },
+  });
+
+  logger.info('Password reset link requested by an admin', {
+    targetUserId: reset.userId,
+    requestedBy: req.user?.sub,
+  });
+
+  res.json({
+    success: true,
+    data: {
+      message: `Tautan reset password telah dikirim ke ${reset.email}.`,
+      expiresInHours: reset.expiresInHours,
+    },
+  });
+});
+
+/**
+ * Redeem a password reset token
+ * POST /api/auth/reset-password
+ */
+export const resetPassword = asyncHandler(async (req: Request, res: Response) => {
+  const { token, newPassword }: ResetPasswordInput = req.body;
+
+  const result = await authService.resetPassword(token, newPassword);
+
   res.json({ success: true, data: result });
 });

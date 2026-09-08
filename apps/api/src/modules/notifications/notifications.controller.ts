@@ -18,6 +18,7 @@ import { notificationScheduler } from './scheduler.service';
 import { z } from 'zod';
 import { UserRole } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
+import { describeEmailTransport } from './email-transport';
 
 // Constants
 const ADMIN_ROLES: readonly string[] = [UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN];
@@ -374,6 +375,23 @@ export async function getChannelPolicy(req: Request, res: Response, next: NextFu
   try {
     const policy = await service.getChannelPolicy();
     res.json({ success: true, data: policy });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * GET /notifications/settings/email-transport — what actually sends the mail.
+ *
+ * Exists because the settings screen used to *state* the mail configuration
+ * from hardcoded strings — noreply@, halo@, smtp.gmail.com:587 — while the
+ * server read them from the environment, and showed "Channel Email Aktif"
+ * whenever the channel policy was on, even with no transport configured at all.
+ * The page now asks rather than asserts.
+ */
+export async function getEmailTransport(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json({ success: true, data: describeEmailTransport() });
   } catch (error) {
     next(error);
   }

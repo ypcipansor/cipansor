@@ -87,6 +87,107 @@ precision silently.
 matching is the bottleneck — measure, then swap. The advice above applies at
 that moment, unchanged.
 
+### REVISED AGAIN (2026-09-04) — the corpus is sent whole, and retrieval no longer gates
+
+Measured: the public corpus is **2,513 characters, ~628 tokens** across 8
+entries. Less than one page.
+
+Retrieval exists to solve one problem — a corpus that does not fit in the
+prompt. Ours fits, with room to spare. Current practice puts the "just put it in
+the context" threshold around **100K tokens, or a few hundred documents**; we
+are two orders of magnitude below it. Selecting 4 entries out of 8 saved
+nothing measurable and cost a failure mode that reached a real visitor:
+
+> `ada`, `apa` and `saja` are all stopwords — deliberately, so BM25 does not
+> rank on sentence shape. That left **one** term, "informasi", which no entry
+> discusses. Zero chunks retrieved, and the service refused **without ever
+> calling the model**. The most natural question anyone can ask an assistant —
+> *what can you help with?* — was the one guaranteed to fail.
+
+So the pipeline changed shape:
+
+| Before | After |
+| --- | --- |
+| BM25 picks ≤4 entries | The **whole corpus** goes into every prompt |
+| 0 chunks ⇒ service refuses, model never called | Refusal is the **model's** to write, under scaffold rules 1, 2 and 5 |
+| `sources` = what BM25 ranked | `sources` = what the model **says it used** (rule 7), filtered against the real corpus, falling back to BM25 |
+| `refused` = "the service declined" | `refused` = `looksLikeRefusal(answer)` — see `refusal.ts`, whose patterns were tightened to require the *assistant* (or the *information*) as the subject, so "biaya tidak dapat dikembalikan" is no longer read as a refusal |
+
+`groundedRefusal()` survives, but only as a last line of defence for a state no
+question can reach: an empty corpus AND no live facts.
+
+**Techniques deliberately NOT adopted, and the reason:**
+
+- **Hybrid BM25 + dense embeddings with RRF.** The right answer for a large
+  mixed corpus — ~7.4% NDCG lift on WANDS (0.7497 vs 0.6983 / 0.6953), RRF at
+  k=60 as the zero-config default. Here it means standing up a vector index and
+  an embedding call per question **to rank 8 documents that are all being sent
+  anyway**. Ranking buys nothing when there is no selection.
+- **Query rewriting / HyDE.** The literature's diagnosis is exactly our bug —
+  *"most retrieval failures are query-shape failures; a short user question does
+  not sit in the same region as the answer documents"* — but the cure is an
+  extra model call per question, for a problem 600 tokens of context deletes.
+- **Agentic RAG** (the model drives retrieval and re-queries). 2–4× the calls
+  and latency on a path already measured at 8–33 s. Built for corpora that do
+  not fit.
+- **Letting the model browse the public site live.** Slower, and it turns page
+  content into an instruction channel — rule 4 exists precisely because context
+  is data, not commands. The site's content is already mirrored in the corpus.
+
+**Revisit trigger, so this is not re-litigated from taste:** when the corpus
+passes **~100K tokens or a few hundred documents** — indexing every site
+article, naskah dinas, and the full SPMB FAQ would do it — hybrid retrieval with
+RRF and a query-rewriting layer become the right spend. Not before.
+
+A detour worth recording, because it was decided and then reversed by
+measurement: `refused` was briefly gated on the model citing no sources —
+"if it named a source, it answered". A live run killed it. Rule 5 tells the
+model to list the available topics and give the contact number *when it
+declines*, so refusals cite `bantuan-ikhtisar` and `kontak` too. The signal
+separated nothing. What separates them is inside the sentence — its subject.
+
+**The cost this accepted:** an off-topic question now reaches the model, where
+it used to be refused for free. Prompt tokens per call rise by roughly the
+entries BM25 would have dropped. Turnstile plus the 10/minute per-IP limiter
+still bound the abuse case, and refusals are deliberately **not cached** so a
+wrong one cannot stick.
+
+Measured on the real model, same questions, same day:
+
+| Question | Before | After |
+| --- | ---: | ---: |
+| "ada informasi apa saja" | 999 prompt tokens | 3,300 |
+| "di mana lokasinya dan berapa biaya pendaftarannya?" | 1,385 | 3,317 |
+
+Production averaged **1,174 prompt tokens per call** before this. At the
+configured prices (0.19 USD / 1M input, 0.51 output) that is roughly **0.30 →
+0.70 USD per 1,000 questions**.
+
+The offsetting effect, which is a checkable prediction rather than a promise:
+sending a constant corpus makes the prompt **prefix** identical across every
+question for the first time, which is exactly the shape provider-side prompt
+caching rewards — billed at 0.028 rather than 0.19, **6.8× cheaper**. On
+2026-09-04, before this change, 2,304 of 10,566 prompt tokens were already
+served from that cache. `chatbot_usage_daily.cached_prompt_tokens` will show
+whether that share rises after deployment.
+
+**Diukur 2026-09-05, dan hasilnya MEMBANTAH ramalan di atas.** Tiga panggilan
+pertama sesudah penggelaran, ketiganya dengan awalan yang sama persis (~3.300
+token) dan dalam rentang sepuluh menit, dilaporkan **0 token ter-cache** dari
+10.225 token prompt — sementara sehari sebelumnya, dengan prompt yang lebih
+pendek, 21,8% ter-cache. Pembacaannya bukan salah kita: adaptor membaca
+`prompt_tokens_details.cached_tokens` **dan** `prompt_cache_hit_tokens`
+(`providers/openai-compatible.ts`), jadi angka nol itu laporan penyedia.
+
+Dugaan yang paling cocok dengan kedua angka: yang ter-cache kemarin adalah
+prompt yang **identik seluruhnya** (pertanyaan berulang), bukan awalan yang
+dipakai bersama pertanyaan berbeda — artinya penyedia ini tidak memberi diskon
+awalan otomatis pada deployment kita. Tiga panggilan tetap sampel kecil dan
+cache bisa perlu trafik untuk hangat, jadi **periksa ulang setelah ada trafik
+pengunjung sungguhan** sebelum menyimpulkannya permanen. Yang tidak berubah:
+taksiran 0,30 → 0,70 USD per 1.000 pertanyaan sudah dihitung pada harga penuh,
+jadi ia tetap berlaku — yang hilang hanya potongan yang diharapkan.
+
 ## 2. The central decision: RAG for public content, tools for private data
 
 The requirement says the logged-in assistant should reach "data sesuai
@@ -247,6 +348,110 @@ code — `berita` included, which is not database-backed.
   was fixed in this system in July 2026. A bot that confidently quotes last
   year's fee to a prospective family is a real harm, not a cosmetic bug.
 
+## 6a. Surge: retry, and a queue that is deliberately short (2026-09-04)
+
+Azure AI Foundry caps requests and tokens per minute. Touching the cap comes
+back as **HTTP 429 with `Retry-After`** — "in a moment", not "you are wrong".
+Without a retry layer, an answer that was half a second away becomes "asisten
+sedang tidak tersedia" on the visitor's screen.
+
+Three decisions shape `chatbot/retry.ts`, because a retry fitted without
+thought is how an incident is made worse:
+
+1. **Only transient failures are retried** — 408, 425, 429, 5xx. A 400 means
+   our request is malformed and a 401 means the key is wrong; neither heals by
+   waiting, and retrying them spends the quota that is left on calls that
+   cannot succeed. This is enforced by *type* (`TransientUpstreamError`), not by
+   a deny-list, so the default for anything unclassified is "do not retry".
+2. **Timeouts are NOT retried.** A call that reached the 60-second ceiling has
+   already spent the visitor's patience; retrying asks them to wait two minutes
+   for a call that was too slow the first time. Other network faults — DNS,
+   connection refused, a dropped socket — heal in milliseconds and are retried.
+3. **`Retry-After` is obeyed, not clamped.** The server knows when its quota
+   returns; our backoff is a guess. An early draft capped the header at
+   `maxDelayMs`, which turned "wait 30 seconds" into "come back in 1 second" —
+   the exact behaviour that turns an outage into a worse one. It was caught by
+   the test that asserts we give up rather than sleep past the budget. The cap
+   belongs to our own guess; the server's instruction is honoured, and the time
+   budget decides whether we can afford it.
+
+Backoff uses **full jitter** (`random() × delay`), not a fixed wait: several
+requests rejected in the same second would otherwise wake in the same second
+and hit the same cap again.
+
+`chatbot/throttle.ts` handles the other half — stopping us from *causing* the
+cap. Ten visitors asking at once means ten concurrent calls; three at a time
+plus a short queue means the endpoint sees three.
+
+**Why the queue is short, and why that is not a compromise.** The visitor is
+watching a screen and their HTTP request dies around the minute mark. A queue
+that holds a question until quota returns produces a visitor who has already
+closed the tab. So waiting is capped at ten seconds, after which we answer
+honestly that the assistant is busy — **HTTP 503 with `Retry-After`**, and a
+different sentence from "unavailable", because "unavailable" tells someone to
+give up when trying again shortly would have worked.
+
+A **durable** queue is right for work nobody is watching — forwarding a
+question by email is the obvious case. Not for this.
+
+**No circuit breaker, deliberately.** It was considered and left out: a breaker
+is a stateful component whose own failure mode is an outage we cause (stuck
+open), and at nine questions a day it protects against nothing we have. Most of
+its benefit is already there for free — when `Retry-After` exceeds the remaining
+budget we fail immediately rather than sleeping, so a genuinely exhausted quota
+already fails fast. Revisit if sustained 429s ever appear in the logs.
+
+## 6b. Handing the question to a human (2026-09-05)
+
+A refusal that ends at a phone number is a dead end for the person who cannot
+call during office hours. So when the assistant declines, it offers to pass the
+question to the team, and — with consent — mails it to `halo@cipansor.or.id`.
+
+**The mail is from `noreply@`, but `Reply-To` is the visitor.** That one header
+is the whole feature: without it, the staff member who hits Reply writes to
+their own inbox and the person who asked never hears back. It required a
+per-message `replyTo` on `deliverEmail()`, which until now always used
+`config.mail.replyTo`.
+
+**The flow stops in the visitor's hands twice**, and both stops are load-bearing:
+
+1. Before a single field is requested. Asking for a name and a phone number
+   from someone who has not said yes is unsolicited collection, not politeness.
+2. After the summary is composed. People are entitled to see exactly what will
+   be sent in their name — and the text they approve is the *same text* the
+   server renders into the mail, not a similar-looking preview.
+
+**Fields are collected in a form, not by conversational turns.** A bot that asks
+for an email and then parses it out of free text sounds cleverer and works
+worse: it mis-reads, it cannot validate, and on a phone it forces five separate
+sends. The *voice* stays conversational — the offer, the summary and the thanks
+are assistant bubbles — while the filling-in uses the control designed for
+filling in.
+
+**The durable queue lives here, not in the chat.** Chat cannot be queued: the
+visitor is watching, and their HTTP request dies inside a minute (§6a). Nobody
+watches an email being sent. So the row is written first, the reference number
+is returned immediately, delivery is attempted after the response, and
+`jobs/chatbot-escalation-retry.job.ts` retries every 30 minutes up to five
+attempts — roughly a two-hour window. **A delivery failure therefore never means
+a lost question.** Rows that exhaust their attempts become `FAILED` with
+`lastError` beside them, for a human to read rather than for a log to swallow.
+
+**Protections, and what each is actually for:**
+
+| Control | Protects |
+| --- | --- |
+| Turnstile (`chatbot-escalate`) | the inbox, not the bill — this is the 8th gated action |
+| 3/hour per IP | staff *attention*; an inbox drowned by scripts stops being read, and real questions drown with it |
+| Honeypot (`website`) | answered as if it succeeded, with a fake reference — telling a script it was caught only helps its author |
+| `consent` as `literal(true)` | a `false` that validates and is then rejected in the service is two places that must agree forever |
+| `consentAt` as a timestamp | UU PDP asks *when* consent was given; a boolean cannot answer that six months later |
+| 90-day retention, same sweep | one promise, one sweeper — a second job is a second thing that can die quietly |
+| HTML escaping | the question is written by the public and read in Gmail |
+
+`FAILED` rows are deleted by the retention sweep too. Holding someone's personal
+data forever because our mail server failed is not a lawful reason to hold it.
+
 ## 7. Risks that are easy to miss
 
 **Prompt injection.** Both retrieved content and tool results (complaint text,
@@ -287,9 +492,42 @@ cap, and a monthly spend alert. Cache aggressively — "berapa biaya
 pendaftaran?" will be asked hundreds of times, and the top FAQ entries deserve
 deterministic answers that never reach the model.
 
-> **Status 2026-07-25, updated 2026-07-31 — and the reason to check rather than
-> tick.** Token cap (700), history cap (6 turns) and the cache all shipped and
-> work. The spend alert still does not exist. The per-IP limiter — 10/minute,
+> **Status 2026-07-25, updated 2026-07-31 and 2026-09-04 — and the reason to
+> check rather than tick.** Token cap (700), history cap (6 turns) and the cache
+> all shipped and work. **The spend alert shipped 2026-09-04** and closes this
+> list: every billed call is booked into `chatbot_usage_daily` (a daily
+> aggregate per model, not one row per question — bounded, and it keeps no
+> per-visitor trail), and `jobs/chatbot-spend.job.ts` compares the month to date
+> against `CHATBOT_MONTHLY_BUDGET` every morning at 07:00 WIB, mailing at 50%,
+> 80% and 100%, each at most once a month. Three decisions in it are load-bearing:
+>
+> - **Token prices have no default.** They belong to the model and the region,
+>   both of which are env configuration precisely so the model stays swappable
+>   (§1), so a plausible default would produce an authoritative-looking figure
+>   that is simply wrong. `CHATBOT_PRICE_INPUT_PER_MTOK`,
+>   `CHATBOT_PRICE_OUTPUT_PER_MTOK` and `CHATBOT_PRICE_CACHED_INPUT_PER_MTOK`
+>   start at 0. Production runs 0.19 / 0.51 / 0.028 USD per 1M tokens against a
+>   10 USD monthly budget, from the Azure AI Foundry price page for
+>   *DeepSeek-V4 Flash Global*.
+> - **The cached-input rate is live — CORRECTED 2026-09-04.** This bullet first
+>   claimed the deployment reports no cached-token count at all, so the rate was
+>   inert and every estimate an upper bound. That was one observation stretched
+>   too far: the response inspected simply had no cache hit, and the field is
+>   absent rather than always missing. Production the same day recorded **2,304
+>   of 8,589 prompt tokens as cached**, on real visitor traffic. The 0.028 rate
+>   is therefore applied, and the estimate is more accurate than promised, not
+>   less. What survives is the flag, not the claim: `cacheUnreported` is
+>   computed from the data, so a month with no reported cache still says out
+>   loud that its figure leans high — and now it says so only when true.
+> - **Unpriced does not mean silent.** With no price or no budget set, the job
+>   mails a configuration notice once a month — but only in a month the
+>   assistant was actually used. Going quiet when unconfigured is the exact
+>   failure this module has already had twice.
+> - **A call whose response carries no `usage` block is counted as unmetered,
+>   never as free.** Zeros would report a spend of zero against a real invoice;
+>   the estimate says out loud that it is a lower bound instead.
+>
+> The per-IP limiter — 10/minute,
 > the one item on this list aimed squarely at cost amplification — was **present
 > in code and inert in production** for six days: `trust proxy = 1` behind
 > Cloudflare *and* nginx made `req.ip` the rotating edge address, so 40+
@@ -306,6 +544,57 @@ deterministic answers that never reach the model.
 personal data to a third-party inference endpoint. That needs a lawful basis,
 and region and data-residency become requirements rather than preferences. The
 public bot raises none of this — one more reason it goes first.
+
+> **Corrected 2026-09-04.** "The public bot raises none of this" stopped being
+> true the day it began storing what visitors type. It was written when the
+> widget kept nothing: `chatbot.controller.ts` logged *that* a question arrived
+> and whether it could be answered, deliberately never the text, because people
+> type "anak saya bernama…" into chat boxes.
+>
+> The transcript (§9) reverses that, on purpose and with the owner's decision.
+> The claim that survives is narrower and worth stating precisely: the public
+> bot processes **personal data volunteered by an adult visitor about their own
+> enquiry**, not children's records pulled from our database — which is a
+> different lawful basis and a far smaller blast radius than Phase 2. It is
+> still personal data, and it is governed as such.
+
+## 9. The transcript, and what makes storing it defensible
+
+Shipped 2026-09-04, at the owner's request: every question and answer is kept in
+`chatbot_conversations` / `chatbot_messages` so the pesantren can see what the
+public actually asks and where the assistant fails them.
+
+The objection that kept this out for six weeks was never wrong, so it is
+answered rather than dropped. Three constraints, each load-bearing:
+
+1. **One reader.** `GET /chatbot/admin/conversations` is `SUPER_ADMIN` only —
+   stricter in spirit than the persona editor beside it, which merely edits
+   house style. Opening a conversation writes an audit line naming who read it.
+2. **Ninety days, enforced by a job that proves it ran.**
+   `jobs/chatbot-transcript-purge.job.ts` deletes conversations whose last turn
+   is older than 90 days, nightly at 03:15 WIB, and writes an `audit_logs` row
+   **every run, including the runs that delete nothing**. That zero-row is the
+   whole point: a table that is empty because nothing expired and a table that
+   is empty because the purge died three months ago look identical, and only the
+   trail tells them apart. Retention is half of why storing this is defensible,
+   so it cannot be a promise nobody can check.
+3. **Nothing that identifies a person.** No IP, no user agent, no cookie. The
+   only key is a `conversationId` the browser mints per open widget, which
+   grants nothing and links to nobody. Enough to read a conversation as a
+   conversation; not enough to follow anyone.
+
+Two smaller decisions worth keeping:
+
+- **The transcript is not the usage ledger, and the difference is deliberate.**
+  `chatbot_usage_daily` records what was *paid for*; the transcript records what
+  was *said*. A cache hit costs nothing and is absent from the ledger, but the
+  visitor still read it, so it appears here — flagged `fromCache`, because a
+  wrong answer that turns out to be a replay is fixed by clearing the cache, not
+  by editing the persona.
+- **The answer is sent before the transcript is written.** `recordTurn` swallows
+  its own errors, but ordering it ahead of `res.json` would make a correctly
+  answered question depend on a bookkeeping write succeeding. After the
+  response, nothing below it can reach the visitor.
 
 ## 8. Phasing, and why the authenticated half waits
 

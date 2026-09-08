@@ -3,10 +3,12 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
+import { getPrimaryRoleCode } from "@/lib/rbac";
 import { useCorrespondence } from "@/hooks/use-correspondence";
-import { useTeachers } from "@/hooks/use-teachers";
+import { useCorrespondenceParticipants } from "@/hooks/use-correspondence";
+import { useUnits } from "@/hooks/use-units";
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -40,12 +42,14 @@ import {
   renderTemplateDraft,
   remainingPlaceholders,
 } from "@cipansor/shared";
+import { TembusanEditor } from "@/components/e-office/tembusan-editor";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import React from "react";
 import { Upload } from "lucide-react";
 
 const letterSchema = z.object({
+  unitId: z.string().optional(),
   direction: z.nativeEnum(LetterDirection),
   type: z.nativeEnum(LetterType),
   subject: z.string().min(1, "Perihal wajib diisi"),
@@ -60,37 +64,78 @@ const letterSchema = z.object({
   fileUrl: z.string().optional(),
   reviewerIds: z.array(z.string()).optional(),
   recipientIds: z.array(z.string()).optional(),
+  ccRecipients: z
+    .array(
+      z.object({
+        userId: z.string().optional(),
+        externalName: z.string().optional(),
+      }),
+    )
+    .optional(),
+  attachments: z
+    .array(
+      z.object({
+        name: z.string(),
+        fileUrl: z.string(),
+        mimeType: z.string().optional(),
+        sizeBytes: z.number().optional(),
+      }),
+    )
+    .optional(),
 });
 
-export default function CreateLetterPage() {
+function CreateLetterForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user } = useAuth();
-  const { createLetter } = useCorrespondence(user?.unitId);
-  const { data: teachers } = useTeachers({
-    page: 1,
-    limit: 100,
-    unitId: user?.unitId,
-  });
-  const [uploading, setUploading] = React.useState(false);
 
-  const staffOptions =
-    teachers?.data.map((t: any) => ({
-      label: t.user?.name || t.nip,
-      value: t.userId,
-    })) || [];
+  /**
+   * The direction the caller asked for.
+   *
+   * The e-office dashboard has separate tiles for "Catat Surat Masuk" and
+   * "Buat Surat Keluar" and sends `?direction=incoming` / `?direction=outgoing`
+   * with each. The form ignored the parameter entirely and always opened as an
+   * outgoing letter — so "Catat Surat Masuk" opened a form for writing one.
+   */
+  const requestedDirection =
+    searchParams.get("direction")?.toUpperCase() === "INCOMING"
+      ? LetterDirection.INCOMING
+      : LetterDirection.OUTGOING;
+  const { data: units = [] } = useUnits();
+  const [searchQuery, setSearchQuery] = React.useState("");
+  const [uploading, setUploading] = React.useState(false);
+  const [uploadingAttachment, setUploadingAttachment] = React.useState(false);
+  const [submitMode, setSubmitMode] = React.useState<"DRAFT" | "SUBMIT">("DRAFT");
 
   const form = useForm<z.infer<typeof letterSchema>>({
     resolver: zodResolver(letterSchema),
     defaultValues: {
-      direction: LetterDirection.OUTGOING,
+      unitId: user?.unitId || "",
+      direction: requestedDirection,
       type: LetterType.SURAT_DINAS,
       date: new Date().toISOString().split("T")[0],
       urgency: LetterUrgency.NORMAL,
       nature: LetterNature.PUBLIC,
       reviewerIds: [],
       recipientIds: [],
+      ccRecipients: [],
+      attachments: [],
     },
   });
+
+  const selectedUnitId = form.watch("unitId") || user?.unitId;
+  const { createLetter } = useCorrespondence(selectedUnitId);
+  const { data: participantsData } = useCorrespondenceParticipants({
+    search: searchQuery || undefined,
+    unitId: selectedUnitId,
+    limit: 100,
+  });
+
+  const staffOptions =
+    participantsData?.data.map((u) => ({
+      label: u.nip ? `${u.name} (${u.nip})` : u.name,
+      value: u.id,
+    })) || [];
 
   const direction = form.watch("direction");
   const letterType = form.watch("type");
@@ -139,22 +184,78 @@ export default function CreateLetterPage() {
     }
   };
 
+  /**
+   * Menambahkan satu lampiran.
+   *
+   * Berkasnya diunggah lebih dulu dan yang disimpan bersama surat hanyalah
+   * rujukannya — jalur yang sama dengan berkas naskah di atas. Nama aslinya
+   * ikut disimpan: "Daftar hadir.pdf" adalah yang dicari pengarsip, bukan nama
+   * acak yang diberikan penyimpanan.
+   */
+  const handleAttachmentUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingAttachment(true);
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const response = await api.post("/upload", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      if (response.data.success) {
+        form.setValue("attachments", [
+          ...(form.getValues("attachments") || []),
+          {
+            name: file.name,
+            fileUrl: response.data.data.url,
+            mimeType: file.type || undefined,
+            sizeBytes: file.size,
+          },
+        ]);
+        toast.success(`Lampiran "${file.name}" ditambahkan`);
+      }
+    } catch {
+      toast.error("Gagal mengunggah lampiran");
+    } finally {
+      setUploadingAttachment(false);
+      // Supaya berkas dengan nama yang sama dapat dipilih lagi setelah dihapus.
+      e.target.value = "";
+    }
+  };
+
   async function onSubmit(values: z.infer<typeof letterSchema>) {
-    if (!user?.unitId) {
-      toast.error("Unit ID tidak ditemukan");
+    const effectiveUnitId = values.unitId || user?.unitId;
+    if (!effectiveUnitId) {
+      toast.error("Unit ID wajib dipilih");
+      return;
+    }
+
+    const targetStatus =
+      submitMode === "SUBMIT" ? LetterStatus.PENDING_REVIEW : LetterStatus.DRAFT;
+
+    if (submitMode === "SUBMIT" && values.direction === LetterDirection.OUTGOING && (!values.reviewerIds || values.reviewerIds.length === 0)) {
+      toast.error("Pemeriksa pertama wajib dipilih saat mengajukan review.");
       return;
     }
 
     try {
       await createLetter.mutateAsync({
         ...values,
-        unitId: user.unitId,
-        status: LetterStatus.DRAFT,
+        unitId: effectiveUnitId,
+        status: targetStatus,
       });
-      toast.success("Surat berhasil dibuat");
+      toast.success(
+        targetStatus === LetterStatus.PENDING_REVIEW
+          ? "Surat berhasil diajukan untuk ditinjau"
+          : "Draft surat berhasil disimpan"
+      );
       router.push("/e-office/inbox");
     } catch (error) {
-      toast.error("Gagal membuat surat");
+      toast.error("Gagal memproses surat");
       console.error(error);
     }
   }
@@ -175,6 +276,37 @@ export default function CreateLetterPage() {
               <CardTitle>Informasi Dasar</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* B5: Display unit selector ONLY when user is authorized to issue cross-unit letters */}
+              {user && (getPrimaryRoleCode(user) === "YAYASAN_KETUA" || getPrimaryRoleCode(user) === "YAYASAN_SEKRETARIS" || getPrimaryRoleCode(user) === "SUPER_ADMIN" || !user.unitId) && (
+                <FormField
+                  control={form.control}
+                  name="unitId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Unit Penerbit / Pembuat Surat</FormLabel>
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value || user?.unitId || ""}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Pilih unit penerbit..." />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {units.map((u) => (
+                            <SelectItem key={u.id} value={u.id}>
+                              {u.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
+
               <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
@@ -193,10 +325,10 @@ export default function CreateLetterPage() {
                         </FormControl>
                         <SelectContent>
                           <SelectItem value={LetterDirection.INCOMING}>
-                            Surat Masuk (Dari Luar)
+                            Surat Masuk (diterima dari pihak lain)
                           </SelectItem>
                           <SelectItem value={LetterDirection.OUTGOING}>
-                            Surat Keluar (Ke Luar)
+                            Surat Keluar (diterbitkan yayasan)
                           </SelectItem>
                         </SelectContent>
                       </Select>
@@ -341,44 +473,126 @@ export default function CreateLetterPage() {
                   name="reviewerIds"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Pemeriksa & Penandatangan (Urut)</FormLabel>
+                      <FormLabel>Pemeriksa / Peninjau Pertama</FormLabel>
+                      <div className="space-y-2">
+                        <Input
+                          placeholder="Cari pejabat/staf..."
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          className="text-xs mb-1"
+                        />
+                        <Select
+                          onValueChange={(val) => field.onChange([val])}
+                          value={field.value?.[0] || ""}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Pilih pemeriksa/atasan pertama..." />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {staffOptions.map((option: any) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <FormDescription>
+                        Pilih pejabat/atasan pertama yang akan mengulas konsep surat ini. Pemeriksa pertama dapat meneruskan secara fleksibel ke pejabat berikutnya.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
+
+              {/*
+                Tembusan — daftar yang bisa disusun, bukan daftar centang.
+
+                Dua hal yang tidak bisa dilakukan daftar centang: memuat pihak
+                yang tidak punya akun di sini (justru sebagian besar tembusan
+                naskah dinas), dan menyimpan urutan — padahal tembusan tercetak
+                sebagai daftar bernomor yang lazim menurun menurut kedudukan.
+              */}
+              {direction === LetterDirection.OUTGOING && (
+                <FormField
+                  control={form.control}
+                  name="ccRecipients"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Tembusan (opsional)</FormLabel>
                       <FormControl>
-                        {/* Simple multiple select using standard Select for now as MultiSelect component is missing */}
-                        <div className="space-y-2 border rounded-md p-4 max-h-48 overflow-y-auto">
-                          {staffOptions.map((option: any) => (
-                            <div
-                              key={option.value}
-                              className="flex items-center space-x-2"
-                            >
-                              <input
-                                type="checkbox"
-                                value={option.value}
-                                checked={(field.value || []).includes(
-                                  option.value,
-                                )}
-                                onChange={(e) => {
-                                  const checked = e.target.checked;
-                                  const current = field.value || [];
-                                  if (checked) {
-                                    field.onChange([...current, option.value]);
-                                  } else {
-                                    field.onChange(
-                                      current.filter(
-                                        (val: string) => val !== option.value,
-                                      ),
-                                    );
-                                  }
-                                }}
-                                className="h-4 w-4 rounded border-gray-300"
-                              />
-                              <label className="text-sm">{option.label}</label>
-                            </div>
-                          ))}
+                        <TembusanEditor
+                          value={field.value || []}
+                          onChange={field.onChange}
+                          participants={participantsData?.data ?? []}
+                          search={searchQuery}
+                          onSearchChange={setSearchQuery}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        Tembusan internal terkirim sendiri lewat sistem; tembusan
+                        pihak luar hanya tercetak pada naskah, dan
+                        pengantarannya di luar sistem.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
+
+              {direction === LetterDirection.INCOMING && (
+                <FormField
+                  control={form.control}
+                  name="recipientIds"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Teruskan Surat Masuk Kepada (Dapat memilih lebih dari 1)</FormLabel>
+                      <FormControl>
+                        <div className="space-y-2 border rounded-md p-3">
+                          <Input
+                            placeholder="Cari penerima disposisi/terusan..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="text-xs mb-2 bg-white"
+                          />
+                          <div className="space-y-2 max-h-40 overflow-y-auto">
+                            {staffOptions.map((option: any) => (
+                              <div
+                                key={option.value}
+                                className="flex items-center space-x-2"
+                              >
+                                <input
+                                  type="checkbox"
+                                  value={option.value}
+                                  checked={(field.value || []).includes(
+                                    option.value,
+                                  )}
+                                  onChange={(e) => {
+                                    const checked = e.target.checked;
+                                    const current = field.value || [];
+                                    if (checked) {
+                                      field.onChange([...current, option.value]);
+                                    } else {
+                                      field.onChange(
+                                        current.filter(
+                                          (val: string) => val !== option.value,
+                                        ),
+                                      );
+                                    }
+                                  }}
+                                  className="h-4 w-4 rounded border-gray-300"
+                                />
+                                <label className="text-sm cursor-pointer">{option.label}</label>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       </FormControl>
                       <FormDescription>
-                        Pilih urutan pemeriksa (Paraf) hingga Penandatangan
-                        terakhir.
+                        Pilih pejabat/staf yang akan menerima terusan awal surat masuk ini.
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
@@ -488,9 +702,80 @@ export default function CreateLetterPage() {
                     </FormControl>
                     {field.value && (
                       <FormDescription className="text-green-600 flex items-center gap-1">
-                        <Upload className="h-3 w-3" /> File siap dilampirkan
+                        <Upload className="h-3 w-3" /> Berkas naskah siap dikirim
                       </FormDescription>
                     )}
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/*
+                Lampiran, yang berbeda dari berkas naskah di atas.
+
+                Yang di atas adalah naskahnya sendiri — satu berkas, pindaian
+                atau unggahan. Lampiran adalah berkas yang *menyertainya*, dan
+                jumlahnya diumumkan di kepala surat sebagai "Lampiran : 2 (dua)
+                berkas" supaya penerima tahu apa yang seharusnya ia terima.
+              */}
+              <FormField
+                control={form.control}
+                name="attachments"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Lampiran</FormLabel>
+                    <FormControl>
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-4">
+                          <Input
+                            type="file"
+                            onChange={handleAttachmentUpload}
+                            disabled={uploadingAttachment}
+                          />
+                          {uploadingAttachment && (
+                            <span className="text-sm text-muted-foreground">
+                              Mengunggah...
+                            </span>
+                          )}
+                        </div>
+                        {(field.value || []).length > 0 && (
+                          <ul className="space-y-2">
+                            {(field.value || []).map((att, index) => (
+                              <li
+                                key={`${att.fileUrl}-${index}`}
+                                className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
+                              >
+                                <span className="text-muted-foreground">
+                                  {index + 1}.
+                                </span>
+                                <span className="min-w-0 flex-1 truncate">
+                                  {att.name}
+                                </span>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() =>
+                                    field.onChange(
+                                      (field.value || []).filter(
+                                        (_, i) => i !== index,
+                                      ),
+                                    )
+                                  }
+                                >
+                                  Hapus
+                                </Button>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    </FormControl>
+                    <FormDescription>
+                      Jumlahnya diumumkan pada kepala surat. Surat yang menyatakan
+                      dua lampiran dan sampai tanpa keduanya adalah surat yang
+                      kekurangannya dapat dibuktikan.
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -564,15 +849,41 @@ export default function CreateLetterPage() {
             </CardContent>
           </Card>
 
-          <Button
-            type="submit"
-            className="w-full"
-            disabled={createLetter.isPending}
-          >
-            {createLetter.isPending ? "Menyimpan..." : "Simpan Draft"}
-          </Button>
+          <div className="flex gap-4">
+            <Button
+              type="submit"
+              variant="outline"
+              className="flex-1"
+              disabled={createLetter.isPending}
+              onClick={() => setSubmitMode("DRAFT")}
+            >
+              Simpan Draft
+            </Button>
+            <Button
+              type="submit"
+              className="flex-1 bg-blue-600 hover:bg-blue-700"
+              disabled={createLetter.isPending}
+              onClick={() => setSubmitMode("SUBMIT")}
+            >
+              Ajukan Review
+            </Button>
+          </div>
         </form>
       </Form>
     </div>
+  );
+}
+
+/**
+ * `useSearchParams` forces the subtree into client-side rendering, so it needs a
+ * Suspense boundary above it or the whole route opts out of static generation.
+ */
+export default function CreateLetterPage() {
+  return (
+    <React.Suspense
+      fallback={<div className="p-6 text-muted-foreground">Memuat formulir…</div>}
+    >
+      <CreateLetterForm />
+    </React.Suspense>
   );
 }

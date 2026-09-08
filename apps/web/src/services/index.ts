@@ -69,7 +69,7 @@ export type {
   AuthTokens,
   UserProfile,
   ChangePasswordInput,
-  ResetPasswordInput,
+  SendPasswordResetInput,
   ConfirmResetPasswordInput,
 } from "./auth.service";
 

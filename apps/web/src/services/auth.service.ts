@@ -9,6 +9,8 @@ import type { ApiResponse } from "./types";
 export interface LoginCredentials {
   email: string;
   password: string;
+  /** Token Turnstile; tidak ada ketika gerbangnya dimatikan di build ini. */
+  turnstileToken?: string;
 }
 
 export interface RegisterInput {
@@ -47,13 +49,20 @@ export interface ChangePasswordInput {
   newPassword: string;
 }
 
-export interface ResetPasswordInput {
-  email: string;
+/**
+ * Admin-triggered reset. Keyed on a user id, not an e-mail address: there is
+ * deliberately no public "forgot password" form, so the caller is always an
+ * admin looking at a user record.
+ */
+export interface SendPasswordResetInput {
+  userId: string;
 }
 
 export interface ConfirmResetPasswordInput {
   token: string;
   newPassword: string;
+  /** Token Turnstile; tidak ada ketika gerbangnya dimatikan di build ini. */
+  turnstileToken?: string;
 }
 
 /**
@@ -171,10 +180,15 @@ export const authService = {
   },
 
   /**
-   * Request password reset
+   * E-mail a password reset link to a user (admin only).
    */
-  async requestPasswordReset(input: ResetPasswordInput): Promise<void> {
-    await api.post("/auth/forgot-password", input);
+  async sendPasswordReset(
+    input: SendPasswordResetInput,
+  ): Promise<{ message: string; expiresInHours: number }> {
+    const response = await api.post<
+      ApiResponse<{ message: string; expiresInHours: number }>
+    >("/auth/send-password-reset", input);
+    return response.data.data;
   },
 
   /**

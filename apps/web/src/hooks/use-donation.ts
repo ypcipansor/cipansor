@@ -339,6 +339,8 @@ export interface CreateDonationData {
   paymentMethod: PaymentMethod;
   paymentProof?: string;
   notes?: string;
+  /** Token Turnstile; hanya dipakai jalur publik, diabaikan jalur terautentikasi. */
+  turnstileToken?: string;
 }
 
 export function useCreateDonation() {

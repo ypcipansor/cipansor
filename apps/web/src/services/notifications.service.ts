@@ -65,6 +65,21 @@ export interface ListNotificationParams extends PaginationParams {
 /**
  * Notifications Service
  */
+/**
+ * Mirrors `EmailTransportStatus` in the API's email-transport.ts.
+ *
+ * `kind: "log"` means nothing is configured and no mail leaves the building —
+ * the state production has been in all along.
+ */
+export interface EmailTransportStatus {
+  kind: "gmail_api" | "smtp" | "log";
+  configured: boolean;
+  from: string;
+  replyTo: string;
+  sender?: string;
+  host?: string;
+}
+
 export const notificationsService = {
   /**
    * Get paginated list of notifications for current user
@@ -151,6 +166,22 @@ export const notificationsService = {
         failed: number;
       }>
     >("/notifications/send", input);
+    return response.data.data;
+  },
+
+  /**
+   * Which mail transport the server is actually using, and the identity it
+   * sends under.
+   *
+   * Asked rather than assumed: the settings page used to print the From and
+   * Reply-To addresses and the SMTP host as literal strings, so it went on
+   * describing a working Gmail setup no matter what the server was configured
+   * with — or whether it was configured at all.
+   */
+  async getEmailTransport(): Promise<EmailTransportStatus> {
+    const response = await api.get<ApiResponse<EmailTransportStatus>>(
+      "/notifications/settings/email-transport",
+    );
     return response.data.data;
   },
 

@@ -4,6 +4,105 @@ Status of production-readiness work and the remaining roadmap. Updated as part o
 the production-readiness / architecture-standardization effort. For the system
 overview see [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 
+## 🔴 OPEN — empat PR terbuka akan MELINDAS pekerjaan yang sudah tergelar (2026-09-05)
+
+Keempat PR fitur yang terbuka bercabang dari basis yang sudah jauh tertinggal,
+dan menggabungkannya apa adanya akan **menghapus berkas yang hidup di `main`
+dan berjalan di produksi**. Diukur 2026-09-05:
+
+| PR | tertinggal dari `main` | maju | catatan |
+|---|---|---|---|
+| #415 | **45 commit** | 46 | Manajemen Kinerja Terintegrasi |
+| #438 | **42 commit** | 12 | Audit Ujian Online / CBT |
+| #439 | **42 commit** | 14 | Standardisasi SPMB |
+| #441 | **38 commit** | 15 | Google Workspace / Microsoft Nonprofits |
+
+**#441 yang paling berbahaya.** Diff dua-titik dari basisnya menunjukkan ia
+**menghapus 24 berkas**, dan tidak menyediakan penggantinya — di antaranya
+seluruh rantai tanda tangan dan pencabutan e-office yang sudah dijalankan
+end-to-end di produksi:
+
+```
+apps/api/src/utils/generate-letter-pdf.ts        apps/api/src/utils/letter-verification.ts
+apps/api/src/utils/esign-revocation.ts           apps/api/src/utils/letter-revocation-authority.ts
+apps/api/src/modules/correspondence/signed-pdf.ts
+apps/web/src/app/public/verify-letter/page.tsx
+apps/web/src/components/e-office/revocation-requests-card.tsx
+apps/web/e2e/e-office-verify.spec.ts             … dan 16 lainnya
+```
+
+**Kenapa ini mudah terlewat:** `git diff main...branch` (tiga titik) tidak
+menampilkannya sebagai penghapusan sama sekali — ia membandingkan lawan
+merge-base, sehingga PR yang sekadar tertinggal terlihat seolah hanya menambah.
+Ukur dengan `gh api repos/<o>/<r>/compare/main...<branch> --jq '.behind_by'`
+dan `git diff --diff-filter=D --name-only $(git merge-base origin/main FETCH_HEAD) FETCH_HEAD`.
+
+**Jangan gabungkan satu pun tanpa rebase ke `main` lebih dulu**, lalu periksa
+ulang daftar penghapusannya.
+
+## 🟠 SEPARUH BERES — raport merdeka masih PNG rata; naskah dinas tidak lagi (diperiksa 2026-09-05)
+
+**Ralat 2026-09-05.** Separuh entri ini sudah tidak berlaku. Halaman naskah
+dinas **tidak lagi** meraster: `apps/web/src/app/e-office/letter/[id]/page.tsx`
+kini menyatakan sendiri *"Tidak ada html2canvas dan jsPDF di sini lagi"*, dan
+generator sisi-server `apps/api/src/utils/generate-letter-pdf.ts` sudah dipakai
+(7 panggilan `drawText`, teks tetap teks).
+
+**Yang MASIH berlaku:** `apps/web/src/app/assessment/raport-merdeka/page.tsx`
+tetap memanggil `html2canvas` + `jsPDF` (baris 50–51, 124, 132), jadi raport
+merdeka masih diunduh sebagai satu gambar raster per halaman.
+
+Deskripsi aslinya, untuk raport merdeka, tetap benar:
+
+The letter template even documents it, at `letter-pdf-template.tsx:40`:
+*"This template is not only displayed — html2canvas rasterises it into the
+downloaded PDF."*
+
+Costs: the text cannot be selected, searched, or indexed by the archive; screen
+readers get nothing; files are far larger than they need to be; and — the reason
+this blocks other work — **a raster PDF cannot carry a meaningful PAdES
+signature**, so it is a hard ceiling on the e-signature roadmap.
+
+A server-side `pdf-lib` generator that keeps text as text and embeds only the QR
+as an image exists at commit `e93a7cf2` (21 `drawText` calls). It has four
+defects to fix before use — silent single-page truncation, a missing letterhead
+logo, WinAnsi-only fonts that throw on Arabic, and a signature block that can
+overlap the body. See [`EOFFICE_ESIGN_PLAN.md`](./EOFFICE_ESIGN_PLAN.md) §2.2.
+
+## ✅ SUDAH BISA — pencabutan terpasang penuh (dibuktikan lawan `main` 2026-09-05)
+
+**Entri ini sudah tidak berlaku, dan sempat saya sebut mendesak kepada
+pengguna sebelum memeriksanya — jangan ulangi: periksa item merah lawan kode
+sebelum mengutipnya.** Diperiksa lawan `origin/main` 2026-09-05:
+
+- **Kunci penandatanganan.** `POST /esign/keys/:userId/revoke` ada, dan frontend
+  **memanggilnya**: `apps/web/src/components/settings/esign-key-inventory.tsx`
+  (`revokeKey.mutateAsync`, tombol "Cabut kunci"), lewat
+  `apps/web/src/hooks/use-esign.ts:239`.
+- **Tanda tangan surat.** `POST /esign/letters/:letterId/revoke` ada di
+  `esign.routes.ts:169` → `EsignController.revokeSignature`, divalidasi
+  `revokeSignatureSchema`, dan dipanggil dari `use-esign.ts:269`. Modul
+  kewenangannya (`letter-revocation-authority.ts`) dan mekaniknya
+  (`esign-revocation.ts`) ada beserta ujinya, dan `signed-pdf.ts` merender cap
+  DICABUT.
+
+Isi lama, disimpan sebagai catatan bagaimana lubangnya dulu ditemukan:
+
+- **Signing keys.** `POST /esign/keys/:userId/revoke` exists in
+  `esign.routes.ts`, guarded by `isSuperAdmin` and validated by
+  `revokeKeySchema` — and **no frontend code calls it**. A leaked signing
+  passphrase, or an official who leaves the yayasan, cannot be revoked through
+  the application.
+- **Letter signatures.** `LetterSignature` carries `revokedAt`, `revokedReason`
+  and `revokedById`. `letter-verification.ts` branches on them, the public
+  verification page is written to report *"Surat telah dicabut: …"*, and the
+  naskah template filters revoked signatures out of the QR block. But the only
+  `letterSignature.update` in the whole tree writes `{ pdfHash, pdfSignature }`.
+  **No route, controller or service method ever sets `revokedAt`.**
+
+So the UI can display a state no code path can produce. Withdrawing a wrongly
+issued SK is an ordinary administrative need, and today it is impossible.
+
 ## ✅ FIXED — public pages rendered Indonesian when EN/AR was selected (2026-07-23)
 
 **Was.** Switching the public site to English or Arabic translated the
@@ -268,6 +367,8 @@ something that has never happened.
 **Not fixed here.** The repair is a Dockerfile change to the runtime image
 (install `sharp` for musl in the runner stage, or move the runner to a glibc
 base), which is a deploy-risk change and does not belong in a content PR.
+**Still true after the 2026-09-02 rebuild** — re-measured on the live site,
+`/_next/image?w=256` returns the source file at 156,656 bytes unchanged.
 Everything shipped in the meantime carries explicit derivatives instead —
 `galleryThumb()` in `packages/shared/src/public-site.ts` — so the gallery page
 costs 484 KB rather than 2.3 MB whether or not this is ever repaired. Anything
@@ -327,6 +428,16 @@ That is an authority question for the yayasan, not a data-cleanup task. Prefer
 mandatory-2FA wall, including both active `SUPER_ADMIN`s, neither of which has
 2FA enrolled. Flipping it is part of launch, and it locks out testing until
 someone enrols — see the launch checklist rather than treating it as a bug.
+Re-confirmed in the container 2026-09-02. Its sibling is closed:
+`NEXT_PUBLIC_SHOW_DEMO_LOGIN` is now `false` and built that way, so the
+credential panel is gone from `/login`.
+
+**7. `#2` above is now half-solved, in the direction that matters.**
+`/reset-password` is public, portal-only and reachable with no session (#413),
+so an e-mailed link resolves. `/certificates/verify/[code]` is untouched and
+still answers **404** on the apex, **307 → /login** on the portal — measured
+again 2026-09-02. What it discloses still needs deciding before it joins the
+public list.
 
 
 ## ✅ Resolved by this effort (2026-07-22)
@@ -670,7 +781,7 @@ injections (`grc-live`, `integration-grc`), none of which mock product data.
   and financial data); a zakat *collection* (muzakki) model to complement the
   existing distribution side.
 
-## ⚠️ Broken Prisma migration chain (schema-first via `db push`)
+## ✅ SELESAI 2026-09-05 (#480/#481) — rantai migrasi sudah di-baseline
 
 The `prisma/migrations/` folder is **not applicable to a fresh database**:
 `20260709000000_add_pesantren_features_294` runs `ALTER TABLE "complaints" …`,
@@ -683,6 +794,16 @@ but no migration ever `CREATE`s the `complaints` table — it exists only in
 **Impact:** new changes can only be applied via `db:push` (as done for the
 `AccountCode.unitId` addition above); a clean incremental migration cannot be
 generated until the chain is repaired.
+
+**Sudah dikerjakan persis begitu, 2026-09-05.** Riwayat diringkas jadi satu
+`0_init`; produksi ditandai dengan `migrate resolve --applied 0_init`
+(`applied_steps_count = 0`, data tidak tersentuh) dan kini menjawab "No pending
+migrations to apply." Satu jebakan yang nyaris meloloskan kehilangan: `migrate
+diff` **tidak melihat trigger/function/view**, sehingga
+`assert_yayasan_organ_exclusive` hampir hilang dari baseline dengan diff yang
+tetap kosong — ia harus ditulis tangan.
+
+Rencana aslinya, yang ternyata tepat:
 
 **Fix (dedicated follow-up):** baseline the history — squash the 18 migrations
 into a single migration whose SQL is generated from the current `schema.prisma`

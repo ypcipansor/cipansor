@@ -38,6 +38,72 @@ export enum LetterNature {
   STRICTLY_CONFIDENTIAL = "STRICTLY_CONFIDENTIAL",
 }
 
+/**
+ * Dari mana byte naskah yang ditandatangani berasal.
+ *
+ * Cerminan `LetterAuthoringTrack` di Prisma. Ada di sini karena halaman
+ * verifikasi publik harus menyebutkannya: dua jalur ini membuktikan hal yang
+ * sama tentang byte-nya dan hal yang berbeda tentang buku agendanya.
+ */
+export enum LetterAuthoringTrack {
+  GENERATED = "GENERATED",
+  UPLOADED = "UPLOADED",
+}
+
+/**
+ * Apa yang sebenarnya dijamin tiap jalur, ditulis untuk dibaca orang luar.
+ *
+ * Kalimatnya sengaja tidak seimbang. Yang satu boleh menyatakan bahwa
+ * keterangan dan isinya berasal dari satu sumber; yang lain hanya boleh
+ * menyatakan bahwa berkasnya utuh sejak ditandatangani — karena memang hanya
+ * itu yang dapat dibuktikan, dan sebuah halaman verifikasi yang meminjam
+ * kalimat pertama untuk kasus kedua sedang menjanjikan sesuatu yang tidak
+ * diperiksanya.
+ */
+export const LETTER_AUTHORING_TRACK_LABELS: Record<
+  LetterAuthoringTrack,
+  { label: string; assurance: string }
+> = {
+  [LetterAuthoringTrack.GENERATED]: {
+    label: "Disusun oleh sistem",
+    assurance:
+      "Naskah ini disusun sistem dari data yang tercatat pada buku agenda, sehingga nomor, perihal, tanggal, dan isinya berasal dari satu sumber yang sama.",
+  },
+  [LetterAuthoringTrack.UPLOADED]: {
+    label: "Diunggah penyusun",
+    assurance:
+      "Naskah ini ditulis penyusunnya di luar sistem lalu diunggah, dan disegel apa adanya pada saat diterima. Keutuhan berkasnya terbukti; kesesuaian isinya dengan keterangan buku agenda di atas dipastikan oleh pemeriksa dan penanda tangan, bukan oleh pemeriksaan otomatis.",
+  },
+};
+
+/**
+ * Cara sebuah naskah keluar dari kantor.
+ *
+ * Dicatat karena buku ekspedisi mencatatnya: ketika penerima menyatakan tidak
+ * menerima surat, "lewat apa dan kepada siapa diserahkan" adalah pertanyaan
+ * pertama, dan status SENT saja tidak menjawabnya.
+ */
+export enum LetterDispatchChannel {
+  HAND_DELIVERY = "HAND_DELIVERY",
+  COURIER = "COURIER",
+  POST = "POST",
+  EMAIL = "EMAIL",
+  WHATSAPP = "WHATSAPP",
+  OTHER = "OTHER",
+}
+
+export const LETTER_DISPATCH_CHANNEL_LABELS: Record<
+  LetterDispatchChannel,
+  string
+> = {
+  [LetterDispatchChannel.HAND_DELIVERY]: "Diantar langsung",
+  [LetterDispatchChannel.COURIER]: "Kurir / ekspedisi",
+  [LetterDispatchChannel.POST]: "Pos",
+  [LetterDispatchChannel.EMAIL]: "Surel",
+  [LetterDispatchChannel.WHATSAPP]: "WhatsApp",
+  [LetterDispatchChannel.OTHER]: "Lainnya",
+};
+
 export enum LetterStatus {
   DRAFT = "DRAFT",
   PENDING_REVIEW = "PENDING_REVIEW",
@@ -75,17 +141,67 @@ export interface CreateLetterInput {
   // Relations
   reviewerIds?: string[]; // Ordered list of reviewers (User IDs)
   recipientIds?: string[]; // Internal recipients (User IDs)
-  ccIds?: string[]; // CC recipients (User IDs)
+  /**
+   * Tembusan — penerima salinan, bukan penerima surat.
+   *
+   * Sudah lama ada di sini dan di kolom `LetterRecipient.isCC`, dan selama itu
+   * pula tidak pernah terpakai: satu-satunya penulisan `isCC` di seluruh kode
+   * adalah `isCC: false` yang dipaku pada pembuatan surat. Tembusan adalah
+   * unsur baku naskah dinas; tanpa ini penyusun terpaksa menuliskannya di
+   * badan surat, di mana ia tidak terbaca oleh apa pun.
+   *
+   * Satu daftar berurutan, bukan dua: tembusan tercetak sebagai daftar
+   * bernomor, dan urutannya adalah urutan yang disusun penulisnya — biasanya
+   * menurun menurut kedudukan, dengan pihak dalam dan luar berselang-seling.
+   * Dua array terpisah akan memaksa semua pihak internal berkumpul di atas,
+   * yang bukan urutan yang dimaksud siapa pun.
+   */
+  ccRecipients?: LetterCcInput[];
+  /** Lampiran yang menyertai naskah, sudah diunggah lewat POST /upload. */
+  attachments?: LetterAttachmentInput[];
+}
+
+/**
+ * Satu baris tembusan: ke dalam atau ke luar, tidak pernah keduanya.
+ *
+ * `userId` adalah pengguna sistem — ia akan menerima pemberitahuan dan dapat
+ * membuka suratnya sendiri, jadi tembusan kepadanya benar-benar terkirim.
+ * `externalName` adalah pihak di luar sistem (Kepala KUA, Ketua RW, dinas
+ * terkait): namanya tercetak pada naskah, dan pengantarannya di luar sistem —
+ * yang justru jujur, karena sistem memang tidak mengantarkannya.
+ */
+export interface LetterCcInput {
+  userId?: string;
+  externalName?: string;
+}
+
+export interface LetterAttachmentInput {
+  name: string;
+  fileUrl: string;
+  mimeType?: string;
+  sizeBytes?: number;
 }
 
 export interface UpdateLetterInput extends Partial<CreateLetterInput> {
   reviewerNotes?: string; // For adding notes during review
 }
 
+/**
+ * One rung of a letter's verification ladder.
+ *
+ * The name lives on the nested `reviewer`, which is what the API sends. A flat
+ * `reviewerName: string` was declared here too and no endpoint has ever
+ * populated it — so the letter page's "Status Review" card printed an empty
+ * name beside every rung, and the panel that exists to say *who* is holding the
+ * letter up said only "Pending".
+ *
+ * Same defect as `LetterDispositionDetail` had, and the same lesson: a DTO
+ * field that no response fills is not documentation, it is a silent bug with a
+ * type annotation on it.
+ */
 export interface LetterReviewerDetail {
   id: string;
   reviewerId: string;
-  reviewerName: string;
   order: number;
   status: string;
   isSigner: boolean;
@@ -98,14 +214,28 @@ export interface LetterReviewerDetail {
   };
 }
 
+/**
+ * One disposition hop on a letter.
+ *
+ * `sender` and `recipient` are nested objects, matching what the API actually
+ * sends (`include: { sender: { select: { name } } }`). They used to be declared
+ * here as flat `senderName` / `recipientName` strings — fields the API has
+ * never sent. TypeScript was satisfied, `disposition.senderName[0]` read
+ * `undefined[0]` at runtime, and the whole letter page crashed for every letter
+ * that had ever been disposed. A DTO that describes a response nobody sends is
+ * worse than no DTO: it converts a visible mistake into a silent one.
+ */
 export interface LetterDispositionDetail {
   id: string;
-  senderName: string;
-  recipientName: string;
+  senderId?: string;
+  sender?: { name: string } | null;
   recipientId: string;
+  recipient?: { name: string } | null;
   instruction: string;
   status: string;
-  deadline?: string;
+  deadline?: string | null;
+  notes?: string | null;
+  completedAt?: string | null;
   createdAt: string;
 }
 
@@ -120,6 +250,74 @@ export interface LetterFlowEventDetail {
   toStatus?: string | null;
   note?: string | null;
   createdAt: string;
+}
+
+/** Satu lampiran naskah, sebagaimana dikirim API. */
+export interface LetterAttachmentDetail {
+  id: string;
+  name: string;
+  fileUrl: string;
+  mimeType?: string | null;
+  sizeBytes?: number | null;
+  order: number;
+  createdAt: string;
+}
+
+/**
+ * Penerima internal sebuah surat — termasuk penerima tembusan.
+ *
+ * `isCC` membedakan keduanya, dan itu satu-satunya alasan bentuk ini ada:
+ * daftar penerima dan daftar tembusan adalah dua daftar yang dicetak di dua
+ * tempat berbeda pada naskah.
+ */
+export interface LetterRecipientDetail {
+  id: string;
+  userId?: string | null;
+  unitId?: string | null;
+  /** Terisi untuk tembusan ke pihak di luar sistem; `userId` lalu kosong. */
+  externalName?: string | null;
+  /** Unit **penerbit** surat, bukan penerima — lihat `ccRecipientName`. */
+  isCC: boolean;
+  order: number;
+  readAt?: string | null;
+  user?: { name: string } | null;
+  unit?: { name: string } | null;
+}
+
+/**
+ * Nama yang tercetak untuk satu baris tembusan.
+ *
+ * Sengaja **tidak** jatuh ke `unit.name`: kolom `unitId` pada baris penerima
+ * berisi unit *penerbit* suratnya, bukan unit penerima (lihat komentarnya di
+ * schema.prisma). Memakainya sebagai cadangan akan mencetak nama yayasan
+ * sendiri sebagai salah satu penerima tembusannya sendiri.
+ */
+export function ccRecipientName(r: LetterRecipientDetail): string {
+  return r.user?.name?.trim() || r.externalName?.trim() || "Tidak diketahui";
+}
+
+/** Satu baris buku ekspedisi: kapan naskah keluar, lewat apa, dan buktinya. */
+export interface LetterDispatchDetail {
+  id: string;
+  dispatchedAt: string;
+  channel: LetterDispatchChannel;
+  receivedByName?: string | null;
+  trackingNumber?: string | null;
+  receiptUrl?: string | null;
+  note?: string | null;
+  dispatchedBy?: { name: string } | null;
+  createdAt: string;
+}
+
+/** Apa yang dicatat petugas ketika sebuah naskah benar-benar dikirim. */
+export interface DispatchLetterInput {
+  channel: LetterDispatchChannel;
+  /** Tidak diisi = sekarang. Tidak boleh di masa depan. */
+  dispatchedAt?: string;
+  receivedByName?: string;
+  trackingNumber?: string;
+  receiptUrl?: string;
+  note?: string;
 }
 
 export interface LetterDetail {
@@ -151,40 +349,73 @@ export interface LetterDetail {
   urgency: LetterUrgency;
   nature: LetterNature;
   status: LetterStatus;
+  /** Jalur penyusunan naskah — lihat LetterAuthoringTrack. */
+  authoringTrack?: LetterAuthoringTrack;
   senderName?: string;
   senderTitle?: string;
   senderInstance?: string;
   recipientName?: string;
   recipientInstance?: string;
+  createdById?: string;
+  createdBy?: { name: string };
   createdByName: string;
   createdAt: string;
+  /** Kapan naskah pertama kali keluar dari kantor; null selama belum dikirim. */
+  sentAt?: string | null;
 
   reviewers: LetterReviewerDetail[];
+  recipients?: LetterRecipientDetail[];
+  attachments?: LetterAttachmentDetail[];
+  dispatches?: LetterDispatchDetail[];
   dispositions: LetterDispositionDetail[];
   flowEvents?: LetterFlowEventDetail[];
   signatures?: LetterSignatureDetail[];
+  revocationRequests?: LetterRevocationRequestDetail[];
 }
 
 /**
  * The electronic signature affixed to a signed letter.
  *
  * Deliberately no `signature` or `digest` field: the naskah only needs to
- * carry the QR, and the proof itself is checked server-side by
- * `GET /esign/verify/:token`. Shipping the raw signature to every reader of
- * the letter would put the cryptographic material on more screens than the
+ * carry the QR, and the proof itself is checked server-side against the
+ * uploaded PDF's bytes. Shipping the raw signature to every reader of the
+ * letter would put the cryptographic material on more screens than the
  * verification actually requires.
  */
 export interface LetterSignatureDetail {
   id: string;
   signedAt: string;
-  /** Goes into the QR as `/verifikasi/{token}` — a capability, not a secret. */
+  /**
+   * The raw token printed into the QR — not a URL.
+   *
+   * Scanning it opens nothing, deliberately: a token attests that some letter
+   * was signed, never that the document in your hand is that letter, so
+   * verification takes an uploaded PDF instead.
+   */
   verificationToken: string;
   algorithm: string;
+  /**
+   * Jabatan penandatangan saat menandatangani.
+   *
+   * Kewenangan mencabut diukur terhadap jabatan ini
+   * (`letter-revocation-authority.ts`), bukan terhadap jabatan orang itu hari
+   * ini — sebuah SK yang ditandatangani Ketua tetap naskah Ketua walaupun
+   * penandatangannya kemudian menjabat yang lain.
+   */
+  signerRoleCode?: string | null;
   /** Set when the signature was revoked; the naskah must then not claim valid. */
   revokedAt?: string | null;
+  /** Shown to anyone who can read the letter, and on the public page. */
+  revokedReason?: string | null;
+  revokedBy?: { name: string } | null;
+  revokedByRoleCode?: string | null;
+  /**
+   * Nama saja. NIP sengaja tidak ada di sini maupun di hasil verifikasi
+   * publik: nomor induk pegawai adalah keterangan internal, dan naskah yang
+   * beredar tidak perlu membawanya untuk membuktikan siapa yang menandatangani.
+   */
   signer: {
     name: string;
-    nip?: string;
   };
 }
 
@@ -192,7 +423,8 @@ export interface LetterSignatureDetail {
 export interface CreateDispositionInput {
   letterId: string;
   senderId: string;
-  recipientId: string;
+  recipientId?: string;
+  recipientIds?: string[];
   instruction: string;
   deadline?: string;
   parentDispositionId?: string;
@@ -214,3 +446,105 @@ export interface AgendaNumberConfig {
   format: string;
   resetPeriod: string;
 }
+
+/**
+ * Permohonan pencabutan naskah dinas.
+ *
+ * Mengajukan dan memutuskan adalah dua perbuatan yang berbeda, oleh dua pihak
+ * yang berbeda — bentuk yang sama dengan pencabutan sertifikat pada RFC 5280.
+ */
+export interface LetterRevocationRequestDetail {
+  id: string;
+  letterId: string;
+  signatureId: string;
+  requesterId: string;
+  requester?: { id: string; name: string; email: string } | null;
+  reason: string;
+  attachmentUrl?: string | null;
+  status: "PENDING" | "APPROVED" | "REJECTED" | "WITHDRAWN";
+  decidedById?: string | null;
+  decidedBy?: { name: string } | null;
+  decidedAt?: string | null;
+  decisionNote?: string | null;
+  createdAt: string;
+  letter?: {
+    id: string;
+    letterNumber?: string | null;
+    subject: string;
+    date: string;
+  } | null;
+  signature?: {
+    id: string;
+    signerId: string;
+    signerRoleCode?: string | null;
+    revokedAt?: string | null;
+    signer?: { name: string } | null;
+  } | null;
+}
+
+// Public Verification DTO
+export interface PublicLetterVerificationResult {
+  isValid: boolean;
+  isRevoked?: boolean;
+  revokedAt?: string | Date | null;
+  /**
+   * Why it was withdrawn, in the revoker's own words.
+   *
+   * Public text: it is shown as written to anyone who uploads the document.
+   * Without it the page can only say "dicabut" and leave the reader to guess
+   * whether the letter was wrong, superseded, or issued to the wrong person.
+   */
+  revokedReason?: string | null;
+  /** Pejabat yang mencabutnya. */
+  revokedByName?: string | null;
+  /**
+   * Benarkah pencabutan ini dinyatakan oleh pejabat yang namanya tercantum?
+   *
+   * `true` bila tanda tangan Ed25519 atas pernyataan pencabutannya sah — sama
+   * seperti CRL yang ditandatangani penerbitnya (RFC 5280). `null` untuk
+   * pencabutan yang tercatat sebelum tanda tangan pencabutan diberlakukan:
+   * bukan kegagalan verifikasi, hanya ketiadaan bukti tambahan.
+   */
+  revocationVerified?: boolean | null;
+  signedAt?: string | Date;
+  algorithm?: string;
+  digest?: string;
+  signer?: {
+    name: string;
+    position: string;
+  };
+  letter?: {
+    letterNumber: string;
+    subject: string | null;
+    date: string | Date;
+    status: string;
+    unitName: string;
+    /**
+     * Optional because a response produced before this field existed does not
+     * carry it, and the page must render that case rather than crash on it.
+     */
+    authoringTrack?: LetterAuthoringTrack | null;
+  };
+  reason?: string;
+}
+
+export interface ListParticipantsQuery {
+  search?: string;
+  unitId?: string;
+  limit?: number;
+}
+
+export interface CorrespondenceParticipant {
+  id: string;
+  name: string;
+  email: string;
+  unitId?: string | null;
+  unitName?: string | null;
+  roleCode?: string | null;
+  nip?: string | null;
+  position?: string | null;
+}
+
+export type CreateDispositionResponse =
+  | LetterDispositionDetail
+  | LetterDispositionDetail[];

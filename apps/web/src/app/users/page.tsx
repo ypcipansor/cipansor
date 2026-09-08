@@ -50,11 +50,13 @@ import {
   Shield,
   Building2,
   ShieldAlert,
+  KeyRound,
 } from "lucide-react";
 import { TwoFactorVerify } from "@/components/auth/TwoFactorVerify";
 
 import { toast } from "sonner";
 import { useAuthStore } from "@/stores/auth";
+import { authService } from "@/services/auth.service";
 import { cn } from "@/lib/utils";
 
 // Realm filter options
@@ -159,6 +161,7 @@ export default function UsersPage() {
   const [realmFilter, setRealmFilter] = useState<string>("");
   const [unitFilter, setUnitFilter] = useState<string>("");
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [sendingResetFor, setSendingResetFor] = useState<string | null>(null);
   const [deactivate2FAUserId, setDeactivate2FAUserId] = useState<string | null>(
     null,
   );
@@ -180,6 +183,28 @@ export default function UsersPage() {
   });
 
   const deleteMutation = useDeleteUser();
+
+  /**
+   * E-mail this user a password reset link.
+   *
+   * This is the whole "lupa password" flow. There is deliberately no public
+   * self-service form — a user who cannot sign in contacts an admin, who
+   * identifies them and triggers this from here, and only the reset *link*
+   * travels by e-mail. The admin never sees or sets the new password.
+   */
+  const handleSendPasswordReset = async (userId: string, name: string) => {
+    setSendingResetFor(userId);
+    try {
+      const result = await authService.sendPasswordReset({ userId });
+      toast.success(result.message, {
+        description: `Tautan berlaku ${result.expiresInHours} jam. ${name} harus membukanya sebelum kedaluwarsa.`,
+      });
+    } catch {
+      toast.error("Gagal mengirim tautan reset password");
+    } finally {
+      setSendingResetFor(null);
+    }
+  };
 
   const handleDelete = async () => {
     if (!deleteId) return;
@@ -286,6 +311,17 @@ export default function UsersPage() {
               >
                 <Shield className="mr-2 h-4 w-4" />
                 Manage Roles
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={sendingResetFor === row.original.id}
+                onClick={() =>
+                  handleSendPasswordReset(row.original.id, row.original.name)
+                }
+              >
+                <KeyRound className="mr-2 h-4 w-4" />
+                {sendingResetFor === row.original.id
+                  ? "Mengirim…"
+                  : "Kirim tautan reset password"}
               </DropdownMenuItem>
               {(row.original as any).isTwoFactorEnabled && (
                 <DropdownMenuItem

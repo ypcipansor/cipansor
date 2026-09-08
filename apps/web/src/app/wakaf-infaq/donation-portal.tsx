@@ -12,6 +12,10 @@ import type { Locale } from "@/locales";
 import { intlTagFor } from "@/lib/locale-format";
 import { useI18n } from "@/providers/i18n-provider";
 import { useState } from "react";
+import {
+  TurnstileWidget,
+  useTurnstile,
+} from "@/components/security/turnstile-widget";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -140,6 +144,7 @@ export function DonationPortal({
   const activeCampaigns = campaigns.filter((c) => c.status === "ACTIVE");
 
   const createDonation = useCreatePublicDonation();
+  const turnstile = useTurnstile();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -154,9 +159,12 @@ export function DonationPortal({
       return;
     }
 
+    if (!turnstile.ready) return;
+
     setIsSubmitting(true);
     try {
       await createDonation.mutateAsync({
+        turnstileToken: turnstile.token ?? undefined,
         campaignId: selectedCampaignId || undefined,
         donorName: formData.isAnonymous ? ANONYMOUS_DONOR_NAME : formData.donorName,
         donorPhone: formData.donorPhone || undefined,
@@ -190,6 +198,8 @@ export function DonationPortal({
       setShowForm(false);
     } catch {
       toast.error(copy.form.errorFailed);
+      // Token sekali pakai; percobaan berikutnya butuh tantangan baru.
+      turnstile.refresh();
     } finally {
       setIsSubmitting(false);
     }
@@ -681,7 +691,13 @@ export function DonationPortal({
               />
             </div>
 
-            <Button type="submit" disabled={isSubmitting} className="w-full">
+            <TurnstileWidget action="donasi" {...turnstile.widgetProps} />
+
+            <Button
+              type="submit"
+              disabled={isSubmitting || !turnstile.ready}
+              className="w-full"
+            >
               {isSubmitting ? copy.form.submitting : copy.form.submit}
             </Button>
           </form>

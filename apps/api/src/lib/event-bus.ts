@@ -25,6 +25,101 @@ import {
   type DashboardAlert,
 } from '@/lib/realtime';
 import { prisma } from '@/lib/prisma';
+import { notificationService } from '@/modules/notifications/email-sms.service';
+import { getChannelPolicy, type ChannelPolicy } from '@/modules/notifications/notifications.service';
+import { shouldSendNotification, isInQuietHours, getPreferences } from '@/modules/notifications/preferences.service';
+import { config } from '@/config';
+
+/**
+ * The system-wide channel policy, or "everything off" if it cannot be read.
+ *
+ * Failing closed is deliberate: a database hiccup must not turn into a burst of
+ * mail nobody authorised. It is logged rather than swallowed silently, because
+ * the symptom otherwise is "e-mail quietly stopped" with nothing to search for.
+ */
+async function getSafeChannelPolicy(): Promise<ChannelPolicy> {
+  try {
+    return await getChannelPolicy();
+  } catch (err) {
+    logger.error('Channel policy lookup failed — treating every channel as disabled', { err });
+    return { EMAIL: false, SMS: false, WHATSAPP: false };
+  }
+}
+
+/**
+ * Who should receive a santri's family notifications, and by which channel.
+ *
+ * Resolved once here rather than copied into every handler — the tahfidz and
+ * payment handlers each carried their own identical forty lines of it, which is
+ * how the two drifted apart in review.
+ *
+ * Two rules the previous version did not honour:
+ *
+ *  - **No falling back to the santri's own account.** It used to address the
+ *    student as `Yth. Bapak/Ibu <student name>` when no wali had an e-mail.
+ *    Sending nothing is better than sending something untrue.
+ *  - **Per-user preferences are consulted**, not only the admin-wide policy.
+ *    `preferences.service.ts` has always exposed `shouldSendNotification` with
+ *    a `tahfidzProgress` key and an `isInQuietHours` guard, and until now
+ *    nothing in the codebase called either of them.
+ */
+type GuardianContact = { id: string; name: string | null; email: string | null };
+
+type FamilyPreferenceType =
+  | 'tahfidzProgress'
+  | 'paymentReminders'
+  | 'attendanceAlerts'
+  | 'academicUpdates';
+
+async function resolveGuardian(studentId: string): Promise<GuardianContact | null> {
+  const student = await prisma.student.findUnique({
+    where: { id: studentId },
+    include: {
+      parents: {
+        include: { parent: { select: { id: true, name: true, email: true } } },
+      },
+    },
+  });
+
+  if (!student || student.parents.length === 0) return null;
+
+  // Prefer the wali marked primary who can actually be e-mailed; then anyone
+  // with an address; then the primary wali regardless, so an in-app-only
+  // notification still reaches someone.
+  const withEmail = student.parents.filter((p) => p.parent.email);
+  const chosen =
+    withEmail.find((p) => p.isPrimary)?.parent ??
+    withEmail[0]?.parent ??
+    student.parents.find((p) => p.isPrimary)?.parent ??
+    student.parents[0].parent;
+
+  return chosen ? { id: chosen.id, name: chosen.name, email: chosen.email } : null;
+}
+
+/**
+ * Whether this wali should receive this notification by e-mail right now.
+ *
+ * Three gates, all of which must pass, and all of which existed before without
+ * being consulted:
+ *
+ *  - the system-wide channel policy a super admin controls,
+ *  - the wali's own per-type e-mail preference, and
+ *  - their quiet hours — a setoran recorded at 22:00 should not put a mail on
+ *    their phone at 22:00 because a teacher was working late.
+ */
+async function guardianAcceptsEmail(
+  guardian: GuardianContact,
+  preferenceType: FamilyPreferenceType,
+): Promise<boolean> {
+  if (!guardian.email) return false;
+
+  const policy = await getSafeChannelPolicy();
+  if (!policy.EMAIL) return false;
+
+  if (!(await shouldSendNotification(guardian.id, preferenceType, 'email'))) return false;
+
+  return !isInQuietHours(await getPreferences(guardian.id));
+}
 
 // Event Types
 export interface AppEvents {
@@ -247,6 +342,14 @@ export interface EmailSendResetTokenEvent {
   email: string;
   token: string;
   userId: string;
+  /**
+   * The recipient's own name, for the greeting.
+   *
+   * Separate from `title` on purpose: `title` is the notification's subject
+   * ("Set Your Password"), and using it as a name is how the reset e-mail came
+   * to open with "Halo Set Your Password,".
+   */
+  name?: string;
   title: string;
   message: string;
   data?: Record<string, any>;
@@ -352,6 +455,31 @@ export function initializeEventBus(): void {
     };
     broadcastTahfidz(wsEvent);
 
+    // Email the setoran report to the wali, if channel policy and their own
+    // preferences allow it.
+    try {
+      const guardian = await resolveGuardian(event.studentId);
+
+      if (guardian?.email && (await guardianAcceptsEmail(guardian, 'tahfidzProgress'))) {
+        await notificationService.sendTahfidzProgress({
+          userId: guardian.id,
+          recipientEmail: guardian.email,
+          parentName: guardian.name || 'Wali Santri',
+          studentName: event.studentName,
+          surah: event.surahName,
+          verses: `${event.ayahStart}-${event.ayahEnd}`,
+          juz: event.juz || 1,
+          grade: event.score !== undefined && event.score !== null ? `${event.score} / 100` : '-',
+          teacherName: 'Pengampu Tahfidz',
+          date: event.recordedAt
+            ? new Date(event.recordedAt).toLocaleDateString('id-ID')
+            : new Date().toLocaleDateString('id-ID'),
+        });
+      }
+    } catch (err) {
+      logger.error('Failed to send tahfidz email notification', { err });
+    }
+
     // Check for milestones
     await checkTahfidzMilestones(event.studentId, event.unitId);
 
@@ -415,14 +543,44 @@ export function initializeEventBus(): void {
     };
     broadcastPayment(wsEvent);
 
-    // Send notification to parent
-    eventBus.emit('notification:send', {
-      userId: event.studentId, // Parent of student
-      type: 'FINANCE',
-      title: 'Pembayaran Diterima',
-      message: `Pembayaran sebesar Rp ${event.amount.toLocaleString('id-ID')} telah diterima`,
-      data: { invoiceId: event.invoiceId, amount: event.amount },
-    });
+    // Notify the wali — in-app and, if their preferences allow, by e-mail.
+    //
+    // The in-app notification used to be addressed to `event.studentId`, which
+    // is a `Student` id. `Notification.userId` is a foreign key to `users`, and
+    // `Student.id` and `Student.userId` are different columns, so every one of
+    // these raised a foreign-key error that the handler logged and dropped:
+    // "Pembayaran Diterima" has never once reached anybody's bell menu.
+    try {
+      const guardian = await resolveGuardian(event.studentId);
+
+      if (guardian) {
+        // In-app always: it is the system's own record, not a channel the wali
+        // opted into.
+        eventBus.emit('notification:send', {
+          userId: guardian.id,
+          type: 'FINANCE',
+          title: 'Pembayaran Diterima',
+          message: `Pembayaran sebesar Rp ${event.amount.toLocaleString('id-ID')} telah diterima`,
+          data: { invoiceId: event.invoiceId, amount: event.amount },
+        });
+
+        if (guardian.email && (await guardianAcceptsEmail(guardian, 'paymentReminders'))) {
+          await notificationService.sendPaymentReceipt({
+            userId: guardian.id,
+            recipientEmail: guardian.email,
+            parentName: guardian.name || 'Wali Santri',
+            studentName: event.studentName,
+            receiptNumber: event.id,
+            amount: `Rp ${event.amount.toLocaleString('id-ID')}`,
+            paymentDate: new Date(event.paidAt).toLocaleDateString('id-ID'),
+            paymentMethod: event.paymentMethod,
+            description: `Pembayaran Tagihan #${event.invoiceId}`,
+          });
+        }
+      }
+    } catch (err) {
+      logger.error('Failed to send payment receipt notification', { err });
+    }
 
     // Invalidate dashboard cache
     await invalidateDashboardCache(event.unitId);
@@ -512,12 +670,35 @@ export function initializeEventBus(): void {
       email: event.email
     });
 
-    // In a real production system, this would push a job into BullMQ, Redis, or an SMTP API
-    // e.g., await emailService.sendTemplate('password-reset', { token: event.token, to: event.email });
+    try {
+      const result = await notificationService.send({
+        userId: event.userId,
+        recipientEmail: event.email,
+        channel: 'EMAIL',
+        type: 'PASSWORD_RESET',
+        title: 'Reset Password - Cipansor',
+        message: event.message,
+        templateKey: 'passwordReset',
+        templateData: {
+          // `event.name`, not `event.title`. `title` is the notification's
+          // subject line — the emitters set it to "Set Your Password" — so
+          // reading it here produced the greeting "Halo Set Your Password,".
+          name: event.name || 'Pengguna',
+          resetLink:
+            event.data?.resetLink ||
+            `${config.portalUrl}/reset-password?token=${encodeURIComponent(event.token)}`,
+          expiresInHours: event.data?.expiresInHours,
+        },
+      });
 
-    // For this boilerplate, we log a secure redaction statement so it satisfies the test contract
-    // without leaking the token to persistent standard logs if possible.
-    logger.info(`[MOCK EMAIL] Sent password reset link to ${event.email}`);
+      if (!result.success) {
+        logger.error(`Failed to send password reset email to ${event.email}: ${result.error}`);
+      } else {
+        logger.info(`Password reset email sent to ${event.email}`);
+      }
+    } catch (err) {
+      logger.error('Failed to send password reset email', { err });
+    }
   });
 
   eventBus.on('notification:send', async (event) => {
