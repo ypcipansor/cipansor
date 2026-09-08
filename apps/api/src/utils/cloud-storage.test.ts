@@ -1,7 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { uploadToCloudStorage, generateSasUrl, getStorageConfig } from './cloud-storage';
 
-const { mockUploadFile, mockGetBlockBlobClient, mockCreateIfNotExists, mockGetContainerClient, mockSasToString } = vi.hoisted(() => {
+const {
+  mockUploadFile,
+  mockGetBlockBlobClient,
+  mockCreateIfNotExists,
+  mockGetContainerClient,
+  mockSasToString,
+} = vi.hoisted(() => {
   const mockUploadFile = vi.fn().mockResolvedValue({});
   const mockGetBlockBlobClient = vi.fn().mockReturnValue({
     uploadFile: mockUploadFile,
@@ -13,7 +19,13 @@ const { mockUploadFile, mockGetBlockBlobClient, mockCreateIfNotExists, mockGetCo
     getBlockBlobClient: mockGetBlockBlobClient,
   });
   const mockSasToString = vi.fn(() => 'sig=fakeSasToken&se=2026-01-01T00%3A00%3A00Z');
-  return { mockUploadFile, mockGetBlockBlobClient, mockCreateIfNotExists, mockGetContainerClient, mockSasToString };
+  return {
+    mockUploadFile,
+    mockGetBlockBlobClient,
+    mockCreateIfNotExists,
+    mockGetContainerClient,
+    mockSasToString,
+  };
 });
 
 vi.mock('@azure/storage-blob', () => {
@@ -23,7 +35,10 @@ vi.mock('@azure/storage-blob', () => {
         getContainerClient: mockGetContainerClient,
       }),
     },
-    StorageSharedKeyCredential: vi.fn().mockImplementation(function (accountName: string, accountKey: string) {
+    StorageSharedKeyCredential: vi.fn().mockImplementation(function (
+      accountName: string,
+      accountKey: string
+    ) {
       this.accountName = accountName;
       this.accountKey = accountKey;
     }),
@@ -61,9 +76,16 @@ describe('Cloud Storage Utility (Azure Blob Storage Provider)', () => {
   it('uploads a public container with blob-level access and no SAS baked into the URL', async () => {
     process.env.AZURE_STORAGE_CONNECTION_STRING = CONNECTION_STRING;
 
-    const result = await uploadToCloudStorage('/tmp/dummy.pdf', 'dummy.pdf', 'application/pdf', 'media-public');
+    const result = await uploadToCloudStorage(
+      '/tmp/dummy.pdf',
+      'dummy.pdf',
+      'application/pdf',
+      'media-public'
+    );
     expect(result.provider).toBe('azure');
-    expect(result.url).toBe('https://cipansorstore.blob.core.windows.net/e-office-documents/dummy.pdf');
+    expect(result.url).toBe(
+      'https://cipansorstore.blob.core.windows.net/e-office-documents/dummy.pdf'
+    );
     expect(result.url).not.toContain('?');
     expect(result.containerName).toBe('media-public');
     expect(result.blobName).toBe('dummy.pdf');
@@ -76,9 +98,16 @@ describe('Cloud Storage Utility (Azure Blob Storage Provider)', () => {
   it('uploads a private container without baking a SAS; stores a stable blob reference', async () => {
     process.env.AZURE_STORAGE_CONNECTION_STRING = CONNECTION_STRING;
 
-    const result = await uploadToCloudStorage('/tmp/dummy.pdf', 'dummy.pdf', 'application/pdf', 'e-office-documents');
+    const result = await uploadToCloudStorage(
+      '/tmp/dummy.pdf',
+      'dummy.pdf',
+      'application/pdf',
+      'e-office-documents'
+    );
     expect(result.provider).toBe('azure');
-    expect(result.url).toBe('https://cipansorstore.blob.core.windows.net/e-office-documents/dummy.pdf');
+    expect(result.url).toBe(
+      'https://cipansorstore.blob.core.windows.net/e-office-documents/dummy.pdf'
+    );
     expect(result.url).not.toContain('?');
     expect(result.containerName).toBe('e-office-documents');
     expect(result.blobName).toBe('dummy.pdf');
@@ -90,7 +119,12 @@ describe('Cloud Storage Utility (Azure Blob Storage Provider)', () => {
     delete process.env.AZURE_STORAGE_ACCOUNT;
     delete process.env.AZURE_STORAGE_KEY;
 
-    const result = await uploadToCloudStorage('/tmp/dummy.pdf', 'dummy.pdf', 'application/pdf', 'e-office-documents');
+    const result = await uploadToCloudStorage(
+      '/tmp/dummy.pdf',
+      'dummy.pdf',
+      'application/pdf',
+      'e-office-documents'
+    );
     expect(result.provider).toBe('azure');
     expect(result.url).not.toContain('?');
   });
@@ -108,7 +142,9 @@ describe('Cloud Storage Utility (Azure Blob Storage Provider)', () => {
     process.env.AZURE_STORAGE_CONNECTION_STRING = CONNECTION_STRING;
 
     const url = await generateSasUrl('e-office-documents', 'dummy.pdf', 60);
-    expect(url).toContain('https://cipansorstore.blob.core.windows.net/e-office-documents/dummy.pdf?');
+    expect(url).toContain(
+      'https://cipansorstore.blob.core.windows.net/e-office-documents/dummy.pdf?'
+    );
     expect(url).toContain('sig=fakeSasToken');
     expect(mockSasToString).toHaveBeenCalled();
   });

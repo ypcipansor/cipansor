@@ -87,7 +87,9 @@ export async function uploadToCloudStorage(
       };
     } catch (error) {
       logger.error('Azure Blob Storage upload failed', { error, filename });
-      throw new Error(`Gagal mengunggah berkas ke Azure Blob Storage: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(
+        `Gagal mengunggah berkas ke Azure Blob Storage: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
   }
 
@@ -112,7 +114,9 @@ export async function generateSasUrl(
 ): Promise<string> {
   const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
   if (!connectionString || !connectionString.includes('AccountKey=')) {
-    throw new Error('Kredensial Azure Storage (connection string) wajib dikonfigurasi untuk membuat SAS.');
+    throw new Error(
+      'Kredensial Azure Storage (connection string) wajib dikonfigurasi untuk membuat SAS.'
+    );
   }
 
   const { accountName, accountKey } = resolveCredentials(connectionString);
