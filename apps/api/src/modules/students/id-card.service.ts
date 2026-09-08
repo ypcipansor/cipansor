@@ -13,6 +13,7 @@ import { ApiError, ErrorCode } from '../../middleware/error';
 import { config as appConfig } from '../../config';
 import { RoleCode, Prisma } from '@prisma/client';
 import type { JwtPayload } from '../../lib/jwt';
+import type { StudentIdCardDetail } from '@cipansor/shared';
 import * as crypto from 'crypto';
 
 // ID Card template types
@@ -170,9 +171,31 @@ export class StudentIdCardService {
   }
 
   /**
-   * Generate single student ID card data
+   * The public https URL to embed in the printed QR code.
+   *
+   * The QR on a physical card must be a URL, not the bare `cipansor://` scheme:
+   * a phone camera recognises an http(s) link and offers to open the
+   * verification page, whereas a custom scheme is not registered with the OS.
+   * The signed `cipansor://…` string travels inside the `data` query param,
+   * which `/public/verify-card` extracts and verifies. The URL is built from
+   * `config.publicSiteUrl` — the audience is an outsider who scans the card,
+   * never `portalUrl`.
    */
-  static async generateIdCard(studentId: string, config: Partial<IdCardConfig> = {}) {
+  static generateVerificationUrl(qrData: string): string {
+    return `${appConfig.publicSiteUrl}/public/verify-card?data=${encodeURIComponent(qrData)}`;
+  }
+
+  /**
+   * Generate single student ID card data.
+   *
+   * Returns the `@cipansor/shared` `StudentIdCardDetail` contract so the API
+   * response and the web client's `GET /students/:id/id-card` type can never
+   * drift apart (golden rule #8).
+   */
+  static async generateIdCard(
+    studentId: string,
+    config: Partial<IdCardConfig> = {}
+  ): Promise<StudentIdCardDetail> {
     const mergedConfig = { ...DEFAULT_CONFIG, ...config };
 
     // Get student data with relations
@@ -323,10 +346,10 @@ export class StudentIdCardService {
         qrCode: {
           data: qrCodeData,
           // The QR is scanned by an outsider (security guard, parent, dinas) —
-          // exactly the `config.publicSiteUrl` audience. Never build this from
-          // an inline env fallback: BASE_URL names no host in particular, and
-          // the guess was wrong twice already.
-          verificationUrl: `${appConfig.publicSiteUrl}/public/verify-card?data=${encodeURIComponent(qrCodeData)}`,
+          // exactly the `config.publicSiteUrl` audience. The URL, not the raw
+          // `cipansor://` string, is what must be embedded in the printed code
+          // so a phone camera opens the verification page.
+          verificationUrl: this.generateVerificationUrl(qrCodeData),
         },
       },
     };
@@ -544,7 +567,12 @@ export class StudentIdCardService {
       }
     }
 
-    const whereClause: Prisma.StudentWhereInput = { deletedAt: null };
+    // Only currently-active students get a card. `Student.status` is a String
+    // with values `active, alumni, dropped, transferred` (verified in
+    // schema.prisma), so without this a unit-wide regeneration would mint
+    // valid cards for alumni / dropouts / transfers — the "Active" in the
+    // method name deliberately does not hold in the DB query.
+    const whereClause: Prisma.StudentWhereInput = { deletedAt: null, status: 'active' };
     if (unitId) {
       whereClause.unitId = unitId;
     } else if (!isSuperAdmin && userUnitId) {
@@ -563,9 +591,7 @@ export class StudentIdCardService {
       select: { id: true },
     });
 
-    const cards = await Promise.all(
-      students.map((student) => this.generateIdCard(student.id))
-    );
+    const cards = await Promise.all(students.map((student) => this.generateIdCard(student.id)));
 
     return {
       totalRegenerated: cards.length,

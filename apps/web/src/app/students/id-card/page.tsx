@@ -51,6 +51,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { QRCodeSVG } from "qrcode.react";
+import { StudentIdCardDetail } from "@cipansor/shared";
 
 /**
  * The QR printed on a student card.
@@ -63,21 +64,24 @@ import { QRCodeSVG } from "qrcode.react";
  *
  * `qrcode.react` was already a dependency of this app and simply unused here.
  *
- * The payload is the signed verification string (`cipansor://…`, a JSON object
- * + 16-char HMAC). A JSON payload is ~100+ bytes and lands on a version-6/7
- * symbol (41–45 modules); at the old 64px render that is under 1.5px per
- * module, which a phone camera cannot resolve. We therefore render it at 120px
- * — roughly 32mm on a CR80 card — scannable even with the higher symbol order.
+ * The payload is the full public verification URL
+ * (`https://…/public/verify-card?data=cipansor://…`). A phone camera
+ * recognises a URL and offers to open it, whereas a bare `cipansor://` scheme
+ * is not registered with the OS — that is why the physical card must encode
+ * the URL, not the raw signed string (which stays inside the `data` param for
+ * the page to extract and verify). The URL wraps a ~150–200-byte signed
+ * payload, landing on a version-8/9 symbol at level L; we render it at 120px —
+ * roughly 32mm on a CR80 card — so it stays scannable at the higher symbol
+ * order.
  */
-function StudentQRCode({ value, size = 120 }: { value: string; size?: number }) {
-  return (
-    <QRCodeSVG
-      value={value}
-      size={size}
-      level="L"
-      marginSize={2}
-    />
-  );
+function StudentQRCode({
+  value,
+  size = 120,
+}: {
+  value: string;
+  size?: number;
+}) {
+  return <QRCodeSVG value={value} size={size} level="L" marginSize={2} />;
 }
 
 interface StudentCardProps {
@@ -101,13 +105,20 @@ function StudentIDCard({
   const { data: cardDetails, isLoading: cardLoading } = useQuery({
     queryKey: ["student-id-card-details", student.id],
     queryFn: async () => {
-      const res = await api.get(`/students/${student.id}/id-card`);
+      const res = await api.get<{ data: StudentIdCardDetail }>(
+        `/students/${student.id}/id-card`,
+      );
       return res.data.data;
     },
     enabled: !!student.id,
   });
 
-  const qrPayload = cardDetails?.cardData?.qrCode?.data;
+  // The QR printed on the physical card must be a https URL so any phone
+  // camera recognises it and offers to open the verification page. A bare
+  // `cipansor://` scheme is not registered with the OS, so the scanner never
+  // reaches the page. The signed payload lives inside the `verificationUrl`'s
+  // `data` query param, which `/public/verify-card` extracts and verifies.
+  const qrPayload = cardDetails?.cardData?.qrCode?.verificationUrl;
 
   return (
     <div

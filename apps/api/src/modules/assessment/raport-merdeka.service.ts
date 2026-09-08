@@ -119,18 +119,23 @@ const NILAI_TO_CAPAIAN: Record<
  * Both grade classification and attendance must use the SAME boundary so a
  * grade in early January is not counted in one semester while the attendance
  * for those same days is counted in the other.
+ *
+ * Exported for the unit tests that pin the Dec 31 "end of day" boundary.
  */
-function getSemesterDateRange(
+export function getSemesterDateRange(
   academicYear: { startDate: Date | string; endDate: Date | string },
   semester: number
 ): { startDate: Date; endDate: Date } {
   const startDate = new Date(academicYear.startDate);
   const endDate = new Date(academicYear.endDate);
-  const sem1End = new Date(startDate.getFullYear(), 11, 31);
+  // End of day Dec 31, not midnight: `new Date(y, 11, 31)` lands on
+  // 00:00:00.000, so an exam scheduled Dec 31 afternoon (scheduledAt after
+  // midnight) slipped past the `<= semEndDate` check and was dropped from
+  // Semester 1. Semester 2 starts at the first millisecond of Jan 1, so the
+  // two windows never overlap.
+  const sem1End = new Date(startDate.getFullYear(), 11, 31, 23, 59, 59, 999);
   const sem2Start = new Date(startDate.getFullYear() + 1, 0, 1);
-  return semester === 1
-    ? { startDate, endDate: sem1End }
-    : { startDate: sem2Start, endDate };
+  return semester === 1 ? { startDate, endDate: sem1End } : { startDate: sem2Start, endDate };
 }
 
 export class RaportMerdekaService {
@@ -238,7 +243,12 @@ export class RaportMerdekaService {
    * Generate Raport Merdeka for a student
    * Includes: Intrakurikuler, Projek P5, Ekstrakurikuler
    */
-  static async generateRaportMerdeka(studentId: string, academicYearId: string, semester: number, user?: JwtPayload) {
+  static async generateRaportMerdeka(
+    studentId: string,
+    academicYearId: string,
+    semester: number,
+    user?: JwtPayload
+  ) {
     if (user) {
       await this.validateStudentScope(user, studentId);
     }
@@ -890,7 +900,10 @@ export class RaportMerdekaService {
           });
 
           if (!teacherAssignment) {
-            throw new ApiError(ErrorCode.FORBIDDEN, 'Anda tidak memiliki akses ke kelas di unit lain');
+            throw new ApiError(
+              ErrorCode.FORBIDDEN,
+              'Anda tidak memiliki akses ke kelas di unit lain'
+            );
           }
         }
       }

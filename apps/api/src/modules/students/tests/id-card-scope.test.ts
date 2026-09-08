@@ -57,7 +57,11 @@ describe('StudentIdCardService.bulkRegenerateActiveCards — unit scope', () => 
 
   it('rejects a unit-scoped user with no unitId of their own', async () => {
     await expect(
-      StudentIdCardService.bulkRegenerateActiveCards('unit-smp-1', undefined, aUser({ unitId: null }))
+      StudentIdCardService.bulkRegenerateActiveCards(
+        'unit-smp-1',
+        undefined,
+        aUser({ unitId: null })
+      )
     ).rejects.toThrow(/wajib memiliki unit/);
     expect(prisma.student.findMany).not.toHaveBeenCalled();
   });
@@ -111,6 +115,26 @@ describe('StudentIdCardService.bulkRegenerateActiveCards — unit scope', () => 
     const calledWith = (prisma.student.findMany as any).mock.calls[0][0];
     expect(calledWith.where).not.toHaveProperty('unitId');
     expect(result.totalRegenerated).toBe(2);
+  });
+
+  it('limits regeneration to active students (status === active)', async () => {
+    (prisma.student.findMany as any).mockResolvedValue([{ id: 's1' }, { id: 's2' }]);
+    await StudentIdCardService.bulkRegenerateActiveCards('unit-smp-1', undefined, aUser());
+
+    const calledWith = (prisma.student.findMany as any).mock.calls[0][0];
+    expect(calledWith.where).toMatchObject({ status: 'active' });
+  });
+
+  it('keeps the active filter even for SUPER_ADMIN unit-less regeneration', async () => {
+    (prisma.student.findMany as any).mockResolvedValue([{ id: 's1' }]);
+    await StudentIdCardService.bulkRegenerateActiveCards(
+      undefined,
+      undefined,
+      aUser({ roleCode: 'SUPER_ADMIN', role: 'SUPER_ADMIN', unitId: null })
+    );
+
+    const calledWith = (prisma.student.findMany as any).mock.calls[0][0];
+    expect(calledWith.where).toMatchObject({ status: 'active' });
   });
 
   it('scopes by class when classId belongs to the user unit', async () => {

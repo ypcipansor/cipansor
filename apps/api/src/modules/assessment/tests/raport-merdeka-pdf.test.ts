@@ -48,14 +48,10 @@ describe('generateRaportMerdekaPdfBuffer', () => {
           tema: 'Gaya Hidup Berkelanjutan',
           judul: 'Pengolahan Sampah Organik',
           deskripsiProyek: 'Projek kompos sampah dapur.',
-          dimensiTerkait: [
-            { dimensiName: 'Gotong Royong', capaian: 'Sangat Berkembang' },
-          ],
+          dimensiTerkait: [{ dimensiName: 'Gotong Royong', capaian: 'Sangat Berkembang' }],
         },
       ],
-      ekstrakurikuler: [
-        { nama: 'Pramuka', predikat: 'Baik', keterangan: 'Disiplin dan aktif' },
-      ],
+      ekstrakurikuler: [{ nama: 'Pramuka', predikat: 'Baik', keterangan: 'Disiplin dan aktif' }],
       tahfidz: {
         totalJuz: 2,
         surahTerakhir: 'QS. Al-Mulk',
@@ -77,6 +73,81 @@ describe('generateRaportMerdekaPdfBuffer', () => {
     expect(pdfBuffer.length).toBeGreaterThan(1000);
     // PDF signature check (%PDF-1.)
     expect(pdfBuffer.toString('utf8', 0, 5)).toBe('%PDF-');
+  });
+
+  it('breaks to a new page so a long extracurricular list cannot overlap catatan/signatures', async () => {
+    const mockData = {
+      siswa: {
+        nama: 'Ahmad Fulan',
+        nis: '12345',
+        nisn: '0012345678',
+        kelas: 'VII A',
+        unit: 'SMP IT',
+        fase: 'D',
+      },
+      tahunAjaran: {
+        tahun: '2024/2025',
+        semester: 1,
+        semesterLabel: 'Ganjil',
+      },
+      waliKelas: {
+        nama: 'Ustadz Ahmad, S.Pd',
+        nip: '198001012005011001',
+      },
+      intrakurikuler: {
+        kelompokUmum: [
+          {
+            subjectName: 'Matematika',
+            nilaiAkhir: 85,
+            predikat: 'B',
+            levelCapaian: 'BAIK',
+            deskripsi: 'Mampu memahami konsep aljabar dan persamaan linear.',
+          },
+        ],
+        kelompokPesantren: [],
+      },
+      projekP5: [
+        {
+          tema: 'Gaya Hidup Berkelanjutan',
+          judul: 'Pengolahan Sampah Organik',
+          deskripsiProyek: 'Projek kompos sampah dapur.',
+          dimensiTerkait: [{ dimensiName: 'Gotong Royong', capaian: 'Sangat Berkembang' }],
+        },
+      ],
+      // A list long enough that the box grows past the old fixed
+      // `y < MARGIN + 180` page-break threshold: with 40 rows the box is
+      // 40*14+20 = 580pt tall and would otherwise run over the catatan and
+      // the signature block on the same page.
+      ekstrakurikuler: Array.from({ length: 40 }, (_, i) => ({
+        nama: `Ekstrakurikuler ${i + 1}`,
+        predikat: 'Baik',
+        keterangan: 'Aktif dan disiplin',
+      })),
+      tahfidz: {
+        totalJuz: 2,
+        surahTerakhir: 'QS. Al-Mulk',
+        statusCapaian: 'TERCAPAI',
+        catatan: 'Mumtaz',
+      },
+      kehadiran: {
+        hadir: 90,
+        sakit: 1,
+        izin: 0,
+        alpa: 0,
+      },
+      catatanWaliKelas: 'Pertahankan prestasi belajar!',
+    };
+
+    const pdfBuffer = await generateRaportMerdekaPdfBuffer(mockData as any);
+    expect(pdfBuffer).toBeInstanceOf(Buffer);
+    expect(pdfBuffer.toString('utf8', 0, 5)).toBe('%PDF-');
+
+    // Old behaviour drew the tall extracurricular box over the wali kelas
+    // note and signatures, keeping the document at 2 pages; the fix moves the
+    // whole B block to a fresh continuation page.
+    const { PDFDocument } = await import('pdf-lib');
+    const doc = await PDFDocument.load(pdfBuffer);
+    expect(doc.getPageCount()).toBeGreaterThanOrEqual(3);
   });
 });
 
@@ -115,7 +186,9 @@ describe('RaportMerdekaController.exportStudentRaportPdf', () => {
       kehadiran: { sakit: 0, izin: 0, alpa: 0 },
     };
 
-    vi.spyOn(RaportMerdekaService, 'generateRaportMerdeka').mockResolvedValue(mockReportData as any);
+    vi.spyOn(RaportMerdekaService, 'generateRaportMerdeka').mockResolvedValue(
+      mockReportData as any
+    );
 
     const req = {
       params: { studentId: 'student-1' },

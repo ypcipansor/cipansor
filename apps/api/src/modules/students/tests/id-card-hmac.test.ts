@@ -70,4 +70,21 @@ describe('StudentIdCardService HMAC QR Code', () => {
     expect(verification.expired).toBe(true);
     expect(verification.message).toMatch(/kedaluwarsa/);
   });
+
+  it('issues a public verification URL that embeds a verifiable signed payload', () => {
+    // The QR printed on the physical card must be an https URL (so a phone
+    // camera offers to open the verification page), not a bare `cipansor://`
+    // scheme. The signed `cipansor://…` string lives in the URL's `data`
+    // query param, which `/public/verify-card` extracts and verifies.
+    const qrData = StudentIdCardService.generateQRCodeData(mockStudent);
+    const verificationUrl = StudentIdCardService.generateVerificationUrl(qrData);
+
+    expect(verificationUrl).toMatch(/^https:\/\/[^/]+\/public\/verify-card\?data=/);
+
+    const dataParam = new URL(verificationUrl).searchParams.get('data');
+    expect(dataParam).toBe(qrData);
+
+    const verification = StudentIdCardService.verifyQRCodeData(dataParam!);
+    expect(verification.valid).toBe(true);
+  });
 });
