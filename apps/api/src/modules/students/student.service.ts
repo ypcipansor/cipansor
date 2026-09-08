@@ -504,6 +504,19 @@ export class StudentService {
           status: 'ACTIVE',
         },
         update: {
+          // Refresh the alumnus snapshot from the student's current state. When a
+          // student progresses to another unit and then graduates again, the
+          // existing alumnus row still carries the previous unit's unitId, name
+          // and profile fields — leaving per-unit alumni lists and analytics
+          // pointing at the wrong unit with stale personal data.
+          unitId: student.unitId,
+          name: student.user.name,
+          gender: student.gender,
+          birthPlace: student.birthPlace,
+          birthDate: student.birthDate,
+          email: student.user.email,
+          phone: student.parentPhone,
+          address: student.address,
           graduationYear: currentYear,
           graduationDate: effectiveDate,
           status: 'ACTIVE',

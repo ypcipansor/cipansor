@@ -164,7 +164,8 @@ export const waveController = {
   async onboardRegistrant(req: Request, res: Response, next: NextFunction) {
     try {
       // Lazy load to avoid circular dependencies if any
-      const { StudentOnboardingOrchestrator } = await import('@/services/integration/student-onboarding.orchestrator');
+      const { StudentOnboardingOrchestrator } =
+        await import('@/services/integration/student-onboarding.orchestrator');
 
       const { z } = await import('zod');
       const onboardSchema = z.object({
@@ -175,21 +176,32 @@ export const waveController = {
         parentUserId: z.string().optional(), // accepted for contract compatibility, but unused here as orchestrator discovers/creates parent inherently
       });
 
-      const { registrantId, unitId, assignedClassId, academicYearId } = onboardSchema.parse(req.body);
+      const { registrantId, unitId, assignedClassId, academicYearId } = onboardSchema.parse(
+        req.body
+      );
 
       if (!req.user?.id) {
         throw Errors.unauthorized('User not authenticated');
       }
       const processedById = req.user.id;
 
+      const caller = req.user;
       const result = await StudentOnboardingOrchestrator.processEnrollment(
         registrantId,
         unitId,
         processedById,
         assignedClassId,
-        academicYearId
+        academicYearId,
+        caller ? { roleCode: caller.roleCode, role: caller.role, unitId: caller.unitId } : undefined
       );
-      res.status(200).json(ApiResponse.success(result, 'Registrant onboarded successfully (E2E Integration complete)'));
+      res
+        .status(200)
+        .json(
+          ApiResponse.success(
+            result,
+            'Registrant onboarded successfully (E2E Integration complete)'
+          )
+        );
     } catch (error: any) {
       next(error);
     }

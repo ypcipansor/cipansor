@@ -232,6 +232,50 @@ describe('StudentService', () => {
       expect(result.graduateYear).toBe(2026);
     });
 
+    it('should refresh the alumnus snapshot when a progressed student graduates again', async () => {
+      const mockStudent = {
+        id: 's1',
+        userId: 'user-1',
+        unitId: 'u2', // student has since progressed to a new unit
+        unit: { id: 'u2', type: 'SMP_IT' },
+        status: 'active',
+        gender: 'MALE',
+        birthPlace: 'Bandung',
+        birthDate: new Date('2010-05-01'),
+        parentPhone: '081298765432',
+        address: 'Jl. Baru',
+        user: { name: 'Student 1 Updated', email: 's1-new@cipansor.local' },
+      };
+      (prisma.student.findFirst as any).mockResolvedValue(mockStudent);
+      (prisma.student.update as any).mockResolvedValue({
+        id: 's1',
+        status: 'alumni',
+        graduateYear: 2026,
+      });
+      (prisma.role.findMany as any).mockResolvedValue([]);
+
+      await service.graduateStudent('s1', 2026);
+
+      // Re-graduating a student who moved units (SD IT -> SMP IT) must refresh
+      // the existing alumnus row with the current unit/name/profile, otherwise
+      // per-unit alumni lists and analytics keep the stale prior snapshot.
+      const upsertCall = (prisma.alumni.upsert as any).mock.calls[0][0];
+      expect(upsertCall.update).toEqual(
+        expect.objectContaining({
+          unitId: 'u2',
+          name: 'Student 1 Updated',
+          gender: 'MALE',
+          birthPlace: 'Bandung',
+          birthDate: mockStudent.birthDate,
+          email: 's1-new@cipansor.local',
+          phone: '081298765432',
+          address: 'Jl. Baru',
+          graduationYear: 2026,
+          status: 'ACTIVE',
+        })
+      );
+    });
+
     it('should find internal alumni by NIK or NISN', async () => {
       const mockStudent = {
         id: 's1',

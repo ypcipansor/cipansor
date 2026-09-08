@@ -278,5 +278,102 @@ describe('Admissions Service', () => {
         'NISN atau NIK wajib diisi untuk menerima siswa'
       );
     });
+
+    it('should refuse to enroll a registrant with an outstanding registration fee', async () => {
+      vi.mocked(prisma.registrant.findUnique).mockResolvedValue(
+        buildRegistrant({
+          registrationFeePaidAt: null,
+          admissionPeriod: {
+            unitId: 'unit-1',
+            registrationFee: 500000,
+            unit: { id: 'unit-1', type: 'SMP_IT' },
+          },
+        }) as any
+      );
+
+      // Fee gate: accepted is not the same as having settled daftar ulang. The
+      // same rule as processEnrollment must block an unpaid accepted registrant.
+      await expect(service.enrollRegistrant('reg-1', {})).rejects.toThrow(
+        'Pendaftar belum melunasi biaya daftar ulang'
+      );
+      expect(prisma.student.create).not.toHaveBeenCalled();
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it('should scope the alumni re-enrollment lookup to the caller unit when not seesAllUnits', async () => {
+      vi.mocked(prisma.registrant.findUnique).mockResolvedValue(
+        buildRegistrant({
+          isInternalAlumni: true,
+          previousStudentId: 'student-9',
+          internalNisn: null,
+          internalNik: null,
+        }) as any
+      );
+      // The alumnus is in another unit, so the scoped lookup must not match.
+      vi.mocked(prisma.student.findFirst).mockResolvedValue(null);
+      vi.mocked(prisma.user.create).mockResolvedValue({ id: 'user-1' } as any);
+      vi.mocked(prisma.student.create).mockResolvedValue({
+        id: 'student-1',
+        nisn: '0012345678',
+        nik: '3201000000000001',
+      } as any);
+      vi.mocked(prisma.role.findFirst).mockResolvedValue({
+        id: 'role-1',
+        code: 'SMPIT_SISWA',
+      } as any);
+      vi.mocked(prisma.userRoleAssignment.create).mockResolvedValue({ id: 'ura-1' } as any);
+
+      const caller = { roleCode: 'SMPIT_ADMIN', role: 'UNIT_ADMIN', unitId: 'unit-1' };
+      await service.enrollRegistrant('reg-1', {}, caller);
+
+      // A unit-pinned caller may only relink alumni inside their own unit: the
+      // lookup must carry the caller's unitId so student-9 (in another unit)
+      // cannot be hijacked.
+      const findFirstCall = (prisma.student.findFirst as any).mock.calls[0][0];
+      expect(findFirstCall.where).toEqual(
+        expect.objectContaining({ unitId: 'unit-1', status: 'alumni' })
+      );
+    });
+
+    it('should let a foundation/cross-unit caller relink alumni across units', async () => {
+      const aliasStudent = {
+        id: 'student-9',
+        userId: 'existing-user',
+        nisn: '0012345678',
+        nik: null,
+      };
+      vi.mocked(prisma.registrant.findUnique).mockResolvedValue(
+        buildRegistrant({
+          isInternalAlumni: true,
+          previousStudentId: 'student-9',
+          internalNisn: null,
+          internalNik: null,
+        }) as any
+      );
+      vi.mocked(prisma.student.findFirst).mockResolvedValue(aliasStudent as any);
+      vi.mocked(prisma.user.update).mockResolvedValue({ id: 'existing-user' } as any);
+      vi.mocked(prisma.student.update).mockResolvedValue({
+        id: 'student-9',
+        nisn: '0012345678',
+        nik: null,
+      } as any);
+      vi.mocked(prisma.role.findFirst).mockResolvedValue({
+        id: 'role-1',
+        code: 'SMPIT_SISWA',
+      } as any);
+      vi.mocked(prisma.role.findMany).mockResolvedValue([
+        { id: 'role-1', code: 'SMPIT_SISWA' },
+      ] as any);
+      vi.mocked(prisma.userRoleAssignment.upsert).mockResolvedValue({ id: 'ura-1' } as any);
+
+      const caller = { roleCode: 'SUPER_ADMIN', role: 'SUPER_ADMIN', unitId: null };
+      await service.enrollRegistrant('reg-1', {}, caller);
+
+      // SUPER_ADMIN sees all units, so the lookup must NOT be constrained.
+      const findFirstCall = (prisma.student.findFirst as any).mock.calls[0][0];
+      expect(findFirstCall.where).toEqual(expect.objectContaining({ status: 'alumni' }));
+      expect(findFirstCall.where.unitId).toBeUndefined();
+      expect(prisma.student.update).toHaveBeenCalled();
+    });
   });
 });

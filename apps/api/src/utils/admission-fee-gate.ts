@@ -9,8 +9,9 @@ import { Errors } from '@/middleware/error';
  * wallet, medical record, NISN — before paying anything, and the fee owed
  * (AdmissionPeriod.registrationFee) had no counterpart recording settlement.
  *
- * Two enrolment paths exist (the orchestrator and psb.service.enrollRegistrant)
- * and they have drifted apart before, so the rule lives here and both call it.
+ * Two enrolment paths exist (the onboarding orchestrator and
+ * admissions.service.enrollRegistrant) and they have drifted apart before, so
+ * the rule lives here and both call it.
  *
  * Deliberately *not* applied to students transferring in from another school
  * or pesantren: they do not come through SPMB at all. They are entered by an

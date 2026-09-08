@@ -169,12 +169,17 @@ export async function enrollRegistrant(req: Request, res: Response, next: NextFu
       roomId: z.string().optional(),
     });
     const data = schema.parse(req.body);
-    const result = await service.enrollRegistrant(req.params.id, {
-      nisn: data.nisn,
-      nik: data.nik,
-      classId: data.classId,
-      roomId: data.roomId,
-    });
+    const caller = requireUser(req);
+    const result = await service.enrollRegistrant(
+      req.params.id,
+      {
+        nisn: data.nisn,
+        nik: data.nik,
+        classId: data.classId,
+        roomId: data.roomId,
+      },
+      { roleCode: caller.roleCode, role: caller.role, unitId: caller.unitId }
+    );
     res.json({
       success: true,
       data: result,
@@ -275,7 +280,8 @@ export async function createPublicRegistrant(req: Request, res: Response, next: 
     const rawData = createRegistrantSchema.parse(req.body);
 
     // Strip/reject security sensitive internal alumni flags for public registration
-    const { isInternalAlumni, previousStudentId, internalNisn, internalNik, ...sanitizedData } = rawData;
+    const { isInternalAlumni, previousStudentId, internalNisn, internalNik, ...sanitizedData } =
+      rawData;
     const data = {
       ...sanitizedData,
       isInternalAlumni: false,

@@ -1,10 +1,12 @@
 -- Step 1: Add legacy_nis column to students to preserve historic NIS values
 ALTER TABLE "students" ADD COLUMN IF NOT EXISTS "legacy_nis" TEXT;
 
--- Guard the nis backfill: the 0_init baseline no longer creates a `nis` column,
--- so a fresh DB running 0_init -> this migration would fail here because `nis`
--- does not exist. Only run the backfill when the legacy `nis` column is present
--- (an old DB that shipped before the NISN/NIK refactor).
+-- Guard the nis backfill: the 0_init baseline still creates the legacy `nis`
+-- column (it is left untouched so the baseline checksum stays stable), so both
+-- a fresh DB (0_init -> this migration) and an old DB that shipped before the
+-- NISN/NIK refactor carry `nis`. The IF EXISTS guard only runs the backfill
+-- when the column is in fact present, so the migration is identical for both
+-- paths.
 DO $$
 BEGIN
   IF EXISTS (

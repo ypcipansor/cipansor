@@ -27,10 +27,14 @@ export const createStudentSchema = z.object({
   unitId: z.string().uuid("Unit wajib dipilih"),
   nisn: z
     .string()
-    .min(10, "NISN minimal 10 digit")
+    .regex(/^\d{10}$/, "NISN harus tepat 10 digit")
     .optional()
     .or(z.literal("")),
-  nik: z.string().length(16, "NIK harus 16 digit").optional().or(z.literal("")),
+  nik: z
+    .string()
+    .regex(/^\d{16}$/, "NIK harus tepat 16 digit")
+    .optional()
+    .or(z.literal("")),
   noKK: z
     .string()
     .length(16, "Nomor KK harus 16 digit")
@@ -84,8 +88,18 @@ export const permanentIdentifierRefine: (
 
 export const updateStudentSchema = z.object({
   name: z.string().min(2).optional(),
-  nisn: z.string().optional().nullable(),
-  nik: z.string().optional().nullable(),
+  nisn: z
+    .string()
+    .regex(/^\d{10}$/, "NISN harus tepat 10 digit")
+    .optional()
+    .nullable()
+    .or(z.literal("")),
+  nik: z
+    .string()
+    .regex(/^\d{16}$/, "NIK harus tepat 16 digit")
+    .optional()
+    .nullable()
+    .or(z.literal("")),
   noKK: z.string().optional().nullable(),
   noAkta: z.string().optional().nullable(),
   kipNumber: z.string().optional().nullable(),

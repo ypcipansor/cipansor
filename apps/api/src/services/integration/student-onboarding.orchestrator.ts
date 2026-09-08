@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
 import { syncParentRoleAssignments, type ParentScopeClient } from '@/utils/parent-scope';
 import { assertAdmissionFeeSettled } from '@/utils/admission-fee-gate';
+import { seesAllUnits } from '@/utils/resolve-unit-id';
 import { UnitType } from '@prisma/client';
 import { STUDENT_ROLE_CODES, resolveLegacyRoleToRoleCode } from '@/modules/auth/auth.service';
 
@@ -16,7 +17,12 @@ export class StudentOnboardingOrchestrator {
     unitId: string,
     processedById: string,
     assignedClassId?: string,
-    academicYearId?: string
+    academicYearId?: string,
+    currentUser?: {
+      roleCode?: string | null;
+      role?: string | null;
+      unitId?: string | null;
+    }
   ) {
     const result = await prisma.$transaction(async (tx) => {
       const registrant = await tx.registrant.findUnique({
@@ -63,9 +69,21 @@ export class StudentOnboardingOrchestrator {
       let existingStudent = null;
 
       if (registrant.isInternalAlumni) {
+        // Same seesAllUnits policy as findInternalAlumniByIdentifier: a caller
+        // pinned to one unit may only relink alumni in that unit. Without this,
+        // any admissions staff could capture an alumnus in another unit by
+        // forging previousStudentId / internalNisn / internalNik.
+        const alumniUnitScope =
+          currentUser && seesAllUnits(currentUser) ? undefined : (currentUser?.unitId ?? unitId);
+
         if (registrant.previousStudentId) {
           existingStudent = await tx.student.findFirst({
-            where: { id: registrant.previousStudentId, status: 'alumni', deletedAt: null },
+            where: {
+              id: registrant.previousStudentId,
+              status: 'alumni',
+              deletedAt: null,
+              ...(alumniUnitScope ? { unitId: alumniUnitScope } : {}),
+            },
             include: { user: true },
           });
         }
@@ -78,6 +96,7 @@ export class StudentOnboardingOrchestrator {
             where: {
               deletedAt: null,
               status: 'alumni',
+              ...(alumniUnitScope ? { unitId: alumniUnitScope } : {}),
               OR: conditions,
             },
             include: { user: true },

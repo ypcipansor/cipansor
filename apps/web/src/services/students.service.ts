@@ -11,6 +11,14 @@ import type {
   UnitFilterParams,
   SortParams,
 } from "./types";
+import type { CreateStudentInput, UpdateStudentInput } from "@cipansor/shared";
+
+// The create/update payload contracts come from @cipansor/shared so the web
+// client stays in sync with the backend-validated Zod schemas (see
+// packages/shared/src/schemas/student.ts). The response shape below is a
+// UI-level projection and is kept local because @cipansor/shared does not
+// define a matching one.
+export type { CreateStudentInput, UpdateStudentInput };
 
 export type StudentStatus =
   | "ACTIVE"
@@ -47,26 +55,6 @@ export interface Student {
   photo?: string;
   createdAt: string;
   updatedAt: string;
-}
-
-export interface CreateStudentInput {
-  name: string;
-  email: string;
-  phone?: string;
-  gender: Gender;
-  birthDate: string;
-  birthPlace?: string;
-  address?: string;
-  unitId: string;
-  classId?: string;
-  dormitoryId?: string;
-  parentId?: string;
-  nisn?: string;
-  nik?: string;
-}
-
-export interface UpdateStudentInput extends Partial<CreateStudentInput> {
-  status?: StudentStatus;
 }
 
 export interface StudentDetail extends Student {

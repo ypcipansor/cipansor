@@ -15,6 +15,8 @@ import {
   CreateRegistrantDocumentInput,
 } from './admissions.schema';
 import { Errors } from '../../middleware/error';
+import { seesAllUnits } from '../../utils/resolve-unit-id';
+import { assertAdmissionFeeSettled } from '../../utils/admission-fee-gate';
 
 type CreateRegistrantExtendedInput = CreateRegistrantInput;
 
@@ -533,6 +535,11 @@ export async function enrollRegistrant(
     nik?: string;
     classId?: string;
     roomId?: string;
+  },
+  currentUser?: {
+    roleCode?: string | null;
+    role?: string | null;
+    unitId?: string | null;
   }
 ) {
   const randomPassword = randomBytes(24).toString('base64url');
@@ -549,12 +556,36 @@ export async function enrollRegistrant(
       throw new Error('Registrant must be accepted before enrollment');
     }
 
+    // Payment gate (mirrors processEnrollment in the onboarding orchestrator):
+    // being accepted is an academic decision, not proof the registrant settled
+    // daftar ulang. A registrant with an outstanding registration fee must not
+    // be turned into an active student here.
+    const feePeriod = registrant.admissionPeriod;
+    assertAdmissionFeeSettled({
+      registrationFee: feePeriod?.registrationFee ?? null,
+      registrationFeePaidAt: registrant.registrationFeePaidAt,
+    });
+
     let existingStudent = null;
+
+    // Internal-alumni re-enrollment must never be able to capture an alumnus
+    // outside the caller's reach. A user pinned to one unit may only relink
+    // alumni in that unit (same seesAllUnits policy as
+    // findInternalAlumniByIdentifier); foundation/cross-unit roles see all.
+    const alumniUnitScope =
+      currentUser && seesAllUnits(currentUser)
+        ? undefined
+        : (currentUser?.unitId ?? feePeriod?.unitId);
 
     if (registrant.isInternalAlumni) {
       if (registrant.previousStudentId) {
         existingStudent = await tx.student.findFirst({
-          where: { id: registrant.previousStudentId, status: 'alumni', deletedAt: null },
+          where: {
+            id: registrant.previousStudentId,
+            status: 'alumni',
+            deletedAt: null,
+            ...(alumniUnitScope ? { unitId: alumniUnitScope } : {}),
+          },
           include: { user: true },
         });
       }
@@ -567,6 +598,7 @@ export async function enrollRegistrant(
           where: {
             deletedAt: null,
             status: 'alumni',
+            ...(alumniUnitScope ? { unitId: alumniUnitScope } : {}),
             OR: conditions,
           },
           include: { user: true },
