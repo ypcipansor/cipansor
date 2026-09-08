@@ -92,13 +92,13 @@ export async function generateRaportMerdekaPdfBuffer(data: RaportMerdekaPdfData)
   const col2X = PAGE_WIDTH / 2 + 10;
   let infoY = y - 15;
 
-  page1.drawText(`Nama Peserta Didik : ${data.siswa.nama}`, { x: col1X, y: infoY, size: 9, font: fontHelveticaBold });
-  page1.drawText(`Kelas / Fase : ${data.siswa.kelas} / ${data.siswa.fase ?? 'D'}`, { x: col2X, y: infoY, size: 9, font: fontHelvetica });
+  page1.drawText(sanitizeWinAnsiText(`Nama Peserta Didik : ${data.siswa.nama}`), { x: col1X, y: infoY, size: 9, font: fontHelveticaBold });
+  page1.drawText(sanitizeWinAnsiText(`Kelas / Fase : ${data.siswa.kelas} / ${data.siswa.fase ?? 'D'}`), { x: col2X, y: infoY, size: 9, font: fontHelvetica });
   infoY -= 14;
-  page1.drawText(`NIS / NISN          : ${data.siswa.nis} / ${data.siswa.nisn ?? '-'}`, { x: col1X, y: infoY, size: 9, font: fontHelvetica });
-  page1.drawText(`Semester / TA: ${data.tahunAjaran.semesterLabel} / ${data.tahunAjaran.tahun}`, { x: col2X, y: infoY, size: 9, font: fontHelvetica });
+  page1.drawText(sanitizeWinAnsiText(`NIS / NISN          : ${data.siswa.nis} / ${data.siswa.nisn ?? '-'}`), { x: col1X, y: infoY, size: 9, font: fontHelvetica });
+  page1.drawText(sanitizeWinAnsiText(`Semester / TA: ${data.tahunAjaran.semesterLabel} / ${data.tahunAjaran.tahun}`), { x: col2X, y: infoY, size: 9, font: fontHelvetica });
   infoY -= 14;
-  page1.drawText(`Sekolah / Unit       : ${data.siswa.unit}`, { x: col1X, y: infoY, size: 9, font: fontHelvetica });
+  page1.drawText(sanitizeWinAnsiText(`Sekolah / Unit       : ${data.siswa.unit}`), { x: col1X, y: infoY, size: 9, font: fontHelvetica });
 
   y -= 65;
 
@@ -179,13 +179,13 @@ export async function generateRaportMerdekaPdfBuffer(data: RaportMerdekaPdfData)
     });
 
     currentPage.drawText(String(itemNo++), { x: MARGIN + 8, y: y - 12, size: 8, font: fontHelvetica });
-    currentPage.drawText(item.subjectName.slice(0, 24), { x: MARGIN + colW.no + 5, y: y - 12, size: 8, font: fontHelveticaBold });
+    currentPage.drawText(sanitizeWinAnsiText(item.subjectName.slice(0, 24)), { x: MARGIN + colW.no + 5, y: y - 12, size: 8, font: fontHelveticaBold });
     currentPage.drawText(String(item.nilaiAkhir), { x: MARGIN + colW.no + colW.subject + 8, y: y - 12, size: 8, font: fontHelveticaBold });
-    currentPage.drawText(item.predikat, { x: MARGIN + colW.no + colW.subject + colW.score + 6, y: y - 12, size: 8, font: fontHelveticaBold });
+    currentPage.drawText(sanitizeWinAnsiText(item.predikat), { x: MARGIN + colW.no + colW.subject + colW.score + 6, y: y - 12, size: 8, font: fontHelveticaBold });
 
     let descY = y - 10;
     for (const line of descLines) {
-      currentPage.drawText(line, {
+      currentPage.drawText(sanitizeWinAnsiText(line), {
         x: MARGIN + colW.no + colW.subject + colW.score + colW.predicate + 5,
         y: descY,
         size: 7.5,
@@ -229,8 +229,8 @@ export async function generateRaportMerdekaPdfBuffer(data: RaportMerdekaPdfData)
     currentPage.drawText('- Belum ada data ekstrakurikuler -', { x: MARGIN + 5, y: eksY, size: 7.5, font: fontHelveticaOblique });
   } else {
     for (const e of eks) {
-      currentPage.drawText(e.nama, { x: MARGIN + 5, y: eksY, size: 8, font: fontHelvetica });
-      currentPage.drawText(e.predikat, { x: MARGIN + halfW - 40, y: eksY, size: 8, font: fontHelveticaBold });
+      currentPage.drawText(sanitizeWinAnsiText(e.nama), { x: MARGIN + 5, y: eksY, size: 8, font: fontHelvetica });
+      currentPage.drawText(sanitizeWinAnsiText(e.predikat), { x: MARGIN + halfW - 40, y: eksY, size: 8, font: fontHelveticaBold });
       eksY -= 12;
     }
   }
@@ -269,9 +269,9 @@ export async function generateRaportMerdekaPdfBuffer(data: RaportMerdekaPdfData)
   const rightSigX = PAGE_WIDTH - MARGIN - 140;
   currentPage.drawText(`Bogor, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, { x: rightSigX, y: sigY + 40, size: 8.5, font: fontHelvetica });
   currentPage.drawText('Wali Kelas', { x: rightSigX, y: sigY + 30, size: 8.5, font: fontHelvetica });
-  currentPage.drawText(data.waliKelas.nama, { x: rightSigX, y: sigY - 8, size: 8.5, font: fontHelveticaBold });
+  currentPage.drawText(sanitizeWinAnsiText(data.waliKelas.nama), { x: rightSigX, y: sigY - 8, size: 8.5, font: fontHelveticaBold });
   if (data.waliKelas.nip) {
-    currentPage.drawText(`NIP. ${data.waliKelas.nip}`, { x: rightSigX, y: sigY - 18, size: 7.5, font: fontHelvetica });
+    currentPage.drawText(sanitizeWinAnsiText(`NIP. ${data.waliKelas.nip}`), { x: rightSigX, y: sigY - 18, size: 7.5, font: fontHelvetica });
   }
 
   // ---------------- PAGE 2: PESANTREN (TAHFIDZ & P5) ----------------
@@ -282,7 +282,7 @@ export async function generateRaportMerdekaPdfBuffer(data: RaportMerdekaPdfData)
     `${data.siswa.unit} Cipansor`
   );
 
-  page2.drawText(`Nama Peserta Didik: ${data.siswa.nama} (${data.siswa.kelas})`, {
+  page2.drawText(sanitizeWinAnsiText(`Nama Peserta Didik: ${data.siswa.nama} (${data.siswa.kelas})`), {
     x: MARGIN,
     y: y2,
     size: 9,
@@ -369,16 +369,16 @@ export async function generateRaportMerdekaPdfBuffer(data: RaportMerdekaPdfData)
   const pimpinanJabatan = data.pimpinanUnit?.jabatan || 'Kepala Pesantren';
 
   currentP5Page.drawText('Mengetahui,', { x: MARGIN + 20, y: sigY2 + 40, size: 8.5, font: fontHelvetica });
-  currentP5Page.drawText(pimpinanJabatan, { x: MARGIN + 20, y: sigY2 + 30, size: 8.5, font: fontHelvetica });
+  currentP5Page.drawText(sanitizeWinAnsiText(pimpinanJabatan), { x: MARGIN + 20, y: sigY2 + 30, size: 8.5, font: fontHelvetica });
   if (pimpinanNama) {
-    currentP5Page.drawText(pimpinanNama, { x: MARGIN + 20, y: sigY2 - 8, size: 8.5, font: fontHelveticaBold });
+    currentP5Page.drawText(sanitizeWinAnsiText(pimpinanNama), { x: MARGIN + 20, y: sigY2 - 8, size: 8.5, font: fontHelveticaBold });
   } else {
     currentP5Page.drawLine({ start: { x: MARGIN + 10, y: sigY2 - 10 }, end: { x: MARGIN + 140, y: sigY2 - 10 }, thickness: 0.5 });
   }
 
   currentP5Page.drawText(`Bogor, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, { x: rightSigX, y: sigY2 + 40, size: 8.5, font: fontHelvetica });
   currentP5Page.drawText('Musyrif / Wali Kelas', { x: rightSigX, y: sigY2 + 30, size: 8.5, font: fontHelvetica });
-  currentP5Page.drawText(data.waliKelas.nama, { x: rightSigX, y: sigY2 - 8, size: 8.5, font: fontHelveticaBold });
+  currentP5Page.drawText(sanitizeWinAnsiText(data.waliKelas.nama), { x: rightSigX, y: sigY2 - 8, size: 8.5, font: fontHelveticaBold });
 
   // Add dynamic page numbers across all pages in document
   const totalPages = pdfDoc.getPageCount();

@@ -741,7 +741,7 @@ export const CorrespondenceService = {
       await recordFlow(tx, {
         letterId,
         actorId: userId,
-        action: letter.status === DbLetterStatus.REVISION_NEEDED ? LetterFlowAction.RESUBMITTED : LetterFlowAction.CREATED,
+        action: letter.status === DbLetterStatus.REVISION_NEEDED ? LetterFlowAction.RESUBMITTED : LetterFlowAction.DISPOSITION_UPDATED,
         fromStatus: letter.status,
         toStatus: letter.status,
         note: 'Naskah surat diperbarui',

@@ -247,6 +247,32 @@ export interface AssessmentAcademicYearItem {
   name: string;
 }
 
+export interface VerificationResponse {
+  valid: boolean;
+  expired?: boolean;
+  message: string;
+  studentId?: string;
+  nis?: string;
+  student?: {
+    id: string;
+    nis: string;
+    name: string;
+    photoUrl?: string | null;
+    unit: string;
+    unitType?: string | null;
+    currentClass: string;
+    academicYear: string;
+  } | null;
+  cardData?: {
+    nis: string;
+    nisn?: string;
+    studentName: string;
+    unitName: string;
+    className?: string;
+    issueDate?: string;
+  };
+}
+
 export interface RaportMerdekaPdfData {
   siswa: {
     nama: string;

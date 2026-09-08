@@ -950,6 +950,6 @@ router.get('/raport-merdeka/students/:studentId/pdf', isTeacherOrAbove, RaportMe
  *       200:
  *         description: Bulk Raport Merdeka for all students in class
  */
-router.get('/raport-merdeka/classes/:classId', RaportMerdekaController.generateClassRaport);
+router.get('/raport-merdeka/classes/:classId', isTeacherOrAbove, RaportMerdekaController.generateClassRaport);
 
 export default router;

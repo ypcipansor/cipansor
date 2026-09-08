@@ -47,8 +47,12 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useCurrentUnit } from "@/hooks";
-import { useRaportMerdekaStudentData } from "@/hooks/use-kurikulum-merdeka";
-import { AssessmentStudentItem, AssessmentAcademicYearItem } from "@cipansor/shared";
+import {
+  useRaportMerdekaStudentData,
+  useRaportMerdekaStudentsList,
+  useRaportMerdekaAcademicYears,
+  useExportRaportMerdekaPdf,
+} from "@/hooks/use-kurikulum-merdeka";
 import { toast } from "sonner";
 
 // P5 Dimension Icons
@@ -127,23 +131,9 @@ export default function RaportMerdekaPage() {
     },
   });
 
-  const { data: students } = useQuery<AssessmentStudentItem[]>({
-    queryKey: ["students-list", currentUnit?.id, studentSearch],
-    queryFn: async () => {
-      const res = await api.get("/students", {
-        params: { search: studentSearch || undefined, limit: 100 },
-      });
-      return res.data.data;
-    },
-  });
-
-  const { data: academicYears } = useQuery<AssessmentAcademicYearItem[]>({
-    queryKey: ["academic-years-list"],
-    queryFn: async () => {
-      const res = await api.get("/academic-years");
-      return res.data.data;
-    },
-  });
+  const { data: students } = useRaportMerdekaStudentsList(currentUnit?.id, studentSearch);
+  const { data: academicYears } = useRaportMerdekaAcademicYears();
+  const exportPdfMutation = useExportRaportMerdekaPdf();
 
   const handleExportPDF = async () => {
     if (!selectedStudentId) {
@@ -158,20 +148,18 @@ export default function RaportMerdekaPage() {
     try {
       setIsExporting(true);
 
-      const response = await api.get(
-        `/assessment/raport-merdeka/students/${selectedStudentId}/pdf`,
-        {
-          params: { academicYearId, semester },
-          responseType: "blob",
-        }
-      );
+      const pdfData = await exportPdfMutation.mutateAsync({
+        studentId: selectedStudentId,
+        academicYearId,
+        semester,
+      });
 
       const selectedStudent = Array.isArray(students)
         ? students.find((s) => s.id === selectedStudentId)
         : null;
       const studentName = selectedStudent?.user?.name || "Siswa";
 
-      const blob = new Blob([response.data], { type: "application/pdf" });
+      const blob = new Blob([pdfData], { type: "application/pdf" });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -785,21 +773,21 @@ export default function RaportMerdekaPage() {
                   <div className="grid grid-cols-2 gap-x-8 gap-y-1 text-xs mb-6">
                     <div className="grid grid-cols-[100px_1fr]">
                       <div>Nama Peserta Didik</div>
-                      <div className="font-semibold">: {studentReportData?.siswa?.nama || "Ahmad Fulan"}</div>
+                      <div className="font-semibold">: {studentReportData?.siswa?.nama || "-"}</div>
                       <div>NIS / NISN</div>
-                      <div>: {studentReportData?.siswa?.nis || "12345"} / {studentReportData?.siswa?.nisn || "-"}</div>
+                      <div>: {studentReportData?.siswa?.nis || "-"} / {studentReportData?.siswa?.nisn || "-"}</div>
                       <div>Sekolah</div>
-                      <div>: {studentReportData?.siswa?.unit || currentUnit?.name || "SMP Cipansor"}</div>
+                      <div>: {studentReportData?.siswa?.unit || currentUnit?.name || "-"}</div>
                     </div>
                     <div className="grid grid-cols-[100px_1fr]">
                       <div>Kelas</div>
-                      <div>: {studentReportData?.siswa?.kelas || "VII A"}</div>
+                      <div>: {studentReportData?.siswa?.kelas || "-"}</div>
                       <div>Fase</div>
-                      <div>: {studentReportData?.siswa?.fase || "D"}</div>
+                      <div>: {studentReportData?.siswa?.fase || "-"}</div>
                       <div>Semester</div>
                       <div>: {semester} ({semester === "1" ? "Ganjil" : "Genap"})</div>
                       <div>Tahun Pelajaran</div>
-                      <div>: {studentReportData?.tahunAjaran?.tahun || "2024/2025"}</div>
+                      <div>: {studentReportData?.tahunAjaran?.tahun || "-"}</div>
                     </div>
                   </div>
 
@@ -828,59 +816,33 @@ export default function RaportMerdekaPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {studentReportData?.akademik && studentReportData.akademik.length > 0 ? (
-                            studentReportData.akademik.map((item: { mapel: string; nilaiAkhir: number; capaian: string }, idx: number) => (
-                              <tr key={idx} className="align-top">
-                                <td className="border border-black p-2 text-center">
-                                  {idx + 1}
-                                </td>
-                                <td className="border border-black p-2 font-medium">
-                                  {item.mapel}
-                                </td>
-                                <td className="border border-black p-2 text-center font-bold">
-                                  {item.nilaiAkhir}
-                                </td>
-                                <td className="border border-black p-2">
-                                  <p>{item.capaian}</p>
-                                </td>
-                              </tr>
-                            ))
-                          ) : (
-                            <>
-                              <tr className="align-top">
-                                <td className="border border-black p-2 text-center">1</td>
-                                <td className="border border-black p-2 font-medium">Pendidikan Agama Islam</td>
-                                <td className="border border-black p-2 text-center font-bold">88</td>
-                                <td className="border border-black p-2">
-                                  <div className="space-y-1">
-                                    <p><span className="font-semibold">Menunjukkan penguasaan yang sangat baik</span> dalam memahami rukun iman dan rukun islam.</p>
-                                    <p className="text-gray-600 italic">Perlu bimbingan dalam mempraktikkan bacaan tajwid secara konsisten.</p>
-                                  </div>
+                          {(() => {
+                            const allSubjects = [
+                              ...(studentReportData?.intrakurikuler?.kelompokUmum || []),
+                              ...(studentReportData?.intrakurikuler?.kelompokPesantren || []),
+                            ];
+
+                            if (allSubjects.length > 0) {
+                              return allSubjects.map((item, idx) => (
+                                <tr key={idx} className="align-top">
+                                  <td className="border border-black p-2 text-center">{idx + 1}</td>
+                                  <td className="border border-black p-2 font-medium">{item.subjectName}</td>
+                                  <td className="border border-black p-2 text-center font-bold">{item.nilaiAkhir}</td>
+                                  <td className="border border-black p-2"><p>{item.deskripsi}</p></td>
+                                </tr>
+                              ));
+                            }
+
+                            return (
+                              <tr>
+                                <td colSpan={4} className="border border-black p-4 text-center text-muted-foreground">
+                                  {selectedStudentId
+                                    ? "Belum ada data nilai intrakurikuler untuk siswa dan semester ini."
+                                    : "Pilih siswa dan tahun ajaran di atas untuk melihat preview nilai."}
                                 </td>
                               </tr>
-                              <tr className="align-top">
-                                <td className="border border-black p-2 text-center">2</td>
-                                <td className="border border-black p-2 font-medium">Bahasa Indonesia</td>
-                                <td className="border border-black p-2 text-center font-bold">92</td>
-                                <td className="border border-black p-2">
-                                  <div className="space-y-1">
-                                    <p><span className="font-semibold">Menunjukkan penguasaan yang sangat baik</span> dalam menulis teks deskripsi dan narasi.</p>
-                                  </div>
-                                </td>
-                              </tr>
-                              <tr className="align-top">
-                                <td className="border border-black p-2 text-center">3</td>
-                                <td className="border border-black p-2 font-medium">Matematika</td>
-                                <td className="border border-black p-2 text-center font-bold">78</td>
-                                <td className="border border-black p-2">
-                                  <div className="space-y-1">
-                                    <p><span className="font-semibold">Menunjukkan penguasaan yang baik</span> dalam operasi bilangan bulat.</p>
-                                    <p className="text-gray-600 italic">Perlu bimbingan dalam menyelesaikan persamaan linear satu variabel.</p>
-                                  </div>
-                                </td>
-                              </tr>
-                            </>
-                          )}
+                            );
+                          })()}
                         </tbody>
                       </table>
                     )}
@@ -906,7 +868,7 @@ export default function RaportMerdekaPage() {
                       </thead>
                       <tbody>
                         {studentReportData?.ekstrakurikuler && studentReportData.ekstrakurikuler.length > 0 ? (
-                          studentReportData.ekstrakurikuler.map((ekstra: { nama: string; predikat: string; keterangan: string }, idx: number) => (
+                          studentReportData.ekstrakurikuler.map((ekstra, idx) => (
                             <tr key={idx}>
                               <td className="border border-black p-2 text-center">{idx + 1}</td>
                               <td className="border border-black p-2">{ekstra.nama}</td>
@@ -915,20 +877,13 @@ export default function RaportMerdekaPage() {
                             </tr>
                           ))
                         ) : (
-                          <>
-                            <tr>
-                              <td className="border border-black p-2 text-center">1</td>
-                              <td className="border border-black p-2">Pramuka</td>
-                              <td className="border border-black p-2 text-center">Baik</td>
-                              <td className="border border-black p-2">Mampu mengikuti kegiatan kepramukaan dengan disiplin.</td>
-                            </tr>
-                            <tr>
-                              <td className="border border-black p-2 text-center">2</td>
-                              <td className="border border-black p-2">Futsal</td>
-                              <td className="border border-black p-2 text-center">Sangat Baik</td>
-                              <td className="border border-black p-2">Menunjukkan bakat kepemimpinan dalam tim.</td>
-                            </tr>
-                          </>
+                          <tr>
+                            <td colSpan={4} className="border border-black p-4 text-center text-muted-foreground">
+                              {selectedStudentId
+                                ? "Tidak ada kegiatan ekstrakurikuler terdaftar."
+                                : "Pilih siswa di atas untuk melihat kegiatan ekstrakurikuler."}
+                            </td>
+                          </tr>
                         )}
                       </tbody>
                     </table>
@@ -994,7 +949,7 @@ export default function RaportMerdekaPage() {
                   {/* Student Info Review */}
                   <div className="border-b pb-2 mb-4">
                     <p className="font-semibold">
-                      Nama: Ahmad Fulan (Kelas VII A)
+                      Nama: {studentReportData?.siswa?.nama || "-"} (Kelas: {studentReportData?.siswa?.kelas || "-"})
                     </p>
                   </div>
 

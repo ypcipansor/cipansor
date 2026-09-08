@@ -102,6 +102,17 @@ function StudentIDCard({
     .substring(0, 2)
     .toUpperCase();
 
+  const { data: cardDetails } = useQuery({
+    queryKey: ["student-id-card-details", student.id],
+    queryFn: async () => {
+      const res = await api.get(`/students/${student.id}/id-card`);
+      return res.data.data;
+    },
+    enabled: !!student.id,
+  });
+
+  const qrPayload = cardDetails?.cardData?.qrCode?.data || `cipansor://${Buffer.from(JSON.stringify({ sid: student.id, nis: student.nis })).toString('base64url')}#legacy`;
+
   return (
     <div
       className={`
@@ -170,7 +181,7 @@ function StudentIDCard({
 
         {/* QR Code */}
         <div className="shrink-0 bg-white p-1 rounded">
-          <StudentQRCode value={student.nis} size={48} />
+          <StudentQRCode value={qrPayload} size={48} />
         </div>
       </div>
 

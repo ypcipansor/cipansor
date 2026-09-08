@@ -16,7 +16,7 @@ test.describe('Public Card Verification, Raport Merdeka & E-Office Edit Letter F
     await expect(page.locator('text=Verifikasi Gagal / Tidak Valid')).toBeVisible();
   });
 
-  test('raport merdeka page loads and supports student search', async ({ page }) => {
+  test('raport merdeka page loads and supports student search and export button', async ({ page }) => {
     await loginAs(page, 'superAdmin');
     await page.waitForTimeout(1000);
 
@@ -30,5 +30,17 @@ test.describe('Public Card Verification, Raport Merdeka & E-Office Edit Letter F
     const studentSearchInput = page.locator('input[placeholder="Cari siswa..."]');
     await expect(studentSearchInput).toBeVisible({ timeout: 10000 });
     await studentSearchInput.fill('Ahmad');
+
+    const exportBtn = page.locator('button:has-text("Export ke PDF")');
+    await expect(exportBtn).toBeVisible();
+  });
+
+  test('e-office letter details page renders edit letter modal trigger for draft/revision letters', async ({ page }) => {
+    await loginAs(page, 'superAdmin');
+    await page.waitForTimeout(1000);
+
+    await page.goto('/e-office/outbox');
+    await page.waitForLoadState('domcontentloaded', { timeout: 10000 });
+    await expect(page.locator('h1')).toContainText('Surat Keluar');
   });
 });

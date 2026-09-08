@@ -139,11 +139,12 @@ export class RaportMerdekaService {
   }
 
   /**
-   * Validate student unit scope
+   * Validate student unit scope (supports cross-unit educator assignments)
    */
   static async validateStudentScope(user: any, studentId: string) {
     if (!user) return;
-    if (user.role === 'SUPER_ADMIN' || user.roleCode === 'SUPER_ADMIN') return;
+    const userRoleCode = user.roleCode || user.role;
+    if (userRoleCode === 'SUPER_ADMIN') return;
 
     const student = await prisma.student.findUnique({
       where: { id: studentId },
@@ -155,7 +156,34 @@ export class RaportMerdekaService {
     }
 
     if (user.unitId && student.unitId !== user.unitId) {
-      throw new ApiError(ErrorCode.FORBIDDEN, 'Anda tidak memiliki akses ke siswa di unit lain');
+      const userId = user.id || user.sub;
+
+      // 1. Check if user has active UserRole in target student unit or global
+      const userRoleInUnit = await prisma.userRole.findFirst({
+        where: {
+          userId,
+          isActive: true,
+          OR: [{ unitId: student.unitId }, { unitId: null }],
+        },
+      });
+
+      if (userRoleInUnit) return;
+
+      // 2. Check if teacher record is assigned to student's unit or class/exam
+      const teacherAssignment = await prisma.teacher.findFirst({
+        where: {
+          userId,
+          OR: [
+            { unitId: student.unitId },
+            { homeroomClasses: { some: { unitId: student.unitId } } },
+            { exams: { some: { unitId: student.unitId } } },
+          ],
+        },
+      });
+
+      if (!teacherAssignment) {
+        throw new ApiError(ErrorCode.FORBIDDEN, 'Anda tidak memiliki akses ke siswa di unit lain');
+      }
     }
   }
 
@@ -238,19 +266,17 @@ export class RaportMerdekaService {
       },
     });
 
-    // Define semester date range from academic year
+    // Calculate academic year midpoint to accurately bound Semester 1 and Semester 2 windows.
+    // This ensures Semester 1 grades entered in early January before mid-year break
+    // are correctly captured in Semester 1 rather than bleeding into Semester 2.
     const ayStartDate = new Date(enrollment.class.academicYear.startDate);
     const ayEndDate = new Date(enrollment.class.academicYear.endDate);
-    const semStartDate =
-      semester === 1
-        ? ayStartDate
-        : new Date(ayStartDate.getFullYear() + 1, 0, 1);
-    const semEndDate =
-      semester === 1
-        ? new Date(ayStartDate.getFullYear(), 11, 31)
-        : ayEndDate;
+    const ayMidpoint = new Date((ayStartDate.getTime() + ayEndDate.getTime()) / 2);
 
-    // Get grades with scores filtered by semester date range
+    const semStartDate = semester === 1 ? ayStartDate : ayMidpoint;
+    const semEndDate = semester === 1 ? ayMidpoint : ayEndDate;
+
+    // Get grades for this student and academic year within the calculated semester window
     const grades = await prisma.grade.findMany({
       where: {
         studentId,
@@ -755,6 +781,23 @@ export class RaportMerdekaService {
     semester: number,
     user?: any
   ) {
+    // Enforce educator authority check for bulk raport generation
+    if (user) {
+      const roleCode = user.roleCode || user.role;
+      const isTeacherOrAdmin =
+        roleCode === 'SUPER_ADMIN' ||
+        ['UNIT_ADMIN', 'TEACHER', 'SDIT_GURU', 'SMP_GURU', 'SMA_GURU', 'TKQ_GURU', 'TPQ_GURU', 'MADIN_GURU'].some(
+          (prefix) => roleCode.includes(prefix) || roleCode.endsWith('_GURU') || roleCode.endsWith('_ADMIN') || roleCode.endsWith('_KEPALA_SEKOLAH')
+        );
+
+      if (!isTeacherOrAdmin) {
+        throw new ApiError(
+          ErrorCode.FORBIDDEN,
+          'Akses ditolak. Hanya pendidik dan pengelola yang dapat mengakses raport kelas.'
+        );
+      }
+    }
+
     // Get class with academic year check and unit scope check
     const classInfo = await prisma.class.findUnique({
       where: { id: classId },
@@ -770,7 +813,31 @@ export class RaportMerdekaService {
 
     if (user && user.role !== 'SUPER_ADMIN' && user.roleCode !== 'SUPER_ADMIN') {
       if (user.unitId && classInfo.unitId !== user.unitId) {
-        throw new ApiError(ErrorCode.FORBIDDEN, 'Anda tidak memiliki akses ke kelas di unit lain');
+        const userId = user.id || user.sub;
+        const userRoleInUnit = await prisma.userRole.findFirst({
+          where: {
+            userId,
+            isActive: true,
+            OR: [{ unitId: classInfo.unitId }, { unitId: null }],
+          },
+        });
+
+        if (!userRoleInUnit) {
+          const teacherAssignment = await prisma.teacher.findFirst({
+            where: {
+              userId,
+              OR: [
+                { unitId: classInfo.unitId },
+                { homeroomClasses: { some: { id: classId } } },
+                { exams: { some: { classId } } },
+              ],
+            },
+          });
+
+          if (!teacherAssignment) {
+            throw new ApiError(ErrorCode.FORBIDDEN, 'Anda tidak memiliki akses ke kelas di unit lain');
+          }
+        }
       }
     }
 

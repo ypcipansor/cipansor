@@ -26,22 +26,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import api from "@/lib/api";
-
-interface VerificationResponse {
-  valid: boolean;
-  expired?: boolean;
-  message: string;
-  student?: {
-    id: string;
-    nis: string;
-    name: string;
-    photoUrl?: string | null;
-    unit: string;
-    unitType?: string | null;
-    currentClass: string;
-    academicYear: string;
-  } | null;
-}
+import { VerificationResponse } from "@cipansor/shared";
 
 function VerifyCardContent() {
   const searchParams = useSearchParams();

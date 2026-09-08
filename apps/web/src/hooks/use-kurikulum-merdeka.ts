@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api, { ApiResponse, PaginatedResponse } from "@/lib/api";
+import { RaportMerdekaPdfData, AssessmentStudentItem, AssessmentAcademicYearItem } from "@cipansor/shared";
 
 // ==================== CONSTANTS ====================
 
@@ -426,7 +427,7 @@ export function useRaportMerdekaStudentData(
     queryKey: ["raport-merdeka-student", studentId, academicYearId, semester],
     queryFn: async () => {
       if (!studentId || !academicYearId || !semester) return null;
-      const response = await api.get<ApiResponse<any>>(
+      const response = await api.get<ApiResponse<RaportMerdekaPdfData>>(
         `/assessment/raport-merdeka/students/${studentId}`,
         {
           params: { academicYearId, semester },
@@ -435,6 +436,51 @@ export function useRaportMerdekaStudentData(
       return response.data.data;
     },
     enabled: !!studentId && !!academicYearId && !!semester,
+  });
+}
+
+export function useRaportMerdekaStudentsList(unitId?: string, search?: string) {
+  return useQuery({
+    queryKey: ["students-list", unitId, search],
+    queryFn: async () => {
+      const response = await api.get<ApiResponse<AssessmentStudentItem[]>>("/students", {
+        params: { search: search || undefined, limit: 100 },
+      });
+      return response.data.data;
+    },
+  });
+}
+
+export function useRaportMerdekaAcademicYears() {
+  return useQuery({
+    queryKey: ["academic-years-list"],
+    queryFn: async () => {
+      const response = await api.get<ApiResponse<AssessmentAcademicYearItem[]>>("/academic-years");
+      return response.data.data;
+    },
+  });
+}
+
+export function useExportRaportMerdekaPdf() {
+  return useMutation({
+    mutationFn: async ({
+      studentId,
+      academicYearId,
+      semester,
+    }: {
+      studentId: string;
+      academicYearId: string;
+      semester: string | number;
+    }) => {
+      const response = await api.get(
+        `/assessment/raport-merdeka/students/${studentId}/pdf`,
+        {
+          params: { academicYearId, semester },
+          responseType: "blob",
+        }
+      );
+      return response.data;
+    },
   });
 }
 

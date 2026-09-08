@@ -102,6 +102,7 @@ export default function LetterDetailPage({
   const { user } = useAuth();
   const {
     useLetter,
+    updateLetter,
     submitForReview,
     reviewLetter,
     createDisposition,
@@ -138,6 +139,14 @@ export default function LetterDetailPage({
   const [completeNotes, setCompleteNotes] = useState("");
   const [ccDraft, setCcDraft] = useState<LetterCcInput[] | null>(null);
   const [dispatchOpen, setDispatchOpen] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    subject: "",
+    content: "",
+    recipientName: "",
+    recipientInstance: "",
+    urgency: "NORMAL",
+  });
   const [dispatchData, setDispatchData] = useState({
     channel: LetterDispatchChannel.HAND_DELIVERY as LetterDispatchChannel,
     dispatchedAt: "",
@@ -446,6 +455,111 @@ export default function LetterDetailPage({
   return (
     <div className="max-w-5xl mx-auto p-6 space-y-6">
       {/* Dialog Forward Concept Letter */}
+      {/* Dialog Edit Letter */}
+      <Dialog open={editModalOpen} onOpenChange={setEditModalOpen}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>Edit Naskah Surat</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label>Perihal / Judul Surat</Label>
+              <Input
+                value={editFormData.subject}
+                onChange={(e) =>
+                  setEditFormData({ ...editFormData, subject: e.target.value })
+                }
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>Nama Penerima</Label>
+                <Input
+                  value={editFormData.recipientName}
+                  onChange={(e) =>
+                    setEditFormData({
+                      ...editFormData,
+                      recipientName: e.target.value,
+                    })
+                  }
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label>Instansi Penerima</Label>
+                <Input
+                  value={editFormData.recipientInstance}
+                  onChange={(e) =>
+                    setEditFormData({
+                      ...editFormData,
+                      recipientInstance: e.target.value,
+                    })
+                  }
+                />
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label>Urgensi</Label>
+              <Select
+                value={editFormData.urgency}
+                onValueChange={(val) =>
+                  setEditFormData({ ...editFormData, urgency: val })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="NORMAL">Biasa</SelectItem>
+                  <SelectItem value="URGENT">Penting</SelectItem>
+                  <SelectItem value="VERY_URGENT">Sangat Penting</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label>Isi Ringkas Naskah</Label>
+              <Textarea
+                rows={5}
+                value={editFormData.content}
+                onChange={(e) =>
+                  setEditFormData({ ...editFormData, content: e.target.value })
+                }
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-3">
+            <Button variant="outline" onClick={() => setEditModalOpen(false)}>
+              Batal
+            </Button>
+            <Button
+              onClick={async () => {
+                if (!letter?.id) return;
+                try {
+                  await updateLetter.mutateAsync({
+                    id: letter.id,
+                    data: {
+                      subject: editFormData.subject,
+                      content: editFormData.content,
+                      recipientName: editFormData.recipientName,
+                      recipientInstance: editFormData.recipientInstance,
+                      urgency: editFormData.urgency as any,
+                    },
+                  });
+                  toast.success("Naskah surat berhasil diperbarui");
+                  setEditModalOpen(false);
+                } catch (error: any) {
+                  toast.error(
+                    error?.response?.data?.message || "Gagal memperbarui naskah surat"
+                  );
+                }
+              }}
+              disabled={updateLetter.isPending}
+            >
+              {updateLetter.isPending ? "Menyimpan..." : "Simpan Perubahan"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={forwardModalOpen} onOpenChange={setForwardModalOpen}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
@@ -1275,6 +1389,26 @@ export default function LetterDetailPage({
                   way an e-signature platform watermarks a voided document. The
                   office still has to file a copy, and whoever holds the letter
                   deserves a sheet that explains itself. */}
+              {(letter.status === "DRAFT" || letter.status === "REVISION_NEEDED") &&
+                (letter.createdById === user?.id || getPrimaryRoleCode(user) === "SUPER_ADMIN" || getPrimaryRoleCode(user) === "SDIT_ADMIN") && (
+                  <Button
+                    className="w-full bg-amber-600 hover:bg-amber-700 text-white"
+                    onClick={() => {
+                      setEditFormData({
+                        subject: letter.subject || "",
+                        content: letter.content || "",
+                        recipientName: letter.recipientName || "",
+                        recipientInstance: letter.recipientInstance || "",
+                        urgency: letter.urgency || "NORMAL",
+                      });
+                      setEditModalOpen(true);
+                    }}
+                  >
+                    <PenLine className="mr-2 h-4 w-4" />
+                    Edit Naskah Surat
+                  </Button>
+                )}
+
               <Button
                 className="w-full"
                 variant="outline"
