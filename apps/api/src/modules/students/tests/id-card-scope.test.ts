@@ -30,6 +30,11 @@ vi.mock('@/lib/prisma', () => ({
     studentParent: {
       findMany: vi.fn(),
     },
+    studentCardState: {
+      updateMany: vi.fn(),
+      create: vi.fn(),
+    },
+    $transaction: vi.fn(async (ops: unknown[]) => Promise.all(ops)),
   },
 }));
 
@@ -50,8 +55,17 @@ describe('StudentIdCardService.bulkRegenerateActiveCards — unit scope', () => 
   beforeEach(() => {
     vi.clearAllMocks();
     vi.spyOn(StudentIdCardService, 'generateIdCard').mockResolvedValue({
-      id: 'card-1',
-      qrData: 'cipansor://abc#0123456789abcdef',
+      cardData: {
+        validity: {
+          issuedDate: new Date().toISOString(),
+          validUntil: new Date(Date.now() + 86400000).toISOString(),
+          cardNumber: 'CARD-1',
+        },
+        qrCode: {
+          data: 'cipansor://abc#0123456789abcdef',
+          verificationUrl: 'https://cipansor.or.id/public/verify-card?data=x',
+        },
+      },
     } as never);
   });
 

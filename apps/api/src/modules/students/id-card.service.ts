@@ -11,7 +11,7 @@
 import { prisma } from '../../lib/prisma';
 import { ApiError, ErrorCode } from '../../middleware/error';
 import { config as appConfig } from '../../config';
-import { RoleCode, Prisma } from '@prisma/client';
+import { RoleCode, Prisma, StudentCardStatus } from '@prisma/client';
 import type { JwtPayload } from '../../lib/jwt';
 import type { StudentIdCardDetail } from '@cipansor/shared';
 import * as crypto from 'crypto';
@@ -593,9 +593,42 @@ export class StudentIdCardService {
 
     const cards = await Promise.all(students.map((student) => this.generateIdCard(student.id)));
 
+    // Persist an audit trail of the regeneration (Flag 6): one fresh ACTIVE
+    // StudentCardState per student, plus a REVOKED marker on any previous
+    // ACTIVE row. Both writes land in a single transaction so the "at most one
+    // active card per student" invariant and the audit event are all-or-nothing.
+    const generatedById = user?.id ?? null;
+    const regeneratedAt = new Date();
+    await prisma.$transaction(
+      students.flatMap((student, idx) => {
+        const card = cards[idx];
+        return [
+          prisma.studentCardState.updateMany({
+            where: { studentId: student.id, status: StudentCardStatus.ACTIVE },
+            data: {
+              status: StudentCardStatus.REVOKED,
+              revokedAt: regeneratedAt,
+              revokeReason: 'superseded_by_regeneration',
+            },
+          }),
+          prisma.studentCardState.create({
+            data: {
+              studentId: student.id,
+              cardNumber: card.cardData.validity.cardNumber,
+              status: StudentCardStatus.ACTIVE,
+              issuedAt: regeneratedAt,
+              regeneratedAt,
+              validUntil: new Date(card.cardData.validity.validUntil),
+              generatedById,
+            },
+          }),
+        ];
+      })
+    );
+
     return {
       totalRegenerated: cards.length,
-      regeneratedAt: new Date().toISOString(),
+      regeneratedAt: regeneratedAt.toISOString(),
       cards,
     };
   }
