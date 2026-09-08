@@ -4,6 +4,12 @@ import {
   type ColumnDef as TanStackColumnDef,
   createSortedRowModel,
   flexRender,
+  sortFn_alphanumeric,
+  sortFn_alphanumericCaseSensitive,
+  sortFn_basic,
+  sortFn_datetime,
+  sortFn_text,
+  sortFn_textCaseSensitive,
   stockFeatures,
   tableFeatures,
   useTable,
@@ -28,6 +34,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 const features = tableFeatures({
   ...stockFeatures,
   sortedRowModel: createSortedRowModel(),
+  sortFns: {
+    alphanumeric: sortFn_alphanumeric,
+    alphanumericCaseSensitive: sortFn_alphanumericCaseSensitive,
+    basic: sortFn_basic,
+    datetime: sortFn_datetime,
+    text: sortFn_text,
+    textCaseSensitive: sortFn_textCaseSensitive,
+  },
 });
 
 type TableFeatures = typeof features;
