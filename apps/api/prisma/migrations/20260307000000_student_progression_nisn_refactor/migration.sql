@@ -1,9 +1,21 @@
 -- Step 1: Add legacy_nis column to students to preserve historic NIS values
 ALTER TABLE "students" ADD COLUMN IF NOT EXISTS "legacy_nis" TEXT;
 
-UPDATE "students"
-SET "legacy_nis" = "nis"
-WHERE "nis" IS NOT NULL AND "nis" != '';
+-- Guard the nis backfill: the 0_init baseline no longer creates a `nis` column,
+-- so a fresh DB running 0_init -> this migration would fail here because `nis`
+-- does not exist. Only run the backfill when the legacy `nis` column is present
+-- (an old DB that shipped before the NISN/NIK refactor).
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'students' AND column_name = 'nis'
+  ) THEN
+    UPDATE "students"
+    SET "legacy_nis" = "nis"
+    WHERE "nis" IS NOT NULL AND "nis" != '';
+  END IF;
+END $$;
 
 -- Step 2: Backfill nisn if legacy nis is exactly 10 digits and nisn is currently null
 UPDATE "students"

@@ -37,6 +37,12 @@ vi.mock('../../../../src/lib/prisma', () => {
     roomAssignment: {
       updateMany: vi.fn(),
     },
+    role: {
+      findMany: vi.fn(),
+    },
+    userRoleAssignment: {
+      updateMany: vi.fn(),
+    },
     alumni: {
       upsert: vi.fn(),
     },
@@ -155,6 +161,7 @@ describe('StudentService', () => {
     it('should mark student as alumni and complete active class enrollments', async () => {
       const mockStudent = {
         id: 'student-active-1',
+        userId: 'user-1',
         unitId: 'unit-1',
         status: 'active',
         gender: 'MALE',
@@ -175,6 +182,10 @@ describe('StudentService', () => {
 
       vi.mocked(prisma.student.findFirst).mockResolvedValue(mockStudent as any);
       vi.mocked(prisma.student.update).mockResolvedValue(mockUpdatedStudent as any);
+      vi.mocked(prisma.role.findMany).mockResolvedValue([
+        { id: 'role-student-1' },
+        { id: 'role-student-2' },
+      ] as any);
 
       const result = await studentService.graduateStudent('student-active-1', 2026);
 
@@ -185,6 +196,16 @@ describe('StudentService', () => {
       expect(prisma.roomAssignment.updateMany).toHaveBeenCalledWith({
         where: { studentId: 'student-active-1', isActive: true },
         data: { isActive: false, endedAt: expect.any(Date) },
+      });
+      // Graduation must also revoke the student's login access: without this a
+      // graduate keeps their authenticated student role indefinitely.
+      expect(prisma.userRoleAssignment.updateMany).toHaveBeenCalledWith({
+        where: {
+          userId: 'user-1',
+          isActive: true,
+          roleId: { in: ['role-student-1', 'role-student-2'] },
+        },
+        data: { isActive: false, isPrimary: false },
       });
       expect(prisma.student.update).toHaveBeenCalledWith(
         expect.objectContaining({

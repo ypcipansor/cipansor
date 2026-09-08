@@ -1,6 +1,61 @@
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 
+interface InvoiceRegistrant {
+  campaignId: string | null;
+  admissionPeriod: { unitId: string; startDate: Date; endDate: Date } | null;
+}
+
+interface StudentRevenueRow {
+  unitId: string | null;
+  paidAmount: unknown;
+  createdAt: Date;
+  dueDate: Date;
+  student: { registrants: InvoiceRegistrant[] } | null;
+}
+
+/**
+ * Pick which registration a paid student invoice should be attributed to.
+ *
+ * 1. Prefer the unit snapshot: the invoice carries the unit that billed it, which
+ *    stays stable across re-enrollment/progression, so the invoice correctly
+ *    belongs to the admission period of that unit.
+ * 2. No snapshot (historic invoice): we cannot silently force the *oldest*
+ *    registration — that steals progression revenue from later campaigns. A
+ *    single registration is unambiguous (attribute it); otherwise anchor on the
+ *    invoice date against the admission period end/start dates, and only when
+ *    exactly one period matches. If it is ambiguous or unmatched, the invoice is
+ *    left unattributed rather than misattributed.
+ */
+function resolveRegistrantForInvoice(
+  registrants: InvoiceRegistrant[],
+  inv: StudentRevenueRow
+): InvoiceRegistrant | undefined {
+  const byUnit = registrants.find((r) => inv.unitId && r.admissionPeriod?.unitId === inv.unitId);
+  if (byUnit) return byUnit;
+
+  // No usable unit snapshot.
+  if (!inv.unitId) {
+    if (registrants.length === 1) return registrants[0];
+
+    const invoiceDate = inv.createdAt ?? inv.dueDate;
+    if (invoiceDate) {
+      const matches = registrants.filter((r) => {
+        const ap = r.admissionPeriod;
+        return (
+          ap?.startDate && ap?.endDate && invoiceDate >= ap.startDate && invoiceDate <= ap.endDate
+        );
+      });
+      if (matches.length === 1) return matches[0];
+    }
+    return undefined; // ambiguous or unmatched -> unattributed
+  }
+
+  // Snapshot set but no matching registration: only attribute when there is
+  // exactly one registration, otherwise leave unattributed.
+  return registrants.length === 1 ? registrants[0] : undefined;
+}
+
 /**
  * Marketing ROI Service
  * Optimized implementation to avoid N+1 queries.
@@ -53,12 +108,14 @@ export async function calculateCampaignROI(unitId?: string) {
       select: {
         unitId: true,
         paidAmount: true,
+        createdAt: true,
+        dueDate: true,
         student: {
           select: {
             registrants: {
               select: {
                 campaignId: true,
-                admissionPeriod: { select: { unitId: true } },
+                admissionPeriod: { select: { unitId: true, startDate: true, endDate: true } },
               },
               orderBy: { createdAt: 'asc' },
             },
@@ -91,13 +148,12 @@ export async function calculateCampaignROI(unitId?: string) {
   // Add revenue from students
   studentRevenueData.forEach((inv) => {
     const registrants = inv.student?.registrants ?? [];
-    // Attribute the invoice to the registration whose admission period matches
-    // the invoice's unit snapshot (correct attribution after a student has
-    // progressed across units), rather than always using the oldest
-    // registration. Fall back to the first registrant when there is no snapshot.
-    const registrant =
-      registrants.find((r) => inv.unitId && r.admissionPeriod?.unitId === inv.unitId) ??
-      registrants[0];
+    // Attribute the invoice to the correct registration. Prefer the unit snapshot
+    // (stable across progression); when there is no snapshot, do NOT force the
+    // oldest registration — that steals progression revenue from later campaigns.
+    // resolveRegistrantForInvoice returns undefined for ambiguous/unmatched cases,
+    // which are then left unattributed.
+    const registrant = resolveRegistrantForInvoice(registrants, inv);
     const cid = registrant?.campaignId;
     if (cid) {
       revenueMap.set(cid, (revenueMap.get(cid) || 0) + Number(inv.paidAmount));

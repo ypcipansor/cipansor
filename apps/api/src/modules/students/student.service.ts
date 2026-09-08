@@ -6,6 +6,7 @@ import { prisma } from '@/lib/prisma';
 import { hashPassword } from '@/lib/password';
 import { Errors } from '@/middleware/error';
 import { UserRole, Gender, Prisma } from '@prisma/client';
+import { STUDENT_ROLE_CODES } from '@/modules/auth/auth.service';
 import type {
   ListStudentsQuery,
   CreateStudentInput,
@@ -449,6 +450,27 @@ export class StudentService {
         where: { studentId: id, isActive: true },
         data: { isActive: false, endedAt: new Date() },
       });
+
+      // Revoke the graduate's student login access in the same transaction that
+      // marks the record alumni. Without this, a graduated student keeps their
+      // authenticated student roles indefinitely. Resolve the role via the
+      // student RoleCodes so unrelated teacher/staff/parent roles the same user
+      // may hold in other units stay active.
+      const studentRoles = await tx.role.findMany({
+        where: { code: { in: STUDENT_ROLE_CODES } },
+        select: { id: true },
+      });
+      const studentRoleIds = studentRoles.map((r) => r.id);
+      if (studentRoleIds.length > 0) {
+        await tx.userRoleAssignment.updateMany({
+          where: {
+            userId: student.userId,
+            isActive: true,
+            roleId: { in: studentRoleIds },
+          },
+          data: { isActive: false, isPrimary: false },
+        });
+      }
 
       const updated = await tx.student.update({
         where: { id },

@@ -379,6 +379,18 @@ content-signals preamble is Cloudflare's). It allows `User-agent: * / Allow: /`
 but carries no `Sitemap:` directive, so `/sitemap.xml` is only found if it was
 submitted in Search Console.
 
+## 🔴 OPEN — internal-alumni lookup/re-enrollment UI is not wired (2026-09-08)
+
+`students.service.lookupAlumni` (and the graduation call it feeds) exists on
+the backend and the web service method is declared, but no user-facing
+component consumes it yet. The SPMB/onboarding form does not call it, so the
+internal-alumni re-enrollment flow (prefilling `previousStudentId` /
+`internalNisn` / `internalNik` from a lookup) is unreachable. This is
+deliberately out of scope for the NISN/NIK-refactor PR that added the endpoint;
+see the JSDoc on `lookupAlumni` in `apps/web/src/services/students.service.ts`.
+Wiring it is a follow-up UX change: build/adapt the enrolment form to call the
+lookup, then drive a Playwright spec over the real flow.
+
 ## 🔴 OPEN — decisions, not repairs (2026-08-15)
 
 Found while closing #401/#402. Each is a real defect or a real risk, and each

@@ -42,6 +42,7 @@ vi.mock('@/lib/prisma', () => ({
     },
     role: {
       findFirst: vi.fn(),
+      findMany: vi.fn(),
     },
     userRoleAssignment: {
       updateMany: vi.fn(),
@@ -67,8 +68,12 @@ vi.mock('@prisma/client', async (importOriginal) => {
       ...actual.Prisma,
       Decimal: class {
         val: number;
-        constructor(v: any) { this.val = Number(v); }
-        toNumber() { return this.val; }
+        constructor(v: any) {
+          this.val = Number(v);
+        }
+        toNumber() {
+          return this.val;
+        }
       },
       PrismaClientKnownRequestError: class extends Error {},
     },
@@ -86,12 +91,14 @@ describe('Admissions Service', () => {
       academicYear: { name: '2024/2025' },
       unit: { name: 'SD IT' },
       unitId: 'u1',
-      registrationFee: 100000
+      registrationFee: 100000,
     };
 
     vi.mocked(prisma.admissionPeriod.findUnique).mockResolvedValue(mockPeriod as any);
     vi.mocked(prisma.registrant.count).mockResolvedValue(10);
-    (vi.mocked(prisma.registrant.create) as any).mockImplementation(({ data }: any) => Promise.resolve({ ...data, id: 'r1' }));
+    (vi.mocked(prisma.registrant.create) as any).mockImplementation(({ data }: any) =>
+      Promise.resolve({ ...data, id: 'r1' })
+    );
     // REG_FEE payment type already exists, so no need to create one.
     vi.mocked(prisma.paymentType.findFirst).mockResolvedValue({ id: 'pt1' } as any);
 
@@ -204,16 +211,22 @@ describe('Admissions Service', () => {
         id: 'role-1',
         code: 'SMPIT_SISWA',
       } as any);
+      vi.mocked(prisma.role.findMany).mockResolvedValue([
+        { id: 'role-1', code: 'SMPIT_SISWA' },
+        { id: 'role-2', code: 'SDIT_SISWA' },
+      ] as any);
       vi.mocked(prisma.userRoleAssignment.upsert).mockResolvedValue({ id: 'ura-1' } as any);
 
       await service.enrollRegistrant('reg-1', {});
 
-      // Issue #2: only the STUDENT role assignment is deactivated in other units,
-      // so a re-enrolling student keeps active teacher/staff roles.
+      // Issue #2: only STUDENT role assignments are deactivated in other units —
+      // and ALL of them, not just the target unit's roleId, so a student who
+      // progressed across unit types (SD IT -> SMP IT) has their old-unit student
+      // access revoked too. Unrelated teacher/staff roles stay active.
       expect(prisma.userRoleAssignment.updateMany).toHaveBeenCalledWith({
         where: {
           userId: 'user-1',
-          roleId: 'role-1',
+          roleId: { in: ['role-1', 'role-2'] },
           isActive: true,
           unitId: { not: 'unit-1' },
         },

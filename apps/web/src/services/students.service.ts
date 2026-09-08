@@ -146,10 +146,18 @@ export const studentsService = {
     return response.data.data;
   },
 
+  /**
+   * Look up an existing alumnus record by NISN/NIK to prefill an internal
+   * (re-)enrollment. NOTE: this is not yet wired to any user-facing form — the
+   * internal-alumni re-enrollment flow in the web app is still pending (see
+   * docs/KNOWN_ISSUES.md). The backend endpoint and the service method exist so
+   * the flow can consume it once the form is built; until then calling this
+   * returns data but nothing uses it.
+   */
   async lookupAlumni(identifier: string): Promise<StudentDetail | null> {
     const response = await api.get<ApiResponse<StudentDetail | null>>(
       `/students/alumni/lookup`,
-      { params: { identifier } }
+      { params: { identifier } },
     );
     return response.data.data;
   },

@@ -2,6 +2,7 @@ import { randomBytes } from 'crypto';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../../lib/prisma';
 import { Prisma, AdmissionStatus, Gender, UnitType } from '@prisma/client';
+import { STUDENT_ROLE_CODES, resolveLegacyRoleToRoleCode } from '../auth/auth.service';
 import * as financeService from '../finance/finance.service';
 import {
   CreateAdmissionPeriodInput,
@@ -317,7 +318,7 @@ async function createRegistrantOnce(data: CreateRegistrantExtendedInput) {
       ? data.fatherName!.trim()
       : isRealParentName(data.motherName)
         ? data.motherName!.trim()
-        : (data.fatherName || data.motherName || '');
+        : data.fatherName || data.motherName || '';
     const parentPhone = data.fatherPhone || data.motherPhone || '';
     const parentEmail = data.fatherEmail && data.fatherEmail !== '' ? data.fatherEmail : undefined;
     const parentOccupation = data.fatherOccupation || data.motherOccupation;
@@ -589,7 +590,8 @@ export async function enrollRegistrant(
         data: {
           unitId: registrant.admissionPeriod.unitId,
           status: 'active',
-          nisn: studentData.nisn || registrant.nisn || registrant.internalNisn || existingStudent.nisn,
+          nisn:
+            studentData.nisn || registrant.nisn || registrant.internalNisn || existingStudent.nisn,
           nik: studentData.nik || registrant.nik || registrant.internalNik || existingStudent.nik,
           graduateYear: null,
         },
@@ -600,7 +602,6 @@ export async function enrollRegistrant(
         data: { status: 'completed' },
       });
 
-      const { resolveLegacyRoleToRoleCode } = await import('../auth/auth.service');
       const targetRoleCode = resolveLegacyRoleToRoleCode(
         'STUDENT',
         registrant.admissionPeriod.unit.type
@@ -608,18 +609,28 @@ export async function enrollRegistrant(
       if (targetRoleCode) {
         const studentRole = await tx.role.findFirst({ where: { code: targetRoleCode } });
         if (studentRole) {
-          // Deactivate the old unit's STUDENT assignment so getUserRoles stops
-          // exposing it; only touch STUDENT roles so a re-enrolling alumnus keeps
-          // other active roles (e.g. teacher/staff) in other units.
-          await tx.userRoleAssignment.updateMany({
-            where: {
-              userId: user.id,
-              roleId: studentRole.id,
-              isActive: true,
-              unitId: { not: registrant.admissionPeriod.unitId },
-            },
-            data: { isPrimary: false, isActive: false },
+          // Deactivate every STUDENT assignment in OTHER units — not just the
+          // target unit's role. When a student progresses across unit types
+          // (e.g. SD IT -> SMP IT) the old unit's student role has a different
+          // roleId, so filtering only on studentRole.id would leave the old
+          // unit's student access live. Gather all student role ids and revoke
+          // them all; unrelated guru/staf/orang-tua roles stay untouched.
+          const studentRoles = await tx.role.findMany({
+            where: { code: { in: STUDENT_ROLE_CODES } },
+            select: { id: true },
           });
+          const studentRoleIds = studentRoles.map((r) => r.id);
+          if (studentRoleIds.length > 0) {
+            await tx.userRoleAssignment.updateMany({
+              where: {
+                userId: user.id,
+                roleId: { in: studentRoleIds },
+                isActive: true,
+                unitId: { not: registrant.admissionPeriod.unitId },
+              },
+              data: { isPrimary: false, isActive: false },
+            });
+          }
           // Upsert on the (userId, roleId, unitId) unique key so re-enrolling into
           // the same unit reactivates the existing assignment instead of P2002.
           await tx.userRoleAssignment.upsert({
@@ -666,8 +677,16 @@ export async function enrollRegistrant(
             data: {
               unitId: registrant.admissionPeriod.unitId,
               status: 'active',
-              nisn: studentData.nisn || registrant.nisn || registrant.internalNisn || existingStudentForUser.nisn,
-              nik: studentData.nik || registrant.nik || registrant.internalNik || existingStudentForUser.nik,
+              nisn:
+                studentData.nisn ||
+                registrant.nisn ||
+                registrant.internalNisn ||
+                existingStudentForUser.nisn,
+              nik:
+                studentData.nik ||
+                registrant.nik ||
+                registrant.internalNik ||
+                existingStudentForUser.nik,
               graduateYear: null,
             },
           });
@@ -698,7 +717,6 @@ export async function enrollRegistrant(
 
         // Ensure the target unit has an active primary student assignment; the
         // legacy `role` field is no longer written on new flows.
-        const { resolveLegacyRoleToRoleCode } = await import('../auth/auth.service');
         const targetRoleCode = resolveLegacyRoleToRoleCode(
           'STUDENT',
           registrant.admissionPeriod.unit.type
@@ -706,17 +724,26 @@ export async function enrollRegistrant(
         if (targetRoleCode) {
           const studentRole = await tx.role.findFirst({ where: { code: targetRoleCode } });
           if (studentRole) {
-            // Only deactivate the STUDENT role's assignment in other units so a
-            // re-enrolling student keeps other active roles (teacher/staff).
-            await tx.userRoleAssignment.updateMany({
-              where: {
-                userId: user.id,
-                roleId: studentRole.id,
-                isActive: true,
-                unitId: { not: registrant.admissionPeriod.unitId },
-              },
-              data: { isPrimary: false, isActive: false },
+            // Only deactivate the STUDENT role in other units so a re-enrolling
+            // student keeps other active roles (teacher/staff). Use ALL student
+            // role ids — a progressed student's old unit has a different roleId —
+            // so cross-unit student access is fully revoked.
+            const studentRoles = await tx.role.findMany({
+              where: { code: { in: STUDENT_ROLE_CODES } },
+              select: { id: true },
             });
+            const studentRoleIds = studentRoles.map((r) => r.id);
+            if (studentRoleIds.length > 0) {
+              await tx.userRoleAssignment.updateMany({
+                where: {
+                  userId: user.id,
+                  roleId: { in: studentRoleIds },
+                  isActive: true,
+                  unitId: { not: registrant.admissionPeriod.unitId },
+                },
+                data: { isPrimary: false, isActive: false },
+              });
+            }
             // Upsert on the (userId, roleId, unitId) unique key so re-enrolling into
             // the same unit reactivates the existing assignment instead of P2002.
             await tx.userRoleAssignment.upsert({
@@ -772,7 +799,6 @@ export async function enrollRegistrant(
           },
         });
 
-        const { resolveLegacyRoleToRoleCode } = await import('../auth/auth.service');
         const targetRoleCode = resolveLegacyRoleToRoleCode(
           'STUDENT',
           registrant.admissionPeriod.unit.type

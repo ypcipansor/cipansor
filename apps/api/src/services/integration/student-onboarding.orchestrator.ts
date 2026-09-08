@@ -3,7 +3,8 @@ import { prisma } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
 import { syncParentRoleAssignments, type ParentScopeClient } from '@/utils/parent-scope';
 import { assertAdmissionFeeSettled } from '@/utils/admission-fee-gate';
-import { resolveLegacyRoleToRoleCode } from '@/modules/auth/auth.service';
+import { UnitType } from '@prisma/client';
+import { STUDENT_ROLE_CODES, resolveLegacyRoleToRoleCode } from '@/modules/auth/auth.service';
 
 export class StudentOnboardingOrchestrator {
   /**
@@ -131,17 +132,44 @@ export class StudentOnboardingOrchestrator {
         if (targetRoleCode) {
           const studentRole = await tx.role.findFirst({ where: { code: targetRoleCode } });
           if (studentRole) {
-            // Deactivate the old unit's assignment so getUserRoles stops exposing it;
-            // setting only isPrimary:false left a stale active assignment behind.
-            await tx.userRoleAssignment.updateMany({
-              where: { userId: user.id, isActive: true, unitId: { not: unitId } },
-              data: { isPrimary: false, isActive: false },
+            // Deactivate only STUDENT assignments in OTHER units — never unrelated
+            // guru/staf/parent roles the same user may hold. Use ALL student role
+            // ids so a progressed student's old-unit role (a different roleId) is
+            // also revoked, not just the target unit's role.
+            const studentRoles = await tx.role.findMany({
+              where: { code: { in: STUDENT_ROLE_CODES } },
+              select: { id: true },
             });
-            await tx.userRoleAssignment.create({
-              data: {
+            const studentRoleIds = studentRoles.map((r) => r.id);
+            if (studentRoleIds.length > 0) {
+              await tx.userRoleAssignment.updateMany({
+                where: {
+                  userId: user.id,
+                  isActive: true,
+                  roleId: { in: studentRoleIds },
+                  unitId: { not: unitId },
+                },
+                data: { isPrimary: false, isActive: false },
+              });
+            }
+            // Upsert on the (userId, roleId, unitId) unique key: re-enrolling into
+            // the same unit reactivates the existing assignment instead of P2002.
+            await tx.userRoleAssignment.upsert({
+              where: {
+                userId_roleId_unitId: {
+                  userId: user.id,
+                  roleId: studentRole.id,
+                  unitId,
+                },
+              },
+              create: {
                 userId: user.id,
                 roleId: studentRole.id,
                 unitId,
+                isPrimary: true,
+                isActive: true,
+              },
+              update: {
                 isPrimary: true,
                 isActive: true,
               },
@@ -205,6 +233,16 @@ export class StudentOnboardingOrchestrator {
             });
           }
         }
+      }
+
+      // Lifelong-identifier rule (mirrors enrollRegistrant in admissions.service.ts):
+      // an active student must carry a permanent NISN or NIK. TK_QURAN is the
+      // documented exception — young children may not yet have a NISN and the
+      // school does not always collect their NIK. Non-TK units that reach this
+      // point with neither identifier would silently create a student with no way
+      // to be identified long-term.
+      if (!student.nisn && !student.nik && unit?.type !== UnitType.TK_QURAN) {
+        throw Errors.badRequest('NISN atau NIK wajib diisi untuk menerima siswa');
       }
 
       await tx.registrant.update({
