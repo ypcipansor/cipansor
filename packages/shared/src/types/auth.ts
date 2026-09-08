@@ -53,6 +53,15 @@ export interface User {
 export interface LoginRequest {
   email: string;
   password: string;
+  /**
+   * Token Cloudflare Turnstile.
+   *
+   * Opsional karena gerbangnya dapat dimatikan seluruhnya — pengembangan,
+   * e2e, dan penerapan yang belum memasang kuncinya. Ia ditukarkan dan
+   * dibuang di middleware sebelum `validate(loginSchema)` berjalan, jadi
+   * skema login sisi peladen tidak mengenalnya dan tidak perlu mengenalnya.
+   */
+  turnstileToken?: string;
 }
 
 export interface LoginResponse {

@@ -230,6 +230,7 @@ apiRouter.use(normalizePagination);
 // (2fa/enable, 2fa/login and 2fa/disable carry their own twoFactorLimiter.)
 if (config.env !== 'test' && config.env !== 'development') {
   apiRouter.use('/auth/login', authLimiter);
+  apiRouter.use('/auth/sso/login', authLimiter);
   apiRouter.use('/auth/register', authLimiter);
   apiRouter.use('/auth/refresh', authLimiter);
   apiRouter.use('/auth/password', authLimiter);

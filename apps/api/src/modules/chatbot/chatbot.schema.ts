@@ -41,3 +41,43 @@ export const updatePersonaSchema = z.object({
 });
 
 export type UpdatePersonaBody = z.infer<typeof updatePersonaSchema>;
+
+/**
+ * Penerusan pertanyaan ke tim, atas persetujuan penanyanya.
+ *
+ * Setiap batas di sini punya alasan, bukan sekadar angka: kolom yang tidak
+ * dibatasi adalah kolom yang akan dipakai untuk menitipkan sesuatu yang bukan
+ * pertanyaan.
+ */
+export const escalateSchema = z.object({
+  name: z.string().trim().min(2, 'Nama terlalu pendek').max(120),
+  email: z.string().trim().toLowerCase().email('Alamat surel tidak sah').max(200),
+  /**
+   * Keduanya opsional, dan itu keputusan yang disengaja. Surel sudah menjadi
+   * jalur balasannya, jadi memaksa dua nomor pada orang yang hanya punya satu
+   * hanya membuat ia mengarang salah satunya — dan nomor karangan lebih buruk
+   * daripada kolom kosong, karena petugas menelepon dan tidak ada yang angkat.
+   */
+  phone: z.string().trim().max(30).optional().or(z.literal('')),
+  whatsapp: z.string().trim().max(30).optional().or(z.literal('')),
+  question: z.string().trim().min(5, 'Pertanyaan terlalu pendek').max(1000),
+  /**
+   * Persetujuan diteruskan. `literal(true)` bukan `boolean()`: sebuah `false`
+   * yang lolos validasi lalu ditolak di service adalah dua tempat yang harus
+   * sepakat selamanya. Di sini, tidak setuju berarti permintaannya memang tidak
+   * sah bentuknya.
+   */
+  consent: z.literal(true, {
+    errorMap: () => ({ message: 'Persetujuan meneruskan data diperlukan' }),
+  }),
+  conversationId: z.string().max(100).optional(),
+  /**
+   * Umpan lalat. Kolom ini disembunyikan dari manusia lewat CSS dan tidak
+   * pernah terisi olehnya; skrip otomatis mengisi setiap kolom yang ditemukan.
+   * Wajib kosong — dan ditolak dengan sopan seolah berhasil, karena memberi
+   * tahu sebuah bot bahwa ia tertangkap hanya membantu penulisnya memperbaiki.
+   */
+  website: z.string().max(0).optional(),
+});
+
+export type EscalateBody = z.infer<typeof escalateSchema>;

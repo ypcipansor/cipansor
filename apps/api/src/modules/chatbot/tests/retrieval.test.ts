@@ -137,3 +137,42 @@ describe('Bm25Retriever', () => {
     expect(new Bm25Retriever([]).search('apa pun')).toEqual([]);
   });
 });
+
+describe('pertanyaan meta tentang asisten itu sendiri', () => {
+  // Dilaporkan pengguna 2026-09-04 dengan tangkapan layar: "ada informasi apa
+  // saja" dijawab dengan penolakan. Sebabnya ada di uji pertama berkas ini —
+  // `ada`, `apa` dan `saja` semuanya kata henti, sehingga yang tersisa hanya
+  // "informasi", dan sebelum entri daftar isi ada, tidak satu pun entri
+  // membahasnya. Nol potongan, penolakan, tanpa pernah menyentuh model.
+  it('"ada informasi apa saja" menemukan daftar isi', () => {
+    const hits = defaultRetriever.search('ada informasi apa saja');
+
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hits[0].entry.id).toBe('bantuan-ikhtisar');
+  });
+
+  it('menemukan hal yang sama untuk cara bertanya yang lain', () => {
+    for (const question of [
+      'bisa bantu apa saja',
+      'topik apa yang bisa ditanyakan',
+      'what can you help with',
+    ]) {
+      const hits = defaultRetriever.search(question);
+      expect(hits.length, `tidak ada hasil untuk: ${question}`).toBeGreaterThan(0);
+    }
+  });
+
+  it('daftar isi tidak merebut pertanyaan yang punya jawaban sendiri', () => {
+    // Entri ini memuat kata "informasi" beberapa kali, jadi risikonya nyata:
+    // sebuah daftar isi yang muncul di mana-mana akan mengalahkan jawaban yang
+    // sebenarnya dicari orang.
+    for (const [question, expected] of [
+      ['di mana alamat pesantren', 'kontak'],
+      ['bagaimana cara mendaftar', 'spmb-cara-daftar'],
+      ['rekening donasi', 'donasi-rekening'],
+    ] as const) {
+      const hits = defaultRetriever.search(question);
+      expect(hits[0].entry.id, `salah arah untuk: ${question}`).toBe(expected);
+    }
+  });
+});

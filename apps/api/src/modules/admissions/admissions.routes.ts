@@ -7,6 +7,7 @@ import { authenticate, authorize } from '../../middleware/auth';
 import { validateQuery } from '../../middleware/error';
 import { queryAdmissionPeriodSchema, queryRegistrantSchema } from './admissions.schema';
 import waveRoutes from './ppdb-wave.routes';
+import { requireTurnstile } from '@/middleware/turnstile';
 
 const router = Router();
 
@@ -50,6 +51,10 @@ router.get('/public/units', controller.getPublicUnits);
 router.post(
   '/public/registrants',
   publicRegistrantLimiter,
+  // Pendaftaran SPMB terbuka bagi siapa pun tanpa kredensial, dan setiap
+  // kiriman menjadi baris calon santri yang harus dibaca manusia. Pembatas
+  // laju menahan satu mesin; Turnstile menahan yang tersebar.
+  requireTurnstile('spmb-daftar'),
   controller.createPublicRegistrant
 );
 router.get(

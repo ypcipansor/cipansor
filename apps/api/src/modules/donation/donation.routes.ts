@@ -5,6 +5,7 @@ import { requireUser, authenticate, authorize, optionalAuth } from '@/middleware
 import httpStatus from "http-status";
 import { validate } from '@/middleware/validate';
 import { UserRole } from '@prisma/client';
+import { requireTurnstile } from '@/middleware/turnstile';
 import {
   createCampaignSchema,
   updateCampaignSchema,
@@ -41,7 +42,15 @@ router.get('/campaigns/slug/:slug', campaignController.getBySlug);
  * @desc Create public donation (no auth)
  * @access Public
  */
-router.post('/public', validate(createPublicDonationSchema), donationController.createPublic);
+// Turnstile mendahului validate() — lihat catatan urutan di
+// middleware/turnstile.ts. Form donasi publik: kiriman sampah di sini menjadi
+// catatan keuangan palsu, bukan sekadar gangguan.
+router.post(
+  '/public',
+  requireTurnstile('donasi'),
+  validate(createPublicDonationSchema),
+  donationController.createPublic
+);
 
 /**
  * @route GET /api/donation/recent

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { authenticate, authenticate2FA, isAdmin } from '@/middleware/auth';
+import { requireTurnstile } from '@/middleware/turnstile';
 import { validate } from '@/middleware/error';
 import * as controller from './auth.controller';
 import {
@@ -53,7 +54,11 @@ const twoFactorLimiter = rateLimit({
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.post('/login', validate(loginSchema), controller.login);
+// requireTurnstile mendahului validate() dengan sengaja — lihat catatan urutan
+// di middleware/turnstile.ts. Halaman masuk adalah satu-satunya pintu ke
+// seluruh portal, dan `authLimiter` di app.ts membatasi per-IP: sebuah botnet
+// yang tersebar di ribuan IP tidak pernah menyentuh batas itu.
+router.post('/login', requireTurnstile('login'), validate(loginSchema), controller.login);
 
 /**
  * @swagger
@@ -162,6 +167,11 @@ const passwordResetLimiter = rateLimit({
 router.post(
   '/reset-password',
   passwordResetLimiter,
+  // Menukarkan tautan reset berarti menetapkan kata sandi. Tautannya memang
+  // sudah membawa token dari kotak masuk pemiliknya, tetapi endpoint ini
+  // terbuka bagi siapa pun dan formnya diisi manusia — jadi ongkos gerbangnya
+  // nol dan ia menutup penyapuan token.
+  requireTurnstile('reset-password'),
   validate(resetPasswordSchema),
   controller.resetPassword,
 );

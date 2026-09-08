@@ -28,6 +28,13 @@ Mount new modules in `src/app.ts`.
 ## Reuse, don't reinvent
 
 - Responses: `src/utils/response.ts` (`ApiResponse`).
+  **`ApiResponse.error(message, code)` — message first.** Easy to get backwards
+  and silent when you do: the three calls in `modules/chatbot/chatbot.controller.ts`
+  had `code` holding an Indonesian sentence and `message` holding
+  `CHATBOT_UNAVAILABLE`, which inverts their jobs — the code is the machine-readable
+  half. Nothing failed, because no caller read it. Fixed 2026-09-04; if you add a
+  branch that returns an error the widget or a client acts on, assert the `code`
+  in a test.
 - Errors/validation: `src/middleware/error.ts` — throw `Errors.notFound()`,
   `Errors.badRequest()`, etc.; wrap async handlers in `asyncHandler`; validate
   with `validate(schema)` / `validateQuery(schema)`.
