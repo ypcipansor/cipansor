@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { partialUpdateSchema } from '@/lib/partial';
 
 // Enums matching Prisma
 export const DutyCategory = z.enum([
@@ -52,7 +53,7 @@ export const createDutyTypeSchema = z.object({
 export type CreateDutyTypeInput = z.infer<typeof createDutyTypeSchema>;
 
 // Update duty type
-export const updateDutyTypeSchema = createDutyTypeSchema.partial();
+export const updateDutyTypeSchema = partialUpdateSchema(createDutyTypeSchema);
 
 export type UpdateDutyTypeInput = z.infer<typeof updateDutyTypeSchema>;
 
