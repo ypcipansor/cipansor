@@ -75,6 +75,7 @@ describe('StudentOnboardingOrchestrator', () => {
         $queryRaw: vi.fn().mockResolvedValue([]),
         $executeRaw: vi.fn().mockResolvedValue(1),
         student: { 
+          findUnique: vi.fn().mockResolvedValue(null),
           create: vi.fn().mockResolvedValue({ id: 'stud-1', nis: 'NIS-2026-SMP-0001' }),
         },
         studentParent: { 
@@ -90,15 +91,18 @@ describe('StudentOnboardingOrchestrator', () => {
         },
         userRoleAssignment: {
           findMany: vi.fn().mockResolvedValue([]),
+          findFirst: vi.fn().mockResolvedValue(null),
           create: vi.fn().mockResolvedValue({ id: 'ura-1' }),
         },
         classEnrollment: {
           create: vi.fn().mockResolvedValue({ id: 'ce-1' })
         },
         medicalRecord: { 
+          findFirst: vi.fn().mockResolvedValue(null),
           create: vi.fn().mockResolvedValue({ id: 'med-1' }) 
         },
         santriWallet: {
+          findUnique: vi.fn().mockResolvedValue(null),
           create: vi.fn().mockResolvedValue({ id: 'wallet-1' })
         }
       };
