@@ -79,6 +79,15 @@ test.describe('Public Card Verification, Raport Merdeka & E-Office Edit Letter F
     //    the card identifier, so a hand-rolled QR would be rejected.
     const session = await loginAs(page, 'superAdmin');
     const student = await fetchFirstStudent(session);
+
+    // A GET preview is read-only (finding #1): it never writes a
+    // `StudentCardState` row, so a card that was never "issued" produces a
+    // transient, non-persisted `cid` and therefore cannot (and should not)
+    // verify. Issue it first via the regeneration endpoint — the only path
+    // allowed to write the ACTIVE audit row — then the preview reuses that
+    // row's `cid` and the QR verifies end-to-end.
+    await apiRequest(session, 'POST', '/students/id-cards/bulk-regenerate', {});
+
     const cardRes = (await apiRequest(session, 'GET', `/students/${student.id}/id-card`)) as {
       data?: { cardData?: { qrCode?: { data?: string } } };
     };

@@ -35,7 +35,13 @@ export class IdCardController {
       const { studentId } = req.params;
       const config = req.query;
 
-      const cardData = await StudentIdCardService.generateIdCard(studentId, {
+      // Preview / print must be read-only. `getOrGeneratePreviewIdCard` never
+      // writes a `StudentCardState` row, so merely opening the card page (the
+      // frontend calls this via useQuery/useQueries) can no longer REVOKE the
+      // card that is already printed for the student. It reuses the existing
+      // ACTIVE row's id/validity/number when one exists; only issue/regenerate
+      // endpoints write audit rows.
+      const cardData = await StudentIdCardService.getOrGeneratePreviewIdCard(studentId, {
         templateType: config.template as any,
         orientation: config.orientation as any,
         showPhoto: config.showPhoto !== 'false',
@@ -146,7 +152,9 @@ export class IdCardController {
         req.user
       );
 
-      return res.json(ApiResponse.success(result, 'Kartu pelajar berhasil diregenerasi secara masal'));
+      return res.json(
+        ApiResponse.success(result, 'Kartu pelajar berhasil diregenerasi secara masal')
+      );
     } catch (error) {
       next(error);
     }

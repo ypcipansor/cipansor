@@ -254,6 +254,52 @@ export class StudentIdCardService {
   }
 
   /**
+   * The single ACTIVE `StudentCardState` row for a student, if any.
+   *
+   * Read-only. Used by the preview path so a card view is idempotent and can
+   * reuse the already-issued card's identifier, validity window and number
+   * instead of minting (and REVOKING) a fresh issuance on every render.
+   */
+  private static async findActiveCardState(studentId: string) {
+    return prisma.studentCardState.findFirst({
+      where: { studentId, status: StudentCardStatus.ACTIVE },
+      orderBy: [{ issuedAt: 'desc' }],
+    });
+  }
+
+  /**
+   * Generate ID card data for viewing / printing WITHOUT touching audit state.
+   *
+   * A GET/preview must never REVOKE the card that is already in a student's
+   * hands: `getOrGeneratePreviewIdCard` is idempotent and read-only.
+   *
+   * - If the student already has an ACTIVE `StudentCardState` row, the preview
+   *   reuses its `id` (embedded in the QR as `cid`), its `validUntil` and its
+   *   `cardNumber`, so what is rendered today matches the card already printed —
+   *   and repeated renders are byte-for-byte stable.
+   * - If the student has no ACTIVE row yet, the preview renders a transient card
+   *   that is never persisted. The audit row is only written by an issue /
+   *   regeneration endpoint (`bulkRegenerateActiveCards` or a bulk issue), which
+   *   is where a REVOKE+CREATE belongs.
+   */
+  static async getOrGeneratePreviewIdCard(
+    studentId: string,
+    config: Partial<IdCardConfig> = {}
+  ): Promise<StudentIdCardDetail> {
+    const existing = await this.findActiveCardState(studentId);
+    if (existing) {
+      return this.generateIdCard(studentId, config, {
+        cardStateId: existing.id,
+        persistState: false,
+        ...(existing.validUntil ? { validUntil: existing.validUntil } : {}),
+        cardNumber: existing.cardNumber,
+        ...(existing.issuedAt ? { issuedAt: existing.issuedAt } : {}),
+      });
+    }
+    return this.generateIdCard(studentId, config, { persistState: false });
+  }
+
+  /**
    * Generate single student ID card data.
    *
    * Returns the `@cipansor/shared` `StudentIdCardDetail` contract so the API
@@ -263,7 +309,17 @@ export class StudentIdCardService {
   static async generateIdCard(
     studentId: string,
     config: Partial<IdCardConfig> = {},
-    opts?: { cardStateId?: string; generatedById?: string | null; persistState?: boolean }
+    opts?: {
+      cardStateId?: string;
+      generatedById?: string | null;
+      persistState?: boolean;
+      /** Reuse an already-issued card's validity window for an idempotent preview. */
+      validUntil?: Date;
+      /** Reuse an already-issued card's number for an idempotent preview. */
+      cardNumber?: string;
+      /** Reuse an already-issued card's issue date for an idempotent preview. */
+      issuedAt?: Date;
+    }
   ): Promise<StudentIdCardDetail> {
     const mergedConfig = { ...DEFAULT_CONFIG, ...config };
     // Each card issuance gets a unique `StudentCardState.id` that the QR payload
@@ -336,10 +392,16 @@ export class StudentIdCardService {
       }
     }
 
-    // Calculate validity period
-    const validFrom = new Date();
-    const validUntil = new Date();
-    validUntil.setMonth(validUntil.getMonth() + mergedConfig.validityPeriod);
+    // Calculate validity period. When a `validUntil`/`cardNumber`/`issuedAt`
+    // override is supplied (the read-only preview reusing an already-issued
+    // ACTIVE card), the preview matches the printed card exactly instead of
+    // minting a fresh validity window that would disagree with what is on the
+    // physical card.
+    const validFrom = opts?.issuedAt ?? new Date();
+    const computedValidUntil = new Date();
+    computedValidUntil.setMonth(computedValidUntil.getMonth() + mergedConfig.validityPeriod);
+    const validUntil = opts?.validUntil ?? computedValidUntil;
+    const cardNumber = opts?.cardNumber ?? this.generateCardNumber(student.nis, student.unit.type);
 
     // Generate QR Code data
     const qrCodeData = this.generateQRCodeData({
@@ -415,7 +477,7 @@ export class StudentIdCardService {
         validity: {
           issuedDate: validFrom.toISOString(),
           validUntil: validUntil.toISOString(),
-          cardNumber: this.generateCardNumber(student.nis, student.unit.type),
+          cardNumber,
         },
         // QR Code
         qrCode: {
@@ -462,28 +524,45 @@ export class StudentIdCardService {
     generatedById: string | null
   ) {
     const now = new Date();
-    await prisma.$transaction([
-      prisma.studentCardState.updateMany({
-        where: { studentId, status: StudentCardStatus.ACTIVE },
-        data: {
-          status: StudentCardStatus.REVOKED,
-          revokedAt: now,
-          revokeReason: 'superseded_by_regeneration',
-        },
-      }),
-      prisma.studentCardState.create({
-        data: {
-          id: cardStateId,
-          studentId,
-          cardNumber,
-          status: StudentCardStatus.ACTIVE,
-          issuedAt: now,
-          regeneratedAt: now,
-          validUntil,
-          generatedById,
-        },
-      }),
-    ]);
+    try {
+      await prisma.$transaction([
+        prisma.studentCardState.updateMany({
+          where: { studentId, status: StudentCardStatus.ACTIVE },
+          data: {
+            status: StudentCardStatus.REVOKED,
+            revokedAt: now,
+            revokeReason: 'superseded_by_regeneration',
+          },
+        }),
+        prisma.studentCardState.create({
+          data: {
+            id: cardStateId,
+            studentId,
+            cardNumber,
+            status: StudentCardStatus.ACTIVE,
+            issuedAt: now,
+            regeneratedAt: now,
+            validUntil,
+            generatedById,
+          },
+        }),
+      ]);
+    } catch (error) {
+      // The partial unique index `student_card_state_one_active_per_student`
+      // (migration `add_student_card_one_active` ) guarantees at most one ACTIVE
+      // row per student. Two concurrent issuances for the same student can both
+      // revoke the same predecessor and both try to INSERT an ACTIVE row; the
+      // second INSERT violates the index (P2002) and the transaction rolls back,
+      // which is exactly the "one ACTIVE card" guarantee we want. Surface the
+      // conflict cleanly instead of leaking a raw Prisma error.
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ApiError(
+          ErrorCode.CONFLICT,
+          'Regenerasi kartu bersamaan terdeteksi. Hanya satu kartu aktif yang diizinkan per siswa; silakan coba lagi.'
+        );
+      }
+      throw error;
+    }
   }
 
   /**
@@ -729,42 +808,79 @@ export class StudentIdCardService {
     // lands atomically.
     const generatedById = user?.id ?? null;
     const regeneratedAt = new Date();
-    const cardRows = await Promise.all(
-      students.map(async (student) => {
-        const cardStateId = crypto.randomUUID();
-        const card = await this.generateIdCard(student.id, {}, { cardStateId, persistState: false, generatedById });
-        return { student, cardStateId, card };
-      })
-    );
 
-    // Persist an audit trail of the regeneration (Flag 6): one fresh ACTIVE
-    // StudentCardState per student, plus a REVOKED marker on any previous
-    // ACTIVE row. Both writes land in a single transaction so the "at most one
-    // active card per student" invariant and the audit event are all-or-nothing.
-    await prisma.$transaction(
-      cardRows.flatMap(({ student, cardStateId, card }) => [
-        prisma.studentCardState.updateMany({
-          where: { studentId: student.id, status: StudentCardStatus.ACTIVE },
-          data: {
-            status: StudentCardStatus.REVOKED,
-            revokedAt: regeneratedAt,
-            revokeReason: 'superseded_by_regeneration',
-          },
-        }),
-        prisma.studentCardState.create({
-          data: {
-            id: cardStateId,
-            studentId: student.id,
-            cardNumber: card.cardData.validity.cardNumber,
-            status: StudentCardStatus.ACTIVE,
-            issuedAt: regeneratedAt,
-            regeneratedAt,
-            validUntil: new Date(card.cardData.validity.validUntil),
-            generatedById,
-          },
-        }),
-      ])
-    );
+    // Process in bounded batches so a large unit cannot build every card
+    // concurrently in one `Promise.all` (a memory spike for hundreds of
+    // students) nor pass an unbounded operation list to `$transaction`. Each
+    // batch builds its cards and commits its audit rows in its own transaction,
+    // so the memory and transaction size stay proportional to BATCH_SIZE.
+    const BATCH_SIZE = 50;
+    const cardRows: Array<{
+      student: { id: string };
+      cardStateId: string;
+      card: StudentIdCardDetail;
+    }> = [];
+
+    for (let i = 0; i < students.length; i += BATCH_SIZE) {
+      const batch = students.slice(i, i + BATCH_SIZE);
+      const batchRows = await Promise.all(
+        batch.map(async (student) => {
+          const cardStateId = crypto.randomUUID();
+          const card = await this.generateIdCard(
+            student.id,
+            {},
+            { cardStateId, persistState: false, generatedById }
+          );
+          return { student, cardStateId, card };
+        })
+      );
+
+      // Persist an audit trail of the regeneration (Flag 6): one fresh ACTIVE
+      // StudentCardState per student, plus a REVOKED marker on any previous
+      // ACTIVE row. Both writes land in a single transaction so the "at most one
+      // active card per student" invariant and the audit event are all-or-nothing.
+      try {
+        await prisma.$transaction(
+          batchRows.flatMap(({ student, cardStateId, card }) => [
+            prisma.studentCardState.updateMany({
+              where: { studentId: student.id, status: StudentCardStatus.ACTIVE },
+              data: {
+                status: StudentCardStatus.REVOKED,
+                revokedAt: regeneratedAt,
+                revokeReason: 'superseded_by_regeneration',
+              },
+            }),
+            prisma.studentCardState.create({
+              data: {
+                id: cardStateId,
+                studentId: student.id,
+                cardNumber: card.cardData.validity.cardNumber,
+                status: StudentCardStatus.ACTIVE,
+                issuedAt: regeneratedAt,
+                regeneratedAt,
+                validUntil: new Date(card.cardData.validity.validUntil),
+                generatedById,
+              },
+            }),
+          ])
+        );
+      } catch (error) {
+        // The partial unique index `student_card_state_one_active_per_student`
+        // (migration `add_student_card_one_active`) guarantees at most one ACTIVE
+        // row per student. A concurrent regeneration for a student in this batch
+        // violates it (P2002); surface the conflict cleanly instead of leaking a
+        // raw Prisma error.
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+          throw new ApiError(
+            ErrorCode.CONFLICT,
+            'Regenerasi kartu bersamaan terdeteksi. Hanya satu kartu aktif yang diizinkan per siswa; silakan coba lagi.'
+          );
+        }
+        throw error;
+      }
+
+      cardRows.push(...batchRows);
+    }
 
     return {
       totalRegenerated: cardRows.length,

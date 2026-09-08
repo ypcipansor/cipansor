@@ -42,4 +42,41 @@ describe('letter date/receivedAt validation', () => {
       })
     ).toThrow();
   });
+
+  describe('updateLetterSchema is the single source of truth for update payloads', () => {
+    it('strips fields the update endpoint does NOT support (status, direction, unitId)', () => {
+      // `UpdateLetterInput` is derived from this schema, so a typed client can no
+      // longer send `status`/`direction`/`unitId`. Even a raw payload gets them
+      // stripped here — the server applies only what the schema keeps.
+      const result = updateLetterSchema.parse({
+        subject: 'Naskah baru',
+        status: 'APPROVED', // ← not in the schema
+        direction: 'INCOMING', // ← not in the schema
+        unitId: '00000000-0000-0000-0000-000000000000', // ← not in the schema
+      });
+
+      expect(result).toEqual({ subject: 'Naskah baru' });
+      expect(result).not.toHaveProperty('status');
+      expect(result).not.toHaveProperty('direction');
+      expect(result).not.toHaveProperty('unitId');
+    });
+
+    it('keeps the supported editable fields', () => {
+      const result = updateLetterSchema.parse({
+        subject: 'Naskah baru',
+        content: 'Isi',
+        urgency: 'URGENT',
+        nature: 'PUBLIC',
+        recipientName: 'Kepala Sekolah',
+      });
+
+      expect(result).toMatchObject({
+        subject: 'Naskah baru',
+        content: 'Isi',
+        urgency: 'URGENT',
+        nature: 'PUBLIC',
+        recipientName: 'Kepala Sekolah',
+      });
+    });
+  });
 });

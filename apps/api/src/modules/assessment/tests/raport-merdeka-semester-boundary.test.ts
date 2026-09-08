@@ -66,3 +66,33 @@ describe('getSemesterDateRange — Semester 2 (Genap)', () => {
     );
   });
 });
+
+describe('getSemesterDateRange — invalid semester is rejected', () => {
+  it('rejects semester values other than 1 or 2 (e.g. the unified-raport query 99)', () => {
+    // Regression: the unified-raport controller parses `semester` straight from
+    // the query string and forwarded it here; a value like 99 used to fall
+    // through the `semester === 1 ? … : …` ternary and silently return a
+    // Semester 2 (Genap) raport. Every entry point must reject it.
+    expect(() => getSemesterDateRange(academicYear, 99)).toThrow(/Semester harus bernilai 1/);
+    expect(() => getSemesterDateRange(academicYear, 0)).toThrow(/Semester harus bernilai 1/);
+  });
+});
+
+describe('P5 semester attribution — project startDate falls inside one semester window', () => {
+  const sem1 = getSemesterDateRange(academicYear, 1);
+  const sem2 = getSemesterDateRange(academicYear, 2);
+
+  // P5Project has no `semester` column, so the raport attributes a project to
+  // the semester in which its startDate falls. This pins that rule so the two
+  // semesters cannot be mixed into one raport.
+  it('attributes a Sept project to Semester 1 and a Jan project to Semester 2', () => {
+    const sept = new Date(2024, 8, 10); // 10 Sep 2024
+    const jan = new Date(2025, 0, 15); // 15 Jan 2025
+
+    expect(sept >= sem1.startDate && sept <= sem1.endDate).toBe(true);
+    expect(sept >= sem2.startDate && sept <= sem2.endDate).toBe(false);
+
+    expect(jan >= sem2.startDate && jan <= sem2.endDate).toBe(true);
+    expect(jan >= sem1.startDate && jan <= sem1.endDate).toBe(false);
+  });
+});

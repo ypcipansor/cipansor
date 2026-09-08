@@ -126,6 +126,15 @@ export function getSemesterDateRange(
   academicYear: { startDate: Date | string; endDate: Date | string },
   semester: number
 ): { startDate: Date; endDate: Date } {
+  // Every caller that reaches here must pass exactly 1 or 2. The unified-raport
+  // controller parses `semester` straight from the query string, so a value like
+  // 99 used to fall through the `semester === 1 ? … : …` ternary and silently
+  // produce a Semester 2 (Genap) raport that looked legitimate. Reject it here
+  // so ALL entry points — individual, class bulk and unified — are covered by
+  // the same boundary.
+  if (semester !== 1 && semester !== 2) {
+    throw new ApiError(ErrorCode.BAD_REQUEST, 'Semester harus bernilai 1 (Ganjil) atau 2 (Genap)');
+  }
   const startDate = new Date(academicYear.startDate);
   const endDate = new Date(academicYear.endDate);
   // End of day Dec 31, not midnight: `new Date(y, 11, 31)` lands on
@@ -222,14 +231,33 @@ export class RaportMerdekaService {
 
     if (userRoleInUnit && isTeacherOrAboveRoleCode(userRoleInUnit.role.code)) return;
 
-    // 2. Check if teacher record is assigned to student's unit or class/exam
+    // 2. The teacher record grants access only to students the teacher actually
+    //    covers. A cross-unit teacher with a single exam in the student's UNIT
+    //    used to open every student in that unit — leak of grades, attendance
+    //    and notes for children the teacher never taught. Narrow it to the
+    //    student's own active classes: the teacher must be the homeroom teacher,
+    //    teach a subject there, or have set an exam for that class.
+    const studentClasses = await prisma.classEnrollment.findMany({
+      where: { studentId, status: 'active' },
+      select: { classId: true },
+    });
+    const classIds = studentClasses.map((c) => c.classId);
+
+    if (classIds.length === 0) {
+      throw new ApiError(ErrorCode.FORBIDDEN, 'Anda tidak memiliki akses ke siswa di unit lain');
+    }
+
     const teacherAssignment = await prisma.teacher.findFirst({
       where: {
         userId,
         OR: [
-          { unitId: student.unitId },
-          { homeroomClasses: { some: { unitId: student.unitId } } },
-          { exams: { some: { unitId: student.unitId } } },
+          // Teacher is homeroom for one of the student's classes.
+          { homeroomClasses: { some: { id: { in: classIds } } } },
+          // Teacher teaches a subject in one of the student's classes
+          // (`classId: null` on TeacherSubject means "all classes").
+          { teacherSubjects: { some: { OR: [{ classId: { in: classIds } }, { classId: null }] } } },
+          // Teacher set an exam for one of the student's classes.
+          { exams: { some: { classId: { in: classIds } } } },
         ],
       },
     });
@@ -514,10 +542,31 @@ export class RaportMerdekaService {
    */
   private static async getP5Projects(studentId: string, academicYearId: string, semester: number) {
     // Fetch real P5 assessments from database
-    const p5Assessments = await P5ProjectService.getStudentAssessmentsForReport(
+    let p5Assessments = await P5ProjectService.getStudentAssessmentsForReport(
       studentId,
       academicYearId
     );
+
+    // P5Project carries NO `semester` column, so the semester is attributed by
+    // when the project ran: a project belongs to Semester 1 if its startDate
+    // falls inside the Semester 1 window, Semester 2 if it falls inside the
+    // Semester 2 window. Without this the same academic year's two semesters
+    // would be mixed into one raport.
+    const academicYear = await prisma.academicYear.findUnique({
+      where: { id: academicYearId },
+      select: { startDate: true, endDate: true },
+    });
+
+    if (academicYear) {
+      const { startDate: semStart, endDate: semEnd } = getSemesterDateRange(academicYear, semester);
+      const inSemester = p5Assessments.filter((assessment) => {
+        const projectStart = new Date(assessment.startDate);
+        return (
+          projectStart.getTime() >= semStart.getTime() && projectStart.getTime() <= semEnd.getTime()
+        );
+      });
+      p5Assessments = inSemester;
+    }
 
     if (p5Assessments.length > 0) {
       // Map to report structure
@@ -897,8 +946,13 @@ export class RaportMerdekaService {
             where: {
               userId,
               OR: [
-                { unitId: classInfo.unitId },
+                // The teacher must directly cover THIS class — be its homeroom
+                // teacher, teach a subject in it (`classId: null` = all classes),
+                // or have set an exam for it. A membership in the unit alone no
+                // longer grants a class raport, so one exam in a unit cannot
+                // open every class of that unit.
                 { homeroomClasses: { some: { id: classId } } },
+                { teacherSubjects: { some: { OR: [{ classId }, { classId: null }] } } },
                 { exams: { some: { classId } } },
               ],
             },

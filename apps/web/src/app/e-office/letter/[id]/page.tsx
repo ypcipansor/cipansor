@@ -141,12 +141,18 @@ export default function LetterDetailPage({
   const [ccDraft, setCcDraft] = useState<LetterCcInput[] | null>(null);
   const [dispatchOpen, setDispatchOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
-  const [editFormData, setEditFormData] = useState({
+  const [editFormData, setEditFormData] = useState<{
+    subject: string;
+    content: string;
+    recipientName: string;
+    recipientInstance: string;
+    urgency: LetterUrgency;
+  }>({
     subject: "",
     content: "",
     recipientName: "",
     recipientInstance: "",
-    urgency: "NORMAL",
+    urgency: LetterUrgency.NORMAL,
   });
   const [dispatchData, setDispatchData] = useState({
     channel: LetterDispatchChannel.HAND_DELIVERY as LetterDispatchChannel,
@@ -534,16 +540,23 @@ export default function LetterDetailPage({
               <Select
                 value={editFormData.urgency}
                 onValueChange={(val) =>
-                  setEditFormData({ ...editFormData, urgency: val })
+                  setEditFormData({
+                    ...editFormData,
+                    urgency: val as LetterUrgency,
+                  })
                 }
               >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="NORMAL">Biasa</SelectItem>
-                  <SelectItem value="URGENT">Penting</SelectItem>
-                  <SelectItem value="VERY_URGENT">Sangat Penting</SelectItem>
+                  {Object.entries(LETTER_URGENCY_LABELS).map(
+                    ([value, label]) => (
+                      <SelectItem key={value} value={value}>
+                        {label}
+                      </SelectItem>
+                    ),
+                  )}
                 </SelectContent>
               </Select>
             </div>
@@ -573,7 +586,7 @@ export default function LetterDetailPage({
                       content: editFormData.content,
                       recipientName: editFormData.recipientName,
                       recipientInstance: editFormData.recipientInstance,
-                      urgency: editFormData.urgency as any,
+                      urgency: editFormData.urgency,
                     },
                   });
                   toast.success("Naskah surat berhasil diperbarui");
