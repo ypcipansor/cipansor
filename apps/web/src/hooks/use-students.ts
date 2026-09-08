@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api, { PaginatedResponse, ApiResponse } from "@/lib/api";
+import { studentsService } from "@/services";
 
 // Types
 export interface Student {
@@ -267,6 +268,24 @@ export function useStudentSearch(query: string, unitId?: string) {
       return response.data.data;
     },
     enabled: query.length >= 2,
+  });
+}
+
+/**
+ * Look up an existing alumnus record by NISN/NIK so an internal re-enrollment
+ * can be prefilled with previousStudentId/internalNisn/internalNik. The lookup
+ * is a staff-only endpoint (STUDENT_CREATE permission), so callers must be
+ * authenticated.
+ */
+export function useLookupAlumni(identifier: string) {
+  return useQuery({
+    queryKey: ["students", "alumni-lookup", identifier],
+    queryFn: async () => {
+      const result = await studentsService.lookupAlumni(identifier);
+      return result;
+    },
+    enabled: identifier.trim().length >= 2,
+    retry: false,
   });
 }
 

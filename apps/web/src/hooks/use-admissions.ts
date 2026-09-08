@@ -298,6 +298,26 @@ export function useCreateRegistration() {
   });
 }
 
+/**
+ * Create a registrant from the authenticated (staff) surface. Unlike the public
+ * `useCreateRegistration`, this keeps the internal-alumni re-enrollment fields
+ * (`isInternalAlumni`, `previousStudentId`, `internalNisn`, `internalNik`) —
+ * the public endpoint strips them for security. Behind
+ * `authorize(SUPER_ADMIN, UNIT_ADMIN, STAFF)`.
+ */
+export function useCreateRegistrant() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: Record<string, unknown>) => {
+      const response = await api.post("/admissions/registrants", data);
+      return response.data.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admission-registrants"] });
+    },
+  });
+}
+
 export function useUpdateRegistrationStatus() {
   const queryClient = useQueryClient();
   return useMutation({
