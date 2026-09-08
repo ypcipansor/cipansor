@@ -69,16 +69,12 @@ import { QRCodeSVG } from "qrcode.react";
  * and it is the identifier staff can act on — the name and unit are already
  * printed in plain text beside it.
  */
-function StudentQRCode({ value, size = 48 }: { value: string; size?: number }) {
+function StudentQRCode({ value, size = 64 }: { value: string; size?: number }) {
   return (
     <QRCodeSVG
       value={value}
       size={size}
-      // Cards get handled, folded into wallets and photocopied; M recovers ~15%
-      // of a damaged symbol and still fits the NIS in the smallest version.
-      level="M"
-      // The quiet zone is part of the spec, not decoration — without it a
-      // scanner cannot find the symbol against the card's white patch.
+      level="L"
       marginSize={2}
     />
   );
@@ -102,7 +98,7 @@ function StudentIDCard({
     .substring(0, 2)
     .toUpperCase();
 
-  const { data: cardDetails } = useQuery({
+  const { data: cardDetails, isLoading: cardLoading } = useQuery({
     queryKey: ["student-id-card-details", student.id],
     queryFn: async () => {
       const res = await api.get(`/students/${student.id}/id-card`);
@@ -111,7 +107,7 @@ function StudentIDCard({
     enabled: !!student.id,
   });
 
-  const qrPayload = cardDetails?.cardData?.qrCode?.data || `cipansor://${Buffer.from(JSON.stringify({ sid: student.id, nis: student.nis })).toString('base64url')}#legacy`;
+  const qrPayload = cardDetails?.cardData?.qrCode?.data;
 
   return (
     <div
@@ -180,8 +176,12 @@ function StudentIDCard({
         </div>
 
         {/* QR Code */}
-        <div className="shrink-0 bg-white p-1 rounded">
-          <StudentQRCode value={qrPayload} size={48} />
+        <div className="shrink-0 bg-white p-1 rounded min-w-[66px] min-h-[66px] flex items-center justify-center">
+          {cardLoading || !qrPayload ? (
+            <Skeleton className="h-[64px] w-[64px] rounded" />
+          ) : (
+            <StudentQRCode value={qrPayload} size={64} />
+          )}
         </div>
       </div>
 

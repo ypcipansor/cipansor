@@ -334,7 +334,11 @@ export async function generateRaportMerdekaPdfBuffer(data: RaportMerdekaPdfData)
     y2 -= 25;
   } else {
     for (const p5 of p5List) {
-      if (y2 < MARGIN + 100) {
+      const descLines = p5.deskripsiProyek ? wrapText(p5.deskripsiProyek, tableWidth, fontHelvetica, 7.5) : [];
+      const dimensionsCount = p5.dimensiTerkait?.length ?? 0;
+      const estimatedHeight = 12 + 14 + (descLines.length * 9) + (dimensionsCount * 10) + 15;
+
+      if (y2 - estimatedHeight < MARGIN + 80) {
         currentP5Page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
         y2 = drawHeader(currentP5Page, 'Laporan Perkembangan Pesantren & P5 (Lanjutan)', `${data.siswa.unit} Cipansor`);
       }
@@ -344,17 +348,18 @@ export async function generateRaportMerdekaPdfBuffer(data: RaportMerdekaPdfData)
       currentP5Page.drawText(sanitizeWinAnsiText(`Judul Projek: ${p5.judul}`), { x: MARGIN, y: y2, size: 8, font: fontHelveticaBold });
       y2 -= 14;
 
-      if (p5.deskripsiProyek) {
-        const descLines = wrapText(p5.deskripsiProyek, tableWidth, fontHelvetica, 7.5);
-        for (const dl of descLines) {
-          currentP5Page.drawText(sanitizeWinAnsiText(dl), { x: MARGIN, y: y2, size: 7.5, font: fontHelvetica });
-          y2 -= 9;
-        }
+      for (const dl of descLines) {
+        currentP5Page.drawText(sanitizeWinAnsiText(dl), { x: MARGIN, y: y2, size: 7.5, font: fontHelvetica });
+        y2 -= 9;
       }
 
       if (p5.dimensiTerkait && p5.dimensiTerkait.length > 0) {
         y2 -= 4;
         for (const dim of p5.dimensiTerkait) {
+          if (y2 < MARGIN + 80) {
+            currentP5Page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+            y2 = drawHeader(currentP5Page, 'Laporan Perkembangan Pesantren & P5 (Lanjutan)', `${data.siswa.unit} Cipansor`);
+          }
           currentP5Page.drawText(sanitizeWinAnsiText(`• ${dim.dimensiName} : ${dim.capaian ?? 'Berkembang Sesuai Harapan'}`), { x: MARGIN + 10, y: y2, size: 7.5, font: fontHelveticaBold });
           y2 -= 10;
         }

@@ -135,6 +135,20 @@ export class IdCardController {
   }
 
   /**
+   * Bulk regenerate cards for unit or class
+   */
+  static async bulkRegenerateCards(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { unitId, classId } = req.body;
+      const result = await StudentIdCardService.bulkRegenerateActiveCards(unitId, classId);
+
+      return res.json(ApiResponse.success(result, 'Kartu pelajar berhasil diregenerasi secara masal'));
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Get card statistics for a unit
    */
   static async getStatistics(req: Request, res: Response, next: NextFunction) {

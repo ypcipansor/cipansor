@@ -151,6 +151,12 @@ router.get(
   IdCardController.getTemplates
 );
 
+router.post(
+  '/id-cards/bulk-regenerate',
+  hasPermission(PERMISSIONS.STUDENT_UPDATE),
+  IdCardController.bulkRegenerateCards
+);
+
 /**
  * @swagger
  * /api/students/id-cards/stats/{unitId}:

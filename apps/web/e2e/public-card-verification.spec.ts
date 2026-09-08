@@ -1,5 +1,26 @@
 import { test, expect } from './fixtures/auth.fixture';
 import { loginAs } from './helpers/auth-api';
+import crypto from 'crypto';
+
+function generateRealHMACQrCode() {
+  const secret = process.env.STUDENT_CARD_HMAC_SECRET || process.env.JWT_SECRET || 'test-jwt-secret-key-for-e2e-testing';
+  const payload = {
+    sid: 'student-uuid-demo',
+    nis: '2026001',
+    nisn: '0012345678',
+    uid: 'unit-smp-1',
+    exp: Date.now() + 86400000 * 365,
+  };
+  const payloadString = JSON.stringify(payload);
+  const hmacSignature = crypto
+    .createHmac('sha256', secret)
+    .update(payloadString)
+    .digest('hex')
+    .substring(0, 16);
+
+  const base64Payload = Buffer.from(payloadString).toString('base64url');
+  return `cipansor://${base64Payload}#${hmacSignature}`;
+}
 
 test.describe('Public Card Verification, Raport Merdeka & E-Office Edit Letter Flow', () => {
   test('public verify card page loads and verifies QR code inputs', async ({ page }) => {
@@ -14,6 +35,11 @@ test.describe('Public Card Verification, Raport Merdeka & E-Office Edit Letter F
     await page.click('button:has-text("Verifikasi")');
 
     await expect(page.locator('text=Verifikasi Gagal / Tidak Valid')).toBeVisible();
+
+    // Fill valid HMAC QR code string
+    const validQr = generateRealHMACQrCode();
+    await input.fill(validQr);
+    await page.click('button:has-text("Verifikasi")');
   });
 
   test('raport merdeka page loads and supports student search and export button', async ({ page }) => {

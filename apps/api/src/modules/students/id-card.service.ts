@@ -312,7 +312,7 @@ export class StudentIdCardService {
         // QR Code
         qrCode: {
           data: qrCodeData,
-          verificationUrl: `/public/verify-card?data=${encodeURIComponent(qrCodeData)}`,
+          verificationUrl: `${(process.env.BASE_URL || 'https://cipansor.or.id').replace(/\/$/, '')}/public/verify-card?data=${encodeURIComponent(qrCodeData)}`,
         },
       },
     };
@@ -477,6 +477,34 @@ export class StudentIdCardService {
         features: ['Foto', 'QR Code', 'Data Dasar'],
       },
     ];
+  }
+
+  /**
+   * Bulk regenerate ID cards for active students in a unit or class
+   */
+  static async bulkRegenerateActiveCards(unitId?: string, classId?: string) {
+    const whereClause: any = { deletedAt: null };
+    if (unitId) whereClause.unitId = unitId;
+    if (classId) {
+      whereClause.enrollments = {
+        some: { classId, status: 'active' },
+      };
+    }
+
+    const students = await prisma.student.findMany({
+      where: whereClause,
+      select: { id: true },
+    });
+
+    const cards = await Promise.all(
+      students.map((student) => this.generateIdCard(student.id))
+    );
+
+    return {
+      totalRegenerated: cards.length,
+      regeneratedAt: new Date().toISOString(),
+      cards,
+    };
   }
 
   /**

@@ -444,10 +444,35 @@ export function useRaportMerdekaStudentsList(unitId?: string, search?: string) {
     queryKey: ["students-list", unitId, search],
     queryFn: async () => {
       const response = await api.get<ApiResponse<AssessmentStudentItem[]>>("/students", {
-        params: { search: search || undefined, limit: 100 },
+        params: { unitId: unitId || undefined, search: search || undefined, limit: 100 },
       });
       return response.data.data;
     },
+  });
+}
+
+export function useRaportMerdekaP5Dimensions() {
+  return useQuery({
+    queryKey: ["p5-dimensions"],
+    queryFn: async () => {
+      const response = await api.get<ApiResponse<Array<{ code: string; name: string; description: string; elements: string[] }>>>(
+        "/assessment/raport-merdeka/p5-dimensions"
+      );
+      return response.data.data;
+    },
+  });
+}
+
+export function useRaportMerdekaCpMapping(subjectCode: string, gradeLevel: string) {
+  return useQuery({
+    queryKey: ["cp-mapping", subjectCode, gradeLevel],
+    queryFn: async () => {
+      const response = await api.get<ApiResponse<{ fase: string; cp: string[] }>>(
+        `/assessment/raport-merdeka/cp/${subjectCode}/${gradeLevel}`
+      );
+      return response.data.data;
+    },
+    enabled: !!subjectCode && !!gradeLevel,
   });
 }
 

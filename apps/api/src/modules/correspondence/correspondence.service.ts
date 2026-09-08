@@ -670,6 +670,9 @@ export const CorrespondenceService = {
       // Update Reviewers if provided
       if (data.reviewerIds) {
         const uniqueReviewers = Array.from(new Set(data.reviewerIds));
+        if (letter.status === DbLetterStatus.REVISION_NEEDED && uniqueReviewers.length === 0) {
+          throw Errors.badRequest('Surat yang dalam perbaikan revisi wajib memiliki minimal satu pemeriksa/verifikator.');
+        }
         await tx.letterReviewer.deleteMany({ where: { letterId } });
         if (uniqueReviewers.length > 0) {
           await tx.letterReviewer.createMany({
@@ -741,7 +744,7 @@ export const CorrespondenceService = {
       await recordFlow(tx, {
         letterId,
         actorId: userId,
-        action: letter.status === DbLetterStatus.REVISION_NEEDED ? LetterFlowAction.RESUBMITTED : LetterFlowAction.DISPOSITION_UPDATED,
+        action: LetterFlowAction.DISPOSITION_UPDATED,
         fromStatus: letter.status,
         toStatus: letter.status,
         note: 'Naskah surat diperbarui',

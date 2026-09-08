@@ -52,6 +52,8 @@ import {
   useRaportMerdekaStudentsList,
   useRaportMerdekaAcademicYears,
   useExportRaportMerdekaPdf,
+  useRaportMerdekaP5Dimensions,
+  useRaportMerdekaCpMapping,
 } from "@/hooks/use-kurikulum-merdeka";
 import { toast } from "sonner";
 
@@ -99,14 +101,7 @@ export default function RaportMerdekaPage() {
   const [semester, setSemester] = useState<string>("1");
   const [studentSearch, setStudentSearch] = useState<string>("");
 
-  // Fetch P5 dimensions
-  const { data: p5Dimensions, isLoading: p5Loading } = useQuery<P5Dimension[]>({
-    queryKey: ["p5-dimensions"],
-    queryFn: async () => {
-      const res = await api.get("/assessment/raport-merdeka/p5-dimensions");
-      return res.data.data;
-    },
-  });
+  const { data: p5Dimensions, isLoading: p5Loading } = useRaportMerdekaP5Dimensions();
 
   const { data: studentReportData, isLoading: reportLoading } = useRaportMerdekaStudentData(
     selectedStudentId,
@@ -114,22 +109,8 @@ export default function RaportMerdekaPage() {
     semester
   );
 
-  // Fetch CP mappings for reference
-  const { data: cpMtk } = useQuery({
-    queryKey: ["cp-mapping", "MTK"],
-    queryFn: async () => {
-      const res = await api.get("/assessment/raport-merdeka/cp/MTK/7-9");
-      return res.data.data;
-    },
-  });
-
-  const { data: cpThf } = useQuery({
-    queryKey: ["cp-mapping", "THF"],
-    queryFn: async () => {
-      const res = await api.get("/assessment/raport-merdeka/cp/THF/7-9");
-      return res.data.data;
-    },
-  });
+  const { data: cpMtk } = useRaportMerdekaCpMapping("MTK", "7-9");
+  const { data: cpThf } = useRaportMerdekaCpMapping("THF", "7-9");
 
   const { data: students } = useRaportMerdekaStudentsList(currentUnit?.id, studentSearch);
   const { data: academicYears } = useRaportMerdekaAcademicYears();
