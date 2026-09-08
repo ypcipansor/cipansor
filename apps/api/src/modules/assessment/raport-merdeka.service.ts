@@ -158,8 +158,8 @@ export class RaportMerdekaService {
     if (user.unitId && student.unitId !== user.unitId) {
       const userId = user.id || user.sub;
 
-      // 1. Check if user has active UserRole in target student unit or global
-      const userRoleInUnit = await prisma.userRole.findFirst({
+      // 1. Check if user has active UserRoleAssignment in target student unit or global
+      const userRoleInUnit = await prisma.userRoleAssignment.findFirst({
         where: {
           userId,
           isActive: true,
@@ -814,7 +814,7 @@ export class RaportMerdekaService {
     if (user && user.role !== 'SUPER_ADMIN' && user.roleCode !== 'SUPER_ADMIN') {
       if (user.unitId && classInfo.unitId !== user.unitId) {
         const userId = user.id || user.sub;
-        const userRoleInUnit = await prisma.userRole.findFirst({
+        const userRoleInUnit = await prisma.userRoleAssignment.findFirst({
           where: {
             userId,
             isActive: true,
