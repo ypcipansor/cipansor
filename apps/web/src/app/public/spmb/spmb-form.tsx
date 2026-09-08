@@ -33,6 +33,10 @@ import {
   Gender,
 } from "@/hooks/use-admissions";
 import { usePublicUnits } from "@/hooks/use-units";
+import {
+  TurnstileWidget,
+  useTurnstile,
+} from "@/components/security/turnstile-widget";
 import { getPeriodWindow } from "@/lib/admission-period";
 import { RegistrationTracker } from "@/components/admissions/registration-tracker";
 import {
@@ -163,6 +167,7 @@ export function SpmbForm({
   const { data: activePeriod } = useActivePeriod();
   const { data: units = [] } = usePublicUnits();
   const createRegistration = useCreateRegistration();
+  const turnstile = useTurnstile();
   const searchParams = useSearchParams();
 
   const periodWindow = getPeriodWindow(activePeriod);
@@ -272,6 +277,7 @@ export function SpmbForm({
   };
 
   const handleSubmit = async () => {
+    if (!turnstile.ready) return;
     setIsSubmitting(true);
     try {
       // Build a plain JSON payload matching the backend's
@@ -338,6 +344,8 @@ export function SpmbForm({
       if (formData.source) payload.source = formData.source;
       if (formData.campaignId) payload.campaignId = formData.campaignId;
 
+      if (turnstile.token) payload.turnstileToken = turnstile.token;
+
       const result = await createRegistration.mutateAsync(payload);
 
       setSuccessData({
@@ -354,6 +362,8 @@ export function SpmbForm({
       setCurrentStep(0);
     } catch (error) {
       toast.error("Gagal mengirim pendaftaran. Silakan coba lagi.");
+      // Token sekali pakai; percobaan berikutnya butuh tantangan baru.
+      turnstile.refresh();
     } finally {
       setIsSubmitting(false);
     }
@@ -1193,6 +1203,14 @@ export function SpmbForm({
                       </div>
                     )}
                   </CardContent>
+                  {currentStep === steps.length - 1 && (
+                    <div className="px-6 pb-2">
+                      <TurnstileWidget
+                        action="spmb-daftar"
+                        {...turnstile.widgetProps}
+                      />
+                    </div>
+                  )}
                   <CardFooter className="flex justify-between">
                     <Button
                       variant="outline"
@@ -1208,7 +1226,10 @@ export function SpmbForm({
                         <ChevronRight className="h-4 w-4 ml-2" />
                       </Button>
                     ) : (
-                      <Button onClick={handleSubmit} disabled={isSubmitting}>
+                      <Button
+                        onClick={handleSubmit}
+                        disabled={isSubmitting || !turnstile.ready}
+                      >
                         {isSubmitting ? "Mengirim..." : "Kirim Pendaftaran"}
                       </Button>
                     )}

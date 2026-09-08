@@ -8,6 +8,11 @@ import {
 import { aggregateDashboardMetrics } from './dashboard-metrics.job';
 import { runMonthlyAutoBilling } from './finance-billing.job';
 import { sendMonthlySppReminders } from './spp-reminder.job';
+import { purgeIdentityDocuments } from './identity-purge.job';
+import { runChatbotSpendCheck } from './chatbot-spend.job';
+import { runChatbotTranscriptPurge } from './chatbot-transcript-purge.job';
+import { runChatbotEscalationRetry } from './chatbot-escalation-retry.job';
+import { prisma } from '@/lib/prisma';
 
 /**
  * Scheduler Module
@@ -148,6 +153,133 @@ export function initializeScheduler(): void {
   scheduledTasks.push(sppReminderTask);
   logger.info('[Scheduler] SPP reminder job scheduled at 06:00 WIB on the 1st of each month');
 
+  /**
+   * Penyapuan foto KTP — tiap hari pukul 02.30 WIB.
+   *
+   * Di sini, bukan di crontab host, karena berkasnya ada di volume yang
+   * terpasang ke kontainer ini dan basis datanya hanya terjangkau dari jaringan
+   * Compose. Penjadwal di luar kontainer terikat pada satu mesin dan tidak ikut
+   * berpindah bersama image-nya. Alasan selengkapnya ada di berkas jobnya.
+   *
+   * 02.30 dipilih di celah yang kosong: snapshot harian 01.00, ringkasan
+   * mingguan 02.00, cleanup 03.00. Pekerjaannya sendiri ringan — sebuah kueri
+   * berindeks dan pembacaan satu direktori — tetapi menaruhnya bertumpuk dengan
+   * yang lain hanya menyulitkan pembacaan log ketika ada yang salah.
+   *
+   * Kegagalan dicatat sebagai error dan tidak menjatuhkan penjadwal; berhasil
+   * atau gagal, jalannya meninggalkan baris di `audit_logs` — yang menjawab
+   * "kapan terakhir retensi ini benar-benar ditegakkan" setelah log diputar.
+   */
+  const identityPurgeTask = cron.schedule(
+    '30 2 * * *',
+    async () => {
+      logger.info('[Scheduler] Running identity document purge job');
+      try {
+        const summary = await purgeIdentityDocuments(prisma);
+        logger.info(
+          `[Scheduler] Identity purge: ${summary.expired.length} expired, ` +
+            `${summary.orphans.length} orphaned, ` +
+            `${summary.onDiskCount} on disk, ${summary.referencedCount} referenced`
+        );
+      } catch (error) {
+        logger.error('[Scheduler] Identity document purge job failed:', error);
+      }
+    },
+    {
+      timezone: 'Asia/Jakarta',
+    }
+  );
+  scheduledTasks.push(identityPurgeTask);
+  logger.info('[Scheduler] Identity document purge job scheduled daily at 02:30 WIB');
+
+  /**
+   * Peringatan belanja chatbot — setiap hari pukul 07:00 WIB.
+   *
+   * Harian, bukan bulanan, meskipun anggarannya bulanan: peringatan yang datang
+   * pada tanggal 1 hanya bisa mengabarkan uang yang sudah habis. Pukul 07:00
+   * dipilih supaya suratnya berada di kotak masuk sebelum jam kerja, bukan
+   * bersama pekerjaan tengah malam yang tidak dibaca siapa pun.
+   *
+   * Pekerjaan ini menahan diri sendiri: satu tingkat ambang hanya dikirim sekali
+   * per bulan, dan bulan tanpa pemakaian tidak mengirim apa pun.
+   */
+  const chatbotSpendTask = cron.schedule(
+    '0 7 * * *',
+    async () => {
+      logger.debug('[Scheduler] Running chatbot spend check');
+      try {
+        const result = await runChatbotSpendCheck();
+        if (result.sent) {
+          logger.warn(`[Scheduler] Chatbot spend alert sent: ${result.sent}`);
+        }
+      } catch (error) {
+        logger.error('[Scheduler] Chatbot spend check failed:', error);
+      }
+    },
+    {
+      timezone: 'Asia/Jakarta',
+    }
+  );
+  scheduledTasks.push(chatbotSpendTask);
+  logger.info('[Scheduler] Chatbot spend check scheduled daily at 07:00 WIB');
+
+  /**
+   * Penyapuan riwayat percakapan asisten publik.
+   *
+   * Retensi 90 hari adalah separuh alasan mengapa menyimpan kalimat pengunjung
+   * dapat dipertanggungjawabkan sama sekali; kalau penyapunya berhenti, janji
+   * itu berhenti benar tanpa satu pun gejala yang terlihat. Karena itu ia
+   * menulis baris audit setiap kali berjalan, termasuk ketika tidak ada yang
+   * dihapus.
+   *
+   * Pukul 03:15 WIB: sesudah pembersihan snapshot pukul 03:00 dan jauh dari
+   * penyapuan KTP pukul 02:30, supaya dua penghapusan besar tidak berebut
+   * basis data yang sama.
+   */
+  const chatbotTranscriptTask = cron.schedule(
+    '15 3 * * *',
+    async () => {
+      logger.debug('[Scheduler] Running chatbot transcript purge');
+      try {
+        await runChatbotTranscriptPurge();
+      } catch (error) {
+        logger.error('[Scheduler] Chatbot transcript purge failed:', error);
+      }
+    },
+    {
+      timezone: 'Asia/Jakarta',
+    }
+  );
+  scheduledTasks.push(chatbotTranscriptTask);
+  logger.info('[Scheduler] Chatbot transcript purge scheduled daily at 03:15 WIB');
+
+  /**
+   * Penerusan pertanyaan yang belum terkirim, dicoba lagi tiap 30 menit.
+   *
+   * Percobaan PERTAMA sudah terjadi di dalam permintaan penanya; yang ini
+   * hanya untuk yang gagal. Jadi pada hari yang sehat pekerjaan ini tidak
+   * menemukan apa-apa dan tidak menulis satu baris log pun — sengaja, supaya
+   * ketika ia MENEMUKAN sesuatu, barisnya berarti.
+   *
+   * Tiap 30 menit dengan batas 5 percobaan memberi jendela sekitar dua jam,
+   * cukup untuk melewati gangguan penyedia surel yang lazim.
+   */
+  const chatbotEscalationTask = cron.schedule(
+    '*/30 * * * *',
+    async () => {
+      try {
+        await runChatbotEscalationRetry();
+      } catch (error) {
+        logger.error('[Scheduler] Chatbot escalation retry failed:', error);
+      }
+    },
+    {
+      timezone: 'Asia/Jakarta',
+    }
+  );
+  scheduledTasks.push(chatbotEscalationTask);
+  logger.info('[Scheduler] Chatbot escalation retry scheduled every 30 minutes');
+
   logger.info(`[Scheduler] ${scheduledTasks.length} jobs scheduled successfully`);
 }
 
@@ -171,6 +303,10 @@ export async function runJob(
     | 'cleanup'
     | 'auto-billing'
     | 'spp-reminder'
+    | 'identity-purge'
+    | 'chatbot-spend'
+    | 'chatbot-transcript-purge'
+    | 'chatbot-escalation-retry'
 ): Promise<void> {
   logger.info(`[Scheduler] Manually running job: ${jobName}`);
 
@@ -192,6 +328,18 @@ export async function runJob(
       break;
     case 'spp-reminder':
       await sendMonthlySppReminders();
+      break;
+    case 'identity-purge':
+      await purgeIdentityDocuments(prisma);
+      break;
+    case 'chatbot-spend':
+      await runChatbotSpendCheck();
+      break;
+    case 'chatbot-transcript-purge':
+      await runChatbotTranscriptPurge();
+      break;
+    case 'chatbot-escalation-retry':
+      await runChatbotEscalationRetry();
       break;
     default:
       throw new Error(`Unknown job: ${jobName}`);

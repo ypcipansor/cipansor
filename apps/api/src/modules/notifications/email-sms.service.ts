@@ -21,6 +21,18 @@ import {
   resetEmailTransport,
   type EmailTransportKind,
 } from './email-transport';
+import {
+  BRAND,
+  emailButton,
+  emailFinePrint,
+  emailHeading,
+  emailLogoAttachment,
+  emailNote,
+  emailPanel,
+  emailParagraph,
+  emailSignoff,
+  renderEmailLayout,
+} from './email-layout';
 
 /**
  * Escapes unsafe characters for HTML interpolation.
@@ -35,96 +47,63 @@ function escapeHtml(str: string): string {
     .replace(/'/g, '&#039;');
 }
 
-/**
- * Layout HTML Wrapper standard for Yayasan Pesantren Cipansor
- */
-const renderEmailLayout = (title: string, contentHtml: string) => `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${title}</title>
-</head>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f3f4f6; margin: 0; padding: 24px;">
-  <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
-    <!-- Header -->
-    <div style="background-color: #1e3a8a; color: #ffffff; padding: 20px 24px; text-align: center;">
-      <h1 style="margin: 0; font-size: 20px; font-weight: 700; letter-spacing: 0.5px;">Yayasan Pesantren Cipansor</h1>
-      <p style="margin: 4px 0 0 0; font-size: 12px; color: #93c5fd;">Sistem Informasi Management Terpadu</p>
-    </div>
-    <!-- Body -->
-    <div style="padding: 24px; color: #1f2937; line-height: 1.6;">
-      ${contentHtml}
-    </div>
-    <!-- Footer -->
-    <div style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 16px 24px; text-align: center; font-size: 12px; color: #64748b;">
-      <p style="margin: 0 0 8px 0;">Email ini dikirim secara otomatis oleh Sistem Informasi Yayasan Pesantren Cipansor.</p>
-      <p style="margin: 0; font-style: italic; color: #0284c7;">
-        Mohon <strong>tidak membalas langsung ke alamat email noreply ini</strong>. Jika Anda memiliki pertanyaan, silakan kirim email ke kanal resmi kami di
-        <a href="mailto:${config.mail.replyTo}" style="color: #0284c7; font-weight: bold; text-decoration: underline;">${config.mail.replyTo}</a>.
-      </p>
-      <p style="margin: 12px 0 0 0; color: #94a3b8;">&copy; ${new Date().getFullYear()} Yayasan Pesantren Cipansor. All rights reserved.</p>
-    </div>
-  </div>
-</body>
-</html>
-`;
-
 // Notification templates
 const templates = {
-  // Welcome email for new users
   welcome: {
-    subject: 'Selamat Datang di Cipansor',
+    subject: 'Akun Anda di Sistem Cipansor sudah aktif',
     html: (data: { name: string; email: string; password?: string }) =>
-      renderEmailLayout(
-        'Selamat Datang di Cipansor',
-        `
-        <h2 style="color: #1e3a8a; margin-top: 0;">Selamat Datang di Cipansor!</h2>
-        <p>Halo <strong>${escapeHtml(data.name)}</strong>,</p>
-        <p>Akun Anda telah berhasil dibuat di sistem Cipansor - Pesantren Management System.</p>
-        <div style="background-color: #f1f5f9; border-left: 4px solid #1e3a8a; padding: 12px 16px; margin: 16px 0; border-radius: 4px;">
-          <p style="margin: 0 0 8px 0;"><strong>Detail Akun Anda:</strong></p>
-          <ul style="margin: 0; padding-left: 20px;">
-            <li><strong>Email:</strong> ${escapeHtml(data.email)}</li>
-            ${data.password ? `<li><strong>Password sementara:</strong> <code>${escapeHtml(data.password)}</code></li>` : ''}
-          </ul>
-        </div>
-        ${data.password ? '<p style="color: #dc2626; font-size: 13px;"><em>Demi keamanan, silakan segera ubah password Anda setelah login pertama kali.</em></p>' : ''}
-        <p style="margin-top: 24px;">Salam,<br/><strong>Tim Pengelola Cipansor</strong></p>
-        `
-      ),
+      renderEmailLayout({
+        title: 'Akun Anda sudah aktif',
+        preheader: `Detail akun untuk ${data.name}. Ganti kata sandi sementara setelah masuk pertama kali.`,
+        bodyHtml:
+          emailHeading('Akun Anda sudah aktif') +
+          emailParagraph(`Halo <strong>${escapeHtml(data.name)}</strong>,`) +
+          emailParagraph(
+            'Akun Anda pada Sistem Informasi Yayasan Pesantren Cipansor telah dibuat dan siap digunakan.'
+          ) +
+          emailPanel([
+            ['Email', escapeHtml(data.email)],
+            ...(data.password
+              ? ([['Kata sandi sementara', escapeHtml(data.password)]] as Array<[string, string]>)
+              : []),
+          ]) +
+          (data.password
+            ? emailNote(
+                'Kata sandi di atas bersifat sementara. Mohon segera menggantinya setelah masuk pertama kali.'
+              )
+            : '') +
+          emailSignoff('Tim Pengelola Sistem Cipansor'),
+      }),
   },
 
-  // Password reset
   passwordReset: {
-    subject: 'Reset Password - Cipansor',
+    subject: 'Atur ulang kata sandi akun Cipansor Anda',
     html: (data: { name: string; resetLink: string; expiresInHours?: number }) =>
-      renderEmailLayout(
-        'Reset Password - Cipansor',
-        `
-        <h2 style="color: #1e3a8a; margin-top: 0;">Reset Password</h2>
-        <p>Halo <strong>${escapeHtml(data.name)}</strong>,</p>
-        <p>Kami menerima permintaan untuk mereset password akun Anda di Sistem Cipansor.</p>
-        <div style="text-align: center; margin: 24px 0;">
-          <a href="${escapeHtml(data.resetLink)}" style="display: inline-block; background-color: #1e3a8a; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">Reset Password Saya</a>
-        </div>
-        <!--
-          The lifetime is passed in rather than written here. Self-service
-          resets last an hour; the tokens minted when a santri or wali account
-          is created last 24, and this line used to claim "1 jam" for both.
-        -->
-        <p style="font-size: 13px; color: #64748b;">Link ini akan kadaluarsa dalam ${data.expiresInHours ?? 1} jam.</p>
-        <p style="font-size: 12px; color: #94a3b8; word-break: break-all;">Jika tombol di atas tidak berfungsi, salin tautan ini ke peramban Anda:<br/>${escapeHtml(data.resetLink)}</p>
-        <p style="font-size: 13px; color: #64748b;">Jika Anda tidak meminta reset password, abaikan saja email ini.</p>
-        <p style="margin-top: 24px;">Salam,<br/><strong>Tim IT & Keamanan Cipansor</strong></p>
-        `
-      ),
+      renderEmailLayout({
+        title: 'Atur ulang kata sandi',
+        preheader: `Tautan berlaku ${data.expiresInHours ?? 1} jam. Abaikan pesan ini bila Anda tidak memintanya.`,
+        bodyHtml:
+          emailHeading('Atur ulang kata sandi') +
+          emailParagraph(`Halo <strong>${escapeHtml(data.name)}</strong>,`) +
+          emailParagraph(
+            'Kami menerima permintaan untuk mengatur ulang kata sandi akun Anda. Tekan tombol di bawah untuk menetapkan kata sandi baru.'
+          ) +
+          emailButton(data.resetLink, 'Atur Kata Sandi Baru') +
+          // The lifetime is passed in rather than written here. Admin-initiated
+          // resets last an hour; the tokens minted when a santri or wali account
+          // is created last 24, and this line used to claim "1 jam" for both.
+          emailFinePrint(
+            `Tautan ini berlaku selama <strong>${data.expiresInHours ?? 1} jam</strong>. Bila tombol tidak berfungsi, salin alamat berikut ke peramban Anda:<br><span style="word-break:break-all;">${escapeHtml(data.resetLink)}</span>`
+          ) +
+          emailFinePrint(
+            'Jika Anda tidak meminta pengaturan ulang, abaikan pesan ini — kata sandi Anda tidak berubah.'
+          ) +
+          emailSignoff('Tim Keamanan Sistem Cipansor'),
+      }),
   },
 
-  // Payment reminder
   paymentReminder: {
-    subject: 'Pengingat Tagihan Pembayaran - Cipansor',
+    subject: 'Pengingat tagihan pendidikan',
     html: (data: {
       parentName: string;
       studentName: string;
@@ -132,27 +111,34 @@ const templates = {
       amount: string;
       dueDate: string;
     }) =>
-      renderEmailLayout(
-        'Pengingat Pembayaran - Cipansor',
-        `
-        <h2 style="color: #1e3a8a; margin-top: 0;">Pengingat Tagihan Pembayaran</h2>
-        <p>Yth. Bapak/Ibu <strong>${escapeHtml(data.parentName)}</strong>,</p>
-        <p>Kami menyampaikan pengingat mengenai tagihan pendidikan/pesantren untuk putra/putri Anda:</p>
-        <table style="width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px;">
-          <tr style="background-color: #f8fafc;"><td style="padding: 10px; border: 1px solid #e2e8f0; width: 35%;"><strong>Nama Santri/Siswa:</strong></td><td style="padding: 10px; border: 1px solid #e2e8f0;">${escapeHtml(data.studentName)}</td></tr>
-          <tr><td style="padding: 10px; border: 1px solid #e2e8f0;"><strong>No. Invoice:</strong></td><td style="padding: 10px; border: 1px solid #e2e8f0;"><code>${escapeHtml(data.invoiceNumber)}</code></td></tr>
-          <tr style="background-color: #f8fafc;"><td style="padding: 10px; border: 1px solid #e2e8f0;"><strong>Jumlah Tagihan:</strong></td><td style="padding: 10px; border: 1px solid #e2e8f0; color: #047857; font-weight: bold;">${escapeHtml(data.amount)}</td></tr>
-          <tr><td style="padding: 10px; border: 1px solid #e2e8f0;"><strong>Jatuh Tempo:</strong></td><td style="padding: 10px; border: 1px solid #e2e8f0; color: #b91c1c; font-weight: bold;">${escapeHtml(data.dueDate)}</td></tr>
-        </table>
-        <p>Mohon segera melakukan pembayaran sebelum tanggal jatuh tempo melalui Portal Wali / Rekening Resmi Yayasan.</p>
-        <p style="margin-top: 24px;">Salam hangat,<br/><strong>Bendahara & Keuangan Cipansor</strong></p>
-        `
-      ),
+      renderEmailLayout({
+        title: 'Pengingat tagihan pendidikan',
+        preheader: `Tagihan ${data.invoiceNumber} untuk ${data.studentName} jatuh tempo ${data.dueDate}.`,
+        bodyHtml:
+          emailHeading('Pengingat tagihan pendidikan') +
+          emailParagraph(`Yth. Bapak/Ibu <strong>${escapeHtml(data.parentName)}</strong>,`) +
+          emailParagraph('Berikut rincian tagihan untuk putra/putri Bapak/Ibu.') +
+          emailPanel([
+            ['Nama santri', escapeHtml(data.studentName)],
+            ['Nomor tagihan', escapeHtml(data.invoiceNumber)],
+            [
+              'Jumlah',
+              `<span style="color:${BRAND.greenDeep};font-size:16px;">${escapeHtml(data.amount)}</span>`,
+            ],
+            [
+              'Jatuh tempo',
+              `<span style="color:${BRAND.red};">${escapeHtml(data.dueDate)}</span>`,
+            ],
+          ]) +
+          emailParagraph(
+            'Pembayaran dapat dilakukan melalui Portal Wali atau rekening resmi yayasan sebelum tanggal jatuh tempo.'
+          ) +
+          emailSignoff('Bagian Keuangan Yayasan Pesantren Cipansor'),
+      }),
   },
 
-  // Payment Receipt (Kwitansi Pembayaran)
   paymentReceipt: {
-    subject: 'Bukti Pembayaran Resmi - Cipansor',
+    subject: 'Bukti pembayaran resmi',
     html: (data: {
       parentName: string;
       studentName: string;
@@ -162,31 +148,35 @@ const templates = {
       paymentMethod: string;
       description: string;
     }) =>
-      renderEmailLayout(
-        'Bukti Pembayaran Resmi',
-        `
-        <h2 style="color: #047857; margin-top: 0;">Kwitansi & Bukti Pembayaran Resmi</h2>
-        <p>Yth. Bapak/Ibu <strong>${escapeHtml(data.parentName)}</strong>,</p>
-        <p>Pembayaran Anda telah kami terima dan diverifikasi oleh Tim Keuangan Yayasan Pesantren Cipansor.</p>
-        <div style="background-color: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 6px; padding: 16px; margin: 16px 0;">
-          <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
-            <tr><td style="padding: 6px 0; color: #065f46;"><strong>No. Bukti / Transaksi:</strong></td><td style="padding: 6px 0; text-align: right; color: #065f46;"><code>${escapeHtml(data.receiptNumber)}</code></td></tr>
-            <tr><td style="padding: 6px 0; color: #065f46;"><strong>Nama Santri:</strong></td><td style="padding: 6px 0; text-align: right; color: #065f46;">${escapeHtml(data.studentName)}</td></tr>
-            <tr><td style="padding: 6px 0; color: #065f46;"><strong>Keterangan:</strong></td><td style="padding: 6px 0; text-align: right; color: #065f46;">${escapeHtml(data.description)}</td></tr>
-            <tr><td style="padding: 6px 0; color: #065f46;"><strong>Metode Pembayaran:</strong></td><td style="padding: 6px 0; text-align: right; color: #065f46;">${escapeHtml(data.paymentMethod)}</td></tr>
-            <tr><td style="padding: 6px 0; color: #065f46;"><strong>Tanggal Pembayaran:</strong></td><td style="padding: 6px 0; text-align: right; color: #065f46;">${escapeHtml(data.paymentDate)}</td></tr>
-            <tr style="border-top: 1px solid #a7f3d0;"><td style="padding: 10px 0 0 0; color: #047857; font-size: 16px;"><strong>Total Dibayar:</strong></td><td style="padding: 10px 0 0 0; text-align: right; color: #047857; font-size: 18px; font-weight: bold;">${escapeHtml(data.amount)}</td></tr>
-          </table>
-        </div>
-        <p>Terima kasih atas kepercayaannya mendampingi pendidikan santri di Cipansor.</p>
-        <p style="margin-top: 24px;">Jazakumullah Khairan,<br/><strong>Tim Keuangan Yayasan Pesantren Cipansor</strong></p>
-        `
-      ),
+      renderEmailLayout({
+        title: 'Bukti pembayaran resmi',
+        preheader: `Pembayaran ${data.amount} untuk ${data.studentName} telah kami terima dan verifikasi.`,
+        bodyHtml:
+          emailHeading('Pembayaran Anda telah kami terima') +
+          emailParagraph(`Yth. Bapak/Ibu <strong>${escapeHtml(data.parentName)}</strong>,`) +
+          emailParagraph(
+            'Pembayaran berikut telah diterima dan diverifikasi oleh Bagian Keuangan Yayasan Pesantren Cipansor.'
+          ) +
+          emailPanel([
+            ['Nomor bukti', escapeHtml(data.receiptNumber)],
+            ['Nama santri', escapeHtml(data.studentName)],
+            ['Keterangan', escapeHtml(data.description)],
+            ['Metode', escapeHtml(data.paymentMethod)],
+            ['Tanggal', escapeHtml(data.paymentDate)],
+            [
+              'Total dibayar',
+              `<span style="color:${BRAND.greenDeep};font-size:17px;">${escapeHtml(data.amount)}</span>`,
+            ],
+          ]) +
+          emailParagraph(
+            'Simpan pesan ini sebagai bukti pembayaran. Terima kasih atas kepercayaan Bapak/Ibu.'
+          ) +
+          emailSignoff('Bagian Keuangan Yayasan Pesantren Cipansor'),
+      }),
   },
 
-  // Violation notification to parent
   violationNotification: {
-    subject: 'Pemberitahuan Pelanggaran Siswa - Cipansor',
+    subject: 'Catatan kedisiplinan santri',
     html: (data: {
       parentName: string;
       studentName: string;
@@ -195,28 +185,34 @@ const templates = {
       points: number;
       date: string;
     }) =>
-      renderEmailLayout(
-        'Pemberitahuan Kedisiplinan',
-        `
-        <h2 style="color: #b91c1c; margin-top: 0;">Pemberitahuan Pelanggaran Kedisiplinan</h2>
-        <p>Yth. Bapak/Ibu <strong>${escapeHtml(data.parentName)}</strong>,</p>
-        <p>Dengan ini kami menyampaikan laporan catatan kedisiplinan putra/putri Bapak/Ibu:</p>
-        <table style="width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px;">
-          <tr style="background-color: #f8fafc;"><td style="padding: 10px; border: 1px solid #e2e8f0; width: 35%;"><strong>Nama Santri:</strong></td><td style="padding: 10px; border: 1px solid #e2e8f0;">${escapeHtml(data.studentName)}</td></tr>
-          <tr><td style="padding: 10px; border: 1px solid #e2e8f0;"><strong>Kategori Pelanggaran:</strong></td><td style="padding: 10px; border: 1px solid #e2e8f0;">${escapeHtml(data.violationType)}</td></tr>
-          <tr style="background-color: #f8fafc;"><td style="padding: 10px; border: 1px solid #e2e8f0;"><strong>Deskripsi:</strong></td><td style="padding: 10px; border: 1px solid #e2e8f0;">${escapeHtml(data.description)}</td></tr>
-          <tr><td style="padding: 10px; border: 1px solid #e2e8f0;"><strong>Poin Pelanggaran:</strong></td><td style="padding: 10px; border: 1px solid #e2e8f0; color: #b91c1c; font-weight: bold;">+${data.points} Poin</td></tr>
-          <tr style="background-color: #f8fafc;"><td style="padding: 10px; border: 1px solid #e2e8f0;"><strong>Tanggal Kejadian:</strong></td><td style="padding: 10px; border: 1px solid #e2e8f0;">${escapeHtml(data.date)}</td></tr>
-        </table>
-        <p>Mohon kerjasamanya untuk senantiasa membimbing dan memberikan pengarahan kepada ananda.</p>
-        <p style="margin-top: 24px;">Salam,<br/><strong>Tim Pengasuhan & Kedisiplinan Cipansor</strong></p>
-        `
-      ),
+      renderEmailLayout({
+        title: 'Catatan kedisiplinan santri',
+        preheader: `Catatan kedisiplinan ${data.studentName} pada ${data.date}: ${data.violationType}.`,
+        bodyHtml:
+          emailHeading('Catatan kedisiplinan santri') +
+          emailParagraph(`Yth. Bapak/Ibu <strong>${escapeHtml(data.parentName)}</strong>,`) +
+          emailParagraph(
+            'Kami menyampaikan catatan kedisiplinan putra/putri Bapak/Ibu agar dapat ditindaklanjuti bersama.'
+          ) +
+          emailPanel([
+            ['Nama santri', escapeHtml(data.studentName)],
+            ['Kategori', escapeHtml(data.violationType)],
+            ['Uraian', escapeHtml(data.description)],
+            [
+              'Poin',
+              `<span style="color:${BRAND.red};">+${data.points} poin</span>`,
+            ],
+            ['Tanggal', escapeHtml(data.date)],
+          ]) +
+          emailParagraph(
+            'Mohon kerja samanya untuk membimbing ananda. Bila ingin berdiskusi lebih lanjut, silakan balas pesan ini.'
+          ) +
+          emailSignoff('Bagian Pengasuhan Yayasan Pesantren Cipansor'),
+      }),
   },
 
-  // Attendance alert
   attendanceAlert: {
-    subject: 'Pemberitahuan Kehadiran Siswa - Cipansor',
+    subject: 'Laporan kehadiran santri',
     html: (data: {
       parentName: string;
       studentName: string;
@@ -224,26 +220,27 @@ const templates = {
       date: string;
       notes?: string;
     }) =>
-      renderEmailLayout(
-        'Pemberitahuan Kehadiran',
-        `
-        <h2 style="color: #1e3a8a; margin-top: 0;">Laporan Kehadiran Santri</h2>
-        <p>Yth. Bapak/Ibu <strong>${escapeHtml(data.parentName)}</strong>,</p>
-        <p>Informasi status presensi putra/putri Bapak/Ibu hari ini:</p>
-        <table style="width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px;">
-          <tr style="background-color: #f8fafc;"><td style="padding: 10px; border: 1px solid #e2e8f0; width: 35%;"><strong>Nama Santri:</strong></td><td style="padding: 10px; border: 1px solid #e2e8f0;">${escapeHtml(data.studentName)}</td></tr>
-          <tr><td style="padding: 10px; border: 1px solid #e2e8f0;"><strong>Tanggal:</strong></td><td style="padding: 10px; border: 1px solid #e2e8f0;">${escapeHtml(data.date)}</td></tr>
-          <tr style="background-color: #f8fafc;"><td style="padding: 10px; border: 1px solid #e2e8f0;"><strong>Status Kehadiran:</strong></td><td style="padding: 10px; border: 1px solid #e2e8f0; font-weight: bold;">${escapeHtml(data.status)}</td></tr>
-          ${data.notes ? `<tr><td style="padding: 10px; border: 1px solid #e2e8f0;"><strong>Keterangan:</strong></td><td style="padding: 10px; border: 1px solid #e2e8f0;">${escapeHtml(data.notes)}</td></tr>` : ''}
-        </table>
-        <p style="margin-top: 24px;">Salam,<br/><strong>Tim Kesiswaan Cipansor</strong></p>
-        `
-      ),
+      renderEmailLayout({
+        title: 'Laporan kehadiran santri',
+        preheader: `${data.studentName} tercatat ${data.status} pada ${data.date}.`,
+        bodyHtml:
+          emailHeading('Laporan kehadiran santri') +
+          emailParagraph(`Yth. Bapak/Ibu <strong>${escapeHtml(data.parentName)}</strong>,`) +
+          emailParagraph('Berikut status kehadiran putra/putri Bapak/Ibu.') +
+          emailPanel([
+            ['Nama santri', escapeHtml(data.studentName)],
+            ['Tanggal', escapeHtml(data.date)],
+            ['Status', escapeHtml(data.status)],
+            ...(data.notes
+              ? ([['Keterangan', escapeHtml(data.notes)]] as Array<[string, string]>)
+              : []),
+          ]) +
+          emailSignoff('Bagian Kesiswaan Yayasan Pesantren Cipansor'),
+      }),
   },
 
-  // Permit status update
   permitStatusUpdate: {
-    subject: 'Update Status Izin Santri - Cipansor',
+    subject: 'Status permohonan izin santri',
     html: (data: {
       parentName: string;
       studentName: string;
@@ -253,26 +250,29 @@ const templates = {
       endDate: string;
       notes?: string;
     }) =>
-      renderEmailLayout(
-        'Update Status Perizinan',
-        `
-        <h2 style="color: #1e3a8a; margin-top: 0;">Status Pengajuan Izin Santri</h2>
-        <p>Yth. Bapak/Ibu <strong>${escapeHtml(data.parentName)}</strong>,</p>
-        <p>Permohonan izin pengasuhan/keluar kompleks santri telah diverifikasi dengan status: <span style="background-color: #dbeafe; color: #1e40af; padding: 4px 8px; border-radius: 4px; font-weight: bold;">${escapeHtml(data.status)}</span></p>
-        <table style="width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px;">
-          <tr style="background-color: #f8fafc;"><td style="padding: 10px; border: 1px solid #e2e8f0; width: 35%;"><strong>Nama Santri:</strong></td><td style="padding: 10px; border: 1px solid #e2e8f0;">${escapeHtml(data.studentName)}</td></tr>
-          <tr><td style="padding: 10px; border: 1px solid #e2e8f0;"><strong>Jenis Izin:</strong></td><td style="padding: 10px; border: 1px solid #e2e8f0;">${escapeHtml(data.permitType)}</td></tr>
-          <tr style="background-color: #f8fafc;"><td style="padding: 10px; border: 1px solid #e2e8f0;"><strong>Periode Izin:</strong></td><td style="padding: 10px; border: 1px solid #e2e8f0;">${escapeHtml(data.startDate)} - ${escapeHtml(data.endDate)}</td></tr>
-          ${data.notes ? `<tr><td style="padding: 10px; border: 1px solid #e2e8f0;"><strong>Catatan Pengasuh:</strong></td><td style="padding: 10px; border: 1px solid #e2e8f0;">${escapeHtml(data.notes)}</td></tr>` : ''}
-        </table>
-        <p style="margin-top: 24px;">Salam,<br/><strong>Tim Musyrif & Kesantrian Cipansor</strong></p>
-        `
-      ),
+      renderEmailLayout({
+        title: 'Status permohonan izin santri',
+        preheader: `Permohonan izin ${data.studentName} berstatus ${data.status}.`,
+        bodyHtml:
+          emailHeading('Status permohonan izin santri') +
+          emailParagraph(`Yth. Bapak/Ibu <strong>${escapeHtml(data.parentName)}</strong>,`) +
+          emailParagraph(
+            `Permohonan izin santri telah diverifikasi dengan status <strong style="color:${BRAND.greenDeep};">${escapeHtml(data.status)}</strong>.`
+          ) +
+          emailPanel([
+            ['Nama santri', escapeHtml(data.studentName)],
+            ['Jenis izin', escapeHtml(data.permitType)],
+            ['Periode', `${escapeHtml(data.startDate)} &ndash; ${escapeHtml(data.endDate)}`],
+            ...(data.notes
+              ? ([['Catatan pengasuh', escapeHtml(data.notes)]] as Array<[string, string]>)
+              : []),
+          ]) +
+          emailSignoff('Bagian Kesantrian Yayasan Pesantren Cipansor'),
+      }),
   },
 
-  // Tahfidz Progress Update (Report Setoran Hafalan)
   tahfidzProgress: {
-    subject: 'Laporan Perkembangan Tahfidz Santri - Cipansor',
+    subject: 'Laporan perkembangan tahfidz',
     html: (data: {
       parentName: string;
       studentName: string;
@@ -283,48 +283,50 @@ const templates = {
       teacherName: string;
       date: string;
     }) =>
-      renderEmailLayout(
-        'Laporan Tahfidz Al-Qur\'an',
-        `
-        <h2 style="color: #047857; margin-top: 0;">Laporan Setoran & Capaian Tahfidz</h2>
-        <p>Yth. Bapak/Ibu <strong>${escapeHtml(data.parentName)}</strong>,</p>
-        <p>Alhamdulillah, berikut perkembangan hafalan Al-Qur'an putra/putri Anda:</p>
-        <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 16px; margin: 16px 0;">
-          <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
-            <tr><td style="padding: 6px 0; color: #166534;"><strong>Nama Santri:</strong></td><td style="padding: 6px 0; text-align: right; color: #166534;">${escapeHtml(data.studentName)}</td></tr>
-            <tr><td style="padding: 6px 0; color: #166534;"><strong>Surah / Ayat:</strong></td><td style="padding: 6px 0; text-align: right; color: #166534;">${escapeHtml(data.surah)} (${escapeHtml(data.verses)})</td></tr>
-            <tr><td style="padding: 6px 0; color: #166534;"><strong>Juz:</strong></td><td style="padding: 6px 0; text-align: right; color: #166534;">Juz ${data.juz}</td></tr>
-            <tr><td style="padding: 6px 0; color: #166534;"><strong>Nilai Kelancaran:</strong></td><td style="padding: 6px 0; text-align: right; color: #166534; font-weight: bold;">${escapeHtml(data.grade)}</td></tr>
-            <tr><td style="padding: 6px 0; color: #166534;"><strong>Pengampu / Ustadz:</strong></td><td style="padding: 6px 0; text-align: right; color: #166534;">${escapeHtml(data.teacherName)}</td></tr>
-            <tr><td style="padding: 6px 0; color: #166534;"><strong>Tanggal Setoran:</strong></td><td style="padding: 6px 0; text-align: right; color: #166534;">${escapeHtml(data.date)}</td></tr>
-          </table>
-        </div>
-        <p>Semoga ananda istiqomah dan senantiasa diberkahi Al-Qur'an.</p>
-        <p style="margin-top: 24px;">Jazakumullah Khairan,<br/><strong>Lembaga Tahfidz Qur'an Cipansor</strong></p>
-        `
-      ),
+      renderEmailLayout({
+        title: 'Laporan perkembangan tahfidz',
+        preheader: `${data.studentName} menyetorkan ${data.surah} (${data.verses}) dengan nilai ${data.grade}.`,
+        bodyHtml:
+          emailHeading('Laporan perkembangan tahfidz') +
+          emailParagraph(`Yth. Bapak/Ibu <strong>${escapeHtml(data.parentName)}</strong>,`) +
+          emailParagraph(
+            'Berikut catatan setoran hafalan Al-Qur&rsquo;an putra/putri Bapak/Ibu.'
+          ) +
+          emailPanel([
+            ['Nama santri', escapeHtml(data.studentName)],
+            ['Surah / ayat', `${escapeHtml(data.surah)} (${escapeHtml(data.verses)})`],
+            ['Juz', `Juz ${data.juz}`],
+            [
+              'Nilai kelancaran',
+              `<span style="color:${BRAND.greenDeep};">${escapeHtml(data.grade)}</span>`,
+            ],
+            ['Pengampu', escapeHtml(data.teacherName)],
+            ['Tanggal setoran', escapeHtml(data.date)],
+          ]) +
+          emailParagraph('Semoga ananda istiqamah dan senantiasa diberkahi Al-Qur&rsquo;an.') +
+          emailSignoff('Lembaga Tahfidz Qur&rsquo;an Cipansor'),
+      }),
   },
 
-  // General announcement
   announcement: {
-    subject: '[Pengumuman Resmi] {title} - Cipansor',
+    subject: '[Pengumuman] {title}',
     html: (data: { title: string; content: string; priority: string }) =>
-      renderEmailLayout(
-        escapeHtml(data.title),
-        `
-        ${data.priority === 'HIGH' ? '<div style="background-color: #dc2626; color: white; padding: 8px 12px; text-align: center; font-weight: bold; border-radius: 4px; margin-bottom: 16px;">PENGUMUMAN PENTING</div>' : ''}
-        <h2 style="color: #1e3a8a; margin-top: 0;">${escapeHtml(data.title)}</h2>
-        <!--
-          The white-space: pre-line below is load-bearing, not decoration.
-          Announcement bodies are typed into a textarea, so they are plain text
-          carrying real newlines; escaped and dropped into ordinary HTML they
-          collapse, and a pengumuman written in four paragraphs arrives as one
-          block.
-        -->
-        <div style="line-height: 1.6; margin: 16px 0; white-space: pre-line;">${escapeHtml(data.content)}</div>
-        <p style="margin-top: 24px;">Salam,<br/><strong>Pengurus Yayasan Pesantren Cipansor</strong></p>
-        `
-      ),
+      renderEmailLayout({
+        title: data.title,
+        preheader: data.content.replace(/\s+/g, ' ').slice(0, 140),
+        bodyHtml:
+          (data.priority === 'HIGH'
+            ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 16px 0;"><tr><td style="background-color:${BRAND.red};padding:6px 12px;border-radius:4px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:11px;font-weight:700;letter-spacing:0.8px;color:#ffffff;">PENGUMUMAN PENTING</td></tr></table>`
+            : '') +
+          emailHeading(data.title) +
+          // The white-space: pre-line below is load-bearing, not decoration.
+          // Announcement bodies are typed into a textarea, so they are plain
+          // text carrying real newlines; escaped and dropped into ordinary HTML
+          // they collapse, and a pengumuman written in four paragraphs arrives
+          // as one block.
+          `<div style="margin:0 0 14px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.65;color:${BRAND.ink};white-space:pre-line;">${escapeHtml(data.content)}</div>` +
+          emailSignoff('Pengurus Yayasan Pesantren Cipansor'),
+      }),
   },
 };
 
@@ -552,6 +554,11 @@ class NotificationService {
         to: recipientEmail,
         subject,
         html: htmlContent,
+        // The lambang rides along as an inline part. Sent as a hosted URL it
+        // would be blocked by default in Outlook and in Gmail's ask-first mode
+        // — precisely the readers who most need to see at a glance that this is
+        // the yayasan writing to them, not someone impersonating it.
+        attachments: [emailLogoAttachment()],
       });
 
       // `delivered` distinguishes a real send from the log-only transport. The

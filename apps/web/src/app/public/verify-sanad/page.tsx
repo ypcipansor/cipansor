@@ -1,6 +1,10 @@
 "use client";
 
 import { useState, Suspense } from "react";
+import {
+  TurnstileWidget,
+  useTurnstile,
+} from "@/components/security/turnstile-widget";
 import { useSearchParams } from "next/navigation";
 import {
   CheckCircle,
@@ -53,10 +57,12 @@ function VerifySanadContent() {
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<VerificationResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const turnstile = useTurnstile();
 
   const handleVerify = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!code.trim()) return;
+    if (!turnstile.ready) return;
 
     setIsLoading(true);
     setError(null);
@@ -65,7 +71,10 @@ function VerifySanadContent() {
     try {
       const response = await api.post<{ data: VerificationResult }>(
         "/sanad/verify",
-        { certificateNumber: code.trim() },
+        {
+          certificateNumber: code.trim(),
+          turnstileToken: turnstile.token ?? undefined,
+        },
       );
       const verification = response.data.data;
       if (verification.valid) {
@@ -134,14 +143,18 @@ function VerifySanadContent() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleVerify} className="flex gap-2">
+          <form onSubmit={handleVerify} className="space-y-3">
+            <div className="flex gap-2">
             <Input
               placeholder="Contoh: SANAD-202601-A1B2C3D4"
               value={code}
               onChange={(e) => setCode(e.target.value)}
               className="flex-1"
             />
-            <Button type="submit" disabled={isLoading || !code.trim()}>
+            <Button
+              type="submit"
+              disabled={isLoading || !code.trim() || !turnstile.ready}
+            >
               {isLoading ? (
                 "Mengecek..."
               ) : (
@@ -151,6 +164,9 @@ function VerifySanadContent() {
                 </>
               )}
             </Button>
+            </div>
+
+            <TurnstileWidget action="verify-sanad" {...turnstile.widgetProps} />
           </form>
 
           {error && (

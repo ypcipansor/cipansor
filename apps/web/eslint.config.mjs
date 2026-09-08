@@ -26,6 +26,12 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     "playwright-report/**",
     "test-results/**",
+    // Build output kept aside by hand during a deploy. `.next/**` is ignored
+    // above, but a rollback copy under another name is not — and eslint reads
+    // no `.gitignore`, so a developer who has one gets hundreds of errors from
+    // generated bundles that CI, on a fresh checkout, never sees. Local lint
+    // has to agree with CI's to be worth running.
+    ".next.bak/**",
   ]),
 ]);
 

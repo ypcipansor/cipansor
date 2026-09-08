@@ -52,18 +52,17 @@ const publicPrefixes = [
   "/wakaf-infaq",
   "/kontak",
   /**
-   * The page a letter's QR opens.
+   * The path a letter's printed QR used to open.
    *
-   * It is scanned by people who have no account here — a dinas office, a wali
-   * santri, a prospective partner — so putting it behind the login wall makes
-   * the whole e-sign feature unreachable by exactly the people it exists for.
-   * The API side was already public (esign.routes.ts registers /verify/:token
-   * before `authenticate`); this was the half that was missed, and the effect
-   * was a QR that led to a login form.
+   * The page itself is gone: a token attests that *some* letter was signed,
+   * never that the document in your hand is that letter, so a forger could keep
+   * the genuine QR and edit the body while the page still answered that the
+   * letter was valid. Verification now means uploading the PDF itself at
+   * /public/verify-letter, and next.config.ts 308s this path there.
    *
-   * What is protected here is not access but the answer: `verifyByToken` never
-   * returns the letter body, and returns the perihal only for a letter of
-   * nature Biasa.
+   * The prefix stays public because the redirect must reach people who have no
+   * account here — a dinas office, a wali santri — and the letters carrying the
+   * old URL are already on paper.
    */
   "/verifikasi",
 ];

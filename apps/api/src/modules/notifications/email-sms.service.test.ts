@@ -72,10 +72,27 @@ describe('NotificationService email dispatch', () => {
     expect(deliverEmailMock).toHaveBeenCalledWith(
       expect.objectContaining({
         to: 'santri@cipansor.or.id',
-        subject: 'Selamat Datang di Cipansor',
+        subject: 'Akun Anda di Sistem Cipansor sudah aktif',
         html: expect.stringContaining('Ahmad Santri'),
       }),
     );
+
+    /**
+     * The lambang travels with the message, and the HTML points at it.
+     *
+     * Sent as a hosted URL it is blocked by default in Outlook and in Gmail's
+     * ask-first mode, so the reader who most needs to recognise the yayasan at
+     * a glance sees a broken box instead. This pins the inline part and the
+     * `cid:` reference together — either alone is a header with no crest.
+     */
+    const sent = deliverEmailMock.mock.calls[0][0] as {
+      html: string;
+      attachments?: Array<{ cid?: string; contentType: string }>;
+    };
+    expect(sent.html).toContain('cid:lambang-cipansor');
+    expect(sent.attachments).toEqual([
+      expect.objectContaining({ cid: 'lambang-cipansor', contentType: 'image/png' }),
+    ]);
   });
 
   it('reports delivered:false when the transport only logged the message', async () => {
@@ -222,8 +239,9 @@ describe('email templates', () => {
     });
 
     // Without `white-space: pre-line` the two lines run together, which is what
-    // every announcement e-mail did.
-    expect(html).toContain('white-space: pre-line');
+    // every announcement e-mail did. Matched loosely on purpose: the property
+    // is what matters, not whether the generator puts a space after the colon.
+    expect(html).toMatch(/white-space:\s*pre-line/);
     expect(html).toContain('Baris pertama.\n\nBaris kedua.');
   });
 

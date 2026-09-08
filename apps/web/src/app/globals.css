@@ -129,6 +129,46 @@
     @apply bg-gradient-to-b from-sidebar to-sidebar/95;
   }
 
+  /* Bilah gulir bawaan peramban, ditipiskan.
+     Dipakai menu sidebar setelah `ScrollArea` Radix dilepas dari sana: di
+     build produksi, posisi ibu jarinya hanya ditulis SEKALI per sesi gulir,
+     jadi ia selalu tertinggal satu putaran roda dan menyusul dengan meloncat.
+     Yang digambar peramban tidak bisa tertinggal dari yang digulirnya. */
+  /* Bilah gulir bawaan yang tipis, dipakai di menu sidebar.
+
+     Bilah bawaan memakan lebar dari kotak konten — tidak seperti bilah Radix
+     yang melayang di atasnya — jadi menggantinya menyempitkan teks menu.
+     Diukur pada menu super admin: label terpanjang ("Perencanaan & Tata
+     Kelola") butuh lebar konten >= 223px, sementara `px-3` hanya menyisakan
+     221px dan label itu pecah jadi dua baris. Itu sebabnya padding kanannya
+     `pr-1`, bukan `pr-3`: sisanya jadi 229px.
+
+     Catatan yang mudah salah: di Chromium modern `scrollbar-width` menang atas
+     `::-webkit-scrollbar`, jadi lebar 8px di bawah ini TIDAK berlaku di sana —
+     terukur tetap 10px. Aturan webkit-nya disimpan untuk Safari lama dan
+     Chromium lama, bukan sebagai pengatur lebar yang bisa diandalkan. Kalau
+     mengubah padding di sini, ukur ulang; jangan hitung dari angka 8px itu.
+
+     `scrollbar-gutter: stable` menahan ruangnya walau isinya sedang tidak
+     meluber, supaya menu peran yang pendek tidak bergeser dari yang panjang. */
+  .thin-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+    scrollbar-gutter: stable;
+  }
+  .thin-scrollbar::-webkit-scrollbar {
+    width: 8px;
+  }
+  .thin-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .thin-scrollbar::-webkit-scrollbar-thumb {
+    background-color: var(--border);
+    border: 2px solid transparent;
+    border-radius: 9999px;
+    background-clip: content-box;
+  }
+
   .active-glow {
     @apply relative after:absolute after:left-0 after:top-1/4 after:h-1/2 after:w-1 after:bg-primary after:rounded-r-full after:shadow-[0_0_10px_oklch(var(--primary))];
   }
