@@ -58,6 +58,23 @@ const nextConfig: NextConfig = {
         destination: "/wakaf-infaq",
         permanent: true,
       },
+      // Letters already in circulation carry a QR printed when verification
+      // still lived at /verifikasi/<token>. That page was removed deliberately
+      // — a token attests that some letter was signed, never that the document
+      // in your hand is that letter, so a forger could keep the genuine QR and
+      // edit the body. The redirect does not verify anything; it just stops a
+      // printed letter from dead-ending, and sends the reader to the upload
+      // form that does bind to the document.
+      {
+        source: "/verifikasi/:token",
+        destination: "/public/verify-letter",
+        permanent: true,
+      },
+      {
+        source: "/verifikasi",
+        destination: "/public/verify-letter",
+        permanent: true,
+      },
     ];
   },
 

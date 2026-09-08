@@ -19,6 +19,10 @@ import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
+import {
+  TurnstileWidget,
+  useTurnstile,
+} from "@/components/security/turnstile-widget";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
@@ -64,6 +68,7 @@ function ResetPasswordForm() {
 
   const [showPassword, setShowPassword] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
+  const turnstile = useTurnstile();
 
   const {
     register,
@@ -77,6 +82,7 @@ function ResetPasswordForm() {
       await authService.confirmPasswordReset({
         token,
         newPassword: values.newPassword,
+        turnstileToken: turnstile.token ?? undefined,
       });
       toast.success("Password berhasil diperbarui. Silakan masuk.");
       router.push("/login");
@@ -86,6 +92,8 @@ function ResetPasswordForm() {
       setFailure(
         "Tautan ini tidak valid atau sudah kedaluwarsa. Silakan hubungi admin untuk dikirimkan tautan baru.",
       );
+      // Token sekali pakai: percobaan berikutnya butuh tantangan baru.
+      turnstile.refresh();
     }
   };
 
@@ -162,7 +170,13 @@ function ResetPasswordForm() {
         )}
       </div>
 
-      <Button type="submit" className="w-full" disabled={isSubmitting}>
+      <TurnstileWidget action="reset-password" {...turnstile.widgetProps} />
+
+      <Button
+        type="submit"
+        className="w-full"
+        disabled={isSubmitting || !turnstile.ready}
+      >
         {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
         Simpan password baru
       </Button>

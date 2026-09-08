@@ -92,17 +92,6 @@ export function errorHandler(error: Error, req: Request, res: Response, next: Ne
     });
   }
 
-  // Handle Workflow errors (WorkflowError -> 409 Conflict)
-  if (error.name === 'WorkflowError') {
-    return res.status(409).json({
-      success: false,
-      error: {
-        code: ErrorCode.CONFLICT,
-        message: error.message,
-      },
-    });
-  }
-
   // Handle Zod validation errors
   if (error instanceof ZodError) {
     const details = error.issues.map((e) => ({
@@ -137,6 +126,34 @@ export function errorHandler(error: Error, req: Request, res: Response, next: Ne
       error: {
         code: ErrorCode.UNAUTHORIZED,
         message: 'Token expired',
+      },
+    });
+  }
+
+  /**
+   * Aturan alur surat menolak dengan alasannya sendiri — dan alasan itu harus
+   * sampai kepada petugasnya.
+   *
+   * `utils/letter-workflow.ts` sengaja melempar, bukan mengembalikan boolean,
+   * supaya "belum giliran Anda, menunggu verifikator urutan 2" berbeda dari
+   * "surat ini sudah ditandatangani". Tanpa cabang ini keduanya jatuh ke
+   * penanganan galat umum di bawah, yang di produksi menjawab 500 "Internal
+   * server error": setiap penolakan alur yang wajar terbaca sebagai kerusakan
+   * server, dan kalimat yang ditulis untuk menjelaskannya dibuang tepat
+   * sebelum dibaca.
+   *
+   * 409, bukan 400: permintaannya sendiri sah, keadaan suratlah yang belum
+   * mengizinkannya.
+   *
+   * Dikenali lewat `name`, seperti galat JWT di atas, agar middleware ini
+   * tidak perlu mengimpor modul alur surat.
+   */
+  if (error.name === 'WorkflowError') {
+    return res.status(409).json({
+      success: false,
+      error: {
+        code: ErrorCode.CONFLICT,
+        message: error.message,
       },
     });
   }

@@ -18,6 +18,7 @@
     "db:migrate": "prisma migrate dev --config prisma/prisma.config.ts",
     "db:deploy": "prisma migrate deploy --config prisma/prisma.config.ts",
     "db:seed": "tsx prisma/seed.ts",
+    "db:archive-letters": "tsx prisma/scripts/archive-signed-letters.ts",
     "db:studio": "prisma studio --config prisma/prisma.config.ts",
     "chatbot:eval": "tsx src/modules/chatbot/eval/run.ts"
   },
@@ -47,6 +48,7 @@
     "node-cron": "^4.6.0",
     "nodemailer": "9.0.6",
     "otplib": "13.5.0",
+    "pdf-lib": "^1.17.1",
     "pg": "8.23.0",
     "qrcode": "^1.5.4",
     "socket.io": "^4.7.5",

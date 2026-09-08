@@ -3,7 +3,7 @@ import fs from "fs";
 import path from "path";
 
 /**
- * Every in-app `href` must resolve to a real page.
+ * Every in-app navigation target must resolve to a real page.
  *
  * `rbac.test.ts` already asserts this for sidebar links. It does not cover the
  * links inside page bodies — buttons, table row actions, breadcrumbs — and
@@ -57,6 +57,44 @@ const KNOWN_MISSING = new Set([
   "/takhosus/enrollment/X/edit",
   "/takhosus/halaqoh/X/edit",
   "/takhosus/murojaah",
+
+  /**
+   * Revealed when this scanner was widened from `href=` to `router.push` —
+   * pre-existing gaps, not new breakage. None of them is in e-office: the one
+   * that was (`/e-office/archive`, on the module's own landing page) is a page
+   * now, not a list entry.
+   *
+   * Worth reading as a group rather than a list. Thirteen of them are
+   * `/paud/...` targets pushed from pages that live under `/tk/...` — a whole
+   * module navigating to a route tree that does not exist under that name.
+   */
+  "/attendance/create",
+  "/certificates/X/edit",
+  "/ibadah/bulk",
+  "/paud/assessment",
+  "/paud/assessment/X",
+  "/paud/assessment/X/edit",
+  "/paud/daily-reports",
+  "/paud/daily-reports/X",
+  "/paud/daily-reports/X/edit",
+  "/paud/daily-reports/check-in",
+  "/paud/daily-reports/new",
+  "/paud/reports",
+  "/paud/reports/X",
+  "/paud/reports/X/edit",
+  "/paud/reports/generate",
+  "/paud/reports/new",
+  "/pkg/X",
+  "/portfolio/X",
+  "/student/X",
+  "/student/X/takhosus",
+  "/tahfidz/murojaah/X/edit",
+  "/tahfidz/murojaah/X/mistakes",
+  "/tahfidz/murojaah/X/review",
+  "/tahfidz/sanad/X",
+  "/tahfidz/sanad/X/edit",
+  "/tahfidz/simaan/X/score",
+  "/tahfidz/simaan/X/start",
 ]);
 
 /** Every route the App Router actually serves. */
@@ -106,10 +144,20 @@ function collectHrefs(dir: string): Map<string, Set<string>> {
       if (!/\.tsx?$/.test(entry.name) || /\.test\.tsx?$/.test(entry.name)) continue;
 
       const source = fs.readFileSync(full, "utf8");
-      const pattern = /href=(?:"([^"]+)"|\{`([^`]+)`\})/g;
+      /**
+       * `href=` was the only thing scanned, and it is not the only way this app
+       * navigates.
+       *
+       * The e-office dashboard sent people to `/e-office/archive` with
+       * `router.push`, and that page had never been built: a 404 on a tile of
+       * the module's own landing page, invisible to this test for as long as it
+       * existed. `router.replace` and `redirect()` navigate just as really.
+       */
+      const pattern =
+        /(?:href=|router\.(?:push|replace)\(|\bredirect\()\s*(?:"([^"]+)"|`([^`]+)`|\{`([^`]+)`\})/g;
       let match: RegExpExecArray | null;
       while ((match = pattern.exec(source))) {
-        let href = (match[1] ?? match[2]).replace(/\$\{[^}]*\}/g, "X");
+        let href = (match[1] ?? match[2] ?? match[3]).replace(/\$\{[^}]*\}/g, "X");
         if (!href.startsWith("/")) continue;
         href = href.split("?")[0].split("#")[0].replace(/\/$/, "") || "/";
         // Static assets and API calls are not App Router pages.
@@ -131,6 +179,22 @@ describe("in-app links", () => {
   it("finds the App Router pages and the links between them", () => {
     expect(routes.size).toBeGreaterThan(300);
     expect(hrefs.size).toBeGreaterThan(200);
+  });
+
+  /**
+   * Proves the scanner reads programmatic navigation, not only `href`. Without
+   * this, widening the pattern could silently regress to href-only and the test
+   * above would still pass.
+   */
+  it("scans router.push targets, not only href attributes", () => {
+    expect(hrefs.has("/e-office/create")).toBe(true);
+    const fromPush = [...hrefs.entries()].filter(([href, files]) =>
+      [...files].some((f) => {
+        const source = fs.readFileSync(path.join(WEB_SRC, f), "utf8");
+        return new RegExp(`router\\.push\\(\\s*["\`]${href}`).test(source);
+      }),
+    );
+    expect(fromPush.length).toBeGreaterThan(0);
   });
 
   it("has no dead link that is not already a known gap", () => {

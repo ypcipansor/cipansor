@@ -52,6 +52,31 @@ export interface DeliverEmailInput {
   html: string;
   /** Optional plain-text part. Derived from `html` when omitted. */
   text?: string;
+  /**
+   * Alamat yang dituju ketika penerima menekan Balas. Bawaannya
+   * `config.mail.replyTo` (halo@), yang benar untuk hampir semua surat kita.
+   *
+   * Yang membutuhkan penggantinya: surat yang KAMI kirim ke halo@ atas nama
+   * orang lain — penerusan pertanyaan dari asisten AI. Di sana balasan harus
+   * jatuh ke penanyanya, bukan kembali ke kotak masuk yang sama; tanpa ini,
+   * petugas yang menekan Balas mengirim surat kepada dirinya sendiri dan orang
+   * yang bertanya tidak pernah mendapat jawaban.
+   */
+  replyTo?: string;
+  /**
+   * Inline parts the HTML refers to by `cid:`.
+   *
+   * The lambang travels this way rather than as a hosted URL: Outlook and
+   * Gmail's "ask before displaying" mode block remote images by default, and a
+   * `data:` URI is stripped outright — so an attached part is the only form
+   * that renders for everyone without them having to click anything.
+   */
+  attachments?: Array<{
+    filename: string;
+    content: Buffer;
+    contentType: string;
+    cid?: string;
+  }>;
 }
 
 export interface DeliverEmailResult {
@@ -139,11 +164,12 @@ async function composeRawMessage(input: DeliverEmailInput): Promise<Buffer> {
 
   const info = await composer.sendMail({
     from: config.mail.from,
-    replyTo: config.mail.replyTo,
+    replyTo: input.replyTo ?? config.mail.replyTo,
     to: input.to,
     subject: input.subject,
     html: input.html,
     text: input.text ?? htmlToText(input.html),
+    attachments: input.attachments,
   });
 
   return info.message as Buffer;
@@ -260,11 +286,12 @@ async function sendViaGmailApi(input: DeliverEmailInput): Promise<DeliverEmailRe
 async function sendViaSmtp(input: DeliverEmailInput): Promise<DeliverEmailResult> {
   const info = await getSmtpTransporter().sendMail({
     from: config.mail.from,
-    replyTo: config.mail.replyTo,
+    replyTo: input.replyTo ?? config.mail.replyTo,
     to: input.to,
     subject: input.subject,
     html: input.html,
     text: input.text ?? htmlToText(input.html),
+    attachments: input.attachments,
   });
 
   return { kind: 'smtp', delivered: true, messageId: info.messageId };
