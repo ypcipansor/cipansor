@@ -86,27 +86,37 @@ test.describe('Public Card Verification, Raport Merdeka & E-Office Edit Letter F
     await expect(page.locator('h1')).toContainText('Verifikasi Kartu Santri / Pelajar');
 
     const input = page.locator('input[placeholder*="cipansor://"]');
+    const verifyButton = page.locator('button:has-text("Verifikasi")');
     await expect(input).toBeVisible();
 
+    // On WebKit/Safari, Playwright `fill` on a React 19 controlled input does
+    // not reliably fire the synthetic `onChange`, so the submit button stays
+    // disabled (the previous no-wait click raced this and flaked exactly on
+    // webkit/mobile-safari). Type the value keystroke-by-keystroke (genuine
+    // user input → onChange fires on every engine) and wait for enable.
+    const fillAndSubmit = async (value: string) => {
+      await input.fill('');
+      await input.pressSequentially(value);
+      await expect(verifyButton).toBeEnabled();
+      await verifyButton.click();
+    };
+
     // 1. Invalid (tampered) QR is rejected.
-    await input.fill('cipansor://invaliddata#1234567890123456');
-    await page.click('button:has-text("Verifikasi")');
+    await fillAndSubmit('cipansor://invaliddata#1234567890123456');
     await expect(page.locator('text=Verifikasi Gagal / Tidak Valid')).toBeVisible();
 
     // 2. A short legacy 8-char hash is rejected, never silently accepted.
     const legacyQr = `${Buffer.from(
       JSON.stringify({ sid: 'x', nis: 'y', exp: Date.now() + 100000 }),
     ).toString('base64url')}#abcdef12`;
-    await input.fill(`cipansor://${legacyQr}`);
-    await page.click('button:has-text("Verifikasi")');
+    await fillAndSubmit(`cipansor://${legacyQr}`);
     await expect(page.locator('text=Verifikasi Gagal / Tidak Valid')).toBeVisible();
 
     // 3. A real, HMAC-signed card for an existing seeded student verifies.
     const session = await loginAs(page, 'superAdmin');
     const student = await fetchFirstStudent(session);
     const validQr = generateRealHMACQrCode(student);
-    await input.fill(validQr);
-    await page.click('button:has-text("Verifikasi")');
+    await fillAndSubmit(validQr);
 
     await expect(page.locator('text=Kartu Santri Resmi & Terverifikasi')).toBeVisible();
     await expect(page.locator(`text=${student.nis}`)).toBeVisible();
