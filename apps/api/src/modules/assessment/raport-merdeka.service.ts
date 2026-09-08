@@ -867,7 +867,12 @@ export class RaportMerdekaService {
     }
 
     if (user && user.role !== 'SUPER_ADMIN' && user.roleCode !== 'SUPER_ADMIN') {
-      if (user.unitId && classInfo.unitId !== user.unitId) {
+      // An empty `unitId` is treated as cross-unit — the same rule as
+      // `validateStudentScope` for the individual endpoint. A user without a
+      // unit of their own must NOT get a free pass into a class raport across
+      // units; they can only open it with an educator/admin assignment.
+      const isCrossUnit = !user.unitId || classInfo.unitId !== user.unitId;
+      if (isCrossUnit) {
         const userId = user.id || user.sub;
         const now = new Date();
         const userRoleInUnit = await prisma.userRoleAssignment.findFirst({

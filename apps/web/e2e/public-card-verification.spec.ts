@@ -1,46 +1,7 @@
 import { test, expect } from './fixtures/auth.fixture';
 import { loginAs, apiRequest, apiLogin } from './helpers/auth-api';
-import crypto from 'crypto';
 
 type ApiSession = Awaited<ReturnType<typeof apiLogin>>;
-
-/**
- * Mirror the API's own secret resolution (see `resolveStudentCardHmacSecret`):
- * student cards are signed with a DEDICATED `STUDENT_CARD_HMAC_SECRET`, never
- * the JWT secret. Rotating session credentials must not invalidate printed
- * cards, and a test that falls back to JWT_SECRET would sign a QR the API
- * rejects.
- */
-function resolveCardHmacSecret(): string {
-  return (
-    process.env.STUDENT_CARD_HMAC_SECRET ||
-    'dev-student-card-hmac-secret-not-for-production'
-  );
-}
-
-/**
- * Build a real, HMAC-signed card QR for a student that exists in the seeded DB.
- *
- * The payload mirrors the production service: only `sid`, `nis` and `exp` are
- * encoded (no nisn/uid) — a leaner payload keeps the QR symbol order low enough
- * for a phone camera to read a printed card.
- */
-function generateRealHMACQrCode(student: { id: string; nis: string }): string {
-  const payload = {
-    sid: student.id,
-    nis: student.nis,
-    exp: Date.now() + 86400000 * 365,
-  };
-  const payloadString = JSON.stringify(payload);
-  const hmacSignature = crypto
-    .createHmac('sha256', resolveCardHmacSecret())
-    .update(payloadString)
-    .digest('hex')
-    .substring(0, 16);
-
-  const base64Payload = Buffer.from(payloadString).toString('base64url');
-  return `cipansor://${base64Payload}#${hmacSignature}`;
-}
 
 async function fetchFirstStudent(session: ApiSession) {
   const res = (await apiRequest(session, 'GET', '/students?limit=1&page=1')) as {
@@ -112,11 +73,26 @@ test.describe('Public Card Verification, Raport Merdeka & E-Office Edit Letter F
     await fillAndSubmit(`cipansor://${legacyQr}`);
     await expect(page.locator('text=Verifikasi Gagal / Tidak Valid')).toBeVisible();
 
-    // 3. A real, HMAC-signed card for an existing seeded student verifies.
+    // 3. A real, HMAC-signed card for an existing seeded student verifies. The
+    //    card is generated through the API so its QR payload embeds a real
+    //    `StudentCardState.id` (cid) — verification refuses a payload without
+    //    the card identifier, so a hand-rolled QR would be rejected.
     const session = await loginAs(page, 'superAdmin');
     const student = await fetchFirstStudent(session);
-    const validQr = generateRealHMACQrCode(student);
-    await fillAndSubmit(validQr);
+    const cardRes = (await apiRequest(session, 'GET', `/students/${student.id}/id-card`)) as {
+      data?: { cardData?: { qrCode?: { data?: string } } };
+    };
+    const validQr = cardRes.data?.cardData?.qrCode?.data;
+    expect(validQr).toBeTruthy();
+    expect(validQr).toMatch(/^cipansor:\/\//);
+    // The generated QR payload must embed the fresh StudentCardState.id (cid),
+    // otherwise verification would (correctly) reject it as an unidentified card.
+    const payloadJson = Buffer.from(
+      validQr!.replace('cipansor://', '').split('#')[0],
+      'base64url',
+    ).toString('utf8');
+    expect(JSON.parse(payloadJson).cid).toBeTruthy();
+    await fillAndSubmit(validQr!);
 
     await expect(page.locator('text=Kartu Santri Resmi & Terverifikasi')).toBeVisible();
     await expect(page.locator(`text=${student.nis}`)).toBeVisible();

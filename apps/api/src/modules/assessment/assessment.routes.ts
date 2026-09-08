@@ -6,6 +6,8 @@ import { P5ProjectController } from './p5-project.controller';
 import { UnifiedRaportController } from './unified-raport.controller';
 import { authenticate, authorize, isTeacherOrAbove } from '@/middleware/auth';
 import { UserRole, RoleCode } from '@prisma/client';
+import { validateQuery } from '@/middleware/error';
+import { raportMerdekaQuerySchema } from '@cipansor/shared';
 
 const router = Router();
 
@@ -918,8 +920,8 @@ router.get('/raport-merdeka/capaian', RaportMerdekaController.getCapaianMapping)
  *       200:
  *         description: Complete Raport Merdeka with intrakurikuler, P5, ekstrakurikuler
  */
-router.get('/raport-merdeka/students/:studentId', isTeacherOrAbove, RaportMerdekaController.generateStudentRaport);
-router.get('/raport-merdeka/students/:studentId/pdf', isTeacherOrAbove, RaportMerdekaController.exportStudentRaportPdf);
+router.get('/raport-merdeka/students/:studentId', isTeacherOrAbove, validateQuery(raportMerdekaQuerySchema), RaportMerdekaController.generateStudentRaport);
+router.get('/raport-merdeka/students/:studentId/pdf', isTeacherOrAbove, validateQuery(raportMerdekaQuerySchema), RaportMerdekaController.exportStudentRaportPdf);
 
 /**
  * @swagger
@@ -950,6 +952,6 @@ router.get('/raport-merdeka/students/:studentId/pdf', isTeacherOrAbove, RaportMe
  *       200:
  *         description: Bulk Raport Merdeka for all students in class
  */
-router.get('/raport-merdeka/classes/:classId', isTeacherOrAbove, RaportMerdekaController.generateClassRaport);
+router.get('/raport-merdeka/classes/:classId', isTeacherOrAbove, validateQuery(raportMerdekaQuerySchema), RaportMerdekaController.generateClassRaport);
 
 export default router;

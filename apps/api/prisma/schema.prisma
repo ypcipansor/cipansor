@@ -7272,6 +7272,7 @@ enum LetterStatus {
 /// Setiap perbuatan yang mengubah perjalanan sebuah surat.
 enum LetterFlowAction {
   CREATED // Surat dicatat/dibuat
+  EDITED // Naskah surat diperbarui/diubah (bukan tindak lanjut disposisi)
   SUBMITTED // Konsep diajukan untuk diverifikasi
   APPROVED // Diparaf/disetujui oleh salah satu verifikator
   SIGNED // Ditandatangani oleh penandatangan akhir

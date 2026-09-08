@@ -74,7 +74,15 @@ export class RaportMerdekaController {
    */
   static generateStudentRaport = asyncHandler(async (req: Request, res: Response) => {
     const { studentId } = req.params;
-    const { academicYearId, semester } = req.query;
+    // `validateQuery(raportMerdekaQuerySchema)` at the route guarantees semester
+    // is exactly 1 or 2 and parks the parsed values here; reading `req.query`
+    // instead would re-parse the raw string and lose that guard (and, for
+    // semester=99, silently produce a Genap raport).
+    const query = (res.locals.validatedQuery || {}) as {
+      academicYearId?: string;
+      semester?: number;
+    };
+    const { academicYearId, semester } = query;
 
     if (!academicYearId || !semester) {
       return res.status(400).json({
@@ -85,8 +93,8 @@ export class RaportMerdekaController {
 
     const raport = await RaportMerdekaService.generateRaportMerdeka(
       studentId,
-      academicYearId as string,
-      parseInt(semester as string, 10),
+      academicYearId,
+      semester,
       requireUser(req)
     );
 
@@ -98,7 +106,11 @@ export class RaportMerdekaController {
    */
   static generateClassRaport = asyncHandler(async (req: Request, res: Response) => {
     const { classId } = req.params;
-    const { academicYearId, semester } = req.query;
+    const query = (res.locals.validatedQuery || {}) as {
+      academicYearId?: string;
+      semester?: number;
+    };
+    const { academicYearId, semester } = query;
 
     if (!academicYearId || !semester) {
       return res.status(400).json({
@@ -109,8 +121,8 @@ export class RaportMerdekaController {
 
     const raports = await RaportMerdekaService.generateBulkRaportMerdeka(
       classId,
-      academicYearId as string,
-      parseInt(semester as string, 10),
+      academicYearId,
+      semester,
       requireUser(req)
     );
 
@@ -122,7 +134,11 @@ export class RaportMerdekaController {
    */
   static exportStudentRaportPdf = asyncHandler(async (req: Request, res: Response) => {
     const { studentId } = req.params;
-    const { academicYearId, semester } = req.query;
+    const query = (res.locals.validatedQuery || {}) as {
+      academicYearId?: string;
+      semester?: number;
+    };
+    const { academicYearId, semester } = query;
 
     if (!academicYearId || !semester) {
       return res.status(400).json({
@@ -133,8 +149,8 @@ export class RaportMerdekaController {
 
     const raportData = await RaportMerdekaService.generateRaportMerdeka(
       studentId,
-      academicYearId as string,
-      parseInt(semester as string, 10),
+      academicYearId,
+      semester,
       requireUser(req)
     );
 

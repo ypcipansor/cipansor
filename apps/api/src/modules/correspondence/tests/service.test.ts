@@ -783,6 +783,40 @@ describe('CorrespondenceService', () => {
       ).rejects.toThrow(/tidak ditemukan atau tidak aktif/);
       expect(prisma.letter.update).not.toHaveBeenCalled();
     });
+    it('records a naskah edit as LetterFlowAction.EDITED, not a disposition action', async () => {
+      vi.mocked(prisma.letter.findUnique).mockResolvedValue({
+        ...draftLetter(),
+        signatures: [],
+        recipients: [],
+        dispositions: [],
+      } as any);
+      vi.mocked(prisma.letter.update).mockResolvedValue({} as any);
+
+      await CorrespondenceService.updateLetter(
+        'letter-edit-1',
+        { subject: 'Judul Baru', content: 'Isi Baru' },
+        'tu-1',
+        adminActor as any
+      );
+
+      expect(prisma.letterFlowEvent.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          letterId: 'letter-edit-1',
+          actorId: 'tu-1',
+          action: 'EDITED',
+          fromStatus: 'DRAFT',
+          toStatus: 'DRAFT',
+          note: 'Naskah surat diperbarui',
+        }),
+      });
+      // The UI labels this as "naskah edit", so it must never be recorded as a
+      // disposition follow-up.
+      expect(prisma.letterFlowEvent.create).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ action: 'DISPOSITION_UPDATED' }),
+        })
+      );
+    });
   });
 
   describe('Resubmit and archive', () => {

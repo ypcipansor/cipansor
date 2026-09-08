@@ -159,6 +159,7 @@ describe('RaportMerdekaController.exportStudentRaportPdf', () => {
     } as any;
 
     const res = {
+      locals: {},
       status: vi.fn().mockReturnThis(),
       json: vi.fn(),
     } as any;
@@ -198,6 +199,7 @@ describe('RaportMerdekaController.exportStudentRaportPdf', () => {
 
     const resHeaders: Record<string, string> = {};
     const res = {
+      locals: { validatedQuery: { academicYearId: 'ay-1', semester: 1 } },
       setHeader: vi.fn((key: string, val: string) => {
         resHeaders[key] = val;
       }),

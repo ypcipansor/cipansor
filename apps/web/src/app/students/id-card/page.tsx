@@ -28,7 +28,7 @@ import { useClasses } from "@/hooks/use-classes";
 import { useUnits } from "@/hooks/use-units";
 import { useRegenerateStudentCards } from "@/hooks/use-regenerate-student-cards";
 import { useAuthStore } from "@/stores/auth";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueries } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import {
   IdCard,
@@ -291,6 +291,15 @@ export default function StudentIDCardPage() {
       return;
     }
 
+    // The print window copies `printRef.current.innerHTML` synchronously, so if
+    // any selected card is still showing its Skeleton (the student-id-card query
+    // has not settled) the printout would capture the placeholder — and a card
+    // with no QR. Wait until every selected card's details are loaded.
+    if (!allCardsReady) {
+      toast.error("Kartu masih dimuat. Tunggu hingga QR code siap, lalu coba cetak lagi.");
+      return;
+    }
+
     const printContent = printRef.current;
     if (!printContent) return;
 
@@ -345,6 +354,27 @@ export default function StudentIDCardPage() {
   const selectedStudentsList = students.filter((s) =>
     selectedStudents.includes(s.id),
   );
+
+  // Prefetch the card details for every selected student so the print action can
+  // be gated on the QR being present. These share the same `student-id-card-*
+  // details` query key as the printed cards, so a prefetched value is what the
+  // card component renders — the print DOM is never captured before the query
+  // settles (which produced a card with an empty QR placeholder).
+  const selectedCardQueries = useQueries({
+    queries: selectedStudentsList.map((student) => ({
+      queryKey: ["student-id-card-details", student.id],
+      queryFn: async () => {
+        const res = await api.get<{ data: StudentIdCardDetail }>(
+          `/students/${student.id}/id-card`,
+        );
+        return res.data.data;
+      },
+      enabled: selectedStudentsList.length > 0,
+    })),
+  });
+  const allCardsReady =
+    selectedStudentsList.length > 0 &&
+    selectedCardQueries.every((q) => q.isSuccess);
 
   const { user } = useAuthStore();
   const regenerateMutation = useRegenerateStudentCards();
@@ -405,7 +435,12 @@ export default function StudentIDCardPage() {
             <Button
               variant="default"
               onClick={handlePrint}
-              disabled={selectedStudents.length === 0}
+              disabled={selectedStudents.length === 0 || !allCardsReady}
+              title={
+                !allCardsReady && selectedStudents.length > 0
+                  ? "Kartu masih dimuat — tunggu hingga QR code siap untuk mencetak"
+                  : undefined
+              }
             >
               <Printer className="h-4 w-4 mr-2" />
               Cetak{" "}

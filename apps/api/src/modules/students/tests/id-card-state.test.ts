@@ -84,6 +84,7 @@ describe('StudentIdCardService.bulkRegenerateActiveCards — state persistence (
 
     expect(prisma.studentCardState.create).toHaveBeenCalledWith({
       data: {
+        id: expect.any(String),
         studentId: 's1',
         cardNumber: 'CARD-S1',
         status: StudentCardStatus.ACTIVE,

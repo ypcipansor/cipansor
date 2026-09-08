@@ -61,8 +61,18 @@ export const createLetterSchema = z.object({
   classificationId: z.string().uuid().optional(),
   agendaNumber: z.string().optional(),
   letterNumber: z.string().optional(),
-  date: z.string(),
-  receivedAt: z.string().optional(),
+  date: z
+    .string()
+    .min(1)
+    .refine((v) => !Number.isNaN(Date.parse(v)), {
+      message: "Tanggal surat tidak sah",
+    }),
+  receivedAt: z
+    .string()
+    .optional()
+    .refine((v) => !v || !Number.isNaN(Date.parse(v)), {
+      message: "Tanggal penerimaan tidak sah",
+    }),
   subject: z.string().min(1),
   content: z.string().optional(),
   fileUrl: z.string().url().optional(),
@@ -156,8 +166,21 @@ export type SubmitLetterSchemaInput = z.infer<typeof submitLetterSchema>;
 export const updateLetterSchema = z.object({
   type: z.nativeEnum(LetterType).optional(),
   classificationId: z.string().uuid().optional().nullable(),
-  date: z.string().optional(),
-  receivedAt: z.string().optional(),
+  // A malformed `date`/`receivedAt` used to reach `new Date(...)` in the
+  // service and surface as a 500. Reject it at the edge as a 400 instead.
+  date: z
+    .string()
+    .min(1)
+    .refine((v) => !Number.isNaN(Date.parse(v)), {
+      message: "Tanggal surat tidak sah",
+    })
+    .optional(),
+  receivedAt: z
+    .string()
+    .optional()
+    .refine((v) => !v || !Number.isNaN(Date.parse(v)), {
+      message: "Tanggal penerimaan tidak sah",
+    }),
   subject: z.string().min(1).optional(),
   content: z.string().optional(),
   fileUrl: z.string().url().optional().nullable(),

@@ -73,19 +73,27 @@ export class StudentIdCardService {
     unitId: string;
     unitName: string;
     validUntil: Date;
+    /** Unique `StudentCardState.id` for this card issuance. */
+    cardId?: string;
   }): string {
     // Create verification payload. Deliberately minimal: only what the verifier
-    // needs (student id, NIS, expiry). The student is re-fetched from the DB on
-    // verification, so nisn/unit are redundant here — and every extra byte
-    // pushes the QR onto a higher symbol order, which is what made the printed
-    // card unscannable (a ~200-byte JSON payload at 64px was under 1.5px per
-    // module). A leaner payload keeps the symbol small so a larger render can
-    // actually be read.
-    const payload = {
+    // needs (student id, NIS, expiry, and the card's audit id). The student is
+    // re-fetched from the DB on verification, so nisn/unit are redundant here —
+    // and every extra byte pushes the QR onto a higher symbol order, which is
+    // what made the printed card unscannable (a ~200-byte JSON payload at 64px
+    // was under 1.5px per module). A leaner payload keeps the symbol small so a
+    // larger render can actually be read.
+    const payload: Record<string, unknown> = {
       sid: studentData.id,
       nis: studentData.nis,
       exp: studentData.validUntil.getTime(),
     };
+    // The card identifier is the key that links a physical card to its
+    // `StudentCardState` audit row, so verification can reject a card that was
+    // REVOKED by a regeneration even before it expires. Without it a card
+    // remains "valid" until its exp claim, which is exactly the hole this
+    // closes.
+    if (studentData.cardId) payload.cid = studentData.cardId;
 
     const payloadString = JSON.stringify(payload);
 
@@ -102,15 +110,21 @@ export class StudentIdCardService {
   }
 
   /**
-   * Verify QR Code data using HMAC-SHA256 signature
+   * Verify QR Code data using HMAC-SHA256 signature.
+   *
+   * In addition to the signature and expiry, the verification consults the
+   * `StudentCardState` audit row identified by the payload's `cid`. This is how
+   * a card that was REVOKED by a regeneration (or has otherwise been
+   * superseded) is rejected even before its encoded `exp` date — otherwise a
+   * physical card that is no longer valid stays scannable for the whole year.
    */
-  static verifyQRCodeData(qrData: string): {
+  static async verifyQRCodeData(qrData: string): Promise<{
     valid: boolean;
     studentId?: string;
     nis?: string;
     expired?: boolean;
     message: string;
-  } {
+  }> {
     try {
       if (!qrData || !qrData.startsWith('cipansor://')) {
         return { valid: false, message: 'Format QR Code tidak valid' };
@@ -123,7 +137,12 @@ export class StudentIdCardService {
       }
 
       const payloadString = Buffer.from(payloadPart, 'base64url').toString('utf8');
-      const payload = JSON.parse(payloadString);
+      const payload = JSON.parse(payloadString) as {
+        sid?: string;
+        nis?: string;
+        exp?: number;
+        cid?: string;
+      };
 
       // Strict 16-character HMAC verification only (reject legacy or non-HMAC QR codes)
       if (receivedHmac.length !== 16) {
@@ -148,13 +167,62 @@ export class StudentIdCardService {
       }
 
       // Check expiry
-      if (payload.exp < Date.now()) {
+      if (payload.exp === undefined || payload.exp < Date.now()) {
         return {
           valid: false,
           studentId: payload.sid,
           nis: payload.nis,
-          expired: true,
+          expired: payload.exp !== undefined,
           message: 'Kartu pelajar sudah kedaluwarsa (expired)',
+        };
+      }
+
+      // Every card must carry its `StudentCardState.id` in the payload so the
+      // audit row can be consulted. Without it there is no way to know whether
+      // this issuance was later revoked by a regeneration.
+      if (!payload.cid) {
+        return {
+          valid: false,
+          studentId: payload.sid,
+          nis: payload.nis,
+          message: 'QR Code tidak valid (identitas kartu tidak ditemukan)',
+        };
+      }
+
+      const cardState = await prisma.studentCardState.findUnique({
+        where: { id: payload.cid },
+      });
+
+      if (!cardState) {
+        return {
+          valid: false,
+          studentId: payload.sid,
+          nis: payload.nis,
+          message: 'Kartu pelajar tidak ditemukan di sistem',
+        };
+      }
+
+      // The card id must belong to the student encoded in the QR, otherwise the
+      // payload and the audit row disagree about who holds the card.
+      if (cardState.studentId !== payload.sid) {
+        return {
+          valid: false,
+          studentId: payload.sid,
+          nis: payload.nis,
+          message: 'QR Code tidak valid (data kartu tidak cocok)',
+        };
+      }
+
+      if (cardState.status !== StudentCardStatus.ACTIVE) {
+        return {
+          valid: false,
+          studentId: payload.sid,
+          nis: payload.nis,
+          expired: cardState.status === StudentCardStatus.EXPIRED,
+          message:
+            cardState.status === StudentCardStatus.EXPIRED
+              ? 'Kartu pelajar sudah kedaluwarsa (expired)'
+              : 'Kartu pelajar sudah tidak berlaku (dicabut/diregenerasi)',
         };
       }
 
@@ -194,9 +262,15 @@ export class StudentIdCardService {
    */
   static async generateIdCard(
     studentId: string,
-    config: Partial<IdCardConfig> = {}
+    config: Partial<IdCardConfig> = {},
+    opts?: { cardStateId?: string; generatedById?: string | null; persistState?: boolean }
   ): Promise<StudentIdCardDetail> {
     const mergedConfig = { ...DEFAULT_CONFIG, ...config };
+    // Each card issuance gets a unique `StudentCardState.id` that the QR payload
+    // embeds, so verification can consult the audit row and reject a card that
+    // was superseded by a regeneration. When `persistState` is false the caller
+    // (bulk regeneration) owns the audit write and supplies the id it will use.
+    const cardStateId = opts?.cardStateId ?? crypto.randomUUID();
 
     // Get student data with relations
     const student = await prisma.student.findUnique({
@@ -276,13 +350,14 @@ export class StudentIdCardService {
       unitId: student.unit.id,
       unitName: student.unit.name,
       validUntil,
+      cardId: cardStateId,
     });
 
     // Build card data
     const currentEnrollment = student.enrollments[0];
     const primaryParent = student.parents[0];
 
-    return {
+    const cardData = {
       config: mergedConfig,
       cardData: {
         // Institution info
@@ -353,6 +428,62 @@ export class StudentIdCardService {
         },
       },
     };
+
+    // Persist the audit row for this issuance (unless the caller — the bulk
+    // regeneration — owns the write and supplies the id). Every generated card
+    // therefore has a `StudentCardState` row keyed by the `cid` in its QR, which
+    // is what verification consults to reject superseded/revoked cards.
+    if (opts?.persistState !== false) {
+      await this.persistCardState(
+        student.id,
+        cardStateId,
+        cardData.cardData.validity.cardNumber,
+        validUntil,
+        opts?.generatedById ?? null
+      );
+    }
+
+    return cardData;
+  }
+
+  /**
+   * Write the `StudentCardState` audit row for a card issuance.
+   *
+   * This is the single write path that keeps the "at most one ACTIVE card per
+   * student" invariant: the previous ACTIVE row (if any) is REVOKED and a fresh
+   * ACTIVE row is created in the same transaction, keyed by the `cardStateId`
+   * embedded in the QR payload.
+   */
+  private static async persistCardState(
+    studentId: string,
+    cardStateId: string,
+    cardNumber: string,
+    validUntil: Date,
+    generatedById: string | null
+  ) {
+    const now = new Date();
+    await prisma.$transaction([
+      prisma.studentCardState.updateMany({
+        where: { studentId, status: StudentCardStatus.ACTIVE },
+        data: {
+          status: StudentCardStatus.REVOKED,
+          revokedAt: now,
+          revokeReason: 'superseded_by_regeneration',
+        },
+      }),
+      prisma.studentCardState.create({
+        data: {
+          id: cardStateId,
+          studentId,
+          cardNumber,
+          status: StudentCardStatus.ACTIVE,
+          issuedAt: now,
+          regeneratedAt: now,
+          validUntil,
+          generatedById,
+        },
+      }),
+    ]);
   }
 
   /**
@@ -420,7 +551,7 @@ export class StudentIdCardService {
    * Validate and lookup student by QR code
    */
   static async validateAndGetStudent(qrData: string) {
-    const verification = this.verifyQRCodeData(qrData);
+    const verification = await this.verifyQRCodeData(qrData);
 
     if (!verification.valid || !verification.studentId) {
       return {
@@ -591,45 +722,54 @@ export class StudentIdCardService {
       select: { id: true },
     });
 
-    const cards = await Promise.all(students.map((student) => this.generateIdCard(student.id)));
+    // Generate a fresh `StudentCardState.id` per student FIRST, so the QR
+    // payload embeds it; the bulk write below then creates the row with that
+    // same id. `persistState: false` tells generateIdCard not to write its own
+    // row — the bulk transaction below owns the audit write so the whole unit
+    // lands atomically.
+    const generatedById = user?.id ?? null;
+    const regeneratedAt = new Date();
+    const cardRows = await Promise.all(
+      students.map(async (student) => {
+        const cardStateId = crypto.randomUUID();
+        const card = await this.generateIdCard(student.id, {}, { cardStateId, persistState: false, generatedById });
+        return { student, cardStateId, card };
+      })
+    );
 
     // Persist an audit trail of the regeneration (Flag 6): one fresh ACTIVE
     // StudentCardState per student, plus a REVOKED marker on any previous
     // ACTIVE row. Both writes land in a single transaction so the "at most one
     // active card per student" invariant and the audit event are all-or-nothing.
-    const generatedById = user?.id ?? null;
-    const regeneratedAt = new Date();
     await prisma.$transaction(
-      students.flatMap((student, idx) => {
-        const card = cards[idx];
-        return [
-          prisma.studentCardState.updateMany({
-            where: { studentId: student.id, status: StudentCardStatus.ACTIVE },
-            data: {
-              status: StudentCardStatus.REVOKED,
-              revokedAt: regeneratedAt,
-              revokeReason: 'superseded_by_regeneration',
-            },
-          }),
-          prisma.studentCardState.create({
-            data: {
-              studentId: student.id,
-              cardNumber: card.cardData.validity.cardNumber,
-              status: StudentCardStatus.ACTIVE,
-              issuedAt: regeneratedAt,
-              regeneratedAt,
-              validUntil: new Date(card.cardData.validity.validUntil),
-              generatedById,
-            },
-          }),
-        ];
-      })
+      cardRows.flatMap(({ student, cardStateId, card }) => [
+        prisma.studentCardState.updateMany({
+          where: { studentId: student.id, status: StudentCardStatus.ACTIVE },
+          data: {
+            status: StudentCardStatus.REVOKED,
+            revokedAt: regeneratedAt,
+            revokeReason: 'superseded_by_regeneration',
+          },
+        }),
+        prisma.studentCardState.create({
+          data: {
+            id: cardStateId,
+            studentId: student.id,
+            cardNumber: card.cardData.validity.cardNumber,
+            status: StudentCardStatus.ACTIVE,
+            issuedAt: regeneratedAt,
+            regeneratedAt,
+            validUntil: new Date(card.cardData.validity.validUntil),
+            generatedById,
+          },
+        }),
+      ])
     );
 
     return {
-      totalRegenerated: cards.length,
+      totalRegenerated: cardRows.length,
       regeneratedAt: regeneratedAt.toISOString(),
-      cards,
+      cards: cardRows.map(({ card }) => card),
     };
   }
 
