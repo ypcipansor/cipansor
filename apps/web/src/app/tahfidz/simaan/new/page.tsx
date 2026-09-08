@@ -71,7 +71,7 @@ const EXAM_TYPES = [
 const simaanSchema = z
   .object({
     studentId: z.string().min(1, "Santri wajib dipilih"),
-    examDate: z.date({ required_error: "Tanggal wajib diisi" }),
+    examDate: z.date({ error: "Tanggal wajib diisi" }),
     examType: z.string().min(1, "Jenis ujian wajib dipilih"),
     startJuz: z.number().min(1).max(30).optional(),
     endJuz: z.number().min(1).max(30).optional(),

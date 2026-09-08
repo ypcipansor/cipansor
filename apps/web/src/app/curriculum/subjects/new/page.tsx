@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Save } from "lucide-react";
 import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import {
@@ -48,7 +48,7 @@ const subjectSchema = z.object({
   name: z.string().min(1, "Nama mata pelajaran wajib diisi"),
   description: z.string().optional(),
   type: z.enum(["REQUIRED", "ELECTIVE", "EXTRACURRICULAR"] as const, {
-    required_error: "Tipe mata pelajaran wajib dipilih",
+    error: "Tipe mata pelajaran wajib dipilih",
   }),
   credits: z.coerce.number().min(1, "Minimal 1 SKS"),
   hoursPerWeek: z.coerce.number().min(1, "Minimal 1 jam per minggu"),

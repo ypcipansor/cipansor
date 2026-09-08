@@ -43,8 +43,8 @@ const academicYearSchema = z
   .object({
     name: z.string().min(1, "Nama tahun ajaran wajib diisi"),
     unitId: z.string().min(1, "Unit wajib dipilih"),
-    startDate: z.date({ required_error: "Tanggal mulai wajib diisi" }),
-    endDate: z.date({ required_error: "Tanggal selesai wajib diisi" }),
+    startDate: z.date({ error: "Tanggal mulai wajib diisi" }),
+    endDate: z.date({ error: "Tanggal selesai wajib diisi" }),
     isActive: z.boolean(),
   })
   .superRefine((data, ctx) => {
