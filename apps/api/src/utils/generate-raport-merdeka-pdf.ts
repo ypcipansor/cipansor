@@ -58,6 +58,10 @@ async function loadUnicodeFont(pdfDoc: PDFDocument): Promise<PDFFont | null> {
  */
 function toSafeText(text: string | null | undefined): string {
   if (!text) return '';
+  // Strip ASCII control chars (C0 + DEL) before collapsing whitespace. The
+  // range must be a literal here so the \x00-\x1F control escapes are
+  // explicit; eslint's no-control-regex flags them, hence the disable.
+  // eslint-disable-next-line no-control-regex
   const normalized = text.normalize('NFD').replace(/[\x00-\x1F\x7F]/g, ' ').replace(/\s+/g, ' ').trim();
   if (unicodeFont) return normalized;
   return normalized.replace(/[^\x20-\x7E\xA0-\xFF]/g, '').trim();
