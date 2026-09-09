@@ -100,6 +100,11 @@ describe('StudentOnboardingOrchestrator', () => {
           create: vi.fn().mockResolvedValue({ id: 'ce-1' }),
           updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         },
+        class: {
+          // `class-1` belongs to `unit-1`, matching the effective unit, so the
+          // enrolment flows through the tenant-isolation check below.
+          findUnique: vi.fn().mockResolvedValue({ id: 'class-1', unitId: 'unit-1' }),
+        },
         medicalRecord: { 
           findFirst: vi.fn().mockResolvedValue(null),
           create: vi.fn().mockResolvedValue({ id: 'med-1' }) 
@@ -404,6 +409,228 @@ describe('StudentOnboardingOrchestrator', () => {
         })
       );
       expect(txMock.studentParent.create).not.toHaveBeenCalled();
+    });
+
+    it('never reuses an existing STUDENT account matched only by unverified registrant email', async () => {
+      // Scenario: a STUDENT user + its Student record already exist, keyed by
+      // email `student@x.com`. A new registrant submits that same email, BUT the
+      // registrant has never proven ownership of it (there is no email-verification
+      // step in this flow). Onboarding must NOT recycle that existing account —
+      // doing so would let the registrant take over the login AND get reassigned
+      // the existing student's Student record via `student.findUnique({ userId })`.
+      //
+      // The existing student account is simulated by having `user.findUnique`
+      // resolve a STUDENT row for the claimed email, and `student.create` produce
+      // a student whose `userId` is the NEW user (never the existing one).
+      const buildTx = (createId: string) => ({
+        registrant: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: `reg-${createId}`,
+            status: 'ACCEPTED',
+            fullName: 'Budi Baru',
+            gender: 'MALE',
+            birthPlace: 'Jakarta',
+            birthDate: new Date('2011-01-01'),
+            address: 'Jl. Tes 456',
+            parentName: 'Ibu Budi',
+            parentPhone: '081233333333',
+            parentEmail: 'ibu@test.com',
+            admissionPeriod: { registrationFee: 0 },
+            registrationFeePaidAt: new Date('2026-07-01'),
+            email: 'student@x.com',
+          }),
+          update: vi.fn().mockResolvedValue({ id: `reg-${createId}` }),
+        },
+        admissionPeriod: { findUnique: vi.fn() },
+        $queryRaw: vi.fn().mockResolvedValue([]),
+        $executeRaw: vi.fn().mockResolvedValue(1),
+        unit: { findUnique: vi.fn().mockResolvedValue({ type: 'SMP_IT' }) },
+        user: {
+          // Existing STUDENT account owns the claimed email.
+          findUnique: vi.fn(({ where }: any) => {
+            if (where.email === 'student@x.com') {
+              return Promise.resolve({ id: 'existing-student-user', role: 'STUDENT' });
+            }
+            return Promise.resolve(null);
+          }),
+          findFirst: vi.fn().mockResolvedValue(null),
+          create: vi.fn()
+            .mockResolvedValueOnce({ id: createId }) // student user
+            .mockResolvedValueOnce({ id: `${createId}-parent`, email: 'ibu@test.com' }), // parent user
+        },
+        role: {
+          findFirst: vi.fn(({ where }: any) => {
+            if (where.code === 'SMPIT_SISWA') return Promise.resolve({ id: 'role-smpit-siswa' });
+            if (where.code === 'SMPIT_ORANG_TUA') return Promise.resolve({ id: 'role-smpit-ortu' });
+            return Promise.resolve(null);
+          }),
+        },
+        userRoleAssignment: {
+          findMany: vi.fn().mockResolvedValue([]),
+          findFirst: vi.fn().mockResolvedValue(null),
+          create: vi.fn().mockResolvedValue({ id: 'ura-1' }),
+        },
+        student: {
+          // The existing student account's record lives under the EXISTING user
+          // id. A fresh user id never resolves one, so a new Student is made.
+          findUnique: vi.fn(({ where }: any) =>
+            Promise.resolve(where.userId === 'existing-student-user' ? { id: 'existing-student' } : null)
+          ),
+          create: vi.fn().mockResolvedValue({ id: `stud-${createId}`, nis: `NIS-${createId}` }),
+        },
+        studentParent: {
+          upsert: vi.fn().mockResolvedValue({ id: 'sp-1' }),
+          create: vi.fn(),
+          findMany: vi.fn().mockResolvedValue([
+            { student: { unitId: 'unit-1', unit: { type: 'SMP_IT' } } },
+          ]),
+        },
+        classEnrollment: { create: vi.fn(), updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+        medicalRecord: {
+          findFirst: vi.fn().mockResolvedValue(null),
+          create: vi.fn().mockResolvedValue({ id: 'med-1' }),
+        },
+        santriWallet: {
+          findUnique: vi.fn().mockResolvedValue(null),
+          create: vi.fn().mockResolvedValue({ id: 'wallet-1' }),
+        },
+      });
+
+      // Two DIFFERENT registrants (different units/NIS) both claim the SAME
+      // existing student's email. Neither may end up inside the existing account.
+      const tx1 = buildTx('user-new-1');
+      vi.mocked(prisma.$transaction).mockImplementation(async (cb: any) => cb(tx1 as any));
+      const run1 = await StudentOnboardingOrchestrator.processEnrollment('reg-1', 'unit-1', 'admin-1');
+
+      const tx2 = buildTx('user-new-2');
+      vi.mocked(prisma.$transaction).mockImplementation(async (cb: any) => cb(tx2 as any));
+      const run2 = await StudentOnboardingOrchestrator.processEnrollment('reg-2', 'unit-1', 'admin-1');
+
+      expect(run1.success).toBe(true);
+      expect(run2.success).toBe(true);
+
+      // Every claim on the existing email must be redirected to a FRESH account
+      // under a .local fallback whose email must NEVER be the claimed one — so
+      // no registrant ever lands in the existing student's User.
+      const createdEmail1 = (tx1.user.create).mock.calls[0][0].data.email as string;
+      const createdEmail2 = (tx2.user.create).mock.calls[0][0].data.email as string;
+      expect(createdEmail1).not.toBe('student@x.com');
+      expect(createdEmail2).not.toBe('student@x.com');
+      expect(createdEmail1).toMatch(/@student\.cipansor\.local$/);
+      expect(createdEmail2).toMatch(/@student\.cipansor\.local$/);
+
+      // Distinct fresh user ids are used for each registrant, and the existing
+      // student account is never reused as the login for anyone new.
+      expect(run1.userId).toBe('user-new-1');
+      expect(run2.userId).toBe('user-new-2');
+
+      // The existing student's record must never be claimed: `student.findUnique`
+      // must never be called with the existing user id as the source of the new
+      // admission, and a new Student row is created for each fresh account.
+      expect(tx1.student.findUnique).not.toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ userId: 'existing-student-user' }) })
+      );
+      expect(tx1.student.create).toHaveBeenCalled();
+      expect(tx2.student.create).toHaveBeenCalled();
+    });
+
+    it('rejects a class or room that belongs to another unit (tenant isolation)', async () => {
+      const baseTx = {
+        registrant: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: 'reg-1',
+            status: 'ACCEPTED',
+            fullName: 'Budi Unit',
+            gender: 'MALE',
+            birthPlace: 'Jakarta',
+            birthDate: new Date('2010-01-01'),
+            address: 'Jl. Test 123',
+            parentName: 'Ayah Budi',
+            parentPhone: '08123456789',
+            parentEmail: 'ayah@test.com',
+            admissionPeriod: { registrationFee: 0 },
+            registrationFeePaidAt: new Date('2026-07-01'),
+          }),
+          update: vi.fn().mockResolvedValue({ id: 'reg-1' }),
+        },
+        admissionPeriod: { findUnique: vi.fn() },
+        $queryRaw: vi.fn().mockResolvedValue([]),
+        $executeRaw: vi.fn().mockResolvedValue(1),
+        unit: { findUnique: vi.fn().mockResolvedValue({ type: 'SMP_IT' }) },
+        user: {
+          findUnique: vi.fn().mockResolvedValue(null),
+          findFirst: vi.fn().mockResolvedValue(null),
+          create: vi.fn()
+            .mockResolvedValueOnce({ id: 'user-stud-1' }) // student user
+            .mockResolvedValueOnce({ id: 'user-parent-1', email: 'ayah@test.com' }) // parent user
+            // third+ creates (e.g. guardian-role provisioning) must never be `undefined`
+            .mockResolvedValue({ id: 'user-extra', email: 'extra@test.com' }),
+        },
+        role: { findFirst: vi.fn().mockResolvedValue({ id: 'role-smpit-siswa' }) },
+        userRoleAssignment: {
+          findMany: vi.fn().mockResolvedValue([]),
+          findFirst: vi.fn().mockResolvedValue(null),
+          create: vi.fn().mockResolvedValue({ id: 'ura-1' }),
+        },
+        student: {
+          findUnique: vi.fn().mockResolvedValue(null),
+          create: vi.fn().mockResolvedValue({ id: 'stud-1', nis: 'NIS-1' }),
+        },
+        studentParent: {
+          upsert: vi.fn().mockResolvedValue({ id: 'sp-1' }),
+          create: vi.fn(),
+          findMany: vi.fn().mockResolvedValue([
+            { student: { unitId: 'unit-1', unit: { type: 'SMP_IT' } } },
+          ]),
+        },
+        classEnrollment: { create: vi.fn(), updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+        medicalRecord: {
+          findFirst: vi.fn().mockResolvedValue(null),
+          create: vi.fn().mockResolvedValue({ id: 'med-1' }),
+        },
+        santriWallet: {
+          findUnique: vi.fn().mockResolvedValue(null),
+          create: vi.fn().mockResolvedValue({ id: 'wallet-1' }),
+        },
+      };
+
+      // --- Cross-unit class ---
+      const classTx = {
+        ...baseTx,
+        class: { findUnique: vi.fn().mockResolvedValue({ id: 'class-other', unitId: 'unit-99' }) },
+        student: {
+          findUnique: vi.fn().mockResolvedValue(null),
+          create: vi.fn().mockResolvedValue({ id: 'stud-1', nis: 'NIS-1' }),
+        },
+      } as any;
+      vi.mocked(prisma.$transaction).mockImplementation(async (cb: any) => cb(classTx));
+      await expect(
+        StudentOnboardingOrchestrator.processEnrollment('reg-1', 'unit-1', 'admin-1', {
+          classId: 'class-other',
+        })
+      ).rejects.toThrow(/tidak berada pada unit/);
+
+      // --- Cross-unit room ---
+      const roomTx = {
+        ...baseTx,
+        room: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: 'room-other',
+            dormitory: { unitId: 'unit-99' },
+          }),
+        },
+        roomAssignment: { create: vi.fn() },
+        student: {
+          findUnique: vi.fn().mockResolvedValue(null),
+          create: vi.fn().mockResolvedValue({ id: 'stud-1', nis: 'NIS-1' }),
+        },
+      } as any;
+      vi.mocked(prisma.$transaction).mockImplementation(async (cb: any) => cb(roomTx));
+      await expect(
+        StudentOnboardingOrchestrator.processEnrollment('reg-1', 'unit-1', 'admin-1', {
+          roomId: 'room-other',
+        })
+      ).rejects.toThrow(/tidak berada pada unit/);
     });
   });
 });

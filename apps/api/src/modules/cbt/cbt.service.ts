@@ -3,6 +3,7 @@ import { Prisma, QuestionType } from '@prisma/client';
 import { RecordSecurityLogInput } from '@cipansor/shared';
 import { Decimal } from '@prisma/client/runtime/client';
 import { Errors } from '@/middleware/error';
+import { logger } from '@/lib/logger';
 import type { JwtPayload } from '@/lib/jwt';
 
 /** Authenticated caller shape used for unit-scoping checks. */
@@ -604,7 +605,13 @@ export class CBTService {
         }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
         if (result && result.status === 'COMPLETED') {
-          await CBTService.syncGradeToAcademicGradebook(attemptId, true);
+          // The grading transaction above has ALREADY committed (score + status
+          // persisted). Syncing the academic gradebook is a best-effort,
+          // idempotent side effect (a grade.upsert): it must not turn a
+          // successful grading into a failure — otherwise a transient sync error
+          // would surface to the caller as "grading failed", triggering a retry
+          // of grading that had already succeeded. Best-effort with bounded retry.
+          await CBTService.syncGradeToAcademicGradebookBestEffort(attemptId, true);
         }
 
         return result;
@@ -1136,6 +1143,40 @@ export class CBTService {
           }
         : {},
     });
+  }
+
+  /**
+   * Best-effort gradebook sync used from the essay-grading path.
+   *
+   * `syncGradeToAcademicGradebook` runs OUTSIDE the grading transaction, after
+   * the attempt's score/status have already been committed. It is idempotent (a
+   * `grade.upsert`), so a transient failure must never fail the already-successful
+   * grading: we retry a couple of times and log on exhaustion. Callers that treat
+   * the sync as authoritative (e.g. the administrative `syncGradeToAcademicGradebook`
+   * route) should call the synchronous method directly; this is only for paths
+   * where the commit must win.
+   */
+  static async syncGradeToAcademicGradebookBestEffort(
+    attemptId: string,
+    forceUpdate = false
+  ): Promise<void> {
+    const MAX_SYNC_ATTEMPTS = 3;
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= MAX_SYNC_ATTEMPTS; attempt++) {
+      try {
+        await CBTService.syncGradeToAcademicGradebook(attemptId, forceUpdate);
+        return;
+      } catch (err) {
+        lastError = err;
+        if (attempt < MAX_SYNC_ATTEMPTS) {
+          await new Promise((resolve) => setTimeout(resolve, 200 * attempt));
+        }
+      }
+    }
+    logger.error(
+      `Gradebook sync failed after ${MAX_SYNC_ATTEMPTS} attempts for exam attempt ${attemptId}; the attempt remains graded. Re-sync manually via the admin sync endpoint.`,
+      { attemptId, error: lastError }
+    );
   }
 
   /**

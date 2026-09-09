@@ -227,7 +227,14 @@ export const waveService = {
     if (input.waveNumber !== undefined) data.waveNumber = input.waveNumber;
     if (input.quota !== undefined) data.quota = input.quota;
     if (input.registrationFee !== undefined) data.registrationFee = input.registrationFee;
-    if (input.status !== undefined) data.status = input.status;
+    if (input.status !== undefined) {
+      data.status = input.status;
+      // An operator explicitly setting the status is a *manual* decision, so the
+      // wave is no longer "full purely by capacity". This is what stops a
+      // hand-closed FULL wave (or an operator reopening one) from being silently
+      // reopened later by `deleteRegistrant` when a registrant is removed.
+      data.fullByCapacity = false;
+    }
     if (input.notes !== undefined) data.notes = input.notes;
     // Use `!== undefined` for consistency with the other fields above. An
     // empty string would produce an Invalid Date, but Zod's `z.string()` does
@@ -533,7 +540,9 @@ export const waveService = {
       if (wave.registeredCount >= wave.quota) {
         await prisma.admissionWave.update({
           where: { id: wave.id },
-          data: { status: 'FULL' },
+          // Capacity-driven full: mark it so deleteRegistrant may reopen it when
+          // a slot frees up (operator-closed FULL waves stay closed).
+          data: { status: 'FULL', fullByCapacity: true },
         });
       }
     }

@@ -7,10 +7,18 @@ describe("resolveFeeOwed", () => {
     expect(resolveFeeOwed(250000, 100000)).toBe(250000);
   });
 
-  it("falls back to the period fee when the wave fee is absent or zero", () => {
-    expect(resolveFeeOwed(0, 100000)).toBe(100000);
+  it("treats an explicit wave fee of 0 as a waiver override (never falls back to the period fee)", () => {
+    // A defined wave fee — even 0 — overrides the period fee, mirroring
+    // `effectiveRegistrationFee = wave.registrationFee ?? period.registrationFee`.
+    // A waived wave must not demand the period fee in the UI.
+    expect(resolveFeeOwed(0, 100000)).toBe(0);
+    expect(resolveFeeOwed(0, 500000)).toBe(0);
+  });
+
+  it("falls back to the period fee only when the wave fee is absent", () => {
     expect(resolveFeeOwed(null, 100000)).toBe(100000);
     expect(resolveFeeOwed(undefined, 100000)).toBe(100000);
+    expect(resolveFeeOwed(null, 0)).toBe(0);
   });
 
   it("returns 0 when neither wave nor period charges a fee", () => {

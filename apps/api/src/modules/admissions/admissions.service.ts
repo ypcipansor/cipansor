@@ -597,7 +597,10 @@ async function createRegistrantOnce(
           if (updatedWave && updatedWave.registeredCount >= updatedWave.quota && updatedWave.status !== 'FULL') {
             await tx.admissionWave.update({
               where: { id: wave.id },
-              data: { status: 'FULL' },
+              // Capacity-driven closure: the wave fills up because of enrolment,
+              // so mark it auto-filled. deleteRegistrant may reopen it later when
+              // a slot frees up (unlike an operator-closed FULL wave).
+              data: { status: 'FULL', fullByCapacity: true },
             });
           }
 
@@ -1016,12 +1019,27 @@ export async function deleteRegistrant(id: string, actor?: AuthUser) {
 
       const wave = await tx.admissionWave.findUnique({
         where: { id: registrant.waveId },
-        select: { id: true, status: true, registeredCount: true, quota: true, startDate: true, endDate: true },
+        select: {
+          id: true,
+          status: true,
+          registeredCount: true,
+          quota: true,
+          startDate: true,
+          endDate: true,
+          fullByCapacity: true,
+        },
       });
       const now = new Date();
+      // Reopen only a FULL wave that became FULL by capacity (`fullByCapacity`
+      // true) — i.e. a cancelled slot in a wave that simply filled up. A wave
+      // an operator deliberately marked FULL below quota (`fullByCapacity`
+      // false/null, e.g. manual early-close) stays closed: `createRegistrantOnce`
+      // also treats FULL as terminal for manual closure, so never silently
+      // reopen it just because one registrant was removed.
       if (
         wave &&
         wave.status === 'FULL' &&
+        wave.fullByCapacity === true &&
         wave.registeredCount < wave.quota &&
         wave.startDate <= now &&
         wave.endDate >= now
@@ -1108,11 +1126,25 @@ export async function createPublicRegistrantDocumentService(
 
   // Identity documents are stored inline as data-URIs on the RegistrantDocument
   // row. This keeps the public upload flow dependency-free (no object-store
-  // roundtrip) but trades away object-storage advantages: a data-URI has no
-  // independent retention/backup lifecycle, is not served over a CDN, and
-  // access controls to the row gate the file. If identity documents are later
-  // moved to object storage, add an access-audit log and a retention policy —
-  // and migrate existing rows then, not now.
+  // roundtrip) but trades away object-storage advantages. DECISION (documented
+  // 2026-09-09): accept inline storage for now; revisit when moving to object
+  // storage. Rationale and the controls that the current design relies on:
+  //
+  //  - Retention / backup exposure: a data-URI rides inside the DB row and is
+  //    therefore included in every DB backup. There is no separate lifecycle —
+  //    deleting the `RegistrantDocument` row (or its `registrant`, which
+  //    cascades) deletes the file; backups must apply the same retention as the
+  //    rest of the DB. Any future object-store migration must add an
+  //    independent TTL/retention policy, a purge job, and access-audit log.
+  //  - Access auditing: access to the file is the same as access to the row —
+  //    the admins wave/detail handlers (`assertRegistrantUnitAccess`) are the
+  //    gate. There is no per-download audit trail today; add one if a
+  //    compliance requirement emerges.
+  //  - Deletion: no orphan cleanup is needed beyond row/schema deletes. Uploads
+  //    are capped at 2MB and MIME-whitelisted below.
+  // If identity documents are later moved to object storage, add an access-audit
+  // log and a retention policy AND a backfill job to migrate existing rows then,
+  // not now.
   //
   // CONTRACT: the registration token is NOT single-use. It is an HMAC bound to
   // `registrant:id` and valid for 2 hours (see the check above), and may be

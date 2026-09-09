@@ -273,6 +273,66 @@ describe('CBT Service', () => {
       });
     });
 
+    it('does not fail essay grading when the gradebook sync throws after commit', async () => {
+      // Regression for: a sync failure (idempotent `grade.upsert` OUTSIDE the
+      // grading transaction) must not surface as "grading failed" and trigger a
+      // re-grade of an attempt whose score/status already committed. The grading
+      // result is what the caller sees; the gradebook sync is best-effort.
+      vi.mocked(prisma.examAttempt.findUnique).mockResolvedValue({
+        id: 'attempt-1',
+        studentId: 'std-1',
+        status: 'COMPLETED',
+        score: 0,
+        finishedAt: new Date(),
+        exam: {
+          id: 'exam-1',
+          subjectId: 'sub-1',
+          academicYearId: 'ay-1',
+          maxScore: 100,
+          questionBankId: 'bank-1',
+          teacherId: 'teacher-1',
+          teacher: { id: 'teacher-1', userId: 'user-1' },
+          questionBank: {
+            questions: [{ points: 50 }, { points: 50 }],
+          },
+        },
+      } as any);
+      vi.mocked(prisma.question.findUnique).mockResolvedValue({
+        id: 'q-1',
+        bankId: 'bank-1',
+        points: 85,
+        type: 'ESSAY',
+      } as any);
+      vi.mocked(prisma.examAnswer.findUnique).mockResolvedValue({ id: 'ans-1' } as any);
+      vi.mocked(prisma.examAnswer.update).mockResolvedValue({ id: 'ans-1' } as any);
+      vi.mocked(prisma.examAnswer.findMany).mockResolvedValue([
+        { id: 'ans-1', score: 42, question: { type: 'ESSAY' } },
+        { id: 'ans-2', score: 43, question: { type: 'MULTIPLE_CHOICE' } },
+      ] as any);
+      vi.mocked(prisma.examAttempt.update).mockResolvedValue({
+        id: 'attempt-1',
+        score: 85,
+        status: 'COMPLETED',
+      } as any);
+      // The gradebook upsert itself fails every retry: grading must still succeed.
+      vi.mocked(prisma.grade.upsert).mockRejectedValue(new Error('gradebook down'));
+
+      const result = await CBTService.gradeEssayAnswer(
+        'attempt-1',
+        'q-1',
+        { score: 42, isCorrect: true },
+        { id: 'user-1', role: 'TEACHER' }
+      );
+
+      // Grading completed: the commit happened before the sync, so the caller's
+      // result is produced despite the failed (best-effort) gradebook write.
+      expect(result).toBeDefined();
+      expect(result.score).toBe(85);
+      expect(prisma.examAttempt.update).toHaveBeenCalled();
+      // The best-effort path ran but never surfaced the error.
+      expect(prisma.grade.upsert).toHaveBeenCalled();
+    });
+
     it('should persist security log and validate student attempt ownership', async () => {
       vi.mocked(prisma.examAttempt.findUnique).mockResolvedValue({
         id: 'att-1',

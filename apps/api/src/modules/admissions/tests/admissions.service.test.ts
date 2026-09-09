@@ -192,6 +192,88 @@ describe('Admissions Service', () => {
     });
   });
 
+  it('should NOT reopen a manually-closed FULL wave when a registrant is deleted (fullByCapacity=false)', async () => {
+    // A FULL wave that an operator closed manually (fullByCapacity=false) is a
+    // terminal state for the admission window. Removing one registrant must not
+    // silently reopen it — otherwise the next public registrant could claim a
+    // slot in a wave the admin deliberately shut early.
+    const now = new Date();
+    const manuallyClosedWave = {
+      id: 'w-manual',
+      status: 'FULL',
+      fullByCapacity: false,
+      registeredCount: 20,
+      quota: 50,
+      startDate: new Date(now.getTime() - 10 * 24 * 60 * 60 * 1000),
+      endDate: new Date(now.getTime() + 10 * 24 * 60 * 60 * 1000), // still within the window
+    };
+
+    vi.mocked(prisma.registrant.findUnique).mockResolvedValue({
+      id: 'r-1',
+      status: 'REGISTERED',
+      waveId: 'w-manual',
+    } as any);
+    vi.mocked(prisma.admissionWave.updateMany as any).mockResolvedValue({ count: 1 });
+    vi.mocked(prisma.admissionWave.findUnique as any).mockResolvedValue(manuallyClosedWave as any);
+    vi.mocked(prisma.registrant.delete as any).mockResolvedValue({ id: 'r-1' });
+
+    await service.deleteRegistrant('r-1');
+
+    // The wave is within its window and has capacity, but because it was closed
+    // manually (`fullByCapacity !== true`) it must stay FULL.
+    expect(prisma.admissionWave.update).not.toHaveBeenCalledWith({
+      where: { id: 'w-manual' },
+      data: { status: 'OPEN' },
+    });
+
+    // This file's `beforeEach` only clears call history, not implementations,
+    // so reset the shared mocks this test touched to avoid leaking capacity/wave
+    // mocks into sibling tests that assume a bare `vi.fn()` default.
+    vi.mocked(prisma.admissionWave.findUnique as any).mockReset();
+    vi.mocked(prisma.admissionWave.updateMany as any).mockReset();
+    vi.mocked(prisma.registrant.findUnique as any).mockReset();
+    vi.mocked(prisma.registrant.delete as any).mockReset();
+    vi.mocked(prisma.admissionPeriod.findUnique as any).mockReset();
+  });
+
+  it('reopens a FULL-by-capacity wave within its window when a registrant is deleted', async () => {
+    const now = new Date();
+    const capacityFullWave = {
+      id: 'w-cap',
+      status: 'FULL',
+      fullByCapacity: true,
+      registeredCount: 40,
+      quota: 50,
+      startDate: new Date(now.getTime() - 10 * 24 * 60 * 60 * 1000),
+      endDate: new Date(now.getTime() + 10 * 24 * 60 * 60 * 1000),
+    };
+
+    vi.mocked(prisma.registrant.findUnique).mockResolvedValue({
+      id: 'r-1',
+      status: 'REGISTERED',
+      waveId: 'w-cap',
+    } as any);
+    vi.mocked(prisma.admissionWave.updateMany as any).mockResolvedValue({ count: 1 });
+    vi.mocked(prisma.admissionWave.findUnique as any).mockResolvedValue(capacityFullWave as any);
+    vi.mocked(prisma.registrant.delete as any).mockResolvedValue({ id: 'r-1' });
+
+    await service.deleteRegistrant('r-1');
+
+    // Auto-filled waves regain a slot on cancellation and re-open.
+    expect(prisma.admissionWave.update).toHaveBeenCalledWith({
+      where: { id: 'w-cap' },
+      data: { status: 'OPEN' },
+    });
+
+    // Reset shared mocks to avoid leaking the capacity-full wave mock into
+    // sibling tests (see the manually-closed test above).
+    vi.mocked(prisma.admissionWave.findUnique as any).mockReset();
+    vi.mocked(prisma.admissionWave.updateMany as any).mockReset();
+    vi.mocked(prisma.registrant.findUnique as any).mockReset();
+    vi.mocked(prisma.registrant.delete as any).mockReset();
+    vi.mocked(prisma.admissionPeriod.findUnique as any).mockReset();
+  });
+
   it('should reject registration when all waves for a period are full', async () => {
     const mockPeriod = {
       id: 'p1',
@@ -298,10 +380,11 @@ describe('Admissions Service', () => {
       false
     );
 
-    // Verify wave status was updated to FULL
+    // Verify wave status was updated to FULL and flagged as auto-filled by
+    // capacity (so a later `deleteRegistrant` may reopen it).
     expect(prisma.admissionWave.update).toHaveBeenCalledWith({
       where: { id: 'w1' },
-      data: { status: 'FULL' },
+      data: { status: 'FULL', fullByCapacity: true },
     });
   });
 

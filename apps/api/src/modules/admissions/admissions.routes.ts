@@ -85,6 +85,19 @@ router.get(
   publicRegistrantLimiter,
   controller.trackPublicRegistrantStatus
 );
+// DOCUMENT-OCR GATING (assumption review 2026-09-09):
+// `parse-document` is OPEN (no Turnstile) because OCR is currently LOCAL ONLY:
+// `parseAndVerifyDocument` (document-ocr.service.ts) never calls a paid/third-party
+// vision service — it reads plain-text bytes pasted as base64 and flags every real
+// photo/PDF for manual verification. There is no per-request cost and no data leaves
+// this deployment, so a Turnstile (which would otherwise gate a page that itself
+// requires Turnstile) is unnecessary and would only hurt legitimate applicants.
+// The payload is also capped at 2MB by `parseDocumentSchema`, and the endpoint
+// shares the same strict `publicRegistrantLimiter` (10 req/min/IP) used for
+// registrant creation.
+// **Revisit this gating (rate limit + Turnstile) BEFORE introducing paid/learned
+// OCR or increasing acceptable upload size** — a heavy/paid processor needs a
+// real abuse boundary, not just the current limiter.
 router.post(
   '/public/parse-document',
   publicRegistrantLimiter,

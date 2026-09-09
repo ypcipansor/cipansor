@@ -56,10 +56,16 @@ vi.mock('@/lib/prisma', () => ({
       create: vi.fn(),
       findUnique: vi.fn(),
     },
+    class: {
+      findUnique: vi.fn(),
+    },
     classEnrollment: {
       create: vi.fn(),
       updateMany: vi.fn(),
       findFirst: vi.fn(),
+    },
+    room: {
+      findUnique: vi.fn(),
     },
     roomAssignment: {
       create: vi.fn(),
@@ -119,6 +125,15 @@ describe('Student Onboarding & Wave Quota Unit Tests', () => {
       vi.mocked(prisma.unit.findUnique).mockResolvedValue({ id: 'unit-1', type: 'SMP_IT' } as any);
       (vi.mocked(prisma.user.create) as any).mockResolvedValue({ id: 'u-1', name: 'Ahmad Santri' });
       (vi.mocked(prisma.student.create) as any).mockResolvedValue({ id: 's-1', nis: 'NIS-CUSTOM-001' });
+      // Class & room belong to unit-1 → tenant-isolation check passes.
+      vi.mocked(prisma.class.findUnique).mockResolvedValue({ id: 'class-7a', unitId: 'unit-1' } as any);
+      vi.mocked(prisma.room.findUnique).mockResolvedValue({
+        id: 'room-101',
+        dormitory: { unitId: 'unit-1' },
+      } as any);
+      (vi.mocked(prisma.classEnrollment.updateMany) as any).mockResolvedValue({ count: 0 });
+      (vi.mocked(prisma.classEnrollment.create) as any).mockResolvedValue({ id: 'ce-1' });
+      (vi.mocked(prisma.roomAssignment.create) as any).mockResolvedValue({ id: 'ra-1' });
 
       const result = await StudentOnboardingOrchestrator.processEnrollment(
         'reg-1',
@@ -147,7 +162,12 @@ describe('Student Onboarding & Wave Quota Unit Tests', () => {
       );
     });
 
-    it('reuses existing user account when registrant email matches an existing user and fallback when email is empty', async () => {
+    it('creates a fresh .local account (never reusing an existing STUDENT account) when the registrant emails an existing STUDENT user', async () => {
+      // Account-takeover prevention: the registrant email is UNVERIFIED, so even
+      // when it matches an existing STUDENT user, onboarding must NOT recycle
+      // that account (which would also steal that student's Student record).
+      // A fresh, unit-scoped .local account is created instead; an authorised
+      // operator can later merge the registrant onto the existing student.
       const mockRegistrantWithEmail = {
         id: 'reg-email',
         status: 'ACCEPTED',
@@ -174,29 +194,48 @@ describe('Student Onboarding & Wave Quota Unit Tests', () => {
       vi.mocked(prisma.registrant.findUnique).mockResolvedValue(mockRegistrantWithEmail as any);
       vi.mocked(prisma.admissionPeriod.findUnique).mockResolvedValue(mockPeriod as any);
       vi.mocked(prisma.unit.findUnique).mockResolvedValue({ id: 'unit-1', type: 'SMP_IT' } as any);
-      vi.mocked(prisma.user.findUnique).mockResolvedValue(existingUser as any);
+      (vi.mocked(prisma.user.findUnique) as any).mockImplementation((args: any) =>
+        Promise.resolve(args?.where?.email === 'santri.real@gmail.com' ? (existingUser as any) : null)
+      );
+      vi.mocked(prisma.user.create).mockResolvedValue({
+        id: 'usr-fresh',
+        email: 'santri.2026-0001@student.cipansor.local',
+      } as any);
       vi.mocked(prisma.role.findFirst as any).mockResolvedValue({ id: 'role-std-id' });
       vi.mocked(prisma.userRoleAssignment.findFirst as any).mockResolvedValue(null);
       vi.mocked(prisma.student.findUnique).mockResolvedValue(null as any);
-      vi.mocked(prisma.medicalRecord.findFirst as any).mockResolvedValue({ id: 'med-1' });
-      vi.mocked(prisma.santriWallet.findUnique as any).mockResolvedValue({ id: 'wal-1' });
-      (vi.mocked(prisma.student.create) as any).mockResolvedValue({ id: 's-exist', nis: 'NIS-002' });
+      vi.mocked(prisma.studentParent.upsert as any).mockResolvedValue({ id: 'sp-1' });
+      vi.mocked(prisma.studentParent.findMany as any).mockResolvedValue([
+        { student: { unitId: 'unit-1', unit: { type: 'SMP_IT' } } },
+      ]);
+      vi.mocked(prisma.medicalRecord.findFirst as any).mockResolvedValue(null);
+      vi.mocked(prisma.medicalRecord.create as any).mockResolvedValue({ id: 'med-1' });
+      vi.mocked(prisma.santriWallet.findUnique as any).mockResolvedValue(null);
+      vi.mocked(prisma.santriWallet.create as any).mockResolvedValue({ id: 'wal-1' });
+      (vi.mocked(prisma.student.create) as any).mockResolvedValue({ id: 's-fresh', nis: 'NIS-002' });
 
       const result = await StudentOnboardingOrchestrator.processEnrollment('reg-email', 'unit-1', 'admin-1', {
         academicYearId: 'ay-2026',
       });
 
-      // Does not create a duplicate user since existing user was found
-      expect(prisma.user.create).not.toHaveBeenCalledWith(
+      // A NEW user is created — the existing STUDENT account is never reused.
+      expect(result.userId).toBe('usr-fresh');
+      expect(prisma.user.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ email: 'santri.real@gmail.com' }),
+          data: expect.objectContaining({
+            role: 'STUDENT',
+            // Never the claimed (unverified) real email.
+            email: expect.not.stringMatching(/^santri\.real@gmail\.com/),
+          }),
         })
       );
+      const createdEmail = (prisma.user.create as any).mock.calls[0][0].data.email as string;
+      expect(createdEmail).toMatch(/@student\.cipansor\.local$/);
 
-      // Student UserRoleAssignment created
+      // The student role assignment is bound to the FRESH user, not the existing one.
       expect(prisma.userRoleAssignment.create).toHaveBeenCalledWith({
         data: {
-          userId: 'usr-existing',
+          userId: 'usr-fresh',
           roleId: 'role-std-id',
           unitId: 'unit-1',
           isPrimary: true,
@@ -204,25 +243,23 @@ describe('Student Onboarding & Wave Quota Unit Tests', () => {
         },
       });
 
+      // The Student record attaches to the fresh user, never the existing user's.
+      expect(prisma.student.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            userId: 'usr-fresh',
+          }),
+        })
+      );
+      expect(prisma.student.create).not.toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ userId: 'usr-existing' }) })
+      );
+
       // Reset token must never be returned to the API caller (account-takeover
       // prevention): the EnrollmentResult surface carries no reset token field.
       expect(result).not.toHaveProperty('resetToken');
       expect(result).not.toHaveProperty('studentResetToken');
       expect(result).not.toHaveProperty('parentResetToken');
-
-      // Idempotent: medicalRecord and santriWallet create NOT called again
-      expect(prisma.medicalRecord.create).not.toHaveBeenCalled();
-      expect(prisma.santriWallet.create).not.toHaveBeenCalled();
-
-      // Student record attaches to existing user id
-      expect(prisma.student.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            userId: 'usr-existing',
-          }),
-        })
-      );
-
 
       // Verify NO duplicate REG_FEE invoice was created because registrationFeePaidAt is set
       expect(prisma.invoice.create).not.toHaveBeenCalled();
@@ -269,7 +306,12 @@ describe('Student Onboarding & Wave Quota Unit Tests', () => {
       expect(prisma.student.create).not.toHaveBeenCalled();
     });
 
-    it('preserves the requested NIS on a returning student and closes the previous active enrollment before adding a new class', async () => {
+    it('never reuses an existing STUDENT account matched by unverified email; a fresh account+student honours the requested NIS', async () => {
+      // Account-takeover prevention: the registrant email is UNVERIFIED and the
+      // registrant carries no ownership link to the existing student, so even
+      // though `usr-existing`/`s-exist` share this email, onboarding must NOT
+      // recycle them — it creates a FRESH user + student while honouring the
+      // explicitly requested NIS/NISN on the fresh student.
       const mockRegistrantWithEmail = {
         id: 'reg-email',
         status: 'ACCEPTED',
@@ -292,24 +334,36 @@ describe('Student Onboarding & Wave Quota Unit Tests', () => {
         academicYearId: 'ay-2026',
       };
 
-      // Existing legit student account + existing student record (returning student).
       const existingUser = { id: 'usr-existing', email: 'santri.real@gmail.com', role: 'STUDENT' };
-      const existingStudent = { id: 's-exist', userId: 'usr-existing', nis: 'OLD-NIS-001', nisn: 'OLD-NISN' };
 
       vi.mocked(prisma.registrant.findUnique).mockResolvedValue(mockRegistrantWithEmail as any);
       vi.mocked(prisma.admissionPeriod.findUnique).mockResolvedValue(mockPeriod as any);
       vi.mocked(prisma.unit.findUnique).mockResolvedValue({ id: 'unit-1', type: 'SMP_IT' } as any);
-      vi.mocked(prisma.user.findUnique).mockResolvedValue(existingUser as any);
+      (vi.mocked(prisma.user.findUnique) as any).mockImplementation((args: any) =>
+        Promise.resolve(args?.where?.email === 'santri.real@gmail.com' ? (existingUser as any) : null)
+      );
+      (vi.mocked(prisma.user.create) as any).mockResolvedValue({ id: 'usr-fresh' });
       vi.mocked(prisma.role.findFirst as any).mockResolvedValue({ id: 'role-std-id' });
       vi.mocked(prisma.userRoleAssignment.findFirst as any).mockResolvedValue(null);
-      vi.mocked(prisma.student.findUnique).mockResolvedValue(existingStudent as any);
-      (vi.mocked(prisma.student.update) as any).mockResolvedValue({
-        ...existingStudent,
+      vi.mocked(prisma.student.findUnique).mockResolvedValue(null as any);
+      (vi.mocked(prisma.student.create) as any).mockResolvedValue({
+        id: 's-fresh',
         nis: 'NEW-NIS-REQUESTED',
         nisn: 'NEW-NISN',
+        userId: 'usr-fresh',
       });
-      vi.mocked(prisma.medicalRecord.findFirst as any).mockResolvedValue({ id: 'med-1' });
-      vi.mocked(prisma.santriWallet.findUnique as any).mockResolvedValue({ id: 'wal-1' });
+      vi.mocked(prisma.studentParent.upsert as any).mockResolvedValue({ id: 'sp-1' });
+      vi.mocked(prisma.studentParent.findMany as any).mockResolvedValue([
+        { student: { unitId: 'unit-1', unit: { type: 'SMP_IT' } } },
+      ]);
+      vi.mocked(prisma.medicalRecord.findFirst as any).mockResolvedValue(null);
+      (vi.mocked(prisma.medicalRecord.create) as any).mockResolvedValue({ id: 'med-1' });
+      vi.mocked(prisma.santriWallet.findUnique).mockResolvedValue(null as any);
+      (vi.mocked(prisma.santriWallet.create) as any).mockResolvedValue({ id: 'wal-1' });
+      // Class belongs to unit-1 → tenant-isolation passes.
+      vi.mocked(prisma.class.findUnique).mockResolvedValue({ id: 'class-7a', unitId: 'unit-1' } as any);
+      (vi.mocked(prisma.classEnrollment.updateMany) as any).mockResolvedValue({ count: 0 });
+      (vi.mocked(prisma.classEnrollment.create) as any).mockResolvedValue({ id: 'ce-1' });
 
       const result = await StudentOnboardingOrchestrator.processEnrollment('reg-email', 'unit-1', 'admin-1', {
         nis: 'NEW-NIS-REQUESTED',
@@ -320,25 +374,26 @@ describe('Student Onboarding & Wave Quota Unit Tests', () => {
 
       expect(result.success).toBe(true);
 
-      // The existing student is updated (not recreated) and honours the requested NIS/NISN.
-      expect(prisma.student.create).not.toHaveBeenCalled();
-      expect(prisma.student.update).toHaveBeenCalledWith(
+      // A fresh student is created (not the existing one) and honours NIS/NISN.
+      expect(prisma.student.update).not.toHaveBeenCalled();
+      expect(prisma.student.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
+            userId: 'usr-fresh',
+            unitId: 'unit-1',
             nis: 'NEW-NIS-REQUESTED',
             nisn: 'NEW-NISN',
           }),
         })
       );
+      // The pre-existing STUDENT account/record is never taken over or re-purposed.
+      expect(prisma.student.create).not.toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ userId: 'usr-existing' }) })
+      );
 
-      // Any previously active class enrollment is closed before the new one opens,
-      // so the returning student never ends up with a double active roster.
-      expect(prisma.classEnrollment.updateMany).toHaveBeenCalledWith({
-        where: { studentId: 's-exist', status: 'active' },
-        data: { status: 'completed' },
-      });
+      // Class enrollment is created for the FRESH student / fresh roster.
       expect(prisma.classEnrollment.create).toHaveBeenCalledWith({
-        data: { studentId: 's-exist', classId: 'class-7a', status: 'active' },
+        data: { studentId: 's-fresh', classId: 'class-7a', status: 'active' },
       });
     });
   });

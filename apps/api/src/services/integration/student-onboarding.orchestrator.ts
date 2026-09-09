@@ -199,28 +199,65 @@ export class StudentOnboardingOrchestrator {
         nis = `${prefix}${String(nextSeq).padStart(4, '0')}`;
       }
 
-      // Determine student email: prefer real registrant.email, fallback to .local
+      // Determine student email: prefer real registrant.email, fallback to .local.
+      // NOTE (account-takeover prevention): the registrant email is UNVERIFIED —
+      // nothing in this flow proves the person submitting the form owns it. It is
+      // therefore never safe to *reuse* an existing account matched by raw email:
+      // two different registrants both entering a student's email could otherwise
+      // claim (and recycle) that student's User + Student record.
       const realEmail = registrant.email && registrant.email.trim() !== '' ? registrant.email.trim() : null;
-      const fallbackEmail = `${cleanName}.${nis.toLowerCase()}@student.cipansor.local`;
-      const email = realEmail || fallbackEmail;
+      const fallbackBase = `${cleanName}.${nis.toLowerCase()}@student.cipansor.local`;
 
-      let user = await tx.user.findUnique({ where: { email } });
-
-      const isNewUser = !user;
-
-      // Security gate (account-takeover prevention): an existing account may
-      // only be reused when it already belongs to a student (a returning
-      // student re-registering with the same email). If the email is owned by a
-      // non-student account (staff, teacher, parent, admin) we must NOT
-      // repurpose it by attaching a student profile or granting a student role —
-      // that would let a registrant take over an existing login using only its
-      // email address, with no proof of ownership, and mis-attach that person's
-      // student record onto the registrant.
-      if (user && user.role !== 'STUDENT') {
-        throw Errors.conflict('Email sudah terdaftar pada akun lain yang tidak sesuai');
+      // Resolve the email actually used for the *new* student account.
+      let email: string;
+      let user: { id: string; role: string | null } | null = null;
+      if (realEmail) {
+        const existing = await tx.user.findUnique({ where: { email: realEmail } });
+        if (existing) {
+          // An existing non-student account (staff, teacher, parent, admin) must
+          // never be repurposed into a student login — that would let a registrant
+          // take over an existing account using only its (unverified) email.
+          if (existing.role !== 'STUDENT') {
+            throw Errors.conflict('Email sudah terdaftar pada akun lain yang tidak sesuai');
+          }
+          // The email belongs to a student account but the registrant has not
+          // proven ownership of it, so we must NOT recycle that account (which
+          // would also steal that student's Student record). Create a fresh,
+          // unit-scoped .local account instead; the same registrant can later be
+          // merged onto the existing student record by an authorised operator.
+          email = fallbackBase;
+        } else {
+          email = realEmail;
+        }
+      } else {
+        email = fallbackBase;
       }
 
-      if (!user) {
+      // A .local fallback must be unique — it embeds a per-unit NIS so it is
+      // already highly unlikely to collide, but take no chance: append a suffix
+      // until the address is free rather than reusing (or chasing) another row.
+      // The loop is bounded: each candidate is a distinct address (incrementing
+      // suffix), so under sane data it breaks on the first free one; the cap is
+      // only an escape hatch so a pathological store (or a test mock that never
+      // returns null) cannot wedge onboarding in an infinite loop.
+      let candidate = email;
+      let suffix = 2;
+      const MAX_UNIQUE_EMAIL_ATTEMPTS = 25;
+      // A fallback address colliding with an existing row gets a numeric suffix
+      // inserted *inside the local part* so the address still ends in `.local`.
+      const FALLBACK_DOMAIN = '@student.cipansor.local';
+      const fallbackLocal = fallbackBase.slice(0, fallbackBase.length - FALLBACK_DOMAIN.length);
+      for (let attempt = 0; attempt < MAX_UNIQUE_EMAIL_ATTEMPTS; attempt++) {
+        const taken = await tx.user.findUnique({ where: { email: candidate } });
+        if (!taken) break;
+        candidate = `${fallbackLocal}:${suffix}${FALLBACK_DOMAIN}`;
+        suffix += 1;
+      }
+      email = candidate;
+
+      const isNewUser = true;
+
+      {
         user = await tx.user.create({
           data: {
             name: registrant.fullName,
@@ -421,7 +458,25 @@ export class StudentOnboardingOrchestrator {
       // 7. Enroll in specific class if provided. A returning student must not end
       // up with two active classEnrollments: close/settle any currently active
       // enrollment before opening the new one (mirrors `enrollRegistrant`).
+      //
+      // Tenant-isolation: the class must belong to the effective unit, otherwise
+      // a registrant could be enrolled into another unit's class (cross-unit
+      // leak). Resolve the class's unit up front and reject it when it does not
+      // match.
       if (classId) {
+        const klass = await tx.class.findUnique({
+          where: { id: classId },
+          select: { id: true, unitId: true },
+        });
+        if (!klass) {
+          throw Errors.notFound('Class');
+        }
+        if (klass.unitId !== effectiveUnitId) {
+          throw Errors.forbidden(
+            'Kelas tidak berada pada unit pendaftaran yang sama'
+          );
+        }
+
         await tx.classEnrollment.updateMany({
           where: {
             studentId: student.id,
@@ -440,7 +495,26 @@ export class StudentOnboardingOrchestrator {
       }
 
       // 8. Assign room if roomId provided
+      // Tenant-isolation: the room must not belong to another unit's asrama.
+      // A room lives under a Dormitory whose `unitId` may be null — the
+      // foundation-level case where santri from several units board in the same
+      // asrama (see the Dormitory model). Only a *non-null* unitId that differs
+      // from the effective unit is a cross-unit leak and is rejected.
       if (roomId && tx.roomAssignment) {
+        const room = await tx.room.findUnique({
+          where: { id: roomId },
+          select: { id: true, dormitory: { select: { unitId: true } } },
+        });
+        if (!room) {
+          throw Errors.notFound('Room');
+        }
+        const roomUnitId = room.dormitory?.unitId ?? null;
+        if (roomUnitId !== null && roomUnitId !== effectiveUnitId) {
+          throw Errors.forbidden(
+            'Kamar tidak berada pada unit pendaftaran yang sama'
+          );
+        }
+
         await tx.roomAssignment.create({
           data: {
             studentId: student.id,
@@ -497,10 +571,23 @@ export class StudentOnboardingOrchestrator {
     // email delivery is itself async, so this is inherently best-effort.
     //
     // Mitigation applied here: a small bounded retry for transient dispatch
-    // failures. A fully durable solution (outbox table consumed by a worker, or
-    // a persisted job) is the long-term fix and requires a schema change +
-    // migration; this matches the repo's "at minimum document + retry" stance
-    // without a schema migration.
+    // failures. This does NOT make delivery durable — the window between
+    // transaction commit and the dispatch tick is real.
+    //
+    // LONG-TERM PLAN (durable outbox — not yet implemented):
+    //   1. Add an `event_outbox` table (id, created_at, topic, payload jsonb,
+    //      status PENDING/DISPATCHED/FAILED, attempts, last_error_id).
+    //   2. Insert the outbox rows INSIDE the same $transaction that creates the
+    //      student, so commit and enqueue are atomic — closes the death window.
+    //   3. A worker (or pg_notify poller) claims due PENDING rows, calls the
+    //      same `eventBus.emit`/email dispatch, and marks DISPATCHED on success.
+    //      Bounded retries with exponential backoff; poison messages land in
+    //      FAILED for operator inspection.
+    //   4. Replace the `emittedSecret` capture + `process.nextTick` dispatch
+    //      below with a read of the outbox, and drop this comment.
+    // Until then, a process death between commit and dispatch can lose the
+    // reset-token emails/notifications even though onboarding succeeded; the
+    // bounded retry only covers failures that keep the process alive.
     // ---------------------------------------------------------------------
     const dispatchEvents = async () => {
       const { eventBus } = await import('@/lib/event-bus');

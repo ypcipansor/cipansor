@@ -1,16 +1,22 @@
 /**
  * Mirrors the backend `assertAdmissionFeeSettled()` decision. The wave's
- * `registrationFee` overrides the parent period's fee when present; the
- * onboarding gate reads the *wave* fee. Reading only the period fee hides the
- * payment button when the period fee is 0 but the wave charges a fee, or shows
- * it when the period charges but the wave waived it.
+ * `registrationFee` overrides the parent period's fee whenever it is present
+ * (including an explicit `0` waiver); the onboarding gate reads the *wave*
+ * fee: `effectiveRegistrationFee = wave.registrationFee ?? period.registrationFee ?? null`.
+ *
+ * A defined wave fee of `0` is a deliberate waiver and must NOT fall through to
+ * the period fee — otherwise the UI would wrongly demand payment for a
+ * fee-waived wave, and hide the onboarding button. Only fall back to the period
+ * fee when the wave fee is genuinely absent (`null`/`undefined`).
  */
 export function resolveFeeOwed(
   waveFee?: number | string | null,
   periodFee?: number | string | null,
 ): number {
-  const wave = Number(waveFee ?? 0);
-  return wave > 0 ? wave : Number(periodFee ?? 0);
+  if (waveFee !== null && waveFee !== undefined) {
+    return Number(waveFee);
+  }
+  return Number(periodFee ?? 0);
 }
 
 /**

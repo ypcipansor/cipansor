@@ -12,6 +12,7 @@ import {
   useUpdateRegistrantStatus,
   useVerifyRegistrantDocument,
 } from "@/hooks/use-admissions";
+import type { RegistrationStatus } from "@/hooks/use-admissions";
 import { useAuth } from "@/hooks/use-auth";
 import { getPrimaryRoleCode } from "@/lib/rbac";
 import { safeFormat } from "@/lib/date";
@@ -99,7 +100,7 @@ export default function RegistrationDetailPage({
     try {
       await updateStatus.mutateAsync({
         id: registrant.id,
-        status: newStatus,
+        status: newStatus as RegistrationStatus,
       });
       toast.success(`Status berhasil diubah ke ${STATUS_LABEL[newStatus] ?? newStatus}.`);
     } catch {

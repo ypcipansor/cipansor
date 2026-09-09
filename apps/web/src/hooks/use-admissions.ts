@@ -2,12 +2,40 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type {
   RegistrantDTO,
-  RegistrantDocumentDTO,
   OnboardRegistrantPayload,
   TrackedRegistrantDTO,
   RegistrationStatus,
 } from "@cipansor/shared";
 export type { RegistrationStatus };
+
+// Typed query params for the admissions list endpoints. These mirror the
+// request schemas in `apps/api/src/modules/admissions/admissions.schema.ts`
+// (queryAdmissionPeriodSchema / queryRegistrantSchema) and the wave list
+// handler in `ppdb-wave.service.ts` — single source on the API side, and a
+// lean union here is all the web client needs to avoid `any`.
+export interface AdmissionPeriodQuery {
+  page?: number;
+  limit?: number;
+  unitId?: string;
+  academicYearId?: string;
+  isActive?: boolean | string;
+}
+
+export interface AdmissionWaveQuery {
+  page?: number;
+  limit?: number;
+  periodId?: string;
+  status?: string;
+}
+
+export interface RegistrantQuery {
+  page?: number;
+  limit?: number;
+  admissionPeriodId?: string;
+  status?: RegistrationStatus | string;
+  gender?: "MALE" | "FEMALE";
+  search?: string;
+}
 
 // =====================================
 // Backward-compat types & constants
@@ -62,7 +90,7 @@ export const REGISTRATION_STATUS_COLORS: Record<RegistrationStatus, string> = {
 };
 
 // --- Admission Periods ---
-export function useAdmissionPeriods(params?: any) {
+export function useAdmissionPeriods(params?: AdmissionPeriodQuery) {
   return useQuery({
     queryKey: ["admission-periods", params],
     queryFn: async () => {
@@ -72,7 +100,7 @@ export function useAdmissionPeriods(params?: any) {
   });
 }
 
-export function useActiveAdmissionWaves(params?: any) {
+export function useActiveAdmissionWaves(params?: AdmissionWaveQuery) {
   return useQuery({
     queryKey: ["active-admission-waves", params],
     queryFn: async () => {
@@ -170,7 +198,7 @@ export function useTrackRegistrant(registrationNo: string, birthDate: string) {
 }
 
 // --- Admission Waves ---
-export function useAdmissionWaves(params?: any) {
+export function useAdmissionWaves(params?: AdmissionWaveQuery) {
   return useQuery({
     queryKey: ["admission-waves", params],
     queryFn: async () => {
@@ -192,7 +220,7 @@ export function useAdmissionWave(id: string) {
 }
 
 // --- Registrants ---
-export function useRegistrants(params?: any) {
+export function useRegistrants(params?: RegistrantQuery) {
   return useQuery({
     queryKey: ["admission-registrants", params],
     queryFn: async () => {
@@ -271,7 +299,15 @@ export function useRecordRegistrationFee() {
 export function useUpdateRegistrantStatus() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, status, notes }: any) => {
+    mutationFn: async ({
+      id,
+      status,
+      notes,
+    }: {
+      id: string;
+      status: RegistrationStatus;
+      notes?: string;
+    }) => {
       const response = await api.patch(`/admissions/registrants/${id}/status`, { status, notes });
       return response.data.data;
     },
@@ -321,9 +357,9 @@ export function useCreateRegistration() {
       // document upload is a separate flow under
       // `/admissions/registrants/:id/documents`, not part of registrant
       // creation.
-      let payload: Record<string, any>;
+      let payload: Record<string, unknown>;
       if (typeof FormData !== "undefined" && data instanceof FormData) {
-        const obj: Record<string, any> = {};
+        const obj: Record<string, unknown> = {};
         data.forEach((value, key) => {
           if (typeof value === "string") {
             obj[key] = value;
@@ -331,7 +367,10 @@ export function useCreateRegistration() {
         });
         payload = obj;
       } else {
-        payload = data;
+        // `data` is a plain object (the FormData branch is guarded by
+        // `typeof FormData`). When FormData is undefined at runtime the else
+        // branch can still see `data` typed as FormData, so cast explicitly.
+        payload = data as Record<string, unknown>;
       }
       // Use the unauthenticated public endpoint. The authenticated
       // `/admissions/registrants` POST is behind `authorize(SUPER_ADMIN,
