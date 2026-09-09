@@ -117,6 +117,17 @@ export const createPlan = asyncHandler(async (req: Request, res: Response) => {
 
   const body = createPlanSchema.parse(req.body);
 
+  // RPJP dan RENSTRA adalah dokumen tingkat yayasan (unitId null). Seorang
+  // pemanggil unit-scoped yang berusaha membuatnya akan menempelkan
+  // targetUnitId ke unitnya sendiri, sehingga dokumen yayasan tercatat milik
+  // satu unit dan memblokir root yayasan yang sebenarnya. Tolak dengan jelas.
+  const isFoundationDoc = body.type === 'RPJP' || body.type === 'RENSTRA';
+  if (isFoundationDoc && (!isPrivileged(req.user?.role) || !seesAll(req.user))) {
+    throw Errors.forbidden(
+      `${body.type} adalah dokumen tingkat yayasan dan hanya boleh dibuat oleh pengurus yayasan atau super admin.`
+    );
+  }
+
   // A yayasan-level document (RPJP, Renstra, RKA Yayasan) has NO unit — that
   // is what makes it the foundation's own plan rather than a school's. Until
   // now this branch demanded a unit from everyone, so the three documents at
@@ -124,7 +135,10 @@ export const createPlan = asyncHandler(async (req: Request, res: Response) => {
   // admin carries no unitId, and the fallback rejected the request outright.
   let targetUnitId: string | null | undefined = req.user?.unitId ?? null;
 
-  if (!targetUnitId) {
+  if (isFoundationDoc) {
+    // Dokumen tingkat yayasan selalu tanpa unit — apa pun unitId JWT-nya.
+    targetUnitId = null;
+  } else if (!targetUnitId) {
     if (body.unitId) {
       // Naming someone else's unit is the privileged write that already
       // existed (SUPER_ADMIN / UNIT_ADMIN).
@@ -202,6 +216,18 @@ export const deletePlan = asyncHandler(async (req: Request, res: Response) => {
 
 export const createObjective = asyncHandler(async (req: Request, res: Response) => {
   const body = createObjectiveSchema.parse(req.body);
+  // Sasaran adalah mutasi pada rencana induk: cek akses tulis yang sama dengan
+  // updatePlan — harus bisa menulis unit plan tersebut, dan plan harus masih
+  // DRAFT. Tanpa ini guru/staf biasa dapat menambah sasaran ke plan yayasan
+  // atau unit lain hanya dengan tahu planId-nya.
+  const plan = await perencanaanService.getPlanForAuth(body.planId);
+  if (!plan) throw Errors.notFound('Plan not found');
+  if (!canWritePlan(plan.unitId, req.user)) {
+    throw Errors.forbidden('Access denied');
+  }
+  if (plan.status !== 'DRAFT') {
+    throw Errors.badRequest('Hanya dapat menambah sasaran pada rencana berstatus DRAFT');
+  }
   const objective = await perencanaanService.createObjective(body);
   res.status(201).json({ success: true, data: objective });
 });

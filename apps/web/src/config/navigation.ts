@@ -2159,6 +2159,26 @@ export interface ActiveRole {
 }
 
 /**
+ * Filter a navigasi tree by roleCodes secara rekursif.
+ *
+ * Filter lama hanya menyaring item terminal (item tanpa children), sehingga
+ * submenu ber-roleCodes — mis. "Mutabaah Yaumiyah" yang hanya untuk TKQ/SDIT —
+ * tetap bocor ke admin SMPIT/SMAQ selama item induknya tidak dibatasi. Dengan
+ * filter rekursif, jika suatu induk kehilangan semua anaknya karena tidak
+ * diizinkan, induk itu ikut dibuang.
+ */
+function filterNavItemsByRoleCode(items: NavItem[], roleCode: string): NavItem[] {
+  return items
+    .filter((item) => !item.roleCodes || item.roleCodes.includes(roleCode))
+    .map((item) => {
+      if (!item.children?.length) return item;
+      const filteredChildren = filterNavItemsByRoleCode(item.children, roleCode);
+      return { ...item, children: filteredChildren };
+    })
+    .filter((item) => !item.children || item.children.length > 0);
+}
+
+/**
  * Get navigation for a specific role code
  * Uses the new RoleCode-based system
  */
@@ -2185,9 +2205,7 @@ export function getNavigationForRoleCode(roleCode: string): NavGroup[] {
     return adminNavigation
       .map((group) => ({
         ...group,
-        items: group.items.filter(
-          (item) => !item.roleCodes || item.roleCodes.includes(roleCode),
-        ),
+        items: filterNavItemsByRoleCode(group.items, roleCode),
       }))
       .filter((group) => group.items.length > 0);
   }

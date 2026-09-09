@@ -4,7 +4,14 @@ import type { Request, Response } from 'express';
 vi.mock('../pk.service', () => ({
   pkService: {
     getSupervisors: vi.fn(),
+    assertUnitScope: vi.fn(),
+    createIndicator: vi.fn(),
+    updateIndicator: vi.fn(),
+    deleteIndicator: vi.fn(),
   },
+}));
+
+vi.mock('../pk.validation', () => ({
   createPKSchema: { parse: vi.fn((x) => x) },
   updatePKSchema: { parse: vi.fn((x) => x) },
   rejectPKSchema: { parse: vi.fn((x) => x) },
@@ -39,6 +46,9 @@ async function run(handler: any, req: Request, res: Response) {
   await handler(req, res, (err?: any) => {
     nextError = err;
   });
+  // asyncHandler menyambungkan rejection ke next() secara mikro-task; beri
+  // waktu satu putaran event-loop agar error yang dilempar service sampai.
+  await new Promise((r) => setTimeout(r, 0));
   if (nextError) throw nextError;
 }
 
@@ -61,5 +71,34 @@ describe('pkController.listSupervisors', () => {
     expect(pkService.getSupervisors).toHaveBeenCalledWith(userObj, 'user-123');
     expect(res.statusCode).toBe(200);
     expect(res.jsonPayload.data).toEqual(mockSupervisors);
+  });
+});
+
+describe('pkController.createIndicator — unit scope', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(pkService.createIndicator).mockResolvedValue({ id: 'ind-1' } as any);
+  });
+
+  it('memanggil assertUnitScope({ pkId }) sebelum menulis indikator', async () => {
+    const { req, res } = mockReqRes({ body: { pkId: 'pk-lain', title: 'T', target: 1, unit: '%', weight: 20 } });
+
+    await run(pkController.createIndicator, req, res);
+
+    expect(pkService.assertUnitScope).toHaveBeenCalledWith(
+      { pkId: 'pk-lain' },
+      expect.objectContaining({ roleCode: 'SDIT_GURU', unitId: 'unit-sd' }),
+    );
+    expect(pkService.createIndicator).toHaveBeenCalledTimes(1);
+  });
+
+  it('tidak memanggil service bila unit scope ditolak', async () => {
+    vi.mocked(pkService.assertUnitScope).mockRejectedValue(new Error('unit lain'));
+
+    const { req, res } = mockReqRes({ body: { pkId: 'pk-lain', title: 'T', target: 1, unit: '%', weight: 20 } });
+
+    await expect(run(pkController.createIndicator, req, res)).rejects.toThrowError();
+
+    expect(pkService.createIndicator).not.toHaveBeenCalled();
   });
 });

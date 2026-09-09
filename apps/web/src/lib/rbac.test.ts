@@ -37,6 +37,21 @@ function navHrefs(roleCode: string): string[] {
 /** All 81 RoleCodes, taken from the demo-account catalogue (one per role). */
 const ALL_ROLE_CODES = DEMO_ACCOUNTS.map((a) => a.roleCode);
 
+describe("navigasi — filter roleCodes berjalan rekursif ke submenu", () => {
+  // "Mutabaah Yaumiyah" (/daily-report) hanya untuk TKQ/SDIT. Filter lama
+  // hanya menyaring item induk, sehingga anak yang dibatasi peran tetap bocor
+  // ke admin SMPIT/SMAQ selama induknya (Attendance) tidak dibatasi.
+  it("membuang submenu khusus TKQ/SDIT dari menu admin SMPIT/SMAQ", () => {
+    expect(navHrefs("SMPIT_ADMIN")).not.toContain("/daily-report");
+    expect(navHrefs("SMAQ_ADMIN")).not.toContain("/daily-report");
+  });
+
+  it("tetap menampilkan submenu khusus untuk admin yang diizinkan", () => {
+    expect(navHrefs("SDIT_ADMIN")).toContain("/daily-report");
+    expect(navHrefs("TKQ_ADMIN")).toContain("/daily-report");
+  });
+});
+
 describe("rbac — legacy bucket derivation", () => {
   it("identifies the six legacy buckets", () => {
     for (const role of [
@@ -668,7 +683,7 @@ describe("a11y — exactly one <main> landmark, and the skip link reaches it", (
     expect(wrong).toEqual([]);
     // This test walks the whole src/app tree and follows every page's imports,
     // so it can exceed vitest's default 5s timeout on larger route trees.
-  }, 30000);
+  });
 
   it("every <main> carries id=\"main-content\"", () => {
     // The count above only sees landmarks that have the id, so a bare <main>

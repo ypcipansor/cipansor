@@ -86,14 +86,13 @@ export class PKAnalyticsService {
         ? approvedPksAll.reduce((sum, pk) => sum + pk.behaviorScore, 0) / approvedPksAll.length
         : 0;
 
-    // Hanya unit yang PUNYA PK disetujui yang boleh diperingkat.
+    // Hanya unit dengan EVALUASI APPROVED yang boleh diperingkat.
     //
-    // `avgScore` disetel 0 ketika belum ada PK disetujui sama sekali. Tanpa
-    // saringan ini, unit yang belum mulai menyusun PK muncul di puncak
-    // "unit dengan kinerja terendah" dengan skor 0% — tidak terbedakan dari
-    // unit yang benar-benar dinilai buruk. Itu angka yang berbohong kepada
-    // pembacanya, dan keputusan yayasan bisa berdiri di atasnya.
-    const ranked = unitMetrics.filter((u) => u.pkCount > 0);
+    // Sebelumnya syaratnya "punya PK disetujui" (`pkCount > 0`), sehingga unit
+    // yang PK-nya sudah disetujui tetapi belum pernah dinilai tetap masuk
+    // peringkat dengan skor nol — muncul di puncak "kinerja terburuk" padahal
+    // hanya belum ada data. Itu angka yang berbohong kepada pembacanya.
+    const ranked = unitMetrics.filter((u) => u.evCount > 0);
     const sorted = [...ranked].sort((a, b) => b.avgScore - a.avgScore);
 
     return {
@@ -104,10 +103,10 @@ export class PKAnalyticsService {
       avgBehaviorScore,
       bestPerformingUnits: sorted.slice(0, 5),
       worstPerformingUnits: [...sorted].reverse().slice(0, 5),
-      // Unit yang belum punya PK disetujui tetap dilaporkan, tetapi terpisah —
-      // "belum ada data" adalah temuan tersendiri, bukan nilai nol.
+      // Unit yang belum punya evaluasi disetujui tetap dilaporkan, tetapi
+      // terpisah — "belum ada data" adalah temuan tersendiri, bukan nilai nol.
       unitsWithoutApprovedPk: unitMetrics
-        .filter((u) => u.pkCount === 0)
+        .filter((u) => u.evCount === 0)
         .map((u) => ({ id: u.id, name: u.name })),
       allUnits: unitMetrics,
     };

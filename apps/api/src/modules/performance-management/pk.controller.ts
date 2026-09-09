@@ -101,6 +101,9 @@ export const rejectPK = asyncHandler(async (req: Request, res: Response) => {
 export const createIndicator = asyncHandler(async (req: Request, res: Response) => {
   const { id, isAdmin } = caller(req);
   const body = createPKIndicatorSchema.parse(req.body);
+  // Indikator dipasang pada PK milik unit lain: `assertUnitScope` menolak
+  // sebelum service sempat menulis — sama seperti updateIndicator/deleteIndicator.
+  await pkService.assertUnitScope({ pkId: body.pkId }, caller(req));
   const indicator = await pkService.createIndicator(id, isAdmin, body);
   res.status(201).json(ApiResponse.success(indicator));
 });

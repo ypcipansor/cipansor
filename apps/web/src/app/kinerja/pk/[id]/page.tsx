@@ -87,6 +87,7 @@ function PerformanceAgreementDetailPageContent() {
     unit: "%",
     weight: 20,
     category: "NON_CASCADING" as "DIRECT" | "INDIRECT" | "NON_CASCADING",
+    aggregation: "" as "" | "KUMULATIF" | "RATA_RATA" | "TERAKHIR",
     refStrategicIndicatorId: "",
     notes: "",
   });
@@ -126,6 +127,7 @@ function PerformanceAgreementDetailPageContent() {
       unit: indicatorForm.unit,
       weight: Number(indicatorForm.weight),
       category: indicatorForm.category,
+      aggregation: indicatorForm.aggregation || undefined,
       refStrategicIndicatorId: indicatorForm.refStrategicIndicatorId || undefined,
       notes: indicatorForm.notes || undefined,
     });
@@ -136,6 +138,7 @@ function PerformanceAgreementDetailPageContent() {
       unit: "%",
       weight: 20,
       category: "NON_CASCADING",
+      aggregation: "",
       refStrategicIndicatorId: "",
       notes: "",
     });
@@ -342,6 +345,24 @@ function PerformanceAgreementDetailPageContent() {
                           <SelectItem value="NON_CASCADING">Indikator Mandiri (Non-Cascading)</SelectItem>
                           <SelectItem value="DIRECT">Turunan Langsung (Direct Cascading)</SelectItem>
                           <SelectItem value="INDIRECT">Turunan Tidak Langsung (Indirect Cascading)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="grid gap-2">
+                      <Label>Metode Agregasi Capaian</Label>
+                      <Select
+                        value={indicatorForm.aggregation}
+                        onValueChange={(val: any) => setIndicatorForm({ ...indicatorForm, aggregation: val })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Otomatis (sesuai satuan)" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="">Otomatis (sesuai satuan)</SelectItem>
+                          <SelectItem value="KUMULATIF">Kumulatif — menumpuk (mis. jumlah dokumen)</SelectItem>
+                          <SelectItem value="RATA_RATA">Rata-rata — dibagi periode</SelectItem>
+                          <SelectItem value="TERAKHIR">Terakhir — ambil capaian periode terakhir</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>

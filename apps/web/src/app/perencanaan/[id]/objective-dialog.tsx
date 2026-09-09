@@ -1,7 +1,7 @@
 "use client";
 
 import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { zodResolver } from "@/lib/zod-resolver";
 import * as z from "zod";
 import { useCreateObjective } from "@/hooks/use-perencanaan";
 import {

@@ -51,9 +51,16 @@ describe('Perencanaan Service', () => {
         endDate: new Date().toISOString(),
         budget: 50000000,
         unitId: 'unit-1',
+        parentId: 'rpjp-1',
         createdById: 'user-1',
       };
 
+      vi.mocked(prisma.strategicPlan.findFirst).mockResolvedValue(null);
+      // RENSTRA harus menggantung pada RPJP — induknya wajib ada dan berjenis RPJP.
+      vi.mocked(prisma.strategicPlan.findUnique).mockResolvedValue({
+        id: 'rpjp-1',
+        type: 'RPJP',
+      } as any);
       vi.mocked(prisma.strategicPlan.create).mockResolvedValue({ id: 'plan-1', ...dto } as any);
 
       await perencanaanService.createPlan(dto);
@@ -78,6 +85,42 @@ describe('Perencanaan Service', () => {
           endDate: new Date().toISOString(),
           unitId: 'unit-1',
           createdById: 'user-1',
+        })
+      ).rejects.toMatchObject({ statusCode: 400 });
+      expect(prisma.strategicPlan.create).not.toHaveBeenCalled();
+    });
+
+    it('walidates that RENSTRA and RKA Yayasan must hang off their mandated parent', async () => {
+      // Sebelumnya penjaga "parentless" hanya menolak RKA unit. Akibatnya
+      // RENSTRA maupun RKA Yayasan tanpa parentId tetap lolos dan terlepas
+      // dari kaskade wajib (Renstra harus berinduk RPJP; RKA Yayasan harus
+      // berinduk Renstra). Kedua kasus ini harus ditolak.
+      const base = {
+        startDate: '2027-01-01T00:00:00.000Z',
+        endDate: '2027-12-31T00:00:00.000Z',
+        createdById: 'user-1',
+      };
+
+      // RENSTRA tanpa induk RPJP → ditolak.
+      vi.mocked(prisma.strategicPlan.findFirst).mockResolvedValue(null);
+      await expect(
+        perencanaanService.createPlan({
+          ...base,
+          title: 'Renstra Yayasan 2027-2031',
+          type: 'RENSTRA' as any,
+          unitId: null,
+        })
+      ).rejects.toMatchObject({ statusCode: 400 });
+      expect(prisma.strategicPlan.create).not.toHaveBeenCalled();
+
+      // RKA Yayasan tanpa induk Renstra → ditolak.
+      vi.mocked(prisma.strategicPlan.findFirst).mockResolvedValue(null);
+      await expect(
+        perencanaanService.createPlan({
+          ...base,
+          title: 'RKA Yayasan 2027',
+          type: 'RKA' as any,
+          unitId: null,
         })
       ).rejects.toMatchObject({ statusCode: 400 });
       expect(prisma.strategicPlan.create).not.toHaveBeenCalled();

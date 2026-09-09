@@ -92,12 +92,18 @@ export class PerencanaanService {
       if (data.type === 'RENSTRA' && parent.type !== 'RPJP') {
         throw Errors.badRequest('RENSTRA must refer to an RPJP parent plan');
       }
-    } else if (data.type === 'RKA' && data.unitId) {
-      // A unit RKA with no parent would float outside the cascade, which is
-      // precisely the gap that let unit plans claim in prose to be derived
-      // from the RKA Yayasan while pointing at the Renstra.
+    } else if (data.type !== 'RPJP') {
+      // RPJP adalah akar kaskade — satu-satunya tipe yang sah tanpa induk.
+      // Segala yang lain harus menggantung pada tingkat di atasnya, atau
+      // dokumen terlepas dari kaskade wajib (Renstra menginduk RPJP; RKA
+      // Yayasan menginduk Renstra; RKA unit menginduk RKA Yayasan).
+      if (data.type === 'RENSTRA') {
+        throw Errors.badRequest('RENSTRA harus menyebut RPJP induknya.');
+      }
       throw Errors.badRequest(
-        'RKA unit harus menyebut RKA Yayasan induknya.'
+        data.unitId
+          ? 'RKA unit harus menyebut RKA Yayasan induknya.'
+          : 'RKA Yayasan harus menyebut Renstra induknya.'
       );
     }
 
@@ -469,7 +475,7 @@ export class PerencanaanService {
   async getPlanForAuth(id: string) {
     return prisma.strategicPlan.findUnique({
       where: { id },
-      select: { id: true, unitId: true },
+      select: { id: true, unitId: true, status: true },
     });
   }
 

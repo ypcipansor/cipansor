@@ -164,6 +164,7 @@ export interface CreatePKIndicatorRequestDTO {
   unit: string;
   weight: number;
   category: "DIRECT" | "INDIRECT" | "NON_CASCADING";
+  aggregation?: "KUMULATIF" | "RATA_RATA" | "TERAKHIR";
   refIndicatorId?: string;
   refStrategicIndicatorId?: string;
   notes?: string;
@@ -175,6 +176,7 @@ export interface UpdatePKIndicatorRequestDTO {
   unit?: string;
   weight?: number;
   category?: "DIRECT" | "INDIRECT" | "NON_CASCADING";
+  aggregation?: "KUMULATIF" | "RATA_RATA" | "TERAKHIR";
   refIndicatorId?: string | null;
   refStrategicIndicatorId?: string | null;
   notes?: string | null;
