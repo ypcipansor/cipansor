@@ -39,7 +39,7 @@ import {
   ASPECT_LABELS,
   TKAchievementLevel,
 } from "@/hooks/use-tk-assessment";
-import { ColumnDef } from "@tanstack/react-table";
+import { type ColumnDef } from "@/components/shared";
 import { format } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
 import { toast } from "sonner";
