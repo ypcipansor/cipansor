@@ -1,4 +1,4 @@
-import { ColumnDef } from "@tanstack/react-table";
+import { type ColumnDef } from "@/components/shared";
 import { safeFormat } from "@/lib/date";
 import { DataTable } from "@/components/shared";
 import { AssignmentSubmission } from "@cipansor/shared";
