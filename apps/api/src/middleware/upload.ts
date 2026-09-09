@@ -185,10 +185,22 @@ export const handleSingleUpload = (fieldName: string) => {
           const localPath = req.file.path;
 
           const { uploadToCloudStorage } = await import('@/utils/cloud-storage');
-          const storageResult = await uploadToCloudStorage(localPath, filename, mimeType);
+          let storageResult;
+          try {
+            storageResult = await uploadToCloudStorage(localPath, filename, mimeType);
+          } catch (error) {
+            // A failed cloud upload must not leave the staging file behind;
+            // repeated failures would otherwise fill the upload volume.
+            await fs.promises.unlink(localPath).catch(() => undefined);
+            throw error;
+          }
 
           if (storageResult.provider === 'azure') {
             req.body.fileUrl = storageResult.url;
+            // Container/blob name ride alongside so the upload controller can
+            // mint a SAS for a private container instead of the raw blob URL.
+            req.body.fileContainerName = storageResult.containerName;
+            req.body.fileBlobName = storageResult.blobName;
             // Clean up staging file on local disk after successful Azure Blob upload
             await fs.promises.unlink(localPath).catch(() => undefined);
           } else {

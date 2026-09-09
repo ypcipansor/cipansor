@@ -32,7 +32,7 @@ import {
 import { TwoFactorVerify } from "@/components/auth/TwoFactorVerify";
 import { TwoFactorSetup } from "@/components/auth/TwoFactorSetup";
 import { toast } from "sonner";
-import { authApi } from "@/lib/api";
+import { useSSOConfig } from "@/hooks/use-sso-config";
 import {
   DEMO_ACCOUNTS,
   DEMO_TABS,
@@ -129,6 +129,9 @@ function LoginPageContent() {
     verifyTwoFactor,
     resetAuth,
   } = useAuthStore();
+
+  // SSO config via the React Query data-layer hook (never the Axios instance).
+  const { data: ssoConfig, isError: ssoConfigError } = useSSOConfig();
 
   // Handle OIDC token callback in URL hash (e.g. #id_token=...)
   useEffect(() => {
@@ -527,17 +530,21 @@ function LoginPageContent() {
                 variant="outline"
                 className="w-full flex items-center justify-center gap-2"
                 disabled={isLoading}
-                onClick={async () => {
+                onClick={() => {
+                  clearError();
+                  if (ssoConfigError || !ssoConfig) {
+                    toast.error(
+                      "Gagal memuat konfigurasi SSO. Periksa koneksi Anda lalu coba lagi."
+                    );
+                    return;
+                  }
+                  if (!ssoConfig.googleEnabled || !ssoConfig.googleClientId) {
+                    toast.info(
+                      "Google Workspace SSO belum dikonfigurasi di server. Minta administrator menyetel GOOGLE_CLIENT_ID."
+                    );
+                    return;
+                  }
                   try {
-                    clearError();
-                    const configRes = await authApi.getSSOConfig();
-                    const config = configRes.data.data;
-                    if (!config.googleEnabled || !config.googleClientId) {
-                      toast.info(
-                        "Google Workspace SSO belum dikonfigurasi di server. Minta administrator menyetel GOOGLE_CLIENT_ID."
-                      );
-                      return;
-                    }
                     const state = crypto.randomUUID();
                     const nonce = crypto.randomUUID();
                     sessionStorage.setItem("sso_provider", "google");
@@ -545,9 +552,13 @@ function LoginPageContent() {
                     sessionStorage.setItem("sso_nonce", nonce);
 
                     const redirectUri = encodeURIComponent(window.location.origin + "/login");
-                    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?response_type=id_token&client_id=${config.googleClientId}&redirect_uri=${redirectUri}&scope=openid%20email%20profile&state=${state}&nonce=${nonce}`;
+                    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?response_type=id_token&client_id=${ssoConfig.googleClientId}&redirect_uri=${redirectUri}&scope=openid%20email%20profile&state=${state}&nonce=${nonce}`;
                     window.location.href = authUrl;
-                  } catch {}
+                  } catch {
+                    toast.error(
+                      "Gagal memulai alur masuk Google Workspace. Silakan coba lagi."
+                    );
+                  }
                 }}
               >
                 <svg className="h-4 w-4" viewBox="0 0 24 24">
@@ -564,17 +575,21 @@ function LoginPageContent() {
                 variant="outline"
                 className="w-full flex items-center justify-center gap-2"
                 disabled={isLoading}
-                onClick={async () => {
+                onClick={() => {
+                  clearError();
+                  if (ssoConfigError || !ssoConfig) {
+                    toast.error(
+                      "Gagal memuat konfigurasi SSO. Periksa koneksi Anda lalu coba lagi."
+                    );
+                    return;
+                  }
+                  if (!ssoConfig.microsoftEnabled || !ssoConfig.microsoftClientId) {
+                    toast.info(
+                      "Microsoft 365 SSO belum dikonfigurasi di server. Minta administrator menyetel MICROSOFT_CLIENT_ID."
+                    );
+                    return;
+                  }
                   try {
-                    clearError();
-                    const configRes = await authApi.getSSOConfig();
-                    const config = configRes.data.data;
-                    if (!config.microsoftEnabled || !config.microsoftClientId) {
-                      toast.info(
-                        "Microsoft 365 SSO belum dikonfigurasi di server. Minta administrator menyetel MICROSOFT_CLIENT_ID."
-                      );
-                      return;
-                    }
                     const state = crypto.randomUUID();
                     const nonce = crypto.randomUUID();
                     sessionStorage.setItem("sso_provider", "microsoft");
@@ -582,9 +597,13 @@ function LoginPageContent() {
                     sessionStorage.setItem("sso_nonce", nonce);
 
                     const redirectUri = encodeURIComponent(window.location.origin + "/login");
-                    const authUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=${config.microsoftClientId}&response_type=id_token&redirect_uri=${redirectUri}&scope=openid%20profile%20email&response_mode=fragment&state=${state}&nonce=${nonce}`;
+                    const authUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=${ssoConfig.microsoftClientId}&response_type=id_token&redirect_uri=${redirectUri}&scope=openid%20profile%20email&response_mode=fragment&state=${state}&nonce=${nonce}`;
                     window.location.href = authUrl;
-                  } catch {}
+                  } catch {
+                    toast.error(
+                      "Gagal memulai alur masuk Microsoft 365. Silakan coba lagi."
+                    );
+                  }
                 }}
               >
                 <svg className="h-4 w-4 text-blue-600" viewBox="0 0 23 23">

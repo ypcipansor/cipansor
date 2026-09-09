@@ -14,6 +14,28 @@ import { JwksClient } from 'jwks-rsa';
 import { SSOConfigResponse } from '@cipansor/shared';
 
 /**
+ * Microsoft Entra ID JWKS clients, cached per tenantId so the
+ * `cache`/`rateLimit` options actually hold across requests instead of being
+ * recreated (and re-fetching the signing keys) on every login.
+ */
+const microsoftJwksClients = new Map<string, JwksClient>();
+
+function getMicrosoftJwksClient(tenantId: string): JwksClient {
+  const existing = microsoftJwksClients.get(tenantId);
+  if (existing) return existing;
+
+  const client = new JwksClient({
+    jwksUri: `https://login.microsoftonline.com/${tenantId}/discovery/v2.0/keys`,
+    cache: true,
+    cacheMaxAge: 86400000, // 24h — the OIDC key lifetime
+    rateLimit: true,
+    jwksRequestsPerMinute: 10,
+  });
+  microsoftJwksClients.set(tenantId, client);
+  return client;
+}
+
+/**
  * Resolve a legacy UserRole value (e.g. 'TEACHER', 'STAFF') into the correct
  * per-unit RoleCode (e.g. 'TKQ_GURU', 'SDIT_GURU') based on the target Unit's
  * type. For SUPER_ADMIN and UNIT_ADMIN the mapping is unit-agnostic.
@@ -422,11 +444,7 @@ export class AuthService {
     }
 
     const tenantId = process.env.MICROSOFT_TENANT_ID || 'common';
-    const jwksClient = new JwksClient({
-      jwksUri: `https://login.microsoftonline.com/${tenantId}/discovery/v2.0/keys`,
-      cache: true,
-      rateLimit: true,
-    });
+    const jwksClient = getMicrosoftJwksClient(tenantId);
 
     const key = await jwksClient.getSigningKey(decoded.header.kid);
     const signingKey = key.getPublicKey();
@@ -449,6 +467,21 @@ export class AuthService {
       !payload.iss.startsWith('https://sts.windows.net/')
     ) {
       throw new Error('Microsoft token issuer (iss) invalid');
+    }
+
+    // Single-tenant enforcement: when MICROSOFT_TENANT_ID names one tenant
+    // (a directory GUID or a domain) rather than a multi-tenant audience
+    // ('common'/'organizations'/'consumers'), reject tokens minted for a
+    // different tenant. The `tid` claim is the directory GUID; the issuer
+    // carries the same tenant (as GUID or verified domain) in its path.
+    const isMultiTenantAuth = tenantId === 'common' || tenantId === 'organizations' || tenantId === 'consumers';
+    if (!isMultiTenantAuth) {
+      const tidMatches = typeof payload.tid === 'string' && payload.tid === tenantId;
+      const issuerMatchesTenant =
+        typeof payload.iss === 'string' && payload.iss.includes(`/${tenantId}/`);
+      if (!tidMatches && !issuerMatchesTenant) {
+        throw new Error('Microsoft token tenant (tid) mismatch');
+      }
     }
 
     const email = (payload.preferred_username || payload.email || payload.upn) as string | undefined;

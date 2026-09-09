@@ -35,6 +35,7 @@ describe('UploadController', () => {
         },
         protocol: 'http',
         get: vi.fn().mockReturnValue('localhost:3000'),
+        body: {},
       } as unknown as Request;
       const res = {
         status: vi.fn().mockReturnThis(),

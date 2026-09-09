@@ -3,7 +3,6 @@ import { uploadToCloudStorage, generateSasUrl, getStorageConfig } from './cloud-
 
 const {
   mockUploadFile,
-  mockGetBlockBlobClient,
   mockCreateIfNotExists,
   mockGetContainerClient,
   mockSasToString,
@@ -165,8 +164,17 @@ describe('Cloud Storage Utility (Azure Blob Storage Provider)', () => {
     let config = getStorageConfig();
     expect(config.primaryProvider).toBe('local');
     expect(config.azureConfigured).toBe(false);
+    expect(config.azureAccount).toBeNull();
 
+    // Account name alone does not make Azure usable: uploads branch on the
+    // connection string, so the config must not advertise Azure otherwise.
     process.env.AZURE_STORAGE_ACCOUNT = 'cipansorstore';
+    config = getStorageConfig();
+    expect(config.primaryProvider).toBe('local');
+    expect(config.azureConfigured).toBe(false);
+    expect(config.azureAccount).toBe('cipansorstore');
+
+    process.env.AZURE_STORAGE_CONNECTION_STRING = CONNECTION_STRING;
     config = getStorageConfig();
     expect(config.primaryProvider).toBe('azure');
     expect(config.azureConfigured).toBe(true);

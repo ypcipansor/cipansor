@@ -139,9 +139,11 @@ export async function generateSasUrl(
  * Get cloud storage configuration details
  */
 export function getStorageConfig() {
-  const isAzureConfigured = Boolean(
-    process.env.AZURE_STORAGE_CONNECTION_STRING || process.env.AZURE_STORAGE_ACCOUNT
-  );
+  // Azure uploads can only run when a connection string is present (see
+  // uploadToCloudStorage — it branches on AZURE_STORAGE_CONNECTION_STRING).
+  // Reporting the account name alone as "configured" would advertise Azure
+  // while every upload would quietly fall back to local disk.
+  const isAzureConfigured = Boolean(process.env.AZURE_STORAGE_CONNECTION_STRING);
 
   return {
     primaryProvider: isAzureConfigured ? 'azure' : 'local',
