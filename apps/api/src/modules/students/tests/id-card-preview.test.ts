@@ -58,12 +58,14 @@ describe('StudentIdCardService.getOrGeneratePreviewIdCard — read-only preview'
     generateSpy.mockRestore();
   });
 
-  it('renders a transient card and NEVER writes state when no ACTIVE row exists', async () => {
+  it('renders a not-issued preview and NEVER writes state when no ACTIVE row exists', async () => {
     (prisma.studentCardState.findFirst as any).mockResolvedValue(null);
 
     await StudentIdCardService.getOrGeneratePreviewIdCard('s1');
 
-    expect(generateSpy).toHaveBeenCalledWith('s1', {}, { persistState: false });
+    // Flag 2: no card is issued yet, so the preview is marked not-issued and
+    // ships NO QR (a transient `cid` would fail verification).
+    expect(generateSpy).toHaveBeenCalledWith('s1', {}, { persistState: false, issued: false });
     expect(prisma.studentCardState.create).not.toHaveBeenCalled();
     expect(prisma.studentCardState.updateMany).not.toHaveBeenCalled();
   });
@@ -88,6 +90,7 @@ describe('StudentIdCardService.getOrGeneratePreviewIdCard — read-only preview'
       {
         cardStateId: 'existing-state-id',
         persistState: false,
+        issued: true,
         validUntil,
         cardNumber: 'CARD-EXISTING',
         issuedAt,
@@ -112,7 +115,12 @@ describe('StudentIdCardService.getOrGeneratePreviewIdCard — read-only preview'
     expect(generateSpy).toHaveBeenCalledWith(
       's1',
       {},
-      { cardStateId: 'existing-state-id', persistState: false, cardNumber: 'CARD-EXISTING' }
+      {
+        cardStateId: 'existing-state-id',
+        persistState: false,
+        issued: true,
+        cardNumber: 'CARD-EXISTING',
+      }
     );
   });
 });
@@ -123,7 +131,10 @@ describe('StudentIdCardService.bulkRegenerateActiveCards — conflict handling',
     vi.spyOn(StudentIdCardService, 'generateIdCard').mockResolvedValue(aCardDetail() as never);
   });
 
-  it('translates a concurrent ACTIVE-card unique violation into a 409 conflict', async () => {
+  it('reports a concurrent ACTIVE-card unique violation as a partial failure, not a throw', async () => {
+    // Flag 5: a later batch failing must not swallow the cards already
+    // regenerated. A P2002 on a batch returns the conflict in `failures` and the
+    // successful cards in `cards` instead of throwing and hiding the earlier work.
     (prisma.student.findMany as any).mockResolvedValue([{ id: 's1' }]);
     (prisma.$transaction as any).mockRejectedValue(
       new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
@@ -133,8 +144,46 @@ describe('StudentIdCardService.bulkRegenerateActiveCards — conflict handling',
       })
     );
 
-    await expect(
-      StudentIdCardService.bulkRegenerateActiveCards(undefined, undefined, superAdmin())
-    ).rejects.toThrow(/Hanya satu kartu aktif/i);
+    const result = await StudentIdCardService.bulkRegenerateActiveCards(
+      undefined,
+      undefined,
+      superAdmin()
+    );
+
+    expect(result.totalRegenerated).toBe(0);
+    expect(result.cards).toHaveLength(0);
+    expect(result.failures).toEqual([
+      { studentId: 's1', message: expect.stringMatching(/Hanya satu kartu aktif/i) },
+    ]);
+  });
+
+  it('keeps previously regenerated cards when a later batch fails', async () => {
+    // BATCH_SIZE is 50: students s-0..s-49 make up the first (committed) batch,
+    // s-50 the second (failed) one. The partial result must report the 50 already
+    // regenerated AND the one that failed — a mid-run failure must never hide it.
+    const students = Array.from({ length: 51 }, (_, i) => ({ id: `s-${i}` }));
+    (prisma.student.findMany as any).mockResolvedValue(students);
+    (prisma.$transaction as any)
+      .mockResolvedValueOnce(undefined) // first batch (50) commits
+      .mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+          code: 'P2002',
+          clientVersion: 'vitest',
+          meta: {},
+        })
+      );
+
+    const result = await StudentIdCardService.bulkRegenerateActiveCards(
+      undefined,
+      undefined,
+      superAdmin()
+    );
+
+    expect(result.totalRegenerated).toBe(50);
+    expect(result.cards).toHaveLength(50);
+    // The student from the failed second batch is reported, not lost.
+    expect(result.failures).toEqual([
+      { studentId: 's-50', message: expect.stringMatching(/Hanya satu kartu aktif/i) },
+    ]);
   });
 });

@@ -12,7 +12,7 @@
 
 import { prisma } from '../../lib/prisma';
 import { ApiError, ErrorCode } from '../../middleware/error';
-import { isTeacherOrAboveRoleCode } from '../../middleware/auth';
+import { isTeacherOrAboveRoleCode, isAdminRoleCode } from '../../middleware/auth';
 import { RoleCode } from '@prisma/client';
 import type { JwtPayload } from '../../lib/jwt';
 import { P5ProjectService } from './p5-project.service';
@@ -137,13 +137,22 @@ export function getSemesterDateRange(
   }
   const startDate = new Date(academicYear.startDate);
   const endDate = new Date(academicYear.endDate);
-  // End of day Dec 31, not midnight: `new Date(y, 11, 31)` lands on
+  // Keep the boundary in UTC so it never shifts with the server's timezone.
+  // `scheduledAt`/`gradedAt` are stored by Prisma as UTC DateTimes, so on a
+  // UTC host `new Date(y, 11, 31)` happened to match — but on a UTC+7 host the
+  // same expression lands on Dec 31 00:00 WIB = Dec 30 17:00 UTC, which would
+  // push a Dec 31-afternoon UTC exam into Semester 1 (or a Jan 1-early UTC exam
+  // into Semester 1 instead of 2). Using `Date.UTC` decouples the boundary from
+  // the host timezone entirely.
+  //
+  // End of day Dec 31, not midnight: `Date.UTC(y, 11, 31)` lands on
   // 00:00:00.000, so an exam scheduled Dec 31 afternoon (scheduledAt after
   // midnight) slipped past the `<= semEndDate` check and was dropped from
   // Semester 1. Semester 2 starts at the first millisecond of Jan 1, so the
   // two windows never overlap.
-  const sem1End = new Date(startDate.getFullYear(), 11, 31, 23, 59, 59, 999);
-  const sem2Start = new Date(startDate.getFullYear() + 1, 0, 1);
+  const startYear = startDate.getUTCFullYear();
+  const sem1End = new Date(Date.UTC(startYear, 11, 31, 23, 59, 59, 999));
+  const sem2Start = new Date(Date.UTC(startYear + 1, 0, 1));
   return semester === 1 ? { startDate, endDate: sem1End } : { startDate: sem2Start, endDate };
 }
 
@@ -180,18 +189,17 @@ export class RaportMerdekaService {
   }
 
   /**
-   * Validate student unit scope (supports cross-unit educator assignments).
+   * Validate whether the user may read the given student's raport.
    *
-   * Access rules:
+   * Access rules (see also {@link assertRaportAccess}, shared with the bulk
+   * class endpoint so the two flows can never drift apart):
    * - SUPER_ADMIN bypasses scoping.
-   * - A user whose `unitId` matches the student's unit is fine.
-   * - A user with NO `unitId` must NOT bypass scoping — they are treated as a
-   *   cross-unit accessor and must prove an educator/admin assignment or a
-   *   teacher record in the student's unit (otherwise an empty unitId was a
-   *   free pass to every unit).
-   * - Cross-unit access is only granted to educator/admin roles
-   *   (`isTeacherOrAboveRoleCode`); a non-educator assignment (e.g. a parent
-   *   or business staff role) does not open a raport.
+   * - An admin role (per-school ADMIN / legacy UNIT_ADMIN) whose `unitId` matches
+   *   the student's unit may read the whole unit.
+   * - Any other teacher-or-above role must cover one of the student's ACTIVE
+   *   classes (homeroom / teaches a subject there / set an exam there). A same-
+   *   unit teacher is NOT granted unit-wide raport access; a cross-unit teacher
+   *   with an exam OR a UserRoleAssignment in the unit alone is NOT enough.
    */
   static async validateStudentScope(user: JwtPayload | undefined, studentId: string) {
     if (!user) return;
@@ -207,63 +215,100 @@ export class RaportMerdekaService {
       throw new ApiError(ErrorCode.NOT_FOUND, 'Siswa tidak ditemukan');
     }
 
-    // A user with no unitId is treated as cross-unit. An empty unitId must
-    // never be a bypass — it can only pass if an explicit assignment exists.
-    const isCrossUnit = !user.unitId || student.unitId !== user.unitId;
-    if (!isCrossUnit) return;
-
-    const userId = user.id || user.sub;
-    const now = new Date();
-
-    // 1. Active, non-expired UserRoleAssignment in the target student unit
-    //    (or a global/unit-less one) whose role is an educator/admin RoleCode.
-    const userRoleInUnit = await prisma.userRoleAssignment.findFirst({
-      where: {
-        userId,
-        isActive: true,
-        AND: [
-          { OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
-          { OR: [{ unitId: student.unitId }, { unitId: null }] },
-        ],
-      },
-      include: { role: { select: { code: true } } },
-    });
-
-    if (userRoleInUnit && isTeacherOrAboveRoleCode(userRoleInUnit.role.code)) return;
-
-    // 2. The teacher record grants access only to students the teacher actually
-    //    covers. A cross-unit teacher with a single exam in the student's UNIT
-    //    used to open every student in that unit — leak of grades, attendance
-    //    and notes for children the teacher never taught. Narrow it to the
-    //    student's own active classes: the teacher must be the homeroom teacher,
-    //    teach a subject there, or have set an exam for that class.
     const studentClasses = await prisma.classEnrollment.findMany({
       where: { studentId, status: 'active' },
       select: { classId: true },
     });
-    const classIds = studentClasses.map((c) => c.classId);
 
+    await this.assertRaportAccess(
+      user,
+      student.unitId,
+      studentClasses.map((c) => c.classId),
+      'Anda tidak memiliki akses ke siswa di unit lain'
+    );
+  }
+
+  /**
+   * Shared raport access gate used by both the single-student endpoint and the
+   * bulk class endpoint.
+   *
+   * `unitId` is the unit the raport belongs to (the student's unit, or the
+   * class's unit for bulk). `classIds` are the classes the subject (the student
+   * itself, or the single class for bulk) belongs to.
+   *
+   * - SUPER_ADMIN bypasses (handled by callers before reaching here).
+   * - An admin role in the SAME unit passes.
+   * - An admin role in ANOTHER unit passes only with an active educator/admin
+   *   `UserRoleAssignment` in that unit.
+   * - Every other role (teachers, principals, ustadz, ...) must cover one of
+   *   the given classes: homeroom, teach a subject there, or set an exam for
+   *   it. A classless subject (`TeacherSubject.classId = null`) only covers
+   *   classes inside the teacher's OWN unit — it must never open a student of
+   *   ANOTHER unit (Flag 4).
+   *
+   * Throws 403 with `denyMessage` when access is not granted.
+   */
+  private static async assertRaportAccess(
+    user: JwtPayload,
+    unitId: string,
+    classIds: string[],
+    denyMessage: string
+  ) {
+    const userRoleCode = user.roleCode || user.role;
+    const isAdmin = isAdminRoleCode(userRoleCode) || userRoleCode === 'UNIT_ADMIN';
+    const isSameUnit = !!user.unitId && unitId === user.unitId;
+
+    if (isAdmin && isSameUnit) return;
+
+    const userId = user.id || user.sub;
+    const now = new Date();
+
+    if (isAdmin) {
+      // A cross-unit admin may open a raport only when an active educator/admin
+      // assignment places them in this unit.
+      const userRoleInUnit = await prisma.userRoleAssignment.findFirst({
+        where: {
+          userId,
+          isActive: true,
+          AND: [
+            { OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
+            { OR: [{ unitId }, { unitId: null }] },
+          ],
+        },
+        include: { role: { select: { code: true } } },
+      });
+      if (userRoleInUnit && isTeacherOrAboveRoleCode(userRoleInUnit.role.code)) return;
+      throw new ApiError(ErrorCode.FORBIDDEN, denyMessage);
+    }
+
+    // Non-admin educators must cover one of the subject's classes. This closes
+    // two leaks at once: a same-unit teacher used to read every raport of the
+    // unit (Flag 3), and a cross-unit teacher with a single exam / classless
+    // subject / unit assignment opened every student of the unit (Flag 4).
     if (classIds.length === 0) {
-      throw new ApiError(ErrorCode.FORBIDDEN, 'Anda tidak memiliki akses ke siswa di unit lain');
+      throw new ApiError(ErrorCode.FORBIDDEN, denyMessage);
     }
 
     const teacherAssignment = await prisma.teacher.findFirst({
       where: {
         userId,
         OR: [
-          // Teacher is homeroom for one of the student's classes.
+          // Teacher is homeroom for one of the subject's classes.
           { homeroomClasses: { some: { id: { in: classIds } } } },
-          // Teacher teaches a subject in one of the student's classes
-          // (`classId: null` on TeacherSubject means "all classes").
-          { teacherSubjects: { some: { OR: [{ classId: { in: classIds } }, { classId: null }] } } },
-          // Teacher set an exam for one of the student's classes.
+          // Teacher teaches a subject in one of the subject's classes.
+          { teacherSubjects: { some: { classId: { in: classIds } } } },
+          // A classless subject (covers all classes) only applies inside the
+          // teacher's OWN unit — a cross-unit teacher's classless subject must
+          // NOT open every student of another unit.
+          { unitId, teacherSubjects: { some: { classId: null } } },
+          // Teacher set an exam for one of the subject's classes.
           { exams: { some: { classId: { in: classIds } } } },
         ],
       },
     });
 
     if (!teacherAssignment) {
-      throw new ApiError(ErrorCode.FORBIDDEN, 'Anda tidak memiliki akses ke siswa di unit lain');
+      throw new ApiError(ErrorCode.FORBIDDEN, denyMessage);
     }
   }
 
@@ -916,56 +961,18 @@ export class RaportMerdekaService {
     }
 
     if (user && user.role !== 'SUPER_ADMIN' && user.roleCode !== 'SUPER_ADMIN') {
-      // An empty `unitId` is treated as cross-unit — the same rule as
-      // `validateStudentScope` for the individual endpoint. A user without a
-      // unit of their own must NOT get a free pass into a class raport across
-      // units; they can only open it with an educator/admin assignment.
-      const isCrossUnit = !user.unitId || classInfo.unitId !== user.unitId;
-      if (isCrossUnit) {
-        const userId = user.id || user.sub;
-        const now = new Date();
-        const userRoleInUnit = await prisma.userRoleAssignment.findFirst({
-          where: {
-            userId,
-            isActive: true,
-            AND: [
-              { OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
-              { OR: [{ unitId: classInfo.unitId }, { unitId: null }] },
-            ],
-          },
-          include: { role: { select: { code: true } } },
-        });
-
-        // Cross-unit access requires an educator/admin assignment (same
-        // canonical RoleCode group the middleware uses) — not just any role on
-        // the roster. A parent/business-staff role must not open a class raport.
-        const hasEducatorRoleInUnit =
-          userRoleInUnit && isTeacherOrAboveRoleCode(userRoleInUnit.role.code);
-        if (!hasEducatorRoleInUnit) {
-          const teacherAssignment = await prisma.teacher.findFirst({
-            where: {
-              userId,
-              OR: [
-                // The teacher must directly cover THIS class — be its homeroom
-                // teacher, teach a subject in it (`classId: null` = all classes),
-                // or have set an exam for it. A membership in the unit alone no
-                // longer grants a class raport, so one exam in a unit cannot
-                // open every class of that unit.
-                { homeroomClasses: { some: { id: classId } } },
-                { teacherSubjects: { some: { OR: [{ classId }, { classId: null }] } } },
-                { exams: { some: { classId } } },
-              ],
-            },
-          });
-
-          if (!teacherAssignment) {
-            throw new ApiError(
-              ErrorCode.FORBIDDEN,
-              'Anda tidak memiliki akses ke kelas di unit lain'
-            );
-          }
-        }
-      }
+      // Same gate as the single-student endpoint (`assertRaportAccess`), so the
+      // two flows can never drift apart. A same-unit non-admin teacher is NOT
+      // granted a class raport for a class they do not teach (Flag 4 applies to
+      // the bulk path too). A cross-unit teacher must cover THIS class — an exam
+      // elsewhere in the unit, or a classless subject in another unit, no longer
+      // opens it.
+      await this.assertRaportAccess(
+        user,
+        classInfo.unitId,
+        [classId],
+        'Anda tidak memiliki akses ke kelas di unit lain'
+      );
     }
 
     const enrollments = await prisma.classEnrollment.findMany({

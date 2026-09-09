@@ -69,18 +69,35 @@ export interface StudentIdCardDetail {
       validUntil: string;
       cardNumber: string;
     };
+    /**
+     * `true` when a real `StudentCardState` row backs this card and its QR will
+     * verify; `false` for a read-only preview of a student who has no issued
+     * card yet. When `issued` is `false`, `qrCode` is `null` so the preview
+     * never ships a QR that looks scannable but fails verification (a transient
+     * `cid` was never persisted, so the verifier would reject it). Printing is
+     * gated until the card is actually issued.
+     */
+    issued: boolean;
     qrCode: {
       data: string;
       verificationUrl: string;
-    };
+    } | null;
   };
 }
 
-/** Response body of `POST /students/id-cards/bulk-regenerate`. */
+/**
+ * Response body of `POST /students/id-cards/bulk-regenerate`.
+ *
+ * `failures` is present when a batch could not be committed (e.g. a concurrent
+ * regeneration hit the one-active-card invariant); it carries the students that
+ * did NOT get a card, so the caller can tell exactly which printed cards are no
+ * longer valid instead of silently losing them.
+ */
 export interface RegenerateCardsResult {
   totalRegenerated: number;
   regeneratedAt: string;
   cards: StudentIdCardDetail[];
+  failures?: Array<{ studentId: string; message: string }>;
 }
 
 /** Request body of `POST /students/id-cards/bulk-regenerate`. */

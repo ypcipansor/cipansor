@@ -29,9 +29,17 @@ export function useRegenerateStudentCards() {
         queryKey: ["student-id-card-details"],
       });
       queryClient.invalidateQueries({ queryKey: ["students"] });
-      toast.success(
-        `${data.totalRegenerated} kartu pelajar berhasil diregenerasi.`,
-      );
+      const failures = data.failures?.length ?? 0;
+      if (failures > 0) {
+        toast.warning(
+          `${data.totalRegenerated} kartu berhasil diregenerasi, namun ${failures} siswa gagal. Kartu lama siswa yang gagal tetap berlaku; ulangi untuk siswa tersebut.`,
+          { duration: 8000 },
+        );
+      } else {
+        toast.success(
+          `${data.totalRegenerated} kartu pelajar berhasil diregenerasi.`,
+        );
+      }
     },
     onError: (error: unknown) => {
       toast.error("Gagal meregenerasi kartu pelajar.");

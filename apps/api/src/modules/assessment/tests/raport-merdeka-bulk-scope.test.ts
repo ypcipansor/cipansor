@@ -73,11 +73,28 @@ describe('RaportMerdekaService.generateBulkRaportMerdeka scope', () => {
     ).rejects.toThrow(/tidak memiliki akses ke kelas di unit lain/);
   });
 
-  it('an educator user with no unitId but an educator cross-unit assignment opens the class raport', async () => {
+  it('DENIES a cross-unit educator with only a unit assignment but no class coverage', async () => {
+    // Flag 4 on the bulk path: a cross-unit educator assignment in the unit
+    // alone no longer opens a class raport — the teacher must cover THIS class.
     const crossUnit = user({ unitId: null });
     (prisma.userRoleAssignment.findFirst as any).mockResolvedValue({
       role: { code: 'SMPIT_GURU' },
     });
+    (prisma.teacher.findFirst as any).mockResolvedValue(null);
+    (prisma.classEnrollment.findMany as any).mockResolvedValue([{ student: { id: 's1' } }]);
+
+    await expect(
+      RaportMerdekaService.generateBulkRaportMerdeka('class-1', 'year-1', 2, crossUnit)
+    ).rejects.toThrow(/tidak memiliki akses ke kelas di unit lain/);
+    expect(prisma.classEnrollment.findMany).not.toHaveBeenCalled();
+  });
+
+  it('ALLOWS a cross-unit educator with no unitId but who covers the class', async () => {
+    const crossUnit = user({ unitId: null });
+    (prisma.userRoleAssignment.findFirst as any).mockResolvedValue({
+      role: { code: 'SMPIT_GURU' },
+    });
+    (prisma.teacher.findFirst as any).mockResolvedValue({ id: 'teacher-1' });
     (prisma.classEnrollment.findMany as any).mockResolvedValue([{ student: { id: 's1' } }]);
 
     const result = await RaportMerdekaService.generateBulkRaportMerdeka(
@@ -91,8 +108,20 @@ describe('RaportMerdekaService.generateBulkRaportMerdeka scope', () => {
     expect(prisma.classEnrollment.findMany).toHaveBeenCalled();
   });
 
-  it('a user whose unitId matches the class unit passes without an educator assignment check', async () => {
+  it('DENIES a same-unit teacher who does NOT cover the class (Flag 3 on the bulk path)', async () => {
     const sameUnit = user({ unitId: 'unit-smp-1' });
+    (prisma.userRoleAssignment.findFirst as any).mockResolvedValue(null);
+    (prisma.teacher.findFirst as any).mockResolvedValue(null);
+
+    await expect(
+      RaportMerdekaService.generateBulkRaportMerdeka('class-1', 'year-1', 1, sameUnit)
+    ).rejects.toThrow(/tidak memiliki akses ke kelas di unit lain/);
+  });
+
+  it('ALLOWS a same-unit teacher who covers the class, without an educator assignment check', async () => {
+    const sameUnit = user({ unitId: 'unit-smp-1' });
+    (prisma.userRoleAssignment.findFirst as any).mockResolvedValue(null);
+    (prisma.teacher.findFirst as any).mockResolvedValue({ id: 'teacher-1' });
     (prisma.classEnrollment.findMany as any).mockResolvedValue([{ student: { id: 's1' } }]);
 
     const result = await RaportMerdekaService.generateBulkRaportMerdeka(

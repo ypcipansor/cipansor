@@ -119,6 +119,7 @@ function StudentIDCard({
   // reaches the page. The signed payload lives inside the `verificationUrl`'s
   // `data` query param, which `/public/verify-card` extracts and verifies.
   const qrPayload = cardDetails?.cardData?.qrCode?.verificationUrl;
+  const cardIssued = cardDetails?.cardData?.issued ?? false;
 
   return (
     <div
@@ -187,11 +188,19 @@ function StudentIDCard({
         </div>
 
         {/* QR Code */}
-        <div className="shrink-0 bg-white p-1 rounded min-w-[126px] min-h-[126px] flex items-center justify-center">
-          {cardLoading || !qrPayload ? (
+        <div className="shrink-0 bg-white p-1 rounded min-w-[126px] min-h-[126px] flex flex-col items-center justify-center text-center">
+          {cardLoading ? (
             <Skeleton className="h-[120px] w-[120px] rounded" />
-          ) : (
+          ) : cardIssued && qrPayload ? (
             <StudentQRCode value={qrPayload} size={120} />
+          ) : (
+            <div className="text-[10px] text-emerald-700 px-2">
+              <QrCode className="h-6 w-6 mx-auto mb-1 opacity-50" />
+              <p>Belum diterbitkan</p>
+              <p className="text-[9px]">
+                Cetak setelah kartu diregenerasi
+              </p>
+            </div>
           )}
         </div>
       </div>

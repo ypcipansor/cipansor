@@ -480,7 +480,13 @@ export function useRaportMerdekaAcademicYears() {
   return useQuery({
     queryKey: ["academic-years-list"],
     queryFn: async () => {
-      const response = await api.get<ApiResponse<AssessmentAcademicYearItem[]>>("/academic-years");
+      // No limit → the API defaults to ~10 records, which silently drops old
+      // academic years from the selector so they can never be previewed/exported.
+      // Ask for the max page size so the full history is available (Flag 8).
+      const response = await api.get<ApiResponse<AssessmentAcademicYearItem[]>>(
+        "/academic-years",
+        { params: { limit: 100 } },
+      );
       return response.data.data;
     },
   });

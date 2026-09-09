@@ -562,15 +562,16 @@ export const CorrespondenceService = {
   ) {
     await assertLetterAccess(actor, letterId);
 
-    // Validate participant eligibility if reviewer/recipient/cc arrays are provided
+    // Compute the participant set up-front but DELAY the eligibility check until
+    // after the status/signature/authorization guards below. Doing it first let
+    // a read-only link on the review chain probe the eligibility of arbitrary
+    // userIds through an update request before learning the letter is not theirs
+    // to edit (Flag 12).
     const participantsToValidate = [
       ...(data.reviewerIds || []),
       ...(data.recipientIds || []),
       ...ccUserIds(data.ccRecipients),
     ];
-    if (participantsToValidate.length > 0) {
-      await this.validateParticipantEligibility(participantsToValidate, actor);
-    }
 
     return await prisma.$transaction(async (tx) => {
       // Row lock letter for update
@@ -619,6 +620,13 @@ export const CorrespondenceService = {
 
       if (!isCreator && !isExecutive && !handlesUnitCorrespondence(actor)) {
         throw Errors.forbidden('Anda tidak berwenang mengubah surat ini.');
+      }
+
+      // Now that status, signature and authorization have all passed, validate
+      // the requested participant list. A read-only reviewer cannot reach this
+      // point, so the eligibility probe is no longer an oracle.
+      if (participantsToValidate.length > 0) {
+        await this.validateParticipantEligibility(participantsToValidate, actor);
       }
 
       // If letter already has an assigned letterNumber, forbid changing type or classificationId to prevent number category mismatches

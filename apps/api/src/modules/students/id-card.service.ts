@@ -291,12 +291,16 @@ export class StudentIdCardService {
       return this.generateIdCard(studentId, config, {
         cardStateId: existing.id,
         persistState: false,
+        issued: true,
         ...(existing.validUntil ? { validUntil: existing.validUntil } : {}),
         cardNumber: existing.cardNumber,
         ...(existing.issuedAt ? { issuedAt: existing.issuedAt } : {}),
       });
     }
-    return this.generateIdCard(studentId, config, { persistState: false });
+    // No issued card yet: the preview marks itself as not-issued and ships NO
+    // QR (Flag 2). The card can only be printed after issue/regeneration writes
+    // a real StudentCardState row.
+    return this.generateIdCard(studentId, config, { persistState: false, issued: false });
   }
 
   /**
@@ -313,6 +317,13 @@ export class StudentIdCardService {
       cardStateId?: string;
       generatedById?: string | null;
       persistState?: boolean;
+      /**
+       * `false` marks a read-only preview of a student with no issued card. The
+       * preview then ships `issued: false` and a `null` QR instead of a transient
+       * `cid` that would appear valid but always fail verification (Flag 2).
+       * Defaults to `true` so issue/regeneration always produces a verifiable card.
+       */
+      issued?: boolean;
       /** Reuse an already-issued card's validity window for an idempotent preview. */
       validUntil?: Date;
       /** Reuse an already-issued card's number for an idempotent preview. */
@@ -403,17 +414,25 @@ export class StudentIdCardService {
     const validUntil = opts?.validUntil ?? computedValidUntil;
     const cardNumber = opts?.cardNumber ?? this.generateCardNumber(student.nis, student.unit.type);
 
-    // Generate QR Code data
-    const qrCodeData = this.generateQRCodeData({
-      id: student.id,
-      nis: student.nis,
-      nisn: student.nisn ?? undefined,
-      name: student.user.name,
-      unitId: student.unit.id,
-      unitName: student.unit.name,
-      validUntil,
-      cardId: cardStateId,
-    });
+    // A preview of a student with no issued card must not ship a QR that looks
+    // scannable but fails verification: its `cid` was never persisted, so the
+    // verifier would always reject it (Flag 2). Only issue/regeneration paths
+    // (which persist a `StudentCardState` row) produce a real QR.
+    const issued = opts?.issued ?? true;
+
+    // Generate QR Code data (only when there is a real, persisted issuance).
+    const qrCodeData = issued
+      ? this.generateQRCodeData({
+          id: student.id,
+          nis: student.nis,
+          nisn: student.nisn ?? undefined,
+          name: student.user.name,
+          unitId: student.unit.id,
+          unitName: student.unit.name,
+          validUntil,
+          cardId: cardStateId,
+        })
+      : null;
 
     // Build card data
     const currentEnrollment = student.enrollments[0];
@@ -479,15 +498,19 @@ export class StudentIdCardService {
           validUntil: validUntil.toISOString(),
           cardNumber,
         },
-        // QR Code
-        qrCode: {
-          data: qrCodeData,
-          // The QR is scanned by an outsider (security guard, parent, dinas) —
-          // exactly the `config.publicSiteUrl` audience. The URL, not the raw
-          // `cipansor://` string, is what must be embedded in the printed code
-          // so a phone camera opens the verification page.
-          verificationUrl: this.generateVerificationUrl(qrCodeData),
-        },
+        // QR Code. `null` when the card has not been issued yet (see `issued`).
+        qrCode: qrCodeData
+          ? {
+              data: qrCodeData,
+              // The QR is scanned by an outsider (security guard, parent, dinas) —
+              // exactly the `config.publicSiteUrl` audience. The URL, not the raw
+              // `cipansor://` string, is what must be embedded in the printed code
+              // so a phone camera opens the verification page.
+              verificationUrl: this.generateVerificationUrl(qrCodeData),
+            }
+          : null,
+        // Whether a real StudentCardState backs this card (see `issued`).
+        issued,
       },
     };
 
@@ -820,6 +843,11 @@ export class StudentIdCardService {
       cardStateId: string;
       card: StudentIdCardDetail;
     }> = [];
+    // Students whose batch could not be committed. A later batch failing no
+    // longer swallows the cards already regenerated: the caller receives the
+    // partial result plus these failures so it can tell exactly which printed
+    // cards keep working and which silently stopped (Flag 5).
+    const failures: Array<{ studentId: string; message: string }> = [];
 
     for (let i = 0; i < students.length; i += BATCH_SIZE) {
       const batch = students.slice(i, i + BATCH_SIZE);
@@ -829,7 +857,7 @@ export class StudentIdCardService {
           const card = await this.generateIdCard(
             student.id,
             {},
-            { cardStateId, persistState: false, generatedById }
+            { cardStateId, persistState: false, generatedById, issued: true }
           );
           return { student, cardStateId, card };
         })
@@ -864,28 +892,26 @@ export class StudentIdCardService {
             }),
           ])
         );
+        cardRows.push(...batchRows);
       } catch (error) {
         // The partial unique index `student_card_state_one_active_per_student`
         // (migration `add_student_card_one_active`) guarantees at most one ACTIVE
         // row per student. A concurrent regeneration for a student in this batch
-        // violates it (P2002); surface the conflict cleanly instead of leaking a
-        // raw Prisma error.
-        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-          throw new ApiError(
-            ErrorCode.CONFLICT,
-            'Regenerasi kartu bersamaan terdeteksi. Hanya satu kartu aktif yang diizinkan per siswa; silakan coba lagi.'
-          );
-        }
-        throw error;
+        // violates it (P2002). A failed batch rolls back entirely, so every
+        // student in it must be reported as not regenerated.
+        const message =
+          error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002'
+            ? 'Regenerasi kartu bersamaan terdeteksi. Hanya satu kartu aktif yang diizinkan per siswa; silakan coba lagi.'
+            : 'Gagal meregenerasi kartu pelajar. Silakan dicoba kembali.';
+        failures.push(...batchRows.map(({ student }) => ({ studentId: student.id, message })));
       }
-
-      cardRows.push(...batchRows);
     }
 
     return {
       totalRegenerated: cardRows.length,
       regeneratedAt: regeneratedAt.toISOString(),
       cards: cardRows.map(({ card }) => card),
+      failures,
     };
   }
 

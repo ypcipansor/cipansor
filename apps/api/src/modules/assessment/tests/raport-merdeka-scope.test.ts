@@ -67,13 +67,48 @@ describe('RaportMerdekaService.validateStudentScope', () => {
     );
   });
 
-  it('a cross-unit assignment with an educator RoleCode opens the raport', async () => {
+  it('DENIES a cross-unit teacher with only an educator assignment in the unit (no class coverage)', async () => {
+    // Flag 4 regression: a cross-unit educator assignment used to open every
+    // student in that unit. A teacher must now cover the student's own class.
     const crossUnit = user({ unitId: null, roleCode: 'TEACHER' });
     (prisma.userRoleAssignment.findFirst as any).mockResolvedValue({
       role: { code: 'SMPIT_GURU' },
     });
+    (prisma.teacher.findFirst as any).mockResolvedValue(null);
+
+    await expect(RaportMerdekaService.validateStudentScope(crossUnit, 's1')).rejects.toThrow(
+      /tidak memiliki akses ke siswa di unit lain/
+    );
+  });
+
+  it('ALLOWS a cross-unit teacher who covers the student class', async () => {
+    const crossUnit = user({ unitId: null, roleCode: 'TEACHER' });
+    (prisma.userRoleAssignment.findFirst as any).mockResolvedValue({
+      role: { code: 'SMPIT_GURU' },
+    });
+    (prisma.teacher.findFirst as any).mockResolvedValue({ id: 'teacher-1' });
 
     await expect(RaportMerdekaService.validateStudentScope(crossUnit, 's1')).resolves.not.toThrow();
+  });
+
+  it('DENIES a same-unit teacher who does NOT cover the student class', async () => {
+    // Flag 3 regression: a teacher in the student's own unit used to read every
+    // raport of that unit. Same-unit teachers must now prove class coverage.
+    const sameUnit = user({ unitId: 'unit-smp-1', roleCode: 'SMPIT_GURU' });
+    (prisma.userRoleAssignment.findFirst as any).mockResolvedValue(null);
+    (prisma.teacher.findFirst as any).mockResolvedValue(null);
+
+    await expect(RaportMerdekaService.validateStudentScope(sameUnit, 's1')).rejects.toThrow(
+      /tidak memiliki akses ke siswa di unit lain/
+    );
+  });
+
+  it('ALLOWS a same-unit teacher who covers the student class', async () => {
+    const sameUnit = user({ unitId: 'unit-smp-1', roleCode: 'SMPIT_GURU' });
+    (prisma.userRoleAssignment.findFirst as any).mockResolvedValue(null);
+    (prisma.teacher.findFirst as any).mockResolvedValue({ id: 'teacher-1' });
+
+    await expect(RaportMerdekaService.validateStudentScope(sameUnit, 's1')).resolves.not.toThrow();
   });
 
   it('no assignment and no teacher record is denied', async () => {
@@ -87,7 +122,7 @@ describe('RaportMerdekaService.validateStudentScope', () => {
   });
 
   it('a cross-unit teacher record grants access', async () => {
-    const otherUnit = user({ unitId: 'unit-other' });
+    const otherUnit = user({ unitId: 'unit-other', roleCode: 'SMPIT_GURU' });
     (prisma.userRoleAssignment.findFirst as any).mockResolvedValue(null);
     (prisma.teacher.findFirst as any).mockResolvedValue({ id: 'teacher-1' });
 
@@ -98,7 +133,7 @@ describe('RaportMerdekaService.validateStudentScope', () => {
     // Regression for the scope leak: a teacher with one exam in the student's
     // unit used to open every student of that unit. The narrowed check scopes
     // the lookup to the student's own classes and must deny here.
-    const otherUnit = user({ unitId: 'unit-other' });
+    const otherUnit = user({ unitId: 'unit-other', roleCode: 'SMPIT_GURU' });
     (prisma.userRoleAssignment.findFirst as any).mockResolvedValue(null);
     (prisma.classEnrollment.findMany as any).mockResolvedValue([{ classId: 'class-X' }]);
     (prisma.teacher.findFirst as any).mockResolvedValue(null);
@@ -117,7 +152,7 @@ describe('RaportMerdekaService.validateStudentScope', () => {
   });
 
   it('rejects a student with no active class enrollment for a cross-unit teacher', async () => {
-    const otherUnit = user({ unitId: 'unit-other' });
+    const otherUnit = user({ unitId: 'unit-other', roleCode: 'SMPIT_GURU' });
     (prisma.userRoleAssignment.findFirst as any).mockResolvedValue(null);
     (prisma.classEnrollment.findMany as any).mockResolvedValue([]);
 
@@ -128,7 +163,7 @@ describe('RaportMerdekaService.validateStudentScope', () => {
   });
 
   it('ALLOWS a cross-unit teacher who is homeroom for the student class', async () => {
-    const otherUnit = user({ unitId: 'unit-other' });
+    const otherUnit = user({ unitId: 'unit-other', roleCode: 'SMPIT_GURU' });
     (prisma.userRoleAssignment.findFirst as any).mockResolvedValue(null);
     (prisma.classEnrollment.findMany as any).mockResolvedValue([{ classId: 'class-X' }]);
     (prisma.teacher.findFirst as any).mockResolvedValue({ id: 'teacher-1' });
