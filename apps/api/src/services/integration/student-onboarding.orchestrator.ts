@@ -1,11 +1,31 @@
 import { prisma } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
-import { PaymentStatus, Registrant } from '@prisma/client';
+import { RoleCode, UnitType } from '@prisma/client';
 import {
   syncParentRoleAssignments,
   type ParentScopeClient,
 } from '@/utils/parent-scope';
 import { assertAdmissionFeeSettled } from '@/utils/admission-fee-gate';
+
+/**
+ * The per-unit student RoleCode that grants the onboarding user a real role
+ * assignment. The role catalogue is unit-specific (`SDIT_SISWA`, `SMPIT_SISWA`,
+ * `SMAQ_SISWA`, `PT_MAHASISWA`) — there is no bare `STUDENT` code to look up.
+ * TK Qur'an children hold no login, so `TK_QURAN` deliberately maps to nothing.
+ */
+export const STUDENT_ROLE_BY_UNIT_TYPE: Partial<Record<UnitType, RoleCode>> = {
+  [UnitType.SD_IT]: RoleCode.SDIT_SISWA,
+  [UnitType.SMP_IT]: RoleCode.SMPIT_SISWA,
+  [UnitType.SMA_QURAN]: RoleCode.SMAQ_SISWA,
+  [UnitType.PERGURUAN_TINGGI]: RoleCode.PT_MAHASISWA,
+};
+
+/** The student RoleCode for a unit type, or undefined when the unit has none. */
+export function studentRoleForUnitType(
+  unitType: UnitType | null | undefined
+): RoleCode | undefined {
+  return unitType ? STUDENT_ROLE_BY_UNIT_TYPE[unitType] : undefined;
+}
 
 export interface EnrollmentOptions {
   classId?: string;
@@ -64,21 +84,19 @@ export class StudentOnboardingOrchestrator {
 
     const result = await prisma.$transaction(async (tx) => {
       // 1. Lock registrant row for concurrency protection
-      if ((tx as any).$executeRaw) {
-        await (tx as any).$executeRaw`SELECT id FROM "registrants" WHERE id = ${registrantId} FOR UPDATE`;
-      }
+      await tx.$executeRaw`SELECT id FROM "registrants" WHERE id = ${registrantId} FOR UPDATE`;
 
       // Get registrant data
       const registrant = await tx.registrant.findUnique({
         where: { id: registrantId },
-        include: { admissionPeriod: true },
+        include: { admissionPeriod: true, wave: true },
       });
 
       if (!registrant) {
         throw Errors.notFound('Registrant');
       }
 
-      if (registrant.status === 'ENROLLED' || (registrant as any).studentId) {
+      if (registrant.status === 'ENROLLED' || registrant.studentId) {
         throw Errors.conflict('Pendaftar ini telah terdaftar sebagai santri (enrolled)');
       }
 
@@ -87,7 +105,8 @@ export class StudentOnboardingOrchestrator {
       }
 
       // Being accepted is an academic decision; it is not daftar ulang. The
-      // fee owed lives on the period, so it has to be read alongside.
+      // fee owed lives on the period, but the wave may override it with its own
+      // registrationFee — a wave can charge more/less than its parent period.
       const period = registrant.admissionPeriod || (await tx.admissionPeriod.findUnique({
         where: { id: registrant.admissionPeriodId },
         select: { registrationFee: true, academicYearId: true },
@@ -95,10 +114,22 @@ export class StudentOnboardingOrchestrator {
 
       const effectiveUnitId = period?.unitId || unitId;
 
+      // Wave fee takes precedence over the period fee for this registrant.
+      const effectiveRegistrationFee = registrant.wave?.registrationFee ?? period?.registrationFee ?? null;
+
       assertAdmissionFeeSettled({
-        registrationFee: period?.registrationFee ?? null,
+        registrationFee: effectiveRegistrationFee,
         registrationFeePaidAt: registrant.registrationFeePaidAt,
       });
+
+      // Resolve the effective unit once: its type drives both the NIS prefix
+      // and the per-unit student RoleCode below.
+      const unit = await tx.unit.findUnique({
+        where: { id: effectiveUnitId },
+        select: { type: true },
+      });
+      const unitType = unit?.type ?? null;
+      const unitCode = unitType ? unitType.toUpperCase() : 'UNK';
 
       // Resolve academicYearId if not passed explicitly
       if (!academicYearId && period?.academicYearId) {
@@ -125,13 +156,6 @@ export class StudentOnboardingOrchestrator {
       let nis = customNis;
 
       if (!nis) {
-        // Look up unit dynamically, fallback to UNK
-        let unitCode = 'UNK';
-        const unit = await tx.unit.findUnique({ where: { id: effectiveUnitId }, select: { type: true } });
-        if (unit && unit.type) {
-          unitCode = unit.type.toUpperCase();
-        }
-
         // Use Postgres advisory locks to serialize NIS generation for the same unit + year
         const prefix = `NIS-${year}-${unitCode}-`;
 
@@ -157,12 +181,6 @@ export class StudentOnboardingOrchestrator {
 
         const nextSeq = maxSeq + 1;
         nis = `${prefix}${String(nextSeq).padStart(4, '0')}`;
-      }
-
-      let unitCode = 'UNK';
-      const unit = await tx.unit.findUnique({ where: { id: effectiveUnitId }, select: { type: true } });
-      if (unit && unit.type) {
-        unitCode = unit.type.toUpperCase();
       }
 
       // Determine student email: prefer real registrant.email, fallback to .local
@@ -191,8 +209,14 @@ export class StudentOnboardingOrchestrator {
         });
       }
 
-      // Ensure UserRoleAssignment exists for STUDENT role
-      const studentRole = await tx.role.findFirst({ where: { code: 'STUDENT' } });
+      // Ensure UserRoleAssignment exists for a unit-appropriate student role.
+      // The role catalogue has no bare `STUDENT` code — each unit type has its
+      // own (SDIT_SISWA, SMPIT_SISWA, SMAQ_SISWA, PT_MAHASISWA). TK Qur'an
+      // children hold no login, so a unit type with no mapping starts no role.
+      const studentRoleCode = studentRoleForUnitType(unitType);
+      const studentRole = studentRoleCode
+        ? await tx.role.findFirst({ where: { code: studentRoleCode } })
+        : null;
       if (studentRole) {
         const existingUserRole = await tx.userRoleAssignment.findFirst({
           where: {
@@ -264,8 +288,7 @@ export class StudentOnboardingOrchestrator {
 
       // 4. Create Parent User Account
       let parentResetToken: string | undefined;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let parentUser: any = null;
+      let parentUser: { id: string; email: string | null; name: string | null } | null = null;
       if (registrant.parentPhone || registrant.parentEmail) {
         if (registrant.parentEmail) {
           parentUser = await tx.user.findUnique({
@@ -284,8 +307,7 @@ export class StudentOnboardingOrchestrator {
           const parentResetTokenExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
           const parentPasswordHash = await hashPassword(crypto.randomBytes(16).toString('hex'));
           const parentEmail = registrant.parentEmail || `parent.${registrant.parentPhone}@parent.cipansor.local`;
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          parentUser = await (tx.user.create as any)({
+          parentUser = await tx.user.create({
             data: {
               name: registrant.parentName,
               email: parentEmail,
@@ -299,14 +321,22 @@ export class StudentOnboardingOrchestrator {
           });
         }
 
-        // Link student and parent
-        await tx.studentParent.create({
-          data: {
+        // Link student and parent. Returning students may already have the link
+        // (unique on [studentId, parentId]), so upsert instead of create.
+        await tx.studentParent.upsert({
+          where: {
+            studentId_parentId: { studentId: student.id, parentId: parentUser.id },
+          },
+          create: {
             studentId: student.id,
             parentId: parentUser.id,
             relation: 'parent',
             isPrimary: true,
-          }
+          },
+          update: {
+            relation: 'parent',
+            isPrimary: true,
+          },
         });
 
         await syncParentRoleAssignments(
@@ -400,8 +430,8 @@ export class StudentOnboardingOrchestrator {
         unitCode,
         resetToken: (isNewUser ? resetToken : undefined) as string | undefined,
         parentUserId: parentUser ? parentUser.id : undefined,
-        parentEmail: parentUser && parentResetToken ? parentUser.email : undefined,
-        parentName: parentUser ? parentUser.name : undefined,
+        parentEmail: parentUser && parentResetToken ? parentUser.email ?? undefined : undefined,
+        parentName: parentUser ? parentUser.name ?? undefined : undefined,
         parentResetToken,
         studentName: registrant.fullName,
         effectiveUnitId,
@@ -412,13 +442,12 @@ export class StudentOnboardingOrchestrator {
     process.nextTick(async () => {
       try {
         const { eventBus } = await import('@/lib/event-bus');
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const r = result as any;
+        const r = result;
 
         eventBus.emit('student:created', {
           id: r.studentId,
           name: r.studentName,
-          unitId: (result as any).effectiveUnitId || unitId,
+          unitId: r.effectiveUnitId || unitId,
           unitName: r.unitCode,
         });
 
@@ -431,7 +460,7 @@ export class StudentOnboardingOrchestrator {
           complaint: 'Initial Checkup',
           status: 'HEALTHY',
           recordedAt: new Date(),
-          unitId: (result as any).effectiveUnitId || unitId,
+          unitId: r.effectiveUnitId || unitId,
         });
 
         eventBus.emit('notification:send', {
@@ -453,7 +482,7 @@ export class StudentOnboardingOrchestrator {
           });
         }
 
-        if (r.parentUserId && r.parentResetToken) {
+        if (r.parentUserId && r.parentResetToken && r.parentEmail) {
           eventBus.emit('notification:send', {
             type: 'INFO',
             title: 'Your Parent Account has been created',

@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import waveService from './ppdb-wave.service';
 import { ApiResponse } from '@/utils/response';
 import { Errors } from '@/middleware/error';
+import { assertRegistrantUnitAccess } from './admissions.service';
 
 export const waveController = {
   /**
@@ -166,24 +167,27 @@ export const waveController = {
       // Lazy load to avoid circular dependencies if any
       const { StudentOnboardingOrchestrator } = await import('@/services/integration/student-onboarding.orchestrator');
 
-      const { z } = await import('zod');
-      const onboardSchema = z.object({
-        registrantId: z.string().min(1, 'Registrant ID is required'),
-        unitId: z.string().optional(),
-        classId: z.string().optional(),
-        assignedClassId: z.string().optional(),
-        roomId: z.string().optional(),
-        nis: z.string().optional(),
-        nisn: z.string().optional(),
-        academicYearId: z.string().optional(),
-      });
-
-      const data = onboardSchema.parse(req.body);
+      // The route already validates the body with `onboardRegistrantSchema`
+      // (see ppdb-wave.routes.ts), so `req.body` is fully shaped here.
+      const data = req.body as {
+        registrantId: string;
+        unitId?: string;
+        classId?: string;
+        assignedClassId?: string;
+        roomId?: string;
+        nis?: string;
+        nisn?: string;
+        academicYearId?: string;
+      };
 
       if (!req.user?.id) {
         throw Errors.unauthorized('User not authenticated');
       }
       const processedById = req.user.id;
+
+      // Onboarding is also a by-id registrant operation: a non-super admin may
+      // only onboard registrants whose admission period belongs to their unit.
+      await assertRegistrantUnitAccess(data.registrantId, req.user);
 
       const result = await StudentOnboardingOrchestrator.processEnrollment(
         data.registrantId,

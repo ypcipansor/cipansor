@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { CBTController } from './cbt.controller';
 import { authenticate, authorize } from '@/middleware/auth';
 import { validate } from '@/middleware/validate';
-import { recordSecurityLogSchema } from '@cipansor/shared';
+import { recordSecurityLogSchema, STUDENT_ROLE_CODES } from '@cipansor/shared';
 import { UserRole } from '@prisma/client';
 
 const router = Router();
@@ -128,7 +128,7 @@ router.get(
 router.post(
   '/attempts/:attemptId/answer',
   authenticate,
-  authorize(UserRole.STUDENT),
+  authorize(...STUDENT_ROLE_CODES),
   CBTController.submitAnswer
 );
 
@@ -136,7 +136,7 @@ router.post(
 router.post(
   '/attempts/:attemptId/finish',
   authenticate,
-  authorize(UserRole.STUDENT),
+  authorize(...STUDENT_ROLE_CODES),
   CBTController.finishExam
 );
 
@@ -144,7 +144,7 @@ router.post(
 router.post(
   '/attempts/:attemptId/security-log',
   authenticate,
-  authorize(UserRole.STUDENT),
+  authorize(...STUDENT_ROLE_CODES),
   validate(recordSecurityLogSchema),
   CBTController.recordSecurityLog
 );

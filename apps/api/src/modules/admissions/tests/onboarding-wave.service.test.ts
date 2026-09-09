@@ -36,7 +36,9 @@ vi.mock('@/lib/prisma', () => ({
       update: vi.fn(),
     },
     studentParent: {
+      upsert: vi.fn().mockResolvedValue({ id: 'sp-1' }),
       create: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
     },
     role: {
       findFirst: vi.fn(),

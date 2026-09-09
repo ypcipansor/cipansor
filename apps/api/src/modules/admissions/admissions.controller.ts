@@ -15,6 +15,7 @@ import {
 import { Errors, asyncHandler } from '../../middleware/error';
 import { z } from 'zod';
 import { requireUser } from '../../middleware/auth';
+import { ApiResponse } from '../../utils/response';
 
 // =====================================
 // ADMISSION PERIOD CONTROLLERS
@@ -81,11 +82,12 @@ export const getRegistrants = asyncHandler(async (req: Request, res: Response) =
 });
 
 export const getRegistrantById = asyncHandler(async (req: Request, res: Response) => {
-  const registrant = await service.getRegistrantById(req.params.id);
+  const user = requireUser(req);
+  const registrant = await service.getRegistrantById(req.params.id, user);
   if (!registrant) {
     throw Errors.notFound('Registrant');
   }
-  res.json({ success: true, data: registrant });
+  res.json(ApiResponse.success(registrant));
 });
 
 export const createRegistrant = asyncHandler(async (req: Request, res: Response) => {
@@ -95,28 +97,31 @@ export const createRegistrant = asyncHandler(async (req: Request, res: Response)
 });
 
 export const updateRegistrant = asyncHandler(async (req: Request, res: Response) => {
+  const user = requireUser(req);
   const data = updateRegistrantSchema.parse(req.body);
-  const registrant = await service.updateRegistrant(req.params.id, data);
-  res.json({ success: true, data: registrant });
+  const registrant = await service.updateRegistrant(req.params.id, data, user);
+  res.json(ApiResponse.success(registrant));
 });
 
 export const updateRegistrantScore = asyncHandler(async (req: Request, res: Response) => {
+  const user = requireUser(req);
   const data = updateRegistrantScoreSchema.parse(req.body);
-  const registrant = await service.updateRegistrantScore(req.params.id, data);
-  res.json({ success: true, data: registrant });
+  const registrant = await service.updateRegistrantScore(req.params.id, data, user);
+  res.json(ApiResponse.success(registrant));
 });
 
 export const recordRegistrationFee = asyncHandler(async (req: Request, res: Response) => {
   const data = recordRegistrationFeeSchema.parse(req.body);
   const user = requireUser(req);
-  const registrant = await service.recordRegistrationFee(req.params.id, data, user.id);
-  res.json({ success: true, data: registrant });
+  const registrant = await service.recordRegistrationFee(req.params.id, data, user.id, user);
+  res.json(ApiResponse.success(registrant));
 });
 
 export const updateRegistrantStatus = asyncHandler(async (req: Request, res: Response) => {
+  const user = requireUser(req);
   const data = updateRegistrantStatusSchema.parse(req.body);
-  const registrant = await service.updateRegistrantStatus(req.params.id, data);
-  res.json({ success: true, data: registrant });
+  const registrant = await service.updateRegistrantStatus(req.params.id, data, user);
+  res.json(ApiResponse.success(registrant));
 });
 
 export const enrollRegistrant = asyncHandler(async (req: Request, res: Response) => {
@@ -134,17 +139,14 @@ export const enrollRegistrant = asyncHandler(async (req: Request, res: Response)
     classId: data.classId,
     roomId: data.roomId,
     processedById: user.id,
-  });
-  res.json({
-    success: true,
-    data: result,
-    message: 'Registrant enrolled successfully',
-  });
+  }, user);
+  res.json(ApiResponse.success(result, 'Registrant enrolled successfully'));
 });
 
 export const deleteRegistrant = asyncHandler(async (req: Request, res: Response) => {
-  await service.deleteRegistrant(req.params.id);
-  res.json({ success: true, message: 'Registrant deleted successfully' });
+  const user = requireUser(req);
+  await service.deleteRegistrant(req.params.id, user);
+  res.json(ApiResponse.success(null, 'Registrant deleted successfully'));
 });
 
 // =====================================
@@ -152,28 +154,32 @@ export const deleteRegistrant = asyncHandler(async (req: Request, res: Response)
 // =====================================
 
 export const getRegistrantDocuments = asyncHandler(async (req: Request, res: Response) => {
-  const documents = await service.getRegistrantDocuments(req.params.registrantId);
-  res.json({ success: true, data: documents });
+  const user = requireUser(req);
+  const documents = await service.getRegistrantDocuments(req.params.registrantId, user);
+  res.json(ApiResponse.success(documents));
 });
 
 export const createRegistrantDocument = asyncHandler(async (req: Request, res: Response) => {
+  const user = requireUser(req);
   const data = createRegistrantDocumentSchema.parse({
     ...req.body,
     registrantId: req.params.registrantId,
   });
-  const document = await service.createRegistrantDocument(data);
-  res.status(201).json({ success: true, data: document });
+  const document = await service.createRegistrantDocument(data, user);
+  res.status(201).json(ApiResponse.success(document));
 });
 
 export const verifyDocument = asyncHandler(async (req: Request, res: Response) => {
+  const user = requireUser(req);
   const data = verifyDocumentSchema.parse(req.body);
-  const document = await service.verifyDocument(req.params.id, data.isVerified, data.notes);
-  res.json({ success: true, data: document });
+  const document = await service.verifyDocument(req.params.id, data.isVerified, data.notes, user);
+  res.json(ApiResponse.success(document));
 });
 
 export const deleteRegistrantDocument = asyncHandler(async (req: Request, res: Response) => {
-  await service.deleteRegistrantDocument(req.params.id);
-  res.json({ success: true, message: 'Document deleted successfully' });
+  const user = requireUser(req);
+  await service.deleteRegistrantDocument(req.params.id, user);
+  res.json(ApiResponse.success(null, 'Document deleted successfully'));
 });
 
 // =====================================
@@ -182,17 +188,17 @@ export const deleteRegistrantDocument = asyncHandler(async (req: Request, res: R
 
 export const getPublicActiveAdmissionPeriod = asyncHandler(async (_req: Request, res: Response) => {
   const period = await service.findPublicActivePeriod();
-  res.json({ success: true, data: period });
+  res.json(ApiResponse.success(period));
 });
 
 export const getPublicUnits = asyncHandler(async (_req: Request, res: Response) => {
   const units = await service.getPublicUnitsService();
-  res.json({ success: true, data: units });
+  res.json(ApiResponse.success(units));
 });
 
 export const createPublicRegistrantDocument = asyncHandler(async (req: Request, res: Response) => {
   const { registrantId } = req.params;
-  const { type, url, base64, fileName, registrationToken } = req.body;
+  const { type, url, base64, fileName, registrationToken, ocrNotes, ocrStatus } = req.body;
 
   const document = await service.createPublicRegistrantDocumentService({
     registrantId,
@@ -201,9 +207,11 @@ export const createPublicRegistrantDocument = asyncHandler(async (req: Request, 
     base64,
     fileName,
     registrationToken,
+    ocrNotes,
+    ocrStatus,
   });
 
-  res.status(201).json({ success: true, data: document });
+  res.status(201).json(ApiResponse.success(document));
 });
 
 export const createPublicRegistrant = asyncHandler(async (req: Request, res: Response) => {

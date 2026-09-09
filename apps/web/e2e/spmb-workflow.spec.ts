@@ -1,5 +1,29 @@
 import { test, expect } from "./fixtures/auth.fixture";
-import { loginAs } from "./helpers/auth-api";
+import { loginAs, apiRequest } from "./helpers/auth-api";
+
+const API_URL = process.env.API_URL || "http://localhost:3001/api";
+
+/** Tiny valid PNG data-URI, used for the public document upload step. */
+const TINY_PNG =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+
+async function publicGet(path: string) {
+  const res = await fetch(`${API_URL}${path}`);
+  const json = await res.json();
+  if (!res.ok) throw new Error(`${path} → ${res.status}: ${JSON.stringify(json)}`);
+  return json;
+}
+
+async function publicPost(path: string, body: unknown) {
+  const res = await fetch(`${API_URL}${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(`${path} → ${res.status}: ${JSON.stringify(json)}`);
+  return json;
+}
 
 /**
  * SPMB (Sistem Penerimaan Murid Baru) End-to-End Workflow & Verification Tests
@@ -71,5 +95,96 @@ test.describe("SPMB - End-to-End Public Registration & Admin Management", () => 
     await page.goto("/spmb/registrations");
     await page.waitForLoadState("domcontentloaded", { timeout: 10000 });
     expect(page.url()).toContain("/spmb/registrations");
+  });
+
+  test("full flow: register + upload document + verify + score + accept + onboard", async ({ page }) => {
+    test.setTimeout(120_000);
+
+    // ── Data setup (real API, no mock) ───────────────────────────────
+    // Use the currently-announced period to borrow a real unit/academic year
+    // so a brand-new, definitely-open period can be created for this run.
+    const basePeriod = (await publicGet("/admissions/public/active-period")).data;
+    expect(basePeriod).toBeTruthy();
+    const now = Date.now();
+    const runId = `e2e-${now}`;
+
+    const session = await loginAs(page, "superAdmin");
+    const createdPeriod = (await apiRequest<{ data: { id: string } }>(
+      session,
+      "POST",
+      "/admissions/periods",
+      {
+        unitId: basePeriod.unit.id,
+        academicYearId: basePeriod.academicYear.id,
+        name: `SPMB E2E Auto ${runId}`,
+        startDate: new Date(now - 86_400_000).toISOString(),
+        endDate: new Date(now + 30 * 86_400_000).toISOString(),
+        quota: 50,
+        registrationFee: 0,
+      }
+    )).data;
+
+    // Registration — exercises the public (unauthenticated) SPMB create path
+    // and returns the single-use registration token used right after.
+    const email = `spmb.e2e.${runId}@example.test`;
+    const registration = (await publicPost("/admissions/public/registrants", {
+      admissionPeriodId: createdPeriod.id,
+      fullName: `SPMB E2E ${runId}`,
+      gender: "MALE",
+      birthPlace: "Bandung",
+      birthDate: new Date("2012-01-01").toISOString(),
+      address: "Jl. End-to-End No. 1",
+      fatherName: `Ayah E2E ${runId}`,
+      motherName: `Ibu E2E ${runId}`,
+      phone: "081234567891",
+      email,
+      parentName: `Wali E2E ${runId}`,
+      parentPhone: "081234567892",
+      parentEmail: `wali.e2e.${runId}@example.test`,
+    })).data;
+
+    expect(registration.id).toBeTruthy();
+    expect(registration.registrationToken).toBeTruthy();
+
+    // Document upload — public endpoint with the token returned above.
+    const uploadedDoc = (await publicPost(
+      `/admissions/public/registrants/${registration.id}/documents`,
+      {
+        type: "PHOTO",
+        url: TINY_PNG,
+        fileName: `${runId}.png`,
+        registrationToken: registration.registrationToken,
+      }
+    )).data;
+    expect(uploadedDoc.id).toBeTruthy();
+
+    // ── Admin verification panel ─────────────────────────────────────
+    // Opens the real registration detail page, which is the verification panel.
+    await page.goto(`/spmb/registrations/${registration.id}`);
+    await page.waitForLoadState("domcontentloaded", { timeout: 15000 });
+
+    await expect(page.getByText(registration.registrationNo).first()).toBeVisible({
+      timeout: 15000,
+    });
+
+    // Input selection scores.
+    const scoreInput = page.getByPlaceholder("0-100").first();
+    await scoreInput.fill("85");
+    await page.getByRole("button", { name: /Simpan Nilai Seleksi/i }).click();
+
+    // Decision status: accept the registrant.
+    await page.getByRole("button", { name: /Terima \(ACCEPTED\)/i }).click();
+
+    // Fee is 0 for this run, so onboarding becomes available immediately after
+    // acceptance; if a fee were charged, the detail page would surface a "Catat
+    // Pelunasan Daftar Ulang" button to settle it first.
+    const onboardButton = page.getByRole("button", { name: /Eksekusi Onboarding Terpadu \(E2E\)/i });
+    await expect(onboardButton).toBeVisible({ timeout: 15000 });
+    await onboardButton.click();
+
+    // Onboarding terpadu completes with a success toast.
+    await expect(page.getByText(/Siswa berhasil di-Onboard/i)).toBeVisible({
+      timeout: 30000,
+    });
   });
 });

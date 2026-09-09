@@ -16,13 +16,24 @@ export enum ExamStatus {
   GRADED = "GRADED",
 }
 
-export enum SecurityEventType {
-  TAB_SWITCH = "TAB_SWITCH",
-  COPY_PASTE = "COPY_PASTE",
-  RIGHT_CLICK = "RIGHT_CLICK",
-  FULLSCREEN_EXIT = "FULLSCREEN_EXIT",
-  DEV_TOOLS = "DEV_TOOLS",
-}
+/**
+ * Security event kinds for the CBT anti-cheating log.
+ *
+ * Declared as a const tuple + union (not a TS `enum`) so the values are plain
+ * string literals that the API can assign to the Prisma `SecurityEventType`
+ * column without a cast, and so a sync test in `apps/api` can pin them to the
+ * database enum. Keep in exact sync with `enum SecurityEventType` in
+ * `apps/api/prisma/schema.prisma`.
+ */
+export const SECURITY_EVENT_TYPES = [
+  "TAB_SWITCH",
+  "COPY_PASTE",
+  "RIGHT_CLICK",
+  "FULLSCREEN_EXIT",
+  "DEV_TOOLS",
+] as const;
+
+export type SecurityEventType = (typeof SECURITY_EVENT_TYPES)[number];
 
 
 export enum GradeType {

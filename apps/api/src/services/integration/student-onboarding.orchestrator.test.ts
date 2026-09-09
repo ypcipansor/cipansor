@@ -24,6 +24,7 @@ describe('StudentOnboardingOrchestrator', () => {
     it('should throw an error if registrant is not found', async () => {
       vi.mocked(prisma.$transaction).mockImplementation(async (callback) => {
         const txMock = {
+          $executeRaw: vi.fn().mockResolvedValue(1),
           registrant: { findUnique: vi.fn().mockResolvedValue(null) },
         };
         return callback(txMock as any);
@@ -78,7 +79,8 @@ describe('StudentOnboardingOrchestrator', () => {
           findUnique: vi.fn().mockResolvedValue(null),
           create: vi.fn().mockResolvedValue({ id: 'stud-1', nis: 'NIS-2026-SMP-0001' }),
         },
-        studentParent: { 
+        studentParent: {
+          upsert: vi.fn().mockResolvedValue({ id: 'sp-1' }),
           create: vi.fn().mockResolvedValue({ id: 'sp-1' }),
           // Read back by syncParentRoleAssignments to work out which units the
           // guardian now has a child in.
@@ -139,8 +141,8 @@ describe('StudentOnboardingOrchestrator', () => {
 
       // Verify student and parent links
       expect(txMock.student.create).toHaveBeenCalled();
-      expect(txMock.studentParent.create).toHaveBeenCalledWith(expect.objectContaining({
-        data: expect.objectContaining({
+      expect(txMock.studentParent.upsert).toHaveBeenCalledWith(expect.objectContaining({
+        create: expect.objectContaining({
           studentId: 'stud-1',
           parentId: 'user-parent-1',
           relation: 'parent'
@@ -191,6 +193,216 @@ describe('StudentOnboardingOrchestrator', () => {
       expect(eventBus.emit).toHaveBeenCalledWith('health:medical-record-created', expect.objectContaining({ studentId: 'stud-1' }));
       expect(eventBus.emit).toHaveBeenCalledWith('notification:send', expect.objectContaining({ userId: 'user-stud-1', type: 'INFO' }));
       expect(eventBus.emit).toHaveBeenCalledWith('email:send_reset_token', expect.objectContaining({ userId: 'user-stud-1' }));
+    });
+
+    it('creates a UserRoleAssignment with a unit-specific student role id', async () => {
+      const txMock = {
+        registrant: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: 'reg-1',
+            status: 'ACCEPTED',
+            fullName: 'Budi SMP',
+            gender: 'MALE',
+            birthPlace: 'Jakarta',
+            birthDate: new Date('2010-01-01'),
+            address: 'Jl. Test 123',
+            parentName: 'Ayah Budi',
+            parentPhone: '08123456789',
+            parentEmail: 'ayah@test.com',
+            admissionPeriod: { registrationFee: 0, academicYearId: 'ay-1' },
+            registrationFeePaidAt: new Date('2026-07-01'),
+          }),
+          update: vi.fn().mockResolvedValue({ id: 'reg-1' }),
+        },
+        admissionPeriod: { findUnique: vi.fn() },
+        $queryRaw: vi.fn().mockResolvedValue([]),
+        $executeRaw: vi.fn().mockResolvedValue(1),
+        unit: { findUnique: vi.fn().mockResolvedValue({ type: 'SMP_IT' }) },
+        user: {
+          findUnique: vi.fn().mockResolvedValue(null),
+          findFirst: vi.fn().mockResolvedValue(null),
+          create: vi.fn()
+            .mockResolvedValueOnce({ id: 'user-stud-1' })
+            .mockResolvedValueOnce({ id: 'user-parent-1', email: 'ayah@test.com' }),
+        },
+        role: {
+          // resolve the per-unit student role by code, and the guardian role
+          findFirst: vi.fn(({ where }: any) => {
+            if (where.code === 'SMPIT_SISWA') return Promise.resolve({ id: 'role-smpit-siswa' });
+            if (where.code === 'SMPIT_ORANG_TUA') return Promise.resolve({ id: 'role-smpit-ortu' });
+            return Promise.resolve(null);
+          }),
+        },
+        userRoleAssignment: {
+          findMany: vi.fn().mockResolvedValue([]),
+          findFirst: vi.fn().mockResolvedValue(null),
+          create: vi.fn().mockResolvedValue({ id: 'ura-1' }),
+        },
+        student: {
+          findUnique: vi.fn().mockResolvedValue(null),
+          create: vi.fn().mockResolvedValue({ id: 'stud-1', nis: 'NIS-2026-SMPIT-0001' }),
+        },
+        studentParent: {
+          upsert: vi.fn().mockResolvedValue({ id: 'sp-1' }),
+          findMany: vi.fn().mockResolvedValue([
+            { student: { unitId: 'unit-1', unit: { type: 'SMP_IT' } } },
+          ]),
+        },
+        classEnrollment: { create: vi.fn().mockResolvedValue({ id: 'ce-1' }) },
+        medicalRecord: {
+          findFirst: vi.fn().mockResolvedValue(null),
+          create: vi.fn().mockResolvedValue({ id: 'med-1' }),
+        },
+        santriWallet: {
+          findUnique: vi.fn().mockResolvedValue(null),
+          create: vi.fn().mockResolvedValue({ id: 'wallet-1' }),
+        },
+      };
+
+      vi.mocked(prisma.$transaction).mockImplementation(async (callback) => {
+        return callback(txMock as any);
+      });
+
+      const result = await StudentOnboardingOrchestrator.processEnrollment(
+        'reg-1',
+        'unit-1',
+        'admin-1'
+      );
+
+      expect(result.success).toBe(true);
+
+      // The student role looked up must be the SMP_IT student role (the role
+      // catalogue has no bare `STUDENT` code), and the assignment is created.
+      expect(txMock.userRoleAssignment.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            userId: 'user-stud-1',
+            roleId: 'role-smpit-siswa',
+            unitId: 'unit-1',
+            isPrimary: true,
+          }),
+        })
+      );
+    });
+
+    it('requires a wave fee to be settled even when the period fee is zero', async () => {
+      const txMock = {
+        registrant: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: 'reg-1',
+            status: 'ACCEPTED',
+            fullName: 'Budi Test',
+            admissionPeriod: { registrationFee: 0 },
+            wave: { registrationFee: 500000 },
+            registrationFeePaidAt: null,
+          }),
+        },
+        $executeRaw: vi.fn().mockResolvedValue(1),
+      };
+
+      vi.mocked(prisma.$transaction).mockImplementation(async (callback) => {
+        return callback(txMock as any);
+      });
+
+      await expect(
+        StudentOnboardingOrchestrator.processEnrollment('reg-1', 'unit-1', 'admin-1')
+      ).rejects.toThrow('belum melunasi biaya daftar ulang');
+    });
+
+    it('upserts an existing student-parent link instead of violating the unique constraint', async () => {
+      // Returning student: the parent email already maps to an existing User,
+      // so no parent is created; the link must be upserted, not created.
+      const txMock = {
+        registrant: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: 'reg-1',
+            status: 'ACCEPTED',
+            fullName: 'Budi Test',
+            gender: 'MALE',
+            birthPlace: 'Jakarta',
+            birthDate: new Date('2010-01-01'),
+            address: 'Jl. Test 123',
+            parentName: 'Ayah Budi',
+            parentPhone: '08123456789',
+            parentEmail: 'ayah@test.com',
+            admissionPeriod: { registrationFee: 0 },
+            registrationFeePaidAt: new Date('2026-07-01'),
+          }),
+          update: vi.fn().mockResolvedValue({ id: 'reg-1' }),
+        },
+        admissionPeriod: { findUnique: vi.fn() },
+        $queryRaw: vi.fn().mockResolvedValue([]),
+        $executeRaw: vi.fn().mockResolvedValue(1),
+        unit: { findUnique: vi.fn().mockResolvedValue({ type: 'SMP_IT' }) },
+        user: {
+          // Parent email already exists → parentUser resolved from DB.
+          findUnique: vi.fn(({ where }: any) => {
+            if (where.email === 'ayah@test.com') {
+              return Promise.resolve({ id: 'user-parent-1', email: 'ayah@test.com' });
+            }
+            return Promise.resolve(null);
+          }),
+          findFirst: vi.fn().mockResolvedValue(null),
+          create: vi.fn().mockResolvedValueOnce({ id: 'user-stud-1' }),
+        },
+        role: {
+          findFirst: vi.fn(({ where }: any) => {
+            if (where.code === 'SMPIT_SISWA') return Promise.resolve({ id: 'role-smpit-siswa' });
+            if (where.code === 'SMPIT_ORANG_TUA') return Promise.resolve({ id: 'role-smpit-ortu' });
+            return Promise.resolve(null);
+          }),
+        },
+        userRoleAssignment: {
+          findMany: vi.fn().mockResolvedValue([]),
+          findFirst: vi.fn().mockResolvedValue(null),
+          create: vi.fn().mockResolvedValue({ id: 'ura-1' }),
+        },
+        student: {
+          findUnique: vi.fn().mockResolvedValue(null),
+          create: vi.fn().mockResolvedValue({ id: 'stud-1', nis: 'NIS-2026-SMPIT-0001' }),
+        },
+        studentParent: {
+          upsert: vi.fn().mockResolvedValue({ id: 'sp-1' }),
+          create: vi.fn(),
+          findMany: vi.fn().mockResolvedValue([
+            { student: { unitId: 'unit-1', unit: { type: 'SMP_IT' } } },
+          ]),
+        },
+        classEnrollment: { create: vi.fn().mockResolvedValue({ id: 'ce-1' }) },
+        medicalRecord: {
+          findFirst: vi.fn().mockResolvedValue(null),
+          create: vi.fn().mockResolvedValue({ id: 'med-1' }),
+        },
+        santriWallet: {
+          findUnique: vi.fn().mockResolvedValue(null),
+          create: vi.fn().mockResolvedValue({ id: 'wallet-1' }),
+        },
+      };
+
+      vi.mocked(prisma.$transaction).mockImplementation(async (callback) => {
+        return callback(txMock as any);
+      });
+
+      const result = await StudentOnboardingOrchestrator.processEnrollment(
+        'reg-1',
+        'unit-1',
+        'admin-1'
+      );
+
+      expect(result.success).toBe(true);
+      // The parent already existed, so only the student user is created.
+      expect(txMock.user.create).toHaveBeenCalledTimes(1);
+      // Link is idempotent: upsert, never a bare create (which would raise a
+      // unique constraint on [studentId, parentId]).
+      expect(txMock.studentParent.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            studentId_parentId: { studentId: 'stud-1', parentId: 'user-parent-1' },
+          },
+          create: expect.objectContaining({ parentId: 'user-parent-1' }),
+        })
+      );
+      expect(txMock.studentParent.create).not.toHaveBeenCalled();
     });
   });
 });

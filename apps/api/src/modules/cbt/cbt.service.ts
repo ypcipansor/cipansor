@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma';
-import { Prisma, QuestionType, SecurityEventType as PrismaSecurityEventType } from '@prisma/client';
+import { Prisma, QuestionType } from '@prisma/client';
 import { RecordSecurityLogInput } from '@cipansor/shared';
 import { Decimal } from '@prisma/client/runtime/client';
 import { Errors } from '@/middleware/error';
@@ -1061,7 +1061,9 @@ export class CBTService {
     return prisma.examSecurityLog.create({
       data: {
         attemptId: input.attemptId,
-        eventType: input.eventType as PrismaSecurityEventType,
+        // Shared `SecurityEventType` is a literal union matching the Prisma
+        // enum exactly (pinned by a sync test), so no cast is needed here.
+        eventType: input.eventType,
         details: input.details ? (input.details as Prisma.InputJsonValue) : Prisma.JsonNull,
       },
     });

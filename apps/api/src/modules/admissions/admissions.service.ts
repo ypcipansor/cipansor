@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { config } from '../../config';
 import { prisma } from '../../lib/prisma';
 import { Prisma, AdmissionStatus, Gender } from '@prisma/client';
+import type { CreatePublicRegistrantDocumentRequest } from '@cipansor/shared';
 import * as financeService from '../finance/finance.service';
 import {
   CreateAdmissionPeriodInput,
@@ -16,7 +17,56 @@ import {
 } from './admissions.schema';
 import { Errors } from '../../middleware/error';
 
-type AuthUser = { id: string; role: string; unitId?: string | null };
+type AuthUser = { id: string; role: string; roleCode?: string; unitId?: string | null };
+
+function isSuperAdmin(actor: AuthUser): boolean {
+  return actor.roleCode === 'SUPER_ADMIN' || actor.role === 'SUPER_ADMIN';
+}
+
+/**
+ * Server-side unit scoping for any by-id registrant operation.
+ * SUPER_ADMIN is exempt; every other actor must belong to the registrant's
+ * admission period unit, otherwise the request is refused with 403.
+ */
+export async function assertRegistrantUnitAccess(id: string, actor: AuthUser): Promise<void> {
+  if (isSuperAdmin(actor)) return;
+  const actorUnitId = actor.unitId;
+  if (!actorUnitId) {
+    throw Errors.forbidden('Access to this unit is not allowed');
+  }
+  const registrant = await prisma.registrant.findUnique({
+    where: { id },
+    select: { admissionPeriod: { select: { unitId: true } } },
+  });
+  if (!registrant) {
+    throw Errors.notFound('Registrant');
+  }
+  if (registrant.admissionPeriod?.unitId !== actorUnitId) {
+    throw Errors.forbidden('Access to this unit is not allowed');
+  }
+}
+
+/**
+ * Server-side unit scoping for by-id document operations, resolved through the
+ * owning registrant's admission period unit.
+ */
+async function assertDocumentUnitAccess(id: string, actor: AuthUser): Promise<void> {
+  if (isSuperAdmin(actor)) return;
+  const actorUnitId = actor.unitId;
+  if (!actorUnitId) {
+    throw Errors.forbidden('Access to this unit is not allowed');
+  }
+  const document = await prisma.registrantDocument.findUnique({
+    where: { id },
+    select: { registrant: { select: { admissionPeriod: { select: { unitId: true } } } } },
+  });
+  if (!document) {
+    throw Errors.notFound('Document');
+  }
+  if (document.registrant?.admissionPeriod?.unitId !== actorUnitId) {
+    throw Errors.forbidden('Access to this unit is not allowed');
+  }
+}
 
 // `CreateRegistrantInput` already defines `source` and `campaignId` as
 // optional (see `createRegistrantSchema` in ./schema.ts), so there's no need
@@ -287,8 +337,8 @@ export async function getRegistrants(
   };
 }
 
-export async function getRegistrantById(id: string) {
-  return prisma.registrant.findUnique({
+export async function getRegistrantById(id: string, actor?: AuthUser) {
+  const registrant = await prisma.registrant.findUnique({
     where: { id },
     include: {
       admissionPeriod: {
@@ -296,6 +346,7 @@ export async function getRegistrantById(id: string) {
           id: true,
           name: true,
           registrationFee: true,
+          unitId: true,
           unit: { select: { id: true, name: true, type: true } },
           academicYear: { select: { id: true, name: true } },
         },
@@ -304,6 +355,17 @@ export async function getRegistrantById(id: string) {
       student: { select: { id: true, nis: true, userId: true } },
     },
   });
+
+  if (registrant && actor) {
+    if (!isSuperAdmin(actor)) {
+      const actorUnitId = actor.unitId;
+      if (!actorUnitId || registrant.admissionPeriod?.unitId !== actorUnitId) {
+        throw Errors.forbidden('Access to this unit is not allowed');
+      }
+    }
+  }
+
+  return registrant;
 }
 
 export async function createPublicRegistrantService(data: CreateRegistrantExtendedInput) {
@@ -528,7 +590,8 @@ async function createRegistrantOnce(data: CreateRegistrantExtendedInput, isAdmin
   });
 }
 
-export async function updateRegistrant(id: string, data: UpdateRegistrantInput) {
+export async function updateRegistrant(id: string, data: UpdateRegistrantInput, actor?: AuthUser) {
+  if (actor) await assertRegistrantUnitAccess(id, actor);
   // Map Zod input fields to the actual Prisma Registrant model.
   // The schema accepts `fatherName` / `fatherPhone` / `motherName` /
   // `motherPhone` for UX parity with create, but the persisted model uses
@@ -561,7 +624,8 @@ export async function updateRegistrant(id: string, data: UpdateRegistrantInput) 
   });
 }
 
-export async function updateRegistrantScore(id: string, data: UpdateRegistrantScoreInput) {
+export async function updateRegistrantScore(id: string, data: UpdateRegistrantScoreInput, actor?: AuthUser) {
+  if (actor) await assertRegistrantUnitAccess(id, actor);
   // Only advance status to TEST_COMPLETED when:
   //   1. At least one actual score (test/interview/tahfidz) was provided, AND
   //   2. The registrant is still in a pre-test phase.
@@ -619,30 +683,46 @@ export async function updateRegistrantScore(id: string, data: UpdateRegistrantSc
 export async function recordRegistrationFee(
   id: string,
   data: RecordRegistrationFeeInput,
-  verifiedById: string
+  verifiedById: string,
+  actor?: AuthUser
 ) {
   const registrant = await prisma.registrant.findUnique({
     where: { id },
-    include: { admissionPeriod: { select: { registrationFee: true } } },
+    include: {
+      admissionPeriod: { select: { registrationFee: true, unitId: true } },
+      wave: { select: { registrationFee: true } },
+    },
   });
 
   if (!registrant) throw Errors.notFound('Registrant');
+
+  if (actor && !isSuperAdmin(actor)) {
+    const actorUnitId = actor.unitId;
+    if (!actorUnitId || registrant.admissionPeriod?.unitId !== actorUnitId) {
+      throw Errors.forbidden('Access to this unit is not allowed');
+    }
+  }
+
+  // A wave may override its parent period's registrationFee, so the amount
+  // recorded should be what the registrant actually owed. Wave wins when set.
+  const effectiveFee =
+    registrant.wave?.registrationFee ?? registrant.admissionPeriod?.registrationFee ?? null;
 
   return prisma.registrant.update({
     where: { id },
     data: {
       registrationFeePaidAt: data.paidAt ?? new Date(),
-      // Falls back to what the period charges, so the common "paid in full"
-      // case needs no amount and the record still says how much.
-      registrationFeeAmount:
-        data.amount != null ? data.amount : (registrant.admissionPeriod?.registrationFee ?? null),
+      // Falls back to what the period/wave charges, so the common "paid in
+      // full" case needs no amount and the record still says how much.
+      registrationFeeAmount: data.amount != null ? data.amount : effectiveFee,
       registrationFeeVerifiedById: verifiedById,
       registrationFeeNote: data.note,
     },
   });
 }
 
-export async function updateRegistrantStatus(id: string, data: UpdateRegistrantStatusInput) {
+export async function updateRegistrantStatus(id: string, data: UpdateRegistrantStatusInput, actor?: AuthUser) {
+  if (actor) await assertRegistrantUnitAccess(id, actor);
   // Guard: ENROLLED is a terminal status that must only be reached through
   // `enrollRegistrant`, which atomically creates the User + Student records,
   // assigns class/room, generates the registration-fee invoice, and adjusts
@@ -777,7 +857,8 @@ export async function enrollRegistrant(
     classId?: string;
     roomId?: string;
     processedById?: string;
-  }
+  },
+  actor?: AuthUser
 ) {
   const registrant = await prisma.registrant.findUnique({
     where: { id: registrantId },
@@ -785,6 +866,13 @@ export async function enrollRegistrant(
   });
 
   if (!registrant) throw new Error('Registrant not found');
+
+  if (actor && !isSuperAdmin(actor)) {
+    const actorUnitId = actor.unitId;
+    if (!actorUnitId || registrant.admissionPeriod?.unitId !== actorUnitId) {
+      throw Errors.forbidden('Access to this unit is not allowed');
+    }
+  }
 
   const { StudentOnboardingOrchestrator } = await import(
     '../../services/integration/student-onboarding.orchestrator'
@@ -807,7 +895,8 @@ export async function enrollRegistrant(
   return result;
 }
 
-export async function deleteRegistrant(id: string) {
+export async function deleteRegistrant(id: string, actor?: AuthUser) {
+  if (actor) await assertRegistrantUnitAccess(id, actor);
   // Wrap the read + decrement + delete in a single transaction so that the
   // wave's `registeredCount` (and `acceptedCount` if the registrant was
   // ACCEPTED) stays in sync with the registrants that actually exist.
@@ -868,28 +957,23 @@ export async function deleteRegistrant(id: string) {
 // REGISTRANT DOCUMENT SERVICE
 // =====================================
 
-export async function getRegistrantDocuments(registrantId: string) {
+export async function getRegistrantDocuments(registrantId: string, actor?: AuthUser) {
+  if (actor) await assertRegistrantUnitAccess(registrantId, actor);
   return prisma.registrantDocument.findMany({
     where: { registrantId },
     orderBy: { createdAt: 'desc' },
   });
 }
 
-export async function createRegistrantDocument(data: CreateRegistrantDocumentInput) {
+export async function createRegistrantDocument(data: CreateRegistrantDocumentInput, actor?: AuthUser) {
+  if (actor) await assertRegistrantUnitAccess(data.registrantId, actor);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return prisma.registrantDocument.create({ data: data as any });
 }
 
-export async function createPublicRegistrantDocumentService(data: {
-  registrantId: string;
-  type: string;
-  url?: string;
-  base64?: string;
-  fileName?: string;
-  registrationToken?: string;
-  ocrNotes?: string[];
-  ocrStatus?: 'WARNING' | 'MISMATCH';
-}) {
+export async function createPublicRegistrantDocumentService(
+  data: CreatePublicRegistrantDocumentRequest & { registrantId: string }
+) {
   const { registrantId, type, url, base64, fileName, registrationToken, ocrNotes, ocrStatus } = data;
 
   const registrant = await prisma.registrant.findUnique({
@@ -931,7 +1015,18 @@ export async function createPublicRegistrantDocumentService(data: {
     throw Errors.badRequest('Dokumen url/base64 wajib diisi');
   }
 
-  // Unified validation for docUrl (data-URI or remote HTTP/HTTPS URL)
+  // Identity documents are stored inline as data-URIs on the RegistrantDocument
+  // row. This keeps the public upload flow dependency-free (no object-store
+  // roundtrip, token stays single-use) but trades away object-storage
+  // advantages: a data-URI has no independent retention/backup lifecycle, is
+  // not served over a CDN, and access controls to the row gate the file. If
+  // identity documents are later moved to object storage, add an access-audit
+  // log and a retention policy — and migrate existing rows then, not now.
+  //
+  // For remote URLs (https), the SSRF guard below blocks loopback and private
+  // hosts. The URL is stored, never fetched in this path; if it is ever
+  // fetched, the same check must run at fetch time AND redirect targets must be
+  // re-validated (a public URL can redirect to 169.254.169.254 / metadata).
   if (docUrl.startsWith('data:')) {
     if (docUrl.length > 2800000) {
       throw Errors.badRequest('Ukuran berkas melebihi batas maksimum (2MB)');
@@ -1015,7 +1110,8 @@ export async function createPublicRegistrantDocumentService(data: {
   });
 }
 
-export async function verifyDocument(id: string, isVerified: boolean, notes?: string) {
+export async function verifyDocument(id: string, isVerified: boolean, notes?: string, actor?: AuthUser) {
+  if (actor) await assertDocumentUnitAccess(id, actor);
   return prisma.registrantDocument.update({
     where: { id },
     data: {
@@ -1026,7 +1122,8 @@ export async function verifyDocument(id: string, isVerified: boolean, notes?: st
   });
 }
 
-export async function deleteRegistrantDocument(id: string) {
+export async function deleteRegistrantDocument(id: string, actor?: AuthUser) {
+  if (actor) await assertDocumentUnitAccess(id, actor);
   return prisma.registrantDocument.delete({ where: { id } });
 }
 

@@ -15,6 +15,11 @@ vi.mock('@/lib/prisma', () => ({
       findUnique: vi.fn(),
       create: vi.fn(),
       delete: vi.fn(),
+      update: vi.fn(),
+    },
+    registrantDocument: {
+      count: vi.fn(),
+      create: vi.fn(),
     },
     paymentType: {
       findFirst: vi.fn(),
@@ -372,5 +377,64 @@ describe('Admissions Service', () => {
       where: { id: 'w1' },
       data: { status: 'FULL' },
     });
+  });
+
+  it('should persist OCR notes and status summary on public document upload', async () => {
+    const crypto = await import('crypto');
+    const { config } = await import('../../../config');
+    const registrantId = '11111111-1111-1111-1111-111111111111';
+    const tsHex = Date.now().toString(16);
+    const hmacHex = crypto.createHmac('sha256', config.jwt.secret).update(`${registrantId}:${tsHex}`).digest('hex').slice(0, 16);
+    const validToken = `${tsHex}.${hmacHex}`;
+
+    vi.mocked(prisma.registrant.findUnique).mockResolvedValue({ id: registrantId, registrationNo: 'REG-001' } as any);
+    vi.mocked(prisma.registrantDocument.count as any).mockResolvedValue(0);
+    vi.mocked(prisma.registrantDocument.create as any).mockImplementation(({ data }: any) =>
+      Promise.resolve({ id: 'doc-1', ...data })
+    );
+
+    await service.createPublicRegistrantDocumentService({
+      registrantId,
+      type: 'KK',
+      url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+      registrationToken: validToken,
+      ocrNotes: ['NIK tidak cocok', 'Kertas tampak rusak'],
+      ocrStatus: 'MISMATCH',
+    });
+
+    // The note must carry the verification status so reviewers see the mismatch.
+    expect(prisma.registrantDocument.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          notes: '[Hasil Verifikasi: MISMATCH] NIK tidak cocok | Kertas tampak rusak',
+        }),
+      })
+    );
+  });
+
+  it('should refuse a cross-unit UNIT_ADMIN from reading a registrant (403)', async () => {
+    vi.mocked(prisma.registrant.findUnique).mockResolvedValue({
+      id: 'reg-1',
+      admissionPeriod: { unitId: 'unit-1' },
+    } as any);
+
+    const crossUnitAdmin = { id: 'admin-2', role: 'UNIT_ADMIN', roleCode: 'SDIT_ADMIN', unitId: 'unit-2' };
+
+    await expect(
+      service.getRegistrantById('reg-1', crossUnitAdmin)
+    ).rejects.toThrow('Access to this unit is not allowed');
+  });
+
+  it('should refuse a cross-unit UNIT_ADMIN from updating a registrant status (403)', async () => {
+    vi.mocked(prisma.registrant.findUnique).mockResolvedValue({
+      id: 'reg-1',
+      admissionPeriod: { unitId: 'unit-1' },
+    } as any);
+
+    const crossUnitAdmin = { id: 'admin-2', role: 'UNIT_ADMIN', roleCode: 'SDIT_ADMIN', unitId: 'unit-2' };
+
+    await expect(
+      service.updateRegistrantStatus('reg-1', { status: 'REJECTED' }, crossUnitAdmin)
+    ).rejects.toThrow('Access to this unit is not allowed');
   });
 });

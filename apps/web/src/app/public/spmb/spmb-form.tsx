@@ -1135,7 +1135,7 @@ export function SpmbForm({
                                   Instruksi Unggah Dokumen:
                                 </p>
                                 <p className="text-blue-700">
-                                  Anda dapat memilih file dari perangkat atau mengambil foto langsung dari kamera HP/laptop. Sistem secara otomatis memindai NIK & No. KK untuk memverifikasi kecocokan data.
+                                  Anda dapat memilih file dari perangkat atau mengambil foto langsung dari kamera HP/laptop. Dokumen akan diverifikasi secara manual oleh petugas SPMB untuk mencocokkan NIK & No. KK dengan data formulir.
                                 </p>
                               </div>
                             </div>
