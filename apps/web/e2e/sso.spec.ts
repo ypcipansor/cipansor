@@ -10,6 +10,9 @@ test.describe("Single Sign-On (SSO) Buttons", () => {
   });
 
   test("should display Google Workspace and Microsoft 365 SSO buttons", async ({ page }) => {
+    // No route mock here: the button rendering is driven by the real
+    // /api/auth/sso/config payload the login page fetches from the backend.
+    // This is genuine browser-to-API integration coverage for the config path.
     const googleBtn = page.getByRole("button", { name: /Google Workspace/i });
     const microsoftBtn = page.getByRole("button", { name: /Microsoft 365/i });
 
@@ -46,6 +49,15 @@ test.describe("Single Sign-On (SSO) Buttons", () => {
   });
 
   test("should handle requiresTwoFactor branch during SSO callback", async ({ page }) => {
+    // This is the ONLY place the SSO login endpoint is stubbed, and it is
+    // unavoidable in CI: a genuine Google/Microsoft OAuth code exchange needs a
+    // real external IdP plus a locally-held x509 key that matches the provider's
+    // JWKS. That cannot run in an isolated e2e stack, so the ID-token
+    // verification step boundary has to be mocked here. The surrounding
+    // browser-to-API contract (handshake state, hash callback, redirect to the
+    // two-factor prompt) is exercised for real against the login page's
+    // ssoLogin client.
+    //
     // The login page rejects an SSO callback that arrives without the handshake
     // state it stored when the user initiated the flow (in sessionStorage).
     // Plant it the way the Google/Microsoft button click does, so the callback
