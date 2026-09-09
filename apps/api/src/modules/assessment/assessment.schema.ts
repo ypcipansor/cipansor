@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ExamType, ExamStatus, GradeType } from '@cipansor/shared';
+import { partialUpdateSchema } from '@/lib/partial';
 
 // Exam schemas
 export const createExamSchema = z.object({
@@ -20,7 +21,7 @@ export const createExamSchema = z.object({
   instructions: z.string().optional(),
 });
 
-export const updateExamSchema = createExamSchema.partial().extend({
+export const updateExamSchema = partialUpdateSchema(createExamSchema).extend({
   status: z.nativeEnum(ExamStatus).optional(),
 });
 
@@ -51,7 +52,7 @@ export const createGradeSchema = z.object({
   gradedById: z.string().uuid(),
 });
 
-export const updateGradeSchema = createGradeSchema.partial();
+export const updateGradeSchema = partialUpdateSchema(createGradeSchema);
 
 export const bulkCreateGradesSchema = z.object({
   examId: z.string().uuid().optional(),

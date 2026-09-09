@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { partialUpdateSchema } from '@/lib/partial';
 
 // We define the enum manually to match @cipansor/shared and include Prisma's types for compatibility
 // Shared: ANNOUNCEMENT, ATTENDANCE, FINANCE, ACADEMIC, PERMIT, HEALTH, VIOLATION, REWARD, SYSTEM
@@ -77,7 +78,7 @@ export const createTemplateSchema = z.object({
   isActive: z.boolean().default(true),
 });
 
-export const updateTemplateSchema = createTemplateSchema.partial();
+export const updateTemplateSchema = partialUpdateSchema(createTemplateSchema);
 
 export const queryTemplateSchema = z.object({
   type: NotificationTypeEnum.optional(),
@@ -108,7 +109,7 @@ export const createAnnouncementSchema = z.object({
   attachmentUrl: z.string().url().optional(),
 });
 
-export const updateAnnouncementSchema = createAnnouncementSchema.partial();
+export const updateAnnouncementSchema = partialUpdateSchema(createAnnouncementSchema);
 
 export const queryAnnouncementSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),

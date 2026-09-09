@@ -69,15 +69,15 @@ const formSchema = z.object({
   academicYearId: z.string().min(1, "Pilih tahun ajaran"),
   semester: z.enum(["GANJIL", "GENAP"]),
   aspect: z.enum(["NAM", "FM", "KOG", "BHS", "SE", "SNI"], {
-    required_error: "Pilih aspek perkembangan",
+    error: "Pilih aspek perkembangan",
   }),
   indicatorId: z.string().optional(),
   periodType: z.enum(["HARIAN", "MINGGUAN", "BULANAN", "SEMESTER"], {
-    required_error: "Pilih tipe periode",
+    error: "Pilih tipe periode",
   }),
-  periodDate: z.date({ required_error: "Pilih tanggal penilaian" }),
+  periodDate: z.date({ error: "Pilih tanggal penilaian" }),
   achievementLevel: z.enum(["BB", "MB", "BSH", "BSB"], {
-    required_error: "Pilih tingkat capaian",
+    error: "Pilih tingkat capaian",
   }),
   narrativeText: z.string().max(2000).optional(),
   teacherNotes: z.string().max(1000).optional(),
