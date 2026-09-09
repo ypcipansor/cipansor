@@ -58,7 +58,7 @@ const leaveRequestSchema = z
         "OTHER",
       ],
       {
-        required_error: "Jenis cuti wajib dipilih",
+        error: "Jenis cuti wajib dipilih",
       },
     ),
     startDate: z.string().min(1, "Tanggal mulai wajib diisi"),

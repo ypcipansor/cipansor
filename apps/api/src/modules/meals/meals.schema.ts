@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { partialUpdateSchema } from '@/lib/partial';
 
 // ======================
 // ENUMS
@@ -37,7 +38,7 @@ export const createMealScheduleSchema = z.object({
   isActive: z.boolean().default(true),
 });
 
-export const updateMealScheduleSchema = createMealScheduleSchema.partial().omit({ unitId: true });
+export const updateMealScheduleSchema = partialUpdateSchema(createMealScheduleSchema).omit({ unitId: true });
 
 // ======================
 // MENU SCHEMAS
@@ -69,7 +70,7 @@ export const createMenuSchema = z.object({
   notes: z.string().max(500).optional(),
 });
 
-export const updateMenuSchema = createMenuSchema.partial().omit({ mealScheduleId: true });
+export const updateMenuSchema = partialUpdateSchema(createMenuSchema).omit({ mealScheduleId: true });
 
 export const bulkCreateMenuSchema = z.object({
   menus: z.array(createMenuSchema).min(1).max(50),

@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
 import { format } from "date-fns";
 import { toast } from "sonner";
@@ -77,7 +77,7 @@ const createMenuSchema = z.object({
   description: z.string().optional(),
   mealType: z.enum(["BREAKFAST", "LUNCH", "DINNER", "SNACK"]),
   dayType: z.enum(["WEEKDAY", "WEEKEND", "ALL"]),
-  date: z.date({ required_error: "Tanggal wajib diisi" }),
+  date: z.date({ error: "Tanggal wajib diisi" }),
   mainDish: z
     .string()
     .min(3, "Hidangan utama minimal 3 karakter")

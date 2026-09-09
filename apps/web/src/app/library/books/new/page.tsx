@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, BookOpen, Save } from "lucide-react";
 import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import {
@@ -62,7 +62,7 @@ const bookSchema = z.object({
       "OTHER",
     ] as const,
     {
-      required_error: "Kategori wajib dipilih",
+      error: "Kategori wajib dipilih",
     },
   ),
   description: z.string().optional(),

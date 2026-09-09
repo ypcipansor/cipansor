@@ -101,7 +101,7 @@ const murojaahSchema = z
   .object({
     studentId: z.string().min(1, "Santri wajib dipilih"),
     teacherId: z.string().min(1, "Musyrif wajib dipilih"),
-    date: z.date({ required_error: "Tanggal wajib diisi" }),
+    date: z.date({ error: "Tanggal wajib diisi" }),
     surahId: z.string().min(1, "Surah wajib dipilih"),
     startAyat: z.number().min(1, "Ayat awal wajib diisi"),
     endAyat: z.number().min(1, "Ayat akhir wajib diisi"),

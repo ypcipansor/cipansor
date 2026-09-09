@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -49,7 +49,7 @@ const formSchema = z.object({
     .min(1, "Kode asrama wajib diisi")
     .max(10, "Kode maksimal 10 karakter"),
   type: z.enum(["MALE", "FEMALE"], {
-    required_error: "Tipe asrama wajib dipilih",
+    error: "Tipe asrama wajib dipilih",
   }),
   capacity: z.coerce.number().min(1, "Kapasitas minimal 1"),
   // Optional: an asrama run by the yayasan across units has no single unit.

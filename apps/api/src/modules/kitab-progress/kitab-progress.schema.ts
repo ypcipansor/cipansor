@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { partialUpdateSchema } from '@/lib/partial';
 
 // ======================
 // ENUMS
@@ -71,7 +72,7 @@ export const createKitabSchema = z.object({
   isActive: z.boolean().default(true),
 });
 
-export const updateKitabSchema = createKitabSchema.partial().omit({ unitId: true });
+export const updateKitabSchema = partialUpdateSchema(createKitabSchema).omit({ unitId: true });
 
 // ======================
 // KITAB ASSIGNMENT

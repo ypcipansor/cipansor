@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -59,17 +59,17 @@ import { cn } from "@/lib/utils";
 const tahfidzSchema = z
   .object({
     studentId: z.string().min(1, "Santri wajib dipilih"),
-    date: z.date({ required_error: "Tanggal wajib diisi" }),
+    date: z.date({ error: "Tanggal wajib diisi" }),
     surah: z.string().min(1, "Surah wajib dipilih"),
     startAyah: z.coerce.number().min(1, "Ayat awal minimal 1"),
     endAyah: z.coerce.number().min(1, "Ayat akhir minimal 1"),
     type: z.enum(["ZIYADAH", "MUROJAAH", "TASMI", "ASSESSMENT"] as const, {
-      required_error: "Tipe wajib dipilih",
+      error: "Tipe wajib dipilih",
     }),
     grade: z.enum(
       ["MUMTAZ", "JAYYID_JIDDAN", "JAYYID", "MAQBUL", "RASIB"] as const,
       {
-        required_error: "Nilai wajib dipilih",
+        error: "Nilai wajib dipilih",
       },
     ),
     notes: z.string().optional(),
