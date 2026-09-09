@@ -297,11 +297,6 @@ export enum SecurityEventType {
   RIGHT_CLICK = "RIGHT_CLICK",
 }
 
-export interface RecordSecurityLogInput {
-  eventType: SecurityEventType | string;
-  details?: string | null;
-}
-
 export interface ExamSecurityLog {
   id: string;
   attemptId: string;

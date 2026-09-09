@@ -732,8 +732,57 @@ describe('CBT Service', () => {
         create: expect.objectContaining({
           letterGrade: 'A',
         }),
-        update: {},
+        update: expect.objectContaining({
+          letterGrade: 'A',
+          score: 50,
+          percentage: expect.any(Object),
+          gradedAt: expect.any(Date),
+        }),
       });
+    });
+
+    it('should refresh an existing EXAM grade even without forceUpdate (non-essay exam)', async () => {
+      vi.mocked(prisma.grade.upsert).mockClear();
+
+      const mockAttemptForSync = {
+        id: 'attempt-sync-existing',
+        studentId: 'std-1',
+        examId: 'exam-1',
+        score: 40,
+        status: 'COMPLETED',
+        exam: {
+          id: 'exam-1',
+          maxScore: 100,
+          subjectId: 'sub-1',
+          academicYearId: 'ay-1',
+          teacherId: 't-1',
+          title: 'Math Exam',
+          questionBank: {
+            questions: [{ points: 25 }, { points: 25 }], // total possible points = 50
+          },
+        },
+      };
+
+      vi.mocked(prisma.examAttempt.findUnique).mockResolvedValue(mockAttemptForSync as any);
+      vi.mocked(prisma.teacher.findUnique).mockResolvedValue({ userId: 'user-t-1' } as any);
+      vi.mocked(prisma.grade.upsert).mockResolvedValue({ id: 'grade-1' } as any);
+
+      await CBTService.syncGradeToAcademicGradebook('attempt-sync-existing');
+
+      // 40 / 50 = 80% -> updates the already-present grade row with the new score
+      const callArgs = vi.mocked(prisma.grade.upsert).mock.calls[0] as any;
+      expect(callArgs[0].where).toEqual({
+        studentId_examId: { studentId: 'std-1', examId: 'exam-1' },
+      });
+      expect(callArgs[0].update).toEqual(
+        expect.objectContaining({
+          score: 40,
+          letterGrade: 'B',
+          gradedAt: expect.any(Date),
+        })
+      );
+      // note is only set in the forceUpdate (post-essay-grading) path
+      expect(callArgs[0].update.notes).toBeUndefined();
     });
 
     it('should update Grade when forceUpdate is true after essay grading', async () => {

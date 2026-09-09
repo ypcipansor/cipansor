@@ -4,7 +4,7 @@ import { SecurityEventType } from "@cipansor/shared";
 
 // Types
 export { QuestionType } from "@cipansor/shared";
-export type { Question, QuestionBank, ExamAttempt, ExamSecurityLog } from "@cipansor/shared";
+export type { Question, QuestionBank, ExamAttempt, ExamAnswer, ExamSecurityLog } from "@cipansor/shared";
 
 // Hooks
 

@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { Prisma, QuestionType } from '@prisma/client';
+import type { Question as QuestionModel } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/client';
 import { Errors } from '@/middleware/error';
 import { calculateLetterGrade } from '@cipansor/shared';
@@ -756,13 +757,13 @@ export class CBTService {
         if (Array.isArray(q.options) && q.options.length > 0) {
           return {
             ...q,
-            options: shuffleWithSeed(q.options as any[], `${attemptId}_${q.id}`),
+            options: shuffleWithSeed(q.options as unknown[] as string[], `${attemptId}_${q.id}`),
           };
         }
         return q;
       });
 
-      attempt.exam.questionBank.questions = questions as any;
+      attempt.exam.questionBank.questions = questions as unknown as QuestionModel[];
     }
 
     return attempt;
@@ -1038,7 +1039,7 @@ export class CBTService {
           .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
           .map(
             ({ id, type, content, options, points }) => ({ id, type, content, options, points })
-          ) as any;
+          ) as unknown as QuestionModel[];
       }
 
       // Idempotent catch-up sync: ensure completed attempts have a Grade record created
@@ -1082,8 +1083,8 @@ export class CBTService {
         // Simple logic: if JSON stringify matches (careful with order) or direct value check.
         // Assuming answerKey is just the ID of the correct option.
 
-        const key = question.answerKey as any; // e.g. "opt-1"
-        const studentAns = studentAnswer?.answer as any; // e.g. "opt-1"
+        const key = question.answerKey as unknown; // e.g. "opt-1"
+        const studentAns = studentAnswer?.answer as unknown; // e.g. "opt-1"
 
         // Use JSON.stringify for comparison to handle both primitive and
         // object JSON values (Prisma Json fields may be deserialized objects).
@@ -1187,13 +1188,16 @@ export class CBTService {
 
   /**
    * Automatically synchronizes CBT attempt scores into the academic Gradebook (`Grade` model).
-   */
-  /**
-   * Automatically synchronizes CBT attempt scores into the academic Gradebook (`Grade` model).
    *
    * Thread-safe and atomic: uses `upsert` with compound key `studentId_examId`.
-   * When `forceUpdate` is true (e.g. after teacher grades essay questions), updates the score
-   * and percentage. Otherwise uses `update: {}` (no-op) to preserve historical grades.
+   * Both the new-record path and any update path always refresh the score fields so a freshly
+   * finished CBT attempt lands in the gradebook even when the grade row already exists.
+   * `forceUpdate` (after teacher grades essay questions) additionally notes the post-grading refresh.
+   *
+   * The update is inherently scoped to exam grades: `examId` is only non-null for `EXAM`-type
+   * grades (`schema.prisma`: "null untuk nilai non-ujian"), and the compound unique key only
+   * matches rows whose `examId` equals this exam — so grades originating from other modules
+   * (assignments, projects, …) can never be touched here.
    */
   static async syncGradeToAcademicGradebook(
     attemptId: string,
@@ -1247,16 +1251,21 @@ export class CBTService {
       gradedById: teacher.userId,
     };
 
-    const updatePayload = options?.forceUpdate
-      ? {
-          score: attempt.score,
-          maxScore: new Decimal(denominator),
-          percentage: new Decimal(percentage),
-          letterGrade,
-          gradedAt: new Date(),
-          notes: `Nilai CBT (${attempt.exam.title}) - Diperbarui Pasca Koreksi Esai`,
-        }
-      : {};
+    // Always refresh the score fields so a freshly finished CBT attempt lands in the
+    // gradebook even when the grade row already exists (exam without essay grading).
+    // Only the EXAM-type grade whose `examId` matches can be selected by the compound
+    // unique key below, so historical grades from other modules are never overwritten.
+    const updatePayload: Prisma.GradeUpdateInput = {
+      score: attempt.score,
+      maxScore: new Decimal(denominator),
+      percentage: new Decimal(percentage),
+      letterGrade,
+      gradedAt: new Date(),
+    };
+
+    if (options?.forceUpdate) {
+      updatePayload.notes = `Nilai CBT (${attempt.exam.title}) - Diperbarui Pasca Koreksi Esai`;
+    }
 
     return db.grade.upsert({
       where: {
@@ -1332,25 +1341,29 @@ export class CBTService {
         : null;
 
       // Best Practice: Distractor analysis for multiple choice questions
-      let distractorAnalysis: Array<{ option: any; count: number; percentage: number }> | undefined;
+      let distractorAnalysis:
+        | Array<{ option: Prisma.JsonValue; count: number; percentage: number }>
+        | undefined;
       if (q.type === 'MULTIPLE_CHOICE' && Array.isArray(q.options)) {
-        const getOptKey = (opt: any) =>
-          typeof opt === 'object' && opt !== null && opt.id ? opt.id : opt;
+        const getOptKey = (opt: Prisma.JsonValue): Prisma.JsonValue =>
+          typeof opt === 'object' && opt !== null && !Array.isArray(opt) && 'id' in opt
+            ? (opt as { id: Prisma.JsonValue }).id
+            : opt;
 
         const optionCounts: Record<string, number> = {};
         answers.forEach((ans) => {
           if (ans && ans.answer != null) {
-            const rawAns = ans.answer as any;
+            const rawAns = ans.answer as Prisma.JsonValue;
             const rawKey =
-              typeof rawAns === 'object' && rawAns !== null && 'id' in rawAns
-                ? rawAns.id
+              typeof rawAns === 'object' && rawAns !== null && !Array.isArray(rawAns) && 'id' in rawAns
+                ? (rawAns as { id: Prisma.JsonValue }).id
                 : rawAns;
             const keyStr = typeof rawKey === 'string' ? rawKey : JSON.stringify(rawKey);
             optionCounts[keyStr] = (optionCounts[keyStr] || 0) + 1;
           }
         });
 
-        distractorAnalysis = (q.options as any[]).map((opt) => {
+        distractorAnalysis = (q.options as Prisma.JsonValue[]).map((opt) => {
           const optKey = getOptKey(opt);
           const keyStr = typeof optKey === 'string' ? optKey : JSON.stringify(optKey);
           const count = optionCounts[keyStr] || 0;

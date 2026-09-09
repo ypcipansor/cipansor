@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { MainLayout } from "@/components/layout";
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,7 @@ import {
   useFinishExam,
   useRecordSecurityLog,
   ExamAttempt,
+  ExamAnswer,
   Question,
   QuestionType,
 } from "@/hooks/use-cbt";
@@ -56,7 +57,9 @@ export default function TakeExamPage({ params }: { params: { id: string } }) {
   const [attemptId, setAttemptId] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(false);
 
-  const { data: fullAttempt, isLoading: loadingAttempt } = useExamAttempt(attemptId ?? "");
+  const { data: fullAttempt, isLoading: loadingAttempt } = useExamAttempt(
+    attemptId ?? "",
+  );
 
   const handleStart = async () => {
     setIsStarting(true);
@@ -197,10 +200,13 @@ function ExamPlayer({
             const savedDraft = JSON.parse(savedDraftRaw);
             const draftAnswers = savedDraft.answers || savedDraft;
             const draftTime = savedDraft.timestamp || 0;
-            const attemptUpdatedTime = attempt.updatedAt ? new Date(attempt.updatedAt).getTime() : 0;
+            const attemptUpdatedTime = attempt.updatedAt
+              ? new Date(attempt.updatedAt).getTime()
+              : 0;
 
             for (const [qId, draftVal] of Object.entries(draftAnswers)) {
-              const hasServerAns = initialAnswers[qId] !== undefined && initialAnswers[qId] !== "";
+              const hasServerAns =
+                initialAnswers[qId] !== undefined && initialAnswers[qId] !== "";
               // For questions with NO server answer (hasServerAns == false), always apply local draft.
               // For questions with existing server answer, apply draft only if draft is newer than attempt.updatedAt.
               if (!hasServerAns || draftTime > attemptUpdatedTime) {
@@ -227,53 +233,143 @@ function ExamPlayer({
 
   const currentQuestion = questions[currentIndex];
 
-  const handleFinish = useCallback(async () => {
-    try {
-      // Parallel sync only for unsynced/modified answers before finishing
-      const unsyncedEntries = Object.entries(answers).filter(([qId, ans]) => {
-        const serverAns = attempt.answers?.find((a: any) => a.questionId === qId)?.answer;
-        return (
-          ans !== undefined &&
-          ans !== "" &&
-          (serverAns === undefined || JSON.stringify(serverAns) !== JSON.stringify(ans))
-        );
-      });
+  // Keep the latest answers/server answers readable from callbacks without
+  // eagerly rebinding effects (used by the finish and timer flows).
+  const answersRef = useRef(answers);
+  useEffect(() => {
+    answersRef.current = answers;
+  }, [answers]);
 
-      if (unsyncedEntries.length > 0) {
-        const results = await Promise.allSettled(
-          unsyncedEntries.map(([qId, ans]) =>
-            submitAnswer.mutateAsync({
-              attemptId: attempt.id,
-              questionId: qId,
-              answer: ans,
-            })
-          )
-        );
+  const serverAnswersRef = useRef(attempt.answers);
+  useEffect(() => {
+    serverAnswersRef.current = attempt.answers;
+  }, [attempt.answers]);
 
-        const hasFailed = results.some((r) => r.status === "rejected");
-        if (hasFailed) {
-          toast.error(
-            "Beberapa jawaban gagal dikirim ke server. Mohon periksa koneksi internet Anda dan coba lagi."
+  // Track in-flight autosaves so finalization can settle them before grading,
+  // preventing a slow autosave request landing after the final answers.
+  const pendingSubmitsRef = useRef<Set<Promise<unknown>>>(new Set());
+  const trackSubmit = useCallback((promise: Promise<unknown>) => {
+    const wrapped = promise.finally(() =>
+      pendingSubmitsRef.current.delete(wrapped),
+    );
+    wrapped.catch(() => {}); // keep the tracking set rejection-free
+    pendingSubmitsRef.current.add(wrapped);
+    return wrapped;
+  }, []);
+
+  // An answer counts as unsynced when it was cleared (""), so clearing an
+  // offline answer is still propagated to the server, or when its serialized
+  // value differs from what the server last persisted.
+  const isUnsynced = useCallback(
+    (qId: string, ans: any, serverAnswers?: ExamAnswer[]) => {
+      const serverAns = serverAnswers?.find(
+        (a: any) => a.questionId === qId,
+      )?.answer;
+      return (
+        ans !== undefined &&
+        (serverAns === undefined ||
+          JSON.stringify(serverAns) !== JSON.stringify(ans))
+      );
+    },
+    [],
+  );
+
+  const collectUnsynced = useCallback(
+    (sourceAnswers: Record<string, any>, serverAnswers?: ExamAnswer[]) =>
+      Object.entries(sourceAnswers).filter(([qId, ans]) =>
+        isUnsynced(qId, ans, serverAnswers),
+      ),
+    [isUnsynced],
+  );
+
+  const submitAll = useCallback(
+    (entries: Array<[string, any]>, attemptId: string) =>
+      entries.map(([questionId, answer]) =>
+        submitAnswer.mutateAsync({ attemptId, questionId, answer }),
+      ),
+    [submitAnswer],
+  );
+
+  const handleFinish = useCallback(
+    async (opts?: { isAuto?: boolean }) => {
+      const isAuto = opts?.isAuto ?? false;
+      // Await any in-flight autosaves so an older request cannot land after the
+      // final sync and overwrite a newer answer on the server.
+      const inFlight = Array.from(pendingSubmitsRef.current);
+      if (inFlight.length > 0) {
+        await Promise.allSettled(inFlight);
+      }
+
+      const latest = answersRef.current;
+      const serverAnswers = serverAnswersRef.current;
+      const unsyncedEntries = collectUnsynced(latest, serverAnswers);
+
+      try {
+        if (unsyncedEntries.length > 0) {
+          const results = await Promise.allSettled(
+            submitAll(unsyncedEntries, attempt.id),
           );
-          return;
-        }
-      }
+          const hasFailed = results.some((r) => r.status === "rejected");
 
-      await finishExam.mutateAsync(attempt.id);
-      if (typeof window !== "undefined") {
-        localStorage.removeItem(draftStorageKey);
+          if (hasFailed) {
+            if (isAuto) {
+              // Auto-submit on timeout: retry a few times, then still finish the
+              // exam so it is graded instead of silently EXPIRING unmarked.
+              for (let retry = 0; retry < 2; retry++) {
+                await new Promise((r) => setTimeout(r, 800));
+                const retryResults = await Promise.allSettled(
+                  submitAll(
+                    collectUnsynced(
+                      answersRef.current,
+                      serverAnswersRef.current,
+                    ),
+                    attempt.id,
+                  ),
+                );
+                if (retryResults.every((r) => r.status === "fulfilled")) break;
+              }
+            } else {
+              toast.error(
+                "Beberapa jawaban gagal dikirim ke server. Mohon periksa koneksi internet Anda dan coba lagi.",
+              );
+              return;
+            }
+          }
+        }
+
+        await finishExam.mutateAsync(attempt.id);
+        if (typeof window !== "undefined") {
+          localStorage.removeItem(draftStorageKey);
+        }
+        toast.success("Ujian selesai!");
+        router.push("/student/exams");
+      } catch {
+        toast.error("Gagal menyelesaikan ujian. Silakan coba lagi.");
       }
-      toast.success("Ujian selesai!");
-      router.push("/student/exams");
-    } catch {
-      toast.error("Gagal menyelesaikan ujian. Silakan coba lagi.");
-    }
-  }, [answers, attempt.answers, attempt.id, draftStorageKey, finishExam, router, submitAnswer]);
+    },
+    [
+      attempt.id,
+      collectUnsynced,
+      draftStorageKey,
+      finishExam,
+      router,
+      submitAll,
+    ],
+  );
+
+  // Stable ref so the one-second timer never depends on `handleFinish` (which
+  // itself depends on live answer state) — otherwise every keystroke would tear
+  // down and restart the interval and the countdown would run slow on essays.
+  const handleFinishRef = useRef(handleFinish);
+  useEffect(() => {
+    handleFinishRef.current = handleFinish;
+  }, [handleFinish]);
 
   const handleAnswerChange = async (value: any) => {
     if (!currentQuestion) return;
 
-    const newAnswers = { ...answers, [currentQuestion.id]: value };
+    const newAnswers = { ...answersRef.current, [currentQuestion.id]: value };
+    answersRef.current = newAnswers;
     setAnswers(newAnswers);
 
     // Save draft locally with timestamp for offline recovery
@@ -281,7 +377,11 @@ function ExamPlayer({
       try {
         localStorage.setItem(
           draftStorageKey,
-          JSON.stringify({ answers: newAnswers, timestamp: Date.now(), examId: attempt.examId })
+          JSON.stringify({
+            answers: newAnswers,
+            timestamp: Date.now(),
+            examId: attempt.examId,
+          }),
         );
       } catch (err) {
         console.error("Failed to save draft locally", err);
@@ -289,11 +389,14 @@ function ExamPlayer({
     }
 
     try {
-      await submitAnswer.mutateAsync({
-        attemptId: attempt.id,
-        questionId: currentQuestion.id,
-        answer: value,
-      });
+      // Track the autosave so finish can await it before finalizing.
+      await trackSubmit(
+        submitAnswer.mutateAsync({
+          attemptId: attempt.id,
+          questionId: currentQuestion.id,
+          answer: value,
+        }),
+      );
     } catch {
       console.error("Failed to save answer online; saved to offline draft");
     }
@@ -307,8 +410,11 @@ function ExamPlayer({
       setTimeLeft((prev) => {
         if (prev <= 1) {
           clearInterval(timer);
-          toast.warning("Waktu pengerjaan telah habis. Mengirim jawaban otomatis...");
-          handleFinish();
+          toast.warning(
+            "Waktu pengerjaan telah habis. Mengirim jawaban otomatis...",
+          );
+          // Auto-submit path: always completes the exam even if some uploads fail.
+          handleFinishRef.current?.({ isAuto: true });
           return 0;
         }
         return prev - 1;
@@ -316,7 +422,7 @@ function ExamPlayer({
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [attempt.status, handleFinish]);
+  }, [attempt.status]);
 
   // Anti-Cheating: Tab Switch & Window Blur Listener
   useEffect(() => {
@@ -325,7 +431,9 @@ function ExamPlayer({
     const handleVisibilityChange = () => {
       if (document.hidden) {
         setTabSwitchCount((prev) => prev + 1);
-        toast.error("Peringatan Keamanan: Anda terdeteksi meninggalkan layar ujian! Aktivitas ini dicatat pengawas.");
+        toast.error(
+          "Peringatan Keamanan: Anda terdeteksi meninggalkan layar ujian! Aktivitas ini dicatat pengawas.",
+        );
         recordSecurityLog.mutate({
           attemptId: attempt.id,
           eventType: "TAB_SWITCH",
@@ -345,34 +453,35 @@ function ExamPlayer({
     if (attempt.status !== "IN_PROGRESS") return;
 
     const handleOnline = async () => {
-      toast.success("Koneksi terhubung kembali. Meringkas sinkronisasi jawaban...");
-      const unsyncedEntries = Object.entries(answers).filter(([qId, ans]) => {
-        const serverAns = attempt.answers?.find((a: any) => a.questionId === qId)?.answer;
-        return (
-          ans !== undefined &&
-          ans !== "" &&
-          (serverAns === undefined || JSON.stringify(serverAns) !== JSON.stringify(ans))
-        );
-      });
+      toast.success(
+        "Koneksi terhubung kembali. Meringkas sinkronisasi jawaban...",
+      );
+      // Same unsynced semantics as handleFinish: cleared ("") answers are synced too.
+      const unsyncedEntries = collectUnsynced(
+        answersRef.current,
+        serverAnswersRef.current,
+      );
 
       if (unsyncedEntries.length > 0) {
         await Promise.all(
-          unsyncedEntries.map(([qId, ans]) =>
-            submitAnswer
-              .mutateAsync({
-                attemptId: attempt.id,
-                questionId: qId,
-                answer: ans,
-              })
-              .catch((e) => console.error("Failed to sync answer on reconnect", e))
-          )
+          submitAll(unsyncedEntries, attempt.id).map((p) =>
+            p.catch((e) =>
+              console.error("Failed to sync answer on reconnect", e),
+            ),
+          ),
         );
       }
     };
 
     window.addEventListener("online", handleOnline);
     return () => window.removeEventListener("online", handleOnline);
-  }, [answers, attempt.answers, attempt.id, attempt.status, submitAnswer]);
+  }, [
+    attempt.id,
+    attempt.status,
+    collectUnsynced,
+    serverAnswersRef,
+    submitAll,
+  ]);
 
   if (attempt.status !== "IN_PROGRESS") {
     return (
@@ -448,7 +557,7 @@ function ExamPlayer({
                 <AlertDialogFooter>
                   <AlertDialogCancel>Batal</AlertDialogCancel>
                   <AlertDialogAction
-                    onClick={handleFinish}
+                    onClick={() => handleFinish()}
                     className="bg-primary"
                   >
                     Ya, Selesai
