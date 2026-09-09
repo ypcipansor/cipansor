@@ -729,10 +729,17 @@ export async function getLibraryStats(unitId?: string): Promise<LibrarySummary> 
 }
 
 export async function getSPMBStats(unitId?: string): Promise<SpmbSummary> {
-  // Check for active admission period
+  // Check for a *currently running* admission period. Picking the period with
+  // the latest startDate alone is wrong: a future-dated `isActive` period would
+  // then shadow the intake that is actually running today. A period counts as
+  // active only when `isActive` is true AND `now` falls inside its
+  // [startDate, endDate] window.
+  const now = new Date();
   const activePeriod = await prisma.admissionPeriod.findFirst({
     where: {
       isActive: true,
+      startDate: { lte: now },
+      endDate: { gte: now },
       ...(unitId && { unitId }),
     },
     orderBy: { startDate: 'desc' },

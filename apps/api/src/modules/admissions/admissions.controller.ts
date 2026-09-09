@@ -46,19 +46,22 @@ export const getAdmissionPeriodById = asyncHandler(async (req: Request, res: Res
 });
 
 export const createAdmissionPeriod = asyncHandler(async (req: Request, res: Response) => {
+  const user = requireUser(req);
   const data = createAdmissionPeriodSchema.parse(req.body);
-  const period = await service.createAdmissionPeriod(data);
+  const period = await service.createAdmissionPeriod(data, user);
   res.status(201).json({ success: true, data: period });
 });
 
 export const updateAdmissionPeriod = asyncHandler(async (req: Request, res: Response) => {
+  const user = requireUser(req);
   const data = updateAdmissionPeriodSchema.parse(req.body);
-  const period = await service.updateAdmissionPeriod(req.params.id, data);
+  const period = await service.updateAdmissionPeriod(req.params.id, data, user);
   res.json({ success: true, data: period });
 });
 
-export const deleteAdmissionPeriod = asyncHandler(async (_req: Request, res: Response) => {
-  await service.deleteAdmissionPeriod(_req.params.id);
+export const deleteAdmissionPeriod = asyncHandler(async (req: Request, res: Response) => {
+  const user = requireUser(req);
+  await service.deleteAdmissionPeriod(req.params.id, user);
   res.json({ success: true, message: 'Admission period deleted successfully' });
 });
 
@@ -91,8 +94,9 @@ export const getRegistrantById = asyncHandler(async (req: Request, res: Response
 });
 
 export const createRegistrant = asyncHandler(async (req: Request, res: Response) => {
+  const user = requireUser(req);
   const data = createRegistrantSchema.parse(req.body);
-  const registrant = await service.createRegistrant(data);
+  const registrant = await service.createRegistrant(data, true, user);
   res.status(201).json({ success: true, data: registrant });
 });
 

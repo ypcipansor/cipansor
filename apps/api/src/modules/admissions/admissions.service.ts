@@ -24,6 +24,23 @@ function isSuperAdmin(actor: AuthUser): boolean {
 }
 
 /**
+ * Refuse a non-SUPER_ADMIN actor that does not belong to the given unit.
+ * A null `unitId` on the actor is always rejected: it would otherwise bypass
+ * unit scoping entirely (see the `getRegistrants`/`createRegistrantOnce`
+ * guards). SUPER_ADMIN is exempt.
+ */
+function assertUnitMatchesActor(unitId: string | null | undefined, actor?: AuthUser): void {
+  if (actor && !isSuperAdmin(actor)) {
+    if (!actor.unitId) {
+      throw Errors.forbidden('Access to this unit is not allowed');
+    }
+    if (unitId !== actor.unitId) {
+      throw Errors.forbidden('Access to this unit is not allowed');
+    }
+  }
+}
+
+/**
  * Server-side unit scoping for any by-id registrant operation.
  * SUPER_ADMIN is exempt; every other actor must belong to the registrant's
  * admission period unit, otherwise the request is refused with 403.
@@ -164,7 +181,11 @@ export async function getRegistrantTrackingInfo(registrationNo: string, birthDat
   });
 }
 
-export async function createAdmissionPeriod(data: CreateAdmissionPeriodInput) {
+export async function createAdmissionPeriod(data: CreateAdmissionPeriodInput, actor?: AuthUser) {
+  // A UNIT_ADMIN may only create a period for their own unit; otherwise they
+  // could manufacture a period in another unit's admissions.
+  assertUnitMatchesActor(data.unitId, actor);
+
   return prisma.admissionPeriod.create({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     data: {
@@ -176,7 +197,22 @@ export async function createAdmissionPeriod(data: CreateAdmissionPeriodInput) {
   });
 }
 
-export async function updateAdmissionPeriod(id: string, data: UpdateAdmissionPeriodInput) {
+export async function updateAdmissionPeriod(
+  id: string,
+  data: UpdateAdmissionPeriodInput,
+  actor?: AuthUser
+) {
+  // Resolve the existing period's unit so the scoping check can run against the
+  // record being edited (a UNIT_ADMIN must not touch another unit's period).
+  const existingPeriod = await prisma.admissionPeriod.findUnique({
+    where: { id },
+    select: { unitId: true },
+  });
+  if (!existingPeriod) {
+    throw Errors.notFound('Admission period');
+  }
+  assertUnitMatchesActor(existingPeriod.unitId, actor);
+
   return prisma.admissionPeriod.update({
     where: { id },
     data: {
@@ -189,14 +225,21 @@ export async function updateAdmissionPeriod(id: string, data: UpdateAdmissionPer
   });
 }
 
-export async function deleteAdmissionPeriod(id: string) {
+export async function deleteAdmissionPeriod(id: string, actor?: AuthUser) {
   // Check if period has registrants
   const period = await prisma.admissionPeriod.findUnique({
     where: { id },
     include: { _count: { select: { registrants: true } } },
   });
 
-  if (period?._count.registrants && period._count.registrants > 0) {
+  if (!period) {
+    throw Errors.notFound('Admission period');
+  }
+
+  // A UNIT_ADMIN may only delete a period belonging to their own unit.
+  assertUnitMatchesActor(period.unitId, actor);
+
+  if (period._count.registrants && period._count.registrants > 0) {
     throw new Error('Cannot delete admission period with registrants');
   }
 
@@ -299,8 +342,14 @@ export async function getRegistrants(
   if (status) where.status = status;
   if (gender) where.gender = gender as Gender;
 
-  // Server-side unit scoping: SUPER_ADMIN sees all; non-SUPER_ADMIN is restricted to their unitId
-  if (actor && actor.role !== 'SUPER_ADMIN' && actor.unitId) {
+  // Server-side unit scoping: SUPER_ADMIN sees all; non-SUPER_ADMIN is
+  // restricted to their unitId. A non-SUPER_ADMIN without a unitId must NEVER
+  // fall through to the unscoped query — that would let them list registrants
+  // of EVERY unit. Refuse with 403 instead of silently widening the filter.
+  if (actor && !isSuperAdmin(actor)) {
+    if (!actor.unitId) {
+      throw Errors.forbidden('Access to this unit is not allowed');
+    }
     where.admissionPeriod = { ...(where.admissionPeriod as any), unitId: actor.unitId };
   }
 
@@ -351,6 +400,9 @@ export async function getRegistrantById(id: string, actor?: AuthUser) {
           academicYear: { select: { id: true, name: true } },
         },
       },
+      wave: {
+        select: { id: true, name: true, waveNumber: true, registrationFee: true },
+      },
       documents: { orderBy: { createdAt: 'desc' } },
       student: { select: { id: true, nis: true, userId: true } },
     },
@@ -400,7 +452,11 @@ export async function createPublicRegistrantService(data: CreateRegistrantExtend
   };
 }
 
-export async function createRegistrant(data: CreateRegistrantExtendedInput, isAdmin: boolean = true) {
+export async function createRegistrant(
+  data: CreateRegistrantExtendedInput,
+  isAdmin: boolean = true,
+  actor?: AuthUser
+) {
   // Race-safety: `generateRegistrationNo` derives the next number from
   // `count(*) + 1`. Under PostgreSQL's default READ COMMITTED isolation,
   // two concurrent transactions can read the same count and try to insert
@@ -412,7 +468,7 @@ export async function createRegistrant(data: CreateRegistrantExtendedInput, isAd
   let lastError: unknown;
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     try {
-      return await createRegistrantOnce(data, isAdmin);
+      return await createRegistrantOnce(data, isAdmin, actor);
     } catch (err) {
       lastError = err;
       if (
@@ -430,8 +486,33 @@ export async function createRegistrant(data: CreateRegistrantExtendedInput, isAd
   throw lastError;
 }
 
-async function createRegistrantOnce(data: CreateRegistrantExtendedInput, isAdmin: boolean = true) {
+async function createRegistrantOnce(
+  data: CreateRegistrantExtendedInput,
+  isAdmin: boolean = true,
+  actor?: AuthUser
+) {
   return prisma.$transaction(async (tx) => {
+    // Unit scoping for the admin/staff create path: a non-SUPER_ADMIN may only
+    // create a registrant in an admission period that belongs to their own
+    // unit. Otherwise a staff member could send `admissionPeriodId` of another
+    // unit's period and both consume that unit's wave quota and register
+    // applicants into a period they do not manage.
+    if (actor && !isSuperAdmin(actor)) {
+      if (!actor.unitId) {
+        throw Errors.forbidden('Access to this unit is not allowed');
+      }
+      const scopedPeriod = await tx.admissionPeriod.findUnique({
+        where: { id: data.admissionPeriodId },
+        select: { unitId: true },
+      });
+      if (!scopedPeriod) {
+        throw Errors.notFound('Admission period');
+      }
+      if (scopedPeriod.unitId !== actor.unitId) {
+        throw Errors.forbidden('Access to this unit is not allowed');
+      }
+    }
+
     const registrationNo = await generateRegistrationNo(data.admissionPeriodId, tx);
 
     // Map Zod input fields to the actual Prisma Registrant model.
@@ -458,11 +539,21 @@ async function createRegistrantOnce(data: CreateRegistrantExtendedInput, isAdmin
       // Look up all open waves for the period ordered by waveNumber asc
       // to atomically claim a slot in the first wave that has capacity.
       const now = new Date();
+      // Auto-assign claims a wave only when it is *open for registration right
+      // now*, decided by dates, not merely by status:
+      //  - `FULL` is a terminal closed state (manual early-close OR capacity
+      //    reached). Never auto-claim it, even if `registeredCount` is below
+      //    quota (a manual early-close would otherwise be silently reopened by
+      //    a fresh submission). Cancelled slots in a FULL wave are recovered by
+      //    an admin re-opening the wave or by `updateWaveStatuses`.
+      //  - `UPCOMING` is claimable once its window has opened (started and not
+      //    ended), so registration does not depend on the `updateWaveStatuses`
+      //    cron having transitioned it to OPEN before the first submission.
       const candidateWaves = tx.admissionWave
         ? await tx.admissionWave.findMany({
             where: {
               periodId: data.admissionPeriodId,
-              status: { in: ['OPEN', 'FULL'] },
+              status: { in: ['OPEN', 'UPCOMING'] },
               startDate: { lte: now },
               endDate: { gte: now },
             },
@@ -489,7 +580,7 @@ async function createRegistrantOnce(data: CreateRegistrantExtendedInput, isAdmin
         const claim = await tx.admissionWave.updateMany({
           where: {
             id: wave.id,
-            status: { in: ['OPEN', 'FULL'] },
+            status: { in: ['OPEN', 'UPCOMING'] },
             registeredCount: { lt: freshWave.quota },
           },
           data: {
@@ -1017,11 +1108,20 @@ export async function createPublicRegistrantDocumentService(
 
   // Identity documents are stored inline as data-URIs on the RegistrantDocument
   // row. This keeps the public upload flow dependency-free (no object-store
-  // roundtrip, token stays single-use) but trades away object-storage
-  // advantages: a data-URI has no independent retention/backup lifecycle, is
-  // not served over a CDN, and access controls to the row gate the file. If
-  // identity documents are later moved to object storage, add an access-audit
-  // log and a retention policy — and migrate existing rows then, not now.
+  // roundtrip) but trades away object-storage advantages: a data-URI has no
+  // independent retention/backup lifecycle, is not served over a CDN, and
+  // access controls to the row gate the file. If identity documents are later
+  // moved to object storage, add an access-audit log and a retention policy —
+  // and migrate existing rows then, not now.
+  //
+  // CONTRACT: the registration token is NOT single-use. It is an HMAC bound to
+  // `registrant:id` and valid for 2 hours (see the check above), and may be
+  // reused to upload multiple documents for that registrant within the window.
+  // This is intentional: an applicant often uploads several identity documents
+  // (KTP, KK, akta, foto) in one session without re-fetching a fresh token each
+  // time. If the security policy later requires true single-use, persist a
+  // one-time token per document (or a Redis `SETNX` key) — this needs a small
+  // schema/extra-state change, not a code comment tweak.
   //
   // For remote URLs (https), the SSRF guard below blocks loopback and private
   // hosts. The URL is stored, never fetched in this path; if it is ever

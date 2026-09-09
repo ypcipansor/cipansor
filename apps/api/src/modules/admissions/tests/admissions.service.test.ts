@@ -7,7 +7,11 @@ vi.mock('@/lib/prisma', () => ({
     admissionPeriod: {
       findUnique: vi.fn(),
       findMany: vi.fn(),
+      findFirst: vi.fn(),
       count: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
     },
     registrant: {
       count: vi.fn(),
@@ -435,6 +439,61 @@ describe('Admissions Service', () => {
 
     await expect(
       service.updateRegistrantStatus('reg-1', { status: 'REJECTED' }, crossUnitAdmin)
+    ).rejects.toThrow('Access to this unit is not allowed');
+  });
+
+  it('should refuse non-SUPER_ADMIN with a missing unitId from listing registrants (403, never unscoped)', async () => {
+    const unitlessActor = { id: 'usr-nounit', role: 'UNIT_ADMIN', roleCode: 'SDIT_ADMIN', unitId: null };
+
+    await expect(
+      service.getRegistrants({ page: 1, limit: 10 }, unitlessActor as any)
+    ).rejects.toThrow('Access to this unit is not allowed');
+
+    // The unscoped query must never run — otherwise the actor would see EVERY
+    // unit's registrants.
+    expect(prisma.registrant.findMany).not.toHaveBeenCalled();
+    expect(prisma.registrant.count).not.toHaveBeenCalled();
+  });
+
+  it('should refuse a cross-unit UNIT_ADMIN from creating an admission period (403)', async () => {
+    const crossUnitAdmin = { id: 'admin-2', role: 'UNIT_ADMIN', roleCode: 'SDIT_ADMIN', unitId: 'unit-2' };
+
+    await expect(
+      service.createAdmissionPeriod(
+        {
+          name: 'SPMB 2026',
+          unitId: 'unit-1',
+          startDate: new Date().toISOString(),
+          endDate: new Date(Date.now() + 10 * 24 * 3600 * 1000).toISOString(),
+          registrationFee: 0,
+          academicYearId: 'ay-2026',
+          isActive: true,
+        } as any,
+        crossUnitAdmin
+      )
+    ).rejects.toThrow('Access to this unit is not allowed');
+
+    expect(prisma.admissionPeriod.create).not.toHaveBeenCalled();
+  });
+
+  it('should refuse a cross-unit UNIT_ADMIN from creating a registrant in another unit period (403)', async () => {
+    const crossUnitAdmin = { id: 'admin-2', role: 'UNIT_ADMIN', roleCode: 'SDIT_ADMIN', unitId: 'unit-2' };
+    vi.mocked(prisma.admissionPeriod.findUnique).mockResolvedValue({ id: 'p-1', unitId: 'unit-1' } as any);
+
+    await expect(
+      service.createRegistrant(
+        {
+          admissionPeriodId: 'p-1',
+          fullName: 'Anak Lintas Unit',
+          gender: 'MALE',
+          birthPlace: 'Jakarta',
+          birthDate: new Date().toISOString(),
+          address: 'Alamat',
+          fatherName: 'Ayah',
+        } as any,
+        true,
+        crossUnitAdmin
+      )
     ).rejects.toThrow('Access to this unit is not allowed');
   });
 });

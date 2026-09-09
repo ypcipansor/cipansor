@@ -4,10 +4,15 @@ export type DocumentParseResult = DocumentOcrResult;
 
 /**
  * Document Verification Service
- * Note: Visual Optical Character Recognition (OCR) on compressed binary images (JPEG/PNG)
- * requires a visual OCR engine. Without a visual OCR engine, compressed image bytes cannot
- * be parsed as visual text. All uploaded document images are accepted and flagged with
- * status 'WARNING' for manual verification by SPMB officers.
+ *
+ * IMPORTANT / honest contract: this endpoint does NOT run real visual OCR on
+ * compressed image/PDF bytes — that requires a visual OCR engine (e.g. a
+ * vision model), which this deployment does not have. It can only read
+ * *plain-text* content that has been pasted as non-binary base64 (rare for a
+ * real photo), and it matches that against the user's input. Every binary
+ * document (a real JPEG/PNG photo or a PDF) is therefore accepted and flagged
+ * as 'WARNING' for MANUAL verification by an SPMB officer. The UI must
+ * advertise manual verification, not automatic NIK/KK extraction.
  */
 export async function parseAndVerifyDocument(
   payload: DocumentParseRequest
@@ -72,7 +77,7 @@ export async function parseAndVerifyDocument(
     }
   }
 
-  notes.push('Dokumen berupa berkas foto/gambar. Diperlukan verifikasi manual oleh petugas panitia SPMB.');
+  notes.push('Berkas foto/PDF tidak dipindai otomatis (OCR visual tidak tersedia). Dokumen akan diverifikasi manual oleh petugas panitia SPMB.');
 
   const status: DocumentOcrResult['validation']['status'] = isMismatch ? 'MISMATCH' : 'WARNING';
   const matchScore = isMismatch ? 0 : 50;

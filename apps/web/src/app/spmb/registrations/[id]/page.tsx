@@ -15,6 +15,7 @@ import {
 import { useAuth } from "@/hooks/use-auth";
 import { getPrimaryRoleCode } from "@/lib/rbac";
 import { safeFormat } from "@/lib/date";
+import { resolveFeeOwed, canPreviewDocument } from "@/lib/spmb-registration";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -185,7 +186,15 @@ export default function RegistrationDetailPage({
   // Acceptance is an academic decision; daftar ulang is a separate one. The
   // API refuses to onboard an unpaid registrant, so the button reflects that
   // rather than offering an action that will fail.
-  const registrationFeeOwed = Number(registrant.admissionPeriod?.registrationFee ?? 0);
+  // Mirrors assertAdmissionFeeSettled(): the wave's registrationFee overrides
+  // the parent period's fee when present, and the onboarding gate reads the
+  // *wave* fee. Reading only the period fee hides the payment button when the
+  // period fee is 0 but the wave charges a fee, or shows it when the period
+  // charges but the wave waived it — both make feeSettled diverge from backend.
+  const registrationFeeOwed = resolveFeeOwed(
+    registrant.wave?.registrationFee,
+    registrant.admissionPeriod?.registrationFee,
+  );
   const feeSettled = registrationFeeOwed <= 0 || Boolean(registrant.registrationFeePaidAt);
   const canOnboard =
     registrant.status === "ACCEPTED" && !registrant.enrolledAt && feeSettled;
@@ -404,7 +413,16 @@ export default function RegistrationDetailPage({
           <CardContent>
             {registrant.documents && registrant.documents.length > 0 ? (
               <div className="space-y-3">
-                {registrant.documents.map((doc: any) => (
+                {registrant.documents.map((doc: any) => {
+                  // SSRF guard (review): a stored `fileUrl` may point at an
+                  // arbitrary public host that redirects to a private/metadata
+                  // endpoint. Do NOT render a remote URL directly in the admin
+                  // browser. Inline data-URIs are self-contained and safe to
+                  // preview; everything else is shown as a download-required
+                  // notice. A validated backend proxy is the future path for
+                  // remote documents.
+                  const isDataUri = canPreviewDocument(doc.fileUrl);
+                  return (
                   <div
                     key={doc.id}
                     className="flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-lg border bg-slate-50/50 gap-2"
@@ -419,7 +437,7 @@ export default function RegistrationDetailPage({
                       )}
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
-                      {doc.fileUrl && (
+                      {doc.fileUrl && isDataUri ? (
                         <Dialog>
                           <DialogTrigger asChild>
                             <Button size="sm" variant="outline">
@@ -431,8 +449,8 @@ export default function RegistrationDetailPage({
                               <DialogTitle>{doc.name} ({doc.type})</DialogTitle>
                             </DialogHeader>
                             <div className="mt-2 flex flex-col items-center justify-center">
-                              {doc.fileUrl.startsWith("data:application/pdf") || doc.fileUrl.endsWith(".pdf") ? (
-                                <iframe src={doc.fileUrl} className="w-full h-[60vh] rounded border" />
+                              {doc.fileUrl.startsWith("data:application/pdf") ? (
+                                <iframe src={doc.fileUrl} title={doc.name} className="w-full h-[60vh] rounded border" />
                               ) : (
                                 <img
                                   src={doc.fileUrl}
@@ -440,18 +458,16 @@ export default function RegistrationDetailPage({
                                   className="max-h-[60vh] w-auto object-contain rounded border"
                                 />
                               )}
-                              <a
-                                href={doc.fileUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="mt-3 text-xs text-primary underline flex items-center gap-1"
-                              >
-                                Buka di tab baru <ExternalLink className="h-3 w-3" />
-                              </a>
                             </div>
                           </DialogContent>
                         </Dialog>
-                      )}
+                      ) : (doc.fileUrl ? (
+                        <p className="text-xs text-muted-foreground bg-slate-100 border rounded p-2 max-w-xs">
+                          Dokumen disimpan sebagai URL eksternal dan tidak dapat
+                          dipratinjau langsung demi keamanan (anti-SSRF). Kontak
+                          petugas terkait untuk memperoleh berkas.
+                        </p>
+                      ) : null)}
                       <Badge variant={doc.isVerified ? "default" : "secondary"}>
                         {doc.isVerified ? "Terverifikasi" : "Belum Verifikasi"}
                       </Badge>
@@ -466,7 +482,8 @@ export default function RegistrationDetailPage({
                       </Button>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <p className="text-sm italic text-muted-foreground py-4">

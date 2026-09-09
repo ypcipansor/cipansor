@@ -1,6 +1,13 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import type { RegistrantDTO, RegistrantDocumentDTO, OnboardRegistrantPayload } from "@cipansor/shared";
+import type {
+  RegistrantDTO,
+  RegistrantDocumentDTO,
+  OnboardRegistrantPayload,
+  TrackedRegistrantDTO,
+  RegistrationStatus,
+} from "@cipansor/shared";
+export type { RegistrationStatus };
 
 // =====================================
 // Backward-compat types & constants
@@ -8,22 +15,6 @@ import type { RegistrantDTO, RegistrantDocumentDTO, OnboardRegistrantPayload } f
 // =====================================
 
 export type Gender = "MALE" | "FEMALE";
-
-export type RegistrationStatus =
-  | "REGISTERED"
-  | "DOCUMENT_CHECK"
-  | "TEST_SCHEDULED"
-  | "TEST_COMPLETED"
-  | "ACCEPTED"
-  | "REJECTED"
-  | "ENROLLED"
-  | "CANCELLED"
-  // Legacy values still referenced by the UI
-  | "DRAFT"
-  | "SUBMITTED"
-  | "DOCUMENT_REVIEW"
-  | "INTERVIEW_SCHEDULED"
-  | "INTERVIEW_COMPLETED";
 
 export const REGISTRATION_STATUSES: RegistrationStatus[] = [
   "REGISTERED",
@@ -159,21 +150,6 @@ export function useAdmissionPeriod(id: string) {
   });
 }
 
-export interface TrackedRegistrant {
-  id: string;
-  registrationNo: string;
-  fullName: string;
-  status: RegistrationStatus;
-  testScore: string | number | null;
-  interviewScore: string | number | null;
-  tahfidzScore: string | number | null;
-  acceptedAt: string | null;
-  enrolledAt: string | null;
-  createdAt: string;
-  admissionPeriod?: { name: string; unit?: { name: string } };
-  documents: { id: string; name: string; isVerified: boolean }[];
-}
-
 /**
  * Public PPDB tracker (GET /admissions/public/track). Requires both the
  * registration number and birth date; the backend rejects partial matches.
@@ -182,7 +158,7 @@ export function useTrackRegistrant(registrationNo: string, birthDate: string) {
   return useQuery({
     queryKey: ["track-registrant", registrationNo, birthDate],
     queryFn: async () => {
-      const response = await api.get<{ data: TrackedRegistrant }>(
+      const response = await api.get<{ data: TrackedRegistrantDTO }>(
         "/admissions/public/track",
         { params: { registrationNo, birthDate } },
       );
@@ -250,8 +226,13 @@ export function useOnboardRegistrant() {
       );
       return response.data;
     },
-    onSuccess: () => {
+    onSuccess: (_data, payload) => {
       queryClient.invalidateQueries({ queryKey: ["admission-registrants"] });
+      // The detail query feeds the onboarding button's enabled/disabled state
+      // (via status/enrolledAt). Without invalidating it, the button stays
+      // visible after a successful onboarding and a second click fails with a
+      // "already enrolled" conflict.
+      queryClient.invalidateQueries({ queryKey: ["admission-registrant", payload.registrantId] });
       queryClient.invalidateQueries({ queryKey: ["students"] });
     },
   });

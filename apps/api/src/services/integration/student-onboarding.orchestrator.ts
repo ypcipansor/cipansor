@@ -43,11 +43,11 @@ export interface EnrollmentResult {
   nis: string;
   email: string;
   unitCode: string;
-  resetToken?: string;
+  // Reset tokens are intentionally absent: they are secrets delivered only via
+  // the post-commit event dispatch (email), never returned to the API caller.
   parentUserId?: string;
   parentEmail?: string;
   parentName?: string;
-  parentResetToken?: string;
   studentName?: string;
   effectiveUnitId?: string;
 }
@@ -81,6 +81,22 @@ export class StudentOnboardingOrchestrator {
       nisn = options.nisn;
       roomId = options.roomId;
     }
+
+    // Reset tokens are SECRETS. They are generated inside the transaction but
+    // must never be returned to the API caller (a staff member could then take
+    // over the student/parent account). They are captured here separately and
+    // delivered only through the post-commit event dispatch (email/notification).
+    const emittedSecret = {
+      studentResetToken: undefined as string | undefined,
+      studentResetEmail: undefined as string | undefined,
+      studentResetUserId: undefined as string | undefined,
+      studentResetName: undefined as string | undefined,
+      isNewUser: false,
+      parentResetToken: undefined as string | undefined,
+      parentResetEmail: undefined as string | undefined,
+      parentResetUserId: undefined as string | undefined,
+      parentResetName: undefined as string | undefined,
+    };
 
     const result = await prisma.$transaction(async (tx) => {
       // 1. Lock registrant row for concurrency protection
@@ -188,11 +204,21 @@ export class StudentOnboardingOrchestrator {
       const fallbackEmail = `${cleanName}.${nis.toLowerCase()}@student.cipansor.local`;
       const email = realEmail || fallbackEmail;
 
-      let user = await tx.user.findUnique({
-        where: { email },
-      });
+      let user = await tx.user.findUnique({ where: { email } });
 
       const isNewUser = !user;
+
+      // Security gate (account-takeover prevention): an existing account may
+      // only be reused when it already belongs to a student (a returning
+      // student re-registering with the same email). If the email is owned by a
+      // non-student account (staff, teacher, parent, admin) we must NOT
+      // repurpose it by attaching a student profile or granting a student role —
+      // that would let a registrant take over an existing login using only its
+      // email address, with no proof of ownership, and mis-attach that person's
+      // student record onto the registrant.
+      if (user && user.role !== 'STUDENT') {
+        throw Errors.conflict('Email sudah terdaftar pada akun lain yang tidak sesuai');
+      }
 
       if (!user) {
         user = await tx.user.create({
@@ -207,6 +233,12 @@ export class StudentOnboardingOrchestrator {
             isActive: true,
           },
         });
+
+        emittedSecret.isNewUser = true;
+        emittedSecret.studentResetToken = resetToken;
+        emittedSecret.studentResetEmail = email;
+        emittedSecret.studentResetUserId = user.id;
+        emittedSecret.studentResetName = registrant.fullName;
       }
 
       // Ensure UserRoleAssignment exists for a unit-appropriate student role.
@@ -251,7 +283,11 @@ export class StudentOnboardingOrchestrator {
           where: { id: student.id },
           data: {
             unitId: effectiveUnitId,
-            nis: student.nis || nis,
+            // A returning student re-registering: honour a NIS explicitly
+            // requested in this enrolment; otherwise keep the student's existing
+            // NIS rather than silently regenerating a new one. NISN follows the
+            // same preference (requested first, then existing).
+            nis: customNis || student.nis || nis,
             nisn: nisn || student.nisn || undefined,
             status: 'active',
             registrant: {
@@ -319,6 +355,11 @@ export class StudentOnboardingOrchestrator {
               isActive: true,
             }
           });
+
+          emittedSecret.parentResetToken = parentResetToken;
+          emittedSecret.parentResetEmail = parentEmail;
+          emittedSecret.parentResetUserId = parentUser.id;
+          emittedSecret.parentResetName = registrant.parentName ?? undefined;
         }
 
         // Link student and parent. Returning students may already have the link
@@ -377,8 +418,18 @@ export class StudentOnboardingOrchestrator {
         });
       }
 
-      // 7. Enroll in specific class if provided
+      // 7. Enroll in specific class if provided. A returning student must not end
+      // up with two active classEnrollments: close/settle any currently active
+      // enrollment before opening the new one (mirrors `enrollRegistrant`).
       if (classId) {
+        await tx.classEnrollment.updateMany({
+          where: {
+            studentId: student.id,
+            status: 'active',
+          },
+          data: { status: 'completed' },
+        });
+
         await tx.classEnrollment.create({
           data: {
             studentId: student.id,
@@ -428,88 +479,117 @@ export class StudentOnboardingOrchestrator {
         nis,
         email,
         unitCode,
-        resetToken: (isNewUser ? resetToken : undefined) as string | undefined,
         parentUserId: parentUser ? parentUser.id : undefined,
         parentEmail: parentUser && parentResetToken ? parentUser.email ?? undefined : undefined,
         parentName: parentUser ? parentUser.name ?? undefined : undefined,
-        parentResetToken,
         studentName: registrant.fullName,
         effectiveUnitId,
       };
     });
 
-    // Asynchronous event distribution
-    process.nextTick(async () => {
-      try {
-        const { eventBus } = await import('@/lib/event-bus');
-        const r = result;
+    // ---------------------------------------------------------------------
+    // Asynchronous event distribution (best-effort).
+    //
+    // RISK (documented by design): these events are emitted AFTER the
+    // transaction commits, via `process.nextTick`. If the process dies between
+    // commit and dispatch, the notifications / reset-token emails are lost even
+    // though onboarding succeeded. Event emission is fire-and-forget and the
+    // email delivery is itself async, so this is inherently best-effort.
+    //
+    // Mitigation applied here: a small bounded retry for transient dispatch
+    // failures. A fully durable solution (outbox table consumed by a worker, or
+    // a persisted job) is the long-term fix and requires a schema change +
+    // migration; this matches the repo's "at minimum document + retry" stance
+    // without a schema migration.
+    // ---------------------------------------------------------------------
+    const dispatchEvents = async () => {
+      const { eventBus } = await import('@/lib/event-bus');
+      const r = result;
 
-        eventBus.emit('student:created', {
-          id: r.studentId,
-          name: r.studentName,
-          unitId: r.effectiveUnitId || unitId,
-          unitName: r.unitCode,
+      eventBus.emit('student:created', {
+        id: r.studentId,
+        name: r.studentName,
+        unitId: r.effectiveUnitId || unitId,
+        unitName: r.unitCode,
+      });
+
+      eventBus.emit('health:medical-record-created', {
+        id: 'auto-generated',
+        studentId: r.studentId,
+        studentName: r.studentName,
+        unitName: r.unitCode,
+        type: 'CHECKUP',
+        complaint: 'Initial Checkup',
+        status: 'HEALTHY',
+        recordedAt: new Date(),
+        unitId: r.effectiveUnitId || unitId,
+      });
+
+      eventBus.emit('notification:send', {
+        type: 'INFO',
+        title: 'Your Account has been created',
+        message: `Student account created. Email: ${r.email}. Please check your email for a password reset link to set your password securely.`,
+        userId: r.userId,
+      });
+
+      if (emittedSecret.isNewUser && emittedSecret.studentResetToken) {
+        eventBus.emit('email:send_reset_token', {
+          email: emittedSecret.studentResetEmail!,
+          token: emittedSecret.studentResetToken,
+          userId: emittedSecret.studentResetUserId!,
+          name: emittedSecret.studentResetName ?? r.studentName,
+          title: 'Set Your Password',
+          message: 'Please set your password using the link provided.',
+          data: { expiresInHours: 24 },
         });
+      }
 
-        eventBus.emit('health:medical-record-created', {
-          id: 'auto-generated',
-          studentId: r.studentId,
-          studentName: r.studentName,
-          unitName: r.unitCode,
-          type: 'CHECKUP',
-          complaint: 'Initial Checkup',
-          status: 'HEALTHY',
-          recordedAt: new Date(),
-          unitId: r.effectiveUnitId || unitId,
-        });
-
+      if (emittedSecret.parentResetToken && emittedSecret.parentResetEmail && emittedSecret.parentResetUserId) {
         eventBus.emit('notification:send', {
           type: 'INFO',
-          title: 'Your Account has been created',
-          message: `Student account created. Email: ${r.email}. Please check your email for a password reset link to set your password securely.`,
-          userId: r.userId,
+          title: 'Your Parent Account has been created',
+          message: `Parent account created. Please check your email for a password reset link to set your password securely.`,
+          userId: emittedSecret.parentResetUserId,
         });
-
-        if (r.resetToken) {
-          eventBus.emit('email:send_reset_token', {
-            email: r.email,
-            token: r.resetToken,
-            userId: r.userId,
-            name: r.studentName,
-            title: 'Set Your Password',
-            message: 'Please set your password using the link provided.',
-            data: { expiresInHours: 24 },
-          });
-        }
-
-        if (r.parentUserId && r.parentResetToken && r.parentEmail) {
-          eventBus.emit('notification:send', {
-            type: 'INFO',
-            title: 'Your Parent Account has been created',
-            message: `Parent account created. Please check your email for a password reset link to set your password securely.`,
-            userId: r.parentUserId,
-          });
-          eventBus.emit('email:send_reset_token', {
-            email: r.parentEmail,
-            token: r.parentResetToken,
-            userId: r.parentUserId,
-            name: r.parentName,
-            title: 'Set Your Parent Password',
-            message: 'Please set your parent account password using the link provided.',
-            data: { expiresInHours: 24 },
-          });
-        } else if (r.parentUserId) {
-          eventBus.emit('notification:send', {
-            type: 'INFO',
-            title: 'Your Parent Account has been linked',
-            message: `Your existing parent account has been linked to the new student.`,
-            userId: r.parentUserId,
-          });
-        }
-      } catch (err) {
-        console.error('Failed to dispatch onboarding events:', err);
+        eventBus.emit('email:send_reset_token', {
+          email: emittedSecret.parentResetEmail,
+          token: emittedSecret.parentResetToken,
+          userId: emittedSecret.parentResetUserId,
+          name: emittedSecret.parentResetName ?? r.parentName,
+          title: 'Set Your Parent Password',
+          message: 'Please set your parent account password using the link provided.',
+          data: { expiresInHours: 24 },
+        });
+      } else if (r.parentUserId) {
+        eventBus.emit('notification:send', {
+          type: 'INFO',
+          title: 'Your Parent Account has been linked',
+          message: `Your existing parent account has been linked to the new student.`,
+          userId: r.parentUserId,
+        });
       }
-    });
+    };
+
+    // Bounded retry: transient failures (e.g. eventBus being briefly
+    // unavailable) are retried; exhaustive failures are logged and dropped.
+    let dispatchAttempt = 0;
+    const runDispatch = async () => {
+      try {
+        await dispatchEvents();
+      } catch (err) {
+        dispatchAttempt += 1;
+        if (dispatchAttempt < 3) {
+          console.warn(
+            `Onboarding event dispatch attempt ${dispatchAttempt} failed, retrying...`,
+            err
+          );
+          setTimeout(runDispatch, 500 * dispatchAttempt);
+        } else {
+          console.error('Failed to dispatch onboarding events after retries:', err);
+        }
+      }
+    };
+    process.nextTick(runDispatch);
 
     return result;
   }

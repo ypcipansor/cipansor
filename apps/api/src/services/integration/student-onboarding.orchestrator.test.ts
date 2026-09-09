@@ -97,7 +97,8 @@ describe('StudentOnboardingOrchestrator', () => {
           create: vi.fn().mockResolvedValue({ id: 'ura-1' }),
         },
         classEnrollment: {
-          create: vi.fn().mockResolvedValue({ id: 'ce-1' })
+          create: vi.fn().mockResolvedValue({ id: 'ce-1' }),
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         },
         medicalRecord: { 
           findFirst: vi.fn().mockResolvedValue(null),
@@ -248,7 +249,7 @@ describe('StudentOnboardingOrchestrator', () => {
             { student: { unitId: 'unit-1', unit: { type: 'SMP_IT' } } },
           ]),
         },
-        classEnrollment: { create: vi.fn().mockResolvedValue({ id: 'ce-1' }) },
+        classEnrollment: { create: vi.fn().mockResolvedValue({ id: 'ce-1' }), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
         medicalRecord: {
           findFirst: vi.fn().mockResolvedValue(null),
           create: vi.fn().mockResolvedValue({ id: 'med-1' }),
@@ -368,7 +369,7 @@ describe('StudentOnboardingOrchestrator', () => {
             { student: { unitId: 'unit-1', unit: { type: 'SMP_IT' } } },
           ]),
         },
-        classEnrollment: { create: vi.fn().mockResolvedValue({ id: 'ce-1' }) },
+        classEnrollment: { create: vi.fn().mockResolvedValue({ id: 'ce-1' }), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
         medicalRecord: {
           findFirst: vi.fn().mockResolvedValue(null),
           create: vi.fn().mockResolvedValue({ id: 'med-1' }),

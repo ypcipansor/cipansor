@@ -84,6 +84,12 @@ export interface RegistrantDTO {
     registrationFee?: number | null;
     unit?: { id: string; name: string; type: string };
   };
+  wave?: {
+    id: string;
+    name: string;
+    waveNumber: number;
+    registrationFee?: number | null;
+  } | null;
   documents?: RegistrantDocumentDTO[];
 }
 
@@ -96,6 +102,47 @@ export interface RegistrantDocumentDTO {
   isVerified: boolean;
   notes?: string | null;
   createdAt: string;
+}
+
+/**
+ * Lifecycle of an admission registrant. Single-sourced here so the web tracker
+ * hook/component and any API response shape stay in sync (no drift).
+ */
+export type RegistrationStatus =
+  | "REGISTERED"
+  | "DOCUMENT_CHECK"
+  | "TEST_SCHEDULED"
+  | "TEST_COMPLETED"
+  | "ACCEPTED"
+  | "REJECTED"
+  | "ENROLLED"
+  | "CANCELLED"
+  // Legacy values still referenced by the UI
+  | "DRAFT"
+  | "SUBMITTED"
+  | "DOCUMENT_REVIEW"
+  | "INTERVIEW_SCHEDULED"
+  | "INTERVIEW_COMPLETED";
+
+/**
+ * Public PPDB tracker DTO (GET /admissions/public/track). The backend requires
+ * both the registration number and birth date; partial matches are rejected.
+ * Kept in `@cipansor/shared` so the web tracker hook and the API contract stay
+ * in sync (no drift between the two).
+ */
+export interface TrackedRegistrantDTO {
+  id: string;
+  registrationNo: string;
+  fullName: string;
+  status: RegistrationStatus;
+  testScore: string | number | null;
+  interviewScore: string | number | null;
+  tahfidzScore: string | number | null;
+  acceptedAt: string | null;
+  enrolledAt: string | null;
+  createdAt: string;
+  admissionPeriod?: { name: string; unit?: { name: string } };
+  documents: { id: string; name: string; isVerified: boolean }[];
 }
 
 export interface OnboardRegistrantPayload {

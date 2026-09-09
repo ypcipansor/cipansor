@@ -12,12 +12,15 @@ export const waveController = {
     try {
       const { page = 1, limit = 10, periodId, status } = req.query;
 
-      const result = await waveService.findAll({
-        page: Number(page),
-        limit: Number(limit),
-        periodId: periodId as string,
-        status: status as string,
-      });
+      const result = await waveService.findAll(
+        {
+          page: Number(page),
+          limit: Number(limit),
+          periodId: periodId as string,
+          status: status as string,
+        },
+        req.user
+      );
 
       res.json(ApiResponse.success(result.data, 'Waves retrieved successfully', result.pagination));
     } catch (error) {
@@ -42,7 +45,7 @@ export const waveController = {
    */
   async getStats(req: Request, res: Response, next: NextFunction) {
     try {
-      const stats = await waveService.getStats(req.params.periodId);
+      const stats = await waveService.getStats(req.params.periodId, req.user);
       res.json(ApiResponse.success(stats));
     } catch (error) {
       next(error);
@@ -54,7 +57,7 @@ export const waveController = {
    */
   async getById(req: Request, res: Response, next: NextFunction) {
     try {
-      const wave = await waveService.findById(req.params.id);
+      const wave = await waveService.findById(req.params.id, req.user);
 
       if (!wave) {
         return res.status(404).json(ApiResponse.error('Wave not found'));
@@ -73,11 +76,15 @@ export const waveController = {
     try {
       const { page = 1, limit = 10, status } = req.query;
 
-      const result = await waveService.getRegistrantsByWave(req.params.id, {
-        page: Number(page),
-        limit: Number(limit),
-        status: status as string,
-      });
+      const result = await waveService.getRegistrantsByWave(
+        req.params.id,
+        {
+          page: Number(page),
+          limit: Number(limit),
+          status: status as string,
+        },
+        req.user
+      );
 
       res.json(
         ApiResponse.success(result.data, 'Registrants retrieved successfully', result.pagination)
@@ -92,7 +99,7 @@ export const waveController = {
    */
   async create(req: Request, res: Response, next: NextFunction) {
     try {
-      const wave = await waveService.create(req.body);
+      const wave = await waveService.create(req.body, req.user);
       res.status(201).json(ApiResponse.success(wave, 'Wave created successfully'));
     } catch (error: any) {
       if (error.message?.includes('already exists')) {
@@ -107,7 +114,7 @@ export const waveController = {
    */
   async update(req: Request, res: Response, next: NextFunction) {
     try {
-      const wave = await waveService.update(req.params.id, req.body);
+      const wave = await waveService.update(req.params.id, req.body, req.user);
       res.json(ApiResponse.success(wave, 'Wave updated successfully'));
     } catch (error) {
       next(error);
@@ -119,7 +126,7 @@ export const waveController = {
    */
   async delete(req: Request, res: Response, next: NextFunction) {
     try {
-      await waveService.delete(req.params.id);
+      await waveService.delete(req.params.id, req.user);
       res.json(ApiResponse.success(null, 'Wave deleted successfully'));
     } catch (error: any) {
       if (error.message?.includes('Cannot delete')) {
@@ -135,7 +142,7 @@ export const waveController = {
   async assignRegistrant(req: Request, res: Response, next: NextFunction) {
     try {
       const { registrantId, waveId } = req.body;
-      const registrant = await waveService.assignRegistrant(registrantId, waveId);
+      const registrant = await waveService.assignRegistrant(registrantId, waveId, req.user);
       res.json(ApiResponse.success(registrant, 'Registrant assigned to wave successfully'));
     } catch (error: any) {
       if (error.message?.includes('full') || error.message?.includes('not found')) {

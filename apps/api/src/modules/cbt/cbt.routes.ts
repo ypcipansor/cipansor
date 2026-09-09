@@ -3,7 +3,7 @@ import { CBTController } from './cbt.controller';
 import { authenticate, authorize } from '@/middleware/auth';
 import { validate } from '@/middleware/validate';
 import { recordSecurityLogSchema, STUDENT_ROLE_CODES } from '@cipansor/shared';
-import { UserRole } from '@prisma/client';
+import { RoleCode } from '@prisma/client';
 
 const router = Router();
 
@@ -12,25 +12,25 @@ const router = Router();
 router.get(
   '/banks',
   authenticate,
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'TEACHER'),
   CBTController.getQuestionBanks
 );
 router.post(
   '/banks',
   authenticate,
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'TEACHER'),
   CBTController.createQuestionBank
 );
 router.get(
   '/banks/:id',
   authenticate,
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'TEACHER'),
   CBTController.getQuestionBankById
 );
 router.delete(
   '/banks/:id',
   authenticate,
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'TEACHER'),
   CBTController.deleteQuestionBank
 );
 
@@ -38,19 +38,19 @@ router.delete(
 router.post(
   '/banks/:id/questions',
   authenticate,
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'TEACHER'),
   CBTController.addQuestion
 );
 router.put(
   '/banks/:id/questions/:questionId',
   authenticate,
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'TEACHER'),
   CBTController.updateQuestion
 );
 router.delete(
   '/banks/:id/questions/:questionId',
   authenticate,
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'TEACHER'),
   CBTController.deleteQuestion
 );
 
@@ -58,37 +58,37 @@ router.delete(
 router.get(
   '/exams',
   authenticate,
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'TEACHER'),
   CBTController.getExams
 );
 router.post(
   '/exams',
   authenticate,
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'TEACHER'),
   CBTController.createExam
 );
 router.delete(
   '/exams/:examId',
   authenticate,
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'TEACHER'),
   CBTController.deleteExam
 );
 router.get(
   '/exams/:examId/monitoring',
   authenticate,
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'TEACHER'),
   CBTController.getExamMonitoring
 );
 router.get(
   '/exams/:examId/topic-mastery',
   authenticate,
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'TEACHER'),
   CBTController.getTopicMasteryAnalytics
 );
 router.get(
   '/exams/:examId/difficulty-insights',
   authenticate,
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'TEACHER'),
   CBTController.getExamDifficultyInsights
 );
 
@@ -96,13 +96,13 @@ router.get(
 router.get(
   '/attempts/:attemptId/grading',
   authenticate,
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'TEACHER'),
   CBTController.getAttemptForGrading
 );
 router.post(
   '/attempts/:attemptId/grade',
   authenticate,
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'TEACHER'),
   CBTController.gradeEssayAnswer
 );
 
@@ -112,7 +112,7 @@ router.post(
 router.post(
   '/exams/:examId/start',
   authenticate,
-  authorize(UserRole.STUDENT),
+  authorize(...STUDENT_ROLE_CODES),
   CBTController.startExam
 );
 
@@ -120,7 +120,7 @@ router.post(
 router.get(
   '/attempts/:attemptId',
   authenticate,
-  authorize(UserRole.STUDENT),
+  authorize(...STUDENT_ROLE_CODES),
   CBTController.getAttempt
 );
 
