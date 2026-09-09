@@ -68,7 +68,7 @@ export const escalateSchema = z.object({
    * sah bentuknya.
    */
   consent: z.literal(true, {
-    errorMap: () => ({ message: 'Persetujuan meneruskan data diperlukan' }),
+    error: 'Persetujuan meneruskan data diperlukan',
   }),
   conversationId: z.string().max(100).optional(),
   /**

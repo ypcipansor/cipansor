@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { partialUpdateSchema } from '@/lib/partial';
 
 // ======================
 // ENUMS
@@ -68,7 +69,7 @@ export const createTargetSchema = z.object({
   sortOrder: z.number().int().min(0).default(0),
 });
 
-export const updateTargetSchema = createTargetSchema.partial().omit({ unitId: true });
+export const updateTargetSchema = partialUpdateSchema(createTargetSchema).omit({ unitId: true });
 
 // ======================
 // RECORD SCHEMAS
@@ -104,9 +105,11 @@ export const createRecordSchema = z.object({
   notes: z.string().max(500).optional(),
 });
 
-export const updateRecordSchema = createRecordSchema
-  .partial()
-  .omit({ targetId: true, studentId: true, date: true });
+export const updateRecordSchema = partialUpdateSchema(createRecordSchema).omit({
+  targetId: true,
+  studentId: true,
+  date: true,
+});
 
 export const bulkCreateRecordsSchema = z.object({
   studentId: z.string().uuid(),
@@ -228,7 +231,7 @@ export const createIslamicEventSchema = z.object({
   scheduleAdjustment: z.record(z.string(), z.any()).optional(),
 });
 
-export const updateIslamicEventSchema = createIslamicEventSchema.partial();
+export const updateIslamicEventSchema = partialUpdateSchema(createIslamicEventSchema);
 
 // ======================
 // HIJRI DATE CONVERSION

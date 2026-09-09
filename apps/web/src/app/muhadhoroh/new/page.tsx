@@ -66,14 +66,14 @@ const muhadhorohSchema = z.object({
   studentId: z.string().min(1, "Santri harus dipilih"),
   unitId: z.string().min(1, "Unit harus dipilih"),
   scheduledAt: z.date({
-    required_error: "Tanggal dan waktu harus diisi",
+    error: "Tanggal dan waktu harus diisi",
   }),
   topic: z
     .string()
     .min(3, "Topik minimal 3 karakter")
     .max(200, "Topik maksimal 200 karakter"),
   language: z.enum(["Indonesian", "Arabic", "English"], {
-    required_error: "Bahasa harus dipilih",
+    error: "Bahasa harus dipilih",
   }),
 });
 

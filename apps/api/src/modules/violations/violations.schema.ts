@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ViolationType } from '@prisma/client';
+import { partialUpdateSchema } from '@/lib/partial';
 
 export const createViolationSchema = z.object({
   studentId: z.string().uuid('Invalid student ID'),
@@ -11,7 +12,7 @@ export const createViolationSchema = z.object({
   action: z.string().optional(),
 });
 
-export const updateViolationSchema = createViolationSchema.partial().omit({
+export const updateViolationSchema = partialUpdateSchema(createViolationSchema).omit({
   studentId: true,
 });
 

@@ -10,6 +10,10 @@
     // the comment there) so a stale shared build cannot desync the seeded logins
     // from the login page. tsconfig.build.json, which does emit, pins
     // rootDir to ./src and excludes prisma/, so the dist layout is unaffected.
+    // TypeScript 6.0 infers and enforces rootDir even for noEmit configs, so we
+    // pin it to the repo root to keep that cross-package import valid (it is
+    // overridden back to ./src by tsconfig.build.json, which emits).
+    "rootDir": "../..",
     "strict": true,
     "noEmit": true,
     "noImplicitAny": true,

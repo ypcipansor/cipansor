@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { partialUpdateSchema } from '@/lib/partial';
 
 // Salary Component Schemas
 export const salaryComponentSchema = z.object({
@@ -17,7 +18,7 @@ export const salaryComponentSchema = z.object({
 });
 
 export const createSalaryComponentSchema = salaryComponentSchema;
-export const updateSalaryComponentSchema = salaryComponentSchema.partial();
+export const updateSalaryComponentSchema = partialUpdateSchema(salaryComponentSchema);
 
 // Employee Salary Schemas
 export const employeeSalaryItemSchema = z.object({
@@ -42,7 +43,9 @@ export const employeeSalarySchema = z.object({
 });
 
 export const createEmployeeSalarySchema = employeeSalarySchema;
-export const updateEmployeeSalarySchema = employeeSalarySchema.partial().omit({ staffId: true });
+export const updateEmployeeSalarySchema = partialUpdateSchema(employeeSalarySchema).omit({
+  staffId: true,
+});
 
 // Payroll Period Schemas
 export const payrollPeriodSchema = z.object({

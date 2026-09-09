@@ -666,7 +666,9 @@ describe("a11y — exactly one <main> landmark, and the skip link reaches it", (
       })
       .filter(({ count }) => count !== 1);
     expect(wrong).toEqual([]);
-  });
+    // This test walks the whole src/app tree and follows every page's imports,
+    // so it can exceed vitest's default 5s timeout on larger route trees.
+  }, 30000);
 
   it("every <main> carries id=\"main-content\"", () => {
     // The count above only sees landmarks that have the id, so a bare <main>

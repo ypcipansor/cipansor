@@ -1,6 +1,6 @@
 import { useRouter } from "next/navigation";
 import { safeFormat } from "@/lib/date";
-import { ColumnDef } from "@tanstack/react-table";
+import { type ColumnDef } from "@/components/shared";
 import { DataTable } from "@/components/shared";
 import { Assignment } from "@cipansor/shared";
 import { Badge } from "@/components/ui/badge";

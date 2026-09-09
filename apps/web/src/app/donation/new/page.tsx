@@ -2,7 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
 import { format } from "date-fns";
 import { ArrowLeft, Heart, CalendarIcon, User } from "lucide-react";
@@ -74,7 +74,7 @@ const donationSchema = z.object({
     "EWALLET",
     "OTHERS",
   ] as const),
-  paymentDate: z.date({ required_error: "Pilih tanggal pembayaran" }),
+  paymentDate: z.date({ error: "Pilih tanggal pembayaran" }),
   notes: z.string().optional(),
   isAnonymous: z.boolean(),
 });
