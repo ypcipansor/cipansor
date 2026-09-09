@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Plus, Eye, AlertTriangle } from "lucide-react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
-import { ColumnDef } from "@tanstack/react-table";
+import { type ColumnDef } from "@/components/shared";
 import { Risk } from "@/types/risk";
 
 const columns: ColumnDef<Risk>[] = [

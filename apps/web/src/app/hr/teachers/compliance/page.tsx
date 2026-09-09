@@ -18,7 +18,7 @@ import {
   GraduationCap,
 } from "lucide-react";
 import { toast } from "sonner";
-import { ColumnDef } from "@tanstack/react-table";
+import { type ColumnDef } from "@/components/shared";
 
 import { MainLayout } from "@/components/layout/main-layout";
 import { PageHeader } from "@/components/shared/page-header";
