@@ -2,7 +2,7 @@ export { Pagination } from "./pagination";
 export { PageHeader } from "./page-header";
 export { ConfirmDialog } from "./confirm-dialog";
 export { SearchInput } from "./search-input";
-export { DataTable } from "./data-table";
+export { DataTable, type ColumnDef } from "./data-table";
 export { EmptyState } from "./empty-state";
 export { StatsCard } from "./stats-card";
 export { StatusBadge } from "./status-badge";
