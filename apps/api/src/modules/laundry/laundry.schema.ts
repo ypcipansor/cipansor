@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { partialUpdateSchema } from '@/lib/partial';
 
 // =============================================================================
 // STATUS ENUMS
@@ -31,7 +32,7 @@ export const CreatePricingSchema = z.object({
   isActive: z.boolean().default(true),
 });
 
-export const UpdatePricingSchema = CreatePricingSchema.partial();
+export const UpdatePricingSchema = partialUpdateSchema(CreatePricingSchema);
 
 // =============================================================================
 // LAUNDRY ITEM SCHEMAS (Detail Pakaian)

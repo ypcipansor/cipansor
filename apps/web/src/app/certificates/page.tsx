@@ -21,7 +21,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useCertificates, DigitalCertificate } from "@/hooks/use-certificate";
-import { ColumnDef } from "@tanstack/react-table";
+import { type ColumnDef } from "@/components/shared";
 
 import { id } from "date-fns/locale";
 import {

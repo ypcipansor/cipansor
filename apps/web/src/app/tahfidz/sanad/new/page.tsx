@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
 import { MainLayout } from "@/components/layout";
 import { PageHeader } from "@/components/shared";
@@ -62,7 +62,7 @@ const formSchema = z.object({
   surahStart: z.coerce.number().min(1).max(114).optional(),
   surahEnd: z.coerce.number().min(1).max(114).optional(),
   certifiedAt: z.date({
-    required_error: "Tanggal pengesahan wajib diisi",
+    error: "Tanggal pengesahan wajib diisi",
   }),
   grade: z.string().optional(),
   notes: z.string().optional(),

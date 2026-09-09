@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useSanadRecords, SanadRecord } from "@/hooks/use-takhosus";
-import { ColumnDef } from "@tanstack/react-table";
+import { type ColumnDef } from "@/components/shared";
 
 import { id } from "date-fns/locale";
 import {

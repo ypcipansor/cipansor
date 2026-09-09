@@ -34,7 +34,7 @@ const unitSchema = z.object({
   // Derived from UNIT_TYPES so the form can never accept a narrower set than
   // the database holds — this literal list had fallen two values behind.
   type: z.enum(UNIT_TYPE_VALUES, {
-    required_error: "Tipe unit wajib dipilih",
+    error: "Tipe unit wajib dipilih",
   }),
   address: z.string().optional(),
   phone: z.string().optional(),

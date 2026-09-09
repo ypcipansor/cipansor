@@ -63,7 +63,7 @@ const formSchema = z.object({
   grade: z.string().optional().default(""),
   rank: z.string().optional().default(""),
   issueDate: z.date({
-    required_error: "Tanggal terbit wajib diisi",
+    error: "Tanggal terbit wajib diisi",
   }),
   signatoryName: z.string().min(3, "Nama penandatangan wajib diisi"),
   signatoryTitle: z.string().min(3, "Jabatan penandatangan wajib diisi"),

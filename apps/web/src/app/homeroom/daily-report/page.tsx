@@ -66,7 +66,7 @@ import { cn } from "@/lib/utils";
 // SD/SMP/SMA Daily Report Schema
 const dailyReportSchema = z.object({
   classId: z.string().min(1, "Kelas wajib dipilih"),
-  reportDate: z.date({ required_error: "Tanggal wajib diisi" }),
+  reportDate: z.date({ error: "Tanggal wajib diisi" }),
 });
 
 // Individual student report schema

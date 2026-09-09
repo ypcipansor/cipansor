@@ -20,7 +20,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ColumnDef } from "@tanstack/react-table";
+import { type ColumnDef } from "@/components/shared";
 
 import {
   ArrowLeft,

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { partialUpdateSchema } from '@/lib/partial';
 import {
   AssetStatus,
   AssetCondition,
@@ -49,9 +50,10 @@ export const createInventoryItemSchema = z.object({
   photoUrl: z.string().url().optional(),
 });
 
-export const updateInventoryItemSchema = createInventoryItemSchema
-  .partial()
-  .omit({ categoryId: true, unitId: true });
+export const updateInventoryItemSchema = partialUpdateSchema(createInventoryItemSchema).omit({
+  categoryId: true,
+  unitId: true,
+});
 
 export const queryInventoryItemSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),

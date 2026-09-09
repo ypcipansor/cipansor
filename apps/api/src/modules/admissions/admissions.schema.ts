@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { AdmissionStatus } from '@prisma/client';
+import { partialUpdateSchema } from '@/lib/partial';
 
 export const createAdmissionPeriodSchema = z.object({
   unitId: z.string().uuid(),
@@ -12,9 +13,10 @@ export const createAdmissionPeriodSchema = z.object({
   requirements: z.string().optional(),
 });
 
-export const updateAdmissionPeriodSchema = createAdmissionPeriodSchema
-  .partial()
-  .omit({ unitId: true, academicYearId: true });
+export const updateAdmissionPeriodSchema = partialUpdateSchema(createAdmissionPeriodSchema).omit({
+  unitId: true,
+  academicYearId: true,
+});
 
 export const queryAdmissionPeriodSchema = z.object({
   page: z.coerce.number().min(1).default(1),

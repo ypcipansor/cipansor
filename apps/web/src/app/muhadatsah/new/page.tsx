@@ -70,11 +70,11 @@ const muhadatsahSchema = z.object({
   partnerId: z.string().optional(),
   unitId: z.string().min(1, "Unit harus dipilih"),
   scheduledAt: z.date({
-    required_error: "Tanggal dan waktu harus diisi",
+    error: "Tanggal dan waktu harus diisi",
   }),
   topic: z.string().max(200).optional(),
   language: z.enum(["Arabic", "English"], {
-    required_error: "Bahasa harus dipilih",
+    error: "Bahasa harus dipilih",
   }),
 });
 

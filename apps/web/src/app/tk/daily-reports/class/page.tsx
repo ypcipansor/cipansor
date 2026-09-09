@@ -31,7 +31,7 @@ import {
 } from "@/components/ui/select";
 import { useDailyReports, DailyReport } from "@/hooks/use-daily-report";
 import { useClasses } from "@/hooks/use-classes";
-import { ColumnDef } from "@tanstack/react-table";
+import { type ColumnDef } from "@/components/shared";
 import { format } from "date-fns";
 import { id } from "date-fns/locale";
 import {
