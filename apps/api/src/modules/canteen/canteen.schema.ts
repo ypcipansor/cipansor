@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { partialUpdateSchema } from '@/lib/partial';
 
 // =============================================================================
 // CATEGORY SCHEMAS
@@ -12,7 +13,7 @@ export const CreateCategorySchema = z.object({
   businessUnitId: z.string().uuid().optional().nullable(),
 });
 
-export const UpdateCategorySchema = CreateCategorySchema.partial();
+export const UpdateCategorySchema = partialUpdateSchema(CreateCategorySchema);
 
 // =============================================================================
 // ITEM SCHEMAS
@@ -34,7 +35,7 @@ export const CreateItemSchema = z.object({
   isActive: z.boolean().default(true),
 });
 
-export const UpdateItemSchema = CreateItemSchema.partial();
+export const UpdateItemSchema = partialUpdateSchema(CreateItemSchema);
 
 export const ListItemsQuerySchema = z.object({
   categoryId: z.string().uuid().optional(),

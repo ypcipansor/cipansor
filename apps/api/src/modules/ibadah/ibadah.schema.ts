@@ -105,9 +105,11 @@ export const createRecordSchema = z.object({
   notes: z.string().max(500).optional(),
 });
 
-export const updateRecordSchema = createRecordSchema
-  .partial()
-  .omit({ targetId: true, studentId: true, date: true });
+export const updateRecordSchema = partialUpdateSchema(createRecordSchema).omit({
+  targetId: true,
+  studentId: true,
+  date: true,
+});
 
 export const bulkCreateRecordsSchema = z.object({
   studentId: z.string().uuid(),
