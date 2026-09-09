@@ -28,6 +28,7 @@ import { useClasses } from "@/hooks/use-classes";
 import { useUnits } from "@/hooks/use-units";
 import { useRegenerateStudentCards } from "@/hooks/use-regenerate-student-cards";
 import { useAuthStore } from "@/stores/auth";
+import { getPrimaryRoleCode } from "@/lib/rbac";
 import { useQuery, useMutation, useQueries } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import {
@@ -197,9 +198,7 @@ function StudentIDCard({
             <div className="text-[10px] text-emerald-700 px-2">
               <QrCode className="h-6 w-6 mx-auto mb-1 opacity-50" />
               <p>Belum diterbitkan</p>
-              <p className="text-[9px]">
-                Cetak setelah kartu diregenerasi
-              </p>
+              <p className="text-[9px]">Cetak setelah kartu diregenerasi</p>
             </div>
           )}
         </div>
@@ -305,7 +304,9 @@ export default function StudentIDCardPage() {
     // has not settled) the printout would capture the placeholder — and a card
     // with no QR. Wait until every selected card's details are loaded.
     if (!allCardsReady) {
-      toast.error("Kartu masih dimuat. Tunggu hingga QR code siap, lalu coba cetak lagi.");
+      toast.error(
+        "Kartu masih dimuat. Tunggu hingga QR code siap, lalu coba cetak lagi.",
+      );
       return;
     }
 
@@ -381,13 +382,20 @@ export default function StudentIDCardPage() {
       enabled: selectedStudentsList.length > 0,
     })),
   });
+  // Print is gated on the card being BOTH loaded AND actually issued. A student
+  // with no `StudentCardState` yet gets `issued: false` (and no QR) from the
+  // preview endpoint; printing that would capture a "Belum diterbitkan" card.
   const allCardsReady =
     selectedStudentsList.length > 0 &&
-    selectedCardQueries.every((q) => q.isSuccess);
+    selectedCardQueries.every(
+      (q) => q.isSuccess && q.data?.cardData?.issued === true,
+    );
 
   const { user } = useAuthStore();
   const regenerateMutation = useRegenerateStudentCards();
-  const isSuperAdmin = user?.role === "SUPER_ADMIN";
+  // RoleCode-based check (via the user's primary role assignment), not the
+  // deprecated `user.role` bucket — see apps/web/AGENTS.md.
+  const isSuperAdmin = getPrimaryRoleCode(user) === "SUPER_ADMIN";
   const canRegenerate =
     (isSuperAdmin || !!selectedUnitId || !!selectedClassId) &&
     (isSuperAdmin || user?.permissions?.includes("STUDENT_UPDATE"));

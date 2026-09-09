@@ -12,6 +12,27 @@
 import { Request, Response, NextFunction } from 'express';
 import { StudentIdCardService } from './id-card.service';
 import { ApiResponse } from '../../utils/response';
+import { asyncHandler } from '../../middleware/error';
+import type { IdCardQuery, ClassIdCardQuery, StudentIdCardConfig } from '@cipansor/shared';
+
+// The validated query lives on `res.locals.validatedQuery` (see `validateQuery`
+// in `src/middleware/error.ts`), because Express 5's `req.query` is read-only.
+// Mapping is centralised here so the controller never casts raw query values
+// `as any`. `StudentIdCardConfig` is the shared contract consumed by
+// `StudentIdCardService`; `Partial` lets the caller override only what it needs.
+function cardConfigFromQuery(query: IdCardQuery): Partial<StudentIdCardConfig> {
+  const config: Partial<StudentIdCardConfig> = {};
+  if (query.template !== undefined) config.templateType = query.template;
+  if (query.orientation !== undefined) config.orientation = query.orientation;
+  if (query.showPhoto !== undefined) config.showPhoto = query.showPhoto;
+  if (query.showQrCode !== undefined) config.showQrCode = query.showQrCode;
+  if (query.showParentName !== undefined) config.showParentName = query.showParentName;
+  if (query.showBloodType !== undefined) config.showBloodType = query.showBloodType;
+  if (query.showAddress !== undefined) config.showAddress = query.showAddress;
+  if (query.showTahfidz !== undefined) config.showTahfidzProgress = query.showTahfidz;
+  if (query.validityPeriod !== undefined) config.validityPeriod = query.validityPeriod;
+  return config;
+}
 
 export class IdCardController {
   /**
@@ -28,73 +49,47 @@ export class IdCardController {
   }
 
   /**
-   * Generate ID card for a single student
+   * Generate ID card for a single student.
+   *
+   * The query is validated against the shared `idCardQuerySchema` at the edge
+   * (`validateQuery`), so `res.locals.validatedQuery` is already a typed
+   * `IdCardQuery` rather than a raw object cast `as any`.
+   *
+   * Preview / print must be read-only. `getOrGeneratePreviewIdCard` never writes
+   * a `StudentCardState` row, so merely opening the card page (the frontend
+   * calls this via useQuery/useQueries) can no longer REVOKE the card that is
+   * already printed for the student. It reuses the existing ACTIVE row's
+   * id/validity/number when one exists; only issue/regenerate endpoints write
+   * audit rows.
    */
-  static async generateStudentCard(req: Request, res: Response, next: NextFunction) {
-    try {
-      const { studentId } = req.params;
-      const config = req.query;
+  static generateStudentCard = asyncHandler(async (req: Request, res: Response) => {
+    const { studentId } = req.params;
+    const query = (res.locals.validatedQuery ?? {}) as IdCardQuery;
 
-      // Preview / print must be read-only. `getOrGeneratePreviewIdCard` never
-      // writes a `StudentCardState` row, so merely opening the card page (the
-      // frontend calls this via useQuery/useQueries) can no longer REVOKE the
-      // card that is already printed for the student. It reuses the existing
-      // ACTIVE row's id/validity/number when one exists; only issue/regenerate
-      // endpoints write audit rows.
-      const cardData = await StudentIdCardService.getOrGeneratePreviewIdCard(studentId, {
-        templateType: config.template as any,
-        orientation: config.orientation as any,
-        showPhoto: config.showPhoto !== 'false',
-        showQrCode: config.showQrCode !== 'false',
-        showParentName: config.showParentName !== 'false',
-        showBloodType: config.showBloodType !== 'false',
-        showAddress: config.showAddress === 'true',
-        showTahfidzProgress: config.showTahfidz === 'true',
-        validityPeriod: config.validityPeriod ? parseInt(config.validityPeriod as string, 10) : 12,
-      });
+    const cardData = await StudentIdCardService.getOrGeneratePreviewIdCard(
+      studentId,
+      cardConfigFromQuery(query)
+    );
 
-      return res.json(ApiResponse.success(cardData, 'Kartu pelajar berhasil digenerate'));
-    } catch (error) {
-      next(error);
-    }
-  }
+    return res.json(ApiResponse.success(cardData, 'Kartu pelajar berhasil digenerate'));
+  });
 
   /**
-   * Generate bulk ID cards for a class
+   * Generate bulk ID cards for a class. Query is edge-validated (including the
+   * required `academicYearId`) via `classIdCardQuerySchema`.
    */
-  static async generateClassCards(req: Request, res: Response, next: NextFunction) {
-    try {
-      const { classId } = req.params;
-      const { academicYearId } = req.query;
-      const config = req.query;
+  static generateClassCards = asyncHandler(async (req: Request, res: Response) => {
+    const { classId } = req.params;
+    const query = (res.locals.validatedQuery ?? {}) as ClassIdCardQuery;
 
-      if (!academicYearId) {
-        return res.status(400).json({
-          success: false,
-          message: 'academicYearId harus diisi',
-        });
-      }
+    const cardsData = await StudentIdCardService.generateBulkIdCards(
+      classId,
+      query.academicYearId,
+      cardConfigFromQuery(query)
+    );
 
-      const cardsData = await StudentIdCardService.generateBulkIdCards(
-        classId,
-        academicYearId as string,
-        {
-          templateType: config.template as any,
-          orientation: config.orientation as any,
-          showPhoto: config.showPhoto !== 'false',
-          showQrCode: config.showQrCode !== 'false',
-          showParentName: config.showParentName !== 'false',
-          showBloodType: config.showBloodType !== 'false',
-          showAddress: config.showAddress === 'true',
-          showTahfidzProgress: config.showTahfidz === 'true',
-        }
-      );
-
-      return res.json(ApiResponse.success(cardsData, 'Kartu pelajar kelas berhasil digenerate'));
-    } catch (error) {
-      next(error);
-    }
-  }
+    return res.json(ApiResponse.success(cardsData, 'Kartu pelajar kelas berhasil digenerate'));
+  });
 
   /**
    * Verify QR code
@@ -141,24 +136,19 @@ export class IdCardController {
   }
 
   /**
-   * Bulk regenerate cards for unit or class
+   * Bulk regenerate cards for unit or class.
+   *
+   * Uses `asyncHandler` (the module convention) instead of a manual try/catch so
+   * errors flow through the shared error middleware like every other handler.
    */
-  static async bulkRegenerateCards(req: Request, res: Response, next: NextFunction) {
-    try {
-      const { unitId, classId } = req.body;
-      const result = await StudentIdCardService.bulkRegenerateActiveCards(
-        unitId,
-        classId,
-        req.user
-      );
+  static bulkRegenerateCards = asyncHandler(async (req: Request, res: Response) => {
+    const { unitId, classId } = req.body;
+    const result = await StudentIdCardService.bulkRegenerateActiveCards(unitId, classId, req.user);
 
-      return res.json(
-        ApiResponse.success(result, 'Kartu pelajar berhasil diregenerasi secara masal')
-      );
-    } catch (error) {
-      next(error);
-    }
-  }
+    return res.json(
+      ApiResponse.success(result, 'Kartu pelajar berhasil diregenerasi secara masal')
+    );
+  });
 
   /**
    * Get card statistics for a unit

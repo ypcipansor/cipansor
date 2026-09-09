@@ -10,7 +10,11 @@ import {
   listStudentsQuerySchema,
   studentIdParamSchema,
 } from './student.schema';
-import { bulkRegenerateCardsSchema } from '@cipansor/shared';
+import {
+  bulkRegenerateCardsSchema,
+  idCardQuerySchema,
+  classIdCardQuerySchema,
+} from '@cipansor/shared';
 
 const router = Router();
 
@@ -218,6 +222,7 @@ router.get(
 router.get(
   '/id-cards/classes/:classId',
   hasPermission(PERMISSIONS.STUDENT_VIEW),
+  validateQuery(classIdCardQuerySchema),
   IdCardController.generateClassCards
 );
 
@@ -262,6 +267,7 @@ router.get(
 router.get(
   '/:studentId/id-card',
   hasPermission(PERMISSIONS.STUDENT_VIEW),
+  validateQuery(idCardQuerySchema),
   IdCardController.generateStudentCard
 );
 

@@ -98,9 +98,7 @@ const DEFAULT_AGENDA_FORMAT = '[NO]/[TYPE]/Y-CPS/[ROMAN]/[YEAR]';
 
 /** Pengguna internal yang disebut dalam daftar tembusan, tanpa duplikat. */
 function ccUserIds(cc?: LetterCcInput[] | null): string[] {
-  return Array.from(
-    new Set((cc ?? []).map((c) => c.userId).filter((id): id is string => !!id))
-  );
+  return Array.from(new Set((cc ?? []).map((c) => c.userId).filter((id): id is string => !!id)));
 }
 
 /**
@@ -242,7 +240,9 @@ export const CorrespondenceService = {
     });
 
     if (users.length !== uniqueIds.length) {
-      throw Errors.badRequest('Satu atau lebih penerima/pemeriksa tidak ditemukan atau tidak aktif');
+      throw Errors.badRequest(
+        'Satu atau lebih penerima/pemeriksa tidak ditemukan atau tidak aktif'
+      );
     }
 
     const actorSeesAll = actor ? seesAllUnits(actor) : true;
@@ -256,7 +256,9 @@ export const CorrespondenceService = {
       // Enforce unit scope based on active role assignments or legacy user unitId
       if (!actorSeesAll && actor?.unitId) {
         const matchesUserUnit = u.unitId === actor.unitId || u.unitId === null;
-        const matchesRoleUnit = u.userRoles.some((ur) => ur.unitId === actor.unitId || ur.unitId === null);
+        const matchesRoleUnit = u.userRoles.some(
+          (ur) => ur.unitId === actor.unitId || ur.unitId === null
+        );
         if (!matchesUserUnit && !matchesRoleUnit) {
           throw Errors.forbidden(`Pengguna ${u.id} berada di luar unit Anda`);
         }
@@ -304,8 +306,14 @@ export const CorrespondenceService = {
     }
 
     // Outgoing letters submitted in PENDING_REVIEW must have at least one reviewer assigned
-    if (data.direction === 'OUTGOING' && data.status === LetterStatus.PENDING_REVIEW && (!data.reviewerIds || data.reviewerIds.length === 0)) {
-      throw Errors.badRequest('Surat keluar berstatus PENDING_REVIEW wajib memilih minimal satu pemeriksa');
+    if (
+      data.direction === 'OUTGOING' &&
+      data.status === LetterStatus.PENDING_REVIEW &&
+      (!data.reviewerIds || data.reviewerIds.length === 0)
+    ) {
+      throw Errors.badRequest(
+        'Surat keluar berstatus PENDING_REVIEW wajib memilih minimal satu pemeriksa'
+      );
     }
 
     // Single-unit bypass is strictly reserved for Executive Foundation Roles and SUPER_ADMIN.
@@ -320,7 +328,7 @@ export const CorrespondenceService = {
       }
     }
 
-    const targetUnitId = isFoundationBypass ? (data.unitId || actor.unitId) : actor.unitId;
+    const targetUnitId = isFoundationBypass ? data.unitId || actor.unitId : actor.unitId;
 
     if (!targetUnitId) {
       throw Errors.badRequest('Unit ID wajib diisi');
@@ -335,10 +343,15 @@ export const CorrespondenceService = {
     // Incoming letters do not enter review unless reviewerIds are provided.
     // If an incoming letter is submitted without reviewers, set status based on recipient assignment.
     let initialStatus = data.status as DbLetterStatus;
-    if (data.direction === 'INCOMING' && initialStatus === DbLetterStatus.PENDING_REVIEW && (!data.reviewerIds || data.reviewerIds.length === 0)) {
-      initialStatus = data.recipientIds && data.recipientIds.length > 0
-        ? DbLetterStatus.DISPOSED
-        : DbLetterStatus.DRAFT;
+    if (
+      data.direction === 'INCOMING' &&
+      initialStatus === DbLetterStatus.PENDING_REVIEW &&
+      (!data.reviewerIds || data.reviewerIds.length === 0)
+    ) {
+      initialStatus =
+        data.recipientIds && data.recipientIds.length > 0
+          ? DbLetterStatus.DISPOSED
+          : DbLetterStatus.DRAFT;
     }
 
     // Get active academic year
@@ -429,12 +442,7 @@ export const CorrespondenceService = {
        * tembusan: seseorang menerima surat ini *atau* salinannya, dan dua baris
        * untuk orang yang sama akan mencetak namanya dua kali di kaki naskah.
        */
-      const ccRows = buildCcRows(
-        letter.id,
-        targetUnitId,
-        data.ccRecipients,
-        data.recipientIds
-      );
+      const ccRows = buildCcRows(letter.id, targetUnitId, data.ccRecipients, data.recipientIds);
       if (ccRows.length > 0) {
         await tx.letterRecipient.createMany({ data: ccRows });
       }
@@ -482,7 +490,11 @@ export const CorrespondenceService = {
       const createdDispositionsToNotify: Array<{ id: string; recipientId: string }> = [];
 
       // Create live Dispositions ONLY when initial status is DISPOSED
-      if (data.direction === 'INCOMING' && initialStatus === DbLetterStatus.DISPOSED && data.recipientIds?.length) {
+      if (
+        data.direction === 'INCOMING' &&
+        initialStatus === DbLetterStatus.DISPOSED &&
+        data.recipientIds?.length
+      ) {
         const uniqueRecipients = Array.from(new Set(data.recipientIds));
         for (const recipientId of uniqueRecipients) {
           const existingDisp = await tx.disposition.findFirst({
@@ -611,14 +623,20 @@ export const CorrespondenceService = {
         );
       }
 
-      // Authorization check: creator, unit correspondence role, executive foundation roles, or SUPER_ADMIN
+      // Authorization check: creator, unit correspondence role (same unit only),
+      // executive foundation roles, or SUPER_ADMIN. A unit-scope holder must be
+      // in the letter's own unit — otherwise a correspondence officer from any
+      // unit who happens to be on the letter's review chain (which assertLetterAccess
+      // above admits cross-unit) could edit another unit's draft.
       const isCreator = actor.id === letter.createdById;
       const isExecutive =
         actor.roleCode === RoleCode.YAYASAN_KETUA ||
         actor.roleCode === RoleCode.YAYASAN_SEKRETARIS ||
         actor.roleCode === RoleCode.SUPER_ADMIN;
+      const isSameUnitCorrespondence =
+        handlesUnitCorrespondence(actor) && actor.unitId === letter.unitId;
 
-      if (!isCreator && !isExecutive && !handlesUnitCorrespondence(actor)) {
+      if (!isCreator && !isExecutive && !isSameUnitCorrespondence) {
         throw Errors.forbidden('Anda tidak berwenang mengubah surat ini.');
       }
 
@@ -637,10 +655,14 @@ export const CorrespondenceService = {
 
       if (fullLetter?.letterNumber) {
         if (data.type !== undefined && data.type !== letter.type) {
-          throw Errors.badRequest('Jenis surat tidak dapat diubah karena nomor surat sudah terbit.');
+          throw Errors.badRequest(
+            'Jenis surat tidak dapat diubah karena nomor surat sudah terbit.'
+          );
         }
         if (data.classificationId !== undefined) {
-          throw Errors.badRequest('Klasifikasi surat tidak dapat diubah karena nomor surat sudah terbit.');
+          throw Errors.badRequest(
+            'Klasifikasi surat tidak dapat diubah karena nomor surat sudah terbit.'
+          );
         }
       }
 
@@ -648,38 +670,87 @@ export const CorrespondenceService = {
       const targetNature = (data.nature as DbLetterNature | undefined) ?? letter.nature;
       assertNatureAllowed(targetType, targetNature);
 
-      // Build update payload
+      // Build update payload. Tracks whether the request actually changes
+      // anything, so an empty PATCH is not recorded as a fake "EDITED" audit
+      // entry (the flow log is append-only; a no-op edit claims an edit that
+      // never happened).
       const updateData: Prisma.LetterUpdateInput = {};
+      let hasChange = false;
 
-      if (data.type !== undefined) updateData.type = data.type as DbLetterType;
+      if (data.type !== undefined) {
+        updateData.type = data.type as DbLetterType;
+        hasChange = true;
+      }
       if (data.classificationId !== undefined) {
         updateData.classification = data.classificationId
           ? { connect: { id: data.classificationId } }
           : { disconnect: true };
+        hasChange = true;
       }
-      if (data.date !== undefined) updateData.date = new Date(data.date);
-      if (data.receivedAt !== undefined) updateData.receivedAt = data.receivedAt ? new Date(data.receivedAt) : null;
-      if (data.subject !== undefined) updateData.subject = data.subject;
-      if (data.content !== undefined) updateData.content = data.content;
-      if (data.fileUrl !== undefined) updateData.fileUrl = data.fileUrl;
-      if (data.urgency !== undefined) updateData.urgency = data.urgency as any;
-      if (data.nature !== undefined) updateData.nature = data.nature as any;
-      if (data.senderName !== undefined) updateData.senderName = data.senderName;
-      if (data.senderTitle !== undefined) updateData.senderTitle = data.senderTitle;
-      if (data.senderInstance !== undefined) updateData.senderInstance = data.senderInstance;
-      if (data.recipientName !== undefined) updateData.recipientName = data.recipientName;
-      if (data.recipientInstance !== undefined) updateData.recipientInstance = data.recipientInstance;
+      if (data.date !== undefined) {
+        updateData.date = new Date(data.date);
+        hasChange = true;
+      }
+      if (data.receivedAt !== undefined) {
+        updateData.receivedAt = data.receivedAt ? new Date(data.receivedAt) : null;
+        hasChange = true;
+      }
+      if (data.subject !== undefined) {
+        updateData.subject = data.subject;
+        hasChange = true;
+      }
+      if (data.content !== undefined) {
+        updateData.content = data.content;
+        hasChange = true;
+      }
+      if (data.fileUrl !== undefined) {
+        updateData.fileUrl = data.fileUrl;
+        hasChange = true;
+      }
+      if (data.urgency !== undefined) {
+        updateData.urgency = data.urgency as any;
+        hasChange = true;
+      }
+      if (data.nature !== undefined) {
+        updateData.nature = data.nature as any;
+        hasChange = true;
+      }
+      if (data.senderName !== undefined) {
+        updateData.senderName = data.senderName;
+        hasChange = true;
+      }
+      if (data.senderTitle !== undefined) {
+        updateData.senderTitle = data.senderTitle;
+        hasChange = true;
+      }
+      if (data.senderInstance !== undefined) {
+        updateData.senderInstance = data.senderInstance;
+        hasChange = true;
+      }
+      if (data.recipientName !== undefined) {
+        updateData.recipientName = data.recipientName;
+        hasChange = true;
+      }
+      if (data.recipientInstance !== undefined) {
+        updateData.recipientInstance = data.recipientInstance;
+        hasChange = true;
+      }
 
-      await tx.letter.update({
-        where: { id: letterId },
-        data: updateData,
-      });
+      if (Object.keys(updateData).length > 0) {
+        await tx.letter.update({
+          where: { id: letterId },
+          data: updateData,
+        });
+      }
 
       // Update Reviewers if provided
       if (data.reviewerIds) {
+        hasChange = true;
         const uniqueReviewers = Array.from(new Set(data.reviewerIds));
         if (letter.status === DbLetterStatus.REVISION_NEEDED && uniqueReviewers.length === 0) {
-          throw Errors.badRequest('Surat yang dalam perbaikan revisi wajib memiliki minimal satu pemeriksa/verifikator.');
+          throw Errors.badRequest(
+            'Surat yang dalam perbaikan revisi wajib memiliki minimal satu pemeriksa/verifikator.'
+          );
         }
         await tx.letterReviewer.deleteMany({ where: { letterId } });
         if (uniqueReviewers.length > 0) {
@@ -697,6 +768,7 @@ export const CorrespondenceService = {
 
       // Update Recipients if provided
       if (data.recipientIds) {
+        hasChange = true;
         const uniqueRecipients = Array.from(new Set(data.recipientIds));
         await tx.letterRecipient.deleteMany({ where: { letterId, isCC: false } });
         if (uniqueRecipients.length > 0) {
@@ -723,8 +795,11 @@ export const CorrespondenceService = {
 
       // Update CC Recipients if provided
       if (data.ccRecipients) {
+        hasChange = true;
         await tx.letterRecipient.deleteMany({ where: { letterId, isCC: true } });
-        const primaryRecipientIds = data.recipientIds ?? letter.recipients.map((r) => r.userId).filter((id): id is string => !!id);
+        const primaryRecipientIds =
+          data.recipientIds ??
+          letter.recipients.map((r) => r.userId).filter((id): id is string => !!id);
         const ccRows = buildCcRows(letterId, letter.unitId, data.ccRecipients, primaryRecipientIds);
         if (ccRows.length > 0) {
           await tx.letterRecipient.createMany({ data: ccRows });
@@ -733,6 +808,7 @@ export const CorrespondenceService = {
 
       // Update Attachments if provided
       if (data.attachments) {
+        hasChange = true;
         await tx.letterAttachment.deleteMany({ where: { letterId } });
         if (data.attachments.length > 0) {
           await tx.letterAttachment.createMany({
@@ -749,14 +825,19 @@ export const CorrespondenceService = {
         }
       }
 
-      await recordFlow(tx, {
-        letterId,
-        actorId: userId,
-        action: LetterFlowAction.EDITED,
-        fromStatus: letter.status,
-        toStatus: letter.status,
-        note: 'Naskah surat diperbarui',
-      });
+      // Only record an EDITED flow entry when the request actually changed
+      // something. The flow log is append-only, so a no-op PATCH must not forge
+      // an edit that never happened (Flag: "Edit kosong memalsukan riwayat surat").
+      if (hasChange) {
+        await recordFlow(tx, {
+          letterId,
+          actorId: userId,
+          action: LetterFlowAction.EDITED,
+          fromStatus: letter.status,
+          toStatus: letter.status,
+          note: 'Naskah surat diperbarui',
+        });
+      }
 
       return await tx.letter.findUnique({
         where: { id: letterId },
@@ -1030,7 +1111,9 @@ export const CorrespondenceService = {
         // Validate that an approval specifies either a nextReviewerId, isFinalSigner, or an existing signer
         const hasExistingSigner = updatedLadder.some((r) => r.isSigner);
         if (!nextReviewerId && !isFinalSigner && !hasExistingSigner) {
-          throw new Error('Harus memilih pejabat penerus atau menandai sebagai penandatangan akhir.');
+          throw new Error(
+            'Harus memilih pejabat penerus atau menandai sebagai penandatangan akhir.'
+          );
         }
 
         if (isFinalSigner) {
@@ -1045,7 +1128,9 @@ export const CorrespondenceService = {
         // If approving and nextReviewerId is provided, add or update the next reviewer dynamically
         if (nextReviewerId) {
           const existingNext = letter.reviewers.find((r) => r.reviewerId === nextReviewerId);
-          const nonSigners = letter.reviewers.filter((r) => !r.isSigner && r.id !== existingNext?.id);
+          const nonSigners = letter.reviewers.filter(
+            (r) => !r.isSigner && r.id !== existingNext?.id
+          );
           const maxNonSignerOrder = Math.max(...nonSigners.map((r) => r.order), mine.order, 0);
           const newNextOrder = maxNonSignerOrder + 1;
 
@@ -1086,7 +1171,9 @@ export const CorrespondenceService = {
 
           // If nextReviewerId is NOT marked as final signer, move any existing signer to sit AFTER nextReviewerId
           if (!isFinalSigner) {
-            const existingSigners = letter.reviewers.filter((r) => r.isSigner && r.id !== existingNext?.id);
+            const existingSigners = letter.reviewers.filter(
+              (r) => r.isSigner && r.id !== existingNext?.id
+            );
             for (const signer of existingSigners) {
               const shiftedOrder = newNextOrder + 1;
               await tx.letterReviewer.update({
@@ -1115,7 +1202,11 @@ export const CorrespondenceService = {
           ? statusAfterApproval(updatedLadder, reviewerId)
           : DbLetterStatus.REVISION_NEEDED;
 
-      const reviewFinished = action === 'APPROVE' && !nextRung(updatedLadder.map((r) => r.reviewerId === reviewerId ? { ...r, status: 'APPROVED' } : r));
+      const reviewFinished =
+        action === 'APPROVE' &&
+        !nextRung(
+          updatedLadder.map((r) => (r.reviewerId === reviewerId ? { ...r, status: 'APPROVED' } : r))
+        );
       const disposedRecipients: string[] = [];
 
       if (action === 'APPROVE') {
@@ -1220,7 +1311,13 @@ export const CorrespondenceService = {
         targetId: action === 'REJECT' ? letter.createdById : nextReviewerId || null,
         fromStatus: letter.status,
         toStatus: nextStatus,
-        note: notes ? (nextReviewerId ? `${notes} [Diteruskan]` : notes) : (nextReviewerId ? 'Diteruskan ke peninjau berikutnya' : null),
+        note: notes
+          ? nextReviewerId
+            ? `${notes} [Diteruskan]`
+            : notes
+          : nextReviewerId
+            ? 'Diteruskan ke peninjau berikutnya'
+            : null,
       });
 
       return {
@@ -1245,9 +1342,7 @@ export const CorrespondenceService = {
         unitId: letter?.unitId,
         type: 'REMINDER',
         title: 'Surat Dikembalikan untuk Revisi',
-        message: `Konsep "${letter?.subject ?? ''}" dikembalikan${
-          notes ? `: ${notes}` : '.'
-        }`,
+        message: `Konsep "${letter?.subject ?? ''}" dikembalikan${notes ? `: ${notes}` : '.'}`,
         data: { letterId, link: `/e-office/letter/${letterId}` },
       });
     }
@@ -1387,7 +1482,9 @@ export const CorrespondenceService = {
       }
 
       if (!currentReviewers || currentReviewers.length === 0) {
-        throw Errors.badRequest('Konsep surat harus memiliki minimal satu pemeriksa sebelum diajukan');
+        throw Errors.badRequest(
+          'Konsep surat harus memiliki minimal satu pemeriksa sebelum diajukan'
+        );
       }
 
       // Guard: atomic state transition from DRAFT -> PENDING_REVIEW
@@ -1593,11 +1690,7 @@ export const CorrespondenceService = {
    * unit, atau pejabat yayasan. Pengiriman adalah perbuatan tata usaha, bukan
    * perbuatan penanda tangan.
    */
-  async dispatchLetter(
-    letterId: string,
-    actor: LetterActor,
-    input: DispatchLetterSchemaInput
-  ) {
+  async dispatchLetter(letterId: string, actor: LetterActor, input: DispatchLetterSchemaInput) {
     await assertLetterAccess(actor, letterId);
 
     const existing = await prisma.letter.findUnique({
@@ -1719,8 +1812,14 @@ export const CorrespondenceService = {
     await assertLetterAccess(actor, letterId);
 
     // B4: Restrict archive authorization to creator, correspondence role, executive foundation roles, or super admin
-    const isCreator = actor.id === (await prisma.letter.findUnique({ where: { id: letterId }, select: { createdById: true } }))?.createdById;
-    const isExecutive = actor.roleCode === RoleCode.YAYASAN_KETUA || actor.roleCode === RoleCode.YAYASAN_SEKRETARIS || actor.roleCode === RoleCode.SUPER_ADMIN;
+    const isCreator =
+      actor.id ===
+      (await prisma.letter.findUnique({ where: { id: letterId }, select: { createdById: true } }))
+        ?.createdById;
+    const isExecutive =
+      actor.roleCode === RoleCode.YAYASAN_KETUA ||
+      actor.roleCode === RoleCode.YAYASAN_SEKRETARIS ||
+      actor.roleCode === RoleCode.SUPER_ADMIN;
     const isCorrRole = handlesUnitCorrespondence(actor);
 
     if (!isCreator && !isExecutive && !isCorrRole) {
@@ -1774,16 +1873,15 @@ export const CorrespondenceService = {
     const letter = await assertLetterAccess(actor, data.letterId);
 
     if (letter.status === DbLetterStatus.ARCHIVED) {
-      throw new Error(
-        'Surat sudah diarsipkan; buka kembali arsipnya sebelum mendisposisikan.'
-      );
+      throw new Error('Surat sudah diarsipkan; buka kembali arsipnya sebelum mendisposisikan.');
     }
 
-    const rawRecipients = data.recipientIds && data.recipientIds.length > 0
-      ? data.recipientIds
-      : data.recipientId
-        ? [data.recipientId]
-        : [];
+    const rawRecipients =
+      data.recipientIds && data.recipientIds.length > 0
+        ? data.recipientIds
+        : data.recipientId
+          ? [data.recipientId]
+          : [];
 
     // Deduplicate recipient IDs to prevent duplicate dispositions for the same person
     const recipients = Array.from(new Set(rawRecipients));
@@ -1807,9 +1905,7 @@ export const CorrespondenceService = {
       if (!txLetter) throw Errors.notFound('Surat tidak ditemukan');
 
       if (txLetter.status === DbLetterStatus.ARCHIVED) {
-        throw new Error(
-          'Surat sudah diarsipkan; buka kembali arsipnya sebelum mendisposisikan.'
-        );
+        throw new Error('Surat sudah diarsipkan; buka kembali arsipnya sebelum mendisposisikan.');
       }
 
       const allDispositions = [];
@@ -1850,8 +1946,7 @@ export const CorrespondenceService = {
           action: LetterFlowAction.DISPOSED,
           targetId: targetRecipientId,
           fromStatus: txLetter.status,
-          toStatus:
-            txLetter.direction === 'INCOMING' ? DbLetterStatus.DISPOSED : txLetter.status,
+          toStatus: txLetter.direction === 'INCOMING' ? DbLetterStatus.DISPOSED : txLetter.status,
           note: data.instruction,
         });
 
@@ -1859,10 +1954,7 @@ export const CorrespondenceService = {
         newlyCreatedDispositions.push(created);
       }
 
-      if (
-        txLetter.direction === 'INCOMING' &&
-        txLetter.status !== DbLetterStatus.DISPOSED
-      ) {
+      if (txLetter.direction === 'INCOMING' && txLetter.status !== DbLetterStatus.DISPOSED) {
         await tx.letter.update({
           where: { id: txLetter.id },
           data: { status: DbLetterStatus.DISPOSED },

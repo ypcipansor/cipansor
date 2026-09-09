@@ -11,6 +11,20 @@ const PAGE_HEIGHT = 841.89; // A4 height
 const MARGIN = 40;
 
 /**
+ * ARABIC RENDERING (verified 2026-09): the raport is Indonesian/Latin prose,
+ * and the only field that could carry Arabic — the tahfidz "surah last" value —
+ * is stored and seeded TRANSLITERATED (e.g. "Al-Fatihah", "QS. Al-Mulk"; see
+ * `prisma/seed.ts` and `schema.prisma` `TahfidzRecord.surahName`), so no Arabic
+ * script is actually rendered today. The PDF therefore preserves code points in
+ * `toSafeText` (kept verbatim when the Unicode font is embedded) WITHOUT a
+ * Harfbuzz shaping / RTL-bidi pipeline. That is a deliberate, documented
+ * limitation: if Arabic script data is ever introduced, the letters would
+ * render in their isolated forms rather than connected, and RTL word order
+ * would be wrong — adding `harfbuzzjs` shaping + RTL layout for the Arabic runs
+ * would be the required follow-up then.
+ */
+
+/**
  * Raw TTF bytes for the Unicode font, cached so we only read the file once.
  * The PDFFont instance itself must NOT be cached module-wide: a font embedded
  * into one PDFDocument is bound to that document, and re-using it in a later

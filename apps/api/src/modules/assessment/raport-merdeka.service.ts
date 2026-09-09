@@ -137,22 +137,32 @@ export function getSemesterDateRange(
   }
   const startDate = new Date(academicYear.startDate);
   const endDate = new Date(academicYear.endDate);
-  // Keep the boundary in UTC so it never shifts with the server's timezone.
-  // `scheduledAt`/`gradedAt` are stored by Prisma as UTC DateTimes, so on a
-  // UTC host `new Date(y, 11, 31)` happened to match — but on a UTC+7 host the
-  // same expression lands on Dec 31 00:00 WIB = Dec 30 17:00 UTC, which would
-  // push a Dec 31-afternoon UTC exam into Semester 1 (or a Jan 1-early UTC exam
-  // into Semester 1 instead of 2). Using `Date.UTC` decouples the boundary from
-  // the host timezone entirely.
+  // Anchor the boundary to the operation's timezone (WIB, UTC+7), not to the
+  // server host. The exam/grade timestamps (`scheduledAt`/`gradedAt`) are
+  // stored by Prisma as UTC DateTimes, and a school schedules them in WIB, so
+  // the "Semester 2 starts Jan 1" rule is really "01 Jan 00:00 WIB". A distinct
+  // Jan 1 *local-morning* exam (before 07:00 WIB) is stored as the *previous*
+  // Dec 31 UTC evening; anchored at UTC midnight it would fall inside Semester 1.
   //
-  // End of day Dec 31, not midnight: `Date.UTC(y, 11, 31)` lands on
-  // 00:00:00.000, so an exam scheduled Dec 31 afternoon (scheduledAt after
-  // midnight) slipped past the `<= semEndDate` check and was dropped from
-  // Semester 1. Semester 2 starts at the first millisecond of Jan 1, so the
-  // two windows never overlap.
+  // WIB = UTC+7, so "01 Jan 00:00 WIB" == "31 Dec 17:00 UTC". The boundary is
+  // pinned with `Date.UTC` plus the constant WIB offset, which makes it
+  // independent of whatever timezone this process happens to run in (on a UTC
+  // host, anchoring naively at `Date.UTC(y, 11, 31, 23, 59, 59, 999)` reproduces
+  // the bug above).
+  //
+  // End of day Dec 31 WIB (not midnight): a Dec 31-afternoon WIB exam must not
+  // slip past the `<= semEndDate` check and be dropped from Semester 1. With the
+  // WIB anchor, `sem1End` is the last millisecond of Dec 31 WIB and `sem2Start`
+  // is the first millisecond of Jan 1 WIB, so the two windows never overlap.
+  const WIB_UTC_OFFSET_HOURS = 7;
   const startYear = startDate.getUTCFullYear();
-  const sem1End = new Date(Date.UTC(startYear, 11, 31, 23, 59, 59, 999));
-  const sem2Start = new Date(Date.UTC(startYear + 1, 0, 1));
+  // "01 Jan 00:00 of the next year" expressed in UTC, minus the 7h the
+  // operational calendar is ahead of UTC.
+  const sem2StartLocal = Date.UTC(startYear + 1, 0, 1); // 01 Jan 00:00 UTC
+  const sem2Start = new Date(
+    sem2StartLocal - WIB_UTC_OFFSET_HOURS * 60 * 60 * 1000 // 31 Dec 17:00 UTC
+  );
+  const sem1End = new Date(sem2Start.getTime() - 1); // last ms before sem2Start
   return semester === 1 ? { startDate, endDate: sem1End } : { startDate: sem2Start, endDate };
 }
 
@@ -189,19 +199,33 @@ export class RaportMerdekaService {
   }
 
   /**
-   * Validate whether the user may read the given student's raport.
+   * Validate whether the user may read the given student's raport for a
+   * specific academic year.
    *
    * Access rules (see also {@link assertRaportAccess}, shared with the bulk
    * class endpoint so the two flows can never drift apart):
    * - SUPER_ADMIN bypasses scoping.
    * - An admin role (per-school ADMIN / legacy UNIT_ADMIN) whose `unitId` matches
    *   the student's unit may read the whole unit.
-   * - Any other teacher-or-above role must cover one of the student's ACTIVE
-   *   classes (homeroom / teaches a subject there / set an exam there). A same-
-   *   unit teacher is NOT granted unit-wide raport access; a cross-unit teacher
-   *   with an exam OR a UserRoleAssignment in the unit alone is NOT enough.
+   * - Any other teacher-or-above role must cover one of the student's classes in
+   *   the requested `academicYearId` (homeroom / teaches a subject there / set an
+   *   exam there). A same-unit teacher is NOT granted unit-wide raport access; a
+   *   cross-unit teacher with an exam OR a UserRoleAssignment in the unit alone is
+   *   NOT enough.
+   *
+   * CRITICAL: access must be scoped to the CLASSES THE STUDENT SAT IN for the
+   * requested academic year, not the student's *current* enrollment. Otherwise a
+   * teacher who only teaches the student "this year" would inherit access to the
+   * student's raport for every past year (a class the teacher never taught), and
+   * an enrollment the student has since left would leak into the wrong years too.
+   * `ClassEnrollment` itself has no `academicYearId`, but its `class` relation
+   * does, so the lookup is filtered through `class.academicYearId`.
    */
-  static async validateStudentScope(user: JwtPayload | undefined, studentId: string) {
+  static async validateStudentScope(
+    user: JwtPayload | undefined,
+    studentId: string,
+    academicYearId: string
+  ) {
     if (!user) return;
     const userRoleCode = user.roleCode || user.role;
     if (userRoleCode === RoleCode.SUPER_ADMIN || userRoleCode === 'SUPER_ADMIN') return;
@@ -216,7 +240,7 @@ export class RaportMerdekaService {
     }
 
     const studentClasses = await prisma.classEnrollment.findMany({
-      where: { studentId, status: 'active' },
+      where: { studentId, class: { academicYearId } },
       select: { classId: true },
     });
 
@@ -293,15 +317,20 @@ export class RaportMerdekaService {
       where: {
         userId,
         OR: [
-          // Teacher is homeroom for one of the subject's classes.
-          { homeroomClasses: { some: { id: { in: classIds } } } },
-          // Teacher teaches a subject in one of the subject's classes.
-          { teacherSubjects: { some: { classId: { in: classIds } } } },
+          // Teacher is homeroom for one of the subject's classes (only if that
+          // class is not soft-deleted).
+          { homeroomClasses: { some: { id: { in: classIds }, deletedAt: null } } },
+          // Teacher teaches a subject in one of the subject's classes — only an
+          // ACTIVE assignment counts. A deactivated `TeacherSubject.isActive =
+          // false` must not keep the raport accessible after the teacher was
+          // taken off the class.
+          { teacherSubjects: { some: { classId: { in: classIds }, isActive: true } } },
           // A classless subject (covers all classes) only applies inside the
           // teacher's OWN unit — a cross-unit teacher's classless subject must
-          // NOT open every student of another unit.
-          { unitId, teacherSubjects: { some: { classId: null } } },
-          // Teacher set an exam for one of the subject's classes.
+          // NOT open every student of another unit. Also only active assignments.
+          { unitId, teacherSubjects: { some: { classId: null, isActive: true } } },
+          // Teacher set an exam for one of the subject's classes (only if that
+          // class is not soft-deleted).
           { exams: { some: { classId: { in: classIds } } } },
         ],
       },
@@ -320,10 +349,14 @@ export class RaportMerdekaService {
     studentId: string,
     academicYearId: string,
     semester: number,
-    user?: JwtPayload
+    user?: JwtPayload,
+    opts?: { skipScopeValidation?: boolean }
   ) {
-    if (user) {
-      await this.validateStudentScope(user, studentId);
+    if (user && !opts?.skipScopeValidation) {
+      // Scope access to the classes the student sat in for THIS academic year,
+      // so a teacher covering the student this year cannot open past-year
+      // raports for classes they never taught.
+      await this.validateStudentScope(user, studentId, academicYearId);
     }
     // Helper: Determine Fase from class level or unit type
     const getFaseFromClassLevel = (levelStr?: string, unitTypeStr?: string): string => {
@@ -985,9 +1018,16 @@ export class RaportMerdekaService {
       },
     });
 
+    // The class-level gate (assertRaportAccess above) already proved access to
+    // THIS class, and every student below is enrolled in it for this academic
+    // year, so re-running the per-student scope lookup would repeat the same
+    // student/enrollment/teacher queries once per student for no additional
+    // information. Skip it on the bulk path.
     const reports = await Promise.all(
       enrollments.map((enrollment) =>
-        this.generateRaportMerdeka(enrollment.student.id, academicYearId, semester, user)
+        this.generateRaportMerdeka(enrollment.student.id, academicYearId, semester, user, {
+          skipScopeValidation: true,
+        })
       )
     );
 

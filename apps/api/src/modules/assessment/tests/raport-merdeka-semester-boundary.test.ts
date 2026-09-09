@@ -20,14 +20,18 @@ const academicYear = {
 describe('getSemesterDateRange — Semester 1 (Ganjil)', () => {
   const sem1 = getSemesterDateRange(academicYear, 1);
 
-  it('ends on Dec 31 at the LAST millisecond of the day', () => {
-    expect(sem1.endDate.getFullYear()).toBe(2024);
-    expect(sem1.endDate.getMonth()).toBe(11); // December
-    expect(sem1.endDate.getDate()).toBe(31);
-    expect(sem1.endDate.getHours()).toBe(23);
-    expect(sem1.endDate.getMinutes()).toBe(59);
-    expect(sem1.endDate.getSeconds()).toBe(59);
-    expect(sem1.endDate.getMilliseconds()).toBe(999);
+  it('ends on Dec 31 at the LAST millisecond of the day (WIB)', () => {
+    // The boundary is anchored to WIB (UTC+7): "end of Dec 31" means Dec 31
+    // 23:59:59.999 WIB, which is Dec 31 16:59:59.999 UTC on a UTC host. The
+    // date (year/month/day) is what must not drift; the clock time shifts with
+    // the anchoring.
+    expect(sem1.endDate.getUTCFullYear()).toBe(2024);
+    expect(sem1.endDate.getUTCMonth()).toBe(11); // December
+    expect(sem1.endDate.getUTCDate()).toBe(31);
+    expect(sem1.endDate.getUTCHours()).toBe(16); // 23:59:59.999 WIB
+    expect(sem1.endDate.getUTCMinutes()).toBe(59);
+    expect(sem1.endDate.getUTCSeconds()).toBe(59);
+    expect(sem1.endDate.getUTCMilliseconds()).toBe(999);
   });
 
   it('includes an exam scheduled on Dec 31 afternoon', () => {
@@ -45,13 +49,16 @@ describe('getSemesterDateRange — Semester 1 (Ganjil)', () => {
 describe('getSemesterDateRange — Semester 2 (Genap)', () => {
   const sem2 = getSemesterDateRange(academicYear, 2);
 
-  it('starts on Jan 1 at midnight', () => {
-    expect(sem2.startDate.getFullYear()).toBe(2025);
-    expect(sem2.startDate.getMonth()).toBe(0);
-    expect(sem2.startDate.getDate()).toBe(1);
-    expect(sem2.startDate.getHours()).toBe(0);
-    expect(sem2.startDate.getMinutes()).toBe(0);
-    expect(sem2.startDate.getSeconds()).toBe(0);
+  it('starts on Jan 1 at midnight (WIB)', () => {
+    // "Semester 2 starts Jan 1 00:00 WIB" == "Dec 31 17:00 UTC". In WIB terms
+    // that is still 01 Jan 00:00, so assert the calendar date in WIB.
+    const wibDate = new Date(sem2.startDate.getTime() + 7 * 60 * 60 * 1000);
+    expect(wibDate.getUTCFullYear()).toBe(2025);
+    expect(wibDate.getUTCMonth()).toBe(0); // January
+    expect(wibDate.getUTCDate()).toBe(1);
+    expect(wibDate.getUTCHours()).toBe(0);
+    expect(wibDate.getUTCMinutes()).toBe(0);
+    expect(wibDate.getUTCSeconds()).toBe(0);
   });
 
   it('includes a grade on Jan 1 midnight (not dropped into Semester 1)', () => {
@@ -64,6 +71,38 @@ describe('getSemesterDateRange — Semester 2 (Genap)', () => {
     expect(sem2.startDate.getTime()).toBeGreaterThan(
       getSemesterDateRange(academicYear, 1).endDate.getTime()
     );
+  });
+});
+
+describe('getSemesterDateRange — WIB (UTC+7) operational boundary', () => {
+  // The school operates in WIB, so "Semester 2 starts Jan 1" means "01 Jan
+  // 00:00 WIB". An exam at, say, 05:00 WIB on Jan 1 is stored in UTC as the
+  // *previous* Dec 31 22:00. Anchored at UTC midnight this would fall inside
+  // Semester 1 — the bug. The boundary must be anchored to WIB.
+  const sem1 = getSemesterDateRange(academicYear, 1);
+  const sem2 = getSemesterDateRange(academicYear, 2);
+
+  it('places a Jan 1 00:00 UTC exam in Semester 2, not Semester 1', () => {
+    // Jan 1 00:00 UTC == Jan 1 07:00 WIB → clearly Semester 2.
+    const jan1UtcMidnight = new Date('2025-01-01T00:00:00.000Z');
+    expect(jan1UtcMidnight <= sem1.endDate).toBe(false);
+    expect(jan1UtcMidnight >= sem2.startDate).toBe(true);
+  });
+
+  it('places a Jan 1 early-morning (before 07:00 WIB) exam in Semester 2', () => {
+    // 05:00 WIB on Jan 1 is stored as Dec 31 22:00 UTC, i.e. the calendar
+    // "last evening" of the old year but operationally already the new year.
+    const jan1EarlyWib = new Date('2024-12-31T22:00:00.000Z');
+    expect(jan1EarlyWib <= sem1.endDate).toBe(false);
+    expect(jan1EarlyWib >= sem2.startDate).toBe(true);
+  });
+
+  it('keeps a Dec 31 afternoon WIB exam in Semester 1', () => {
+    // Dec 31 22:00 WIB is stored as Dec 31 15:00 UTC. This must remain in
+    // Semester 1 (operationally still the last day of Semester 1).
+    const dec31AfternoonWib = new Date('2024-12-31T15:00:00.000Z');
+    expect(dec31AfternoonWib <= sem1.endDate).toBe(true);
+    expect(dec31AfternoonWib >= sem2.startDate).toBe(false);
   });
 });
 

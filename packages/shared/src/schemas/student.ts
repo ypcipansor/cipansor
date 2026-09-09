@@ -67,9 +67,38 @@ export const bulkRegenerateCardsSchema = z.object({
   classId: z.string().uuid("classId harus berupa UUID").optional(),
 });
 
+// ==================== ID CARD QUERY PARAMS ====================
+
+const cardTemplate = z.enum(["STANDARD", "PESANTREN", "TAHFIDZ", "MINIMAL"]);
+const cardOrientation = z.enum(["PORTRAIT", "LANDSCAPE"]);
+
+// The boolean query params arrive as strings from the URL ("true"/"false"), so
+// they are coerced before validation. Shared so the API confirms the payload at
+// the edge (`validateQuery`) and the web client types its request with the same
+// contract rather than casting raw query values `as any`.
+export const idCardQuerySchema = z.object({
+  template: cardTemplate.optional(),
+  orientation: cardOrientation.optional(),
+  showPhoto: z.coerce.boolean().optional(),
+  showQrCode: z.coerce.boolean().optional(),
+  showParentName: z.coerce.boolean().optional(),
+  showBloodType: z.coerce.boolean().optional(),
+  showAddress: z.coerce.boolean().optional(),
+  showTahfidz: z.coerce.boolean().optional(),
+  validityPeriod: z.coerce.number().int().min(1).max(120).optional(),
+});
+
+export const classIdCardQuerySchema = idCardQuerySchema.extend({
+  academicYearId: z.string().uuid("academicYearId harus berupa UUID"),
+});
+
 // ==================== TYPES ====================
 
 export type ListStudentsQuery = z.infer<typeof listStudentsQuerySchema>;
 export type CreateStudentInput = z.infer<typeof createStudentSchema>;
 export type UpdateStudentInput = z.infer<typeof updateStudentSchema>;
-export type BulkRegenerateCardsInput = z.infer<typeof bulkRegenerateCardsSchema>;
+export type BulkRegenerateCardsInput = z.infer<
+  typeof bulkRegenerateCardsSchema
+>;
+export type IdCardQuery = z.infer<typeof idCardQuerySchema>;
+export type ClassIdCardQuery = z.infer<typeof classIdCardQuerySchema>;

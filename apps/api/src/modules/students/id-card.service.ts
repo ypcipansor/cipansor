@@ -166,7 +166,13 @@ export class StudentIdCardService {
         return { valid: false, message: 'QR Code tidak valid (tanda tangan HMAC tidak cocok)' };
       }
 
-      // Check expiry
+      // Expiry is enforced HERE by the signed `payload.exp` claim (itself
+      // HMAC-protected and constant-time compared above), not by the
+      // `StudentCardStatus` of the audit row. There is deliberately no
+      // ACTIVE→EXPIRED transition job: no lifecycle query in this module reads
+      // status EXPIRED, so a card whose QR `exp` has passed is already rejected
+      // regardless of how its stored status was left. The status branch below
+      // only refines the message for a card the DB explicitly marked EXPIRED.
       if (payload.exp === undefined || payload.exp < Date.now()) {
         return {
           valid: false,
@@ -598,7 +604,16 @@ export class StudentIdCardService {
   }
 
   /**
-   * Generate bulk ID cards for a class
+   * Generate bulk ID cards for a class — READ-ONLY class preview.
+   *
+   * Mirrors {@link getOrGeneratePreviewIdCard}: this is a `GET` preview
+   * endpoint (`GET /id-cards/classes/:classId`), so it must never write or
+   * REVOKE `StudentCardState` rows. Previously it called `generateIdCard`
+   * directly with default `persistState: true`, which minted a fresh issuance
+   * (and REVOKED each student's already-printed card) on every page view —
+   * silent card invalidation that a passing verification would later expose.
+   * It now reuses each student's existing ACTIVE card when one exists, and
+   * marks unissued students as not-ready, exactly like the single preview.
    */
   static async generateBulkIdCards(
     classId: string,
@@ -638,7 +653,9 @@ export class StudentIdCardService {
     });
 
     const cards = await Promise.all(
-      enrollments.map((enrollment) => this.generateIdCard(enrollment.student.id, config))
+      enrollments.map((enrollment) =>
+        this.getOrGeneratePreviewIdCard(enrollment.student.id, config)
+      )
     );
 
     return {
@@ -837,6 +854,16 @@ export class StudentIdCardService {
     // students) nor pass an unbounded operation list to `$transaction`. Each
     // batch builds its cards and commits its audit rows in its own transaction,
     // so the memory and transaction size stay proportional to BATCH_SIZE.
+    //
+    // OPERATOR IMPLICATION (non-atomic across batches): regeneration is
+    // per-batch, not one atomic commit. If a LATER batch fails (or the request
+    // is interrupted), students in already-committed batches will have NEW
+    // cards while students in the failed batch keep their OLD ones — a mix of
+    // old and new across the unit. `failures` tells the caller exactly which
+    // students still hold old cards, so an operator can re-run for those. This
+    // is a deliberate trade: making hundreds of students atomic would balloon
+    // memory and one long `$transaction`; scoping to batches keeps each commit
+    // bounded at the cost of atomicity across the whole request.
     const BATCH_SIZE = 50;
     const cardRows: Array<{
       student: { id: string };
@@ -851,17 +878,34 @@ export class StudentIdCardService {
 
     for (let i = 0; i < students.length; i += BATCH_SIZE) {
       const batch = students.slice(i, i + BATCH_SIZE);
-      const batchRows = await Promise.all(
-        batch.map(async (student) => {
+
+      // Build every card in the batch BEFORE committing its audit rows. Each
+      // build is guarded individually so a single student whose data cannot be
+      // rendered (e.g. a student row in a broken state) is recorded as a failure
+      // instead of throwing out of the whole request — which previously hid the
+      // cards already committed by earlier batches and revoked nothing cleanly.
+      const batchRows: Array<{
+        student: { id: string };
+        cardStateId: string;
+        card: StudentIdCardDetail;
+      }> = [];
+      for (const student of batch) {
+        try {
           const cardStateId = crypto.randomUUID();
           const card = await this.generateIdCard(
             student.id,
             {},
             { cardStateId, persistState: false, generatedById, issued: true }
           );
-          return { student, cardStateId, card };
-        })
-      );
+          batchRows.push({ student, cardStateId, card });
+        } catch {
+          failures.push({
+            studentId: student.id,
+            message: 'Gagal membuat data kartu pelajar. Silakan dicoba kembali.',
+          });
+        }
+      }
+      if (batchRows.length === 0) continue;
 
       // Persist an audit trail of the regeneration (Flag 6): one fresh ACTIVE
       // StudentCardState per student, plus a REVOKED marker on any previous
