@@ -38,7 +38,7 @@ const userSchema = z.object({
   role: z.enum(
     ["SUPER_ADMIN", "UNIT_ADMIN", "TEACHER", "STUDENT", "STAFF", "PARENT"],
     {
-      required_error: "Role is required",
+      error: "Role is required",
     },
   ),
   unitId: z.string().optional(),

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { partialUpdateSchema } from '@/lib/partial';
 
 // ======================
 // ENUMS
@@ -98,9 +99,10 @@ export const createEventSchema = z.object({
   metadata: z.record(z.string(), z.any()).optional(),
 });
 
-export const updateEventSchema = createEventSchema
-  .partial()
-  .omit({ unitId: true, academicYearId: true });
+export const updateEventSchema = partialUpdateSchema(createEventSchema).omit({
+  unitId: true,
+  academicYearId: true,
+});
 
 export const bulkCreateEventsSchema = z.object({
   events: z.array(createEventSchema).min(1).max(100),

@@ -65,7 +65,7 @@ const scheduleSchema = z.object({
       "SUNDAY",
     ] as const,
     {
-      required_error: "Hari wajib dipilih",
+      error: "Hari wajib dipilih",
     },
   ),
   startTime: z.string().min(1, "Waktu mulai wajib diisi"),

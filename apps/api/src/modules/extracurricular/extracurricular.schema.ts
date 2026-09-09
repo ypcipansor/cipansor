@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { partialUpdateSchema } from '@/lib/partial';
 
 // Enums matching Prisma
 export const ExtracurricularCategory = z.enum([
@@ -62,7 +63,7 @@ export const createExtracurricularSchema = z.object({
 export type CreateExtracurricularInput = z.infer<typeof createExtracurricularSchema>;
 
 // Update extracurricular
-export const updateExtracurricularSchema = createExtracurricularSchema.partial().extend({
+export const updateExtracurricularSchema = partialUpdateSchema(createExtracurricularSchema).extend({
   status: ExtracurricularStatus.optional(),
 });
 
