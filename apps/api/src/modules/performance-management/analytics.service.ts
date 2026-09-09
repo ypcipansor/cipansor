@@ -29,8 +29,17 @@ export class PKAnalyticsService {
           select: { status: true, overallScore: true, totalScore: true, behaviorScore: true },
         });
 
+        // evCount = SEMUA evaluasi (DRAFT, PROPOSED, APPROVED) — dipakai untuk
+        // metrik totalEvaluations, maknanya jangan diubah.
         const evCount = await prisma.pKEvaluation.count({
           where: { pk: { user: { unitId: unit.id } } },
+        });
+        // approvedEvCount = hanya evaluasi APPROVED — dipakai sebagai syarat
+        // eligibility ranking. Unit yang baru punya evaluasi DRAFT (belum
+        // disetujui) tidak boleh diperingkat: skor PK agregatnya berasal dari
+        // evaluasi yang belum lengkap.
+        const approvedEvCount = await prisma.pKEvaluation.count({
+          where: { pk: { user: { unitId: unit.id } }, status: PlanStatus.APPROVED },
         });
 
         const approvedPks = allPks.filter((p) => p.status === PlanStatus.APPROVED);
@@ -59,6 +68,7 @@ export class PKAnalyticsService {
           pkCount: approvedPks.length,
           totalPksCount: allPks.length,
           evCount,
+          approvedEvCount,
         };
       })
     );
@@ -92,7 +102,11 @@ export class PKAnalyticsService {
     // yang PK-nya sudah disetujui tetapi belum pernah dinilai tetap masuk
     // peringkat dengan skor nol — muncul di puncak "kinerja terburuk" padahal
     // hanya belum ada data. Itu angka yang berbohong kepada pembacanya.
-    const ranked = unitMetrics.filter((u) => u.evCount > 0);
+    //
+    // Syarat eligibility kini menggunakan approvedEvCount (evaluasi APPROVED),
+    // bukan evCount total. Unit yang baru punya evaluasi DRAFT (belum
+    // disetujui) tidak boleh diperingkat — agregat skornya belum sah.
+    const ranked = unitMetrics.filter((u) => u.approvedEvCount > 0);
     const sorted = [...ranked].sort((a, b) => b.avgScore - a.avgScore);
 
     return {
@@ -106,7 +120,7 @@ export class PKAnalyticsService {
       // Unit yang belum punya evaluasi disetujui tetap dilaporkan, tetapi
       // terpisah — "belum ada data" adalah temuan tersendiri, bukan nilai nol.
       unitsWithoutApprovedPk: unitMetrics
-        .filter((u) => u.evCount === 0)
+        .filter((u) => u.approvedEvCount === 0)
         .map((u) => ({ id: u.id, name: u.name })),
       allUnits: unitMetrics,
     };

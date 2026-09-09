@@ -479,6 +479,57 @@ export class PerencanaanService {
     });
   }
 
+  /**
+   * Resolve an objective to its parent plan's write-auth payload
+   * ({ id, unitId, status }). Used by the controller to gate subrecord
+   * mutations against the same write-access + DRAFT rules as the plan itself.
+   */
+  async getObjectivePlanForAuth(
+    objectiveId: string
+  ): Promise<{ id: string; unitId: string | null; status: string } | null> {
+    const objective = await prisma.planObjective.findUnique({
+      where: { id: objectiveId },
+      select: { plan: { select: { id: true, unitId: true, status: true } } },
+    });
+    return objective?.plan ?? null;
+  }
+
+  /**
+   * Resolve an indicator to its parent plan's write-auth payload. An
+   * indicator hangs off EITHER an objective (IUP/IKU) or an activity
+   * (IKP/IKK) — trace whichever branch is set.
+   */
+  async getIndicatorPlanForAuth(
+    indicatorId: string
+  ): Promise<{ id: string; unitId: string | null; status: string } | null> {
+    const indicator = await prisma.planIndicator.findUnique({
+      where: { id: indicatorId },
+      select: { objectiveId: true, activityId: true },
+    });
+    if (!indicator) return null;
+    if (indicator.objectiveId) return this.getObjectivePlanForAuth(indicator.objectiveId);
+    if (indicator.activityId) return this.getActivityPlanForAuth(indicator.activityId);
+    return null;
+  }
+
+  /**
+   * Resolve an activity to its parent plan's write-auth payload. Walk the
+   * parent chain (Kegiatan → Program) until an objective is found, then
+   * resolve that objective's plan.
+   */
+  async getActivityPlanForAuth(
+    activityId: string
+  ): Promise<{ id: string; unitId: string | null; status: string } | null> {
+    const activity = await prisma.planActivity.findUnique({
+      where: { id: activityId },
+      select: { objectiveId: true, parentId: true },
+    });
+    if (!activity) return null;
+    if (activity.objectiveId) return this.getObjectivePlanForAuth(activity.objectiveId);
+    if (activity.parentId) return this.getActivityPlanForAuth(activity.parentId);
+    return null;
+  }
+
   async updatePlan(id: string, data: Prisma.StrategicPlanUpdateInput) {
     return prisma.strategicPlan.update({
       where: { id },

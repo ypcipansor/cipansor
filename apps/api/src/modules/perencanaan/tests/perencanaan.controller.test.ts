@@ -8,11 +8,20 @@ vi.mock('@/utils/resolve-unit-id', () => ({
 vi.mock('../perencanaan.service', () => ({
   perencanaanService: {
     getPlanForAuth: vi.fn(),
+    getObjectivePlanForAuth: vi.fn(),
+    getIndicatorPlanForAuth: vi.fn(),
+    getActivityPlanForAuth: vi.fn(),
     createPlan: vi.fn(),
     updatePlan: vi.fn(),
     createObjective: vi.fn(),
     updateObjective: vi.fn(),
     deleteObjective: vi.fn(),
+    createIndicator: vi.fn(),
+    updateIndicator: vi.fn(),
+    deleteIndicator: vi.fn(),
+    createActivity: vi.fn(),
+    updateActivity: vi.fn(),
+    deleteActivity: vi.fn(),
   },
 }));
 
@@ -149,5 +158,172 @@ describe('perencanaanController.createObjective — write access', () => {
     await run(perencanaanController.createObjective, req, res);
 
     expect(perencanaanService.createObjective).toHaveBeenCalledTimes(1);
+  });
+});
+describe('perencanaanController — write guard pada subrecord lintas unit (Bug regresi #1)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const planSmpit = { id: 'plan-smpit', unitId: 'unit-smpit', status: 'DRAFT' } as any;
+  const planApproved = { id: 'plan-smpit', unitId: 'unit-smpit', status: 'APPROVED' } as any;
+  const planSdit = { id: 'plan-sdit', unitId: 'unit-sdit', status: 'DRAFT' } as any;
+
+  const crossUnitUser = {
+    sub: 'user-1',
+    role: 'TEACHER',
+    roleCode: 'SDIT_GURU',
+    unitId: 'unit-sdit',
+  } as any;
+  const ownUnitAdmin = {
+    sub: 'user-1',
+    role: 'UNIT_ADMIN',
+    roleCode: 'SDIT_ADMIN',
+    unitId: 'unit-sdit',
+  } as any;
+
+  it('menolak updateObjective pada plan unit lain (103: cross-unit)', async () => {
+    vi.mocked(perencanaanService.getObjectivePlanForAuth).mockResolvedValue(planSmpit);
+    const { req, res } = mockReqRes({
+      user: crossUnitUser,
+      params: { id: 'obj-smpit' },
+      body: { title: 'Ubah sasaran unit lain' },
+    });
+
+    await expect(run(perencanaanController.updateObjective, req, res)).rejects.toThrowError(
+      /403|forbidden|Access denied/i,
+    );
+    expect(perencanaanService.updateObjective).not.toHaveBeenCalled();
+  });
+
+  it('menolak updateObjective pada plan yang bukan DRAFT', async () => {
+    vi.mocked(perencanaanService.getObjectivePlanForAuth).mockResolvedValue(planApproved);
+    const { req, res } = mockReqRes({
+      user: ownUnitAdmin,
+      params: { id: 'obj-smpit' },
+      body: { title: 'Ubah sasaran plan approved' },
+    });
+
+    await expect(run(perencanaanController.updateObjective, req, res)).rejects.toThrowError(
+      /DRAFT/i,
+    );
+    expect(perencanaanService.updateObjective).not.toHaveBeenCalled();
+  });
+
+  it('mengizinkan updateObjective untuk admin unit pada plan unitnya sendiri yang DRAFT', async () => {
+    vi.mocked(perencanaanService.getObjectivePlanForAuth).mockResolvedValue(planSdit);
+    vi.mocked(perencanaanService.updateObjective).mockResolvedValue({ id: 'obj-1' } as any);
+    const { req, res } = mockReqRes({
+      user: ownUnitAdmin,
+      params: { id: 'obj-1' },
+      body: { title: 'Sasaran OK' },
+    });
+
+    await run(perencanaanController.updateObjective, req, res);
+    expect(perencanaanService.updateObjective).toHaveBeenCalledTimes(1);
+  });
+
+  it('menolak deleteObjective pada plan unit lain', async () => {
+    vi.mocked(perencanaanService.getObjectivePlanForAuth).mockResolvedValue(planSmpit);
+    const { req, res } = mockReqRes({
+      user: crossUnitUser,
+      params: { id: 'obj-smpit' },
+    });
+
+    await expect(run(perencanaanController.deleteObjective, req, res)).rejects.toThrowError(
+      /403|forbidden|Access denied/i,
+    );
+    expect(perencanaanService.deleteObjective).not.toHaveBeenCalled();
+  });
+
+  it('menolak createIndicator pada objective milik unit lain', async () => {
+    vi.mocked(perencanaanService.getObjectivePlanForAuth).mockResolvedValue(planSmpit);
+    const { req, res } = mockReqRes({
+      user: crossUnitUser,
+      body: { objectiveId: 'obj-smpit', name: 'Indikator X', unit: '%', targetValue: 90 },
+    });
+
+    await expect(run(perencanaanController.createIndicator, req, res)).rejects.toThrowError(
+      /403|forbidden|Access denied/i,
+    );
+    expect(perencanaanService.createIndicator).not.toHaveBeenCalled();
+  });
+
+  it('menolak updateIndicator pada indikator milik unit lain', async () => {
+    vi.mocked(perencanaanService.getIndicatorPlanForAuth).mockResolvedValue(planSmpit);
+    const { req, res } = mockReqRes({
+      user: crossUnitUser,
+      params: { id: 'ind-smpit' },
+      body: { name: 'Ubah indikator unit lain' },
+    });
+
+    await expect(run(perencanaanController.updateIndicator, req, res)).rejects.toThrowError(
+      /403|forbidden|Access denied/i,
+    );
+    expect(perencanaanService.updateIndicator).not.toHaveBeenCalled();
+  });
+
+  it('mengizinkan updateIndicator untuk admin unit pada plan unitnya sendiri yang DRAFT', async () => {
+    vi.mocked(perencanaanService.getIndicatorPlanForAuth).mockResolvedValue(planSdit);
+    vi.mocked(perencanaanService.updateIndicator).mockResolvedValue({ id: 'ind-1' } as any);
+    const { req, res } = mockReqRes({
+      user: ownUnitAdmin,
+      params: { id: 'ind-1' },
+      body: { name: 'Indikator OK' },
+    });
+
+    await run(perencanaanController.updateIndicator, req, res);
+    expect(perencanaanService.updateIndicator).toHaveBeenCalledTimes(1);
+  });
+
+  it('menolak deleteIndicator pada indikator milik unit lain', async () => {
+    vi.mocked(perencanaanService.getIndicatorPlanForAuth).mockResolvedValue(planSmpit);
+    const { req, res } = mockReqRes({
+      user: crossUnitUser,
+      params: { id: 'ind-smpit' },
+    });
+
+    await expect(run(perencanaanController.deleteIndicator, req, res)).rejects.toThrowError(
+      /403|forbidden|Access denied/i,
+    );
+    expect(perencanaanService.deleteIndicator).not.toHaveBeenCalled();
+  });
+
+  it('menolak createActivity pada objective milik unit lain', async () => {
+    vi.mocked(perencanaanService.getObjectivePlanForAuth).mockResolvedValue(planSmpit);
+    const { req, res } = mockReqRes({
+      user: crossUnitUser,
+      body: { objectiveId: 'obj-smpit', title: 'Kegiatan X' },
+    });
+
+    await expect(run(perencanaanController.createActivity, req, res)).rejects.toThrowError(
+      /403|forbidden|Access denied/i,
+    );
+    expect(perencanaanService.createActivity).not.toHaveBeenCalled();
+  });
+
+  it('menolak updateActivity pada aktivitas milik unit lain', async () => {
+    vi.mocked(perencanaanService.getActivityPlanForAuth).mockResolvedValue(planSmpit);
+    const { req, res } = mockReqRes({
+      user: crossUnitUser,
+      params: { id: 'act-smpit' },
+      body: { title: 'Ubah kegiatan unit lain' },
+    });
+
+    await expect(run(perencanaanController.updateActivity, req, res)).rejects.toThrowError(
+      /403|forbidden|Access denied/i,
+    );
+    expect(perencanaanService.updateActivity).not.toHaveBeenCalled();
+  });
+
+  it('menolak deleteActivity pada aktivitas milik unit lain', async () => {
+    vi.mocked(perencanaanService.getActivityPlanForAuth).mockResolvedValue(planSmpit);
+    const { req, res } = mockReqRes({
+      user: crossUnitUser,
+      params: { id: 'act-smpit' },
+    });
+
+    await expect(run(perencanaanController.deleteActivity, req, res)).rejects.toThrowError(
+      /403|forbidden|Access denied/i,
+    );
+    expect(perencanaanService.deleteActivity).not.toHaveBeenCalled();
   });
 });

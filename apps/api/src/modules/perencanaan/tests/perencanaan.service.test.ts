@@ -24,11 +24,13 @@ vi.mock('@/lib/prisma', () => ({
       create: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
+      findUnique: vi.fn(),
     },
     planActivity: {
       create: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
+      findUnique: vi.fn(),
     },
     journalEntry: {
       aggregate: vi.fn(),
@@ -587,4 +589,73 @@ describe('Perencanaan Service', () => {
       expect(result).toEqual({ planId: 'plan-1', trend: [] });
     });
   });
+
+  describe('Plan resolution helpers (getXPlanForAuth)', () => {
+    const planPayload = { id: 'plan-1', unitId: 'unit-1', status: 'DRAFT' };
+
+    it('getObjectivePlanForAuth returns the parent plan payload', async () => {
+      vi.mocked(prisma.planObjective.findUnique).mockResolvedValue({
+        plan: planPayload,
+      } as any);
+      const result = await perencanaanService.getObjectivePlanForAuth('obj-1');
+      expect(result).toEqual(planPayload);
+      expect(prisma.planObjective.findUnique).toHaveBeenCalledWith({
+        where: { id: 'obj-1' },
+        select: { plan: { select: { id: true, unitId: true, status: true } } },
+      });
+    });
+
+    it('getObjectivePlanForAuth returns null when the objective is missing', async () => {
+      vi.mocked(prisma.planObjective.findUnique).mockResolvedValue(null);
+      const result = await perencanaanService.getObjectivePlanForAuth('obj-unknown');
+      expect(result).toBeNull();
+    });
+
+    it('getIndicatorPlanForAuth traces an objective-owned indicator', async () => {
+      vi.mocked(prisma.planIndicator.findUnique).mockResolvedValue({
+        objectiveId: 'obj-1',
+        activityId: null,
+      } as any);
+      vi.mocked(prisma.planObjective.findUnique).mockResolvedValue({
+        plan: planPayload,
+      } as any);
+      const result = await perencanaanService.getIndicatorPlanForAuth('ind-1');
+      expect(result).toEqual(planPayload);
+    });
+
+    it('getIndicatorPlanForAuth traces an activity-owned indicator', async () => {
+      vi.mocked(prisma.planIndicator.findUnique).mockResolvedValue({
+        objectiveId: null,
+        activityId: 'act-1',
+      } as any);
+      vi.mocked(prisma.planActivity.findUnique).mockResolvedValue({
+        objectiveId: 'obj-1',
+        parentId: null,
+      } as any);
+      vi.mocked(prisma.planObjective.findUnique).mockResolvedValue({
+        plan: planPayload,
+      } as any);
+      const result = await perencanaanService.getIndicatorPlanForAuth('ind-1');
+      expect(result).toEqual(planPayload);
+    });
+
+    it('getActivityPlanForAuth walks the parent chain up to the plan', async () => {
+      // Kegiatan nested under a Program (objectiveId null → parentId).
+      vi.mocked(prisma.planActivity.findUnique)
+        .mockResolvedValueOnce({ objectiveId: null, parentId: 'act-parent' } as any)
+        .mockResolvedValueOnce({ objectiveId: 'obj-1', parentId: null } as any);
+      vi.mocked(prisma.planObjective.findUnique).mockResolvedValue({
+        plan: planPayload,
+      } as any);
+      const result = await perencanaanService.getActivityPlanForAuth('act-child');
+      expect(result).toEqual(planPayload);
+    });
+
+    it('getIndicatorPlanForAuth returns null when the indicator is missing', async () => {
+      vi.mocked(prisma.planIndicator.findUnique).mockResolvedValue(null);
+      const result = await perencanaanService.getIndicatorPlanForAuth('ind-unknown');
+      expect(result).toBeNull();
+    });
+  });
+
 });

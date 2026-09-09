@@ -53,6 +53,23 @@ function canWritePlan(planUnitId: string | null, user?: PlanUser): boolean {
   return isPrivileged(user?.role) || planUnitId === user?.unitId;
 }
 
+type PlanAuth = { id: string; unitId: string | null; status: string };
+
+/**
+ * Shared write gate for subrecord mutations (objective/indicator/activity).
+ * Mirrors createObjective's guard: the caller must be able to write the parent
+ * plan, and the plan must still be DRAFT. Without this a teacher/staff member
+ * who knows a subrecord id could edit or delete another unit's (or the
+ * yayasan's) objectives, indicators and activities.
+ */
+function requireWritableDraftPlan(plan: PlanAuth | null | undefined, user?: PlanUser) {
+  if (!plan) throw Errors.notFound('Plan not found');
+  if (!canWritePlan(plan.unitId, user)) throw Errors.forbidden('Access denied');
+  if (plan.status !== 'DRAFT') {
+    throw Errors.badRequest('Hanya dapat mengubah subrecord pada rencana berstatus DRAFT');
+  }
+}
+
 // ==================== PLANS ====================
 
 export const listPlans = asyncHandler(async (req: Request, res: Response) => {
@@ -233,12 +250,16 @@ export const createObjective = asyncHandler(async (req: Request, res: Response) 
 });
 
 export const updateObjective = asyncHandler(async (req: Request, res: Response) => {
+  const plan = await perencanaanService.getObjectivePlanForAuth(req.params.id);
+  requireWritableDraftPlan(plan, req.user);
   const body = updateObjectiveSchema.parse(req.body);
   const objective = await perencanaanService.updateObjective(req.params.id, body);
   res.json({ success: true, data: objective });
 });
 
 export const deleteObjective = asyncHandler(async (req: Request, res: Response) => {
+  const plan = await perencanaanService.getObjectivePlanForAuth(req.params.id);
+  requireWritableDraftPlan(plan, req.user);
   await perencanaanService.deleteObjective(req.params.id);
   res.json({ success: true, message: 'Objective deleted' });
 });
@@ -247,17 +268,23 @@ export const deleteObjective = asyncHandler(async (req: Request, res: Response) 
 
 export const createIndicator = asyncHandler(async (req: Request, res: Response) => {
   const body = createIndicatorSchema.parse(req.body);
+  const plan = await perencanaanService.getObjectivePlanForAuth(body.objectiveId);
+  requireWritableDraftPlan(plan, req.user);
   const indicator = await perencanaanService.createIndicator(body);
   res.status(201).json({ success: true, data: indicator });
 });
 
 export const updateIndicator = asyncHandler(async (req: Request, res: Response) => {
+  const plan = await perencanaanService.getIndicatorPlanForAuth(req.params.id);
+  requireWritableDraftPlan(plan, req.user);
   const body = updateIndicatorSchema.parse(req.body);
   const indicator = await perencanaanService.updateIndicator(req.params.id, body);
   res.json({ success: true, data: indicator });
 });
 
 export const deleteIndicator = asyncHandler(async (req: Request, res: Response) => {
+  const plan = await perencanaanService.getIndicatorPlanForAuth(req.params.id);
+  requireWritableDraftPlan(plan, req.user);
   await perencanaanService.deleteIndicator(req.params.id);
   res.json({ success: true, message: 'Indicator deleted' });
 });
@@ -266,17 +293,23 @@ export const deleteIndicator = asyncHandler(async (req: Request, res: Response) 
 
 export const createActivity = asyncHandler(async (req: Request, res: Response) => {
   const body = createActivitySchema.parse(req.body);
+  const plan = await perencanaanService.getObjectivePlanForAuth(body.objectiveId);
+  requireWritableDraftPlan(plan, req.user);
   const activity = await perencanaanService.createActivity(body);
   res.status(201).json({ success: true, data: activity });
 });
 
 export const updateActivity = asyncHandler(async (req: Request, res: Response) => {
+  const plan = await perencanaanService.getActivityPlanForAuth(req.params.id);
+  requireWritableDraftPlan(plan, req.user);
   const body = updateActivitySchema.parse(req.body);
   const activity = await perencanaanService.updateActivity(req.params.id, body);
   res.json({ success: true, data: activity });
 });
 
 export const deleteActivity = asyncHandler(async (req: Request, res: Response) => {
+  const plan = await perencanaanService.getActivityPlanForAuth(req.params.id);
+  requireWritableDraftPlan(plan, req.user);
   await perencanaanService.deleteActivity(req.params.id);
   res.json({ success: true, message: 'Activity deleted' });
 });

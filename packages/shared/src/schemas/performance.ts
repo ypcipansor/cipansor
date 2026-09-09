@@ -24,7 +24,9 @@ export const createEvaluationSchema = z.object({
 
 export const updateIndicatorRealizationSchema = z.object({
   indicatorId: z.string().uuid(),
-  realization: z.number(),
+  // Realisasi kinerja tidak pernah bernilai negatif (indikator target selalu
+  // >= 0; capaian negatif menghasilkan skor negatif yang tidak sah).
+  realization: z.number().min(0),
   activities: z.string().optional(),
 });
 

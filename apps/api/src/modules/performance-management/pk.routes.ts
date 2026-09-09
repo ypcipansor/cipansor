@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authenticate, authorize } from '@/middleware/auth';
-import { RoleCode, UserRole } from '@prisma/client';
+import { RoleCode } from '@prisma/client';
 import { STAFF_ROLE_CODES } from './staff-roles';
 import * as pkController from './pk.controller';
 import * as evalController from './evaluation.controller';
