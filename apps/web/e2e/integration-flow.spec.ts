@@ -58,11 +58,12 @@ test.describe("Integrated School Management Flow", () => {
     await loginAs(page, "superAdmin");
     await page.goto("/hr/talenta");
 
-    // Dikurung dan dibatasi ke isi halaman: `text=` tanpa kutip adalah mesin
-    // substring, jadi begitu "Matriks Talenta" juga menjadi label submenu di
-    // bilah sisi, selektor ini cocok pada keduanya.
+    // Dikurung ke konten landmark (`main`), sehingga label submenu serupa di
+    // bilah sisi tidak ikut cocok. Judul di konten sebenarnya adalah
+    // "Matriks Talenta (9-Box Grid)", jadi pencocokan harus substring (bukan
+    // exact) agar tidak terlewat.
     await expect(
-      page.getByRole("main").getByText("Matriks Talenta", { exact: true }).first(),
+      page.getByRole("main").getByText("Matriks Talenta", { exact: false }).first(),
     ).toBeVisible();
 
     // Scope to the content landmark and match the initials exactly. `text=UA`
