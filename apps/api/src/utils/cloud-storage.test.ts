@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { uploadToCloudStorage, generateSasUrl, getStorageConfig } from './cloud-storage';
+import {
+  uploadToCloudStorage,
+  generateSasUrl,
+  getStorageConfig,
+  parseBlobUrl,
+} from './cloud-storage';
 
 const {
   mockUploadFile,
@@ -179,5 +184,37 @@ describe('Cloud Storage Utility (Azure Blob Storage Provider)', () => {
     expect(config.primaryProvider).toBe('azure');
     expect(config.azureConfigured).toBe(true);
     expect(config.azureAccount).toBe('cipansorstore');
+  });
+});
+
+describe('parseBlobUrl', () => {
+  it('parses a raw blob URL into container and blob', () => {
+    expect(
+      parseBlobUrl('https://acct.blob.core.windows.net/e-office-documents/naskah.pdf')
+    ).toEqual({ containerName: 'e-office-documents', blobName: 'naskah.pdf' });
+  });
+
+  it('decodes URL-encoded container/blob names', () => {
+    expect(
+      parseBlobUrl('https://acct.blob.core.windows.net/student-documents/foto%20siswa%2F1.jpg')
+    ).toEqual({ containerName: 'student-documents', blobName: 'foto siswa/1.jpg' });
+  });
+
+  it('ignores a query string on the blob URL', () => {
+    expect(
+      parseBlobUrl('https://acct.blob.core.windows.net/e-office-documents/a.pdf?sv=1&sig=x')
+    ).toEqual({ containerName: 'e-office-documents', blobName: 'a.pdf' });
+  });
+
+  it('returns null for a local /uploads URL', () => {
+    expect(parseBlobUrl('https://cipansor.or.id/uploads/a.pdf')).toBeNull();
+  });
+
+  it('returns null for a non-blob external URL', () => {
+    expect(parseBlobUrl('https://example.com/a.pdf')).toBeNull();
+  });
+
+  it('returns null for a malformed URL', () => {
+    expect(parseBlobUrl('not-a-url')).toBeNull();
   });
 });

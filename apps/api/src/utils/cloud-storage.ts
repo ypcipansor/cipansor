@@ -156,3 +156,22 @@ export function getStorageConfig() {
     },
   };
 }
+/**
+ * Parse a raw Blob Storage URL into its container and blob name.
+ *
+ * Format: `https://<account>.blob.core.windows.net/<container>/<blob-path>`
+ * Used by the on-demand SAS endpoint to translate a persisted stable URL
+ * (no SAS) back into the container/blob needed to mint a fresh link.
+ */
+export function parseBlobUrl(
+  url: string
+): { containerName: string; blobName: string } | null {
+  // Container: up to the first `/` or `?`; blob: everything after the next `/`
+  // up to any query string or fragment that a SAS may have carried.
+  const m = url.match(/^https?:\/\/[^/]+\.blob\.core\.windows\.net\/([^/?]+)\/([^?#]+)/);
+  if (!m) return null;
+  const containerName = decodeURIComponent(m[1]);
+  const blobName = decodeURIComponent(m[2]);
+  if (!containerName || !blobName) return null;
+  return { containerName, blobName };
+}

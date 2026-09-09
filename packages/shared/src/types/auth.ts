@@ -123,10 +123,12 @@ export interface AssignRoleRequest {
   isPrimary?: boolean;
 }
 
-export interface SSOLoginRequest {
-  provider: 'google' | 'microsoft';
-  idToken: string;
-}
+/**
+ * Single SSO-login contract, derived from the shared Zod schema in
+ * `../schemas/auth.ts` so the backend edge and the web client can never
+ * drift apart.
+ */
+export type SSOLoginRequest = import("../schemas/auth").SSOLoginInput;
 
 export interface SSOConfigResponse {
   domain: string;

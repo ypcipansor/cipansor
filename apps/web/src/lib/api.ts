@@ -379,22 +379,49 @@ export const tahfidzApi = {
 };
 
 // General Upload API
+//
+// The upload response deliberately separates the STABLE reference from any
+// TEMPORARY access link: consumers must PERSIST `url` (the raw blob URL for
+// Azure, or a `/uploads/...` path for local storage — neither carries an
+// expiring SAS), and use `downloadUrl` only to open the file immediately after
+// upload. To display or download a persisted private reference later, call
+// `sasUrl` to mint a fresh SAS on demand.
+export interface UploadFileResult {
+  /** Stable reference to persist — never a short-lived SAS. */
+  url: string;
+  /** Temporary SAS to open the just-uploaded file. Only present for private Azure containers. */
+  downloadUrl?: string;
+  /** Azure container the blob lives in (present only for Azure uploads). */
+  containerName?: string;
+  /** Azure blob name within the container (present only for Azure uploads). */
+  blobName?: string;
+  filename: string;
+  mimetype: string;
+  size: number;
+}
+
 export const uploadApi = {
   uploadFile: async (file: File) => {
     const formData = new FormData();
     formData.append("file", file);
-    return api.post<
-      ApiResponse<{
-        url: string;
-        filename: string;
-        mimetype: string;
-        size: number;
-      }>
-    >("/upload", formData, {
+    return api.post<ApiResponse<UploadFileResult>>("/upload", formData, {
       headers: {
         "Content-Type": "multipart/form-data",
       },
     });
+  },
+  /**
+   * Mint a fresh short-lived SAS for a persisted stable URL (the raw blob URL
+   * stored via {@link uploadFile}). Private blobs return 403 without a SAS, and
+   * any SAS persisted earlier has expired — so call this at display/download
+   * time. Local /uploads URLs and public blob URLs return `{ url }` unchanged
+   * (no `downloadUrl`).
+   */
+  sasUrl: async (url: string) => {
+    return api.post<ApiResponse<{ url: string; downloadUrl?: string }>>(
+      "/upload/sas",
+      { url },
+    );
   },
 };
 
