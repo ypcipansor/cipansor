@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { PaymentStatus, PaymentMethod } from '@prisma/client';
+import { partialUpdateSchema } from '@/lib/partial';
 
 // =====================================
 // PAYMENT TYPE SCHEMAS
@@ -16,7 +17,7 @@ export const createPaymentTypeSchema = z.object({
   accountId: z.string().uuid('Invalid account ID').optional(),
 });
 
-export const updatePaymentTypeSchema = createPaymentTypeSchema.partial().omit({
+export const updatePaymentTypeSchema = partialUpdateSchema(createPaymentTypeSchema).omit({
   unitId: true,
 });
 
@@ -126,7 +127,7 @@ export const createAccountSchema = z.object({
   isActive: z.boolean().default(true),
 });
 
-export const updateAccountSchema = createAccountSchema.partial();
+export const updateAccountSchema = partialUpdateSchema(createAccountSchema);
 
 export const saveReportNoteSchema = z.object({
   unitId: z.string().uuid(),

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { BookStatus, BorrowingStatus } from '@cipansor/shared';
+import { partialUpdateSchema } from '@/lib/partial';
 
 // Book Category schemas
 export const createBookCategorySchema = z.object({
@@ -32,7 +33,7 @@ export const createBookSchema = z.object({
   fileType: z.string().max(20).optional(),
 });
 
-export const updateBookSchema = createBookSchema.partial().omit({ unitId: true });
+export const updateBookSchema = partialUpdateSchema(createBookSchema).omit({ unitId: true });
 
 export const queryBookSchema = z.object({
   page: z.coerce.number().int().positive().default(1),

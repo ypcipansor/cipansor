@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { partialUpdateSchema } from '@/lib/partial';
 
 // ==================== ALUMNI ====================
 
@@ -24,7 +25,7 @@ export const createAlumniSchema = z.object({
   notes: z.string().optional(),
 });
 
-export const updateAlumniSchema = createAlumniSchema.partial();
+export const updateAlumniSchema = partialUpdateSchema(createAlumniSchema);
 
 export const alumniQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
@@ -55,7 +56,7 @@ export const createCareerSchema = z.object({
   description: z.string().optional(),
 });
 
-export const updateCareerSchema = createCareerSchema.partial();
+export const updateCareerSchema = partialUpdateSchema(createCareerSchema);
 
 // ==================== EDUCATION ====================
 
@@ -74,7 +75,7 @@ export const createEducationSchema = z.object({
   isInternational: z.boolean().default(false),
 });
 
-export const updateEducationSchema = createEducationSchema.partial();
+export const updateEducationSchema = partialUpdateSchema(createEducationSchema);
 
 // ==================== DONATION ====================
 
@@ -90,7 +91,7 @@ export const createDonationSchema = z.object({
   notes: z.string().optional(),
 });
 
-export const updateDonationSchema = createDonationSchema.partial();
+export const updateDonationSchema = partialUpdateSchema(createDonationSchema);
 
 export const donationQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
@@ -120,7 +121,7 @@ export const createEventSchema = z.object({
   notes: z.string().optional(),
 });
 
-export const updateEventSchema = createEventSchema.partial().extend({
+export const updateEventSchema = partialUpdateSchema(createEventSchema).extend({
   status: z.enum(['upcoming', 'ongoing', 'completed', 'cancelled']).optional(),
 });
 

@@ -60,7 +60,7 @@ import { useAddDailyReportPhoto } from "@/hooks/use-daily-report";
 const dailyReportSchema = z.object({
   studentId: z.string().min(1, "Siswa wajib dipilih"),
   classId: z.string().min(1, "Kelas wajib dipilih"),
-  reportDate: z.date({ required_error: "Tanggal wajib diisi" }),
+  reportDate: z.date({ error: "Tanggal wajib diisi" }),
   morningMood: z.string().optional(),
   healthNotes: z.string().optional(),
   temperature: z.number().optional(),

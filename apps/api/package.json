@@ -55,7 +55,7 @@
     "swagger-ui-express": "^5.0.1",
     "twilio": "6.1.0",
     "winston": "^3.11.0",
-    "zod": "^3.22.4",
+    "zod": "^4.5.4",
     "@pdf-lib/fontkit": "^1.1.1"
   },
   "devDependencies": {

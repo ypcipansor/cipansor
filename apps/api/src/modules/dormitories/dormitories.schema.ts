@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { Gender } from '@prisma/client';
+import { partialUpdateSchema } from '@/lib/partial';
 
 // =====================================
 // DORMITORY SCHEMAS
@@ -46,7 +47,7 @@ export const createRoomSchema = z.object({
   isActive: z.boolean().default(true),
 });
 
-export const updateRoomSchema = createRoomSchema.partial().omit({ dormitoryId: true });
+export const updateRoomSchema = partialUpdateSchema(createRoomSchema).omit({ dormitoryId: true });
 
 export const queryRoomSchema = z.object({
   dormitoryId: z.string().uuid().optional(),

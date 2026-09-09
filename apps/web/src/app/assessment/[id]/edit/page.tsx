@@ -38,7 +38,7 @@ import {
 import { useClasses, useSubjects, useAcademicYears } from "@/hooks";
 import { ArrowLeft, Save, Loader2, AlertCircle } from "lucide-react";
 import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
 import { toast } from "sonner";
 
@@ -55,7 +55,7 @@ const assessmentSchema = z.object({
       "TAHFIDZ_TEST",
     ],
     {
-      required_error: "Tipe penilaian wajib dipilih",
+      error: "Tipe penilaian wajib dipilih",
     },
   ),
   classId: z.string().min(1, "Kelas wajib dipilih"),
@@ -63,7 +63,7 @@ const assessmentSchema = z.object({
   academicYearId: z.string().min(1, "Tahun ajaran wajib dipilih"),
   semester: z.coerce.number().min(1).max(2, "Semester harus 1 atau 2"),
   scheduledAt: z.string({
-    required_error: "Tanggal wajib diisi",
+    error: "Tanggal wajib diisi",
   }),
   maxScore: z.coerce
     .number()

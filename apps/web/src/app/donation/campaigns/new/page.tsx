@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
 import { format } from "date-fns";
 import { id as localeId } from "date-fns/locale";
@@ -48,7 +48,7 @@ const campaignSchema = z.object({
   description: z.string().optional(),
   targetAmount: z.coerce.number().min(100000, "Target minimal Rp 100.000"),
   unitId: z.string().optional(),
-  startDate: z.date({ required_error: "Pilih tanggal mulai" }),
+  startDate: z.date({ error: "Pilih tanggal mulai" }),
   endDate: z.date().optional(),
   status: z.string(),
   imageUrl: z.string().url().optional().or(z.literal("")),
