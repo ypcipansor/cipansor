@@ -1,0 +1,36 @@
+import { describe, expect, it } from 'vitest';
+import { updateSalaryComponentSchema, updateEmployeeSalarySchema } from '../payroll.schema';
+
+describe('payroll update schemas (Zod 4 partial-overwrite regression)', () => {
+  describe('updateSalaryComponentSchema', () => {
+    it('does not leak isFixed/isPercentage/isTaxable/isActive/sortOrder defaults when only name is sent', () => {
+      const parsed = updateSalaryComponentSchema.parse({ name: 'Tunjangan' });
+      expect(parsed).toEqual({ name: 'Tunjangan' });
+    });
+
+    it('parses an empty object to only the keys actually sent', () => {
+      expect(updateSalaryComponentSchema.parse({})).toEqual({});
+    });
+
+    it('keeps explicitly provided defaulted fields', () => {
+      const parsed = updateSalaryComponentSchema.parse({ isFixed: false, sortOrder: 5 });
+      expect(parsed).toEqual({ isFixed: false, sortOrder: 5 });
+    });
+  });
+
+  describe('updateEmployeeSalarySchema', () => {
+    it('does not leak taxStatus default when only baseSalary is sent', () => {
+      const parsed = updateEmployeeSalarySchema.parse({ baseSalary: 5000000 });
+      expect(parsed).toEqual({ baseSalary: 5000000 });
+    });
+
+    it('parses an empty object to only the keys actually sent', () => {
+      expect(updateEmployeeSalarySchema.parse({})).toEqual({});
+    });
+
+    it('keeps explicitly provided defaulted fields', () => {
+      const parsed = updateEmployeeSalarySchema.parse({ taxStatus: 'K/1' });
+      expect(parsed).toEqual({ taxStatus: 'K/1' });
+    });
+  });
+});

@@ -58,7 +58,7 @@ const employeeSchema = z.object({
   nip: z.string().min(1, "NIP wajib diisi"),
   fullName: z.string().min(1, "Nama lengkap wajib diisi"),
   gender: z.enum(["MALE", "FEMALE"], {
-    required_error: "Jenis kelamin wajib dipilih",
+    error: "Jenis kelamin wajib dipilih",
   }),
   birthPlace: z.string().optional(),
   birthDate: z.string().optional(),

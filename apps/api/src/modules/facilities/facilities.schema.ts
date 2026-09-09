@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { BuildingCondition, LandOwnership } from '@prisma/client';
+import { partialUpdateSchema } from '@/lib/partial';
 
 // ==================== COMMON SCHEMAS ====================
 
@@ -118,7 +119,7 @@ export const createRoomSchema = z.object({
   isActive: z.boolean().default(true),
 });
 
-export const updateRoomSchema = createRoomSchema.partial().omit({ unitId: true });
+export const updateRoomSchema = partialUpdateSchema(createRoomSchema).omit({ unitId: true });
 
 export const roomIdParamSchema = z.object({
   id: z.string().uuid({ message: 'Room ID tidak valid' }),

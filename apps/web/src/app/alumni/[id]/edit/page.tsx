@@ -47,7 +47,7 @@ import { toast } from "sonner";
 const alumniSchema = z.object({
   fullName: z.string().min(1, "Nama lengkap wajib diisi"),
   gender: z.enum(["MALE", "FEMALE"], {
-    required_error: "Jenis kelamin wajib dipilih",
+    error: "Jenis kelamin wajib dipilih",
   }),
   birthPlace: z.string().min(1, "Tempat lahir wajib diisi"),
   birthDate: z.string().min(1, "Tanggal lahir wajib diisi"),

@@ -36,7 +36,7 @@ import { getEffectiveRole } from "@/lib/rbac";
 const studentSchema = z.object({
   nis: z.string().min(1, "NIS is required"),
   name: z.string().min(1, "Name is required"),
-  gender: z.enum(["MALE", "FEMALE"], { required_error: "Gender is required" }),
+  gender: z.enum(["MALE", "FEMALE"], { error: "Gender is required" }),
   birthDate: z.string().min(1, "Birth date is required"),
   birthPlace: z.string().min(1, "Birth place is required"),
   address: z.string().min(1, "Address is required"),

@@ -3,7 +3,7 @@
 import { use, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
 import { MainLayout } from "@/components/layout";
 import { PageHeader } from "@/components/shared";
@@ -56,10 +56,10 @@ import {
 
 const formSchema = z.object({
   examDate: z.date({
-    required_error: "Tanggal ujian wajib diisi",
+    error: "Tanggal ujian wajib diisi",
   }),
   examType: z.enum(["JUZ_30", "JUZ_PILIHAN", "FULL_QURAN", "CUSTOM"], {
-    required_error: "Tipe ujian wajib dipilih",
+    error: "Tipe ujian wajib dipilih",
   }),
   startSurah: z.string().optional(),
   startAyat: z.coerce.number().min(1).optional(),

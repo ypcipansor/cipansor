@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { MedicalRecordType, HealthStatus } from '@cipansor/shared';
+import { partialUpdateSchema } from '@/lib/partial';
 
 // Medical Record schemas
 export const createMedicalRecordSchema = z.object({
@@ -55,7 +56,7 @@ export const createMedicationSchema = z.object({
   notes: z.string().optional(),
 });
 
-export const updateMedicationSchema = createMedicationSchema.partial().omit({ unitId: true });
+export const updateMedicationSchema = partialUpdateSchema(createMedicationSchema).omit({ unitId: true });
 
 export const queryMedicationSchema = z.object({
   page: z.coerce.number().int().positive().default(1),

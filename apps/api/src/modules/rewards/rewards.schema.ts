@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { partialUpdateSchema } from '@/lib/partial';
 
 export const createRewardSchema = z.object({
   studentId: z.string().uuid('Invalid student ID'),
@@ -8,7 +9,7 @@ export const createRewardSchema = z.object({
   givenAt: z.string().datetime().optional(),
 });
 
-export const updateRewardSchema = createRewardSchema.partial().omit({
+export const updateRewardSchema = partialUpdateSchema(createRewardSchema).omit({
   studentId: true,
 });
 
