@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { partialUpdateSchema } from '@/lib/partial';
 
 // Subject schemas
 export const createSubjectSchema = z.object({
@@ -12,7 +13,7 @@ export const createSubjectSchema = z.object({
   isActive: z.boolean().default(true),
 });
 
-export const updateSubjectSchema = createSubjectSchema.partial();
+export const updateSubjectSchema = partialUpdateSchema(createSubjectSchema);
 
 export const subjectQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -48,7 +49,7 @@ export const createLessonPlanSchema = z.object({
   notes: z.string().optional(),
 });
 
-export const updateLessonPlanSchema = createLessonPlanSchema.partial();
+export const updateLessonPlanSchema = partialUpdateSchema(createLessonPlanSchema);
 
 export const lessonPlanQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -74,7 +75,7 @@ export const createScheduleSchema = z.object({
   isActive: z.boolean().default(true),
 });
 
-export const updateScheduleSchema = createScheduleSchema.partial();
+export const updateScheduleSchema = partialUpdateSchema(createScheduleSchema);
 
 export const scheduleQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
