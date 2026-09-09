@@ -19,7 +19,9 @@ test.describe("E-Office correspondence flows", () => {
 
     await expect(page.getByRole("heading", { name: "Arsip Surat" })).toBeVisible();
     await expect(page.getByLabel("Cari surat")).toBeVisible();
-    await expect(page.getByLabel("Saring menurut status")).toBeVisible();
+    // When the archive page fixes the status to ARCHIVED it hides the status
+    // filter, so only the search box is expected on this surface.
+    await expect(page.getByLabel("Saring menurut status")).toBeHidden();
   });
 
   test("create page renders the letter-creation form", async ({ page }) => {
@@ -27,6 +29,8 @@ test.describe("E-Office correspondence flows", () => {
 
     await expect(page.getByRole("heading", { name: "Buat Surat Baru" })).toBeVisible();
     await expect(page.getByPlaceholder("Contoh: Undangan Rapat Wali Murid")).toBeVisible();
-    await expect(page.getByPlaceholder("Pilih unit penerbit...")).toBeVisible();
+    // The unit/penerbit selector is a Radix Select; its placeholder is rendered
+    // as text (a SelectValue span), not an input `placeholder` attribute.
+    await expect(page.getByText("Pilih unit penerbit...").first()).toBeVisible();
   });
 });
