@@ -28,9 +28,10 @@ test.describe("E-Office correspondence flows", () => {
     await page.goto("/e-office/create");
 
     await expect(page.getByRole("heading", { name: "Buat Surat Baru" })).toBeVisible();
+    // The subject field is a real text input with a placeholder attribute, so
+    // asserting it proves the create form mounted. (The unit selector is a
+    // Radix Select that is pre-selected for the caller's unit, so its placeholder
+    // is intentionally not asserted.)
     await expect(page.getByPlaceholder("Contoh: Undangan Rapat Wali Murid")).toBeVisible();
-    // The unit/penerbit selector is a Radix Select; its placeholder is rendered
-    // as text (a SelectValue span), not an input `placeholder` attribute.
-    await expect(page.getByText("Pilih unit penerbit...").first()).toBeVisible();
   });
 });
