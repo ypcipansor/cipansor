@@ -100,7 +100,11 @@ export const graduate = asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params;
   const input: GraduateStudentInput = req.body;
 
-  const student = await studentService.graduateStudent(id, input);
+  const student = await studentService.graduateStudent(id, input, {
+    role: req.user!.role,
+    roleCode: req.user!.roleCode,
+    unitId: req.user!.unitId,
+  });
 
   res.json({
     success: true,
@@ -116,7 +120,11 @@ export const graduate = asyncHandler(async (req: Request, res: Response) => {
 export const update = asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params;
   const input: UpdateStudentInput = req.body;
-  const student = await studentService.update(id, input);
+  const student = await studentService.update(id, input, {
+    role: req.user!.role,
+    roleCode: req.user!.roleCode,
+    unitId: req.user!.unitId,
+  });
 
   res.json({
     success: true,

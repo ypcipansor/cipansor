@@ -300,7 +300,25 @@ describe('Admissions Service', () => {
       expect(prisma.user.create).not.toHaveBeenCalled();
     });
 
-    it('should scope the alumni re-enrollment lookup to the caller unit when not seesAllUnits', async () => {
+    it('should reject a caller pinned to a different unit than the admission period', async () => {
+      vi.mocked(prisma.registrant.findUnique).mockResolvedValue(buildRegistrant() as any);
+
+      // The admission period belongs to unit-1, but the caller is pinned to
+      // unit-2. They must not be able to drop a student into another unit.
+      const caller = { roleCode: 'SDIT_ADMIN', role: 'UNIT_ADMIN', unitId: 'unit-2' };
+      await expect(service.enrollRegistrant('reg-1', {}, caller)).rejects.toThrow(
+        'You can only enroll students into your own unit'
+      );
+      expect(prisma.student.create).not.toHaveBeenCalled();
+    });
+
+    it('should let a unit-pinned target-unit caller relink a cross-unit alumnus (progression)', async () => {
+      const alumnus = {
+        id: 'student-9',
+        userId: 'user-alum-1',
+        nisn: '0012345678',
+        nik: null,
+      };
       vi.mocked(prisma.registrant.findUnique).mockResolvedValue(
         buildRegistrant({
           isInternalAlumni: true,
@@ -309,30 +327,64 @@ describe('Admissions Service', () => {
           internalNik: null,
         }) as any
       );
-      // The alumnus is in another unit, so the scoped lookup must not match.
-      vi.mocked(prisma.student.findFirst).mockResolvedValue(null);
-      vi.mocked(prisma.user.create).mockResolvedValue({ id: 'user-1' } as any);
-      vi.mocked(prisma.student.create).mockResolvedValue({
-        id: 'student-1',
+      // The alumnus is still recorded in SD IT (another unit). Because `unitId`
+      // is the CURRENT active unit, an SMP IT caller re-enrolling them (the
+      // progression SD IT -> SMP IT) must be able to find them regardless of unit.
+      vi.mocked(prisma.student.findFirst).mockResolvedValue(alumnus as any);
+      vi.mocked(prisma.user.update).mockResolvedValue({ id: 'user-alum-1' } as any);
+      vi.mocked(prisma.student.update).mockResolvedValue({
+        id: 'student-9',
         nisn: '0012345678',
-        nik: '3201000000000001',
+        nik: null,
       } as any);
       vi.mocked(prisma.role.findFirst).mockResolvedValue({
         id: 'role-1',
         code: 'SMPIT_SISWA',
       } as any);
-      vi.mocked(prisma.userRoleAssignment.create).mockResolvedValue({ id: 'ura-1' } as any);
+      vi.mocked(prisma.role.findMany).mockResolvedValue([
+        { id: 'role-1', code: 'SMPIT_SISWA' },
+      ] as any);
+      vi.mocked(prisma.userRoleAssignment.upsert).mockResolvedValue({ id: 'ura-1' } as any);
 
       const caller = { roleCode: 'SMPIT_ADMIN', role: 'UNIT_ADMIN', unitId: 'unit-1' };
       await service.enrollRegistrant('reg-1', {}, caller);
 
-      // A unit-pinned caller may only relink alumni inside their own unit: the
-      // lookup must carry the caller's unitId so student-9 (in another unit)
-      // cannot be hijacked.
       const findFirstCall = (prisma.student.findFirst as any).mock.calls[0][0];
-      expect(findFirstCall.where).toEqual(
-        expect.objectContaining({ unitId: 'unit-1', status: 'alumni' })
+      expect(findFirstCall.where).toEqual(expect.objectContaining({ status: 'alumni' }));
+      expect(findFirstCall.where.unitId).toBeUndefined();
+      // The alumnus (recorded in the source unit) is relocated into the target unit.
+      expect(prisma.student.update).toHaveBeenCalled();
+      // The source unit's historical enrolment is preserved (marked completed,
+      // never deleted), so a per-unit report on the OLD unit still sees the
+      // record via the ClassEnrollment -> Class.unitId snapshot.
+      expect(prisma.classEnrollment.updateMany).toHaveBeenCalledWith({
+        where: { studentId: 'student-9', status: 'active' },
+        data: { status: 'completed' },
+      });
+    });
+
+    it('should NOT relink an ACTIVE student in another unit (no take-over)', async () => {
+      vi.mocked(prisma.registrant.findUnique).mockResolvedValue(
+        buildRegistrant({
+          isInternalAlumni: true,
+          previousStudentId: 'student-9',
+          internalNisn: null,
+          internalNik: null,
+        }) as any
       );
+      // The referenced record is ACTIVE (not alumni) — the status filter excludes
+      // it, so the lookup returns nothing and the flow must fail loudly rather
+      // than fall through to reuse/create another student.
+      vi.mocked(prisma.student.findFirst).mockResolvedValue(null);
+
+      const caller = { roleCode: 'SMPIT_ADMIN', role: 'UNIT_ADMIN', unitId: 'unit-1' };
+      await expect(service.enrollRegistrant('reg-1', {}, caller)).rejects.toThrow(
+        'Referenced internal alumnus record not found or student is not in alumni status'
+      );
+      const findFirstCall = (prisma.student.findFirst as any).mock.calls[0][0];
+      expect(findFirstCall.where).toEqual(expect.objectContaining({ status: 'alumni' }));
+      expect(prisma.user.create).not.toHaveBeenCalled();
+      expect(prisma.student.create).not.toHaveBeenCalled();
     });
 
     it('should let a foundation/cross-unit caller relink alumni across units', async () => {

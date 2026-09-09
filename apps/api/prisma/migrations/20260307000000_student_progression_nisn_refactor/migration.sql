@@ -19,15 +19,18 @@ BEGIN
   END IF;
 END $$;
 
--- Step 2: Backfill nisn if legacy nis is exactly 10 digits and nisn is currently null
-UPDATE "students"
-SET "nisn" = "legacy_nis"
-WHERE "nisn" IS NULL AND "legacy_nis" ~ '^[0-9]{10}$';
-
--- Backfill nik if legacy nis is exactly 16 digits and nik is currently null
-UPDATE "students"
-SET "nik" = "legacy_nis"
-WHERE "nik" IS NULL AND "legacy_nis" ~ '^[0-9]{16}$';
+-- Step 2: Archive the legacy NIS into legacy_nis (done above). We deliberately
+-- do NOT promote any value into the official `nisn`/`nik` columns based on digit
+-- length. Length is not proof that a number is the right life-long identifier:
+-- a 10-digit entry could be a mis-typed/incomplete value rather than the real
+-- NISN, and a 16-digit entry could be a family/NIK guess rather than the
+-- student's own NIK. Promoting either into a UNIQUE official column would lock
+-- in a false identity, and the index would then block the correct NISN/NIK from
+-- ever being recorded. `legacy_nis` stays as the auditable archive; `nisn`/`nik`
+-- are filled manually / through verified identity proof later. If an automated
+-- backfill is ever wanted, it must go through a SEPARATE candidate column (e.g.
+-- `nisn_candidate`) that is NOT unique and is NOT treated as an official
+-- identity.
 
 -- Step 3: Create audit table for recording any duplicate identifiers before nullifying
 CREATE TABLE IF NOT EXISTS "legacy_identifier_audit" (

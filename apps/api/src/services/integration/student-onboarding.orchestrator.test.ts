@@ -394,7 +394,7 @@ describe('StudentOnboardingOrchestrator', () => {
       ).rejects.toThrow('NISN atau NIK wajib diisi untuk menerima siswa');
     });
 
-    it('should scope the internal-alumni lookup to the caller unit (anti-hijack)', async () => {
+    it('should reject a caller pinned to a different unit than the target unit', async () => {
       const txMock = {
         registrant: {
           findUnique: vi.fn().mockResolvedValue({
@@ -409,6 +409,150 @@ describe('StudentOnboardingOrchestrator', () => {
             parentPhone: '08123456789',
             parentEmail: null,
             admissionPeriodId: 'period-1',
+            admissionPeriod: { unitId: 'unit-1' },
+            registrationFeePaidAt: new Date('2026-07-01'),
+            isInternalAlumni: true,
+            previousStudentId: 'alum-9',
+            internalNisn: null,
+            internalNik: null,
+            nisn: '0012345678',
+            nik: null,
+          }),
+        },
+        admissionPeriod: { findUnique: vi.fn().mockResolvedValue({ registrationFee: 0 }) },
+        unit: { findUnique: vi.fn().mockResolvedValue({ type: 'SMP_IT' }) },
+        student: { findFirst: vi.fn(), update: vi.fn() },
+        user: { update: vi.fn() },
+        classEnrollment: { updateMany: vi.fn() },
+        role: { findFirst: vi.fn(), findMany: vi.fn() },
+        userRoleAssignment: { updateMany: vi.fn(), upsert: vi.fn(), create: vi.fn() },
+        medicalRecord: { findFirst: vi.fn(), create: vi.fn() },
+        santriWallet: { findFirst: vi.fn(), create: vi.fn() },
+        studentParent: { findFirst: vi.fn(), create: vi.fn() },
+      };
+
+      vi.mocked(prisma.$transaction).mockImplementation(async (callback) => {
+        return callback(txMock as any);
+      });
+
+      // The admission period belongs to unit-1, but the caller is pinned to
+      // unit-2. They must not be able to drop a student into another unit.
+      const caller = { roleCode: 'SDIT_ADMIN', role: 'UNIT_ADMIN', unitId: 'unit-2' };
+      await expect(
+        StudentOnboardingOrchestrator.processEnrollment(
+          'reg-4',
+          'unit-1',
+          'admin-1',
+          undefined,
+          undefined,
+          caller
+        )
+      ).rejects.toThrow('You can only onboard students into your own unit');
+      expect(txMock.student.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('should let a unit-pinned target-unit caller relink a cross-unit alumnus (progression)', async () => {
+      const alumnus = { id: 'alum-9', userId: 'user-alum-1', nisn: '0012345678', nik: null };
+      const txMock = {
+        registrant: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: 'reg-4',
+            status: 'ACCEPTED',
+            fullName: 'Alumni Kembali',
+            gender: 'MALE',
+            birthPlace: 'Jakarta',
+            birthDate: new Date('2010-01-01'),
+            address: 'Jl. X',
+            parentName: 'Ayah',
+            parentPhone: '08123456789',
+            parentEmail: null,
+            admissionPeriodId: 'period-1',
+            admissionPeriod: { unitId: 'unit-1' },
+            registrationFeePaidAt: new Date('2026-07-01'),
+            isInternalAlumni: true,
+            previousStudentId: 'alum-9',
+            internalNisn: null,
+            internalNik: null,
+            nisn: '0012345678',
+            nik: null,
+          }),
+          update: vi.fn().mockResolvedValue({ id: 'reg-4' }),
+        },
+        admissionPeriod: { findUnique: vi.fn().mockResolvedValue({ registrationFee: 0 }) },
+        unit: { findUnique: vi.fn().mockResolvedValue({ type: 'SMP_IT' }) },
+        student: {
+          // The alumnus lives in SD IT (the source unit). The progression to
+          // SMP IT must find it even though the caller is pinned to SMP IT.
+          findFirst: vi.fn().mockResolvedValue(alumnus),
+          update: vi.fn().mockResolvedValue(alumnus),
+        },
+        user: {
+          update: vi.fn().mockResolvedValue({ id: 'user-alum-1' }),
+          findUnique: vi.fn().mockResolvedValue(null),
+          findFirst: vi.fn().mockResolvedValue(null),
+          create: vi.fn().mockResolvedValue({ id: 'user-parent-1', email: 'ayah@test.com' }),
+        },
+        classEnrollment: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+        role: {
+          findFirst: vi.fn().mockResolvedValue({ id: 'role-smpit-siswa', code: 'SMPIT_SISWA' }),
+          findMany: vi.fn().mockResolvedValue([{ id: 'role-smpit-siswa' }]),
+        },
+        userRoleAssignment: {
+          updateMany: vi.fn(),
+          upsert: vi.fn().mockResolvedValue({ id: 'ura-1' }),
+          create: vi.fn(),
+          findMany: vi.fn().mockResolvedValue([]),
+        },
+        medicalRecord: { findFirst: vi.fn().mockResolvedValue(null), create: vi.fn().mockResolvedValue({ id: 'med-1' }) },
+        santriWallet: { findFirst: vi.fn().mockResolvedValue(null), create: vi.fn().mockResolvedValue({ id: 'wallet-1' }) },
+        studentParent: {
+          findFirst: vi.fn().mockResolvedValue(null),
+          findMany: vi.fn().mockResolvedValue([{ student: { unitId: 'unit-1', unit: { type: 'SMP_IT' } } }]),
+          create: vi.fn().mockResolvedValue({ id: 'sp-1' }),
+        },
+      };
+
+      vi.mocked(prisma.$transaction).mockImplementation(async (callback) => {
+        return callback(txMock as any);
+      });
+
+      const caller = { roleCode: 'SMPIT_ADMIN', role: 'UNIT_ADMIN', unitId: 'unit-1' };
+      const result = await StudentOnboardingOrchestrator.processEnrollment(
+        'reg-4',
+        'unit-1',
+        'admin-1',
+        undefined,
+        undefined,
+        caller
+      );
+
+      expect(result.studentId).toBe('alum-9');
+      // The alumnus lookup is NOT scoped to the caller's unit — only to alumni
+      // status — so an SD IT alumnus can be re-enrolled into SMP IT.
+      expect(txMock.student.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ status: 'alumni' }),
+        })
+      );
+      expect(txMock.student.findFirst.mock.calls[0][0].where.unitId).toBeUndefined();
+    });
+
+    it('should NOT relink an ACTIVE student in another unit (no take-over)', async () => {
+      const txMock = {
+        registrant: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: 'reg-4',
+            status: 'ACCEPTED',
+            fullName: 'X',
+            gender: 'MALE',
+            birthPlace: 'Jakarta',
+            birthDate: new Date('2010-01-01'),
+            address: 'Jl. X',
+            parentName: 'Ayah',
+            parentPhone: '08123456789',
+            parentEmail: null,
+            admissionPeriodId: 'period-1',
+            admissionPeriod: { unitId: 'unit-1' },
             registrationFeePaidAt: new Date('2026-07-01'),
             isInternalAlumni: true,
             previousStudentId: 'alum-9',
@@ -421,11 +565,13 @@ describe('StudentOnboardingOrchestrator', () => {
         admissionPeriod: { findUnique: vi.fn().mockResolvedValue({ registrationFee: 0 }) },
         unit: { findUnique: vi.fn().mockResolvedValue({ type: 'SMP_IT' }) },
         student: {
-          // Scoped lookup cannot find an alumnus who lives in another unit.
+          // The referenced record is ACTIVE in another unit — the status filter
+          // excludes it, so the lookup returns nothing and the flow must fail.
           findFirst: vi.fn().mockResolvedValue(null),
           update: vi.fn(),
+          create: vi.fn(),
         },
-        user: { update: vi.fn() },
+        user: { update: vi.fn(), create: vi.fn() },
         classEnrollment: { updateMany: vi.fn() },
         role: { findFirst: vi.fn(), findMany: vi.fn() },
         userRoleAssignment: { updateMany: vi.fn(), upsert: vi.fn(), create: vi.fn() },
@@ -442,22 +588,21 @@ describe('StudentOnboardingOrchestrator', () => {
       await expect(
         StudentOnboardingOrchestrator.processEnrollment(
           'reg-4',
-          'unit-3',
+          'unit-1',
           'admin-1',
           undefined,
           undefined,
           caller
         )
-      ).rejects.toThrow('Referenced internal alumnus record not found');
+      ).rejects.toThrow('Referenced internal alumnus record not found or student is not in alumni status');
 
-      // A unit-pinned caller (unit-1) may not relink an alumnus outside unit-1:
-      // the lookup must carry the caller's unitId, so forging previousStudentId
-      // for an alumnus in another unit cannot capture the record.
-      expect(txMock.student.findFirst).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({ unitId: 'unit-1', status: 'alumni' }),
-        })
+      // The lookup is filtered to alumni only, so an active student elsewhere is
+      // never captured, and no user/student is created in its place.
+      expect(txMock.student.findFirst.mock.calls[0][0].where).toEqual(
+        expect.objectContaining({ status: 'alumni' })
       );
+      expect(txMock.user.create).not.toHaveBeenCalled();
+      expect(txMock.student.create).not.toHaveBeenCalled();
     });
   });
 });

@@ -71,10 +71,14 @@ describe('Student Controller — progression endpoints', () => {
       req.body = { graduateYear: 2026, graduationDate: '2026-06-01T00:00:00.000Z' };
       await controller.graduate(req as Request, res as Response, next as any);
 
-      expect(studentService.graduateStudent).toHaveBeenCalledWith('stu-1', {
-        graduateYear: 2026,
-        graduationDate: '2026-06-01T00:00:00.000Z',
-      });
+      expect(studentService.graduateStudent).toHaveBeenCalledWith(
+        'stu-1',
+        {
+          graduateYear: 2026,
+          graduationDate: '2026-06-01T00:00:00.000Z',
+        },
+        { role: 'ADMIN', roleCode: 'SUPER_ADMIN', unitId: 'unit-1' }
+      );
       expect(json).toHaveBeenCalledWith({
         success: true,
         data: graduated,

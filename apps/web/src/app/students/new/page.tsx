@@ -31,18 +31,15 @@ import { toast } from "sonner";
 import { Loader2, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 
-import {
-  createStudentSchema,
-  permanentIdentifierRefine,
-  type CreateStudentInput,
-} from "@cipansor/shared";
+import { createStudentSchema, type CreateStudentInput } from "@cipansor/shared";
 import { getEffectiveRole } from "@/lib/rbac";
 
-// Use strict validation from shared
-// We can extend here if needed for UI-specific validaton (e.g. terms acceptance)
-const studentSchema = createStudentSchema.superRefine(
-  permanentIdentifierRefine,
-);
+// The "at least one permanent identifier (NISN/NIK)" rule is intentionally not
+// enforced here: it depends on the selected unit's type, and TK_QURAN is the
+// documented exception where neither may yet exist. The API enforces it at the
+// service layer (StudentService.create) where the unit type is known, so every
+// path — direct create and both enrollment flows — applies the SAME rule.
+const studentSchema = createStudentSchema;
 
 type StudentForm = CreateStudentInput;
 

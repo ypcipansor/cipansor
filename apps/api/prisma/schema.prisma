@@ -1018,6 +1018,7 @@ model Student {
   userId       String   @unique @map("user_id")
   unitId       String   @map("unit_id")
   nisn         String?  @unique // Nomor Induk Siswa Nasional
+  legacyNis    String?  @map("legacy_nis") // Archived historical local NIS — NOT an official identity (never unique)
   gender       Gender
   birthPlace   String   @map("birth_place")
   birthDate    DateTime @map("birth_date")

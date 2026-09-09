@@ -566,17 +566,27 @@ export async function enrollRegistrant(
       registrationFeePaidAt: registrant.registrationFeePaidAt,
     });
 
+    // SECURITY: the caller must be allowed to operate on the unit the admission
+    // period belongs to. A user pinned to one unit may only enroll registrants
+    // into that unit (they could otherwise drop a student into any unit, or pull
+    // an alumnus across units by forging previousStudentId / internalNisn /
+    // internalNik). Foundation/cross-unit roles (seesAllUnits) may enroll across
+    // units.
+    if (currentUser && !seesAllUnits(currentUser) && currentUser.unitId !== feePeriod?.unitId) {
+      throw Errors.forbidden('You can only enroll students into your own unit');
+    }
+
     let existingStudent = null;
 
-    // Internal-alumni re-enrollment must never be able to capture an alumnus
-    // outside the caller's reach. A user pinned to one unit may only relink
-    // alumni in that unit (same seesAllUnits policy as
-    // findInternalAlumniByIdentifier); foundation/cross-unit roles see all.
-    const alumniUnitScope =
-      currentUser && seesAllUnits(currentUser)
-        ? undefined
-        : (currentUser?.unitId ?? feePeriod?.unitId);
-
+    // MODEL (see findInternalAlumniByIdentifier and root AGENTS.md golden rule
+    // #4/5): `student.unitId` is the CURRENT ACTIVE unit, so a student
+    // progressing across units legitimately migrates it. For a target-unit
+    // caller to re-enrol an alumnus still recorded in the source unit the
+    // lookup must NOT be scoped to the caller's unit — that scope made the
+    // normal progression (SD IT -> SMP IT) silently fail. Take-over of an ACTIVE
+    // student in another unit is prevented by the `status = 'alumni'` filter
+    // below plus the caller-scope check above; this path only ever runs through
+    // an authenticated admissions endpoint.
     if (registrant.isInternalAlumni) {
       if (registrant.previousStudentId) {
         existingStudent = await tx.student.findFirst({
@@ -584,7 +594,6 @@ export async function enrollRegistrant(
             id: registrant.previousStudentId,
             status: 'alumni',
             deletedAt: null,
-            ...(alumniUnitScope ? { unitId: alumniUnitScope } : {}),
           },
           include: { user: true },
         });
@@ -598,11 +607,21 @@ export async function enrollRegistrant(
           where: {
             deletedAt: null,
             status: 'alumni',
-            ...(alumniUnitScope ? { unitId: alumniUnitScope } : {}),
             OR: conditions,
           },
           include: { user: true },
         });
+      }
+
+      // An internal-alumni registrant whose referenced record cannot be found
+      // must NOT fall through to the generic email/re-create path — that would
+      // silently reuse or create a different student, hijacking the identified
+      // alumnus under a new account. Fail loudly, like the onboarding
+      // orchestrator does (issue #8).
+      if (!existingStudent) {
+        throw Errors.badRequest(
+          'Referenced internal alumnus record not found or student is not in alumni status'
+        );
       }
     }
 

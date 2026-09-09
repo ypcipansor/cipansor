@@ -27,6 +27,7 @@ export class StudentOnboardingOrchestrator {
     const result = await prisma.$transaction(async (tx) => {
       const registrant = await tx.registrant.findUnique({
         where: { id: registrantId },
+        include: { admissionPeriod: { select: { unitId: true } } },
       });
 
       if (!registrant) {
@@ -35,6 +36,20 @@ export class StudentOnboardingOrchestrator {
 
       if (registrant.status !== 'ACCEPTED') {
         throw Errors.badRequest('Only ACCEPTED registrants can be enrolled');
+      }
+
+      // SECURITY: the onboarding target unit must be the unit the registrant
+      // actually applied to (a registrant is bound to one admission period, which
+      // belongs to one unit). Accepting a mismatched `unitId` from the request
+      // body would let admissions staff drop a student into any unit.
+      if (registrant.admissionPeriod?.unitId && registrant.admissionPeriod.unitId !== unitId) {
+        throw Errors.badRequest('Target unit does not match the registrant admission period');
+      }
+
+      // SECURITY: a caller pinned to one unit may only onboard into that unit.
+      // Foundation/cross-unit roles (seesAllUnits) may onboard across units.
+      if (currentUser && !seesAllUnits(currentUser) && currentUser.unitId !== unitId) {
+        throw Errors.forbidden('You can only onboard students into your own unit');
       }
 
       const period = await tx.admissionPeriod.findUnique({
@@ -69,20 +84,23 @@ export class StudentOnboardingOrchestrator {
       let existingStudent = null;
 
       if (registrant.isInternalAlumni) {
-        // Same seesAllUnits policy as findInternalAlumniByIdentifier: a caller
-        // pinned to one unit may only relink alumni in that unit. Without this,
-        // any admissions staff could capture an alumnus in another unit by
-        // forging previousStudentId / internalNisn / internalNik.
-        const alumniUnitScope =
-          currentUser && seesAllUnits(currentUser) ? undefined : (currentUser?.unitId ?? unitId);
-
+        // MODEL (see findInternalAlumniByIdentifier and root AGENTS.md golden
+        // rule #4/5): `student.unitId` is the CURRENT ACTIVE unit, so a student
+        // progressing across units legitimately migrates it. For a target-unit
+        // caller to re-enrol an alumnus still recorded in the source unit the
+        // lookup must NOT be scoped to the caller's unit — scoping it made the
+        // normal progression (SD IT -> SMP IT) silently fail. Take-over of an
+        // ACTIVE student in another unit is prevented by the `status = 'alumni'`
+        // filter below plus the caller-scope and period-unit checks above, and
+        // by this path only ever running through an authenticated admissions
+        // endpoint. Trade-off chosen over a per-caller unit scope: the scope was
+        // the blocker for the very progression this feature exists to enable.
         if (registrant.previousStudentId) {
           existingStudent = await tx.student.findFirst({
             where: {
               id: registrant.previousStudentId,
               status: 'alumni',
               deletedAt: null,
-              ...(alumniUnitScope ? { unitId: alumniUnitScope } : {}),
             },
             include: { user: true },
           });
@@ -96,7 +114,6 @@ export class StudentOnboardingOrchestrator {
             where: {
               deletedAt: null,
               status: 'alumni',
-              ...(alumniUnitScope ? { unitId: alumniUnitScope } : {}),
               OR: conditions,
             },
             include: { user: true },

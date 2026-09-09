@@ -5,7 +5,6 @@ import {
   updateStudentSchema as sharedUpdateSchema,
   graduateStudentSchema as sharedGraduateStudentSchema,
   alumniLookupQuerySchema as sharedAlumniLookupQuerySchema,
-  permanentIdentifierRefine,
 } from '@cipansor/shared';
 import type {
   GraduateStudentInput as SharedGraduateStudentInput,
@@ -20,17 +19,21 @@ export const listStudentsQuerySchema = sharedListSchema;
 // auto-generated password (set/reset later). When a password IS supplied it
 // must meet the complexity policy below. (Requiring it here made the create form,
 // which collects no password, impossible to submit — POST returned 400.)
-export const createStudentSchema = sharedCreateSchema
-  .extend({
-    password: z
-      .string()
-      .min(8, 'Password must be at least 8 characters')
-      .regex(/[A-Z]/, 'Password must contain uppercase letter')
-      .regex(/[a-z]/, 'Password must contain lowercase letter')
-      .regex(/[0-9]/, 'Password must contain number')
-      .optional(),
-  })
-  .superRefine(permanentIdentifierRefine);
+//
+// The "at least one permanent identifier (NISN/NIK)" rule is NOT enforced here
+// because the schema does not know the target unit's type: TK_QURAN is the
+// documented exception where neither may yet exist. It is enforced at the
+// service layer (StudentService.create) where the unit type is known, so every
+// path — direct create and both enrollment flows — applies the SAME rule.
+export const createStudentSchema = sharedCreateSchema.extend({
+  password: z
+    .string()
+    .min(8, 'Password must be at least 8 characters')
+    .regex(/[A-Z]/, 'Password must contain uppercase letter')
+    .regex(/[a-z]/, 'Password must contain lowercase letter')
+    .regex(/[0-9]/, 'Password must contain number')
+    .optional(),
+});
 
 // Update student
 export const updateStudentSchema = sharedUpdateSchema;
