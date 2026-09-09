@@ -1,6 +1,42 @@
 import { prisma } from '@/lib/prisma';
 import { PlanStatus } from '@prisma/client';
 
+type PkUnitView = {
+  user?: { unitId: string | null } | null;
+  strategicPlan?: { unitId: string | null } | null;
+};
+
+type PkWithUnit = PkUnitView & {
+  status: PlanStatus;
+  overallScore: number;
+  totalScore: number;
+  behaviorScore: number;
+};
+
+/**
+ * Unit yang "memiliki" sebuah PK, untuk keperluan laporan.
+ *
+ * Bug pegawai multi-unit: laporan mengelompokkan PK berdasarkan
+ * `user.unitId` (unit asal), sehingga PK seorang guru yang mengajar di unit
+ * lain — lewat `UserRoleAssignment.unitId` — masuk laporan unit asalnya,
+ * bukan unit yang RKA/Renstra-nya ia implementasikan. `UserRoleAssignment`
+ * bersifat per-peran dan kedaluwarsa, jadi tidak cocok sebagai sumber atribusi
+ * sebuah PK.
+ *
+ * Sumber yang dipakai adalah `strategicPlan.unitId` bila PK mengacu pada
+ * sebuah dokumen rencana (RKA/Renstra) — karena di situlah PK berakar dalam
+ * kaskade — dan baru jatuh ke `user.unitId` bila tidak. Ini perbaikan tanpa
+ * perubahan schema (opsi b). Opsi a (kolom `unitId` persisten di
+ * `PerformanceAgreement`) adalah perbaikan yang tahan lama dan disarankan
+ * sebagai follow-up, digabung dengan FLAG 5 (uniqueness RKA tahunan) karena
+ * keduanya menyentuh schema yang sama.
+ */
+function resolvePkUnit(pk: PkUnitView): string | null {
+  return pk.strategicPlan?.unitId ?? pk.user?.unitId ?? null;
+}
+
+const APPROVED = PlanStatus.APPROVED;
+
 /** Aggregated PK dashboards for unit and foundation leadership. */
 export class PKAnalyticsService {
   async getUnitPerformanceDashboard(unitId?: string) {
@@ -8,83 +44,99 @@ export class PKAnalyticsService {
       ? await prisma.unit.findMany({ where: { id: unitId } })
       : await prisma.unit.findMany();
 
-    // Include foundation agreements (where user.unitId is null) ONLY when viewing global dashboard
-    const foundationPks = unitId
-      ? []
-      : await prisma.performanceAgreement.findMany({
-          where: { user: { unitId: null } },
-          select: { status: true, overallScore: true, totalScore: true, behaviorScore: true },
-        });
+    // Ambil SEMUA PK (dengan relasi pembawa unit) sekali, lalu kelompokkan di
+    // JS menurut unit hasil resolve. Query per-unit (N+1) yang menyaring
+    // `user.unitId` tidak dapat menangkap PK yang mengacu RKA/Renstra unit lain
+    // — justru inti bug pegawai multi-unit.
+    const pkWhere = unitId
+      ? { OR: [{ user: { unitId } }, { strategicPlan: { unitId } }] }
+      : undefined;
+    const allPks = (await prisma.performanceAgreement.findMany({
+      where: pkWhere,
+      select: {
+        status: true,
+        overallScore: true,
+        totalScore: true,
+        behaviorScore: true,
+        user: { select: { unitId: true } },
+        strategicPlan: { select: { unitId: true } },
+      },
+    })) as PkWithUnit[];
 
-    const foundationEvCount = unitId
-      ? 0
-      : await prisma.pKEvaluation.count({
-          where: { pk: { user: { unitId: null } } },
-        });
+    // Evaluasi dikelompokkan dengan cara yang sama, supaya hitungan selaras
+    // dengan pengelompokan PK-nya.
+    const evalWhere = unitId
+      ? { pk: { OR: [{ user: { unitId } }, { strategicPlan: { unitId } }] } }
+      : undefined;
+    const evals = await prisma.pKEvaluation.findMany({
+      where: evalWhere,
+      select: {
+        status: true,
+        pk: {
+          select: {
+            user: { select: { unitId: true } },
+            strategicPlan: { select: { unitId: true } },
+          },
+        },
+      },
+    });
 
-    const unitMetrics = await Promise.all(
-      units.map(async (unit) => {
-        const allPks = await prisma.performanceAgreement.findMany({
-          where: { user: { unitId: unit.id } },
-          select: { status: true, overallScore: true, totalScore: true, behaviorScore: true },
-        });
+    // Foundation = unit hasil resolve null (unitId null di user DAN strategicPlan).
+    const pksByUnit = new Map<string | null, PkWithUnit[]>();
+    const evalsByUnit = new Map<string | null, { total: number; approved: number }>();
 
-        // evCount = SEMUA evaluasi (DRAFT, PROPOSED, APPROVED) — dipakai untuk
-        // metrik totalEvaluations, maknanya jangan diubah.
-        const evCount = await prisma.pKEvaluation.count({
-          where: { pk: { user: { unitId: unit.id } } },
-        });
-        // approvedEvCount = hanya evaluasi APPROVED — dipakai sebagai syarat
-        // eligibility ranking. Unit yang baru punya evaluasi DRAFT (belum
-        // disetujui) tidak boleh diperingkat: skor PK agregatnya berasal dari
-        // evaluasi yang belum lengkap.
-        const approvedEvCount = await prisma.pKEvaluation.count({
-          where: { pk: { user: { unitId: unit.id } }, status: PlanStatus.APPROVED },
-        });
+    for (const pk of allPks) {
+      const u = resolvePkUnit(pk);
+      // Untuk tampilan satu unit, buang baris yang hanya cocok lewat user.unitId
+      // asal tetapi sebenarnya milik unit lain (multi-unit).
+      if (unitId && u !== unitId) continue;
+      const arr = pksByUnit.get(u);
+      if (arr) arr.push(pk);
+      else pksByUnit.set(u, [pk]);
+    }
+    for (const ev of evals) {
+      const u = resolvePkUnit(ev.pk ?? {});
+      if (unitId && u !== unitId) continue;
+      const entry = evalsByUnit.get(u) ?? { total: 0, approved: 0 };
+      entry.total += 1;
+      if (ev.status === APPROVED) entry.approved += 1;
+      evalsByUnit.set(u, entry);
+    }
 
-        const approvedPks = allPks.filter((p) => p.status === PlanStatus.APPROVED);
+    const unitMetrics = units.map((unit) => {
+      const unitPks = pksByUnit.get(unit.id) ?? [];
+      const approvedPks = unitPks.filter((p) => p.status === APPROVED);
+      const ev = evalsByUnit.get(unit.id) ?? { total: 0, approved: 0 };
+      const avg = (list: PkWithUnit[], key: 'overallScore' | 'totalScore' | 'behaviorScore') =>
+        list.length > 0 ? list.reduce((sum, p) => sum + p[key], 0) / list.length : 0;
 
-        const avgScore =
-          approvedPks.length > 0
-            ? approvedPks.reduce((sum, pk) => sum + pk.overallScore, 0) / approvedPks.length
-            : 0;
+      return {
+        id: unit.id,
+        name: unit.name,
+        avgScore: avg(approvedPks, 'overallScore'),
+        avgPerformanceScore: avg(approvedPks, 'totalScore'),
+        avgBehaviorScore: avg(approvedPks, 'behaviorScore'),
+        pkCount: approvedPks.length,
+        totalPksCount: unitPks.length,
+        evCount: ev.total,
+        approvedEvCount: ev.approved,
+      };
+    });
 
-        const avgPerf =
-          approvedPks.length > 0
-            ? approvedPks.reduce((sum, pk) => sum + pk.totalScore, 0) / approvedPks.length
-            : 0;
-
-        const avgBehav =
-          approvedPks.length > 0
-            ? approvedPks.reduce((sum, pk) => sum + pk.behaviorScore, 0) / approvedPks.length
-            : 0;
-
-        return {
-          id: unit.id,
-          name: unit.name,
-          avgScore,
-          avgPerformanceScore: avgPerf,
-          avgBehaviorScore: avgBehav,
-          pkCount: approvedPks.length,
-          totalPksCount: allPks.length,
-          evCount,
-          approvedEvCount,
-        };
-      })
-    );
+    const foundationPks = pksByUnit.get(null) ?? [];
+    const foundationEv = evalsByUnit.get(null) ?? { total: 0, approved: 0 };
 
     const totalAgreements =
       foundationPks.length + unitMetrics.reduce((sum, u) => sum + u.totalPksCount, 0);
     const approvedAgreements =
-      foundationPks.filter((p) => p.status === PlanStatus.APPROVED).length +
+      foundationPks.filter((p) => p.status === APPROVED).length +
       unitMetrics.reduce((sum, u) => sum + u.pkCount, 0);
     const totalEvaluations =
-      foundationEvCount + unitMetrics.reduce((sum, u) => sum + u.evCount, 0);
+      foundationEv.total + unitMetrics.reduce((sum, u) => sum + u.evCount, 0);
 
-    const approvedPksAll = await prisma.performanceAgreement.findMany({
-      where: unitId ? { user: { unitId }, status: PlanStatus.APPROVED } : { status: PlanStatus.APPROVED },
-      select: { overallScore: true, totalScore: true, behaviorScore: true },
-    });
+    const approvedPksAll = allPks.filter(
+      (p) => p.status === APPROVED && (!unitId || resolvePkUnit(p) === unitId)
+    );
 
     const avgPerformanceScore =
       approvedPksAll.length > 0
@@ -134,31 +186,40 @@ export class PKAnalyticsService {
       orderBy: { createdAt: 'desc' },
     });
 
+    // PK yang mengacu RKA/Renstra unit lain (pegawai multi-unit) tetap milik
+    // unit yang rencananya diimplementasikan, bukan unit asal si pegawai.
     const agreements = await prisma.performanceAgreement.findMany({
-      where: { user: { unitId }, status: PlanStatus.APPROVED },
+      where: {
+        OR: [{ user: { unitId } }, { strategicPlan: { unitId } }],
+        status: APPROVED,
+      },
       include: {
-        user: { select: { id: true, name: true } },
+        user: { select: { id: true, name: true, unitId: true } },
         supervisor: { select: { id: true, name: true } },
         indicators: { select: { id: true } },
       },
     });
+
+    const scoped = agreements.filter((a) => resolvePkUnit(a) === unitId);
 
     return {
       unit: unit ? { id: unit.id, name: unit.name } : null,
       strategicPlan: strategicPlan
         ? { id: strategicPlan.id, title: strategicPlan.title, progress: strategicPlan.progress }
         : null,
-      agreements: agreements.map((a) => ({
+      agreements: scoped.map((a) => ({
         id: a.id,
         userId: a.userId,
         supervisorId: a.supervisorId,
-        periodStart: a.periodStart instanceof Date ? a.periodStart.toISOString() : String(a.periodStart ?? ''),
-        periodEnd: a.periodEnd instanceof Date ? a.periodEnd.toISOString() : String(a.periodEnd ?? ''),
+        periodStart:
+          a.periodStart instanceof Date ? a.periodStart.toISOString() : String(a.periodStart ?? ''),
+        periodEnd:
+          a.periodEnd instanceof Date ? a.periodEnd.toISOString() : String(a.periodEnd ?? ''),
         status: a.status,
         totalScore: a.totalScore,
         behaviorScore: a.behaviorScore,
         overallScore: a.overallScore,
-        user: a.user,
+        user: { id: a.user.id, name: a.user.name },
         supervisor: a.supervisor,
         indicators: a.indicators,
       })),
@@ -173,105 +234,104 @@ export class PKAnalyticsService {
     const rangeStart = new Date(period.year, (period.month || 1) - 1, 1);
     const rangeEnd = new Date(period.year, period.month || 12, 0, 23, 59, 59, 999);
 
-    const unitReports = await Promise.all(
-      units.map(async (unit) => {
-        const evalWhere: any = { year: period.year, status: PlanStatus.APPROVED };
-        if (period.month) {
-          evalWhere.month = period.month;
-        }
+    // PK & evaluasi periodik dibawa dalam satu genggaman dengan relasi pembawa
+    // unit, lalu dikelompokkan menurut unit hasil resolve — bukan `user.unitId`
+    // — supaya pegawai multi-unit masuk laporan unit yang RKA/Renstra-nya ia
+    // implementasikan.
+    const pkWhere: any = {
+      periodStart: { lte: rangeEnd },
+      periodEnd: { gte: rangeStart },
+    };
+    if (period.unitId) {
+      pkWhere.OR = [
+        { user: { unitId: period.unitId } },
+        { strategicPlan: { unitId: period.unitId } },
+      ];
+    }
+    const allPks = (await prisma.performanceAgreement.findMany({
+      where: pkWhere,
+      select: {
+        status: true,
+        user: { select: { unitId: true } },
+        strategicPlan: { select: { unitId: true } },
+      },
+    })) as PkWithUnit[];
 
-        const approvedEvaluations = await prisma.pKEvaluation.findMany({
-          where: {
-            pk: { user: { unitId: unit.id } },
-            ...evalWhere,
+    const evalBase: any = { year: period.year, status: APPROVED };
+    if (period.month) evalBase.month = period.month;
+    const evalWhere: any = { ...evalBase };
+    if (period.unitId) {
+      evalWhere.pk = {
+        OR: [{ user: { unitId: period.unitId } }, { strategicPlan: { unitId: period.unitId } }],
+      };
+    }
+    const evals = await prisma.pKEvaluation.findMany({
+      where: evalWhere,
+      select: {
+        overallScore: true,
+        performanceScore: true,
+        behaviorScore: true,
+        pk: {
+          select: {
+            user: { select: { unitId: true } },
+            strategicPlan: { select: { unitId: true } },
           },
-          select: { overallScore: true, performanceScore: true, behaviorScore: true },
-        });
+        },
+      },
+    });
 
-        const pks = await prisma.performanceAgreement.findMany({
-          where: {
-            user: { unitId: unit.id },
-            periodStart: { lte: rangeEnd },
-            periodEnd: { gte: rangeStart },
-          },
-          select: { status: true },
-        });
+    const pksByUnit = new Map<string | null, { status: PlanStatus }[]>();
+    const evalsByUnit = new Map<
+      string | null,
+      { overall: number; perf: number; behav: number; count: number }
+    >();
 
-        const totalAgreements = pks.length;
-        const approvedAgreements = pks.filter((p) => p.status === PlanStatus.APPROVED).length;
-        const evalCount = approvedEvaluations.length;
+    for (const pk of allPks) {
+      const u = resolvePkUnit(pk);
+      if (period.unitId && u !== period.unitId) continue;
+      const arr = pksByUnit.get(u);
+      if (arr) arr.push(pk);
+      else pksByUnit.set(u, [pk]);
+    }
+    for (const ev of evals) {
+      const u = resolvePkUnit(ev.pk ?? {});
+      if (period.unitId && u !== period.unitId) continue;
+      const entry = evalsByUnit.get(u) ?? { overall: 0, perf: 0, behav: 0, count: 0 };
+      entry.overall += ev.overallScore;
+      entry.perf += ev.performanceScore;
+      entry.behav += ev.behaviorScore;
+      entry.count += 1;
+      evalsByUnit.set(u, entry);
+    }
 
-        const avgScore =
-          evalCount > 0
-            ? approvedEvaluations.reduce((sum, ev) => sum + ev.overallScore, 0) / evalCount
-            : 0;
+    const unitReports = units.map((unit) => {
+      const unitPks = pksByUnit.get(unit.id) ?? [];
+      const ev = evalsByUnit.get(unit.id) ?? { overall: 0, perf: 0, behav: 0, count: 0 };
+      const totalAgreements = unitPks.length;
+      const approvedAgreements = unitPks.filter((p) => p.status === APPROVED).length;
 
-        const avgPerf =
-          evalCount > 0
-            ? approvedEvaluations.reduce((sum, ev) => sum + ev.performanceScore, 0) / evalCount
-            : 0;
-
-        const avgBehav =
-          evalCount > 0
-            ? approvedEvaluations.reduce((sum, ev) => sum + ev.behaviorScore, 0) / evalCount
-            : 0;
-
-        return {
-          id: unit.id,
-          name: unit.name,
-          totalAgreements,
-          approvedAgreements,
-          avgOverallScore: avgScore,
-          avgPerformanceScore: avgPerf,
-          avgBehaviorScore: avgBehav,
-        };
-      })
-    );
+      return {
+        id: unit.id,
+        name: unit.name,
+        totalAgreements,
+        approvedAgreements,
+        avgOverallScore: ev.count > 0 ? ev.overall / ev.count : 0,
+        avgPerformanceScore: ev.count > 0 ? ev.perf / ev.count : 0,
+        avgBehaviorScore: ev.count > 0 ? ev.behav / ev.count : 0,
+      };
+    });
 
     // If global report (no unitId filter), include Foundation agreements (unitId = null)
     if (!period.unitId) {
-      const evalWhere: any = { year: period.year, status: PlanStatus.APPROVED };
-      if (period.month) {
-        evalWhere.month = period.month;
-      }
-
-      const foundationEvaluations = await prisma.pKEvaluation.findMany({
-        where: {
-          pk: { user: { unitId: null } },
-          ...evalWhere,
-        },
-        select: { overallScore: true, performanceScore: true, behaviorScore: true },
-      });
-
-      const foundationPks = await prisma.performanceAgreement.findMany({
-        where: {
-          user: { unitId: null },
-          periodStart: { lte: rangeEnd },
-          periodEnd: { gte: rangeStart },
-        },
-        select: { status: true },
-      });
-
+      const foundationPks = pksByUnit.get(null) ?? [];
+      const ev = evalsByUnit.get(null) ?? { overall: 0, perf: 0, behav: 0, count: 0 };
       const totalAgreements = foundationPks.length;
-      const approvedAgreements = foundationPks.filter((p) => p.status === PlanStatus.APPROVED).length;
-      const evalCount = foundationEvaluations.length;
+      const approvedAgreements = foundationPks.filter((p) => p.status === APPROVED).length;
+      const avgScore = ev.count > 0 ? ev.overall / ev.count : 0;
+      const avgPerf = ev.count > 0 ? ev.perf / ev.count : 0;
+      const avgBehav = ev.count > 0 ? ev.behav / ev.count : 0;
 
-      const avgScore =
-        evalCount > 0
-          ? foundationEvaluations.reduce((sum, ev) => sum + ev.overallScore, 0) / evalCount
-          : 0;
-
-      const avgPerf =
-        evalCount > 0
-          ? foundationEvaluations.reduce((sum, ev) => sum + ev.performanceScore, 0) / evalCount
-          : 0;
-
-      const avgBehav =
-        evalCount > 0
-          ? foundationEvaluations.reduce((sum, ev) => sum + ev.behaviorScore, 0) / evalCount
-          : 0;
-
-      if (totalAgreements > 0 || evalCount > 0) {
+      if (totalAgreements > 0 || ev.count > 0) {
         unitReports.unshift({
           id: 'yayasan',
           name: 'Yayasan (Kantor Pusat)',
