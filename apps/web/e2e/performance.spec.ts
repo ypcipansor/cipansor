@@ -98,7 +98,12 @@ test.describe("Integrated Performance Management (/kinerja) E2E Flows", () => {
       await expect(page.locator("text=Tambah Indikator Kinerja Baru")).toBeVisible();
       await page.fill("input[placeholder*='Ketercapaian Target']", `Target ${runTag}`);
       // Buka Select Metode Agregasi dan pilih "Otomatis (sesuai satuan)".
-      await page.getByRole("button", { name: /Otomatis \(sesuai satuan\)/ }).click({ force: true });
+      // Radix renders the Select trigger as a combobox (button[role="combobox"]),
+      // not a plain button — see the repo convention in other e2e specs.
+      const aggregationTrigger = page
+        .locator('button[role="combobox"]')
+        .filter({ hasText: /Otomatis \(sesuai satuan\)/ });
+      await aggregationTrigger.click({ force: true });
       await page.getByRole("option", { name: /Otomatis \(sesuai satuan\)/ }).click({ force: true });
       await page.click("button:has-text('Simpan Indikator')");
       await expect(page.locator("text=Tambah Indikator Kinerja Baru")).not.toBeVisible();
