@@ -9,7 +9,9 @@ test.describe("Single Sign-On (SSO) Buttons", () => {
     await loginPage.goto();
   });
 
-  test("should display Google Workspace and Microsoft 365 SSO buttons", async ({ page }) => {
+  test("should display Google Workspace and Microsoft 365 SSO buttons", async ({
+    page,
+  }) => {
     // No route mock here: the button rendering is driven by the real
     // /api/auth/sso/config payload the login page fetches from the backend.
     // This is genuine browser-to-API integration coverage for the config path.
@@ -20,7 +22,9 @@ test.describe("Single Sign-On (SSO) Buttons", () => {
     await expect(microsoftBtn).toBeVisible();
   });
 
-  test("should show configuration toast when SSO provider is disabled", async ({ page }) => {
+  test("should show configuration toast when SSO provider is disabled", async ({
+    page,
+  }) => {
     // Mock getSSOConfig response with disabled providers
     await page.route("**/api/auth/sso/config", async (route) => {
       await route.fulfill({
@@ -34,6 +38,7 @@ test.describe("Single Sign-On (SSO) Buttons", () => {
             googleClientId: null,
             microsoftEnabled: false,
             microsoftClientId: null,
+            microsoftTenantId: "common",
           },
         }),
       });
@@ -44,11 +49,13 @@ test.describe("Single Sign-On (SSO) Buttons", () => {
 
     // Verify toast or notification appears
     await expect(
-      page.getByText(/Google Workspace SSO belum dikonfigurasi/i)
+      page.getByText(/Google Workspace SSO belum dikonfigurasi/i),
     ).toBeVisible({ timeout: 5000 });
   });
 
-  test("should handle requiresTwoFactor branch during SSO callback", async ({ page }) => {
+  test("should handle requiresTwoFactor branch during SSO callback", async ({
+    page,
+  }) => {
     // This is the ONLY place the SSO login endpoint is stubbed, and it is
     // unavoidable in CI: a genuine Google/Microsoft OAuth code exchange needs a
     // real external IdP plus a locally-held x509 key that matches the provider's
@@ -92,7 +99,42 @@ test.describe("Single Sign-On (SSO) Buttons", () => {
     await page.goto("/login?sso=1#id_token=valid_mock_token&provider=google");
 
     await expect(
-      page.getByText(/Two-Factor Authentication/i).first()
+      page.getByText(/Two-Factor Authentication/i).first(),
     ).toBeVisible({ timeout: 10000 });
+  });
+
+  test("should build the Microsoft authorize URL with the backend tenant id", async ({
+    page,
+  }) => {
+    // Mock getSSOConfig with an enabled Microsoft provider pinned to a
+    // single tenant. The login page must target that tenant authority
+    // (not the multi-tenant `common`) when it opens Microsoft 365 SSO.
+    await page.route("**/api/auth/sso/config", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          success: true,
+          data: {
+            domain: "cipansor.or.id",
+            googleEnabled: false,
+            googleClientId: null,
+            microsoftEnabled: true,
+            microsoftClientId: "ms-client-id-123",
+            microsoftTenantId: "00000000-0000-0000-0000-000000000000",
+          },
+        }),
+      });
+    });
+
+    const microsoftBtn = page.getByRole("button", { name: /Microsoft 365/i });
+    await expect(microsoftBtn).toBeVisible();
+    await microsoftBtn.click();
+
+    // The page redirects to login.microsoftonline.com/<tenant>/... and the
+    // tenant segment must be the backend-enforced one.
+    await page.waitForURL(
+      /login\.microsoftonline\.com\/00000000-0000-0000-0000-000000000000\/oauth2\/v2\.0\/authorize/,
+    );
   });
 });

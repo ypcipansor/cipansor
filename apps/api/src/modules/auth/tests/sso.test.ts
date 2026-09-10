@@ -323,4 +323,70 @@ describe('SSO Authentication Security Unit Tests', () => {
     // Two logins for the same tenant must reuse the module-level JwksClient.
     expect(mockJwksClient.mock.calls.length - constructorsBefore).toBe(1);
   });
+
+  it('should expose microsoftTenantId (MICROSOFT_TENANT_ID) from getSSOConfig', async () => {
+    process.env.GOOGLE_CLIENT_ID = 'g';
+    process.env.MICROSOFT_CLIENT_ID = 'm';
+    process.env.MICROSOFT_TENANT_ID = 'tenant-guid-999';
+
+    const cfg = authService.getSSOConfig();
+    expect(cfg.microsoftTenantId).toBe('tenant-guid-999');
+  });
+
+  it('should default microsoftTenantId to common when MICROSOFT_TENANT_ID is unset', async () => {
+    delete process.env.MICROSOFT_TENANT_ID;
+    process.env.MICROSOFT_CLIENT_ID = 'm';
+
+    const cfg = authService.getSSOConfig();
+    expect(cfg.microsoftTenantId).toBe('common');
+  });
+
+  it('should match a registered user even when the SSO email casing differs', async () => {
+    process.env.MICROSOFT_CLIENT_ID = 'expected-ms-client-id';
+
+    const mockUser = {
+      id: 'usr_case_1',
+      email: 'guru@cipansor.or.id',
+      isActive: true,
+      unitId: 'unit_1',
+      userRoles: [
+        {
+          isPrimary: true,
+          roleId: 'role_1',
+          unitId: 'unit_1',
+          role: { code: 'SDIT_GURU', permissions: ['STUDENT_READ'] },
+        },
+      ],
+    };
+
+    vi.spyOn(jwt, 'decode').mockReturnValueOnce({
+      header: { kid: 'key_123' },
+      payload: { aud: 'expected-ms-client-id' },
+    } as any);
+
+    // Provider issues the mailbox with different casing; the account is stored lowercase.
+    vi.spyOn(jwt, 'verify').mockReturnValueOnce({
+      aud: 'expected-ms-client-id',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      preferred_username: 'GURU@cipansor.or.id',
+    } as any);
+
+    vi.spyOn(prisma.user, 'findFirst').mockResolvedValueOnce(mockUser as any);
+    vi.spyOn(prisma.refreshToken, 'create').mockResolvedValueOnce({} as any);
+    vi.spyOn(prisma.user, 'update').mockResolvedValueOnce({} as any);
+    vi.spyOn(prisma.academicYear, 'findFirst').mockResolvedValueOnce({ id: 'ay_1' } as any);
+
+    const result = await authService.ssoLogin({
+      provider: 'microsoft',
+      idToken: 'mixed_case_email_token',
+    });
+
+    expect(result).toHaveProperty('accessToken');
+    // The lookup must have normalised the provider email to lowercase.
+    expect(prisma.user.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ email: 'guru@cipansor.or.id' }),
+      })
+    );
+  });
 });

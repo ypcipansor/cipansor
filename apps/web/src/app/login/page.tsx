@@ -145,16 +145,21 @@ function LoginPageContent() {
         const state = params.get("state");
         const storedState = sessionStorage.getItem("sso_state");
         const storedNonce = sessionStorage.getItem("sso_nonce");
-        const storedProvider = sessionStorage.getItem("sso_provider") as "google" | "microsoft" | null;
+        const storedProvider = sessionStorage.getItem("sso_provider") as
+          "google" | "microsoft" | null;
 
         if (!storedProvider) {
-          toast.error("Sesi SSO tidak valid atau telah kedaluwarsa. Silakan coba lagi.");
+          toast.error(
+            "Sesi SSO tidak valid atau telah kedaluwarsa. Silakan coba lagi.",
+          );
           window.history.replaceState(null, "", window.location.pathname);
           return;
         }
 
         if (storedState && state !== storedState) {
-          toast.error("Validasi keamanan SSO (state) gagal. Silakan coba lagi.");
+          toast.error(
+            "Validasi keamanan SSO (state) gagal. Silakan coba lagi.",
+          );
           sessionStorage.removeItem("sso_state");
           sessionStorage.removeItem("sso_nonce");
           sessionStorage.removeItem("sso_provider");
@@ -169,7 +174,9 @@ function LoginPageContent() {
             if (parts.length === 3) {
               const payload = JSON.parse(atob(parts[1]));
               if (payload.nonce && payload.nonce !== storedNonce) {
-                toast.error("Validasi keamanan SSO (nonce) gagal. Silakan coba lagi.");
+                toast.error(
+                  "Validasi keamanan SSO (nonce) gagal. Silakan coba lagi.",
+                );
                 sessionStorage.removeItem("sso_state");
                 sessionStorage.removeItem("sso_nonce");
                 sessionStorage.removeItem("sso_provider");
@@ -186,12 +193,18 @@ function LoginPageContent() {
 
         if (idToken) {
           window.history.replaceState(null, "", window.location.pathname);
-          ssoLogin({ provider: storedProvider, idToken }).then(() => {
-            const storeState = useAuthStore.getState();
-            if (!storeState.requiresTwoFactor && !storeState.requiresTwoFactorSetup && storeState.isAuthenticated) {
-              router.push(landingRouteForCurrentUser());
-            }
-          }).catch(() => {});
+          ssoLogin({ provider: storedProvider, idToken })
+            .then(() => {
+              const storeState = useAuthStore.getState();
+              if (
+                !storeState.requiresTwoFactor &&
+                !storeState.requiresTwoFactorSetup &&
+                storeState.isAuthenticated
+              ) {
+                router.push(landingRouteForCurrentUser());
+              }
+            })
+            .catch(() => {});
         }
       }
     };
@@ -534,13 +547,13 @@ function LoginPageContent() {
                   clearError();
                   if (ssoConfigError || !ssoConfig) {
                     toast.error(
-                      "Gagal memuat konfigurasi SSO. Periksa koneksi Anda lalu coba lagi."
+                      "Gagal memuat konfigurasi SSO. Periksa koneksi Anda lalu coba lagi.",
                     );
                     return;
                   }
                   if (!ssoConfig.googleEnabled || !ssoConfig.googleClientId) {
                     toast.info(
-                      "Google Workspace SSO belum dikonfigurasi di server. Minta administrator menyetel GOOGLE_CLIENT_ID."
+                      "Google Workspace SSO belum dikonfigurasi di server. Minta administrator menyetel GOOGLE_CLIENT_ID.",
                     );
                     return;
                   }
@@ -551,12 +564,14 @@ function LoginPageContent() {
                     sessionStorage.setItem("sso_state", state);
                     sessionStorage.setItem("sso_nonce", nonce);
 
-                    const redirectUri = encodeURIComponent(window.location.origin + "/login");
+                    const redirectUri = encodeURIComponent(
+                      window.location.origin + "/login",
+                    );
                     const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?response_type=id_token&client_id=${ssoConfig.googleClientId}&redirect_uri=${redirectUri}&scope=openid%20email%20profile&state=${state}&nonce=${nonce}`;
                     window.location.href = authUrl;
                   } catch {
                     toast.error(
-                      "Gagal memulai alur masuk Google Workspace. Silakan coba lagi."
+                      "Gagal memulai alur masuk Google Workspace. Silakan coba lagi.",
                     );
                   }
                 }}
@@ -579,13 +594,16 @@ function LoginPageContent() {
                   clearError();
                   if (ssoConfigError || !ssoConfig) {
                     toast.error(
-                      "Gagal memuat konfigurasi SSO. Periksa koneksi Anda lalu coba lagi."
+                      "Gagal memuat konfigurasi SSO. Periksa koneksi Anda lalu coba lagi.",
                     );
                     return;
                   }
-                  if (!ssoConfig.microsoftEnabled || !ssoConfig.microsoftClientId) {
+                  if (
+                    !ssoConfig.microsoftEnabled ||
+                    !ssoConfig.microsoftClientId
+                  ) {
                     toast.info(
-                      "Microsoft 365 SSO belum dikonfigurasi di server. Minta administrator menyetel MICROSOFT_CLIENT_ID."
+                      "Microsoft 365 SSO belum dikonfigurasi di server. Minta administrator menyetel MICROSOFT_CLIENT_ID.",
                     );
                     return;
                   }
@@ -596,12 +614,19 @@ function LoginPageContent() {
                     sessionStorage.setItem("sso_state", state);
                     sessionStorage.setItem("sso_nonce", nonce);
 
-                    const redirectUri = encodeURIComponent(window.location.origin + "/login");
-                    const authUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=${ssoConfig.microsoftClientId}&response_type=id_token&redirect_uri=${redirectUri}&scope=openid%20profile%20email&response_mode=fragment&state=${state}&nonce=${nonce}`;
+                    const redirectUri = encodeURIComponent(
+                      window.location.origin + "/login",
+                    );
+                    // Use the tenant authority the backend enforces
+                    // (MICROSOFT_TENANT_ID) so a single-tenant Entra app never
+                    // trips on the multi-tenant `common` authority; fall back to
+                    // `common` when the backend is multi-tenant.
+                    const tenant = ssoConfig.microsoftTenantId || "common";
+                    const authUrl = `https://login.microsoftonline.com/${tenant}/oauth2/v2.0/authorize?client_id=${ssoConfig.microsoftClientId}&response_type=id_token&redirect_uri=${redirectUri}&scope=openid%20profile%20email&response_mode=fragment&state=${state}&nonce=${nonce}`;
                     window.location.href = authUrl;
                   } catch {
                     toast.error(
-                      "Gagal memulai alur masuk Microsoft 365. Silakan coba lagi."
+                      "Gagal memulai alur masuk Microsoft 365. Silakan coba lagi.",
                     );
                   }
                 }}
@@ -656,9 +681,7 @@ function LoginPageContent() {
                       className={cn(
                         "flex items-center gap-2 p-2 rounded-lg border text-left transition-all text-xs",
                         "hover:bg-muted disabled:opacity-50",
-                        selectedDemo === acc.email
-                          ? "ring-2 ring-primary"
-                          : "",
+                        selectedDemo === acc.email ? "ring-2 ring-primary" : "",
                       )}
                     >
                       <DemoAvatar acc={acc} size={8} />

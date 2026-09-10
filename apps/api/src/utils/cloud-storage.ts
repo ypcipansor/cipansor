@@ -18,8 +18,30 @@ export interface StorageUploadResult {
   blobName?: string;
 }
 
+/**
+ * Allowlist of containers this application is allowed to read/write/delete.
+ *
+ * A SAS endpoint must never sign a blob URL inside an arbitrary container: that
+ * would turn "mint a link for my document" into "mint a link for anything we can
+ * guess the URL of". Every caller that reaches Azure blob storage resolves its
+ * container against this set; anything else is rejected.
+ */
+export const STORAGE_CONTAINERS = [
+  'cipansor-documents', // generic upload middleware default (HR, misc)
+  'e-office-documents', // E-Office correspondence naskah + attachments
+  'student-documents', // student/boarding records
+  'media-public', // public media (blob-level access, no SAS needed)
+] as const;
+
+export type StorageContainer = (typeof STORAGE_CONTAINERS)[number];
+
+/** True when `containerName` is one this application owns. */
+export function isAllowedContainer(containerName: string): boolean {
+  return (STORAGE_CONTAINERS as readonly string[]).includes(containerName);
+}
+
 /** Public containers use blob-level access and need no SAS; everything else is private. */
-function isPublicContainer(containerName: string): boolean {
+export function isPublicContainer(containerName: string): boolean {
   return containerName === 'media-public';
 }
 
@@ -136,6 +158,39 @@ export async function generateSasUrl(
 }
 
 /**
+ * Delete a blob from Cloud Storage.
+ *
+ * Wired into record-delete paths so removing a record does not leave its
+ * private document (HR records, letters, student docs) stored forever. When
+ * Azure is not configured there is no remote blob to remove; the function
+ * resolves successfully (the local staging file, if any, is the caller's
+ * concern). Throws when deletion fails so the caller can decide whether to
+ * roll back.
+ */
+export async function deleteFromCloudStorage(
+  containerName: string,
+  blobName: string
+): Promise<void> {
+  const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
+  if (!connectionString) {
+    // Local-only deployment: nothing remote to delete.
+    return;
+  }
+
+  try {
+    const blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
+    const containerClient = blobServiceClient.getContainerClient(containerName);
+    await containerClient.deleteBlob(blobName, { deleteSnapshots: 'include' });
+    logger.info('Blob deleted from Azure Blob Storage', { container: containerName, blobName });
+  } catch (error) {
+    logger.error('Azure Blob Storage delete failed', { container: containerName, blobName, error });
+    throw new Error(
+      `Gagal menghapus berkas dari Azure Blob Storage: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+}
+
+/**
  * Get cloud storage configuration details
  */
 export function getStorageConfig() {
@@ -163,9 +218,7 @@ export function getStorageConfig() {
  * Used by the on-demand SAS endpoint to translate a persisted stable URL
  * (no SAS) back into the container/blob needed to mint a fresh link.
  */
-export function parseBlobUrl(
-  url: string
-): { containerName: string; blobName: string } | null {
+export function parseBlobUrl(url: string): { containerName: string; blobName: string } | null {
   // Container: up to the first `/` or `?`; blob: everything after the next `/`
   // up to any query string or fragment that a SAS may have carried.
   const m = url.match(/^https?:\/\/[^/]+\.blob\.core\.windows\.net\/([^/?]+)\/([^?#]+)/);

@@ -29,6 +29,9 @@ import {
   TahfidzStudentSummary,
   CreateTahfidzInput,
   UpdateTahfidzInput,
+  GetSasUrlRequest,
+  GetSasUrlResult,
+  UploadFileResult,
 } from "@cipansor/shared";
 
 // 2FA Types
@@ -207,7 +210,8 @@ api.interceptors.response.use(
         // prospective parent to the staff login screen over that 401 is far
         // worse than letting the caller render its own empty state.
         const hadSession =
-          typeof window !== "undefined" && !!localStorage.getItem("accessToken");
+          typeof window !== "undefined" &&
+          !!localStorage.getItem("accessToken");
         if (!hadSession) {
           return Promise.reject(error);
         }
@@ -386,19 +390,9 @@ export const tahfidzApi = {
 // expiring SAS), and use `downloadUrl` only to open the file immediately after
 // upload. To display or download a persisted private reference later, call
 // `sasUrl` to mint a fresh SAS on demand.
-export interface UploadFileResult {
-  /** Stable reference to persist — never a short-lived SAS. */
-  url: string;
-  /** Temporary SAS to open the just-uploaded file. Only present for private Azure containers. */
-  downloadUrl?: string;
-  /** Azure container the blob lives in (present only for Azure uploads). */
-  containerName?: string;
-  /** Azure blob name within the container (present only for Azure uploads). */
-  blobName?: string;
-  filename: string;
-  mimetype: string;
-  size: number;
-}
+//
+// The upload response contract (UploadFileResult) lives in @cipansor/shared so
+// the API and the web client can never drift apart.
 
 export const uploadApi = {
   uploadFile: async (file: File) => {
@@ -418,10 +412,8 @@ export const uploadApi = {
    * (no `downloadUrl`).
    */
   sasUrl: async (url: string) => {
-    return api.post<ApiResponse<{ url: string; downloadUrl?: string }>>(
-      "/upload/sas",
-      { url },
-    );
+    const body: GetSasUrlRequest = { url };
+    return api.post<ApiResponse<GetSasUrlResult>>("/upload/sas", body);
   },
 };
 

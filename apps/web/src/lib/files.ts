@@ -52,7 +52,9 @@ export function isPrivateAzureBlob(url: string | null | undefined): boolean {
  * Wrap persisted upload references with this (instead of {@link authFileUrl})
  * so files inside private containers stay reachable long after upload.
  */
-export async function resolveFileUrl(url: string | null | undefined): Promise<string> {
+export async function resolveFileUrl(
+  url: string | null | undefined,
+): Promise<string> {
   if (!url) return "";
   if (!isPrivateAzureBlob(url)) return authFileUrl(url);
 

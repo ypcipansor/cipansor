@@ -4,6 +4,8 @@ import {
   generateSasUrl,
   getStorageConfig,
   parseBlobUrl,
+  deleteFromCloudStorage,
+  isAllowedContainer,
 } from './cloud-storage';
 
 const {
@@ -11,8 +13,10 @@ const {
   mockCreateIfNotExists,
   mockGetContainerClient,
   mockSasToString,
+  mockDeleteBlob,
 } = vi.hoisted(() => {
   const mockUploadFile = vi.fn().mockResolvedValue({});
+  const mockDeleteBlob = vi.fn().mockResolvedValue({});
   const mockGetBlockBlobClient = vi.fn().mockReturnValue({
     uploadFile: mockUploadFile,
     url: 'https://cipansorstore.blob.core.windows.net/e-office-documents/dummy.pdf',
@@ -21,6 +25,7 @@ const {
   const mockGetContainerClient = vi.fn().mockReturnValue({
     createIfNotExists: mockCreateIfNotExists,
     getBlockBlobClient: mockGetBlockBlobClient,
+    deleteBlob: mockDeleteBlob,
   });
   const mockSasToString = vi.fn(() => 'sig=fakeSasToken&se=2026-01-01T00%3A00%3A00Z');
   return {
@@ -29,6 +34,7 @@ const {
     mockCreateIfNotExists,
     mockGetContainerClient,
     mockSasToString,
+    mockDeleteBlob,
   };
 });
 
@@ -216,5 +222,62 @@ describe('parseBlobUrl', () => {
 
   it('returns null for a malformed URL', () => {
     expect(parseBlobUrl('not-a-url')).toBeNull();
+  });
+});
+
+describe('deleteFromCloudStorage', () => {
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  it('no-ops (resolves) when Azure is not configured', async () => {
+    delete process.env.AZURE_STORAGE_CONNECTION_STRING;
+
+    await expect(
+      deleteFromCloudStorage('e-office-documents', 'naskah.pdf')
+    ).resolves.toBeUndefined();
+    expect(mockDeleteBlob).not.toHaveBeenCalled();
+  });
+
+  it('deletes the blob including its snapshots when Azure is configured', async () => {
+    process.env.AZURE_STORAGE_CONNECTION_STRING = CONNECTION_STRING;
+
+    await deleteFromCloudStorage('e-office-documents', 'naskah.pdf');
+
+    expect(mockDeleteBlob).toHaveBeenCalledWith('naskah.pdf', {
+      deleteSnapshots: 'include',
+    });
+    expect(mockGetContainerClient).toHaveBeenCalledWith('e-office-documents');
+  });
+
+  it('throws when the remote delete fails', async () => {
+    process.env.AZURE_STORAGE_CONNECTION_STRING = CONNECTION_STRING;
+    mockDeleteBlob.mockRejectedValueOnce(new Error('Network error'));
+
+    await expect(deleteFromCloudStorage('e-office-documents', 'naskah.pdf')).rejects.toThrow(
+      /Gagal menghapus berkas dari Azure Blob Storage/
+    );
+  });
+});
+
+describe('isAllowedContainer', () => {
+  it('accepts every application-owned container', () => {
+    expect(isAllowedContainer('cipansor-documents')).toBe(true);
+    expect(isAllowedContainer('e-office-documents')).toBe(true);
+    expect(isAllowedContainer('student-documents')).toBe(true);
+    expect(isAllowedContainer('media-public')).toBe(true);
+  });
+
+  it('rejects foreign or unknown containers', () => {
+    expect(isAllowedContainer('human-resources')).toBe(false);
+    expect(isAllowedContainer('secret-reports')).toBe(false);
+    expect(isAllowedContainer('')).toBe(false);
   });
 });

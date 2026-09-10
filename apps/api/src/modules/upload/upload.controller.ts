@@ -1,29 +1,11 @@
 import { Request, Response } from 'express';
-import { ApiResponse } from '@cipansor/shared';
-import { generateSasUrl } from '@/utils/cloud-storage';
-
-/** Containers served with blob-level public access need no SAS. */
-const PUBLIC_CONTAINERS = new Set(['media-public']);
-
-export interface UploadFileResponseData {
-  /** Stable reference to persist — never a short-lived SAS. */
-  url: string;
-  /** Temporary SAS to open the just-uploaded file. Only present for private Azure containers. */
-  downloadUrl?: string;
-  /** Azure container the blob lives in (present only for Azure uploads). */
-  containerName?: string;
-  /** Azure blob name within the container (present only for Azure uploads). */
-  blobName?: string;
-  filename: string;
-  mimetype: string;
-  size: number;
-}
+import { ApiResponse, GetSasUrlRequest, GetSasUrlResult, UploadFileResult } from '@cipansor/shared';
+import { generateSasUrl, isPublicContainer } from '@/utils/cloud-storage';
+import { requireUser } from '@/middleware/auth';
+import { resolveSasForBlob } from './upload.service';
 
 export const uploadController = {
-  uploadFile: async (
-    req: Request,
-    res: Response<ApiResponse<UploadFileResponseData>>
-  ) => {
+  uploadFile: async (req: Request, res: Response<ApiResponse<UploadFileResult>>) => {
     try {
       if (!req.file) {
         return res.status(400).json({
@@ -56,7 +38,7 @@ export const uploadController = {
         stableUrl = req.body.fileUrl;
         containerName = req.body.fileContainerName;
         blobName = req.body.fileBlobName;
-        if (containerName && blobName && !PUBLIC_CONTAINERS.has(containerName)) {
+        if (containerName && blobName && !isPublicContainer(containerName)) {
           // Private container: the raw blob URL returns 403. Mint a fresh SAS
           // only for this response so the caller can open the file it just
           // uploaded; the stable raw URL above is what gets persisted.
@@ -107,14 +89,9 @@ export const uploadController = {
    * or download time to obtain a valid link. Local /uploads URLs and public
    * blob URLs pass through unchanged.
    */
-  getSasUrl: async (
-    req: Request,
-    res: Response<
-      ApiResponse<{ url: string; downloadUrl?: string }>
-    >
-  ) => {
+  getSasUrl: async (req: Request, res: Response<ApiResponse<GetSasUrlResult>>) => {
     try {
-      const { url } = (req.body ?? {}) as { url?: string };
+      const { url } = (req.body ?? {}) as GetSasUrlRequest;
       if (!url || typeof url !== 'string') {
         return res.status(400).json({
           success: false,
@@ -122,25 +99,22 @@ export const uploadController = {
           error: { code: 'URL_REQUIRED', message: 'url wajib diisi' },
         });
       }
-      const { parseBlobUrl } = await import('@/utils/cloud-storage');
-      const parsed = parseBlobUrl(url);
-      if (!parsed || PUBLIC_CONTAINERS.has(parsed.containerName)) {
-        // Not a private blob — a local /uploads path, a public blob, or an
-        // unrecognised URL. Callers should render `url` directly.
-        return res.status(200).json({ success: true, data: { url } });
-      }
-      const downloadUrl = await generateSasUrl(
-        parsed.containerName,
-        parsed.blobName,
-        60
-      );
-      return res.status(200).json({ success: true, data: { url, downloadUrl } });
+      // Container allowlist + record-ownership authorization live in the
+      // service layer; the controller only resolves the actor and shapes the
+      // response. Private blobs the caller may read get a fresh SAS.
+      const actor = requireUser(req);
+      const data = await resolveSasForBlob(url, actor);
+      return res.status(200).json({ success: true, data });
     } catch (error) {
-      return res.status(500).json({
+      const status =
+        error instanceof Error && 'statusCode' in error
+          ? (error as { statusCode?: number }).statusCode
+          : undefined;
+      return res.status(status ?? 500).json({
         success: false,
         data: null as any,
         error: {
-          code: 'SAS_ERROR',
+          code: status === 403 ? 'FORBIDDEN' : 'SAS_ERROR',
           message: error instanceof Error ? error.message : 'Unknown SAS error',
         },
       });
