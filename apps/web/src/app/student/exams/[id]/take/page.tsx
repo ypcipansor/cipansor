@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { use, useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { MainLayout } from "@/components/layout";
 import { Button } from "@/components/ui/button";
@@ -27,6 +27,7 @@ import {
   QuestionType,
 } from "@/hooks/use-cbt";
 import { useExam } from "@/hooks/use-assessment";
+import { getErrorMessage } from "@/lib/api-error";
 import {
   Loader2,
   Timer,
@@ -49,9 +50,14 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
-export default function TakeExamPage({ params }: { params: { id: string } }) {
+export default function TakeExamPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   const router = useRouter();
-  const { data: exam, isLoading: loadingExam } = useExam(params.id);
+  const { id: examId } = use(params);
+  const { data: exam, isLoading: loadingExam } = useExam(examId);
   const startExam = useStartExam();
 
   const [attemptId, setAttemptId] = useState<string | null>(null);
@@ -64,10 +70,10 @@ export default function TakeExamPage({ params }: { params: { id: string } }) {
   const handleStart = async () => {
     setIsStarting(true);
     try {
-      const data = await startExam.mutateAsync(params.id);
+      const data = await startExam.mutateAsync(examId);
       setAttemptId(data.id);
-    } catch (error: any) {
-      toast.error(error.message || "Gagal memulai ujian");
+    } catch (error) {
+      toast.error(getErrorMessage(error));
     } finally {
       setIsStarting(false);
     }

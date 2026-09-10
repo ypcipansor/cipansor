@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, Page } from "@playwright/test";
 import {
   apiLogin,
   apiRequest,
@@ -23,14 +23,16 @@ type AuthSession = Awaited<ReturnType<typeof apiLogin>>;
  * against real data (Playwright mocks are avoided per apps/web/AGENTS.md).
  */
 
-interface QuestionBank {
+interface QuestionOption {
   id: string;
+  text: string;
 }
-interface Question {
+interface QuestionDto {
   id: string;
   type: string;
   content: string;
-  options: unknown[];
+  options: QuestionOption[];
+  points: number;
 }
 interface Exam {
   id: string;
@@ -41,17 +43,21 @@ interface Attempt {
   status: string;
   tabSwitchCount?: number;
 }
-interface QuestionDto {
+interface FullAttempt {
   id: string;
-  type: string;
-  content: string;
-  options: string[];
+  status: string;
+  tabSwitchCount: number;
+  exam: {
+    questionBank: {
+      questions: QuestionDto[];
+    };
+  };
 }
 
 /** Create a question bank + 2 MCQ questions + a scheduled exam via the API. */
 async function createCbtExam(
   session: AuthSession,
-): Promise<{ exam: Exam; questions: QuestionDto[] }> {
+): Promise<{ exam: Exam; questions: QuestionDto[]; bankId: string }> {
   // Pick a seeded unit (SMP IT) + the first subject/academic-year/class/teacher.
   const units = await apiRequest<{ data: Array<{ id: string; name: string }> }>(
     session,
@@ -80,13 +86,12 @@ async function createCbtExam(
   expect(classes.data?.[0], "seeded class required").toBeTruthy();
   expect(teachers.data?.[0], "seeded teacher required").toBeTruthy();
 
-  const bankTitle = `Bank E2E ${Date.now()}`;
-  const bank = await apiRequest<{ data: QuestionBank }>(
+  const bank = await apiRequest<{ data: { id: string } }>(
     session,
     "POST",
     "/cbt/banks",
     {
-      title: bankTitle,
+      title: `Bank E2E ${Date.now()}`,
       description: "E2E question bank",
       unitId: smpit.id,
       subjectId: subjects.data[0].id,
@@ -94,28 +99,39 @@ async function createCbtExam(
     },
   );
 
-  const added: Question[] = [];
   const seeds: Array<{
     content: string;
-    options: string[];
+    options: QuestionOption[];
     answerKey: string;
     points: number;
   }> = [
     {
       content: `E2E Q1 ${Date.now()}`,
-      options: ["alpha", "beta", "gamma", "delta"],
-      answerKey: "alpha",
+      options: [
+        { id: "q1a", text: "alpha" },
+        { id: "q1b", text: "beta" },
+        { id: "q1c", text: "gamma" },
+        { id: "q1d", text: "delta" },
+      ],
+      answerKey: "q1a",
       points: 50,
     },
     {
       content: `E2E Q2 ${Date.now()}`,
-      options: ["delta", "charlie", "bravo", "alpha"],
-      answerKey: "delta",
+      options: [
+        { id: "q2a", text: "delta" },
+        { id: "q2b", text: "charlie" },
+        { id: "q2c", text: "bravo" },
+        { id: "q2d", text: "alpha" },
+      ],
+      answerKey: "q2a",
       points: 50,
     },
   ];
+
+  const added: QuestionDto[] = [];
   for (const s of seeds) {
-    const q = await apiRequest<{ data: Question }>(
+    const q = await apiRequest<{ data: QuestionDto }>(
       session,
       "POST",
       `/cbt/banks/${bank.data.id}/questions`,
@@ -147,15 +163,17 @@ async function createCbtExam(
     teacherId: teachers.data[0].id,
   });
 
-  return {
-    exam: exam.data,
-    questions: added.map((q) => ({
-      id: q.id,
-      type: q.type,
-      content: q.content,
-      options: q.options as string[],
-    })),
-  };
+  return { exam: exam.data, questions: added, bankId: bank.data.id };
+}
+
+/**
+ * Tidy up the resources this spec created. The exam cannot be deleted once a
+ * student attempt exists (a deliberate data-integrity guard in the API), so we
+ * soft-delete the question bank, which is always permitted and keeps repeat
+ * runs from accumulating active banks.
+ */
+async function cleanupCbtExam(session: AuthSession, bankId: string) {
+  await apiRequest(session, "DELETE", `/cbt/banks/${bankId}`);
 }
 
 /** Start an attempt for the seeded student and return the attempt id. */
@@ -171,49 +189,83 @@ async function startAttempt(
   return res.data;
 }
 
+/** Fetch the full attempt payload (authoritative shuffled question order). */
+async function getAttempt(
+  session: AuthSession,
+  attemptId: string,
+): Promise<FullAttempt> {
+  const res = await apiRequest<{ data: FullAttempt }>(
+    session,
+    "GET",
+    `/cbt/attempts/${attemptId}`,
+  );
+  return res.data;
+}
+
+/**
+ * Advance from the start screen into the player: the page renders a start
+ * card until "Mulai Kerjakan" is pressed, which starts/resumes the attempt
+ * and mounts the timer + question player.
+ */
+async function enterExam(page: Page) {
+  await page.getByRole("button", { name: "Mulai Kerjakan" }).click();
+  await expect(
+    page.locator("[class*='select-none']").first(),
+  ).toBeVisible({ timeout: 15000 });
+}
+
 test.describe("CBT Take Exam (Student)", () => {
   test("starts an exam and shows attempt-shuffled questions & options", async ({
     page,
   }) => {
     const admin = await apiLogin(SEED_USERS.superAdmin);
-    const { exam, questions } = await createCbtExam(admin);
-    expect(questions.length).toBeGreaterThanOrEqual(2);
-
+    const { exam, bankId } = await createCbtExam(admin);
     const student = await apiLogin(SEED_USERS.student);
-    await startAttempt(student, exam.id);
+    const attempt = await startAttempt(student, exam.id);
     await injectSession(page, student);
+
     await page.goto(`/student/exams/${exam.id}/take`);
+    await enterExam(page);
 
-    // The first rendered question comes from the real (seeded) question bank.
-    await expect(page.getByText(questions[0].content)).toBeVisible({
-      timeout: 15000,
-    });
-    await expect(page.getByText(questions[1].content)).toBeVisible();
+    // The attempt payload is the source of truth for the seeded shuffle — it is
+    // deterministic per attempt, so the rendered order must match it exactly.
+    const full = await getAttempt(student, attempt.id);
+    const ordered = full.exam.questionBank.questions;
+    expect(ordered.length).toBeGreaterThanOrEqual(2);
 
-    // Every MCQ option from the bank is rendered (order is shuffled, not the set).
-    for (const q of questions) {
+    for (let i = 0; i < ordered.length; i++) {
+      if (i > 0) {
+        await page.getByRole("button", { name: "Selanjutnya" }).click();
+      }
+      const q = ordered[i];
+      await expect(page.getByText(q.content)).toBeVisible();
       for (const opt of q.options) {
         await expect(
-          page.getByText(opt, { exact: true }).first(),
+          page.getByText(opt.text, { exact: true }).first(),
         ).toBeVisible();
       }
     }
 
-    // Clean up the exam so repeat runs keep the seeded DB tidy.
-    await apiRequest(admin, "DELETE", `/cbt/exams/${exam.id}`);
+    await cleanupCbtExam(admin, bankId);
   });
 
   test("autosaves a draft answer and recovers it after reload", async ({
     page,
   }) => {
     const admin = await apiLogin(SEED_USERS.superAdmin);
-    const { exam } = await createCbtExam(admin);
+    const { exam, bankId } = await createCbtExam(admin);
     const student = await apiLogin(SEED_USERS.student);
     const attempt = await startAttempt(student, exam.id);
     await injectSession(page, student);
 
     await page.goto(`/student/exams/${exam.id}/take`);
-    // Select the first option of the first question.
+    await enterExam(page);
+
+    // First shown question + its first option, from the authoritative payload.
+    const ordered = (await getAttempt(student, attempt.id)).exam.questionBank
+      .questions;
+    const opt0 = ordered[0].options[0];
+
     await page.getByRole("radio").first().click({ force: true });
 
     // The draft is mirrored to localStorage immediately (offline resilience).
@@ -222,34 +274,38 @@ test.describe("CBT Take Exam (Student)", () => {
       .poll(async () => page.evaluate((k) => localStorage.getItem(k), draftKey))
       .not.toBeNull();
 
+    // Reload lands back on the start screen; re-enter to re-mount the player,
+    // which rehydrates the answer from the backend + the local draft.
     await page.reload();
-    // Answer survives reload (recovered from backend + local draft).
-    await expect(page.getByRole("radio").first()).toBeChecked({
-      timeout: 15000,
-    });
+    await enterExam(page);
 
-    await apiRequest(admin, "DELETE", `/cbt/exams/${exam.id}`);
+    // The selected option is still chosen after a full reload. Mirroring the
+    // attempt's deterministic per-attempt option order, the option we clicked
+    // first is exactly the same one now — assert by its accessible name.
+    await expect(
+      page.getByRole("radio", { checked: true }).first(),
+    ).toHaveAccessibleName(opt0.text);
+
+    await cleanupCbtExam(admin, bankId);
   });
 
   test("auto-submits on timeout and STILL finishes the exam even if some uploads fail", async ({
     page,
   }) => {
     const admin = await apiLogin(SEED_USERS.superAdmin);
-    const { exam } = await createCbtExam(admin);
+    const { exam, bankId } = await createCbtExam(admin);
     const student = await apiLogin(SEED_USERS.student);
     const attempt = await startAttempt(student, exam.id);
     await injectSession(page, student);
 
-    // Install a fake clock BEFORE the page loads so the countdown interval and
-    // `new Date()` are both driven by the same virtual timeline.
-    await page.clock.install();
-
+    // Navigate first (a fresh document needs the fake clock installed after
+    // load — installing before page.goto is wiped when the new document
+    // mounts its own real timers). The countdown interval is only scheduled
+    // once the player mounts, which happens when "Mulai Kerjakan" is pressed.
     await page.goto(`/student/exams/${exam.id}/take`);
-    // Answer the first question so at least one answer uploads during finish.
-    await page.getByRole("radio").first().click({ force: true });
 
-    // Simulate uploads failing during finish. Route interception runs in the
-    // page context; the next submit request is the browser's real call.
+    // Simulate uploads failing during finish BEFORE the first answer upload,
+    // so a real answer submission lands in the pending set as a failure.
     await page.route("**/api/cbt/attempts/*/answer**", async (route) => {
       // Fail every answer upload to emulate "sebagian jawaban gagal terunggah".
       await route.fulfill({
@@ -259,12 +315,23 @@ test.describe("CBT Take Exam (Student)", () => {
       });
     });
 
-    // Fast-forward the countdown past the exam duration so the timer fires the
-    // auto-submit path (isAuto === true), which must complete the exam.
-    await page.clock.fastForward("60:01");
+    // Install a fake clock after navigation and before the player mounts, so
+    // the countdown interval + `new Date()` are driven by the same virtual
+    // timeline.
+    await page.clock.install();
+    await enterExam(page);
 
-    // The instructor sees a COMPLETED attempt with the attempt no longer
-    // pending — the exam finished despite the failed uploads.
+    // Answer the first question. The upload fails (route above); the pending
+    // submission is retried during finish and still must not block completion.
+    await page.getByRole("radio").first().click({ force: true });
+
+    // Run the countdown clock past the exam duration so the repeating 1-second
+    // interval fires the auto-submit path (isAuto === true), which must complete
+    // the exam. (runFor, unlike fastForward, fires every recurring tick.)
+    await page.clock.runFor(120_000); // 2min > the exam's 1min duration
+
+    // The attempt is graded instead of silently EXPIRING — it completes even
+    // though every answer upload failed.
     await expect
       .poll(
         async () => {
@@ -279,21 +346,21 @@ test.describe("CBT Take Exam (Student)", () => {
       )
       .toBe("COMPLETED");
 
-    await apiRequest(admin, "DELETE", `/cbt/exams/${exam.id}`);
+    await cleanupCbtExam(admin, bankId);
   });
 
   test("records anti-cheating events and persists the tab-switch counter on refresh", async ({
     page,
   }) => {
     const admin = await apiLogin(SEED_USERS.superAdmin);
-    const { exam } = await createCbtExam(admin);
+    const { exam, bankId } = await createCbtExam(admin);
     const student = await apiLogin(SEED_USERS.student);
     const attempt = await startAttempt(student, exam.id);
     await injectSession(page, student);
 
     await page.goto(`/student/exams/${exam.id}/take`);
+    await enterExam(page);
     const card = page.locator("[class*='select-none']").first();
-    await expect(card).toBeVisible({ timeout: 15000 });
 
     // Copy / paste / right-click on the question card fire the React security
     // handlers. Dispatching synthetic DOM events is more reliable than keyboard
@@ -302,7 +369,8 @@ test.describe("CBT Take Exam (Student)", () => {
     await card.dispatchEvent("paste");
     await card.dispatchEvent("contextmenu");
 
-    // Simulate a tab switch (visibilitychange marks the document hidden).
+    // Simulate a tab switch (visibilitychange marks the document hidden), which
+    // the anti-cheating listener records as a security event on the backend.
     await page.evaluate(() => {
       Object.defineProperty(document, "hidden", {
         configurable: true,
@@ -326,6 +394,7 @@ test.describe("CBT Take Exam (Student)", () => {
     // After a reload the page re-mounts and the attempt is still IN_PROGRESS
     // (nothing finalised the exam), proving the counter data round-trips.
     await page.reload();
+    await enterExam(page);
     await expect(card).toBeVisible({ timeout: 15000 });
     const after = await apiRequest<{ data: Attempt }>(
       student,
@@ -334,6 +403,6 @@ test.describe("CBT Take Exam (Student)", () => {
     );
     expect(after.data?.tabSwitchCount ?? 0).toBeGreaterThan(0);
 
-    await apiRequest(admin, "DELETE", `/cbt/exams/${exam.id}`);
+    await cleanupCbtExam(admin, bankId);
   });
 });
