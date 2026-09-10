@@ -255,13 +255,42 @@ export class EvaluationService {
 
     if (!evaluation) return;
 
-    // Kumpulkan realisasi indikator di SELURUH evaluasi PK, terurut menurut
-    // tahun/bulan. Ini dasar hitung capaian YTD: skor indikator bukan jumlah
-    // skor bulanan mentah (yang untuk KUMULATIF memberi ~1/12 untuk tiap bulan
-    // yang dicicil menuju target setahun), melainkan capaian YTD ter-agregasi
-    // menurut `indicator.aggregation` dibanding target.
+    // Kumpulkan realisasi indikator PK, terurut menurut tahun/bulan, TETAPI
+    // hanya sampai periode evaluasi yang sedang dihitung. Ini dasar hitung
+    // capaian YTD: skor indikator bukan jumlah skor bulanan mentah (yang untuk
+    // KUMULATIF memberi ~1/12 untuk tiap bulan yang dicicil menuju target
+    // setahun), melainkan capaian YTD ter-agregasi menurut
+    // `indicator.aggregation` dibanding target.
+    //
+    // Tanpa dua pembatas ini skor YTD bulan berikutnya mengontaminasi bulan
+    // yang lebih awal: evaluasi Januari memuat realisasi Februari yang belum
+    // ada saat Januari dinilai. Jadi bentuk agregasi hanya dari evaluasi yang
+    // PERIODENYA sudah tiba (year/month <= current) dengan status yang sudah
+    // dikunci (PROPOSED/APPROVED), plus evaluasi saat ini sendiri yang sedang
+    // dinilai realisasinya.
+    const relevantStatuses = [PlanStatus.APPROVED, PlanStatus.PROPOSED];
+    const periodCondition =
+      evaluation.year !== undefined && evaluation.year !== null
+        ? [
+            {
+              OR: [
+                { year: { lt: evaluation.year } },
+                { year: evaluation.year, month: { lte: evaluation.month ?? 12 } },
+              ],
+            },
+          ]
+        : [];
+
     const aggs = await client.pKIndicatorEvaluation.findMany({
-      where: { evaluation: { pkId: evaluation.pkId } },
+      where: {
+        evaluation: {
+          AND: [
+            { pkId: evaluation.pkId },
+            { OR: [{ id: evaluationId }, { status: { in: relevantStatuses } }] },
+            ...periodCondition,
+          ],
+        },
+      },
       select: {
         indicatorId: true,
         realization: true,
@@ -418,6 +447,8 @@ export class EvaluationService {
         },
         evaluations: {
           where: { status: PlanStatus.APPROVED },
+          // Urutan wajib: periode terakhir = evaluasi paling akhir (max period).
+          orderBy: [{ year: 'asc' }, { month: 'asc' }],
         },
       },
     });
@@ -443,23 +474,25 @@ export class EvaluationService {
       });
     }
 
-    // 2. PK aggregate scores = average of approved monthly evaluations.
+    // 2. PK aggregate scores = capaian YTD TERKINI, bukan rata-rata skor
+    //    bulanan. Setiap `performanceScore` bulanan SUDAH merupakan capaian
+    //    YTD (naik bertahap terhadap target setahun); merata-ratakannya kembali
+    //    membuat target tahunan yang tercapai penuh terbaca jauh di bawah 100%.
+    //    Pakai skor perioda terakhir (teragregasi) yang sudah diurut naik.
     const approvedCount = pk.evaluations.length;
     if (approvedCount === 0) return;
 
-    const avgPerformance =
-      pk.evaluations.reduce((sum: number, ev: any) => sum + ev.performanceScore, 0) / approvedCount;
-    const avgBehavior =
-      pk.evaluations.reduce((sum: number, ev: any) => sum + ev.behaviorScore, 0) / approvedCount;
-    const avgOverall =
-      pk.evaluations.reduce((sum: number, ev: any) => sum + ev.overallScore, 0) / approvedCount;
+    const latest = pk.evaluations[pk.evaluations.length - 1];
+    const latestPerformance = latest?.performanceScore ?? 0;
+    const latestBehavior = latest?.behaviorScore ?? 0;
+    const latestOverall = latest?.overallScore ?? 0;
 
     await tx.performanceAgreement.update({
       where: { id: pkId },
       data: {
-        totalScore: avgPerformance,
-        behaviorScore: avgBehavior,
-        overallScore: avgOverall,
+        totalScore: latestPerformance,
+        behaviorScore: latestBehavior,
+        overallScore: latestOverall,
       },
     });
 
@@ -474,20 +507,20 @@ export class EvaluationService {
     if (!talentProfile) return;
 
     let rating: PerformanceRating;
-    if (avgOverall >= 90) rating = PerformanceRating.OUTSTANDING;
-    else if (avgOverall >= 80) rating = PerformanceRating.EXCEEDS;
-    else if (avgOverall >= 70) rating = PerformanceRating.MEETS;
-    else if (avgOverall >= 60) rating = PerformanceRating.BELOW;
+    if (latestOverall >= 90) rating = PerformanceRating.OUTSTANDING;
+    else if (latestOverall >= 80) rating = PerformanceRating.EXCEEDS;
+    else if (latestOverall >= 70) rating = PerformanceRating.MEETS;
+    else if (latestOverall >= 60) rating = PerformanceRating.BELOW;
     else rating = PerformanceRating.UNSATISFACTORY;
 
     const period = `PK Sync ${pk.periodStart.getFullYear()} (${pkId.slice(0, 8)})`;
     const assessmentData = {
       performanceRating: rating,
       potentialRating: talentProfile.assessments[0]?.potentialRating ?? PerformanceRating.MEETS,
-      overallScore: avgOverall,
+      overallScore: latestOverall,
       feedback:
-        `Automated sync from Perjanjian Kinerja. Performance: ${avgPerformance.toFixed(2)}, ` +
-        `Behavior (SAFTI): ${avgBehavior.toFixed(2)}. Potential rating carried forward — review manually.`,
+        `Automated sync from Perjanjian Kinerja. Performance: ${latestPerformance.toFixed(2)}, ` +
+        `Behavior (SAFTI): ${latestBehavior.toFixed(2)}. Potential rating carried forward — review manually.`,
       assessedAt: new Date(),
     };
 

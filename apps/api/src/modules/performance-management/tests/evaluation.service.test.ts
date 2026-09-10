@@ -190,6 +190,90 @@ describe('EvaluationService', () => {
         data: { score: 80 },
       });
     });
+// Bug regresi #3 — evaluasi periode berikutnya (atau status yang belum
+    // dikunci) tidak boleh mengontaminasi skor YTD periode yang lebih awal.
+    // Saat menghitung ulang skor Januari, agregasi realisasi wajib dibatasi ke
+    // tahun/bulan <= Januari dan hanya status yang relevan (APPROVED/PROPOSED).
+    it('membatasi agregasi YTD ke periode dan status yang relevan (Bug regresi #3)', async () => {
+      mocked.pKEvaluation.findUnique.mockResolvedValue({
+        id: 'ev-jan',
+        pkId: 'pk-1',
+        status: 'DRAFT',
+        year: 2026,
+        month: 1,
+        indicatorDetails: [
+          {
+            id: 'dev-jan',
+            indicatorId: 'ind-jan',
+            indicator: { weight: 100, target: 100, aggregation: IndicatorAggregation.KUMULATIF },
+          },
+        ],
+        behaviorDetails: [],
+      });
+      mocked.pKIndicatorEvaluation.findMany.mockResolvedValue([]);
+      mocked.pKEvaluation.update.mockResolvedValue({});
+
+      await evaluationService.recalculateEvaluationScores('ev-jan');
+
+      const callArgs = mocked.pKIndicatorEvaluation.findMany.mock.calls[0][0];
+      const evalFilter = callArgs.where.evaluation;
+      expect(evalFilter.AND).toEqual(
+        expect.arrayContaining([
+          { pkId: 'pk-1' },
+          { OR: [{ id: 'ev-jan' }, { status: { in: ['APPROVED', 'PROPOSED'] } }] },
+          { OR: [{ year: { lt: 2026 } }, { year: 2026, month: { lte: 1 } }] },
+        ])
+      );
+    });
+
+    // Versi perilaku Bug regresi #3: dengan where dipatuhi, realisasi Februari
+    // tidak ikut — skor Januari (realisasi 40, target 100) = 40, bukan 100.
+    it('menghitung skor Januari tanpa memakai realisasi Februari (Bug regresi #3)', async () => {
+      mocked.pKEvaluation.findUnique.mockResolvedValue({
+        id: 'ev-jan',
+        pkId: 'pk-1',
+        status: 'DRAFT',
+        year: 2026,
+        month: 1,
+        indicatorDetails: [
+          {
+            id: 'dev-jan',
+            indicatorId: 'ind-jan',
+            indicator: { weight: 100, target: 100, aggregation: IndicatorAggregation.KUMULATIF },
+          },
+        ],
+        behaviorDetails: [],
+      });
+
+      // findMany mengabaikan where karena di-mock, jadi kita meniru basis data
+      // dengan memfilter baris sesuai where periode evaluasi (<= Jan 2026):
+      // realisasi Februari (month 2) TIDAK boleh ikut.
+      mocked.pKIndicatorEvaluation.findMany.mockImplementation(async (args: any) => {
+        const rows = [
+          { indicatorId: 'ind-jan', realization: 40, evaluation: { year: 2026, month: 1 } },
+          { indicatorId: 'ind-jan', realization: 60, evaluation: { year: 2026, month: 2 } },
+        ];
+        // Bentuk where.evaluation.AND[2].OR = [{year:{lt}}, {year, month:{lte}}]
+        const periodCond = args.where.evaluation.AND.find(
+          (c: any) => Array.isArray(c.OR) && c.OR[1] !== undefined && c.OR[1].year !== undefined
+        );
+        const y = periodCond?.OR?.[1]?.year ?? 2026;
+        const m = periodCond?.OR?.[1]?.month?.lte ?? 1;
+        return rows.filter(
+          (r) => r.evaluation.year < y || (r.evaluation.year === y && r.evaluation.month <= m)
+        );
+      });
+      mocked.pKEvaluation.update.mockResolvedValue({});
+
+      await evaluationService.recalculateEvaluationScores('ev-jan');
+
+      const args = mocked.pKEvaluation.update.mock.calls[0][0];
+      expect(args.data.performanceScore).toBeCloseTo(40, 5);
+      expect(mocked.pKIndicatorEvaluation.update).toHaveBeenCalledWith({
+        where: { id: 'dev-jan' },
+        data: { score: 40 },
+      });
+    });
   });
 
   describe('concurrent edit after approval regression tests', () => {
@@ -388,9 +472,12 @@ describe('EvaluationService', () => {
         data: { realization: 7 },
       });
       const pkUpdate = mocked.performanceAgreement.update.mock.calls[0][0];
-      expect(pkUpdate.data.totalScore).toBe(70);
-      expect(pkUpdate.data.behaviorScore).toBe(80);
-      expect(pkUpdate.data.overallScore).toBe(73);
+      // Bug regresi #4: agregat PK memakai capaian YTD TERKINI (evaluasi
+      // terakhir), bukan rata-rata skor bulanan yang menaik. Evaluasi terakhir
+      // dalam daftar (60/70/63) — bukan rata-rata (70/80/73).
+      expect(pkUpdate.data.totalScore).toBe(60);
+      expect(pkUpdate.data.behaviorScore).toBe(70);
+      expect(pkUpdate.data.overallScore).toBe(63);
       expect(mocked.talentProfile.findUnique).not.toHaveBeenCalled();
     });
 
@@ -426,6 +513,39 @@ describe('EvaluationService', () => {
       expect(taUpdate.data.performanceRating).toBe('OUTSTANDING');
       // Potential is carried forward from the latest human assessment.
       expect(taUpdate.data.potentialRating).toBe('EXCEEDS');
+    });
+// Bug regresi #4 — agregat PK memakai capaian YTD TERKINI, bukan rata-rata
+    // skor bulanan yang menaik. Target 120 dicicil 10/bulan selama 12 bulan
+    // memberi skor YTD per bulan 8,33; 16,67; …; 100. Rata-rata dari 12 angka
+    // itu ~54; capaian YTD terkini (bulan ke-12) = 100.
+    it('mencapai ~100 untuk target tahunan yang dicicil penuh (Bug regresi #4)', async () => {
+      mocked.pKEvaluation.findUnique.mockResolvedValue({
+        id: 'ev-12',
+        pkId: 'pk-1',
+        status: 'DRAFT',
+        pk: { userId: 'u-1', supervisorId: 'u-boss' },
+      });
+      mocked.pKEvaluation.updateMany.mockResolvedValue({ count: 1 });
+      mocked.performanceAgreement.findUnique.mockResolvedValue({
+        id: 'pk-1',
+        userId: 'u-1',
+        supervisorId: null, // tanpa supervisor — tidak ada sinkron talent
+        periodStart: new Date('2026-01-01'),
+        indicators: [],
+        evaluations: Array.from({ length: 12 }, (_, i) => {
+          const p = Math.round((((i + 1) * 10) / 120) * 100 * 100) / 100;
+          return { performanceScore: p, behaviorScore: 100 - i, overallScore: (p * 0.6 + (100 - i) * 0.4) };
+        }),
+      });
+      mocked.pKIndicator.update.mockResolvedValue({});
+      mocked.performanceAgreement.update.mockResolvedValue({});
+
+      await evaluationService.approveEvaluation('ev-12', 'u-boss', false);
+
+      const pkUpdate = mocked.performanceAgreement.update.mock.calls[0][0];
+      // Evaluasi terakhir (bulan ke-12): performanceScore 100, behavior 89.
+      expect(pkUpdate.data.totalScore).toBeCloseTo(100, 5);
+      expect(pkUpdate.data.behaviorScore).toBeCloseTo(89, 5);
     });
   });
 });

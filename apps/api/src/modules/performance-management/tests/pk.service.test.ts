@@ -268,6 +268,50 @@ describe('PerformanceAgreementService', () => {
 
       expect(mocked.performanceAgreement.delete).toHaveBeenCalledWith({ where: { id: 'pk-1' } });
     });
+it('blocks admin of employee-origin unit from deleting a PK owned by another unit\'s plan (Bug regresi #2)', async () => {
+      // Pegawai asal unit-sdit, tetapi PK mengimplementasikan rencana milik
+      // unit-smpit (strategicPlan.unitId). Kepemilikan PK mengikuti pemilik
+      // rencana, jadi admin unit-sdit (asal pegawai) TIDAK boleh menghapus.
+      mocked.performanceAgreement.findUnique.mockResolvedValueOnce({
+        id: 'pk-1',
+        userId: 'u-sdit-employee',
+        status: 'DRAFT',
+        user: { id: 'u-sdit-employee', unitId: 'unit-sdit' },
+        strategicPlan: { unitId: 'unit-smpit' },
+      });
+
+      await expect(
+        pkService.deletePK('pk-1', {
+          id: 'admin-sdit',
+          isAdmin: true,
+          roleCode: 'SDIT_ADMIN',
+          unitId: 'unit-sdit',
+        })
+      ).rejects.toThrow(/permission|forbidden/i);
+      expect(mocked.performanceAgreement.delete).not.toHaveBeenCalled();
+    });
+
+    it('allows admin of the plan-owning unit to delete a PK whose plan belongs to their unit (Bug regresi #2)', async () => {
+      // Pegawai asal unit-sdit, tetapi rencana (dan karenanya PK) milik unit-smpit.
+      // Admin unit-smpit (pemilik rencana) BOLEH menghapus.
+      mocked.performanceAgreement.findUnique.mockResolvedValueOnce({
+        id: 'pk-1',
+        userId: 'u-sdit-employee',
+        status: 'DRAFT',
+        user: { id: 'u-sdit-employee', unitId: 'unit-sdit' },
+        strategicPlan: { unitId: 'unit-smpit' },
+      });
+      mocked.performanceAgreement.delete.mockResolvedValueOnce({ id: 'pk-1' });
+
+      await pkService.deletePK('pk-1', {
+        id: 'admin-smpit',
+        isAdmin: true,
+        roleCode: 'SMPIT_ADMIN',
+        unitId: 'unit-smpit',
+      });
+
+      expect(mocked.performanceAgreement.delete).toHaveBeenCalledWith({ where: { id: 'pk-1' } });
+    });
 
     it('rejects deletion when PK becomes APPROVED after acquiring row lock (concurrent approval race)', async () => {
       // In deletePK, $queryRaw FOR UPDATE locks the row first, then findUnique reads the latest status under lock.

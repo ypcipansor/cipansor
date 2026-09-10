@@ -452,6 +452,7 @@ export class PerformanceAgreementService {
         where: { id },
         include: {
           user: { select: { id: true, unitId: true } },
+          strategicPlan: { select: { unitId: true } },
         },
       });
       if (!pk) throw Errors.notFound('PK');
@@ -460,13 +461,19 @@ export class PerformanceAgreementService {
         throw Errors.conflict('Only DRAFT performance agreements can be deleted');
       }
 
+      // Unit yang memiliki PK ditentukan dari RENCANA yang diimplementasikannya
+      // (strategicPlan.unitId), bukan dari unit asal pegawai (user.unitId) —
+      // konsisten dengan assertUnitScope. Admin unit pemilik rencana boleh
+      // menghapus; admin unit asal pegawai (jika berbeda) tidak.
+      const ownerUnitId = pk.strategicPlan?.unitId ?? pk.user?.unitId;
+
       const isOwner = pk.userId === callerObj.id;
       const isSuperAdmin = callerObj.roleCode === 'SUPER_ADMIN';
       const isSameUnitAdmin =
         !!callerObj.isAdmin &&
         callerObj.unitId !== null &&
         callerObj.unitId !== undefined &&
-        pk.user?.unitId === callerObj.unitId;
+        ownerUnitId === callerObj.unitId;
 
       if (!isOwner && !isSuperAdmin && !isSameUnitAdmin) {
         throw Errors.forbidden('You do not have permission to delete this performance agreement');

@@ -14,12 +14,26 @@ import {
   listPlanQuerySchema,
 } from './perencanaan.validation';
 import { UserRole } from '@prisma/client';
+import { ADMIN_ROLE_CODES, GOVERNANCE_ROLE_CODES } from '@cipansor/shared';
 import { seesAllUnits } from '@/utils/resolve-unit-id';
 
 const PRIVILEGED_ROLES: string[] = [UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN];
 
-function isPrivileged(role?: string): boolean {
-  return role ? PRIVILEGED_ROLES.includes(role) : false;
+/**
+ * RoleCodes that may author strategic plans. Faithful to the legacy
+ * PRIVILEGED_ROLES bucket (SUPER_ADMIN + UNIT_ADMIN): a roleCode is privileged
+ * when it is a system-admin code or a foundation governance code, since
+ * GOVERNANCE_ROLE_CODES is what the legacy UNIT_ADMIN string expands to.
+ */
+const PRIVILEGED_ROLE_CODES: string[] = [...ADMIN_ROLE_CODES, ...GOVERNANCE_ROLE_CODES];
+
+function isPrivileged(user?: PlanUser): boolean {
+  if (!user) return false;
+  // Canonical path: roleCode. It is also, alone, trustworthy — every roleCode
+  // that maps onto the legacy SUPER_ADMIN/UNIT_ADMIN buckets is listed above,
+  // while the legacy `role` string is only consulted for pre-roleCode callers.
+  if (user.roleCode) return PRIVILEGED_ROLE_CODES.includes(user.roleCode);
+  return !!user.role && PRIVILEGED_ROLES.includes(user.role);
 }
 
 type PlanUser = { role?: string; roleCode?: string | null; unitId?: string | null };
@@ -45,12 +59,14 @@ function canReadPlan(planUnitId: string | null, user?: PlanUser): boolean {
  * Write gate — deliberately narrower than the read gate (mutations must never
  * widen). A foundation-wide plan may be written only by a foundation-scoped
  * caller, so a single-unit admin cannot rewrite the yayasan's RPJP. A
- * unit-owned plan stays writable by a privileged user or that unit, exactly as
- * before.
+ * unit-owned plan stays writable by a privileged user within that unit only —
+ * mere unit membership (teacher/staff) is not enough to mutate another user's
+ * objectives, indicators and activities.
  */
 function canWritePlan(planUnitId: string | null, user?: PlanUser): boolean {
+  if (!isPrivileged(user)) return false;
   if (planUnitId === null) return seesAll(user);
-  return isPrivileged(user?.role) || planUnitId === user?.unitId;
+  return seesAll(user) || planUnitId === user?.unitId;
 }
 
 type PlanAuth = { id: string; unitId: string | null; status: string };
@@ -153,7 +169,7 @@ export const createPlan = asyncHandler(async (req: Request, res: Response) => {
   // targetUnitId ke unitnya sendiri, sehingga dokumen yayasan tercatat milik
   // satu unit dan memblokir root yayasan yang sebenarnya. Tolak dengan jelas.
   const isFoundationDoc = body.type === 'RPJP' || body.type === 'RENSTRA';
-  if (isFoundationDoc && (!isPrivileged(req.user?.role) || !seesAll(req.user))) {
+  if (isFoundationDoc && (!isPrivileged(req.user) || !seesAll(req.user))) {
     throw Errors.forbidden(
       `${body.type} adalah dokumen tingkat yayasan dan hanya boleh dibuat oleh pengurus yayasan atau super admin.`
     );
@@ -173,7 +189,7 @@ export const createPlan = asyncHandler(async (req: Request, res: Response) => {
     if (body.unitId) {
       // Naming someone else's unit is the privileged write that already
       // existed (SUPER_ADMIN / UNIT_ADMIN).
-      if (!isPrivileged(req.user?.role)) throw Errors.badRequest('Unit ID is required');
+      if (!isPrivileged(req.user)) throw Errors.badRequest('Unit ID is required');
       targetUnitId = body.unitId;
     } else {
       // Omitting the unit files the plan as the yayasan's own. That takes the
@@ -181,7 +197,7 @@ export const createPlan = asyncHandler(async (req: Request, res: Response) => {
       // scope. `seesAll` alone is too wide — it is also true for cross-unit
       // service staff (perawat, pustakawan, laboran), who read every unit but
       // have no business authoring the yayasan's RPJP.
-      if (!isPrivileged(req.user?.role) || !seesAll(req.user)) {
+      if (!isPrivileged(req.user) || !seesAll(req.user)) {
         throw Errors.badRequest('Unit ID is required');
       }
       targetUnitId = null;
@@ -222,7 +238,7 @@ export const approvePlan = asyncHandler(async (req: Request, res: Response) => {
   // Keep the original "admins only" floor, then add the foundation tightening:
   // a foundation-wide plan may be approved only by a foundation-scoped caller,
   // so a single-unit admin cannot ratify the yayasan's RPJP/Renstra.
-  if (!isPrivileged(req.user?.role)) throw Errors.forbidden('Only admins can approve plans');
+  if (!isPrivileged(req.user)) throw Errors.forbidden('Only admins can approve plans');
   if (existing.unitId === null && !seesAll(req.user)) {
     throw Errors.forbidden('Only foundation admins can approve a foundation-wide plan');
   }
@@ -341,7 +357,7 @@ export const addCollaborator = asyncHandler(async (req: Request, res: Response) 
     req.params.id,
     userId,
     callerId,
-    isPrivileged(req.user?.role)
+    isPrivileged(req.user)
   );
   res.status(201).json({ success: true, data: collaborator });
 });
@@ -354,7 +370,7 @@ export const removeCollaborator = asyncHandler(async (req: Request, res: Respons
     req.params.id,
     req.params.userId,
     callerId,
-    isPrivileged(req.user?.role)
+    isPrivileged(req.user)
   );
   res.json({ success: true, message: 'Collaborator removed' });
 });
