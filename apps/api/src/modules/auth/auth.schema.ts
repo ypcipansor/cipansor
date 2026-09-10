@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { RoleCode } from '@prisma/client';
+import { ssoLoginSchema } from '@cipansor/shared';
 
 // Login schema
 export const loginSchema = z.object({
@@ -96,3 +97,8 @@ export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type RefreshTokenInput = z.infer<typeof refreshTokenSchema>;
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+
+// SSO Login Schema (Google & Microsoft 365) — single source of truth lives in
+// @cipansor/shared so the web client and this API edge can never drift apart.
+export { ssoLoginSchema };
+export type { SSOLoginInput } from '@cipansor/shared';

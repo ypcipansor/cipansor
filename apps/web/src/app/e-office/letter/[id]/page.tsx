@@ -1,6 +1,6 @@
 "use client";
 import { useRouter } from "next/navigation";
-import { authFileUrl } from "@/lib/files";
+import { authFileUrl, resolveFileUrl } from "@/lib/files";
 import { safeFormat } from "@/lib/date";
 import { useCorrespondence } from "@/hooks/use-correspondence";
 import { useAuth } from "@/hooks/use-auth";
@@ -32,7 +32,7 @@ import {
 } from "lucide-react";
 
 import { id } from "date-fns/locale";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 /*
  * Tidak ada html2canvas dan jsPDF di sini lagi.
  *
@@ -116,6 +116,43 @@ export default function LetterDetailPage({
     limit: 100,
   });
   const { data: letter, isLoading } = useLetter(params.id);
+
+  // Persisted upload references stay stable (no expiring SAS) while Azure
+  // private blobs need a fresh SAS to render. Resolve naskah + attachment URLs
+  // on demand when the letter loads.
+  const [resolvedFiles, setResolvedFiles] = useState<Record<string, string>>(
+    {},
+  );
+  useEffect(() => {
+    if (!letter) return;
+    const urls = [
+      letter.fileUrl,
+      ...(letter.attachments ?? []).map((a) => a.fileUrl).filter(Boolean),
+    ].filter((u): u is string => !!u);
+    const needs = urls.filter((u) => /\.blob\.core\.windows\.net\//.test(u));
+    if (needs.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const entries = await Promise.all(
+        needs.map(async (u) => [u, await resolveFileUrl(u)] as const),
+      );
+      if (cancelled) return;
+      setResolvedFiles((prev) => {
+        const next = { ...prev };
+        for (const [k, v] of entries) next[k] = v;
+        return next;
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [letter]);
+
+  /** Prefer the on-demand SAS when a stable reference was resolved. */
+  const displayable = (u?: string | null): string => {
+    if (!u) return "";
+    return resolvedFiles[u] || authFileUrl(u);
+  };
 
   const [notes, setNotes] = useState("");
   const [dispositionOpen, setDispositionOpen] = useState(false);
@@ -934,7 +971,7 @@ export default function LetterDetailPage({
                     </span>
                     <Button variant="ghost" size="sm" asChild>
                       <a
-                        href={authFileUrl(letter.fileUrl)}
+                        href={displayable(letter.fileUrl)}
                         target="_blank"
                         rel="noopener noreferrer"
                       >
@@ -971,7 +1008,7 @@ export default function LetterDetailPage({
                         </span>
                         <Button variant="ghost" size="sm" asChild>
                           <a
-                            href={authFileUrl(att.fileUrl)}
+                            href={displayable(att.fileUrl)}
                             target="_blank"
                             rel="noopener noreferrer"
                           >
@@ -1103,7 +1140,7 @@ export default function LetterDetailPage({
               </CardHeader>
               <CardContent>
                 <object
-                  data={authFileUrl(letter.fileUrl)}
+                  data={displayable(letter.fileUrl)}
                   type="application/pdf"
                   className="w-full h-[600px] rounded border bg-muted"
                 >
@@ -1112,7 +1149,7 @@ export default function LetterDetailPage({
                     <p className="mb-2">Pratinjau tidak tersedia.</p>
                     <Button variant="outline" size="sm" asChild>
                       <a
-                        href={authFileUrl(letter.fileUrl)}
+                        href={displayable(letter.fileUrl)}
                         target="_blank"
                         rel="noopener noreferrer"
                       >

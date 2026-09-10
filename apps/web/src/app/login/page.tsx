@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
@@ -32,6 +32,7 @@ import {
 import { TwoFactorVerify } from "@/components/auth/TwoFactorVerify";
 import { TwoFactorSetup } from "@/components/auth/TwoFactorSetup";
 import { toast } from "sonner";
+import { useSSOConfig } from "@/hooks/use-sso-config";
 import {
   DEMO_ACCOUNTS,
   DEMO_TABS,
@@ -119,6 +120,7 @@ function LoginPageContent() {
   const router = useRouter();
   const {
     login,
+    ssoLogin,
     isLoading,
     error,
     clearError,
@@ -127,6 +129,90 @@ function LoginPageContent() {
     verifyTwoFactor,
     resetAuth,
   } = useAuthStore();
+
+  // SSO config via the React Query data-layer hook (never the Axios instance).
+  const { data: ssoConfig, isError: ssoConfigError } = useSSOConfig();
+
+  // Handle OIDC token callback in URL hash (e.g. #id_token=...)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const checkHashAndLogin = () => {
+      const hash = window.location.hash;
+      if (hash.includes("id_token=")) {
+        const params = new URLSearchParams(hash.substring(1));
+        const idToken = params.get("id_token");
+        const state = params.get("state");
+        const storedState = sessionStorage.getItem("sso_state");
+        const storedNonce = sessionStorage.getItem("sso_nonce");
+        const storedProvider = sessionStorage.getItem("sso_provider") as
+          "google" | "microsoft" | null;
+
+        if (!storedProvider) {
+          toast.error(
+            "Sesi SSO tidak valid atau telah kedaluwarsa. Silakan coba lagi.",
+          );
+          window.history.replaceState(null, "", window.location.pathname);
+          return;
+        }
+
+        if (storedState && state !== storedState) {
+          toast.error(
+            "Validasi keamanan SSO (state) gagal. Silakan coba lagi.",
+          );
+          sessionStorage.removeItem("sso_state");
+          sessionStorage.removeItem("sso_nonce");
+          sessionStorage.removeItem("sso_provider");
+          window.history.replaceState(null, "", window.location.pathname);
+          return;
+        }
+
+        // Decode JWT payload to verify nonce claim
+        if (idToken && storedNonce) {
+          try {
+            const parts = idToken.split(".");
+            if (parts.length === 3) {
+              const payload = JSON.parse(atob(parts[1]));
+              if (payload.nonce && payload.nonce !== storedNonce) {
+                toast.error(
+                  "Validasi keamanan SSO (nonce) gagal. Silakan coba lagi.",
+                );
+                sessionStorage.removeItem("sso_state");
+                sessionStorage.removeItem("sso_nonce");
+                sessionStorage.removeItem("sso_provider");
+                window.history.replaceState(null, "", window.location.pathname);
+                return;
+              }
+            }
+          } catch {}
+        }
+
+        sessionStorage.removeItem("sso_state");
+        sessionStorage.removeItem("sso_nonce");
+        sessionStorage.removeItem("sso_provider");
+
+        if (idToken) {
+          window.history.replaceState(null, "", window.location.pathname);
+          ssoLogin({ provider: storedProvider, idToken })
+            .then(() => {
+              const storeState = useAuthStore.getState();
+              if (
+                !storeState.requiresTwoFactor &&
+                !storeState.requiresTwoFactorSetup &&
+                storeState.isAuthenticated
+              ) {
+                router.push(landingRouteForCurrentUser());
+              }
+            })
+            .catch(() => {});
+        }
+      }
+    };
+
+    checkHashAndLogin();
+    window.addEventListener("hashchange", checkHashAndLogin);
+    return () => window.removeEventListener("hashchange", checkHashAndLogin);
+  }, [ssoLogin, router]);
   const [showPassword, setShowPassword] = useState(false);
   const [selectedDemo, setSelectedDemo] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>(DEMO_TABS[0]?.key ?? "");
@@ -440,6 +526,121 @@ function LoginPageContent() {
               </Button>
             </form>
 
+            <div className="relative my-4">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-card px-2 text-muted-foreground">
+                  Atau Masuk Dengan Akun Domain
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full flex items-center justify-center gap-2"
+                disabled={isLoading}
+                onClick={() => {
+                  clearError();
+                  if (ssoConfigError || !ssoConfig) {
+                    toast.error(
+                      "Gagal memuat konfigurasi SSO. Periksa koneksi Anda lalu coba lagi.",
+                    );
+                    return;
+                  }
+                  if (!ssoConfig.googleEnabled || !ssoConfig.googleClientId) {
+                    toast.info(
+                      "Google Workspace SSO belum dikonfigurasi di server. Minta administrator menyetel GOOGLE_CLIENT_ID.",
+                    );
+                    return;
+                  }
+                  try {
+                    const state = crypto.randomUUID();
+                    const nonce = crypto.randomUUID();
+                    sessionStorage.setItem("sso_provider", "google");
+                    sessionStorage.setItem("sso_state", state);
+                    sessionStorage.setItem("sso_nonce", nonce);
+
+                    const redirectUri = encodeURIComponent(
+                      window.location.origin + "/login",
+                    );
+                    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?response_type=id_token&client_id=${ssoConfig.googleClientId}&redirect_uri=${redirectUri}&scope=openid%20email%20profile&state=${state}&nonce=${nonce}`;
+                    window.location.href = authUrl;
+                  } catch {
+                    toast.error(
+                      "Gagal memulai alur masuk Google Workspace. Silakan coba lagi.",
+                    );
+                  }
+                }}
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24">
+                  <path
+                    fill="currentColor"
+                    d="M12.545,10.239v3.821h5.445c-0.712,2.315-2.647,3.972-5.445,3.972c-3.332,0-6.033-2.701-6.033-6.032s2.701-6.032,6.033-6.032c1.498,0,2.866,0.549,3.921,1.453l2.814-2.814C17.503,2.988,15.139,2,12.545,2C7.021,2,2.543,6.477,2.543,12s4.478,10,10.002,10c8.396,0,10.249-7.85,9.426-11.761H12.545z"
+                  />
+                </svg>
+                Google Workspace
+              </Button>
+
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full flex items-center justify-center gap-2"
+                disabled={isLoading}
+                onClick={() => {
+                  clearError();
+                  if (ssoConfigError || !ssoConfig) {
+                    toast.error(
+                      "Gagal memuat konfigurasi SSO. Periksa koneksi Anda lalu coba lagi.",
+                    );
+                    return;
+                  }
+                  if (
+                    !ssoConfig.microsoftEnabled ||
+                    !ssoConfig.microsoftClientId
+                  ) {
+                    toast.info(
+                      "Microsoft 365 SSO belum dikonfigurasi di server. Minta administrator menyetel MICROSOFT_CLIENT_ID.",
+                    );
+                    return;
+                  }
+                  try {
+                    const state = crypto.randomUUID();
+                    const nonce = crypto.randomUUID();
+                    sessionStorage.setItem("sso_provider", "microsoft");
+                    sessionStorage.setItem("sso_state", state);
+                    sessionStorage.setItem("sso_nonce", nonce);
+
+                    const redirectUri = encodeURIComponent(
+                      window.location.origin + "/login",
+                    );
+                    // Use the tenant authority the backend enforces
+                    // (MICROSOFT_TENANT_ID) so a single-tenant Entra app never
+                    // trips on the multi-tenant `common` authority; fall back to
+                    // `common` when the backend is multi-tenant.
+                    const tenant = ssoConfig.microsoftTenantId || "common";
+                    const authUrl = `https://login.microsoftonline.com/${tenant}/oauth2/v2.0/authorize?client_id=${ssoConfig.microsoftClientId}&response_type=id_token&redirect_uri=${redirectUri}&scope=openid%20profile%20email&response_mode=fragment&state=${state}&nonce=${nonce}`;
+                    window.location.href = authUrl;
+                  } catch {
+                    toast.error(
+                      "Gagal memulai alur masuk Microsoft 365. Silakan coba lagi.",
+                    );
+                  }
+                }}
+              >
+                <svg className="h-4 w-4 text-blue-600" viewBox="0 0 23 23">
+                  <path fill="#f35325" d="M1 1h10v10H1z" />
+                  <path fill="#81bc06" d="M12 1h10v10H12z" />
+                  <path fill="#05a6f0" d="M1 12h10v10H1z" />
+                  <path fill="#ffba08" d="M12 12h10v10H12z" />
+                </svg>
+                Microsoft 365
+              </Button>
+            </div>
+
             {/* Mobile Demo Credentials */}
             {SHOW_DEMO_LOGIN && (
               <div className="mt-6 border-t pt-4 lg:hidden">
@@ -480,9 +681,7 @@ function LoginPageContent() {
                       className={cn(
                         "flex items-center gap-2 p-2 rounded-lg border text-left transition-all text-xs",
                         "hover:bg-muted disabled:opacity-50",
-                        selectedDemo === acc.email
-                          ? "ring-2 ring-primary"
-                          : "",
+                        selectedDemo === acc.email ? "ring-2 ring-primary" : "",
                       )}
                     >
                       <DemoAvatar acc={acc} size={8} />

@@ -132,14 +132,6 @@ export const ALUMNI_ROLE_CODES: readonly string[] = [
   "PT_ALUMNI",
 ];
 
-/** External roles (students, parents, alumni, komite) that cannot participate in E-Office correspondence. */
-export const EXCLUDED_CORRESPONDENCE_ROLES: readonly string[] = [
-  ...STUDENT_ROLE_CODES,
-  ...PARENT_ROLE_CODES,
-  ...KOMITE_ROLE_CODES,
-  ...ALUMNI_ROLE_CODES,
-];
-
 /** Every RoleCode in the system — must equal the Prisma enum exactly. */
 export const ALL_ROLE_CODES: readonly string[] = [
   ...ADMIN_ROLE_CODES,
@@ -155,6 +147,17 @@ export const ALL_ROLE_CODES: readonly string[] = [
   ...SUPPORT_ROLE_CODES,
   ...BUSINESS_ROLE_CODES,
   ...PT_STAFF_ROLE_CODES,
+  ...STUDENT_ROLE_CODES,
+  ...PARENT_ROLE_CODES,
+  ...KOMITE_ROLE_CODES,
+  ...ALUMNI_ROLE_CODES,
+];
+
+/**
+ * Roles explicitly excluded from E-Office participant search and selection
+ * (external users, students, parents, alumni, and school committees).
+ */
+export const EXCLUDED_CORRESPONDENCE_ROLES: readonly string[] = [
   ...STUDENT_ROLE_CODES,
   ...PARENT_ROLE_CODES,
   ...KOMITE_ROLE_CODES,

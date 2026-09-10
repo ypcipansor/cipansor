@@ -138,6 +138,13 @@ services:
       GOOGLE_SERVICE_ACCOUNT_EMAIL: ${GOOGLE_SERVICE_ACCOUNT_EMAIL:-}
       GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: ${GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY:-}
       GMAIL_SENDER: ${GMAIL_SENDER:-noreply@cipansor.or.id}
+      # Single Sign-On (Google Workspace & Microsoft 365 Entra ID)
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:-}
+      MICROSOFT_TENANT_ID: ${MICROSOFT_TENANT_ID:-common}
+      # Azure Blob Storage Grant Provider
+      AZURE_STORAGE_CONNECTION_STRING: ${AZURE_STORAGE_CONNECTION_STRING:-}
+      AZURE_STORAGE_ACCOUNT: ${AZURE_STORAGE_ACCOUNT:-}
       # SMTP fallback, used only when the Gmail credentials above are absent.
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}

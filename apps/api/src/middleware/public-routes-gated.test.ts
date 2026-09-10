@@ -38,6 +38,10 @@ const DELIBERATELY_UNGATED: Record<string, string> = {
   'student.routes.ts POST /id-cards/verify':
     'Endpoint pemindai QR untuk petugas, tanpa halaman web yang memanggilnya — captcha adalah alat yang ' +
     'salah untuk konsumen mesin dan akan mematikannya. Dijaga defaultLimiter.',
+  'auth.routes.ts POST /sso/login':
+    'Login SSO menukarkan idToken yang sudah diverifikasi Google/Microsoft (OIDC) — kredensialnya ' +
+    'bukan rahasia portal, dan penyedia OIDC sendiri yang menerapkan perlindungan bot pada penerbitan ' +
+    'idToken. Menaruh captcha di alur OIDC akan menolak pengguna yang sah. Dijaga authLimiter.',
 };
 
 function stripComments(source: string): string {

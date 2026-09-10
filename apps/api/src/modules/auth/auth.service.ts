@@ -4,11 +4,36 @@ import { generateTokenPair, verifyToken, getExpirationDate, generateAccessToken 
 import { Errors } from '@/middleware/error';
 import { isAdminRoleCode, isGovernanceRoleCode, deriveLegacyRole } from '@/middleware/auth';
 import { config } from '@/config';
-import type { LoginInput, RegisterInput, ChangePasswordInput } from './auth.schema';
+import type { LoginInput, RegisterInput, ChangePasswordInput, SSOLoginInput } from './auth.schema';
 import { RoleCode, UnitType } from '@prisma/client';
 import { generateSecret, generateURI, verify as verifyOtp } from 'otplib';
 import * as qrcode from 'qrcode';
 import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
+import { JwksClient } from 'jwks-rsa';
+import { SSOConfigResponse } from '@cipansor/shared';
+
+/**
+ * Microsoft Entra ID JWKS clients, cached per tenantId so the
+ * `cache`/`rateLimit` options actually hold across requests instead of being
+ * recreated (and re-fetching the signing keys) on every login.
+ */
+const microsoftJwksClients = new Map<string, JwksClient>();
+
+function getMicrosoftJwksClient(tenantId: string): JwksClient {
+  const existing = microsoftJwksClients.get(tenantId);
+  if (existing) return existing;
+
+  const client = new JwksClient({
+    jwksUri: `https://login.microsoftonline.com/${tenantId}/discovery/v2.0/keys`,
+    cache: true,
+    cacheMaxAge: 86400000, // 24h — the OIDC key lifetime
+    rateLimit: true,
+    jwksRequestsPerMinute: 10,
+  });
+  microsoftJwksClients.set(tenantId, client);
+  return client;
+}
 
 /**
  * Resolve a legacy UserRole value (e.g. 'TEACHER', 'STAFF') into the correct
@@ -20,21 +45,26 @@ import crypto from 'crypto';
  */
 export function resolveLegacyRoleToRoleCode(
   legacyRole: string,
-  unitType: UnitType | null | undefined,
+  unitType: UnitType | null | undefined
 ): RoleCode | null {
   // Unit-agnostic mappings
   if (legacyRole === 'SUPER_ADMIN') return RoleCode.SUPER_ADMIN;
   if (legacyRole === 'UNIT_ADMIN') {
     switch (unitType) {
-      case UnitType.TK_QURAN: return RoleCode.TKQ_ADMIN;
-      case UnitType.SD_IT: return RoleCode.SDIT_ADMIN;
-      case UnitType.SMP_IT: return RoleCode.SMPIT_ADMIN;
-      case UnitType.SMA_QURAN: return RoleCode.SMAQ_ADMIN;
+      case UnitType.TK_QURAN:
+        return RoleCode.TKQ_ADMIN;
+      case UnitType.SD_IT:
+        return RoleCode.SDIT_ADMIN;
+      case UnitType.SMP_IT:
+        return RoleCode.SMPIT_ADMIN;
+      case UnitType.SMA_QURAN:
+        return RoleCode.SMAQ_ADMIN;
       // PESANTREN / OTHER / unknown: no dedicated per-unit admin RoleCode exists.
       // Do NOT silently fall back to a foundation-level role — that would be a privilege
       // escalation (foundation-level governance) for a unit-level admin.
       // Caller must supply `roleCode` explicitly for these unit types.
-      default: return null;
+      default:
+        return null;
     }
   }
 
@@ -90,10 +120,7 @@ export function resolveLegacyRoleToRoleCode(
 function activeRoleWhere() {
   return {
     isActive: true,
-    OR: [
-      { expiresAt: null },
-      { expiresAt: { gt: new Date() } },
-    ],
+    OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
   };
 }
 
@@ -190,10 +217,7 @@ export class AuthService {
 
     // Check for 2FA
     if (user.isTwoFactorEnabled && !isDemoAccount) {
-      const tempToken = generateAccessToken(
-        { ...basePayload, isTemp: true },
-        '5m'
-      );
+      const tempToken = generateAccessToken({ ...basePayload, isTemp: true }, '5m');
 
       return {
         requiresTwoFactor: true,
@@ -203,10 +227,7 @@ export class AuthService {
 
     // Force 2FA setup for Admin/Super Admin
     if (isUserAdmin && !user.isTwoFactorEnabled && !isDemoAccount) {
-      const tempToken = generateAccessToken(
-        { ...basePayload, isTemp: true },
-        '10m'
-      );
+      const tempToken = generateAccessToken({ ...basePayload, isTemp: true }, '10m');
 
       return {
         requiresTwoFactorSetup: true,
@@ -247,6 +268,263 @@ export class AuthService {
   }
 
   /**
+   * SSO Login (Google Workspace & Microsoft 365)
+   * Cryptographically verifies the OIDC token with provider before authenticating.
+   */
+  async ssoLogin(input: SSOLoginInput) {
+    if (!input.idToken) {
+      throw Errors.badRequest(
+        'SSO idToken is required for cryptographically verified authentication'
+      );
+    }
+
+    let email: string;
+
+    try {
+      if (input.provider === 'google') {
+        email = await this.verifyGoogleIdToken(input.idToken);
+      } else if (input.provider === 'microsoft') {
+        email = await this.verifyMicrosoftIdToken(input.idToken);
+      } else {
+        throw Errors.badRequest('Unsupported SSO provider');
+      }
+    } catch (err: any) {
+      throw Errors.unauthorized(
+        `SSO token verification failed: ${err.message || 'Invalid signature'}`
+      );
+    }
+
+    if (!email) {
+      throw Errors.badRequest('Email could not be verified from SSO provider token');
+    }
+
+    // Email casing normalization: the same mailbox may arrive as
+    // user@cipansor.or.id or User@cipansor.or.id depending on the provider.
+    // Match against the stored account case-insensitively (provider issues the
+    // mailbox; local registration stores whichever casing the admin typed), so
+    // a registered user is never reported as "tidak terdaftar" just because a
+    // different casing reached this lookup.
+    const normalizedEmail = email.toLowerCase();
+
+    const user = await prisma.user.findFirst({
+      where: {
+        email: normalizedEmail,
+        deletedAt: null,
+      },
+      include: {
+        unit: true,
+        userRoles: {
+          where: activeRoleWhere(),
+          include: {
+            role: true,
+            unit: true,
+          },
+          orderBy: { isPrimary: 'desc' },
+        },
+      },
+    });
+
+    if (!user) {
+      const isDomainEmail = email.toLowerCase().endsWith('@cipansor.or.id');
+      if (isDomainEmail) {
+        throw Errors.unauthorized(
+          `Akun email ${input.provider === 'google' ? 'Google' : 'Microsoft'} (${email}) belum terdaftar di Sistem Cipansor. Silakan hubungi Administrator.`
+        );
+      }
+      throw Errors.unauthorized('Email tidak terdaftar di sistem');
+    }
+
+    if (!user.isActive) {
+      throw Errors.unauthorized('Account is deactivated');
+    }
+
+    const primaryAssignment = user.userRoles.find((r) => r.isPrimary) || user.userRoles[0];
+    if (!primaryAssignment) {
+      throw Errors.forbidden('No active role assignment found for this user');
+    }
+
+    const roleCode = primaryAssignment.role.code;
+    const permissions = (primaryAssignment.role.permissions as string[]) || [];
+    const roleId = primaryAssignment.roleId;
+    const assignmentUnitId = primaryAssignment.unitId;
+    const isUserAdmin = isAdminRoleCode(roleCode);
+
+    const basePayload = {
+      id: user.id,
+      sub: user.id,
+      email: user.email,
+      roleId: roleId || '',
+      roleCode,
+      unitId: assignmentUnitId || user.unitId,
+      permissions,
+      role: deriveLegacyRole(roleCode),
+    };
+
+    const isDemoAccount = process.env.DEMO_MODE === 'true';
+
+    // Check 2FA
+    if (user.isTwoFactorEnabled && !isDemoAccount) {
+      const tempToken = generateAccessToken({ ...basePayload, isTemp: true }, '5m');
+      return { requiresTwoFactor: true, tempToken };
+    }
+
+    if (isUserAdmin && !user.isTwoFactorEnabled && !isDemoAccount) {
+      const tempToken = generateAccessToken({ ...basePayload, isTemp: true }, '10m');
+      return { requiresTwoFactorSetup: true, tempToken };
+    }
+
+    // Generate tokens
+    const tokens = generateTokenPair(basePayload);
+
+    const [, , activeAcademicYearId] = await Promise.all([
+      prisma.refreshToken.create({
+        data: {
+          token: tokens.refreshToken,
+          userId: user.id,
+          expiresAt: getExpirationDate(config.jwt.refreshExpiresIn),
+        },
+      }),
+      prisma.user.update({
+        where: { id: user.id },
+        data: { lastLoginAt: new Date() },
+      }),
+      this.getActiveAcademicYearId(),
+    ]);
+
+    const userWithoutPassword = this.stripSensitiveFields(user);
+
+    return {
+      user: {
+        ...userWithoutPassword,
+        academicYearId: activeAcademicYearId,
+        permissions,
+      },
+      ...tokens,
+    };
+  }
+
+  /**
+   * Verify Google OAuth2 ID token against Google's tokeninfo endpoint and validate claims
+   */
+  private async verifyGoogleIdToken(idToken: string): Promise<string> {
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    if (!clientId) {
+      throw Errors.badRequest('Google SSO is not configured on this server');
+    }
+
+    const res = await fetch(
+      `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`
+    );
+    if (!res.ok) {
+      throw new Error('Google token validation failed or token expired');
+    }
+
+    const data = (await res.json()) as {
+      email?: string;
+      email_verified?: string | boolean;
+      aud?: string;
+      exp?: string | number;
+    };
+
+    if (data.aud !== clientId) {
+      throw new Error('Google token audience (aud) mismatch');
+    }
+
+    if (data.exp && Number(data.exp) < Date.now() / 1000) {
+      throw new Error('Google token has expired');
+    }
+
+    if (!data.email || (data.email_verified !== 'true' && data.email_verified !== true)) {
+      throw new Error('Google account email is missing or not verified');
+    }
+
+    return data.email;
+  }
+
+  /**
+   * Cryptographically verify Microsoft Entra ID OIDC ID token using JWKS
+   */
+  private async verifyMicrosoftIdToken(idToken: string): Promise<string> {
+    const clientId = process.env.MICROSOFT_CLIENT_ID;
+    if (!clientId) {
+      throw Errors.badRequest('Microsoft SSO is not configured on this server');
+    }
+
+    const decoded = jwt.decode(idToken, { complete: true });
+    if (!decoded || typeof decoded === 'string' || !decoded.header.kid) {
+      throw new Error('Invalid Microsoft ID token format');
+    }
+
+    const tenantId = process.env.MICROSOFT_TENANT_ID || 'common';
+    const jwksClient = getMicrosoftJwksClient(tenantId);
+
+    const key = await jwksClient.getSigningKey(decoded.header.kid);
+    const signingKey = key.getPublicKey();
+
+    const payload = jwt.verify(idToken, signingKey, {
+      algorithms: ['RS256'],
+    }) as jwt.JwtPayload;
+
+    if (payload.aud !== clientId) {
+      throw new Error('Microsoft token audience (aud) mismatch');
+    }
+
+    if (payload.exp && payload.exp < Date.now() / 1000) {
+      throw new Error('Microsoft token has expired');
+    }
+
+    if (
+      payload.iss &&
+      !payload.iss.startsWith('https://login.microsoftonline.com/') &&
+      !payload.iss.startsWith('https://sts.windows.net/')
+    ) {
+      throw new Error('Microsoft token issuer (iss) invalid');
+    }
+
+    // Single-tenant enforcement: when MICROSOFT_TENANT_ID names one tenant
+    // (a directory GUID or a domain) rather than a multi-tenant audience
+    // ('common'/'organizations'/'consumers'), reject tokens minted for a
+    // different tenant. The `tid` claim is the directory GUID; the issuer
+    // carries the same tenant (as GUID or verified domain) in its path.
+    const isMultiTenantAuth =
+      tenantId === 'common' || tenantId === 'organizations' || tenantId === 'consumers';
+    if (!isMultiTenantAuth) {
+      const tidMatches = typeof payload.tid === 'string' && payload.tid === tenantId;
+      const issuerMatchesTenant =
+        typeof payload.iss === 'string' && payload.iss.includes(`/${tenantId}/`);
+      if (!tidMatches && !issuerMatchesTenant) {
+        throw new Error('Microsoft token tenant (tid) mismatch');
+      }
+    }
+
+    const email = (payload.preferred_username || payload.email || payload.upn) as
+      string | undefined;
+    if (!email) {
+      throw new Error('Microsoft token does not contain a valid email claim');
+    }
+
+    return email;
+  }
+
+  /**
+   * Get SSO configuration status
+   */
+  getSSOConfig(): SSOConfigResponse {
+    const googleClientId = process.env.GOOGLE_CLIENT_ID || null;
+    const microsoftClientId = process.env.MICROSOFT_CLIENT_ID || null;
+    const microsoftTenantId = process.env.MICROSOFT_TENANT_ID || 'common';
+
+    return {
+      domain: 'cipansor.or.id',
+      googleEnabled: Boolean(googleClientId),
+      googleClientId,
+      microsoftEnabled: Boolean(microsoftClientId),
+      microsoftClientId,
+      microsoftTenantId,
+    };
+  }
+
+  /**
    * Register new user (by admin)
    */
   async register(input: RegisterInput, creatorRoleCode: string) {
@@ -279,7 +557,7 @@ export class AuthService {
       if (!mapped) {
         throw Errors.badRequest(
           `Cannot resolve legacy role '${input.role}' for unit type '${unitType ?? 'unknown'}'. ` +
-          `Please send 'roleCode' instead.`
+            `Please send 'roleCode' instead.`
         );
       }
       resolvedRoleCode = mapped;
@@ -363,12 +641,19 @@ export class AuthService {
     // `role = NULL` would break any downstream consumer (BI tools, audit
     // queries, raw SQL reports) that assumes `role IS NOT NULL`. We would
     // rather fail loudly here than silently create unmapped rows.
-    const VALID_LEGACY_ROLES = ['SUPER_ADMIN', 'UNIT_ADMIN', 'TEACHER', 'STAFF', 'STUDENT', 'PARENT'];
+    const VALID_LEGACY_ROLES = [
+      'SUPER_ADMIN',
+      'UNIT_ADMIN',
+      'TEACHER',
+      'STAFF',
+      'STUDENT',
+      'PARENT',
+    ];
     const legacyRole = deriveLegacyRole(resolvedRoleCode);
     if (!VALID_LEGACY_ROLES.includes(legacyRole)) {
       throw Errors.badRequest(
         `RoleCode '${resolvedRoleCode}' has no legacy UserRole mapping. ` +
-        `Add a mapping to LEGACY_ROLE_EXPANSION in middleware/auth.ts or use an existing mapped role.`
+          `Add a mapping to LEGACY_ROLE_EXPANSION in middleware/auth.ts or use an existing mapped role.`
       );
     }
     const legacyRoleValue = legacyRole;
@@ -657,7 +942,9 @@ export class AuthService {
     }
 
     if (!user.isActive) {
-      throw Errors.badRequest('Akun ini nonaktif — aktifkan lebih dulu sebelum mengirim tautan reset');
+      throw Errors.badRequest(
+        'Akun ini nonaktif — aktifkan lebih dulu sebelum mengirim tautan reset'
+      );
     }
 
     // An identity row with no login cannot have its password reset.
@@ -1048,8 +1335,6 @@ export class AuthService {
     } = user;
     return safe;
   }
-
-
 }
 
 export const authService = new AuthService();

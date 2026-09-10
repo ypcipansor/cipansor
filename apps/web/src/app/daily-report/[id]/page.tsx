@@ -1,6 +1,7 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { safeFormat } from "@/lib/date";
+import { resolveFileUrl } from "@/lib/files";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -37,6 +38,32 @@ function DailyReportDetailPageContent({
 }) {
   const router = useRouter();
   const { data: report, isLoading } = useDailyReport(params.id);
+
+  // Persisted daily-report photo URLs are stable references (raw blob URL, no
+  // expiring SAS). The browser cannot send an Authorization header for a blob
+  // URL, so at display time we mint a fresh SAS for each private Azure photo
+  // (or fall back to authFileUrl for local /uploads paths) and cache it here.
+  const [resolvedPhotos, setResolvedPhotos] = useState<Record<string, string>>(
+    {},
+  );
+  const reportPhotos = report?.photos;
+  useEffect(() => {
+    const urls = (reportPhotos ?? [])
+      .map((p) => p.photoUrl)
+      .filter(Boolean) as string[];
+    if (urls.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const entries = await Promise.all(
+        urls.map(async (u) => [u, await resolveFileUrl(u)] as const),
+      );
+      if (!cancelled) setResolvedPhotos(Object.fromEntries(entries));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [reportPhotos]);
+  const photoSrc = (url: string) => resolvedPhotos[url] || url;
 
   if (isLoading) {
     return (
@@ -303,7 +330,7 @@ function DailyReportDetailPageContent({
                 <PhotoGallery
                   photos={report.photos.map((p) => ({
                     id: p.id,
-                    url: p.photoUrl,
+                    url: photoSrc(p.photoUrl),
                     uploadedAt: new Date(p.createdAt),
                     caption: p.caption,
                     category: "Kegiatan",
