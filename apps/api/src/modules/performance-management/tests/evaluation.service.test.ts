@@ -191,9 +191,10 @@ describe('EvaluationService', () => {
       });
     });
     // Bug regresi #3 — evaluasi periode berikutnya (atau status yang belum
-    // dikunci) tidak boleh mengontaminasi skor YTD periode yang lebih awal.
-    // Saat menghitung ulang skor Januari, agregasi realisasi wajib dibatasi ke
-    // tahun/bulan <= Januari dan hanya status yang relevan (APPROVED/PROPOSED).
+    // disetujui, termasuk PROPOSED) tidak boleh mengontaminasi skor YTD
+    // periode yang lebih awal. Saat menghitung ulang skor Januari, agregasi
+    // realisasi wajib dibatasi ke tahun/bulan <= Januari dan hanya status yang
+    // sah (APPROVED).
     it('membatasi agregasi YTD ke periode dan status yang relevan (Bug regresi #3)', async () => {
       mocked.pKEvaluation.findUnique.mockResolvedValue({
         id: 'ev-jan',
@@ -220,7 +221,7 @@ describe('EvaluationService', () => {
       expect(evalFilter.AND).toEqual(
         expect.arrayContaining([
           { pkId: 'pk-1' },
-          { OR: [{ id: 'ev-jan' }, { status: { in: ['APPROVED', 'PROPOSED'] } }] },
+          { OR: [{ id: 'ev-jan' }, { status: { in: ['APPROVED'] } }] },
           { OR: [{ year: { lt: 2026 } }, { year: 2026, month: { lte: 1 } }] },
         ])
       );
@@ -273,6 +274,42 @@ describe('EvaluationService', () => {
         where: { id: 'dev-jan' },
         data: { score: 40 },
       });
+    });
+
+    // FLAG F — evaluasi PROPOSED (belum disetujui, masih bisa diubah) tidak
+    // boleh ikut serta menghitung capaian YTD periode berikutnya. Filter status
+    // yang dikirim ke pKIndicatorEvaluation.findMany hanya boleh memuat
+    // APPROVED, TIDAK PROPOSED. Gagal sebelum perbaikan karena PROPOSED ikut
+    // dalam `status.in`, sehingga realisasi evaluasi yang belum final
+    // mengontaminasi YTD.
+    it('filter status agregasi YTD tidak memuat PROPOSED (FLAG F)', async () => {
+      mocked.pKEvaluation.findUnique.mockResolvedValue({
+        id: 'ev-feb',
+        pkId: 'pk-1',
+        status: 'DRAFT',
+        year: 2026,
+        month: 2,
+        indicatorDetails: [
+          {
+            id: 'dev-feb',
+            indicatorId: 'ind-x',
+            indicator: { weight: 100, target: 100, aggregation: IndicatorAggregation.KUMULATIF },
+          },
+        ],
+        behaviorDetails: [],
+      });
+      mocked.pKIndicatorEvaluation.findMany.mockResolvedValue([]);
+      mocked.pKEvaluation.update.mockResolvedValue({});
+
+      await evaluationService.recalculateEvaluationScores('ev-feb');
+
+      const callArgs = mocked.pKIndicatorEvaluation.findMany.mock.calls[0][0];
+      const evalFilter = callArgs.where.evaluation;
+      const statusOr = evalFilter.AND.find(
+        (c: any) => Array.isArray(c.OR) && c.OR[0]?.id === 'ev-feb'
+      );
+      // Evaluasi periode lain yang boleh mengisi YTD hanya yang APPROVED.
+      expect(statusOr.OR[1]).toEqual({ status: { in: ['APPROVED'] } });
     });
   });
 

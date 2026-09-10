@@ -33,6 +33,7 @@ const mocked = prisma as unknown as {
 // sesuai bentuk hasil select di analytics.service.
 function pk(over: Partial<Record<string, unknown>> = {}) {
   return {
+    id: 'pk-1',
     status: 'APPROVED',
     overallScore: 0,
     totalScore: 0,
@@ -44,9 +45,10 @@ function pk(over: Partial<Record<string, unknown>> = {}) {
 }
 
 // Evaluasi dengan pembawa unit pada PK-nya.
-function ev(status: string, unitKey: string | null) {
+function ev(status: string, unitKey: string | null, pkId = 'pk-1') {
   return {
     status,
+    pkId,
     pk: { user: { unitId: unitKey }, strategicPlan: { unitId: unitKey } },
   };
 }
@@ -196,6 +198,155 @@ describe('PKAnalyticsService unit tests', () => {
       expect(result.unitsWithoutApprovedPk.map((u) => u.id)).toContain('unit-1');
       // totalAgreements hanya menghitung satu PK.
       expect(result.totalAgreements).toBe(1);
+    });
+
+    // REGRESI (BUG 1 NON-SEVERE): PK berstatus APPROVED tetapi belum pernah
+    // dinilai tidak boleh menekan rata-rata headline. Satu unit dengan 1 PK
+    // approved+dinilai (skor 80/70) dan 1 PK approved tanpa evaluasi (skor 0)
+    // → rata-rata hanya dari PK yang dinilai, bukan tertekan oleh nol.
+    it('menghitung rata-rata headline hanya dari PK yang sudah dinilai (regresi)', async () => {
+      mocked.unit.findMany.mockResolvedValue([{ id: 'unit-1', name: 'SDIT' }]);
+      // PK-1: approved dan sudah dinilai (ada evaluasi APPROVED), skor > 0.
+      // PK-2: approved tetapi BELUM pernah dinilai, skor 0.
+      mocked.performanceAgreement.findMany.mockResolvedValue([
+        pk({
+          id: 'pk-rated',
+          status: 'APPROVED',
+          overallScore: 80,
+          totalScore: 80,
+          behaviorScore: 70,
+        }),
+        pk({
+          id: 'pk-unrated',
+          status: 'APPROVED',
+          overallScore: 0,
+          totalScore: 0,
+          behaviorScore: 0,
+        }),
+      ]);
+      mocked.pKEvaluation.findMany.mockResolvedValue([
+        ev('APPROVED', 'unit-1', 'pk-rated'),
+      ]);
+
+      const result = await pkAnalyticsService.getUnitPerformanceDashboard();
+
+      // Sebelum perbaikan, kedua PK masuk rata-rata → (80 + 0) / 2 = 40.
+      // Sesudah perbaikan, hanya pk-rated → 80.
+      expect(result.avgPerformanceScore).toBe(80);
+      expect(result.avgBehaviorScore).toBe(70);
+    });
+  });
+
+  describe('getUnitDrilldown - scoping RKA ke periode/agreement (FLAG A)', () => {
+    it('menampilkan RKA yang direferensi PK dan APPROVED, bukan RKA DRAFT terbaru', async () => {
+      mocked.unit.findUnique.mockResolvedValue({ id: 'unit-1', name: 'SDIT' });
+      // PK unit mengacu ke RKA yang sudah APPROVED (id rka-approved).
+      mocked.performanceAgreement.findMany.mockResolvedValue([
+        {
+          id: 'pk-rated',
+          userId: 'u-1',
+          supervisorId: null,
+          periodStart: new Date('2026-01-01'),
+          periodEnd: new Date('2026-12-31'),
+          status: 'APPROVED',
+          totalScore: 80,
+          behaviorScore: 70,
+          overallScore: 78,
+          user: { id: 'u-1', name: 'Guru', unitId: 'unit-1' },
+          supervisor: null,
+          indicators: [],
+          strategicPlan: { id: 'rka-approved', unitId: 'unit-1' },
+        },
+      ]);
+      // findFirst dipanggil pertama kali dengan filter id referencing →
+      // mengembalikan RKA APPROVED (hanya RKA APPROVED yang ter-index).
+      mocked.strategicPlan.findFirst.mockResolvedValue({
+        id: 'rka-approved',
+        title: 'RKA 2026 SDIT (sah)',
+        progress: 80,
+      });
+
+      const result = await pkAnalyticsService.getUnitDrilldown('unit-1');
+
+      // Sebelum perbaikan, RKA diambil lewat orderBy createdAt desc tanpa
+      // filter status — DRAFT terbaru pun bisa muncul. Sesudah perbaikan, RKA
+      // yang ditampilkan adalah yang direferensi PK dan berstatus APPROVED.
+      expect(result.strategicPlan?.id).toBe('rka-approved');
+      expect(result.strategicPlan?.title).toBe('RKA 2026 SDIT (sah)');
+      expect(mocked.strategicPlan.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ status: 'APPROVED' }) })
+      );
+    });
+
+    it('jatuh ke RKA APPROVED terbaru unit bila tidak ada PK yang menunjuk RKA', async () => {
+      mocked.unit.findUnique.mockResolvedValue({ id: 'unit-1', name: 'SDIT' });
+      // PK tanpa strategicPlan (strategicPlan null) — tidak ada referensi RKA.
+      mocked.performanceAgreement.findMany.mockResolvedValue([
+        {
+          id: 'pk-orphan',
+          userId: 'u-1',
+          supervisorId: null,
+          periodStart: new Date('2026-01-01'),
+          periodEnd: new Date('2026-12-31'),
+          status: 'APPROVED',
+          totalScore: 80,
+          behaviorScore: 70,
+          overallScore: 78,
+          user: { id: 'u-1', name: 'Guru', unitId: 'unit-1' },
+          supervisor: null,
+          indicators: [],
+          strategicPlan: null,
+        },
+      ]);
+      mocked.strategicPlan.findFirst.mockResolvedValue({
+        id: 'rka-latest',
+        title: 'RKA terbaru SDIT',
+        progress: 50,
+      });
+
+      const result = await pkAnalyticsService.getUnitDrilldown('unit-1');
+
+      expect(result.strategicPlan?.id).toBe('rka-latest');
+    });
+  });
+
+  describe('resolvePkUnit - atribusi PK dasar yayasan (FLAG E)', () => {
+    it('mengklasifikasikan PK berinduk dokumen yayasan sebagai foundation, bukan unit pegawai', async () => {
+      // Skor headline ikut memakai resolvePkUnit: tanpa filter unitId.
+      mocked.unit.findMany.mockResolvedValue([{ id: 'unit-2', name: 'SMP IT' }]);
+      // Satu PK berinduk RKA Yayasan (strategicPlan.unitId === null) tetapi
+      // user-nya beralamat unit-2. Sebelumnya resolve jatuh ke user.unitId dan
+      // PK yayasan masuk laporan SMP IT. Sesudah perbaikan harus jadi
+      // foundation (null), TIDAK masuk semuaUnits[0] milik unit-2.
+      mocked.performanceAgreement.findMany.mockResolvedValue([
+        {
+          id: 'pk-yayasan',
+          status: 'APPROVED',
+          overallScore: 90,
+          totalScore: 92,
+          behaviorScore: 87,
+          user: { unitId: 'unit-2' },
+          strategicPlan: { unitId: null },
+        },
+      ]);
+      mocked.pKEvaluation.findMany.mockResolvedValue([
+        {
+          status: 'APPROVED',
+          pkId: 'pk-yayasan',
+          pk: { user: { unitId: 'unit-2' }, strategicPlan: { unitId: null } },
+        },
+      ]);
+
+      const result = await pkAnalyticsService.getUnitPerformanceDashboard();
+
+      // PK yayasan tidak mengotori metrik unit-2.
+      expect(result.allUnits[0].totalPksCount).toBe(0);
+      // Namun tetap dihitung sebagai total keseluruhan (foundation).
+      expect(result.totalAgreements).toBe(1);
+      expect(result.approvedAgreements).toBe(1);
+      // Dan ikut headline rata-rata (berinduk yayasan = foundation, bukan unit).
+      expect(result.avgPerformanceScore).toBe(92);
+      expect(result.avgBehaviorScore).toBe(87);
     });
   });
 });

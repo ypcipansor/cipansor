@@ -591,7 +591,7 @@ describe('Perencanaan Service', () => {
   });
 
   describe('Plan resolution helpers (getXPlanForAuth)', () => {
-    const planPayload = { id: 'plan-1', unitId: 'unit-1', status: 'DRAFT' };
+    const planPayload = { id: 'plan-1', unitId: 'unit-1', status: 'DRAFT', isCollaborator: false };
 
     it('getObjectivePlanForAuth returns the parent plan payload', async () => {
       vi.mocked(prisma.planObjective.findUnique).mockResolvedValue({
@@ -655,6 +655,40 @@ describe('Perencanaan Service', () => {
       vi.mocked(prisma.planIndicator.findUnique).mockResolvedValue(null);
       const result = await perencanaanService.getIndicatorPlanForAuth('ind-unknown');
       expect(result).toBeNull();
+    });
+
+    // REGRESI (BUG 2): ketika userId diberikan dan user itu adalah collaborator
+    // pada plan, isCollaborator bernilai true — inilah yang dipakai controller
+    // untuk mengizinkan kolaborator mengedit draft.
+    it('menandai isCollaborator=true ketika user ada di PlanCollaborator', async () => {
+      vi.mocked(prisma.planObjective.findUnique).mockResolvedValue({
+        plan: {
+          id: 'plan-1',
+          unitId: 'unit-1',
+          status: 'DRAFT',
+          collaborators: [{ userId: 'user-collab' }],
+        },
+      } as any);
+      const result = await perencanaanService.getObjectivePlanForAuth('obj-1', 'user-collab');
+      expect(result).toEqual({
+        id: 'plan-1',
+        unitId: 'unit-1',
+        status: 'DRAFT',
+        isCollaborator: true,
+      });
+      expect(prisma.planObjective.findUnique).toHaveBeenCalledWith({
+        where: { id: 'obj-1' },
+        select: {
+          plan: {
+            select: {
+              id: true,
+              unitId: true,
+              status: true,
+              collaborators: { where: { userId: 'user-collab' }, select: { userId: true } },
+            },
+          },
+        },
+      });
     });
   });
 

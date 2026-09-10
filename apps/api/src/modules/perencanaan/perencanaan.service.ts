@@ -472,26 +472,59 @@ export class PerencanaanService {
     return { planId: id, trend };
   }
 
-  async getPlanForAuth(id: string) {
-    return prisma.strategicPlan.findUnique({
+  /**
+   * Plan write-auth payload ({ id, unitId, status, isCollaborator }). When a
+   * userId is supplied, isCollaborator tells whether that user was explicitly
+   * added as a collaborator on the plan (PlanCollaborator), letting the
+   * controller's write gate grant DRAFT/IN_PROGRESS edits to the right people.
+   */
+  planAuthSelect(userId?: string) {
+    return {
+      id: true,
+      unitId: true,
+      status: true,
+      ...(userId
+        ? { collaborators: { where: { userId }, select: { userId: true } } }
+        : {}),
+    };
+  }
+
+  planAuthFromRow(
+    row: { id: string; unitId: string | null; status: string; collaborators?: { userId: string }[] } | null
+  ) {
+    return row
+      ? {
+          id: row.id,
+          unitId: row.unitId,
+          status: row.status,
+          isCollaborator: (row.collaborators ?? []).length > 0,
+        }
+      : null;
+  }
+
+  async getPlanForAuth(id: string, userId?: string) {
+    const row = await prisma.strategicPlan.findUnique({
       where: { id },
-      select: { id: true, unitId: true, status: true },
+      select: this.planAuthSelect(userId),
     });
+    return this.planAuthFromRow(row);
   }
 
   /**
    * Resolve an objective to its parent plan's write-auth payload
-   * ({ id, unitId, status }). Used by the controller to gate subrecord
-   * mutations against the same write-access + DRAFT rules as the plan itself.
+   * ({ id, unitId, status, isCollaborator }). Used by the controller to gate
+   * subrecord mutations against the same write-access + DRAFT rules as the
+   * plan itself.
    */
   async getObjectivePlanForAuth(
-    objectiveId: string
-  ): Promise<{ id: string; unitId: string | null; status: string } | null> {
+    objectiveId: string,
+    userId?: string
+  ): Promise<{ id: string; unitId: string | null; status: string; isCollaborator: boolean } | null> {
     const objective = await prisma.planObjective.findUnique({
       where: { id: objectiveId },
-      select: { plan: { select: { id: true, unitId: true, status: true } } },
+      select: { plan: { select: this.planAuthSelect(userId) } },
     });
-    return objective?.plan ?? null;
+    return this.planAuthFromRow(objective?.plan ?? null);
   }
 
   /**
@@ -500,15 +533,17 @@ export class PerencanaanService {
    * (IKP/IKK) — trace whichever branch is set.
    */
   async getIndicatorPlanForAuth(
-    indicatorId: string
-  ): Promise<{ id: string; unitId: string | null; status: string } | null> {
+    indicatorId: string,
+    userId?: string
+  ): Promise<{ id: string; unitId: string | null; status: string; isCollaborator: boolean } | null> {
     const indicator = await prisma.planIndicator.findUnique({
       where: { id: indicatorId },
       select: { objectiveId: true, activityId: true },
     });
     if (!indicator) return null;
-    if (indicator.objectiveId) return this.getObjectivePlanForAuth(indicator.objectiveId);
-    if (indicator.activityId) return this.getActivityPlanForAuth(indicator.activityId);
+    if (indicator.objectiveId)
+      return this.getObjectivePlanForAuth(indicator.objectiveId, userId);
+    if (indicator.activityId) return this.getActivityPlanForAuth(indicator.activityId, userId);
     return null;
   }
 
@@ -518,15 +553,16 @@ export class PerencanaanService {
    * resolve that objective's plan.
    */
   async getActivityPlanForAuth(
-    activityId: string
-  ): Promise<{ id: string; unitId: string | null; status: string } | null> {
+    activityId: string,
+    userId?: string
+  ): Promise<{ id: string; unitId: string | null; status: string; isCollaborator: boolean } | null> {
     const activity = await prisma.planActivity.findUnique({
       where: { id: activityId },
       select: { objectiveId: true, parentId: true },
     });
     if (!activity) return null;
-    if (activity.objectiveId) return this.getObjectivePlanForAuth(activity.objectiveId);
-    if (activity.parentId) return this.getActivityPlanForAuth(activity.parentId);
+    if (activity.objectiveId) return this.getObjectivePlanForAuth(activity.objectiveId, userId);
+    if (activity.parentId) return this.getActivityPlanForAuth(activity.parentId, userId);
     return null;
   }
 

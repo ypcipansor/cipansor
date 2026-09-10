@@ -265,10 +265,13 @@ export class EvaluationService {
     // Tanpa dua pembatas ini skor YTD bulan berikutnya mengontaminasi bulan
     // yang lebih awal: evaluasi Januari memuat realisasi Februari yang belum
     // ada saat Januari dinilai. Jadi bentuk agregasi hanya dari evaluasi yang
-    // PERIODENYA sudah tiba (year/month <= current) dengan status yang sudah
-    // dikunci (PROPOSED/APPROVED), plus evaluasi saat ini sendiri yang sedang
-    // dinilai realisasinya.
-    const relevantStatuses = [PlanStatus.APPROVED, PlanStatus.PROPOSED];
+    // PERIODENYA sudah tiba (year/month <= current) dan SUDAH DISETUJUI
+    // (APPROVED), plus evaluasi saat ini sendiri yang sedang dinilai
+    // realisasinya. Evaluasi PROPOSED sengaja TIDAK dihitung: statusnya tidak
+    // terkunci (masih bisa diubah lewat `loadEditableEvaluationInTx` yang hanya
+    // memblokir APPROVED), sehingga realisasinya belum otoritatif dan bisa
+    // mengontaminasi YTD dengan angka yang masih akan dikoreksi.
+    const relevantStatuses = [PlanStatus.APPROVED];
     const periodCondition =
       evaluation.year !== undefined && evaluation.year !== null
         ? [

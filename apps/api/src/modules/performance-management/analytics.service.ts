@@ -7,6 +7,7 @@ type PkUnitView = {
 };
 
 type PkWithUnit = PkUnitView & {
+  id: string;
   status: PlanStatus;
   overallScore: number;
   totalScore: number;
@@ -25,14 +26,20 @@ type PkWithUnit = PkUnitView & {
  *
  * Sumber yang dipakai adalah `strategicPlan.unitId` bila PK mengacu pada
  * sebuah dokumen rencana (RKA/Renstra) — karena di situlah PK berakar dalam
- * kaskade — dan baru jatuh ke `user.unitId` bila tidak. Ini perbaikan tanpa
- * perubahan schema (opsi b). Opsi a (kolom `unitId` persisten di
- * `PerformanceAgreement`) adalah perbaikan yang tahan lama dan disarankan
- * sebagai follow-up, digabung dengan FLAG 5 (uniqueness RKA tahunan) karena
- * keduanya menyentuh schema yang sama.
+ * kaskade — dan baru jatuh ke `user.unitId` bila PK TIDAK mengacu rencana
+ * sama sekali. Ini perbaikan tanpa perubahan schema (opsi b). Opsi a (kolom
+ * `unitId` persisten di `PerformanceAgreement`) adalah perbaikan yang tahan
+ * lama dan disarankan sebagai follow-up, digabung dengan FLAG 5 (uniqueness
+ * RKA tahunan) karena keduanya menyentuh schema yang sama.
  */
 function resolvePkUnit(pk: PkUnitView): string | null {
-  return pk.strategicPlan?.unitId ?? pk.user?.unitId ?? null;
+  // Jika PK mengacu sebuah dokumen rencana, dokumen itu yang menentukan unit
+  // (termasuk null = dokumen yayasan / Kantor Pusat). Jangan jatuh ke
+  // `user.unitId`: PK yang berinduk RKA Yayasan (strategicPlan.unitId ===
+  // null) adalah PK tingkat yayasan, bukan PK pegawai unit. `user.unitId`
+  // hanya dipakai bila PK berjalan tanpa acuan rencana.
+  if (pk.strategicPlan) return pk.strategicPlan.unitId ?? null;
+  return pk.user?.unitId ?? null;
 }
 
 const APPROVED = PlanStatus.APPROVED;
@@ -54,6 +61,7 @@ export class PKAnalyticsService {
     const allPks = (await prisma.performanceAgreement.findMany({
       where: pkWhere,
       select: {
+        id: true,
         status: true,
         overallScore: true,
         totalScore: true,
@@ -72,6 +80,7 @@ export class PKAnalyticsService {
       where: evalWhere,
       select: {
         status: true,
+        pkId: true,
         pk: {
           select: {
             user: { select: { unitId: true } },
@@ -134,8 +143,19 @@ export class PKAnalyticsService {
     const totalEvaluations =
       foundationEv.total + unitMetrics.reduce((sum, u) => sum + u.evCount, 0);
 
+    // Headline rata-rata hanya boleh berasal dari PK yang BENAR-BENAR sudah
+    // dinilai (punya evaluasi APPROVED) — konsisten dengan syarat eligibility
+    // ranking (`approvedEvCount > 0`). Sebelumnya `approvedPksAll` memuat SEMUA
+    // PK berstatus APPROVED, termasuk yang belum pernah dinilai: skor nol dari
+    // PK "disetujui tapi belum dinilai" ikut menekan rata-rata.
+    const evaluatedPkIds = new Set(
+      evals.filter((ev) => ev.status === APPROVED).map((ev) => ev.pkId)
+    );
     const approvedPksAll = allPks.filter(
-      (p) => p.status === APPROVED && (!unitId || resolvePkUnit(p) === unitId)
+      (p) =>
+        p.status === APPROVED &&
+        evaluatedPkIds.has(p.id) &&
+        (!unitId || resolvePkUnit(p) === unitId)
     );
 
     const avgPerformanceScore =
@@ -180,11 +200,6 @@ export class PKAnalyticsService {
 
   async getUnitDrilldown(unitId: string) {
     const unit = await prisma.unit.findUnique({ where: { id: unitId } });
-    const strategicPlan = await prisma.strategicPlan.findFirst({
-      where: { unitId, type: 'RKA' },
-      select: { id: true, title: true, progress: true },
-      orderBy: { createdAt: 'desc' },
-    });
 
     // PK yang mengacu RKA/Renstra unit lain (pegawai multi-unit) tetap milik
     // unit yang rencananya diimplementasikan, bukan unit asal si pegawai.
@@ -194,6 +209,7 @@ export class PKAnalyticsService {
         status: APPROVED,
       },
       include: {
+        strategicPlan: { select: { id: true, unitId: true } },
         user: { select: { id: true, name: true, unitId: true } },
         supervisor: { select: { id: true, name: true } },
         indicators: { select: { id: true } },
@@ -201,6 +217,34 @@ export class PKAnalyticsService {
     });
 
     const scoped = agreements.filter((a) => resolvePkUnit(a) === unitId);
+
+    // RKA yang ditampilkan harus yang benar-benar di-referensi oleh PK unit
+    // ini (ter-secope periode/agreement), dan statusnya sah (APPROVED) — bukan
+    // sekadar RKA terbaru menurut createdAt, yang bisa berasal dari periode
+    // berbeda atau masih DRAFT/PROPOSED sehingga progress-nya belum sah.
+    const referencedPlanIds = [
+      ...new Set(
+        scoped
+          .map((a) => a.strategicPlan?.id ?? null)
+          .filter((id): id is string => !!id)
+      ),
+    ];
+    let strategicPlan: { id: string; title: string; progress: number } | null = null;
+    if (referencedPlanIds.length > 0) {
+      strategicPlan = await prisma.strategicPlan.findFirst({
+        where: { id: { in: referencedPlanIds }, type: 'RKA', status: APPROVED },
+        select: { id: true, title: true, progress: true },
+        orderBy: { startDate: 'desc' },
+      });
+    }
+    // Tak ada PK yang menunjuk RKA — jatuh ke RKA terbaru unit yang sah.
+    if (!strategicPlan) {
+      strategicPlan = await prisma.strategicPlan.findFirst({
+        where: { unitId, type: 'RKA', status: APPROVED },
+        select: { id: true, title: true, progress: true },
+        orderBy: { startDate: 'desc' },
+      });
+    }
 
     return {
       unit: unit ? { id: unit.id, name: unit.name } : null,

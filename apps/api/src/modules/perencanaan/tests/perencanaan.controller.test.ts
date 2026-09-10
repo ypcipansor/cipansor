@@ -518,3 +518,102 @@ describe('perencanaanController — same-unit teacher cannot write (Bug regresi 
     expect(perencanaanService.createObjective).toHaveBeenCalledTimes(1);
   });
 });
+describe('perencanaanController — collaborator dapat mengedit subrecord draft (BUG 2)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  // Collaborator: non-privileged (guru) yang di-share ke sebuah plan DRAFT.
+  const collaboratorUser = {
+    sub: 'user-collab',
+    role: 'TEACHER',
+    roleCode: 'SDIT_GURU',
+    unitId: 'unit-sdit',
+  } as any;
+  const collaboratorPlan = {
+    id: 'plan-sdit',
+    unitId: 'unit-sdit',
+    status: 'DRAFT',
+    isCollaborator: true,
+  } as any;
+  const collaboratorPlanInProgress = {
+    id: 'plan-sdit',
+    unitId: 'unit-sdit',
+    status: 'IN_PROGRESS',
+    isCollaborator: true,
+  } as any;
+  const collaboratorApprovedPlan = {
+    id: 'plan-sdit',
+    unitId: 'unit-sdit',
+    status: 'APPROVED',
+    isCollaborator: true,
+  } as any;
+
+  it('mengizinkan kolaborator non-privileged membuat objective pada plan DRAFT', async () => {
+    vi.mocked(perencanaanService.getPlanForAuth).mockResolvedValue(collaboratorPlan);
+    vi.mocked(perencanaanService.createObjective).mockResolvedValue({ id: 'obj-1' } as any);
+    const { req, res } = mockReqRes({
+      user: collaboratorUser,
+      body: { planId: 'plan-sdit', title: 'Sasaran oleh kolaborator' },
+    });
+
+    await run(perencanaanController.createObjective, req, res);
+
+    expect(perencanaanService.createObjective).toHaveBeenCalledTimes(1);
+  });
+
+  it('mengizinkan kolaborator memperbarui subrecord pada plan IN_PROGRESS', async () => {
+    vi.mocked(perencanaanService.getObjectivePlanForAuth).mockResolvedValue(
+      collaboratorPlanInProgress
+    );
+    vi.mocked(perencanaanService.updateObjective).mockResolvedValue({ id: 'obj-1' } as any);
+    const { req, res } = mockReqRes({
+      user: collaboratorUser,
+      params: { id: 'obj-1' },
+      body: { title: 'Sasaran diperbarui kolaborator' },
+    });
+
+    await run(perencanaanController.updateObjective, req, res);
+
+    expect(perencanaanService.updateObjective).toHaveBeenCalledTimes(1);
+  });
+
+  it('menolak kolaborator menulis subrecord pada plan yang sudah difinalisasi', async () => {
+    vi.mocked(perencanaanService.getObjectivePlanForAuth).mockResolvedValue(
+      collaboratorApprovedPlan
+    );
+    const { req, res } = mockReqRes({
+      user: collaboratorUser,
+      params: { id: 'obj-1' },
+      body: { title: 'Percobaan edit plan final' },
+    });
+
+    // Kolaborator yang sah tetapi pada plan final (APPROVED) tidak boleh
+    // menulis: akses tulis kolaborator hanya berlaku selama DRAFT/IN_PROGRESS.
+    await expect(run(perencanaanController.updateObjective, req, res)).rejects.toThrowError(
+      /403|forbidden|Access denied/i,
+    );
+    expect(perencanaanService.updateObjective).not.toHaveBeenCalled();
+  });
+
+  it('tetap menolak guru seunit yang BUKAN kolaborator (tidak melonggarkan akses)', async () => {
+    vi.mocked(perencanaanService.getPlanForAuth).mockResolvedValue({
+      id: 'plan-sdit',
+      unitId: 'unit-sdit',
+      status: 'DRAFT',
+      isCollaborator: false,
+    } as any);
+    const { req, res } = mockReqRes({
+      user: {
+        sub: 'user-1',
+        role: 'TEACHER',
+        roleCode: 'SDIT_GURU',
+        unitId: 'unit-sdit',
+      } as any,
+      body: { planId: 'plan-sdit', title: 'Sasaran oleh guru seunit biasa' },
+    });
+
+    await expect(run(perencanaanController.createObjective, req, res)).rejects.toThrowError(
+      /403|forbidden|Access denied/i,
+    );
+    expect(perencanaanService.createObjective).not.toHaveBeenCalled();
+  });
+});

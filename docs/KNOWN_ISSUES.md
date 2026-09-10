@@ -861,6 +861,27 @@ and follow-through:
   `<html lang dir>` pre-paint), fully typed, wired to the header switcher and
   settings page, with unit tests. Pages adopt `t()` incrementally.
 
+## Follow-up (didefinisikan 2026-09-10 pada PR #415)
+
+### Uniqueness RKA Yayasan per tahun — aplikasi-level saja, rawan race (butuh schema)
+
+`apps/api/src/modules/perencanaan/perencanaan.service.ts` (`createPlan`)
+menegakkan "satu RKA Yayasan aktif per tahun" lewat `findFirst` saja:
+```ts
+if (data.type === 'RKA' && !data.unitId) {
+  const year = new Date(data.startDate).getUTCFullYear();
+  const clash = await prisma.strategicPlan.findFirst({ where: { type: 'RKA', unitId: null, ... } });
+  if (clash) throw Errors.badRequest(...);
+}
+```
+Tidak ada constraint unik di DB. Dua permintaan bersamaan bisa sama-sama lolos
+`findFirst` sebelum salah satu `commit`, menghasilkan dua RKA Yayasan untuk
+tahun yang sama. Perbaikan murni memerlukan **partial unique index** Postgres
+(expression `EXTRACT(YEAR FROM start_date)` + `WHERE type='RKA' AND unit_id IS
+NULL AND status NOT IN ('COMPLETED','CANCELLED')`), jadi ini dijadwalkan sebagai
+**follow-up terpisah yang menyentuh `schema.prisma`** — per AGENTS.md, jangan
+digabung dengan perbaikan non-schema di PR yang sama.
+
 ## How to contribute a build fix
 
 1. `pnpm --filter api build:strict` to see strict errors (the real target).

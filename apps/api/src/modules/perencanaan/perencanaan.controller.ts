@@ -62,14 +62,29 @@ function canReadPlan(planUnitId: string | null, user?: PlanUser): boolean {
  * unit-owned plan stays writable by a privileged user within that unit only —
  * mere unit membership (teacher/staff) is not enough to mutate another user's
  * objectives, indicators and activities.
+ *
+ * The one widening is the plan's own collaborators: a user explicitly shared
+ * onto a still-editable (DRAFT/IN_PROGRESS) draft via `addCollaborator` may
+ * write it. The membership is per-plan, so it cannot leak across units, and it
+ * is revoked the moment the plan leaves DRAFT/IN_PROGRESS — a finalised (or
+ * PROPOSED) plan stays frozen for collaborators just as for everyone else.
  */
-function canWritePlan(planUnitId: string | null, user?: PlanUser): boolean {
+function canWritePlan(plan: PlanAuth | null | undefined, user?: PlanUser): boolean {
+  if (!plan) return false;
+  if (plan.isCollaborator && isEditablePlan(plan)) return true;
+  const planUnitId = plan.unitId;
   if (!isPrivileged(user)) return false;
   if (planUnitId === null) return seesAll(user);
   return seesAll(user) || planUnitId === user?.unitId;
 }
 
-type PlanAuth = { id: string; unitId: string | null; status: string };
+type PlanAuth = {
+  id: string;
+  unitId: string | null;
+  status: string;
+  /** True when the current user was explicitly shared this plan's draft. */
+  isCollaborator: boolean;
+};
 
 /**
  * Statuses in which a plan's subrecords may still be edited. A plan that has
@@ -94,7 +109,7 @@ function isEditablePlan(plan: Pick<PlanAuth, 'status'>): boolean {
  */
 function requireWritableDraftPlan(plan: PlanAuth | null | undefined, user?: PlanUser) {
   if (!plan) throw Errors.notFound('Plan not found');
-  if (!canWritePlan(plan.unitId, user)) throw Errors.forbidden('Access denied');
+  if (!canWritePlan(plan, user)) throw Errors.forbidden('Access denied');
   if (!isEditablePlan(plan)) {
     throw Errors.badRequest('Hanya dapat mengubah subrecord pada rencana berstatus DRAFT/IN_PROGRESS');
   }
@@ -214,10 +229,10 @@ export const createPlan = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const updatePlan = asyncHandler(async (req: Request, res: Response) => {
-  const existing = await perencanaanService.getPlanForAuth(req.params.id);
+  const existing = await perencanaanService.getPlanForAuth(req.params.id, req.user?.sub);
   if (!existing) throw Errors.notFound('Plan not found');
 
-  if (!canWritePlan(existing.unitId, req.user)) {
+  if (!canWritePlan(existing, req.user)) {
     throw Errors.forbidden('Access denied');
   }
 
@@ -248,10 +263,10 @@ export const approvePlan = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const deletePlan = asyncHandler(async (req: Request, res: Response) => {
-  const existing = await perencanaanService.getPlanForAuth(req.params.id);
+  const existing = await perencanaanService.getPlanForAuth(req.params.id, req.user?.sub);
   if (!existing) throw Errors.notFound('Plan not found');
 
-  if (!canWritePlan(existing.unitId, req.user)) {
+  if (!canWritePlan(existing, req.user)) {
     throw Errors.forbidden('Access denied');
   }
 
@@ -268,9 +283,9 @@ export const createObjective = asyncHandler(async (req: Request, res: Response) 
   // dalam status yang dapat diedit (belum difinalisasi). Tanpa ini guru/staf
   // biasa dapat menambah sasaran ke plan yayasan atau unit lain hanya dengan
   // tahu planId-nya.
-  const plan = await perencanaanService.getPlanForAuth(body.planId);
+  const plan = await perencanaanService.getPlanForAuth(body.planId, req.user?.sub);
   if (!plan) throw Errors.notFound('Plan not found');
-  if (!canWritePlan(plan.unitId, req.user)) {
+  if (!canWritePlan(plan, req.user)) {
     throw Errors.forbidden('Access denied');
   }
   if (!isEditablePlan(plan)) {
@@ -281,7 +296,7 @@ export const createObjective = asyncHandler(async (req: Request, res: Response) 
 });
 
 export const updateObjective = asyncHandler(async (req: Request, res: Response) => {
-  const plan = await perencanaanService.getObjectivePlanForAuth(req.params.id);
+  const plan = await perencanaanService.getObjectivePlanForAuth(req.params.id, req.user?.sub);
   requireWritableDraftPlan(plan, req.user);
   const body = updateObjectiveSchema.parse(req.body);
   const objective = await perencanaanService.updateObjective(req.params.id, body);
@@ -289,7 +304,7 @@ export const updateObjective = asyncHandler(async (req: Request, res: Response) 
 });
 
 export const deleteObjective = asyncHandler(async (req: Request, res: Response) => {
-  const plan = await perencanaanService.getObjectivePlanForAuth(req.params.id);
+  const plan = await perencanaanService.getObjectivePlanForAuth(req.params.id, req.user?.sub);
   requireWritableDraftPlan(plan, req.user);
   await perencanaanService.deleteObjective(req.params.id);
   res.json({ success: true, message: 'Objective deleted' });
@@ -299,14 +314,14 @@ export const deleteObjective = asyncHandler(async (req: Request, res: Response) 
 
 export const createIndicator = asyncHandler(async (req: Request, res: Response) => {
   const body = createIndicatorSchema.parse(req.body);
-  const plan = await perencanaanService.getObjectivePlanForAuth(body.objectiveId);
+  const plan = await perencanaanService.getObjectivePlanForAuth(body.objectiveId, req.user?.sub);
   requireWritableDraftPlan(plan, req.user);
   const indicator = await perencanaanService.createIndicator(body);
   res.status(201).json({ success: true, data: indicator });
 });
 
 export const updateIndicator = asyncHandler(async (req: Request, res: Response) => {
-  const plan = await perencanaanService.getIndicatorPlanForAuth(req.params.id);
+  const plan = await perencanaanService.getIndicatorPlanForAuth(req.params.id, req.user?.sub);
   requireWritableDraftPlan(plan, req.user);
   const body = updateIndicatorSchema.parse(req.body);
   const indicator = await perencanaanService.updateIndicator(req.params.id, body);
@@ -314,7 +329,7 @@ export const updateIndicator = asyncHandler(async (req: Request, res: Response) 
 });
 
 export const deleteIndicator = asyncHandler(async (req: Request, res: Response) => {
-  const plan = await perencanaanService.getIndicatorPlanForAuth(req.params.id);
+  const plan = await perencanaanService.getIndicatorPlanForAuth(req.params.id, req.user?.sub);
   requireWritableDraftPlan(plan, req.user);
   await perencanaanService.deleteIndicator(req.params.id);
   res.json({ success: true, message: 'Indicator deleted' });
@@ -324,14 +339,14 @@ export const deleteIndicator = asyncHandler(async (req: Request, res: Response) 
 
 export const createActivity = asyncHandler(async (req: Request, res: Response) => {
   const body = createActivitySchema.parse(req.body);
-  const plan = await perencanaanService.getObjectivePlanForAuth(body.objectiveId);
+  const plan = await perencanaanService.getObjectivePlanForAuth(body.objectiveId, req.user?.sub);
   requireWritableDraftPlan(plan, req.user);
   const activity = await perencanaanService.createActivity(body);
   res.status(201).json({ success: true, data: activity });
 });
 
 export const updateActivity = asyncHandler(async (req: Request, res: Response) => {
-  const plan = await perencanaanService.getActivityPlanForAuth(req.params.id);
+  const plan = await perencanaanService.getActivityPlanForAuth(req.params.id, req.user?.sub);
   requireWritableDraftPlan(plan, req.user);
   const body = updateActivitySchema.parse(req.body);
   const activity = await perencanaanService.updateActivity(req.params.id, body);
@@ -339,7 +354,7 @@ export const updateActivity = asyncHandler(async (req: Request, res: Response) =
 });
 
 export const deleteActivity = asyncHandler(async (req: Request, res: Response) => {
-  const plan = await perencanaanService.getActivityPlanForAuth(req.params.id);
+  const plan = await perencanaanService.getActivityPlanForAuth(req.params.id, req.user?.sub);
   requireWritableDraftPlan(plan, req.user);
   await perencanaanService.deleteActivity(req.params.id);
   res.json({ success: true, message: 'Activity deleted' });

@@ -87,7 +87,7 @@ function PerformanceAgreementDetailPageContent() {
     unit: "%",
     weight: 20,
     category: "NON_CASCADING" as "DIRECT" | "INDIRECT" | "NON_CASCADING",
-    aggregation: "" as "" | "KUMULATIF" | "RATA_RATA" | "TERAKHIR",
+    aggregation: "AUTO" as "AUTO" | "KUMULATIF" | "RATA_RATA" | "TERAKHIR",
     refStrategicIndicatorId: "",
     notes: "",
   });
@@ -127,7 +127,7 @@ function PerformanceAgreementDetailPageContent() {
       unit: indicatorForm.unit,
       weight: Number(indicatorForm.weight),
       category: indicatorForm.category,
-      aggregation: indicatorForm.aggregation || undefined,
+      aggregation: indicatorForm.aggregation === "AUTO" ? undefined : indicatorForm.aggregation,
       refStrategicIndicatorId: indicatorForm.refStrategicIndicatorId || undefined,
       notes: indicatorForm.notes || undefined,
     });
@@ -138,7 +138,7 @@ function PerformanceAgreementDetailPageContent() {
       unit: "%",
       weight: 20,
       category: "NON_CASCADING",
-      aggregation: "",
+      aggregation: "AUTO",
       refStrategicIndicatorId: "",
       notes: "",
     });
@@ -359,7 +359,7 @@ function PerformanceAgreementDetailPageContent() {
                           <SelectValue placeholder="Otomatis (sesuai satuan)" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">Otomatis (sesuai satuan)</SelectItem>
+                          <SelectItem value="AUTO">Otomatis (sesuai satuan)</SelectItem>
                           <SelectItem value="KUMULATIF">Kumulatif — menumpuk (mis. jumlah dokumen)</SelectItem>
                           <SelectItem value="RATA_RATA">Rata-rata — dibagi periode</SelectItem>
                           <SelectItem value="TERAKHIR">Terakhir — ambil capaian periode terakhir</SelectItem>
