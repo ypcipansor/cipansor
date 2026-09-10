@@ -1,11 +1,9 @@
 import { prisma } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
 import { RoleCode, UnitType } from '@prisma/client';
-import {
-  syncParentRoleAssignments,
-  type ParentScopeClient,
-} from '@/utils/parent-scope';
+import { syncParentRoleAssignments, type ParentScopeClient } from '@/utils/parent-scope';
 import { assertAdmissionFeeSettled } from '@/utils/admission-fee-gate';
+import { studentsHoldLogins } from '@/utils/student-login-policy';
 
 /**
  * The per-unit student RoleCode that grants the onboarding user a real role
@@ -92,6 +90,10 @@ export class StudentOnboardingOrchestrator {
       studentResetUserId: undefined as string | undefined,
       studentResetName: undefined as string | undefined,
       isNewUser: false,
+      // Whether the new student was issued a credential. Identity-only units
+      // (TK Qur'an) produce no login, so no reset-token event is emitted and
+      // the account-created notification must not claim a password was sent.
+      studentHasLogin: true,
       parentResetToken: undefined as string | undefined,
       parentResetEmail: undefined as string | undefined,
       parentResetUserId: undefined as string | undefined,
@@ -123,15 +125,18 @@ export class StudentOnboardingOrchestrator {
       // Being accepted is an academic decision; it is not daftar ulang. The
       // fee owed lives on the period, but the wave may override it with its own
       // registrationFee — a wave can charge more/less than its parent period.
-      const period = registrant.admissionPeriod || (await tx.admissionPeriod.findUnique({
-        where: { id: registrant.admissionPeriodId },
-        select: { registrationFee: true, academicYearId: true },
-      }));
+      const period =
+        registrant.admissionPeriod ||
+        (await tx.admissionPeriod.findUnique({
+          where: { id: registrant.admissionPeriodId },
+          select: { registrationFee: true, academicYearId: true },
+        }));
 
       const effectiveUnitId = period?.unitId || unitId;
 
       // Wave fee takes precedence over the period fee for this registrant.
-      const effectiveRegistrationFee = registrant.wave?.registrationFee ?? period?.registrationFee ?? null;
+      const effectiveRegistrationFee =
+        registrant.wave?.registrationFee ?? period?.registrationFee ?? null;
 
       assertAdmissionFeeSettled({
         registrationFee: effectiveRegistrationFee,
@@ -156,10 +161,23 @@ export class StudentOnboardingOrchestrator {
       const crypto = await import('crypto');
       const { hashPassword } = await import('@/lib/password');
 
+      // Whether a pupil at this unit type is issued a credential at all.
+      // TK Qur'an children never hold logins (see `student-login-policy`): they
+      // still get a User row (so the Student `userId` reference and the parent
+      // portal have an identity to point at) but with `passwordHash` null, no
+      // reset token, and no ability to sign in — mirroring `student.service.ts`.
+      // A unit with no mapped student role (TK) must therefore not force the
+      // creation of a role/login either.
+      const withLogin = unitType ? studentsHoldLogins(unitType) : true;
+
       // Use crypto for password reset token generation
-      const resetToken = crypto.randomBytes(32).toString('hex');
-      const resetTokenExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
-      const passwordHash = await hashPassword(crypto.randomBytes(8).toString('hex')); // Dummy secure hash
+      const resetToken = withLogin ? crypto.randomBytes(32).toString('hex') : undefined;
+      const resetTokenExpiry = withLogin
+        ? new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
+        : undefined;
+      const passwordHash = withLogin
+        ? await hashPassword(crypto.randomBytes(8).toString('hex')) // Dummy secure hash
+        : null;
 
       // Extract parts of name to create a safe email
       let cleanName = registrant.fullName.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -177,7 +195,7 @@ export class StudentOnboardingOrchestrator {
 
         let lockKey = 0;
         for (let i = 0; i < prefix.length; i++) {
-          lockKey = ((lockKey << 5) - lockKey) + prefix.charCodeAt(i);
+          lockKey = (lockKey << 5) - lockKey + prefix.charCodeAt(i);
           lockKey = lockKey & lockKey;
         }
 
@@ -205,7 +223,8 @@ export class StudentOnboardingOrchestrator {
       // therefore never safe to *reuse* an existing account matched by raw email:
       // two different registrants both entering a student's email could otherwise
       // claim (and recycle) that student's User + Student record.
-      const realEmail = registrant.email && registrant.email.trim() !== '' ? registrant.email.trim() : null;
+      const realEmail =
+        registrant.email && registrant.email.trim() !== '' ? registrant.email.trim() : null;
       const fallbackBase = `${cleanName}.${nis.toLowerCase()}@student.cipansor.local`;
 
       // Resolve the email actually used for the *new* student account.
@@ -255,27 +274,34 @@ export class StudentOnboardingOrchestrator {
       }
       email = candidate;
 
-      const isNewUser = true;
-
       {
         user = await tx.user.create({
           data: {
             name: registrant.fullName,
             email,
             passwordHash,
-            resetTokenHash: crypto.createHash('sha256').update(resetToken).digest('hex'),
-            resetTokenExpiresAt: resetTokenExpiry,
+            // Identity-only pupils (TK Qur'an) get no reset token and can never
+            // sign in; a credential-holding student gets a real reset secret.
+            ...(withLogin && resetToken
+              ? {
+                  resetTokenHash: crypto.createHash('sha256').update(resetToken).digest('hex'),
+                  resetTokenExpiresAt: resetTokenExpiry,
+                }
+              : {}),
             role: 'STUDENT',
             unitId: effectiveUnitId,
-            isActive: true,
+            isActive: withLogin,
           },
         });
 
-        emittedSecret.isNewUser = true;
-        emittedSecret.studentResetToken = resetToken;
-        emittedSecret.studentResetEmail = email;
-        emittedSecret.studentResetUserId = user.id;
-        emittedSecret.studentResetName = registrant.fullName;
+        emittedSecret.isNewUser = withLogin;
+        emittedSecret.studentHasLogin = withLogin;
+        if (withLogin && resetToken) {
+          emittedSecret.studentResetToken = resetToken;
+          emittedSecret.studentResetEmail = email;
+          emittedSecret.studentResetUserId = user.id;
+          emittedSecret.studentResetName = registrant.fullName;
+        }
       }
 
       // Ensure UserRoleAssignment exists for a unit-appropriate student role.
@@ -363,23 +389,61 @@ export class StudentOnboardingOrchestrator {
       let parentResetToken: string | undefined;
       let parentUser: { id: string; email: string | null; name: string | null } | null = null;
       if (registrant.parentPhone || registrant.parentEmail) {
+        // ACCOUNT-TAKEOVER PREVENTION (mirrors the student path above): the
+        // parent's email/phone on the registrant is UNVERIFIED — nothing in this
+        // flow proves the registrant owns the account they wrote down. Linking
+        // the child's StudentParent straight onto an account matched only by
+        // that raw value would hand a stranger — a staff member, teacher, or
+        // another unit's guardian who happens to share the address — read access
+        // to the child's private records. Reuse is therefore allowed ONLY when
+        // the matched account is genuinely a parent (a returning wali bringing
+        // in a second child); any other matched account is never recycled, and a
+        // fresh guardian identity is created instead.
+        let matchedParent: {
+          id: string;
+          email: string | null;
+          name: string | null;
+          role: string | null;
+        } | null = null;
         if (registrant.parentEmail) {
-          parentUser = await tx.user.findUnique({
-            where: { email: registrant.parentEmail }
+          matchedParent = await tx.user.findUnique({
+            where: { email: registrant.parentEmail },
           });
         }
 
-        if (!parentUser && registrant.parentPhone) {
-          parentUser = await tx.user.findFirst({
-            where: { phone: registrant.parentPhone }
+        if (!matchedParent && registrant.parentPhone) {
+          matchedParent = await tx.user.findFirst({
+            where: { phone: registrant.parentPhone },
           });
+        }
+
+        const reuseParent = !!matchedParent && matchedParent.role === 'PARENT';
+        if (reuseParent && matchedParent) {
+          parentUser = {
+            id: matchedParent.id,
+            email: matchedParent.email,
+            name: matchedParent.name,
+          };
         }
 
         if (!parentUser) {
           parentResetToken = crypto.randomBytes(32).toString('hex');
           const parentResetTokenExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
           const parentPasswordHash = await hashPassword(crypto.randomBytes(16).toString('hex'));
-          const parentEmail = registrant.parentEmail || `parent.${registrant.parentPhone}@parent.cipansor.local`;
+
+          // The registrant's raw parent email is used for the fresh account ONLY
+          // when it is genuinely free. If any existing account already holds it
+          // (and we are here because it was NOT a reusable PARENT), claiming it
+          // again would violate the unique-email constraint — and pinning the new
+          // guardian onto a stranger's address is exactly the takeover we forbid.
+          // Fall back to a .local address, same policy as the student path.
+          const parentRealEmail = registrant.parentEmail?.trim();
+          const parentLocalBase = registrant.parentPhone
+            ? `parent.${registrant.parentPhone.replace(/[^a-z0-9]/gi, '').toLowerCase()}@parent.cipansor.local`
+            : `parent.guardian@parent.cipansor.local`;
+          // Only a genuinely free address is claimed; otherwise use the .local fallback.
+          const parentEmail = parentRealEmail && !matchedParent ? parentRealEmail : parentLocalBase;
+
           parentUser = await tx.user.create({
             data: {
               name: registrant.parentName,
@@ -390,7 +454,7 @@ export class StudentOnboardingOrchestrator {
               resetTokenExpiresAt: parentResetTokenExpiry,
               role: 'PARENT',
               isActive: true,
-            }
+            },
           });
 
           emittedSecret.parentResetToken = parentResetToken;
@@ -417,10 +481,7 @@ export class StudentOnboardingOrchestrator {
           },
         });
 
-        await syncParentRoleAssignments(
-          tx as unknown as ParentScopeClient,
-          parentUser.id
-        );
+        await syncParentRoleAssignments(tx as unknown as ParentScopeClient, parentUser.id);
       }
 
       // 5. Setup initial Health/UKS record (idempotent)
@@ -472,9 +533,7 @@ export class StudentOnboardingOrchestrator {
           throw Errors.notFound('Class');
         }
         if (klass.unitId !== effectiveUnitId) {
-          throw Errors.forbidden(
-            'Kelas tidak berada pada unit pendaftaran yang sama'
-          );
+          throw Errors.forbidden('Kelas tidak berada pada unit pendaftaran yang sama');
         }
 
         await tx.classEnrollment.updateMany({
@@ -490,7 +549,7 @@ export class StudentOnboardingOrchestrator {
             studentId: student.id,
             classId,
             status: 'active',
-          }
+          },
         });
       }
 
@@ -510,9 +569,7 @@ export class StudentOnboardingOrchestrator {
         }
         const roomUnitId = room.dormitory?.unitId ?? null;
         if (roomUnitId !== null && roomUnitId !== effectiveUnitId) {
-          throw Errors.forbidden(
-            'Kamar tidak berada pada unit pendaftaran yang sama'
-          );
+          throw Errors.forbidden('Kamar tidak berada pada unit pendaftaran yang sama');
         }
 
         await tx.roomAssignment.create({
@@ -530,8 +587,8 @@ export class StudentOnboardingOrchestrator {
         data: {
           status: 'ENROLLED',
           enrolledAt: new Date(),
-          studentId: student.id
-        }
+          studentId: student.id,
+        },
       });
 
       // Decrement wave's acceptedCount
@@ -554,8 +611,8 @@ export class StudentOnboardingOrchestrator {
         email,
         unitCode,
         parentUserId: parentUser ? parentUser.id : undefined,
-        parentEmail: parentUser && parentResetToken ? parentUser.email ?? undefined : undefined,
-        parentName: parentUser ? parentUser.name ?? undefined : undefined,
+        parentEmail: parentUser && parentResetToken ? (parentUser.email ?? undefined) : undefined,
+        parentName: parentUser ? (parentUser.name ?? undefined) : undefined,
         studentName: registrant.fullName,
         effectiveUnitId,
       };
@@ -612,10 +669,19 @@ export class StudentOnboardingOrchestrator {
         unitId: r.effectiveUnitId || unitId,
       });
 
+      // Identity-only pupils (TK Qur'an) received no credential, so the
+      // account-created notification must not claim a password was issued and
+      // no reset-token event is emitted for them.
       eventBus.emit('notification:send', {
         type: 'INFO',
-        title: 'Your Account has been created',
-        message: `Student account created. Email: ${r.email}. Please check your email for a password reset link to set your password securely.`,
+        title: emittedSecret.studentHasLogin
+          ? 'Your Account has been created'
+          : 'Student identity has been created',
+        message: emittedSecret.studentHasLogin
+          ? `Student account created. Email: ${r.email}. Please check your email for a password reset link to set your password securely.`
+          : `Student ${r.studentName} has been registered. No login was issued for ${
+              r.unitCode === 'TK_QURAN' ? 'this TK Qur`an pupil' : 'this pupil'
+            }.`,
         userId: r.userId,
       });
 
@@ -631,7 +697,11 @@ export class StudentOnboardingOrchestrator {
         });
       }
 
-      if (emittedSecret.parentResetToken && emittedSecret.parentResetEmail && emittedSecret.parentResetUserId) {
+      if (
+        emittedSecret.parentResetToken &&
+        emittedSecret.parentResetEmail &&
+        emittedSecret.parentResetUserId
+      ) {
         eventBus.emit('notification:send', {
           type: 'INFO',
           title: 'Your Parent Account has been created',

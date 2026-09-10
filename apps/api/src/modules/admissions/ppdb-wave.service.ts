@@ -437,6 +437,40 @@ export const waveService = {
           where: { id: existing.waveId, registeredCount: { gt: 0 } },
           data: { registeredCount: { decrement: 1 } },
         });
+
+        const oldWave = await tx.admissionWave.findUnique({
+          where: { id: existing.waveId },
+          select: {
+            id: true,
+            status: true,
+            registeredCount: true,
+            quota: true,
+            startDate: true,
+            endDate: true,
+            fullByCapacity: true,
+          },
+        });
+        const now = new Date();
+        // If reassigning out of a wave that had filled up BY CAPACITY frees a
+        // slot that is still inside the wave's open window, reopen it so the
+        // freed slot can be claimed by the next registrant. Mirror
+        // `deleteRegistrant`: only a capacity-driven FULL wave whose count is
+        // now under quota and whose window still covers `now` is reopened; a
+        // wave an operator deliberately closed (`fullByCapacity` false/null)
+        // stays FULL, and an expired wave stays FULL.
+        if (
+          oldWave &&
+          oldWave.status === 'FULL' &&
+          oldWave.fullByCapacity === true &&
+          oldWave.registeredCount < oldWave.quota &&
+          oldWave.startDate <= now &&
+          oldWave.endDate >= now
+        ) {
+          await tx.admissionWave.update({
+            where: { id: oldWave.id },
+            data: { status: 'OPEN' },
+          });
+        }
       }
 
       const updatedRegistrant = await tx.registrant.update({
@@ -470,7 +504,7 @@ export const waveService = {
     const where: Prisma.RegistrantWhereInput = {
       waveId,
       ...(status && {
-        status: status as Prisma.RegistrantWhereInput["status"],
+        status: status as Prisma.RegistrantWhereInput['status'],
       }),
     };
 

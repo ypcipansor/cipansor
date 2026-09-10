@@ -124,9 +124,15 @@ describe('Student Onboarding & Wave Quota Unit Tests', () => {
       vi.mocked(prisma.admissionPeriod.findUnique).mockResolvedValue(mockPeriod as any);
       vi.mocked(prisma.unit.findUnique).mockResolvedValue({ id: 'unit-1', type: 'SMP_IT' } as any);
       (vi.mocked(prisma.user.create) as any).mockResolvedValue({ id: 'u-1', name: 'Ahmad Santri' });
-      (vi.mocked(prisma.student.create) as any).mockResolvedValue({ id: 's-1', nis: 'NIS-CUSTOM-001' });
+      (vi.mocked(prisma.student.create) as any).mockResolvedValue({
+        id: 's-1',
+        nis: 'NIS-CUSTOM-001',
+      });
       // Class & room belong to unit-1 → tenant-isolation check passes.
-      vi.mocked(prisma.class.findUnique).mockResolvedValue({ id: 'class-7a', unitId: 'unit-1' } as any);
+      vi.mocked(prisma.class.findUnique).mockResolvedValue({
+        id: 'class-7a',
+        unitId: 'unit-1',
+      } as any);
       vi.mocked(prisma.room.findUnique).mockResolvedValue({
         id: 'room-101',
         dormitory: { unitId: 'unit-1' },
@@ -195,7 +201,9 @@ describe('Student Onboarding & Wave Quota Unit Tests', () => {
       vi.mocked(prisma.admissionPeriod.findUnique).mockResolvedValue(mockPeriod as any);
       vi.mocked(prisma.unit.findUnique).mockResolvedValue({ id: 'unit-1', type: 'SMP_IT' } as any);
       (vi.mocked(prisma.user.findUnique) as any).mockImplementation((args: any) =>
-        Promise.resolve(args?.where?.email === 'santri.real@gmail.com' ? (existingUser as any) : null)
+        Promise.resolve(
+          args?.where?.email === 'santri.real@gmail.com' ? (existingUser as any) : null
+        )
       );
       vi.mocked(prisma.user.create).mockResolvedValue({
         id: 'usr-fresh',
@@ -212,11 +220,19 @@ describe('Student Onboarding & Wave Quota Unit Tests', () => {
       vi.mocked(prisma.medicalRecord.create as any).mockResolvedValue({ id: 'med-1' });
       vi.mocked(prisma.santriWallet.findUnique as any).mockResolvedValue(null);
       vi.mocked(prisma.santriWallet.create as any).mockResolvedValue({ id: 'wal-1' });
-      (vi.mocked(prisma.student.create) as any).mockResolvedValue({ id: 's-fresh', nis: 'NIS-002' });
-
-      const result = await StudentOnboardingOrchestrator.processEnrollment('reg-email', 'unit-1', 'admin-1', {
-        academicYearId: 'ay-2026',
+      (vi.mocked(prisma.student.create) as any).mockResolvedValue({
+        id: 's-fresh',
+        nis: 'NIS-002',
       });
+
+      const result = await StudentOnboardingOrchestrator.processEnrollment(
+        'reg-email',
+        'unit-1',
+        'admin-1',
+        {
+          academicYearId: 'ay-2026',
+        }
+      );
 
       // A NEW user is created — the existing STUDENT account is never reused.
       expect(result.userId).toBe('usr-fresh');
@@ -340,7 +356,9 @@ describe('Student Onboarding & Wave Quota Unit Tests', () => {
       vi.mocked(prisma.admissionPeriod.findUnique).mockResolvedValue(mockPeriod as any);
       vi.mocked(prisma.unit.findUnique).mockResolvedValue({ id: 'unit-1', type: 'SMP_IT' } as any);
       (vi.mocked(prisma.user.findUnique) as any).mockImplementation((args: any) =>
-        Promise.resolve(args?.where?.email === 'santri.real@gmail.com' ? (existingUser as any) : null)
+        Promise.resolve(
+          args?.where?.email === 'santri.real@gmail.com' ? (existingUser as any) : null
+        )
       );
       (vi.mocked(prisma.user.create) as any).mockResolvedValue({ id: 'usr-fresh' });
       vi.mocked(prisma.role.findFirst as any).mockResolvedValue({ id: 'role-std-id' });
@@ -361,16 +379,24 @@ describe('Student Onboarding & Wave Quota Unit Tests', () => {
       vi.mocked(prisma.santriWallet.findUnique).mockResolvedValue(null as any);
       (vi.mocked(prisma.santriWallet.create) as any).mockResolvedValue({ id: 'wal-1' });
       // Class belongs to unit-1 → tenant-isolation passes.
-      vi.mocked(prisma.class.findUnique).mockResolvedValue({ id: 'class-7a', unitId: 'unit-1' } as any);
+      vi.mocked(prisma.class.findUnique).mockResolvedValue({
+        id: 'class-7a',
+        unitId: 'unit-1',
+      } as any);
       (vi.mocked(prisma.classEnrollment.updateMany) as any).mockResolvedValue({ count: 0 });
       (vi.mocked(prisma.classEnrollment.create) as any).mockResolvedValue({ id: 'ce-1' });
 
-      const result = await StudentOnboardingOrchestrator.processEnrollment('reg-email', 'unit-1', 'admin-1', {
-        nis: 'NEW-NIS-REQUESTED',
-        nisn: 'NEW-NISN',
-        classId: 'class-7a',
-        academicYearId: 'ay-2026',
-      });
+      const result = await StudentOnboardingOrchestrator.processEnrollment(
+        'reg-email',
+        'unit-1',
+        'admin-1',
+        {
+          nis: 'NEW-NIS-REQUESTED',
+          nisn: 'NEW-NISN',
+          classId: 'class-7a',
+          academicYearId: 'ay-2026',
+        }
+      );
 
       expect(result.success).toBe(true);
 
@@ -513,9 +539,9 @@ describe('Student Onboarding & Wave Quota Unit Tests', () => {
 
       const actor = { id: 'admin-1', role: 'UNIT_ADMIN', roleCode: 'SDIT_ADMIN', unitId: 'unit-1' };
 
-      await expect(
-        waveService.assignRegistrant('reg-1', 'w-cross', actor as any)
-      ).rejects.toThrow('Access to this unit is not allowed');
+      await expect(waveService.assignRegistrant('reg-1', 'w-cross', actor as any)).rejects.toThrow(
+        'Access to this unit is not allowed'
+      );
     });
 
     it('refuses to assign a registrant from one period into a wave of another period', async () => {
@@ -532,11 +558,130 @@ describe('Student Onboarding & Wave Quota Unit Tests', () => {
         admissionPeriodId: 'p-1',
       });
 
-      const superAdmin = { id: 'super', role: 'SUPER_ADMIN', roleCode: 'SUPER_ADMIN', unitId: null };
+      const superAdmin = {
+        id: 'super',
+        role: 'SUPER_ADMIN',
+        roleCode: 'SUPER_ADMIN',
+        unitId: null,
+      };
 
       await expect(
         waveService.assignRegistrant('reg-1', 'w-p2', superAdmin as any)
       ).rejects.toThrow('Registrant dan gelombang harus berada pada periode yang sama');
+    });
+    it('reopens a FULL-by-capacity wave when reassigning its last freed slot out (within the open window)', async () => {
+      // Reassigning a registrant out of a wave that had filled BY CAPACITY frees
+      // a slot. Within the wave's still-open window the wave must be reopened to
+      // OPEN so the freed slot is claimable by the next registrant — mirroring
+      // `deleteRegistrant`. Without this, the slot stays stranded and later
+      // registrants are wrongly turned away.
+      const oldWaveFreed = {
+        id: 'w-old',
+        status: 'FULL',
+        fullByCapacity: true,
+        registeredCount: 49, // after the decrement, one slot is free
+        quota: 50,
+        startDate: new Date('2020-01-01'),
+        endDate: new Date('2030-01-01'),
+      };
+      const targetWave = { id: 'w-new', quota: 10, periodId: 'p-1', period: { unitId: 'unit-1' } };
+
+      vi.mocked(prisma.admissionWave.findUnique as any).mockImplementation(({ where }: any) =>
+        Promise.resolve(where.id === 'w-new' ? targetWave : oldWaveFreed)
+      );
+      vi.mocked(prisma.registrant.findUnique as any).mockResolvedValue({
+        id: 'reg-1',
+        waveId: 'w-old',
+        admissionPeriodId: 'p-1',
+      });
+      vi.mocked(prisma.admissionWave.updateMany as any).mockResolvedValue({ count: 1 });
+      vi.mocked(prisma.registrant.update as any).mockResolvedValue({
+        id: 'reg-1',
+        waveId: 'w-new',
+      });
+
+      await waveService.assignRegistrant('reg-1', 'w-new');
+
+      // The freed old wave must be flipped back to OPEN.
+      expect(prisma.admissionWave.update).toHaveBeenCalledWith({
+        where: { id: 'w-old' },
+        data: { status: 'OPEN' },
+      });
+    });
+
+    it('does NOT reopen a wave an operator manually closed (fullByCapacity false/null) when reassigning out', async () => {
+      // A FULL wave that an operator deliberately closed (`fullByCapacity`
+      // false/null) is terminal for this admission — even though removing a
+      // registrant frees a slot. It must stay FULL.
+      const manuallyClosedWave = {
+        id: 'w-old',
+        status: 'FULL',
+        fullByCapacity: false, // operator-closed, not capacity-driven
+        registeredCount: 49,
+        quota: 50,
+        startDate: new Date('2020-01-01'),
+        endDate: new Date('2030-01-01'),
+      };
+      const targetWave = { id: 'w-new', quota: 10, periodId: 'p-1', period: { unitId: 'unit-1' } };
+
+      vi.mocked(prisma.admissionWave.findUnique as any).mockImplementation(({ where }: any) =>
+        Promise.resolve(where.id === 'w-new' ? targetWave : manuallyClosedWave)
+      );
+      vi.mocked(prisma.registrant.findUnique as any).mockResolvedValue({
+        id: 'reg-1',
+        waveId: 'w-old',
+        admissionPeriodId: 'p-1',
+      });
+      vi.mocked(prisma.admissionWave.updateMany as any).mockResolvedValue({ count: 1 });
+      vi.mocked(prisma.registrant.update as any).mockResolvedValue({
+        id: 'reg-1',
+        waveId: 'w-new',
+      });
+
+      await waveService.assignRegistrant('reg-1', 'w-new');
+
+      // The manually closed old wave must stay FULL (never reopened).
+      expect(prisma.admissionWave.update).not.toHaveBeenCalledWith({
+        where: { id: 'w-old' },
+        data: { status: 'OPEN' },
+      });
+    });
+
+    it('does NOT reopen an expired FULL wave when reassigning out', async () => {
+      // Even a capacity-driven FULL wave whose open window has already elapsed
+      // stays FULL — its slots are no longer claimable this admission.
+      const expiredWave = {
+        id: 'w-old',
+        status: 'FULL',
+        fullByCapacity: true,
+        registeredCount: 49,
+        quota: 50,
+        startDate: new Date('2020-01-01'),
+        endDate: new Date('2020-06-01'), // window long past
+      };
+      const targetWave = { id: 'w-new', quota: 10, periodId: 'p-1', period: { unitId: 'unit-1' } };
+
+      vi.mocked(prisma.admissionWave.findUnique as any).mockImplementation(({ where }: any) =>
+        Promise.resolve(where.id === 'w-new' ? targetWave : expiredWave)
+      );
+      vi.mocked(prisma.registrant.findUnique as any).mockResolvedValue({
+        id: 'reg-1',
+        waveId: 'w-old',
+        admissionPeriodId: 'p-1',
+      });
+      vi.mocked(prisma.admissionWave.updateMany as any).mockResolvedValue({ count: 1 });
+      vi.mocked(prisma.registrant.update as any).mockResolvedValue({
+        id: 'reg-1',
+        waveId: 'w-new',
+      });
+
+      await waveService.assignRegistrant('reg-1', 'w-new');
+
+      // The expired old wave must stay FULL (never reopened).
+      expect(prisma.admissionWave.update).not.toHaveBeenCalledWith({
+        where: { id: 'w-old' },
+        data: { status: 'OPEN' },
+      });
     });
   });
 });
