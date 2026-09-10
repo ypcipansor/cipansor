@@ -460,7 +460,7 @@ export default function BukuPenghubungPage() {
                   {selectedChild.name}
                 </h3>
                 <p className="text-sm text-muted-foreground">
-                  NIS: {selectedChild.nis} • Kelas:{" "}
+                  NISN: {selectedChild.nisn} • Kelas:{" "}
                   {selectedChild.currentClass?.name || "-"}
                 </p>
                 <p className="text-sm text-muted-foreground">

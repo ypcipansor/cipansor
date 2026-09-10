@@ -372,7 +372,7 @@ export default function NewMuhadatsahPage() {
                               {students.map((student) => (
                                 <CommandItem
                                   key={student.id}
-                                  value={`${student.name} ${student.nis}`}
+                                  value={`${student.name} ${student.nisn}`}
                                   onSelect={() => {
                                     setValue("studentId", student.id);
                                     if (selectedPartnerId === student.id) {
@@ -396,7 +396,7 @@ export default function NewMuhadatsahPage() {
                                         {student.name}
                                       </p>
                                       <p className="text-xs text-muted-foreground">
-                                        {student.nis} •{" "}
+                                        {student.nisn} •{" "}
                                         {student.currentClass?.name || "-"}
                                       </p>
                                     </div>
@@ -479,7 +479,7 @@ export default function NewMuhadatsahPage() {
                               {availablePartners.map((partner) => (
                                 <CommandItem
                                   key={partner.id}
-                                  value={`${partner.name} ${partner.nis}`}
+                                  value={`${partner.name} ${partner.nisn}`}
                                   onSelect={() => {
                                     setValue("partnerId", partner.id);
                                     setPartnerOpen(false);
@@ -500,7 +500,7 @@ export default function NewMuhadatsahPage() {
                                         {partner.name}
                                       </p>
                                       <p className="text-xs text-muted-foreground">
-                                        {partner.nis} •{" "}
+                                        {partner.nisn} •{" "}
                                         {partner.currentClass?.name || "-"}
                                       </p>
                                     </div>
@@ -701,7 +701,7 @@ export default function NewMuhadatsahPage() {
                         <div className="text-sm">
                           <p className="font-medium">{selectedStudent.name}</p>
                           <p className="text-xs text-muted-foreground">
-                            {selectedStudent.nis}
+                            {selectedStudent.nisn}
                           </p>
                         </div>
                       </div>
@@ -730,7 +730,7 @@ export default function NewMuhadatsahPage() {
                               {selectedPartner.name}
                             </p>
                             <p className="text-xs text-muted-foreground">
-                              {selectedPartner.nis}
+                              {selectedPartner.nisn}
                             </p>
                           </div>
                         </div>

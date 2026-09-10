@@ -1,7 +1,13 @@
 import { Request, Response } from 'express';
 import { asyncHandler } from '@/middleware/error';
 import { studentService } from './student.service';
-import { ListStudentsQuery, CreateStudentInput, UpdateStudentInput } from './student.schema';
+import {
+  ListStudentsQuery,
+  CreateStudentInput,
+  UpdateStudentInput,
+  GraduateStudentInput,
+  AlumniLookupQuery,
+} from './student.schema';
 
 /**
  * List students
@@ -21,6 +27,26 @@ export const list = asyncHandler(async (req: Request, res: Response) => {
     meta: {
       pagination: result.pagination,
     },
+  });
+});
+
+/**
+ * Lookup internal alumni by NIK or NISN for re-enrollment
+ * GET /api/students/alumni/lookup
+ */
+export const lookupAlumni = asyncHandler(async (req: Request, res: Response) => {
+  const { identifier } = (res.locals.validatedQuery || req.query) as AlumniLookupQuery;
+  const currentUser = req.user
+    ? { role: req.user.role, roleCode: req.user.roleCode, unitId: req.user.unitId }
+    : undefined;
+  const student = await studentService.findInternalAlumniByIdentifier(
+    String(identifier || ''),
+    currentUser
+  );
+
+  res.json({
+    success: true,
+    data: student,
   });
 });
 
@@ -67,13 +93,38 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
 });
 
 /**
+ * Mark student as graduated
+ * POST /api/students/:id/graduate
+ */
+export const graduate = asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const input: GraduateStudentInput = req.body;
+
+  const student = await studentService.graduateStudent(id, input, {
+    role: req.user!.role,
+    roleCode: req.user!.roleCode,
+    unitId: req.user!.unitId,
+  });
+
+  res.json({
+    success: true,
+    data: student,
+    message: 'Santri berhasil dinyatakan lulus',
+  });
+});
+
+/**
  * Update student
  * PUT /api/students/:id
  */
 export const update = asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params;
   const input: UpdateStudentInput = req.body;
-  const student = await studentService.update(id, input);
+  const student = await studentService.update(id, input, {
+    role: req.user!.role,
+    roleCode: req.user!.roleCode,
+    unitId: req.user!.unitId,
+  });
 
   res.json({
     success: true,

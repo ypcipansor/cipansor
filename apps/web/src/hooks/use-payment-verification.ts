@@ -24,7 +24,7 @@ export interface VerifiablePayment {
     paidAmount: string | number;
     student: {
       id: string;
-      nis: string;
+      nisn: string;
       user: { name: string };
     };
     paymentType: { name: string };

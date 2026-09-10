@@ -4,7 +4,7 @@ import { admissionFeeSettled, assertAdmissionFeeSettled } from './admission-fee-
 /**
  * Enrollment gated only on status === 'ACCEPTED'. Acceptance is an academic
  * decision, not daftar ulang, so an accepted registrant became a full santri —
- * account, class, wallet, medical record, NIS — without paying anything.
+ * account, class, wallet, medical record, NISN — without paying anything.
  */
 describe('admission fee gate', () => {
   it('refuses an accepted registrant who has not paid', () => {

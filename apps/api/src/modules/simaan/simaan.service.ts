@@ -65,7 +65,7 @@ export const simaanService = {
           student: {
             select: {
               id: true,
-              nis: true,
+              nisn: true, nik: true,
               user: { select: { id: true, name: true } },
             },
           },
@@ -106,8 +106,8 @@ export const simaanService = {
         student: {
           select: {
             id: true,
-            nis: true,
             nisn: true,
+              nik: true,
             user: { select: { id: true, name: true } },
           },
         },
@@ -361,7 +361,7 @@ export const simaanService = {
     return {
       student: await prisma.student.findUnique({
         where: { id: studentId },
-        select: { id: true, nis: true, user: { select: { name: true } } },
+        select: { id: true, nisn: true, nik: true, user: { select: { name: true } } },
       }),
       summary: {
         totalExams,
@@ -400,7 +400,7 @@ export const simaanService = {
         where,
         include: {
           student: {
-            select: { id: true, nis: true, user: { select: { name: true } } },
+            select: { id: true, nisn: true, nik: true, user: { select: { name: true } } },
           },
           examiners: {
             include: { examiner: { select: { id: true, name: true } } },
@@ -450,7 +450,7 @@ export const simaanService = {
       where,
       include: {
         student: {
-          select: { id: true, nis: true, user: { select: { name: true } } },
+          select: { id: true, nisn: true, nik: true, user: { select: { name: true } } },
         },
         halaqoh: { select: { id: true, name: true } },
       },

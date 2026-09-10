@@ -152,7 +152,7 @@ export default function QuranMapPage() {
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Cari nama atau NIS siswa..."
+                  placeholder="Cari nama atau NISN siswa..."
                   value={studentSearch}
                   onChange={(e) => setStudentSearch(e.target.value)}
                   className="pl-10"
@@ -182,7 +182,7 @@ export default function QuranMapPage() {
                         <div>
                           <p className="font-medium">{student.name}</p>
                           <p className="text-xs text-muted-foreground">
-                            {student.nis} • {student.currentClass?.name || "-"}
+                            {student.nisn} • {student.currentClass?.name || "-"}
                           </p>
                         </div>
                       </button>

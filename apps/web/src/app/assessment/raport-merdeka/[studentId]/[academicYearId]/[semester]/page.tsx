@@ -133,8 +133,8 @@ function RaportMerdekaPrintPageContent({
               </td>
             </tr>
             <tr>
-              <td>NIS</td>
-              <td>: {raport.siswa.nis}</td>
+              <td>NISN</td>
+              <td>: {raport.siswa.nisn}</td>
               <td>Semester</td>
               <td>
                 : {raport.tahunAjaran.semester} (

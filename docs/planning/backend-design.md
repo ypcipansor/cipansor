@@ -1428,7 +1428,7 @@ class PDFService {
 
       // Student Info
       studentName: report.student.user.name,
-      studentNis: report.student.nis,
+      studentNisn: report.student.nisn,
       className: report.student.class?.name,
 
       // Narratives

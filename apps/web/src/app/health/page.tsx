@@ -228,7 +228,7 @@ function QuickAdmitCard() {
                         <div className="flex flex-col">
                           <span>{student.name}</span>
                           <span className="text-xs text-muted-foreground">
-                            {student.nis} •{" "}
+                            {student.nisn || student.nik || "-"} •{" "}
                             {student.currentClass?.name || "No Class"}
                           </span>
                         </div>
@@ -595,7 +595,7 @@ function HealthPageContent() {
                                 record.student?.name}
                             </p>
                             <p className="text-xs text-muted-foreground">
-                              {record.student?.nis}
+                              {record.student?.nisn || record.student?.nik || "-"}
                             </p>
                           </div>
                         </div>

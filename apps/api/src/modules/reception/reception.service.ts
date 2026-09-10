@@ -20,13 +20,14 @@ import { Prisma, VisitStatus, PackageStatus } from '@prisma/client';
 // student.class) the web client consumes.
 type PrismaStudentShape = {
   user: { name: string } | null;
-  nis: string;
+  nisn: string | null;
+  nik: string | null;
   enrollments: { class: { name: string } }[];
 } | null;
 
 function mapStudent(s: PrismaStudentShape) {
   if (!s) return undefined;
-  return { name: s.user?.name ?? '', nis: s.nis, class: s.enrollments?.[0]?.class };
+  return { name: s.user?.name ?? '', nisn: s.nisn || s.nik || "-", class: s.enrollments?.[0]?.class };
 }
 
 const toStudentVisit = (v: Record<string, unknown> & { student?: PrismaStudentShape }): StudentVisit =>
@@ -178,7 +179,7 @@ export const getStudentVisits = async (
       student: {
         select: {
           user: { select: { name: true } },
-          nis: true,
+          nisn: true, nik: true,
           enrollments: {
             where: { status: 'active' },
             select: { class: { select: { name: true } } },
@@ -216,7 +217,7 @@ export const createStudentVisit = async (unitId: string, data: CreateStudentVisi
       student: {
         select: {
           user: { select: { name: true } },
-          nis: true,
+          nisn: true, nik: true,
           enrollments: {
             where: { status: 'active' },
             select: { class: { select: { name: true } } },
@@ -244,7 +245,7 @@ export const updateStudentVisit = async (id: string, data: UpdateStudentVisitInp
       student: {
         select: {
           user: { select: { name: true } },
-          nis: true,
+          nisn: true, nik: true,
           enrollments: {
             where: { status: 'active' },
             select: { class: { select: { name: true } } },
@@ -280,7 +281,7 @@ export const getPackages = async (
       student: {
         select: {
           user: { select: { name: true } },
-          nis: true,
+          nisn: true, nik: true,
           enrollments: {
             where: { status: 'active' },
             select: { class: { select: { name: true } } },
@@ -318,7 +319,7 @@ export const createPackage = async (
       student: {
         select: {
           user: { select: { name: true } },
-          nis: true,
+          nisn: true, nik: true,
           enrollments: {
             where: { status: 'active' },
             select: { class: { select: { name: true } } },
@@ -360,7 +361,7 @@ export const updatePackage = async (id: string, data: UpdateStudentPackageInput)
       student: {
         select: {
           user: { select: { name: true } },
-          nis: true,
+          nisn: true, nik: true,
           enrollments: {
             where: { status: 'active' },
             select: { class: { select: { name: true } } },

@@ -95,7 +95,7 @@ export const murojaahService = {
           student: {
             select: {
               id: true,
-              nis: true,
+              nisn: true, nik: true,
               user: { select: { id: true, name: true } },
             },
           },
@@ -135,8 +135,8 @@ export const murojaahService = {
         student: {
           select: {
             id: true,
-            nis: true,
             nisn: true,
+              nik: true,
             user: { select: { id: true, name: true } },
           },
         },
@@ -354,7 +354,7 @@ export const murojaahService = {
       }),
       prisma.student.findUnique({
         where: { id: studentId },
-        select: { id: true, nis: true, user: { select: { name: true } } },
+        select: { id: true, nisn: true, nik: true, user: { select: { name: true } } },
       }),
     ]);
 
@@ -434,7 +434,7 @@ export const murojaahService = {
         where,
         include: {
           student: {
-            select: { id: true, nis: true, user: { select: { name: true } } },
+            select: { id: true, nisn: true, nik: true, user: { select: { name: true } } },
           },
           mistakes: true,
         },
@@ -748,7 +748,7 @@ export const murojaahService = {
         student: {
           select: {
             id: true,
-            nis: true,
+            nisn: true, nik: true,
             user: { select: { name: true } },
           },
         },

@@ -52,7 +52,8 @@ export interface ClassEnrollment {
   status: EnrollmentStatus;
   student?: {
     id: string;
-    nis: string; // Student NIS
+    nisn?: string | null;
+    nik?: string | null;
     gender: Gender; // Student Gender
     name?: string; // Derived/Fallback
     user?: {

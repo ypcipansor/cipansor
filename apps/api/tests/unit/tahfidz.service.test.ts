@@ -55,7 +55,7 @@ describe('TahfidzService', () => {
 
       const mockTopStudentsData = [{ studentId: 's1', _sum: { totalAyah: 100 } }];
 
-      const mockTopStudentDetails = [{ id: 's1', user: { name: 'Student 1' }, nis: '123' }];
+      const mockTopStudentDetails = [{ id: 's1', user: { name: 'Student 1' }, nisn: '123' }];
 
       const mockAllJuzCounts = [
         { studentId: 's1', juz: 1, _count: { juz: 1 } },

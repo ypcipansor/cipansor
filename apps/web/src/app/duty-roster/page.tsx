@@ -574,7 +574,7 @@ function DutyRosterPageContent() {
                       <div className="flex-1">
                         <p className="font-medium">{performer.student.name}</p>
                         <p className="text-sm text-muted-foreground">
-                          {performer.student.nis}
+                          {performer.student.nisn}
                         </p>
                       </div>
                       <div className="text-right">

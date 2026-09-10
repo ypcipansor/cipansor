@@ -294,7 +294,7 @@ export default function GenerateTKReportPage() {
                     <SelectContent>
                       {students?.data?.map((student) => (
                         <SelectItem key={student.id} value={student.id}>
-                          {student.name} ({student.nis})
+                          {student.name} ({student.nisn})
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -409,7 +409,7 @@ export default function GenerateTKReportPage() {
                             <div>
                               <p className="font-medium">{student.name}</p>
                               <p className="text-sm text-muted-foreground">
-                                {student.nis}
+                                {student.nisn}
                               </p>
                             </div>
                           </div>

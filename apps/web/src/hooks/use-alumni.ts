@@ -71,7 +71,7 @@ export interface Alumni {
   studentId?: string;
   student?: {
     id: string;
-    nis: string;
+    nisn: string;
     name: string;
   };
 

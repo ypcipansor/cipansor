@@ -251,7 +251,7 @@ export default function MuhadatsahDetailPage() {
                         {muhadatsah.student?.name}
                       </p>
                       <p className="text-sm text-muted-foreground">
-                        {muhadatsah.student?.nis}
+                        {muhadatsah.student?.nisn}
                       </p>
                     </div>
                   </div>
@@ -300,7 +300,7 @@ export default function MuhadatsahDetailPage() {
                             {muhadatsah.partner?.name}
                           </p>
                           <p className="text-sm text-muted-foreground">
-                            {muhadatsah.partner?.nis}
+                            {muhadatsah.partner?.nisn}
                           </p>
                         </div>
                       </div>

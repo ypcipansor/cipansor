@@ -113,7 +113,7 @@ interface LaundryTransaction {
   };
   student?: {
     id: string;
-    nis: string;
+    nisn: string;
     fullName: string;
   };
   items?: LaundryItem[];
@@ -134,7 +134,7 @@ interface LaundryItem {
 
 interface Student {
   id: string;
-  nis: string;
+  nisn: string;
   fullName: string;
 }
 
@@ -861,7 +861,7 @@ function TransactionsTab() {
               <div className="space-y-2">
                 <Label>Cari Santri</Label>
                 <Input
-                  placeholder="Ketik nama atau NIS..."
+                  placeholder="Ketik nama atau NISN..."
                   value={studentSearch}
                   onChange={(e) => setStudentSearch(e.target.value)}
                 />
@@ -878,7 +878,7 @@ function TransactionsTab() {
                       >
                         <div className="font-medium">{student.fullName}</div>
                         <div className="text-sm text-muted-foreground">
-                          {student.nis}
+                          {student.nisn}
                         </div>
                       </div>
                     ))}
@@ -891,7 +891,7 @@ function TransactionsTab() {
                         {selectedStudent.fullName}
                       </div>
                       <div className="text-sm text-muted-foreground">
-                        {selectedStudent.nis}
+                        {selectedStudent.nisn}
                       </div>
                     </div>
                     <Button
@@ -1043,7 +1043,7 @@ function TransactionsTab() {
                     {selectedTransaction.student?.fullName}
                   </div>
                   <div className="text-sm text-muted-foreground">
-                    {selectedTransaction.student?.nis}
+                    {selectedTransaction.student?.nisn}
                   </div>
                 </div>
                 <div>
@@ -1232,7 +1232,7 @@ function TransactionsTab() {
                     <div>
                       <div className="font-medium">{tx.student?.fullName}</div>
                       <div className="text-sm text-muted-foreground">
-                        {tx.student?.nis}
+                        {tx.student?.nisn}
                       </div>
                     </div>
                   </TableCell>

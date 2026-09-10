@@ -262,9 +262,9 @@ export default function ReportCardDetailPage() {
                 </span>
               </div>
               <div className="grid grid-cols-3 gap-2 text-sm">
-                <span className="text-muted-foreground">NIS</span>
+                <span className="text-muted-foreground">NISN</span>
                 <span className="col-span-2 font-medium">
-                  : {reportCard.student?.nis || "-"}
+                  : {reportCard.student?.nisn || "-"}
                 </span>
               </div>
               <div className="grid grid-cols-3 gap-2 text-sm">

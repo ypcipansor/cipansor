@@ -28,7 +28,6 @@ export const unitIdParamSchema = z.object({
 // ==================== EMIS STUDENT DATA SCHEMA ====================
 
 export const emisStudentDataSchema = z.object({
-  nis: z.string().min(1, 'NIS is required'),
   nisn: z.string().regex(/^\d{10}$/, 'NISN must be 10 digits'),
   nik: z.string().regex(/^\d{16}$/, 'NIK must be 16 digits'),
   nama: z.string().min(1, 'Nama is required').max(100),

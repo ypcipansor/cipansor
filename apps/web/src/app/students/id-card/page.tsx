@@ -60,12 +60,12 @@ import { QRCodeSVG } from "qrcode.react";
  *
  * `qrcode.react` was already a dependency of this app and simply unused here.
  *
- * It encodes the NIS alone, deliberately. The old payload was a JSON object
- * carrying nis, name, unit and year — around 90 characters, which forces a
+ * It encodes the NISN alone, deliberately. The old payload was a JSON object
+ * carrying nisn, name, unit and year — around 90 characters, which forces a
  * version-6 symbol of 41×41 modules. At the 48px this card allots (roughly
  * 12mm on an ID-1 card) that is about 0.3mm per module: below what a phone
  * camera resolves, so a "real" QR at that size would still have been
- * unscannable, just honestly so. The NIS fits in a version-1 symbol at 21×21,
+ * unscannable, just honestly so. The NISN fits in a version-1 symbol at 21×21,
  * and it is the identifier staff can act on — the name and unit are already
  * printed in plain text beside it.
  */
@@ -75,7 +75,7 @@ function StudentQRCode({ value, size = 48 }: { value: string; size?: number }) {
       value={value}
       size={size}
       // Cards get handled, folded into wallets and photocopied; M recovers ~15%
-      // of a damaged symbol and still fits the NIS in the smallest version.
+      // of a damaged symbol and still fits the NISN in the smallest version.
       level="M"
       // The quiet zone is part of the spec, not decoration — without it a
       // scanner cannot find the symbol against the card's white patch.
@@ -145,7 +145,7 @@ function StudentIDCard({
           <div className="space-y-0.5 text-[10px] opacity-90">
             <p className="flex items-center gap-1">
               <IdCard className="h-3 w-3" />
-              NIS: {student.nis}
+              NISN: {student.nisn}
             </p>
             <p className="flex items-center gap-1">
               <School className="h-3 w-3" />
@@ -170,7 +170,7 @@ function StudentIDCard({
 
         {/* QR Code */}
         <div className="shrink-0 bg-white p-1 rounded">
-          <StudentQRCode value={student.nis} size={48} />
+          <StudentQRCode value={student.nisn ?? ""} size={48} />
         </div>
       </div>
 
@@ -412,7 +412,7 @@ export default function StudentIDCardPage() {
                   <div className="flex-1 relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
-                      placeholder="Cari nama/NIS..."
+                      placeholder="Cari nama/NISN..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       className="pl-9"
@@ -494,7 +494,7 @@ export default function StudentIDCardPage() {
                               {student.name}
                             </p>
                             <p className="text-sm text-muted-foreground">
-                              NIS: {student.nis} •{" "}
+                              NISN: {student.nisn} •{" "}
                               {student.currentClass?.name || "-"}
                             </p>
                           </div>

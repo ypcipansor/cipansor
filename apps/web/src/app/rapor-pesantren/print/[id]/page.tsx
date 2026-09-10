@@ -97,7 +97,7 @@ function RaporPrintPageContent() {
             <span>Nomor Induk / NISN</span>
             <span>:</span>
             <span>
-              {rapor.student.nis} / {rapor.student.nisn || "-"}
+              {rapor.student.nisn} / {rapor.student.nisn || "-"}
             </span>
           </div>
           <div className="grid grid-cols-[120px_10px_1fr]">

@@ -109,8 +109,8 @@ export async function findAllReports(
         student: {
           select: {
             id: true,
-            nis: true,
             nisn: true,
+            nik: true,
             photoUrl: true,
             user: { select: { name: true } },
           },
@@ -156,8 +156,8 @@ export async function findReportById(id: string, context: ReportAccessContext) {
       student: {
         select: {
           id: true,
-          nis: true,
           nisn: true,
+          nik: true,
           photoUrl: true,
           birthDate: true,
           birthPlace: true,
@@ -253,7 +253,7 @@ export async function createReport(input: CreateReportInput, context: ReportAcce
       createdById: context.userId,
     },
     include: {
-      student: { select: { id: true, nis: true, user: { select: { name: true } } } },
+      student: { select: { id: true, nisn: true, nik: true, user: { select: { name: true } } } },
       unit: { select: { id: true, name: true } },
       academicYear: { select: { id: true, name: true } },
     },
@@ -291,7 +291,7 @@ export async function updateReport(
       updatedAt: new Date(),
     },
     include: {
-      student: { select: { id: true, nis: true, user: { select: { name: true } } } },
+      student: { select: { id: true, nisn: true, nik: true, user: { select: { name: true } } } },
       unit: { select: { id: true, name: true } },
       academicYear: { select: { id: true, name: true } },
       photos: { orderBy: { orderNumber: 'asc' } },
@@ -489,7 +489,7 @@ export async function generateReportFromAssessments(
         updatedAt: new Date(),
       },
       include: {
-        student: { select: { id: true, nis: true, user: { select: { name: true } } } },
+        student: { select: { id: true, nisn: true, nik: true, user: { select: { name: true } } } },
         unit: { select: { id: true, name: true } },
         academicYear: { select: { id: true, name: true } },
       },
@@ -500,7 +500,7 @@ export async function generateReportFromAssessments(
   return prisma.pAUDNarrativeReport.create({
     data: reportData,
     include: {
-      student: { select: { id: true, nis: true, user: { select: { name: true } } } },
+      student: { select: { id: true, nisn: true, nik: true, user: { select: { name: true } } } },
       unit: { select: { id: true, name: true } },
       academicYear: { select: { id: true, name: true } },
     },
@@ -612,7 +612,7 @@ export async function finalizeReport(
       principalSignature: input.principalSignature,
     },
     include: {
-      student: { select: { id: true, nis: true, user: { select: { name: true } } } },
+      student: { select: { id: true, nisn: true, nik: true, user: { select: { name: true } } } },
       unit: { select: { id: true, name: true } },
       academicYear: { select: { id: true, name: true } },
     },

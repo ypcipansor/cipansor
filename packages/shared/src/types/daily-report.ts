@@ -63,7 +63,7 @@ export interface DailyReport {
   updatedAt: string;
   student?: {
     id: string;
-    nis: string;
+    nisn: string;
     photoUrl?: string;
     user?: {
       name: string;

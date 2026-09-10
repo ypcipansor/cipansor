@@ -145,7 +145,7 @@ function Student360PageContent() {
           <div>
             <h1 className="text-3xl font-bold tracking-tight">{student.name}</h1>
             <div className="flex items-center gap-2 mt-1">
-              <Badge variant="outline">{student.nis}</Badge>
+              <Badge variant="outline">{student.nisn}</Badge>
               <Badge variant="secondary">{student.unit?.name}</Badge>
               <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">AKTIF</Badge>
             </div>

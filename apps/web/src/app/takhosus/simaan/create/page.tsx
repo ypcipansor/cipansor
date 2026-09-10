@@ -72,7 +72,7 @@ function CreateSimaanPageContent() {
   const studentOptions =
     studentsData?.data?.map((s: any) => ({
       value: s.id,
-      label: `${s.user?.name} (${s.nis})`,
+      label: `${s.user?.name} (${s.nisn})`,
     })) || [];
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

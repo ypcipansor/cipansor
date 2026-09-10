@@ -20,7 +20,7 @@ export interface DigitalCertificate {
   student?: {
     id: string;
     name: string;
-    nis: string;
+    nisn: string;
     photoUrl?: string;
     user?: { name: string };
     class?: { id: string; name: string };

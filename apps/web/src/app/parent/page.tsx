@@ -194,7 +194,7 @@ export default function ParentDashboardPage() {
                     </CardTitle>
                     <CardDescription>
                       <div className="flex flex-wrap gap-2 mt-1">
-                        <Badge variant="secondary">{child.nis}</Badge>
+                        <Badge variant="secondary">{child.nisn}</Badge>
                         {child.currentClass && (
                           <Badge variant="outline">
                             {child.currentClass.name}

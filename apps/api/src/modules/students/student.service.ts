@@ -5,8 +5,14 @@ import { linkGuardian, type GuardianClient } from '@/utils/link-guardian';
 import { prisma } from '@/lib/prisma';
 import { hashPassword } from '@/lib/password';
 import { Errors } from '@/middleware/error';
-import { UserRole, Gender, Prisma } from '@prisma/client';
-import type { ListStudentsQuery, CreateStudentInput, UpdateStudentInput } from './student.schema';
+import { UserRole, Gender, Prisma, UnitType } from '@prisma/client';
+import { STUDENT_ROLE_CODES } from '@/modules/auth/auth.service';
+import type {
+  ListStudentsQuery,
+  CreateStudentInput,
+  UpdateStudentInput,
+  GraduateStudentInput,
+} from './student.schema';
 
 export class StudentService {
   /**
@@ -16,16 +22,17 @@ export class StudentService {
     query: ListStudentsQuery,
     currentUser: { role: string; roleCode?: string | null; unitId: string | null }
   ) {
-    const { page, limit, search, unitId, classId, gender } = query;
+    const { page, limit, search, unitId, classId, gender, status } = query;
     const skip = (page - 1) * limit;
 
     const where: Prisma.StudentWhereInput = {
       deletedAt: null,
     };
 
-    // Unit filter. seesAllUnits() covers both the yayasan board (no unitId at
-    // all, so this used to resolve to 'none' and return nothing) and the
-    // boarding/shared-service staff, whose santri span several academic units.
+    if (status) {
+      where.status = status.toLowerCase();
+    }
+
     if (!seesAllUnits(currentUser)) {
       where.unitId = currentUser.unitId || 'none';
     } else if (unitId) {
@@ -48,8 +55,8 @@ export class StudentService {
     if (search) {
       where.OR = [
         { user: { name: { contains: search, mode: 'insensitive' } } },
-        { nis: { contains: search, mode: 'insensitive' } },
         { nisn: { contains: search, mode: 'insensitive' } },
+        { nik: { contains: search, mode: 'insensitive' } },
       ];
     }
 
@@ -92,10 +99,8 @@ export class StudentService {
       prisma.student.count({ where }),
     ]);
 
-    // Map response to match shared types/frontend expectations
-    // Specifically ensuring currentClass has 'grade' mapped from 'level'
     const mappedStudents = students.map((student) => {
-      const currentEnrollment = student.enrollments[0]; // active enrollment due to filter
+      const currentEnrollment = student.enrollments[0];
       const currentClass = currentEnrollment?.class
         ? {
             id: currentEnrollment.class.id,
@@ -108,7 +113,6 @@ export class StudentService {
       return {
         ...student,
         currentClass,
-        // Flatten user properties if needed, but existing FE likely expects nested user
       };
     });
 
@@ -120,6 +124,72 @@ export class StudentService {
         total,
         totalPages: Math.ceil(total / limit),
       },
+    };
+  }
+
+  /**
+   * Find internal alumnus student by NIK or NISN for re-enrollment / onboarding
+   */
+  async findInternalAlumniByIdentifier(
+    identifier: string,
+    currentUser?: { role: string; roleCode?: string | null; unitId: string | null }
+  ) {
+    if (!identifier || identifier.trim().length === 0) {
+      return null;
+    }
+
+    const clean = identifier.trim();
+
+    const where: Prisma.StudentWhereInput = {
+      deletedAt: null,
+      status: 'alumni',
+      OR: [{ nik: clean }, { nisn: clean }],
+    };
+
+    // MODEL (see root AGENTS.md golden rule #4/5): `student.unitId` is the
+    // CURRENT ACTIVE unit, not a historical source of truth. A student who
+    // progresses from one unit to the next (TK -> SD IT -> SMP IT -> SMA
+    // Qur'an) legitimately migrates their `unitId` to the target unit, so a
+    // target-unit admissions/PPSB user re-enrolling them MUST be able to find
+    // the alumnus even though the record still lives in the source unit.
+    //
+    // To keep that breadth from reopening a take-over hole, the lookup is
+    // deliberately narrowed to `status = 'alumni'` (never an active student in
+    // another unit) and only ever runs through an authenticated admissions
+    // endpoint (STUDENT_CREATE). A unit-pinned caller may therefore search
+    // across all units but can only ever re-link records that have already
+    // graduated; an ACTIVE student in another unit cannot be hijacked because
+    // no path here matches it.
+    //
+    // Trade-off (chosen over the alternative of scoping by caller unit): the
+    // unit scope blocked the very progression this feature exists to enable —
+    // an SMP IT staffer could not look up an SD IT alumni to re-enrol them,
+    // and the search silently failed. We accept that a unit-pinned caller can
+    // discover alumni from other units for re-enrollment, and rely on the
+    // 'alumni' status filter plus the authenticated, audit-visible admissions
+    // path to prevent hijacking active students.
+    const student = await prisma.student.findFirst({
+      where,
+      select: {
+        id: true,
+        nisn: true,
+        nik: true,
+        gender: true,
+        birthPlace: true,
+        birthDate: true,
+        entryYear: true,
+        graduateYear: true,
+        status: true,
+        user: { select: { id: true, name: true } },
+        unit: { select: { id: true, name: true, type: true } },
+      },
+    });
+
+    if (!student) {
+      return null;
+    }
+    return {
+      ...student,
     };
   }
 
@@ -169,7 +239,6 @@ export class StudentService {
           },
           take: 1,
         },
-        // We fetch a preview list, but calculate totals separately
         violations: {
           take: 5,
           orderBy: { occurredAt: 'desc' },
@@ -178,7 +247,6 @@ export class StudentService {
           take: 5,
           orderBy: { visitDate: 'desc' },
         },
-        // Latest growth measurement (carries WHO Z-scores + nutrition status)
         growthRecords: {
           take: 1,
           orderBy: { recordDate: 'desc' },
@@ -197,8 +265,6 @@ export class StudentService {
       throw Errors.notFound('Student');
     }
 
-    // Parallel aggregation queries for accurate totals
-    // Using aggregation for better performance than pulling all records
     const [violationStats, invoiceStats] = await Promise.all([
       prisma.violation.aggregate({
         where: { studentId: id },
@@ -211,7 +277,6 @@ export class StudentService {
       }),
     ]);
 
-    // Find active enrollment for current class
     const currentEnrollment = student.enrollments.find((e) => e.status === 'active');
     const currentClass = currentEnrollment?.class
       ? {
@@ -223,13 +288,11 @@ export class StudentService {
         }
       : null;
 
-    // Calculate summaries from aggregation results
     const totalViolationPoints = violationStats._sum.points || 0;
     const unpaidInvoicesCount = invoiceStats._count.id;
     const unpaidInvoicesTotal =
       (Number(invoiceStats._sum.amount) || 0) - (Number(invoiceStats._sum.paidAmount) || 0);
 
-    // Boarding info
     const boarding = student.roomAssignments[0]
       ? {
           dormitoryName: student.roomAssignments[0].room.dormitory.name,
@@ -256,8 +319,6 @@ export class StudentService {
 
   /**
    * Get complete student profile (Student 360 view).
-   * Aggregate summaries only — detailed counseling/medical data stays behind
-   * their own permission-guarded endpoints.
    */
   async getCompleteProfile(id: string) {
     const student = await prisma.student.findFirst({
@@ -318,7 +379,6 @@ export class StudentService {
       }),
     ]);
 
-    // Academic summary — normalize each grade to a percentage
     const toPercentage = (g: (typeof grades)[number]) => {
       if (g.percentage !== null) return Number(g.percentage);
       const max = Number(g.maxScore) || 100;
@@ -329,7 +389,6 @@ export class StudentService {
       values.length > 0 ? values.reduce((sum, v) => sum + v, 0) / values.length : 0;
     const averageGrade = Math.round(average(percentages) * 100) / 100;
 
-    // Trend: newer half vs older half of the recent grades (>2 point swing)
     let trend: 'UP' | 'DOWN' | 'STABLE' = 'STABLE';
     if (percentages.length >= 4) {
       const mid = Math.floor(percentages.length / 2);
@@ -338,7 +397,6 @@ export class StudentService {
       else if (diff < -2) trend = 'DOWN';
     }
 
-    // Attendance summary (last 30 days)
     const countFor = (status: string) =>
       attendanceByStatus.find((row) => row.status === status)?._count.id ?? 0;
     const totalDays = attendanceByStatus.reduce((sum, row) => sum + row._count.id, 0);
@@ -372,20 +430,176 @@ export class StudentService {
   }
 
   /**
-   * Create new student (with user account)
+   * Mark student as graduated (Alumni)
+   *
+   * Business rule: `graduateYear` wins over `graduationDate` when both are provided,
+   * otherwise the graduation year is derived from the date (or the current year).
    */
-  async create(input: CreateStudentInput) {
-    // Check if NIS already exists
-    const existingNis = await prisma.student.findFirst({
-      where: { nis: input.nis },
+  async graduateStudent(
+    id: string,
+    input?: GraduateStudentInput | number,
+    currentUser?: { role: string; roleCode?: string | null; unitId: string | null }
+  ) {
+    return prisma.$transaction((tx) => this._graduateStudent(tx, id, input, currentUser));
+  }
+
+  /**
+   * Internal graduation routine. Takes an explicit transaction client so callers
+   * that need profile-write + graduation to be atomic (see `update`) can run it
+   * inside the same transaction rather than committing the profile first and
+   * then starting a separate graduation transaction.
+   */
+  private async _graduateStudent(
+    tx: Prisma.TransactionClient,
+    id: string,
+    input?: GraduateStudentInput | number,
+    currentUser?: { role: string; roleCode?: string | null; unitId: string | null }
+  ) {
+    const student = await tx.student.findFirst({
+      where: { id, deletedAt: null },
+      include: { user: true, unit: true },
     });
 
-    if (existingNis) {
-      throw Errors.conflict('NIS already exists');
+    if (!student) {
+      throw Errors.notFound('Student');
     }
 
-    // Check if email exists (if provided)
-    const emailToCheck = input.email || `${input.nis}@student.cipansor.local`;
+    // SECURITY: a caller pinned to one unit may only graduate students in that
+    // unit. Without this a unit's staff could strip another unit's student of
+    // their enrollment, dormitory room and login access. Foundation/cross-unit
+    // roles (seesAllUnits) may graduate across the foundation.
+    if (currentUser && !seesAllUnits(currentUser) && student.unitId !== currentUser.unitId) {
+      throw Errors.forbidden('You can only graduate students in your own unit');
+    }
+
+    // Accept both the new object contract and the legacy `(id, year)` shape.
+    const graduateYear = typeof input === 'number' ? input : input?.graduateYear;
+    const graduationDate = typeof input === 'number' ? undefined : input?.graduationDate;
+
+    const effectiveDate = graduationDate ? new Date(graduationDate) : new Date();
+    const currentYear = graduateYear ?? effectiveDate.getFullYear();
+
+    await tx.classEnrollment.updateMany({
+      where: { studentId: id, status: 'active' },
+      data: { status: 'completed' },
+    });
+
+    // Free the dormitory bed on graduation so the room roster no longer shows
+    // the graduate and the assignment cannot be reused while still active.
+    await tx.roomAssignment.updateMany({
+      where: { studentId: id, isActive: true },
+      data: { isActive: false, endedAt: new Date() },
+    });
+
+    // Revoke the graduate's student login access in the same transaction that
+    // marks the record alumni. Without this, a graduated student keeps their
+    // authenticated student roles indefinitely. Resolve the role via the
+    // student RoleCodes so unrelated teacher/staff/parent roles the same user
+    // may hold in other units stay active.
+    const studentRoles = await tx.role.findMany({
+      where: { code: { in: STUDENT_ROLE_CODES } },
+      select: { id: true },
+    });
+    const studentRoleIds = studentRoles.map((r) => r.id);
+    if (studentRoleIds.length > 0) {
+      await tx.userRoleAssignment.updateMany({
+        where: {
+          userId: student.userId,
+          isActive: true,
+          roleId: { in: studentRoleIds },
+        },
+        data: { isActive: false, isPrimary: false },
+      });
+    }
+
+    const updated = await tx.student.update({
+      where: { id },
+      data: {
+        status: 'alumni',
+        graduateYear: currentYear,
+      },
+      include: {
+        user: { select: { id: true, name: true, email: true } },
+        unit: { select: { id: true, name: true } },
+      },
+    });
+
+    // ISSUE #3 (a graduation snapshot must never erase a prior unit's alumni
+    // record): the Alumni row is keyed on the composite (studentId, unitId,
+    // graduationYear), so each graduation is its own immutable snapshot. A
+    // progressed student who graduates from unit B keeps the Alumni row created
+    // when they graduated from unit A — unit A's alumni list/analytics are not
+    // clobbered. Re-graduating the same (student, unit, year) refreshes that one
+    // snapshot in place (idempotent) instead of duplicating it. Per-unit history
+    // stays in per-record snapshots: `Alumni.unitId` (this row), `ClassEnrollment
+    // -> Class.unitId`, and `Invoice.unitId` — never the mutable `student.unitId`.
+    const registrationNo = `ALM-${currentYear}-${student.unitId
+      .slice(0, 4)
+      .toUpperCase()}-${id.slice(0, 8).toUpperCase()}`;
+    await tx.alumni.upsert({
+      where: {
+        studentId_unitId_graduationYear: {
+          studentId: id,
+          unitId: student.unitId,
+          graduationYear: currentYear,
+        },
+      },
+      create: {
+        studentId: id,
+        unitId: student.unitId,
+        registrationNo,
+        name: student.user.name,
+        gender: student.gender,
+        birthPlace: student.birthPlace,
+        birthDate: student.birthDate,
+        graduationYear: currentYear,
+        graduationDate: effectiveDate,
+        email: student.user.email,
+        phone: student.parentPhone,
+        address: student.address,
+        status: 'ACTIVE',
+      },
+      update: {
+        registrationNo,
+        name: student.user.name,
+        gender: student.gender,
+        birthPlace: student.birthPlace,
+        birthDate: student.birthDate,
+        graduationDate: effectiveDate,
+        email: student.user.email,
+        phone: student.parentPhone,
+        address: student.address,
+        status: 'ACTIVE',
+      },
+    });
+
+    return updated;
+  }
+
+  /**
+   * Create new student
+   */
+  async create(input: CreateStudentInput) {
+    if (input.nisn) {
+      const existingNisn = await prisma.student.findFirst({
+        where: { nisn: input.nisn },
+      });
+      if (existingNisn) {
+        throw Errors.conflict('NISN already exists');
+      }
+    }
+
+    if (input.nik) {
+      const existingNik = await prisma.student.findFirst({
+        where: { nik: input.nik },
+      });
+      if (existingNik) {
+        throw Errors.conflict('NIK already exists');
+      }
+    }
+
+    const emailToCheck =
+      input.email || `${input.nisn || input.nik || randomUUID()}@student.cipansor.local`;
     const existingEmail = await prisma.user.findFirst({
       where: { email: emailToCheck },
     });
@@ -394,7 +608,6 @@ export class StudentService {
       throw Errors.conflict('Email already registered');
     }
 
-    // Check unit exists
     if (!input.unitId) {
       throw Errors.badRequest('Unit ID is required');
     }
@@ -407,27 +620,26 @@ export class StudentService {
       throw Errors.notFound('Unit');
     }
 
-    const unitId = input.unitId; // TypeScript narrowing
+    // Lifelong-identifier rule (mirrors enrolRegistrant in admissions.service.ts
+    // and processEnrollment in the onboarding orchestrator): an active student
+    // must carry a permanent NISN or NIK. TK_QURAN is the documented exception —
+    // young children may not yet have a NISN and the school does not always
+    // collect their NIK. Non-TK units that reach this point with neither
+    // identifier would silently create a student with no way to be identified
+    // long-term.
+    if (!input.nisn && !input.nik && unit.type !== UnitType.TK_QURAN) {
+      throw Errors.badRequest('NISN atau NIK wajib diisi untuk menerima siswa');
+    }
 
-    // Generate email if not provided
-    const email = input.email || `${input.nis}@student.cipansor.local`;
-
-    // Whether this pupil gets an account at all. TK Qur'an pupils never do —
-    // they are four to six years old — so the row created below is an identity
-    // carrying their name, with no credential and no ability to sign in.
-    // Without this, adding a TK pupil through the UI issued them a password.
+    const unitId = input.unitId;
+    const email = emailToCheck;
     const withLogin = studentsHoldLogins(unit.type);
 
-    // Students are issued a password to reset later rather than choosing one.
     const passwordHash = withLogin
-      ? await hashPassword(
-          input.password ?? `Aa1${randomUUID().replace(/-/g, '').slice(0, 12)}`
-        )
+      ? await hashPassword(input.password ?? `Aa1${randomUUID().replace(/-/g, '').slice(0, 12)}`)
       : null;
 
-    // Create user and student in transaction
     const student = await prisma.$transaction(async (tx) => {
-      // Create user account
       const user = await tx.user.create({
         data: {
           name: input.name,
@@ -439,13 +651,15 @@ export class StudentService {
         },
       });
 
-      // Create student profile
       const student = await tx.student.create({
         data: {
           userId: user.id,
           unitId,
-          nis: input.nis,
-          nisn: input.nisn,
+          nisn: input.nisn || null,
+          nik: input.nik || null,
+          noKK: input.noKK || null,
+          noAkta: input.noAkta || null,
+          kipNumber: input.kipNumber || null,
           gender: input.gender as Gender,
           birthPlace: input.birthPlace,
           birthDate: input.birthDate,
@@ -453,6 +667,8 @@ export class StudentService {
           parentName: input.parentName,
           parentPhone: input.parentPhone,
           parentEmail: input.parentEmail,
+          entryYear: new Date().getFullYear(),
+          status: 'active',
         },
         include: {
           user: {
@@ -471,10 +687,6 @@ export class StudentService {
         },
       });
 
-      // Link the guardian for real. Before this, parentName/parentPhone were
-      // stored on the student row and nowhere else, so every santri added
-      // through the admin form was an orphan relationally: the wali had no
-      // account, no StudentParent row, and no unit scope.
       await linkGuardian(tx as unknown as GuardianClient, {
         studentId: student.id,
         name: input.parentName,
@@ -482,7 +694,6 @@ export class StudentService {
         email: input.parentEmail,
       });
 
-      // Enroll in class if provided
       if (input.classId) {
         const classExists = await tx.class.findFirst({
           where: { id: input.classId, deletedAt: null, unitId },
@@ -508,7 +719,11 @@ export class StudentService {
   /**
    * Update student
    */
-  async update(id: string, input: UpdateStudentInput) {
+  async update(
+    id: string,
+    input: UpdateStudentInput,
+    currentUser?: { role: string; roleCode?: string | null; unitId: string | null }
+  ) {
     const student = await prisma.student.findFirst({
       where: { id, deletedAt: null },
       include: { user: true },
@@ -518,19 +733,83 @@ export class StudentService {
       throw Errors.notFound('Student');
     }
 
-    // Check NIS uniqueness if changing
-    if (input.nis && input.nis !== student.nis) {
-      const existingNis = await prisma.student.findFirst({
-        where: { nis: input.nis, id: { not: id } },
-      });
-      if (existingNis) {
-        throw Errors.conflict('NIS already in use');
+    // INTEGRITY (mirrors the create-stage rule): an update must not wipe a
+    // non-TK student's permanent identity. Issued #6: checking only "both fields
+    // sent as null" is insufficient — a payload that sends `nisn: null` while
+    // omitting `nik` (undefined) previously escaped the guard and left a non-TK
+    // student with neither NISN nor NIK. Resolve the EFFECTIVE value per field
+    // (new value when present in the payload, existing value when the field is
+    // omitted) and reject if the merged outcome leaves a non-TK student without
+    // any identifier. Applied uniformly to the alumni and non-alumni update
+    // paths, not just when both fields are sent explicitly.
+    const effectiveNisn = input.nisn === undefined ? student.nisn : (input.nisn || null);
+    const effectiveNik = input.nik === undefined ? student.nik : (input.nik || null);
+    if (!effectiveNisn && !effectiveNik && (student.nisn || student.nik)) {
+      const unit = await prisma.unit.findFirst({ where: { id: student.unitId } });
+      if (unit && unit.type !== UnitType.TK_QURAN) {
+        throw Errors.badRequest('Minimal satu identifier wajib diisi (NISN atau NIK)');
       }
     }
 
-    // Update in transaction
+    if (input.nisn && input.nisn !== student.nisn) {
+      const existingNisn = await prisma.student.findFirst({
+        where: { nisn: input.nisn, id: { not: id } },
+      });
+      if (existingNisn) {
+        throw Errors.conflict('NISN already in use');
+      }
+    }
+
+    if (input.nik && input.nik !== student.nik) {
+      const existingNik = await prisma.student.findFirst({
+        where: { nik: input.nik, id: { not: id } },
+      });
+      if (existingNik) {
+        throw Errors.conflict('NIK already in use');
+      }
+    }
+
+    const targetStatus = input.status ? this.mapCanonicalStatus(input.status) : undefined;
+
+    if (targetStatus === 'alumni') {
+      // Graduation must be atomic: profile edits AND the graduation side-effects
+      // (deactivate enrollments, free the room, revoke student login roles,
+      // upsert the alumni snapshot) commit together. The profile write used to
+      // be committed here BEFORE graduateStudent started a separate transaction,
+      // so a failure in the revocation/alumni-upsert left a saved profile with
+      // the student still 'active'. Run both in the SAME transaction now.
+      return prisma.$transaction(async (tx) => {
+        if (input.name) {
+          await tx.user.update({
+            where: { id: student.userId },
+            data: { name: input.name },
+          });
+        }
+
+        await tx.student.update({
+          where: { id },
+          data: {
+            nisn: input.nisn,
+            nik: input.nik,
+            noKK: input.noKK,
+            noAkta: input.noAkta,
+            kipNumber: input.kipNumber,
+            gender: input.gender as Gender | undefined,
+            birthPlace: input.birthPlace,
+            birthDate: input.birthDate,
+            address: input.address,
+            parentName: input.parentName,
+            parentPhone: input.parentPhone,
+            parentEmail: input.parentEmail,
+            photoUrl: input.photoUrl,
+          },
+        });
+
+        return this._graduateStudent(tx, id, undefined, currentUser);
+      });
+    }
+
     const updated = await prisma.$transaction(async (tx) => {
-      // Update user name if provided
       if (input.name) {
         await tx.user.update({
           where: { id: student.userId },
@@ -538,12 +817,14 @@ export class StudentService {
         });
       }
 
-      // Update student
       return tx.student.update({
         where: { id },
         data: {
-          nis: input.nis,
           nisn: input.nisn,
+          nik: input.nik,
+          noKK: input.noKK,
+          noAkta: input.noAkta,
+          kipNumber: input.kipNumber,
           gender: input.gender as Gender | undefined,
           birthPlace: input.birthPlace,
           birthDate: input.birthDate,
@@ -552,6 +833,7 @@ export class StudentService {
           parentPhone: input.parentPhone,
           parentEmail: input.parentEmail,
           photoUrl: input.photoUrl,
+          status: targetStatus,
         },
         include: {
           user: {
@@ -577,6 +859,15 @@ export class StudentService {
   /**
    * Delete student (soft delete)
    */
+  private mapCanonicalStatus(status: string): string {
+    const s = status.toLowerCase();
+    if (s === 'graduated' || s === 'alumni') return 'alumni';
+    if (s === 'dropped_out' || s === 'dropped') return 'dropped';
+    if (s === 'transferred') return 'transferred';
+    if (s === 'inactive') return 'inactive';
+    return 'active';
+  }
+
   async delete(id: string) {
     const student = await prisma.student.findFirst({
       where: { id, deletedAt: null },
@@ -586,7 +877,6 @@ export class StudentService {
       throw Errors.notFound('Student');
     }
 
-    // Soft delete both student and user
     await prisma.$transaction([
       prisma.student.update({
         where: { id },

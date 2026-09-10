@@ -1,7 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api, { ApiResponse, PaginatedResponse } from "@/lib/api";
 
-// Dormitory (Asrama) entity
 export interface Dormitory {
   id: string;
   name: string;
@@ -9,7 +8,6 @@ export interface Dormitory {
   type: DormitoryType;
   capacity: number;
   currentOccupancy?: number;
-  /** Unit pengelola; null when the yayasan runs the asrama across units. */
   unitId: string | null;
   unit?: {
     id: string;
@@ -34,7 +32,6 @@ export const DORMITORY_TYPES: { value: DormitoryType; label: string }[] = [
   { value: "FEMALE", label: "Putri" },
 ];
 
-// Room entity
 export interface Room {
   id: string;
   name: string;
@@ -48,7 +45,6 @@ export interface Room {
   updatedAt: string;
 }
 
-// Room assignment
 export interface RoomAssignment {
   id: string;
   roomId: string;
@@ -57,7 +53,8 @@ export interface RoomAssignment {
   student?: {
     id: string;
     name: string;
-    nis: string;
+    nisn?: string;
+    nik?: string;
     gender: string;
   };
   startDate: string;
@@ -117,7 +114,6 @@ export interface CreateDormitoryData {
   code: string;
   type: DormitoryType;
   capacity: number;
-  /** Omit or send null for an asrama the yayasan runs across units. */
   unitId?: string | null;
   supervisorId?: string;
   description?: string;
@@ -181,7 +177,6 @@ export function useDeleteDormitory() {
   });
 }
 
-// Room hooks
 export interface RoomParams {
   page?: number;
   limit?: number;
@@ -285,8 +280,6 @@ export function useDeleteRoom() {
   });
 }
 
-// Shape returned by GET /dormitories/assignments/list — assignments carry
-// assignedAt/endedAt and the student's name nested under `user`.
 interface ApiRoomAssignment {
   id: string;
   roomId: string;
@@ -294,7 +287,8 @@ interface ApiRoomAssignment {
   studentId: string;
   student?: {
     id: string;
-    nis: string;
+    nisn?: string;
+    nik?: string;
     gender: string;
     user?: { id: string; name: string; email?: string };
   };
@@ -315,7 +309,8 @@ function toRoomAssignment(a: ApiRoomAssignment): RoomAssignment {
       ? {
           id: a.student.id,
           name: a.student.user?.name ?? "",
-          nis: a.student.nis,
+          nisn: a.student.nisn,
+          nik: a.student.nik,
           gender: a.student.gender,
         }
       : undefined,
@@ -327,7 +322,6 @@ function toRoomAssignment(a: ApiRoomAssignment): RoomAssignment {
   };
 }
 
-// Room Assignment hooks
 export function useRoomAssignments(roomId: string) {
   return useQuery({
     queryKey: ["rooms", roomId, "assignments"],

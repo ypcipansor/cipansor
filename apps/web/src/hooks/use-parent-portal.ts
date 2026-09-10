@@ -21,7 +21,6 @@ import api, { ApiResponse, PaginatedResponse } from "@/lib/api";
 export interface ParentChild {
   /** The student's id — not the parent-child link id. */
   id: string;
-  nis: string;
   nisn?: string | null;
   name: string;
   gender: "MALE" | "FEMALE";

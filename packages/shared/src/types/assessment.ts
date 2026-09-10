@@ -97,7 +97,7 @@ export interface Grade {
   // Relations
   student?: {
     id: string;
-    nis: string | null;
+    nisn: string | null;
     user?: { id: string; name: string | null };
   };
   subject?: { id: string; name: string; code: string };
@@ -182,7 +182,6 @@ export interface ReportCard {
   // Relations
   student?: {
     id: string;
-    nis: string | null;
     nisn?: string | null;
     user?: { id: string; name: string | null };
   };

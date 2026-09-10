@@ -509,9 +509,9 @@ export default function SuratKeteranganPage() {
                 <td className="font-semibold">{selectedStudent.name}</td>
               </tr>
               <tr>
-                <td className="pr-4 align-top">NIS</td>
+                <td className="pr-4 align-top">NISN</td>
                 <td className="pr-2 align-top">:</td>
-                <td>{selectedStudent.nis}</td>
+                <td>{selectedStudent.nisn}</td>
               </tr>
               <tr>
                 <td className="pr-4 align-top">NISN</td>
@@ -851,7 +851,7 @@ export default function SuratKeteranganPage() {
                   <div className="flex-1 relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
-                      placeholder="Cari nama atau NIS..."
+                      placeholder="Cari nama atau NISN..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       className="pl-9"
@@ -907,7 +907,7 @@ export default function SuratKeteranganPage() {
                               {student.name}
                             </p>
                             <p className="text-sm text-muted-foreground">
-                              NIS: {student.nis}
+                              NISN: {student.nisn}
                             </p>
                             <p className="text-xs text-muted-foreground">
                               {student.currentClass?.name || "-"} •{" "}
@@ -935,7 +935,7 @@ export default function SuratKeteranganPage() {
                   {selectedStudent && (
                     <span>
                       Untuk: <strong>{selectedStudent.name}</strong> (
-                      {selectedStudent.nis})
+                      {selectedStudent.nisn})
                     </span>
                   )}
                 </CardDescription>
@@ -1007,7 +1007,7 @@ export default function SuratKeteranganPage() {
                       <div>
                         <p className="font-medium">{selectedStudent.name}</p>
                         <p className="text-sm text-muted-foreground">
-                          NIS: {selectedStudent.nis} •{" "}
+                          NISN: {selectedStudent.nisn} •{" "}
                           {selectedStudent.unit?.name}
                         </p>
                       </div>

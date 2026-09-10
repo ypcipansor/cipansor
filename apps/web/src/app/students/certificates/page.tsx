@@ -304,7 +304,7 @@ export default function CertificateGeneratorPage() {
             >
               {selectedStudent.name}
             </p>
-            <p className="text-sm opacity-80">NIS: {selectedStudent.nis}</p>
+            <p className="text-sm opacity-80">NISN: {selectedStudent.nisn}</p>
           </div>
 
           {/* Description */}
@@ -559,7 +559,7 @@ export default function CertificateGeneratorPage() {
                   <div className="flex-1 relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
-                      placeholder="Cari nama atau NIS..."
+                      placeholder="Cari nama atau NISN..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       className="pl-9 bg-background/50 backdrop-blur-sm border-muted-foreground/20"
@@ -611,7 +611,7 @@ export default function CertificateGeneratorPage() {
                               {student.name}
                             </p>
                             <p className="text-sm text-muted-foreground">
-                              NIS: {student.nis}
+                              NISN: {student.nisn}
                             </p>
                             <p className="text-xs text-muted-foreground">
                               {student.currentClass?.name || "-"} •{" "}
@@ -639,7 +639,7 @@ export default function CertificateGeneratorPage() {
                   {selectedStudent && (
                     <span>
                       Untuk: <strong>{selectedStudent.name}</strong> (
-                      {selectedStudent.nis})
+                      {selectedStudent.nisn})
                     </span>
                   )}
                 </CardDescription>
@@ -710,7 +710,7 @@ export default function CertificateGeneratorPage() {
                       <div>
                         <p className="font-medium">{selectedStudent.name}</p>
                         <p className="text-sm text-muted-foreground">
-                          NIS: {selectedStudent.nis} •{" "}
+                          NISN: {selectedStudent.nisn} •{" "}
                           {selectedStudent.unit?.name}
                         </p>
                       </div>

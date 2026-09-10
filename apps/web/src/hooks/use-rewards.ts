@@ -32,7 +32,7 @@ export interface Reward {
   student?: {
     id: string;
     name: string;
-    nis: string;
+    nisn: string;
     class?: { name: string };
     unit?: { name: string };
     totalRewardPoints?: number;

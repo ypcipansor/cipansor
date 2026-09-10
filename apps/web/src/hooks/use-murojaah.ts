@@ -72,7 +72,7 @@ export interface MurojaahRecord {
   reviewedAt?: string;
   student?: {
     id: string;
-    nis: string;
+    nisn: string;
     photoUrl?: string;
     user?: {
       name: string;
@@ -144,7 +144,7 @@ export type UpdateMurojaahData = Partial<
 export interface StudentMurojaahSummary {
   student: {
     id: string;
-    nis: string;
+    nisn: string;
     user: { name: string };
   };
   summary: {

@@ -86,7 +86,7 @@ function PaymentCard({
             <p className="font-semibold">
               {payment.invoice.student.user.name}{" "}
               <span className="text-muted-foreground font-normal">
-                (NIS {payment.invoice.student.nis})
+                (NISN {payment.invoice.student.nisn})
               </span>
             </p>
             <p className="text-sm text-muted-foreground">

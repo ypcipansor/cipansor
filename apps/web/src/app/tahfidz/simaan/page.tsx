@@ -151,7 +151,7 @@ export default function SimaanListPage() {
               {row.original.student?.user?.name || "-"}
             </p>
             <p className="text-xs text-muted-foreground">
-              {row.original.student?.nis}
+              {row.original.student?.nisn}
             </p>
           </div>
         </div>

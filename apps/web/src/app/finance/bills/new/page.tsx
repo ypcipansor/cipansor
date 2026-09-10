@@ -320,7 +320,7 @@ function NewBillPageContent() {
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
-                  placeholder="Cari nama/NIS..."
+                  placeholder="Cari nama/NISN..."
                   className="pl-10"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
@@ -364,7 +364,7 @@ function NewBillPageContent() {
                           onCheckedChange={toggleAll}
                         />
                       </TableHead>
-                      <TableHead>NIS</TableHead>
+                      <TableHead>NISN</TableHead>
                       <TableHead>Nama</TableHead>
                       <TableHead>Kelas</TableHead>
                     </TableRow>
@@ -383,7 +383,7 @@ function NewBillPageContent() {
                           />
                         </TableCell>
                         <TableCell className="font-mono text-sm">
-                          {student.nis}
+                          {student.nisn}
                         </TableCell>
                         <TableCell className="font-medium">
                           {student.name}

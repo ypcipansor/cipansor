@@ -151,7 +151,7 @@ function TargetPageContent() {
               <SelectContent>
                 {students?.data?.map((s: any) => (
                   <SelectItem key={s.id} value={s.id}>
-                    {s.user.name} ({s.nis})
+                    {s.user.name} ({s.nisn})
                   </SelectItem>
                 ))}
               </SelectContent>

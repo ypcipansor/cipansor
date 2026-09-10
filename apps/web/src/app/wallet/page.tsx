@@ -93,7 +93,7 @@ const searchStudents = async (search: string) => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return res.data.data.map((s: any) => ({
     id: s.id,
-    nis: s.nis,
+    nisn: s.nisn,
     name: s.user?.name || s.name,
     className: s.class?.name,
     walletBalance: s.wallet?.balance,
@@ -116,7 +116,7 @@ const StudentPicker = ({
   <div className="space-y-2">
     <Label>Cari Santri</Label>
     <Input
-      placeholder="Ketik nama atau NIS santri..."
+      placeholder="Ketik nama atau NISN santri..."
       value={search}
       onChange={(e) => setSearch(e.target.value)}
     />
@@ -134,7 +134,7 @@ const StudentPicker = ({
             <div>
               <span className="font-medium">{student.name}</span>
               <span className="text-sm text-muted-foreground ml-2">
-                ({student.nis})
+                ({student.nisn})
               </span>
               {student.className && (
                 <span className="text-sm text-muted-foreground ml-2">
@@ -460,7 +460,7 @@ function WalletPageContent() {
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
-                    placeholder="Cari berdasarkan nama atau NIS..."
+                    placeholder="Cari berdasarkan nama atau NISN..."
                     value={search}
                     onChange={(e) => {
                       setSearch(e.target.value);
@@ -518,7 +518,7 @@ function WalletPageContent() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Santri</TableHead>
-                      <TableHead>NIS</TableHead>
+                      <TableHead>NISN</TableHead>
                       <TableHead>Kelas</TableHead>
                       <TableHead>Unit</TableHead>
                       <TableHead className="text-right">Saldo</TableHead>
@@ -533,7 +533,7 @@ function WalletPageContent() {
                           {wallet.student?.name || "-"}
                         </TableCell>
                         <TableCell className="font-mono text-sm">
-                          {wallet.student?.nis || "-"}
+                          {wallet.student?.nisn || "-"}
                         </TableCell>
                         <TableCell>
                           {wallet.student?.class?.name || "-"}

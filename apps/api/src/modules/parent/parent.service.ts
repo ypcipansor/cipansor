@@ -8,9 +8,6 @@ type StudentParentWithStudent = Awaited<ReturnType<typeof prisma.studentParent.f
 type GradeWithRelations = Awaited<ReturnType<typeof prisma.grade.findMany>>[0];
 
 export class ParentService {
-  /**
-   * Get all children linked to a parent
-   */
   async getChildren(parentId: string) {
     const children = await prisma.studentParent.findMany({
       where: { parentId },
@@ -52,9 +49,6 @@ export class ParentService {
                         id: true,
                         user: {
                           select: {
-                            // The parent's "kirim pesan ke wali kelas" flow needs
-                            // the teacher's *User* id as the recipient; the
-                            // Teacher id is a different entity.
                             id: true,
                             name: true,
                           },
@@ -72,24 +66,15 @@ export class ParentService {
       },
     });
 
-    // `id` is deliberately the *student* id, not the StudentParent link id:
-    // every downstream route is `/parent/children/{studentId}/…`.
-    //
-    // The biodata below (nisn, birth details, contact) is what the "Data Anak"
-    // page renders. It used to call `/parent/children/{id}` for it — a route
-    // that was never built — so those fields were always blank. Returning them
-    // here costs one row per child and removes a request.
     return children.map((sp: (typeof children)[0]) => ({
       id: sp.student.id,
       name: sp.student.user.name,
-      nis: sp.student.nis,
       nisn: sp.student.nisn,
+      nik: sp.student.nik,
       gender: sp.student.gender,
       birthPlace: sp.student.birthPlace,
       birthDate: sp.student.birthDate,
       address: sp.student.address,
-      // Student has no phone/email of its own — the contact on file is the
-      // guardian's, plus the login email on the linked user.
       phone: sp.student.parentPhone,
       email: sp.student.user.email,
       photoUrl: sp.student.photoUrl,
@@ -102,9 +87,6 @@ export class ParentService {
     }));
   }
 
-  /**
-   * Verify parent has access to student
-   */
   async verifyParentAccess(parentId: string, studentId: string) {
     const link = await prisma.studentParent.findUnique({
       where: {
@@ -119,9 +101,6 @@ export class ParentService {
     return link;
   }
 
-  /**
-   * Get child profile with full details
-   */
   async getChildProfile(parentId: string, studentId: string) {
     await this.verifyParentAccess(parentId, studentId);
 
@@ -197,9 +176,6 @@ export class ParentService {
     };
   }
 
-  /**
-   * Get child attendance summary
-   */
   async getChildAttendance(
     parentId: string,
     studentId: string,
@@ -234,7 +210,6 @@ export class ParentService {
       take: 30,
     });
 
-    // Calculate summary
     const summary = await prisma.attendance.groupBy({
       by: ['status'],
       where,
@@ -263,12 +238,6 @@ export class ParentService {
     };
   }
 
-  /**
-   * Aggregated weekly progress for one child (attendance + tahfidz + behavior +
-   * academic), used by the parent "Buku Penghubung" weekly tab. Defaults to the
-   * current Monday–Sunday week; `weekStart` (any date in the desired week) can
-   * override it.
-   */
   async getChildWeeklyProgress(
     parentId: string,
     studentId: string,
@@ -276,10 +245,9 @@ export class ParentService {
   ) {
     await this.verifyParentAccess(parentId, studentId);
 
-    // Monday 00:00 of the reference week → exclusive next Monday.
     const ref = query.weekStart ? new Date(query.weekStart) : new Date();
     const start = new Date(ref);
-    const dow = (start.getDay() + 6) % 7; // 0 = Monday
+    const dow = (start.getDay() + 6) % 7;
     start.setDate(start.getDate() - dow);
     start.setHours(0, 0, 0, 0);
     const end = new Date(start);
@@ -316,13 +284,11 @@ export class ParentService {
         }),
       ]);
 
-    // Attendance
     const att = { PRESENT: 0, ABSENT: 0, LATE: 0, SICK: 0, EXCUSED: 0 };
     for (const g of attendanceGroups) {
       att[g.status as keyof typeof att] = g._count.id;
     }
 
-    // Tahfidz
     let newMemorization = 0;
     let review = 0;
     const tahfidzScores: number[] = [];
@@ -346,7 +312,6 @@ export class ParentService {
               ? 'Jayyid'
               : 'Maqbul';
 
-    // Academic
     const pct = (g: { percentage: unknown; score: unknown; maxScore: unknown }) =>
       Number(
         g.percentage ??
@@ -397,9 +362,6 @@ export class ParentService {
     };
   }
 
-  /**
-   * Get child tahfidz progress
-   */
   async getChildTahfidz(
     parentId: string,
     studentId: string,
@@ -437,7 +399,6 @@ export class ParentService {
       prisma.tahfidzRecord.count({ where }),
     ]);
 
-    // Get summary
     const summaryByType = await prisma.tahfidzRecord.groupBy({
       by: ['activityType'],
       where: { studentId },
@@ -445,7 +406,6 @@ export class ParentService {
       _sum: { totalAyah: true },
     });
 
-    // Calculate total juz memorized
     const ziyadahRecords = await prisma.tahfidzRecord.findMany({
       where: {
         studentId,
@@ -470,9 +430,6 @@ export class ParentService {
     };
   }
 
-  /**
-   * Get child ibadah stats
-   */
   async getChildIbadah(
     parentId: string,
     studentId: string,
@@ -490,9 +447,6 @@ export class ParentService {
     });
   }
 
-  /**
-   * Get child grades
-   */
   async getChildGrades(
     parentId: string,
     studentId: string,
@@ -546,7 +500,6 @@ export class ParentService {
       averageScore: number;
     };
 
-    // Group by subject
     const bySubject = grades.reduce<Record<string, SubjectGrades>>((acc, grade) => {
       const subjectId = grade.subject.id;
       if (!acc[subjectId]) {
@@ -560,7 +513,6 @@ export class ParentService {
       return acc;
     }, {});
 
-    // Calculate averages
     Object.values(bySubject).forEach((subjectGrades) => {
       const scores = subjectGrades.grades.map((g) =>
         Number(g.percentage || (Number(g.score) / Number(g.maxScore)) * 100)
@@ -574,16 +526,13 @@ export class ParentService {
     };
   }
 
-  /**
-   * Get child report cards
-   */
   async getChildReportCards(parentId: string, studentId: string) {
     await this.verifyParentAccess(parentId, studentId);
 
     const reportCards = await prisma.reportCard.findMany({
       where: {
         studentId,
-        isPublished: true, // Only show published report cards to parents
+        isPublished: true,
       },
       include: {
         class: {
@@ -609,9 +558,6 @@ export class ParentService {
     return reportCards;
   }
 
-  /**
-   * Get child financial summary
-   */
   async getChildFinance(parentId: string, studentId: string) {
     await this.verifyParentAccess(parentId, studentId);
 
@@ -653,13 +599,6 @@ export class ParentService {
     };
   }
 
-  /**
-   * Get child counseling summaries shared with parents.
-   * PRIVACY: only sessions explicitly flagged for parents
-   * (parentNotified) or non-confidential ones are returned, and the
-   * structured psychological observations (psychologyData) plus internal
-   * notes are NEVER exposed here — only summary and recommendations.
-   */
   async getChildCounseling(parentId: string, studentId: string) {
     await this.verifyParentAccess(parentId, studentId);
 
@@ -692,9 +631,6 @@ export class ParentService {
     }));
   }
 
-  /**
-   * Get child violations
-   */
   async getChildViolations(parentId: string, studentId: string) {
     await this.verifyParentAccess(parentId, studentId);
 
@@ -727,9 +663,6 @@ export class ParentService {
     };
   }
 
-  /**
-   * Get child rewards
-   */
   async getChildRewards(parentId: string, studentId: string) {
     await this.verifyParentAccess(parentId, studentId);
 
@@ -762,9 +695,6 @@ export class ParentService {
     };
   }
 
-  /**
-   * Get child health records
-   */
   async getChildHealth(parentId: string, studentId: string) {
     await this.verifyParentAccess(parentId, studentId);
 
@@ -793,9 +723,6 @@ export class ParentService {
     };
   }
 
-  /**
-   * Get child permits
-   */
   async getChildPermits(parentId: string, studentId: string) {
     await this.verifyParentAccess(parentId, studentId);
 
@@ -815,9 +742,6 @@ export class ParentService {
     return permits;
   }
 
-  /**
-   * Create permit request for child
-   */
   async createPermitRequest(
     parentId: string,
     studentId: string,
@@ -846,11 +770,7 @@ export class ParentService {
     return permit;
   }
 
-  /**
-   * Get announcements for parent
-   */
   async getAnnouncements(parentId: string) {
-    // Get parent's children units
     const children = await prisma.studentParent.findMany({
       where: { parentId },
       include: {
@@ -868,8 +788,8 @@ export class ParentService {
         AND: [
           {
             OR: [
-              { unitId: null }, // Global announcements
-              { unitId: { in: unitIds } }, // Unit-specific
+              { unitId: null },
+              { unitId: { in: unitIds } },
             ],
           },
           { targetRoles: { has: 'PARENT' } },
@@ -901,9 +821,6 @@ export class ParentService {
     return announcements;
   }
 
-  /**
-   * Get notifications for parent
-   */
   async getNotifications(
     parentId: string,
     query: { status?: string; page?: number; limit?: number }
@@ -941,9 +858,6 @@ export class ParentService {
     };
   }
 
-  /**
-   * Mark notification as read
-   */
   async markNotificationRead(parentId: string, notificationId: string) {
     const notification = await prisma.notification.findFirst({
       where: { id: notificationId, userId: parentId },
@@ -962,16 +876,11 @@ export class ParentService {
     });
   }
 
-  /**
-   * Get parent dashboard summary
-   */
   async getDashboardSummary(parentId: string) {
     const children = await this.getChildren(parentId);
     const childrenIds = children.map((c) => c.id);
 
-    // If no children, return empty early
     if (childrenIds.length === 0) {
-      // Get unread notifications
       const unreadNotifications = await prisma.notification.count({
         where: { userId: parentId, status: 'UNREAD' },
       });
@@ -983,7 +892,6 @@ export class ParentService {
       };
     }
 
-    // 1. Bulk fetch attendance (last 30 days)
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
@@ -995,7 +903,6 @@ export class ParentService {
       orderBy: { date: 'desc' },
     });
 
-    // 2. Bulk count pending invoices
     const pendingInvoices = await prisma.invoice.groupBy({
       by: ['studentId'],
       where: {
@@ -1005,7 +912,6 @@ export class ParentService {
       _count: { id: true },
     });
 
-    // 3. Bulk count active permits
     const activePermits = await prisma.permit.groupBy({
       by: ['studentId'],
       where: {
@@ -1016,7 +922,6 @@ export class ParentService {
       _count: { id: true },
     });
 
-    // 4. Bulk fetch recent tahfidz (last one per student)
     const lastTahfidzRecords = await prisma.tahfidzRecord.findMany({
       where: {
         studentId: { in: childrenIds },
@@ -1025,20 +930,16 @@ export class ParentService {
       orderBy: [{ studentId: 'asc' }, { recordedAt: 'desc' }],
     });
 
-    // 5. Bulk fetch active academic years for all units involved
     const unitIds = [...new Set(children.map((c) => c.unitId))];
-    // AcademicYear is global (not scoped by unit), so just fetch active years.
     const activeYears = await prisma.academicYear.findMany({
       where: { isActive: true },
     });
 
-    // 6. Bulk fetch room assignments
     const roomAssignments = await prisma.roomAssignment.findMany({
       where: { studentId: { in: childrenIds }, isActive: true },
       select: { studentId: true, roomId: true },
     });
 
-    // 7. Batch fetch average academic grade per student for their active year
     const activeYearIds = activeYears.map((ay) => ay.id);
     const studentGradeScores = await prisma.grade.groupBy({
       by: ['studentId'],
@@ -1046,14 +947,12 @@ export class ParentService {
       _avg: { percentage: true },
     });
 
-    // 8. Batch fetch total violation points per student
     const studentViolationPoints = await prisma.violation.groupBy({
       by: ['studentId'],
       where: { studentId: { in: childrenIds } },
       _sum: { points: true },
     });
 
-    // 9. Fetch room social analytics once per unique room (avoid N+1)
     const uniqueRoomIds = [...new Set(roomAssignments.map((ra) => ra.roomId))];
     const roomAnalyticsEntries = await Promise.all(
       uniqueRoomIds.map(async (roomId) => {
@@ -1063,19 +962,13 @@ export class ParentService {
     );
     const roomAnalyticsMap = new Map(roomAnalyticsEntries);
 
-    // Map data back to children (synchronous now – no per-child DB calls)
     const summary = children.map((child) => {
-      // Filter recent attendance for this child, take 7
       const recentAttendance = allAttendances.filter((a) => a.studentId === child.id).slice(0, 7);
-
       const pendingInvoiceCount =
         pendingInvoices.find((p) => p.studentId === child.id)?._count.id || 0;
-
       const activePermitCount = activePermits.find((p) => p.studentId === child.id)?._count.id || 0;
-
       const lastTahfidz = lastTahfidzRecords.find((t) => t.studentId === child.id);
 
-      // Compute holistic score from bulk-fetched data (academic + behavior + tahfidz)
       const gradeAvg = studentGradeScores.find((g) => g.studentId === child.id)?._avg.percentage;
       const violationPts = Number(
         studentViolationPoints.find((v) => v.studentId === child.id)?._sum.points || 0
@@ -1092,7 +985,6 @@ export class ParentService {
           ? holisticDims.reduce((sum, d) => sum + d, 0) / holisticDims.length
           : null;
 
-      // Boarding harmony from deduplicated room analytics map
       const assignment = roomAssignments.find((ra) => ra.studentId === child.id);
       const boardingHarmony = assignment ? (roomAnalyticsMap.get(assignment.roomId) ?? null) : null;
 
@@ -1108,7 +1000,6 @@ export class ParentService {
       };
     });
 
-    // Get unread notifications
     const unreadNotifications = await prisma.notification.count({
       where: { userId: parentId, status: 'UNREAD' },
     });

@@ -137,7 +137,7 @@ function RewardDetailPageContent() {
                   {reward.student?.name || "-"}
                 </p>
                 <p className="text-sm text-muted-foreground">
-                  NIS: {reward.student?.nis || "-"}
+                  NISN: {reward.student?.nisn || "-"}
                 </p>
               </div>
             </div>

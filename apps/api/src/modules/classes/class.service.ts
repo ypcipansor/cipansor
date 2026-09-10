@@ -14,29 +14,24 @@ import {
   ListClassesQuery,
 } from '@cipansor/shared';
 
-// Helper to safely cast DB status to EnrollmentStatus
 function toEnrollmentStatus(status: string): EnrollmentStatus {
-  // Since we defined the Enum values as lowercase strings matching the DB,
-  // we can cast directly if valid, otherwise fallback or error.
-  // Assuming strict adherence:
   if (Object.values(EnrollmentStatus).includes(status as EnrollmentStatus)) {
     return status as EnrollmentStatus;
   }
-  // Default fallback if unknown status in DB (should not happen with strict schema)
   return EnrollmentStatus.ACTIVE;
 }
 
-// Helper to map Prisma result to ClassEnrollment
 function mapToClassEnrollment(data: {
   id: string;
   studentId: string;
   classId: string;
-  status: string; // Prisma type usually string or Enum
+  status: string;
   createdAt: Date;
   student: {
     id: string;
-    nis: string;
-    gender: string; // Prisma Gender Enum is usually uppercase
+    nisn?: string | null;
+    nik?: string | null;
+    gender: string;
     user: {
       id: string;
       name: string;
@@ -52,8 +47,9 @@ function mapToClassEnrollment(data: {
     enrolledAt: data.createdAt,
     student: {
       id: data.student.id,
-      nis: data.student.nis,
-      gender: data.student.gender as Gender, // Assumes Prisma Gender matches Shared Gender (MALE/FEMALE)
+      nisn: data.student.nisn,
+      nik: data.student.nik,
+      gender: data.student.gender as Gender,
       name: data.student.user.name,
       user: {
         id: data.student.user.id,
@@ -64,9 +60,6 @@ function mapToClassEnrollment(data: {
 }
 
 export class ClassService {
-  /**
-   * Get all classes with pagination and filters
-   */
   async findAll(query: ListClassesQuery) {
     const { page = 1, limit = 10, search, unitId, academicYearId, grade, level } = query;
     const skip = (page - 1) * limit;
@@ -144,8 +137,8 @@ export class ClassService {
     })) as unknown as Class[];
 
     return {
-      classes: mappedClasses, // Legacy property name
-      data: mappedClasses, // Standard property name
+      classes: mappedClasses,
+      data: mappedClasses,
       pagination: {
         page,
         limit,
@@ -155,9 +148,6 @@ export class ClassService {
     };
   }
 
-  /**
-   * Get class by ID
-   */
   async findById(id: string): Promise<Class> {
     const classData = await prisma.class.findUnique({
       where: { id },
@@ -215,9 +205,6 @@ export class ClassService {
     } as unknown as Class;
   }
 
-  /**
-   * Create new class
-   */
   async create(input: CreateClassInput) {
     const unit = await prisma.unit.findFirst({
       where: { id: input.unitId, deletedAt: null },
@@ -287,9 +274,6 @@ export class ClassService {
     return classData;
   }
 
-  /**
-   * Update class
-   */
   async update(id: string, input: UpdateClassInput) {
     const classData = await prisma.class.findFirst({
       where: { id, deletedAt: null },
@@ -355,9 +339,6 @@ export class ClassService {
     return updated;
   }
 
-  /**
-   * Delete class (soft delete)
-   */
   async delete(id: string) {
     const classData = await prisma.class.findFirst({
       where: { id, deletedAt: null },
@@ -383,9 +364,6 @@ export class ClassService {
     return { message: 'Class deleted successfully' };
   }
 
-  /**
-   * Enroll student in class
-   */
   async enrollStudent(classId: string, input: EnrollStudentInput): Promise<ClassEnrollment> {
     const classData = await prisma.class.findFirst({
       where: { id: classId, deletedAt: null },
@@ -432,7 +410,8 @@ export class ClassService {
         student: {
           select: {
             id: true,
-            nis: true,
+            nisn: true,
+            nik: true,
             gender: true,
             user: {
               select: { id: true, name: true, email: true },
@@ -445,9 +424,6 @@ export class ClassService {
     return mapToClassEnrollment(enrollment);
   }
 
-  /**
-   * Update enrollment status
-   */
   async updateEnrollment(classId: string, studentId: string, input: UpdateEnrollmentInput) {
     const enrollment = await prisma.classEnrollment.findFirst({
       where: { classId, studentId },
@@ -465,9 +441,6 @@ export class ClassService {
     return updated;
   }
 
-  /**
-   * Remove student from class
-   */
   async removeStudent(classId: string, studentId: string) {
     const enrollment = await prisma.classEnrollment.findFirst({
       where: { classId, studentId },
@@ -484,9 +457,6 @@ export class ClassService {
     return { message: 'Student removed from class' };
   }
 
-  /**
-   * Get enrollments for a class
-   */
   async getEnrollments(classId: string): Promise<ClassEnrollment[]> {
     const enrollments = await prisma.classEnrollment.findMany({
       where: {
@@ -498,7 +468,8 @@ export class ClassService {
         student: {
           select: {
             id: true,
-            nis: true,
+            nisn: true,
+            nik: true,
             gender: true,
             user: {
               select: {
@@ -528,11 +499,6 @@ export class ClassService {
     })) as unknown as ClassEnrollment[];
   }
 
-  /**
-   * Promote a set of students into a target class: close their current active
-   * enrollments and open new active enrollments in the target class. Rejects if
-   * the target class does not have enough remaining capacity.
-   */
   async promoteStudents(input: { studentIds: string[]; targetClassId: string }) {
     const { studentIds, targetClassId } = input;
     return prisma.$transaction(async (tx) => {

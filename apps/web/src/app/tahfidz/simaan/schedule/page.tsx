@@ -214,7 +214,7 @@ export default function SimaanSchedulePage() {
                                     "Santri"}
                                 </h3>
                                 <p className="text-sm text-muted-foreground">
-                                  {exam.student?.nis}
+                                  {exam.student?.nisn}
                                 </p>
                                 <div className="flex items-center gap-2 mt-2">
                                   <Badge variant="outline">

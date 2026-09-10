@@ -54,7 +54,7 @@ export interface StudentVisit {
   // Relations
   student?: {
     name: string;
-    nis: string;
+    nisn: string;
     class?: {
       name: string;
     };
@@ -80,7 +80,7 @@ export interface StudentPackage {
   // Relations
   student?: {
     name: string;
-    nis: string;
+    nisn: string;
     class?: {
       name: string;
     };

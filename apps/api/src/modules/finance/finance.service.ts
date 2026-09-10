@@ -1,5 +1,12 @@
 import { prisma } from '../../lib/prisma';
-import { PaymentStatus, PaymentMethod, PaymentVerificationStatus, Prisma, NotificationType, UserRole } from '@prisma/client';
+import {
+  PaymentStatus,
+  PaymentMethod,
+  PaymentVerificationStatus,
+  Prisma,
+  NotificationType,
+  UserRole,
+} from '@prisma/client';
 import * as notificationService from '../notifications/notifications.service';
 import { eventBus } from '@/lib/event-bus';
 import { AccountType, JournalReferenceType } from '@cipansor/shared';
@@ -101,7 +108,10 @@ export async function deletePaymentType(id: string) {
 // INVOICE SERVICE
 // =====================================
 
-async function generateInvoiceNumber(unitId?: string, tx?: Prisma.TransactionClient): Promise<string> {
+async function generateInvoiceNumber(
+  unitId?: string,
+  tx?: Prisma.TransactionClient
+): Promise<string> {
   const year = new Date().getFullYear();
   const month = String(new Date().getMonth() + 1).padStart(2, '0');
 
@@ -125,20 +135,23 @@ async function generateInvoiceNumber(unitId?: string, tx?: Prisma.TransactionCli
 
 export async function createInvoice(data: CreateInvoiceDto, tx?: Prisma.TransactionClient) {
   let invoice;
-  // Bug 1 Fix: Do not retry on P2002 if inside a transaction to prevent transaction aborts
   let retries = tx ? 1 : 3;
   const dbClient: any = tx || prisma;
 
   while (retries > 0) {
     try {
-      // Use transaction client for invoice number generation if available
       const invoiceNumber = await generateInvoiceNumber(undefined, tx);
 
       const { studentId, paymentTypeId, ...invoiceData } = data;
 
-      // =================================================================
-      // INTEGRATION: Apply Scholarship Discounts
-      // =================================================================
+      // Snapshot the billing unit at invoice creation so historical finance stays
+      // in the unit that billed it even if the student is later re-enrolled
+      // elsewhere (which would change students.unit_id).
+      const invoiceStudent = await dbClient.student.findUnique({
+        where: { id: studentId },
+        select: { unitId: true },
+      });
+
       let finalAmount = new Prisma.Decimal(data.amount);
       const scholarships = await dbClient.scholarshipRecipient.findMany({
         where: {
@@ -157,9 +170,6 @@ export async function createInvoice(data: CreateInvoiceDto, tx?: Prisma.Transact
       });
 
       for (const rec of scholarships) {
-        // Find if this scholarship covers this payment type
-        // In this implementation, we assume if it has specific discounts, apply them.
-        // If it's a general scholarship, it might apply to all.
         for (const discount of rec.scholarship.discounts) {
           if (discount.componentId === paymentTypeId) {
             if (discount.discountType === 'PERCENTAGE') {
@@ -178,6 +188,7 @@ export async function createInvoice(data: CreateInvoiceDto, tx?: Prisma.Transact
           invoiceNumber,
           amount: finalAmount.lt(0) ? 0 : finalAmount,
           dueDate: new Date(data.dueDate),
+          unitId: invoiceStudent?.unitId ?? null,
           student: { connect: { id: studentId } },
           paymentType: { connect: { id: paymentTypeId } },
         },
@@ -202,7 +213,6 @@ export async function createInvoice(data: CreateInvoiceDto, tx?: Prisma.Transact
     }
   }
 
-  // Bug 3 Fix: Do not send notifications inside a transaction to avoid side-effects on rollback
   if (invoice && !tx) {
     try {
       const formatter = new Intl.NumberFormat('id-ID', {
@@ -225,7 +235,6 @@ export async function createInvoice(data: CreateInvoiceDto, tx?: Prisma.Transact
       });
     } catch (error) {
       console.error('Failed to send notification:', error);
-      // Don't fail the request if notification fails
     }
   }
 
@@ -329,15 +338,13 @@ export async function deleteInvoice(id: string) {
 // =====================================
 
 export async function createPayment(data: CreatePaymentDto, userId: string = 'SYSTEM') {
-  // Create payment and update invoice in a transaction
   const payment = await prisma.$transaction(async (tx) => {
-    // 1. Fetch invoice with all required details upfront
     const invoice = await tx.invoice.findUnique({
       where: { id: data.invoiceId },
       include: {
         student: {
           include: {
-            user: { select: { name: true } }, // Fetch user name for description
+            user: { select: { name: true } },
           },
         },
         paymentType: { select: { id: true, name: true, accountId: true } },
@@ -366,12 +373,12 @@ export async function createPayment(data: CreatePaymentDto, userId: string = 'SY
               },
             },
             paymentType: { select: { id: true, name: true } },
+            unit: { select: { id: true, name: true } },
           },
         },
       },
     });
 
-    // Update invoice paid amount and status
     const newPaidAmount = invoice.paidAmount.add(new Prisma.Decimal(data.amount));
     let newStatus: PaymentStatus;
 
@@ -391,11 +398,7 @@ export async function createPayment(data: CreatePaymentDto, userId: string = 'SY
       },
     });
 
-    // =================================================================
-    // INTEGRATION: Create Journal Entry for Accounting
-    // =================================================================
-    if (invoice.paymentType.accountId && invoice.student.unitId) {
-      // 1. Determine Debit Account (Asset) based on Payment Method
+    if (invoice.paymentType.accountId && invoice.unitId) {
       const isBank = ['BANK_TRANSFER', 'VIRTUAL_ACCOUNT', 'QRIS', 'EWALLET'].includes(
         payment.method
       );
@@ -404,7 +407,7 @@ export async function createPayment(data: CreatePaymentDto, userId: string = 'SY
       const fallbackName = isBank ? 'Bank' : 'Kas';
 
       const assetAccount = await getAccountOrFallback(
-        invoice.student.unitId,
+        invoice.unitId,
         mappingKey,
         fallbackCode,
         fallbackName
@@ -413,10 +416,9 @@ export async function createPayment(data: CreatePaymentDto, userId: string = 'SY
       if (assetAccount) {
         const descriptionPrefix = `Pembayaran ${invoice.invoiceNumber}`;
 
-        // Debit Entry (Asset increases)
         await tx.journalEntry.create({
           data: {
-            unitId: invoice.student.unitId,
+            unitId: invoice.unitId,
             accountId: assetAccount.id,
             date: new Date(),
             description: `${descriptionPrefix} (${payment.method})`,
@@ -428,10 +430,9 @@ export async function createPayment(data: CreatePaymentDto, userId: string = 'SY
           },
         });
 
-        // Credit Entry (Revenue increases)
         await tx.journalEntry.create({
           data: {
-            unitId: invoice.student.unitId,
+            unitId: invoice.unitId,
             accountId: invoice.paymentType.accountId,
             date: new Date(),
             description: `Pendapatan ${invoice.paymentType.name} - ${invoice.student.user.name}`,
@@ -442,18 +443,12 @@ export async function createPayment(data: CreatePaymentDto, userId: string = 'SY
             createdById: userId,
           },
         });
-      } else {
-        // If no account found, we must throw error to maintain integrity
-        console.warn(
-          `Accounting Integration: No Asset Account found for method ${payment.method} in unit ${invoice.student.unitId}`
-        );
       }
     }
 
     return payment;
   });
 
-  // Send notification after transaction commits
   try {
     const formatter = new Intl.NumberFormat('id-ID', {
       style: 'currency',
@@ -477,13 +472,19 @@ export async function createPayment(data: CreatePaymentDto, userId: string = 'SY
     console.error('Failed to send payment notification:', error);
   }
 
-  // Emit event for cross-module integration (dashboard real-time updates)
   try {
-    // We need to fetch student unit info for the event
     const studentWithUnit = await prisma.student.findUnique({
       where: { id: payment.invoice.studentId },
       include: { unit: { select: { id: true, name: true } } },
     });
+
+    // Attribute the event to the invoice's own unit snapshot (invoice.unitId) so
+    // a historical payment stays in the unit that billed it even if the student
+    // has since moved units. Fall back to the student's current unit when the
+    // invoice has no snapshot.
+    const unitId = payment.invoice.unitId ?? studentWithUnit?.unitId ?? '';
+    const unitName =
+      (payment.invoice.unitId ? payment.invoice.unit?.name : studentWithUnit?.unit?.name) || '';
 
     if (studentWithUnit) {
       eventBus.emit('finance:payment-received', {
@@ -491,8 +492,8 @@ export async function createPayment(data: CreatePaymentDto, userId: string = 'SY
         invoiceId: payment.invoiceId,
         studentId: payment.invoice.studentId,
         studentName: payment.invoice.student.user.name,
-        unitId: studentWithUnit.unitId,
-        unitName: studentWithUnit.unit?.name || '',
+        unitId,
+        unitName,
         amount: payment.amount.toNumber(),
         paymentMethod: payment.method,
         paidAt: payment.paidAt || new Date(),
@@ -507,27 +508,16 @@ export async function createPayment(data: CreatePaymentDto, userId: string = 'SY
 }
 
 // =================================================================
-// PAYMENT PROOF + TWO-STEP VERIFICATION (maker-checker Tata Usaha)
+// PAYMENT PROOF + TWO-STEP VERIFICATION
 // =================================================================
 
 interface VerifierContext {
   sub: string;
   role: string;
-  /**
-   * RoleCode granular. Wajib ada agar scoping bisa memakai seesAllUnits():
-   * `role` legacy memetakan setiap YAYASAN_* menjadi 'UNIT_ADMIN', sehingga
-   * pemeriksaan yang ditulis atas `role` menggolongkan pengurus yayasan
-   * sebagai admin unit — itulah yang menyembunyikan datanya.
-   */
   roleCode?: string | null;
   unitId: string | null;
 }
 
-/**
- * Parent/student submits a transfer proof against their own invoice.
- * Creates a Payment in PENDING_VERIFICATION — the invoice and ledger are
- * only touched when the payment reaches FINAL_APPROVED.
- */
 export async function submitPaymentProof(
   input: {
     invoiceId: string;
@@ -551,15 +541,13 @@ export async function submitPaymentProof(
     throw new Error('Invoice is not payable');
   }
 
-  // Ownership: parents may only pay their own children's invoices,
-  // students only their own.
   if (currentUser.role === UserRole.PARENT) {
     const link = await prisma.studentParent.findUnique({
       where: {
         studentId_parentId: { studentId: invoice.student.id, parentId: currentUser.sub },
       },
     });
-    if (!link) throw new Error('Access denied: not your child\'s invoice');
+    if (!link) throw new Error("Access denied: not your child's invoice");
   } else if (currentUser.role === UserRole.STUDENT) {
     if (invoice.student.userId !== currentUser.sub) {
       throw new Error('Access denied: not your invoice');
@@ -601,10 +589,6 @@ export async function submitPaymentProof(
   return payment;
 }
 
-/**
- * List payments awaiting verification for the TU queue (unit-scoped for
- * non-super-admins).
- */
 export async function getPendingVerifications(
   currentUser: VerifierContext,
   query: { page?: number; limit?: number; status?: PaymentVerificationStatus }
@@ -615,12 +599,7 @@ export async function getPendingVerifications(
 
   const where: Prisma.PaymentWhereInput = {
     verificationStatus: status,
-    // Pengurus yayasan memegang FINANCE_VIEW (Ketua bahkan FINANCE_MANAGE)
-    // tetapi tidak punya unitId, sehingga cabang lama menyaringnya ke 'none'
-    // dan daftar verifikasi pembayaran selalu kosong bagi mereka.
-    ...(seesAllUnits(currentUser)
-      ? {}
-      : { invoice: { student: { unitId: currentUser.unitId ?? 'none' } } }),
+    ...(seesAllUnits(currentUser) ? {} : { invoice: { unitId: currentUser.unitId ?? 'none' } }),
   };
 
   const [payments, total] = await Promise.all([
@@ -635,7 +614,8 @@ export async function getPendingVerifications(
             student: {
               select: {
                 id: true,
-                nis: true,
+                nisn: true,
+                nik: true,
                 unitId: true,
                 user: { select: { name: true } },
               },
@@ -655,15 +635,6 @@ export async function getPendingVerifications(
   };
 }
 
-/**
- * Two-step verification state machine:
- *   PENDING_VERIFICATION --TU_APPROVE--> TU_APPROVED --FINAL_APPROVE--> FINAL_APPROVED
- *   PENDING_VERIFICATION / TU_APPROVED --REJECT--> REJECTED
- * Invalid transitions throw (idempotent — re-approving a FINAL_APPROVED
- * payment cannot double-post the invoice or the ledger). The final
- * approver must be a different user than the TU verifier (separation of
- * duties), and non-super-admins can only verify payments of their unit.
- */
 export async function verifyPayment(
   paymentId: string,
   action: 'TU_APPROVE' | 'FINAL_APPROVE' | 'REJECT',
@@ -686,10 +657,9 @@ export async function verifyPayment(
     });
     if (!payment) throw new Error('Payment not found');
 
-    // Unit scoping
     if (
       currentUser.role !== UserRole.SUPER_ADMIN &&
-      payment.invoice.student.unitId !== currentUser.unitId
+      (payment.invoice.unitId ?? payment.invoice.student.unitId) !== currentUser.unitId
     ) {
       throw new Error('Access denied: payment belongs to another unit');
     }
@@ -727,7 +697,6 @@ export async function verifyPayment(
       });
     }
 
-    // FINAL_APPROVE
     if (status !== PaymentVerificationStatus.TU_APPROVED) {
       throw new Error(`Cannot final-approve a payment in status ${status}`);
     }
@@ -746,14 +715,13 @@ export async function verifyPayment(
       data: { paidAmount: newPaidAmount, status: newStatus },
     });
 
-    // Ledger posting (same double entry as direct payments)
-    if (invoice.paymentType.accountId && invoice.student.unitId) {
+    if (invoice.paymentType.accountId && invoice.unitId) {
       const isBank = ['BANK_TRANSFER', 'VIRTUAL_ACCOUNT', 'QRIS', 'EWALLET'].includes(
         payment.method
       );
       const mappingKey = isBank ? ACCOUNT_MAPPING_KEYS.BANK : ACCOUNT_MAPPING_KEYS.CASH;
       const assetAccount = await getAccountOrFallback(
-        invoice.student.unitId,
+        invoice.unitId,
         mappingKey,
         isBank ? '1102' : '1101',
         isBank ? 'Bank' : 'Kas'
@@ -761,7 +729,7 @@ export async function verifyPayment(
       if (assetAccount) {
         await tx.journalEntry.create({
           data: {
-            unitId: invoice.student.unitId,
+            unitId: invoice.unitId,
             accountId: assetAccount.id,
             date: new Date(),
             description: `Pembayaran ${invoice.invoiceNumber} (${payment.method})`,
@@ -774,7 +742,7 @@ export async function verifyPayment(
         });
         await tx.journalEntry.create({
           data: {
-            unitId: invoice.student.unitId,
+            unitId: invoice.unitId,
             accountId: invoice.paymentType.accountId,
             date: new Date(),
             description: `Pendapatan ${invoice.paymentType.name} - ${invoice.student.user.name}`,
@@ -798,7 +766,6 @@ export async function verifyPayment(
     });
   });
 
-  // Post-commit notifications (never inside the transaction)
   try {
     const payment = await prisma.payment.findUnique({
       where: { id: paymentId },
@@ -826,8 +793,7 @@ export async function verifyPayment(
         currency: 'IDR',
         minimumFractionDigits: 0,
       });
-      const isApproved =
-        payment.verificationStatus === PaymentVerificationStatus.FINAL_APPROVED;
+      const isApproved = payment.verificationStatus === PaymentVerificationStatus.FINAL_APPROVED;
       const isRejected = payment.verificationStatus === PaymentVerificationStatus.REJECTED;
       if (isApproved || isRejected) {
         await Promise.allSettled(
@@ -965,7 +931,7 @@ export async function getUnitFinanceStats(unitId: string, month?: string) {
 
   const invoices = await prisma.invoice.findMany({
     where: {
-      student: { unitId },
+      unitId,
       ...dateFilter,
     },
   });
@@ -976,7 +942,7 @@ export async function getUnitFinanceStats(unitId: string, month?: string) {
 
   const byStatus = await prisma.invoice.groupBy({
     by: ['status'],
-    where: { student: { unitId }, ...dateFilter },
+    where: { unitId, ...dateFilter },
     _count: true,
     _sum: { amount: true },
   });
@@ -994,19 +960,6 @@ export async function getUnitFinanceStats(unitId: string, month?: string) {
   };
 }
 
-/**
- * Yayasan-wide financial summary for the finance and foundation dashboards.
- *
- * The web app has called GET /api/finance/summary since those pages were
- * written, but the route never existed — every card rendered zero. Shape
- * matches the `FinancialSummary` interface in apps/web/src/hooks/use-finance.ts.
- *
- * NOTE ON `academicYearId`: the caller passes one, but Invoice has no academic
- * year column — it hangs off the student and the payment type, neither of
- * which is dated. Accepting and ignoring it keeps the existing callers working;
- * making it a real filter needs a schema change, so it is deliberately not
- * pretended here.
- */
 export async function getFinancialSummary() {
   const now = new Date();
 
@@ -1027,7 +980,9 @@ export async function getFinancialSummary() {
         invoice: {
           select: {
             invoiceNumber: true,
-            student: { select: { id: true, nis: true, user: { select: { name: true } } } },
+            student: {
+              select: { id: true, nisn: true, nik: true, user: { select: { name: true } } },
+            },
           },
         },
       },
@@ -1053,7 +1008,10 @@ export async function getFinancialSummary() {
 
     const name = inv.paymentType?.name ?? 'Lainnya';
     const bucket = byType.get(name) ?? { total: zero, paid: zero };
-    byType.set(name, { total: bucket.total.add(inv.amount), paid: bucket.paid.add(inv.paidAmount) });
+    byType.set(name, {
+      total: bucket.total.add(inv.amount),
+      paid: bucket.paid.add(inv.paidAmount),
+    });
   }
 
   return {
@@ -1076,7 +1034,7 @@ export async function getFinancialSummary() {
 export async function getStudentOutstandingBalances(unitId: string) {
   const invoices = await prisma.invoice.findMany({
     where: {
-      student: { unitId },
+      unitId,
       status: { in: [PaymentStatus.PENDING, PaymentStatus.PARTIAL] },
       dueDate: { lt: new Date() },
     },
@@ -1105,7 +1063,9 @@ export async function getStudentOutstandingBalances(unitId: string) {
       studentMap.set(inv.studentId, {
         studentId: inv.studentId,
         studentName: inv.student.user.name,
-        nis: inv.student.nis,
+        nisn: inv.student.nisn || inv.student.nik || '-',
+        studentNisn: inv.student.nisn,
+        studentNik: inv.student.nik,
         className: inv.student.enrollments[0]?.class?.name || '-',
         unpaid_amount: 0,
         overdueInvoiceCount: 0,
@@ -1134,7 +1094,8 @@ export interface SppMatrixQuery {
 export interface StudentSppRow {
   studentId: string;
   studentName: string;
-  nis: string;
+  studentNisn?: string | null;
+  studentNik?: string | null;
   className: string;
   months: {
     [month: string]: {
@@ -1152,7 +1113,6 @@ export interface StudentSppRow {
 export async function getSppMatrix(query: SppMatrixQuery) {
   const { unitId, classId, year, paymentTypeId } = query;
 
-  // Get students with their class enrollment
   const students = await prisma.student.findMany({
     where: {
       ...(unitId && { unitId }),
@@ -1172,10 +1132,9 @@ export async function getSppMatrix(query: SppMatrixQuery) {
         take: 1,
       },
     },
-    orderBy: { nis: 'asc' },
+    orderBy: { nisn: 'asc' },
   });
 
-  // Get SPP payment type (recurring monthly)
   const sppPaymentType = paymentTypeId
     ? await prisma.paymentType.findUnique({ where: { id: paymentTypeId } })
     : await prisma.paymentType.findFirst({
@@ -1190,7 +1149,6 @@ export async function getSppMatrix(query: SppMatrixQuery) {
     return { students: [], sppRate: 0, year, months: [] };
   }
 
-  // Define months for the year
   const months = [
     'Jan',
     'Feb',
@@ -1209,11 +1167,11 @@ export async function getSppMatrix(query: SppMatrixQuery) {
   const startDate = new Date(year, 0, 1);
   const endDate = new Date(year, 11, 31, 23, 59, 59);
 
-  // Get all invoices for these students for the year
   const studentIds = students.map((s) => s.id);
   const invoices = await prisma.invoice.findMany({
     where: {
       studentId: { in: studentIds },
+      ...(unitId ? { unitId } : {}),
       paymentTypeId: sppPaymentType.id,
       dueDate: {
         gte: startDate,
@@ -1225,7 +1183,6 @@ export async function getSppMatrix(query: SppMatrixQuery) {
     },
   });
 
-  // Build matrix data
   const now = new Date();
   const matrixData: StudentSppRow[] = students.map((student) => {
     const studentInvoices = invoices.filter((inv) => inv.studentId === student.id);
@@ -1235,7 +1192,6 @@ export async function getSppMatrix(query: SppMatrixQuery) {
     let totalPaid = 0;
 
     months.forEach((monthName, index) => {
-      const monthDate = new Date(year, index, 10); // Due date is 10th of each month
       const invoice = studentInvoices.find((inv) => {
         const invMonth = new Date(inv.dueDate).getMonth();
         return invMonth === index;
@@ -1271,7 +1227,9 @@ export async function getSppMatrix(query: SppMatrixQuery) {
     return {
       studentId: student.id,
       studentName: student.user.name,
-      nis: student.nis || '-',
+      nisn: student.nisn || student.nik || '-',
+      studentNisn: student.nisn,
+      studentNik: student.nik,
       className: student.enrollments[0]?.class?.name || '-',
       months: monthsData,
       totalAmount,
@@ -1279,7 +1237,6 @@ export async function getSppMatrix(query: SppMatrixQuery) {
     };
   });
 
-  // Calculate summary stats
   const summary = {
     totalStudents: students.length,
     totalBilled: matrixData.reduce((sum, s) => sum + s.totalAmount, 0),
@@ -1293,7 +1250,6 @@ export async function getSppMatrix(query: SppMatrixQuery) {
 
   summary.totalOutstanding = summary.totalBilled - summary.totalPaid;
 
-  // Count statuses
   matrixData.forEach((student) => {
     Object.values(student.months).forEach((month) => {
       if (month.status === 'PAID') summary.paidCount++;
@@ -1313,13 +1269,12 @@ export async function getSppMatrix(query: SppMatrixQuery) {
   };
 }
 
-// Generate bulk invoices for SPP
 export async function generateBulkSppInvoices(data: {
   unitId?: string;
   classId?: string;
   paymentTypeId: string;
   year: number;
-  month: number; // 0-11
+  month: number;
   dueDay?: number;
 }) {
   const { unitId, classId, paymentTypeId, year, month, dueDay = 10 } = data;
@@ -1332,7 +1287,6 @@ export async function generateBulkSppInvoices(data: {
     throw new Error('Payment type not found');
   }
 
-  // Get students
   const students = await prisma.student.findMany({
     where: {
       ...(unitId && { unitId }),
@@ -1365,7 +1319,6 @@ export async function generateBulkSppInvoices(data: {
   const createdInvoices = [];
 
   for (const student of students) {
-    // Check if invoice already exists for this student/month
     const existing = await prisma.invoice.findFirst({
       where: {
         studentId: student.id,
@@ -1387,6 +1340,7 @@ export async function generateBulkSppInvoices(data: {
           amount: paymentType.amount,
           dueDate,
           period,
+          unitId: student.unitId,
           notes: `Tagihan ${paymentType.name} untuk ${period}`,
         },
       });
@@ -1401,7 +1355,6 @@ export async function generateBulkSppInvoices(data: {
   };
 }
 
-// Generate recurring bills for all active students (Auto-billing scheduler)
 export async function generateRecurringBills() {
   const year = new Date().getFullYear();
   const month = new Date().getMonth();
@@ -1427,7 +1380,6 @@ export async function generateRecurringBills() {
   let created = 0;
   let skipped = 0;
 
-  // 1. Get all recurring payment types
   const paymentTypes = await prisma.paymentType.findMany({
     where: { isRecurring: true, isActive: true },
   });
@@ -1436,7 +1388,6 @@ export async function generateRecurringBills() {
     return { processed, created, skipped };
   }
 
-  // 2. Get all active students
   const activeStudents = await prisma.student.findMany({
     where: { status: 'ACTIVE' },
     select: { id: true, unitId: true, userId: true },
@@ -1446,17 +1397,12 @@ export async function generateRecurringBills() {
     return { processed, created, skipped };
   }
 
-  // Process billing for each student matching payment types
   for (const student of activeStudents) {
-    // Determine applicable payment types for this student (matching unitId)
-    const applicableTypes = paymentTypes.filter(
-      (pt) => pt.unitId === student.unitId
-    );
+    const applicableTypes = paymentTypes.filter((pt) => pt.unitId === student.unitId);
 
     for (const paymentType of applicableTypes) {
       processed++;
-      
-      // Check if already billed
+
       const existing = await prisma.invoice.findFirst({
         where: {
           studentId: student.id,
@@ -1478,6 +1424,7 @@ export async function generateRecurringBills() {
             amount: paymentType.amount,
             dueDate,
             period,
+            unitId: student.unitId,
             notes: `Tagihan ${paymentType.name} otomatis untuk ${period}`,
           },
         });
@@ -1491,9 +1438,6 @@ export async function generateRecurringBills() {
   return { processed, created, skipped };
 }
 
-// =====================================
-// BUG 1 FIX: Transaction isolation for calculateInvoiceAmounts
-// =====================================
 export async function calculateInvoiceAmounts(
   studentId: string | undefined,
   paymentTypeId: string,
@@ -1504,18 +1448,19 @@ export async function calculateInvoiceAmounts(
   const db = tx || prisma;
   if (studentId) {
     const recipients = await db.scholarshipRecipient.findMany({
-      where: { studentId }
+      where: { studentId },
     });
-    // Calculation logic...
   }
   return { amount: originalAmount, discount: 0 };
 }
 
-// =====================================
-// BUG 2 FIX: Application-level validation for ScholarshipDiscount
-// =====================================
-export function validateScholarshipDiscount(data: { componentId?: string | null; paymentTypeId?: string | null }) {
+export function validateScholarshipDiscount(data: {
+  componentId?: string | null;
+  paymentTypeId?: string | null;
+}) {
   if (!data.componentId && !data.paymentTypeId) {
-    throw new Error("Data Integrity Error: At least one of componentId or paymentTypeId must be set to prevent duplicate orphaned discounts.");
+    throw new Error(
+      'Data Integrity Error: At least one of componentId or paymentTypeId must be set to prevent duplicate orphaned discounts.'
+    );
   }
 }

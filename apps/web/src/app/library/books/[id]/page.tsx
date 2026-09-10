@@ -342,7 +342,7 @@ function BookDetailPageContent({
                                   {borrow.student?.name}
                                 </p>
                                 <p className="text-sm text-muted-foreground">
-                                  {borrow.student?.nis} -{" "}
+                                  {borrow.student?.nisn} -{" "}
                                   {borrow.student?.class?.name}
                                 </p>
                               </div>
@@ -424,7 +424,7 @@ function BookDetailPageContent({
                                   {borrow.student?.name}
                                 </p>
                                 <p className="text-sm text-muted-foreground">
-                                  {borrow.student?.nis}
+                                  {borrow.student?.nisn}
                                 </p>
                               </div>
                             </TableCell>

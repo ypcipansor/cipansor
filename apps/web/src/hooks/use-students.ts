@@ -1,11 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api, { PaginatedResponse, ApiResponse } from "@/lib/api";
+import { studentsService } from "@/services";
 
 // Types
 export interface Student {
   id: string;
-  nis: string;
   nisn?: string;
+  nik?: string;
   name: string;
   gender: "MALE" | "FEMALE";
   birthDate: string;
@@ -139,7 +140,8 @@ export interface StudentListParams {
 }
 
 export interface CreateStudentData {
-  nis: string;
+  nisn?: string;
+  nik?: string;
   name: string;
   gender: "MALE" | "FEMALE";
   birthDate: string;
@@ -175,6 +177,7 @@ export function useStudents(params: StudentListParams = {}) {
         ...body,
         data: (body.data ?? []).map((s) => ({
           ...s,
+          nisn: s.nisn ?? s.nik ?? "",
           name: s.name ?? (s as { user?: { name?: string } }).user?.name ?? "",
         })),
       } as PaginatedResponse<Student>;
@@ -269,6 +272,24 @@ export function useStudentSearch(query: string, unitId?: string) {
 }
 
 /**
+ * Look up an existing alumnus record by NISN/NIK so an internal re-enrollment
+ * can be prefilled with previousStudentId/internalNisn/internalNik. The lookup
+ * is a staff-only endpoint (STUDENT_CREATE permission), so callers must be
+ * authenticated.
+ */
+export function useLookupAlumni(identifier: string) {
+  return useQuery({
+    queryKey: ["students", "alumni-lookup", identifier],
+    queryFn: async () => {
+      const result = await studentsService.lookupAlumni(identifier);
+      return result;
+    },
+    enabled: identifier.trim().length >= 2,
+    retry: false,
+  });
+}
+
+/**
  * Get students by class
  */
 export function useStudentsByClass(classId: string) {
@@ -282,6 +303,7 @@ export function useStudentsByClass(classId: string) {
       // it onto `name` so dropdowns don't render blank labels (see useStudents).
       return (response.data.data ?? []).map((s) => ({
         ...s,
+        nisn: s.nisn ?? s.nik ?? "",
         name: s.name ?? (s as { user?: { name?: string } }).user?.name ?? "",
       }));
     },

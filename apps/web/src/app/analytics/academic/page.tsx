@@ -104,7 +104,7 @@ function AcademicInterventionDashboardContent() {
                         {student.name}
                         {student.priority === 'CRITICAL' && <Badge variant="destructive" className="text-[9px] h-4">CRITICAL</Badge>}
                       </h4>
-                      <p className="text-xs text-muted-foreground">NIS: {student.nis} • Holistic Score: <span className="font-bold text-slate-700">{student.score}</span></p>
+                      <p className="text-xs text-muted-foreground">NISN: {student.nisn} • Holistic Score: <span className="font-bold text-slate-700">{student.score}</span></p>
                     </div>
                   </div>
 

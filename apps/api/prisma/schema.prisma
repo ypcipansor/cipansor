@@ -664,6 +664,7 @@ model Unit {
   p5Projects             P5Project[]
   merdekaAssessments     MerdekaAssessment[]
   journalEntries         JournalEntry[]
+  invoices               Invoice[]
   // Canteen relations
   canteenCategories      CanteenCategory[]
   canteenItems           CanteenItem[]
@@ -1016,8 +1017,8 @@ model Student {
   id           String   @id @default(uuid())
   userId       String   @unique @map("user_id")
   unitId       String   @map("unit_id")
-  nis          String   @unique // Nomor Induk Siswa
-  nisn         String? // Nomor Induk Siswa Nasional
+  nisn         String?  @unique // Nomor Induk Siswa Nasional
+  legacyNis    String?  @map("legacy_nis") // Archived historical local NIS — NOT an official identity (never unique)
   gender       Gender
   birthPlace   String   @map("birth_place")
   birthDate    DateTime @map("birth_date")
@@ -1031,7 +1032,7 @@ model Student {
   graduateYear Int?     @map("graduate_year")
 
   // === PHASE 8: Indonesia Compliance Fields (Dapodik/EMIS) ===
-  nik         String? // NIK (16 digit)
+  nik         String? @unique // NIK (16 digit)
   noAkta      String? @map("no_akta") // Nomor Akta Lahir
   noKK        String? @map("no_kk") // Nomor Kartu Keluarga (16 digit)
   religion    String  @default("ISLAM") // Agama
@@ -1121,12 +1122,14 @@ model Student {
   rewards                     Reward[]
   invoices                    Invoice[]
   borrowings                  Borrowing[]
-  registrant                  Registrant? // Link dari pendaftaran PSB
+  registrants                 Registrant[] // Link dari pendaftaran PSB/re-enrollment
   medicalRecords              MedicalRecord[]
   medicationUsage             MedicationUsageLog[]
   grades                      Grade[]
   reportCards                 ReportCard[]
-  alumniRecord                Alumni? // Link ke data alumni jika sudah lulus
+  // Alumni graduation snapshots: a student has MANY (one per (unit, year)) once
+  // a student progresses across units; each graduation keeps its own row.
+  alumni                      Alumni[]
   // New relations for Phase 8
   takhosusEnrollment          TakhosusEnrollment?
   dailyMuhasabah              DailyMuhasabah[]
@@ -1195,7 +1198,6 @@ model Student {
   assignmentSubmissions       AssignmentSubmission[]
   examAttempts                ExamAttempt[]
 
-  @@index([nis])
   @@index([unitId])
   @@index([status])
   @@index([provinceId])
@@ -1528,17 +1530,23 @@ model Invoice {
   paidAmount    Decimal       @default(0) @map("paid_amount") @db.Decimal(15, 2)
   period        String? // e.g., "Januari 2024" for monthly payments
   notes         String?
+  // Snapshot of the unit that billed this invoice — stable across re-enrollment,
+  // so historical finance stays in its original unit even if the student's
+  // UnitId later changes.
+  unitId        String?       @map("unit_id")
   createdAt     DateTime      @default(now()) @map("created_at")
   updatedAt     DateTime      @updatedAt @map("updated_at")
 
   // Relations
   student     Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
   paymentType PaymentType @relation(fields: [paymentTypeId], references: [id])
+  unit        Unit?       @relation(fields: [unitId], references: [id])
   payments    Payment[]
 
   @@index([studentId])
   @@index([status])
   @@index([dueDate])
+  @@index([unitId])
   @@map("invoices")
 }
 
@@ -1695,6 +1703,24 @@ model Registrant {
   parentPhone       String          @map("parent_phone")
   parentEmail       String?         @map("parent_email")
   parentOccupation  String?         @map("parent_occupation")
+  nisn              String?         @map("nisn")
+  nik               String?         @map("nik")
+  // Parent & Guardian detailed compliance fields
+  fatherNik         String?         @map("father_nik")
+  fatherOccupation  String?         @map("father_occupation")
+  fatherIncomeRange String?         @map("father_income_range")
+  motherNik         String?         @map("mother_nik")
+  motherOccupation  String?         @map("mother_occupation")
+  motherIncomeRange String?         @map("mother_income_range")
+  guardianName      String?         @map("guardian_name")
+  guardianNik       String?         @map("guardian_nik")
+  guardianOccupation String?        @map("guardian_occupation")
+  guardianPhone     String?         @map("guardian_phone")
+  // Internal alumni re-enrollment flags
+  isInternalAlumni  Boolean         @default(false) @map("is_internal_alumni")
+  previousStudentId String?         @map("previous_student_id")
+  internalNisn      String?         @map("internal_nisn")
+  internalNik       String?         @map("internal_nik")
   // Selection process
   status            AdmissionStatus @default(REGISTERED)
   testScore         Decimal?        @map("test_score") @db.Decimal(5, 2)
@@ -1711,7 +1737,7 @@ model Registrant {
   registrationFeeAmount   Decimal?  @map("registration_fee_amount") @db.Decimal(12, 2)
   registrationFeeVerifiedById String? @map("registration_fee_verified_by_id")
   registrationFeeNote     String?   @map("registration_fee_note") @db.Text
-  studentId         String?         @unique @map("student_id") // Link ke student jika sudah enrolled
+  studentId         String?         @map("student_id") // Link ke student jika sudah enrolled (non-unique to allow multi-unit progression)
   campaignId        String?         @map("campaign_id")
   source            String?
   createdAt         DateTime        @default(now()) @map("created_at")
@@ -2924,7 +2950,7 @@ enum AlumniEventType {
 /// Alumni - Data Alumni/Lulusan
 model Alumni {
   id             String       @id @default(uuid())
-  studentId      String?      @unique @map("student_id") // Link ke data santri
+  studentId      String?      @map("student_id") // Link ke data santri
   unitId         String       @map("unit_id")
   registrationNo String       @unique @map("registration_no") // Nomor alumni
   name           String // Nama lengkap
@@ -2956,6 +2982,10 @@ model Alumni {
   donations        AlumniDonation[]
   eventAttendances AlumniEventAttendee[]
 
+  // A student graduates once per (unit, year). Each graduation is its own
+  // immutable snapshot so a progressed student graduating from unit B keeps the
+  // Alumni row created when they graduated from unit A instead of overwriting it.
+  @@unique([studentId, unitId, graduationYear])
   @@index([unitId])
   @@index([graduationYear])
   @@index([status])

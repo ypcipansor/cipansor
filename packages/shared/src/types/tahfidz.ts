@@ -74,7 +74,7 @@ export interface TahfidzDashboardStats {
   topStudents: {
     studentId: string;
     studentName: string;
-    nis: string;
+    nisn: string;
     totalAyah: number;
     completedJuz: number;
   }[];

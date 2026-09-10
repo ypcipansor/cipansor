@@ -752,7 +752,7 @@ export default function RaportMerdekaPage() {
                     <div className="grid grid-cols-[100px_1fr]">
                       <div>Nama Peserta Didik</div>
                       <div className="font-semibold">: Ahmad Fulan</div>
-                      <div>NIS / NISN</div>
+                      <div>NISN / NISN</div>
                       <div>: 12345 / 0012345678</div>
                       <div>Sekolah</div>
                       <div>: SMP Cipansor</div>

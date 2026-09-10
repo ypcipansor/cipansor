@@ -39,11 +39,11 @@ test.describe("Integration: Student → Attendance → Report Flow", () => {
 
     const timestamp = Date.now();
     const studentName = `Integration Test Student ${timestamp}`;
-    const studentNIS = `INT${timestamp.toString().slice(-10)}`;
+    const studentNISN = timestamp.toString().slice(-10);
 
-    // Fill every required field (name, nis, gender, birthDate, birthPlace,
+    // Fill every required field (name, nisn, gender, birthDate, birthPlace,
     // address, unit, parentName, parentPhone) so submit passes validation.
-    await page.getByLabel(/^NIS/i).fill(studentNIS);
+    await page.getByLabel(/^NISN/i).fill(studentNISN);
     await page.getByLabel(/full name/i).fill(studentName);
 
     // Open the Nth Radix select (gender = 0, unit = 1 — only the two Radix
@@ -159,7 +159,7 @@ test.describe("Integration: Student → Attendance → Report Flow", () => {
       .getByPlaceholder(/cari|search/i)
       .or(page.getByLabel(/cari|search/i));
     if (await searchInput.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await searchInput.fill(studentNIS);
+      await searchInput.fill(studentNISN);
       await waitForLoadingComplete(page);
 
       const deleteButton = page

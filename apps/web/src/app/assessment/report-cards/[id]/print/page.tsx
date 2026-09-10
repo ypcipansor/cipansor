@@ -119,8 +119,8 @@ export default function PrintReportCardPage() {
                 </span>
               </div>
               <div className="flex">
-                <span className="w-32 text-sm">NIS</span>
-                <span className="text-sm">: {reportCard.student?.nis}</span>
+                <span className="w-32 text-sm">NISN</span>
+                <span className="text-sm">: {reportCard.student?.nisn}</span>
               </div>
               <div className="flex">
                 <span className="w-32 text-sm">NISN</span>

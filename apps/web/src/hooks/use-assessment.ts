@@ -74,7 +74,7 @@ export interface GradeStats {
 export interface StudentGradeSummary {
   studentId: string;
   studentName: string;
-  nis: string;
+  nisn: string;
   averageScore: number;
   totalExams: number;
   rank?: number;

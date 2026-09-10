@@ -113,7 +113,7 @@ export default function StudentCompliancePage() {
         <div>
           <div className="font-medium">{row.getValue("name")}</div>
           <div className="text-sm text-muted-foreground">
-            {row.original.nis}
+            {row.original.nisn}
           </div>
         </div>
       ),
@@ -486,7 +486,7 @@ export default function StudentCompliancePage() {
                         <TableHeader>
                           <TableRow>
                             <TableHead>Nama</TableHead>
-                            <TableHead>NIS</TableHead>
+                            <TableHead>NISN</TableHead>
                             <TableHead>Field yang Kosong</TableHead>
                             <TableHead>Aksi</TableHead>
                           </TableRow>
@@ -497,7 +497,7 @@ export default function StudentCompliancePage() {
                               <TableCell className="font-medium">
                                 {issue.studentName}
                               </TableCell>
-                              <TableCell>{issue.nis}</TableCell>
+                              <TableCell>{issue.nisn}</TableCell>
                               <TableCell>
                                 <div className="flex flex-wrap gap-1">
                                   {issue.missingFields.map((field) => (

@@ -86,6 +86,19 @@ export function resolveLegacyRoleToRoleCode(
   return perUnit[legacyRole]?.[unitType] ?? null;
 }
 
+/**
+ * Every RoleCode that represents a *student* login, across all unit types that
+ * have one. TK_QURAN deliberately has none (children of that age do not hold
+ * logins, so there is no TKQ_SISWA). Used to deactivate a user's student
+ * access — for example when they graduate or progress across units — without
+ * touching unrelated guru/staf/orang-tua roles the same user may hold.
+ */
+export const STUDENT_ROLE_CODES: RoleCode[] = [
+  RoleCode.SDIT_SISWA,
+  RoleCode.SMPIT_SISWA,
+  RoleCode.SMAQ_SISWA,
+];
+
 /** Build a Prisma `where` clause to select only active, non-expired role assignments */
 function activeRoleWhere() {
   return {

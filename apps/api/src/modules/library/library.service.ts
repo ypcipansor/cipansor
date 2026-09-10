@@ -201,7 +201,7 @@ export async function getBorrowings(query: QueryBorrowingInput) {
             category: { select: { id: true, name: true } },
           },
         },
-        student: { select: { nis: true, user: { select: { name: true } } } },
+        student: { select: { nisn: true, nik: true, user: { select: { name: true } } } },
         processedByUser: { select: { id: true, name: true } },
       },
       orderBy: { borrowedAt: 'desc' },
@@ -267,7 +267,7 @@ export async function createBorrowing(data: CreateBorrowingInput, processedBy: s
       },
       include: {
         book: { select: { id: true, title: true, author: true } },
-        student: { select: { nis: true, user: { select: { name: true } } } },
+        student: { select: { nisn: true, nik: true, user: { select: { name: true } } } },
         processedByUser: { select: { id: true, name: true } },
       },
     });

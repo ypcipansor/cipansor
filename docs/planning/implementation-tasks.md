@@ -110,7 +110,7 @@
   - **Time:** 2h
 
 - [ ] 1.2.2 Implement Step 1: Student Info
-  - Autocomplete student select (search by name/NIS)
+  - Autocomplete student select (search by name/NISN)
   - Period type radio (WEEKLY, MONTHLY, SEMESTER)
   - Academic year select (auto-default to current)
   - **Time:** 2h

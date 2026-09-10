@@ -299,7 +299,7 @@ export default function SimaanDetailPage({
                     {exam.student?.user?.name || "N/A"}
                   </h3>
                   <p className="text-sm text-muted-foreground">
-                    {(exam.student as any)?.nis || "-"}
+                    {(exam.student as any)?.nisn || "-"}
                   </p>
                   <p className="text-sm text-muted-foreground">
                     {exam.halaqoh?.name || "-"}

@@ -93,7 +93,7 @@ describe('Health Service', () => {
           status: 'HEALTHY',
           student: {
             id: 'student-1',
-            nis: '123',
+            nisn: '123',
             user: { id: 'user-1', name: 'John Doe' },
             unit: { id: 'unit-1', name: 'Unit 1' },
           },
@@ -147,7 +147,7 @@ describe('Health Service', () => {
         recordedById: 'staff-1',
         student: {
           id: 'student-1',
-          nis: '123',
+          nisn: '123',
           user: { id: 'user-1', name: 'John Doe' },
         },
         recordedBy: { id: 'staff-1', name: 'Dr. Smith' },

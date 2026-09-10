@@ -34,8 +34,11 @@ import Link from "next/link";
 import { createStudentSchema, type CreateStudentInput } from "@cipansor/shared";
 import { getEffectiveRole } from "@/lib/rbac";
 
-// Use strict validation from shared
-// We can extend here if needed for UI-specific validaton (e.g. terms acceptance)
+// The "at least one permanent identifier (NISN/NIK)" rule is intentionally not
+// enforced here: it depends on the selected unit's type, and TK_QURAN is the
+// documented exception where neither may yet exist. The API enforces it at the
+// service layer (StudentService.create) where the unit type is known, so every
+// path — direct create and both enrollment flows — applies the SAME rule.
 const studentSchema = createStudentSchema;
 
 type StudentForm = CreateStudentInput;
@@ -106,11 +109,21 @@ export default function NewStudentPage() {
             </CardHeader>
             <CardContent className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="nis">NIS (Student ID) *</Label>
-                <Input id="nis" {...register("nis")} />
-                {errors.nis && (
+                <Label htmlFor="nisn">NISN</Label>
+                <Input id="nisn" {...register("nisn")} />
+                {errors.nisn && (
                   <p className="text-sm text-destructive">
-                    {errors.nis.message}
+                    {errors.nisn.message}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="nik">NIK</Label>
+                <Input id="nik" {...register("nik")} />
+                {errors.nik && (
+                  <p className="text-sm text-destructive">
+                    {errors.nik.message}
                   </p>
                 )}
               </div>

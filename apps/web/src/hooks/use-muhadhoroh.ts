@@ -2,73 +2,25 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import type {
+  MuhadhorohStatus,
+  MuhadhorohRecord,
+  MuhadhorohStats,
+  TopPerformer,
+} from "@cipansor/shared";
+
+// Re-export the shared contracts so existing consumers importing from this hook
+// keep working without redeclaring the payload shapes.
+export type {
+  MuhadhorohStatus,
+  MuhadhorohRecord,
+  MuhadhorohStats,
+  TopPerformer,
+} from "@cipansor/shared";
 
 // ===================
 // TYPES
 // ===================
-
-export type MuhadhorohStatus = "SCHEDULED" | "COMPLETED" | "CANCELLED";
-
-export interface MuhadhorohRecord {
-  id: string;
-  unitId: string;
-  studentId: string;
-  scheduledAt: string;
-  topic: string;
-  language: string;
-  duration: number | null;
-  contentScore: number | null;
-  deliveryScore: number | null;
-  languageScore: number | null;
-  totalScore: number | null;
-  grade: string | null;
-  feedback: string | null;
-  evaluatorId: string | null;
-  evaluatedAt: string | null;
-  status: MuhadhorohStatus;
-  videoUrl: string | null;
-  createdAt: string;
-  updatedAt: string;
-  unit?: {
-    id: string;
-    name: string;
-  };
-  student?: {
-    id: string;
-    nis: string;
-    name: string;
-    class?: {
-      id: string;
-      name: string;
-      level?: string;
-    } | null;
-  };
-  evaluator?: {
-    id: string;
-    name: string;
-  } | null;
-}
-
-export interface MuhadhorohStats {
-  total: number;
-  byStatus: { status: string; count: number }[];
-  byLanguage: { language: string; count: number }[];
-  averages: {
-    content: number;
-    delivery: number;
-    language: number;
-    total: number;
-  };
-}
-
-export interface TopPerformer {
-  studentId: string;
-  name: string;
-  nis: string;
-  class: string | null;
-  averageScore: number;
-  totalSessions: number;
-}
 
 export interface ListMuhadhorohParams {
   unitId?: string;

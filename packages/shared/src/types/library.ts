@@ -45,7 +45,7 @@ export interface Book {
 
 export interface BorrowingStudent {
   name: string;
-  nis: string;
+  nisn: string;
   class?: {
     name: string;
   };

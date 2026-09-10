@@ -224,7 +224,7 @@ export default function EvaluateMuhadhorohPage({ params }: PageProps) {
                       {muhadhoroh.student?.name}
                     </h3>
                     <p className="text-sm text-muted-foreground">
-                      NIS: {muhadhoroh.student?.nis} •{" "}
+                      NISN: {muhadhoroh.student?.nisn} •{" "}
                       {muhadhoroh.student?.class?.name}
                     </p>
                     <div className="flex items-center gap-2 mt-2">

@@ -107,7 +107,7 @@ export default function RaporPesantrenPreviewPage() {
       id: raporDetail.id,
       student: {
         name: raporDetail.student?.name || "-",
-        nis: raporDetail.student?.nis || "-",
+        nisn: raporDetail.student?.nisn || "-",
         class: raporDetail.student?.class?.name || "-",
       },
       period: {
@@ -228,7 +228,7 @@ export default function RaporPesantrenPreviewPage() {
             <SelectContent>
               {students.map((s) => (
                 <SelectItem key={s.id} value={s.id}>
-                  {s.name} ({s.nis})
+                  {s.name} ({s.nisn})
                 </SelectItem>
               ))}
             </SelectContent>
@@ -272,7 +272,7 @@ export default function RaporPesantrenPreviewPage() {
                         {rapor.student.name}
                       </h2>
                       <p className="text-muted-foreground">
-                        NIS: {rapor.student.nis} | Kelas: {rapor.student.class}
+                        NISN: {rapor.student.nisn} | Kelas: {rapor.student.class}
                       </p>
                     </div>
                   </div>

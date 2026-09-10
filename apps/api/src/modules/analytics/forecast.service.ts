@@ -221,7 +221,9 @@ export async function getOutstandingPaymentPrediction(unitId?: string): Promise<
   const outstandingInvoices = await prisma.invoice.findMany({
     where: {
       status: { in: ['PENDING', 'PARTIAL'] },
-      ...(unitId && { student: { unitId } }),
+      // ISSUE #4: filter by the invoice's OWN unit snapshot, not the mutable
+      // `student.unitId`, so the forecast stays attributed to the billing unit.
+      ...(unitId && { unitId }),
     },
     include: {
       student: {
@@ -242,7 +244,9 @@ export async function getOutstandingPaymentPrediction(unitId?: string): Promise<
   const historicalStats = await prisma.invoice.aggregate({
     where: {
       createdAt: { gte: threeMonthsAgo },
-      ...(unitId && { student: { unitId } }),
+      // ISSUE #4: aggregate on the invoice's OWN unit snapshot so historical
+      // collection-rate data does not migrate between units on re-enrollment.
+      ...(unitId && { unitId }),
     },
     _sum: { amount: true, paidAmount: true },
   });
@@ -385,7 +389,9 @@ export async function calculateCashFlowForecast(unitId?: string) {
   const pendingInvoices = await prisma.invoice.findMany({
     where: {
       status: { in: ['PENDING', 'PARTIAL'] },
-      ...(unitId && { student: { unitId } }),
+      // ISSUE #4: filter by the invoice's OWN unit snapshot, not the mutable
+      // `student.unitId`, so cash-flow projections stay with the billing unit.
+      ...(unitId && { unitId }),
     },
     select: { amount: true, paidAmount: true, dueDate: true },
   });

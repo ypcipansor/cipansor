@@ -2,7 +2,6 @@ import { z } from 'zod';
 import { AdmissionStatus } from '@prisma/client';
 import { partialUpdateSchema } from '@/lib/partial';
 
-// Admission Period schemas
 export const createAdmissionPeriodSchema = z.object({
   unitId: z.string().uuid(),
   academicYearId: z.string().uuid(),
@@ -30,53 +29,63 @@ export const queryAdmissionPeriodSchema = z.object({
     .optional(),
 });
 
-// Registrant schemas
 export const createRegistrantSchema = z.object({
   admissionPeriodId: z.string().uuid(),
-  fullName: z.string().min(2).max(100), // Updated from 'name'
+  fullName: z.string().min(2).max(100),
   nickname: z.string().optional(),
   gender: z.enum(['MALE', 'FEMALE']),
   birthPlace: z.string().min(2).max(100),
   birthDate: z.string().datetime(),
   address: z.string().min(5),
 
-  // Optional identity fields
+  nisn: z.string().optional(),
+  nik: z.string().optional(),
   nationalId: z.string().optional(),
   familyCardNumber: z.string().optional(),
 
-  // Location details
   village: z.string().optional(),
   district: z.string().optional(),
   city: z.string().optional(),
   province: z.string().optional(),
   postalCode: z.string().optional(),
 
-  // Contact
   phone: z.string().max(20).optional(),
   email: z.string().email().optional().or(z.literal('')),
 
-  // Education
   previousSchool: z.string().max(200).optional(),
   previousSchoolAddress: z.string().optional(),
   graduationYear: z.number().int().optional(),
 
-  // Parents
-  fatherName: z.string().min(1).max(100),
+  // Extended parent & guardian details for Dapodik/EMIS compliance & internal re-enrollment
+  fatherName: z.string().min(1).max(100).optional().default('Wali'),
+  fatherNik: z.string().optional(),
   fatherOccupation: z.string().optional(),
+  fatherIncomeRange: z.string().optional(),
   fatherPhone: z.string().optional(),
   fatherEmail: z.string().email().optional().or(z.literal('')),
 
-  motherName: z.string().min(1).max(100),
+  motherName: z.string().min(1).max(100).optional().default('Ibu'),
+  motherNik: z.string().optional(),
   motherOccupation: z.string().optional(),
+  motherIncomeRange: z.string().optional(),
   motherPhone: z.string().optional(),
 
-  // Quran
+  guardianName: z.string().optional(),
+  guardianNik: z.string().optional(),
+  guardianOccupation: z.string().optional(),
+  guardianPhone: z.string().optional(),
+
+  // Internal alumni re-enrollment flags
+  isInternalAlumni: z.boolean().optional(),
+  previousStudentId: z.string().uuid().optional(),
+  internalNisn: z.string().optional(),
+  internalNik: z.string().optional(),
+
   quranAbility: z.string().optional(),
   memorizedJuz: z.number().int().optional(),
 
   notes: z.string().optional(),
 
-  // Marketing fields
   source: z.string().optional(),
   campaignId: z.string().uuid().optional(),
 });
@@ -84,17 +93,25 @@ export const createRegistrantSchema = z.object({
 export const updateRegistrantSchema = z.object({
   fullName: z.string().min(2).max(100).optional(),
   phone: z.string().max(20).optional(),
-  // Accept empty string to clear the field, mirroring `createRegistrantSchema`.
-  // Without `.or(z.literal(''))` a registrant created with an empty email
-  // cannot round-trip the same value back through PUT /registrants/:id.
   email: z.string().email().optional().or(z.literal('')),
   address: z.string().min(5).optional(),
   previousSchool: z.string().max(200).optional(),
-  // Parents
+
   fatherName: z.string().min(1).max(100).optional(),
+  fatherNik: z.string().optional(),
+  fatherOccupation: z.string().optional(),
+  fatherIncomeRange: z.string().optional(),
   fatherPhone: z.string().max(20).optional(),
+
   motherName: z.string().min(1).max(100).optional(),
+  motherNik: z.string().optional(),
+  motherOccupation: z.string().optional(),
+  motherIncomeRange: z.string().optional(),
   motherPhone: z.string().max(20).optional(),
+
+  guardianName: z.string().optional(),
+  guardianNik: z.string().optional(),
+  guardianOccupation: z.string().optional(),
 
   notes: z.string().optional(),
 });
@@ -111,13 +128,6 @@ export const updateRegistrantStatusSchema = z.object({
   notes: z.string().optional(),
 });
 
-/**
- * Record that a registrant settled their daftar ulang fee.
- *
- * `paidAt` defaults to now rather than being required, because the common case
- * is a clerk confirming a payment in front of them. It stays settable so a
- * transfer that cleared yesterday can be recorded with the date it cleared.
- */
 export const recordRegistrationFeeSchema = z.object({
   paidAt: z.coerce.date().optional(),
   amount: z.number().min(0).optional(),
@@ -133,7 +143,6 @@ export const queryRegistrantSchema = z.object({
   search: z.string().optional(),
 });
 
-// Registrant Document schemas
 export const createRegistrantDocumentSchema = z.object({
   registrantId: z.string().uuid(),
   name: z.string().min(2).max(200),
@@ -147,8 +156,6 @@ export const verifyDocumentSchema = z.object({
   notes: z.string().optional(),
 });
 
-// Public PPDB tracking: the registrant's birth date acts as a second factor
-// so a leaked/guessed registration number alone cannot expose the record.
 export const trackRegistrantQuerySchema = z.object({
   registrationNo: z.string().min(3).max(50),
   birthDate: z.coerce.date(),

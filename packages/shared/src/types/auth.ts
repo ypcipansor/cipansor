@@ -34,7 +34,7 @@ export interface User {
   student?: {
     id: string;
     name?: string;
-    nis?: string;
+    nisn?: string;
   };
   teacher?: {
     id: string;

@@ -68,7 +68,7 @@ export interface QuickReportParams {
 // Student Report Response
 export interface StudentReportItem {
   id: string;
-  nis: string;
+  nisn: string;
   name: string;
   gender: string;
   birthDate: string;
@@ -93,7 +93,7 @@ export interface StudentReportResponse {
 export interface AttendanceReportItem {
   studentId: string;
   studentName: string;
-  nis: string;
+  nisn: string;
   className: string;
   totalDays: number;
   present: number;
@@ -128,7 +128,7 @@ export interface AttendanceReportResponse {
 export interface TahfidzReportItem {
   studentId: string;
   studentName: string;
-  nis: string;
+  nisn: string;
   className: string;
   totalJuz: number;
   totalSurah: number;

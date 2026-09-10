@@ -390,7 +390,7 @@ function LibraryPageContent() {
                           <div>
                             <p>{borrow.student?.name}</p>
                             <p className="text-sm text-muted-foreground">
-                              {borrow.student?.nis}
+                              {borrow.student?.nisn}
                             </p>
                           </div>
                         </TableCell>

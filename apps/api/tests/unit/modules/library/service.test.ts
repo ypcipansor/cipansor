@@ -93,7 +93,7 @@ describe('Library Service', () => {
         {
           id: 'borrow-1',
           book: { title: 'Book 1' },
-          student: { name: 'Student 1', nis: '123' },
+          student: { name: 'Student 1', nisn: '123' },
         },
       ];
 

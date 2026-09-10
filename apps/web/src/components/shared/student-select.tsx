@@ -105,7 +105,7 @@ export function StudentSelect({
                   <div className="flex flex-col text-left">
                     <span className="font-medium">{student.name}</span>
                     <span className="text-xs text-muted-foreground">
-                      {student.nis} - {student.unit?.name || "-"}
+                      {student.nisn} - {student.unit?.name || "-"}
                     </span>
                   </div>
                 </CommandItem>

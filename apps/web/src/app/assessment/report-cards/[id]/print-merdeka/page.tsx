@@ -307,9 +307,9 @@ function PrintReportCardMerdekaPageContent() {
                     </span>
                   </div>
                   <div className="flex">
-                    <span className="w-28 text-gray-600">NIS / NISN</span>
+                    <span className="w-28 text-gray-600">NISN / NISN</span>
                     <span>
-                      : {reportCard.student?.nis} /{" "}
+                      : {reportCard.student?.nisn} /{" "}
                       {reportCard.student?.nisn ?? "-"}
                     </span>
                   </div>

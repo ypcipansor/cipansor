@@ -90,7 +90,7 @@ interface BehaviorNote {
   id: string;
   studentId: string;
   studentName: string;
-  studentNis: string;
+  studentNisn: string;
   type: NoteType;
   category: string;
   description: string;
@@ -334,7 +334,7 @@ function BehaviorNotesPageContent() {
     return (
       homeroomClass?.students?.map((s) => ({
         id: s.id,
-        nis: s.nis,
+        nisn: s.nisn,
         name: s.name,
       })) || []
     );
@@ -477,7 +477,7 @@ function BehaviorNotesPageContent() {
                     ) : (
                       students.map((student) => (
                         <SelectItem key={student.id} value={student.id}>
-                          {student.nis} - {student.name}
+                          {student.nisn} - {student.name}
                         </SelectItem>
                       ))
                     )}
@@ -712,7 +712,7 @@ function BehaviorNotesPageContent() {
                                 {note.student?.user?.name}
                               </span>
                               <Badge variant="outline" className="text-xs">
-                                {note.student?.nis}
+                                {note.student?.nisn}
                               </Badge>
                               <Badge
                                 className={`text-xs ${note.behaviorType === "POSITIVE" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}

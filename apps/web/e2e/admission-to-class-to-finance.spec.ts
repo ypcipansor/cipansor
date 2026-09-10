@@ -19,6 +19,10 @@ test.describe("End-to-End: PPDB Registration to Finance & Medical", () => {
     // so reused contact details would collide across runs.
     const stamp = Date.now();
     const fullName = `Budi Onboard E2E ${stamp}`;
+    // The onboarding orchestrator enforces the lifelong-identifier rule: a
+    // student in a non-TK unit must carry a NISN or NIK. The seed's admission
+    // period targets SMP IT, so a fresh registrant needs a NIK here.
+    const nik = `3201${String(stamp).slice(-12)}`;
     const created = await apiRequest<{ data: { id: string; registrationNo: string } }>(
       session,
       "POST",
@@ -30,6 +34,7 @@ test.describe("End-to-End: PPDB Registration to Finance & Medical", () => {
         birthPlace: "Tasikmalaya",
         birthDate: "2015-05-01T00:00:00.000Z",
         address: "Jl. Pendaftaran E2E No. 1",
+        nik,
         fatherName: `Bapak Budi ${stamp}`,
         motherName: `Ibu Budi ${stamp}`,
         parentName: `Bapak Budi ${stamp}`,

@@ -175,7 +175,7 @@ export default function TKAssessmentDetailPage() {
                     {assessment.student?.user?.name}
                   </h2>
                   <p className="text-muted-foreground">
-                    NIS: {assessment.student?.nis}
+                    NISN: {assessment.student?.nisn}
                   </p>
                 </div>
               </div>

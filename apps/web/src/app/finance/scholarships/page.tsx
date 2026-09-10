@@ -105,7 +105,7 @@ function RecipientsDialog({
             <TableHeader>
               <TableRow>
                 <TableHead>Nama Santri</TableHead>
-                <TableHead>NIS</TableHead>
+                <TableHead>NISN</TableHead>
                 <TableHead>Kelas</TableHead>
                 <TableHead>Tahun Ajaran</TableHead>
                 <TableHead>Status</TableHead>
@@ -134,7 +134,7 @@ function RecipientsDialog({
                     <TableCell className="font-medium">
                       {recipient.student?.name || "Unknown"}
                     </TableCell>
-                    <TableCell>{recipient.student?.nis || "-"}</TableCell>
+                    <TableCell>{recipient.student?.nisn || "-"}</TableCell>
                     <TableCell>{recipient.student?.class || "-"}</TableCell>
                     <TableCell>{recipient.academicYear?.name || "-"}</TableCell>
                     <TableCell>
@@ -294,7 +294,7 @@ export default function ScholarshipsPage() {
                         <SelectContent>
                           {studentsData?.data.map((s: any) => (
                             <SelectItem key={s.id} value={s.id}>
-                              {s.user.name} ({s.nis})
+                              {s.user.name} ({s.nisn})
                             </SelectItem>
                           ))}
                         </SelectContent>

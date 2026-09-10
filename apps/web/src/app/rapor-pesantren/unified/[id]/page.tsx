@@ -23,7 +23,7 @@ interface UnifiedRapor {
   academicYear?: { name: string } | null;
   student?: {
     name: string;
-    nis: string;
+    nisn: string;
     class?: { name: string } | null;
     dormRoom?: { name: string } | null;
   } | null;
@@ -114,7 +114,7 @@ function UnifiedRaporPageContent() {
                 <span className="text-3xl font-semibold">{rapor.student?.name?.[0]}</span>
               </div>
               <h2 className="text-xl font-bold">{rapor.student?.name}</h2>
-              <p className="text-sm text-gray-500">NIS: {rapor.student?.nis}</p>
+              <p className="text-sm text-gray-500">NISN: {rapor.student?.nisn}</p>
             </div>
 
             <div className="space-y-2 text-sm pt-2 border-t text-gray-600">

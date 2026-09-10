@@ -325,7 +325,7 @@ export default function AssessmentGradesPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[50px]">No</TableHead>
-                  <TableHead className="w-[100px]">NIS</TableHead>
+                  <TableHead className="w-[100px]">NISN</TableHead>
                   <TableHead>Nama Santri</TableHead>
                   <TableHead className="w-[120px]">Nilai</TableHead>
                   <TableHead className="w-[100px]">Status</TableHead>
@@ -345,7 +345,7 @@ export default function AssessmentGradesPage() {
                           {index + 1}
                         </TableCell>
                         <TableCell className="font-mono text-sm">
-                          {grade.student?.nis}
+                          {grade.student?.nisn}
                         </TableCell>
                         <TableCell className="font-medium">
                           {grade.student?.user?.name}

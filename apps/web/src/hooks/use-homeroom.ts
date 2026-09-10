@@ -38,7 +38,7 @@ export interface HomeroomClass {
 
 export interface HomeroomStudent {
   id: string;
-  nis: string;
+  nisn: string;
   name: string;
   gender: "MALE" | "FEMALE";
   birthDate?: string;
@@ -109,7 +109,7 @@ export interface ParentMessage {
   studentId: string;
   student: {
     id: string;
-    nis: string;
+    nisn: string;
     name: string;
   };
   subject: string;
@@ -134,7 +134,7 @@ export interface UpcomingBirthday {
   student: {
     id: string;
     name: string;
-    nis: string;
+    nisn: string;
   };
   date: string;
   daysUntil: number;
@@ -284,7 +284,7 @@ export function useHomeroomStudent(studentId?: string) {
 // Student Detail Types for comprehensive view
 export interface StudentDetailData {
   id: string;
-  nis: string;
+  nisn: string;
   name: string;
   gender: "MALE" | "FEMALE";
   birthDate?: string;

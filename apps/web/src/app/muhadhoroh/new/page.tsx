@@ -253,7 +253,7 @@ export default function NewMuhadhorohPage() {
                           <span className="flex items-center gap-2">
                             <span>{selectedStudent.name}</span>
                             <Badge variant="secondary" className="text-xs">
-                              {selectedStudent.nis}
+                              {selectedStudent.nisn}
                             </Badge>
                           </span>
                         ) : (
@@ -269,7 +269,7 @@ export default function NewMuhadhorohPage() {
                     <PopoverContent className="w-[400px] p-0" align="start">
                       <Command>
                         <CommandInput
-                          placeholder="Cari nama atau NIS santri..."
+                          placeholder="Cari nama atau NISN santri..."
                           value={studentSearch}
                           onValueChange={setStudentSearch}
                         />
@@ -283,7 +283,7 @@ export default function NewMuhadhorohPage() {
                             {students.map((student) => (
                               <CommandItem
                                 key={student.id}
-                                value={`${student.name} ${student.nis}`}
+                                value={`${student.name} ${student.nisn}`}
                                 onSelect={() => {
                                   setValue("studentId", student.id);
                                   setStudentOpen(false);
@@ -295,7 +295,7 @@ export default function NewMuhadhorohPage() {
                                       {student.name}
                                     </p>
                                     <p className="text-sm text-muted-foreground">
-                                      {student.nis} •{" "}
+                                      {student.nisn} •{" "}
                                       {student.currentClass?.name ||
                                         "Belum ada kelas"}
                                     </p>
@@ -527,7 +527,7 @@ export default function NewMuhadhorohPage() {
                   <p className="font-medium">{selectedStudent?.name || "-"}</p>
                   {selectedStudent && (
                     <p className="text-sm text-muted-foreground">
-                      {selectedStudent.nis} •{" "}
+                      {selectedStudent.nisn} •{" "}
                       {selectedStudent.currentClass?.name || "-"}
                     </p>
                   )}

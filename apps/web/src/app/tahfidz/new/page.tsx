@@ -185,7 +185,7 @@ export default function NewTahfidzPage() {
                       >
                         {selectedStudent ? (
                           <span>
-                            {selectedStudent.name} ({selectedStudent.nis})
+                            {selectedStudent.name} ({selectedStudent.nisn})
                           </span>
                         ) : (
                           <span className="text-muted-foreground">
@@ -198,7 +198,7 @@ export default function NewTahfidzPage() {
                     <PopoverContent className="w-[400px] p-0">
                       <Command>
                         <CommandInput
-                          placeholder="Cari nama atau NIS santri..."
+                          placeholder="Cari nama atau NISN santri..."
                           value={studentSearch}
                           onValueChange={setStudentSearch}
                         />
@@ -221,7 +221,7 @@ export default function NewTahfidzPage() {
                                 <div>
                                   <p className="font-medium">{student.name}</p>
                                   <p className="text-sm text-muted-foreground">
-                                    {student.nis}
+                                    {student.nisn}
                                   </p>
                                 </div>
                               </CommandItem>

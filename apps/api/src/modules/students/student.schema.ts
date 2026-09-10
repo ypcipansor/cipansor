@@ -3,6 +3,12 @@ import {
   listStudentsQuerySchema as sharedListSchema,
   createStudentSchema as sharedCreateSchema,
   updateStudentSchema as sharedUpdateSchema,
+  graduateStudentSchema as sharedGraduateStudentSchema,
+  alumniLookupQuerySchema as sharedAlumniLookupQuerySchema,
+} from '@cipansor/shared';
+import type {
+  GraduateStudentInput as SharedGraduateStudentInput,
+  AlumniLookupQuery as SharedAlumniLookupQuery,
 } from '@cipansor/shared';
 
 // Query params
@@ -13,6 +19,12 @@ export const listStudentsQuerySchema = sharedListSchema;
 // auto-generated password (set/reset later). When a password IS supplied it
 // must meet the complexity policy below. (Requiring it here made the create form,
 // which collects no password, impossible to submit — POST returned 400.)
+//
+// The "at least one permanent identifier (NISN/NIK)" rule is NOT enforced here
+// because the schema does not know the target unit's type: TK_QURAN is the
+// documented exception where neither may yet exist. It is enforced at the
+// service layer (StudentService.create) where the unit type is known, so every
+// path — direct create and both enrollment flows — applies the SAME rule.
 export const createStudentSchema = sharedCreateSchema.extend({
   password: z
     .string()
@@ -26,6 +38,13 @@ export const createStudentSchema = sharedCreateSchema.extend({
 // Update student
 export const updateStudentSchema = sharedUpdateSchema;
 
+// Graduate student (contract lives in @cipansor/shared so the web client can
+// reuse the exact same DTO)
+export const graduateStudentSchema = sharedGraduateStudentSchema;
+
+// Alumni lookup query (contract lives in @cipansor/shared)
+export const alumniLookupQuerySchema = sharedAlumniLookupQuerySchema;
+
 // ID param
 export const studentIdParamSchema = z.object({
   id: z.string().uuid('Invalid student ID'),
@@ -35,3 +54,5 @@ export const studentIdParamSchema = z.object({
 export type ListStudentsQuery = z.infer<typeof listStudentsQuerySchema>;
 export type CreateStudentInput = z.infer<typeof createStudentSchema>;
 export type UpdateStudentInput = z.infer<typeof updateStudentSchema>;
+export type GraduateStudentInput = SharedGraduateStudentInput;
+export type AlumniLookupQuery = SharedAlumniLookupQuery;

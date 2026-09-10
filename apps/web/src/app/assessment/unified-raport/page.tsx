@@ -136,7 +136,7 @@ function UnifiedRaportPageContent() {
                 <SelectContent>
                   {students?.map((s) => (
                     <SelectItem key={s.id} value={s.id}>
-                      {s.name} ({s.nis})
+                      {s.name} ({s.nisn})
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -202,9 +202,9 @@ function UnifiedRaportPageContent() {
                 </p>
                 <p>
                   <span className="font-semibold w-24 inline-block">
-                    NIS/NISN
+                    NISN/NISN
                   </span>
-                  : {data.data.student.nis} / {data.data.student.nisn}
+                  : {data.data.student.nisn} / {data.data.student.nisn}
                 </p>
               </div>
               <div>

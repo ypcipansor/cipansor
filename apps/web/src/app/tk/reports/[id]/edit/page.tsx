@@ -224,7 +224,7 @@ export default function EditTKReportPage() {
                   {report.student?.user?.name || "-"}
                 </h3>
                 <p className="text-muted-foreground">
-                  NIS: {report.student?.nis || "-"}
+                  NISN: {report.student?.nisn || "-"}
                 </p>
                 <p className="text-muted-foreground">
                   {report.student?.enrollments?.[0]?.class?.name || "-"}

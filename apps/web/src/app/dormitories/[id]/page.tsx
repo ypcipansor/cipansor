@@ -475,7 +475,7 @@ function DormitoryDetailPageContent({
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>NIS</TableHead>
+                          <TableHead>NISN</TableHead>
                           <TableHead>Nama</TableHead>
                           <TableHead>Tanggal Masuk</TableHead>
                           <TableHead className="text-right">Aksi</TableHead>
@@ -484,7 +484,7 @@ function DormitoryDetailPageContent({
                       <TableBody>
                         {assignments?.map((assignment) => (
                           <TableRow key={assignment.id}>
-                            <TableCell>{assignment.student?.nis}</TableCell>
+                            <TableCell>{assignment.student?.nisn || assignment.student?.nik || "-"}</TableCell>
                             <TableCell className="font-medium">
                               {assignment.student?.name}
                             </TableCell>

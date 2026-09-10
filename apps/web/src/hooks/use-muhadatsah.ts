@@ -37,7 +37,7 @@ export interface MuhadatsahRecord {
   };
   student?: {
     id: string;
-    nis: string;
+    nisn: string;
     name: string;
     class?: {
       id: string;
@@ -47,7 +47,7 @@ export interface MuhadatsahRecord {
   };
   partner?: {
     id: string;
-    nis: string;
+    nisn: string;
     name: string;
   } | null;
   evaluator?: {
@@ -72,7 +72,7 @@ export interface MuhadatsahStats {
 export interface TopPerformer {
   studentId: string;
   name: string;
-  nis: string;
+  nisn: string;
   class: string | null;
   averageScore: number;
   totalSessions: number;
@@ -80,7 +80,7 @@ export interface TopPerformer {
 
 export interface AvailablePartner {
   id: string;
-  nis: string;
+  nisn: string;
   name: string;
   class: {
     name: string;

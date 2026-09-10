@@ -64,7 +64,7 @@ function LegerPesantrenPageContent() {
 
     const headers = [
       "No",
-      "NIS",
+      "NISN",
       "Nama Santri",
       "Tahfidz (Nilai)",
       "Tahfidz (Predikat)",
@@ -86,7 +86,7 @@ function LegerPesantrenPageContent() {
 
     const rows = legerData.map((item, index) => [
       index + 1,
-      item.studentNis,
+      item.studentNisn,
       item.studentName,
       item.tahfidzScore.toFixed(0),
       item.tahfidzGrade,
@@ -388,7 +388,7 @@ function LegerPesantrenPageContent() {
                             <span>{item.studentName}</span>
                           )}
                           <span className="text-xs text-muted-foreground">
-                            {item.studentNis}
+                            {item.studentNisn}
                           </span>
                         </div>
                       </TableCell>

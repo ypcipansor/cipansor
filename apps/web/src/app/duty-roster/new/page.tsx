@@ -105,7 +105,7 @@ function NewDutyRosterPageContent() {
     return (
       studentsData?.data?.map((s: any) => ({
         id: s.id,
-        nis: s.nis,
+        nisn: s.nisn,
         name: s.user?.name ?? s.name ?? "",
         class: { id: s.class?.id || "", name: s.class?.name || "-" },
         gender: s.gender,
@@ -141,7 +141,7 @@ function NewDutyRosterPageContent() {
   const filteredStudents = students.filter((student) => {
     const matchesSearch =
       (student.name ?? "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (student.nis ?? "").includes(searchQuery);
+      (student.nisn ?? "").includes(searchQuery);
     const matchesClass =
       filterClass === "all" || student.class.id === filterClass;
     return matchesSearch && matchesClass;
@@ -510,7 +510,7 @@ function NewDutyRosterPageContent() {
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
-                    placeholder="Cari nama atau NIS..."
+                    placeholder="Cari nama atau NISN..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="pl-9"
@@ -561,7 +561,7 @@ function NewDutyRosterPageContent() {
                       <div className="flex-1">
                         <p className="font-medium">{student.name}</p>
                         <p className="text-sm text-muted-foreground">
-                          {student.nis} • {student.class.name}
+                          {student.nisn} • {student.class.name}
                         </p>
                       </div>
                       <Badge

@@ -19,7 +19,6 @@ interface SkhunData {
   student: {
     id: string;
     name: string;
-    nis: string;
     nisn: string | null;
     birthPlace: string | null;
     birthDate: string | null;
@@ -195,9 +194,9 @@ function SkhunPrintPageContent() {
                     </td>
                   </tr>
                   <tr>
-                    <td className="py-1 text-gray-600">NIS / NISN</td>
+                    <td className="py-1 text-gray-600">NISN / NISN</td>
                     <td className="py-1">
-                      : {skhunData.student.nis} /{" "}
+                      : {skhunData.student.nisn} /{" "}
                       {skhunData.student.nisn ?? "-"}
                     </td>
                   </tr>

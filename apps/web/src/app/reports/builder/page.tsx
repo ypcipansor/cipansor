@@ -122,7 +122,7 @@ const REPORT_TYPES: Array<{
 // Available fields per type
 const REPORT_FIELDS: Record<ReportType, ReportField[]> = {
   students: [
-    { key: "nis", label: "NIS", type: "string", category: "Identitas" },
+    { key: "nisn", label: "NISN", type: "string", category: "Identitas" },
     { key: "name", label: "Nama", type: "string", category: "Identitas" },
     {
       key: "gender",

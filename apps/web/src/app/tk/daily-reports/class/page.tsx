@@ -103,7 +103,7 @@ export default function ClassDailyReportsPage() {
               {row.original.student?.user?.name}
             </div>
             <div className="text-sm text-muted-foreground">
-              {row.original.student?.nis}
+              {row.original.student?.nisn}
             </div>
           </div>
         </div>

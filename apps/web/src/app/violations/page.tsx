@@ -245,7 +245,7 @@ function ViolationsPageContent() {
                               {violation.student?.name}
                             </p>
                             <p className="text-sm text-muted-foreground">
-                              {violation.student?.nis}
+                              {violation.student?.nisn}
                             </p>
                           </div>
                         </TableCell>

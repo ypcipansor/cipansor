@@ -43,7 +43,8 @@ export async function getMedicalRecords(query: QueryMedicalRecordInput & { statu
         student: {
           select: {
             id: true,
-            nis: true,
+            nisn: true,
+            nik: true,
             user: { select: { id: true, name: true } },
             unit: { select: { id: true, name: true } },
           },
@@ -62,7 +63,8 @@ export async function getMedicalRecords(query: QueryMedicalRecordInput & { statu
       student: record.student
         ? {
             id: record.student.id,
-            nis: record.student.nis,
+            nisn: record.student.nisn,
+            nik: record.student.nik,
             name: record.student?.user?.name,
             user: record.student.user,
             unit: record.student.unit,
@@ -88,7 +90,8 @@ export async function getMedicalRecordById(id: string) {
       student: {
         select: {
           id: true,
-          nis: true,
+          nisn: true,
+          nik: true,
           gender: true,
           birthDate: true,
           user: { select: { id: true, name: true } },
@@ -105,7 +108,8 @@ export async function getMedicalRecordById(id: string) {
     ...record,
     student: record.student ? {
       id: record.student.id,
-      nis: record.student.nis,
+      nisn: record.student.nisn,
+      nik: record.student.nik,
       name: record.student?.user?.name,
       user: record.student.user,
       unit: record.student.unit,
@@ -151,7 +155,8 @@ export async function createMedicalRecord(data: CreateMedicalRecordInput, record
       student: {
         select: {
           id: true,
-          nis: true,
+          nisn: true,
+          nik: true,
           unitId: true,
           unit: { select: { id: true, name: true } },
           user: { select: { id: true, name: true } },
@@ -161,7 +166,6 @@ export async function createMedicalRecord(data: CreateMedicalRecordInput, record
     },
   });
 
-  // Integration: Attendance
   if (createAttendance) {
     try {
       const enrollment = await prisma.classEnrollment.findFirst({
@@ -189,7 +193,6 @@ export async function createMedicalRecord(data: CreateMedicalRecordInput, record
     }
   }
 
-  // Integration: Notification
   if (notifyParent) {
     try {
       const parents = await prisma.studentParent.findMany({
@@ -216,7 +219,6 @@ export async function createMedicalRecord(data: CreateMedicalRecordInput, record
     }
   }
 
-  // Emit Event for other listeners (e.g., Dashboard)
   eventBus.emit('health:medical-record-created', {
     id: record.id,
     studentId: record.studentId || '',
@@ -233,7 +235,8 @@ export async function createMedicalRecord(data: CreateMedicalRecordInput, record
     ...record,
     student: record.student ? {
       id: record.student.id,
-      nis: record.student.nis,
+      nisn: record.student.nisn,
+      nik: record.student.nik,
       name: record.student?.user?.name,
       user: record.student.user,
     } : undefined,
@@ -261,7 +264,8 @@ export async function updateMedicalRecord(id: string, data: UpdateMedicalRecordI
       student: {
         select: {
           id: true,
-          nis: true,
+          nisn: true,
+          nik: true,
           user: { select: { id: true, name: true } },
         },
       },
@@ -273,7 +277,8 @@ export async function updateMedicalRecord(id: string, data: UpdateMedicalRecordI
     ...record,
     student: record.student ? {
       id: record.student.id,
-      nis: record.student.nis,
+      nisn: record.student.nisn,
+      nik: record.student.nik,
       name: record.student?.user?.name,
       user: record.student.user,
     } : undefined,
@@ -526,7 +531,6 @@ export async function createClinicAppointment(data: {
   appointmentDate: string | Date;
   complaint: string;
 }) {
-  // Generate queue number for the day
   const startOfDay = new Date(data.appointmentDate);
   startOfDay.setHours(0, 0, 0, 0);
   const endOfDay = new Date(data.appointmentDate);
@@ -706,13 +710,6 @@ export async function fulfillPrescription(prescriptionId: string, fulfilledById:
 
 // ==================== STATISTICS ====================
 
-/**
- * Health statistics, scoped to a unit or across every unit.
- *
- * `unitId` is optional because the dashboard and the health landing page want
- * a yayasan-wide figure and have no unit in scope. Prisma treats an
- * `undefined` filter as "no filter", so the same query serves both.
- */
 export async function getHealthStats(unitId?: string): Promise<HealthStats> {
   const today = new Date();
   const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
@@ -759,8 +756,6 @@ export async function getHealthStats(unitId?: string): Promise<HealthStats> {
 
 // ==================== GROWTH RECORD ====================
 
-// WHO growth-standard milestones (approximate medians and SDs) for
-// height-for-age and weight-for-age, early childhood through 18y.
 const GROWTH_STANDARDS: Record<
   'MALE' | 'FEMALE',
   Record<number, { hM: number; hS: number; wM: number; wS: number }>
@@ -791,10 +786,6 @@ const GROWTH_STANDARDS: Record<
   },
 };
 
-/**
- * Height-for-age and weight-for-age Z-scores against the nearest WHO
- * milestone, plus a derived nutrition status label.
- */
 export function calculateGrowthZScores(input: {
   ageMonths: number;
   gender: 'MALE' | 'FEMALE';
@@ -823,7 +814,6 @@ export function calculateGrowthZScores(input: {
 }
 
 export async function createGrowthRecord(data: CreateGrowthRecordInput, recordedById: string) {
-  // Compute real age + WHO Z-scores from the student's profile
   const student = await prisma.student.findUnique({
     where: { id: data.studentId },
     select: { birthDate: true, gender: true },

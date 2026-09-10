@@ -184,7 +184,7 @@ export default function NewSanadPage() {
                               >
                                 {enrollment.student?.user?.name ||
                                   "Unknown"}{" "}
-                                - {(enrollment.student as any)?.nis || "—"}
+                                - {(enrollment.student as any)?.nisn || "—"}
                               </SelectItem>
                             ))
                           )}

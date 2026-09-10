@@ -24,7 +24,7 @@ import {
 
 import { MainLayout } from "@/components/layout";
 import { PageHeader } from "@/components/shared";
-import { useStudent } from "@/hooks/use-students";
+import { useStudent, useGraduateStudent } from "@/hooks/use-students";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -71,6 +71,24 @@ export default function StudentDetailPage() {
 
   // Only use useStudent here
   const { data: student, isLoading } = useStudent(studentId);
+  const graduateMutation = useGraduateStudent();
+
+  const handleGraduate = () => {
+    if (!student) return;
+    if (
+      !window.confirm(
+        `Tandai ${student.name} sebagai lulus? Histori kelas & SPP akan dipindahkan ke status alumni.`,
+      )
+    ) {
+      return;
+    }
+    graduateMutation.mutate(
+      { studentId: student.id, graduationDate: new Date().toISOString() },
+      {
+        onSuccess: () => router.refresh(),
+      },
+    );
+  };
 
   if (isLoading) {
     return (
@@ -105,7 +123,10 @@ export default function StudentDetailPage() {
   return (
     <MainLayout allowedRoles={["SUPER_ADMIN", "UNIT_ADMIN", "TEACHER"]}>
       <div className="space-y-6">
-        <PageHeader title={student.name} description={`NIS: ${student.nis}`}>
+        <PageHeader
+          title={student.name}
+          description={`NISN: ${student.nisn || student.nik || "-"}`}
+        >
           <Button variant="outline" asChild>
             <Link href="/students">
               <ArrowLeft className="mr-2 h-4 w-4" />
@@ -118,6 +139,18 @@ export default function StudentDetailPage() {
               Edit
             </Link>
           </Button>
+          {!["GRADUATED", "ALUMNI", "alumni", "graduated"].includes(
+            student.status,
+          ) && (
+            <Button
+              variant="outline"
+              onClick={handleGraduate}
+              disabled={graduateMutation.isPending}
+            >
+              <GraduationCap className="mr-2 h-4 w-4" />
+              {graduateMutation.isPending ? "Menandai..." : "Tandai Lulus"}
+            </Button>
+          )}
         </PageHeader>
 
         {/* Status Banner */}

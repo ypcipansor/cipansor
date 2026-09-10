@@ -241,8 +241,8 @@ export default function StudentTranscriptPage() {
               </span>
             </div>
             <div className="flex">
-              <span className="w-32">NIS</span>
-              <span>: {selectedStudent.nis}</span>
+              <span className="w-32">NISN</span>
+              <span>: {selectedStudent.nisn}</span>
             </div>
             <div className="flex">
               <span className="w-32">Tempat, Tgl Lahir</span>
@@ -560,7 +560,7 @@ export default function StudentTranscriptPage() {
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
-                    placeholder="Cari nama/NIS..."
+                    placeholder="Cari nama/NISN..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="pl-9"
@@ -612,7 +612,7 @@ export default function StudentTranscriptPage() {
                               {student.name}
                             </p>
                             <p className="text-sm text-muted-foreground">
-                              {student.nis} •{" "}
+                              {student.nisn} •{" "}
                               {student.currentClass?.name || "-"}
                             </p>
                           </div>

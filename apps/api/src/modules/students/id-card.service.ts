@@ -3,7 +3,7 @@
  *
  * Generate Kartu Pelajar/Santri dengan:
  * - QR Code untuk verifikasi
- * - Data identitas siswa
+ * - Data identitas siswa (NISN / NIK)
  * - Foto siswa
  * - Validitas masa berlaku
  */
@@ -37,7 +37,7 @@ const DEFAULT_CONFIG: IdCardConfig = {
   showPhoto: true,
   showQrCode: true,
   showParentName: true,
-  showBloodType: false, // Not available in schema
+  showBloodType: false,
   showAddress: false,
   showTahfidzProgress: false,
   validityPeriod: 12,
@@ -46,34 +46,30 @@ const DEFAULT_CONFIG: IdCardConfig = {
 export class StudentIdCardService {
   /**
    * Generate QR Code data string
-   * Contains encrypted student data for verification
    */
   static generateQRCodeData(studentData: {
     id: string;
-    nis: string;
-    nisn?: string;
+    nisn?: string | null;
+    nik?: string | null;
     name: string;
     unitId: string;
     unitName: string;
     validUntil: Date;
   }): string {
-    // Create verification payload
     const payload = {
       sid: studentData.id,
-      nis: studentData.nis,
       nisn: studentData.nisn ?? '',
+      nik: studentData.nik ?? '',
       uid: studentData.unitId,
       exp: studentData.validUntil.getTime(),
     };
 
-    // Create hash for integrity verification
     const hash = crypto
       .createHash('sha256')
       .update(JSON.stringify(payload))
       .digest('hex')
       .substring(0, 8);
 
-    // Format: cipansor://{base64_payload}#{hash}
     const base64Payload = Buffer.from(JSON.stringify(payload)).toString('base64url');
     return `cipansor://${base64Payload}#${hash}`;
   }
@@ -84,7 +80,8 @@ export class StudentIdCardService {
   static verifyQRCodeData(qrData: string): {
     valid: boolean;
     studentId?: string;
-    nis?: string;
+    nisn?: string;
+    nik?: string;
     expired?: boolean;
     message: string;
   } {
@@ -101,7 +98,6 @@ export class StudentIdCardService {
 
       const payload = JSON.parse(Buffer.from(payloadPart, 'base64url').toString('utf8'));
 
-      // Verify hash
       const expectedHash = crypto
         .createHash('sha256')
         .update(JSON.stringify(payload))
@@ -112,12 +108,12 @@ export class StudentIdCardService {
         return { valid: false, message: 'QR Code tidak valid (hash mismatch)' };
       }
 
-      // Check expiry
       if (payload.exp < Date.now()) {
         return {
           valid: false,
           studentId: payload.sid,
-          nis: payload.nis,
+          nisn: payload.nisn,
+          nik: payload.nik,
           expired: true,
           message: 'Kartu pelajar sudah expired',
         };
@@ -126,7 +122,8 @@ export class StudentIdCardService {
       return {
         valid: true,
         studentId: payload.sid,
-        nis: payload.nis,
+        nisn: payload.nisn,
+        nik: payload.nik,
         expired: false,
         message: 'Kartu pelajar valid',
       };
@@ -141,7 +138,6 @@ export class StudentIdCardService {
   static async generateIdCard(studentId: string, config: Partial<IdCardConfig> = {}) {
     const mergedConfig = { ...DEFAULT_CONFIG, ...config };
 
-    // Get student data with relations
     const student = await prisma.student.findUnique({
       where: { id: studentId },
       include: {
@@ -183,7 +179,6 @@ export class StudentIdCardService {
       throw new ApiError(ErrorCode.NOT_FOUND, 'Siswa tidak ditemukan');
     }
 
-    // Get tahfidz progress if needed
     let tahfidzProgress = null;
     if (mergedConfig.showTahfidzProgress) {
       const tahfidzRecord = await prisma.tahfidzRecord.findFirst({
@@ -205,43 +200,40 @@ export class StudentIdCardService {
       }
     }
 
-    // Calculate validity period
     const validFrom = new Date();
     const validUntil = new Date();
     validUntil.setMonth(validUntil.getMonth() + mergedConfig.validityPeriod);
 
-    // Generate QR Code data
     const qrCodeData = this.generateQRCodeData({
       id: student.id,
-      nis: student.nis,
-      nisn: student.nisn ?? undefined,
+      nisn: student.nisn,
+      nik: student.nik,
       name: student.user.name,
       unitId: student.unit.id,
       unitName: student.unit.name,
       validUntil,
     });
 
-    // Build card data
     const currentEnrollment = student.enrollments[0];
     const primaryParent = student.parents[0];
+
+    const studentIdentifier = student.nisn || student.nik || student.id.slice(0, 8);
 
     return {
       config: mergedConfig,
       cardData: {
-        // Institution info
         institution: {
-          foundationName: student.unit.foundation?.name ?? 'Yayasan Pesantren',
+          foundationName: student.unit.foundation?.name ?? 'Yayasan Pesantren Cipansor',
           unitName: student.unit.name,
           unitType: student.unit.type,
           address: student.unit.address,
           phone: student.unit.phone,
           logoUrl: student.unit.foundation?.logoUrl,
         },
-        // Student info
         student: {
           id: student.id,
-          nis: student.nis,
           nisn: student.nisn,
+          nik: student.nik,
           name: student.user.name,
           photoUrl: student.photoUrl,
           gender: student.gender,
@@ -249,7 +241,6 @@ export class StudentIdCardService {
           birthDate: student.birthDate,
           address: mergedConfig.showAddress ? student.address : null,
         },
-        // Current class
         enrollment: currentEnrollment
           ? {
               className: currentEnrollment.class.name,
@@ -257,21 +248,18 @@ export class StudentIdCardService {
               academicYear: currentEnrollment.class.academicYear.name,
             }
           : null,
-        // Parent info (from StudentParent relation)
         parent:
           mergedConfig.showParentName && primaryParent
             ? {
                 name: primaryParent.parent.name,
                 phone: primaryParent.parent.phone,
               }
-            : // Fallback to parentName field
-              mergedConfig.showParentName && student.parentName
+            : mergedConfig.showParentName && student.parentName
               ? {
                   name: student.parentName,
                   phone: student.parentPhone,
                 }
               : null,
-        // Tahfidz progress
         tahfidz: tahfidzProgress
           ? {
               currentJuz: tahfidzProgress.juz,
@@ -279,32 +267,13 @@ export class StudentIdCardService {
               totalAyah: tahfidzProgress.totalAyah,
             }
           : null,
-        // Validity
         validity: {
           issuedDate: validFrom.toISOString(),
           validUntil: validUntil.toISOString(),
-          cardNumber: this.generateCardNumber(student.nis, student.unit.type),
+          cardNumber: this.generateCardNumber(studentIdentifier, student.unit.type),
         },
-        // QR Code
         qrCode: {
           data: qrCodeData,
-          /**
-           * Deliberately null: there is no student-card verification page.
-           *
-           * This used to be `https://cipansor.app/verify?q=<payload>` — a
-           * domain the yayasan does not own, and a path this app has never
-           * routed. Pointing it at a real host would only have moved the 404,
-           * so rather than dress up a dead link the field now says plainly
-           * that the destination does not exist. Nothing consumes it today.
-           *
-           * Building that page is a decision, not a repair, and it needs one
-           * thing settled first: `generateQRCodeData` signs the payload with a
-           * bare `sha256(payload)` truncated to 8 hex characters and no secret,
-           * so anyone who reads one card can mint a payload that verifies.
-           * A verification page over an unkeyed hash would attest nothing —
-           * that wants an HMAC keyed on a server-side secret before it is worth
-           * publishing.
-           */
           verificationUrl: null,
         },
       },
@@ -314,10 +283,10 @@ export class StudentIdCardService {
   /**
    * Generate card number
    */
-  private static generateCardNumber(nis: string, unitType: string): string {
+  private static generateCardNumber(identifier: string, unitType: string): string {
     const prefix = unitType.substring(0, 2).toUpperCase();
     const year = new Date().getFullYear().toString().substring(2);
-    return `${prefix}${year}-${nis}`;
+    return `${prefix}${year}-${identifier}`;
   }
 
   /**
@@ -328,7 +297,6 @@ export class StudentIdCardService {
     academicYearId: string,
     config: Partial<IdCardConfig> = {}
   ) {
-    // Get class info first to verify academicYear
     const classInfo = await prisma.class.findUnique({
       where: { id: classId },
       select: {
@@ -341,7 +309,6 @@ export class StudentIdCardService {
       throw new ApiError(ErrorCode.NOT_FOUND, 'Kelas tidak ditemukan');
     }
 
-    // Get active enrollments for this class
     const enrollments = await prisma.classEnrollment.findMany({
       where: {
         classId,
@@ -419,7 +386,8 @@ export class StudentIdCardService {
       ...verification,
       student: {
         id: student.id,
-        nis: student.nis,
+        nisn: student.nisn,
+        nik: student.nik,
         name: student.user.name,
         photoUrl: student.photoUrl,
         unit: student.unit.name,
@@ -483,11 +451,10 @@ export class StudentIdCardService {
       },
     });
 
-    // For now, we track cards in memory - in production this would be in DB
     return {
       unitId,
       totalStudents,
-      cardsGenerated: 0, // Would track actual generated cards
+      cardsGenerated: 0,
       cardsActive: 0,
       cardsExpired: 0,
       lastGeneratedAt: null,

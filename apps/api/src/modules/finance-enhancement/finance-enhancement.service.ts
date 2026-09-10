@@ -22,8 +22,6 @@ import { Prisma } from '@prisma/client';
 import { checkPeriodStatus } from './period.service';
 
 export class FinanceEnhancementService {
-  // ==================== ACCOUNT CODES ====================
-
   async getAccountCodes(params: {
     type?: string;
     isActive?: boolean;
@@ -103,8 +101,6 @@ export class FinanceEnhancementService {
     return this.mapToAccountCode(accountCode);
   }
 
-  // ==================== JOURNAL ENTRIES ====================
-
   async getJournalEntries(params: {
     unitId?: string;
     accountId?: string;
@@ -160,13 +156,10 @@ export class FinanceEnhancementService {
   async createJournalEntry(
     input: CreateJournalEntryInput & { createdById: string }
   ): Promise<JournalEntry> {
-    // Check if period is closed
     const entryDate = new Date(input.date);
     await checkPeriodStatus(input.unitId, entryDate);
 
-    // Use transaction to ensure consistency
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Create Journal Entry
       const entry = await tx.journalEntry.create({
         data: {
           unitId: input.unitId,
@@ -185,16 +178,14 @@ export class FinanceEnhancementService {
         },
       });
 
-      // 2. Update Budget Realization (if exists)
-      // Find academic year for this date
       const academicYear = await tx.academicYear.findFirst({
         where: {
           startDate: { lte: entryDate },
           endDate: { gte: entryDate },
         },
         orderBy: [
-          { isActive: 'desc' }, // Prefer active year first
-          { startDate: 'desc' }, // Then most recent start date
+          { isActive: 'desc' },
+          { startDate: 'desc' },
         ],
       });
 
@@ -221,7 +212,6 @@ export class FinanceEnhancementService {
           }
 
           if (delta !== 0) {
-            // Use raw SQL to update atomically and enforce non-negative constraint
             await tx.$executeRaw`
               UPDATE budgets
               SET used_amount = GREATEST(0, used_amount + ${delta})
@@ -251,8 +241,6 @@ export class FinanceEnhancementService {
 
     return this.mapToJournalEntry(entry);
   }
-
-  // ==================== SCHOLARSHIPS ====================
 
   async getScholarships(params: {
     unitId?: string;
@@ -419,8 +407,6 @@ export class FinanceEnhancementService {
     return this.mapToScholarshipRecipient(recipient);
   }
 
-  // ==================== PAYMENT COMPONENTS ====================
-
   async getPaymentComponents(params: {
     unitId?: string;
     category?: string;
@@ -486,8 +472,6 @@ export class FinanceEnhancementService {
     } as unknown as PaymentComponent;
   }
 
-  // ==================== REPORTS ====================
-
   async getTrialBalance(params: {
     unitId?: string;
     startDate: Date;
@@ -514,7 +498,6 @@ export class FinanceEnhancementService {
 
     const accountMap = new Map(accounts.map((a) => [a.id, a]));
 
-    // Opening balances: net (debit - credit) of all entries before the period.
     const opening = await prisma.journalEntry.groupBy({
       by: ['accountId'],
       where: {
@@ -566,10 +549,6 @@ export class FinanceEnhancementService {
       isBalanced: Math.abs(totals.debit - totals.credit) < 0.01,
     };
   }
-
-  // NOTE: The previous one-month `getCashFlowForecast` method was removed.
-  // The controller now delegates to `reporting.service.ts#getCashFlowForecast`
-  // which implements a multi-month projection.
 
   async getConsolidatedBudget(params: { academicYearId: string }) {
     const { academicYearId } = params;
@@ -632,7 +611,6 @@ export class FinanceEnhancementService {
 
     const dateFormat = groupBy === FinanceReportPeriod.MONTH ? 'YYYY-MM' : 'YYYY-MM-DD';
 
-    // Optimization: Using Enum constants instead of hardcoded strings
     const results = await prisma.$queryRaw<Array<{ period: string; type: string; total: bigint }>>`
       SELECT
         TO_CHAR(je.date, ${dateFormat}) as period,
@@ -694,26 +672,23 @@ export class FinanceEnhancementService {
     };
   }
 
-  // ==================== HELPERS ====================
-
   private mapToAccountCode(prismaAccount: any): AccountCode {
     return {
       id: prismaAccount.id,
       code: prismaAccount.code,
       name: prismaAccount.name,
-      type: prismaAccount.type as AccountType, // Prisma enum should match Shared enum
+      type: prismaAccount.type as AccountType,
       parentId: prismaAccount.parentId,
       isActive: prismaAccount.isActive,
       createdAt: prismaAccount.createdAt,
       updatedAt: prismaAccount.updatedAt,
-      // Map relations if they exist
       parent: prismaAccount.parent
         ? {
             id: prismaAccount.parent.id,
             code: prismaAccount.parent.code,
             name: prismaAccount.parent.name,
             type: prismaAccount.parent.type as AccountType,
-            isActive: true, // Partial mapping for relation
+            isActive: true,
           }
         : undefined,
       children: prismaAccount.children
@@ -733,7 +708,7 @@ export class FinanceEnhancementService {
       id: prismaEntry.id,
       unitId: prismaEntry.unitId,
       accountId: prismaEntry.accountId,
-      date: prismaEntry.date, // Date object, shared type allows string or Date
+      date: prismaEntry.date,
       description: prismaEntry.description,
       debit: Number(prismaEntry.debit),
       credit: Number(prismaEntry.credit),
@@ -792,7 +767,7 @@ export class FinanceEnhancementService {
       student: prismaRecipient.student
         ? {
             id: prismaRecipient.student.id,
-            nis: prismaRecipient.student.nis,
+            nisn: prismaRecipient.student.nisn || prismaRecipient.student.nik || '-',
             name: prismaRecipient.student.user?.name || '',
             class: prismaRecipient.student.enrollments?.[0]?.class?.name || '-',
           }

@@ -7,7 +7,7 @@ interface BehaviorRecord {
   id: string;
   studentId: string;
   studentName: string;
-  studentNis: string;
+  studentNisn: string;
   type: "POSITIVE" | "NEGATIVE" | "NEUTRAL";
   category: string;
   description: string;

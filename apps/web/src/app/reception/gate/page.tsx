@@ -36,7 +36,7 @@ interface Permit {
   returnedAt?: string;
   student: {
     id: string;
-    nis: string;
+    nisn: string;
     user: {
       name: string;
       email: string;
@@ -162,7 +162,7 @@ export default function ReceptionGatePage() {
                   {getStatusBadge(permit)}
                 </CardTitle>
                 <CardDescription>
-                  {permit.student.unit.name} • {permit.student.nis}
+                  {permit.student.unit.name} • {permit.student.nisn}
                 </CardDescription>
               </div>
               <div className="text-right">

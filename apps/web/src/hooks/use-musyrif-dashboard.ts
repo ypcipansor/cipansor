@@ -7,7 +7,7 @@ import { toast } from "sonner";
 export interface MusyrifStudent {
   id: string;
   name: string;
-  nis: string;
+  nisn: string;
   photo: string | null;
   class: string;
   room: string;

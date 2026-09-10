@@ -118,7 +118,7 @@ describe('Class Service', () => {
           status: 'active',
           student: {
             id: 'student-id',
-            nis: '12345',
+            nisn: '12345',
             gender: Gender.MALE,
             user: {
               id: 'user-id',
@@ -144,7 +144,8 @@ describe('Class Service', () => {
           student: {
             select: {
               id: true,
-              nis: true,
+              nisn: true,
+              nik: true,
               gender: true,
               user: {
                 select: {

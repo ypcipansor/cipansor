@@ -172,7 +172,7 @@ export default function TahfidzDetailPage() {
                       "-"}
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    NIS: {record.student?.nis || "-"}
+                    NISN/NIK: {record.student?.nisn || record.student?.nik || "-"}
                   </p>
                 </div>
               </div>

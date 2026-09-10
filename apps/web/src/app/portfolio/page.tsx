@@ -436,7 +436,7 @@ function PortfolioPageContent() {
                   <SelectContent>
                     {studentsData?.data?.map((student: any) => (
                       <SelectItem key={student.id} value={student.id}>
-                        {student.user?.name} ({student.nis})
+                        {student.user?.name} ({student.nisn})
                       </SelectItem>
                     ))}
                   </SelectContent>

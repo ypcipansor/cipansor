@@ -289,7 +289,11 @@ export class DashboardService {
    * Get finance statistics
    */
   async getFinanceStats(context: DashboardServiceContext): Promise<FinanceStats> {
-    const unitFilter = context.unitId ? { student: { unitId: context.unitId } } : {};
+    // ISSUE #4: invoice aggregates must use the invoice's OWN unit snapshot
+    // (`invoice.unitId`), not the mutable `student.unitId`, so a progressed /
+    // re-enrolled student's billed/paid/unpaid history stays with the unit that
+    // originally billed it instead of migrating to the student's current unit.
+    const unitFilter = context.unitId ? { unitId: context.unitId } : {};
 
     const [totalBilled, totalPaid, totalUnpaid, recentPaymentsRaw] = await Promise.all([
       prisma.invoice.aggregate({
@@ -648,7 +652,10 @@ export class DashboardService {
           status: { in: ['PENDING', 'PARTIAL', 'OVERDUE'] },
           dueDate: { lt: new Date() },
           createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
-          ...(unitId ? { student: { unitId } } : {}),
+          // ISSUE #4: count overdue invoices by the invoice's OWN unit snapshot,
+          // not the mutable `student.unitId`, so re-enrolled students' unpaid
+          // bills don't relocate to another unit.
+          ...(unitId ? { unitId } : {}),
         },
       });
 

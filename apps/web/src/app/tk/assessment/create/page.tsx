@@ -289,7 +289,7 @@ export default function TKAssessmentCreatePage() {
                       <div className="min-w-[200px]">
                         <h4 className="font-semibold">{student.name}</h4>
                         <p className="text-sm text-muted-foreground">
-                          {student.nis}
+                          {student.nisn}
                         </p>
                       </div>
 

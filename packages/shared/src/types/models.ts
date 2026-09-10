@@ -21,8 +21,8 @@ export interface Unit extends BaseEntity {
 export interface Student extends BaseEntity {
   userId: string;
   unitId: string;
-  nis: string;
   nisn?: string | null;
+  nik?: string | null;
   gender: Gender;
   birthPlace: string;
   birthDate: Date;

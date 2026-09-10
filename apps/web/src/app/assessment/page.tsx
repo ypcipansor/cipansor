@@ -417,7 +417,7 @@ export default function AssessmentPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>NIS</TableHead>
+                    <TableHead>NISN</TableHead>
                     <TableHead>Nama Santri</TableHead>
                     <TableHead>Kelas</TableHead>
                     <TableHead>Semester</TableHead>
@@ -438,7 +438,7 @@ export default function AssessmentPage() {
                     reportCards.map((report) => (
                       <TableRow key={report.id}>
                         <TableCell className="font-mono text-sm">
-                          {report.student?.nis}
+                          {report.student?.nisn}
                         </TableCell>
                         <TableCell className="font-medium">
                           {report.student?.user?.name || "-"}

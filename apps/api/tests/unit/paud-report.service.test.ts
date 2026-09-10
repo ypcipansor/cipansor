@@ -75,7 +75,7 @@ describe('PAUD Report Service - List Reports', () => {
           id: 'report-1',
           studentId: 'student-1',
           status: 'DRAFT',
-          student: { id: 'student-1', nis: '12345', user: { name: 'Student 1' } },
+          student: { id: 'student-1', nisn: '12345', user: { name: 'Student 1' } },
         },
       ];
 

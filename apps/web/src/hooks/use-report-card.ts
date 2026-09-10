@@ -9,7 +9,7 @@ export interface ParentReportCard {
   studentId: string;
   student: {
     id: string;
-    nis: string;
+    nisn: string;
     name: string;
     class: {
       id: string;
@@ -185,7 +185,7 @@ export function useMyChildrenReportCards() {
     {
       child: {
         id: string;
-        nis: string;
+        nisn: string;
         name: string;
         class?: {
           id: string;
@@ -203,7 +203,7 @@ export function useMyChildrenReportCards() {
           {
             child: {
               id: string;
-              nis: string;
+              nisn: string;
               name: string;
               class?: {
                 id: string;
@@ -238,7 +238,7 @@ export function useClassReportCards(classId?: string, semester?: number) {
     {
       student: {
         id: string;
-        nis: string;
+        nisn: string;
         name: string;
       };
       reportCard?: ReportCardListItem;
@@ -254,7 +254,7 @@ export function useClassReportCards(classId?: string, semester?: number) {
           {
             student: {
               id: string;
-              nis: string;
+              nisn: string;
               name: string;
             };
             reportCard?: ReportCardListItem;

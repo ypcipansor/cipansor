@@ -1,6 +1,61 @@
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 
+interface InvoiceRegistrant {
+  campaignId: string | null;
+  admissionPeriod: { unitId: string; startDate: Date; endDate: Date } | null;
+}
+
+interface StudentRevenueRow {
+  unitId: string | null;
+  paidAmount: unknown;
+  createdAt: Date;
+  dueDate: Date;
+  student: { registrants: InvoiceRegistrant[] } | null;
+}
+
+/**
+ * Pick which registration a paid student invoice should be attributed to.
+ *
+ * 1. Prefer the unit snapshot: the invoice carries the unit that billed it, which
+ *    stays stable across re-enrollment/progression, so the invoice correctly
+ *    belongs to the admission period of that unit.
+ * 2. No snapshot (historic invoice): we cannot silently force the *oldest*
+ *    registration — that steals progression revenue from later campaigns. A
+ *    single registration is unambiguous (attribute it); otherwise anchor on the
+ *    invoice date against the admission period end/start dates, and only when
+ *    exactly one period matches. If it is ambiguous or unmatched, the invoice is
+ *    left unattributed rather than misattributed.
+ */
+function resolveRegistrantForInvoice(
+  registrants: InvoiceRegistrant[],
+  inv: StudentRevenueRow
+): InvoiceRegistrant | undefined {
+  const byUnit = registrants.find((r) => inv.unitId && r.admissionPeriod?.unitId === inv.unitId);
+  if (byUnit) return byUnit;
+
+  // No usable unit snapshot.
+  if (!inv.unitId) {
+    if (registrants.length === 1) return registrants[0];
+
+    const invoiceDate = inv.createdAt ?? inv.dueDate;
+    if (invoiceDate) {
+      const matches = registrants.filter((r) => {
+        const ap = r.admissionPeriod;
+        return (
+          ap?.startDate && ap?.endDate && invoiceDate >= ap.startDate && invoiceDate <= ap.endDate
+        );
+      });
+      if (matches.length === 1) return matches[0];
+    }
+    return undefined; // ambiguous or unmatched -> unattributed
+  }
+
+  // Snapshot set but no matching registration: only attribute when there is
+  // exactly one registration, otherwise leave unattributed.
+  return registrants.length === 1 ? registrants[0] : undefined;
+}
+
 /**
  * Marketing ROI Service
  * Optimized implementation to avoid N+1 queries.
@@ -21,7 +76,7 @@ export async function calculateCampaignROI(unitId?: string) {
 
   if (campaigns.length === 0) return [];
 
-  const campaignIds = campaigns.map(c => c.id);
+  const campaignIds = campaigns.map((c) => c.id);
 
   // 1. Get converted counts in one query
   const conversions = await prisma.registrant.groupBy({
@@ -33,9 +88,7 @@ export async function calculateCampaignROI(unitId?: string) {
     _count: { _all: true },
   });
 
-  const conversionMap = new Map(
-    conversions.map(c => [c.campaignId, c._count._all])
-  );
+  const conversionMap = new Map(conversions.map((c) => [c.campaignId, c._count._all]));
 
   // 2. Get revenue in one query
   // Support both Registrant -> Student -> Invoice AND Registrant -> Invoice directly
@@ -44,46 +97,64 @@ export async function calculateCampaignROI(unitId?: string) {
     prisma.invoice.findMany({
       where: {
         student: {
-          registrant: {
-            campaignId: { in: campaignIds },
+          registrants: {
+            some: {
+              campaignId: { in: campaignIds },
+            },
           },
         },
         status: 'PAID',
       },
       select: {
+        unitId: true,
         paidAmount: true,
+        createdAt: true,
+        dueDate: true,
         student: {
           select: {
-            registrant: {
-              select: { campaignId: true }
-            }
-          }
-        }
-      }
+            registrants: {
+              select: {
+                campaignId: true,
+                admissionPeriod: { select: { unitId: true, startDate: true, endDate: true } },
+              },
+              orderBy: { createdAt: 'asc' },
+            },
+          },
+        },
+      },
     }),
     // Path: Registrant -> Invoice (for registration fees paid before promotion to student)
     // Note: This requires an optional registrantId on the Invoice model
-    (prisma.invoice as any).findMany({
-      where: {
-        registrant: {
-          campaignId: { in: campaignIds },
+    (prisma.invoice as any)
+      .findMany({
+        where: {
+          registrant: {
+            campaignId: { in: campaignIds },
+          },
+          status: 'PAID',
         },
-        status: 'PAID',
-      },
-      select: {
-        paidAmount: true,
-        registrant: {
-          select: { campaignId: true }
-        }
-      }
-    }).catch(() => []) // Gracefully handle if registrantId isn't on Invoice yet
+        select: {
+          paidAmount: true,
+          registrant: {
+            select: { campaignId: true },
+          },
+        },
+      })
+      .catch(() => []), // Gracefully handle if registrantId isn't on Invoice yet
   ]);
 
   const revenueMap = new Map<string, number>();
 
   // Add revenue from students
-  studentRevenueData.forEach(inv => {
-    const cid = inv.student?.registrant?.campaignId;
+  studentRevenueData.forEach((inv) => {
+    const registrants = inv.student?.registrants ?? [];
+    // Attribute the invoice to the correct registration. Prefer the unit snapshot
+    // (stable across progression); when there is no snapshot, do NOT force the
+    // oldest registration — that steals progression revenue from later campaigns.
+    // resolveRegistrantForInvoice returns undefined for ambiguous/unmatched cases,
+    // which are then left unattributed.
+    const registrant = resolveRegistrantForInvoice(registrants, inv);
+    const cid = registrant?.campaignId;
     if (cid) {
       revenueMap.set(cid, (revenueMap.get(cid) || 0) + Number(inv.paidAmount));
     }
@@ -103,9 +174,8 @@ export async function calculateCampaignROI(unitId?: string) {
     const cost = Number(campaign.budget || 0);
 
     const roi = cost > 0 ? ((revenue - cost) / cost) * 100 : 0;
-    const conversionRate = campaign._count.registrants > 0
-      ? (convertedCount / campaign._count.registrants) * 100
-      : 0;
+    const conversionRate =
+      campaign._count.registrants > 0 ? (convertedCount / campaign._count.registrants) * 100 : 0;
 
     return {
       campaignId: campaign.id,
@@ -120,13 +190,12 @@ export async function calculateCampaignROI(unitId?: string) {
         roi: Math.round(roi * 100) / 100,
         costPerLead: campaign._count.registrants > 0 ? cost / campaign._count.registrants : 0,
         costPerAcquisition: convertedCount > 0 ? cost / convertedCount : 0,
-      }
+      },
     };
   });
 
   return results.sort((a, b) => b.metrics.roi - a.metrics.roi);
 }
-
 
 /**
  * Admission funnel: how far registrants progress through the pipeline.
@@ -197,10 +266,15 @@ export async function getMonthlyAttributedRevenue(unitId?: string, months = 6) {
     where: {
       paidAt: { gte: start },
       invoice: {
+        // Filter on the invoice's own unit snapshot, not the student's
+        // registrations, so a payment from a previous unit is not attributed to
+        // a different unit after the student has progressed across units.
+        ...(unitId ? { unitId } : {}),
         student: {
-          registrant: {
-            campaignId: { not: null },
-            ...(unitId ? { admissionPeriod: { unitId } } : {}),
+          registrants: {
+            some: {
+              campaignId: { not: null },
+            },
           },
         },
       },
@@ -218,9 +292,10 @@ export async function getMonthlyAttributedRevenue(unitId?: string, months = 6) {
     });
   }
   for (const payment of payments) {
-    const key = `${payment.paidAt.getFullYear()}-${String(
-      payment.paidAt.getMonth() + 1
-    ).padStart(2, '0')}`;
+    const key = `${payment.paidAt.getFullYear()}-${String(payment.paidAt.getMonth() + 1).padStart(
+      2,
+      '0'
+    )}`;
     const bucket = buckets.get(key);
     if (bucket) {
       bucket.revenue += Number(payment.amount);

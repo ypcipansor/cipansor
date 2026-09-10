@@ -55,7 +55,7 @@ describe('Class Controller', () => {
           status: 'active',
           student: {
             id: 'student-id',
-            nis: '12345',
+            nisn: '12345',
             gender: Gender.MALE,
             user: {
               id: 'user-id',

@@ -11,20 +11,29 @@ import type {
   UnitFilterParams,
   SortParams,
 } from "./types";
+import type { CreateStudentInput, UpdateStudentInput } from "@cipansor/shared";
+
+// The create/update payload contracts come from @cipansor/shared so the web
+// client stays in sync with the backend-validated Zod schemas (see
+// packages/shared/src/schemas/student.ts). The response shape below is a
+// UI-level projection and is kept local because @cipansor/shared does not
+// define a matching one.
+export type { CreateStudentInput, UpdateStudentInput };
 
 export type StudentStatus =
   | "ACTIVE"
   | "INACTIVE"
   | "GRADUATED"
   | "DROPPED_OUT"
-  | "TRANSFERRED";
+  | "TRANSFERRED"
+  | "ALUMNI";
 export type Gender = "MALE" | "FEMALE";
 
 export interface Student {
   id: string;
   userId: string;
-  nis: string;
   nisn?: string;
+  nik?: string;
   name: string;
   email: string;
   phone?: string;
@@ -46,26 +55,6 @@ export interface Student {
   photo?: string;
   createdAt: string;
   updatedAt: string;
-}
-
-export interface CreateStudentInput {
-  name: string;
-  email: string;
-  phone?: string;
-  gender: Gender;
-  birthDate: string;
-  birthPlace?: string;
-  address?: string;
-  unitId: string;
-  classId?: string;
-  dormitoryId?: string;
-  parentId?: string;
-  nis?: string;
-  nisn?: string;
-}
-
-export interface UpdateStudentInput extends Partial<CreateStudentInput> {
-  status?: StudentStatus;
 }
 
 export interface StudentDetail extends Student {
@@ -130,13 +119,7 @@ export interface StudentStatistics {
   byUnit: Array<{ unitId: string; unitName: string; count: number }>;
 }
 
-/**
- * Students Service
- */
 export const studentsService = {
-  /**
-   * Get paginated list of students
-   */
   async list(params?: ListStudentParams): Promise<PaginatedResponse<Student>> {
     const response = await api.get<PaginatedResponse<Student>>("/students", {
       params,
@@ -144,9 +127,6 @@ export const studentsService = {
     return response.data;
   },
 
-  /**
-   * Get single student by ID
-   */
   async getById(id: string): Promise<StudentDetail> {
     const response = await api.get<ApiResponse<StudentDetail>>(
       `/students/${id}`,
@@ -155,26 +135,25 @@ export const studentsService = {
   },
 
   /**
-   * Get student by NIS
+   * Look up an existing alumnus record by NISN/NIK to prefill an internal
+   * (re-)enrollment. Consumed by the staff re-enrollment form at
+   * `/admissions/registrants/new` via `useLookupAlumni`; the backend endpoint
+   * is authenticated (STUDENT_CREATE permission), so this must not be called
+   * from an anonymous/public surface.
    */
-  async getByNis(nis: string): Promise<StudentDetail> {
-    const response = await api.get<ApiResponse<StudentDetail>>(
-      `/students/nis/${nis}`,
+  async lookupAlumni(identifier: string): Promise<StudentDetail | null> {
+    const response = await api.get<ApiResponse<StudentDetail | null>>(
+      `/students/alumni/lookup`,
+      { params: { identifier } },
     );
     return response.data.data;
   },
 
-  /**
-   * Create new student
-   */
   async create(input: CreateStudentInput): Promise<Student> {
     const response = await api.post<ApiResponse<Student>>("/students", input);
     return response.data.data;
   },
 
-  /**
-   * Update student
-   */
   async update(id: string, input: UpdateStudentInput): Promise<Student> {
     const response = await api.patch<ApiResponse<Student>>(
       `/students/${id}`,
@@ -183,16 +162,10 @@ export const studentsService = {
     return response.data.data;
   },
 
-  /**
-   * Delete student (soft delete)
-   */
   async delete(id: string): Promise<void> {
     await api.delete(`/students/${id}`);
   },
 
-  /**
-   * Assign student to class
-   */
   async assignToClass(studentId: string, classId: string): Promise<Student> {
     const response = await api.post<ApiResponse<Student>>(
       `/students/${studentId}/assign-class`,
@@ -201,9 +174,6 @@ export const studentsService = {
     return response.data.data;
   },
 
-  /**
-   * Assign student to dormitory
-   */
   async assignToDormitory(
     studentId: string,
     dormitoryId: string,
@@ -215,9 +185,6 @@ export const studentsService = {
     return response.data.data;
   },
 
-  /**
-   * Get student statistics
-   */
   async getStatistics(params?: UnitFilterParams): Promise<StudentStatistics> {
     const response = await api.get<ApiResponse<StudentStatistics>>(
       "/students/statistics",
@@ -228,9 +195,6 @@ export const studentsService = {
     return response.data.data;
   },
 
-  /**
-   * Upload student photo
-   */
   async uploadPhoto(
     studentId: string,
     file: File,
@@ -250,9 +214,6 @@ export const studentsService = {
     return response.data.data;
   },
 
-  /**
-   * Import students from CSV/Excel
-   */
   async importStudents(
     file: File,
     unitId: string,
@@ -279,9 +240,6 @@ export const studentsService = {
     return response.data.data;
   },
 
-  /**
-   * Export students to CSV
-   */
   async export(
     params?: ListStudentParams & { format?: "csv" | "xlsx" },
   ): Promise<Blob> {
@@ -292,9 +250,6 @@ export const studentsService = {
     return response.data;
   },
 
-  /**
-   * Graduate student
-   */
   async graduate(studentId: string, graduationDate?: string): Promise<Student> {
     const response = await api.post<ApiResponse<Student>>(
       `/students/${studentId}/graduate`,
@@ -303,9 +258,6 @@ export const studentsService = {
     return response.data.data;
   },
 
-  /**
-   * Transfer student to another unit
-   */
   async transfer(
     studentId: string,
     newUnitId: string,

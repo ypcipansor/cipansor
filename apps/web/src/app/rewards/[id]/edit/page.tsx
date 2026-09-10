@@ -61,7 +61,7 @@ function EditRewardPageContent() {
   const [selectedStudent, setSelectedStudent] = useState<{
     id: string;
     name: string;
-    nis: string;
+    nisn?: string;
   } | null>(null);
 
   const { data: reward, isLoading } = useReward(id);
@@ -95,7 +95,7 @@ function EditRewardPageContent() {
         setSelectedStudent({
           id: reward.student.id,
           name: reward.student.name,
-          nis: reward.student.nis,
+          nisn: reward.student.nisn,
         });
       }
     }
@@ -120,7 +120,7 @@ function EditRewardPageContent() {
   const handleSelectStudent = (student: {
     id: string;
     name: string;
-    nis: string;
+    nisn?: string;
   }) => {
     setSelectedStudent(student);
     form.setValue("studentId", student.id);
@@ -188,7 +188,7 @@ function EditRewardPageContent() {
                     <div>
                       <p className="font-medium">{selectedStudent.name}</p>
                       <p className="text-sm text-muted-foreground">
-                        {selectedStudent.nis}
+                        {selectedStudent.nisn}
                       </p>
                     </div>
                     <Button
@@ -207,7 +207,7 @@ function EditRewardPageContent() {
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                       <Input
-                        placeholder="Cari nama/NIS santri..."
+                        placeholder="Cari nama/NISN santri..."
                         className="pl-10"
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
@@ -235,11 +235,11 @@ function EditRewardPageContent() {
                                     handleSelectStudent({
                                       id: student.id,
                                       name: student.name,
-                                      nis: student.nis,
+                                      nisn: student.nisn,
                                     })
                                   }
                                 >
-                                  <TableCell>{student.nis}</TableCell>
+                                  <TableCell>{student.nisn}</TableCell>
                                   <TableCell className="font-medium">
                                     {student.name}
                                   </TableCell>

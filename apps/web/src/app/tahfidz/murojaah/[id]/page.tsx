@@ -250,7 +250,7 @@ export default function MurojaahDetailPage() {
                         {murojaah.student?.user?.name || "-"}
                       </p>
                       <p className="text-sm text-muted-foreground">
-                        {murojaah.student?.nis}
+                        {murojaah.student?.nisn}
                       </p>
                     </div>
                   </div>

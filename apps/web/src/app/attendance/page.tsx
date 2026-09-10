@@ -280,7 +280,7 @@ export default function AttendancePage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Tanggal</TableHead>
-                <TableHead>NIS</TableHead>
+                <TableHead>NISN</TableHead>
                 <TableHead>Nama Siswa</TableHead>
                 <TableHead>Kelas</TableHead>
                 <TableHead>Status</TableHead>
@@ -316,7 +316,7 @@ export default function AttendancePage() {
                       })}
                     </TableCell>
                     <TableCell className="font-mono">
-                      {attendance.student?.nis || "-"}
+                      {attendance.student?.nisn || attendance.student?.nik || "-"}
                     </TableCell>
                     <TableCell>{attendance.student?.name || "-"}</TableCell>
                     <TableCell>{attendance.class?.name || "-"}</TableCell>

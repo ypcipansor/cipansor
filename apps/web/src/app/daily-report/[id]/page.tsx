@@ -157,7 +157,7 @@ function DailyReportDetailPageContent({
                     {report.student?.user?.name}
                   </h3>
                   <p className="text-sm text-muted-foreground">
-                    {report.student?.nis}
+                    {report.student?.nisn}
                   </p>
                 </div>
               </div>
