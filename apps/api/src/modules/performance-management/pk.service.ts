@@ -7,7 +7,7 @@ import {
   RoleCode,
 } from '@prisma/client';
 import { Errors } from '@/middleware/error';
-import { seesAllUnits } from '@/utils/resolve-unit-id';
+import { seesAllUnits, FOUNDATION_SCOPE_ROLES } from '@/utils/resolve-unit-id';
 import { STAFF_ROLE_CODES } from './staff-roles';
 
 /**
@@ -138,19 +138,36 @@ export class PerformanceAgreementService {
       return this.assertUnitScope({ pkId: indicator.pkId }, caller);
     }
 
-    const ownerUnitId = target.pkId
-      ? (
-          await prisma.performanceAgreement.findUnique({
-            where: { id: target.pkId },
-            select: { user: { select: { unitId: true } } },
-          })
-        )?.user?.unitId
-      : (
-          await prisma.pKEvaluation.findUnique({
-            where: { id: target.evaluationId },
-            select: { pk: { select: { user: { select: { unitId: true } } } } },
-          })
-        )?.pk?.user?.unitId;
+    // Unit yang dimiliki sebuah PK ditentukan dari RENCANA yang diimplementasikannya
+    // (strategicPlan.unitId), bukan dari unit ASAL pegawai (user.unitId). Sebuah PK
+    // yang menginduk pada RKA/Renstra unit lain adalah milik unit pemilik rencana
+    // itu — admin unit pemilik rencana boleh, admin unit asal pegawai tidak. Ini
+    // sama dengan `resolvePkUnit` di analytics.service.ts; jangan sampai keduanya
+    // menyimpang.
+    let ownerUnitId: string | null | undefined;
+    if (target.pkId) {
+      const pk = await prisma.performanceAgreement.findUnique({
+        where: { id: target.pkId },
+        select: {
+          strategicPlan: { select: { unitId: true } },
+          user: { select: { unitId: true } },
+        },
+      });
+      ownerUnitId = pk?.strategicPlan?.unitId ?? pk?.user?.unitId;
+    } else if (target.evaluationId) {
+      const evaluation = await prisma.pKEvaluation.findUnique({
+        where: { id: target.evaluationId },
+        select: {
+          pk: {
+            select: {
+              strategicPlan: { select: { unitId: true } },
+              user: { select: { unitId: true } },
+            },
+          },
+        },
+      });
+      ownerUnitId = evaluation?.pk?.strategicPlan?.unitId ?? evaluation?.pk?.user?.unitId;
+    }
 
     // Baris tidak ada: biarkan lapisan di bawahnya yang menjawab 404, supaya
     // pemeriksaan ini tidak berubah menjadi alat penebak id.
@@ -303,7 +320,16 @@ export class PerformanceAgreementService {
   ) {
     const now = new Date();
     const canSeeAll = caller ? seesAllUnits(caller) : true;
-    const targetUnitId = !canSeeAll ? (caller?.unitId ?? 'none') : undefined;
+
+    // Unit boundary: a caller pinned to a unit sees that unit's staff — dan,
+    // di sampingnya, kandidat ber-scope yayasan/global. Assignment organ
+    // yayasan (mis. Ketua Pengurus) tidak punya unitId, sehingga filter
+    // `unitId = caller.unitId` saja membuat atasan yang WAJIB untuk rantai PK
+    // kepala unit tidak pernah muncul di daftar. `seesAllUnits`-friendly roles
+    // (FOUNDATION_SCOPE_ROLES) tetap disertakan tanpa membocorkan seluruh
+    // direktori: peran tersebut memang bekerja lintas unit. Pemanggil yang
+    // ber-scope global (`canSeeAll`) tidak dibatasi unit sama sekali.
+    const foundationRoleCodes = [...FOUNDATION_SCOPE_ROLES];
 
     const rows = await prisma.user.findMany({
       where: {
@@ -311,7 +337,6 @@ export class PerformanceAgreementService {
         userRoles: {
           some: {
             isActive: true,
-            ...(targetUnitId ? { unitId: targetUnitId } : {}),
             OR: [
               { expiresAt: null },
               { expiresAt: { gt: now } },
@@ -321,6 +346,18 @@ export class PerformanceAgreementService {
                 in: [...STAFF_ROLE_CODES],
               },
             },
+            ...(canSeeAll
+              ? {}
+              : {
+                  AND: [
+                    {
+                      OR: [
+                        ...(caller?.unitId ? [{ unitId: caller.unitId }] : []),
+                        { role: { code: { in: foundationRoleCodes } } },
+                      ],
+                    },
+                  ],
+                }),
           },
         },
       },

@@ -387,3 +387,72 @@ describe('perencanaanController — write guard pada subrecord lintas unit (Bug 
     expect(perencanaanService.createObjective).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('perencanaanController — rencana PROPOSED beku (Bug regresi #4)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const proposer = {
+    sub: 'user-1',
+    role: 'UNIT_ADMIN',
+    roleCode: 'SMPIT_ADMIN',
+    unitId: 'unit-smpit',
+  } as any;
+
+  it('menolak menambah sasaran pada plan yang sudah DIAJUKAN (PROPOSED)', async () => {
+    vi.mocked(perencanaanService.getPlanForAuth).mockResolvedValue({
+      id: 'plan-smpit',
+      unitId: 'unit-smpit',
+      status: 'PROPOSED',
+    } as any);
+
+    const { req, res } = mockReqRes({
+      user: proposer,
+      body: { planId: 'plan-smpit', title: 'Sasaran setelah pengajuan' },
+    });
+
+    await expect(run(perencanaanController.createObjective, req, res)).rejects.toThrowError(
+      /DRAFT\/IN_PROGRESS/i,
+    );
+    expect(perencanaanService.createObjective).not.toHaveBeenCalled();
+  });
+
+  it('menolak memperbarui sasaran pada plan PROPOSED melalui write gate', async () => {
+    vi.mocked(perencanaanService.getObjectivePlanForAuth).mockResolvedValue({
+      id: 'plan-smpit',
+      unitId: 'unit-smpit',
+      status: 'PROPOSED',
+    } as any);
+
+    const { req, res } = mockReqRes({
+      user: proposer,
+      params: { id: 'obj-smpit' },
+      body: { title: 'Sasaran berubah' },
+    });
+
+    await expect(run(perencanaanController.updateObjective, req, res)).rejects.toThrowError(
+      /DRAFT\/IN_PROGRESS/i,
+    );
+    expect(perencanaanService.updateObjective).not.toHaveBeenCalled();
+  });
+
+  it('mengizinkan mutasi subrecord pada plan DRAFT dan IN_PROGRESS', async () => {
+    for (const status of ['DRAFT', 'IN_PROGRESS']) {
+      vi.mocked(perencanaanService.getPlanForAuth).mockResolvedValue({
+        id: 'plan-smpit',
+        unitId: 'unit-smpit',
+        status,
+      } as any);
+      vi.mocked(perencanaanService.createObjective).mockResolvedValue({ id: 'obj-1' } as any);
+
+      const { req, res } = mockReqRes({
+        user: proposer,
+        body: { planId: 'plan-smpit', title: `Sasaran pada plan ${status}` },
+      });
+
+      await run(perencanaanController.createObjective, req, res);
+
+      expect(perencanaanService.createObjective).toHaveBeenCalledTimes(1);
+      vi.clearAllMocks();
+    }
+  });
+});

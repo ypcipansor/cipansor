@@ -57,11 +57,12 @@ type PlanAuth = { id: string; unitId: string | null; status: string };
 
 /**
  * Statuses in which a plan's subrecords may still be edited. A plan that has
- * been finalised (submitted/approved, completed, or cancelled) is frozen —
- * objectives, indicators and activities may no longer be added or changed.
- * Plans still being worked on (DRAFT, PROPOSED, IN_PROGRESS) remain editable.
+ * been finalised — including one that has been DIAJUKAN (PROPOSED) untuk
+ * persetujuan — is frozen: objectives, indicators and activities may no longer
+ * be added or changed without resubmitting. Hanya rencana yang masih disusun
+ * (DRAFT, IN_PROGRESS) yang boleh diubah subrecord-nya.
  */
-const EDITABLE_PLAN_STATUSES = new Set(['DRAFT', 'PROPOSED', 'IN_PROGRESS']);
+const EDITABLE_PLAN_STATUSES = new Set(['DRAFT', 'IN_PROGRESS']);
 
 function isEditablePlan(plan: Pick<PlanAuth, 'status'>): boolean {
   return EDITABLE_PLAN_STATUSES.has(plan.status);
@@ -70,10 +71,10 @@ function isEditablePlan(plan: Pick<PlanAuth, 'status'>): boolean {
 /**
  * Shared write gate for subrecord mutations (objective/indicator/activity).
  * Mirrors createObjective's guard: the caller must be able to write the parent
- * plan, and the plan must still be editable (DRAFT/PROPOSED/IN_PROGRESS, i.e.
- * not finalised). Without this a teacher/staff member who knows a subrecord id
- * could edit or delete another unit's (or the yayasan's) objectives, indicators
- * and activities.
+ * plan, and the plan must still be editable (DRAFT/IN_PROGRESS — PROPOSED,
+ * setelah diajukan untuk persetujuan, sudah beku). Without this a
+ * teacher/staff member who knows a subrecord id could edit or delete another
+ * unit's (or the yayasan's) objectives, indicators and activities.
  */
 function requireWritableDraftPlan(plan: PlanAuth | null | undefined, user?: PlanUser) {
   if (!plan) throw Errors.notFound('Plan not found');

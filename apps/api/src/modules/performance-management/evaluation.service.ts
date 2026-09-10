@@ -10,6 +10,27 @@ import { pkService } from './pk.service';
  * scores, weighted score roll-ups, and (on approval) YTD sync to the
  * PK plus an automated talent-matrix assessment.
  */
+/**
+ * Capaian YTD sebuah indikator dari daftar realisasi bulanannya, menurut sifat
+ * agregasi indikator. SATU-SATUNYA tempat agregasi ini didefinisikan — dipakai
+ * oleh penilaian evaluasi (`recalculateEvaluationScores`) DAN oleh sinkronisasi
+ * PK/talent (`syncToPKAndTalentInTx`). Kalau salah satu menyimpang, skor
+ * evaluasi dan capaian YTD PK tidak akan pernah selaras.
+ *
+ * `values` harus sudah terurut dari periode tertua ke terbaru agar mode
+ * TERAKHIR mengambil entri yang benar.
+ */
+function aggregateValues(values: number[], aggregation: IndicatorAggregation): number {
+  if (values.length === 0) return 0;
+  if (aggregation === IndicatorAggregation.RATA_RATA) {
+    return values.reduce((sum, v) => sum + v, 0) / values.length;
+  }
+  if (aggregation === IndicatorAggregation.TERAKHIR) {
+    return values[values.length - 1];
+  }
+  return values.reduce((sum, v) => sum + v, 0);
+}
+
 export class EvaluationService {
   // ==================== BEHAVIORAL VALUES (ADMIN) ====================
 
@@ -172,21 +193,17 @@ export class EvaluationService {
       });
       if (!detail) throw Errors.notFound('Indicator detail for this evaluation');
 
-      // Score the month: realization vs target, capped at 100.
-      const target = detail.indicator.target;
-      let score = 0;
-      if (target > 0) {
-        score = Math.min(100, (data.realization / target) * 100);
-      } else if (target === 0 && data.realization === 0) {
-        score = 100;
-      }
-
+      // Simpan realisasi bulanan MENTAH. Skor indikator tidak dihitung di sini
+      // bulan-per-bulan: untuk indikator KUMULATIF, menyentuh target setahun
+      // yang dicicil 12 bulan akan memberi skor ~1/12 pada setiap bulannya, dan
+      // merata-ratakannya pun tetap salah. Skor dihitung di
+      // `recalculateEvaluationScores` dari capaian YTD ter-agregasi (sesuai
+      // `indicator.aggregation`) dibanding target.
       const updated = await tx.pKIndicatorEvaluation.update({
         where: { id: detail.id },
         data: {
           realization: data.realization,
           activities: data.activities,
-          score,
         },
         include: { indicator: true },
       });
@@ -238,11 +255,47 @@ export class EvaluationService {
 
     if (!evaluation) return;
 
-    // Performance: weighted by indicator weight (weights total 100).
-    const performanceScore = evaluation.indicatorDetails.reduce(
-      (sum, det) => sum + (det.score * det.indicator.weight) / 100,
-      0
-    );
+    // Kumpulkan realisasi indikator di SELURUH evaluasi PK, terurut menurut
+    // tahun/bulan. Ini dasar hitung capaian YTD: skor indikator bukan jumlah
+    // skor bulanan mentah (yang untuk KUMULATIF memberi ~1/12 untuk tiap bulan
+    // yang dicicil menuju target setahun), melainkan capaian YTD ter-agregasi
+    // menurut `indicator.aggregation` dibanding target.
+    const aggs = await client.pKIndicatorEvaluation.findMany({
+      where: { evaluation: { pkId: evaluation.pkId } },
+      select: {
+        indicatorId: true,
+        realization: true,
+        evaluation: { select: { year: true, month: true } },
+      },
+      orderBy: [{ evaluation: { year: 'asc' } }, { evaluation: { month: 'asc' } }],
+    });
+    const byIndicator = new Map<string, number[]>();
+    for (const agg of aggs) {
+      const arr = byIndicator.get(agg.indicatorId) ?? [];
+      arr.push(agg.realization);
+      byIndicator.set(agg.indicatorId, arr);
+    }
+
+    // Performance: skor per indikator dari capaian YTD vs target, ditimbang
+    // bobot indikator (bobot total 100). Skor yang dihitung ini dipersist
+    // kembali ke detail evaluasi supaya nilai yang tersimpan mencerminkan
+    // capaian ter-agregasi, bukan hanya bulan yang baru saja diubah.
+    let performanceScore = 0;
+    for (const det of evaluation.indicatorDetails) {
+      const values = byIndicator.get(det.indicatorId) ?? [];
+      const achieved = aggregateValues(values, det.indicator.aggregation);
+      let indScore = 0;
+      if (det.indicator.target > 0) {
+        indScore = Math.min(100, (achieved / det.indicator.target) * 100);
+      } else if (det.indicator.target === 0 && achieved === 0) {
+        indScore = 100;
+      }
+      await client.pKIndicatorEvaluation.update({
+        where: { id: det.id },
+        data: { score: indScore },
+      });
+      performanceScore += (indScore * det.indicator.weight) / 100;
+    }
 
     // Behavior: weighted by BehavioralValue.weight (simple average when
     // all weights are equal, which is the SAFTI default).
@@ -378,16 +431,12 @@ export class EvaluationService {
     // dievaluasi 88 lalu 80, tertulis "Realisasi YTD 168 persen".
     for (const indicator of pk.indicators) {
       const entries = indicator.evaluations as Array<{ realization: number }>;
-      let realization = 0;
-      if (entries.length > 0) {
-        if (indicator.aggregation === IndicatorAggregation.RATA_RATA) {
-          realization = entries.reduce((sum, ev) => sum + ev.realization, 0) / entries.length;
-        } else if (indicator.aggregation === IndicatorAggregation.TERAKHIR) {
-          realization = entries[entries.length - 1].realization;
-        } else {
-          realization = entries.reduce((sum, ev) => sum + ev.realization, 0);
-        }
-      }
+      // `aggregateValues` sudah terurut terlebih dahulu lewat orderBy di atas,
+      // sehingga mode TERAKHIR dan RATA_RATA mengambil entri yang benar.
+      const realization = aggregateValues(
+        entries.map((ev) => ev.realization),
+        indicator.aggregation
+      );
       await tx.pKIndicator.update({
         where: { id: indicator.id },
         data: { realization },

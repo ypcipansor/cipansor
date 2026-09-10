@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { IndicatorAggregation } from '@prisma/client';
 
 vi.mock('@/lib/prisma', () => ({
   prisma: {
     performanceAgreement: { findUnique: vi.fn(), update: vi.fn() },
     pKEvaluation: { findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     pKIndicator: { update: vi.fn() },
-    pKIndicatorEvaluation: { findUnique: vi.fn(), update: vi.fn() },
+    pKIndicatorEvaluation: { findUnique: vi.fn(), update: vi.fn(), findMany: vi.fn() },
     pKBehaviorEvaluation: { findUnique: vi.fn(), update: vi.fn() },
     behavioralValue: { findMany: vi.fn() },
     talentProfile: { findUnique: vi.fn() },
@@ -25,20 +26,34 @@ describe('EvaluationService', () => {
   beforeEach(() => vi.clearAllMocks());
 
   describe('recalculateEvaluationScores', () => {
-    it('computes weighted performance, weighted SAFTI behavior, and 70/30 overall', async () => {
+    it('computes weighted performance, weighted SAFTI behavior, and overall', async () => {
       mocked.pKEvaluation.findUnique.mockResolvedValue({
         id: 'ev-1',
         pkId: 'pk-1',
         status: 'DRAFT',
         indicatorDetails: [
-          { score: 100, indicator: { weight: 60 } },
-          { score: 50, indicator: { weight: 40 } },
+          {
+            id: 'dev-1',
+            indicatorId: 'ind-1',
+            indicator: { weight: 60, target: 100, aggregation: IndicatorAggregation.KUMULATIF },
+          },
+          {
+            id: 'dev-2',
+            indicatorId: 'ind-2',
+            indicator: { weight: 40, target: 40, aggregation: IndicatorAggregation.KUMULATIF },
+          },
         ],
         behaviorDetails: [
           { score: 90, behaviorValue: { weight: 1 } },
           { score: 70, behaviorValue: { weight: 1 } },
         ],
       });
+      // YTD untuk ind-1 = 100 → skor 100; ind-2 = 20 → skor 50.
+      mocked.pKIndicatorEvaluation.findMany.mockResolvedValue([
+        { indicatorId: 'ind-1', realization: 40, evaluation: { year: 2026, month: 1 } },
+        { indicatorId: 'ind-1', realization: 60, evaluation: { year: 2026, month: 2 } },
+        { indicatorId: 'ind-2', realization: 20, evaluation: { year: 2026, month: 1 } },
+      ]);
       mocked.pKEvaluation.update.mockResolvedValue({});
 
       await evaluationService.recalculateEvaluationScores('ev-1');
@@ -49,6 +64,10 @@ describe('EvaluationService', () => {
       expect(args.data.performanceScore).toBe(80);
       expect(args.data.behaviorScore).toBe(80);
       expect(args.data.overallScore).toBeCloseTo(80);
+      // Skor yang dihitung dari capaian YTD dipersist ke detail evaluasi.
+      const scoreUpdateArgs = mocked.pKIndicatorEvaluation.update.mock.calls.map((c) => c[0]);
+      expect(scoreUpdateArgs).toContainEqual({ where: { id: 'dev-1' }, data: { score: 100 } });
+      expect(scoreUpdateArgs).toContainEqual({ where: { id: 'dev-2' }, data: { score: 50 } });
     });
 
     it('respects unequal behavioral-value weights', async () => {
@@ -62,12 +81,114 @@ describe('EvaluationService', () => {
           { score: 0, behaviorValue: { weight: 1 } },
         ],
       });
+      mocked.pKIndicatorEvaluation.findMany.mockResolvedValue([]);
       mocked.pKEvaluation.update.mockResolvedValue({});
 
       await evaluationService.recalculateEvaluationScores('ev-1');
 
       const args = mocked.pKEvaluation.update.mock.calls[0][0];
       expect(args.data.behaviorScore).toBe(75);
+    });
+
+    // Bug regresi #2 — indikator KUMULATIF dinilai dari capaian YTD ter-agregasi
+    // (jumlah seluruh bulan) dibanding target, TIDAK dari rata-rata skor bulanan
+    // mentah. Target setahun 120 yang dicicil 10/bulan selama 12 bulan harus
+    // memberi ~100, bukan ~8.
+    it('menilai indikator KUMULATIF dari capaian YTD (target 120 dicicil 12 bulan → ~100)', async () => {
+      mocked.pKEvaluation.findUnique.mockResolvedValue({
+        id: 'ev-12',
+        pkId: 'pk-1',
+        status: 'DRAFT',
+        indicatorDetails: [
+          {
+            id: 'dev-kum',
+            indicatorId: 'ind-kum',
+            indicator: { weight: 100, target: 120, aggregation: IndicatorAggregation.KUMULATIF },
+          },
+        ],
+        behaviorDetails: [],
+      });
+      mocked.pKIndicatorEvaluation.findMany.mockResolvedValue(
+        Array.from({ length: 12 }, (_, i) => ({
+          indicatorId: 'ind-kum',
+          realization: 10,
+          evaluation: { year: 2026, month: i + 1 },
+        }))
+      );
+      mocked.pKEvaluation.update.mockResolvedValue({});
+
+      await evaluationService.recalculateEvaluationScores('ev-12');
+
+      const args = mocked.pKEvaluation.update.mock.calls[0][0];
+      expect(args.data.performanceScore).toBeCloseTo(100, 5);
+      expect(mocked.pKIndicatorEvaluation.update).toHaveBeenCalledWith({
+        where: { id: 'dev-kum' },
+        data: { score: 100 },
+      });
+    });
+
+    it('menghitung skor RATA_RATA dari rata-rata realisasi bulanan', async () => {
+      mocked.pKEvaluation.findUnique.mockResolvedValue({
+        id: 'ev-rata',
+        pkId: 'pk-1',
+        status: 'DRAFT',
+        indicatorDetails: [
+          {
+            id: 'dev-rata',
+            indicatorId: 'ind-rata',
+            indicator: { weight: 100, target: 85, aggregation: IndicatorAggregation.RATA_RATA },
+          },
+        ],
+        behaviorDetails: [],
+      });
+      // Rata-rata 3 bulan = (90 + 80 + 85)/3 = 85 terhadap target 85 → 100.
+      mocked.pKIndicatorEvaluation.findMany.mockResolvedValue([
+        { indicatorId: 'ind-rata', realization: 90, evaluation: { year: 2026, month: 1 } },
+        { indicatorId: 'ind-rata', realization: 80, evaluation: { year: 2026, month: 2 } },
+        { indicatorId: 'ind-rata', realization: 85, evaluation: { year: 2026, month: 3 } },
+      ]);
+      mocked.pKEvaluation.update.mockResolvedValue({});
+
+      await evaluationService.recalculateEvaluationScores('ev-rata');
+
+      const args = mocked.pKEvaluation.update.mock.calls[0][0];
+      expect(args.data.performanceScore).toBeCloseTo(100, 5);
+      expect(mocked.pKIndicatorEvaluation.update).toHaveBeenCalledWith({
+        where: { id: 'dev-rata' },
+        data: { score: 100 },
+      });
+    });
+
+    it('mengambil periode TERAKHIR untuk indikator keadaan akhir', async () => {
+      mocked.pKEvaluation.findUnique.mockResolvedValue({
+        id: 'ev-akhir',
+        pkId: 'pk-1',
+        status: 'DRAFT',
+        indicatorDetails: [
+          {
+            id: 'dev-akhir',
+            indicatorId: 'ind-akhir',
+            indicator: { weight: 100, target: 50, aggregation: IndicatorAggregation.TERAKHIR },
+          },
+        ],
+        behaviorDetails: [],
+      });
+      // Keadaan akhir = 40 (bulan terakhir) terhadap target 50 → 80, BUKAN jumlah.
+      mocked.pKIndicatorEvaluation.findMany.mockResolvedValue([
+        { indicatorId: 'ind-akhir', realization: 25, evaluation: { year: 2026, month: 1 } },
+        { indicatorId: 'ind-akhir', realization: 15, evaluation: { year: 2026, month: 2 } },
+        { indicatorId: 'ind-akhir', realization: 40, evaluation: { year: 2026, month: 3 } },
+      ]);
+      mocked.pKEvaluation.update.mockResolvedValue({});
+
+      await evaluationService.recalculateEvaluationScores('ev-akhir');
+
+      const args = mocked.pKEvaluation.update.mock.calls[0][0];
+      expect(args.data.performanceScore).toBeCloseTo(80, 5);
+      expect(mocked.pKIndicatorEvaluation.update).toHaveBeenCalledWith({
+        where: { id: 'dev-akhir' },
+        data: { score: 80 },
+      });
     });
   });
 
