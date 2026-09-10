@@ -232,7 +232,7 @@ describe('StudentService', () => {
       expect(result.graduateYear).toBe(2026);
     });
 
-    it('should refresh the alumnus snapshot when a progressed student graduates again', async () => {
+    it('should key each graduation snapshot on (studentId, unitId, graduationYear) instead of overwriting the single row', async () => {
       const mockStudent = {
         id: 's1',
         userId: 'user-1',
@@ -256,13 +256,32 @@ describe('StudentService', () => {
 
       await service.graduateStudent('s1', 2026);
 
-      // Re-graduating a student who moved units (SD IT -> SMP IT) must refresh
-      // the existing alumnus row with the current unit/name/profile, otherwise
-      // per-unit alumni lists and analytics keep the stale prior snapshot.
+      // ISSUE #3: the Alumni row is keyed on the composite (studentId, unitId,
+      // graduationYear) so a graduation in a NEW unit/year creates its own row
+      // and never erases the Alumni snapshot from the student's prior unit. The
+      // `update` branch refreshes the profile of the SAME snapshot in place and
+      // MUST NOT mutate its composite identity (unitId / graduationYear).
       const upsertCall = (prisma.alumni.upsert as any).mock.calls[0][0];
+      expect(upsertCall.where).toEqual({
+        studentId_unitId_graduationYear: {
+          studentId: 's1',
+          unitId: 'u2',
+          graduationYear: 2026,
+        },
+      });
+      expect(upsertCall.create).toEqual(
+        expect.objectContaining({
+          studentId: 's1',
+          unitId: 'u2',
+          graduationYear: 2026,
+          registrationNo: expect.stringContaining('u2-'.toUpperCase()),
+          name: 'Student 1 Updated',
+          status: 'ACTIVE',
+        })
+      );
+      // The update branch must not move the row to another unit/year.
       expect(upsertCall.update).toEqual(
         expect.objectContaining({
-          unitId: 'u2',
           name: 'Student 1 Updated',
           gender: 'MALE',
           birthPlace: 'Bandung',
@@ -270,10 +289,11 @@ describe('StudentService', () => {
           email: 's1-new@cipansor.local',
           phone: '081298765432',
           address: 'Jl. Baru',
-          graduationYear: 2026,
           status: 'ACTIVE',
         })
       );
+      expect(upsertCall.update).not.toHaveProperty('unitId');
+      expect(upsertCall.update).not.toHaveProperty('graduationYear');
     });
 
     it('should find internal alumni by NIK or NISN', async () => {
@@ -471,6 +491,59 @@ describe('StudentService', () => {
 
       const result = await service.update('s1', { nisn: null, nik: null } as any);
       expect(result.nisn).toBeNull();
+      expect(prisma.student.update).toHaveBeenCalled();
+    });
+    it('should reject a PARTIAL clear that would leave a non-TK student without any identifier (ISSUE #6)', async () => {
+      // Bug: a payload sending only `nisn: null` (omitting `nik`) previously
+      // slipped past the "clears BOTH" guard and the non-alumni update wrote
+      // `nisn: null` while leaving `nik` untouched-but-absent, ending with a
+      // non-TK student that has neither NISN nor NIK.
+      const existingStudent = {
+        id: 's1',
+        userId: 'user-1',
+        unitId: 'unit-sdit',
+        nisn: '0012345678',
+        nik: null,
+        user: { id: 'user-1' },
+      };
+      // Send `nisn: null` while OMITTING `nik` (undefined). The effective
+      // identity after merge is (nisn=null, nik=existing=null) = empty, so a
+      // non-TK student must be rejected even though only one field was sent.
+      (prisma.student.findFirst as any).mockResolvedValue(existingStudent);
+      (prisma.unit.findFirst as any).mockResolvedValue({ id: 'unit-sdit', type: 'SD_IT' });
+
+      await expect(service.update('s1', { nisn: null } as any)).rejects.toThrow(
+        'Minimal satu identifier wajib diisi (NISN atau NIK)'
+      );
+      expect(prisma.student.update).not.toHaveBeenCalled();
+    });
+
+    it('should KEEP the existing identifier when only one field is sent (no accidental erase)', async () => {
+      const existingStudent = {
+        id: 's1',
+        userId: 'user-1',
+        unitId: 'unit-sdit',
+        nisn: '0012345678',
+        nik: null,
+        user: { id: 'user-1' },
+      };
+      // Updating `nik` while omitting `nisn` (undefined) must KEEP the retained
+      // NISN — the effective identity stays non-empty, so the update proceeds.
+      // The main student lookup returns the existing record; the NISN/NIK
+      // uniqueness probes return null (no other student holds that value).
+      (prisma.student.findFirst as any).mockResolvedValueOnce(existingStudent);
+      (prisma.student.findFirst as any).mockResolvedValue(null);
+      (prisma.unit.findFirst as any).mockResolvedValue({ id: 'unit-sdit', type: 'SD_IT' });
+      (prisma.student.update as any).mockResolvedValue({
+        id: 's1',
+        nisn: '0012345678',
+        nik: '3201000000000002',
+        status: 'active',
+      });
+
+      const result = await service.update('s1', { nik: '3201000000000002' } as any);
+      expect(result.nik).toBe('3201000000000002');
+      expect(result.nisn).toBe('0012345678');
       expect(prisma.student.update).toHaveBeenCalled();
     });
   });

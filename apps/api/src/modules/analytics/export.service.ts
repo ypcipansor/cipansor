@@ -101,7 +101,10 @@ export async function exportFinanceData(options: ExportOptions) {
   const invoices = await prisma.invoice.findMany({
     where: {
       ...(Object.keys(dateFilter).length && { createdAt: dateFilter }),
-      ...(options.unitId && { student: { unitId: options.unitId } }),
+      // ISSUE #4: filter by the invoice's OWN unit snapshot, not the mutable
+      // `student.unitId`, so progressed/re-enrolled students' historical
+      // invoices stay attributed to the unit that originally billed them.
+      ...(options.unitId && { unitId: options.unitId }),
     },
     include: {
       student: {

@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
 import { syncParentRoleAssignments, type ParentScopeClient } from '@/utils/parent-scope';
 import { assertAdmissionFeeSettled } from '@/utils/admission-fee-gate';
+import { lockRegistrantForEnrollment } from '@/utils/enrollment-lock';
 import { seesAllUnits } from '@/utils/resolve-unit-id';
 import { UnitType } from '@prisma/client';
 import { STUDENT_ROLE_CODES, resolveLegacyRoleToRoleCode } from '@/modules/auth/auth.service';
@@ -11,6 +12,26 @@ export class StudentOnboardingOrchestrator {
   /**
    * Process a registrant to become a full student.
    * Onboarding orchestrator connecting Admissions -> User -> Student -> Health -> Finance.
+   *
+   * This is the RICHER of the two enrollment paths — the other is
+   * `admissions.service.enrollRegistrant`. Its contract is locked by tests, and
+   * the divergences from `enrollRegistrant` are deliberate:
+   *
+   * - **Wallet / medical record / parent account**: created here (incipient
+   *   records) so a student onboarded through this path is immediately
+   *   wallet-ready. `enrollRegistrant` does not create these.
+   * - **REG_FEE invoice**: NOT created here. This path only enforces the
+   *   settlement gate; daftar-ulang fee minting lives in `enrollRegistrant`.
+   * - **Event bus**: emits `student:created`, `notification:send` and
+   *   `email:send_reset_token` for the student (and, when created, a parent).
+   *
+   * Shared core contract (both paths): registrant must be ACCEPTED + fee
+   * settled, the onboarding unit must match the admission period, a single
+   * User+Student (+ student RoleAssignment) is produced, the registrant flips to
+   * ENROLLED with `studentId` set, and the wave accepted-count is decremented.
+   *
+   * Concurrency: the registrant row is locked with `SELECT ... FOR UPDATE`
+   * before the ACCEPTED check (issue #1).
    */
   static async processEnrollment(
     registrantId: string,
@@ -34,7 +55,14 @@ export class StudentOnboardingOrchestrator {
         throw Errors.notFound('Registrant');
       }
 
-      if (registrant.status !== 'ACCEPTED') {
+      // CONCURRENCY (issue #1): the unique index on registrants.student_id was
+      // dropped to allow cross-unit re-enrollment, so the DB can no longer stop
+      // two concurrent enrollment requests from promoting the SAME registrant.
+      // Acquire a pessimistic row lock and re-check the status AFTER the lock is
+      // held — the second waiter observes the committed `ENROLLED` status and
+      // aborts instead of creating a duplicate orphaned User/Student pair.
+      const lockedStatus = await lockRegistrantForEnrollment(tx, registrant.id);
+      if (lockedStatus !== 'ACCEPTED') {
         throw Errors.badRequest('Only ACCEPTED registrants can be enrolled');
       }
 

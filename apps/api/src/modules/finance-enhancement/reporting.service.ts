@@ -625,7 +625,10 @@ export async function getCashFlowForecast(unitId: string, months: number = 6) {
   // (mirroring the overdue PR backlog behavior below).
   const pendingInvoices = await prisma.invoice.findMany({
     where: {
-      student: { unitId },
+      // ISSUE #4: use the invoice's OWN unit snapshot, not the mutable
+      // `student.unitId`, so receivables stay in the unit that billed them even
+      // after the student progresses/re-enrols.
+      unitId,
       status: { in: ['PENDING', 'PARTIAL'] },
       dueDate: { lte: endDate },
     },

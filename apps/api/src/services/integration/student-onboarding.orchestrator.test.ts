@@ -69,7 +69,7 @@ describe('StudentOnboardingOrchestrator', () => {
         unit: {
           findUnique: vi.fn().mockResolvedValue({ type: 'SMP' }),
         },
-        $queryRaw: vi.fn().mockResolvedValue([]),
+        $queryRaw: vi.fn().mockResolvedValue([{ status: 'ACCEPTED' }]),
         $executeRaw: vi.fn().mockResolvedValue(1),
         student: {
           create: vi.fn().mockResolvedValue({ id: 'stud-1', nisn: 'NISN-2026-SMP-0001' }),
@@ -207,6 +207,8 @@ describe('StudentOnboardingOrchestrator', () => {
 
     it('should revoke ONLY the student role in other units and upsert on internal-alumni re-enrollment', async () => {
       const txMock = {
+        // ISSUE #1: concurrency lock re-checks ACCEPTED via $queryRaw.
+        $queryRaw: vi.fn().mockResolvedValue([{ status: 'ACCEPTED' }]),
         registrant: {
           findUnique: vi.fn().mockResolvedValue({
             id: 'reg-2',
@@ -330,6 +332,8 @@ describe('StudentOnboardingOrchestrator', () => {
 
     it('should reject a non-TK student without any permanent identifier', async () => {
       const txMock = {
+        // ISSUE #1: concurrency lock re-checks ACCEPTED via $queryRaw.
+        $queryRaw: vi.fn().mockResolvedValue([{ status: 'ACCEPTED' }]),
         registrant: {
           findUnique: vi.fn().mockResolvedValue({
             id: 'reg-3',
@@ -396,6 +400,8 @@ describe('StudentOnboardingOrchestrator', () => {
 
     it('should reject a caller pinned to a different unit than the target unit', async () => {
       const txMock = {
+        // ISSUE #1: concurrency lock re-checks ACCEPTED via $queryRaw.
+        $queryRaw: vi.fn().mockResolvedValue([{ status: 'ACCEPTED' }]),
         registrant: {
           findUnique: vi.fn().mockResolvedValue({
             id: 'reg-4',
@@ -454,6 +460,8 @@ describe('StudentOnboardingOrchestrator', () => {
     it('should let a unit-pinned target-unit caller relink a cross-unit alumnus (progression)', async () => {
       const alumnus = { id: 'alum-9', userId: 'user-alum-1', nisn: '0012345678', nik: null };
       const txMock = {
+        // ISSUE #1: concurrency lock re-checks ACCEPTED via $queryRaw.
+        $queryRaw: vi.fn().mockResolvedValue([{ status: 'ACCEPTED' }]),
         registrant: {
           findUnique: vi.fn().mockResolvedValue({
             id: 'reg-4',
@@ -539,6 +547,8 @@ describe('StudentOnboardingOrchestrator', () => {
 
     it('should NOT relink an ACTIVE student in another unit (no take-over)', async () => {
       const txMock = {
+        // ISSUE #1: concurrency lock re-checks ACCEPTED via $queryRaw.
+        $queryRaw: vi.fn().mockResolvedValue([{ status: 'ACCEPTED' }]),
         registrant: {
           findUnique: vi.fn().mockResolvedValue({
             id: 'reg-4',

@@ -524,10 +524,26 @@ export class StudentService {
       },
     });
 
-    // Upsert Alumni record to keep alumni module synchronized
-    const registrationNo = `ALM-${currentYear}-${id.slice(0, 8).toUpperCase()}`;
+    // ISSUE #3 (a graduation snapshot must never erase a prior unit's alumni
+    // record): the Alumni row is keyed on the composite (studentId, unitId,
+    // graduationYear), so each graduation is its own immutable snapshot. A
+    // progressed student who graduates from unit B keeps the Alumni row created
+    // when they graduated from unit A — unit A's alumni list/analytics are not
+    // clobbered. Re-graduating the same (student, unit, year) refreshes that one
+    // snapshot in place (idempotent) instead of duplicating it. Per-unit history
+    // stays in per-record snapshots: `Alumni.unitId` (this row), `ClassEnrollment
+    // -> Class.unitId`, and `Invoice.unitId` — never the mutable `student.unitId`.
+    const registrationNo = `ALM-${currentYear}-${student.unitId
+      .slice(0, 4)
+      .toUpperCase()}-${id.slice(0, 8).toUpperCase()}`;
     await tx.alumni.upsert({
-      where: { studentId: id },
+      where: {
+        studentId_unitId_graduationYear: {
+          studentId: id,
+          unitId: student.unitId,
+          graduationYear: currentYear,
+        },
+      },
       create: {
         studentId: id,
         unitId: student.unitId,
@@ -544,24 +560,15 @@ export class StudentService {
         status: 'ACTIVE',
       },
       update: {
-        // `student.unitId` is the CURRENT ACTIVE unit (root AGENTS.md golden
-        // rule #4/5). The Alumni row therefore mirrors the unit the student
-        // graduated from THIS time. Per-unit history is NOT derived from the
-        // mutable `student.unitId` — it lives in per-record snapshots:
-        // - Graduations: `Alumni.unitId` (this row) + `AlumniEducation` rows.
-        // - Enrolments: `ClassEnrollment` -> `Class.unitId` (rows are marked
-        //   'completed', never deleted, when a student progresses).
-        // - Finance: `Invoice.unitId`.
-        unitId: student.unitId,
+        registrationNo,
         name: student.user.name,
         gender: student.gender,
         birthPlace: student.birthPlace,
         birthDate: student.birthDate,
+        graduationDate: effectiveDate,
         email: student.user.email,
         phone: student.parentPhone,
         address: student.address,
-        graduationYear: currentYear,
-        graduationDate: effectiveDate,
         status: 'ACTIVE',
       },
     });
@@ -727,14 +734,17 @@ export class StudentService {
     }
 
     // INTEGRITY (mirrors the create-stage rule): an update must not wipe a
-    // non-TK student's permanent identity. A payload that clears BOTH NISN and
-    // NIK (null or '' — the schema treats empty string as absent) is only
-    // allowed when the student had no identifier to begin with, or when they
-    // belong to TK_QURAN (the documented exception).
-    const clearingBoth =
-      (input.nisn === null || input.nisn === '') &&
-      (input.nik === null || input.nik === '');
-    if (clearingBoth && (student.nisn || student.nik)) {
+    // non-TK student's permanent identity. Issued #6: checking only "both fields
+    // sent as null" is insufficient — a payload that sends `nisn: null` while
+    // omitting `nik` (undefined) previously escaped the guard and left a non-TK
+    // student with neither NISN nor NIK. Resolve the EFFECTIVE value per field
+    // (new value when present in the payload, existing value when the field is
+    // omitted) and reject if the merged outcome leaves a non-TK student without
+    // any identifier. Applied uniformly to the alumni and non-alumni update
+    // paths, not just when both fields are sent explicitly.
+    const effectiveNisn = input.nisn === undefined ? student.nisn : (input.nisn || null);
+    const effectiveNik = input.nik === undefined ? student.nik : (input.nik || null);
+    if (!effectiveNisn && !effectiveNik && (student.nisn || student.nik)) {
       const unit = await prisma.unit.findFirst({ where: { id: student.unitId } });
       if (unit && unit.type !== UnitType.TK_QURAN) {
         throw Errors.badRequest('Minimal satu identifier wajib diisi (NISN atau NIK)');

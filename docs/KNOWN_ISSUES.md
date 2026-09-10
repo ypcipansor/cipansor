@@ -394,6 +394,32 @@ tests (`dead-links`, `rbac`, `host-split`).
 The lookup endpoint stays staff-only (`STUDENT_CREATE` permission), so it is
 deliberately not called from the anonymous SPMB public form.
 
+## 🟡 OPEN — per-unit historical snapshots vs the mutable `student.unitId` (2026-09-09)
+
+Student progression mutates `students.unit_id`, so any per-unit query that
+filters through `student.unitId` will silently move a progressed/re-enrolled
+student's historical rows into their **current** unit. The snapshot-bearing
+surfaces were moved onto their own stable unit column:
+
+- `Invoice.unitId` (migration `20260908000000_invoice_unit_snapshot`; written by
+  `financeService.createInvoice`, consumed by the reporting, analytics-finance
+  export/forecast, dashboard `getFinanceStats`/overdue-invoice alert and
+  finance-enhancement queries).
+- `Alumni` graduation rows are now per `(studentId, unitId, graduationYear)`
+  (migration `20260909000000_alumni_snapshot_per_unit_year`).
+- `ClassEnrollment` was already immutable in practice (rows are marked
+  `completed`, never deleted, when a student progresses) and the unit is read
+  via `Class.unitId`.
+
+Surfaces that still filter by the mutable `student.unitId` and have **no** per-row
+unit snapshot yet — attendance, tahfidz records, violations, permits, rewards,
+health records, and the dairy/canteen/laundry aggregates — are known debt:
+they are operational-current data (a student's activity while enrolled in their
+present unit), but adding a `unitId` snapshot to each is tracked as future work.
+A thin per-record snapshot such as `Invoice.unitId` is the established pattern to
+follow rather than re-introducing any dependence on `student.unitId` for
+history.
+
 ## 🔴 OPEN — decisions, not repairs (2026-08-15)
 
 Found while closing #401/#402. Each is a real defect or a real risk, and each

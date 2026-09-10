@@ -57,6 +57,10 @@ vi.mock('@/lib/prisma', () => ({
       updateMany: vi.fn(),
     },
     $transaction: vi.fn((cb) => cb(prisma)),
+    // ISSUE #1 concurrency lock: enrollRegistrant re-checks the ACCEPTED status
+    // from a `SELECT ... FOR UPDATE` on the registrant row. Default to ACCEPTED
+    // so happy-path tests keep passing; concurrency tests override per-case.
+    $queryRaw: vi.fn().mockResolvedValue([{ status: 'ACCEPTED' }]),
   },
 }));
 
@@ -194,19 +198,28 @@ describe('Admissions Service', () => {
       );
     });
 
-    it('should deactivate only the STUDENT role and upsert on re-enrollment to the same unit', async () => {
+    it('should deactivate only the STUDENT role and upsert when re-enrolling an email-owner alumnus', async () => {
       const mockStudent = {
         id: 'student-1',
         nisn: '0012345678',
         nik: '3201000000000001',
+        status: 'active',
       };
       vi.mocked(prisma.registrant.findUnique).mockResolvedValue(
         buildRegistrant({ email: 'budi@example.com' }) as any
       );
-      // Existing user, but this user has no student record yet.
+      // The email is owned by a user whose linked student is an ALUMNUS — a
+      // legitimate re-enrolment, so we reuse that user and reactivate the
+      // alumnus record (issue #5 restricts reuse to alumni owners only).
       vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: 'user-1' } as any);
-      vi.mocked(prisma.student.findUnique).mockResolvedValue(null);
-      vi.mocked(prisma.student.create).mockResolvedValue(mockStudent as any);
+      vi.mocked(prisma.student.findUnique).mockResolvedValue({
+        id: 'student-x',
+        userId: 'user-1',
+        status: 'alumni',
+        nisn: '0012345678',
+        nik: '3201000000000001',
+      } as any);
+      vi.mocked(prisma.student.update).mockResolvedValue(mockStudent as any);
       vi.mocked(prisma.role.findFirst).mockResolvedValue({
         id: 'role-1',
         code: 'SMPIT_SISWA',
@@ -251,6 +264,119 @@ describe('Admissions Service', () => {
           isActive: true,
         },
       });
+    });
+
+    it('should NOT take over another account\'s ACTIVE student via email reuse (ISSUE #5)', async () => {
+      const mockStudent = {
+        id: 'student-1',
+        nisn: '0012345678',
+        nik: '3201000000000001',
+      };
+      vi.mocked(prisma.registrant.findUnique).mockResolvedValue(
+        buildRegistrant({ email: 'activekid@example.com' }) as any
+      );
+      // The email belongs to a user who owns an ACTIVE student in another unit.
+      // Reusing that record to "reactivate" this registrant would be a take-over.
+      // The registrant must get a FRESH user (unique student email) + fresh student.
+      vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: 'user-active' } as any);
+      vi.mocked(prisma.student.findUnique).mockResolvedValue({
+        id: 'student-active',
+        userId: 'user-active',
+        status: 'active',
+        unitId: 'unit-other',
+        nisn: '0099887766',
+        nik: '3201000000000999',
+      } as any);
+      vi.mocked(prisma.student.create).mockResolvedValue(mockStudent as any);
+      vi.mocked(prisma.user.create).mockResolvedValue({ id: 'user-fresh' } as any);
+      vi.mocked(prisma.role.findFirst).mockResolvedValue({
+        id: 'role-1',
+        code: 'SMPIT_SISWA',
+      } as any);
+      vi.mocked(prisma.userRoleAssignment.create).mockResolvedValue({ id: 'ura-1' } as any);
+
+      await service.enrollRegistrant('reg-1', {});
+
+      // The claimed email owner's student must NOT be touched...
+      expect(prisma.student.update).not.toHaveBeenCalled();
+      // ...and a brand-new user is created with a UNIQUE address (juggernaut to
+      // P2002 on User.email and to hijacking the active account).
+      const createdUser = (prisma.user.create as any).mock.calls[0][0].data;
+      expect(createdUser.email).not.toBe('activekid@example.com');
+      expect(String(createdUser.email)).toMatch(/@student\.cipansor\.or\.id$/);
+      expect(prisma.student.create).toHaveBeenCalled();
+    });
+
+    it('should NOT create a REG_FEE invoice when daftar ulang fee is already settled (ISSUE #2)', async () => {
+      const mockStudent = { id: 'student-1', nisn: '0012345678', nik: '3201000000000001' };
+      vi.mocked(prisma.registrant.findUnique).mockResolvedValue(
+        buildRegistrant({
+          email: 'paid@example.com',
+          registrationFeePaidAt: new Date('2026-07-01'),
+          admissionPeriod: {
+            unitId: 'unit-1',
+            registrationFee: 500000,
+            unit: { id: 'unit-1', type: 'SMP_IT' },
+          },
+        }) as any
+      );
+      vi.mocked(prisma.user.findUnique).mockResolvedValue(null);
+      vi.mocked(prisma.user.create).mockResolvedValue({ id: 'user-1' } as any);
+      vi.mocked(prisma.student.create).mockResolvedValue(mockStudent as any);
+      vi.mocked(prisma.role.findFirst).mockResolvedValue({
+        id: 'role-1',
+        code: 'SMPIT_SISWA',
+      } as any);
+      vi.mocked(prisma.userRoleAssignment.create).mockResolvedValue({ id: 'ura-1' } as any);
+      // REG_FEE payment type exists — but must NOT be used because fee is settled.
+      vi.mocked(prisma.paymentType.findFirst).mockResolvedValue({ id: 'pt1' } as any);
+
+      await service.enrollRegistrant('reg-1', {});
+
+      // ISSUE #2: a family that already paid daftar ulang must not be billed a
+      // fresh outstanding REG_FEE invoice for the same fee.
+      expect(prisma.paymentType.findFirst).not.toHaveBeenCalled();
+      expect(prisma.invoice.create).not.toHaveBeenCalled();
+    });
+
+    it('should reject a registrant whose row is locked as no-longer-ACCEPTED (ISSUE #1 concurrency)', async () => {
+      vi.mocked(prisma.registrant.findUnique).mockResolvedValue(buildRegistrant() as any);
+      // The `SELECT ... FOR UPDATE` lock reads status AFTER locking; a concurrent
+      // transaction already enrolled this registrant, so the locked status is now
+      // ENROLLED and the second request must abort instead of creating duplicates.
+      // `mockResolvedValueOnce` so later tests keep the ACCEPTED default.
+      vi.mocked(prisma.$queryRaw).mockResolvedValueOnce([{ status: 'ENROLLED' }]);
+
+      await expect(service.enrollRegistrant('reg-1', {})).rejects.toThrow(
+        'Registrant must be accepted before enrollment'
+      );
+      expect(prisma.student.create).not.toHaveBeenCalled();
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it('locks the enrollRegistrant contract (FLAG #7): leaner side-effects than processEnrollment', async () => {
+      const mockStudent = { id: 'student-1', nisn: '0012345678', nik: '3201000000000001' };
+      vi.mocked(prisma.registrant.findUnique).mockResolvedValue(buildRegistrant() as any);
+      vi.mocked(prisma.user.findUnique).mockResolvedValue(null);
+      vi.mocked(prisma.user.create).mockResolvedValue({ id: 'user-1' } as any);
+      vi.mocked(prisma.student.create).mockResolvedValue(mockStudent as any);
+      vi.mocked(prisma.role.findFirst).mockResolvedValue({
+        id: 'role-1',
+        code: 'SMPIT_SISWA',
+      } as any);
+      vi.mocked(prisma.userRoleAssignment.create).mockResolvedValue({ id: 'ura-1' } as any);
+
+      await service.enrollRegistrant('reg-1', {});
+
+      // Shared core contract with processEnrollment:
+      expect(prisma.user.create).toHaveBeenCalled();
+      expect(prisma.student.create).toHaveBeenCalled();
+
+      // Documented divergence (FLAG #7): this path does NOT create the wallet,
+      // medical record, or parent account — those belong to processEnrollment.
+      // KEEPING THIS TEST DELIBERATELY SILENT here locks the "leaner path"
+      // contract (a toddler parent portal / wallet lazy-creation flow).
+      expect(prisma.userRoleAssignment.create).toHaveBeenCalled();
     });
 
     it('should throw when enrolling a non-TK student without any permanent identifier', async () => {

@@ -1127,7 +1127,9 @@ model Student {
   medicationUsage             MedicationUsageLog[]
   grades                      Grade[]
   reportCards                 ReportCard[]
-  alumniRecord                Alumni? // Link ke data alumni jika sudah lulus
+  // Alumni graduation snapshots: a student has MANY (one per (unit, year)) once
+  // a student progresses across units; each graduation keeps its own row.
+  alumni                      Alumni[]
   // New relations for Phase 8
   takhosusEnrollment          TakhosusEnrollment?
   dailyMuhasabah              DailyMuhasabah[]
@@ -2948,7 +2950,7 @@ enum AlumniEventType {
 /// Alumni - Data Alumni/Lulusan
 model Alumni {
   id             String       @id @default(uuid())
-  studentId      String?      @unique @map("student_id") // Link ke data santri
+  studentId      String?      @map("student_id") // Link ke data santri
   unitId         String       @map("unit_id")
   registrationNo String       @unique @map("registration_no") // Nomor alumni
   name           String // Nama lengkap
@@ -2980,6 +2982,10 @@ model Alumni {
   donations        AlumniDonation[]
   eventAttendances AlumniEventAttendee[]
 
+  // A student graduates once per (unit, year). Each graduation is its own
+  // immutable snapshot so a progressed student graduating from unit B keeps the
+  // Alumni row created when they graduated from unit A instead of overwriting it.
+  @@unique([studentId, unitId, graduationYear])
   @@index([unitId])
   @@index([graduationYear])
   @@index([status])

@@ -1,4 +1,4 @@
-import { randomBytes } from 'crypto';
+import { randomBytes, randomUUID } from 'crypto';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../../lib/prisma';
 import { Prisma, AdmissionStatus, Gender, UnitType } from '@prisma/client';
@@ -17,6 +17,7 @@ import {
 import { Errors } from '../../middleware/error';
 import { seesAllUnits } from '../../utils/resolve-unit-id';
 import { assertAdmissionFeeSettled } from '../../utils/admission-fee-gate';
+import { lockRegistrantForEnrollment } from '../../utils/enrollment-lock';
 
 type CreateRegistrantExtendedInput = CreateRegistrantInput;
 
@@ -528,6 +529,36 @@ export async function updateRegistrantStatus(id: string, data: UpdateRegistrantS
   });
 }
 
+/**
+ * Enroll an accepted registrant as a full student (SPMB admissions path).
+ *
+ * This is the LIGHTER of the two enrollment paths — the other is
+ * `StudentOnboardingOrchestrator.processEnrollment`. The divergences below are
+ * known and locked by contract tests (`enrollRegistrant` vs `processEnrollment`
+ * in the admissions service tests):
+ *
+ * - **Wallet / medical record / parent account** (present in `processEnrollment`
+ *   only): `enrollRegistrant` deliberately does NOT create these. The wallet is
+ *   auto-created lazily by `getOrCreateWallet` on first use; medical records are
+ *   entry-based and read-only here; and parent linking on this path is expected
+ *   to be handled through the PPSB/parent portal, not at enrollment.
+ * - **REG_FEE invoice** (present in `enrollRegistrant` only, when the fee is
+ *   unsettled): the admissions path is where SPMB daftar-ulang fees are minted.
+ *   `processEnrollment` never bills REG_FEE — it only enforces the settlement
+ *   gate. After issue #2 a settled fee is never re-invoiced on either path.
+ * - **Event bus** (present in `processEnrollment` only): the orchestrator emits
+ *   `student:created` / password-reset notifications; the legacy admissions
+ *   path leaves account-creation notifications to downstream flows.
+ *
+ * Shared core contract (both paths): registrant must be ACCEPTED + fee settled,
+ * the caller must be scoped to (or see) the admission period's unit, a single
+ * User+Student (+student RoleAssignment) is produced, the registrant flips to
+ * ENROLLED with `studentId` set, and the wave accepted-count is decremented.
+ *
+ * Concurrency: the registrant row is locked with `SELECT ... FOR UPDATE` before
+ * the ACCEPTED check so two concurrent enrollments cannot both promote the same
+ * registrant into separate orphaned User/Student pairs (issue #1).
+ */
 export async function enrollRegistrant(
   registrantId: string,
   studentData: {
@@ -552,7 +583,15 @@ export async function enrollRegistrant(
     });
 
     if (!registrant) throw new Error('Registrant not found');
-    if (registrant.status !== AdmissionStatus.ACCEPTED) {
+
+    // CONCURRENCY (issue #1): the unique index on registrants.student_id was
+    // dropped to allow cross-unit re-enrollment, so the DB can no longer stop
+    // two concurrent enrollment requests from promoting the SAME registrant.
+    // Acquire a pessimistic row lock and re-check the status AFTER the lock is
+    // held: the second waiter observes the committed `ENROLLED` status and
+    // aborts instead of creating a duplicate orphaned User/Student pair.
+    const lockedStatus = await lockRegistrantForEnrollment(tx, registrantId);
+    if (lockedStatus !== AdmissionStatus.ACCEPTED) {
       throw new Error('Registrant must be accepted before enrollment');
     }
 
@@ -713,61 +752,49 @@ export async function enrollRegistrant(
           })
         : null;
 
-      if (existingUser) {
+      // ISSUE #5 (email reuse must not take over another account's student):
+      // matching by email alone is not proof the registrant owns that record.
+      // Reusing an existing user is only safe when that user's linked student
+      // is an ALUMNUS (a legitimate re-enrolment of the email owner) — never an
+      // ACTIVE student in another unit. A parent/staff account that merely holds
+      // the same email, or a user owning an active student, must NOT have that
+      // record commandeered/moved; the registrant falls back to a brand-new
+      // student with a unique address (mirrors the onboarding orchestrator).
+      const existingStudentForUser = existingUser
+        ? await tx.student.findUnique({
+            where: { userId: existingUser.id },
+          })
+        : null;
+      const canReactivate = !!existingUser && existingStudentForUser?.status === 'alumni';
+
+      if (existingUser && canReactivate) {
+        // Legitimate re-enrolment: the registrant's email owns an ALUMNUS
+        // student. Reactivate that record under the same user.
         user = existingUser;
-        // Student.userId is unique: if this user already owns a student record,
-        // creating another would fail with P2002. Reactivate the existing record
-        // instead of re-creating it.
-        const existingStudentForUser = await tx.student.findUnique({
-          where: { userId: user.id },
+        student = await tx.student.update({
+          where: { id: existingStudentForUser!.id },
+          data: {
+            unitId: registrant.admissionPeriod.unitId,
+            status: 'active',
+            nisn:
+              studentData.nisn ||
+              registrant.nisn ||
+              registrant.internalNisn ||
+              existingStudentForUser!.nisn,
+            nik:
+              studentData.nik ||
+              registrant.nik ||
+              registrant.internalNik ||
+              existingStudentForUser!.nik,
+            graduateYear: null,
+          },
         });
 
-        if (existingStudentForUser) {
-          student = await tx.student.update({
-            where: { id: existingStudentForUser.id },
-            data: {
-              unitId: registrant.admissionPeriod.unitId,
-              status: 'active',
-              nisn:
-                studentData.nisn ||
-                registrant.nisn ||
-                registrant.internalNisn ||
-                existingStudentForUser.nisn,
-              nik:
-                studentData.nik ||
-                registrant.nik ||
-                registrant.internalNik ||
-                existingStudentForUser.nik,
-              graduateYear: null,
-            },
-          });
+        await tx.classEnrollment.updateMany({
+          where: { studentId: student.id, status: 'active' },
+          data: { status: 'completed' },
+        });
 
-          await tx.classEnrollment.updateMany({
-            where: { studentId: student.id, status: 'active' },
-            data: { status: 'completed' },
-          });
-        } else {
-          student = await tx.student.create({
-            data: {
-              userId: user.id,
-              unitId: registrant.admissionPeriod.unitId,
-              nisn: studentData.nisn || registrant.nisn || registrant.internalNisn,
-              nik: studentData.nik || registrant.nik || registrant.internalNik,
-              gender: registrant.gender,
-              birthPlace: registrant.birthPlace,
-              birthDate: registrant.birthDate,
-              address: registrant.address,
-              parentName: registrant.parentName,
-              parentPhone: registrant.parentPhone,
-              parentEmail: registrant.parentEmail,
-              status: 'active',
-              entryYear: new Date().getFullYear(),
-            },
-          });
-        }
-
-        // Ensure the target unit has an active primary student assignment; the
-        // legacy `role` field is no longer written on new flows.
         const targetRoleCode = resolveLegacyRoleToRoleCode(
           'STUDENT',
           registrant.admissionPeriod.unit.type
@@ -775,10 +802,9 @@ export async function enrollRegistrant(
         if (targetRoleCode) {
           const studentRole = await tx.role.findFirst({ where: { code: targetRoleCode } });
           if (studentRole) {
-            // Only deactivate the STUDENT role in other units so a re-enrolling
-            // student keeps other active roles (teacher/staff). Use ALL student
-            // role ids — a progressed student's old unit has a different roleId —
-            // so cross-unit student access is fully revoked.
+            // Revoke the student's other-unit STUDENT roles (a progressed student's
+            // old unit has a different roleId) but leave unrelated guru/staf/parent
+            // roles untouched.
             const studentRoles = await tx.role.findMany({
               where: { code: { in: STUDENT_ROLE_CODES } },
               select: { id: true },
@@ -820,12 +846,25 @@ export async function enrollRegistrant(
           }
         }
       } else {
+        // Fresh student for this registrant. If the registrant's email is
+        // already claimed by another account (parent/staff/active student),
+        // reuse would hijack it or violate User.email uniqueness (P2002) — fall
+        // back to a unique student address, exactly like the onboarding
+        // orchestrator does.
+        let userEmail =
+          registrant.email ||
+          `${studentData.nisn || randomBytes(8).toString('hex')}@student.cipansor.or.id`;
+        if (registrant.email) {
+          const emailOwner = await tx.user.findUnique({ where: { email: registrant.email } });
+          if (emailOwner) {
+            userEmail = `${studentData.nisn || randomUUID()}@student.cipansor.or.id`;
+          }
+        }
+
         user = await tx.user.create({
           data: {
             name: registrant.fullName,
-            email:
-              registrant.email ||
-              `${studentData.nisn || randomBytes(8).toString('hex')}@student.cipansor.or.id`,
+            email: userEmail,
             passwordHash: prehashedPassword,
             unitId: registrant.admissionPeriod.unitId,
             isActive: true,
@@ -922,7 +961,16 @@ export async function enrollRegistrant(
     }
 
     const period = registrant.admissionPeriod;
-    if (period && Number(period.registrationFee) > 0) {
+    // ISSUE #2 (paid fee must not be re-billed): `assertAdmissionFeeSettled`
+    // above guarantees that by this point either the fee is 0/nil (nothing is
+    // owed) or `registrationFeePaidAt` is set (daftar ulang already settled).
+    // Creating a fresh REG_FEE invoice when the fee is already settled would
+    // bill the family a NEW outstanding debt for the same daftar ulang. Only
+    // mint an invoice when there is still an unsettled amount — and because the
+    // gate forbids enrolling with an outstanding fee, this branch is effectively
+    // reachable only for fee > 0 that is settled, which we skip.
+    const feeSettled = registrant.registrationFeePaidAt != null;
+    if (period && Number(period.registrationFee) > 0 && !feeSettled) {
       const paymentType = await tx.paymentType.findFirst({
         where: { unitId: period.unitId, code: 'REG_FEE' },
       });

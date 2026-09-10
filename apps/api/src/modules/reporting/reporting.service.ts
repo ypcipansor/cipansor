@@ -221,7 +221,11 @@ class ReportingService {
 
   private async generateFinancialSummaryReport(filters: ReportFilter) {
     const invoiceWhere = {
-      ...(filters.unitId && { student: { unitId: filters.unitId } }),
+      // ISSUE #4: filter by the invoice's OWN unit snapshot (Invoice.unitId),
+      // never the mutable `student.unitId`, so a progressed/re-enrolled student's
+      // historical invoices stay attributed to the unit that originally billed
+      // them instead of migrating to the student's current unit.
+      ...(filters.unitId && { unitId: filters.unitId }),
       ...(filters.startDate &&
         filters.endDate && {
           createdAt: { gte: filters.startDate, lte: filters.endDate },
@@ -262,7 +266,10 @@ class ReportingService {
     const statusFilter = filters.status ? { status: filters.status as PaymentStatus } : {};
 
     const where: Prisma.InvoiceWhereInput = {
-      ...(filters.unitId && { student: { unitId: filters.unitId } }),
+      // ISSUE #4: filter by the invoice's OWN unit snapshot (Invoice.unitId),
+      // not the mutable `student.unitId`, so historical invoices stay with the
+      // unit that billed them even after the student progresses/re-enrols.
+      ...(filters.unitId && { unitId: filters.unitId }),
       ...statusFilter,
       ...(filters.startDate &&
         filters.endDate && {
