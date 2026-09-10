@@ -56,17 +56,30 @@ function canWritePlan(planUnitId: string | null, user?: PlanUser): boolean {
 type PlanAuth = { id: string; unitId: string | null; status: string };
 
 /**
+ * Statuses in which a plan's subrecords may still be edited. A plan that has
+ * been finalised (submitted/approved, completed, or cancelled) is frozen —
+ * objectives, indicators and activities may no longer be added or changed.
+ * Plans still being worked on (DRAFT, PROPOSED, IN_PROGRESS) remain editable.
+ */
+const EDITABLE_PLAN_STATUSES = new Set(['DRAFT', 'PROPOSED', 'IN_PROGRESS']);
+
+function isEditablePlan(plan: Pick<PlanAuth, 'status'>): boolean {
+  return EDITABLE_PLAN_STATUSES.has(plan.status);
+}
+
+/**
  * Shared write gate for subrecord mutations (objective/indicator/activity).
  * Mirrors createObjective's guard: the caller must be able to write the parent
- * plan, and the plan must still be DRAFT. Without this a teacher/staff member
- * who knows a subrecord id could edit or delete another unit's (or the
- * yayasan's) objectives, indicators and activities.
+ * plan, and the plan must still be editable (DRAFT/PROPOSED/IN_PROGRESS, i.e.
+ * not finalised). Without this a teacher/staff member who knows a subrecord id
+ * could edit or delete another unit's (or the yayasan's) objectives, indicators
+ * and activities.
  */
 function requireWritableDraftPlan(plan: PlanAuth | null | undefined, user?: PlanUser) {
   if (!plan) throw Errors.notFound('Plan not found');
   if (!canWritePlan(plan.unitId, user)) throw Errors.forbidden('Access denied');
-  if (plan.status !== 'DRAFT') {
-    throw Errors.badRequest('Hanya dapat mengubah subrecord pada rencana berstatus DRAFT');
+  if (!isEditablePlan(plan)) {
+    throw Errors.badRequest('Hanya dapat mengubah subrecord pada rencana berstatus DRAFT/IN_PROGRESS');
   }
 }
 
@@ -235,15 +248,16 @@ export const createObjective = asyncHandler(async (req: Request, res: Response) 
   const body = createObjectiveSchema.parse(req.body);
   // Sasaran adalah mutasi pada rencana induk: cek akses tulis yang sama dengan
   // updatePlan — harus bisa menulis unit plan tersebut, dan plan harus masih
-  // DRAFT. Tanpa ini guru/staf biasa dapat menambah sasaran ke plan yayasan
-  // atau unit lain hanya dengan tahu planId-nya.
+  // dalam status yang dapat diedit (belum difinalisasi). Tanpa ini guru/staf
+  // biasa dapat menambah sasaran ke plan yayasan atau unit lain hanya dengan
+  // tahu planId-nya.
   const plan = await perencanaanService.getPlanForAuth(body.planId);
   if (!plan) throw Errors.notFound('Plan not found');
   if (!canWritePlan(plan.unitId, req.user)) {
     throw Errors.forbidden('Access denied');
   }
-  if (plan.status !== 'DRAFT') {
-    throw Errors.badRequest('Hanya dapat menambah sasaran pada rencana berstatus DRAFT');
+  if (!isEditablePlan(plan)) {
+    throw Errors.badRequest('Hanya dapat menambah sasaran pada rencana berstatus DRAFT/IN_PROGRESS');
   }
   const objective = await perencanaanService.createObjective(body);
   res.status(201).json({ success: true, data: objective });

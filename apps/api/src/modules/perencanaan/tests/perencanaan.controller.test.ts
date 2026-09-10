@@ -326,4 +326,64 @@ describe('perencanaanController — write guard pada subrecord lintas unit (Bug 
     );
     expect(perencanaanService.deleteActivity).not.toHaveBeenCalled();
   });
+
+  // Regression (e2e perencanaan-finance): a plan in IN_PROGRESS is a plan still
+  // being worked on — subrecords must remain writable. Only finalised plans
+  // (APPROVED/COMPLETED/CANCELLED/PROPOSED-as-final) are frozen.
+  it('mengizinkan createActivity pada plan unit sendiri yang berstatus IN_PROGRESS', async () => {
+    const planInProgress = { id: 'plan-smpit', unitId: 'unit-smpit', status: 'IN_PROGRESS' } as any;
+    vi.mocked(perencanaanService.getObjectivePlanForAuth).mockResolvedValue(planInProgress);
+    vi.mocked(perencanaanService.createActivity).mockResolvedValue({ id: 'act-1' } as any);
+    const { req, res } = mockReqRes({
+      user: {
+        sub: 'user-1',
+        role: 'UNIT_ADMIN',
+        roleCode: 'SMPIT_ADMIN',
+        unitId: 'unit-smpit',
+      } as any,
+      body: { objectiveId: 'obj-smpit', title: 'Kegiatan pada plan berjalan' },
+    });
+
+    await run(perencanaanController.createActivity, req, res);
+
+    expect(perencanaanService.createActivity).toHaveBeenCalledTimes(1);
+  });
+
+  it('menolak createActivity pada plan yang sudah difinalisasi (APPROVED)', async () => {
+    vi.mocked(perencanaanService.getObjectivePlanForAuth).mockResolvedValue(planApproved);
+    const { req, res } = mockReqRes({
+      user: {
+        sub: 'user-1',
+        role: 'UNIT_ADMIN',
+        roleCode: 'SMPIT_ADMIN',
+        unitId: 'unit-smpit',
+      } as any,
+      body: { objectiveId: 'obj-smpit', title: 'Kegiatan pada plan final' },
+    });
+
+    await expect(run(perencanaanController.createActivity, req, res)).rejects.toThrowError(/DRAFT/i);
+    expect(perencanaanService.createActivity).not.toHaveBeenCalled();
+  });
+
+  it('mengizinkan createObjective pada plan unit sendiri yang berstatus IN_PROGRESS', async () => {
+    vi.mocked(perencanaanService.getPlanForAuth).mockResolvedValue({
+      id: 'plan-smpit',
+      unitId: 'unit-smpit',
+      status: 'IN_PROGRESS',
+    } as any);
+    vi.mocked(perencanaanService.createObjective).mockResolvedValue({ id: 'obj-1' } as any);
+    const { req, res } = mockReqRes({
+      user: {
+        sub: 'user-1',
+        role: 'UNIT_ADMIN',
+        roleCode: 'SMPIT_ADMIN',
+        unitId: 'unit-smpit',
+      } as any,
+      body: { planId: 'plan-smpit', title: 'Sasaran pada plan berjalan' },
+    });
+
+    await run(perencanaanController.createObjective, req, res);
+
+    expect(perencanaanService.createObjective).toHaveBeenCalledTimes(1);
+  });
 });
