@@ -109,6 +109,12 @@ test.describe("Single Sign-On (SSO) Buttons", () => {
     // Mock getSSOConfig with an enabled Microsoft provider pinned to a
     // single tenant. The login page must target that tenant authority
     // (not the multi-tenant `common`) when it opens Microsoft 365 SSO.
+    //
+    // The config is fetched when the login page mounts (during the beforeEach
+    // navigation), so register the route BEFORE a fresh navigation that will
+    // re-fetch it — otherwise the page would read the real backend config
+    // (SSO disabled in CI) and show the "not configured" toast instead of
+    // redirecting.
     await page.route("**/api/auth/sso/config", async (route) => {
       await route.fulfill({
         status: 200,
@@ -127,9 +133,13 @@ test.describe("Single Sign-On (SSO) Buttons", () => {
       });
     });
 
-    const microsoftBtn = page.getByRole("button", { name: /Microsoft 365/i });
-    await expect(microsoftBtn).toBeVisible();
-    await microsoftBtn.click();
+    // Re-navigate so the config request is actually intercepted by the mock
+    // registered above (the beforeEach load happened before it existed).
+    await page.goto("/login");
+    await expect(
+      page.getByRole("button", { name: /Microsoft 365/i }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: /Microsoft 365/i }).click();
 
     // The page redirects to login.microsoftonline.com/<tenant>/... and the
     // tenant segment must be the backend-enforced one.

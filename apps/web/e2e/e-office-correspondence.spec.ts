@@ -114,7 +114,12 @@ test.describe("E-Office correspondence flows", () => {
     // browser-usable link. In CI the local provider returns an /uploads URL that
     // passes through unchanged; on Azure the URL is a private blob resolved via
     // a fresh SAS.
-    const body = Buffer.from("surat-lampiran-e2e-upload", "utf8");
+    // The API validates magic bytes: an application/pdf upload must begin with
+    // the "%PDF" header or it is rejected as a content/type mismatch.
+    const body = Buffer.from(
+      "%PDF-1.4\n% e2e lampiran\n1 0 obj<</Type/Catalog>>endobj\n%%EOF",
+      "utf8",
+    );
     const form = new FormData();
     form.append(
       "file",
