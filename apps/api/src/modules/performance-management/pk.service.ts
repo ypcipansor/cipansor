@@ -485,15 +485,26 @@ export class PerformanceAgreementService {
 
   async updatePK(
     id: string,
-    callerId: string,
-    isAdmin: boolean,
+    caller: { id: string; isAdmin: boolean; roleCode?: string; unitId?: string | null },
     data: { notes?: string; supervisorId?: string; strategicPlanId?: string }
   ) {
     const pk = await prisma.performanceAgreement.findUnique({ where: { id } });
     if (!pk) throw Errors.notFound('PK');
-    this.assertAccess(pk, callerId, isAdmin, { ownerOnly: true });
+    this.assertAccess(pk, caller.id, caller.isAdmin, { ownerOnly: true });
     if (pk.status === PlanStatus.APPROVED) {
       throw Errors.badRequest('An approved PK can no longer be edited');
+    }
+
+    // Bug regresi #1 — perpindahan strategicPlanId lintas unit.
+    //
+    // assertUnitScope (dipanggil controller terhadap PK SAAT INI) menurunkan
+    // unit pemilik PK dari strategicPlan.unitId, BUKAN dari user.unitId pegawai.
+    // Jika pemindahan rencana dibiarkan tanpa validasi, PK bisa diinduk-kan ke
+    // rencana milik unit lain: PK itu menyusup ke laporan unit lain sekaligus
+    // hilang dari laporan unit pemilik aslinya. Validasi rencana TUJUAN dengan
+    // aturan scope yang sama seperti assertUnitScope.
+    if (data.strategicPlanId !== undefined) {
+      await this.assertPlanUnitInScope(data.strategicPlanId, caller);
     }
 
     return prisma.performanceAgreement.update({
@@ -508,6 +519,33 @@ export class PerformanceAgreementService {
         supervisor: { select: { id: true, name: true } },
       },
     });
+  }
+
+  /**
+   * Pastikan sebuah rencana strategis berada dalam scope unit pemanggil.
+   *
+   * Aturan ini identik dengan `assertUnitScope`: unit yang boleh menyentuh
+   * sebuah rencana (dan PK yang menginduk padanya) ditentukan oleh
+   * `strategicPlan.unitId`, dan peran lintas unit (yayasan, pengasuh, direktur,
+   * super admin) dilepaskan lewat `seesAllUnits`. Tidak ada admin unit lain —
+   * bahkan admin unit asal pegawai — yang boleh memindahkan PK ke rencana milik
+   * unit lain.
+   */
+  private async assertPlanUnitInScope(
+    planId: string,
+    caller: { roleCode?: string; unitId?: string | null }
+  ): Promise<void> {
+    if (seesAllUnits(caller)) return;
+    const plan = await prisma.strategicPlan.findUnique({
+      where: { id: planId },
+      select: { unitId: true },
+    });
+    if (!plan) return; // baris tidak ada → lapisan db yang menjawab 404
+    if (!caller.unitId || plan.unitId !== caller.unitId) {
+      throw Errors.forbidden(
+        'Perjanjian Kinerja tidak dapat dipindahkan ke rencana milik unit lain'
+      );
+    }
   }
 
   /** Kode peran aktif milik seorang pengguna (belum kedaluwarsa). */

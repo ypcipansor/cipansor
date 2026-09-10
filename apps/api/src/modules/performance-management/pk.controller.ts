@@ -61,7 +61,7 @@ export const updatePK = asyncHandler(async (req: Request, res: Response) => {
   const { id, isAdmin } = user;
   await pkService.assertUnitScope({ pkId: req.params.id }, user);
   const body = updatePKSchema.parse(req.body);
-  const pk = await pkService.updatePK(req.params.id, id, isAdmin, body);
+  const pk = await pkService.updatePK(req.params.id, user, body);
   res.json(ApiResponse.success(pk));
 });
 

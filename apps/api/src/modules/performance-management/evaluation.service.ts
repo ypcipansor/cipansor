@@ -460,6 +460,7 @@ export class EvaluationService {
     // Dulu selalu dijumlahkan. Untuk indikator persentase itu menghasilkan
     // angka mustahil yang tampil apa adanya di layar: target 85 persen,
     // dievaluasi 88 lalu 80, tertulis "Realisasi YTD 168 persen".
+    const realizationByIndicator = new Map<string, number>();
     for (const indicator of pk.indicators) {
       const entries = indicator.evaluations as Array<{ realization: number }>;
       // `aggregateValues` sudah terurut terlebih dahulu lewat orderBy di atas,
@@ -468,6 +469,7 @@ export class EvaluationService {
         entries.map((ev) => ev.realization),
         indicator.aggregation
       );
+      realizationByIndicator.set(indicator.id, realization);
       await tx.pKIndicator.update({
         where: { id: indicator.id },
         data: { realization },
@@ -483,9 +485,38 @@ export class EvaluationService {
     if (approvedCount === 0) return;
 
     const latest = pk.evaluations[pk.evaluations.length - 1];
-    const latestPerformance = latest?.performanceScore ?? 0;
+
+    // Bug regresi #2 — skor PK tidak boleh basi dari realisasi ter-agregasi.
+    //
+    // Realisasi indikator (langkah 1) SELALU diagregasi dari seluruh evaluasi
+    // approved. Bila periode yang lebih awal disetujui SETELAH periode yang
+    // lebih baru, `performanceScore` tersimpan pada evaluasi periode terakhir
+    // belum mencerminkan realisasi periode awal itu (skor itu dihitung saat
+    // realisasinya terakhir disunting, sebelum periode awal ikut approved).
+    // Menyalin `performanceScore` tersimpan apa adanya membuat PK memegang
+    // realisasi YTD dan skor yang tidak konsisten. Karena itu skor performa PK
+    // dihitung ULANG dari realisasi ter-agregasi yang sama persis dengan
+    // langkah 1, lalu ditulis balik ke evaluasi supaya datanya ikut terkoreksi.
+    let latestPerformance = 0;
+    for (const indicator of pk.indicators) {
+      const achieved = realizationByIndicator.get(indicator.id) ?? 0;
+      let indScore = 0;
+      if (indicator.target > 0) {
+        indScore = Math.min(100, (achieved / indicator.target) * 100);
+      } else if (indicator.target === 0 && achieved === 0) {
+        indScore = 100;
+      }
+      latestPerformance += (indScore * indicator.weight) / 100;
+    }
     const latestBehavior = latest?.behaviorScore ?? 0;
-    const latestOverall = latest?.overallScore ?? 0;
+    const latestOverall = latestPerformance * 0.6 + latestBehavior * 0.4;
+
+    // Tulis balik skor yang telah dihitung ulang ke evaluasi periode terakhir
+    // supaya baris yang tersimpan tidak ikut berbeda dari PK yang dibacanya.
+    await tx.pKEvaluation.update({
+      where: { id: latest.id },
+      data: { performanceScore: latestPerformance, overallScore: latestOverall },
+    });
 
     await tx.performanceAgreement.update({
       where: { id: pkId },

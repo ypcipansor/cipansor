@@ -190,7 +190,7 @@ describe('EvaluationService', () => {
         data: { score: 80 },
       });
     });
-// Bug regresi #3 — evaluasi periode berikutnya (atau status yang belum
+    // Bug regresi #3 — evaluasi periode berikutnya (atau status yang belum
     // dikunci) tidak boleh mengontaminasi skor YTD periode yang lebih awal.
     // Saat menghitung ulang skor Januari, agregasi realisasi wajib dibatasi ke
     // tahun/bulan <= Januari dan hanya status yang relevan (APPROVED/PROPOSED).
@@ -300,7 +300,9 @@ describe('EvaluationService', () => {
         });
 
       await expect(
-        evaluationService.updateIndicatorRealization('ev-1', 'ind-1', 'u-1', false, { realization: 100 })
+        evaluationService.updateIndicatorRealization('ev-1', 'ind-1', 'u-1', false, {
+          realization: 100,
+        })
       ).rejects.toThrow(/approved/i);
 
       expect(mockQueryRaw).toHaveBeenCalledTimes(1);
@@ -436,9 +438,9 @@ describe('EvaluationService', () => {
         pk: { userId: 'u-1', supervisorId: 'u-boss' },
       });
       mocked.pKEvaluation.updateMany.mockResolvedValue({ count: 0 });
-      await expect(
-        evaluationService.approveEvaluation('ev-1', 'u-boss', false)
-      ).rejects.toThrow(/already approved/i);
+      await expect(evaluationService.approveEvaluation('ev-1', 'u-boss', false)).rejects.toThrow(
+        /already approved/i
+      );
     });
 
     it('approves and rolls YTD + PK aggregates up, skipping talent sync without supervisor', async () => {
@@ -455,14 +457,31 @@ describe('EvaluationService', () => {
         supervisorId: null, // supervisor removed since — no talent sync
         periodStart: new Date('2026-01-01'),
         indicators: [
-          { id: 'ind-1', evaluations: [{ realization: 3 }, { realization: 4 }] },
+          {
+            id: 'ind-1',
+            target: 100,
+            weight: 100,
+            aggregation: IndicatorAggregation.KUMULATIF,
+            evaluations: [{ realization: 3 }, { realization: 4 }],
+          },
         ],
         evaluations: [
-          { performanceScore: 80, behaviorScore: 90, overallScore: 83 },
-          { performanceScore: 60, behaviorScore: 70, overallScore: 63 },
+          {
+            id: 'ev-m1',
+            performanceScore: 80,
+            behaviorScore: 90,
+            overallScore: 83,
+          },
+          {
+            id: 'ev-m2',
+            performanceScore: 60, // basi: tidak mencerminkan realisasi Januari
+            behaviorScore: 70,
+            overallScore: 63,
+          },
         ],
       });
       mocked.pKIndicator.update.mockResolvedValue({});
+      mocked.pKEvaluation.update.mockResolvedValue({});
       mocked.performanceAgreement.update.mockResolvedValue({});
 
       await evaluationService.approveEvaluation('ev-1', 'u-boss', false);
@@ -472,12 +491,14 @@ describe('EvaluationService', () => {
         data: { realization: 7 },
       });
       const pkUpdate = mocked.performanceAgreement.update.mock.calls[0][0];
-      // Bug regresi #4: agregat PK memakai capaian YTD TERKINI (evaluasi
-      // terakhir), bukan rata-rata skor bulanan yang menaik. Evaluasi terakhir
-      // dalam daftar (60/70/63) — bukan rata-rata (70/80/73).
-      expect(pkUpdate.data.totalScore).toBe(60);
+      // Bug regresi #4 + #2: agregat PK memakai capaian YTD TERKINI (dihitung
+      // ulang dari realisasi ter-agregasi), bukan rata-rata skor bulanan dan
+      // bukan salinan buta `performanceScore` tersimpan yang basi. Realisasi
+      // YTD agregat = 3+4 = 7 dari target 100 → performa 7. Perilaku diambil
+      // dari evaluasi periode terakhir (70).
+      expect(pkUpdate.data.totalScore).toBeCloseTo(7, 5);
       expect(pkUpdate.data.behaviorScore).toBe(70);
-      expect(pkUpdate.data.overallScore).toBe(63);
+      expect(pkUpdate.data.overallScore).toBeCloseTo(7 * 0.6 + 70 * 0.4, 5);
       expect(mocked.talentProfile.findUnique).not.toHaveBeenCalled();
     });
 
@@ -494,9 +515,25 @@ describe('EvaluationService', () => {
         userId: 'u-1',
         supervisorId: 'u-boss',
         periodStart: new Date('2026-01-01'),
-        indicators: [],
-        evaluations: [{ performanceScore: 95, behaviorScore: 90, overallScore: 93.5 }],
+        indicators: [
+          {
+            id: 'ind-1',
+            target: 100,
+            weight: 100,
+            aggregation: IndicatorAggregation.KUMULATIF,
+            evaluations: [{ realization: 95 }],
+          },
+        ],
+        evaluations: [
+          {
+            id: 'ev-m1',
+            performanceScore: 95,
+            behaviorScore: 90,
+            overallScore: 93.5,
+          },
+        ],
       });
+      mocked.pKEvaluation.update.mockResolvedValue({});
       mocked.performanceAgreement.update.mockResolvedValue({});
       mocked.talentProfile.findUnique.mockResolvedValue({
         id: 'tp-1',
@@ -514,7 +551,7 @@ describe('EvaluationService', () => {
       // Potential is carried forward from the latest human assessment.
       expect(taUpdate.data.potentialRating).toBe('EXCEEDS');
     });
-// Bug regresi #4 — agregat PK memakai capaian YTD TERKINI, bukan rata-rata
+    // Bug regresi #4 — agregat PK memakai capaian YTD TERKINI, bukan rata-rata
     // skor bulanan yang menaik. Target 120 dicicil 10/bulan selama 12 bulan
     // memberi skor YTD per bulan 8,33; 16,67; …; 100. Rata-rata dari 12 angka
     // itu ~54; capaian YTD terkini (bulan ke-12) = 100.
@@ -531,21 +568,111 @@ describe('EvaluationService', () => {
         userId: 'u-1',
         supervisorId: null, // tanpa supervisor — tidak ada sinkron talent
         periodStart: new Date('2026-01-01'),
-        indicators: [],
+        indicators: [
+          {
+            id: 'ind-1',
+            target: 120,
+            weight: 100,
+            aggregation: IndicatorAggregation.KUMULATIF,
+            // 12 bulan × 10 = 120 → capaian YTD penuh, skor performa 100.
+            evaluations: Array.from({ length: 12 }, () => ({ realization: 10 })),
+          },
+        ],
         evaluations: Array.from({ length: 12 }, (_, i) => {
           const p = Math.round((((i + 1) * 10) / 120) * 100 * 100) / 100;
-          return { performanceScore: p, behaviorScore: 100 - i, overallScore: (p * 0.6 + (100 - i) * 0.4) };
+          return {
+            id: `ev-m${i + 1}`,
+            performanceScore: p,
+            behaviorScore: 100 - i,
+            overallScore: p * 0.6 + (100 - i) * 0.4,
+          };
         }),
       });
       mocked.pKIndicator.update.mockResolvedValue({});
+      mocked.pKEvaluation.update.mockResolvedValue({});
       mocked.performanceAgreement.update.mockResolvedValue({});
 
       await evaluationService.approveEvaluation('ev-12', 'u-boss', false);
 
       const pkUpdate = mocked.performanceAgreement.update.mock.calls[0][0];
-      // Evaluasi terakhir (bulan ke-12): performanceScore 100, behavior 89.
+      // Capaian YTD dari realisasi ter-agregasi: 10×12=120 dari target 120 →
+      // performa 100, bukan rata-rata skor bulanan (~54). Perilaku dari
+      // evaluasi periode terakhir (bulan ke-12): 89.
       expect(pkUpdate.data.totalScore).toBeCloseTo(100, 5);
       expect(pkUpdate.data.behaviorScore).toBeCloseTo(89, 5);
+    });
+
+    it('menyelaraskan skor PK dgn realisasi saat periode awal di-approve setelah periode akhir (Bug regresi #2)', async () => {
+      // Periode akhir (bulan 2) di-approve LEBIH DULU. Saat itu periode awal
+      // (bulan 1) masih DRAFT, sehingga performanceScore tersimpan bulan 2
+      // hanya mencerminkan realisasi Februari dan TIDAK termasuk Januari.
+      // Ketika Januari di-approve berikutnya, realisasi indikator (langkah 1)
+      // ter-agregasi dari SEMUA evaluasi approved (Jan + Feb), tetapi skor PK
+      // tidak boleh lagi menyalin `performanceScore` basi bulan 2 — ia harus
+      // dihitung ulang dari realisasi YTD ter-agregasi.
+      mocked.pKEvaluation.findUnique.mockResolvedValue({
+        id: 'ev-m1',
+        pkId: 'pk-1',
+        status: 'DRAFT',
+        pk: { userId: 'u-1', supervisorId: 'u-boss' },
+      });
+      mocked.pKEvaluation.updateMany.mockResolvedValue({ count: 1 });
+      mocked.performanceAgreement.findUnique.mockResolvedValue({
+        id: 'pk-1',
+        userId: 'u-1',
+        supervisorId: null, // tanpa supervisor — tidak ada sinkron talent
+        periodStart: new Date('2026-01-01'),
+        indicators: [
+          {
+            id: 'ind-1',
+            target: 100,
+            weight: 100,
+            aggregation: IndicatorAggregation.KUMULATIF,
+            // Jan realisasi 30, Feb realisasi 30. OrderBy periode membuat
+            // Jan diagregasi lebih dulu. YTD = 60.
+            evaluations: [
+              { realization: 30, evaluation: { year: 2026, month: 1 } },
+              { realization: 30, evaluation: { year: 2026, month: 2 } },
+            ],
+          },
+        ],
+        evaluations: [
+          // Urutan periode naik: Jan lalu Feb. Feb adalah periode terakhir.
+          { id: 'ev-m1', performanceScore: 30, behaviorScore: 80, overallScore: 50 },
+          {
+            id: 'ev-m2',
+            // performanceScore tersimpan basi: dihitung saat Feb di-approve
+            // pertama, TANPA realisasi Januari. YTD seharusnya 60/100, bukan 30.
+            performanceScore: 30,
+            behaviorScore: 80,
+            overallScore: 50,
+          },
+        ],
+      });
+      mocked.pKIndicator.update.mockResolvedValue({});
+      mocked.pKEvaluation.update.mockResolvedValue({});
+      mocked.performanceAgreement.update.mockResolvedValue({});
+
+      await evaluationService.approveEvaluation('ev-m1', 'u-boss', false);
+
+      // Realisasi indikator diagregasi dari SEMUA approved (Jan + Feb) = 60.
+      expect(mocked.pKIndicator.update).toHaveBeenCalledWith({
+        where: { id: 'ind-1' },
+        data: { realization: 60 },
+      });
+
+      // Skor PK TIDAK lagi menyalin performanceScore basi (30) evaluasi
+      // periode terakhir; ia dihitung ulang dari realisasi YTD 60/100.
+      const pkUpdate = mocked.performanceAgreement.update.mock.calls[0][0];
+      expect(pkUpdate.data.totalScore).toBe(60);
+      expect(pkUpdate.data.behaviorScore).toBe(80);
+      expect(pkUpdate.data.overallScore).toBeCloseTo(60 * 0.6 + 80 * 0.4, 5);
+
+      // Skor evaluasi periode terakhir yang tersimpan ikut dikoreksi.
+      const evUpdate = mocked.pKEvaluation.update.mock.calls[0][0];
+      expect(evUpdate.where).toEqual({ id: 'ev-m2' });
+      expect(evUpdate.data.performanceScore).toBe(60);
+      expect(evUpdate.data.overallScore).toBeCloseTo(60 * 0.6 + 80 * 0.4, 5);
     });
   });
 });
