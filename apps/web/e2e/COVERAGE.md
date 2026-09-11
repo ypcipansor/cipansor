@@ -6,7 +6,7 @@ _Headline count + spec-inventory table re-audited 2026-07-20 from source; the ro
 
 - **Routes (App Router pages):** 430
 - **Routes visited by ≥1 spec:** 76 (17%)
-- **Spec files:** 75 — all **active** specs now authenticate for real
+- **Spec files:** 76 — all **active** specs now authenticate for real
   (`loginAs` / `apiLogin` + `injectSession`) and assert real seeded/API data.
   The only remaining `page.route` usages are: `grc-live` (one deliberate 500
   injection to prove an error state) and the config-**ignored** dev utilities
@@ -565,7 +565,7 @@ History of the stabilization (all root-caused, no suppressions):
 | Route | Specs | Nav | CRUD | Buttons | Fields | RBAC |
 |---|---|---|---|---|---|---|
 | `/perencanaan` | perencanaan | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 |
-| `/perencanaan/[id]` | grc-integrated, perencanaan-risk | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 |
+| `/perencanaan/[id]` | grc-integrated, perencanaan-pengesahan, perencanaan-risk | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 |
 | `/perencanaan/strategy-map` | business-unit-flow | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 |
 
 ### `/permits`
@@ -975,6 +975,7 @@ History of the stabilization (all root-caused, no suppressions):
 | `paud-main.spec.ts` | loginAs | real backend | 0 route(s) visited |
 | `pengawasan.spec.ts` | loginAs | real backend | 1 route(s) visited |
 | `perencanaan-finance.spec.ts` | loginAs | real backend | 1 route(s) visited |
+| `perencanaan-pengesahan.spec.ts` | apiLogin | real backend | 1 route(s) visited — the yayasan ratification panel per organ and the RKA Unit approval button; the route's other actions stay 🟡 |
 | `perencanaan-risk.spec.ts` | loginAs | real backend | 1 route(s) visited |
 | `perencanaan.spec.ts` | loginAs | real backend | 1 route(s) visited |
 | `pesantren-features-294-smoke.spec.ts` | — | public/unauthenticated | 3 route(s) visited |

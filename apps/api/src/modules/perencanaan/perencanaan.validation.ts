@@ -93,3 +93,14 @@ export const listPlanQuerySchema = z.object({
   status: z.enum(['DRAFT', 'PROPOSED', 'APPROVED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED']).optional(),
   unitId: z.string().uuid().optional(),
 });
+
+// ==================== PENGESAHAN DOKUMEN YAYASAN ====================
+// Pengurus mengajukan → Pengawas mereviu → Pengurus menanggapi → Pembina
+// menetapkan atau mengembalikan. The contract lives once in @cipansor/shared;
+// the web dialogs validate with the same schemas before sending.
+export {
+  submitForReviewSchema,
+  reviewResultSchema,
+  proposeToPembinaSchema,
+  decidePlanSchema,
+} from '@cipansor/shared';

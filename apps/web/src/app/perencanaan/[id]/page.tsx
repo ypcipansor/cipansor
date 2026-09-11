@@ -18,8 +18,11 @@ import {
   useApprovePlan,
   usePlanRealizationTrend,
   PLAN_STATUS_LABEL,
+  PLAN_REVIEW_STAGE_LABEL,
   planTierLabel,
 } from "@/hooks/use-perencanaan";
+import { useAuthStore } from "@/stores/auth";
+import { getPrimaryRoleCode } from "@/lib/rbac";
 import { PageHeader } from "@/components/shared/page-header";
 import {
   Card,
@@ -58,6 +61,7 @@ import {
   ActivityCard,
   FundingSection,
 } from "./plan-sections";
+import { ReviewPanel } from "./review-panel";
 
 function PerencanaanDetailPageContent() {
   const params = useParams();
@@ -67,6 +71,8 @@ function PerencanaanDetailPageContent() {
   const { data: plan, isLoading } = usePlan(planId);
   const { data: realizationTrend } = usePlanRealizationTrend(planId);
   const approvePlan = useApprovePlan();
+  const user = useAuthStore((s) => s.user);
+  const roleCode = getPrimaryRoleCode(user);
 
   const [objectiveDialogOpen, setObjectiveDialogOpen] = useState(false);
   const [activityDialogOpen, setActivityDialogOpen] = useState(false);
@@ -93,7 +99,9 @@ function PerencanaanDetailPageContent() {
 
   const handleApprove = async () => {
     if (
-      confirm("Apakah Anda yakin ingin menyetujui dokumen perencanaan ini?")
+      confirm(
+        `Sahkan ${planTierLabel(plan)}? Setelah disahkan, RKA ini menjadi jangkar Perjanjian Kinerja kepala unit.`,
+      )
     ) {
       await approvePlan.mutateAsync(plan.id);
     }
@@ -137,20 +145,32 @@ function PerencanaanDetailPageContent() {
             >
               {PLAN_STATUS_LABEL[plan.status] ?? plan.status}
             </Badge>
+            {plan.reviewStage && plan.reviewStage !== "DITETAPKAN" && (
+              <Badge
+                variant="outline"
+                className="mt-[-24px] border-amber-400 text-amber-700 dark:text-amber-300"
+              >
+                {PLAN_REVIEW_STAGE_LABEL[plan.reviewStage]}
+              </Badge>
+            )}
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          {(plan.status === "DRAFT" ||
-            plan.status === "PROPOSED" ||
-            plan.status === "REVIEW") && (
-            <Button onClick={handleApprove} disabled={approvePlan.isPending}>
-              <CheckCircle2 className="w-4 h-4 mr-2" />
-              Setujui Rencana
-            </Button>
-          )}
+          {/* Only an RKA Unit is approved with one button, and only by Ketua
+              Pengurus. Yayasan documents go through the panel below. */}
+          {plan.unitId &&
+            roleCode === "YAYASAN_KETUA" &&
+            (plan.status === "DRAFT" || plan.status === "PROPOSED") && (
+              <Button onClick={handleApprove} disabled={approvePlan.isPending}>
+                <CheckCircle2 className="w-4 h-4 mr-2" />
+                Sahkan {planTierLabel(plan)}
+              </Button>
+            )}
         </div>
       </div>
+
+      {plan.unitId === null && <ReviewPanel plan={plan} roleCode={roleCode} />}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card className="md:col-span-2">

@@ -33,6 +33,12 @@ export const SEED_USERS = {
   teacher: { email: "fatimah@cipansor.or.id", password: "Teacher123!" },
   parent: { email: "parent3@cipansor.or.id", password: "Parent123!" },
   student: { email: "student3@cipansor.or.id", password: "Student123!" },
+  // The three yayasan organs, each with one step in ratifying a yayasan
+  // document (perencanaan-pengesahan.spec.ts). Legacy UNIT_ADMIN, so CI's
+  // E2E_FIXED_2FA seed gives them the fixed TOTP secret like any admin.
+  ketuaPengurus: { email: "yayasan.ketua@cipansor.or.id", password: "Cipansor123!" },
+  pengawas: { email: "yayasan.pengawas@cipansor.or.id", password: "Cipansor123!" },
+  pembina: { email: "yayasan.pembina@cipansor.or.id", password: "Cipansor123!" },
 } satisfies Record<string, SeedUser>;
 
 export type SeedRole = keyof typeof SEED_USERS;

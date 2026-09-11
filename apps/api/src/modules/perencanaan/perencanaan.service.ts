@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma';
-import { Prisma, PlanStatus } from '@prisma/client';
+import { Prisma, PlanStatus, PlanReviewStage, PlanReviewAction } from '@prisma/client';
 import { Errors } from '@/middleware/error';
 
 type TransactionClient = Prisma.TransactionClient;
@@ -173,6 +173,10 @@ export class PerencanaanService {
         approvedBy: { select: { id: true, name: true } },
         parent: { select: { id: true, title: true, type: true } },
         collaborators: { include: { user: { select: { id: true, name: true } } } },
+        reviewEvents: {
+          orderBy: { createdAt: 'asc' },
+          include: { actor: { select: { id: true, name: true } } },
+        },
         objectives: {
           include: {
             indicators: true,
@@ -196,6 +200,10 @@ export class PerencanaanService {
         approvedBy: { select: { id: true, name: true } },
         parent: { select: { id: true, title: true, type: true } },
         collaborators: { include: { user: { select: { id: true, name: true } } } },
+        reviewEvents: {
+          orderBy: { createdAt: 'asc' },
+          include: { actor: { select: { id: true, name: true } } },
+        },
         objectives: {
           include: {
             indicators: {
@@ -483,6 +491,8 @@ export class PerencanaanService {
       id: true,
       unitId: true,
       status: true,
+      type: true,
+      reviewStage: true,
       ...(userId
         ? { collaborators: { where: { userId }, select: { userId: true } } }
         : {}),
@@ -490,13 +500,22 @@ export class PerencanaanService {
   }
 
   planAuthFromRow(
-    row: { id: string; unitId: string | null; status: string; collaborators?: { userId: string }[] } | null
+    row: {
+      id: string;
+      unitId: string | null;
+      status: string;
+      type?: string;
+      reviewStage?: string | null;
+      collaborators?: { userId: string }[];
+    } | null
   ) {
     return row
       ? {
           id: row.id,
           unitId: row.unitId,
           status: row.status,
+          type: row.type,
+          reviewStage: row.reviewStage ?? null,
           isCollaborator: (row.collaborators ?? []).length > 0,
         }
       : null;
@@ -587,6 +606,66 @@ export class PerencanaanService {
         approvedBy: { connect: { id: approvedById } },
         approvedAt: new Date(),
       },
+    });
+  }
+
+  /**
+   * One step of the yayasan-document ratification flow, atomically.
+   *
+   * The stage moves only while it is still one this step expects (a
+   * compare-and-set on `reviewStage`), and the trail entry is written in the
+   * same transaction — so two people pressing a button at once cannot both
+   * succeed, and no stage change ever exists without its record.
+   */
+  async advanceReview(params: {
+    planId: string;
+    from: Array<PlanReviewStage | null>;
+    to: PlanReviewStage;
+    status: PlanStatus;
+    approve?: boolean;
+    event: {
+      action: PlanReviewAction;
+      actorId: string;
+      actorRoleCode: string;
+      notes?: string | null;
+      revised?: boolean | null;
+    };
+  }) {
+    const stages = params.from.filter((s): s is PlanReviewStage => s !== null);
+    const stageWhere = params.from.includes(null)
+      ? { OR: [{ reviewStage: null }, { reviewStage: { in: stages } }] }
+      : { reviewStage: { in: stages } };
+
+    return prisma.$transaction(async (tx) => {
+      const { count } = await tx.strategicPlan.updateMany({
+        where: { id: params.planId, ...stageWhere },
+        data: {
+          reviewStage: params.to,
+          status: params.status,
+          ...(params.approve
+            ? { approvedById: params.event.actorId, approvedAt: new Date() }
+            : {}),
+        },
+      });
+      if (count !== 1) {
+        throw Errors.badRequest(
+          'Tahap pengesahan dokumen ini sudah berubah. Muat ulang halaman untuk melihat tahap terbarunya.'
+        );
+      }
+      await tx.planReviewEvent.create({
+        data: {
+          planId: params.planId,
+          action: params.event.action,
+          actorId: params.event.actorId,
+          actorRoleCode: params.event.actorRoleCode,
+          notes: params.event.notes ?? null,
+          revised: params.event.revised ?? null,
+        },
+      });
+      return tx.strategicPlan.findUnique({
+        where: { id: params.planId },
+        select: { id: true, status: true, reviewStage: true, approvedAt: true },
+      });
     });
   }
 

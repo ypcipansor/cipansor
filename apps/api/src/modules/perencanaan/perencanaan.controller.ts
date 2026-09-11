@@ -12,9 +12,18 @@ import {
   createActivitySchema,
   updateActivitySchema,
   listPlanQuerySchema,
+  submitForReviewSchema,
+  reviewResultSchema,
+  proposeToPembinaSchema,
+  decidePlanSchema,
 } from './perencanaan.validation';
 import { UserRole } from '@prisma/client';
-import { ADMIN_ROLE_CODES, GOVERNANCE_ROLE_CODES } from '@cipansor/shared';
+import {
+  ADMIN_ROLE_CODES,
+  GOVERNANCE_ROLE_CODES,
+  PENGURUS_ROLE_CODES,
+  PRINCIPAL_ROLE_CODES,
+} from '@cipansor/shared';
 import { seesAllUnits } from '@/utils/resolve-unit-id';
 
 const PRIVILEGED_ROLES: string[] = [UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN];
@@ -69,13 +78,49 @@ function canReadPlan(planUnitId: string | null, user?: PlanUser): boolean {
  * is revoked the moment the plan leaves DRAFT/IN_PROGRESS — a finalised (or
  * PROPOSED) plan stays frozen for collaborators just as for everyone else.
  */
+function isSuperAdmin(user?: PlanUser): boolean {
+  if (!user) return false;
+  if (user.roleCode) return user.roleCode === UserRole.SUPER_ADMIN;
+  return user.role === UserRole.SUPER_ADMIN;
+}
+
+/** Pengurus yayasan — the organ that drafts the yayasan's plans (UU 16/2001 Ps. 31). */
+function isPengurus(user?: PlanUser): boolean {
+  return !!user?.roleCode && PENGURUS_ROLE_CODES.includes(user.roleCode);
+}
+
+/**
+ * Who may author a yayasan-level document (RPJP, Renstra, RKA Yayasan):
+ * Pengurus and super admin. Never Pembina, who ratifies it, nor Pengawas, who
+ * reviews it — neither drafts what they then judge.
+ */
+function canAuthorFoundationPlan(user?: PlanUser): boolean {
+  return isSuperAdmin(user) || isPengurus(user);
+}
+
+/**
+ * Who may author a unit's plan: that unit's own kepala sekolah and admin —
+ * the head drafts the RKA Unit because it is the document their PK then
+ * anchors to — plus Pengurus and super admin. Guru and staff do not; they
+ * contribute as collaborators invited onto a draft.
+ */
+function canAuthorUnitPlan(user: PlanUser | undefined, unitId: string): boolean {
+  if (!user) return false;
+  if (isSuperAdmin(user) || isPengurus(user)) return true;
+  const code = user.roleCode ?? '';
+  if (ADMIN_ROLE_CODES.includes(code) || PRINCIPAL_ROLE_CODES.includes(code)) {
+    return user.unitId === unitId;
+  }
+  // Pre-roleCode caller: the legacy UNIT_ADMIN bucket, on its own unit only.
+  return !user.roleCode && user.role === UserRole.UNIT_ADMIN && user.unitId === unitId;
+}
+
 function canWritePlan(plan: PlanAuth | null | undefined, user?: PlanUser): boolean {
   if (!plan) return false;
   if (plan.isCollaborator && isEditablePlan(plan)) return true;
-  const planUnitId = plan.unitId;
-  if (!isPrivileged(user)) return false;
-  if (planUnitId === null) return seesAll(user);
-  return seesAll(user) || planUnitId === user?.unitId;
+  return plan.unitId === null
+    ? canAuthorFoundationPlan(user)
+    : canAuthorUnitPlan(user, plan.unitId);
 }
 
 type PlanAuth = {
@@ -84,6 +129,9 @@ type PlanAuth = {
   status: string;
   /** True when the current user was explicitly shared this plan's draft. */
   isCollaborator: boolean;
+  type?: string;
+  /** Ratification stage of a yayasan document; null for unit plans. */
+  reviewStage?: string | null;
 };
 
 /**
@@ -95,8 +143,17 @@ type PlanAuth = {
  */
 const EDITABLE_PLAN_STATUSES = new Set(['DRAFT', 'IN_PROGRESS']);
 
-function isEditablePlan(plan: Pick<PlanAuth, 'status'>): boolean {
-  return EDITABLE_PLAN_STATUSES.has(plan.status);
+/**
+ * Stages in which a yayasan document is in someone ELSE's hands — Pengawas is
+ * reviewing it, or Pembina is deciding on it. Changing it underneath them
+ * would make the review, or the ratification, about a different document.
+ */
+const LOCKED_REVIEW_STAGES = new Set(['DIREVIU_PENGAWAS', 'DIAJUKAN_PEMBINA']);
+
+function isEditablePlan(plan: Pick<PlanAuth, 'status' | 'reviewStage'>): boolean {
+  return (
+    EDITABLE_PLAN_STATUSES.has(plan.status) && !LOCKED_REVIEW_STAGES.has(plan.reviewStage ?? '')
+  );
 }
 
 /**
@@ -179,44 +236,40 @@ export const createPlan = asyncHandler(async (req: Request, res: Response) => {
 
   const body = createPlanSchema.parse(req.body);
 
-  // RPJP dan RENSTRA adalah dokumen tingkat yayasan (unitId null). Seorang
-  // pemanggil unit-scoped yang berusaha membuatnya akan menempelkan
-  // targetUnitId ke unitnya sendiri, sehingga dokumen yayasan tercatat milik
-  // satu unit dan memblokir root yayasan yang sebenarnya. Tolak dengan jelas.
+  // RPJP dan Renstra selalu dokumen tingkat yayasan (unitId null); RKA tanpa
+  // unit adalah RKA Yayasan. Ketiganya disusun Pengurus — bukan Pembina yang
+  // mengesahkannya, bukan Pengawas yang mereviunya.
   const isFoundationDoc = body.type === 'RPJP' || body.type === 'RENSTRA';
-  if (isFoundationDoc && (!isPrivileged(req.user) || !seesAll(req.user))) {
+  if (isFoundationDoc && !canAuthorFoundationPlan(req.user)) {
     throw Errors.forbidden(
-      `${body.type} adalah dokumen tingkat yayasan dan hanya boleh dibuat oleh pengurus yayasan atau super admin.`
+      `${body.type} adalah dokumen tingkat yayasan dan hanya disusun oleh Pengurus yayasan.`
     );
   }
 
-  // A yayasan-level document (RPJP, Renstra, RKA Yayasan) has NO unit — that
-  // is what makes it the foundation's own plan rather than a school's. Until
-  // now this branch demanded a unit from everyone, so the three documents at
-  // the top of the cascade could only ever be written by the seed: a super
-  // admin carries no unitId, and the fallback rejected the request outright.
-  let targetUnitId: string | null | undefined = req.user?.unitId ?? null;
-
+  let targetUnitId: string | null;
   if (isFoundationDoc) {
-    // Dokumen tingkat yayasan selalu tanpa unit — apa pun unitId JWT-nya.
     targetUnitId = null;
-  } else if (!targetUnitId) {
-    if (body.unitId) {
-      // Naming someone else's unit is the privileged write that already
-      // existed (SUPER_ADMIN / UNIT_ADMIN).
-      if (!isPrivileged(req.user)) throw Errors.badRequest('Unit ID is required');
-      targetUnitId = body.unitId;
-    } else {
-      // Omitting the unit files the plan as the yayasan's own. That takes the
-      // same two-part gate `approvePlan` uses: the admin floor AND foundation
-      // scope. `seesAll` alone is too wide — it is also true for cross-unit
-      // service staff (perawat, pustakawan, laboran), who read every unit but
-      // have no business authoring the yayasan's RPJP.
-      if (!isPrivileged(req.user) || !seesAll(req.user)) {
-        throw Errors.badRequest('Unit ID is required');
-      }
-      targetUnitId = null;
+  } else if (req.user?.unitId) {
+    targetUnitId = req.user.unitId;
+  } else if (body.unitId) {
+    targetUnitId = body.unitId;
+  } else {
+    // Omitting the unit files the plan as the yayasan's own RKA — which only
+    // Pengurus drafts. "Unit ID is required" told Pengawas and Pembina to add a
+    // unit, when the answer is that this document is not theirs to write.
+    if (!canAuthorFoundationPlan(req.user)) {
+      throw Errors.forbidden(
+        'RKA Yayasan disusun oleh Pengurus yayasan. RKA unit disusun kepala sekolah atau admin unitnya.'
+      );
     }
+    targetUnitId = null;
+  }
+
+  if (targetUnitId !== null && !canAuthorUnitPlan(req.user, targetUnitId)) {
+    throw Errors.forbidden(
+      'RKA unit disusun oleh kepala sekolah dan admin unit itu sendiri. Guru dan staf ikut ' +
+        'menyusun sebagai kolaborator yang diundang pada draft.'
+    );
   }
 
   const plan = await perencanaanService.createPlan({
@@ -235,6 +288,18 @@ export const updatePlan = asyncHandler(async (req: Request, res: Response) => {
   if (!canWritePlan(existing, req.user)) {
     throw Errors.forbidden('Access denied');
   }
+  if (LOCKED_REVIEW_STAGES.has(existing.reviewStage ?? '')) {
+    throw Errors.badRequest(
+      'Dokumen ini sedang direviu Pengawas atau menunggu keputusan Pembina, jadi belum dapat diubah.'
+    );
+  }
+  // The header obeys the same rule its subrecords already did. A ratified
+  // document is what Pembina — or, for an RKA Unit, Ketua Pengurus — put their
+  // name to; rewriting its title or budget afterwards would make that
+  // signature cover words they never saw.
+  if (!isEditablePlan(existing)) {
+    throw Errors.badRequest('Hanya rencana berstatus Draft atau Berjalan yang dapat diubah.');
+  }
 
   const body = updatePlanSchema.parse(req.body);
   const { unitId: _, ...updateData } = body;
@@ -250,16 +315,138 @@ export const approvePlan = asyncHandler(async (req: Request, res: Response) => {
   const existing = await perencanaanService.getPlanForAuth(req.params.id);
   if (!existing) throw Errors.notFound('Plan not found');
 
-  // Keep the original "admins only" floor, then add the foundation tightening:
-  // a foundation-wide plan may be approved only by a foundation-scoped caller,
-  // so a single-unit admin cannot ratify the yayasan's RPJP/Renstra.
-  if (!isPrivileged(req.user)) throw Errors.forbidden('Only admins can approve plans');
-  if (existing.unitId === null && !seesAll(req.user)) {
-    throw Errors.forbidden('Only foundation admins can approve a foundation-wide plan');
+  // A yayasan document is not approved with one button: Pengurus submits,
+  // Pengawas reviews, Pembina ratifies (UU 16/2001 Ps. 28 ayat 2 huruf d,
+  // Ps. 40 ayat 1). That flow lives under /:id/review/*.
+  if (existing.unitId === null) {
+    throw Errors.badRequest(
+      'Dokumen tingkat yayasan ditetapkan Pembina setelah direviu Pengawas. Ajukan lewat alur ' +
+        'pengesahan, bukan tombol setujui langsung.'
+    );
+  }
+  // An RKA Unit is ratified by Ketua Pengurus — the mandate giver whose PK
+  // with the kepala unit then anchors to it (PermenPANRB 53/2014 C.1.b.2).
+  if (req.user?.roleCode !== KETUA_PENGURUS) {
+    throw Errors.forbidden('RKA unit disahkan oleh Ketua Pengurus.');
+  }
+  if (existing.status === 'APPROVED') throw Errors.badRequest('Rencana ini sudah disahkan.');
+  // Approving a running or closed RKA would push it back to APPROVED.
+  if (existing.status !== 'DRAFT' && existing.status !== 'PROPOSED') {
+    throw Errors.badRequest('Hanya RKA berstatus Draft atau Diajukan yang dapat disahkan.');
   }
 
   const plan = await perencanaanService.approvePlan(req.params.id, userId);
   res.json({ success: true, data: plan });
+});
+
+// ==================== PENGESAHAN DOKUMEN YAYASAN ====================
+
+const KETUA_PENGURUS = 'YAYASAN_KETUA';
+const PENGAWAS = 'YAYASAN_PENGAWAS';
+const PEMBINA = 'YAYASAN_PEMBINA';
+
+/** The acting organ, or a refusal naming who takes this step. */
+function requireOrgan(req: Request, roleCode: string, who: string): string {
+  const actorId = req.user?.sub;
+  if (!actorId) throw Errors.unauthorized('User context missing');
+  if (req.user?.roleCode !== roleCode) {
+    throw Errors.forbidden(`Langkah ini dilakukan oleh ${who}.`);
+  }
+  return actorId;
+}
+
+async function loadFoundationPlan(id: string) {
+  const plan = await perencanaanService.getPlanForAuth(id);
+  if (!plan) throw Errors.notFound('Plan not found');
+  if (plan.unitId !== null) {
+    throw Errors.badRequest(
+      'Alur Pengawas → Pembina hanya untuk dokumen tingkat yayasan. RKA unit disahkan Ketua Pengurus.'
+    );
+  }
+  return plan;
+}
+
+/** Ketua Pengurus, for the Pengurus, submits a draft to Pengawas for review. */
+export const submitForReview = asyncHandler(async (req: Request, res: Response) => {
+  const actorId = requireOrgan(req, KETUA_PENGURUS, 'Ketua Pengurus atas nama Pengurus');
+  const body = submitForReviewSchema.parse(req.body);
+  const plan = await loadFoundationPlan(req.params.id);
+  // A PROPOSED document with no stage was "diajukan" before this flow existed.
+  // /approve now refuses every yayasan document, so unless it may enter here
+  // it can be neither submitted nor ratified.
+  const legacyProposed = plan.status === 'PROPOSED' && plan.reviewStage == null;
+  if (plan.status !== 'DRAFT' && !legacyProposed) {
+    throw Errors.badRequest('Hanya dokumen berstatus Draft yang dapat diajukan ke Pengawas.');
+  }
+  const data = await perencanaanService.advanceReview({
+    planId: plan.id,
+    from: [null, 'DIKEMBALIKAN'],
+    to: 'DIREVIU_PENGAWAS',
+    status: 'DRAFT',
+    event: { action: 'AJUKAN_REVIU', actorId, actorRoleCode: KETUA_PENGURUS, notes: body.notes },
+  });
+  res.json({ success: true, data });
+});
+
+/** Pengawas sends the review back to Pengurus. */
+export const submitReviewResult = asyncHandler(async (req: Request, res: Response) => {
+  const actorId = requireOrgan(req, PENGAWAS, 'Pengawas');
+  const body = reviewResultSchema.parse(req.body);
+  const plan = await loadFoundationPlan(req.params.id);
+  const data = await perencanaanService.advanceReview({
+    planId: plan.id,
+    from: ['DIREVIU_PENGAWAS'],
+    to: 'HASIL_REVIU',
+    status: 'DRAFT',
+    event: { action: 'KIRIM_HASIL_REVIU', actorId, actorRoleCode: PENGAWAS, notes: body.notes },
+  });
+  res.json({ success: true, data });
+});
+
+/**
+ * Ketua Pengurus answers the review — revised, or not and why — and submits
+ * the document together with that review to Pembina.
+ */
+export const proposeToPembina = asyncHandler(async (req: Request, res: Response) => {
+  const actorId = requireOrgan(req, KETUA_PENGURUS, 'Ketua Pengurus atas nama Pengurus');
+  const body = proposeToPembinaSchema.parse(req.body);
+  const plan = await loadFoundationPlan(req.params.id);
+  const data = await perencanaanService.advanceReview({
+    planId: plan.id,
+    from: ['HASIL_REVIU'],
+    to: 'DIAJUKAN_PEMBINA',
+    status: 'PROPOSED',
+    event: {
+      action: 'AJUKAN_PENETAPAN',
+      actorId,
+      actorRoleCode: KETUA_PENGURUS,
+      notes: body.notes,
+      revised: body.revised,
+    },
+  });
+  res.json({ success: true, data });
+});
+
+/** Pembina ratifies the document, or returns it to Pengurus for improvement. */
+export const decidePlan = asyncHandler(async (req: Request, res: Response) => {
+  const actorId = requireOrgan(req, PEMBINA, 'Pembina');
+  const body = decidePlanSchema.parse(req.body);
+  const plan = await loadFoundationPlan(req.params.id);
+  const tetapkan = body.decision === 'TETAPKAN';
+  const data = await perencanaanService.advanceReview({
+    planId: plan.id,
+    from: ['DIAJUKAN_PEMBINA'],
+    to: tetapkan ? 'DITETAPKAN' : 'DIKEMBALIKAN',
+    status: tetapkan ? 'APPROVED' : 'DRAFT',
+    approve: tetapkan,
+    event: {
+      action: tetapkan ? 'TETAPKAN' : 'KEMBALIKAN',
+      actorId,
+      actorRoleCode: PEMBINA,
+      notes: body.notes,
+    },
+  });
+  res.json({ success: true, data });
 });
 
 export const deletePlan = asyncHandler(async (req: Request, res: Response) => {
@@ -268,6 +455,14 @@ export const deletePlan = asyncHandler(async (req: Request, res: Response) => {
 
   if (!canWritePlan(existing, req.user)) {
     throw Errors.forbidden('Access denied');
+  }
+  // Only a draft nobody else is holding may go. A ratified or running plan is
+  // what PKs and realisation hang on, and deleting it cascades its
+  // ratification history away with it.
+  if (existing.status !== 'DRAFT' || LOCKED_REVIEW_STAGES.has(existing.reviewStage ?? '')) {
+    throw Errors.badRequest(
+      'Hanya draf yang dapat dihapus — bukan rencana yang sedang direviu, sudah disahkan, atau sedang berjalan.'
+    );
   }
 
   await perencanaanService.deletePlan(req.params.id);

@@ -591,7 +591,16 @@ describe('Perencanaan Service', () => {
   });
 
   describe('Plan resolution helpers (getXPlanForAuth)', () => {
-    const planPayload = { id: 'plan-1', unitId: 'unit-1', status: 'DRAFT', isCollaborator: false };
+    // type and reviewStage ride along: the controller needs both to know a
+    // yayasan document is locked while Pengawas or Pembina hold it.
+    const planPayload = {
+      id: 'plan-1',
+      unitId: 'unit-1',
+      status: 'DRAFT',
+      type: 'RKA',
+      reviewStage: null,
+      isCollaborator: false,
+    };
 
     it('getObjectivePlanForAuth returns the parent plan payload', async () => {
       vi.mocked(prisma.planObjective.findUnique).mockResolvedValue({
@@ -601,7 +610,9 @@ describe('Perencanaan Service', () => {
       expect(result).toEqual(planPayload);
       expect(prisma.planObjective.findUnique).toHaveBeenCalledWith({
         where: { id: 'obj-1' },
-        select: { plan: { select: { id: true, unitId: true, status: true } } },
+        select: {
+          plan: { select: { id: true, unitId: true, status: true, type: true, reviewStage: true } },
+        },
       });
     });
 
@@ -674,6 +685,7 @@ describe('Perencanaan Service', () => {
         id: 'plan-1',
         unitId: 'unit-1',
         status: 'DRAFT',
+        reviewStage: null,
         isCollaborator: true,
       });
       expect(prisma.planObjective.findUnique).toHaveBeenCalledWith({
@@ -684,6 +696,8 @@ describe('Perencanaan Service', () => {
               id: true,
               unitId: true,
               status: true,
+              type: true,
+              reviewStage: true,
               collaborators: { where: { userId: 'user-collab' }, select: { userId: true } },
             },
           },

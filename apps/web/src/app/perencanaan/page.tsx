@@ -13,11 +13,13 @@ import {
   useDeletePlan,
   type StrategicPlan,
   PLAN_STATUS_LABEL,
+  PLAN_REVIEW_STAGE_LABEL,
   PLAN_TYPE_LABEL,
   planTierLabel,
 } from "@/hooks/use-perencanaan";
 import { useUnits } from "@/hooks/use-units";
 import { useAuthStore } from "@/stores/auth";
+import { getPrimaryRoleCode } from "@/lib/rbac";
 import { PageHeader } from "@/components/shared/page-header";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import {
@@ -485,6 +487,10 @@ function PerencanaanPageContent() {
   });
   const approvePlan = useApprovePlan();
   const deletePlan = useDeletePlan();
+  const authUser = useAuthStore((s) => s.user);
+  // Only an RKA Unit is approved with one click, and only by Ketua Pengurus;
+  // a yayasan document goes Pengurus → Pengawas → Pembina on its detail page.
+  const isKetua = getPrimaryRoleCode(authUser) === "YAYASAN_KETUA";
 
   const approvedCount =
     plans?.filter(
@@ -688,14 +694,22 @@ function PerencanaanPageContent() {
                     <Badge className={statusColor[plan.status]}>
                       {PLAN_STATUS_LABEL[plan.status] ?? plan.status}
                     </Badge>
+                    {plan.reviewStage && plan.reviewStage !== "DITETAPKAN" && (
+                      <Badge
+                        variant="outline"
+                        className="border-amber-400 text-amber-700 dark:text-amber-300"
+                      >
+                        {PLAN_REVIEW_STAGE_LABEL[plan.reviewStage]}
+                      </Badge>
+                    )}
                     <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
-                      {plan.status === "DRAFT" && (
+                      {plan.status === "DRAFT" && plan.unitId && isKetua && (
                         <Button
                           size="icon"
                           variant="ghost"
                           className="h-8 w-8 text-green-600"
                           onClick={() => approvePlan.mutate(plan.id)}
-                          title="Setujui"
+                          title="Sahkan RKA unit"
                         >
                           <CheckCircle className="h-4 w-4" />
                         </Button>
