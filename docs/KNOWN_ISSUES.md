@@ -911,6 +911,18 @@ yang sudah disahkan. Server menolaknya dengan benar; tombolnya yang berbohong.
   per-medan untuk rencana yang sedang berjalan (realisasi boleh, teks yang
   disahkan tidak) belum ada.
 
+### 88 asersi judul e2e masih menguji kerangka, bukan halaman
+
+Mempersempit pemilih judul ke `<main>` menjatuhkan satu uji yang selama ini
+hijau karena mengenai `<h4>Keuangan</h4>` — judul **grup sidebar**, bukan
+halaman `/finance` (yang berjudul "Tagihan & SPP"). Sisa 88 asersi
+`getByRole("heading", …)` di `apps/web/e2e` masih tanpa lingkup. Yang memakai
+**nama persis** aman; yang memakai regex bisa tertangkap salah satu dari
+sembilan judul grup (Ringkasan, Akademik, Kesantrian & Pesantren, SDM,
+Keuangan, Pemasaran & Penerimaan, Perencanaan & Kinerja, Sarana & Layanan,
+Sistem) atau judul kerangka lain. Sapuannya murah, tetapi tiap perubahan bisa
+memerahkan uji lain yang ternyata juga salah sasaran — kerjakan per berkas.
+
 ### Log seed mencetak tiga login yang tidak ada
 
 Penutup `apps/api/prisma/seed.ts` mencetak `pengawas@`, `kepala.sdit@`, dan

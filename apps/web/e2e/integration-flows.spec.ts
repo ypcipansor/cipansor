@@ -407,7 +407,10 @@ test.describe("Integration: Finance → Dashboard Sync", () => {
     await dashboard.goto();
     await dashboard.waitForDataLoad();
 
-    const financeCard = page.getByRole("main").getByText(/keuangan|finance|pendapatan|revenue/i);
+    const financeCard = page
+      .getByRole("main")
+      .getByText(/keuangan|finance|pendapatan|revenue/i)
+      .first();
     if (await financeCard.isVisible({ timeout: 5000 }).catch(() => false)) {
       const initialValue = await financeCard.textContent();
 
@@ -415,8 +418,14 @@ test.describe("Integration: Finance → Dashboard Sync", () => {
       await navigateTo(page, "/finance");
 
       // Should show finance data
+      // The page's own h1, not the sidebar group label: /finance is titled
+      // "Tagihan & SPP" since it shows santri billing, while the sidebar
+      // still renders an <h4>Keuangan</h4> group heading. Unscoped, this
+      // assertion passed on any page that had that sidebar.
       await expect(
-        page.getByRole("main").getByRole("heading", { name: /keuangan|finance/i }),
+        page
+          .getByRole("main")
+          .getByRole("heading", { level: 1, name: /tagihan|spp|keuangan|finance/i }),
       ).toBeVisible({ timeout: 5000 });
 
       // Go back to dashboard
