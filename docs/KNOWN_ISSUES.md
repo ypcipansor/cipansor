@@ -879,8 +879,43 @@ Tidak ada constraint unik di DB. Dua permintaan bersamaan bisa sama-sama lolos
 tahun yang sama. Perbaikan murni memerlukan **partial unique index** Postgres
 (expression `EXTRACT(YEAR FROM start_date)` + `WHERE type='RKA' AND unit_id IS
 NULL AND status NOT IN ('COMPLETED','CANCELLED')`), jadi ini dijadwalkan sebagai
-**follow-up terpisah yang menyentuh `schema.prisma`** — per AGENTS.md, jangan
-digabung dengan perbaikan non-schema di PR yang sama.
+**follow-up yang menyentuh `schema.prisma`**. (Koreksi 2026-09-11: AGENTS.md tidak
+punya aturan yang melarang perubahan skema digabung dengan perbaikan lain dalam
+satu PR — kutipan sebelumnya keliru. PR #415 sendiri kini membawa migrasi
+`20260911000000_plan_review_workflow`.)
+
+## Follow-up (ditemukan 2026-09-11 pada PR #415)
+
+### Cookie `auth-storage` di atas 4 KB dibuang peramban — middleware tanpa peran
+
+Objek pengguna kepala sekolah, dengan seluruh izinnya, berukuran 4.308 byte.
+`customStorage` (`apps/web/src/stores/auth.ts`) menuliskannya ke
+`document.cookie`; peramban menolak cookie di atas ~4 KB tanpa pesan, dan
+`apps/web/middleware.ts` lalu jatuh ke cabang `accessToken` saja —
+terautentikasi **tanpa peran**, sehingga pemeriksaan rute dilewati. API tetap
+menegakkan otorisasi, jadi data tidak bocor, tetapi gerbang rute web tidak
+berlaku bagi akun berizin banyak. Arah perbaikan: cookie cukup membawa
+identitas + kode peran primer, bukan seluruh objek pengguna.
+
+### Tombol tambah pada rencana yang tidak boleh ditulis
+
+"+ Tambah Sasaran" dan "+ Tambah Kegiatan" tampil untuk semua pembaca, termasuk
+Pembina, Pengawas, Super Admin pada dokumen yayasan, dan siapa pun pada rencana
+yang sudah disahkan. Server menolaknya dengan benar; tombolnya yang berbohong.
+
+### Pengesahan yayasan: yang belum dimodelkan
+
+- Keputusan Pembina diambil satu akun Pembina, bukan sebagai keputusan rapat
+  (kolektif).
+- Kepala rencana berstatus IN_PROGRESS masih bisa diubah penyusunnya; aturan
+  per-medan untuk rencana yang sedang berjalan (realisasi boleh, teks yang
+  disahkan tidak) belum ada.
+
+### Log seed mencetak tiga login yang tidak ada
+
+Penutup `apps/api/prisma/seed.ts` mencetak `pengawas@`, `kepala.sdit@`, dan
+`kepala.smpit@cipansor.or.id`. Akun yang benar-benar dibuat:
+`yayasan.pengawas@`, `sdit.kepala@`, `smpit.kepala@` (`Cipansor123!`).
 
 ## How to contribute a build fix
 
