@@ -9,6 +9,21 @@ import {
 import { Errors } from '@/middleware/error';
 import { seesAllUnits, FOUNDATION_SCOPE_ROLES } from '@/utils/resolve-unit-id';
 import { STAFF_ROLE_CODES } from './staff-roles';
+import { pkOwnerUnitId, type PkUnitView } from './pk-unit';
+
+/**
+ * Supervisor candidates: yayasan staff EXCEPT Pembina and Pengawas. Pembina
+ * ratifies (UU 16/2001 Ps. 28 ayat 2 huruf d) and Pengawas supervises and
+ * advises Pengurus (Ps. 40 ayat 1); appraising an employee is management work,
+ * and listing either organ here invites them into the very work their
+ * independence is kept apart from.
+ */
+const SUPERVISOR_CANDIDATE_ROLE_CODES: RoleCode[] = STAFF_ROLE_CODES.filter(
+  (c) => c !== RoleCode.YAYASAN_PEMBINA && c !== RoleCode.YAYASAN_PENGAWAS,
+);
+
+/** An RKA a PK may anchor to: ratified, or ratified and under way. */
+const RENCANA_DISAHKAN = new Set<PlanStatus>([PlanStatus.APPROVED, PlanStatus.IN_PROGRESS]);
 
 /**
  * Perjanjian Kinerja (PK) — performance agreements with cascading
@@ -138,40 +153,31 @@ export class PerformanceAgreementService {
       return this.assertUnitScope({ pkId: indicator.pkId }, caller);
     }
 
-    // Unit yang dimiliki sebuah PK ditentukan dari RENCANA yang diimplementasikannya
-    // (strategicPlan.unitId), bukan dari unit ASAL pegawai (user.unitId). Sebuah PK
-    // yang menginduk pada RKA/Renstra unit lain adalah milik unit pemilik rencana
-    // itu — admin unit pemilik rencana boleh, admin unit asal pegawai tidak. Ini
-    // sama dengan `resolvePkUnit` di analytics.service.ts; jangan sampai keduanya
-    // menyimpang.
-    let ownerUnitId: string | null | undefined;
+    // One rule with reporting: `pkOwnerUnitId` (pk-unit.ts). The two drifted
+    // for PKs anchored to RKA Yayasan; see the note there.
+    const ownerSelect = {
+      strategicPlan: { select: { unitId: true } },
+      user: { select: { unitId: true } },
+    } as const;
+    let owner: PkUnitView | null | undefined;
     if (target.pkId) {
-      const pk = await prisma.performanceAgreement.findUnique({
+      owner = await prisma.performanceAgreement.findUnique({
         where: { id: target.pkId },
-        select: {
-          strategicPlan: { select: { unitId: true } },
-          user: { select: { unitId: true } },
-        },
+        select: ownerSelect,
       });
-      ownerUnitId = pk?.strategicPlan?.unitId ?? pk?.user?.unitId;
     } else if (target.evaluationId) {
-      const evaluation = await prisma.pKEvaluation.findUnique({
-        where: { id: target.evaluationId },
-        select: {
-          pk: {
-            select: {
-              strategicPlan: { select: { unitId: true } },
-              user: { select: { unitId: true } },
-            },
-          },
-        },
-      });
-      ownerUnitId = evaluation?.pk?.strategicPlan?.unitId ?? evaluation?.pk?.user?.unitId;
+      owner = (
+        await prisma.pKEvaluation.findUnique({
+          where: { id: target.evaluationId },
+          select: { pk: { select: ownerSelect } },
+        })
+      )?.pk;
     }
 
     // Baris tidak ada: biarkan lapisan di bawahnya yang menjawab 404, supaya
     // pemeriksaan ini tidak berubah menjadi alat penebak id.
-    if (ownerUnitId === undefined) return;
+    if (!owner) return;
+    const ownerUnitId = pkOwnerUnitId(owner);
 
     if (!caller.unitId || ownerUnitId !== caller.unitId) {
       throw Errors.forbidden('Perjanjian Kinerja ini milik unit lain');
@@ -203,34 +209,48 @@ export class PerformanceAgreementService {
       // cerminan — supaya sasaran yang sama tidak hidup di dua tempat dan
       // berselisih.
       if (await this.isOrganTanpaPK(data.supervisorId)) {
+        // PermenPANRB 53/2014 bagian C: PK pimpinan satuan kerja disusun oleh
+        // pimpinannya, ditandatangani bersama pemberi amanah, dan "harus
+        // disusun setelah … menerima dokumen pelaksanaan anggaran". Bagi
+        // yayasan: kepala unit (penerima amanah) dan Ketua Pengurus (pemberi
+        // amanah), berjangkar pada RKA UNIT-nya yang sudah disahkan — bukan
+        // pada RKA Yayasan di atasnya. Pegawai yayasan tanpa unit berjangkar
+        // pada RKA Yayasan. Organ yayasan sendiri tidak punya PK; kontrak
+        // mereka adalah RKA itu (lihat ORGAN_TANPA_PK).
+        const owner = await prisma.user.findUnique({
+          where: { id: data.userId },
+          select: { unitId: true },
+        });
+        const ownerUnitId = owner?.unitId ?? null;
         if (!data.strategicPlanId) {
           throw Errors.badRequest(
-            'PK yang atasan penilainya organ yayasan harus menyebut dokumen RKA/Renstra ' +
-              'yang menjadi induknya — di situlah kontrak kinerja yayasan berada.'
+            ownerUnitId
+              ? 'PK kepala unit menginduk pada RKA Unit-nya yang sudah disahkan. Susun RKA Unit ' +
+                  '(turunan RKA Yayasan) dan mintakan pengesahan Ketua Pengurus lebih dahulu.'
+              : 'PK pegawai yayasan menginduk pada RKA Yayasan yang sudah ditetapkan Pembina.'
           );
         }
         const rencana = await prisma.strategicPlan.findUnique({
           where: { id: data.strategicPlanId },
-          select: { id: true, status: true },
+          select: { id: true, type: true, unitId: true, status: true, title: true },
         });
         if (!rencana) throw Errors.notFound('Dokumen rencana');
-        if (rencana.status === PlanStatus.DRAFT) {
+        if (rencana.type !== 'RKA') {
           throw Errors.badRequest(
-            'Dokumen rencana induknya masih berstatus Draft — sahkan lebih dahulu ' +
-              'sebelum PK diturunkan darinya.'
+            'PK menginduk pada RKA — anggaran tahunan yang dilaksanakan — bukan pada RPJP atau Renstra.'
           );
         }
-
-        // RKA unit itu OPSIONAL. Tetapi begitu sebuah unit punya RKA-nya
-        // sendiri, PK kepala unit itu harus menginduk padanya — bukan
-        // melompat ke RKA Yayasan. Kalau melompat, RKA unitnya jadi yatim:
-        // disusun, disahkan, lalu tidak ada satu pun PK yang menurunkannya,
-        // dan capaiannya tidak pernah terhubung ke siapa pun.
-        const rkaUnit = await this.rkaUnitBerlaku(data.userId, data.periodStart, data.periodEnd);
-        if (rkaUnit && rkaUnit.id !== rencana.id) {
+        if (rencana.unitId !== ownerUnitId) {
           throw Errors.badRequest(
-            `Unit ini sudah punya RKA sendiri untuk periode tersebut ("${rkaUnit.title}"). ` +
-              'PK-nya harus menginduk pada RKA unit itu, bukan langsung pada RKA Yayasan.'
+            ownerUnitId
+              ? 'PK kepala unit menginduk pada RKA unitnya sendiri, bukan pada RKA Yayasan atau RKA unit lain.'
+              : 'PK pegawai yayasan menginduk pada RKA Yayasan, bukan pada RKA sebuah unit.'
+          );
+        }
+        if (!RENCANA_DISAHKAN.has(rencana.status)) {
+          throw Errors.badRequest(
+            `RKA "${rencana.title}" belum disahkan. PK disusun setelah dokumen anggarannya ` +
+              'disahkan (PermenPANRB 53/2014).'
           );
         }
 
@@ -343,7 +363,7 @@ export class PerformanceAgreementService {
             ],
             role: {
               code: {
-                in: [...STAFF_ROLE_CODES],
+                in: SUPERVISOR_CANDIDATE_ROLE_CODES,
               },
             },
             ...(canSeeAll
@@ -576,31 +596,6 @@ export class PerformanceAgreementService {
   private async isChainRoot(userId: string): Promise<boolean> {
     const codes = await this.activeRoleCodes(userId);
     return codes.some((c) => c === RoleCode.SUPER_ADMIN);
-  }
-
-  /**
-   * RKA milik unit pengguna yang berlaku pada periode PK, bila ada.
-   *
-   * Mengembalikan null ketika unitnya memang tidak menyusun RKA sendiri —
-   * itu keadaan yang sah, bukan kekurangan. RKA unit hanya perlu disusun bila
-   * strukturnya besar atau ada kewajiban pelaporannya.
-   */
-  private async rkaUnitBerlaku(userId: string, periodStart: string, periodEnd: string) {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { unitId: true },
-    });
-    if (!user?.unitId) return null;
-    return prisma.strategicPlan.findFirst({
-      where: {
-        unitId: user.unitId,
-        type: 'RKA',
-        status: { notIn: [PlanStatus.DRAFT, PlanStatus.CANCELLED] },
-        startDate: { lte: new Date(periodEnd) },
-        endDate: { gte: new Date(periodStart) },
-      },
-      select: { id: true, title: true },
-    });
   }
 
   /** True bila pengguna ini adalah organ yayasan yang memang tanpa PK. */

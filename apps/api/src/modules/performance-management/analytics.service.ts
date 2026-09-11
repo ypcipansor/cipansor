@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { pkOwnerUnitId } from './pk-unit';
 import { PlanStatus } from '@prisma/client';
 
 type PkUnitView = {
@@ -15,31 +16,12 @@ type PkWithUnit = PkUnitView & {
 };
 
 /**
- * Unit yang "memiliki" sebuah PK, untuk keperluan laporan.
- *
- * Bug pegawai multi-unit: laporan mengelompokkan PK berdasarkan
- * `user.unitId` (unit asal), sehingga PK seorang guru yang mengajar di unit
- * lain — lewat `UserRoleAssignment.unitId` — masuk laporan unit asalnya,
- * bukan unit yang RKA/Renstra-nya ia implementasikan. `UserRoleAssignment`
- * bersifat per-peran dan kedaluwarsa, jadi tidak cocok sebagai sumber atribusi
- * sebuah PK.
- *
- * Sumber yang dipakai adalah `strategicPlan.unitId` bila PK mengacu pada
- * sebuah dokumen rencana (RKA/Renstra) — karena di situlah PK berakar dalam
- * kaskade — dan baru jatuh ke `user.unitId` bila PK TIDAK mengacu rencana
- * sama sekali. Ini perbaikan tanpa perubahan schema (opsi b). Opsi a (kolom
- * `unitId` persisten di `PerformanceAgreement`) adalah perbaikan yang tahan
- * lama dan disarankan sebagai follow-up, digabung dengan FLAG 5 (uniqueness
- * RKA tahunan) karena keduanya menyentuh schema yang sama.
+ * Unit yang "memiliki" sebuah PK, untuk keperluan laporan — aturan yang SAMA
+ * dengan hak akses (`pkOwnerUnitId`, pk-unit.ts). Laporan dan akses sempat
+ * menyimpang untuk PK yang berinduk RKA Yayasan; lihat penjelasan di sana.
  */
 function resolvePkUnit(pk: PkUnitView): string | null {
-  // Jika PK mengacu sebuah dokumen rencana, dokumen itu yang menentukan unit
-  // (termasuk null = dokumen yayasan / Kantor Pusat). Jangan jatuh ke
-  // `user.unitId`: PK yang berinduk RKA Yayasan (strategicPlan.unitId ===
-  // null) adalah PK tingkat yayasan, bukan PK pegawai unit. `user.unitId`
-  // hanya dipakai bila PK berjalan tanpa acuan rencana.
-  if (pk.strategicPlan) return pk.strategicPlan.unitId ?? null;
-  return pk.user?.unitId ?? null;
+  return pkOwnerUnitId(pk);
 }
 
 const APPROVED = PlanStatus.APPROVED;

@@ -310,43 +310,47 @@ describe('PKAnalyticsService unit tests', () => {
     });
   });
 
-  describe('resolvePkUnit - atribusi PK dasar yayasan (FLAG E)', () => {
-    it('mengklasifikasikan PK berinduk dokumen yayasan sebagai foundation, bukan unit pegawai', async () => {
-      // Skor headline ikut memakai resolvePkUnit: tanpa filter unitId.
+  describe('resolvePkUnit — satu aturan dengan hak akses (keputusan 2026-09-11)', () => {
+    const pk = (userUnitId: string | null) => ({
+      id: 'pk-rka-yayasan',
+      status: 'APPROVED',
+      overallScore: 90,
+      totalScore: 92,
+      behaviorScore: 87,
+      user: { unitId: userUnitId },
+      strategicPlan: { unitId: null },
+    });
+    const ev = (userUnitId: string | null) => ({
+      status: 'APPROVED',
+      pkId: 'pk-rka-yayasan',
+      pk: { user: { unitId: userUnitId }, strategicPlan: { unitId: null } },
+    });
+
+    it('PK pegawai unit yang berinduk RKA Yayasan tetap milik unitnya', async () => {
+      // FLAG E sempat memindahkan PK ini ke yayasan, sementara hak akses tetap
+      // menganggapnya milik unit — kepala unit yang unitnya belum ber-RKA
+      // sendiri lalu hilang dari dasbor unitnya. Keputusan: milik unit pegawai.
       mocked.unit.findMany.mockResolvedValue([{ id: 'unit-2', name: 'SMP IT' }]);
-      // Satu PK berinduk RKA Yayasan (strategicPlan.unitId === null) tetapi
-      // user-nya beralamat unit-2. Sebelumnya resolve jatuh ke user.unitId dan
-      // PK yayasan masuk laporan SMP IT. Sesudah perbaikan harus jadi
-      // foundation (null), TIDAK masuk semuaUnits[0] milik unit-2.
-      mocked.performanceAgreement.findMany.mockResolvedValue([
-        {
-          id: 'pk-yayasan',
-          status: 'APPROVED',
-          overallScore: 90,
-          totalScore: 92,
-          behaviorScore: 87,
-          user: { unitId: 'unit-2' },
-          strategicPlan: { unitId: null },
-        },
-      ]);
-      mocked.pKEvaluation.findMany.mockResolvedValue([
-        {
-          status: 'APPROVED',
-          pkId: 'pk-yayasan',
-          pk: { user: { unitId: 'unit-2' }, strategicPlan: { unitId: null } },
-        },
-      ]);
+      mocked.performanceAgreement.findMany.mockResolvedValue([pk('unit-2')]);
+      mocked.pKEvaluation.findMany.mockResolvedValue([ev('unit-2')]);
 
       const result = await pkAnalyticsService.getUnitPerformanceDashboard();
 
-      // PK yayasan tidak mengotori metrik unit-2.
-      expect(result.allUnits[0].totalPksCount).toBe(0);
-      // Namun tetap dihitung sebagai total keseluruhan (foundation).
+      expect(result.allUnits[0].totalPksCount).toBe(1);
       expect(result.totalAgreements).toBe(1);
       expect(result.approvedAgreements).toBe(1);
-      // Dan ikut headline rata-rata (berinduk yayasan = foundation, bukan unit).
-      expect(result.avgPerformanceScore).toBe(92);
-      expect(result.avgBehaviorScore).toBe(87);
+    });
+
+    it('PK pegawai tanpa unit yang berinduk RKA Yayasan adalah PK yayasan', async () => {
+      mocked.unit.findMany.mockResolvedValue([{ id: 'unit-2', name: 'SMP IT' }]);
+      mocked.performanceAgreement.findMany.mockResolvedValue([pk(null)]);
+      mocked.pKEvaluation.findMany.mockResolvedValue([ev(null)]);
+
+      const result = await pkAnalyticsService.getUnitPerformanceDashboard();
+
+      expect(result.allUnits[0].totalPksCount).toBe(0);
+      expect(result.totalAgreements).toBe(1);
+      expect(result.approvedAgreements).toBe(1);
     });
   });
 });

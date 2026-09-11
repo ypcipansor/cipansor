@@ -49,6 +49,23 @@ const mocked = prisma as unknown as {
 describe('PerformanceAgreementService', () => {
   beforeEach(() => vi.clearAllMocks());
 
+  describe('getSupervisors — Pembina dan Pengawas bukan calon atasan penilai', () => {
+    it('mengecualikan keduanya dari daftar, sementara Pengurus tetap tersedia', async () => {
+      // Pembina mengesahkan (UU 16/2001 Ps. 28 ayat 2 huruf d) dan Pengawas
+      // mengawasi Pengurus (Ps. 40 ayat 1). Menilai kinerja pegawai adalah kerja
+      // kepengurusan; menaruh keduanya di dropdown mengundang mereka ke sana.
+      mocked.user.findMany.mockResolvedValue([]);
+      await pkService.getSupervisors({ roleCode: 'SUPER_ADMIN', unitId: undefined });
+
+      const where = mocked.user.findMany.mock.calls[0][0].where;
+      const codes: string[] = where.userRoles.some.role.code.in;
+      expect(codes).not.toContain('YAYASAN_PEMBINA');
+      expect(codes).not.toContain('YAYASAN_PENGAWAS');
+      expect(codes).toContain('YAYASAN_KETUA');
+      expect(codes).toContain('SDIT_KEPALA_SEKOLAH');
+    });
+  });
+
   describe('getSupervisors unit scoping', () => {
     it('filters userRoles to caller unit OR foundation roles for unit-pinned callers', async () => {
       mocked.user.findMany.mockResolvedValue([]);
@@ -791,7 +808,11 @@ describe('PerformanceAgreementService', () => {
     });
   });
 
-  describe('PK yang atasannya organ yayasan berjangkar pada dokumen RKA', () => {
+  describe('PK kepala unit berjangkar pada RKA Unit-nya yang sudah disahkan', () => {
+    // PermenPANRB 53/2014 bagian C: PK pimpinan satuan kerja ditandatangani
+    // bersama pemberi amanah dan "harus disusun setelah … menerima dokumen
+    // pelaksanaan anggaran". Bagi yayasan: kepala unit dengan Ketua Pengurus,
+    // di atas RKA Unit-nya sendiri — bukan RKA Yayasan di atasnya.
     const dto = {
       userId: 'u-kepsek',
       supervisorId: 'u-ketua',
@@ -804,33 +825,32 @@ describe('PerformanceAgreementService', () => {
         .mockResolvedValueOnce(self.map((code) => ({ role: { code } })))
         .mockResolvedValueOnce(supervisor.map((code) => ({ role: { code } })));
     };
+    const rka = (over: Record<string, unknown> = {}) => ({
+      id: 'rka-smp',
+      type: 'RKA',
+      unitId: 'unit-smp',
+      status: 'APPROVED',
+      title: 'RKA SMP IT 2027',
+      ...over,
+    });
 
-    it('tidak menuntut PK atasan — menuntut dokumen rencananya', async () => {
-      // Inilah yang mencegah duplikasi: Ketua Pengurus TIDAK diberi PK cermin
-      // berisi sasaran RKA, jadi PK kepsek menggantung pada RKA-nya langsung.
+    it('tidak menuntut PK atasan — menuntut RKA Unit-nya', async () => {
+      // Ketua Pengurus TIDAK diberi PK cermin berisi sasaran RKA; PK kepsek
+      // menggantung langsung pada dokumen anggaran unitnya.
       asRoles(['SMPIT_KEPALA_SEKOLAH'], ['YAYASAN_KETUA']);
+      mocked.user.findUnique.mockResolvedValue({ unitId: 'unit-smp' });
 
-      await expect(pkService.createPK(dto)).rejects.toThrow(/dokumen RKA\/Renstra/i);
+      await expect(pkService.createPK(dto)).rejects.toThrow(/RKA Unit/);
       expect(mocked.performanceAgreement.findFirst).not.toHaveBeenCalled();
     });
 
-    it('menolak dokumen rencana yang masih Draft', async () => {
+    it('menerima RKA Unit sendiri yang sudah disahkan, tanpa supervisorPk', async () => {
       asRoles(['SMPIT_KEPALA_SEKOLAH'], ['YAYASAN_KETUA']);
-      mocked.strategicPlan.findUnique.mockResolvedValue({ id: 'rka-1', status: 'DRAFT' });
-
-      await expect(pkService.createPK({ ...dto, strategicPlanId: 'rka-1' })).rejects.toThrow(
-        /Draft/i
-      );
-    });
-
-    it('menerima RKA yang sudah disahkan, tanpa supervisorPk', async () => {
-      asRoles(['SMPIT_KEPALA_SEKOLAH'], ['YAYASAN_KETUA']);
-      mocked.strategicPlan.findUnique.mockResolvedValue({ id: 'rka-1', status: 'APPROVED' });
       mocked.user.findUnique.mockResolvedValue({ unitId: 'unit-smp' });
-      mocked.strategicPlan.findFirst.mockResolvedValue(null); // unit belum punya RKA sendiri
+      mocked.strategicPlan.findUnique.mockResolvedValue(rka());
       mocked.performanceAgreement.create.mockResolvedValue({ id: 'pk-kepsek' });
 
-      await pkService.createPK({ ...dto, strategicPlanId: 'rka-1' });
+      await pkService.createPK({ ...dto, strategicPlanId: 'rka-smp' });
 
       expect(mocked.performanceAgreement.create).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -839,20 +859,58 @@ describe('PerformanceAgreementService', () => {
       );
     });
 
-    it('menolak lompat ke RKA Yayasan bila unitnya sudah punya RKA sendiri', async () => {
-      // RKA unit itu opsional — tetapi begitu ada, ia tidak boleh yatim.
-      asRoles(['SDIT_KEPALA_SEKOLAH'], ['YAYASAN_KETUA']);
-      mocked.strategicPlan.findUnique.mockResolvedValue({ id: 'rka-yayasan', status: 'APPROVED' });
-      mocked.user.findUnique.mockResolvedValue({ unitId: 'unit-sd' });
-      mocked.strategicPlan.findFirst.mockResolvedValue({
-        id: 'rka-sd',
-        title: 'RKA SD IT Cipansor 2027',
-      });
+    it('menolak RKA Unit yang belum disahkan', async () => {
+      asRoles(['SMPIT_KEPALA_SEKOLAH'], ['YAYASAN_KETUA']);
+      mocked.user.findUnique.mockResolvedValue({ unitId: 'unit-smp' });
+      mocked.strategicPlan.findUnique.mockResolvedValue(rka({ status: 'DRAFT' }));
 
-      await expect(pkService.createPK({ ...dto, strategicPlanId: 'rka-yayasan' })).rejects.toThrow(
-        /RKA SD IT Cipansor 2027/
+      await expect(pkService.createPK({ ...dto, strategicPlanId: 'rka-smp' })).rejects.toThrow(
+        /belum disahkan/
       );
       expect(mocked.performanceAgreement.create).not.toHaveBeenCalled();
+    });
+
+    it('menolak RKA Yayasan untuk kepala unit — induknya RKA unitnya sendiri', async () => {
+      asRoles(['SDIT_KEPALA_SEKOLAH'], ['YAYASAN_KETUA']);
+      mocked.user.findUnique.mockResolvedValue({ unitId: 'unit-sd' });
+      mocked.strategicPlan.findUnique.mockResolvedValue(
+        rka({ id: 'rka-yayasan', unitId: null, title: 'RKA Yayasan 2027' })
+      );
+
+      await expect(pkService.createPK({ ...dto, strategicPlanId: 'rka-yayasan' })).rejects.toThrow(
+        /RKA unitnya sendiri/
+      );
+      expect(mocked.performanceAgreement.create).not.toHaveBeenCalled();
+    });
+
+    it('menolak RKA milik unit lain', async () => {
+      asRoles(['SDIT_KEPALA_SEKOLAH'], ['YAYASAN_KETUA']);
+      mocked.user.findUnique.mockResolvedValue({ unitId: 'unit-sd' });
+      mocked.strategicPlan.findUnique.mockResolvedValue(rka()); // unit-smp
+
+      await expect(pkService.createPK({ ...dto, strategicPlanId: 'rka-smp' })).rejects.toThrow(
+        /RKA unitnya sendiri/
+      );
+    });
+
+    it('menolak Renstra sebagai induk PK', async () => {
+      asRoles(['SMPIT_KEPALA_SEKOLAH'], ['YAYASAN_KETUA']);
+      mocked.user.findUnique.mockResolvedValue({ unitId: 'unit-smp' });
+      mocked.strategicPlan.findUnique.mockResolvedValue(rka({ type: 'RENSTRA', unitId: null }));
+
+      await expect(pkService.createPK({ ...dto, strategicPlanId: 'renstra' })).rejects.toThrow(
+        /bukan pada RPJP atau Renstra/
+      );
+    });
+
+    it('pegawai tanpa unit berjangkar pada RKA Yayasan', async () => {
+      asRoles(['SDIT_GURU'], ['YAYASAN_KETUA']);
+      mocked.user.findUnique.mockResolvedValue({ unitId: null });
+      mocked.strategicPlan.findUnique.mockResolvedValue(rka({ id: 'rka-yayasan', unitId: null }));
+      mocked.performanceAgreement.create.mockResolvedValue({ id: 'pk-staf' });
+
+      await pkService.createPK({ ...dto, userId: 'u-staf', strategicPlanId: 'rka-yayasan' });
+      expect(mocked.performanceAgreement.create).toHaveBeenCalled();
     });
 
     it('atasan BUKAN organ tetap wajib punya PK yang sudah disetujui', async () => {
