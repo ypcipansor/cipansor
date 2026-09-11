@@ -10,6 +10,27 @@ import { pkService } from './pk.service';
  * scores, weighted score roll-ups, and (on approval) YTD sync to the
  * PK plus an automated talent-matrix assessment.
  */
+/**
+ * Capaian YTD sebuah indikator dari daftar realisasi bulanannya, menurut sifat
+ * agregasi indikator. SATU-SATUNYA tempat agregasi ini didefinisikan — dipakai
+ * oleh penilaian evaluasi (`recalculateEvaluationScores`) DAN oleh sinkronisasi
+ * PK/talent (`syncToPKAndTalentInTx`). Kalau salah satu menyimpang, skor
+ * evaluasi dan capaian YTD PK tidak akan pernah selaras.
+ *
+ * `values` harus sudah terurut dari periode tertua ke terbaru agar mode
+ * TERAKHIR mengambil entri yang benar.
+ */
+function aggregateValues(values: number[], aggregation: IndicatorAggregation): number {
+  if (values.length === 0) return 0;
+  if (aggregation === IndicatorAggregation.RATA_RATA) {
+    return values.reduce((sum, v) => sum + v, 0) / values.length;
+  }
+  if (aggregation === IndicatorAggregation.TERAKHIR) {
+    return values[values.length - 1];
+  }
+  return values.reduce((sum, v) => sum + v, 0);
+}
+
 export class EvaluationService {
   // ==================== BEHAVIORAL VALUES (ADMIN) ====================
 
@@ -172,21 +193,17 @@ export class EvaluationService {
       });
       if (!detail) throw Errors.notFound('Indicator detail for this evaluation');
 
-      // Score the month: realization vs target, capped at 100.
-      const target = detail.indicator.target;
-      let score = 0;
-      if (target > 0) {
-        score = Math.min(100, (data.realization / target) * 100);
-      } else if (target === 0 && data.realization === 0) {
-        score = 100;
-      }
-
+      // Simpan realisasi bulanan MENTAH. Skor indikator tidak dihitung di sini
+      // bulan-per-bulan: untuk indikator KUMULATIF, menyentuh target setahun
+      // yang dicicil 12 bulan akan memberi skor ~1/12 pada setiap bulannya, dan
+      // merata-ratakannya pun tetap salah. Skor dihitung di
+      // `recalculateEvaluationScores` dari capaian YTD ter-agregasi (sesuai
+      // `indicator.aggregation`) dibanding target.
       const updated = await tx.pKIndicatorEvaluation.update({
         where: { id: detail.id },
         data: {
           realization: data.realization,
           activities: data.activities,
-          score,
         },
         include: { indicator: true },
       });
@@ -238,11 +255,79 @@ export class EvaluationService {
 
     if (!evaluation) return;
 
-    // Performance: weighted by indicator weight (weights total 100).
-    const performanceScore = evaluation.indicatorDetails.reduce(
-      (sum, det) => sum + (det.score * det.indicator.weight) / 100,
-      0
-    );
+    // Kumpulkan realisasi indikator PK, terurut menurut tahun/bulan, TETAPI
+    // hanya sampai periode evaluasi yang sedang dihitung. Ini dasar hitung
+    // capaian YTD: skor indikator bukan jumlah skor bulanan mentah (yang untuk
+    // KUMULATIF memberi ~1/12 untuk tiap bulan yang dicicil menuju target
+    // setahun), melainkan capaian YTD ter-agregasi menurut
+    // `indicator.aggregation` dibanding target.
+    //
+    // Tanpa dua pembatas ini skor YTD bulan berikutnya mengontaminasi bulan
+    // yang lebih awal: evaluasi Januari memuat realisasi Februari yang belum
+    // ada saat Januari dinilai. Jadi bentuk agregasi hanya dari evaluasi yang
+    // PERIODENYA sudah tiba (year/month <= current) dan SUDAH DISETUJUI
+    // (APPROVED), plus evaluasi saat ini sendiri yang sedang dinilai
+    // realisasinya. Evaluasi PROPOSED sengaja TIDAK dihitung: statusnya tidak
+    // terkunci (masih bisa diubah lewat `loadEditableEvaluationInTx` yang hanya
+    // memblokir APPROVED), sehingga realisasinya belum otoritatif dan bisa
+    // mengontaminasi YTD dengan angka yang masih akan dikoreksi.
+    const relevantStatuses = [PlanStatus.APPROVED];
+    const periodCondition =
+      evaluation.year !== undefined && evaluation.year !== null
+        ? [
+            {
+              OR: [
+                { year: { lt: evaluation.year } },
+                { year: evaluation.year, month: { lte: evaluation.month ?? 12 } },
+              ],
+            },
+          ]
+        : [];
+
+    const aggs = await client.pKIndicatorEvaluation.findMany({
+      where: {
+        evaluation: {
+          AND: [
+            { pkId: evaluation.pkId },
+            { OR: [{ id: evaluationId }, { status: { in: relevantStatuses } }] },
+            ...periodCondition,
+          ],
+        },
+      },
+      select: {
+        indicatorId: true,
+        realization: true,
+        evaluation: { select: { year: true, month: true } },
+      },
+      orderBy: [{ evaluation: { year: 'asc' } }, { evaluation: { month: 'asc' } }],
+    });
+    const byIndicator = new Map<string, number[]>();
+    for (const agg of aggs) {
+      const arr = byIndicator.get(agg.indicatorId) ?? [];
+      arr.push(agg.realization);
+      byIndicator.set(agg.indicatorId, arr);
+    }
+
+    // Performance: skor per indikator dari capaian YTD vs target, ditimbang
+    // bobot indikator (bobot total 100). Skor yang dihitung ini dipersist
+    // kembali ke detail evaluasi supaya nilai yang tersimpan mencerminkan
+    // capaian ter-agregasi, bukan hanya bulan yang baru saja diubah.
+    let performanceScore = 0;
+    for (const det of evaluation.indicatorDetails) {
+      const values = byIndicator.get(det.indicatorId) ?? [];
+      const achieved = aggregateValues(values, det.indicator.aggregation);
+      let indScore = 0;
+      if (det.indicator.target > 0) {
+        indScore = Math.min(100, (achieved / det.indicator.target) * 100);
+      } else if (det.indicator.target === 0 && achieved === 0) {
+        indScore = 100;
+      }
+      await client.pKIndicatorEvaluation.update({
+        where: { id: det.id },
+        data: { score: indScore },
+      });
+      performanceScore += (indScore * det.indicator.weight) / 100;
+    }
 
     // Behavior: weighted by BehavioralValue.weight (simple average when
     // all weights are equal, which is the SAFTI default).
@@ -365,6 +450,8 @@ export class EvaluationService {
         },
         evaluations: {
           where: { status: PlanStatus.APPROVED },
+          // Urutan wajib: periode terakhir = evaluasi paling akhir (max period).
+          orderBy: [{ year: 'asc' }, { month: 'asc' }],
         },
       },
     });
@@ -376,41 +463,70 @@ export class EvaluationService {
     // Dulu selalu dijumlahkan. Untuk indikator persentase itu menghasilkan
     // angka mustahil yang tampil apa adanya di layar: target 85 persen,
     // dievaluasi 88 lalu 80, tertulis "Realisasi YTD 168 persen".
+    const realizationByIndicator = new Map<string, number>();
     for (const indicator of pk.indicators) {
       const entries = indicator.evaluations as Array<{ realization: number }>;
-      let realization = 0;
-      if (entries.length > 0) {
-        if (indicator.aggregation === IndicatorAggregation.RATA_RATA) {
-          realization = entries.reduce((sum, ev) => sum + ev.realization, 0) / entries.length;
-        } else if (indicator.aggregation === IndicatorAggregation.TERAKHIR) {
-          realization = entries[entries.length - 1].realization;
-        } else {
-          realization = entries.reduce((sum, ev) => sum + ev.realization, 0);
-        }
-      }
+      // `aggregateValues` sudah terurut terlebih dahulu lewat orderBy di atas,
+      // sehingga mode TERAKHIR dan RATA_RATA mengambil entri yang benar.
+      const realization = aggregateValues(
+        entries.map((ev) => ev.realization),
+        indicator.aggregation
+      );
+      realizationByIndicator.set(indicator.id, realization);
       await tx.pKIndicator.update({
         where: { id: indicator.id },
         data: { realization },
       });
     }
 
-    // 2. PK aggregate scores = average of approved monthly evaluations.
+    // 2. PK aggregate scores = capaian YTD TERKINI, bukan rata-rata skor
+    //    bulanan. Setiap `performanceScore` bulanan SUDAH merupakan capaian
+    //    YTD (naik bertahap terhadap target setahun); merata-ratakannya kembali
+    //    membuat target tahunan yang tercapai penuh terbaca jauh di bawah 100%.
+    //    Pakai skor perioda terakhir (teragregasi) yang sudah diurut naik.
     const approvedCount = pk.evaluations.length;
     if (approvedCount === 0) return;
 
-    const avgPerformance =
-      pk.evaluations.reduce((sum: number, ev: any) => sum + ev.performanceScore, 0) / approvedCount;
-    const avgBehavior =
-      pk.evaluations.reduce((sum: number, ev: any) => sum + ev.behaviorScore, 0) / approvedCount;
-    const avgOverall =
-      pk.evaluations.reduce((sum: number, ev: any) => sum + ev.overallScore, 0) / approvedCount;
+    const latest = pk.evaluations[pk.evaluations.length - 1];
+
+    // Bug regresi #2 — skor PK tidak boleh basi dari realisasi ter-agregasi.
+    //
+    // Realisasi indikator (langkah 1) SELALU diagregasi dari seluruh evaluasi
+    // approved. Bila periode yang lebih awal disetujui SETELAH periode yang
+    // lebih baru, `performanceScore` tersimpan pada evaluasi periode terakhir
+    // belum mencerminkan realisasi periode awal itu (skor itu dihitung saat
+    // realisasinya terakhir disunting, sebelum periode awal ikut approved).
+    // Menyalin `performanceScore` tersimpan apa adanya membuat PK memegang
+    // realisasi YTD dan skor yang tidak konsisten. Karena itu skor performa PK
+    // dihitung ULANG dari realisasi ter-agregasi yang sama persis dengan
+    // langkah 1, lalu ditulis balik ke evaluasi supaya datanya ikut terkoreksi.
+    let latestPerformance = 0;
+    for (const indicator of pk.indicators) {
+      const achieved = realizationByIndicator.get(indicator.id) ?? 0;
+      let indScore = 0;
+      if (indicator.target > 0) {
+        indScore = Math.min(100, (achieved / indicator.target) * 100);
+      } else if (indicator.target === 0 && achieved === 0) {
+        indScore = 100;
+      }
+      latestPerformance += (indScore * indicator.weight) / 100;
+    }
+    const latestBehavior = latest?.behaviorScore ?? 0;
+    const latestOverall = latestPerformance * 0.6 + latestBehavior * 0.4;
+
+    // Tulis balik skor yang telah dihitung ulang ke evaluasi periode terakhir
+    // supaya baris yang tersimpan tidak ikut berbeda dari PK yang dibacanya.
+    await tx.pKEvaluation.update({
+      where: { id: latest.id },
+      data: { performanceScore: latestPerformance, overallScore: latestOverall },
+    });
 
     await tx.performanceAgreement.update({
       where: { id: pkId },
       data: {
-        totalScore: avgPerformance,
-        behaviorScore: avgBehavior,
-        overallScore: avgOverall,
+        totalScore: latestPerformance,
+        behaviorScore: latestBehavior,
+        overallScore: latestOverall,
       },
     });
 
@@ -425,20 +541,20 @@ export class EvaluationService {
     if (!talentProfile) return;
 
     let rating: PerformanceRating;
-    if (avgOverall >= 90) rating = PerformanceRating.OUTSTANDING;
-    else if (avgOverall >= 80) rating = PerformanceRating.EXCEEDS;
-    else if (avgOverall >= 70) rating = PerformanceRating.MEETS;
-    else if (avgOverall >= 60) rating = PerformanceRating.BELOW;
+    if (latestOverall >= 90) rating = PerformanceRating.OUTSTANDING;
+    else if (latestOverall >= 80) rating = PerformanceRating.EXCEEDS;
+    else if (latestOverall >= 70) rating = PerformanceRating.MEETS;
+    else if (latestOverall >= 60) rating = PerformanceRating.BELOW;
     else rating = PerformanceRating.UNSATISFACTORY;
 
     const period = `PK Sync ${pk.periodStart.getFullYear()} (${pkId.slice(0, 8)})`;
     const assessmentData = {
       performanceRating: rating,
       potentialRating: talentProfile.assessments[0]?.potentialRating ?? PerformanceRating.MEETS,
-      overallScore: avgOverall,
+      overallScore: latestOverall,
       feedback:
-        `Automated sync from Perjanjian Kinerja. Performance: ${avgPerformance.toFixed(2)}, ` +
-        `Behavior (SAFTI): ${avgBehavior.toFixed(2)}. Potential rating carried forward — review manually.`,
+        `Automated sync from Perjanjian Kinerja. Performance: ${latestPerformance.toFixed(2)}, ` +
+        `Behavior (SAFTI): ${latestBehavior.toFixed(2)}. Potential rating carried forward — review manually.`,
       assessedAt: new Date(),
     };
 

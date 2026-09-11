@@ -24,11 +24,13 @@ vi.mock('@/lib/prisma', () => ({
       create: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
+      findUnique: vi.fn(),
     },
     planActivity: {
       create: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
+      findUnique: vi.fn(),
     },
     journalEntry: {
       aggregate: vi.fn(),
@@ -51,9 +53,16 @@ describe('Perencanaan Service', () => {
         endDate: new Date().toISOString(),
         budget: 50000000,
         unitId: 'unit-1',
+        parentId: 'rpjp-1',
         createdById: 'user-1',
       };
 
+      vi.mocked(prisma.strategicPlan.findFirst).mockResolvedValue(null);
+      // RENSTRA harus menggantung pada RPJP — induknya wajib ada dan berjenis RPJP.
+      vi.mocked(prisma.strategicPlan.findUnique).mockResolvedValue({
+        id: 'rpjp-1',
+        type: 'RPJP',
+      } as any);
       vi.mocked(prisma.strategicPlan.create).mockResolvedValue({ id: 'plan-1', ...dto } as any);
 
       await perencanaanService.createPlan(dto);
@@ -78,6 +87,42 @@ describe('Perencanaan Service', () => {
           endDate: new Date().toISOString(),
           unitId: 'unit-1',
           createdById: 'user-1',
+        })
+      ).rejects.toMatchObject({ statusCode: 400 });
+      expect(prisma.strategicPlan.create).not.toHaveBeenCalled();
+    });
+
+    it('walidates that RENSTRA and RKA Yayasan must hang off their mandated parent', async () => {
+      // Sebelumnya penjaga "parentless" hanya menolak RKA unit. Akibatnya
+      // RENSTRA maupun RKA Yayasan tanpa parentId tetap lolos dan terlepas
+      // dari kaskade wajib (Renstra harus berinduk RPJP; RKA Yayasan harus
+      // berinduk Renstra). Kedua kasus ini harus ditolak.
+      const base = {
+        startDate: '2027-01-01T00:00:00.000Z',
+        endDate: '2027-12-31T00:00:00.000Z',
+        createdById: 'user-1',
+      };
+
+      // RENSTRA tanpa induk RPJP → ditolak.
+      vi.mocked(prisma.strategicPlan.findFirst).mockResolvedValue(null);
+      await expect(
+        perencanaanService.createPlan({
+          ...base,
+          title: 'Renstra Yayasan 2027-2031',
+          type: 'RENSTRA' as any,
+          unitId: null,
+        })
+      ).rejects.toMatchObject({ statusCode: 400 });
+      expect(prisma.strategicPlan.create).not.toHaveBeenCalled();
+
+      // RKA Yayasan tanpa induk Renstra → ditolak.
+      vi.mocked(prisma.strategicPlan.findFirst).mockResolvedValue(null);
+      await expect(
+        perencanaanService.createPlan({
+          ...base,
+          title: 'RKA Yayasan 2027',
+          type: 'RKA' as any,
+          unitId: null,
         })
       ).rejects.toMatchObject({ statusCode: 400 });
       expect(prisma.strategicPlan.create).not.toHaveBeenCalled();
@@ -544,4 +589,107 @@ describe('Perencanaan Service', () => {
       expect(result).toEqual({ planId: 'plan-1', trend: [] });
     });
   });
+
+  describe('Plan resolution helpers (getXPlanForAuth)', () => {
+    const planPayload = { id: 'plan-1', unitId: 'unit-1', status: 'DRAFT', isCollaborator: false };
+
+    it('getObjectivePlanForAuth returns the parent plan payload', async () => {
+      vi.mocked(prisma.planObjective.findUnique).mockResolvedValue({
+        plan: planPayload,
+      } as any);
+      const result = await perencanaanService.getObjectivePlanForAuth('obj-1');
+      expect(result).toEqual(planPayload);
+      expect(prisma.planObjective.findUnique).toHaveBeenCalledWith({
+        where: { id: 'obj-1' },
+        select: { plan: { select: { id: true, unitId: true, status: true } } },
+      });
+    });
+
+    it('getObjectivePlanForAuth returns null when the objective is missing', async () => {
+      vi.mocked(prisma.planObjective.findUnique).mockResolvedValue(null);
+      const result = await perencanaanService.getObjectivePlanForAuth('obj-unknown');
+      expect(result).toBeNull();
+    });
+
+    it('getIndicatorPlanForAuth traces an objective-owned indicator', async () => {
+      vi.mocked(prisma.planIndicator.findUnique).mockResolvedValue({
+        objectiveId: 'obj-1',
+        activityId: null,
+      } as any);
+      vi.mocked(prisma.planObjective.findUnique).mockResolvedValue({
+        plan: planPayload,
+      } as any);
+      const result = await perencanaanService.getIndicatorPlanForAuth('ind-1');
+      expect(result).toEqual(planPayload);
+    });
+
+    it('getIndicatorPlanForAuth traces an activity-owned indicator', async () => {
+      vi.mocked(prisma.planIndicator.findUnique).mockResolvedValue({
+        objectiveId: null,
+        activityId: 'act-1',
+      } as any);
+      vi.mocked(prisma.planActivity.findUnique).mockResolvedValue({
+        objectiveId: 'obj-1',
+        parentId: null,
+      } as any);
+      vi.mocked(prisma.planObjective.findUnique).mockResolvedValue({
+        plan: planPayload,
+      } as any);
+      const result = await perencanaanService.getIndicatorPlanForAuth('ind-1');
+      expect(result).toEqual(planPayload);
+    });
+
+    it('getActivityPlanForAuth walks the parent chain up to the plan', async () => {
+      // Kegiatan nested under a Program (objectiveId null → parentId).
+      vi.mocked(prisma.planActivity.findUnique)
+        .mockResolvedValueOnce({ objectiveId: null, parentId: 'act-parent' } as any)
+        .mockResolvedValueOnce({ objectiveId: 'obj-1', parentId: null } as any);
+      vi.mocked(prisma.planObjective.findUnique).mockResolvedValue({
+        plan: planPayload,
+      } as any);
+      const result = await perencanaanService.getActivityPlanForAuth('act-child');
+      expect(result).toEqual(planPayload);
+    });
+
+    it('getIndicatorPlanForAuth returns null when the indicator is missing', async () => {
+      vi.mocked(prisma.planIndicator.findUnique).mockResolvedValue(null);
+      const result = await perencanaanService.getIndicatorPlanForAuth('ind-unknown');
+      expect(result).toBeNull();
+    });
+
+    // REGRESI (BUG 2): ketika userId diberikan dan user itu adalah collaborator
+    // pada plan, isCollaborator bernilai true — inilah yang dipakai controller
+    // untuk mengizinkan kolaborator mengedit draft.
+    it('menandai isCollaborator=true ketika user ada di PlanCollaborator', async () => {
+      vi.mocked(prisma.planObjective.findUnique).mockResolvedValue({
+        plan: {
+          id: 'plan-1',
+          unitId: 'unit-1',
+          status: 'DRAFT',
+          collaborators: [{ userId: 'user-collab' }],
+        },
+      } as any);
+      const result = await perencanaanService.getObjectivePlanForAuth('obj-1', 'user-collab');
+      expect(result).toEqual({
+        id: 'plan-1',
+        unitId: 'unit-1',
+        status: 'DRAFT',
+        isCollaborator: true,
+      });
+      expect(prisma.planObjective.findUnique).toHaveBeenCalledWith({
+        where: { id: 'obj-1' },
+        select: {
+          plan: {
+            select: {
+              id: true,
+              unitId: true,
+              status: true,
+              collaborators: { where: { userId: 'user-collab' }, select: { userId: true } },
+            },
+          },
+        },
+      });
+    });
+  });
+
 });

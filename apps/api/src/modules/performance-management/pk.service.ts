@@ -7,7 +7,7 @@ import {
   RoleCode,
 } from '@prisma/client';
 import { Errors } from '@/middleware/error';
-import { seesAllUnits } from '@/utils/resolve-unit-id';
+import { seesAllUnits, FOUNDATION_SCOPE_ROLES } from '@/utils/resolve-unit-id';
 import { STAFF_ROLE_CODES } from './staff-roles';
 
 /**
@@ -138,19 +138,36 @@ export class PerformanceAgreementService {
       return this.assertUnitScope({ pkId: indicator.pkId }, caller);
     }
 
-    const ownerUnitId = target.pkId
-      ? (
-          await prisma.performanceAgreement.findUnique({
-            where: { id: target.pkId },
-            select: { user: { select: { unitId: true } } },
-          })
-        )?.user?.unitId
-      : (
-          await prisma.pKEvaluation.findUnique({
-            where: { id: target.evaluationId },
-            select: { pk: { select: { user: { select: { unitId: true } } } } },
-          })
-        )?.pk?.user?.unitId;
+    // Unit yang dimiliki sebuah PK ditentukan dari RENCANA yang diimplementasikannya
+    // (strategicPlan.unitId), bukan dari unit ASAL pegawai (user.unitId). Sebuah PK
+    // yang menginduk pada RKA/Renstra unit lain adalah milik unit pemilik rencana
+    // itu — admin unit pemilik rencana boleh, admin unit asal pegawai tidak. Ini
+    // sama dengan `resolvePkUnit` di analytics.service.ts; jangan sampai keduanya
+    // menyimpang.
+    let ownerUnitId: string | null | undefined;
+    if (target.pkId) {
+      const pk = await prisma.performanceAgreement.findUnique({
+        where: { id: target.pkId },
+        select: {
+          strategicPlan: { select: { unitId: true } },
+          user: { select: { unitId: true } },
+        },
+      });
+      ownerUnitId = pk?.strategicPlan?.unitId ?? pk?.user?.unitId;
+    } else if (target.evaluationId) {
+      const evaluation = await prisma.pKEvaluation.findUnique({
+        where: { id: target.evaluationId },
+        select: {
+          pk: {
+            select: {
+              strategicPlan: { select: { unitId: true } },
+              user: { select: { unitId: true } },
+            },
+          },
+        },
+      });
+      ownerUnitId = evaluation?.pk?.strategicPlan?.unitId ?? evaluation?.pk?.user?.unitId;
+    }
 
     // Baris tidak ada: biarkan lapisan di bawahnya yang menjawab 404, supaya
     // pemeriksaan ini tidak berubah menjadi alat penebak id.
@@ -303,7 +320,16 @@ export class PerformanceAgreementService {
   ) {
     const now = new Date();
     const canSeeAll = caller ? seesAllUnits(caller) : true;
-    const targetUnitId = !canSeeAll ? (caller?.unitId ?? 'none') : undefined;
+
+    // Unit boundary: a caller pinned to a unit sees that unit's staff — dan,
+    // di sampingnya, kandidat ber-scope yayasan/global. Assignment organ
+    // yayasan (mis. Ketua Pengurus) tidak punya unitId, sehingga filter
+    // `unitId = caller.unitId` saja membuat atasan yang WAJIB untuk rantai PK
+    // kepala unit tidak pernah muncul di daftar. `seesAllUnits`-friendly roles
+    // (FOUNDATION_SCOPE_ROLES) tetap disertakan tanpa membocorkan seluruh
+    // direktori: peran tersebut memang bekerja lintas unit. Pemanggil yang
+    // ber-scope global (`canSeeAll`) tidak dibatasi unit sama sekali.
+    const foundationRoleCodes = [...FOUNDATION_SCOPE_ROLES];
 
     const rows = await prisma.user.findMany({
       where: {
@@ -311,7 +337,6 @@ export class PerformanceAgreementService {
         userRoles: {
           some: {
             isActive: true,
-            ...(targetUnitId ? { unitId: targetUnitId } : {}),
             OR: [
               { expiresAt: null },
               { expiresAt: { gt: now } },
@@ -321,6 +346,18 @@ export class PerformanceAgreementService {
                 in: [...STAFF_ROLE_CODES],
               },
             },
+            ...(canSeeAll
+              ? {}
+              : {
+                  AND: [
+                    {
+                      OR: [
+                        ...(caller?.unitId ? [{ unitId: caller.unitId }] : []),
+                        { role: { code: { in: foundationRoleCodes } } },
+                      ],
+                    },
+                  ],
+                }),
           },
         },
       },
@@ -415,6 +452,7 @@ export class PerformanceAgreementService {
         where: { id },
         include: {
           user: { select: { id: true, unitId: true } },
+          strategicPlan: { select: { unitId: true } },
         },
       });
       if (!pk) throw Errors.notFound('PK');
@@ -423,13 +461,19 @@ export class PerformanceAgreementService {
         throw Errors.conflict('Only DRAFT performance agreements can be deleted');
       }
 
+      // Unit yang memiliki PK ditentukan dari RENCANA yang diimplementasikannya
+      // (strategicPlan.unitId), bukan dari unit asal pegawai (user.unitId) —
+      // konsisten dengan assertUnitScope. Admin unit pemilik rencana boleh
+      // menghapus; admin unit asal pegawai (jika berbeda) tidak.
+      const ownerUnitId = pk.strategicPlan?.unitId ?? pk.user?.unitId;
+
       const isOwner = pk.userId === callerObj.id;
       const isSuperAdmin = callerObj.roleCode === 'SUPER_ADMIN';
       const isSameUnitAdmin =
         !!callerObj.isAdmin &&
         callerObj.unitId !== null &&
         callerObj.unitId !== undefined &&
-        pk.user?.unitId === callerObj.unitId;
+        ownerUnitId === callerObj.unitId;
 
       if (!isOwner && !isSuperAdmin && !isSameUnitAdmin) {
         throw Errors.forbidden('You do not have permission to delete this performance agreement');
@@ -441,15 +485,26 @@ export class PerformanceAgreementService {
 
   async updatePK(
     id: string,
-    callerId: string,
-    isAdmin: boolean,
+    caller: { id: string; isAdmin: boolean; roleCode?: string; unitId?: string | null },
     data: { notes?: string; supervisorId?: string; strategicPlanId?: string }
   ) {
     const pk = await prisma.performanceAgreement.findUnique({ where: { id } });
     if (!pk) throw Errors.notFound('PK');
-    this.assertAccess(pk, callerId, isAdmin, { ownerOnly: true });
+    this.assertAccess(pk, caller.id, caller.isAdmin, { ownerOnly: true });
     if (pk.status === PlanStatus.APPROVED) {
       throw Errors.badRequest('An approved PK can no longer be edited');
+    }
+
+    // Bug regresi #1 — perpindahan strategicPlanId lintas unit.
+    //
+    // assertUnitScope (dipanggil controller terhadap PK SAAT INI) menurunkan
+    // unit pemilik PK dari strategicPlan.unitId, BUKAN dari user.unitId pegawai.
+    // Jika pemindahan rencana dibiarkan tanpa validasi, PK bisa diinduk-kan ke
+    // rencana milik unit lain: PK itu menyusup ke laporan unit lain sekaligus
+    // hilang dari laporan unit pemilik aslinya. Validasi rencana TUJUAN dengan
+    // aturan scope yang sama seperti assertUnitScope.
+    if (data.strategicPlanId !== undefined) {
+      await this.assertPlanUnitInScope(data.strategicPlanId, caller);
     }
 
     return prisma.performanceAgreement.update({
@@ -464,6 +519,33 @@ export class PerformanceAgreementService {
         supervisor: { select: { id: true, name: true } },
       },
     });
+  }
+
+  /**
+   * Pastikan sebuah rencana strategis berada dalam scope unit pemanggil.
+   *
+   * Aturan ini identik dengan `assertUnitScope`: unit yang boleh menyentuh
+   * sebuah rencana (dan PK yang menginduk padanya) ditentukan oleh
+   * `strategicPlan.unitId`, dan peran lintas unit (yayasan, pengasuh, direktur,
+   * super admin) dilepaskan lewat `seesAllUnits`. Tidak ada admin unit lain —
+   * bahkan admin unit asal pegawai — yang boleh memindahkan PK ke rencana milik
+   * unit lain.
+   */
+  private async assertPlanUnitInScope(
+    planId: string,
+    caller: { roleCode?: string; unitId?: string | null }
+  ): Promise<void> {
+    if (seesAllUnits(caller)) return;
+    const plan = await prisma.strategicPlan.findUnique({
+      where: { id: planId },
+      select: { unitId: true },
+    });
+    if (!plan) return; // baris tidak ada → lapisan db yang menjawab 404
+    if (!caller.unitId || plan.unitId !== caller.unitId) {
+      throw Errors.forbidden(
+        'Perjanjian Kinerja tidak dapat dipindahkan ke rencana milik unit lain'
+      );
+    }
   }
 
   /** Kode peran aktif milik seorang pengguna (belum kedaluwarsa). */

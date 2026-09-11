@@ -36,6 +36,8 @@ function caller(req: Request): {
 export const createEvaluation = asyncHandler(async (req: Request, res: Response) => {
   const { id, isAdmin } = caller(req);
   const body = createEvaluationSchema.parse(req.body);
+  // Sama seperti rute evaluasi lain: tolak sebelum menulis bila PK milik unit lain.
+  await pkService.assertUnitScope({ pkId: body.pkId }, caller(req));
   const evaluation = await evaluationService.createEvaluation(id, isAdmin, body);
   res.status(201).json(ApiResponse.success(evaluation));
 });

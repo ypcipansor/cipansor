@@ -3,6 +3,7 @@ import { rolesService } from './roles.service';
 import { generateTokenPair, getExpirationDate } from '@/lib/jwt';
 import { prisma } from '@/lib/prisma';
 import { config } from '@/config';
+import { seesAllUnits } from '@/utils/resolve-unit-id';
 import type { Realm } from '@prisma/client';
 import type {
   GetRolesQuery,
@@ -153,7 +154,17 @@ export class RolesController {
         role: result.user.role ?? '',
         roleCode: result.activeRole.role.code,
         roleId: result.activeRole.roleId,
-        unitId: result.activeRole.unitId ?? result.user.unitId,
+        // Bila assignment global (unitId null) dipakai untuk peran yang memang
+        // bekerja lintas unit — pengurus yayasan, pengasuh/direktur pesantren,
+        // super admin — jangan jatuhkan ke user.unitId. Fallback itu membuat
+        // role yayasan diperlakukan seolah unit-scoped, padahal remitnya
+        // seluruh yayasan. Peran unit yang kebetulan unitId-nya null tetap
+        // memakai unit home.
+        unitId:
+          result.activeRole.unitId ??
+          (seesAllUnits({ roleCode: result.activeRole.role.code })
+            ? null
+            : result.user.unitId),
         permissions: (result.activeRole.role.permissions as string[]) ?? [],
       });
 

@@ -1444,7 +1444,7 @@ const adminNavigation: NavGroup[] = [
     title: "Sistem",
     items: [
       {
-        title: "Foundation",
+        title: "Yayasan",
         href: "/foundation",
         icon: Building2,
         roleCodes: ["SUPER_ADMIN"],
@@ -2151,22 +2151,27 @@ export interface ActiveRole {
 /**
  * Keep only the entries this role may see, at every depth.
  *
- * This used to filter `group.items` alone. That was correct only while nothing
- * had children: the moment a `roleCodes`-restricted entry is nested — and
- * `/admin/marketing`, `/dashboard/settings/system-secrets` and the chatbot
- * screens all are — an unrestricted parent carried it straight past the filter
- * and drew a SUPER_ADMIN-only link in a unit admin's sidebar. The menu is the
- * only thing that hides those pages from a role that cannot open them, so the
- * filter has to walk as deep as the menu does.
+ * The filter used to check `group.items` alone, which was only correct while
+ * nothing had children: a `roleCodes`-restricted entry nested under an
+ * unrestricted parent — "Mutabaah Yaumiyah" (TKQ/SDIT only) under Attendance,
+ * or the SUPER_ADMIN-only Secrets and chatbot screens under Settings — rode
+ * straight past it into the sidebar of roles that cannot open them.
+ *
+ * A parent whose children are ALL filtered out stays, as a plain link. It
+ * opens a page of its own that this role may open; dropping it together with
+ * its children took Settings and Users & Roles out of every unit admin's menu
+ * once their SUPER_ADMIN-only screens were nested under them.
  */
-function filterByRoleCode(items: NavItem[], roleCode: string): NavItem[] {
+function filterNavItemsByRoleCode(items: NavItem[], roleCode: string): NavItem[] {
   return items
     .filter((item) => !item.roleCodes || item.roleCodes.includes(roleCode))
-    .map((item) =>
-      item.children
-        ? { ...item, children: filterByRoleCode(item.children, roleCode) }
-        : item,
-    );
+    .map((item) => {
+      if (!item.children?.length) return item;
+      const children = filterNavItemsByRoleCode(item.children, roleCode);
+      return children.length > 0
+        ? { ...item, children }
+        : { ...item, children: undefined };
+    });
 }
 
 /**
@@ -2196,7 +2201,7 @@ export function getNavigationForRoleCode(roleCode: string): NavGroup[] {
     return adminNavigation
       .map((group) => ({
         ...group,
-        items: filterByRoleCode(group.items, roleCode),
+        items: filterNavItemsByRoleCode(group.items, roleCode),
       }))
       .filter((group) => group.items.length > 0);
   }

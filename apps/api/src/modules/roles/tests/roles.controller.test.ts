@@ -20,6 +20,12 @@ vi.mock('@/lib/prisma', () => ({
   },
 }));
 
+vi.mock('@/utils/resolve-unit-id', () => ({
+  seesAllUnits: vi.fn(({ roleCode }: { roleCode?: string }) =>
+    roleCode === 'SUPER_ADMIN' || roleCode === 'YAYASAN_KETUA',
+  ),
+}));
+
 import { rolesController } from '../roles.controller';
 import { rolesService } from '../roles.service';
 import { generateTokenPair } from '@/lib/jwt';
@@ -80,7 +86,10 @@ describe('RolesController.switchRole', () => {
     expect(res.jsonPayload.data.accessToken).toBe('token-123');
   });
 
-  it('falls back to user.unitId when activeRole.unitId is null', async () => {
+  it('keeps unitId null when switching to a global (sees-all) role', async () => {
+    // Role yayasan adalah peran lintas-unit. Sebelum perbaikan, fallback ke
+    // user.unitId menjadikannya unit-scoped — pengurus yayasan yang seharusnya
+    // melihat seluruh unit malah terkunci pada unit asalnya.
     const mockSwitchResult = {
       user: { id: 'u-1', email: 'user@cipansor.or.id', role: 'TEACHER', unitId: 'unit-home-sd' },
       activeRole: {
@@ -104,6 +113,38 @@ describe('RolesController.switchRole', () => {
       expect.objectContaining({
         id: 'u-1',
         roleCode: 'YAYASAN_KETUA',
+        unitId: null,
+      })
+    );
+  });
+
+  it('falls back to user.unitId only for a non-global role whose unitId is null', async () => {
+    // Peran yang memang unit-scoped tetapi kebetulan unitId-nya null harus
+    // tetap memakai unit home; yang boleh null hanya peran yang bekerja lintas
+    // unit (seesAllUnits true).
+    const mockSwitchResult = {
+      user: { id: 'u-1', email: 'user@cipansor.or.id', role: 'TEACHER', unitId: 'unit-home-sd' },
+      activeRole: {
+        id: 'role-assign-3',
+        roleId: 'r-unit',
+        unitId: null,
+        role: { code: 'SDIT_GURU', permissions: ['PERM_1'] },
+        unit: null,
+      },
+    };
+
+    vi.mocked(rolesService.switchRole).mockResolvedValue(mockSwitchResult as any);
+
+    const { req, res, next } = mockReqRes({
+      body: { roleAssignmentId: 'role-assign-3' } as any,
+    });
+
+    await rolesController.switchRole(req, res, next);
+
+    expect(generateTokenPair).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'u-1',
+        roleCode: 'SDIT_GURU',
         unitId: 'unit-home-sd',
       })
     );

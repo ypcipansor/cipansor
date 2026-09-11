@@ -286,26 +286,34 @@ function NavItemComponent({
 
   return (
     <div>
-      <Button
-        variant={branchActive ? "secondary" : "ghost"}
-        className={cn(
-          "w-full justify-start transition-all duration-200",
-          branchActive && "bg-secondary/60 font-medium",
-        )}
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        aria-controls={panelId}
-      >
-        <Icon className="h-4 w-4" />
-        <span className="ml-2 flex-1 text-left">{item.title}</span>
-        <ChevronDown
+      <div className="flex items-center">
+        <Link href={item.href} className="min-w-0 flex-1">
+          <Button
+            variant={branchActive ? "secondary" : "ghost"}
+            className={cn(
+              "w-full justify-start transition-all duration-200",
+              branchActive && "bg-secondary/60 font-medium",
+            )}
+          >
+            <Icon className="h-4 w-4 shrink-0" />
+            <span className="ml-2 flex-1 truncate text-left">{item.title}</span>
+          </Button>
+        </Link>
+        <Button
+          variant="ghost"
+          size="icon"
           className={cn(
-            "h-4 w-4 shrink-0 transition-transform duration-200",
+            "h-9 w-9 shrink-0 transition-transform duration-200",
             open && "rotate-180",
           )}
-          aria-hidden="true"
-        />
-      </Button>
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          aria-controls={panelId}
+          aria-label={`${open ? "Tutup" : "Buka"} submenu ${item.title}`}
+        >
+          <ChevronDown className="h-4 w-4" />
+        </Button>
+      </div>
 
       <div id={panelId} hidden={!open} className="mt-1 space-y-1 pl-4">
         {children.map((child) => {

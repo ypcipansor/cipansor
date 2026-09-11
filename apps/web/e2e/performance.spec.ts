@@ -78,6 +78,36 @@ test.describe("Integrated Performance Management (/kinerja) E2E Flows", () => {
       await expect(page.locator("text=Buat Perjanjian Kinerja Baru")).not.toBeVisible();
       await expect(page.locator(`text=${testNote}`).or(page.locator("text=PK Saya"))).toBeVisible();
 
+      // 1b. Indicator dialog: "Otomatis" aggregation must be a valid, selectable
+      // option. Regression (FLAG D): an empty string "" is reserved by Radix
+      // Select for clearing the selection, so the "Otomatis" option must use a
+      // non-empty sentinel ("AUTO") instead — otherwise the dialog renders with
+      // a select-item warning and the option cannot be picked cleanly.
+      // Navigate via API since the list table does not link the notes text.
+      const pkSession = await apiLogin(SEED_USERS.superAdmin);
+      const pkList = await apiRequest<{ data: Array<{ id: string; notes?: string }> }>(
+        pkSession,
+        "GET",
+        "/performance-agreements"
+      );
+      const createdPk = (pkList?.data || []).find((p) => p.notes?.includes(runTag));
+      expect(createdPk, "created PK should exist").toBeTruthy();
+      await page.goto(`/kinerja/pk/${createdPk!.id}`);
+      await expect(page.locator("button:has-text('Tambah Indikator')")).toBeVisible();
+      await page.click("button:has-text('Tambah Indikator')");
+      await expect(page.locator("text=Tambah Indikator Kinerja Baru")).toBeVisible();
+      await page.fill("input[placeholder*='Ketercapaian Target']", `Target ${runTag}`);
+      // Buka Select Metode Agregasi dan pilih "Otomatis (sesuai satuan)".
+      // Radix renders the Select trigger as a combobox (button[role="combobox"]),
+      // not a plain button — see the repo convention in other e2e specs.
+      const aggregationTrigger = page
+        .locator('button[role="combobox"]')
+        .filter({ hasText: /Otomatis \(sesuai satuan\)/ });
+      await aggregationTrigger.click({ force: true });
+      await page.getByRole("option", { name: /Otomatis \(sesuai satuan\)/ }).click({ force: true });
+      await page.click("button:has-text('Simpan Indikator')");
+      await expect(page.locator("text=Tambah Indikator Kinerja Baru")).not.toBeVisible();
+
       // 2. Periodic Evaluation Hub & Creation Dialog Flow
       await page.goto("/kinerja/evaluasi");
       await expect(page.locator("h1")).toContainText(/Evaluasi.*Periodik/i);

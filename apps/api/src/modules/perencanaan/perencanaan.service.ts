@@ -92,12 +92,18 @@ export class PerencanaanService {
       if (data.type === 'RENSTRA' && parent.type !== 'RPJP') {
         throw Errors.badRequest('RENSTRA must refer to an RPJP parent plan');
       }
-    } else if (data.type === 'RKA' && data.unitId) {
-      // A unit RKA with no parent would float outside the cascade, which is
-      // precisely the gap that let unit plans claim in prose to be derived
-      // from the RKA Yayasan while pointing at the Renstra.
+    } else if (data.type !== 'RPJP') {
+      // RPJP adalah akar kaskade — satu-satunya tipe yang sah tanpa induk.
+      // Segala yang lain harus menggantung pada tingkat di atasnya, atau
+      // dokumen terlepas dari kaskade wajib (Renstra menginduk RPJP; RKA
+      // Yayasan menginduk Renstra; RKA unit menginduk RKA Yayasan).
+      if (data.type === 'RENSTRA') {
+        throw Errors.badRequest('RENSTRA harus menyebut RPJP induknya.');
+      }
       throw Errors.badRequest(
-        'RKA unit harus menyebut RKA Yayasan induknya.'
+        data.unitId
+          ? 'RKA unit harus menyebut RKA Yayasan induknya.'
+          : 'RKA Yayasan harus menyebut Renstra induknya.'
       );
     }
 
@@ -466,11 +472,98 @@ export class PerencanaanService {
     return { planId: id, trend };
   }
 
-  async getPlanForAuth(id: string) {
-    return prisma.strategicPlan.findUnique({
+  /**
+   * Plan write-auth payload ({ id, unitId, status, isCollaborator }). When a
+   * userId is supplied, isCollaborator tells whether that user was explicitly
+   * added as a collaborator on the plan (PlanCollaborator), letting the
+   * controller's write gate grant DRAFT/IN_PROGRESS edits to the right people.
+   */
+  planAuthSelect(userId?: string) {
+    return {
+      id: true,
+      unitId: true,
+      status: true,
+      ...(userId
+        ? { collaborators: { where: { userId }, select: { userId: true } } }
+        : {}),
+    };
+  }
+
+  planAuthFromRow(
+    row: { id: string; unitId: string | null; status: string; collaborators?: { userId: string }[] } | null
+  ) {
+    return row
+      ? {
+          id: row.id,
+          unitId: row.unitId,
+          status: row.status,
+          isCollaborator: (row.collaborators ?? []).length > 0,
+        }
+      : null;
+  }
+
+  async getPlanForAuth(id: string, userId?: string) {
+    const row = await prisma.strategicPlan.findUnique({
       where: { id },
-      select: { id: true, unitId: true },
+      select: this.planAuthSelect(userId),
     });
+    return this.planAuthFromRow(row);
+  }
+
+  /**
+   * Resolve an objective to its parent plan's write-auth payload
+   * ({ id, unitId, status, isCollaborator }). Used by the controller to gate
+   * subrecord mutations against the same write-access + DRAFT rules as the
+   * plan itself.
+   */
+  async getObjectivePlanForAuth(
+    objectiveId: string,
+    userId?: string
+  ): Promise<{ id: string; unitId: string | null; status: string; isCollaborator: boolean } | null> {
+    const objective = await prisma.planObjective.findUnique({
+      where: { id: objectiveId },
+      select: { plan: { select: this.planAuthSelect(userId) } },
+    });
+    return this.planAuthFromRow(objective?.plan ?? null);
+  }
+
+  /**
+   * Resolve an indicator to its parent plan's write-auth payload. An
+   * indicator hangs off EITHER an objective (IUP/IKU) or an activity
+   * (IKP/IKK) — trace whichever branch is set.
+   */
+  async getIndicatorPlanForAuth(
+    indicatorId: string,
+    userId?: string
+  ): Promise<{ id: string; unitId: string | null; status: string; isCollaborator: boolean } | null> {
+    const indicator = await prisma.planIndicator.findUnique({
+      where: { id: indicatorId },
+      select: { objectiveId: true, activityId: true },
+    });
+    if (!indicator) return null;
+    if (indicator.objectiveId)
+      return this.getObjectivePlanForAuth(indicator.objectiveId, userId);
+    if (indicator.activityId) return this.getActivityPlanForAuth(indicator.activityId, userId);
+    return null;
+  }
+
+  /**
+   * Resolve an activity to its parent plan's write-auth payload. Walk the
+   * parent chain (Kegiatan → Program) until an objective is found, then
+   * resolve that objective's plan.
+   */
+  async getActivityPlanForAuth(
+    activityId: string,
+    userId?: string
+  ): Promise<{ id: string; unitId: string | null; status: string; isCollaborator: boolean } | null> {
+    const activity = await prisma.planActivity.findUnique({
+      where: { id: activityId },
+      select: { objectiveId: true, parentId: true },
+    });
+    if (!activity) return null;
+    if (activity.objectiveId) return this.getObjectivePlanForAuth(activity.objectiveId, userId);
+    if (activity.parentId) return this.getActivityPlanForAuth(activity.parentId, userId);
+    return null;
   }
 
   async updatePlan(id: string, data: Prisma.StrategicPlanUpdateInput) {

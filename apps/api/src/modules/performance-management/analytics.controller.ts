@@ -69,7 +69,7 @@ export const getConsolidatedReport = asyncHandler(async (req: Request, res: Resp
 
   const queryResult = getConsolidatedReportQuerySchema.safeParse(req.query);
   if (!queryResult.success) {
-    const firstIssue = queryResult.error.errors[0];
+    const firstIssue = queryResult.error.issues[0];
     throw Errors.badRequest(firstIssue?.message || 'Invalid query parameters');
   }
   const { month, year } = queryResult.data;

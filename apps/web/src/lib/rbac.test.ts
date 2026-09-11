@@ -37,6 +37,46 @@ function navHrefs(roleCode: string): string[] {
 /** All 81 RoleCodes, taken from the demo-account catalogue (one per role). */
 const ALL_ROLE_CODES = DEMO_ACCOUNTS.map((a) => a.roleCode);
 
+describe("navigasi — filter roleCodes berjalan rekursif ke submenu", () => {
+  // "Mutabaah Yaumiyah" (/daily-report) hanya untuk TKQ/SDIT. Filter lama
+  // hanya menyaring item induk, sehingga anak yang dibatasi peran tetap bocor
+  // ke admin SMPIT/SMAQ selama induknya (Attendance) tidak dibatasi.
+  it("membuang submenu khusus TKQ/SDIT dari menu admin SMPIT/SMAQ", () => {
+    expect(navHrefs("SMPIT_ADMIN")).not.toContain("/daily-report");
+    expect(navHrefs("SMAQ_ADMIN")).not.toContain("/daily-report");
+  });
+
+  it("tetap menampilkan submenu khusus untuk admin yang diizinkan", () => {
+    expect(navHrefs("SDIT_ADMIN")).toContain("/daily-report");
+    expect(navHrefs("TKQ_ADMIN")).toContain("/daily-report");
+  });
+
+  it("induk tetap tampil sebagai tautan biasa bila semua submenunya tersaring", () => {
+    // Settings dan Users & Roles menampung anak yang SEMUANYA SUPER_ADMIN
+    // saja. Aturan "buang induk bila anaknya habis" menghapus kedua induk itu
+    // dari menu admin unit — padahal masing-masing membuka halamannya sendiri
+    // yang memang boleh dibuka admin unit. Penjaga halaman→menu tidak
+    // menangkapnya, karena super admin masih melihatnya. (Yayasan juga
+    // menampung anak SUPER_ADMIN, tetapi induknya sendiri SUPER_ADMIN, jadi
+    // admin unit memang tidak pernah melihatnya.)
+    for (const role of ["TKQ_ADMIN", "SDIT_ADMIN", "SMPIT_ADMIN", "SMAQ_ADMIN"]) {
+      const hrefs = navHrefs(role);
+      for (const parent of ["/settings", "/users"]) {
+        expect(hrefs, `${role} kehilangan ${parent}`).toContain(parent);
+      }
+      expect(hrefs).not.toContain("/dashboard/settings/system-secrets");
+      expect(hrefs).not.toContain("/settings/roles");
+
+      // Tanpa anak tersisa, induknya dirender sebagai tautan, bukan tombol
+      // yang membuka panel kosong.
+      const settings = getNavigationForRoleCode(role)
+        .flatMap((g) => g.items)
+        .find((i) => i.href === "/settings");
+      expect(settings?.children).toBeUndefined();
+    }
+  });
+});
+
 describe("rbac — legacy bucket derivation", () => {
   it("identifies the six legacy buckets", () => {
     for (const role of [
@@ -663,6 +703,8 @@ describe("a11y — exactly one <main> landmark, and the skip link reaches it", (
       })
       .filter(({ count }) => count !== 1);
     expect(wrong).toEqual([]);
+    // This test walks the whole src/app tree and follows every page's imports,
+    // so it can exceed vitest's default 5s timeout on larger route trees.
   });
 
   it("every <main> carries id=\"main-content\"", () => {

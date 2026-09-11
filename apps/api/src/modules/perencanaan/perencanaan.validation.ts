@@ -11,11 +11,15 @@ export const createPlanSchema = z.object({
   parentId: z.string().uuid().optional(),
 });
 
+// `status` sengaja TIDAK diterima pada update rencana. Transisi status hanya
+// boleh lewat /approve (yang juga mengisi approvedBy/approvedAt). Sebelumnya
+// status dibuka sebagai enum arbitrer sehingga pemanggil dengan akses tulis
+// bisa menyetel APPROVED langsung (membajak alur persetujuan, tanpa metadata
+// approval) atau membuka kembali rencana final ke DRAFT.
 export const updatePlanSchema = z.object({
   title: z.string().min(3).optional(),
   description: z.string().optional(),
   type: z.enum(['RPJP', 'RENSTRA', 'RKA']).optional(),
-  status: z.enum(['DRAFT', 'PROPOSED', 'APPROVED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED']).optional(),
   startDate: z.string().datetime().optional(),
   endDate: z.string().datetime().optional(),
   budget: z.number().positive().optional(),

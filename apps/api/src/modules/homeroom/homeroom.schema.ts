@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { partialUpdateSchema } from '@/lib/partial';
 
 // ======================
 // ENUMS
@@ -70,7 +71,7 @@ export const createStudentNoteSchema = z.object({
   tags: z.array(z.string()).optional(),
 });
 
-export const updateStudentNoteSchema = createStudentNoteSchema.partial().omit({
+export const updateStudentNoteSchema = partialUpdateSchema(createStudentNoteSchema).omit({
   studentId: true,
   classId: true,
   academicYearId: true,

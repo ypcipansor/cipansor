@@ -50,25 +50,38 @@ describe('PerformanceAgreementService', () => {
   beforeEach(() => vi.clearAllMocks());
 
   describe('getSupervisors unit scoping', () => {
-    it('filters userRoles by caller unitId for unit-pinned roles regardless of User.unitId', async () => {
+    it('filters userRoles to caller unit OR foundation roles for unit-pinned callers', async () => {
       mocked.user.findMany.mockResolvedValue([]);
       await pkService.getSupervisors({ roleCode: 'SDIT_GURU', unitId: 'unit-sdit' });
 
       expect(mocked.user.findMany).toHaveBeenCalledTimes(1);
       const queryWhere = mocked.user.findMany.mock.calls[0][0].where;
-      // Top-level User.unitId is NOT filtered; filtering is on userRoles.some.unitId
+      // Top-level User.unitId is NOT filtered; unit filtering happens inside
+      // userRoles.some.AND[0].OR (unit caller OR foundation-scope role).
       expect(queryWhere.unitId).toBeUndefined();
-      expect(queryWhere.userRoles.some.unitId).toBe('unit-sdit');
+      const some = queryWhere.userRoles.some;
+      expect(some.unitId).toBeUndefined();
+      const scopeOr = some.AND[0].OR;
+      // Branch 1: caller's own unit.
+      expect(scopeOr[0]).toEqual({ unitId: 'unit-sdit' });
+      // Branch 2: foundation-scope roles (unitless org assignments included).
+      expect(scopeOr[1].role.code.in).toContain('YAYASAN_KETUA');
+      expect(scopeOr[1].role.code.in).toContain('SUPER_ADMIN');
     });
 
-    it('forces userRoles.some.unitId to "none" for unassigned non-global callers', async () => {
+    it('unassigned non-global callers still see foundation-scope supervisors', async () => {
       mocked.user.findMany.mockResolvedValue([]);
       await pkService.getSupervisors({ roleCode: 'SDIT_GURU', unitId: undefined });
 
       expect(mocked.user.findMany).toHaveBeenCalledTimes(1);
       const queryWhere = mocked.user.findMany.mock.calls[0][0].where;
       expect(queryWhere.unitId).toBeUndefined();
-      expect(queryWhere.userRoles.some.unitId).toBe('none');
+      const some = queryWhere.userRoles.some;
+      expect(some.unitId).toBeUndefined();
+      const scopeOr = some.AND[0].OR;
+      // No caller unit to pin to; only the foundation-scope branch remains.
+      expect(scopeOr).toHaveLength(1);
+      expect(scopeOr[0].role.code.in).toContain('SUPER_ADMIN');
     });
 
     it('allows cross-unit / foundation roles to query supervisors across all role unit assignments', async () => {
@@ -78,7 +91,42 @@ describe('PerformanceAgreementService', () => {
       expect(mocked.user.findMany).toHaveBeenCalledTimes(1);
       const queryWhere = mocked.user.findMany.mock.calls[0][0].where;
       expect(queryWhere.unitId).toBeUndefined();
+      // Global caller: no unit boundary at all.
       expect(queryWhere.userRoles.some.unitId).toBeUndefined();
+      expect(queryWhere.userRoles.some.AND).toBeUndefined();
+    });
+
+    // Bug regresi #3 — atasan yayasan hilang dari daftar. Assignment organ
+    // yayasan (mis. YAYASAN_KETUA) tidak punya unitId, sehingga pemanggil
+    // ber-unit tidak pernah melihatnya. Hasil dari findMany yang memuat user
+    // ber-role YAYASAN_KETUA (assignment tanpa unit) harus sampai ke hasil
+    // getSupervisors.
+    it('memuat user ber-role yayasan (assignment tanpa unit) sebagai calon atasan', async () => {
+      mocked.user.findMany.mockResolvedValue([
+        {
+          id: 'user-ketua',
+          name: 'Ketua Pengurus',
+          unit: null,
+          userRoles: [{ role: { code: 'YAYASAN_KETUA' } }],
+        },
+      ]);
+
+      mocked.userRoleAssignment.findMany.mockResolvedValue([
+        { role: { code: 'SDIT_KEPALA_SEKOLAH' } },
+      ]);
+
+      const result = await pkService.getSupervisors(
+        { roleCode: 'SDIT_KEPALA_SEKOLAH', unitId: 'unit-sdit' },
+        'caller-kepala'
+      );
+
+      expect(result.map((s) => s.id)).toContain('user-ketua');
+      expect(result.find((s) => s.id === 'user-ketua')).toMatchObject({
+        name: 'Ketua Pengurus',
+        roleCodes: ['YAYASAN_KETUA'],
+      });
+      // Pemanggil kepala unit diindukkan pada Ketua Pengurus → ditandai disarankan.
+      expect(result.find((s) => s.id === 'user-ketua')?.suggested).toBe(true);
     });
   });
 
@@ -124,7 +172,9 @@ describe('PerformanceAgreementService', () => {
     it('rejects deletion if PK is not found', async () => {
       mocked.performanceAgreement.findUnique.mockResolvedValue(null);
 
-      await expect(pkService.deletePK('pk-nonexistent', 'u-owner', false)).rejects.toThrow(/not found/i);
+      await expect(pkService.deletePK('pk-nonexistent', 'u-owner', false)).rejects.toThrow(
+        /not found/i
+      );
       expect(mocked.performanceAgreement.delete).not.toHaveBeenCalled();
     });
 
@@ -220,6 +270,50 @@ describe('PerformanceAgreementService', () => {
 
       expect(mocked.performanceAgreement.delete).toHaveBeenCalledWith({ where: { id: 'pk-1' } });
     });
+    it("blocks admin of employee-origin unit from deleting a PK owned by another unit's plan (Bug regresi #2)", async () => {
+      // Pegawai asal unit-sdit, tetapi PK mengimplementasikan rencana milik
+      // unit-smpit (strategicPlan.unitId). Kepemilikan PK mengikuti pemilik
+      // rencana, jadi admin unit-sdit (asal pegawai) TIDAK boleh menghapus.
+      mocked.performanceAgreement.findUnique.mockResolvedValueOnce({
+        id: 'pk-1',
+        userId: 'u-sdit-employee',
+        status: 'DRAFT',
+        user: { id: 'u-sdit-employee', unitId: 'unit-sdit' },
+        strategicPlan: { unitId: 'unit-smpit' },
+      });
+
+      await expect(
+        pkService.deletePK('pk-1', {
+          id: 'admin-sdit',
+          isAdmin: true,
+          roleCode: 'SDIT_ADMIN',
+          unitId: 'unit-sdit',
+        })
+      ).rejects.toThrow(/permission|forbidden/i);
+      expect(mocked.performanceAgreement.delete).not.toHaveBeenCalled();
+    });
+
+    it('allows admin of the plan-owning unit to delete a PK whose plan belongs to their unit (Bug regresi #2)', async () => {
+      // Pegawai asal unit-sdit, tetapi rencana (dan karenanya PK) milik unit-smpit.
+      // Admin unit-smpit (pemilik rencana) BOLEH menghapus.
+      mocked.performanceAgreement.findUnique.mockResolvedValueOnce({
+        id: 'pk-1',
+        userId: 'u-sdit-employee',
+        status: 'DRAFT',
+        user: { id: 'u-sdit-employee', unitId: 'unit-sdit' },
+        strategicPlan: { unitId: 'unit-smpit' },
+      });
+      mocked.performanceAgreement.delete.mockResolvedValueOnce({ id: 'pk-1' });
+
+      await pkService.deletePK('pk-1', {
+        id: 'admin-smpit',
+        isAdmin: true,
+        roleCode: 'SMPIT_ADMIN',
+        unitId: 'unit-smpit',
+      });
+
+      expect(mocked.performanceAgreement.delete).toHaveBeenCalledWith({ where: { id: 'pk-1' } });
+    });
 
     it('rejects deletion when PK becomes APPROVED after acquiring row lock (concurrent approval race)', async () => {
       // In deletePK, $queryRaw FOR UPDATE locks the row first, then findUnique reads the latest status under lock.
@@ -241,13 +335,133 @@ describe('PerformanceAgreementService', () => {
     });
   });
 
+  describe('updatePK — strategicPlanId cross-unit scope (Bug regresi #1)', () => {
+    it('menolak pemilik unit A memindahkan PK ke rencana milik unit B', async () => {
+      // PK saat ini milik unit-sdit. Pemiliknya (bukan admin) mencoba memindah
+      // ke rencana milik unit-smpit → harus ditolak, jangan sampai PK menyusup
+      // ke laporan unit lain.
+      mocked.performanceAgreement.findUnique.mockResolvedValueOnce({
+        id: 'pk-1',
+        userId: 'u-sdit-employee',
+        status: 'DRAFT',
+      });
+      mocked.strategicPlan.findUnique.mockResolvedValueOnce({
+        id: 'plan-smpit',
+        unitId: 'unit-smpit',
+      });
+
+      await expect(
+        pkService.updatePK(
+          'pk-1',
+          { id: 'u-sdit-employee', isAdmin: false, roleCode: 'SDIT_GURU', unitId: 'unit-sdit' },
+          { notes: 'pindah', strategicPlanId: 'plan-smpit' }
+        )
+      ).rejects.toThrow(/unit lain/i);
+      expect(mocked.performanceAgreement.update).not.toHaveBeenCalled();
+    });
+
+    it('mengizinkan admin unit pemilik rencana tujuan memindahkan PK ke rencana unitnya', async () => {
+      // Admin unit-smpit (pemilik rencana tujuan) boleh memindahkan rencana
+      // karena rencana tujuan berada dalam scope unitnya.
+      mocked.performanceAgreement.findUnique.mockResolvedValueOnce({
+        id: 'pk-1',
+        userId: 'u-sdit-employee',
+        status: 'DRAFT',
+      });
+      mocked.strategicPlan.findUnique.mockResolvedValueOnce({
+        id: 'plan-smpit',
+        unitId: 'unit-smpit',
+      });
+      mocked.performanceAgreement.update.mockResolvedValueOnce({ id: 'pk-1' });
+
+      await pkService.updatePK(
+        'pk-1',
+        { id: 'admin-smpit', isAdmin: true, roleCode: 'SMPIT_ADMIN', unitId: 'unit-smpit' },
+        { notes: 'pindah', strategicPlanId: 'plan-smpit' }
+      );
+
+      expect(mocked.performanceAgreement.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'pk-1' },
+          data: expect.objectContaining({ strategicPlanId: 'plan-smpit' }),
+        })
+      );
+    });
+
+    it('pemindahan ke rencana dalam unit yang sama tetap lolos', async () => {
+      mocked.performanceAgreement.findUnique.mockResolvedValueOnce({
+        id: 'pk-1',
+        userId: 'u-sdit-employee',
+        status: 'DRAFT',
+      });
+      mocked.strategicPlan.findUnique.mockResolvedValueOnce({
+        id: 'plan-sdit-2',
+        unitId: 'unit-sdit',
+      });
+      mocked.performanceAgreement.update.mockResolvedValueOnce({ id: 'pk-1' });
+
+      await pkService.updatePK(
+        'pk-1',
+        { id: 'u-sdit-employee', isAdmin: false, roleCode: 'SDIT_GURU', unitId: 'unit-sdit' },
+        { notes: 'ganti rencana sesama unit', strategicPlanId: 'plan-sdit-2' }
+      );
+
+      expect(mocked.performanceAgreement.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ strategicPlanId: 'plan-sdit-2' }),
+        })
+      );
+    });
+
+    it('memindahkan ke rencana unit lain tetap ditolak untuk admin unit ASAL pegawai', async () => {
+      // Pegawai asal unit-sdit, tetapi PK mengimplementasikan rencana unit-smpit
+      // (strategicPlan.unitId). Admin unit-sdit (asal pegawai) memindah ke rencana
+      // unit-smaq → rencana tujuan di luar unitnya, tetap ditolak.
+      mocked.performanceAgreement.findUnique.mockResolvedValueOnce({
+        id: 'pk-1',
+        userId: 'u-sdit-employee',
+        status: 'DRAFT',
+      });
+      mocked.strategicPlan.findUnique.mockResolvedValueOnce({
+        id: 'plan-smaq',
+        unitId: 'unit-smaq',
+      });
+
+      await expect(
+        pkService.updatePK(
+          'pk-1',
+          { id: 'admin-sdit', isAdmin: true, roleCode: 'SDIT_ADMIN', unitId: 'unit-sdit' },
+          { strategicPlanId: 'plan-smaq' }
+        )
+      ).rejects.toThrow(/unit lain/i);
+      expect(mocked.performanceAgreement.update).not.toHaveBeenCalled();
+    });
+
+    it('peran lintas unit (SUPER_ADMIN) boleh memindahkan ke rencana unit mana pun', async () => {
+      mocked.performanceAgreement.findUnique.mockResolvedValueOnce({
+        id: 'pk-1',
+        userId: 'u-sdit-employee',
+        status: 'DRAFT',
+      });
+      mocked.performanceAgreement.update.mockResolvedValueOnce({ id: 'pk-1' });
+
+      await pkService.updatePK(
+        'pk-1',
+        { id: 'superadmin', isAdmin: true, roleCode: 'SUPER_ADMIN', unitId: null },
+        { strategicPlanId: 'plan-smpit' }
+      );
+
+      // seesAllUnits → tidak pernah menelusuri strategicPlan tujuan.
+      expect(mocked.strategicPlan.findUnique).not.toHaveBeenCalled();
+      expect(mocked.performanceAgreement.update).toHaveBeenCalled();
+    });
+  });
+
   describe('createPK cascading rule', () => {
     it('rejects a subordinate PK when the supervisor has no approved PK for the period', async () => {
       // Keduanya jabatan kepegawaian biasa, bukan organ yayasan — jalur
       // kaskade normal (`createPK` menanyakan peran pemilik lalu atasannya).
-      mocked.userRoleAssignment.findMany.mockResolvedValue([
-        { role: { code: 'SMPIT_GURU' } },
-      ]);
+      mocked.userRoleAssignment.findMany.mockResolvedValue([{ role: { code: 'SMPIT_GURU' } }]);
       mocked.performanceAgreement.findFirst.mockResolvedValue(null);
 
       await expect(
@@ -262,9 +476,7 @@ describe('PerformanceAgreementService', () => {
     });
 
     it('links the subordinate PK to the supervisor PK when one exists', async () => {
-      mocked.userRoleAssignment.findMany.mockResolvedValue([
-        { role: { code: 'SMPIT_GURU' } },
-      ]);
+      mocked.userRoleAssignment.findMany.mockResolvedValue([{ role: { code: 'SMPIT_GURU' } }]);
       mocked.performanceAgreement.findFirst.mockResolvedValue({ id: 'pk-boss' });
       mocked.performanceAgreement.create.mockResolvedValue({ id: 'pk-new' });
 
@@ -292,10 +504,13 @@ describe('PerformanceAgreementService', () => {
       });
 
       await expect(
-        pkService.assertUnitScope({ pkId: 'pk-smpit' }, {
-          roleCode: 'SDIT_ADMIN',
-          unitId: 'unit-sdit',
-        })
+        pkService.assertUnitScope(
+          { pkId: 'pk-smpit' },
+          {
+            roleCode: 'SDIT_ADMIN',
+            unitId: 'unit-sdit',
+          }
+        )
       ).rejects.toThrow(/unit lain/i);
     });
 
@@ -305,10 +520,13 @@ describe('PerformanceAgreementService', () => {
       });
 
       await expect(
-        pkService.assertUnitScope({ pkId: 'pk-sdit' }, {
-          roleCode: 'SDIT_ADMIN',
-          unitId: 'unit-sdit',
-        })
+        pkService.assertUnitScope(
+          { pkId: 'pk-sdit' },
+          {
+            roleCode: 'SDIT_ADMIN',
+            unitId: 'unit-sdit',
+          }
+        )
       ).resolves.toBeUndefined();
     });
 
@@ -344,10 +562,111 @@ describe('PerformanceAgreementService', () => {
       });
 
       await expect(
-        pkService.assertUnitScope({ evaluationId: 'ev-1' }, {
-          roleCode: 'SDIT_ADMIN',
-          unitId: 'unit-sdit',
-        })
+        pkService.assertUnitScope(
+          { evaluationId: 'ev-1' },
+          {
+            roleCode: 'SDIT_ADMIN',
+            unitId: 'unit-sdit',
+          }
+        )
+      ).rejects.toThrow(/unit lain/i);
+    });
+
+    // Bug regresi #1 — cakupan unit PK ditentukan dari RENCANA (strategicPlan.unitId)
+    // yang diimplementasikan, bukan dari unit asal pegawai. PK yang menginduk pada
+    // RKA/Renstra unit lain adalah milik admin unit pemilik rencana, bukan admin
+    // unit asal pegawai.
+    it('mengizinkan admin unit TUJUAN (pemilik rencana) menyentuh PK lintas unit', async () => {
+      // Pegawai PK berasal dari unit-smpit tetapi rencananya milik unit-sdit
+      // (strategicPlan.unitId = unit-sdit). Admin unit tujuan BOLEH.
+      mocked.performanceAgreement.findUnique.mockResolvedValue({
+        strategicPlan: { unitId: 'unit-sdit' },
+        user: { unitId: 'unit-smpit' },
+      });
+
+      await expect(
+        pkService.assertUnitScope(
+          { pkId: 'pk-lintas' },
+          {
+            roleCode: 'SDIT_ADMIN',
+            unitId: 'unit-sdit',
+          }
+        )
+      ).resolves.toBeUndefined();
+    });
+
+    it('menolak admin unit ASAL (unit pegawai) menyentuh PK yang rencananya unit lain', async () => {
+      mocked.performanceAgreement.findUnique.mockResolvedValue({
+        strategicPlan: { unitId: 'unit-sdit' },
+        user: { unitId: 'unit-smpit' },
+      });
+
+      await expect(
+        pkService.assertUnitScope(
+          { pkId: 'pk-lintas' },
+          {
+            roleCode: 'SMPIT_ADMIN',
+            unitId: 'unit-smpit',
+          }
+        )
+      ).rejects.toThrow(/unit lain/i);
+    });
+
+    it('fallback ke unit pegawai bila PK tidak mengacu rencana apa pun', async () => {
+      mocked.performanceAgreement.findUnique.mockResolvedValue({
+        strategicPlan: null,
+        user: { unitId: 'unit-sdit' },
+      });
+
+      await expect(
+        pkService.assertUnitScope(
+          { pkId: 'pk-tanpa-rencana' },
+          {
+            roleCode: 'SDIT_ADMIN',
+            unitId: 'unit-sdit',
+          }
+        )
+      ).resolves.toBeUndefined();
+
+      await expect(
+        pkService.assertUnitScope(
+          { pkId: 'pk-tanpa-rencana' },
+          {
+            roleCode: 'SMPIT_ADMIN',
+            unitId: 'unit-smpit',
+          }
+        )
+      ).rejects.toThrow(/unit lain/i);
+    });
+
+    it('evaluasi lintas unit juga di-scope oleh strategicPlan.unitId', async () => {
+      mocked.pKEvaluation.findUnique.mockResolvedValue({
+        pk: {
+          strategicPlan: { unitId: 'unit-sdit' },
+          user: { unitId: 'unit-smpit' },
+        },
+      });
+
+      // Admin unit pemilik rencana boleh.
+      await expect(
+        pkService.assertUnitScope(
+          { evaluationId: 'ev-lintas' },
+          {
+            roleCode: 'SDIT_ADMIN',
+            unitId: 'unit-sdit',
+          }
+        )
+      ).resolves.toBeUndefined();
+
+      // Admin unit asal pegawai ditolak meski pegawai berasal dari unitnya.
+      await expect(
+        pkService.assertUnitScope(
+          { evaluationId: 'ev-lintas' },
+          {
+            roleCode: 'SMPIT_ADMIN',
+            unitId: 'unit-smpit',
+          }
+        )
       ).rejects.toThrow(/unit lain/i);
     });
   });
@@ -407,9 +726,7 @@ describe('PerformanceAgreementService', () => {
         indicators: [{ weight: 100 }],
       });
 
-      mocked.userRoleAssignment.findMany.mockResolvedValue([
-        { role: { code: 'SMPIT_GURU' } },
-      ]);
+      mocked.userRoleAssignment.findMany.mockResolvedValue([{ role: { code: 'SMPIT_GURU' } }]);
 
       await expect(pkService.proposePK('pk-1', 'u-1', false)).rejects.toThrow(/atasan penilai/i);
       expect(mocked.performanceAgreement.update).not.toHaveBeenCalled();
@@ -429,9 +746,7 @@ describe('PerformanceAgreementService', () => {
         status: 'DRAFT',
         indicators: [{ weight: 100 }],
       });
-      mocked.userRoleAssignment.findMany.mockResolvedValue([
-        { role: { code: 'SUPER_ADMIN' } },
-      ]);
+      mocked.userRoleAssignment.findMany.mockResolvedValue([{ role: { code: 'SUPER_ADMIN' } }]);
       mocked.performanceAgreement.update.mockResolvedValue({
         id: 'pk-root',
         status: 'PROPOSED',
@@ -503,9 +818,9 @@ describe('PerformanceAgreementService', () => {
       asRoles(['SMPIT_KEPALA_SEKOLAH'], ['YAYASAN_KETUA']);
       mocked.strategicPlan.findUnique.mockResolvedValue({ id: 'rka-1', status: 'DRAFT' });
 
-      await expect(
-        pkService.createPK({ ...dto, strategicPlanId: 'rka-1' })
-      ).rejects.toThrow(/Draft/i);
+      await expect(pkService.createPK({ ...dto, strategicPlanId: 'rka-1' })).rejects.toThrow(
+        /Draft/i
+      );
     });
 
     it('menerima RKA yang sudah disahkan, tanpa supervisorPk', async () => {
@@ -534,9 +849,9 @@ describe('PerformanceAgreementService', () => {
         title: 'RKA SD IT Cipansor 2027',
       });
 
-      await expect(
-        pkService.createPK({ ...dto, strategicPlanId: 'rka-yayasan' })
-      ).rejects.toThrow(/RKA SD IT Cipansor 2027/);
+      await expect(pkService.createPK({ ...dto, strategicPlanId: 'rka-yayasan' })).rejects.toThrow(
+        /RKA SD IT Cipansor 2027/
+      );
       expect(mocked.performanceAgreement.create).not.toHaveBeenCalled();
     });
 
