@@ -132,7 +132,7 @@ test.describe("Integration: Student → Attendance → Report Flow", () => {
     // STEP 3: Verify in attendance report
     await navigateTo(page, "/attendance/reports");
 
-    const reportHeading = page.getByRole("heading", {
+    const reportHeading = page.getByRole("main").getByRole("heading", {
       name: /laporan|report/i,
     });
     if (await reportHeading.isVisible({ timeout: 5000 }).catch(() => false)) {
@@ -407,7 +407,7 @@ test.describe("Integration: Finance → Dashboard Sync", () => {
     await dashboard.goto();
     await dashboard.waitForDataLoad();
 
-    const financeCard = page.getByText(/keuangan|finance|pendapatan|revenue/i);
+    const financeCard = page.getByRole("main").getByText(/keuangan|finance|pendapatan|revenue/i);
     if (await financeCard.isVisible({ timeout: 5000 }).catch(() => false)) {
       const initialValue = await financeCard.textContent();
 
@@ -416,7 +416,7 @@ test.describe("Integration: Finance → Dashboard Sync", () => {
 
       // Should show finance data
       await expect(
-        page.getByRole("heading", { name: /keuangan|finance/i }),
+        page.getByRole("main").getByRole("heading", { name: /keuangan|finance/i }),
       ).toBeVisible({ timeout: 5000 });
 
       // Go back to dashboard
@@ -453,8 +453,8 @@ test.describe("Integration: Multi-user Collaboration", () => {
     await navigateTo(page2, "/students");
 
     // Verify both can see the same data
-    const heading1 = page.getByRole("heading", { name: /santri|students/i });
-    const heading2 = page2.getByRole("heading", { name: /santri|students/i });
+    const heading1 = page.getByRole("main").getByRole("heading", { name: /santri|students/i });
+    const heading2 = page2.getByRole("main").getByRole("heading", { name: /santri|students/i });
 
     await expect(heading1).toBeVisible();
     await expect(heading2).toBeVisible();

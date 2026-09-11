@@ -852,6 +852,75 @@ describe("e2e selectors — no loose text= selector can collide with the sidebar
     }
     expect(collisions).toEqual([]);
   });
+
+  it("no unscoped regex heading/text selector can resolve to the sidebar instead of the page", () => {
+    // The text= check above never saw two other shapes, and both broke CI the
+    // day the admin menu was regrouped by discipline (#415):
+    //
+    //   page.getByRole("heading", { name: /santri|students/i })
+    //     sidebar GROUP labels are <h4>, so the new group "Kesantrian &
+    //     Pesantren" made this a strict-mode violation against the page's h1;
+    //   page.getByText(/nisn|nis/i).first()
+    //     submenus stay in the DOM while collapsed (hidden), ahead of <main>,
+    //     so .first() became "Qiyadah (Organisasi)" and never turned visible.
+    //
+    // Both had only ever passed because no label happened to match. Scope such
+    // selectors to page.getByRole("main").
+    const navs = ALL_ROLE_CODES.map((rc) => getNavigationForRoleCode(rc));
+    const groupTitles = [...new Set(navs.flatMap((groups) => groups.map((g) => g.title)))];
+    const submenuTitles = [
+      ...new Set(
+        navs.flatMap((groups) =>
+          groups.flatMap((g) => g.items.flatMap((i) => (i.children ?? []).map((c) => c.title))),
+        ),
+      ),
+    ];
+
+    const allTs = (dir: string): string[] =>
+      !fs.existsSync(dir)
+        ? []
+        : fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+            const child = path.join(dir, e.name);
+            if (e.isDirectory()) return allTs(child);
+            return e.name.endsWith(".ts") ? [child] : [];
+          });
+
+    const shapes: Array<{ re: RegExp; pool: string[]; what: string }> = [
+      {
+        re: /\bpage2?\.getByRole\(\s*["']heading["']\s*,\s*\{\s*name:\s*\/((?:\\\/|[^/\n])+)\/([a-z]*)/g,
+        pool: groupTitles,
+        what: "sidebar group heading",
+      },
+      {
+        re: /\bpage2?\.getByText\(\s*\/((?:\\\/|[^/\n])+)\/([a-z]*)/g,
+        pool: submenuTitles,
+        what: "hidden submenu item",
+      },
+    ];
+
+    const offenders: string[] = [];
+    for (const file of allTs(E2E_DIR)) {
+      const src = fs.readFileSync(file, "utf8");
+      for (const { re, pool, what } of shapes) {
+        for (const m of src.matchAll(re)) {
+          let rx: RegExp;
+          try {
+            rx = new RegExp(m[1].replace(/\\\//g, "/"), m[2].includes("i") ? "i" : "");
+          } catch {
+            continue;
+          }
+          const hits = pool.filter((t) => rx.test(t));
+          if (hits.length) {
+            const line = src.slice(0, m.index).split("\n").length;
+            offenders.push(
+              `${path.relative(process.cwd(), file)}:${line} /${m[1]}/ also matches ${what} ${hits.slice(0, 3).join(", ")}`,
+            );
+          }
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
 });
 
 /**

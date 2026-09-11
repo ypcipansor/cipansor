@@ -17,7 +17,7 @@ test.describe("Class Management - List and View", () => {
   test("should display class list", async ({ page }) => {
     await navigateTo(page, "/classes");
 
-    const heading = page.getByRole("heading", { name: /kelas|class/i });
+    const heading = page.getByRole("main").getByRole("heading", { name: /kelas|class/i });
     if (await heading.isVisible({ timeout: 5000 }).catch(() => false)) {
       const table = page.locator("table");
       await expect(table).toBeVisible({ timeout: 5000 });
@@ -45,7 +45,7 @@ test.describe("Class Management - List and View", () => {
   test("should view class detail", async ({ page }) => {
     await navigateTo(page, "/classes");
 
-    const heading = page.getByRole("heading", { name: /kelas|class/i });
+    const heading = page.getByRole("main").getByRole("heading", { name: /kelas|class/i });
     if (await heading.isVisible({ timeout: 5000 }).catch(() => false)) {
       const firstRow = page.locator("table tbody tr").first();
       if (await firstRow.isVisible({ timeout: 3000 }).catch(() => false)) {
@@ -73,7 +73,7 @@ test.describe("Class Management - List and View", () => {
   test("should filter classes by grade level", async ({ page }) => {
     await navigateTo(page, "/classes");
 
-    const heading = page.getByRole("heading", { name: /kelas|class/i });
+    const heading = page.getByRole("main").getByRole("heading", { name: /kelas|class/i });
     if (await heading.isVisible({ timeout: 5000 }).catch(() => false)) {
       const filterButton = page.getByRole("button", {
         name: /filter|tingkat/i,
@@ -105,7 +105,7 @@ test.describe("Class Management - Create and Update", () => {
   test("should create new class", async ({ page }) => {
     await navigateTo(page, "/classes");
 
-    const heading = page.getByRole("heading", { name: /kelas|class/i });
+    const heading = page.getByRole("main").getByRole("heading", { name: /kelas|class/i });
     if (await heading.isVisible({ timeout: 5000 }).catch(() => false)) {
       // The header action is a role-gated Link styled as a button (renders
       // as role=link) — accept either role and wait for hydration.
@@ -182,7 +182,7 @@ test.describe("Class Management - Create and Update", () => {
   test("should update class information", async ({ page }) => {
     await navigateTo(page, "/classes");
 
-    const heading = page.getByRole("heading", { name: /kelas|class/i });
+    const heading = page.getByRole("main").getByRole("heading", { name: /kelas|class/i });
     if (await heading.isVisible({ timeout: 5000 }).catch(() => false)) {
       const firstRow = page.locator("table tbody tr").first();
       if (!(await firstRow.isVisible({ timeout: 3000 }).catch(() => false))) {
@@ -243,7 +243,7 @@ test.describe("Class Management - Create and Update", () => {
   test("should validate required fields", async ({ page }) => {
     await navigateTo(page, "/classes");
 
-    const heading = page.getByRole("heading", { name: /kelas|class/i });
+    const heading = page.getByRole("main").getByRole("heading", { name: /kelas|class/i });
     if (await heading.isVisible({ timeout: 5000 }).catch(() => false)) {
       // The header action is a role-gated Link styled as a button (renders
       // as role=link) — accept either role and wait for hydration.
@@ -276,7 +276,7 @@ test.describe("Class Management - Student Enrollment", () => {
   test("should enroll student to class", async ({ page }) => {
     await navigateTo(page, "/classes");
 
-    const heading = page.getByRole("heading", { name: /kelas|class/i });
+    const heading = page.getByRole("main").getByRole("heading", { name: /kelas|class/i });
     if (await heading.isVisible({ timeout: 5000 }).catch(() => false)) {
       const firstRow = page.locator("table tbody tr").first();
 
@@ -325,7 +325,7 @@ test.describe("Class Management - Student Enrollment", () => {
   test("should remove student from class", async ({ page }) => {
     await navigateTo(page, "/classes");
 
-    const heading = page.getByRole("heading", { name: /kelas|class/i });
+    const heading = page.getByRole("main").getByRole("heading", { name: /kelas|class/i });
     if (await heading.isVisible({ timeout: 5000 }).catch(() => false)) {
       const firstRow = page.locator("table tbody tr").first();
 
@@ -371,7 +371,7 @@ test.describe("Class Management - Schedule", () => {
   test("should view class schedule", async ({ page }) => {
     await navigateTo(page, "/classes");
 
-    const heading = page.getByRole("heading", { name: /kelas|class/i });
+    const heading = page.getByRole("main").getByRole("heading", { name: /kelas|class/i });
     if (await heading.isVisible({ timeout: 5000 }).catch(() => false)) {
       const firstRow = page.locator("table tbody tr").first();
 
@@ -387,7 +387,7 @@ test.describe("Class Management - Schedule", () => {
       // Look for schedule tab/section
       const scheduleTab = page
         .getByRole("tab", { name: /jadwal|schedule/i })
-        .or(page.getByText(/jadwal|schedule/i));
+        .or(page.getByRole("main").getByText(/jadwal|schedule/i));
 
       if (await scheduleTab.isVisible({ timeout: 3000 }).catch(() => false)) {
         if ((await scheduleTab.getAttribute("role")) === "tab") {
@@ -409,7 +409,7 @@ test.describe("Class Management - Schedule", () => {
   test("should add schedule entry", async ({ page }) => {
     await navigateTo(page, "/classes");
 
-    const heading = page.getByRole("heading", { name: /kelas|class/i });
+    const heading = page.getByRole("main").getByRole("heading", { name: /kelas|class/i });
     if (await heading.isVisible({ timeout: 5000 }).catch(() => false)) {
       const firstRow = page.locator("table tbody tr").first();
       await firstRow.click();
@@ -471,7 +471,7 @@ test.describe("Class Management - Export", () => {
   test("should export class list", async ({ page }) => {
     await navigateTo(page, "/classes");
 
-    const heading = page.getByRole("heading", { name: /kelas|class/i });
+    const heading = page.getByRole("main").getByRole("heading", { name: /kelas|class/i });
     if (await heading.isVisible({ timeout: 5000 }).catch(() => false)) {
       const exportButton = page.getByRole("button", { name: /export|unduh/i });
       if (await exportButton.isVisible({ timeout: 3000 }).catch(() => false)) {
