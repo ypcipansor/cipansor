@@ -20,9 +20,12 @@
 
 -- ----------------------------------------------------------------------------
 -- 1. Capaian YTD per (evaluasi, indikator). Untuk tiap evaluasi APPROVED,
---    kumpulkan realisasi evaluasi itu sendiri + seluruh evaluasi dengan periode
---    <= periodenya yang berstatus APPROVED atau PROPOSED, terurut naik periode
---    (urutan ini wajib untuk mode TERAKHIR).
+--    kumpulkan realisasi seluruh evaluasi APPROVED dengan periode <= periodenya
+--    (termasuk evaluasi itu sendiri), terurut naik periode (urutan ini wajib
+--    untuk mode TERAKHIR). PROPOSED TIDAK dihitung — sama persis dengan
+--    `recalculateEvaluationScores` dan `syncToPKAndTalentInTx`: realisasinya
+--    belum terkunci, jadi belum otoritatif. Migrasi yang menghitung dengan
+--    aturan lain menulis skor yang tidak akan pernah dihasilkan aplikasinya.
 -- ----------------------------------------------------------------------------
 CREATE TEMP TABLE _perf_yield (
   evaluation_id    text,
@@ -48,7 +51,7 @@ WITH vis AS (
   JOIN "pk_indicators" i ON i.id = eid."indicator_id"
   LEFT JOIN "pk_evaluations" e2
          ON e2."pk_id" = e."pk_id"
-        AND e2."status" IN ('APPROVED', 'PROPOSED')
+        AND e2."status" = 'APPROVED'
         AND (e2."year" < e."year"
              OR (e2."year" = e."year" AND e2."month" <= e."month"))
   LEFT JOIN "pk_indicator_evaluations" ie

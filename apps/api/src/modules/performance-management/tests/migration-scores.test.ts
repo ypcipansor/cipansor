@@ -47,6 +47,18 @@ describe('Migrasi koreksi skor kinerja (Bug regresi #3)', () => {
     expect(allSql).toMatch(/ORDER\s+BY\s+e\."pk_id",\s*e\."year"\s+DESC,\s*e\."month"\s+DESC/i);
   });
 
+  it('YTD hanya dari evaluasi APPROVED — aturan yang sama dengan layanan', () => {
+    // recalculateEvaluationScores dan syncToPKAndTalentInTx sama-sama
+    // mengecualikan PROPOSED (realisasinya belum terkunci). Migrasi ini
+    // sempat memakai IN ('APPROVED', 'PROPOSED'), sehingga persetujuan yang
+    // tidak berurutan — Maret disetujui saat Februari masih diajukan — membuat
+    // skor Maret tersimpan dengan realisasi Februari, angka yang tidak akan
+    // pernah dihitung aplikasinya sendiri.
+    const code = allSql.replace(/--[^\n]*/g, '');
+    expect(code).not.toMatch(/'PROPOSED'/);
+    expect(code).toMatch(/e2\."status"\s*=\s*'APPROVED'/);
+  });
+
   it('perhitungan ulang menghormati aggregation indikator (KUMULATIF / RATA_RATA / TERAKHIR)', () => {
     expect(allSql).toMatch(/'RATA_RATA'/);
     expect(allSql).toMatch(/'TERAKHIR'/);
