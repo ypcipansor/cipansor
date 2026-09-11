@@ -145,9 +145,32 @@ describe("rbac — legacy bucket derivation", () => {
 });
 
 describe("rbac — getEffectiveRole", () => {
-  it("prefers the legacy user.role bucket (backward compatible)", () => {
+  it("uses the legacy user.role bucket when there is no assignment", () => {
     expect(getEffectiveRole({ role: "SUPER_ADMIN" })).toBe("SUPER_ADMIN");
     expect(getEffectiveRole({ role: "PARENT" })).toBe("PARENT");
+  });
+
+  it("lets the active assignment win over a stale legacy column", () => {
+    // Four yayasan accounts (Ketua, Pembina, Sekretaris, Bendahara) carry
+    // STAFF in users.role — in production too. The API authorises them by
+    // roleCode; the web read the column and sent Ketua Pengurus to /staff.
+    const ketua = {
+      role: "STAFF",
+      userRoles: [{ isPrimary: true, role: { code: "YAYASAN_KETUA" } }],
+    };
+    expect(getEffectiveRole(ketua)).toBe("UNIT_ADMIN");
+    expect(canAccessRoute(getEffectiveRole(ketua), "/perencanaan/abc")).toBe(true);
+  });
+
+  it("follows a role switch — the primary assignment moves, so does the bucket", () => {
+    const user = {
+      role: "TEACHER",
+      userRoles: [
+        { isPrimary: false, role: { code: "SDIT_GURU" } },
+        { isPrimary: true, role: { code: "SDIT_ADMIN" } },
+      ],
+    };
+    expect(getEffectiveRole(user)).toBe("UNIT_ADMIN");
   });
 
   it("derives from the primary RoleCode assignment when role is absent", () => {
