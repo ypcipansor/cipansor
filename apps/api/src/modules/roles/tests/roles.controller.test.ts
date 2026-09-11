@@ -20,11 +20,8 @@ vi.mock('@/lib/prisma', () => ({
   },
 }));
 
-vi.mock('@/utils/resolve-unit-id', () => ({
-  seesAllUnits: vi.fn(({ roleCode }: { roleCode?: string }) =>
-    roleCode === 'SUPER_ADMIN' || roleCode === 'YAYASAN_KETUA',
-  ),
-}));
+// The real tokenUnitId runs here (resolve-unit-id is pure): the switchRole
+// scope rule is exactly what these tests pin, so mocking it would test the mock.
 
 import { rolesController } from '../roles.controller';
 import { rolesService } from '../roles.service';
@@ -86,7 +83,7 @@ describe('RolesController.switchRole', () => {
     expect(res.jsonPayload.data.accessToken).toBe('token-123');
   });
 
-  it('keeps unitId null when switching to a global (sees-all) role', async () => {
+  it('keeps unitId null when switching to a foundation role', async () => {
     // Role yayasan adalah peran lintas-unit. Sebelum perbaikan, fallback ke
     // user.unitId menjadikannya unit-scoped — pengurus yayasan yang seharusnya
     // melihat seluruh unit malah terkunci pada unit asalnya.
@@ -118,7 +115,7 @@ describe('RolesController.switchRole', () => {
     );
   });
 
-  it('falls back to user.unitId only for a non-global role whose unitId is null', async () => {
+  it('falls back to user.unitId for a unit role whose assignment names no unit', async () => {
     // Peran yang memang unit-scoped tetapi kebetulan unitId-nya null harus
     // tetap memakai unit home; yang boleh null hanya peran yang bekerja lintas
     // unit (seesAllUnits true).
@@ -147,6 +144,35 @@ describe('RolesController.switchRole', () => {
         roleCode: 'SDIT_GURU',
         unitId: 'unit-home-sd',
       })
+    );
+  });
+
+  it('keeps a cross-unit service role on its home unit — only foundation roles carry no unit', async () => {
+    // Perawat bekerja lintas unit, tetapi lebarnya datang dari seesAllUnits di
+    // kueri, bukan dari unitId kosong. Sebelum tokenUnitId, switchRole
+    // mengosongkannya sementara refresh mengembalikan unit asal — cakupannya
+    // berganti sendiri pada penyegaran token berikutnya.
+    const mockSwitchResult = {
+      user: { id: 'u-1', email: 'perawat@cipansor.or.id', role: 'STAFF', unitId: 'unit-home-smp' },
+      activeRole: {
+        id: 'role-assign-4',
+        roleId: 'r-perawat',
+        unitId: null,
+        role: { code: 'PERAWAT', permissions: ['PERM_1'] },
+        unit: null,
+      },
+    };
+
+    vi.mocked(rolesService.switchRole).mockResolvedValue(mockSwitchResult as any);
+
+    const { req, res, next } = mockReqRes({
+      body: { roleAssignmentId: 'role-assign-4' } as any,
+    });
+
+    await rolesController.switchRole(req, res, next);
+
+    expect(generateTokenPair).toHaveBeenCalledWith(
+      expect.objectContaining({ roleCode: 'PERAWAT', unitId: 'unit-home-smp' })
     );
   });
 });

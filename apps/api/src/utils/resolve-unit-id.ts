@@ -171,3 +171,29 @@ export function seesAllUnits(user: {
     (!!user.roleCode && CROSS_UNIT_SCOPE_ROLES.includes(user.roleCode))
   );
 }
+
+/**
+ * The `unitId` a token carries for the ACTIVE role assignment — one rule for
+ * every path that mints a token: login, 2FA, refresh and switching role.
+ *
+ * A role assignment binds a person, a role and a scope; the token's unit is
+ * that scope. The paths used to disagree: switchRole returned null for every
+ * `seesAllUnits` role while refresh fell back to the home unit, so a person
+ * who switched to a yayasan role held foundation scope for one access token
+ * and their home unit's after the next refresh, with nothing to show for it.
+ *
+ * Only a FOUNDATION role may carry no unit — its scope is the whole yayasan.
+ * Cross-unit service roles (perawat, pustakawan, musyrif…) keep their home
+ * unit: their breadth comes from `seesAllUnits` widening a query, never from
+ * an empty scope that every `unitId ? filter : everything` clause reads as
+ * "no limit at all".
+ */
+export function tokenUnitId(
+  assignmentUnitId: string | null | undefined,
+  roleCode: string | null | undefined,
+  userUnitId: string | null | undefined,
+): string | null {
+  if (assignmentUnitId) return assignmentUnitId;
+  if (isFoundationScopedRole(roleCode)) return null;
+  return userUnitId ?? null;
+}
