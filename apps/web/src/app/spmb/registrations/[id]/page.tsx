@@ -263,7 +263,7 @@ export default function RegistrationDetailPage({
                 ) : (
                   <GraduationCap className="mr-2 h-4 w-4" />
                 )}
-                Eksekusi Onboarding Terpadu (E2E)
+                Jalankan Onboarding Terpadu
               </Button>
             </CardContent>
           </Card>

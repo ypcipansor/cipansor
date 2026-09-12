@@ -1,5 +1,6 @@
 import { test, expect } from "./fixtures/auth.fixture";
 import { loginAs, apiRequest } from "./helpers/auth-api";
+import { isProductionApi } from "./helpers/api-env";
 
 const API_URL = process.env.API_URL || "http://localhost:3001/api";
 
@@ -100,6 +101,17 @@ test.describe("SPMB - End-to-End Public Registration & Admin Management", () => 
   test("full flow: register + upload document + verify + score + accept + onboard", async ({ page }) => {
     test.setTimeout(120_000);
 
+    // This is the one test in the file that WRITES: an admission period, a
+    // public registrant, a document, and finally a Student plus a guardian
+    // account. Against the CI container that is the point. Against a live API
+    // it would leave that junk in real data on every run — and the suite's
+    // default API_URL (localhost:3001) is the live API on this project's own
+    // host. Ask the API which it is rather than trusting an env var to be set.
+    test.skip(
+      await isProductionApi(),
+      "API_URL menunjuk API produksi; uji ini menulis data, jadi dilewati",
+    );
+
     // ── Data setup (real API, no mock) ───────────────────────────────
     // Use the currently-announced period to borrow a real unit/academic year
     // so a brand-new, definitely-open period can be created for this run.
@@ -178,7 +190,7 @@ test.describe("SPMB - End-to-End Public Registration & Admin Management", () => 
     // Fee is 0 for this run, so onboarding becomes available immediately after
     // acceptance; if a fee were charged, the detail page would surface a "Catat
     // Pelunasan Daftar Ulang" button to settle it first.
-    const onboardButton = page.getByRole("button", { name: /Eksekusi Onboarding Terpadu \(E2E\)/i });
+    const onboardButton = page.getByRole("button", { name: /Jalankan Onboarding Terpadu/i });
     await expect(onboardButton).toBeVisible({ timeout: 15000 });
     await onboardButton.click();
 
