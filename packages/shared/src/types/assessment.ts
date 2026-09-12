@@ -319,6 +319,8 @@ export interface ExamAttempt {
   updatedAt?: string | Date;
   exam?: Exam;
   answers?: ExamAnswer[];
+}
+
 export interface AssessmentStudentItem {
   id: string;
   nis: string;
