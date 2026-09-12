@@ -3,11 +3,35 @@ import { Prisma, QuestionType } from '@prisma/client';
 import type { Question as QuestionModel } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/client';
 import { Errors } from '@/middleware/error';
+import { canonicalAnswer, isAnswerCorrect, normalizeAnswerKeyForStorage } from './answer-key';
 import { calculateLetterGrade } from '@cipansor/shared';
 import type { JwtPayload } from '@/lib/jwt';
 
 /** Authenticated caller shape used for unit-scoping checks. */
 type AuthUser = Pick<JwtPayload, 'id' | 'role'> & { unitId?: string | null };
+
+/**
+ * Minutes a student may still act after the exam duration has elapsed, to absorb
+ * clock skew and a slow last request. One constant because the rule is enforced
+ * in two places — saving an answer and finishing the attempt — and two copies of
+ * one rule diverge at the next edit.
+ */
+export const EXAM_GRACE_PERIOD_MINUTES = 2;
+
+/**
+ * `normalizeAnswerKeyForStorage` in the shape a nullable Json column accepts:
+ * `Prisma.DbNull` writes SQL NULL ("this question has no key yet"), which is the
+ * meaning here — `Prisma.JsonNull` would store the JSON value `null` instead,
+ * and the two are different rows to query against.
+ */
+function answerKeyForPrisma(
+  type: QuestionType,
+  answerKey: unknown,
+  options: unknown
+): string | typeof Prisma.DbNull {
+  const normalized = normalizeAnswerKeyForStorage(type, answerKey, options);
+  return normalized === null ? Prisma.DbNull : normalized;
+}
 
 /** Deterministic pseudo-random number generator for attempt-level shuffling */
 function seededRandom(seedStr: string) {
@@ -210,7 +234,10 @@ export class CBTService {
         type: data.type,
         content: data.content,
         options: data.options,
-        answerKey: data.answerKey,
+        // Normalised and checked against this question's own options here, so a
+        // key that can never match is refused while the teacher is writing it
+        // instead of surfacing as every student's zero on exam day.
+        answerKey: answerKeyForPrisma(data.type, data.answerKey, data.options),
         explanation: data.explanation,
         points: data.points ?? 1,
         order: data.order ?? 0,
@@ -241,9 +268,17 @@ export class CBTService {
       throw Errors.forbidden('You do not have permission to update this question');
     }
 
+    // The same contract on update, evaluated against the values this call leaves
+    // behind: replacing the options can make a previously valid key unusable, so
+    // the stored key is re-checked even when the caller did not send one. The
+    // question type is not editable here (it is absent from UpdateQuestionInput),
+    // so it always comes from the stored row.
+    const nextOptions = data.options ?? question.options;
+    const nextKey = 'answerKey' in data ? data.answerKey : question.answerKey;
+
     return prisma.question.update({
       where: { id },
-      data,
+      data: { ...data, answerKey: answerKeyForPrisma(question.type, nextKey, nextOptions) },
     });
   }
 
@@ -831,16 +866,18 @@ export class CBTService {
 
     // Strict time limit check with 2 minute grace period
     if (attempt.startedAt && attempt.exam.duration) {
-      const gracePeriodMinutes = 2;
-      const allowedDurationMs = (attempt.exam.duration + gracePeriodMinutes) * 60 * 1000;
+      const allowedDurationMs =
+        (attempt.exam.duration + EXAM_GRACE_PERIOD_MINUTES) * 60 * 1000;
       const elapsedMs = Date.now() - new Date(attempt.startedAt).getTime();
 
       if (elapsedMs > allowedDurationMs) {
-        await prisma.examAttempt.update({
-          where: { id: attemptId },
-          data: { status: 'EXPIRED', finishedAt: new Date() },
-        });
-        throw Errors.badRequest('Waktu pengerjaan ujian telah habis.');
+        // This answer is late and is refused. The attempt itself is finished and
+        // graded on the answers that did arrive in time, so running out of time
+        // costs the student this one answer rather than the whole exam.
+        await CBTService.finishExamAttempt(attemptId, studentId);
+        throw Errors.badRequest(
+          'Waktu pengerjaan ujian telah habis. Jawaban yang sudah tersimpan sudah dinilai.'
+        );
       }
     }
 
@@ -1031,7 +1068,12 @@ export class CBTService {
     if (!attempt) throw Errors.notFound('Attempt');
     if (attempt.studentId !== studentId) throw Errors.forbidden('Access denied');
 
-    if (attempt.status !== 'IN_PROGRESS') {
+    // An attempt the old behaviour left as EXPIRED with no score was a dead end:
+    // its answers sat graded-never in the database and no Grade was ever issued.
+    // Treat those as unfinished and grade them below instead of returning them.
+    const staleExpired = attempt.status === 'EXPIRED' && attempt.score === null;
+
+    if (attempt.status !== 'IN_PROGRESS' && !staleExpired) {
       // Strip sensitive fields before returning to the student to prevent leaking
       // correct answers and explanations. Only expose the same fields as getAttempt.
       if (attempt.exam?.questionBank?.questions) {
@@ -1050,20 +1092,18 @@ export class CBTService {
       return attempt;
     }
 
-    // Strict time limit check with 2 minute grace period (ONLY for IN_PROGRESS attempts)
-    if (attempt.startedAt && attempt.exam?.duration) {
-      const gracePeriodMinutes = 2;
-      const allowedDurationMs = (attempt.exam.duration + gracePeriodMinutes) * 60 * 1000;
-      const elapsedMs = Date.now() - new Date(attempt.startedAt).getTime();
-
-      if (elapsedMs > allowedDurationMs) {
-        await prisma.examAttempt.update({
-          where: { id: attemptId },
-          data: { status: 'EXPIRED', finishedAt: new Date() },
-        });
-        throw Errors.badRequest('Waktu pengerjaan ujian telah habis.');
-      }
-    }
+    // Past the deadline the paper is closed, not shredded: the answers already
+    // saved are graded exactly as they stand and a Grade is issued like any
+    // other attempt. Throwing here (the previous behaviour) left the student's
+    // saved answers forever ungraded with no way back — a dropped connection in
+    // the last minutes cost an entire exam. Late ANSWERS are still refused, in
+    // submitAnswer; this only decides what happens to the ones that arrived in
+    // time.
+    const closedByTimeLimit =
+      attempt.startedAt && attempt.exam?.duration
+        ? Date.now() - new Date(attempt.startedAt).getTime() >
+          (attempt.exam.duration + EXAM_GRACE_PERIOD_MINUTES) * 60 * 1000
+        : false;
 
     // Auto grading
     let totalScore = 0;
@@ -1078,17 +1118,13 @@ export class CBTService {
       let score = 0;
 
       if (question.type === 'MULTIPLE_CHOICE' || question.type === 'TRUE_FALSE') {
-        // Compare answerKey. Assuming answerKey is { optionId: "..." } or simple string
-        // studentAnswer.answer should match structure.
-        // Simple logic: if JSON stringify matches (careful with order) or direct value check.
-        // Assuming answerKey is just the ID of the correct option.
-
-        const key = question.answerKey as unknown; // e.g. "opt-1"
-        const studentAns = studentAnswer?.answer as unknown; // e.g. "opt-1"
-
-        // Use JSON.stringify for comparison to handle both primitive and
-        // object JSON values (Prisma Json fields may be deserialized objects).
-        if (key != null && studentAns != null && JSON.stringify(key) === JSON.stringify(studentAns)) {
+        // One rule decides this, shared with the question-write validation and
+        // the distractor analysis (`answer-key.ts`). It replaced a
+        // `JSON.stringify(key) === JSON.stringify(answer)` comparison, which
+        // marked every true/false question wrong whenever the teacher's key was
+        // stored as the JSON boolean `true` and the client sent the string
+        // "true" — silently, and straight into the academic gradebook.
+        if (isAnswerCorrect(question.type, question.answerKey, studentAnswer?.answer)) {
           isCorrect = true;
           score = question.points;
         }
@@ -1145,6 +1181,23 @@ export class CBTService {
         },
       })
     );
+
+    // An attempt closed by the clock is scored like any other, so the status no
+    // longer says which of the two happened. The distinction matters to whoever
+    // reviews the exam afterwards, so it is written where the rest of the
+    // attempt's history already lives — append-only, in the same transaction as
+    // the grading it describes.
+    if (closedByTimeLimit) {
+      gradedAnswers.push(
+        prisma.examSecurityLog.create({
+          data: {
+            attemptId,
+            type: 'TIME_EXPIRED_AUTO_SUBMIT',
+            details: `Ditutup sistem karena waktu habis (durasi ${attempt.exam?.duration ?? '?'} menit + toleransi ${EXAM_GRACE_PERIOD_MINUTES} menit). Jawaban yang sudah masuk dinilai apa adanya.`,
+          },
+        })
+      );
+    }
 
     await prisma.$transaction(gradedAnswers);
 
@@ -1345,28 +1398,21 @@ export class CBTService {
         | Array<{ option: Prisma.JsonValue; count: number; percentage: number }>
         | undefined;
       if (q.type === 'MULTIPLE_CHOICE' && Array.isArray(q.options)) {
-        const getOptKey = (opt: Prisma.JsonValue): Prisma.JsonValue =>
-          typeof opt === 'object' && opt !== null && !Array.isArray(opt) && 'id' in opt
-            ? (opt as { id: Prisma.JsonValue }).id
-            : opt;
-
+        // Counted through the same canonical form the grader uses. These two
+        // used to normalise differently — the analysis unwrapped `{ id: … }`
+        // wrappers and the grader did not — so they could disagree about which
+        // option a student had picked.
         const optionCounts: Record<string, number> = {};
         answers.forEach((ans) => {
           if (ans && ans.answer != null) {
-            const rawAns = ans.answer as Prisma.JsonValue;
-            const rawKey =
-              typeof rawAns === 'object' && rawAns !== null && !Array.isArray(rawAns) && 'id' in rawAns
-                ? (rawAns as { id: Prisma.JsonValue }).id
-                : rawAns;
-            const keyStr = typeof rawKey === 'string' ? rawKey : JSON.stringify(rawKey);
-            optionCounts[keyStr] = (optionCounts[keyStr] || 0) + 1;
+            const keyStr = canonicalAnswer(q.type, ans.answer);
+            if (keyStr !== null) optionCounts[keyStr] = (optionCounts[keyStr] || 0) + 1;
           }
         });
 
         distractorAnalysis = (q.options as Prisma.JsonValue[]).map((opt) => {
-          const optKey = getOptKey(opt);
-          const keyStr = typeof optKey === 'string' ? optKey : JSON.stringify(optKey);
-          const count = optionCounts[keyStr] || 0;
+          const keyStr = canonicalAnswer(q.type, opt);
+          const count = keyStr === null ? 0 : optionCounts[keyStr] || 0;
           return {
             option: opt,
             count,

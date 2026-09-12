@@ -429,6 +429,147 @@ describe('CBT Service', () => {
       });
     });
 
+    it('menilai soal benar-salah yang kuncinya boolean JSON', async () => {
+      // Regresi: penilai lama membandingkan JSON.stringify kedua sisi, sedangkan
+      // klien web selalu mengirim string ("true"/"false"). Kunci boolean `true`
+      // — bentuk paling wajar untuk kolom Json — membuat SETIAP siswa salah,
+      // tanpa pesan apa pun, dan nilainya kini menyeberang ke buku nilai.
+      vi.mocked(prisma.examAttempt.findUnique).mockResolvedValue({
+        id: 'attempt-tf',
+        studentId: 'std-1',
+        status: 'IN_PROGRESS',
+        exam: {
+          questionBank: {
+            questions: [
+              { id: 'q-1', type: 'TRUE_FALSE', answerKey: true, points: 10 },
+              { id: 'q-2', type: 'TRUE_FALSE', answerKey: false, points: 10 },
+            ],
+          },
+        },
+        answers: [
+          { id: 'ans-1', questionId: 'q-1', answer: 'true' }, // benar
+          { id: 'ans-2', questionId: 'q-2', answer: 'true' }, // salah
+        ],
+      } as any);
+      vi.mocked(prisma.examAttempt.update).mockResolvedValue({} as any);
+
+      await CBTService.finishExamAttempt('attempt-tf', 'std-1');
+
+      expect(prisma.examAnswer.update).toHaveBeenCalledWith({
+        where: { id: 'ans-1' },
+        data: { isCorrect: true, score: 10 },
+      });
+      expect(prisma.examAnswer.update).toHaveBeenCalledWith({
+        where: { id: 'ans-2' },
+        data: { isCorrect: false, score: 0 },
+      });
+    });
+
+    it('waktu habis: jawaban yang sudah masuk dinilai, bukan hangus', async () => {
+      // Perilaku lama melempar di sini, sehingga baris exam_answers tetap ada di
+      // basis data tetapi tidak pernah dinilai dan tidak ada Grade yang terbit —
+      // koneksi yang putus di menit terakhir memusnahkan seluruh ujian.
+      const startedAt = new Date(Date.now() - 120 * 60 * 1000); // 120 menit lalu
+      vi.mocked(prisma.examAttempt.findUnique).mockResolvedValue({
+        id: 'attempt-late',
+        studentId: 'std-1',
+        status: 'IN_PROGRESS',
+        startedAt,
+        score: null,
+        exam: {
+          duration: 60,
+          questionBank: {
+            questions: [{ id: 'q-1', type: 'MULTIPLE_CHOICE', answerKey: 'opt-A', points: 10 }],
+          },
+        },
+        answers: [{ id: 'ans-1', questionId: 'q-1', answer: 'opt-A' }],
+      } as any);
+      vi.mocked(prisma.examAttempt.update).mockResolvedValue({} as any);
+
+      await expect(
+        CBTService.finishExamAttempt('attempt-late', 'std-1')
+      ).resolves.toBeDefined();
+
+      expect(prisma.examAnswer.update).toHaveBeenCalledWith({
+        where: { id: 'ans-1' },
+        data: { isCorrect: true, score: 10 },
+      });
+      expect(prisma.examAttempt.update).toHaveBeenCalledWith({
+        where: { id: 'attempt-late' },
+        data: expect.objectContaining({ status: 'COMPLETED', score: expect.anything() }),
+      });
+    });
+
+    it('waktu habis dicatat sebagai ditutup sistem, bukan dikumpulkan siswa', async () => {
+      const startedAt = new Date(Date.now() - 120 * 60 * 1000);
+      vi.mocked(prisma.examAttempt.findUnique).mockResolvedValue({
+        id: 'attempt-late-2',
+        studentId: 'std-1',
+        status: 'IN_PROGRESS',
+        startedAt,
+        score: null,
+        exam: {
+          duration: 60,
+          questionBank: { questions: [] },
+        },
+        answers: [],
+      } as any);
+      vi.mocked(prisma.examAttempt.update).mockResolvedValue({} as any);
+
+      await CBTService.finishExamAttempt('attempt-late-2', 'std-1');
+
+      expect(prisma.examSecurityLog.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          attemptId: 'attempt-late-2',
+          type: 'TIME_EXPIRED_AUTO_SUBMIT',
+        }),
+      });
+    });
+
+    it('attempt yang dikumpulkan tepat waktu tidak menulis log waktu habis', async () => {
+      vi.mocked(prisma.examAttempt.findUnique).mockResolvedValue({
+        id: 'attempt-ontime',
+        studentId: 'std-1',
+        status: 'IN_PROGRESS',
+        startedAt: new Date(Date.now() - 10 * 60 * 1000),
+        score: null,
+        exam: { duration: 60, questionBank: { questions: [] } },
+        answers: [],
+      } as any);
+      vi.mocked(prisma.examAttempt.update).mockResolvedValue({} as any);
+
+      await CBTService.finishExamAttempt('attempt-ontime', 'std-1');
+
+      expect(prisma.examSecurityLog.create).not.toHaveBeenCalled();
+    });
+
+    it('attempt EXPIRED lama yang belum bernilai masih bisa dinilai', async () => {
+      // Baris yang ditinggalkan perilaku lama: EXPIRED dengan score null adalah
+      // jalan buntu — memanggil submit lagi pun melempar. Sekarang ia dinilai.
+      vi.mocked(prisma.examAttempt.findUnique).mockResolvedValue({
+        id: 'attempt-stale',
+        studentId: 'std-1',
+        status: 'EXPIRED',
+        score: null,
+        startedAt: new Date(Date.now() - 120 * 60 * 1000),
+        exam: {
+          duration: 60,
+          questionBank: {
+            questions: [{ id: 'q-1', type: 'MULTIPLE_CHOICE', answerKey: 'opt-A', points: 10 }],
+          },
+        },
+        answers: [{ id: 'ans-1', questionId: 'q-1', answer: 'opt-A' }],
+      } as any);
+      vi.mocked(prisma.examAttempt.update).mockResolvedValue({} as any);
+
+      await CBTService.finishExamAttempt('attempt-stale', 'std-1');
+
+      expect(prisma.examAttempt.update).toHaveBeenCalledWith({
+        where: { id: 'attempt-stale' },
+        data: expect.objectContaining({ status: 'COMPLETED' }),
+      });
+    });
+
     it('should grade and finish exam attempt atomically', async () => {
       const attemptData = {
         id: 'attempt-1',
@@ -648,24 +789,47 @@ describe('CBT Service', () => {
       ).rejects.toThrow('Cannot record security events');
     });
 
-    it('should enforce strict duration limits and expire attempt if time exceeded', async () => {
-      const pastTime = new Date(Date.now() - 90 * 60 * 1000); // 90 mins ago for a 60 min exam
-      vi.mocked(prisma.examAttempt.findUnique).mockResolvedValueOnce({
+    it('jawaban yang terlambat ditolak, tetapi ujiannya ditutup dan dinilai', async () => {
+      // Uji ini dulu menuntut `status: 'EXPIRED'` — yaitu persis perilaku yang
+      // harus berubah. EXPIRED tanpa nilai adalah jalan buntu: jawaban yang
+      // sempat masuk tidak pernah dinilai dan tidak ada Grade yang terbit.
+      // Yang benar: jawaban terlambat ini ditolak, dan lembar jawabannya ditutup
+      // lalu dinilai apa adanya.
+      const pastTime = new Date(Date.now() - 90 * 60 * 1000); // 90 menit lalu, ujian 60 menit
+      const lateAttempt = {
         id: 'attempt-1',
         studentId: 'std-1',
         status: 'IN_PROGRESS',
         startedAt: pastTime,
-        exam: { questionBankId: 'bank-1', duration: 60 },
-      } as any);
+        score: null,
+        exam: {
+          questionBankId: 'bank-1',
+          duration: 60,
+          questionBank: {
+            questions: [{ id: 'q-1', type: 'MULTIPLE_CHOICE', answerKey: 'opt-A', points: 10 }],
+          },
+        },
+        answers: [{ id: 'ans-1', questionId: 'q-1', answer: 'opt-A' }],
+      };
+      vi.mocked(prisma.examAttempt.findUnique).mockResolvedValue(lateAttempt as any);
+      vi.mocked(prisma.examAttempt.update).mockResolvedValue({} as any);
 
       await expect(
         CBTService.submitAnswer('attempt-1', 'q-1', 'opt-A', 'std-1')
       ).rejects.toThrow('Waktu pengerjaan ujian telah habis.');
 
+      // Jawaban yang sudah tersimpan tetap dinilai…
+      expect(prisma.examAnswer.update).toHaveBeenCalledWith({
+        where: { id: 'ans-1' },
+        data: { isCorrect: true, score: 10 },
+      });
+      // …dan attempt-nya selesai dengan nilai, bukan ditinggalkan EXPIRED kosong.
       expect(prisma.examAttempt.update).toHaveBeenCalledWith({
         where: { id: 'attempt-1' },
-        data: expect.objectContaining({ status: 'EXPIRED' }),
+        data: expect.objectContaining({ status: 'COMPLETED', score: expect.anything() }),
       });
+      // Jawaban terlambatnya sendiri tidak ikut tersimpan.
+      expect(prisma.examAnswer.upsert).not.toHaveBeenCalled();
     });
 
     it('should NOT expire an already COMPLETED attempt during late retry of finishExamAttempt', async () => {
