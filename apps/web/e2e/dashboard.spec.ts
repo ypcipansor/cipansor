@@ -1,5 +1,6 @@
 import { test, expect } from "./fixtures/auth.fixture";
 import { loginAs } from "./helpers/auth-api";
+import { settledContent } from "./helpers/page-state";
 
 /**
  * Dashboard Module E2E Tests
@@ -21,7 +22,7 @@ test.describe("Dashboard - Navigation", () => {
   });
 
   test("should display dashboard content", async ({ page }) => {
-    const content = await page.content();
+    const content = await settledContent(page);
     expect(content.length).toBeGreaterThan(2000);
   });
 });
@@ -41,7 +42,7 @@ test.describe("Dashboard - Metrics", () => {
 
   test("should show student count metrics", async ({ page }) => {
     await page.waitForTimeout(2000); // let metrics queries resolve
-    const content = await page.content();
+    const content = await settledContent(page);
     const hasStudentMetrics =
       content.includes("Siswa") ||
       content.includes("Student") ||
@@ -64,7 +65,7 @@ test.describe("Dashboard - Metrics", () => {
 test.describe("Dashboard - Navigation Links", () => {
   test("should have links to main modules", async ({ page }) => {
     await page.waitForTimeout(2000); // sidebar renders after auth hydration
-    const content = await page.content();
+    const content = await settledContent(page);
     const hasNavigation =
       content.includes("Siswa") ||
       content.includes("Guru") ||

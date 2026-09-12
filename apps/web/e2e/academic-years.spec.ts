@@ -1,5 +1,6 @@
 import { test, expect } from "./fixtures/auth.fixture";
 import { loginAs } from "./helpers/auth-api";
+import { settledContent } from "./helpers/page-state";
 
 /**
  * Academic Years Module E2E Tests
@@ -24,7 +25,7 @@ test.describe("Academic Years - Navigation", () => {
     await page.goto("/academic-years");
     await page.waitForLoadState("domcontentloaded", { timeout: 10000 });
 
-    const content = await page.content();
+    const content = await settledContent(page);
     expect(content.length).toBeGreaterThan(1000);
   });
 });
