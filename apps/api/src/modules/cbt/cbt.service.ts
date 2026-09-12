@@ -4,7 +4,7 @@ import type { Question as QuestionModel } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/client';
 import { Errors } from '@/middleware/error';
 import { canonicalAnswer, isAnswerCorrect, normalizeAnswerKeyForStorage } from './answer-key';
-import { SecurityEventType } from '@cipansor/shared';
+import type { SecurityEventType } from '@cipansor/shared';
 import { calculateLetterGrade } from '@cipansor/shared';
 import type { JwtPayload } from '@/lib/jwt';
 
@@ -808,12 +808,14 @@ export class CBTService {
   static async recordSecurityLog(
     attemptId: string,
     userId: string,
-    event: { type: string; details?: string }
+    event: { type: SecurityEventType; details?: Record<string, unknown> | null }
   ) {
-    const ALLOWED_EVENT_TYPES = ['TAB_SWITCH', 'FOCUS_LOST', 'COPY', 'PASTE', 'RIGHT_CLICK'];
-    if (!event.type || !ALLOWED_EVENT_TYPES.includes(event.type)) {
-      throw Errors.badRequest(`Invalid event type: ${event.type}. Must be one of ${ALLOWED_EVENT_TYPES.join(', ')}`);
-    }
+    // The allowed list used to be a third copy hardcoded right here — five
+    // values, so it would have rejected FULLSCREEN_EXIT and DEV_TOOLS the moment
+    // the client started sending them. The list now lives once, in
+    // `SECURITY_EVENT_TYPES`: the zod schema rejects an unknown name at the
+    // boundary with a 400, the type above stops the server writing one, and the
+    // CHECK constraint is the last line in the database.
 
     const student = await prisma.student.findUnique({ where: { userId } });
     if (!student) throw Errors.unauthorized('User is not a student');
@@ -835,10 +837,7 @@ export class CBTService {
         data: {
           attemptId,
           type: event.type,
-          // The client sends a human sentence; it is stored as a field inside the
-          // JSONB payload rather than as the payload, so server-raised events can
-          // carry their own structure in the same column.
-          details: event.details ? { note: event.details.substring(0, 500) } : Prisma.DbNull,
+          details: (event.details ?? Prisma.DbNull) as Prisma.InputJsonValue,
         },
       }),
       ...(isTabSwitch
@@ -1196,7 +1195,7 @@ export class CBTService {
         prisma.examSecurityLog.create({
           data: {
             attemptId,
-            type: SecurityEventType.TIME_EXPIRED_AUTO_SUBMIT,
+            type: 'TIME_EXPIRED_AUTO_SUBMIT' satisfies SecurityEventType,
             details: {
               closedBy: 'SYSTEM',
               examDurationMinutes: attempt.exam?.duration ?? null,

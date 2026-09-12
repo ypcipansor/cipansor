@@ -26,8 +26,10 @@ export const useRecordSecurityLog = () => {
       details,
     }: {
       attemptId: string;
-      eventType: SecurityEventType | string;
-      details?: string | null;
+      eventType: SecurityEventType;
+      // Structured, matching the JSONB column; `{ note }` is the usual shape for
+      // something a person will read.
+      details?: Record<string, unknown> | null;
     }) => {
       const { data } = await api.post(`/cbt/attempts/${attemptId}/security-log`, {
         eventType,

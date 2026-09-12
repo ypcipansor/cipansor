@@ -745,13 +745,13 @@ describe('CBT Service', () => {
         id: 'log-1',
         attemptId: 'attempt-1',
         type: 'TAB_SWITCH',
-        details: 'Minimizing window',
+        details: { note: 'Minimizing window' },
         createdAt: new Date(),
       } as any);
 
       await CBTService.recordSecurityLog('attempt-1', 'user-std-1', {
         type: 'TAB_SWITCH',
-        details: 'Minimizing window',
+        details: { note: 'Minimizing window' },
       });
 
       expect(prisma.examSecurityLog.create).toHaveBeenCalledWith({
@@ -784,7 +784,7 @@ describe('CBT Service', () => {
       await expect(
         CBTService.recordSecurityLog('attempt-1', 'user-std-1', {
           type: 'TAB_SWITCH',
-          details: 'Late event after completion',
+          details: { note: 'Late event after completion' },
         })
       ).rejects.toThrow('Cannot record security events');
     });

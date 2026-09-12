@@ -1,13 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
-import { SecurityEventType } from '@cipansor/shared';
+import { SECURITY_EVENT_TYPES } from '@cipansor/shared';
 
 /**
  * The list of exam-integrity event names exists in two places that nothing else
- * ties together: the TypeScript enum in `@cipansor/shared` (what the code may
- * write) and the CHECK constraint on `exam_security_logs.type` (what the database
- * will accept). A value added to one and not the other fails at runtime, on a
+ * ties together: the `SECURITY_EVENT_TYPES` tuple in `@cipansor/shared` (what the
+ * code and the API schema accept) and the CHECK constraint on
+ * `exam_security_logs.type` (what the database will accept). A value added to one and not the other fails at runtime, on a
  * write that only happens while a student is sitting an exam — the worst possible
  * moment to discover it.
  *
@@ -30,16 +30,16 @@ function checkConstraintValues(sql: string): string[] {
 }
 
 describe('daftar jenis kejadian keamanan ujian', () => {
-  it('CHECK di basis data memuat tepat nilai yang sama dengan enum bersama', () => {
+  it('CHECK di basis data memuat tepat nilai yang sama dengan daftar bersama', () => {
     const sql = fs.readFileSync(MIGRATION, 'utf8');
     const inDatabase = checkConstraintValues(sql).sort();
-    const inCode = Object.values(SecurityEventType).sort();
+    const inCode = [...SECURITY_EVENT_TYPES].sort();
 
     expect(inDatabase).toEqual(inCode);
   });
 
   it('nilai yang ditulis oleh sistem sendiri ada di daftar', () => {
     // finishExamAttempt menulis nilai ini ketika jam menutup lembar jawaban.
-    expect(Object.values(SecurityEventType)).toContain('TIME_EXPIRED_AUTO_SUBMIT');
+    expect(SECURITY_EVENT_TYPES).toContain('TIME_EXPIRED_AUTO_SUBMIT');
   });
 });

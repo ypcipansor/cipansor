@@ -292,23 +292,32 @@ export interface ExamAnswer {
 /**
  * Every anti-cheat / exam-integrity event the system records.
  *
- * This list is the single source of truth: the `exam_security_logs.type` CHECK
- * constraint in the database must contain exactly these values, and a sync test
- * (`apps/api/src/modules/cbt/tests/security-event-types-sync.test.ts`) fails if
- * the two drift apart — the shape of bug this repo keeps finding, where one fact
- * is written in two places with no type between them.
+ * A `const` tuple rather than a TypeScript enum, because this one list has to
+ * serve three consumers at once: `z.enum()` at the API boundary (which needs a
+ * tuple), the writers in the service, and the `exam_security_logs.type` CHECK
+ * constraint in the database. A sync test
+ * (`apps/api/src/modules/cbt/tests/security-event-types-sync.test.ts`) reads the
+ * migration SQL and fails if the constraint and this list drift apart — the shape
+ * of bug this repo keeps finding, where one fact is written in two places with no
+ * type between them.
+ *
+ * COPY and PASTE are deliberately separate events rather than one COPY_PASTE:
+ * pasting INTO the exam suggests outside help, copying OUT suggests the paper is
+ * leaking. Collapsing them throws away the distinction an invigilator needs.
  */
-export enum SecurityEventType {
-  TAB_SWITCH = "TAB_SWITCH",
-  FOCUS_LOST = "FOCUS_LOST",
-  COPY = "COPY",
-  PASTE = "PASTE",
-  RIGHT_CLICK = "RIGHT_CLICK",
-  FULLSCREEN_EXIT = "FULLSCREEN_EXIT",
-  DEV_TOOLS = "DEV_TOOLS",
+export const SECURITY_EVENT_TYPES = [
+  "TAB_SWITCH",
+  "FOCUS_LOST",
+  "COPY",
+  "PASTE",
+  "RIGHT_CLICK",
+  "FULLSCREEN_EXIT",
+  "DEV_TOOLS",
   /** The clock closed the paper; the student did not press Kumpulkan. */
-  TIME_EXPIRED_AUTO_SUBMIT = "TIME_EXPIRED_AUTO_SUBMIT",
-}
+  "TIME_EXPIRED_AUTO_SUBMIT",
+] as const;
+
+export type SecurityEventType = (typeof SECURITY_EVENT_TYPES)[number];
 
 export interface ExamSecurityLog {
   id: string;

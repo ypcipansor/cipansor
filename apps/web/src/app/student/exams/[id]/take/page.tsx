@@ -443,7 +443,7 @@ function ExamPlayer({
         recordSecurityLog.mutate({
           attemptId: attempt.id,
           eventType: "TAB_SWITCH",
-          details: "User switched browser tab or minimized window",
+          details: { note: "Pindah tab atau meminimalkan jendela" },
         });
       }
     };
@@ -586,7 +586,7 @@ function ExamPlayer({
               recordSecurityLog.mutate({
                 attemptId: attempt.id,
                 eventType: "RIGHT_CLICK",
-                details: "Right-click context menu attempt detected",
+                details: { note: "Percobaan membuka menu klik kanan" },
               });
             }}
             onCopy={(e) => {
@@ -595,7 +595,7 @@ function ExamPlayer({
               recordSecurityLog.mutate({
                 attemptId: attempt.id,
                 eventType: "COPY",
-                details: "Copy text attempt detected",
+                details: { note: "Percobaan menyalin teks" },
               });
             }}
             onPaste={(e) => {
@@ -604,7 +604,7 @@ function ExamPlayer({
               recordSecurityLog.mutate({
                 attemptId: attempt.id,
                 eventType: "PASTE",
-                details: "Paste text attempt detected",
+                details: { note: "Percobaan menempel teks" },
               });
             }}
           >

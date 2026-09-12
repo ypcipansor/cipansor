@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { recordSecurityLogSchema } from '@cipansor/shared';
 import { CBTService } from './cbt.service';
 import { Errors } from '@/middleware/error';
 import { prisma } from '@/lib/prisma';
@@ -40,12 +41,14 @@ export class CBTController {
   static async recordSecurityLog(req: Request, res: Response, next: NextFunction) {
     try {
       const user = requireUser(req);
-      const { eventType, details } = req.body;
+      // Validated here so an unknown event name answers 400 naming the field,
+      // rather than reaching the database and failing its CHECK as a 500.
+      const body = recordSecurityLogSchema.parse(req.body);
 
       const result = await CBTService.recordSecurityLog(
         req.params.attemptId,
         user.id,
-        { type: eventType, details }
+        { type: body.eventType, details: body.details }
       );
       res.json({ success: true, data: result });
     } catch (error) {
