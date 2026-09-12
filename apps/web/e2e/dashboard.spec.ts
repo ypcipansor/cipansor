@@ -1,5 +1,6 @@
 import { test, expect } from "./fixtures/auth.fixture";
 import { loginAs } from "./helpers/auth-api";
+import { settledContent } from "./helpers/page-state";
 
 /**
  * Dashboard Module E2E Tests
@@ -21,24 +22,27 @@ test.describe("Dashboard - Navigation", () => {
   });
 
   test("should display dashboard content", async ({ page }) => {
-    const content = await page.content();
+    const content = await settledContent(page);
     expect(content.length).toBeGreaterThan(2000);
   });
 });
 
 test.describe("Dashboard - Metrics", () => {
   test("should display statistics cards", async ({ page }) => {
-    // shadcn Card renders data-slot="card" (no "card" substring in class
-    // names). First paint sits on an auth-hydration spinner, which can
-    // exceed 10s under parallel worker load — wait for the cards properly.
+    // Scope to the content landmark and target the shadcn Card slot. The old
+    // page-wide `[class*="card"]` selector also matched the hidden lucide
+    // `id-card` icon in the sidebar, and `.first()` resolved to that
+    // `aria-hidden` SVG (never visible), so this always timed out. First paint
+    // sits on an auth-hydration spinner, which can exceed 10s under parallel
+    // worker load — wait for an actual card in <main> properly.
     await expect(
-      page.locator('[data-slot="card"], [class*="card"], [class*="stat"]').first(),
+      page.getByRole("main").locator('[data-slot="card"]').first(),
     ).toBeVisible({ timeout: 20000 });
   });
 
   test("should show student count metrics", async ({ page }) => {
     await page.waitForTimeout(2000); // let metrics queries resolve
-    const content = await page.content();
+    const content = await settledContent(page);
     const hasStudentMetrics =
       content.includes("Siswa") ||
       content.includes("Student") ||
@@ -61,7 +65,7 @@ test.describe("Dashboard - Metrics", () => {
 test.describe("Dashboard - Navigation Links", () => {
   test("should have links to main modules", async ({ page }) => {
     await page.waitForTimeout(2000); // sidebar renders after auth hydration
-    const content = await page.content();
+    const content = await settledContent(page);
     const hasNavigation =
       content.includes("Siswa") ||
       content.includes("Guru") ||

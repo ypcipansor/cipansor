@@ -11,7 +11,15 @@ import {
   useUpdatePlan,
   useApprovePlan,
   useDeletePlan,
+  type StrategicPlan,
+  PLAN_STATUS_LABEL,
+  PLAN_REVIEW_STAGE_LABEL,
+  PLAN_TYPE_LABEL,
+  planTierLabel,
 } from "@/hooks/use-perencanaan";
+import { useUnits } from "@/hooks/use-units";
+import { useAuthStore } from "@/stores/auth";
+import { getPrimaryRoleCode } from "@/lib/rbac";
 import { PageHeader } from "@/components/shared/page-header";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import {
@@ -53,16 +61,50 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Plus, Pencil, Trash2, CheckCircle, Filter, X } from "lucide-react";
 
 // ─── Schemas ────────────────────────────────────────────────
-const planFormSchema = z.object({
+const planFormBase = z.object({
   title: z.string().min(3, "Judul minimal 3 karakter"),
   description: z.string().optional(),
   type: z.enum(["RPJP", "RENSTRA", "RKA"]),
+  // Only the annual document has two tiers. RPJP and Renstra are always the
+  // yayasan's own, so the control is hidden for them and pinned to YAYASAN.
+  level: z.enum(["YAYASAN", "UNIT"]),
+  unitId: z.string().optional(),
+  parentId: z.string().optional(),
   startDate: z.string().min(1, "Tanggal mulai wajib"),
   endDate: z.string().min(1, "Tanggal selesai wajib"),
   budget: z.string().optional(),
 });
 
-type PlanFormValues = z.infer<typeof planFormSchema>;
+type PlanFormValues = z.infer<typeof planFormBase>;
+
+/**
+ * Hierarchy is fixed at creation — `updatePlan` deliberately drops unit and
+ * parent — so the edit dialog hides those pickers. Requiring them there anyway
+ * would fail the form on a field the user cannot see.
+ */
+const planFormSchema = (isEdit: boolean, needsUnitPick: boolean) =>
+  planFormBase.superRefine((v, ctx) => {
+    if (isEdit) return;
+    if (needsUnitPick && v.type === "RKA" && v.level === "UNIT" && !v.unitId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["unitId"],
+        message: "Pilih unit kerja pemilik RKA ini",
+      });
+    }
+    if (v.type !== "RPJP" && !v.parentId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["parentId"],
+        message:
+          v.type === "RENSTRA"
+            ? "Renstra harus menginduk pada RPJP"
+            : v.level === "UNIT"
+              ? "RKA unit harus menginduk pada RKA Yayasan"
+              : "RKA Yayasan harus menginduk pada Renstra",
+      });
+    }
+  });
 
 // ─── Constants ──────────────────────────────────────────────
 const statusColor: Record<string, string> = {
@@ -76,26 +118,24 @@ const statusColor: Record<string, string> = {
 
 // RPJP was in the database enum but absent from this list, so the longest-horizon
 // document was the one plan type the UI could not create.
-const typeLabel: Record<string, string> = {
-  RPJP: "RPJP",
-  RENSTRA: "Renstra",
-  RKA: "RKA",
-};
-
 const typeOptions = [
   { value: "RPJP", label: "RPJP — Rencana Pembangunan Jangka Panjang (20 Tahun)" },
   { value: "RENSTRA", label: "Renstra — Rencana Strategis (5 Tahun)" },
   { value: "RKA", label: "RKA — Rencana Kerja dan Anggaran (1 Tahun)" },
 ];
 
-const statusOptions = [
-  { value: "DRAFT", label: "Draft" },
-  { value: "PROPOSED", label: "Diajukan" },
-  { value: "APPROVED", label: "Disetujui" },
-  { value: "IN_PROGRESS", label: "Berjalan" },
-  { value: "COMPLETED", label: "Selesai" },
-  { value: "CANCELLED", label: "Dibatalkan" },
+// The annual level has two tiers, mirroring the national chain
+// (RKPD konsolidasi → Renja/RKA per OPD): the pengurus approves one
+// consolidated RKA Yayasan, and each school files its own slice beneath it.
+const levelOptions = [
+  { value: "YAYASAN", label: "Yayasan — konsolidasi seluruh unit" },
+  { value: "UNIT", label: "Unit — turunan dari RKA Yayasan" },
 ];
+
+const statusOptions = Object.entries(PLAN_STATUS_LABEL).map(([value, label]) => ({
+  value,
+  label,
+}));
 
 // ─── Create/Edit Dialog ─────────────────────────────────────
 function PlanFormDialog({
@@ -108,13 +148,24 @@ function PlanFormDialog({
   const createPlan = useCreatePlan();
   const updatePlan = useUpdatePlan();
   const isEdit = !!editData;
+  const { data: allPlans } = usePlans();
+  const { data: units } = useUnits();
+  // The controller files a plan against the caller's own unit whenever they
+  // have one, so a unit-scoped user offered the "Yayasan" tier would fill in
+  // the whole form and then be refused by the server for a reason the screen
+  // never mentioned. Only a foundation-scoped caller gets the choice.
+  const callerUnitId = useAuthStore((s) => s.user?.unitId) ?? null;
+  const canFileForYayasan = callerUnitId === null;
 
   const form = useForm<PlanFormValues>({
-    resolver: zodResolver(planFormSchema),
+    resolver: zodResolver(planFormSchema(isEdit, canFileForYayasan)),
     defaultValues: {
       title: editData?.title || "",
       description: editData?.description || "",
       type: editData?.type || "RKA",
+      level: editData?.unitId || !canFileForYayasan ? "UNIT" : "YAYASAN",
+      unitId: editData?.unitId || undefined,
+      parentId: editData?.parentId || undefined,
       startDate: editData?.startDate
         ? new Date(editData.startDate).toISOString().split("T")[0]
         : "",
@@ -125,9 +176,43 @@ function PlanFormDialog({
     },
   });
 
+  const type = form.watch("type");
+  const level = form.watch("level");
+  const isUnitRka = type === "RKA" && level === "UNIT";
+  // A unit-scoped caller has exactly one unit and the server uses it
+  // regardless, so the picker would be a control with one correct answer.
+  const showUnitPicker = isUnitRka && canFileForYayasan;
+
+  // The example must match the document being created — a Renstra example on
+  // an RKA Unit form is an instruction to name the thing wrongly.
+  const titlePlaceholder =
+    type === "RPJP"
+      ? "cth: RPJP Yayasan Pesantren Cipansor 2027–2045"
+      : type === "RENSTRA"
+        ? "cth: Renstra Yayasan Pesantren Cipansor 2027–2029"
+        : isUnitRka
+          ? "cth: RKA SMP IT Pesantren Cipansor 2027"
+          : "cth: RKA Yayasan Pesantren Cipansor 2027";
+
+  // Each tier may only hang off the one directly above it, so the picker only
+  // ever offers that tier — a Renstra lists RPJPs, an RKA Yayasan lists
+  // Renstras, and a unit RKA lists the consolidated RKAs (unitId null).
+  const parentType = type === "RENSTRA" ? "RPJP" : isUnitRka ? "RKA" : "RENSTRA";
+  const parentOptions = (allPlans ?? []).filter(
+    (p) =>
+      p.type === parentType &&
+      (parentType !== "RKA" || p.unitId === null) &&
+      p.id !== editData?.id,
+  );
+
   const onSubmit = async (values: PlanFormValues) => {
+    const { level: _level, ...rest } = values;
     const payload = {
-      ...values,
+      ...rest,
+      // A yayasan document carries no unit — that is what makes it the
+      // foundation's own plan rather than a school's.
+      unitId: isUnitRka ? values.unitId : undefined,
+      parentId: values.type === "RPJP" ? undefined : values.parentId,
       startDate: new Date(values.startDate).toISOString(),
       endDate: new Date(values.endDate).toISOString(),
       budget: values.budget ? Number(values.budget) : undefined,
@@ -151,8 +236,8 @@ function PlanFormDialog({
         </DialogTitle>
         <DialogDescription>
           {isEdit
-            ? "Perbarui informasi rencana strategis."
-            : "Isi data RPJP, Renstra, atau RKA."}
+            ? "Perbarui informasi rencana strategis. Induk dan unit ditetapkan saat pembuatan dan tidak diubah di sini."
+            : "Rantai: RPJP → Renstra → RKA Yayasan → RKA Unit. Setiap dokumen menginduk pada satu tingkat di atasnya."}
         </DialogDescription>
       </DialogHeader>
 
@@ -165,10 +250,7 @@ function PlanFormDialog({
               <FormItem>
                 <FormLabel>Judul Rencana</FormLabel>
                 <FormControl>
-                  <Input
-                    placeholder="cth: RENSTRA Yayasan 2025-2029"
-                    {...field}
-                  />
+                  <Input placeholder={titlePlaceholder} {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -182,8 +264,15 @@ function PlanFormDialog({
               <FormItem>
                 <FormLabel>Jenis Rencana</FormLabel>
                 <Select
-                  onValueChange={field.onChange}
-                  defaultValue={field.value}
+                  onValueChange={(v) => {
+                    field.onChange(v);
+                    form.setValue("parentId", undefined);
+                    if (v !== "RKA") {
+                      form.setValue("level", "YAYASAN");
+                      form.setValue("unitId", undefined);
+                    }
+                  }}
+                  value={field.value}
                 >
                   <FormControl>
                     <SelectTrigger>
@@ -202,6 +291,108 @@ function PlanFormDialog({
               </FormItem>
             )}
           />
+
+          {!isEdit && type === "RKA" && canFileForYayasan && (
+            <FormField
+              control={form.control}
+              name="level"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Tingkat RKA</FormLabel>
+                  <Select
+                    onValueChange={(v) => {
+                      field.onChange(v);
+                      // The eligible parents differ per tier, so a stale
+                      // selection would silently submit the wrong induk.
+                      form.setValue("parentId", undefined);
+                      if (v === "YAYASAN") form.setValue("unitId", undefined);
+                    }}
+                    value={field.value}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Pilih tingkat" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {levelOptions.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          )}
+
+          {!isEdit && showUnitPicker && (
+            <FormField
+              control={form.control}
+              name="unitId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Unit Kerja</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Pilih unit kerja" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {(units ?? []).map((u) => (
+                        <SelectItem key={u.id} value={u.id}>
+                          {u.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          )}
+
+          {!isEdit && type !== "RPJP" && (
+            <FormField
+              control={form.control}
+              name="parentId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    {type === "RENSTRA"
+                      ? "RPJP Induk"
+                      : isUnitRka
+                        ? "RKA Yayasan Induk"
+                        : "Renstra Induk"}
+                  </FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue
+                          placeholder={
+                            parentOptions.length
+                              ? "Pilih dokumen induk"
+                              : `Belum ada ${PLAN_TYPE_LABEL[parentType]} untuk diinduki`
+                          }
+                        />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {parentOptions.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.title}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          )}
 
           <FormField
             control={form.control}
@@ -296,6 +487,10 @@ function PerencanaanPageContent() {
   });
   const approvePlan = useApprovePlan();
   const deletePlan = useDeletePlan();
+  const authUser = useAuthStore((s) => s.user);
+  // Only an RKA Unit is approved with one click, and only by Ketua Pengurus;
+  // a yayasan document goes Pengurus → Pengawas → Pembina on its detail page.
+  const isKetua = getPrimaryRoleCode(authUser) === "YAYASAN_KETUA";
 
   const approvedCount =
     plans?.filter(
@@ -479,9 +674,16 @@ function PerencanaanPageContent() {
                   <div className="space-y-1">
                     <CardTitle className="text-lg">{plan.title}</CardTitle>
                     <CardDescription>
-                      {typeLabel[plan.type] || plan.type} •{" "}
-                      {plan.createdBy?.name}
+                      {planTierLabel(plan)} • {plan.createdBy?.name}
                     </CardDescription>
+                    {plan.parent && (
+                      <p className="text-xs text-muted-foreground">
+                        Menginduk pada{" "}
+                        <span className="font-medium text-foreground">
+                          {plan.parent.title}
+                        </span>
+                      </p>
+                    )}
                     {plan.description && (
                       <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
                         {plan.description}
@@ -490,16 +692,24 @@ function PerencanaanPageContent() {
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge className={statusColor[plan.status]}>
-                      {plan.status}
+                      {PLAN_STATUS_LABEL[plan.status] ?? plan.status}
                     </Badge>
+                    {plan.reviewStage && plan.reviewStage !== "DITETAPKAN" && (
+                      <Badge
+                        variant="outline"
+                        className="border-amber-400 text-amber-700 dark:text-amber-300"
+                      >
+                        {PLAN_REVIEW_STAGE_LABEL[plan.reviewStage]}
+                      </Badge>
+                    )}
                     <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
-                      {plan.status === "DRAFT" && (
+                      {plan.status === "DRAFT" && plan.unitId && isKetua && (
                         <Button
                           size="icon"
                           variant="ghost"
                           className="h-8 w-8 text-green-600"
                           onClick={() => approvePlan.mutate(plan.id)}
-                          title="Setujui"
+                          title="Sahkan RKA unit"
                         >
                           <CheckCircle className="h-4 w-4" />
                         </Button>

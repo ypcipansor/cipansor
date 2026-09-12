@@ -74,6 +74,9 @@ describe('PerencanaanService', () => {
       };
 
       mockStrategicPlan.create.mockResolvedValue(mockResult);
+      // RENSTRA harus menggantung pada RPJP — induknya wajib ada dan berjenis RPJP.
+      mockStrategicPlan.findFirst.mockResolvedValue(null);
+      mockStrategicPlan.findUnique.mockResolvedValue({ id: 'rpjp-1', type: 'RPJP' });
 
       const result = await service.createPlan({
         title: 'RENSTRA 2025-2030',
@@ -81,6 +84,7 @@ describe('PerencanaanService', () => {
         startDate: '2025-01-01T00:00:00.000Z',
         endDate: '2030-12-31T00:00:00.000Z',
         unitId: 'unit-1',
+        parentId: 'rpjp-1',
         createdById: 'user-1',
       });
 

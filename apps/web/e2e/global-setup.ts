@@ -29,6 +29,9 @@ const ROLE_FILES: Record<keyof typeof SEED_USERS, string> = {
   teacher: "teacher",
   parent: "parent",
   student: "student",
+  ketuaPengurus: "ketuaPengurus",
+  pengawas: "pengawas",
+  pembina: "pembina",
 };
 
 async function globalSetup() {

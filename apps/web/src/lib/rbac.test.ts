@@ -16,8 +16,66 @@ import {
 } from "@/config/navigation";
 import { DEMO_ACCOUNTS } from "@cipansor/shared";
 
+/**
+ * Semua href dalam menu sebuah peran, TERMASUK submenu.
+ *
+ * Tiap pemeriksaan di berkas ini dulu hanya membaca `group.items`. Begitu
+ * entri bersubmenu diperkenalkan, seluruh anaknya berada di luar jangkauan
+ * penjaga ini — halaman mati, izin yang tak cocok, dan tautan ganda pada
+ * submenu tidak akan tertangkap satu pun.
+ */
+function hrefsOf(groups: NavGroup[]): string[] {
+  const walk = (items: NavGroup["items"]): string[] =>
+    items.flatMap((i) => [i.href, ...walk(i.children ?? [])]);
+  return groups.flatMap((g) => walk(g.items));
+}
+
+function navHrefs(roleCode: string): string[] {
+  return hrefsOf(getNavigationForRoleCode(roleCode));
+}
+
 /** All 81 RoleCodes, taken from the demo-account catalogue (one per role). */
 const ALL_ROLE_CODES = DEMO_ACCOUNTS.map((a) => a.roleCode);
+
+describe("navigasi — filter roleCodes berjalan rekursif ke submenu", () => {
+  // "Mutabaah Yaumiyah" (/daily-report) hanya untuk TKQ/SDIT. Filter lama
+  // hanya menyaring item induk, sehingga anak yang dibatasi peran tetap bocor
+  // ke admin SMPIT/SMAQ selama induknya (Attendance) tidak dibatasi.
+  it("membuang submenu khusus TKQ/SDIT dari menu admin SMPIT/SMAQ", () => {
+    expect(navHrefs("SMPIT_ADMIN")).not.toContain("/daily-report");
+    expect(navHrefs("SMAQ_ADMIN")).not.toContain("/daily-report");
+  });
+
+  it("tetap menampilkan submenu khusus untuk admin yang diizinkan", () => {
+    expect(navHrefs("SDIT_ADMIN")).toContain("/daily-report");
+    expect(navHrefs("TKQ_ADMIN")).toContain("/daily-report");
+  });
+
+  it("induk tetap tampil sebagai tautan biasa bila semua submenunya tersaring", () => {
+    // Settings dan Users & Roles menampung anak yang SEMUANYA SUPER_ADMIN
+    // saja. Aturan "buang induk bila anaknya habis" menghapus kedua induk itu
+    // dari menu admin unit — padahal masing-masing membuka halamannya sendiri
+    // yang memang boleh dibuka admin unit. Penjaga halaman→menu tidak
+    // menangkapnya, karena super admin masih melihatnya. (Yayasan juga
+    // menampung anak SUPER_ADMIN, tetapi induknya sendiri SUPER_ADMIN, jadi
+    // admin unit memang tidak pernah melihatnya.)
+    for (const role of ["TKQ_ADMIN", "SDIT_ADMIN", "SMPIT_ADMIN", "SMAQ_ADMIN"]) {
+      const hrefs = navHrefs(role);
+      for (const parent of ["/settings", "/users"]) {
+        expect(hrefs, `${role} kehilangan ${parent}`).toContain(parent);
+      }
+      expect(hrefs).not.toContain("/dashboard/settings/system-secrets");
+      expect(hrefs).not.toContain("/settings/roles");
+
+      // Tanpa anak tersisa, induknya dirender sebagai tautan, bukan tombol
+      // yang membuka panel kosong.
+      const settings = getNavigationForRoleCode(role)
+        .flatMap((g) => g.items)
+        .find((i) => i.href === "/settings");
+      expect(settings?.children).toBeUndefined();
+    }
+  });
+});
 
 describe("rbac — legacy bucket derivation", () => {
   it("identifies the six legacy buckets", () => {
@@ -87,9 +145,32 @@ describe("rbac — legacy bucket derivation", () => {
 });
 
 describe("rbac — getEffectiveRole", () => {
-  it("prefers the legacy user.role bucket (backward compatible)", () => {
+  it("uses the legacy user.role bucket when there is no assignment", () => {
     expect(getEffectiveRole({ role: "SUPER_ADMIN" })).toBe("SUPER_ADMIN");
     expect(getEffectiveRole({ role: "PARENT" })).toBe("PARENT");
+  });
+
+  it("lets the active assignment win over a stale legacy column", () => {
+    // Four yayasan accounts (Ketua, Pembina, Sekretaris, Bendahara) carry
+    // STAFF in users.role — in production too. The API authorises them by
+    // roleCode; the web read the column and sent Ketua Pengurus to /staff.
+    const ketua = {
+      role: "STAFF",
+      userRoles: [{ isPrimary: true, role: { code: "YAYASAN_KETUA" } }],
+    };
+    expect(getEffectiveRole(ketua)).toBe("UNIT_ADMIN");
+    expect(canAccessRoute(getEffectiveRole(ketua), "/perencanaan/abc")).toBe(true);
+  });
+
+  it("follows a role switch — the primary assignment moves, so does the bucket", () => {
+    const user = {
+      role: "TEACHER",
+      userRoles: [
+        { isPrimary: false, role: { code: "SDIT_GURU" } },
+        { isPrimary: true, role: { code: "SDIT_ADMIN" } },
+      ],
+    };
+    expect(getEffectiveRole(user)).toBe("UNIT_ADMIN");
   });
 
   it("derives from the primary RoleCode assignment when role is absent", () => {
@@ -216,9 +297,9 @@ describe("rbac — navigation and route access stay in sync", () => {
   it.each(navToBucket)(
     "every rendered sidebar link is reachable by its bucket",
     (nav, bucket) => {
-      const unreachable = nav
-        .flatMap((group) => group.items.map((item) => item.href))
-        .filter((href) => !canAccessRoute(bucket, href));
+      const unreachable = hrefsOf(nav).filter(
+        (href) => !canAccessRoute(bucket, href),
+      );
       expect(unreachable).toEqual([]);
     },
   );
@@ -279,16 +360,12 @@ describe("navigation — every menu link points at a page that exists", () => {
   ];
 
   it.each(ROLE_SAMPLE)("%s has no dead menu links", (roleCode) => {
-    const dead = getNavigationForRoleCode(roleCode)
-      .flatMap((group) => group.items.map((item) => item.href))
-      .filter((href) => !routeExists(href));
+    const dead = navHrefs(roleCode).filter((href) => !routeExists(href));
     expect(dead).toEqual([]);
   });
 
   it.each(ROLE_SAMPLE)("%s lists no route twice", (roleCode) => {
-    const hrefs = getNavigationForRoleCode(roleCode).flatMap((group) =>
-      group.items.map((item) => item.href),
-    );
+    const hrefs = navHrefs(roleCode);
     const duplicated = [...new Set(hrefs)].filter(
       (href) => hrefs.filter((h) => h === href).length > 1,
     );
@@ -319,9 +396,7 @@ describe("navigation — every menu link is one its own role may open", () => {
 
     const unopenable = [
       ...new Set(
-        getNavigationForRoleCode(roleCode)
-          .flatMap((group) => group.items.map((item) => item.href))
-          .filter((href) => !canAccessRoute(legacy, href)),
+        navHrefs(roleCode).filter((href) => !canAccessRoute(legacy, href)),
       ),
     ];
 
@@ -344,9 +419,6 @@ describe("navigation — every app page is reachable from some menu", () => {
     "/ppdb": "legacy duplicate of /admissions, pending the SPMB route rename",
     "/ppdb/registrations":
       "legacy duplicate of /admissions, pending the SPMB route rename",
-    "/hr/talenta/succession":
-      "standalone copy of the Succession Planning tab already on /hr/talenta; " +
-      "kept only for links already sent out, and a deletion candidate",
   };
 
   /** Reached from a list page's action button, never from a menu. */
@@ -390,9 +462,7 @@ describe("navigation — every app page is reachable from some menu", () => {
 
   const menuHrefs = new Set(
     ALL_ROLE_CODES.flatMap((roleCode) =>
-      getNavigationForRoleCode(roleCode).flatMap((group) =>
-        group.items.map((item) => item.href),
-      ),
+      navHrefs(roleCode),
     ),
   );
 
@@ -637,7 +707,7 @@ describe("a11y — exactly one <main> landmark, and the skip link reaches it", (
     );
   });
 
-  it("every page renders exactly one <main id=\"main-content\">", () => {
+  it("every page renders exactly one <main id=\"main-content\">", { timeout: 15000 }, () => {
     // Zero means the skip link has no target and silently does nothing.
     // Two means nested or duplicated landmarks and a duplicate id, so
     // getElementById picks whichever comes first in the document.
@@ -658,7 +728,7 @@ describe("a11y — exactly one <main> landmark, and the skip link reaches it", (
     expect(wrong).toEqual([]);
     // This test walks the whole src/app tree and follows every page's imports,
     // so it can exceed vitest's default 5s timeout on larger route trees.
-  }, 30000);
+  });
 
   it("every <main> carries id=\"main-content\"", () => {
     // The count above only sees landmarks that have the id, so a bare <main>
@@ -772,9 +842,11 @@ describe("e2e selectors — no loose text= selector can collide with the sidebar
   const navTitles = ALL_ROLE_CODES.flatMap((rc) =>
     getNavigationForRoleCode(rc).flatMap((g) => [
       g.title,
-      ...g.items.map((i) => i.title),
+      ...g.items.flatMap((i) => [i.title, ...(i.children ?? []).map((c) => c.title)]),
     ]),
-  ).map((t) => t.toLowerCase());
+  )
+    .filter((t): t is string => Boolean(t))
+    .map((t) => t.toLowerCase());
 
   function specFiles(dir: string): string[] {
     if (!fs.existsSync(dir)) return [];
@@ -802,6 +874,75 @@ describe("e2e selectors — no loose text= selector can collide with the sidebar
       }
     }
     expect(collisions).toEqual([]);
+  });
+
+  it("no unscoped regex heading/text selector can resolve to the sidebar instead of the page", () => {
+    // The text= check above never saw two other shapes, and both broke CI the
+    // day the admin menu was regrouped by discipline (#415):
+    //
+    //   page.getByRole("heading", { name: /santri|students/i })
+    //     sidebar GROUP labels are <h4>, so the new group "Kesantrian &
+    //     Pesantren" made this a strict-mode violation against the page's h1;
+    //   page.getByText(/nisn|nis/i).first()
+    //     submenus stay in the DOM while collapsed (hidden), ahead of <main>,
+    //     so .first() became "Qiyadah (Organisasi)" and never turned visible.
+    //
+    // Both had only ever passed because no label happened to match. Scope such
+    // selectors to page.getByRole("main").
+    const navs = ALL_ROLE_CODES.map((rc) => getNavigationForRoleCode(rc));
+    const groupTitles = [...new Set(navs.flatMap((groups) => groups.map((g) => g.title)))];
+    const submenuTitles = [
+      ...new Set(
+        navs.flatMap((groups) =>
+          groups.flatMap((g) => g.items.flatMap((i) => (i.children ?? []).map((c) => c.title))),
+        ),
+      ),
+    ];
+
+    const allTs = (dir: string): string[] =>
+      !fs.existsSync(dir)
+        ? []
+        : fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+            const child = path.join(dir, e.name);
+            if (e.isDirectory()) return allTs(child);
+            return e.name.endsWith(".ts") ? [child] : [];
+          });
+
+    const shapes: Array<{ re: RegExp; pool: string[]; what: string }> = [
+      {
+        re: /\bpage2?\.getByRole\(\s*["']heading["']\s*,\s*\{\s*name:\s*\/((?:\\\/|[^/\n])+)\/([a-z]*)/g,
+        pool: groupTitles,
+        what: "sidebar group heading",
+      },
+      {
+        re: /\bpage2?\.getByText\(\s*\/((?:\\\/|[^/\n])+)\/([a-z]*)/g,
+        pool: submenuTitles,
+        what: "hidden submenu item",
+      },
+    ];
+
+    const offenders: string[] = [];
+    for (const file of allTs(E2E_DIR)) {
+      const src = fs.readFileSync(file, "utf8");
+      for (const { re, pool, what } of shapes) {
+        for (const m of src.matchAll(re)) {
+          let rx: RegExp;
+          try {
+            rx = new RegExp(m[1].replace(/\\\//g, "/"), m[2].includes("i") ? "i" : "");
+          } catch {
+            continue;
+          }
+          const hits = pool.filter((t) => rx.test(t));
+          if (hits.length) {
+            const line = src.slice(0, m.index).split("\n").length;
+            offenders.push(
+              `${path.relative(process.cwd(), file)}:${line} /${m[1]}/ also matches ${what} ${hits.slice(0, 3).join(", ")}`,
+            );
+          }
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 });
 
