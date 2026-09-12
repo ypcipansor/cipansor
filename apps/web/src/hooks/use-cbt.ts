@@ -1,52 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, SharedPaginatedResponse } from "@/lib/api";
+import { api } from "@/lib/api";
+import { SecurityEventType } from "@cipansor/shared";
 
 // Types
-export enum QuestionType {
-  MULTIPLE_CHOICE = "MULTIPLE_CHOICE",
-  ESSAY = "ESSAY",
-  TRUE_FALSE = "TRUE_FALSE",
-}
-
-export interface Question {
-  id: string;
-  bankId: string;
-  type: QuestionType;
-  content: string;
-  options?: any;
-  answerKey?: any;
-  explanation?: string;
-  points: number;
-  order: number;
-}
-
-export interface QuestionBank {
-  id: string;
-  unitId: string;
-  teacherId: string;
-  subjectId?: string;
-  title: string;
-  description?: string;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-  teacherRel?: { user: { name: string } };
-  subject?: { name: string; code: string };
-  questions?: Question[];
-  _count?: { questions: number; exams: number };
-}
-
-export interface ExamAttempt {
-  id: string;
-  examId: string;
-  studentId: string;
-  startedAt: string;
-  finishedAt?: string;
-  score?: number;
-  status: "IN_PROGRESS" | "COMPLETED" | "EXPIRED" | "NEEDS_REVIEW";
-  exam?: any;
-  answers?: any[];
-}
+export { QuestionType } from "@cipansor/shared";
+export type { Question, QuestionBank, ExamAttempt, ExamAnswer, ExamSecurityLog } from "@cipansor/shared";
 
 // Hooks
 
@@ -56,6 +14,28 @@ export const useQuestionBanks = (params?: any) => {
     queryFn: async () => {
       const { data } = await api.get("/cbt/banks", { params });
       return data;
+    },
+  });
+};
+
+export const useRecordSecurityLog = () => {
+  return useMutation({
+    mutationFn: async ({
+      attemptId,
+      eventType,
+      details,
+    }: {
+      attemptId: string;
+      eventType: SecurityEventType;
+      // Structured, matching the JSONB column; `{ note }` is the usual shape for
+      // something a person will read.
+      details?: Record<string, unknown> | null;
+    }) => {
+      const { data } = await api.post(`/cbt/attempts/${attemptId}/security-log`, {
+        eventType,
+        details,
+      });
+      return data.data;
     },
   });
 };

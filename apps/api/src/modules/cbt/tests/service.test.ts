@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { prisma } from '../../lib/prisma';
-import { CBTService } from './cbt.service';
+import { prisma } from '../../../lib/prisma';
+import { CBTService } from '../cbt.service';
 
 vi.mock('@prisma/client', () => ({
   Prisma: {
@@ -18,7 +18,7 @@ vi.mock('@prisma/client', () => ({
 }));
 
 // Mock external dependencies
-vi.mock('../../lib/prisma', () => ({
+vi.mock('../../../lib/prisma', () => ({
   prisma: {
     questionBank: {
       create: vi.fn(),
@@ -48,6 +48,21 @@ vi.mock('../../lib/prisma', () => ({
       create: vi.fn(),
       update: vi.fn(),
       findMany: vi.fn(),
+      findUnique: vi.fn(),
+    },
+    examSecurityLog: {
+      create: vi.fn(),
+    },
+    grade: {
+      findFirst: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      upsert: vi.fn(),
+    },
+    teacher: {
+      findUnique: vi.fn(),
+    },
+    student: {
       findUnique: vi.fn(),
     },
     $transaction: vi.fn((callbackOrPromises, _options?) => {
@@ -414,6 +429,147 @@ describe('CBT Service', () => {
       });
     });
 
+    it('menilai soal benar-salah yang kuncinya boolean JSON', async () => {
+      // Regresi: penilai lama membandingkan JSON.stringify kedua sisi, sedangkan
+      // klien web selalu mengirim string ("true"/"false"). Kunci boolean `true`
+      // — bentuk paling wajar untuk kolom Json — membuat SETIAP siswa salah,
+      // tanpa pesan apa pun, dan nilainya kini menyeberang ke buku nilai.
+      vi.mocked(prisma.examAttempt.findUnique).mockResolvedValue({
+        id: 'attempt-tf',
+        studentId: 'std-1',
+        status: 'IN_PROGRESS',
+        exam: {
+          questionBank: {
+            questions: [
+              { id: 'q-1', type: 'TRUE_FALSE', answerKey: true, points: 10 },
+              { id: 'q-2', type: 'TRUE_FALSE', answerKey: false, points: 10 },
+            ],
+          },
+        },
+        answers: [
+          { id: 'ans-1', questionId: 'q-1', answer: 'true' }, // benar
+          { id: 'ans-2', questionId: 'q-2', answer: 'true' }, // salah
+        ],
+      } as any);
+      vi.mocked(prisma.examAttempt.update).mockResolvedValue({} as any);
+
+      await CBTService.finishExamAttempt('attempt-tf', 'std-1');
+
+      expect(prisma.examAnswer.update).toHaveBeenCalledWith({
+        where: { id: 'ans-1' },
+        data: { isCorrect: true, score: 10 },
+      });
+      expect(prisma.examAnswer.update).toHaveBeenCalledWith({
+        where: { id: 'ans-2' },
+        data: { isCorrect: false, score: 0 },
+      });
+    });
+
+    it('waktu habis: jawaban yang sudah masuk dinilai, bukan hangus', async () => {
+      // Perilaku lama melempar di sini, sehingga baris exam_answers tetap ada di
+      // basis data tetapi tidak pernah dinilai dan tidak ada Grade yang terbit —
+      // koneksi yang putus di menit terakhir memusnahkan seluruh ujian.
+      const startedAt = new Date(Date.now() - 120 * 60 * 1000); // 120 menit lalu
+      vi.mocked(prisma.examAttempt.findUnique).mockResolvedValue({
+        id: 'attempt-late',
+        studentId: 'std-1',
+        status: 'IN_PROGRESS',
+        startedAt,
+        score: null,
+        exam: {
+          duration: 60,
+          questionBank: {
+            questions: [{ id: 'q-1', type: 'MULTIPLE_CHOICE', answerKey: 'opt-A', points: 10 }],
+          },
+        },
+        answers: [{ id: 'ans-1', questionId: 'q-1', answer: 'opt-A' }],
+      } as any);
+      vi.mocked(prisma.examAttempt.update).mockResolvedValue({} as any);
+
+      await expect(
+        CBTService.finishExamAttempt('attempt-late', 'std-1')
+      ).resolves.toBeDefined();
+
+      expect(prisma.examAnswer.update).toHaveBeenCalledWith({
+        where: { id: 'ans-1' },
+        data: { isCorrect: true, score: 10 },
+      });
+      expect(prisma.examAttempt.update).toHaveBeenCalledWith({
+        where: { id: 'attempt-late' },
+        data: expect.objectContaining({ status: 'COMPLETED', score: expect.anything() }),
+      });
+    });
+
+    it('waktu habis dicatat sebagai ditutup sistem, bukan dikumpulkan siswa', async () => {
+      const startedAt = new Date(Date.now() - 120 * 60 * 1000);
+      vi.mocked(prisma.examAttempt.findUnique).mockResolvedValue({
+        id: 'attempt-late-2',
+        studentId: 'std-1',
+        status: 'IN_PROGRESS',
+        startedAt,
+        score: null,
+        exam: {
+          duration: 60,
+          questionBank: { questions: [] },
+        },
+        answers: [],
+      } as any);
+      vi.mocked(prisma.examAttempt.update).mockResolvedValue({} as any);
+
+      await CBTService.finishExamAttempt('attempt-late-2', 'std-1');
+
+      expect(prisma.examSecurityLog.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          attemptId: 'attempt-late-2',
+          type: 'TIME_EXPIRED_AUTO_SUBMIT',
+        }),
+      });
+    });
+
+    it('attempt yang dikumpulkan tepat waktu tidak menulis log waktu habis', async () => {
+      vi.mocked(prisma.examAttempt.findUnique).mockResolvedValue({
+        id: 'attempt-ontime',
+        studentId: 'std-1',
+        status: 'IN_PROGRESS',
+        startedAt: new Date(Date.now() - 10 * 60 * 1000),
+        score: null,
+        exam: { duration: 60, questionBank: { questions: [] } },
+        answers: [],
+      } as any);
+      vi.mocked(prisma.examAttempt.update).mockResolvedValue({} as any);
+
+      await CBTService.finishExamAttempt('attempt-ontime', 'std-1');
+
+      expect(prisma.examSecurityLog.create).not.toHaveBeenCalled();
+    });
+
+    it('attempt EXPIRED lama yang belum bernilai masih bisa dinilai', async () => {
+      // Baris yang ditinggalkan perilaku lama: EXPIRED dengan score null adalah
+      // jalan buntu — memanggil submit lagi pun melempar. Sekarang ia dinilai.
+      vi.mocked(prisma.examAttempt.findUnique).mockResolvedValue({
+        id: 'attempt-stale',
+        studentId: 'std-1',
+        status: 'EXPIRED',
+        score: null,
+        startedAt: new Date(Date.now() - 120 * 60 * 1000),
+        exam: {
+          duration: 60,
+          questionBank: {
+            questions: [{ id: 'q-1', type: 'MULTIPLE_CHOICE', answerKey: 'opt-A', points: 10 }],
+          },
+        },
+        answers: [{ id: 'ans-1', questionId: 'q-1', answer: 'opt-A' }],
+      } as any);
+      vi.mocked(prisma.examAttempt.update).mockResolvedValue({} as any);
+
+      await CBTService.finishExamAttempt('attempt-stale', 'std-1');
+
+      expect(prisma.examAttempt.update).toHaveBeenCalledWith({
+        where: { id: 'attempt-stale' },
+        data: expect.objectContaining({ status: 'COMPLETED' }),
+      });
+    });
+
     it('should grade and finish exam attempt atomically', async () => {
       const attemptData = {
         id: 'attempt-1',
@@ -542,6 +698,334 @@ describe('CBT Service', () => {
           score: expect.anything(), // Decimal(10) — only MC score
         }),
       });
+    });
+
+    it('should randomize question and option order deterministically per attempt', async () => {
+      const mockAttempt = {
+        id: 'attempt-123',
+        studentId: 'std-1',
+        exam: {
+          questionBank: {
+            questions: [
+              { id: 'q1', content: 'Q1', options: [{ id: 'opt1' }, { id: 'opt2' }], order: 1 },
+              { id: 'q2', content: 'Q2', options: [{ id: 'opt3' }, { id: 'opt4' }], order: 2 },
+              { id: 'q3', content: 'Q3', options: [], order: 3 },
+            ],
+          },
+        },
+      };
+
+      vi.mocked(prisma.examAttempt.findUnique).mockImplementation(
+        () => Promise.resolve(JSON.parse(JSON.stringify(mockAttempt))) as any
+      );
+
+      const attempt1 = await CBTService.getAttempt('attempt-123', 'std-1');
+      const questions1 = attempt1.exam?.questionBank?.questions ?? [];
+
+      // Re-fetching same attempt should return identical randomized order
+      const attempt2 = await CBTService.getAttempt('attempt-123', 'std-1');
+      const questions2 = attempt2.exam?.questionBank?.questions ?? [];
+
+      expect(questions1).toHaveLength(3);
+      expect(questions1.map((q: any) => q.id)).toEqual(questions2.map((q: any) => q.id));
+    });
+
+    it('should record security log events (anti-cheating tab switches)', async () => {
+      const mockStudent = { id: 'std-1', userId: 'user-std-1' };
+      const mockAttempt = {
+        id: 'attempt-1',
+        studentId: 'std-1',
+        status: 'IN_PROGRESS',
+        tabSwitchCount: 1,
+      };
+
+      vi.mocked(prisma.student.findUnique).mockResolvedValue(mockStudent as any);
+      vi.mocked(prisma.examAttempt.findUnique).mockResolvedValue(mockAttempt as any);
+      vi.mocked(prisma.examSecurityLog.create).mockResolvedValue({
+        id: 'log-1',
+        attemptId: 'attempt-1',
+        type: 'TAB_SWITCH',
+        details: { note: 'Minimizing window' },
+        createdAt: new Date(),
+      } as any);
+
+      await CBTService.recordSecurityLog('attempt-1', 'user-std-1', {
+        type: 'TAB_SWITCH',
+        details: { note: 'Minimizing window' },
+      });
+
+      expect(prisma.examSecurityLog.create).toHaveBeenCalledWith({
+        data: {
+          attemptId: 'attempt-1',
+          type: 'TAB_SWITCH',
+          details: { note: 'Minimizing window' },
+        },
+      });
+
+      expect(prisma.examAttempt.update).toHaveBeenCalledWith({
+        where: { id: 'attempt-1' },
+        data: {
+          tabSwitchCount: { increment: 1 },
+        },
+      });
+    });
+
+    it('should reject recordSecurityLog if attempt is not IN_PROGRESS', async () => {
+      const mockStudent = { id: 'std-1', userId: 'user-std-1' };
+      const completedAttempt = {
+        id: 'attempt-1',
+        studentId: 'std-1',
+        status: 'COMPLETED',
+      };
+
+      vi.mocked(prisma.student.findUnique).mockResolvedValue(mockStudent as any);
+      vi.mocked(prisma.examAttempt.findUnique).mockResolvedValue(completedAttempt as any);
+
+      await expect(
+        CBTService.recordSecurityLog('attempt-1', 'user-std-1', {
+          type: 'TAB_SWITCH',
+          details: { note: 'Late event after completion' },
+        })
+      ).rejects.toThrow('Cannot record security events');
+    });
+
+    it('jawaban yang terlambat ditolak, tetapi ujiannya ditutup dan dinilai', async () => {
+      // Uji ini dulu menuntut `status: 'EXPIRED'` — yaitu persis perilaku yang
+      // harus berubah. EXPIRED tanpa nilai adalah jalan buntu: jawaban yang
+      // sempat masuk tidak pernah dinilai dan tidak ada Grade yang terbit.
+      // Yang benar: jawaban terlambat ini ditolak, dan lembar jawabannya ditutup
+      // lalu dinilai apa adanya.
+      const pastTime = new Date(Date.now() - 90 * 60 * 1000); // 90 menit lalu, ujian 60 menit
+      const lateAttempt = {
+        id: 'attempt-1',
+        studentId: 'std-1',
+        status: 'IN_PROGRESS',
+        startedAt: pastTime,
+        score: null,
+        exam: {
+          questionBankId: 'bank-1',
+          duration: 60,
+          questionBank: {
+            questions: [{ id: 'q-1', type: 'MULTIPLE_CHOICE', answerKey: 'opt-A', points: 10 }],
+          },
+        },
+        answers: [{ id: 'ans-1', questionId: 'q-1', answer: 'opt-A' }],
+      };
+      vi.mocked(prisma.examAttempt.findUnique).mockResolvedValue(lateAttempt as any);
+      vi.mocked(prisma.examAttempt.update).mockResolvedValue({} as any);
+
+      await expect(
+        CBTService.submitAnswer('attempt-1', 'q-1', 'opt-A', 'std-1')
+      ).rejects.toThrow('Waktu pengerjaan ujian telah habis.');
+
+      // Jawaban yang sudah tersimpan tetap dinilai…
+      expect(prisma.examAnswer.update).toHaveBeenCalledWith({
+        where: { id: 'ans-1' },
+        data: { isCorrect: true, score: 10 },
+      });
+      // …dan attempt-nya selesai dengan nilai, bukan ditinggalkan EXPIRED kosong.
+      expect(prisma.examAttempt.update).toHaveBeenCalledWith({
+        where: { id: 'attempt-1' },
+        data: expect.objectContaining({ status: 'COMPLETED', score: expect.anything() }),
+      });
+      // Jawaban terlambatnya sendiri tidak ikut tersimpan.
+      expect(prisma.examAnswer.upsert).not.toHaveBeenCalled();
+    });
+
+    it('should NOT expire an already COMPLETED attempt during late retry of finishExamAttempt', async () => {
+      const pastTime = new Date(Date.now() - 90 * 60 * 1000); // 90 mins ago
+      const completedAttempt = {
+        id: 'attempt-1',
+        studentId: 'std-1',
+        status: 'COMPLETED',
+        score: 100,
+        startedAt: pastTime,
+        exam: { id: 'exam-1', teacherId: 't-1', duration: 60, questionBank: { questions: [] } },
+        answers: [],
+      };
+
+      vi.mocked(prisma.examAttempt.findUnique).mockResolvedValueOnce(completedAttempt as any);
+
+      const result = await CBTService.finishExamAttempt('attempt-1', 'std-1');
+
+      expect(result.status).toBe('COMPLETED');
+      expect(prisma.examAttempt.update).not.toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ status: 'EXPIRED' }) })
+      );
+    });
+
+    it('should calculate percentage and letter grade from question bank total points when upserting grade', async () => {
+      vi.mocked(prisma.grade.upsert).mockClear();
+
+      const mockAttemptForSync = {
+        id: 'attempt-sync-1',
+        studentId: 'std-1',
+        examId: 'exam-1',
+        score: 50, // student got 50 points
+        status: 'COMPLETED',
+        exam: {
+          id: 'exam-1',
+          maxScore: 100, // exam maxScore is 100, but question bank points total 50
+          subjectId: 'sub-1',
+          academicYearId: 'ay-1',
+          teacherId: 't-1',
+          title: 'Math Exam',
+          questionBank: {
+            questions: [
+              { points: 25 },
+              { points: 25 }, // total possible points = 50
+            ],
+          },
+        },
+      };
+
+      vi.mocked(prisma.examAttempt.findUnique).mockImplementation((args: any) => {
+        if (args?.where?.id === 'attempt-sync-1') {
+          return Promise.resolve(mockAttemptForSync) as any;
+        }
+        return Promise.resolve(null) as any;
+      });
+      vi.mocked(prisma.teacher.findUnique).mockResolvedValue({ userId: 'user-t-1' } as any);
+      vi.mocked(prisma.grade.upsert).mockResolvedValue({ id: 'grade-1' } as any);
+
+      await CBTService.syncGradeToAcademicGradebook('attempt-sync-1');
+
+      // 50 out of 50 total question points = 100% -> Letter grade A!
+      expect(prisma.grade.upsert).toHaveBeenCalledWith({
+        where: { studentId_examId: { studentId: 'std-1', examId: 'exam-1' } },
+        create: expect.objectContaining({
+          letterGrade: 'A',
+        }),
+        update: expect.objectContaining({
+          letterGrade: 'A',
+          score: 50,
+          percentage: expect.any(Object),
+          gradedAt: expect.any(Date),
+        }),
+      });
+    });
+
+    it('should refresh an existing EXAM grade even without forceUpdate (non-essay exam)', async () => {
+      vi.mocked(prisma.grade.upsert).mockClear();
+
+      const mockAttemptForSync = {
+        id: 'attempt-sync-existing',
+        studentId: 'std-1',
+        examId: 'exam-1',
+        score: 40,
+        status: 'COMPLETED',
+        exam: {
+          id: 'exam-1',
+          maxScore: 100,
+          subjectId: 'sub-1',
+          academicYearId: 'ay-1',
+          teacherId: 't-1',
+          title: 'Math Exam',
+          questionBank: {
+            questions: [{ points: 25 }, { points: 25 }], // total possible points = 50
+          },
+        },
+      };
+
+      vi.mocked(prisma.examAttempt.findUnique).mockResolvedValue(mockAttemptForSync as any);
+      vi.mocked(prisma.teacher.findUnique).mockResolvedValue({ userId: 'user-t-1' } as any);
+      vi.mocked(prisma.grade.upsert).mockResolvedValue({ id: 'grade-1' } as any);
+
+      await CBTService.syncGradeToAcademicGradebook('attempt-sync-existing');
+
+      // 40 / 50 = 80% -> updates the already-present grade row with the new score
+      const callArgs = vi.mocked(prisma.grade.upsert).mock.calls[0] as any;
+      expect(callArgs[0].where).toEqual({
+        studentId_examId: { studentId: 'std-1', examId: 'exam-1' },
+      });
+      expect(callArgs[0].update).toEqual(
+        expect.objectContaining({
+          score: 40,
+          letterGrade: 'B',
+          gradedAt: expect.any(Date),
+        })
+      );
+      // note is only set in the forceUpdate (post-essay-grading) path
+      expect(callArgs[0].update.notes).toBeUndefined();
+    });
+
+    it('should update Grade when forceUpdate is true after essay grading', async () => {
+      vi.mocked(prisma.grade.upsert).mockClear();
+
+      const mockAttemptForSync = {
+        id: 'attempt-sync-essay',
+        studentId: 'std-1',
+        examId: 'exam-1',
+        score: 45, // updated score 45/50
+        status: 'COMPLETED',
+        exam: {
+          id: 'exam-1',
+          maxScore: 50,
+          subjectId: 'sub-1',
+          academicYearId: 'ay-1',
+          teacherId: 't-1',
+          title: 'Math Exam',
+          questionBank: {
+            questions: [{ points: 25 }, { points: 25 }],
+          },
+        },
+      };
+
+      vi.mocked(prisma.examAttempt.findUnique).mockResolvedValue(mockAttemptForSync as any);
+      vi.mocked(prisma.teacher.findUnique).mockResolvedValue({ userId: 'user-t-1' } as any);
+      vi.mocked(prisma.grade.upsert).mockResolvedValue({ id: 'grade-1' } as any);
+
+      await CBTService.syncGradeToAcademicGradebook('attempt-sync-essay', { forceUpdate: true });
+
+      // 45 / 50 = 90% -> Letter grade A!
+      expect(prisma.grade.upsert).toHaveBeenCalledWith({
+        where: { studentId_examId: { studentId: 'std-1', examId: 'exam-1' } },
+        create: expect.objectContaining({ letterGrade: 'A' }),
+        update: expect.objectContaining({ letterGrade: 'A' }),
+      });
+    });
+
+    it('should calculate distractor analysis for multiple choice questions', async () => {
+      const mockExam = {
+        id: 'exam-1',
+        title: 'Exam Title',
+        questionBank: {
+          questions: [
+            {
+              id: 'q1',
+              type: 'MULTIPLE_CHOICE',
+              content: 'What is 2+2?',
+              options: [{ id: 'opt1', text: '4' }, { id: 'opt2', text: '5' }],
+            },
+          ],
+        },
+        attempts: [
+          {
+            id: 'a1',
+            status: 'COMPLETED',
+            score: 100,
+            answers: [{ questionId: 'q1', answer: 'opt1', score: 10, isCorrect: true }],
+          },
+          {
+            id: 'a2',
+            status: 'COMPLETED',
+            score: 0,
+            answers: [{ questionId: 'q1', answer: 'opt2', score: 0, isCorrect: false }],
+          },
+        ],
+      };
+
+      vi.mocked(prisma.exam.findUnique).mockResolvedValue(mockExam as any);
+
+      const insights = await CBTService.getExamDifficultyInsights('exam-1');
+
+      expect(insights).not.toBeNull();
+      const qInsight = insights!.questionInsights[0];
+      expect(qInsight.distractorAnalysis).toBeDefined();
+      expect(qInsight.distractorAnalysis).toHaveLength(2);
+      expect(qInsight.distractorAnalysis![0]).toEqual(
+        expect.objectContaining({ count: 1, percentage: 50 })
+      );
     });
   });
 });

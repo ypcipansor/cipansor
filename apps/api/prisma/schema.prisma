@@ -2828,6 +2828,7 @@ model Grade {
   academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
   gradedBy     User         @relation("GradeRecorder", fields: [gradedById], references: [id])
 
+  @@unique([studentId, examId])
   @@index([studentId])
   @@index([subjectId])
   @@index([examId])
@@ -8055,25 +8056,48 @@ model Question {
 
 /// ExamAttempt - Sesi Ujian Siswa
 model ExamAttempt {
-  id         String            @id @default(uuid())
-  examId     String            @map("exam_id")
-  studentId  String            @map("student_id")
-  startedAt  DateTime          @default(now()) @map("started_at")
-  finishedAt DateTime?         @map("finished_at")
-  score      Decimal?          @db.Decimal(5, 2)
-  status     ExamAttemptStatus @default(IN_PROGRESS)
-  createdAt  DateTime          @default(now()) @map("created_at")
-  updatedAt  DateTime          @updatedAt @map("updated_at")
+  id             String            @id @default(uuid())
+  examId         String            @map("exam_id")
+  studentId      String            @map("student_id")
+  startedAt      DateTime          @default(now()) @map("started_at")
+  finishedAt     DateTime?         @map("finished_at")
+  score          Decimal?          @db.Decimal(5, 2)
+  status         ExamAttemptStatus @default(IN_PROGRESS)
+  tabSwitchCount Int               @default(0) @map("tab_switch_count")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
 
   // Relations
-  exam    Exam         @relation(fields: [examId], references: [id])
-  student Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  answers ExamAnswer[]
+  exam         Exam              @relation(fields: [examId], references: [id])
+  student      Student           @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  answers      ExamAnswer[]
+  securityLogs ExamSecurityLog[]
 
   @@unique([examId, studentId])
   @@index([examId])
   @@index([studentId])
   @@map("exam_attempts")
+}
+
+/// ExamSecurityLog - Catatan aktivitas/pelanggaran keamanan ujian
+model ExamSecurityLog {
+  id        String @id @default(uuid())
+  attemptId String @map("attempt_id")
+  /// Event name. Guarded in the database by a CHECK constraint listing the known
+  /// values (see the migration, and the sync test that keeps that list equal to
+  /// `SecurityEventType` in @cipansor/shared). Prisma cannot express a CHECK, so
+  /// the type here is String — the constraint is still enforced by Postgres.
+  type      String
+  /// Structured payload: which control fired, how long the student was away, the
+  /// duration the clock used. JSONB so it can be queried and aggregated.
+  details   Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  attempt ExamAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+
+  @@index([attemptId])
+  @@map("exam_security_logs")
 }
 
 /// ExamAnswer - Jawaban Siswa

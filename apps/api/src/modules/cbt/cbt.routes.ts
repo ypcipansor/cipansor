@@ -1,7 +1,19 @@
 import { Router } from 'express';
 import { CBTController } from './cbt.controller';
 import { authenticate, authorize } from '@/middleware/auth';
-import { UserRole } from '@prisma/client';
+import { validate } from '@/middleware/validate';
+import { LEGACY_ROLE_EXPANSION, recordSecurityLogSchema } from '@cipansor/shared';
+
+// RoleCode-based access for the CBT module. The admin/teacher and student sets
+// are derived from the canonical legacy-bucket expansion (`@cipansor/shared`
+// roles.ts) so behavior is identical to the old `UserRole.UNIT_ADMIN/TEACHER/STUDENT`
+// guards while authorization runs on native RoleCodes (AGENTS.md golden rule #3).
+const adminTeacherRoleCodes = [
+  ...LEGACY_ROLE_EXPANSION.SUPER_ADMIN,
+  ...LEGACY_ROLE_EXPANSION.UNIT_ADMIN,
+  ...LEGACY_ROLE_EXPANSION.TEACHER,
+];
+const studentRoleCodes = LEGACY_ROLE_EXPANSION.STUDENT;
 
 const router = Router();
 
@@ -10,25 +22,25 @@ const router = Router();
 router.get(
   '/banks',
   authenticate,
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  authorize(...adminTeacherRoleCodes),
   CBTController.getQuestionBanks
 );
 router.post(
   '/banks',
   authenticate,
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  authorize(...adminTeacherRoleCodes),
   CBTController.createQuestionBank
 );
 router.get(
   '/banks/:id',
   authenticate,
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  authorize(...adminTeacherRoleCodes),
   CBTController.getQuestionBankById
 );
 router.delete(
   '/banks/:id',
   authenticate,
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  authorize(...adminTeacherRoleCodes),
   CBTController.deleteQuestionBank
 );
 
@@ -36,57 +48,47 @@ router.delete(
 router.post(
   '/banks/:id/questions',
   authenticate,
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  authorize(...adminTeacherRoleCodes),
   CBTController.addQuestion
 );
 router.put(
   '/banks/:id/questions/:questionId',
   authenticate,
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  authorize(...adminTeacherRoleCodes),
   CBTController.updateQuestion
 );
 router.delete(
   '/banks/:id/questions/:questionId',
   authenticate,
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  authorize(...adminTeacherRoleCodes),
   CBTController.deleteQuestion
 );
 
 // --- Exam Scheduling ---
-router.get(
-  '/exams',
-  authenticate,
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
-  CBTController.getExams
-);
-router.post(
-  '/exams',
-  authenticate,
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
-  CBTController.createExam
-);
+router.get('/exams', authenticate, authorize(...adminTeacherRoleCodes), CBTController.getExams);
+router.post('/exams', authenticate, authorize(...adminTeacherRoleCodes), CBTController.createExam);
 router.delete(
   '/exams/:examId',
   authenticate,
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  authorize(...adminTeacherRoleCodes),
   CBTController.deleteExam
 );
 router.get(
   '/exams/:examId/monitoring',
   authenticate,
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  authorize(...adminTeacherRoleCodes),
   CBTController.getExamMonitoring
 );
 router.get(
   '/exams/:examId/topic-mastery',
   authenticate,
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  authorize(...adminTeacherRoleCodes),
   CBTController.getTopicMasteryAnalytics
 );
 router.get(
   '/exams/:examId/difficulty-insights',
   authenticate,
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  authorize(...adminTeacherRoleCodes),
   CBTController.getExamDifficultyInsights
 );
 
@@ -94,13 +96,13 @@ router.get(
 router.get(
   '/attempts/:attemptId/grading',
   authenticate,
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  authorize(...adminTeacherRoleCodes),
   CBTController.getAttemptForGrading
 );
 router.post(
   '/attempts/:attemptId/grade',
   authenticate,
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  authorize(...adminTeacherRoleCodes),
   CBTController.gradeEssayAnswer
 );
 
@@ -110,7 +112,7 @@ router.post(
 router.post(
   '/exams/:examId/start',
   authenticate,
-  authorize(UserRole.STUDENT),
+  authorize(...studentRoleCodes),
   CBTController.startExam
 );
 
@@ -118,7 +120,7 @@ router.post(
 router.get(
   '/attempts/:attemptId',
   authenticate,
-  authorize(UserRole.STUDENT),
+  authorize(...studentRoleCodes),
   CBTController.getAttempt
 );
 
@@ -126,7 +128,7 @@ router.get(
 router.post(
   '/attempts/:attemptId/answer',
   authenticate,
-  authorize(UserRole.STUDENT),
+  authorize(...studentRoleCodes),
   CBTController.submitAnswer
 );
 
@@ -134,8 +136,17 @@ router.post(
 router.post(
   '/attempts/:attemptId/finish',
   authenticate,
-  authorize(UserRole.STUDENT),
+  authorize(...studentRoleCodes),
   CBTController.finishExam
+);
+
+// Record Security Log (Anti-cheating tab switch/blur monitoring)
+router.post(
+  '/attempts/:attemptId/security-log',
+  authenticate,
+  authorize(...studentRoleCodes),
+  validate(recordSecurityLogSchema),
+  CBTController.recordSecurityLog
 );
 
 export const cbtRoutes = router;
