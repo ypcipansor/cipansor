@@ -4,6 +4,7 @@ import type { Question as QuestionModel } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/client';
 import { Errors } from '@/middleware/error';
 import { canonicalAnswer, isAnswerCorrect, normalizeAnswerKeyForStorage } from './answer-key';
+import { SecurityEventType } from '@cipansor/shared';
 import { calculateLetterGrade } from '@cipansor/shared';
 import type { JwtPayload } from '@/lib/jwt';
 
@@ -834,7 +835,10 @@ export class CBTService {
         data: {
           attemptId,
           type: event.type,
-          details: event.details ? event.details.substring(0, 500) : null,
+          // The client sends a human sentence; it is stored as a field inside the
+          // JSONB payload rather than as the payload, so server-raised events can
+          // carry their own structure in the same column.
+          details: event.details ? { note: event.details.substring(0, 500) } : Prisma.DbNull,
         },
       }),
       ...(isTabSwitch
@@ -1192,8 +1196,14 @@ export class CBTService {
         prisma.examSecurityLog.create({
           data: {
             attemptId,
-            type: 'TIME_EXPIRED_AUTO_SUBMIT',
-            details: `Ditutup sistem karena waktu habis (durasi ${attempt.exam?.duration ?? '?'} menit + toleransi ${EXAM_GRACE_PERIOD_MINUTES} menit). Jawaban yang sudah masuk dinilai apa adanya.`,
+            type: SecurityEventType.TIME_EXPIRED_AUTO_SUBMIT,
+            details: {
+              closedBy: 'SYSTEM',
+              examDurationMinutes: attempt.exam?.duration ?? null,
+              graceMinutes: EXAM_GRACE_PERIOD_MINUTES,
+              gradedAnswers: attempt.answers.length,
+              note: 'Ditutup sistem karena waktu habis; jawaban yang sudah masuk dinilai apa adanya.',
+            },
           },
         })
       );

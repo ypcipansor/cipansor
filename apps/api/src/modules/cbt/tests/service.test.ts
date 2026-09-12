@@ -758,7 +758,7 @@ describe('CBT Service', () => {
         data: {
           attemptId: 'attempt-1',
           type: 'TAB_SWITCH',
-          details: 'Minimizing window',
+          details: { note: 'Minimizing window' },
         },
       });
 

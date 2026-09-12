@@ -2,14 +2,38 @@
 ALTER TABLE "exam_attempts" ADD COLUMN "tab_switch_count" INTEGER NOT NULL DEFAULT 0;
 
 -- CreateTable
+--
+-- `type` is TEXT with a CHECK constraint rather than a native enum, and that is
+-- a deliberate choice for THIS list. The set of anti-cheat events grows: this
+-- release already adds TIME_EXPIRED_AUTO_SUBMIT (an exam the clock closed), and
+-- FULLSCREEN_EXIT / DEV_TOOLS are next. A Postgres enum cannot drop, rename or
+-- reorder a value without creating a new type and rewriting the column, while a
+-- CHECK constraint is swapped in one statement — which is why the constraint is
+-- the usual recommendation for an evolving value set and the enum is reserved
+-- for closed domains. The guard still lives in the database, so a typo cannot
+-- quietly invent a new event type.
+--
+-- `details` is JSONB, not TEXT: what belongs there is structured (which control
+-- fired, how long the student was away, the exam duration the clock used), and
+-- a sentence glued together in code cannot be queried or aggregated afterwards.
 CREATE TABLE "exam_security_logs" (
     "id" TEXT NOT NULL,
     "attempt_id" TEXT NOT NULL,
     "type" TEXT NOT NULL,
-    "details" TEXT,
+    "details" JSONB,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT "exam_security_logs_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "exam_security_logs_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "exam_security_logs_type_check" CHECK ("type" IN (
+      'TAB_SWITCH',
+      'FOCUS_LOST',
+      'COPY',
+      'PASTE',
+      'RIGHT_CLICK',
+      'FULLSCREEN_EXIT',
+      'DEV_TOOLS',
+      'TIME_EXPIRED_AUTO_SUBMIT'
+    ))
 );
 
 -- CreateIndex

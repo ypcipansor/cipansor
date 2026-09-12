@@ -8081,10 +8081,16 @@ model ExamAttempt {
 
 /// ExamSecurityLog - Catatan aktivitas/pelanggaran keamanan ujian
 model ExamSecurityLog {
-  id        String   @id @default(uuid())
-  attemptId String   @map("attempt_id")
+  id        String @id @default(uuid())
+  attemptId String @map("attempt_id")
+  /// Event name. Guarded in the database by a CHECK constraint listing the known
+  /// values (see the migration, and the sync test that keeps that list equal to
+  /// `SecurityEventType` in @cipansor/shared). Prisma cannot express a CHECK, so
+  /// the type here is String — the constraint is still enforced by Postgres.
   type      String
-  details   String?  @db.Text
+  /// Structured payload: which control fired, how long the student was away, the
+  /// duration the clock used. JSONB so it can be queried and aggregated.
+  details   Json?
   createdAt DateTime @default(now()) @map("created_at")
 
   // Relations

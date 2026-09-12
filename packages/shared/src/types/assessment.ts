@@ -289,19 +289,37 @@ export interface ExamAnswer {
   createdAt?: string | Date;
 }
 
+/**
+ * Every anti-cheat / exam-integrity event the system records.
+ *
+ * This list is the single source of truth: the `exam_security_logs.type` CHECK
+ * constraint in the database must contain exactly these values, and a sync test
+ * (`apps/api/src/modules/cbt/tests/security-event-types-sync.test.ts`) fails if
+ * the two drift apart — the shape of bug this repo keeps finding, where one fact
+ * is written in two places with no type between them.
+ */
 export enum SecurityEventType {
   TAB_SWITCH = "TAB_SWITCH",
   FOCUS_LOST = "FOCUS_LOST",
   COPY = "COPY",
   PASTE = "PASTE",
   RIGHT_CLICK = "RIGHT_CLICK",
+  FULLSCREEN_EXIT = "FULLSCREEN_EXIT",
+  DEV_TOOLS = "DEV_TOOLS",
+  /** The clock closed the paper; the student did not press Kumpulkan. */
+  TIME_EXPIRED_AUTO_SUBMIT = "TIME_EXPIRED_AUTO_SUBMIT",
 }
 
 export interface ExamSecurityLog {
   id: string;
   attemptId: string;
   type: SecurityEventType | string;
-  details?: string | null;
+  /**
+   * Structured payload (JSONB). Client-reported events carry `{ note }`; events
+   * the server raises carry their own fields, e.g. the exam duration and grace
+   * period the clock used.
+   */
+  details?: Record<string, unknown> | null;
   createdAt: string | Date;
 }
 
