@@ -35,12 +35,15 @@ export default function SPMBPage() {
   const { data: registrantsData } = useRegistrants();
   const { data: acceptedData } = useRegistrants({ status: "ACCEPTED" });
   const { data: pendingData } = useRegistrants({ status: "DOCUMENT_CHECK" });
+  const { data: testScheduledData } = useRegistrants({ status: "TEST_SCHEDULED" });
   const { data: periodsData } = useAdmissionPeriods();
   const { data: activeWavesData } = useActiveAdmissionWaves();
 
   const totalRegistrants = registrantsData?.meta?.total ?? registrantsData?.data?.length ?? 0;
   const acceptedCount = acceptedData?.meta?.total ?? acceptedData?.data?.length ?? 0;
   const pendingCount = pendingData?.meta?.total ?? pendingData?.data?.length ?? 0;
+  const testScheduledCount =
+    testScheduledData?.meta?.total ?? testScheduledData?.data?.length ?? 0;
   const totalPeriods = periodsData?.meta?.total ?? periodsData?.data?.length ?? 0;
   const activeWavesCount = activeWavesData?.pagination?.total ?? activeWavesData?.data?.length ?? 0;
 
@@ -49,7 +52,10 @@ export default function SPMBPage() {
       title: "Gelombang SPMB",
       description: "Kelola periode dan gelombang penerimaan",
       icon: Calendar,
-      href: "/spmb/waves",
+      // Halaman gelombangnya masih di bawah /admissions; menautkan /spmb/waves
+      // yang belum ada berarti 404 — dan Next memuat-awal tautan ini, jadi
+      // biayanya tertagih tiap kali halaman ini dirender, bukan saat diklik.
+      href: "/admissions/waves",
       color: "text-blue-600",
       bgColor: "bg-blue-50",
       count: String(totalPeriods),
@@ -65,12 +71,15 @@ export default function SPMBPage() {
     },
     {
       title: "Seleksi",
-      description: "Proses seleksi dan penilaian calon santri",
+      // Belum ada halaman penjadwalan seleksi. Yang ada adalah daftar pendaftar
+      // yang sudah dijadwalkan tes, dan di situlah petugas bekerja — jadi kartu
+      // ini menunjuk ke sana, bukan ke halaman yang belum dibangun.
+      description: "Pendaftar yang sudah dijadwalkan tes",
       icon: ClipboardList,
-      href: "/spmb/selections",
+      href: "/spmb/registrations?status=TEST_SCHEDULED",
       color: "text-purple-600",
       bgColor: "bg-purple-50",
-      count: String(pendingCount),
+      count: String(testScheduledCount),
     },
     {
       title: "Diterima",
@@ -199,7 +208,7 @@ export default function SPMBPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid gap-4 md:grid-cols-3">
-                <Link href="/spmb/waves">
+                <Link href="/admissions/waves">
                   <Button className="w-full" variant="outline">
                     <Calendar className="mr-2 h-4 w-4" />
                     Kelola Gelombang
@@ -211,10 +220,10 @@ export default function SPMBPage() {
                     Lihat Pendaftar
                   </Button>
                 </Link>
-                <Link href="/spmb/selections">
+                <Link href="/spmb/registrations?status=TEST_SCHEDULED">
                   <Button className="w-full" variant="outline">
                     <ClipboardList className="mr-2 h-4 w-4" />
-                    Proses Seleksi
+                    Peserta Tes
                   </Button>
                 </Link>
               </CardContent>
@@ -265,8 +274,8 @@ export default function SPMBPage() {
                     <li>• Tes Kesehatan</li>
                   </ul>
                 </div>
-                <Link href="/spmb/selections">
-                  <Button className="w-full">Lihat Jadwal Seleksi</Button>
+                <Link href="/spmb/registrations?status=TEST_SCHEDULED">
+                  <Button className="w-full">Lihat Peserta yang Dijadwalkan Tes</Button>
                 </Link>
               </CardContent>
             </Card>

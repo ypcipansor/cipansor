@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import * as fs from 'fs';
+import * as path from 'path';
 import { StudentOnboardingOrchestrator } from '../../../services/integration/student-onboarding.orchestrator';
 import { prisma } from '@/lib/prisma';
 import * as admissionsService from '../admissions.service';
@@ -682,6 +684,61 @@ describe('Student Onboarding & Wave Quota Unit Tests', () => {
         where: { id: 'w-old' },
         data: { status: 'OPEN' },
       });
+    });
+  });
+
+  describe('kuota gelombang tidak bisa disusutkan di bawah pendaftar yang sudah masuk', () => {
+    // Kuota adalah batas, dan satu-satunya yang menjaganya dulu adalah jalur
+    // penetapan pendaftar. Menurunkan kuota lewat PATCH melewatinya sepenuhnya:
+    // gelombang berkuota 10 dengan 30 pendaftar lolos tanpa suara, lalu setiap
+    // laporan yang menghitung `quota - registeredCount` mencetak angka negatif.
+    // Sejak migrasi 20260912010000 basis data juga menolaknya; yang diuji di
+    // sini adalah jawaban 400 beserta jalan keluarnya, karena pelanggaran
+    // constraint sampai ke pengguna sebagai 500 tanpa saran apa pun.
+    it('menolak kuota di bawah registeredCount dan menyebut cara menutup pendaftaran', async () => {
+      vi.mocked(prisma.admissionWave.findUnique as any).mockResolvedValue({
+        id: 'w-1',
+        registeredCount: 30,
+        period: { unitId: 'unit-1' },
+      });
+
+      await expect(waveService.update('w-1', { quota: 10 } as any)).rejects.toThrow(
+        /lebih kecil dari jumlah pendaftar yang sudah masuk \(30\)/
+      );
+      expect(prisma.admissionWave.update).not.toHaveBeenCalled();
+    });
+
+    it('menerima kuota yang sama dengan jumlah pendaftar (gelombang pas penuh)', async () => {
+      vi.mocked(prisma.admissionWave.findUnique as any).mockResolvedValue({
+        id: 'w-1',
+        registeredCount: 30,
+        period: { unitId: 'unit-1' },
+      });
+      vi.mocked(prisma.admissionWave.update as any).mockResolvedValue({ id: 'w-1', quota: 30 });
+
+      await waveService.update('w-1', { quota: 30 } as any);
+
+      expect(prisma.admissionWave.update).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'w-1' }, data: expect.objectContaining({ quota: 30 }) })
+      );
+    });
+  });
+
+  describe('invarian kuota dijaga basis data, bukan cuma kode', () => {
+    // Satu jalur kode yang benar tidak menjaga kolom: impor, perbaikan manual
+    // lewat psql, dan skrip pemeliharaan menulis langsung ke tabel. Uji ini
+    // membaca SQL migrasinya — bukan salinan daftarnya — supaya constraint yang
+    // dihapus di migrasi berikutnya tetap tertangkap di sini.
+    it('migrasi memasang CHECK registered_count <= quota dan quota >= 1', () => {
+      const sql = fs.readFileSync(
+        path.resolve(
+          __dirname,
+          '../../../../prisma/migrations/20260912010000_admission_wave_quota_invariants/migration.sql'
+        ),
+        'utf8'
+      );
+      expect(sql).toMatch(/CHECK\s*\(\s*"registered_count"\s*<=\s*"quota"\s*\)/i);
+      expect(sql).toMatch(/CHECK\s*\(\s*"quota"\s*>=\s*1\s*\)/i);
     });
   });
 });

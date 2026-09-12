@@ -243,6 +243,31 @@ export const waveService = {
     if (input.startDate !== undefined) data.startDate = new Date(input.startDate);
     if (input.endDate !== undefined) data.endDate = new Date(input.endDate);
 
+    // A new quota below the number of registrants already in the wave is
+    // refused here so the caller gets a 400 that says what to do instead. The
+    // database refuses it too (CHECK admission_waves_registered_within_quota),
+    // but a constraint violation surfaces as a 500 with no advice in it — and
+    // the advice is the useful part: registrants already accepted into a wave
+    // cannot be un-registered by shrinking a number. Closing registration early
+    // is a status change (FULL/CLOSED), which `full_by_capacity` already
+    // distinguishes from a wave that filled up on its own.
+    if (data.quota !== undefined) {
+      const current = await prisma.admissionWave.findUnique({
+        where: { id },
+        select: { registeredCount: true },
+      });
+      if (!current) {
+        throw Errors.notFound('Admission wave');
+      }
+      if (data.quota < current.registeredCount) {
+        throw Errors.badRequest(
+          `Kuota ${data.quota} lebih kecil dari jumlah pendaftar yang sudah masuk ` +
+            `(${current.registeredCount}). Untuk menutup pendaftaran lebih awal, ubah ` +
+            `status gelombang menjadi FULL atau CLOSED.`
+        );
+      }
+    }
+
     // Cross-check date ordering against the persisted record. The schema-level
     // `.refine` in `updateWaveSchema` only runs when BOTH dates are provided
     // in the same request, so a caller can otherwise send only `endDate` (or

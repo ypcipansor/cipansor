@@ -3384,7 +3384,13 @@ model AdmissionWave {
   name            String // e.g., "Gelombang 1 2024-2025"
   startDate       DateTime   @map("start_date")
   endDate         DateTime   @map("end_date")
-  quota           Int // Kuota pendaftar
+  /// Kuota pendaftar. Dijaga di basis data oleh dua CHECK yang tidak bisa
+  /// diungkapkan Prisma (lihat migrasi 20260912010000):
+  /// `quota >= 1` dan `registered_count <= quota`. Menurunkan kuota di bawah
+  /// jumlah pendaftar yang sudah masuk ditolak API dengan 400 lebih dulu
+  /// (ppdb-wave.service.ts) — cara menutup pendaftaran lebih awal adalah
+  /// mengubah status, bukan mengecilkan angka.
+  quota           Int
   registeredCount Int        @default(0) @map("registered_count")
   acceptedCount   Int        @default(0) @map("accepted_count")
   status          WaveStatus @default(UPCOMING)
