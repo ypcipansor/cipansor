@@ -319,4 +319,111 @@ export interface ExamAttempt {
   updatedAt?: string | Date;
   exam?: Exam;
   answers?: ExamAnswer[];
+export interface AssessmentStudentItem {
+  id: string;
+  nis: string;
+  user?: { name?: string | null };
+}
+
+export interface AssessmentAcademicYearItem {
+  id: string;
+  name: string;
+}
+
+export interface VerificationResponse {
+  valid: boolean;
+  expired?: boolean;
+  message: string;
+  studentId?: string;
+  nis?: string;
+  student?: {
+    id: string;
+    nis: string;
+    name: string;
+    photoUrl?: string | null;
+    unit: string;
+    unitType?: string | null;
+    currentClass: string;
+    academicYear: string;
+  } | null;
+  cardData?: {
+    nis: string;
+    nisn?: string;
+    studentName: string;
+    unitName: string;
+    className?: string;
+    issueDate?: string;
+  };
+}
+
+export interface RaportMerdekaPdfData {
+  siswa: {
+    nama: string;
+    nis: string;
+    nisn?: string | null;
+    kelas: string;
+    unit: string;
+    unitType?: string | null;
+    fase?: string | null;
+  };
+  tahunAjaran: {
+    tahun: string;
+    semester: number;
+    semesterLabel: string;
+  };
+  waliKelas: {
+    nama: string;
+    nip?: string | null;
+  };
+  pimpinanUnit?: {
+    nama: string;
+    jabatan?: string | null;
+    nip?: string | null;
+  };
+  intrakurikuler: {
+    kelompokUmum: Array<{
+      subjectName: string;
+      nilaiAkhir: number;
+      predikat: string;
+      levelCapaian: string;
+      deskripsi: string;
+    }>;
+    kelompokPesantren: Array<{
+      subjectName: string;
+      nilaiAkhir: number;
+      predikat: string;
+      levelCapaian: string;
+      deskripsi: string;
+    }>;
+  };
+  projekP5?: Array<{
+    tema: string;
+    judul: string;
+    deskripsiProyek?: string;
+    dimensiTerkait?: Array<{
+      dimensiName: string;
+      capaian?: string;
+      deskripsi?: string;
+    }>;
+  }>;
+  ekstrakurikuler?: Array<{
+    nama: string;
+    predikat: string;
+    keterangan: string;
+  }>;
+  tahfidz?: {
+    totalJuz?: number;
+    targetCapaian?: string;
+    surahTerakhir?: string;
+    statusCapaian?: string;
+    catatan?: string;
+  };
+  kehadiran?: {
+    hadir?: number;
+    sakit?: number;
+    izin?: number;
+    alpa?: number;
+  };
+  catatanWaliKelas?: string;
+  tanggalCetak?: string;
 }

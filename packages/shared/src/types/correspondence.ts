@@ -1,4 +1,6 @@
 // Letter Enums
+import type { UpdateLetterSchemaInput } from "../schemas/correspondence";
+
 export enum LetterDirection {
   INCOMING = "INCOMING",
   OUTGOING = "OUTGOING",
@@ -182,9 +184,19 @@ export interface LetterAttachmentInput {
   sizeBytes?: number;
 }
 
-export interface UpdateLetterInput extends Partial<CreateLetterInput> {
-  reviewerNotes?: string; // For adding notes during review
-}
+/**
+ * The editable fields of an existing letter — exactly what `updateLetterSchema`
+ * accepts, so the shared schema is the single source of truth.
+ *
+ * Previously this was `Partial<CreateLetterInput>`, which inherited fields the
+ * update endpoint does NOT support (`unitId`, `direction`, `status`,
+ * `agendaNumber`, `letterNumber`, …). A typed client could send those and get a
+ * 200 while the schema silently stripped them: no error, no change, and a
+ * payload that looks like it worked actually did nothing. Deriving the type
+ * from the schema means the only sendable fields are the ones the server will
+ * apply.
+ */
+export type UpdateLetterInput = UpdateLetterSchemaInput;
 
 /**
  * One rung of a letter's verification ladder.
@@ -546,5 +558,4 @@ export interface CorrespondenceParticipant {
 }
 
 export type CreateDispositionResponse =
-  | LetterDispositionDetail
-  | LetterDispositionDetail[];
+  LetterDispositionDetail | LetterDispositionDetail[];

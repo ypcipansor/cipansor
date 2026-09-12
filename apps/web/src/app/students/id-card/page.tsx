@@ -26,7 +26,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useStudents, Student } from "@/hooks/use-students";
 import { useClasses } from "@/hooks/use-classes";
 import { useUnits } from "@/hooks/use-units";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useRegenerateStudentCards } from "@/hooks/use-regenerate-student-cards";
+import { useAuthStore } from "@/stores/auth";
+import { getPrimaryRoleCode } from "@/lib/rbac";
+import { useQuery, useMutation, useQueries } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import {
   IdCard,
@@ -45,9 +48,11 @@ import {
   Scan,
   AlertTriangle,
   Loader2,
+  RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { QRCodeSVG } from "qrcode.react";
+import { StudentIdCardDetail } from "@cipansor/shared";
 
 /**
  * The QR printed on a student card.
@@ -60,28 +65,24 @@ import { QRCodeSVG } from "qrcode.react";
  *
  * `qrcode.react` was already a dependency of this app and simply unused here.
  *
- * It encodes the NIS alone, deliberately. The old payload was a JSON object
- * carrying nis, name, unit and year — around 90 characters, which forces a
- * version-6 symbol of 41×41 modules. At the 48px this card allots (roughly
- * 12mm on an ID-1 card) that is about 0.3mm per module: below what a phone
- * camera resolves, so a "real" QR at that size would still have been
- * unscannable, just honestly so. The NIS fits in a version-1 symbol at 21×21,
- * and it is the identifier staff can act on — the name and unit are already
- * printed in plain text beside it.
+ * The payload is the full public verification URL
+ * (`https://…/public/verify-card?data=cipansor://…`). A phone camera
+ * recognises a URL and offers to open it, whereas a bare `cipansor://` scheme
+ * is not registered with the OS — that is why the physical card must encode
+ * the URL, not the raw signed string (which stays inside the `data` param for
+ * the page to extract and verify). The URL wraps a ~150–200-byte signed
+ * payload, landing on a version-8/9 symbol at level L; we render it at 120px —
+ * roughly 32mm on a CR80 card — so it stays scannable at the higher symbol
+ * order.
  */
-function StudentQRCode({ value, size = 48 }: { value: string; size?: number }) {
-  return (
-    <QRCodeSVG
-      value={value}
-      size={size}
-      // Cards get handled, folded into wallets and photocopied; M recovers ~15%
-      // of a damaged symbol and still fits the NIS in the smallest version.
-      level="M"
-      // The quiet zone is part of the spec, not decoration — without it a
-      // scanner cannot find the symbol against the card's white patch.
-      marginSize={2}
-    />
-  );
+function StudentQRCode({
+  value,
+  size = 120,
+}: {
+  value: string;
+  size?: number;
+}) {
+  return <QRCodeSVG value={value} size={size} level="L" marginSize={2} />;
 }
 
 interface StudentCardProps {
@@ -101,6 +102,25 @@ function StudentIDCard({
     .join("")
     .substring(0, 2)
     .toUpperCase();
+
+  const { data: cardDetails, isLoading: cardLoading } = useQuery({
+    queryKey: ["student-id-card-details", student.id],
+    queryFn: async () => {
+      const res = await api.get<{ data: StudentIdCardDetail }>(
+        `/students/${student.id}/id-card`,
+      );
+      return res.data.data;
+    },
+    enabled: !!student.id,
+  });
+
+  // The QR printed on the physical card must be a https URL so any phone
+  // camera recognises it and offers to open the verification page. A bare
+  // `cipansor://` scheme is not registered with the OS, so the scanner never
+  // reaches the page. The signed payload lives inside the `verificationUrl`'s
+  // `data` query param, which `/public/verify-card` extracts and verifies.
+  const qrPayload = cardDetails?.cardData?.qrCode?.verificationUrl;
+  const cardIssued = cardDetails?.cardData?.issued ?? false;
 
   return (
     <div
@@ -169,8 +189,18 @@ function StudentIDCard({
         </div>
 
         {/* QR Code */}
-        <div className="shrink-0 bg-white p-1 rounded">
-          <StudentQRCode value={student.nis} size={48} />
+        <div className="shrink-0 bg-white p-1 rounded min-w-[126px] min-h-[126px] flex flex-col items-center justify-center text-center">
+          {cardLoading ? (
+            <Skeleton className="h-[120px] w-[120px] rounded" />
+          ) : cardIssued && qrPayload ? (
+            <StudentQRCode value={qrPayload} size={120} />
+          ) : (
+            <div className="text-[10px] text-emerald-700 px-2">
+              <QrCode className="h-6 w-6 mx-auto mb-1 opacity-50" />
+              <p>Belum diterbitkan</p>
+              <p className="text-[9px]">Cetak setelah kartu diregenerasi</p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -269,6 +299,17 @@ export default function StudentIDCardPage() {
       return;
     }
 
+    // The print window copies `printRef.current.innerHTML` synchronously, so if
+    // any selected card is still showing its Skeleton (the student-id-card query
+    // has not settled) the printout would capture the placeholder — and a card
+    // with no QR. Wait until every selected card's details are loaded.
+    if (!allCardsReady) {
+      toast.error(
+        "Kartu masih dimuat. Tunggu hingga QR code siap, lalu coba cetak lagi.",
+      );
+      return;
+    }
+
     const printContent = printRef.current;
     if (!printContent) return;
 
@@ -324,6 +365,59 @@ export default function StudentIDCardPage() {
     selectedStudents.includes(s.id),
   );
 
+  // Prefetch the card details for every selected student so the print action can
+  // be gated on the QR being present. These share the same `student-id-card-*
+  // details` query key as the printed cards, so a prefetched value is what the
+  // card component renders — the print DOM is never captured before the query
+  // settles (which produced a card with an empty QR placeholder).
+  const selectedCardQueries = useQueries({
+    queries: selectedStudentsList.map((student) => ({
+      queryKey: ["student-id-card-details", student.id],
+      queryFn: async () => {
+        const res = await api.get<{ data: StudentIdCardDetail }>(
+          `/students/${student.id}/id-card`,
+        );
+        return res.data.data;
+      },
+      enabled: selectedStudentsList.length > 0,
+    })),
+  });
+  // Print is gated on the card being BOTH loaded AND actually issued. A student
+  // with no `StudentCardState` yet gets `issued: false` (and no QR) from the
+  // preview endpoint; printing that would capture a "Belum diterbitkan" card.
+  const allCardsReady =
+    selectedStudentsList.length > 0 &&
+    selectedCardQueries.every(
+      (q) => q.isSuccess && q.data?.cardData?.issued === true,
+    );
+
+  const { user } = useAuthStore();
+  const regenerateMutation = useRegenerateStudentCards();
+  // RoleCode-based check (via the user's primary role assignment), not the
+  // deprecated `user.role` bucket — see apps/web/AGENTS.md.
+  const isSuperAdmin = getPrimaryRoleCode(user) === "SUPER_ADMIN";
+  const canRegenerate =
+    (isSuperAdmin || !!selectedUnitId || !!selectedClassId) &&
+    (isSuperAdmin || user?.permissions?.includes("STUDENT_UPDATE"));
+
+  const handleRegenerate = () => {
+    if (!canRegenerate) {
+      toast.error("Pilih unit atau kelas untuk meregenerasi kartu.");
+      return;
+    }
+    if (
+      !window.confirm(
+        "Regenerasi semua kartu pelajar pada filter ini? Kartu lama akan dibuat ulang sehingga perlu dicetak ulang.",
+      )
+    ) {
+      return;
+    }
+    regenerateMutation.mutate({
+      unitId: selectedUnitId || undefined,
+      classId: selectedClassId || undefined,
+    });
+  };
+
   return (
     <MainLayout>
       <div className="space-y-6">
@@ -339,10 +433,31 @@ export default function StudentIDCardPage() {
             </p>
           </div>
           <div className="flex gap-2">
+            {canRegenerate && (
+              <Button
+                variant="outline"
+                onClick={handleRegenerate}
+                disabled={regenerateMutation.isPending}
+              >
+                <RefreshCw
+                  className={`h-4 w-4 mr-2 ${
+                    regenerateMutation.isPending ? "animate-spin" : ""
+                  }`}
+                />
+                {regenerateMutation.isPending
+                  ? "Meregenerasi..."
+                  : "Regenerasi Kartu"}
+              </Button>
+            )}
             <Button
               variant="default"
               onClick={handlePrint}
-              disabled={selectedStudents.length === 0}
+              disabled={selectedStudents.length === 0 || !allCardsReady}
+              title={
+                !allCardsReady && selectedStudents.length > 0
+                  ? "Kartu masih dimuat — tunggu hingga QR code siap untuk mencetak"
+                  : undefined
+              }
             >
               <Printer className="h-4 w-4 mr-2" />
               Cetak{" "}

@@ -7157,6 +7157,7 @@ enum LetterStatus {
 /// Setiap perbuatan yang mengubah perjalanan sebuah surat.
 enum LetterFlowAction {
   CREATED // Surat dicatat/dibuat
+  EDITED // Naskah surat diperbarui/diubah (bukan tindak lanjut disposisi)
   SUBMITTED // Konsep diajukan untuk diverifikasi
   APPROVED // Diparaf/disetujui oleh salah satu verifikator
   SIGNED // Ditandatangani oleh penandatangan akhir
@@ -10355,3 +10356,36 @@ model PKBehaviorEvaluation {
   @@map("pk_behavior_evaluations")
 }
 
+// ---------------------------------------------------------------
+// Student card lifecycle state (Flag 6)
+// ---------------------------------------------------------------
+enum StudentCardStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+}
+
+/// Audit trail of a student ID card's issue/regeneration/revocation lifecycle.
+/// A scalar `studentId` snapshot (no FK) keeps the audit row alive after a
+/// student soft-delete and avoids coupling this append-mostly table to the
+/// large `Student` model, which is edited only surgically (golden rule #1).
+model StudentCardState {
+  id            String            @id @default(cuid())
+  studentId     String            @map("student_id")
+  cardNumber    String            @map("card_number")
+  status        StudentCardStatus @default(ACTIVE)
+  /// When this card was first issued / (re)generated.
+  issuedAt      DateTime          @default(now()) @map("issued_at")
+  /// Timestamp of the regeneration that produced this row (audit).
+  regeneratedAt DateTime          @default(now()) @map("regenerated_at")
+  validUntil    DateTime?         @map("valid_until")
+  revokedAt     DateTime?         @map("revoked_at")
+  revokeReason  String?           @map("revoke_reason")
+  /// Snapshot of the user who triggered the regeneration (survives user
+  /// deletion; `User` is not modelled here).
+  generatedById String?           @map("generated_by_id")
+
+  @@index([studentId])
+  @@index([status])
+  @@map("student_card_state")
+}

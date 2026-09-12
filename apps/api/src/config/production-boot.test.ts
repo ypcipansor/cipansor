@@ -79,6 +79,7 @@ describe('production boot guard (real module load)', () => {
       NODE_ENV: 'production',
       JWT_SECRET: SHIPPED_PLACEHOLDER,
       ENCRYPTION_KEY: GOOD_ENCRYPTION_KEY,
+      STUDENT_CARD_HMAC_SECRET: GOOD_SECRET,
     });
 
     expect(result.ok, `config loaded when it should have refused:\n${result.output}`).toBe(
@@ -93,6 +94,7 @@ describe('production boot guard (real module load)', () => {
       NODE_ENV: 'production',
       JWT_SECRET: 'terlalu-pendek',
       ENCRYPTION_KEY: GOOD_ENCRYPTION_KEY,
+      STUDENT_CARD_HMAC_SECRET: GOOD_SECRET,
     });
 
     // Behaviour only, no wording match: any correct guard rejects a short key,
@@ -117,6 +119,7 @@ describe('production boot guard (real module load)', () => {
       NODE_ENV: 'production',
       JWT_SECRET: GOOD_SECRET,
       ENCRYPTION_KEY: GOOD_ENCRYPTION_KEY,
+      STUDENT_CARD_HMAC_SECRET: GOOD_SECRET,
     });
 
     // The positive case matters as much as the negative: a guard that refuses

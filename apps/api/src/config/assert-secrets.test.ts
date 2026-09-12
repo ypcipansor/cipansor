@@ -55,7 +55,12 @@ describe('production secret guard', () => {
   // the test depend on whatever .env happens to hold.
   it('accepts generated keys', () => {
     expect(() =>
-      assertProductionSecrets({ env: 'production', jwtSecret: GOOD, encryptionKey: GOOD })
+      assertProductionSecrets({
+        env: 'production',
+        jwtSecret: GOOD,
+        encryptionKey: GOOD,
+        studentCardHmacSecret: GOOD,
+      })
     ).not.toThrow();
   });
 
@@ -65,6 +70,7 @@ describe('production secret guard', () => {
         env: 'production',
         jwtSecret: GOOD,
         encryptionKey: 'changeme-changeme-changeme-changeme',
+        studentCardHmacSecret: GOOD,
       })
     ).toThrow(/ENCRYPTION_KEY/);
   });
@@ -76,6 +82,7 @@ describe('production secret guard', () => {
     const issues = findSecretIssues({
       jwtSecret: GOOD,
       encryptionKey: '000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f',
+      studentCardHmacSecret: GOOD,
     });
 
     expect(issues).toHaveLength(1);
@@ -85,7 +92,43 @@ describe('production secret guard', () => {
 
   it('reports every problem at once, not just the first', () => {
     const issues = findSecretIssues({ jwtSecret: 'short', encryptionKey: SHIPPED });
-    expect(issues.map((i) => i.variable)).toEqual(['JWT_SECRET', 'ENCRYPTION_KEY']);
+    expect(issues.map((i) => i.variable)).toEqual([
+      'JWT_SECRET',
+      'ENCRYPTION_KEY',
+      'STUDENT_CARD_HMAC_SECRET',
+    ]);
+  });
+
+  // The card signer must be its OWN secret, required in production. A missing
+  // STUDENT_CARD_HMAC_SECRET is not a soft fallback to the JWT secret — that was
+  // the bug: rotating session credentials invalidated every printed card.
+  it('refuses production without a dedicated STUDENT_CARD_HMAC_SECRET', () => {
+    expect(() =>
+      assertProductionSecrets({
+        env: 'production',
+        jwtSecret: GOOD,
+        encryptionKey: GOOD,
+      })
+    ).toThrow(/STUDENT_CARD_HMAC_SECRET/);
+  });
+
+  it('uses the dev-only card secret outside production, never the JWT secret', async () => {
+    const { resolveStudentCardHmacSecret } = await import('./index');
+    expect(resolveStudentCardHmacSecret(undefined, 'development')).toBe(
+      'dev-student-card-hmac-secret-not-for-production'
+    );
+  });
+
+  it('throws in production when the card secret is still an example value', () => {
+    const issues = findSecretIssues({
+      jwtSecret: GOOD,
+      encryptionKey: GOOD,
+      studentCardHmacSecret: 'change-me-this-is-an-example-value-for-cards',
+    });
+    expect(issues.map((i) => i.variable)).toContain('STUDENT_CARD_HMAC_SECRET');
+    expect(issues.find((i) => i.variable === 'STUDENT_CARD_HMAC_SECRET')?.reason).toMatch(
+      /example value/
+    );
   });
 
   // The gap this closes. #341 added resolveJwtSecret, which refused a secret

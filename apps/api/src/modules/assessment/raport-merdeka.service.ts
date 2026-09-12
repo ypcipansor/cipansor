@@ -12,6 +12,9 @@
 
 import { prisma } from '../../lib/prisma';
 import { ApiError, ErrorCode } from '../../middleware/error';
+import { isTeacherOrAboveRoleCode, isAdminRoleCode } from '../../middleware/auth';
+import { RoleCode } from '@prisma/client';
+import type { JwtPayload } from '../../lib/jwt';
 import { P5ProjectService } from './p5-project.service';
 
 // Profil Pelajar Pancasila - 6 Dimensi
@@ -106,6 +109,63 @@ const NILAI_TO_CAPAIAN: Record<
   },
 };
 
+/**
+ * Semester date range for an academic year.
+ *
+ * The Indonesian school year runs July–June. Semester 1 (Ganjil) spans the
+ * school-year start through Dec 31 of that calendar year; Semester 2 (Genap)
+ * spans Jan 1 of the following calendar year through the school-year end.
+ *
+ * Both grade classification and attendance must use the SAME boundary so a
+ * grade in early January is not counted in one semester while the attendance
+ * for those same days is counted in the other.
+ *
+ * Exported for the unit tests that pin the Dec 31 "end of day" boundary.
+ */
+export function getSemesterDateRange(
+  academicYear: { startDate: Date | string; endDate: Date | string },
+  semester: number
+): { startDate: Date; endDate: Date } {
+  // Every caller that reaches here must pass exactly 1 or 2. The unified-raport
+  // controller parses `semester` straight from the query string, so a value like
+  // 99 used to fall through the `semester === 1 ? … : …` ternary and silently
+  // produce a Semester 2 (Genap) raport that looked legitimate. Reject it here
+  // so ALL entry points — individual, class bulk and unified — are covered by
+  // the same boundary.
+  if (semester !== 1 && semester !== 2) {
+    throw new ApiError(ErrorCode.BAD_REQUEST, 'Semester harus bernilai 1 (Ganjil) atau 2 (Genap)');
+  }
+  const startDate = new Date(academicYear.startDate);
+  const endDate = new Date(academicYear.endDate);
+  // Anchor the boundary to the operation's timezone (WIB, UTC+7), not to the
+  // server host. The exam/grade timestamps (`scheduledAt`/`gradedAt`) are
+  // stored by Prisma as UTC DateTimes, and a school schedules them in WIB, so
+  // the "Semester 2 starts Jan 1" rule is really "01 Jan 00:00 WIB". A distinct
+  // Jan 1 *local-morning* exam (before 07:00 WIB) is stored as the *previous*
+  // Dec 31 UTC evening; anchored at UTC midnight it would fall inside Semester 1.
+  //
+  // WIB = UTC+7, so "01 Jan 00:00 WIB" == "31 Dec 17:00 UTC". The boundary is
+  // pinned with `Date.UTC` plus the constant WIB offset, which makes it
+  // independent of whatever timezone this process happens to run in (on a UTC
+  // host, anchoring naively at `Date.UTC(y, 11, 31, 23, 59, 59, 999)` reproduces
+  // the bug above).
+  //
+  // End of day Dec 31 WIB (not midnight): a Dec 31-afternoon WIB exam must not
+  // slip past the `<= semEndDate` check and be dropped from Semester 1. With the
+  // WIB anchor, `sem1End` is the last millisecond of Dec 31 WIB and `sem2Start`
+  // is the first millisecond of Jan 1 WIB, so the two windows never overlap.
+  const WIB_UTC_OFFSET_HOURS = 7;
+  const startYear = startDate.getUTCFullYear();
+  // "01 Jan 00:00 of the next year" expressed in UTC, minus the 7h the
+  // operational calendar is ahead of UTC.
+  const sem2StartLocal = Date.UTC(startYear + 1, 0, 1); // 01 Jan 00:00 UTC
+  const sem2Start = new Date(
+    sem2StartLocal - WIB_UTC_OFFSET_HOURS * 60 * 60 * 1000 // 31 Dec 17:00 UTC
+  );
+  const sem1End = new Date(sem2Start.getTime() - 1); // last ms before sem2Start
+  return semester === 1 ? { startDate, endDate: sem1End } : { startDate: sem2Start, endDate };
+}
+
 export class RaportMerdekaService {
   /**
    * Get all P5 dimensions
@@ -139,14 +199,188 @@ export class RaportMerdekaService {
   }
 
   /**
+   * Validate whether the user may read the given student's raport for a
+   * specific academic year.
+   *
+   * Access rules (see also {@link assertRaportAccess}, shared with the bulk
+   * class endpoint so the two flows can never drift apart):
+   * - SUPER_ADMIN bypasses scoping.
+   * - An admin role (per-school ADMIN / legacy UNIT_ADMIN) whose `unitId` matches
+   *   the student's unit may read the whole unit.
+   * - Any other teacher-or-above role must cover one of the student's classes in
+   *   the requested `academicYearId` (homeroom / teaches a subject there / set an
+   *   exam there). A same-unit teacher is NOT granted unit-wide raport access; a
+   *   cross-unit teacher with an exam OR a UserRoleAssignment in the unit alone is
+   *   NOT enough.
+   *
+   * CRITICAL: access must be scoped to the CLASSES THE STUDENT SAT IN for the
+   * requested academic year, not the student's *current* enrollment. Otherwise a
+   * teacher who only teaches the student "this year" would inherit access to the
+   * student's raport for every past year (a class the teacher never taught), and
+   * an enrollment the student has since left would leak into the wrong years too.
+   * `ClassEnrollment` itself has no `academicYearId`, but its `class` relation
+   * does, so the lookup is filtered through `class.academicYearId`.
+   */
+  static async validateStudentScope(
+    user: JwtPayload | undefined,
+    studentId: string,
+    academicYearId: string
+  ) {
+    if (!user) return;
+    const userRoleCode = user.roleCode || user.role;
+    if (userRoleCode === RoleCode.SUPER_ADMIN || userRoleCode === 'SUPER_ADMIN') return;
+
+    const student = await prisma.student.findUnique({
+      where: { id: studentId },
+      select: { unitId: true },
+    });
+
+    if (!student) {
+      throw new ApiError(ErrorCode.NOT_FOUND, 'Siswa tidak ditemukan');
+    }
+
+    const studentClasses = await prisma.classEnrollment.findMany({
+      where: { studentId, class: { academicYearId } },
+      select: { classId: true },
+    });
+
+    await this.assertRaportAccess(
+      user,
+      student.unitId,
+      studentClasses.map((c) => c.classId),
+      'Anda tidak memiliki akses ke siswa di unit lain'
+    );
+  }
+
+  /**
+   * Shared raport access gate used by both the single-student endpoint and the
+   * bulk class endpoint.
+   *
+   * `unitId` is the unit the raport belongs to (the student's unit, or the
+   * class's unit for bulk). `classIds` are the classes the subject (the student
+   * itself, or the single class for bulk) belongs to.
+   *
+   * - SUPER_ADMIN bypasses (handled by callers before reaching here).
+   * - An admin role in the SAME unit passes.
+   * - An admin role in ANOTHER unit passes only with an active educator/admin
+   *   `UserRoleAssignment` in that unit.
+   * - Every other role (teachers, principals, ustadz, ...) must cover one of
+   *   the given classes: homeroom, teach a subject there, or set an exam for
+   *   it. A classless subject (`TeacherSubject.classId = null`) only covers
+   *   classes inside the teacher's OWN unit — it must never open a student of
+   *   ANOTHER unit (Flag 4).
+   *
+   * Throws 403 with `denyMessage` when access is not granted.
+   */
+  private static async assertRaportAccess(
+    user: JwtPayload,
+    unitId: string,
+    classIds: string[],
+    denyMessage: string
+  ) {
+    const userRoleCode = user.roleCode || user.role;
+    const isAdmin = isAdminRoleCode(userRoleCode) || userRoleCode === 'UNIT_ADMIN';
+    const isSameUnit = !!user.unitId && unitId === user.unitId;
+
+    if (isAdmin && isSameUnit) return;
+
+    const userId = user.id || user.sub;
+    const now = new Date();
+
+    if (isAdmin) {
+      // A cross-unit admin may open a raport only when an active educator/admin
+      // assignment places them in this unit.
+      const userRoleInUnit = await prisma.userRoleAssignment.findFirst({
+        where: {
+          userId,
+          isActive: true,
+          AND: [
+            { OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
+            { OR: [{ unitId }, { unitId: null }] },
+          ],
+        },
+        include: { role: { select: { code: true } } },
+      });
+      if (userRoleInUnit && isTeacherOrAboveRoleCode(userRoleInUnit.role.code)) return;
+      throw new ApiError(ErrorCode.FORBIDDEN, denyMessage);
+    }
+
+    // Non-admin educators must cover one of the subject's classes. This closes
+    // two leaks at once: a same-unit teacher used to read every raport of the
+    // unit (Flag 3), and a cross-unit teacher with a single exam / classless
+    // subject / unit assignment opened every student of the unit (Flag 4).
+    if (classIds.length === 0) {
+      throw new ApiError(ErrorCode.FORBIDDEN, denyMessage);
+    }
+
+    const teacherAssignment = await prisma.teacher.findFirst({
+      where: {
+        userId,
+        OR: [
+          // Teacher is homeroom for one of the subject's classes (only if that
+          // class is not soft-deleted).
+          { homeroomClasses: { some: { id: { in: classIds }, deletedAt: null } } },
+          // Teacher teaches a subject in one of the subject's classes — only an
+          // ACTIVE assignment counts. A deactivated `TeacherSubject.isActive =
+          // false` must not keep the raport accessible after the teacher was
+          // taken off the class.
+          { teacherSubjects: { some: { classId: { in: classIds }, isActive: true } } },
+          // A classless subject (covers all classes) only applies inside the
+          // teacher's OWN unit — a cross-unit teacher's classless subject must
+          // NOT open every student of another unit. Also only active assignments.
+          { unitId, teacherSubjects: { some: { classId: null, isActive: true } } },
+          // Teacher set an exam for one of the subject's classes (only if that
+          // class is not soft-deleted).
+          { exams: { some: { classId: { in: classIds } } } },
+        ],
+      },
+    });
+
+    if (!teacherAssignment) {
+      throw new ApiError(ErrorCode.FORBIDDEN, denyMessage);
+    }
+  }
+
+  /**
    * Generate Raport Merdeka for a student
    * Includes: Intrakurikuler, Projek P5, Ekstrakurikuler
    */
-  static async generateRaportMerdeka(studentId: string, academicYearId: string, semester: number) {
+  static async generateRaportMerdeka(
+    studentId: string,
+    academicYearId: string,
+    semester: number,
+    user?: JwtPayload,
+    opts?: { skipScopeValidation?: boolean }
+  ) {
+    if (user && !opts?.skipScopeValidation) {
+      // Scope access to the classes the student sat in for THIS academic year,
+      // so a teacher covering the student this year cannot open past-year
+      // raports for classes they never taught.
+      await this.validateStudentScope(user, studentId, academicYearId);
+    }
+    // Helper: Determine Fase from class level or unit type
+    const getFaseFromClassLevel = (levelStr?: string, unitTypeStr?: string): string => {
+      const levelNum = parseInt((levelStr || '').replace(/\D/g, ''), 10);
+      if (unitTypeStr === 'PAUD' || unitTypeStr === 'TK') return 'Fondasi';
+      if (levelNum === 1 || levelNum === 2) return 'A';
+      if (levelNum === 3 || levelNum === 4) return 'B';
+      if (levelNum === 5 || levelNum === 6) return 'C';
+      if (levelNum >= 7 && levelNum <= 9) return 'D';
+      if (levelNum === 10) return 'E';
+      if (levelNum === 11 || levelNum === 12) return 'F';
+      if (unitTypeStr === 'SMP') return 'D';
+      if (unitTypeStr === 'SMA' || unitTypeStr === 'SMK' || unitTypeStr === 'MA') return 'E-F';
+      if (unitTypeStr === 'SD') return 'A-C';
+      return 'D';
+    };
+
     // Get student data with enrollment
     const student = await prisma.student.findUnique({
       where: { id: studentId },
-      include: {
+      select: {
+        id: true,
+        nis: true,
+        nisn: true,
         user: { select: { name: true } },
         unit: { select: { id: true, name: true, type: true } },
         enrollments: {
@@ -195,8 +429,23 @@ export class RaportMerdekaService {
       },
     });
 
-    // Get grades with scores
-    const grades = await prisma.grade.findMany({
+    // Bound Semester 1 and Semester 2 with the SAME boundary used by the
+    // attendance summary. Note: `Grade` has NO `semester` column (verified
+    // against the Prisma schema), so a grade cannot be attributed to a
+    // semester directly. Instead we classify each grade by the assessment's
+    // own date — `exam.scheduledAt` when the grade came from an exam,
+    // otherwise `gradedAt` — using the shared semester date range so grades
+    // and attendance never disagree about which side of the boundary a date
+    // falls on.
+    const { startDate: semStartDate, endDate: semEndDate } = getSemesterDateRange(
+      enrollment.class.academicYear,
+      semester
+    );
+
+    // Fetch all grades for the year, then classify in memory using the
+    // assessment's own date. Keeps the window check away from `gradedAt` for
+    // exam-linked grades.
+    const yearGrades = await prisma.grade.findMany({
       where: {
         studentId,
         academicYearId,
@@ -205,6 +454,11 @@ export class RaportMerdekaService {
         exam: true,
         subject: true,
       },
+    });
+
+    const grades = yearGrades.filter((grade) => {
+      const effectiveDate = grade.exam?.scheduledAt ?? grade.gradedAt;
+      return effectiveDate >= semStartDate && effectiveDate <= semEndDate;
     });
 
     // Group grades by subject
@@ -254,6 +508,7 @@ export class RaportMerdekaService {
 
     // Get academic year info
     const academicYear = enrollment.class.academicYear;
+    const computedFase = getFaseFromClassLevel(enrollment.class.level, student.unit.type);
 
     return {
       raportFormat: 'KURIKULUM_MERDEKA',
@@ -263,8 +518,13 @@ export class RaportMerdekaService {
         nisn: student.nisn,
         nama: student.user.name,
         kelas: enrollment.class.name,
+        fase: computedFase,
         unit: student.unit.name,
         unitType: student.unit.type,
+      },
+      pimpinanUnit: {
+        nama: '',
+        jabatan: `Kepala ${student.unit.name}`,
       },
       tahunAjaran: {
         id: academicYear.id,
@@ -360,10 +620,31 @@ export class RaportMerdekaService {
    */
   private static async getP5Projects(studentId: string, academicYearId: string, semester: number) {
     // Fetch real P5 assessments from database
-    const p5Assessments = await P5ProjectService.getStudentAssessmentsForReport(
+    let p5Assessments = await P5ProjectService.getStudentAssessmentsForReport(
       studentId,
       academicYearId
     );
+
+    // P5Project carries NO `semester` column, so the semester is attributed by
+    // when the project ran: a project belongs to Semester 1 if its startDate
+    // falls inside the Semester 1 window, Semester 2 if it falls inside the
+    // Semester 2 window. Without this the same academic year's two semesters
+    // would be mixed into one raport.
+    const academicYear = await prisma.academicYear.findUnique({
+      where: { id: academicYearId },
+      select: { startDate: true, endDate: true },
+    });
+
+    if (academicYear) {
+      const { startDate: semStart, endDate: semEnd } = getSemesterDateRange(academicYear, semester);
+      const inSemester = p5Assessments.filter((assessment) => {
+        const projectStart = new Date(assessment.startDate);
+        return (
+          projectStart.getTime() >= semStart.getTime() && projectStart.getTime() <= semEnd.getTime()
+        );
+      });
+      p5Assessments = inSemester;
+    }
 
     if (p5Assessments.length > 0) {
       // Map to report structure
@@ -482,15 +763,10 @@ export class RaportMerdekaService {
       };
     }
 
-    // Define semester date range
-    const startDate =
-      semester === 1
-        ? academicYear.startDate
-        : new Date(academicYear.startDate.getFullYear() + 1, 0, 1);
-    const endDate =
-      semester === 1
-        ? new Date(academicYear.startDate.getFullYear(), 11, 31)
-        : academicYear.endDate;
+    // Define semester date range using the same boundary as grade
+    // classification, so a date in early January is in the same semester for
+    // both values and attendance.
+    const { startDate, endDate } = getSemesterDateRange(academicYear, semester);
 
     const attendance = await prisma.attendance.groupBy({
       by: ['status'],
@@ -687,18 +963,49 @@ export class RaportMerdekaService {
   static async generateBulkRaportMerdeka(
     classId: string,
     academicYearId: string,
-    semester: number
+    semester: number,
+    user?: JwtPayload
   ) {
-    // Get class with academic year check
+    // Enforce educator authority check for bulk raport generation using the
+    // canonical teacher-or-above RoleCode group shared with the middleware —
+    // not a hand-rolled `endsWith('_GURU')` fragment that drifts from the real
+    // role vocabulary.
+    if (user) {
+      const roleCode = user.roleCode || user.role;
+      if (roleCode !== RoleCode.SUPER_ADMIN && !isTeacherOrAboveRoleCode(roleCode)) {
+        throw new ApiError(
+          ErrorCode.FORBIDDEN,
+          'Akses ditolak. Hanya pendidik dan pengelola yang dapat mengakses raport kelas.'
+        );
+      }
+    }
+
+    // Get class with academic year check and unit scope check
     const classInfo = await prisma.class.findUnique({
       where: { id: classId },
       select: {
+        unitId: true,
         academicYearId: true,
       },
     });
 
     if (!classInfo || classInfo.academicYearId !== academicYearId) {
       throw new ApiError(ErrorCode.NOT_FOUND, 'Kelas tidak ditemukan untuk tahun ajaran ini');
+    }
+
+    if (user && user.role !== 'SUPER_ADMIN' && user.roleCode !== 'SUPER_ADMIN') {
+      // Same gate as the single-student endpoint (`assertRaportAccess`), so the
+      // two flows can never drift apart. A same-unit non-admin teacher is NOT
+      // granted a class raport for a class they do not teach (Flag 4 applies to
+      // the bulk path too). A cross-unit teacher must cover THIS class — an exam
+      // elsewhere in the unit, or a classless subject in another unit, no longer
+      // opens it.
+      await this.assertRaportAccess(
+        user,
+        classInfo.unitId,
+        [classId],
+        'Anda tidak memiliki akses ke kelas di unit lain'
+      );
     }
 
     const enrollments = await prisma.classEnrollment.findMany({
@@ -711,9 +1018,16 @@ export class RaportMerdekaService {
       },
     });
 
+    // The class-level gate (assertRaportAccess above) already proved access to
+    // THIS class, and every student below is enrolled in it for this academic
+    // year, so re-running the per-student scope lookup would repeat the same
+    // student/enrollment/teacher queries once per student for no additional
+    // information. Skip it on the bulk path.
     const reports = await Promise.all(
       enrollments.map((enrollment) =>
-        this.generateRaportMerdeka(enrollment.student.id, academicYearId, semester)
+        this.generateRaportMerdeka(enrollment.student.id, academicYearId, semester, user, {
+          skipScopeValidation: true,
+        })
       )
     );
 
