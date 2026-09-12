@@ -47,8 +47,14 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useCurrentUnit } from "@/hooks";
-import html2canvas from "html2canvas-pro";
-import jsPDF from "jspdf";
+import {
+  useRaportMerdekaStudentData,
+  useRaportMerdekaStudentsList,
+  useRaportMerdekaAcademicYears,
+  useExportRaportMerdekaPdf,
+  useRaportMerdekaP5Dimensions,
+  useRaportMerdekaCpMapping,
+} from "@/hooks/use-kurikulum-merdeka";
 import { toast } from "sonner";
 
 // P5 Dimension Icons
@@ -90,75 +96,61 @@ export default function RaportMerdekaPage() {
   const reportRef = useRef<HTMLDivElement>(null);
   const [isExporting, setIsExporting] = useState(false);
 
-  // Fetch P5 dimensions
-  const { data: p5Dimensions, isLoading: p5Loading } = useQuery<P5Dimension[]>({
-    queryKey: ["p5-dimensions"],
-    queryFn: async () => {
-      const res = await api.get("/assessment/raport-merdeka/p5-dimensions");
-      return res.data.data;
-    },
-  });
+  const [selectedStudentId, setSelectedStudentId] = useState<string>("");
+  const [academicYearId, setAcademicYearId] = useState<string>("");
+  const [semester, setSemester] = useState<string>("1");
+  const [studentSearch, setStudentSearch] = useState<string>("");
 
-  // Fetch CP mappings for reference
-  const { data: cpMtk } = useQuery({
-    queryKey: ["cp-mapping", "MTK"],
-    queryFn: async () => {
-      const res = await api.get("/assessment/raport-merdeka/cp/MTK/7-9");
-      return res.data.data;
-    },
-  });
+  const { data: p5Dimensions, isLoading: p5Loading } = useRaportMerdekaP5Dimensions();
 
-  const { data: cpThf } = useQuery({
-    queryKey: ["cp-mapping", "THF"],
-    queryFn: async () => {
-      const res = await api.get("/assessment/raport-merdeka/cp/THF/7-9");
-      return res.data.data;
-    },
-  });
+  const { data: studentReportData, isLoading: reportLoading } = useRaportMerdekaStudentData(
+    selectedStudentId,
+    academicYearId,
+    semester
+  );
+
+  const { data: cpMtk } = useRaportMerdekaCpMapping("MTK", "7-9");
+  const { data: cpThf } = useRaportMerdekaCpMapping("THF", "7-9");
+
+  const { data: students } = useRaportMerdekaStudentsList(currentUnit?.id, studentSearch);
+  const { data: academicYears } = useRaportMerdekaAcademicYears();
+  const exportPdfMutation = useExportRaportMerdekaPdf();
 
   const handleExportPDF = async () => {
-    if (!reportRef.current) return;
+    if (!selectedStudentId) {
+      toast.error("Pilih siswa terlebih dahulu");
+      return;
+    }
+    if (!academicYearId) {
+      toast.error("Pilih tahun ajaran terlebih dahulu");
+      return;
+    }
 
     try {
       setIsExporting(true);
-      const canvas = await html2canvas(reportRef.current, {
-        scale: 2, // Higher quality
-        useCORS: true,
-        logging: false,
-        backgroundColor: "#ffffff",
+
+      const pdfData = await exportPdfMutation.mutateAsync({
+        studentId: selectedStudentId,
+        academicYearId,
+        semester,
       });
 
-      const imgData = canvas.toDataURL("image/png");
-      const pdf = new jsPDF("p", "mm", "a4");
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
+      const selectedStudent = Array.isArray(students)
+        ? students.find((s) => s.id === selectedStudentId)
+        : null;
+      const studentName = selectedStudent?.user?.name || "Siswa";
 
-      // Calculate scaling to fit A4 width
-      const imgProps = pdf.getImageProperties(imgData);
-      const pdfHeightCalculated = (imgProps.height * pdfWidth) / imgProps.width;
+      const blob = new Blob([pdfData], { type: "application/pdf" });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `Raport_Merdeka_${studentName.replace(/\s+/g, "_")}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
 
-      // If height > A4, we might need multiple pages, but for now let's just fit width or auto-page (advanced)
-      // For this MVP preview which is A4-sized visually, we just place it.
-      // Since our preview might be multiple pages (scroll), html2canvas captures essentialy one long image.
-      // A better approach for multi-page is capturing each "page" div separately, but let's stick to single long capture for now or simplified.
-      // Actually, if we want "Premium" multi-page PDF, we should capture separate page elements.
-      // Let's assume the reportRef wraps the container of pages.
-
-      // Simple strategy: One long page or just fit (it will shrink if too long).
-      // Let's go with adding image.
-
-      if (pdfHeightCalculated > pdfHeight) {
-        // crude pagination or just long page? PDF doesn't support infinite height easily without custom format.
-        // Let's force it to fit for now or just save as is.
-        // Better: Create new page per A4 section.
-        // Implementation detail: User sees ONE preview. We can export that.
-        pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeightCalculated);
-      } else {
-        pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeightCalculated);
-      }
-
-      pdf.save(`Raport_Merdeka_Ahmad_Fulan.pdf`);
-      toast.success("Raport berhasil diexport!");
+      toast.success("Raport vector PDF berhasil diexport!");
     } catch (error) {
       console.error(error);
       toast.error("Gagal export PDF");
@@ -661,38 +653,49 @@ export default function RaportMerdekaPage() {
               <CardContent className="space-y-4">
                 <div className="grid gap-4 md:grid-cols-3">
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Kelas</label>
-                    <Select>
+                    <label className="text-sm font-medium">Pilih Siswa</label>
+                    <input
+                      type="text"
+                      placeholder="Cari siswa..."
+                      className="w-full text-xs px-2 py-1 mb-1 border rounded"
+                      value={studentSearch}
+                      onChange={(e) => setStudentSearch(e.target.value)}
+                    />
+                    <Select value={selectedStudentId} onValueChange={setSelectedStudentId}>
                       <SelectTrigger>
-                        <SelectValue placeholder="Pilih Kelas" />
+                        <SelectValue placeholder="Pilih Siswa" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="7a">VII A</SelectItem>
-                        <SelectItem value="7b">VII B</SelectItem>
-                        <SelectItem value="8a">VIII A</SelectItem>
-                        <SelectItem value="8b">VIII B</SelectItem>
-                        <SelectItem value="9a">IX A</SelectItem>
-                        <SelectItem value="9b">IX B</SelectItem>
+                        {Array.isArray(students) &&
+                          students.map((s) => (
+                            <SelectItem key={s.id} value={s.id}>
+                              {s.user?.name || s.nis} ({s.nis})
+                            </SelectItem>
+                          ))}
                       </SelectContent>
                     </Select>
                   </div>
 
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Tahun Ajaran</label>
-                    <Select>
+                    <Select value={academicYearId} onValueChange={setAcademicYearId}>
                       <SelectTrigger>
                         <SelectValue placeholder="Pilih Tahun" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="2024/2025">2024/2025</SelectItem>
-                        <SelectItem value="2023/2024">2023/2024</SelectItem>
+                        {Array.isArray(academicYears) &&
+                          academicYears.map((ay) => (
+                            <SelectItem key={ay.id} value={ay.id}>
+                              {ay.name}
+                            </SelectItem>
+                          ))}
                       </SelectContent>
                     </Select>
                   </div>
 
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Semester</label>
-                    <Select>
+                    <Select value={semester} onValueChange={setSemester}>
                       <SelectTrigger>
                         <SelectValue placeholder="Pilih Semester" />
                       </SelectTrigger>
@@ -751,116 +754,79 @@ export default function RaportMerdekaPage() {
                   <div className="grid grid-cols-2 gap-x-8 gap-y-1 text-xs mb-6">
                     <div className="grid grid-cols-[100px_1fr]">
                       <div>Nama Peserta Didik</div>
-                      <div className="font-semibold">: Ahmad Fulan</div>
+                      <div className="font-semibold">: {studentReportData?.siswa?.nama || "-"}</div>
                       <div>NIS / NISN</div>
-                      <div>: 12345 / 0012345678</div>
+                      <div>: {studentReportData?.siswa?.nis || "-"} / {studentReportData?.siswa?.nisn || "-"}</div>
                       <div>Sekolah</div>
-                      <div>: SMP Cipansor</div>
+                      <div>: {studentReportData?.siswa?.unit || currentUnit?.name || "-"}</div>
                     </div>
                     <div className="grid grid-cols-[100px_1fr]">
                       <div>Kelas</div>
-                      <div>: VII A</div>
+                      <div>: {studentReportData?.siswa?.kelas || "-"}</div>
                       <div>Fase</div>
-                      <div>: D</div>
+                      <div>: {studentReportData?.siswa?.fase || "-"}</div>
                       <div>Semester</div>
-                      <div>: 1 (Ganjil)</div>
+                      <div>: {semester} ({semester === "1" ? "Ganjil" : "Genap"})</div>
                       <div>Tahun Pelajaran</div>
-                      <div>: 2024/2025</div>
+                      <div>: {studentReportData?.tahunAjaran?.tahun || "-"}</div>
                     </div>
                   </div>
 
                   {/* Content - Academic */}
                   <div className="space-y-4">
                     <h4 className="font-bold text-sm">A. Nilai Akademik</h4>
-                    <table className="w-full border-collapse border border-black text-xs">
-                      <thead>
-                        <tr className="bg-gray-100">
-                          <th className="border border-black p-2 w-8">No</th>
-                          <th className="border border-black p-2 w-[25%] font-bold text-left">
-                            Mata Pelajaran
-                          </th>
-                          <th className="border border-black p-2 w-12 font-bold">
-                            Nilai Akhir
-                          </th>
-                          <th className="border border-black p-2 font-bold text-left">
-                            Capaian Kompetensi
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr className="align-top">
-                          <td className="border border-black p-2 text-center">
-                            1
-                          </td>
-                          <td className="border border-black p-2 font-medium">
-                            Pendidikan Agama Islam
-                          </td>
-                          <td className="border border-black p-2 text-center font-bold">
-                            88
-                          </td>
-                          <td className="border border-black p-2">
-                            <div className="space-y-1">
-                              <p>
-                                <span className="font-semibold">
-                                  Menunjukkan penguasaan yang sangat baik
-                                </span>{" "}
-                                dalam memahami rukun iman dan rukun islam.
-                              </p>
-                              <p className="text-gray-600 italic">
-                                Perlu bimbingan dalam mempraktikkan bacaan
-                                tajwid secara konsisten.
-                              </p>
-                            </div>
-                          </td>
-                        </tr>
-                        <tr className="align-top">
-                          <td className="border border-black p-2 text-center">
-                            2
-                          </td>
-                          <td className="border border-black p-2 font-medium">
-                            Bahasa Indonesia
-                          </td>
-                          <td className="border border-black p-2 text-center font-bold">
-                            92
-                          </td>
-                          <td className="border border-black p-2">
-                            <div className="space-y-1">
-                              <p>
-                                <span className="font-semibold">
-                                  Menunjukkan penguasaan yang sangat baik
-                                </span>{" "}
-                                dalam menulis teks deskripsi dan narasi.
-                              </p>
-                            </div>
-                          </td>
-                        </tr>
-                        <tr className="align-top">
-                          <td className="border border-black p-2 text-center">
-                            3
-                          </td>
-                          <td className="border border-black p-2 font-medium">
-                            Matematika
-                          </td>
-                          <td className="border border-black p-2 text-center font-bold">
-                            78
-                          </td>
-                          <td className="border border-black p-2">
-                            <div className="space-y-1">
-                              <p>
-                                <span className="font-semibold">
-                                  Menunjukkan penguasaan yang baik
-                                </span>{" "}
-                                dalam operasi bilangan bulat.
-                              </p>
-                              <p className="text-gray-600 italic">
-                                Perlu bimbingan dalam menyelesaikan persamaan
-                                linear satu variabel.
-                              </p>
-                            </div>
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
+                    {reportLoading ? (
+                      <div className="flex items-center justify-center p-8 text-muted-foreground">
+                        <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                        Memuat nilai akademik...
+                      </div>
+                    ) : (
+                      <table className="w-full border-collapse border border-black text-xs">
+                        <thead>
+                          <tr className="bg-gray-100">
+                            <th className="border border-black p-2 w-8">No</th>
+                            <th className="border border-black p-2 w-[25%] font-bold text-left">
+                              Mata Pelajaran
+                            </th>
+                            <th className="border border-black p-2 w-12 font-bold">
+                              Nilai Akhir
+                            </th>
+                            <th className="border border-black p-2 font-bold text-left">
+                              Capaian Kompetensi
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(() => {
+                            const allSubjects = [
+                              ...(studentReportData?.intrakurikuler?.kelompokUmum || []),
+                              ...(studentReportData?.intrakurikuler?.kelompokPesantren || []),
+                            ];
+
+                            if (allSubjects.length > 0) {
+                              return allSubjects.map((item, idx) => (
+                                <tr key={idx} className="align-top">
+                                  <td className="border border-black p-2 text-center">{idx + 1}</td>
+                                  <td className="border border-black p-2 font-medium">{item.subjectName}</td>
+                                  <td className="border border-black p-2 text-center font-bold">{item.nilaiAkhir}</td>
+                                  <td className="border border-black p-2"><p>{item.deskripsi}</p></td>
+                                </tr>
+                              ));
+                            }
+
+                            return (
+                              <tr>
+                                <td colSpan={4} className="border border-black p-4 text-center text-muted-foreground">
+                                  {selectedStudentId
+                                    ? "Belum ada data nilai intrakurikuler untuk siswa dan semester ini."
+                                    : "Pilih siswa dan tahun ajaran di atas untuk melihat preview nilai."}
+                                </td>
+                              </tr>
+                            );
+                          })()}
+                        </tbody>
+                      </table>
+                    )}
                   </div>
 
                   {/* Content - Extracurricular */}
@@ -882,31 +848,24 @@ export default function RaportMerdekaPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        <tr>
-                          <td className="border border-black p-2 text-center">
-                            1
-                          </td>
-                          <td className="border border-black p-2">Pramuka</td>
-                          <td className="border border-black p-2 text-center">
-                            Baik
-                          </td>
-                          <td className="border border-black p-2">
-                            Mampu mengikuti kegiatan kepramukaan dengan
-                            disiplin.
-                          </td>
-                        </tr>
-                        <tr>
-                          <td className="border border-black p-2 text-center">
-                            2
-                          </td>
-                          <td className="border border-black p-2">Futsal</td>
-                          <td className="border border-black p-2 text-center">
-                            Sangat Baik
-                          </td>
-                          <td className="border border-black p-2">
-                            Menunjukkan bakat kepemimpinan dalam tim.
-                          </td>
-                        </tr>
+                        {studentReportData?.ekstrakurikuler && studentReportData.ekstrakurikuler.length > 0 ? (
+                          studentReportData.ekstrakurikuler.map((ekstra, idx) => (
+                            <tr key={idx}>
+                              <td className="border border-black p-2 text-center">{idx + 1}</td>
+                              <td className="border border-black p-2">{ekstra.nama}</td>
+                              <td className="border border-black p-2 text-center">{ekstra.predikat}</td>
+                              <td className="border border-black p-2">{ekstra.keterangan}</td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={4} className="border border-black p-4 text-center text-muted-foreground">
+                              {selectedStudentId
+                                ? "Tidak ada kegiatan ekstrakurikuler terdaftar."
+                                : "Pilih siswa di atas untuk melihat kegiatan ekstrakurikuler."}
+                            </td>
+                          </tr>
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -917,17 +876,23 @@ export default function RaportMerdekaPage() {
                     <div className="border border-black w-1/2 text-xs">
                       <div className="grid grid-cols-[1fr_60px] border-b border-black last:border-0">
                         <div className="p-2 border-r border-black">Sakit</div>
-                        <div className="p-2 text-center">1 hari</div>
+                        <div className="p-2 text-center">
+                          {studentReportData?.kehadiran?.sakit ?? "-"} hari
+                        </div>
                       </div>
                       <div className="grid grid-cols-[1fr_60px] border-b border-black last:border-0">
                         <div className="p-2 border-r border-black">Izin</div>
-                        <div className="p-2 text-center">0 hari</div>
+                        <div className="p-2 text-center">
+                          {studentReportData?.kehadiran?.izin ?? "-"} hari
+                        </div>
                       </div>
                       <div className="grid grid-cols-[1fr_60px] border-b border-black last:border-0">
                         <div className="p-2 border-r border-black">
                           Tanpa Keterangan
                         </div>
-                        <div className="p-2 text-center">0 hari</div>
+                        <div className="p-2 text-center">
+                          {studentReportData?.kehadiran?.alpa ?? "-"} hari
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -943,15 +908,19 @@ export default function RaportMerdekaPage() {
                       <p className="border-b border-black min-w-[150px] inline-block"></p>
                     </div>
                     <div className="text-center">
-                      <p>Bogor, 20 Desember 2024</p>
+                      <p>
+                        {studentReportData?.tanggalCetak
+                          ? `Bogor, ${new Date(studentReportData.tanggalCetak).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}`
+                          : "Bogor, ........................"}
+                      </p>
                       <p>Wali Kelas</p>
                       <br />
                       <br />
                       <br />
                       <p className="font-bold underline">
-                        Nama Wali Kelas, S.Pd
+                        {studentReportData?.waliKelas?.nama ?? "-"}
                       </p>
-                      <p>NIP. 19800101 200501 1 001</p>
+                      <p>NIP. {studentReportData?.waliKelas?.nip ?? "-"}</p>
                     </div>
                   </div>
                 </div>
@@ -971,7 +940,7 @@ export default function RaportMerdekaPage() {
                   {/* Student Info Review */}
                   <div className="border-b pb-2 mb-4">
                     <p className="font-semibold">
-                      Nama: Ahmad Fulan (Kelas VII A)
+                      Nama: {studentReportData?.siswa?.nama || "-"} (Kelas: {studentReportData?.siswa?.kelas || "-"})
                     </p>
                   </div>
 
@@ -982,7 +951,7 @@ export default function RaportMerdekaPage() {
                         D. Tahfidz Al-Qur'an
                       </h4>
                       <Badge className="bg-green-600">
-                        Target: Juz 30 & 29
+                        Target: {studentReportData?.tahfidz?.targetCapaian ?? "-"}
                       </Badge>
                     </div>
 
@@ -992,10 +961,10 @@ export default function RaportMerdekaPage() {
                           Capaian Hafalan (Ziyadah)
                         </div>
                         <div className="text-3xl font-bold text-green-700">
-                          1.5 Juz
+                          {studentReportData?.tahfidz?.totalJuz ?? "-"} Juz
                         </div>
                         <p className="text-sm">
-                          Terakhir: QS. Al-Mulk ayat 1-30
+                          Terakhir: {studentReportData?.tahfidz?.surahTerakhir ?? "-"}
                         </p>
                       </div>
                       <div className="border rounded p-4 space-y-2">
@@ -1003,10 +972,10 @@ export default function RaportMerdekaPage() {
                           Predikat Murojaah
                         </div>
                         <div className="text-3xl font-bold text-blue-700">
-                          Mumtaz
+                          {studentReportData?.tahfidz?.statusCapaian ?? "-"}
                         </div>
                         <p className="text-sm">
-                          Sangat lancar dalam mengulang hafalan lama.
+                          {studentReportData?.tahfidz?.catatan ?? "-"}
                         </p>
                       </div>
                     </div>
@@ -1026,27 +995,28 @@ export default function RaportMerdekaPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        <tr>
-                          <td className="border border-black p-2">
-                            Kelancaran (Fashohah)
-                          </td>
-                          <td className="border border-black p-2 text-center font-bold">
-                            A
-                          </td>
-                          <td className="border border-black p-2">
-                            Mampu membaca dengan sangat lancar dan fasih.
-                          </td>
-                        </tr>
-                        <tr>
-                          <td className="border border-black p-2">Tajwid</td>
-                          <td className="border border-black p-2 text-center font-bold">
-                            B
-                          </td>
-                          <td className="border border-black p-2">
-                            Penerapan hukum bacaan sudah baik, perlu ketelitian
-                            mad lazim.
-                          </td>
-                        </tr>
+                        {selectedStudentId && studentReportData?.tahfidz ? (
+                          <tr>
+                            <td
+                              colSpan={3}
+                              className="border border-black p-4 text-center text-muted-foreground"
+                            >
+                              Rincian aspek penilaian tahfidz belum tersedia.
+                              Ringkasan capaian dapat dilihat di atas.
+                            </td>
+                          </tr>
+                        ) : (
+                          <tr>
+                            <td
+                              colSpan={3}
+                              className="border border-black p-4 text-center text-muted-foreground"
+                            >
+                              {selectedStudentId
+                                ? "Belum ada data tahfidz untuk siswa ini."
+                                : "Pilih siswa untuk melihat capaian tahfidz."}
+                            </td>
+                          </tr>
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -1057,20 +1027,6 @@ export default function RaportMerdekaPage() {
                       <h4 className="font-bold text-blue-900">
                         E. Kepribadian & Akhlak (Behavior)
                       </h4>
-                      <div className="flex gap-2">
-                        <Badge
-                          variant="outline"
-                          className="border-green-500 text-green-700 bg-green-50"
-                        >
-                          +150 Poin
-                        </Badge>
-                        <Badge
-                          variant="outline"
-                          className="border-red-500 text-red-700 bg-red-50"
-                        >
-                          -10 Poin
-                        </Badge>
-                      </div>
                     </div>
 
                     <table className="w-full border-collapse border border-black text-xs">
@@ -1087,43 +1043,13 @@ export default function RaportMerdekaPage() {
                       </thead>
                       <tbody>
                         <tr>
-                          <td className="border border-black p-2 text-center">
-                            1
-                          </td>
-                          <td className="border border-black p-2 font-medium">
-                            Kedisiplinan
-                          </td>
-                          <td className="border border-black p-2">
-                            Sangat disiplin dalam sholat berjamaah.{" "}
-                            <span className="text-green-600 font-semibold">
-                              (+50 Poin)
-                            </span>
-                          </td>
-                        </tr>
-                        <tr>
-                          <td className="border border-black p-2 text-center">
-                            2
-                          </td>
-                          <td className="border border-black p-2 font-medium">
-                            Kebersihan
-                          </td>
-                          <td className="border border-black p-2">
-                            Lupa merapikan tempat tidur pada pekan ke-3.{" "}
-                            <span className="text-red-600 font-semibold">
-                              (-10 Poin)
-                            </span>
-                          </td>
-                        </tr>
-                        <tr>
-                          <td className="border border-black p-2 text-center">
-                            3
-                          </td>
-                          <td className="border border-black p-2 font-medium">
-                            Sosial
-                          </td>
-                          <td className="border border-black p-2">
-                            Sering membantu teman yang sakit. Ananda memiliki
-                            jiwa sosial yang tinggi.
+                          <td
+                            colSpan={3}
+                            className="border border-black p-4 text-center text-muted-foreground"
+                          >
+                            {selectedStudentId
+                              ? "Belum ada catatan perilaku untuk siswa ini."
+                              : "Pilih siswa untuk melihat catatan perilaku."}
                           </td>
                         </tr>
                       </tbody>
@@ -1140,19 +1066,19 @@ export default function RaportMerdekaPage() {
                         <div className="text-muted-foreground">
                           Sholat Berjamaah
                         </div>
-                        <div className="text-lg font-bold">95%</div>
+                        <div className="text-lg font-bold">-</div>
                       </div>
                       <div className="border p-2 rounded">
                         <div className="text-muted-foreground">
                           Sholat Dhuha
                         </div>
-                        <div className="text-lg font-bold">80%</div>
+                        <div className="text-lg font-bold">-</div>
                       </div>
                       <div className="border p-2 rounded">
                         <div className="text-muted-foreground">
                           Puasa Sunnah
                         </div>
-                        <div className="text-lg font-bold">Senin-Kamis</div>
+                        <div className="text-lg font-bold">-</div>
                       </div>
                     </div>
                   </div>
@@ -1165,15 +1091,23 @@ export default function RaportMerdekaPage() {
                       <br />
                       <br />
                       <br />
-                      <p className="font-bold underline">KH. Abdullah, Lc</p>
+                      <p className="font-bold underline">
+                        {studentReportData?.pimpinanUnit?.nama ?? "-"}
+                      </p>
                     </div>
                     <div className="text-center">
-                      <p>Bogor, 20 Desember 2024</p>
-                      <p>Musyrif Kamar</p>
+                      <p>
+                        {studentReportData?.tanggalCetak
+                          ? `Bogor, ${new Date(studentReportData.tanggalCetak).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}`
+                          : "Bogor, ........................"}
+                      </p>
+                      <p>Wali Kelas</p>
                       <br />
                       <br />
                       <br />
-                      <p className="font-bold underline">Ustadz Ahmad</p>
+                      <p className="font-bold underline">
+                        {studentReportData?.waliKelas?.nama ?? "-"}
+                      </p>
                     </div>
                   </div>
 

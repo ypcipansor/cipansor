@@ -68,6 +68,7 @@ export interface SecretCheckInput {
   env?: string;
   jwtSecret?: string;
   encryptionKey?: string;
+  studentCardHmacSecret?: string;
 }
 
 function inspect(variable: string, value: string | undefined, issues: SecretIssue[]): void {
@@ -116,6 +117,11 @@ export function findSecretIssues(input: SecretCheckInput): SecretIssue[] {
   // silently substitutes the sequential default above, and system secrets get
   // encrypted with a key anyone can read.
   inspect('ENCRYPTION_KEY', input.encryptionKey, issues);
+  // Required, not optional, in production. A card signer that falls back to
+  // the session key means every printed card dies on the next JWT rotation;
+  // a card signer that falls back to a hardcoded value means anyone can mint
+  // a verifiable card. Refuse to boot in either case.
+  inspect('STUDENT_CARD_HMAC_SECRET', input.studentCardHmacSecret, issues);
   return issues;
 }
 
@@ -131,6 +137,8 @@ export function assertProductionSecrets(input: SecretCheckInput = {}): void {
     env,
     jwtSecret: input.jwtSecret ?? process.env.JWT_SECRET,
     encryptionKey: input.encryptionKey ?? process.env.ENCRYPTION_KEY,
+    studentCardHmacSecret:
+      input.studentCardHmacSecret ?? process.env.STUDENT_CARD_HMAC_SECRET,
   });
 
   if (issues.length === 0) return;

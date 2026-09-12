@@ -61,6 +61,7 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-15m}
       JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-30d}
+      STUDENT_CARD_HMAC_SECRET: ${STUDENT_CARD_HMAC_SECRET:-}
       # Falls back to a public hardcoded key inside the API if unset.
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}

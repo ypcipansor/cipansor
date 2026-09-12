@@ -61,8 +61,18 @@ export const createLetterSchema = z.object({
   classificationId: z.string().uuid().optional(),
   agendaNumber: z.string().optional(),
   letterNumber: z.string().optional(),
-  date: z.string(),
-  receivedAt: z.string().optional(),
+  date: z
+    .string()
+    .min(1)
+    .refine((v) => !Number.isNaN(Date.parse(v)), {
+      message: "Tanggal surat tidak sah",
+    }),
+  receivedAt: z
+    .string()
+    .optional()
+    .refine((v) => !v || !Number.isNaN(Date.parse(v)), {
+      message: "Tanggal penerimaan tidak sah",
+    }),
   subject: z.string().min(1),
   content: z.string().optional(),
   fileUrl: z.string().url().optional(),
@@ -152,3 +162,39 @@ export const submitLetterSchema = z.object({
 });
 
 export type SubmitLetterSchemaInput = z.infer<typeof submitLetterSchema>;
+
+export const updateLetterSchema = z.object({
+  type: z.nativeEnum(LetterType).optional(),
+  classificationId: z.string().uuid().optional().nullable(),
+  // A malformed `date`/`receivedAt` used to reach `new Date(...)` in the
+  // service and surface as a 500. Reject it at the edge as a 400 instead.
+  date: z
+    .string()
+    .min(1)
+    .refine((v) => !Number.isNaN(Date.parse(v)), {
+      message: "Tanggal surat tidak sah",
+    })
+    .optional(),
+  receivedAt: z
+    .string()
+    .optional()
+    .refine((v) => !v || !Number.isNaN(Date.parse(v)), {
+      message: "Tanggal penerimaan tidak sah",
+    }),
+  subject: z.string().min(1).optional(),
+  content: z.string().optional(),
+  fileUrl: z.string().url().optional().nullable(),
+  urgency: z.nativeEnum(LetterUrgency).optional(),
+  nature: z.nativeEnum(LetterNature).optional(),
+  senderName: z.string().optional().nullable(),
+  senderTitle: z.string().optional().nullable(),
+  senderInstance: z.string().optional().nullable(),
+  recipientName: z.string().optional().nullable(),
+  recipientInstance: z.string().optional().nullable(),
+  reviewerIds: z.array(z.string().uuid()).optional(),
+  recipientIds: z.array(z.string().uuid()).optional(),
+  ccRecipients: z.array(letterCcSchema).max(30).optional(),
+  attachments: z.array(letterAttachmentSchema).max(20).optional(),
+});
+
+export type UpdateLetterSchemaInput = z.infer<typeof updateLetterSchema>;

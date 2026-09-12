@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { UnifiedRaportService } from './unified-raport.service';
 import { ApiResponse } from '@/utils/response';
+import { requireUser } from '@/middleware/auth';
 
 export class UnifiedRaportController {
   /**
@@ -21,7 +22,8 @@ export class UnifiedRaportController {
       const result = await UnifiedRaportService.generateUnifiedRaport(
         studentId,
         academicYearId as string,
-        parseInt(semester as string, 10)
+        parseInt(semester as string, 10),
+        requireUser(req)
       );
 
       return res.json(ApiResponse.success(result, 'Unified Raport generated successfully'));
@@ -48,7 +50,8 @@ export class UnifiedRaportController {
       const result = await UnifiedRaportService.getPrintData(
         studentId,
         academicYearId as string,
-        parseInt(semester as string, 10)
+        parseInt(semester as string, 10),
+        requireUser(req)
       );
 
       return res.json(

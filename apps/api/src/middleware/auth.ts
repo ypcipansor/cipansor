@@ -379,6 +379,16 @@ const TEACHER_OR_ABOVE_CODES: string[] = [
 ];
 
 /**
+ * True when a RoleCode belongs to the canonical "teacher or above" group
+ * (admins + educators). Shared by the middleware and by services that must
+ * scope cross-unit educator access, so the judgement lives in ONE place rather
+ * than being re-derived with `endsWith('_GURU')` string fragments.
+ */
+export function isTeacherOrAboveRoleCode(roleCode: string): boolean {
+  return TEACHER_OR_ABOVE_CODES.includes(roleCode);
+}
+
+/**
  * Check if user is Teacher or above
  */
 export function isTeacherOrAbove(req: Request, res: Response, next: NextFunction) {
