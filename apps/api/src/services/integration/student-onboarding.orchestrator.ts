@@ -1,71 +1,183 @@
 import { prisma } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
-import { PaymentStatus, Registrant } from '@prisma/client';
-import {
-  syncParentRoleAssignments,
-  type ParentScopeClient,
-} from '@/utils/parent-scope';
+import { RoleCode, UnitType } from '@prisma/client';
+import { syncParentRoleAssignments, type ParentScopeClient } from '@/utils/parent-scope';
 import { assertAdmissionFeeSettled } from '@/utils/admission-fee-gate';
+import { studentsHoldLogins } from '@/utils/student-login-policy';
+
+/**
+ * The per-unit student RoleCode that grants the onboarding user a real role
+ * assignment. The role catalogue is unit-specific (`SDIT_SISWA`, `SMPIT_SISWA`,
+ * `SMAQ_SISWA`, `PT_MAHASISWA`) — there is no bare `STUDENT` code to look up.
+ * TK Qur'an children hold no login, so `TK_QURAN` deliberately maps to nothing.
+ */
+export const STUDENT_ROLE_BY_UNIT_TYPE: Partial<Record<UnitType, RoleCode>> = {
+  [UnitType.SD_IT]: RoleCode.SDIT_SISWA,
+  [UnitType.SMP_IT]: RoleCode.SMPIT_SISWA,
+  [UnitType.SMA_QURAN]: RoleCode.SMAQ_SISWA,
+  [UnitType.PERGURUAN_TINGGI]: RoleCode.PT_MAHASISWA,
+};
+
+/** The student RoleCode for a unit type, or undefined when the unit has none. */
+export function studentRoleForUnitType(
+  unitType: UnitType | null | undefined
+): RoleCode | undefined {
+  return unitType ? STUDENT_ROLE_BY_UNIT_TYPE[unitType] : undefined;
+}
+
+export interface EnrollmentOptions {
+  classId?: string;
+  assignedClassId?: string;
+  academicYearId?: string;
+  nis?: string;
+  nisn?: string;
+  roomId?: string;
+}
+
+export interface EnrollmentResult {
+  success: boolean;
+  studentId: string;
+  userId: string;
+  nis: string;
+  email: string;
+  unitCode: string;
+  // Reset tokens are intentionally absent: they are secrets delivered only via
+  // the post-commit event dispatch (email), never returned to the API caller.
+  parentUserId?: string;
+  parentEmail?: string;
+  parentName?: string;
+  studentName?: string;
+  effectiveUnitId?: string;
+}
 
 export class StudentOnboardingOrchestrator {
   /**
    * Process a registrant to become a full student
    * This is an integration point touching multiple domains:
    * PSB -> HR/User -> Academic -> Health -> Finance
-   *
-   * IMPORTANT — DUAL ENROLLMENT PATHS:
-   * The legacy enrollment entry point lives in
-   * `apps/api/src/modules/admissions/service.ts` (`enrollRegistrant`)
-   * and is exposed via `POST /api/admissions/registrants/:id/enroll`.
-   * The two paths intentionally do different work; see the JSDoc on
-   * `enrollRegistrant` for the side-by-side comparison. If you change
-   * any enrollment business rule here (parent account creation, wallet
-   * setup, medical record bootstrap, NIS generation, event emission,
-   * etc.), update `enrollRegistrant` too — or explicitly document why
-   * the two paths should diverge. Failing to do so leaves student
-   * records in inconsistent states depending on which API the caller
-   * used.
    */
   static async processEnrollment(
     registrantId: string,
     unitId: string,
     processedById: string,
-    assignedClassId?: string,
-    academicYearId?: string
-  ) {
+    options?: EnrollmentOptions | string,
+    legacyAcademicYearId?: string
+  ): Promise<EnrollmentResult> {
+    // Normalise options
+    let classId: string | undefined = undefined;
+    let academicYearId: string | undefined = legacyAcademicYearId;
+    let customNis: string | undefined = undefined;
+    let nisn: string | undefined = undefined;
+    let roomId: string | undefined = undefined;
+
+    if (typeof options === 'string') {
+      classId = options;
+    } else if (options && typeof options === 'object') {
+      classId = options.classId || options.assignedClassId;
+      academicYearId = options.academicYearId || legacyAcademicYearId;
+      customNis = options.nis;
+      nisn = options.nisn;
+      roomId = options.roomId;
+    }
+
+    // Reset tokens are SECRETS. They are generated inside the transaction but
+    // must never be returned to the API caller (a staff member could then take
+    // over the student/parent account). They are captured here separately and
+    // delivered only through the post-commit event dispatch (email/notification).
+    const emittedSecret = {
+      studentResetToken: undefined as string | undefined,
+      studentResetEmail: undefined as string | undefined,
+      studentResetUserId: undefined as string | undefined,
+      studentResetName: undefined as string | undefined,
+      isNewUser: false,
+      // Whether the new student was issued a credential. Identity-only units
+      // (TK Qur'an) produce no login, so no reset-token event is emitted and
+      // the account-created notification must not claim a password was sent.
+      studentHasLogin: true,
+      parentResetToken: undefined as string | undefined,
+      parentResetEmail: undefined as string | undefined,
+      parentResetUserId: undefined as string | undefined,
+      parentResetName: undefined as string | undefined,
+    };
+
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Get registrant data
+      // 1. Lock registrant row for concurrency protection
+      await tx.$executeRaw`SELECT id FROM "registrants" WHERE id = ${registrantId} FOR UPDATE`;
+
+      // Get registrant data
       const registrant = await tx.registrant.findUnique({
         where: { id: registrantId },
+        include: { admissionPeriod: true, wave: true },
       });
 
       if (!registrant) {
         throw Errors.notFound('Registrant');
       }
 
+      if (registrant.status === 'ENROLLED' || registrant.studentId) {
+        throw Errors.conflict('Pendaftar ini telah terdaftar sebagai santri (enrolled)');
+      }
+
       if (registrant.status !== 'ACCEPTED') {
-        throw Errors.badRequest('Only ACCEPTED registrants can be enrolled');
+        throw Errors.badRequest('Hanya pendaftar dengan status ACCEPTED yang dapat di-onboard');
       }
 
       // Being accepted is an academic decision; it is not daftar ulang. The
-      // fee owed lives on the period, so it has to be read alongside.
-      const period = await tx.admissionPeriod.findUnique({
-        where: { id: registrant.admissionPeriodId },
-        select: { registrationFee: true },
-      });
+      // fee owed lives on the period, but the wave may override it with its own
+      // registrationFee — a wave can charge more/less than its parent period.
+      const period =
+        registrant.admissionPeriod ||
+        (await tx.admissionPeriod.findUnique({
+          where: { id: registrant.admissionPeriodId },
+          select: { registrationFee: true, academicYearId: true },
+        }));
+
+      const effectiveUnitId = period?.unitId || unitId;
+
+      // Wave fee takes precedence over the period fee for this registrant.
+      const effectiveRegistrationFee =
+        registrant.wave?.registrationFee ?? period?.registrationFee ?? null;
+
       assertAdmissionFeeSettled({
-        registrationFee: period?.registrationFee ?? null,
+        registrationFee: effectiveRegistrationFee,
         registrationFeePaidAt: registrant.registrationFeePaidAt,
       });
+
+      // Resolve the effective unit once: its type drives both the NIS prefix
+      // and the per-unit student RoleCode below.
+      const unit = await tx.unit.findUnique({
+        where: { id: effectiveUnitId },
+        select: { type: true },
+      });
+      const unitType = unit?.type ?? null;
+      const unitCode = unitType ? unitType.toUpperCase() : 'UNK';
+
+      // Resolve academicYearId if not passed explicitly
+      if (!academicYearId && period?.academicYearId) {
+        academicYearId = period.academicYearId;
+      }
 
       // 2. Create User Account for Student
       const crypto = await import('crypto');
       const { hashPassword } = await import('@/lib/password');
 
+      // Whether a pupil at this unit type is issued a credential at all.
+      // TK Qur'an children never hold logins (see `student-login-policy`): they
+      // still get a User row (so the Student `userId` reference and the parent
+      // portal have an identity to point at) but with `passwordHash` null, no
+      // reset token, and no ability to sign in — mirroring `student.service.ts`.
+      // A unit with no mapped student role (TK) must therefore not force the
+      // creation of a role/login either.
+      const withLogin = unitType ? studentsHoldLogins(unitType) : true;
+
       // Use crypto for password reset token generation
-      const resetToken = crypto.randomBytes(32).toString('hex');
-      const resetTokenExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
-      const passwordHash = await hashPassword(crypto.randomBytes(8).toString('hex')); // Dummy secure hash, user will reset it
+      const resetToken = withLogin ? crypto.randomBytes(32).toString('hex') : undefined;
+      const resetTokenExpiry = withLogin
+        ? new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
+        : undefined;
+      const passwordHash = withLogin
+        ? await hashPassword(crypto.randomBytes(8).toString('hex')) // Dummy secure hash
+        : null;
 
       // Extract parts of name to create a safe email
       let cleanName = registrant.fullName.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -73,122 +185,266 @@ export class StudentOnboardingOrchestrator {
         cleanName = 'student'; // Fallback for non-Latin names
       }
 
-      // 3. Create Student Record (Generate NIS first so we can use it for email)
+      // 3. Resolve or Generate NIS
       const year = new Date().getFullYear();
+      let nis = customNis;
 
-      // Look up unit dynamically, fallback to UNK
-      let unitCode = 'UNK';
-      const unit = await tx.unit.findUnique({ where: { id: unitId }, select: { type: true } });
-      if (unit && unit.type) {
-        unitCode = unit.type.toUpperCase();
+      if (!nis) {
+        // Use Postgres advisory locks to serialize NIS generation for the same unit + year
+        const prefix = `NIS-${year}-${unitCode}-`;
+
+        let lockKey = 0;
+        for (let i = 0; i < prefix.length; i++) {
+          lockKey = (lockKey << 5) - lockKey + prefix.charCodeAt(i);
+          lockKey = lockKey & lockKey;
+        }
+
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(${lockKey})`;
+
+        const prefixLen = prefix.length + 1;
+        const results = await tx.$queryRaw<Array<{ max_seq: number | null }>>`
+          SELECT MAX(CAST(substr(nis, ${prefixLen}) AS INTEGER)) as max_seq
+          FROM "students"
+          WHERE "unit_id" = ${effectiveUnitId} AND nis LIKE ${prefix + '%'} AND substr(nis, ${prefixLen}) ~ '^[0-9]+$'
+        `;
+
+        let maxSeq = 0;
+        if (results && results.length > 0 && results[0].max_seq != null) {
+          maxSeq = Number(results[0].max_seq);
+        }
+
+        const nextSeq = maxSeq + 1;
+        nis = `${prefix}${String(nextSeq).padStart(4, '0')}`;
       }
 
-      // Use Postgres advisory locks to serialize NIS generation for the same unit + year
-      const prefix = `NIS-${year}-${unitCode}-`;
+      // Determine student email: prefer real registrant.email, fallback to .local.
+      // NOTE (account-takeover prevention): the registrant email is UNVERIFIED —
+      // nothing in this flow proves the person submitting the form owns it. It is
+      // therefore never safe to *reuse* an existing account matched by raw email:
+      // two different registrants both entering a student's email could otherwise
+      // claim (and recycle) that student's User + Student record.
+      const realEmail =
+        registrant.email && registrant.email.trim() !== '' ? registrant.email.trim() : null;
+      const fallbackBase = `${cleanName}.${nis.toLowerCase()}@student.cipansor.local`;
 
-      // Hash the prefix into an integer for the pg_advisory_xact_lock
-      let lockKey = 0;
-      for (let i = 0; i < prefix.length; i++) {
-        lockKey = ((lockKey << 5) - lockKey) + prefix.charCodeAt(i);
-        lockKey = lockKey & lockKey; // Convert to 32bit integer
-      }
-
-      // Acquire a transaction-level advisory lock (released automatically at transaction end)
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${lockKey})`;
-
-      // Find the absolute maximum sequence number for this unit and year (ignoring legacy formats).
-      // We parse the integer value directly in the SQL to handle numbers > 9999 properly.
-      // Note: The table name in Prisma PostgreSQL is typically "students" or "Student" mapped.
-      // Use substr(text, position): its second argument is unambiguously a
-      // start index. `SUBSTRING(nis FROM $1)` binds $1 as text, which makes
-      // Postgres pick the POSIX-regex form (`SUBSTRING(string FROM pattern)`)
-      // instead of the positional form — so the sequence never parsed and
-      // maxSeq stayed 0, making every second onboarding in a unit/year collide
-      // on the generated NIS.
-      const prefixLen = prefix.length + 1; // +1 for SQL substr which is 1-indexed
-      const results = await tx.$queryRaw<Array<{ max_seq: number | null }>>`
-        SELECT MAX(CAST(substr(nis, ${prefixLen}) AS INTEGER)) as max_seq
-        FROM "students"
-        WHERE "unit_id" = ${unitId} AND nis LIKE ${prefix + '%'} AND substr(nis, ${prefixLen}) ~ '^[0-9]+$'
-      `;
-
-      let maxSeq = 0;
-      if (results && results.length > 0 && results[0].max_seq != null) {
-        maxSeq = Number(results[0].max_seq);
-      }
-
-      const nextSeq = maxSeq + 1;
-      const nis = `${prefix}${String(nextSeq).padStart(4, '0')}`;
-
-      const email = `${cleanName}.${nis.toLowerCase()}@student.cipansor.local`;
-
-      const { eventBus } = await import('@/lib/event-bus');
-
-      // @ts-ignore - Ignore type error as Prisma types might be lagging behind schema for password reset
-      const user = await tx.user.create({
-        data: {
-          name: registrant.fullName,
-          email,
-          passwordHash,
-          resetTokenHash: crypto.createHash('sha256').update(resetToken).digest('hex'),
-          resetTokenExpiresAt: resetTokenExpiry,
-          role: 'STUDENT',
-          unitId,
-          isActive: true,
-        },
-      });
-
-
-      const student = await (tx.student.create as any)({
-        data: {
-          userId: user.id,
-          status: 'active',
-          unitId,
-          nis,
-          entryYear: year, // entryYear requires an Int, using current year
-
-          // Core Data mapping from registrant
-          gender: registrant.gender,
-          birthPlace: registrant.birthPlace,
-          birthDate: registrant.birthDate,
-          address: registrant.address,
-          parentName: registrant.parentName,
-          parentPhone: registrant.parentPhone,
-          parentEmail: registrant.parentEmail,
-
-          // Link back
-          registrant: {
-            connect: { id: registrant.id }
+      // Resolve the email actually used for the *new* student account.
+      let email: string;
+      let user: { id: string; role: string | null } | null = null;
+      if (realEmail) {
+        const existing = await tx.user.findUnique({ where: { email: realEmail } });
+        if (existing) {
+          // An existing non-student account (staff, teacher, parent, admin) must
+          // never be repurposed into a student login — that would let a registrant
+          // take over an existing account using only its (unverified) email.
+          if (existing.role !== 'STUDENT') {
+            throw Errors.conflict('Email sudah terdaftar pada akun lain yang tidak sesuai');
           }
-        },
+          // The email belongs to a student account but the registrant has not
+          // proven ownership of it, so we must NOT recycle that account (which
+          // would also steal that student's Student record). Create a fresh,
+          // unit-scoped .local account instead; the same registrant can later be
+          // merged onto the existing student record by an authorised operator.
+          email = fallbackBase;
+        } else {
+          email = realEmail;
+        }
+      } else {
+        email = fallbackBase;
+      }
+
+      // A .local fallback must be unique — it embeds a per-unit NIS so it is
+      // already highly unlikely to collide, but take no chance: append a suffix
+      // until the address is free rather than reusing (or chasing) another row.
+      // The loop is bounded: each candidate is a distinct address (incrementing
+      // suffix), so under sane data it breaks on the first free one; the cap is
+      // only an escape hatch so a pathological store (or a test mock that never
+      // returns null) cannot wedge onboarding in an infinite loop.
+      let candidate = email;
+      let suffix = 2;
+      const MAX_UNIQUE_EMAIL_ATTEMPTS = 25;
+      // A fallback address colliding with an existing row gets a numeric suffix
+      // inserted *inside the local part* so the address still ends in `.local`.
+      const FALLBACK_DOMAIN = '@student.cipansor.local';
+      const fallbackLocal = fallbackBase.slice(0, fallbackBase.length - FALLBACK_DOMAIN.length);
+      for (let attempt = 0; attempt < MAX_UNIQUE_EMAIL_ATTEMPTS; attempt++) {
+        const taken = await tx.user.findUnique({ where: { email: candidate } });
+        if (!taken) break;
+        candidate = `${fallbackLocal}:${suffix}${FALLBACK_DOMAIN}`;
+        suffix += 1;
+      }
+      email = candidate;
+
+      {
+        user = await tx.user.create({
+          data: {
+            name: registrant.fullName,
+            email,
+            passwordHash,
+            // Identity-only pupils (TK Qur'an) get no reset token and can never
+            // sign in; a credential-holding student gets a real reset secret.
+            ...(withLogin && resetToken
+              ? {
+                  resetTokenHash: crypto.createHash('sha256').update(resetToken).digest('hex'),
+                  resetTokenExpiresAt: resetTokenExpiry,
+                }
+              : {}),
+            role: 'STUDENT',
+            unitId: effectiveUnitId,
+            isActive: withLogin,
+          },
+        });
+
+        emittedSecret.isNewUser = withLogin;
+        emittedSecret.studentHasLogin = withLogin;
+        if (withLogin && resetToken) {
+          emittedSecret.studentResetToken = resetToken;
+          emittedSecret.studentResetEmail = email;
+          emittedSecret.studentResetUserId = user.id;
+          emittedSecret.studentResetName = registrant.fullName;
+        }
+      }
+
+      // Ensure UserRoleAssignment exists for a unit-appropriate student role.
+      // The role catalogue has no bare `STUDENT` code — each unit type has its
+      // own (SDIT_SISWA, SMPIT_SISWA, SMAQ_SISWA, PT_MAHASISWA). TK Qur'an
+      // children hold no login, so a unit type with no mapping starts no role.
+      const studentRoleCode = studentRoleForUnitType(unitType);
+      const studentRole = studentRoleCode
+        ? await tx.role.findFirst({ where: { code: studentRoleCode } })
+        : null;
+      if (studentRole) {
+        const existingUserRole = await tx.userRoleAssignment.findFirst({
+          where: {
+            userId: user.id,
+            roleId: studentRole.id,
+            unitId: effectiveUnitId,
+          },
+        });
+
+        if (!existingUserRole) {
+          const hasPrimary = await tx.userRoleAssignment.findFirst({
+            where: { userId: user.id, isPrimary: true },
+          });
+          await tx.userRoleAssignment.create({
+            data: {
+              userId: user.id,
+              roleId: studentRole.id,
+              unitId: effectiveUnitId,
+              isPrimary: !hasPrimary,
+              isActive: true,
+            },
+          });
+        }
+      }
+
+      let student = await tx.student.findUnique({
+        where: { userId: user.id },
       });
+
+      if (student) {
+        student = await tx.student.update({
+          where: { id: student.id },
+          data: {
+            unitId: effectiveUnitId,
+            // A returning student re-registering: honour a NIS explicitly
+            // requested in this enrolment; otherwise keep the student's existing
+            // NIS rather than silently regenerating a new one. NISN follows the
+            // same preference (requested first, then existing).
+            nis: customNis || student.nis || nis,
+            nisn: nisn || student.nisn || undefined,
+            status: 'active',
+            registrant: {
+              connect: { id: registrant.id },
+            },
+          },
+        });
+      } else {
+        student = await tx.student.create({
+          data: {
+            userId: user.id,
+            status: 'active',
+            unitId: effectiveUnitId,
+            nis,
+            nisn: nisn || undefined,
+            entryYear: year,
+
+            // Core Data mapping from registrant
+            gender: registrant.gender,
+            birthPlace: registrant.birthPlace,
+            birthDate: registrant.birthDate,
+            address: registrant.address,
+            parentName: registrant.parentName,
+            parentPhone: registrant.parentPhone,
+            parentEmail: registrant.parentEmail,
+
+            // Link back
+            registrant: {
+              connect: { id: registrant.id },
+            },
+          },
+        });
+      }
 
       // 4. Create Parent User Account
-      let parentDefaultPassword;
       let parentResetToken: string | undefined;
-      let parentUser: any = null;
+      let parentUser: { id: string; email: string | null; name: string | null } | null = null;
       if (registrant.parentPhone || registrant.parentEmail) {
-        // Prefer matching by email first since it is unique
+        // ACCOUNT-TAKEOVER PREVENTION (mirrors the student path above): the
+        // parent's email/phone on the registrant is UNVERIFIED — nothing in this
+        // flow proves the registrant owns the account they wrote down. Linking
+        // the child's StudentParent straight onto an account matched only by
+        // that raw value would hand a stranger — a staff member, teacher, or
+        // another unit's guardian who happens to share the address — read access
+        // to the child's private records. Reuse is therefore allowed ONLY when
+        // the matched account is genuinely a parent (a returning wali bringing
+        // in a second child); any other matched account is never recycled, and a
+        // fresh guardian identity is created instead.
+        let matchedParent: {
+          id: string;
+          email: string | null;
+          name: string | null;
+          role: string | null;
+        } | null = null;
         if (registrant.parentEmail) {
-          parentUser = await tx.user.findUnique({
-            where: { email: registrant.parentEmail }
+          matchedParent = await tx.user.findUnique({
+            where: { email: registrant.parentEmail },
           });
         }
 
-        // If not found by email, try finding by phone
-        if (!parentUser && registrant.parentPhone) {
-          parentUser = await tx.user.findFirst({
-            where: { phone: registrant.parentPhone }
+        if (!matchedParent && registrant.parentPhone) {
+          matchedParent = await tx.user.findFirst({
+            where: { phone: registrant.parentPhone },
           });
+        }
+
+        const reuseParent = !!matchedParent && matchedParent.role === 'PARENT';
+        if (reuseParent && matchedParent) {
+          parentUser = {
+            id: matchedParent.id,
+            email: matchedParent.email,
+            name: matchedParent.name,
+          };
         }
 
         if (!parentUser) {
           parentResetToken = crypto.randomBytes(32).toString('hex');
-          const parentResetTokenExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
-          // Assign a dummy unguessable password hash, parent will reset via token
+          const parentResetTokenExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
           const parentPasswordHash = await hashPassword(crypto.randomBytes(16).toString('hex'));
-          const parentEmail = registrant.parentEmail || `parent.${registrant.parentPhone}@parent.cipansor.local`;
-          parentUser = await (tx.user.create as any)({
+
+          // The registrant's raw parent email is used for the fresh account ONLY
+          // when it is genuinely free. If any existing account already holds it
+          // (and we are here because it was NOT a reusable PARENT), claiming it
+          // again would violate the unique-email constraint — and pinning the new
+          // guardian onto a stranger's address is exactly the takeover we forbid.
+          // Fall back to a .local address, same policy as the student path.
+          const parentRealEmail = registrant.parentEmail?.trim();
+          const parentLocalBase = registrant.parentPhone
+            ? `parent.${registrant.parentPhone.replace(/[^a-z0-9]/gi, '').toLowerCase()}@parent.cipansor.local`
+            : `parent.guardian@parent.cipansor.local`;
+          // Only a genuinely free address is claimed; otherwise use the .local fallback.
+          const parentEmail = parentRealEmail && !matchedParent ? parentRealEmail : parentLocalBase;
+
+          parentUser = await tx.user.create({
             data: {
               name: registrant.parentName,
               email: parentEmail,
@@ -198,89 +454,154 @@ export class StudentOnboardingOrchestrator {
               resetTokenExpiresAt: parentResetTokenExpiry,
               role: 'PARENT',
               isActive: true,
-            }
+            },
           });
+
+          emittedSecret.parentResetToken = parentResetToken;
+          emittedSecret.parentResetEmail = parentEmail;
+          emittedSecret.parentResetUserId = parentUser.id;
+          emittedSecret.parentResetName = registrant.parentName ?? undefined;
         }
 
-        // Link student and parent
-        await tx.studentParent.create({
-          data: {
+        // Link student and parent. Returning students may already have the link
+        // (unique on [studentId, parentId]), so upsert instead of create.
+        await tx.studentParent.upsert({
+          where: {
+            studentId_parentId: { studentId: student.id, parentId: parentUser.id },
+          },
+          create: {
             studentId: student.id,
             parentId: parentUser.id,
             relation: 'parent',
             isPrimary: true,
-          }
+          },
+          update: {
+            relation: 'parent',
+            isPrimary: true,
+          },
         });
 
-        // Give the guardian the role their child implies.
-        //
-        // This step did not exist: a wali onboarded through SPMB got a User row
-        // with the legacy `role: 'PARENT'` and no UserRoleAssignment at all, so
-        // they signed in only through the legacy fallback — with an empty
-        // permission list, which silently fails every permission-gated route —
-        // and had no unit scope. It also means a second child at another
-        // jenjang now widens the same account instead of needing a new one.
-        await syncParentRoleAssignments(
-          tx as unknown as ParentScopeClient,
-          parentUser.id
-        );
+        await syncParentRoleAssignments(tx as unknown as ParentScopeClient, parentUser.id);
       }
 
-      // 5. Setup initial Health/UKS record (Empty but ready)
-      await (tx.medicalRecord.create as any)({
-        data: {
-          studentId: student.id,
-          type: 'CHECKUP',
-          visitDate: new Date(),
-          complaint: 'Initial Enrollment Checkup',
-          diagnosis: 'Healthy',
-          notes: 'Auto-generated during enrollment',
-          recordedById: processedById,
-          status: 'HEALTHY'
-        }
+      // 5. Setup initial Health/UKS record (idempotent)
+      const existingMedical = await tx.medicalRecord.findFirst({
+        where: { studentId: student.id },
       });
+      if (!existingMedical) {
+        await tx.medicalRecord.create({
+          data: {
+            studentId: student.id,
+            type: 'CHECKUP',
+            visitDate: new Date(),
+            complaint: 'Initial Enrollment Checkup',
+            diagnosis: 'Healthy',
+            notes: 'Auto-generated during enrollment',
+            recordedById: processedById,
+            status: 'HEALTHY',
+          },
+        });
+      }
 
-      // 6. Setup Student Wallet
-      await tx.santriWallet.create({
-        data: {
-          studentId: student.id,
-          balance: 0,
-        }
+      // 6. Setup Student Wallet (idempotent)
+      const existingWallet = await tx.santriWallet.findUnique({
+        where: { studentId: student.id },
       });
+      if (!existingWallet) {
+        await tx.santriWallet.create({
+          data: {
+            studentId: student.id,
+            balance: 0,
+          },
+        });
+      }
 
-      // 7. Optional: Enroll in specific class if provided
-      if (assignedClassId && academicYearId) {
+      // 7. Enroll in specific class if provided. A returning student must not end
+      // up with two active classEnrollments: close/settle any currently active
+      // enrollment before opening the new one (mirrors `enrollRegistrant`).
+      //
+      // Tenant-isolation: the class must belong to the effective unit, otherwise
+      // a registrant could be enrolled into another unit's class (cross-unit
+      // leak). Resolve the class's unit up front and reject it when it does not
+      // match.
+      if (classId) {
+        const klass = await tx.class.findUnique({
+          where: { id: classId },
+          select: { id: true, unitId: true },
+        });
+        if (!klass) {
+          throw Errors.notFound('Class');
+        }
+        if (klass.unitId !== effectiveUnitId) {
+          throw Errors.forbidden('Kelas tidak berada pada unit pendaftaran yang sama');
+        }
+
+        await tx.classEnrollment.updateMany({
+          where: {
+            studentId: student.id,
+            status: 'active',
+          },
+          data: { status: 'completed' },
+        });
+
         await tx.classEnrollment.create({
           data: {
             studentId: student.id,
-            classId: assignedClassId,
+            classId,
             status: 'active',
-          }
+          },
         });
       }
 
-      // 8. Update Registrant Status
+      // 8. Assign room if roomId provided
+      // Tenant-isolation: the room must not belong to another unit's asrama.
+      // A room lives under a Dormitory whose `unitId` may be null — the
+      // foundation-level case where santri from several units board in the same
+      // asrama (see the Dormitory model). Only a *non-null* unitId that differs
+      // from the effective unit is a cross-unit leak and is rejected.
+      if (roomId && tx.roomAssignment) {
+        const room = await tx.room.findUnique({
+          where: { id: roomId },
+          select: { id: true, dormitory: { select: { unitId: true } } },
+        });
+        if (!room) {
+          throw Errors.notFound('Room');
+        }
+        const roomUnitId = room.dormitory?.unitId ?? null;
+        if (roomUnitId !== null && roomUnitId !== effectiveUnitId) {
+          throw Errors.forbidden('Kamar tidak berada pada unit pendaftaran yang sama');
+        }
+
+        await tx.roomAssignment.create({
+          data: {
+            studentId: student.id,
+            roomId,
+            isActive: true,
+          },
+        });
+      }
+
+      // 9. Update Registrant Status
       await tx.registrant.update({
         where: { id: registrant.id },
         data: {
           status: 'ENROLLED',
           enrolledAt: new Date(),
-          studentId: student.id
-        }
+          studentId: student.id,
+        },
       });
 
-      // Decrement the wave's `acceptedCount` to mirror `enrollRegistrant` in
-      // `apps/api/src/modules/admissions/service.ts`. Without this, every
-      // registrant onboarded through the orchestrator path leaves a stale
-      // ACCEPTED count behind, eventually overstating each wave's acceptance
-      // rate (see `ppdb-wave.service.ts` `getStats`). Clamped at 0 to avoid
-      // negatives in case of prior data drift.
+      // Decrement wave's acceptedCount
       if (registrant.waveId) {
         await tx.admissionWave.updateMany({
           where: { id: registrant.waveId, acceptedCount: { gt: 0 } },
           data: { acceptedCount: { decrement: 1 } },
         });
       }
+
+      // Policy: Registration fee (daftar ulang) settlement is mandatory prior to onboarding
+      // (enforced by assertAdmissionFeeSettled above). Payment is recorded prior to enrollment via
+      // recordRegistrationFee, so no unpaid invoice generation is needed during student onboarding.
 
       return {
         success: true,
@@ -289,99 +610,144 @@ export class StudentOnboardingOrchestrator {
         nis,
         email,
         unitCode,
-        resetToken,
         parentUserId: parentUser ? parentUser.id : undefined,
-        parentEmail: parentUser && parentResetToken ? parentUser.email : undefined,
-        parentName: parentUser ? parentUser.name : undefined,
-        parentResetToken,
-        studentName: registrant.fullName
+        parentEmail: parentUser && parentResetToken ? (parentUser.email ?? undefined) : undefined,
+        parentName: parentUser ? (parentUser.name ?? undefined) : undefined,
+        studentName: registrant.fullName,
+        effectiveUnitId,
       };
     });
 
-    // 9. Distribute Reset Tokens asynchronously AFTER transaction commits successfully
-    // We do NOT generate plaintext passwords anymore. We notify users to set their passwords via tokens.
-    // Dispatching after commit guarantees the DB records exist when listeners fire.
-    process.nextTick(async () => {
-      try {
-        const { eventBus } = await import('@/lib/event-bus');
-        const r = result as any; // Ignore types to access internal fields
+    // ---------------------------------------------------------------------
+    // Asynchronous event distribution (best-effort).
+    //
+    // RISK (documented by design): these events are emitted AFTER the
+    // transaction commits, via `process.nextTick`. If the process dies between
+    // commit and dispatch, the notifications / reset-token emails are lost even
+    // though onboarding succeeded. Event emission is fire-and-forget and the
+    // email delivery is itself async, so this is inherently best-effort.
+    //
+    // Mitigation applied here: a small bounded retry for transient dispatch
+    // failures. This does NOT make delivery durable — the window between
+    // transaction commit and the dispatch tick is real.
+    //
+    // LONG-TERM PLAN (durable outbox — not yet implemented):
+    //   1. Add an `event_outbox` table (id, created_at, topic, payload jsonb,
+    //      status PENDING/DISPATCHED/FAILED, attempts, last_error_id).
+    //   2. Insert the outbox rows INSIDE the same $transaction that creates the
+    //      student, so commit and enqueue are atomic — closes the death window.
+    //   3. A worker (or pg_notify poller) claims due PENDING rows, calls the
+    //      same `eventBus.emit`/email dispatch, and marks DISPATCHED on success.
+    //      Bounded retries with exponential backoff; poison messages land in
+    //      FAILED for operator inspection.
+    //   4. Replace the `emittedSecret` capture + `process.nextTick` dispatch
+    //      below with a read of the outbox, and drop this comment.
+    // Until then, a process death between commit and dispatch can lose the
+    // reset-token emails/notifications even though onboarding succeeded; the
+    // bounded retry only covers failures that keep the process alive.
+    // ---------------------------------------------------------------------
+    const dispatchEvents = async () => {
+      const { eventBus } = await import('@/lib/event-bus');
+      const r = result;
 
-        eventBus.emit('student:created', {
-          id: r.studentId,
-          name: r.studentName,
-          unitId,
-          unitName: r.unitCode,
-        });
+      eventBus.emit('student:created', {
+        id: r.studentId,
+        name: r.studentName,
+        unitId: r.effectiveUnitId || unitId,
+        unitName: r.unitCode,
+      });
 
-        eventBus.emit('health:medical-record-created', {
-          id: 'auto-generated',
-          studentId: r.studentId,
-          studentName: r.studentName,
-          unitName: r.unitCode,
-          type: 'CHECKUP',
-          complaint: 'Initial Checkup',
-          status: 'HEALTHY',
-          recordedAt: new Date(),
-          unitId,
-        });
+      eventBus.emit('health:medical-record-created', {
+        id: 'auto-generated',
+        studentId: r.studentId,
+        studentName: r.studentName,
+        unitName: r.unitCode,
+        type: 'CHECKUP',
+        complaint: 'Initial Checkup',
+        status: 'HEALTHY',
+        recordedAt: new Date(),
+        unitId: r.effectiveUnitId || unitId,
+      });
 
-        eventBus.emit('notification:send', {
-          type: 'INFO',
-          title: 'Your Account has been created',
-          message: `Student account created. Email: ${r.email}. Please check your email for a password reset link to set your password securely.`,
-          userId: r.userId,
-        });
+      // Identity-only pupils (TK Qur'an) received no credential, so the
+      // account-created notification must not claim a password was issued and
+      // no reset-token event is emitted for them.
+      eventBus.emit('notification:send', {
+        type: 'INFO',
+        title: emittedSecret.studentHasLogin
+          ? 'Your Account has been created'
+          : 'Student identity has been created',
+        message: emittedSecret.studentHasLogin
+          ? `Student account created. Email: ${r.email}. Please check your email for a password reset link to set your password securely.`
+          : `Student ${r.studentName} has been registered. No login was issued for ${
+              r.unitCode === 'TK_QURAN' ? 'this TK Qur`an pupil' : 'this pupil'
+            }.`,
+        userId: r.userId,
+      });
 
-        // The exact transport implementation for emails is handled externally via this bus event.
-        // We emit the `email:send_reset_token` which a separate microservice/mailer worker listens for.
+      if (emittedSecret.isNewUser && emittedSecret.studentResetToken) {
         eventBus.emit('email:send_reset_token', {
-          email: r.email,
-          token: r.resetToken,
-          userId: r.userId,
-          // `name` greets the recipient; `title` is the notification subject.
-          // They are not interchangeable — see EmailSendResetTokenEvent.
-          name: r.studentName,
+          email: emittedSecret.studentResetEmail!,
+          token: emittedSecret.studentResetToken,
+          userId: emittedSecret.studentResetUserId!,
+          name: emittedSecret.studentResetName ?? r.studentName,
           title: 'Set Your Password',
           message: 'Please set your password using the link provided.',
           data: { expiresInHours: 24 },
         });
-
-        if (r.parentUserId && r.parentResetToken) {
-          eventBus.emit('notification:send', {
-            type: 'INFO',
-            title: 'Your Parent Account has been created',
-            message: `Parent account created. Please check your email for a password reset link to set your password securely.`,
-            userId: r.parentUserId,
-          });
-          eventBus.emit('email:send_reset_token', {
-            email: r.parentEmail,
-            token: r.parentResetToken,
-            userId: r.parentUserId,
-            name: r.parentName,
-            title: 'Set Your Parent Password',
-            message: 'Please set your parent account password using the link provided.',
-            data: { expiresInHours: 24 },
-          });
-        } else if (r.parentUserId) {
-          eventBus.emit('notification:send', {
-            type: 'INFO',
-            title: 'Your Parent Account has been linked',
-            message: `Your existing parent account has been linked to the new student.`,
-            userId: r.parentUserId,
-          });
-        }
-      } catch (err) {
-        console.error('Failed to dispatch onboarding events:', err);
-        // Do not throw here, as the transaction has already committed successfully
-        // We want the HTTP request to succeed even if side-effect emissions fail.
       }
-    });
 
-    return {
-      success: result.success,
-      studentId: result.studentId,
-      userId: result.userId,
-      nis: result.nis
+      if (
+        emittedSecret.parentResetToken &&
+        emittedSecret.parentResetEmail &&
+        emittedSecret.parentResetUserId
+      ) {
+        eventBus.emit('notification:send', {
+          type: 'INFO',
+          title: 'Your Parent Account has been created',
+          message: `Parent account created. Please check your email for a password reset link to set your password securely.`,
+          userId: emittedSecret.parentResetUserId,
+        });
+        eventBus.emit('email:send_reset_token', {
+          email: emittedSecret.parentResetEmail,
+          token: emittedSecret.parentResetToken,
+          userId: emittedSecret.parentResetUserId,
+          name: emittedSecret.parentResetName ?? r.parentName,
+          title: 'Set Your Parent Password',
+          message: 'Please set your parent account password using the link provided.',
+          data: { expiresInHours: 24 },
+        });
+      } else if (r.parentUserId) {
+        eventBus.emit('notification:send', {
+          type: 'INFO',
+          title: 'Your Parent Account has been linked',
+          message: `Your existing parent account has been linked to the new student.`,
+          userId: r.parentUserId,
+        });
+      }
     };
+
+    // Bounded retry: transient failures (e.g. eventBus being briefly
+    // unavailable) are retried; exhaustive failures are logged and dropped.
+    let dispatchAttempt = 0;
+    const runDispatch = async () => {
+      try {
+        await dispatchEvents();
+      } catch (err) {
+        dispatchAttempt += 1;
+        if (dispatchAttempt < 3) {
+          console.warn(
+            `Onboarding event dispatch attempt ${dispatchAttempt} failed, retrying...`,
+            err
+          );
+          setTimeout(runDispatch, 500 * dispatchAttempt);
+        } else {
+          console.error('Failed to dispatch onboarding events after retries:', err);
+        }
+      }
+    };
+    process.nextTick(runDispatch);
+
+    return result;
   }
 }

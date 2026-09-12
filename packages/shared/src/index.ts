@@ -40,3 +40,4 @@ export * from "./types/assignment";
 export * from "./types/student-id-card";
 export * from "./roles";
 export * from "./types/demo-accounts";
+export * from "./types/admissions";

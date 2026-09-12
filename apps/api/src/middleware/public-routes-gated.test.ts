@@ -38,6 +38,17 @@ const DELIBERATELY_UNGATED: Record<string, string> = {
   'student.routes.ts POST /id-cards/verify':
     'Endpoint pemindai QR untuk petugas, tanpa halaman web yang memanggilnya — captcha adalah alat yang ' +
     'salah untuk konsumen mesin dan akan mematikannya. Dijaga defaultLimiter.',
+  'admissions.routes.ts POST /public/registrants/:registrantId/documents':
+    'Unggah dokumen pasca-pendaftaran. Izinnya adalah `registrationToken` bertanda-tangan HMAC (kadaluarsa ' +
+    '2 jam) yang hanya dicetak peladen di `/public/registrants` — permukaan yang SUDAH dijaga ' +
+    '`requireTurnstile(\'spmb-daftar\')`. Jadi permintaan ini hanya dapat muncul dari pendaftaran yang sudah ' +
+    'lulus Turnstile, dan menyelesaikan tantangan kedua tepat setelah menyerahkan formulir yang sudah tervet ' +
+    'adalah permusuhan tanpa tambahan perlindungan. Dijaga registrationToken + documentUploadLimiter.',
+  'admissions.routes.ts POST /public/parse-document':
+    'Bantuan OCR tanpa status yang dipanggil peramban pada langkah Dokumen, sebelum pendaftaran dibuat. Tidak ' +
+    'menulis apa pun ke DB — hanya memvalidasi data yang dikirim pengunjung sendiri. Dijaga ' +
+    'publicRegistrantLimiter. Menuntut Turnstile di sini akan gagal-tertutup pada langkah unggah bagi ' +
+    'pengunjung yang jaringannya memfilter challenges.cloudflare.com, padahal permintaan ini tidak membuat baris.',
 };
 
 function stripComments(source: string): string {

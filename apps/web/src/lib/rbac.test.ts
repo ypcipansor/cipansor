@@ -416,9 +416,6 @@ describe("navigation — every app page is reachable from some menu", () => {
   /** Pages that intentionally have no sidebar entry, with the reason. */
   const NO_MENU_BY_DESIGN: Record<string, string> = {
     "/profile": "opened from the header profile menu, not the sidebar",
-    "/ppdb": "legacy duplicate of /admissions, pending the SPMB route rename",
-    "/ppdb/registrations":
-      "legacy duplicate of /admissions, pending the SPMB route rename",
   };
 
   /** Reached from a list page's action button, never from a menu. */
@@ -481,6 +478,25 @@ describe("navigation — every app page is reachable from some menu", () => {
       .map(({ route }) => route);
 
     expect(orphans).toEqual([]);
+  });
+
+  /**
+   * The exemption list is the one part of this contract nothing else checks, so
+   * it rots silently. Merging #439 found two entries naming pages that had been
+   * deleted months earlier (`/ppdb`, `/hr/talenta/succession`) — each one a
+   * standing permission for a page that no longer exists, and each read as
+   * current documentation by the next person to open the file.
+   *
+   * A stale entry is not only untidy: it is a hole. Re-create a route with that
+   * exact name later and it is exempt from the orphan check on arrival, which is
+   * how a page ships with no way to reach it.
+   */
+  it("every NO_MENU_BY_DESIGN entry still names a real, menu-less page", () => {
+    const routes = new Set(appPages().map(({ route }) => route));
+    const stale = Object.keys(NO_MENU_BY_DESIGN).filter(
+      (route) => !routes.has(route) || menuHrefs.has(route),
+    );
+    expect(stale).toEqual([]);
   });
 });
 
@@ -546,9 +562,12 @@ describe("navigation — every page renders the app shell", () => {
    * A redirect-only stub renders nothing, so there is no shell to put around
    * it — /finance/billing just forwards its old bookmarks to /finance.
    *
-   * Both forms count. /psb does the same job with `router.replace()` in an
-   * effect rather than the server `redirect()`, and matching only the latter
-   * made a stub look like a page that had lost its shell.
+   * Both forms count: a stub may forward with the server `redirect()` or with
+   * `router.replace()` in an effect, and matching only the former made a
+   * client-side stub look like a page that had lost its shell. (/psb was the
+   * case that taught this; its page is gone — next.config.ts now redirects
+   * /psb to /spmb before routing ever reaches a page — but /parent/ibadah
+   * still forwards the client-side way.)
    */
   const isRedirectStub = (src: string) =>
     /from\s+"next\/navigation"/.test(src) &&

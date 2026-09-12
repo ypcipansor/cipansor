@@ -56,7 +56,9 @@ test.describe("End-to-End: PPDB Registration to Finance & Medical", () => {
 
     try {
       // Admin opens the registration listing, finds the registrant, opens detail.
-      await page.goto("/ppdb/registrations");
+      // /ppdb was renamed to /spmb in #439 (next.config.ts still redirects the
+      // old path, but a test should name the route it means).
+      await page.goto("/spmb/registrations");
       await expect(page.getByRole("heading", { name: /Pendaftar/i })).toBeVisible();
 
       await page.getByPlaceholder(/cari|search/i).first().fill(fullName).catch(() => {});
@@ -66,7 +68,7 @@ test.describe("End-to-End: PPDB Registration to Finance & Medical", () => {
 
       // The integrated onboarding button is present because status is ACCEPTED.
       const onboardButton = page.getByRole("button", {
-        name: /Eksekusi Onboarding Terpadu/i,
+        name: /Jalankan Onboarding Terpadu/i,
       });
       await expect(onboardButton).toBeVisible();
 

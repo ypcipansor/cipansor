@@ -155,6 +155,7 @@ export const roleRouteAccess: Record<LegacyRole, string[]> = {
   UNIT_ADMIN: [
     "/academic-years",
     "/admissions",
+    "/spmb",
     "/alumni",
     "/analytics",
     "/announcements",
@@ -228,6 +229,7 @@ export const roleRouteAccess: Record<LegacyRole, string[]> = {
   ],
   TEACHER: [
     "/admissions",
+    "/spmb",
     "/alumni",
     "/analytics",
     "/announcements",
@@ -281,8 +283,10 @@ export const roleRouteAccess: Record<LegacyRole, string[]> = {
     "/violations",
   ],
   STAFF: [
+    "/admissions",
     "/analytics",
     "/announcements",
+    "/spmb",
     "/donation",
     "/e-office",
     "/finance",

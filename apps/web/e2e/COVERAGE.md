@@ -452,7 +452,7 @@ History of the stabilization (all root-caused, no suppressions):
 
 | Route | Specs | Nav | CRUD | Buttons | Fields | RBAC |
 |---|---|---|---|---|---|---|
-| `/login` | academic-years, alumni, announcements, assessment, attendance, auth, calendar, canteen, classes, counseling, curriculum, dashboard, dormitories, extracurricular, integration-grc, inventory, library, lingkungan, litbang, muhadatsah, organisasi, paud-main, pengawasan, perencanaan, ppdb, pwa, schedule, syariah, tahfidz-transcript, tata-laksana | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 |
+| `/login` | academic-years, alumni, announcements, assessment, attendance, auth, calendar, canteen, classes, counseling, curriculum, dashboard, dormitories, extracurricular, integration-grc, inventory, library, lingkungan, litbang, muhadatsah, organisasi, paud-main, pengawasan, perencanaan, pwa, schedule, syariah, tahfidz-transcript, tata-laksana | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 |
 
 ### `/marketing`
 
@@ -592,13 +592,16 @@ History of the stabilization (all root-caused, no suppressions):
 |---|---|---|---|---|---|---|
 | `/portfolio` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
 
-### `/ppdb`
+### `/spmb`
+
+Renamed from `/ppdb` in #439; `next.config.ts` keeps a permanent redirect for the
+old addresses, and `spmb.spec.ts` asserts that redirect still lands on `/spmb`.
 
 | Route | Specs | Nav | CRUD | Buttons | Fields | RBAC |
 |---|---|---|---|---|---|---|
-| `/ppdb` | ppdb | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 |
-| `/ppdb/registrations` | admission-to-class-to-finance | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 |
-| `/ppdb/registrations/[id]` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `/spmb` | spmb, spmb-workflow | 🟢 | 🟡 | 🟡 | 🟡 | 🟡 |
+| `/spmb/registrations` | spmb, spmb-workflow, admission-to-class-to-finance | 🟢 | 🟡 | 🟡 | 🟡 | 🟡 |
+| `/spmb/registrations/[id]` | spmb-workflow | 🟡 | 🟡 | 🟡 | 🟡 | ❌ |
 
 ### `/practicum`
 
@@ -643,8 +646,8 @@ History of the stabilization (all root-caused, no suppressions):
 | Route | Specs | Nav | CRUD | Buttons | Fields | RBAC |
 |---|---|---|---|---|---|---|
 | `/public/donation` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `/public/ppdb` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `/public/ppdb/track` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `/public/spmb` | spmb-workflow | 🟡 | ❌ | ❌ | ❌ | ❌ |
+| `/public/spmb/track` | spmb-workflow | 🟡 | ❌ | ❌ | ❌ | ❌ |
 | `/public/verify-sanad` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
 
 ### `/quality`
@@ -984,7 +987,7 @@ History of the stabilization (all root-caused, no suppressions):
 | `perencanaan.spec.ts` | loginAs | real backend | 1 route(s) visited |
 | `performance.spec.ts` | — | real backend | 1 route(s) visited |
 | `pesantren-features-294-smoke.spec.ts` | — | public/unauthenticated | 3 route(s) visited |
-| `ppdb.spec.ts` | loginAs | real backend | 1 route(s) visited |
+| `public-card-verification.spec.ts` | loginAs + apiRequest | real backend | 4 route(s) visited |
 | `public-i18n.spec.ts` | — | real backend | 1 route(s) visited |
 | `public-photography.spec.ts` | — | real backend | 1 route(s) visited |
 | `public-verification.spec.ts` | loginAs | real backend | 2 route(s) visited |
@@ -992,6 +995,8 @@ History of the stabilization (all root-caused, no suppressions):
 | `rapor-ganda.spec.ts` | loginAs | real backend | 1 route(s) visited |
 | `risk-audit-link.spec.ts` | loginAs | real backend | 1 route(s) visited |
 | `schedule.spec.ts` | loginAs | real backend | 1 route(s) visited |
+| `spmb.spec.ts` | loginAs | real backend | 3 route(s) visited |
+| `spmb-workflow.spec.ts` | loginAs | real backend | 5 route(s) visited |
 | `student-lifecycle-enhanced.spec.ts` | loginAs | real backend | 2 route(s) visited |
 | `student-management.spec.ts` | — | skipped | 1 route(s) visited |
 | `syariah.spec.ts` | loginAs | real backend | 1 route(s) visited |

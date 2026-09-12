@@ -106,7 +106,7 @@ export function RegistrationTracker() {
               */}
               <Input
                 id="track-reg-no"
-                placeholder="Contoh: PSB-0001"
+                placeholder="Contoh: REG-2026-00001"
                 value={regNo}
                 onChange={(e) => setRegNo(e.target.value)}
                 required
@@ -245,6 +245,34 @@ export function RegistrationTracker() {
                     </div>
                   )}
                 </div>
+
+                {(registrant.testScore != null ||
+                  registrant.interviewScore != null ||
+                  registrant.tahfidzScore != null) && (
+                  <div className="pt-2 border-t space-y-1 text-xs">
+                    <p className="font-bold text-slate-700">Hasil Nilai Seleksi:</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {registrant.testScore != null && (
+                        <div className="bg-white p-1.5 rounded border text-center">
+                          <span className="block text-[9px] text-muted-foreground">Akademik</span>
+                          <span className="font-bold text-sm text-primary">{registrant.testScore}</span>
+                        </div>
+                      )}
+                      {registrant.interviewScore != null && (
+                        <div className="bg-white p-1.5 rounded border text-center">
+                          <span className="block text-[9px] text-muted-foreground">Wawancara</span>
+                          <span className="font-bold text-sm text-primary">{registrant.interviewScore}</span>
+                        </div>
+                      )}
+                      {registrant.tahfidzScore != null && (
+                        <div className="bg-white p-1.5 rounded border text-center">
+                          <span className="block text-[9px] text-muted-foreground">Qur'an</span>
+                          <span className="font-bold text-sm text-primary">{registrant.tahfidzScore}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-4">

@@ -405,6 +405,11 @@ const staffNavigation: NavGroup[] = [
     title: "Administrasi",
     items: [
       {
+        title: "Penerimaan (SPMB)",
+        href: "/spmb",
+        icon: UserPlus,
+      },
+      {
         title: "E-Office (Persuratan)",
         href: "/e-office",
         icon: Mail,
@@ -1258,9 +1263,28 @@ const adminNavigation: NavGroup[] = [
         ],
       },
       {
-        title: "Admissions",
-        href: "/admissions",
+        // /spmb is the SPMB hub #439 introduced; /admissions keeps the two
+        // pages that hub has no equivalent of yet, so neither goes unreachable.
+        title: "Penerimaan (SPMB)",
+        href: "/spmb",
         icon: UserPlus,
+        children: [
+          {
+            title: "Pendaftar",
+            href: "/spmb/registrations",
+            icon: Users,
+          },
+          {
+            title: "Gelombang",
+            href: "/admissions/waves",
+            icon: Calendar,
+          },
+          {
+            title: "Analitik Penerimaan",
+            href: "/admissions/analytics",
+            icon: BarChart3,
+          },
+        ],
       },
     ],
   },

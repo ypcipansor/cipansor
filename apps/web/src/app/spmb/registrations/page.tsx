@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { MainLayout } from "@/components/layout/main-layout";
 import { PageHeader } from "@/components/shared/page-header";
 import { useRegistrants } from "@/hooks/use-admissions";
@@ -52,8 +53,16 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 export default function RegistrationsPage() {
+  const searchParams = useSearchParams();
+  const queryStatus = searchParams.get("status");
   const [search, setSearch] = useState("");
-  const [status, setStatus] = useState<string>("ALL");
+  const [status, setStatus] = useState<string>(queryStatus || "ALL");
+
+  useEffect(() => {
+    if (queryStatus) {
+      setStatus(queryStatus);
+    }
+  }, [queryStatus]);
 
   const { data, isLoading } = useRegistrants({
     ...(status !== "ALL" ? { status } : {}),
@@ -128,7 +137,7 @@ export default function RegistrationsPage() {
                     <TableRow key={reg.id}>
                       <TableCell className="font-medium">
                         <Link
-                          href={`/ppdb/registrations/${reg.id}`}
+                          href={`/spmb/registrations/${reg.id}`}
                           className="text-primary hover:underline"
                         >
                           {reg.fullName || reg.name || "-"}

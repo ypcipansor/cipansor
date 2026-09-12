@@ -7,6 +7,7 @@ export type ReportType =
   | "HEALTH_SUMMARY"
   | "VIOLATION_SUMMARY"
   | "LIBRARY_STATISTICS"
+  | "SPMB_STATISTICS"
   | "PSB_STATISTICS";
 
 export type TimeRange =
@@ -190,7 +191,7 @@ export interface LibrarySummary {
   }>;
 }
 
-export interface PsbSummary {
+export interface SpmbSummary {
   totalRegistrants: number;
   byStatus: Record<string, number>;
   byPeriod: Array<{
@@ -203,6 +204,8 @@ export interface PsbSummary {
     isActive: boolean;
   }>;
 }
+
+export type PsbSummary = SpmbSummary;
 
 export interface DashboardSummary {
   students: {

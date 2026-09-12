@@ -3384,10 +3384,22 @@ model AdmissionWave {
   name            String // e.g., "Gelombang 1 2024-2025"
   startDate       DateTime   @map("start_date")
   endDate         DateTime   @map("end_date")
-  quota           Int // Kuota pendaftar
+  /// Kuota pendaftar. Dijaga di basis data oleh dua CHECK yang tidak bisa
+  /// diungkapkan Prisma (lihat migrasi 20260912010000):
+  /// `quota >= 1` dan `registered_count <= quota`. Menurunkan kuota di bawah
+  /// jumlah pendaftar yang sudah masuk ditolak API dengan 400 lebih dulu
+  /// (ppdb-wave.service.ts) — cara menutup pendaftaran lebih awal adalah
+  /// mengubah status, bukan mengecilkan angka.
+  quota           Int
   registeredCount Int        @default(0) @map("registered_count")
   acceptedCount   Int        @default(0) @map("accepted_count")
   status          WaveStatus @default(UPCOMING)
+  /// `true` when the wave transitioned to FULL purely because `registeredCount`
+  /// reached `quota` (auto-assign or the status cron). `false` when an operator
+  /// set FULL manually. `deleteRegistrant` reopens a FULL wave only when this is
+  /// true, so a deliberately hand-closed wave is never silently reopened by a
+  /// cancellation. NULL for rows migrated from before this flag existed.
+  fullByCapacity   Boolean?  @default(false) @map("full_by_capacity")
   registrationFee Decimal?   @map("registration_fee") @db.Decimal(12, 2)
   notes           String?
   createdAt       DateTime   @default(now()) @map("created_at")

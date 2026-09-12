@@ -2,7 +2,8 @@ import { Router } from 'express';
 import waveController from './ppdb-wave.controller';
 import { authenticate, authorize } from '@/middleware/auth';
 import { validate } from '@/middleware/validate';
-import { UserRole } from '@prisma/client';
+import { RoleCode } from '@prisma/client';
+import { onboardRegistrantSchema } from '@cipansor/shared';
 import { createWaveSchema, updateWaveSchema, assignWaveSchema } from './ppdb-wave.schema';
 
 const router = Router();
@@ -31,7 +32,7 @@ router.use(authenticate);
  */
 router.get(
   '/',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.STAFF),
+  authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'STAFF'),
   waveController.list
 );
 
@@ -42,7 +43,7 @@ router.get(
  */
 router.get(
   '/stats/:periodId',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.STAFF),
+  authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'STAFF'),
   waveController.getStats
 );
 
@@ -53,7 +54,7 @@ router.get(
  */
 router.get(
   '/:id',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.STAFF),
+  authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'STAFF'),
   waveController.getById
 );
 
@@ -64,7 +65,7 @@ router.get(
  */
 router.get(
   '/:id/registrants',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.STAFF),
+  authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'STAFF'),
   waveController.getRegistrants
 );
 
@@ -75,7 +76,7 @@ router.get(
  */
 router.post(
   '/',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
+  authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN'),
   validate(createWaveSchema),
   waveController.create
 );
@@ -87,7 +88,7 @@ router.post(
  */
 router.put(
   '/:id',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
+  authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN'),
   validate(updateWaveSchema),
   waveController.update
 );
@@ -97,7 +98,7 @@ router.put(
  * @desc Delete wave
  * @access Private - Admin only
  */
-router.delete('/:id', authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN), waveController.delete);
+router.delete('/:id', authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN'), waveController.delete);
 
 /**
  * @route POST /api/ppdb-wave/assign
@@ -106,7 +107,7 @@ router.delete('/:id', authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN), wave
  */
 router.post(
   '/assign',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.STAFF),
+  authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'STAFF'),
   validate(assignWaveSchema),
   waveController.assignRegistrant
 );
@@ -118,8 +119,8 @@ router.post(
  */
 router.post(
   '/onboard-registrant',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.STAFF),
-  // Typically we'd place a zod schema validation here: validate(onboardRegistrantSchema),
+  authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'STAFF'),
+  validate(onboardRegistrantSchema),
   waveController.onboardRegistrant
 );
 
@@ -132,7 +133,7 @@ router.post(
  */
 router.post(
   '/update-statuses',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
+  authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN'),
   waveController.updateStatuses
 );
 

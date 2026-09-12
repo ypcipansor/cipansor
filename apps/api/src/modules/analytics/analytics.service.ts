@@ -11,6 +11,7 @@ import type {
   ViolationSummary,
   LibrarySummary,
   PsbSummary,
+  SpmbSummary,
 } from '@cipansor/shared';
 
 interface DateRange {
@@ -727,11 +728,18 @@ export async function getLibraryStats(unitId?: string): Promise<LibrarySummary> 
   };
 }
 
-export async function getPSBStats(unitId?: string): Promise<PsbSummary> {
-  // Check for active admission period
+export async function getSPMBStats(unitId?: string): Promise<SpmbSummary> {
+  // Check for a *currently running* admission period. Picking the period with
+  // the latest startDate alone is wrong: a future-dated `isActive` period would
+  // then shadow the intake that is actually running today. A period counts as
+  // active only when `isActive` is true AND `now` falls inside its
+  // [startDate, endDate] window.
+  const now = new Date();
   const activePeriod = await prisma.admissionPeriod.findFirst({
     where: {
       isActive: true,
+      startDate: { lte: now },
+      endDate: { gte: now },
       ...(unitId && { unitId }),
     },
     orderBy: { startDate: 'desc' },
@@ -788,3 +796,5 @@ export async function getPSBStats(unitId?: string): Promise<PsbSummary> {
     byPeriod: periodsData,
   };
 }
+
+export const getPSBStats = getSPMBStats;

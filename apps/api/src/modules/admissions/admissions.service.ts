@@ -1,7 +1,9 @@
 import { randomBytes } from 'crypto';
 import bcrypt from 'bcryptjs';
+import { config } from '../../config';
 import { prisma } from '../../lib/prisma';
 import { Prisma, AdmissionStatus, Gender } from '@prisma/client';
+import type { CreatePublicRegistrantDocumentRequest } from '@cipansor/shared';
 import * as financeService from '../finance/finance.service';
 import {
   CreateAdmissionPeriodInput,
@@ -14,6 +16,74 @@ import {
   CreateRegistrantDocumentInput,
 } from './admissions.schema';
 import { Errors } from '../../middleware/error';
+
+type AuthUser = { id: string; role: string; roleCode?: string; unitId?: string | null };
+
+function isSuperAdmin(actor: AuthUser): boolean {
+  return actor.roleCode === 'SUPER_ADMIN' || actor.role === 'SUPER_ADMIN';
+}
+
+/**
+ * Refuse a non-SUPER_ADMIN actor that does not belong to the given unit.
+ * A null `unitId` on the actor is always rejected: it would otherwise bypass
+ * unit scoping entirely (see the `getRegistrants`/`createRegistrantOnce`
+ * guards). SUPER_ADMIN is exempt.
+ */
+function assertUnitMatchesActor(unitId: string | null | undefined, actor?: AuthUser): void {
+  if (actor && !isSuperAdmin(actor)) {
+    if (!actor.unitId) {
+      throw Errors.forbidden('Access to this unit is not allowed');
+    }
+    if (unitId !== actor.unitId) {
+      throw Errors.forbidden('Access to this unit is not allowed');
+    }
+  }
+}
+
+/**
+ * Server-side unit scoping for any by-id registrant operation.
+ * SUPER_ADMIN is exempt; every other actor must belong to the registrant's
+ * admission period unit, otherwise the request is refused with 403.
+ */
+export async function assertRegistrantUnitAccess(id: string, actor: AuthUser): Promise<void> {
+  if (isSuperAdmin(actor)) return;
+  const actorUnitId = actor.unitId;
+  if (!actorUnitId) {
+    throw Errors.forbidden('Access to this unit is not allowed');
+  }
+  const registrant = await prisma.registrant.findUnique({
+    where: { id },
+    select: { admissionPeriod: { select: { unitId: true } } },
+  });
+  if (!registrant) {
+    throw Errors.notFound('Registrant');
+  }
+  if (registrant.admissionPeriod?.unitId !== actorUnitId) {
+    throw Errors.forbidden('Access to this unit is not allowed');
+  }
+}
+
+/**
+ * Server-side unit scoping for by-id document operations, resolved through the
+ * owning registrant's admission period unit.
+ */
+async function assertDocumentUnitAccess(id: string, actor: AuthUser): Promise<void> {
+  if (isSuperAdmin(actor)) return;
+  const actorUnitId = actor.unitId;
+  if (!actorUnitId) {
+    throw Errors.forbidden('Access to this unit is not allowed');
+  }
+  const document = await prisma.registrantDocument.findUnique({
+    where: { id },
+    select: { registrant: { select: { admissionPeriod: { select: { unitId: true } } } } },
+  });
+  if (!document) {
+    throw Errors.notFound('Document');
+  }
+  if (document.registrant?.admissionPeriod?.unitId !== actorUnitId) {
+    throw Errors.forbidden('Access to this unit is not allowed');
+  }
+}
 
 // `CreateRegistrantInput` already defines `source` and `campaignId` as
 // optional (see `createRegistrantSchema` in ./schema.ts), so there's no need
@@ -111,7 +181,11 @@ export async function getRegistrantTrackingInfo(registrationNo: string, birthDat
   });
 }
 
-export async function createAdmissionPeriod(data: CreateAdmissionPeriodInput) {
+export async function createAdmissionPeriod(data: CreateAdmissionPeriodInput, actor?: AuthUser) {
+  // A UNIT_ADMIN may only create a period for their own unit; otherwise they
+  // could manufacture a period in another unit's admissions.
+  assertUnitMatchesActor(data.unitId, actor);
+
   return prisma.admissionPeriod.create({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     data: {
@@ -123,7 +197,22 @@ export async function createAdmissionPeriod(data: CreateAdmissionPeriodInput) {
   });
 }
 
-export async function updateAdmissionPeriod(id: string, data: UpdateAdmissionPeriodInput) {
+export async function updateAdmissionPeriod(
+  id: string,
+  data: UpdateAdmissionPeriodInput,
+  actor?: AuthUser
+) {
+  // Resolve the existing period's unit so the scoping check can run against the
+  // record being edited (a UNIT_ADMIN must not touch another unit's period).
+  const existingPeriod = await prisma.admissionPeriod.findUnique({
+    where: { id },
+    select: { unitId: true },
+  });
+  if (!existingPeriod) {
+    throw Errors.notFound('Admission period');
+  }
+  assertUnitMatchesActor(existingPeriod.unitId, actor);
+
   return prisma.admissionPeriod.update({
     where: { id },
     data: {
@@ -136,14 +225,21 @@ export async function updateAdmissionPeriod(id: string, data: UpdateAdmissionPer
   });
 }
 
-export async function deleteAdmissionPeriod(id: string) {
+export async function deleteAdmissionPeriod(id: string, actor?: AuthUser) {
   // Check if period has registrants
   const period = await prisma.admissionPeriod.findUnique({
     where: { id },
     include: { _count: { select: { registrants: true } } },
   });
 
-  if (period?._count.registrants && period._count.registrants > 0) {
+  if (!period) {
+    throw Errors.notFound('Admission period');
+  }
+
+  // A UNIT_ADMIN may only delete a period belonging to their own unit.
+  assertUnitMatchesActor(period.unitId, actor);
+
+  if (period._count.registrants && period._count.registrants > 0) {
     throw new Error('Cannot delete admission period with registrants');
   }
 
@@ -226,14 +322,17 @@ async function generateRegistrationNo(
   return `REG-${year}-${periodSuffix}-${String(count + 1).padStart(5, '0')}`;
 }
 
-export async function getRegistrants(params: {
-  page: number;
-  limit: number;
-  admissionPeriodId?: string;
-  status?: AdmissionStatus;
-  gender?: 'MALE' | 'FEMALE';
-  search?: string;
-}) {
+export async function getRegistrants(
+  params: {
+    page: number;
+    limit: number;
+    admissionPeriodId?: string;
+    status?: AdmissionStatus;
+    gender?: 'MALE' | 'FEMALE';
+    search?: string;
+  },
+  actor?: AuthUser
+) {
   const { page, limit, admissionPeriodId, status, gender, search } = params;
   const skip = (page - 1) * limit;
 
@@ -242,6 +341,17 @@ export async function getRegistrants(params: {
   if (admissionPeriodId) where.admissionPeriodId = admissionPeriodId;
   if (status) where.status = status;
   if (gender) where.gender = gender as Gender;
+
+  // Server-side unit scoping: SUPER_ADMIN sees all; non-SUPER_ADMIN is
+  // restricted to their unitId. A non-SUPER_ADMIN without a unitId must NEVER
+  // fall through to the unscoped query — that would let them list registrants
+  // of EVERY unit. Refuse with 403 instead of silently widening the filter.
+  if (actor && !isSuperAdmin(actor)) {
+    if (!actor.unitId) {
+      throw Errors.forbidden('Access to this unit is not allowed');
+    }
+    where.admissionPeriod = { ...(where.admissionPeriod as any), unitId: actor.unitId };
+  }
 
   if (search) {
     where.OR = [
@@ -276,8 +386,8 @@ export async function getRegistrants(params: {
   };
 }
 
-export async function getRegistrantById(id: string) {
-  return prisma.registrant.findUnique({
+export async function getRegistrantById(id: string, actor?: AuthUser) {
+  const registrant = await prisma.registrant.findUnique({
     where: { id },
     include: {
       admissionPeriod: {
@@ -285,17 +395,68 @@ export async function getRegistrantById(id: string) {
           id: true,
           name: true,
           registrationFee: true,
+          unitId: true,
           unit: { select: { id: true, name: true, type: true } },
           academicYear: { select: { id: true, name: true } },
         },
+      },
+      wave: {
+        select: { id: true, name: true, waveNumber: true, registrationFee: true },
       },
       documents: { orderBy: { createdAt: 'desc' } },
       student: { select: { id: true, nis: true, userId: true } },
     },
   });
+
+  if (registrant && actor) {
+    if (!isSuperAdmin(actor)) {
+      const actorUnitId = actor.unitId;
+      if (!actorUnitId || registrant.admissionPeriod?.unitId !== actorUnitId) {
+        throw Errors.forbidden('Access to this unit is not allowed');
+      }
+    }
+  }
+
+  return registrant;
 }
 
-export async function createRegistrant(data: CreateRegistrantExtendedInput) {
+export async function createPublicRegistrantService(data: CreateRegistrantExtendedInput) {
+  const period = await prisma.admissionPeriod.findUnique({
+    where: { id: data.admissionPeriodId },
+    select: { isActive: true, startDate: true, endDate: true },
+  });
+
+  if (!period) {
+    throw Errors.notFound('Admission period');
+  }
+
+  const now = new Date();
+  if (!period.isActive || now < period.startDate || now > period.endDate) {
+    throw Errors.badRequest('Admission period is not open for registration');
+  }
+
+  const registrant = await createRegistrant(data, false);
+
+  const crypto = await import('crypto');
+  const timestampHex = Date.now().toString(16);
+  const hmacHex = crypto.createHmac('sha256', config.jwt.secret).update(`${registrant.id}:${timestampHex}`).digest('hex').slice(0, 16);
+  const registrationToken = `${timestampHex}.${hmacHex}`;
+
+  return {
+    id: registrant.id,
+    registrationNo: registrant.registrationNo,
+    registrationToken,
+    fullName: registrant.fullName,
+    status: registrant.status,
+    createdAt: registrant.createdAt,
+  };
+}
+
+export async function createRegistrant(
+  data: CreateRegistrantExtendedInput,
+  isAdmin: boolean = true,
+  actor?: AuthUser
+) {
   // Race-safety: `generateRegistrationNo` derives the next number from
   // `count(*) + 1`. Under PostgreSQL's default READ COMMITTED isolation,
   // two concurrent transactions can read the same count and try to insert
@@ -307,7 +468,7 @@ export async function createRegistrant(data: CreateRegistrantExtendedInput) {
   let lastError: unknown;
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     try {
-      return await createRegistrantOnce(data);
+      return await createRegistrantOnce(data, isAdmin, actor);
     } catch (err) {
       lastError = err;
       if (
@@ -325,8 +486,33 @@ export async function createRegistrant(data: CreateRegistrantExtendedInput) {
   throw lastError;
 }
 
-async function createRegistrantOnce(data: CreateRegistrantExtendedInput) {
+async function createRegistrantOnce(
+  data: CreateRegistrantExtendedInput,
+  isAdmin: boolean = true,
+  actor?: AuthUser
+) {
   return prisma.$transaction(async (tx) => {
+    // Unit scoping for the admin/staff create path: a non-SUPER_ADMIN may only
+    // create a registrant in an admission period that belongs to their own
+    // unit. Otherwise a staff member could send `admissionPeriodId` of another
+    // unit's period and both consume that unit's wave quota and register
+    // applicants into a period they do not manage.
+    if (actor && !isSuperAdmin(actor)) {
+      if (!actor.unitId) {
+        throw Errors.forbidden('Access to this unit is not allowed');
+      }
+      const scopedPeriod = await tx.admissionPeriod.findUnique({
+        where: { id: data.admissionPeriodId },
+        select: { unitId: true },
+      });
+      if (!scopedPeriod) {
+        throw Errors.notFound('Admission period');
+      }
+      if (scopedPeriod.unitId !== actor.unitId) {
+        throw Errors.forbidden('Access to this unit is not allowed');
+      }
+    }
+
     const registrationNo = await generateRegistrationNo(data.admissionPeriodId, tx);
 
     // Map Zod input fields to the actual Prisma Registrant model.
@@ -342,9 +528,97 @@ async function createRegistrantOnce(data: CreateRegistrantExtendedInput) {
     const parentEmail = data.fatherEmail && data.fatherEmail !== '' ? data.fatherEmail : undefined;
     const parentOccupation = data.fatherOccupation || data.motherOccupation;
 
+    // Check if the admission period defines any waves.
+    const totalWaves = tx.admissionWave
+      ? await tx.admissionWave.count({ where: { periodId: data.admissionPeriodId } })
+      : 0;
+
+    let waveId: string | undefined = undefined;
+
+    if (totalWaves > 0) {
+      // Look up all open waves for the period ordered by waveNumber asc
+      // to atomically claim a slot in the first wave that has capacity.
+      const now = new Date();
+      // Auto-assign claims a wave only when it is *open for registration right
+      // now*, decided by dates, not merely by status:
+      //  - `FULL` is a terminal closed state (manual early-close OR capacity
+      //    reached). Never auto-claim it, even if `registeredCount` is below
+      //    quota (a manual early-close would otherwise be silently reopened by
+      //    a fresh submission). Cancelled slots in a FULL wave are recovered by
+      //    an admin re-opening the wave or by `updateWaveStatuses`.
+      //  - `UPCOMING` is claimable once its window has opened (started and not
+      //    ended), so registration does not depend on the `updateWaveStatuses`
+      //    cron having transitioned it to OPEN before the first submission.
+      const candidateWaves = tx.admissionWave
+        ? await tx.admissionWave.findMany({
+            where: {
+              periodId: data.admissionPeriodId,
+              status: { in: ['OPEN', 'UPCOMING'] },
+              startDate: { lte: now },
+              endDate: { gte: now },
+            },
+            orderBy: { waveNumber: 'asc' },
+          })
+        : [];
+
+      if ((tx as any).$executeRaw) {
+        // Acquire row-level locks on candidate waves to prevent concurrent quota race conditions
+        await (tx as any).$executeRaw`SELECT id FROM "admission_waves" WHERE "period_id" = ${data.admissionPeriodId} FOR UPDATE`;
+      }
+
+      let waveClaimed = false;
+      for (const wave of candidateWaves) {
+        const freshWave = await tx.admissionWave.findUnique({
+          where: { id: wave.id },
+          select: { id: true, registeredCount: true, quota: true, status: true },
+        });
+
+        if (!freshWave || freshWave.registeredCount >= freshWave.quota) {
+          continue;
+        }
+
+        const claim = await tx.admissionWave.updateMany({
+          where: {
+            id: wave.id,
+            status: { in: ['OPEN', 'UPCOMING'] },
+            registeredCount: { lt: freshWave.quota },
+          },
+          data: {
+            registeredCount: { increment: 1 },
+          },
+        });
+
+        if (claim.count === 1) {
+          const updatedWave = await tx.admissionWave.findUnique({
+            where: { id: wave.id },
+            select: { id: true, registeredCount: true, quota: true, status: true },
+          });
+
+          if (updatedWave && updatedWave.registeredCount >= updatedWave.quota && updatedWave.status !== 'FULL') {
+            await tx.admissionWave.update({
+              where: { id: wave.id },
+              // Capacity-driven closure: the wave fills up because of enrolment,
+              // so mark it auto-filled. deleteRegistrant may reopen it later when
+              // a slot frees up (unlike an operator-closed FULL wave).
+              data: { status: 'FULL', fullByCapacity: true },
+            });
+          }
+
+          waveId = wave.id;
+          waveClaimed = true;
+          break;
+        }
+      }
+
+      if (!waveClaimed && !isAdmin) {
+        throw Errors.badRequest('Semua gelombang pendaftaran pada periode ini telah penuh atau ditutup');
+      }
+    }
+
     const registrant = await tx.registrant.create({
       data: {
         admissionPeriodId: data.admissionPeriodId,
+        waveId,
         registrationNo,
         fullName: data.fullName,
         name: data.fullName, // legacy column, kept in sync
@@ -410,7 +684,8 @@ async function createRegistrantOnce(data: CreateRegistrantExtendedInput) {
   });
 }
 
-export async function updateRegistrant(id: string, data: UpdateRegistrantInput) {
+export async function updateRegistrant(id: string, data: UpdateRegistrantInput, actor?: AuthUser) {
+  if (actor) await assertRegistrantUnitAccess(id, actor);
   // Map Zod input fields to the actual Prisma Registrant model.
   // The schema accepts `fatherName` / `fatherPhone` / `motherName` /
   // `motherPhone` for UX parity with create, but the persisted model uses
@@ -443,7 +718,8 @@ export async function updateRegistrant(id: string, data: UpdateRegistrantInput) 
   });
 }
 
-export async function updateRegistrantScore(id: string, data: UpdateRegistrantScoreInput) {
+export async function updateRegistrantScore(id: string, data: UpdateRegistrantScoreInput, actor?: AuthUser) {
+  if (actor) await assertRegistrantUnitAccess(id, actor);
   // Only advance status to TEST_COMPLETED when:
   //   1. At least one actual score (test/interview/tahfidz) was provided, AND
   //   2. The registrant is still in a pre-test phase.
@@ -501,30 +777,46 @@ export async function updateRegistrantScore(id: string, data: UpdateRegistrantSc
 export async function recordRegistrationFee(
   id: string,
   data: RecordRegistrationFeeInput,
-  verifiedById: string
+  verifiedById: string,
+  actor?: AuthUser
 ) {
   const registrant = await prisma.registrant.findUnique({
     where: { id },
-    include: { admissionPeriod: { select: { registrationFee: true } } },
+    include: {
+      admissionPeriod: { select: { registrationFee: true, unitId: true } },
+      wave: { select: { registrationFee: true } },
+    },
   });
 
   if (!registrant) throw Errors.notFound('Registrant');
+
+  if (actor && !isSuperAdmin(actor)) {
+    const actorUnitId = actor.unitId;
+    if (!actorUnitId || registrant.admissionPeriod?.unitId !== actorUnitId) {
+      throw Errors.forbidden('Access to this unit is not allowed');
+    }
+  }
+
+  // A wave may override its parent period's registrationFee, so the amount
+  // recorded should be what the registrant actually owed. Wave wins when set.
+  const effectiveFee =
+    registrant.wave?.registrationFee ?? registrant.admissionPeriod?.registrationFee ?? null;
 
   return prisma.registrant.update({
     where: { id },
     data: {
       registrationFeePaidAt: data.paidAt ?? new Date(),
-      // Falls back to what the period charges, so the common "paid in full"
-      // case needs no amount and the record still says how much.
-      registrationFeeAmount:
-        data.amount != null ? data.amount : (registrant.admissionPeriod?.registrationFee ?? null),
+      // Falls back to what the period/wave charges, so the common "paid in
+      // full" case needs no amount and the record still says how much.
+      registrationFeeAmount: data.amount != null ? data.amount : effectiveFee,
       registrationFeeVerifiedById: verifiedById,
       registrationFeeNote: data.note,
     },
   });
 }
 
-export async function updateRegistrantStatus(id: string, data: UpdateRegistrantStatusInput) {
+export async function updateRegistrantStatus(id: string, data: UpdateRegistrantStatusInput, actor?: AuthUser) {
+  if (actor) await assertRegistrantUnitAccess(id, actor);
   // Guard: ENROLLED is a terminal status that must only be reached through
   // `enrollRegistrant`, which atomically creates the User + Student records,
   // assigns class/room, generates the registration-fee invoice, and adjusts
@@ -654,203 +946,51 @@ export async function updateRegistrantStatus(id: string, data: UpdateRegistrantS
 export async function enrollRegistrant(
   registrantId: string,
   studentData: {
-    nis: string;
+    nis?: string;
     nisn?: string;
     classId?: string;
     roomId?: string;
-  }
+    processedById?: string;
+  },
+  actor?: AuthUser
 ) {
-  // Pre-compute a bcrypt hash OUTSIDE the transaction. bcrypt.hash with cost
-  // factor 10 takes ~80-100ms during which we'd otherwise be holding row locks
-  // inside the enrollment transaction, increasing lock contention under
-  // concurrent load. The hash is only consumed by the "no existing user" path
-  // below; when an existing user is reused it is simply discarded. The small
-  // amount of wasted work when the hash isn't needed is worth the shorter
-  // transaction lifetime.
-  const randomPassword = randomBytes(24).toString('base64url');
-  const prehashedPassword = await bcrypt.hash(randomPassword, 10);
-
-  const result = await prisma.$transaction(async (tx) => {
-    // Read registrant + status check INSIDE the transaction so two concurrent
-    // enrollment requests can't both pass the ACCEPTED check and end up
-    // creating duplicate User/Student records for the same registrant.
-    const registrant = await tx.registrant.findUnique({
-      where: { id: registrantId },
-      include: { admissionPeriod: { include: { unit: true } } },
-    });
-
-    if (!registrant) throw new Error('Registrant not found');
-    if (registrant.status !== AdmissionStatus.ACCEPTED) {
-      throw new Error('Registrant must be accepted before enrollment');
-    }
-
-    const existingUser = registrant.email
-      ? await tx.user.findUnique({
-          where: { email: registrant.email },
-          include: { student: true },
-        })
-      : null;
-
-    let user;
-    let student;
-
-    if (existingUser && existingUser.student) {
-      user = existingUser;
-      student = await tx.student.update({
-        where: { id: existingUser.student.id },
-        data: {
-          unitId: registrant.admissionPeriod.unitId,
-          status: 'active',
-          nis: studentData.nis,
-          // Persist the caller-supplied NISN on re-enrollment too. The other
-          // two branches below (existing-user-without-student and brand-new
-          // user) both set `nisn: studentData.nisn` on `tx.student.create`,
-          // so omitting it here would silently discard the value when a
-          // previously-enrolled student is re-enrolled (e.g. after graduating
-          // or transferring) with a new NISN.
-          nisn: studentData.nisn,
-          graduateYear: null,
-        },
-      });
-
-      await tx.classEnrollment.updateMany({
-        where: { studentId: student.id, status: 'active' },
-        data: { status: 'completed' },
-      });
-    } else if (existingUser) {
-      // A User with the registrant's email already exists but has no linked
-      // Student record (e.g. the same email belongs to a parent / staff
-      // account). Reuse that user and attach a new Student row to it instead
-      // of attempting `tx.user.create({ email })`, which would violate the
-      // `User.email @unique` constraint and abort the entire transaction
-      // with an opaque P2002 error.
-      user = existingUser;
-
-      student = await tx.student.create({
-        data: {
-          userId: user.id,
-          unitId: registrant.admissionPeriod.unitId,
-          nis: studentData.nis,
-          nisn: studentData.nisn,
-          gender: registrant.gender,
-          birthPlace: registrant.birthPlace,
-          birthDate: registrant.birthDate,
-          address: registrant.address,
-          parentName: registrant.parentName,
-          parentPhone: registrant.parentPhone,
-          parentEmail: registrant.parentEmail,
-          status: 'active',
-          entryYear: new Date().getFullYear(),
-        },
-      });
-    } else {
-      // Use the bcrypt hash computed before the transaction (see above).
-      // The plain password is intentionally discarded so the account can only
-      // be activated via the standard password-reset flow. This avoids
-      // shipping a known-weak / non-bcrypt placeholder hash to production.
-      user = await tx.user.create({
-        data: {
-          name: registrant.fullName,
-          email: registrant.email || `${studentData.nis}@student.cipansor.or.id`,
-          passwordHash: prehashedPassword,
-          role: 'STUDENT',
-          unitId: registrant.admissionPeriod.unitId,
-          isActive: true,
-        },
-      });
-
-      student = await tx.student.create({
-        data: {
-          userId: user.id,
-          unitId: registrant.admissionPeriod.unitId,
-          nis: studentData.nis,
-          nisn: studentData.nisn,
-          gender: registrant.gender,
-          birthPlace: registrant.birthPlace,
-          birthDate: registrant.birthDate,
-          address: registrant.address,
-          parentName: registrant.parentName,
-          parentPhone: registrant.parentPhone,
-          parentEmail: registrant.parentEmail,
-          status: 'active',
-          entryYear: new Date().getFullYear(),
-        },
-      });
-    }
-
-    if (studentData.classId) {
-      await tx.classEnrollment.create({
-        data: {
-          studentId: student.id,
-          classId: studentData.classId,
-          status: 'active',
-        },
-      });
-    }
-
-    if (studentData.roomId) {
-      await tx.roomAssignment.create({
-        data: {
-          studentId: student.id,
-          roomId: studentData.roomId,
-          isActive: true,
-          assignedAt: new Date(),
-        },
-      });
-    }
-
-    await tx.registrant.update({
-      where: { id: registrantId },
-      data: {
-        status: AdmissionStatus.ENROLLED,
-        enrolledAt: new Date(),
-        studentId: student.id,
-      },
-    });
-
-    // The registrant's status transitions from ACCEPTED -> ENROLLED here, but
-    // unlike `updateRegistrantStatus` this code path doesn't go through the
-    // shared status-transition logic. We must therefore decrement the wave's
-    // `acceptedCount` ourselves; otherwise every successful enrollment leaves
-    // a stale ACCEPTED count behind, eventually overstating the wave's
-    // acceptance rate (see `ppdb-wave.service.ts` `getStats`).
-    if (registrant.waveId) {
-      await tx.admissionWave.updateMany({
-        where: { id: registrant.waveId, acceptedCount: { gt: 0 } },
-        data: { acceptedCount: { decrement: 1 } },
-      });
-    }
-
-    // Auto-generate the registration-fee invoice now that we have a real
-    // Student to attach it to. Skipped if no fee is configured or the
-    // REG_FEE payment type is missing.
-    const period = registrant.admissionPeriod;
-    if (period && Number(period.registrationFee) > 0) {
-      const paymentType = await tx.paymentType.findFirst({
-        where: { unitId: period.unitId, code: 'REG_FEE' },
-      });
-      if (paymentType) {
-        await financeService.createInvoice(
-          {
-            studentId: student.id,
-            paymentTypeId: paymentType.id,
-            amount: Number(period.registrationFee),
-            dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-            notes: `Biaya Pendaftaran ${registrant.fullName}`,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          } as any,
-          tx as Prisma.TransactionClient
-        );
-      }
-    }
-
-    return { user, student };
+  const registrant = await prisma.registrant.findUnique({
+    where: { id: registrantId },
+    include: { admissionPeriod: true },
   });
+
+  if (!registrant) throw new Error('Registrant not found');
+
+  if (actor && !isSuperAdmin(actor)) {
+    const actorUnitId = actor.unitId;
+    if (!actorUnitId || registrant.admissionPeriod?.unitId !== actorUnitId) {
+      throw Errors.forbidden('Access to this unit is not allowed');
+    }
+  }
+
+  const { StudentOnboardingOrchestrator } = await import(
+    '../../services/integration/student-onboarding.orchestrator'
+  );
+
+  const result = await StudentOnboardingOrchestrator.processEnrollment(
+    registrantId,
+    registrant.admissionPeriod.unitId,
+    studentData.processedById || 'system',
+    {
+      nis: studentData.nis,
+      nisn: studentData.nisn,
+      classId: studentData.classId,
+      assignedClassId: studentData.classId,
+      roomId: studentData.roomId,
+      academicYearId: registrant.admissionPeriod.academicYearId,
+    }
+  );
 
   return result;
 }
 
-export async function deleteRegistrant(id: string) {
+export async function deleteRegistrant(id: string, actor?: AuthUser) {
+  if (actor) await assertRegistrantUnitAccess(id, actor);
   // Wrap the read + decrement + delete in a single transaction so that the
   // wave's `registeredCount` (and `acceptedCount` if the registrant was
   // ACCEPTED) stays in sync with the registrants that actually exist.
@@ -877,6 +1017,39 @@ export async function deleteRegistrant(id: string) {
         data: { registeredCount: { decrement: 1 } },
       });
 
+      const wave = await tx.admissionWave.findUnique({
+        where: { id: registrant.waveId },
+        select: {
+          id: true,
+          status: true,
+          registeredCount: true,
+          quota: true,
+          startDate: true,
+          endDate: true,
+          fullByCapacity: true,
+        },
+      });
+      const now = new Date();
+      // Reopen only a FULL wave that became FULL by capacity (`fullByCapacity`
+      // true) — i.e. a cancelled slot in a wave that simply filled up. A wave
+      // an operator deliberately marked FULL below quota (`fullByCapacity`
+      // false/null, e.g. manual early-close) stays closed: `createRegistrantOnce`
+      // also treats FULL as terminal for manual closure, so never silently
+      // reopen it just because one registrant was removed.
+      if (
+        wave &&
+        wave.status === 'FULL' &&
+        wave.fullByCapacity === true &&
+        wave.registeredCount < wave.quota &&
+        wave.startDate <= now &&
+        wave.endDate >= now
+      ) {
+        await tx.admissionWave.update({
+          where: { id: wave.id },
+          data: { status: 'OPEN' },
+        });
+      }
+
       if (registrant.status === AdmissionStatus.ACCEPTED) {
         await tx.admissionWave.updateMany({
           where: { id: registrant.waveId, acceptedCount: { gt: 0 } },
@@ -893,19 +1066,184 @@ export async function deleteRegistrant(id: string) {
 // REGISTRANT DOCUMENT SERVICE
 // =====================================
 
-export async function getRegistrantDocuments(registrantId: string) {
+export async function getRegistrantDocuments(registrantId: string, actor?: AuthUser) {
+  if (actor) await assertRegistrantUnitAccess(registrantId, actor);
   return prisma.registrantDocument.findMany({
     where: { registrantId },
     orderBy: { createdAt: 'desc' },
   });
 }
 
-export async function createRegistrantDocument(data: CreateRegistrantDocumentInput) {
+export async function createRegistrantDocument(data: CreateRegistrantDocumentInput, actor?: AuthUser) {
+  if (actor) await assertRegistrantUnitAccess(data.registrantId, actor);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return prisma.registrantDocument.create({ data: data as any });
 }
 
-export async function verifyDocument(id: string, isVerified: boolean, notes?: string) {
+export async function createPublicRegistrantDocumentService(
+  data: CreatePublicRegistrantDocumentRequest & { registrantId: string }
+) {
+  const { registrantId, type, url, base64, fileName, registrationToken, ocrNotes, ocrStatus } = data;
+
+  const registrant = await prisma.registrant.findUnique({
+    where: { id: registrantId },
+    select: { id: true, registrationNo: true },
+  });
+
+  if (!registrant) {
+    throw Errors.notFound('Registrant');
+  }
+
+  // Token / Proof of Ownership & Expiry Check (max 2 hours valid)
+  if (!registrationToken) {
+    throw Errors.forbidden('Invalid registration token for document upload');
+  }
+
+  const crypto = await import('crypto');
+  const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
+  let isTokenValid = false;
+
+  if (registrationToken.includes('.')) {
+    const [tsHex, hmacHex] = registrationToken.split('.');
+    const timestamp = parseInt(tsHex, 16);
+    if (!isNaN(timestamp)) {
+      const now = Date.now();
+      const expectedHmac = crypto.createHmac('sha256', config.jwt.secret).update(`${registrant.id}:${tsHex}`).digest('hex').slice(0, 16);
+      if (hmacHex === expectedHmac && now >= timestamp && (now - timestamp) <= TWO_HOURS_MS) {
+        isTokenValid = true;
+      }
+    }
+  }
+
+  if (!isTokenValid) {
+    throw Errors.forbidden('Invalid registration token for document upload');
+  }
+
+  const docUrl = url || base64;
+  if (!docUrl || typeof docUrl !== 'string') {
+    throw Errors.badRequest('Dokumen url/base64 wajib diisi');
+  }
+
+  // Identity documents are stored inline as data-URIs on the RegistrantDocument
+  // row. This keeps the public upload flow dependency-free (no object-store
+  // roundtrip) but trades away object-storage advantages. DECISION (documented
+  // 2026-09-09): accept inline storage for now; revisit when moving to object
+  // storage. Rationale and the controls that the current design relies on:
+  //
+  //  - Retention / backup exposure: a data-URI rides inside the DB row and is
+  //    therefore included in every DB backup. There is no separate lifecycle —
+  //    deleting the `RegistrantDocument` row (or its `registrant`, which
+  //    cascades) deletes the file; backups must apply the same retention as the
+  //    rest of the DB. Any future object-store migration must add an
+  //    independent TTL/retention policy, a purge job, and access-audit log.
+  //  - Access auditing: access to the file is the same as access to the row —
+  //    the admins wave/detail handlers (`assertRegistrantUnitAccess`) are the
+  //    gate. There is no per-download audit trail today; add one if a
+  //    compliance requirement emerges.
+  //  - Deletion: no orphan cleanup is needed beyond row/schema deletes. Uploads
+  //    are capped at 2MB and MIME-whitelisted below.
+  // If identity documents are later moved to object storage, add an access-audit
+  // log and a retention policy AND a backfill job to migrate existing rows then,
+  // not now.
+  //
+  // CONTRACT: the registration token is NOT single-use. It is an HMAC bound to
+  // `registrant:id` and valid for 2 hours (see the check above), and may be
+  // reused to upload multiple documents for that registrant within the window.
+  // This is intentional: an applicant often uploads several identity documents
+  // (KTP, KK, akta, foto) in one session without re-fetching a fresh token each
+  // time. If the security policy later requires true single-use, persist a
+  // one-time token per document (or a Redis `SETNX` key) — this needs a small
+  // schema/extra-state change, not a code comment tweak.
+  //
+  // For remote URLs (https), the SSRF guard below blocks loopback and private
+  // hosts. The URL is stored, never fetched in this path; if it is ever
+  // fetched, the same check must run at fetch time AND redirect targets must be
+  // re-validated (a public URL can redirect to 169.254.169.254 / metadata).
+  if (docUrl.startsWith('data:')) {
+    if (docUrl.length > 2800000) {
+      throw Errors.badRequest('Ukuran berkas melebihi batas maksimum (2MB)');
+    }
+    const mimeMatch = docUrl.match(/^data:(image\/(jpeg|jpg|png|webp)|application\/pdf);base64,/i);
+    if (!mimeMatch) {
+      throw Errors.badRequest('Tipe berkas tidak didukung. Hanya gambar (JPEG/PNG/WebP) dan PDF yang diperbolehkan');
+    }
+  } else {
+    try {
+      const parsedUrl = new URL(docUrl);
+      if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+        throw new Error('Invalid protocol');
+      }
+      const hostname = parsedUrl.hostname.toLowerCase();
+      const isLoopback =
+        hostname === 'localhost' ||
+        hostname === '127.0.0.1' ||
+        hostname === '::1' ||
+        hostname.startsWith('127.');
+      const isPrivateIp =
+        hostname.startsWith('10.') ||
+        hostname.startsWith('192.168.') ||
+        /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname) ||
+        hostname === '169.254.169.254' ||
+        hostname.endsWith('.local') ||
+        hostname.endsWith('.internal');
+
+      if (isLoopback || isPrivateIp) {
+        throw Errors.badRequest('URL dokumen tidak diizinkan (host privat atau internal)');
+      }
+    } catch (err: any) {
+      if (err instanceof Errors.badRequest('').constructor || err?.name === 'ApiError' || err?.code) throw err;
+      throw Errors.badRequest('URL dokumen tidak valid (harus diawali http:// atau https://)');
+    }
+  }
+
+  let schemaType: 'akta' | 'ijazah' | 'kk' | 'foto' | 'rapor' | 'lainnya' = 'lainnya';
+  const normalizedType = String(type).toLowerCase();
+  if (normalizedType.includes('foto') || normalizedType === 'photo') {
+    schemaType = 'foto';
+  } else if (normalizedType.includes('kk') || normalizedType === 'family_card') {
+    schemaType = 'kk';
+  } else if (normalizedType.includes('akta') || normalizedType === 'birth_certificate') {
+    schemaType = 'akta';
+  } else if (normalizedType.includes('rapor') || normalizedType === 'report_card') {
+    schemaType = 'rapor';
+  } else if (normalizedType.includes('ijazah') || normalizedType === 'diploma') {
+    schemaType = 'ijazah';
+  }
+
+  let ocrSummaryNote: string | undefined = undefined;
+  if (ocrNotes && ocrNotes.length > 0) {
+    ocrSummaryNote = `[Hasil Verifikasi: ${ocrStatus || 'WARNING'}] ${ocrNotes.join(' | ')}`;
+  }
+
+  const createRegistrantDocumentSchema = (await import('./admissions.schema')).createRegistrantDocumentSchema;
+  const docData = createRegistrantDocumentSchema.parse({
+    registrantId,
+    name: fileName || `${schemaType}_${Date.now()}`,
+    type: schemaType,
+    fileUrl: docUrl,
+    notes: ocrSummaryNote,
+  });
+
+  // Execute count check and document creation within a row-locked transaction to prevent race conditions
+  return prisma.$transaction(async (tx) => {
+    if ((tx as any).$executeRaw) {
+      await (tx as any).$executeRaw`SELECT id FROM "registrants" WHERE id = ${registrantId} FOR UPDATE`;
+    }
+
+    const existingDocCount = await tx.registrantDocument.count({
+      where: { registrantId },
+    });
+
+    if (existingDocCount >= 10) {
+      throw Errors.badRequest('Jumlah dokumen pendaftar telah mencapai batas maksimum (10 dokumen)');
+    }
+
+    return tx.registrantDocument.create({ data: docData as any });
+  });
+}
+
+export async function verifyDocument(id: string, isVerified: boolean, notes?: string, actor?: AuthUser) {
+  if (actor) await assertDocumentUnitAccess(id, actor);
   return prisma.registrantDocument.update({
     where: { id },
     data: {
@@ -916,7 +1254,8 @@ export async function verifyDocument(id: string, isVerified: boolean, notes?: st
   });
 }
 
-export async function deleteRegistrantDocument(id: string) {
+export async function deleteRegistrantDocument(id: string, actor?: AuthUser) {
+  if (actor) await assertDocumentUnitAccess(id, actor);
   return prisma.registrantDocument.delete({ where: { id } });
 }
 
@@ -964,6 +1303,14 @@ export type PublicAdmissionPeriod = Prisma.AdmissionPeriodGetPayload<{
  * copies of this three-tier fallback would drift, and the drift reintroduces
  * exactly the bug described above.
  */
+export async function getPublicUnitsService() {
+  return prisma.unit.findMany({
+    where: { deletedAt: null },
+    select: { id: true, name: true, type: true },
+    orderBy: { name: 'asc' },
+  });
+}
+
 export async function findPublicActivePeriod(
   now: Date = new Date()
 ): Promise<PublicAdmissionPeriod | null> {

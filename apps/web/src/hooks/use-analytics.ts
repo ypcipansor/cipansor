@@ -42,6 +42,7 @@ export const REPORT_TYPES: ReportType[] = [
   "HEALTH_SUMMARY",
   "VIOLATION_SUMMARY",
   "LIBRARY_STATISTICS",
+  "SPMB_STATISTICS",
   "PSB_STATISTICS",
 ];
 
@@ -54,6 +55,7 @@ export const REPORT_TYPE_LABELS: Record<ReportType, string> = {
   HEALTH_SUMMARY: "Ringkasan Kesehatan",
   VIOLATION_SUMMARY: "Ringkasan Pelanggaran",
   LIBRARY_STATISTICS: "Statistik Perpustakaan",
+  SPMB_STATISTICS: "Statistik SPMB",
   PSB_STATISTICS: "Statistik PSB",
 };
 

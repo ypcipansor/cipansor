@@ -1,5 +1,41 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import type {
+  RegistrantDTO,
+  OnboardRegistrantPayload,
+  TrackedRegistrantDTO,
+  RegistrationStatus,
+} from "@cipansor/shared";
+export type { RegistrationStatus };
+
+// Typed query params for the admissions list endpoints. These mirror the
+// request schemas in `apps/api/src/modules/admissions/admissions.schema.ts`
+// (queryAdmissionPeriodSchema / queryRegistrantSchema) and the wave list
+// handler in `ppdb-wave.service.ts` — single source on the API side, and a
+// lean union here is all the web client needs to avoid `any`.
+export interface AdmissionPeriodQuery {
+  page?: number;
+  limit?: number;
+  unitId?: string;
+  academicYearId?: string;
+  isActive?: boolean | string;
+}
+
+export interface AdmissionWaveQuery {
+  page?: number;
+  limit?: number;
+  periodId?: string;
+  status?: string;
+}
+
+export interface RegistrantQuery {
+  page?: number;
+  limit?: number;
+  admissionPeriodId?: string;
+  status?: RegistrationStatus | string;
+  gender?: "MALE" | "FEMALE";
+  search?: string;
+}
 
 // =====================================
 // Backward-compat types & constants
@@ -7,22 +43,6 @@ import { api } from "@/lib/api";
 // =====================================
 
 export type Gender = "MALE" | "FEMALE";
-
-export type RegistrationStatus =
-  | "REGISTERED"
-  | "DOCUMENT_CHECK"
-  | "TEST_SCHEDULED"
-  | "TEST_COMPLETED"
-  | "ACCEPTED"
-  | "REJECTED"
-  | "ENROLLED"
-  | "CANCELLED"
-  // Legacy values still referenced by the UI
-  | "DRAFT"
-  | "SUBMITTED"
-  | "DOCUMENT_REVIEW"
-  | "INTERVIEW_SCHEDULED"
-  | "INTERVIEW_COMPLETED";
 
 export const REGISTRATION_STATUSES: RegistrationStatus[] = [
   "REGISTERED",
@@ -70,12 +90,79 @@ export const REGISTRATION_STATUS_COLORS: Record<RegistrationStatus, string> = {
 };
 
 // --- Admission Periods ---
-export function useAdmissionPeriods(params?: any) {
+export function useAdmissionPeriods(params?: AdmissionPeriodQuery) {
   return useQuery({
     queryKey: ["admission-periods", params],
     queryFn: async () => {
       const response = await api.get("/admissions/periods", { params });
       return response.data;
+    },
+  });
+}
+
+export function useActiveAdmissionWaves(params?: AdmissionWaveQuery) {
+  return useQuery({
+    queryKey: ["active-admission-waves", params],
+    queryFn: async () => {
+      const response = await api.get("/admissions/waves", {
+        params: { status: "OPEN", ...params },
+      });
+      return response.data;
+    },
+  });
+}
+
+export function useUpdateRegistrantScore() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      id,
+      testScore,
+      interviewScore,
+      tahfidzScore,
+      notes,
+    }: {
+      id: string;
+      testScore?: number;
+      interviewScore?: number;
+      tahfidzScore?: number;
+      notes?: string;
+    }) => {
+      const response = await api.patch(`/admissions/registrants/${id}/score`, {
+        testScore,
+        interviewScore,
+        tahfidzScore,
+        notes,
+      });
+      return response.data.data;
+    },
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: ["admission-registrant", id] });
+      queryClient.invalidateQueries({ queryKey: ["admission-registrants"] });
+    },
+  });
+}
+
+export function useVerifyRegistrantDocument() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      id,
+      isVerified,
+      notes,
+    }: {
+      id: string;
+      isVerified: boolean;
+      notes?: string;
+    }) => {
+      const response = await api.patch(`/admissions/documents/${id}/verify`, {
+        isVerified,
+        notes,
+      });
+      return response.data.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admission-registrant"] });
     },
   });
 }
@@ -91,21 +178,6 @@ export function useAdmissionPeriod(id: string) {
   });
 }
 
-export interface TrackedRegistrant {
-  id: string;
-  registrationNo: string;
-  fullName: string;
-  status: RegistrationStatus;
-  testScore: string | number | null;
-  interviewScore: string | number | null;
-  tahfidzScore: string | number | null;
-  acceptedAt: string | null;
-  enrolledAt: string | null;
-  createdAt: string;
-  admissionPeriod?: { name: string; unit?: { name: string } };
-  documents: { id: string; name: string; isVerified: boolean }[];
-}
-
 /**
  * Public PPDB tracker (GET /admissions/public/track). Requires both the
  * registration number and birth date; the backend rejects partial matches.
@@ -114,7 +186,7 @@ export function useTrackRegistrant(registrationNo: string, birthDate: string) {
   return useQuery({
     queryKey: ["track-registrant", registrationNo, birthDate],
     queryFn: async () => {
-      const response = await api.get<{ data: TrackedRegistrant }>(
+      const response = await api.get<{ data: TrackedRegistrantDTO }>(
         "/admissions/public/track",
         { params: { registrationNo, birthDate } },
       );
@@ -126,7 +198,7 @@ export function useTrackRegistrant(registrationNo: string, birthDate: string) {
 }
 
 // --- Admission Waves ---
-export function useAdmissionWaves(params?: any) {
+export function useAdmissionWaves(params?: AdmissionWaveQuery) {
   return useQuery({
     queryKey: ["admission-waves", params],
     queryFn: async () => {
@@ -148,7 +220,7 @@ export function useAdmissionWave(id: string) {
 }
 
 // --- Registrants ---
-export function useRegistrants(params?: any) {
+export function useRegistrants(params?: RegistrantQuery) {
   return useQuery({
     queryKey: ["admission-registrants", params],
     queryFn: async () => {
@@ -159,7 +231,7 @@ export function useRegistrants(params?: any) {
 }
 
 export function useRegistrant(id: string) {
-  return useQuery({
+  return useQuery<RegistrantDTO>({
     queryKey: ["admission-registrant", id],
     queryFn: async () => {
       const response = await api.get(`/admissions/registrants/${id}`);
@@ -172,7 +244,7 @@ export function useRegistrant(id: string) {
 export function useOnboardRegistrant() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (payload: any) => {
+    mutationFn: async (payload: OnboardRegistrantPayload) => {
       // The onboarding orchestrator is mounted under the waves sub-router at
       // POST /admissions/waves/onboard-registrant (see ppdb-wave.routes.ts).
       // The handler reads `registrantId` from the request body.
@@ -182,8 +254,13 @@ export function useOnboardRegistrant() {
       );
       return response.data;
     },
-    onSuccess: () => {
+    onSuccess: (_data, payload) => {
       queryClient.invalidateQueries({ queryKey: ["admission-registrants"] });
+      // The detail query feeds the onboarding button's enabled/disabled state
+      // (via status/enrolledAt). Without invalidating it, the button stays
+      // visible after a successful onboarding and a second click fails with a
+      // "already enrolled" conflict.
+      queryClient.invalidateQueries({ queryKey: ["admission-registrant", payload.registrantId] });
       queryClient.invalidateQueries({ queryKey: ["students"] });
     },
   });
@@ -222,7 +299,15 @@ export function useRecordRegistrationFee() {
 export function useUpdateRegistrantStatus() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, status, notes }: any) => {
+    mutationFn: async ({
+      id,
+      status,
+      notes,
+    }: {
+      id: string;
+      status: RegistrationStatus;
+      notes?: string;
+    }) => {
       const response = await api.patch(`/admissions/registrants/${id}/status`, { status, notes });
       return response.data.data;
     },
@@ -272,9 +357,9 @@ export function useCreateRegistration() {
       // document upload is a separate flow under
       // `/admissions/registrants/:id/documents`, not part of registrant
       // creation.
-      let payload: Record<string, any>;
+      let payload: Record<string, unknown>;
       if (typeof FormData !== "undefined" && data instanceof FormData) {
-        const obj: Record<string, any> = {};
+        const obj: Record<string, unknown> = {};
         data.forEach((value, key) => {
           if (typeof value === "string") {
             obj[key] = value;
@@ -282,7 +367,10 @@ export function useCreateRegistration() {
         });
         payload = obj;
       } else {
-        payload = data;
+        // `data` is a plain object (the FormData branch is guarded by
+        // `typeof FormData`). When FormData is undefined at runtime the else
+        // branch can still see `data` typed as FormData, so cast explicitly.
+        payload = data as Record<string, unknown>;
       }
       // Use the unauthenticated public endpoint. The authenticated
       // `/admissions/registrants` POST is behind `authorize(SUPER_ADMIN,

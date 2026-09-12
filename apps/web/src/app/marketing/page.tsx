@@ -230,8 +230,8 @@ export default function MarketingDashboard() {
     setShowCreateDialog(true);
   };
 
-  const copyTrackingLink = (code: string) => {
-    const link = `${window.location.origin}/psb?ref=${code}`;
+  const copyTrackingLink = (code: string, id?: string) => {
+    const link = `${window.location.origin}/public/spmb?campaign_id=${id || ""}&source=${code}`;
     navigator.clipboard.writeText(link);
     toast.success("Link tracking berhasil disalin");
   };
@@ -868,7 +868,7 @@ export default function MarketingDashboard() {
                                 Edit
                               </DropdownMenuItem>
                               <DropdownMenuItem
-                                onClick={() => copyTrackingLink(campaign.code)}
+                                onClick={() => copyTrackingLink(campaign.code, campaign.id)}
                               >
                                 <Copy className="mr-2 h-4 w-4" />
                                 Salin Link
@@ -876,7 +876,7 @@ export default function MarketingDashboard() {
                               <DropdownMenuItem
                                 onClick={() =>
                                   window.open(
-                                    `/psb?ref=${campaign.code}`,
+                                    `/public/spmb?campaign_id=${campaign.id}&source=${campaign.code}`,
                                     "_blank",
                                   )
                                 }
