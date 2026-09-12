@@ -3,6 +3,7 @@ import { ApiError, ErrorCode } from '@/middleware/error';
 import RaportMerdekaService from './raport-merdeka.service';
 import { generateRaporPesantren } from '../rapor-pesantren/rapor-pesantren.service';
 import { AssessmentAnalyticsService } from './analytics.service';
+import type { JwtPayload } from '@/lib/jwt';
 
 /**
  * Service to generate a unified report combining academic (Merdeka)
@@ -13,7 +14,12 @@ export class UnifiedRaportService {
    * Generate Unified SD IT Raport
    * Combines Kurikulum Merdeka (Academic) and Pesantren (Islamic) data
    */
-  static async generateUnifiedRaport(studentId: string, academicYearId: string, semester: number) {
+  static async generateUnifiedRaport(
+    studentId: string,
+    academicYearId: string,
+    semester: number,
+    user?: JwtPayload
+  ) {
     // 1. Get Student & School Info
     const student = await prisma.student.findUnique({
       where: { id: studentId },
@@ -57,7 +63,7 @@ export class UnifiedRaportService {
       recommendation: genericRecommendation,
     };
     const [raportMerdeka, raporPesantren, holistic] = await Promise.all([
-      RaportMerdekaService.generateRaportMerdeka(studentId, academicYearId, semester),
+      RaportMerdekaService.generateRaportMerdeka(studentId, academicYearId, semester, user),
       generateRaporPesantren({ studentId, academicYearId, semester, unitId: student.unitId }),
       // Holistic analytics failure should not block raport generation
       AssessmentAnalyticsService.getStudentHolisticAnalytics(studentId, academicYearId)
@@ -125,8 +131,13 @@ export class UnifiedRaportService {
     };
   }
 
-  static async getPrintData(studentId: string, academicYearId: string, semester: number) {
-    const data = await this.generateUnifiedRaport(studentId, academicYearId, semester);
+  static async getPrintData(
+    studentId: string,
+    academicYearId: string,
+    semester: number,
+    user?: JwtPayload
+  ) {
+    const data = await this.generateUnifiedRaport(studentId, academicYearId, semester, user);
 
     return {
       ...data,

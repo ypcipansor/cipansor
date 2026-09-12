@@ -84,7 +84,6 @@ const KNOWN_MISSING = new Set([
   "/paud/reports/X/edit",
   "/paud/reports/generate",
   "/paud/reports/new",
-  "/pkg/X",
   "/portfolio/X",
   "/student/X",
   "/student/X/takhosus",

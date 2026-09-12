@@ -198,7 +198,7 @@ export const roleRouteAccess: Record<LegacyRole, string[]> = {
     "/pengawasan",
     "/perencanaan",
     "/permits",
-    "/pkg",
+    "/kinerja",
     "/portfolio",
     "/practicum",
     "/procurement",
@@ -261,8 +261,8 @@ export const roleRouteAccess: Record<LegacyRole, string[]> = {
     "/muhasabah",
     "/musyrif",
     "/notifications",
+    "/kinerja",
     "/permits",
-    "/pkg",
     "/portfolio",
     "/practicum",
     "/profile",
@@ -291,6 +291,7 @@ export const roleRouteAccess: Record<LegacyRole, string[]> = {
     "/e-office",
     "/finance",
     "/health",
+    "/kinerja",
     "/lingkungan",
     "/notifications",
     "/permits",
@@ -381,8 +382,13 @@ export function getEffectiveRole(
 ): LegacyRole | undefined {
   if (!user) return undefined;
 
-  if (isLegacyRole(user.role)) return user.role;
-
+  // The active (primary) assignment decides, as on the API, which derives
+  // req.user.role from the token's roleCode. `user.role` is the legacy column
+  // and always holds a legacy value, so reading it first made the assignment
+  // branch dead code for every real user: ketua@ — STAFF in that column, Ketua
+  // Pengurus by assignment — was bounced from /perencanaan to /staff by the web
+  // while the API served the page, and switching roles never changed which
+  // pages the web allowed.
   const assignments = user.userRoles ?? [];
   const primary =
     assignments.find((a) => a?.isPrimary) ?? assignments[0] ?? undefined;
@@ -391,6 +397,8 @@ export function getEffectiveRole(
     const derived = deriveLegacyRole(code);
     if (derived) return derived;
   }
+
+  if (isLegacyRole(user.role)) return user.role;
 
   // Last-ditch: a raw RoleCode sitting in `user.role`.
   if (typeof user.role === "string") {

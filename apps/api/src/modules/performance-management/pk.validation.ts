@@ -1,13 +1,7 @@
 import { z } from 'zod';
+import { createPKSchema } from '@cipansor/shared';
 
-export const createPKSchema = z.object({
-  strategicPlanId: z.string().uuid().optional(),
-  supervisorId: z.string().uuid().optional(),
-  supervisorPkId: z.string().uuid().optional(),
-  periodStart: z.string().datetime(),
-  periodEnd: z.string().datetime(),
-  notes: z.string().optional(),
-});
+export { createPKSchema };
 
 // Status is deliberately NOT updatable here — it only changes through the
 // propose/approve/reject workflow endpoints.
@@ -28,12 +22,16 @@ export const createPKIndicatorSchema = z.object({
   unit: z.string().min(1),
   weight: z.number().min(0).max(100),
   category: z.enum(['DIRECT', 'INDIRECT', 'NON_CASCADING']),
+  // Sifat indikator: menumpuk, dirata-rata, atau diambil yang terakhir.
+  // Tidak wajib — bila kosong, layanan menyimpulkannya dari satuan.
+  aggregation: z.enum(['KUMULATIF', 'RATA_RATA', 'TERAKHIR']).optional(),
   refIndicatorId: z.string().uuid().optional(),
   refStrategicIndicatorId: z.string().uuid().optional(),
   notes: z.string().optional(),
 });
 
 export const updatePKIndicatorSchema = z.object({
+  aggregation: z.enum(['KUMULATIF', 'RATA_RATA', 'TERAKHIR']).optional(),
   title: z.string().min(3).optional(),
   target: z.number().nonnegative().optional(),
   unit: z.string().min(1).optional(),

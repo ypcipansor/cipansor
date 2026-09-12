@@ -1,43 +1,99 @@
--- CreateEnum
-DO $$ BEGIN
-  CREATE TYPE "SecurityEventType" AS ENUM ('TAB_SWITCH', 'COPY_PASTE', 'RIGHT_CLICK', 'FULLSCREEN_EXIT', 'DEV_TOOLS');
-EXCEPTION
-  WHEN duplicate_object THEN null;
-END $$;
+-- AlterTable
+ALTER TABLE "exam_attempts" ADD COLUMN "tab_switch_count" INTEGER NOT NULL DEFAULT 0;
 
 -- CreateTable
-CREATE TABLE IF NOT EXISTS "exam_security_logs" (
+--
+-- `type` is TEXT with a CHECK constraint rather than a native enum, and that is
+-- a deliberate choice for THIS list. The set of anti-cheat events grows: this
+-- release already adds TIME_EXPIRED_AUTO_SUBMIT (an exam the clock closed), and
+-- FULLSCREEN_EXIT / DEV_TOOLS are next. A Postgres enum cannot drop, rename or
+-- reorder a value without creating a new type and rewriting the column, while a
+-- CHECK constraint is swapped in one statement — which is why the constraint is
+-- the usual recommendation for an evolving value set and the enum is reserved
+-- for closed domains. The guard still lives in the database, so a typo cannot
+-- quietly invent a new event type.
+--
+-- `details` is JSONB, not TEXT: what belongs there is structured (which control
+-- fired, how long the student was away, the exam duration the clock used), and
+-- a sentence glued together in code cannot be queried or aggregated afterwards.
+CREATE TABLE "exam_security_logs" (
     "id" TEXT NOT NULL,
     "attempt_id" TEXT NOT NULL,
-    "event_type" "SecurityEventType" NOT NULL,
+    "type" TEXT NOT NULL,
     "details" JSONB,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT "exam_security_logs_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "exam_security_logs_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "exam_security_logs_type_check" CHECK ("type" IN (
+      'TAB_SWITCH',
+      'FOCUS_LOST',
+      'COPY',
+      'PASTE',
+      'RIGHT_CLICK',
+      'FULLSCREEN_EXIT',
+      'DEV_TOOLS',
+      'TIME_EXPIRED_AUTO_SUBMIT'
+    ))
 );
 
 -- CreateIndex
-CREATE INDEX IF NOT EXISTS "exam_security_logs_attempt_id_idx" ON "exam_security_logs"("attempt_id");
+CREATE INDEX "exam_security_logs_attempt_id_idx" ON "exam_security_logs"("attempt_id");
 
 -- AddForeignKey
-DO $$ BEGIN
-  ALTER TABLE "exam_security_logs" ADD CONSTRAINT "exam_security_logs_attempt_id_fkey" FOREIGN KEY ("attempt_id") REFERENCES "exam_attempts"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-EXCEPTION
-  WHEN duplicate_object THEN null;
-END $$;
+ALTER TABLE "exam_security_logs" ADD CONSTRAINT "exam_security_logs_attempt_id_fkey" FOREIGN KEY ("attempt_id") REFERENCES "exam_attempts"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
--- Deduplicate historical duplicate grades keeping the latest updated_at/created_at before adding unique index
+-- Deduplicate existing grades before creating unique index
+-- Deduplicate existing grades before creating unique index (keep the most recent record based on updated_at)
+--
+-- Best-practice guard (review item H): the dedup below permanently deletes
+-- older duplicate grade rows, losing their old score/notes/grader/timestamp.
+-- Before deleting, archive every affected row into a backup table so the
+-- history is recoverable if it turns out to carry meaningful data.
+CREATE TABLE "exam_grade_duplicates_backup" (
+    "id" TEXT NOT NULL,
+    "student_id" TEXT NOT NULL,
+    "subject_id" TEXT NOT NULL,
+    "exam_id" TEXT,
+    "academic_year_id" TEXT NOT NULL,
+    "type" TEXT NOT NULL,
+    "score" DECIMAL(5,2) NOT NULL,
+    "max_score" DECIMAL(5,2) NOT NULL,
+    "percentage" DECIMAL(5,2),
+    "letter_grade" TEXT,
+    "notes" TEXT,
+    "graded_by_id" TEXT NOT NULL,
+    "graded_at" TIMESTAMP(3) NOT NULL,
+    "created_at" TIMESTAMP(3) NOT NULL,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+    "backed_up_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "exam_grade_duplicates_backup_pkey" PRIMARY KEY ("id")
+);
+
+INSERT INTO "exam_grade_duplicates_backup" (
+    "id", "student_id", "subject_id", "exam_id", "academic_year_id", "type",
+    "score", "max_score", "percentage", "letter_grade", "notes",
+    "graded_by_id", "graded_at", "created_at", "updated_at"
+)
+SELECT g1."id", g1."student_id", g1."subject_id", g1."exam_id", g1."academic_year_id", g1."type",
+       g1."score", g1."max_score", g1."percentage", g1."letter_grade", g1."notes",
+       g1."graded_by_id", g1."graded_at", g1."created_at", g1."updated_at"
+FROM "grades" g1
+JOIN "grades" g2
+  ON g1."student_id" = g2."student_id"
+ AND g1."exam_id" IS NOT NULL
+ AND g1."exam_id" = g2."exam_id"
+WHERE g1."updated_at" < g2."updated_at"
+   OR (g1."updated_at" = g2."updated_at" AND g1."id" > g2."id");
+
 DELETE FROM "grades" g1
-WHERE g1.exam_id IS NOT NULL
-  AND EXISTS (
-    SELECT 1 FROM "grades" g2
-    WHERE g2.student_id = g1.student_id
-      AND g2.exam_id = g1.exam_id
-      AND (
-        g2.updated_at > g1.updated_at
-        OR (g2.updated_at = g1.updated_at AND g2.id > g1.id)
-      )
+USING "grades" g2
+WHERE g1.student_id = g2.student_id
+  AND g1.exam_id IS NOT NULL
+  AND g1.exam_id = g2.exam_id
+  AND (
+    g1.updated_at < g2.updated_at
+    OR (g1.updated_at = g2.updated_at AND g1.id > g2.id)
   );
 
 -- CreateIndex
-CREATE UNIQUE INDEX IF NOT EXISTS "grades_student_id_exam_id_key" ON "grades"("student_id", "exam_id");
+CREATE UNIQUE INDEX "grades_student_id_exam_id_key" ON "grades"("student_id", "exam_id");

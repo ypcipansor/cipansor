@@ -1,5 +1,6 @@
 import { test, expect } from "./fixtures/auth.fixture";
 import { loginAs } from "./helpers/auth-api";
+import { settledContent } from "./helpers/page-state";
 
 /**
  * PPDB (Student Registration) E2E Tests
@@ -24,7 +25,7 @@ test.describe("PPDB - Main Page", () => {
     await page.goto("/ppdb");
     await page.waitForLoadState("domcontentloaded", { timeout: 10000 });
 
-    const hasContent = await page.content();
+    const hasContent = await settledContent(page);
     expect(hasContent.length).toBeGreaterThan(1000);
     expect(page.url()).toMatch(/(spmb|ppdb)/);
   });

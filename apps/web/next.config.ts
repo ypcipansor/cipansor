@@ -95,6 +95,19 @@ const nextConfig: NextConfig = {
         destination: "/public/verify-letter",
         permanent: true,
       },
+      // Manajemen Kinerja diremajakan sebagai /kinerja. Buku penanda dan hasil
+      // pencarian lama masih membawa /pkg, dan halaman lamanya sudah dihapus —
+      // tanpa pengalihan ini bookmark lama berakhir di 404.
+      {
+        source: "/pkg",
+        destination: "/kinerja",
+        permanent: true,
+      },
+      {
+        source: "/pkg/:path*",
+        destination: "/kinerja/:path*",
+        permanent: true,
+      },
     ];
   },
 

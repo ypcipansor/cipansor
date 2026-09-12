@@ -1,5 +1,6 @@
 import { test, expect } from "./fixtures/auth.fixture";
 import { loginAs } from "./helpers/auth-api";
+import { settledContent } from "./helpers/page-state";
 
 /**
  * Dormitories Module E2E Tests
@@ -24,7 +25,7 @@ test.describe("Dormitories - Navigation", () => {
     await page.goto("/dormitories");
     await page.waitForLoadState("domcontentloaded", { timeout: 10000 });
 
-    const content = await page.content();
+    const content = await settledContent(page);
     expect(content.length).toBeGreaterThan(1000);
   });
 });
@@ -53,7 +54,7 @@ test.describe("Dormitories - Features", () => {
     await page.goto("/dormitories");
     await page.waitForLoadState("domcontentloaded", { timeout: 10000 });
 
-    const content = await page.content();
+    const content = await settledContent(page);
     const hasAssignment =
       content.includes("Kamar") ||
       content.includes("Room") ||
@@ -69,7 +70,7 @@ test.describe("Dormitories - Features", () => {
     await page.goto("/dormitories");
     await page.waitForLoadState("domcontentloaded", { timeout: 10000 });
 
-    const content = await page.content();
+    const content = await settledContent(page);
     const hasOccupancy =
       content.includes("Penghuni") ||
       content.includes("Occupancy") ||

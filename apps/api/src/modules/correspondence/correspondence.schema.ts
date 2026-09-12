@@ -8,6 +8,7 @@ export {
   listParticipantsQuerySchema,
   dispatchLetterSchema,
   updateLetterCcSchema,
+  updateLetterSchema,
 } from '@cipansor/shared';
 
 export type {
@@ -20,4 +21,5 @@ export type {
   ListParticipantsQueryInput,
   DispatchLetterSchemaInput,
   UpdateLetterCcSchemaInput,
+  UpdateLetterSchemaInput,
 } from '@cipansor/shared';

@@ -1,5 +1,6 @@
 // Domain hooks
 export * from "./use-students";
+export * from "./use-regenerate-student-cards";
 export * from "./use-units";
 export * from "./use-users";
 export * from "./use-classes";

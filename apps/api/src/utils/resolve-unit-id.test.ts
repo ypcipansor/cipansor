@@ -5,6 +5,7 @@ import {
   CROSS_UNIT_SCOPE_ROLES,
   isFoundationScopedRole,
   seesAllUnits,
+  tokenUnitId,
 } from './resolve-unit-id';
 
 /**
@@ -118,5 +119,29 @@ describe('scope role lists', () => {
     expect(isFoundationScopedRole(RoleCode.SMPIT_ADMIN)).toBe(false);
     expect(isFoundationScopedRole(null)).toBe(false);
     expect(isFoundationScopedRole(undefined)).toBe(false);
+  });
+});
+
+describe('tokenUnitId — one scope rule for every token path', () => {
+  it('uses the assignment unit whenever the assignment names one', () => {
+    expect(tokenUnitId('unit-smp', 'YAYASAN_KETUA', 'unit-sd')).toBe('unit-smp');
+    expect(tokenUnitId('unit-smp', 'SDIT_GURU', 'unit-sd')).toBe('unit-smp');
+  });
+
+  it('lets only a foundation role carry no unit', () => {
+    expect(tokenUnitId(null, 'YAYASAN_KETUA', 'unit-sd')).toBeNull();
+    expect(tokenUnitId(null, 'YAYASAN_PENGAWAS', 'unit-sd')).toBeNull();
+    expect(tokenUnitId(undefined, 'SUPER_ADMIN', null)).toBeNull();
+  });
+
+  it('keeps cross-unit service roles on their home unit — breadth comes from seesAllUnits, not an empty scope', () => {
+    expect(tokenUnitId(null, 'PERAWAT', 'unit-smp')).toBe('unit-smp');
+    expect(tokenUnitId(null, 'PESANTREN_PENGASUH', 'unit-smp')).toBe('unit-smp');
+  });
+
+  it('falls back to the home unit for a unit role, and to null only when there is none', () => {
+    expect(tokenUnitId(null, 'SDIT_GURU', 'unit-sd')).toBe('unit-sd');
+    expect(tokenUnitId(null, 'SDIT_GURU', null)).toBeNull();
+    expect(tokenUnitId(null, undefined, 'unit-sd')).toBe('unit-sd');
   });
 });

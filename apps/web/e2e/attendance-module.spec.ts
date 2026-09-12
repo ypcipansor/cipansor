@@ -264,7 +264,7 @@ test.describe("Attendance - Reports", () => {
     await waitForLoadingComplete(page);
 
     // Should show report page
-    const heading = page.getByRole("heading", { name: /laporan|report/i });
+    const heading = page.getByRole("main").getByRole("heading", { name: /laporan|report/i });
     if (await heading.isVisible({ timeout: 5000 }).catch(() => false)) {
       // Select report type
       const reportType = page

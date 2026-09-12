@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma';
-import { Prisma, PlanStatus } from '@prisma/client';
+import { Prisma, PlanStatus, PlanReviewStage, PlanReviewAction } from '@prisma/client';
 import { Errors } from '@/middleware/error';
 
 type TransactionClient = Prisma.TransactionClient;
@@ -14,7 +14,9 @@ export class PerencanaanService {
     startDate: string;
     endDate: string;
     budget?: number;
-    unitId: string;
+    /// Null for yayasan-level documents (RPJP, Renstra, RKA Yayasan). Only a
+    /// unit's own RKA carries a unit.
+    unitId?: string | null;
     createdById: string;
     parentId?: string;
   }) {
@@ -39,19 +41,70 @@ export class PerencanaanService {
       }
     }
 
+    // The consolidated RKA Yayasan is the document the pengurus actually
+    // approves, so there is exactly one per year. Unit RKAs are unconstrained
+    // — every unit files its own slice of that same year.
+    if (data.type === 'RKA' && !data.unitId) {
+      const year = new Date(data.startDate).getUTCFullYear();
+      const clash = await prisma.strategicPlan.findFirst({
+        where: {
+          type: 'RKA',
+          unitId: null,
+          status: { notIn: ['COMPLETED', 'CANCELLED'] },
+          startDate: {
+            gte: new Date(Date.UTC(year, 0, 1)),
+            lt: new Date(Date.UTC(year + 1, 0, 1)),
+          },
+        },
+        select: { id: true },
+      });
+      if (clash) {
+        throw Errors.badRequest(
+          `Sudah ada RKA Yayasan aktif untuk tahun ${year}.`
+        );
+      }
+    }
+
     if (data.parentId) {
       const parent = await prisma.strategicPlan.findUnique({ where: { id: data.parentId } });
       if (!parent) throw Errors.notFound('Parent plan');
 
-      // Cascading hierarchy: RPJP -> RENSTRA -> RKA. Each level's closing
-      // targets are the next level's contract, so a plan may only hang off
-      // the level directly above it.
-      if (data.type === 'RKA' && parent.type !== 'RENSTRA') {
-        throw Errors.badRequest('RKA must refer to a RENSTRA parent plan');
+      // Cascading hierarchy, mirroring the national planning chain
+      // (RPJPD → RPJMD → RKPD → Renja/RKA-OPD): the annual level has TWO
+      // tiers, a consolidated foundation document and the unit slices that
+      // hang off it. A plan may only hang off the tier directly above it.
+      //
+      //   RPJP  (20 th, yayasan)
+      //     └── RENSTRA  (5 th, yayasan)
+      //           └── RKA Yayasan  (1 th, konsolidasi — unitId null)
+      //                 └── RKA Unit  (1 th, per sekolah — unitId set)
+      if (data.type === 'RKA') {
+        if (data.unitId) {
+          if (parent.type !== 'RKA' || parent.unitId !== null) {
+            throw Errors.badRequest(
+              'RKA unit harus menginduk pada RKA Yayasan (konsolidasi), bukan pada Renstra maupun RKA unit lain.'
+            );
+          }
+        } else if (parent.type !== 'RENSTRA') {
+          throw Errors.badRequest('RKA Yayasan harus menginduk pada Renstra.');
+        }
       }
       if (data.type === 'RENSTRA' && parent.type !== 'RPJP') {
         throw Errors.badRequest('RENSTRA must refer to an RPJP parent plan');
       }
+    } else if (data.type !== 'RPJP') {
+      // RPJP adalah akar kaskade — satu-satunya tipe yang sah tanpa induk.
+      // Segala yang lain harus menggantung pada tingkat di atasnya, atau
+      // dokumen terlepas dari kaskade wajib (Renstra menginduk RPJP; RKA
+      // Yayasan menginduk Renstra; RKA unit menginduk RKA Yayasan).
+      if (data.type === 'RENSTRA') {
+        throw Errors.badRequest('RENSTRA harus menyebut RPJP induknya.');
+      }
+      throw Errors.badRequest(
+        data.unitId
+          ? 'RKA unit harus menyebut RKA Yayasan induknya.'
+          : 'RKA Yayasan harus menyebut Renstra induknya.'
+      );
     }
 
     return prisma.strategicPlan.create({
@@ -62,7 +115,7 @@ export class PerencanaanService {
         startDate: new Date(data.startDate),
         endDate: new Date(data.endDate),
         budget: data.budget ? (data.budget as any) : undefined,
-        unit: { connect: { id: data.unitId } },
+        unit: data.unitId ? { connect: { id: data.unitId } } : undefined,
         createdBy: { connect: { id: data.createdById } },
         parent: data.parentId ? { connect: { id: data.parentId } } : undefined,
       },
@@ -120,6 +173,10 @@ export class PerencanaanService {
         approvedBy: { select: { id: true, name: true } },
         parent: { select: { id: true, title: true, type: true } },
         collaborators: { include: { user: { select: { id: true, name: true } } } },
+        reviewEvents: {
+          orderBy: { createdAt: 'asc' },
+          include: { actor: { select: { id: true, name: true } } },
+        },
         objectives: {
           include: {
             indicators: true,
@@ -143,6 +200,10 @@ export class PerencanaanService {
         approvedBy: { select: { id: true, name: true } },
         parent: { select: { id: true, title: true, type: true } },
         collaborators: { include: { user: { select: { id: true, name: true } } } },
+        reviewEvents: {
+          orderBy: { createdAt: 'asc' },
+          include: { actor: { select: { id: true, name: true } } },
+        },
         objectives: {
           include: {
             indicators: {
@@ -419,11 +480,109 @@ export class PerencanaanService {
     return { planId: id, trend };
   }
 
-  async getPlanForAuth(id: string) {
-    return prisma.strategicPlan.findUnique({
+  /**
+   * Plan write-auth payload ({ id, unitId, status, isCollaborator }). When a
+   * userId is supplied, isCollaborator tells whether that user was explicitly
+   * added as a collaborator on the plan (PlanCollaborator), letting the
+   * controller's write gate grant DRAFT/IN_PROGRESS edits to the right people.
+   */
+  planAuthSelect(userId?: string) {
+    return {
+      id: true,
+      unitId: true,
+      status: true,
+      type: true,
+      reviewStage: true,
+      ...(userId
+        ? { collaborators: { where: { userId }, select: { userId: true } } }
+        : {}),
+    };
+  }
+
+  planAuthFromRow(
+    row: {
+      id: string;
+      unitId: string | null;
+      status: string;
+      type?: string;
+      reviewStage?: string | null;
+      collaborators?: { userId: string }[];
+    } | null
+  ) {
+    return row
+      ? {
+          id: row.id,
+          unitId: row.unitId,
+          status: row.status,
+          type: row.type,
+          reviewStage: row.reviewStage ?? null,
+          isCollaborator: (row.collaborators ?? []).length > 0,
+        }
+      : null;
+  }
+
+  async getPlanForAuth(id: string, userId?: string) {
+    const row = await prisma.strategicPlan.findUnique({
       where: { id },
-      select: { id: true, unitId: true },
+      select: this.planAuthSelect(userId),
     });
+    return this.planAuthFromRow(row);
+  }
+
+  /**
+   * Resolve an objective to its parent plan's write-auth payload
+   * ({ id, unitId, status, isCollaborator }). Used by the controller to gate
+   * subrecord mutations against the same write-access + DRAFT rules as the
+   * plan itself.
+   */
+  async getObjectivePlanForAuth(
+    objectiveId: string,
+    userId?: string
+  ): Promise<{ id: string; unitId: string | null; status: string; isCollaborator: boolean } | null> {
+    const objective = await prisma.planObjective.findUnique({
+      where: { id: objectiveId },
+      select: { plan: { select: this.planAuthSelect(userId) } },
+    });
+    return this.planAuthFromRow(objective?.plan ?? null);
+  }
+
+  /**
+   * Resolve an indicator to its parent plan's write-auth payload. An
+   * indicator hangs off EITHER an objective (IUP/IKU) or an activity
+   * (IKP/IKK) — trace whichever branch is set.
+   */
+  async getIndicatorPlanForAuth(
+    indicatorId: string,
+    userId?: string
+  ): Promise<{ id: string; unitId: string | null; status: string; isCollaborator: boolean } | null> {
+    const indicator = await prisma.planIndicator.findUnique({
+      where: { id: indicatorId },
+      select: { objectiveId: true, activityId: true },
+    });
+    if (!indicator) return null;
+    if (indicator.objectiveId)
+      return this.getObjectivePlanForAuth(indicator.objectiveId, userId);
+    if (indicator.activityId) return this.getActivityPlanForAuth(indicator.activityId, userId);
+    return null;
+  }
+
+  /**
+   * Resolve an activity to its parent plan's write-auth payload. Walk the
+   * parent chain (Kegiatan → Program) until an objective is found, then
+   * resolve that objective's plan.
+   */
+  async getActivityPlanForAuth(
+    activityId: string,
+    userId?: string
+  ): Promise<{ id: string; unitId: string | null; status: string; isCollaborator: boolean } | null> {
+    const activity = await prisma.planActivity.findUnique({
+      where: { id: activityId },
+      select: { objectiveId: true, parentId: true },
+    });
+    if (!activity) return null;
+    if (activity.objectiveId) return this.getObjectivePlanForAuth(activity.objectiveId, userId);
+    if (activity.parentId) return this.getActivityPlanForAuth(activity.parentId, userId);
+    return null;
   }
 
   async updatePlan(id: string, data: Prisma.StrategicPlanUpdateInput) {
@@ -447,6 +606,66 @@ export class PerencanaanService {
         approvedBy: { connect: { id: approvedById } },
         approvedAt: new Date(),
       },
+    });
+  }
+
+  /**
+   * One step of the yayasan-document ratification flow, atomically.
+   *
+   * The stage moves only while it is still one this step expects (a
+   * compare-and-set on `reviewStage`), and the trail entry is written in the
+   * same transaction — so two people pressing a button at once cannot both
+   * succeed, and no stage change ever exists without its record.
+   */
+  async advanceReview(params: {
+    planId: string;
+    from: Array<PlanReviewStage | null>;
+    to: PlanReviewStage;
+    status: PlanStatus;
+    approve?: boolean;
+    event: {
+      action: PlanReviewAction;
+      actorId: string;
+      actorRoleCode: string;
+      notes?: string | null;
+      revised?: boolean | null;
+    };
+  }) {
+    const stages = params.from.filter((s): s is PlanReviewStage => s !== null);
+    const stageWhere = params.from.includes(null)
+      ? { OR: [{ reviewStage: null }, { reviewStage: { in: stages } }] }
+      : { reviewStage: { in: stages } };
+
+    return prisma.$transaction(async (tx) => {
+      const { count } = await tx.strategicPlan.updateMany({
+        where: { id: params.planId, ...stageWhere },
+        data: {
+          reviewStage: params.to,
+          status: params.status,
+          ...(params.approve
+            ? { approvedById: params.event.actorId, approvedAt: new Date() }
+            : {}),
+        },
+      });
+      if (count !== 1) {
+        throw Errors.badRequest(
+          'Tahap pengesahan dokumen ini sudah berubah. Muat ulang halaman untuk melihat tahap terbarunya.'
+        );
+      }
+      await tx.planReviewEvent.create({
+        data: {
+          planId: params.planId,
+          action: params.event.action,
+          actorId: params.event.actorId,
+          actorRoleCode: params.event.actorRoleCode,
+          notes: params.event.notes ?? null,
+          revised: params.event.revised ?? null,
+        },
+      });
+      return tx.strategicPlan.findUnique({
+        where: { id: params.planId },
+        select: { id: true, status: true, reviewStage: true, approvedAt: true },
+      });
     });
   }
 

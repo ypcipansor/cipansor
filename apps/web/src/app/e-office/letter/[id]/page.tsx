@@ -73,6 +73,7 @@ import {
   LETTER_NATURE_LABELS,
   LETTER_URGENCY_LABELS,
   LETTER_DISPATCH_CHANNEL_LABELS,
+  mayEditLetter,
   ccRecipientName,
   mayRevokeSignature,
   whoMayRevoke,
@@ -102,6 +103,7 @@ export default function LetterDetailPage({
   const { user } = useAuth();
   const {
     useLetter,
+    updateLetter,
     submitForReview,
     reviewLetter,
     createDisposition,
@@ -138,6 +140,20 @@ export default function LetterDetailPage({
   const [completeNotes, setCompleteNotes] = useState("");
   const [ccDraft, setCcDraft] = useState<LetterCcInput[] | null>(null);
   const [dispatchOpen, setDispatchOpen] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editFormData, setEditFormData] = useState<{
+    subject: string;
+    content: string;
+    recipientName: string;
+    recipientInstance: string;
+    urgency: LetterUrgency;
+  }>({
+    subject: "",
+    content: "",
+    recipientName: "",
+    recipientInstance: "",
+    urgency: LetterUrgency.NORMAL,
+  });
   const [dispatchData, setDispatchData] = useState({
     channel: LetterDispatchChannel.HAND_DELIVERY as LetterDispatchChannel,
     dispatchedAt: "",
@@ -176,8 +192,7 @@ export default function LetterDetailPage({
    */
   const signerParty = activeSignature
     ? {
-        userId:
-          letter?.reviewers?.find((r) => r.isSigner)?.reviewerId ?? "",
+        userId: letter?.reviewers?.find((r) => r.isSigner)?.reviewerId ?? "",
         roleCode: activeSignature.signerRoleCode ?? null,
       }
     : null;
@@ -188,6 +203,16 @@ export default function LetterDetailPage({
   const canRevokeLetter =
     !!signerParty && mayRevokeSignature(signerParty, actorParty);
   const whoMayRevokeText = signerParty ? whoMayRevoke(signerParty) : "";
+
+  // Mirrors the server's `updateLetter` authorisation (creator, executive
+  // foundation roles, or a role that handles unit correspondence) so the UI
+  // and the API can never disagree about who sees the "Edit Naskah Surat"
+  // button. `mayEditLetter` is the same single source the backend guard uses —
+  // previously the UI hard-coded only SUPER_ADMIN / SDIT_ADMIN, leaving e.g.
+  // the tata usaha and kepala sekolah of every unit unable to edit a naskah
+  // they were entitled to change.
+  const canEditNaskah =
+    letter?.createdById === user?.id || mayEditLetter(getPrimaryRoleCode(user));
 
   const handleUpdateDisposition = async (
     status: "IN_PROGRESS" | "COMPLETED",
@@ -229,11 +254,14 @@ export default function LetterDetailPage({
 
     try {
       toast.info("Sedang mengunduh dokumen PDF...");
-      const response = await fetch(`/api/correspondence/letters/${letter.id}/pdf`, {
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("token") || ""}`,
+      const response = await fetch(
+        `/api/correspondence/letters/${letter.id}/pdf`,
+        {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token") || ""}`,
+          },
         },
-      });
+      );
 
       /**
        * Pesan servernya yang dibacakan, bukan kalimat umum.
@@ -319,7 +347,8 @@ export default function LetterDetailPage({
   };
 
   const handleSubmitDraftForReview = async () => {
-    const firstReviewerId = letter.reviewers?.[0]?.reviewerId || selectedReviewerId;
+    const firstReviewerId =
+      letter.reviewers?.[0]?.reviewerId || selectedReviewerId;
     if (!firstReviewerId) {
       toast.error("Pemeriksa pertama wajib dipilih saat mengajukan review");
       return;
@@ -328,18 +357,29 @@ export default function LetterDetailPage({
       await submitForReview.mutateAsync({
         id: letter.id,
         note: notes || "Mengajukan draft untuk ditinjau",
-        reviewerIds: letter.reviewers?.length ? undefined : [selectedReviewerId],
+        reviewerIds: letter.reviewers?.length
+          ? undefined
+          : [selectedReviewerId],
       });
       toast.success("Draft surat berhasil diajukan untuk ditinjau");
     } catch (error: any) {
-      toast.error(error?.response?.data?.message || "Gagal mengajukan draft untuk ditinjau");
+      toast.error(
+        error?.response?.data?.message ||
+          "Gagal mengajukan draft untuk ditinjau",
+      );
     }
   };
 
   const handleForwardReview = async () => {
     const hasExistingSigner = letter.reviewers?.some((r) => r.isSigner);
-    if (!forwardData.nextReviewerId && !forwardData.isFinalSigner && !hasExistingSigner) {
-      toast.error("Pilih pejabat penerus atau tandai sebagai penandatangan akhir.");
+    if (
+      !forwardData.nextReviewerId &&
+      !forwardData.isFinalSigner &&
+      !hasExistingSigner
+    ) {
+      toast.error(
+        "Pilih pejabat penerus atau tandai sebagai penandatangan akhir.",
+      );
       return;
     }
     try {
@@ -353,7 +393,7 @@ export default function LetterDetailPage({
       toast.success(
         forwardData.nextReviewerId
           ? "Surat berhasil disetujui dan diteruskan"
-          : "Surat berhasil disetujui"
+          : "Surat berhasil disetujui",
       );
       setForwardModalOpen(false);
     } catch (error) {
@@ -403,7 +443,10 @@ export default function LetterDetailPage({
   const handleSaveCc = async () => {
     if (!letter?.id || ccDraft === null) return;
     try {
-      await updateLetterCc.mutateAsync({ id: letter.id, ccRecipients: ccDraft });
+      await updateLetterCc.mutateAsync({
+        id: letter.id,
+        ccRecipients: ccDraft,
+      });
       setCcDraft(null);
       toast.success("Daftar tembusan disimpan");
     } catch (error: any) {
@@ -416,7 +459,11 @@ export default function LetterDetailPage({
   };
 
   const handleCreateDisposition = async () => {
-    if ((!dispositionData.recipientIds || dispositionData.recipientIds.length === 0) || !dispositionData.instruction) {
+    if (
+      !dispositionData.recipientIds ||
+      dispositionData.recipientIds.length === 0 ||
+      !dispositionData.instruction
+    ) {
       toast.error("Penerima dan Instruksi wajib diisi");
       return;
     }
@@ -446,6 +493,119 @@ export default function LetterDetailPage({
   return (
     <div className="max-w-5xl mx-auto p-6 space-y-6">
       {/* Dialog Forward Concept Letter */}
+      {/* Dialog Edit Letter */}
+      <Dialog open={editModalOpen} onOpenChange={setEditModalOpen}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>Edit Naskah Surat</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label>Perihal / Judul Surat</Label>
+              <Input
+                value={editFormData.subject}
+                onChange={(e) =>
+                  setEditFormData({ ...editFormData, subject: e.target.value })
+                }
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>Nama Penerima</Label>
+                <Input
+                  value={editFormData.recipientName}
+                  onChange={(e) =>
+                    setEditFormData({
+                      ...editFormData,
+                      recipientName: e.target.value,
+                    })
+                  }
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label>Instansi Penerima</Label>
+                <Input
+                  value={editFormData.recipientInstance}
+                  onChange={(e) =>
+                    setEditFormData({
+                      ...editFormData,
+                      recipientInstance: e.target.value,
+                    })
+                  }
+                />
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label>Urgensi</Label>
+              <Select
+                value={editFormData.urgency}
+                onValueChange={(val) =>
+                  setEditFormData({
+                    ...editFormData,
+                    urgency: val as LetterUrgency,
+                  })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(LETTER_URGENCY_LABELS).map(
+                    ([value, label]) => (
+                      <SelectItem key={value} value={value}>
+                        {label}
+                      </SelectItem>
+                    ),
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label>Isi Ringkas Naskah</Label>
+              <Textarea
+                rows={5}
+                value={editFormData.content}
+                onChange={(e) =>
+                  setEditFormData({ ...editFormData, content: e.target.value })
+                }
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-3">
+            <Button variant="outline" onClick={() => setEditModalOpen(false)}>
+              Batal
+            </Button>
+            <Button
+              onClick={async () => {
+                if (!letter?.id) return;
+                try {
+                  await updateLetter.mutateAsync({
+                    id: letter.id,
+                    data: {
+                      subject: editFormData.subject,
+                      content: editFormData.content,
+                      recipientName: editFormData.recipientName,
+                      recipientInstance: editFormData.recipientInstance,
+                      urgency: editFormData.urgency,
+                    },
+                  });
+                  toast.success("Naskah surat berhasil diperbarui");
+                  setEditModalOpen(false);
+                } catch (error: any) {
+                  toast.error(
+                    error?.response?.data?.message ||
+                      "Gagal memperbarui naskah surat",
+                  );
+                }
+              }}
+              disabled={updateLetter.isPending}
+            >
+              {updateLetter.isPending ? "Menyimpan..." : "Simpan Perubahan"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={forwardModalOpen} onOpenChange={setForwardModalOpen}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
@@ -462,7 +622,11 @@ export default function LetterDetailPage({
               />
               <Select
                 onValueChange={(val) =>
-                  setForwardData({ ...forwardData, nextReviewerId: val, isFinalSigner: false })
+                  setForwardData({
+                    ...forwardData,
+                    nextReviewerId: val,
+                    isFinalSigner: false,
+                  })
                 }
                 value={forwardData.nextReviewerId}
                 disabled={forwardData.isFinalSigner}
@@ -490,12 +654,17 @@ export default function LetterDetailPage({
                   setForwardData({
                     ...forwardData,
                     isFinalSigner: e.target.checked,
-                    nextReviewerId: e.target.checked ? "" : forwardData.nextReviewerId,
+                    nextReviewerId: e.target.checked
+                      ? ""
+                      : forwardData.nextReviewerId,
                   })
                 }
                 className="h-4 w-4 rounded border-gray-300"
               />
-              <Label htmlFor="isFinalSigner" className="text-sm font-medium cursor-pointer">
+              <Label
+                htmlFor="isFinalSigner"
+                className="text-sm font-medium cursor-pointer"
+              >
                 Atau tandai untuk langsung diajukan ke Penandatanganan Akhir
               </Label>
             </div>
@@ -511,7 +680,10 @@ export default function LetterDetailPage({
             </div>
           </div>
           <div className="flex justify-end gap-3">
-            <Button variant="outline" onClick={() => setForwardModalOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setForwardModalOpen(false)}
+            >
               Batal
             </Button>
             <Button onClick={handleForwardReview}>Proses & Teruskan</Button>
@@ -559,7 +731,10 @@ export default function LetterDetailPage({
                         }}
                         className="h-4 w-4 rounded border-gray-300"
                       />
-                      <label htmlFor={`disp-rec-${u.id}`} className="text-sm cursor-pointer">
+                      <label
+                        htmlFor={`disp-rec-${u.id}`}
+                        className="text-sm cursor-pointer"
+                      >
                         {u.nip ? `${u.name} (${u.nip})` : u.name}
                       </label>
                     </div>
@@ -749,7 +924,10 @@ export default function LetterDetailPage({
             <Button variant="outline" onClick={() => setDispatchOpen(false)}>
               Batal
             </Button>
-            <Button onClick={handleDispatch} disabled={dispatchLetter.isPending}>
+            <Button
+              onClick={handleDispatch}
+              disabled={dispatchLetter.isPending}
+            >
               {dispatchLetter.isPending ? "Menyimpan..." : "Catat Pengiriman"}
             </Button>
           </div>
@@ -807,7 +985,9 @@ export default function LetterDetailPage({
               really is SIGNED in the agenda — that is what this badge says,
               and saying so removes the ambiguity. */}
           {revokedSignature && (
-            <span className="text-xs text-muted-foreground">Status agenda:</span>
+            <span className="text-xs text-muted-foreground">
+              Status agenda:
+            </span>
           )}
           <LetterStatusBadge status={letter.status} />
         </div>
@@ -827,9 +1007,13 @@ export default function LetterDetailPage({
           )}
           <p className="mt-2 text-xs text-orange-800">
             Dicabut{" "}
-            {safeFormat(new Date(revokedSignature.revokedAt!), "dd MMMM yyyy HH:mm", {
-              locale: id,
-            })}
+            {safeFormat(
+              new Date(revokedSignature.revokedAt!),
+              "dd MMMM yyyy HH:mm",
+              {
+                locale: id,
+              },
+            )}
             {revokedSignature.revokedBy?.name
               ? ` oleh ${revokedSignature.revokedBy.name}`
               : ""}
@@ -983,7 +1167,6 @@ export default function LetterDetailPage({
                   </ul>
                 </div>
               )}
-
             </CardContent>
           </Card>
 
@@ -1275,6 +1458,27 @@ export default function LetterDetailPage({
                   way an e-signature platform watermarks a voided document. The
                   office still has to file a copy, and whoever holds the letter
                   deserves a sheet that explains itself. */}
+              {(letter.status === "DRAFT" ||
+                letter.status === "REVISION_NEEDED") &&
+                canEditNaskah && (
+                  <Button
+                    className="w-full bg-amber-600 hover:bg-amber-700 text-white"
+                    onClick={() => {
+                      setEditFormData({
+                        subject: letter.subject || "",
+                        content: letter.content || "",
+                        recipientName: letter.recipientName || "",
+                        recipientInstance: letter.recipientInstance || "",
+                        urgency: letter.urgency || "NORMAL",
+                      });
+                      setEditModalOpen(true);
+                    }}
+                  >
+                    <PenLine className="mr-2 h-4 w-4" />
+                    Edit Naskah Surat
+                  </Button>
+                )}
+
               <Button
                 className="w-full"
                 variant="outline"
@@ -1316,7 +1520,9 @@ export default function LetterDetailPage({
                     onClick={() => setDispatchOpen(true)}
                   >
                     <Truck className="mr-2 h-4 w-4" />
-                    {letter.sentAt ? "Catat Pengiriman Lagi" : "Catat Pengiriman"}
+                    {letter.sentAt
+                      ? "Catat Pengiriman Lagi"
+                      : "Catat Pengiriman"}
                   </Button>
                 )}
 
@@ -1372,7 +1578,9 @@ export default function LetterDetailPage({
                       disabled={resubmitLetter.isPending}
                     >
                       <Send className="mr-2 h-4 w-4" />
-                      {resubmitLetter.isPending ? "Mengajukan…" : "Ajukan Ulang"}
+                      {resubmitLetter.isPending
+                        ? "Mengajukan…"
+                        : "Ajukan Ulang"}
                     </Button>
                     <p className="text-xs text-muted-foreground">
                       Seluruh paraf yang sudah diberikan akan dihapus dan
@@ -1386,7 +1594,9 @@ export default function LetterDetailPage({
                 <div className="space-y-3 pt-2 border-t">
                   {(!letter.reviewers || letter.reviewers.length === 0) && (
                     <div className="space-y-2">
-                      <Label className="text-xs font-medium text-slate-700">Pilih Pemeriksa Pertama</Label>
+                      <Label className="text-xs font-medium text-slate-700">
+                        Pilih Pemeriksa Pertama
+                      </Label>
                       <Input
                         placeholder="Cari pejabat..."
                         value={participantSearch}
@@ -1435,12 +1645,10 @@ export default function LetterDetailPage({
               */}
               {(() => {
                 const reviewers = letter.reviewers ?? [];
-                const mine = reviewers.find(
-                  (r) => r.reviewerId === user?.id,
-                );
+                const mine = reviewers.find((r) => r.reviewerId === user?.id);
                 const turn = [...reviewers]
                   .filter((r) => r.status !== "APPROVED")
-                  .sort((a,b) => a.order - b.order)[0];
+                  .sort((a, b) => a.order - b.order)[0];
                 const openForReview =
                   letter.status === "PENDING_REVIEW" ||
                   letter.status === "READY_TO_SIGN";
@@ -1465,15 +1673,13 @@ export default function LetterDetailPage({
                   );
                 }
 
-                const myTurn =
-                  !!mine && turn?.reviewerId === user?.id;
+                const myTurn = !!mine && turn?.reviewerId === user?.id;
 
                 if (!myTurn) {
                   return (
                     <div className="pt-4 border-t">
                       <p className="text-xs text-muted-foreground">
-                        Menunggu verifikator urutan {turn?.order} lebih
-                        dahulu.
+                        Menunggu verifikator urutan {turn?.order} lebih dahulu.
                       </p>
                     </div>
                   );
@@ -1482,7 +1688,9 @@ export default function LetterDetailPage({
                 return (
                   <div className="pt-4 border-t space-y-3">
                     <p className="text-xs font-medium text-muted-foreground mb-2">
-                      {mine.isSigner ? "Penandatanganan" : "Paraf / Persetujuan"}
+                      {mine.isSigner
+                        ? "Penandatanganan"
+                        : "Paraf / Persetujuan"}
                     </p>
                     <Textarea
                       placeholder="Catatan (opsional)..."
@@ -1568,7 +1776,8 @@ export default function LetterDetailPage({
                             (DTO menjanjikan `reviewerName`, API mengirim
                             `reviewer.name`) dan statusnya berbahasa Inggris. */}
                         {reviewer.isSigner ? "Penanda tangan" : "Paraf"} ·{" "}
-                        {REVIEWER_STATUS_LABEL[reviewer.status] ?? reviewer.status}
+                        {REVIEWER_STATUS_LABEL[reviewer.status] ??
+                          reviewer.status}
                       </p>
                       {reviewer.notes && (
                         <p className="text-xs mt-1 bg-muted p-2 rounded">

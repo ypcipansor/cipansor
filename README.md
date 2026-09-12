@@ -367,6 +367,30 @@ Ikuti langkah berikut untuk menjalankan proyek di lingkungan lokal Anda:
     - Web: `http://localhost:3000`
     - API: `http://localhost:3001`
 
+### Prasyarat Deployment: Regenerasi Kartu Pelajar
+
+Verifikasi QR kartu pelajar/santri hanya menerima tanda tangan **HMAC-SHA256
+16 karakter**, sesuai desain keamanan kartu fisik yang tidak boleh divalidasi
+oleh hash lama yang mudah dipalsukan. **Kartu yang tercetak dengan QR generasi
+lama (SHA-256 8 karakter tanpa secret TIDAK akan lolos verifikasi** dan harus
+diregenerasi sebelum verifikasi ketat dipakai di produksi.
+
+Sebelum mengaktifkan verifikasi ketat, jalankan regenerasi massal untuk
+seluruh kartu aktif:
+
+1. Masuk sebagai **SUPER_ADMIN** (atau admin unit yang bisa mengakses menu
+   Generator Kartu Pelajar).
+2. Buka **Generator Kartu Pelajar** (`/students/id-card`).
+3. Pilih unit/kelas (atau biarkan kosong sebagai SUPER_ADMIN untuk semua unit),
+   lalu klik **Regenerasi Kartu**.
+4. Cetak ulang seluruh kartu yang sudah diregenerasi dan distribusikan ke
+   pemegang kartu.
+
+Endpoint `POST /api/students/id-cards/bulk-regenerate` melakukan regenerasi
+tersebut. Tanpa langkah ini, kartu fisik lama akan ditolak oleh endpoint
+verifikasi. Verifikasi QR 8 karakter/non-HMAC tetap ditolak oleh desain — ini
+disengaja, bukan bug.
+
 ---
 
 ## 💻 Pengembangan
