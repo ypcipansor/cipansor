@@ -1,6 +1,7 @@
 import { PrismaClient, Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 import { Errors } from '../../middleware/error';
+import { recordUnitEnrollmentFromClass } from '../../utils/student-unit-history';
 import {
   CreateClassInput,
   UpdateClassInput,
@@ -422,6 +423,8 @@ export class ClassService {
       throw Errors.conflict('Student already enrolled in this class');
     }
 
+    await recordUnitEnrollmentFromClass(prisma, input.studentId, classId);
+
     const enrollment = await prisma.classEnrollment.create({
       data: {
         studentId: input.studentId,
@@ -559,6 +562,12 @@ export class ClassService {
           status: 'active',
         })),
       });
+      // Kenaikan kelas adalah tempat perpindahan unit paling sering terjadi
+      // (TK → SD IT, SD IT → SMP IT), jadi justru di sini riwayatnya paling
+      // penting ditulis.
+      for (const studentId of studentIds) {
+        await recordUnitEnrollmentFromClass(tx, studentId, targetClassId);
+      }
       return { promoted: created.count };
     });
   }

@@ -6,6 +6,9 @@ const { prismaMock } = vi.hoisted(() => ({
     class: {
       findUnique: vi.fn(),
     },
+    studentUnitEnrollment: {
+      upsert: vi.fn(),
+    },
     classEnrollment: {
       findMany: vi.fn(),
       count: vi.fn(),

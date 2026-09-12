@@ -7,6 +7,7 @@ import { hashPassword } from '@/lib/password';
 import { Errors } from '@/middleware/error';
 import { UserRole, Gender, Prisma } from '@prisma/client';
 import type { ListStudentsQuery, CreateStudentInput, UpdateStudentInput } from './student.schema';
+import { recordUnitEnrollmentFromClass } from '@/utils/student-unit-history';
 
 export class StudentService {
   /**
@@ -496,6 +497,9 @@ export class StudentService {
               status: 'active',
             },
           });
+          // Rombel tahu unit dan tahun ajarannya; riwayat unit ditulis dari
+          // sana supaya tabelnya tidak basi pada santri berikutnya.
+          await recordUnitEnrollmentFromClass(tx, student.id, input.classId);
         }
       }
 
