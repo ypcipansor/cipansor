@@ -89,8 +89,8 @@ function getAuthState(request: NextRequest): {
     try {
       const parsed = JSON.parse(authStorage);
       if (parsed.state?.isAuthenticated === true && parsed.state?.user) {
-        // Prefer the legacy `user.role` bucket (still emitted by the backend);
-        // fall back to deriving it from `userRoles[].role.code` (RoleCode).
+        // The primary assignment's RoleCode decides, as on the API; the legacy
+        // `user.role` column is only the fallback (see getEffectiveRole).
         const role = getEffectiveRole(parsed.state.user);
         if (role) {
           return {

@@ -19,10 +19,14 @@ test.describe("GRC Integrated Flow", () => {
     await page.goto(`/perencanaan/${plan.id}`);
     await expect(page.locator("h1")).toContainText(plan.title);
 
-    // Financial realization summary computed from real journal data
-    await expect(
-      page.locator("text=Realisasi Anggaran (Financial Realization)"),
-    ).toBeVisible({ timeout: 20000 });
+    // Financial realization summary computed from real journal data. Assert the
+    // FIGURE, not the label: this pinned the English gloss "(Financial
+    // Realization)" that the Indonesian-copy pass had to delete, so it failed
+    // on a change that made the page better rather than worse.
+    const realisasi = page
+      .locator("div", { has: page.getByText("Realisasi Anggaran", { exact: false }) })
+      .last();
+    await expect(realisasi.getByText(/%$/).first()).toBeVisible({ timeout: 20000 });
 
     // Activity-level realization under the Program & Kegiatan tab
     await page.click('button:has-text("Program & Kegiatan")');

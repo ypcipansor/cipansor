@@ -194,7 +194,7 @@ const ALUMNI_ROLES = [
 // Teacher-specific navigation
 const teacherNavigation: NavGroup[] = [
   {
-    title: "Overview",
+    title: "Ringkasan",
     items: [
       {
         title: "Dashboard",
@@ -289,12 +289,24 @@ const teacherNavigation: NavGroup[] = [
     ],
   },
   {
-    title: "PKG",
+    title: "Kinerja",
     items: [
       {
-        title: "Penilaian Kinerja",
-        href: "/pkg",
+        title: "Manajemen Kinerja",
+        href: "/kinerja",
         icon: ClipboardPenLine,
+        children: [
+          {
+            title: "Perjanjian Kinerja",
+            href: "/kinerja/pk",
+            icon: ClipboardList,
+          },
+          {
+            title: "Evaluasi Periodik",
+            href: "/kinerja/evaluasi",
+            icon: ClipboardCheck,
+          },
+        ],
       },
     ],
   },
@@ -323,12 +335,34 @@ const teacherNavigation: NavGroup[] = [
 // Staff-specific navigation
 const staffNavigation: NavGroup[] = [
   {
-    title: "Overview",
+    title: "Ringkasan",
     items: [
       {
         title: "Dashboard",
         href: "/staff",
         icon: LayoutDashboard,
+      },
+    ],
+  },
+  {
+    title: "Kinerja",
+    items: [
+      {
+        title: "Manajemen Kinerja",
+        href: "/kinerja",
+        icon: ClipboardPenLine,
+        children: [
+          {
+            title: "Perjanjian Kinerja",
+            href: "/kinerja/pk",
+            icon: ClipboardList,
+          },
+          {
+            title: "Evaluasi Periodik",
+            href: "/kinerja/evaluasi",
+            icon: ClipboardCheck,
+          },
+        ],
       },
     ],
   },
@@ -397,7 +431,7 @@ const staffNavigation: NavGroup[] = [
 // Student-specific navigation
 const studentNavigation: NavGroup[] = [
   {
-    title: "Overview",
+    title: "Ringkasan",
     items: [
       {
         title: "Dashboard",
@@ -491,7 +525,7 @@ const studentNavigation: NavGroup[] = [
 // Parent-specific navigation
 const parentNavigation: NavGroup[] = [
   {
-    title: "Overview",
+    title: "Ringkasan",
     items: [
       {
         title: "Dashboard",
@@ -605,7 +639,7 @@ const parentNavigation: NavGroup[] = [
 // Yayasan-specific navigation (for Yayasan admins and board members)
 const yayasanNavigation: NavGroup[] = [
   {
-    title: "Overview",
+    title: "Ringkasan",
     items: [
       {
         title: "Dashboard",
@@ -628,92 +662,29 @@ const yayasanNavigation: NavGroup[] = [
     title: "Yayasan",
     items: [
       {
-        title: "Foundation",
+        title: "Yayasan",
         href: "/foundation",
         icon: Building2,
-      },
-      {
-        title: "E-Office (Persuratan)",
-        href: "/e-office",
-        icon: Mail,
-      },
-      {
-        title: "Units",
-        href: "/units",
-        icon: School,
+        children: [
+          {
+            title: "Units",
+            href: "/units",
+            icon: School,
+          },
+        ],
       },
       {
         title: "Penjaminan Mutu",
         href: "/quality",
         icon: Award,
+        children: [
+          {
+            title: "Aduan & Aspirasi",
+            href: "/quality/complaints",
+            icon: MessageSquareWarning,
+          },
+        ],
       },
-      {
-        title: "Aduan & Aspirasi",
-        href: "/quality/complaints",
-        icon: MessageSquareWarning,
-      },
-    ],
-  },
-  {
-    title: "Keuangan",
-    items: [
-      // "Laporan Keuangan" used to point here, at /finance — a santri billing
-      // dashboard, not a financial report. The actual financial statements
-      // (neraca, laba rugi, arus kas) live at /finance/accounting and were
-      // filed under Administration, so nobody looking for a laporan keuangan
-      // in the Keuangan menu could find one. /finance/billing was a second,
-      // overlapping tagihan screen that reported a different outstanding total
-      // than /finance did; it is now the Tunggakan tab of this page.
-      {
-        title: "Tagihan & SPP",
-        href: "/finance",
-        icon: Receipt,
-      },
-      {
-        title: "Verifikasi Pembayaran",
-        href: "/finance/verification",
-        icon: Receipt,
-      },
-      {
-        title: "Laporan Keuangan",
-        href: "/finance/accounting",
-        icon: Wallet,
-      },
-      {
-        title: "BOS/BOP",
-        href: "/finance/bos",
-        icon: Wallet,
-      },
-      {
-        title: "Procurement",
-        href: "/procurement",
-        icon: ShoppingBag,
-      },
-      {
-        title: "Donation/ZIS",
-        href: "/donation",
-        icon: HeartHandshake,
-      },
-      {
-        title: "Public Portal",
-        href: "/wakaf-infaq",
-        icon: HeartHandshake,
-      },
-    ],
-  },
-  {
-    title: "Alumni",
-    items: [
-      {
-        title: "Data Alumni",
-        href: "/alumni",
-        icon: GraduationCap,
-      },
-    ],
-  },
-  {
-    title: "Risk Management",
-    items: [
       {
         title: "Manajemen Risiko",
         href: "/risk-management",
@@ -722,12 +693,95 @@ const yayasanNavigation: NavGroup[] = [
     ],
   },
   {
-    title: "Pengumuman",
+    title: "Kinerja",
     items: [
+      {
+        title: "Manajemen Kinerja",
+        href: "/kinerja",
+        icon: ClipboardPenLine,
+        children: [
+          {
+            title: "Perjanjian Kinerja",
+            href: "/kinerja/pk",
+            icon: ClipboardList,
+          },
+          {
+            title: "Evaluasi Periodik",
+            href: "/kinerja/evaluasi",
+            icon: ClipboardCheck,
+          },
+          {
+            title: "Analitik Kinerja",
+            href: "/kinerja/analytics",
+            icon: BarChart3,
+          },
+        ],
+      },
+    ],
+  },
+  {
+    title: "Keuangan",
+    items: [
+      {
+        title: "Tagihan & SPP",
+        href: "/finance",
+        icon: Receipt,
+        children: [
+          {
+            title: "Verifikasi Pembayaran",
+            href: "/finance/verification",
+            icon: Receipt,
+          },
+        ],
+      },
+      {
+        title: "Laporan Keuangan",
+        href: "/finance/accounting",
+        icon: Wallet,
+        children: [
+          {
+            title: "BOS/BOP",
+            href: "/finance/bos",
+            icon: Wallet,
+          },
+        ],
+      },
+      {
+        title: "Donation/ZIS",
+        href: "/donation",
+        icon: HeartHandshake,
+        children: [
+          {
+            title: "Public Portal",
+            href: "/wakaf-infaq",
+            icon: HeartHandshake,
+          },
+        ],
+      },
+      {
+        title: "Procurement",
+        href: "/procurement",
+        icon: ShoppingBag,
+      },
+    ],
+  },
+  {
+    title: "Informasi",
+    items: [
+      {
+        title: "E-Office (Persuratan)",
+        href: "/e-office",
+        icon: Mail,
+      },
       {
         title: "Pengumuman",
         href: "/announcements",
         icon: Megaphone,
+      },
+      {
+        title: "Data Alumni",
+        href: "/alumni",
+        icon: GraduationCap,
       },
     ],
   },
@@ -736,7 +790,7 @@ const yayasanNavigation: NavGroup[] = [
 // Admin navigation - for Super Admin and Unit Admins
 const adminNavigation: NavGroup[] = [
   {
-    title: "Overview",
+    title: "Ringkasan",
     items: [
       {
         title: "Dashboard",
@@ -768,73 +822,538 @@ const adminNavigation: NavGroup[] = [
     ],
   },
   {
-    title: "Marketing",
+    title: "Akademik",
     items: [
       {
-        title: "Dashboard",
-        href: "/marketing",
-        icon: BarChart3,
+        title: "Students",
+        href: "/students",
+        icon: GraduationCap,
+        children: [
+          {
+            title: "Student ID Card",
+            href: "/students/id-card",
+            icon: IdCard,
+          },
+          {
+            title: "Certificates",
+            href: "/students/certificates",
+            icon: Award,
+          },
+          {
+            title: "Transcript",
+            href: "/students/transcript",
+            icon: ScrollText,
+          },
+          {
+            title: "Portfolio Siswa",
+            href: "/portfolio",
+            icon: FolderOpen,
+          },
+          {
+            title: "Student Compliance",
+            href: "/students/compliance",
+            icon: Shield,
+          },
+        ],
       },
       {
-        title: "Campaigns",
-        href: "/marketing/campaigns",
-        icon: Megaphone,
+        title: "Classes",
+        href: "/classes",
+        icon: BookOpen,
+        children: [
+          {
+            title: "Academic Years",
+            href: "/academic-years",
+            icon: Calendar,
+          },
+          {
+            title: "Curriculum",
+            href: "/curriculum",
+            icon: BookMarked,
+          },
+          {
+            title: "Kurikulum Merdeka",
+            href: "/curriculum/merdeka",
+            icon: BookMarked,
+          },
+          {
+            title: "Timetable",
+            href: "/curriculum/schedules/timetable",
+            icon: CalendarDays,
+          },
+        ],
       },
       {
-        title: "Leads",
-        href: "/marketing/leads",
-        icon: Users,
+        title: "Assessment",
+        href: "/assessment",
+        icon: ClipboardCheck,
+        children: [
+          {
+            title: "Question Banks (CBT)",
+            href: "/cbt/banks",
+            icon: BookCheck,
+          },
+          {
+            title: "Jadwal Ujian (CBT)",
+            href: "/cbt/exams",
+            icon: BookOpenCheck,
+          },
+          {
+            title: "Raport Merdeka",
+            href: "/assessment/raport-merdeka",
+            icon: FileSpreadsheet,
+          },
+        ],
       },
       {
-        title: "Analitik Marketing",
-        href: "/admin/marketing",
-        icon: BarChart3,
-        roleCodes: ["SUPER_ADMIN"],
+        title: "Attendance",
+        href: "/attendance",
+        icon: ClipboardCheck,
+        children: [
+          {
+            title: "Attendance Calendar",
+            href: "/attendance/calendar",
+            icon: CalendarDays,
+          },
+          {
+            title: "Academic Calendar",
+            href: "/calendar",
+            icon: CalendarDays,
+          },
+          {
+            title: "Mutabaah Yaumiyah",
+            href: "/daily-report",
+            icon: Activity,
+            roleCodes: [
+              "TKQ_ADMIN",
+              "SDIT_ADMIN",
+              "TKQ_KEPALA_SEKOLAH",
+              "SDIT_KEPALA_SEKOLAH",
+            ],
+          },
+        ],
+      },
+      {
+        title: "Tahfidz",
+        href: "/tahfidz",
+        icon: BookMarked,
+        children: [
+          {
+            title: "E-Simaan",
+            href: "/tahfidz/e-simaan",
+            icon: Mic,
+          },
+          {
+            title: "Jadwal Simaan",
+            href: "/tahfidz/simaan/schedule",
+            icon: CalendarDays,
+          },
+          {
+            title: "Peta Al-Quran",
+            href: "/tahfidz/quran-map",
+            icon: BookCheck,
+          },
+          {
+            title: "Analitik Murojaah",
+            href: "/tahfidz/murojaah/analytics",
+            icon: BarChart3,
+          },
+        ],
+      },
+      {
+        title: "TK / PAUD",
+        href: "/tk",
+        icon: Baby,
+        children: [
+          {
+            title: "Penilaian TK",
+            href: "/tk/assessment",
+            icon: ClipboardPenLine,
+          },
+          {
+            title: "Progres Penilaian",
+            href: "/tk/assessment/progress",
+            icon: BarChart3,
+          },
+          {
+            title: "Laporan Harian",
+            href: "/tk/daily-reports",
+            icon: NotebookPen,
+          },
+          {
+            title: "Laporan Harian (Kelas)",
+            href: "/tk/daily-reports/class",
+            icon: School,
+          },
+          {
+            title: "Laporan Harian (Orang Tua)",
+            href: "/tk/daily-reports/parent",
+            icon: Heart,
+          },
+          {
+            title: "Raport TK",
+            href: "/tk/reports",
+            icon: FileBarChart,
+          },
+        ],
       },
     ],
   },
   {
-    title: "Management",
+    title: "Kesantrian & Pesantren",
     items: [
       {
-        title: "Foundation",
-        href: "/foundation",
-        icon: Building2,
-        roleCodes: ["SUPER_ADMIN"],
+        title: "Jurnal Ibadah",
+        href: "/ibadah",
+        icon: Sparkles,
+        children: [
+          {
+            title: "Muhasabah",
+            href: "/muhasabah",
+            icon: Sparkles,
+          },
+        ],
       },
       {
-        title: "Units",
-        href: "/units",
-        icon: School,
-        roleCodes: ["SUPER_ADMIN"],
+        title: "Muhadhoroh",
+        href: "/muhadhoroh",
+        icon: MessageSquare,
+        children: [
+          {
+            title: "Muhadatsah",
+            href: "/muhadatsah",
+            icon: Languages,
+          },
+        ],
       },
       {
-        title: "Users & Roles",
-        href: "/users",
-        icon: UserCog,
+        title: "Kitab Kuning",
+        href: "/kitab-progress",
+        icon: BookOpen,
+        children: [
+          {
+            title: "Takhosus",
+            href: "/takhosus",
+            icon: BookMarked,
+          },
+          {
+            title: "Turats Lab",
+            href: "/research",
+            icon: ScrollText,
+          },
+          {
+            title: "Amaliyah Tadris",
+            href: "/practicum",
+            icon: ClipboardPenLine,
+          },
+        ],
       },
       {
-        title: "Role Permissions",
-        href: "/settings/roles",
-        icon: Shield,
-        roleCodes: ["SUPER_ADMIN"],
+        title: "Dormitories",
+        href: "/dormitories",
+        icon: Home,
+        children: [
+          {
+            title: "Permits",
+            href: "/permits",
+            icon: FileText,
+          },
+          {
+            title: "Violations",
+            href: "/violations",
+            icon: AlertTriangle,
+          },
+          {
+            title: "Rewards",
+            href: "/rewards",
+            icon: Award,
+          },
+        ],
       },
       {
-        title: "Kesiapan Akreditasi",
-        href: "/foundation/accreditation/readiness",
+        title: "Ekstrakurikuler",
+        href: "/extracurricular",
+        icon: Drama,
+        children: [
+          {
+            title: "Qiyadah (Organisasi)",
+            href: "/student-org",
+            icon: Users,
+          },
+          {
+            title: "Piket Santri",
+            href: "/duty-roster",
+            icon: ClipboardList,
+          },
+        ],
+      },
+      {
+        title: "Bimbingan Konseling",
+        href: "/counseling",
+        icon: HeartHandshake,
+      },
+      {
+        title: "Alumni",
+        href: "/alumni",
+        icon: GraduationCap,
+        children: [
+          {
+            title: "Si-Taka (Sebaran)",
+            href: "/alumni/placement",
+            icon: Globe,
+          },
+        ],
+      },
+    ],
+  },
+  {
+    title: "SDM",
+    items: [
+      {
+        title: "Kepegawaian",
+        href: "/hr",
+        icon: Clock,
+        children: [
+          {
+            title: "Staff Attendance",
+            href: "/hr/attendance",
+            icon: ClipboardCheck,
+          },
+          {
+            title: "Teacher Compliance",
+            href: "/hr/teachers/compliance",
+            icon: Shield,
+          },
+        ],
+      },
+      {
+        title: "Penggajian",
+        href: "/payroll",
+        icon: Wallet,
+        children: [
+          {
+            title: "Komponen Gaji",
+            href: "/hr/payroll/components",
+            icon: CreditCard,
+          },
+          {
+            title: "Periode Penggajian",
+            href: "/hr/payroll/periods",
+            icon: CalendarDays,
+          },
+          {
+            title: "Gaji Pegawai",
+            href: "/hr/payroll/staff-salary",
+            icon: Wallet,
+          },
+        ],
+      },
+      {
+        title: "Manajemen Talenta",
+        href: "/talenta",
+        icon: Sparkles,
+        children: [
+          {
+            title: "Matriks Talenta",
+            href: "/talenta/matrix",
+            icon: LayoutDashboard,
+          },
+          {
+            title: "Perencanaan Suksesi",
+            href: "/talenta/succession",
+            icon: Trophy,
+          },
+          {
+            title: "Analitik Talenta",
+            href: "/talenta/analytics",
+            icon: BarChart3,
+          },
+        ],
+      },
+    ],
+  },
+  {
+    title: "Keuangan",
+    items: [
+      {
+        title: "Tagihan & SPP",
+        href: "/finance",
+        icon: Receipt,
+        children: [
+          {
+            title: "Dompet Santri",
+            href: "/finance/wallet",
+            icon: CreditCard,
+          },
+        ],
+      },
+      {
+        title: "Laporan Keuangan",
+        href: "/finance/accounting",
+        icon: Wallet,
+        children: [
+          {
+            // Hub for neraca / laba rugi / arus kas / buku besar / neraca saldo.
+            // Those six report pages had no menu path of their own.
+            title: "Laporan Akuntansi",
+            href: "/finance/reports",
+            icon: FileBarChart,
+          },
+          {
+            title: "BOS/BOP",
+            href: "/finance/bos",
+            icon: Wallet,
+          },
+          {
+            title: "Konsolidasi Keuangan",
+            href: "/foundation/finance/consolidation",
+            icon: FileSpreadsheet,
+            roleCodes: ["SUPER_ADMIN"],
+          },
+        ],
+      },
+      {
+        title: "Donation/ZIS",
+        href: "/donation",
+        icon: HeartHandshake,
+        children: [
+          {
+            title: "Scholarships",
+            href: "/finance/scholarships",
+            icon: Award,
+          },
+        ],
+      },
+      {
+        title: "Procurement",
+        href: "/procurement",
+        icon: ShoppingBag,
+      },
+    ],
+  },
+  {
+    title: "Pemasaran & Penerimaan",
+    items: [
+      {
+        title: "Pemasaran",
+        href: "/marketing",
+        icon: BarChart3,
+        children: [
+          {
+            title: "Campaigns",
+            href: "/marketing/campaigns",
+            icon: Megaphone,
+          },
+          {
+            title: "Leads",
+            href: "/marketing/leads",
+            icon: Users,
+          },
+          {
+            title: "Analitik Marketing",
+            href: "/admin/marketing",
+            icon: BarChart3,
+            roleCodes: ["SUPER_ADMIN"],
+          },
+        ],
+      },
+      {
+        title: "Admissions",
+        href: "/admissions",
+        icon: UserPlus,
+      },
+    ],
+  },
+  {
+    // Perencanaan dan kinerja duduk dalam satu grup dengan sengaja. Manajemen
+    // kinerja secara keilmuan adalah fungsi SDM, tetapi memindahkannya ke sana
+    // memutus kedekatan RKA → Perjanjian Kinerja — justru rantai yang paling
+    // sulit dipahami orang, dan yang kedekatan di menu ini ikut mengajarkannya.
+    title: "Perencanaan & Kinerja",
+    items: [
+      {
+        title: "Perencanaan Strategis",
+        href: "/perencanaan",
+        icon: ClipboardList,
+        children: [
+          {
+            title: "Peta Strategi",
+            href: "/perencanaan/strategy-map",
+            icon: Globe,
+          },
+        ],
+      },
+      {
+        title: "Manajemen Kinerja",
+        href: "/kinerja",
+        icon: ClipboardPenLine,
+        children: [
+          {
+            title: "Perjanjian Kinerja",
+            href: "/kinerja/pk",
+            icon: ClipboardList,
+          },
+          {
+            title: "Evaluasi Periodik",
+            href: "/kinerja/evaluasi",
+            icon: ClipboardCheck,
+          },
+          {
+            title: "Analitik Kinerja",
+            href: "/kinerja/analytics",
+            icon: BarChart3,
+          },
+        ],
+      },
+      {
+        title: "Dashboard GRC",
+        href: "/grc-dashboard",
+        icon: ShieldCheck,
+        children: [
+          {
+            title: "Manajemen Risiko",
+            href: "/risk-management",
+            icon: Shield,
+          },
+          {
+            title: "Pengawasan Internal",
+            href: "/pengawasan",
+            icon: ClipboardCheck,
+          },
+          {
+            title: "Kepatuhan Syariah",
+            href: "/syariah",
+            icon: BookCheck,
+          },
+          {
+            title: "Tata Laksana (SOP)",
+            href: "/tata-laksana",
+            icon: ScrollText,
+          },
+          {
+            title: "Struktur Organisasi",
+            href: "/organisasi",
+            icon: UserCog,
+          },
+        ],
+      },
+      {
+        title: "Penjaminan Mutu",
+        href: "/quality",
         icon: Award,
-        roleCodes: ["SUPER_ADMIN"],
-      },
-      {
-        title: "Konsolidasi Keuangan",
-        href: "/foundation/finance/consolidation",
-        icon: FileSpreadsheet,
-        roleCodes: ["SUPER_ADMIN"],
-      },
-      {
-        title: "Unit Usaha",
-        href: "/unit-usaha",
-        icon: Briefcase,
+        children: [
+          {
+            title: "Aduan & Aspirasi",
+            href: "/quality/complaints",
+            icon: MessageSquareWarning,
+          },
+          {
+            title: "Kesiapan Akreditasi",
+            href: "/foundation/accreditation/readiness",
+            icon: Award,
+            roleCodes: ["SUPER_ADMIN"],
+          },
+        ],
       },
       {
         title: "Projects",
@@ -844,367 +1363,19 @@ const adminNavigation: NavGroup[] = [
     ],
   },
   {
-    title: "Academic",
-    items: [
-      {
-        title: "Students",
-        href: "/students",
-        icon: GraduationCap,
-      },
-      {
-        title: "Student ID Card",
-        href: "/students/id-card",
-        icon: IdCard,
-      },
-      {
-        title: "Certificates",
-        href: "/students/certificates",
-        icon: Award,
-      },
-      {
-        title: "Transcript",
-        href: "/students/transcript",
-        icon: ScrollText,
-      },
-      {
-        title: "Portfolio Siswa",
-        href: "/portfolio",
-        icon: FolderOpen,
-      },
-      {
-        title: "Classes",
-        href: "/classes",
-        icon: BookOpen,
-      },
-      {
-        title: "Academic Years",
-        href: "/academic-years",
-        icon: Calendar,
-      },
-      {
-        title: "Curriculum",
-        href: "/curriculum",
-        icon: BookMarked,
-      },
-      {
-        title: "Timetable",
-        href: "/curriculum/schedules/timetable",
-        icon: CalendarDays,
-      },
-      {
-        title: "Assessment",
-        href: "/assessment",
-        icon: ClipboardCheck,
-      },
-      {
-        title: "Question Banks (CBT)",
-        href: "/cbt/banks",
-        icon: BookCheck,
-      },
-      {
-        title: "Raport Merdeka",
-        href: "/assessment/raport-merdeka",
-        icon: FileSpreadsheet,
-      },
-      {
-        title: "Mutabaah Yaumiyah",
-        href: "/daily-report",
-        icon: Activity,
-        roleCodes: [
-          "TKQ_ADMIN",
-          "SDIT_ADMIN",
-          "TKQ_KEPALA_SEKOLAH",
-          "SDIT_KEPALA_SEKOLAH",
-        ],
-      },
-      {
-        title: "Attendance",
-        href: "/attendance",
-        icon: ClipboardCheck,
-      },
-      {
-        title: "Attendance Calendar",
-        href: "/attendance/calendar",
-        icon: CalendarDays,
-      },
-      {
-        title: "Academic Calendar",
-        href: "/calendar",
-        icon: CalendarDays,
-      },
-      {
-        title: "Tahfidz",
-        href: "/tahfidz",
-        icon: BookMarked,
-      },
-      {
-        title: "E-Simaan",
-        href: "/tahfidz/e-simaan",
-        icon: Mic,
-      },
-      {
-        title: "Peta Al-Quran",
-        href: "/tahfidz/quran-map",
-        icon: BookCheck,
-      },
-      {
-        title: "Analitik Murojaah",
-        href: "/tahfidz/murojaah/analytics",
-        icon: BarChart3,
-      },
-      {
-        title: "Jadwal Simaan",
-        href: "/tahfidz/simaan/schedule",
-        icon: CalendarDays,
-      },
-      {
-        title: "Jadwal Ujian (CBT)",
-        href: "/cbt/exams",
-        icon: BookOpenCheck,
-      },
-    ],
-  },
-  {
-    // The whole TK/PAUD module (assessment, daily reports, raport) shipped
-    // without a single menu entry, so no role could reach any of its pages.
-    title: "TK / PAUD",
-    items: [
-      {
-        title: "Dashboard TK",
-        href: "/tk",
-        icon: Baby,
-      },
-      {
-        title: "Penilaian TK",
-        href: "/tk/assessment",
-        icon: ClipboardPenLine,
-      },
-      {
-        title: "Progres Penilaian",
-        href: "/tk/assessment/progress",
-        icon: BarChart3,
-      },
-      {
-        title: "Laporan Harian",
-        href: "/tk/daily-reports",
-        icon: NotebookPen,
-      },
-      {
-        title: "Laporan Harian (Kelas)",
-        href: "/tk/daily-reports/class",
-        icon: School,
-      },
-      {
-        title: "Laporan Harian (Orang Tua)",
-        href: "/tk/daily-reports/parent",
-        icon: Heart,
-      },
-      {
-        title: "Raport TK",
-        href: "/tk/reports",
-        icon: FileBarChart,
-      },
-    ],
-  },
-  {
-    title: "Kesiswaan",
-    items: [
-      {
-        title: "Ekstrakurikuler",
-        href: "/extracurricular",
-        icon: Drama,
-      },
-      {
-        title: "Bimbingan Konseling",
-        href: "/counseling",
-        icon: HeartHandshake,
-      },
-      {
-        title: "Piket Santri",
-        href: "/duty-roster",
-        icon: ClipboardList,
-      },
-    ],
-  },
-  {
-    title: "Pesantren",
-    items: [
-      {
-        title: "Jurnal Ibadah",
-        href: "/ibadah",
-        icon: Sparkles,
-      },
-      {
-        title: "Muhadhoroh",
-        href: "/muhadhoroh",
-        icon: MessageSquare,
-      },
-      {
-        title: "Muhadatsah",
-        href: "/muhadatsah",
-        icon: Languages,
-      },
-      {
-        title: "Kitab Kuning",
-        href: "/kitab-progress",
-        icon: BookOpen,
-      },
-      {
-        title: "Amaliyah Tadris",
-        href: "/practicum",
-        icon: ClipboardPenLine,
-      },
-      {
-        title: "Qiyadah (Organisasi)",
-        href: "/student-org",
-        icon: Users,
-      },
-      {
-        title: "Turats Lab",
-        href: "/research",
-        icon: ScrollText,
-      },
-      {
-        title: "Takhosus",
-        href: "/takhosus",
-        icon: BookMarked,
-      },
-      {
-        title: "Muhasabah",
-        href: "/muhasabah",
-        icon: Sparkles,
-      },
-    ],
-  },
-  {
-    title: "Boarding",
-    items: [
-      {
-        title: "Dormitories",
-        href: "/dormitories",
-        icon: Home,
-      },
-      {
-        title: "Permits",
-        href: "/permits",
-        icon: FileText,
-      },
-      {
-        title: "Violations",
-        href: "/violations",
-        icon: AlertTriangle,
-      },
-      {
-        title: "Rewards",
-        href: "/rewards",
-        icon: Award,
-      },
-    ],
-  },
-  {
-    title: "Administration",
-    items: [
-      {
-        title: "Tagihan & SPP",
-        href: "/finance",
-        icon: Receipt,
-      },
-      {
-        title: "Laporan Keuangan",
-        href: "/finance/accounting",
-        icon: Wallet,
-      },
-      {
-        title: "BOS/BOP",
-        href: "/finance/bos",
-        icon: Wallet,
-      },
-      {
-        title: "Procurement",
-        href: "/procurement",
-        icon: ShoppingBag,
-      },
-      {
-        title: "Scholarships",
-        href: "/finance/scholarships",
-        icon: Award,
-      },
-      {
-        title: "Donation/ZIS",
-        href: "/donation",
-        icon: HeartHandshake,
-      },
-      {
-        title: "Admissions",
-        href: "/admissions",
-        icon: UserPlus,
-      },
-      {
-        title: "HR",
-        href: "/hr",
-        icon: Clock,
-      },
-      {
-        title: "Staff Attendance",
-        href: "/hr/attendance",
-        icon: ClipboardCheck,
-      },
-      {
-        title: "Penggajian",
-        href: "/payroll",
-        icon: Wallet,
-      },
-      {
-        title: "Komponen Gaji",
-        href: "/hr/payroll/components",
-        icon: CreditCard,
-      },
-      {
-        title: "Periode Penggajian",
-        href: "/hr/payroll/periods",
-        icon: CalendarDays,
-      },
-      {
-        title: "Gaji Pegawai",
-        href: "/hr/payroll/staff-salary",
-        icon: Wallet,
-      },
-      {
-        title: "Manajemen Talenta",
-        href: "/talenta",
-        icon: Sparkles,
-      },
-      {
-        // Hub for neraca / laba rugi / arus kas / buku besar / neraca saldo.
-        // Those six report pages had no menu path of their own.
-        title: "Laporan Akuntansi",
-        href: "/finance/reports",
-        icon: FileBarChart,
-      },
-      {
-        title: "PKG Guru",
-        href: "/pkg",
-        icon: ClipboardPenLine,
-      },
-      {
-        title: "Penjaminan Mutu",
-        href: "/quality",
-        icon: Award,
-      },
-      {
-        title: "Aduan & Aspirasi",
-        href: "/quality/complaints",
-        icon: MessageSquareWarning,
-      },
-    ],
-  },
-  {
-    title: "Operations",
+    title: "Sarana & Layanan",
     items: [
       {
         title: "Facilities",
         href: "/facilities",
         icon: Building2,
+        children: [
+          {
+            title: "Inventory (Asset)",
+            href: "/inventory",
+            icon: Package,
+          },
+        ],
       },
       {
         title: "E-Office (Persuratan)",
@@ -1212,39 +1383,38 @@ const adminNavigation: NavGroup[] = [
         icon: Mail,
       },
       {
-        title: "Inventory (Asset)",
-        href: "/inventory",
-        icon: Package,
-      },
-      {
         title: "Library",
         href: "/library",
         icon: Library,
-      },
-      {
-        title: "Maktabah Digital",
-        href: "/library/digital",
-        icon: BookOpen,
+        children: [
+          {
+            title: "Maktabah Digital",
+            href: "/library/digital",
+            icon: BookOpen,
+          },
+        ],
       },
       {
         title: "Health (UKS)",
         href: "/health",
         icon: Heart,
-      },
-      {
-        title: "Meals",
-        href: "/meals",
-        icon: UtensilsCrossed,
-      },
-      {
-        title: "Canteen/Koperasi",
-        href: "/canteen",
-        icon: ShoppingCart,
-      },
-      {
-        title: "Laundry",
-        href: "/laundry",
-        icon: WashingMachine,
+        children: [
+          {
+            title: "Meals",
+            href: "/meals",
+            icon: UtensilsCrossed,
+          },
+          {
+            title: "Canteen/Koperasi",
+            href: "/canteen",
+            icon: ShoppingCart,
+          },
+          {
+            title: "Laundry",
+            href: "/laundry",
+            icon: WashingMachine,
+          },
+        ],
       },
       {
         title: "Reception",
@@ -1252,25 +1422,54 @@ const adminNavigation: NavGroup[] = [
         icon: IdCard,
       },
       {
-        title: "Dompet Santri",
-        href: "/finance/wallet",
-        icon: CreditCard,
-      },
-      {
         title: "Notifications",
         href: "/notifications",
         icon: Bell,
+        children: [
+          {
+            title: "Quick Send",
+            href: "/notifications/quick-send",
+            icon: Send,
+          },
+        ],
       },
       {
-        title: "Quick Send",
-        href: "/notifications/quick-send",
-        icon: Send,
+        title: "Unit Usaha",
+        href: "/unit-usaha",
+        icon: Briefcase,
       },
     ],
   },
   {
-    title: "Reference Data",
+    title: "Sistem",
     items: [
+      {
+        title: "Yayasan",
+        href: "/foundation",
+        icon: Building2,
+        roleCodes: ["SUPER_ADMIN"],
+        children: [
+          {
+            title: "Units",
+            href: "/units",
+            icon: School,
+            roleCodes: ["SUPER_ADMIN"],
+          },
+        ],
+      },
+      {
+        title: "Users & Roles",
+        href: "/users",
+        icon: UserCog,
+        children: [
+          {
+            title: "Role Permissions",
+            href: "/settings/roles",
+            icon: Shield,
+            roleCodes: ["SUPER_ADMIN"],
+          },
+        ],
+      },
       {
         title: "Wilayah",
         href: "/wilayah",
@@ -1278,141 +1477,54 @@ const adminNavigation: NavGroup[] = [
         roleCodes: ["SUPER_ADMIN"],
       },
       {
-        title: "Kurikulum Merdeka",
-        href: "/curriculum/merdeka",
-        icon: BookMarked,
-      },
-    ],
-  },
-  {
-    title: "Compliance",
-    items: [
-      {
-        title: "Student Compliance",
-        href: "/students/compliance",
-        icon: Shield,
-      },
-      {
-        title: "Teacher Compliance",
-        href: "/hr/teachers/compliance",
-        icon: Shield,
-      },
-    ],
-  },
-  {
-    // The governance cluster used to hold Manajemen Risiko alone, so the pages
-    // it integrates with — Perencanaan (RPJP/Renstra/RKA), the GRC dashboard,
-    // Pengawasan, Kepatuhan Syariah and Tata Laksana — shipped with no menu
-    // entry at all and were reachable only by typing the URL.
-    title: "Perencanaan & Tata Kelola",
-    items: [
-      {
-        title: "Perencanaan Strategis",
-        href: "/perencanaan",
-        icon: ClipboardList,
-      },
-      {
-        title: "Peta Strategi",
-        href: "/perencanaan/strategy-map",
-        icon: Globe,
-      },
-      {
-        title: "Manajemen Risiko",
-        href: "/risk-management",
-        icon: Shield,
-      },
-      {
-        title: "Dashboard GRC",
-        href: "/grc-dashboard",
-        icon: ShieldCheck,
-      },
-      {
-        title: "Pengawasan Internal",
-        href: "/pengawasan",
-        icon: ClipboardCheck,
-      },
-      {
-        title: "Kepatuhan Syariah",
-        href: "/syariah",
-        icon: BookCheck,
-      },
-      {
-        title: "Tata Laksana (SOP)",
-        href: "/tata-laksana",
-        icon: ScrollText,
-      },
-      {
-        title: "Struktur Organisasi",
-        href: "/organisasi",
-        icon: UserCog,
-      },
-    ],
-  },
-  {
-    title: "Alumni",
-    items: [
-      {
-        title: "Alumni",
-        href: "/alumni",
-        icon: GraduationCap,
-      },
-      {
-        title: "Si-Taka (Sebaran)",
-        href: "/alumni/placement",
-        icon: Globe,
-      },
-    ],
-  },
-  {
-    title: "Settings",
-    items: [
-      {
         title: "Settings",
         href: "/settings",
         icon: Settings,
-      },
-      {
-        /**
-         * The approval queue for electronic-signature keys.
-         *
-         * It had no entry here at all, and `/settings/esign` appeared nowhere
-         * in the codebase but its own page file — so the only way to reach it
-         * was to type the URL. The effect was a dead end for the whole
-         * feature: a signer requests a key, nobody ever sees the request, no
-         * key is ever issued, and no letter can be signed.
-         */
-        title: "Tanda Tangan Elektronik",
-        href: "/settings/esign",
-        icon: ShieldCheck,
-        roleCodes: ["SUPER_ADMIN"],
-        roles: ["SUPER_ADMIN"],
-      },
-      {
-        title: "Secrets",
-        href: "/dashboard/settings/system-secrets",
-        icon: Key,
-        roleCodes: ["SUPER_ADMIN"],
-        roles: ["SUPER_ADMIN"], // Explicitly support legacy role
-      },
-      {
-        // The editable persona (tone/style) of the public chatbot. Safety rules
-        // are code-resident; this only controls how the assistant speaks.
-        title: "Asisten AI",
-        href: "/settings/chatbot",
-        icon: MessageSquare,
-        roleCodes: ["SUPER_ADMIN"],
-        roles: ["SUPER_ADMIN"],
-      },
-      {
-        // Riwayat tanya-jawab asisten publik. Dikunci ke SUPER_ADMIN dengan
-        // alasan yang lebih keras daripada persona di atasnya: isinya kalimat
-        // yang benar-benar diketik pengunjung, dan terhapus sendiri setelah 90
-        // hari.
-        title: "Riwayat Percakapan",
-        href: "/settings/chatbot/percakapan",
-        icon: MessagesSquare,
-        roleCodes: ["SUPER_ADMIN"],
-        roles: ["SUPER_ADMIN"],
+        children: [
+          {
+            /**
+             * The approval queue for electronic-signature keys.
+             *
+             * It had no entry here at all, and `/settings/esign` appeared nowhere
+             * in the codebase but its own page file — so the only way to reach it
+             * was to type the URL. The effect was a dead end for the whole
+             * feature: a signer requests a key, nobody ever sees the request, no
+             * key is ever issued, and no letter can be signed.
+             */
+            title: "Tanda Tangan Elektronik",
+            href: "/settings/esign",
+            icon: ShieldCheck,
+            roleCodes: ["SUPER_ADMIN"],
+            roles: ["SUPER_ADMIN"],
+          },
+          {
+            title: "Secrets",
+            href: "/dashboard/settings/system-secrets",
+            icon: Key,
+            roleCodes: ["SUPER_ADMIN"],
+            roles: ["SUPER_ADMIN"], // Explicitly support legacy role
+          },
+          {
+            // The editable persona (tone/style) of the public chatbot. Safety rules
+            // are code-resident; this only controls how the assistant speaks.
+            title: "Asisten AI",
+            href: "/settings/chatbot",
+            icon: MessageSquare,
+            roleCodes: ["SUPER_ADMIN"],
+            roles: ["SUPER_ADMIN"],
+          },
+          {
+            // Riwayat tanya-jawab asisten publik. Dikunci ke SUPER_ADMIN dengan
+            // alasan yang lebih keras daripada persona di atasnya: isinya kalimat
+            // yang benar-benar diketik pengunjung, dan terhapus sendiri setelah 90
+            // hari.
+            title: "Riwayat Percakapan",
+            href: "/settings/chatbot/percakapan",
+            icon: MessagesSquare,
+            roleCodes: ["SUPER_ADMIN"],
+            roles: ["SUPER_ADMIN"],
+          },
+        ],
       },
     ],
   },
@@ -1421,7 +1533,7 @@ const adminNavigation: NavGroup[] = [
 // Kepala Sekolah navigation - extended admin with focus on school operations
 const kepalaSekolahNavigation: NavGroup[] = [
   {
-    title: "Overview",
+    title: "Ringkasan",
     items: [
       {
         title: "Dashboard",
@@ -1441,47 +1553,31 @@ const kepalaSekolahNavigation: NavGroup[] = [
     ],
   },
   {
-    title: "Management",
-    items: [
-      {
-        title: "Users & Staff",
-        href: "/users",
-        icon: UserCog,
-      },
-      {
-        title: "Teachers",
-        href: "/hr/employees",
-        icon: Users,
-      },
-      {
-        title: "PKG Guru",
-        href: "/pkg",
-        icon: ClipboardPenLine,
-      },
-    ],
-  },
-  {
-    title: "Academic",
+    title: "Akademik",
     items: [
       {
         title: "Students",
         href: "/students",
         icon: GraduationCap,
-      },
-      {
-        title: "Portfolio Siswa",
-        href: "/portfolio",
-        icon: FolderOpen,
+        children: [
+          {
+            title: "Portfolio Siswa",
+            href: "/portfolio",
+            icon: FolderOpen,
+          },
+        ],
       },
       {
         title: "Classes",
         href: "/classes",
         icon: BookOpen,
-      },
-      {
-        title: "Curriculum",
-        href: "/curriculum",
-        icon: BookMarked,
+        children: [
+          {
+            title: "Curriculum",
+            href: "/curriculum",
+            icon: BookMarked,
+          },
+        ],
       },
       {
         title: "Assessment",
@@ -1493,16 +1589,21 @@ const kepalaSekolahNavigation: NavGroup[] = [
         href: "/tahfidz",
         icon: BookMarked,
       },
-    ],
-  },
-  {
-    title: "Kesiswaan",
-    items: [
       {
         title: "Attendance",
         href: "/attendance",
         icon: ClipboardCheck,
       },
+      {
+        title: "Admissions",
+        href: "/admissions",
+        icon: UserPlus,
+      },
+    ],
+  },
+  {
+    title: "Kesantrian",
+    items: [
       {
         title: "Permits",
         href: "/permits",
@@ -1521,22 +1622,51 @@ const kepalaSekolahNavigation: NavGroup[] = [
     ],
   },
   {
-    title: "Administration",
+    title: "SDM",
     items: [
       {
-        title: "Admissions",
-        href: "/admissions",
-        icon: UserPlus,
-      },
-      {
-        title: "HR",
+        title: "Kepegawaian",
         href: "/hr",
         icon: Clock,
+        children: [
+          {
+            title: "Teachers",
+            href: "/hr/employees",
+            icon: Users,
+          },
+        ],
       },
     ],
   },
   {
-    title: "Operations",
+    title: "Kinerja",
+    items: [
+      {
+        title: "Manajemen Kinerja",
+        href: "/kinerja",
+        icon: ClipboardPenLine,
+        children: [
+          {
+            title: "Perjanjian Kinerja",
+            href: "/kinerja/pk",
+            icon: ClipboardList,
+          },
+          {
+            title: "Evaluasi Periodik",
+            href: "/kinerja/evaluasi",
+            icon: ClipboardCheck,
+          },
+          {
+            title: "Analitik Kinerja",
+            href: "/kinerja/analytics",
+            icon: BarChart3,
+          },
+        ],
+      },
+    ],
+  },
+  {
+    title: "Sarana & Layanan",
     items: [
       {
         title: "E-Office (Persuratan)",
@@ -1556,8 +1686,13 @@ const kepalaSekolahNavigation: NavGroup[] = [
     ],
   },
   {
-    title: "Settings",
+    title: "Sistem",
     items: [
+      {
+        title: "Users & Staff",
+        href: "/users",
+        icon: UserCog,
+      },
       {
         title: "Settings",
         href: "/settings",
@@ -1571,7 +1706,7 @@ const kepalaSekolahNavigation: NavGroup[] = [
 // tahfidz/diniyah, boarding services and reporting.
 const pesantrenPimpinanNavigation: NavGroup[] = [
   {
-    title: "Overview",
+    title: "Ringkasan",
     items: [
       { title: "Dashboard", href: "/teacher", icon: LayoutDashboard },
       { title: "Analitik", href: "/analytics", icon: BarChart3 },
@@ -1645,7 +1780,7 @@ const pesantrenPimpinanNavigation: NavGroup[] = [
 // — day-to-day pengasuhan of the santri they are responsible for.
 const pesantrenPengasuhanNavigation: NavGroup[] = [
   {
-    title: "Overview",
+    title: "Ringkasan",
     items: [{ title: "Dashboard", href: "/teacher", icon: LayoutDashboard }],
   },
   {
@@ -1719,7 +1854,7 @@ const pesantrenPengasuhanNavigation: NavGroup[] = [
 // Perguruan Tinggi leadership (Rektor, Wakil Rektor, Dekan, Kaprodi).
 const ptPimpinanNavigation: NavGroup[] = [
   {
-    title: "Overview",
+    title: "Ringkasan",
     items: [
       { title: "Dashboard", href: "/teacher", icon: LayoutDashboard },
       { title: "Analitik", href: "/analytics", icon: BarChart3 },
@@ -1785,7 +1920,7 @@ const ptPimpinanNavigation: NavGroup[] = [
 // Perguruan Tinggi lecturers.
 const ptDosenNavigation: NavGroup[] = [
   {
-    title: "Overview",
+    title: "Ringkasan",
     items: [{ title: "Dashboard", href: "/teacher", icon: LayoutDashboard }],
   },
   {
@@ -1817,7 +1952,23 @@ const ptDosenNavigation: NavGroup[] = [
   {
     title: "Kinerja",
     items: [
-      { title: "Penilaian Kinerja", href: "/pkg", icon: ClipboardPenLine },
+      {
+        title: "Manajemen Kinerja",
+        href: "/kinerja",
+        icon: ClipboardPenLine,
+        children: [
+          {
+            title: "Perjanjian Kinerja",
+            href: "/kinerja/pk",
+            icon: ClipboardList,
+          },
+          {
+            title: "Evaluasi Periodik",
+            href: "/kinerja/evaluasi",
+            icon: ClipboardCheck,
+          },
+        ],
+      },
     ],
   },
   {
@@ -1838,7 +1989,7 @@ const ptDosenNavigation: NavGroup[] = [
 // (no tahfidz/pesantren groups, adds UKM, praktikum and billing).
 const ptMahasiswaNavigation: NavGroup[] = [
   {
-    title: "Overview",
+    title: "Ringkasan",
     items: [{ title: "Dashboard", href: "/student", icon: LayoutDashboard }],
   },
   {
@@ -1998,6 +2149,32 @@ export interface ActiveRole {
 }
 
 /**
+ * Keep only the entries this role may see, at every depth.
+ *
+ * The filter used to check `group.items` alone, which was only correct while
+ * nothing had children: a `roleCodes`-restricted entry nested under an
+ * unrestricted parent — "Mutabaah Yaumiyah" (TKQ/SDIT only) under Attendance,
+ * or the SUPER_ADMIN-only Secrets and chatbot screens under Settings — rode
+ * straight past it into the sidebar of roles that cannot open them.
+ *
+ * A parent whose children are ALL filtered out stays, as a plain link. It
+ * opens a page of its own that this role may open; dropping it together with
+ * its children took Settings and Users & Roles out of every unit admin's menu
+ * once their SUPER_ADMIN-only screens were nested under them.
+ */
+function filterNavItemsByRoleCode(items: NavItem[], roleCode: string): NavItem[] {
+  return items
+    .filter((item) => !item.roleCodes || item.roleCodes.includes(roleCode))
+    .map((item) => {
+      if (!item.children?.length) return item;
+      const children = filterNavItemsByRoleCode(item.children, roleCode);
+      return children.length > 0
+        ? { ...item, children }
+        : { ...item, children: undefined };
+    });
+}
+
+/**
  * Get navigation for a specific role code
  * Uses the new RoleCode-based system
  */
@@ -2024,9 +2201,7 @@ export function getNavigationForRoleCode(roleCode: string): NavGroup[] {
     return adminNavigation
       .map((group) => ({
         ...group,
-        items: group.items.filter(
-          (item) => !item.roleCodes || item.roleCodes.includes(roleCode),
-        ),
+        items: filterNavItemsByRoleCode(group.items, roleCode),
       }))
       .filter((group) => group.items.length > 0);
   }
