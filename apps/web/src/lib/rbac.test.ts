@@ -562,9 +562,12 @@ describe("navigation — every page renders the app shell", () => {
    * A redirect-only stub renders nothing, so there is no shell to put around
    * it — /finance/billing just forwards its old bookmarks to /finance.
    *
-   * Both forms count. /psb does the same job with `router.replace()` in an
-   * effect rather than the server `redirect()`, and matching only the latter
-   * made a stub look like a page that had lost its shell.
+   * Both forms count: a stub may forward with the server `redirect()` or with
+   * `router.replace()` in an effect, and matching only the former made a
+   * client-side stub look like a page that had lost its shell. (/psb was the
+   * case that taught this; its page is gone — next.config.ts now redirects
+   * /psb to /spmb before routing ever reaches a page — but /parent/ibadah
+   * still forwards the client-side way.)
    */
   const isRedirectStub = (src: string) =>
     /from\s+"next\/navigation"/.test(src) &&
