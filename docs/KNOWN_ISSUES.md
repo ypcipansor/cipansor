@@ -451,10 +451,11 @@ of system sprawl, docs drift, and a full per-role visual sweep.
   called its `/api/ppdb-wave` mount). Deleted the five screenshot/crash-sweep e2e
   specs that were tooling, not tests. (The web `/ppdb` pages were **kept**: an
   early pass mistook them for a dead duplicate and removed them, but the e2e
-  onboarding test caught it — `/ppdb/registrations` is the only built
-  registrant-listing + "Eksekusi Onboarding Terpadu" UI; the canonical
-  `/admissions/registrants` is still an unbuilt dead-link. Consolidating `/ppdb`
-  into `/admissions/registrants` is a roadmap item, not a delete.)
+  onboarding test caught it — that page was the only built registrant-listing +
+  integrated-onboarding UI. **#439 renamed those pages to `/spmb`** and left a
+  permanent redirect from `/ppdb/*`; the canonical `/admissions/registrants` is
+  still an unbuilt dead-link, so consolidating into it remains a roadmap item,
+  not a delete.)
 - **Per-role screenshot sweep made runnable + the crashes it found fixed.**
   `screenshot-roles.ts` pointed at `qa-*` accounts no seed creates; it now drives
   off `DEMO_ACCOUNTS` (one login per RoleCode, `DEMO_MODE` bypasses admin 2FA
