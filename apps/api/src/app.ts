@@ -62,7 +62,6 @@ import { walletRoutes } from '@/modules/wallet';
 import { canteenRoutes } from '@/modules/canteen';
 import { laundryRoutes } from '@/modules/laundry';
 import { payrollRoutes } from '@/modules/payroll';
-import pkgRoutes from '@/modules/pkg/pkg.routes';
 import portfolioRoutes from '@/modules/portfolio/portfolio.routes';
 import ibadahRoutes from '@/modules/ibadah/ibadah.routes';
 import raporPesantrenRoutes from '@/modules/rapor-pesantren/rapor-pesantren.routes';
@@ -279,7 +278,6 @@ apiRouter.use('/wallet', walletRoutes);
 apiRouter.use('/canteen', canteenRoutes);
 apiRouter.use('/laundry', laundryRoutes);
 apiRouter.use('/payroll', payrollRoutes);
-apiRouter.use('/pkg', pkgRoutes);
 apiRouter.use('/portfolio', portfolioRoutes);
 apiRouter.use('/ibadah', ibadahRoutes);
 apiRouter.use('/rapor-pesantren', raporPesantrenRoutes);
@@ -397,7 +395,6 @@ apiRouter.get('/', (_req, res) => {
       wallet: '/api/wallet',
       canteen: '/api/canteen',
       laundry: '/api/laundry',
-      pkg: '/api/pkg',
       portfolio: '/api/portfolio',
       ibadah: '/api/ibadah',
       raporPesantren: '/api/rapor-pesantren',

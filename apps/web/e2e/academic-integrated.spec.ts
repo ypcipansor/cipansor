@@ -26,30 +26,28 @@ test.describe("Academic Integrated Flow", () => {
     await expect(chartOrEmpty.first()).toBeVisible();
   });
 
-  test("should display Succession Planning recommendations in HR module", async ({ page }) => {
-    await page.goto("/hr/talenta");
+  test("should display Succession Planning recommendations", async ({ page }) => {
+    // Was /hr/talenta's "Succession Planning" tab. That page and
+    // /hr/talenta/succession were merged into /talenta/succession, which now
+    // carries the search, the org-chart jabatan picker, and the statement of
+    // how the score is computed — no tab to click first.
+    await page.goto("/talenta/succession");
 
-    // Click Succession Planning tab (Radix trigger — force past the
-    // WebKit "not stable" animation gate).
-    await page.locator("text=Succession Planning").first().waitFor({ state: "visible" });
-    await page.locator("text=Succession Planning").first().click({ force: true });
-
-    // Verify the search UI is visible. This used to assert the card title
-    // "AI-Driven Succession Recommendations" — a string #410 deliberately
-    // removed, because a weighted sum is not AI. Assert the control the test
-    // is actually about instead, so honest copy edits don't fail the suite.
+    // Assert the control the test is actually about, not a card title. It used
+    // to assert "AI-Driven Succession Recommendations", a string #410 removed
+    // on purpose because a weighted sum is not AI.
     await expect(page.locator('input[placeholder*="Masukkan nama jabatan"]')).toBeVisible();
 
-    // Search for a position against the real suggestion engine
+    // Search for a position against the real suggestion engine. The query is
+    // debounced and fires on its own once the text is longer than 2 chars.
     await page.fill('input[placeholder*="Masukkan nama jabatan"]', "Kepala Sekolah");
-    await page.keyboard.press("Enter");
 
     // The real API answers with either candidate recommendations (seeded
     // talent profiles) or the explicit no-candidates state.
     await expect(
       page
-        .getByText(/Rekomendasi untuk/)
-        .or(page.getByText("Tidak ditemukan kandidat suksesi untuk jabatan ini."))
+        .getByText("Kandidat Suksesi: Kepala Sekolah")
+        .or(page.getByText("Tidak ada kandidat potensial yang ditemukan untuk posisi ini."))
         .first(),
     ).toBeVisible({ timeout: 20000 });
   });

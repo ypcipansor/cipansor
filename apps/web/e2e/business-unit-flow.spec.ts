@@ -22,7 +22,7 @@ test.describe("Business Unit & Integrated Flows", () => {
 
   test("should show Strategy Map in Perencanaan", async ({ page }) => {
     await page.goto("/perencanaan/strategy-map", { waitUntil: "domcontentloaded" });
-    await expect(page.locator('h1:has-text("Strategy Map")')).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('h1:has-text("Peta Strategi")')).toBeVisible({ timeout: 15000 });
   });
 
   test("should show Executive Dashboard with consolidated data", async ({ page }) => {

@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { tokenUnitId } from '@/utils/resolve-unit-id';
 import { hashPassword, comparePassword } from '@/lib/password';
 import { generateTokenPair, verifyToken, getExpirationDate, generateAccessToken } from '@/lib/jwt';
 import { Errors } from '@/middleware/error';
@@ -165,7 +166,7 @@ export class AuthService {
       email: user.email,
       roleId: roleId || '',
       roleCode,
-      unitId: assignmentUnitId || user.unitId,
+      unitId: tokenUnitId(assignmentUnitId, roleCode, user.unitId),
       permissions,
       role: deriveLegacyRole(roleCode),
     };
@@ -488,7 +489,7 @@ export class AuthService {
       email: storedToken.user.email,
       roleId: refreshRoleId || '',
       roleCode: refreshRoleCode,
-      unitId: refreshUnitId || storedToken.user.unitId,
+      unitId: tokenUnitId(refreshUnitId, refreshRoleCode, storedToken.user.unitId),
       permissions,
       role: deriveLegacyRole(refreshRoleCode),
     });
@@ -872,7 +873,7 @@ export class AuthService {
       email: user.email,
       roleId: twoFaRoleId || '',
       roleCode: twoFaRoleCode,
-      unitId: twoFaUnitId || user.unitId,
+      unitId: tokenUnitId(twoFaUnitId, twoFaRoleCode, user.unitId),
       permissions,
       role: deriveLegacyRole(twoFaRoleCode),
     });

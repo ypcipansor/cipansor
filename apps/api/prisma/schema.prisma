@@ -448,8 +448,7 @@ model User {
   // Payroll relations
   payrollPeriodsCreated             PayrollPeriod[]             @relation("PayrollPeriodCreator")
   payrollPeriodsApproved            PayrollPeriod[]             @relation("PayrollPeriodApprover")
-  // PKG & Portfolio relations
-  pkgAssessed                       PKGEvaluation[]             @relation("PKGAssessor")
+  // Portfolio relations
   portfoliosReviewed                Portfolio[]                 @relation("PortfolioReviewer")
   portfolioComments                 PortfolioComment[]
   ibadahVerified                    DailyIbadahRecord[]         @relation("IbadahVerifier")
@@ -525,6 +524,7 @@ model User {
   approvedPlans      StrategicPlan[]    @relation("PlanApprover")
   assignedActivities PlanActivity[]     @relation("ActivityPIC")
   planCollaborations PlanCollaborator[]
+  planReviewEvents   PlanReviewEvent[]  @relation("PlanReviewActor")
 
   // Performance Management (Perjanjian Kinerja / PK)
   performanceAgreements PerformanceAgreement[] @relation("UserPK")
@@ -673,8 +673,7 @@ model Unit {
   laundryTransactions    LaundryTransaction[]
   // Payroll relations
   payrollPeriods         PayrollPeriod[]
-  // PKG, Portfolio & Islamic relations
-  pkgPeriods             PKGPeriod[]
+  // Portfolio & Islamic relations
   islamicEvents          IslamicEvent[]
   dailyIbadahTargets     DailyIbadahTarget[]
   ibadahLeaderboards     IbadahLeaderboard[]
@@ -867,8 +866,6 @@ model Teacher {
   musyrifs                 Musyrif[]
   // Non-formal Education
   instructedCourses        Course[]            @relation("TeacherCourseInstructor")
-  // PKG relations
-  pkgEvaluations           PKGEvaluation[]
   assignments              Assignment[]
 
   @@index([unitId])
@@ -935,8 +932,7 @@ model AcademicYear {
   p5Projects            P5Project[]
   scholarshipRecipients ScholarshipRecipient[]
   merdekaAssessments    MerdekaAssessment[]
-  // PKG & Portfolio relations
-  pkgPeriods            PKGPeriod[]
+  // Portfolio relations
   portfolios            Portfolio[]
   // Rapor Pesantren relations
   raporPesantren        RaporPesantren[]
@@ -5820,118 +5816,6 @@ model PayrollItem {
   @@map("payroll_items")
 }
 
-// =====================================
-// PKG - PENILAIAN KINERJA GURU
-// =====================================
-
-/// PKGPeriod - Periode Penilaian Kinerja Guru (tahunan)
-model PKGPeriod {
-  id             String   @id @default(uuid())
-  unitId         String   @map("unit_id")
-  academicYearId String   @map("academic_year_id")
-  name           String // e.g., "PKG Semester 1 2024/2025"
-  startDate      DateTime @map("start_date")
-  endDate        DateTime @map("end_date")
-  status         String   @default("DRAFT") // DRAFT, ACTIVE, COMPLETED, ARCHIVED
-  description    String?
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  unit         Unit            @relation(fields: [unitId], references: [id])
-  academicYear AcademicYear    @relation(fields: [academicYearId], references: [id])
-  evaluations  PKGEvaluation[]
-
-  @@index([unitId])
-  @@index([academicYearId])
-  @@map("pkg_periods")
-}
-
-/// PKGEvaluation - Hasil Evaluasi PKG per Guru
-model PKGEvaluation {
-  id         String  @id @default(uuid())
-  periodId   String  @map("period_id")
-  teacherId  String  @map("teacher_id")
-  assessorId String? @map("assessor_id") // Penilai (Kepala Sekolah)
-
-  // 4 Kompetensi Utama (Nilai 1-4)
-  pedagogikScore   Decimal? @map("pedagogik_score") @db.Decimal(3, 2)
-  kepribadianScore Decimal? @map("kepribadian_score") @db.Decimal(3, 2)
-  sosialScore      Decimal? @map("sosial_score") @db.Decimal(3, 2)
-  profesionalScore Decimal? @map("profesional_score") @db.Decimal(3, 2)
-
-  // Total score and grade
-  totalScore     Decimal? @map("total_score") @db.Decimal(5, 2) // Nilai akhir (0-100)
-  grade          String? // A (Amat Baik), B (Baik), C (Cukup), D (Kurang)
-  creditPoints   Decimal? @map("credit_points") @db.Decimal(5, 2) // Angka Kredit
-  recommendation String? // Rekomendasi (LANJUT, PEMBINAAN, PKB)
-
-  // Status & Timeline
-  status           String    @default("DRAFT") // DRAFT, SELF_ASSESSMENT, OBSERVATION, REVIEW, APPROVED
-  selfAssessmentAt DateTime? @map("self_assessment_at")
-  observedAt       DateTime? @map("observed_at")
-  approvedAt       DateTime? @map("approved_at")
-
-  notes     String?
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  period    PKGPeriod     @relation(fields: [periodId], references: [id])
-  teacher   Teacher       @relation(fields: [teacherId], references: [id])
-  assessor  User?         @relation("PKGAssessor", fields: [assessorId], references: [id])
-  details   PKGDetail[]
-  documents PKGDocument[]
-
-  @@unique([periodId, teacherId])
-  @@index([periodId])
-  @@index([teacherId])
-  @@map("pkg_evaluations")
-}
-
-/// PKGDetail - Detail Penilaian per Kompetensi
-model PKGDetail {
-  id            String @id @default(uuid())
-  evaluationId  String @map("evaluation_id")
-  competency    String // PEDAGOGIK, KEPRIBADIAN, SOSIAL, PROFESIONAL
-  indicator     String // Kode indikator (P1, P2, K1, S1, PR1, dst)
-  indicatorName String @map("indicator_name") // Nama indikator lengkap
-
-  // Penilaian
-  selfScore     Int?    @map("self_score") // Nilai dari guru (1-4)
-  assessorScore Int?    @map("assessor_score") // Nilai dari penilai (1-4)
-  finalScore    Int?    @map("final_score") // Nilai akhir
-  evidence      String? // Bukti/catatan
-  notes         String?
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  evaluation PKGEvaluation @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
-
-  @@index([evaluationId])
-  @@map("pkg_details")
-}
-
-/// PKGDocument - Dokumen Pendukung PKG
-model PKGDocument {
-  id           String @id @default(uuid())
-  evaluationId String @map("evaluation_id")
-  name         String
-  type         String // RPP, SILABUS, NILAI, SERTIFIKAT, KEHADIRAN, LAINNYA
-  fileUrl      String @map("file_url")
-  fileSize     Int?   @map("file_size")
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  evaluation PKGEvaluation @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
-
-  @@index([evaluationId])
-  @@map("pkg_documents")
-}
 
 // =====================================
 // STUDENT PORTFOLIO
@@ -8626,6 +8510,27 @@ enum PlanStatus {
   CANCELLED
 }
 
+/// Where a yayasan-level document (RPJP, Renstra, RKA Yayasan) stands in its
+/// ratification: Pengurus drafts and submits (UU 16/2001 Ps. 31), Pengawas
+/// reviews and advises (Ps. 40 ayat 1), Pengurus answers the review, and
+/// Pembina ratifies (Ps. 28 ayat 2 huruf d) or sends it back. Kept apart from
+/// PlanStatus because PlanStatus is shared with PK and evaluations.
+enum PlanReviewStage {
+  DIREVIU_PENGAWAS
+  HASIL_REVIU
+  DIAJUKAN_PEMBINA
+  DITETAPKAN
+  DIKEMBALIKAN
+}
+
+enum PlanReviewAction {
+  AJUKAN_REVIU
+  KIRIM_HASIL_REVIU
+  AJUKAN_PENETAPAN
+  TETAPKAN
+  KEMBALIKAN
+}
+
 enum PlanPriority {
   LOW
   MEDIUM
@@ -8680,12 +8585,16 @@ enum PlanIndicatorLevel {
 
 model StrategicPlan {
   id String @id @default(uuid())
-  /// Null for foundation-wide plans. RPJP and Renstra are yayasan-level
-  /// documents covering every unit, so requiring a unit made the foundation's
-  /// own plans impossible to represent — they had to be filed against an
-  /// arbitrary school. Unit-level plans (a school's own RKA) still set it.
+  /// Null for foundation-wide plans. RPJP, Renstra and the consolidated RKA
+  /// Yayasan are yayasan-level documents covering every unit, so requiring a
+  /// unit made the foundation's own plans impossible to represent — they had
+  /// to be filed against an arbitrary school. Only a school's own RKA sets it.
   unitId       String?    @map("unit_id")
-  parentId     String?    @map("parent_id") // Hierarchy: RPJP -> RENSTRA -> RKA
+  /// Cascade, mirroring the national chain (RPJPD → RPJMD → RKPD → Renja/RKA
+  /// per OPD): the ANNUAL level has two tiers, one consolidated document the
+  /// pengurus approves and the unit slices beneath it.
+  ///   RPJP → RENSTRA → RKA Yayasan (unitId null) → RKA Unit (unitId set)
+  parentId     String?    @map("parent_id")
   title        String
   description  String?    @db.Text
   /// Visi statement (RPJP Visi 2045 / Renstra Visi periode).
@@ -8701,6 +8610,9 @@ model StrategicPlan {
   createdById  String     @map("created_by_id")
   approvedById String?    @map("approved_by_id")
   approvedAt   DateTime?  @map("approved_at")
+  /// Null until a yayasan document is first submitted to Pengawas. Unit plans
+  /// never enter this flow: Ketua Pengurus approves an RKA Unit directly.
+  reviewStage  PlanReviewStage? @map("review_stage")
   createdAt    DateTime   @default(now()) @map("created_at")
   updatedAt    DateTime   @updatedAt @map("updated_at")
 
@@ -8716,6 +8628,7 @@ model StrategicPlan {
   internalAudits InternalAudit[]
   collaborators  PlanCollaborator[]
   performanceAgreements PerformanceAgreement[]
+  reviewEvents   PlanReviewEvent[]
 
   @@index([unitId])
   @@index([status])
@@ -8736,6 +8649,30 @@ model PlanCollaborator {
 
   @@unique([planId, userId])
   @@map("plan_collaborators")
+}
+
+/// Append-only trail of a yayasan document's ratification: who submitted it,
+/// what Pengawas found, how Pengurus answered (revised or not, and why), and
+/// what Pembina decided.
+model PlanReviewEvent {
+  id            String           @id @default(uuid())
+  planId        String           @map("plan_id")
+  action        PlanReviewAction
+  actorId       String           @map("actor_id")
+  /// The role the actor acted in. People change office; the office they held
+  /// when they signed is what the record has to show.
+  actorRoleCode String           @map("actor_role_code")
+  notes         String?          @db.Text
+  /// Only on AJUKAN_PENETAPAN: whether Pengurus revised after the review. When
+  /// it did not, `notes` carries the reason.
+  revised       Boolean?
+  createdAt     DateTime         @default(now()) @map("created_at")
+
+  plan  StrategicPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  actor User          @relation("PlanReviewActor", fields: [actorId], references: [id])
+
+  @@index([planId, createdAt])
+  @@map("plan_review_events")
 }
 
 /// PlanObjective - Sasaran/tujuan dari rencana
@@ -10282,6 +10219,21 @@ model PerformanceAgreement {
 }
 
 /// PKIndicator - Indikator kinerja dalam sebuah PK
+/// Cara realisasi bulanan dijumlahkan menjadi capaian setahun.
+///
+/// Dulu selalu dijumlahkan, apa pun satuannya. Untuk indikator berbasis
+/// persentase itu menghasilkan angka yang mustahil: dua evaluasi 88% dan 80%
+/// terhadap target 85% terbaca "Realisasi YTD 168 persen". Sifat indikator
+/// harus DINYATAKAN, bukan ditebak dari teks satuannya.
+enum IndicatorAggregation {
+  /// Dijumlahkan — untuk hitungan yang menumpuk (kegiatan, dokumen, juz, orang).
+  KUMULATIF
+  /// Dirata-ratakan — untuk persentase, rasio, indeks, dan nilai.
+  RATA_RATA
+  /// Diambil dari periode terakhir — untuk keadaan akhir, bukan akumulasi.
+  TERAKHIR
+}
+
 model PKIndicator {
   id                      String            @id @default(uuid())
   pkId                    String            @map("pk_id")
@@ -10293,7 +10245,8 @@ model PKIndicator {
   refIndicatorId          String?           @map("ref_indicator_id") // PKIndicator atasan
   refStrategicIndicatorId String?           @map("ref_strategic_indicator_id") // PlanIndicator (RKA/Renstra)
   notes                   String?           @db.Text // Catatan keterkaitan
-  realization             Float             @default(0) // Realisasi akumulatif YTD
+  realization             Float             @default(0) // Capaian YTD, dihitung menurut `aggregation`
+  aggregation             IndicatorAggregation @default(KUMULATIF)
   createdAt               DateTime          @default(now()) @map("created_at")
   updatedAt               DateTime          @updatedAt @map("updated_at")
 
@@ -10383,3 +10336,4 @@ model PKBehaviorEvaluation {
   @@unique([evaluationId, behaviorValueId])
   @@map("pk_behavior_evaluations")
 }
+

@@ -1,5 +1,6 @@
 import { test, expect } from "./fixtures/auth.fixture";
 import { loginAs } from "./helpers/auth-api";
+import { settledContent } from "./helpers/page-state";
 
 /**
  * Curriculum Module E2E Tests
@@ -24,7 +25,7 @@ test.describe("Curriculum - Navigation", () => {
     await page.goto("/curriculum");
     await page.waitForLoadState("domcontentloaded", { timeout: 10000 });
 
-    const content = await page.content();
+    const content = await settledContent(page);
     expect(content.length).toBeGreaterThan(1000);
   });
 });
@@ -53,7 +54,7 @@ test.describe("Curriculum - Features", () => {
     await page.goto("/curriculum");
     await page.waitForLoadState("domcontentloaded", { timeout: 10000 });
 
-    const content = await page.content();
+    const content = await settledContent(page);
     const hasSubjects =
       content.includes("Subject") ||
       content.includes("Mata Pelajaran") ||
@@ -69,7 +70,7 @@ test.describe("Curriculum - Features", () => {
     await page.goto("/curriculum");
     await page.waitForLoadState("domcontentloaded", { timeout: 10000 });
 
-    const content = await page.content();
+    const content = await settledContent(page);
     const hasDetails =
       content.includes("Curriculum") ||
       content.includes("Kurikulum") ||

@@ -236,7 +236,8 @@ for an actual intake. The values above are demo data from the seed.
    table as empty and gives 262). The **RPJP / Renstra / RKA** slice is
    **done** — `prisma/seeds/strategic-plan-cipansor.ts` seeds the yayasan's
    full cascade from the three planning documents (RPJP 2027–2045 → Renstra
-   2027–2029 → RKA 2027), all foundation-wide (`unitId` null): 15 objectives,
+   2027–2029 → RKA Yayasan 2027 → RKA unit), the first three foundation-wide
+   (`unitId` null): 15 objectives,
    25 indicators, 47 activities, with the RKA's `budget` the exact sum of its
    activity budgets. Sasaran → `PlanObjective`, IUP/IKU/IKK → `PlanIndicator`,
    Program/Kegiatan → `PlanActivity`, faithful to the user's mock-up framing.

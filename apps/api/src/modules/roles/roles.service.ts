@@ -310,6 +310,13 @@ export class RolesService {
       throw Errors.notFound('Role assignment');
     }
 
+    // Assignment yang sudah kedaluwarsa tidak boleh dipakai untuk berpindah
+    // peran — `isActive` saja tidak cukup, karena baterai peran bisa dibiarkan
+    // aktif setelah tanggal akhirnya lewat.
+    if (assignment.expiresAt && assignment.expiresAt < new Date()) {
+      throw Errors.badRequest('Role assignment has expired');
+    }
+
     // Update primary role
     await prisma.userRoleAssignment.updateMany({
       where: { userId, isPrimary: true },

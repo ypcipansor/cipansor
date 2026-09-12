@@ -42,6 +42,19 @@ export const GOVERNANCE_ROLE_CODES: readonly string[] = [
   "YAYASAN_PENGAWAS",
 ];
 
+/**
+ * Pengurus — the organ that RUNS the yayasan (UU 16/2001 Pasal 31 ayat 1), and
+ * so the only one that drafts its plans. Pembina ratifies the work programme
+ * and annual budget (Pasal 28 ayat 2 huruf d); Pengawas supervises and advises
+ * (Pasal 40 ayat 1). Neither authors the documents they then judge.
+ */
+export const PENGURUS_ROLE_CODES: readonly string[] = [
+  "YAYASAN_KETUA",
+  "YAYASAN_SEKRETARIS",
+  "YAYASAN_BENDAHARA",
+  "YAYASAN_ANGGOTA",
+];
+
 /** Kepala sekolah — educational leadership, not system administration. */
 export const PRINCIPAL_ROLE_CODES: readonly string[] = perSchool("KEPALA_SEKOLAH");
 
