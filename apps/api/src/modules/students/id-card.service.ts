@@ -97,7 +97,25 @@ export class StudentIdCardService {
 
     const payloadString = JSON.stringify(payload);
 
-    // Create HMAC-SHA256 signature for integrity & authenticity verification
+    // Create HMAC-SHA256 signature for integrity & authenticity verification.
+    //
+    // Truncated to 16 hex characters = 64 bits, to keep the QR readable at the
+    // size it is actually printed. NIST SP 800-107 Rev. 1 calls 64 bits a
+    // commonly acceptable MacTag length, so the length itself is fine — but it
+    // attaches a condition we deliberately do NOT implement: an application
+    // using truncated tags "shall determine a maximum number of failed tag
+    // verifications" and retire the key once that number is reached.
+    //
+    // Retiring this key is not an option here: it is the key every printed card
+    // was signed with, so retiring it invalidates cards that are physically in
+    // students' hands — a remedy worse than the disease. What protects us
+    // instead is arithmetic: forging a 64-bit tag takes ~2^63 attempts, and the
+    // verify endpoint sits behind the global limiter (100 requests/minute per
+    // IP), which puts a forgery some 10^13 years away. Recorded as a conscious
+    // deviation rather than an oversight. If third parties ever need to verify a
+    // card WITHOUT calling this API, the answer is not a longer HMAC but an
+    // asymmetric signature (ICAO VDS-NC uses ECDSA inside the barcode), and the
+    // Ed25519 signing chain for naskah dinas already exists in this codebase.
     const hmacSignature = crypto
       .createHmac('sha256', this.getHmacSecret())
       .update(payloadString)
