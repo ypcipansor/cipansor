@@ -20,12 +20,21 @@ export class StudentService {
     query: ListStudentsQuery,
     currentUser: { role: string; roleCode?: string | null; unitId: string | null }
   ) {
-    const { page, limit, search, unitId, classId, gender } = query;
+    const { page, limit, search, unitId, classId, gender, status } = query;
     const skip = (page - 1) * limit;
 
     const where: Prisma.StudentWhereInput = {
       deletedAt: null,
     };
+
+    // Skema query sudah membatasi `status` ke STUDENT_STATUS_VALUES (#492), tapi
+    // sampai 2026-09-13 nilainya tidak pernah dipasang di sini: filter "Alumni"
+    // di Daftar Santri tetap menampilkan semua santri, dan setiap pemanggil
+    // `?status=active` menerima alumni juga. Terukur di produksi setelah #492
+    // tergelar — `status: 'alumni'` mengembalikan 14 dari 14 santri aktif.
+    if (status) {
+      where.status = status;
+    }
 
     // Unit filter. seesAllUnits() covers both the yayasan board (no unitId at
     // all, so this used to resolve to 'none' and return nothing) and the
