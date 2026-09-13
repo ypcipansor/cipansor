@@ -18,6 +18,7 @@ import type {
   CreateIslamicEventInput,
   UpdateIslamicEventInput,
 } from './ibadah.schema';
+import { CLASS_ENROLLMENT_STATUS, STUDENT_STATUS } from '@cipansor/shared';
 
 // ======================
 // TARGET SERVICES
@@ -538,7 +539,7 @@ export async function getLeaderboard(query: LeaderboardQuery) {
     include: {
       user: { select: { name: true } },
       enrollments: {
-        where: { status: 'ACTIVE' },
+        where: { status: CLASS_ENROLLMENT_STATUS.ACTIVE },
         include: { class: { select: { name: true } } },
         take: 1,
       },
@@ -843,7 +844,7 @@ export async function getUnitIbadahStats(query: UnitIbadahStatsQuery) {
 
   // Get student count
   const studentCount = await prisma.student.count({
-    where: { unitId, status: 'ACTIVE' },
+    where: { unitId, status: STUDENT_STATUS.ACTIVE },
   });
 
   const totalRecords = records.length;
@@ -883,7 +884,7 @@ export async function getClassIbadahStats(query: ClassIbadahStatsQuery) {
 
   // Get students in class
   const enrollments = await prisma.classEnrollment.findMany({
-    where: { classId, status: 'ACTIVE' },
+    where: { classId, status: CLASS_ENROLLMENT_STATUS.ACTIVE },
     select: { studentId: true },
   });
   const studentIds = enrollments.map((e) => e.studentId);

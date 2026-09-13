@@ -12,6 +12,7 @@ import type {
   UpdateDailyReportInput,
   BulkCreateDailyReportsInput,
 } from '@cipansor/shared';
+import { STUDENT_STATUS } from '@cipansor/shared';
 
 // Helper interface for validation since schema types might not be exported from shared yet or match perfectly
 interface ConfirmReportInput {
@@ -700,7 +701,7 @@ export const dailyReportService = {
     // Get students in unit or class
     const studentsWhere: Prisma.StudentWhereInput = {
       unitId,
-      status: 'ACTIVE',
+      status: STUDENT_STATUS.ACTIVE,
     };
 
     if (classId) {

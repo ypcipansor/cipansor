@@ -15,6 +15,7 @@ import {
   QueryPaymentDto,
 } from './finance.schema';
 import { seesAllUnits } from '@/utils/resolve-unit-id';
+import { CLASS_ENROLLMENT_STATUS, STUDENT_STATUS } from '@cipansor/shared';
 
 // =====================================
 // PAYMENT TYPE SERVICE
@@ -1085,7 +1086,7 @@ export async function getStudentOutstandingBalances(unitId: string) {
         include: {
           user: { select: { id: true, name: true } },
           enrollments: {
-            where: { status: 'ACTIVE' },
+            where: { status: CLASS_ENROLLMENT_STATUS.ACTIVE },
             include: { class: { select: { id: true, name: true } } },
             take: 1,
             orderBy: { enrolledAt: 'desc' },
@@ -1438,7 +1439,7 @@ export async function generateRecurringBills() {
 
   // 2. Get all active students
   const activeStudents = await prisma.student.findMany({
-    where: { status: 'ACTIVE' },
+    where: { status: STUDENT_STATUS.ACTIVE },
     select: { id: true, unitId: true, userId: true },
   });
 

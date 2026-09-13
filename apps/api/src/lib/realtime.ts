@@ -11,6 +11,7 @@ import { prisma } from '@/lib/prisma';
 import { verifyToken, JwtPayload } from '@/lib/jwt';
 import Redis from 'ioredis';
 import type { DashboardMetrics, DashboardAlert } from '@cipansor/shared';
+import { STUDENT_STATUS } from '@cipansor/shared';
 
 // Event types
 export interface LiveEvent {
@@ -485,7 +486,7 @@ export async function getCurrentDashboardMetrics(unitId?: string): Promise<Dashb
     const activeStudents = await prisma.student.count({
       where: {
         ...unitFilter,
-        status: 'ACTIVE',
+        status: STUDENT_STATUS.ACTIVE,
       },
     });
 

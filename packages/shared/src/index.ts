@@ -3,6 +3,7 @@ export * from "./types/class";
 export * from "./types/models";
 export * from "./types/attendance";
 export * from "./types/enums";
+export * from "./types/student-status";
 export * from "./types/notifications";
 export * from "./types/messages";
 export * from "./types/analytics";

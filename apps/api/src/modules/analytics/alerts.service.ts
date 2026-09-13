@@ -7,6 +7,7 @@ import { prisma } from '@/lib/prisma';
 import { createNotification } from '@/modules/notifications/notifications.service';
 import { NotificationType, AttendanceStatus } from '@prisma/client';
 import { logger } from '@/lib/logger';
+import { STUDENT_STATUS } from '@cipansor/shared';
 
 export interface AlertRule {
   id: string;
@@ -132,7 +133,7 @@ export async function checkAttendanceRule(rule: AlertRule): Promise<AlertTrigger
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
   const students = await prisma.student.findMany({
-    where: { status: 'ACTIVE' },
+    where: { status: STUDENT_STATUS.ACTIVE },
     select: {
       id: true,
       user: { select: { id: true, name: true } },

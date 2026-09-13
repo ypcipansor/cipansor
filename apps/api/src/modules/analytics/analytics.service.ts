@@ -13,6 +13,7 @@ import type {
   PsbSummary,
   SpmbSummary,
 } from '@cipansor/shared';
+import { STUDENT_STATUS } from '@cipansor/shared';
 
 interface DateRange {
   startDate?: string;
@@ -166,7 +167,11 @@ export async function getStudentStats(unitId?: string): Promise<StudentStatistic
       prisma.student.count({
         where: {
           ...unitFilter,
-          status: 'graduated',
+          // Dulu 'graduated' — nilai yang TIDAK PERNAH ditulis siapa pun.
+          // Satu-satunya penulisnya, `alumni.service`, menulis 'alumni', jadi
+          // "alumni tahun ini" permanen nol. Cacat yang sama keluarganya dengan
+          // 39 penyaring huruf besar di PR ini: satu fakta, beberapa ejaan.
+          status: STUDENT_STATUS.ALUMNI,
           updatedAt: { gte: new Date(new Date().getFullYear(), 0, 1) },
         },
       }),

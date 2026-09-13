@@ -8,6 +8,7 @@ import { Prisma, UserRole } from '@prisma/client';
 import { logger } from '@/lib/logger';
 import { createBulkNotifications } from '@/modules/notifications/notifications.service';
 import { NotificationType } from '@prisma/client';
+import { CLASS_ENROLLMENT_STATUS, STUDENT_STATUS } from '@cipansor/shared';
 
 // Import result types
 export interface BulkImportResult {
@@ -94,7 +95,10 @@ export async function bulkImportStudents(
             address: 'Belum diisi', // Required field
             parentName: row.parentName || 'Unknown', // Required field
             parentPhone: row.parentPhone || '000000000', // Required field
-            status: 'ACTIVE',
+            // Ini jalur IMPOR MASSAL, dan dulu ia MENULIS 'ACTIVE' ke kolom yang
+            // berisi 'active'. Jadi setiap santri hasil impor tidak terlihat oleh
+            // 62 penyaring yang benar — korupsi data, bukan cuma laporan salah.
+            status: STUDENT_STATUS.ACTIVE,
           },
         });
       });
@@ -217,7 +221,7 @@ export async function sendMassNotification(
 
     case 'unit': {
       const unitStudents = await prisma.student.findMany({
-        where: { unitId: targetId, status: 'ACTIVE' },
+        where: { unitId: targetId, status: STUDENT_STATUS.ACTIVE },
         select: { userId: true },
       });
       userIds = unitStudents.map((s) => s.userId);
@@ -226,7 +230,7 @@ export async function sendMassNotification(
 
     case 'class': {
       const classStudents = await prisma.student.findMany({
-        where: { enrollments: { some: { classId: targetId, status: 'active' } }, status: 'ACTIVE' },
+        where: { enrollments: { some: { classId: targetId, status: 'active' } }, status: CLASS_ENROLLMENT_STATUS.ACTIVE },
         select: { userId: true },
       });
       userIds = classStudents.map((s) => s.userId);

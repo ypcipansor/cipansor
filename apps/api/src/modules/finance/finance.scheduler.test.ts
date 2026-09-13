@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 import { generateRecurringBills } from './finance.service';
+import { STUDENT_STATUS } from '@cipansor/shared';
 
 // Mock all external dependencies
 vi.mock('../../lib/prisma', () => ({
@@ -27,7 +28,7 @@ describe('Finance Scheduler Unit Tests - Auto Billing', () => {
   describe('generateRecurringBills', () => {
     it('should query active students and recurring payment types', async () => {
       vi.mocked(prisma.student.findMany).mockResolvedValue([
-        { id: 'student-1', unitId: 'unit-1', status: 'ACTIVE' } as any,
+        { id: 'student-1', unitId: 'unit-1', status: STUDENT_STATUS.ACTIVE } as any,
       ]);
 
       vi.mocked(prisma.paymentType.findMany).mockResolvedValue([
@@ -38,8 +39,15 @@ describe('Finance Scheduler Unit Tests - Auto Billing', () => {
 
       await generateRecurringBills();
 
+      // Kosakatanya diturunkan dari STUDENT_STATUS, bukan diketik ulang.
+      // Sampai 2026-09-13 assertion ini memaku 'ACTIVE' huruf besar — dan HIJAU,
+      // justru karena kodenya juga salah. Kolomnya berisi 'active' huruf kecil,
+      // jadi penyaring itu selalu mengembalikan nol santri dan tagihan berulang
+      // tidak pernah terbit untuk siapa pun. Uji yang memaku ejaan yang salah
+      // mengubah cacat menjadi kontrak; yang menemukannya adalah perbaikan
+      // kodenya, bukan uji ini.
       expect(prisma.student.findMany).toHaveBeenCalledWith({
-        where: { status: 'ACTIVE' },
+        where: { status: STUDENT_STATUS.ACTIVE },
         select: { id: true, unitId: true, userId: true },
       });
 

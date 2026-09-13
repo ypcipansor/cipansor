@@ -11,6 +11,7 @@ import {
 } from './wallet.schema';
 import { ACCOUNT_MAPPING_KEYS, getAccountOrFallback } from '../finance/accounting-config.service';
 import { JournalReferenceType } from '@cipansor/shared';
+import { CLASS_ENROLLMENT_STATUS } from '@cipansor/shared';
 
 export class WalletService {
   /**
@@ -25,7 +26,7 @@ export class WalletService {
             user: { select: { name: true } },
             unit: { select: { id: true, name: true } },
             enrollments: {
-              where: { status: 'ACTIVE' },
+              where: { status: CLASS_ENROLLMENT_STATUS.ACTIVE },
               include: { class: { select: { id: true, name: true } } },
               take: 1,
             },
@@ -43,7 +44,7 @@ export class WalletService {
               user: { select: { name: true } },
               unit: { select: { id: true, name: true } },
               enrollments: {
-                where: { status: 'ACTIVE' },
+                where: { status: CLASS_ENROLLMENT_STATUS.ACTIVE },
                 include: { class: { select: { id: true, name: true } } },
                 take: 1,
               },
@@ -81,7 +82,7 @@ export class WalletService {
     if (classId) {
       where.student = {
         ...(where.student as object),
-        enrollments: { some: { classId, status: 'ACTIVE' } },
+        enrollments: { some: { classId, status: CLASS_ENROLLMENT_STATUS.ACTIVE } },
       };
     }
 
@@ -102,7 +103,7 @@ export class WalletService {
               user: { select: { name: true } },
               unit: { select: { id: true, name: true } },
               enrollments: {
-                where: { status: 'ACTIVE' },
+                where: { status: CLASS_ENROLLMENT_STATUS.ACTIVE },
                 include: { class: { select: { id: true, name: true } } },
                 take: 1,
               },

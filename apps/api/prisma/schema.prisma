@@ -1025,6 +1025,10 @@ model Student {
   parentPhone  String   @map("parent_phone")
   parentEmail  String?  @map("parent_email")
   photoUrl     String?  @map("photo_url")
+  /// Kosakatanya di `packages/shared/src/types/student-status.ts`
+  /// (STUDENT_STATUS) dan diikat CHECK `students_status_check`.
+  /// HURUF KECIL — 2026-09-13 ada 23 tempat yang menyaring/menulis 'ACTIVE'
+  /// huruf besar, semuanya nol tanpa galat. Jangan mengetik literalnya lagi.
   status       String   @default("active") // active, alumni, dropped, transferred
   entryYear    Int?     @map("entry_year")
   graduateYear Int?     @map("graduate_year")
@@ -1279,6 +1283,9 @@ model ClassEnrollment {
   studentId  String   @map("student_id")
   classId    String   @map("class_id")
   enrolledAt DateTime @default(now()) @map("enrolled_at")
+  /// Kosakatanya di `packages/shared/src/types/student-status.ts`
+  /// (CLASS_ENROLLMENT_STATUS) dan diikat CHECK `class_enrollments_status_check`.
+  /// BEDA dari status santri: 'completed' ada di sini, 'alumni' tidak.
   status     String   @default("active") // active, completed, transferred, dropped
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")

@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
+import { CLASS_ENROLLMENT_STATUS } from '@cipansor/shared';
 
 /** Fields required for a student record to count as Dapodik-complete. */
 const REQUIRED_FIELDS = [
@@ -83,7 +84,7 @@ export async function getCompletenessReport(filters: CompletenessFilters) {
       user: { select: { name: true } },
       unit: { select: { name: true } },
       enrollments: {
-        where: { status: 'ACTIVE' },
+        where: { status: CLASS_ENROLLMENT_STATUS.ACTIVE },
         include: { class: { select: { name: true } } },
         take: 1,
       },
@@ -136,7 +137,7 @@ export async function getDapodikReady(filters: { unitId?: string }) {
       user: { select: { name: true } },
       unit: { select: { name: true, npsn: true } },
       enrollments: {
-        where: { status: 'ACTIVE' },
+        where: { status: CLASS_ENROLLMENT_STATUS.ACTIVE },
         include: { class: { select: { name: true } } },
         take: 1,
       },
