@@ -51,6 +51,7 @@ import {
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
+import { STUDENT_STATUS } from "@cipansor/shared";
 
 export default function StudentTranscriptPage() {
   const [selectedUnitId, setSelectedUnitId] = useState<string>("");
@@ -72,7 +73,7 @@ export default function StudentTranscriptPage() {
     unitId: selectedUnitId || undefined,
     classId: selectedClassId || undefined,
     search: searchQuery || undefined,
-    status: "ACTIVE",
+    status: STUDENT_STATUS.ACTIVE,
     limit: 50,
   });
 

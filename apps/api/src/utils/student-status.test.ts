@@ -299,3 +299,109 @@ describe('kosakata status santri dan pendaftaran kelas', () => {
     });
   });
 });
+
+/**
+ * Kosong-kan komentar (baris, blok, dan komentar JSX berkurung kurawal) dengan spasi, sambil
+ * mempertahankan string — `http://` di dalam string bukan komentar — dan
+ * mempertahankan offset sehingga nomor baris tetap benar.
+ */
+function tanpaKomentar(s: string): string {
+  const out = s.split('');
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === "'" || c === '"' || c === '`') {
+      for (i++; i < s.length; i++) {
+        if (s[i] === '\\') i++;
+        else if (s[i] === c) break;
+      }
+      continue;
+    }
+    if (c === '/' && s[i + 1] === '/') {
+      const akhir = s.indexOf('\n', i);
+      const j = akhir < 0 ? s.length : akhir;
+      for (let k = i; k < j; k++) out[k] = ' ';
+      i = j;
+      continue;
+    }
+    if (c === '/' && s[i + 1] === '*') {
+      const akhir = s.indexOf('*/', i + 2);
+      const j = akhir < 0 ? s.length : akhir + 2;
+      for (let k = i; k < j; k++) if (out[k] !== '\n') out[k] = ' ';
+      i = j - 1;
+    }
+  }
+  return out.join('');
+}
+
+describe('frontend memakai kosakata yang sama', () => {
+  /**
+   * Penjaga ini ada karena E2E PR ini sendiri memerah. Frontend punya
+   * TUJUH salinan kosakata status santri — `hooks/use-students.ts`,
+   * `services/students.service.ts`, `hooks/use-homeroom.ts`, `lib/constants.ts`,
+   * dropdown di `students/page.tsx`, skema form `students/[id]/edit/page.tsx`,
+   * dan 14 pemanggilan `useStudents({ status: "ACTIVE" })` yang disuruh oleh
+   * tipe tiruan itu. Uji API tidak pernah melihat satu pun: faktanya ditulis di
+   * `apps/web` tanpa satu tipe yang menghubungkannya ke `apps/api`.
+   */
+  const WEB_SRC = join(__dirname, '../../../web/src');
+  const berkasWeb = (function kumpul(dir: string): string[] {
+    const out: string[] = [];
+    for (const nama of readdirSync(dir)) {
+      const p = join(dir, nama);
+      if (statSync(p).isDirectory()) out.push(...kumpul(p));
+      else if (/\.(ts|tsx)$/.test(nama) && !/\.test\./.test(nama)) out.push(p);
+    }
+    return out;
+  })(WEB_SRC);
+
+  it('menemukan sumber web untuk dipindai (penjaga atas penjaga)', () => {
+    expect(berkasWeb.length).toBeGreaterThan(200);
+  });
+
+  it('tidak ada "GRADUATED" / "DROPPED_OUT" di kode web — nilai itu tak dimiliki kosakata mana pun', () => {
+    // "INACTIVE" sengaja tidak dilarang: guru, ekstrakurikuler, HR, dan alumni
+    // punya status itu dengan sah.
+    const temuan: string[] = [];
+    for (const f of berkasWeb) {
+      const kode = tanpaKomentar(readFileSync(f, 'utf-8'));
+      const re = /["'`](GRADUATED|DROPPED_OUT)["'`]/g;
+      for (let m = re.exec(kode); m; m = re.exec(kode)) {
+        const baris = kode.slice(0, m.index).split('\n').length;
+        temuan.push(`${f.replace(WEB_SRC, 'apps/web/src')}:${baris} — ${m[1]}`);
+      }
+    }
+    expect(temuan).toEqual([]);
+  });
+
+  it('setiap permintaan daftar santri — useStudents({ status }) maupun get("/students", { params }) — memakai huruf kecil atau konstanta', () => {
+    // Bentuk kedua ditambahkan setelah `use-executive-dashboard.ts` lolos dari
+    // versi pertama penjaga ini: ia memanggil `apiClient.get("/students")`
+    // langsung, tanpa hook, dan setelah API menolak ejaan lain grafiknya
+    // diam-diam jadi nol.
+    const temuan: string[] = [];
+    for (const f of berkasWeb) {
+      const kode = tanpaKomentar(readFileSync(f, 'utf-8'));
+      const pemanggil = /\buseStudents\s*\(|\.get(?:<[^()\n]*?>)?\s*\(\s*["'`]\/students["'`]/g;
+      for (let m = pemanggil.exec(kode); m; m = pemanggil.exec(kode)) {
+        const buka = m.index + m[0].indexOf('(');
+        const tutup = akhirBlok(kode, buka);
+        if (tutup < 0) continue;
+        const arg = kode.slice(buka, tutup);
+        const s = /\bstatus:\s*["'`]([A-Za-z_]+)["'`]/.exec(arg);
+        if (s && s[1] !== s[1].toLowerCase()) {
+          const baris = kode.slice(0, buka + s.index).split('\n').length;
+          temuan.push(`${f.replace(WEB_SRC, 'apps/web/src')}:${baris} — status: '${s[1]}'`);
+        }
+      }
+    }
+    expect(temuan).toEqual([]);
+  });
+
+  it('pemindai komentarnya tidak memakan string yang memuat //', () => {
+    const contoh = `const u = "http://x"; // "GRADUATED"\n/* "DROPPED_OUT" */ const v = 'GRADUATED';`;
+    const k = tanpaKomentar(contoh);
+    expect(k).toContain('"http://x"');
+    expect(k.match(/GRADUATED/g)).toHaveLength(1);
+    expect(k).not.toContain('DROPPED_OUT');
+  });
+});

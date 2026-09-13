@@ -63,6 +63,7 @@ import { useAuthStore } from "@/stores/auth";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { Progress } from "@/components/ui/progress";
+import { STUDENT_STATUS } from "@cipansor/shared";
 
 const formSchema = z.object({
   studentId: z.string().min(1, "Pilih siswa"),
@@ -130,7 +131,7 @@ export default function EditTKAssessmentPage() {
     useTKAssessment(id);
   const { data: students, isLoading: loadingStudents } = useStudents({
     unitId: user?.unitId,
-    status: "ACTIVE",
+    status: STUDENT_STATUS.ACTIVE,
     limit: 100,
   });
   const { data: academicYears } = useAcademicYears();

@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import api, { ApiResponse, PaginatedResponse } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
+import { STUDENT_STATUS } from "@cipansor/shared";
 import { useActiveAcademicYear } from "./use-academic-years";
 
 // ============================================
@@ -109,7 +110,7 @@ export function usePAUDDashboardStats() {
             .get<ApiResponse<{ total: number }>>("/students", {
               params: {
                 unitId: tkUnitId,
-                status: "ACTIVE",
+                status: STUDENT_STATUS.ACTIVE,
                 limit: 1,
               },
             })

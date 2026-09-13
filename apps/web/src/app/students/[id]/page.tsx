@@ -42,13 +42,7 @@ import { StudentBehaviorTab } from "@/components/students/student-behavior-tab";
 import { StudentIbadahTab } from "@/components/students/student-ibadah-tab";
 import { StudentKitabTab } from "@/components/students/student-kitab-tab";
 import { StudentTakhosusTab } from "@/components/students/student-takhosus-tab";
-
-const statusColors: Record<string, string> = {
-  ACTIVE: "bg-green-100 text-green-800",
-  INACTIVE: "bg-gray-100 text-gray-800",
-  GRADUATED: "bg-blue-100 text-blue-800",
-  DROPPED_OUT: "bg-red-100 text-red-800",
-};
+import { studentStatusOption } from "@/lib/constants";
 
 const genderLabels: Record<string, string> = {
   MALE: "Laki-laki",
@@ -122,8 +116,11 @@ export default function StudentDetailPage() {
 
         {/* Status Banner */}
         <div className="flex items-center gap-4">
-          <Badge className={statusColors[student.status]} variant="outline">
-            {student.status}
+          <Badge
+            className={studentStatusOption(student.status)?.badge}
+            variant="outline"
+          >
+            {studentStatusOption(student.status)?.label ?? student.status}
           </Badge>
           {student.currentClass && (
             <Badge variant="secondary">

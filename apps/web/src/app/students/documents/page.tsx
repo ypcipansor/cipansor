@@ -59,6 +59,7 @@ import {
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
+import { STUDENT_STATUS } from "@cipansor/shared";
 
 // ========================================
 // TYPES & TEMPLATES SURAT KETERANGAN
@@ -334,7 +335,7 @@ export default function SuratKeteranganPage() {
     unitId: selectedUnitId || undefined,
     classId: selectedClassId || undefined,
     search: searchQuery || undefined,
-    status: "ACTIVE",
+    status: STUDENT_STATUS.ACTIVE,
     limit: 50,
   });
 

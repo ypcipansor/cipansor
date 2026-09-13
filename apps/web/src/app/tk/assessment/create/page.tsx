@@ -28,6 +28,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ArrowLeft, Save, Loader2, Info } from "lucide-react";
 import { toast } from "sonner";
 import { useClasses } from "@/hooks/use-classes";
+import { useUnits } from "@/hooks/use-units";
 import { useStudents } from "@/hooks/use-students";
 import { useActiveAcademicYear } from "@/hooks/use-academic-years";
 import {
@@ -37,6 +38,7 @@ import {
   TKAspect,
   TKAchievementLevel,
 } from "@/hooks/use-tk-assessment";
+import { STUDENT_STATUS } from "@cipansor/shared";
 
 const ACHIEVEMENT_LEVELS = [
   {
@@ -82,12 +84,23 @@ export default function TKAssessmentCreatePage() {
   >({});
 
   // Data Fetching
-  const { data: classes } = useClasses({ unitId: user?.unitId });
+  const { data: classes } = useClasses({ unitId: user?.unitId, limit: 100 });
+  const { data: units } = useUnits();
+  // Halaman ini khusus TK. Akun ber-unit sudah dibatasi API lewat `unitId`;
+  // akun tingkat yayasan (tanpa unit) menerima kelas SEMUA unit, jadi saring ke
+  // unit bertipe TK_QURAN — kalau tidak, penilaian PAUD bisa tersimpan untuk
+  // kelas SD.
+  const tkUnitIds = new Set(
+    (units ?? []).filter((u) => u.type === "TK_QURAN").map((u) => u.id),
+  );
+  const kelasTk = user?.unitId
+    ? (classes?.data ?? [])
+    : (classes?.data ?? []).filter((c) => tkUnitIds.has(c.unitId));
   const { data: students, isLoading: isLoadingStudents } = useStudents({
     classId: selectedClassId || undefined,
     unitId: user?.unitId,
     limit: 100,
-    status: "active",
+    status: STUDENT_STATUS.ACTIVE,
   });
 
   const { data: activeYear } = useActiveAcademicYear();
@@ -139,7 +152,13 @@ export default function TKAssessmentCreatePage() {
     try {
       await createMutation.mutateAsync({
         classId: selectedClassId,
-        unitId: user?.unitId || "",
+        // Unit penilaian = unit KELAS-nya; API menolak kalau keduanya beda.
+        // Dulu diambil dari akun (`user.unitId`), yang kosong untuk akun
+        // tingkat yayasan, sehingga Simpan selalu gagal 400 bagi mereka.
+        unitId:
+          kelasTk.find((c) => c.id === selectedClassId)?.unitId ??
+          user?.unitId ??
+          "",
         academicYearId: user?.academicYearId || activeYear?.id || "",
         semester: "GANJIL", // Default to GANJIL as AcademicYear doesn't have semester
         periodType: "HARIAN",
@@ -190,7 +209,7 @@ export default function TKAssessmentCreatePage() {
                   <SelectValue placeholder="Pilih Kelas" />
                 </SelectTrigger>
                 <SelectContent>
-                  {classes?.data?.map((cls) => (
+                  {kelasTk.map((cls) => (
                     <SelectItem key={cls.id} value={cls.id}>
                       {cls.name}
                     </SelectItem>

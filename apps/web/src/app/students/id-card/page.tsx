@@ -53,6 +53,7 @@ import {
 import { toast } from "sonner";
 import { QRCodeSVG } from "qrcode.react";
 import { StudentIdCardDetail } from "@cipansor/shared";
+import { STUDENT_STATUS } from "@cipansor/shared";
 
 /**
  * The QR printed on a student card.
@@ -271,7 +272,7 @@ export default function StudentIDCardPage() {
     unitId: selectedUnitId || undefined,
     classId: selectedClassId || undefined,
     search: searchQuery || undefined,
-    status: "ACTIVE",
+    status: STUDENT_STATUS.ACTIVE,
     limit: 100,
   });
 

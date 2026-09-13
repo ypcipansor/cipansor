@@ -1,5 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api, { PaginatedResponse, ApiResponse } from "@/lib/api";
+import {
+  STUDENT_STATUS,
+  type StudentStatus,
+  type ClassEnrollmentStatus,
+} from "@cipansor/shared";
 
 // Types
 export interface Student {
@@ -20,7 +25,14 @@ export interface Student {
   photoUrl?: string;
   bloodType?: string;
   specialNeeds?: string;
-  status: "ACTIVE" | "INACTIVE" | "GRADUATED" | "DROPPED_OUT";
+  /**
+   * Kosakatanya dari STUDENT_STATUS di @cipansor/shared, bukan diketik ulang.
+   * Sampai 2026-09-13 di sini tertulis "ACTIVE" | "INACTIVE" | "GRADUATED" |
+   * "DROPPED_OUT" — empat nilai yang TIDAK ADA di kolomnya (kolomnya berisi
+   * 'active' huruf kecil). Tipe inilah yang menyuruh 13 halaman mengirim
+   * `status: "ACTIVE"` ke API, yang dulu diam-diam membuang parameternya.
+   */
+  status: StudentStatus;
   enrollmentDate: string;
   unitId: string;
   unit?: {
@@ -153,9 +165,10 @@ export interface CreateStudentData {
   enrollmentDate?: string;
 }
 
-export interface UpdateStudentData extends Partial<CreateStudentData> {
-  status?: "ACTIVE" | "INACTIVE" | "GRADUATED" | "DROPPED_OUT";
-}
+export type UpdateStudentData = Partial<CreateStudentData>;
+// `status` sengaja TIDAK ada di sini: `updateStudentSchema` di API membuangnya,
+// dan memang harus — menjadikan santri alumni lewat `alumni.service`, yang
+// sekaligus membuat baris Alumni dan menutup pendaftaran kelasnya.
 
 // Hooks
 export function useStudents(params: StudentListParams = {}) {
@@ -259,7 +272,7 @@ export function useStudentSearch(query: string, unitId?: string) {
           search: query,
           unitId,
           limit: 10,
-          status: "ACTIVE",
+          status: STUDENT_STATUS.ACTIVE,
         },
       });
       return response.data.data;
@@ -536,7 +549,7 @@ export function useStudentEnrollmentHistory(studentId: string) {
             gradeLevel: number;
             academicYearId: string;
             academicYearName: string;
-            status: "ACTIVE" | "COMPLETED" | "TRANSFERRED" | "DROPPED";
+            status: ClassEnrollmentStatus;
             startDate: string;
             endDate?: string;
             finalGrade?: number;
