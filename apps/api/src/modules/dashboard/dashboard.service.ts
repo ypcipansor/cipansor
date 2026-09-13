@@ -23,6 +23,7 @@ import type {
 } from '@cipansor/shared';
 import { DAY_OF_WEEK_BY_INDEX } from '@cipansor/shared';
 import { studentInUnitAt } from '@/utils/student-unit-history';
+import { STUDENT_STATUS } from '@cipansor/shared';
 
 export interface DashboardServiceContext {
   userId?: string;
@@ -129,11 +130,11 @@ export class DashboardService {
       activeAcademicYear,
     ] = await Promise.all([
       prisma.student.count({ where: unitFilter }),
-      prisma.student.count({ where: { ...unitFilter, status: 'ACTIVE' } }),
+      prisma.student.count({ where: { ...unitFilter, status: STUDENT_STATUS.ACTIVE } }),
       prisma.student.count({
         where: {
           ...unitFilter,
-          status: 'ACTIVE',
+          status: STUDENT_STATUS.ACTIVE,
           createdAt: { lte: lastMonth },
         },
       }),
@@ -186,7 +187,7 @@ export class DashboardService {
 
     const [totalStudents, activeStudents, totalTeachers, todayAttendance] = await Promise.all([
       prisma.student.count({ where: unitFilter }),
-      prisma.student.count({ where: { ...unitFilter, status: 'ACTIVE' } }),
+      prisma.student.count({ where: { ...unitFilter, status: STUDENT_STATUS.ACTIVE } }),
       prisma.teacher.count({ where: unitFilter }),
       this.getTodayAttendanceCount(context.unitId),
     ]);
@@ -624,7 +625,7 @@ export class DashboardService {
       // 1. Check attendance rate
       const [activeStudents, todayPresent] = await Promise.all([
         prisma.student.count({
-          where: { ...unitFilter, status: 'ACTIVE' },
+          where: { ...unitFilter, status: STUDENT_STATUS.ACTIVE },
         }),
         prisma.attendance.count({
           where: {
@@ -699,7 +700,7 @@ export class DashboardService {
       });
 
       const totalActiveStudents = await prisma.student.count({
-        where: { ...unitFilter, status: 'ACTIVE' },
+        where: { ...unitFilter, status: STUDENT_STATUS.ACTIVE },
       });
 
       const inactiveStudents = totalActiveStudents - studentsWithRecentTahfidz.length;

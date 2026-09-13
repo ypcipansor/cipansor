@@ -21,6 +21,7 @@ import { CreateNotificationInput } from './notifications.schema';
 import { NotificationType, AttendanceStatus, PaymentStatus, Prisma } from '@prisma/client';
 import { NotificationPriority, NotificationChannel, RecipientType } from '@cipansor/shared';
 import { logger } from '../../lib/logger';
+import { CLASS_ENROLLMENT_STATUS, STUDENT_STATUS } from '@cipansor/shared';
 
 interface ScheduledTask {
   id: string;
@@ -766,7 +767,7 @@ export class SchedulerService {
 
     const students = await prisma.student.findMany({
       where: {
-        status: 'ACTIVE',
+        status: STUDENT_STATUS.ACTIVE,
       },
       include: {
         user: {
@@ -833,7 +834,7 @@ export class SchedulerService {
 
       case 'STUDENTS': {
         const students = await prisma.student.findMany({
-          where: { status: 'ACTIVE' },
+          where: { status: STUDENT_STATUS.ACTIVE },
           include: { user: { select: { id: true, phone: true } } },
           take: 500,
         });
@@ -858,7 +859,7 @@ export class SchedulerService {
         if (targetId) {
           const unitStudents = await prisma.student.findMany({
             where: {
-              status: 'ACTIVE',
+              status: STUDENT_STATUS.ACTIVE,
               unitId: targetId,
             },
             include: { user: { select: { id: true, phone: true } } },
@@ -874,7 +875,7 @@ export class SchedulerService {
           const enrollments = await prisma.classEnrollment.findMany({
             where: {
               classId: targetId,
-              status: 'ACTIVE',
+              status: CLASS_ENROLLMENT_STATUS.ACTIVE,
             },
             include: {
               student: {

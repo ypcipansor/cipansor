@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
 import { UserRole, Prisma } from '@prisma/client';
 import { seesAllUnits } from '@/utils/resolve-unit-id';
+import { CLASS_ENROLLMENT_STATUS } from '@cipansor/shared';
 
 // Status enum
 type MuhadhorohStatus = 'SCHEDULED' | 'COMPLETED' | 'CANCELLED';
@@ -109,7 +110,7 @@ export class MuhadhorohService {
             include: {
               user: { select: { name: true } },
               enrollments: {
-                where: { status: 'ACTIVE' },
+                where: { status: CLASS_ENROLLMENT_STATUS.ACTIVE },
                 include: { class: { select: { id: true, name: true, level: true } } },
                 take: 1,
               },
@@ -150,7 +151,7 @@ export class MuhadhorohService {
           include: {
             user: { select: { name: true, email: true } },
             enrollments: {
-              where: { status: 'ACTIVE' },
+              where: { status: CLASS_ENROLLMENT_STATUS.ACTIVE },
               include: { class: true },
               take: 1,
             },
@@ -319,7 +320,7 @@ export class MuhadhorohService {
           include: {
             user: { select: { name: true } },
             enrollments: {
-              where: { status: 'ACTIVE' },
+              where: { status: CLASS_ENROLLMENT_STATUS.ACTIVE },
               include: { class: { select: { name: true } } },
               take: 1,
             },
@@ -418,7 +419,7 @@ export class MuhadhorohService {
       include: {
         user: { select: { name: true } },
         enrollments: {
-          where: { status: 'ACTIVE' },
+          where: { status: CLASS_ENROLLMENT_STATUS.ACTIVE },
           include: { class: { select: { name: true } } },
           take: 1,
         },

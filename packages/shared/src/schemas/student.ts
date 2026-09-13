@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { STUDENT_STATUS_VALUES } from "../types/student-status";
 
 // ==================== QUERY PARAMS ====================
 
@@ -9,7 +10,13 @@ export const listStudentsQuerySchema = z.object({
   unitId: z.string().uuid().optional(),
   classId: z.string().uuid().optional(),
   gender: z.enum(["MALE", "FEMALE"]).optional(),
-  status: z.enum(["ACTIVE", "INACTIVE", "GRADUATED", "DROPPED_OUT"]).optional(),
+  /**
+   * Kosakatanya diturunkan dari STUDENT_STATUS, bukan diketik ulang. Sampai
+   * 2026-09-13 di sini tertulis ["ACTIVE","INACTIVE","GRADUATED","DROPPED_OUT"]
+   * — empat nilai yang tidak pernah ada di kolomnya, pada endpoint yang juga
+   * tidak pernah memakai nilainya. Keduanya diperbaiki bersamaan.
+   */
+  status: z.enum(STUDENT_STATUS_VALUES).optional(),
 });
 
 // ==================== CREATE STUDENT ====================
@@ -55,7 +62,12 @@ export const updateStudentSchema = z.object({
   parentPhone: z.string().min(10).optional(),
   parentEmail: z.string().email().optional().nullable(),
   photoUrl: z.string().url().optional().nullable(),
-  status: z.enum(["ACTIVE", "INACTIVE", "GRADUATED", "DROPPED_OUT"]).optional(),
+  // `status` SENGAJA tidak ada di sini. Ia dulu dideklarasikan dan
+  // `student.service.update` tidak pernah menuliskannya, jadi klien mendapat
+  // 200 sementara santrinya tidak berubah. Dan memang tidak boleh bisa:
+  // menjadikan santri alumni harus lewat `alumni.service`, yang sekaligus
+  // membuat barisan Alumni dan menutup pendaftaran kelasnya. PUT generik yang
+  // menulis kolom ini akan melewati keduanya.
   unitId: z.string().uuid().optional(),
   classId: z.string().uuid().optional().nullable(),
 });

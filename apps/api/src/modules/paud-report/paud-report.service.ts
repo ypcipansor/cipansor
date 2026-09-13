@@ -11,6 +11,7 @@ import type {
   AddPhotoInput,
   UpdatePhotoInput,
 } from './paud-report.schema';
+import { CLASS_ENROLLMENT_STATUS } from '@cipansor/shared';
 
 // ============================================
 // CONSTANTS
@@ -164,7 +165,7 @@ export async function findReportById(id: string, context: ReportAccessContext) {
           gender: true,
           user: { select: { name: true } },
           enrollments: {
-            where: { status: 'ACTIVE' },
+            where: { status: CLASS_ENROLLMENT_STATUS.ACTIVE },
             include: {
               class: { select: { id: true, name: true } },
             },
@@ -521,7 +522,7 @@ export async function bulkGenerateReports(
   const enrollments = await prisma.classEnrollment.findMany({
     where: {
       classId,
-      status: 'ACTIVE',
+      status: CLASS_ENROLLMENT_STATUS.ACTIVE,
     },
     select: {
       studentId: true,

@@ -42,6 +42,7 @@ import { CreateStudentPackageInput, PackageStatus } from "@cipansor/shared";
 import { Loader2, Plus, PackageCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { STUDENT_STATUS } from "@cipansor/shared";
 
 export default function PackagePage() {
   const [date, setDate] = useState<Date>(new Date());
@@ -127,7 +128,7 @@ function PackageForm({ onSuccess }: { onSuccess: () => void }) {
   const { data: studentsData } = useStudents({
     page: 1,
     limit: 100,
-    status: "active",
+    status: STUDENT_STATUS.ACTIVE,
   });
 
   const studentOptions =

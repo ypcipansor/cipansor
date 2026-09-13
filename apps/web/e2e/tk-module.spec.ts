@@ -113,12 +113,23 @@ test.describe("TK Assessment", () => {
     }
     await waitForLoadingComplete(page);
 
+    // Radio Radix di sini ber-class `sr-only`: tombolnya ada untuk pembaca layar,
+    // dan yang terlihat serta menerima klik adalah <label for=...>-nya. Mengklik
+    // tombolnya langsung akan selalu dicegat labelnya ("intercepts pointer
+    // events") sampai habis waktu. Pengguna sungguhan mengklik labelnya, jadi
+    // itu yang dilakukan di sini. Pola yang sama berlaku untuk kontrol Radix
+    // lain di repo ini.
     const levelRadio = page.locator('button[role="radio"]').first();
     if (!(await levelRadio.isVisible({ timeout: 5000 }).catch(() => false))) {
       test.skip(true, "No students to assess");
       return;
     }
-    await levelRadio.click();
+    const radioId = await levelRadio.getAttribute("id");
+    if (radioId) {
+      await page.locator(`label[for="${radioId}"]`).click();
+    } else {
+      await levelRadio.click({ force: true });
+    }
 
     await page.getByRole("button", { name: /simpan penilaian/i }).click();
     await waitForToast(page, /berhasil|tersimpan|success/i, "success");

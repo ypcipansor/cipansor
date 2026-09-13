@@ -12,12 +12,10 @@ import type {
   SortParams,
 } from "./types";
 
-export type StudentStatus =
-  | "ACTIVE"
-  | "INACTIVE"
-  | "GRADUATED"
-  | "DROPPED_OUT"
-  | "TRANSFERRED";
+// Dulu tipe tiruan "ACTIVE" | "INACTIVE" | "GRADUATED" | "DROPPED_OUT" |
+// "TRANSFERRED" — kosakata yang tidak ada di kolomnya. Sekarang diturunkan.
+import type { StudentStatus } from "@cipansor/shared";
+export type { StudentStatus };
 export type Gender = "MALE" | "FEMALE";
 
 export interface Student {

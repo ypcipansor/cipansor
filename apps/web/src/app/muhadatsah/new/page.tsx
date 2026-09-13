@@ -63,6 +63,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useStudents } from "@/hooks/use-students";
 import { useUnits } from "@/hooks/use-units";
 import { useCreateMuhadatsah, useMatchPartners } from "@/hooks/use-muhadatsah";
+import { STUDENT_STATUS } from "@cipansor/shared";
 
 // Form Schema
 const muhadatsahSchema = z.object({
@@ -157,7 +158,7 @@ export default function NewMuhadatsahPage() {
     unitId: selectedUnitId,
     search: studentSearch,
     limit: 50,
-    status: "ACTIVE",
+    status: STUDENT_STATUS.ACTIVE,
   });
   const students = studentsData?.data || [];
 
@@ -165,7 +166,7 @@ export default function NewMuhadatsahPage() {
     unitId: selectedUnitId,
     search: partnerSearch,
     limit: 50,
-    status: "ACTIVE",
+    status: STUDENT_STATUS.ACTIVE,
   });
   // Filter out selected student from partners
   const availablePartners = (partnersData?.data || []).filter(

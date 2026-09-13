@@ -41,6 +41,7 @@ import { toast } from "sonner";
 
 import { id as idLocale } from "date-fns/locale";
 import { api } from "@/lib/api";
+import { STUDENT_STATUS } from "@cipansor/shared";
 
 // ========================================
 // JUZ DATA & SANAD TYPES
@@ -179,7 +180,7 @@ export default function TahfidzCertificatePage() {
     unitId: selectedUnitId || undefined,
     classId: selectedClassId || undefined,
     search: searchQuery || undefined,
-    status: "ACTIVE",
+    status: STUDENT_STATUS.ACTIVE,
     limit: 50,
   });
 

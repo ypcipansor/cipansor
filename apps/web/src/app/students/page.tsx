@@ -31,13 +31,8 @@ import { safeFormat } from "@/lib/date";
 import { toast } from "sonner";
 import { useAuthStore } from "@/stores/auth";
 import { getEffectiveRole } from "@/lib/rbac";
+import { STUDENT_STATUS_OPTIONS, studentStatusOption } from "@/lib/constants";
 
-const statusColors: Record<string, string> = {
-  ACTIVE: "bg-green-100 text-green-800",
-  INACTIVE: "bg-gray-100 text-gray-800",
-  GRADUATED: "bg-blue-100 text-blue-800",
-  DROPPED_OUT: "bg-red-100 text-red-800",
-};
 
 const genderLabels: Record<string, string> = {
   MALE: "Laki-laki",
@@ -127,8 +122,8 @@ export default function StudentsPage() {
       accessorKey: "status",
       header: "Status",
       cell: ({ row }) => (
-        <Badge className={statusColors[row.original.status]}>
-          {row.original.status}
+        <Badge className={studentStatusOption(row.original.status)?.badge}>
+          {studentStatusOption(row.original.status)?.label ?? row.original.status}
         </Badge>
       ),
     },
@@ -199,14 +194,21 @@ export default function StudentsPage() {
           </div>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="w-full md:w-40">
-              <SelectValue placeholder="All Status" />
+              <SelectValue placeholder="Semua Status" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="ALL">All Status</SelectItem>
-              <SelectItem value="ACTIVE">Active</SelectItem>
-              <SelectItem value="INACTIVE">Inactive</SelectItem>
-              <SelectItem value="GRADUATED">Graduated</SelectItem>
-              <SelectItem value="DROPPED_OUT">Dropped Out</SelectItem>
+              {/*
+                Nilainya dari STUDENT_STATUS_OPTIONS, bukan diketik ulang. Dulu
+                opsinya "ACTIVE"/"INACTIVE"/"GRADUATED"/"DROPPED_OUT" — tak satu
+                pun ada di kolomnya, dan API diam-diam membuang parameternya,
+                jadi memilih apa pun tetap memperlihatkan semua santri.
+              */}
+              <SelectItem value="ALL">Semua Status</SelectItem>
+              {STUDENT_STATUS_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>

@@ -63,6 +63,7 @@ import {
   Palette,
   FileText,
 } from "lucide-react";
+import { STUDENT_STATUS } from "@cipansor/shared";
 
 const formSchema = z.object({
   studentId: z.string().min(1, "Pilih siswa"),
@@ -126,7 +127,7 @@ export default function CreateTKAssessmentPage() {
 
   const { data: students, isLoading: loadingStudents } = useStudents({
     unitId: user?.unitId,
-    status: "ACTIVE",
+    status: STUDENT_STATUS.ACTIVE,
     limit: 100,
   });
 

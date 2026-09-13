@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
 import { Prisma, UserRole, Gender, UnitType } from '@prisma/client';
+import { STUDENT_STATUS } from '@cipansor/shared';
 
 // User type from JwtPayload
 interface AuthenticatedUser {
@@ -292,7 +293,7 @@ export class EmisService {
 
     // Get related counts separately
     const [students, teachers, classes] = await Promise.all([
-      prisma.student.findMany({ where: { unitId, status: 'ACTIVE', deletedAt: null } }),
+      prisma.student.findMany({ where: { unitId, status: STUDENT_STATUS.ACTIVE, deletedAt: null } }),
       prisma.teacher.findMany({ where: { unitId, deletedAt: null } }),
       prisma.class.findMany({
         where: { unitId, deletedAt: null },

@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api, { ApiResponse } from "@/lib/api";
+import type { StudentStatus } from "@cipansor/shared";
 
 // ==================== TYPES ====================
 
@@ -130,7 +131,8 @@ interface UseStudentComplianceParams {
   limit?: number;
   search?: string;
   unitId?: string;
-  status?: string;
+  /** Diteruskan ke GET /students, yang menolak ejaan di luar kosakata ini. */
+  status?: StudentStatus;
 }
 
 export function useStudentComplianceList(params?: UseStudentComplianceParams) {

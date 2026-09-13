@@ -57,6 +57,7 @@ import {
   useDapodikReadyReport,
   StudentComplianceData,
 } from "@/hooks/use-student-compliance";
+import { STUDENT_STATUS } from "@cipansor/shared";
 
 const REQUIRED_FIELDS = [
   { key: "nisn", label: "NISN" },
@@ -97,7 +98,7 @@ export default function StudentCompliancePage() {
     useStudentComplianceList({
       search: searchQuery,
       unitId: selectedUnit || undefined,
-      status: "ACTIVE",
+      status: STUDENT_STATUS.ACTIVE,
     });
   const { data: completenessReport, isLoading: loadingReport } =
     useComplianceReport(selectedUnit || undefined);

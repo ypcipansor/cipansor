@@ -54,17 +54,24 @@ export async function gotoAuthedPage(
 
 /**
  * Wait for toast notification
+ *
+ * sonner 2 merender toast sebagai `<li data-sonner-toast data-type="…">` TANPA
+ * `role="status"`. Versi lama helper ini mencari `getByRole("status")`, jadi ia
+ * tidak pernah menemukan toast apa pun: setiap uji yang benar-benar sampai ke
+ * sini merah, dan yang lain hijau hanya karena dilewati lebih dulu (ditemukan
+ * lewat tk-module.spec, yang menyimpan penilaian dengan sukses lalu gagal
+ * menunggu toast-nya). `type` sekarang dipakai: toast galat yang teksnya
+ * kebetulan cocok tidak bisa lolos sebagai sukses.
  */
 export async function waitForToast(
   page: Page,
   message?: string | RegExp,
   type: "success" | "error" | "info" = "success",
 ) {
-  const toast = message
-    ? page.getByRole("status").filter({ hasText: message })
-    : page.getByRole("status");
+  const semua = page.locator(`[data-sonner-toast][data-type="${type}"]`);
+  const toast = message ? semua.filter({ hasText: message }) : semua;
 
-  await expect(toast).toBeVisible({ timeout: 5000 });
+  await expect(toast.first()).toBeVisible({ timeout: 5000 });
   return toast;
 }
 

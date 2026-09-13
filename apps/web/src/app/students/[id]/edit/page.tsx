@@ -32,6 +32,8 @@ import { toast } from "sonner";
 import { Loader2, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { getEffectiveRole } from "@/lib/rbac";
+import { studentStatusOption } from "@/lib/constants";
+import { Badge } from "@/components/ui/badge";
 
 const studentSchema = z.object({
   nis: z.string().min(1, "NIS is required"),
@@ -45,7 +47,13 @@ const studentSchema = z.object({
   parentName: z.string().min(1, "Parent name is required"),
   parentPhone: z.string().min(1, "Parent phone is required"),
   unitId: z.string().min(1, "Unit is required"),
-  status: z.enum(["ACTIVE", "INACTIVE", "GRADUATED", "DROPPED_OUT"]),
+  // `status` SENGAJA tidak ada di skema form ini. Dulu di sini
+  // z.enum(["ACTIVE","INACTIVE","GRADUATED","DROPPED_OUT"]) diwajibkan, sementara
+  // form diisi dengan `student.status` = "active" dari API — validasinya gagal
+  // di medan ini sehingga tombol Simpan tidak melakukan apa-apa kecuali pengguna
+  // memilih ulang status, yang lalu dibuang API. Status santri berubah lewat
+  // menu Data Alumni (alumni.service), yang juga membuat barisan Alumni dan
+  // menutup pendaftaran kelasnya.
 });
 
 type StudentForm = z.infer<typeof studentSchema>;
@@ -83,7 +91,6 @@ export default function EditStudentPage() {
         parentName: student.parentName,
         parentPhone: student.parentPhone,
         unitId: student.unitId,
-        status: student.status,
       });
     }
   }, [student, reset]);
@@ -306,29 +313,16 @@ export default function EditStudentPage() {
             <CardContent>
               <div className="space-y-2 md:w-1/2">
                 <Label>Status</Label>
-                <Select
-                  value={watch("status")}
-                  onValueChange={(value) =>
-                    setValue(
-                      "status",
-                      value as
-                        | "ACTIVE"
-                        | "INACTIVE"
-                        | "GRADUATED"
-                        | "DROPPED_OUT",
-                    )
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ACTIVE">Active</SelectItem>
-                    <SelectItem value="INACTIVE">Inactive</SelectItem>
-                    <SelectItem value="GRADUATED">Graduated</SelectItem>
-                    <SelectItem value="DROPPED_OUT">Dropped Out</SelectItem>
-                  </SelectContent>
-                </Select>
+                <div>
+                  <Badge className={studentStatusOption(student?.status)?.badge}>
+                    {studentStatusOption(student?.status)?.label ?? student?.status}
+                  </Badge>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Status tidak diubah dari sini. Santri yang lulus dicatat lewat menu
+                  Data Alumni, supaya data alumni dan pendaftaran kelasnya ikut
+                  diperbarui.
+                </p>
               </div>
             </CardContent>
           </Card>

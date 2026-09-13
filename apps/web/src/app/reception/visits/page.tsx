@@ -42,6 +42,7 @@ import { CreateStudentVisitInput, VisitStatus } from "@cipansor/shared";
 import { Loader2, Plus, CheckCircle, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { STUDENT_STATUS } from "@cipansor/shared";
 
 export default function StudentVisitPage() {
   const [date, setDate] = useState<Date>(new Date());
@@ -126,7 +127,7 @@ function VisitForm({ onSuccess }: { onSuccess: () => void }) {
   const { data: studentsData } = useStudents({
     page: 1,
     limit: 100,
-    status: "active",
+    status: STUDENT_STATUS.ACTIVE,
   }); // Simplified for demo
 
   // Transform students for SearchableSelect

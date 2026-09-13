@@ -1,5 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
+import { CLASS_ENROLLMENT_STATUS, isStudentStatus, STUDENT_STATUS_VALUES } from '@cipansor/shared';
+import { Errors } from '@/middleware/error';
 
 /** Fields required for a student record to count as Dapodik-complete. */
 const REQUIRED_FIELDS = [
@@ -73,6 +75,14 @@ export function updateCompliance(studentId: string, data: Record<string, any>) {
 
 /** Completeness report + summary across students (optionally unit/status scoped). */
 export async function getCompletenessReport(filters: CompletenessFilters) {
+  // `status` datang mentah dari query string. Ejaan yang tidak ada di kolomnya
+  // (mis. "ACTIVE") dulu menghasilkan laporan kosong tanpa galat — sama dengan
+  // laporan Daftar Santri di reporting.service.
+  if (filters.status && !isStudentStatus(filters.status)) {
+    throw Errors.badRequest(
+      `Status santri tidak dikenal: "${filters.status}". Nilai yang sah: ${STUDENT_STATUS_VALUES.join(', ')}.`
+    );
+  }
   const whereClause: Prisma.StudentWhereInput = {};
   if (filters.unitId) whereClause.unitId = filters.unitId;
   if (filters.status) whereClause.status = filters.status;
@@ -83,7 +93,7 @@ export async function getCompletenessReport(filters: CompletenessFilters) {
       user: { select: { name: true } },
       unit: { select: { name: true } },
       enrollments: {
-        where: { status: 'ACTIVE' },
+        where: { status: CLASS_ENROLLMENT_STATUS.ACTIVE },
         include: { class: { select: { name: true } } },
         take: 1,
       },
@@ -136,7 +146,7 @@ export async function getDapodikReady(filters: { unitId?: string }) {
       user: { select: { name: true } },
       unit: { select: { name: true, npsn: true } },
       enrollments: {
-        where: { status: 'ACTIVE' },
+        where: { status: CLASS_ENROLLMENT_STATUS.ACTIVE },
         include: { class: { select: { name: true } } },
         take: 1,
       },
