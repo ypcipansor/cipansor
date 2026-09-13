@@ -144,6 +144,25 @@ describe('DashboardService', () => {
       );
     });
 
+    it('menyaring kehadiran lewat RIWAYAT unit, bukan unit santri sekarang', async () => {
+      // Ini pembedaan yang jadi seluruh alasan tabel riwayat unit ada. Santri
+      // yang naik dari TK ke SD IT punya satu `students.unit_id` (SD IT) dan
+      // dua baris riwayat; dasbor TK yang menyaring lewat kolom itu akan
+      // kehilangan dia, dan dasbor SD IT akan mengklaim kehadirannya di TK.
+      vi.mocked(prisma.attendance.findMany).mockResolvedValue([] as never);
+
+      await service.getAttendanceStats({ unitId: 'unit-tkq' }, {});
+
+      const arg = vi.mocked(prisma.attendance.findMany).mock.calls.at(-1)?.[0] as any;
+      const filter = arg.where.student;
+      expect(filter).toBeDefined();
+      expect(JSON.stringify(filter)).toContain('unitEnrollments');
+      // Santri yang belum punya baris riwayat sama sekali tetap terhitung lewat
+      // unit sekarang — laporan yang diam-diam kehilangan orang lebih berbahaya
+      // daripada laporan yang memakai unit sekarang.
+      expect(JSON.stringify(filter)).toContain('unit-tkq');
+    });
+
     it('should calculate student growth correctly', async () => {
       vi.mocked(prisma.student.count)
         .mockResolvedValueOnce(100) // totalStudents

@@ -4,7 +4,10 @@ import { RoleCode, UnitType } from '@prisma/client';
 import { syncParentRoleAssignments, type ParentScopeClient } from '@/utils/parent-scope';
 import { assertAdmissionFeeSettled } from '@/utils/admission-fee-gate';
 import { studentsHoldLogins } from '@/utils/student-login-policy';
-import { recordUnitEnrollmentFromClass } from '@/utils/student-unit-history';
+import {
+  recordUnitEnrollmentFromClass,
+  ensureUnitEnrollment,
+} from '@/utils/student-unit-history';
 
 /**
  * The per-unit student RoleCode that grants the onboarding user a real role
@@ -556,6 +559,11 @@ export class StudentOnboardingOrchestrator {
         // Santri baru: catat juga keanggotaan unitnya, supaya laporan yang
         // bertanya "saat itu unitnya apa" punya jawaban sejak hari pertama.
         await recordUnitEnrollmentFromClass(tx, student.id, classId);
+      } else {
+        // Onboarding tanpa rombel (rombelnya diatur belakangan) tetap harus
+        // meninggalkan jejak unit, kalau tidak santri ini tidak terlihat di
+        // laporan mana pun yang menyaring lewat riwayat.
+        await ensureUnitEnrollment(tx, student.id, effectiveUnitId);
       }
 
       // 8. Assign room if roomId provided

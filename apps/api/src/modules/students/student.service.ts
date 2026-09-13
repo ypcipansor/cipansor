@@ -7,7 +7,10 @@ import { hashPassword } from '@/lib/password';
 import { Errors } from '@/middleware/error';
 import { UserRole, Gender, Prisma } from '@prisma/client';
 import type { ListStudentsQuery, CreateStudentInput, UpdateStudentInput } from './student.schema';
-import { recordUnitEnrollmentFromClass } from '@/utils/student-unit-history';
+import {
+  recordUnitEnrollmentFromClass,
+  ensureUnitEnrollment,
+} from '@/utils/student-unit-history';
 
 export class StudentService {
   /**
@@ -484,6 +487,7 @@ export class StudentService {
       });
 
       // Enroll in class if provided
+      let riwayatDitulis = false;
       if (input.classId) {
         const classExists = await tx.class.findFirst({
           where: { id: input.classId, deletedAt: null, unitId },
@@ -500,7 +504,15 @@ export class StudentService {
           // Rombel tahu unit dan tahun ajarannya; riwayat unit ditulis dari
           // sana supaya tabelnya tidak basi pada santri berikutnya.
           await recordUnitEnrollmentFromClass(tx, student.id, input.classId);
+          riwayatDitulis = true;
         }
+      }
+
+      // Rombel itu pilihan: santri pindahan sering masuk sebelum rombelnya
+      // ditentukan. Riwayat unitnya tetap harus ada, kalau tidak ia hilang dari
+      // setiap laporan yang menyaring lewat riwayat.
+      if (!riwayatDitulis) {
+        await ensureUnitEnrollment(tx, student.id, unitId);
       }
 
       return student;

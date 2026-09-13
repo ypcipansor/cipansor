@@ -20,6 +20,7 @@ import { prisma } from '@/lib/prisma';
 /** Klien Prisma atau transaksi — supaya pemanggil bisa ikut transaksinya. */
 type Db = Pick<typeof prisma, 'studentUnitEnrollment' | 'student'>;
 type DbWrite = Pick<typeof prisma, 'studentUnitEnrollment' | 'class'>;
+type DbWriteDirect = Pick<typeof prisma, 'studentUnitEnrollment' | 'academicYear'>;
 
 export type UnitAtSource =
   /** Dari riwayat: ada baris yang periodenya mencakup tanggal itu. */
@@ -194,5 +195,106 @@ export async function recordUnitEnrollmentFromClass(
       gradeLevel: kelas.level ?? null,
     },
     update: { gradeLevel: kelas.level ?? null },
+  });
+}
+
+/**
+ * Potongan `where` untuk menyaring lewat unit SAAT ITU.
+ *
+ * Dipakai menggantikan `student: { unitId }` di laporan:
+ *
+ * ```ts
+ * where: { student: studentInUnitAt(unitId, tanggal) }
+ * ```
+ *
+ * Sengaja potongan `where`, bukan daftar id. Daftar id memaksa satu kueri
+ * tambahan lalu `IN (…)` sepanjang jumlah santri — di unit dengan ribuan santri
+ * itu kueri yang berbeda kelas beratnya. Potongan ini tetap satu kueri dengan
+ * join, dan bentuk relasinya sama di setiap model yang punya `student`.
+ *
+ * `termasukTanpaRiwayat` (bawaan: true) memasukkan santri yang BELUM punya satu
+ * baris riwayat pun — mereka disaring memakai `students.unit_id` seperti dulu.
+ * Itu bukan kelalaian: tanpa itu, satu santri yang dibuat lewat jalur yang belum
+ * menulis riwayat akan HILANG dari setiap laporan, dan laporan yang diam-diam
+ * kehilangan orang lebih berbahaya daripada laporan yang memakai unit sekarang.
+ * Laporan historis (akreditasi, angka tahun lalu) sebaiknya menyetelnya `false`:
+ * di sana "tidak tahu" memang jawaban yang lebih jujur daripada "unit sekarang".
+ */
+export function studentInUnitAt(
+  unitId: string,
+  at: Date,
+  options: { termasukTanpaRiwayat?: boolean } = {}
+) {
+  const { termasukTanpaRiwayat = true } = options;
+  const punyaRiwayat = {
+    unitEnrollments: {
+      some: {
+        unitId,
+        entryDate: { lte: at },
+        OR: [{ exitDate: null }, { exitDate: { gte: at } }],
+      },
+    },
+  };
+
+  if (!termasukTanpaRiwayat) return punyaRiwayat;
+
+  return {
+    OR: [punyaRiwayat, { unitEnrollments: { none: {} }, unitId }],
+  };
+}
+
+/** Sama, tetapi untuk pertanyaan yang dihitung per tahun ajaran. */
+export function studentInUnitForYear(
+  unitId: string,
+  academicYearId: string,
+  options: { termasukTanpaRiwayat?: boolean } = {}
+) {
+  const { termasukTanpaRiwayat = true } = options;
+  const punyaRiwayat = { unitEnrollments: { some: { unitId, academicYearId } } };
+
+  if (!termasukTanpaRiwayat) return punyaRiwayat;
+
+  return {
+    OR: [punyaRiwayat, { unitEnrollments: { none: {} }, unitId }],
+  };
+}
+
+/**
+ * Catat keanggotaan unit untuk santri yang dibuat TANPA rombel.
+ *
+ * `student.service.create` menerima `classId` sebagai pilihan, jadi santri bisa
+ * lahir tanpa rombel — pindahan yang rombelnya belum ditentukan, atau santri TK
+ * yang rombelnya diatur belakangan. Tanpa baris riwayat, santri itu menghilang
+ * dari setiap laporan yang sudah ditukar ke penyaring riwayat; laporan yang
+ * diam-diam kehilangan orang lebih berbahaya daripada laporan yang memakai unit
+ * sekarang.
+ *
+ * Tahun ajarannya diambil yang sedang aktif. Kalau tidak ada satu pun tahun
+ * ajaran aktif, tidak ada yang bisa dijadikan sandaran dan fungsinya diam —
+ * penyaring `studentInUnitAt` masih memasukkan santri tanpa riwayat lewat
+ * `students.unit_id`, jadi ia tetap terlihat.
+ */
+export async function ensureUnitEnrollment(
+  db: DbWriteDirect,
+  studentId: string,
+  unitId: string,
+  now: Date = new Date()
+): Promise<void> {
+  const tahun = await db.academicYear.findFirst({
+    where: { isActive: true },
+    orderBy: { startDate: 'desc' },
+    select: { id: true, startDate: true, endDate: true },
+  });
+  if (!tahun) return;
+
+  const masukAkal = now >= tahun.startDate && now <= tahun.endDate;
+  const entryDate = masukAkal ? now : tahun.startDate;
+
+  await db.studentUnitEnrollment.upsert({
+    where: {
+      studentId_unitId_academicYearId: { studentId, unitId, academicYearId: tahun.id },
+    },
+    create: { studentId, unitId, academicYearId: tahun.id, entryDate },
+    update: {},
   });
 }

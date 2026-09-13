@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
+import { studentInUnitAt } from '@/utils/student-unit-history';
 import type {
   DashboardOverviewQuery,
   MetricsQuery,
@@ -46,7 +47,7 @@ export const dashboardService = {
       by: ['status'],
       where: {
         date: { gte: sevenDaysAgo },
-        ...(unitId ? { student: { unitId } } : {}),
+        ...(unitId ? { student: studentInUnitAt(unitId, new Date()) } : {}),
       },
       _count: { _all: true },
     });
@@ -61,7 +62,7 @@ export const dashboardService = {
       _avg: { score: true, totalAyah: true },
       _sum: { totalAyah: true },
       _count: { _all: true },
-      where: unitId ? { student: { unitId } } : {},
+      where: unitId ? { student: studentInUnitAt(unitId, new Date()) } : {},
     });
 
     // Get murojaah stats
@@ -69,18 +70,18 @@ export const dashboardService = {
       _avg: { qualityScore: true },
       _sum: { pagesReviewed: true },
       _count: { _all: true },
-      where: unitId ? { student: { unitId } } : {},
+      where: unitId ? { student: studentInUnitAt(unitId, new Date()) } : {},
     });
 
     // Get simaan stats
     const simaanTotal = await prisma.simaanExam.count({
-      where: unitId ? { student: { unitId } } : {},
+      where: unitId ? { student: studentInUnitAt(unitId, new Date()) } : {},
     });
 
     const simaanPassed = await prisma.simaanExam.count({
       where: {
         passed: true,
-        ...(unitId ? { student: { unitId } } : {}),
+        ...(unitId ? { student: studentInUnitAt(unitId, new Date()) } : {}),
       },
     });
 
@@ -520,7 +521,7 @@ export const dashboardService = {
       where: {
         date: { gte: today },
         status: 'PRESENT',
-        ...(unitId ? { student: { unitId } } : {}),
+        ...(unitId ? { student: studentInUnitAt(unitId, new Date()) } : {}),
       },
     });
 
@@ -528,7 +529,7 @@ export const dashboardService = {
     const recentMurojaah = await prisma.murojaahRecord.count({
       where: {
         murojaahDate: { gte: today },
-        ...(unitId ? { student: { unitId } } : {}),
+        ...(unitId ? { student: studentInUnitAt(unitId, new Date()) } : {}),
       },
     });
 
