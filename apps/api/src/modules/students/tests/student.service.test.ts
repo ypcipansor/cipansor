@@ -156,6 +156,40 @@ describe('StudentService', () => {
       );
     });
 
+    it('menerapkan filter status ke halaman DAN hitungannya', async () => {
+      (prisma.student.findMany as any).mockResolvedValue([]);
+      (prisma.student.count as any).mockResolvedValue(0);
+
+      // Sampai 2026-09-13 `status` divalidasi skema lalu dibuang di sini, jadi
+      // filter "Alumni" menampilkan semua santri. Uji skema saja tidak bisa
+      // menangkapnya — yang harus diperiksa adalah `where` yang sampai ke Prisma.
+      await service.findAll(
+        { page: 1, limit: 10, status: 'alumni' },
+        { role: UserRole.SUPER_ADMIN, roleCode: 'SUPER_ADMIN', unitId: null }
+      );
+
+      expect(prisma.student.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ status: 'alumni' }) })
+      );
+      expect(prisma.student.count).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ status: 'alumni' }) })
+      );
+    });
+
+    it('tanpa status tidak menyaring status (pilihan "Semua Status")', async () => {
+      (prisma.student.findMany as any).mockResolvedValue([]);
+      (prisma.student.count as any).mockResolvedValue(0);
+
+      await service.findAll(
+        { page: 1, limit: 10 },
+        { role: UserRole.SUPER_ADMIN, roleCode: 'SUPER_ADMIN', unitId: null }
+      );
+
+      expect(prisma.student.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.not.objectContaining({ status: expect.anything() }) })
+      );
+    });
+
     it('still pins an ordinary unit role to its own unit', async () => {
       (prisma.student.findMany as any).mockResolvedValue([]);
       (prisma.student.count as any).mockResolvedValue(0);
