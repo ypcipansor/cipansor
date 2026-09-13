@@ -100,8 +100,16 @@ describe('StudentOnboardingOrchestrator', () => {
         class: {
           // `class-1` belongs to `unit-1`, matching the effective unit, so the
           // enrolment flows through the tenant-isolation check below.
-          findUnique: vi.fn().mockResolvedValue({ id: 'class-1', unitId: 'unit-1' }),
+          findUnique: vi.fn().mockResolvedValue({
+            id: 'class-1',
+            unitId: 'unit-1',
+            academicYearId: 'ay-1',
+            level: '1',
+            academicYear: { startDate: new Date('2026-07-15'), endDate: new Date('2027-06-30') },
+          }),
         },
+        // Riwayat unit ditulis dari rombelnya (utils/student-unit-history).
+        studentUnitEnrollment: { upsert: vi.fn() },
         medicalRecord: {
           findFirst: vi.fn().mockResolvedValue(null),
           create: vi.fn().mockResolvedValue({ id: 'med-1' }),
@@ -653,6 +661,7 @@ describe('StudentOnboardingOrchestrator', () => {
       const classTx = {
         ...baseTx,
         class: { findUnique: vi.fn().mockResolvedValue({ id: 'class-other', unitId: 'unit-99' }) },
+        studentUnitEnrollment: { upsert: vi.fn() },
         student: {
           findUnique: vi.fn().mockResolvedValue(null),
           create: vi.fn().mockResolvedValue({ id: 'stud-1', nis: 'NIS-1' }),

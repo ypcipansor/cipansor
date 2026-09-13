@@ -7991,7 +7991,91 @@ async function main() {
     );
   }
 
+  // Riwayat unit diturunkan dari rombel yang baru saja dibuat. Backfill-nya
+  // hidup di migrasi 20260912020000 dan hanya berjalan sekali; basis data yang
+  // disemai ulang (dev, CI, e2e) tidak melewatinya, jadi tanpa langkah ini
+  // tabel riwayatnya kosong dan setiap pertanyaan "saat itu unitnya apa" jatuh
+  // ke unit sekarang — tepat kekeliruan yang tabel ini ada untuk menghapus.
+  await seedUnitEnrollments();
+
   console.log('\n✅ Database seeded successfully!');
+}
+
+/**
+ * Turunkan `StudentUnitEnrollment` dari setiap pendaftaran kelas yang ada.
+ *
+ * Aturannya sengaja sama persis dengan backfill di migrasi
+ * `20260912020000_student_unit_enrollment`: satu baris per (santri, unit, tahun
+ * ajaran), tanggal masuk diambil dari `enrolledAt` hanya bila tanggal itu jatuh
+ * di dalam rentang tahun ajarannya, dan tahun ajaran yang sudah lewat ditutup
+ * dengan tanggal selesainya.
+ */
+async function seedUnitEnrollments() {
+  console.log('🌱 Seeding student unit enrollments (riwayat unit)...');
+
+  const enrollments = await prisma.classEnrollment.findMany({
+    select: {
+      studentId: true,
+      enrolledAt: true,
+      class: {
+        select: {
+          unitId: true,
+          academicYearId: true,
+          level: true,
+          academicYear: { select: { startDate: true, endDate: true } },
+        },
+      },
+    },
+  });
+
+  const now = new Date();
+  const perKunci = new Map<
+    string,
+    {
+      studentId: string;
+      unitId: string;
+      academicYearId: string;
+      entryDate: Date;
+      exitDate: Date | null;
+      gradeLevel: string | null;
+    }
+  >();
+
+  for (const e of enrollments) {
+    const kelas = e.class;
+    if (!kelas?.academicYear) continue;
+    const { startDate, endDate } = kelas.academicYear;
+    const masukAkal = e.enrolledAt >= startDate && e.enrolledAt <= endDate;
+    const entryDate = masukAkal ? e.enrolledAt : startDate;
+    const kunci = `${e.studentId}|${kelas.unitId}|${kelas.academicYearId}`;
+    const ada = perKunci.get(kunci);
+    if (!ada || entryDate < ada.entryDate) {
+      perKunci.set(kunci, {
+        studentId: e.studentId,
+        unitId: kelas.unitId,
+        academicYearId: kelas.academicYearId,
+        entryDate,
+        exitDate: endDate < now ? endDate : null,
+        gradeLevel: kelas.level ?? null,
+      });
+    }
+  }
+
+  for (const baris of perKunci.values()) {
+    await prisma.studentUnitEnrollment.upsert({
+      where: {
+        studentId_unitId_academicYearId: {
+          studentId: baris.studentId,
+          unitId: baris.unitId,
+          academicYearId: baris.academicYearId,
+        },
+      },
+      create: baris,
+      update: { gradeLevel: baris.gradeLevel },
+    });
+  }
+
+  console.log(`✅ Riwayat unit: ${perKunci.size} baris`);
 }
 
 // SAFTI behavioral values — master data for Perjanjian Kinerja evaluations.

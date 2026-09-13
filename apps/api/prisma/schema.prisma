@@ -620,6 +620,7 @@ model Unit {
   users                  User[]
   userRoleAssignments    UserRoleAssignment[] // NEW: Role assignments for this unit
   students               Student[]
+  studentUnitEnrollments StudentUnitEnrollment[]
   teachers               Teacher[]
   staff                  Staff[]
   classes                Class[]
@@ -960,6 +961,8 @@ model AcademicYear {
   // Risk Management
   risks Risk[]
 
+  studentUnitEnrollments StudentUnitEnrollment[]
+
   @@index([isActive])
   @@map("academic_years")
 }
@@ -1190,6 +1193,9 @@ model Student {
   packages                    StudentPackage[]
   assignmentSubmissions       AssignmentSubmission[]
   examAttempts                ExamAttempt[]
+  /// Riwayat unit per tahun ajaran. `unitId` di atas adalah unit SEKARANG;
+  /// yang ini menjawab "saat itu di unit mana" — lihat StudentUnitEnrollment.
+  unitEnrollments             StudentUnitEnrollment[]
 
   @@index([nis])
   @@index([unitId])
@@ -1218,6 +1224,56 @@ model StudentParent {
 }
 
 /// ClassEnrollment - Student enrollment in classes
+/// StudentUnitEnrollment - Riwayat satuan pendidikan per tahun ajaran.
+///
+/// `students.unit_id` hanya menyimpan unit SEKARANG, jadi setiap laporan yang
+/// menyaring lewat `student: { unitId }` sebenarnya bertanya "unit santri ini
+/// apa?" padahal yang dimaksud "saat itu unitnya apa?". Seorang santri yang naik
+/// dari TK ke SD IT membawa seluruh catatan kesehatan, izin, penghargaan, dan
+/// angka dasbor tahun-tahun TK-nya ikut berpindah ke SD IT — bukan karena ada
+/// yang mengubah data, melainkan karena pertanyaannya salah. Tabel ini yang
+/// menjawabnya, dan ia sumber tunggal riwayat unit.
+///
+/// Bentuknya mengikuti StudentSchoolAssociation pada Ed-Fi Enrollment Domain:
+/// satu baris per (santri, unit, tahun ajaran), tanggal masuk wajib dan tanggal
+/// keluar opsional; barisnya BERTAMBAH ketika santri berpindah — tidak pernah
+/// ditimpa atau dihapus — dan sengaja terpisah dari pendaftaran kelas
+/// (`ClassEnrollment`), yang menjawab pertanyaan lain: rombelnya yang mana.
+model StudentUnitEnrollment {
+  id             String    @id @default(uuid())
+  studentId      String    @map("student_id")
+  unitId         String    @map("unit_id")
+  academicYearId String    @map("academic_year_id")
+  /// Tanggal santri masuk unit ini pada tahun ajaran ini. Wajib: baris tanpa
+  /// tanggal masuk tidak bisa menjawab pertanyaan apa pun tentang "saat itu".
+  entryDate      DateTime  @map("entry_date") @db.Date
+  /// Kosong berarti masih berjalan. Terisi berarti sudah selesai atau keluar —
+  /// barisnya tetap tinggal sebagai riwayat.
+  exitDate       DateTime? @map("exit_date") @db.Date
+  /// Alasan keluar bila diketahui. Dijaga CHECK di basis data (lihat migrasi
+  /// 20260912020000), bukan enum Postgres: daftar nilainya masih akan tumbuh.
+  exitReason     String?   @map("exit_reason")
+  /// Tingkat saat itu ("1", "7", "X"), disalin dari rombelnya sebagai cuplikan —
+  /// kelasnya bisa dihapus, riwayatnya tidak boleh ikut hilang.
+  gradeLevel     String?   @map("grade_level")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  student      Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  unit         Unit         @relation(fields: [unitId], references: [id])
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
+
+  /// Nama indeksnya dipatok eksplisit: nama bawaan Prisma untuk tiga kolom ini
+  /// 64 karakter, satu lewat dari batas Postgres, jadi ia akan dipotong dan
+  /// nama di basis data tidak lagi sama dengan yang dikira Prisma.
+  @@unique([studentId, unitId, academicYearId], map: "student_unit_enrollments_student_unit_year_key")
+  @@index([studentId, entryDate])
+  @@index([unitId, academicYearId])
+  @@index([academicYearId])
+  @@map("student_unit_enrollments")
+}
+
 model ClassEnrollment {
   id         String   @id @default(uuid())
   studentId  String   @map("student_id")
