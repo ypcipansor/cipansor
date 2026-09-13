@@ -34,6 +34,14 @@ vi.mock('@/lib/prisma', () => ({
     unit: {
       findFirst: vi.fn(),
     },
+    // Santri yang dibuat tanpa rombel tetap mendapat baris riwayat unit,
+    // disandarkan pada tahun ajaran aktif (utils/student-unit-history).
+    academicYear: {
+      findFirst: vi.fn(),
+    },
+    studentUnitEnrollment: {
+      upsert: vi.fn(),
+    },
     grade: {
       findMany: vi.fn(),
     },
