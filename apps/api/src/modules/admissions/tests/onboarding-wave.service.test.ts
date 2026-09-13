@@ -64,6 +64,9 @@ vi.mock('@/lib/prisma', () => ({
     studentUnitEnrollment: {
       upsert: vi.fn(),
     },
+    academicYear: {
+      findFirst: vi.fn(),
+    },
     classEnrollment: {
       create: vi.fn(),
       updateMany: vi.fn(),

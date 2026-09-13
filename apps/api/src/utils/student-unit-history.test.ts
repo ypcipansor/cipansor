@@ -8,6 +8,7 @@ vi.mock('@/lib/prisma', () => ({
     studentUnitEnrollment: { findFirst: vi.fn(), findMany: vi.fn(), upsert: vi.fn() },
     student: { findUnique: vi.fn() },
     class: { findUnique: vi.fn() },
+    academicYear: { findFirst: vi.fn() },
   },
 }));
 
@@ -18,6 +19,9 @@ import {
   studentIdsInUnitAt,
   studentIdsInUnitForYear,
   recordUnitEnrollmentFromClass,
+  ensureUnitEnrollment,
+  studentInUnitAt,
+  studentInUnitForYear,
 } from './student-unit-history';
 
 /**
@@ -235,5 +239,68 @@ describe('invarian riwayat dijaga basis data', () => {
     const nilai = [...m![1].matchAll(/'([^']+)'/g)].map((x) => x[1]);
     expect(nilai).toContain('LULUS');
     expect(nilai).toContain('PINDAH_UNIT');
+  });
+});
+
+describe('potongan penyaring untuk laporan', () => {
+  const KAPAN = new Date('2025-03-01');
+
+  it('menyaring lewat baris riwayat yang periodenya mencakup tanggal itu', () => {
+    const f = studentInUnitAt(TK, KAPAN, { termasukTanpaRiwayat: false }) as any;
+
+    expect(f.unitEnrollments.some).toEqual({
+      unitId: TK,
+      entryDate: { lte: KAPAN },
+      OR: [{ exitDate: null }, { exitDate: { gte: KAPAN } }],
+    });
+    // Tanpa opsi itu, penyaringnya tidak boleh menyentuh `students.unit_id`
+    // sama sekali — di situlah letak seluruh perbedaannya. Satu kunci di
+    // tingkat atas berarti tidak ada penyaring kolom unit yang menyelinap.
+    expect(Object.keys(f)).toEqual(['unitEnrollments']);
+  });
+
+  it('secara bawaan tetap memasukkan santri yang belum punya riwayat', () => {
+    // Santri yang lahir lewat jalur yang belum menulis riwayat tidak boleh
+    // menghilang dari laporan. Laporan yang diam-diam kehilangan orang lebih
+    // berbahaya daripada laporan yang memakai unit sekarang.
+    const f = studentInUnitAt(TK, KAPAN) as any;
+
+    expect(f.OR).toHaveLength(2);
+    expect(f.OR[1]).toEqual({ unitEnrollments: { none: {} }, unitId: TK });
+  });
+
+  it('bentuk per tahun ajaran memakai tahunnya, bukan tanggal', () => {
+    const f = studentInUnitForYear(SDIT, 'ta-2026', { termasukTanpaRiwayat: false }) as any;
+    expect(f).toEqual({ unitEnrollments: { some: { unitId: SDIT, academicYearId: 'ta-2026' } } });
+  });
+});
+
+describe('santri yang dibuat tanpa rombel', () => {
+  it('tetap dapat baris riwayat pada tahun ajaran aktif', async () => {
+    vi.mocked(prisma.academicYear.findFirst as any).mockResolvedValue({
+      id: 'ta-2026',
+      startDate: new Date('2026-07-15'),
+      endDate: new Date('2027-06-30'),
+    });
+
+    await ensureUnitEnrollment(prisma as any, 's-9', SDIT, new Date('2026-09-12'));
+
+    const arg = vi.mocked(prisma.studentUnitEnrollment.upsert as any).mock.calls[0][0];
+    expect(arg.create).toEqual({
+      studentId: 's-9',
+      unitId: SDIT,
+      academicYearId: 'ta-2026',
+      entryDate: new Date('2026-09-12'),
+    });
+    // Baris yang sudah ada tidak disentuh: santri ini memang sudah di sana.
+    expect(arg.update).toEqual({});
+  });
+
+  it('tanpa tahun ajaran aktif tidak menulis apa pun, dan itu bukan kegagalan', async () => {
+    vi.mocked(prisma.academicYear.findFirst as any).mockResolvedValue(null);
+
+    await ensureUnitEnrollment(prisma as any, 's-9', SDIT);
+
+    expect(prisma.studentUnitEnrollment.upsert).not.toHaveBeenCalled();
   });
 });

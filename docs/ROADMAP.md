@@ -818,6 +818,13 @@ jawabannya (`history` / `current` / `unknown`). Laporan historis
 adalah persis kekeliruan yang tabel ini dibuat untuk menghapus. Layar yang
 hanya butuh label boleh memakainya.
 
+**Biaya yang selalu muncul saat menukar, catat sekali di sini.** Jalur tulis
+riwayat memakai model Prisma baru, dan setiap uji yang MENIRU klien Prisma harus
+ikut mengenalnya — delapan uji memerah sekaligus pada PR dasbor karena blok `tx`
+tiruannya tidak punya `academicYear`/`studentUnitEnrollment`. Perbaikannya di
+tiruannya, bukan di asersinya. Kalau ini terjadi sekali lagi, buat satu pabrik
+tiruan bersama (`makePrismaMock()`) daripada menambal per berkas.
+
 **Satu hal yang belum diputuskan.** Santri yang pindah unit **di tengah** tahun
 ajaran menghasilkan dua baris pada tahun yang sama. Query "pada tanggal X" sudah
 benar untuk itu; query "sepanjang tahun ajaran Y" akan menghitungnya di dua unit.

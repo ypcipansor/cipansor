@@ -238,6 +238,8 @@ describe('StudentOnboardingOrchestrator', () => {
 
     it('creates a UserRoleAssignment with a unit-specific student role id', async () => {
       const txMock = {
+        academicYear: { findFirst: vi.fn().mockResolvedValue(null) },
+        studentUnitEnrollment: { upsert: vi.fn() },
         registrant: {
           findUnique: vi.fn().mockResolvedValue({
             id: 'reg-1',
@@ -332,6 +334,8 @@ describe('StudentOnboardingOrchestrator', () => {
 
     it('requires a wave fee to be settled even when the period fee is zero', async () => {
       const txMock = {
+        academicYear: { findFirst: vi.fn().mockResolvedValue(null) },
+        studentUnitEnrollment: { upsert: vi.fn() },
         registrant: {
           findUnique: vi.fn().mockResolvedValue({
             id: 'reg-1',
@@ -358,6 +362,8 @@ describe('StudentOnboardingOrchestrator', () => {
       // Returning student: the parent email already maps to an existing User,
       // so no parent is created; the link must be upserted, not created.
       const txMock = {
+        academicYear: { findFirst: vi.fn().mockResolvedValue(null) },
+        studentUnitEnrollment: { upsert: vi.fn() },
         registrant: {
           findUnique: vi.fn().mockResolvedValue({
             id: 'reg-1',
@@ -472,6 +478,8 @@ describe('StudentOnboardingOrchestrator', () => {
       // resolve a STUDENT row for the claimed email, and `student.create` produce
       // a student whose `userId` is the NEW user (never the existing one).
       const buildTx = (createId: string) => ({
+        academicYear: { findFirst: vi.fn().mockResolvedValue(null) },
+        studentUnitEnrollment: { upsert: vi.fn() },
         registrant: {
           findUnique: vi.fn().mockResolvedValue({
             id: `reg-${createId}`,
@@ -598,6 +606,10 @@ describe('StudentOnboardingOrchestrator', () => {
 
     it('rejects a class or room that belongs to another unit (tenant isolation)', async () => {
       const baseTx = {
+        // Riwayat unit ditulis dari rombel, atau disandarkan pada tahun ajaran
+        // aktif ketika onboarding berjalan tanpa rombel.
+        academicYear: { findFirst: vi.fn().mockResolvedValue(null) },
+        studentUnitEnrollment: { upsert: vi.fn() },
         registrant: {
           findUnique: vi.fn().mockResolvedValue({
             id: 'reg-1',
@@ -703,6 +715,8 @@ describe('StudentOnboardingOrchestrator', () => {
       // carry no passwordHash and no reset token, `isActive` must follow the
       // identity-only policy, and no reset-token event may be dispatched.
       const tk = {
+        academicYear: { findFirst: vi.fn().mockResolvedValue(null) },
+        studentUnitEnrollment: { upsert: vi.fn() },
         registrant: {
           findUnique: vi.fn().mockResolvedValue({
             id: 'reg-tk',
@@ -800,6 +814,8 @@ describe('StudentOnboardingOrchestrator', () => {
       // child's records. A fresh guardian is created instead, and the existing
       // account is never used as the studentParent target.
       const parentTakeover = {
+        academicYear: { findFirst: vi.fn().mockResolvedValue(null) },
+        studentUnitEnrollment: { upsert: vi.fn() },
         registrant: {
           findUnique: vi.fn().mockResolvedValue({
             id: 'reg-pt',
@@ -905,6 +921,8 @@ describe('StudentOnboardingOrchestrator', () => {
       // a real PARENT account matched by the same (unverified) email is reused so
       // the second child lands in the same guardian's scope.
       const reuse = {
+        academicYear: { findFirst: vi.fn().mockResolvedValue(null) },
+        studentUnitEnrollment: { upsert: vi.fn() },
         registrant: {
           findUnique: vi.fn().mockResolvedValue({
             id: 'reg-rp',
