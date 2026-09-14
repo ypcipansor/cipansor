@@ -242,12 +242,20 @@ export class RaportMerdekaService {
 
     const studentClasses = await prisma.classEnrollment.findMany({
       where: { studentId, class: { academicYearId } },
-      select: { classId: true },
+      select: { classId: true, class: { select: { unitId: true } } },
     });
+
+    // Rapor tahun itu terbit atas nama unit ROMBELNYA. Santri SD IT yang sudah
+    // naik ke SMP IT membawa `students.unit_id` SMP IT, sehingga admin SD IT
+    // dulu ditolak membuka rapor SD IT yang diterbitkannya sendiri. Admin unit
+    // santri SEKARANG tetap boleh — ia yang menerima santri itu.
+    const unitRapor = studentClasses.find((c) => c.class?.unitId)?.class?.unitId ?? student.unitId;
+    const isAdmin = isAdminRoleCode(userRoleCode) || userRoleCode === 'UNIT_ADMIN';
+    if (isAdmin && !!user.unitId && user.unitId === student.unitId) return;
 
     await this.assertRaportAccess(
       user,
-      student.unitId,
+      unitRapor,
       studentClasses.map((c) => c.classId),
       'Anda tidak memiliki akses ke siswa di unit lain'
     );
@@ -392,6 +400,7 @@ export class RaportMerdekaService {
             class: {
               include: {
                 academicYear: true,
+                unit: { select: { id: true, name: true, type: true } },
                 homeroomTeacher: {
                   include: { user: { select: { name: true } } },
                 },
@@ -509,7 +518,12 @@ export class RaportMerdekaService {
 
     // Get academic year info
     const academicYear = enrollment.class.academicYear;
-    const computedFase = getFaseFromClassLevel(enrollment.class.level, student.unit.type);
+    // Unit penerbit rapor = unit rombel tahun ajaran rapor, bukan unit santri
+    // sekarang: rapor SD IT yang dicetak ulang setelah santri naik ke SMP IT
+    // dulu berkop "SMP IT Cipansor", ditandatangani "Kepala SMP IT", dan fasenya
+    // dihitung dari jenjang SMP.
+    const unitRapor = enrollment.class.unit;
+    const computedFase = getFaseFromClassLevel(enrollment.class.level, unitRapor.type);
 
     // Rapor terbit atas nama unit ROMBELNYA pada tahun ajaran itu. Santri yang
     // sejak itu pindah unit punya NIS lain sekarang; rapor lama tetap memuat
@@ -530,12 +544,12 @@ export class RaportMerdekaService {
         nama: student.user.name,
         kelas: enrollment.class.name,
         fase: computedFase,
-        unit: student.unit.name,
-        unitType: student.unit.type,
+        unit: unitRapor.name,
+        unitType: unitRapor.type,
       },
       pimpinanUnit: {
         nama: '',
-        jabatan: `Kepala ${student.unit.name}`,
+        jabatan: `Kepala ${unitRapor.name}`,
       },
       tahunAjaran: {
         id: academicYear.id,

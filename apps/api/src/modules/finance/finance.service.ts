@@ -16,6 +16,7 @@ import {
 } from './finance.schema';
 import { seesAllUnits } from '@/utils/resolve-unit-id';
 import { CLASS_ENROLLMENT_STATUS, STUDENT_STATUS } from '@cipansor/shared';
+import { nisMapForUnit } from '@/utils/student-nis';
 
 // =====================================
 // PAYMENT TYPE SERVICE
@@ -341,13 +342,19 @@ export async function createPayment(data: CreatePaymentDto, userId: string = 'SY
             user: { select: { name: true } }, // Fetch user name for description
           },
         },
-        paymentType: { select: { id: true, name: true, accountId: true } },
+        paymentType: { select: { id: true, name: true, accountId: true, unitId: true } },
       },
     });
 
     if (!invoice) {
       throw new Error('Invoice not found');
     }
+
+    // Tagihan milik unit JENIS BAYARNYA (SPP SD IT = tagihan SD IT), bukan unit
+    // santri sekarang. Santri yang sudah naik ke SMP IT dan melunasi SPP SD IT
+    // yang tertunggak dulu tercatat sebagai kas SMP IT yang mengkredit akun
+    // pendapatan SD IT — satu transaksi, dua buku unit.
+    const unitTagihan = invoice.paymentType.unitId;
 
     const { invoiceId, ...paymentData } = data;
     const payment = await tx.payment.create({
@@ -366,7 +373,7 @@ export async function createPayment(data: CreatePaymentDto, userId: string = 'SY
                 user: { select: { id: true, name: true } },
               },
             },
-            paymentType: { select: { id: true, name: true } },
+            paymentType: { select: { id: true, name: true, unitId: true } },
           },
         },
       },
@@ -395,7 +402,7 @@ export async function createPayment(data: CreatePaymentDto, userId: string = 'SY
     // =================================================================
     // INTEGRATION: Create Journal Entry for Accounting
     // =================================================================
-    if (invoice.paymentType.accountId && invoice.student.unitId) {
+    if (invoice.paymentType.accountId && unitTagihan) {
       // 1. Determine Debit Account (Asset) based on Payment Method
       const isBank = ['BANK_TRANSFER', 'VIRTUAL_ACCOUNT', 'QRIS', 'EWALLET'].includes(
         payment.method
@@ -405,7 +412,7 @@ export async function createPayment(data: CreatePaymentDto, userId: string = 'SY
       const fallbackName = isBank ? 'Bank' : 'Kas';
 
       const assetAccount = await getAccountOrFallback(
-        invoice.student.unitId,
+        unitTagihan,
         mappingKey,
         fallbackCode,
         fallbackName
@@ -417,7 +424,7 @@ export async function createPayment(data: CreatePaymentDto, userId: string = 'SY
         // Debit Entry (Asset increases)
         await tx.journalEntry.create({
           data: {
-            unitId: invoice.student.unitId,
+            unitId: unitTagihan,
             accountId: assetAccount.id,
             date: new Date(),
             description: `${descriptionPrefix} (${payment.method})`,
@@ -432,7 +439,7 @@ export async function createPayment(data: CreatePaymentDto, userId: string = 'SY
         // Credit Entry (Revenue increases)
         await tx.journalEntry.create({
           data: {
-            unitId: invoice.student.unitId,
+            unitId: unitTagihan,
             accountId: invoice.paymentType.accountId,
             date: new Date(),
             description: `Pendapatan ${invoice.paymentType.name} - ${invoice.student.user.name}`,
@@ -446,7 +453,7 @@ export async function createPayment(data: CreatePaymentDto, userId: string = 'SY
       } else {
         // If no account found, we must throw error to maintain integrity
         console.warn(
-          `Accounting Integration: No Asset Account found for method ${payment.method} in unit ${invoice.student.unitId}`
+          `Accounting Integration: No Asset Account found for method ${payment.method} in unit ${unitTagihan}`
         );
       }
     }
@@ -480,20 +487,20 @@ export async function createPayment(data: CreatePaymentDto, userId: string = 'SY
 
   // Emit event for cross-module integration (dashboard real-time updates)
   try {
-    // We need to fetch student unit info for the event
-    const studentWithUnit = await prisma.student.findUnique({
-      where: { id: payment.invoice.studentId },
-      include: { unit: { select: { id: true, name: true } } },
+    // Unit penerima pembayaran = unit tagihannya (lihat createPayment).
+    const unitTagihan = await prisma.unit.findUnique({
+      where: { id: payment.invoice.paymentType.unitId },
+      select: { id: true, name: true },
     });
 
-    if (studentWithUnit) {
+    if (unitTagihan) {
       eventBus.emit('finance:payment-received', {
         id: payment.id,
         invoiceId: payment.invoiceId,
         studentId: payment.invoice.studentId,
         studentName: payment.invoice.student.user.name,
-        unitId: studentWithUnit.unitId,
-        unitName: studentWithUnit.unit?.name || '',
+        unitId: unitTagihan.id,
+        unitName: unitTagihan.name,
         amount: payment.amount.toNumber(),
         paymentMethod: payment.method,
         paidAt: payment.paidAt || new Date(),
@@ -621,7 +628,7 @@ export async function getPendingVerifications(
     // dan daftar verifikasi pembayaran selalu kosong bagi mereka.
     ...(seesAllUnits(currentUser)
       ? {}
-      : { invoice: { student: { unitId: currentUser.unitId ?? 'none' } } }),
+      : { invoice: { paymentType: { unitId: currentUser.unitId ?? 'none' } } }),
   };
 
   const [payments, total] = await Promise.all([
@@ -680,18 +687,19 @@ export async function verifyPayment(
             student: {
               include: { user: { select: { id: true, name: true } } },
             },
-            paymentType: { select: { id: true, name: true, accountId: true } },
+            paymentType: { select: { id: true, name: true, accountId: true, unitId: true } },
           },
         },
       },
     });
     if (!payment) throw new Error('Payment not found');
 
-    // Unit scoping
-    if (
-      currentUser.role !== UserRole.SUPER_ADMIN &&
-      payment.invoice.student.unitId !== currentUser.unitId
-    ) {
+    // Lingkup unit = unit TAGIHAN, sama dengan antrean getPendingVerifications
+    // (keduanya dulu memakai unit santri sekarang, dan pemeriksaan ini hanya
+    // mengenal SUPER_ADMIN sehingga pengurus yayasan melihat antrean yang tak
+    // bisa mereka setujui).
+    const unitTagihan = payment.invoice.paymentType.unitId;
+    if (!seesAllUnits(currentUser) && unitTagihan !== currentUser.unitId) {
       throw new Error('Access denied: payment belongs to another unit');
     }
 
@@ -748,13 +756,13 @@ export async function verifyPayment(
     });
 
     // Ledger posting (same double entry as direct payments)
-    if (invoice.paymentType.accountId && invoice.student.unitId) {
+    if (invoice.paymentType.accountId && unitTagihan) {
       const isBank = ['BANK_TRANSFER', 'VIRTUAL_ACCOUNT', 'QRIS', 'EWALLET'].includes(
         payment.method
       );
       const mappingKey = isBank ? ACCOUNT_MAPPING_KEYS.BANK : ACCOUNT_MAPPING_KEYS.CASH;
       const assetAccount = await getAccountOrFallback(
-        invoice.student.unitId,
+        unitTagihan,
         mappingKey,
         isBank ? '1102' : '1101',
         isBank ? 'Bank' : 'Kas'
@@ -762,7 +770,7 @@ export async function verifyPayment(
       if (assetAccount) {
         await tx.journalEntry.create({
           data: {
-            unitId: invoice.student.unitId,
+            unitId: unitTagihan,
             accountId: assetAccount.id,
             date: new Date(),
             description: `Pembayaran ${invoice.invoiceNumber} (${payment.method})`,
@@ -775,7 +783,7 @@ export async function verifyPayment(
         });
         await tx.journalEntry.create({
           data: {
-            unitId: invoice.student.unitId,
+            unitId: unitTagihan,
             accountId: invoice.paymentType.accountId,
             date: new Date(),
             description: `Pendapatan ${invoice.paymentType.name} - ${invoice.student.user.name}`,
@@ -964,9 +972,11 @@ export async function getUnitFinanceStats(unitId: string, month?: string) {
       }
     : {};
 
+  // Tagihan unit = tagihan jenis bayar unit itu, termasuk milik santri yang
+  // sejak itu pindah unit — tunggakannya tetap piutang unit penerbit.
   const invoices = await prisma.invoice.findMany({
     where: {
-      student: { unitId },
+      paymentType: { unitId },
       ...dateFilter,
     },
   });
@@ -977,7 +987,7 @@ export async function getUnitFinanceStats(unitId: string, month?: string) {
 
   const byStatus = await prisma.invoice.groupBy({
     by: ['status'],
-    where: { student: { unitId }, ...dateFilter },
+    where: { paymentType: { unitId }, ...dateFilter },
     _count: true,
     _sum: { amount: true },
   });
@@ -1077,7 +1087,7 @@ export async function getFinancialSummary() {
 export async function getStudentOutstandingBalances(unitId: string) {
   const invoices = await prisma.invoice.findMany({
     where: {
-      student: { unitId },
+      paymentType: { unitId },
       status: { in: [PaymentStatus.PENDING, PaymentStatus.PARTIAL] },
       dueDate: { lt: new Date() },
     },
@@ -1097,6 +1107,12 @@ export async function getStudentOutstandingBalances(unitId: string) {
   });
 
   const studentMap = new Map<string, any>();
+  // NIS yang dikenal unit penerbit tagihan, bukan NIS unit santri sekarang.
+  const nisUnit = await nisMapForUnit(
+    prisma,
+    unitId,
+    invoices.map((inv) => inv.student)
+  );
 
   for (const inv of invoices) {
     const unpaidAmount = inv.amount.sub(inv.paidAmount).toNumber();
@@ -1106,7 +1122,7 @@ export async function getStudentOutstandingBalances(unitId: string) {
       studentMap.set(inv.studentId, {
         studentId: inv.studentId,
         studentName: inv.student.user.name,
-        nis: inv.student.nis,
+        nis: nisUnit.get(inv.studentId) ?? '-',
         className: inv.student.enrollments[0]?.class?.name || '-',
         unpaid_amount: 0,
         overdueInvoiceCount: 0,
