@@ -5,6 +5,7 @@ import { linkGuardian, type GuardianClient } from '@/utils/link-guardian';
 import { prisma } from '@/lib/prisma';
 import { hashPassword } from '@/lib/password';
 import { Errors } from '@/middleware/error';
+import { assertStudentIdentifiersAvailable } from './student-identifiers';
 import { UserRole, Gender, Prisma } from '@prisma/client';
 import type { ListStudentsQuery, CreateStudentInput, UpdateStudentInput } from './student.schema';
 import {
@@ -407,6 +408,8 @@ export class StudentService {
       throw Errors.conflict('Email already registered');
     }
 
+    await assertStudentIdentifiersAvailable({ nisn: input.nisn });
+
     // Check unit exists
     if (!input.unitId) {
       throw Errors.badRequest('Unit ID is required');
@@ -552,6 +555,8 @@ export class StudentService {
         throw Errors.conflict('NIS already in use');
       }
     }
+
+    await assertStudentIdentifiersAvailable({ nisn: input.nisn }, student);
 
     // Update in transaction
     const updated = await prisma.$transaction(async (tx) => {

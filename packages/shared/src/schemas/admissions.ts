@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { nisnSchema } from "./student-compliance";
 
 export const parseDocumentSchema = z.object({
   imageBase64: z
@@ -42,7 +43,7 @@ export const onboardRegistrantSchema = z.object({
   assignedClassId: z.string().optional(),
   roomId: z.string().optional(),
   nis: z.string().optional(),
-  nisn: z.string().optional(),
+  nisn: nisnSchema,
   academicYearId: z.string().optional(),
 });
 

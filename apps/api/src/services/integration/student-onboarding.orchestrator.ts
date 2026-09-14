@@ -4,6 +4,7 @@ import { RoleCode, UnitType } from '@prisma/client';
 import { syncParentRoleAssignments, type ParentScopeClient } from '@/utils/parent-scope';
 import { assertAdmissionFeeSettled } from '@/utils/admission-fee-gate';
 import { studentsHoldLogins } from '@/utils/student-login-policy';
+import { assertStudentIdentifiersAvailable } from '@/modules/students/student-identifiers';
 import {
   recordUnitEnrollmentFromClass,
   ensureUnitEnrollment,
@@ -344,6 +345,13 @@ export class StudentOnboardingOrchestrator {
       let student = await tx.student.findUnique({
         where: { userId: user.id },
       });
+
+      // NISN yang diminta di onboarding sudah milik santri lain: tolak dengan
+      // pesan yang terbaca, bukan 409 "nisn already exists" dari indeks unik
+      // (yang tetap menjadi penjaga terakhir terhadap balapan).
+      if (nisn) {
+        await assertStudentIdentifiersAvailable({ nisn }, student ?? undefined, tx);
+      }
 
       if (student) {
         student = await tx.student.update({

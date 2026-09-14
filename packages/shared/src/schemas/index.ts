@@ -1,4 +1,5 @@
 export * from "./student";
+export * from "./student-compliance";
 export * from "./admissions";
 export * from "./correspondence";
 export * from "./assessment";

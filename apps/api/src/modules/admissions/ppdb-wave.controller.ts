@@ -183,7 +183,8 @@ export const waveController = {
         assignedClassId?: string;
         roomId?: string;
         nis?: string;
-        nisn?: string;
+        /** Sudah dinormalkan skema: 10 digit, atau null bila dikosongkan. */
+        nisn?: string | null;
         academicYearId?: string;
       };
 
@@ -202,7 +203,7 @@ export const waveController = {
         processedById,
         {
           nis: data.nis,
-          nisn: data.nisn,
+          nisn: data.nisn ?? undefined,
           classId: data.classId || data.assignedClassId,
           assignedClassId: data.assignedClassId || data.classId,
           roomId: data.roomId,
