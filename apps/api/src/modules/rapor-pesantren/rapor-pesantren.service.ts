@@ -21,6 +21,7 @@ import {
 } from './rapor-pesantren.schema';
 import type { Prisma } from '@prisma/client';
 import { createNotification } from '../notifications/notifications.service';
+import { nisForUnit, nisMapForUnit } from '@/utils/student-nis';
 
 // =====================
 // CONFIG MANAGEMENT
@@ -903,7 +904,8 @@ export async function generateRaporPesantren(query: GetRaporQuery): Promise<Rapo
     academicYearId,
     semester,
     status: rapor.status as RaporPesantren['status'],
-    student: formatStudentInfo(student),
+    // NIS unit yang menerbitkan rapor, bukan NIS unit santri sekarang.
+    student: { ...formatStudentInfo(student), nis: (await nisForUnit(prisma, student, rapor.unitId)) ?? '-' },
     academicYear: {
       id: academicYear.id,
       name: academicYear.name,
@@ -979,12 +981,20 @@ export async function listRaporPesantren(query: ListRaporQuery) {
     prisma.raporPesantren.count({ where }),
   ]);
 
+  // NIS menurut unit tiap rapor — satu kueri per unit yang muncul di halaman ini.
+  const nisPerRapor = new Map<string, string | null>();
+  for (const unit of new Set(rapors.map((r) => r.unitId))) {
+    const milikUnit = rapors.filter((r) => r.unitId === unit);
+    const peta = await nisMapForUnit(prisma, unit, milikUnit.map((r) => r.student));
+    for (const r of milikUnit) nisPerRapor.set(r.id, peta.get(r.student.id) ?? null);
+  }
+
   return {
     data: rapors.map((r) => ({
       id: r.id,
       studentId: r.studentId,
       studentName: r.student.user.name,
-      studentNis: r.student.nis,
+      studentNis: nisPerRapor.get(r.id) ?? '-',
       className: r.student.enrollments[0]?.class?.name,
       academicYearName: r.academicYear.name,
       semester: r.semester,
@@ -1156,7 +1166,7 @@ export async function getRaporPesantrenById(id: string): Promise<RaporPesantren 
     student: {
       id: rapor.student.id,
       name: rapor.student.user.name,
-      nis: rapor.student.nis,
+      nis: (await nisForUnit(prisma, rapor.student, rapor.unitId)) ?? '-',
       nisn: rapor.student.nisn || undefined,
       gender: rapor.student.gender,
       birthDate: rapor.student.birthDate?.toISOString(),
@@ -1228,6 +1238,12 @@ export async function getLegerPesantren(query: GetLegerQuery): Promise<LegerItem
   }
 
   const studentIds = enrollments.map((e) => e.studentId);
+  // Leger adalah dokumen unit: NIS yang tercetak NIS unit itu.
+  const nisLeger = await nisMapForUnit(
+    prisma,
+    unitId,
+    enrollments.map((e) => e.student)
+  );
 
   // 2. Get all rapors for these students
   const rapors = await prisma.raporPesantren.findMany({
@@ -1260,7 +1276,7 @@ export async function getLegerPesantren(query: GetLegerQuery): Promise<LegerItem
         id: '',
         studentId: student.id,
         studentName: student.user.name,
-        studentNis: student.nis,
+        studentNis: nisLeger.get(student.id) ?? '-',
         tahfidzScore: 0,
         tahfidzGrade: '-',
         takhosusScore: 0,
@@ -1295,7 +1311,7 @@ export async function getLegerPesantren(query: GetLegerQuery): Promise<LegerItem
       id: rapor.id,
       studentId: student.id,
       studentName: student.user.name,
-      studentNis: student.nis,
+      studentNis: nisLeger.get(student.id) ?? '-',
 
       tahfidzScore: tahfidz.score,
       tahfidzGrade: tahfidz.grade,

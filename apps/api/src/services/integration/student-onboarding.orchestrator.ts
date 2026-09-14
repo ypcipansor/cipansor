@@ -5,6 +5,7 @@ import { syncParentRoleAssignments, type ParentScopeClient } from '@/utils/paren
 import { assertAdmissionFeeSettled } from '@/utils/admission-fee-gate';
 import { studentsHoldLogins } from '@/utils/student-login-policy';
 import { assertStudentIdentifiersAvailable } from '@/modules/students/student-identifiers';
+import { assignStudentNis } from '@/utils/student-nis';
 import {
   recordUnitEnrollmentFromClass,
   ensureUnitEnrollment,
@@ -207,10 +208,18 @@ export class StudentOnboardingOrchestrator {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(${lockKey})`;
 
         const prefixLen = prefix.length + 1;
+        // Urutan dihitung dari SEMUA NIS yang pernah terbit di unit ini —
+        // termasuk santri yang sudah pindah unit, yang `students.nis`-nya kini
+        // berisi NIS unit barunya — ditambah `students` untuk baris yang ditulis
+        // image lama selama jendela rollback.
         const results = await tx.$queryRaw<Array<{ max_seq: number | null }>>`
           SELECT MAX(CAST(substr(nis, ${prefixLen}) AS INTEGER)) as max_seq
-          FROM "students"
-          WHERE "unit_id" = ${effectiveUnitId} AND nis LIKE ${prefix + '%'} AND substr(nis, ${prefixLen}) ~ '^[0-9]+$'
+          FROM (
+            SELECT nis FROM "student_unit_identifiers" WHERE "unit_id" = ${effectiveUnitId}
+            UNION ALL
+            SELECT nis FROM "students" WHERE "unit_id" = ${effectiveUnitId}
+          ) terbit
+          WHERE nis LIKE ${prefix + '%'} AND substr(nis, ${prefixLen}) ~ '^[0-9]+$'
         `;
 
         let maxSeq = 0;
@@ -354,15 +363,28 @@ export class StudentOnboardingOrchestrator {
       }
 
       if (student) {
+        // NIS milik UNIT, bukan santri. Santri yang kembali ke unit yang pernah
+        // menerimanya memakai NIS lamanya di unit itu; yang masuk unit lain
+        // menerima NIS unit itu (diminta di formulir, atau dibangkitkan di
+        // atas). Dulu NIS unit lama dibawa begitu saja ke unit baru, sehingga
+        // rapor unit baru memuat nomor induk sekolah lain.
+        const nisTercatat = await tx.studentUnitIdentifier.findUnique({
+          where: { studentId_unitId: { studentId: student.id, unitId: effectiveUnitId } },
+          select: { nis: true },
+        });
+        nis =
+          customNis ||
+          nisTercatat?.nis ||
+          (student.unitId === effectiveUnitId ? student.nis : nis);
+
         student = await tx.student.update({
           where: { id: student.id },
           data: {
             unitId: effectiveUnitId,
-            // A returning student re-registering: honour a NIS explicitly
-            // requested in this enrolment; otherwise keep the student's existing
-            // NIS rather than silently regenerating a new one. NISN follows the
-            // same preference (requested first, then existing).
-            nis: customNis || student.nis || nis,
+            // `students.nis` = NIS unit sekarang (cuplikan; sumbernya
+            // student_unit_identifiers). NISN seumur hidup: yang diminta, lalu
+            // yang sudah ada.
+            nis,
             nisn: nisn || student.nisn || undefined,
             status: 'active',
             registrant: {
@@ -396,6 +418,9 @@ export class StudentOnboardingOrchestrator {
           },
         });
       }
+
+      // Tulis ganda: NIS santri di unit penerimanya.
+      await assignStudentNis(tx, { studentId: student.id, unitId: effectiveUnitId, nis });
 
       // 4. Create Parent User Account
       let parentResetToken: string | undefined;

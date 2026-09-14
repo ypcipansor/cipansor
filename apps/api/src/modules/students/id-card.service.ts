@@ -15,6 +15,7 @@ import { RoleCode, Prisma, StudentCardStatus } from '@prisma/client';
 import type { JwtPayload } from '../../lib/jwt';
 import type { StudentIdCardDetail } from '@cipansor/shared';
 import * as crypto from 'crypto';
+import { nisForUnit } from '../../utils/student-nis';
 
 // ID Card template types
 export type CardTemplateType = 'STANDARD' | 'PESANTREN' | 'TAHFIDZ' | 'MINIMAL';
@@ -436,7 +437,12 @@ export class StudentIdCardService {
     const computedValidUntil = new Date();
     computedValidUntil.setMonth(computedValidUntil.getMonth() + mergedConfig.validityPeriod);
     const validUntil = opts?.validUntil ?? computedValidUntil;
-    const cardNumber = opts?.cardNumber ?? this.generateCardNumber(student.nis, student.unit.type);
+    // Kartu terbit atas nama unit santri sekarang, jadi yang tercetak NIS unit
+    // itu (student_unit_identifiers), bukan nomor induk sekolah sebelumnya.
+    const nisKartu =
+      (await nisForUnit(prisma, { id: student.id, unitId: student.unitId, nis: student.nis }, student.unitId)) ??
+      student.nis;
+    const cardNumber = opts?.cardNumber ?? this.generateCardNumber(nisKartu, student.unit.type);
 
     // A preview of a student with no issued card must not ship a QR that looks
     // scannable but fails verification: its `cid` was never persisted, so the
@@ -448,7 +454,7 @@ export class StudentIdCardService {
     const qrCodeData = issued
       ? this.generateQRCodeData({
           id: student.id,
-          nis: student.nis,
+          nis: nisKartu,
           nisn: student.nisn ?? undefined,
           name: student.user.name,
           unitId: student.unit.id,
@@ -477,7 +483,7 @@ export class StudentIdCardService {
         // Student info
         student: {
           id: student.id,
-          nis: student.nis,
+          nis: nisKartu,
           nisn: student.nisn,
           name: student.user.name,
           photoUrl: student.photoUrl,

@@ -72,6 +72,11 @@ describe('StudentOnboardingOrchestrator', () => {
         },
         $queryRaw: vi.fn().mockResolvedValue([]),
         $executeRaw: vi.fn().mockResolvedValue(1),
+        studentUnitIdentifier: {
+          findUnique: vi.fn().mockResolvedValue(null),
+          findFirst: vi.fn().mockResolvedValue(null),
+          upsert: vi.fn().mockResolvedValue({}),
+        },
         student: {
           findUnique: vi.fn().mockResolvedValue(null),
           create: vi.fn().mockResolvedValue({ id: 'stud-1', nis: 'NIS-2026-SMP-0001' }),
@@ -282,6 +287,11 @@ describe('StudentOnboardingOrchestrator', () => {
           findFirst: vi.fn().mockResolvedValue(null),
           create: vi.fn().mockResolvedValue({ id: 'ura-1' }),
         },
+        studentUnitIdentifier: {
+          findUnique: vi.fn().mockResolvedValue(null),
+          findFirst: vi.fn().mockResolvedValue(null),
+          upsert: vi.fn().mockResolvedValue({}),
+        },
         student: {
           findUnique: vi.fn().mockResolvedValue(null),
           create: vi.fn().mockResolvedValue({ id: 'stud-1', nis: 'NIS-2026-SMPIT-0001' }),
@@ -415,6 +425,11 @@ describe('StudentOnboardingOrchestrator', () => {
           findFirst: vi.fn().mockResolvedValue(null),
           create: vi.fn().mockResolvedValue({ id: 'ura-1' }),
         },
+        studentUnitIdentifier: {
+          findUnique: vi.fn().mockResolvedValue(null),
+          findFirst: vi.fn().mockResolvedValue(null),
+          upsert: vi.fn().mockResolvedValue({}),
+        },
         student: {
           findUnique: vi.fn().mockResolvedValue(null),
           create: vi.fn().mockResolvedValue({ id: 'stud-1', nis: 'NIS-2026-SMPIT-0001' }),
@@ -527,6 +542,11 @@ describe('StudentOnboardingOrchestrator', () => {
           findMany: vi.fn().mockResolvedValue([]),
           findFirst: vi.fn().mockResolvedValue(null),
           create: vi.fn().mockResolvedValue({ id: 'ura-1' }),
+        },
+        studentUnitIdentifier: {
+          findUnique: vi.fn().mockResolvedValue(null),
+          findFirst: vi.fn().mockResolvedValue(null),
+          upsert: vi.fn().mockResolvedValue({}),
         },
         student: {
           // The existing student account's record lives under the EXISTING user
@@ -647,6 +667,11 @@ describe('StudentOnboardingOrchestrator', () => {
           findFirst: vi.fn().mockResolvedValue(null),
           create: vi.fn().mockResolvedValue({ id: 'ura-1' }),
         },
+        studentUnitIdentifier: {
+          findUnique: vi.fn().mockResolvedValue(null),
+          findFirst: vi.fn().mockResolvedValue(null),
+          upsert: vi.fn().mockResolvedValue({}),
+        },
         student: {
           findUnique: vi.fn().mockResolvedValue(null),
           create: vi.fn().mockResolvedValue({ id: 'stud-1', nis: 'NIS-1' }),
@@ -674,6 +699,11 @@ describe('StudentOnboardingOrchestrator', () => {
         ...baseTx,
         class: { findUnique: vi.fn().mockResolvedValue({ id: 'class-other', unitId: 'unit-99' }) },
         studentUnitEnrollment: { upsert: vi.fn() },
+        studentUnitIdentifier: {
+          findUnique: vi.fn().mockResolvedValue(null),
+          findFirst: vi.fn().mockResolvedValue(null),
+          upsert: vi.fn().mockResolvedValue({}),
+        },
         student: {
           findUnique: vi.fn().mockResolvedValue(null),
           create: vi.fn().mockResolvedValue({ id: 'stud-1', nis: 'NIS-1' }),
@@ -696,6 +726,11 @@ describe('StudentOnboardingOrchestrator', () => {
           }),
         },
         roomAssignment: { create: vi.fn() },
+        studentUnitIdentifier: {
+          findUnique: vi.fn().mockResolvedValue(null),
+          findFirst: vi.fn().mockResolvedValue(null),
+          upsert: vi.fn().mockResolvedValue({}),
+        },
         student: {
           findUnique: vi.fn().mockResolvedValue(null),
           create: vi.fn().mockResolvedValue({ id: 'stud-1', nis: 'NIS-1' }),
@@ -751,6 +786,11 @@ describe('StudentOnboardingOrchestrator', () => {
         userRoleAssignment: {
           findMany: vi.fn().mockResolvedValue([]),
           create: vi.fn(),
+        },
+        studentUnitIdentifier: {
+          findUnique: vi.fn().mockResolvedValue(null),
+          findFirst: vi.fn().mockResolvedValue(null),
+          upsert: vi.fn().mockResolvedValue({}),
         },
         student: {
           findUnique: vi.fn().mockResolvedValue(null),
@@ -867,6 +907,11 @@ describe('StudentOnboardingOrchestrator', () => {
           findFirst: vi.fn().mockResolvedValue(null),
           create: vi.fn().mockResolvedValue({ id: 'ura' }),
         },
+        studentUnitIdentifier: {
+          findUnique: vi.fn().mockResolvedValue(null),
+          findFirst: vi.fn().mockResolvedValue(null),
+          upsert: vi.fn().mockResolvedValue({}),
+        },
         student: {
           findUnique: vi.fn().mockResolvedValue(null),
           create: vi.fn().mockResolvedValue({ id: 'stud-pt', nis: 'NIS-PT-1' }),
@@ -966,6 +1011,11 @@ describe('StudentOnboardingOrchestrator', () => {
           findMany: vi.fn().mockResolvedValue([]),
           findFirst: vi.fn().mockResolvedValue(null),
           create: vi.fn().mockResolvedValue({ id: 'ura' }),
+        },
+        studentUnitIdentifier: {
+          findUnique: vi.fn().mockResolvedValue(null),
+          findFirst: vi.fn().mockResolvedValue(null),
+          upsert: vi.fn().mockResolvedValue({}),
         },
         student: {
           findUnique: vi.fn().mockResolvedValue(null),

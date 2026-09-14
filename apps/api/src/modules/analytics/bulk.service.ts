@@ -9,6 +9,7 @@ import { logger } from '@/lib/logger';
 import { createBulkNotifications } from '@/modules/notifications/notifications.service';
 import { NotificationType } from '@prisma/client';
 import { CLASS_ENROLLMENT_STATUS, STUDENT_STATUS } from '@cipansor/shared';
+import { assignStudentNis } from '@/utils/student-nis';
 
 // Import result types
 export interface BulkImportResult {
@@ -84,7 +85,7 @@ export async function bulkImportStudents(
           },
         });
 
-        await tx.student.create({
+        const student = await tx.student.create({
           data: {
             userId: user.id,
             unitId: unit!.id,
@@ -101,6 +102,9 @@ export async function bulkImportStudents(
             status: STUDENT_STATUS.ACTIVE,
           },
         });
+
+        // NIS hasil impor adalah NIS unit tujuan impor.
+        await assignStudentNis(tx, { studentId: student.id, unitId: unit!.id, nis: row.nis });
       });
 
       result.success++;

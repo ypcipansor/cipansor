@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
 import { Prisma, UserRole, Gender, UnitType } from '@prisma/client';
 import { STUDENT_STATUS } from '@cipansor/shared';
+import { nisMapForUnit } from '@/utils/student-nis';
 
 // User type from JwtPayload
 interface AuthenticatedUser {
@@ -172,6 +173,9 @@ export class EmisService {
       orderBy: [{ nis: 'asc' }],
     });
 
+    // NIS lokal di EMIS adalah nomor induk UNIT yang melapor.
+    const nisUnit = await nisMapForUnit(prisma, targetUnitId, students);
+
     // Transform to EMIS format
     const emisData: EmisStudentData[] = students.map((student, index) => {
       const enrollment = student.enrollments[0];
@@ -181,7 +185,7 @@ export class EmisService {
       return {
         no: index + 1,
         nisn: student.nisn || '',
-        nis: student.nis,
+        nis: nisUnit.get(student.id) ?? '',
         nama: student.user.name,
         tempatLahir: student.birthPlace,
         tanggalLahir: this.formatDate(student.birthDate),
@@ -196,7 +200,7 @@ export class EmisService {
         status: student.status,
         tahunMasuk: student.entryYear,
         tahunLulus: student.graduateYear,
-        nisLokal: student.nis,
+        nisLokal: nisUnit.get(student.id) ?? '',
       };
     });
 

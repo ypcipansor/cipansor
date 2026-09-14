@@ -90,7 +90,8 @@ export class UnifiedRaportService {
       student: {
         id: student.id,
         name: student.user.name,
-        nis: student.nis,
+        // NIS unit rombel rapor (dihitung RaportMerdekaService), bukan NIS sekarang.
+        nis: raportMerdeka.siswa.nis,
         nisn: student.nisn,
         class: enrollment.class.name,
         gradeLevel: enrollment.class.level,

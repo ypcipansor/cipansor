@@ -930,6 +930,43 @@ Penutup `apps/api/prisma/seed.ts` mencetak `pengawas@`, `kepala.sdit@`, dan
 `kepala.smpit@cipansor.or.id`. Akun yang benar-benar dibuat:
 `yayasan.pengawas@`, `sdit.kepala@`, `smpit.kepala@` (`Cipansor123!`).
 
+## Follow-up (ditemukan 2026-09-14 pada PR #494 dan bagian 2 pengganti #489)
+
+Sengaja tidak dikerjakan di PR yang menemukannya; semuanya diukur, bukan diduga.
+
+### Setiap galat simpan tampil dua kali — seluruh aplikasi
+
+`lib/api.ts` (interceptor axios) menampilkan `toast.error` untuk setiap
+respons galat, dan `components/providers/query-provider.tsx` memasang
+`mutations.onError: handleQueryError` yang menampilkan toast lagi. Terlihat di
+rig pada Kelengkapan Data: 409 NISN kembar muncul sebagai dua notifikasi yang
+sama. Pilih satu tempat; jangan tambal per halaman.
+
+### Kelengkapan Data Guru masih penugasan massal
+
+`modules/teacher-compliance` meneruskan `req.body` mentah ke
+`updateCompliance` (pola yang sama dengan Kelengkapan Data Santri sebelum
+#494: kolom apa pun bisa ditulis, nama isian web ≠ kolom). Perbaikannya sama:
+skema `.strict()` bersama di `packages/shared` + lingkup unit.
+
+### Daftar Kelengkapan Data Santri
+
+Kolom "Nama Siswa" berisi NIS (baris `GET /students` membawa `user.name`,
+halaman membaca `name`), kartu ringkasan membaca bentuk respons yang berbeda
+dari yang dikirim `report/completeness`, dan **NIK anak tampil penuh** di tabel
+(minimisasi tampilan data pribadi spesifik, UU 27/2022 Ps. 4).
+
+### NIS per unit — sisa (bagian 3 dan 4 pengganti #489)
+
+- `students.nis` masih unik lintas yayasan, jadi dua unit belum bisa memakai
+  nomor yang sama. Melonggarkannya butuh lingkup unit di
+  `analytics/bulk.service.ts#bulkImportAttendance`, yang mencari santri hanya
+  lewat NIS.
+- Rapor Kurikulum Merdeka mencetak nama/jenis unit SEKARANG (`student.unit`)
+  untuk rapor tahun ajaran lama; seharusnya unit rombelnya.
+- Onboarding santri lama masih mengganti NISN tersimpan dengan NISN yang
+  diketik di formulir (`nisn || student.nisn`) — NISN berlaku seumur hidup.
+
 ## How to contribute a build fix
 
 1. `pnpm --filter api build:strict` to see strict errors (the real target).
