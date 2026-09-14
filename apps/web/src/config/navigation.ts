@@ -1522,13 +1522,6 @@ const adminNavigation: NavGroup[] = [
             roles: ["SUPER_ADMIN"],
           },
           {
-            title: "Secrets",
-            href: "/dashboard/settings/system-secrets",
-            icon: Key,
-            roleCodes: ["SUPER_ADMIN"],
-            roles: ["SUPER_ADMIN"], // Explicitly support legacy role
-          },
-          {
             // The editable persona (tone/style) of the public chatbot. Safety rules
             // are code-resident; this only controls how the assistant speaks.
             title: "Asisten AI",
