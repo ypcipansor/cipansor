@@ -1,94 +1,89 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api, { ApiResponse } from "@/lib/api";
-import type { StudentStatus } from "@cipansor/shared";
+import type {
+  BLOOD_TYPE_VALUES,
+  EDUCATION_LEVEL_VALUES,
+  INCOME_RANGE_VALUES,
+  OCCUPATION_VALUES,
+  StudentStatus,
+  TRANSPORT_MODE_VALUES,
+  UpdateStudentComplianceRequest,
+} from "@cipansor/shared";
 
 // ==================== TYPES ====================
 
-export const TRANSPORT_MODES = [
-  { value: "JALAN_KAKI", label: "Jalan Kaki" },
-  { value: "SEPEDA", label: "Sepeda" },
-  { value: "MOTOR", label: "Sepeda Motor" },
-  { value: "MOBIL", label: "Mobil Pribadi" },
-  { value: "ANGKOT", label: "Angkutan Umum" },
-  { value: "BUS", label: "Bus Sekolah" },
-  { value: "OJEK", label: "Ojek" },
-  { value: "LAINNYA", label: "Lainnya" },
-] as const;
+// Pilihan formulir (moda transportasi, golongan darah, pendidikan, pekerjaan,
+// penghasilan) TIDAK didefinisikan di sini lagi: ambil dari @cipansor/shared.
+// Salinan lokal di sini dulu memakai "MOTOR"/"ANGKOT"/"BUS" — nilai yang tidak
+// ada di enum TransportMode, sehingga memilihnya membuat simpan gagal 500.
 
+type Wilayah = { id: string; name: string; code: string } | null;
+type Nilai<T extends readonly string[]> = T[number] | null;
+
+/** Angka Decimal dari Prisma tiba di JSON sebagai string ("12.50"). */
+type DecimalJson = string | number | null;
+
+/**
+ * Bentuk GET /student-compliance/:studentId — baris `students` apa adanya,
+ * dengan nama kolom Prisma. Nama santri ada di `user.name`, bukan `name`.
+ */
 export interface StudentComplianceData {
   id: string;
-  name: string;
+  /** Hanya pada daftar (GET /students). */
+  name?: string;
+  user?: { id: string; name: string; email: string };
   nis: string;
-  nisn?: string;
-  nik?: string;
-  noAkta?: string;
-  noKK?: string;
+  nisn?: string | null;
+  nik?: string | null;
+  noAkta?: string | null;
+  noKK?: string | null;
 
-  // Address fields
   address?: string;
-  rt?: string;
-  rw?: string;
-  villageId?: string;
-  village?: {
-    id: string;
-    name: string;
-    district?: {
-      id: string;
-      name: string;
-      regency?: {
-        id: string;
-        name: string;
-        province?: {
-          id: string;
-          name: string;
-        };
-      };
-    };
-  };
+  rt?: string | null;
+  rw?: string | null;
+  postalCode?: string | null;
+  provinceId?: string | null;
+  regencyId?: string | null;
+  districtId?: string | null;
+  villageId?: string | null;
+  province?: Wilayah;
+  regency?: Wilayah;
+  district?: Wilayah;
+  village?: Wilayah;
 
-  // Transport
-  transportMode?: string;
-  distance?: number;
-  travelTime?: number;
+  transportMode?: Nilai<typeof TRANSPORT_MODE_VALUES>;
+  distanceToSchool?: DecimalJson;
+  travelTime?: number | null;
 
-  // Welfare data
-  isKIP?: boolean;
-  kipNumber?: string;
-  isPKH?: boolean;
-  pkhNumber?: string;
-  isKKS?: boolean;
-  kksNumber?: string;
+  kipNumber?: string | null;
+  isPkh?: boolean;
+  isKks?: boolean;
 
-  // Health data
-  height?: number;
-  weight?: number;
-  bloodType?: string;
-  hasDisability?: boolean;
-  disabilityType?: string;
+  bloodType?: Nilai<typeof BLOOD_TYPE_VALUES>;
+  height?: DecimalJson;
+  weight?: DecimalJson;
+  headCircumference?: DecimalJson;
+  specialNeeds?: string | null;
 
-  // Father data
-  fatherName?: string;
-  fatherNIK?: string;
-  fatherBirthDate?: string;
-  fatherEducation?: string;
-  fatherOccupation?: string;
-  fatherIncome?: number;
+  fatherName?: string | null;
+  fatherNik?: string | null;
+  fatherBirthDate?: string | null;
+  fatherEducation?: Nilai<typeof EDUCATION_LEVEL_VALUES>;
+  fatherOccupation?: Nilai<typeof OCCUPATION_VALUES>;
+  fatherIncome?: Nilai<typeof INCOME_RANGE_VALUES>;
 
-  // Mother data
-  motherName?: string;
-  motherNIK?: string;
-  motherBirthDate?: string;
-  motherEducation?: string;
-  motherOccupation?: string;
-  motherIncome?: number;
+  motherName?: string | null;
+  motherNik?: string | null;
+  motherBirthDate?: string | null;
+  motherEducation?: Nilai<typeof EDUCATION_LEVEL_VALUES>;
+  motherOccupation?: Nilai<typeof OCCUPATION_VALUES>;
+  motherIncome?: Nilai<typeof INCOME_RANGE_VALUES>;
 
-  // Guardian data
-  guardianName?: string;
-  guardianNIK?: string;
-  guardianRelation?: string;
-  guardianPhone?: string;
+  guardianName?: string | null;
+  guardianNik?: string | null;
+  guardianRelation?: string | null;
+  guardianPhone?: string | null;
 
-  // Unit info
   unit?: {
     id: string;
     name: string;
@@ -167,62 +162,6 @@ export function useStudentCompliance(studentId: string) {
   });
 }
 
-export interface UpdateStudentComplianceData {
-  // Identity
-  nisn?: string;
-  nik?: string;
-  noAkta?: string;
-  noKK?: string;
-
-  // Address
-  address?: string;
-  rt?: string;
-  rw?: string;
-  villageId?: string;
-
-  // Transport
-  transportMode?: string;
-  distance?: number;
-  travelTime?: number;
-
-  // Welfare
-  isKIP?: boolean;
-  kipNumber?: string;
-  isPKH?: boolean;
-  pkhNumber?: string;
-  isKKS?: boolean;
-  kksNumber?: string;
-
-  // Health
-  height?: number;
-  weight?: number;
-  bloodType?: string;
-  hasDisability?: boolean;
-  disabilityType?: string;
-
-  // Father
-  fatherName?: string;
-  fatherNIK?: string;
-  fatherBirthDate?: string;
-  fatherEducation?: string;
-  fatherOccupation?: string;
-  fatherIncome?: number;
-
-  // Mother
-  motherName?: string;
-  motherNIK?: string;
-  motherBirthDate?: string;
-  motherEducation?: string;
-  motherOccupation?: string;
-  motherIncome?: number;
-
-  // Guardian
-  guardianName?: string;
-  guardianNIK?: string;
-  guardianRelation?: string;
-  guardianPhone?: string;
-}
-
 export function useUpdateStudentCompliance() {
   const queryClient = useQueryClient();
 
@@ -232,7 +171,7 @@ export function useUpdateStudentCompliance() {
       data,
     }: {
       studentId: string;
-      data: UpdateStudentComplianceData;
+      data: UpdateStudentComplianceRequest;
     }) => {
       const response = await api.put<ApiResponse<StudentComplianceData>>(
         `/student-compliance/${studentId}`,
@@ -258,15 +197,19 @@ export function useBulkUpdateStudentCompliance() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    // Tiap baris datar: { studentId, ...kolom }. Bentuk lama { studentId, data }
+    // akan ditolak 400 oleh skema ketat API.
     mutationFn: async (
-      updates: { studentId: string; data: UpdateStudentComplianceData }[],
+      updates: (UpdateStudentComplianceRequest & { studentId: string })[],
     ) => {
-      const response = await api.post<ApiResponse<{ updated: number }>>(
-        "/student-compliance/bulk-update",
-        {
-          updates,
-        },
-      );
+      const response = await api.post<
+        ApiResponse<{
+          successful: { studentId: string }[];
+          failed: { studentId: string; error: string }[];
+        }>
+      >("/student-compliance/bulk-update", {
+        updates,
+      });
       return response.data.data;
     },
     onSuccess: () => {

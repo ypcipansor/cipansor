@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { STUDENT_STATUS_VALUES } from "../types/student-status";
+import { nisnSchema } from "./student-compliance";
 
 // ==================== QUERY PARAMS ====================
 
@@ -31,7 +32,8 @@ export const createStudentSchema = z.object({
   password: z.string().min(8, "Password minimal 8 karakter").optional(), // Optional because it might be auto-generated or set later
   unitId: z.string().uuid("Unit wajib dipilih"),
   nis: z.string().min(4, "NIS minimal 4 karakter"),
-  nisn: z.string().optional(),
+  /** 10 digit angka atau kosong (lihat student-compliance.ts). */
+  nisn: nisnSchema,
   gender: z.enum(["MALE", "FEMALE"]),
   birthPlace: z.string().min(2, "Tempat lahir wajib diisi"),
   birthDate: z.coerce.date(),
@@ -53,7 +55,7 @@ export const createStudentSchema = z.object({
 export const updateStudentSchema = z.object({
   name: z.string().min(2).optional(),
   nis: z.string().min(4).optional(),
-  nisn: z.string().optional().nullable(),
+  nisn: nisnSchema,
   gender: z.enum(["MALE", "FEMALE"]).optional(),
   birthPlace: z.string().min(2).optional(),
   birthDate: z.coerce.date().optional(),

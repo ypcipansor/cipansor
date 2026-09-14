@@ -36,6 +36,7 @@ vi.mock('@/lib/prisma', () => ({
     student: {
       create: vi.fn(),
       findUnique: vi.fn(),
+      findFirst: vi.fn(),
       update: vi.fn(),
     },
     studentParent: {
@@ -174,6 +175,48 @@ describe('Student Onboarding & Wave Quota Unit Tests', () => {
           }),
         })
       );
+    });
+
+    // NISN berlaku satu untuk satu anak. Sebelum indeks unik (migrasi
+    // 20260914000000) onboarding menyimpan NISN kembar diam-diam; sesudahnya
+    // tanpa pemeriksaan ini petugas mendapat 409 "nisn already exists".
+    it('menolak NISN yang sudah milik santri lain — 409 berbahasa Indonesia, santri tidak dibuat', async () => {
+      vi.mocked(prisma.registrant.findUnique).mockResolvedValue({
+        id: 'reg-2',
+        status: 'ACCEPTED',
+        admissionPeriodId: 'period-1',
+        fullName: 'Santri Kembar',
+        gender: 'MALE',
+        birthPlace: 'Bandung',
+        birthDate: new Date('2010-01-01'),
+        address: 'Jl. Pesantren',
+        parentName: 'Ayah',
+        parentPhone: '081234567891',
+        parentEmail: 'ayah2@gmail.com',
+        registrationFeePaidAt: new Date(),
+      } as any);
+      vi.mocked(prisma.admissionPeriod.findUnique).mockResolvedValue({
+        id: 'period-1',
+        unitId: 'unit-1',
+        registrationFee: 250000,
+        academicYearId: 'ay-2026',
+      } as any);
+      vi.mocked(prisma.unit.findUnique).mockResolvedValue({ id: 'unit-1', type: 'SMP_IT' } as any);
+      (vi.mocked(prisma.user.create) as any).mockResolvedValue({ id: 'u-2', name: 'Santri Kembar' });
+      (vi.mocked(prisma.student.findFirst) as any).mockResolvedValueOnce({ id: 's-lain' });
+
+      await expect(
+        StudentOnboardingOrchestrator.processEnrollment('reg-2', 'unit-1', 'admin-1', {
+          nis: 'NIS-002',
+          nisn: '1234567890',
+          academicYearId: 'ay-2026',
+        })
+      ).rejects.toMatchObject({
+        code: 'CONFLICT',
+        message: expect.stringMatching(/^NISN ini sudah tercatat pada santri lain/),
+      });
+      expect(prisma.student.create).not.toHaveBeenCalled();
+      expect(prisma.student.update).not.toHaveBeenCalled();
     });
 
     it('creates a fresh .local account (never reusing an existing STUDENT account) when the registrant emails an existing STUDENT user', async () => {

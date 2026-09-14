@@ -1016,7 +1016,10 @@ model Student {
   userId       String   @unique @map("user_id")
   unitId       String   @map("unit_id")
   nis          String   @unique // Nomor Induk Siswa
-  nisn         String? // Nomor Induk Siswa Nasional
+  /// Nomor Induk Siswa Nasional: 10 digit angka, satu untuk satu peserta didik
+  /// seumur hidup. Unik bila diisi, dan bentuknya dijaga CHECK
+  /// `students_nisn_format_check` (migrasi 20260914000000).
+  nisn         String?  @unique
   gender       Gender
   birthPlace   String   @map("birth_place")
   birthDate    DateTime @map("birth_date")
@@ -1034,7 +1037,9 @@ model Student {
   graduateYear Int?     @map("graduate_year")
 
   // === PHASE 8: Indonesia Compliance Fields (Dapodik/EMIS) ===
-  nik         String? // NIK (16 digit)
+  /// NIK: 16 digit angka, unik bila diisi (CHECK `students_nik_format_check`).
+  /// Data pribadi anak — UU 27/2022 Ps. 4. Tidak pernah dicetak di kartu santri.
+  nik         String? @unique
   noAkta      String? @map("no_akta") // Nomor Akta Lahir
   noKK        String? @map("no_kk") // Nomor Kartu Keluarga (16 digit)
   religion    String  @default("ISLAM") // Agama
@@ -1243,6 +1248,24 @@ model StudentParent {
 /// keluar opsional; barisnya BERTAMBAH ketika santri berpindah — tidak pernah
 /// ditimpa atau dihapus — dan sengaja terpisah dari pendaftaran kelas
 /// (`ClassEnrollment`), yang menjawab pertanyaan lain: rombelnya yang mana.
+/// Pengenal santri (NISN/NIK) yang dikosongkan migrasi
+/// 20260914000000_student_identifier_uniqueness karena bentuknya salah
+/// (`reason` = 'format') atau dipakai lebih dari satu santri ('duplicate';
+/// `keptStudentId` = santri yang mempertahankannya). Hanya jejak untuk petugas —
+/// sengaja tanpa relasi, supaya catatannya tidak ikut terhapus bersama santrinya.
+model LegacyIdentifierAudit {
+  id            String   @id @default(uuid())
+  studentId     String   @map("student_id")
+  field         String
+  value         String
+  reason        String
+  keptStudentId String?  @map("kept_student_id")
+  recordedAt    DateTime @default(now()) @map("recorded_at")
+
+  @@index([studentId])
+  @@map("legacy_identifier_audit")
+}
+
 model StudentUnitEnrollment {
   id             String    @id @default(uuid())
   studentId      String    @map("student_id")

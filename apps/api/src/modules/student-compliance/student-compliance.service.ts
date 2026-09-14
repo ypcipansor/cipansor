@@ -1,7 +1,14 @@
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
-import { CLASS_ENROLLMENT_STATUS, isStudentStatus, STUDENT_STATUS_VALUES } from '@cipansor/shared';
-import { Errors } from '@/middleware/error';
+import {
+  CLASS_ENROLLMENT_STATUS,
+  isStudentStatus,
+  STUDENT_STATUS_VALUES,
+  type UpdateStudentComplianceInput,
+} from '@cipansor/shared';
+import { ApiError, Errors } from '@/middleware/error';
+import { assertStudentIdentifiersAvailable } from '@/modules/students/student-identifiers';
+import { seesAllUnits } from '@/utils/resolve-unit-id';
 
 /** Fields required for a student record to count as Dapodik-complete. */
 const REQUIRED_FIELDS = [
@@ -25,10 +32,39 @@ export interface CompletenessFilters {
   status?: string;
 }
 
-/** Full compliance (Indonesia-specific) view of a single student. */
-export function getComplianceByStudent(studentId: string) {
-  return prisma.student.findUnique({
-    where: { id: studentId },
+/** Siapa yang meminta — cukup untuk menentukan lingkup unitnya. */
+export interface ComplianceActor {
+  roleCode?: string | null;
+  role?: string | null;
+  unitId?: string | null;
+}
+
+/**
+ * Lingkup unit. Modul ini memuat NIK anak, NIK dan penghasilan orang tua, dan
+ * nomor KIP — data pribadi spesifik (UU 27/2022 Ps. 4). Sampai 2026-09-14 tidak
+ * satu pun fungsinya memeriksa unit, dan GET per santri tidak memeriksa peran:
+ * di rig, akun SISWA SD IT membaca NIK dan penghasilan orang tua santri SMP IT,
+ * dan tata usaha SD IT mengubah RT santri SMP IT. Aturannya sama dengan Daftar
+ * Santri (`student.service.findAll`): yayasan dan layanan lintas unit melihat
+ * semua unit, selain itu hanya unitnya sendiri.
+ */
+function lingkupUnit(actor: ComplianceActor): Prisma.StudentWhereInput {
+  return seesAllUnits(actor) ? {} : { unitId: actor.unitId || 'none' };
+}
+
+/** Unit laporan: pilihan pemanggil hanya berlaku bagi yang melihat semua unit. */
+function unitLaporan(actor: ComplianceActor, diminta?: string): string | undefined {
+  return seesAllUnits(actor) ? diminta : actor.unitId || 'none';
+}
+
+/**
+ * Full compliance (Indonesia-specific) view of a single student. Santri di luar
+ * lingkup unit pemanggil dijawab sama dengan santri yang tidak ada (null → 404),
+ * supaya keberadaannya pun tidak bocor.
+ */
+export function getComplianceByStudent(studentId: string, actor: ComplianceActor) {
+  return prisma.student.findFirst({
+    where: { id: studentId, deletedAt: null, ...lingkupUnit(actor) },
     include: {
       user: { select: { id: true, name: true, email: true } },
       unit: { select: { id: true, name: true } },
@@ -40,41 +76,66 @@ export function getComplianceByStudent(studentId: string) {
   });
 }
 
-export function findStudentById(studentId: string) {
-  return prisma.student.findUnique({ where: { id: studentId } });
-}
+/**
+ * Wilayah domisili mengikuti desanya. Formulir dulu hanya mengirim `villageId`,
+ * sehingga provinsi/kabupaten/kecamatan — tiga dari 13 kolom wajib Dapodik di
+ * REQUIRED_FIELDS — tidak pernah terisi dan tak ada santri yang bisa 100%.
+ * Kini induknya diturunkan dari desa di server; induk yang dikirim dan
+ * bertentangan dengan desanya ditolak, bukan ditimpa diam-diam.
+ */
+async function resolveWilayah(input: UpdateStudentComplianceInput) {
+  if (!input.villageId) return {};
 
-/** True if another student already uses this NISN. */
-export async function isNisnTaken(nisn: string, excludeStudentId: string): Promise<boolean> {
-  const existing = await prisma.student.findFirst({
-    where: { nisn, id: { not: excludeStudentId } },
+  const village = await prisma.village.findUnique({
+    where: { id: input.villageId },
+    select: { districtId: true, district: { select: { regencyId: true, regency: { select: { provinceId: true } } } } },
   });
-  return Boolean(existing);
+  if (!village) {
+    throw Errors.badRequest('Kelurahan/desa tidak dikenal. Pilih ulang dari daftar wilayah.');
+  }
+
+  const turunan = {
+    districtId: village.districtId,
+    regencyId: village.district.regencyId,
+    provinceId: village.district.regency.provinceId,
+  };
+  for (const [kolom, nilai] of Object.entries(turunan) as [keyof typeof turunan, string][]) {
+    if (input[kolom] && input[kolom] !== nilai) {
+      throw Errors.badRequest(
+        'Provinsi, kabupaten/kota, dan kecamatan tidak cocok dengan kelurahan/desa yang dipilih.'
+      );
+    }
+  }
+  return turunan;
 }
 
-/** True if another student already uses this NIK. */
-export async function isNikTaken(nik: string, excludeStudentId: string): Promise<boolean> {
-  const existing = await prisma.student.findFirst({
-    where: { nik, id: { not: excludeStudentId } },
+/**
+ * Simpan data kelengkapan. `input` sudah lolos `updateStudentComplianceSchema`
+ * (ketat, nama kolom Prisma), jadi di sini tidak ada lagi pemetaan nama atau
+ * konversi tanggal — dan tidak ada kolom lain yang bisa ikut tertulis.
+ */
+export async function updateCompliance(
+  studentId: string,
+  input: UpdateStudentComplianceInput,
+  actor: ComplianceActor
+) {
+  const student = await prisma.student.findFirst({
+    where: { id: studentId, deletedAt: null, ...lingkupUnit(actor) },
+    select: { id: true, nisn: true, nik: true },
   });
-  return Boolean(existing);
-}
+  if (!student) throw Errors.notFound('Student');
 
-/** Update a student's compliance fields (dates coerced from ISO strings). */
-export function updateCompliance(studentId: string, data: Record<string, any>) {
-  const { fatherBirthDate, motherBirthDate, ...rest } = data;
+  await assertStudentIdentifiersAvailable(input, student);
+  const wilayah = await resolveWilayah(input);
+
   return prisma.student.update({
     where: { id: studentId },
-    data: {
-      ...rest,
-      fatherBirthDate: fatherBirthDate ? new Date(fatherBirthDate) : undefined,
-      motherBirthDate: motherBirthDate ? new Date(motherBirthDate) : undefined,
-    },
+    data: { ...input, ...wilayah },
   });
 }
 
 /** Completeness report + summary across students (optionally unit/status scoped). */
-export async function getCompletenessReport(filters: CompletenessFilters) {
+export async function getCompletenessReport(filters: CompletenessFilters, actor: ComplianceActor) {
   // `status` datang mentah dari query string. Ejaan yang tidak ada di kolomnya
   // (mis. "ACTIVE") dulu menghasilkan laporan kosong tanpa galat — sama dengan
   // laporan Daftar Santri di reporting.service.
@@ -84,7 +145,8 @@ export async function getCompletenessReport(filters: CompletenessFilters) {
     );
   }
   const whereClause: Prisma.StudentWhereInput = {};
-  if (filters.unitId) whereClause.unitId = filters.unitId;
+  const unitId = unitLaporan(actor, filters.unitId);
+  if (unitId) whereClause.unitId = unitId;
   if (filters.status) whereClause.status = filters.status;
 
   const students = await prisma.student.findMany({
@@ -130,7 +192,8 @@ export async function getCompletenessReport(filters: CompletenessFilters) {
 }
 
 /** Students ready for Dapodik export + a count of those not yet ready. */
-export async function getDapodikReady(filters: { unitId?: string }) {
+export async function getDapodikReady(filters: { unitId?: string }, actor: ComplianceActor) {
+  const unitId = unitLaporan(actor, filters.unitId);
   // Dapodik readiness gates on the optional national identifiers; birthPlace
   // and birthDate are non-nullable columns (always present), so a `not: null`
   // filter on them is a redundant no-op and is intentionally omitted.
@@ -138,7 +201,7 @@ export async function getDapodikReady(filters: { unitId?: string }) {
     nisn: { not: null },
     nik: { not: null },
   };
-  if (filters.unitId) whereClause.unitId = filters.unitId;
+  if (unitId) whereClause.unitId = unitId;
 
   const readyStudents = await prisma.student.findMany({
     where: whereClause,
@@ -153,15 +216,14 @@ export async function getDapodikReady(filters: { unitId?: string }) {
     },
   });
 
+  // `birthDate` NOT NULL: `{ birthDate: { equals: null } }` (dulu ada di sini,
+  // dibungkus `as any`) ditolak Prisma 7 — "Argument `equals` is missing" — dan
+  // setiap pembukaan Kelengkapan Data dijawab 500. Tanpa `as any` kompilator
+  // sudah menolaknya.
   const notReadyCount = await prisma.student.count({
     where: {
-      OR: [
-        { nisn: { equals: null } },
-        { nik: { equals: null } },
-        { birthPlace: '' },
-        { birthDate: { equals: null } },
-      ] as any,
-      ...(filters.unitId ? { unitId: filters.unitId } : {}),
+      OR: [{ nisn: null }, { nik: null }, { birthPlace: '' }],
+      ...(unitId ? { unitId } : {}),
     },
   });
 
@@ -193,33 +255,31 @@ export async function getDapodikReady(filters: { unitId?: string }) {
   };
 }
 
-/** Apply many compliance updates, collecting per-row success/failure. */
-export async function bulkUpdate(updates: Array<Record<string, any>>) {
-  const results: Array<{ studentId: string; success: true; name: string }> = [];
-  const errors: Array<{ studentId: string | null; error: string }> = [];
+/**
+ * Terapkan banyak pembaruan, satu per satu, lewat jalur yang SAMA dengan PUT
+ * tunggal (keunikan NISN/NIK dan wilayah ikut diperiksa). Dulu setiap baris
+ * langsung ke `prisma.student.update` dengan isi apa pun yang dikirim.
+ */
+export async function bulkUpdate(
+  updates: Array<UpdateStudentComplianceInput & { studentId: string }>,
+  actor: ComplianceActor
+) {
+  const successful: Array<{ studentId: string; success: true }> = [];
+  const failed: Array<{ studentId: string; error: string }> = [];
 
-  for (const update of updates) {
+  for (const { studentId, ...input } of updates) {
     try {
-      const { studentId, ...data } = update;
-      if (!studentId) {
-        errors.push({ studentId: null, error: 'Student ID is required' });
-        continue;
-      }
-
-      const processedData: any = { ...data };
-      if (data.fatherBirthDate) processedData.fatherBirthDate = new Date(data.fatherBirthDate);
-      if (data.motherBirthDate) processedData.motherBirthDate = new Date(data.motherBirthDate);
-
-      const updated = await prisma.student.update({
-        where: { id: studentId },
-        data: processedData,
-        include: { user: { select: { name: true } } },
+      await updateCompliance(studentId, input, actor);
+      successful.push({ studentId, success: true });
+    } catch (error) {
+      // Pesan ApiError ditulis untuk petugas; galat lain (basis data) tidak
+      // diteruskan mentah ke klien.
+      failed.push({
+        studentId,
+        error: error instanceof ApiError ? error.message : 'Gagal menyimpan baris ini',
       });
-      results.push({ studentId, success: true, name: updated.user.name });
-    } catch (error: any) {
-      errors.push({ studentId: update.studentId, error: error.message || 'Update failed' });
     }
   }
 
-  return { successful: results, failed: errors };
+  return { successful, failed };
 }

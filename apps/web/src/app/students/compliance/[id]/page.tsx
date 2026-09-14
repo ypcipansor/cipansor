@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, use } from "react";
+import { useState, use } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -14,6 +14,15 @@ import {
   Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  BLOOD_TYPE_OPTIONS,
+  EDUCATION_LEVEL_OPTIONS,
+  INCOME_RANGE_OPTIONS,
+  OCCUPATION_OPTIONS,
+  TRANSPORT_MODE_OPTIONS,
+  updateStudentComplianceSchema,
+  type UpdateStudentComplianceRequest,
+} from "@cipansor/shared";
 
 import { MainLayout } from "@/components/layout/main-layout";
 import { PageHeader } from "@/components/shared/page-header";
@@ -41,8 +50,7 @@ import { Separator } from "@/components/ui/separator";
 import {
   useStudentCompliance,
   useUpdateStudentCompliance,
-  UpdateStudentComplianceData,
-  TRANSPORT_MODES,
+  type StudentComplianceData,
 } from "@/hooks/use-student-compliance";
 import {
   useProvinces,
@@ -51,21 +59,119 @@ import {
   useVillages,
 } from "@/hooks/use-wilayah";
 
-const EDUCATION_LEVELS = [
-  { value: "TIDAK_SEKOLAH", label: "Tidak Sekolah" },
-  { value: "SD", label: "SD/Sederajat" },
-  { value: "SMP", label: "SMP/Sederajat" },
-  { value: "SMA", label: "SMA/Sederajat" },
-  { value: "D1", label: "D1" },
-  { value: "D2", label: "D2" },
-  { value: "D3", label: "D3" },
-  { value: "D4", label: "D4/S1" },
-  { value: "S1", label: "S1" },
-  { value: "S2", label: "S2" },
-  { value: "S3", label: "S3" },
-];
+/**
+ * Isian formulir memakai nama kolom yang sama dengan API dan basis data
+ * (`fatherNik`, `kipNumber`, `distanceToSchool`). Sampai 2026-09-14 formulir
+ * ini memakai nama sendiri (`fatherNIK`, `isKIP`, `distance`, `pkhNumber`) dan
+ * nilai pilihan yang tidak ada di enum ("MOTOR"), sehingga SETIAP simpan
+ * dijawab 500. Isian tanpa kolom (nomor PKH/KKS, "memiliki disabilitas")
+ * dihapus, bukan dikirim lalu hilang.
+ */
+type Isian = UpdateStudentComplianceRequest;
+type Galat = Partial<Record<keyof Isian, string>>;
 
-const BLOOD_TYPES = ["A", "B", "AB", "O"];
+const teks = (v?: string | null) => v ?? "";
+const angka = (v?: string | number | null) =>
+  v === null || v === undefined || v === "" ? null : Number(v);
+const angkaDariInput = (v: string) => (v === "" ? null : Number(v));
+
+function isianAwal(s: StudentComplianceData): Isian {
+  return {
+    nisn: teks(s.nisn),
+    nik: teks(s.nik),
+    noAkta: teks(s.noAkta),
+    noKK: teks(s.noKK),
+
+    address: s.address ?? "",
+    rt: teks(s.rt),
+    rw: teks(s.rw),
+    provinceId: s.provinceId ?? null,
+    regencyId: s.regencyId ?? null,
+    districtId: s.districtId ?? null,
+    villageId: s.villageId ?? null,
+
+    transportMode: s.transportMode ?? null,
+    distanceToSchool: angka(s.distanceToSchool),
+    travelTime: s.travelTime ?? null,
+
+    kipNumber: teks(s.kipNumber),
+    isPkh: s.isPkh ?? false,
+    isKks: s.isKks ?? false,
+
+    height: angka(s.height),
+    weight: angka(s.weight),
+    bloodType: s.bloodType ?? null,
+    specialNeeds: teks(s.specialNeeds),
+
+    fatherName: teks(s.fatherName),
+    fatherNik: teks(s.fatherNik),
+    fatherBirthDate: s.fatherBirthDate?.slice(0, 10) ?? "",
+    fatherEducation: s.fatherEducation ?? null,
+    fatherOccupation: s.fatherOccupation ?? null,
+    fatherIncome: s.fatherIncome ?? null,
+
+    motherName: teks(s.motherName),
+    motherNik: teks(s.motherNik),
+    motherBirthDate: s.motherBirthDate?.slice(0, 10) ?? "",
+    motherEducation: s.motherEducation ?? null,
+    motherOccupation: s.motherOccupation ?? null,
+    motherIncome: s.motherIncome ?? null,
+
+    guardianName: teks(s.guardianName),
+    guardianNik: teks(s.guardianNik),
+    guardianRelation: teks(s.guardianRelation),
+    guardianPhone: teks(s.guardianPhone),
+  };
+}
+
+function PesanGalat({ pesan }: { pesan?: string }) {
+  if (!pesan) return null;
+  return (
+    <p data-field-error className="text-sm text-destructive">
+      {pesan}
+    </p>
+  );
+}
+
+function PilihanDaftar<T extends string>({
+  id,
+  label,
+  value,
+  options,
+  placeholder,
+  onChange,
+  disabled,
+}: {
+  id: string;
+  label: string;
+  value: T | null | undefined;
+  options: readonly { value: T; label: string }[];
+  placeholder: string;
+  onChange: (value: T) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={id}>{label}</Label>
+      <Select
+        value={value ?? ""}
+        onValueChange={(v) => onChange(v as T)}
+        disabled={disabled}
+      >
+        <SelectTrigger id={id}>
+          <SelectValue placeholder={placeholder} />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((o) => (
+            <SelectItem key={o.value} value={o.value}>
+              {o.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -73,119 +179,7 @@ interface PageProps {
 
 export default function StudentComplianceEditPage({ params }: PageProps) {
   const { id } = use(params);
-  const router = useRouter();
-
   const { data: student, isLoading } = useStudentCompliance(id);
-  const updateCompliance = useUpdateStudentCompliance();
-
-  // Form state
-  const [formData, setFormData] = useState<UpdateStudentComplianceData>({});
-
-  // Wilayah state
-  const [selectedProvince, setSelectedProvince] = useState("");
-  const [selectedRegency, setSelectedRegency] = useState("");
-  const [selectedDistrict, setSelectedDistrict] = useState("");
-
-  // Wilayah hooks
-  const { data: provinces } = useProvinces();
-  const { data: regencies } = useRegencies({
-    provinceId: selectedProvince || undefined,
-  });
-  const { data: districts } = useDistricts({
-    regencyId: selectedRegency || undefined,
-  });
-  const { data: villages } = useVillages({
-    districtId: selectedDistrict || undefined,
-  });
-
-  // Initialize form data when student loads
-  useEffect(() => {
-    if (student) {
-      setFormData((prev) => {
-        // Simple equality check to prevent unnecessary updates
-        if (prev.nisn === student.nisn && prev.nik === student.nik) {
-          return prev;
-        }
-
-        return {
-          nisn: student.nisn || "",
-          nik: student.nik || "",
-          noAkta: student.noAkta || "",
-          noKK: student.noKK || "",
-          address: student.address || "",
-          rt: student.rt || "",
-          rw: student.rw || "",
-          villageId: student.villageId || "",
-          transportMode: student.transportMode || "",
-          distance: student.distance || undefined,
-          travelTime: student.travelTime || undefined,
-          isKIP: student.isKIP || false,
-          kipNumber: student.kipNumber || "",
-          isPKH: student.isPKH || false,
-          pkhNumber: student.pkhNumber || "",
-          isKKS: student.isKKS || false,
-          kksNumber: student.kksNumber || "",
-          height: student.height || undefined,
-          weight: student.weight || undefined,
-          bloodType: student.bloodType || "",
-          hasDisability: student.hasDisability || false,
-          disabilityType: student.disabilityType || "",
-          fatherName: student.fatherName || "",
-          fatherNIK: student.fatherNIK || "",
-          fatherBirthDate: student.fatherBirthDate?.split("T")[0] || "",
-          fatherEducation: student.fatherEducation || "",
-          fatherOccupation: student.fatherOccupation || "",
-          fatherIncome: student.fatherIncome || undefined,
-          motherName: student.motherName || "",
-          motherNIK: student.motherNIK || "",
-          motherBirthDate: student.motherBirthDate?.split("T")[0] || "",
-          motherEducation: student.motherEducation || "",
-          motherOccupation: student.motherOccupation || "",
-          motherIncome: student.motherIncome || undefined,
-          guardianName: student.guardianName || "",
-          guardianNIK: student.guardianNIK || "",
-          guardianRelation: student.guardianRelation || "",
-          guardianPhone: student.guardianPhone || "",
-        };
-      });
-
-      // Set wilayah cascade
-      if (student.village?.district?.regency?.province?.id) {
-        setSelectedProvince(student.village.district.regency.province.id);
-      }
-      if (student.village?.district?.regency?.id) {
-        setSelectedRegency(student.village.district.regency.id);
-      }
-      if (student.village?.district?.id) {
-        setSelectedDistrict(student.village.district.id);
-      }
-    }
-    // We explicitly exclude formData from deps as we only want to update on student change
-  }, [student]);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    try {
-      await updateCompliance.mutateAsync({
-        studentId: id,
-        data: formData,
-      });
-      toast.success("Data berhasil disimpan");
-      router.push("/students/compliance");
-    } catch (error: unknown) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Gagal menyimpan data";
-      toast.error(errorMessage);
-    }
-  };
-
-  const updateField = (
-    field: keyof UpdateStudentComplianceData,
-    value: unknown,
-  ) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
-  };
 
   if (isLoading) {
     return (
@@ -197,10 +191,83 @@ export default function StudentComplianceEditPage({ params }: PageProps) {
     );
   }
 
+  if (!student) {
+    return (
+      <MainLayout>
+        <PageHeader
+          title="Santri tidak ditemukan"
+          backHref="/students/compliance"
+        />
+      </MainLayout>
+    );
+  }
+
+  // Isian diisi SEKALI dari data santri saat komponen formulir dipasang —
+  // tanpa efek yang menyalin ulang dan menimpa ketikan petugas.
+  return <FormulirKelengkapan key={student.id} student={student} />;
+}
+
+function FormulirKelengkapan({ student }: { student: StudentComplianceData }) {
+  const router = useRouter();
+  const updateCompliance = useUpdateStudentCompliance();
+
+  const [isian, setIsian] = useState<Isian>(() => isianAwal(student));
+  const [galat, setGalat] = useState<Galat>({});
+
+  const { data: provinces } = useProvinces();
+  const { data: regencies } = useRegencies({
+    provinceId: isian.provinceId || undefined,
+  });
+  const { data: districts } = useDistricts({
+    regencyId: isian.regencyId || undefined,
+  });
+  const { data: villages } = useVillages({
+    districtId: isian.districtId || undefined,
+  });
+
+  const ubah = <K extends keyof Isian>(field: K, value: Isian[K]) => {
+    setIsian((prev) => ({ ...prev, [field]: value }));
+    if (galat[field]) {
+      setGalat((prev) => ({ ...prev, [field]: undefined }));
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    // Aturan yang sama persis dengan yang dipakai API, dari @cipansor/shared.
+    // Tanpa ini penolakan server hanya terbaca "Validation failed".
+    const hasil = updateStudentComplianceSchema.safeParse(isian);
+    if (!hasil.success) {
+      const baru: Galat = {};
+      for (const issue of hasil.error.issues) {
+        const field = issue.path[0] as keyof Isian | undefined;
+        if (field && !baru[field]) baru[field] = issue.message;
+      }
+      setGalat(baru);
+      toast.error("Periksa isian yang ditandai merah.");
+      const pertama = Object.keys(baru)[0];
+      if (pertama) document.getElementById(pertama)?.focus();
+      return;
+    }
+    setGalat({});
+
+    try {
+      await updateCompliance.mutateAsync({ studentId: student.id, data: isian });
+      toast.success("Data kelengkapan tersimpan");
+      router.push("/students/compliance");
+    } catch {
+      // Pesan dari API (mis. 409 "NISN ini sudah tercatat pada santri lain")
+      // sudah ditampilkan interceptor di lib/api — jangan digandakan.
+    }
+  };
+
+  const namaSantri = student.user?.name ?? student.name ?? student.nis;
+
   return (
     <MainLayout>
       <PageHeader
-        title={`Edit Kelengkapan Data: ${student?.name || ""}`}
+        title={`Edit Kelengkapan Data: ${namaSantri}`}
         description="Lengkapi data siswa untuk kepatuhan Dapodik dan administrasi"
         backHref="/students/compliance"
         breadcrumbs={[
@@ -211,7 +278,7 @@ export default function StudentComplianceEditPage({ params }: PageProps) {
         ]}
       />
 
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={handleSubmit} noValidate>
         <div className="grid gap-6">
           {/* Identity Section */}
           <Card>
@@ -232,40 +299,51 @@ export default function StudentComplianceEditPage({ params }: PageProps) {
                   </Label>
                   <Input
                     id="nisn"
-                    placeholder="10 digit NISN"
+                    inputMode="numeric"
+                    placeholder="10 digit angka"
                     maxLength={10}
-                    value={formData.nisn || ""}
-                    onChange={(e) => updateField("nisn", e.target.value)}
+                    aria-invalid={!!galat.nisn}
+                    value={isian.nisn ?? ""}
+                    onChange={(e) => ubah("nisn", e.target.value)}
                   />
+                  <PesanGalat pesan={galat.nisn} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="nik">NIK (Nomor Induk Kependudukan) *</Label>
                   <Input
                     id="nik"
-                    placeholder="16 digit NIK"
+                    inputMode="numeric"
+                    placeholder="16 digit angka"
                     maxLength={16}
-                    value={formData.nik || ""}
-                    onChange={(e) => updateField("nik", e.target.value)}
+                    aria-invalid={!!galat.nik}
+                    value={isian.nik ?? ""}
+                    onChange={(e) => ubah("nik", e.target.value)}
                   />
+                  <PesanGalat pesan={galat.nik} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="noAkta">Nomor Akta Lahir *</Label>
                   <Input
                     id="noAkta"
                     placeholder="Nomor akta kelahiran"
-                    value={formData.noAkta || ""}
-                    onChange={(e) => updateField("noAkta", e.target.value)}
+                    aria-invalid={!!galat.noAkta}
+                    value={isian.noAkta ?? ""}
+                    onChange={(e) => ubah("noAkta", e.target.value)}
                   />
+                  <PesanGalat pesan={galat.noAkta} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="noKK">Nomor Kartu Keluarga *</Label>
                   <Input
                     id="noKK"
-                    placeholder="16 digit No. KK"
+                    inputMode="numeric"
+                    placeholder="16 digit angka"
                     maxLength={16}
-                    value={formData.noKK || ""}
-                    onChange={(e) => updateField("noKK", e.target.value)}
+                    aria-invalid={!!galat.noKK}
+                    value={isian.noKK ?? ""}
+                    onChange={(e) => ubah("noKK", e.target.value)}
                   />
+                  <PesanGalat pesan={galat.noKK} />
                 </div>
               </div>
             </CardContent>
@@ -286,9 +364,11 @@ export default function StudentComplianceEditPage({ params }: PageProps) {
                 <Textarea
                   id="address"
                   placeholder="Jalan, nomor rumah, nama gedung, dll."
-                  value={formData.address || ""}
-                  onChange={(e) => updateField("address", e.target.value)}
+                  aria-invalid={!!galat.address}
+                  value={isian.address ?? ""}
+                  onChange={(e) => ubah("address", e.target.value)}
                 />
+                <PesanGalat pesan={galat.address} />
               </div>
               <div className="grid gap-4 md:grid-cols-4">
                 <div className="space-y-2">
@@ -296,109 +376,80 @@ export default function StudentComplianceEditPage({ params }: PageProps) {
                   <Input
                     id="rt"
                     placeholder="001"
-                    value={formData.rt || ""}
-                    onChange={(e) => updateField("rt", e.target.value)}
+                    maxLength={5}
+                    value={isian.rt ?? ""}
+                    onChange={(e) => ubah("rt", e.target.value)}
                   />
+                  <PesanGalat pesan={galat.rt} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="rw">RW</Label>
                   <Input
                     id="rw"
                     placeholder="001"
-                    value={formData.rw || ""}
-                    onChange={(e) => updateField("rw", e.target.value)}
+                    maxLength={5}
+                    value={isian.rw ?? ""}
+                    onChange={(e) => ubah("rw", e.target.value)}
                   />
+                  <PesanGalat pesan={galat.rw} />
                 </div>
               </div>
               <Separator />
+              {/* Keempat tingkat wilayah dikirim; server menurunkan ulang
+                  induknya dari desa dan menolak yang tidak cocok. */}
               <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label>Provinsi *</Label>
-                  <Select
-                    value={selectedProvince}
-                    onValueChange={(val) => {
-                      setSelectedProvince(val);
-                      setSelectedRegency("");
-                      setSelectedDistrict("");
-                      updateField("villageId", "");
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Pilih provinsi" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {provinces?.map((province) => (
-                        <SelectItem key={province.id} value={province.id}>
-                          {province.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Kabupaten/Kota *</Label>
-                  <Select
-                    value={selectedRegency}
-                    onValueChange={(val) => {
-                      setSelectedRegency(val);
-                      setSelectedDistrict("");
-                      updateField("villageId", "");
-                    }}
-                    disabled={!selectedProvince}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Pilih kabupaten/kota" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {regencies?.map((regency) => (
-                        <SelectItem key={regency.id} value={regency.id}>
-                          {regency.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Kecamatan *</Label>
-                  <Select
-                    value={selectedDistrict}
-                    onValueChange={(val) => {
-                      setSelectedDistrict(val);
-                      updateField("villageId", "");
-                    }}
-                    disabled={!selectedRegency}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Pilih kecamatan" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {districts?.map((district) => (
-                        <SelectItem key={district.id} value={district.id}>
-                          {district.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Kelurahan/Desa *</Label>
-                  <Select
-                    value={formData.villageId || ""}
-                    onValueChange={(val) => updateField("villageId", val)}
-                    disabled={!selectedDistrict}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Pilih kelurahan/desa" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {villages?.map((village) => (
-                        <SelectItem key={village.id} value={village.id}>
-                          {village.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                <PilihanDaftar
+                  id="provinceId"
+                  label="Provinsi *"
+                  value={isian.provinceId}
+                  options={(provinces ?? []).map((p) => ({ value: p.id, label: p.name }))}
+                  placeholder="Pilih provinsi"
+                  onChange={(val) =>
+                    setIsian((prev) => ({
+                      ...prev,
+                      provinceId: val,
+                      regencyId: null,
+                      districtId: null,
+                      villageId: null,
+                    }))
+                  }
+                />
+                <PilihanDaftar
+                  id="regencyId"
+                  label="Kabupaten/Kota *"
+                  value={isian.regencyId}
+                  options={(regencies ?? []).map((r) => ({ value: r.id, label: r.name }))}
+                  placeholder="Pilih kabupaten/kota"
+                  disabled={!isian.provinceId}
+                  onChange={(val) =>
+                    setIsian((prev) => ({
+                      ...prev,
+                      regencyId: val,
+                      districtId: null,
+                      villageId: null,
+                    }))
+                  }
+                />
+                <PilihanDaftar
+                  id="districtId"
+                  label="Kecamatan *"
+                  value={isian.districtId}
+                  options={(districts ?? []).map((d) => ({ value: d.id, label: d.name }))}
+                  placeholder="Pilih kecamatan"
+                  disabled={!isian.regencyId}
+                  onChange={(val) =>
+                    setIsian((prev) => ({ ...prev, districtId: val, villageId: null }))
+                  }
+                />
+                <PilihanDaftar
+                  id="villageId"
+                  label="Kelurahan/Desa *"
+                  value={isian.villageId}
+                  options={(villages ?? []).map((v) => ({ value: v.id, label: v.name }))}
+                  placeholder="Pilih kelurahan/desa"
+                  disabled={!isian.districtId}
+                  onChange={(val) => ubah("villageId", val)}
+                />
               </div>
             </CardContent>
           </Card>
@@ -416,54 +467,45 @@ export default function StudentComplianceEditPage({ params }: PageProps) {
             </CardHeader>
             <CardContent>
               <div className="grid gap-4 md:grid-cols-3">
+                <PilihanDaftar
+                  id="transportMode"
+                  label="Moda Transportasi"
+                  value={isian.transportMode}
+                  options={TRANSPORT_MODE_OPTIONS}
+                  placeholder="Pilih moda transportasi"
+                  onChange={(val) => ubah("transportMode", val)}
+                />
                 <div className="space-y-2">
-                  <Label>Moda Transportasi</Label>
-                  <Select
-                    value={formData.transportMode || ""}
-                    onValueChange={(val) => updateField("transportMode", val)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Pilih moda transportasi" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {TRANSPORT_MODES.map((mode) => (
-                        <SelectItem key={mode.value} value={mode.value}>
-                          {mode.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="distance">Jarak ke Sekolah (km)</Label>
+                  <Label htmlFor="distanceToSchool">Jarak ke Sekolah (km)</Label>
                   <Input
-                    id="distance"
+                    id="distanceToSchool"
                     type="number"
                     step="0.1"
+                    min="0"
                     placeholder="0.0"
-                    value={formData.distance || ""}
+                    aria-invalid={!!galat.distanceToSchool}
+                    value={isian.distanceToSchool ?? ""}
                     onChange={(e) =>
-                      updateField(
-                        "distance",
-                        parseFloat(e.target.value) || undefined,
-                      )
+                      ubah("distanceToSchool", angkaDariInput(e.target.value))
                     }
                   />
+                  <PesanGalat pesan={galat.distanceToSchool} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="travelTime">Waktu Tempuh (menit)</Label>
                   <Input
                     id="travelTime"
                     type="number"
+                    min="0"
+                    step="1"
                     placeholder="0"
-                    value={formData.travelTime || ""}
+                    aria-invalid={!!galat.travelTime}
+                    value={isian.travelTime ?? ""}
                     onChange={(e) =>
-                      updateField(
-                        "travelTime",
-                        parseInt(e.target.value) || undefined,
-                      )
+                      ubah("travelTime", angkaDariInput(e.target.value))
                     }
                   />
+                  <PesanGalat pesan={galat.travelTime} />
                 </div>
               </div>
             </CardContent>
@@ -483,61 +525,30 @@ export default function StudentComplianceEditPage({ params }: PageProps) {
             <CardContent className="space-y-4">
               <div className="grid gap-4 md:grid-cols-3">
                 <div className="space-y-2">
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="isKIP"
-                      checked={formData.isKIP || false}
-                      onCheckedChange={(checked) =>
-                        updateField("isKIP", checked)
-                      }
-                    />
-                    <Label htmlFor="isKIP">Penerima KIP</Label>
-                  </div>
-                  {formData.isKIP && (
-                    <Input
-                      placeholder="Nomor KIP"
-                      value={formData.kipNumber || ""}
-                      onChange={(e) => updateField("kipNumber", e.target.value)}
-                    />
-                  )}
+                  <Label htmlFor="kipNumber">Nomor KIP</Label>
+                  <Input
+                    id="kipNumber"
+                    placeholder="Kosongkan bila bukan penerima KIP"
+                    value={isian.kipNumber ?? ""}
+                    onChange={(e) => ubah("kipNumber", e.target.value)}
+                  />
+                  <PesanGalat pesan={galat.kipNumber} />
                 </div>
-                <div className="space-y-2">
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="isPKH"
-                      checked={formData.isPKH || false}
-                      onCheckedChange={(checked) =>
-                        updateField("isPKH", checked)
-                      }
-                    />
-                    <Label htmlFor="isPKH">Penerima PKH</Label>
-                  </div>
-                  {formData.isPKH && (
-                    <Input
-                      placeholder="Nomor PKH"
-                      value={formData.pkhNumber || ""}
-                      onChange={(e) => updateField("pkhNumber", e.target.value)}
-                    />
-                  )}
+                <div className="flex items-center space-x-2 md:pt-8">
+                  <Checkbox
+                    id="isPkh"
+                    checked={isian.isPkh ?? false}
+                    onCheckedChange={(checked) => ubah("isPkh", checked === true)}
+                  />
+                  <Label htmlFor="isPkh">Penerima PKH</Label>
                 </div>
-                <div className="space-y-2">
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="isKKS"
-                      checked={formData.isKKS || false}
-                      onCheckedChange={(checked) =>
-                        updateField("isKKS", checked)
-                      }
-                    />
-                    <Label htmlFor="isKKS">Penerima KKS</Label>
-                  </div>
-                  {formData.isKKS && (
-                    <Input
-                      placeholder="Nomor KKS"
-                      value={formData.kksNumber || ""}
-                      onChange={(e) => updateField("kksNumber", e.target.value)}
-                    />
-                  )}
+                <div className="flex items-center space-x-2 md:pt-8">
+                  <Checkbox
+                    id="isKks"
+                    checked={isian.isKks ?? false}
+                    onCheckedChange={(checked) => ubah("isKks", checked === true)}
+                  />
+                  <Label htmlFor="isKks">Penerima KKS</Label>
                 </div>
               </div>
             </CardContent>
@@ -561,256 +572,140 @@ export default function StudentComplianceEditPage({ params }: PageProps) {
                   <Input
                     id="height"
                     type="number"
+                    step="0.1"
+                    min="0"
                     placeholder="0"
-                    value={formData.height || ""}
-                    onChange={(e) =>
-                      updateField(
-                        "height",
-                        parseInt(e.target.value) || undefined,
-                      )
-                    }
+                    aria-invalid={!!galat.height}
+                    value={isian.height ?? ""}
+                    onChange={(e) => ubah("height", angkaDariInput(e.target.value))}
                   />
+                  <PesanGalat pesan={galat.height} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="weight">Berat Badan (kg)</Label>
                   <Input
                     id="weight"
                     type="number"
+                    step="0.1"
+                    min="0"
                     placeholder="0"
-                    value={formData.weight || ""}
-                    onChange={(e) =>
-                      updateField(
-                        "weight",
-                        parseInt(e.target.value) || undefined,
-                      )
-                    }
+                    aria-invalid={!!galat.weight}
+                    value={isian.weight ?? ""}
+                    onChange={(e) => ubah("weight", angkaDariInput(e.target.value))}
                   />
+                  <PesanGalat pesan={galat.weight} />
                 </div>
-                <div className="space-y-2">
-                  <Label>Golongan Darah</Label>
-                  <Select
-                    value={formData.bloodType || ""}
-                    onValueChange={(val) => updateField("bloodType", val)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Pilih" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {BLOOD_TYPES.map((type) => (
-                        <SelectItem key={type} value={type}>
-                          {type}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                <PilihanDaftar
+                  id="bloodType"
+                  label="Golongan Darah"
+                  value={isian.bloodType}
+                  options={BLOOD_TYPE_OPTIONS}
+                  placeholder="Pilih"
+                  onChange={(val) => ubah("bloodType", val)}
+                />
               </div>
               <Separator />
               <div className="space-y-2">
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="hasDisability"
-                    checked={formData.hasDisability || false}
-                    onCheckedChange={(checked) =>
-                      updateField("hasDisability", checked)
-                    }
-                  />
-                  <Label htmlFor="hasDisability">Memiliki Disabilitas</Label>
-                </div>
-                {formData.hasDisability && (
-                  <Input
-                    placeholder="Jenis disabilitas"
-                    value={formData.disabilityType || ""}
-                    onChange={(e) =>
-                      updateField("disabilityType", e.target.value)
-                    }
-                  />
-                )}
+                <Label htmlFor="specialNeeds">Kebutuhan Khusus / Disabilitas</Label>
+                <Input
+                  id="specialNeeds"
+                  placeholder="Kosongkan bila tidak ada"
+                  value={isian.specialNeeds ?? ""}
+                  onChange={(e) => ubah("specialNeeds", e.target.value)}
+                />
+                <PesanGalat pesan={galat.specialNeeds} />
               </div>
             </CardContent>
           </Card>
 
-          {/* Father Section */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <Users className="h-5 w-5 text-muted-foreground" />
-                <CardTitle>Data Ayah</CardTitle>
-              </div>
-              <CardDescription>Informasi data orang tua (ayah)</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="fatherName">Nama Lengkap Ayah *</Label>
-                  <Input
-                    id="fatherName"
-                    placeholder="Nama ayah sesuai KTP"
-                    value={formData.fatherName || ""}
-                    onChange={(e) => updateField("fatherName", e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="fatherNIK">NIK Ayah</Label>
-                  <Input
-                    id="fatherNIK"
-                    placeholder="16 digit NIK"
-                    maxLength={16}
-                    value={formData.fatherNIK || ""}
-                    onChange={(e) => updateField("fatherNIK", e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="fatherBirthDate">Tanggal Lahir</Label>
-                  <Input
-                    id="fatherBirthDate"
-                    type="date"
-                    value={formData.fatherBirthDate || ""}
-                    onChange={(e) =>
-                      updateField("fatherBirthDate", e.target.value)
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Pendidikan Terakhir</Label>
-                  <Select
-                    value={formData.fatherEducation || ""}
-                    onValueChange={(val) => updateField("fatherEducation", val)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Pilih pendidikan" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {EDUCATION_LEVELS.map((level) => (
-                        <SelectItem key={level.value} value={level.value}>
-                          {level.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="fatherOccupation">Pekerjaan</Label>
-                  <Input
-                    id="fatherOccupation"
-                    placeholder="Pekerjaan ayah"
-                    value={formData.fatherOccupation || ""}
-                    onChange={(e) =>
-                      updateField("fatherOccupation", e.target.value)
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="fatherIncome">
-                    Penghasilan per Bulan (Rp)
-                  </Label>
-                  <Input
-                    id="fatherIncome"
-                    type="number"
-                    placeholder="0"
-                    value={formData.fatherIncome || ""}
-                    onChange={(e) =>
-                      updateField(
-                        "fatherIncome",
-                        parseInt(e.target.value) || undefined,
-                      )
-                    }
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Mother Section */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <Users className="h-5 w-5 text-muted-foreground" />
-                <CardTitle>Data Ibu</CardTitle>
-              </div>
-              <CardDescription>Informasi data orang tua (ibu)</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="motherName">Nama Lengkap Ibu *</Label>
-                  <Input
-                    id="motherName"
-                    placeholder="Nama ibu sesuai KTP"
-                    value={formData.motherName || ""}
-                    onChange={(e) => updateField("motherName", e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="motherNIK">NIK Ibu</Label>
-                  <Input
-                    id="motherNIK"
-                    placeholder="16 digit NIK"
-                    maxLength={16}
-                    value={formData.motherNIK || ""}
-                    onChange={(e) => updateField("motherNIK", e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="motherBirthDate">Tanggal Lahir</Label>
-                  <Input
-                    id="motherBirthDate"
-                    type="date"
-                    value={formData.motherBirthDate || ""}
-                    onChange={(e) =>
-                      updateField("motherBirthDate", e.target.value)
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Pendidikan Terakhir</Label>
-                  <Select
-                    value={formData.motherEducation || ""}
-                    onValueChange={(val) => updateField("motherEducation", val)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Pilih pendidikan" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {EDUCATION_LEVELS.map((level) => (
-                        <SelectItem key={level.value} value={level.value}>
-                          {level.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="motherOccupation">Pekerjaan</Label>
-                  <Input
-                    id="motherOccupation"
-                    placeholder="Pekerjaan ibu"
-                    value={formData.motherOccupation || ""}
-                    onChange={(e) =>
-                      updateField("motherOccupation", e.target.value)
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="motherIncome">
-                    Penghasilan per Bulan (Rp)
-                  </Label>
-                  <Input
-                    id="motherIncome"
-                    type="number"
-                    placeholder="0"
-                    value={formData.motherIncome || ""}
-                    onChange={(e) =>
-                      updateField(
-                        "motherIncome",
-                        parseInt(e.target.value) || undefined,
-                      )
-                    }
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          {(["father", "mother"] as const).map((siapa) => {
+            const ayah = siapa === "father";
+            const k = {
+              name: `${siapa}Name`,
+              nik: `${siapa}Nik`,
+              birthDate: `${siapa}BirthDate`,
+              education: `${siapa}Education`,
+              occupation: `${siapa}Occupation`,
+              income: `${siapa}Income`,
+            } as const;
+            return (
+              <Card key={siapa}>
+                <CardHeader>
+                  <div className="flex items-center gap-2">
+                    <Users className="h-5 w-5 text-muted-foreground" />
+                    <CardTitle>{ayah ? "Data Ayah" : "Data Ibu"}</CardTitle>
+                  </div>
+                  <CardDescription>
+                    Informasi data orang tua ({ayah ? "ayah" : "ibu"})
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor={k.name}>
+                        Nama Lengkap {ayah ? "Ayah" : "Ibu"} *
+                      </Label>
+                      <Input
+                        id={k.name}
+                        placeholder={`Nama ${ayah ? "ayah" : "ibu"} sesuai KTP`}
+                        value={isian[k.name] ?? ""}
+                        onChange={(e) => ubah(k.name, e.target.value)}
+                      />
+                      <PesanGalat pesan={galat[k.name]} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor={k.nik}>NIK {ayah ? "Ayah" : "Ibu"}</Label>
+                      <Input
+                        id={k.nik}
+                        inputMode="numeric"
+                        placeholder="16 digit angka"
+                        maxLength={16}
+                        aria-invalid={!!galat[k.nik]}
+                        value={isian[k.nik] ?? ""}
+                        onChange={(e) => ubah(k.nik, e.target.value)}
+                      />
+                      <PesanGalat pesan={galat[k.nik]} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor={k.birthDate}>Tanggal Lahir</Label>
+                      <Input
+                        id={k.birthDate}
+                        type="date"
+                        aria-invalid={!!galat[k.birthDate]}
+                        value={isian[k.birthDate] ?? ""}
+                        onChange={(e) => ubah(k.birthDate, e.target.value)}
+                      />
+                      <PesanGalat pesan={galat[k.birthDate]} />
+                    </div>
+                    <PilihanDaftar
+                      id={k.education}
+                      label="Pendidikan Terakhir"
+                      value={isian[k.education]}
+                      options={EDUCATION_LEVEL_OPTIONS}
+                      placeholder="Pilih pendidikan"
+                      onChange={(val) => ubah(k.education, val)}
+                    />
+                    <PilihanDaftar
+                      id={k.occupation}
+                      label="Pekerjaan"
+                      value={isian[k.occupation]}
+                      options={OCCUPATION_OPTIONS}
+                      placeholder="Pilih pekerjaan"
+                      onChange={(val) => ubah(k.occupation, val)}
+                    />
+                    <PilihanDaftar
+                      id={k.income}
+                      label="Penghasilan per Bulan"
+                      value={isian[k.income]}
+                      options={INCOME_RANGE_OPTIONS}
+                      placeholder="Pilih rentang penghasilan"
+                      onChange={(val) => ubah(k.income, val)}
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
 
           {/* Guardian Section */}
           <Card>
@@ -830,21 +725,23 @@ export default function StudentComplianceEditPage({ params }: PageProps) {
                   <Input
                     id="guardianName"
                     placeholder="Nama wali"
-                    value={formData.guardianName || ""}
-                    onChange={(e) =>
-                      updateField("guardianName", e.target.value)
-                    }
+                    value={isian.guardianName ?? ""}
+                    onChange={(e) => ubah("guardianName", e.target.value)}
                   />
+                  <PesanGalat pesan={galat.guardianName} />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="guardianNIK">NIK Wali</Label>
+                  <Label htmlFor="guardianNik">NIK Wali</Label>
                   <Input
-                    id="guardianNIK"
-                    placeholder="16 digit NIK"
+                    id="guardianNik"
+                    inputMode="numeric"
+                    placeholder="16 digit angka"
                     maxLength={16}
-                    value={formData.guardianNIK || ""}
-                    onChange={(e) => updateField("guardianNIK", e.target.value)}
+                    aria-invalid={!!galat.guardianNik}
+                    value={isian.guardianNik ?? ""}
+                    onChange={(e) => ubah("guardianNik", e.target.value)}
                   />
+                  <PesanGalat pesan={galat.guardianNik} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="guardianRelation">
@@ -853,22 +750,20 @@ export default function StudentComplianceEditPage({ params }: PageProps) {
                   <Input
                     id="guardianRelation"
                     placeholder="Paman, Kakak, dll."
-                    value={formData.guardianRelation || ""}
-                    onChange={(e) =>
-                      updateField("guardianRelation", e.target.value)
-                    }
+                    value={isian.guardianRelation ?? ""}
+                    onChange={(e) => ubah("guardianRelation", e.target.value)}
                   />
+                  <PesanGalat pesan={galat.guardianRelation} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="guardianPhone">No. HP Wali</Label>
                   <Input
                     id="guardianPhone"
                     placeholder="08xxxxxxxxxx"
-                    value={formData.guardianPhone || ""}
-                    onChange={(e) =>
-                      updateField("guardianPhone", e.target.value)
-                    }
+                    value={isian.guardianPhone ?? ""}
+                    onChange={(e) => ubah("guardianPhone", e.target.value)}
                   />
+                  <PesanGalat pesan={galat.guardianPhone} />
                 </div>
               </div>
             </CardContent>

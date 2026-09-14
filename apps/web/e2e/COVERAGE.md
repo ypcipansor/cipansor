@@ -5,8 +5,8 @@ _Headline count + spec-inventory table re-audited 2026-07-20 from source; the ro
 ## Summary
 
 - **Routes (App Router pages):** 430
-- **Routes visited by ≥1 spec:** 76 (17%)
-- **Spec files:** 80 — 79 at `e2e/` plus `cbt/cbt.spec.ts`; every one has a row
+- **Routes visited by ≥1 spec:** 78 (18%)
+- **Spec files:** 83 — 82 at `e2e/` plus `cbt/cbt.spec.ts` (recounted 2026-09-14); every one has a row
   in the inventory below. Active specs authenticate for real (`loginAs` /
   `apiLogin` + `injectSession`) and assert real seeded/API data. Six specs still
   call `page.route` (re-checked 2026-09-12): `grc-live` and `integration-grc`
@@ -765,8 +765,8 @@ old addresses, and `spmb.spec.ts` asserts that redirect still lands on `/spmb`.
 | `/students/[id]/360` | student-lifecycle-enhanced | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 |
 | `/students/[id]/edit` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `/students/certificates` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `/students/compliance` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `/students/compliance/[id]` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `/students/compliance` | student-compliance | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `/students/compliance/[id]` | student-compliance | ✅ | ❌ | ❌ | ✅ | ❌ |
 | `/students/documents` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `/students/id-card` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `/students/new` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
@@ -998,6 +998,7 @@ old addresses, and `spmb.spec.ts` asserts that redirect still lands on `/spmb`.
 | `spmb.spec.ts` | loginAs | real backend | 3 route(s) visited |
 | `spmb-workflow.spec.ts` | loginAs | real backend | 5 route(s) visited |
 | `student-lifecycle-enhanced.spec.ts` | loginAs | real backend | 2 route(s) visited |
+| `student-compliance.spec.ts` | loginAs | real backend | 2 route(s) visited — simpan kelengkapan: NISN salah bentuk, kembar (409), sah (tersimpan) |
 | `student-management.spec.ts` | — | skipped | 1 route(s) visited |
 | `syariah.spec.ts` | loginAs | real backend | 1 route(s) visited |
 | `tahfidz-dashboard.spec.ts` | — | skipped | 0 route(s) visited |

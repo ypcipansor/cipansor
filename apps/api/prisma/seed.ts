@@ -1777,6 +1777,7 @@ async function main() {
       unit: sdIt,
       classId: class1A.id,
       nis: '2024SDB1',
+      nisn: '0120000002',
       gender: Gender.MALE,
       birthDate: '2017-04-18',
       roleCode: RoleCode.SDIT_SISWA,
@@ -1787,6 +1788,7 @@ async function main() {
       unit: smpIt,
       classId: class7A.id,
       nis: '2024SMB1',
+      nisn: '0120000003',
       gender: Gender.FEMALE,
       birthDate: '2012-09-05',
       roleCode: RoleCode.SMPIT_SISWA,
@@ -1820,7 +1822,9 @@ async function main() {
         userId: siblingUser.id,
         unitId: sibling.unit.id,
         nis: sibling.nis,
-        nisn: `013${sibling.nis.slice(-5)}`,
+        // Dulu `013${nis.slice(-5)}` → '0134SDB1': 8 karakter dan berhuruf, dua
+        // NISN tak sah yang ikut tergelar ke produksi. NISN itu 10 digit angka.
+        nisn: sibling.nisn,
         gender: sibling.gender,
         birthPlace: 'Tasikmalaya',
         birthDate: new Date(sibling.birthDate),

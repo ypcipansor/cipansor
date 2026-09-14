@@ -14,6 +14,7 @@ import {
 } from './admissions.schema';
 import { Errors, asyncHandler } from '../../middleware/error';
 import { z } from 'zod';
+import { nisnSchema } from '@cipansor/shared';
 import { requireUser } from '../../middleware/auth';
 import { ApiResponse } from '../../utils/response';
 
@@ -131,7 +132,7 @@ export const updateRegistrantStatus = asyncHandler(async (req: Request, res: Res
 export const enrollRegistrant = asyncHandler(async (req: Request, res: Response) => {
   const schema = z.object({
     nis: z.string().optional(),
-    nisn: z.string().optional(),
+    nisn: nisnSchema,
     classId: z.string().optional(),
     roomId: z.string().optional(),
   });
@@ -139,7 +140,7 @@ export const enrollRegistrant = asyncHandler(async (req: Request, res: Response)
   const data = schema.parse(req.body);
   const result = await service.enrollRegistrant(req.params.id, {
     nis: data.nis,
-    nisn: data.nisn,
+    nisn: data.nisn ?? undefined,
     classId: data.classId,
     roomId: data.roomId,
     processedById: user.id,
