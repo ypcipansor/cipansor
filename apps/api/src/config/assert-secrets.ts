@@ -49,11 +49,13 @@ const MIN_SECRET_LENGTH = 32;
 /**
  * Known hardcoded defaults that pass every generic check.
  *
- * utils/encryption.ts falls back to a sequential byte pattern
- * (00 01 02 … 1f) when ENCRYPTION_KEY is unset. It is exactly 32 bytes, so the
- * length validation right below it accepts it and production encrypts system
- * secrets with a key printed in a public repository. Same shape of mistake as
- * JWT_SECRET, and equally invisible: forgetting produces no symptom.
+ * `00010203…1f` is the sequential-byte key that the former SystemSecret
+ * encryption utility baked in as a fallback when ENCRYPTION_KEY was unset. It
+ * is exactly 32 bytes, so the length validation right below it accepts it and
+ * production would encrypt with a key printed in a public repository. Same
+ * shape of mistake as JWT_SECRET, and equally invisible: forgetting produces
+ * no symptom. Guarded even though that utility is gone, in case the value
+ * reappears.
  */
 const KNOWN_DEFAULT_VALUES = [
   '000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f',
@@ -113,9 +115,10 @@ function inspect(variable: string, value: string | undefined, issues: SecretIssu
 export function findSecretIssues(input: SecretCheckInput): SecretIssue[] {
   const issues: SecretIssue[] = [];
   inspect('JWT_SECRET', input.jwtSecret, issues);
-  // Required, not optional. An unset ENCRYPTION_KEY does not fail loudly — it
-  // silently substitutes the sequential default above, and system secrets get
-  // encrypted with a key anyone can read.
+  // Required, not optional. An unset ENCRYPTION_KEY was once silently
+  // substituted with the sequential default above, encrypting secret material
+  // with a key anyone can read. Keep guarding it even though no code currently
+  // reads the variable.
   inspect('ENCRYPTION_KEY', input.encryptionKey, issues);
   // Required, not optional, in production. A card signer that falls back to
   // the session key means every printed card dies on the next JWT rotation;

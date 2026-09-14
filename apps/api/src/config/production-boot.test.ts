@@ -146,9 +146,9 @@ describe('bootstrap wiring', () => {
 
     expect(
       source.includes('assertProductionSecrets('),
-      'main.ts no longer calls assertProductionSecrets(). Without it, a ' +
-        'missing ENCRYPTION_KEY is not checked at boot — utils/encryption.ts ' +
-        'silently substitutes a key printed in the source.'
+      'main.ts no longer calls assertProductionSecrets(). Without it, an ' +
+        'ENCRYPTION_KEY is not checked at boot and could silently be left ' +
+        'unset next to a printed default.'
     ).toBe(true);
 
     const callIndex = source.indexOf('assertProductionSecrets(');

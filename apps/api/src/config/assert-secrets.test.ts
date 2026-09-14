@@ -75,10 +75,11 @@ describe('production secret guard', () => {
     ).toThrow(/ENCRYPTION_KEY/);
   });
 
-  // utils/encryption.ts substitutes this when ENCRYPTION_KEY is unset. It is
-  // exactly 32 bytes, so the length check beside it accepts it and production
-  // encrypts with a key printed in the repository.
-  it("refuses encryption.ts's sequential default key", () => {
+  // The sequential-byte fallback the former SystemSecret encryption utility
+  // used when ENCRYPTION_KEY was unset. It is exactly 32 bytes, so the length
+  // check beside it accepts it and production could encrypt with a key printed
+  // in the repository. Guarded as history in case the value reappears.
+  it("refuses the sequential default ENCRYPTION_KEY", () => {
     const issues = findSecretIssues({
       jwtSecret: GOOD,
       encryptionKey: '000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f',
