@@ -50,7 +50,6 @@ import {
   FileBarChart,
   Activity,
   ShoppingBag,
-  Key,
   MessageSquareWarning,
   Leaf,
   Globe,
