@@ -1,10 +1,14 @@
 import { Router } from 'express';
 import * as controller from './alumni.controller';
 import { authenticate } from '@/middleware/auth';
+import { manageAlumni, readAlumniPersonalData } from './alumni-access';
 
 const router = Router();
 
-// All routes require authentication
+// All routes require authentication. Membaca direktori terbuka untuk setiap
+// akun (data diri dibuang di controller); setiap penulisan, dan daftar donasi,
+// hanya untuk pengelola alumni — lingkup unitnya diperiksa di service. Lihat
+// alumni-access.ts.
 router.use(authenticate);
 
 // ==================== ALUMNI ====================
@@ -56,7 +60,7 @@ router.get('/stats/placements', controller.getPlacements);
  *       403:
  *         description: Access denied to cross-unit data
  */
-router.get('/stats/outcome', controller.getOutcomeAnalytics);
+router.get('/stats/outcome', readAlumniPersonalData, controller.getOutcomeAnalytics);
 
 /**
  * @swagger
@@ -161,7 +165,7 @@ router.get('/:id', controller.getAlumniById);
  *       201:
  *         description: Alumni created
  */
-router.post('/', controller.createAlumni);
+router.post('/', manageAlumni, controller.createAlumni);
 
 /**
  * @swagger
@@ -189,7 +193,7 @@ router.post('/', controller.createAlumni);
  *       404:
  *         description: Alumni not found
  */
-router.put('/:id', controller.updateAlumni);
+router.put('/:id', manageAlumni, controller.updateAlumni);
 
 /**
  * @swagger
@@ -211,7 +215,7 @@ router.put('/:id', controller.updateAlumni);
  *       404:
  *         description: Alumni not found
  */
-router.delete('/:id', controller.deleteAlumni);
+router.delete('/:id', manageAlumni, controller.deleteAlumni);
 
 /**
  * @swagger
@@ -242,7 +246,7 @@ router.delete('/:id', controller.deleteAlumni);
  *       404:
  *         description: Student not found
  */
-router.post('/from-student/:studentId', controller.convertFromStudent);
+router.post('/from-student/:studentId', manageAlumni, controller.convertFromStudent);
 
 // ==================== CAREERS ====================
 
@@ -306,7 +310,7 @@ router.get('/:alumniId/careers', controller.getCareersByAlumni);
  *       201:
  *         description: Career added
  */
-router.post('/:alumniId/careers', controller.createCareer);
+router.post('/:alumniId/careers', manageAlumni, controller.createCareer);
 
 /**
  * @swagger
@@ -326,7 +330,7 @@ router.post('/:alumniId/careers', controller.createCareer);
  *       200:
  *         description: Career updated
  */
-router.put('/careers/:id', controller.updateCareer);
+router.put('/careers/:id', manageAlumni, controller.updateCareer);
 
 /**
  * @swagger
@@ -346,7 +350,7 @@ router.put('/careers/:id', controller.updateCareer);
  *       204:
  *         description: Career deleted
  */
-router.delete('/careers/:id', controller.deleteCareer);
+router.delete('/careers/:id', manageAlumni, controller.deleteCareer);
 
 // ==================== EDUCATION ====================
 
@@ -408,7 +412,7 @@ router.get('/:alumniId/education', controller.getEducationsByAlumni);
  *       201:
  *         description: Education added
  */
-router.post('/:alumniId/education', controller.createEducation);
+router.post('/:alumniId/education', manageAlumni, controller.createEducation);
 
 /**
  * @swagger
@@ -428,7 +432,7 @@ router.post('/:alumniId/education', controller.createEducation);
  *       200:
  *         description: Education updated
  */
-router.put('/education/:id', controller.updateEducation);
+router.put('/education/:id', manageAlumni, controller.updateEducation);
 
 /**
  * @swagger
@@ -448,7 +452,7 @@ router.put('/education/:id', controller.updateEducation);
  *       204:
  *         description: Education deleted
  */
-router.delete('/education/:id', controller.deleteEducation);
+router.delete('/education/:id', manageAlumni, controller.deleteEducation);
 
 // ==================== DONATIONS ====================
 
@@ -473,7 +477,7 @@ router.delete('/education/:id', controller.deleteEducation);
  *       200:
  *         description: List of donations
  */
-router.get('/donations/list', controller.getDonations);
+router.get('/donations/list', manageAlumni, controller.getDonations);
 
 /**
  * @swagger
@@ -509,7 +513,7 @@ router.get('/donations/list', controller.getDonations);
  *       201:
  *         description: Donation created
  */
-router.post('/:alumniId/donations', controller.createDonation);
+router.post('/:alumniId/donations', manageAlumni, controller.createDonation);
 
 /**
  * @swagger
@@ -529,7 +533,7 @@ router.post('/:alumniId/donations', controller.createDonation);
  *       200:
  *         description: Donation updated
  */
-router.put('/donations/:id', controller.updateDonation);
+router.put('/donations/:id', manageAlumni, controller.updateDonation);
 
 /**
  * @swagger
@@ -549,7 +553,7 @@ router.put('/donations/:id', controller.updateDonation);
  *       204:
  *         description: Donation deleted
  */
-router.delete('/donations/:id', controller.deleteDonation);
+router.delete('/donations/:id', manageAlumni, controller.deleteDonation);
 
 // ==================== EVENTS ====================
 
@@ -633,7 +637,7 @@ router.get('/events/:id', controller.getEventById);
  *       201:
  *         description: Event created
  */
-router.post('/events', controller.createEvent);
+router.post('/events', manageAlumni, controller.createEvent);
 
 /**
  * @swagger
@@ -653,7 +657,7 @@ router.post('/events', controller.createEvent);
  *       200:
  *         description: Event updated
  */
-router.put('/events/:id', controller.updateEvent);
+router.put('/events/:id', manageAlumni, controller.updateEvent);
 
 /**
  * @swagger
@@ -673,7 +677,7 @@ router.put('/events/:id', controller.updateEvent);
  *       204:
  *         description: Event deleted
  */
-router.delete('/events/:id', controller.deleteEvent);
+router.delete('/events/:id', manageAlumni, controller.deleteEvent);
 
 // ==================== EVENT ATTENDEES ====================
 
@@ -733,7 +737,7 @@ router.post('/events/:eventId/register', controller.registerForEvent);
  *       200:
  *         description: Status updated
  */
-router.put('/events/attendees/:id/status', controller.updateAttendeeStatus);
+router.put('/events/attendees/:id/status', manageAlumni, controller.updateAttendeeStatus);
 
 /**
  * @swagger
@@ -753,6 +757,6 @@ router.put('/events/attendees/:id/status', controller.updateAttendeeStatus);
  *       204:
  *         description: Registration cancelled
  */
-router.delete('/events/attendees/:id', controller.cancelRegistration);
+router.delete('/events/attendees/:id', manageAlumni, controller.cancelRegistration);
 
 export default router;

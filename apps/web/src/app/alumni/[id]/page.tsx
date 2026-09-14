@@ -60,11 +60,15 @@ import { Linkedin, Instagram, Facebook } from "@/components/icons/social";
 import { id as idLocale } from "date-fns/locale";
 import Link from "next/link";
 import { toast } from "sonner";
+import { useAuthStore } from "@/stores/auth";
+import { alumniAccessOf } from "@/lib/alumni-access";
 
 export default function AlumniDetailPage() {
   const params = useParams();
   const router = useRouter();
   const id = params.id as string;
+  const { user } = useAuthStore();
+  const { canManage } = alumniAccessOf(user);
 
   const { data: alumni, isLoading } = useAlumniDetail(id);
   const verifyMutation = useVerifyAlumni();
@@ -212,32 +216,34 @@ export default function AlumniDetailPage() {
               </p>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {alumni.status === "REGISTERED" && (
-              <Button
-                variant="outline"
-                onClick={handleVerify}
-                disabled={verifyMutation.isPending}
-              >
-                {verifyMutation.isPending ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <CheckCircle className="mr-2 h-4 w-4" />
-                )}
-                Verifikasi
+          {canManage && (
+            <div className="flex flex-wrap gap-2">
+              {alumni.status === "REGISTERED" && (
+                <Button
+                  variant="outline"
+                  onClick={handleVerify}
+                  disabled={verifyMutation.isPending}
+                >
+                  {verifyMutation.isPending ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <CheckCircle className="mr-2 h-4 w-4" />
+                  )}
+                  Verifikasi
+                </Button>
+              )}
+              <Button variant="outline" asChild>
+                <Link href={`/alumni/${id}/edit`}>
+                  <Edit className="mr-2 h-4 w-4" />
+                  Edit
+                </Link>
               </Button>
-            )}
-            <Button variant="outline" asChild>
-              <Link href={`/alumni/${id}/edit`}>
-                <Edit className="mr-2 h-4 w-4" />
-                Edit
-              </Link>
-            </Button>
-            <Button variant="destructive" onClick={() => setDeleteOpen(true)}>
-              <Trash2 className="mr-2 h-4 w-4" />
-              Hapus
-            </Button>
-          </div>
+              <Button variant="destructive" onClick={() => setDeleteOpen(true)}>
+                <Trash2 className="mr-2 h-4 w-4" />
+                Hapus
+              </Button>
+            </div>
+          )}
         </div>
 
         {/* Quick Info Cards */}
@@ -531,10 +537,12 @@ export default function AlumniDetailPage() {
           <TabsContent value="achievements" className="space-y-4">
             <div className="flex justify-between items-center">
               <h3 className="text-lg font-medium">Daftar Prestasi</h3>
-              <Button onClick={() => setAchievementOpen(true)}>
-                <Plus className="mr-2 h-4 w-4" />
-                Tambah Prestasi
-              </Button>
+              {canManage && (
+                <Button onClick={() => setAchievementOpen(true)}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Tambah Prestasi
+                </Button>
+              )}
             </div>
 
             {alumni.achievements?.length ? (
@@ -551,13 +559,15 @@ export default function AlumniDetailPage() {
                             {achievement.category}
                           </CardDescription>
                         </div>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => setDeleteAchievementId(achievement.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        {canManage && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setDeleteAchievementId(achievement.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                       </div>
                     </CardHeader>
                     <CardContent>

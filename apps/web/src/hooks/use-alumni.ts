@@ -216,9 +216,11 @@ export function useAlumni(params?: {
   });
 }
 
-export function useAlumniOutcomeAnalytics(unitId?: string) {
+export function useAlumniOutcomeAnalytics(unitId?: string, enabled = true) {
   return useQuery({
     queryKey: ["alumni-outcome-analytics", unitId],
+    // Nilai per nama alumni: hanya pembaca data diri (lihat lib/alumni-access).
+    enabled,
     queryFn: async () => {
       const response = await api.get("/alumni/stats/outcome", {
         params: { unitId },

@@ -19,6 +19,7 @@ import {
   registerEventSchema,
   updateAttendeeStatusSchema,
 } from './alumni.schema';
+import { alumniUnitScope, redactAlumniFor } from './alumni-access';
 
 // ==================== ALUMNI ====================
 
@@ -26,7 +27,14 @@ export async function getAlumni(req: Request, res: Response, next: NextFunction)
   try {
     const query = alumniQuerySchema.parse(req.query);
     const result = await service.getAlumni(query);
-    res.json({ success: true, ...result });
+    // Direktori untuk semua akun; kontak dan data diri hanya untuk pembaca yang
+    // berhak atas unit baris itu.
+    const user = requireUser(req);
+    res.json({
+      success: true,
+      ...result,
+      data: result.data.map((alumni) => redactAlumniFor(user, alumni)),
+    });
   } catch (error) {
     next(error);
   }
@@ -37,17 +45,15 @@ export async function getOutcomeAnalytics(req: Request, res: Response, next: Nex
     const { unitId } = req.query;
     const user = requireUser(req);
 
-    // Enforce tenant scope: non-super-admin users can only view their own unit's outcomes
-    let effectiveUnitId = unitId as string | undefined;
-    if (user && user.role !== 'SUPER_ADMIN') {
-      if (!user.unitId) {
-        return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Access to this unit is not allowed' } });
-      }
-      if (effectiveUnitId && effectiveUnitId !== user.unitId) {
-        return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Access to this unit is not allowed' } });
-      }
-      effectiveUnitId = user.unitId;
+    // Nilai rata-rata dan capaian tahfidz per NAMA alumni: lingkup unit yang
+    // sama dengan data diri. Yayasan (tanpa unit) dulu tertolak di sini karena
+    // pemeriksaannya hanya mengenal SUPER_ADMIN.
+    const scope = alumniUnitScope(user);
+    const requested = typeof unitId === 'string' && unitId ? unitId : undefined;
+    if (scope !== null && requested && requested !== scope) {
+      return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Access to this unit is not allowed' } });
     }
+    const effectiveUnitId = scope ?? requested;
 
     const data = await service.getAlumniOutcomeAnalytics(effectiveUnitId);
     res.json({ success: true, data });
@@ -65,7 +71,7 @@ export async function getAlumniById(req: Request, res: Response, next: NextFunct
         .status(404)
         .json({ success: false, error: { code: 'NOT_FOUND', message: 'Alumni not found' } });
     }
-    res.json({ success: true, data: alumni });
+    res.json({ success: true, data: redactAlumniFor(requireUser(req), alumni) });
   } catch (error) {
     next(error);
   }
@@ -74,7 +80,7 @@ export async function getAlumniById(req: Request, res: Response, next: NextFunct
 export async function createAlumni(req: Request, res: Response, next: NextFunction) {
   try {
     const data = createAlumniSchema.parse(req.body);
-    const alumni = await service.createAlumni(data);
+    const alumni = await service.createAlumni(data, requireUser(req));
     res.status(201).json({ success: true, data: alumni });
   } catch (error) {
     next(error);
@@ -85,7 +91,7 @@ export async function updateAlumni(req: Request, res: Response, next: NextFuncti
   try {
     const { id } = req.params;
     const data = updateAlumniSchema.parse(req.body);
-    const alumni = await service.updateAlumni(id, data);
+    const alumni = await service.updateAlumni(id, data, requireUser(req));
     res.json({ success: true, data: alumni });
   } catch (error) {
     next(error);
@@ -95,7 +101,7 @@ export async function updateAlumni(req: Request, res: Response, next: NextFuncti
 export async function deleteAlumni(req: Request, res: Response, next: NextFunction) {
   try {
     const { id } = req.params;
-    await service.deleteAlumni(id);
+    await service.deleteAlumni(id, requireUser(req));
     res.json({ success: true, message: 'Alumni deleted successfully' });
   } catch (error) {
     next(error);
@@ -106,7 +112,7 @@ export async function convertFromStudent(req: Request, res: Response, next: Next
   try {
     const { studentId } = req.params;
     const data = convertFromStudentSchema.parse(req.body);
-    const alumni = await service.convertFromStudent(studentId, data);
+    const alumni = await service.convertFromStudent(studentId, data, requireUser(req));
     res.status(201).json({ success: true, data: alumni });
   } catch (error) {
     next(error);
@@ -159,7 +165,7 @@ export async function createCareer(req: Request, res: Response, next: NextFuncti
   try {
     const { alumniId } = req.params;
     const data = createCareerSchema.parse(req.body);
-    const career = await service.createCareer(alumniId, data);
+    const career = await service.createCareer(alumniId, data, requireUser(req));
     res.status(201).json({ success: true, data: career });
   } catch (error) {
     next(error);
@@ -170,7 +176,7 @@ export async function updateCareer(req: Request, res: Response, next: NextFuncti
   try {
     const { id } = req.params;
     const data = updateCareerSchema.parse(req.body);
-    const career = await service.updateCareer(id, data);
+    const career = await service.updateCareer(id, data, requireUser(req));
     res.json({ success: true, data: career });
   } catch (error) {
     next(error);
@@ -180,7 +186,7 @@ export async function updateCareer(req: Request, res: Response, next: NextFuncti
 export async function deleteCareer(req: Request, res: Response, next: NextFunction) {
   try {
     const { id } = req.params;
-    await service.deleteCareer(id);
+    await service.deleteCareer(id, requireUser(req));
     res.json({ success: true, message: 'Career deleted successfully' });
   } catch (error) {
     next(error);
@@ -203,7 +209,7 @@ export async function createEducation(req: Request, res: Response, next: NextFun
   try {
     const { alumniId } = req.params;
     const data = createEducationSchema.parse(req.body);
-    const education = await service.createEducation(alumniId, data);
+    const education = await service.createEducation(alumniId, data, requireUser(req));
     res.status(201).json({ success: true, data: education });
   } catch (error) {
     next(error);
@@ -214,7 +220,7 @@ export async function updateEducation(req: Request, res: Response, next: NextFun
   try {
     const { id } = req.params;
     const data = updateEducationSchema.parse(req.body);
-    const education = await service.updateEducation(id, data);
+    const education = await service.updateEducation(id, data, requireUser(req));
     res.json({ success: true, data: education });
   } catch (error) {
     next(error);
@@ -224,7 +230,7 @@ export async function updateEducation(req: Request, res: Response, next: NextFun
 export async function deleteEducation(req: Request, res: Response, next: NextFunction) {
   try {
     const { id } = req.params;
-    await service.deleteEducation(id);
+    await service.deleteEducation(id, requireUser(req));
     res.json({ success: true, message: 'Education deleted successfully' });
   } catch (error) {
     next(error);
@@ -236,7 +242,7 @@ export async function deleteEducation(req: Request, res: Response, next: NextFun
 export async function getDonations(req: Request, res: Response, next: NextFunction) {
   try {
     const query = donationQuerySchema.parse(req.query);
-    const result = await service.getDonations(query);
+    const result = await service.getDonations(query, requireUser(req));
     res.json({ success: true, ...result });
   } catch (error) {
     next(error);
@@ -247,7 +253,7 @@ export async function createDonation(req: Request, res: Response, next: NextFunc
   try {
     const { alumniId } = req.params;
     const data = createDonationSchema.parse(req.body);
-    const donation = await service.createDonation(alumniId, data);
+    const donation = await service.createDonation(alumniId, data, requireUser(req));
     res.status(201).json({ success: true, data: donation });
   } catch (error) {
     next(error);
@@ -258,7 +264,7 @@ export async function updateDonation(req: Request, res: Response, next: NextFunc
   try {
     const { id } = req.params;
     const data = updateDonationSchema.parse(req.body);
-    const donation = await service.updateDonation(id, data);
+    const donation = await service.updateDonation(id, data, requireUser(req));
     res.json({ success: true, data: donation });
   } catch (error) {
     next(error);
@@ -268,7 +274,7 @@ export async function updateDonation(req: Request, res: Response, next: NextFunc
 export async function deleteDonation(req: Request, res: Response, next: NextFunction) {
   try {
     const { id } = req.params;
-    await service.deleteDonation(id);
+    await service.deleteDonation(id, requireUser(req));
     res.json({ success: true, message: 'Donation deleted successfully' });
   } catch (error) {
     next(error);
@@ -305,7 +311,7 @@ export async function getEventById(req: Request, res: Response, next: NextFuncti
 export async function createEvent(req: Request, res: Response, next: NextFunction) {
   try {
     const data = createEventSchema.parse(req.body);
-    const event = await service.createEvent(data);
+    const event = await service.createEvent(data, requireUser(req));
     res.status(201).json({ success: true, data: event });
   } catch (error) {
     next(error);
@@ -316,7 +322,7 @@ export async function updateEvent(req: Request, res: Response, next: NextFunctio
   try {
     const { id } = req.params;
     const data = updateEventSchema.parse(req.body);
-    const event = await service.updateEvent(id, data);
+    const event = await service.updateEvent(id, data, requireUser(req));
     res.json({ success: true, data: event });
   } catch (error) {
     next(error);
@@ -326,7 +332,7 @@ export async function updateEvent(req: Request, res: Response, next: NextFunctio
 export async function deleteEvent(req: Request, res: Response, next: NextFunction) {
   try {
     const { id } = req.params;
-    await service.deleteEvent(id);
+    await service.deleteEvent(id, requireUser(req));
     res.json({ success: true, message: 'Event deleted successfully' });
   } catch (error) {
     next(error);
@@ -350,7 +356,7 @@ export async function updateAttendeeStatus(req: Request, res: Response, next: Ne
   try {
     const { id } = req.params;
     const data = updateAttendeeStatusSchema.parse(req.body);
-    const attendee = await service.updateAttendeeStatus(id, data);
+    const attendee = await service.updateAttendeeStatus(id, data, requireUser(req));
     res.json({ success: true, data: attendee });
   } catch (error) {
     next(error);
@@ -360,7 +366,7 @@ export async function updateAttendeeStatus(req: Request, res: Response, next: Ne
 export async function cancelRegistration(req: Request, res: Response, next: NextFunction) {
   try {
     const { id } = req.params;
-    await service.cancelRegistration(id);
+    await service.cancelRegistration(id, requireUser(req));
     res.json({ success: true, message: 'Registration cancelled successfully' });
   } catch (error) {
     next(error);

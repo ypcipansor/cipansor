@@ -54,6 +54,8 @@ import {
   type AlumniStatus,
 } from "@/hooks";
 import { AlumniDashboard } from "@/components/alumni/alumni-dashboard";
+import { useAuthStore } from "@/stores/auth";
+import { alumniAccessOf } from "@/lib/alumni-access";
 import {
   ScatterChart,
   Scatter,
@@ -73,6 +75,8 @@ const statusColors: Record<AlumniStatus, string> = {
 };
 
 function AlumniPageContent() {
+  const { user } = useAuthStore();
+  const { canManage, canReadPersonalData } = alumniAccessOf(user);
   const [activeTab, setActiveTab] = useState("alumni");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -112,7 +116,10 @@ function AlumniPageContent() {
   });
 
   const { data: events, isLoading: eventsLoading } = useAlumniEvents();
-  const { data: outcomeData } = useAlumniOutcomeAnalytics();
+  const { data: outcomeData } = useAlumniOutcomeAnalytics(
+    undefined,
+    canReadPersonalData,
+  );
 
   const createAlumni = useCreateAlumni();
   const verifyAlumni = useVerifyAlumni();
@@ -199,7 +206,9 @@ function AlumniPageContent() {
           <TabsTrigger value="alumni">Data Alumni</TabsTrigger>
           <TabsTrigger value="events">Acara Alumni</TabsTrigger>
           <TabsTrigger value="tracer">Dashboard Tracer</TabsTrigger>
-          <TabsTrigger value="outcome">Analisis Outcome</TabsTrigger>
+          {canReadPersonalData && (
+            <TabsTrigger value="outcome">Analisis Outcome</TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="tracer" className="space-y-4">
@@ -218,9 +227,11 @@ function AlumniPageContent() {
                   open={isAddAlumniOpen}
                   onOpenChange={setIsAddAlumniOpen}
                 >
-                  <DialogTrigger asChild>
-                    <Button>Tambah Alumni</Button>
-                  </DialogTrigger>
+                  {canManage && (
+                    <DialogTrigger asChild>
+                      <Button>Tambah Alumni</Button>
+                    </DialogTrigger>
+                  )}
                   <DialogContent className="max-w-md">
                     <DialogHeader>
                       <DialogTitle>Tambah Alumni Baru</DialogTitle>
@@ -444,7 +455,7 @@ function AlumniPageContent() {
                           <TableCell>
                             <div>
                               <p className="font-medium">
-                                {member.studentName || "-"}
+                                {member.name || member.studentName || "-"}
                               </p>
                               <p className="text-sm text-muted-foreground">
                                 {member.email}
@@ -460,7 +471,9 @@ function AlumniPageContent() {
                               </p>
                             </div>
                           </TableCell>
-                          <TableCell>{member.currentCity || "-"}</TableCell>
+                          <TableCell>
+                            {member.city || member.currentCity || "-"}
+                          </TableCell>
                           <TableCell>
                             <Badge className={statusColors[member.status]}>
                               {ALUMNI_STATUS_LABELS[member.status]}
@@ -468,7 +481,7 @@ function AlumniPageContent() {
                           </TableCell>
                           <TableCell>
                             <div className="flex gap-2">
-                              {member.status === "REGISTERED" && (
+                              {canManage && member.status === "REGISTERED" && (
                                 <Button
                                   size="sm"
                                   variant="outline"
@@ -544,9 +557,11 @@ function AlumniPageContent() {
                   </CardDescription>
                 </div>
                 <Dialog open={isAddEventOpen} onOpenChange={setIsAddEventOpen}>
-                  <DialogTrigger asChild>
-                    <Button>Buat Acara</Button>
-                  </DialogTrigger>
+                  {canManage && (
+                    <DialogTrigger asChild>
+                      <Button>Buat Acara</Button>
+                    </DialogTrigger>
+                  )}
                   <DialogContent className="max-w-md">
                     <DialogHeader>
                       <DialogTitle>Buat Acara Baru</DialogTitle>

@@ -147,6 +147,26 @@ export const ALUMNI_ROLE_CODES: readonly string[] = [
   "PT_ALUMNI",
 ];
 
+/**
+ * Menulis data alumni (alumni, karier, pendidikan, donasi, acara, kehadiran) —
+ * admin dan tata usaha, di lingkup unitnya. Satu sumber untuk API
+ * (`modules/alumni/alumni-access.ts`) dan web (tombol di halaman Alumni).
+ */
+export const ALUMNI_WRITE_ROLE_CODES: readonly string[] = [
+  ...ADMIN_ROLE_CODES,
+  ...TATA_USAHA_ROLE_CODES,
+];
+
+/**
+ * Membaca kontak, data diri, dan analisis nilai per alumni — pengelola ditambah
+ * kepala sekolah dan organ yayasan. Akun lain melihat direktori tanpa semua itu.
+ */
+export const ALUMNI_PERSONAL_DATA_ROLE_CODES: readonly string[] = [
+  ...ALUMNI_WRITE_ROLE_CODES,
+  ...PRINCIPAL_ROLE_CODES,
+  ...GOVERNANCE_ROLE_CODES,
+];
+
 /** External roles (students, parents, alumni, komite) that cannot participate in E-Office correspondence. */
 export const EXCLUDED_CORRESPONDENCE_ROLES: readonly string[] = [
   ...STUDENT_ROLE_CODES,
