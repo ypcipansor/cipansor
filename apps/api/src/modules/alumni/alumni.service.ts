@@ -18,6 +18,24 @@ import {
   UpdateAttendeeStatusInput,
 } from './alumni.schema';
 import { Prisma } from '@prisma/client';
+import { Errors } from '@/middleware/error';
+import {
+  AlumniActor,
+  alumniUnitScope,
+  assertAlumniRecordInScope,
+  assertAlumniTargetUnitInScope,
+} from './alumni-access';
+
+/** Unit alumni yang akan disentuh — 404 bila tidak ada atau di luar lingkup. */
+async function alumniInScope(alumniId: string, actor: AlumniActor) {
+  const alumni = await prisma.alumni.findFirst({
+    where: { id: alumniId, deletedAt: null },
+    select: { id: true, unitId: true },
+  });
+  if (!alumni) throw Errors.notFound('Alumni');
+  assertAlumniRecordInScope(actor, alumni.unitId, 'Alumni');
+  return alumni;
+}
 
 // ==================== ALUMNI ====================
 
@@ -218,7 +236,9 @@ export async function getAlumniById(id: string) {
   });
 }
 
-export async function createAlumni(data: CreateAlumniInput) {
+export async function createAlumni(data: CreateAlumniInput, actor: AlumniActor) {
+  assertAlumniTargetUnitInScope(actor, data.unitId);
+
   // Generate registration number
   const year = data.graduationYear;
   const count = await prisma.alumni.count({
@@ -240,7 +260,10 @@ export async function createAlumni(data: CreateAlumniInput) {
   });
 }
 
-export async function updateAlumni(id: string, data: UpdateAlumniInput) {
+export async function updateAlumni(id: string, data: UpdateAlumniInput, actor: AlumniActor) {
+  await alumniInScope(id, actor);
+  if (data.unitId) assertAlumniTargetUnitInScope(actor, data.unitId);
+
   return prisma.alumni.update({
     where: { id },
     data: {
@@ -254,22 +277,30 @@ export async function updateAlumni(id: string, data: UpdateAlumniInput) {
   });
 }
 
-export async function deleteAlumni(id: string) {
+export async function deleteAlumni(id: string, actor: AlumniActor) {
+  await alumniInScope(id, actor);
+
   return prisma.alumni.update({
     where: { id },
     data: { deletedAt: new Date() },
   });
 }
 
-export async function convertFromStudent(studentId: string, data: ConvertFromStudentInput) {
-  const student = await prisma.student.findUnique({
-    where: { id: studentId },
+export async function convertFromStudent(
+  studentId: string,
+  data: ConvertFromStudentInput,
+  actor: AlumniActor
+) {
+  const student = await prisma.student.findFirst({
+    where: { id: studentId, deletedAt: null },
     include: { user: true },
   });
 
   if (!student) {
-    throw new Error('Student not found');
+    throw Errors.notFound('Student');
   }
+  // Meluluskan santri mengubah statusnya; hanya pengelola unit santri itu.
+  assertAlumniRecordInScope(actor, student.unitId, 'Student');
 
   // Generate registration number
   const year = student.graduateYear || new Date().getFullYear();
@@ -384,7 +415,9 @@ export async function getCareersByAlumni(alumniId: string) {
   });
 }
 
-export async function createCareer(alumniId: string, data: CreateCareerInput) {
+export async function createCareer(alumniId: string, data: CreateCareerInput, actor: AlumniActor) {
+  await alumniInScope(alumniId, actor);
+
   // If this is current job, unset other current jobs
   if (data.isCurrent) {
     await prisma.alumniCareer.updateMany({
@@ -404,9 +437,10 @@ export async function createCareer(alumniId: string, data: CreateCareerInput) {
   });
 }
 
-export async function updateCareer(id: string, data: UpdateCareerInput) {
+export async function updateCareer(id: string, data: UpdateCareerInput, actor: AlumniActor) {
   const career = await prisma.alumniCareer.findUnique({ where: { id } });
-  if (!career) throw new Error('Career not found');
+  if (!career) throw Errors.notFound('Career');
+  await alumniInScope(career.alumniId, actor);
 
   // If setting as current, unset others
   if (data.isCurrent) {
@@ -426,11 +460,24 @@ export async function updateCareer(id: string, data: UpdateCareerInput) {
   });
 }
 
-export async function deleteCareer(id: string) {
+export async function deleteCareer(id: string, actor: AlumniActor) {
+  const career = await prisma.alumniCareer.findUnique({ where: { id }, select: { alumniId: true } });
+  if (!career) throw Errors.notFound('Career');
+  await alumniInScope(career.alumniId, actor);
+
   return prisma.alumniCareer.delete({ where: { id } });
 }
 
 // ==================== EDUCATION ====================
+
+async function educationInScope(id: string, actor: AlumniActor) {
+  const education = await prisma.alumniEducation.findUnique({
+    where: { id },
+    select: { alumniId: true },
+  });
+  if (!education) throw Errors.notFound('Education');
+  await alumniInScope(education.alumniId, actor);
+}
 
 export async function getEducationsByAlumni(alumniId: string) {
   return prisma.alumniEducation.findMany({
@@ -483,7 +530,13 @@ export async function getPlacements(unitId?: string) {
   };
 }
 
-export async function createEducation(alumniId: string, data: CreateEducationInput) {
+export async function createEducation(
+  alumniId: string,
+  data: CreateEducationInput,
+  actor: AlumniActor
+) {
+  await alumniInScope(alumniId, actor);
+
   return prisma.alumniEducation.create({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     data: {
@@ -493,24 +546,31 @@ export async function createEducation(alumniId: string, data: CreateEducationInp
   });
 }
 
-export async function updateEducation(id: string, data: UpdateEducationInput) {
+export async function updateEducation(id: string, data: UpdateEducationInput, actor: AlumniActor) {
+  await educationInScope(id, actor);
+
   return prisma.alumniEducation.update({
     where: { id },
     data,
   });
 }
 
-export async function deleteEducation(id: string) {
+export async function deleteEducation(id: string, actor: AlumniActor) {
+  await educationInScope(id, actor);
+
   return prisma.alumniEducation.delete({ where: { id } });
 }
 
 // ==================== DONATIONS ====================
 
-export async function getDonations(query: DonationQueryInput) {
+export async function getDonations(query: DonationQueryInput, actor: AlumniActor) {
   const { page, limit, alumniId, unitId, type, startDate, endDate } = query;
   const skip = (page - 1) * limit;
+  const scope = alumniUnitScope(actor);
 
   const where: Prisma.AlumniDonationWhereInput = {
+    // Pengelola satu unit: donasi UNTUK unitnya atau DARI alumninya.
+    ...(scope !== null && { OR: [{ unitId: scope }, { alumni: { unitId: scope } }] }),
     ...(alumniId && { alumniId }),
     ...(unitId && { unitId }),
     ...(type && { type }),
@@ -563,7 +623,14 @@ export async function getDonations(query: DonationQueryInput) {
   };
 }
 
-export async function createDonation(alumniId: string, data: CreateDonationInput) {
+export async function createDonation(
+  alumniId: string,
+  data: CreateDonationInput,
+  actor: AlumniActor
+) {
+  await alumniInScope(alumniId, actor);
+  if (data.unitId) assertAlumniTargetUnitInScope(actor, data.unitId);
+
   // Generate receipt number
   const year = new Date().getFullYear();
   const count = await prisma.alumniDonation.count({
@@ -587,7 +654,19 @@ export async function createDonation(alumniId: string, data: CreateDonationInput
   });
 }
 
-export async function updateDonation(id: string, data: UpdateDonationInput) {
+async function donationInScope(id: string, actor: AlumniActor) {
+  const donation = await prisma.alumniDonation.findUnique({
+    where: { id },
+    select: { alumniId: true },
+  });
+  if (!donation) throw Errors.notFound('Donation');
+  await alumniInScope(donation.alumniId, actor);
+}
+
+export async function updateDonation(id: string, data: UpdateDonationInput, actor: AlumniActor) {
+  await donationInScope(id, actor);
+  if (data.unitId) assertAlumniTargetUnitInScope(actor, data.unitId);
+
   return prisma.alumniDonation.update({
     where: { id },
     data: {
@@ -602,7 +681,9 @@ export async function updateDonation(id: string, data: UpdateDonationInput) {
   });
 }
 
-export async function deleteDonation(id: string) {
+export async function deleteDonation(id: string, actor: AlumniActor) {
+  await donationInScope(id, actor);
+
   return prisma.alumniDonation.delete({ where: { id } });
 }
 
@@ -666,11 +747,27 @@ export async function getEventById(id: string) {
   });
 }
 
-export async function createEvent(data: CreateEventInput) {
+async function eventInScope(id: string, actor: AlumniActor) {
+  const event = await prisma.alumniEvent.findFirst({
+    where: { id, deletedAt: null },
+    select: { unitId: true },
+  });
+  if (!event) throw Errors.notFound('Event');
+  // Acara tanpa unit milik yayasan: hanya yang melihat semua unit.
+  assertAlumniRecordInScope(actor, event.unitId, 'Event');
+}
+
+export async function createEvent(data: CreateEventInput, actor: AlumniActor) {
+  // Pengelola satu unit yang tidak menyebut unit membuat acara unitnya sendiri.
+  const scope = alumniUnitScope(actor);
+  const unitId = data.unitId ?? (scope !== null && scope !== 'none' ? scope : undefined);
+  if (scope !== null) assertAlumniTargetUnitInScope(actor, unitId);
+
   return prisma.alumniEvent.create({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     data: {
       ...data,
+      unitId,
       eventDate: new Date(data.eventDate),
       endDate: data.endDate ? new Date(data.endDate) : undefined,
       fee: data.fee ? new Prisma.Decimal(data.fee) : undefined,
@@ -681,7 +778,10 @@ export async function createEvent(data: CreateEventInput) {
   });
 }
 
-export async function updateEvent(id: string, data: UpdateEventInput) {
+export async function updateEvent(id: string, data: UpdateEventInput, actor: AlumniActor) {
+  await eventInScope(id, actor);
+  if (data.unitId) assertAlumniTargetUnitInScope(actor, data.unitId);
+
   return prisma.alumniEvent.update({
     where: { id },
     data: {
@@ -696,7 +796,9 @@ export async function updateEvent(id: string, data: UpdateEventInput) {
   });
 }
 
-export async function deleteEvent(id: string) {
+export async function deleteEvent(id: string, actor: AlumniActor) {
+  await eventInScope(id, actor);
+
   return prisma.alumniEvent.update({
     where: { id },
     data: { deletedAt: new Date() },
@@ -728,7 +830,22 @@ export async function registerForEvent(eventId: string, data: RegisterEventInput
   });
 }
 
-export async function updateAttendeeStatus(id: string, data: UpdateAttendeeStatusInput) {
+async function attendeeInScope(id: string, actor: AlumniActor) {
+  const attendee = await prisma.alumniEventAttendee.findUnique({
+    where: { id },
+    select: { eventId: true },
+  });
+  if (!attendee) throw Errors.notFound('Registration');
+  await eventInScope(attendee.eventId, actor);
+}
+
+export async function updateAttendeeStatus(
+  id: string,
+  data: UpdateAttendeeStatusInput,
+  actor: AlumniActor
+) {
+  await attendeeInScope(id, actor);
+
   const updateData: Prisma.AlumniEventAttendeeUpdateInput = {
     status: data.status,
   };
@@ -749,7 +866,9 @@ export async function updateAttendeeStatus(id: string, data: UpdateAttendeeStatu
   });
 }
 
-export async function cancelRegistration(id: string) {
+export async function cancelRegistration(id: string, actor: AlumniActor) {
+  await attendeeInScope(id, actor);
+
   return prisma.alumniEventAttendee.delete({ where: { id } });
 }
 
