@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import { StudentOnboardingOrchestrator } from '../../../services/integration/student-onboarding.orchestrator';
@@ -38,6 +38,11 @@ vi.mock('@/lib/prisma', () => ({
       findUnique: vi.fn(),
       findFirst: vi.fn(),
       update: vi.fn(),
+    },
+    studentUnitIdentifier: {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      upsert: vi.fn(),
     },
     studentParent: {
       upsert: vi.fn().mockResolvedValue({ id: 'sp-1' }),
@@ -217,6 +222,91 @@ describe('Student Onboarding & Wave Quota Unit Tests', () => {
       });
       expect(prisma.student.create).not.toHaveBeenCalled();
       expect(prisma.student.update).not.toHaveBeenCalled();
+    });
+
+    describe('NIS milik unit (audit #489 B1)', () => {
+      afterEach(() => {
+        vi.mocked(prisma.student.update).mockReset();
+      });
+
+      const siapkan = () => {
+        vi.mocked(prisma.registrant.findUnique).mockResolvedValue({
+          id: 'reg-3',
+          status: 'ACCEPTED',
+          admissionPeriodId: 'period-1',
+          fullName: 'Yusuf Naik Kelas',
+          gender: 'MALE',
+          birthPlace: 'Tasikmalaya',
+          birthDate: new Date('2014-04-18'),
+          address: 'Kp. Cipansor',
+          parentName: 'Ayah',
+          parentPhone: '081234567892',
+          parentEmail: 'ayah3@gmail.com',
+          registrationFeePaidAt: new Date(),
+        } as any);
+        vi.mocked(prisma.admissionPeriod.findUnique).mockResolvedValue({
+          id: 'period-1',
+          unitId: 'unit-1',
+          registrationFee: 250000,
+          academicYearId: 'ay-2026',
+        } as any);
+        vi.mocked(prisma.unit.findUnique).mockResolvedValue({ id: 'unit-1', type: 'SMP_IT' } as any);
+        (vi.mocked(prisma.user.create) as any).mockResolvedValue({ id: 'u-3', name: 'Yusuf Naik Kelas' });
+        (vi.mocked(prisma.student.update) as any).mockImplementation(async ({ data }: any) => ({
+          id: 's-lama',
+          ...data,
+        }));
+      };
+
+      it('santri yang masuk unit LAIN menerima NIS unit itu — dulu NIS SD IT-nya dibawa ke SMP IT', async () => {
+        siapkan();
+        (vi.mocked(prisma.student.findUnique) as any).mockResolvedValueOnce({
+          id: 's-lama',
+          unitId: 'unit-sd',
+          nis: 'SD-2020-07',
+          nisn: null,
+        });
+        (vi.mocked(prisma.studentUnitIdentifier.findUnique) as any).mockResolvedValueOnce(null);
+
+        const hasil = await StudentOnboardingOrchestrator.processEnrollment('reg-3', 'unit-1', 'admin-1', {
+          academicYearId: 'ay-2026',
+        });
+
+        const tulis = (vi.mocked(prisma.student.update) as any).mock.calls[0][0].data;
+        expect(tulis.unitId).toBe('unit-1');
+        expect(tulis.nis).toMatch(/^NIS-\d{4}-SMP_IT-0011$/);
+        expect(hasil.nis).toBe(tulis.nis);
+        expect(prisma.studentUnitIdentifier.upsert).toHaveBeenCalledWith({
+          where: { studentId_unitId: { studentId: 's-lama', unitId: 'unit-1' } },
+          create: { studentId: 's-lama', unitId: 'unit-1', nis: tulis.nis },
+          update: { nis: tulis.nis },
+        });
+      });
+
+      it('santri yang kembali ke unit yang pernah menerimanya memakai NIS lamanya DI UNIT ITU', async () => {
+        siapkan();
+        (vi.mocked(prisma.student.findUnique) as any).mockResolvedValueOnce({
+          id: 's-lama',
+          unitId: 'unit-sd',
+          nis: 'SD-2020-07',
+          nisn: null,
+        });
+        (vi.mocked(prisma.studentUnitIdentifier.findUnique) as any).mockResolvedValueOnce({ nis: 'SMP-2019-03' });
+
+        await StudentOnboardingOrchestrator.processEnrollment('reg-3', 'unit-1', 'admin-1', {
+          academicYearId: 'ay-2026',
+        });
+
+        expect((vi.mocked(prisma.student.update) as any).mock.calls[0][0].data.nis).toBe('SMP-2019-03');
+      });
+
+      it('penomoran baru menghitung NIS yang pernah terbit di unit itu, termasuk santri yang sudah pindah', async () => {
+        const sumber = fs.readFileSync(
+          path.join(__dirname, '../../../services/integration/student-onboarding.orchestrator.ts'),
+          'utf-8'
+        );
+        expect(sumber).toMatch(/FROM "student_unit_identifiers" WHERE "unit_id" = \$\{effectiveUnitId\}/);
+      });
     });
 
     it('creates a fresh .local account (never reusing an existing STUDENT account) when the registrant emails an existing STUDENT user', async () => {

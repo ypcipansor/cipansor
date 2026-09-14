@@ -16,6 +16,7 @@ import { isTeacherOrAboveRoleCode, isAdminRoleCode } from '../../middleware/auth
 import { RoleCode } from '@prisma/client';
 import type { JwtPayload } from '../../lib/jwt';
 import { P5ProjectService } from './p5-project.service';
+import { nisForUnit } from '../../utils/student-nis';
 
 // Profil Pelajar Pancasila - 6 Dimensi
 export const PROFIL_PELAJAR_PANCASILA = [
@@ -510,11 +511,21 @@ export class RaportMerdekaService {
     const academicYear = enrollment.class.academicYear;
     const computedFase = getFaseFromClassLevel(enrollment.class.level, student.unit.type);
 
+    // Rapor terbit atas nama unit ROMBELNYA pada tahun ajaran itu. Santri yang
+    // sejak itu pindah unit punya NIS lain sekarang; rapor lama tetap memuat
+    // nomor induk unit yang menerbitkannya ('-' bila tidak tercatat).
+    const nisRapor =
+      (await nisForUnit(
+        prisma,
+        { id: student.id, unitId: student.unit.id, nis: student.nis },
+        enrollment.class.unitId
+      )) ?? '-';
+
     return {
       raportFormat: 'KURIKULUM_MERDEKA',
       siswa: {
         id: student.id,
-        nis: student.nis,
+        nis: nisRapor,
         nisn: student.nisn,
         nama: student.user.name,
         kelas: enrollment.class.name,

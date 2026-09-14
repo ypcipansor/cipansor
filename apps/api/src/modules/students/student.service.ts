@@ -6,6 +6,7 @@ import { prisma } from '@/lib/prisma';
 import { hashPassword } from '@/lib/password';
 import { Errors } from '@/middleware/error';
 import { assertStudentIdentifiersAvailable } from './student-identifiers';
+import { assignStudentNis } from '@/utils/student-nis';
 import { UserRole, Gender, Prisma } from '@prisma/client';
 import type { ListStudentsQuery, CreateStudentInput, UpdateStudentInput } from './student.schema';
 import {
@@ -487,6 +488,9 @@ export class StudentService {
         },
       });
 
+      // NIS terbit atas nama unit: catat pasangan (santri, unit) → NIS.
+      await assignStudentNis(tx, { studentId: student.id, unitId, nis: input.nis });
+
       // Link the guardian for real. Before this, parentName/parentPhone were
       // stored on the student row and nowhere else, so every santri added
       // through the admin form was an orphan relationally: the wali had no
@@ -566,6 +570,12 @@ export class StudentService {
           where: { id: student.userId },
           data: { name: input.name },
         });
+      }
+
+      // NIS yang diubah adalah NIS unit santri SEKARANG; NIS di unit-unit
+      // lamanya (dokumen yang sudah terbit) tidak disentuh.
+      if (input.nis && input.nis !== student.nis) {
+        await assignStudentNis(tx, { studentId: id, unitId: student.unitId, nis: input.nis });
       }
 
       // Update student

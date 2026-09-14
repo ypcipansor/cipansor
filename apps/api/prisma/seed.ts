@@ -8080,6 +8080,20 @@ async function seedUnitEnrollments() {
   }
 
   console.log(`✅ Riwayat unit: ${perKunci.size} baris`);
+
+  // NIS per unit (student_unit_identifiers): NIS seed adalah NIS unit santri
+  // sekarang — sama dengan backfill migrasi 20260914010000. Tanpa ini basis data
+  // CI (db push + seed) tidak punya satu pun baris, dan dokumen resmi hanya
+  // hidup dari jalur cadangan `students.nis`.
+  const santri = await prisma.student.findMany({ select: { id: true, unitId: true, nis: true } });
+  for (const s of santri) {
+    await prisma.studentUnitIdentifier.upsert({
+      where: { studentId_unitId: { studentId: s.id, unitId: s.unitId } },
+      create: { studentId: s.id, unitId: s.unitId, nis: s.nis.trim() },
+      update: { nis: s.nis.trim() },
+    });
+  }
+  console.log(`✅ NIS per unit: ${santri.length} baris`);
 }
 
 // SAFTI behavioral values — master data for Perjanjian Kinerja evaluations.

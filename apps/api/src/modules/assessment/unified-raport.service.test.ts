@@ -50,6 +50,8 @@ describe('UnifiedRaportService Integration', () => {
   };
 
   const mockMerdeka = {
+    // RaportMerdekaService sudah menghitung NIS unit rombel rapornya.
+    siswa: { nis: '1001', nisn: '0012345678' },
     tahunAjaran: { tahun: '2024/2025' },
     intrakurikuler: [{ subjectName: 'Matematika', finalScore: 85 }],
     projekP5: [],

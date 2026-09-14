@@ -19,6 +19,11 @@ vi.mock('@/lib/prisma', () => ({
       create: vi.fn(),
       update: vi.fn(),
     },
+    // NIS per unit (utils/student-nis): tulis ganda saat membuat/mengubah NIS.
+    studentUnitIdentifier: {
+      findFirst: vi.fn(),
+      upsert: vi.fn(),
+    },
     // Needed by linkGuardian: creating a student must also produce the
     // guardian account, the StudentParent row and the guardian's unit role.
     studentParent: {
@@ -286,6 +291,24 @@ describe('StudentService', () => {
       expect(prisma.student.create).not.toHaveBeenCalled();
     });
 
+    it('mencatat NIS santri baru sebagai NIS UNIT-nya (student_unit_identifiers)', async () => {
+      (prisma.student.findFirst as any).mockResolvedValue(null);
+      (prisma.user.findFirst as any).mockResolvedValue(null);
+      (prisma.unit.findFirst as any).mockResolvedValue({ id: 'unit-1', type: 'SD_IT' });
+      (prisma.studentUnitIdentifier.findFirst as any).mockResolvedValue(null);
+      mockGuardianPath();
+      (prisma.user.create as any).mockResolvedValue({ id: 'user-9' });
+      (prisma.student.create as any).mockResolvedValue({ id: 'student-9' });
+
+      await service.create({ ...mockInput, nis: '2026001' });
+
+      expect(prisma.studentUnitIdentifier.upsert).toHaveBeenCalledWith({
+        where: { studentId_unitId: { studentId: 'student-9', unitId: 'unit-1' } },
+        create: { studentId: 'student-9', unitId: 'unit-1', nis: '2026001' },
+        update: { nis: '2026001' },
+      });
+    });
+
     it('tanpa NISN tidak mencari kembarannya (santri baru sering belum punya NISN)', async () => {
       (prisma.student.findFirst as any).mockResolvedValue({ id: 'existing' });
       await expect(service.create({ ...mockInput, nisn: null })).rejects.toThrow('NIS already exists');
@@ -472,6 +495,21 @@ describe('StudentService', () => {
       const cari = (prisma.student.findFirst as any).mock.calls[1][0];
       expect(cari.where).toEqual({ nisn: '0099999999', id: { not: 's1' } });
       expect(prisma.student.update).not.toHaveBeenCalled();
+    });
+
+    it('NIS yang diubah dicatat untuk unit santri SEKARANG; NIS unit lamanya tidak disentuh', async () => {
+      (prisma.student.findFirst as any)
+        .mockResolvedValueOnce({ ...santri, unitId: 'unit-smp' })
+        .mockResolvedValueOnce(null); // NIS baru belum dipakai
+      (prisma.studentUnitIdentifier.findFirst as any).mockResolvedValue(null);
+      (prisma.student.update as any).mockResolvedValue({ id: 's1' });
+
+      await service.update('s1', { nis: 'SMP-2026-02' });
+
+      expect(prisma.studentUnitIdentifier.upsert).toHaveBeenCalledTimes(1);
+      expect(prisma.studentUnitIdentifier.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { studentId_unitId: { studentId: 's1', unitId: 'unit-smp' } } })
+      );
     });
 
     it('NISN yang tidak berubah tidak dianggap bentrok dengan dirinya sendiri', async () => {

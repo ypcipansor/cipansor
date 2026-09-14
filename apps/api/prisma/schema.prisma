@@ -621,6 +621,7 @@ model Unit {
   userRoleAssignments    UserRoleAssignment[] // NEW: Role assignments for this unit
   students               Student[]
   studentUnitEnrollments StudentUnitEnrollment[]
+  studentIdentifiers     StudentUnitIdentifier[]
   teachers               Teacher[]
   staff                  Staff[]
   classes                Class[]
@@ -1205,6 +1206,9 @@ model Student {
   /// Riwayat unit per tahun ajaran. `unitId` di atas adalah unit SEKARANG;
   /// yang ini menjawab "saat itu di unit mana" — lihat StudentUnitEnrollment.
   unitEnrollments             StudentUnitEnrollment[]
+  /// NIS santri di tiap unit yang pernah menerimanya. `nis` di atas hanya NIS
+  /// unit SEKARANG — lihat StudentUnitIdentifier.
+  unitIdentifiers             StudentUnitIdentifier[]
 
   @@index([nis])
   @@index([unitId])
@@ -1248,6 +1252,36 @@ model StudentParent {
 /// keluar opsional; barisnya BERTAMBAH ketika santri berpindah — tidak pernah
 /// ditimpa atau dihapus — dan sengaja terpisah dari pendaftaran kelas
 /// (`ClassEnrollment`), yang menjawab pertanyaan lain: rombelnya yang mana.
+/// NIS (Nomor Induk Siswa; di Dapodik: NIPD) santri PER UNIT.
+///
+/// NIS diterbitkan oleh satuan pendidikan, bukan oleh yayasan: buku induk dan
+/// rapor SD IT memuat NIS SD IT, dan santri yang naik ke SMP IT menerima NIS
+/// SMP IT tanpa kehilangan NIS lamanya di dokumen SD IT. `students.nis` hanya
+/// bisa menyimpan satu, dan unik lintas yayasan — dua sekolah yang sama-sama
+/// memulai dari "2024001" tidak bisa hidup berdampingan di sana. Tabel ini
+/// menyimpan pasangan (santri, unit) → NIS, unik per unit (audit PR #489, B1).
+///
+/// Selama `students.nis` masih ada ia ditulis ganda dan selalu sama dengan NIS
+/// unit sekarang (utils/student-nis.ts). Dokumen resmi (rapor, kartu, EMIS)
+/// membaca dari sini lewat unit dokumennya. Migrasi: 20260914010000.
+model StudentUnitIdentifier {
+  id        String   @id @default(uuid())
+  studentId String   @map("student_id")
+  unitId    String   @map("unit_id")
+  nis       String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  unit    Unit    @relation(fields: [unitId], references: [id])
+
+  /// Satu NIS per santri per unit.
+  @@unique([studentId, unitId])
+  /// Di satu unit, satu NIS hanya milik satu santri.
+  @@unique([unitId, nis])
+  @@map("student_unit_identifiers")
+}
+
 /// Pengenal santri (NISN/NIK) yang dikosongkan migrasi
 /// 20260914000000_student_identifier_uniqueness karena bentuknya salah
 /// (`reason` = 'format') atau dipakai lebih dari satu santri ('duplicate';
