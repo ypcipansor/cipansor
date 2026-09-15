@@ -22,7 +22,7 @@ overrides:
   mysql2: '>=3.22.0'
   nanoid@3: 3.3.18
   next: '>=16.2.11'
-  nodemailer: 9.1.1
+  nodemailer: 10.0.7
   postcss: '>=8.5.23'
   rollup: '>=4.22.4'
   sharp: '>=0.35.0'
@@ -111,8 +111,8 @@ importers:
         specifier: ^4.6.0
         version: 4.6.0
       nodemailer:
-        specifier: 9.1.1
-        version: 9.1.1
+        specifier: 10.0.7
+        version: 10.0.7
       otplib:
         specifier: 13.5.0
         version: 13.5.0
@@ -5289,9 +5289,9 @@ packages:
     resolution: {integrity: sha512-mIrE/Cw9y+9Au6dS5vDKDhQza9YvG6w+ZrS6X+ZzA7yFW/soAeaups4Qzn1bL6g5FVy8WtP79+0j82oPIbqRjQ==}
     engines: {node: '>=18'}
 
-  nodemailer@9.1.1:
-    resolution: {integrity: sha512-izw9mVKFix6YSnC9eLgV6g1opl9DUlRio9ZNcq+Wu9Ujn2UwF+8Nl0B8nz22kEC+CTZCvinkxwJ0DeFbb6NwcQ==}
-    engines: {node: '>=6.0.0'}
+  nodemailer@10.0.7:
+    resolution: {integrity: sha512-guf2Y9vYdc0x/2zry8AlOdlBSypNCqFnfetFSoD5QdHU5MrNVt9gzt5u5muJneu6vF4Zs/hrBdnhwdHITrzMhA==}
+    engines: {node: '>=20.0.0'}
 
   normalize-path@3.0.0:
     resolution: {integrity: sha512-6eZs5Ls3WtCisHWp9S2GUy8dqkpGi4BVSz3GaqiE6ezub0512ESztXUwUB6C6IKbQkY2Pnb/mD4WYojCRwcwLA==}
@@ -11636,7 +11636,7 @@ snapshots:
 
   node-releases@2.0.55: {}
 
-  nodemailer@9.1.1: {}
+  nodemailer@10.0.7: {}
 
   normalize-path@3.0.0: {}
 
