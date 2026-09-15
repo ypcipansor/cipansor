@@ -2170,8 +2170,8 @@ export interface ActiveRole {
  * The filter used to check `group.items` alone, which was only correct while
  * nothing had children: a `roleCodes`-restricted entry nested under an
  * unrestricted parent — "Mutabaah Yaumiyah" (TKQ/SDIT only) under Attendance,
- * or the SUPER_ADMIN-only Secrets and chatbot screens under Settings — rode
- * straight past it into the sidebar of roles that cannot open them.
+ * or the SUPER_ADMIN-only chatbot screens under Settings — rode straight past
+ * it into the sidebar of roles that cannot open them.
  *
  * A parent whose children are ALL filtered out stays, as a plain link. It
  * opens a page of its own that this role may open; dropping it together with
