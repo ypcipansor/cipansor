@@ -6,6 +6,7 @@ import {
   type ParentScopeClient,
 } from '@/utils/parent-scope';
 import { assertAdmissionFeeSettled } from '@/utils/admission-fee-gate';
+import { normalizeEmail } from '@/utils/email';
 
 export class StudentOnboardingOrchestrator {
   /**
@@ -120,7 +121,7 @@ export class StudentOnboardingOrchestrator {
       const nextSeq = maxSeq + 1;
       const nis = `${prefix}${String(nextSeq).padStart(4, '0')}`;
 
-      const email = `${cleanName}.${nis.toLowerCase()}@student.cipansor.local`;
+      const email = normalizeEmail(`${cleanName}.${nis.toLowerCase()}@student.cipansor.local`);
 
       const { eventBus } = await import('@/lib/event-bus');
 
@@ -171,7 +172,7 @@ export class StudentOnboardingOrchestrator {
         // Prefer matching by email first since it is unique
         if (registrant.parentEmail) {
           parentUser = await tx.user.findUnique({
-            where: { email: registrant.parentEmail }
+            where: { email: normalizeEmail(registrant.parentEmail) }
           });
         }
 
@@ -187,7 +188,9 @@ export class StudentOnboardingOrchestrator {
           const parentResetTokenExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
           // Assign a dummy unguessable password hash, parent will reset via token
           const parentPasswordHash = await hashPassword(crypto.randomBytes(16).toString('hex'));
-          const parentEmail = registrant.parentEmail || `parent.${registrant.parentPhone}@parent.cipansor.local`;
+          const parentEmail = normalizeEmail(
+            registrant.parentEmail || `parent.${registrant.parentPhone}@parent.cipansor.local`
+          );
           parentUser = await (tx.user.create as any)({
             data: {
               name: registrant.parentName,

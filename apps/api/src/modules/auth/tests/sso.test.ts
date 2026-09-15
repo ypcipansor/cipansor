@@ -26,6 +26,13 @@ describe('SSO Authentication Security Unit Tests', () => {
   beforeEach(() => {
     process.env = { ...originalEnv };
     vi.restoreAllMocks();
+    // Identity linking runs on every successful SSO login. Default it to
+    // "no existing link, create succeeds" so tests that are about verification
+    // do not each have to stub it; the linking-specific tests override.
+    vi.spyOn(prisma.identityProvider, 'findUnique').mockResolvedValue(null as any);
+    vi.spyOn(prisma.identityProvider, 'create').mockResolvedValue({} as any);
+    vi.spyOn(prisma.identityProvider, 'update').mockResolvedValue({} as any);
+    vi.spyOn(prisma.auditLog, 'create').mockResolvedValue({} as any);
   });
 
   afterEach(() => {
@@ -54,15 +61,17 @@ describe('SSO Authentication Security Unit Tests', () => {
   it('should reject Google SSO when token audience (aud) mismatches', async () => {
     process.env.GOOGLE_CLIENT_ID = 'expected-google-client-id';
 
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        email: 'user@cipansor.or.id',
-        email_verified: true,
-        aud: 'wrong-google-client-id',
-        exp: Math.floor(Date.now() / 1000) + 3600,
-      }),
-    } as Response);
+    vi.spyOn(jwt, 'decode').mockReturnValueOnce({
+      header: { kid: 'google_key_1' },
+      payload: {},
+    } as any);
+    vi.spyOn(jwt, 'verify').mockReturnValueOnce({
+      email: 'user@cipansor.or.id',
+      email_verified: true,
+      sub: 'google-sub-1',
+      aud: 'wrong-google-client-id',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    } as any);
 
     await expect(
       authService.ssoLogin({
@@ -75,15 +84,17 @@ describe('SSO Authentication Security Unit Tests', () => {
   it('should reject Google SSO when token is expired', async () => {
     process.env.GOOGLE_CLIENT_ID = 'expected-google-client-id';
 
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        email: 'user@cipansor.or.id',
-        email_verified: true,
-        aud: 'expected-google-client-id',
-        exp: Math.floor(Date.now() / 1000) - 100, // Expired
-      }),
-    } as Response);
+    vi.spyOn(jwt, 'decode').mockReturnValueOnce({
+      header: { kid: 'google_key_1' },
+      payload: {},
+    } as any);
+    vi.spyOn(jwt, 'verify').mockReturnValueOnce({
+      email: 'user@cipansor.or.id',
+      email_verified: true,
+      sub: 'google-sub-1',
+      aud: 'expected-google-client-id',
+      exp: Math.floor(Date.now() / 1000) - 100, // Expired
+    } as any);
 
     await expect(
       authService.ssoLogin({
@@ -96,15 +107,17 @@ describe('SSO Authentication Security Unit Tests', () => {
   it('should reject Google SSO when email is not verified', async () => {
     process.env.GOOGLE_CLIENT_ID = 'expected-google-client-id';
 
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        email: 'user@cipansor.or.id',
-        email_verified: false,
-        aud: 'expected-google-client-id',
-        exp: Math.floor(Date.now() / 1000) + 3600,
-      }),
-    } as Response);
+    vi.spyOn(jwt, 'decode').mockReturnValueOnce({
+      header: { kid: 'google_key_1' },
+      payload: {},
+    } as any);
+    vi.spyOn(jwt, 'verify').mockReturnValueOnce({
+      email: 'user@cipansor.or.id',
+      email_verified: false,
+      sub: 'google-sub-1',
+      aud: 'expected-google-client-id',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    } as any);
 
     await expect(
       authService.ssoLogin({
@@ -114,18 +127,66 @@ describe('SSO Authentication Security Unit Tests', () => {
     ).rejects.toThrow('Google account email is missing or not verified');
   });
 
+  it('should reject Google SSO when the issuer is not Google', async () => {
+    process.env.GOOGLE_CLIENT_ID = 'expected-google-client-id';
+
+    vi.spyOn(jwt, 'decode').mockReturnValueOnce({
+      header: { kid: 'google_key_1' },
+      payload: {},
+    } as any);
+    vi.spyOn(jwt, 'verify').mockReturnValueOnce({
+      email: 'user@cipansor.or.id',
+      email_verified: true,
+      sub: 'google-sub-1',
+      aud: 'expected-google-client-id',
+      iss: 'https://accounts.evil.example',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    } as any);
+
+    await expect(
+      authService.ssoLogin({
+        provider: 'google',
+        idToken: 'wrong_issuer_token',
+      })
+    ).rejects.toThrow('Google token issuer (iss) invalid');
+  });
+
+  it('should reject Google SSO when the token has no subject (sub)', async () => {
+    process.env.GOOGLE_CLIENT_ID = 'expected-google-client-id';
+
+    vi.spyOn(jwt, 'decode').mockReturnValueOnce({
+      header: { kid: 'google_key_1' },
+      payload: {},
+    } as any);
+    vi.spyOn(jwt, 'verify').mockReturnValueOnce({
+      email: 'user@cipansor.or.id',
+      email_verified: true,
+      aud: 'expected-google-client-id',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    } as any);
+
+    await expect(
+      authService.ssoLogin({
+        provider: 'google',
+        idToken: 'no_subject_token',
+      })
+    ).rejects.toThrow('Google token subject (sub) is missing');
+  });
+
   it('should reject Google SSO when user is not found in database', async () => {
     process.env.GOOGLE_CLIENT_ID = 'expected-google-client-id';
 
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        email: 'unregistered@cipansor.or.id',
-        email_verified: true,
-        aud: 'expected-google-client-id',
-        exp: Math.floor(Date.now() / 1000) + 3600,
-      }),
-    } as Response);
+    vi.spyOn(jwt, 'decode').mockReturnValueOnce({
+      header: { kid: 'google_key_1' },
+      payload: {},
+    } as any);
+    vi.spyOn(jwt, 'verify').mockReturnValueOnce({
+      email: 'unregistered@cipansor.or.id',
+      email_verified: true,
+      sub: 'google-sub-unregistered',
+      aud: 'expected-google-client-id',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    } as any);
 
     vi.spyOn(prisma.user, 'findFirst').mockResolvedValueOnce(null);
 
@@ -177,6 +238,7 @@ describe('SSO Authentication Security Unit Tests', () => {
       aud: 'expected-ms-client-id',
       exp: Math.floor(Date.now() / 1000) + 3600,
       preferred_username: 'guru@cipansor.or.id',
+      oid: 'ms-oid-1',
     } as any);
 
     vi.spyOn(prisma.user, 'findFirst').mockResolvedValueOnce(mockUser as any);
@@ -209,6 +271,7 @@ describe('SSO Authentication Security Unit Tests', () => {
       tid: 'tenant-guid-999',
       iss: 'https://login.microsoftonline.com/tenant-guid-999/v2.0',
       preferred_username: 'guru@cipansor.or.id',
+      oid: 'ms-oid-1',
     } as any);
 
     await expect(
@@ -248,6 +311,7 @@ describe('SSO Authentication Security Unit Tests', () => {
       tid: 'tenant-guid-111',
       iss: 'https://login.microsoftonline.com/tenant-guid-111/v2.0',
       preferred_username: 'guru@cipansor.or.id',
+      oid: 'ms-oid-1',
     } as any);
 
     vi.spyOn(prisma.user, 'findFirst').mockResolvedValueOnce(mockUser as any);
@@ -297,6 +361,7 @@ describe('SSO Authentication Security Unit Tests', () => {
         tid: 'tenant-guid-cache',
         iss: 'https://login.microsoftonline.com/tenant-guid-cache/v2.0',
         preferred_username: 'guru@cipansor.or.id',
+        oid: 'ms-oid-1',
       } as any)
       .mockReturnValueOnce({
         aud: 'expected-ms-client-id',
@@ -304,6 +369,7 @@ describe('SSO Authentication Security Unit Tests', () => {
         tid: 'tenant-guid-cache',
         iss: 'https://login.microsoftonline.com/tenant-guid-cache/v2.0',
         preferred_username: 'guru@cipansor.or.id',
+        oid: 'ms-oid-1',
       } as any);
 
     vi.spyOn(prisma.user, 'findFirst').mockResolvedValueOnce(mockUser as any);
@@ -369,6 +435,7 @@ describe('SSO Authentication Security Unit Tests', () => {
       aud: 'expected-ms-client-id',
       exp: Math.floor(Date.now() / 1000) + 3600,
       preferred_username: 'GURU@cipansor.or.id',
+      oid: 'ms-oid-1',
     } as any);
 
     vi.spyOn(prisma.user, 'findFirst').mockResolvedValueOnce(mockUser as any);
@@ -388,5 +455,181 @@ describe('SSO Authentication Security Unit Tests', () => {
         where: expect.objectContaining({ email: 'guru@cipansor.or.id' }),
       })
     );
+  });
+
+  // ==========================================
+  // IdentityProvider linking (TASK 4)
+  // ==========================================
+
+  function stubMicrosoftSuccessClaims() {
+    process.env.MICROSOFT_CLIENT_ID = 'expected-ms-client-id';
+    vi.spyOn(jwt, 'decode').mockReturnValueOnce({
+      header: { kid: 'key_123' },
+      payload: {},
+    } as any);
+    vi.spyOn(jwt, 'verify').mockReturnValueOnce({
+      aud: 'expected-ms-client-id',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      preferred_username: 'guru@cipansor.or.id',
+      oid: 'ms-oid-link',
+    } as any);
+  }
+
+  const linkedUser = {
+    id: 'usr_link_1',
+    email: 'guru@cipansor.or.id',
+    isActive: true,
+    unitId: 'unit_1',
+    userRoles: [
+      {
+        isPrimary: true,
+        roleId: 'role_1',
+        unitId: 'unit_1',
+        role: { code: 'SDIT_GURU', permissions: ['STUDENT_READ'] },
+      },
+    ],
+  };
+
+  function stubLoginSideEffects(user: any = linkedUser) {
+    vi.spyOn(prisma.user, 'findFirst').mockResolvedValueOnce(user as any);
+    vi.spyOn(prisma.refreshToken, 'create').mockResolvedValueOnce({} as any);
+    vi.spyOn(prisma.user, 'update').mockResolvedValueOnce({} as any);
+    vi.spyOn(prisma.academicYear, 'findFirst').mockResolvedValueOnce({ id: 'ay_1' } as any);
+  }
+
+  it('links the provider identity on first login', async () => {
+    stubMicrosoftSuccessClaims();
+    stubLoginSideEffects();
+
+    vi.mocked(prisma.identityProvider.findUnique).mockResolvedValueOnce(null as any);
+
+    await authService.ssoLogin({ provider: 'microsoft', idToken: 'first_login_token' });
+
+    expect(prisma.identityProvider.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          provider: 'MICROSOFT',
+          providerSubjectId: 'ms-oid-link',
+          providerEmail: 'guru@cipansor.or.id',
+          userId: 'usr_link_1',
+        }),
+      })
+    );
+  });
+
+  it('refreshes lastLoginAt on a repeat login instead of creating a second row', async () => {
+    stubMicrosoftSuccessClaims();
+    stubLoginSideEffects();
+
+    vi.mocked(prisma.identityProvider.findUnique).mockResolvedValueOnce({
+      id: 'idp_1',
+      userId: 'usr_link_1',
+      provider: 'MICROSOFT',
+      providerSubjectId: 'ms-oid-link',
+    } as any);
+
+    await authService.ssoLogin({ provider: 'microsoft', idToken: 'repeat_login_token' });
+
+    expect(prisma.identityProvider.create).not.toHaveBeenCalled();
+    expect(prisma.identityProvider.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'idp_1' },
+        data: expect.objectContaining({ providerEmail: 'guru@cipansor.or.id' }),
+      })
+    );
+  });
+
+  it('refuses to re-point a subject that already belongs to another account', async () => {
+    stubMicrosoftSuccessClaims();
+    stubLoginSideEffects();
+
+    vi.mocked(prisma.identityProvider.findUnique).mockResolvedValueOnce({
+      id: 'idp_other',
+      userId: 'someone-else',
+      provider: 'MICROSOFT',
+      providerSubjectId: 'ms-oid-link',
+    } as any);
+
+    await expect(
+      authService.ssoLogin({ provider: 'microsoft', idToken: 'hijack_attempt_token' })
+    ).rejects.toThrow('sudah tertaut ke akun lain');
+
+    expect(prisma.identityProvider.create).not.toHaveBeenCalled();
+    expect(prisma.identityProvider.update).not.toHaveBeenCalled();
+  });
+
+  it('does not link an identity when the account does not exist', async () => {
+    stubMicrosoftSuccessClaims();
+    vi.spyOn(prisma.user, 'findFirst').mockResolvedValueOnce(null);
+
+    await expect(
+      authService.ssoLogin({ provider: 'microsoft', idToken: 'unknown_user_token' })
+    ).rejects.toThrow();
+
+    expect(prisma.identityProvider.create).not.toHaveBeenCalled();
+  });
+
+  // ==========================================
+  // Login audit trail (TASK 6)
+  // ==========================================
+
+  it('records a successful SSO login in the audit log', async () => {
+    stubMicrosoftSuccessClaims();
+    stubLoginSideEffects();
+
+    await authService.ssoLogin(
+      { provider: 'microsoft', idToken: 'audited_token' },
+      { ipAddress: '203.0.113.7', userAgent: 'vitest-agent' }
+    );
+
+    expect(prisma.auditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: 'LOGIN',
+          entity: 'User',
+          entityId: 'usr_link_1',
+          userId: 'usr_link_1',
+          ipAddress: '203.0.113.7',
+          userAgent: 'vitest-agent',
+        }),
+      })
+    );
+  });
+
+  it('records a failed SSO login with a reason, without the attempted email', async () => {
+    stubMicrosoftSuccessClaims();
+    vi.spyOn(prisma.user, 'findFirst').mockResolvedValueOnce(null);
+
+    await expect(
+      authService.ssoLogin({ provider: 'microsoft', idToken: 'bad_user_token' })
+    ).rejects.toThrow();
+
+    const auditCall = vi.mocked(prisma.auditLog.create).mock.calls.at(-1)?.[0] as any;
+    expect(auditCall.data).toMatchObject({
+      action: 'LOGIN',
+      entity: 'User',
+      entityId: null,
+      userId: null,
+    });
+    expect(auditCall.data.newValues).toMatchObject({
+      method: 'sso:microsoft',
+      success: false,
+      reason: 'user_not_found',
+    });
+    // PII decision: the attempted address must not be persisted.
+    expect(JSON.stringify(auditCall.data)).not.toContain('guru@cipansor.or.id');
+  });
+
+  it('never lets an audit-write failure break a successful login', async () => {
+    stubMicrosoftSuccessClaims();
+    stubLoginSideEffects();
+    vi.mocked(prisma.auditLog.create).mockRejectedValueOnce(new Error('audit table is down'));
+
+    const result = await authService.ssoLogin({
+      provider: 'microsoft',
+      idToken: 'audit_broken_token',
+    });
+
+    expect(result).toHaveProperty('accessToken');
   });
 });

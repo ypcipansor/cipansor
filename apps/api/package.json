@@ -20,6 +20,7 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:archive-letters": "tsx prisma/scripts/archive-signed-letters.ts",
     "db:purge-identity-documents": "tsx prisma/scripts/purge-identity-documents.ts",
+    "db:normalize-emails": "tsx prisma/scripts/normalize-emails.ts",
     "db:studio": "prisma studio --config prisma/prisma.config.ts",
     "chatbot:eval": "tsx src/modules/chatbot/eval/run.ts"
   },

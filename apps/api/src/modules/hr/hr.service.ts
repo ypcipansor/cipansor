@@ -19,6 +19,7 @@ import {
 } from './hr.schema';
 import bcrypt from 'bcryptjs';
 import { Errors } from '../../middleware/error';
+import { normalizeEmail } from '../../utils/email';
 
 // =====================================
 // EMPLOYEE SERVICE (UNIFIED TEACHER & STAFF)
@@ -226,8 +227,11 @@ export async function getRetentionRiskAnalytics(unitId: string) {
 }
 
 export async function createEmployee(data: CreateEmployeeInput) {
-  // Validate unique email
-  const existingUser = await prisma.user.findUnique({ where: { email: data.email } });
+  // Validate unique email. Normalised here too, because the schema that
+  // lower-cases is only the HTTP edge — this function is also called
+  // internally.
+  const email = normalizeEmail(data.email);
+  const existingUser = await prisma.user.findUnique({ where: { email } });
   if (existingUser) {
     throw Errors.badRequest('Email already exists');
   }
@@ -241,7 +245,7 @@ export async function createEmployee(data: CreateEmployeeInput) {
     const user = await tx.user.create({
       data: {
         name: data.name,
-        email: data.email,
+        email,
         passwordHash,
         role: data.role as UserRole,
         unitId: data.unitId,
@@ -304,7 +308,7 @@ export async function updateEmployee(id: string, data: UpdateEmployeeInput) {
       where: { id },
       data: {
         name: data.name,
-        email: data.email,
+        email: data.email ? normalizeEmail(data.email) : undefined,
         unitId: data.unitId,
         phone: data.phone,
         isActive: data.isActive,

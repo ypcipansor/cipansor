@@ -14,6 +14,7 @@ import {
   CreateRegistrantDocumentInput,
 } from './admissions.schema';
 import { Errors } from '../../middleware/error';
+import { normalizeEmail } from '../../utils/email';
 
 // `CreateRegistrantInput` already defines `source` and `campaignId` as
 // optional (see `createRegistrantSchema` in ./schema.ts), so there's no need
@@ -353,7 +354,7 @@ async function createRegistrantOnce(data: CreateRegistrantExtendedInput) {
         birthDate: new Date(data.birthDate),
         address: data.address,
         phone: data.phone,
-        email: data.email && data.email !== '' ? data.email : undefined,
+        email: data.email && data.email !== '' ? normalizeEmail(data.email) : undefined,
         previousSchool: data.previousSchool,
         quranAbility: data.quranAbility,
         memorizedJuz: data.memorizedJuz,
@@ -429,7 +430,8 @@ export async function updateRegistrant(id: string, data: UpdateRegistrantInput) 
   // on create stores NULL — breaking downstream `if (registrant.email)`
   // checks and risking duplicate-empty-string collisions if `email` ever
   // becomes @unique.
-  const normalisedEmail = email === undefined ? undefined : email === '' ? null : email;
+  const normalisedEmail =
+    email === undefined ? undefined : email === '' ? null : normalizeEmail(email);
 
   return prisma.registrant.update({
     where: { id },
@@ -686,7 +688,7 @@ export async function enrollRegistrant(
 
     const existingUser = registrant.email
       ? await tx.user.findUnique({
-          where: { email: registrant.email },
+          where: { email: normalizeEmail(registrant.email) },
           include: { student: true },
         })
       : null;
@@ -751,7 +753,9 @@ export async function enrollRegistrant(
       user = await tx.user.create({
         data: {
           name: registrant.fullName,
-          email: registrant.email || `${studentData.nis}@student.cipansor.or.id`,
+          email: registrant.email
+            ? normalizeEmail(registrant.email)
+            : `${studentData.nis}@student.cipansor.or.id`,
           passwordHash: prehashedPassword,
           role: 'STUDENT',
           unitId: registrant.admissionPeriod.unitId,

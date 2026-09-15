@@ -1,10 +1,16 @@
 import { z } from 'zod';
 import { RoleCode } from '@prisma/client';
 import { ssoLoginSchema } from '@cipansor/shared';
+import { normalizeEmail } from '@/utils/email';
+
+// Emails are normalised to lowercase at the edge so that every write site and
+// every lookup agree on one spelling. See utils/email.ts for why.
+const emailField = (message = 'Invalid email format') =>
+  z.string().email(message).transform((v) => normalizeEmail(v));
 
 // Login schema
 export const loginSchema = z.object({
-  email: z.string().email('Invalid email format'),
+  email: emailField(),
   password: z.string().min(1, 'Password is required'),
 });
 
@@ -21,7 +27,7 @@ export const loginSchema = z.object({
 // Unit.type and pick the correct per-unit RoleCode.
 export const registerSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
-  email: z.string().email('Invalid email format'),
+  email: emailField(),
   password: z
     .string()
     .min(8, 'Password must be at least 8 characters')

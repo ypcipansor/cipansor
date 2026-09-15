@@ -19,7 +19,10 @@ import { logger } from '@/lib/logger';
  */
 export const login = asyncHandler(async (req: Request, res: Response) => {
   const input: LoginInput = req.body;
-  const result = await authService.login(input);
+  const result = await authService.login(input, {
+    ipAddress: req.ip,
+    userAgent: req.get('user-agent') ?? undefined,
+  });
 
   res.json({
     success: true,
@@ -33,7 +36,10 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
  */
 export const ssoLogin = asyncHandler(async (req: Request, res: Response) => {
   const input: SSOLoginInput = req.body;
-  const result = await authService.ssoLogin(input);
+  const result = await authService.ssoLogin(input, {
+    ipAddress: req.ip,
+    userAgent: req.get('user-agent') ?? undefined,
+  });
 
   res.json({
     success: true,
