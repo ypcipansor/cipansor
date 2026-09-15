@@ -116,7 +116,6 @@ import lingkunganRoutes from '@/modules/lingkungan/lingkungan.routes';
 import talentaRoutes from '@/modules/talenta/talenta.routes';
 import organisasiRoutes from '@/modules/organisasi/organisasi.routes';
 import tataLaksanaRoutes from '@/modules/tatalaksana/tatalaksana.routes';
-import litbangRoutes from '@/modules/litbang/litbang.routes';
 import businessUnitRoutes from '@/modules/business-unit/business-unit.routes';
 
 // Create Express app
@@ -329,7 +328,6 @@ apiRouter.use('/lingkungan', lingkunganRoutes);
 apiRouter.use('/talenta', talentaRoutes);
 apiRouter.use('/organisasi', organisasiRoutes);
 apiRouter.use('/tata-laksana', tataLaksanaRoutes);
-apiRouter.use('/litbang', litbangRoutes);
 apiRouter.use('/business-units', businessUnitRoutes);
 
 // API info
@@ -403,7 +401,6 @@ apiRouter.get('/', (_req, res) => {
       talenta: '/api/talenta',
       organisasi: '/api/organisasi',
       tataLaksana: '/api/tata-laksana',
-      litbang: '/api/litbang',
       businessUnits: '/api/business-units',
     },
   });

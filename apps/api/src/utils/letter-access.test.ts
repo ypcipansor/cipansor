@@ -195,7 +195,6 @@ describe('mayEditLetter (shared single source with the API updateLetter guard)',
     expect(mayEditLetter(RoleCode.TKQ_TATA_USAHA)).toBe(true);
     expect(mayEditLetter(RoleCode.SMPIT_TATA_USAHA)).toBe(true);
     expect(mayEditLetter(RoleCode.PESANTREN_TATA_USAHA)).toBe(true);
-    expect(mayEditLetter(RoleCode.PT_TATA_USAHA)).toBe(true);
     expect(mayEditLetter(RoleCode.SDIT_ADMIN)).toBe(true);
     expect(mayEditLetter(RoleCode.TKQ_ADMIN)).toBe(true);
 

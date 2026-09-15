@@ -14,14 +14,13 @@ import {
 /**
  * The per-unit student RoleCode that grants the onboarding user a real role
  * assignment. The role catalogue is unit-specific (`SDIT_SISWA`, `SMPIT_SISWA`,
- * `SMAQ_SISWA`, `PT_MAHASISWA`) — there is no bare `STUDENT` code to look up.
+ * `SMAQ_SISWA`) — there is no bare `STUDENT` code to look up.
  * TK Qur'an children hold no login, so `TK_QURAN` deliberately maps to nothing.
  */
 export const STUDENT_ROLE_BY_UNIT_TYPE: Partial<Record<UnitType, RoleCode>> = {
   [UnitType.SD_IT]: RoleCode.SDIT_SISWA,
   [UnitType.SMP_IT]: RoleCode.SMPIT_SISWA,
   [UnitType.SMA_QURAN]: RoleCode.SMAQ_SISWA,
-  [UnitType.PERGURUAN_TINGGI]: RoleCode.PT_MAHASISWA,
 };
 
 /** The student RoleCode for a unit type, or undefined when the unit has none. */
@@ -320,7 +319,7 @@ export class StudentOnboardingOrchestrator {
 
       // Ensure UserRoleAssignment exists for a unit-appropriate student role.
       // The role catalogue has no bare `STUDENT` code — each unit type has its
-      // own (SDIT_SISWA, SMPIT_SISWA, SMAQ_SISWA, PT_MAHASISWA). TK Qur'an
+      // own (SDIT_SISWA, SMPIT_SISWA, SMAQ_SISWA). TK Qur'an
       // children hold no login, so a unit type with no mapping starts no role.
       const studentRoleCode = studentRoleForUnitType(unitType);
       const studentRole = studentRoleCode

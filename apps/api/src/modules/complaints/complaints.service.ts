@@ -74,8 +74,8 @@ export const complaintsService = {
     // Access Control
     //
     // Unit-scoped access requires a unit. A user with no unit assignment —
-    // normal for the Perguruan Tinggi roles, and for anyone not yet attached
-    // to a unit — used to hit a bare `throw new Error('Unit ID required')`,
+    // anyone not yet attached to a unit — used to hit a bare
+    // `throw new Error('Unit ID required')`,
     // which the error handler reported as a 500 and broke the page outright.
     // Falling through to an unfiltered query instead would be worse: it would
     // hand a unit admin with no unit every complaint in the yayasan. So they
