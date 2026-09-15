@@ -58,44 +58,15 @@ describe('production secret guard', () => {
       assertProductionSecrets({
         env: 'production',
         jwtSecret: GOOD,
-        encryptionKey: GOOD,
         studentCardHmacSecret: GOOD,
       })
     ).not.toThrow();
   });
 
-  it('checks ENCRYPTION_KEY too', () => {
-    expect(() =>
-      assertProductionSecrets({
-        env: 'production',
-        jwtSecret: GOOD,
-        encryptionKey: 'changeme-changeme-changeme-changeme',
-        studentCardHmacSecret: GOOD,
-      })
-    ).toThrow(/ENCRYPTION_KEY/);
-  });
-
-  // The sequential-byte fallback the former SystemSecret encryption utility
-  // used when ENCRYPTION_KEY was unset. It is exactly 32 bytes, so the length
-  // check beside it accepts it and production could encrypt with a key printed
-  // in the repository. Guarded as history in case the value reappears.
-  it("refuses the sequential default ENCRYPTION_KEY", () => {
-    const issues = findSecretIssues({
-      jwtSecret: GOOD,
-      encryptionKey: '000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f',
-      studentCardHmacSecret: GOOD,
-    });
-
-    expect(issues).toHaveLength(1);
-    expect(issues[0].variable).toBe('ENCRYPTION_KEY');
-    expect(issues[0].reason).toMatch(/hardcoded default/);
-  });
-
   it('reports every problem at once, not just the first', () => {
-    const issues = findSecretIssues({ jwtSecret: 'short', encryptionKey: SHIPPED });
+    const issues = findSecretIssues({ jwtSecret: 'short' });
     expect(issues.map((i) => i.variable)).toEqual([
       'JWT_SECRET',
-      'ENCRYPTION_KEY',
       'STUDENT_CARD_HMAC_SECRET',
     ]);
   });
@@ -108,7 +79,6 @@ describe('production secret guard', () => {
       assertProductionSecrets({
         env: 'production',
         jwtSecret: GOOD,
-        encryptionKey: GOOD,
       })
     ).toThrow(/STUDENT_CARD_HMAC_SECRET/);
   });
@@ -123,7 +93,6 @@ describe('production secret guard', () => {
   it('throws in production when the card secret is still an example value', () => {
     const issues = findSecretIssues({
       jwtSecret: GOOD,
-      encryptionKey: GOOD,
       studentCardHmacSecret: 'change-me-this-is-an-example-value-for-cards',
     });
     expect(issues.map((i) => i.variable)).toContain('STUDENT_CARD_HMAC_SECRET');

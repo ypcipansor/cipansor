@@ -46,21 +46,6 @@ const PLACEHOLDER_MARKERS = [
 /** A signing key shorter than this is brute-forceable regardless of content. */
 const MIN_SECRET_LENGTH = 32;
 
-/**
- * Known hardcoded defaults that pass every generic check.
- *
- * `00010203…1f` is the sequential-byte key that the former SystemSecret
- * encryption utility baked in as a fallback when ENCRYPTION_KEY was unset. It
- * is exactly 32 bytes, so the length validation right below it accepts it and
- * production would encrypt with a key printed in a public repository. Same
- * shape of mistake as JWT_SECRET, and equally invisible: forgetting produces
- * no symptom. Guarded even though that utility is gone, in case the value
- * reappears.
- */
-const KNOWN_DEFAULT_VALUES = [
-  '000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f',
-];
-
 export interface SecretIssue {
   variable: string;
   reason: string;
@@ -69,7 +54,6 @@ export interface SecretIssue {
 export interface SecretCheckInput {
   env?: string;
   jwtSecret?: string;
-  encryptionKey?: string;
   studentCardHmacSecret?: string;
 }
 
@@ -91,15 +75,6 @@ function inspect(variable: string, value: string | undefined, issues: SecretIssu
 
   const lowered = value.toLowerCase();
 
-  if (KNOWN_DEFAULT_VALUES.includes(lowered)) {
-    issues.push({
-      variable,
-      reason:
-        'is still the hardcoded default from the source — that key is public',
-    });
-    return;
-  }
-
   const marker = PLACEHOLDER_MARKERS.find((m) => lowered.includes(m));
   if (marker) {
     issues.push({
@@ -115,11 +90,6 @@ function inspect(variable: string, value: string | undefined, issues: SecretIssu
 export function findSecretIssues(input: SecretCheckInput): SecretIssue[] {
   const issues: SecretIssue[] = [];
   inspect('JWT_SECRET', input.jwtSecret, issues);
-  // Required, not optional. An unset ENCRYPTION_KEY was once silently
-  // substituted with the sequential default above, encrypting secret material
-  // with a key anyone can read. Keep guarding it even though no code currently
-  // reads the variable.
-  inspect('ENCRYPTION_KEY', input.encryptionKey, issues);
   // Required, not optional, in production. A card signer that falls back to
   // the session key means every printed card dies on the next JWT rotation;
   // a card signer that falls back to a hardcoded value means anyone can mint
@@ -139,7 +109,6 @@ export function assertProductionSecrets(input: SecretCheckInput = {}): void {
   const issues = findSecretIssues({
     env,
     jwtSecret: input.jwtSecret ?? process.env.JWT_SECRET,
-    encryptionKey: input.encryptionKey ?? process.env.ENCRYPTION_KEY,
     studentCardHmacSecret:
       input.studentCardHmacSecret ?? process.env.STUDENT_CARD_HMAC_SECRET,
   });
@@ -152,8 +121,7 @@ export function assertProductionSecrets(input: SecretCheckInput = {}): void {
     'Refusing to start the API in production with insecure secrets:\n' +
       `${detail}\n\n` +
       'Generate new values, e.g.:  openssl rand -hex 48\n' +
-      'Rotating JWT_SECRET only ends live sessions — no data becomes ' +
-      'unreadable. (Unlike ENCRYPTION_KEY, which must not be rotated once ' +
-      'data is encrypted.)'
+      'Rotating JWT_SECRET only ends live sessions — no stored data becomes ' +
+      'unreadable.'
   );
 }
