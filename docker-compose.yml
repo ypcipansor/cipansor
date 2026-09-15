@@ -64,6 +64,9 @@ services:
       STUDENT_CARD_HMAC_SECRET: ${STUDENT_CARD_HMAC_SECRET:-}
       # Falls back to a public hardcoded key inside the API if unset.
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      # Passphrase server-side e-seal Yayasan. Wajib eksplisit di produksi;
+      # produksi menolak boot tanpa nilai (lihat config/index.ts).
+      FOUNDATION_ESEAL_PASSPHRASE: ${FOUNDATION_ESEAL_PASSPHRASE:-}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
       # Enumerated here on purpose. A var present only in .env never reaches the
       # container, and the failure is silent — which is exactly how the old
