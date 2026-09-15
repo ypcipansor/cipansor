@@ -23,13 +23,13 @@ CREATE SCHEMA IF NOT EXISTS "public";
 CREATE TYPE "UserRole" AS ENUM ('SUPER_ADMIN', 'UNIT_ADMIN', 'TEACHER', 'STAFF', 'STUDENT', 'PARENT');
 
 -- CreateEnum
-CREATE TYPE "Realm" AS ENUM ('GLOBAL', 'YAYASAN', 'TK_QURAN', 'SD_IT', 'SMP_IT', 'SMA_QURAN', 'PESANTREN', 'UNIT_USAHA');
+CREATE TYPE "Realm" AS ENUM ('GLOBAL', 'YAYASAN', 'TK_QURAN', 'SD_IT', 'SMP_IT', 'SMA_QURAN', 'PESANTREN', 'PERGURUAN_TINGGI', 'UNIT_USAHA');
 
 -- CreateEnum
-CREATE TYPE "RoleCode" AS ENUM ('SUPER_ADMIN', 'YAYASAN_PEMBINA', 'YAYASAN_KETUA', 'YAYASAN_SEKRETARIS', 'YAYASAN_BENDAHARA', 'YAYASAN_ANGGOTA', 'YAYASAN_PENGAWAS', 'TKQ_ADMIN', 'TKQ_KEPALA_SEKOLAH', 'TKQ_WAKASEK', 'TKQ_GURU', 'TKQ_WALI_KELAS', 'TKQ_TATA_USAHA', 'TKQ_BENDAHARA', 'TKQ_KOMITE', 'TKQ_ORANG_TUA', 'SDIT_ADMIN', 'SDIT_KEPALA_SEKOLAH', 'SDIT_WAKASEK', 'SDIT_GURU', 'SDIT_WALI_KELAS', 'SDIT_TATA_USAHA', 'SDIT_BENDAHARA', 'SDIT_KOMITE', 'SDIT_ORANG_TUA', 'SDIT_SISWA', 'SMPIT_ADMIN', 'SMPIT_KEPALA_SEKOLAH', 'SMPIT_WAKASEK', 'SMPIT_GURU', 'SMPIT_WALI_KELAS', 'SMPIT_GURU_BK', 'SMPIT_TATA_USAHA', 'SMPIT_BENDAHARA', 'SMPIT_KOMITE', 'SMPIT_ORANG_TUA', 'SMPIT_SISWA', 'SMPIT_ALUMNI', 'SMAQ_ADMIN', 'SMAQ_KEPALA_SEKOLAH', 'SMAQ_WAKASEK', 'SMAQ_GURU', 'SMAQ_WALI_KELAS', 'SMAQ_GURU_BK', 'SMAQ_TATA_USAHA', 'SMAQ_BENDAHARA', 'SMAQ_KOMITE', 'SMAQ_ORANG_TUA', 'SMAQ_SISWA', 'SMAQ_ALUMNI', 'PESANTREN_PENGASUH', 'PESANTREN_DIREKTUR', 'PESANTREN_TATA_USAHA', 'USTADZ', 'MUSYRIF', 'MUSYRIFAH', 'MUHAFIDZ', 'MUHAFIDZAH', 'MURABBI', 'WALI_KAMAR', 'PUSTAKAWAN', 'PERAWAT', 'KEAMANAN', 'LABORAN', 'BUSINESS_MANAGER', 'BUSINESS_STAFF');
+CREATE TYPE "RoleCode" AS ENUM ('SUPER_ADMIN', 'YAYASAN_PEMBINA', 'YAYASAN_KETUA', 'YAYASAN_SEKRETARIS', 'YAYASAN_BENDAHARA', 'YAYASAN_ANGGOTA', 'YAYASAN_PENGAWAS', 'TKQ_ADMIN', 'TKQ_KEPALA_SEKOLAH', 'TKQ_WAKASEK', 'TKQ_GURU', 'TKQ_WALI_KELAS', 'TKQ_TATA_USAHA', 'TKQ_BENDAHARA', 'TKQ_KOMITE', 'TKQ_ORANG_TUA', 'SDIT_ADMIN', 'SDIT_KEPALA_SEKOLAH', 'SDIT_WAKASEK', 'SDIT_GURU', 'SDIT_WALI_KELAS', 'SDIT_TATA_USAHA', 'SDIT_BENDAHARA', 'SDIT_KOMITE', 'SDIT_ORANG_TUA', 'SDIT_SISWA', 'SMPIT_ADMIN', 'SMPIT_KEPALA_SEKOLAH', 'SMPIT_WAKASEK', 'SMPIT_GURU', 'SMPIT_WALI_KELAS', 'SMPIT_GURU_BK', 'SMPIT_TATA_USAHA', 'SMPIT_BENDAHARA', 'SMPIT_KOMITE', 'SMPIT_ORANG_TUA', 'SMPIT_SISWA', 'SMPIT_ALUMNI', 'SMAQ_ADMIN', 'SMAQ_KEPALA_SEKOLAH', 'SMAQ_WAKASEK', 'SMAQ_GURU', 'SMAQ_WALI_KELAS', 'SMAQ_GURU_BK', 'SMAQ_TATA_USAHA', 'SMAQ_BENDAHARA', 'SMAQ_KOMITE', 'SMAQ_ORANG_TUA', 'SMAQ_SISWA', 'SMAQ_ALUMNI', 'PT_REKTOR', 'PT_WAKIL_REKTOR', 'PT_DEKAN', 'PT_KAPRODI', 'PT_DOSEN', 'PT_MAHASISWA', 'PT_STAF_AKADEMIK', 'PT_TATA_USAHA', 'PT_ALUMNI', 'PESANTREN_PENGASUH', 'PESANTREN_DIREKTUR', 'PESANTREN_TATA_USAHA', 'USTADZ', 'MUSYRIF', 'MUSYRIFAH', 'MUHAFIDZ', 'MUHAFIDZAH', 'MURABBI', 'WALI_KAMAR', 'PUSTAKAWAN', 'PERAWAT', 'KEAMANAN', 'LABORAN', 'BUSINESS_MANAGER', 'BUSINESS_STAFF');
 
 -- CreateEnum
-CREATE TYPE "UnitType" AS ENUM ('PESANTREN', 'TK_QURAN', 'SD_IT', 'SMP_IT', 'SMA_QURAN', 'UNIT_USAHA', 'OTHER');
+CREATE TYPE "UnitType" AS ENUM ('PESANTREN', 'TK_QURAN', 'SD_IT', 'SMP_IT', 'SMA_QURAN', 'PERGURUAN_TINGGI', 'UNIT_USAHA', 'OTHER');
 
 -- CreateEnum
 CREATE TYPE "Gender" AS ENUM ('MALE', 'FEMALE');
@@ -5013,6 +5013,7 @@ CREATE TABLE "environment_programs" (
     "progress" DOUBLE PRECISION NOT NULL DEFAULT 0,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
+    "course_id" TEXT,
 
     CONSTRAINT "environment_programs_pkey" PRIMARY KEY ("id")
 );
@@ -5541,6 +5542,106 @@ CREATE TABLE "social_service_materials" (
     CONSTRAINT "social_service_materials_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "faculties" (
+    "id" TEXT NOT NULL,
+    "unit_id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "code" TEXT NOT NULL,
+    "description" TEXT,
+    "dean_id" TEXT,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "faculties_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "study_programs" (
+    "id" TEXT NOT NULL,
+    "faculty_id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "code" TEXT NOT NULL,
+    "degree" TEXT NOT NULL,
+    "accreditation" TEXT,
+    "head_id" TEXT,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "study_programs_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "higher_ed_courses" (
+    "id" TEXT NOT NULL,
+    "program_id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "code" TEXT NOT NULL,
+    "credits" INTEGER NOT NULL DEFAULT 2,
+    "semester" INTEGER NOT NULL,
+    "description" TEXT,
+    "is_active" BOOLEAN NOT NULL DEFAULT true,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "higher_ed_courses_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "higher_ed_course_classes" (
+    "id" TEXT NOT NULL,
+    "course_id" TEXT NOT NULL,
+    "academic_year_id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "lecturer_id" TEXT NOT NULL,
+    "capacity" INTEGER NOT NULL DEFAULT 40,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "higher_ed_course_classes_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "students_higher_ed" (
+    "id" TEXT NOT NULL,
+    "student_id" TEXT NOT NULL,
+    "program_id" TEXT NOT NULL,
+    "nim" TEXT NOT NULL,
+    "current_semester" INTEGER NOT NULL DEFAULT 1,
+    "gpa" DECIMAL(3,2),
+    "total_credits" INTEGER NOT NULL DEFAULT 0,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "students_higher_ed_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "krs" (
+    "id" TEXT NOT NULL,
+    "student_he_id" TEXT NOT NULL,
+    "academic_year_id" TEXT NOT NULL,
+    "semester" INTEGER NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'DRAFT',
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "krs_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "krs_course_enrollments" (
+    "id" TEXT NOT NULL,
+    "krs_id" TEXT NOT NULL,
+    "class_id" TEXT NOT NULL,
+    "grade" DECIMAL(5,2),
+    "letter_grade" TEXT,
+    "status" TEXT NOT NULL DEFAULT 'ENROLLED',
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "krs_course_enrollments_pkey" PRIMARY KEY ("id")
+);
 
 -- CreateTable
 CREATE TABLE "patients" (
@@ -7928,6 +8029,54 @@ CREATE UNIQUE INDEX "social_service_teams_order_id_user_id_key" ON "social_servi
 CREATE INDEX "social_service_materials_order_id_idx" ON "social_service_materials"("order_id");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "faculties_code_key" ON "faculties"("code");
+
+-- CreateIndex
+CREATE INDEX "faculties_unit_id_idx" ON "faculties"("unit_id");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "study_programs_code_key" ON "study_programs"("code");
+
+-- CreateIndex
+CREATE INDEX "study_programs_faculty_id_idx" ON "study_programs"("faculty_id");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "higher_ed_courses_code_key" ON "higher_ed_courses"("code");
+
+-- CreateIndex
+CREATE INDEX "higher_ed_courses_program_id_idx" ON "higher_ed_courses"("program_id");
+
+-- CreateIndex
+CREATE INDEX "higher_ed_course_classes_course_id_idx" ON "higher_ed_course_classes"("course_id");
+
+-- CreateIndex
+CREATE INDEX "higher_ed_course_classes_academic_year_id_idx" ON "higher_ed_course_classes"("academic_year_id");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "students_higher_ed_student_id_key" ON "students_higher_ed"("student_id");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "students_higher_ed_nim_key" ON "students_higher_ed"("nim");
+
+-- CreateIndex
+CREATE INDEX "students_higher_ed_program_id_idx" ON "students_higher_ed"("program_id");
+
+-- CreateIndex
+CREATE INDEX "krs_student_he_id_idx" ON "krs"("student_he_id");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "krs_student_he_id_academic_year_id_semester_key" ON "krs"("student_he_id", "academic_year_id", "semester");
+
+-- CreateIndex
+CREATE INDEX "krs_course_enrollments_krs_id_idx" ON "krs_course_enrollments"("krs_id");
+
+-- CreateIndex
+CREATE INDEX "krs_course_enrollments_class_id_idx" ON "krs_course_enrollments"("class_id");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "krs_course_enrollments_krs_id_class_id_key" ON "krs_course_enrollments"("krs_id", "class_id");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "patients_user_id_key" ON "patients"("user_id");
 
 -- CreateIndex
@@ -9581,6 +9730,9 @@ ALTER TABLE "environment_programs" ADD CONSTRAINT "environment_programs_unit_id_
 ALTER TABLE "environment_programs" ADD CONSTRAINT "environment_programs_pic_id_fkey" FOREIGN KEY ("pic_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "environment_programs" ADD CONSTRAINT "environment_programs_course_id_fkey" FOREIGN KEY ("course_id") REFERENCES "higher_ed_courses"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "waste_management" ADD CONSTRAINT "waste_management_unit_id_fkey" FOREIGN KEY ("unit_id") REFERENCES "units"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -9771,6 +9923,39 @@ ALTER TABLE "social_service_materials" ADD CONSTRAINT "social_service_materials_
 
 -- AddForeignKey
 ALTER TABLE "social_service_materials" ADD CONSTRAINT "social_service_materials_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "faculties" ADD CONSTRAINT "faculties_unit_id_fkey" FOREIGN KEY ("unit_id") REFERENCES "units"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "study_programs" ADD CONSTRAINT "study_programs_faculty_id_fkey" FOREIGN KEY ("faculty_id") REFERENCES "faculties"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "higher_ed_courses" ADD CONSTRAINT "higher_ed_courses_program_id_fkey" FOREIGN KEY ("program_id") REFERENCES "study_programs"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "higher_ed_course_classes" ADD CONSTRAINT "higher_ed_course_classes_course_id_fkey" FOREIGN KEY ("course_id") REFERENCES "higher_ed_courses"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "higher_ed_course_classes" ADD CONSTRAINT "higher_ed_course_classes_academic_year_id_fkey" FOREIGN KEY ("academic_year_id") REFERENCES "academic_years"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "students_higher_ed" ADD CONSTRAINT "students_higher_ed_student_id_fkey" FOREIGN KEY ("student_id") REFERENCES "students"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "students_higher_ed" ADD CONSTRAINT "students_higher_ed_program_id_fkey" FOREIGN KEY ("program_id") REFERENCES "study_programs"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "krs" ADD CONSTRAINT "krs_student_he_id_fkey" FOREIGN KEY ("student_he_id") REFERENCES "students_higher_ed"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "krs" ADD CONSTRAINT "krs_academic_year_id_fkey" FOREIGN KEY ("academic_year_id") REFERENCES "academic_years"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "krs_course_enrollments" ADD CONSTRAINT "krs_course_enrollments_krs_id_fkey" FOREIGN KEY ("krs_id") REFERENCES "krs"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "krs_course_enrollments" ADD CONSTRAINT "krs_course_enrollments_class_id_fkey" FOREIGN KEY ("class_id") REFERENCES "higher_ed_course_classes"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "patients" ADD CONSTRAINT "patients_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;

@@ -113,8 +113,6 @@ import {
   InternalAuditStatus,
   ShariaCategory,
   TrainingStatus,
-  ResearchStatus,
-  InnovationStatus,
   AssetDisposalReason,
   WasteCategory,
   EnvironmentProgramStatus,
@@ -7446,56 +7444,6 @@ async function main() {
     },
   });
   console.log('   ✅ Green Campus tables created');
-
-  // 5. Research & Development / Litbang (research_projects, research_milestones, innovation_proposals)
-  console.log('   Seeding Litbang (Research & Development)...');
-  const resProject = await prisma.researchProject.create({
-    data: {
-      unitId: smpIt.id,
-      title: 'Pengembangan Metode Murattal Cepat untuk Anak PAUD',
-      abstract: 'Penelitian eksperimental menguji efektivitas metode irama nahawand bagi ingatan balita.',
-      category: 'Pendidikan',
-      status: ResearchStatus.IN_PROGRESS,
-      budget: new Prisma.Decimal(15000000.0),
-      startDate: new Date('2026-05-01'),
-      endDate: new Date('2026-11-30'),
-      leaderId: teacherPesantrenUser.id,
-      progress: 30,
-    },
-  });
-
-  await prisma.researchMilestone.create({
-    data: {
-      projectId: resProject.id,
-      title: 'Desain kurikulum dan pre-test',
-      description: 'Membuat modul materi dan melakukan pre-test kemampuan awal santri PAUD.',
-      dueDate: new Date('2026-06-30'),
-      status: 'COMPLETED',
-      completedAt: new Date('2026-06-28'),
-    },
-  });
-
-  await prisma.researchMilestone.create({
-    data: {
-      projectId: resProject.id,
-      title: 'Penerapan metode nahawand',
-      description: 'Memulai sesi pengenalan irama secara rutin di kelas.',
-      dueDate: new Date('2026-09-15'),
-      status: 'IN_PROGRESS',
-    },
-  });
-
-  await prisma.innovationProposal.create({
-    data: {
-      unitId: smpIt.id,
-      title: 'Aplikasi Tabungan Santri Berbasis Barcode',
-      description: 'Usulan sistem pembayaran non-tunai di kantin menggunakan ID Card santri berkode batang.',
-      category: 'TEKNOLOGI',
-      status: InnovationStatus.IDEA,
-      proposerId: teacherPesantrenUser.id,
-    },
-  });
-  console.log('   ✅ Litbang / R&D tables created');
 
   // 6. Strategic Planning (strategic_plans, plan_objectives, plan_indicators, plan_activities)
   //    The yayasan's RPJP → Renstra → RKA cascade, modelled on the three

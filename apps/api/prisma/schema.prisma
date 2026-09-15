@@ -550,11 +550,6 @@ model User {
   sopsApproved  StandardOperatingProcedure[] @relation("SOPApprover")
   sopRevisions  SOPRevision[]               @relation("SOPRevisor")
 
-  // Litbang / Inovasi (R&D)
-  researchProjects     ResearchProject[]     @relation("ResearchLeader")
-  innovationsProposed  InnovationProposal[]  @relation("InnovationProposer")
-  innovationsApproved  InnovationProposal[]  @relation("InnovationApprover")
-
   // Non-formal Education, ZIS & Social Services
   instructedCourses        Course[]                @relation("UserCourseInstructor")
   zisDistributions         ZisDistribution[]       @relation("ZisDistributor")
@@ -668,7 +663,6 @@ model Unit {
   ibadahLeaderboards     IbadahLeaderboard[]
   // Settings and Rapor Pesantren
   settings               Setting[]
-  systemSecrets          SystemSecret[]
   raporPesantren         RaporPesantren[]            @relation("RaporPesantrenUnit")
   // PAUD & Enhancement relations
   paudIndicators         PAUDDevelopmentIndicator[]
@@ -737,10 +731,6 @@ model Unit {
 
   // Tata Laksana (SOP Management)
   standardOperatingProcedures StandardOperatingProcedure[]
-
-  // Litbang / Inovasi (R&D)
-  researchProjects     ResearchProject[]
-  innovationProposals  InnovationProposal[]
 
   // Business Units (Unit Usaha)
   businessUnits        BusinessUnit[]
@@ -5111,7 +5101,6 @@ model Budget {
   createdBy            User                  @relation("BudgetCreator", fields: [createdById], references: [id])
   purchaseRequestItems PurchaseRequestItem[]
   planActivities       PlanActivity[]
-  researchProjects     ResearchProject[]
 
   @@unique([unitId, academicYearId, accountId])
   @@index([unitId])
@@ -5486,9 +5475,6 @@ model BusinessUnit {
   canteenTransactions  CanteenTransaction[]
   laundryPricings      LaundryPricing[]
   laundryTransactions  LaundryTransaction[]
-
-  // Litbang integration
-  researchProjects     ResearchProject[]
 
   @@unique([unitId, code])
   @@index([unitId])
@@ -6173,24 +6159,6 @@ model Setting {
 
   @@unique([unitId, key])
   @@map("settings")
-}
-
-/// SystemSecret - Encrypted system configuration/secrets
-model SystemSecret {
-  id          String   @id @default(uuid())
-  unitId      String?  @map("unit_id")
-  key         String
-  value       String // Encrypted value
-  description String?  @db.Text
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  unit Unit? @relation(fields: [unitId], references: [id])
-
-  @@unique([unitId, key])
-  @@index([unitId])
-  @@map("system_secrets")
 }
 
 /// ChatbotPersona - the editable tone/style layer for the AI assistant, keyed
@@ -9521,86 +9489,6 @@ model SOPRevision {
 }
 
 // =====================================
-// LITBANG / INOVASI (R&D / INNOVATION)
-// =====================================
-
-enum ResearchStatus {
-  PROPOSAL
-  APPROVED
-  IN_PROGRESS
-  COMPLETED
-  PUBLISHED
-  CANCELLED
-}
-
-enum InnovationStatus {
-  IDEA
-  EVALUATION
-  PILOT
-  IMPLEMENTED
-  SCALED
-  REJECTED
-}
-
-/// ResearchProject - Proyek penelitian
-model ResearchProject {
-  id            String         @id @default(uuid())
-  unitId        String         @map("unit_id")
-  title         String
-  abstract      String?        @db.Text
-  category      String         // Pendidikan, Teknologi, Sosial, Agama, dll
-  status        ResearchStatus @default(PROPOSAL)
-  leaderId      String         @map("leader_id")
-  startDate     DateTime?      @map("start_date")
-  endDate       DateTime?      @map("end_date")
-  budget        Decimal?       @db.Decimal(15, 2)
-  fundingSource String?        @map("funding_source")
-  methodology   String?        @db.Text
-  findings      String?        @db.Text
-  publishedUrl  String?        @map("published_url")
-  progress      Float          @default(0) // 0-100
-  createdAt     DateTime       @default(now()) @map("created_at")
-  updatedAt     DateTime       @updatedAt @map("updated_at")
-
-  // Relations
-  unit       Unit                @relation(fields: [unitId], references: [id])
-  leader     User                @relation("ResearchLeader", fields: [leaderId], references: [id])
-  milestones ResearchMilestone[]
-  budgetRel  Budget?             @relation(fields: [budgetId], references: [id])
-  budgetId   String?             @map("budget_id")
-
-  // Business Unit Integration (Litbang -> Unit Usaha)
-  businessUnitId String?       @map("business_unit_id")
-  businessUnit   BusinessUnit? @relation(fields: [businessUnitId], references: [id])
-  impactScore    Float?        @map("impact_score") // Skor dampak terhadap unit usaha
-  impactNotes    String?       @map("impact_notes") @db.Text
-
-  @@index([unitId])
-  @@index([status])
-  @@index([leaderId])
-  @@map("research_projects")
-}
-
-/// ResearchMilestone - Milestone proyek penelitian
-model ResearchMilestone {
-  id          String    @id @default(uuid())
-  projectId   String    @map("project_id")
-  title       String
-  description String?   @db.Text
-  dueDate     DateTime? @map("due_date")
-  completedAt DateTime? @map("completed_at")
-  status      String    @default("PENDING") // PENDING, IN_PROGRESS, COMPLETED
-  sortOrder   Int       @default(0) @map("sort_order")
-  createdAt   DateTime  @default(now()) @map("created_at")
-
-  // Relations
-  project ResearchProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  @@index([projectId])
-  @@map("research_milestones")
-}
-
-// =====================================
 // PRACTICUM (AMALIYAH TADRIS), QIYADAH & TURATS LAB (from PR #295, hardened)
 // =====================================
 
@@ -9793,35 +9681,6 @@ model ResearchReference {
 
   @@index([submissionId])
   @@map("research_references")
-}
-
-/// InnovationProposal - Usulan inovasi
-model InnovationProposal {
-  id          String           @id @default(uuid())
-  unitId      String           @map("unit_id")
-  title       String
-  description String?          @db.Text
-  category    String           // Teknologi, Pedagogi, Administrasi, Layanan
-  status      InnovationStatus @default(IDEA)
-  proposerId  String           @map("proposer_id")
-  impact      String?          @db.Text // Dampak yang diharapkan
-  resources   String?          @db.Text // Sumber daya yang dibutuhkan
-  timeline    String?          // Estimasi waktu implementasi
-  score       Float?           // Skor evaluasi 0-100
-  feedback    String?          @db.Text
-  approvedById String?         @map("approved_by_id")
-  approvedAt  DateTime?        @map("approved_at")
-  createdAt   DateTime         @default(now()) @map("created_at")
-  updatedAt   DateTime         @updatedAt @map("updated_at")
-
-  // Relations
-  unit       Unit  @relation(fields: [unitId], references: [id])
-  proposer   User  @relation("InnovationProposer", fields: [proposerId], references: [id])
-  approvedBy User? @relation("InnovationApprover", fields: [approvedById], references: [id])
-
-  @@index([unitId])
-  @@index([status])
-  @@map("innovation_proposals")
 }
 
 // =====================================
