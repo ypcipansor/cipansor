@@ -4,7 +4,7 @@ _Headline count + spec-inventory table re-audited 2026-07-20 from source; the ro
 
 ## Summary
 
-- **Routes (App Router pages):** 446
+- **Routes (App Router pages):** 447
 - **Routes visited by ≥1 spec:** 73 (16%)
 - **Spec files:** 83 — 81 at `e2e/` plus `cbt/cbt.spec.ts` and
   `cbt/take-exam.spec.ts` (recounted 2026-09-15; `litbang.spec.ts` removed with
@@ -238,6 +238,7 @@ History of the stabilization (all root-caused, no suppressions):
 | `/dashboard` | auth, authenticated-smoke, dashboard-realtime | ✅ | 🟡 | 🟡 | 🟡 | 🟡 |
 | `/dashboard/comparison` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `/dashboard/executive` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `/dashboard/settings/system-secrets` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
 
 ### `/donation`
 

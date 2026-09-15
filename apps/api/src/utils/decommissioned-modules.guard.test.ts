@@ -5,7 +5,7 @@ import * as PrismaClientNS from '@prisma/client';
 import { createPrismaClient } from '../../prisma/client';
 
 /**
- * Regression guard for the higher-education / SystemSecret / Litbang purge
+ * Regression guard for the higher-education / Litbang purge
  * (PR #505). Each removal here was silent: a deleted module whose Prisma model
  * survived only failed at runtime, and editing the already-deployed `0_init`
  * migration left old enum values in existing databases while the regenerated
@@ -19,12 +19,7 @@ const read = (p: string) => readFileSync(p, 'utf8');
 const SCHEMA = read(join(API_ROOT, 'prisma', 'schema.prisma'));
 const ZERO_INIT = read(join(API_ROOT, 'prisma', 'migrations', '0_init', 'migration.sql'));
 
-const REMOVED_MODELS = [
-  'SystemSecret',
-  'ResearchProject',
-  'ResearchMilestone',
-  'InnovationProposal',
-];
+const REMOVED_MODELS = ['ResearchProject', 'ResearchMilestone', 'InnovationProposal'];
 const REMOVED_ENUMS = ['ResearchStatus', 'InnovationStatus'];
 const REMOVED_ROLES = [
   'PT_REKTOR',
@@ -39,9 +34,7 @@ const REMOVED_ROLES = [
 ];
 
 const migrationDirs = readdirSync(join(API_ROOT, 'prisma', 'migrations'));
-const DECOMMISSION_DIR = migrationDirs.find((d) =>
-  d.endsWith('_decommission_higher_ed_litbang_system_secrets')
-);
+const DECOMMISSION_DIR = migrationDirs.find((d) => d.endsWith('_decommission_higher_ed_litbang'));
 const DECOMMISSION = DECOMMISSION_DIR
   ? read(join(API_ROOT, 'prisma', 'migrations', DECOMMISSION_DIR, 'migration.sql'))
   : '';
@@ -112,14 +105,11 @@ describe('decommission purge — migrations', () => {
     expect(reassign).toBeGreaterThan(-1);
     expect(recreate).toBeGreaterThan(reassign);
 
-    for (const table of [
-      'research_projects',
-      'research_milestones',
-      'innovation_proposals',
-      'system_secrets',
-    ]) {
+    for (const table of ['research_projects', 'research_milestones', 'innovation_proposals']) {
       expect(DECOMMISSION).toContain(`DROP TABLE IF EXISTS "${table}"`);
     }
+    // PR #504 owns the system-secrets removal; #505 must not touch it.
+    expect(DECOMMISSION).not.toContain('system_secrets');
   });
 
   it('no longer references the removed modules from active source', () => {

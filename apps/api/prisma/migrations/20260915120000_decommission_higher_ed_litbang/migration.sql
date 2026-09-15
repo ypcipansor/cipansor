@@ -1,7 +1,7 @@
--- Decommission higher-education (Perguruan Tinggi), Litbang/R&D, and
--- system-secrets. The application code and the Prisma schema were removed
--- first; this migration reconciles databases that were deployed before the
--- purge, without touching the 0_init baseline.
+-- Decommission higher-education (Perguruan Tinggi) and Litbang/R&D. The
+-- application code and the Prisma schema were removed first; this migration
+-- reconciles databases that were deployed before the purge, without touching
+-- the 0_init baseline.
 --
 -- NOTE: `0_init` must never be edited after it has been deployed — existing
 -- databases never re-run it. Enum values, tables and columns removed from the
@@ -40,12 +40,7 @@ DROP TYPE IF EXISTS "ResearchStatus";
 DROP TYPE IF EXISTS "InnovationStatus";
 
 -- ---------------------------------------------------------------------------
--- 3. System-secrets table (API + UI removed; ciphertext no longer used)
--- ---------------------------------------------------------------------------
-DROP TABLE IF EXISTS "system_secrets" CASCADE;
-
--- ---------------------------------------------------------------------------
--- 4. Enum drift
+-- 3. Enum drift
 -- ---------------------------------------------------------------------------
 -- Databases deployed before this change still carry the `PERGURUAN_TINGGI`
 -- unit type / realm, while the regenerated Prisma client no longer accepts
