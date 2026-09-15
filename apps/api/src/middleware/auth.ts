@@ -7,6 +7,7 @@ import {
 } from '@cipansor/shared';
 import { verifyToken, JwtPayload } from '@/lib/jwt';
 import { prisma } from '@/lib/prisma';
+import { isUserSuspended } from '@/utils/suspended-users';
 import { Errors } from './error';
 
 // RoleCodes that are considered "admin" across the system.
@@ -172,7 +173,7 @@ export async function findTeacherIdForUser(userId: string): Promise<string | nul
  * Authentication middleware - verifies JWT token
  * Rejects temporary 2FA tokens
  */
-export async function authenticate(req: Request, res: Response, next: NextFunction) {
+export function authenticate(req: Request, res: Response, next: NextFunction) {
   try {
     const authHeader = req.headers.authorization;
 
@@ -196,12 +197,7 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
       throw Errors.unauthorized('2FA Verification Required');
     }
 
-    const userState = await prisma.user.findUnique({
-      where: { id: payload.sub },
-      select: { isActive: true, deletedAt: true },
-    });
-
-    if (!userState || !userState.isActive || userState.deletedAt) {
+    if (isUserSuspended(payload.sub)) {
       throw Errors.unauthorized('Akun Anda non-aktif atau telah dibekukan.');
     }
 

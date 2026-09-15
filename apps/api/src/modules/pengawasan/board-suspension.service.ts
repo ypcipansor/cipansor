@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
 import { BoardSuspensionStatus } from '@prisma/client';
+import { markUserSuspended, unmarkUserSuspended } from '@/utils/suspended-users';
 
 export interface CreateBoardSuspensionInput {
   userId: string;
@@ -43,7 +44,7 @@ export class BoardSuspensionService {
       throw Errors.conflict(`Pengurus ini telah memiliki Surat Keputusan Pembekuan Aktif (${existingActive.skNumber})`);
     }
 
-    return prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       // 1. Create BoardMemberSuspension entry
       const suspension = await tx.boardMemberSuspension.create({
         data: {
@@ -110,6 +111,9 @@ export class BoardSuspensionService {
 
       return suspension;
     });
+
+    markUserSuspended(data.userId);
+    return result;
   }
 
   /**
@@ -132,7 +136,7 @@ export class BoardSuspensionService {
       throw Errors.conflict(`Status pembekuan sudah tidak aktif (${suspension.status})`);
     }
 
-    return prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       // 1. Update suspension record
       const updated = await tx.boardMemberSuspension.update({
         where: { id },
@@ -179,6 +183,9 @@ export class BoardSuspensionService {
 
       return updated;
     });
+
+    unmarkUserSuspended(suspension.userId);
+    return result;
   }
 
   /**
