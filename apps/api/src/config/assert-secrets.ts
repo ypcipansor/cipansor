@@ -46,6 +46,22 @@ const PLACEHOLDER_MARKERS = [
 /** A signing key shorter than this is brute-forceable regardless of content. */
 const MIN_SECRET_LENGTH = 32;
 
+/**
+ * Known default/leaked values that pass every generic check.
+ *
+ * The former SystemSecret subsystem's fallback key was a sequential byte
+ * pattern (00 01 02 … 1f) exposed as a hardcoded default in this public
+ * repository. It is 64 hex characters and looks deliberate, so the length and
+ * placeholder checks below both accept it — yet signing tokens or printed
+ * cards with it hands the verifier to anyone who can read the source. Any
+ * signer (JWT, card HMAC, …) must reject it. Values here are exact matches;
+ * anything added must be a value already public in this repository, not a
+ * guess about a future default.
+ */
+const LEAKED_OR_DEFAULT_VALUES = [
+  '000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f',
+];
+
 export interface SecretIssue {
   variable: string;
   reason: string;
@@ -74,6 +90,16 @@ function inspect(variable: string, value: string | undefined, issues: SecretIssu
   }
 
   const lowered = value.toLowerCase();
+
+  if (LEAKED_OR_DEFAULT_VALUES.includes(lowered)) {
+    issues.push({
+      variable,
+      reason:
+        'is still a leaked/default value from this public repository — that ' +
+        'key is public',
+    });
+    return;
+  }
 
   const marker = PLACEHOLDER_MARKERS.find((m) => lowered.includes(m));
   if (marker) {

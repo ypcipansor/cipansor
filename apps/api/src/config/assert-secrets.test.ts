@@ -7,6 +7,15 @@ const GOOD = 'a'.repeat(96);
 /** The value cipansor.or.id was actually running with. */
 const SHIPPED = 'your-super-secret-key-change-this-in-production-min-32-chars';
 
+/**
+ * The old SystemSecret subsystem's fallback key: a sequential byte pattern
+ * (00 01 02 … 1f) hardcoded in this public repository. 64 hex chars and
+ * deliberate-looking, which is why the length and placeholder checks alone
+ * would let it through.
+ */
+const LEAKED_SEQUENTIAL_HEX =
+  '000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f';
+
 describe('production secret guard', () => {
   it('refuses the exact value that was live in production', () => {
     expect(() =>
@@ -61,6 +70,22 @@ describe('production secret guard', () => {
         studentCardHmacSecret: GOOD,
       })
     ).not.toThrow();
+  });
+
+  it('rejects the leaked sequential key as a JWT signer', () => {
+    expect(LEAKED_SEQUENTIAL_HEX.length).toBeGreaterThanOrEqual(32);
+    const issues = findSecretIssues({ jwtSecret: LEAKED_SEQUENTIAL_HEX });
+    const jwt = issues.find((i) => i.variable === 'JWT_SECRET');
+    expect(jwt?.reason).toMatch(/public/);
+  });
+
+  it('rejects the leaked sequential key as the student-card HMAC signer', () => {
+    const issues = findSecretIssues({
+      jwtSecret: GOOD,
+      studentCardHmacSecret: LEAKED_SEQUENTIAL_HEX,
+    });
+    const card = issues.find((i) => i.variable === 'STUDENT_CARD_HMAC_SECRET');
+    expect(card?.reason).toMatch(/public/);
   });
 
   it('reports every problem at once, not just the first', () => {
