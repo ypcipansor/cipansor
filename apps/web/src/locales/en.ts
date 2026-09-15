@@ -182,7 +182,6 @@ export const en = {
     studentCompliance: "Student Compliance",
     teacherCompliance: "Teacher Compliance",
     placement: "Placement (Si-Taka)",
-    secrets: "System Secrets",
   },
   settings: {
     title: "Settings",

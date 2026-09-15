@@ -64,7 +64,6 @@ describe("navigasi — filter roleCodes berjalan rekursif ke submenu", () => {
       for (const parent of ["/settings", "/users"]) {
         expect(hrefs, `${role} kehilangan ${parent}`).toContain(parent);
       }
-      expect(hrefs).not.toContain("/dashboard/settings/system-secrets");
       expect(hrefs).not.toContain("/settings/roles");
 
       // Tanpa anak tersisa, induknya dirender sebagai tautan, bukan tombol
