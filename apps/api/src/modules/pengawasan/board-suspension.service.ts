@@ -7,10 +7,10 @@ export interface CreateBoardSuspensionInput {
   skNumber: string;
   auditReason: string;
   documentUrl?: string;
-  startDate?: string;
-  projectedEndDate?: string;
-  plhUserId?: string;
-  plhRoleCode?: string;
+  startDate?: string | null;
+  projectedEndDate?: string | null;
+  plhUserId?: string | null;
+  plhRoleCode?: string | null;
 }
 
 export class BoardSuspensionService {
@@ -76,9 +76,10 @@ export class BoardSuspensionService {
         where: { userId: data.userId },
       });
 
-      // 4. Revoke E-Sign keys if any
-      await tx.userSigningKey.deleteMany({
+      // 4. Soft-lock E-Sign keys (preserve audit trail while revoking signing capability)
+      await tx.userSigningKey.updateMany({
         where: { userId: data.userId },
+        data: { lockedUntil: new Date('2099-01-01T00:00:00Z') },
       });
 
       // 5. Temporary Plh / Plt Role Assignment if specified
@@ -88,7 +89,6 @@ export class BoardSuspensionService {
         });
 
         if (role) {
-          // Check if Plh user already has this role assignment
           const existingAssign = await tx.userRoleAssignment.findFirst({
             where: {
               userId: data.plhUserId,
@@ -153,6 +153,29 @@ export class BoardSuspensionService {
         where: { id: suspension.userId },
         data: { isActive: true },
       });
+
+      // 3. Unlock E-Sign keys
+      await tx.userSigningKey.updateMany({
+        where: { userId: suspension.userId },
+        data: { lockedUntil: null },
+      });
+
+      // 4. Remove temporary Plh role assignment if one was granted
+      if (suspension.plhUserId && suspension.plhRoleCode) {
+        const role = await tx.role.findFirst({
+          where: { code: suspension.plhRoleCode },
+        });
+
+        if (role) {
+          await tx.userRoleAssignment.deleteMany({
+            where: {
+              userId: suspension.plhUserId,
+              roleId: role.id,
+              isPrimary: false,
+            },
+          });
+        }
+      }
 
       return updated;
     });

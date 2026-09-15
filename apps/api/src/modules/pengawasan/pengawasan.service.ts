@@ -117,7 +117,7 @@ export class PengawasanService {
     rootCause?: string;
     recommendation?: string;
     responsibleId?: string;
-    dueDate?: string;
+    dueDate?: string | null;
     planObjectiveId?: string;
     linkToRiskId?: string;
   }) {
@@ -270,7 +270,7 @@ export class PengawasanService {
   async createFollowUp(data: {
     findingId: string;
     action: string;
-    dueDate?: string;
+    dueDate?: string | null;
     evidence?: string;
   }) {
     return prisma.auditFollowUp.create({

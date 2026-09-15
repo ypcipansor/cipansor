@@ -1,10 +1,16 @@
 import { z } from 'zod';
 
+const dateStringSchema = z.string().refine((val) => !isNaN(Date.parse(val)), {
+  message: 'Format tanggal tidak valid',
+});
+
+const optionalDateSchema = dateStringSchema.optional().nullable();
+
 export const createAuditSchema = z.object({
   title: z.string().min(3),
   description: z.string().optional(),
   auditType: z.string().min(1),
-  plannedDate: z.string(),
+  plannedDate: dateStringSchema,
   scope: z.string().optional(),
   methodology: z.string().optional(),
   unitId: z.string().uuid().optional(),
@@ -17,9 +23,9 @@ export const updateAuditSchema = z.object({
   description: z.string().optional(),
   auditType: z.string().optional(),
   status: z.enum(['PLANNED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED']).optional(),
-  plannedDate: z.string().optional(),
-  executedDate: z.string().optional(),
-  completedDate: z.string().optional(),
+  plannedDate: optionalDateSchema,
+  executedDate: optionalDateSchema,
+  completedDate: optionalDateSchema,
   scope: z.string().optional(),
   methodology: z.string().optional(),
   conclusion: z.string().optional(),
@@ -36,7 +42,7 @@ export const createFindingSchema = z.object({
   rootCause: z.string().optional(),
   recommendation: z.string().optional(),
   responsibleId: z.string().uuid().optional(),
-  dueDate: z.string().optional(),
+  dueDate: optionalDateSchema,
   planObjectiveId: z.string().uuid().optional(),
   linkToRiskId: z.string().uuid().optional(),
 });
@@ -50,14 +56,14 @@ export const updateFindingSchema = z.object({
   rootCause: z.string().optional(),
   recommendation: z.string().optional(),
   responsibleId: z.string().uuid().nullable().optional(),
-  dueDate: z.string().optional(),
+  dueDate: optionalDateSchema,
   planObjectiveId: z.string().uuid().nullable().optional(),
 });
 
 export const createFollowUpSchema = z.object({
   findingId: z.string().uuid(),
   action: z.string().min(1),
-  dueDate: z.string().optional(),
+  dueDate: optionalDateSchema,
   evidence: z.string().optional(),
 });
 
@@ -65,7 +71,7 @@ export const updateFollowUpSchema = z.object({
   action: z.string().optional(),
   status: z.enum(['OPEN', 'IN_PROGRESS', 'RESOLVED', 'VERIFIED', 'OVERDUE']).optional(),
   evidence: z.string().optional(),
-  dueDate: z.string().optional(),
+  dueDate: optionalDateSchema,
 });
 
 export const listAuditQuerySchema = z.object({
@@ -96,7 +102,7 @@ export const createPublicWbsSchema = z.object({
   subject: z.string().min(3),
   description: z.string().min(10),
   location: z.string().optional(),
-  incidentDate: z.string().optional(),
+  incidentDate: optionalDateSchema,
   isAnonymous: z.boolean().optional(),
   reporterName: z.string().optional(),
   reporterContact: z.string().optional(),
@@ -147,10 +153,10 @@ export const createBoardSuspensionSchema = z.object({
   skNumber: z.string().min(3),
   auditReason: z.string().min(10),
   documentUrl: z.string().optional(),
-  startDate: z.string().optional(),
-  projectedEndDate: z.string().optional(),
-  plhUserId: z.string().uuid().optional(),
-  plhRoleCode: z.string().optional(),
+  startDate: optionalDateSchema,
+  projectedEndDate: optionalDateSchema,
+  plhUserId: z.string().uuid().optional().nullable(),
+  plhRoleCode: z.string().optional().nullable(),
 });
 
 export const liftBoardSuspensionSchema = z.object({

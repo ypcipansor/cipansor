@@ -11,7 +11,7 @@ export interface CreatePublicWbsInput {
   subject: string;
   description: string;
   location?: string;
-  incidentDate?: string;
+  incidentDate?: string | null;
   isAnonymous?: boolean;
   reporterName?: string;
   reporterContact?: string;

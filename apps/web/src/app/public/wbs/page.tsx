@@ -2,6 +2,7 @@
 
 import React, { useState, Suspense } from "react";
 import { usePublicCreateWbs } from "@/hooks/use-pengawasan";
+import { usePublicUnits } from "@/hooks/use-units";
 import { TurnstileWidget, useTurnstile } from "@/components/security/turnstile-widget";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -32,6 +33,7 @@ function PublicWbsContent() {
 
   const [createdTicket, setCreatedTicket] = useState<{ ticketCode: string; trackingToken: string } | null>(null);
 
+  const { data: publicUnits } = usePublicUnits();
   const turnstile = useTurnstile();
   const createWbsMutation = usePublicCreateWbs();
 
@@ -50,7 +52,7 @@ function PublicWbsContent() {
 
     try {
       const res = await createWbsMutation.mutateAsync({
-        unitId: unitId || undefined,
+        unitId: (unitId && unitId !== "YAYASAN_PUSAT") ? unitId : undefined,
         category,
         targetLevel,
         targetName: targetName || undefined,
@@ -62,7 +64,7 @@ function PublicWbsContent() {
         reporterName: isAnonymous ? undefined : reporterName,
         reporterContact: isAnonymous ? undefined : reporterContact,
         attachments: attachmentUrl ? [attachmentUrl] : undefined,
-        turnstileToken: turnstile.token,
+        turnstileToken: turnstile.token || undefined,
       });
 
       if (res?.data) {
@@ -155,8 +157,25 @@ function PublicWbsContent() {
                 </div>
               </div>
 
-              {/* Specific Target Name & Unit */}
+              {/* Unit Selection & Specific Target Name */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="unitId">Unit Organisasi Terkait (Opsional)</Label>
+                  <Select value={unitId} onValueChange={setUnitId}>
+                    <SelectTrigger id="unitId" className="bg-white">
+                      <SelectValue placeholder="Pilih Unit Organisasi..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="YAYASAN_PUSAT">Yayasan Pusat (Pusat)</SelectItem>
+                      {publicUnits?.map((u) => (
+                        <SelectItem key={u.id} value={u.id}>
+                          {u.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 <div className="space-y-2">
                   <Label htmlFor="targetName">Nama / Jabatan Pihak Teradu (Opsional)</Label>
                   <Input
@@ -164,17 +183,6 @@ function PublicWbsContent() {
                     placeholder="Contoh: Oknum Staf Keuangan / Nama Teradu"
                     value={targetName}
                     onChange={(e) => setTargetName(e.target.value)}
-                    className="bg-white"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="location">Lokasi / Unit Terkait (Opsional)</Label>
-                  <Input
-                    id="location"
-                    placeholder="Contoh: Gedung SD IT / Asrama Santri / Kantor Yayasan"
-                    value={location}
-                    onChange={(e) => setLocation(e.target.value)}
                     className="bg-white"
                   />
                 </div>
@@ -203,6 +211,18 @@ function PublicWbsContent() {
                     className="bg-white"
                   />
                 </div>
+              </div>
+
+              {/* Location */}
+              <div className="space-y-2">
+                <Label htmlFor="location">Spesifikasi Lokasi Kejadian (Opsional)</Label>
+                <Input
+                  id="location"
+                  placeholder="Contoh: Gedung SD IT / Asrama Santri / Kantor Yayasan"
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  className="bg-white"
+                />
               </div>
 
               {/* Description */}

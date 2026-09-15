@@ -34,6 +34,7 @@ vi.mock('@/lib/prisma', () => ({
     },
     userSigningKey: {
       deleteMany: vi.fn(),
+      updateMany: vi.fn(),
     },
     role: {
       findFirst: vi.fn(),
@@ -41,6 +42,7 @@ vi.mock('@/lib/prisma', () => ({
     userRoleAssignment: {
       findFirst: vi.fn(),
       create: vi.fn(),
+      deleteMany: vi.fn(),
     },
     $transaction: vi.fn((cb) => cb(prisma)),
   },
@@ -137,7 +139,7 @@ describe('BoardSuspensionService Unit Tests', () => {
     vi.clearAllMocks();
   });
 
-  it('suspends board member and deactivates user account', async () => {
+  it('suspends board member, deactivates account, soft-locks e-sign keys, and delegates Plh role', async () => {
     const mockUser = {
       id: 'user-pengurus',
       name: 'Pengurus Fulan',
@@ -154,6 +156,8 @@ describe('BoardSuspensionService Unit Tests', () => {
       skNumber: 'SK/PENGAWAS/2026/001',
       status: 'ACTIVE',
     });
+    (prisma.role.findFirst as any).mockResolvedValue({ id: 'role-ketua-id', code: 'YAYASAN_KETUA' });
+    (prisma.userRoleAssignment.findFirst as any).mockResolvedValue(null);
 
     const suspension = await boardSuspensionService.suspendBoardMember(
       {
@@ -174,8 +178,49 @@ describe('BoardSuspensionService Unit Tests', () => {
     expect(prisma.refreshToken.deleteMany).toHaveBeenCalledWith({
       where: { userId: 'user-pengurus' },
     });
-    expect(prisma.userSigningKey.deleteMany).toHaveBeenCalledWith({
+    expect(prisma.userSigningKey.updateMany).toHaveBeenCalledWith({
       where: { userId: 'user-pengurus' },
+      data: { lockedUntil: expect.any(Date) },
+    });
+    expect(prisma.userRoleAssignment.create).toHaveBeenCalledWith({
+      data: {
+        userId: 'user-sekretaris',
+        roleId: 'role-ketua-id',
+        isPrimary: false,
+      },
+    });
+  });
+
+  it('lifts board member suspension, reactivates account, unlocks e-sign keys, and removes temporary Plh assignment', async () => {
+    const mockSuspension = {
+      id: 'susp-1',
+      userId: 'user-pengurus',
+      status: 'ACTIVE',
+      plhUserId: 'user-sekretaris',
+      plhRoleCode: 'YAYASAN_KETUA',
+    };
+
+    (prisma.boardMemberSuspension.findUnique as any).mockResolvedValue(mockSuspension);
+    (prisma.boardMemberSuspension.update as any).mockResolvedValue({ ...mockSuspension, status: 'LIFTED' });
+    (prisma.role.findFirst as any).mockResolvedValue({ id: 'role-ketua-id', code: 'YAYASAN_KETUA' });
+
+    const updated = await boardSuspensionService.liftBoardSuspension('susp-1', 'lifter-pembina', 'Penyelidikan selesai');
+
+    expect(updated.status).toBe('LIFTED');
+    expect(prisma.user.update).toHaveBeenCalledWith({
+      where: { id: 'user-pengurus' },
+      data: { isActive: true },
+    });
+    expect(prisma.userSigningKey.updateMany).toHaveBeenCalledWith({
+      where: { userId: 'user-pengurus' },
+      data: { lockedUntil: null },
+    });
+    expect(prisma.userRoleAssignment.deleteMany).toHaveBeenCalledWith({
+      where: {
+        userId: 'user-sekretaris',
+        roleId: 'role-ketua-id',
+        isPrimary: false,
+      },
     });
   });
 });

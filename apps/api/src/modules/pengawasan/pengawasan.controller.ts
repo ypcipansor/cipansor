@@ -278,8 +278,18 @@ export const listBoardSuspensions = asyncHandler(async (_req: Request, res: Resp
 // ==================== FINANCIAL OVERSIGHT CONTROLLERS ====================
 
 export const getFinancialArrears = asyncHandler(async (req: Request, res: Response) => {
-  const unitId = req.query.unitId ? String(req.query.unitId) : (req.user?.unitId ?? undefined);
-  const data = await pengawasanService.getFinancialArrears(unitId);
+  const isExecutiveOversight =
+    req.user?.role === UserRole.SUPER_ADMIN ||
+    ['YAYASAN_PEMBINA', 'YAYASAN_PENGAWAS', 'YAYASAN_KETUA', 'YAYASAN_BENDAHARA'].includes(req.user?.roleCode || '');
+
+  let targetUnitId: string | undefined = req.user?.unitId ?? undefined;
+
+  if (isExecutiveOversight && req.query.unitId) {
+    const qUnit = String(req.query.unitId);
+    targetUnitId = qUnit === 'all' ? undefined : qUnit;
+  }
+
+  const data = await pengawasanService.getFinancialArrears(targetUnitId);
   res.json({ success: true, data });
 });
 
