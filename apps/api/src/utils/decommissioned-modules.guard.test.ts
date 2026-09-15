@@ -120,4 +120,25 @@ describe('decommission purge — migrations', () => {
     const removedDir = join(API_ROOT, 'src', 'modules', 'litbang');
     expect(() => readdirSync(removedDir)).toThrow();
   });
+
+  it('ends the sessions of users left without any role by the PT purge', () => {
+    // Deleting the PT_* assignments alone does not end a PT user's session:
+    // `authService.refreshToken` falls back to the legacy `users.role` column
+    // when no assignment is active, so a user whose only role was PT keeps
+    // rotating refresh tokens. The migration must therefore also identify the
+    // affected users (before deleting their assignments), revoke their refresh
+    // tokens and null the legacy role.
+    const code = DECOMMISSION.replace(/--[^\n]*/g, '');
+    expect(code).toMatch(/DELETE FROM "refresh_tokens"/);
+    expect(code).toMatch(/UPDATE "users"[\s\S]*?SET "role"\s*=\s*NULL/);
+    // The temp table must be populated before the PT assignments are removed,
+    // otherwise the trace of who was PT-only is already gone.
+    const snapshot = code.indexOf('CREATE TEMP TABLE');
+    const deleteAssignments = code.indexOf('DELETE FROM "user_role_assignments"');
+    expect(snapshot).toBeGreaterThan(-1);
+    expect(deleteAssignments).toBeGreaterThan(snapshot);
+    // Only users with no remaining active assignment qualify.
+    expect(code).toMatch(/NOT EXISTS/);
+    expect(code).toMatch(/"is_active"/);
+  });
 });

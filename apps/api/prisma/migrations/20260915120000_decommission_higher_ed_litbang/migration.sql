@@ -85,6 +85,44 @@ CREATE TYPE "RoleCode" AS ENUM (
 );
 DROP TYPE "RoleCode_old";
 
+-- ---------------------------------------------------------------------------
+-- 4. Users who lose their only role with the PT purge
+-- ---------------------------------------------------------------------------
+-- Deleting the PT_* assignments below is not enough to end a PT user's
+-- session. Such a user may still hold (a) a live refresh token and (b) a
+-- legacy `users.role` value: the legacy `UserRole` enum has no PT member, so a
+-- PT account stores an ordinary value like TEACHER. When the refresh flow
+-- finds no active role assignment it falls back to that column
+-- (auth.service.ts `refreshToken`) and mints a fresh session, letting a
+-- PT-only user rotate tokens indefinitely.
+--
+-- The affected users must therefore be identified BEFORE their assignments are
+-- deleted, since afterwards the trace of "this used to be a PT user" is gone.
+-- Only users who end up with no ACTIVE assignment are selected, matching the
+-- runtime's `activeRoleWhere()` (is_active AND not expired); a user who also
+-- holds an active non-PT role keeps their session.
+DROP TABLE IF EXISTS "pt_only_users_tmp";
+CREATE TEMP TABLE "pt_only_users_tmp" AS
+SELECT DISTINCT a."user_id" AS "user_id"
+FROM "user_role_assignments" a
+JOIN "roles" r ON r."id" = a."role_id"
+WHERE r."code" IN (
+    'PT_REKTOR', 'PT_WAKIL_REKTOR', 'PT_DEKAN', 'PT_KAPRODI', 'PT_DOSEN',
+    'PT_MAHASISWA', 'PT_STAF_AKADEMIK', 'PT_TATA_USAHA', 'PT_ALUMNI'
+  )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM "user_role_assignments" b
+    JOIN "roles" rb ON rb."id" = b."role_id"
+    WHERE b."user_id" = a."user_id"
+      AND rb."code" NOT IN (
+        'PT_REKTOR', 'PT_WAKIL_REKTOR', 'PT_DEKAN', 'PT_KAPRODI', 'PT_DOSEN',
+        'PT_MAHASISWA', 'PT_STAF_AKADEMIK', 'PT_TATA_USAHA', 'PT_ALUMNI'
+      )
+      AND b."is_active"
+      AND (b."expires_at" IS NULL OR b."expires_at" > now())
+  );
+
 -- Remove higher-education role rows from `roles` (code is TEXT, not the
 -- RoleCode enum) so no role survives with a code the schema no longer lists.
 DELETE FROM "user_role_assignments"
@@ -96,3 +134,18 @@ DELETE FROM "roles" WHERE "code" IN (
   'PT_REKTOR', 'PT_WAKIL_REKTOR', 'PT_DEKAN', 'PT_KAPRODI', 'PT_DOSEN',
   'PT_MAHASISWA', 'PT_STAF_AKADEMIK', 'PT_TATA_USAHA', 'PT_ALUMNI'
 );
+
+-- Revoke every refresh token of those users so nothing can be rotated.
+DELETE FROM "refresh_tokens"
+WHERE "user_id" IN (SELECT "user_id" FROM "pt_only_users_tmp");
+
+-- Null out the legacy fallback for exactly those users. Once `users.role` is
+-- NULL the `else if (storedToken.user.role)` branch no longer matches and the
+-- refresh flow rejects with `Errors.forbidden('No active role assignment
+-- found')`. Scoped to the temp set so identity-only rows and users with an
+-- active role keep their value.
+UPDATE "users"
+SET "role" = NULL
+WHERE "id" IN (SELECT "user_id" FROM "pt_only_users_tmp");
+
+DROP TABLE IF EXISTS "pt_only_users_tmp";
