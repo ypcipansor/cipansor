@@ -1,5 +1,6 @@
 import { test, expect } from "./fixtures/auth.fixture";
 import { loginAs } from "./helpers/auth-api";
+import { settledContent } from "./helpers/page-state";
 
 /**
  * Canteen Module E2E Tests
@@ -24,7 +25,7 @@ test.describe("Canteen - Navigation", () => {
     await page.goto("/canteen");
     await page.waitForLoadState("domcontentloaded", { timeout: 10000 });
 
-    const content = await page.content();
+    const content = await settledContent(page);
     expect(content.length).toBeGreaterThan(1000);
   });
 });
@@ -69,7 +70,7 @@ test.describe("Canteen - Features", () => {
     await page.goto("/canteen");
     await page.waitForLoadState("domcontentloaded", { timeout: 10000 });
 
-    const content = await page.content();
+    const content = await settledContent(page);
     const hasTransactions =
       content.includes("Transaksi") ||
       content.includes("Order") ||

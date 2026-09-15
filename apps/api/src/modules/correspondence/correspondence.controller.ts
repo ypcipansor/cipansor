@@ -37,6 +37,16 @@ export const CorrespondenceController = {
     res.status(201).json(ApiResponse.success(result));
   }),
 
+  update: asyncHandler(async (req: Request, res: Response) => {
+    const result = await CorrespondenceService.updateLetter(
+      req.params.id,
+      req.body,
+      req.user!.id,
+      actorOf(req)
+    );
+    res.json(ApiResponse.success(result));
+  }),
+
   findAll: asyncHandler(async (req: Request, res: Response) => {
     const actor = actorOf(req);
     const unitId = choosesUnit(actor) ? (req.query.unitId as string | undefined) : undefined;

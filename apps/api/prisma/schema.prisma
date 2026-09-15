@@ -448,8 +448,7 @@ model User {
   // Payroll relations
   payrollPeriodsCreated             PayrollPeriod[]             @relation("PayrollPeriodCreator")
   payrollPeriodsApproved            PayrollPeriod[]             @relation("PayrollPeriodApprover")
-  // PKG & Portfolio relations
-  pkgAssessed                       PKGEvaluation[]             @relation("PKGAssessor")
+  // Portfolio relations
   portfoliosReviewed                Portfolio[]                 @relation("PortfolioReviewer")
   portfolioComments                 PortfolioComment[]
   ibadahVerified                    DailyIbadahRecord[]         @relation("IbadahVerifier")
@@ -525,6 +524,7 @@ model User {
   approvedPlans      StrategicPlan[]    @relation("PlanApprover")
   assignedActivities PlanActivity[]     @relation("ActivityPIC")
   planCollaborations PlanCollaborator[]
+  planReviewEvents   PlanReviewEvent[]  @relation("PlanReviewActor")
 
   // Performance Management (Perjanjian Kinerja / PK)
   performanceAgreements PerformanceAgreement[] @relation("UserPK")
@@ -623,6 +623,8 @@ model Unit {
   users                  User[]
   userRoleAssignments    UserRoleAssignment[] // NEW: Role assignments for this unit
   students               Student[]
+  studentUnitEnrollments StudentUnitEnrollment[]
+  studentIdentifiers     StudentUnitIdentifier[]
   teachers               Teacher[]
   staff                  Staff[]
   classes                Class[]
@@ -676,8 +678,7 @@ model Unit {
   laundryTransactions    LaundryTransaction[]
   // Payroll relations
   payrollPeriods         PayrollPeriod[]
-  // PKG, Portfolio & Islamic relations
-  pkgPeriods             PKGPeriod[]
+  // Portfolio & Islamic relations
   islamicEvents          IslamicEvent[]
   dailyIbadahTargets     DailyIbadahTarget[]
   ibadahLeaderboards     IbadahLeaderboard[]
@@ -870,8 +871,6 @@ model Teacher {
   musyrifs                 Musyrif[]
   // Non-formal Education
   instructedCourses        Course[]            @relation("TeacherCourseInstructor")
-  // PKG relations
-  pkgEvaluations           PKGEvaluation[]
   assignments              Assignment[]
 
   @@index([unitId])
@@ -938,8 +937,7 @@ model AcademicYear {
   p5Projects            P5Project[]
   scholarshipRecipients ScholarshipRecipient[]
   merdekaAssessments    MerdekaAssessment[]
-  // PKG & Portfolio relations
-  pkgPeriods            PKGPeriod[]
+  // Portfolio relations
   portfolios            Portfolio[]
   // Rapor Pesantren relations
   raporPesantren        RaporPesantren[]
@@ -966,6 +964,8 @@ model AcademicYear {
 
   // Risk Management
   risks Risk[]
+
+  studentUnitEnrollments StudentUnitEnrollment[]
 
   @@index([isActive])
   @@map("academic_years")
@@ -1020,7 +1020,10 @@ model Student {
   userId       String   @unique @map("user_id")
   unitId       String   @map("unit_id")
   nis          String   @unique // Nomor Induk Siswa
-  nisn         String? // Nomor Induk Siswa Nasional
+  /// Nomor Induk Siswa Nasional: 10 digit angka, satu untuk satu peserta didik
+  /// seumur hidup. Unik bila diisi, dan bentuknya dijaga CHECK
+  /// `students_nisn_format_check` (migrasi 20260914000000).
+  nisn         String?  @unique
   gender       Gender
   birthPlace   String   @map("birth_place")
   birthDate    DateTime @map("birth_date")
@@ -1029,12 +1032,18 @@ model Student {
   parentPhone  String   @map("parent_phone")
   parentEmail  String?  @map("parent_email")
   photoUrl     String?  @map("photo_url")
+  /// Kosakatanya di `packages/shared/src/types/student-status.ts`
+  /// (STUDENT_STATUS) dan diikat CHECK `students_status_check`.
+  /// HURUF KECIL — 2026-09-13 ada 23 tempat yang menyaring/menulis 'ACTIVE'
+  /// huruf besar, semuanya nol tanpa galat. Jangan mengetik literalnya lagi.
   status       String   @default("active") // active, alumni, dropped, transferred
   entryYear    Int?     @map("entry_year")
   graduateYear Int?     @map("graduate_year")
 
   // === PHASE 8: Indonesia Compliance Fields (Dapodik/EMIS) ===
-  nik         String? // NIK (16 digit)
+  /// NIK: 16 digit angka, unik bila diisi (CHECK `students_nik_format_check`).
+  /// Data pribadi anak — UU 27/2022 Ps. 4. Tidak pernah dicetak di kartu santri.
+  nik         String? @unique
   noAkta      String? @map("no_akta") // Nomor Akta Lahir
   noKK        String? @map("no_kk") // Nomor Kartu Keluarga (16 digit)
   religion    String  @default("ISLAM") // Agama
@@ -1197,6 +1206,12 @@ model Student {
   packages                    StudentPackage[]
   assignmentSubmissions       AssignmentSubmission[]
   examAttempts                ExamAttempt[]
+  /// Riwayat unit per tahun ajaran. `unitId` di atas adalah unit SEKARANG;
+  /// yang ini menjawab "saat itu di unit mana" — lihat StudentUnitEnrollment.
+  unitEnrollments             StudentUnitEnrollment[]
+  /// NIS santri di tiap unit yang pernah menerimanya. `nis` di atas hanya NIS
+  /// unit SEKARANG — lihat StudentUnitIdentifier.
+  unitIdentifiers             StudentUnitIdentifier[]
 
   @@index([nis])
   @@index([unitId])
@@ -1225,11 +1240,112 @@ model StudentParent {
 }
 
 /// ClassEnrollment - Student enrollment in classes
+/// StudentUnitEnrollment - Riwayat satuan pendidikan per tahun ajaran.
+///
+/// `students.unit_id` hanya menyimpan unit SEKARANG, jadi setiap laporan yang
+/// menyaring lewat `student: { unitId }` sebenarnya bertanya "unit santri ini
+/// apa?" padahal yang dimaksud "saat itu unitnya apa?". Seorang santri yang naik
+/// dari TK ke SD IT membawa seluruh catatan kesehatan, izin, penghargaan, dan
+/// angka dasbor tahun-tahun TK-nya ikut berpindah ke SD IT — bukan karena ada
+/// yang mengubah data, melainkan karena pertanyaannya salah. Tabel ini yang
+/// menjawabnya, dan ia sumber tunggal riwayat unit.
+///
+/// Bentuknya mengikuti StudentSchoolAssociation pada Ed-Fi Enrollment Domain:
+/// satu baris per (santri, unit, tahun ajaran), tanggal masuk wajib dan tanggal
+/// keluar opsional; barisnya BERTAMBAH ketika santri berpindah — tidak pernah
+/// ditimpa atau dihapus — dan sengaja terpisah dari pendaftaran kelas
+/// (`ClassEnrollment`), yang menjawab pertanyaan lain: rombelnya yang mana.
+/// NIS (Nomor Induk Siswa; di Dapodik: NIPD) santri PER UNIT.
+///
+/// NIS diterbitkan oleh satuan pendidikan, bukan oleh yayasan: buku induk dan
+/// rapor SD IT memuat NIS SD IT, dan santri yang naik ke SMP IT menerima NIS
+/// SMP IT tanpa kehilangan NIS lamanya di dokumen SD IT. `students.nis` hanya
+/// bisa menyimpan satu, dan unik lintas yayasan — dua sekolah yang sama-sama
+/// memulai dari "2024001" tidak bisa hidup berdampingan di sana. Tabel ini
+/// menyimpan pasangan (santri, unit) → NIS, unik per unit (audit PR #489, B1).
+///
+/// Selama `students.nis` masih ada ia ditulis ganda dan selalu sama dengan NIS
+/// unit sekarang (utils/student-nis.ts). Dokumen resmi (rapor, kartu, EMIS)
+/// membaca dari sini lewat unit dokumennya. Migrasi: 20260914010000.
+model StudentUnitIdentifier {
+  id        String   @id @default(uuid())
+  studentId String   @map("student_id")
+  unitId    String   @map("unit_id")
+  nis       String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  unit    Unit    @relation(fields: [unitId], references: [id])
+
+  /// Satu NIS per santri per unit.
+  @@unique([studentId, unitId])
+  /// Di satu unit, satu NIS hanya milik satu santri.
+  @@unique([unitId, nis])
+  @@map("student_unit_identifiers")
+}
+
+/// Pengenal santri (NISN/NIK) yang dikosongkan migrasi
+/// 20260914000000_student_identifier_uniqueness karena bentuknya salah
+/// (`reason` = 'format') atau dipakai lebih dari satu santri ('duplicate';
+/// `keptStudentId` = santri yang mempertahankannya). Hanya jejak untuk petugas —
+/// sengaja tanpa relasi, supaya catatannya tidak ikut terhapus bersama santrinya.
+model LegacyIdentifierAudit {
+  id            String   @id @default(uuid())
+  studentId     String   @map("student_id")
+  field         String
+  value         String
+  reason        String
+  keptStudentId String?  @map("kept_student_id")
+  recordedAt    DateTime @default(now()) @map("recorded_at")
+
+  @@index([studentId])
+  @@map("legacy_identifier_audit")
+}
+
+model StudentUnitEnrollment {
+  id             String    @id @default(uuid())
+  studentId      String    @map("student_id")
+  unitId         String    @map("unit_id")
+  academicYearId String    @map("academic_year_id")
+  /// Tanggal santri masuk unit ini pada tahun ajaran ini. Wajib: baris tanpa
+  /// tanggal masuk tidak bisa menjawab pertanyaan apa pun tentang "saat itu".
+  entryDate      DateTime  @map("entry_date") @db.Date
+  /// Kosong berarti masih berjalan. Terisi berarti sudah selesai atau keluar —
+  /// barisnya tetap tinggal sebagai riwayat.
+  exitDate       DateTime? @map("exit_date") @db.Date
+  /// Alasan keluar bila diketahui. Dijaga CHECK di basis data (lihat migrasi
+  /// 20260912020000), bukan enum Postgres: daftar nilainya masih akan tumbuh.
+  exitReason     String?   @map("exit_reason")
+  /// Tingkat saat itu ("1", "7", "X"), disalin dari rombelnya sebagai cuplikan —
+  /// kelasnya bisa dihapus, riwayatnya tidak boleh ikut hilang.
+  gradeLevel     String?   @map("grade_level")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  student      Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  unit         Unit         @relation(fields: [unitId], references: [id])
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
+
+  /// Nama indeksnya dipatok eksplisit: nama bawaan Prisma untuk tiga kolom ini
+  /// 64 karakter, satu lewat dari batas Postgres, jadi ia akan dipotong dan
+  /// nama di basis data tidak lagi sama dengan yang dikira Prisma.
+  @@unique([studentId, unitId, academicYearId], map: "student_unit_enrollments_student_unit_year_key")
+  @@index([studentId, entryDate])
+  @@index([unitId, academicYearId])
+  @@index([academicYearId])
+  @@map("student_unit_enrollments")
+}
+
 model ClassEnrollment {
   id         String   @id @default(uuid())
   studentId  String   @map("student_id")
   classId    String   @map("class_id")
   enrolledAt DateTime @default(now()) @map("enrolled_at")
+  /// Kosakatanya di `packages/shared/src/types/student-status.ts`
+  /// (CLASS_ENROLLMENT_STATUS) dan diikat CHECK `class_enrollments_status_check`.
+  /// BEDA dari status santri: 'completed' ada di sini, 'alumni' tidak.
   status     String   @default("active") // active, completed, transferred, dropped
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
@@ -2866,6 +2982,7 @@ model Grade {
   academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
   gradedBy     User         @relation("GradeRecorder", fields: [gradedById], references: [id])
 
+  @@unique([studentId, examId])
   @@index([studentId])
   @@index([subjectId])
   @@index([examId])
@@ -3421,10 +3538,22 @@ model AdmissionWave {
   name            String // e.g., "Gelombang 1 2024-2025"
   startDate       DateTime   @map("start_date")
   endDate         DateTime   @map("end_date")
-  quota           Int // Kuota pendaftar
+  /// Kuota pendaftar. Dijaga di basis data oleh dua CHECK yang tidak bisa
+  /// diungkapkan Prisma (lihat migrasi 20260912010000):
+  /// `quota >= 1` dan `registered_count <= quota`. Menurunkan kuota di bawah
+  /// jumlah pendaftar yang sudah masuk ditolak API dengan 400 lebih dulu
+  /// (ppdb-wave.service.ts) — cara menutup pendaftaran lebih awal adalah
+  /// mengubah status, bukan mengecilkan angka.
+  quota           Int
   registeredCount Int        @default(0) @map("registered_count")
   acceptedCount   Int        @default(0) @map("accepted_count")
   status          WaveStatus @default(UPCOMING)
+  /// `true` when the wave transitioned to FULL purely because `registeredCount`
+  /// reached `quota` (auto-assign or the status cron). `false` when an operator
+  /// set FULL manually. `deleteRegistrant` reopens a FULL wave only when this is
+  /// true, so a deliberately hand-closed wave is never silently reopened by a
+  /// cancellation. NULL for rows migrated from before this flag existed.
+  fullByCapacity   Boolean?  @default(false) @map("full_by_capacity")
   registrationFee Decimal?   @map("registration_fee") @db.Decimal(12, 2)
   notes           String?
   createdAt       DateTime   @default(now()) @map("created_at")
@@ -5854,118 +5983,6 @@ model PayrollItem {
   @@map("payroll_items")
 }
 
-// =====================================
-// PKG - PENILAIAN KINERJA GURU
-// =====================================
-
-/// PKGPeriod - Periode Penilaian Kinerja Guru (tahunan)
-model PKGPeriod {
-  id             String   @id @default(uuid())
-  unitId         String   @map("unit_id")
-  academicYearId String   @map("academic_year_id")
-  name           String // e.g., "PKG Semester 1 2024/2025"
-  startDate      DateTime @map("start_date")
-  endDate        DateTime @map("end_date")
-  status         String   @default("DRAFT") // DRAFT, ACTIVE, COMPLETED, ARCHIVED
-  description    String?
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  unit         Unit            @relation(fields: [unitId], references: [id])
-  academicYear AcademicYear    @relation(fields: [academicYearId], references: [id])
-  evaluations  PKGEvaluation[]
-
-  @@index([unitId])
-  @@index([academicYearId])
-  @@map("pkg_periods")
-}
-
-/// PKGEvaluation - Hasil Evaluasi PKG per Guru
-model PKGEvaluation {
-  id         String  @id @default(uuid())
-  periodId   String  @map("period_id")
-  teacherId  String  @map("teacher_id")
-  assessorId String? @map("assessor_id") // Penilai (Kepala Sekolah)
-
-  // 4 Kompetensi Utama (Nilai 1-4)
-  pedagogikScore   Decimal? @map("pedagogik_score") @db.Decimal(3, 2)
-  kepribadianScore Decimal? @map("kepribadian_score") @db.Decimal(3, 2)
-  sosialScore      Decimal? @map("sosial_score") @db.Decimal(3, 2)
-  profesionalScore Decimal? @map("profesional_score") @db.Decimal(3, 2)
-
-  // Total score and grade
-  totalScore     Decimal? @map("total_score") @db.Decimal(5, 2) // Nilai akhir (0-100)
-  grade          String? // A (Amat Baik), B (Baik), C (Cukup), D (Kurang)
-  creditPoints   Decimal? @map("credit_points") @db.Decimal(5, 2) // Angka Kredit
-  recommendation String? // Rekomendasi (LANJUT, PEMBINAAN, PKB)
-
-  // Status & Timeline
-  status           String    @default("DRAFT") // DRAFT, SELF_ASSESSMENT, OBSERVATION, REVIEW, APPROVED
-  selfAssessmentAt DateTime? @map("self_assessment_at")
-  observedAt       DateTime? @map("observed_at")
-  approvedAt       DateTime? @map("approved_at")
-
-  notes     String?
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  period    PKGPeriod     @relation(fields: [periodId], references: [id])
-  teacher   Teacher       @relation(fields: [teacherId], references: [id])
-  assessor  User?         @relation("PKGAssessor", fields: [assessorId], references: [id])
-  details   PKGDetail[]
-  documents PKGDocument[]
-
-  @@unique([periodId, teacherId])
-  @@index([periodId])
-  @@index([teacherId])
-  @@map("pkg_evaluations")
-}
-
-/// PKGDetail - Detail Penilaian per Kompetensi
-model PKGDetail {
-  id            String @id @default(uuid())
-  evaluationId  String @map("evaluation_id")
-  competency    String // PEDAGOGIK, KEPRIBADIAN, SOSIAL, PROFESIONAL
-  indicator     String // Kode indikator (P1, P2, K1, S1, PR1, dst)
-  indicatorName String @map("indicator_name") // Nama indikator lengkap
-
-  // Penilaian
-  selfScore     Int?    @map("self_score") // Nilai dari guru (1-4)
-  assessorScore Int?    @map("assessor_score") // Nilai dari penilai (1-4)
-  finalScore    Int?    @map("final_score") // Nilai akhir
-  evidence      String? // Bukti/catatan
-  notes         String?
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  evaluation PKGEvaluation @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
-
-  @@index([evaluationId])
-  @@map("pkg_details")
-}
-
-/// PKGDocument - Dokumen Pendukung PKG
-model PKGDocument {
-  id           String @id @default(uuid())
-  evaluationId String @map("evaluation_id")
-  name         String
-  type         String // RPP, SILABUS, NILAI, SERTIFIKAT, KEHADIRAN, LAINNYA
-  fileUrl      String @map("file_url")
-  fileSize     Int?   @map("file_size")
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  evaluation PKGEvaluation @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
-
-  @@index([evaluationId])
-  @@map("pkg_documents")
-}
 
 // =====================================
 // STUDENT PORTFOLIO
@@ -7306,6 +7323,7 @@ enum LetterStatus {
 /// Setiap perbuatan yang mengubah perjalanan sebuah surat.
 enum LetterFlowAction {
   CREATED // Surat dicatat/dibuat
+  EDITED // Naskah surat diperbarui/diubah (bukan tindak lanjut disposisi)
   SUBMITTED // Konsep diajukan untuk diverifikasi
   APPROVED // Diparaf/disetujui oleh salah satu verifikator
   SIGNED // Ditandatangani oleh penandatangan akhir
@@ -8204,25 +8222,48 @@ model Question {
 
 /// ExamAttempt - Sesi Ujian Siswa
 model ExamAttempt {
-  id         String            @id @default(uuid())
-  examId     String            @map("exam_id")
-  studentId  String            @map("student_id")
-  startedAt  DateTime          @default(now()) @map("started_at")
-  finishedAt DateTime?         @map("finished_at")
-  score      Decimal?          @db.Decimal(5, 2)
-  status     ExamAttemptStatus @default(IN_PROGRESS)
-  createdAt  DateTime          @default(now()) @map("created_at")
-  updatedAt  DateTime          @updatedAt @map("updated_at")
+  id             String            @id @default(uuid())
+  examId         String            @map("exam_id")
+  studentId      String            @map("student_id")
+  startedAt      DateTime          @default(now()) @map("started_at")
+  finishedAt     DateTime?         @map("finished_at")
+  score          Decimal?          @db.Decimal(5, 2)
+  status         ExamAttemptStatus @default(IN_PROGRESS)
+  tabSwitchCount Int               @default(0) @map("tab_switch_count")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
 
   // Relations
-  exam    Exam         @relation(fields: [examId], references: [id])
-  student Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  answers ExamAnswer[]
+  exam         Exam              @relation(fields: [examId], references: [id])
+  student      Student           @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  answers      ExamAnswer[]
+  securityLogs ExamSecurityLog[]
 
   @@unique([examId, studentId])
   @@index([examId])
   @@index([studentId])
   @@map("exam_attempts")
+}
+
+/// ExamSecurityLog - Catatan aktivitas/pelanggaran keamanan ujian
+model ExamSecurityLog {
+  id        String @id @default(uuid())
+  attemptId String @map("attempt_id")
+  /// Event name. Guarded in the database by a CHECK constraint listing the known
+  /// values (see the migration, and the sync test that keeps that list equal to
+  /// `SecurityEventType` in @cipansor/shared). Prisma cannot express a CHECK, so
+  /// the type here is String — the constraint is still enforced by Postgres.
+  type      String
+  /// Structured payload: which control fired, how long the student was away, the
+  /// duration the clock used. JSONB so it can be queried and aggregated.
+  details   Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  attempt ExamAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+
+  @@index([attemptId])
+  @@map("exam_security_logs")
 }
 
 /// ExamAnswer - Jawaban Siswa
@@ -8660,6 +8701,27 @@ enum PlanStatus {
   CANCELLED
 }
 
+/// Where a yayasan-level document (RPJP, Renstra, RKA Yayasan) stands in its
+/// ratification: Pengurus drafts and submits (UU 16/2001 Ps. 31), Pengawas
+/// reviews and advises (Ps. 40 ayat 1), Pengurus answers the review, and
+/// Pembina ratifies (Ps. 28 ayat 2 huruf d) or sends it back. Kept apart from
+/// PlanStatus because PlanStatus is shared with PK and evaluations.
+enum PlanReviewStage {
+  DIREVIU_PENGAWAS
+  HASIL_REVIU
+  DIAJUKAN_PEMBINA
+  DITETAPKAN
+  DIKEMBALIKAN
+}
+
+enum PlanReviewAction {
+  AJUKAN_REVIU
+  KIRIM_HASIL_REVIU
+  AJUKAN_PENETAPAN
+  TETAPKAN
+  KEMBALIKAN
+}
+
 enum PlanPriority {
   LOW
   MEDIUM
@@ -8714,12 +8776,16 @@ enum PlanIndicatorLevel {
 
 model StrategicPlan {
   id String @id @default(uuid())
-  /// Null for foundation-wide plans. RPJP and Renstra are yayasan-level
-  /// documents covering every unit, so requiring a unit made the foundation's
-  /// own plans impossible to represent — they had to be filed against an
-  /// arbitrary school. Unit-level plans (a school's own RKA) still set it.
+  /// Null for foundation-wide plans. RPJP, Renstra and the consolidated RKA
+  /// Yayasan are yayasan-level documents covering every unit, so requiring a
+  /// unit made the foundation's own plans impossible to represent — they had
+  /// to be filed against an arbitrary school. Only a school's own RKA sets it.
   unitId       String?    @map("unit_id")
-  parentId     String?    @map("parent_id") // Hierarchy: RPJP -> RENSTRA -> RKA
+  /// Cascade, mirroring the national chain (RPJPD → RPJMD → RKPD → Renja/RKA
+  /// per OPD): the ANNUAL level has two tiers, one consolidated document the
+  /// pengurus approves and the unit slices beneath it.
+  ///   RPJP → RENSTRA → RKA Yayasan (unitId null) → RKA Unit (unitId set)
+  parentId     String?    @map("parent_id")
   title        String
   description  String?    @db.Text
   /// Visi statement (RPJP Visi 2045 / Renstra Visi periode).
@@ -8735,6 +8801,9 @@ model StrategicPlan {
   createdById  String     @map("created_by_id")
   approvedById String?    @map("approved_by_id")
   approvedAt   DateTime?  @map("approved_at")
+  /// Null until a yayasan document is first submitted to Pengawas. Unit plans
+  /// never enter this flow: Ketua Pengurus approves an RKA Unit directly.
+  reviewStage  PlanReviewStage? @map("review_stage")
   createdAt    DateTime   @default(now()) @map("created_at")
   updatedAt    DateTime   @updatedAt @map("updated_at")
 
@@ -8750,6 +8819,7 @@ model StrategicPlan {
   internalAudits InternalAudit[]
   collaborators  PlanCollaborator[]
   performanceAgreements PerformanceAgreement[]
+  reviewEvents   PlanReviewEvent[]
 
   @@index([unitId])
   @@index([status])
@@ -8770,6 +8840,30 @@ model PlanCollaborator {
 
   @@unique([planId, userId])
   @@map("plan_collaborators")
+}
+
+/// Append-only trail of a yayasan document's ratification: who submitted it,
+/// what Pengawas found, how Pengurus answered (revised or not, and why), and
+/// what Pembina decided.
+model PlanReviewEvent {
+  id            String           @id @default(uuid())
+  planId        String           @map("plan_id")
+  action        PlanReviewAction
+  actorId       String           @map("actor_id")
+  /// The role the actor acted in. People change office; the office they held
+  /// when they signed is what the record has to show.
+  actorRoleCode String           @map("actor_role_code")
+  notes         String?          @db.Text
+  /// Only on AJUKAN_PENETAPAN: whether Pengurus revised after the review. When
+  /// it did not, `notes` carries the reason.
+  revised       Boolean?
+  createdAt     DateTime         @default(now()) @map("created_at")
+
+  plan  StrategicPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  actor User          @relation("PlanReviewActor", fields: [actorId], references: [id])
+
+  @@index([planId, createdAt])
+  @@map("plan_review_events")
 }
 
 /// PlanObjective - Sasaran/tujuan dari rencana
@@ -10316,6 +10410,21 @@ model PerformanceAgreement {
 }
 
 /// PKIndicator - Indikator kinerja dalam sebuah PK
+/// Cara realisasi bulanan dijumlahkan menjadi capaian setahun.
+///
+/// Dulu selalu dijumlahkan, apa pun satuannya. Untuk indikator berbasis
+/// persentase itu menghasilkan angka yang mustahil: dua evaluasi 88% dan 80%
+/// terhadap target 85% terbaca "Realisasi YTD 168 persen". Sifat indikator
+/// harus DINYATAKAN, bukan ditebak dari teks satuannya.
+enum IndicatorAggregation {
+  /// Dijumlahkan — untuk hitungan yang menumpuk (kegiatan, dokumen, juz, orang).
+  KUMULATIF
+  /// Dirata-ratakan — untuk persentase, rasio, indeks, dan nilai.
+  RATA_RATA
+  /// Diambil dari periode terakhir — untuk keadaan akhir, bukan akumulasi.
+  TERAKHIR
+}
+
 model PKIndicator {
   id                      String            @id @default(uuid())
   pkId                    String            @map("pk_id")
@@ -10327,7 +10436,8 @@ model PKIndicator {
   refIndicatorId          String?           @map("ref_indicator_id") // PKIndicator atasan
   refStrategicIndicatorId String?           @map("ref_strategic_indicator_id") // PlanIndicator (RKA/Renstra)
   notes                   String?           @db.Text // Catatan keterkaitan
-  realization             Float             @default(0) // Realisasi akumulatif YTD
+  realization             Float             @default(0) // Capaian YTD, dihitung menurut `aggregation`
+  aggregation             IndicatorAggregation @default(KUMULATIF)
   createdAt               DateTime          @default(now()) @map("created_at")
   updatedAt               DateTime          @updatedAt @map("updated_at")
 
@@ -10416,4 +10526,38 @@ model PKBehaviorEvaluation {
 
   @@unique([evaluationId, behaviorValueId])
   @@map("pk_behavior_evaluations")
+}
+
+// ---------------------------------------------------------------
+// Student card lifecycle state (Flag 6)
+// ---------------------------------------------------------------
+enum StudentCardStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+}
+
+/// Audit trail of a student ID card's issue/regeneration/revocation lifecycle.
+/// A scalar `studentId` snapshot (no FK) keeps the audit row alive after a
+/// student soft-delete and avoids coupling this append-mostly table to the
+/// large `Student` model, which is edited only surgically (golden rule #1).
+model StudentCardState {
+  id            String            @id @default(cuid())
+  studentId     String            @map("student_id")
+  cardNumber    String            @map("card_number")
+  status        StudentCardStatus @default(ACTIVE)
+  /// When this card was first issued / (re)generated.
+  issuedAt      DateTime          @default(now()) @map("issued_at")
+  /// Timestamp of the regeneration that produced this row (audit).
+  regeneratedAt DateTime          @default(now()) @map("regenerated_at")
+  validUntil    DateTime?         @map("valid_until")
+  revokedAt     DateTime?         @map("revoked_at")
+  revokeReason  String?           @map("revoke_reason")
+  /// Snapshot of the user who triggered the regeneration (survives user
+  /// deletion; `User` is not modelled here).
+  generatedById String?           @map("generated_by_id")
+
+  @@index([studentId])
+  @@index([status])
+  @@map("student_card_state")
 }

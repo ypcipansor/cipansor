@@ -11,7 +11,9 @@ import type {
   ViolationSummary,
   LibrarySummary,
   PsbSummary,
+  SpmbSummary,
 } from '@cipansor/shared';
+import { STUDENT_STATUS } from '@cipansor/shared';
 
 interface DateRange {
   startDate?: string;
@@ -165,7 +167,11 @@ export async function getStudentStats(unitId?: string): Promise<StudentStatistic
       prisma.student.count({
         where: {
           ...unitFilter,
-          status: 'graduated',
+          // Dulu 'graduated' — nilai yang TIDAK PERNAH ditulis siapa pun.
+          // Satu-satunya penulisnya, `alumni.service`, menulis 'alumni', jadi
+          // "alumni tahun ini" permanen nol. Cacat yang sama keluarganya dengan
+          // 39 penyaring huruf besar di PR ini: satu fakta, beberapa ejaan.
+          status: STUDENT_STATUS.ALUMNI,
           updatedAt: { gte: new Date(new Date().getFullYear(), 0, 1) },
         },
       }),
@@ -727,11 +733,18 @@ export async function getLibraryStats(unitId?: string): Promise<LibrarySummary> 
   };
 }
 
-export async function getPSBStats(unitId?: string): Promise<PsbSummary> {
-  // Check for active admission period
+export async function getSPMBStats(unitId?: string): Promise<SpmbSummary> {
+  // Check for a *currently running* admission period. Picking the period with
+  // the latest startDate alone is wrong: a future-dated `isActive` period would
+  // then shadow the intake that is actually running today. A period counts as
+  // active only when `isActive` is true AND `now` falls inside its
+  // [startDate, endDate] window.
+  const now = new Date();
   const activePeriod = await prisma.admissionPeriod.findFirst({
     where: {
       isActive: true,
+      startDate: { lte: now },
+      endDate: { gte: now },
       ...(unitId && { unitId }),
     },
     orderBy: { startDate: 'desc' },
@@ -788,3 +801,5 @@ export async function getPSBStats(unitId?: string): Promise<PsbSummary> {
     byPeriod: periodsData,
   };
 }
+
+export const getPSBStats = getSPMBStats;

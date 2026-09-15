@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { use, useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { MainLayout } from "@/components/layout";
 import { Button } from "@/components/ui/button";
@@ -17,13 +17,17 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import {
   useStartExam,
+  useExamAttempt,
   useSubmitAnswer,
   useFinishExam,
+  useRecordSecurityLog,
   ExamAttempt,
+  ExamAnswer,
   Question,
   QuestionType,
 } from "@/hooks/use-cbt";
 import { useExam } from "@/hooks/use-assessment";
+import { getErrorMessage } from "@/lib/api-error";
 import {
   Loader2,
   Timer,
@@ -46,27 +50,36 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
-export default function TakeExamPage({ params }: { params: { id: string } }) {
+export default function TakeExamPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   const router = useRouter();
-  const { data: exam, isLoading: loadingExam } = useExam(params.id);
+  const { id: examId } = use(params);
+  const { data: exam, isLoading: loadingExam } = useExam(examId);
   const startExam = useStartExam();
 
-  const [attempt, setAttempt] = useState<ExamAttempt | null>(null);
+  const [attemptId, setAttemptId] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(false);
+
+  const { data: fullAttempt, isLoading: loadingAttempt } = useExamAttempt(
+    attemptId ?? "",
+  );
 
   const handleStart = async () => {
     setIsStarting(true);
     try {
-      const data = await startExam.mutateAsync(params.id);
-      setAttempt(data);
-    } catch (error: any) {
-      toast.error(error.message || "Gagal memulai ujian");
+      const data = await startExam.mutateAsync(examId);
+      setAttemptId(data.id);
+    } catch (error) {
+      toast.error(getErrorMessage(error));
     } finally {
       setIsStarting(false);
     }
   };
 
-  if (loadingExam) {
+  if (loadingExam || (attemptId && loadingAttempt)) {
     return (
       <div className="flex items-center justify-center h-screen">
         <Loader2 className="h-8 w-8 animate-spin" />
@@ -86,7 +99,7 @@ export default function TakeExamPage({ params }: { params: { id: string } }) {
     );
   }
 
-  if (!attempt) {
+  if (!fullAttempt) {
     return (
       <MainLayout>
         <div className="max-w-2xl mx-auto py-12">
@@ -143,7 +156,7 @@ export default function TakeExamPage({ params }: { params: { id: string } }) {
     );
   }
 
-  return <ExamPlayer attempt={attempt} examDuration={exam.duration} />;
+  return <ExamPlayer attempt={fullAttempt} examDuration={exam.duration} />;
 }
 
 function ExamPlayer({
@@ -158,21 +171,61 @@ function ExamPlayer({
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, any>>({});
   const [timeLeft, setTimeLeft] = useState(examDuration * 60); // seconds
+  const [tabSwitchCount, setTabSwitchCount] = useState(0);
 
   const submitAnswer = useSubmitAnswer();
   const finishExam = useFinishExam();
+  const recordSecurityLog = useRecordSecurityLog();
+
+  const draftStorageKey = `cbt_draft_${attempt.id}`;
 
   useEffect(() => {
     if (attempt?.exam?.questionBank?.questions) {
       setQuestions(attempt.exam.questionBank.questions);
     }
+
+    if (attempt?.tabSwitchCount) {
+      setTabSwitchCount(attempt.tabSwitchCount);
+    }
+
+    // Restore initial answers from backend + local draft storage for offline resilience
+    const initialAnswers: Record<string, any> = {};
     if (attempt?.answers) {
-      const initialAnswers: Record<string, any> = {};
       attempt.answers.forEach((ans: any) => {
         initialAnswers[ans.questionId] = ans.answer;
       });
-      setAnswers(initialAnswers);
     }
+
+    if (typeof window !== "undefined") {
+      if (attempt.status !== "IN_PROGRESS") {
+        localStorage.removeItem(draftStorageKey);
+      } else {
+        try {
+          const savedDraftRaw = localStorage.getItem(draftStorageKey);
+          if (savedDraftRaw) {
+            const savedDraft = JSON.parse(savedDraftRaw);
+            const draftAnswers = savedDraft.answers || savedDraft;
+            const draftTime = savedDraft.timestamp || 0;
+            const attemptUpdatedTime = attempt.updatedAt
+              ? new Date(attempt.updatedAt).getTime()
+              : 0;
+
+            for (const [qId, draftVal] of Object.entries(draftAnswers)) {
+              const hasServerAns =
+                initialAnswers[qId] !== undefined && initialAnswers[qId] !== "";
+              // For questions with NO server answer (hasServerAns == false), always apply local draft.
+              // For questions with existing server answer, apply draft only if draft is newer than attempt.updatedAt.
+              if (!hasServerAns || draftTime > attemptUpdatedTime) {
+                initialAnswers[qId] = draftVal;
+              }
+            }
+          }
+        } catch (err) {
+          console.error("Failed to load local exam draft", err);
+        }
+      }
+    }
+    setAnswers(initialAnswers);
 
     // Calculate time left based on startedAt
     if (attempt.startedAt) {
@@ -182,9 +235,180 @@ function ExamPlayer({
       const diff = Math.floor((endTime - now) / 1000);
       setTimeLeft(diff > 0 ? diff : 0);
     }
-  }, [attempt, examDuration]);
+  }, [attempt, examDuration, draftStorageKey]);
 
-  // Timer
+  const currentQuestion = questions[currentIndex];
+
+  // Keep the latest answers/server answers readable from callbacks without
+  // eagerly rebinding effects (used by the finish and timer flows).
+  const answersRef = useRef(answers);
+  useEffect(() => {
+    answersRef.current = answers;
+  }, [answers]);
+
+  const serverAnswersRef = useRef(attempt.answers);
+  useEffect(() => {
+    serverAnswersRef.current = attempt.answers;
+  }, [attempt.answers]);
+
+  // Track in-flight autosaves so finalization can settle them before grading,
+  // preventing a slow autosave request landing after the final answers.
+  const pendingSubmitsRef = useRef<Set<Promise<unknown>>>(new Set());
+  const trackSubmit = useCallback((promise: Promise<unknown>) => {
+    const wrapped = promise.finally(() =>
+      pendingSubmitsRef.current.delete(wrapped),
+    );
+    wrapped.catch(() => {}); // keep the tracking set rejection-free
+    pendingSubmitsRef.current.add(wrapped);
+    return wrapped;
+  }, []);
+
+  // An answer counts as unsynced when it was cleared (""), so clearing an
+  // offline answer is still propagated to the server, or when its serialized
+  // value differs from what the server last persisted.
+  const isUnsynced = useCallback(
+    (qId: string, ans: any, serverAnswers?: ExamAnswer[]) => {
+      const serverAns = serverAnswers?.find(
+        (a: any) => a.questionId === qId,
+      )?.answer;
+      return (
+        ans !== undefined &&
+        (serverAns === undefined ||
+          JSON.stringify(serverAns) !== JSON.stringify(ans))
+      );
+    },
+    [],
+  );
+
+  const collectUnsynced = useCallback(
+    (sourceAnswers: Record<string, any>, serverAnswers?: ExamAnswer[]) =>
+      Object.entries(sourceAnswers).filter(([qId, ans]) =>
+        isUnsynced(qId, ans, serverAnswers),
+      ),
+    [isUnsynced],
+  );
+
+  const submitAll = useCallback(
+    (entries: Array<[string, any]>, attemptId: string) =>
+      entries.map(([questionId, answer]) =>
+        submitAnswer.mutateAsync({ attemptId, questionId, answer }),
+      ),
+    [submitAnswer],
+  );
+
+  const handleFinish = useCallback(
+    async (opts?: { isAuto?: boolean }) => {
+      const isAuto = opts?.isAuto ?? false;
+      // Await any in-flight autosaves so an older request cannot land after the
+      // final sync and overwrite a newer answer on the server.
+      const inFlight = Array.from(pendingSubmitsRef.current);
+      if (inFlight.length > 0) {
+        await Promise.allSettled(inFlight);
+      }
+
+      const latest = answersRef.current;
+      const serverAnswers = serverAnswersRef.current;
+      const unsyncedEntries = collectUnsynced(latest, serverAnswers);
+
+      try {
+        if (unsyncedEntries.length > 0) {
+          const results = await Promise.allSettled(
+            submitAll(unsyncedEntries, attempt.id),
+          );
+          const hasFailed = results.some((r) => r.status === "rejected");
+
+          if (hasFailed) {
+            if (isAuto) {
+              // Auto-submit on timeout: retry a few times, then still finish the
+              // exam so it is graded instead of silently EXPIRING unmarked.
+              for (let retry = 0; retry < 2; retry++) {
+                await new Promise((r) => setTimeout(r, 800));
+                const retryResults = await Promise.allSettled(
+                  submitAll(
+                    collectUnsynced(
+                      answersRef.current,
+                      serverAnswersRef.current,
+                    ),
+                    attempt.id,
+                  ),
+                );
+                if (retryResults.every((r) => r.status === "fulfilled")) break;
+              }
+            } else {
+              toast.error(
+                "Beberapa jawaban gagal dikirim ke server. Mohon periksa koneksi internet Anda dan coba lagi.",
+              );
+              return;
+            }
+          }
+        }
+
+        await finishExam.mutateAsync(attempt.id);
+        if (typeof window !== "undefined") {
+          localStorage.removeItem(draftStorageKey);
+        }
+        toast.success("Ujian selesai!");
+        router.push("/student/exams");
+      } catch {
+        toast.error("Gagal menyelesaikan ujian. Silakan coba lagi.");
+      }
+    },
+    [
+      attempt.id,
+      collectUnsynced,
+      draftStorageKey,
+      finishExam,
+      router,
+      submitAll,
+    ],
+  );
+
+  // Stable ref so the one-second timer never depends on `handleFinish` (which
+  // itself depends on live answer state) — otherwise every keystroke would tear
+  // down and restart the interval and the countdown would run slow on essays.
+  const handleFinishRef = useRef(handleFinish);
+  useEffect(() => {
+    handleFinishRef.current = handleFinish;
+  }, [handleFinish]);
+
+  const handleAnswerChange = async (value: any) => {
+    if (!currentQuestion) return;
+
+    const newAnswers = { ...answersRef.current, [currentQuestion.id]: value };
+    answersRef.current = newAnswers;
+    setAnswers(newAnswers);
+
+    // Save draft locally with timestamp for offline recovery
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem(
+          draftStorageKey,
+          JSON.stringify({
+            answers: newAnswers,
+            timestamp: Date.now(),
+            examId: attempt.examId,
+          }),
+        );
+      } catch (err) {
+        console.error("Failed to save draft locally", err);
+      }
+    }
+
+    try {
+      // Track the autosave so finish can await it before finalizing.
+      await trackSubmit(
+        submitAnswer.mutateAsync({
+          attemptId: attempt.id,
+          questionId: currentQuestion.id,
+          answer: value,
+        }),
+      );
+    } catch {
+      console.error("Failed to save answer online; saved to offline draft");
+    }
+  };
+
+  // Timer & Auto-submit
   useEffect(() => {
     if (attempt.status !== "IN_PROGRESS") return;
 
@@ -192,7 +416,11 @@ function ExamPlayer({
       setTimeLeft((prev) => {
         if (prev <= 1) {
           clearInterval(timer);
-          // Auto submit?
+          toast.warning(
+            "Waktu pengerjaan telah habis. Mengirim jawaban otomatis...",
+          );
+          // Auto-submit path: always completes the exam even if some uploads fail.
+          handleFinishRef.current?.({ isAuto: true });
           return 0;
         }
         return prev - 1;
@@ -202,34 +430,64 @@ function ExamPlayer({
     return () => clearInterval(timer);
   }, [attempt.status]);
 
-  const currentQuestion = questions[currentIndex];
+  // Anti-Cheating: Tab Switch & Window Blur Listener
+  useEffect(() => {
+    if (attempt.status !== "IN_PROGRESS") return;
 
-  const handleAnswerChange = async (value: any) => {
-    if (!currentQuestion) return;
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        setTabSwitchCount((prev) => prev + 1);
+        toast.error(
+          "Peringatan Keamanan: Anda terdeteksi meninggalkan layar ujian! Aktivitas ini dicatat pengawas.",
+        );
+        recordSecurityLog.mutate({
+          attemptId: attempt.id,
+          eventType: "TAB_SWITCH",
+          details: { note: "Pindah tab atau meminimalkan jendela" },
+        });
+      }
+    };
 
-    setAnswers((prev) => ({ ...prev, [currentQuestion.id]: value }));
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [attempt.id, attempt.status, recordSecurityLog]);
 
-    // Debounced submit or immediate? immediate for now
-    try {
-      await submitAnswer.mutateAsync({
-        attemptId: attempt.id,
-        questionId: currentQuestion.id,
-        answer: value,
-      });
-    } catch (error) {
-      console.error("Failed to save answer");
-    }
-  };
+  // Offline resilience sync listener
+  useEffect(() => {
+    if (attempt.status !== "IN_PROGRESS") return;
 
-  const handleFinish = async () => {
-    try {
-      await finishExam.mutateAsync(attempt.id);
-      toast.success("Ujian selesai!");
-      router.push("/student/exams");
-    } catch (error) {
-      toast.error("Gagal menyelesaikan ujian");
-    }
-  };
+    const handleOnline = async () => {
+      toast.success(
+        "Koneksi terhubung kembali. Meringkas sinkronisasi jawaban...",
+      );
+      // Same unsynced semantics as handleFinish: cleared ("") answers are synced too.
+      const unsyncedEntries = collectUnsynced(
+        answersRef.current,
+        serverAnswersRef.current,
+      );
+
+      if (unsyncedEntries.length > 0) {
+        await Promise.all(
+          submitAll(unsyncedEntries, attempt.id).map((p) =>
+            p.catch((e) =>
+              console.error("Failed to sync answer on reconnect", e),
+            ),
+          ),
+        );
+      }
+    };
+
+    window.addEventListener("online", handleOnline);
+    return () => window.removeEventListener("online", handleOnline);
+  }, [
+    attempt.id,
+    attempt.status,
+    collectUnsynced,
+    serverAnswersRef,
+    submitAll,
+  ]);
 
   if (attempt.status !== "IN_PROGRESS") {
     return (
@@ -276,6 +534,12 @@ function ExamPlayer({
             {attempt.exam?.title}
           </div>
           <div className="flex items-center gap-4">
+            {tabSwitchCount > 0 && (
+              <div className="flex items-center gap-1 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-md">
+                <AlertTriangle className="h-3.5 w-3.5" />
+                <span>{tabSwitchCount}x Pindah Tab</span>
+              </div>
+            )}
             <div
               className={`flex items-center gap-2 font-mono text-xl font-bold ${timeLeft < 300 ? "text-red-500" : "text-primary"}`}
             >
@@ -299,7 +563,7 @@ function ExamPlayer({
                 <AlertDialogFooter>
                   <AlertDialogCancel>Batal</AlertDialogCancel>
                   <AlertDialogAction
-                    onClick={handleFinish}
+                    onClick={() => handleFinish()}
                     className="bg-primary"
                   >
                     Ya, Selesai
@@ -314,7 +578,36 @@ function ExamPlayer({
       <div className="flex-1 max-w-7xl mx-auto w-full p-4 lg:p-6 grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Main Question Area */}
         <div className="lg:col-span-3 space-y-6">
-          <Card className="min-h-[400px] flex flex-col">
+          <Card
+            className="min-h-[400px] flex flex-col select-none"
+            onContextMenu={(e) => {
+              e.preventDefault();
+              toast.warning("Klik kanan dinonaktifkan demi keamanan ujian.");
+              recordSecurityLog.mutate({
+                attemptId: attempt.id,
+                eventType: "RIGHT_CLICK",
+                details: { note: "Percobaan membuka menu klik kanan" },
+              });
+            }}
+            onCopy={(e) => {
+              e.preventDefault();
+              toast.warning("Menyalin teks dinonaktifkan demi keamanan ujian.");
+              recordSecurityLog.mutate({
+                attemptId: attempt.id,
+                eventType: "COPY",
+                details: { note: "Percobaan menyalin teks" },
+              });
+            }}
+            onPaste={(e) => {
+              e.preventDefault();
+              toast.warning("Tempel teks dinonaktifkan.");
+              recordSecurityLog.mutate({
+                attemptId: attempt.id,
+                eventType: "PASTE",
+                details: { note: "Percobaan menempel teks" },
+              });
+            }}
+          >
             <CardHeader>
               <div className="flex justify-between">
                 <CardTitle>Soal No. {currentIndex + 1}</CardTitle>

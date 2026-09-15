@@ -3,6 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api, { ApiResponse } from "@/lib/api";
 import { AttendanceStatus } from "@cipansor/shared";
+import type { StudentStatus } from "@cipansor/shared";
 
 // ======================
 // TYPES
@@ -49,7 +50,7 @@ export interface HomeroomStudent {
   parentPhone: string;
   parentEmail?: string;
   photo?: string;
-  status: "ACTIVE" | "INACTIVE" | "GRADUATED" | "TRANSFERRED" | "DROPPED_OUT";
+  status: StudentStatus;
   attendanceSummary?: HomeroomAttendanceSummary;
   academicSummary?: AcademicSummary;
   behaviorNotes?: BehaviorNote[];

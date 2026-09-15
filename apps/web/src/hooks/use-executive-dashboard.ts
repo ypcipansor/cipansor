@@ -6,6 +6,7 @@
 
 import { useQuery, useQueries } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api-client";
+import { STUDENT_STATUS } from "@cipansor/shared";
 
 // Types
 export interface UnitStats {
@@ -300,7 +301,7 @@ export function useEnrollmentTrends(months: number = 6) {
             const response = await apiClient.get("/students", {
               params: {
                 unitId: unit.id,
-                status: "ACTIVE",
+                status: STUDENT_STATUS.ACTIVE,
                 limit: 1, // We just need the count
               },
             });

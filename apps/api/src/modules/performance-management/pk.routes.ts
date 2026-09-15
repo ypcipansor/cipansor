@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authenticate, authorize } from '@/middleware/auth';
-import { RoleCode, UserRole } from '@prisma/client';
+import { RoleCode } from '@prisma/client';
+import { STAFF_ROLE_CODES } from './staff-roles';
 import * as pkController from './pk.controller';
 import * as evalController from './evaluation.controller';
 import * as analyticsController from './analytics.controller';
@@ -15,7 +16,11 @@ const leadership = () =>
   authorize(
     RoleCode.SUPER_ADMIN,
     RoleCode.YAYASAN_KETUA,
+    RoleCode.YAYASAN_PEMBINA,
     RoleCode.YAYASAN_PENGAWAS,
+    RoleCode.YAYASAN_SEKRETARIS,
+    RoleCode.YAYASAN_BENDAHARA,
+    RoleCode.YAYASAN_ANGGOTA,
     RoleCode.TKQ_ADMIN,
     RoleCode.SDIT_ADMIN,
     RoleCode.SMPIT_ADMIN,
@@ -24,6 +29,12 @@ const leadership = () =>
     RoleCode.SDIT_KEPALA_SEKOLAH,
     RoleCode.SMPIT_KEPALA_SEKOLAH,
     RoleCode.SMAQ_KEPALA_SEKOLAH,
+    RoleCode.PESANTREN_PENGASUH,
+    RoleCode.PESANTREN_DIREKTUR,
+    RoleCode.PT_REKTOR,
+    RoleCode.PT_WAKIL_REKTOR,
+    RoleCode.PT_DEKAN,
+    RoleCode.PT_KAPRODI,
     'UNIT_ADMIN' // Legacy pre-migration token value
   );
 
@@ -32,21 +43,27 @@ router.get('/dashboard', leadership(), analyticsController.getDashboard);
 router.get('/dashboard/drilldown/:unitId', leadership(), analyticsController.getDrilldown);
 router.get('/reports/consolidated', leadership(), analyticsController.getConsolidatedReport);
 
+// Daftar calon atasan penilai. Dulu hanya `authenticate`, sehingga SIAPA PUN
+// yang login — santri, wali murid, alumni, komite — bisa menarik direktori
+// staf lengkap dengan nama dan unitnya. Yang membutuhkannya hanyalah orang
+// yang memang menyusun PK, jadi dijaga dengan daftar peran yang sama.
+router.get('/supervisors', authorize(...STAFF_ROLE_CODES), pkController.listSupervisors);
+
 // Master data: behavioral values (SAFTI)
 router.get('/settings/behavioral-values', evalController.listBehavioralValues);
 router.post(
   '/settings/behavioral-values',
-  authorize(UserRole.SUPER_ADMIN),
+  authorize(RoleCode.SUPER_ADMIN),
   evalController.createBehavioralValue
 );
 router.put(
   '/settings/behavioral-values/:id',
-  authorize(UserRole.SUPER_ADMIN),
+  authorize(RoleCode.SUPER_ADMIN),
   evalController.updateBehavioralValue
 );
 router.delete(
   '/settings/behavioral-values/:id',
-  authorize(UserRole.SUPER_ADMIN),
+  authorize(RoleCode.SUPER_ADMIN),
   evalController.deleteBehavioralValue
 );
 
@@ -67,6 +84,7 @@ router.get('/', pkController.listPKs);
 router.post('/', pkController.createPK);
 router.get('/:id', pkController.getPK);
 router.put('/:id', pkController.updatePK);
+router.delete('/:id', pkController.deletePK);
 router.post('/:id/propose', pkController.proposePK);
 router.post('/:id/approve', pkController.approvePK);
 router.post('/:id/reject', pkController.rejectPK);

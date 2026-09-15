@@ -39,6 +39,7 @@ import {
 } from "@/components/security/turnstile-widget";
 import { getPeriodWindow } from "@/lib/admission-period";
 import { RegistrationTracker } from "@/components/admissions/registration-tracker";
+import { DocumentCaptureField } from "@/components/admissions/document-capture-field";
 import {
   CheckCircle2,
   User,
@@ -57,6 +58,7 @@ import {
 import { toast } from "sonner";
 import { format, differenceInDays } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
+import { api } from "@/lib/api";
 
 interface FormData {
   // Student info
@@ -199,11 +201,20 @@ export function SpmbForm({
     photo: File | null;
     birthCertificate: File | null;
     familyCard: File | null;
+    ktp: File | null;
   }>({
     photo: null,
     birthCertificate: null,
     familyCard: null,
+    ktp: null,
   });
+
+  const [ocrResults, setOcrResults] = useState<Record<string, { status: "WARNING" | "MISMATCH"; notes: string[] }>>({});
+  const [activeRegistration, setActiveRegistration] = useState<{
+    registrantId: string;
+    registrationToken: string;
+    registrationNo: string;
+  } | null>(null);
 
   const steps = [
     { id: "student", title: "Data Calon Santri", icon: User },
@@ -276,22 +287,91 @@ export function SpmbForm({
     }
   };
 
+  const uploadSelectedDocuments = async (registrantId: string, registrationToken?: string) => {
+    const fileEntries: { key: keyof typeof files; file: File | null; type: string; label: string }[] = [
+      { key: "photo", file: files.photo, type: "PHOTO", label: "Pas Foto" },
+      { key: "ktp", file: files.ktp, type: "ID_CARD", label: "KTP Orang Tua" },
+      { key: "familyCard", file: files.familyCard, type: "FAMILY_CARD", label: "Kartu Keluarga" },
+      { key: "birthCertificate", file: files.birthCertificate, type: "BIRTH_CERTIFICATE", label: "Akte Kelahiran" },
+    ];
+
+    const failedKeys: (keyof typeof files)[] = [];
+    const failedLabels: string[] = [];
+
+    for (const { key, file, type, label } of fileEntries) {
+      if (!file) continue;
+
+      try {
+        const base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = (err) => reject(err);
+          reader.readAsDataURL(file);
+        });
+
+        const ocr = ocrResults[key];
+        await api.post(`/admissions/public/registrants/${registrantId}/documents`, {
+          type,
+          base64,
+          fileName: file.name,
+          registrationToken,
+          ocrNotes: ocr?.notes,
+          ocrStatus: ocr?.status,
+        });
+      } catch (err: any) {
+        failedKeys.push(key);
+        failedLabels.push(label);
+        console.error(`Failed to upload ${type} document:`, err);
+      }
+    }
+
+    return { failedKeys, failedLabels };
+  };
+
+  const handleRetryUpload = async () => {
+    if (!activeRegistration) return;
+    setIsSubmitting(true);
+    try {
+      const { failedKeys, failedLabels } = await uploadSelectedDocuments(
+        activeRegistration.registrantId,
+        activeRegistration.registrationToken
+      );
+
+      setFiles((prev) => {
+        const next = { ...prev };
+        if (!failedKeys.includes("photo")) next.photo = null;
+        if (!failedKeys.includes("ktp")) next.ktp = null;
+        if (!failedKeys.includes("familyCard")) next.familyCard = null;
+        if (!failedKeys.includes("birthCertificate")) next.birthCertificate = null;
+        return next;
+      });
+
+      if (failedLabels.length === 0) {
+        toast.success("Seluruh berkas dokumen berhasil diunggah.");
+        setSuccessData({
+          registrationNumber: activeRegistration.registrationNo,
+          name: formData.fullName,
+        });
+        setActiveRegistration(null);
+        setFormData(initialFormData);
+        setCurrentStep(0);
+      } else {
+        toast.error(`Beberapa berkas masih gagal diunggah: ${failedLabels.join(", ")}`);
+      }
+    } catch (err) {
+      toast.error("Gagal mengunggah ulang berkas dokumen. Silakan coba lagi.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleSubmit = async () => {
+    if (activeRegistration) {
+      return handleRetryUpload();
+    }
     if (!turnstile.ready) return;
     setIsSubmitting(true);
     try {
-      // Build a plain JSON payload matching the backend's
-      // `createRegistrantSchema` in `apps/api/src/modules/admissions/schema.ts`.
-      // Notes:
-      //   - The schema field is `admissionPeriodId`, not the legacy `periodId`.
-      //   - `birthDate` must be an ISO-8601 datetime string (`z.string().datetime()`),
-      //     so we promote the date-only `<input type="date">` value to UTC midnight.
-      //   - `memorizedJuz` / `graduationYear` are numeric on the backend.
-      //   - `unitId` is not part of the schema (the unit is derived from the
-      //     admission period), so it's intentionally omitted.
-      //   - Files are NOT submitted here: documents have a separate upload flow
-      //     under `/admissions/registrants/:id/documents`, and there is no
-      //     multipart middleware on `POST /admissions/registrants`.
       const admissionPeriodId = formData.periodId || activePeriod?.id;
       if (!admissionPeriodId) {
         toast.error("Periode pendaftaran tidak ditemukan");
@@ -314,8 +394,6 @@ export function SpmbForm({
         motherName: formData.motherName,
       };
 
-      // Optional fields — only include when set so empty strings don't
-      // trip schema validators that expect non-empty / typed values.
       if (formData.nickname) payload.nickname = formData.nickname;
       if (formData.nationalId) payload.nationalId = formData.nationalId;
       if (formData.familyCardNumber)
@@ -347,21 +425,45 @@ export function SpmbForm({
       if (turnstile.token) payload.turnstileToken = turnstile.token;
 
       const result = await createRegistration.mutateAsync(payload);
+      const createdRegistrantId = result?.id || result?.data?.id;
+      const registrationToken = result?.registrationToken || result?.data?.registrationToken;
+      const registrationNo = result?.registrationNo || result?.registrationNumber || "PSB-" + Date.now();
+
+      if (createdRegistrantId) {
+        const { failedKeys, failedLabels } = await uploadSelectedDocuments(createdRegistrantId, registrationToken);
+
+        setFiles((prev) => {
+          const next = { ...prev };
+          if (!failedKeys.includes("photo")) next.photo = null;
+          if (!failedKeys.includes("ktp")) next.ktp = null;
+          if (!failedKeys.includes("familyCard")) next.familyCard = null;
+          if (!failedKeys.includes("birthCertificate")) next.birthCertificate = null;
+          return next;
+        });
+
+        if (failedLabels.length > 0) {
+          toast.error(`Pendaftaran tersimpan (${registrationNo}), tetapi berkas gagal diunggah: ${failedLabels.join(", ")}`);
+          setActiveRegistration({
+            registrantId: createdRegistrantId,
+            registrationToken,
+            registrationNo,
+          });
+          return;
+        }
+      }
 
       setSuccessData({
-        registrationNumber:
-          result?.registrationNo ||
-          result?.registrationNumber ||
-          "PSB-" + Date.now(),
+        registrationNumber: registrationNo,
         name: formData.fullName,
       });
 
-      // Reset form
+      // Reset form on full success
+      setActiveRegistration(null);
       setFormData(initialFormData);
-      setFiles({ photo: null, birthCertificate: null, familyCard: null });
       setCurrentStep(0);
-    } catch (error) {
-      toast.error("Gagal mengirim pendaftaran. Silakan coba lagi.");
+    } catch (error: any) {
+      const msg = error?.response?.data?.message || "Gagal mengirim pendaftaran. Silakan coba lagi.";
+      toast.error(msg);
       // Token sekali pakai; percobaan berikutnya butuh tantangan baru.
       turnstile.refresh();
     } finally {
@@ -1006,17 +1108,34 @@ export function SpmbForm({
                     {/* Step 5: Documents */}
                     {currentStep === 4 && (
                       <div className="space-y-6">
+                        {activeRegistration && (
+                          <Card className="bg-amber-50 border-amber-300">
+                            <CardContent className="pt-4">
+                              <div className="flex items-start gap-3">
+                                <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                                <div className="text-sm">
+                                  <p className="font-medium text-amber-900">
+                                    Pendaftaran Tersimpan ({activeRegistration.registrationNo})
+                                  </p>
+                                  <p className="text-amber-800">
+                                    Data formulir pendaftaran Anda sudah tersimpan. Beberapa berkas dokumen gagal diunggah. Silakan pilih kembali berkas yang gagal dan tekan tombol di bawah untuk mencoba mengunggah ulang.
+                                  </p>
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        )}
+
                         <Card className="bg-blue-50 border-blue-200">
                           <CardContent className="pt-4">
                             <div className="flex items-start gap-3">
                               <Info className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
                               <div className="text-sm">
                                 <p className="font-medium text-blue-800">
-                                  Instruksi Upload:
+                                  Instruksi Unggah Dokumen:
                                 </p>
                                 <p className="text-blue-700">
-                                  Format file yang didukung: JPG, PNG, PDF.
-                                  Ukuran maksimal 2MB per file.
+                                  Anda dapat memilih file dari perangkat atau mengambil foto langsung dari kamera HP/laptop. Dokumen akan diverifikasi secara manual oleh petugas SPMB untuk mencocokkan NIK & No. KK dengan data formulir.
                                 </p>
                               </div>
                             </div>
@@ -1024,51 +1143,49 @@ export function SpmbForm({
                         </Card>
 
                         <div className="space-y-4">
-                          <div className="space-y-2">
-                            <Label>Pas Foto (3x4 Latar Biru)</Label>
-                            <Input
-                              type="file"
-                              accept="image/*"
-                              onChange={(e) => handleFileChange(e, "photo")}
-                            />
-                            {files.photo && (
-                              <p className="text-xs text-green-600">
-                                File terpilih: {files.photo.name}
-                              </p>
-                            )}
-                          </div>
+                          <DocumentCaptureField
+                            label="Pas Foto Calon Santri (3x4 Latar Biru)"
+                            documentType="foto"
+                            file={files.photo}
+                            onFileSelect={(f) => setFiles((prev) => ({ ...prev, photo: f }))}
+                            onOcrResult={(res) => setOcrResults((prev) => ({ ...prev, photo: res }))}
+                          />
 
-                          <div className="space-y-2">
-                            <Label>Akte Kelahiran</Label>
-                            <Input
-                              type="file"
-                              accept="image/*,application/pdf"
-                              onChange={(e) =>
-                                handleFileChange(e, "birthCertificate")
-                              }
-                            />
-                            {files.birthCertificate && (
-                              <p className="text-xs text-green-600">
-                                File terpilih: {files.birthCertificate.name}
-                              </p>
-                            )}
-                          </div>
+                          <DocumentCaptureField
+                            label="KTP Orang Tua / Wali"
+                            documentType="ktp"
+                            file={files.ktp}
+                            userInputData={{
+                              fullName: formData.fatherName || formData.motherName,
+                            }}
+                            onFileSelect={(f) => setFiles((prev) => ({ ...prev, ktp: f }))}
+                            onOcrResult={(res) => setOcrResults((prev) => ({ ...prev, ktp: res }))}
+                          />
 
-                          <div className="space-y-2">
-                            <Label>Kartu Keluarga (KK)</Label>
-                            <Input
-                              type="file"
-                              accept="image/*,application/pdf"
-                              onChange={(e) =>
-                                handleFileChange(e, "familyCard")
+                          <DocumentCaptureField
+                            label="Kartu Keluarga (KK)"
+                            documentType="kk"
+                            file={files.familyCard}
+                            userInputData={{
+                              fullName: formData.fatherName || formData.motherName,
+                              familyCardNumber: formData.familyCardNumber,
+                            }}
+                            onFileSelect={(f) => setFiles((prev) => ({ ...prev, familyCard: f }))}
+                            onOcrExtracted={(ext) => {
+                              if (ext.familyCardNumber && !formData.familyCardNumber) {
+                                setFormData((prev) => ({ ...prev, familyCardNumber: ext.familyCardNumber! }));
                               }
-                            />
-                            {files.familyCard && (
-                              <p className="text-xs text-green-600">
-                                File terpilih: {files.familyCard.name}
-                              </p>
-                            )}
-                          </div>
+                            }}
+                            onOcrResult={(res) => setOcrResults((prev) => ({ ...prev, familyCard: res }))}
+                          />
+
+                          <DocumentCaptureField
+                            label="Akte Kelahiran"
+                            documentType="akta"
+                            file={files.birthCertificate}
+                            onFileSelect={(f) => setFiles((prev) => ({ ...prev, birthCertificate: f }))}
+                            onOcrResult={(res) => setOcrResults((prev) => ({ ...prev, birthCertificate: res }))}
+                          />
                         </div>
                       </div>
                     )}

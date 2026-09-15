@@ -3,6 +3,7 @@ import { rolesService } from './roles.service';
 import { generateTokenPair, getExpirationDate } from '@/lib/jwt';
 import { prisma } from '@/lib/prisma';
 import { config } from '@/config';
+import { tokenUnitId } from '@/utils/resolve-unit-id';
 import type { Realm } from '@prisma/client';
 import type {
   GetRolesQuery,
@@ -145,7 +146,7 @@ export class RolesController {
 
       const result = await rolesService.switchRole(userId, input.roleAssignmentId);
 
-      // Generate new tokens with the new active role
+      // Generate new tokens with the new active role and its assigned unit
       const tokens = generateTokenPair({
         id: result.user.id,
         sub: result.user.id,
@@ -153,7 +154,14 @@ export class RolesController {
         role: result.user.role ?? '',
         roleCode: result.activeRole.role.code,
         roleId: result.activeRole.roleId,
-        unitId: result.user.unitId,
+        // Same rule as login, 2FA and refresh (tokenUnitId): only a foundation
+        // role may carry no unit. Deciding it differently here gave a switched
+        // role one scope until the next refresh and another after it.
+        unitId: tokenUnitId(
+          result.activeRole.unitId,
+          result.activeRole.role.code,
+          result.user.unitId,
+        ),
         permissions: (result.activeRole.role.permissions as string[]) ?? [],
       });
 

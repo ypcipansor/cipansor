@@ -43,10 +43,10 @@ export function AdmissionsStatsCard({
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <CardTitle className="text-lg flex items-center gap-2">
-              <Users className="h-5 w-5 text-primary" /> PPDB / PSB
+              <Users className="h-5 w-5 text-primary" /> SPMB
             </CardTitle>
             <CardDescription className="text-xs">
-              Ringkasan pendaftaran santri baru
+              Ringkasan pendaftaran murid/santri baru
             </CardDescription>
           </div>
           <Badge variant="secondary">{stats.activePeriods} Periode Aktif</Badge>

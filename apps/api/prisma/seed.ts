@@ -1777,6 +1777,7 @@ async function main() {
       unit: sdIt,
       classId: class1A.id,
       nis: '2024SDB1',
+      nisn: '0120000002',
       gender: Gender.MALE,
       birthDate: '2017-04-18',
       roleCode: RoleCode.SDIT_SISWA,
@@ -1787,6 +1788,7 @@ async function main() {
       unit: smpIt,
       classId: class7A.id,
       nis: '2024SMB1',
+      nisn: '0120000003',
       gender: Gender.FEMALE,
       birthDate: '2012-09-05',
       roleCode: RoleCode.SMPIT_SISWA,
@@ -1820,7 +1822,9 @@ async function main() {
         userId: siblingUser.id,
         unitId: sibling.unit.id,
         nis: sibling.nis,
-        nisn: `013${sibling.nis.slice(-5)}`,
+        // Dulu `013${nis.slice(-5)}` → '0134SDB1': 8 karakter dan berhuruf, dua
+        // NISN tak sah yang ikut tergelar ke produksi. NISN itu 10 digit angka.
+        nisn: sibling.nisn,
         gender: sibling.gender,
         birthPlace: 'Tasikmalaya',
         birthDate: new Date(sibling.birthDate),
@@ -7570,7 +7574,7 @@ async function main() {
   //    mock-up planning documents. RPJP/Renstra/RKA are foundation-wide
   //    (unitId null), so they surface to the yayasan board and every unit's
   //    staff via the foundation-scope read path in perencanaan.service.
-  console.log('   Seeding Strategic Plans (RPJP → Renstra → RKA)...');
+  console.log('   Seeding Strategic Plans (RPJP → Renstra → RKA Yayasan → RKA Unit)...');
   const { rpjp, renstra, rka, smpRka } = await seedStrategicPlans(prisma, {
     createdById: superAdminUser.id,
     approvedById: pembinaYayasanUser.id,
@@ -7797,58 +7801,6 @@ async function main() {
     });
   }
 
-  // PKG periods & evaluations for teachers
-  const pkgPeriod = await prisma.pKGPeriod.create({
-    data: {
-      unitId: smpIt.id,
-      academicYearId: academicYear.id,
-      name: 'Penilaian Kinerja Guru (PKG) Ganjil 2026',
-      startDate: new Date('2026-06-01'),
-      endDate: new Date('2026-06-30'),
-      status: 'CLOSED',
-    },
-  });
-
-  if (teacherPesantren) {
-    const pkgEval = await prisma.pKGEvaluation.create({
-      data: {
-        periodId: pkgPeriod.id,
-        teacherId: teacherPesantren.id,
-        assessorId: adminPesantrenUser.id,
-        pedagogikScore: new Prisma.Decimal(3.5),
-        kepribadianScore: new Prisma.Decimal(3.8),
-        sosialScore: new Prisma.Decimal(3.6),
-        profesionalScore: new Prisma.Decimal(3.7),
-        totalScore: new Prisma.Decimal(88.5),
-        grade: 'A',
-        recommendation: 'LANJUT',
-        status: 'APPROVED',
-        notes: 'Sangat baik dalam penguasaan kelas dan pemanfaatan media ajar digital.',
-        approvedAt: new Date(),
-      },
-    });
-
-    await prisma.pKGDetail.create({
-      data: {
-        evaluationId: pkgEval.id,
-        competency: 'PEDAGOGIK',
-        indicator: 'P1',
-        indicatorName: 'Menguasai karakteristik peserta didik',
-        assessorScore: 4,
-        finalScore: 4,
-        notes: 'Mampu memetakan kesiapan belajar peserta didik dengan sangat presisi.',
-      },
-    });
-
-    await prisma.pKGDocument.create({
-      data: {
-        evaluationId: pkgEval.id,
-        name: 'Modul Ajar Matematika K-Merdeka',
-        type: 'RPP',
-        fileUrl: '/documents/pkg/modul-mtk.pdf',
-      },
-    });
-  }
 
   // Dashboard history snapshots
   await prisma.dashboardHistory.create({
@@ -8043,7 +7995,105 @@ async function main() {
     );
   }
 
+  // Riwayat unit diturunkan dari rombel yang baru saja dibuat. Backfill-nya
+  // hidup di migrasi 20260912020000 dan hanya berjalan sekali; basis data yang
+  // disemai ulang (dev, CI, e2e) tidak melewatinya, jadi tanpa langkah ini
+  // tabel riwayatnya kosong dan setiap pertanyaan "saat itu unitnya apa" jatuh
+  // ke unit sekarang — tepat kekeliruan yang tabel ini ada untuk menghapus.
+  await seedUnitEnrollments();
+
   console.log('\n✅ Database seeded successfully!');
+}
+
+/**
+ * Turunkan `StudentUnitEnrollment` dari setiap pendaftaran kelas yang ada.
+ *
+ * Aturannya sengaja sama persis dengan backfill di migrasi
+ * `20260912020000_student_unit_enrollment`: satu baris per (santri, unit, tahun
+ * ajaran), tanggal masuk diambil dari `enrolledAt` hanya bila tanggal itu jatuh
+ * di dalam rentang tahun ajarannya, dan tahun ajaran yang sudah lewat ditutup
+ * dengan tanggal selesainya.
+ */
+async function seedUnitEnrollments() {
+  console.log('🌱 Seeding student unit enrollments (riwayat unit)...');
+
+  const enrollments = await prisma.classEnrollment.findMany({
+    select: {
+      studentId: true,
+      enrolledAt: true,
+      class: {
+        select: {
+          unitId: true,
+          academicYearId: true,
+          level: true,
+          academicYear: { select: { startDate: true, endDate: true } },
+        },
+      },
+    },
+  });
+
+  const now = new Date();
+  const perKunci = new Map<
+    string,
+    {
+      studentId: string;
+      unitId: string;
+      academicYearId: string;
+      entryDate: Date;
+      exitDate: Date | null;
+      gradeLevel: string | null;
+    }
+  >();
+
+  for (const e of enrollments) {
+    const kelas = e.class;
+    if (!kelas?.academicYear) continue;
+    const { startDate, endDate } = kelas.academicYear;
+    const masukAkal = e.enrolledAt >= startDate && e.enrolledAt <= endDate;
+    const entryDate = masukAkal ? e.enrolledAt : startDate;
+    const kunci = `${e.studentId}|${kelas.unitId}|${kelas.academicYearId}`;
+    const ada = perKunci.get(kunci);
+    if (!ada || entryDate < ada.entryDate) {
+      perKunci.set(kunci, {
+        studentId: e.studentId,
+        unitId: kelas.unitId,
+        academicYearId: kelas.academicYearId,
+        entryDate,
+        exitDate: endDate < now ? endDate : null,
+        gradeLevel: kelas.level ?? null,
+      });
+    }
+  }
+
+  for (const baris of perKunci.values()) {
+    await prisma.studentUnitEnrollment.upsert({
+      where: {
+        studentId_unitId_academicYearId: {
+          studentId: baris.studentId,
+          unitId: baris.unitId,
+          academicYearId: baris.academicYearId,
+        },
+      },
+      create: baris,
+      update: { gradeLevel: baris.gradeLevel },
+    });
+  }
+
+  console.log(`✅ Riwayat unit: ${perKunci.size} baris`);
+
+  // NIS per unit (student_unit_identifiers): NIS seed adalah NIS unit santri
+  // sekarang — sama dengan backfill migrasi 20260914010000. Tanpa ini basis data
+  // CI (db push + seed) tidak punya satu pun baris, dan dokumen resmi hanya
+  // hidup dari jalur cadangan `students.nis`.
+  const santri = await prisma.student.findMany({ select: { id: true, unitId: true, nis: true } });
+  for (const s of santri) {
+    await prisma.studentUnitIdentifier.upsert({
+      where: { studentId_unitId: { studentId: s.id, unitId: s.unitId } },
+      create: { studentId: s.id, unitId: s.unitId, nis: s.nis.trim() },
+      update: { nis: s.nis.trim() },
+    });
+  }
+  console.log(`✅ NIS per unit: ${santri.length} baris`);
 }
 
 // SAFTI behavioral values — master data for Perjanjian Kinerja evaluations.

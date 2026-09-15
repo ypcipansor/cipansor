@@ -236,7 +236,8 @@ for an actual intake. The values above are demo data from the seed.
    table as empty and gives 262). The **RPJP / Renstra / RKA** slice is
    **done** — `prisma/seeds/strategic-plan-cipansor.ts` seeds the yayasan's
    full cascade from the three planning documents (RPJP 2027–2045 → Renstra
-   2027–2029 → RKA 2027), all foundation-wide (`unitId` null): 15 objectives,
+   2027–2029 → RKA Yayasan 2027 → RKA unit), the first three foundation-wide
+   (`unitId` null): 15 objectives,
    25 indicators, 47 activities, with the RKA's `budget` the exact sum of its
    activity budgets. Sasaran → `PlanObjective`, IUP/IKU/IKK → `PlanIndicator`,
    Program/Kegiatan → `PlanActivity`, faithful to the user's mock-up framing.
@@ -458,13 +459,20 @@ production-ready.
 Scope, measured 2026-07-23 — three vocabularies coexist: `ppdb` in 38 files,
 `psb` in 35, `spmb` in 32.
 
+**Frontend half landed in #439 (merged 2026-09-12, `731b7f7e`).** The pages
+moved to `/spmb`, the navigation says *Penerimaan (SPMB)*, the public pages are
+`/public/spmb`, and `next.config.ts` keeps permanent redirects from `/ppdb/*`
+and `/psb/*` — asserted by `e2e/spmb.spec.ts`, so the promise to printed links
+is a test, not an intention.
+
 Remaining work:
 
 1. **Backend** — rename `apps/api/src/modules/admissions/ppdb-wave.*` to
    `spmb-wave.*`, its exports in `admissions/index.ts`, and the
-   `/api/ppdb-waves` paths in the controller's docs and routes.
-2. **Frontend** — `/ppdb` and `/psb` pages already redirect to `/admissions`;
-   settle on the SPMB vocabulary in routes and copy.
+   `/api/ppdb-waves` paths in the controller's docs and routes. Also
+   `getPSBStats`/`PsbSummary`, which now exist only as aliases of the SPMB
+   names, and the `/analytics/psb` route.
+2. ~~**Frontend** — routes and copy.~~ Done in #439.
 3. **Keep every old path alive with a permanent redirect.** Anything may hold
    an old URL — a bookmark, a printed flyer's QR, an external integration. A
    rename that 404s a family mid-registration is a real harm, not cosmetic.
@@ -773,6 +781,55 @@ switch — the site key is baked at **build** time, so changing `.env` alone doe
 nothing; a wrong secret answers HTTP 400.
 
 ---
+
+## 🟠 16. Riwayat unit santri — tabelnya sudah ada, penyaring laporannya belum ditukar
+
+**Masalahnya.** `students.unit_id` menyimpan unit **sekarang**. Sekitar **85**
+tempat di API menyaring lewat `student: { unitId }`, dan hampir semuanya
+sebenarnya bertanya *"saat itu unitnya apa?"* — berapa santri TK tahun lalu,
+siapa yang dirawat di unit itu semester itu, berapa penghargaan yang terbit di
+SD IT. Begitu seorang santri naik dari TK ke SD IT, seluruh riwayat TK-nya ikut
+berpindah ke SD IT di setiap laporan itu. Tidak ada yang mengubah data; yang
+salah pertanyaannya. Tagihan tidak terkena karena ia sudah menyimpan cuplikan
+`unit_id` sendiri.
+
+**Yang sudah ada (PR tabel riwayat unit, 2026-09-12).** Tabel
+`student_unit_enrollments` — satu baris per (santri, unit, tahun ajaran) dengan
+tanggal masuk/keluar, bentuknya mengikuti `StudentSchoolAssociation` pada Ed-Fi
+Enrollment Domain — plus backfill dari pendaftaran kelas, penulisan otomatis
+dari keempat tempat yang membuat `ClassEnrollment`, langkah seed yang setara,
+dan `apps/api/src/utils/student-unit-history.ts` sebagai satu-satunya pintu
+bacanya. **Nol laporan diubah di PR itu, disengaja.**
+
+**Yang belum.** Menukar penyaringnya, **satu modul per PR**, supaya setiap
+perubahan angka bisa dibaca tersendiri. Urutan yang masuk akal — dari yang
+paling sering dilihat dan paling sering salah:
+
+1. `dashboard` + `dashboard-enhancement` (15 tempat)
+2. `analytics` + `reporting` + `export` (11)
+3. `assessment/analytics`, `health`, `accreditation` (6)
+4. sisanya: `dormitories`, `permits`, `rewards`, `roles`, `attendance`,
+   `finance-enhancement/reporting`, `homeroom`, `parent-scope`
+
+**Aturan yang harus dipegang saat menukar.** `unitAt()` mengembalikan sumber
+jawabannya (`history` / `current` / `unknown`). Laporan historis
+(akreditasi, angka tahun lalu, rapor) harus memperlakukan `current` sebagai
+*tidak diketahui*, bukan sebagai jawaban — jatuh diam-diam ke unit sekarang
+adalah persis kekeliruan yang tabel ini dibuat untuk menghapus. Layar yang
+hanya butuh label boleh memakainya.
+
+**Biaya yang selalu muncul saat menukar, catat sekali di sini.** Jalur tulis
+riwayat memakai model Prisma baru, dan setiap uji yang MENIRU klien Prisma harus
+ikut mengenalnya — delapan uji memerah sekaligus pada PR dasbor karena blok `tx`
+tiruannya tidak punya `academicYear`/`studentUnitEnrollment`. Perbaikannya di
+tiruannya, bukan di asersinya. Kalau ini terjadi sekali lagi, buat satu pabrik
+tiruan bersama (`makePrismaMock()`) daripada menambal per berkas.
+
+**Satu hal yang belum diputuskan.** Santri yang pindah unit **di tengah** tahun
+ajaran menghasilkan dua baris pada tahun yang sama. Query "pada tanggal X" sudah
+benar untuk itu; query "sepanjang tahun ajaran Y" akan menghitungnya di dua unit.
+Untuk laporan tahunan per unit, putuskan mana yang dipakai — keadaan pada tanggal
+potong (mis. akhir semester) atau keduanya — dan tulis keputusannya di sini.
 
 ## Operating notes that keep costing time when forgotten
 

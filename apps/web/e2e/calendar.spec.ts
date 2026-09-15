@@ -1,5 +1,6 @@
 import { test, expect } from "./fixtures/auth.fixture";
 import { loginAs } from "./helpers/auth-api";
+import { settledContent } from "./helpers/page-state";
 
 /**
  * Calendar Module E2E Tests
@@ -24,7 +25,7 @@ test.describe("Calendar - Navigation", () => {
     await page.goto("/calendar");
     await page.waitForLoadState("domcontentloaded", { timeout: 10000 });
 
-    const content = await page.content();
+    const content = await settledContent(page);
     expect(content.length).toBeGreaterThan(1000);
   });
 });
@@ -37,7 +38,7 @@ test.describe("Calendar - Features", () => {
     await page.goto("/calendar");
     await page.waitForLoadState("domcontentloaded", { timeout: 10000 });
 
-    const content = await page.content();
+    const content = await settledContent(page);
     const hasCalendar =
       content.includes("Calendar") ||
       content.includes("Kalender") ||
@@ -75,7 +76,7 @@ test.describe("Calendar - Features", () => {
     await page.goto("/calendar");
     await page.waitForLoadState("domcontentloaded", { timeout: 10000 });
 
-    const content = await page.content();
+    const content = await settledContent(page);
     const hasViewSelector =
       content.includes("Month") ||
       content.includes("Week") ||

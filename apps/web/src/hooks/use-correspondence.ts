@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import {
   CreateLetterInput,
+  UpdateLetterInput,
   DispatchLetterInput,
   LetterCcInput,
   LetterDirection,
@@ -112,6 +113,18 @@ export function useCorrespondence(unitId?: string) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["letters"] });
+    },
+  });
+
+  // Update Letter
+  const updateLetter = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: UpdateLetterInput }) => {
+      const response = await api.patch(`/correspondence/letters/${id}`, data);
+      return response.data;
+    },
+    onSuccess: (_d, v) => {
+      queryClient.invalidateQueries({ queryKey: ["letters"] });
+      queryClient.invalidateQueries({ queryKey: ["letter", v.id] });
     },
   });
 
@@ -281,6 +294,7 @@ export function useCorrespondence(unitId?: string) {
     useLetters,
     useLetter,
     createLetter,
+    updateLetter,
     submitForReview,
     reviewLetter,
     createDisposition,

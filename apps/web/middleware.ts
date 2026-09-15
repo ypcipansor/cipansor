@@ -65,6 +65,15 @@ const publicPrefixes = [
    * old URL are already on paper.
    */
   "/verifikasi",
+  /**
+   * Where a printed student ID card's QR points. Kept in step with
+   * `PUBLIC_PATH_PREFIXES` in lib/host-split.ts (the two lists must describe
+   * the same set; a sync test enforces it). It is a `/public/*` page so the
+   * matcher below exempts it from middleware anyway, but listing it here makes
+   * the read-without-a-session intent explicit and keeps the two canonical
+   * lists in agreement (Flag 11).
+   */
+  "/public/verify-card",
 ];
 
 // Helper function to get auth state from cookie
@@ -80,8 +89,8 @@ function getAuthState(request: NextRequest): {
     try {
       const parsed = JSON.parse(authStorage);
       if (parsed.state?.isAuthenticated === true && parsed.state?.user) {
-        // Prefer the legacy `user.role` bucket (still emitted by the backend);
-        // fall back to deriving it from `userRoles[].role.code` (RoleCode).
+        // The primary assignment's RoleCode decides, as on the API; the legacy
+        // `user.role` column is only the fallback (see getEffectiveRole).
         const role = getEffectiveRole(parsed.state.user);
         if (role) {
           return {

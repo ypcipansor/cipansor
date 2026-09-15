@@ -1,6 +1,11 @@
 import { Router } from 'express';
 import { authenticate, authorize } from '@/middleware/auth';
 import { UserRole } from '@prisma/client';
+import {
+  bulkUpdateStudentComplianceSchema,
+  updateStudentComplianceSchema,
+} from '@cipansor/shared';
+import { validate } from '@/middleware/validate';
 import * as controller from './student-compliance.controller';
 
 const router = Router();
@@ -19,12 +24,29 @@ router.get('/report/completeness', authorize(...MANAGE_ROLES), controller.comple
 router.get('/report/dapodik-ready', authorize(...MANAGE_ROLES), controller.dapodikReady);
 
 /** @route POST /api/student-compliance/bulk-update */
-router.post('/bulk-update', authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN), controller.bulkUpdate);
+router.post(
+  '/bulk-update',
+  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
+  validate(bulkUpdateStudentComplianceSchema),
+  controller.bulkUpdate
+);
 
-/** @route GET /api/student-compliance/:studentId */
-router.get('/:studentId', controller.getByStudent);
+/**
+ * @route GET /api/student-compliance/:studentId
+ * Dulu tanpa pemeriksaan peran: akun siswa mana pun bisa membaca NIK dan
+ * penghasilan orang tua santri lain. Peran yang sama dengan PUT; lingkup unit
+ * diperiksa di service.
+ */
+router.get('/:studentId', authorize(...MANAGE_ROLES), controller.getByStudent);
 
 /** @route PUT /api/student-compliance/:studentId */
-router.put('/:studentId', authorize(...MANAGE_ROLES), controller.update);
+// Skemanya KETAT: kunci di luar kolom kelengkapan ditolak 400. Tanpa ini body
+// mentah diteruskan ke `prisma.student.update` (penugasan massal).
+router.put(
+  '/:studentId',
+  authorize(...MANAGE_ROLES),
+  validate(updateStudentComplianceSchema),
+  controller.update
+);
 
 export default router;

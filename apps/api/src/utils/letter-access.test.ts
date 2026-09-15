@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { RoleCode } from '@prisma/client';
+import { mayEditLetter, LETTER_UNIT_SCOPE_ROLES } from '@cipansor/shared';
 
 vi.mock('@/lib/prisma', () => ({
   prisma: { letter: { findUnique: vi.fn() } },
@@ -181,5 +182,38 @@ describe('role helpers', () => {
     expect(handlesUnitCorrespondence({ id: 'b', roleCode: RoleCode.SMPIT_ORANG_TUA })).toBe(false);
     expect(choosesUnit({ id: 'c', roleCode: RoleCode.YAYASAN_KETUA })).toBe(true);
     expect(choosesUnit({ id: 'd', roleCode: RoleCode.SMPIT_TATA_USAHA })).toBe(false);
+  });
+});
+
+describe('mayEditLetter (shared single source with the API updateLetter guard)', () => {
+  it('allows every LETTER_UNIT_SCOPE_ROLES member', () => {
+    // The old UI showed the edit button only for SUPER_ADMIN / SDIT_ADMIN,
+    // leaving tata usaha & kepala sekolah of every unit unable to edit a
+    // naskah the backend allowed them to change.
+    expect(mayEditLetter(RoleCode.SDIT_KEPALA_SEKOLAH)).toBe(true);
+    expect(mayEditLetter(RoleCode.SMPIT_KEPALA_SEKOLAH)).toBe(true);
+    expect(mayEditLetter(RoleCode.TKQ_TATA_USAHA)).toBe(true);
+    expect(mayEditLetter(RoleCode.SMPIT_TATA_USAHA)).toBe(true);
+    expect(mayEditLetter(RoleCode.PESANTREN_TATA_USAHA)).toBe(true);
+    expect(mayEditLetter(RoleCode.PT_TATA_USAHA)).toBe(true);
+    expect(mayEditLetter(RoleCode.SDIT_ADMIN)).toBe(true);
+    expect(mayEditLetter(RoleCode.TKQ_ADMIN)).toBe(true);
+
+    for (const code of LETTER_UNIT_SCOPE_ROLES) {
+      expect(mayEditLetter(code)).toBe(true);
+    }
+  });
+
+  it('allows the executive foundation roles the API treats as editors', () => {
+    expect(mayEditLetter(RoleCode.SUPER_ADMIN)).toBe(true);
+    expect(mayEditLetter(RoleCode.YAYASAN_KETUA)).toBe(true);
+    expect(mayEditLetter(RoleCode.YAYASAN_SEKRETARIS)).toBe(true);
+  });
+
+  it('rejects non-correspondence roles and missing role codes', () => {
+    expect(mayEditLetter(RoleCode.SMPIT_ORANG_TUA)).toBe(false);
+    expect(mayEditLetter(RoleCode.SMPIT_SISWA)).toBe(false);
+    expect(mayEditLetter(undefined)).toBe(false);
+    expect(mayEditLetter(null)).toBe(false);
   });
 });

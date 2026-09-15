@@ -133,16 +133,46 @@ export const useDeleteSuccession = () => {
   });
 };
 
-export const useSuccessorSuggestions = (positionTitle?: string, unitId?: string) => {
+export const useSuccessorSuggestions = (
+  positionTitle?: string,
+  unitId?: string,
+  // Id of a jabatan on the org chart. Passing it is what lets the competency
+  // component run at all: the service reads that position's recorded
+  // requirements and compares them to each candidate's assessed competencies.
+  // Without it competency scores 0 for everyone, which is not-measured drawn
+  // as a bad score.
+  targetPositionId?: string | null,
+) => {
   // Debounce the input so suggestions are fetched once typing pauses,
   // instead of firing a network request on every keystroke.
   const debounced = useDebouncedValue(positionTitle, 300);
   return useQuery({
-    queryKey: ["talenta", "successor-suggestions", debounced, unitId],
-    queryFn: async () => (await api.get("/talenta/successions/suggest", { params: { positionTitle: debounced, unitId } })).data.data,
+    queryKey: ["talenta", "successor-suggestions", debounced, unitId, targetPositionId],
+    queryFn: async () =>
+      (
+        await api.get("/talenta/successions/suggest", {
+          params: {
+            positionTitle: debounced,
+            unitId,
+            ...(targetPositionId ? { targetPositionId } : {}),
+          },
+        })
+      ).data.data,
     enabled: !!debounced && debounced.length > 2,
   });
 };
+
+/** Jabatan on the org chart, offered as targets for a succession search. */
+export const useOrgPositionsForSuccession = () =>
+  useQuery({
+    queryKey: ["talenta", "org-positions"],
+    queryFn: async () =>
+      ((await api.get("/organisasi/positions")).data.data ?? []) as {
+        id: string;
+        title: string;
+        requirements?: string | null;
+      }[],
+  });
 
 // Aliases for consistent naming in pages
 export const useCreateProfile = useCreateTalentProfile;

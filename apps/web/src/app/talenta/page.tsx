@@ -419,11 +419,17 @@ function SuccessionFormDialog({ onClose, initialData }: { onClose: () => void; i
             <FormItem><FormLabel>Jabatan</FormLabel><FormControl><Input placeholder="cth: Kepala Sekolah" {...field} /></FormControl><FormMessage /></FormItem>
           )} />
 
-          {/* AI Suggestions */}
+          {/*
+            Kandidat dari mesin saran yang sama dengan /talenta/succession:
+            penjumlahan berbobot, bukan model. Label lamanya "(AI-Matching)" —
+            klaim yang #410 hapus dari layar suksesi lain karena tidak ada
+            model apa pun di baliknya, dan layar ini luput waktu itu.
+          */}
           {positionTitle && positionTitle.length > 2 && (
             <div className="space-y-2 border rounded-lg p-3 bg-slate-50/50">
               <div className="flex items-center gap-2 text-sm font-semibold text-purple-700">
-                <Sparkles className="h-4 w-4" /> Kandidat Potensial (AI-Matching)
+                <Sparkles className="h-4 w-4" /> Kandidat Potensial (skor
+                kecocokan)
               </div>
               <div className="grid grid-cols-1 gap-2 max-h-[160px] overflow-y-auto pr-1">
                 {loadingSuggestions ? (

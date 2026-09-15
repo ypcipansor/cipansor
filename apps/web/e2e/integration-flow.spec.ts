@@ -56,9 +56,18 @@ test.describe("Integrated School Management Flow", () => {
 
   test("Talent Management - Display Talent Matrix", async ({ page }) => {
     await loginAs(page, "superAdmin");
-    await page.goto("/hr/talenta");
+    // /hr/talenta was deleted: its 9-box grid and its distribution cards were
+    // a second copy of what /talenta/matrix and /talenta/analytics already
+    // rendered from the same endpoint. This walks the surviving one.
+    await page.goto("/talenta/matrix");
 
-    await expect(page.locator("text=Matriks Talenta")).toBeVisible();
+    // Dikurung dan dibatasi ke isi halaman: `text=` tanpa kutip adalah mesin
+    // substring, jadi begitu label serupa juga muncul sebagai submenu di bilah
+    // sisi, selektor longgar akan cocok pada keduanya. `exact` di sini juga
+    // memisahkan judul kartu "9-Box Grid" dari judul halaman yang memuatnya.
+    await expect(
+      page.getByRole("main").getByText("9-Box Grid", { exact: true }).first(),
+    ).toBeVisible();
 
     // Scope to the content landmark and match the initials exactly. `text=UA`
     // is Playwright's unquoted engine — a case-insensitive *substring* — so it

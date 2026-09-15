@@ -1,10 +1,119 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
+import type {
+  DecidePlanInput,
+  ProposeToPembinaInput,
+  ReviewResultInput,
+  SubmitForReviewInput,
+} from "@cipansor/shared";
+
+/**
+ * The API wraps every failure as `{ success: false, error: { code, message } }`.
+ * Every handler below read `data.message`, one level too shallow, so a precise
+ * server-side refusal ("RKA unit harus menginduk pada RKA Yayasan…") surfaced
+ * as the generic fallback and the user was never told what to change.
+ */
+type ApiErrorShape = {
+  response?: { data?: { error?: { message?: string }; message?: string } };
+};
+
+function apiMessage(error: ApiErrorShape): string | undefined {
+  return error?.response?.data?.error?.message ?? error?.response?.data?.message;
+}
+
+/**
+ * Human labels for the plan enums. These used to live only in the list page's
+ * filter dropdown while the badges rendered the raw enum, so the same document
+ * read "Berjalan" in one control and "IN_PROGRESS" two inches away.
+ */
+export const PLAN_STATUS_LABEL: Record<string, string> = {
+  DRAFT: "Draft",
+  PROPOSED: "Diajukan",
+  APPROVED: "Disetujui",
+  IN_PROGRESS: "Berjalan",
+  COMPLETED: "Selesai",
+  CANCELLED: "Dibatalkan",
+};
+
+export const PLAN_TYPE_LABEL: Record<string, string> = {
+  RPJP: "RPJP",
+  RENSTRA: "Renstra",
+  RKA: "RKA",
+};
+
+/**
+ * The annual document exists at two tiers, and every place that names a plan
+ * must say which — a consolidated "RKA Yayasan" and a school's "RKA SMP IT"
+ * are different documents that both used to render as the bare word "RKA".
+ */
+export function planTierLabel(plan: {
+  type: string;
+  unitId?: string | null;
+  unit?: { name: string } | null;
+}): string {
+  const base = PLAN_TYPE_LABEL[plan.type] ?? plan.type;
+  if (plan.type !== "RKA") return `${base} Yayasan`;
+  return plan.unitId ? `${base} ${plan.unit?.name ?? "Unit"}` : `${base} Yayasan`;
+}
+
+/**
+ * Where a yayasan-level document stands on its way to Pembina. Kept apart from
+ * `status`, which PK and evaluations share: "Draft" alone cannot say whether
+ * the draft sits on the Pengawas's desk or is back with Pengurus.
+ */
+export type PlanReviewStage =
+  | "DIREVIU_PENGAWAS"
+  | "HASIL_REVIU"
+  | "DIAJUKAN_PEMBINA"
+  | "DITETAPKAN"
+  | "DIKEMBALIKAN";
+
+export const PLAN_REVIEW_STAGE_LABEL: Record<PlanReviewStage, string> = {
+  DIREVIU_PENGAWAS: "Direviu Pengawas",
+  HASIL_REVIU: "Hasil reviu di Pengurus",
+  DIAJUKAN_PEMBINA: "Menunggu keputusan Pembina",
+  DITETAPKAN: "Ditetapkan Pembina",
+  DIKEMBALIKAN: "Dikembalikan Pembina",
+};
+
+export type PlanReviewAction =
+  | "AJUKAN_REVIU"
+  | "KIRIM_HASIL_REVIU"
+  | "AJUKAN_PENETAPAN"
+  | "TETAPKAN"
+  | "KEMBALIKAN";
+
+export const PLAN_REVIEW_ACTION_LABEL: Record<PlanReviewAction, string> = {
+  AJUKAN_REVIU: "Diajukan ke Pengawas untuk direviu",
+  KIRIM_HASIL_REVIU: "Hasil reviu dikirim ke Pengurus",
+  AJUKAN_PENETAPAN: "Diajukan ke Pembina untuk ditetapkan",
+  TETAPKAN: "Ditetapkan",
+  KEMBALIKAN: "Dikembalikan untuk diperbaiki",
+};
+
+export interface PlanReviewEvent {
+  id: string;
+  action: PlanReviewAction;
+  actorRoleCode: string;
+  notes?: string | null;
+  /// Set only on AJUKAN_PENETAPAN: did Pengurus revise after the review?
+  revised?: boolean | null;
+  createdAt: string;
+  actor: { id: string; name: string };
+}
 
 export interface StrategicPlan {
   id: string;
+  /// Null until a yayasan document enters the Pengurus → Pengawas → Pembina
+  /// flow; always null for an RKA Unit, which Ketua Pengurus approves directly.
+  reviewStage?: PlanReviewStage | null;
+  reviewEvents?: PlanReviewEvent[];
+  /// Null for yayasan-level documents (RPJP, Renstra, RKA Yayasan).
   unitId: string | null;
+  unit?: { id: string; name: string } | null;
+  parentId?: string | null;
+  parent?: { id: string; title: string; type: string } | null;
   title: string;
   description?: string;
   vision?: string | null;
@@ -117,6 +226,43 @@ export const usePlans = (params?: { type?: string; status?: string }) => {
   });
 };
 
+/**
+ * Membuat Sasaran Strategis.
+ *
+ * Sebelum ini tidak ada sama sekali di frontend: tombol "+ Tambah Sasaran" di
+ * halaman dokumen adalah tombol mati tanpa penangan klik, padahal rute
+ * POST /perencanaan/objectives sudah tersedia. Akibatnya Sasaran — tingkat DI
+ * ATAS Kegiatan dalam kaskade RPJP → Renstra → RKA — hanya bisa lahir dari
+ * seed, dan rantai perencanaannya tidak pernah bisa disusun lewat aplikasi.
+ */
+export const useCreateObjective = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: {
+      planId: string;
+      title: string;
+      description?: string;
+      priority?: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+      weight?: number;
+      perspective?: "FINANCIAL" | "CUSTOMER" | "PROCESS" | "LEARNING";
+    }) => {
+      const res = await api.post("/perencanaan/objectives", data);
+      return res.data;
+    },
+    onSuccess: () => {
+      toast.success("Sasaran strategis berhasil dibuat");
+      queryClient.invalidateQueries({ queryKey: ["perencanaan"] });
+    },
+    onError: (error: ApiErrorShape) => {
+      toast.error(
+        error.response?.data?.error?.message ||
+          apiMessage(error) ||
+          "Gagal membuat sasaran strategis"
+      );
+    },
+  });
+};
+
 export const useCreateActivity = () => {
   const queryClient = useQueryClient();
   return useMutation({
@@ -128,8 +274,8 @@ export const useCreateActivity = () => {
       toast.success("Kegiatan berhasil dibuat");
       queryClient.invalidateQueries({ queryKey: ["perencanaan"] });
     },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.message || "Gagal membuat kegiatan");
+    onError: (error: ApiErrorShape) => {
+      toast.error(apiMessage(error) || "Gagal membuat kegiatan");
     },
   });
 };
@@ -145,8 +291,8 @@ export const useUpdateActivity = () => {
       toast.success("Kegiatan berhasil diperbarui");
       queryClient.invalidateQueries({ queryKey: ["perencanaan"] });
     },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.message || "Gagal memperbarui kegiatan");
+    onError: (error: ApiErrorShape) => {
+      toast.error(apiMessage(error) || "Gagal memperbarui kegiatan");
     },
   });
 };
@@ -162,8 +308,8 @@ export const useDeleteActivity = () => {
       toast.success("Kegiatan berhasil dihapus");
       queryClient.invalidateQueries({ queryKey: ["perencanaan"] });
     },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.message || "Gagal menghapus kegiatan");
+    onError: (error: ApiErrorShape) => {
+      toast.error(apiMessage(error) || "Gagal menghapus kegiatan");
     },
   });
 };
@@ -209,8 +355,8 @@ export const useCreatePlan = () => {
       toast.success("Rencana berhasil dibuat");
       queryClient.invalidateQueries({ queryKey: ["perencanaan"] });
     },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.message || "Gagal membuat rencana");
+    onError: (error: ApiErrorShape) => {
+      toast.error(apiMessage(error) || "Gagal membuat rencana");
     },
   });
 };
@@ -226,8 +372,8 @@ export const useUpdatePlan = () => {
       toast.success("Rencana berhasil diperbarui");
       queryClient.invalidateQueries({ queryKey: ["perencanaan"] });
     },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.message || "Gagal memperbarui rencana");
+    onError: (error: ApiErrorShape) => {
+      toast.error(apiMessage(error) || "Gagal memperbarui rencana");
     },
   });
 };
@@ -243,8 +389,51 @@ export const useApprovePlan = () => {
       toast.success("Rencana berhasil disetujui");
       queryClient.invalidateQueries({ queryKey: ["perencanaan"] });
     },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.message || "Gagal menyetujui rencana");
+    onError: (error: ApiErrorShape) => {
+      toast.error(apiMessage(error) || "Gagal menyetujui rencana");
+    },
+  });
+};
+
+/**
+ * One step of the yayasan ratification flow. `step` is the API path segment;
+ * the server decides whether the caller's organ may take it, so a refusal
+ * arrives as a toast naming who does.
+ */
+export type PlanReviewPayload =
+  | ({ step: "submit" } & SubmitForReviewInput)
+  | ({ step: "result" } & ReviewResultInput)
+  | ({ step: "propose" } & ProposeToPembinaInput)
+  | ({ step: "decide" } & DecidePlanInput);
+
+function reviewStepDone(payload: PlanReviewPayload): string {
+  switch (payload.step) {
+    case "submit":
+      return "Diajukan ke Pengawas untuk direviu";
+    case "result":
+      return "Hasil reviu dikirim ke Pengurus";
+    case "propose":
+      return "Diajukan ke Pembina beserta hasil reviu Pengawas";
+    case "decide":
+      return payload.decision === "TETAPKAN"
+        ? "Dokumen ditetapkan"
+        : "Dokumen dikembalikan ke Pengurus";
+  }
+}
+
+export const usePlanReviewStep = (planId: string) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ step, ...body }: PlanReviewPayload) => {
+      const res = await api.post(`/perencanaan/${planId}/review/${step}`, body);
+      return res.data;
+    },
+    onSuccess: (_data, payload) => {
+      toast.success(reviewStepDone(payload));
+      queryClient.invalidateQueries({ queryKey: ["perencanaan"] });
+    },
+    onError: (error: ApiErrorShape) => {
+      toast.error(apiMessage(error) || "Langkah pengesahan gagal");
     },
   });
 };
@@ -260,8 +449,8 @@ export const useDeletePlan = () => {
       toast.success("Rencana berhasil dihapus");
       queryClient.invalidateQueries({ queryKey: ["perencanaan"] });
     },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.message || "Gagal menghapus rencana");
+    onError: (error: ApiErrorShape) => {
+      toast.error(apiMessage(error) || "Gagal menghapus rencana");
     },
   });
 };

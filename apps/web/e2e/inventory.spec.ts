@@ -1,5 +1,6 @@
 import { test, expect } from "./fixtures/auth.fixture";
 import { loginAs } from "./helpers/auth-api";
+import { settledContent } from "./helpers/page-state";
 
 /**
  * Inventory Module E2E Tests
@@ -24,7 +25,7 @@ test.describe("Inventory - Navigation", () => {
     await page.goto("/inventory");
     await page.waitForLoadState("domcontentloaded", { timeout: 10000 });
 
-    const content = await page.content();
+    const content = await settledContent(page);
     expect(content.length).toBeGreaterThan(1000);
     expect(page.url()).toMatch(/inventory/);
   });

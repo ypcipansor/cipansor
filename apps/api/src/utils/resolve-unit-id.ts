@@ -83,6 +83,40 @@ export function isFoundationScopedRole(roleCode?: string | null): boolean {
 }
 
 /**
+ * Leadership roles across Foundation, Schools/Units, Pesantren, and Higher Education.
+ */
+export const LEADERSHIP_ROLES: readonly string[] = [
+  RoleCode.SUPER_ADMIN,
+  RoleCode.YAYASAN_KETUA,
+  RoleCode.YAYASAN_PEMBINA,
+  RoleCode.YAYASAN_PENGAWAS,
+  RoleCode.YAYASAN_SEKRETARIS,
+  RoleCode.YAYASAN_BENDAHARA,
+  RoleCode.YAYASAN_ANGGOTA,
+  RoleCode.TKQ_ADMIN,
+  RoleCode.SDIT_ADMIN,
+  RoleCode.SMPIT_ADMIN,
+  RoleCode.SMAQ_ADMIN,
+  RoleCode.TKQ_KEPALA_SEKOLAH,
+  RoleCode.SDIT_KEPALA_SEKOLAH,
+  RoleCode.SMPIT_KEPALA_SEKOLAH,
+  RoleCode.SMAQ_KEPALA_SEKOLAH,
+  RoleCode.PESANTREN_PENGASUH,
+  RoleCode.PESANTREN_DIREKTUR,
+  RoleCode.PT_REKTOR,
+  RoleCode.PT_WAKIL_REKTOR,
+  RoleCode.PT_DEKAN,
+  RoleCode.PT_KAPRODI,
+];
+
+/**
+ * Helper to check if a user role belongs to unit or foundation leadership.
+ */
+export function isLeadershipRole(roleCode?: string | null): boolean {
+  return !!roleCode && LEADERSHIP_ROLES.includes(roleCode as RoleCode);
+}
+
+/**
  * Roles that work across the academic units rather than inside one.
  *
  * The asrama houses santri from SD IT, SMP IT and SMA Qur'an together, and the
@@ -136,4 +170,30 @@ export function seesAllUnits(user: {
     isFoundationScopedRole(user.roleCode) ||
     (!!user.roleCode && CROSS_UNIT_SCOPE_ROLES.includes(user.roleCode))
   );
+}
+
+/**
+ * The `unitId` a token carries for the ACTIVE role assignment — one rule for
+ * every path that mints a token: login, 2FA, refresh and switching role.
+ *
+ * A role assignment binds a person, a role and a scope; the token's unit is
+ * that scope. The paths used to disagree: switchRole returned null for every
+ * `seesAllUnits` role while refresh fell back to the home unit, so a person
+ * who switched to a yayasan role held foundation scope for one access token
+ * and their home unit's after the next refresh, with nothing to show for it.
+ *
+ * Only a FOUNDATION role may carry no unit — its scope is the whole yayasan.
+ * Cross-unit service roles (perawat, pustakawan, musyrif…) keep their home
+ * unit: their breadth comes from `seesAllUnits` widening a query, never from
+ * an empty scope that every `unitId ? filter : everything` clause reads as
+ * "no limit at all".
+ */
+export function tokenUnitId(
+  assignmentUnitId: string | null | undefined,
+  roleCode: string | null | undefined,
+  userUnitId: string | null | undefined,
+): string | null {
+  if (assignmentUnitId) return assignmentUnitId;
+  if (isFoundationScopedRole(roleCode)) return null;
+  return userUnitId ?? null;
 }

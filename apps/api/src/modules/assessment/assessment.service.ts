@@ -16,6 +16,7 @@ import {
   CreateReportCardInput,
   UpdateReportCardInput,
   ReportCardDetail,
+  calculateLetterGrade,
 } from '@cipansor/shared';
 import { Prisma } from '@prisma/client';
 import type { ExamQuery, GradeQuery, ReportCardQuery } from './assessment.schema';
@@ -309,14 +310,6 @@ export async function updateExamStatus(id: string, status: string): Promise<Exam
 // GRADE SERVICES
 // =====================================
 
-function calculateLetterGrade(percentage: number): string {
-  if (percentage >= 90) return 'A';
-  if (percentage >= 80) return 'B';
-  if (percentage >= 70) return 'C';
-  if (percentage >= 60) return 'D';
-  return 'E';
-}
-
 export async function getGrades(query: GradeQuery): Promise<SharedPaginatedResponse<Grade>> {
   const { page, limit, studentId, subjectId, examId, academicYearId, type } = query;
   const skip = (page - 1) * limit;
@@ -377,26 +370,53 @@ export async function createGrade(data: CreateGradeInput): Promise<Grade> {
   const percentage = (data.score / (data.maxScore ?? 100)) * 100;
   const letterGrade = calculateLetterGrade(percentage);
 
+  const gradeData = {
+    studentId: data.studentId,
+    subjectId: data.subjectId,
+    examId: data.examId,
+    academicYearId: data.academicYearId,
+    type: data.type as any,
+    score: new Decimal(data.score),
+    maxScore: new Decimal(data.maxScore ?? 100),
+    percentage: new Decimal(percentage),
+    letterGrade,
+    notes: data.notes,
+    gradedById: data.gradedById,
+  };
+
+  const includeRelations = {
+    student: { include: { user: { select: { id: true, name: true } } } },
+    subject: { select: { id: true, name: true, code: true } },
+    exam: { select: { id: true, title: true, type: true } },
+    gradedBy: { select: { id: true, name: true } },
+  };
+
+  if (data.examId) {
+    const grade = await prisma.grade.upsert({
+      where: {
+        studentId_examId: {
+          studentId: data.studentId,
+          examId: data.examId,
+        },
+      },
+      create: gradeData,
+      update: {
+        score: gradeData.score,
+        maxScore: gradeData.maxScore,
+        percentage: gradeData.percentage,
+        letterGrade: gradeData.letterGrade,
+        notes: gradeData.notes,
+        gradedById: gradeData.gradedById,
+        gradedAt: new Date(),
+      },
+      include: includeRelations,
+    });
+    return mapToGrade(grade);
+  }
+
   const grade = await prisma.grade.create({
-    data: {
-      studentId: data.studentId,
-      subjectId: data.subjectId,
-      examId: data.examId,
-      academicYearId: data.academicYearId,
-      type: data.type as any,
-      score: new Decimal(data.score),
-      maxScore: new Decimal(data.maxScore ?? 100),
-      percentage: new Decimal(percentage),
-      letterGrade,
-      notes: data.notes,
-      gradedById: data.gradedById,
-    },
-    include: {
-      student: { include: { user: { select: { id: true, name: true } } } },
-      subject: { select: { id: true, name: true, code: true } },
-      exam: { select: { id: true, title: true, type: true } },
-      gradedBy: { select: { id: true, name: true } },
-    },
+    data: gradeData,
+    include: includeRelations,
   });
 
   return mapToGrade(grade);
@@ -443,8 +463,51 @@ export async function deleteGrade(id: string): Promise<Grade> {
 }
 
 export async function bulkCreateGrades(data: BulkCreateGradesInput): Promise<number> {
+  const maxScore = data.maxScore ?? 100;
+
+  if (data.examId) {
+    const examId = data.examId;
+    const operations = data.grades.map((g) => {
+      const percentage = (g.score / maxScore) * 100;
+      const letterGrade = calculateLetterGrade(percentage);
+
+      return prisma.grade.upsert({
+        where: {
+          studentId_examId: {
+            studentId: g.studentId,
+            examId,
+          },
+        },
+        create: {
+          studentId: g.studentId,
+          subjectId: data.subjectId,
+          examId,
+          academicYearId: data.academicYearId,
+          type: data.type as any,
+          score: new Decimal(g.score),
+          maxScore: new Decimal(maxScore),
+          percentage: new Decimal(percentage),
+          letterGrade,
+          notes: g.notes,
+          gradedById: data.gradedById,
+        },
+        update: {
+          score: new Decimal(g.score),
+          maxScore: new Decimal(maxScore),
+          percentage: new Decimal(percentage),
+          letterGrade,
+          notes: g.notes,
+          gradedById: data.gradedById,
+          gradedAt: new Date(),
+        },
+      });
+    });
+
+    const results = await prisma.$transaction(operations);
+    return results.length;
+  }
+
   const grades = data.grades.map((g) => {
-    const maxScore = data.maxScore ?? 100;
     const percentage = (g.score / maxScore) * 100;
 
     return {

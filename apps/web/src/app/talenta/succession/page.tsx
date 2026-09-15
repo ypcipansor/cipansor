@@ -1,7 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { useSuccessions, useSuccessorSuggestions } from "@/hooks/use-talenta";
+import {
+  useSuccessions,
+  useSuccessorSuggestions,
+  useOrgPositionsForSuccession,
+} from "@/hooks/use-talenta";
 import { PageHeader } from "@/components/shared/page-header";
 import {
   Card,
@@ -11,9 +15,12 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
-import { UserCheck, Star, Search, Loader2 } from "lucide-react";
+import { UserCheck, Search, Loader2, Target, Info } from "lucide-react";
+import {
+  SuccessionPlanningList,
+  type SuccessionCandidate,
+} from "@/components/hr/succession-planning-list";
 import { MainLayout } from "@/components/layout";
 
 interface SuccessionPlanItem {
@@ -27,24 +34,32 @@ interface SuccessionPlanItem {
   successor: { user: { id: string; name: string } } | null;
 }
 
-interface SuccessorSuggestion {
-  name: string;
-  readiness: string;
-  matchScore: number;
-  shariaMatch: boolean;
-}
-
+/*
+  This page absorbed /hr/talenta and /hr/talenta/succession (deleted). There
+  used to be two screens for one job: a "Manajemen Talenta" at /hr/talenta
+  whose 9-box and distribution cards already existed at /talenta/matrix and
+  /talenta/analytics, and a /hr/talenta/succession that nothing linked to but
+  which held the only part worth keeping — picking a real jabatan from the org
+  chart, and the honest statement of how the score is computed. Both live here
+  now, next to the plans they are meant to fill.
+*/
 function SuccessionDashboardPageContent() {
   const { data: successions, isLoading } = useSuccessions();
   const [search, setSearch] = useState("");
+  const [targetPositionId, setTargetPositionId] = useState<string | null>(null);
+  const { data: positions } = useOrgPositionsForSuccession();
   const { data: suggestions, isLoading: suggestionsLoading } =
-    useSuccessorSuggestions(search);
+    useSuccessorSuggestions(search, undefined, targetPositionId);
+
+  const selected = positions?.find((p) => p.id === targetPositionId);
+  const selectedHasRequirements = Boolean(selected?.requirements);
+  const candidates = (suggestions as SuccessionCandidate[] | undefined) ?? [];
 
   return (
     <div className="container mx-auto py-8 space-y-8">
       <PageHeader
-        title="Succession Planning"
-        description="Identifikasi dan persiapan pemimpin masa depan unit"
+        title="Perencanaan Suksesi"
+        description="Rencana suksesi aktif, dan penyaringan kandidat dari data talenta yang tercatat"
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -133,71 +148,108 @@ function SuccessionDashboardPageContent() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Search className="h-5 w-5" /> Cari Kandidat Suksesor
+                <Target className="h-5 w-5" /> Cari Kandidat Suksesor
               </CardTitle>
               <CardDescription>
-                Saran kandidat dari profil talenta, penilaian kompetensi, dan
-                riwayat pelatihan
+                Pilih jabatan dari struktur organisasi agar kesesuaian
+                kompetensi ikut dihitung.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <Input
-                placeholder="Ketik nama posisi (mis. Kepala Sekolah)..."
+                placeholder="Masukkan nama jabatan, misal: Kepala Sekolah"
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setTargetPositionId(null);
+                }}
               />
 
-              <div className="space-y-3">
-                {suggestionsLoading ? (
-                  <div className="flex justify-center py-4">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  </div>
-                ) : (
-                  (suggestions as SuccessorSuggestion[] | undefined)?.map(
-                    (sug, i) => (
-                      <div
-                        key={i}
-                        className="p-3 border rounded-lg shadow-sm space-y-2"
+              {positions && positions.length > 0 && (
+                <div className="space-y-2 border-t pt-4">
+                  <p className="text-xs font-semibold uppercase text-muted-foreground">
+                    Jabatan pada struktur organisasi
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {positions.map((p) => (
+                      <Badge
+                        key={p.id}
+                        variant={
+                          targetPositionId === p.id ? "default" : "secondary"
+                        }
+                        className="cursor-pointer"
+                        onClick={() => {
+                          setTargetPositionId(p.id);
+                          setSearch(p.title);
+                        }}
                       >
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm font-bold">{sug.name}</span>
-                          <Badge variant="secondary" className="text-[10px]">
-                            {sug.matchScore}% cocok
-                          </Badge>
-                        </div>
-                        <div className="space-y-1">
-                          <div className="flex justify-between text-[10px]">
-                            <span className="text-muted-foreground">
-                              Kesiapan
-                            </span>
-                            <span>{sug.readiness}</span>
-                          </div>
-                          <Progress
-                            value={Math.min(100, sug.matchScore)}
-                            className="h-1"
-                          />
-                        </div>
-                        {sug.shariaMatch && (
-                          <div className="flex items-center gap-1 text-[10px] text-emerald-600 font-bold">
-                            <Star className="h-3 w-3 fill-current" /> Pelatihan
-                            syariah
-                          </div>
-                        )}
-                      </div>
-                    ),
-                  )
-                )}
-
-                {search.length > 2 &&
-                  !suggestionsLoading &&
-                  suggestions?.length === 0 && (
-                    <p className="text-center text-xs text-muted-foreground py-4">
-                      Tidak ada kandidat cocok ditemukan
+                        {p.title}
+                      </Badge>
+                    ))}
+                  </div>
+                  {targetPositionId && !selectedHasRequirements && (
+                    <p className="text-xs text-amber-700 dark:text-amber-500">
+                      Jabatan ini belum punya syarat kompetensi tercatat, jadi
+                      kesesuaian kompetensi tetap tidak bisa dihitung.
                     </p>
                   )}
-              </div>
+                </div>
+              )}
+
+              {positions && positions.length === 0 && (
+                <p className="border-t pt-4 text-xs text-muted-foreground">
+                  Belum ada jabatan pada struktur organisasi. Tambahkan lewat
+                  menu Struktur Organisasi agar kesesuaian kompetensi bisa
+                  dinilai.
+                </p>
+              )}
             </CardContent>
           </Card>
+        </div>
+      </div>
+
+      <div className="space-y-6">
+        {suggestionsLoading ? (
+          <div className="flex flex-col items-center justify-center rounded-xl border border-dashed bg-slate-50 py-20 dark:bg-slate-900/40">
+            <Loader2 className="mb-4 h-8 w-8 animate-spin text-primary" />
+            <p className="text-muted-foreground">Menghitung skor kandidat...</p>
+          </div>
+        ) : search.length > 2 ? (
+          <SuccessionPlanningList
+            candidates={candidates}
+            positionTitle={search}
+          />
+        ) : (
+          <div className="rounded-xl border border-dashed py-16 text-center text-muted-foreground">
+            <Search className="mx-auto mb-3 h-10 w-10 opacity-30" />
+            <p className="text-sm">
+              Ketik nama jabatan di atas, atau pilih satu dari struktur
+              organisasi, untuk melihat kandidat suksesornya.
+            </p>
+          </div>
+        )}
+
+        {/*
+          The old copy called this "AI-Driven" and stamped an "AI Powered
+          Recommendations" badge on it. It is a weighted sum, not a model, and
+          saying otherwise on a screen used to pick who runs a school is not a
+          harmless flourish. The weights are stated here so a reader can judge
+          the number instead of trusting it.
+        */}
+        <div className="flex items-start gap-3 rounded-lg border bg-muted/40 p-4">
+          <Info className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
+          <div>
+            <p className="text-sm font-bold">Cara skor dihitung</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Penjumlahan berbobot, bukan model AI: kategori talenta (maks 80),
+              relevansi peran saat ini terhadap judul jabatan (10), pelatihan
+              yang diselesaikan (15), pelatihan syariah (10), dan kesesuaian
+              kompetensi terhadap syarat jabatan (25). Komponen yang datanya
+              belum ada ditandai pada setiap kandidat, dan bila hanya kategori
+              yang menyumbang, skornya tidak ditampilkan sebagai angka — karena
+              angka itu tidak menjawab kecocokan terhadap jabatan yang dicari.
+            </p>
+          </div>
         </div>
       </div>
     </div>

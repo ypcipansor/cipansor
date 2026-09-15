@@ -26,6 +26,7 @@ import { format } from "date-fns";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
 import type { BulkCreateDailyReportsInput } from "@cipansor/shared";
+import { STUDENT_STATUS } from "@cipansor/shared";
 
 const MOODS = [
   { value: "HAPPY", label: "Senang", icon: Smile, color: "text-green-500" },
@@ -84,7 +85,7 @@ export default function BulkCreateDailyReportPage() {
     classId: selectedClassId || undefined,
     unitId: user?.unitId,
     limit: 100,
-    status: "active",
+    status: STUDENT_STATUS.ACTIVE,
   });
 
   const bulkMutation = useBulkCreateDailyReport();

@@ -48,6 +48,7 @@ import {
   useAcademicYears,
   useActiveAcademicYear,
 } from "@/hooks/use-academic-years";
+import { STUDENT_STATUS } from "@cipansor/shared";
 
 const bulkBillSchema = z.object({
   academicYearId: z.string().min(1, "Pilih tahun ajaran"),
@@ -88,7 +89,7 @@ export default function BulkBillsPage() {
     unitId: unitId || undefined,
     classId: classId || undefined,
     limit: 500,
-    status: "ACTIVE",
+    status: STUDENT_STATUS.ACTIVE,
   });
   const students = studentsData?.data || [];
 

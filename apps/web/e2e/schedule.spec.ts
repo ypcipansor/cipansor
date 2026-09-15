@@ -1,5 +1,6 @@
 import { test, expect } from "./fixtures/auth.fixture";
 import { loginAs } from "./helpers/auth-api";
+import { settledContent } from "./helpers/page-state";
 
 /**
  * Schedule Module E2E Tests
@@ -25,7 +26,7 @@ test.describe("Schedule - Navigation", () => {
     await page.waitForLoadState("domcontentloaded", { timeout: 10000 });
 
     // Page should load with content
-    const content = await page.content();
+    const content = await settledContent(page);
     expect(content.length).toBeGreaterThan(1000);
     expect(page.url()).toMatch(/schedule/);
   });

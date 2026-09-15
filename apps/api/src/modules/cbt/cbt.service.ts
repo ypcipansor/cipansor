@@ -1,11 +1,63 @@
 import { prisma } from '@/lib/prisma';
 import { Prisma, QuestionType } from '@prisma/client';
+import type { Question as QuestionModel } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/client';
 import { Errors } from '@/middleware/error';
+import { canonicalAnswer, isAnswerCorrect, normalizeAnswerKeyForStorage } from './answer-key';
+import type { SecurityEventType } from '@cipansor/shared';
+import { calculateLetterGrade } from '@cipansor/shared';
 import type { JwtPayload } from '@/lib/jwt';
 
 /** Authenticated caller shape used for unit-scoping checks. */
 type AuthUser = Pick<JwtPayload, 'id' | 'role'> & { unitId?: string | null };
+
+/**
+ * Minutes a student may still act after the exam duration has elapsed, to absorb
+ * clock skew and a slow last request. One constant because the rule is enforced
+ * in two places — saving an answer and finishing the attempt — and two copies of
+ * one rule diverge at the next edit.
+ */
+export const EXAM_GRACE_PERIOD_MINUTES = 2;
+
+/**
+ * `normalizeAnswerKeyForStorage` in the shape a nullable Json column accepts:
+ * `Prisma.DbNull` writes SQL NULL ("this question has no key yet"), which is the
+ * meaning here — `Prisma.JsonNull` would store the JSON value `null` instead,
+ * and the two are different rows to query against.
+ */
+function answerKeyForPrisma(
+  type: QuestionType,
+  answerKey: unknown,
+  options: unknown
+): string | typeof Prisma.DbNull {
+  const normalized = normalizeAnswerKeyForStorage(type, answerKey, options);
+  return normalized === null ? Prisma.DbNull : normalized;
+}
+
+/** Deterministic pseudo-random number generator for attempt-level shuffling */
+function seededRandom(seedStr: string) {
+  let h = 0;
+  for (let i = 0; i < seedStr.length; i++) {
+    h = (Math.imul(31, h) + seedStr.charCodeAt(i)) | 0;
+  }
+  return function () {
+    h = (h + 0x6d2b79f5) | 0;
+    let t = Math.imul(h ^ (h >>> 15), 1 | h);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Seeded Fisher-Yates array shuffling */
+function shuffleWithSeed<T>(array: T[], seedStr: string): T[] {
+  const result = [...array];
+  const rand = seededRandom(seedStr);
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
 
 // Types for inputs (can be moved to shared types later)
 interface CreateQuestionBankInput {
@@ -183,7 +235,10 @@ export class CBTService {
         type: data.type,
         content: data.content,
         options: data.options,
-        answerKey: data.answerKey,
+        // Normalised and checked against this question's own options here, so a
+        // key that can never match is refused while the teacher is writing it
+        // instead of surfacing as every student's zero on exam day.
+        answerKey: answerKeyForPrisma(data.type, data.answerKey, data.options),
         explanation: data.explanation,
         points: data.points ?? 1,
         order: data.order ?? 0,
@@ -214,9 +269,17 @@ export class CBTService {
       throw Errors.forbidden('You do not have permission to update this question');
     }
 
+    // The same contract on update, evaluated against the values this call leaves
+    // behind: replacing the options can make a previously valid key unusable, so
+    // the stored key is re-checked even when the caller did not send one. The
+    // question type is not editable here (it is absent from UpdateQuestionInput),
+    // so it always comes from the stored row.
+    const nextOptions = data.options ?? question.options;
+    const nextKey = 'answerKey' in data ? data.answerKey : question.answerKey;
+
     return prisma.question.update({
       where: { id },
-      data,
+      data: { ...data, answerKey: answerKeyForPrisma(question.type, nextKey, nextOptions) },
     });
   }
 
@@ -593,13 +656,19 @@ export class CBTService {
             (ans) => ans.question.type === 'ESSAY' && ans.score === null
           );
 
-          return tx.examAttempt.update({
+          const updatedAttempt = await tx.examAttempt.update({
             where: { id: attemptId },
             data: {
               score: new Decimal(totalScore),
               status: hasUngradedEssay ? 'NEEDS_REVIEW' : 'COMPLETED',
             },
           });
+
+          if (!hasUngradedEssay) {
+            await CBTService.syncGradeToAcademicGradebook(attemptId, { forceUpdate: true }, tx);
+          }
+
+          return updatedAttempt;
         }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
       } catch (error: any) {
         lastError = error;
@@ -692,6 +761,7 @@ export class CBTService {
                     content: true,
                     options: true,
                     points: true,
+                    order: true,
                     // NO ANSWER KEY
                   },
                   orderBy: { order: 'asc' },
@@ -706,19 +776,112 @@ export class CBTService {
     if (!attempt) throw Errors.notFound('Attempt');
     if (attempt.studentId !== studentId) throw Errors.forbidden('Access denied');
 
+    // Best Practice Enhancement: Seed-based deterministic shuffling per attempt
+    // Keeps same order on page refresh while randomizing across different students.
+    if (attempt.exam?.questionBank?.questions) {
+      // Deep clone questions array to avoid mutating cached Prisma model in-place
+      let questions = attempt.exam.questionBank.questions.map((q) => ({
+        ...q,
+        options: Array.isArray(q.options) ? [...q.options] : q.options,
+      }));
+
+      // Shuffle question order using attemptId seed
+      questions = shuffleWithSeed(questions, attemptId);
+
+      // Shuffle options order for each MCQ question using attemptId + questionId seed
+      questions = questions.map((q) => {
+        if (Array.isArray(q.options) && q.options.length > 0) {
+          return {
+            ...q,
+            options: shuffleWithSeed(q.options as unknown[] as string[], `${attemptId}_${q.id}`),
+          };
+        }
+        return q;
+      });
+
+      attempt.exam.questionBank.questions = questions as unknown as QuestionModel[];
+    }
+
     return attempt;
+  }
+
+  static async recordSecurityLog(
+    attemptId: string,
+    userId: string,
+    event: { type: SecurityEventType; details?: Record<string, unknown> | null }
+  ) {
+    // The allowed list used to be a third copy hardcoded right here — five
+    // values, so it would have rejected FULLSCREEN_EXIT and DEV_TOOLS the moment
+    // the client started sending them. The list now lives once, in
+    // `SECURITY_EVENT_TYPES`: the zod schema rejects an unknown name at the
+    // boundary with a 400, the type above stops the server writing one, and the
+    // CHECK constraint is the last line in the database.
+
+    const student = await prisma.student.findUnique({ where: { userId } });
+    if (!student) throw Errors.unauthorized('User is not a student');
+
+    const attempt = await prisma.examAttempt.findUnique({
+      where: { id: attemptId },
+    });
+    if (!attempt) throw Errors.notFound('Attempt');
+    if (attempt.studentId !== student.id) throw Errors.forbidden('Access denied');
+
+    if (attempt.status !== 'IN_PROGRESS') {
+      throw Errors.badRequest('Cannot record security events for an attempt that is not in progress');
+    }
+
+    const isTabSwitch = event.type === 'TAB_SWITCH' || event.type === 'FOCUS_LOST';
+
+    const [log] = await prisma.$transaction([
+      prisma.examSecurityLog.create({
+        data: {
+          attemptId,
+          type: event.type,
+          details: (event.details ?? Prisma.DbNull) as Prisma.InputJsonValue,
+        },
+      }),
+      ...(isTabSwitch
+        ? [
+            prisma.examAttempt.update({
+              where: { id: attemptId },
+              data: {
+                tabSwitchCount: { increment: 1 },
+              },
+            }),
+          ]
+        : []),
+    ]);
+
+    return log;
   }
 
   static async submitAnswer(attemptId: string, questionId: string, answer: any, studentId: string) {
     const attempt = await prisma.examAttempt.findUnique({
       where: { id: attemptId },
-      include: { exam: { select: { questionBankId: true } } },
+      include: { exam: { select: { questionBankId: true, duration: true } } },
     });
     if (!attempt) throw Errors.notFound('Attempt');
     if (attempt.studentId !== studentId) throw Errors.forbidden('Access denied');
 
     if (attempt.status !== 'IN_PROGRESS') {
       throw Errors.badRequest('Cannot submit answer for a completed or expired attempt');
+    }
+
+    // Strict time limit check with 2 minute grace period
+    if (attempt.startedAt && attempt.exam.duration) {
+      const allowedDurationMs =
+        (attempt.exam.duration + EXAM_GRACE_PERIOD_MINUTES) * 60 * 1000;
+      const elapsedMs = Date.now() - new Date(attempt.startedAt).getTime();
+
+      if (elapsedMs > allowedDurationMs) {
+        // This answer is late and is refused. The attempt itself is finished and
+        // graded on the answers that did arrive in time, so running out of time
+        // costs the student this one answer rather than the whole exam.
+        await CBTService.finishExamAttempt(attemptId, studentId);
+        throw Errors.badRequest(
+          'Waktu pengerjaan ujian telah habis. Jawaban yang sudah tersimpan sudah dinilai.'
+        );
+      }
     }
 
     // Validate that the question belongs to this exam's question bank
@@ -771,6 +934,7 @@ export class CBTService {
         },
         attempts: {
           where: { status: { in: ['COMPLETED', 'NEEDS_REVIEW'] } },
+          orderBy: { createdAt: 'desc' },
           take: 1000, // Safety limit to prevent excessive memory usage
           include: {
             answers: {
@@ -906,7 +1070,13 @@ export class CBTService {
 
     if (!attempt) throw Errors.notFound('Attempt');
     if (attempt.studentId !== studentId) throw Errors.forbidden('Access denied');
-    if (attempt.status !== 'IN_PROGRESS') {
+
+    // An attempt the old behaviour left as EXPIRED with no score was a dead end:
+    // its answers sat graded-never in the database and no Grade was ever issued.
+    // Treat those as unfinished and grade them below instead of returning them.
+    const staleExpired = attempt.status === 'EXPIRED' && attempt.score === null;
+
+    if (attempt.status !== 'IN_PROGRESS' && !staleExpired) {
       // Strip sensitive fields before returning to the student to prevent leaking
       // correct answers and explanations. Only expose the same fields as getAttempt.
       if (attempt.exam?.questionBank?.questions) {
@@ -914,10 +1084,29 @@ export class CBTService {
           .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
           .map(
             ({ id, type, content, options, points }) => ({ id, type, content, options, points })
-          ) as any;
+          ) as unknown as QuestionModel[];
       }
+
+      // Idempotent catch-up sync: ensure completed attempts have a Grade record created
+      if (attempt.status === 'COMPLETED') {
+        await CBTService.syncGradeToAcademicGradebook(attemptId);
+      }
+
       return attempt;
     }
+
+    // Past the deadline the paper is closed, not shredded: the answers already
+    // saved are graded exactly as they stand and a Grade is issued like any
+    // other attempt. Throwing here (the previous behaviour) left the student's
+    // saved answers forever ungraded with no way back — a dropped connection in
+    // the last minutes cost an entire exam. Late ANSWERS are still refused, in
+    // submitAnswer; this only decides what happens to the ones that arrived in
+    // time.
+    const closedByTimeLimit =
+      attempt.startedAt && attempt.exam?.duration
+        ? Date.now() - new Date(attempt.startedAt).getTime() >
+          (attempt.exam.duration + EXAM_GRACE_PERIOD_MINUTES) * 60 * 1000
+        : false;
 
     // Auto grading
     let totalScore = 0;
@@ -932,17 +1121,13 @@ export class CBTService {
       let score = 0;
 
       if (question.type === 'MULTIPLE_CHOICE' || question.type === 'TRUE_FALSE') {
-        // Compare answerKey. Assuming answerKey is { optionId: "..." } or simple string
-        // studentAnswer.answer should match structure.
-        // Simple logic: if JSON stringify matches (careful with order) or direct value check.
-        // Assuming answerKey is just the ID of the correct option.
-
-        const key = question.answerKey as any; // e.g. "opt-1"
-        const studentAns = studentAnswer?.answer as any; // e.g. "opt-1"
-
-        // Use JSON.stringify for comparison to handle both primitive and
-        // object JSON values (Prisma Json fields may be deserialized objects).
-        if (key != null && studentAns != null && JSON.stringify(key) === JSON.stringify(studentAns)) {
+        // One rule decides this, shared with the question-write validation and
+        // the distractor analysis (`answer-key.ts`). It replaced a
+        // `JSON.stringify(key) === JSON.stringify(answer)` comparison, which
+        // marked every true/false question wrong whenever the teacher's key was
+        // stored as the JSON boolean `true` and the client sent the string
+        // "true" — silently, and straight into the academic gradebook.
+        if (isAnswerCorrect(question.type, question.answerKey, studentAnswer?.answer)) {
           isCorrect = true;
           score = question.points;
         }
@@ -1000,6 +1185,29 @@ export class CBTService {
       })
     );
 
+    // An attempt closed by the clock is scored like any other, so the status no
+    // longer says which of the two happened. The distinction matters to whoever
+    // reviews the exam afterwards, so it is written where the rest of the
+    // attempt's history already lives — append-only, in the same transaction as
+    // the grading it describes.
+    if (closedByTimeLimit) {
+      gradedAnswers.push(
+        prisma.examSecurityLog.create({
+          data: {
+            attemptId,
+            type: 'TIME_EXPIRED_AUTO_SUBMIT' satisfies SecurityEventType,
+            details: {
+              closedBy: 'SYSTEM',
+              examDurationMinutes: attempt.exam?.duration ?? null,
+              graceMinutes: EXAM_GRACE_PERIOD_MINUTES,
+              gradedAnswers: attempt.answers.length,
+              note: 'Ditutup sistem karena waktu habis; jawaban yang sudah masuk dinilai apa adanya.',
+            },
+          },
+        })
+      );
+    }
+
     await prisma.$transaction(gradedAnswers);
 
     // Re-fetch the attempt using Prisma `select` on questions to avoid
@@ -1032,7 +1240,105 @@ export class CBTService {
 
     if (!finishedAttempt) throw Errors.notFound('Attempt');
 
+    // Auto-sync score to academic Gradebook if completed (no pending essay grading)
+    if (finishedAttempt.status === 'COMPLETED') {
+      await CBTService.syncGradeToAcademicGradebook(attemptId);
+    }
+
     return finishedAttempt;
+  }
+
+  /**
+   * Automatically synchronizes CBT attempt scores into the academic Gradebook (`Grade` model).
+   *
+   * Thread-safe and atomic: uses `upsert` with compound key `studentId_examId`.
+   * Both the new-record path and any update path always refresh the score fields so a freshly
+   * finished CBT attempt lands in the gradebook even when the grade row already exists.
+   * `forceUpdate` (after teacher grades essay questions) additionally notes the post-grading refresh.
+   *
+   * The update is inherently scoped to exam grades: `examId` is only non-null for `EXAM`-type
+   * grades (`schema.prisma`: "null untuk nilai non-ujian"), and the compound unique key only
+   * matches rows whose `examId` equals this exam — so grades originating from other modules
+   * (assignments, projects, …) can never be touched here.
+   */
+  static async syncGradeToAcademicGradebook(
+    attemptId: string,
+    options?: { forceUpdate?: boolean },
+    tx?: any
+  ) {
+    const db = tx || prisma;
+    const attempt = await db.examAttempt.findUnique({
+      where: { id: attemptId },
+      include: {
+        exam: {
+          include: {
+            questionBank: {
+              include: {
+                questions: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!attempt || attempt.score === null || attempt.status !== 'COMPLETED' || !attempt.exam?.teacherId) return null;
+
+    const teacher = await db.teacher.findUnique({
+      where: { id: attempt.exam.teacherId },
+      select: { userId: true },
+    });
+
+    if (!teacher) return null;
+
+    const questions = attempt.exam.questionBank?.questions || [];
+    const totalPossiblePoints = questions.reduce((sum: number, q: { points?: number | null }) => sum + Number(q.points || 0), 0);
+    const denominator = totalPossiblePoints > 0 ? totalPossiblePoints : (attempt.exam.maxScore ? Number(attempt.exam.maxScore) : 100);
+
+    const numericScore = Number(attempt.score);
+    const percentage = denominator > 0 ? Math.min(100, Math.max(0, (numericScore / denominator) * 100)) : 0;
+    const letterGrade = calculateLetterGrade(percentage);
+
+    const createPayload = {
+      studentId: attempt.studentId,
+      examId: attempt.examId,
+      subjectId: attempt.exam.subjectId,
+      academicYearId: attempt.exam.academicYearId,
+      type: 'EXAM' as const,
+      score: attempt.score,
+      maxScore: new Decimal(denominator),
+      percentage: new Decimal(percentage),
+      letterGrade,
+      notes: `Nilai CBT Ujian Online (${attempt.exam.title})`,
+      gradedById: teacher.userId,
+    };
+
+    // Always refresh the score fields so a freshly finished CBT attempt lands in the
+    // gradebook even when the grade row already exists (exam without essay grading).
+    // Only the EXAM-type grade whose `examId` matches can be selected by the compound
+    // unique key below, so historical grades from other modules are never overwritten.
+    const updatePayload: Prisma.GradeUpdateInput = {
+      score: attempt.score,
+      maxScore: new Decimal(denominator),
+      percentage: new Decimal(percentage),
+      letterGrade,
+      gradedAt: new Date(),
+    };
+
+    if (options?.forceUpdate) {
+      updatePayload.notes = `Nilai CBT (${attempt.exam.title}) - Diperbarui Pasca Koreksi Esai`;
+    }
+
+    return db.grade.upsert({
+      where: {
+        studentId_examId: {
+          studentId: attempt.studentId,
+          examId: attempt.examId,
+        },
+      },
+      create: createPayload,
+      update: updatePayload,
+    });
   }
 
   /**
@@ -1096,12 +1402,41 @@ export class CBTService {
         ? (countCorrect(upperGroup, q.id) - countCorrect(lowerGroup, q.id)) / groupSize
         : null;
 
+      // Best Practice: Distractor analysis for multiple choice questions
+      let distractorAnalysis:
+        | Array<{ option: Prisma.JsonValue; count: number; percentage: number }>
+        | undefined;
+      if (q.type === 'MULTIPLE_CHOICE' && Array.isArray(q.options)) {
+        // Counted through the same canonical form the grader uses. These two
+        // used to normalise differently — the analysis unwrapped `{ id: … }`
+        // wrappers and the grader did not — so they could disagree about which
+        // option a student had picked.
+        const optionCounts: Record<string, number> = {};
+        answers.forEach((ans) => {
+          if (ans && ans.answer != null) {
+            const keyStr = canonicalAnswer(q.type, ans.answer);
+            if (keyStr !== null) optionCounts[keyStr] = (optionCounts[keyStr] || 0) + 1;
+          }
+        });
+
+        distractorAnalysis = (q.options as Prisma.JsonValue[]).map((opt) => {
+          const keyStr = canonicalAnswer(q.type, opt);
+          const count = keyStr === null ? 0 : optionCounts[keyStr] || 0;
+          return {
+            option: opt,
+            count,
+            percentage: totalGraded > 0 ? (count / totalGraded) * 100 : 0,
+          };
+        });
+      }
+
       return {
         questionId: q.id,
         content: q.content.substring(0, 100),
         successRate,
         difficultyIndex: totalGraded > 0 ? totalCorrect / totalGraded : null,
         discriminationIndex,
+        distractorAnalysis,
         totalGraded,
         isKiller: successRate < 30 && totalGraded > 5,
         needsReview:

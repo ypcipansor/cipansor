@@ -12,6 +12,7 @@ import {
 } from '@/lib/realtime';
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
+import { STUDENT_STATUS } from '@cipansor/shared';
 
 /**
  * Aggregate and publish dashboard metrics
@@ -93,7 +94,7 @@ async function checkAndPublishAlerts(): Promise<void> {
     today.setHours(0, 0, 0, 0);
 
     const totalActiveStudents = await prisma.student.count({
-      where: { status: 'ACTIVE' },
+      where: { status: STUDENT_STATUS.ACTIVE },
     });
 
     const todayPresent = await prisma.attendance.count({
@@ -126,7 +127,7 @@ async function checkAndPublishAlerts(): Promise<void> {
     const studentsByUnit = await prisma.student.groupBy({
       by: ['unitId'],
       where: {
-        status: 'ACTIVE',
+        status: STUDENT_STATUS.ACTIVE,
       },
       _count: true,
     });

@@ -81,7 +81,7 @@ export default function StrategyMapPage() {
       <div className="space-y-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Strategy Map</h1>
+            <h1 className="text-3xl font-bold tracking-tight">Peta Strategi</h1>
             <p className="text-muted-foreground">
               Visualisasi hubungan sebab-akibat sasaran strategis (BSC)
             </p>
@@ -182,10 +182,10 @@ export default function StrategyMapPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">Catatan Implementasi Strategy Map</CardTitle>
+            <CardTitle className="text-sm">Catatan Implementasi Peta Strategi</CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground">
-             Strategy Map ini menghubungkan empat perspektif Balanced Scorecard secara logis. Investasi pada <b>Learning & Growth</b> (SDM & Budaya) mendorong perbaikan <b>Internal Process</b>, yang kemudian meningkatkan kepuasan <b>Customer</b> (Siswa/Wali Murid), dan akhirnya menghasilkan kinerja <b>Financial</b> yang sehat bagi Yayasan.
+             Peta Strategi ini menghubungkan empat perspektif Balanced Scorecard secara logis. Investasi pada <b>Pembelajaran &amp; Pertumbuhan</b> (SDM &amp; Budaya) mendorong perbaikan <b>Proses Internal</b>, yang kemudian meningkatkan kepuasan <b>Pemangku Kepentingan</b> (Siswa/Wali Murid), dan akhirnya menghasilkan kinerja <b>Keuangan</b> yang sehat bagi Yayasan.
           </CardContent>
         </Card>
       </div>

@@ -3,6 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api, { ApiResponse, PaginatedResponse } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
+import { STUDENT_STATUS } from "@cipansor/shared";
 
 // ============================================
 // TYPES
@@ -165,7 +166,7 @@ export function useStaffDashboardStats() {
         // Active students count
         api
           .get<PaginatedResponse<unknown>>("/students", {
-            params: { status: "ACTIVE", unitId: user?.unitId, limit: 1 },
+            params: { status: STUDENT_STATUS.ACTIVE, unitId: user?.unitId, limit: 1 },
             skipErrorToast: true,
           })
           .catch(() => ({ data: { meta: { pagination: { total: 0 } } } })),

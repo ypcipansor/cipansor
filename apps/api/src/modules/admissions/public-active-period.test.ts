@@ -21,7 +21,10 @@ function invoke() {
   return {
     res,
     next,
-    run: () => getPublicActiveAdmissionPeriod({} as never, res, next),
+    run: async () => {
+      getPublicActiveAdmissionPeriod({} as never, res, next);
+      await new Promise((r) => setTimeout(r, 0));
+    },
     payload: () => (res.json as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0],
   };
 }

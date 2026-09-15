@@ -297,6 +297,11 @@ export class P5ProjectService {
         theme: assessment.project.theme.name,
         title: assessment.project.title,
         description: assessment.project.description,
+        // Expose the project period so the caller can attribute it to a semester
+        // (P5Project has no `semester` column — the semester is derived from
+        // when the project ran).
+        startDate: assessment.project.startDate,
+        endDate: assessment.project.endDate,
         dimensions,
         notes: assessment.notes,
         assessor: assessment.assessedBy.user.name,

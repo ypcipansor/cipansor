@@ -12,6 +12,9 @@ const { prismaMock, notificationMock } = vi.hoisted(() => {
       classEnrollment: {
         findMany: vi.fn(),
       },
+      studentUnitIdentifier: {
+        findMany: vi.fn().mockResolvedValue([]),
+      },
       student: {
         findUnique: vi.fn(),
       },
@@ -144,6 +147,30 @@ describe('Rapor Pesantren Enhancements', () => {
       // Charlie (78) should be Rank 3
       const charlie = result.find((r) => r.studentName === 'Charlie');
       expect(charlie?.rank).toBe(3);
+    });
+
+    // Leger dokumen unit: santri yang kini di unit lain tetap tercetak dengan
+    // NIS unit leger ini (student_unit_identifiers), bukan NIS barunya.
+    it('mencetak NIS unit leger, bukan NIS unit santri sekarang', async () => {
+      // @ts-ignore
+      prismaMock.classEnrollment.findMany.mockResolvedValue([
+        { student: { id: 's1', unitId: 'u-smp', user: { name: 'Alice' }, nis: 'SMP-2026-01' } },
+        { student: { id: 's2', unitId: 'u1', user: { name: 'Bob' }, nis: 'SD-124' } },
+      ]);
+      // @ts-ignore
+      prismaMock.raporPesantren.findMany.mockResolvedValue([]);
+      // @ts-ignore
+      prismaMock.studentUnitIdentifier.findMany.mockResolvedValueOnce([
+        { studentId: 's1', unitId: 'u1', nis: 'SD-123' },
+        { studentId: 's1', unitId: 'u-smp', nis: 'SMP-2026-01' },
+      ]);
+
+      const result = await getLegerPesantren({ unitId: 'u1', classId: 'c1', academicYearId: 'ay1', semester: 1 });
+
+      expect(result.map((r) => [r.studentName, r.studentNis])).toEqual([
+        ['Alice', 'SD-123'],
+        ['Bob', 'SD-124'],
+      ]);
     });
   });
 

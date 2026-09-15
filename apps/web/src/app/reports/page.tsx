@@ -64,6 +64,7 @@ import {
 } from "@/hooks/use-reports";
 import { useUnits, type Unit } from "@/hooks/use-units";
 import { useClasses } from "@/hooks/use-classes";
+import { STUDENT_STATUS_OPTIONS } from "@/lib/constants";
 
 // Icon mapping
 const REPORT_ICONS: Record<
@@ -483,13 +484,17 @@ function ReportsPageContent() {
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="">Semua Status</SelectItem>
-                            <SelectItem value="ACTIVE">Aktif</SelectItem>
-                            <SelectItem value="INACTIVE">
-                              Tidak Aktif
-                            </SelectItem>
-                            <SelectItem value="GRADUATED">Lulus</SelectItem>
-                            <SelectItem value="TRANSFERRED">Pindah</SelectItem>
-                            <SelectItem value="DROPPED">Keluar</SelectItem>
+                            {/*
+                              Dari STUDENT_STATUS_OPTIONS. Dulu "ACTIVE"/"GRADUATED"/…
+                              dikirim apa adanya ke generateStudentListReport, yang
+                              memasangnya langsung ke kolom berisi 'active' — memilih
+                              "Aktif" menghasilkan laporan KOSONG.
+                            */}
+                            {STUDENT_STATUS_OPTIONS.map((o) => (
+                              <SelectItem key={o.value} value={o.value}>
+                                {o.label}
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                       </div>

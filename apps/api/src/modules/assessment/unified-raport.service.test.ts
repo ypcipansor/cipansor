@@ -50,6 +50,8 @@ describe('UnifiedRaportService Integration', () => {
   };
 
   const mockMerdeka = {
+    // RaportMerdekaService sudah menghitung NIS unit rombel rapornya.
+    siswa: { nis: '1001', nisn: '0012345678' },
     tahunAjaran: { tahun: '2024/2025' },
     intrakurikuler: [{ subjectName: 'Matematika', finalScore: 85 }],
     projekP5: [],
@@ -127,12 +129,23 @@ describe('UnifiedRaportService Integration', () => {
     expect(result.signatures.homeroomTeacher).toBe('Ustadz Fulan');
 
     // Verify parallel execution with correct parameters
-    expect(RaportMerdekaService.generateRaportMerdeka).toHaveBeenCalledWith('s1', 'ay1', 1);
+    expect(RaportMerdekaService.generateRaportMerdeka).toHaveBeenCalledWith('s1', 'ay1', 1, undefined);
     expect(raporPesantrenService.generateRaporPesantren).toHaveBeenCalledWith({
       studentId: 's1',
       academicYearId: 'ay1',
       semester: 1,
       unitId: 'u1',
     });
+  });
+
+  it('forwards the authenticated user to generateRaportMerdeka for scope validation', async () => {
+    (prisma.student.findUnique as any).mockResolvedValue(mockStudent);
+    (RaportMerdekaService.generateRaportMerdeka as any).mockResolvedValue(mockMerdeka);
+    (raporPesantrenService.generateRaporPesantren as any).mockResolvedValue(mockPesantren);
+
+    const user = { id: 'u-1', roleCode: 'SDIT_GURU', unitId: 'u1' };
+    await UnifiedRaportService.generateUnifiedRaport('s1', 'ay1', 1, user as any);
+
+    expect(RaportMerdekaService.generateRaportMerdeka).toHaveBeenCalledWith('s1', 'ay1', 1, user);
   });
 });

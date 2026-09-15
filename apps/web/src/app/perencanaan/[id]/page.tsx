@@ -17,7 +17,12 @@ import {
   usePlan,
   useApprovePlan,
   usePlanRealizationTrend,
+  PLAN_STATUS_LABEL,
+  PLAN_REVIEW_STAGE_LABEL,
+  planTierLabel,
 } from "@/hooks/use-perencanaan";
+import { useAuthStore } from "@/stores/auth";
+import { getPrimaryRoleCode } from "@/lib/rbac";
 import { PageHeader } from "@/components/shared/page-header";
 import {
   Card,
@@ -49,12 +54,14 @@ import {
 import { RiskLevelBadge } from "@/components/risk/risk-badges";
 import Link from "next/link";
 import { ActivityDialog } from "./activity-dialog";
+import { ObjectiveDialog } from "./objective-dialog";
 import { MainLayout } from "@/components/layout";
 import {
   IndicatorRow,
   ActivityCard,
   FundingSection,
 } from "./plan-sections";
+import { ReviewPanel } from "./review-panel";
 
 function PerencanaanDetailPageContent() {
   const params = useParams();
@@ -64,7 +71,10 @@ function PerencanaanDetailPageContent() {
   const { data: plan, isLoading } = usePlan(planId);
   const { data: realizationTrend } = usePlanRealizationTrend(planId);
   const approvePlan = useApprovePlan();
+  const user = useAuthStore((s) => s.user);
+  const roleCode = getPrimaryRoleCode(user);
 
+  const [objectiveDialogOpen, setObjectiveDialogOpen] = useState(false);
   const [activityDialogOpen, setActivityDialogOpen] = useState(false);
   const [selectedObjectiveId, setSelectedObjectiveId] = useState<string>("");
   const [editActivityData, setEditActivityData] = useState<any>(null);
@@ -89,7 +99,9 @@ function PerencanaanDetailPageContent() {
 
   const handleApprove = async () => {
     if (
-      confirm("Apakah Anda yakin ingin menyetujui dokumen perencanaan ini?")
+      confirm(
+        `Sahkan ${planTierLabel(plan)}? Setelah disahkan, RKA ini menjadi jangkar Perjanjian Kinerja kepala unit.`,
+      )
     ) {
       await approvePlan.mutateAsync(plan.id);
     }
@@ -120,26 +132,45 @@ function PerencanaanDetailPageContent() {
       <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
         <div className="flex-1">
           <div className="flex items-center gap-3">
-            <PageHeader title={plan.title} description={`Tipe: ${plan.type}`} />
+            <PageHeader
+              title={plan.title}
+              description={
+                plan.parent
+                  ? `${planTierLabel(plan)} · menginduk pada ${plan.parent.title}`
+                  : planTierLabel(plan)
+              }
+            />
             <Badge
               className={`${statusColor} hover:${statusColor} ml-2 mt-[-24px]`}
             >
-              {plan.status}
+              {PLAN_STATUS_LABEL[plan.status] ?? plan.status}
             </Badge>
+            {plan.reviewStage && plan.reviewStage !== "DITETAPKAN" && (
+              <Badge
+                variant="outline"
+                className="mt-[-24px] border-amber-400 text-amber-700 dark:text-amber-300"
+              >
+                {PLAN_REVIEW_STAGE_LABEL[plan.reviewStage]}
+              </Badge>
+            )}
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          {(plan.status === "DRAFT" ||
-            plan.status === "PROPOSED" ||
-            plan.status === "REVIEW") && (
-            <Button onClick={handleApprove} disabled={approvePlan.isPending}>
-              <CheckCircle2 className="w-4 h-4 mr-2" />
-              Setujui Rencana
-            </Button>
-          )}
+          {/* Only an RKA Unit is approved with one button, and only by Ketua
+              Pengurus. Yayasan documents go through the panel below. */}
+          {plan.unitId &&
+            roleCode === "YAYASAN_KETUA" &&
+            (plan.status === "DRAFT" || plan.status === "PROPOSED") && (
+              <Button onClick={handleApprove} disabled={approvePlan.isPending}>
+                <CheckCircle2 className="w-4 h-4 mr-2" />
+                Sahkan {planTierLabel(plan)}
+              </Button>
+            )}
         </div>
       </div>
+
+      {plan.unitId === null && <ReviewPanel plan={plan} roleCode={roleCode} />}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card className="md:col-span-2">
@@ -197,7 +228,6 @@ function PerencanaanDetailPageContent() {
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-sm font-semibold flex items-center gap-2">
                     <PieChart className="w-4 h-4" /> Realisasi Anggaran
-                    (Financial Realization)
                   </span>
                   <span className="text-sm font-bold text-emerald-600">
                     {Math.round(plan.financialProgress || 0)}%
@@ -262,12 +292,18 @@ function PerencanaanDetailPageContent() {
           <CardContent className="space-y-4 text-sm">
             <div className="flex justify-between border-b pb-2">
               <span className="text-muted-foreground">Unit Terkait</span>
-              <span className="font-medium">Semua Unit (Demo)</span>
+              {/* Hardcoded "Semua Unit (Demo)" until now — a placeholder shipped
+                  as a fact, and wrong for every unit-owned RKA. */}
+              <span className="font-medium">
+                {plan.unit?.name ?? "Yayasan (seluruh unit)"}
+              </span>
             </div>
             <div className="flex justify-between border-b pb-2">
               <span className="text-muted-foreground">Anggaran (Estimasi)</span>
               <span className="font-medium">
-                Rp {Number(plan.budget || 0).toLocaleString("id-ID")}
+                {plan.budget
+                  ? `Rp ${Number(plan.budget).toLocaleString("id-ID")}`
+                  : "Belum ditetapkan"}
               </span>
             </div>
             <div className="flex justify-between border-b pb-2">
@@ -325,7 +361,7 @@ function PerencanaanDetailPageContent() {
               value="strategy-map"
               className="flex items-center gap-2 text-indigo-600 data-[state=active]:text-indigo-700"
             >
-              <LayoutDashboard className="w-4 h-4" /> Strategy Map
+              <LayoutDashboard className="w-4 h-4" /> Peta Strategi
             </TabsTrigger>
           </TabsList>
         </div>
@@ -336,7 +372,7 @@ function PerencanaanDetailPageContent() {
               <CardTitle className="text-lg">
                 Daftar Sasaran Strategis
               </CardTitle>
-              <Button size="sm" variant="outline">
+              <Button size="sm" variant="outline" onClick={() => setObjectiveDialogOpen(true)}>
                 + Tambah Sasaran
               </Button>
             </CardHeader>
@@ -553,7 +589,7 @@ function PerencanaanDetailPageContent() {
             <CardHeader className="bg-indigo-50/50 border-b pb-4">
               <CardTitle className="text-lg flex items-center gap-2 text-indigo-800">
                 <LayoutDashboard className="w-5 h-5" /> Balanced Scorecard
-                Strategy Map
+                Peta Strategi
               </CardTitle>
               <CardDescription>
                 Visualisasi aliran strategi dari pembelajaran hingga hasil
@@ -692,6 +728,14 @@ function PerencanaanDetailPageContent() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {objectiveDialogOpen && (
+        <ObjectiveDialog
+          open={objectiveDialogOpen}
+          onOpenChange={setObjectiveDialogOpen}
+          planId={plan.id}
+        />
+      )}
 
       {activityDialogOpen && (
         <ActivityDialog

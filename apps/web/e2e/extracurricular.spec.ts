@@ -1,5 +1,6 @@
 import { test, expect } from "./fixtures/auth.fixture";
 import { loginAs } from "./helpers/auth-api";
+import { settledContent } from "./helpers/page-state";
 
 /**
  * Extracurricular Module E2E Tests
@@ -24,7 +25,7 @@ test.describe("Extracurricular - Navigation", () => {
     await page.goto("/extracurricular");
     await page.waitForLoadState("domcontentloaded", { timeout: 10000 });
 
-    const content = await page.content();
+    const content = await settledContent(page);
     expect(content.length).toBeGreaterThan(1000);
   });
 });
@@ -71,7 +72,7 @@ test.describe("Extracurricular - Features", () => {
     await page.goto("/extracurricular");
     await page.waitForLoadState("domcontentloaded", { timeout: 10000 });
 
-    const content = await page.content();
+    const content = await settledContent(page);
     const hasParticipation =
       content.includes("Peserta") ||
       content.includes("Siswa") ||
@@ -89,7 +90,7 @@ test.describe("Extracurricular - Features", () => {
     await page.goto("/extracurricular");
     await page.waitForLoadState("domcontentloaded", { timeout: 10000 });
 
-    const content = await page.content();
+    const content = await settledContent(page);
     const hasSchedule =
       content.includes("Jadwal") ||
       content.includes("Schedule") ||

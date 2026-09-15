@@ -21,9 +21,12 @@ import path from "path";
 
 const ROOT = path.join(__dirname, "..", "..");
 
+// /hr/talenta and /hr/talenta/succession were merged into /talenta/succession.
+// The guard has to follow the copy it protects: pointed at a deleted path it
+// would either throw or, worse, scan nothing and pass.
 const SURFACES = [
-  "app/hr/talenta/page.tsx",
-  "app/hr/talenta/succession/page.tsx",
+  "app/talenta/page.tsx",
+  "app/talenta/succession/page.tsx",
   "components/hr/succession-planning-list.tsx",
 ];
 
@@ -62,7 +65,7 @@ describe("succession screens — no AI branding on a weighted sum", () => {
   });
 
   it("the scoring method is stated on the page that shows the score", () => {
-    const src = read("app/hr/talenta/succession/page.tsx");
+    const src = read("app/talenta/succession/page.tsx");
     expect(src).toContain("bukan model AI");
   });
 });
@@ -94,7 +97,7 @@ describe("succession screens — the headline number is withheld when it means n
     // The service accepted targetPositionId from day one and nothing ever sent
     // one, which is why the only term grounded in recorded assessments was
     // permanently zero.
-    const src = stripComments(read("app/hr/talenta/succession/page.tsx"));
+    const src = stripComments(read("app/talenta/succession/page.tsx"));
     expect(src).toContain("targetPositionId");
   });
 });

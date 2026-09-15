@@ -451,10 +451,11 @@ of system sprawl, docs drift, and a full per-role visual sweep.
   called its `/api/ppdb-wave` mount). Deleted the five screenshot/crash-sweep e2e
   specs that were tooling, not tests. (The web `/ppdb` pages were **kept**: an
   early pass mistook them for a dead duplicate and removed them, but the e2e
-  onboarding test caught it — `/ppdb/registrations` is the only built
-  registrant-listing + "Eksekusi Onboarding Terpadu" UI; the canonical
-  `/admissions/registrants` is still an unbuilt dead-link. Consolidating `/ppdb`
-  into `/admissions/registrants` is a roadmap item, not a delete.)
+  onboarding test caught it — that page was the only built registrant-listing +
+  integrated-onboarding UI. **#439 renamed those pages to `/spmb`** and left a
+  permanent redirect from `/ppdb/*`; the canonical `/admissions/registrants` is
+  still an unbuilt dead-link, so consolidating into it remains a roadmap item,
+  not a delete.)
 - **Per-role screenshot sweep made runnable + the crashes it found fixed.**
   `screenshot-roles.ts` pointed at `qa-*` accounts no seed creates; it now drives
   off `DEMO_ACCOUNTS` (one login per RoleCode, `DEMO_MODE` bypasses admin 2FA
@@ -860,6 +861,111 @@ and follow-through:
   Closed; rebuilt SSR-aware (cookie read in the root layout stamps
   `<html lang dir>` pre-paint), fully typed, wired to the header switcher and
   settings page, with unit tests. Pages adopt `t()` incrementally.
+
+## Follow-up (didefinisikan 2026-09-10 pada PR #415)
+
+### Uniqueness RKA Yayasan per tahun — aplikasi-level saja, rawan race (butuh schema)
+
+`apps/api/src/modules/perencanaan/perencanaan.service.ts` (`createPlan`)
+menegakkan "satu RKA Yayasan aktif per tahun" lewat `findFirst` saja:
+```ts
+if (data.type === 'RKA' && !data.unitId) {
+  const year = new Date(data.startDate).getUTCFullYear();
+  const clash = await prisma.strategicPlan.findFirst({ where: { type: 'RKA', unitId: null, ... } });
+  if (clash) throw Errors.badRequest(...);
+}
+```
+Tidak ada constraint unik di DB. Dua permintaan bersamaan bisa sama-sama lolos
+`findFirst` sebelum salah satu `commit`, menghasilkan dua RKA Yayasan untuk
+tahun yang sama. Perbaikan murni memerlukan **partial unique index** Postgres
+(expression `EXTRACT(YEAR FROM start_date)` + `WHERE type='RKA' AND unit_id IS
+NULL AND status NOT IN ('COMPLETED','CANCELLED')`), jadi ini dijadwalkan sebagai
+**follow-up yang menyentuh `schema.prisma`**. (Koreksi 2026-09-11: AGENTS.md tidak
+punya aturan yang melarang perubahan skema digabung dengan perbaikan lain dalam
+satu PR — kutipan sebelumnya keliru. PR #415 sendiri kini membawa migrasi
+`20260911000000_plan_review_workflow`.)
+
+## Follow-up (ditemukan 2026-09-11 pada PR #415)
+
+### Cookie `auth-storage` di atas 4 KB dibuang peramban — middleware tanpa peran
+
+Objek pengguna kepala sekolah, dengan seluruh izinnya, berukuran 4.308 byte.
+`customStorage` (`apps/web/src/stores/auth.ts`) menuliskannya ke
+`document.cookie`; peramban menolak cookie di atas ~4 KB tanpa pesan, dan
+`apps/web/middleware.ts` lalu jatuh ke cabang `accessToken` saja —
+terautentikasi **tanpa peran**, sehingga pemeriksaan rute dilewati. API tetap
+menegakkan otorisasi, jadi data tidak bocor, tetapi gerbang rute web tidak
+berlaku bagi akun berizin banyak. Arah perbaikan: cookie cukup membawa
+identitas + kode peran primer, bukan seluruh objek pengguna.
+
+### Tombol tambah pada rencana yang tidak boleh ditulis
+
+"+ Tambah Sasaran" dan "+ Tambah Kegiatan" tampil untuk semua pembaca, termasuk
+Pembina, Pengawas, Super Admin pada dokumen yayasan, dan siapa pun pada rencana
+yang sudah disahkan. Server menolaknya dengan benar; tombolnya yang berbohong.
+
+### Pengesahan yayasan: yang belum dimodelkan
+
+- Keputusan Pembina diambil satu akun Pembina, bukan sebagai keputusan rapat
+  (kolektif).
+- Kepala rencana berstatus IN_PROGRESS masih bisa diubah penyusunnya; aturan
+  per-medan untuk rencana yang sedang berjalan (realisasi boleh, teks yang
+  disahkan tidak) belum ada.
+
+### 88 asersi judul e2e masih menguji kerangka, bukan halaman
+
+Mempersempit pemilih judul ke `<main>` menjatuhkan satu uji yang selama ini
+hijau karena mengenai `<h4>Keuangan</h4>` — judul **grup sidebar**, bukan
+halaman `/finance` (yang berjudul "Tagihan & SPP"). Sisa 88 asersi
+`getByRole("heading", …)` di `apps/web/e2e` masih tanpa lingkup. Yang memakai
+**nama persis** aman; yang memakai regex bisa tertangkap salah satu dari
+sembilan judul grup (Ringkasan, Akademik, Kesantrian & Pesantren, SDM,
+Keuangan, Pemasaran & Penerimaan, Perencanaan & Kinerja, Sarana & Layanan,
+Sistem) atau judul kerangka lain. Sapuannya murah, tetapi tiap perubahan bisa
+memerahkan uji lain yang ternyata juga salah sasaran — kerjakan per berkas.
+
+### Log seed mencetak tiga login yang tidak ada
+
+Penutup `apps/api/prisma/seed.ts` mencetak `pengawas@`, `kepala.sdit@`, dan
+`kepala.smpit@cipansor.or.id`. Akun yang benar-benar dibuat:
+`yayasan.pengawas@`, `sdit.kepala@`, `smpit.kepala@` (`Cipansor123!`).
+
+## Follow-up (ditemukan 2026-09-14 pada PR #494 dan bagian 2 pengganti #489)
+
+Sengaja tidak dikerjakan di PR yang menemukannya; semuanya diukur, bukan diduga.
+
+### Setiap galat simpan tampil dua kali — seluruh aplikasi
+
+`lib/api.ts` (interceptor axios) menampilkan `toast.error` untuk setiap
+respons galat, dan `components/providers/query-provider.tsx` memasang
+`mutations.onError: handleQueryError` yang menampilkan toast lagi. Terlihat di
+rig pada Kelengkapan Data: 409 NISN kembar muncul sebagai dua notifikasi yang
+sama. Pilih satu tempat; jangan tambal per halaman.
+
+### Kelengkapan Data Guru masih penugasan massal
+
+`modules/teacher-compliance` meneruskan `req.body` mentah ke
+`updateCompliance` (pola yang sama dengan Kelengkapan Data Santri sebelum
+#494: kolom apa pun bisa ditulis, nama isian web ≠ kolom). Perbaikannya sama:
+skema `.strict()` bersama di `packages/shared` + lingkup unit.
+
+### Daftar Kelengkapan Data Santri
+
+Kolom "Nama Siswa" berisi NIS (baris `GET /students` membawa `user.name`,
+halaman membaca `name`), kartu ringkasan membaca bentuk respons yang berbeda
+dari yang dikirim `report/completeness`, dan **NIK anak tampil penuh** di tabel
+(minimisasi tampilan data pribadi spesifik, UU 27/2022 Ps. 4).
+
+### NIS per unit — sisa (bagian 3 dan 4 pengganti #489)
+
+- `students.nis` masih unik lintas yayasan, jadi dua unit belum bisa memakai
+  nomor yang sama. Melonggarkannya butuh lingkup unit di
+  `analytics/bulk.service.ts#bulkImportAttendance`, yang mencari santri hanya
+  lewat NIS.
+- Rapor Kurikulum Merdeka mencetak nama/jenis unit SEKARANG (`student.unit`)
+  untuk rapor tahun ajaran lama; seharusnya unit rombelnya.
+- Onboarding santri lama masih mengganti NISN tersimpan dengan NISN yang
+  diketik di formulir (`nisn || student.nisn`) — NISN berlaku seumur hidup.
 
 ## How to contribute a build fix
 

@@ -10,6 +10,11 @@ import {
   listStudentsQuerySchema,
   studentIdParamSchema,
 } from './student.schema';
+import {
+  bulkRegenerateCardsSchema,
+  idCardQuerySchema,
+  classIdCardQuerySchema,
+} from '@cipansor/shared';
 
 const router = Router();
 
@@ -151,6 +156,13 @@ router.get(
   IdCardController.getTemplates
 );
 
+router.post(
+  '/id-cards/bulk-regenerate',
+  hasPermission(PERMISSIONS.STUDENT_UPDATE),
+  validate(bulkRegenerateCardsSchema),
+  IdCardController.bulkRegenerateCards
+);
+
 /**
  * @swagger
  * /api/students/id-cards/stats/{unitId}:
@@ -210,6 +222,7 @@ router.get(
 router.get(
   '/id-cards/classes/:classId',
   hasPermission(PERMISSIONS.STUDENT_VIEW),
+  validateQuery(classIdCardQuerySchema),
   IdCardController.generateClassCards
 );
 
@@ -254,6 +267,7 @@ router.get(
 router.get(
   '/:studentId/id-card',
   hasPermission(PERMISSIONS.STUDENT_VIEW),
+  validateQuery(idCardQuerySchema),
   IdCardController.generateStudentCard
 );
 

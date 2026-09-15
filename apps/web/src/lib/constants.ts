@@ -1,3 +1,5 @@
+import { STUDENT_STATUS } from "@cipansor/shared";
+
 /**
  * Application constants
  * Centralized constants for consistency throughout the application
@@ -122,13 +124,27 @@ export const MONTHS = [
 // Status Options
 // ============================================
 
-export const STUDENT_STATUS = [
-  { value: "ACTIVE", label: "Aktif", color: "green" },
-  { value: "INACTIVE", label: "Tidak Aktif", color: "gray" },
-  { value: "GRADUATED", label: "Lulus", color: "blue" },
-  { value: "TRANSFERRED", label: "Pindah", color: "yellow" },
-  { value: "DROPPED_OUT", label: "Keluar", color: "red" },
+/**
+ * Label dan warna status santri. Nilainya diturunkan dari STUDENT_STATUS di
+ * @cipansor/shared — kosakata yang sama dengan kolom `students.status` dan CHECK
+ * `students_status_check`.
+ *
+ * Sampai 2026-09-13 di sini ada daftar bernama `STUDENT_STATUS` dengan nilai
+ * "ACTIVE"/"INACTIVE"/"GRADUATED"/"DROPPED_OUT" — tak satu pun ada di kolomnya,
+ * dan daftar itu tidak dipakai siapa pun. Namanya sama persis dengan konstanta
+ * kosakata di shared, jadi ia hanya menunggu salah-impor. Diganti nama supaya
+ * keduanya tidak bisa tertukar.
+ */
+export const STUDENT_STATUS_OPTIONS = [
+  { value: STUDENT_STATUS.ACTIVE, label: "Aktif", badge: "bg-green-100 text-green-800" },
+  { value: STUDENT_STATUS.ALUMNI, label: "Alumni", badge: "bg-blue-100 text-blue-800" },
+  { value: STUDENT_STATUS.TRANSFERRED, label: "Pindah", badge: "bg-yellow-100 text-yellow-800" },
+  { value: STUDENT_STATUS.DROPPED, label: "Keluar", badge: "bg-red-100 text-red-800" },
 ] as const;
+
+export function studentStatusOption(value: string | null | undefined) {
+  return STUDENT_STATUS_OPTIONS.find((o) => o.value === value);
+}
 
 export const EMPLOYEE_STATUS = [
   { value: "ACTIVE", label: "Aktif", color: "green" },

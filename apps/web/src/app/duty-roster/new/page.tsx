@@ -49,6 +49,7 @@ import { useTeachers } from "@/hooks/use-teachers";
 import { useClasses } from "@/hooks/use-classes";
 import { useAuthStore } from "@/stores/auth";
 import { MainLayout } from "@/components/layout";
+import { STUDENT_STATUS } from "@cipansor/shared";
 
 const LOCATIONS: Record<DutyType, string[]> = {
   CLEANING_CLASSROOM: [
@@ -89,7 +90,7 @@ function NewDutyRosterPageContent() {
   // Fetch real data
   const { data: studentsData, isLoading: isLoadingStudents } = useStudents({
     unitId,
-    status: "ACTIVE",
+    status: STUDENT_STATUS.ACTIVE,
     limit: 100,
   });
   const { data: teachersData, isLoading: isLoadingTeachers } = useTeachers({

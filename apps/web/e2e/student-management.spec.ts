@@ -214,10 +214,10 @@ test.describe("Student Management - List & View", () => {
       }
 
       // Should show student details
-      await expect(page.getByText(/nama|name/i).first()).toBeVisible({
+      await expect(page.getByRole("main").getByText(/nama|name/i).first()).toBeVisible({
         timeout: 8000,
       });
-      await expect(page.getByText(/nisn|nis/i).first()).toBeVisible();
+      await expect(page.getByRole("main").getByText(/nisn|nis/i).first()).toBeVisible();
     } else {
       test.skip(true, "No students available");
     }

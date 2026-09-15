@@ -5,9 +5,15 @@ import { linkGuardian, type GuardianClient } from '@/utils/link-guardian';
 import { prisma } from '@/lib/prisma';
 import { hashPassword } from '@/lib/password';
 import { Errors } from '@/middleware/error';
+import { assertStudentIdentifiersAvailable } from './student-identifiers';
+import { assignStudentNis } from '@/utils/student-nis';
 import { UserRole, Gender, Prisma } from '@prisma/client';
 import type { ListStudentsQuery, CreateStudentInput, UpdateStudentInput } from './student.schema';
 import { normalizeEmail } from '@/utils/email';
+import {
+  recordUnitEnrollmentFromClass,
+  ensureUnitEnrollment,
+} from '@/utils/student-unit-history';
 
 export class StudentService {
   /**
@@ -17,12 +23,21 @@ export class StudentService {
     query: ListStudentsQuery,
     currentUser: { role: string; roleCode?: string | null; unitId: string | null }
   ) {
-    const { page, limit, search, unitId, classId, gender } = query;
+    const { page, limit, search, unitId, classId, gender, status } = query;
     const skip = (page - 1) * limit;
 
     const where: Prisma.StudentWhereInput = {
       deletedAt: null,
     };
+
+    // Skema query sudah membatasi `status` ke STUDENT_STATUS_VALUES (#492), tapi
+    // sampai 2026-09-13 nilainya tidak pernah dipasang di sini: filter "Alumni"
+    // di Daftar Santri tetap menampilkan semua santri, dan setiap pemanggil
+    // `?status=active` menerima alumni juga. Terukur di produksi setelah #492
+    // tergelar — `status: 'alumni'` mengembalikan 14 dari 14 santri aktif.
+    if (status) {
+      where.status = status;
+    }
 
     // Unit filter. seesAllUnits() covers both the yayasan board (no unitId at
     // all, so this used to resolve to 'none' and return nothing) and the
@@ -395,6 +410,8 @@ export class StudentService {
       throw Errors.conflict('Email already registered');
     }
 
+    await assertStudentIdentifiersAvailable({ nisn: input.nisn });
+
     // Check unit exists
     if (!input.unitId) {
       throw Errors.badRequest('Unit ID is required');
@@ -472,6 +489,9 @@ export class StudentService {
         },
       });
 
+      // NIS terbit atas nama unit: catat pasangan (santri, unit) → NIS.
+      await assignStudentNis(tx, { studentId: student.id, unitId, nis: input.nis });
+
       // Link the guardian for real. Before this, parentName/parentPhone were
       // stored on the student row and nowhere else, so every santri added
       // through the admin form was an orphan relationally: the wali had no
@@ -484,6 +504,7 @@ export class StudentService {
       });
 
       // Enroll in class if provided
+      let riwayatDitulis = false;
       if (input.classId) {
         const classExists = await tx.class.findFirst({
           where: { id: input.classId, deletedAt: null, unitId },
@@ -497,7 +518,18 @@ export class StudentService {
               status: 'active',
             },
           });
+          // Rombel tahu unit dan tahun ajarannya; riwayat unit ditulis dari
+          // sana supaya tabelnya tidak basi pada santri berikutnya.
+          await recordUnitEnrollmentFromClass(tx, student.id, input.classId);
+          riwayatDitulis = true;
         }
+      }
+
+      // Rombel itu pilihan: santri pindahan sering masuk sebelum rombelnya
+      // ditentukan. Riwayat unitnya tetap harus ada, kalau tidak ia hilang dari
+      // setiap laporan yang menyaring lewat riwayat.
+      if (!riwayatDitulis) {
+        await ensureUnitEnrollment(tx, student.id, unitId);
       }
 
       return student;
@@ -529,6 +561,8 @@ export class StudentService {
       }
     }
 
+    await assertStudentIdentifiersAvailable({ nisn: input.nisn }, student);
+
     // Update in transaction
     const updated = await prisma.$transaction(async (tx) => {
       // Update user name if provided
@@ -537,6 +571,12 @@ export class StudentService {
           where: { id: student.userId },
           data: { name: input.name },
         });
+      }
+
+      // NIS yang diubah adalah NIS unit santri SEKARANG; NIS di unit-unit
+      // lamanya (dokumen yang sudah terbit) tidak disentuh.
+      if (input.nis && input.nis !== student.nis) {
+        await assignStudentNis(tx, { studentId: id, unitId: student.unitId, nis: input.nis });
       }
 
       // Update student

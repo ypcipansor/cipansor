@@ -992,7 +992,11 @@ export const dashboardService = {
         take: 5,
         include: {
           enrollments: {
-            where: { status: 'ACTIVE' },
+            // Halaqoh.enrollments adalah TakhosusEnrollment, yang statusnya enum
+            // Prisma `TakhosusStatus` — huruf besar di sini BENAR. Nama relasi
+            // `enrollments` dimiliki tujuh model dengan enam tipe berbeda, jadi
+            // namanya sendiri tidak pernah cukup untuk menentukan kosakatanya.
+            where: { status: 'ACTIVE' as TakhosusStatus },
             select: { completedJuz: true },
           },
           teacher: { select: { name: true } },

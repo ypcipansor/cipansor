@@ -111,6 +111,11 @@ COPY --from=assemble --chown=expressjs:nodejs /app/packages/shared/node_modules 
 
 # Compiled output + runtime assets.
 COPY --from=builder --chown=expressjs:nodejs /app/apps/api/dist ./apps/api/dist
+# tsc emits JS only, so the Unicode font for raport PDFs (Amiri for Arabic
+# script) must be copied into dist explicitly. `loadUnicodeFont` resolves it at
+# `dist/assets/fonts/Amiri-Regular.ttf` (the first FONT_CANDIDATE_PATHS entry);
+# without it unicodeFont is null and every Arabic character is stripped.
+COPY --from=builder --chown=expressjs:nodejs /app/apps/api/src/assets/fonts ./apps/api/dist/assets/fonts
 COPY --from=builder --chown=expressjs:nodejs /app/apps/api/package.json ./apps/api/
 COPY --from=builder --chown=expressjs:nodejs /app/apps/api/prisma ./apps/api/prisma
 COPY --from=builder --chown=expressjs:nodejs /app/packages/shared/dist ./packages/shared/dist

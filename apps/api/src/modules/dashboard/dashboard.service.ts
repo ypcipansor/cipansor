@@ -22,6 +22,8 @@ import type {
   CBTStats,
 } from '@cipansor/shared';
 import { DAY_OF_WEEK_BY_INDEX } from '@cipansor/shared';
+import { studentInUnitAt } from '@/utils/student-unit-history';
+import { STUDENT_STATUS } from '@cipansor/shared';
 
 export interface DashboardServiceContext {
   userId?: string;
@@ -128,11 +130,11 @@ export class DashboardService {
       activeAcademicYear,
     ] = await Promise.all([
       prisma.student.count({ where: unitFilter }),
-      prisma.student.count({ where: { ...unitFilter, status: 'ACTIVE' } }),
+      prisma.student.count({ where: { ...unitFilter, status: STUDENT_STATUS.ACTIVE } }),
       prisma.student.count({
         where: {
           ...unitFilter,
-          status: 'ACTIVE',
+          status: STUDENT_STATUS.ACTIVE,
           createdAt: { lte: lastMonth },
         },
       }),
@@ -185,7 +187,7 @@ export class DashboardService {
 
     const [totalStudents, activeStudents, totalTeachers, todayAttendance] = await Promise.all([
       prisma.student.count({ where: unitFilter }),
-      prisma.student.count({ where: { ...unitFilter, status: 'ACTIVE' } }),
+      prisma.student.count({ where: { ...unitFilter, status: STUDENT_STATUS.ACTIVE } }),
       prisma.teacher.count({ where: unitFilter }),
       this.getTodayAttendanceCount(context.unitId),
     ]);
@@ -242,7 +244,11 @@ export class DashboardService {
           gte: start,
           lte: end,
         },
-        ...(context.unitId ? { student: { unitId: context.unitId } } : {}),
+        // Keanggotaan unit dibaca pada AKHIR rentang yang dilaporkan, bukan
+        // hari ini. Rentang ini bisa historis; memakai hari ini berarti
+        // menanyakan lagi "unit santri ini SEKARANG apa" — kekeliruan yang
+        // penukaran ini justru menghapus.
+        ...(context.unitId ? { student: studentInUnitAt(context.unitId, end) } : {}),
       },
       select: {
         date: true,
@@ -289,7 +295,7 @@ export class DashboardService {
    * Get finance statistics
    */
   async getFinanceStats(context: DashboardServiceContext): Promise<FinanceStats> {
-    const unitFilter = context.unitId ? { student: { unitId: context.unitId } } : {};
+    const unitFilter = context.unitId ? { student: studentInUnitAt(context.unitId, new Date()) } : {};
 
     const [totalBilled, totalPaid, totalUnpaid, recentPaymentsRaw] = await Promise.all([
       prisma.invoice.aggregate({
@@ -359,7 +365,7 @@ export class DashboardService {
         periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
     }
 
-    const unitFilter = context.unitId ? { student: { unitId: context.unitId } } : {};
+    const unitFilter = context.unitId ? { student: studentInUnitAt(context.unitId, new Date()) } : {};
 
     // Get total memorized ayah across all students
     const totalMemorizedResult = await prisma.tahfidzRecord.aggregate({
@@ -466,7 +472,7 @@ export class DashboardService {
         periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
     }
 
-    const unitFilter = context.unitId ? { student: { unitId: context.unitId } } : {};
+    const unitFilter = context.unitId ? { student: studentInUnitAt(context.unitId, new Date()) } : {};
 
     const [totalViolations, totalRewards, recentViolationsRaw, recentRewardsRaw] =
       await Promise.all([
@@ -539,7 +545,7 @@ export class DashboardService {
     context: DashboardServiceContext,
     since: Date
   ): Promise<Array<{ month: string; ayahCount: number; studentCount: number }>> {
-    const unitFilter = context.unitId ? { student: { unitId: context.unitId } } : {};
+    const unitFilter = context.unitId ? { student: studentInUnitAt(context.unitId, new Date()) } : {};
 
     const records = await prisma.tahfidzRecord.findMany({
       where: {
@@ -619,13 +625,13 @@ export class DashboardService {
       // 1. Check attendance rate
       const [activeStudents, todayPresent] = await Promise.all([
         prisma.student.count({
-          where: { ...unitFilter, status: 'ACTIVE' },
+          where: { ...unitFilter, status: STUDENT_STATUS.ACTIVE },
         }),
         prisma.attendance.count({
           where: {
             date: { gte: today },
             status: 'PRESENT',
-            ...(unitId ? { student: { unitId } } : {}),
+            ...(unitId ? { student: studentInUnitAt(unitId, new Date()) } : {}),
           },
         }),
       ]);
@@ -648,7 +654,7 @@ export class DashboardService {
           status: { in: ['PENDING', 'PARTIAL', 'OVERDUE'] },
           dueDate: { lt: new Date() },
           createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
-          ...(unitId ? { student: { unitId } } : {}),
+          ...(unitId ? { student: studentInUnitAt(unitId, new Date()) } : {}),
         },
       });
 
@@ -667,7 +673,7 @@ export class DashboardService {
         _avg: { qualityScore: true },
         where: {
           createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
-          ...(unitId ? { student: { unitId } } : {}),
+          ...(unitId ? { student: studentInUnitAt(unitId, new Date()) } : {}),
         },
       });
 
@@ -687,14 +693,14 @@ export class DashboardService {
       const studentsWithRecentTahfidz = await prisma.tahfidzRecord.findMany({
         where: {
           recordedAt: { gte: sevenDaysAgo },
-          ...(unitId ? { student: { unitId } } : {}),
+          ...(unitId ? { student: studentInUnitAt(unitId, new Date()) } : {}),
         },
         select: { studentId: true },
         distinct: ['studentId'],
       });
 
       const totalActiveStudents = await prisma.student.count({
-        where: { ...unitFilter, status: 'ACTIVE' },
+        where: { ...unitFilter, status: STUDENT_STATUS.ACTIVE },
       });
 
       const inactiveStudents = totalActiveStudents - studentsWithRecentTahfidz.length;
@@ -1085,7 +1091,7 @@ export class DashboardService {
       where: {
         date: { gte: today },
         status: 'PRESENT',
-        ...(unitId ? { student: { unitId } } : {}),
+        ...(unitId ? { student: studentInUnitAt(unitId, new Date()) } : {}),
       },
     });
   }

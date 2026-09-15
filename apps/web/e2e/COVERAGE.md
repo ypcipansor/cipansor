@@ -1,17 +1,20 @@
 # E2E Coverage Matrix — route × {nav, CRUD, buttons, fields, RBAC}
 
-_Headline count + spec-inventory table re-audited 2026-07-20 from source; the route×dimension matrix cells are upgraded manually only when a spec **proves** the dimension against the real seeded stack (loginAs + no `page.route` interception). Re-run `node scripts/e2e-coverage.mjs` to detect drift._
+_Headline count + spec-inventory table re-audited 2026-07-20 from source; the route×dimension matrix cells are upgraded manually only when a spec **proves** the dimension against the real seeded stack (loginAs + no `page.route` interception). The regeneration script the earlier audit cited (`scripts/e2e-coverage.mjs`) does **not** exist in the repo — the table is maintained by hand, so compare it against `ls apps/web/e2e/*.spec.ts` before trusting a count. Reconciled 2026-09-12: five rows named specs that had been deleted, and ten specs had no row at all._
 
 ## Summary
 
 - **Routes (App Router pages):** 430
-- **Routes visited by ≥1 spec:** 76 (17%)
-- **Spec files:** 75 — all **active** specs now authenticate for real
-  (`loginAs` / `apiLogin` + `injectSession`) and assert real seeded/API data.
-  The only remaining `page.route` usages are: `grc-live` (one deliberate 500
-  injection to prove an error state) and the config-**ignored** dev utilities
-  (`debug-*`, `generate-screenshots`, `verify-screenshots`, `verify_reception`),
-  which never run in the suite. No active spec relies on mock-intercepted data.
+- **Routes visited by ≥1 spec:** 78 (18%)
+- **Spec files:** 83 — 82 at `e2e/` plus `cbt/cbt.spec.ts` (recounted 2026-09-14); every one has a row
+  in the inventory below. Active specs authenticate for real (`loginAs` /
+  `apiLogin` + `injectSession`) and assert real seeded/API data. Six specs still
+  call `page.route` (re-checked 2026-09-12): `grc-live` and `integration-grc`
+  (deliberate failure injection to prove an error state), `auth`,
+  `chatbot-widget`, `e-office-verify`, and the config-**ignored**
+  `verify_reception`. The dev utilities the earlier audit named here
+  (`debug-*`, `generate-screenshots`, `verify-screenshots`) have since been
+  deleted.
 
 ## Verified full-suite run (chromium, real seeded stack — 2026-07-16)
 
@@ -382,8 +385,6 @@ History of the stabilization (all root-caused, no suppressions):
 | `/hr/payroll/periods` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `/hr/payroll/periods/[id]` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `/hr/payroll/staff-salary` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `/hr/talenta` | academic-integrated, integration-flow | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 |
-| `/hr/talenta/succession` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `/hr/teachers/compliance` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
 
 ### `/ibadah`
@@ -451,7 +452,7 @@ History of the stabilization (all root-caused, no suppressions):
 
 | Route | Specs | Nav | CRUD | Buttons | Fields | RBAC |
 |---|---|---|---|---|---|---|
-| `/login` | academic-years, alumni, announcements, assessment, attendance, auth, calendar, canteen, classes, counseling, curriculum, dashboard, dormitories, extracurricular, integration-grc, inventory, library, lingkungan, litbang, muhadatsah, organisasi, paud-main, pengawasan, perencanaan, ppdb, pwa, schedule, syariah, tahfidz-transcript, tata-laksana | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 |
+| `/login` | academic-years, alumni, announcements, assessment, attendance, auth, calendar, canteen, classes, counseling, curriculum, dashboard, dormitories, extracurricular, integration-grc, inventory, library, lingkungan, litbang, muhadatsah, organisasi, paud-main, pengawasan, perencanaan, pwa, schedule, syariah, tahfidz-transcript, tata-laksana | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 |
 
 ### `/marketing`
 
@@ -567,7 +568,7 @@ History of the stabilization (all root-caused, no suppressions):
 | Route | Specs | Nav | CRUD | Buttons | Fields | RBAC |
 |---|---|---|---|---|---|---|
 | `/perencanaan` | perencanaan | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 |
-| `/perencanaan/[id]` | grc-integrated, perencanaan-risk | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 |
+| `/perencanaan/[id]` | grc-integrated, perencanaan-pengesahan, perencanaan-risk | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 |
 | `/perencanaan/strategy-map` | business-unit-flow | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 |
 
 ### `/permits`
@@ -591,13 +592,16 @@ History of the stabilization (all root-caused, no suppressions):
 |---|---|---|---|---|---|---|
 | `/portfolio` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
 
-### `/ppdb`
+### `/spmb`
+
+Renamed from `/ppdb` in #439; `next.config.ts` keeps a permanent redirect for the
+old addresses, and `spmb.spec.ts` asserts that redirect still lands on `/spmb`.
 
 | Route | Specs | Nav | CRUD | Buttons | Fields | RBAC |
 |---|---|---|---|---|---|---|
-| `/ppdb` | ppdb | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 |
-| `/ppdb/registrations` | admission-to-class-to-finance | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 |
-| `/ppdb/registrations/[id]` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `/spmb` | spmb, spmb-workflow | 🟢 | 🟡 | 🟡 | 🟡 | 🟡 |
+| `/spmb/registrations` | spmb, spmb-workflow, admission-to-class-to-finance | 🟢 | 🟡 | 🟡 | 🟡 | 🟡 |
+| `/spmb/registrations/[id]` | spmb-workflow | 🟡 | 🟡 | 🟡 | 🟡 | ❌ |
 
 ### `/practicum`
 
@@ -642,8 +646,8 @@ History of the stabilization (all root-caused, no suppressions):
 | Route | Specs | Nav | CRUD | Buttons | Fields | RBAC |
 |---|---|---|---|---|---|---|
 | `/public/donation` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `/public/ppdb` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `/public/ppdb/track` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `/public/spmb` | spmb-workflow | 🟡 | ❌ | ❌ | ❌ | ❌ |
+| `/public/spmb/track` | spmb-workflow | 🟡 | ❌ | ❌ | ❌ | ❌ |
 | `/public/verify-sanad` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
 
 ### `/quality`
@@ -761,8 +765,8 @@ History of the stabilization (all root-caused, no suppressions):
 | `/students/[id]/360` | student-lifecycle-enhanced | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 |
 | `/students/[id]/edit` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `/students/certificates` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `/students/compliance` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `/students/compliance/[id]` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `/students/compliance` | student-compliance | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `/students/compliance/[id]` | student-compliance | ✅ | ❌ | ❌ | ✅ | ❌ |
 | `/students/documents` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `/students/id-card` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `/students/new` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
@@ -823,8 +827,8 @@ History of the stabilization (all root-caused, no suppressions):
 | `/talenta` | talenta | ✅ | 🟡 | 🟡 | 🟡 | 🟡 |
 | `/talenta/[id]` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `/talenta/analytics` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `/talenta/matrix` | talent-matrix-new | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 |
-| `/talenta/succession` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `/talenta/matrix` | talent-matrix-new, integration-flow | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 |
+| `/talenta/succession` | academic-integrated | 🟡 | ❌ | 🟡 | 🟡 | ❌ |
 
 ### `/tata-laksana`
 
@@ -942,22 +946,21 @@ History of the stabilization (all root-caused, no suppressions):
 | `calendar.spec.ts` | loginAs | real backend | 1 route(s) visited |
 | `canteen.spec.ts` | loginAs | real backend | 1 route(s) visited |
 | `cbt/cbt.spec.ts` | loginAs | real backend | 4 route(s) visited |
+| `chatbot-widget.spec.ts` | — | `page.route` mocks | 2 route(s) visited |
 | `class-management.spec.ts` | — | skipped | 0 route(s) visited |
 | `classes.spec.ts` | loginAs | real backend | 1 route(s) visited |
 | `counseling.spec.ts` | loginAs | real backend | 1 route(s) visited |
-| `crash-sweep.spec.ts` | loginAs | real backend | 0 route(s) visited |
 | `curriculum.spec.ts` | loginAs | real backend | 1 route(s) visited |
 | `dashboard-realtime.spec.ts` | — | public/unauthenticated | 2 route(s) visited |
 | `dashboard.spec.ts` | loginAs | real backend | 2 route(s) visited |
-| `debug-crash.spec.ts` | — | `page.route` mocks | 0 route(s) visited |
-| `debug-failures.spec.ts` | — | `page.route` mocks | 0 route(s) visited |
 | `dormitories.spec.ts` | loginAs | real backend | 1 route(s) visited |
+| `e-office-verify.spec.ts` | loginAs | `page.route` mocks | 2 route(s) visited |
+| `email-notifications.spec.ts` | loginAs | real backend | 4 route(s) visited |
 | `extracurricular.spec.ts` | loginAs | real backend | 1 route(s) visited |
 | `finance-forecast.spec.ts` | loginAs | real backend | 1 route(s) visited |
 | `finance-integration.spec.ts` | — | public/unauthenticated | 3 route(s) visited |
 | `finance-management.spec.ts` | — | skipped | 0 route(s) visited |
 | `finance-reports.spec.ts` | loginAs | real backend | 1 route(s) visited |
-| `generate-screenshots.spec.ts` | — | `page.route` mocks | 0 route(s) visited |
 | `grc-integrated.spec.ts` | loginAs | real backend | 2 route(s) visited |
 | `grc-integration-new.spec.ts` | loginAs | real backend | 3 route(s) visited |
 | `grc-live.spec.ts` | loginAs | loginAs + injected route | 1 route(s) visited |
@@ -972,20 +975,30 @@ History of the stabilization (all root-caused, no suppressions):
 | `lingkungan.spec.ts` | — | public/unauthenticated | 2 route(s) visited |
 | `litbang.spec.ts` | loginAs | real backend | 1 route(s) visited |
 | `muhadatsah.spec.ts` | loginAs | real backend | 2 route(s) visited |
+| `nav-breakpoint.spec.ts` | storageState | real backend | sidebar breakpoints, no goto |
 | `new-modular-features-smoke.spec.ts` | — | public/unauthenticated | 3 route(s) visited |
 | `organisasi.spec.ts` | loginAs | real backend | 1 route(s) visited |
+| `page-state-helper.spec.ts` | — | real backend | pins `settledContent`; no route coverage |
 | `paud-main.spec.ts` | loginAs | real backend | 0 route(s) visited |
 | `pengawasan.spec.ts` | loginAs | real backend | 1 route(s) visited |
 | `perencanaan-finance.spec.ts` | loginAs | real backend | 1 route(s) visited |
+| `perencanaan-pengesahan.spec.ts` | apiLogin | real backend | 1 route(s) visited — the yayasan ratification panel per organ and the RKA Unit approval button; the route's other actions stay 🟡 |
 | `perencanaan-risk.spec.ts` | loginAs | real backend | 1 route(s) visited |
 | `perencanaan.spec.ts` | loginAs | real backend | 1 route(s) visited |
+| `performance.spec.ts` | — | real backend | 1 route(s) visited |
 | `pesantren-features-294-smoke.spec.ts` | — | public/unauthenticated | 3 route(s) visited |
-| `ppdb.spec.ts` | loginAs | real backend | 1 route(s) visited |
+| `public-card-verification.spec.ts` | loginAs + apiRequest | real backend | 4 route(s) visited |
+| `public-i18n.spec.ts` | — | real backend | 1 route(s) visited |
+| `public-photography.spec.ts` | — | real backend | 1 route(s) visited |
+| `public-verification.spec.ts` | loginAs | real backend | 2 route(s) visited |
 | `pwa.spec.ts` | — | public/unauthenticated | 1 route(s) visited |
 | `rapor-ganda.spec.ts` | loginAs | real backend | 1 route(s) visited |
 | `risk-audit-link.spec.ts` | loginAs | real backend | 1 route(s) visited |
 | `schedule.spec.ts` | loginAs | real backend | 1 route(s) visited |
+| `spmb.spec.ts` | loginAs | real backend | 3 route(s) visited |
+| `spmb-workflow.spec.ts` | loginAs | real backend | 5 route(s) visited |
 | `student-lifecycle-enhanced.spec.ts` | loginAs | real backend | 2 route(s) visited |
+| `student-compliance.spec.ts` | loginAs | real backend | 2 route(s) visited — simpan kelengkapan: NISN salah bentuk, kembar (409), sah (tersimpan) |
 | `student-management.spec.ts` | — | skipped | 1 route(s) visited |
 | `syariah.spec.ts` | loginAs | real backend | 1 route(s) visited |
 | `tahfidz-dashboard.spec.ts` | — | skipped | 0 route(s) visited |
@@ -998,7 +1011,6 @@ History of the stabilization (all root-caused, no suppressions):
 | `tk-module.spec.ts` | — | skipped | 1 route(s) visited |
 | `unauthorized.spec.ts` | — | public/unauthenticated | 1 route(s) visited |
 | `verify_reception.spec.ts` | — | `page.route` mocks | 1 route(s) visited |
-| `verify-screenshots.spec.ts` | — | `page.route` mocks | 0 route(s) visited |
 
 ## How to move a cell to ✅
 

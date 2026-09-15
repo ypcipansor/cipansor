@@ -51,6 +51,14 @@ export const PUBLIC_PATH_PREFIXES = [
    * as those letters exist. It can never migrate to the portal.
    */
   "/verifikasi",
+  /**
+   * Where a printed student ID card's QR points. It is a `/public/*` page, so
+   * the middleware matcher already exempts it from the session wall — but it
+   * must ALSO be classified as a public path here so `hostSplitActionFor` keeps
+   * it on the apex (the host `config.publicSiteUrl` embeds in the printed QR),
+   * and so the two canonical lists stay in step (Flag 11).
+   */
+  "/public/verify-card",
 ];
 
 /** True when the request arrived on the portal, ignoring case and port. */

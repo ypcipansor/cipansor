@@ -79,6 +79,14 @@ describe("hostSplitActionFor", () => {
       expect(target(PUBLIC_HOST, `${prefix}/anak`)).toBeNull();
     });
 
+    // Where the printed student ID card's QR points. It must answer on the
+    // public host (that is the host `config.publicSiteUrl` embeds), never 404
+    // there — while the portal sends it back so there is one address per page.
+    it("keeps the public verify-card page", () => {
+      expect(target(PUBLIC_HOST, "/public/verify-card")).toBeNull();
+      expect(target(PORTAL_HOST, "/public/verify-card")).toBe(PUBLIC_HOST);
+    });
+
     // 404, not a redirect to the portal. A redirect would imply the
     // application also lives at cipansor.or.id — the assumption the split
     // exists to remove — and nothing has ever linked here to be rescued.

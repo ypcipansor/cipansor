@@ -42,11 +42,26 @@ export const GOVERNANCE_ROLE_CODES: readonly string[] = [
   "YAYASAN_PENGAWAS",
 ];
 
+/**
+ * Pengurus — the organ that RUNS the yayasan (UU 16/2001 Pasal 31 ayat 1), and
+ * so the only one that drafts its plans. Pembina ratifies the work programme
+ * and annual budget (Pasal 28 ayat 2 huruf d); Pengawas supervises and advises
+ * (Pasal 40 ayat 1). Neither authors the documents they then judge.
+ */
+export const PENGURUS_ROLE_CODES: readonly string[] = [
+  "YAYASAN_KETUA",
+  "YAYASAN_SEKRETARIS",
+  "YAYASAN_BENDAHARA",
+  "YAYASAN_ANGGOTA",
+];
+
 /** Kepala sekolah — educational leadership, not system administration. */
-export const PRINCIPAL_ROLE_CODES: readonly string[] = perSchool("KEPALA_SEKOLAH");
+export const PRINCIPAL_ROLE_CODES: readonly string[] =
+  perSchool("KEPALA_SEKOLAH");
 
 /** Wakil kepala sekolah. */
-export const VICE_PRINCIPAL_ROLE_CODES: readonly string[] = perSchool("WAKASEK");
+export const VICE_PRINCIPAL_ROLE_CODES: readonly string[] =
+  perSchool("WAKASEK");
 
 /** Classroom teachers, homeroom teachers, and BK counselors. */
 export const SCHOOL_TEACHER_ROLE_CODES: readonly string[] = [
@@ -132,6 +147,80 @@ export const ALUMNI_ROLE_CODES: readonly string[] = [
   "PT_ALUMNI",
 ];
 
+/**
+ * Menulis data alumni (alumni, karier, pendidikan, donasi, acara, kehadiran) —
+ * admin dan tata usaha, di lingkup unitnya. Satu sumber untuk API
+ * (`modules/alumni/alumni-access.ts`) dan web (tombol di halaman Alumni).
+ */
+export const ALUMNI_WRITE_ROLE_CODES: readonly string[] = [
+  ...ADMIN_ROLE_CODES,
+  ...TATA_USAHA_ROLE_CODES,
+];
+
+/**
+ * Membaca kontak, data diri, dan analisis nilai per alumni — pengelola ditambah
+ * kepala sekolah dan organ yayasan. Akun lain melihat direktori tanpa semua itu.
+ */
+export const ALUMNI_PERSONAL_DATA_ROLE_CODES: readonly string[] = [
+  ...ALUMNI_WRITE_ROLE_CODES,
+  ...PRINCIPAL_ROLE_CODES,
+  ...GOVERNANCE_ROLE_CODES,
+];
+
+/** External roles (students, parents, alumni, komite) that cannot participate in E-Office correspondence. */
+export const EXCLUDED_CORRESPONDENCE_ROLES: readonly string[] = [
+  ...STUDENT_ROLE_CODES,
+  ...PARENT_ROLE_CODES,
+  ...KOMITE_ROLE_CODES,
+  ...ALUMNI_ROLE_CODES,
+];
+
+/**
+ * Roles that handle a unit's correspondence as part of the job: the office
+ * that registers and files letters, and the head who signs them.
+ *
+ * Single source of truth for the E-Office "Edit Naskah Surat" UI toggle and
+ * the API's letter-access guard (`apps/api/src/utils/letter-access.ts`), so
+ * the two can never drift apart again. The API has a sync test
+ * (`apps/api/src/middleware/roles-sync.test.ts`) asserting the grouped
+ * strings match the `RoleCode` Prisma enum exactly.
+ *
+ * Deliberately an explicit list rather than a permission string: introducing a
+ * LETTER_* permission would mean editing the role→permission matrix and would
+ * only take effect after every existing JWT expired; an allowlist checked at
+ * request time is auditable in one place and correct immediately.
+ */
+export const LETTER_UNIT_SCOPE_ROLES: readonly string[] = [
+  ...TATA_USAHA_ROLE_CODES,
+  ...PRINCIPAL_ROLE_CODES,
+  ...perSchool("ADMIN"),
+];
+
+/**
+ * Foundation/executive roles that may edit a letter's naskah too — the
+ * API's `updateLetter` grants the creator, these executive roles, and any
+ * `LETTER_UNIT_SCOPE_ROLES` holder (via `handlesUnitCorrespondence`).
+ */
+export const LETTER_EDIT_EXECUTIVE_ROLES: readonly string[] = [
+  "SUPER_ADMIN",
+  "YAYASAN_KETUA",
+  "YAYASAN_SEKRETARIS",
+];
+
+/**
+ * True when a role code may edit a letter's naskah (excluding the "is the
+ * creator" check, which is by user id). Mirrors `updateLetter` on the API so
+ * the E-Office "Edit Naskah Surat" UI toggle and the server guard read the
+ * same source.
+ */
+export function mayEditLetter(roleCode: string | null | undefined): boolean {
+  if (!roleCode) return false;
+  return (
+    LETTER_UNIT_SCOPE_ROLES.includes(roleCode) ||
+    LETTER_EDIT_EXECUTIVE_ROLES.includes(roleCode)
+  );
+}
+
 /** Every RoleCode in the system — must equal the Prisma enum exactly. */
 export const ALL_ROLE_CODES: readonly string[] = [
   ...ADMIN_ROLE_CODES,
@@ -153,29 +242,13 @@ export const ALL_ROLE_CODES: readonly string[] = [
   ...ALUMNI_ROLE_CODES,
 ];
 
-/**
- * Roles explicitly excluded from E-Office participant search and selection
- * (external users, students, parents, alumni, and school committees).
- */
-export const EXCLUDED_CORRESPONDENCE_ROLES: readonly string[] = [
-  ...STUDENT_ROLE_CODES,
-  ...PARENT_ROLE_CODES,
-  ...KOMITE_ROLE_CODES,
-  ...ALUMNI_ROLE_CODES,
-];
-
 // ---------------------------------------------------------------------------
 // Legacy UserRole bridge
 // ---------------------------------------------------------------------------
 
 /** The six coarse buckets of the legacy `UserRole` enum. */
 export type LegacyRole =
-  | "SUPER_ADMIN"
-  | "UNIT_ADMIN"
-  | "TEACHER"
-  | "STAFF"
-  | "STUDENT"
-  | "PARENT";
+  "SUPER_ADMIN" | "UNIT_ADMIN" | "TEACHER" | "STAFF" | "STUDENT" | "PARENT";
 
 export const LEGACY_ROLES: readonly LegacyRole[] = [
   "SUPER_ADMIN",
@@ -195,10 +268,7 @@ export const LEGACY_ROLES: readonly LegacyRole[] = [
  */
 export const LEGACY_ROLE_EXPANSION: Record<LegacyRole, string[]> = {
   SUPER_ADMIN: ["SUPER_ADMIN"],
-  UNIT_ADMIN: [
-    ...GOVERNANCE_ROLE_CODES,
-    ...perSchool("ADMIN"),
-  ],
+  UNIT_ADMIN: [...GOVERNANCE_ROLE_CODES, ...perSchool("ADMIN")],
   TEACHER: [
     ...SCHOOL_TEACHER_ROLE_CODES,
     ...PRINCIPAL_ROLE_CODES,
@@ -236,7 +306,9 @@ export const ROLE_CODE_TO_LEGACY: Record<string, LegacyRole> = (() => {
 
 /** Type guard: is this string one of the six legacy buckets? */
 export function isLegacyRole(value: unknown): value is LegacyRole {
-  return typeof value === "string" && (LEGACY_ROLES as string[]).includes(value);
+  return (
+    typeof value === "string" && (LEGACY_ROLES as string[]).includes(value)
+  );
 }
 
 /** Derive the legacy bucket for a RoleCode, or `undefined` if unmapped. */

@@ -12,10 +12,12 @@ import {
   getNavigationForRole,
   getNavigationForRoleCode,
   type NavGroup,
+  type NavItem,
 } from "@/config/navigation";
 import { useAuthStore } from "@/stores/auth";
 import { demoPhotoForEmail } from "@/lib/demo-avatar";
-import { ChevronLeft, LogOut } from "lucide-react";
+import { ChevronDown, ChevronLeft, LogOut } from "lucide-react";
+import { useState } from "react";
 
 interface SidebarProps {
   collapsed?: boolean;
@@ -217,28 +219,123 @@ function NavGroupComponent({
         </h4>
       )}
       <nav className="space-y-1">
-        {group.items.map((item) => {
-          const isActive =
-            pathname === item.href || pathname.startsWith(`${item.href}/`);
-          const Icon = item.icon;
+        {group.items.map((item) => (
+          <NavItemComponent
+            key={item.href}
+            item={item}
+            pathname={pathname}
+            collapsed={collapsed}
+          />
+        ))}
+      </nav>
+    </div>
+  );
+}
 
+function isWithin(pathname: string, href: string): boolean {
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+/**
+ * One sidebar entry, with its submenu when it has one.
+ *
+ * `NavItem.children` sudah ada di tipenya sejak lama tetapi tidak pernah
+ * dirender — jadi satu-satunya cara merapikan menu yang panjang adalah
+ * menumpuk entri datar sampai bilah sisinya harus digulir jauh. Sekarang
+ * induknya bisa dibuka-tutup, dan cabang yang sedang dibuka terbuka sendiri.
+ */
+function NavItemComponent({
+  item,
+  pathname,
+  collapsed,
+}: {
+  item: NavItem;
+  pathname: string;
+  collapsed: boolean;
+}) {
+  const children = item.children ?? [];
+  const hasChildren = children.length > 0;
+  // Aktif bila halamannya sendiri atau salah satu anaknya sedang dibuka.
+  const branchActive =
+    isWithin(pathname, item.href) || children.some((c) => isWithin(pathname, c.href));
+  const [open, setOpen] = useState(branchActive);
+  const Icon = item.icon;
+
+  // Saat bilah sisinya menyempit hanya ikon yang terlihat, jadi submenu
+  // ditiadakan dan induknya kembali menjadi tautan biasa.
+  if (!hasChildren || collapsed) {
+    return (
+      <Link href={item.href}>
+        <Button
+          variant={branchActive ? "secondary" : "ghost"}
+          className={cn(
+            "w-full justify-start transition-all duration-200 hover:translate-x-1",
+            branchActive && "active-glow bg-secondary/80 font-medium",
+            collapsed && "justify-center px-2 hover:translate-x-0",
+          )}
+          title={collapsed ? item.title : undefined}
+        >
+          <Icon className="h-4 w-4" />
+          {!collapsed && <span className="ml-2">{item.title}</span>}
+        </Button>
+      </Link>
+    );
+  }
+
+  const panelId = `submenu-${item.href.replace(/[^\w-]/g, "-")}`;
+
+  return (
+    <div>
+      <div className="flex items-center">
+        <Link href={item.href} className="min-w-0 flex-1">
+          <Button
+            variant={branchActive ? "secondary" : "ghost"}
+            className={cn(
+              "w-full justify-start transition-all duration-200",
+              branchActive && "bg-secondary/60 font-medium",
+            )}
+          >
+            <Icon className="h-4 w-4 shrink-0" />
+            <span className="ml-2 flex-1 truncate text-left">{item.title}</span>
+          </Button>
+        </Link>
+        <Button
+          variant="ghost"
+          size="icon"
+          className={cn(
+            "h-9 w-9 shrink-0 transition-transform duration-200",
+            open && "rotate-180",
+          )}
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          aria-controls={panelId}
+          aria-label={`${open ? "Tutup" : "Buka"} submenu ${item.title}`}
+        >
+          <ChevronDown className="h-4 w-4" />
+        </Button>
+      </div>
+
+      <div id={panelId} hidden={!open} className="mt-1 space-y-1 pl-4">
+        {children.map((child) => {
+          const childActive = isWithin(pathname, child.href);
+          const ChildIcon = child.icon;
           return (
-            <Link key={item.href} href={item.href}>
+            <Link key={child.href} href={child.href}>
               <Button
-                variant={isActive ? "secondary" : "ghost"}
+                variant={childActive ? "secondary" : "ghost"}
+                size="sm"
                 className={cn(
-                  "w-full justify-start transition-all duration-200 hover:translate-x-1",
-                  isActive && "active-glow bg-secondary/80 font-medium",
-                  collapsed && "justify-center px-2 hover:translate-x-0",
+                  "w-full justify-start border-l border-border pl-3 transition-all duration-200 hover:translate-x-1",
+                  childActive && "active-glow bg-secondary/80 font-medium",
                 )}
               >
-                <Icon className="h-4 w-4" />
-                {!collapsed && <span className="ml-2">{item.title}</span>}
+                <ChildIcon className="h-3.5 w-3.5" />
+                <span className="ml-2">{child.title}</span>
               </Button>
             </Link>
           );
         })}
-      </nav>
+      </div>
     </div>
   );
 }

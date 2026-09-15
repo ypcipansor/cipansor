@@ -22,6 +22,14 @@ router.get('/:id', perencanaanController.getPlan);
 router.get('/:id/realization-trend', perencanaanController.getPlanRealizationTrend);
 router.put('/:id', perencanaanController.updatePlan);
 router.post('/:id/approve', perencanaanController.approvePlan);
+
+// Pengesahan dokumen tingkat yayasan (RPJP, Renstra, RKA Yayasan):
+// Ketua Pengurus mengajukan → Pengawas mengirim hasil reviu → Ketua Pengurus
+// menanggapi dan mengajukan → Pembina menetapkan atau mengembalikan.
+router.post('/:id/review/submit', perencanaanController.submitForReview);
+router.post('/:id/review/result', perencanaanController.submitReviewResult);
+router.post('/:id/review/propose', perencanaanController.proposeToPembina);
+router.post('/:id/review/decide', perencanaanController.decidePlan);
 router.delete('/:id', perencanaanController.deletePlan);
 
 // Collaboration (draft co-editing)

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { CorrespondenceService } from '../correspondence.service';
 import { prisma } from '@/lib/prisma';
 import { LETTER_PDF_RELATIONS } from '@/utils/generate-letter-pdf';
+import { LetterType } from '@cipansor/shared';
 
 // Mock dependencies
 vi.mock('@/lib/prisma', () => ({
@@ -32,6 +33,7 @@ vi.mock('@/lib/prisma', () => ({
     },
     letterAttachment: {
       createMany: vi.fn(),
+      deleteMany: vi.fn(),
     },
     letterDispatch: {
       create: vi.fn(),
@@ -188,7 +190,14 @@ describe('CorrespondenceService', () => {
         ],
       } as any);
 
-      await CorrespondenceService.processReview('letter-1', 'signer-1', 'APPROVE', undefined, undefined, true);
+      await CorrespondenceService.processReview(
+        'letter-1',
+        'signer-1',
+        'APPROVE',
+        undefined,
+        undefined,
+        true
+      );
 
       expect(prisma.letterReviewer.updateMany).toHaveBeenCalledWith({
         where: { letterId: 'letter-1' },
@@ -261,7 +270,10 @@ describe('CorrespondenceService', () => {
         subject: 'Draft Test',
       } as any);
       vi.mocked(prisma.letter.updateMany).mockResolvedValue({ count: 1 });
-      vi.mocked(prisma.letter.update).mockResolvedValue({ id: 'let-draft', status: 'PENDING_REVIEW' } as any);
+      vi.mocked(prisma.letter.update).mockResolvedValue({
+        id: 'let-draft',
+        status: 'PENDING_REVIEW',
+      } as any);
 
       const result = await CorrespondenceService.submitForReview(
         'let-draft',
@@ -298,7 +310,10 @@ describe('CorrespondenceService', () => {
         },
       ] as any);
       vi.mocked(prisma.letter.updateMany).mockResolvedValue({ count: 1 });
-      vi.mocked(prisma.letter.update).mockResolvedValue({ id: 'let-no-rev-yet', status: 'PENDING_REVIEW' } as any);
+      vi.mocked(prisma.letter.update).mockResolvedValue({
+        id: 'let-no-rev-yet',
+        status: 'PENDING_REVIEW',
+      } as any);
 
       const result = await CorrespondenceService.submitForReview(
         'let-no-rev-yet',
@@ -334,10 +349,11 @@ describe('CorrespondenceService', () => {
       vi.mocked(prisma.letter.updateMany).mockResolvedValue({ count: 0 });
 
       await expect(
-        CorrespondenceService.submitForReview(
-          'let-already-sub',
-          { id: 'creator-1', roleCode: 'SDIT_TATA_USAHA', unitId: 'unit-1' } as any
-        )
+        CorrespondenceService.submitForReview('let-already-sub', {
+          id: 'creator-1',
+          roleCode: 'SDIT_TATA_USAHA',
+          unitId: 'unit-1',
+        } as any)
       ).rejects.toThrow(/Surat sudah diajukan/);
 
       expect(prisma.agendaNumber.update).not.toHaveBeenCalled();
@@ -356,10 +372,11 @@ describe('CorrespondenceService', () => {
       } as any);
 
       await expect(
-        CorrespondenceService.submitForReview(
-          'let-draft',
-          { id: 'other-user', roleCode: 'SDIT_TATA_USAHA', unitId: 'unit-1' } as any
-        )
+        CorrespondenceService.submitForReview('let-draft', {
+          id: 'other-user',
+          roleCode: 'SDIT_TATA_USAHA',
+          unitId: 'unit-1',
+        } as any)
       ).rejects.toThrow(/Hanya pembuat surat/);
     });
 
@@ -372,10 +389,11 @@ describe('CorrespondenceService', () => {
       } as any);
 
       await expect(
-        CorrespondenceService.submitForReview(
-          'let-submitted',
-          { id: 'creator-1', roleCode: 'SDIT_TATA_USAHA', unitId: 'unit-1' } as any
-        )
+        CorrespondenceService.submitForReview('let-submitted', {
+          id: 'creator-1',
+          roleCode: 'SDIT_TATA_USAHA',
+          unitId: 'unit-1',
+        } as any)
       ).rejects.toThrow(/Hanya surat berstatus DRAFT/);
     });
 
@@ -388,10 +406,11 @@ describe('CorrespondenceService', () => {
       } as any);
 
       await expect(
-        CorrespondenceService.submitForReview(
-          'let-no-rev',
-          { id: 'creator-1', roleCode: 'SDIT_TATA_USAHA', unitId: 'unit-1' } as any
-        )
+        CorrespondenceService.submitForReview('let-no-rev', {
+          id: 'creator-1',
+          roleCode: 'SDIT_TATA_USAHA',
+          unitId: 'unit-1',
+        } as any)
       ).rejects.toThrow(/minimal satu pemeriksa/);
     });
 
@@ -427,7 +446,10 @@ describe('CorrespondenceService', () => {
         subject: 'Outgoing Draft Test',
       } as any);
       vi.mocked(prisma.letter.updateMany).mockResolvedValue({ count: 1 });
-      vi.mocked(prisma.academicYear.findFirst).mockResolvedValue({ id: 'year-1', isActive: true } as any);
+      vi.mocked(prisma.academicYear.findFirst).mockResolvedValue({
+        id: 'year-1',
+        isActive: true,
+      } as any);
       vi.mocked(prisma.agendaNumber.findUnique).mockResolvedValue({
         id: 'agenda-1',
         unitId: 'unit-1',
@@ -437,7 +459,10 @@ describe('CorrespondenceService', () => {
         format: '[NO]/Sket/Y-CPS/[ROMAN]/[YEAR]',
       } as any);
       vi.mocked(prisma.agendaNumber.update).mockResolvedValue({ lastNumber: 6 } as any);
-      vi.mocked(prisma.letter.update).mockResolvedValue({ id: 'let-draft-out', status: 'PENDING_REVIEW' } as any);
+      vi.mocked(prisma.letter.update).mockResolvedValue({
+        id: 'let-draft-out',
+        status: 'PENDING_REVIEW',
+      } as any);
 
       const result = await CorrespondenceService.submitForReview(
         'let-draft-out',
@@ -452,6 +477,458 @@ describe('CorrespondenceService', () => {
           data: expect.objectContaining({
             letterNumber: expect.stringMatching(/006\/Sket\/Y-CPS/),
           }),
+        })
+      );
+    });
+  });
+
+  describe('updateLetter', () => {
+    const adminActor = { id: 'tu-1', roleCode: 'SDIT_TATA_USAHA', unitId: 'unit-1' };
+    const draftLetter = (over: Record<string, unknown> = {}) => ({
+      id: 'letter-edit-1',
+      unitId: 'unit-1',
+      createdById: 'tu-1',
+      status: 'DRAFT',
+      direction: 'OUTGOING',
+      type: 'SURAT_DINAS',
+      nature: 'PUBLIC',
+      subject: 'Judul Lama',
+      reviewers: [],
+      recipients: [],
+      dispositions: [],
+      signatures: [],
+      ...over,
+    });
+
+    it('updates subject, content and reviewers for a DRAFT letter', async () => {
+      vi.mocked(prisma.letter.findUnique).mockResolvedValue({
+        ...draftLetter(),
+        signatures: [],
+        recipients: [],
+        dispositions: [],
+      } as any);
+      vi.mocked(prisma.letter.update).mockResolvedValue({} as any);
+
+      const result = await CorrespondenceService.updateLetter(
+        'letter-edit-1',
+        { subject: 'Judul Baru', content: 'Isi Baru' },
+        'tu-1',
+        adminActor as any
+      );
+
+      expect(prisma.letter.update).toHaveBeenCalledWith({
+        where: { id: 'letter-edit-1' },
+        data: expect.objectContaining({
+          subject: 'Judul Baru',
+          content: 'Isi Baru',
+        }),
+      });
+      expect(result).toBeDefined();
+    });
+
+    it('allows updating a letter in REVISION_NEEDED status', async () => {
+      vi.mocked(prisma.letter.findUnique).mockResolvedValue({
+        ...draftLetter({ status: 'REVISION_NEEDED' }),
+        signatures: [],
+        recipients: [],
+        dispositions: [],
+      } as any);
+      vi.mocked(prisma.letter.update).mockResolvedValue({} as any);
+
+      await CorrespondenceService.updateLetter(
+        'letter-edit-1',
+        { subject: 'Judul Setelah Revisi' },
+        'tu-1',
+        adminActor as any
+      );
+
+      expect(prisma.letter.update).toHaveBeenCalledWith({
+        where: { id: 'letter-edit-1' },
+        data: expect.objectContaining({ subject: 'Judul Setelah Revisi' }),
+      });
+    });
+
+    it('rejects update if letter is in SIGNED or PENDING_REVIEW status', async () => {
+      vi.mocked(prisma.letter.findUnique).mockResolvedValue({
+        ...draftLetter({ status: 'PENDING_REVIEW' }),
+        signatures: [],
+        recipients: [],
+        dispositions: [],
+      } as any);
+
+      await expect(
+        CorrespondenceService.updateLetter(
+          'letter-edit-1',
+          { subject: 'Mencoba Edit' },
+          'tu-1',
+          adminActor as any
+        )
+      ).rejects.toThrow(/DRAFT atau REVISION_NEEDED/);
+      expect(prisma.letter.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects update if user is unauthorized', async () => {
+      vi.mocked(prisma.letter.findUnique).mockResolvedValue({
+        ...draftLetter({ createdById: 'owner-other' }),
+        signatures: [],
+        recipients: [],
+        dispositions: [],
+      } as any);
+
+      await expect(
+        CorrespondenceService.updateLetter(
+          'letter-edit-1',
+          { subject: 'Mencoba Edit' },
+          'unauthorized-user',
+          { id: 'unauthorized-user', roleCode: 'SDIT_GURU', unitId: 'unit-1' } as any
+        )
+      ).rejects.toThrow(/tidak memiliki akses/);
+      expect(prisma.letter.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects a unit-scope correspondence officer from a DIFFERENT unit even when they are on the letter chain', async () => {
+      // Regression: a correspondence officer from another unit who happens to
+      // sit on the letter's review chain can get past `assertLetterAccess`
+      // (reviewers are admitted cross-unit), but must not be able to edit the
+      // draft of a unit they do not handle.
+      const otherUnitOfficer = {
+        id: 'tu-99',
+        roleCode: 'SDIT_TATA_USAHA',
+        unitId: 'unit-999',
+      };
+      vi.mocked(prisma.letter.findUnique).mockResolvedValue({
+        ...draftLetter({ createdById: 'owner-other' } as any),
+        signatures: [],
+        recipients: [],
+        dispositions: [],
+        // Officer is admitted by `assertLetterAccess` because they are on the chain
+        reviewers: [{ reviewerId: 'tu-99' }],
+      } as any);
+
+      await expect(
+        CorrespondenceService.updateLetter(
+          'letter-edit-1',
+          { subject: 'Mencoba Edit' },
+          'tu-99',
+          otherUnitOfficer as any
+        )
+      ).rejects.toThrow(/tidak berwenang mengubah surat ini/);
+      expect(prisma.letter.update).not.toHaveBeenCalled();
+    });
+
+    it('allows a unit-scope correspondence officer of the SAME unit to edit', async () => {
+      const sameUnitOfficer = {
+        id: 'tu-7',
+        roleCode: 'SDIT_TATA_USAHA',
+        unitId: 'unit-1',
+      };
+      vi.mocked(prisma.letter.findUnique).mockResolvedValue({
+        ...draftLetter({ createdById: 'owner-other' }),
+        signatures: [],
+        recipients: [],
+        dispositions: [],
+      } as any);
+      vi.mocked(prisma.letter.update).mockResolvedValue({} as any);
+
+      await CorrespondenceService.updateLetter(
+        'letter-edit-1',
+        { subject: 'Judul Baru' },
+        'tu-7',
+        sameUnitOfficer as any
+      );
+
+      expect(prisma.letter.update).toHaveBeenCalledWith({
+        where: { id: 'letter-edit-1' },
+        data: expect.objectContaining({ subject: 'Judul Baru' }),
+      });
+    });
+
+    it('updates recipientIds (primary recipients)', async () => {
+      vi.mocked(prisma.letter.findUnique).mockResolvedValue({
+        ...draftLetter(),
+        signatures: [],
+        recipients: [],
+        dispositions: [],
+      } as any);
+      vi.mocked(prisma.letter.update).mockResolvedValue({} as any);
+      vi.mocked(prisma.user.findMany).mockResolvedValue([
+        {
+          id: 'u-1',
+          unitId: 'unit-1',
+          userRoles: [{ unitId: 'unit-1', role: { code: 'SDIT_GURU' } }],
+        },
+        {
+          id: 'u-2',
+          unitId: 'unit-1',
+          userRoles: [{ unitId: 'unit-1', role: { code: 'SDIT_GURU' } }],
+        },
+      ] as any);
+
+      await CorrespondenceService.updateLetter(
+        'letter-edit-1',
+        { recipientIds: ['u-1', 'u-2', 'u-1'] },
+        'tu-1',
+        adminActor as any
+      );
+
+      expect(prisma.letterRecipient.deleteMany).toHaveBeenCalledWith({
+        where: { letterId: 'letter-edit-1', isCC: false },
+      });
+      expect(prisma.letterRecipient.createMany).toHaveBeenCalledWith({
+        data: [
+          { letterId: 'letter-edit-1', userId: 'u-1', unitId: 'unit-1', isCC: false },
+          { letterId: 'letter-edit-1', userId: 'u-2', unitId: 'unit-1', isCC: false },
+        ],
+      });
+    });
+
+    it('updates ccRecipients (tembusan) including external parties', async () => {
+      vi.mocked(prisma.letter.findUnique).mockResolvedValue({
+        ...draftLetter(),
+        signatures: [],
+        recipients: [],
+        dispositions: [],
+      } as any);
+      vi.mocked(prisma.letter.update).mockResolvedValue({} as any);
+      vi.mocked(prisma.user.findMany).mockResolvedValue([
+        {
+          id: 'u-3',
+          unitId: 'unit-1',
+          userRoles: [{ unitId: 'unit-1', role: { code: 'SDIT_GURU' } }],
+        },
+      ] as any);
+
+      await CorrespondenceService.updateLetter(
+        'letter-edit-1',
+        { ccRecipients: [{ userId: 'u-3' }, { externalName: 'Kepala KUA' }] },
+        'tu-1',
+        adminActor as any
+      );
+
+      expect(prisma.letterRecipient.deleteMany).toHaveBeenCalledWith({
+        where: { letterId: 'letter-edit-1', isCC: true },
+      });
+      expect(prisma.letterRecipient.createMany).toHaveBeenCalledWith({
+        data: expect.arrayContaining([
+          expect.objectContaining({
+            letterId: 'letter-edit-1',
+            userId: 'u-3',
+            unitId: 'unit-1',
+            externalName: null,
+            isCC: true,
+            order: 1,
+          }),
+          expect.objectContaining({
+            letterId: 'letter-edit-1',
+            userId: null,
+            unitId: 'unit-1',
+            externalName: 'Kepala KUA',
+            isCC: true,
+            order: 2,
+          }),
+        ]),
+      });
+    });
+
+    it('updates attachments', async () => {
+      vi.mocked(prisma.letter.findUnique).mockResolvedValue({
+        ...draftLetter(),
+        signatures: [],
+        recipients: [],
+        dispositions: [],
+      } as any);
+      vi.mocked(prisma.letter.update).mockResolvedValue({} as any);
+
+      await CorrespondenceService.updateLetter(
+        'letter-edit-1',
+        {
+          attachments: [
+            {
+              name: 'SK.png',
+              fileUrl: '/uploads/SK.png',
+              mimeType: 'image/png',
+              sizeBytes: 2048,
+            },
+          ],
+        },
+        'tu-1',
+        adminActor as any
+      );
+
+      expect(prisma.letterAttachment.deleteMany).toHaveBeenCalledWith({
+        where: { letterId: 'letter-edit-1' },
+      });
+      expect(prisma.letterAttachment.createMany).toHaveBeenCalledWith({
+        data: [
+          expect.objectContaining({
+            letterId: 'letter-edit-1',
+            name: 'SK.png',
+            fileUrl: '/uploads/SK.png',
+            mimeType: 'image/png',
+            sizeBytes: 2048,
+            order: 1,
+            uploadedById: 'tu-1',
+          }),
+        ],
+      });
+    });
+
+    it('rejects changing type when letterNumber is already issued', async () => {
+      vi.mocked(prisma.letter.findUnique).mockResolvedValue({
+        ...draftLetter({ letterNumber: '003/SURAT/Y-CPS' }),
+        signatures: [],
+        recipients: [],
+        dispositions: [],
+      } as any);
+      vi.mocked(prisma.letter.update).mockResolvedValue({} as any);
+
+      await expect(
+        CorrespondenceService.updateLetter(
+          'letter-edit-1',
+          { type: LetterType.SURAT_UNDANGAN },
+          'tu-1',
+          adminActor as any
+        )
+      ).rejects.toThrow(/nomor surat sudah terbit/);
+      expect(prisma.letter.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects changing classificationId when letterNumber is already issued', async () => {
+      vi.mocked(prisma.letter.findUnique).mockResolvedValue({
+        ...draftLetter({ letterNumber: '003/SURAT/Y-CPS' }),
+        signatures: [],
+        recipients: [],
+        dispositions: [],
+      } as any);
+      vi.mocked(prisma.letter.update).mockResolvedValue({} as any);
+
+      await expect(
+        CorrespondenceService.updateLetter(
+          'letter-edit-1',
+          { classificationId: 'classification-1' },
+          'tu-1',
+          adminActor as any
+        )
+      ).rejects.toThrow(/nomor surat sudah terbit/);
+      expect(prisma.letter.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects update when the letter already has electronic signatures', async () => {
+      vi.mocked(prisma.letter.findUnique).mockResolvedValue({
+        ...draftLetter(),
+        signatures: [{ id: 'sig-1' }],
+        recipients: [],
+        dispositions: [],
+      } as any);
+      vi.mocked(prisma.letter.update).mockResolvedValue({} as any);
+
+      await expect(
+        CorrespondenceService.updateLetter(
+          'letter-edit-1',
+          { subject: 'Mencoba Edit' },
+          'tu-1',
+          adminActor as any
+        )
+      ).rejects.toThrow(/tanda tangan elektronik/);
+      expect(prisma.letter.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects empty reviewerIds on a REVISION_NEEDED letter', async () => {
+      vi.mocked(prisma.letter.findUnique).mockResolvedValue({
+        ...draftLetter({ status: 'REVISION_NEEDED' }),
+        signatures: [],
+        recipients: [],
+        dispositions: [],
+      } as any);
+      vi.mocked(prisma.letter.update).mockResolvedValue({} as any);
+
+      await expect(
+        CorrespondenceService.updateLetter(
+          'letter-edit-1',
+          { reviewerIds: [] },
+          'tu-1',
+          adminActor as any
+        )
+      ).rejects.toThrow(/minimal satu pemeriksa/);
+      // There are no scalar fields to write (only reviewerIds was sent), so no
+      // base `letter.update` is issued — but the reviewer guard must still throw
+      // before any reviewer rows are touched.
+      expect(prisma.letter.update).not.toHaveBeenCalled();
+      expect(prisma.letterReviewer.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('validates participant eligibility and rejects unknown/inactive recipients', async () => {
+      vi.mocked(prisma.letter.findUnique).mockResolvedValue({
+        ...draftLetter(),
+        signatures: [],
+        recipients: [],
+        dispositions: [],
+      } as any);
+      // Only one of the two requested users resolves -> eligibility check fails.
+      vi.mocked(prisma.user.findMany).mockResolvedValue([{ id: 'u-1' }] as any);
+
+      await expect(
+        CorrespondenceService.updateLetter(
+          'letter-edit-1',
+          { recipientIds: ['u-1', 'u-2'] },
+          'tu-1',
+          adminActor as any
+        )
+      ).rejects.toThrow(/tidak ditemukan atau tidak aktif/);
+      expect(prisma.letter.update).not.toHaveBeenCalled();
+    });
+    it('records a naskah edit as LetterFlowAction.EDITED, not a disposition action', async () => {
+      vi.mocked(prisma.letter.findUnique).mockResolvedValue({
+        ...draftLetter(),
+        signatures: [],
+        recipients: [],
+        dispositions: [],
+      } as any);
+      vi.mocked(prisma.letter.update).mockResolvedValue({} as any);
+
+      await CorrespondenceService.updateLetter(
+        'letter-edit-1',
+        { subject: 'Judul Baru', content: 'Isi Baru' },
+        'tu-1',
+        adminActor as any
+      );
+
+      expect(prisma.letterFlowEvent.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          letterId: 'letter-edit-1',
+          actorId: 'tu-1',
+          action: 'EDITED',
+          fromStatus: 'DRAFT',
+          toStatus: 'DRAFT',
+          note: 'Naskah surat diperbarui',
+        }),
+      });
+      // The UI labels this as "naskah edit", so it must never be recorded as a
+      // disposition follow-up.
+      expect(prisma.letterFlowEvent.create).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ action: 'DISPOSITION_UPDATED' }),
+        })
+      );
+    });
+
+    it('does NOT record an EDITED flow entry when the PATCH changes nothing', async () => {
+      // Regression: an empty PATCH used to append a fake "EDITED" audit entry.
+      // The flow log is append-only, so a no-op must leave no trace of an edit.
+      vi.mocked(prisma.letter.findUnique).mockResolvedValue({
+        ...draftLetter(),
+        signatures: [],
+        recipients: [],
+        dispositions: [],
+      } as any);
+      vi.mocked(prisma.letter.update).mockResolvedValue({} as any);
+
+      await CorrespondenceService.updateLetter('letter-edit-1', {}, 'tu-1', adminActor as any);
+
+      expect(prisma.letter.update).not.toHaveBeenCalled();
+      expect(prisma.letterFlowEvent.create).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ action: 'EDITED' }),
         })
       );
     });
@@ -512,7 +989,10 @@ describe('CorrespondenceService', () => {
 
   describe('createLetter Unit Authorization & Incoming Lifecycle', () => {
     it('executes number generation within transaction scope so failure rolls back counter increment', async () => {
-      vi.mocked(prisma.academicYear.findFirst).mockResolvedValue({ id: 'year-1', isActive: true } as any);
+      vi.mocked(prisma.academicYear.findFirst).mockResolvedValue({
+        id: 'year-1',
+        isActive: true,
+      } as any);
       vi.mocked(prisma.agendaNumber.findUnique).mockResolvedValue({
         id: 'ag-1',
         lastNumber: 1,
@@ -541,7 +1021,11 @@ describe('CorrespondenceService', () => {
     });
 
     it('creates letter for authorized unit', async () => {
-      vi.mocked(prisma.letter.create).mockResolvedValue({ id: 'let-1', status: 'DRAFT', unitId: 'unit-1' } as any);
+      vi.mocked(prisma.letter.create).mockResolvedValue({
+        id: 'let-1',
+        status: 'DRAFT',
+        unitId: 'unit-1',
+      } as any);
 
       const result = await CorrespondenceService.createLetter(
         {
@@ -570,7 +1054,11 @@ describe('CorrespondenceService', () => {
           userRoles: [{ role: { code: 'SDIT_GURU' } }],
         },
       ] as any);
-      vi.mocked(prisma.letter.create).mockResolvedValue({ id: 'let-dup-rev', status: 'DRAFT', unitId: 'unit-1' } as any);
+      vi.mocked(prisma.letter.create).mockResolvedValue({
+        id: 'let-dup-rev',
+        status: 'DRAFT',
+        unitId: 'unit-1',
+      } as any);
 
       await CorrespondenceService.createLetter(
         {
@@ -690,7 +1178,11 @@ describe('CorrespondenceService', () => {
     });
 
     it('allows letter creation across units for executive foundation roles (YAYASAN_KETUA, YAYASAN_SEKRETARIS)', async () => {
-      vi.mocked(prisma.letter.create).mockResolvedValue({ id: 'let-yayasan', status: 'DRAFT', unitId: 'unit-2' } as any);
+      vi.mocked(prisma.letter.create).mockResolvedValue({
+        id: 'let-yayasan',
+        status: 'DRAFT',
+        unitId: 'unit-2',
+      } as any);
 
       const result = await CorrespondenceService.createLetter(
         {
@@ -773,8 +1265,15 @@ describe('CorrespondenceService', () => {
           userRoles: [{ role: { code: 'SDIT_TATA_USAHA' } }],
         },
       ] as any);
-      vi.mocked(prisma.letter.create).mockResolvedValue({ id: 'let-2', status: 'DISPOSED', unitId: 'unit-1' } as any);
-      vi.mocked(prisma.disposition.create).mockResolvedValue({ id: 'disp-auto-1', recipientId: 'user-2' } as any);
+      vi.mocked(prisma.letter.create).mockResolvedValue({
+        id: 'let-2',
+        status: 'DISPOSED',
+        unitId: 'unit-1',
+      } as any);
+      vi.mocked(prisma.disposition.create).mockResolvedValue({
+        id: 'disp-auto-1',
+        recipientId: 'user-2',
+      } as any);
 
       const result = await CorrespondenceService.createLetter(
         {
@@ -829,10 +1328,11 @@ describe('CorrespondenceService', () => {
     it('excludes former staff without active userRoles from participant search candidates', async () => {
       vi.mocked(prisma.user.findMany).mockResolvedValue([]);
 
-      await CorrespondenceService.getParticipants(
-        { search: 'Former' },
-        { id: 'admin-1', roleCode: 'SUPER_ADMIN', unitId: null } as any
-      );
+      await CorrespondenceService.getParticipants({ search: 'Former' }, {
+        id: 'admin-1',
+        roleCode: 'SUPER_ADMIN',
+        unitId: null,
+      } as any);
 
       const findCall = vi.mocked(prisma.user.findMany).mock.calls.at(-1)![0] as any;
       expect(findCall.where.userRoles).toBeDefined();
@@ -855,10 +1355,11 @@ describe('CorrespondenceService', () => {
         },
       ] as any);
 
-      const result = await CorrespondenceService.getParticipants(
-        { search: 'Ahmad' },
-        { id: 'guru-1', roleCode: 'SDIT_GURU', unitId: 'unit-1' } as any
-      );
+      const result = await CorrespondenceService.getParticipants({ search: 'Ahmad' }, {
+        id: 'guru-1',
+        roleCode: 'SDIT_GURU',
+        unitId: 'unit-1',
+      } as any);
 
       expect(result).toHaveLength(1);
       expect(result[0].name).toBe('Ust. Ahmad');
@@ -868,10 +1369,11 @@ describe('CorrespondenceService', () => {
     it('rejects external roles (STUDENT, PARENT, ALUMNI, KOMITE) from participant search', async () => {
       for (const roleCode of ['SDIT_SISWA', 'TKQ_ORANG_TUA', 'SMPIT_ALUMNI', 'SDIT_KOMITE']) {
         await expect(
-          CorrespondenceService.getParticipants(
-            { search: 'Ahmad' },
-            { id: 'ext-1', roleCode, unitId: 'unit-1' } as any
-          )
+          CorrespondenceService.getParticipants({ search: 'Ahmad' }, {
+            id: 'ext-1',
+            roleCode,
+            unitId: 'unit-1',
+          } as any)
         ).rejects.toThrow(/tidak memiliki akses/);
       }
     });
@@ -890,10 +1392,11 @@ describe('CorrespondenceService', () => {
         },
       ] as any);
 
-      await CorrespondenceService.getParticipants(
-        { search: 'Pustakawan', unitId: 'unit-2' },
-        { id: 'perawat-1', roleCode: 'PERAWAT', unitId: 'unit-1' } as any
-      );
+      await CorrespondenceService.getParticipants({ search: 'Pustakawan', unitId: 'unit-2' }, {
+        id: 'perawat-1',
+        roleCode: 'PERAWAT',
+        unitId: 'unit-1',
+      } as any);
 
       const findCall = vi.mocked(prisma.user.findMany).mock.calls.at(-1)![0] as any;
       expect(findCall.where.AND).toEqual(
@@ -912,10 +1415,11 @@ describe('CorrespondenceService', () => {
     it('pins ordinary unit roles to their assigned unitId even if query specifies another unit', async () => {
       vi.mocked(prisma.user.findMany).mockResolvedValue([]);
 
-      await CorrespondenceService.getParticipants(
-        { search: 'Guru', unitId: 'unit-2' },
-        { id: 'guru-1', roleCode: 'SDIT_GURU', unitId: 'unit-1' } as any
-      );
+      await CorrespondenceService.getParticipants({ search: 'Guru', unitId: 'unit-2' }, {
+        id: 'guru-1',
+        roleCode: 'SDIT_GURU',
+        unitId: 'unit-1',
+      } as any);
 
       const findCall = vi.mocked(prisma.user.findMany).mock.calls.at(-1)![0] as any;
       expect(findCall.where.AND).toEqual(
@@ -954,7 +1458,10 @@ describe('CorrespondenceService', () => {
         dispositions: [],
       } as any);
       vi.mocked(prisma.disposition.findFirst).mockResolvedValue(null as any);
-      vi.mocked(prisma.disposition.create).mockResolvedValue({ id: 'disp-1', recipientId: 'user-2' } as any);
+      vi.mocked(prisma.disposition.create).mockResolvedValue({
+        id: 'disp-1',
+        recipientId: 'user-2',
+      } as any);
       vi.mocked(prisma.letter.update).mockResolvedValue({} as any);
 
       const result = await CorrespondenceService.createDisposition(
@@ -1078,7 +1585,10 @@ describe('CorrespondenceService', () => {
         recipients: [],
         dispositions: [],
       } as any);
-      vi.mocked(prisma.disposition.create).mockResolvedValue({ id: 'disp-1', recipientId: 'user-2' } as any);
+      vi.mocked(prisma.disposition.create).mockResolvedValue({
+        id: 'disp-1',
+        recipientId: 'user-2',
+      } as any);
 
       const result = await CorrespondenceService.createDisposition(
         {
@@ -1223,9 +1733,13 @@ describe('CorrespondenceService', () => {
       vi.mocked(prisma.letterDispatch.create).mockResolvedValue({ id: 'exp-2' } as any);
       vi.mocked(prisma.letter.update).mockResolvedValue({} as any);
 
-      await CorrespondenceService.dispatchLetter('letter-1', petugas as any, {
-        channel: 'POST',
-      } as any);
+      await CorrespondenceService.dispatchLetter(
+        'letter-1',
+        petugas as any,
+        {
+          channel: 'POST',
+        } as any
+      );
 
       expect(prisma.letter.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: { status: 'SENT', sentAt: first } })
@@ -1238,9 +1752,13 @@ describe('CorrespondenceService', () => {
       );
 
       await expect(
-        CorrespondenceService.dispatchLetter('letter-1', petugas as any, {
-          channel: 'HAND_DELIVERY',
-        } as any)
+        CorrespondenceService.dispatchLetter(
+          'letter-1',
+          petugas as any,
+          {
+            channel: 'HAND_DELIVERY',
+          } as any
+        )
       ).rejects.toThrow(/Surat masuk diterima, bukan dikirim/);
       expect(prisma.letterDispatch.create).not.toHaveBeenCalled();
     });
@@ -1251,9 +1769,13 @@ describe('CorrespondenceService', () => {
       );
 
       await expect(
-        CorrespondenceService.dispatchLetter('letter-1', petugas as any, {
-          channel: 'HAND_DELIVERY',
-        } as any)
+        CorrespondenceService.dispatchLetter(
+          'letter-1',
+          petugas as any,
+          {
+            channel: 'HAND_DELIVERY',
+          } as any
+        )
       ).rejects.toThrow(/belum ditandatangani/);
       expect(prisma.letterDispatch.create).not.toHaveBeenCalled();
     });
@@ -1267,9 +1789,13 @@ describe('CorrespondenceService', () => {
       );
 
       await expect(
-        CorrespondenceService.dispatchLetter('letter-1', petugas as any, {
-          channel: 'EMAIL',
-        } as any)
+        CorrespondenceService.dispatchLetter(
+          'letter-1',
+          petugas as any,
+          {
+            channel: 'EMAIL',
+          } as any
+        )
       ).rejects.toThrow(/sudah dicabut/);
     });
 
@@ -1336,12 +1862,8 @@ describe('CorrespondenceService', () => {
         .mocked(prisma.letterRecipient.createMany)
         .mock.calls.flatMap((c) => (c[0] as any).data as any[]);
 
-      expect(rows).toContainEqual(
-        expect.objectContaining({ userId: 'penerima-1', isCC: false })
-      );
-      expect(rows).toContainEqual(
-        expect.objectContaining({ userId: 'tembusan-1', isCC: true })
-      );
+      expect(rows).toContainEqual(expect.objectContaining({ userId: 'penerima-1', isCC: false }));
+      expect(rows).toContainEqual(expect.objectContaining({ userId: 'tembusan-1', isCC: true }));
     });
 
     /**
@@ -1507,10 +2029,7 @@ describe('CorrespondenceService', () => {
           urgency: 'NORMAL' as any,
           nature: 'PUBLIC' as any,
           status: 'DRAFT' as any,
-          ccRecipients: [
-            { externalName: 'Ketua RW 04' },
-            { externalName: '  ketua rw 04  ' },
-          ],
+          ccRecipients: [{ externalName: 'Ketua RW 04' }, { externalName: '  ketua rw 04  ' }],
         },
         'user-1',
         admin as any
@@ -1546,11 +2065,9 @@ describe('CorrespondenceService', () => {
       vi.mocked(prisma.letter.findUnique).mockResolvedValue(draft() as any);
       vi.mocked(prisma.letterRecipient.deleteMany).mockResolvedValue({ count: 2 } as any);
 
-      const result = await CorrespondenceService.updateLetterCc(
-        'letter-1',
-        petugas as any,
-        [{ externalName: 'Kepala KUA' }]
-      );
+      const result = await CorrespondenceService.updateLetterCc('letter-1', petugas as any, [
+        { externalName: 'Kepala KUA' },
+      ]);
 
       // Penerima utama adalah daftar yang berbeda; menghapusnya di sini akan
       // mencabut akses orang yang memang berhak membaca surat ini.

@@ -12,6 +12,7 @@ import {
   ClipboardCheck,
   Mail,
   Archive,
+  FilePen,
   type LucideIcon,
 } from "lucide-react";
 
@@ -40,6 +41,12 @@ const FLOW: Record<string, FlowStyle> = {
     icon: FilePlus2,
     label: "Dicatat",
     sentence: (a) => `${a} mencatat surat ini`,
+    tone: "text-muted-foreground",
+  },
+  EDITED: {
+    icon: FilePen,
+    label: "Diedit",
+    sentence: (a) => `${a} memperbarui naskah surat`,
     tone: "text-muted-foreground",
   },
   SUBMITTED: {

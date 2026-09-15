@@ -60,6 +60,7 @@ import { Separator } from "@/components/ui/separator";
 import { useStudents } from "@/hooks/use-students";
 import { useUnits } from "@/hooks/use-units";
 import { useCreateMuhadhoroh } from "@/hooks/use-muhadhoroh";
+import { STUDENT_STATUS } from "@cipansor/shared";
 
 // Form Schema
 const muhadhorohSchema = z.object({
@@ -145,7 +146,7 @@ export default function NewMuhadhorohPage() {
     unitId: selectedUnitId,
     search: studentSearch,
     limit: 50,
-    status: "ACTIVE",
+    status: STUDENT_STATUS.ACTIVE,
   });
   const students = studentsData?.data || [];
 

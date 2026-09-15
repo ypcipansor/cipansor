@@ -20,6 +20,7 @@ import {
 } from '@cipansor/shared';
 import { Prisma } from '@prisma/client';
 import { checkPeriodStatus } from './period.service';
+import { CLASS_ENROLLMENT_STATUS } from '@cipansor/shared';
 
 export class FinanceEnhancementService {
   // ==================== ACCOUNT CODES ====================
@@ -356,7 +357,7 @@ export class FinanceEnhancementService {
             include: {
               user: { select: { name: true } },
               enrollments: {
-                where: { status: 'ACTIVE' },
+                where: { status: CLASS_ENROLLMENT_STATUS.ACTIVE },
                 include: { class: { select: { name: true } } },
                 take: 1,
               },

@@ -769,7 +769,7 @@ export async function seedStrategicPlans(prisma: PrismaClient, u: StrategicPlanS
       description:
         'Rencana Kerja dan Anggaran tahun pertama Renstra 2027–2029. Setiap kegiatan ' +
         'memiliki induk Program, IKK triwulanan, jadwal bulanan, penanggung jawab, dan ' +
-        'RAB rinci. Nominal indikatif (mock-up demo). Rantai: RPJP → Renstra → RKA.',
+        'RAB rinci. Nominal indikatif (mock-up demo). Rantai: RPJP → Renstra → RKA Yayasan → RKA Unit.',
       startDate: new Date('2027-01-01'),
       endDate: new Date('2027-12-31'),
       progress: 45,
@@ -830,7 +830,10 @@ export async function seedStrategicPlans(prisma: PrismaClient, u: StrategicPlanS
   const smpRka = await prisma.strategicPlan.create({
     data: {
       unit: { connect: { id: u.unitSmpId } },
-      parent: { connect: { id: renstra.id } },
+      // The unit RKA hangs off the consolidated RKA Yayasan, not off the
+      // Renstra — its description said so all along while the row pointed one
+      // level too high.
+      parent: { connect: { id: rka.id } },
       type: PlanType.RKA,
       status: PlanStatus.IN_PROGRESS,
       title: 'RKA SMP IT Pesantren Cipansor 2027',

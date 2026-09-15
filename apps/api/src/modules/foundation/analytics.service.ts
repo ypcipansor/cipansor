@@ -4,6 +4,7 @@ import {
   FoundationFinancialOverview,
   FoundationUnitComparison,
 } from '@cipansor/shared';
+import { STUDENT_STATUS } from '@cipansor/shared';
 
 /**
  * Get executive summary statistics for the foundation
@@ -12,7 +13,7 @@ import {
 export async function getExecutiveSummary(): Promise<FoundationExecutiveSummary> {
   // Count active students
   const totalStudents = await prisma.student.count({
-    where: { status: 'ACTIVE' },
+    where: { status: STUDENT_STATUS.ACTIVE },
   });
 
   // Count teachers via role assignments (roles containing GURU)
@@ -54,7 +55,7 @@ export async function getExecutiveSummary(): Promise<FoundationExecutiveSummary>
 
   const studentsLastMonth = await prisma.student.count({
     where: {
-      status: 'ACTIVE',
+      status: STUDENT_STATUS.ACTIVE,
       createdAt: { lt: oneMonthAgo },
     },
   });
@@ -144,7 +145,7 @@ export async function getFinancialOverview(): Promise<FoundationFinancialOvervie
     prisma.student.groupBy({
       by: ['unitId'],
       _count: { _all: true },
-      where: { status: 'ACTIVE' },
+      where: { status: STUDENT_STATUS.ACTIVE },
     }),
   ]);
 
@@ -244,7 +245,7 @@ export async function getUnitComparison(): Promise<FoundationUnitComparison[]> {
     include: {
       _count: {
         select: {
-          students: { where: { status: 'ACTIVE' } },
+          students: { where: { status: STUDENT_STATUS.ACTIVE } },
         },
       },
     },

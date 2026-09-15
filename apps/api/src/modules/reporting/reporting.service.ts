@@ -6,6 +6,8 @@
 import { prisma } from '../../lib/prisma';
 import { logger } from '../../lib/logger';
 import { Prisma, PaymentStatus } from '@prisma/client';
+import { isStudentStatus, STUDENT_STATUS_VALUES } from '@cipansor/shared';
+import { Errors } from '../../middleware/error';
 
 export type ReportFormat = 'JSON' | 'CSV';
 export type ReportType =
@@ -113,6 +115,16 @@ class ReportingService {
   }
 
   private async generateStudentListReport(filters: ReportFilter) {
+    // Tolak kosakata di luar STUDENT_STATUS alih-alih mengembalikan laporan
+    // kosong. Sampai 2026-09-13 halaman Laporan mengirim "ACTIVE"/"GRADUATED"
+    // dan nilai itu dipasang langsung ke kolom berisi 'active' — memilih "Aktif"
+    // menghasilkan nol baris tanpa galat apa pun. Laporan kosong yang tampak sah
+    // lebih berbahaya daripada 400 yang menyebut nilai yang benar.
+    if (filters.status && !isStudentStatus(filters.status)) {
+      throw Errors.badRequest(
+        `Status santri tidak dikenal: "${filters.status}". Nilai yang sah: ${STUDENT_STATUS_VALUES.join(', ')}.`
+      );
+    }
     const where = {
       ...(filters.unitId && { unitId: filters.unitId }),
       ...(filters.status && { status: filters.status }),

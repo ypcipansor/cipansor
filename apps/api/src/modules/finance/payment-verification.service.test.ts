@@ -44,7 +44,7 @@ const baseInvoice = {
     unitId: 'unit-1',
     user: { id: 'student-user-1', name: 'Santri A' },
   },
-  paymentType: { id: 'pt-1', name: 'SPP', accountId: 'acc-revenue' },
+  paymentType: { id: 'pt-1', name: 'SPP', accountId: 'acc-revenue', unitId: 'unit-1' },
 };
 
 function paymentInStatus(status: string, extra: Record<string, unknown> = {}) {
@@ -216,6 +216,48 @@ describe('verifyPayment state machine', () => {
 
     await expect(verifyPayment('pay-1', 'TU_APPROVE', otherUnitAdmin)).rejects.toThrow(
       /another unit/
+    );
+  });
+
+  it('santri yang sudah pindah unit: tagihan unit lamanya diverifikasi & dibukukan di unit TAGIHAN', async () => {
+    // Santri kini di unit-2; SPP-nya terbit dari jenis bayar unit-1.
+    const tagihanLama = { ...baseInvoice, student: { ...baseInvoice.student, unitId: 'unit-2' } };
+    mocked.payment.findUnique.mockResolvedValueOnce(
+      paymentInStatus('TU_APPROVED', { tuVerifiedById: 'staff-1', invoice: tagihanLama })
+    );
+    const { getAccountOrFallback } = await import('./accounting-config.service');
+
+    await verifyPayment('pay-1', 'FINAL_APPROVE', unitAdmin);
+
+    expect(getAccountOrFallback).toHaveBeenCalledWith('unit-1', 'BANK', '1102', 'Bank');
+    expect(mocked.journalEntry.create).toHaveBeenCalledTimes(2);
+    for (const [arg] of mocked.journalEntry.create.mock.calls) {
+      expect(arg.data.unitId).toBe('unit-1');
+    }
+  });
+
+  it('admin unit santri SEKARANG tidak memverifikasi tagihan unit lamanya', async () => {
+    const tagihanLama = { ...baseInvoice, student: { ...baseInvoice.student, unitId: 'unit-2' } };
+    mocked.payment.findUnique.mockResolvedValueOnce(
+      paymentInStatus('PENDING_VERIFICATION', { invoice: tagihanLama })
+    );
+
+    await expect(verifyPayment('pay-1', 'TU_APPROVE', otherUnitAdmin)).rejects.toThrow(/another unit/);
+    expect(mocked.payment.update).not.toHaveBeenCalled();
+  });
+
+  it('bendahara yayasan (tanpa unit) bisa memverifikasi antrean yang memang ditampilkan kepadanya', async () => {
+    mocked.payment.findUnique.mockResolvedValueOnce(paymentInStatus('PENDING_VERIFICATION'));
+
+    await verifyPayment('pay-1', 'TU_APPROVE', {
+      sub: 'bendahara-yayasan',
+      role: 'UNIT_ADMIN',
+      roleCode: 'YAYASAN_BENDAHARA',
+      unitId: null,
+    });
+
+    expect(mocked.payment.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ verificationStatus: 'TU_APPROVED' }) })
     );
   });
 

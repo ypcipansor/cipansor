@@ -12,6 +12,7 @@ import {
   listParticipantsQuerySchema,
   dispatchLetterSchema,
   updateLetterCcSchema,
+  updateLetterSchema,
 } from './correspondence.schema';
 
 const router = Router();
@@ -32,6 +33,7 @@ router.get(
   CorrespondenceController.getParticipants
 );
 router.post('/letters', validate(createLetterSchema), CorrespondenceController.create);
+router.patch('/letters/:id', validate(updateLetterSchema), CorrespondenceController.update);
 router.get('/letters', CorrespondenceController.findAll);
 router.get('/stats', CorrespondenceController.getStats);
 router.get('/letters/:id', CorrespondenceController.findOne);

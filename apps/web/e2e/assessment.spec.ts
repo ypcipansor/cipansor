@@ -1,6 +1,7 @@
 import { test, expect } from "./fixtures/auth.fixture";
 import { LoginPage } from "./page-objects";
 import { loginAs } from "./helpers/auth-api";
+import { settledContent } from "./helpers/page-state";
 
 /**
  * Assessment Module E2E Tests
@@ -32,7 +33,7 @@ test.describe("Assessment - List & Navigation", () => {
     expect(page.url()).toMatch(/assessment/);
 
     // Should have some content (very lenient check)
-    const pageContent = await page.content();
+    const pageContent = await settledContent(page);
     expect(pageContent.length).toBeGreaterThan(1000); // Has content
   });
 });

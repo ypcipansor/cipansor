@@ -1,4 +1,5 @@
-import { RoleCode, Prisma, LetterStatus, LetterDirection } from '@prisma/client';
+import { Prisma, LetterStatus, LetterDirection } from '@prisma/client';
+import { LETTER_UNIT_SCOPE_ROLES } from '@cipansor/shared';
 import { prisma } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
 import { seesAllUnits } from './resolve-unit-id';
@@ -33,28 +34,12 @@ import { seesAllUnits } from './resolve-unit-id';
  * Roles that handle a unit's correspondence as part of the job: the office
  * that registers and files letters, and the head who signs them.
  *
- * Deliberately an explicit list rather than a permission string. Introducing a
- * LETTER_* permission would mean editing the role→permission matrix and would
- * only take effect after every existing JWT expired; an allowlist checked at
- * request time is auditable in one place and correct immediately. When the
- * matrix does grow letter permissions, this becomes the seed for them.
+ * The list now lives in `@cipansor/shared` (`LETTER_UNIT_SCOPE_ROLES`) so the
+ * API guard here and the E-Office "Edit Naskah Surat" UI toggle read the same
+ * source and can never drift apart again. It is re-exported for any existing
+ * importer of this module.
  */
-export const LETTER_UNIT_SCOPE_ROLES: readonly string[] = [
-  RoleCode.TKQ_TATA_USAHA,
-  RoleCode.SDIT_TATA_USAHA,
-  RoleCode.SMPIT_TATA_USAHA,
-  RoleCode.SMAQ_TATA_USAHA,
-  RoleCode.PESANTREN_TATA_USAHA,
-  RoleCode.PT_TATA_USAHA,
-  RoleCode.TKQ_KEPALA_SEKOLAH,
-  RoleCode.SDIT_KEPALA_SEKOLAH,
-  RoleCode.SMPIT_KEPALA_SEKOLAH,
-  RoleCode.SMAQ_KEPALA_SEKOLAH,
-  RoleCode.TKQ_ADMIN,
-  RoleCode.SDIT_ADMIN,
-  RoleCode.SMPIT_ADMIN,
-  RoleCode.SMAQ_ADMIN,
-];
+export { LETTER_UNIT_SCOPE_ROLES } from '@cipansor/shared';
 
 export type LetterActor = {
   id: string;
@@ -155,9 +140,7 @@ export async function assertLetterAccess(
     letter.createdById === actor.id ||
     letter.reviewers.some((r) => r.reviewerId === actor.id) ||
     letter.recipients.some((r) => r.userId === actor.id) ||
-    letter.dispositions.some(
-      (d) => d.senderId === actor.id || d.recipientId === actor.id
-    );
+    letter.dispositions.some((d) => d.senderId === actor.id || d.recipientId === actor.id);
 
   if (inChain) return letter;
 
