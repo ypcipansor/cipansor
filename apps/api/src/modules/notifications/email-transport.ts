@@ -22,7 +22,7 @@
  * `deliverEmail()` reports `delivered: false` rather than pretending.
  */
 
-import nodemailer, { type Transporter } from 'nodemailer';
+import nodemailer from 'nodemailer';
 import { config } from '../../config';
 import { logger } from '../../lib/logger';
 import { ServiceAccountTokenSource } from '../../lib/google-service-account';
@@ -199,9 +199,9 @@ type SmtpAuthOptions =
       refreshToken: string;
     };
 
-let smtpTransporter: Transporter | null = null;
+let smtpTransporter: nodemailer.Transporter | null = null;
 
-function getSmtpTransporter(): Transporter {
+function getSmtpTransporter(): nodemailer.Transporter {
   if (smtpTransporter) {
     return smtpTransporter;
   }
