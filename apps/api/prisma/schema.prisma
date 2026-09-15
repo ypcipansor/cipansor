@@ -577,6 +577,16 @@ model User {
   // Business Unit Management
   managedBusinessUnits BusinessUnit[]        @relation("BusinessUnitManager")
 
+  // Whistleblowing System (WBS) & Board Member Suspension
+  assignedWbsReports       WbsReport[]             @relation("WbsAssignedUser")
+  wbsComments              WbsComment[]
+  forwardedWbsLogs         WbsForwardLog[]         @relation("WbsForwarder")
+  receivedWbsForwardLogs   WbsForwardLog[]         @relation("WbsForwardTarget")
+  boardSuspensions         BoardMemberSuspension[] @relation("SuspendedBoardUser")
+  issuedBoardSuspensions   BoardMemberSuspension[] @relation("SuspensionIssuer")
+  plhBoardSuspensions      BoardMemberSuspension[] @relation("SuspensionPlhUser")
+  liftedBoardSuspensions   BoardMemberSuspension[] @relation("SuspensionLifter")
+
   @@index([email])
   @@index([role])
   @@index([unitId])
@@ -764,6 +774,9 @@ model Unit {
 
   // Perguruan Tinggi (Higher Ed)
   faculties Faculty[]
+
+  // Whistleblowing System
+  wbsReports WbsReport[]
 
   @@index([type])
   @@index([foundationId])
@@ -10526,4 +10539,140 @@ model StudentCardState {
   @@index([studentId])
   @@index([status])
   @@map("student_card_state")
+}
+
+// ===============================================================
+// Whistleblowing System (WBS) & Board Member Suspension Models
+// ===============================================================
+
+enum WbsCategory {
+  KEUANGAN_ASET
+  SOP_TATA_KELOLA
+  ETIKA_PERILAKU
+  PELAYANAN_AKADEMIK_PENGASUHAN
+  LAINNYA
+}
+
+enum WbsTargetLevel {
+  PENGURUS_YAYASAN
+  PENGAWAS_YAYASAN
+  KEPALA_UNIT
+  STAF_PEGAWAI
+  SISWA_SANTRI
+}
+
+enum WbsStatus {
+  DIAJUKAN
+  DALAM_PENYELIDIKAN
+  DITINDAKLANJUTI
+  SELESAI
+  TIDAK_DAPAT_DITINDAKLANJUTI
+}
+
+enum WbsSenderType {
+  REPORTER
+  HANDLER
+}
+
+enum BoardSuspensionStatus {
+  ACTIVE
+  LIFTED
+  PERMANENT_DISMISSAL
+}
+
+model WbsReport {
+  id                 String         @id @default(uuid())
+  ticketCode         String         @unique @map("ticket_code")
+  trackingToken      String         @map("tracking_token")
+  unitId             String?        @map("unit_id")
+  category           WbsCategory
+  targetLevel        WbsTargetLevel @map("target_level")
+  targetName         String?        @map("target_name")
+  subject            String
+  description        String         @db.Text
+  location           String?
+  incidentDate       DateTime?      @map("incident_date")
+  isAnonymous        Boolean        @default(true) @map("is_anonymous")
+  reporterName       String?        @map("reporter_name")
+  reporterContact    String?        @map("reporter_contact")
+  attachments        Json?
+  status             WbsStatus      @default(DIAJUKAN)
+  primaryHandlerRole String         @map("primary_handler_role")
+  assignedUserId     String?        @map("assigned_user_id")
+  resolution         String?        @db.Text
+  createdAt          DateTime       @default(now()) @map("created_at")
+  updatedAt          DateTime       @updatedAt @map("updated_at")
+
+  unit         Unit?            @relation(fields: [unitId], references: [id])
+  assignedUser User?            @relation("WbsAssignedUser", fields: [assignedUserId], references: [id])
+  comments     WbsComment[]
+  forwardLogs  WbsForwardLog[]
+
+  @@index([ticketCode])
+  @@index([status])
+  @@index([primaryHandlerRole])
+  @@map("wbs_reports")
+}
+
+model WbsComment {
+  id          String        @id @default(uuid())
+  reportId    String        @map("report_id")
+  senderType  WbsSenderType @map("sender_type")
+  senderId    String?       @map("sender_id")
+  senderName  String?       @map("sender_name")
+  message     String        @db.Text
+  attachments Json?
+  createdAt   DateTime      @default(now()) @map("created_at")
+
+  report WbsReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  sender User?      @relation(fields: [senderId], references: [id])
+
+  @@index([reportId])
+  @@map("wbs_comments")
+}
+
+model WbsForwardLog {
+  id            String   @id @default(uuid())
+  reportId      String   @map("report_id")
+  forwardedById String   @map("forwarded_by_id")
+  fromRole      String   @map("from_role")
+  toRole        String   @map("to_role")
+  toUserId      String?  @map("to_user_id")
+  reason        String   @db.Text
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  report      WbsReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  forwardedBy User      @relation("WbsForwarder", fields: [forwardedById], references: [id])
+  toUser      User?     @relation("WbsForwardTarget", fields: [toUserId], references: [id])
+
+  @@index([reportId])
+  @@map("wbs_forward_logs")
+}
+
+model BoardMemberSuspension {
+  id               String                @id @default(uuid())
+  userId           String                @map("user_id")
+  skNumber         String                @map("sk_number")
+  auditReason      String                @map("audit_reason") @db.Text
+  documentUrl      String?               @map("document_url")
+  startDate        DateTime              @default(now()) @map("start_date")
+  projectedEndDate DateTime?             @map("projected_end_date")
+  status           BoardSuspensionStatus @default(ACTIVE)
+  suspendedById    String                @map("suspended_by_id")
+  plhUserId        String?               @map("plh_user_id")
+  plhRoleCode      String?               @map("plh_role_code")
+  liftedAt         DateTime?             @map("lifted_at")
+  liftedById       String?               @map("lifted_by_id")
+  liftReason       String?               @map("lift_reason") @db.Text
+  createdAt        DateTime              @default(now()) @map("created_at")
+  updatedAt        DateTime              @updatedAt @map("updated_at")
+
+  user        User  @relation("SuspendedBoardUser", fields: [userId], references: [id])
+  suspendedBy User  @relation("SuspensionIssuer", fields: [suspendedById], references: [id])
+  plhUser     User? @relation("SuspensionPlhUser", fields: [plhUserId], references: [id])
+  liftedBy    User? @relation("SuspensionLifter", fields: [liftedById], references: [id])
+
+  @@index([userId])
+  @@index([status])
+  @@map("board_member_suspensions")
 }
