@@ -3,9 +3,8 @@ import { RoleCode, UnitType } from '@prisma/client';
 /**
  * The guardian role that belongs to each kind of unit.
  *
- * Perguruan Tinggi is absent on purpose. A mahasiswa is an adult; the RoleCode
- * enum has no guardian role for PT, and inventing one would model something the
- * institution does not do.
+ * Only the school/TK-SD-SMP-SMA units have guardian roles; the higher units
+ * serve adult students, so no guardian role exists for them.
  */
 export const PARENT_ROLE_BY_UNIT_TYPE: Partial<Record<UnitType, RoleCode>> = {
   [UnitType.TK_QURAN]: RoleCode.TKQ_ORANG_TUA,

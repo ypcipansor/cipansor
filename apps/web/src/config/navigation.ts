@@ -120,8 +120,6 @@ const STAFF_ROLES = [
   "SMPIT_BENDAHARA",
   "SMAQ_BENDAHARA",
   "PESANTREN_TATA_USAHA",
-  "PT_TATA_USAHA",
-  "PT_STAF_AKADEMIK",
   "PUSTAKAWAN",
   "PERAWAT",
   "KEAMANAN",
@@ -130,8 +128,6 @@ const STAFF_ROLES = [
   "BUSINESS_STAFF",
 ];
 
-// PT_MAHASISWA is a student too, but gets its own nav (ptMahasiswaNavigation)
-// rather than the pesantren/school one, so it is deliberately not listed here.
 const STUDENT_ROLES = ["SDIT_SISWA", "SMPIT_SISWA", "SMAQ_SISWA"];
 
 const PARENT_ROLES = [
@@ -168,15 +164,6 @@ const PESANTREN_ROLES = [
   ...PESANTREN_PENGASUHAN_ROLES,
 ];
 
-// Perguruan Tinggi. PT_TATA_USAHA and PT_STAF_AKADEMIK are staff (see
-// STAFF_ROLES); PT_ALUMNI is covered by ALUMNI_ROLES.
-const PT_PIMPINAN_ROLES = [
-  "PT_REKTOR",
-  "PT_WAKIL_REKTOR",
-  "PT_DEKAN",
-  "PT_KAPRODI",
-];
-
 // School committee — external oversight stakeholders, one per unit.
 const KOMITE_ROLES = [
   "TKQ_KOMITE",
@@ -188,7 +175,6 @@ const KOMITE_ROLES = [
 const ALUMNI_ROLES = [
   "SMPIT_ALUMNI",
   "SMAQ_ALUMNI",
-  "PT_ALUMNI",
 ];
 
 // Teacher-specific navigation
@@ -1875,191 +1861,6 @@ const pesantrenPengasuhanNavigation: NavGroup[] = [
   },
 ];
 
-// Perguruan Tinggi leadership (Rektor, Wakil Rektor, Dekan, Kaprodi).
-const ptPimpinanNavigation: NavGroup[] = [
-  {
-    title: "Ringkasan",
-    items: [
-      { title: "Dashboard", href: "/teacher", icon: LayoutDashboard },
-      { title: "Analitik", href: "/analytics", icon: BarChart3 },
-      { title: "Laporan", href: "/reports", icon: FileBarChart },
-    ],
-  },
-  {
-    title: "Akademik",
-    items: [
-      { title: "Kurikulum", href: "/curriculum", icon: BookOpen },
-      { title: "Kelas & Mata Kuliah", href: "/classes", icon: School },
-      { title: "Jadwal Kuliah", href: "/schedule", icon: Calendar },
-      { title: "Penilaian", href: "/assessment", icon: ClipboardList },
-      { title: "Presensi", href: "/attendance", icon: ClipboardCheck },
-    ],
-  },
-  {
-    title: "Kemahasiswaan",
-    items: [
-      { title: "Data Mahasiswa", href: "/students", icon: GraduationCap },
-      { title: "Organisasi Mahasiswa", href: "/student-org", icon: Users },
-      { title: "UKM & Ekstrakurikuler", href: "/extracurricular", icon: Drama },
-      { title: "Konseling", href: "/counseling", icon: HeartHandshake },
-    ],
-  },
-  {
-    title: "Penelitian & Pengabdian",
-    items: [
-      { title: "Penelitian", href: "/research", icon: Microscope },
-      { title: "Litbang", href: "/litbang", icon: FileBarChart },
-      { title: "Praktikum", href: "/practicum", icon: FlaskConical },
-      { title: "Perpustakaan", href: "/library", icon: Library },
-    ],
-  },
-  {
-    title: "Alumni & Sertifikasi",
-    items: [
-      { title: "Direktori Alumni", href: "/alumni", icon: Users },
-      { title: "Penempatan Karier", href: "/alumni/placement", icon: Briefcase },
-      { title: "Sertifikat", href: "/certificates", icon: Award },
-    ],
-  },
-  {
-    title: "Mutu",
-    items: [
-      { title: "Penjaminan Mutu", href: "/quality", icon: Shield },
-      {
-        title: "Aduan & Aspirasi",
-        href: "/quality/complaints",
-        icon: MessageSquareWarning,
-      },
-    ],
-  },
-  {
-    title: "Informasi",
-    items: [
-      { title: "E-Office (Persuratan)", href: "/e-office", icon: Mail },
-      { title: "Pengumuman", href: "/announcements", icon: Bell },
-    ],
-  },
-];
-
-// Perguruan Tinggi lecturers.
-const ptDosenNavigation: NavGroup[] = [
-  {
-    title: "Ringkasan",
-    items: [{ title: "Dashboard", href: "/teacher", icon: LayoutDashboard }],
-  },
-  {
-    title: "Mengajar",
-    items: [
-      { title: "Kelas & Mata Kuliah", href: "/classes", icon: School },
-      { title: "Jadwal Kuliah", href: "/schedule", icon: Calendar },
-      { title: "Presensi", href: "/attendance", icon: ClipboardCheck },
-      { title: "Tugas", href: "/assignments", icon: FileText },
-      { title: "Penilaian", href: "/assessment", icon: ClipboardList },
-      { title: "Mahasiswa", href: "/students", icon: GraduationCap },
-    ],
-  },
-  {
-    title: "Penelitian",
-    items: [
-      { title: "Penelitian", href: "/research", icon: Microscope },
-      { title: "Praktikum", href: "/practicum", icon: FlaskConical },
-      { title: "Perpustakaan", href: "/library", icon: Library },
-    ],
-  },
-  {
-    title: "Bimbingan",
-    items: [
-      { title: "Konseling", href: "/counseling", icon: HeartHandshake },
-      { title: "Portfolio Mahasiswa", href: "/portfolio", icon: FolderOpen },
-    ],
-  },
-  {
-    title: "Kinerja",
-    items: [
-      {
-        title: "Manajemen Kinerja",
-        href: "/kinerja",
-        icon: ClipboardPenLine,
-        children: [
-          {
-            title: "Perjanjian Kinerja",
-            href: "/kinerja/pk",
-            icon: ClipboardList,
-          },
-          {
-            title: "Evaluasi Periodik",
-            href: "/kinerja/evaluasi",
-            icon: ClipboardCheck,
-          },
-        ],
-      },
-    ],
-  },
-  {
-    title: "Informasi",
-    items: [
-      { title: "E-Office (Persuratan)", href: "/e-office", icon: Mail },
-      { title: "Pengumuman", href: "/announcements", icon: Bell },
-      {
-        title: "Aduan & Aspirasi",
-        href: "/quality/complaints",
-        icon: MessageSquareWarning,
-      },
-    ],
-  },
-];
-
-// Perguruan Tinggi students — distinct from the pesantren/school student nav
-// (no tahfidz/pesantren groups, adds UKM, praktikum and billing).
-const ptMahasiswaNavigation: NavGroup[] = [
-  {
-    title: "Ringkasan",
-    items: [{ title: "Dashboard", href: "/student", icon: LayoutDashboard }],
-  },
-  {
-    title: "Akademik",
-    items: [
-      { title: "Jadwal Kuliah", href: "/schedule", icon: Calendar },
-      { title: "Kelas & Mata Kuliah", href: "/classes", icon: School },
-      { title: "Tugas", href: "/assignments", icon: FileText },
-      { title: "Nilai", href: "/assessment", icon: ClipboardList },
-      { title: "Presensi", href: "/attendance", icon: ClipboardCheck },
-      { title: "Portfolio Saya", href: "/portfolio", icon: FolderOpen },
-    ],
-  },
-  {
-    title: "Kemahasiswaan",
-    items: [
-      { title: "Organisasi Mahasiswa", href: "/student-org", icon: Users },
-      { title: "UKM & Ekstrakurikuler", href: "/extracurricular", icon: Drama },
-      { title: "Praktikum", href: "/practicum", icon: FlaskConical },
-      { title: "Konseling", href: "/counseling", icon: HeartHandshake },
-    ],
-  },
-  {
-    title: "Sumber Daya",
-    items: [
-      { title: "Perpustakaan", href: "/library", icon: Library },
-      { title: "Penelitian", href: "/research", icon: Microscope },
-    ],
-  },
-  {
-    title: "Keuangan",
-    items: [{ title: "Dompet Digital", href: "/wallet", icon: Wallet }],
-  },
-  {
-    title: "Informasi",
-    items: [
-      { title: "Pengumuman", href: "/announcements", icon: Bell },
-      {
-        title: "Aduan & Aspirasi",
-        href: "/quality/complaints",
-        icon: MessageSquareWarning,
-      },
-    ],
-  },
-];
-
 // Komite Sekolah — external stakeholders. Oversight and transparency only,
 // no operational data entry.
 const komiteNavigation: NavGroup[] = [
@@ -2239,19 +2040,6 @@ export function getNavigationForRoleCode(roleCode: string): NavGroup[] {
     return pesantrenPengasuhanNavigation;
   }
 
-  // Perguruan Tinggi
-  if (PT_PIMPINAN_ROLES.includes(roleCode)) {
-    return ptPimpinanNavigation;
-  }
-
-  if (roleCode === "PT_DOSEN") {
-    return ptDosenNavigation;
-  }
-
-  if (roleCode === "PT_MAHASISWA") {
-    return ptMahasiswaNavigation;
-  }
-
   // Komite sekolah (external oversight) and alumni
   if (KOMITE_ROLES.includes(roleCode)) {
     return komiteNavigation;
@@ -2341,7 +2129,6 @@ export {
   PESANTREN_ROLES,
   PESANTREN_PIMPINAN_ROLES,
   PESANTREN_PENGASUHAN_ROLES,
-  PT_PIMPINAN_ROLES,
   KOMITE_ROLES,
   ALUMNI_ROLES,
   isAdminRole,

@@ -34,7 +34,7 @@ function navHrefs(roleCode: string): string[] {
   return hrefsOf(getNavigationForRoleCode(roleCode));
 }
 
-/** All 81 RoleCodes, taken from the demo-account catalogue (one per role). */
+/** All RoleCodes, taken from the demo-account catalogue (one per role). */
 const ALL_ROLE_CODES = DEMO_ACCOUNTS.map((a) => a.roleCode);
 
 describe("navigasi — filter roleCodes berjalan rekursif ke submenu", () => {
@@ -126,10 +126,6 @@ describe("rbac — legacy bucket derivation", () => {
     expect(deriveLegacyRole("MUSYRIFAH")).toBe("TEACHER");
     expect(deriveLegacyRole("MUHAFIDZAH")).toBe("TEACHER");
     expect(deriveLegacyRole("PESANTREN_TATA_USAHA")).toBe("STAFF");
-    // Perguruan Tinggi
-    expect(deriveLegacyRole("PT_REKTOR")).toBe("TEACHER");
-    expect(deriveLegacyRole("PT_MAHASISWA")).toBe("STUDENT");
-    expect(deriveLegacyRole("PT_TATA_USAHA")).toBe("STAFF");
     // Business units → STAFF, never an admin bucket
     expect(deriveLegacyRole("BUSINESS_MANAGER")).toBe("STAFF");
     expect(deriveLegacyRole("BUSINESS_STAFF")).toBe("STAFF");
@@ -284,12 +280,9 @@ describe("rbac — navigation and route access stay in sync", () => {
     [getNavigationForRoleCode("SMPIT_KEPALA_SEKOLAH"), "TEACHER"],
     [getNavigationForRoleCode("PESANTREN_PENGASUH"), "TEACHER"],
     [getNavigationForRoleCode("MUSYRIF"), "TEACHER"],
-    [getNavigationForRoleCode("PT_REKTOR"), "TEACHER"],
-    [getNavigationForRoleCode("PT_DOSEN"), "TEACHER"],
     [getNavigationForRoleCode("SMPIT_TATA_USAHA"), "STAFF"],
     [getNavigationForRoleCode("SDIT_KOMITE"), "STAFF"],
     [getNavigationForRoleCode("SMPIT_SISWA"), "STUDENT"],
-    [getNavigationForRoleCode("PT_MAHASISWA"), "STUDENT"],
     [getNavigationForRoleCode("SMPIT_ALUMNI"), "STUDENT"],
     [getNavigationForRoleCode("SMPIT_ORANG_TUA"), "PARENT"],
   ];
@@ -304,7 +297,7 @@ describe("rbac — navigation and route access stay in sync", () => {
     },
   );
 
-  it("gives every one of the 81 RoleCodes a real menu, not the stub", () => {
+  it("gives every RoleCode a real menu, not the stub", () => {
     // The fallback nav is Dashboard + Notifications + Settings. Any RoleCode
     // landing on it has simply been forgotten.
     const stubSize = 3;
@@ -349,9 +342,6 @@ describe("navigation — every menu link points at a page that exists", () => {
     "SMPIT_KEPALA_SEKOLAH",
     "PESANTREN_PENGASUH",
     "MUSYRIF",
-    "PT_REKTOR",
-    "PT_DOSEN",
-    "PT_MAHASISWA",
     "SMPIT_TATA_USAHA",
     "SDIT_KOMITE",
     "SMPIT_SISWA",
@@ -1000,10 +990,6 @@ describe("e-office menu coverage", () => {
     "PESANTREN_TATA_USAHA",
     "USTADZ",
     "MUSYRIF",
-    "PT_REKTOR",
-    "PT_DEKAN",
-    "PT_DOSEN",
-    "PT_TATA_USAHA",
     "PUSTAKAWAN",
     "PERAWAT",
   ];
@@ -1012,12 +998,10 @@ describe("e-office menu coverage", () => {
   const EXTERNAL = [
     "SMPIT_SISWA",
     "SMAQ_SISWA",
-    "PT_MAHASISWA",
     "SMPIT_ORANG_TUA",
     "TKQ_ORANG_TUA",
     "SMPIT_KOMITE",
     "SMPIT_ALUMNI",
-    "PT_ALUMNI",
   ];
 
   function hasEOffice(roleCode: string): boolean {
