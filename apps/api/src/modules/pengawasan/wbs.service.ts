@@ -4,7 +4,7 @@ import { WbsCategory, WbsTargetLevel, WbsStatus, WbsSenderType } from '@prisma/c
 import crypto from 'crypto';
 
 export interface CreatePublicWbsInput {
-  unitId?: string;
+  unitId?: string | null;
   category: WbsCategory;
   targetLevel: WbsTargetLevel;
   targetName?: string;
@@ -171,10 +171,8 @@ export class WbsService {
     let whereCondition: any = {};
 
     if (role === 'SUPER_ADMIN' || role === 'YAYASAN_PEMBINA') {
-      // Pembina has access to all reports (especially PENGAWAS_YAYASAN targets & CC oversight)
       whereCondition = {};
     } else if (role === 'YAYASAN_PENGAWAS') {
-      // Pengawas handles PENGURUS_YAYASAN targets, plus CC visibility over KEPALA_UNIT, STAF, SISWA
       whereCondition = {
         OR: [
           { primaryHandlerRole: 'YAYASAN_PENGAWAS' },
@@ -182,7 +180,6 @@ export class WbsService {
         ],
       };
     } else if (['YAYASAN_KETUA', 'YAYASAN_SEKRETARIS', 'YAYASAN_BENDAHARA', 'YAYASAN_ANGGOTA'].includes(role)) {
-      // Pengurus handles KEPALA_UNIT targets, plus CC visibility over STAF and SISWA
       whereCondition = {
         OR: [
           { primaryHandlerRole: 'YAYASAN_KETUA' },
@@ -190,7 +187,6 @@ export class WbsService {
         ],
       };
     } else {
-      // Unit heads / Unit admins handle STAF_PEGAWAI and SISWA_SANTRI in their unit
       whereCondition = {
         targetLevel: { in: ['STAF_PEGAWAI', 'SISWA_SANTRI'] },
         ...(unitId ? { unitId } : {}),
@@ -315,7 +311,6 @@ export class WbsService {
     }
 
     return prisma.$transaction(async (tx) => {
-      // 1. Create Forward Log
       await tx.wbsForwardLog.create({
         data: {
           reportId: id,
@@ -327,7 +322,6 @@ export class WbsService {
         },
       });
 
-      // 2. Update Primary Handler Role on Report
       const updated = await tx.wbsReport.update({
         where: { id },
         data: {
@@ -336,7 +330,6 @@ export class WbsService {
         },
       });
 
-      // 3. Add system comment in WBS history
       await tx.wbsComment.create({
         data: {
           reportId: id,

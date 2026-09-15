@@ -563,11 +563,28 @@ export class PengawasanService {
     // Find a recipient user with Pembina role or Super Admin
     const pembinaUser = await prisma.user.findFirst({
       where: {
-        role: { in: ['YAYASAN_PEMBINA', 'SUPER_ADMIN'] },
         isActive: true,
+        OR: [
+          { role: 'SUPER_ADMIN' },
+          { userRoles: { some: { role: { code: 'YAYASAN_PEMBINA' } } } },
+        ],
       },
+      select: { id: true, unitId: true },
+    });
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { unitId: true },
+    });
+
+    const targetUnit = await prisma.unit.findFirst({
       select: { id: true },
     });
+
+    const unitId = user?.unitId || targetUnit?.id || pembinaUser?.unitId;
+    if (!unitId) {
+      throw Errors.badRequest('Unit ID required for correspondence creation');
+    }
 
     const letterContent = `
 LAPORAN PENGAWASAN PERIODIK YAYASAN PESANTREN CIPANSOR
@@ -584,15 +601,18 @@ ${data.findingsSummary || 'Semua audit internal dan tindak lanjut temuan terpant
 ${data.recommendations || 'Diharapkan Pengurus Yayasan dan Kepala Unit terus meningkatkan kepatuhan SOP dan efisiensi keuangan.'}
     `.trim();
 
-    // Generate letter classification e.g. "LAPORAN_PENGAWASAN" or default
     const defaultClassification = await prisma.filingClassification.findFirst();
 
     const letter = await prisma.letter.create({
       data: {
-        title: `[Laporan Pengawasan] ${data.title} (${data.period})`,
+        unitId,
+        direction: 'OUTGOING',
+        type: 'SURAT_DINAS',
+        subject: `[Laporan Pengawasan] ${data.title} (${data.period})`,
+        content: letterContent,
+        date: new Date(),
         letterNumber: `LAP-PENGAWAS/${data.period.replace(/\s+/g, '-')}/${Date.now().toString().slice(-4)}`,
-        status: 'DISPATCHED',
-        type: 'SURAT_OUTGOING',
+        status: 'SENT',
         createdById: userId,
         classificationId: defaultClassification?.id,
         recipients: pembinaUser
@@ -615,7 +635,7 @@ ${data.recommendations || 'Diharapkan Pengurus Yayasan dan Kepala Unit terus men
     return {
       letterId: letter.id,
       letterNumber: letter.letterNumber,
-      title: letter.title,
+      title: letter.subject,
       status: letter.status,
       contentPreview: letterContent,
     };
