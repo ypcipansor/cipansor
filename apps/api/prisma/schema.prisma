@@ -577,6 +577,9 @@ model User {
   // Business Unit Management
   managedBusinessUnits BusinessUnit[]        @relation("BusinessUnitManager")
 
+  // SSO identity links (Google Workspace / Microsoft Entra ID)
+  identityProviders IdentityProvider[]
+
   @@index([email])
   @@index([role])
   @@index([unitId])
@@ -2174,6 +2177,37 @@ model AuditLog {
   @@index([entity])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+/// SSO provider a user has linked. An enum (not a String) because AGENTS.md
+/// makes Prisma the source of truth for DB enums, and the set is closed:
+/// the API's `ssoLoginSchema` accepts exactly these two values.
+enum SSOProvider {
+  GOOGLE
+  MICROSOFT
+}
+
+/// IdentityProvider - an SSO subject (Google `sub`, Microsoft `oid`) linked to
+/// a local User.
+///
+/// The link is by provider subject, not by e-mail: a provider-side address
+/// change must not break an established login, and two addresses must never
+/// resolve to the same account by accident.
+model IdentityProvider {
+  id                 String      @id @default(uuid())
+  userId             String      @map("user_id")
+  provider           SSOProvider
+  providerSubjectId  String      @map("provider_subject_id")
+  providerEmail      String?     @map("provider_email")
+  linkedAt           DateTime    @default(now()) @map("linked_at")
+  lastLoginAt        DateTime?   @map("last_login_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerSubjectId])
+  @@index([userId])
+  @@map("identity_providers")
 }
 
 // =====================================

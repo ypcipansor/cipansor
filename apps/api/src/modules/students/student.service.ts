@@ -9,6 +9,7 @@ import { assertStudentIdentifiersAvailable } from './student-identifiers';
 import { assignStudentNis } from '@/utils/student-nis';
 import { UserRole, Gender, Prisma } from '@prisma/client';
 import type { ListStudentsQuery, CreateStudentInput, UpdateStudentInput } from './student.schema';
+import { normalizeEmail } from '@/utils/email';
 import {
   recordUnitEnrollmentFromClass,
   ensureUnitEnrollment,
@@ -400,7 +401,7 @@ export class StudentService {
     }
 
     // Check if email exists (if provided)
-    const emailToCheck = input.email || `${input.nis}@student.cipansor.local`;
+    const emailToCheck = normalizeEmail(input.email || `${input.nis}@student.cipansor.local`);
     const existingEmail = await prisma.user.findFirst({
       where: { email: emailToCheck },
     });
@@ -427,7 +428,7 @@ export class StudentService {
     const unitId = input.unitId; // TypeScript narrowing
 
     // Generate email if not provided
-    const email = input.email || `${input.nis}@student.cipansor.local`;
+    const email = normalizeEmail(input.email || `${input.nis}@student.cipansor.local`);
 
     // Whether this pupil gets an account at all. TK Qur'an pupils never do —
     // they are four to six years old — so the row created below is an identity

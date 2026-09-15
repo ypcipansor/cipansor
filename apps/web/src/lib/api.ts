@@ -14,6 +14,9 @@ import {
   User,
   LoginRequest,
   LoginResponse,
+  SSOLoginRequest,
+  SSOConfigResponse,
+  SSOLoginResult,
   UserRoleAssignment,
   Role,
   RoleAssignment,
@@ -26,6 +29,9 @@ import {
   TahfidzStudentSummary,
   CreateTahfidzInput,
   UpdateTahfidzInput,
+  GetSasUrlRequest,
+  GetSasUrlResult,
+  UploadFileResult,
 } from "@cipansor/shared";
 
 // 2FA Types
@@ -204,7 +210,8 @@ api.interceptors.response.use(
         // prospective parent to the staff login screen over that 401 is far
         // worse than letting the caller render its own empty state.
         const hadSession =
-          typeof window !== "undefined" && !!localStorage.getItem("accessToken");
+          typeof window !== "undefined" &&
+          !!localStorage.getItem("accessToken");
         if (!hadSession) {
           return Promise.reject(error);
         }
@@ -274,6 +281,12 @@ api.interceptors.response.use(
 export const authApi = {
   login: (data: LoginRequest) =>
     api.post<ApiResponse<LoginResponse>>("/auth/login", data),
+
+  ssoLogin: (data: SSOLoginRequest) =>
+    api.post<ApiResponse<SSOLoginResult>>("/auth/sso/login", data),
+
+  getSSOConfig: () =>
+    api.get<ApiResponse<SSOConfigResponse>>("/auth/sso/config"),
 
   logout: () => api.post("/auth/logout"),
 
@@ -370,22 +383,37 @@ export const tahfidzApi = {
 };
 
 // General Upload API
+//
+// The upload response deliberately separates the STABLE reference from any
+// TEMPORARY access link: consumers must PERSIST `url` (the raw blob URL for
+// Azure, or a `/uploads/...` path for local storage — neither carries an
+// expiring SAS), and use `downloadUrl` only to open the file immediately after
+// upload. To display or download a persisted private reference later, call
+// `sasUrl` to mint a fresh SAS on demand.
+//
+// The upload response contract (UploadFileResult) lives in @cipansor/shared so
+// the API and the web client can never drift apart.
+
 export const uploadApi = {
   uploadFile: async (file: File) => {
     const formData = new FormData();
     formData.append("file", file);
-    return api.post<
-      ApiResponse<{
-        url: string;
-        filename: string;
-        mimetype: string;
-        size: number;
-      }>
-    >("/upload", formData, {
+    return api.post<ApiResponse<UploadFileResult>>("/upload", formData, {
       headers: {
         "Content-Type": "multipart/form-data",
       },
     });
+  },
+  /**
+   * Mint a fresh short-lived SAS for a persisted stable URL (the raw blob URL
+   * stored via {@link uploadFile}). Private blobs return 403 without a SAS, and
+   * any SAS persisted earlier has expired — so call this at display/download
+   * time. Local /uploads URLs and public blob URLs return `{ url }` unchanged
+   * (no `downloadUrl`).
+   */
+  sasUrl: async (url: string) => {
+    const body: GetSasUrlRequest = { url };
+    return api.post<ApiResponse<GetSasUrlResult>>("/upload/sas", body);
   },
 };
 

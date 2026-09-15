@@ -179,11 +179,35 @@ export const handleSingleUpload = (fieldName: string) => {
             });
           }
 
-          // Construct public URL
-          const protocol = req.protocol;
-          const host = req.get('host');
+          // Construct public URL (or Azure Blob URL if configured)
           const filename = req.file.filename;
-          req.body.fileUrl = `${protocol}://${host}/uploads/${filename}`;
+          const mimeType = req.file.mimetype;
+          const localPath = req.file.path;
+
+          const { uploadToCloudStorage } = await import('@/utils/cloud-storage');
+          let storageResult;
+          try {
+            storageResult = await uploadToCloudStorage(localPath, filename, mimeType);
+          } catch (error) {
+            // A failed cloud upload must not leave the staging file behind;
+            // repeated failures would otherwise fill the upload volume.
+            await fs.promises.unlink(localPath).catch(() => undefined);
+            throw error;
+          }
+
+          if (storageResult.provider === 'azure') {
+            req.body.fileUrl = storageResult.url;
+            // Container/blob name ride alongside so the upload controller can
+            // mint a SAS for a private container instead of the raw blob URL.
+            req.body.fileContainerName = storageResult.containerName;
+            req.body.fileBlobName = storageResult.blobName;
+            // Clean up staging file on local disk after successful Azure Blob upload
+            await fs.promises.unlink(localPath).catch(() => undefined);
+          } else {
+            const protocol = req.protocol;
+            const host = req.get('host');
+            req.body.fileUrl = `${protocol}://${host}/uploads/${filename}`;
+          }
 
           // Also map other metadata if needed
           if (!req.body.fileName) {

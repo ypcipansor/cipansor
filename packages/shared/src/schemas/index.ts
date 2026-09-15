@@ -2,6 +2,7 @@ export * from "./student";
 export * from "./student-compliance";
 export * from "./admissions";
 export * from "./correspondence";
+export * from "./auth";
 export * from "./assessment";
 export * from "./raport-merdeka";
 export * from "./performance";

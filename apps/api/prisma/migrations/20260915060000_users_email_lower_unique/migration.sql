@@ -1,0 +1,15 @@
+-- Alamat e-mail harus unik tanpa memandang huruf besar/kecil.
+--
+-- `users_email_key` (dari `@unique` di schema) membandingkan string apa
+-- adanya, jadi `Guru@cipansor.or.id` dan `guru@cipansor.or.id` lolos sebagai
+-- dua baris. Login SSO menerima e-mail dengan huruf apa pun dari penyedia
+-- identitas, sehingga akun yang sama bisa gagal ditemukan. Indeks fungsional
+-- ini menutup celah itu di tingkat basis data, bukan hanya di kode penulis.
+--
+-- Penulisan baru sudah dinormalkan lewat `utils/email.ts`. Indeks ini adalah
+-- jaring pengaman untuk penulis yang belum/tidak melewatinya.
+--
+-- Dijalankan setelah `db:normalize-emails`: bila masih ada dua baris dengan
+-- `lower(email)` yang sama, pembuatan indeks ini gagal — dan itu memang
+-- tujuannya, karena kegagalan itu sendiri adalah buktinya.
+CREATE UNIQUE INDEX "users_email_lower_key" ON "users" (lower(trim(email)));

@@ -48,6 +48,10 @@ const {
       userRoleAssignment: {
         create: vi.fn(),
       },
+      // Every login attempt writes one audit row (see AuthService.recordLoginAudit).
+      auditLog: {
+        create: vi.fn(),
+      },
       // register() runs user + role-assignment creation in a transaction.
       $transaction: vi.fn(),
     },
@@ -76,7 +80,9 @@ const {
       UNIT_ADMIN: 'UNIT_ADMIN',
     },
     mockGenerateSecret: vi.fn(() => 'GENERATED_SECRET'),
-    mockGenerateURI: vi.fn(() => 'otpauth://totp/Cipansor%20App:test@example.com?secret=GENERATED_SECRET'),
+    mockGenerateURI: vi.fn(
+      () => 'otpauth://totp/Cipansor%20App:test@example.com?secret=GENERATED_SECRET'
+    ),
     mockVerifyOtp: vi.fn(),
     mockToDataURL: vi.fn().mockResolvedValue('data:image/png;base64,QRCODE'),
   };
@@ -245,6 +251,56 @@ describe('AuthService', () => {
 
       await expect(authService.login(validLoginInput)).rejects.toThrow('Invalid email or password');
     });
+
+    it('records a successful password login in the audit log', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(mockUser);
+      mockPrisma.academicYear.findFirst.mockResolvedValue({ id: 'ay-1' });
+      mockComparePassword.mockResolvedValue(true);
+      mockPrisma.refreshToken.create.mockResolvedValue({});
+      mockPrisma.user.update.mockResolvedValue(mockUser);
+
+      await authService.login(validLoginInput, {
+        ipAddress: '198.51.100.4',
+        userAgent: 'vitest',
+      });
+
+      expect(mockPrisma.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            action: 'LOGIN',
+            entity: 'User',
+            entityId: 'user-1',
+            userId: 'user-1',
+            ipAddress: '198.51.100.4',
+            userAgent: 'vitest',
+          }),
+        })
+      );
+    });
+
+    it('records a failed password login with a reason and no attempted email', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(null);
+
+      await expect(authService.login(validLoginInput)).rejects.toThrow();
+
+      expect(mockPrisma.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            action: 'LOGIN',
+            entity: 'User',
+            entityId: null,
+            userId: null,
+            newValues: expect.objectContaining({
+              method: 'password',
+              success: false,
+              reason: 'user_not_found',
+            }),
+          }),
+        })
+      );
+      const call = (mockPrisma.auditLog.create as any).mock.calls.at(-1)[0];
+      expect(JSON.stringify(call)).not.toContain('test@example.com');
+    });
   });
 
   describe('register', () => {
@@ -301,6 +357,41 @@ describe('AuthService', () => {
           RoleCode.SUPER_ADMIN
         )
       ).rejects.toThrow('Email already registered');
+    });
+
+    it('persists the email lower-cased even when the caller sends mixed case', async () => {
+      setupLookups(RoleCode.SDIT_GURU);
+      mockPrisma.user.findFirst.mockResolvedValue(null);
+      mockPrisma.user.create.mockResolvedValue({
+        id: 'new-user-id',
+        name: baseInput.name,
+        email: 'newuser@example.com',
+        role: UserRole.TEACHER,
+        unitId: 'unit-1',
+        passwordHash: 'hashed-password',
+        isActive: true,
+      });
+      (mockPrisma.userRoleAssignment.create as any).mockResolvedValue({ id: 'ura-1' });
+      mockPrisma.academicYear.findFirst.mockResolvedValue({ id: 'ay-1' });
+
+      await authService.register(
+        {
+          ...baseInput,
+          email: 'NewUser@Example.COM',
+          roleCode: RoleCode.SDIT_GURU,
+          unitId: 'unit-1',
+        },
+        RoleCode.SUPER_ADMIN
+      );
+
+      expect(mockPrisma.user.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { email: 'newuser@example.com' } })
+      );
+      expect(mockPrisma.user.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ email: 'newuser@example.com' }),
+        })
+      );
     });
 
     it('should prevent non-super-admin from creating super-admin', async () => {

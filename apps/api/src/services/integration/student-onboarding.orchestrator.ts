@@ -10,6 +10,7 @@ import {
   recordUnitEnrollmentFromClass,
   ensureUnitEnrollment,
 } from '@/utils/student-unit-history';
+import { normalizeEmail } from '@/utils/email';
 
 /**
  * The per-unit student RoleCode that grants the onboarding user a real role
@@ -238,8 +239,12 @@ export class StudentOnboardingOrchestrator {
       // two different registrants both entering a student's email could otherwise
       // claim (and recycle) that student's User + Student record.
       const realEmail =
-        registrant.email && registrant.email.trim() !== '' ? registrant.email.trim() : null;
-      const fallbackBase = `${cleanName}.${nis.toLowerCase()}@student.cipansor.local`;
+        registrant.email && registrant.email.trim() !== ''
+          ? normalizeEmail(registrant.email.trim())
+          : null;
+      const fallbackBase = normalizeEmail(
+        `${cleanName}.${nis.toLowerCase()}@student.cipansor.local`
+      );
 
       // Resolve the email actually used for the *new* student account.
       let email: string;
@@ -444,7 +449,7 @@ export class StudentOnboardingOrchestrator {
         } | null = null;
         if (registrant.parentEmail) {
           matchedParent = await tx.user.findUnique({
-            where: { email: registrant.parentEmail },
+            where: { email: normalizeEmail(registrant.parentEmail) },
           });
         }
 
@@ -474,7 +479,9 @@ export class StudentOnboardingOrchestrator {
           // again would violate the unique-email constraint — and pinning the new
           // guardian onto a stranger's address is exactly the takeover we forbid.
           // Fall back to a .local address, same policy as the student path.
-          const parentRealEmail = registrant.parentEmail?.trim();
+          const parentRealEmail = registrant.parentEmail
+            ? normalizeEmail(registrant.parentEmail.trim())
+            : undefined;
           const parentLocalBase = registrant.parentPhone
             ? `parent.${registrant.parentPhone.replace(/[^a-z0-9]/gi, '').toLowerCase()}@parent.cipansor.local`
             : `parent.guardian@parent.cipansor.local`;

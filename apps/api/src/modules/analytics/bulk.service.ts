@@ -8,6 +8,7 @@ import { Prisma, UserRole } from '@prisma/client';
 import { logger } from '@/lib/logger';
 import { createBulkNotifications } from '@/modules/notifications/notifications.service';
 import { NotificationType } from '@prisma/client';
+import { normalizeEmail } from '@/utils/email';
 import { CLASS_ENROLLMENT_STATUS, STUDENT_STATUS } from '@cipansor/shared';
 import { assignStudentNis } from '@/utils/student-nis';
 
@@ -76,7 +77,7 @@ export async function bulkImportStudents(
       await (prisma as any).$transaction(async (tx: any) => {
         const user = await tx.user.create({
           data: {
-            email: row.email || `${row.nis}@student.cipansor.or.id`,
+            email: normalizeEmail(row.email || `${row.nis}@student.cipansor.or.id`),
             name: row.name,
             phone: row.phone,
             role: 'STUDENT',
