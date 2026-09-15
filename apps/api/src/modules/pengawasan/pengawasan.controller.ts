@@ -2,6 +2,8 @@ import { Request, Response } from 'express';
 import { asyncHandler } from '@/middleware/error';
 import { Errors } from '@/middleware/error';
 import { pengawasanService } from './pengawasan.service';
+import { wbsService } from './wbs.service';
+import { boardSuspensionService } from './board-suspension.service';
 import {
   createAuditSchema,
   updateAuditSchema,
@@ -10,6 +12,15 @@ import {
   createFollowUpSchema,
   updateFollowUpSchema,
   listAuditQuerySchema,
+  createPublicWbsSchema,
+  trackPublicWbsSchema,
+  addPublicWbsCommentSchema,
+  updateWbsStatusSchema,
+  forwardWbsReportSchema,
+  addWbsHandlerCommentSchema,
+  createBoardSuspensionSchema,
+  liftBoardSuspensionSchema,
+  submitPeriodicReportSchema,
 } from './pengawasan.validation';
 import { UserRole } from '@prisma/client';
 
@@ -28,7 +39,6 @@ export const listAudits = asyncHandler(async (req: Request, res: Response) => {
   if (!unitId && !isPrivilegedUser) throw Errors.unauthorized('Unit ID required');
   const targetUnitId =
     isPrivilegedUser && req.query.unitId ? String(req.query.unitId) : unitId ?? undefined;
-  // A global SUPER_ADMIN (no assigned unit) gets the cross-unit view
   if (!targetUnitId && req.user?.role !== UserRole.SUPER_ADMIN) {
     throw Errors.badRequest('Unit ID required');
   }
@@ -153,11 +163,6 @@ export const getAuditSuggestions = asyncHandler(async (req: Request, res: Respon
 
   if (!unitId && !isPrivilegedUser) throw Errors.unauthorized('Unit ID required');
 
-  // Privileged users can:
-  //   - pass ?unitId=<uuid> to scope to a specific unit
-  //   - pass ?unitId=all   to get cross-unit suggestions (global view)
-  //   - omit ?unitId       to default to their own token unitId (or cross-unit if token has none)
-  // Non-privileged users always use their token unitId.
   let targetUnitId: string | undefined = unitId ?? undefined;
   if (isPrivilegedUser) {
     const queryUnitId = req.query.unitId ? String(req.query.unitId) : undefined;
@@ -166,9 +171,136 @@ export const getAuditSuggestions = asyncHandler(async (req: Request, res: Respon
     } else if (queryUnitId) {
       targetUnitId = queryUnitId;
     }
-    // else: no query param → falls through to token unitId (may be undefined for tokenless admins)
   }
 
   const suggestions = await pengawasanService.suggestAuditSchedules(targetUnitId);
   res.json({ success: true, data: suggestions });
+});
+
+// ==================== PUBLIC WBS CONTROLLERS ====================
+
+export const createPublicWbsReport = asyncHandler(async (req: Request, res: Response) => {
+  const body = createPublicWbsSchema.parse(req.body);
+  const result = await wbsService.createPublicReport(body);
+  res.status(201).json({ success: true, data: result });
+});
+
+export const getPublicWbsTracking = asyncHandler(async (req: Request, res: Response) => {
+  const body = trackPublicWbsSchema.parse(req.body);
+  const result = await wbsService.getPublicTracking(body.ticketCode, body.trackingToken);
+  res.json({ success: true, data: result });
+});
+
+export const addPublicWbsComment = asyncHandler(async (req: Request, res: Response) => {
+  const body = addPublicWbsCommentSchema.parse(req.body);
+  const result = await wbsService.addPublicComment(
+    body.ticketCode,
+    body.trackingToken,
+    body.message,
+    body.attachments
+  );
+  res.status(201).json({ success: true, data: result });
+});
+
+// ==================== AUTHENTICATED WBS CONTROLLERS ====================
+
+export const listWbsReports = asyncHandler(async (req: Request, res: Response) => {
+  const actor = {
+    roleCode: req.user?.roleCode || req.user?.role,
+    unitId: req.user?.unitId,
+  };
+  const reports = await wbsService.getReportsForUser(actor);
+  res.json({ success: true, data: reports });
+});
+
+export const getWbsReportById = asyncHandler(async (req: Request, res: Response) => {
+  const report = await wbsService.getReportById(req.params.id);
+  res.json({ success: true, data: report });
+});
+
+export const updateWbsStatus = asyncHandler(async (req: Request, res: Response) => {
+  const body = updateWbsStatusSchema.parse(req.body);
+  const user = {
+    id: req.user?.sub || '',
+    name: req.user?.email || 'Handler',
+  };
+  const updated = await wbsService.updateReportStatus(req.params.id, body, user);
+  res.json({ success: true, data: updated });
+});
+
+export const forwardWbsReport = asyncHandler(async (req: Request, res: Response) => {
+  const body = forwardWbsReportSchema.parse(req.body);
+  const actor = {
+    id: req.user?.sub || '',
+    name: req.user?.email || 'Handler',
+    roleCode: req.user?.roleCode || req.user?.role,
+  };
+  const updated = await wbsService.forwardReport(req.params.id, body, actor);
+  res.json({ success: true, data: updated });
+});
+
+export const addHandlerWbsComment = asyncHandler(async (req: Request, res: Response) => {
+  const body = addWbsHandlerCommentSchema.parse(req.body);
+  const user = {
+    id: req.user?.sub || '',
+    name: req.user?.email || 'Handler',
+    roleCode: req.user?.roleCode || req.user?.role,
+  };
+  const comment = await wbsService.addHandlerComment(req.params.id, body.message, body.attachments, user);
+  res.status(201).json({ success: true, data: comment });
+});
+
+// ==================== BOARD MEMBER SUSPENSION CONTROLLERS ====================
+
+export const createBoardSuspension = asyncHandler(async (req: Request, res: Response) => {
+  const body = createBoardSuspensionSchema.parse(req.body);
+  const suspendedById = req.user?.sub;
+  if (!suspendedById) throw Errors.unauthorized('User context missing');
+
+  const suspension = await boardSuspensionService.suspendBoardMember(body, suspendedById);
+  res.status(201).json({ success: true, data: suspension });
+});
+
+export const liftBoardSuspension = asyncHandler(async (req: Request, res: Response) => {
+  const body = liftBoardSuspensionSchema.parse(req.body);
+  const liftedById = req.user?.sub;
+  if (!liftedById) throw Errors.unauthorized('User context missing');
+
+  const updated = await boardSuspensionService.liftBoardSuspension(req.params.id, liftedById, body.liftReason);
+  res.json({ success: true, data: updated });
+});
+
+export const listBoardSuspensions = asyncHandler(async (_req: Request, res: Response) => {
+  const suspensions = await boardSuspensionService.getBoardSuspensions();
+  res.json({ success: true, data: suspensions });
+});
+
+// ==================== FINANCIAL OVERSIGHT CONTROLLERS ====================
+
+export const getFinancialArrears = asyncHandler(async (req: Request, res: Response) => {
+  const isExecutiveOversight =
+    req.user?.role === UserRole.SUPER_ADMIN ||
+    ['YAYASAN_PEMBINA', 'YAYASAN_PENGAWAS', 'YAYASAN_KETUA', 'YAYASAN_BENDAHARA'].includes(req.user?.roleCode || '');
+
+  let targetUnitId: string | undefined = req.user?.unitId ?? undefined;
+
+  if (isExecutiveOversight && req.query.unitId) {
+    const qUnit = String(req.query.unitId);
+    targetUnitId = qUnit === 'all' ? undefined : qUnit;
+  }
+
+  const data = await pengawasanService.getFinancialArrears(targetUnitId);
+  res.json({ success: true, data });
+});
+
+// ==================== PERIODIC OVERSIGHT REPORT CONTROLLERS ====================
+
+export const submitPeriodicReportToEOffice = asyncHandler(async (req: Request, res: Response) => {
+  const body = submitPeriodicReportSchema.parse(req.body);
+  const userId = req.user?.sub;
+  if (!userId) throw Errors.unauthorized('User context missing');
+  const userRole = req.user?.roleCode || req.user?.role || 'YAYASAN_PENGAWAS';
+
+  const result = await pengawasanService.submitPeriodicReportToEOffice(body, userId, userRole);
+  res.status(201).json({ success: true, data: result });
 });

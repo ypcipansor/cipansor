@@ -172,7 +172,7 @@ export async function findTeacherIdForUser(userId: string): Promise<string | nul
  * Authentication middleware - verifies JWT token
  * Rejects temporary 2FA tokens
  */
-export function authenticate(req: Request, res: Response, next: NextFunction) {
+export async function authenticate(req: Request, res: Response, next: NextFunction) {
   try {
     const authHeader = req.headers.authorization;
 
@@ -194,6 +194,15 @@ export function authenticate(req: Request, res: Response, next: NextFunction) {
 
     if (payload.isTemp) {
       throw Errors.unauthorized('2FA Verification Required');
+    }
+
+    const userState = await prisma.user.findUnique({
+      where: { id: payload.sub },
+      select: { isActive: true, deletedAt: true },
+    });
+
+    if (!userState || !userState.isActive || userState.deletedAt) {
+      throw Errors.unauthorized('Akun Anda non-aktif atau telah dibekukan.');
     }
 
     req.user = buildReqUser(payload);

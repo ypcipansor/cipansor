@@ -1,7 +1,8 @@
 "use client";
-import { MainLayout } from "@/components/layout";
 
-import { useState } from "react";
+import React, { useState } from "react";
+import Link from "next/link";
+import { MainLayout } from "@/components/layout";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -11,47 +12,32 @@ import {
   useUpdateAudit,
   useDeleteAudit,
   useCreateFinding,
-  useCreateFollowUp,
+  useWbsReports,
+  useUpdateWbsStatus,
+  useForwardWbsReport,
+  useAddWbsHandlerComment,
+  useBoardSuspensions,
+  useCreateBoardSuspension,
+  useLiftBoardSuspension,
+  useFinancialArrears,
+  useSubmitPeriodicReportToEOffice,
 } from "@/hooks/use-pengawasan";
 import { PageHeader } from "@/components/shared/page-header";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Pencil, Trash2, AlertTriangle, ShieldCheck, Filter, X } from "lucide-react";
+import { Plus, Pencil, Trash2, AlertTriangle, ShieldCheck, Filter, X, Send, Lock, ArrowRight, UserX, FileText, DollarSign, Users, RefreshCw, CheckCircle2 } from "lucide-react";
+import { safeFormat } from "@/lib/date";
+import { id as localeId } from "date-fns/locale";
 
 // ─── Schemas ────────────────────────────────────────
 const auditFormSchema = z.object({
@@ -72,9 +58,21 @@ const findingFormSchema = z.object({
   recommendation: z.string().optional(),
 });
 
-const followUpFormSchema = z.object({
-  action: z.string().min(5, "Tindakan wajib minimal 5 karakter"),
-  dueDate: z.string().optional(),
+const boardSuspensionSchema = z.object({
+  userId: z.string().min(1, "Pengurus yang dibekukan wajib dipilih"),
+  skNumber: z.string().min(3, "Nomor SK wajib diisi"),
+  auditReason: z.string().min(10, "Alasan audit minimal 10 karakter"),
+  documentUrl: z.string().optional(),
+  plhUserId: z.string().optional(),
+  plhRoleCode: z.string().optional(),
+});
+
+const periodicReportSchema = z.object({
+  title: z.string().min(3, "Judul laporan wajib diisi"),
+  period: z.string().min(2, "Periode laporan wajib diisi"),
+  executiveSummary: z.string().min(10, "Ringkasan eksekutif minimal 10 karakter"),
+  findingsSummary: z.string().optional(),
+  recommendations: z.string().optional(),
 });
 
 type AuditFormValues = z.infer<typeof auditFormSchema>;
@@ -96,7 +94,15 @@ const severityColor: Record<string, string> = {
 
 const auditTypes = ["Akademik", "Keuangan", "Operasional", "Kepatuhan", "Tata Kelola"];
 
-// ─── Create Audit Dialog ────────────────────────────
+const wbsStatusBadges: Record<string, { label: string; color: string }> = {
+  DIAJUKAN: { label: "Diajukan", color: "bg-blue-100 text-blue-800 border-blue-300" },
+  DALAM_PENYELIDIKAN: { label: "Dalam Penyelidikan", color: "bg-purple-100 text-purple-800 border-purple-300" },
+  DITINDAKLANJUTI: { label: "Ditindaklanjuti", color: "bg-amber-100 text-amber-800 border-amber-300" },
+  SELESAI: { label: "Selesai", color: "bg-emerald-100 text-emerald-800 border-emerald-300" },
+  TIDAK_DAPAT_DITINDAKLANJUTI: { label: "Tidak Dapat Ditindaklanjuti", color: "bg-slate-200 text-slate-800 border-slate-300" },
+};
+
+// ─── Audit Dialogs ────────────────────────────
 function AuditFormDialog({ editData, onClose }: { editData?: any; onClose: () => void }) {
   const createAudit = useCreateAudit();
   const updateAudit = useUpdateAudit();
@@ -141,7 +147,7 @@ function AuditFormDialog({ editData, onClose }: { editData?: any; onClose: () =>
           <FormField control={form.control} name="title" render={({ field }) => (
             <FormItem>
               <FormLabel>Judul Audit</FormLabel>
-              <FormControl><Input placeholder="cth: Audit Keuangan Q1 2025" {...field} /></FormControl>
+              <FormControl><Input placeholder="cth: Audit Keuangan Q1 2026" {...field} /></FormControl>
               <FormMessage />
             </FormItem>
           )} />
@@ -173,13 +179,6 @@ function AuditFormDialog({ editData, onClose }: { editData?: any; onClose: () =>
               <FormMessage />
             </FormItem>
           )} />
-          <FormField control={form.control} name="description" render={({ field }) => (
-            <FormItem>
-              <FormLabel>Catatan (Opsional)</FormLabel>
-              <FormControl><Textarea placeholder="Catatan tambahan…" rows={2} {...field} /></FormControl>
-              <FormMessage />
-            </FormItem>
-          )} />
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="outline" onClick={onClose}>Batal</Button>
             <Button type="submit" disabled={isPending}>
@@ -192,7 +191,6 @@ function AuditFormDialog({ editData, onClose }: { editData?: any; onClose: () =>
   );
 }
 
-// ─── Add Finding Dialog ─────────────────────────────
 function AddFindingDialog({ auditId, onClose }: { auditId: string; onClose: () => void }) {
   const createFinding = useCreateFinding();
   const form = useForm<z.infer<typeof findingFormSchema>>({
@@ -208,7 +206,7 @@ function AddFindingDialog({ auditId, onClose }: { auditId: string; onClose: () =
   return (
     <DialogContent className="sm:max-w-[560px]">
       <DialogHeader>
-        <DialogTitle>Tambah Temuan</DialogTitle>
+        <DialogTitle>Tambah Temuan Audit</DialogTitle>
         <DialogDescription>Catat temuan audit beserta tingkat keparahan.</DialogDescription>
       </DialogHeader>
       <Form {...form}>
@@ -223,7 +221,7 @@ function AddFindingDialog({ auditId, onClose }: { auditId: string; onClose: () =
             )} />
             <FormField control={form.control} name="severity" render={({ field }) => (
               <FormItem>
-                <FormLabel>Tingkat</FormLabel>
+                <FormLabel>Tingkat Severity</FormLabel>
                 <Select onValueChange={field.onChange} defaultValue={field.value}>
                   <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                   <SelectContent>
@@ -258,13 +256,6 @@ function AddFindingDialog({ auditId, onClose }: { auditId: string; onClose: () =
               <FormMessage />
             </FormItem>
           )} />
-          <FormField control={form.control} name="recommendation" render={({ field }) => (
-            <FormItem>
-              <FormLabel>Rekomendasi (Opsional)</FormLabel>
-              <FormControl><Textarea placeholder="Rekomendasi perbaikan…" rows={2} {...field} /></FormControl>
-              <FormMessage />
-            </FormItem>
-          )} />
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="outline" onClick={onClose}>Batal</Button>
             <Button type="submit" disabled={createFinding.isPending}>
@@ -277,7 +268,7 @@ function AddFindingDialog({ auditId, onClose }: { auditId: string; onClose: () =
   );
 }
 
-// ─── Main Page ──────────────────────────────────────
+// ─── Main Component ──────────────────────────────────
 function PengawasanPageContent() {
   const [filterStatus, setFilterStatus] = useState<string | undefined>();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -285,173 +276,651 @@ function PengawasanPageContent() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [findingAuditId, setFindingAuditId] = useState<string | null>(null);
 
-  const { data: audits, isLoading } = useAudits(
+  // WBS States
+  const [selectedWbs, setSelectedWbs] = useState<any>(null);
+  const [forwardRole, setForwardRole] = useState<string>("YAYASAN_KETUA");
+  const [forwardReason, setForwardReason] = useState<string>("");
+  const [forwardDialogOpen, setForwardRoleDialogOpen] = useState<boolean>(false);
+  const [handlerComment, setHandlerComment] = useState<string>("");
+
+  // Board Suspension States
+  const [suspensionDialogOpen, setSuspensionDialogOpen] = useState<boolean>(false);
+  const [liftReason, setLiftReason] = useState<string>("");
+  const [selectedLiftId, setSelectedLiftId] = useState<string | null>(null);
+
+  // Periodic Report States
+  const [periodicDialogOpen, setPeriodicDialogOpen] = useState<boolean>(false);
+
+  // Hooks
+  const { data: audits, isLoading: isAuditsLoading } = useAudits(
     filterStatus ? { status: filterStatus } : undefined
   );
   const deleteAudit = useDeleteAudit();
 
-  const totalFindings = audits?.reduce(
-    (sum: number, a: any) => sum + (a.findings?.length || 0), 0
-  ) || 0;
-  const criticalFindings = audits?.reduce(
-    (sum: number, a: any) =>
-      sum + (a.findings?.filter((f: any) => f.severity === "CRITICAL" || f.severity === "MAJOR").length || 0),
-    0
-  ) || 0;
+  const { data: wbsReports, isLoading: isWbsLoading } = useWbsReports();
+  const updateWbsStatusMutation = useUpdateWbsStatus();
+  const forwardWbsMutation = useForwardWbsReport();
+
+  const { data: boardSuspensions, isLoading: isSuspensionsLoading } = useBoardSuspensions();
+  const createSuspensionMutation = useCreateBoardSuspension();
+  const liftSuspensionMutation = useLiftBoardSuspension();
+
+  const { data: arrearsData, isLoading: isArrearsLoading } = useFinancialArrears();
+  const submitPeriodicReportMutation = useSubmitPeriodicReportToEOffice();
+
+  // Forms
+  const suspensionForm = useForm<z.infer<typeof boardSuspensionSchema>>({
+    resolver: zodResolver(boardSuspensionSchema),
+    defaultValues: { userId: "", skNumber: "", auditReason: "", documentUrl: "", plhUserId: "", plhRoleCode: "YAYASAN_KETUA" },
+  });
+
+  const periodicForm = useForm<z.infer<typeof periodicReportSchema>>({
+    resolver: zodResolver(periodicReportSchema),
+    defaultValues: { title: "Laporan Hasil Pengawasan Periodik 2026", period: "2026-Q1", executiveSummary: "", findingsSummary: "", recommendations: "" },
+  });
 
   const handleEdit = (audit: any) => { setEditItem(audit); setDialogOpen(true); };
   const handleCreate = () => { setEditItem(null); setDialogOpen(true); };
   const handleDialogClose = () => { setDialogOpen(false); setEditItem(null); };
 
+  const handleCreateSuspensionSubmit = async (values: z.infer<typeof boardSuspensionSchema>) => {
+    await createSuspensionMutation.mutateAsync(values);
+    setSuspensionDialogOpen(false);
+    suspensionForm.reset();
+  };
+
+  const handleLiftSuspension = async () => {
+    if (!selectedLiftId || !liftReason) return;
+    await liftSuspensionMutation.mutateAsync({ id: selectedLiftId, liftReason });
+    setSelectedLiftId(null);
+    setLiftReason("");
+  };
+
+  const handleForwardWbsSubmit = async () => {
+    if (!selectedWbs || !forwardReason) return;
+    await forwardWbsMutation.mutateAsync({
+      id: selectedWbs.id,
+      toRole: forwardRole,
+      reason: forwardReason,
+    });
+    setForwardRoleDialogOpen(false);
+    setForwardReason("");
+    setSelectedWbs(null);
+  };
+
+  const handlePeriodicReportSubmit = async (values: z.infer<typeof periodicReportSchema>) => {
+    await submitPeriodicReportMutation.mutateAsync(values);
+    setPeriodicDialogOpen(false);
+    periodicForm.reset();
+  };
+
   return (
     <div className="container mx-auto py-6 space-y-8">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <PageHeader
-          title="Pengawasan Internal"
-          description="Kelola audit internal, temuan, dan tindak lanjut."
+          title="Pengawasan Internal & Governance Yayasan"
+          description="Fungsi Audit Internal, Whistleblowing System (WBS), Pembekuan Pengurus & Plh/Plt, serta Laporan Pengawasan via E-Office."
         />
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={handleCreate} className="gap-1">
-              <Plus className="h-4 w-4" />
-              Jadwalkan Audit
-            </Button>
-          </DialogTrigger>
-          <AuditFormDialog editData={editItem} onClose={handleDialogClose} />
-        </Dialog>
-      </div>
-
-      {/* Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="border-l-4 border-l-blue-500">
-          <CardHeader className="pb-2">
-            <CardDescription>Total Audit</CardDescription>
-            <CardTitle className="text-3xl">
-              {isLoading ? <Skeleton className="h-9 w-12" /> : audits?.length || 0}
-            </CardTitle>
-          </CardHeader>
-        </Card>
-        <Card className="border-l-4 border-l-yellow-500">
-          <CardHeader className="pb-2">
-            <CardDescription>Sedang Berjalan</CardDescription>
-            <CardTitle className="text-3xl text-yellow-600">
-              {isLoading ? <Skeleton className="h-9 w-12" /> : audits?.filter((a: any) => a.status === "IN_PROGRESS").length || 0}
-            </CardTitle>
-          </CardHeader>
-        </Card>
-        <Card className="border-l-4 border-l-orange-500">
-          <CardHeader className="pb-2">
-            <CardDescription>Total Temuan</CardDescription>
-            <CardTitle className="text-3xl">{isLoading ? <Skeleton className="h-9 w-12" /> : totalFindings}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card className="border-l-4 border-l-red-500">
-          <CardHeader className="pb-2">
-            <CardDescription>Temuan Kritis/Major</CardDescription>
-            <CardTitle className="text-3xl text-red-600">
-              {isLoading ? <Skeleton className="h-9 w-12" /> : criticalFindings}
-            </CardTitle>
-          </CardHeader>
-        </Card>
-      </div>
-
-      {/* Filters */}
-      <div className="flex flex-wrap gap-3 items-center">
-        <Filter className="h-4 w-4 text-muted-foreground" />
-        <Select
-          value={filterStatus || "ALL"}
-          onValueChange={(v) => setFilterStatus(v === "ALL" ? undefined : v)}
-        >
-          <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="Semua Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="ALL">Semua Status</SelectItem>
-            <SelectItem value="PLANNED">Terjadwal</SelectItem>
-            <SelectItem value="IN_PROGRESS">Berjalan</SelectItem>
-            <SelectItem value="COMPLETED">Selesai</SelectItem>
-          </SelectContent>
-        </Select>
-        {filterStatus && (
-          <Button variant="ghost" size="sm" onClick={() => setFilterStatus(undefined)}>
-            <X className="h-3 w-3 mr-1" /> Reset
+        <div className="flex gap-2 flex-wrap">
+          <Button onClick={() => setPeriodicDialogOpen(true)} variant="outline" className="border-blue-600 text-blue-600 hover:bg-blue-50 gap-1">
+            <FileText className="h-4 w-4" />
+            Laporan Pengawasan E-Office
           </Button>
-        )}
+          <Button onClick={handleCreate} className="gap-1 bg-blue-600 hover:bg-blue-700">
+            <Plus className="h-4 w-4" />
+            Jadwalkan Audit
+          </Button>
+        </div>
       </div>
 
-      {/* Audit List */}
-      <div className="space-y-4">
-        <h2 className="text-xl font-semibold">Daftar Audit</h2>
-        {isLoading ? (
-          <div className="space-y-3">{[1, 2, 3].map((i) => <Skeleton key={i} className="h-32 w-full" />)}</div>
-        ) : audits?.length === 0 ? (
-          <Card>
-            <CardContent className="py-12 text-center text-muted-foreground">
-              <ShieldCheck className="h-12 w-12 mx-auto mb-3 text-muted-foreground/40" />
-              <p className="text-lg mb-1">Belum ada audit terjadwal.</p>
-              <p className="text-sm">Klik &quot;Jadwalkan Audit&quot; untuk membuat jadwal baru.</p>
-            </CardContent>
-          </Card>
-        ) : (
-          audits?.map((audit: any) => (
-            <Card key={audit.id} className="hover:shadow-md transition-shadow group">
-              <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div>
-                    <CardTitle className="text-lg">{audit.title}</CardTitle>
-                    <CardDescription>
-                      Tipe: {audit.auditType} • Auditor: {audit.leadAuditor?.name} •{" "}
-                      {new Date(audit.plannedDate).toLocaleDateString("id-ID")}
-                    </CardDescription>
-                    {audit.scope && (
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Ruang Lingkup: {audit.scope}
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge className={statusColor[audit.status]}>{audit.status}</Badge>
-                    <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
-                      <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => handleEdit(audit)} title="Edit">
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => setDeleteId(audit.id)} title="Hapus">
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                </div>
+      <Tabs defaultValue="audits" className="space-y-6">
+        <TabsList className="grid grid-cols-2 md:grid-cols-5 gap-2 h-auto p-1 bg-slate-100 rounded-lg">
+          <TabsTrigger value="audits" className="py-2.5 text-xs md:text-sm font-medium">
+            <ShieldCheck className="h-4 w-4 mr-1.5" /> Audit & Temuan
+          </TabsTrigger>
+          <TabsTrigger value="wbs" className="py-2.5 text-xs md:text-sm font-medium">
+            <AlertTriangle className="h-4 w-4 mr-1.5" /> WBS & Pengaduan ({wbsReports?.length || 0})
+          </TabsTrigger>
+          <TabsTrigger value="suspensions" className="py-2.5 text-xs md:text-sm font-medium">
+            <UserX className="h-4 w-4 mr-1.5" /> Pembekuan Pengurus
+          </TabsTrigger>
+          <TabsTrigger value="arrears" className="py-2.5 text-xs md:text-sm font-medium">
+            <DollarSign className="h-4 w-4 mr-1.5" /> Tagihan Belum Dibayar
+          </TabsTrigger>
+          <TabsTrigger value="eoffice" className="py-2.5 text-xs md:text-sm font-medium">
+            <Send className="h-4 w-4 mr-1.5" /> E-Office Report
+          </TabsTrigger>
+        </TabsList>
+
+        {/* ================= TAB 1: AUDIT & TEMUAN ================= */}
+        <TabsContent value="audits" className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Card className="border-l-4 border-l-blue-500">
+              <CardHeader className="pb-2">
+                <CardDescription>Total Audit</CardDescription>
+                <CardTitle className="text-3xl">
+                  {isAuditsLoading ? <Skeleton className="h-9 w-12" /> : audits?.length || 0}
+                </CardTitle>
               </CardHeader>
-              <CardContent>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium">Temuan ({audit.findings?.length || 0})</span>
-                  <Dialog open={findingAuditId === audit.id} onOpenChange={(open) => !open && setFindingAuditId(null)}>
-                    <DialogTrigger asChild>
+            </Card>
+            <Card className="border-l-4 border-l-yellow-500">
+              <CardHeader className="pb-2">
+                <CardDescription>Sedang Berjalan</CardDescription>
+                <CardTitle className="text-3xl text-yellow-600">
+                  {isAuditsLoading ? <Skeleton className="h-9 w-12" /> : audits?.filter((a: any) => a.status === "IN_PROGRESS").length || 0}
+                </CardTitle>
+              </CardHeader>
+            </Card>
+            <Card className="border-l-4 border-l-orange-500">
+              <CardHeader className="pb-2">
+                <CardDescription>Total Temuan</CardDescription>
+                <CardTitle className="text-3xl">
+                  {isAuditsLoading ? <Skeleton className="h-9 w-12" /> : audits?.reduce((sum: number, a: any) => sum + (a.findings?.length || 0), 0) || 0}
+                </CardTitle>
+              </CardHeader>
+            </Card>
+            <Card className="border-l-4 border-l-red-500">
+              <CardHeader className="pb-2">
+                <CardDescription>Temuan Kritikal / Major</CardDescription>
+                <CardTitle className="text-3xl text-red-600">
+                  {isAuditsLoading ? <Skeleton className="h-9 w-12" /> : audits?.reduce((sum: number, a: any) => sum + (a.findings?.filter((f: any) => f.severity === "CRITICAL" || f.severity === "MAJOR").length || 0), 0) || 0}
+                </CardTitle>
+              </CardHeader>
+            </Card>
+          </div>
+
+          <div className="space-y-4">
+            <h2 className="text-lg font-semibold text-slate-900">Daftar Audit Internal</h2>
+            {isAuditsLoading ? (
+              <div className="space-y-3">{[1, 2].map((i) => <Skeleton key={i} className="h-32 w-full" />)}</div>
+            ) : audits?.length === 0 ? (
+              <Card>
+                <CardContent className="py-12 text-center text-muted-foreground">
+                  <ShieldCheck className="h-12 w-12 mx-auto mb-3 text-muted-foreground/40" />
+                  <p className="text-lg mb-1">Belum ada audit internal.</p>
+                </CardContent>
+              </Card>
+            ) : (
+              audits?.map((audit: any) => (
+                <Card key={audit.id} className="hover:shadow-md transition-shadow group">
+                  <CardHeader>
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <CardTitle className="text-lg">{audit.title}</CardTitle>
+                        <CardDescription>
+                          Tipe: {audit.auditType} • Auditor: {audit.leadAuditor?.name} •{" "}
+                          {safeFormat(new Date(audit.plannedDate), "dd MMMM yyyy", { locale: localeId })}
+                        </CardDescription>
+                        {audit.scope && <p className="text-xs text-muted-foreground mt-1">Lingkup: {audit.scope}</p>}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge className={statusColor[audit.status]}>{audit.status}</Badge>
+                        <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => handleEdit(audit)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => setDeleteId(audit.id)}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-medium">Temuan ({audit.findings?.length || 0})</span>
                       <Button size="sm" variant="outline" className="gap-1 h-7" onClick={() => setFindingAuditId(audit.id)}>
                         <Plus className="h-3 w-3" /> Tambah Temuan
                       </Button>
-                    </DialogTrigger>
-                    <AddFindingDialog auditId={audit.id} onClose={() => setFindingAuditId(null)} />
-                  </Dialog>
-                </div>
-                <div className="flex gap-2 flex-wrap">
-                  {audit.findings?.map((f: any) => (
-                    <Badge key={f.id} variant="outline" className={severityColor[f.severity]}>
-                      <AlertTriangle className="h-3 w-3 mr-1" />
-                      {f.severity}: {f.title}
-                    </Badge>
-                  ))}
-                  {(!audit.findings || audit.findings.length === 0) && (
-                    <span className="text-sm text-muted-foreground italic">Belum ada temuan</span>
-                  )}
-                </div>
+                    </div>
+                    <div className="flex gap-2 flex-wrap">
+                      {audit.findings?.map((f: any) => (
+                        <Badge key={f.id} variant="outline" className={severityColor[f.severity]}>
+                          <AlertTriangle className="h-3 w-3 mr-1" />
+                          {f.severity}: {f.title}
+                        </Badge>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
+            )}
+          </div>
+        </TabsContent>
+
+        {/* ================= TAB 2: WHISTLEBLOWING SYSTEM (WBS) ================= */}
+        <TabsContent value="wbs" className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">Pengaduan & Whistleblowing System (WBS)</h2>
+              <p className="text-xs text-slate-500">Laporan aduan yang didistribusikan secara otomatis atau diteruskan berdasarkan subjek teradu.</p>
+            </div>
+            <Link href="/public/wbs" target="_blank">
+              <Button variant="outline" size="sm" className="gap-1">
+                Buka Portal WBS Publik
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Button>
+            </Link>
+          </div>
+
+          {isWbsLoading ? (
+            <div className="space-y-3">{[1, 2, 3].map((i) => <Skeleton key={i} className="h-28 w-full" />)}</div>
+          ) : wbsReports?.length === 0 ? (
+            <Card>
+              <CardContent className="py-12 text-center text-muted-foreground">
+                <AlertTriangle className="h-12 w-12 mx-auto mb-3 text-muted-foreground/40" />
+                <p className="text-lg mb-1">Belum ada laporan WBS yang masuk.</p>
               </CardContent>
             </Card>
-          ))
-        )}
-      </div>
+          ) : (
+            <div className="space-y-4">
+              {wbsReports?.map((report: any) => (
+                <Card key={report.id} className="border border-slate-200 hover:shadow-md transition-shadow">
+                  <CardHeader className="pb-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-xs text-slate-500">{report.ticketCode}</span>
+                          <Badge className={`px-2.5 py-0.5 border text-xs font-semibold ${wbsStatusBadges[report.status]?.color}`}>
+                            {wbsStatusBadges[report.status]?.label || report.status}
+                          </Badge>
+                        </div>
+                        <CardTitle className="text-base font-bold text-slate-900 mt-1">{report.subject}</CardTitle>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Select
+                          value={report.status}
+                          onValueChange={(status) => updateWbsStatusMutation.mutate({ id: report.id, status })}
+                        >
+                          <SelectTrigger className="w-[180px] h-8 text-xs">
+                            <SelectValue placeholder="Ubah Status" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="DIAJUKAN">Diajukan</SelectItem>
+                            <SelectItem value="DALAM_PENYELIDIKAN">Dalam Penyelidikan</SelectItem>
+                            <SelectItem value="DITINDAKLANJUTI">Ditindaklanjuti</SelectItem>
+                            <SelectItem value="SELESAI">Selesai</SelectItem>
+                            <SelectItem value="TIDAK_DAPAT_DITINDAKLANJUTI">Tidak Dapat Ditindaklanjuti</SelectItem>
+                          </SelectContent>
+                        </Select>
 
-      {/* Delete Confirmation */}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 text-xs gap-1"
+                          onClick={() => { setSelectedWbs(report); setForwardRoleDialogOpen(true); }}
+                        >
+                          Teruskan
+                        </Button>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="text-xs text-slate-600 grid grid-cols-1 sm:grid-cols-3 gap-2 bg-slate-50 p-2.5 rounded border">
+                      <div><span className="text-slate-400 block">Kategori:</span> <strong className="text-slate-800">{report.category}</strong></div>
+                      <div><span className="text-slate-400 block">Teradu:</span> <strong className="text-slate-800">{report.targetLevel}</strong></div>
+                      <div><span className="text-slate-400 block">Unit:</span> <strong className="text-slate-800">{report.unit?.name || 'Yayasan Pusat'}</strong></div>
+                    </div>
+
+                    <p className="text-xs text-slate-700 whitespace-pre-line bg-white p-3 rounded border">
+                      {report.description}
+                    </p>
+
+                    {/* Forward Logs */}
+                    {report.forwardLogs && report.forwardLogs.length > 0 && (
+                      <div className="space-y-1 border-t pt-2">
+                        <span className="text-[11px] font-semibold text-slate-500 uppercase">Riwayat Diteruskan:</span>
+                        {report.forwardLogs.map((log: any) => (
+                          <div key={log.id} className="text-xs p-2 bg-amber-50/50 rounded border border-amber-200">
+                            Laporan diteruskan dari <strong>{log.fromRole}</strong> ke <strong>{log.toRole}</strong> — Alasan: <em>{log.reason}</em>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
+        {/* ================= TAB 3: PEMBEKUAN PENGURUS & PLH/PLT ================= */}
+        <TabsContent value="suspensions" className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">Pemberhentian Sementara Pengurus (Board Suspension)</h2>
+              <p className="text-xs text-slate-500">Mekanisme penetapan pembekuan sementara akun Pengurus yang terindikasi pelanggaran serta penunjukan Plh/Plt.</p>
+            </div>
+            <Button onClick={() => setSuspensionDialogOpen(true)} className="bg-red-600 hover:bg-red-700 text-white gap-1">
+              <UserX className="h-4 w-4" />
+              Tetapkan SK Pembekuan Pengurus
+            </Button>
+          </div>
+
+          {isSuspensionsLoading ? (
+            <div className="space-y-3">{[1, 2].map((i) => <Skeleton key={i} className="h-28 w-full" />)}</div>
+          ) : boardSuspensions?.length === 0 ? (
+            <Card>
+              <CardContent className="py-12 text-center text-muted-foreground">
+                <ShieldCheck className="h-12 w-12 mx-auto mb-3 text-emerald-500/60" />
+                <p className="text-lg mb-1">Tidak Ada Pengurus yang Sedang Dibekukan.</p>
+                <p className="text-xs">Seluruh akun Pengurus Yayasan dalam keadaan aktif & normal.</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-4">
+              {boardSuspensions?.map((susp: any) => (
+                <Card key={susp.id} className={`border ${susp.status === 'ACTIVE' ? 'border-red-300 bg-red-50/10' : 'border-slate-200'}`}>
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <Badge className={susp.status === 'ACTIVE' ? 'bg-red-100 text-red-800' : 'bg-emerald-100 text-emerald-800'}>
+                            {susp.status === 'ACTIVE' ? 'DIBEKUKAN / SUSPENDED' : 'PEMULIHAN STATUS (LIFTED)'}
+                          </Badge>
+                          <span className="font-mono text-xs text-slate-500">No. SK: {susp.skNumber}</span>
+                        </div>
+                        <CardTitle className="text-base font-bold text-slate-900 mt-1">
+                          {susp.user?.name} ({susp.user?.email})
+                        </CardTitle>
+                      </div>
+                      {susp.status === 'ACTIVE' && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="border-emerald-600 text-emerald-700 hover:bg-emerald-50"
+                          onClick={() => setSelectedLiftId(susp.id)}
+                        >
+                          Pulihkan Status Pengurus
+                        </Button>
+                      )}
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-3 text-xs">
+                    <div className="p-3 bg-slate-50 rounded border space-y-1">
+                      <span className="font-semibold text-slate-700">Pertimbangan Audit / Alasan Pembekuan:</span>
+                      <p className="text-slate-800 whitespace-pre-line">{susp.auditReason}</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-slate-600">
+                      <div>Plh / Plt Pengganti Sementara: <strong>{susp.plhUser?.name || 'Tidak Ada'}</strong> ({susp.plhRoleCode})</div>
+                      <div>Ditetapkan Oleh: <strong>{susp.suspendedBy?.name}</strong></div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
+        {/* ================= TAB 4: TAGIHAN BELUM DIBAYAR ================= */}
+        <TabsContent value="arrears" className="space-y-6">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">Laporan Tagihan & Tunggakan Pembayaran (Arrears)</h2>
+            <p className="text-xs text-slate-500">Visibilitas pengawasan atas risiko likuiditas dan tunggakan iuran/SPP per unit organisasi.</p>
+          </div>
+
+          {isArrearsLoading ? (
+            <Skeleton className="h-48 w-full" />
+          ) : (
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <Card className="border-l-4 border-l-amber-500">
+                  <CardHeader className="pb-2">
+                    <CardDescription>Total Tunggakan Tagihan</CardDescription>
+                    <CardTitle className="text-2xl font-bold text-amber-700">
+                      Rp {(arrearsData?.summary?.totalUnpaidAmount || 0).toLocaleString('id-ID')}
+                    </CardTitle>
+                  </CardHeader>
+                </Card>
+                <Card className="border-l-4 border-l-blue-500">
+                  <CardHeader className="pb-2">
+                    <CardDescription>Total Tagihan Belum Lunas</CardDescription>
+                    <CardTitle className="text-2xl font-bold text-slate-900">
+                      {arrearsData?.summary?.totalUnpaidInvoicesCount || 0} Tagihan
+                    </CardTitle>
+                  </CardHeader>
+                </Card>
+                <Card className="border-l-4 border-l-red-500">
+                  <CardHeader className="pb-2">
+                    <CardDescription>Tagihan Jatuh Tempo (Overdue)</CardDescription>
+                    <CardTitle className="text-2xl font-bold text-red-600">
+                      {arrearsData?.summary?.overdueInvoicesCount || 0} Tagihan
+                    </CardTitle>
+                  </CardHeader>
+                </Card>
+              </div>
+
+              {/* Unit Breakdown */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Rincian Tunggakan per Unit Organisasi</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {arrearsData?.unitBreakdown?.map((u: any) => (
+                      <div key={u.unitId} className="flex items-center justify-between p-3 bg-slate-50 rounded border text-sm">
+                        <div>
+                          <span className="font-bold text-slate-900">{u.unitName}</span>
+                          <span className="text-xs text-slate-500 block">{u.count} tagihan ({u.overdueCount} terlambat)</span>
+                        </div>
+                        <span className="font-bold text-amber-700">Rp {u.totalUnpaid.toLocaleString('id-ID')}</span>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+        </TabsContent>
+
+        {/* ================= TAB 5: E-OFFICE PERIODIC REPORT ================= */}
+        <TabsContent value="eoffice" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Pengajuan Laporan Pengawasan Periodik via E-Office</CardTitle>
+              <CardDescription>
+                Pilih atau susun Laporan Pengawasan untuk diajukan secara resmi kepada Ketua Pembina Yayasan lewat modul Surat Keluar E-Office.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Button onClick={() => setPeriodicDialogOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white gap-2">
+                <Send className="h-4 w-4" />
+                Buat & Ajukan Laporan Pengawasan ke E-Office
+              </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      {/* Dialogs */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <AuditFormDialog editData={editItem} onClose={handleDialogClose} />
+      </Dialog>
+
+      <Dialog open={!!findingAuditId} onOpenChange={(open) => !open && setFindingAuditId(null)}>
+        {findingAuditId && <AddFindingDialog auditId={findingAuditId} onClose={() => setFindingAuditId(null)} />}
+      </Dialog>
+
+      {/* Forward WBS Dialog */}
+      <Dialog open={forwardDialogOpen} onOpenChange={setForwardRoleDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Teruskan Laporan WBS</DialogTitle>
+            <DialogDescription>Pilih peran penerima baru beserta alasan penerusan laporan.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label>Role Penerima Utama Baru</Label>
+              <Select value={forwardRole} onValueChange={setForwardRole}>
+                <SelectTrigger className="bg-white"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="YAYASAN_PEMBINA">Pembina Yayasan</SelectItem>
+                  <SelectItem value="YAYASAN_PENGAWAS">Pengawas Yayasan</SelectItem>
+                  <SelectItem value="YAYASAN_KETUA">Pengurus Yayasan (Ketua)</SelectItem>
+                  <SelectItem value="UNIT_ADMIN">Kepala Unit Organisasi</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Alasan Penerusan Laporan *</Label>
+              <Textarea
+                rows={3}
+                placeholder="Tuliskan pertimbangan atau alasan penerusan laporan..."
+                value={forwardReason}
+                onChange={(e) => setForwardReason(e.target.value)}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setForwardRoleDialogOpen(false)}>Batal</Button>
+              <Button className="bg-blue-600 hover:bg-blue-700 text-white" onClick={handleForwardWbsSubmit}>
+                Teruskan Laporan
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Board Suspension Dialog */}
+      <Dialog open={suspensionDialogOpen} onOpenChange={setSuspensionDialogOpen}>
+        <DialogContent className="sm:max-w-[560px]">
+          <DialogHeader>
+            <DialogTitle className="text-red-700 flex items-center gap-2">
+              <UserX className="h-5 w-5" />
+              Penetapan SK Pembekuan Pengurus & Plh/Plt
+            </DialogTitle>
+            <DialogDescription>
+              Tindakan ini akan menonaktifkan akun Pengurus, mencabut hak akses E-Sign, dan menetapkan Plh/Plt sementara.
+            </DialogDescription>
+          </DialogHeader>
+          <Form {...suspensionForm}>
+            <form onSubmit={suspensionForm.handleSubmit(handleCreateSuspensionSubmit)} className="space-y-4">
+              <FormField control={suspensionForm.control} name="userId" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>ID Pengurus yang Dibekukan *</FormLabel>
+                  <FormControl><Input placeholder="Masukkan ID Pengurus..." {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={suspensionForm.control} name="skNumber" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Nomor SK Pembekuan *</FormLabel>
+                  <FormControl><Input placeholder="SK/PENGAWAS/2026/001" {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={suspensionForm.control} name="auditReason" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Alasan Audit / Indikasi Pelanggaran *</FormLabel>
+                  <FormControl><Textarea placeholder="Jelaskan pertimbangan audit..." rows={3} {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <div className="grid grid-cols-2 gap-4">
+                <FormField control={suspensionForm.control} name="plhUserId" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>ID User Plh/Plt Pengganti</FormLabel>
+                    <FormControl><Input placeholder="ID Pengurus Pendamping..." {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={suspensionForm.control} name="plhRoleCode" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Peran / Role Plh</FormLabel>
+                    <FormControl><Input placeholder="YAYASAN_KETUA" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button type="button" variant="outline" onClick={() => setSuspensionDialogOpen(false)}>Batal</Button>
+                <Button type="submit" className="bg-red-600 hover:bg-red-700 text-white">
+                  Tetapkan SK Pembekuan
+                </Button>
+              </div>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Lift Suspension Dialog */}
+      <Dialog open={!!selectedLiftId} onOpenChange={() => setSelectedLiftId(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Pemulihan Status Pengurus</DialogTitle>
+            <DialogDescription>Masukkan alasan pemulihan status / pencabutan pembekuan pengurus.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label>Alasan Pemulihan Status *</Label>
+              <Textarea
+                rows={3}
+                placeholder="Masukkan pertimbangan pemulihan status..."
+                value={liftReason}
+                onChange={(e) => setLiftReason(e.target.value)}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setSelectedLiftId(null)}>Batal</Button>
+              <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={handleLiftSuspension}>
+                Pulihkan Status Akun
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Periodic Report Dialog */}
+      <Dialog open={periodicDialogOpen} onOpenChange={setPeriodicDialogOpen}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>Pengajuan Laporan Pengawasan Periodik ke Pembina</DialogTitle>
+            <DialogDescription>
+              Isi ringkasan laporan pengawasan. Laporan akan terdaftar sebagai Surat Keluar di E-Office.
+            </DialogDescription>
+          </DialogHeader>
+          <Form {...periodicForm}>
+            <form onSubmit={periodicForm.handleSubmit(handlePeriodicReportSubmit)} className="space-y-4">
+              <FormField control={periodicForm.control} name="title" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Judul Laporan *</FormLabel>
+                  <FormControl><Input {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={periodicForm.control} name="period" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Periode *</FormLabel>
+                  <FormControl><Input placeholder="2026-Q1" {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={periodicForm.control} name="executiveSummary" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Ringkasan Eksekutif *</FormLabel>
+                  <FormControl><Textarea rows={3} placeholder="Tuliskan poin utama hasil pengawasan..." {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={periodicForm.control} name="recommendations" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Rekomendasi Pengawas</FormLabel>
+                  <FormControl><Textarea rows={2} placeholder="Rekomendasi tindak lanjut bagi Pengurus..." {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <div className="flex justify-end gap-2 pt-2">
+                <Button type="button" variant="outline" onClick={() => setPeriodicDialogOpen(false)}>Batal</Button>
+                <Button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white">
+                  Ajukan Surat Laporan ke E-Office
+                </Button>
+              </div>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Audit Confirmation */}
       <ConfirmDialog
         open={!!deleteId}
         onOpenChange={(open) => !open && setDeleteId(null)}

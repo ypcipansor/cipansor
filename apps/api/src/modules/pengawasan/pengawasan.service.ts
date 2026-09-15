@@ -117,7 +117,7 @@ export class PengawasanService {
     rootCause?: string;
     recommendation?: string;
     responsibleId?: string;
-    dueDate?: string;
+    dueDate?: string | null;
     planObjectiveId?: string;
     linkToRiskId?: string;
   }) {
@@ -270,7 +270,7 @@ export class PengawasanService {
   async createFollowUp(data: {
     findingId: string;
     action: string;
-    dueDate?: string;
+    dueDate?: string | null;
     evidence?: string;
   }) {
     return prisma.auditFollowUp.create({
@@ -474,6 +474,171 @@ export class PengawasanService {
       const priorityMap: Record<string, number> = { URGENT: 3, HIGH: 2, MEDIUM: 1, LOW: 0 };
       return (priorityMap[b.priority] || 0) - (priorityMap[a.priority] || 0);
     });
+  }
+
+  // ==================== FINANCIAL ARREARS & OVERSIGHT ====================
+
+  async getFinancialArrears(unitId?: string) {
+    const now = new Date();
+
+    const unpaidInvoices = await prisma.invoice.findMany({
+      where: {
+        status: { in: ['PENDING', 'PARTIAL', 'OVERDUE'] },
+        ...(unitId ? { student: { unitId } } : {}),
+      },
+      include: {
+        student: { select: { id: true, name: true, nis: true, unitId: true, unit: { select: { id: true, name: true } } } },
+        paymentType: { select: { id: true, name: true, code: true } },
+      },
+      orderBy: { dueDate: 'asc' },
+    });
+
+    let totalUnpaidAmount = 0;
+    let overdueInvoicesCount = 0;
+
+    const unitMap: Record<string, { unitId: string; unitName: string; totalUnpaid: number; count: number; overdueCount: number }> = {};
+    const studentMap: Record<string, { studentId: string; studentName: string; nis: string; unitName: string; totalUnpaid: number; invoiceCount: number }> = {};
+
+    for (const inv of unpaidInvoices) {
+      const remaining = Number(inv.amount) - Number(inv.paidAmount);
+      if (remaining <= 0) continue;
+
+      totalUnpaidAmount += remaining;
+      const isOverdue = inv.status === 'OVERDUE' || (inv.dueDate && inv.dueDate < now);
+      if (isOverdue) overdueInvoicesCount++;
+
+      const uId = inv.student.unitId || 'PUSAT';
+      const uName = inv.student.unit?.name || 'Yayasan Pusat';
+
+      if (!unitMap[uId]) {
+        unitMap[uId] = { unitId: uId, unitName: uName, totalUnpaid: 0, count: 0, overdueCount: 0 };
+      }
+      unitMap[uId].totalUnpaid += remaining;
+      unitMap[uId].count += 1;
+      if (isOverdue) unitMap[uId].overdueCount += 1;
+
+      const sId = inv.studentId;
+      if (!studentMap[sId]) {
+        studentMap[sId] = {
+          studentId: sId,
+          studentName: inv.student.name,
+          nis: inv.student.nis || '-',
+          unitName: uName,
+          totalUnpaid: 0,
+          invoiceCount: 0,
+        };
+      }
+      studentMap[sId].totalUnpaid += remaining;
+      studentMap[sId].invoiceCount += 1;
+    }
+
+    const topArrearsStudents = Object.values(studentMap)
+      .sort((a, b) => b.totalUnpaid - a.totalUnpaid)
+      .slice(0, 15);
+
+    return {
+      summary: {
+        totalUnpaidAmount,
+        totalUnpaidInvoicesCount: unpaidInvoices.length,
+        overdueInvoicesCount,
+      },
+      unitBreakdown: Object.values(unitMap),
+      topArrearsStudents,
+    };
+  }
+
+  // ==================== E-OFFICE PERIODIC OVERSIGHT REPORT ====================
+
+  async submitPeriodicReportToEOffice(
+    data: {
+      title: string;
+      period: string;
+      executiveSummary: string;
+      findingsSummary?: string;
+      recommendations?: string;
+    },
+    userId: string,
+    userRole: string
+  ) {
+    // Find a recipient user with Pembina role or Super Admin
+    const pembinaUser = await prisma.user.findFirst({
+      where: {
+        isActive: true,
+        OR: [
+          { role: 'SUPER_ADMIN' },
+          { userRoles: { some: { role: { code: 'YAYASAN_PEMBINA' } } } },
+        ],
+      },
+      select: { id: true, unitId: true },
+    });
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { unitId: true },
+    });
+
+    const targetUnit = await prisma.unit.findFirst({
+      select: { id: true },
+    });
+
+    const unitId = user?.unitId || targetUnit?.id || pembinaUser?.unitId;
+    if (!unitId) {
+      throw Errors.badRequest('Unit ID required for correspondence creation');
+    }
+
+    const letterContent = `
+LAPORAN PENGAWASAN PERIODIK YAYASAN PESANTREN CIPANSOR
+Periode: ${data.period}
+Judul: ${data.title}
+
+1. RINGKASAN EKSEKUTIF
+${data.executiveSummary}
+
+2. RINGKASAN TEMUAN AUDIT & PENGATASAN RISIKO
+${data.findingsSummary || 'Semua audit internal dan tindak lanjut temuan terpantau berjalan sesuai ketentuan.'}
+
+3. REKOMENDASI PENGAWAS YAYASAN
+${data.recommendations || 'Diharapkan Pengurus Yayasan dan Kepala Unit terus meningkatkan kepatuhan SOP dan efisiensi keuangan.'}
+    `.trim();
+
+    const defaultClassification = await prisma.filingClassification.findFirst();
+
+    const letter = await prisma.letter.create({
+      data: {
+        unitId,
+        direction: 'OUTGOING',
+        type: 'SURAT_DINAS',
+        subject: `[Laporan Pengawasan] ${data.title} (${data.period})`,
+        content: letterContent,
+        date: new Date(),
+        letterNumber: `LAP-PENGAWAS/${data.period.replace(/\s+/g, '-')}/${Date.now().toString().slice(-4)}`,
+        status: 'SENT',
+        createdById: userId,
+        classificationId: defaultClassification?.id,
+        recipients: pembinaUser
+          ? {
+              create: [
+                {
+                  recipientType: 'PRIMARY',
+                  userId: pembinaUser.id,
+                },
+              ],
+            }
+          : undefined,
+      },
+      include: {
+        createdBy: { select: { id: true, name: true, role: true } },
+        recipients: { select: { id: true, userId: true } },
+      },
+    });
+
+    return {
+      letterId: letter.id,
+      letterNumber: letter.letterNumber,
+      title: letter.subject,
+      status: letter.status,
+      contentPreview: letterContent,
+    };
   }
 }
 
