@@ -10649,6 +10649,14 @@ model WbsForwardLog {
   @@map("wbs_forward_logs")
 }
 
+/// BoardMemberSuspension — SK Pembekuan Pengurus.
+///
+/// At most ONE row per user may be ACTIVE at a time. Prisma cannot express a
+/// partial unique index, so the invariant is enforced by raw migration SQL
+/// (`board_member_suspensions_one_active_per_user`, `WHERE status = 'ACTIVE'`)
+/// — the same pattern as `student_card_state_one_active_per_student`. Two
+/// parallel suspension requests without it can each insert an ACTIVE row, and
+/// lifting either one reactivates the account while the other still stands.
 model BoardMemberSuspension {
   id               String                @id @default(uuid())
   userId           String                @map("user_id")
@@ -10661,6 +10669,30 @@ model BoardMemberSuspension {
   suspendedById    String                @map("suspended_by_id")
   plhUserId        String?               @map("plh_user_id")
   plhRoleCode      String?               @map("plh_role_code")
+  /// Whether THIS suspension actually created the Plh/Plt assignment.
+  ///
+  /// A Plh who already held the role legitimately is left alone at suspension
+  /// time, so lifting must not delete that pre-existing assignment. Without
+  /// this flag, `liftBoardSuspension` ran `deleteMany` unconditionally and
+  /// silently revoked a role the suspension never granted.
+  plhAssignmentCreated Boolean           @default(false) @map("plh_assignment_created")
+  /// The UserRoleAssignment row this suspension created, so the lift deletes
+  /// exactly that row rather than everything matching user+role.
+  plhAssignmentId  String?               @map("plh_assignment_id")
+  /// Prior state of an assignment this suspension merely reactivated.
+  ///
+  /// An inactive or expired delegation cannot stay as it is (the Plh would hold
+  /// nothing) and cannot simply be deleted on lift (that erases a legitimate
+  /// audit row). `{ isActive, expiresAt }` lets the lift put it back.
+  plhAssignmentRestore Json?             @map("plh_assignment_restore")
+  /// Snapshot of each E-Sign key's `lockedUntil` before suspension locked it.
+  ///
+  /// Suspension soft-locks signing by writing a far-future sentinel; a lift that
+  /// blindly nulls the column erases a legitimate passphrase lockout that
+  /// predated the suspension. The map (keyId → ISO date | null) lets the lift
+  /// restore the exact prior value, and leaves keys created after suspension
+  /// untouched.
+  signingKeyLocks  Json?                 @map("signing_key_locks")
   liftedAt         DateTime?             @map("lifted_at")
   liftedById       String?               @map("lifted_by_id")
   liftReason       String?               @map("lift_reason") @db.Text

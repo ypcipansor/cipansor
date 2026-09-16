@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { WBS_CATEGORIES, WBS_TARGET_LEVELS, WBS_STATUSES } from '@cipansor/shared';
 
 const dateStringSchema = z.string().refine((val) => !isNaN(Date.parse(val)), {
   message: 'Format tanggal tidak valid',
@@ -82,22 +83,13 @@ export const listAuditQuerySchema = z.object({
 });
 
 // WBS Validation Schemas
+// The category/targetLevel/status value lists live in `@cipansor/shared`
+// (`WBS_CATEGORIES`, …) so the public form's option list and this validation
+// cannot drift apart; only the field shape is declared here.
 export const createPublicWbsSchema = z.object({
   unitId: z.string().uuid().optional().nullable(),
-  category: z.enum([
-    'KEUANGAN_ASET',
-    'SOP_TATA_KELOLA',
-    'ETIKA_PERILAKU',
-    'PELAYANAN_AKADEMIK_PENGASUHAN',
-    'LAINNYA',
-  ]),
-  targetLevel: z.enum([
-    'PENGURUS_YAYASAN',
-    'PENGAWAS_YAYASAN',
-    'KEPALA_UNIT',
-    'STAF_PEGAWAI',
-    'SISWA_SANTRI',
-  ]),
+  category: z.enum(WBS_CATEGORIES),
+  targetLevel: z.enum(WBS_TARGET_LEVELS),
   targetName: z.string().optional(),
   subject: z.string().min(3),
   description: z.string().min(10),
@@ -125,13 +117,7 @@ export const addPublicWbsCommentSchema = z.object({
 });
 
 export const updateWbsStatusSchema = z.object({
-  status: z.enum([
-    'DIAJUKAN',
-    'DALAM_PENYELIDIKAN',
-    'DITINDAKLANJUTI',
-    'SELESAI',
-    'TIDAK_DAPAT_DITINDAKLANJUTI',
-  ]),
+  status: z.enum(WBS_STATUSES),
   resolution: z.string().optional(),
   handlerNote: z.string().optional(),
 });

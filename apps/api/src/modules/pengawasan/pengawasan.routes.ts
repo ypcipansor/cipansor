@@ -43,9 +43,16 @@ router.post(
   authorize(...GOVERNANCE_SUPERVISOR_ROLES),
   pengawasanController.createBoardSuspension
 );
+// Pemulihan status is the Pembina's act, not the Pengawas's.
+//
+// The Pengawas issues the SK Pembekuan; letting the same organ lift it means
+// the oversight body both suspends and un-suspends the executive it audits,
+// with no second signature. The Pembina appoints and dismisses — UU 16/2001
+// Pasal 28 — so restoring a board member's status is theirs. Super Admin
+// retains it for operational recovery.
 router.post(
   '/board-suspensions/:id/lift',
-  authorize(...GOVERNANCE_SUPERVISOR_ROLES),
+  authorize('SUPER_ADMIN', 'YAYASAN_PEMBINA'),
   pengawasanController.liftBoardSuspension
 );
 
@@ -64,11 +71,7 @@ const WBS_HANDLER_ROLES = [
   'UNIT_ADMIN',
 ];
 
-router.get(
-  '/wbs/reports',
-  authorize(...WBS_HANDLER_ROLES),
-  pengawasanController.listWbsReports
-);
+router.get('/wbs/reports', authorize(...WBS_HANDLER_ROLES), pengawasanController.listWbsReports);
 router.get(
   '/wbs/reports/:id',
   authorize(...WBS_HANDLER_ROLES),
@@ -91,11 +94,7 @@ router.post(
 );
 
 // 4. Financial Arrears Oversight (Governance + Unit Admins/Treasurers)
-const FINANCIAL_OVERSIGHT_ROLES = [
-  ...GOVERNANCE_ROLE_CODES,
-  'SUPER_ADMIN',
-  'UNIT_ADMIN',
-];
+const FINANCIAL_OVERSIGHT_ROLES = [...GOVERNANCE_ROLE_CODES, 'SUPER_ADMIN', 'UNIT_ADMIN'];
 
 router.get(
   '/financial-arrears',
@@ -113,23 +112,59 @@ const AUDIT_GENERAL_ROLES = [
   ...PRINCIPAL_ROLE_CODES,
 ];
 
-router.get('/suggestions', authorize(...AUDIT_GENERAL_ROLES), pengawasanController.getAuditSuggestions);
+router.get(
+  '/suggestions',
+  authorize(...AUDIT_GENERAL_ROLES),
+  pengawasanController.getAuditSuggestions
+);
 router.get('/', authorize(...AUDIT_GENERAL_ROLES), pengawasanController.listAudits);
-router.post('/', authorize('SUPER_ADMIN', 'UNIT_ADMIN', 'YAYASAN_PENGAWAS'), pengawasanController.createAudit);
+router.post(
+  '/',
+  authorize('SUPER_ADMIN', 'UNIT_ADMIN', 'YAYASAN_PENGAWAS'),
+  pengawasanController.createAudit
+);
 
 // Findings
-router.post('/findings', authorize('SUPER_ADMIN', 'UNIT_ADMIN', 'YAYASAN_PENGAWAS'), pengawasanController.createFinding);
-router.put('/findings/:id', authorize('SUPER_ADMIN', 'UNIT_ADMIN', 'YAYASAN_PENGAWAS'), pengawasanController.updateFinding);
-router.delete('/findings/:id', authorize('SUPER_ADMIN', 'UNIT_ADMIN', 'YAYASAN_PENGAWAS'), pengawasanController.deleteFinding);
+router.post(
+  '/findings',
+  authorize('SUPER_ADMIN', 'UNIT_ADMIN', 'YAYASAN_PENGAWAS'),
+  pengawasanController.createFinding
+);
+router.put(
+  '/findings/:id',
+  authorize('SUPER_ADMIN', 'UNIT_ADMIN', 'YAYASAN_PENGAWAS'),
+  pengawasanController.updateFinding
+);
+router.delete(
+  '/findings/:id',
+  authorize('SUPER_ADMIN', 'UNIT_ADMIN', 'YAYASAN_PENGAWAS'),
+  pengawasanController.deleteFinding
+);
 
 // Follow-ups (Unit Heads / Responsible Staff can submit follow-ups)
 router.post('/follow-ups', authorize(...AUDIT_GENERAL_ROLES), pengawasanController.createFollowUp);
-router.put('/follow-ups/:id', authorize(...AUDIT_GENERAL_ROLES), pengawasanController.updateFollowUp);
-router.delete('/follow-ups/:id', authorize('SUPER_ADMIN', 'UNIT_ADMIN', 'YAYASAN_PENGAWAS'), pengawasanController.deleteFollowUp);
+router.put(
+  '/follow-ups/:id',
+  authorize(...AUDIT_GENERAL_ROLES),
+  pengawasanController.updateFollowUp
+);
+router.delete(
+  '/follow-ups/:id',
+  authorize('SUPER_ADMIN', 'UNIT_ADMIN', 'YAYASAN_PENGAWAS'),
+  pengawasanController.deleteFollowUp
+);
 
 // Single Audit Detail, Update & Delete MUST be placed LAST so /:id doesn't swallow sub-paths
 router.get('/:id', authorize(...AUDIT_GENERAL_ROLES), pengawasanController.getAudit);
-router.put('/:id', authorize('SUPER_ADMIN', 'UNIT_ADMIN', 'YAYASAN_PENGAWAS'), pengawasanController.updateAudit);
-router.delete('/:id', authorize('SUPER_ADMIN', 'UNIT_ADMIN', 'YAYASAN_PENGAWAS'), pengawasanController.deleteAudit);
+router.put(
+  '/:id',
+  authorize('SUPER_ADMIN', 'UNIT_ADMIN', 'YAYASAN_PENGAWAS'),
+  pengawasanController.updateAudit
+);
+router.delete(
+  '/:id',
+  authorize('SUPER_ADMIN', 'UNIT_ADMIN', 'YAYASAN_PENGAWAS'),
+  pengawasanController.deleteAudit
+);
 
 export default router;

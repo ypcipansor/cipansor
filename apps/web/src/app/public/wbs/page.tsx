@@ -3,19 +3,57 @@
 import React, { useState, Suspense } from "react";
 import { usePublicCreateWbs } from "@/hooks/use-pengawasan";
 import { usePublicUnits } from "@/hooks/use-units";
-import { TurnstileWidget, useTurnstile } from "@/components/security/turnstile-widget";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  TurnstileWidget,
+  useTurnstile,
+} from "@/components/security/turnstile-widget";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { ShieldCheck, AlertTriangle, Lock, RefreshCw, Copy, CheckCircle2, ArrowRight, FileText, UserX, UserCheck } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import {
+  ShieldCheck,
+  AlertTriangle,
+  Lock,
+  RefreshCw,
+  Copy,
+  CheckCircle2,
+  ArrowRight,
+  FileText,
+  UserX,
+  UserCheck,
+} from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
+import {
+  WBS_CATEGORIES,
+  WBS_CATEGORY_LABELS,
+  WBS_TARGET_LEVELS,
+  WBS_TARGET_LEVEL_LABELS,
+} from "@cipansor/shared";
 
 function PublicWbsContent() {
   const [unitId, setUnitId] = useState<string>("");
@@ -31,7 +69,10 @@ function PublicWbsContent() {
   const [reporterContact, setReporterContact] = useState<string>("");
   const [attachmentUrl, setAttachmentUrl] = useState<string>("");
 
-  const [createdTicket, setCreatedTicket] = useState<{ ticketCode: string; trackingToken: string } | null>(null);
+  const [createdTicket, setCreatedTicket] = useState<{
+    ticketCode: string;
+    trackingToken: string;
+  } | null>(null);
 
   const { data: publicUnits } = usePublicUnits();
   const turnstile = useTurnstile();
@@ -52,7 +93,7 @@ function PublicWbsContent() {
 
     try {
       const res = await createWbsMutation.mutateAsync({
-        unitId: (unitId && unitId !== "YAYASAN_PUSAT") ? unitId : undefined,
+        unitId: unitId && unitId !== "YAYASAN_PUSAT" ? unitId : undefined,
         category,
         targetLevel,
         targetName: targetName || undefined,
@@ -85,7 +126,10 @@ function PublicWbsContent() {
   };
 
   return (
-    <main id="main-content" className="min-h-screen bg-slate-50 py-12 px-4 sm:px-6 lg:px-8">
+    <main
+      id="main-content"
+      className="min-h-screen bg-slate-50 py-12 px-4 sm:px-6 lg:px-8"
+    >
       <div className="max-w-3xl mx-auto space-y-6">
         {/* Header */}
         <div className="text-center space-y-2">
@@ -96,11 +140,16 @@ function PublicWbsContent() {
             Kanal Pengaduan & Whistleblowing System (WBS)
           </h1>
           <p className="text-slate-600 text-sm max-w-xl mx-auto">
-            Sampaikan pengaduan secara aman, akurat, dan rahasia. Pengaduan Anda akan ditindaklanjuti secara obyektif oleh Pengawas, Pembina, Pengurus, atau Kepala Unit sesuai kewenangannya.
+            Sampaikan pengaduan secara aman, akurat, dan rahasia. Pengaduan Anda
+            akan ditindaklanjuti secara obyektif oleh Pengawas, Pembina,
+            Pengurus, atau Kepala Unit sesuai kewenangannya.
           </p>
           <div className="pt-2">
             <Link href="/public/wbs/track">
-              <Button variant="outline" className="border-blue-600 text-blue-600 hover:bg-blue-50 gap-2">
+              <Button
+                variant="outline"
+                className="border-blue-600 text-blue-600 hover:bg-blue-50 gap-2"
+              >
                 <FileText className="h-4 w-4" />
                 Lacak Progress Laporan Anda
                 <ArrowRight className="h-4 w-4" />
@@ -117,7 +166,8 @@ function PublicWbsContent() {
               Formulir Laporan Pengaduan Baru
             </CardTitle>
             <CardDescription>
-              Isi data berikut dengan jelas. Identitas pelapor dapat dirahasiakan (anonim).
+              Isi data berikut dengan jelas. Identitas pelapor dapat
+              dirahasiakan (anonim).
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -125,33 +175,37 @@ function PublicWbsContent() {
               {/* Category & Target Level */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="category" className="font-semibold">Kategori Laporan *</Label>
+                  <Label htmlFor="category" className="font-semibold">
+                    Kategori Laporan *
+                  </Label>
                   <Select value={category} onValueChange={setCategory}>
                     <SelectTrigger id="category" className="bg-white">
                       <SelectValue placeholder="Pilih Kategori" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="KEUANGAN_ASET">Keuangan & Aset (Penyalahgunaan Anggaran, Pungli, Penggelapan)</SelectItem>
-                      <SelectItem value="SOP_TATA_KELOLA">SOP & Tata Kelola (Pelanggaran Prosedur, Penyalahgunaan Wewenang)</SelectItem>
-                      <SelectItem value="ETIKA_PERILAKU">Etika, Kesusilaan & Perilaku (Pelecehan, Perundungan/Bullying)</SelectItem>
-                      <SelectItem value="PELAYANAN_AKADEMIK_PENGASUHAN">Pelayanan Akademik & Pengasuhan (Keluhan Layanan, Keasramaan)</SelectItem>
-                      <SelectItem value="LAINNYA">Lain-lain</SelectItem>
+                      {WBS_CATEGORIES.map((code) => (
+                        <SelectItem key={code} value={code}>
+                          {WBS_CATEGORY_LABELS[code]}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="targetLevel" className="font-semibold">Subjek Teradu (Level Jabatan) *</Label>
+                  <Label htmlFor="targetLevel" className="font-semibold">
+                    Subjek Teradu (Level Jabatan) *
+                  </Label>
                   <Select value={targetLevel} onValueChange={setTargetLevel}>
                     <SelectTrigger id="targetLevel" className="bg-white">
                       <SelectValue placeholder="Pilih Subjek Teradu" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="PENGURUS_YAYASAN">Pengurus Yayasan (Ditangani Pengawas, CC Pembina)</SelectItem>
-                      <SelectItem value="PENGAWAS_YAYASAN">Pengawas Yayasan (Ditangani Pembina)</SelectItem>
-                      <SelectItem value="KEPALA_UNIT">Kepala Unit Organisasi / Kepsek / Pengasuh (Ditangani Pengurus, CC Pengawas)</SelectItem>
-                      <SelectItem value="STAF_PEGAWAI">Staf / Guru / Pegawai Unit (Ditangani Kepsek/Kepala Unit, CC Pengurus & Pengawas)</SelectItem>
-                      <SelectItem value="SISWA_SANTRI">Siswa / Santri / Murid (Ditangani Kepala Unit/BK, CC Pengurus & Pengawas)</SelectItem>
+                      {WBS_TARGET_LEVELS.map((code) => (
+                        <SelectItem key={code} value={code}>
+                          {WBS_TARGET_LEVEL_LABELS[code]}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -160,13 +214,17 @@ function PublicWbsContent() {
               {/* Unit Selection & Specific Target Name */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="unitId">Unit Organisasi Terkait (Opsional)</Label>
+                  <Label htmlFor="unitId">
+                    Unit Organisasi Terkait (Opsional)
+                  </Label>
                   <Select value={unitId} onValueChange={setUnitId}>
                     <SelectTrigger id="unitId" className="bg-white">
                       <SelectValue placeholder="Pilih Unit Organisasi..." />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="YAYASAN_PUSAT">Yayasan Pusat (Pusat)</SelectItem>
+                      <SelectItem value="YAYASAN_PUSAT">
+                        Yayasan Pusat (Pusat)
+                      </SelectItem>
                       {publicUnits?.map((u) => (
                         <SelectItem key={u.id} value={u.id}>
                           {u.name}
@@ -177,7 +235,9 @@ function PublicWbsContent() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="targetName">Nama / Jabatan Pihak Teradu (Opsional)</Label>
+                  <Label htmlFor="targetName">
+                    Nama / Jabatan Pihak Teradu (Opsional)
+                  </Label>
                   <Input
                     id="targetName"
                     placeholder="Contoh: Oknum Staf Keuangan / Nama Teradu"
@@ -191,7 +251,9 @@ function PublicWbsContent() {
               {/* Subject & Incident Date */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="md:col-span-2 space-y-2">
-                  <Label htmlFor="subject" className="font-semibold">Judul / Perihal Laporan *</Label>
+                  <Label htmlFor="subject" className="font-semibold">
+                    Judul / Perihal Laporan *
+                  </Label>
                   <Input
                     id="subject"
                     placeholder="Tuliskan judul singkat mengenai indikasi pelanggaran..."
@@ -202,7 +264,9 @@ function PublicWbsContent() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="incidentDate">Tanggal Kejadian (Opsional)</Label>
+                  <Label htmlFor="incidentDate">
+                    Tanggal Kejadian (Opsional)
+                  </Label>
                   <Input
                     id="incidentDate"
                     type="date"
@@ -215,7 +279,9 @@ function PublicWbsContent() {
 
               {/* Location */}
               <div className="space-y-2">
-                <Label htmlFor="location">Spesifikasi Lokasi Kejadian (Opsional)</Label>
+                <Label htmlFor="location">
+                  Spesifikasi Lokasi Kejadian (Opsional)
+                </Label>
                 <Input
                   id="location"
                   placeholder="Contoh: Gedung SD IT / Asrama Santri / Kantor Yayasan"
@@ -227,7 +293,9 @@ function PublicWbsContent() {
 
               {/* Description */}
               <div className="space-y-2">
-                <Label htmlFor="description" className="font-semibold">Rincian & Kronologi Laporan *</Label>
+                <Label htmlFor="description" className="font-semibold">
+                  Rincian & Kronologi Laporan *
+                </Label>
                 <Textarea
                   id="description"
                   rows={5}
@@ -241,7 +309,9 @@ function PublicWbsContent() {
 
               {/* Attachment URL */}
               <div className="space-y-2">
-                <Label htmlFor="attachmentUrl">Tautan Lampiran Bukti / Google Drive / Cloud (Opsional)</Label>
+                <Label htmlFor="attachmentUrl">
+                  Tautan Lampiran Bukti / Google Drive / Cloud (Opsional)
+                </Label>
                 <Input
                   id="attachmentUrl"
                   type="url"
@@ -257,11 +327,17 @@ function PublicWbsContent() {
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
                     <Label className="text-base font-semibold flex items-center gap-2">
-                      {isAnonymous ? <UserX className="h-5 w-5 text-emerald-600" /> : <UserCheck className="h-5 w-5 text-blue-600" />}
+                      {isAnonymous ? (
+                        <UserX className="h-5 w-5 text-emerald-600" />
+                      ) : (
+                        <UserCheck className="h-5 w-5 text-blue-600" />
+                      )}
                       Kerahasiaan Identitas Pelapor
                     </Label>
                     <p className="text-xs text-slate-500">
-                      {isAnonymous ? "Laporan dikirim secara ANONIM (tanpa mencantumkan nama/kontak Anda)." : "Nama dan kontak Anda akan dicantumkan secara terbatas bagi pemeriksa."}
+                      {isAnonymous
+                        ? "Laporan dikirim secara ANONIM (tanpa mencantumkan nama/kontak Anda)."
+                        : "Nama dan kontak Anda akan dicantumkan secara terbatas bagi pemeriksa."}
                     </p>
                   </div>
                   <Switch
@@ -273,7 +349,9 @@ function PublicWbsContent() {
                 {!isAnonymous && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 border-t">
                     <div>
-                      <Label htmlFor="reporterName" className="text-xs">Nama Lengkap Pelapor</Label>
+                      <Label htmlFor="reporterName" className="text-xs">
+                        Nama Lengkap Pelapor
+                      </Label>
                       <Input
                         id="reporterName"
                         placeholder="Nama Anda"
@@ -283,7 +361,9 @@ function PublicWbsContent() {
                       />
                     </div>
                     <div>
-                      <Label htmlFor="reporterContact" className="text-xs">No. Telepon / Email Kontak</Label>
+                      <Label htmlFor="reporterContact" className="text-xs">
+                        No. Telepon / Email Kontak
+                      </Label>
                       <Input
                         id="reporterContact"
                         placeholder="No. WA atau Email"
@@ -330,7 +410,10 @@ function PublicWbsContent() {
         </Card>
 
         {/* Success Modal / Dialog */}
-        <Dialog open={!!createdTicket} onOpenChange={() => setCreatedTicket(null)}>
+        <Dialog
+          open={!!createdTicket}
+          onOpenChange={() => setCreatedTicket(null)}
+        >
           <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 text-emerald-600 text-xl">
@@ -338,7 +421,8 @@ function PublicWbsContent() {
                 Laporan WBS Berhasil Dikirim!
               </DialogTitle>
               <DialogDescription>
-                Simpan Kode Tiket dan Token Akses Rahasia ini untuk melacak progress laporan dan berkomunikasi secara anonim.
+                Simpan Kode Tiket dan Token Akses Rahasia ini untuk melacak
+                progress laporan dan berkomunikasi secara anonim.
               </DialogDescription>
             </DialogHeader>
 
@@ -346,28 +430,55 @@ function PublicWbsContent() {
               <div className="space-y-4 py-3">
                 <Alert className="bg-amber-50 border-amber-300">
                   <AlertTriangle className="h-5 w-5 text-amber-600" />
-                  <AlertTitle className="text-amber-800 font-bold">Penting!</AlertTitle>
+                  <AlertTitle className="text-amber-800 font-bold">
+                    Penting!
+                  </AlertTitle>
                   <AlertDescription className="text-amber-700 text-xs">
-                    Token ini hanya ditampilkan SATU KALI. Mohon catat atau salin token ini sekarang sebelum menutup modal!
+                    Token ini hanya ditampilkan SATU KALI. Mohon catat atau
+                    salin token ini sekarang sebelum menutup modal!
                   </AlertDescription>
                 </Alert>
 
                 <div className="p-4 bg-slate-100 rounded-lg space-y-3 font-mono text-sm border">
                   <div>
-                    <span className="text-xs text-slate-500 font-sans block">Kode Tiket WBS:</span>
+                    <span className="text-xs text-slate-500 font-sans block">
+                      Kode Tiket WBS:
+                    </span>
                     <div className="flex items-center justify-between font-bold text-slate-900 bg-white p-2 rounded border">
                       <span>{createdTicket.ticketCode}</span>
-                      <Button size="sm" variant="ghost" onClick={() => copyToClipboard(createdTicket.ticketCode, "Kode Tiket")}>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() =>
+                          copyToClipboard(
+                            createdTicket.ticketCode,
+                            "Kode Tiket",
+                          )
+                        }
+                      >
                         <Copy className="h-4 w-4" />
                       </Button>
                     </div>
                   </div>
 
                   <div>
-                    <span className="text-xs text-slate-500 font-sans block">Token Akses Rahasia:</span>
+                    <span className="text-xs text-slate-500 font-sans block">
+                      Token Akses Rahasia:
+                    </span>
                     <div className="flex items-center justify-between font-bold text-emerald-800 bg-white p-2 rounded border break-all">
-                      <span className="text-xs">{createdTicket.trackingToken}</span>
-                      <Button size="sm" variant="ghost" onClick={() => copyToClipboard(createdTicket.trackingToken, "Token Rahasia")}>
+                      <span className="text-xs">
+                        {createdTicket.trackingToken}
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() =>
+                          copyToClipboard(
+                            createdTicket.trackingToken,
+                            "Token Rahasia",
+                          )
+                        }
+                      >
                         <Copy className="h-4 w-4" />
                       </Button>
                     </div>
@@ -396,7 +507,11 @@ function PublicWbsContent() {
 
 export default function PublicWbsPage() {
   return (
-    <Suspense fallback={<div className="p-8 text-center">Memuat halaman pengaduan WBS...</div>}>
+    <Suspense
+      fallback={
+        <div className="p-8 text-center">Memuat halaman pengaduan WBS...</div>
+      }
+    >
       <PublicWbsContent />
     </Suspense>
   );
