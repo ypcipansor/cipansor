@@ -125,6 +125,85 @@ test.describe("daftar keputusan", () => {
     ).toHaveCount(0);
   });
 
+  test("peran read-only tidak melihat aksi tulis (#6)", async ({ page }) => {
+    // YAYASAN_BENDAHARA & YAYASAN_ANGGOTA hanya READ di routes
+    // (`WRITE` mengecualikan keduanya), jadi tombol "Buat Keputusan" pasti
+    // berakhir 403 saat diklik. UI tidak boleh menawarkannya.
+    await signIn(page, "bendahara");
+    await page.goto("/foundation/decisions");
+
+    await expect(
+      page.getByRole("heading", { name: "Keputusan & Risalah Organ" }),
+    ).toBeVisible({ timeout: 20000 });
+    await expect(
+      page.getByRole("link", { name: /Buat Keputusan/ }),
+    ).toHaveCount(0);
+    // Daftarnya sendiri tetap terbaca — yang hilang hanya aksinya. Isinya
+    // bergantung pada data seed, jadi yang dipaku adalah halaman daftarnya
+    // benar-benar merender (heading + kontrol filter).
+    await expect(
+      page.getByRole("combobox").first(),
+    ).toBeVisible();
+  });
+
+  test("peran read-only ditolak API saat mencoba menulis (#6)", async () => {
+    const bendahara = await apiLogin(SEED_USERS.bendahara);
+    const res = await fetch(`${API_URL}/foundation/decisions`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${bendahara.accessToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        organType: "PENGAWAS",
+        kind: "CIRCULAR",
+        subject: "Uji bendahara read-only",
+        body: "Isi uji yang cukup panjang untuk lolos validasi skema.",
+        decisionType: "pemberhentian-pengurus",
+      }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  test("Super Admin mengelola aturan kuorum (#7)", async ({ page }) => {
+    // Endpoint GET/PUT /foundation/rules sudah ada tetapi tak punya halaman;
+    // hook-nya menganggur. Halaman ini menutup celah itu.
+    await signIn(page, "superAdmin");
+    await page.goto("/foundation/decisions/rules");
+
+    await expect(
+      page.getByRole("heading", { name: "Aturan Kuorum Organ" }),
+    ).toBeVisible({ timeout: 20000 });
+
+    // Pilih pasangan organ × cara, lalu simpan. Trigger Select tidak terikat
+    // <label> (tak ada id), jadi dipilih lewat urutan: organ, cara, kuorum
+    // hadir, kuorum sah.
+    const combos = page.getByRole("combobox");
+    await combos.nth(1).click();
+    await page.getByRole("option", { name: /Rapat/ }).click();
+
+    await combos.nth(3).click();
+    await page.getByRole("option", { name: /Dua pertiga/ }).click();
+    await page.locator('input[type="number"]').nth(1).fill("0.67");
+    await page.getByRole("button", { name: "Simpan Aturan" }).click();
+
+    await expect(page.getByText("Aturan tersimpan.")).toBeVisible({
+      timeout: 20000,
+    });
+    await expect(page.getByRole("cell", { name: /TWO_THIRDS/ })).toBeVisible();
+  });
+
+  test("menu Aturan Kuorum hanya untuk Super Admin (#7)", async ({ page }) => {
+    await signIn(page, "pengawas");
+    await page.goto("/foundation/decisions");
+    await expect(
+      page.getByRole("heading", { name: "Keputusan & Risalah Organ" }),
+    ).toBeVisible({ timeout: 20000 });
+    await expect(
+      page.getByRole("link", { name: /Aturan Kuorum/ }),
+    ).toHaveCount(0);
+  });
+
   test("API menolak guru pada daftar dan pembuatan keputusan", async () => {
     const teacher = await apiLogin(SEED_USERS.teacher);
     const list = await fetch(`${API_URL}/foundation/decisions`, {

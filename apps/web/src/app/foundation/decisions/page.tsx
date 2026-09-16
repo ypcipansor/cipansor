@@ -31,6 +31,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { FileText, Plus } from "lucide-react";
+import { useAuthStore } from "@/stores/auth";
+import { getPrimaryRoleCode } from "@/lib/rbac";
+import { canManageFoundationDecisions } from "@/lib/yayasan-organ";
 
 const statusColor: Record<string, string> = {
   DRAFT: "bg-gray-100 text-gray-700",
@@ -46,6 +49,12 @@ export default function FoundationDecisionsPage() {
   // meneruskan nilai Select apa adanya.
   const { data, isLoading } = useFoundationDecisions({ organType, status });
 
+  // Bendahara & Anggota hanya boleh MEMBACA; peladen menolak POST /decisions
+  // untuk mereka. Tombol "Buat Keputusan" dulu dirender ke semua pembaca,
+  // sehingga klik mereka berakhir 403.
+  const { user } = useAuthStore();
+  const canWrite = canManageFoundationDecisions(getPrimaryRoleCode(user));
+
   const items = data?.items ?? [];
 
   return (
@@ -55,11 +64,13 @@ export default function FoundationDecisionsPage() {
           title="Keputusan & Risalah Organ"
           description="Keputusan Dewan Pembina, Pengurus, dan Pengawas dengan tanda tangan digital."
           actions={
-            <Button asChild>
-              <Link href="/foundation/decisions/new">
-                <Plus className="mr-2 h-4 w-4" /> Buat Keputusan
-              </Link>
-            </Button>
+            canWrite ? (
+              <Button asChild>
+                <Link href="/foundation/decisions/new">
+                  <Plus className="mr-2 h-4 w-4" /> Buat Keputusan
+                </Link>
+              </Button>
+            ) : undefined
           }
         />
 

@@ -4,7 +4,10 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import * as z from "zod";
+import {
+  createFoundationDecisionSchema,
+  type CreateFoundationDecisionInput,
+} from "@cipansor/shared";
 import { MainLayout } from "@/components/layout";
 import { useCreateFoundationDecision } from "@/hooks/use-foundation-decisions";
 import { PageHeader } from "@/components/shared/page-header";
@@ -27,14 +30,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-const schema = z.object({
-  organType: z.string().min(1, "Organ wajib"),
-  kind: z.string().min(1, "Cara keputusan wajib"),
-  subject: z.string().min(3, "Perihal minimal 3 karakter").max(255),
-  decisionType: z.string().min(2, "Jenis keputusan wajib").max(100),
-  body: z.string().min(10, "Isi keputusan minimal 10 karakter"),
-});
-type FormValues = z.infer<typeof schema>;
+/**
+ * Skema create adalah milik bersama: validasi di edge (API) dan tipe di web
+ * harus berasal dari SATU definisi. Sebelumnya halaman ini mendeklarasikan
+ * ulang skema lokal dan melempar payload ke `never`, sehingga aturan validasi
+ * dapat menyimpang dari kontrak — longgar di klien, ketat di peladen (atau
+ * sebaliknya), tanpa ada yang menangkapnya.
+ */
+type FormValues = CreateFoundationDecisionInput;
 
 export default function NewFoundationDecisionPage() {
   const router = useRouter();
@@ -47,10 +50,10 @@ export default function NewFoundationDecisionPage() {
     watch,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(createFoundationDecisionSchema),
     defaultValues: {
-      organType: "",
-      kind: "",
+      organType: "PEMBINA",
+      kind: "CIRCULAR",
       subject: "",
       decisionType: "",
       body: "",
@@ -60,7 +63,7 @@ export default function NewFoundationDecisionPage() {
   const onSubmit = async (values: FormValues) => {
     setError(null);
     try {
-      const res = await create.mutateAsync(values as never);
+      const res = await create.mutateAsync(values);
       const decisionId = res.data?.data?.decisionId;
       router.push(
         decisionId
@@ -98,7 +101,9 @@ export default function NewFoundationDecisionPage() {
                 <Label>Organ</Label>
                 <Select
                   value={watch("organType")}
-                  onValueChange={(v) => setValue("organType", v)}
+                  onValueChange={(v) =>
+                    setValue("organType", v as FormValues["organType"])
+                  }
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Pilih organ" />
@@ -120,7 +125,9 @@ export default function NewFoundationDecisionPage() {
                 <Label>Cara Keputusan</Label>
                 <Select
                   value={watch("kind")}
-                  onValueChange={(v) => setValue("kind", v)}
+                  onValueChange={(v) =>
+                    setValue("kind", v as FormValues["kind"])
+                  }
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Pilih cara" />

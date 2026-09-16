@@ -67,3 +67,28 @@ export function verifySeal(
 ): boolean {
   return verifyPdfHashSignature(material.publicKey, digestHex, signature);
 }
+
+/**
+ * Dapatkah kunci privat seal ini dibuka dengan passphrase yang berlaku sekarang?
+ *
+ * Setelah `FOUNDATION_ESEAL_PASSPHRASE` dirotasi, baris `FoundationEseal` lama
+ * tetap ada dan masih `revokedAt: null`, tetapi kunci privatnya tersegel dengan
+ * passphrase LAMA. Memakainya untuk approval baru membuat `signSeal` gagal
+ * mendekripsi, dan karena itu terjadi di dalam transaksi approval, seluruh
+ * transaksi rollback dan keputusan tak pernah tertutup.
+ *
+ * Probe ini menandatangani digest tetap: Ed25519 deterministik, dan satu-satunya
+ * cara mengetahui passphrase cocok adalah mencoba membuka kunci privatnya —
+ * persis seperti alasan `unsealPrivateKey` tidak menyimpan hash passphrase.
+ */
+export function sealCanSign(
+  material: EncryptedKeyMaterial,
+  serverPassphrase: string
+): boolean {
+  try {
+    signSeal(material, serverPassphrase, 'foundation-eseal-capability-probe');
+    return true;
+  } catch {
+    return false;
+  }
+}

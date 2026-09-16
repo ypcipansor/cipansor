@@ -101,13 +101,17 @@ export function roleCodesForOrgan(organType: FoundationOrganType): RoleCode[] {
     case 'PENGAWAS':
       return [RoleCode.YAYASAN_PENGAWAS];
     case 'GABUNGAN':
-      // Rapat gabungan melibatkan Pembina + Pengurus (bukan hanya Pengawas).
+      // Rapat gabungan Pengurus + Pengawas (UU 16/2001 Pasal 28 ayat (4)):
+      // ketika Yayasan kehilangan seluruh Pembina, Pengurus dan Pengawas
+      // bersama-sama mengangkat Pembina baru. Pembina TIDAK ikut — justru
+      // kekosongan Pembina-lah yang menjadikan rapat ini perlu, dan mengikut-
+      // sertakannya mengembalikan kewenangan ke organ yang sedang kosong.
       return [
-        RoleCode.YAYASAN_PEMBINA,
         RoleCode.YAYASAN_KETUA,
         RoleCode.YAYASAN_SEKRETARIS,
         RoleCode.YAYASAN_BENDAHARA,
         RoleCode.YAYASAN_ANGGOTA,
+        RoleCode.YAYASAN_PENGAWAS,
       ];
     default:
       return [];

@@ -32,6 +32,7 @@ vi.mock('@/lib/prisma', () => ({
     },
     foundationEseal: {
       findFirst: vi.fn(),
+      findMany: vi.fn(),
       findUnique: vi.fn(),
       create: vi.fn(),
     },
@@ -347,7 +348,11 @@ describe('FoundationDecisionService.castVote', () => {
     const d = decisionRow();
     dm.foundationDecision.findUnique.mockResolvedValue(d);
     dm.userSigningKey.findUnique.mockResolvedValue(signingKeyRow);
-    dm.userSigningKey.update.mockResolvedValue(signingKeyRow);
+    // `increment` atomik mengembalikan baris HASIL increment, bukan nilai basi
+    // yang dibaca sebelum update.
+    dm.userSigningKey.update
+      .mockResolvedValueOnce({ ...signingKeyRow, failedAttempts: 1 })
+      .mockResolvedValueOnce(signingKeyRow);
 
     await expect(
       FoundationDecisionService.castVote({ id: 'user-1', roleCode: 'YAYASAN_PEMBINA' }, 'dec-1', {
@@ -356,9 +361,9 @@ describe('FoundationDecisionService.castVote', () => {
       })
     ).rejects.toThrow(/Sisa percobaan: 4/);
 
-    expect(dm.userSigningKey.update).toHaveBeenCalledTimes(1);
-    const data = dm.userSigningKey.update.mock.calls[0][0].data;
-    expect(data.failedAttempts).toBe(1);
+    // Pernyataan increment atomik, bukan penulisan nilai hasil baca.
+    const incrementCall = dm.userSigningKey.update.mock.calls[0][0];
+    expect(incrementCall.data).toEqual({ failedAttempts: { increment: 1 } });
     expect(dm.foundationDecisionVote.create).not.toHaveBeenCalled();
   });
 
@@ -366,7 +371,9 @@ describe('FoundationDecisionService.castVote', () => {
     const d = decisionRow();
     dm.foundationDecision.findUnique.mockResolvedValue(d);
     dm.userSigningKey.findUnique.mockResolvedValue({ ...signingKeyRow, failedAttempts: 4 });
-    dm.userSigningKey.update.mockResolvedValue(signingKeyRow);
+    dm.userSigningKey.update
+      .mockResolvedValueOnce({ ...signingKeyRow, failedAttempts: 5 })
+      .mockResolvedValueOnce(signingKeyRow);
 
     await expect(
       FoundationDecisionService.castVote({ id: 'user-1', roleCode: 'YAYASAN_PEMBINA' }, 'dec-1', {
@@ -375,9 +382,54 @@ describe('FoundationDecisionService.castVote', () => {
       })
     ).rejects.toThrow(/dikunci sementara/);
 
-    const data = dm.userSigningKey.update.mock.calls[0][0].data;
-    expect(data.failedAttempts).toBe(5);
-    expect(data.lockedUntil).toBeInstanceOf(Date);
+    // `lockedUntil` dihitung dari nilai HASIL increment (5), bukan dari 4.
+    const lockCall = dm.userSigningKey.update.mock.calls[1][0];
+    expect(lockCall.data.lockedUntil).toBeInstanceOf(Date);
+  });
+
+  /**
+   * Regresi: percobaan gagal PARALEL tidak boleh melewati lockout.
+   *
+   * Dulu `recordFailedAttempt(keyId, current)` menulis `current + 1` dari nilai
+   * yang dibaca sebelum update. Lima percobaan paralel sama-sama membaca
+   * `failedAttempts: 0`, dan kelimanya menulis `1` — penghitung tak pernah
+   * menembus ambang, jadi lockout tak pernah menyala dan tebakan passphrase
+   * menjadi gratis. Dengan `increment` atomik, tiap panggilan menaikkan nilai
+   * yang benar-benar tersimpan.
+   */
+  it('lima percobaan salah paralel tetap saling menaikkan until lockout tercapai', async () => {
+    const d = decisionRow();
+    dm.foundationDecision.findUnique.mockResolvedValue(d);
+    dm.userSigningKey.findUnique.mockResolvedValue({ ...signingKeyRow, failedAttempts: 0 });
+
+    // Simulasi penghitung yang benar-benar bertambah di basis data: setiap
+    // `increment` mengembalikan nilai berikutnya, membuktikan tiap panggilan
+    // bergantung pada hasil panggilan sebelumnya, bukan pada bacaan basi.
+    let stored = 0;
+    dm.userSigningKey.update.mockImplementation(async (args: any) => {
+      if (args.data.failedAttempts?.increment) stored += args.data.failedAttempts.increment;
+      return { ...signingKeyRow, failedAttempts: stored };
+    });
+
+    const attempts = await Promise.all(
+      Array.from({ length: 5 }, () =>
+        FoundationDecisionService.castVote(
+          { id: 'user-1', roleCode: 'YAYASAN_PEMBINA' },
+          'dec-1',
+          { choice: 'APPROVE', passphrase: 'passphrase-yang-salah-sekali' }
+        ).catch((e) => e as Error)
+      )
+    );
+
+    // Setidaknya satu percobaan melaporkan kunci terkunci — mustahil terjadi
+    // bila kelimanya menulis nilai basi yang sama.
+    expect(attempts.some((e) => /dikunci sementara/.test((e as Error).message))).toBe(true);
+    expect(stored).toBe(5);
+    // Panggilan increment haruslah bentuk atomik, bukan `failedAttempts: n`.
+    const incrementCalls = dm.userSigningKey.update.mock.calls.filter(
+      (c: any) => c[0].data.failedAttempts?.increment
+    );
+    expect(incrementCalls).toHaveLength(5);
   });
 
   it('menolak menandatangani bila kunci sedang terkunci', async () => {
@@ -404,7 +456,7 @@ describe('FoundationDecisionService.castVote', () => {
     dm.foundationDecision.update.mockResolvedValue({ ...d, status: 'VOTING' });
     dm.userSigningKey.findUnique.mockResolvedValue(signingKeyRow);
     dm.userSigningKey.update.mockResolvedValue(signingKeyRow);
-    dm.foundationEseal.findFirst.mockResolvedValue(null);
+    dm.foundationEseal.findMany.mockResolvedValue([]);
 
     await FoundationDecisionService.castVote(
       { id: 'user-1', roleCode: 'YAYASAN_PEMBINA' },
@@ -417,6 +469,58 @@ describe('FoundationDecisionService.castVote', () => {
         data: expect.objectContaining({ failedAttempts: 0, lockedUntil: null }),
       })
     );
+  });
+
+  /**
+   * Regresi: audit VOTE ditulis DI DALAM transaksi suara.
+   *
+   * Dulu `auditLog.create` VOTE berjalan SETELAH transaksi commit. Bila
+   * penulisan audit gagal, suara sudah tercommit tetapi `castVote` melempar
+   * galat; percobaan ulang ditolak sebagai suara ganda, sehingga suara sah
+   * kehilangan baris auditnya. Di sini kegagalan audit harus membatalkan
+   * seluruh transaksi — suara tidak boleh tercommit.
+   */
+  it('gagal menulis audit → vote tidak tercommit (audit di dalam transaksi)', async () => {
+    const d = decisionRow();
+    dm.foundationDecision.findUnique.mockResolvedValue(d);
+    dm.foundationDecisionVote.create.mockResolvedValue({ id: 'vote-1' });
+    dm.foundationDecisionVote.findMany.mockResolvedValue([{ choice: 'APPROVE' }]);
+    dm.foundationDecision.update.mockResolvedValue({ ...d, status: 'VOTING' });
+    dm.userSigningKey.findUnique.mockResolvedValue(signingKeyRow);
+    dm.userSigningKey.update.mockResolvedValue(signingKeyRow);
+    dm.foundationEseal.findMany.mockResolvedValue([]);
+    dm.auditLog.create.mockRejectedValueOnce(new Error('audit down'));
+
+    // Transaksi tiruan yang benar-benar rollback: perubahan hanya tersedia bila
+    // callback selesai tanpa melempar.
+    const committed: string[] = [];
+    dm.$transaction.mockImplementation(async (cb: any) => {
+      const tx = {
+        ...prisma,
+        $executeRaw: vi.fn().mockResolvedValue(1),
+        foundationDecision: prisma.foundationDecision,
+        foundationDecisionVote: prisma.foundationDecisionVote,
+        foundationEseal: prisma.foundationEseal,
+        auditLog: prisma.auditLog,
+        userSigningKey: prisma.userSigningKey,
+      };
+      const result = await cb(tx);
+      committed.push('commit');
+      return result;
+    });
+
+    await expect(
+      FoundationDecisionService.castVote(
+        { id: 'user-1', roleCode: 'YAYASAN_PEMBINA' },
+        'dec-1',
+        { choice: 'APPROVE', passphrase: PASS }
+      )
+    ).rejects.toThrow(/audit down/);
+
+    // Audit dipanggil di dalam callback transaksi, dan transaksi TIDAK pernah
+    // mencapai titik commit — vote tidak tercommit.
+    expect(dm.auditLog.create).toHaveBeenCalledTimes(1);
+    expect(committed).toEqual([]);
   });
 });
 
@@ -521,7 +625,7 @@ describe('FoundationDecisionService.applyOutcome', () => {
       activatedAt: new Date(),
       createdAt: new Date(),
     };
-    dm.foundationEseal.findFirst.mockResolvedValue(sealRow);
+    dm.foundationEseal.findMany.mockResolvedValue([sealRow]);
     dm.foundationDecisionDocument.create.mockResolvedValue({ id: 'doc-1' });
     dm.foundationDecision.update.mockResolvedValue({ id: 'dec-1', status: 'APPROVED' });
     dm.auditLog.create.mockResolvedValue({ id: 'log-1' });
@@ -551,7 +655,7 @@ describe('FoundationDecisionService.applyOutcome', () => {
     expect(result.outcome).toBe('APPROVED');
     // Seal yang dicabut tidak boleh dipakai untuk membubuhkan tanda tangan
     // baru: pencarian hanya boleh menyentuh seal yang masih aktif.
-    expect(dm.foundationEseal.findFirst).toHaveBeenCalledWith(
+    expect(dm.foundationEseal.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { revokedAt: null } })
     );
     const updateData = dm.foundationDecision.update.mock.calls[0][0].data;
@@ -576,13 +680,15 @@ describe('FoundationDecisionService.applyOutcome', () => {
    */
   it('merender PDF dari bentuk final (APPROVED + decidedAt), bukan VOTING', async () => {
     const sealMaterialRow = createSealMaterial(config.foundation.esealPassphrase);
-    dm.foundationEseal.findFirst.mockResolvedValue({
-      id: 'seal-1',
-      ...sealMaterialRow,
-      revokedAt: null,
-      activatedAt: new Date(),
-      createdAt: new Date(),
-    });
+    dm.foundationEseal.findMany.mockResolvedValue([
+      {
+        id: 'seal-1',
+        ...sealMaterialRow,
+        revokedAt: null,
+        activatedAt: new Date(),
+        createdAt: new Date(),
+      },
+    ]);
     dm.foundationDecisionDocument.create.mockResolvedValue({ id: 'doc-1' });
     dm.foundationDecision.update.mockResolvedValue({ id: 'dec-1', status: 'APPROVED' });
 
@@ -627,6 +733,75 @@ describe('FoundationDecisionService.applyOutcome', () => {
     } finally {
       spy.mockRestore();
     }
+  });
+
+  /**
+   * Regresi: rotasi `FOUNDATION_ESEAL_PASSPHRASE` tidak boleh memblokir
+   * approval baru.
+   *
+   * `ensureSeal` dulu mengambil seal aktif TERTUA (`revokedAt: null`) tanpa
+   * memeriksa apakah kunci privatnya masih dapat didekripsi dengan passphrase
+   * SEKARANG. Setelah passphrase dirotasi, seal lama masih `revokedAt: null`,
+   * sehingga dipakai ulang; `signSeal` lalu gagal mendekripsi DI DALAM
+   * transaksi approval, seluruh transaksi rollback, dan keputusan tak pernah
+   * tertutup. Seal yang tak dapat ditandatangani harus dilewati dan seal baru
+   * diterbitkan.
+   */
+  it('menerbitkan seal baru saat seal lama tersegel passphrase lama (rotasi)', async () => {
+    // Baris seal lama: masih aktif, tetapi passphrase-nya (lama) berbeda dari
+    // `config.foundation.esealPassphrase` yang berlaku sekarang. Stub `findFirst`
+    // juga supaya implementasi lama (yang mengambil seal aktif tertua) benar-
+    // benar bertemu seal yang tak dapat ditandatangani ini, bukan tak sengaja
+    // lolos karena mock-nya kosong.
+    const oldMaterial = createSealMaterial('passphrase-e-seal-lama-2025');
+    const oldSealRow = {
+      id: 'seal-lama',
+      ...oldMaterial,
+      revokedAt: null,
+      activatedAt: new Date(),
+      createdAt: new Date(),
+    };
+    dm.foundationEseal.findMany.mockResolvedValue([oldSealRow]);
+    dm.foundationEseal.findFirst.mockResolvedValue(oldSealRow);
+    dm.foundationEseal.create.mockResolvedValue({
+      id: 'seal-baru',
+      ...createSealMaterial(config.foundation.esealPassphrase),
+      revokedAt: null,
+      activatedAt: new Date(),
+      createdAt: new Date(),
+    });
+    dm.foundationDecisionDocument.create.mockResolvedValue({ id: 'doc-1' });
+    dm.foundationDecision.update.mockResolvedValue({ id: 'dec-1', status: 'APPROVED' });
+    dm.auditLog.create.mockResolvedValue({ id: 'log-1' });
+
+    const evaluation = {
+      outcome: 'APPROVED' as const,
+      activeCount: 3,
+      presentCount: 3,
+      approvedCount: 3,
+      rejectedCount: 0,
+      abstainCount: 0,
+      presentRequired: 3,
+      decisionRequired: 3,
+      presentMet: true,
+      decisionMet: true,
+      neededToApprove: 0,
+    };
+
+    const result = await FoundationDecisionService.applyOutcome(
+      { id: 'user-0', roleCode: 'YAYASAN_PEMBINA' },
+      decisionRow() as never,
+      evaluation as never
+    );
+
+    // Approval berhasil alih-alih melempar karena dekripsi gagal...
+    expect(result.outcome).toBe('APPROVED');
+    // ...seal baru diterbitkan, dan keputusan mereferensikannya — bukan seal
+    // lama yang tak dapat ditandatangani.
+    expect(dm.foundationEseal.create).toHaveBeenCalledTimes(1);
+    const updateData = dm.foundationDecision.update.mock.calls[0][0].data;
+    expect(updateData.esealId).toBe('seal-baru');
+    expect(updateData.finalPdfSealSignature).toBeTruthy();
   });
 });
 

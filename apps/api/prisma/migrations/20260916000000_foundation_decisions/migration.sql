@@ -1,10 +1,10 @@
--- Keputusan & Risalah Organ Yayasan: 5 model + 6 enum baru.
+-- Keputusan & Risalah Organ Yayasan: 6 tabel + 5 enum baru.
 --
 -- Menambahkan mesin keputusan organ (Pembina/Pengurus/Pengawas) dengan kuorum
 -- terkunci (snapshot immutable), suara anggota bertanda tangan Ed25519, dan
 -- e-seal Yayasan yang hanya dibubuhkan bila kuorum sah.
 --
--- Migrasi ini HANYA menambah: lima tabel baru, empat enum, dan satu kolom
+-- Migrasi ini HANYA menambah: enam tabel baru, lima enum, dan satu kolom
 -- referensi e-seal (`foundation_decisions.eseal_id`). Tidak ada tabel/kolom
 -- lama yang diubah atau dihapus, sehingga image lama tetap berjalan.
 --

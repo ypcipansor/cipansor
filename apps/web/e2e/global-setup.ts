@@ -32,6 +32,8 @@ const ROLE_FILES: Record<keyof typeof SEED_USERS, string> = {
   ketuaPengurus: "ketuaPengurus",
   pengawas: "pengawas",
   pembina: "pembina",
+  bendahara: "bendahara",
+  anggota: "anggota",
 };
 
 async function globalSetup() {

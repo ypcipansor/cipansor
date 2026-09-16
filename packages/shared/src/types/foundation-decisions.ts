@@ -64,6 +64,36 @@ export interface QuorumSnapshot {
   decisionValue: number;
 }
 
+/**
+ * Ambang kuorum BAWAAN menurut cara pengambilan keputusan, dipakai ketika
+ * (organ × cara) belum punya aturan tersimpan. Sumber tunggal untuk API dan
+ * web: API memakainya di `loadRule`, web menampilkannya sebagai nilai awal di
+ * halaman pengelolaan aturan — supaya apa yang dilihat SUPER_ADMIN benar-benar
+ * nilai yang sedang berlaku, bukan tebakan.
+ */
+export const DEFAULT_FOUNDATION_RULE: Record<
+  FoundationDecisionKind,
+  {
+    quorumPresentMode: FoundationQuorumMode;
+    quorumPresentValue: number;
+    quorumDecisionMode: FoundationQuorumMode;
+    quorumDecisionValue: number;
+  }
+> = {
+  CIRCULAR: {
+    quorumPresentMode: FoundationQuorumMode.MUTLAK,
+    quorumPresentValue: 1,
+    quorumDecisionMode: FoundationQuorumMode.MUTLAK,
+    quorumDecisionValue: 1,
+  },
+  MEETING: {
+    quorumPresentMode: FoundationQuorumMode.MAJORITY,
+    quorumPresentValue: 0.5,
+    quorumDecisionMode: FoundationQuorumMode.MAJORITY,
+    quorumDecisionValue: 0.5,
+  },
+};
+
 /** Rekapitulasi suara pada sebuah keputusan. */
 export interface VoteSummary {
   approve: number;

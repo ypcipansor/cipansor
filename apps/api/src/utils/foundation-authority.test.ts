@@ -52,6 +52,34 @@ describe('keanggotaan organ', () => {
   it('PENGAWAS hanya YAYASAN_PENGAWAS', () => {
     expect(roleCodesForOrgan('PENGAWAS')).toEqual([RoleCode.YAYASAN_PENGAWAS]);
   });
+
+  /**
+   * Regresi: komposisi GABUNGAN pernah MENGHILANGKAN Pengawas dan
+   * MEMASUKKAN Pembina.
+   *
+   * Rapat gabungan yang dimaksud Pasal 28 ayat (4) UU 16/2001 adalah rapat
+   * Pengurus + Pengawas untuk mengangkat Pembina ketika Yayasan tidak lagi
+   * mempunyai Pembina. Daftar yang keliru membuat snapshot keanggotaan
+   * (dan karenanya kuorum yang terkunci) memasukkan organ yang seharusnya
+   * justru kosong, sekaligus mengecualikan organ yang wajib hadir.
+   */
+  it('GABUNGAN = Pengurus + Pengawas, tanpa Pembina (ps. 28 ayat (4))', () => {
+    expect(roleCodesForOrgan('GABUNGAN')).toEqual([
+      RoleCode.YAYASAN_KETUA,
+      RoleCode.YAYASAN_SEKRETARIS,
+      RoleCode.YAYASAN_BENDAHARA,
+      RoleCode.YAYASAN_ANGGOTA,
+      RoleCode.YAYASAN_PENGAWAS,
+    ]);
+    expect(roleCodesForOrgan('GABUNGAN')).toContain(RoleCode.YAYASAN_PENGAWAS);
+    expect(roleCodesForOrgan('GABUNGAN')).not.toContain(RoleCode.YAYASAN_PEMBINA);
+  });
+
+  it('isMemberOfOrgan GABUNGAN: Pengawas boleh, Pembina tidak', () => {
+    expect(isMemberOfOrgan('GABUNGAN', RoleCode.YAYASAN_PENGAWAS)).toBe(true);
+    expect(isMemberOfOrgan('GABUNGAN', RoleCode.YAYASAN_KETUA)).toBe(true);
+    expect(isMemberOfOrgan('GABUNGAN', RoleCode.YAYASAN_PEMBINA)).toBe(false);
+  });
   it('isMemberOfOrgan', () => {
     expect(isMemberOfOrgan('PENGURUS', RoleCode.YAYASAN_SEKRETARIS)).toBe(true);
     expect(isMemberOfOrgan('PENGURUS', RoleCode.YAYASAN_PEMBINA)).toBe(false);

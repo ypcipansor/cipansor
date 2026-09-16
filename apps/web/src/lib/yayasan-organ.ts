@@ -64,3 +64,31 @@ export function yayasanOrganConflict(
 
   return null;
 }
+
+/**
+ * Peran yang boleh MENULIS keputusan organ: membuat, finalisasi, dan (untuk
+ * aturan kuorum) mengubah konfigurasi.
+ *
+ * Cermin dari `WRITE` di
+ * `apps/api/src/modules/foundation-decisions/foundation-decisions.routes.ts`.
+ * Halaman daftar/detail dulu merender tombol "Buat Keputusan"/"Finalisasi" ke
+ * SEMUA pembaca, termasuk Bendahara dan Anggota yang hanya boleh membaca —
+ * klik mereka berakhir 403. UI tidak boleh menjanjikan aksi yang peladen pasti
+ * tolak.
+ *
+ * Ini salinan, bukan aturannya: yang mengikat tetap `authorize(...WRITE)` di
+ * rute, dan `foundation-decision-write-gate.test.ts` memaku kedua daftar agar
+ * tidak menyimpang.
+ */
+export const FOUNDATION_DECISION_WRITE_ROLES: readonly string[] = [
+  "SUPER_ADMIN",
+  "YAYASAN_PEMBINA",
+  "YAYASAN_KETUA",
+  "YAYASAN_SEKRETARIS",
+];
+
+export function canManageFoundationDecisions(
+  roleCode: string | null | undefined,
+): boolean {
+  return !!roleCode && FOUNDATION_DECISION_WRITE_ROLES.includes(roleCode);
+}

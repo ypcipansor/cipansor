@@ -19,6 +19,7 @@ import type {
   UpsertFoundationRuleInput,
   VoteSummary,
 } from '@cipansor/shared';
+import { DEFAULT_FOUNDATION_RULE } from '@cipansor/shared';
 import { prisma } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
 import { config } from '@/config';
@@ -34,25 +35,14 @@ import {
   type ScryptParams,
 } from '@/utils/esign';
 import { assertCanSign } from '@/utils/esign-lifecycle';
-import { createSealMaterial, signSeal, toSealMaterial } from '@/utils/foundation-eseal';
+import { createSealMaterial, sealCanSign, signSeal, toSealMaterial } from '@/utils/foundation-eseal';
 import { decisionVerificationUrl } from '@/utils/verification-url';
 import { generateDecisionPdf } from '@/utils/generate-decision-pdf';
 import type { DecisionPdfVoteRow, DecisionPdfMemberRow } from '@/utils/generate-decision-pdf';
 
-const DEFAULT_RULE = Object.freeze({
-  CIRCULAR: Object.freeze({
-    quorumPresentMode: 'MUTLAK',
-    quorumPresentValue: 1,
-    quorumDecisionMode: 'MUTLAK',
-    quorumDecisionValue: 1,
-  }),
-  MEETING: Object.freeze({
-    quorumPresentMode: 'MAJORITY',
-    quorumPresentValue: 0.5,
-    quorumDecisionMode: 'MAJORITY',
-    quorumDecisionValue: 0.5,
-  }),
-} as const);
+// Default legal hidup di `@cipansor/shared` supaya halaman pengelolaan aturan
+// menampilkan nilai yang benar-benar berlaku, bukan salinan yang bisa basi.
+const DEFAULT_RULE = DEFAULT_FOUNDATION_RULE;
 
 /** Hash teks kanonis (payload suara, dsb). Selalu UTF-8. */
 function sha256hex(text: string): string {
@@ -187,18 +177,31 @@ function sealMaterial(seal: FoundationEseal): EncryptedKeyMaterial {
 }
 
 /**
- * Pastikan e-seal Yayasan yang AKTIF tersedia; buat satu baris bila belum ada.
+ * Pastikan e-seal Yayasan yang AKTIF dan DAPAT DIPAKAI tersedia; buat satu
+ * baris bila belum ada.
  *
  * Sengaja tidak mengambil "seal tertua": seal yang sudah dicabut bukan seal
  * yang boleh membubuhkan tanda tangan baru, dan mengambilnya akan menghasilkan
  * tanda tangan baru di bawah kunci yang sudah tidak berlaku.
+ *
+ * Sebuah seal `revokedAt: null` pun belum tentu dapat dipakai. Setelah
+ * `FOUNDATION_ESEAL_PASSPHRASE` dirotasi, seal lama masih aktif tetapi kunci
+ * privatnya tersegel dengan passphrase lama, sehingga `signSeal` melempar dan
+ * transaksi approval rollback — keputusan tak pernah tertutup. Karena itu
+ * kandidat disaring dengan probe kemampuan menandatangani memakai passphrase
+ * SEKARANG; bila tak satu pun mampu, seal baru diterbitkan. Keputusan lama
+ * tetap dapat diverifikasi karena verifikasi memakai kunci PUBLIK seal yang
+ * tercatat di barisnya, bukan passphrase hari ini.
  */
 async function ensureSeal(client: DbClient = prisma): Promise<FoundationEseal> {
-  const existing = await client.foundationEseal.findFirst({
+  const candidates = await client.foundationEseal.findMany({
     where: { revokedAt: null },
     orderBy: { createdAt: 'asc' },
   });
-  if (existing) return existing;
+  const usable = candidates.find((seal) =>
+    sealCanSign(sealMaterial(seal), SEAL_PASSPHRASE)
+  );
+  if (usable) return usable;
   const material = createSealMaterial(SEAL_PASSPHRASE);
   return client.foundationEseal.create({
     data: {
@@ -225,18 +228,32 @@ async function lockDecision(client: DbClient, id: string): Promise<void> {
   await client.$executeRaw`SELECT id FROM foundation_decisions WHERE id = ${id} FOR UPDATE`;
 }
 
-/** Catat percobaan passphrase gagal; dikunci setelah ambang esign tercapai. */
-async function recordFailedAttempt(keyId: string, current: number): Promise<void> {
-  const failed = current + 1;
+/**
+ * Catat percobaan passphrase gagal; dikunci setelah ambang esign tercapai.
+ *
+ * Penaikan memakai `increment` ATOMIK di basis data, bukan
+ * `current + 1` dari nilai yang dibaca lebih dulu. Beberapa percobaan salah
+ * yang berjalan paralel sama-sama membaca nilai basi yang sama, sehingga
+ * penghitungnya tak pernah menembus ambang dan lockout tak pernah terjadi —
+ * sesi yang dicuri bisa menebak passphrase tanpa batas. `lockedUntil`
+ * dihitung dari nilai HASIL increment, bukan dari bacaan lama.
+ */
+async function recordFailedAttempt(keyId: string): Promise<number> {
+  const updated = await prisma.userSigningKey.update({
+    where: { id: keyId },
+    data: { failedAttempts: { increment: 1 } },
+  });
+  const failed = updated.failedAttempts;
   await prisma.userSigningKey.update({
     where: { id: keyId },
-    data: { failedAttempts: failed, lockedUntil: lockoutUntil(failed) },
+    data: { lockedUntil: lockoutUntil(failed) },
   });
+  return failed;
 }
 
 /** Buka blokir setelah passphrase benar — penghitung kembali ke nol. */
-async function clearFailedAttempts(keyId: string): Promise<void> {
-  await prisma.userSigningKey.update({
+async function clearFailedAttempts(keyId: string, client: DbClient = prisma): Promise<void> {
+  await client.userSigningKey.update({
     where: { id: keyId },
     data: { failedAttempts: 0, lockedUntil: null, lastUsedAt: new Date() },
   });
@@ -497,7 +514,8 @@ export const FoundationDecisionService = {
     const digest = sha256hex(payload);
 
     // Perlindungan tebak-passphrase yang sama dengan modul esign: pencacah
-    // dinaikkan di luar transaksi, dan kunci yang terkunci ditolak sebelum
+    // dinaikkan ATOMIK di luar transaksi (supaya tetap bertambah walau operasi
+    // utamanya dibatalkan), dan kunci yang terkunci ditolak sebelum
     // ditandatangani. Tanpa ini sesi yang dicuri dapat menebak passphrase
     // tanpa batas.
     let signature: string;
@@ -505,8 +523,8 @@ export const FoundationDecisionService = {
       signature = signPdfHash(material, passphrase, digest);
     } catch (error) {
       if (error instanceof EsignError) {
-        await recordFailedAttempt(signingKey!.id, signingKey!.failedAttempts);
-        const left = MAX_PASSPHRASE_ATTEMPTS - (signingKey!.failedAttempts + 1);
+        const failed = await recordFailedAttempt(signingKey!.id);
+        const left = MAX_PASSPHRASE_ATTEMPTS - failed;
         throw Errors.unauthorized(
           left > 0
             ? `Passphrase tanda tangan salah. Sisa percobaan: ${left}.`
@@ -574,21 +592,27 @@ export const FoundationDecisionService = {
       );
       const outcome = await this.applyOutcome(actor, fresh, evaluation, tx);
 
+      // Audit VOTE ditulis DI DALAM transaksi yang sama dengan suaranya. Bila
+      // ditulis di luar (seperti dulu), kegagalan `auditLog.create` membuat
+      // suara sudah tercommit tetapi `castVote` melempar galat — retry ditolak
+      // sebagai suara ganda dan suara sah kehilangan baris auditnya. Di sini
+      // keduanya ikut rollback bersama.
+      await tx.auditLog.create({
+        data: {
+          userId: actor.id,
+          action: 'VOTE',
+          entity: 'FoundationDecisionVote',
+          entityId: vote.id,
+          newValues: { decisionId: d.id, choice },
+        },
+      });
+
+      // Passphrase benar: buka hitungan gagal, juga di dalam transaksi agar
+      // tidak ada pembaruan kunci yang lolos ketika suaranya gagal.
+      await clearFailedAttempts(signingKey!.id, tx);
+
       return { vote, summary, outcome };
     });
-
-    await prisma.auditLog.create({
-      data: {
-        userId: actor.id,
-        action: 'VOTE',
-        entity: 'FoundationDecisionVote',
-        entityId: result.vote.id,
-        newValues: { decisionId: d.id, choice },
-      },
-    });
-
-    // Passphrase benar: buka hitungan gagal.
-    await clearFailedAttempts(signingKey!.id);
 
     return {
       voteId: result.vote.id,
@@ -961,6 +985,7 @@ export const FoundationDecisionService = {
   async renderPdf(d: RichDecision): Promise<Buffer> {
     const roleByUserId = new Map(d.members.map((m) => [m.userId, m.roleCode]));
     const votes: DecisionPdfVoteRow[] = d.votes.map((v) => ({
+      userId: v.userId,
       name: v.user.name,
       roleCode: roleByUserId.get(v.userId) ?? 'anggota',
       choice: v.choice,
@@ -969,6 +994,7 @@ export const FoundationDecisionService = {
       note: v.note,
     }));
     const members: DecisionPdfMemberRow[] = d.members.map((m) => ({
+      userId: m.userId,
       name: m.name,
       roleCode: m.roleCode,
     }));

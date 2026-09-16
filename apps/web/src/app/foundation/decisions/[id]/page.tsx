@@ -50,6 +50,9 @@ import {
   Lock,
   ShieldCheck,
 } from "lucide-react";
+import { useAuthStore } from "@/stores/auth";
+import { getPrimaryRoleCode } from "@/lib/rbac";
+import { canManageFoundationDecisions } from "@/lib/yayasan-organ";
 
 const statusColor: Record<string, string> = {
   VOTING: "bg-amber-100 text-amber-700",
@@ -75,6 +78,12 @@ export default function FoundationDecisionDetailPage() {
   const castVote = useCastFoundationVote(id);
   const finalize = useFinalizeFoundationDecision(id);
   const downloadDoc = useDownloadFoundationDecisionDocument();
+
+  // Finalisasi adalah aksi TULIS: rute memakai `authorize(...WRITE)`, jadi
+  // Bendahara & Anggota pasti ditolak 403. Tombolnya dulu tampil ke semua
+  // pembaca.
+  const { user } = useAuthStore();
+  const canWrite = canManageFoundationDecisions(getPrimaryRoleCode(user));
 
   const handleDownload = async () => {
     try {
@@ -240,7 +249,7 @@ export default function FoundationDecisionDetailPage() {
                   Anda sudah suara: {choiceLabel[d.myVote]}
                 </Badge>
               )}
-              {d.status === "VOTING" && (
+              {d.status === "VOTING" && canWrite && (
                 <Button
                   variant="outline"
                   onClick={() => {

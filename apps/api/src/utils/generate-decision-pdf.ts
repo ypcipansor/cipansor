@@ -27,6 +27,8 @@ import path from 'path';
  */
 
 export interface DecisionPdfVoteRow {
+  /** Identitas unik pemilih — dipakai untuk mencocokkan dengan daftar anggota. */
+  userId: string;
   name: string;
   roleCode: string;
   choice: string;
@@ -36,6 +38,8 @@ export interface DecisionPdfVoteRow {
 }
 
 export interface DecisionPdfMemberRow {
+  /** Identitas unik anggota — dicocokkan dengan suara berdasarkan ini, BUKAN nama. */
+  userId: string;
   name: string;
   roleCode: string;
 }
@@ -119,6 +123,23 @@ async function embedUnicodeFont(pdfDoc: PDFDocument): Promise<PDFFont | null> {
   // yang benar-benar dipakai yang disematkan, dalam urutan yang sama setiap
   // kali, sehingga digest arsip dapat direproduksi (uji determinisme).
   return pdfDoc.embedFont(new Uint8Array(unicodeFontBytes), { subset: true });
+}
+
+/**
+ * Anggota yang belum memberi suara.
+ *
+ * Dibandingkan lewat IDENTITAS UNIK (userId), bukan nama. Dulu pemanggil
+ * membangun himpunan "sudah memilih" dari `name`, sehingga dua anggota bernama
+ * sama dianggap keduanya sudah bersuara begitu salah satu memilih — dan PDF
+ * final yang disegel permanen menghilangkan anggota yang belum bersuara dari
+ * daftar ini. Nama boleh sama; orangnya tidak.
+ */
+export function membersWithoutVote(
+  members: DecisionPdfMemberRow[],
+  votes: DecisionPdfVoteRow[]
+): DecisionPdfMemberRow[] {
+  const votedIds = new Set(votes.map((v) => v.userId));
+  return members.filter((m) => !votedIds.has(m.userId));
 }
 
 function wrap(font: PDFFont, size: number, text: string, maxWidth: number): string[] {
@@ -231,8 +252,7 @@ export async function generateDecisionPdf(data: DecisionPdfData): Promise<Buffer
   }
 
   // Belum memilih (anggota yang tidak hadir/diam pada rapat)
-  const votedIds = new Set(data.votes.map((v) => v.name));
-  const abstained = data.members.filter((m) => !votedIds.has(m.name));
+  const abstained = membersWithoutVote(data.members, data.votes);
   if (abstained.length > 0) {
     text('ANGGOTA YANG BELUM MEMBERI SUARA', { size: 12, bold: true, gap: 6 });
     paragraph(abstained.map((m) => `${m.name} (${m.roleCode})`).join('; '), 10, 10);

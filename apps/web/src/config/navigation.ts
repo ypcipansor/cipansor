@@ -24,6 +24,7 @@ import {
   Settings,
   FileSpreadsheet,
   FileSignature,
+  SlidersHorizontal,
   Baby,
   Receipt,
   Megaphone,
@@ -1479,6 +1480,15 @@ const adminNavigation: NavGroup[] = [
             title: "Units",
             href: "/units",
             icon: School,
+            roleCodes: ["SUPER_ADMIN"],
+          },
+          {
+            // Mengelola override ambang kuorum Anggaran Dasar. Endpoint
+            // `GET/PUT /foundation/rules` hanya untuk SUPER_ADMIN, jadi menunya
+            // pun dikunci ke SUPER_ADMIN.
+            title: "Aturan Kuorum",
+            href: "/foundation/decisions/rules",
+            icon: SlidersHorizontal,
             roleCodes: ["SUPER_ADMIN"],
           },
         ],
