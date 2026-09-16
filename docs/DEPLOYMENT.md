@@ -220,6 +220,41 @@ pm2 startup
 
 ## Database Migration
 
+### Irreversible migrations — backup is a hard prerequisite
+
+Some migrations `DROP TABLE` and cannot be undone by re-running anything: the
+`0_init` baseline never re-runs on an existing database, so a dropped table is
+gone. **Take and verify a full backup before `prisma migrate deploy`** whenever a
+pending migration drops tables, and confirm the dump is complete and restorable
+before proceeding — rollback is restore-from-backup only.
+
+As of this writing that applies to
+`20260915120000_decommission_higher_ed_litbang`, which permanently removes the
+higher-education (Perguruan Tinggi) and Litbang/R&D tables **and deletes every
+row owned by a `PERGURUAN_TINGGI` unit** (its classes, students, teachers, staff,
+departments, budgets, letters, assets, attendance, invoices, …). The unit is
+removed outright rather than re-typed; the blast radius reaches ~130 tables.
+Back up, then deploy:
+
+```bash
+# 1. Backup — REQUIRED before the decommission migration
+pg_dump -U postgres -Fc cipansor > cipansor_$(date +%Y%m%d_%H%M).dump
+
+# 2. Verify the dump is readable and non-empty before trusting it
+pg_restore --list cipansor_$(date +%Y%m%d_%H%M).dump | head
+# (or, for a plain .sql dump: `wc -l` + grep for the tables you expect)
+
+# 3. Only then apply
+cd apps/api && npx prisma migrate deploy
+```
+
+Note: the decommission migration also ends the sessions of users left without any
+role by the purge (their refresh tokens are revoked). An access token already
+issued stays valid until it expires — at most `JWT_EXPIRES_IN` (15 minutes by
+default). This is the same short window the system already accepts for every
+other offboarding or role change, because `authenticate` is stateless by design
+and does not query the database per request.
+
 ### Production Migration
 
 ```bash

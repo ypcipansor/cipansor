@@ -121,6 +121,19 @@ describe('decommission purge — migrations', () => {
     expect(() => readdirSync(removedDir)).toThrow();
   });
 
+  it('deletes the PERGURUAN_TINGGI unit outright instead of re-typing it', () => {
+    // Owner decision on PR #505: the PT unit is removed, not re-typed to OTHER.
+    // A unit cannot simply be deleted while rows still point at it, so the
+    // migration walks the live FK catalog. Pin the shape: no re-typing UPDATE,
+    // a catalog-driven closure, and a real DELETE.
+    expect(DECOMMISSION).not.toMatch(/UPDATE "units"[\s\S]{0,80}SET "type"\s*=\s*'OTHER'/);
+    expect(DECOMMISSION).toContain('confdeltype');
+    expect(DECOMMISSION).toMatch(/DELETE FROM %s WHERE id IN/);
+    // The realm still has to be re-homed for the enum rewrite, which is a
+    // different concern from the unit rows themselves.
+    expect(DECOMMISSION).toMatch(/UPDATE "roles"[\s\S]*?SET "realm"\s*=\s*'UNIT_USAHA'/);
+  });
+
   it('ends the sessions of users left without any role by the PT purge', () => {
     // Deleting the PT_* assignments alone does not end a PT user's session:
     // `authService.refreshToken` falls back to the legacy `users.role` column

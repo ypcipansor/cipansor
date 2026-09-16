@@ -39,11 +39,11 @@ INSERT INTO roles (id, code, name, realm, permissions, updated_at) VALUES
   ('r-pt-mhs', 'PT_MAHASISWA', 'Mahasiswa', 'PERGURUAN_TINGGI', '[]'::jsonb, now()),
   ('r-tkq', 'TKQ_GURU', 'Guru TKQ', 'TK_QURAN', '[]'::jsonb, now());
 
-INSERT INTO users (id, name, email, role, is_active, updated_at) VALUES
-  ('user-pt-only', 'PT Only', 'pt-only@example.com', 'TEACHER', true, now()),
-  ('user-pt-only2', 'PT Only 2', 'pt-only2@example.com', 'STAFF', true, now()),
-  ('user-mixed', 'Mixed', 'mixed@example.com', 'STUDENT', true, now()),
-  ('user-tkq', 'TKQ Guru', 'tkq@example.com', 'TEACHER', true, now());
+INSERT INTO users (id, name, email, role, is_active, unit_id, updated_at) VALUES
+  ('user-pt-only', 'PT Only', 'pt-only@example.com', 'TEACHER', true, 'u-pt', now()),
+  ('user-pt-only2', 'PT Only 2', 'pt-only2@example.com', 'STAFF', true, 'u-pt', now()),
+  ('user-mixed', 'Mixed', 'mixed@example.com', 'STUDENT', true, NULL, now()),
+  ('user-tkq', 'TKQ Guru', 'tkq@example.com', 'TEACHER', true, 'u-tk', now());
 
 INSERT INTO user_role_assignments (id, user_id, role_id, is_primary, is_active, updated_at) VALUES
   ('a-pt-only', 'user-pt-only', 'r-pt-dosen', true, true, now()),
@@ -57,7 +57,43 @@ INSERT INTO refresh_tokens (id, token, user_id, expires_at) VALUES
   ('rt-pt-only2', 'tok-pt-only2', 'user-pt-only2', now() + interval '30 days'),
   ('rt-mixed', 'tok-mixed', 'user-mixed', now() + interval '30 days'),
   ('rt-tkq', 'tok-tkq', 'user-tkq', now() + interval '30 days');
+
+-- Operational rows owned by each unit. The migration deletes the PT unit, so
+-- every row that cannot outlive it must go too; the TK rows are the control
+-- that proves the purge is scoped to PERGURUAN_TINGGI and not a wholesale wipe.
+INSERT INTO departments (id, unit_id, code, name, updated_at) VALUES
+  ('dep-pt', 'u-pt', 'DPT', 'Dept PT', now()),
+  ('dep-tk', 'u-tk', 'DTK', 'Dept TK', now());
+
+INSERT INTO book_categories (id, unit_id, name, code, updated_at) VALUES
+  ('bc-pt', 'u-pt', 'Kategori PT', 'CPT', now()),
+  ('bc-tk', 'u-tk', 'Kategori TK', 'CTK', now());
+INSERT INTO books (id, unit_id, category_id, title, author, updated_at) VALUES
+  ('bk-pt', 'u-pt', 'bc-pt', 'Buku PT', 'Penulis', now()),
+  ('bk-tk', 'u-tk', 'bc-tk', 'Buku TK', 'Penulis', now());
+
+INSERT INTO complaints (id, unit_id, category, subject, description, updated_at) VALUES
+  ('cmp-pt', 'u-pt', 'FACILITY', 's', 'd', now()),
+  ('cmp-tk', 'u-tk', 'FACILITY', 's', 'd', now());
 `;
+
+/** Rows that must be deleted because their unit is the PT unit. */
+const PURGED_PT_ROWS: Array<[table: string, id: string]> = [
+  ['units', 'u-pt'],
+  ['departments', 'dep-pt'],
+  ['book_categories', 'bc-pt'],
+  ['books', 'bk-pt'],
+  ['complaints', 'cmp-pt'],
+];
+
+/** Rows of a surviving unit that the purge must not touch. */
+const KEPT_TK_ROWS: Array<[table: string, id: string]> = [
+  ['units', 'u-tk'],
+  ['departments', 'dep-tk'],
+  ['book_categories', 'bc-tk'],
+  ['books', 'bk-tk'],
+  ['complaints', 'cmp-tk'],
+];
 
 interface UserState {
   id: string;
@@ -166,6 +202,54 @@ describeDb('decommission migration — legacy PT sessions end', () => {
         `SELECT count(*)::int AS n FROM units WHERE type::text = 'PERGURUAN_TINGGI'`
       );
       expect(ptUnits[0].n).toBe(0);
+    } finally {
+      await db.end();
+    }
+  });
+
+  // Owner decision (PR #505 review): the PT unit and its operational data are
+  // removed outright, not re-typed. These cases pin the two halves of that: the
+  // PT-owned rows are gone, and the sibling unit is untouched.
+  it.each(PURGED_PT_ROWS)("deletes the PT unit's %s row", async (table, id) => {
+    const db = new Client({ connectionString: targetUrl });
+    await db.connect();
+    try {
+      const { rows } = await db.query(`SELECT count(*)::int AS n FROM "${table}" WHERE id = $1`, [
+        id,
+      ]);
+      expect(rows[0].n).toBe(0);
+    } finally {
+      await db.end();
+    }
+  });
+
+  it.each(KEPT_TK_ROWS)("keeps the surviving unit's %s row", async (table, id) => {
+    const db = new Client({ connectionString: targetUrl });
+    await db.connect();
+    try {
+      const { rows } = await db.query(`SELECT count(*)::int AS n FROM "${table}" WHERE id = $1`, [
+        id,
+      ]);
+      expect(rows[0].n).toBe(1);
+    } finally {
+      await db.end();
+    }
+  });
+
+  it('keeps PT users as accounts and detaches them from the deleted unit', async () => {
+    // `users.unit_id` is SET NULL, not RESTRICT: the purge must not delete
+    // user rows (that would take their refresh tokens with them and defeat the
+    // section-4 logic). The account survives, detached.
+    const db = new Client({ connectionString: targetUrl });
+    await db.connect();
+    try {
+      const { rows } = await db.query<{ id: string; unit_id: string | null }>(
+        `SELECT id, unit_id FROM users WHERE id LIKE 'user-pt%' ORDER BY id`
+      );
+      expect(rows.map((r) => r.id)).toEqual(['user-pt-only', 'user-pt-only2']);
+      for (const row of rows) {
+        expect(row.unit_id).toBeNull();
+      }
     } finally {
       await db.end();
     }

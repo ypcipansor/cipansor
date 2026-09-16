@@ -40,18 +40,144 @@ DROP TYPE IF EXISTS "ResearchStatus";
 DROP TYPE IF EXISTS "InnovationStatus";
 
 -- ---------------------------------------------------------------------------
--- 3. Enum drift
+-- 3. Unit purge + enum drift
 -- ---------------------------------------------------------------------------
--- Databases deployed before this change still carry the `PERGURUAN_TINGGI`
--- unit type / realm, while the regenerated Prisma client no longer accepts
--- them. Re-home any rows still pointing at the dropped values to a surviving
--- one BEFORE recreating the type, otherwise the ALTER would fail on old data.
+-- The PT unit is deleted outright (owner decision), not re-typed. A plain
+-- `DELETE FROM units` is not enough: 86 of the FKs pointing at `units` are
+-- `NO ACTION`/`RESTRICT`, and deleting a unit therefore requires deleting every
+-- row that depends on it first. The block below walks the live FK catalog to
+-- find that closure and delete it leaf-first, so it stays correct as the schema
+-- grows instead of hard-coding a table list that silently rots.
 --
---   * units.type            -> OTHER
---   * daily_student_reports.unit_type -> OTHER
---   * roles.realm           -> UNIT_USAHA (the closest remaining non-school realm)
-UPDATE "units" SET "type" = 'OTHER' WHERE "type"::text = 'PERGURUAN_TINGGI';
+-- Edges followed: `NO ACTION`, `RESTRICT` and `CASCADE` -- a row that cannot
+-- outlive the unit. Edges *not* followed: `SET NULL` / `SET DEFAULT` (there are
+-- 20 from `units`), which the database resolves by itself; those rows are meant
+-- to survive the unit, `users.unit_id` above all. A PT-only login therefore
+-- keeps its account with `unit_id = NULL`; section 4 below then ends its
+-- session.
+--
+-- Blast radius: everything the unit owns -- its classes, students, teachers,
+-- staff, departments, budgets, letters, assets, attendance, invoices, etc.
+-- (130 tables are transitively reachable, depth <= 5). This is why the deploy
+-- runbook requires a verified backup BEFORE `prisma migrate deploy`.
+DO $decommission_units$
+DECLARE
+  edge     record;
+  inserted integer;
+  total    integer;
+BEGIN
+  CREATE TEMPORARY TABLE _decommission_doomed (
+    tbl text NOT NULL,
+    id  text NOT NULL,
+    PRIMARY KEY (tbl, id)
+  ) ON COMMIT DROP;
+
+  INSERT INTO _decommission_doomed (tbl, id)
+  SELECT q.tbl, u.id
+  FROM (
+    SELECT format('%I.%I', n.nspname, c.relname) AS tbl
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE c.oid = 'units'::regclass
+  ) q, units u
+  WHERE u.type::text = 'PERGURUAN_TINGGI';
+
+  IF NOT EXISTS (SELECT 1 FROM _decommission_doomed) THEN
+    RAISE NOTICE 'decommission: no PERGURUAN_TINGGI units to delete';
+    RETURN;
+  END IF;
+
+  -- Grow the doomed set until it reaches a fixpoint.
+  LOOP
+    total := 0;
+    FOR edge IN
+      SELECT format('%I.%I', cn.nspname, cc.relname) AS child,
+             a.attname                               AS col,
+             format('%I.%I', pn.nspname, pc.relname) AS parent
+      FROM pg_constraint c
+      JOIN pg_class cc     ON cc.oid = c.conrelid
+      JOIN pg_namespace cn ON cn.oid = cc.relnamespace
+      JOIN pg_class pc     ON pc.oid = c.confrelid
+      JOIN pg_namespace pn ON pn.oid = pc.relnamespace
+      JOIN pg_attribute a  ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+      WHERE c.contype = 'f'
+        AND c.confdeltype IN ('a', 'r', 'c')
+        AND format('%I.%I', pn.nspname, pc.relname) IN (SELECT tbl FROM _decommission_doomed)
+    LOOP
+      EXECUTE format(
+        'INSERT INTO _decommission_doomed (tbl, id) '
+        'SELECT %L, ch.id FROM %s ch '
+        'WHERE ch.%I IN (SELECT id FROM _decommission_doomed WHERE tbl = %L) '
+        'ON CONFLICT (tbl, id) DO NOTHING',
+        edge.child, edge.child, edge.col, edge.parent
+      );
+      GET DIAGNOSTICS inserted = ROW_COUNT;
+      total := total + inserted;
+    END LOOP;
+    EXIT WHEN total = 0;
+  END LOOP;
+
+  CREATE TEMPORARY TABLE _decommission_edges (
+    child text NOT NULL, col text NOT NULL, parent text NOT NULL
+  ) ON COMMIT DROP;
+  INSERT INTO _decommission_edges (child, col, parent)
+  SELECT DISTINCT format('%I.%I', cn.nspname, cc.relname),
+                  a.attname,
+                  format('%I.%I', pn.nspname, pc.relname)
+  FROM pg_constraint c
+  JOIN pg_class cc     ON cc.oid = c.conrelid
+  JOIN pg_namespace cn ON cn.oid = cc.relnamespace
+  JOIN pg_class pc     ON pc.oid = c.confrelid
+  JOIN pg_namespace pn ON pn.oid = pc.relnamespace
+  JOIN pg_attribute a  ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+  WHERE c.contype = 'f' AND c.confdeltype IN ('a', 'r', 'c');
+
+  CREATE TEMPORARY TABLE _decommission_todo (tbl text PRIMARY KEY) ON COMMIT DROP;
+  INSERT INTO _decommission_todo SELECT DISTINCT tbl FROM _decommission_doomed;
+
+  -- Delete leaves first: the batch holds every table none of whose remaining
+  -- children is still pending, so each DELETE runs before the row it points at.
+  -- The batch is empty only if the FK graph has a cycle -- raise rather than
+  -- spin, so a future schema change fails loudly instead of hanging the deploy.
+  WHILE EXISTS (SELECT 1 FROM _decommission_todo) LOOP
+    CREATE TEMPORARY TABLE _decommission_batch ON COMMIT DROP AS
+      SELECT t.tbl FROM _decommission_todo t
+      WHERE NOT EXISTS (
+        SELECT 1 FROM _decommission_edges e
+        WHERE e.parent = t.tbl AND e.child <> t.tbl
+          AND e.child IN (SELECT tbl FROM _decommission_todo)
+      );
+
+    IF NOT EXISTS (SELECT 1 FROM _decommission_batch) THEN
+      RAISE EXCEPTION
+        'decommission: FK cycle prevents deleting PERGURUAN_TINGGI units: %',
+        (SELECT string_agg(tbl, ', ' ORDER BY tbl) FROM _decommission_todo);
+    END IF;
+
+    FOR edge IN SELECT tbl FROM _decommission_batch LOOP
+      EXECUTE format(
+        'DELETE FROM %s WHERE id IN (SELECT id FROM _decommission_doomed WHERE tbl = %L)',
+        edge.tbl, edge.tbl
+      );
+    END LOOP;
+
+    DELETE FROM _decommission_todo WHERE tbl IN (SELECT tbl FROM _decommission_batch);
+    DROP TABLE _decommission_batch;
+  END LOOP;
+
+  RAISE NOTICE 'decommission: deleted PERGURUAN_TINGGI units and dependent rows';
+END
+$decommission_units$;
+
+-- Any surviving report still tagged PERGURUAN_TINGGI (a row whose unit_id was
+-- not a PT unit, so the purge above did not reach it) is re-homed to OTHER.
+-- These are inconsistent leftovers, not PT-scoped records.
 UPDATE "daily_student_reports" SET "unit_type" = 'OTHER' WHERE "unit_type"::text = 'PERGURUAN_TINGGI';
+
+-- Databases deployed before this change still carry the `PERGURUAN_TINGGI`
+-- realm, while the regenerated Prisma client no longer accepts it. Re-home the
+-- realm BEFORE recreating the type, otherwise the ALTER would fail on old data.
+-- The PT role rows themselves are deleted in section 4, after the enum rewrite.
 UPDATE "roles" SET "realm" = 'UNIT_USAHA' WHERE "realm"::text = 'PERGURUAN_TINGGI';
 
 ALTER TYPE "UnitType" RENAME TO "UnitType_old";
@@ -149,3 +275,15 @@ SET "role" = NULL
 WHERE "id" IN (SELECT "user_id" FROM "pt_only_users_tmp");
 
 DROP TABLE IF EXISTS "pt_only_users_tmp";
+
+-- What this section does and does not guarantee. Revoking the refresh tokens
+-- and clearing `users.role` removes the only renewable credential, so a PT-only
+-- user cannot obtain a new session from this point on. An access token already
+-- issued before the deploy stays valid until it expires, which is at most the
+-- access-token TTL (config.jwt.expiresIn -- 15 minutes by default). That is by
+-- design, not an oversight: `authenticate` is stateless and deliberately does
+-- not query the database per request (see the comment on `config.jwt.expiresIn`
+-- in src/config/index.ts). Instant revocation would mean adding per-request
+-- state to every route, a cross-cutting change that would also alter how every
+-- other offboarding and role change behaves. The 15-minute ceiling is the
+-- accepted window, consistent with how the rest of the system offboards users.
