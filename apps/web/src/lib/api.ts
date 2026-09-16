@@ -424,6 +424,13 @@ export const uploadApi = {
    * Discard an upload whose follow-up record was never saved, so the blob does
    * not linger in private storage. Safe by construction: the API refuses to
    * discard a blob any record references.
+   *
+   * **Call only after the record-create request has definitively failed.** The
+   * API waits out a short race window and re-checks the reference index, so a
+   * concurrent create that commits wins and the discard is refused
+   * (`409`); treat that as "not orphaned after all", not as an error to retry
+   * blindly. Calling this speculatively — before the create has resolved — can
+   * only end in that refusal.
    */
   discard: async (url: string) => {
     const body: GetSasUrlRequest = { url };

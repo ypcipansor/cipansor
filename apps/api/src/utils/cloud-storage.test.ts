@@ -7,6 +7,9 @@ import {
   deleteFromCloudStorage,
   isAllowedContainer,
   cleanupBlobBestEffort,
+  deleteBlobIfStillOrphaned,
+  getBlobCreatedAt,
+  RACE_RECHECK_DELAY_MS,
   containerForDestination,
   isUploadDestination,
   UPLOAD_DESTINATIONS,
@@ -18,10 +21,14 @@ const {
   mockGetContainerClient,
   mockSasToString,
   mockDeleteBlob,
+  mockGetProperties,
   mockIsBlobStillReferenced,
 } = vi.hoisted(() => {
   const mockUploadFile = vi.fn().mockResolvedValue({});
   const mockDeleteBlob = vi.fn().mockResolvedValue({});
+  const mockGetProperties = vi
+    .fn()
+    .mockResolvedValue({ createdOn: undefined, lastModified: undefined });
   const mockGetBlockBlobClient = vi.fn().mockReturnValue({
     uploadFile: mockUploadFile,
     url: 'https://cipansorstore.blob.core.windows.net/e-office-documents/dummy.pdf',
@@ -31,6 +38,7 @@ const {
     createIfNotExists: mockCreateIfNotExists,
     getBlockBlobClient: mockGetBlockBlobClient,
     deleteBlob: mockDeleteBlob,
+    getBlobClient: vi.fn().mockReturnValue({ getProperties: mockGetProperties }),
   });
   const mockSasToString = vi.fn(() => 'sig=fakeSasToken&se=2026-01-01T00%3A00%3A00Z');
   // The cross-record owner probe is mocked at the module boundary; the real
@@ -43,6 +51,7 @@ const {
     mockGetContainerClient,
     mockSasToString,
     mockDeleteBlob,
+    mockGetProperties,
     mockIsBlobStillReferenced,
   };
 });
@@ -268,7 +277,9 @@ describe('parseBlobUrl', () => {
     process.env.AZURE_STORAGE_ACCOUNT = 'cipansorstore';
 
     expect(
-      parseBlobUrl('https://cipansorstore.blob.core.windows.net/student-documents/foto%20siswa%2F1.jpg')
+      parseBlobUrl(
+        'https://cipansorstore.blob.core.windows.net/student-documents/foto%20siswa%2F1.jpg'
+      )
     ).toEqual({ containerName: 'student-documents', blobName: 'foto siswa/1.jpg' });
   });
 
@@ -276,7 +287,9 @@ describe('parseBlobUrl', () => {
     process.env.AZURE_STORAGE_ACCOUNT = 'cipansorstore';
 
     expect(
-      parseBlobUrl('https://cipansorstore.blob.core.windows.net/e-office-documents/a.pdf?sv=1&sig=x')
+      parseBlobUrl(
+        'https://cipansorstore.blob.core.windows.net/e-office-documents/a.pdf?sv=1&sig=x'
+      )
     ).toEqual({ containerName: 'e-office-documents', blobName: 'a.pdf' });
   });
 
@@ -301,9 +314,7 @@ describe('parseBlobUrl', () => {
     expect(
       parseBlobUrl('https://cipansorstore.blob.core.windows.net/cipansor-documents/%zz.pdf')
     ).toBeNull();
-    expect(
-      parseBlobUrl('https://cipansorstore.blob.core.windows.net/%zz/broken.pdf')
-    ).toBeNull();
+    expect(parseBlobUrl('https://cipansorstore.blob.core.windows.net/%zz/broken.pdf')).toBeNull();
   });
 
   it('returns null for a lookalike host that merely contains the account name', () => {
@@ -312,9 +323,7 @@ describe('parseBlobUrl', () => {
     expect(
       parseBlobUrl('https://cipansorstore.blob.core.windows.net.attacker.com/a/b.pdf')
     ).toBeNull();
-    expect(
-      parseBlobUrl('https://evil-cipansorstore.blob.core.windows.net/a/b.pdf')
-    ).toBeNull();
+    expect(parseBlobUrl('https://evil-cipansorstore.blob.core.windows.net/a/b.pdf')).toBeNull();
   });
 
   it('returns null for a malformed URL', () => {
@@ -371,6 +380,116 @@ describe('deleteFromCloudStorage', () => {
     await expect(deleteFromCloudStorage('e-office-documents', 'naskah.pdf')).rejects.toThrow(
       /Gagal menghapus berkas dari Azure Blob Storage/
     );
+  });
+});
+
+describe('deleteBlobIfStillOrphaned (upload→create race)', () => {
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    process.env.AZURE_STORAGE_CONNECTION_STRING = CONNECTION_STRING;
+    vi.clearAllMocks();
+    mockGetProperties.mockResolvedValue({
+      createdOn: undefined,
+      lastModified: undefined,
+    });
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  it('waits for the race window before re-probing', async () => {
+    // The delay is the whole point: it gives an in-flight create time to
+    // commit, so the re-probe is not just re-reading the same pre-create state.
+    vi.useFakeTimers();
+    try {
+      const recheck = vi.fn().mockResolvedValue(false);
+      const pending = deleteBlobIfStillOrphaned(
+        'cipansor-documents',
+        'orphan.pdf',
+        recheck,
+        RACE_RECHECK_DELAY_MS
+      );
+
+      // Before the delay elapses the re-probe has not run yet.
+      expect(recheck).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(RACE_RECHECK_DELAY_MS);
+      await expect(pending).resolves.toBe(true);
+      expect(recheck).toHaveBeenCalledTimes(1);
+      expect(mockDeleteBlob).toHaveBeenCalledWith('orphan.pdf', {
+        deleteSnapshots: 'include',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not delete when the re-probe finds a record that committed mid-flight', async () => {
+    // The upload→create race: the first probe (in the caller) saw an orphan,
+    // but by the time the delayed re-probe runs the record is committed.
+    // Deleting here would destroy a live document.
+    const recheck = vi.fn().mockResolvedValue(true);
+
+    await expect(
+      deleteBlobIfStillOrphaned('cipansor-documents', 'orphan.pdf', recheck, 0)
+    ).resolves.toBe(false);
+    expect(recheck).toHaveBeenCalledTimes(1);
+    expect(mockDeleteBlob).not.toHaveBeenCalled();
+  });
+
+  it('deletes a blob that is still an orphan after the delay', async () => {
+    const recheck = vi.fn().mockResolvedValue(false);
+
+    await expect(
+      deleteBlobIfStillOrphaned('cipansor-documents', 'orphan.pdf', recheck, 0)
+    ).resolves.toBe(true);
+    expect(mockDeleteBlob).toHaveBeenCalledWith('orphan.pdf', {
+      deleteSnapshots: 'include',
+    });
+  });
+});
+
+describe('getBlobCreatedAt', () => {
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  it('returns null when Azure is not configured', async () => {
+    delete process.env.AZURE_STORAGE_CONNECTION_STRING;
+    await expect(getBlobCreatedAt('cipansor-documents', 'a.pdf')).resolves.toBeNull();
+  });
+
+  it('returns the blob creation time when available', async () => {
+    process.env.AZURE_STORAGE_CONNECTION_STRING = CONNECTION_STRING;
+    const created = new Date('2026-01-01T00:00:00Z');
+    mockGetProperties.mockResolvedValue({ createdOn: created, lastModified: created });
+
+    await expect(getBlobCreatedAt('cipansor-documents', 'a.pdf')).resolves.toEqual(created);
+  });
+
+  it('falls back to lastModified when createdOn is absent', async () => {
+    process.env.AZURE_STORAGE_CONNECTION_STRING = CONNECTION_STRING;
+    const modified = new Date('2026-02-01T00:00:00Z');
+    mockGetProperties.mockResolvedValue({ createdOn: undefined, lastModified: modified });
+
+    await expect(getBlobCreatedAt('cipansor-documents', 'a.pdf')).resolves.toEqual(modified);
+  });
+
+  it('returns null (fail-closed) when properties cannot be read', async () => {
+    process.env.AZURE_STORAGE_CONNECTION_STRING = CONNECTION_STRING;
+    mockGetProperties.mockRejectedValueOnce(new Error('Not found'));
+
+    await expect(getBlobCreatedAt('cipansor-documents', 'a.pdf')).resolves.toBeNull();
   });
 });
 

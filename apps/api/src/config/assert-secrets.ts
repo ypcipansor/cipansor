@@ -55,9 +55,7 @@ const MIN_SECRET_LENGTH = 32;
  * secrets with a key printed in a public repository. Same shape of mistake as
  * JWT_SECRET, and equally invisible: forgetting produces no symptom.
  */
-const KNOWN_DEFAULT_VALUES = [
-  '000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f',
-];
+const KNOWN_DEFAULT_VALUES = ['000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f'];
 
 export interface SecretIssue {
   variable: string;
@@ -92,8 +90,7 @@ function inspect(variable: string, value: string | undefined, issues: SecretIssu
   if (KNOWN_DEFAULT_VALUES.includes(lowered)) {
     issues.push({
       variable,
-      reason:
-        'is still the hardcoded default from the source — that key is public',
+      reason: 'is still the hardcoded default from the source — that key is public',
     });
     return;
   }
@@ -137,8 +134,7 @@ export function assertProductionSecrets(input: SecretCheckInput = {}): void {
     env,
     jwtSecret: input.jwtSecret ?? process.env.JWT_SECRET,
     encryptionKey: input.encryptionKey ?? process.env.ENCRYPTION_KEY,
-    studentCardHmacSecret:
-      input.studentCardHmacSecret ?? process.env.STUDENT_CARD_HMAC_SECRET,
+    studentCardHmacSecret: input.studentCardHmacSecret ?? process.env.STUDENT_CARD_HMAC_SECRET,
   });
 
   if (issues.length === 0) return;
@@ -152,5 +148,31 @@ export function assertProductionSecrets(input: SecretCheckInput = {}): void {
       'Rotating JWT_SECRET only ends live sessions — no data becomes ' +
       'unreadable. (Unlike ENCRYPTION_KEY, which must not be rotated once ' +
       'data is encrypted.)'
+  );
+}
+
+/**
+ * A production `MICROSOFT_TENANT_ID` of `common` is a hole, not a default.
+ *
+ * `common` accepts a token minted in *any* Entra directory whose mailbox
+ * matches a local account, which is a wide net for a single-tenant deployment.
+ * But unlike a published signing key it is not an outright bypass — the
+ * account still has to exist locally — and a tenant id is not a secret, so
+ * refusing to boot would take down a working deployment over a configuration
+ * preference. The check therefore warns, loudly and at every boot, and names
+ * the fix. `getSSOConfig` still reports `common`, so behaviour is unchanged.
+ */
+export function warnOnLooseMicrosoftTenant(
+  env: string | undefined = process.env.NODE_ENV,
+  tenantId: string | undefined = process.env.MICROSOFT_TENANT_ID
+): string | null {
+  if (env !== 'production') return null;
+  if ((tenantId ?? 'common').toLowerCase() !== 'common') return null;
+
+  return (
+    'MICROSOFT_TENANT_ID is "common" in production: Microsoft SSO will accept ' +
+    "a token minted in ANY Entra tenant, not only the yayasan's. Set it to " +
+    'the directory GUID or verified domain (Entra portal → Overview → ' +
+    'Tenant ID) to restrict sign-in to this organisation.'
   );
 }

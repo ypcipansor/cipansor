@@ -54,8 +54,7 @@ function getMicrosoftJwksClient(tenantId: string): JwksClient {
 }
 
 /** Entra directory GUIDs look like a bare UUID. */
-const MICROSOFT_TENANT_GUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const MICROSOFT_TENANT_GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function isTenantGuid(value: string): boolean {
   return MICROSOFT_TENANT_GUID_RE.test(value);
@@ -68,21 +67,49 @@ function isTenantGuid(value: string): boolean {
  * verified e-mail's domain, so a domain-configured tenant can only be enforced
  * by first resolving the domain to the yayasan's directory GUID. Entra's OIDC
  * discovery document is the authority for that mapping: its `issuer` embeds the
- * GUID (`https://login.microsoftonline.com/<guid>/v2.0`). The result is cached
- * per domain, including resolution failures (null), so a bad domain is not
- * refetched on every login.
+ * GUID (`https://login.microsoftonline.com/<guid>/v2.0`).
+ *
+ * **Only successes are cached indefinitely.** A resolution failure means the
+ * discovery call did not answer (network blip, transient 5xx) or answered
+ * without a GUID. Caching that `null` forever poisoned the tenant for the
+ * lifetime of the process: once the network recovered, every Microsoft login
+ * still failed until the API restarted, because the stored `null` short-
+ * circuited the retry. Failures are therefore cached for at most
+ * {@link TENANT_FAILURE_TTL_MS}, after which the next login retries — recovery
+ * without a restart, while a genuinely bad domain is still not refetched on
+ * every single request.
  *
  * Resolution failing is NOT permission to fall back to the e-mail domain — that
  * would re-open exactly the hole this closes (a token minted in a foreign
  * directory that happens to host a mailbox on the same domain). The caller
  * fails closed instead.
  */
-const microsoftTenantGuidCache = new Map<string, string | null>();
+export const TENANT_FAILURE_TTL_MS = 60_000;
 
-async function resolveTenantGuidFromDomain(domain: string): Promise<string | null> {
+interface TenantGuidEntry {
+  guid: string | null;
+  /** For a null (failure) entry, when it stops being trusted; null = forever. */
+  expiresAt: number | null;
+}
+
+const microsoftTenantGuidCache = new Map<string, TenantGuidEntry>();
+
+/** Test-only: clear the module-level cache so cases do not bleed into each other. */
+export function __resetMicrosoftTenantGuidCache(): void {
+  microsoftTenantGuidCache.clear();
+}
+
+export async function resolveTenantGuidFromDomain(
+  domain: string,
+  now: number = Date.now()
+): Promise<string | null> {
   const key = domain.toLowerCase();
-  if (microsoftTenantGuidCache.has(key)) {
-    return microsoftTenantGuidCache.get(key) ?? null;
+  const cached = microsoftTenantGuidCache.get(key);
+  if (cached) {
+    // A successful GUID is authoritative; a failure expires and is retried.
+    if (cached.guid !== null) return cached.guid;
+    if (cached.expiresAt === null || cached.expiresAt > now) return null;
+    microsoftTenantGuidCache.delete(key);
   }
 
   let guid: string | null = null;
@@ -102,7 +129,12 @@ async function resolveTenantGuidFromDomain(domain: string): Promise<string | nul
     guid = null;
   }
 
-  microsoftTenantGuidCache.set(key, guid);
+  microsoftTenantGuidCache.set(
+    key,
+    guid === null
+      ? { guid: null, expiresAt: now + TENANT_FAILURE_TTL_MS }
+      : { guid, expiresAt: null }
+  );
   return guid;
 }
 
@@ -270,9 +302,7 @@ const SSO_USER_SELECT = {
 /** True for a Prisma unique-constraint violation (create raced another insert). */
 function isUniqueConstraintError(error: unknown): boolean {
   return (
-    typeof error === 'object' &&
-    error !== null &&
-    (error as { code?: string }).code === 'P2002'
+    typeof error === 'object' && error !== null && (error as { code?: string }).code === 'P2002'
   );
 }
 
@@ -535,8 +565,7 @@ export class AuthService {
     }
 
     const normalizedEmail = email.toLowerCase();
-    const provider =
-      input.provider === 'google' ? SSOProvider.GOOGLE : SSOProvider.MICROSOFT;
+    const provider = input.provider === 'google' ? SSOProvider.GOOGLE : SSOProvider.MICROSOFT;
 
     // Resolve the account by the *durable* identity link first, then by email.
     //

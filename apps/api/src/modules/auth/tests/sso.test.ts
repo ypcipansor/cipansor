@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { authService } from '../auth.service';
+import {
+  authService,
+  resolveTenantGuidFromDomain,
+  __resetMicrosoftTenantGuidCache,
+  TENANT_FAILURE_TTL_MS,
+} from '../auth.service';
 import { prisma } from '@/lib/prisma';
 import jwt from 'jsonwebtoken';
 
@@ -848,5 +853,75 @@ describe('SSO Authentication Security Unit Tests', () => {
     });
 
     expect(result).toHaveProperty('accessToken');
+  });
+});
+
+describe('resolveTenantGuidFromDomain transient-failure recovery (BUG 3)', () => {
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    __resetMicrosoftTenantGuidCache();
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+    __resetMicrosoftTenantGuidCache();
+    vi.restoreAllMocks();
+  });
+
+  const DOMAIN = 'tenant-recovery.example';
+  const GUID = '44444444-4444-4444-4444-444444444444';
+
+  const okResponse = () =>
+    ({
+      ok: true,
+      json: async () => ({
+        issuer: `https://login.microsoftonline.com/${GUID}/v2.0`,
+      }),
+    }) as any;
+
+  it('does not cache a transient failure permanently — retries and succeeds', async () => {
+    vi.spyOn(globalThis, 'fetch')
+      .mockRejectedValueOnce(new Error('network down'))
+      .mockResolvedValueOnce(okResponse());
+
+    const first = await resolveTenantGuidFromDomain(DOMAIN, 1_000);
+    expect(first).toBeNull();
+
+    // The network is back and the failure entry has expired; the next attempt
+    // must reach discovery and resolve, rather than replaying the cached null.
+    const second = await resolveTenantGuidFromDomain(DOMAIN, 1_000 + TENANT_FAILURE_TTL_MS + 1);
+    expect(second).toBe(GUID);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not refetch a failure before the TTL elapses', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new Error('network down'));
+
+    const first = await resolveTenantGuidFromDomain(DOMAIN, 2_000);
+    const second = await resolveTenantGuidFromDomain(DOMAIN, 2_000 + TENANT_FAILURE_TTL_MS - 1);
+
+    expect(first).toBeNull();
+    expect(second).toBeNull();
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats a 200 response without a GUID as a failure that is retried', async () => {
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ issuer: 'nonsense' }) } as any)
+      .mockResolvedValueOnce(okResponse());
+
+    expect(await resolveTenantGuidFromDomain(DOMAIN, 5_000)).toBeNull();
+    expect(await resolveTenantGuidFromDomain(DOMAIN, 5_000 + TENANT_FAILURE_TTL_MS + 1)).toBe(GUID);
+  });
+
+  it('caches a resolved GUID indefinitely and never refetches it', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(okResponse());
+
+    expect(await resolveTenantGuidFromDomain(DOMAIN, 10_000)).toBe(GUID);
+    // Even long past the failure TTL, a success is authoritative.
+    expect(await resolveTenantGuidFromDomain(DOMAIN, 10_000_000_000)).toBe(GUID);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
   });
 });

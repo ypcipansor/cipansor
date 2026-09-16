@@ -4,10 +4,15 @@ import {
   parseBlobUrl,
   isAllowedContainer,
   isPublicContainer,
-  deleteFromCloudStorage,
+  deleteBlobIfStillOrphaned,
 } from '@/utils/cloud-storage';
 import { Errors } from '@/middleware/error';
-import { findBlobOwner, isBlobStillReferenced, type BlobOwner, type UnitId } from '@/utils/blob-owner';
+import {
+  findBlobOwner,
+  isBlobStillReferenced,
+  type BlobOwner,
+  type UnitId,
+} from '@/utils/blob-owner';
 import { seesAllUnits, isFoundationScopedRole } from '@/utils/resolve-unit-id';
 import { letterScopeWhere } from '@/utils/letter-access';
 import { mayAdministerEmployeeDocuments } from '@cipansor/shared';
@@ -57,6 +62,11 @@ async function assertActorMayReadBlob(actor: BlobActor, owner: BlobOwner): Promi
       return matches > 0;
     }
     case 'public':
+      return true;
+    // Site-wide media with no unit owner (logos, catalog covers, all-units
+    // announcement attachments). Any authenticated caller may read it; the
+    // endpoint is already behind `authenticate`.
+    case 'authenticated':
       return true;
     case 'foundation':
       return isFoundationScopedRole(actor.roleCode);
@@ -139,6 +149,18 @@ export async function resolveSasForBlob(url: string, actor: BlobActor): Promise<
  * exact cross-record destruction the ownership checks exist to prevent). The
  * caller must already know the exact, unguessable blob URL, which bounds the
  * blast radius of an authenticated user discarding an orphan.
+ *
+ * **Race.** Upload and create are two requests, and a discard can slip between
+ * them: it reads "no record references this" at the instant the create request
+ * is committing. `deleteBlobIfStillOrphaned` closes this by waiting
+ * `RACE_RECHECK_DELAY_MS` and then re-probing the reference index — a record
+ * that committed during the wait makes the delete a no-op, and this function
+ * then reports the discard as not-yet-done rather than pretending it succeeded.
+ *
+ * Both callers (HR documents, e-office letters) invoke this ONLY after a create
+ * request has already failed, so the normal path never races a live write; the
+ * delay exists for the window where a *different* request is committing the
+ * record for the same blob.
  */
 export async function discardOrphanBlob(url: string, _actor: BlobActor): Promise<void> {
   const parsed = parseBlobUrl(url);
@@ -156,5 +178,14 @@ export async function discardOrphanBlob(url: string, _actor: BlobActor): Promise
     throw Errors.conflict('Berkas sudah tersimpan pada sebuah catatan dan tidak dapat dibuang');
   }
 
-  await deleteFromCloudStorage(parsed.containerName, parsed.blobName);
+  // Wait out the race window, then re-probe: a create that commits while we
+  // wait must make this a no-op.
+  const deleted = await deleteBlobIfStillOrphaned(parsed.containerName, parsed.blobName, () =>
+    isBlobStillReferenced(url)
+  );
+  if (!deleted) {
+    throw Errors.conflict(
+      'Berkas belum dapat dibuang karena masih berpotensi dirujuk catatan baru; coba lagi nanti'
+    );
+  }
 }

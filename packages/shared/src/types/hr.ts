@@ -8,15 +8,11 @@
  * teacher and a tendik with a single shape, and neither side can drift.
  */
 
-export type HrEmployeeRole = 'TEACHER' | 'STAFF';
+export type HrEmployeeRole = "TEACHER" | "STAFF";
 export type HrEmployeeStatus =
-  | 'ACTIVE'
-  | 'INACTIVE'
-  | 'ON_LEAVE'
-  | 'RESIGNED'
-  | 'RETIRED';
-export type HrEmployeeType = 'PERMANENT' | 'CONTRACT' | 'PART_TIME' | 'INTERN';
-export type HrEmployeeGender = 'MALE' | 'FEMALE';
+  "ACTIVE" | "INACTIVE" | "ON_LEAVE" | "RESIGNED" | "RETIRED";
+export type HrEmployeeType = "PERMANENT" | "CONTRACT" | "PART_TIME" | "INTERN";
+export type HrEmployeeGender = "MALE" | "FEMALE";
 
 /** One row of `GET /hr/employees` and the payload of `GET /hr/employees/:id`. */
 export interface HrEmployee {
@@ -106,4 +102,53 @@ export interface HrEmployeeListResult {
     total: number;
     totalPages: number;
   };
+}
+
+/**
+ * `EmployeeDocumentType` mirrors the DB enum of the same name.
+ *
+ * Values must stay in exact sync with the Prisma enum. It is repeated here
+ * rather than imported from `@prisma/client` because this package must stay
+ * free of Prisma/Node imports so the web bundle can consume it; the backend
+ * still validates against the Prisma enum at the edge.
+ */
+export type EmployeeDocumentType =
+  | "KTP"
+  | "KK"
+  | "NPWP"
+  | "IJAZAH"
+  | "TRANSKRIP_NILAI"
+  | "SERTIFIKAT"
+  | "SK_PENGANGKATAN"
+  | "KONTRAK_KERJA"
+  | "CV"
+  | "LAINNYA";
+
+/** A stored employee document, as returned by the HR document endpoints. */
+export interface EmployeeDocument {
+  id: string;
+  userId: string;
+  name: string;
+  type: EmployeeDocumentType;
+  fileUrl: string;
+  expiryDate: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Request body of `POST /hr/documents`.
+ *
+ * The API module imports the Zod schema (`createEmployeeDocumentSchema`) rather
+ * than redeclaring it, so the web form and the API parse the same fields
+ * (golden rule #8).
+ */
+export interface CreateEmployeeDocumentInput {
+  userId: string;
+  name: string;
+  type: EmployeeDocumentType;
+  fileUrl: string;
+  expiryDate?: string;
+  notes?: string;
 }

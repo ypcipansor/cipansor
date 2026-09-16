@@ -1,19 +1,9 @@
 import { Request, Response } from 'express';
 import { employeeDocumentService, type EmployeeDocumentActor } from './employee-documents.service';
 import { requireUser } from '../../middleware/auth';
-import { z } from 'zod';
-import { EmployeeDocumentType } from '@prisma/client';
 import { asyncHandler } from '../../middleware/error';
 import { ApiResponse } from '../../utils/response';
-
-const createDocumentSchema = z.object({
-  userId: z.string().uuid(),
-  name: z.string().min(1),
-  type: z.nativeEnum(EmployeeDocumentType),
-  fileUrl: z.string().url(),
-  expiryDate: z.coerce.date().optional(),
-  notes: z.string().optional(),
-});
+import { createEmployeeDocumentSchema } from '@cipansor/shared';
 
 /** The authenticated actor, used by the service for ownership/unit checks. */
 function actorOf(req: Request): EmployeeDocumentActor {
@@ -23,7 +13,7 @@ function actorOf(req: Request): EmployeeDocumentActor {
 
 export const employeeDocumentController = {
   create: asyncHandler(async (req: Request, res: Response) => {
-    const data = createDocumentSchema.parse(req.body);
+    const data = createEmployeeDocumentSchema.parse(req.body);
     const result = await employeeDocumentService.create(data, actorOf(req));
     res.status(201).json(ApiResponse.success(result));
   }),

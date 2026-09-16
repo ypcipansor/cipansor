@@ -29,3 +29,32 @@ export const queryEmployeesSchema = z.object({
 });
 
 export type QueryEmployeesInput = z.infer<typeof queryEmployeesSchema>;
+
+/**
+ * Request contract for `POST /hr/documents` — the employee-document upload
+ * record. Shared so the web form and the API validate the same fields.
+ *
+ * `type` uses the Prisma `EmployeeDocumentType` enum on the server; here it is
+ * a plain string enum kept in exact sync, because this package cannot import
+ * `@prisma/client`. `expiryDate` is coerced from the ISO string the client
+ * sends.
+ */
+export const createEmployeeDocumentSchema = z.object({
+  userId: z.string().uuid(),
+  name: z.string().min(1),
+  type: z.enum([
+    "KTP",
+    "KK",
+    "NPWP",
+    "IJAZAH",
+    "TRANSKRIP_NILAI",
+    "SERTIFIKAT",
+    "SK_PENGANGKATAN",
+    "KONTRAK_KERJA",
+    "CV",
+    "LAINNYA",
+  ]),
+  fileUrl: z.string().url(),
+  expiryDate: z.coerce.date().optional(),
+  notes: z.string().optional(),
+});

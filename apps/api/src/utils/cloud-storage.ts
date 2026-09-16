@@ -74,7 +74,9 @@ export function isUploadDestination(value: unknown): value is UploadDestination 
 
 /** Resolve a logical destination to its container. Anything unrecognised is private. */
 export function containerForDestination(destination?: string | null): StorageContainer {
-  return isUploadDestination(destination) ? DESTINATION_CONTAINERS[destination] : 'cipansor-documents';
+  return isUploadDestination(destination)
+    ? DESTINATION_CONTAINERS[destination]
+    : 'cipansor-documents';
 }
 
 interface ResolvedCredentials {
@@ -223,6 +225,75 @@ export async function deleteFromCloudStorage(
 }
 
 /**
+ * A blob's creation time in Azure, or null when it cannot be read (no
+ * connection string / local-only / not found / permission denied).
+ */
+export async function getBlobCreatedAt(
+  containerName: string,
+  blobName: string
+): Promise<Date | null> {
+  const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
+  if (!connectionString) return null;
+
+  try {
+    const blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
+    const containerClient = blobServiceClient.getContainerClient(containerName);
+    const blobClient = containerClient.getBlobClient(blobName);
+    const properties = await blobClient.getProperties();
+    return properties.createdOn ?? properties.lastModified ?? null;
+  } catch (error) {
+    logger.warn('Blob properties could not be read', {
+      container: containerName,
+      blobName,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
+/** How long to wait before re-probing, so an in-flight create can commit. */
+export const RACE_RECHECK_DELAY_MS = 2_000;
+
+/**
+ * Delete a blob only when it is still an orphan after a delayed re-probe.
+ *
+ * Upload and create-record are two requests. A discard can slip between them:
+ * it reads "no record references this" at the instant the create request is
+ * committing, and an immediate delete would destroy a blob the new record just
+ * started pointing at. Waiting {@link RACE_RECHECK_DELAY_MS} before the second
+ * probe lets any in-flight create finish; a record committed by then makes this
+ * a no-op (`false`), and the caller reports the discard as not-yet-done rather
+ * than pretending it succeeded.
+ *
+ * Why not an age floor: the discard's only legitimate caller runs it *after* a
+ * create request has definitely failed, so the blob is always seconds old. A
+ * floor that refused young blobs would refuse every real discard and leave the
+ * orphan on disk forever, which is the state BUG 4 exists to fix. Re-probing is
+ * the guarantee; the delay is what makes the re-probe meaningful.
+ *
+ * `recheck` returns true when a record now references the blob.
+ */
+export async function deleteBlobIfStillOrphaned(
+  containerName: string,
+  blobName: string,
+  recheck: () => Promise<boolean>,
+  delayMs: number = RACE_RECHECK_DELAY_MS
+): Promise<boolean> {
+  if (delayMs > 0) {
+    await sleep(delayMs);
+  }
+
+  if (await recheck()) return false;
+
+  await deleteFromCloudStorage(containerName, blobName);
+  return true;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
  * Best-effort removal of the blob backing a persisted record URL.
  *
  * Record-delete paths call this *after* the database row is gone. Failure to
@@ -242,9 +313,7 @@ export async function deleteFromCloudStorage(
  * still references the blob; only a genuinely orphaned blob is reclaimed.
  * Covered by the shared-URL test in `cloud-storage.test.ts`.
  */
-export async function cleanupBlobBestEffort(
-  fileUrl: string | null | undefined
-): Promise<boolean> {
+export async function cleanupBlobBestEffort(fileUrl: string | null | undefined): Promise<boolean> {
   if (!fileUrl) return false;
   const parsed = parseBlobUrl(fileUrl);
   if (!parsed) return false;
@@ -307,9 +376,8 @@ export function getStorageConfig() {
 export function configuredStorageAccount(): string | null {
   const envName = process.env.AZURE_STORAGE_ACCOUNT?.trim();
   if (envName) return envName.toLowerCase();
-  const fromConnectionString = process.env.AZURE_STORAGE_CONNECTION_STRING?.match(
-    /AccountName=([^;]+)/
-  )?.[1];
+  const fromConnectionString =
+    process.env.AZURE_STORAGE_CONNECTION_STRING?.match(/AccountName=([^;]+)/)?.[1];
   return fromConnectionString ? fromConnectionString.trim().toLowerCase() : null;
 }
 

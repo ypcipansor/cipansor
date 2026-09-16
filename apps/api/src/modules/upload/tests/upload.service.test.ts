@@ -7,6 +7,7 @@ import {
   isAllowedContainer,
   isPublicContainer,
   deleteFromCloudStorage,
+  deleteBlobIfStillOrphaned,
 } from '@/utils/cloud-storage';
 
 /**
@@ -41,6 +42,22 @@ vi.mock('@/lib/prisma', () => ({
     muhadatsah: { findFirst: vi.fn(), count: vi.fn() },
     announcement: { findFirst: vi.fn(), count: vi.fn() },
     letterRevocationRequest: { findFirst: vi.fn(), count: vi.fn() },
+    employmentContract: { findFirst: vi.fn(), count: vi.fn() },
+    alumni: { findFirst: vi.fn(), count: vi.fn() },
+    course: { findFirst: vi.fn(), count: vi.fn() },
+    extracurricular: { findFirst: vi.fn(), count: vi.fn() },
+    canteenItem: { findFirst: vi.fn(), count: vi.fn() },
+    muhadhoroh: { findFirst: vi.fn(), count: vi.fn() },
+    researchProject: { findFirst: vi.fn(), count: vi.fn() },
+    assetMaintenance: { findFirst: vi.fn(), count: vi.fn() },
+    letterDispatch: { findFirst: vi.fn(), count: vi.fn() },
+    calendarEvent: { findFirst: vi.fn(), count: vi.fn() },
+    donationCampaign: { findFirst: vi.fn(), count: vi.fn() },
+    kitabKuning: { findFirst: vi.fn(), count: vi.fn() },
+    unit: { findFirst: vi.fn(), count: vi.fn() },
+    foundation: { findFirst: vi.fn(), count: vi.fn() },
+    digitalCertificate: { findFirst: vi.fn(), count: vi.fn() },
+    studentNote: { findFirst: vi.fn(), count: vi.fn() },
   },
 }));
 
@@ -54,6 +71,12 @@ vi.mock('@/utils/cloud-storage', () => ({
   isAllowedContainer: vi.fn(),
   isPublicContainer: vi.fn(),
   deleteFromCloudStorage: vi.fn().mockResolvedValue(undefined),
+  // The race-safe delete: the delayed re-probe lives in cloud-storage and is
+  // covered there. Here it is stubbed so the service's handling of its result
+  // (throw vs no-op) is what gets exercised, without a real 2s wait.
+  deleteBlobIfStillOrphaned: vi.fn().mockResolvedValue(true),
+  getBlobCreatedAt: vi.fn().mockResolvedValue(null),
+  RACE_RECHECK_DELAY_MS: 2_000,
 }));
 
 vi.mock('@/utils/letter-access', () => ({
@@ -61,9 +84,8 @@ vi.mock('@/utils/letter-access', () => ({
 }));
 
 vi.mock('@/utils/resolve-unit-id', async () => {
-  const actual = await vi.importActual<typeof import('@/utils/resolve-unit-id')>(
-    '@/utils/resolve-unit-id'
-  );
+  const actual =
+    await vi.importActual<typeof import('@/utils/resolve-unit-id')>('@/utils/resolve-unit-id');
   return {
     ...actual,
     seesAllUnits: vi.fn(),
@@ -105,6 +127,22 @@ function clearOwners() {
     'muhadatsah',
     'announcement',
     'letterRevocationRequest',
+    'employmentContract',
+    'alumni',
+    'course',
+    'extracurricular',
+    'canteenItem',
+    'muhadhoroh',
+    'researchProject',
+    'assetMaintenance',
+    'letterDispatch',
+    'calendarEvent',
+    'donationCampaign',
+    'kitabKuning',
+    'unit',
+    'foundation',
+    'digitalCertificate',
+    'studentNote',
   ] as const;
   for (const model of models) {
     (prisma as any)[model].findFirst.mockResolvedValue(null);
@@ -137,9 +175,9 @@ describe('resolveSasForBlob', () => {
   it('refuses an arbitrary external URL instead of vouching for it (BUG 11)', async () => {
     (parseBlobUrl as any).mockReturnValue(null);
 
-    await expect(resolveSasForBlob('https://evil.example.com/steal.pdf', superAdmin)).rejects.toThrow(
-      /Referensi berkas tidak dikenali/
-    );
+    await expect(
+      resolveSasForBlob('https://evil.example.com/steal.pdf', superAdmin)
+    ).rejects.toThrow(/Referensi berkas tidak dikenali/);
     expect(generateSasUrl).not.toHaveBeenCalled();
   });
 
@@ -223,7 +261,7 @@ describe('resolveSasForBlob', () => {
     });
     (prisma.employeeDocument.findFirst as any).mockResolvedValue({
       userId: 'target',
-      user: { unitId: 'unit-2' },
+      user: { unitId: 'unit-2', userRoles: [{ unitId: 'unit-2' }] },
     });
     (seesAllUnits as any).mockReturnValue(false);
 
@@ -241,7 +279,7 @@ describe('resolveSasForBlob', () => {
     });
     (prisma.employeeDocument.findFirst as any).mockResolvedValue({
       userId: 'someone-else',
-      user: { unitId: 'unit-2' },
+      user: { unitId: 'unit-2', userRoles: [{ unitId: 'unit-2' }] },
     });
     (seesAllUnits as any).mockReturnValue(false);
 
@@ -260,7 +298,7 @@ describe('resolveSasForBlob', () => {
     });
     (prisma.employeeDocument.findFirst as any).mockResolvedValue({
       userId: 'user-2',
-      user: { unitId: 'unit-2' },
+      user: { unitId: 'unit-2', userRoles: [{ unitId: 'unit-2' }] },
     });
     (seesAllUnits as any).mockReturnValue(false);
 
@@ -278,7 +316,7 @@ describe('resolveSasForBlob', () => {
     });
     (prisma.employeeDocument.findFirst as any).mockResolvedValue({
       userId: 'target',
-      user: { unitId: 'unit-99' },
+      user: { unitId: 'unit-99', userRoles: [{ unitId: 'unit-99' }] },
     });
     (seesAllUnits as any).mockReturnValue(false);
 
@@ -467,6 +505,24 @@ describe('resolveSasForBlob', () => {
     expect(result.downloadUrl).toContain('sig=fakeSas');
   });
 
+  it('lets an ordinary recipient read a global announcement attachment (unitId = null)', async () => {
+    // A global announcement is addressed to everyone; its attachment must not
+    // be treated as an unowned unit blob, which `actorInUnit` rejects for every
+    // actor but a cross-unit role.
+    (parseBlobUrl as any).mockReturnValue({
+      containerName: 'cipansor-documents',
+      blobName: 'pengumuman-global.pdf',
+    });
+    (prisma.announcement.findFirst as any).mockResolvedValue({ unitId: null });
+    (seesAllUnits as any).mockReturnValue(false);
+
+    const result = await resolveSasForBlob(
+      'https://store.blob.core.windows.net/cipansor-documents/pengumuman-global.pdf',
+      sameUnitPeer
+    );
+    expect(result.downloadUrl).toContain('sig=fakeSas');
+  });
+
   it('resolves a revocation-request attachment through its letter scope (BUG 6)', async () => {
     (parseBlobUrl as any).mockReturnValue({
       containerName: 'cipansor-documents',
@@ -522,6 +578,7 @@ describe('discardOrphanBlob', () => {
       blobName: 'orphan.pdf',
     });
     (isAllowedContainer as any).mockReturnValue(true);
+    (deleteBlobIfStillOrphaned as any).mockResolvedValue(true);
   });
 
   it('deletes a blob no record references (BUG 4)', async () => {
@@ -530,7 +587,30 @@ describe('discardOrphanBlob', () => {
       superAdmin
     );
 
-    expect(deleteFromCloudStorage).toHaveBeenCalledWith('cipansor-documents', 'orphan.pdf');
+    expect(deleteBlobIfStillOrphaned).toHaveBeenCalledWith(
+      'cipansor-documents',
+      'orphan.pdf',
+      expect.any(Function)
+    );
+  });
+
+  it('re-probes inside the race-safe delete, so a create committing mid-flight blocks it (race)', async () => {
+    // First probe (line: isBlobStillReferenced) says orphan; by the time the
+    // re-probe runs a record has committed, so it must report referenced and
+    // the delete must not happen. This is the exact upload→create race: the
+    // decision was made before the record existed.
+    (prisma as any).book.count
+      .mockResolvedValueOnce(0) // first exhaustive probe
+      .mockResolvedValue(1); // re-probe after the create committed
+    (deleteBlobIfStillOrphaned as any).mockResolvedValue(false);
+
+    await expect(
+      discardOrphanBlob(
+        'https://store.blob.core.windows.net/cipansor-documents/orphan.pdf',
+        superAdmin
+      )
+    ).rejects.toThrow(/belum dapat dibuang/);
+    expect(deleteFromCloudStorage).not.toHaveBeenCalled();
   });
 
   it('refuses to discard a blob a live record references', async () => {
@@ -545,6 +625,7 @@ describe('discardOrphanBlob', () => {
       )
     ).rejects.toThrow(/Berkas sudah tersimpan/);
     expect(deleteFromCloudStorage).not.toHaveBeenCalled();
+    expect(deleteBlobIfStillOrphaned).not.toHaveBeenCalled();
   });
 
   it('refuses to discard when ANY stored blob-URL field still references the URL', async () => {
@@ -567,6 +648,7 @@ describe('discardOrphanBlob', () => {
 
     await discardOrphanBlob('https://cipansor.or.id/uploads/a.pdf', superAdmin);
     expect(deleteFromCloudStorage).not.toHaveBeenCalled();
+    expect(deleteBlobIfStillOrphaned).not.toHaveBeenCalled();
   });
 
   it('refuses a foreign container', async () => {

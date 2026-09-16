@@ -1,6 +1,36 @@
 import { prisma } from '@/lib/prisma';
+import { activeUserRoleWhere } from '@/utils/active-role';
 
 export type UnitId = string | null | undefined;
+
+/**
+ * The unit a user's access is scoped to: their primary active role
+ * assignment, falling back to the home unit on the profile.
+ *
+ * Mirrors `findDocumentOwnerTarget` in `modules/hr/employee-documents.service.ts`
+ * and the token scope every login path mints (`tokenUnitId`). An employee's
+ * `user.unitId` is a home address; the assignment is what a token carries, and
+ * the two legitimately disagree when a person holds a role scoped to another
+ * unit. Using the home unit here let a home-unit admin download a personal
+ * document while the assignment-unit admin—whose token scope actually reaches
+ * it—was refused: the two halves of the same authorization decision disagreed.
+ */
+function assignmentUnit(user: {
+  unitId: string | null;
+  userRoles?: Array<{ unitId: string | null }>;
+}): UnitId {
+  return user.userRoles?.[0]?.unitId ?? user.unitId;
+}
+
+/** Select a user's assignment-scoped unit, primary role assignment first. */
+const ASSIGNMENT_UNIT_SELECT = {
+  unitId: true,
+  userRoles: {
+    where: activeUserRoleWhere(),
+    orderBy: { isPrimary: 'desc' },
+    select: { unitId: true },
+  },
+} as const;
 
 /**
  * The record a persisted blob URL resolves to, and therefore the rule that
@@ -27,6 +57,12 @@ export type BlobOwner =
   | { kind: 'unit'; unitId: UnitId }
   /** A foundation-owned record (board member photo, foundation document). */
   | { kind: 'foundation' }
+  /**
+   * A site-wide asset with no per-unit owner (foundation/unit logo, library
+   * catalog cover). Any signed-in user may read it; it is not a personal
+   * document, so unit scoping would deny the very people who display it.
+   */
+  | { kind: 'authenticated' }
   /** Intentionally public — e.g. a portfolio marked `isShowcase`. */
   | { kind: 'public' };
 
@@ -40,6 +76,11 @@ async function ownerForStudentDocument(blobUrl: string): Promise<BlobOwner | nul
     return { kind: 'user-document', userId: doc.student.userId, unitId: doc.student.unitId };
   }
   return null;
+}
+
+/** A unit-owned record, readably by every signed-in user when it has no unit. */
+function unitOrAuthenticatedOwner(unitId: UnitId): BlobOwner {
+  return unitId ? { kind: 'unit', unitId } : { kind: 'authenticated' };
 }
 
 /** Locate the letter or letter attachment that references `blobUrl`. */
@@ -100,10 +141,14 @@ export async function findBlobOwner(
 
   const employeeDoc = await prisma.employeeDocument.findFirst({
     where: { fileUrl: blobUrl },
-    select: { userId: true, user: { select: { unitId: true } } },
+    select: { userId: true, user: { select: ASSIGNMENT_UNIT_SELECT } },
   });
   if (employeeDoc) {
-    return { kind: 'user-document', userId: employeeDoc.userId, unitId: employeeDoc.user.unitId };
+    return {
+      kind: 'user-document',
+      userId: employeeDoc.userId,
+      unitId: assignmentUnit(employeeDoc.user),
+    };
   }
 
   const studentDoc = await ownerForStudentDocument(blobUrl);
@@ -232,12 +277,15 @@ export async function findBlobOwner(
   });
   if (muhadatsah) return { kind: 'unit', unitId: muhadatsah.unitId };
 
-  // Announcement attachment: unit-owned (null unitId = all units).
+  // Announcement attachment. `unitId = null` means "all units": an
+  // announcement every user is meant to receive. Treating that as an unowned
+  // unit blob made `actorInUnit` reject everyone but a cross-unit role, so the
+  // attachment 403'd for the recipients the announcement was addressed to.
   const announcement = await prisma.announcement.findFirst({
     where: { attachmentUrl: blobUrl },
     select: { unitId: true },
   });
-  if (announcement) return { kind: 'unit', unitId: announcement.unitId };
+  if (announcement) return unitOrAuthenticatedOwner(announcement.unitId);
 
   // A revocation request's supporting document shares the letter's scope.
   const revocationRequest = await prisma.letterRevocationRequest.findFirst({
@@ -267,6 +315,150 @@ export async function findBlobOwner(
     select: { id: true },
   });
   if (foundationDocument) return { kind: 'foundation' };
+
+  // ---- Fields found by auditing every stored blob-URL field in the schema ----
+  // (flag 9). Each of these the upload middleware can persist — they share the
+  // default private container — but without a probe the SAS endpoint treated
+  // the blob as unowned and refused every signed-in consumer.
+
+  // An employment contract scan is personal: same rule as an employee document.
+  const employmentContract = await prisma.employmentContract.findFirst({
+    where: { documentUrl: blobUrl },
+    select: { userId: true, user: { select: ASSIGNMENT_UNIT_SELECT } },
+  });
+  if (employmentContract) {
+    return {
+      kind: 'user-document',
+      userId: employmentContract.userId,
+      unitId: assignmentUnit(employmentContract.user),
+    };
+  }
+
+  // Alumni photo: an alumnus belongs to a unit, so a unit-owned record.
+  const alumni = await prisma.alumni.findFirst({
+    where: { photo: blobUrl },
+    select: { unitId: true },
+  });
+  if (alumni) return { kind: 'unit', unitId: alumni.unitId };
+
+  // Course / extracurricular / canteen-item images are catalogue media owned by
+  // a unit; extension and video likewise.
+  const course = await prisma.course.findFirst({
+    where: { imageUrl: blobUrl },
+    select: { unitId: true },
+  });
+  if (course) return { kind: 'unit', unitId: course.unitId };
+
+  const extracurricular = await prisma.extracurricular.findFirst({
+    where: { imageUrl: blobUrl },
+    select: { unitId: true },
+  });
+  if (extracurricular) return { kind: 'unit', unitId: extracurricular.unitId };
+
+  const canteenItem = await prisma.canteenItem.findFirst({
+    where: { imageUrl: blobUrl },
+    select: { unitId: true },
+  });
+  if (canteenItem) return { kind: 'unit', unitId: canteenItem.unitId };
+
+  const muhadhoroh = await prisma.muhadhoroh.findFirst({
+    where: { videoUrl: blobUrl },
+    select: { unitId: true },
+  });
+  if (muhadhoroh) return { kind: 'unit', unitId: muhadhoroh.unitId };
+
+  const researchProject = await prisma.researchProject.findFirst({
+    where: { publishedUrl: blobUrl },
+    select: { unitId: true },
+  });
+  if (researchProject) return { kind: 'unit', unitId: researchProject.unitId };
+
+  // A maintenance invoice belongs to the asset it was filed against.
+  const assetMaintenance = await prisma.assetMaintenance.findFirst({
+    where: { invoiceUrl: blobUrl },
+    select: { asset: { select: { unitId: true } } },
+  });
+  if (assetMaintenance) return { kind: 'unit', unitId: assetMaintenance.asset.unitId };
+
+  // A dispatch receipt shares the scope of the letter it proves delivery of.
+  const letterDispatch = await prisma.letterDispatch.findFirst({
+    where: { receiptUrl: blobUrl },
+    select: { letterId: true },
+  });
+  if (letterDispatch) return { kind: 'letter', letterId: letterDispatch.letterId };
+
+  // A calendar's meeting link: `unitId = null` means every unit may see it.
+  const calendarEvent = await prisma.calendarEvent.findFirst({
+    where: { onlineUrl: blobUrl },
+    select: { unitId: true },
+  });
+  if (calendarEvent) return unitOrAuthenticatedOwner(calendarEvent.unitId);
+
+  // Campaign image: a foundation-wide campaign (null unit) is readable by all.
+  const donationCampaign = await prisma.donationCampaign.findFirst({
+    where: { imageUrl: blobUrl },
+    select: { unitId: true },
+  });
+  if (donationCampaign) return unitOrAuthenticatedOwner(donationCampaign.unitId);
+
+  // Branding / catalog media with no unit owner: any signed-in user displays it.
+  const kitab = await prisma.kitabKuning.findFirst({
+    where: { coverUrl: blobUrl },
+    select: { id: true },
+  });
+  if (kitab) return { kind: 'authenticated' };
+
+  const unit = await prisma.unit.findFirst({
+    where: { logoUrl: blobUrl },
+    select: { id: true },
+  });
+  if (unit) return { kind: 'authenticated' };
+
+  const foundation = await prisma.foundation.findFirst({
+    where: { logoUrl: blobUrl },
+    select: { id: true },
+  });
+  if (foundation) return { kind: 'authenticated' };
+
+  // A digital certificate's stored artefacts (PDF, signature image, thumbnail)
+  // belong to the certificate's student. Nothing writes these fields today —
+  // certificates render from data rather than a stored PDF — but they are
+  // `String?` URL columns, so a future writer must not be a silent 403.
+  const digitalCertificate = await prisma.digitalCertificate.findFirst({
+    where: { OR: [{ pdfUrl: blobUrl }, { signatureUrl: blobUrl }, { thumbnailUrl: blobUrl }] },
+    select: { student: { select: { userId: true, unitId: true } } },
+  });
+  if (digitalCertificate) {
+    return {
+      kind: 'user-document',
+      userId: digitalCertificate.student.userId,
+      unitId: digitalCertificate.student.unitId,
+    };
+  }
+
+  // `verificationUrl` is built from `config.publicSiteUrl` — a public link, not
+  // a private upload — so it is readable by any signed-in user.
+  const certificateVerification = await prisma.digitalCertificate.findFirst({
+    where: { verificationUrl: blobUrl },
+    select: { id: true },
+  });
+  if (certificateVerification) return { kind: 'authenticated' };
+
+  // A homeroom note's attachments are a `String[]` of URLs about one student.
+  // Same personal-document rule as that student's own documents. Nothing
+  // persists these today, but the field is a URL list the upload middleware
+  // could populate, so a future writer must not become a silent 403.
+  const studentNote = await prisma.studentNote.findFirst({
+    where: { attachments: { has: blobUrl } },
+    select: { student: { select: { userId: true, unitId: true } } },
+  });
+  if (studentNote) {
+    return {
+      kind: 'user-document',
+      userId: studentNote.student.userId,
+      unitId: studentNote.student.unitId,
+    };
+  }
 
   return null;
 }
@@ -392,6 +584,83 @@ const BLOB_REFERENCE_COUNTERS: ReadonlyArray<{
     label: 'foundationDocument',
     where: (u) => ({ fileUrl: u }),
     count: (a) => prisma.foundationDocument.count(a),
+  },
+  {
+    label: 'employmentContract',
+    where: (u) => ({ documentUrl: u }),
+    count: (a) => prisma.employmentContract.count(a),
+  },
+  { label: 'alumni', where: (u) => ({ photo: u }), count: (a) => prisma.alumni.count(a) },
+  {
+    label: 'course',
+    where: (u) => ({ imageUrl: u }),
+    count: (a) => prisma.course.count(a),
+  },
+  {
+    label: 'extracurricular',
+    where: (u) => ({ imageUrl: u }),
+    count: (a) => prisma.extracurricular.count(a),
+  },
+  {
+    label: 'canteenItem',
+    where: (u) => ({ imageUrl: u }),
+    count: (a) => prisma.canteenItem.count(a),
+  },
+  {
+    label: 'muhadhoroh',
+    where: (u) => ({ videoUrl: u }),
+    count: (a) => prisma.muhadhoroh.count(a),
+  },
+  {
+    label: 'researchProject',
+    where: (u) => ({ publishedUrl: u }),
+    count: (a) => prisma.researchProject.count(a),
+  },
+  {
+    label: 'assetMaintenance',
+    where: (u) => ({ invoiceUrl: u }),
+    count: (a) => prisma.assetMaintenance.count(a),
+  },
+  {
+    label: 'letterDispatch',
+    where: (u) => ({ receiptUrl: u }),
+    count: (a) => prisma.letterDispatch.count(a),
+  },
+  {
+    label: 'calendarEvent',
+    where: (u) => ({ onlineUrl: u }),
+    count: (a) => prisma.calendarEvent.count(a),
+  },
+  {
+    label: 'donationCampaign',
+    where: (u) => ({ imageUrl: u }),
+    count: (a) => prisma.donationCampaign.count(a),
+  },
+  {
+    label: 'kitabKuning',
+    where: (u) => ({ coverUrl: u }),
+    count: (a) => prisma.kitabKuning.count(a),
+  },
+  { label: 'unit', where: (u) => ({ logoUrl: u }), count: (a) => prisma.unit.count(a) },
+  {
+    label: 'foundation',
+    where: (u) => ({ logoUrl: u }),
+    count: (a) => prisma.foundation.count(a),
+  },
+  {
+    label: 'digitalCertificate',
+    where: (u) => ({ OR: [{ pdfUrl: u }, { signatureUrl: u }, { thumbnailUrl: u }] }),
+    count: (a) => prisma.digitalCertificate.count(a),
+  },
+  {
+    label: 'digitalCertificateVerification',
+    where: (u) => ({ verificationUrl: u }),
+    count: (a) => prisma.digitalCertificate.count(a),
+  },
+  {
+    label: 'studentNote',
+    where: (u) => ({ attachments: { has: u } }),
+    count: (a) => prisma.studentNote.count(a),
   },
 ];
 

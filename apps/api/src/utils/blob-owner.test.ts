@@ -33,6 +33,22 @@ const OWNER_MODELS = [
   'student',
   'boardMember',
   'foundationDocument',
+  'employmentContract',
+  'alumni',
+  'course',
+  'extracurricular',
+  'canteenItem',
+  'muhadhoroh',
+  'researchProject',
+  'assetMaintenance',
+  'letterDispatch',
+  'calendarEvent',
+  'donationCampaign',
+  'kitabKuning',
+  'unit',
+  'foundation',
+  'digitalCertificate',
+  'studentNote',
 ] as const;
 
 vi.mock('@/lib/prisma', () => {
@@ -62,6 +78,22 @@ vi.mock('@/lib/prisma', () => {
     'student',
     'boardMember',
     'foundationDocument',
+    'employmentContract',
+    'alumni',
+    'course',
+    'extracurricular',
+    'canteenItem',
+    'muhadhoroh',
+    'researchProject',
+    'assetMaintenance',
+    'letterDispatch',
+    'calendarEvent',
+    'donationCampaign',
+    'kitabKuning',
+    'unit',
+    'foundation',
+    'digitalCertificate',
+    'studentNote',
   ]) {
     models[model] = { findFirst: vi.fn(), count: vi.fn() };
   }
@@ -69,7 +101,153 @@ vi.mock('@/lib/prisma', () => {
 });
 
 import { prisma } from '@/lib/prisma';
-import { isBlobStillReferenced } from './blob-owner';
+import { isBlobStillReferenced, findBlobOwner } from './blob-owner';
+
+describe('findBlobOwner probe coverage', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    for (const model of OWNER_MODELS) {
+      (prisma as any)[model].findFirst.mockResolvedValue(null);
+    }
+  });
+
+  it('names the record that references the URL', async () => {
+    (prisma as any).book.findFirst.mockResolvedValue({ unitId: 'unit-2' });
+    await expect(
+      findBlobOwner('cipansor-documents', 'https://store/cipansor-documents/x.pdf')
+    ).resolves.toEqual({ kind: 'unit', unitId: 'unit-2' });
+  });
+
+  it('returns null when no record references the URL', async () => {
+    await expect(
+      findBlobOwner('cipansor-documents', 'https://store/cipansor-documents/x.pdf')
+    ).resolves.toBeNull();
+  });
+});
+
+describe('assignment unit vs home unit (BUG 1)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    for (const model of OWNER_MODELS) {
+      (prisma as any)[model].findFirst.mockResolvedValue(null);
+    }
+  });
+
+  it('scopes an employee document by the primary active role assignment, not the home unit', async () => {
+    // The user's profile unit (unit-home) differs from the unit their primary
+    // active role assignment is scoped to (unit-assignment). The assignment is
+    // what a token carries, and what employee-documents.service.ts authorizes
+    // on; findBlobOwner must agree or the two halves of the decision diverge.
+    (prisma as any).employeeDocument.findFirst.mockResolvedValue({
+      userId: 'target',
+      user: {
+        unitId: 'unit-home',
+        userRoles: [{ unitId: 'unit-assignment' }],
+      },
+    });
+
+    await expect(
+      findBlobOwner('cipansor-documents', 'https://store/cipansor-documents/ktp.pdf')
+    ).resolves.toEqual({
+      kind: 'user-document',
+      userId: 'target',
+      unitId: 'unit-assignment',
+    });
+  });
+
+  it('scopes an employment-contract scan by the primary assignment too', async () => {
+    (prisma as any).employmentContract.findFirst.mockResolvedValue({
+      userId: 'target',
+      user: {
+        unitId: 'unit-home',
+        userRoles: [{ unitId: 'unit-assignment' }],
+      },
+    });
+
+    await expect(
+      findBlobOwner('cipansor-documents', 'https://store/cipansor-documents/kontrak.pdf')
+    ).resolves.toEqual({
+      kind: 'user-document',
+      userId: 'target',
+      unitId: 'unit-assignment',
+    });
+  });
+
+  it('falls back to the home unit when the owner has no active role assignment', async () => {
+    (prisma as any).employeeDocument.findFirst.mockResolvedValue({
+      userId: 'target',
+      user: { unitId: 'unit-home', userRoles: [] },
+    });
+
+    await expect(
+      findBlobOwner('cipansor-documents', 'https://store/cipansor-documents/ktp.pdf')
+    ).resolves.toEqual({
+      kind: 'user-document',
+      userId: 'target',
+      unitId: 'unit-home',
+    });
+  });
+});
+
+describe('global announcement attachment (FLAG)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    for (const model of OWNER_MODELS) {
+      (prisma as any)[model].findFirst.mockResolvedValue(null);
+    }
+  });
+
+  it('treats an all-units announcement (unitId = null) as readable by any authenticated user', async () => {
+    (prisma as any).announcement.findFirst.mockResolvedValue({ unitId: null });
+
+    await expect(
+      findBlobOwner('cipansor-documents', 'https://store/cipansor-documents/p.pdf')
+    ).resolves.toEqual({ kind: 'authenticated' });
+  });
+
+  it('keeps a unit-specific announcement unit-scoped', async () => {
+    (prisma as any).announcement.findFirst.mockResolvedValue({ unitId: 'unit-2' });
+
+    await expect(
+      findBlobOwner('cipansor-documents', 'https://store/cipansor-documents/p.pdf')
+    ).resolves.toEqual({ kind: 'unit', unitId: 'unit-2' });
+  });
+});
+
+describe('homeroom note attachments (flag 9 audit)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    for (const model of OWNER_MODELS) {
+      (prisma as any)[model].findFirst.mockResolvedValue(null);
+    }
+  });
+
+  it('scopes a String[] attachment by the student it belongs to', async () => {
+    // The audit parses `String[]` fields too; `StudentNote.attachments` is a
+    // list of URLs about one student, so it takes the personal-document rule.
+    (prisma as any).studentNote.findFirst.mockResolvedValue({
+      student: { userId: 'student-user', unitId: 'unit-3' },
+    });
+
+    await expect(
+      findBlobOwner('cipansor-documents', 'https://store/cipansor-documents/n.pdf')
+    ).resolves.toEqual({
+      kind: 'user-document',
+      userId: 'student-user',
+      unitId: 'unit-3',
+    });
+  });
+
+  it('queries the attachment list with a `has` filter, not a scalar equality', async () => {
+    (prisma as any).studentNote.findFirst.mockResolvedValue(null);
+    await findBlobOwner('cipansor-documents', 'https://store/cipansor-documents/n.pdf');
+    expect((prisma as any).studentNote.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { attachments: { has: 'https://store/cipansor-documents/n.pdf' } },
+      })
+    );
+  });
+});
 
 describe('isBlobStillReferenced', () => {
   beforeEach(() => {
@@ -112,5 +290,119 @@ describe('isBlobStillReferenced', () => {
 
     expect([...ownerModels].sort()).toEqual([...counterModels].sort());
     expect([...ownerModels].sort()).toEqual([...OWNER_MODELS].sort());
+  });
+});
+
+/**
+ * Stored `String`/`String?` fields whose name looks like a blob reference but
+ * that are deliberately NOT blob-URL fields. Kept explicit, with a reason, so
+ * the audit below can tell "not a blob" apart from "a blob nobody probed".
+ */
+const NON_BLOB_FIELDS: Record<string, string> = {
+  'AlumniDonation.receiptNo': 'kwitansi number, not a file',
+  'Book.fileType': 'MIME type string, not a URL',
+  'Donation.receiptNumber': 'receipt number, not a file',
+  'LetterRevocationRequest.signatureId': 'FK to a LetterSignature row',
+  'LetterSignedDocument.signatureId': 'FK to a LetterSignature row',
+  'LetterSignature.pdfSignature': 'inline signature payload, not a blob',
+  'LetterSignature.revocationSignature': 'inline signature payload, not a blob',
+  'LetterSignature.signature': 'inline signature payload, not a blob',
+  'PAUDAssessmentEvidence.fileName': 'display name, not a URL',
+  'PAUDAssessmentEvidence.fileType': 'MIME type string, not a URL',
+  'PAUDNarrativeReport.principalSignature': 'inline signature text, not a blob',
+  'PAUDNarrativeReport.teacherSignature': 'inline signature text, not a blob',
+  'PortfolioFile.fileName': 'display name, not a URL',
+  'PortfolioFile.fileType': 'MIME type string, not a URL',
+  'User.twoFactorRecoveryCodes': 'encrypted codes, not a blob',
+  'UserIdentity.ktpFileName': 'display name, not a URL',
+};
+
+describe('stored blob-URL field audit (flag 9)', () => {
+  /**
+   * Split `findBlobOwner`'s source into one segment per `prisma.<model>.findFirst`
+   * probe, keyed by model name. A segment runs from its own probe call to the
+   * next probe, so the fields it references are the ones *that* model queries.
+   */
+  function probeSegments(source: string): Map<string, string[]> {
+    const probeRe = /prisma\.(\w+)\.findFirst/g;
+    const starts: Array<{ model: string; index: number }> = [];
+    let match: RegExpExecArray | null;
+    while ((match = probeRe.exec(source)) !== null) {
+      starts.push({ model: match[1], index: match.index });
+    }
+    const segments = new Map<string, string[]>();
+    starts.forEach((start, i) => {
+      const end = i + 1 < starts.length ? starts[i + 1].index : source.length;
+      const segment = source.slice(start.index, end);
+      const existing = segments.get(start.model) ?? [];
+      existing.push(segment);
+      segments.set(start.model, existing);
+    });
+    return segments;
+  }
+
+  it('probes every blob-like String field in the Prisma schema', () => {
+    // `findBlobOwner` is a hand-maintained index; a new model field that stores
+    // an uploaded URL is invisible to it until someone remembers to add a probe,
+    // and the failure mode is a file that uploaded cleanly but 403s forever.
+    // This reads the schema directly so a field added by a future migration is
+    // caught here rather than in production.
+    const schema = readFileSync(join(process.cwd(), 'prisma', 'schema.prisma'), 'utf8');
+    const source = readFileSync(join(process.cwd(), 'src', 'utils', 'blob-owner.ts'), 'utf8');
+    const segments = probeSegments(source);
+
+    const blobLike =
+      /(url|photo|image|file|logo|banner|attach|cover|signature|receipt|audio|video|scan|proof)/i;
+    const found: string[] = [];
+    let model: string | null = null;
+    for (const line of schema.split('\n')) {
+      const modelMatch = /^model\s+(\w+)\s*\{/.exec(line);
+      if (modelMatch) {
+        model = modelMatch[1];
+        continue;
+      }
+      if (line.startsWith('}')) {
+        model = null;
+        continue;
+      }
+      if (!model) continue;
+      const fieldMatch = /^\s*(\w+)\s+String\??\b/.exec(line);
+      if (fieldMatch && blobLike.test(fieldMatch[1])) {
+        found.push(`${model}.${fieldMatch[1]}`);
+      }
+    }
+
+    expect(found.length).toBeGreaterThan(0);
+    // The probe is matched against the field's OWN model segment, not the file
+    // at large. `source.includes('fileUrl')` passed for any model because some
+    // other model's probe mentions the name; a field belonging to a model with
+    // no probe (or a probe that omits it) must fail here.
+    const unaccounted = found.filter((field) => {
+      if (NON_BLOB_FIELDS[field]) return false;
+      const [modelName, fieldName] = field.split('.');
+      // Prisma model names are camelCase in the client (the DB is snake_case).
+      const clientModel = modelName[0].toLowerCase() + modelName.slice(1);
+      const ownSegments = segments.get(clientModel);
+      return !ownSegments || !ownSegments.some((segment) => segment.includes(fieldName));
+    });
+
+    expect(unaccounted).toEqual([]);
+  });
+
+  it('every probed model is a real Prisma model (no stale probe)', () => {
+    // The reverse drift: a probe left behind after its model was renamed or
+    // removed would silently never match, and the guard above would not notice.
+    const schema = readFileSync(join(process.cwd(), 'prisma', 'schema.prisma'), 'utf8');
+    const source = readFileSync(join(process.cwd(), 'src', 'utils', 'blob-owner.ts'), 'utf8');
+
+    const schemaModels = new Set(
+      [...schema.matchAll(/^model\s+(\w+)\s*\{/gm)].map(
+        (m) => m[1][0].toLowerCase() + m[1].slice(1)
+      )
+    );
+    const probedModels = [...source.matchAll(/prisma\.(\w+)\.findFirst/g)].map((m) => m[1]);
+
+    const stale = [...new Set(probedModels)].filter((model) => !schemaModels.has(model));
+    expect(stale).toEqual([]);
   });
 });

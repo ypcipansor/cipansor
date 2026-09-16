@@ -46,6 +46,19 @@ async function uploadPdf(session: AuthSession, label: string) {
   return json.data.url as string;
 }
 
+/** POST /upload/discard, returning the status so a refusal can be asserted. */
+async function discardUpload(session: AuthSession, url: string) {
+  const res = await fetch(`${API_URL}/upload/discard`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${session.accessToken}`,
+    },
+    body: JSON.stringify({ url }),
+  });
+  return { status: res.status, body: await res.text() };
+}
+
 test.describe("HR employee directory + documents", () => {
   let session: AuthSession;
 
@@ -138,6 +151,54 @@ test.describe("HR employee directory + documents", () => {
       `/hr/employees/${employee.userId}/documents`,
     );
     expect(after.data.some((d) => d.id === created.data.id)).toBe(false);
+  });
+
+  test("a discard never removes a blob a record references (real stack)", async () => {
+    // The race's observable contract: once a record points at the blob, the
+    // discard endpoint must not destroy it and the document must survive. On a
+    // local-only stack (no Azure configured) uploads are `/uploads` paths and
+    // discard is a documented no-op, so this asserts the surviving record
+    // rather than a 409 — the Azure-specific delete path (the delayed re-probe
+    // and its refusal) is covered by the API unit tests, which CI runs without
+    // an Azure account.
+    const list = await apiRequest<{ data: Array<{ id: string; userId: string }> }>(
+      session,
+      "GET",
+      "/hr/employees?limit=1",
+    );
+    const employee = list.data[0];
+    if (!employee) throw new Error("seeded stack has no employees");
+
+    const fileUrl = await uploadPdf(session, "e2e race");
+
+    const created = await apiRequest<{ data: { id: string } }>(
+      session,
+      "POST",
+      "/hr/documents",
+      { userId: employee.userId, name: "E2E Race", type: "IJAZAH", fileUrl },
+    );
+
+    const discard = await discardUpload(session, fileUrl);
+    expect(discard.status).toBe(200);
+
+    // The document still resolves: the discard did not remove a live record.
+    const documents = await apiRequest<{
+      data: Array<{ id: string; fileUrl: string }>;
+    }>(session, "GET", `/hr/employees/${employee.userId}/documents`);
+    expect(documents.data.some((d) => d.id === created.data.id)).toBe(true);
+  });
+
+  test("discards an upload whose record create failed (no record references it)", async () => {
+    // The normal discard path: a create that definitively failed leaves an
+    // orphan, and the discard is accepted (locally a no-op for `/uploads`).
+    const fileUrl = await uploadPdf(session, "e2e orphan");
+
+    const discard = await discardUpload(session, fileUrl);
+    expect(discard.status).toBe(200);
+
+    // Idempotent: a second discard of the same orphan must not error either.
+    const again = await discardUpload(session, fileUrl);
+    expect(again.status).toBe(200);
   });
 
   test("a unit admin cannot delete another unit's employee document (BUG 1)", async () => {

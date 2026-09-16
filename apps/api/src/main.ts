@@ -12,7 +12,7 @@ Sentry.init({
 
 import { app } from './app';
 import { config } from '@/config';
-import { assertProductionSecrets } from '@/config/assert-secrets';
+import { assertProductionSecrets, warnOnLooseMicrosoftTenant } from '@/config/assert-secrets';
 import { logger } from '@/lib/logger';
 import { prisma } from '@/lib/prisma';
 import { initializeScheduler, stopScheduler } from '@/jobs';
@@ -27,6 +27,11 @@ async function bootstrap() {
     // Before anything else, and before the port opens. Serving traffic signed
     // by a key published in .env.example is worse than not serving at all.
     assertProductionSecrets();
+
+    // Not fatal — a tenant id is not a secret — but silently accepting tokens
+    // from any Entra directory is not what a single-tenant deployment intends.
+    const tenantWarning = warnOnLooseMicrosoftTenant();
+    if (tenantWarning) logger.warn(tenantWarning);
 
     // Test database connection
     logger.info('Connecting to database...');
