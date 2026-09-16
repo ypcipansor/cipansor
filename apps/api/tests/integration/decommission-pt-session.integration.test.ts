@@ -46,7 +46,8 @@ INSERT INTO users (id, name, email, role, is_active, unit_id, updated_at) VALUES
   ('user-mixed-expired', 'Mixed Expired', 'mixed-expired@example.com', 'TEACHER', true, NULL, now()),
   ('user-mixed-future', 'Mixed Future', 'mixed-future@example.com', 'TEACHER', true, NULL, now()),
   ('user-pt-noassign', 'PT No Assign', 'pt-noassign@example.com', 'TEACHER', true, 'u-pt', now()),
-  ('user-tkq', 'TKQ Guru', 'tkq@example.com', 'TEACHER', true, 'u-tk', now());
+  ('user-tkq', 'TKQ Guru', 'tkq@example.com', 'TEACHER', true, 'u-tk', now()),
+  ('user-tk-noassign', 'TK No Assign', 'tk-noassign@example.com', 'STAFF', true, 'u-tk', now());
 
 INSERT INTO user_role_assignments (id, user_id, role_id, is_primary, is_active, expires_at, updated_at) VALUES
   ('a-pt-only', 'user-pt-only', 'r-pt-dosen', true, true, NULL, now()),
@@ -68,6 +69,7 @@ INSERT INTO refresh_tokens (id, token, user_id, expires_at) VALUES
   ('rt-mixed-expired', 'tok-mixed-expired', 'user-mixed-expired', now() + interval '30 days'),
   ('rt-mixed-future', 'tok-mixed-future', 'user-mixed-future', now() + interval '30 days'),
   ('rt-pt-noassign', 'tok-pt-noassign', 'user-pt-noassign', now() + interval '30 days'),
+  ('rt-tk-noassign', 'tok-tk-noassign', 'user-tk-noassign', now() + interval '30 days'),
   ('rt-tkq', 'tok-tkq', 'user-tkq', now() + interval '30 days');
 
 -- Operational rows owned by each unit. The migration deletes the PT unit, so
@@ -222,21 +224,28 @@ describeDb('decommission migration — legacy PT sessions end', () => {
   });
 
   // Gap 1 (review comment): a PT account with no `user_role_assignments` row at
-  // all. It has no PT trace left in the data once the PT role rows are deleted,
-  // so the migration cannot identify it and — by design — does not touch it.
-  // This shape is unreachable through any account-creation path: the seed loop
-  // writes an assignment per DEMO_ACCOUNTS entry, and `authService.register` /
-  // `userService.create` write one in the same transaction. The paths that skip
-  // the assignment (students, HR, bulk import) cannot mint a PT account, and
-  // `login()` refuses a user without an active assignment, so no refresh token
-  // can exist for them. Pinned here so the limitation is visible and any future
-  // detection change is deliberate.
-  it('documents the no-assignment PT shape the migration cannot identify', async () => {
+  // all. It has no PT assignment left to identify it, but it does still sit on
+  // the PT unit before the purge (`users.unit_id` is SET NULL, not RESTRICT), so
+  // the `pt_unit_users_tmp` snapshot taken before the unit delete catches it.
+  // Reachable via `rolesService.removeRoleAssignment`, which deletes the
+  // assignment without revoking refresh tokens, so this must be closed rather
+  // than merely documented.
+  it('revokes and detaches a PT user whose only assignment was already removed', async () => {
     const rows = await fetchUsers();
     const byId = Object.fromEntries(rows.map((r) => [r.id, r]));
     expect(byId['user-pt-noassign'].assign_code).toBeNull();
-    expect(byId['user-pt-noassign'].role).toBe('TEACHER');
-    expect(byId['user-pt-noassign'].tokens).toBe('1');
+    expect(byId['user-pt-noassign'].role).toBeNull();
+    expect(byId['user-pt-noassign'].tokens).toBe('0');
+  });
+
+  // Control for the marker-2 snapshot: a user on a *surviving* unit with no
+  // assignment must not be swept up by the PT-unit branch.
+  it('keeps an unassigned user on a surviving unit untouched', async () => {
+    const rows = await fetchUsers();
+    const byId = Object.fromEntries(rows.map((r) => [r.id, r]));
+    expect(byId['user-tk-noassign'].assign_code).toBeNull();
+    expect(byId['user-tk-noassign'].role).toBe('STAFF');
+    expect(byId['user-tk-noassign'].tokens).toBe('1');
   });
 
   it('keeps an unrelated non-PT user untouched', async () => {
@@ -447,4 +456,3 @@ describeDb('decommission migration — FK-catalog guards fail loud', () => {
     }
   });
 });
-

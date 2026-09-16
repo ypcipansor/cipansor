@@ -253,12 +253,16 @@ cd apps/api && npx prisma migrate deploy
 This gate is an operator decision, not an automated one: no CI/CD or `Makefile`
 deploy target runs `prisma migrate deploy` (the `CI` workflow has no deploy
 stage; `Makefile deploy` uses `prisma db push`, and the API image starts with
-`node dist/main.js`). Nothing in this repository can therefore *enforce* that a
+`node dist/main.js`). Nothing in this repository can therefore _enforce_ that a
 backup exists — the backup and its restorability check above are manual steps
 the deploying operator must complete and confirm. If that ever needs to be
 enforced, it belongs in whatever pipeline runs `migrate deploy`, not here.
 Note: the decommission migration also ends the sessions of users left without any
-role by the purge (their refresh tokens are revoked). An access token already
+role by the purge (their refresh tokens are revoked). That covers both a user who
+still holds a `PT_*` assignment at deploy time and a PT user whose assignment was
+already removed by offboarding but who remains attached to the PT unit — the
+migration snapshots the unit's accounts before deleting the unit, because
+`users.unit_id` is `SET NULL` and the link is lost afterwards. An access token already
 issued stays valid until it expires — at most `JWT_EXPIRES_IN` (15 minutes by
 default). This is the same short window the system already accepts for every
 other offboarding or role change, because `authenticate` is stateless by design

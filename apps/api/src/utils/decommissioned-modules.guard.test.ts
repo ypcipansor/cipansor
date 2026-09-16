@@ -214,20 +214,23 @@ describe('decommission purge — migrations', () => {
     );
   });
 
-  it('documents the no-assignment PT shape as unreachable through account creation', () => {
+  it('closes the no-assignment PT shape via the pre-purge unit snapshot', () => {
     // Gap 1 of the PR #505 review: a PT user with no `user_role_assignments`
-    // row leaves no PT trace for the purge to find. The account-creation paths
-    // all write an assignment in the same transaction:
+    // row leaves no PT assignment for the purge to find. Account creation is
+    // not how the shape arises — those paths all write an assignment:
     //   - authService.register        -> auth.service.ts:388 (tx.userRoleAssignment.create)
     //   - userService.create          -> user.service.ts:224 (nested userRoles.create)
     //   - student-onboarding          -> student-onboarding.orchestrator.ts:341
     //   - parent-scope                -> parent-scope.ts:130
     //   - seed (DEMO_ACCOUNTS loop)   -> seed.ts, one create per entry
-    // The paths that omit the assignment (students.service, hr.service) create
-    // only non-PT legacy roles; and `login()` refuses a user with neither an
-    // active assignment nor a legacy role, so no refresh token can exist for a
-    // PT account with no assignment. Pinned so a new creation path that skips
-    // the assignment fails here rather than only in production.
+    // It arises through *offboarding*: `rolesService.removeRoleAssignment`
+    // (roles.service.ts:243) deletes the row without revoking refresh tokens,
+    // so the user keeps a rotatable token and a legacy `users.role`. The
+    // migration closes it by snapshotting users still attached to a
+    // PERGURUAN_TINGGI unit before the unit is deleted (`users.unit_id` is SET
+    // NULL, so this marker only exists pre-delete), and unioning that with the
+    // assignment-based set. Pinned end-to-end by
+    // tests/integration/decommission-pt-session.integration.test.ts.
     const register = read(join(API_ROOT, 'src', 'modules', 'auth', 'auth.service.ts'));
     expect(register).toMatch(/userRoleAssignment\.create/);
 
@@ -239,6 +242,24 @@ describe('decommission purge — migrations', () => {
     // The seed also fails loudly if any active account is left without an
     // active assignment.
     expect(seed).toMatch(/userRoles:\s*\{\s*none:\s*\{\s*isActive:\s*true/);
+
+    // The offboarding path that produces the shape does not revoke tokens —
+    // the migration therefore has to. Pinned so a future "tidy up" of
+    // removeRoleAssignment is not mistaken for the fix.
+    const roles = read(join(API_ROOT, 'src', 'modules', 'roles', 'roles.service.ts'));
+    const remove = roles.slice(roles.indexOf('async removeRoleAssignment'));
+    expect(remove.slice(0, 400)).not.toMatch(/refreshToken\.deleteMany/);
+
+    // Migration: the unit-based snapshot is taken *before* the unit delete, and
+    // the section-4 selection unions it with the assignment-based candidates.
+    const code = DECOMMISSION.replace(/--[^\n]*/g, '');
+    const unitSnapshot = code.indexOf('pt_unit_users_tmp');
+    const deleteUnits = code.search(/DELETE FROM\s+%s/);
+    expect(unitSnapshot).toBeGreaterThan(-1);
+    expect(deleteUnits).toBeGreaterThan(-1);
+    expect(unitSnapshot).toBeLessThan(deleteUnits);
+    expect(code).toMatch(/UNION/);
+    expect(code).toMatch(/FROM "pt_unit_users_tmp"/);
   });
 
   it('guards the purge block against a catalog that breaks its assumptions', () => {

@@ -79,6 +79,20 @@ DROP TYPE IF EXISTS "InnovationStatus";
 --
 -- (depth distribution: 84 at 1, 104 at 2, 23 at 3.) This is why the deploy
 -- runbook requires a verified backup BEFORE `prisma migrate deploy`.
+
+-- Snapshot the accounts still attached to a PERGURUAN_TINGGI unit BEFORE the
+-- unit is deleted. This is section 4's second marker for a PT-only account and
+-- it has to be read here: `users.unit_id` is `SET NULL`, so once the unit rows
+-- are gone the link is lost and a PT user whose only role assignment was
+-- already removed cannot be told apart from an ordinary account. See the note
+-- on shape (a) in section 4 for why that shape is reachable.
+DROP TABLE IF EXISTS "pt_unit_users_tmp";
+CREATE TEMP TABLE "pt_unit_users_tmp" AS
+SELECT DISTINCT u."id" AS "user_id"
+FROM "users" u
+JOIN "units" un ON un."id" = u."unit_id"
+WHERE un."type"::text = 'PERGURUAN_TINGGI';
+
 DO $decommission_units$
 DECLARE
   edge     record;
@@ -316,19 +330,35 @@ DROP TYPE "RoleCode_old";
 -- runtime's `activeRoleWhere()` (is_active AND not expired); a user who also
 -- holds an active non-PT role keeps their session.
 --
--- Two residual shapes were investigated and are deliberately NOT patched:
+-- Two residual shapes matter here. One is closed by the union below; the other
+-- is investigated and deliberately left alone:
 --
--- (a) A user with NO `user_role_assignments` row at all. Every code path that
---     creates a PT account also creates its assignment: the seed loop
---     (prisma/seed.ts, one `userRoleAssignment.create` per DEMO_ACCOUNTS entry),
---     `authService.register` and `userService.create` both write the assignment
---     in the same transaction. The account-creation paths that do not
---     (students, HR, bulk import) cannot mint a PT account — `login()` refuses a
---     user without an active assignment ("No active role assignment found for
---     this user") — so such a user never obtains a refresh token to rotate.
---     After the PT role rows are gone there is no reliable marker left to
---     identify a hypothetical one, so this is reported to the owner rather than
---     patched speculatively.
+-- (a) A user with NO `user_role_assignments` row at all. This shape IS
+--     reachable, through offboarding rather than account creation. Every
+--     account-creation path does write an assignment (the seed loop
+--     prisma/seed.ts, `authService.register` auth.service.ts:388,
+--     `userService.create` user.service.ts:224, onboarding:341,
+--     parent-scope.ts:130), and `login()` refuses a user without an active
+--     assignment — so the shape does not arise at creation time. It arises
+--     after the fact: `rolesService.removeRoleAssignment` (roles.service.ts:243,
+--     route `DELETE /roles/assignments/:id`) deletes a `user_role_assignments`
+--     row but does NOT revoke the affected user's refresh tokens. If an admin
+--     offboards a PT user that way, the user keeps a live refresh token and a
+--     legacy `users.role` value — exactly the rotatable shape section 4 exists
+--     to close, but with no PT assignment left for the snapshot query to find.
+--     The `pt_unit_users_tmp` snapshot taken before the unit delete is the
+--     surviving marker: a PT user with an assignment lived on a PT unit
+--     (`demoUnitIdFor` in the seed maps every `PT_*` code to the PT unit), so
+--     `users.unit_id` points at that unit. The selection below therefore unions
+--     the assignment-based and unit-based snapshots.
+--
+--     Residual sub-shape, handed to the owner rather than patched: an admin who
+--     granted a `PT_*` role to an account whose `unit_id` is a *non-PT* unit
+--     (register accepts any unitId for a non-super-admin role) and then removed
+--     that assignment leaves a user with neither marker — no PT assignment and
+--     no PT unit. That is indistinguishable from any other offboarded user, so
+--     it cannot be identified without guessing. It is the pre-existing
+--     system-wide offboarding gap, not something this migration introduces.
 --
 -- (b) A "mixed" user whose non-PT assignment is active now but expires later.
 --     Not reachable: `user_role_assignments.expires_at` is never written by any
@@ -352,18 +382,28 @@ DROP TYPE "RoleCode_old";
 --     that changes.
 DROP TABLE IF EXISTS "pt_only_users_tmp";
 CREATE TEMP TABLE "pt_only_users_tmp" AS
-SELECT DISTINCT a."user_id" AS "user_id"
-FROM "user_role_assignments" a
-JOIN "roles" r ON r."id" = a."role_id"
-WHERE r."code" IN (
-    'PT_REKTOR', 'PT_WAKIL_REKTOR', 'PT_DEKAN', 'PT_KAPRODI', 'PT_DOSEN',
-    'PT_MAHASISWA', 'PT_STAF_AKADEMIK', 'PT_TATA_USAHA', 'PT_ALUMNI'
-  )
-  AND NOT EXISTS (
+WITH pt_candidates AS (
+  -- Marker 1: the user still holds a PT_* assignment at migration time.
+  SELECT a."user_id" AS "user_id"
+  FROM "user_role_assignments" a
+  JOIN "roles" r ON r."id" = a."role_id"
+  WHERE r."code" IN (
+      'PT_REKTOR', 'PT_WAKIL_REKTOR', 'PT_DEKAN', 'PT_KAPRODI', 'PT_DOSEN',
+      'PT_MAHASISWA', 'PT_STAF_AKADEMIK', 'PT_TATA_USAHA', 'PT_ALUMNI'
+    )
+  UNION
+  -- Marker 2: the user was attached to a PERGURUAN_TINGGI unit before it was
+  -- deleted (PT-prefixed accounts were seeded onto that unit). This catches a
+  -- PT user whose only assignment was removed by offboarding.
+  SELECT "user_id" FROM "pt_unit_users_tmp"
+)
+SELECT DISTINCT c."user_id"
+FROM pt_candidates c
+WHERE NOT EXISTS (
     SELECT 1
     FROM "user_role_assignments" b
     JOIN "roles" rb ON rb."id" = b."role_id"
-    WHERE b."user_id" = a."user_id"
+    WHERE b."user_id" = c."user_id"
       AND rb."code" NOT IN (
         'PT_REKTOR', 'PT_WAKIL_REKTOR', 'PT_DEKAN', 'PT_KAPRODI', 'PT_DOSEN',
         'PT_MAHASISWA', 'PT_STAF_AKADEMIK', 'PT_TATA_USAHA', 'PT_ALUMNI'
@@ -398,6 +438,7 @@ SET "role" = NULL
 WHERE "id" IN (SELECT "user_id" FROM "pt_only_users_tmp");
 
 DROP TABLE IF EXISTS "pt_only_users_tmp";
+DROP TABLE IF EXISTS "pt_unit_users_tmp";
 
 -- What this section does and does not guarantee. Revoking the refresh tokens
 -- and clearing `users.role` removes the only renewable credential, so a PT-only
