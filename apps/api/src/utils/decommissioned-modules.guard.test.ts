@@ -177,4 +177,82 @@ describe('decommission purge — migrations', () => {
       );
     }
   });
+
+  it('no code writes `expires_at` on a user_role_assignment (exhaustive)', () => {
+    // The full set of assignment writers, confirmed by grepping every
+    // `userRoleAssignment.create|update|updateMany|upsert` and every nested
+    // `userRoles: { create/update }` in the API and the seed. None sets
+    // `expiresAt`/`expires_at`; the only reads are active-role filters
+    // (auth.service.ts activeRoleWhere, roles.service.ts switchRole). If one of
+    // these starts writing an expiry, the "mixed user, future expiry" reasoning
+    // above no longer holds and the PT purge must be revisited.
+    const writers = [
+      ['src', 'modules', 'auth', 'auth.service.ts'],
+      ['src', 'modules', 'roles', 'roles.service.ts'],
+      ['src', 'modules', 'users', 'user.service.ts'],
+      ['src', 'utils', 'parent-scope.ts'],
+      ['src', 'services', 'integration', 'student-onboarding.orchestrator.ts'],
+      ['prisma', 'seed.ts'],
+    ];
+    for (const rel of writers) {
+      const source = read(join(API_ROOT, ...rel));
+      // A write site that reaches an `expiresAt` within a small window of the
+      // assignment mutation is the only realistic way to set the column.
+      expect(source, `${rel.join('/')} writes expiresAt`).not.toMatch(
+        /(userRoleAssignment\.(create|createMany|update|updateMany|upsert)|userRoles:\s*\{\s*(create|update))[\s\S]{0,200}?expiresAt/
+      );
+    }
+    // Raw SQL is the other way in; none of it touches user_role_assignments.
+    const migrationSql = readdirSync(join(API_ROOT, 'prisma', 'migrations'))
+      .filter((d) => d !== 'migration_lock.toml')
+      .map((d) => join(API_ROOT, 'prisma', 'migrations', d, 'migration.sql'))
+      .filter((p) => p.endsWith('.sql'))
+      .map((p) => read(p))
+      .join('\n');
+    expect(migrationSql).not.toMatch(
+      /(INSERT INTO|UPDATE)\s+"?user_role_assignments"?[\s\S]{0,300}?expires_at/
+    );
+  });
+
+  it('documents the no-assignment PT shape as unreachable through account creation', () => {
+    // Gap 1 of the PR #505 review: a PT user with no `user_role_assignments`
+    // row leaves no PT trace for the purge to find. The account-creation paths
+    // all write an assignment in the same transaction:
+    //   - authService.register        -> auth.service.ts:388 (tx.userRoleAssignment.create)
+    //   - userService.create          -> user.service.ts:224 (nested userRoles.create)
+    //   - student-onboarding          -> student-onboarding.orchestrator.ts:341
+    //   - parent-scope                -> parent-scope.ts:130
+    //   - seed (DEMO_ACCOUNTS loop)   -> seed.ts, one create per entry
+    // The paths that omit the assignment (students.service, hr.service) create
+    // only non-PT legacy roles; and `login()` refuses a user with neither an
+    // active assignment nor a legacy role, so no refresh token can exist for a
+    // PT account with no assignment. Pinned so a new creation path that skips
+    // the assignment fails here rather than only in production.
+    const register = read(join(API_ROOT, 'src', 'modules', 'auth', 'auth.service.ts'));
+    expect(register).toMatch(/userRoleAssignment\.create/);
+
+    const users = read(join(API_ROOT, 'src', 'modules', 'users', 'user.service.ts'));
+    expect(users).toMatch(/userRoles:\s*\{\s*create:/);
+
+    const seed = read(join(API_ROOT, 'prisma', 'seed.ts'));
+    expect(seed).toMatch(/userRoleAssignment\.create/);
+    // The seed also fails loudly if any active account is left without an
+    // active assignment.
+    expect(seed).toMatch(/userRoles:\s*\{\s*none:\s*\{\s*isActive:\s*true/);
+  });
+
+  it('guards the purge block against a catalog that breaks its assumptions', () => {
+    // The unit purge deletes rows with `ch.id IN (...)` per FK edge, which is
+    // only correct while every followed edge is single-column, targets the
+    // parent's `id`, and the child has an `id`. The block computes the table
+    // closure from the catalog and asserts those three properties, failing
+    // loudly instead of deleting the wrong rows or dying mid-deploy. Pinned so
+    // the guards are not quietly removed by a future refactor.
+    expect(DECOMMISSION).toMatch(/array_length\(c\.conkey,\s*1\)/);
+    expect(DECOMMISSION).toMatch(/pa\.attnum\s*=\s*c\.confkey\[1\]/);
+    expect(DECOMMISSION).toMatch(/edge\.parent_col\s*<>\s*'id'/);
+    expect(DECOMMISSION).toMatch(/_decommission_tables/);
+    expect(DECOMMISSION).toMatch(/IF edge\.conkey_len <> 1 THEN/);
+    expect(DECOMMISSION).toMatch(/RAISE EXCEPTION/);
+  });
 });

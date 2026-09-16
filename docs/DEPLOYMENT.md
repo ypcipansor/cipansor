@@ -233,8 +233,9 @@ As of this writing that applies to
 higher-education (Perguruan Tinggi) and Litbang/R&D tables **and deletes every
 row owned by a `PERGURUAN_TINGGI` unit** (its classes, students, teachers, staff,
 departments, budgets, letters, assets, attendance, invoices, …). The unit is
-removed outright rather than re-typed; the blast radius reaches ~213 tables
-(depth ≤ 3).
+removed outright rather than re-typed; the blast radius reaches 211 dependent
+tables (212 including `units`), at a maximum depth of 3 — reproduced from the
+post-drop FK catalog in the migration header.
 Back up, then deploy:
 
 ```bash
@@ -249,6 +250,13 @@ pg_restore --list cipansor_$(date +%Y%m%d_%H%M).dump | head
 cd apps/api && npx prisma migrate deploy
 ```
 
+This gate is an operator decision, not an automated one: no CI/CD or `Makefile`
+deploy target runs `prisma migrate deploy` (the `CI` workflow has no deploy
+stage; `Makefile deploy` uses `prisma db push`, and the API image starts with
+`node dist/main.js`). Nothing in this repository can therefore *enforce* that a
+backup exists — the backup and its restorability check above are manual steps
+the deploying operator must complete and confirm. If that ever needs to be
+enforced, it belongs in whatever pipeline runs `migrate deploy`, not here.
 Note: the decommission migration also ends the sessions of users left without any
 role by the purge (their refresh tokens are revoked). An access token already
 issued stays valid until it expires — at most `JWT_EXPIRES_IN` (15 minutes by

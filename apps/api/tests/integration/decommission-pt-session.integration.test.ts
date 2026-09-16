@@ -312,3 +312,139 @@ describeDb('decommission migration — legacy PT sessions end', () => {
     }
   });
 });
+
+/**
+ * Analysis 1 (review comment): the purge block at the top of section 3 deletes
+ * every reachable row with `ch.id IN (SELECT id FROM doomed ...)`, which is only
+ * correct while (i) every followed FK edge is single-column, (ii) it targets the
+ * parent's `id`, and (iii) the child exposes an `id`. The current schema
+ * satisfies all three (verified against the post-drop catalog: 0 composite FKs,
+ * 0 FKs targeting a non-`id` column, 0 public tables without an `id`), so the
+ * guards never fire in production. These tests build the shapes that would
+ * break the block and pin that the guards fail *loud* — an opaque delete of the
+ * wrong rows, or a mid-deploy SQL error, are the outcomes we are preventing.
+ */
+describeDb('decommission migration — FK-catalog guards fail loud', () => {
+  const dbName = `cipansor_decommission_fk_${Date.now()}`;
+  const baseUrl =
+    process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/cipansor';
+  const targetUrl = (() => {
+    const u = new URL(baseUrl);
+    u.pathname = `/${dbName}`;
+    return u.toString();
+  })();
+
+  let admin: Client;
+
+  beforeAll(async () => {
+    admin = new Client({ connectionString: baseUrl });
+    await admin.connect();
+    await admin.query(`CREATE DATABASE "${dbName}"`);
+
+    const db = new Client({ connectionString: targetUrl });
+    await db.connect();
+    try {
+      await db.query(ZERO_INIT);
+      // The guards live inside the DO block, which returns early when there is
+      // no PT unit to purge — so a PT unit must exist for them to be reached.
+      await db.query(
+        `INSERT INTO units (id, name, type, address, updated_at)
+         VALUES ('u-pt-guard', 'PT Guard', 'PERGURUAN_TINGGI', 'addr', now())`
+      );
+    } finally {
+      await db.end();
+    }
+  }, 120000);
+
+  afterAll(async () => {
+    if (!admin) return;
+    await admin.query(`DROP DATABASE IF EXISTS "${dbName}" WITH (FORCE)`);
+    await admin.end();
+  });
+
+  const replayMigration = async (): Promise<void> => {
+    const db = new Client({ connectionString: targetUrl });
+    await db.connect();
+    try {
+      await db.query(DECOMMISSION);
+    } finally {
+      await db.end();
+    }
+  };
+
+  it('rejects when a composite foreign key exists', async () => {
+    const db = new Client({ connectionString: targetUrl });
+    await db.connect();
+    try {
+      await db.query(`CREATE UNIQUE INDEX _cb_units_id_type ON units (id, type)`);
+      await db.query(
+        `CREATE TABLE _cb_probe_composite (id text PRIMARY KEY, unit_id text, unit_type "UnitType")`
+      );
+      await db.query(
+        `ALTER TABLE _cb_probe_composite ADD FOREIGN KEY (unit_id, unit_type) REFERENCES units (id, type)`
+      );
+    } finally {
+      await db.end();
+    }
+
+    await expect(replayMigration()).rejects.toThrow(/composite/i);
+
+    const cleanup = new Client({ connectionString: targetUrl });
+    await cleanup.connect();
+    try {
+      await cleanup.query(`DROP TABLE _cb_probe_composite`);
+      await cleanup.query(`DROP INDEX _cb_units_id_type`);
+    } finally {
+      await cleanup.end();
+    }
+  });
+
+  it('rejects when a foreign key does not target `id`', async () => {
+    const db = new Client({ connectionString: targetUrl });
+    await db.connect();
+    try {
+      // A reachable parent (depth 1 from `units`) with a unique non-`id` column,
+      // and a child pointing at that column rather than the PK.
+      await db.query(
+        `CREATE TABLE _cb_parent (id text PRIMARY KEY, unit_id text REFERENCES units (id), code text UNIQUE)`
+      );
+      await db.query(
+        `CREATE TABLE _cb_probe_target (id text PRIMARY KEY, parent_code text REFERENCES _cb_parent (code))`
+      );
+    } finally {
+      await db.end();
+    }
+
+    await expect(replayMigration()).rejects.toThrow(/does not target/i);
+
+    const cleanup = new Client({ connectionString: targetUrl });
+    await cleanup.connect();
+    try {
+      await cleanup.query(`DROP TABLE _cb_probe_target`);
+      await cleanup.query(`DROP TABLE _cb_parent`);
+    } finally {
+      await cleanup.end();
+    }
+  });
+
+  it('rejects when a reachable table has no `id` column', async () => {
+    const db = new Client({ connectionString: targetUrl });
+    await db.connect();
+    try {
+      await db.query(`CREATE TABLE _cb_probe_noid (unit_id text REFERENCES units (id))`);
+    } finally {
+      await db.end();
+    }
+
+    await expect(replayMigration()).rejects.toThrow(/no `id` column/i);
+
+    const cleanup = new Client({ connectionString: targetUrl });
+    await cleanup.connect();
+    try {
+      await cleanup.query(`DROP TABLE _cb_probe_noid`);
+    } finally {
+      await cleanup.end();
+    }
+  });
+});
+

@@ -43,24 +43,42 @@ DROP TYPE IF EXISTS "InnovationStatus";
 -- 3. Unit purge + enum drift
 -- ---------------------------------------------------------------------------
 -- The PT unit is deleted outright (owner decision), not re-typed. A plain
--- `DELETE FROM units` is not enough: 86 of the FKs pointing at `units` are
--- `NO ACTION`/`RESTRICT`, and deleting a unit therefore requires deleting every
--- row that depends on it first. The block below walks the live FK catalog to
--- find that closure and delete it leaf-first, so it stays correct as the schema
--- grows instead of hard-coding a table list that silently rots.
+-- `DELETE FROM units` is not enough: 84 of the FK constraints pointing at
+-- `units` are `RESTRICT` at this point in the migration (0 `NO ACTION`, 0
+-- `CASCADE`), and deleting a unit therefore requires deleting every row that
+-- depends on it first. The block below walks the live FK catalog to find that
+-- closure and delete it leaf-first, so it stays correct as the schema grows
+-- instead of hard-coding a table list that silently rots.
 --
 -- Edges followed: `NO ACTION`, `RESTRICT` and `CASCADE` -- a row that cannot
 -- outlive the unit. Edges *not* followed: `SET NULL` / `SET DEFAULT` (there are
--- 20 from `units`), which the database resolves by itself; those rows are meant
--- to survive the unit, `users.unit_id` above all. A PT-only login therefore
--- keeps its account with `unit_id = NULL`; section 4 below then ends its
--- session.
+-- 20 `SET NULL` constraints from `units`, 0 `SET DEFAULT`), which the database
+-- resolves by itself; those rows are meant to survive the unit, `users.unit_id`
+-- above all. A PT-only login therefore keeps its account with `unit_id = NULL`;
+-- section 4 below then ends its session.
 --
 -- Blast radius: everything the unit owns -- its classes, students, teachers,
 -- staff, departments, budgets, letters, assets, attendance, invoices, etc.
--- (213 dependent tables are transitively reachable, depth <= 3; verified
--- against the post-drop FK catalog). This is why the deploy runbook requires a
--- verified backup BEFORE `prisma migrate deploy`.
+-- 211 dependent tables are transitively reachable (212 including `units`
+-- itself), at a maximum depth of 3. Reproduce against the catalog this block
+-- runs on -- i.e. after the higher-ed tables of sections 1-2 are dropped:
+--
+--   WITH RECURSIVE reach(tbl, depth) AS (
+--     SELECT format('%I.%I', n.nspname, c.relname) COLLATE "C", 0
+--     FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+--     WHERE c.oid = 'units'::regclass
+--     UNION
+--     SELECT format('%I.%I', cn.nspname, cc.relname) COLLATE "C", r.depth + 1
+--     FROM reach r
+--     JOIN pg_class pc ON pc.oid = r.tbl::regclass
+--     JOIN pg_constraint c ON c.confrelid = pc.oid AND c.contype = 'f'
+--                          AND c.confdeltype IN ('a','r','c')
+--     JOIN pg_class cc ON cc.oid = c.conrelid
+--     JOIN pg_namespace cn ON cn.oid = cc.relnamespace)
+--   SELECT count(*) FROM (SELECT DISTINCT tbl FROM reach) t;  -- 212
+--
+-- (depth distribution: 84 at 1, 104 at 2, 23 at 3.) This is why the deploy
+-- runbook requires a verified backup BEFORE `prisma migrate deploy`.
 DO $decommission_units$
 DECLARE
   edge     record;
@@ -88,7 +106,76 @@ BEGIN
     RETURN;
   END IF;
 
-  -- Grow the doomed set until it reaches a fixpoint.
+  -- Structural closure of the tables reachable from `units` over the edges the
+  -- row walk below follows. Computed from the catalog alone, so the checks that
+  -- follow run even when every table involved is empty.
+  CREATE TEMPORARY TABLE _decommission_tables (tbl text PRIMARY KEY) ON COMMIT DROP;
+  INSERT INTO _decommission_tables (tbl)
+  SELECT format('%I.%I', n.nspname, c.relname)
+  FROM pg_class c
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE c.oid = 'units'::regclass;
+
+  LOOP
+    INSERT INTO _decommission_tables (tbl)
+    SELECT DISTINCT format('%I.%I', cn.nspname, cc.relname)
+    FROM pg_constraint c
+    JOIN pg_class cc     ON cc.oid = c.conrelid
+    JOIN pg_namespace cn ON cn.oid = cc.relnamespace
+    JOIN pg_class pc     ON pc.oid = c.confrelid
+    JOIN pg_namespace pn ON pn.oid = pc.relnamespace
+    WHERE c.contype = 'f'
+      AND c.confdeltype IN ('a', 'r', 'c')
+      AND format('%I.%I', pn.nspname, pc.relname) IN (SELECT tbl FROM _decommission_tables)
+    ON CONFLICT (tbl) DO NOTHING;
+    GET DIAGNOSTICS inserted = ROW_COUNT;
+    EXIT WHEN inserted = 0;
+  END LOOP;
+
+  -- Every followed edge must be single-column, must target the parent's `id`,
+  -- and its child must expose an `id` -- the row deletes below address rows by
+  -- `id`. A future relation that breaks one of these would otherwise delete the
+  -- wrong rows or fail mid-deploy with an opaque SQL error; fail loudly instead.
+  -- Verified 2026-09-16: 0 composite FKs, 0 FKs targeting a non-`id` column,
+  -- 0 public tables without an `id`.
+  FOR edge IN
+    SELECT format('%I.%I', cn.nspname, cc.relname) AS child,
+           a.attname                               AS col,
+           format('%I.%I', pn.nspname, pc.relname) AS parent,
+           array_length(c.conkey, 1)               AS conkey_len,
+           pa.attname                              AS parent_col,
+           ca.attname                              AS child_id_col
+    FROM pg_constraint c
+    JOIN pg_class cc     ON cc.oid = c.conrelid
+    JOIN pg_namespace cn ON cn.oid = cc.relnamespace
+    JOIN pg_class pc     ON pc.oid = c.confrelid
+    JOIN pg_namespace pn ON pn.oid = pc.relnamespace
+    JOIN pg_attribute a  ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+    JOIN pg_attribute pa ON pa.attrelid = c.confrelid AND pa.attnum = c.confkey[1]
+    LEFT JOIN pg_attribute ca ON ca.attrelid = c.conrelid AND ca.attname = 'id'
+                                 AND ca.attnum > 0 AND NOT ca.attisdropped
+    WHERE c.contype = 'f'
+      AND c.confdeltype IN ('a', 'r', 'c')
+      AND format('%I.%I', pn.nspname, pc.relname) IN (SELECT tbl FROM _decommission_tables)
+  LOOP
+    IF edge.conkey_len <> 1 THEN
+      RAISE EXCEPTION
+        'decommission: FK % -> % is composite; the purge block assumes single-column FKs',
+        edge.child, edge.parent;
+    END IF;
+    IF edge.parent_col <> 'id' THEN
+      RAISE EXCEPTION
+        'decommission: FK %.% -> %.% does not target `id`; the purge block assumes it does',
+        edge.child, edge.col, edge.parent, edge.parent_col;
+    END IF;
+    IF edge.child_id_col IS NULL THEN
+      RAISE EXCEPTION
+        'decommission: table % has no `id` column; the purge block assumes one',
+        edge.child;
+    END IF;
+  END LOOP;
+
+  -- Grow the doomed row set until it reaches a fixpoint.
   LOOP
     total := 0;
     FOR edge IN
@@ -245,15 +332,24 @@ DROP TYPE "RoleCode_old";
 --
 -- (b) A "mixed" user whose non-PT assignment is active now but expires later.
 --     Not reachable: `user_role_assignments.expires_at` is never written by any
---     code path — `assignRoleSchema` has no `expiresAt`, and assignRoleToUser,
---     setPrimaryRole, switchRole, the parent-scope and onboarding helpers and
---     the seed all create assignments without it. The only reads are
---     `activeRoleWhere()` and `rolesService.switchRole`'s guard. A mixed user's
---     surviving assignment therefore never expires, so the legacy fallback is
---     never reached via expiry. It could only be reached by an admin deleting
---     the assignment (`removeRoleAssignment`), which is the system-wide
---     offboarding behaviour that predates this migration, not a PT-specific
---     hole.
+--     code path. Every assignment writer was checked (2026-09-16):
+--       auth.service.ts:388  userRoleAssignment.create
+--       roles.service.ts:223 userRoleAssignment.create
+--       roles.service.ts:217/273/321 updateMany (isPrimary/isActive only)
+--       roles.service.ts:279/326 update (isPrimary only)
+--       users/user.service.ts:224 nested userRoles.create (no expiresAt)
+--       utils/parent-scope.ts:130 userRoleAssignment.create
+--       student-onboarding.orchestrator.ts:341 userRoleAssignment.create
+--       prisma/seed.ts userRoleAssignment.create (×many, none with expiresAt)
+--     None sets `expiresAt`; `assignRoleSchema` has no `expiresAt` either. The
+--     only reads are `activeRoleWhere()` and `rolesService.switchRole`'s guard.
+--     A mixed user's surviving assignment therefore never expires, so the
+--     legacy fallback is never reached via expiry. It could only be reached by
+--     an admin deleting the assignment (`removeRoleAssignment`), which is the
+--     system-wide offboarding behaviour that predates this migration, not a
+--     PT-specific hole. `apps/api/src/utils/decommissioned-modules.guard.test.ts`
+--     pins that no writer sets `expires_at`, so this reasoning fails loudly if
+--     that changes.
 DROP TABLE IF EXISTS "pt_only_users_tmp";
 CREATE TEMP TABLE "pt_only_users_tmp" AS
 SELECT DISTINCT a."user_id" AS "user_id"
