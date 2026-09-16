@@ -19,7 +19,13 @@ const uploadDirPrefix = uploadDirResolved.endsWith(path.sep)
   : `${uploadDirResolved}${path.sep}`;
 
 async function getSafeUploadPathForCleanup(candidatePath: string): Promise<string | null> {
-  const resolvedCandidate = path.resolve(candidatePath);
+  const baseName = path.basename(candidatePath);
+  // Accept only expected generated upload names (UUID + extension), e.g. "<uuid>.png"
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.[a-z0-9]+$/i.test(baseName)) {
+    return null;
+  }
+
+  const resolvedCandidate = path.join(uploadDirResolved, baseName);
   try {
     const realCandidate = await fs.promises.realpath(resolvedCandidate);
     if (realCandidate === uploadDirResolved || realCandidate.startsWith(uploadDirPrefix)) {
