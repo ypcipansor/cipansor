@@ -89,6 +89,47 @@ INSERT INTO books (id, unit_id, category_id, title, author, updated_at) VALUES
 INSERT INTO complaints (id, unit_id, category, subject, description, updated_at) VALUES
   ('cmp-pt', 'u-pt', 'FACILITY', 's', 'd', now()),
   ('cmp-tk', 'u-tk', 'FACILITY', 's', 'd', now());
+
+-- Finding 1 (review SEVERE): rows on the PT unit whose unit_id FK is
+-- ON DELETE SET NULL and whose read paths treat NULL as "all units". The FK
+-- would globalise them, so the migration must delete them outright.
+INSERT INTO announcements (id, title, content, unit_id, created_by_id, updated_at) VALUES
+  ('ann-pt', 'PT broadcast', 'body', 'u-pt', 'user-tkq', now()),
+  ('ann-tk', 'TK broadcast', 'body', 'u-tk', 'user-tkq', now());
+INSERT INTO calendar_events (id, title, event_type, start_date, unit_id, created_by_id, updated_at) VALUES
+  ('cal-pt', 'PT event', 'MEETING', now(), 'u-pt', 'user-tkq', now()),
+  ('cal-tk', 'TK event', 'MEETING', now(), 'u-tk', 'user-tkq', now());
+INSERT INTO islamic_events (id, name, type, hijri_month, hijri_day, unit_id, updated_at) VALUES
+  ('isl-pt', 'PT islamic', 'HOLIDAY', 1, 1, 'u-pt', now()),
+  ('isl-tk', 'TK islamic', 'HOLIDAY', 1, 1, 'u-tk', now());
+INSERT INTO paud_development_indicators (id, aspect, code, name, age_group_min, age_group_max, order_number, unit_id, updated_at) VALUES
+  ('pdi-pt', 'NAM', 'PT-01', 'PT indicator', 1, 2, 1, 'u-pt', now()),
+  ('pdi-tk', 'NAM', 'TK-01', 'TK indicator', 1, 2, 2, 'u-tk', now());
+INSERT INTO strategic_plans (id, title, type, start_date, end_date, unit_id, created_by_id, updated_at) VALUES
+  ('sp-pt', 'PT plan', 'RKA', now(), now() + interval '365 days', 'u-pt', 'user-tkq', now()),
+  ('sp-tk', 'TK plan', 'RKA', now(), now() + interval '365 days', 'u-tk', 'user-tkq', now());
+INSERT INTO dashboard_history (id, metrics, unit_id) VALUES
+  ('dh-pt', '{}'::jsonb, 'u-pt'),
+  ('dh-tk', '{}'::jsonb, 'u-tk');
+-- A CASCADE child of a global-capable row: the closure must delete it before
+-- its parent, and must not touch the sibling's.
+INSERT INTO plan_objectives (id, plan_id, title, updated_at) VALUES
+  ('po-pt', 'sp-pt', 'PT objective', now()),
+  ('po-tk', 'sp-tk', 'TK objective', now());
+
+-- Finding 2 (review SEVERE): a PT role with a NON-standard code. roles.code
+-- is TEXT (0_init) and createRoleSchema accepts any uppercase code, so an
+-- admin can create this via POST /roles with realm PERGURUAN_TINGGI. The
+-- migration must purge it by realm, not only by the hard-coded PT_* list, and
+-- end the session of its holder.
+INSERT INTO roles (id, code, name, realm, permissions, updated_at) VALUES
+  ('r-custom-pt', 'PT_CUSTOM_X', 'Custom PT Role', 'PERGURUAN_TINGGI', '[]'::jsonb, now());
+INSERT INTO users (id, name, email, role, is_active, unit_id, updated_at) VALUES
+  ('user-custom-pt', 'Custom PT', 'custom-pt@example.com', 'TEACHER', true, NULL, now());
+INSERT INTO user_role_assignments (id, user_id, role_id, is_primary, is_active, updated_at) VALUES
+  ('a-custom-pt', 'user-custom-pt', 'r-custom-pt', true, true, now());
+INSERT INTO refresh_tokens (id, token, user_id, expires_at) VALUES
+  ('rt-custom-pt', 'tok-custom-pt', 'user-custom-pt', now() + interval '30 days');
 `;
 
 /** Rows that must be deleted because their unit is the PT unit. */
@@ -98,6 +139,14 @@ const PURGED_PT_ROWS: Array<[table: string, id: string]> = [
   ['book_categories', 'bc-pt'],
   ['books', 'bk-pt'],
   ['complaints', 'cmp-pt'],
+  // FINDING 1: SET NULL children on the PT unit that NULL would globalise.
+  ['announcements', 'ann-pt'],
+  ['calendar_events', 'cal-pt'],
+  ['islamic_events', 'isl-pt'],
+  ['paud_development_indicators', 'pdi-pt'],
+  ['strategic_plans', 'sp-pt'],
+  ['dashboard_history', 'dh-pt'],
+  ['plan_objectives', 'po-pt'],
 ];
 
 /** Rows of a surviving unit that the purge must not touch. */
@@ -107,6 +156,15 @@ const KEPT_TK_ROWS: Array<[table: string, id: string]> = [
   ['book_categories', 'bc-tk'],
   ['books', 'bk-tk'],
   ['complaints', 'cmp-tk'],
+  // the FINDING 1 siblings: a NULL-means-global column must not make the purge
+  // reach across units.
+  ['announcements', 'ann-tk'],
+  ['calendar_events', 'cal-tk'],
+  ['islamic_events', 'isl-tk'],
+  ['paud_development_indicators', 'pdi-tk'],
+  ['strategic_plans', 'sp-tk'],
+  ['dashboard_history', 'dh-tk'],
+  ['plan_objectives', 'po-tk'],
 ];
 
 interface UserState {
@@ -268,6 +326,34 @@ describeDb('decommission migration — legacy PT sessions end', () => {
         `SELECT count(*)::int AS n FROM units WHERE type::text = 'PERGURUAN_TINGGI'`
       );
       expect(ptUnits[0].n).toBe(0);
+    } finally {
+      await db.end();
+    }
+  });
+
+  // Finding 2 (review SEVERE): `roles.code` is TEXT, not the RoleCode enum, and
+  // `createRoleSchema` accepts any uppercase code, so an admin can create a
+  // role with a non-standard code (e.g. PT_CUSTOM_X) and realm
+  // PERGURUAN_TINGGI through POST /roles. Re-homing the realm alone would turn
+  // it into an ordinary UNIT_USAHA role that survives, with its assignment,
+  // refresh token and legacy `users.role` still live. The migration captures
+  // PT roles by realm (and by the hard-coded codes) before the rewrite.
+  it('purges a PT role with a non-standard code and ends its holder session', async () => {
+    const db = new Client({ connectionString: targetUrl });
+    await db.connect();
+    try {
+      const { rows: role } = await db.query(
+        `SELECT count(*)::int AS n FROM roles WHERE id = 'r-custom-pt'`
+      );
+      expect(role[0].n).toBe(0);
+
+      const { rows: user } = await db.query<{ role: string | null; tokens: string }>(
+        `SELECT u.role::text AS role,
+                (SELECT count(*) FROM refresh_tokens rt WHERE rt.user_id = u.id) AS tokens
+         FROM users u WHERE u.id = 'user-custom-pt'`
+      );
+      expect(user[0].tokens).toBe('0');
+      expect(user[0].role).toBeNull();
     } finally {
       await db.end();
     }

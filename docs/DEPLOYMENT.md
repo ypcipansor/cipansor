@@ -233,9 +233,10 @@ As of this writing that applies to
 higher-education (Perguruan Tinggi) and Litbang/R&D tables **and deletes every
 row owned by a `PERGURUAN_TINGGI` unit** (its classes, students, teachers, staff,
 departments, budgets, letters, assets, attendance, invoices, …). The unit is
-removed outright rather than re-typed; the blast radius reaches 211 dependent
-tables (212 including `units`), at a maximum depth of 3 — reproduced from the
-post-drop FK catalog in the migration header.
+removed outright rather than re-typed; the blast radius reaches 225 dependent
+tables (226 including `units`), at a maximum depth of 3 — reproduced from the
+post-drop FK catalog, seeded with the six global-capable `SET NULL` children the
+migration now purges by row, in the migration header.
 Back up, then deploy:
 
 ```bash
@@ -258,15 +259,17 @@ backup exists — the backup and its restorability check above are manual steps
 the deploying operator must complete and confirm. If that ever needs to be
 enforced, it belongs in whatever pipeline runs `migrate deploy`, not here.
 Note: the decommission migration also ends the sessions of users left without any
-role by the purge (their refresh tokens are revoked). That covers both a user who
-still holds a `PT_*` assignment at deploy time and a PT user whose assignment was
-already removed by offboarding but who remains attached to the PT unit — the
-migration snapshots the unit's accounts before deleting the unit, because
-`users.unit_id` is `SET NULL` and the link is lost afterwards. An access token already
-issued stays valid until it expires — at most `JWT_EXPIRES_IN` (15 minutes by
-default). This is the same short window the system already accepts for every
-other offboarding or role change, because `authenticate` is stateless by design
-and does not query the database per request.
+role by the purge (their refresh tokens are revoked). That covers a user who
+still holds a `PT_*` assignment at deploy time, a user attached to a PT role with
+a non-standard code (roles are matched by `realm = 'PERGURUAN_TINGGI'` before the
+realm rewrite, not only by the known `PT_*` codes), and a PT user whose
+assignment was already removed by offboarding but who remains attached to the PT
+unit — the migration snapshots the unit's accounts before deleting the unit,
+because `users.unit_id` is `SET NULL` and the link is lost afterwards. An access
+token already issued stays valid until it expires — at most `JWT_EXPIRES_IN` (15
+minutes by default). This is the same short window the system already accepts for
+every other offboarding or role change, because `authenticate` is stateless by
+design and does not query the database per request.
 
 ### Production Migration
 

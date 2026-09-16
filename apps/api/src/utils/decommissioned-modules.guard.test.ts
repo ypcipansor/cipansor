@@ -276,4 +276,80 @@ describe('decommission purge — migrations', () => {
     expect(DECOMMISSION).toMatch(/IF edge\.conkey_len <> 1 THEN/);
     expect(DECOMMISSION).toMatch(/RAISE EXCEPTION/);
   });
+
+  it('deletes PT rows whose `SET NULL` unit FK would globalise them', () => {
+    // Finding 1 of the PR #505 review: a `SET NULL` FK to `units` does not
+    // delete the child row -- it nulls the column, and for these six tables a
+    // NULL `unit_id` is read as "all units"/foundation-wide. Letting the FK fire
+    // would widen each PT row's audience instead of retiring it. The migration
+    // captures those rows before the unit delete and folds them into the purge.
+    //
+    // The list is semantic (the catalog cannot tell "NULL means global" from
+    // "NULL means orphan") but the mechanism is catalog-driven, and each entry
+    // is pinned against the read path that proves the semantics.
+    const GLOBAL_NULL_TABLES = [
+      'announcements',
+      'calendar_events',
+      'dashboard_history',
+      'islamic_events',
+      'paud_development_indicators',
+      'strategic_plans',
+    ];
+    expect(DECOMMISSION).toContain('pt_setnull_doomed_tmp');
+    expect(DECOMMISSION).toMatch(/confdeltype\s*=\s*'n'/);
+    expect(DECOMMISSION).toMatch(/c\.confrelid\s*=\s*'units'::regclass/);
+    for (const table of GLOBAL_NULL_TABLES) {
+      expect(DECOMMISSION, table).toContain(`'public.${table}'`);
+    }
+    // users.unit_id and user_role_assignments.unit_id must keep SET NULL: a
+    // PT-only account survives the unit delete detached (section 4 then ends
+    // its session). Pinned by their absence from the purge list.
+    expect(DECOMMISSION).not.toContain("'public.users'");
+    expect(DECOMMISSION).not.toContain("'public.user_role_assignments'");
+
+    // Evidence that NULL means "global" for each pinned table (file:line).
+    const announcements = read(
+      join(API_ROOT, 'src', 'modules', 'announcements', 'announcements.service.ts')
+    );
+    expect(announcements).toMatch(/\{ unitId: null \}/); // "Global announcements"
+    const calendar = read(join(API_ROOT, 'src', 'modules', 'calendar', 'calendar.service.ts'));
+    expect(calendar).toMatch(/unitId: null/);
+    const dashboard = read(join(API_ROOT, 'src', 'modules', 'dashboard', 'dashboard.service.ts'));
+    expect(dashboard).toMatch(/unitId: unitId \|\| null/);
+    const paudSchema = read(
+      join(API_ROOT, 'src', 'modules', 'paud-assessment', 'paud-assessment.schema.ts')
+    );
+    expect(paudSchema).toMatch(/null = global indicator/);
+    const perencanaan = read(
+      join(API_ROOT, 'src', 'modules', 'perencanaan', 'perencanaan.service.ts')
+    );
+    expect(perencanaan).toMatch(/\{ unitId: null \}/);
+  });
+
+  it('purges PT roles by realm, not only the hard-coded PT_* codes', () => {
+    // Finding 2 of the PR #505 review: `roles.code` is TEXT (0_init), and
+    // `createRoleSchema` accepts any uppercase code, so `POST /roles` can mint a
+    // role with a non-standard code (e.g. PT_CUSTOM_X) and realm
+    // PERGURUAN_TINGGI. Re-homing the realm (line ~283) would turn it into an
+    // ordinary UNIT_USAHA role that survives, keeping its assignment, refresh
+    // token and legacy `users.role`. The migration captures PT roles (realm OR
+    // the known codes) BEFORE the realm rewrite, then deletes them by id.
+    const rolesSchema = read(join(API_ROOT, 'src', 'modules', 'roles', 'roles.schema.ts'));
+    expect(rolesSchema).toMatch(/code:[\s\S]*?z\.string\(\)/);
+    expect(rolesSchema).toMatch(/\^\[A-Z0-9_\]\+\$/);
+
+    const rolesService = read(join(API_ROOT, 'src', 'modules', 'roles', 'roles.service.ts'));
+    expect(rolesService).toMatch(/async createRole/);
+
+    const code = DECOMMISSION.replace(/--[^\n]*/g, '');
+    expect(code).toContain('pt_roles_tmp');
+    expect(code).toMatch(/"realm"::text\s*=\s*'PERGURUAN_TINGGI'/);
+    // capture must precede the re-home, and deletion must use the captured set
+    const capture = code.indexOf('pt_roles_tmp');
+    const rehome = code.indexOf(`SET "realm" = 'UNIT_USAHA'`);
+    const deleteRoles = code.indexOf('DELETE FROM "roles"');
+    expect(rehome).toBeGreaterThan(capture);
+    expect(deleteRoles).toBeGreaterThan(rehome);
+    expect(code).toMatch(/DELETE FROM "roles" WHERE "id" IN \(SELECT "id" FROM "pt_roles_tmp"\)/);
+  });
 });

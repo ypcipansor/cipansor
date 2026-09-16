@@ -52,21 +52,31 @@ DROP TYPE IF EXISTS "InnovationStatus";
 --
 -- Edges followed: `NO ACTION`, `RESTRICT` and `CASCADE` -- a row that cannot
 -- outlive the unit. Edges *not* followed: `SET NULL` / `SET DEFAULT` (there are
--- 20 `SET NULL` constraints from `units`, 0 `SET DEFAULT`), which the database
--- resolves by itself; those rows are meant to survive the unit, `users.unit_id`
--- above all. A PT-only login therefore keeps its account with `unit_id = NULL`;
--- section 4 below then ends its session.
+-- 20 `SET NULL` constraints from `units`, 0 `SET DEFAULT`), because the database
+-- resolves those by itself and `users.unit_id` above all must survive: a
+-- PT-only login keeps its account with `unit_id = NULL`, and section 4 below
+-- then ends its session.
+--
+-- `SET NULL` is not always "safe to keep", though. For some entities a NULL
+-- `unit_id` means *global* -- visible to every unit -- so letting the FK null
+-- out a row that belonged to the PT unit would widen its audience instead of
+-- retiring it. The six tables where NULL is global are purged by row as well
+-- (`pt_setnull_doomed_tmp`, below); the remaining `SET NULL` edges keep
+-- their default behaviour.
 --
 -- Blast radius: everything the unit owns -- its classes, students, teachers,
 -- staff, departments, budgets, letters, assets, attendance, invoices, etc.
--- 211 dependent tables are transitively reachable (212 including `units`
+-- 225 dependent tables are transitively reachable (226 including `units`
 -- itself), at a maximum depth of 3. Reproduce against the catalog this block
--- runs on -- i.e. after the higher-ed tables of sections 1-2 are dropped:
+-- runs on -- i.e. after the higher-ed tables of sections 1-2 are dropped, and
+-- seeded with the seven tables the row walk starts from (the unit plus the six
+-- global-capable `SET NULL` children above):
 --
 --   WITH RECURSIVE reach(tbl, depth) AS (
---     SELECT format('%I.%I', n.nspname, c.relname) COLLATE "C", 0
---     FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
---     WHERE c.oid = 'units'::regclass
+--     SELECT tbl, 0 FROM unnest(ARRAY[
+--       'units', 'announcements', 'calendar_events', 'dashboard_history',
+--       'islamic_events', 'paud_development_indicators', 'strategic_plans'
+--     ]) AS t(tbl)
 --     UNION
 --     SELECT format('%I.%I', cn.nspname, cc.relname) COLLATE "C", r.depth + 1
 --     FROM reach r
@@ -75,10 +85,14 @@ DROP TYPE IF EXISTS "InnovationStatus";
 --                          AND c.confdeltype IN ('a','r','c')
 --     JOIN pg_class cc ON cc.oid = c.conrelid
 --     JOIN pg_namespace cn ON cn.oid = cc.relnamespace)
---   SELECT count(*) FROM (SELECT DISTINCT tbl FROM reach) t;  -- 212
+--   SELECT count(*) FROM (SELECT DISTINCT tbl FROM reach) t;  -- 226
 --
--- (depth distribution: 84 at 1, 104 at 2, 23 at 3.) This is why the deploy
--- runbook requires a verified backup BEFORE `prisma migrate deploy`.
+-- (Depth distribution over the distinct tables: 7 at 0, 88 at 1, 106 at 2,
+-- 25 at 3 -- the seven seeds at depth 0 of which `units` is one.) The six
+-- `SET NULL` tables above are what lift `units`' own 212-table closure to 226;
+-- they matter because their rows would otherwise be nulled -- and so globalised
+-- -- instead of retired. This is why the deploy runbook requires a verified
+-- backup BEFORE `prisma migrate deploy`.
 
 -- Snapshot the accounts still attached to a PERGURUAN_TINGGI unit BEFORE the
 -- unit is deleted. This is section 4's second marker for a PT-only account and
@@ -92,6 +106,70 @@ SELECT DISTINCT u."id" AS "user_id"
 FROM "users" u
 JOIN "units" un ON un."id" = u."unit_id"
 WHERE un."type"::text = 'PERGURUAN_TINGGI';
+
+-- Rows whose `unit_id` points at a PT unit but which would be *globalised*,
+-- not retired, when `ON DELETE SET NULL` fires. The six tables below are the
+-- `SET NULL` children of `units` whose read paths treat `unit_id IS NULL` as
+-- "all units" / "foundation-wide", so nulling the column would widen their
+-- audience to every unit. They are capturable here only -- after the unit is
+-- deleted the link is already NULL and the rows are indistinguishable from
+-- genuinely global ones. Which tables carry such a `SET NULL` FK is read from
+-- `pg_constraint`; the fact that NULL means "global" for these six and not for
+-- the other fourteen `SET NULL` children cannot be read off the catalog, so it
+-- is a pinned list, audited against the read paths (file:line in the loop
+-- below) and guarded by
+-- `apps/api/src/utils/decommissioned-modules.guard.test.ts`.
+DROP TABLE IF EXISTS "pt_setnull_doomed_tmp";
+CREATE TEMP TABLE "pt_setnull_doomed_tmp" (
+  tbl text NOT NULL,
+  id  text NOT NULL,
+  PRIMARY KEY (tbl, id)
+) ON COMMIT DROP;
+
+DO $decommission_setnull$
+DECLARE
+  t record;
+  n integer;
+BEGIN
+  FOR t IN
+    SELECT format('%I.%I', cn.nspname, cc.relname) AS tbl, a.attname AS col
+    FROM pg_constraint c
+    JOIN pg_class cc     ON cc.oid = c.conrelid
+    JOIN pg_namespace cn ON cn.oid = cc.relnamespace
+    JOIN pg_attribute a  ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+    WHERE c.contype = 'f'
+      AND c.confdeltype = 'n'
+      AND c.confrelid = 'units'::regclass
+      AND cn.nspname = 'public'
+      AND array_length(c.conkey, 1) = 1
+      AND format('%I.%I', cn.nspname, cc.relname) IN (
+        -- `unitId IS NULL` is read as "every unit" here:
+        'public.announcements',               -- announcements.service.ts:44-49
+        'public.calendar_events',             -- calendar.service.ts:105,319
+        'public.dashboard_history',           -- dashboard.service.ts:593-594
+        'public.islamic_events',              -- ibadah.schema.ts:219 ("null = semua unit")
+        'public.paud_development_indicators', -- paud-assessment.schema.ts:46
+        'public.strategic_plans'              -- perencanaan.service.ts:150-154
+      )
+  LOOP
+    EXECUTE format(
+      'INSERT INTO "pt_setnull_doomed_tmp" (tbl, id) '
+      'SELECT %L, x."id" FROM %s x '
+      'WHERE x.%I IS NOT NULL '
+      '  AND x.%I IN (SELECT u."id" FROM "units" u '
+      '               WHERE u."type"::text = ''PERGURUAN_TINGGI'') '
+      'ON CONFLICT (tbl, id) DO NOTHING',
+      t.tbl, t.tbl, t.col, t.col
+    );
+    GET DIAGNOSTICS n = ROW_COUNT;
+    IF n > 0 THEN
+      RAISE NOTICE
+        'decommission: % row(s) in % would be globalised by SET NULL; deleting them instead',
+        n, t.tbl;
+    END IF;
+  END LOOP;
+END
+$decommission_setnull$;
 
 DO $decommission_units$
 DECLARE
@@ -113,7 +191,11 @@ BEGIN
     JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE c.oid = 'units'::regclass
   ) q, units u
-  WHERE u.type::text = 'PERGURUAN_TINGGI';
+  WHERE u.type::text = 'PERGURUAN_TINGGI'
+  UNION ALL
+  -- Global-capable PT rows captured before the unit delete (their FK would
+  -- otherwise null out and widen their audience instead of retiring them).
+  SELECT tbl, id FROM "pt_setnull_doomed_tmp";
 
   IF NOT EXISTS (SELECT 1 FROM _decommission_doomed) THEN
     RAISE NOTICE 'decommission: no PERGURUAN_TINGGI units to delete';
@@ -121,14 +203,19 @@ BEGIN
   END IF;
 
   -- Structural closure of the tables reachable from `units` over the edges the
-  -- row walk below follows. Computed from the catalog alone, so the checks that
-  -- follow run even when every table involved is empty.
+  -- row walk below follows, plus the global-capable `SET NULL` children whose
+  -- own dependents must be deleted before those rows. Computed from the catalog
+  -- alone (the explicit UNION adds the global-capable tables, whose own edge to
+  -- `units` is `SET NULL` and so is not followed by the recursion), so the
+  -- checks that follow run even when every table involved is empty.
   CREATE TEMPORARY TABLE _decommission_tables (tbl text PRIMARY KEY) ON COMMIT DROP;
   INSERT INTO _decommission_tables (tbl)
   SELECT format('%I.%I', n.nspname, c.relname)
   FROM pg_class c
   JOIN pg_namespace n ON n.oid = c.relnamespace
-  WHERE c.oid = 'units'::regclass;
+  WHERE c.oid = 'units'::regclass
+  UNION
+  SELECT DISTINCT tbl FROM "pt_setnull_doomed_tmp";
 
   LOOP
     INSERT INTO _decommission_tables (tbl)
@@ -280,6 +367,25 @@ UPDATE "daily_student_reports" SET "unit_type" = 'OTHER' WHERE "unit_type"::text
 -- realm, while the regenerated Prisma client no longer accepts it. Re-home the
 -- realm BEFORE recreating the type, otherwise the ALTER would fail on old data.
 -- The PT role rows themselves are deleted in section 4, after the enum rewrite.
+--
+-- Capture the PT roles *before* the re-home: `roles.code` is plain TEXT (0_init
+-- `CREATE TABLE "roles" ... "code" TEXT NOT NULL`) and `createRoleSchema`
+-- (roles.schema.ts, `code: z.string().regex(/^[A-Z0-9_]+$/)`) plus
+-- `rolesService.createRole` accept any uppercase code, so a role with a
+-- non-standard code (e.g. `PT_CUSTOM_X`) can have been created with
+-- `realm = 'PERGURUAN_TINGGI'` through `POST /roles`. After the UPDATE below it
+-- would be indistinguishable from an ordinary `UNIT_USAHA` role and would
+-- survive, keeping its assignments, refresh tokens and legacy `users.role`
+-- alive. Selecting by realm+code here catches those too.
+DROP TABLE IF EXISTS "pt_roles_tmp";
+CREATE TEMP TABLE "pt_roles_tmp" (id text PRIMARY KEY, code text) ON COMMIT DROP;
+INSERT INTO "pt_roles_tmp" (id, code)
+SELECT "id", "code" FROM "roles"
+WHERE "realm"::text = 'PERGURUAN_TINGGI'
+   OR "code" IN (
+     'PT_REKTOR', 'PT_WAKIL_REKTOR', 'PT_DEKAN', 'PT_KAPRODI', 'PT_DOSEN',
+     'PT_MAHASISWA', 'PT_STAF_AKADEMIK', 'PT_TATA_USAHA', 'PT_ALUMNI'
+   );
 UPDATE "roles" SET "realm" = 'UNIT_USAHA' WHERE "realm"::text = 'PERGURUAN_TINGGI';
 
 ALTER TYPE "UnitType" RENAME TO "UnitType_old";
@@ -383,14 +489,13 @@ DROP TYPE "RoleCode_old";
 DROP TABLE IF EXISTS "pt_only_users_tmp";
 CREATE TEMP TABLE "pt_only_users_tmp" AS
 WITH pt_candidates AS (
-  -- Marker 1: the user still holds a PT_* assignment at migration time.
+  -- Marker 1: the user still holds an assignment to a PT role at migration
+  -- time. The role set is `pt_roles_tmp`, captured by realm AND by the
+  -- hard-coded codes before the realm rewrite -- so a non-standard code created
+  -- through `POST /roles` is caught as well.
   SELECT a."user_id" AS "user_id"
   FROM "user_role_assignments" a
-  JOIN "roles" r ON r."id" = a."role_id"
-  WHERE r."code" IN (
-      'PT_REKTOR', 'PT_WAKIL_REKTOR', 'PT_DEKAN', 'PT_KAPRODI', 'PT_DOSEN',
-      'PT_MAHASISWA', 'PT_STAF_AKADEMIK', 'PT_TATA_USAHA', 'PT_ALUMNI'
-    )
+  JOIN "pt_roles_tmp" pr ON pr."id" = a."role_id"
   UNION
   -- Marker 2: the user was attached to a PERGURUAN_TINGGI unit before it was
   -- deleted (PT-prefixed accounts were seeded onto that unit). This catches a
@@ -402,27 +507,19 @@ FROM pt_candidates c
 WHERE NOT EXISTS (
     SELECT 1
     FROM "user_role_assignments" b
-    JOIN "roles" rb ON rb."id" = b."role_id"
     WHERE b."user_id" = c."user_id"
-      AND rb."code" NOT IN (
-        'PT_REKTOR', 'PT_WAKIL_REKTOR', 'PT_DEKAN', 'PT_KAPRODI', 'PT_DOSEN',
-        'PT_MAHASISWA', 'PT_STAF_AKADEMIK', 'PT_TATA_USAHA', 'PT_ALUMNI'
-      )
+      AND b."role_id" NOT IN (SELECT "id" FROM "pt_roles_tmp")
       AND b."is_active"
       AND (b."expires_at" IS NULL OR b."expires_at" > now())
   );
 
 -- Remove higher-education role rows from `roles` (code is TEXT, not the
 -- RoleCode enum) so no role survives with a code the schema no longer lists.
+-- Both the assignments and the roles come from `pt_roles_tmp`, so a PT role
+-- with a non-standard code is removed too.
 DELETE FROM "user_role_assignments"
-WHERE "role_id" IN (SELECT "id" FROM "roles" WHERE "code" IN (
-  'PT_REKTOR', 'PT_WAKIL_REKTOR', 'PT_DEKAN', 'PT_KAPRODI', 'PT_DOSEN',
-  'PT_MAHASISWA', 'PT_STAF_AKADEMIK', 'PT_TATA_USAHA', 'PT_ALUMNI'
-));
-DELETE FROM "roles" WHERE "code" IN (
-  'PT_REKTOR', 'PT_WAKIL_REKTOR', 'PT_DEKAN', 'PT_KAPRODI', 'PT_DOSEN',
-  'PT_MAHASISWA', 'PT_STAF_AKADEMIK', 'PT_TATA_USAHA', 'PT_ALUMNI'
-);
+WHERE "role_id" IN (SELECT "id" FROM "pt_roles_tmp");
+DELETE FROM "roles" WHERE "id" IN (SELECT "id" FROM "pt_roles_tmp");
 
 -- Revoke every refresh token of those users so nothing can be rotated.
 DELETE FROM "refresh_tokens"
@@ -439,6 +536,8 @@ WHERE "id" IN (SELECT "user_id" FROM "pt_only_users_tmp");
 
 DROP TABLE IF EXISTS "pt_only_users_tmp";
 DROP TABLE IF EXISTS "pt_unit_users_tmp";
+DROP TABLE IF EXISTS "pt_roles_tmp";
+DROP TABLE IF EXISTS "pt_setnull_doomed_tmp";
 
 -- What this section does and does not guarantee. Revoking the refresh tokens
 -- and clearing `users.role` removes the only renewable credential, so a PT-only
