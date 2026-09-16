@@ -62,13 +62,19 @@ describe('decommission purge — schema', () => {
 });
 
 describe('decommission purge — generated Prisma client', () => {
-  it('drops the removed delegates but keeps the live research ones', () => {
+  it('drops the removed delegates but keeps the live research ones', async () => {
     const client = createPrismaClient() as unknown as Record<string, unknown>;
-    for (const model of REMOVED_MODELS) {
-      const delegate = model[0].toLowerCase() + model.slice(1);
-      expect(client[delegate]).toBeUndefined();
+    try {
+      for (const model of REMOVED_MODELS) {
+        const delegate = model[0].toLowerCase() + model.slice(1);
+        expect(client[delegate]).toBeUndefined();
+      }
+      expect(client.researchTheme).toBeDefined();
+    } finally {
+      // The delegate inspection never opens a query, but the client still owns
+      // the pg driver pool; release it rather than leaking a connection.
+      await (client.$disconnect as () => Promise<void>).call(client);
     }
-    expect(client.researchTheme).toBeDefined();
   });
 
   it('no longer exposes ResearchStatus / InnovationStatus', () => {
@@ -279,7 +285,7 @@ describe('decommission purge — migrations', () => {
 
   it('deletes PT rows whose `SET NULL` unit FK would globalise them', () => {
     // Finding 1 of the PR #505 review: a `SET NULL` FK to `units` does not
-    // delete the child row -- it nulls the column, and for these six tables a
+    // delete the child row -- it nulls the column, and for these tables a
     // NULL `unit_id` is read as "all units"/foundation-wide. Letting the FK fire
     // would widen each PT row's audience instead of retiring it. The migration
     // captures those rows before the unit delete and folds them into the purge.
@@ -287,6 +293,11 @@ describe('decommission purge — migrations', () => {
     // The list is semantic (the catalog cannot tell "NULL means global" from
     // "NULL means orphan") but the mechanism is catalog-driven, and each entry
     // is pinned against the read path that proves the semantics.
+    //
+    // `system_secrets` belongs to this class too (secrets.service.ts:6-7 reads
+    // `unitId: null` as the global/foundation-wide scope), but PR #504 owns that
+    // module and #505's migration must not name it. It is caught instead by the
+    // generic below.
     const GLOBAL_NULL_TABLES = [
       'announcements',
       'calendar_events',
@@ -324,6 +335,42 @@ describe('decommission purge — migrations', () => {
       join(API_ROOT, 'src', 'modules', 'perencanaan', 'perencanaan.service.ts')
     );
     expect(perencanaan).toMatch(/\{ unitId: null \}/);
+  });
+
+  it('captures unique-per-unit `SET NULL` children generically, without naming them', () => {
+    // Finding 1's other half. A `SET NULL` child whose `(unit_id, ...)` is
+    // UNIQUE models one row per unit, so a row belonging to the PT unit is
+    // unit-owned -- not a foundation-wide row. It must be purged too. The
+    // migration must NOT name them (PR #504 owns one of them), so it matches
+    // the shape from the catalog: a unique index whose first key column is the
+    // FK column. Today that matches `dashboard_metric_snapshots` and
+    // `report_templates`, plus one table owned by PR #504.
+    const code = DECOMMISSION.replace(/--[^\n]*/g, '');
+    expect(code).toMatch(/pg_index/);
+    expect(code).toMatch(/indisunique/);
+    expect(code).toMatch(/i\.indkey\[0\]/);
+    expect(code).toMatch(/ia\.attname\s*=\s*a\.attname/);
+    // The tables the rule matches today must not be hard-coded anywhere in the
+    // migration -- naming them would defeat the generic match.
+    for (const table of [
+      'dashboard_metric_snapshots',
+      'report_templates',
+      // Owned by PR #504; must stay out of #505's migration entirely.
+      'system_secrets',
+    ]) {
+      expect(code, `${table} must not be pinned by literal name`).not.toContain(table);
+    }
+
+    // Evidence each is genuinely `@@unique([unitId, ...])` (the catalog rule
+    // matches the leading key column being the FK column).
+    for (const [model, unique] of [
+      ['DashboardMetricSnapshot', '@@unique([unitId, metricType, periodType, periodDate])'],
+      ['ReportTemplate', '@@unique([unitId, type])'],
+      ['SystemSecret', '@@unique([unitId, key])'],
+    ]) {
+      const body = SCHEMA.slice(SCHEMA.indexOf(`model ${model} {`));
+      expect(body.slice(0, body.indexOf('\n}')), model).toContain(unique);
+    }
   });
 
   it('purges PT roles by realm, not only the hard-coded PT_* codes', () => {

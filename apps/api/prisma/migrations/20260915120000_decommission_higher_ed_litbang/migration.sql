@@ -57,26 +57,65 @@ DROP TYPE IF EXISTS "InnovationStatus";
 -- PT-only login keeps its account with `unit_id = NULL`, and section 4 below
 -- then ends its session.
 --
--- `SET NULL` is not always "safe to keep", though. For some entities a NULL
--- `unit_id` means *global* -- visible to every unit -- so letting the FK null
--- out a row that belonged to the PT unit would widen its audience instead of
--- retiring it. The six tables where NULL is global are purged by row as well
--- (`pt_setnull_doomed_tmp`, below); the remaining `SET NULL` edges keep
--- their default behaviour.
+-- `SET NULL` is not always "safe to keep", though. A `SET NULL` row from the PT
+-- unit either survives *detached* (unit-scoped data now claiming no unit) or is
+-- read as *global* -- visible to every unit -- so letting the FK null it out
+-- would widen its audience or orphan it instead of retiring it. The migration
+-- therefore deletes two classes of `SET NULL` child by row, before the unit is
+-- gone (afterwards the link is NULL and the rows are indistinguishable from
+-- genuinely global ones):
 --
--- Blast radius: everything the unit owns -- its classes, students, teachers,
--- staff, departments, budgets, letters, assets, attendance, invoices, etc.
--- 225 dependent tables are transitively reachable (226 including `units`
--- itself), at a maximum depth of 3. Reproduce against the catalog this block
--- runs on -- i.e. after the higher-ed tables of sections 1-2 are dropped, and
--- seeded with the seven tables the row walk starts from (the unit plus the six
--- global-capable `SET NULL` children above):
+--   (i)  the children whose `(unit_id, ...)` is UNIQUE. The table models a
+--        per-unit uniqueness -- one row of the kind per unit -- so a row whose
+--        unit is being deleted is unit-owned, not a foundation-wide one.
+--        Whether a table carries such a unique index is read from
+--        `pg_index`/`pg_attribute` in the loop below (its first key column is
+--        the same column as the FK). Today that matches
+--        `dashboard_metric_snapshots` and `report_templates`, plus one table
+--        owned by another change that must not be named here.
 --
---   WITH RECURSIVE reach(tbl, depth) AS (
---     SELECT tbl, 0 FROM unnest(ARRAY[
+--   (ii) the six `SET NULL` children whose read paths treat `unit_id IS NULL`
+--        as "all units" / "foundation-wide". That is a property of the *reader*,
+--        not of the catalog, so it is a pinned list, audited against the read
+--        paths (file:line in the loop below) and guarded by
+--        `apps/api/src/utils/decommissioned-modules.guard.test.ts`.
+--
+-- Blast radius: the purge deletes 228 dependent tables (229 including `units`
+-- itself), at a maximum depth of 3. That set is the closure over the edges
+-- followed below, seeded with `units` plus every `SET NULL` child captured by
+-- row first -- the pinned NULL-means-global tables and the unique-per-unit
+-- tables matched by the catalog rule. Those seeds are not merely decorative:
+-- the pinned seeds alone drag in 14 tables that `units` cannot reach over the
+-- followed edges (212 -> 226), and the three unique-per-unit seeds add the last
+-- 3 (`dashboard_metric_snapshots`, `report_templates`, and one owned by PR
+-- #504) to reach 229. (`users` and `user_role_assignments` are deliberately not
+-- in the deleted set; they survive detached with `unit_id = NULL` and section 4
+-- ends the PT-only sessions.)
+-- Reproduce against the catalog this block runs on -- i.e. after the higher-ed
+-- tables of sections 1-2 are dropped. The seed set mirrors the loop below: the
+-- six pinned tables plus every `SET NULL` child whose `(unit_id, ...)` is
+-- UNIQUE (the `EXISTS` subquery):
+--
+--   WITH seeds(tbl) AS (
+--     SELECT unnest(ARRAY[
 --       'units', 'announcements', 'calendar_events', 'dashboard_history',
 --       'islamic_events', 'paud_development_indicators', 'strategic_plans'
---     ]) AS t(tbl)
+--     ])
+--     UNION
+--     SELECT format('public.%I', cc.relname)
+--     FROM pg_constraint c
+--     JOIN pg_class cc ON cc.oid = c.conrelid
+--     JOIN pg_class pc ON pc.oid = c.confrelid
+--     JOIN pg_namespace pn ON pn.oid = pc.relnamespace AND pn.nspname = 'public'
+--     WHERE c.contype = 'f' AND c.confdeltype = 'n' AND pc.relname = 'units'
+--       AND EXISTS (SELECT 1 FROM pg_index i
+--                   JOIN pg_attribute ia ON ia.attrelid = i.indrelid
+--                    AND ia.attnum = i.indkey[0]
+--                   WHERE i.indrelid = c.conrelid AND i.indisunique
+--                     AND ia.attname = 'unit_id')
+--   ),
+--   RECURSIVE reach(tbl, depth) AS (
+--     SELECT tbl, 0 FROM seeds
 --     UNION
 --     SELECT format('%I.%I', cn.nspname, cc.relname) COLLATE "C", r.depth + 1
 --     FROM reach r
@@ -85,14 +124,11 @@ DROP TYPE IF EXISTS "InnovationStatus";
 --                          AND c.confdeltype IN ('a','r','c')
 --     JOIN pg_class cc ON cc.oid = c.conrelid
 --     JOIN pg_namespace cn ON cn.oid = cc.relnamespace)
---   SELECT count(*) FROM (SELECT DISTINCT tbl FROM reach) t;  -- 226
+--   SELECT count(*) FROM (SELECT DISTINCT tbl FROM reach) t;  -- 229
 --
--- (Depth distribution over the distinct tables: 7 at 0, 88 at 1, 106 at 2,
--- 25 at 3 -- the seven seeds at depth 0 of which `units` is one.) The six
--- `SET NULL` tables above are what lift `units`' own 212-table closure to 226;
--- they matter because their rows would otherwise be nulled -- and so globalised
--- -- instead of retired. This is why the deploy runbook requires a verified
--- backup BEFORE `prisma migrate deploy`.
+-- (Depth distribution over the distinct tables: 10 at 0, 88 at 1, 106 at 2,
+-- 25 at 3 -- the ten seeds at depth 0 of which `units` is one.) This is why the
+-- deploy runbook requires a verified backup BEFORE `prisma migrate deploy`.
 
 -- Snapshot the accounts still attached to a PERGURUAN_TINGGI unit BEFORE the
 -- unit is deleted. This is section 4's second marker for a PT-only account and
@@ -107,18 +143,15 @@ FROM "users" u
 JOIN "units" un ON un."id" = u."unit_id"
 WHERE un."type"::text = 'PERGURUAN_TINGGI';
 
--- Rows whose `unit_id` points at a PT unit but which would be *globalised*,
--- not retired, when `ON DELETE SET NULL` fires. The six tables below are the
--- `SET NULL` children of `units` whose read paths treat `unit_id IS NULL` as
--- "all units" / "foundation-wide", so nulling the column would widen their
--- audience to every unit. They are capturable here only -- after the unit is
--- deleted the link is already NULL and the rows are indistinguishable from
--- genuinely global ones. Which tables carry such a `SET NULL` FK is read from
--- `pg_constraint`; the fact that NULL means "global" for these six and not for
--- the other fourteen `SET NULL` children cannot be read off the catalog, so it
--- is a pinned list, audited against the read paths (file:line in the loop
--- below) and guarded by
--- `apps/api/src/utils/decommissioned-modules.guard.test.ts`.
+-- Rows whose `unit_id` points at a PT unit but which would be *globalised* or
+-- *orphaned*, not retired, when `ON DELETE SET NULL` fires. They are capturable
+-- here only -- after the unit is deleted the link is already NULL and the rows
+-- are indistinguishable from genuinely global ones. Two sources feed the temp
+-- table below:
+--   (i)  every child whose `(unit_id, ...)` is UNIQUE (read from the catalog);
+--   (ii) the pinned NULL-means-global tables (read paths in the loop below),
+--        audited and guarded by
+--        `apps/api/src/utils/decommissioned-modules.guard.test.ts`.
 DROP TABLE IF EXISTS "pt_setnull_doomed_tmp";
 CREATE TEMP TABLE "pt_setnull_doomed_tmp" (
   tbl text NOT NULL,
@@ -142,14 +175,30 @@ BEGIN
       AND c.confrelid = 'units'::regclass
       AND cn.nspname = 'public'
       AND array_length(c.conkey, 1) = 1
-      AND format('%I.%I', cn.nspname, cc.relname) IN (
-        -- `unitId IS NULL` is read as "every unit" here:
-        'public.announcements',               -- announcements.service.ts:44-49
-        'public.calendar_events',             -- calendar.service.ts:105,319
-        'public.dashboard_history',           -- dashboard.service.ts:593-594
-        'public.islamic_events',              -- ibadah.schema.ts:219 ("null = semua unit")
-        'public.paud_development_indicators', -- paud-assessment.schema.ts:46
-        'public.strategic_plans'              -- perencanaan.service.ts:150-154
+      AND (
+        -- (i) Generic: `(unit_id, ...)` is UNIQUE, so the row is one-per-unit
+        -- and belongs to the PT unit rather than to the foundation. The first
+        -- key column of the unique index is the same column as the FK.
+        --   dashboard_metric_snapshots, report_templates
+        EXISTS (
+          SELECT 1
+          FROM pg_index i
+          JOIN pg_attribute ia
+            ON ia.attrelid = i.indrelid AND ia.attnum = i.indkey[0]
+          WHERE i.indrelid = c.conrelid
+            AND i.indisunique
+            AND ia.attname = a.attname
+        )
+        OR
+        -- (ii) Pinned: `unitId IS NULL` is read as "every unit" / foundation-wide:
+        format('%I.%I', cn.nspname, cc.relname) IN (
+          'public.announcements',               -- announcements.service.ts:44-49
+          'public.calendar_events',             -- calendar.service.ts:105,319
+          'public.dashboard_history',           -- dashboard.service.ts:593-594
+          'public.islamic_events',              -- ibadah.schema.ts:219 ("null = semua unit")
+          'public.paud_development_indicators', -- paud-assessment.schema.ts:46
+          'public.strategic_plans'              -- perencanaan.service.ts:150-154
+        )
       )
   LOOP
     EXECUTE format(
@@ -164,7 +213,7 @@ BEGIN
     GET DIAGNOSTICS n = ROW_COUNT;
     IF n > 0 THEN
       RAISE NOTICE
-        'decommission: % row(s) in % would be globalised by SET NULL; deleting them instead',
+        'decommission: % row(s) in % are owned by the PT unit and must not outlive it (UNIQUE-per-unit or NULL-means-global); deleting them',
         n, t.tbl;
     END IF;
   END LOOP;
@@ -193,8 +242,9 @@ BEGIN
   ) q, units u
   WHERE u.type::text = 'PERGURUAN_TINGGI'
   UNION ALL
-  -- Global-capable PT rows captured before the unit delete (their FK would
-  -- otherwise null out and widen their audience instead of retiring them).
+  -- PT rows captured before the unit delete: the `SET NULL` children that are
+  -- either unique-per-unit or NULL-means-global, so the FK would leave them
+  -- globalised/orphaned instead of retiring them.
   SELECT tbl, id FROM "pt_setnull_doomed_tmp";
 
   IF NOT EXISTS (SELECT 1 FROM _decommission_doomed) THEN
@@ -203,10 +253,10 @@ BEGIN
   END IF;
 
   -- Structural closure of the tables reachable from `units` over the edges the
-  -- row walk below follows, plus the global-capable `SET NULL` children whose
-  -- own dependents must be deleted before those rows. Computed from the catalog
-  -- alone (the explicit UNION adds the global-capable tables, whose own edge to
-  -- `units` is `SET NULL` and so is not followed by the recursion), so the
+  -- row walk below follows, plus every table captured in `pt_setnull_doomed_tmp`
+  -- whose own dependents must be deleted before those rows. Computed from the
+  -- catalog alone (the explicit UNION adds the captured tables, whose own edge
+  -- to `units` is `SET NULL` and so is not followed by the recursion), so the
   -- checks that follow run even when every table involved is empty.
   CREATE TEMPORARY TABLE _decommission_tables (tbl text PRIMARY KEY) ON COMMIT DROP;
   INSERT INTO _decommission_tables (tbl)

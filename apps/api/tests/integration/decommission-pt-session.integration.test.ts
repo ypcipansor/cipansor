@@ -117,6 +117,24 @@ INSERT INTO plan_objectives (id, plan_id, title, updated_at) VALUES
   ('po-pt', 'sp-pt', 'PT objective', now()),
   ('po-tk', 'sp-tk', 'TK objective', now());
 
+-- Finding 1 (review, remaining gap): a unit-scoped row whose unit_id FK is SET
+-- NULL and whose read path (secrets.service.ts:6-7) reads NULL as the
+-- GLOBAL/foundation-wide scope. Letting the FK fire would widen its audience to
+-- every unit, so the PT row must be deleted -- not detached. The migration
+-- catches it through its (unit_id, key) UNIQUE, without naming the table.
+INSERT INTO system_secrets (id, unit_id, key, value, updated_at) VALUES
+  ('sec-pt', 'u-pt', 'PT_KEY', 'ciphertext-pt', now()),
+  ('sec-tk', 'u-tk', 'TK_KEY', 'ciphertext-tk', now());
+
+-- Finding 2 (review): dormitories.unit_id is SET NULL too, but this is the
+-- FALSE POSITIVE control. A NULL unit_id is the NORMAL foundation-wide case for
+-- an asrama (it houses santri from several schools), and access is decided by
+-- room occupancy via assertRoomAccess() -- never by dormitory.unit_id -- so the
+-- PT dormitory must survive *detached*, not be deleted and not be globalised.
+INSERT INTO dormitories (id, unit_id, name, code, gender, capacity, updated_at) VALUES
+  ('dorm-pt', 'u-pt', 'Asrama PT', 'D-PT', 'MALE', 10, now()),
+  ('dorm-tk', 'u-tk', 'Asrama TK', 'D-TK', 'FEMALE', 10, now());
+
 -- Finding 2 (review SEVERE): a PT role with a NON-standard code. roles.code
 -- is TEXT (0_init) and createRoleSchema accepts any uppercase code, so an
 -- admin can create this via POST /roles with realm PERGURUAN_TINGGI. The
@@ -147,6 +165,8 @@ const PURGED_PT_ROWS: Array<[table: string, id: string]> = [
   ['strategic_plans', 'sp-pt'],
   ['dashboard_history', 'dh-pt'],
   ['plan_objectives', 'po-pt'],
+  // FINDING 1 (remaining gap): NULL-means-global SECRET on the PT unit.
+  ['system_secrets', 'sec-pt'],
 ];
 
 /** Rows of a surviving unit that the purge must not touch. */
@@ -165,6 +185,10 @@ const KEPT_TK_ROWS: Array<[table: string, id: string]> = [
   ['strategic_plans', 'sp-tk'],
   ['dashboard_history', 'dh-tk'],
   ['plan_objectives', 'po-tk'],
+  ['system_secrets', 'sec-tk'],
+  // FINDING 2 control: the PT dormitory survives detached (unit_id -> NULL),
+  // owed to the sibling, and no other dormitory row is touched.
+  ['dormitories', 'dorm-tk'],
 ];
 
 interface UserState {
@@ -402,6 +426,60 @@ describeDb('decommission migration — legacy PT sessions end', () => {
       for (const row of rows) {
         expect(row.unit_id).toBeNull();
       }
+    } finally {
+      await db.end();
+    }
+  });
+
+  it('detaches (keeps) a PT dormitory, rather than globalising or deleting it', async () => {
+    // FINDING 2 — false positive. `dormitories.unit_id` is SET NULL, and for an
+    // asrama a NULL unit_id is the *normal* foundation-wide case
+    // (schema.prisma:1422-1433 "Do not scope access on it"); access is decided
+    // by room occupancy via assertRoomAccess() (dormitories.service.ts:51-80),
+    // not by dormitory.unit_id. So the FK must be allowed to fire: the PT
+    // dormitory survives, detached, and is still returned by the read path.
+    const db = new Client({ connectionString: targetUrl });
+    await db.connect();
+    try {
+      const { rows } = await db.query<{ id: string; unit_id: string | null }>(
+        `SELECT id, unit_id FROM dormitories ORDER BY id`
+      );
+      expect(rows).toEqual([
+        { id: 'dorm-pt', unit_id: null },
+        { id: 'dorm-tk', unit_id: 'u-tk' },
+      ]);
+      // The read path never returns this NULL simply because unit_id is set:
+      // a scoped listing only includes a NULL-unit asrama when one of its
+      // residents belongs to the unit (the OR branch below).
+      const scoped = await db.query(
+        `SELECT d.id FROM dormitories d WHERE d.deleted_at IS NULL AND (
+           d.unit_id = $1 OR EXISTS (
+             SELECT 1 FROM rooms r
+             JOIN room_assignments ra ON ra.room_id = r.id AND ra.is_active
+             JOIN students s ON s.id = ra.student_id
+             WHERE r.dormitory_id = d.id AND s.unit_id = $1
+           )
+         ) ORDER BY d.id`,
+        ['u-tk']
+      );
+      expect(scoped.rows.map((r: { id: string }) => r.id)).toEqual(['dorm-tk']);
+    } finally {
+      await db.end();
+    }
+  });
+
+  it('purges the PT secret instead of globalising it, keeping its ciphertext twin', async () => {
+    // FINDING 1 (remaining gap). If the FK fired, sec-pt would live on with
+    // unit_id NULL, which SecretsService.list reads as the global/foundation
+    // scope — widened, not retired. The `(unit_id, key)` UNIQUE makes the purge
+    // catch it generically; the sibling ciphertext must be untouched.
+    const db = new Client({ connectionString: targetUrl });
+    await db.connect();
+    try {
+      const { rows } = await db.query<{ id: string; unit_id: string | null; value: string }>(
+        `SELECT id, unit_id, value FROM system_secrets ORDER BY id`
+      );
+      expect(rows).toEqual([{ id: 'sec-tk', unit_id: 'u-tk', value: 'ciphertext-tk' }]);
     } finally {
       await db.end();
     }
