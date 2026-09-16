@@ -28,6 +28,7 @@ import {
 import bcrypt from 'bcryptjs';
 import { Errors } from '../../middleware/error';
 import { normalizeEmail } from '../../utils/email';
+import { activeUserRoleWhere } from '../../utils/active-role';
 
 // =====================================
 // EMPLOYEE SERVICE (UNIFIED TEACHER & STAFF)
@@ -216,7 +217,7 @@ const HR_EMPLOYEE_INCLUDE = {
   // The DTO's TEACHER/STAFF label comes from the live assignment, not the
   // deprecated `User.role` column (which is being removed).
   userRoles: {
-    where: { isActive: true, role: { code: { in: [...HR_EMPLOYEE_ROLE_CODES] } } },
+    where: { ...activeUserRoleWhere(), role: { code: { in: [...HR_EMPLOYEE_ROLE_CODES] } } },
     orderBy: { isPrimary: 'desc' },
     take: 1,
     select: { role: { select: { code: true } } },
@@ -314,8 +315,10 @@ export async function getEmployeeDirectory(
   const where: Prisma.UserWhereInput = {
     deletedAt: null,
     // Membership comes from the live assignment, not the legacy `role` column.
+    // "Live" means active AND not past `expiresAt`: an expired assignment left
+    // the former holder in the directory (and able to shape unit scope).
     userRoles: {
-      some: { isActive: true, role: { code: { in: [...memberRoleCodes] } } },
+      some: { ...activeUserRoleWhere(), role: { code: { in: [...memberRoleCodes] } } },
     },
     ...(status ? { isActive: status === 'ACTIVE' } : {}),
   };
@@ -384,7 +387,7 @@ export async function getEmployeeById(id: string, actor?: EmployeeDirectoryActor
       id,
       deletedAt: null,
       userRoles: {
-        some: { isActive: true, role: { code: { in: [...HR_EMPLOYEE_ROLE_CODES] } } },
+        some: { ...activeUserRoleWhere(), role: { code: { in: [...HR_EMPLOYEE_ROLE_CODES] } } },
       },
     },
     include: HR_EMPLOYEE_INCLUDE,

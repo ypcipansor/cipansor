@@ -158,8 +158,11 @@ describe('getEmployeeDirectory', () => {
       isActive: true,
     });
     // Membership is a live RoleCode assignment, not the legacy `role` column.
+    // "Live" includes the assignment not being expired: an expired holder must
+    // not appear in the directory (BUG: expired roles counted as employees).
     expect(call.where.userRoles.some).toMatchObject({
       isActive: true,
+      OR: [{ expiresAt: null }, { expiresAt: { gt: expect.any(Date) } }],
       role: { code: { in: expect.arrayContaining(['SDIT_TATA_USAHA', 'PERAWAT']) } },
     });
     expect(call.where.role).toBeUndefined();
@@ -333,6 +336,7 @@ describe('getEmployeeById', () => {
     });
     expect(call.where.userRoles.some).toMatchObject({
       isActive: true,
+      OR: [{ expiresAt: null }, { expiresAt: { gt: expect.any(Date) } }],
       role: { code: { in: expect.arrayContaining(['SDIT_GURU']) } },
     });
     expect(call.where.role).toBeUndefined();

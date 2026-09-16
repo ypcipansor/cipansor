@@ -32,6 +32,7 @@ import {
   GetSasUrlRequest,
   GetSasUrlResult,
   UploadFileResult,
+  UploadDestination,
 } from "@cipansor/shared";
 
 // 2FA Types
@@ -395,14 +396,18 @@ export const tahfidzApi = {
 // the API and the web client can never drift apart.
 
 export const uploadApi = {
-  uploadFile: async (file: File) => {
+  uploadFile: async (file: File, destination?: UploadDestination) => {
     const formData = new FormData();
     formData.append("file", file);
-    return api.post<ApiResponse<UploadFileResult>>("/upload", formData, {
-      headers: {
-        "Content-Type": "multipart/form-data",
-      },
-    });
+    return api.post<ApiResponse<UploadFileResult>>(
+      destination ? `/upload?destination=${encodeURIComponent(destination)}` : "/upload",
+      formData,
+      {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      }
+    );
   },
   /**
    * Mint a fresh short-lived SAS for a persisted stable URL (the raw blob URL

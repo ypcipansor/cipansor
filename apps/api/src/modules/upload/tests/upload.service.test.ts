@@ -18,29 +18,29 @@ import {
 vi.mock('@/lib/prisma', () => ({
   prisma: {
     letter: { findFirst: vi.fn(), count: vi.fn() },
-    letterAttachment: { findFirst: vi.fn() },
-    employeeDocument: { findFirst: vi.fn() },
-    studentDocument: { findFirst: vi.fn() },
-    portfolioFile: { findFirst: vi.fn() },
-    dailyReportPhoto: { findFirst: vi.fn() },
-    pAUDReportPhoto: { findFirst: vi.fn() },
-    pAUDAssessmentEvidence: { findFirst: vi.fn() },
-    registrantDocument: { findFirst: vi.fn() },
-    courseCertificate: { findFirst: vi.fn() },
-    qualityEvidence: { findFirst: vi.fn() },
-    studentPackage: { findFirst: vi.fn() },
-    extracurricularAchievement: { findFirst: vi.fn() },
-    book: { findFirst: vi.fn() },
-    asset: { findFirst: vi.fn() },
-    student: { findFirst: vi.fn() },
-    boardMember: { findFirst: vi.fn() },
-    foundationDocument: { findFirst: vi.fn() },
-    payment: { findFirst: vi.fn() },
-    donation: { findFirst: vi.fn() },
-    tahfidzRecord: { findFirst: vi.fn() },
-    muhadatsah: { findFirst: vi.fn() },
-    announcement: { findFirst: vi.fn() },
-    letterRevocationRequest: { findFirst: vi.fn() },
+    letterAttachment: { findFirst: vi.fn(), count: vi.fn() },
+    employeeDocument: { findFirst: vi.fn(), count: vi.fn() },
+    studentDocument: { findFirst: vi.fn(), count: vi.fn() },
+    portfolioFile: { findFirst: vi.fn(), count: vi.fn() },
+    dailyReportPhoto: { findFirst: vi.fn(), count: vi.fn() },
+    pAUDReportPhoto: { findFirst: vi.fn(), count: vi.fn() },
+    pAUDAssessmentEvidence: { findFirst: vi.fn(), count: vi.fn() },
+    registrantDocument: { findFirst: vi.fn(), count: vi.fn() },
+    courseCertificate: { findFirst: vi.fn(), count: vi.fn() },
+    qualityEvidence: { findFirst: vi.fn(), count: vi.fn() },
+    studentPackage: { findFirst: vi.fn(), count: vi.fn() },
+    extracurricularAchievement: { findFirst: vi.fn(), count: vi.fn() },
+    book: { findFirst: vi.fn(), count: vi.fn() },
+    asset: { findFirst: vi.fn(), count: vi.fn() },
+    student: { findFirst: vi.fn(), count: vi.fn() },
+    boardMember: { findFirst: vi.fn(), count: vi.fn() },
+    foundationDocument: { findFirst: vi.fn(), count: vi.fn() },
+    payment: { findFirst: vi.fn(), count: vi.fn() },
+    donation: { findFirst: vi.fn(), count: vi.fn() },
+    tahfidzRecord: { findFirst: vi.fn(), count: vi.fn() },
+    muhadatsah: { findFirst: vi.fn(), count: vi.fn() },
+    announcement: { findFirst: vi.fn(), count: vi.fn() },
+    letterRevocationRequest: { findFirst: vi.fn(), count: vi.fn() },
   },
 }));
 
@@ -108,6 +108,7 @@ function clearOwners() {
   ] as const;
   for (const model of models) {
     (prisma as any)[model].findFirst.mockResolvedValue(null);
+    (prisma as any)[model].count.mockResolvedValue(0);
   }
 }
 
@@ -533,7 +534,24 @@ describe('discardOrphanBlob', () => {
   });
 
   it('refuses to discard a blob a live record references', async () => {
-    (prisma.book.findFirst as any).mockResolvedValue({ unitId: 'unit-2' });
+    // The exhaustive reference probe counts, rather than stopping at the first
+    // owner, so it is `count` that must report a live reference here.
+    (prisma.book.count as any).mockResolvedValue(1);
+
+    await expect(
+      discardOrphanBlob(
+        'https://store.blob.core.windows.net/cipansor-documents/orphan.pdf',
+        superAdmin
+      )
+    ).rejects.toThrow(/Berkas sudah tersimpan/);
+    expect(deleteFromCloudStorage).not.toHaveBeenCalled();
+  });
+
+  it('refuses to discard when ANY stored blob-URL field still references the URL', async () => {
+    // A record type whose own `findBlobOwner` probe does not cover this field
+    // must still block the delete: `findBlobOwner` alone would have called this
+    // an orphan and destroyed a live file.
+    (prisma.payment.count as any).mockResolvedValue(1);
 
     await expect(
       discardOrphanBlob(

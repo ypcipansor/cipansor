@@ -7,7 +7,13 @@ import type { Request, Response, NextFunction } from 'express';
 vi.mock('@/lib/prisma', () => ({ prisma: {} }));
 vi.mock('@/lib/redis', () => ({ redis: {} }));
 
-import { matchesMagicBytes, verifyStoredFile, uploadsAuth, uploadFilenameFor } from './upload';
+import {
+  matchesMagicBytes,
+  verifyStoredFile,
+  uploadsAuth,
+  uploadFilenameFor,
+  getSafeUploadPathForCleanup,
+} from './upload';
 import { generateAccessToken } from '@/lib/jwt';
 import { ApiError } from './error';
 
@@ -156,5 +162,59 @@ describe('uploadsAuth', () => {
     const token = generateAccessToken({ ...payload, isTemp: true });
     const next = run({ query: { token } as Request['query'] });
     expect((next.mock.calls[0][0] as ApiError).statusCode).toBe(401);
+  });
+});
+
+describe('getSafeUploadPathForCleanup', () => {
+  // The cleanup guard added UUID-name + symlink checks with no regression test;
+  // this pins both halves. It only ever returns a real path inside the upload
+  // directory, so a crafted value from a request cannot delete anything else.
+  const uploadDir = path.join(process.cwd(), 'public/uploads');
+  const uuid = '123e4567-e89b-42d3-a456-426614174000';
+
+  it('accepts a generated UUID filename that exists inside the upload dir', async () => {
+    fs.mkdirSync(uploadDir, { recursive: true });
+    const p = path.join(uploadDir, `${uuid}.png`);
+    fs.writeFileSync(p, png);
+    try {
+      await expect(getSafeUploadPathForCleanup(p)).resolves.toBe(fs.realpathSync(p));
+      // A bare filename (what a stored URL carries) resolves against the dir.
+      await expect(getSafeUploadPathForCleanup(`${uuid}.png`)).resolves.toBe(
+        fs.realpathSync(p)
+      );
+    } finally {
+      fs.unlinkSync(p);
+    }
+  });
+
+  it('rejects a non-UUID or extension-less name', async () => {
+    await expect(getSafeUploadPathForCleanup('/etc/passwd')).resolves.toBeNull();
+    await expect(getSafeUploadPathForCleanup('../../etc/passwd')).resolves.toBeNull();
+    await expect(getSafeUploadPathForCleanup(`${uuid}`)).resolves.toBeNull();
+    await expect(getSafeUploadPathForCleanup('not-a-uuid.png')).resolves.toBeNull();
+  });
+
+  it('rejects a symlink that escapes the upload directory', async () => {
+    fs.mkdirSync(uploadDir, { recursive: true });
+    const outside = path.join(os.tmpdir(), `escape-${uuid}.txt`);
+    fs.writeFileSync(outside, 'secret');
+    const link = path.join(uploadDir, `${uuid}.png`);
+    try {
+      fs.symlinkSync(outside, link);
+    } catch {
+      // Symlinks unavailable on this platform/filesystem; nothing to assert.
+      fs.unlinkSync(outside);
+      return;
+    }
+    try {
+      await expect(getSafeUploadPathForCleanup(link)).resolves.toBeNull();
+    } finally {
+      fs.unlinkSync(link);
+      fs.unlinkSync(outside);
+    }
+  });
+
+  it('returns null for a file that no longer exists', async () => {
+    await expect(getSafeUploadPathForCleanup(`${uuid}.png`)).resolves.toBeNull();
   });
 });

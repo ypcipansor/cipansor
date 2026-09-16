@@ -41,8 +41,20 @@ const router = Router();
  * legacy `UNIT_ADMIN` bucket (which also expanded to governance). These groups
  * are not identical to LEGACY_ROLE_EXPANSION — this is a deliberate narrowing
  * of who may read/write personnel data, not a mechanical rename.
+ *
+ * READ vs WRITE is split deliberately. Governance roles (pembina, pengawas,
+ * treasurer, …) have legitimate *oversight* of personnel data — they may read
+ * the directory, attendance, leave and contracts to supervise the yayasan —
+ * but they are not the office that runs HR. Granting them the write routes
+ * (creating attendance, approving leave, editing contracts/departments,
+ * deleting documents) turned a supervisory role into a personnel administrator,
+ * which is broader than oversight. Writes are therefore unit/system admins
+ * only; governance keeps read. `GOVERNANCE_ROLE_CODES`' own doc says it is
+ * "deliberately NOT system administrators", so this restores that boundary.
  */
-const ADMIN_ROLES = [...ADMIN_ROLE_CODES, ...GOVERNANCE_ROLE_CODES];
+const HR_READ_ROLES = [...ADMIN_ROLE_CODES, ...GOVERNANCE_ROLE_CODES];
+const HR_WRITE_ROLES = [...ADMIN_ROLE_CODES];
+const ADMIN_ROLES = HR_READ_ROLES;
 const TEACHER_ROLES = [
   ...SCHOOL_TEACHER_ROLE_CODES,
   ...PRINCIPAL_ROLE_CODES,
@@ -275,7 +287,7 @@ router.get(
  */
 router.post(
   '/attendance',
-  authorize(...ADMIN_ROLES),
+  authorize(...HR_WRITE_ROLES),
   controller.createStaffAttendance
 );
 
@@ -315,7 +327,7 @@ router.post(
  */
 router.post(
   '/attendance/bulk',
-  authorize(...ADMIN_ROLES),
+  authorize(...HR_WRITE_ROLES),
   controller.recordBulkAttendance
 );
 
@@ -363,7 +375,7 @@ router.get(
  */
 router.put(
   '/attendance/:id',
-  authorize(...ADMIN_ROLES),
+  authorize(...HR_WRITE_ROLES),
   controller.updateStaffAttendance
 );
 
@@ -387,7 +399,7 @@ router.put(
  */
 router.delete(
   '/attendance/:id',
-  authorize(...ADMIN_ROLES),
+  authorize(...HR_WRITE_ROLES),
   controller.deleteStaffAttendance
 );
 
@@ -508,7 +520,7 @@ router.get(
  */
 router.post(
   '/leaves',
-  authorize(...ADMIN_ROLES, ...TEACHER_ROLES, ...STAFF_ROLES),
+  authorize(...HR_WRITE_ROLES, ...TEACHER_ROLES, ...STAFF_ROLES),
   controller.createLeave
 );
 
@@ -556,7 +568,7 @@ router.get(
  */
 router.put(
   '/leaves/:id',
-  authorize(...ADMIN_ROLES, ...TEACHER_ROLES, ...STAFF_ROLES),
+  authorize(...HR_WRITE_ROLES, ...TEACHER_ROLES, ...STAFF_ROLES),
   controller.updateLeave
 );
 
@@ -594,7 +606,7 @@ router.put(
  */
 router.patch(
   '/leaves/:id/approve',
-  authorize(...ADMIN_ROLES),
+  authorize(...HR_WRITE_ROLES),
   controller.approveLeave
 );
 
@@ -618,7 +630,7 @@ router.patch(
  */
 router.patch(
   '/leaves/:id/cancel',
-  authorize(...ADMIN_ROLES, ...TEACHER_ROLES, ...STAFF_ROLES),
+  authorize(...HR_WRITE_ROLES, ...TEACHER_ROLES, ...STAFF_ROLES),
   controller.cancelLeave
 );
 
@@ -642,7 +654,7 @@ router.patch(
  */
 router.delete(
   '/leaves/:id',
-  authorize(...ADMIN_ROLES),
+  authorize(...HR_WRITE_ROLES),
   controller.deleteLeave
 );
 
@@ -680,7 +692,7 @@ router.get(
 
 router.post(
   '/departments',
-  authorize(...ADMIN_ROLES),
+  authorize(...HR_WRITE_ROLES),
   departmentController.create
 );
 router.get(
@@ -695,12 +707,12 @@ router.get(
 );
 router.patch(
   '/departments/:id',
-  authorize(...ADMIN_ROLES),
+  authorize(...HR_WRITE_ROLES),
   departmentController.update
 );
 router.delete(
   '/departments/:id',
-  authorize(...ADMIN_ROLES),
+  authorize(...HR_WRITE_ROLES),
   departmentController.delete
 );
 
@@ -708,7 +720,7 @@ router.delete(
 
 router.post(
   '/contracts',
-  authorize(...ADMIN_ROLES),
+  authorize(...HR_WRITE_ROLES),
   contractController.create
 );
 router.get(
@@ -728,7 +740,7 @@ router.get(
 );
 router.patch(
   '/contracts/:id',
-  authorize(...ADMIN_ROLES),
+  authorize(...HR_WRITE_ROLES),
   contractController.update
 );
 
@@ -741,12 +753,12 @@ router.get(
 );
 router.post(
   '/documents',
-  authorize(...ADMIN_ROLES),
+  authorize(...HR_WRITE_ROLES),
   employeeDocumentController.create
 );
 router.delete(
   '/documents/:id',
-  authorize(...ADMIN_ROLES),
+  authorize(...HR_WRITE_ROLES),
   employeeDocumentController.delete
 );
 
@@ -759,7 +771,7 @@ router.get(
 );
 router.post(
   '/history',
-  authorize(...ADMIN_ROLES),
+  authorize(...HR_WRITE_ROLES),
   employmentHistoryController.create
 );
 
@@ -772,12 +784,12 @@ router.get(
 );
 router.post(
   '/leave-balances/initialize',
-  authorize(...ADMIN_ROLES),
+  authorize(...HR_WRITE_ROLES),
   leaveBalanceController.initialize
 );
 router.patch(
   '/leave-balances/:id',
-  authorize(...ADMIN_ROLES),
+  authorize(...HR_WRITE_ROLES),
   leaveBalanceController.update
 );
 

@@ -9,6 +9,21 @@
  * upload.
  */
 
+/**
+ * Logical upload destinations. The client names a *purpose*, never a container:
+ * a caller that could name the container freely could push a KTP scan into the
+ * public media container and make it world-readable. The server maps each
+ * purpose to a concrete container; an unknown or missing purpose falls back to
+ * private.
+ */
+export const UPLOAD_DESTINATIONS = [
+  "private",
+  "media-public",
+  "e-office",
+  "student",
+] as const;
+export type UploadDestination = (typeof UPLOAD_DESTINATIONS)[number];
+
 /** Response of `POST /upload` (see uploadApi.uploadFile / UploadFileResult). */
 export interface UploadFileResult {
   /** Stable reference to persist — never a short-lived SAS. */

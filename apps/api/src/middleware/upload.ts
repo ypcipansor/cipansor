@@ -18,7 +18,7 @@ const uploadDirPrefix = uploadDirResolved.endsWith(path.sep)
   ? uploadDirResolved
   : `${uploadDirResolved}${path.sep}`;
 
-async function getSafeUploadPathForCleanup(candidatePath: string): Promise<string | null> {
+export async function getSafeUploadPathForCleanup(candidatePath: string): Promise<string | null> {
   const baseName = path.basename(candidatePath);
   // Accept only expected generated upload names (UUID + extension), e.g. "<uuid>.png"
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.[a-z0-9]+$/i.test(baseName)) {
@@ -37,14 +37,9 @@ async function getSafeUploadPathForCleanup(candidatePath: string): Promise<strin
   return null;
 }
 
-const resolvedUploadDir = path.resolve(uploadDir);
-const uploadDirPrefix = resolvedUploadDir.endsWith(path.sep)
-  ? resolvedUploadDir
-  : `${resolvedUploadDir}${path.sep}`;
-
 const isPathWithinUploadDir = (candidatePath: string): boolean => {
   const resolvedCandidate = path.resolve(candidatePath);
-  return resolvedCandidate === resolvedUploadDir || resolvedCandidate.startsWith(uploadDirPrefix);
+  return resolvedCandidate === uploadDirResolved || resolvedCandidate.startsWith(uploadDirPrefix);
 };
 
 // Allowed types: client-declared MIME → { stored extension, magic-byte check }.
@@ -187,8 +182,18 @@ export async function verifyStoredFile(file: Express.Multer.File): Promise<boole
   return false;
 }
 
+/**
+ * Resolve the logical upload destination for a request. Supplied by the module
+ * that owns the route, so the validated query value stays a module concern and
+ * the middleware never reaches into an unvalidated `req.query`.
+ */
+export type DestinationResolver = (req: Request, res: Response) => string | undefined;
+
 // Middleware to map uploaded file to body.fileUrl
-export const handleSingleUpload = (fieldName: string) => {
+export const handleSingleUpload = (
+  fieldName: string,
+  resolveDestination?: DestinationResolver
+) => {
   return (req: Request, res: Response, next: NextFunction) => {
     const uploadMiddleware = upload.single(fieldName);
 
@@ -232,7 +237,10 @@ export const handleSingleUpload = (fieldName: string) => {
           const localPath = req.file.path;
 
           const containerName = containerForDestination(
-            typeof req.query?.destination === 'string' ? req.query.destination : undefined
+            // The module supplies the validated destination; the raw query is
+            // the fallback for a mount without `validateQuery`.
+            resolveDestination?.(req, res) ??
+              (typeof req.query?.destination === 'string' ? req.query.destination : undefined)
           );
           const { uploadToCloudStorage } = await import('@/utils/cloud-storage');
           let storageResult;

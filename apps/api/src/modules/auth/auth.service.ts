@@ -53,6 +53,59 @@ function getMicrosoftJwksClient(tenantId: string): JwksClient {
   return client;
 }
 
+/** Entra directory GUIDs look like a bare UUID. */
+const MICROSOFT_TENANT_GUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isTenantGuid(value: string): boolean {
+  return MICROSOFT_TENANT_GUID_RE.test(value);
+}
+
+/**
+ * Directory-GUID resolution for a domain-valued `MICROSOFT_TENANT_ID`.
+ *
+ * A token's `tid`/issuer always carry the **directory GUID**, never the
+ * verified e-mail's domain, so a domain-configured tenant can only be enforced
+ * by first resolving the domain to the yayasan's directory GUID. Entra's OIDC
+ * discovery document is the authority for that mapping: its `issuer` embeds the
+ * GUID (`https://login.microsoftonline.com/<guid>/v2.0`). The result is cached
+ * per domain, including resolution failures (null), so a bad domain is not
+ * refetched on every login.
+ *
+ * Resolution failing is NOT permission to fall back to the e-mail domain — that
+ * would re-open exactly the hole this closes (a token minted in a foreign
+ * directory that happens to host a mailbox on the same domain). The caller
+ * fails closed instead.
+ */
+const microsoftTenantGuidCache = new Map<string, string | null>();
+
+async function resolveTenantGuidFromDomain(domain: string): Promise<string | null> {
+  const key = domain.toLowerCase();
+  if (microsoftTenantGuidCache.has(key)) {
+    return microsoftTenantGuidCache.get(key) ?? null;
+  }
+
+  let guid: string | null = null;
+  try {
+    const response = await fetch(
+      `https://login.microsoftonline.com/${encodeURIComponent(key)}/v2.0/.well-known/openid-configuration`
+    );
+    if (response.ok) {
+      const document = (await response.json()) as { issuer?: unknown };
+      const match =
+        typeof document.issuer === 'string'
+          ? document.issuer.match(/login\.microsoftonline\.com\/([0-9a-f-]{36})\//i)
+          : null;
+      guid = match ? match[1].toLowerCase() : null;
+    }
+  } catch {
+    guid = null;
+  }
+
+  microsoftTenantGuidCache.set(key, guid);
+  return guid;
+}
+
 /**
  * Google's JWKS endpoint. Google is not tenant-scoped, so one module-level
  * client serves every request — same caching rationale as Microsoft above.
@@ -742,26 +795,28 @@ export class AuthService {
     // different tenant. The `tid` claim is the directory GUID; the issuer
     // carries the same tenant (as GUID or verified domain) in its path.
     //
-    // A domain-valued tenant is the trap: Entra always reports the directory
-    // GUID in `tid` and in the issuer path, so comparing either against a
-    // domain can never match and every valid token was rejected. In that case
-    // fall back to the verified e-mail's domain.
+    // A domain-valued tenant must be resolved to the directory GUID through
+    // OIDC discovery before it can prove anything: Entra always reports the
+    // GUID in `tid`/issuer, and the verified e-mail's domain is NOT evidence of
+    // the directory — an attacker can mint a token in their own directory for a
+    // mailbox whose domain happens to end with ours. Domain alone used to pass
+    // that check, letting a foreign-directory token sign in as a local mailbox.
+    // Resolution failing (or a GUID mismatch on both `tid` and issuer) rejects.
     const isMultiTenantAuth =
       tenantId === 'common' || tenantId === 'organizations' || tenantId === 'consumers';
     if (!isMultiTenantAuth) {
-      const isGuid =
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId);
-      const tenantEmail = (payload.preferred_username || payload.email || payload.upn) as
-        | string
-        | undefined;
-      const tidMatches = typeof payload.tid === 'string' && payload.tid === tenantId;
+      const expectedTenantGuid = isTenantGuid(tenantId)
+        ? tenantId.toLowerCase()
+        : await resolveTenantGuidFromDomain(tenantId);
+      const tidMatches =
+        !!expectedTenantGuid &&
+        typeof payload.tid === 'string' &&
+        payload.tid.toLowerCase() === expectedTenantGuid;
       const issuerMatchesTenant =
-        typeof payload.iss === 'string' && payload.iss.includes(`/${tenantId}/`);
-      const tenantDomainMatches =
-        !isGuid &&
-        typeof tenantEmail === 'string' &&
-        tenantEmail.toLowerCase().endsWith(`@${tenantId.toLowerCase()}`);
-      if (!tidMatches && !issuerMatchesTenant && !tenantDomainMatches) {
+        !!expectedTenantGuid &&
+        typeof payload.iss === 'string' &&
+        payload.iss.toLowerCase().includes(`/${expectedTenantGuid}/`);
+      if (!tidMatches && !issuerMatchesTenant) {
         throw new Error('Microsoft token tenant (tid) mismatch');
       }
     }
@@ -788,8 +843,15 @@ export class AuthService {
    * Deliberately a read followed by an explicit write rather than an `upsert`:
    * the unique key is `(provider, subject)`, so an upsert would silently
    * re-point an existing row at whichever user just signed in. A subject that
-   * already belongs to somebody else is a hard conflict and must be surfaced,
-   * not overwritten.
+   * already belongs to a *live* account is a hard conflict and must be
+   * surfaced, not overwritten.
+   *
+   * The one exception is a subject whose owner was soft-deleted. Resolution
+   * skips soft-deleted users (so the login falls back to the e-mail and finds
+   * the recreated account), but the old link survives with the dead user's id.
+   * Treating that as "belongs to someone else" locked the person out
+   * permanently: their subject could never be re-linked to the replacement
+   * account. Re-pointing the link at the live user is the repair.
    *
    * Two first logins for the same subject can pass the `findUnique` together
    * and then race on the insert; the loser gets P2002 from the unique key. That
@@ -813,18 +875,20 @@ export class AuthService {
 
     if (existing) {
       if (existing.userId !== userId) {
-        logger.warn('SSO subject already linked to another account', {
-          provider,
-          providerSubjectId,
-          linkedUserId: existing.userId,
-          attemptedUserId: userId,
-        });
-        throw Errors.conflict('Identitas SSO ini sudah tertaut ke akun lain');
+        if (!(await this.isSoftDeletedUser(existing.userId))) {
+          logger.warn('SSO subject already linked to another account', {
+            provider,
+            providerSubjectId,
+            linkedUserId: existing.userId,
+            attemptedUserId: userId,
+          });
+          throw Errors.conflict('Identitas SSO ini sudah tertaut ke akun lain');
+        }
       }
 
       await prisma.identityProvider.update({
         where: { id: existing.id },
-        data: { providerEmail, lastLoginAt: new Date() },
+        data: { userId, providerEmail, lastLoginAt: new Date() },
       });
       return;
     }
@@ -846,6 +910,14 @@ export class AuthService {
           });
           return;
         }
+        if (raced && (await this.isSoftDeletedUser(raced.userId))) {
+          // Same repair as above, on the losing side of the race.
+          await prisma.identityProvider.update({
+            where: { id: raced.id },
+            data: { userId, providerEmail, lastLoginAt: new Date() },
+          });
+          return;
+        }
         if (raced) {
           logger.warn('SSO subject already linked to another account', {
             provider,
@@ -858,6 +930,15 @@ export class AuthService {
       }
       throw error;
     }
+  }
+
+  /** True when `userId` no longer exists or has been soft-deleted. */
+  private async isSoftDeletedUser(userId: string): Promise<boolean> {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { deletedAt: true },
+    });
+    return !user || Boolean(user.deletedAt);
   }
 
   /**

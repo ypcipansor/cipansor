@@ -6,6 +6,11 @@ import {
   type BlobSASSignatureValues,
 } from '@azure/storage-blob';
 import { logger } from '@/lib/logger';
+import { isBlobStillReferenced } from '@/utils/blob-owner';
+import {
+  UPLOAD_DESTINATIONS as SHARED_UPLOAD_DESTINATIONS,
+  type UploadDestination as SharedUploadDestination,
+} from '@cipansor/shared';
 
 export interface StorageUploadResult {
   /** Stable URL. For a private Azure container this is the raw blob URL (no SAS) — never a persisted expiry. */
@@ -48,13 +53,12 @@ export function isPublicContainer(containerName: string): boolean {
 /**
  * Logical upload destinations, mapped server-side to a concrete container.
  *
- * The client picks a *purpose*, never a container name — a caller that could
- * name the container freely could push a KTP scan into `media-public` and make
- * it world-readable. Unknown/missing destinations fall back to the private
- * default, so an un-migrated caller is never accidentally published.
+ * The contract lives in `@cipansor/shared` so the web client names the same
+ * purposes; only the container mapping is server-side (the client must never
+ * be able to name a container directly).
  */
-export const UPLOAD_DESTINATIONS = ['private', 'media-public', 'e-office', 'student'] as const;
-export type UploadDestination = (typeof UPLOAD_DESTINATIONS)[number];
+export const UPLOAD_DESTINATIONS = SHARED_UPLOAD_DESTINATIONS;
+export type UploadDestination = SharedUploadDestination;
 
 const DESTINATION_CONTAINERS: Record<UploadDestination, StorageContainer> = {
   private: 'cipansor-documents',
@@ -228,18 +232,15 @@ export async function deleteFromCloudStorage(
  * must know whether the blob was actually removed (e.g. rollback), call
  * {@link deleteFromCloudStorage} directly and handle its rejection.
  *
- * **No cross-record owner probe, deliberately.** The blob name is a
+ * **Cross-record owner probe.** The blob name is normally a
  * `crypto.randomUUID()` minted per physical upload (see the multer disk
- * storage in `middleware/upload.ts`), so a stored URL identifies exactly one
- * upload and is never shared between records. There is no server-side path
- * that copies one record's `fileUrl`/`photoUrl`/`coverUrl` onto another record
- * — the only "duplicate" flows in this codebase are client-driven re-uploads,
- * which mint a fresh name. Every cleanup caller therefore deletes a blob whose
- * only possible referent is the row it just removed. Should a copy/clone path
- * ever be added, it must consult `findBlobOwner` (upload.service.ts) before
- * calling this, or the delete would destroy a blob another record still points
- * at. Covered by `cleanupBlobBestEffort`'s uniqueness tests in
- * `cloud-storage.test.ts`.
+ * storage in `middleware/upload.ts`), so the URL usually identifies exactly
+ * one upload. That is not guaranteed across all data — a copy/clone path or
+ * imported legacy rows can point a second record at the same URL, and the
+ * deleting record may itself be one that was cloned forward. So this checks
+ * {@link isBlobStillReferenced} first and refuses to delete while any record
+ * still references the blob; only a genuinely orphaned blob is reclaimed.
+ * Covered by the shared-URL test in `cloud-storage.test.ts`.
  */
 export async function cleanupBlobBestEffort(
   fileUrl: string | null | undefined
@@ -247,6 +248,9 @@ export async function cleanupBlobBestEffort(
   if (!fileUrl) return false;
   const parsed = parseBlobUrl(fileUrl);
   if (!parsed) return false;
+  if (await isBlobStillReferenced(fileUrl)) {
+    return false;
+  }
   try {
     await deleteFromCloudStorage(parsed.containerName, parsed.blobName);
     return true;
@@ -342,8 +346,17 @@ export function parseBlobUrl(url: string): { containerName: string; blobName: st
   // fragment that a SAS may have carried is dropped by URL parsing.
   const segments = parsed.pathname.replace(/^\/+/, '').split('/');
   if (segments.length < 2) return null;
-  const containerName = decodeURIComponent(segments[0]);
-  const blobName = decodeURIComponent(segments.slice(1).join('/'));
+  // `decodeURIComponent` throws URIError on a broken escape (e.g. `%zz`). It
+  // used to sit outside any try/catch, so a malformed stored URL turned
+  // /upload/sas and /upload/discard into 500s instead of a clean refusal.
+  let containerName: string;
+  let blobName: string;
+  try {
+    containerName = decodeURIComponent(segments[0]);
+    blobName = decodeURIComponent(segments.slice(1).join('/'));
+  } catch {
+    return null;
+  }
   if (!containerName || !blobName) return null;
   return { containerName, blobName };
 }

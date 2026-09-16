@@ -33,6 +33,10 @@ describe('SSO Authentication Security Unit Tests', () => {
     vi.spyOn(prisma.identityProvider, 'create').mockResolvedValue({} as any);
     vi.spyOn(prisma.identityProvider, 'update').mockResolvedValue({} as any);
     vi.spyOn(prisma.auditLog, 'create').mockResolvedValue({} as any);
+    // Link repair reads the link owner's soft-delete state through
+    // `user.findUnique`; default to a live owner so verification-only tests
+    // don't reach a real database.
+    vi.spyOn(prisma.user, 'findUnique').mockResolvedValue({ deletedAt: null } as any);
   });
 
   afterEach(() => {
@@ -258,7 +262,7 @@ describe('SSO Authentication Security Unit Tests', () => {
 
   it('should reject Microsoft token from a different tenant when MICROSOFT_TENANT_ID is set', async () => {
     process.env.MICROSOFT_CLIENT_ID = 'expected-ms-client-id';
-    process.env.MICROSOFT_TENANT_ID = 'tenant-guid-111';
+    process.env.MICROSOFT_TENANT_ID = '11111111-1111-1111-1111-111111111111';
 
     vi.spyOn(jwt, 'decode').mockReturnValueOnce({
       header: { kid: 'key_123' },
@@ -268,8 +272,8 @@ describe('SSO Authentication Security Unit Tests', () => {
       aud: 'expected-ms-client-id',
       exp: Math.floor(Date.now() / 1000) + 3600,
       // A token minted for a different tenant: same email domain, foreign tid.
-      tid: 'tenant-guid-999',
-      iss: 'https://login.microsoftonline.com/tenant-guid-999/v2.0',
+      tid: '99999999-9999-9999-9999-999999999999',
+      iss: 'https://login.microsoftonline.com/99999999-9999-9999-9999-999999999999/v2.0',
       preferred_username: 'guru@cipansor.or.id',
       oid: 'ms-oid-1',
     } as any);
@@ -284,7 +288,7 @@ describe('SSO Authentication Security Unit Tests', () => {
 
   it('should accept Microsoft token whose tenant matches MICROSOFT_TENANT_ID', async () => {
     process.env.MICROSOFT_CLIENT_ID = 'expected-ms-client-id';
-    process.env.MICROSOFT_TENANT_ID = 'tenant-guid-111';
+    process.env.MICROSOFT_TENANT_ID = '11111111-1111-1111-1111-111111111111';
 
     const mockUser = {
       id: 'usr_ms_tenant',
@@ -308,8 +312,8 @@ describe('SSO Authentication Security Unit Tests', () => {
     vi.spyOn(jwt, 'verify').mockReturnValueOnce({
       aud: 'expected-ms-client-id',
       exp: Math.floor(Date.now() / 1000) + 3600,
-      tid: 'tenant-guid-111',
-      iss: 'https://login.microsoftonline.com/tenant-guid-111/v2.0',
+      tid: '11111111-1111-1111-1111-111111111111',
+      iss: 'https://login.microsoftonline.com/11111111-1111-1111-1111-111111111111/v2.0',
       preferred_username: 'guru@cipansor.or.id',
       oid: 'ms-oid-1',
     } as any);
@@ -327,12 +331,20 @@ describe('SSO Authentication Security Unit Tests', () => {
     expect(result).toHaveProperty('accessToken');
   });
 
-  it('accepts a Microsoft token when MICROSOFT_TENANT_ID is a DOMAIN (BUG 7)', async () => {
+  it('resolves a domain-valued MICROSOFT_TENANT_ID to the directory GUID and accepts a matching token (BUG 7)', async () => {
     process.env.MICROSOFT_CLIENT_ID = 'expected-ms-client-id';
-    // A domain-valued tenant: Entra still reports the directory GUID in `tid`
-    // and the issuer path, so a naive GUID comparison rejected every valid
-    // token. The verified e-mail's domain must be accepted instead.
-    process.env.MICROSOFT_TENANT_ID = 'cipansor.or.id';
+    // A domain-valued tenant: Entra always reports the directory GUID in `tid`
+    // and the issuer, so the domain must first be resolved through OIDC
+    // discovery. A token carrying that GUID is from the yayasan's directory.
+    process.env.MICROSOFT_TENANT_ID = 'tenant-resolvable.example';
+    const RESOLVED_GUID = '33333333-3333-3333-3333-333333333333';
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        issuer: `https://login.microsoftonline.com/${RESOLVED_GUID}/v2.0`,
+      }),
+    } as any);
 
     const mockUser = {
       id: 'usr_ms_domain',
@@ -356,8 +368,8 @@ describe('SSO Authentication Security Unit Tests', () => {
     vi.spyOn(jwt, 'verify').mockReturnValueOnce({
       aud: 'expected-ms-client-id',
       exp: Math.floor(Date.now() / 1000) + 3600,
-      tid: 'directory-guid-abc',
-      iss: 'https://login.microsoftonline.com/directory-guid-abc/v2.0',
+      tid: RESOLVED_GUID,
+      iss: `https://login.microsoftonline.com/${RESOLVED_GUID}/v2.0`,
       preferred_username: 'guru@cipansor.or.id',
       oid: 'ms-oid-domain',
     } as any);
@@ -375,9 +387,22 @@ describe('SSO Authentication Security Unit Tests', () => {
     expect(result).toHaveProperty('accessToken');
   });
 
-  it('rejects a domain-tenant token whose email domain differs (BUG 7)', async () => {
+  it('rejects a foreign-directory token whose email domain matches the configured tenant (domain is not tenant evidence)', async () => {
     process.env.MICROSOFT_CLIENT_ID = 'expected-ms-client-id';
-    process.env.MICROSOFT_TENANT_ID = 'cipansor.or.id';
+    // The severe bug: with a domain-valued tenant, a token whose mailbox
+    // happened to sit on the configured domain was accepted even though its
+    // `tid`/issuer named a different directory. The verified e-mail domain must
+    // NOT stand in for the directory — resolve the domain, then compare GUIDs.
+    process.env.MICROSOFT_TENANT_ID = 'tenant-foreign-target.example';
+    const RESOLVED_GUID = '33333333-3333-3333-3333-333333333333';
+    const FOREIGN_GUID = '99999999-9999-9999-9999-999999999999';
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        issuer: `https://login.microsoftonline.com/${RESOLVED_GUID}/v2.0`,
+      }),
+    } as any);
 
     vi.spyOn(jwt, 'decode').mockReturnValueOnce({
       header: { kid: 'key_123' },
@@ -386,21 +411,49 @@ describe('SSO Authentication Security Unit Tests', () => {
     vi.spyOn(jwt, 'verify').mockReturnValueOnce({
       aud: 'expected-ms-client-id',
       exp: Math.floor(Date.now() / 1000) + 3600,
-      tid: 'directory-guid-other',
-      iss: 'https://login.microsoftonline.com/directory-guid-other/v2.0',
-      preferred_username: 'guru@outlook.com',
-      oid: 'ms-oid-other',
+      // A foreign directory, but the mailbox is on the configured domain.
+      tid: FOREIGN_GUID,
+      iss: `https://login.microsoftonline.com/${FOREIGN_GUID}/v2.0`,
+      preferred_username: 'guru@cipansor.or.id',
+      oid: 'ms-oid-foreign',
     } as any);
 
     await expect(
-      authService.ssoLogin({ provider: 'microsoft', idToken: 'ms_token_wrong_domain' })
+      authService.ssoLogin({ provider: 'microsoft', idToken: 'ms_token_foreign_directory' })
+    ).rejects.toThrow('Verifikasi token SSO gagal');
+  });
+
+  it('fails closed when a domain-valued tenant cannot be resolved to a directory GUID', async () => {
+    process.env.MICROSOFT_CLIENT_ID = 'expected-ms-client-id';
+    process.env.MICROSOFT_TENANT_ID = 'tenant-unresolvable.example';
+
+    // Discovery is unreachable — resolution cannot prove the tenant, so no
+    // token may be accepted (a failed lookup is not permission to trust the
+    // e-mail domain).
+    vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new Error('network down'));
+
+    vi.spyOn(jwt, 'decode').mockReturnValueOnce({
+      header: { kid: 'key_123' },
+      payload: {},
+    } as any);
+    vi.spyOn(jwt, 'verify').mockReturnValueOnce({
+      aud: 'expected-ms-client-id',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      tid: '33333333-3333-3333-3333-333333333333',
+      iss: 'https://login.microsoftonline.com/33333333-3333-3333-3333-333333333333/v2.0',
+      preferred_username: 'guru@cipansor.or.id',
+      oid: 'ms-oid-unresolvable',
+    } as any);
+
+    await expect(
+      authService.ssoLogin({ provider: 'microsoft', idToken: 'ms_token_unresolvable' })
     ).rejects.toThrow('Verifikasi token SSO gagal');
   });
 
   it('caches the JWKS client per tenant so signing keys are not refetched on every login', async () => {
     process.env.MICROSOFT_CLIENT_ID = 'expected-ms-client-id';
     // A tenant id not used by any earlier test, so the cache starts empty for it.
-    process.env.MICROSOFT_TENANT_ID = 'tenant-guid-cache';
+    process.env.MICROSOFT_TENANT_ID = '22222222-2222-2222-2222-222222222222';
 
     const mockUser = {
       id: 'usr_ms_cache',
@@ -428,16 +481,16 @@ describe('SSO Authentication Security Unit Tests', () => {
       .mockReturnValueOnce({
         aud: 'expected-ms-client-id',
         exp: Math.floor(Date.now() / 1000) + 3600,
-        tid: 'tenant-guid-cache',
-        iss: 'https://login.microsoftonline.com/tenant-guid-cache/v2.0',
+        tid: '22222222-2222-2222-2222-222222222222',
+        iss: 'https://login.microsoftonline.com/22222222-2222-2222-2222-222222222222/v2.0',
         preferred_username: 'guru@cipansor.or.id',
         oid: 'ms-oid-1',
       } as any)
       .mockReturnValueOnce({
         aud: 'expected-ms-client-id',
         exp: Math.floor(Date.now() / 1000) + 3600,
-        tid: 'tenant-guid-cache',
-        iss: 'https://login.microsoftonline.com/tenant-guid-cache/v2.0',
+        tid: '22222222-2222-2222-2222-222222222222',
+        iss: 'https://login.microsoftonline.com/22222222-2222-2222-2222-222222222222/v2.0',
         preferred_username: 'guru@cipansor.or.id',
         oid: 'ms-oid-1',
       } as any);
@@ -463,10 +516,10 @@ describe('SSO Authentication Security Unit Tests', () => {
   it('should expose microsoftTenantId (MICROSOFT_TENANT_ID) from getSSOConfig', async () => {
     process.env.GOOGLE_CLIENT_ID = 'g';
     process.env.MICROSOFT_CLIENT_ID = 'm';
-    process.env.MICROSOFT_TENANT_ID = 'tenant-guid-999';
+    process.env.MICROSOFT_TENANT_ID = '99999999-9999-9999-9999-999999999999';
 
     const cfg = authService.getSSOConfig();
-    expect(cfg.microsoftTenantId).toBe('tenant-guid-999');
+    expect(cfg.microsoftTenantId).toBe('99999999-9999-9999-9999-999999999999');
   });
 
   it('should default microsoftTenantId to common when MICROSOFT_TENANT_ID is unset', async () => {
@@ -611,7 +664,7 @@ describe('SSO Authentication Security Unit Tests', () => {
     );
   });
 
-  it('refuses to re-point a subject that already belongs to another account', async () => {
+  it('refuses to re-point a subject that already belongs to another live account', async () => {
     stubMicrosoftSuccessClaims();
     stubLoginSideEffects();
 
@@ -621,6 +674,8 @@ describe('SSO Authentication Security Unit Tests', () => {
       provider: 'MICROSOFT',
       providerSubjectId: 'ms-oid-link',
     } as any);
+    // The other account is alive, so the link is genuinely theirs.
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ deletedAt: null } as any);
 
     await expect(
       authService.ssoLogin({ provider: 'microsoft', idToken: 'hijack_attempt_token' })
@@ -628,6 +683,40 @@ describe('SSO Authentication Security Unit Tests', () => {
 
     expect(prisma.identityProvider.create).not.toHaveBeenCalled();
     expect(prisma.identityProvider.update).not.toHaveBeenCalled();
+  });
+
+  it('re-points a stale subject link owned by a soft-deleted user to the recreated account', async () => {
+    stubMicrosoftSuccessClaims();
+    stubLoginSideEffects();
+
+    // The old link survives, still pointing at the account that was deleted...
+    vi.mocked(prisma.identityProvider.findUnique).mockResolvedValue({
+      id: 'idp_stale',
+      userId: 'usr_deleted',
+      provider: 'MICROSOFT',
+      providerSubjectId: 'ms-oid-link',
+    } as any);
+    // ...and that account is soft-deleted, so the user signs in again through
+    // the e-mail fallback as a freshly created (live) row.
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      deletedAt: new Date(),
+    } as any);
+
+    const result = await authService.ssoLogin({
+      provider: 'microsoft',
+      idToken: 'recreated_user_token',
+    });
+
+    expect(result).toHaveProperty('accessToken');
+    // The repair: the surviving link is re-pointed at the live account rather
+    // than raising a permanent conflict that locked the user out.
+    expect(prisma.identityProvider.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'idp_stale' },
+        data: expect.objectContaining({ userId: 'usr_link_1' }),
+      })
+    );
+    expect(prisma.identityProvider.create).not.toHaveBeenCalled();
   });
 
   it('resolves the account through the subject link when the PROVIDER EMAIL changed (BUG 5)', async () => {

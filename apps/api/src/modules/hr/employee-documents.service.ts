@@ -4,6 +4,7 @@ import { cleanupBlobBestEffort } from '../../utils/cloud-storage';
 import { isFoundationScopedRole } from '../../utils/resolve-unit-id';
 import { mayAdministerEmployeeDocuments } from '@cipansor/shared';
 import { Errors } from '../../middleware/error';
+import { activeUserRoleWhere } from '../../utils/active-role';
 
 /**
  * The subset of the authenticated user needed to decide whether they own or
@@ -36,7 +37,7 @@ async function findDocumentOwnerTarget(id: string) {
         select: {
           unitId: true,
           userRoles: {
-            where: { isActive: true },
+            where: activeUserRoleWhere(),
             orderBy: { isPrimary: 'desc' },
             select: { unitId: true },
           },
@@ -90,7 +91,7 @@ export const employeeDocumentService = {
         select: {
           unitId: true,
           userRoles: {
-            where: { isActive: true },
+            where: activeUserRoleWhere(),
             orderBy: { isPrimary: 'desc' },
             select: { unitId: true },
           },
@@ -122,7 +123,7 @@ export const employeeDocumentService = {
         select: {
           unitId: true,
           userRoles: {
-            where: { isActive: true },
+            where: activeUserRoleWhere(),
             orderBy: { isPrimary: 'desc' },
             select: { unitId: true },
           },

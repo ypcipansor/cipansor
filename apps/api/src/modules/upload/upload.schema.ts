@@ -9,3 +9,9 @@ export const getSasUrlSchema = z.object({
 });
 
 export type GetSasUrlBody = z.infer<typeof getSasUrlSchema>;
+
+/**
+ * The `POST /upload` query contract is owned by `@cipansor/shared` so the web
+ * client names the same purposes; re-exported here for the route.
+ */
+export { uploadQuerySchema, type UploadQuery } from '@cipansor/shared';

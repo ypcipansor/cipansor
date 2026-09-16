@@ -18,6 +18,7 @@ const {
   mockGetContainerClient,
   mockSasToString,
   mockDeleteBlob,
+  mockIsBlobStillReferenced,
 } = vi.hoisted(() => {
   const mockUploadFile = vi.fn().mockResolvedValue({});
   const mockDeleteBlob = vi.fn().mockResolvedValue({});
@@ -32,6 +33,9 @@ const {
     deleteBlob: mockDeleteBlob,
   });
   const mockSasToString = vi.fn(() => 'sig=fakeSasToken&se=2026-01-01T00%3A00%3A00Z');
+  // The cross-record owner probe is mocked at the module boundary; the real
+  // probe would need a database. Default: the blob is orphaned (deletable).
+  const mockIsBlobStillReferenced = vi.fn().mockResolvedValue(false);
   return {
     mockUploadFile,
     mockGetBlockBlobClient,
@@ -39,8 +43,13 @@ const {
     mockGetContainerClient,
     mockSasToString,
     mockDeleteBlob,
+    mockIsBlobStillReferenced,
   };
 });
+
+vi.mock('@/utils/blob-owner', () => ({
+  isBlobStillReferenced: mockIsBlobStillReferenced,
+}));
 
 vi.mock('@azure/storage-blob', () => {
   return {
@@ -283,6 +292,20 @@ describe('parseBlobUrl', () => {
     expect(parseBlobUrl('https://example.com/a.pdf')).toBeNull();
   });
 
+  it('returns null (no throw) for a malformed percent-escape in the path (BUG 5)', () => {
+    process.env.AZURE_STORAGE_ACCOUNT = 'cipansorstore';
+
+    // `decodeURIComponent('%zz')` throws URIError; a stored URL with a broken
+    // escape used to escape the parser's try/catch and 500 /upload/sas and
+    // /upload/discard. It must be a clean null instead.
+    expect(
+      parseBlobUrl('https://cipansorstore.blob.core.windows.net/cipansor-documents/%zz.pdf')
+    ).toBeNull();
+    expect(
+      parseBlobUrl('https://cipansorstore.blob.core.windows.net/%zz/broken.pdf')
+    ).toBeNull();
+  });
+
   it('returns null for a lookalike host that merely contains the account name', () => {
     process.env.AZURE_STORAGE_ACCOUNT = 'cipansorstore';
 
@@ -365,19 +388,34 @@ describe('cleanupBlobBestEffort', () => {
     process.env = originalEnv;
   });
 
-  it('deletes the blob for a URL on this account (BUG 3: URL uniqueness assumed)', async () => {
-    // The recorded filename is a per-upload crypto.randomUUID (see
-    // `uploadFilenameFor` in middleware/upload.ts and its uniqueness test), so
-    // the URL identifies exactly one upload and no cross-record probe is
-    // needed. If a copy/clone path is ever added it must call `findBlobOwner`
-    // first — the assumption this test pins.
+  it('deletes the blob only once no record references the URL', async () => {
+    mockIsBlobStillReferenced.mockResolvedValueOnce(false);
+
     await expect(
       cleanupBlobBestEffort(
         'https://cipansorstore.blob.core.windows.net/cipansor-documents/9f1c.pdf'
       )
     ).resolves.toBe(true);
 
+    expect(mockIsBlobStillReferenced).toHaveBeenCalledWith(
+      'https://cipansorstore.blob.core.windows.net/cipansor-documents/9f1c.pdf'
+    );
     expect(mockDeleteBlob).toHaveBeenCalledWith('9f1c.pdf', { deleteSnapshots: 'include' });
+  });
+
+  it('REFUSES to delete a blob another record still references (BUG: shared-URL destruction)', async () => {
+    // The URL-uniqueness assumption does not hold across all data: a copy/clone
+    // path or legacy import can point a second record at the same blob. The
+    // deleting record is gone, but that other record still needs the file.
+    mockIsBlobStillReferenced.mockResolvedValueOnce(true);
+
+    await expect(
+      cleanupBlobBestEffort(
+        'https://cipansorstore.blob.core.windows.net/cipansor-documents/shared.pdf'
+      )
+    ).resolves.toBe(false);
+
+    expect(mockDeleteBlob).not.toHaveBeenCalled();
   });
 
   it('REFUSES to delete a blob hosted on a foreign Azure account (BUG 2)', async () => {

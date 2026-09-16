@@ -14,15 +14,11 @@
  * IMPORTANT: `ROLE_CODE_TO_LEGACY` must stay in sync with the backend's
  * `LEGACY_ROLE_EXPANSION`. If you add a RoleCode there, mirror it here.
  */
+import { ADMIN_ROLE_CODES } from "@cipansor/shared";
 
 /** The six coarse buckets the route/dashboard maps are keyed on. */
 export type LegacyRole =
-  | "SUPER_ADMIN"
-  | "UNIT_ADMIN"
-  | "TEACHER"
-  | "STAFF"
-  | "STUDENT"
-  | "PARENT";
+  "SUPER_ADMIN" | "UNIT_ADMIN" | "TEACHER" | "STAFF" | "STUDENT" | "PARENT";
 
 const LEGACY_ROLES: readonly LegacyRole[] = [
   "SUPER_ADMIN",
@@ -467,4 +463,19 @@ export function getPrimaryRoleCode(
   const primary =
     assignments.find((a) => a?.isPrimary) ?? assignments[0] ?? undefined;
   return primary?.role?.code ?? undefined;
+}
+
+/**
+ * True when the user may *administer* HR — the write half of the HR module.
+ *
+ * Governance yayasan roles (pembina, pengawas, bendahara, …) collapse to the
+ * legacy `UNIT_ADMIN` bucket, so a `getEffectiveRole(user) === "UNIT_ADMIN"`
+ * check showed them the leave-approval buttons the API now refuses (403):
+ * oversight of personnel data is read-only. Test the RoleCode directly so the
+ * UI can never re-grant a write the API has taken away.
+ */
+export function mayAdministerHr(user: RbacUser | null | undefined): boolean {
+  const code = getPrimaryRoleCode(user);
+  if (code) return ADMIN_ROLE_CODES.includes(code);
+  return getEffectiveRole(user) === "SUPER_ADMIN";
 }

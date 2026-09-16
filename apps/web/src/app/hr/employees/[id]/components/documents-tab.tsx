@@ -36,6 +36,8 @@ import {
 import { Trash2, FileText, Upload } from "lucide-react";
 
 import api, { uploadApi } from "@/lib/api";
+import { useAuth } from "@/hooks/use-auth";
+import { mayAdministerHr } from "@/lib/rbac";
 
 const DOCUMENT_TYPES: EmployeeDocumentType[] = [
   "KTP",
@@ -51,6 +53,11 @@ const DOCUMENT_TYPES: EmployeeDocumentType[] = [
 ];
 
 export function DocumentsTab({ userId }: { userId: string }) {
+  const { user } = useAuth();
+  // Governance roles reach this tab (oversight of the employee record) but the
+  // API refuses their document writes — hide the controls rather than let them
+  // 403. Same boundary as `HR_WRITE_ROLES` in hr.routes.ts.
+  const canWrite = mayAdministerHr(user);
   const { data: documents, isLoading } = useEmployeeDocuments(userId);
   const createDocument = useCreateEmployeeDocument();
   const deleteDocument = useDeleteEmployeeDocument();
@@ -160,12 +167,13 @@ export function DocumentsTab({ userId }: { userId: string }) {
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h3 className="text-lg font-medium">Dokumen Kepegawaian</h3>
-        <Dialog open={isOpen} onOpenChange={setIsOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Upload className="w-4 h-4 mr-2" /> Upload Dokumen
-            </Button>
-          </DialogTrigger>
+        {canWrite && (
+          <Dialog open={isOpen} onOpenChange={setIsOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Upload className="w-4 h-4 mr-2" /> Upload Dokumen
+              </Button>
+            </DialogTrigger>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Upload Dokumen</DialogTitle>
@@ -225,6 +233,7 @@ export function DocumentsTab({ userId }: { userId: string }) {
             </form>
           </DialogContent>
         </Dialog>
+        )}
       </div>
 
       <div className="border rounded-md">
@@ -272,16 +281,18 @@ export function DocumentsTab({ userId }: { userId: string }) {
                   {safeFormat(new Date(doc.createdAt), "dd MMM yyyy")}
                 </TableCell>
                 <TableCell className="text-right">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => {
-                      if (confirm("Hapus dokumen ini?"))
-                        deleteDocument.mutate(doc.id);
-                    }}
-                  >
-                    <Trash2 className="w-4 h-4 text-red-500" />
-                  </Button>
+                  {canWrite && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => {
+                        if (confirm("Hapus dokumen ini?"))
+                          deleteDocument.mutate(doc.id);
+                      }}
+                    >
+                      <Trash2 className="w-4 h-4 text-red-500" />
+                    </Button>
+                  )}
                 </TableCell>
               </TableRow>
             ))}

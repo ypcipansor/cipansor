@@ -156,27 +156,12 @@ export const updateEmployeeSchema = z.object({
 /**
  * Query for `GET /hr/employees` — the flat employee directory.
  *
- * The web declares `status` as the full lifecycle union, but the database only
- * distinguishes active from inactive, so only those two are accepted here: a
- * caller asking for RESIGNED would be answered with a filtered-empty lie
- * otherwise, and a 400 is the honest reply.
+ * The contract is owned by `@cipansor/shared` so the web client parses the
+ * same query the same way; re-exported here under the name the HR routes and
+ * services already import.
  */
-export const queryEmployeesSchema = z.object({
-  page: z.coerce.number().min(1).default(1),
-  limit: z.coerce.number().min(1).max(100).default(20),
-  unitId: z.preprocess(
-    (value) => (value === '' ? undefined : value),
-    z.string().uuid().optional()
-  ),
-  role: z.enum([UserRole.TEACHER, UserRole.STAFF]).optional(),
-  status: z.preprocess(
-    (value) => (value === '' ? undefined : value),
-    z.enum(['ACTIVE', 'INACTIVE']).optional()
-  ),
-  search: z.string().optional(),
-});
-
-export type QueryEmployeesInput = z.infer<typeof queryEmployeesSchema>;
+export { queryEmployeesSchema } from '@cipansor/shared';
+export type { QueryEmployeesInput } from '@cipansor/shared';
 
 export const queryStaffSchema = z.object({
   page: z.coerce.number().min(1).default(1),

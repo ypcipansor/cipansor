@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
+import crypto from 'crypto';
 import type { Request, Response, NextFunction } from 'express';
 
 vi.mock('@/lib/prisma', () => ({ prisma: {} }));
@@ -47,8 +47,16 @@ import { handleSingleUpload } from './upload';
 
 const png = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
 
+/**
+ * Stage a file the way multer does: inside `public/uploads` under a generated
+ * UUID name. The cleanup path only unlinks files it can prove live in that
+ * directory (the CodeQL path-traversal fix), so a file staged in tmpdir would
+ * be left alone — and the test would be asserting the wrong premise.
+ */
+const uploadDir = path.join(process.cwd(), 'public/uploads');
 function tmpFile(content: Buffer): string {
-  const p = path.join(os.tmpdir(), `upload-cloud-${Date.now()}-${Math.random()}`);
+  fs.mkdirSync(uploadDir, { recursive: true });
+  const p = path.join(uploadDir, `${crypto.randomUUID()}.png`);
   fs.writeFileSync(p, content);
   return p;
 }

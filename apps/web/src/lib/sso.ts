@@ -235,8 +235,8 @@ export function microsoftAuthorityTenant(authority: string): string {
  *  - `common`/`organizations`/`consumers` are Microsoft's multi-tenant
  *    sentinels and must be passed through verbatim. The previous code folded
  *    them into the "no tenant configured" branch, so MSAL received the appId
- *    (the first segment of the client id) as its authority — a directory that
- *    does not exist — and every multi-tenant sign-in failed.
+ *    (the first segment of the client id) as its authority â€” a directory that
+ *    does not exist â€” and every multi-tenant sign-in failed.
  *
  * With no `MICROSOFT_TENANT_ID` at all the app id from the `<appId>.<tenantId>`
  * client-id format is the right authority, matching
