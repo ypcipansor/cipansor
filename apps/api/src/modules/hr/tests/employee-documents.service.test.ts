@@ -168,6 +168,118 @@ describe('employeeDocumentService.delete', () => {
   });
 });
 
+describe('employeeDocumentService.findAll', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (seesAllUnits as any).mockReturnValue(false);
+    (prisma.employeeDocument.findMany as any).mockResolvedValue([{ id: 'doc-1' }]);
+  });
+
+  it("REFUSES a unit admin listing another unit's employee documents (BUG 5)", async () => {
+    (prisma.user.findUnique as any).mockResolvedValue({
+      unitId: 'unit-99',
+      userRoles: [{ unitId: 'unit-99' }],
+    });
+
+    await expect(
+      employeeDocumentService.findAll('target', {
+        id: 'user-3',
+        roleCode: 'SDIT_ADMIN',
+        unitId: 'unit-2',
+      })
+    ).rejects.toThrow(/tidak berwenang mengelola dokumen pegawai/);
+
+    expect(prisma.employeeDocument.findMany).not.toHaveBeenCalled();
+  });
+
+  it('REFUSES a same-unit peer without the HR document role (BUG 5)', async () => {
+    (prisma.user.findUnique as any).mockResolvedValue({
+      unitId: 'unit-2',
+      userRoles: [{ unitId: 'unit-2' }],
+    });
+
+    await expect(
+      employeeDocumentService.findAll('target', {
+        id: 'user-9',
+        roleCode: 'SDIT_GURU',
+        unitId: 'unit-2',
+      })
+    ).rejects.toThrow(/tidak berwenang mengelola dokumen pegawai/);
+
+    expect(prisma.employeeDocument.findMany).not.toHaveBeenCalled();
+  });
+
+  it('allows the owner to list their own documents', async () => {
+    (prisma.user.findUnique as any).mockResolvedValue({
+      unitId: 'unit-2',
+      userRoles: [{ unitId: 'unit-2' }],
+    });
+
+    const result = await employeeDocumentService.findAll('target', {
+      id: 'target',
+      roleCode: 'SDIT_GURU',
+      unitId: 'unit-2',
+    });
+
+    expect(result).toEqual([{ id: 'doc-1' }]);
+  });
+
+  it('allows a personnel admin to list documents in their unit', async () => {
+    (prisma.user.findUnique as any).mockResolvedValue({
+      unitId: 'unit-2',
+      userRoles: [{ unitId: 'unit-2' }],
+    });
+
+    await employeeDocumentService.findAll('target', {
+      id: 'user-3',
+      roleCode: 'SDIT_ADMIN',
+      unitId: 'unit-2',
+    });
+
+    expect(prisma.employeeDocument.findMany).toHaveBeenCalledWith({
+      where: { userId: 'target' },
+      orderBy: { createdAt: 'desc' },
+    });
+  });
+
+  it('allows a foundation role to list documents in any unit', async () => {
+    (prisma.user.findUnique as any).mockResolvedValue({
+      unitId: 'unit-99',
+      userRoles: [{ unitId: 'unit-99' }],
+    });
+    (seesAllUnits as any).mockReturnValue(true);
+
+    await employeeDocumentService.findAll('target', {
+      id: 'user-1',
+      roleCode: 'YAYASAN_KETUA',
+      unitId: null,
+    });
+
+    expect(prisma.employeeDocument.findMany).toHaveBeenCalled();
+  });
+
+  it('404s when the target user does not exist', async () => {
+    (prisma.user.findUnique as any).mockResolvedValue(null);
+
+    await expect(
+      employeeDocumentService.findAll('ghost', {
+        id: 'user-3',
+        roleCode: 'SDIT_ADMIN',
+        unitId: 'unit-2',
+      })
+    ).rejects.toThrow(/User not found/);
+
+    expect(prisma.employeeDocument.findMany).not.toHaveBeenCalled();
+  });
+
+  it('does not check ownership when no actor is supplied (internal callers)', async () => {
+    await employeeDocumentService.findAll('target');
+
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+    expect(prisma.employeeDocument.findMany).toHaveBeenCalled();
+  });
+});
+
 describe('employeeDocumentService.create', () => {
   beforeEach(() => {
     vi.clearAllMocks();

@@ -124,7 +124,20 @@ export function loadGoogleIdentityServices(): Promise<void> {
  * callback alone the promise would hang forever and the button would look
  * stuck, so the GIS moment notification (dismissed / skipped / not displayed)
  * rejects as well. A hard timeout backstops the cases GIS reports nothing at
- * all (e.g. a suppressed One Tap under a browser policy).
+ * all.
+ *
+ * **Known limitation — one-tap suppression.** `prompt()` (One Tap) is the only
+ * GIS entry point that can complete a sign-in *without* a user gesture, and
+ * browsers are free to suppress it: Safari/Firefox ITP treats it as a
+ * third-party frame and blocks it outright, and an enterprise policy
+ * (`ThirdPartyCookiesBlocked`, Chrome's `BlockThirdPartyCookies`) does the
+ * same. When that happens `isNotDisplayedMoment()` reports it and this promise
+ * rejects with "Pilih akun Google dibatalkan", leaving the button usable for a
+ * retry — it does NOT silently hang, which was the earlier failure mode. The
+ * alternative (`disableAutoSelect` + an explicit `renderButton`) needs a
+ * browser check we cannot run in CI against a real IdP policy, so the timeout
+ * and moment-notification fallbacks here are the mitigation. The button is not
+ * the only way in: password login and Microsoft SSO are unaffected.
  */
 export async function loginWithGoogle(
   clientId: string,

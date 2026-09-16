@@ -7,7 +7,7 @@ import type { Request, Response, NextFunction } from 'express';
 vi.mock('@/lib/prisma', () => ({ prisma: {} }));
 vi.mock('@/lib/redis', () => ({ redis: {} }));
 
-import { matchesMagicBytes, verifyStoredFile, uploadsAuth } from './upload';
+import { matchesMagicBytes, verifyStoredFile, uploadsAuth, uploadFilenameFor } from './upload';
 import { generateAccessToken } from '@/lib/jwt';
 import { ApiError } from './error';
 
@@ -51,6 +51,38 @@ describe('matchesMagicBytes', () => {
   it('rejects MIME types outside the allow-list entirely', () => {
     expect(matchesMagicBytes('text/html', Buffer.from('<html>'))).toBe(false);
     expect(matchesMagicBytes('application/x-php', phpScript)).toBe(false);
+  });
+});
+
+describe('uploadFilenameFor', () => {
+  it('derives the extension from the MIME table, never the client filename', () => {
+    expect(uploadFilenameFor('image/png')).toMatch(/^[0-9a-f-]{36}\.png$/);
+    expect(uploadFilenameFor('application/pdf')).toMatch(/^[0-9a-f-]{36}\.pdf$/);
+    expect(uploadFilenameFor('audio/webm')).toMatch(/^[0-9a-f-]{36}\.webm$/);
+  });
+
+  it('never trusts a caller-declared extension for a known MIME type', () => {
+    // There is no client filename in the signature at all — the only input is
+    // the declared MIME type, which the magic-byte check then has to back up.
+    const name = uploadFilenameFor('image/jpeg');
+    expect(name.endsWith('.jpg')).toBe(true);
+    expect(name).not.toContain('.php');
+    expect(name).not.toContain('.html');
+  });
+
+  it('falls back to .bin for a MIME type outside the allow-list', () => {
+    expect(uploadFilenameFor('application/x-php')).toMatch(/^[0-9a-f-]{36}\.bin$/);
+  });
+
+  it('mints a distinct crypto-random name for every upload (blob uniqueness)', () => {
+    // This uniqueness is what lets `cleanupBlobBestEffort` reclaim a record's
+    // blob without asking whether another record shares the URL (BUG 3).
+    const names = new Set(Array.from({ length: 200 }, () => uploadFilenameFor('image/png')));
+
+    expect(names.size).toBe(200);
+    for (const name of names) {
+      expect(name).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.png$/);
+    }
   });
 });
 

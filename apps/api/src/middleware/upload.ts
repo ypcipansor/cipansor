@@ -82,24 +82,36 @@ export function matchesMagicBytes(mimetype: string, buf: Buffer): boolean {
   return allowed ? allowed.matches(buf) : false;
 }
 
+/**
+ * The stored filename for an upload of `mimetype`.
+ *
+ * Extension comes from the MIME table above, never from the client-supplied
+ * filename (which could smuggle .php, .html, ...).
+ *
+ * The name itself is crypto-random rather than `Date.now()` plus
+ * `Math.random()`. uploadsAuth below proves *that* a caller is signed in but
+ * not *which* files they may read, so until that gap is closed the filename
+ * is the only thing standing between one santri's documents and another
+ * parent's browser. A timestamp plus a non-cryptographic PRNG is guessable:
+ * the upload minute is often known, and Math.random() is not seeded for
+ * unpredictability. This is defence in depth, not authorisation.
+ *
+ * Uniqueness is also what lets record-delete paths reclaim a blob without
+ * asking whether another record shares the URL — see `cleanupBlobBestEffort`
+ * in `utils/cloud-storage.ts`.
+ */
+export function uploadFilenameFor(mimetype: string): string {
+  const extension = ALLOWED_TYPES[mimetype]?.extension ?? '.bin';
+  return `${randomUUID()}${extension}`;
+}
+
 // Configure storage
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => {
     cb(null, uploadDir);
   },
   filename: (_req, file, cb) => {
-    // Extension comes from the MIME table above, never from the client-supplied
-    // filename (which could smuggle .php, .html, ...).
-    //
-    // The name itself is crypto-random rather than `Date.now()` plus
-    // `Math.random()`. uploadsAuth below proves *that* a caller is signed in but
-    // not *which* files they may read, so until that gap is closed the filename
-    // is the only thing standing between one santri's documents and another
-    // parent's browser. A timestamp plus a non-cryptographic PRNG is guessable:
-    // the upload minute is often known, and Math.random() is not seeded for
-    // unpredictability. This is defence in depth, not authorisation.
-    const extension = ALLOWED_TYPES[file.mimetype]?.extension ?? '.bin';
-    cb(null, `${randomUUID()}${extension}`);
+    cb(null, uploadFilenameFor(file.mimetype));
   },
 });
 

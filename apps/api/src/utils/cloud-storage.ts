@@ -199,6 +199,19 @@ export async function deleteFromCloudStorage(
  * leaving one orphan behind (which a later sweep can reclaim). For paths that
  * must know whether the blob was actually removed (e.g. rollback), call
  * {@link deleteFromCloudStorage} directly and handle its rejection.
+ *
+ * **No cross-record owner probe, deliberately.** The blob name is a
+ * `crypto.randomUUID()` minted per physical upload (see the multer disk
+ * storage in `middleware/upload.ts`), so a stored URL identifies exactly one
+ * upload and is never shared between records. There is no server-side path
+ * that copies one record's `fileUrl`/`photoUrl`/`coverUrl` onto another record
+ * — the only "duplicate" flows in this codebase are client-driven re-uploads,
+ * which mint a fresh name. Every cleanup caller therefore deletes a blob whose
+ * only possible referent is the row it just removed. Should a copy/clone path
+ * ever be added, it must consult `findBlobOwner` (upload.service.ts) before
+ * calling this, or the delete would destroy a blob another record still points
+ * at. Covered by `cleanupBlobBestEffort`'s uniqueness tests in
+ * `cloud-storage.test.ts`.
  */
 export async function cleanupBlobBestEffort(
   fileUrl: string | null | undefined
@@ -251,19 +264,58 @@ export function getStorageConfig() {
   };
 }
 /**
+ * The storage account this application is configured to use, or null when no
+ * account is configured.
+ *
+ * Read from `AZURE_STORAGE_ACCOUNT` first, falling back to the `AccountName`
+ * of the connection string — the same two sources {@link resolveCredentials}
+ * draws from, so parsing and signing can never disagree about which account is
+ * ours.
+ */
+export function configuredStorageAccount(): string | null {
+  const envName = process.env.AZURE_STORAGE_ACCOUNT?.trim();
+  if (envName) return envName.toLowerCase();
+  const fromConnectionString = process.env.AZURE_STORAGE_CONNECTION_STRING?.match(
+    /AccountName=([^;]+)/
+  )?.[1];
+  return fromConnectionString ? fromConnectionString.trim().toLowerCase() : null;
+}
+
+/**
  * Parse a raw Blob Storage URL into its container and blob name.
  *
  * Format: `https://<account>.blob.core.windows.net/<container>/<blob-path>`
  * Used by the on-demand SAS endpoint to translate a persisted stable URL
  * (no SAS) back into the container/blob needed to mint a fresh link.
+ *
+ * The host must be the account THIS application is configured for. A bare
+ * `[^/]+\.blob\.core\.windows\.net` match accepted any Azure account, so a
+ * foreign URL with the same container/blob path was signed with our own key —
+ * turning "mint a link for my document" into "mint a link for anything on any
+ * account whose URL you can guess". Returning null for a foreign host makes the
+ * caller refuse it instead (see `resolveSasForBlob`).
  */
 export function parseBlobUrl(url: string): { containerName: string; blobName: string } | null {
-  // Container: up to the first `/` or `?`; blob: everything after the next `/`
-  // up to any query string or fragment that a SAS may have carried.
-  const m = url.match(/^https?:\/\/[^/]+\.blob\.core\.windows\.net\/([^/?]+)\/([^?#]+)/);
-  if (!m) return null;
-  const containerName = decodeURIComponent(m[1]);
-  const blobName = decodeURIComponent(m[2]);
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null;
+
+  const host = parsed.hostname.match(/^([^.]+)\.blob\.core\.windows\.net$/i);
+  if (!host) return null;
+
+  const account = configuredStorageAccount();
+  if (!account || host[1].toLowerCase() !== account) return null;
+
+  // Container: the first path segment; blob: the remainder. A query string or
+  // fragment that a SAS may have carried is dropped by URL parsing.
+  const segments = parsed.pathname.replace(/^\/+/, '').split('/');
+  if (segments.length < 2) return null;
+  const containerName = decodeURIComponent(segments[0]);
+  const blobName = decodeURIComponent(segments.slice(1).join('/'));
   if (!containerName || !blobName) return null;
   return { containerName, blobName };
 }

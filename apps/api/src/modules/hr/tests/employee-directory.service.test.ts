@@ -47,6 +47,7 @@ function teacherUser(overrides: Record<string, unknown> = {}) {
       bankAccountName: 'Agus Setiawan',
     },
     staff: null,
+    userRoles: [{ role: { code: 'SDIT_GURU' } }],
     ...overrides,
   };
 }
@@ -65,9 +66,19 @@ function staffUser(overrides: Record<string, unknown> = {}) {
       departmentRel: null,
       joinDate: new Date('2020-04-01T00:00:00.000Z'),
     },
+    userRoles: [{ role: { code: 'PERAWAT' } }],
     ...overrides,
   };
 }
+
+/** A foundation role that sees every unit. */
+const FOUNDATION_ACTOR = { id: 'user-1', roleCode: 'YAYASAN_KETUA', unitId: null };
+/** A personnel administrator scoped to their own unit. */
+const UNIT_ADMIN_ACTOR = { id: 'user-3', roleCode: 'SDIT_ADMIN', unitId: 'unit-1' };
+/** A plain teacher — no personnel-admin role. */
+const TEACHER_ACTOR = { id: 'user-7', roleCode: 'SDIT_GURU', unitId: 'unit-1' };
+/** A cross-unit service role: sees all units, but not personal data. */
+const CROSS_UNIT_ACTOR = { id: 'user-8', roleCode: 'PERAWAT', unitId: 'unit-9' };
 
 describe('getEmployeeDirectory', () => {
   beforeEach(() => {
@@ -79,7 +90,7 @@ describe('getEmployeeDirectory', () => {
   it('flattens a Teacher profile into the shared HrEmployee shape', async () => {
     (prisma.user.findMany as any).mockResolvedValue([teacherUser()]);
 
-    const { data } = await getEmployeeDirectory({ page: 1, limit: 20 });
+    const { data } = await getEmployeeDirectory({ page: 1, limit: 20 }, UNIT_ADMIN_ACTOR);
 
     expect(data).toHaveLength(1);
     expect(data[0]).toMatchObject({
@@ -105,7 +116,7 @@ describe('getEmployeeDirectory', () => {
   it('flattens a Staff profile, reporting a null gender honestly', async () => {
     (prisma.user.findMany as any).mockResolvedValue([staffUser()]);
 
-    const { data } = await getEmployeeDirectory({ page: 1, limit: 20 });
+    const { data } = await getEmployeeDirectory({ page: 1, limit: 20 }, UNIT_ADMIN_ACTOR);
 
     expect(data[0]).toMatchObject({
       fullName: 'Ibu Sri Wahyuni',
@@ -122,48 +133,68 @@ describe('getEmployeeDirectory', () => {
       staffUser({ isActive: false }),
     ]);
 
-    const { data } = await getEmployeeDirectory({ page: 1, limit: 20 });
+    const { data } = await getEmployeeDirectory({ page: 1, limit: 20 }, UNIT_ADMIN_ACTOR);
 
     expect(data[0].status).toBe('INACTIVE');
   });
 
-  it('filters to TEACHER/STAFF users and applies unit, role, status and search', async () => {
-    await getEmployeeDirectory({
-      page: 2,
-      limit: 10,
-      unitId: 'unit-9',
-      role: 'STAFF',
-      status: 'ACTIVE',
-      search: 'sri',
-    });
+  it('filters to HR member roles and applies unit, role, status and search', async () => {
+    await getEmployeeDirectory(
+      {
+        page: 2,
+        limit: 10,
+        unitId: 'unit-9',
+        role: 'STAFF',
+        status: 'ACTIVE',
+        search: 'sri',
+      },
+      FOUNDATION_ACTOR
+    );
 
     const call = (prisma.user.findMany as any).mock.calls[0][0];
     expect(call.where).toMatchObject({
       deletedAt: null,
       unitId: 'unit-9',
-      role: 'STAFF',
       isActive: true,
     });
+    // Membership is a live RoleCode assignment, not the legacy `role` column.
+    expect(call.where.userRoles.some).toMatchObject({
+      isActive: true,
+      role: { code: { in: expect.arrayContaining(['SDIT_TATA_USAHA', 'PERAWAT']) } },
+    });
+    expect(call.where.role).toBeUndefined();
     expect(call.where.OR).toEqual(
-      expect.arrayContaining([
-        { name: { contains: 'sri', mode: 'insensitive' } },
-      ])
+      expect.arrayContaining([{ name: { contains: 'sri', mode: 'insensitive' } }])
     );
     expect(call.skip).toBe(10);
     expect(call.take).toBe(10);
   });
 
-  it('defaults to both TEACHER and STAFF when no role filter is given', async () => {
-    await getEmployeeDirectory({ page: 1, limit: 20 });
+  it('filters by RoleCode group for role=TEACHER (BUG 6)', async () => {
+    await getEmployeeDirectory({ page: 1, limit: 20, role: 'TEACHER' }, FOUNDATION_ACTOR);
 
     const call = (prisma.user.findMany as any).mock.calls[0][0];
-    expect(call.where.role).toEqual({ in: ['TEACHER', 'STAFF'] });
+    const codes = call.where.userRoles.some.role.code.in;
+    expect(codes).toContain('SDIT_GURU');
+    expect(codes).toContain('PT_DOSEN');
+    // Staff-only codes must not leak into the teacher filter.
+    expect(codes).not.toContain('SDIT_TATA_USAHA');
+    expect(codes).not.toContain('PERAWAT');
+  });
+
+  it('defaults to both teacher and staff RoleCodes when no role filter is given (BUG 6)', async () => {
+    await getEmployeeDirectory({ page: 1, limit: 20 }, FOUNDATION_ACTOR);
+
+    const call = (prisma.user.findMany as any).mock.calls[0][0];
+    const codes = call.where.userRoles.some.role.code.in;
+    expect(codes).toEqual(expect.arrayContaining(['SDIT_GURU', 'SDIT_TATA_USAHA']));
+    expect(call.where.role).toBeUndefined();
   });
 
   it('returns pagination metadata from the count and page size', async () => {
     (prisma.user.count as any).mockResolvedValue(23);
 
-    const result = await getEmployeeDirectory({ page: 2, limit: 10 });
+    const result = await getEmployeeDirectory({ page: 2, limit: 10 }, FOUNDATION_ACTOR);
 
     expect(result.meta).toEqual({
       page: 2,
@@ -171,6 +202,105 @@ describe('getEmployeeDirectory', () => {
       total: 23,
       totalPages: 3,
     });
+  });
+
+  // ---------------------------------------------------------------
+  // Unit scoping (BUG 1)
+  // ---------------------------------------------------------------
+
+  it('pins a non-admin caller to their own unit and ignores the client unitId', async () => {
+    await getEmployeeDirectory({ page: 1, limit: 20, unitId: 'unit-99' }, TEACHER_ACTOR);
+
+    const call = (prisma.user.findMany as any).mock.calls[0][0];
+    expect(call.where.unitId).toBe('unit-1');
+  });
+
+  it('narrows a unit-less non-admin to their own record, never the whole directory', async () => {
+    await getEmployeeDirectory(
+      { page: 1, limit: 20, unitId: 'unit-99' },
+      { id: 'user-7', roleCode: 'SDIT_GURU', unitId: null }
+    );
+
+    const call = (prisma.user.findMany as any).mock.calls[0][0];
+    expect(call.where.id).toBe('user-7');
+    expect(call.where.unitId).toBeUndefined();
+  });
+
+  it('lets a personnel admin choose a unit', async () => {
+    await getEmployeeDirectory({ page: 1, limit: 20, unitId: 'unit-9' }, UNIT_ADMIN_ACTOR);
+
+    const call = (prisma.user.findMany as any).mock.calls[0][0];
+    expect(call.where.unitId).toBe('unit-9');
+  });
+
+  it('lets a foundation role list across every unit', async () => {
+    await getEmployeeDirectory({ page: 1, limit: 20 }, FOUNDATION_ACTOR);
+
+    const call = (prisma.user.findMany as any).mock.calls[0][0];
+    expect(call.where.unitId).toBeUndefined();
+  });
+
+  // ---------------------------------------------------------------
+  // Sensitive fields (BUG 1)
+  // ---------------------------------------------------------------
+
+  it('OMITS NIK and bank fields for a plain teacher colleague (BUG 1)', async () => {
+    (prisma.user.findMany as any).mockResolvedValue([teacherUser()]);
+
+    const { data } = await getEmployeeDirectory({ page: 1, limit: 20 }, TEACHER_ACTOR);
+
+    expect(data[0].nik).toBeUndefined();
+    expect(data[0].bankName).toBeUndefined();
+    expect(data[0].bankAccountNumber).toBeUndefined();
+    expect(data[0].bankAccountName).toBeUndefined();
+  });
+
+  it('omits NIK and bank fields for a cross-unit service role (BUG 1)', async () => {
+    (prisma.user.findMany as any).mockResolvedValue([teacherUser()]);
+
+    const { data } = await getEmployeeDirectory({ page: 1, limit: 20 }, CROSS_UNIT_ACTOR);
+
+    expect(data[0].nik).toBeUndefined();
+    expect(data[0].bankName).toBeUndefined();
+  });
+
+  it('includes NIK and bank fields for a personnel admin in the same unit', async () => {
+    (prisma.user.findMany as any).mockResolvedValue([teacherUser()]);
+
+    const { data } = await getEmployeeDirectory({ page: 1, limit: 20 }, UNIT_ADMIN_ACTOR);
+
+    expect(data[0].nik).toBe('3201010101010001');
+    expect(data[0].bankName).toBe('BSI');
+    expect(data[0].bankAccountNumber).toBe('123');
+  });
+
+  it('includes NIK and bank fields for a foundation role', async () => {
+    (prisma.user.findMany as any).mockResolvedValue([teacherUser()]);
+
+    const { data } = await getEmployeeDirectory({ page: 1, limit: 20 }, FOUNDATION_ACTOR);
+
+    expect(data[0].nik).toBe('3201010101010001');
+    expect(data[0].bankAccountName).toBe('Agus Setiawan');
+  });
+
+  it('includes an employee’s own NIK even without an admin role', async () => {
+    (prisma.user.findMany as any).mockResolvedValue([teacherUser({ id: 'user-7' })]);
+
+    const { data } = await getEmployeeDirectory(
+      { page: 1, limit: 20 },
+      { id: 'user-7', roleCode: 'SDIT_GURU', unitId: 'unit-1' }
+    );
+
+    expect(data[0].nik).toBe('3201010101010001');
+  });
+
+  it('hides sensitive fields when no actor is supplied (fail closed)', async () => {
+    (prisma.user.findMany as any).mockResolvedValue([teacherUser()]);
+
+    const { data } = await getEmployeeDirectory({ page: 1, limit: 20 });
+
+    expect(data[0].nik).toBeUndefined();
+    expect(data[0].bankName).toBeUndefined();
   });
 });
 
@@ -182,22 +312,72 @@ describe('getEmployeeById', () => {
   it('returns the flattened employee for a teacher id', async () => {
     (prisma.user.findFirst as any).mockResolvedValue(teacherUser());
 
-    const employee = await getEmployeeById('user-1');
+    const employee = await getEmployeeById('user-1', FOUNDATION_ACTOR);
 
     expect(employee?.id).toBe('user-1');
     expect(employee?.role).toBe('TEACHER');
-    // The lookup refuses deleted and non-teacher/staff users up front.
+    // The lookup refuses deleted and non-HR users up front.
     const call = (prisma.user.findFirst as any).mock.calls[0][0];
     expect(call.where).toMatchObject({
       id: 'user-1',
       deletedAt: null,
-      role: { in: ['TEACHER', 'STAFF'] },
     });
+    expect(call.where.userRoles.some).toMatchObject({
+      isActive: true,
+      role: { code: { in: expect.arrayContaining(['SDIT_GURU']) } },
+    });
+    expect(call.where.role).toBeUndefined();
   });
 
-  it('returns null when the id names no teacher or staff user', async () => {
+  it('returns null when the id names no HR user', async () => {
     (prisma.user.findFirst as any).mockResolvedValue(null);
 
     await expect(getEmployeeById('missing')).resolves.toBeNull();
+  });
+
+  it('returns null for an employee in another unit when the actor is a plain teacher (BUG 1)', async () => {
+    (prisma.user.findFirst as any).mockResolvedValue(
+      teacherUser({ unitId: 'unit-99', unit: { id: 'unit-99', name: 'SMP IT' } })
+    );
+
+    await expect(getEmployeeById('user-1', TEACHER_ACTOR)).resolves.toBeNull();
+  });
+
+  it('returns the record (masked) for a same-unit teacher colleague', async () => {
+    (prisma.user.findFirst as any).mockResolvedValue(teacherUser());
+
+    const employee = await getEmployeeById('user-1', TEACHER_ACTOR);
+
+    expect(employee?.fullName).toBe('Agus Setiawan');
+    expect(employee?.nik).toBeUndefined();
+    expect(employee?.bankName).toBeUndefined();
+  });
+
+  it('allows a personnel admin to read an employee in their unit with sensitive fields', async () => {
+    (prisma.user.findFirst as any).mockResolvedValue(teacherUser());
+
+    const employee = await getEmployeeById('user-1', UNIT_ADMIN_ACTOR);
+
+    expect(employee?.nik).toBe('3201010101010001');
+  });
+
+  it('lets a foundation role read an employee in any unit', async () => {
+    (prisma.user.findFirst as any).mockResolvedValue(
+      teacherUser({ unitId: 'unit-99', unit: { id: 'unit-99', name: 'SMP IT' } })
+    );
+
+    const employee = await getEmployeeById('user-1', FOUNDATION_ACTOR);
+
+    expect(employee?.id).toBe('user-1');
+    expect(employee?.nik).toBe('3201010101010001');
+  });
+
+  it('hides sensitive fields when no actor is supplied (fail closed)', async () => {
+    (prisma.user.findFirst as any).mockResolvedValue(teacherUser());
+
+    const employee = await getEmployeeById('user-1');
+
+    expect(employee?.nik).toBeUndefined();
+    expect(employee?.bankName).toBeUndefined();
   });
 });

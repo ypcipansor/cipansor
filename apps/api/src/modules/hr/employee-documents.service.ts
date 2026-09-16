@@ -111,7 +111,29 @@ export const employeeDocumentService = {
     });
   },
 
-  async findAll(userId: string) {
+  async findAll(userId: string, actor?: EmployeeDocumentActor) {
+    if (actor) {
+      const target = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          unitId: true,
+          userRoles: {
+            where: { isActive: true },
+            orderBy: { isPrimary: 'desc' },
+            select: { unitId: true },
+          },
+        },
+      });
+      if (!target) throw Errors.notFound('User');
+      // Same rule as create/delete: only the owner, a personnel administrator
+      // in the owner's unit, or a foundation role may read the metadata. Before
+      // this check any TEACHER/STAFF could list any user's documents.
+      await assertActorMayManage(actor, {
+        userId,
+        unitId: target.userRoles[0]?.unitId ?? target.unitId,
+      });
+    }
+
     return prisma.employeeDocument.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },

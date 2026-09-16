@@ -6,6 +6,7 @@ import {
   parseBlobUrl,
   deleteFromCloudStorage,
   isAllowedContainer,
+  cleanupBlobBestEffort,
 } from './cloud-storage';
 
 const {
@@ -194,34 +195,114 @@ describe('Cloud Storage Utility (Azure Blob Storage Provider)', () => {
 });
 
 describe('parseBlobUrl', () => {
-  it('parses a raw blob URL into container and blob', () => {
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  it('parses a URL for the account this application is configured for', () => {
+    process.env.AZURE_STORAGE_ACCOUNT = 'cipansorstore';
+
     expect(
-      parseBlobUrl('https://acct.blob.core.windows.net/e-office-documents/naskah.pdf')
+      parseBlobUrl('https://cipansorstore.blob.core.windows.net/e-office-documents/naskah.pdf')
     ).toEqual({ containerName: 'e-office-documents', blobName: 'naskah.pdf' });
   });
 
-  it('decodes URL-encoded container/blob names', () => {
+  it('derives the account from the connection string when AZURE_STORAGE_ACCOUNT is unset', () => {
+    delete process.env.AZURE_STORAGE_ACCOUNT;
+    process.env.AZURE_STORAGE_CONNECTION_STRING = CONNECTION_STRING;
+
     expect(
-      parseBlobUrl('https://acct.blob.core.windows.net/student-documents/foto%20siswa%2F1.jpg')
+      parseBlobUrl('https://cipansorstore.blob.core.windows.net/e-office-documents/naskah.pdf')
+    ).toEqual({ containerName: 'e-office-documents', blobName: 'naskah.pdf' });
+  });
+
+  it('REJECTS a foreign Azure account (BUG 2)', () => {
+    process.env.AZURE_STORAGE_ACCOUNT = 'cipansorstore';
+
+    // Same container/blob path, different account: signing this with our own
+    // key would mint a link for a blob we do not own.
+    expect(
+      parseBlobUrl('https://attackerstore.blob.core.windows.net/e-office-documents/naskah.pdf')
+    ).toBeNull();
+    expect(
+      parseBlobUrl('https://other.blob.core.windows.net/cipansor-documents/ktp.pdf')
+    ).toBeNull();
+  });
+
+  it('REJECTS every blob host when no account is configured (fail closed)', () => {
+    delete process.env.AZURE_STORAGE_ACCOUNT;
+    delete process.env.AZURE_STORAGE_CONNECTION_STRING;
+
+    expect(
+      parseBlobUrl('https://cipansorstore.blob.core.windows.net/e-office-documents/naskah.pdf')
+    ).toBeNull();
+  });
+
+  it('matches the configured account case-insensitively', () => {
+    process.env.AZURE_STORAGE_ACCOUNT = 'CipansorStore';
+
+    expect(
+      parseBlobUrl('https://cipansorstore.blob.core.windows.net/e-office-documents/a.pdf')
+    ).toEqual({ containerName: 'e-office-documents', blobName: 'a.pdf' });
+  });
+
+  it('decodes URL-encoded container/blob names', () => {
+    process.env.AZURE_STORAGE_ACCOUNT = 'cipansorstore';
+
+    expect(
+      parseBlobUrl('https://cipansorstore.blob.core.windows.net/student-documents/foto%20siswa%2F1.jpg')
     ).toEqual({ containerName: 'student-documents', blobName: 'foto siswa/1.jpg' });
   });
 
   it('ignores a query string on the blob URL', () => {
+    process.env.AZURE_STORAGE_ACCOUNT = 'cipansorstore';
+
     expect(
-      parseBlobUrl('https://acct.blob.core.windows.net/e-office-documents/a.pdf?sv=1&sig=x')
+      parseBlobUrl('https://cipansorstore.blob.core.windows.net/e-office-documents/a.pdf?sv=1&sig=x')
     ).toEqual({ containerName: 'e-office-documents', blobName: 'a.pdf' });
   });
 
   it('returns null for a local /uploads URL', () => {
+    process.env.AZURE_STORAGE_ACCOUNT = 'cipansorstore';
+
     expect(parseBlobUrl('https://cipansor.or.id/uploads/a.pdf')).toBeNull();
   });
 
   it('returns null for a non-blob external URL', () => {
+    process.env.AZURE_STORAGE_ACCOUNT = 'cipansorstore';
+
     expect(parseBlobUrl('https://example.com/a.pdf')).toBeNull();
   });
 
+  it('returns null for a lookalike host that merely contains the account name', () => {
+    process.env.AZURE_STORAGE_ACCOUNT = 'cipansorstore';
+
+    expect(
+      parseBlobUrl('https://cipansorstore.blob.core.windows.net.attacker.com/a/b.pdf')
+    ).toBeNull();
+    expect(
+      parseBlobUrl('https://evil-cipansorstore.blob.core.windows.net/a/b.pdf')
+    ).toBeNull();
+  });
+
   it('returns null for a malformed URL', () => {
+    process.env.AZURE_STORAGE_ACCOUNT = 'cipansorstore';
+
     expect(parseBlobUrl('not-a-url')).toBeNull();
+  });
+
+  it('returns null for a URL with no blob path', () => {
+    process.env.AZURE_STORAGE_ACCOUNT = 'cipansorstore';
+
+    expect(
+      parseBlobUrl('https://cipansorstore.blob.core.windows.net/e-office-documents')
+    ).toBeNull();
   });
 });
 
@@ -264,6 +345,60 @@ describe('deleteFromCloudStorage', () => {
     await expect(deleteFromCloudStorage('e-office-documents', 'naskah.pdf')).rejects.toThrow(
       /Gagal menghapus berkas dari Azure Blob Storage/
     );
+  });
+});
+
+describe('cleanupBlobBestEffort', () => {
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    vi.clearAllMocks();
+    process.env.AZURE_STORAGE_CONNECTION_STRING = CONNECTION_STRING;
+    process.env.AZURE_STORAGE_ACCOUNT = 'cipansorstore';
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  it('deletes the blob for a URL on this account (BUG 3: URL uniqueness assumed)', async () => {
+    // The recorded filename is a per-upload crypto.randomUUID (see
+    // `uploadFilenameFor` in middleware/upload.ts and its uniqueness test), so
+    // the URL identifies exactly one upload and no cross-record probe is
+    // needed. If a copy/clone path is ever added it must call `findBlobOwner`
+    // first — the assumption this test pins.
+    await expect(
+      cleanupBlobBestEffort(
+        'https://cipansorstore.blob.core.windows.net/cipansor-documents/9f1c.pdf'
+      )
+    ).resolves.toBe(true);
+
+    expect(mockDeleteBlob).toHaveBeenCalledWith('9f1c.pdf', { deleteSnapshots: 'include' });
+  });
+
+  it('REFUSES to delete a blob hosted on a foreign Azure account (BUG 2)', async () => {
+    await expect(
+      cleanupBlobBestEffort('https://attackerstore.blob.core.windows.net/cipansor-documents/x.pdf')
+    ).resolves.toBe(false);
+
+    expect(mockDeleteBlob).not.toHaveBeenCalled();
+  });
+
+  it('returns false and does not throw for a non-blob URL', async () => {
+    await expect(cleanupBlobBestEffort('https://cipansor.or.id/uploads/a.pdf')).resolves.toBe(
+      false
+    );
+    await expect(cleanupBlobBestEffort(null)).resolves.toBe(false);
+    expect(mockDeleteBlob).not.toHaveBeenCalled();
+  });
+
+  it('swallows a remote delete failure and reports it as false', async () => {
+    mockDeleteBlob.mockRejectedValueOnce(new Error('Network error'));
+
+    await expect(
+      cleanupBlobBestEffort('https://cipansorstore.blob.core.windows.net/cipansor-documents/a.pdf')
+    ).resolves.toBe(false);
   });
 });
 

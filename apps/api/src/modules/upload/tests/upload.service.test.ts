@@ -309,6 +309,62 @@ describe('resolveSasForBlob', () => {
     expect(result.downloadUrl).toContain('sig=fakeSas');
     expect(generateSasUrl).toHaveBeenCalledWith('e-office-documents', 'naskah.pdf', 60);
   });
+
+  it('resolves a letter attachment uploaded into the shared cipansor-documents container (BUG 4)', async () => {
+    // The upload middleware routes to `cipansor-documents` (its default), so a
+    // letter file can live there. Probing only `e-office-documents` left the
+    // letter with no owner and its SAS request 403'd.
+    (parseBlobUrl as any).mockReturnValue({
+      containerName: 'cipansor-documents',
+      blobName: 'lampiran.pdf',
+    });
+    (prisma.letterAttachment.findFirst as any).mockResolvedValue({ letterId: 'letter-1' });
+    (seesAllUnits as any).mockReturnValue(false);
+    (prisma.letter.count as any).mockResolvedValue(1);
+
+    const result = await resolveSasForBlob(
+      'https://store.blob.core.windows.net/cipansor-documents/lampiran.pdf',
+      unitHrAdmin
+    );
+
+    expect(result.downloadUrl).toContain('sig=fakeSas');
+    expect(generateSasUrl).toHaveBeenCalledWith('cipansor-documents', 'lampiran.pdf', 60);
+  });
+
+  it('resolves a letter naskah stored in the shared cipansor-documents container (BUG 4)', async () => {
+    (parseBlobUrl as any).mockReturnValue({
+      containerName: 'cipansor-documents',
+      blobName: 'naskah.pdf',
+    });
+    (prisma.letter.findFirst as any).mockResolvedValue({ id: 'letter-1' });
+    (seesAllUnits as any).mockReturnValue(false);
+    (prisma.letter.count as any).mockResolvedValue(1);
+
+    const result = await resolveSasForBlob(
+      'https://store.blob.core.windows.net/cipansor-documents/naskah.pdf',
+      unitHrAdmin
+    );
+
+    expect(result.downloadUrl).toContain('sig=fakeSas');
+  });
+
+  it('still refuses a shared-container letter blob for an actor outside its scope (BUG 4)', async () => {
+    (parseBlobUrl as any).mockReturnValue({
+      containerName: 'cipansor-documents',
+      blobName: 'lampiran.pdf',
+    });
+    (prisma.letterAttachment.findFirst as any).mockResolvedValue({ letterId: 'letter-1' });
+    (seesAllUnits as any).mockReturnValue(false);
+    (prisma.letter.count as any).mockResolvedValue(0);
+
+    await expect(
+      resolveSasForBlob(
+        'https://store.blob.core.windows.net/cipansor-documents/lampiran.pdf',
+        sameUnitPeer
+      )
+    ).rejects.toThrow(/tidak berwenang/);
+    expect(generateSasUrl).not.toHaveBeenCalled();
+  });
 });
 
 describe('discardOrphanBlob', () => {

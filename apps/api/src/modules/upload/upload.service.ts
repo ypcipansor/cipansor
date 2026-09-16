@@ -58,6 +58,22 @@ async function ownerForStudentDocument(blobUrl: string): Promise<BlobOwner | nul
   return null;
 }
 
+/** Locate the letter or letter attachment that references `blobUrl`. */
+async function ownerForLetter(blobUrl: string): Promise<BlobOwner | null> {
+  const letter = await prisma.letter.findFirst({
+    where: { fileUrl: blobUrl },
+    select: { id: true },
+  });
+  if (letter) return { kind: 'letter', letterId: letter.id };
+
+  const attachment = await prisma.letterAttachment.findFirst({
+    where: { fileUrl: blobUrl },
+    select: { letterId: true },
+  });
+  if (attachment) return { kind: 'letter', letterId: attachment.letterId };
+  return null;
+}
+
 /**
  * Locate the record that references `blobUrl` among the application's private
  * containers. Returns null when no record owns it.
@@ -68,18 +84,7 @@ async function ownerForStudentDocument(blobUrl: string): Promise<BlobOwner | nul
  */
 async function findBlobOwner(containerName: string, blobUrl: string): Promise<BlobOwner | null> {
   if (containerName === 'e-office-documents') {
-    const letter = await prisma.letter.findFirst({
-      where: { fileUrl: blobUrl },
-      select: { id: true },
-    });
-    if (letter) return { kind: 'letter', letterId: letter.id };
-
-    const attachment = await prisma.letterAttachment.findFirst({
-      where: { fileUrl: blobUrl },
-      select: { letterId: true },
-    });
-    if (attachment) return { kind: 'letter', letterId: attachment.letterId };
-    return null;
+    return ownerForLetter(blobUrl);
   }
 
   if (containerName === 'student-documents') {
@@ -91,6 +96,14 @@ async function findBlobOwner(containerName: string, blobUrl: string): Promise<Bl
   // ---- cipansor-documents: the shared default container ----
   // Every distinct record type that can land here is tried in turn; the first
   // match decides the authorization rule.
+  //
+  // Correspondence is probed here too, not only in `e-office-documents`. The
+  // upload middleware routes every upload to this container (its default), so
+  // a letter attachment uploaded through it lands here; searching only
+  // `e-office-documents` meant a letter file had "no owner" and its SAS request
+  // 403'd even though the record existed and the caller could read it.
+  const letter = await ownerForLetter(blobUrl);
+  if (letter) return letter;
 
   const employeeDoc = await prisma.employeeDocument.findFirst({
     where: { fileUrl: blobUrl },

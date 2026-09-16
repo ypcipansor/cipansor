@@ -48,7 +48,14 @@ export interface HrEmployee {
   birthPlace: string | null;
   birthDate: string | null;
   nationalId?: string;
-  nik: string | null;
+  /**
+   * Sensitive identity/bank fields are only present when the caller may see
+   * them (the person themselves, a personnel administrator for their unit, or
+   * a foundation role). For anyone else the field is omitted entirely rather
+   * than sent empty — an absent key cannot leak a value that a later refactor
+   * forgets to mask.
+   */
+  nik?: string | null;
   taxId?: string;
   npwp?: string;
   maritalStatus: string | null;
@@ -74,10 +81,10 @@ export interface HrEmployee {
   educationInstitution: string | null;
   graduationYear: number | null;
 
-  // Bank info
-  bankName: string | null;
-  bankAccountNumber: string | null;
-  bankAccountName: string | null;
+  // Bank info — omitted for callers who may not read personnel data (see nik).
+  bankName?: string | null;
+  bankAccountNumber?: string | null;
+  bankAccountName?: string | null;
 
   // Insurance
   bpjsKesehatan?: string;

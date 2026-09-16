@@ -147,6 +147,47 @@ export const ALUMNI_ROLE_CODES: readonly string[] = [
   "PT_ALUMNI",
 ];
 
+/** HrEmployeeRole, kept local to avoid importing the DTO type here. */
+export type HrDirectoryRole = "TEACHER" | "STAFF";
+
+/**
+ * RoleCodes whose holder appears in the HR employee directory as a teacher.
+ * Mirrors the legacy `UserRole.TEACHER` bucket exactly (see
+ * LEGACY_ROLE_EXPANSION below) so the directory's membership does not change
+ * when the deprecated `User.role` column is dropped.
+ */
+export const HR_TEACHER_ROLE_CODES: readonly string[] = [
+  ...SCHOOL_TEACHER_ROLE_CODES,
+  ...PRINCIPAL_ROLE_CODES,
+  ...VICE_PRINCIPAL_ROLE_CODES,
+  ...PESANTREN_LEADER_ROLE_CODES,
+  ...PESANTREN_EDUCATOR_ROLE_CODES,
+  ...PT_ACADEMIC_ROLE_CODES,
+];
+
+/** RoleCodes whose holder appears in the HR directory as (non-teaching) staff. */
+export const HR_STAFF_ROLE_CODES: readonly string[] = [
+  ...TATA_USAHA_ROLE_CODES,
+  ...BENDAHARA_ROLE_CODES,
+  ...PT_STAFF_ROLE_CODES,
+  ...SUPPORT_ROLE_CODES,
+  ...BUSINESS_ROLE_CODES,
+];
+
+/** Every RoleCode that makes its holder an employee in the directory. */
+export const HR_EMPLOYEE_ROLE_CODES: readonly string[] = [
+  ...HR_TEACHER_ROLE_CODES,
+  ...HR_STAFF_ROLE_CODES,
+];
+
+/** Derive the directory's TEACHER/STAFF label from an active RoleCode. */
+export function hrEmployeeRoleFor(roleCode: string | null | undefined): HrDirectoryRole | null {
+  if (!roleCode) return null;
+  if (HR_TEACHER_ROLE_CODES.includes(roleCode)) return "TEACHER";
+  if (HR_STAFF_ROLE_CODES.includes(roleCode)) return "STAFF";
+  return null;
+}
+
 /**
  * Menulis data alumni (alumni, karier, pendidikan, donasi, acara, kehadiran) —
  * admin dan tata usaha, di lingkup unitnya. Satu sumber untuk API

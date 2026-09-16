@@ -1,8 +1,10 @@
-import { Request, Response, NextFunction } from 'express';
+import { Request, Response } from 'express';
 import { employeeDocumentService, type EmployeeDocumentActor } from './employee-documents.service';
 import { requireUser } from '../../middleware/auth';
 import { z } from 'zod';
 import { EmployeeDocumentType } from '@prisma/client';
+import { asyncHandler } from '../../middleware/error';
+import { ApiResponse } from '../../utils/response';
 
 const createDocumentSchema = z.object({
   userId: z.string().uuid(),
@@ -20,32 +22,20 @@ function actorOf(req: Request): EmployeeDocumentActor {
 }
 
 export const employeeDocumentController = {
-  async create(req: Request, res: Response, next: NextFunction) {
-    try {
-      const data = createDocumentSchema.parse(req.body);
-      const result = await employeeDocumentService.create(data, actorOf(req));
-      res.status(201).json({ success: true, data: result });
-    } catch (error) {
-      next(error);
-    }
-  },
+  create: asyncHandler(async (req: Request, res: Response) => {
+    const data = createDocumentSchema.parse(req.body);
+    const result = await employeeDocumentService.create(data, actorOf(req));
+    res.status(201).json(ApiResponse.success(result));
+  }),
 
-  async findAll(req: Request, res: Response, next: NextFunction) {
-    try {
-      const { userId } = req.params;
-      const result = await employeeDocumentService.findAll(userId);
-      res.json({ success: true, data: result });
-    } catch (error) {
-      next(error);
-    }
-  },
+  findAll: asyncHandler(async (req: Request, res: Response) => {
+    const { userId } = req.params;
+    const result = await employeeDocumentService.findAll(userId, actorOf(req));
+    res.json(ApiResponse.success(result));
+  }),
 
-  async delete(req: Request, res: Response, next: NextFunction) {
-    try {
-      await employeeDocumentService.delete(req.params.id, actorOf(req));
-      res.json({ success: true, message: 'Document deleted' });
-    } catch (error) {
-      next(error);
-    }
-  },
+  delete: asyncHandler(async (req: Request, res: Response) => {
+    await employeeDocumentService.delete(req.params.id, actorOf(req));
+    res.json(ApiResponse.success(null, 'Document deleted'));
+  }),
 };

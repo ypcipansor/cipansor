@@ -191,3 +191,126 @@ test.describe("HR employee directory + documents", () => {
     await apiRequest(session, "DELETE", `/hr/documents/${created.data.id}`);
   });
 });
+
+/**
+ * The access-control half of the employee directory (BUG 1, BUG 5): what a
+ * plain teacher may see and reach. Every assertion drives the real endpoint —
+ * the service scopes the query, the response is what the page receives.
+ */
+test.describe("HR employee directory access control", () => {
+  // A privileged session for building the cross-unit fixtures; the assertions
+  // themselves use the plain teacher's own session.
+  let session: AuthSession;
+
+  test.beforeEach(async ({ page }) => {
+    session = await loginAs(page, "superAdmin");
+  });
+
+  test("a plain teacher's directory never leaks NIK or bank details (BUG 1)", async () => {
+    const teacher = await apiLogin(SEED_USERS.teacher);
+
+    const list = await apiRequest<{
+      success: boolean;
+      data: Array<Record<string, unknown>>;
+    }>(teacher, "GET", "/hr/employees?limit=100");
+
+    expect(list.success).toBe(true);
+    expect(list.data.length).toBeGreaterThan(0);
+    for (const row of list.data) {
+      // Own record may carry them; every colleague's must not.
+      if (row.id === teacher.user.id) continue;
+      expect(row.nik).toBeUndefined();
+      expect(row.bankName).toBeUndefined();
+      expect(row.bankAccountNumber).toBeUndefined();
+      expect(row.bankAccountName).toBeUndefined();
+    }
+  });
+
+  test("a plain teacher is pinned to their own unit in the directory (BUG 1)", async () => {
+    const teacher = await apiLogin(SEED_USERS.teacher);
+    const teacherUnitId = teacher.user.unitId as string;
+
+    const list = await apiRequest<{
+      data: Array<{ unitId: string | null }>;
+    }>(teacher, "GET", "/hr/employees?limit=100&unitId=00000000-0000-0000-0000-000000000000");
+
+    expect(list.data.length).toBeGreaterThan(0);
+    // The spoofed query unitId is ignored; every row stays in the actor's unit.
+    for (const row of list.data) {
+      expect(row.unitId).toBe(teacherUnitId);
+    }
+  });
+
+  test("a plain teacher cannot read an employee in another unit (BUG 1)", async () => {
+    const teacher = await apiLogin(SEED_USERS.teacher);
+    const teacherUnitId = teacher.user.unitId as string;
+
+    const roster = await apiRequest<{
+      data: Array<{ id: string; unitId: string | null }>;
+    }>(session, "GET", "/hr/employees?limit=100");
+    const foreign = roster.data.find((e) => e.unitId !== teacherUnitId);
+    if (!foreign) {
+      test.skip(true, "seeded directory has no employee in another unit");
+      return;
+    }
+
+    const res = await fetch(`${API_URL}/hr/employees/${foreign.id}`, {
+      headers: { authorization: `Bearer ${teacher.accessToken}` },
+    });
+    expect(res.status).toBe(404);
+  });
+
+  test("a plain teacher cannot list another unit's employee documents (BUG 5)", async () => {
+    const teacher = await apiLogin(SEED_USERS.teacher);
+    const teacherUnitId = teacher.user.unitId as string;
+
+    const roster = await apiRequest<{
+      data: Array<{ userId: string; unitId: string | null }>;
+    }>(session, "GET", "/hr/employees?limit=100");
+    const foreign = roster.data.find((e) => e.unitId !== teacherUnitId);
+    if (!foreign) {
+      test.skip(true, "seeded directory has no employee in another unit");
+      return;
+    }
+
+    const res = await fetch(
+      `${API_URL}/hr/employees/${foreign.userId}/documents`,
+      { headers: { authorization: `Bearer ${teacher.accessToken}` } },
+    );
+    expect(res.status).toBe(403);
+  });
+
+  test("a plain teacher can list their own employee documents (BUG 5)", async () => {
+    const teacher = await apiLogin(SEED_USERS.teacher);
+
+    const documents = await apiRequest<{
+      success: boolean;
+      data: Array<{ id: string }>;
+    }>(teacher, "GET", `/hr/employees/${teacher.user.id}/documents`);
+
+    expect(documents.success).toBe(true);
+    expect(Array.isArray(documents.data)).toBe(true);
+  });
+
+  test("the directory's TEACHER and STAFF labels come from live RoleCodes (BUG 6)", async () => {
+    const list = await apiRequest<{
+      data: Array<{ role: string }>;
+    }>(session, "GET", "/hr/employees?limit=100");
+
+    expect(list.data.length).toBeGreaterThan(0);
+    // Every row still resolves to a TEACHER/STAFF label — roleCode-derived,
+    // never the deprecated User.role column.
+    for (const row of list.data) {
+      expect(["TEACHER", "STAFF"]).toContain(row.role);
+    }
+
+    const teachers = await apiRequest<{ data: Array<{ role: string }> }>(
+      session,
+      "GET",
+      "/hr/employees?limit=100&role=TEACHER",
+    );
+    for (const row of teachers.data) {
+      expect(row.role).toBe("TEACHER");
+    }
+  });
+});
