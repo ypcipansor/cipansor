@@ -13,6 +13,24 @@ if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
 
+const uploadDirResolved = path.resolve(uploadDir);
+const uploadDirPrefix = uploadDirResolved.endsWith(path.sep)
+  ? uploadDirResolved
+  : `${uploadDirResolved}${path.sep}`;
+
+async function getSafeUploadPathForCleanup(candidatePath: string): Promise<string | null> {
+  const resolvedCandidate = path.resolve(candidatePath);
+  try {
+    const realCandidate = await fs.promises.realpath(resolvedCandidate);
+    if (realCandidate === uploadDirResolved || realCandidate.startsWith(uploadDirPrefix)) {
+      return realCandidate;
+    }
+  } catch {
+    // If the file no longer exists or cannot be resolved, skip cleanup safely.
+  }
+  return null;
+}
+
 const resolvedUploadDir = path.resolve(uploadDir);
 const uploadDirPrefix = resolvedUploadDir.endsWith(path.sep)
   ? resolvedUploadDir
@@ -218,7 +236,10 @@ export const handleSingleUpload = (fieldName: string) => {
             // A failed cloud upload must not leave the staging file behind;
             // repeated failures would otherwise fill the upload volume.
             if (isPathWithinUploadDir(localPath)) {
-              await fs.promises.unlink(localPath).catch(() => undefined);
+              const safeCleanupPath = await getSafeUploadPathForCleanup(localPath);
+              if (safeCleanupPath) {
+                await fs.promises.unlink(safeCleanupPath).catch(() => undefined);
+              }
             }
             throw error;
           }
@@ -231,7 +252,10 @@ export const handleSingleUpload = (fieldName: string) => {
             req.body.fileBlobName = storageResult.blobName;
             // Clean up staging file on local disk after successful Azure Blob upload
             if (isPathWithinUploadDir(localPath)) {
-              await fs.promises.unlink(localPath).catch(() => undefined);
+              const safeCleanupPath = await getSafeUploadPathForCleanup(localPath);
+              if (safeCleanupPath) {
+                await fs.promises.unlink(safeCleanupPath).catch(() => undefined);
+              }
             }
           } else {
             const protocol = req.protocol;
