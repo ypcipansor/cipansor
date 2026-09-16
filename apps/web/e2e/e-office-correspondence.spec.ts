@@ -268,15 +268,25 @@ test.describe("E-Office correspondence flows", () => {
     // The mapping chose the public container, so no short-lived SAS is minted.
     expect(data?.downloadUrl).toBeUndefined();
 
-    if (data?.url && data.url.includes("blob.core.windows.net")) {
-      expect(data.containerName).toBe("media-public");
-      expect(data.url).toContain("/media-public/");
-      // The SAS endpoint passes a public blob through unchanged.
-      const sas = await apiRequest<{
-        data?: { url?: string; downloadUrl?: string };
-      }>(session, "POST", "/upload/sas", { url: data.url });
-      expect(sas.data?.url).toBe(data.url);
-      expect(sas.data?.downloadUrl).toBeUndefined();
+    if (data?.url) {
+      let isAzureBlobHost = false;
+      try {
+        const host = new URL(data.url).hostname;
+        isAzureBlobHost =
+          host === "blob.core.windows.net" || host.endsWith(".blob.core.windows.net");
+      } catch {
+        isAzureBlobHost = false;
+      }
+      if (isAzureBlobHost) {
+        expect(data.containerName).toBe("media-public");
+        expect(data.url).toContain("/media-public/");
+        // The SAS endpoint passes a public blob through unchanged.
+        const sas = await apiRequest<{
+          data?: { url?: string; downloadUrl?: string };
+        }>(session, "POST", "/upload/sas", { url: data.url });
+        expect(sas.data?.url).toBe(data.url);
+        expect(sas.data?.downloadUrl).toBeUndefined();
+      }
     }
   });
 
@@ -300,8 +310,18 @@ test.describe("E-Office correspondence flows", () => {
 
     const data = json?.data as { url?: string; containerName?: string } | undefined;
     expect(data?.url).toBeTruthy();
-    if (data?.url && data.url.includes("blob.core.windows.net")) {
-      expect(data.containerName).toBe("cipansor-documents");
+    if (data?.url) {
+      let isAzureBlobHost = false;
+      try {
+        const host = new URL(data.url).hostname;
+        isAzureBlobHost =
+          host === "blob.core.windows.net" || host.endsWith(".blob.core.windows.net");
+      } catch {
+        isAzureBlobHost = false;
+      }
+      if (isAzureBlobHost) {
+        expect(data.containerName).toBe("cipansor-documents");
+      }
     }
   });
 });
