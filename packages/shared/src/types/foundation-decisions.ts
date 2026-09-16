@@ -134,7 +134,12 @@ export interface FoundationDecisionVerificationDTO {
   kind: FoundationDecisionKind | null;
   status: FoundationDecisionStatus | null;
   decidedAt: string | null;
-  digestOk: string | null;
+  /** Digest yang di-tanda-tangani e-seal (hash byte PDF final). */
+  digest: string | null;
+  /** Hash ulang dari byte arsip yang tersimpan; null bila tak ada arsip. */
+  archiveDigest: string | null;
+  /** Benarkah byte arsip masih sama dengan digest yang ditandatangani? */
+  digestOk: boolean | null;
   sealVerified: boolean | null;
   voteCount: number;
   approveCount: number;

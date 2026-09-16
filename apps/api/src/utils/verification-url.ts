@@ -53,3 +53,18 @@ export function letterVerificationUrl(): string {
 export function certificateVerificationUrl(certificateNumber: string): string {
   return `${config.publicSiteUrl}/public/verify-sanad?code=${encodeURIComponent(certificateNumber)}`;
 }
+
+/**
+ * Halaman verifikasi keputusan organ yayasan.
+ *
+ * Sengaja memakai `publicSiteUrl`, bukan `portalUrl`. Tautan ini dicetak di
+ * dalam PDF risalah dan dipindai lewat QR oleh siapa pun — dinas, wali santri,
+ * atau pemeriksa. Halaman `/foundation/decisions/verify` berada DI BALIK tembok
+ * sesi, sehingga pemindai anonim akan dilempar ke layar login staf sebelum
+ * sempat melihat hasilnya. `/public/verify-decision` adalah halaman publik yang
+ * membaca token dari query dan memanggil endpoint `/foundation/verify` — yang
+ * memang sudah publik.
+ */
+export function decisionVerificationUrl(token: string): string {
+  return `${config.publicSiteUrl}/public/verify-decision?token=${encodeURIComponent(token)}`;
+}

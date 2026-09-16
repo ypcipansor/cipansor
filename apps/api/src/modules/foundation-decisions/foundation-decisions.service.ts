@@ -12,6 +12,7 @@ import type {
   CastFoundationVoteInput,
   CreateFoundationDecisionInput,
   FoundationDecisionKind,
+  FoundationDecisionVerificationDTO,
   FoundationOrganType,
   ListFoundationDecisionsQuery,
   QuorumSnapshot,
@@ -22,8 +23,11 @@ import { prisma } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
 import { config } from '@/config';
 import { evaluateQuorum, type QuorumEvaluation } from '@/utils/foundation-quorum';
-import { isMemberOfOrgan, roleCodesForOrgan } from '@/utils/foundation-authority';
+import { organMayDecide, roleCodesForOrgan } from '@/utils/foundation-authority';
 import {
+  EsignError,
+  MAX_PASSPHRASE_ATTEMPTS,
+  lockoutUntil,
   signPdfHash,
   verifyPdfHashSignature,
   type EncryptedKeyMaterial,
@@ -31,6 +35,7 @@ import {
 } from '@/utils/esign';
 import { assertCanSign } from '@/utils/esign-lifecycle';
 import { createSealMaterial, signSeal, toSealMaterial } from '@/utils/foundation-eseal';
+import { decisionVerificationUrl } from '@/utils/verification-url';
 import { generateDecisionPdf } from '@/utils/generate-decision-pdf';
 import type { DecisionPdfVoteRow, DecisionPdfMemberRow } from '@/utils/generate-decision-pdf';
 
@@ -51,8 +56,22 @@ const DEFAULT_RULE = Object.freeze({
   }),
 } as const);
 
+/** Hash teks kanonis (payload suara, dsb). Selalu UTF-8. */
 function sha256hex(text: string): string {
   return createHash('sha256').update(text, 'utf8').digest('hex');
+}
+
+/**
+ * Hash byte mentah — untuk arsip PDF.
+ *
+ * Memisahkan ini dari `sha256hex` bukan urusan kerapian: sebuah PDF adalah
+ * biner, dan `sha256hex(buf.toString('utf8'))` lebih dulu menafsirkan ulang
+ * byte-nya sebagai teks. Setiap byte yang bukan UTF-8 sah digantikan U+FFFD,
+ * sehingga dua berkas berbeda dapat menghasilkan digest yang sama — dan yang
+ * ditandatangani e-seal bukan lagi byte yang benar-benar diarsipkan.
+ */
+export function sha256bytes(buf: Buffer | Uint8Array): string {
+  return createHash('sha256').update(buf).digest('hex');
 }
 
 /**
@@ -129,6 +148,8 @@ const decisionInclude = {
 } satisfies Prisma.FoundationDecisionInclude;
 
 type Actor = { id: string; roleCode: string };
+/** Klien Prisma di dalam transaksi interaktif (atau prisma itu sendiri). */
+type DbClient = Prisma.TransactionClient;
 
 const SEAL_PASSPHRASE = config.foundation.esealPassphrase;
 
@@ -136,12 +157,21 @@ function sealMaterial(seal: FoundationEseal): EncryptedKeyMaterial {
   return toSealMaterial(seal);
 }
 
-/** Pastikan e-seal Yayasan tersedia; buat satu baris bila belum ada. */
-async function ensureSeal(): Promise<FoundationEseal> {
-  const existing = await prisma.foundationEseal.findFirst({ orderBy: { createdAt: 'asc' } });
-  if (existing && !existing.revokedAt) return existing;
+/**
+ * Pastikan e-seal Yayasan yang AKTIF tersedia; buat satu baris bila belum ada.
+ *
+ * Sengaja tidak mengambil "seal tertua": seal yang sudah dicabut bukan seal
+ * yang boleh membubuhkan tanda tangan baru, dan mengambilnya akan menghasilkan
+ * tanda tangan baru di bawah kunci yang sudah tidak berlaku.
+ */
+async function ensureSeal(client: DbClient = prisma): Promise<FoundationEseal> {
+  const existing = await client.foundationEseal.findFirst({
+    where: { revokedAt: null },
+    orderBy: { createdAt: 'asc' },
+  });
+  if (existing) return existing;
   const material = createSealMaterial(SEAL_PASSPHRASE);
-  return prisma.foundationEseal.create({
+  return client.foundationEseal.create({
     data: {
       algorithm: material.algorithm,
       publicKey: material.publicKey,
@@ -156,22 +186,76 @@ async function ensureSeal(): Promise<FoundationEseal> {
 }
 
 /**
+ * Kunci baris keputusan selama transaksi.
+ *
+ * Tanpa ini, dua permintaan suara paralel dapat sama-sama membaca status
+ * VOTING, lalu salah satunya menutup keputusan setelah yang lain menghitung
+ * kuorum — sehingga suara yang sah tidak pernah masuk ke PDF final.
+ */
+async function lockDecision(client: DbClient, id: string): Promise<void> {
+  await client.$executeRaw`SELECT id FROM foundation_decisions WHERE id = ${id} FOR UPDATE`;
+}
+
+/** Catat percobaan passphrase gagal; dikunci setelah ambang esign tercapai. */
+async function recordFailedAttempt(keyId: string, current: number): Promise<void> {
+  const failed = current + 1;
+  await prisma.userSigningKey.update({
+    where: { id: keyId },
+    data: { failedAttempts: failed, lockedUntil: lockoutUntil(failed) },
+  });
+}
+
+/** Buka blokir setelah passphrase benar — penghitung kembali ke nol. */
+async function clearFailedAttempts(keyId: string): Promise<void> {
+  await prisma.userSigningKey.update({
+    where: { id: keyId },
+    data: { failedAttempts: 0, lockedUntil: null, lastUsedAt: new Date() },
+  });
+}
+
+/**
  * Mesin keputusan organ yayasan. Prisma hanya disentuh di sini; efek samping
  * audit & arsip PDF melewati eventBus.
  */
 export const FoundationDecisionService = {
   /** Buat keputusan: snapshot anggota organ & kuorum, lalu buka voting. */
   async create(actor: Actor, input: CreateFoundationDecisionInput) {
-    const rule = await this.loadRule(input.organType, input.kind);
+    // Kewenangan organ diperiksa lebih dulu: membuka voting atas keputusan
+    // yang bukan wewenang organ ini adalah kesalahan yang tidak bisa diperbaiki
+    // setelah suara mulai masuk.
+    if (
+      !organMayDecide(input.organType, input.decisionType, actor.roleCode, {
+        allowSuperAdmin: true,
+      })
+    ) {
+      throw Errors.forbidden(
+        `Organ ${input.organType} tidak berwenang memutus "${input.decisionType}".`
+      );
+    }
+
+    const now = new Date();
+    // Snapshot hanya memuat anggota yang benar-benar berhak HARI INI: peran
+    // aktif, penugasan belum kedaluwarsa, dan akunnya sendiri masih aktif.
+    // Anggota yang sudah habis masa tugasnya tidak boleh menggelembungkan
+    // kuorum yang terkunci selamanya.
     const assignments = await prisma.userRoleAssignment.findMany({
       where: {
         isActive: true,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
         role: { code: { in: roleCodesForOrgan(input.organType) }, isActive: true },
+        user: { isActive: true, deletedAt: null },
       },
       include: { user: { select: { id: true, name: true } }, role: { select: { code: true } } },
       distinct: ['userId'],
     });
 
+    if (assignments.length === 0) {
+      throw Errors.badRequest(
+        `Tidak ada anggota aktif pada organ ${input.organType}. Lengkapi keanggotaan organ sebelum membuka keputusan.`
+      );
+    }
+
+    const rule = await this.loadRule(input.organType, input.kind);
     const snapshot: QuorumSnapshot = {
       organType: input.organType,
       kind: input.kind,
@@ -302,8 +386,12 @@ export const FoundationDecisionService = {
     const d = await this.loadWithRelations(decisionId);
     const snapshot = d.quorumSnapshot as unknown as QuorumSnapshot;
     const summary = d.voteSummary as unknown as VoteSummary;
+    // Hak suara mengikuti SNAPSHOT anggota, bukan peran hari ini: orang yang
+    // baru diangkat setelah keputusan dibuat bukan bagian dari badan yang
+    // memutus saat itu.
     const canVote =
-      d.status === FoundationDecisionStatus.VOTING && isMemberOfOrgan(d.organType, actor.roleCode);
+      d.status === FoundationDecisionStatus.VOTING &&
+      d.members.some((m) => m.userId === actor.id);
     const mine = d.votes.find((v) => v.userId === actor.id);
     return this.toDetailDTO(d, snapshot, summary, canVote, mine?.choice ?? null, actor.id);
   },
@@ -334,7 +422,10 @@ export const FoundationDecisionService = {
     if (d.votes.some((v) => v.userId === actor.id)) {
       throw Errors.badRequest('Anda sudah memberikan suara pada keputusan ini.');
     }
-    if (!isMemberOfOrgan(d.organType, actor.roleCode)) {
+    // Keanggotaan diperiksa terhadap SNAPSHOT yang terkunci, bukan peran saat
+    // ini. Memakai peran hari ini berarti seseorang yang baru diangkat dapat
+    // memutus keputusan yang dibuat sebelum ia menjadi anggota.
+    if (!d.members.some((m) => m.userId === actor.id)) {
       throw Errors.forbidden('Anda bukan anggota organ yang berhak memutus keputusan ini.');
     }
     if (d.kind === 'CIRCULAR' && choice === 'REJECT' && (!note || note.trim().length < 5)) {
@@ -344,8 +435,7 @@ export const FoundationDecisionService = {
     }
 
     // Muat kunci tanda tangan pemilih; pastikan masih sah (aktivasi, masa
-    // berlaku, pencabutan) lewat inti yang sama dengan alur surat. Perbaiki
-    // sebab kegagalan menjadi 400 yang bisa dibaca klien.
+    // berlaku, pencabutan, terkunci) lewat inti yang sama dengan alur surat.
     const signingKey = await prisma.userSigningKey.findUnique({ where: { userId: actor.id } });
     try {
       assertCanSign(signingKey as never);
@@ -370,9 +460,46 @@ export const FoundationDecisionService = {
       signedAt,
     });
     const digest = sha256hex(payload);
-    const signature = signPdfHash(material, passphrase, digest);
 
-    const saved = await prisma.$transaction(async (tx) => {
+    // Perlindungan tebak-passphrase yang sama dengan modul esign: pencacah
+    // dinaikkan di luar transaksi, dan kunci yang terkunci ditolak sebelum
+    // ditandatangani. Tanpa ini sesi yang dicuri dapat menebak passphrase
+    // tanpa batas.
+    let signature: string;
+    try {
+      signature = signPdfHash(material, passphrase, digest);
+    } catch (error) {
+      if (error instanceof EsignError) {
+        await recordFailedAttempt(signingKey!.id, signingKey!.failedAttempts);
+        const left = MAX_PASSPHRASE_ATTEMPTS - (signingKey!.failedAttempts + 1);
+        throw Errors.unauthorized(
+          left > 0
+            ? `Passphrase tanda tangan salah. Sisa percobaan: ${left}.`
+            : 'Passphrase salah. Kunci tanda tangan dikunci sementara.'
+        );
+      }
+      throw error;
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      // Kunci baris keputusan dan periksa ulang status DI DALAM transaksi.
+      // Pembuatan suara, pembacaan ulang suara, evaluasi kuorum, dan
+      // finalisasi berjalan atomik terhadap pemilih paralel.
+      await lockDecision(tx, d.id);
+      const locked = (await tx.foundationDecision.findUnique({
+        where: { id: d.id },
+        include: decisionInclude,
+      })) as unknown as RichDecision | null;
+      if (!locked) throw Errors.notFound('Keputusan tidak ditemukan.');
+      if (locked.status !== FoundationDecisionStatus.VOTING) {
+        throw Errors.badRequest(
+          `Keputusan berstatus ${locked.status} dan tidak lagi menerima suara.`
+        );
+      }
+      if (locked.votes.some((v) => v.userId === actor.id)) {
+        throw Errors.badRequest('Anda sudah memberikan suara pada keputusan ini.');
+      }
+
       const vote = await tx.foundationDecisionVote.create({
         data: {
           decisionId: d.id,
@@ -386,6 +513,7 @@ export const FoundationDecisionService = {
           signedAt,
         },
       });
+
       const votes = await tx.foundationDecisionVote.findMany({ where: { decisionId: d.id } });
       const summary: VoteSummary = {
         approve: votes.filter((v) => v.choice === 'APPROVE').length,
@@ -399,7 +527,19 @@ export const FoundationDecisionService = {
         where: { id: d.id },
         data: { voteSummary: summary as unknown as Prisma.InputJsonValue },
       });
-      return { vote, summary };
+
+      // Evaluasi atas baris yang sudah memuat suara ini, masih di dalam kunci.
+      const fresh = (await tx.foundationDecision.findUnique({
+        where: { id: d.id },
+        include: decisionInclude,
+      })) as unknown as RichDecision;
+      const evaluation = evaluateQuorum(
+        fresh.quorumSnapshot as unknown as QuorumSnapshot,
+        this.votesOf(fresh)
+      );
+      const outcome = await this.applyOutcome(actor, fresh, evaluation, tx);
+
+      return { vote, summary, outcome };
     });
 
     await prisma.auditLog.create({
@@ -407,79 +547,90 @@ export const FoundationDecisionService = {
         userId: actor.id,
         action: 'VOTE',
         entity: 'FoundationDecisionVote',
-        entityId: saved.vote.id,
+        entityId: result.vote.id,
         newValues: { decisionId: d.id, choice },
       },
     });
 
-    const fresh = await this.loadWithRelations(d.id);
-    const evaluation = evaluateQuorum(
-      fresh.quorumSnapshot as unknown as QuorumSnapshot,
-      this.votesOf(fresh)
-    );
-    const outcome = await this.applyOutcome(actor, fresh, evaluation);
+    // Passphrase benar: buka hitungan gagal.
+    await clearFailedAttempts(signingKey!.id);
 
     return {
-      voteId: saved.vote.id,
+      voteId: result.vote.id,
       choice,
-      voteSummary: saved.summary,
-      outcome,
+      voteSummary: result.summary,
+      outcome: result.outcome,
     };
   },
 
   /** Finalisasi manual oleh pimpinan/kepala rapat bila kuorum sudah tercapai. */
   async finalize(actor: Actor, decisionId: string) {
-    const d = await this.loadWithRelations(decisionId);
-    if (d.status !== FoundationDecisionStatus.VOTING) {
-      throw Errors.badRequest(`Keputusan berstatus ${d.status} dan tidak lagi menerima suara.`);
-    }
-    const evaluation = evaluateQuorum(
-      d.quorumSnapshot as unknown as QuorumSnapshot,
-      this.votesOf(d)
-    );
-    if (evaluation.outcome === 'OPEN') {
-      throw Errors.badRequest(
-        `Kuorum belum terpenuhi (hadir ${evaluation.presentCount}/${evaluation.presentRequired}, butuh ${evaluation.neededToApprove} setuju lagi).`
+    return prisma.$transaction(async (tx) => {
+      await lockDecision(tx, decisionId);
+      const d = (await tx.foundationDecision.findUnique({
+        where: { id: decisionId },
+        include: decisionInclude,
+      })) as unknown as RichDecision | null;
+      if (!d) throw Errors.notFound('Keputusan tidak ditemukan.');
+      if (d.status !== FoundationDecisionStatus.VOTING) {
+        throw Errors.badRequest(`Keputusan berstatus ${d.status} dan tidak lagi menerima suara.`);
+      }
+      const evaluation = evaluateQuorum(
+        d.quorumSnapshot as unknown as QuorumSnapshot,
+        this.votesOf(d)
       );
-    }
-    return this.applyOutcome(actor, d, evaluation);
+      if (evaluation.outcome === 'OPEN') {
+        throw Errors.badRequest(
+          `Kuorum belum terpenuhi (hadir ${evaluation.presentCount}/${evaluation.presentRequired}, butuh ${evaluation.neededToApprove} setuju lagi).`
+        );
+      }
+      return this.applyOutcome(actor, d, evaluation, tx);
+    });
   },
 
   /** Terapkan hasil kuorum: APPROVED (render PDF + e-seal) atau REJECTED. */
-  async applyOutcome(actor: Actor, d: RichDecision, evaluation: QuorumEvaluation) {
+  async applyOutcome(
+    actor: Actor,
+    d: RichDecision,
+    evaluation: QuorumEvaluation,
+    client: DbClient = prisma
+  ) {
     if (evaluation.outcome === 'APPROVED' && d.status !== FoundationDecisionStatus.APPROVED) {
       const buf = await this.renderPdf(d);
-      const finalPdfDigest = sha256hex(buf.toString('utf8'));
-      const seal = await ensureSeal();
+      // Hash BYTE PDF, bukan teksnya. Ini yang membolehkan arsip memeriksa
+      // dirinya sendiri dan yang diikat e-seal.
+      const finalPdfDigest = sha256bytes(buf);
+      const seal = await ensureSeal(client);
       const sealSignature = signSeal(sealMaterial(seal), SEAL_PASSPHRASE, finalPdfDigest);
 
       // Arsip byte PDF apa adanya, lalu tandai keputusan sah + e-seal. Sekali
       // ditulis, `finalPdfDigest` dikunci (immutable) dan diverifikasi e-seal.
-      await prisma.$transaction(async (tx) => {
-        await tx.foundationDecisionDocument.create({
-          data: {
-            decisionId: d.id,
-            // Buffer dari generator selalu berasal dari Uint8Array tidak
-            // bersandar pada SharedArrayBuffer; salin ke array polos.
-            bytes: new Uint8Array(buf),
-            sha256: finalPdfDigest,
-            byteSize: buf.length,
-          },
-        });
-        return tx.foundationDecision.update({
-          where: { id: d.id },
-          data: {
-            status: FoundationDecisionStatus.APPROVED,
-            decidedById: actor.id,
-            decidedAt: new Date(),
-            finalPdfDigest,
-            finalPdfByteSize: buf.length,
-            finalPdfSealSignature: sealSignature,
-          },
-        });
+      // `esealId` menyimpan SEAL SPESIFIK ini agar verifikasi tidak terpengaruh
+      // rotasi/pencabutan seal di kemudian hari.
+      await client.foundationDecisionDocument.create({
+        data: {
+          decisionId: d.id,
+          // Buffer dari generator selalu berasal dari Uint8Array tidak
+          // bersandar pada SharedArrayBuffer; salin ke array polos.
+          bytes: new Uint8Array(buf),
+          sha256: finalPdfDigest,
+          byteSize: buf.length,
+        },
+      });
+      await client.foundationDecision.update({
+        where: { id: d.id },
+        data: {
+          status: FoundationDecisionStatus.APPROVED,
+          decidedById: actor.id,
+          decidedAt: new Date(),
+          finalPdfDigest,
+          finalPdfByteSize: buf.length,
+          finalPdfSealSignature: sealSignature,
+          esealId: seal.id,
+        },
       });
 
-      await prisma.auditLog.create({
+      await client.auditLog.create({
         data: {
           userId: actor.id,
           action: 'APPROVE',
@@ -496,7 +647,7 @@ export const FoundationDecisionService = {
     }
 
     if (evaluation.outcome === 'REJECTED' && d.status !== FoundationDecisionStatus.REJECTED) {
-      await prisma.foundationDecision.update({
+      await client.foundationDecision.update({
         where: { id: d.id },
         data: {
           status: FoundationDecisionStatus.REJECTED,
@@ -504,7 +655,7 @@ export const FoundationDecisionService = {
           decidedAt: new Date(),
         },
       });
-      await prisma.auditLog.create({
+      await client.auditLog.create({
         data: {
           userId: actor.id,
           action: 'REJECT',
@@ -554,22 +705,46 @@ export const FoundationDecisionService = {
     });
   },
 
-  /** Verifikasi keputusan akhir lewat token (QR). */
-  async verifyByToken(token: string) {
+  /** Verifikasi keputusan akhir lewat token (QR/publik). */
+  async verifyByToken(token: string): Promise<FoundationDecisionVerificationDTO> {
+    const notFound: FoundationDecisionVerificationDTO = {
+      found: false,
+      decisionId: null,
+      subject: null,
+      organType: null,
+      kind: null,
+      status: null,
+      decidedAt: null,
+      digest: null,
+      archiveDigest: null,
+      digestOk: null,
+      sealVerified: null,
+      voteCount: 0,
+      approveCount: 0,
+      rejectCount: 0,
+      abstainCount: 0,
+      members: [],
+    };
+
     const d = await prisma.foundationDecision.findUnique({
       where: { verificationToken: token },
       include: {
         votes: { include: { user: { select: { id: true, name: true } } } },
         members: { include: { user: { select: { id: true, name: true } } } },
+        document: { select: { bytes: true } },
       },
     });
     if (!d || d.status !== FoundationDecisionStatus.APPROVED) {
-      return { found: false as const };
+      return notFound;
     }
 
+    // Verifikasi memakai seal SPESIFIK yang membubuhkan tanda tangan ini —
+    // bukan "seal tertua", yang mungkin sudah dicabut atau berbeda kunci.
     let sealVerified: boolean | null = null;
     if (d.finalPdfDigest && d.finalPdfSealSignature) {
-      const seal = await prisma.foundationEseal.findFirst({ orderBy: { createdAt: 'asc' } });
+      const seal = d.esealId
+        ? await prisma.foundationEseal.findUnique({ where: { id: d.esealId } })
+        : null;
       if (seal) {
         // Tanda tangan Ed25519 deterministik → bubuhkan ulang lalu bandingkan,
         // sekaligus validasi kriptografi terhadap kunci publik.
@@ -580,15 +755,26 @@ export const FoundationDecisionService = {
       }
     }
 
+    // Arsip memeriksa dirinya sendiri: hash ulang byte yang tersimpan dan
+    // bandingkan dengan digest yang ditandatangani. Byte yang diubah setelah
+    // finalisasi tampak tidak sah di sini.
+    const archiveDigest = d.document ? sha256bytes(Buffer.from(d.document.bytes)) : null;
+    const digestOk =
+      archiveDigest === null || d.finalPdfDigest === null
+        ? null
+        : archiveDigest === d.finalPdfDigest;
+
     return {
-      found: true as const,
+      found: true,
       decisionId: d.id,
       subject: d.subject,
       organType: d.organType,
       kind: d.kind,
       status: d.status,
-      decidedAt: d.decidedAt,
-      digestOk: d.finalPdfDigest,
+      decidedAt: d.decidedAt ? d.decidedAt.toISOString() : null,
+      digest: d.finalPdfDigest,
+      archiveDigest,
+      digestOk,
       sealVerified,
       voteCount: d.votes.length,
       approveCount: d.votes.filter((v) => v.choice === 'APPROVE').length,
@@ -596,6 +782,18 @@ export const FoundationDecisionService = {
       abstainCount: d.votes.filter((v) => v.choice === 'ABSTAIN').length,
       members: d.members.map((m) => ({ userId: m.userId, name: m.name, roleCode: m.roleCode })),
     };
+  },
+
+  /** Ambil dokumen PDF final untuk diunduh, atau 404 bila belum final. */
+  async getFinalDocument(decisionId: string) {
+    const doc = await prisma.foundationDecisionDocument.findUnique({
+      where: { decisionId },
+      include: { decision: { select: { status: true } } },
+    });
+    if (!doc || doc.decision.status !== FoundationDecisionStatus.APPROVED) {
+      throw Errors.notFound('Dokumen final keputusan tidak ditemukan atau belum final.');
+    }
+    return doc;
   },
 
   /** Render PDF risalah/keputusan final dari baris + relasinya. */
@@ -628,6 +826,7 @@ export const FoundationDecisionService = {
       votes,
       voteSummary: d.voteSummary as unknown as VoteSummary,
       verificationToken: d.verificationToken,
+      verificationUrl: d.verificationToken ? decisionVerificationUrl(d.verificationToken) : null,
     });
   },
 

@@ -80,11 +80,22 @@ describe('evaluateQuorum — MEETING (hadir >½, sah mayoritas hadir)', () => {
     expect(e.decisionMet).toBe(true);
     expect(e.outcome).toBe('APPROVED');
   });
-  it('ditolak bila semua hadir sudah bersuara dan setuju tak sampai mayoritas', () => {
+  it('tetap terbuka bila kuorum hadir tercapai tetapi setuju belum mayoritas dan masih ada anggota yang belum bersuara', () => {
+    // 4 dari 5 hadir, baru 1 setuju. Kuorum hadir tercapai, tetapi anggota
+    // kelima yang berhak masih bisa hadir & menyetujui — jadi belum boleh
+    // ditolak. Inilah regresi tautologi `presentCount === decisionPool`.
     const e = evaluateQuorum(meeting, votes(['APPROVE', 'REJECT', 'REJECT', 'ABSTAIN']));
     expect(e.presentMet).toBe(true); // 4 dari 5 hadir
     expect(e.decisionMet).toBe(false);
-    // hadir=4, decision required = mayoritas(4)=3; approve=1 < 3; semua hadir sudah bersuara
+    expect(e.outcome).toBe('OPEN');
+  });
+  it('ditolak hanya ketika SELURUH anggota aktif sudah bersuara dan setuju tak sampai mayoritas', () => {
+    const e = evaluateQuorum(
+      meeting,
+      votes(['APPROVE', 'REJECT', 'REJECT', 'ABSTAIN', 'REJECT'])
+    );
+    expect(e.presentMet).toBe(true);
+    expect(e.decisionMet).toBe(false);
     expect(e.outcome).toBe('REJECTED');
   });
 });

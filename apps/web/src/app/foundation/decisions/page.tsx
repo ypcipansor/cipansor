@@ -5,6 +5,7 @@ import Link from "next/link";
 import { MainLayout } from "@/components/layout";
 import {
   useFoundationDecisions,
+  FOUNDATION_FILTER_ALL,
   FOUNDATION_ORGAN_LABEL,
   FOUNDATION_STATUS_LABEL,
   FOUNDATION_KIND_LABEL,
@@ -39,12 +40,11 @@ const statusColor: Record<string, string> = {
 };
 
 export default function FoundationDecisionsPage() {
-  const [organType, setOrganType] = useState<string>("");
-  const [status, setStatus] = useState<string>("");
-  const { data, isLoading } = useFoundationDecisions({
-    organType: organType || undefined,
-    status: status || undefined,
-  });
+  const [organType, setOrganType] = useState<string>(FOUNDATION_FILTER_ALL);
+  const [status, setStatus] = useState<string>(FOUNDATION_FILTER_ALL);
+  // Hook menerjemahkan sentinel "all" menjadi undefined; halaman cukup
+  // meneruskan nilai Select apa adanya.
+  const { data, isLoading } = useFoundationDecisions({ organType, status });
 
   const items = data?.items ?? [];
 
@@ -69,7 +69,7 @@ export default function FoundationDecisionsPage() {
               <SelectValue placeholder="Semua organ" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Semua organ</SelectItem>
+              <SelectItem value={FOUNDATION_FILTER_ALL}>Semua organ</SelectItem>
               {Object.entries(FOUNDATION_ORGAN_LABEL).map(([k, v]) => (
                 <SelectItem key={k} value={k}>
                   {v}
@@ -82,7 +82,7 @@ export default function FoundationDecisionsPage() {
               <SelectValue placeholder="Semua status" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Semua status</SelectItem>
+              <SelectItem value={FOUNDATION_FILTER_ALL}>Semua status</SelectItem>
               {Object.entries(FOUNDATION_STATUS_LABEL).map(([k, v]) => (
                 <SelectItem key={k} value={k}>
                   {v}

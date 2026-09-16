@@ -47,6 +47,8 @@ export interface DecisionPdfData {
     abstain: number;
   };
   verificationToken?: string | null;
+  /** URL halaman verifikasi publik yang dimuat QR; null = token saja. */
+  verificationUrl?: string | null;
 }
 
 const margin = 48;
@@ -172,7 +174,11 @@ export async function generateDecisionPdf(data: DecisionPdfData): Promise<Buffer
   paragraph(`Cetak copy tidak dikontrol; verifikasi daring bila ada token.`, 9, 10);
   if (data.verificationToken) {
     paragraph(`Token verifikasi: ${data.verificationToken}`, 9, 2);
-    paragraph(`Periksa di: portal — verifikasi keputusan yayasan.`, 9, 2);
+    if (data.verificationUrl) {
+      paragraph(`Periksa di: ${data.verificationUrl}`, 9, 2);
+    } else {
+      paragraph(`Periksa di: portal — verifikasi keputusan yayasan.`, 9, 2);
+    }
   }
 
   const bytes = await pdfDoc.save();

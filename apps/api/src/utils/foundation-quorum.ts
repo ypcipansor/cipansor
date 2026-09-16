@@ -105,12 +105,15 @@ export function evaluateQuorum(
     } else {
       // Semua yang harus memutus sudah memberi suara dan tetap tak cukup →
       // keputusan tertolak. Pada CIRCULAR: seluruh anggota aktif sudah
-      // bersuara (mufakat tak tercapai). Pada MEETING: semua yang hadir sudah
-      // bersuara dan suara setuju tak sampai ambang.
-      const decisionBodyFinished =
-        snapshot.kind === 'CIRCULAR'
-          ? presentCount >= activeCount
-          : presentCount >= presentRequired && presentCount === decisionPool;
+      // bersuara (mufakat tak tercapai). Pada MEETING: seluruh anggota aktif
+      // sudah bersuara — bukan sekadar kuorum hadir tercapai.
+      //
+      // Untuk MEETING, `presentCount === decisionPool` adalah tautologi
+      // (`decisionPool` = presentCount), sehingga REJECTED keluar begitu kuorum
+      // hadir terpenuhi tanpa cukup setuju — padahal anggota lain yang berhak
+      // masih bisa hadir dan menyetujui. Sama seperti CIRCULAR, penolakan hanya
+      // sah ketika tidak ada lagi suara yang mungkin masuk.
+      const decisionBodyFinished = presentCount >= activeCount;
       if (decisionBodyFinished) {
         outcome = 'REJECTED';
       }

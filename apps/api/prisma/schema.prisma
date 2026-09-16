@@ -10616,6 +10616,10 @@ model FoundationDecision {
   /// Ed25519 deterministik, sehingga dapat diverifikasi kapan pun tanpa
   /// menyimpan kunci privat — hanya perlu `finalPdfDigest` + kunci publik seal.
   finalPdfSealSignature String? @map("final_pdf_seal_signature") @db.Text
+  /// E-seal SPESIFIK yang membubuhkan tanda tangan di atas. Disimpan sebagai
+  /// referensi, bukan dibaca sebagai "seal tertua": rotasi atau pencabutan seal
+  /// setelahnya tidak boleh mengubah hasil verifikasi keputusan yang sudah sah.
+  esealId String? @map("eseal_id")
   /// Token verifikasi QR, acak 160-bit, bukan turunan id (pola esign).
   verificationToken String? @unique @map("verification_token")
 
@@ -10627,12 +10631,14 @@ model FoundationDecision {
 
   createdBy User                      @relation("DecisionCreator", fields: [createdById], references: [id])
   decidedBy User?                     @relation("DecisionDecider", fields: [decidedById], references: [id])
+  eseal     FoundationEseal?          @relation("DecisionEseal", fields: [esealId], references: [id], onDelete: SetNull)
 
   votes   FoundationDecisionVote[]
   members FoundationDecisionMember[]
 
   @@index([organType, status])
   @@index([createdById])
+  @@index([esealId])
   @@map("foundation_decisions")
 }
 
@@ -10734,6 +10740,8 @@ model FoundationEseal {
   activatedAt         DateTime? @map("activated_at")
   revokedAt           DateTime? @map("revoked_at")
   createdAt           DateTime  @default(now()) @map("created_at")
+
+  decisions FoundationDecision[] @relation("DecisionEseal")
 
   @@map("foundation_eseals")
 }

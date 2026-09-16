@@ -54,6 +54,23 @@ export const FOUNDATION_KIND_LABEL: Record<string, string> = {
   MEETING: "Rapat",
 };
 
+/**
+ * Nilai sentinel "tanpa filter" pada Select.
+ *
+ * SelectItem tidak boleh bernilai string kosong (Radix memakainya untuk
+ * placeholder), sehingga "semua" butuh sentinel tersendiri. Sentinel ini
+ * diterjemahkan menjadi `undefined` di sini — sekali, di satu tempat — karena
+ * mengirim literal "all" ke API akan ditolak skema enum `organType`/`status`,
+ * dan pengguna tidak akan pernah bisa mengosongkan filter.
+ */
+export const FOUNDATION_FILTER_ALL = "all";
+
+/** Ubah nilai filter Select menjadi parameter API (undefined = tanpa filter). */
+export function normalizeFoundationFilter(value: string | undefined): string | undefined {
+  if (!value || value === FOUNDATION_FILTER_ALL) return undefined;
+  return value;
+}
+
 async function getPage(params: {
   page?: number;
   limit?: number;
@@ -75,9 +92,11 @@ export function useFoundationDecisions(params: {
   organType?: string;
   status?: string;
 }) {
+  const organType = normalizeFoundationFilter(params.organType);
+  const status = normalizeFoundationFilter(params.status);
   return useQuery({
-    queryKey: ["foundation-decisions", params],
-    queryFn: () => getPage(params),
+    queryKey: ["foundation-decisions", { ...params, organType, status }],
+    queryFn: () => getPage({ ...params, organType, status }),
   });
 }
 
