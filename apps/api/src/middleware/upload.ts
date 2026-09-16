@@ -13,6 +13,16 @@ if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
 
+const resolvedUploadDir = path.resolve(uploadDir);
+const uploadDirPrefix = resolvedUploadDir.endsWith(path.sep)
+  ? resolvedUploadDir
+  : `${resolvedUploadDir}${path.sep}`;
+
+const isPathWithinUploadDir = (candidatePath: string): boolean => {
+  const resolvedCandidate = path.resolve(candidatePath);
+  return resolvedCandidate === resolvedUploadDir || resolvedCandidate.startsWith(uploadDirPrefix);
+};
+
 // Allowed types: client-declared MIME → { stored extension, magic-byte check }.
 // The extension comes from this table (never from the client's filename), and
 // the magic-byte check runs against the stored file's first bytes, so a
@@ -207,7 +217,9 @@ export const handleSingleUpload = (fieldName: string) => {
           } catch (error) {
             // A failed cloud upload must not leave the staging file behind;
             // repeated failures would otherwise fill the upload volume.
-            await fs.promises.unlink(localPath).catch(() => undefined);
+            if (isPathWithinUploadDir(localPath)) {
+              await fs.promises.unlink(localPath).catch(() => undefined);
+            }
             throw error;
           }
 
@@ -218,7 +230,9 @@ export const handleSingleUpload = (fieldName: string) => {
             req.body.fileContainerName = storageResult.containerName;
             req.body.fileBlobName = storageResult.blobName;
             // Clean up staging file on local disk after successful Azure Blob upload
-            await fs.promises.unlink(localPath).catch(() => undefined);
+            if (isPathWithinUploadDir(localPath)) {
+              await fs.promises.unlink(localPath).catch(() => undefined);
+            }
           } else {
             const protocol = req.protocol;
             const host = req.get('host');
