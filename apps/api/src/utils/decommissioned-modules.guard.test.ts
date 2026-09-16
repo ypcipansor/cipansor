@@ -154,4 +154,27 @@ describe('decommission purge — migrations', () => {
     expect(code).toMatch(/NOT EXISTS/);
     expect(code).toMatch(/"is_active"/);
   });
+
+  it('documents why a later-expiring non-PT assignment is not a PT hole', () => {
+    // Gap 2 of the PR #505 review: a "mixed" user whose surviving non-PT
+    // assignment is active now but expires later would keep the legacy fallback
+    // reachable once it lapses. That presupposes `expires_at` is ever written,
+    // which no code path does — `assignRoleSchema` carries no `expiresAt` and
+    // every assignment creation omits it. Pinned so the day that changes, this
+    // reasoning is re-checked instead of silently rotting.
+    const rolesSchema = read(join(API_ROOT, 'src', 'modules', 'roles', 'roles.schema.ts'));
+    expect(rolesSchema).toMatch(/assignRoleSchema/);
+    expect(rolesSchema).not.toMatch(/expiresAt/);
+
+    for (const rel of [
+      ['src', 'modules', 'roles', 'roles.service.ts'],
+      ['src', 'utils', 'parent-scope.ts'],
+      ['src', 'services', 'integration', 'student-onboarding.orchestrator.ts'],
+    ]) {
+      const source = read(join(API_ROOT, ...rel));
+      expect(source, rel.join('/')).not.toMatch(
+        /userRoleAssignment\.(create|update|updateMany)[\s\S]{0,200}expiresAt/
+      );
+    }
+  });
 });

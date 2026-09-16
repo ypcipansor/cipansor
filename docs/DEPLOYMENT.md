@@ -233,7 +233,8 @@ As of this writing that applies to
 higher-education (Perguruan Tinggi) and Litbang/R&D tables **and deletes every
 row owned by a `PERGURUAN_TINGGI` unit** (its classes, students, teachers, staff,
 departments, budgets, letters, assets, attendance, invoices, …). The unit is
-removed outright rather than re-typed; the blast radius reaches ~130 tables.
+removed outright rather than re-typed; the blast radius reaches ~213 tables
+(depth ≤ 3).
 Back up, then deploy:
 
 ```bash

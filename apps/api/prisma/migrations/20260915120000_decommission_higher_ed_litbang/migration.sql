@@ -58,8 +58,9 @@ DROP TYPE IF EXISTS "InnovationStatus";
 --
 -- Blast radius: everything the unit owns -- its classes, students, teachers,
 -- staff, departments, budgets, letters, assets, attendance, invoices, etc.
--- (130 tables are transitively reachable, depth <= 5). This is why the deploy
--- runbook requires a verified backup BEFORE `prisma migrate deploy`.
+-- (213 dependent tables are transitively reachable, depth <= 3; verified
+-- against the post-drop FK catalog). This is why the deploy runbook requires a
+-- verified backup BEFORE `prisma migrate deploy`.
 DO $decommission_units$
 DECLARE
   edge     record;
@@ -227,6 +228,32 @@ DROP TYPE "RoleCode_old";
 -- Only users who end up with no ACTIVE assignment are selected, matching the
 -- runtime's `activeRoleWhere()` (is_active AND not expired); a user who also
 -- holds an active non-PT role keeps their session.
+--
+-- Two residual shapes were investigated and are deliberately NOT patched:
+--
+-- (a) A user with NO `user_role_assignments` row at all. Every code path that
+--     creates a PT account also creates its assignment: the seed loop
+--     (prisma/seed.ts, one `userRoleAssignment.create` per DEMO_ACCOUNTS entry),
+--     `authService.register` and `userService.create` both write the assignment
+--     in the same transaction. The account-creation paths that do not
+--     (students, HR, bulk import) cannot mint a PT account — `login()` refuses a
+--     user without an active assignment ("No active role assignment found for
+--     this user") — so such a user never obtains a refresh token to rotate.
+--     After the PT role rows are gone there is no reliable marker left to
+--     identify a hypothetical one, so this is reported to the owner rather than
+--     patched speculatively.
+--
+-- (b) A "mixed" user whose non-PT assignment is active now but expires later.
+--     Not reachable: `user_role_assignments.expires_at` is never written by any
+--     code path — `assignRoleSchema` has no `expiresAt`, and assignRoleToUser,
+--     setPrimaryRole, switchRole, the parent-scope and onboarding helpers and
+--     the seed all create assignments without it. The only reads are
+--     `activeRoleWhere()` and `rolesService.switchRole`'s guard. A mixed user's
+--     surviving assignment therefore never expires, so the legacy fallback is
+--     never reached via expiry. It could only be reached by an admin deleting
+--     the assignment (`removeRoleAssignment`), which is the system-wide
+--     offboarding behaviour that predates this migration, not a PT-specific
+--     hole.
 DROP TABLE IF EXISTS "pt_only_users_tmp";
 CREATE TEMP TABLE "pt_only_users_tmp" AS
 SELECT DISTINCT a."user_id" AS "user_id"

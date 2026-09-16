@@ -43,19 +43,31 @@ INSERT INTO users (id, name, email, role, is_active, unit_id, updated_at) VALUES
   ('user-pt-only', 'PT Only', 'pt-only@example.com', 'TEACHER', true, 'u-pt', now()),
   ('user-pt-only2', 'PT Only 2', 'pt-only2@example.com', 'STAFF', true, 'u-pt', now()),
   ('user-mixed', 'Mixed', 'mixed@example.com', 'STUDENT', true, NULL, now()),
+  ('user-mixed-expired', 'Mixed Expired', 'mixed-expired@example.com', 'TEACHER', true, NULL, now()),
+  ('user-mixed-future', 'Mixed Future', 'mixed-future@example.com', 'TEACHER', true, NULL, now()),
+  ('user-pt-noassign', 'PT No Assign', 'pt-noassign@example.com', 'TEACHER', true, 'u-pt', now()),
   ('user-tkq', 'TKQ Guru', 'tkq@example.com', 'TEACHER', true, 'u-tk', now());
 
-INSERT INTO user_role_assignments (id, user_id, role_id, is_primary, is_active, updated_at) VALUES
-  ('a-pt-only', 'user-pt-only', 'r-pt-dosen', true, true, now()),
-  ('a-pt-only2', 'user-pt-only2', 'r-pt-mhs', true, true, now()),
-  ('a-mixed-pt', 'user-mixed', 'r-pt-dosen', true, true, now()),
-  ('a-mixed-tkq', 'user-mixed', 'r-tkq', false, true, now()),
-  ('a-tkq', 'user-tkq', 'r-tkq', true, true, now());
+INSERT INTO user_role_assignments (id, user_id, role_id, is_primary, is_active, expires_at, updated_at) VALUES
+  ('a-pt-only', 'user-pt-only', 'r-pt-dosen', true, true, NULL, now()),
+  ('a-pt-only2', 'user-pt-only2', 'r-pt-mhs', true, true, NULL, now()),
+  ('a-mixed-pt', 'user-mixed', 'r-pt-dosen', true, true, NULL, now()),
+  ('a-mixed-tkq', 'user-mixed', 'r-tkq', false, true, NULL, now()),
+  ('a-mixed-expired-pt', 'user-mixed-expired', 'r-pt-dosen', true, true, NULL, now()),
+  ('a-mixed-expired-tkq', 'user-mixed-expired', 'r-tkq', false, true, now() - interval '1 day', now()),
+  ('a-mixed-future-pt', 'user-mixed-future', 'r-pt-dosen', true, true, NULL, now()),
+  ('a-mixed-future-tkq', 'user-mixed-future', 'r-tkq', false, true, now() + interval '365 days', now()),
+  ('a-tkq', 'user-tkq', 'r-tkq', true, true, NULL, now());
+-- user-pt-noassign deliberately has NO assignment row. It models gap (a) in the
+-- migration's section-4 comment: a legacy-role-only PT account.
 
 INSERT INTO refresh_tokens (id, token, user_id, expires_at) VALUES
   ('rt-pt-only', 'tok-pt-only', 'user-pt-only', now() + interval '30 days'),
   ('rt-pt-only2', 'tok-pt-only2', 'user-pt-only2', now() + interval '30 days'),
   ('rt-mixed', 'tok-mixed', 'user-mixed', now() + interval '30 days'),
+  ('rt-mixed-expired', 'tok-mixed-expired', 'user-mixed-expired', now() + interval '30 days'),
+  ('rt-mixed-future', 'tok-mixed-future', 'user-mixed-future', now() + interval '30 days'),
+  ('rt-pt-noassign', 'tok-pt-noassign', 'user-pt-noassign', now() + interval '30 days'),
   ('rt-tkq', 'tok-tkq', 'user-tkq', now() + interval '30 days');
 
 -- Operational rows owned by each unit. The migration deletes the PT unit, so
@@ -182,6 +194,51 @@ describeDb('decommission migration — legacy PT sessions end', () => {
     expect(byId['user-mixed'].role).toBe('STUDENT');
   });
 
+  // Gap 2 (review comment): a "mixed" user whose non-PT assignment is active at
+  // migration time but expires later. The temp table sticks to the runtime's
+  // `activeRoleWhere()`, so an already-expired non-PT assignment does NOT count
+  // and the user is treated as PT-only — that is the correct outcome.
+  it('purges a mixed user whose only non-PT assignment is already expired', async () => {
+    const rows = await fetchUsers();
+    const byId = Object.fromEntries(rows.map((r) => [r.id, r]));
+    expect(byId['user-mixed-expired'].assign_code).toBeNull();
+    expect(byId['user-mixed-expired'].tokens).toBe('0');
+    expect(byId['user-mixed-expired'].role).toBeNull();
+  });
+
+  // The mirror shape — a non-PT assignment that expires *after* the migration —
+  // is deliberately left alone: it is still active, so the user keeps their
+  // session and their legacy `users.role`. That would only be a hole if the
+  // assignment could later expire on its own, and `expires_at` is never written
+  // by any code path (pinned by the guard test); the reachable offboarding is an
+  // admin deleting the assignment, which is the pre-existing system-wide
+  // behaviour, not something the PT purge introduces.
+  it('leaves a mixed user with a non-PT assignment that is still active', async () => {
+    const rows = await fetchUsers();
+    const byId = Object.fromEntries(rows.map((r) => [r.id, r]));
+    expect(byId['user-mixed-future'].assign_code).toBe('TKQ_GURU');
+    expect(byId['user-mixed-future'].tokens).toBe('1');
+    expect(byId['user-mixed-future'].role).toBe('TEACHER');
+  });
+
+  // Gap 1 (review comment): a PT account with no `user_role_assignments` row at
+  // all. It has no PT trace left in the data once the PT role rows are deleted,
+  // so the migration cannot identify it and — by design — does not touch it.
+  // This shape is unreachable through any account-creation path: the seed loop
+  // writes an assignment per DEMO_ACCOUNTS entry, and `authService.register` /
+  // `userService.create` write one in the same transaction. The paths that skip
+  // the assignment (students, HR, bulk import) cannot mint a PT account, and
+  // `login()` refuses a user without an active assignment, so no refresh token
+  // can exist for them. Pinned here so the limitation is visible and any future
+  // detection change is deliberate.
+  it('documents the no-assignment PT shape the migration cannot identify', async () => {
+    const rows = await fetchUsers();
+    const byId = Object.fromEntries(rows.map((r) => [r.id, r]));
+    expect(byId['user-pt-noassign'].assign_code).toBeNull();
+    expect(byId['user-pt-noassign'].role).toBe('TEACHER');
+    expect(byId['user-pt-noassign'].tokens).toBe('1');
+  });
+
   it('keeps an unrelated non-PT user untouched', async () => {
     const rows = await fetchUsers();
     const byId = Object.fromEntries(rows.map((r) => [r.id, r]));
@@ -246,7 +303,7 @@ describeDb('decommission migration — legacy PT sessions end', () => {
       const { rows } = await db.query<{ id: string; unit_id: string | null }>(
         `SELECT id, unit_id FROM users WHERE id LIKE 'user-pt%' ORDER BY id`
       );
-      expect(rows.map((r) => r.id)).toEqual(['user-pt-only', 'user-pt-only2']);
+      expect(rows.map((r) => r.id)).toEqual(['user-pt-noassign', 'user-pt-only', 'user-pt-only2']);
       for (const row of rows) {
         expect(row.unit_id).toBeNull();
       }
