@@ -32,10 +32,18 @@ export const castFoundationVoteSchema = z.object({
 
 export type CastFoundationVoteInput = z.infer<typeof castFoundationVoteSchema>;
 
-/** Putuskan keputusan terpilih (internal/pimpinan rapat). */
-export const finalizeFoundationDecisionSchema = z.object({
-  passphrase: z.string().min(1),
-});
+/**
+ * Putuskan keputusan terpilih (internal/pimpinan rapat).
+ *
+ * **Tanpa passphrase, dan itu memang model otorisasinya.** Finalisasi tidak
+ * menandatangani apa pun dengan kunci pribadi pemanggil: yang dibubuhkan adalah
+ * e-seal Yayasan, dan kunci privatnya disegel oleh passphrase SERVER
+ * (`FOUNDATION_ESEAL_PASSPHRASE`), bukan oleh rahasia pengguna. Otorisasinya
+ * adalah peran (`WRITE` di routes) — meminta passphrase di sini berarti
+ * menuntut rahasia yang tidak dipakai untuk apa pun, dan menyimpannya di
+ * kontrak berarti mengundang klien mengirimkannya.
+ */
+export const finalizeFoundationDecisionSchema = z.object({});
 
 export type FinalizeFoundationDecisionInput = z.infer<
   typeof finalizeFoundationDecisionSchema
@@ -48,14 +56,16 @@ export const upsertFoundationRuleSchema = z.object({
   quorumPresentMode: z
     .enum(FOUNDATION_QUORUM_MODES)
     .default(FoundationQuorumMode.MAJORITY),
-  quorumPresentValue: z.number().min(0).max(1).default(0.5),
+  /**
+   * Wajib > 0, karena ambang nol berarti "kuorum terpenuhi tanpa satu pun
+   * suara" — keputusan dapat disahkan tanpa ada yang menyetujui.
+   */
+  quorumPresentValue: z.number().gt(0).max(1).default(0.5),
   quorumDecisionMode: z
     .enum(FOUNDATION_QUORUM_MODES)
     .default(FoundationQuorumMode.MAJORITY),
-  quorumDecisionValue: z.number().min(0).max(1).default(0.5),
-  decisionBasis: z
-    .enum(["MUFTAKAT_FIRST", "VOTE_ONLY"])
-    .default("MUFTAKAT_FIRST"),
+  /** Wajib > 0 — alasannya sama dengan `quorumPresentValue`. */
+  quorumDecisionValue: z.number().gt(0).max(1).default(0.5),
 });
 
 export type UpsertFoundationRuleInput = z.infer<

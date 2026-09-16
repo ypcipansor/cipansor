@@ -45,14 +45,12 @@ const DEFAULT_RULE = Object.freeze({
     quorumPresentValue: 1,
     quorumDecisionMode: 'MUTLAK',
     quorumDecisionValue: 1,
-    decisionBasis: 'MUFTAKAT_FIRST',
   }),
   MEETING: Object.freeze({
     quorumPresentMode: 'MAJORITY',
     quorumPresentValue: 0.5,
     quorumDecisionMode: 'MAJORITY',
     quorumDecisionValue: 0.5,
-    decisionBasis: 'MUFTAKAT_FIRST',
   }),
 } as const);
 
@@ -151,6 +149,37 @@ type Actor = { id: string; roleCode: string };
 /** Klien Prisma di dalam transaksi interaktif (atau prisma itu sendiri). */
 type DbClient = Prisma.TransactionClient;
 
+/**
+ * Bentuk DTO verifikasi saat tidak ada yang dapat dinyatakan.
+ *
+ * Fungsi, bukan konstanta: sebuah objek yang dibagikan lalu disebar oleh
+ * pemanggil akan tetap terlihat sama, tetapi nilai `null`-nya mudah tertukar
+ * dengan "belum diperiksa" pada pemakaian berikutnya.
+ */
+function emptyVerification(
+  reason: string | null = null
+): FoundationDecisionVerificationDTO {
+  return {
+    found: false,
+    isValid: false,
+    decisionId: null,
+    subject: null,
+    organType: null,
+    kind: null,
+    status: null,
+    decidedAt: null,
+    digest: null,
+    archiveDigest: null,
+    digestOk: null,
+    sealVerified: null,
+    reason,
+    voteCount: 0,
+    approveCount: 0,
+    rejectCount: 0,
+    abstainCount: 0,
+  };
+}
+
 const SEAL_PASSPHRASE = config.foundation.esealPassphrase;
 
 function sealMaterial(seal: FoundationEseal): EncryptedKeyMaterial {
@@ -214,8 +243,16 @@ async function clearFailedAttempts(keyId: string): Promise<void> {
 }
 
 /**
- * Mesin keputusan organ yayasan. Prisma hanya disentuh di sini; efek samping
- * audit & arsip PDF melewati eventBus.
+ * Mesin keputusan organ yayasan. Prisma hanya disentuh di sini.
+ *
+ * Audit ditulis langsung ke `auditLog` — BUKAN lewat eventBus — dan itu
+ * disengaja. Aturan eventBus di AGENTS.md mengatur komunikasi ANTAR-MODUL;
+ * `auditLog` adalah tabel bersama yang ditulis di tempat oleh setiap modul
+ * (esign, finance, procurement), dan baris audit harus IKUT ROLLBACK bersama
+ * transaksi yang dicatatnya. Emit event bersifat fire-and-forget: suara yang
+ * gagal commit dapat meninggalkan baris audit yang mengaku sukses, dan audit
+ * yang tidak sesuai kenyataan lebih buruk daripada tidak ada audit. Yang perlu
+ * melewati eventBus adalah notifikasi/pemberitahuan ke modul lain.
  */
 export const FoundationDecisionService = {
   /** Buat keputusan: snapshot anggota organ & kuorum, lalu buka voting. */
@@ -264,7 +301,6 @@ export const FoundationDecisionService = {
       presentValue: rule.quorumPresentValue,
       decisionMode: rule.quorumDecisionMode,
       decisionValue: rule.quorumDecisionValue,
-      decisionBasis: rule.decisionBasis as QuorumSnapshot['decisionBasis'],
     };
     const emptySummary: VoteSummary = {
       approve: 0,
@@ -335,7 +371,6 @@ export const FoundationDecisionService = {
       quorumPresentValue: d.quorumPresentValue,
       quorumDecisionMode: d.quorumDecisionMode as FoundationDecisionRule['quorumDecisionMode'],
       quorumDecisionValue: d.quorumDecisionValue,
-      decisionBasis: d.decisionBasis,
       updatedById: null,
       updatedAt: new Date(),
     };
@@ -596,7 +631,26 @@ export const FoundationDecisionService = {
     client: DbClient = prisma
   ) {
     if (evaluation.outcome === 'APPROVED' && d.status !== FoundationDecisionStatus.APPROVED) {
-      const buf = await this.renderPdf(d);
+      /**
+       * Keputusan dibentuk SEBELUM render, bukan dibaca dari baris yang masih
+       * VOTING.
+       *
+       * `applyOutcome` dipanggil dari dalam transaksi suara; baris `d` di sini
+       * masih memuat status VOTING dan `decidedAt` null, karena UPDATE-nya baru
+       * terjadi di bawah. Merender `d` apa adanya mencetak "Status: VOTING" dan
+       * menghilangkan tanggal putusan ke dalam PDF yang kemudian DISEGEL —
+       * arsip permanen yang menyatakan keputusan sah belum diputus, dan
+       * digest-nya (beserta tanda tangan e-seal) mengunci kesalahan itu
+       * selamanya.
+       */
+      const decidedAt = new Date();
+      const finalDecision: RichDecision = {
+        ...d,
+        status: FoundationDecisionStatus.APPROVED,
+        decidedById: actor.id,
+        decidedAt,
+      };
+      const buf = await this.renderPdf(finalDecision);
       // Hash BYTE PDF, bukan teksnya. Ini yang membolehkan arsip memeriksa
       // dirinya sendiri dan yang diikat e-seal.
       const finalPdfDigest = sha256bytes(buf);
@@ -622,7 +676,9 @@ export const FoundationDecisionService = {
         data: {
           status: FoundationDecisionStatus.APPROVED,
           decidedById: actor.id,
-          decidedAt: new Date(),
+          // Tanggal yang SAMA dengan yang tercetak di PDF — dua nilai berbeda
+          // berarti arsip dan basis data menyebut waktu putusan yang berlainan.
+          decidedAt,
           finalPdfDigest,
           finalPdfByteSize: buf.length,
           finalPdfSealSignature: sealSignature,
@@ -682,7 +738,6 @@ export const FoundationDecisionService = {
         quorumPresentValue: input.quorumPresentValue,
         quorumDecisionMode: input.quorumDecisionMode,
         quorumDecisionValue: input.quorumDecisionValue,
-        decisionBasis: input.decisionBasis,
         updatedById: actor.id,
       },
     });
@@ -705,83 +760,189 @@ export const FoundationDecisionService = {
     });
   },
 
-  /** Verifikasi keputusan akhir lewat token (QR/publik). */
-  async verifyByToken(token: string): Promise<FoundationDecisionVerificationDTO> {
-    const notFound: FoundationDecisionVerificationDTO = {
-      found: false,
-      decisionId: null,
-      subject: null,
-      organType: null,
-      kind: null,
-      status: null,
-      decidedAt: null,
-      digest: null,
-      archiveDigest: null,
-      digestOk: null,
-      sealVerified: null,
-      voteCount: 0,
-      approveCount: 0,
-      rejectCount: 0,
-      abstainCount: 0,
-      members: [],
-    };
-
-    const d = await prisma.foundationDecision.findUnique({
-      where: { verificationToken: token },
-      include: {
-        votes: { include: { user: { select: { id: true, name: true } } } },
-        members: { include: { user: { select: { id: true, name: true } } } },
-        document: { select: { bytes: true } },
-      },
-    });
-    if (!d || d.status !== FoundationDecisionStatus.APPROVED) {
-      return notFound;
+  /**
+   * Inti verifikasi yang dipakai BERSAMA oleh jalur token dan jalur unggahan.
+   *
+   * `checkedBytes` adalah byte yang benar-benar ada di tangan pemeriksa. Pada
+   * jalur unggahan itu berkas yang dipegang pemindai; pada jalur token ia
+   * `undefined` dan yang dibandingkan hanyalah arsip tersimpan di server.
+   *
+   * `digestReady` menyatakan bahwa byte-nya BENAR-BENAR kita periksa (jalur
+   * unggahan) — pada jalur itu `finalPdfDigest` diambil dari hasil hash
+   * unggahan, bukan dari server, sehingga sebuah PDF berisi token asli yang
+   * isinya diganti tidak lagi lolos: digestnya berbeda dari yang di-e-seal.
+   */
+  async verifyDecisionCore(
+    d: {
+      id: string;
+      subject: string;
+      organType: string;
+      kind: string;
+      status: string;
+      decidedAt: Date | null;
+      finalPdfDigest: string | null;
+      finalPdfSealSignature: string | null;
+      esealId: string | null;
+      votes: Array<{ choice: string }>;
+    },
+    opts: { checkedBytes?: Buffer; uploaded?: boolean }
+  ): Promise<FoundationDecisionVerificationDTO> {
+    if (d.status !== FoundationDecisionStatus.APPROVED) {
+      return emptyVerification();
     }
 
-    // Verifikasi memakai seal SPESIFIK yang membubuhkan tanda tangan ini —
-    // bukan "seal tertua", yang mungkin sudah dicabut atau berbeda kunci.
+    /**
+     * Verifikasi e-seal HANYA dengan kunci PUBLIK.
+     *
+     * Dulu ia menuntut `signSeal(sealMaterial, SEAL_PASSPHRASE, digest)` sama
+     * dengan tanda tangan tersimpan, yang berarti mendekripsi kunci privat
+     * dengan passphrase yang berlaku SEKARANG. Setelah passphrase e-seal
+     * dirotasi, setiap keputusan lama tiba-tiba gagal diverifikasi — padahal
+     * tidak ada yang berubah pada dokumennya. Yang membuktikan keaslian adalah
+     * kunci publik yang tercatat bersama tanda tangan itu, dan kunci publik
+     * tidak pernah berubah oleh rotasi passphrase.
+     */
     let sealVerified: boolean | null = null;
     if (d.finalPdfDigest && d.finalPdfSealSignature) {
       const seal = d.esealId
         ? await prisma.foundationEseal.findUnique({ where: { id: d.esealId } })
         : null;
       if (seal) {
-        // Tanda tangan Ed25519 deterministik → bubuhkan ulang lalu bandingkan,
-        // sekaligus validasi kriptografi terhadap kunci publik.
-        sealVerified =
-          signSeal(sealMaterial(seal), SEAL_PASSPHRASE, d.finalPdfDigest) ===
-            d.finalPdfSealSignature &&
-          verifyPdfHashSignature(seal.publicKey, d.finalPdfDigest, d.finalPdfSealSignature);
+        sealVerified = verifyPdfHashSignature(
+          seal.publicKey,
+          d.finalPdfDigest,
+          d.finalPdfSealSignature
+        );
       }
     }
 
-    // Arsip memeriksa dirinya sendiri: hash ulang byte yang tersimpan dan
-    // bandingkan dengan digest yang ditandatangani. Byte yang diubah setelah
-    // finalisasi tampak tidak sah di sini.
-    const archiveDigest = d.document ? sha256bytes(Buffer.from(d.document.bytes)) : null;
+    /**
+     * Byte mana yang diperiksa, dan terhadap digest mana ia dibandingkan.
+     *
+     * Pada jalur unggahan, `bytes` adalah berkas pemindai dan `expected` adalah
+     * digest hasil hash berkas ITU. Bila hash-nya tidak sama dengan
+     * `finalPdfDigest` di server, `digestOk` menjadi false — inilah yang
+     * menggagalkan PDF palsu yang mempertahankan token asli.
+     */
+    const archiveDigest = opts.checkedBytes ? sha256bytes(opts.checkedBytes) : null;
     const digestOk =
       archiveDigest === null || d.finalPdfDigest === null
         ? null
         : archiveDigest === d.finalPdfDigest;
 
+    const checks: Array<boolean | null> = [digestOk, sealVerified];
+    const isValid = checks.every((ok) => ok === true);
+
+    // Sebab yang dibaca pengunjung, dengan urutan yang paling penting dulu: byte
+    // yang tidak cocok adalah temuan paling keras (dokumen mungkin dipalsukan),
+    // sedangkan e-seal yang belum diverifikasi bisa sekadar berarti rekamannya
+    // belum lengkap.
+    let reason: string | null = null;
+    if (digestOk === false) {
+      reason = opts.uploaded
+        ? 'Isi berkas PDF ini TIDAK cocok dengan digest yang ditandatangani e-seal — dokumen telah diubah setelah disahkan, atau bukan berkas aslinya.'
+        : 'Byte arsip server tidak cocok dengan digest yang ditandatangani — arsip telah berubah setelah disahkan.';
+    } else if (sealVerified === false) {
+      reason = 'Tanda tangan e-seal Yayasan tidak dapat diverifikasi terhadap kunci publiknya.';
+    } else if (digestOk === null && sealVerified === null && d.finalPdfDigest) {
+      reason =
+        'Keputusan ini tercatat tetapi rekaman e-seal atau arsipnya tidak lengkap, sehingga keabsahannya tidak dapat dipastikan.';
+    } else if (!d.finalPdfDigest) {
+      reason = 'Keputusan ini belum memiliki arsip PDF yang di-e-seal.';
+    }
+
     return {
       found: true,
+      isValid,
       decisionId: d.id,
       subject: d.subject,
-      organType: d.organType,
-      kind: d.kind,
-      status: d.status,
+      organType: d.organType as FoundationDecisionVerificationDTO['organType'],
+      kind: d.kind as FoundationDecisionVerificationDTO['kind'],
+      status: d.status as FoundationDecisionVerificationDTO['status'],
       decidedAt: d.decidedAt ? d.decidedAt.toISOString() : null,
       digest: d.finalPdfDigest,
       archiveDigest,
       digestOk,
       sealVerified,
+      reason,
       voteCount: d.votes.length,
       approveCount: d.votes.filter((v) => v.choice === 'APPROVE').length,
       rejectCount: d.votes.filter((v) => v.choice === 'REJECT').length,
       abstainCount: d.votes.filter((v) => v.choice === 'ABSTAIN').length,
-      members: d.members.map((m) => ({ userId: m.userId, name: m.name, roleCode: m.roleCode })),
     };
+  },
+
+  /**
+   * Verifikasi lewat token (QR), memeriksa arsip yang tersimpan di server.
+   *
+   * Ini membuktikan bahwa arsip server belum berubah sejak disegel. Ia TIDAK
+   * membuktikan apa pun tentang berkas yang dipegang pemindai — lihat
+   * `verifyByPdfBuffer` untuk itu, yang membandingkan byte unggahan.
+   */
+  async verifyByToken(token: string): Promise<FoundationDecisionVerificationDTO> {
+    const d = await prisma.foundationDecision.findUnique({
+      where: { verificationToken: token },
+      include: {
+        votes: { select: { choice: true } },
+        document: { select: { bytes: true } },
+      },
+    });
+    if (!d) {
+      return emptyVerification('Token verifikasi tidak cocok dengan keputusan yang sah.');
+    }
+
+    return this.verifyDecisionCore(
+      d as never,
+      d.document ? { checkedBytes: Buffer.from(d.document.bytes) } : {}
+    );
+  },
+
+  /**
+   * Verifikasi lewat byte PDF yang DIUNGGAH pemindai.
+   *
+   * Mengikat keabsahan pada byte berkas yang dipegang pembaca, bukan pada
+   * catatan server. Alur token saja akan meloloskan PDF palsu yang
+   * mempertahankan token aslinya; di sini hash byte unggahan dihitung dan
+   * dicocokkan dengan `finalPdfDigest` yang ditandatangani e-seal.
+   *
+   * Dicari lewat dua jalur: `finalPdfDigest` (indeks unik) dan `sha256` arsip.
+   */
+  async verifyByPdfBuffer(pdfBuffer: Buffer): Promise<FoundationDecisionVerificationDTO> {
+    const uploadedDigest = sha256bytes(pdfBuffer);
+    const select = {
+      id: true,
+      subject: true,
+      organType: true,
+      kind: true,
+      status: true,
+      decidedAt: true,
+      finalPdfDigest: true,
+      finalPdfSealSignature: true,
+      esealId: true,
+      votes: { select: { choice: true } },
+    } as const;
+
+    const byFinal = await prisma.foundationDecision.findUnique({
+      where: { finalPdfDigest: uploadedDigest },
+      select,
+    });
+    const d =
+      byFinal ??
+      (await prisma.foundationDecision.findFirst({
+        where: { document: { is: { sha256: uploadedDigest } } },
+        select,
+      }));
+
+    if (!d) {
+      // Tidak ada keputusan yang mengenal byte ini. Bentuk DTO tetap penuh,
+      // sehingga halaman publik dapat menampilkan pesan yang benar alih-alih
+      // galat bentuk.
+      return emptyVerification(
+        'Berkas PDF ini tidak terdaftar sebagai risalah/keputusan resmi Yayasan, atau isinya telah berubah sejak disahkan.'
+      );
+    }
+
+    return this.verifyDecisionCore(d as never, { checkedBytes: pdfBuffer, uploaded: true });
   },
 
   /** Ambil dokumen PDF final untuk diunduh, atau 404 bila belum final. */

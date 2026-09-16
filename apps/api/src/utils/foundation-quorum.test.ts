@@ -11,7 +11,6 @@ function snap(over: Partial<QuorumSnapshot> = {}): QuorumSnapshot {
     presentValue: 1,
     decisionMode: 'MUTLAK',
     decisionValue: 1,
-    decisionBasis: 'MUFTAKAT_FIRST',
     ...over,
   };
 }
@@ -58,6 +57,63 @@ describe('evaluateQuorum — CIRCULAR (mufakat 100% aktif)', () => {
       votes(['APPROVE', 'APPROVE', 'APPROVE', 'APPROVE', 'ABSTAIN'])
     );
     expect(e.outcome).toBe('REJECTED');
+  });
+
+  /**
+   * Regresi: satu REJECT menutup sirkuler lebih awal, tanpa menunggu seluruh
+   * anggota bersuara.
+   *
+   * Versi sebelumnya hanya menutup bila `presentCount >= activeCount`, sehingga
+   * seorang penolak di antara anggota yang selebihnya diam meninggalkan
+   * keputusan berstatus VOTING selamanya. Mufakat sudah mustahil saat itu juga;
+   * menunggu suara yang tak akan datang berarti keputusan tak pernah dapat
+   * difinalkan.
+   */
+  it('menutup sirkuler sebagai REJECTED begitu mufakat mustahil, walau baru sebagian bersuara', () => {
+    // 5 anggota aktif, baru 2 memberi suara: 1 setuju, 1 menolak.
+    // Maksimum setuju yang mungkin = 1 + 3 (yang belum bersuara) = 4 < 5.
+    const e = evaluateQuorum(circ, votes(['APPROVE', 'REJECT']));
+    expect(e.presentCount).toBe(2);
+    expect(e.presentMet).toBe(false); // kuorum hadir belum tercapai
+    expect(e.outcome).toBe('REJECTED'); // tetapi mufakat sudah mustahil
+  });
+
+  it('ABSTAIN dini juga menutup sirkuler sebagai REJECTED', () => {
+    const e = evaluateQuorum(circ, votes(['APPROVE', 'ABSTAIN']));
+    expect(e.outcome).toBe('REJECTED');
+  });
+
+  it('tidak menutup sirkuler selama mufakat MASIH mungkin', () => {
+    // 3 setuju dari 5, 2 belum bersuara → maksimum 5 ≥ 5, masih mungkin.
+    const e = evaluateQuorum(circ, votes(['APPROVE', 'APPROVE', 'APPROVE']));
+    expect(e.outcome).toBe('OPEN');
+  });
+
+  /**
+   * Regresi: ambang 0 tak boleh mengesahkan keputusan tanpa satu suara pun.
+   *
+   * `requiredCount(mode, 0, pool)` menghasilkan 0, sehingga `approvedCount (0)
+   * >= decisionRequired (0)` dan `evaluateQuorum` mengembalikan APPROVED
+   * sebelum ada yang menyetujui — lalu finalize menyegelnya. Sirkuler dengan
+   * ambang nol dan tanpa suara adalah bentuk paling telanjang dari ini.
+   */
+  it('tidak pernah APPROVED dengan approvedCount === 0', () => {
+    const zeroRule = snap({ decisionValue: 0, presentValue: 0 });
+    const e = evaluateQuorum(zeroRule, []);
+    expect(e.approvedCount).toBe(0);
+    expect(e.outcome).not.toBe('APPROVED');
+  });
+
+  it('tidak pernah APPROVED dengan approvedCount === 0 pada rapat', () => {
+    const zeroMeeting = snap({
+      kind: 'MEETING',
+      presentMode: 'MUTLAK',
+      presentValue: 0,
+      decisionMode: 'MUTLAK',
+      decisionValue: 0,
+    });
+    const e = evaluateQuorum(zeroMeeting, []);
+    expect(e.outcome).not.toBe('APPROVED');
   });
 });
 

@@ -39,11 +39,13 @@ type Envelope<T> = { success: boolean; data: T };
 type DecisionRow = { id: string; subject: string; status: string };
 type VerifyResult = {
   found: boolean;
+  isValid: boolean;
   status: string | null;
   digest: string | null;
   archiveDigest: string | null;
   digestOk: boolean | null;
   sealVerified: boolean | null;
+  reason: string | null;
 };
 
 const API_URL = process.env.API_URL || "http://localhost:3001/api";
@@ -337,8 +339,11 @@ test.describe("verifikasi publik", () => {
     await expect(page.getByText(subject)).toBeVisible({ timeout: 20000 });
     // Arsip memeriksa dirinya sendiri, dan e-seal diverifikasi ulang (#12).
     await expect(page.getByText(/E-seal Yayasan terverifikasi/)).toBeVisible();
+    // Jalur token tidak memeriksa byte yang dipegang pemindai, jadi salinan
+    // yang benar di sini adalah "arsip server" — kalimat "berkas yang Anda
+    // unggah cocok byte-per-byte" hanya keluar lewat jalur unggahan.
     await expect(
-      page.getByText(/Byte arsip cocok dengan digest yang ditandatangani/),
+      page.getByText(/Arsip server cocok dengan digest yang ditandatangani/),
     ).toBeVisible();
   });
 
@@ -364,6 +369,86 @@ test.describe("verifikasi publik", () => {
     expect(body.data.archiveDigest).toBe(body.data.digest);
     expect(body.data.digestOk).toBe(true);
     expect(body.data.sealVerified).toBe(true);
+    // `isValid` adalah satu-satunya putusan yang dibaca klien.
+    expect(body.data.isValid).toBe(true);
+  });
+
+  /**
+   * Regresi BUG KRITIS: PDF palsu yang mempertahankan token asli.
+   *
+   * Dipisah ke jalur unggahan di bawah: jalur token tidak pernah melihat byte
+   * yang dipegang pemindai, jadi hasil palsu hanya dapat dicegah dengan
+   * membandingkan hash berkas unggahan.
+   */
+  test("unggahan PDF asli dinyatakan SAH lewat /foundation/verify-pdf", async () => {
+    expect(verificationToken).toBeTruthy();
+    // Ambil byte PDF asli dari endpoint unduhan (sesi staf), lalu unggah ulang
+    // sebagai pemindai anonim — inilah alur yang membuktikan keabsahan.
+    const admin = await apiLogin(SEED_USERS.superAdmin);
+    const pdfRes = await fetch(
+      `${API_URL}/foundation/decisions/${decisionId}/document`,
+      { headers: { authorization: `Bearer ${admin.accessToken}` } },
+    );
+    expect(pdfRes.status).toBe(200);
+    const pdfBytes = new Uint8Array(await pdfRes.arrayBuffer());
+
+    const form = new FormData();
+    form.append(
+      "file",
+      new Blob([pdfBytes], { type: "application/pdf" }),
+      "risalah.pdf",
+    );
+    const verifyRes = await fetch(`${API_URL}/foundation/verify-pdf`, {
+      method: "POST",
+      body: form,
+    });
+    expect(verifyRes.status).toBe(200);
+    const body = (await verifyRes.json()) as Envelope<VerifyResult>;
+    expect(body.data.found).toBe(true);
+    expect(body.data.digestOk).toBe(true);
+    expect(body.data.sealVerified).toBe(true);
+    expect(body.data.isValid).toBe(true);
+  });
+
+  /**
+   * Regresi BUG KRITIS: PDF palsu yang mempertahankan token asli.
+   *
+   * Berkas yang isinya diubah harus DITOLAK oleh jalur unggahan, meskipun
+   * tokennya sah — inilah yang tidak dilakukan jalur token.
+   */
+  test("unggahan PDF yang isinya diubah ditolak (token asli tak menolong)", async () => {
+    const forged = Buffer.from(
+      "%PDF-1.7 dokumen karangan yang menyisipkan token asli " +
+        verificationToken +
+        " agar lolos\n%%EOF",
+    );
+    const form = new FormData();
+    form.append(
+      "file",
+      new Blob([forged], { type: "application/pdf" }),
+      "palsu.pdf",
+    );
+    const res = await fetch(`${API_URL}/foundation/verify-pdf`, {
+      method: "POST",
+      body: form,
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Envelope<VerifyResult>;
+    expect(body.data.found).toBe(false);
+    expect(body.data.isValid).toBe(false);
+  });
+
+  test("halaman publik menyediakan unggahan berkas, bukan hanya token", async ({
+    page,
+  }) => {
+    await page.goto("/public/verify-decision");
+    await expect(
+      page.getByRole("heading", { name: "Verifikasi Keputusan Yayasan" }),
+    ).toBeVisible({ timeout: 20000 });
+    await expect(page.getByLabel("Berkas PDF")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Verifikasi Berkas" }),
+    ).toBeVisible();
   });
 });
 

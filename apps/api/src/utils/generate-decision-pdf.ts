@@ -1,16 +1,29 @@
-import { PDFDocument, PDFFont, PDFPage, StandardFonts, rgb } from 'pdf-lib';
+import { PDFDocument, PDFFont, StandardFonts, rgb } from 'pdf-lib';
+import fontkit from '@pdf-lib/fontkit';
+import fs from 'fs';
+import path from 'path';
 
 /**
  * Pembuat PDF risalah/keputusan organ yayasan — fungsi MURNI tanpa Prisma.
  *
  * Menerima data keputusan + daftar suara + daftar anggota + token verifikasi,
- * mengembalikan Buffer PDF. Tampilan sengaja sederhana (Helvetica) agar tetap
- * sah pada setiap pembaca PDF; tidak ada font TTF sehingga tidak tergantung
- * aset font. Berkas final TIDAK dibubuhi tanda tangan oleh generator ini —
- * tanda tangan e-seal ditambahkan pada hash byte final di service (lihat
- * foundation-decisions.service.ts), karena menanam tanda tangan CMS ke dalam
- * PDF membuat byte-range signature (PAdES B-B) dan rawan rusak bila PDF
- * berubah setelahnya.
+ * mengembalikan Buffer PDF. Berkas final TIDAK dibubuhi tanda tangan oleh
+ * generator ini — tanda tangan e-seal ditambahkan pada hash byte final di
+ * service (lihat foundation-decisions.service.ts), karena menanam tanda tangan
+ * CMS ke dalam PDF membuat byte-range signature (PAdES B-B) dan rawan rusak
+ * bila PDF berubah setelahnya.
+ *
+ * **Aksara di luar WinAnsi wajib selamat.** Font standar pdf-lib (Helvetica)
+ * hanya dapat mengkodekan WinAnsi, dan `drawText` MELEMPAR untuk Arab atau
+ * emoji. Dulu itu bukan sekadar tampilan jelek: render terjadi di dalam
+ * transaksi suara yang mencapai kuorum, sehingga lemparan itu me-rollback
+ * suara yang sah dan meninggalkan keputusan terbuka selamanya — satu emoji di
+ * dalam naskah cukup untuk membuat keputusan tak pernah dapat disahkan. Karena
+ * itu font Unicode TTF (`assets/fonts/Amiri-Regular.ttf`, sama seperti raport)
+ * disematkan lewat fontkit; bila asetnya tidak ada, teks disanitasi ke WinAnsi
+ * sebagai ganti gagal — mencetak sebagian isi jauh lebih baik daripada tidak
+ * mencetak keputusan sama sekali. Tanpa shaping/RTL (bukan tugas util ini),
+ * Arab akan tampil dalam bentuk huruf terpisah.
  */
 
 export interface DecisionPdfVoteRow {
@@ -55,6 +68,59 @@ const margin = 48;
 const pageW = 595; // A4 point width
 const contentW = pageW - margin * 2;
 
+/** Batas aksara yang dapat dikodekan font standar (WinAnsi + tambahannya). */
+const WINANSI_EXTRA = new Set('€‚ƒ„…†‡ˆ‰Š‹ŒŽ' + '‘’“”•–—˜™š›œžŸ');
+
+function isWinAnsiEncodable(ch: string): boolean {
+  const code = ch.codePointAt(0)!;
+  if (code === 0x0a || code === 0x0d || code === 0x09) return true;
+  if (code >= 0x20 && code <= 0x7e) return true;
+  if (code >= 0xa0 && code <= 0xff) return true;
+  return WINANSI_EXTRA.has(ch);
+}
+
+/**
+ * Ganti aksara yang tak dapat dikodekan font standar. HANYA dipakai ketika
+ * font Unicode tidak dapat dimuat — selalu ada jaring pengaman, karena
+ * `drawText` yang melempar di tengah transaksi kuorum membatalkan suara sah.
+ */
+function sanitizeForFallbackFont(text: string): string {
+  return [...text].map((ch) => (isWinAnsiEncodable(ch) ? ch : '?')).join('');
+}
+
+/** Byte TTF font Unicode, dibaca sekali. Instance PDFFont terikat ke satu
+ * dokumen, jadi hanya BYTE-nya yang di-cache (pola generate-raport-merdeka-pdf). */
+let unicodeFontBytes: Buffer | null = null;
+
+const FONT_CANDIDATE_PATHS = [
+  path.resolve(__dirname, '../assets/fonts/Amiri-Regular.ttf'),
+  path.resolve(process.cwd(), 'src/assets/fonts/Amiri-Regular.ttf'),
+  path.resolve(process.cwd(), 'apps/api/src/assets/fonts/Amiri-Regular.ttf'),
+];
+
+async function embedUnicodeFont(pdfDoc: PDFDocument): Promise<PDFFont | null> {
+  if (!(pdfDoc as unknown as { fontkit?: unknown }).fontkit) {
+    pdfDoc.registerFontkit(fontkit);
+  }
+  if (!unicodeFontBytes) {
+    for (const candidate of FONT_CANDIDATE_PATHS) {
+      try {
+        if (fs.existsSync(candidate)) {
+          unicodeFontBytes = fs.readFileSync(candidate);
+          break;
+        }
+      } catch {
+        // Coba kandidat berikutnya.
+      }
+    }
+  }
+  if (!unicodeFontBytes) return null;
+  // `subset: true` membuat byte PDF tetap deterministik dan kecil: hanya glyph
+  // yang benar-benar dipakai yang disematkan, dalam urutan yang sama setiap
+  // kali, sehingga digest arsip dapat direproduksi (uji determinisme).
+  return pdfDoc.embedFont(new Uint8Array(unicodeFontBytes), { subset: true });
+}
+
 function wrap(font: PDFFont, size: number, text: string, maxWidth: number): string[] {
   const words = text.split(/\s+/);
   const lines: string[] = [];
@@ -74,9 +140,21 @@ function wrap(font: PDFFont, size: number, text: string, maxWidth: number): stri
 
 export async function generateDecisionPdf(data: DecisionPdfData): Promise<Buffer> {
   const pdfDoc = await PDFDocument.create();
+  pdfDoc.setCreationDate(new Date(0));
+  pdfDoc.setModificationDate(new Date(0));
   let page = pdfDoc.addPage([pageW, 842]); // A4 portrait
-  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-  const bold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const unicodeFont = await embedUnicodeFont(pdfDoc);
+  const keepUnicode = unicodeFont !== null;
+  const font =
+    unicodeFont ?? (await pdfDoc.embedFont(StandardFonts.Helvetica));
+  const bold =
+    unicodeFont ?? (await pdfDoc.embedFont(StandardFonts.HelveticaBold));
+
+  // Setiap teks yang akan digambar/disusun melewati ini. Ketika font Unicode
+  // tidak dapat dimuat, aksara asing diganti supaya `drawText` tidak melempar;
+  // ketika tersedia, teksnya dibiarkan apa adanya agar Arab/emoji ikut tercetak.
+  const safe = (txt: string): string =>
+    keepUnicode ? txt : sanitizeForFallbackFont(txt);
 
   let y = 800;
   const lineHeight = 14;
@@ -93,11 +171,11 @@ export async function generateDecisionPdf(data: DecisionPdfData): Promise<Buffer
   ) => {
     const { size = 11, bold: isBold = false, gap = 4, color = rgb(0, 0, 0) } = opts;
     ensureSpace(lineHeight);
-    page.drawText(txt, { x: margin, y, size, font: isBold ? bold : font, color });
+    page.drawText(safe(txt), { x: margin, y, size, font: isBold ? bold : font, color });
     y -= size + gap;
   };
   const paragraph = (txt: string, size = 11, gap = 6) => {
-    for (const line of wrap(font, size, txt, contentW)) {
+    for (const line of wrap(font, size, safe(txt), contentW)) {
       ensureSpace(lineHeight);
       page.drawText(line, { x: margin, y, size, font, color: rgb(0.05, 0.05, 0.05) });
       y -= size + 3;

@@ -62,7 +62,6 @@ export interface QuorumSnapshot {
   presentValue: number;
   decisionMode: FoundationQuorumMode;
   decisionValue: number;
-  decisionBasis: "MUFTAKAT_FIRST" | "VOTE_ONLY";
 }
 
 /** Rekapitulasi suara pada sebuah keputusan. */
@@ -125,9 +124,27 @@ export interface FoundationDecisionDetailDTO extends FoundationDecisionSummaryDT
   myVote: FoundationVoteChoice | null;
 }
 
-/** Ringkasan tingkat verifikasi sebuah keputusan akhir. */
+/**
+ * Ringkasan tingkat verifikasi sebuah keputusan akhir.
+ *
+ * **Tidak memuat roster anggota.** Endpoint verifikasi terbuka untuk anonim
+ * (pemindai QR, dinas luar), dan daftar nama + jabatan seluruh Pembina/
+ * Pengurus/Pengawas adalah data tata kelola yang tidak dibutuhkan untuk
+ * menjawab "dokumen ini sah?". Yang ditampilkan hanyalah angka rekap suara,
+ * yang memang membuktikan kuorum terpenuhi tanpa menyebut siapa pun.
+ */
 export interface FoundationDecisionVerificationDTO {
   found: boolean;
+  /**
+   * Putusan tunggal yang boleh dipakai klien untuk menampilkan keabsahan.
+   *
+   * True hanya bila seluruh pemeriksaan yang mungkin dilakukan benar-benar
+   * lulus: byte yang diperiksa cocok dengan digest yang ditandatangani dan
+   * tanda tangan e-seal terverifikasi. `null` pada pemeriksaan yang tidak
+   * dapat dijalankan (mis. keputusan tanpa arsip) TIDAK dianggap lulus —
+   * "tidak diperiksa" bukan "aman".
+   */
+  isValid: boolean;
   decisionId: string | null;
   subject: string | null;
   organType: FoundationOrganType | null;
@@ -136,14 +153,51 @@ export interface FoundationDecisionVerificationDTO {
   decidedAt: string | null;
   /** Digest yang di-tanda-tangani e-seal (hash byte PDF final). */
   digest: string | null;
-  /** Hash ulang dari byte arsip yang tersimpan; null bila tak ada arsip. */
+  /**
+   * Hash dari byte yang benar-benar diperiksa: arsip tersimpan pada jalur
+   * token, atau berkas yang diunggah pemindai pada jalur unggahan.
+   */
   archiveDigest: string | null;
-  /** Benarkah byte arsip masih sama dengan digest yang ditandatangani? */
+  /** Benarkah byte yang diperiksa sama dengan digest yang ditandatangani? */
   digestOk: boolean | null;
   sealVerified: boolean | null;
+  /** Kalimat sebab saat tidak sah, untuk dibaca pengunjung. */
+  reason: string | null;
   voteCount: number;
   approveCount: number;
   rejectCount: number;
   abstainCount: number;
-  members: DecisionMemberDTO[];
+}
+
+/** Hasil memberi suara pada sebuah keputusan. */
+export interface FoundationVoteOutcomeDTO {
+  outcome: "APPROVED" | "REJECTED" | "OPEN";
+  status: FoundationDecisionStatus;
+}
+
+/** Respons endpoint memberi suara. */
+export interface CastFoundationVoteResultDTO {
+  voteId: string;
+  choice: FoundationVoteChoice;
+  voteSummary: VoteSummary;
+  outcome: FoundationVoteOutcomeDTO;
+}
+
+/** Halaman daftar keputusan (paginated). */
+export interface FoundationDecisionPageDTO {
+  items: FoundationDecisionSummaryDTO[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+/** Baris aturan kuorum yang tersimpan (Respons GET/PUT /foundation/rules). */
+export interface FoundationDecisionRuleDTO {
+  id?: string;
+  organType: FoundationOrganType;
+  decisionKind: FoundationDecisionKind;
+  quorumPresentMode: FoundationQuorumMode;
+  quorumPresentValue: number;
+  quorumDecisionMode: FoundationQuorumMode;
+  quorumDecisionValue: number;
 }

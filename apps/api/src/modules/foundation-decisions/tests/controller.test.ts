@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Request, Response } from 'express';
 
-vi.mock('./foundation-decisions.service', () => ({
+vi.mock('../foundation-decisions.service', () => ({
   FoundationDecisionService: {
     create: vi.fn(),
     list: vi.fn(),
@@ -11,12 +11,13 @@ vi.mock('./foundation-decisions.service', () => ({
     listRules: vi.fn(),
     upsertRule: vi.fn(),
     verifyByToken: vi.fn(),
+    verifyByPdfBuffer: vi.fn(),
     getFinalDocument: vi.fn(),
   },
 }));
 
-import { FoundationDecisionController as controller } from './foundation-decisions.controller';
-import { FoundationDecisionService } from './foundation-decisions.service';
+import { FoundationDecisionController as controller } from '../foundation-decisions.controller';
+import { FoundationDecisionService } from '../foundation-decisions.service';
 
 type MockRes = Response & {
   statusCode: number;
@@ -171,5 +172,31 @@ describe('foundation-decisions controller', () => {
     expect(FoundationDecisionService.getFinalDocument).toHaveBeenCalledWith('abcdef12-0000');
     expect((res as any).headers['Content-Type']).toBe('application/pdf');
     expect((res as any).sent).toBe(bytes);
+  });
+
+  /**
+   * Verifikasi unggahan PDF memakai `req.file.buffer` dari multer.
+   *
+   * Inilah yang membedakan jalur ini dari jalur token: byte yang dikirim
+   * pengunjung diteruskan apa adanya ke service untuk di-hash dan dibandingkan
+   * dengan digest tertanda-tangan. Bila handler diam-diam memakai arsip server,
+   * PDF palsu akan lolos lagi.
+   */
+  it('verifyPdf: menolak permintaan tanpa berkas', async () => {
+    const { req, res } = mockReqRes({} as any);
+    await expect(controller.verifyPdf(req, res)).rejects.toThrow(/Berkas PDF wajib diunggah/);
+    expect(FoundationDecisionService.verifyByPdfBuffer).not.toHaveBeenCalled();
+  });
+
+  it('verifyPdf: meneruskan byte unggahan ke service', async () => {
+    const buffer = Buffer.from('%PDF-1.7 berkas pemindai');
+    (FoundationDecisionService.verifyByPdfBuffer as any).mockResolvedValue({
+      found: true,
+      isValid: true,
+    });
+    const { req, res } = mockReqRes({ file: { buffer } } as any);
+    await run(controller.verifyPdf, req, res);
+    expect(FoundationDecisionService.verifyByPdfBuffer).toHaveBeenCalledWith(buffer);
+    expect((res as any).jsonPayload?.data?.isValid).toBe(true);
   });
 });

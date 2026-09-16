@@ -1,19 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createHash } from 'crypto';
-import { prisma } from '../../lib/prisma';
+import { prisma } from '@/lib/prisma';
 import {
   FoundationDecisionService,
   canonicalDecisionPayload,
   sha256bytes,
-} from './foundation-decisions.service';
+} from '../foundation-decisions.service';
 import { createKeyMaterial } from '@/utils/esign';
-import { createSealMaterial } from '@/utils/foundation-eseal';
+import { createSealMaterial, signSeal } from '@/utils/foundation-eseal';
 import { config } from '@/config';
 
-vi.mock('../../lib/prisma', () => ({
+vi.mock('@/lib/prisma', () => ({
   prisma: {
     foundationDecision: {
       findUnique: vi.fn(),
+      findFirst: vi.fn(),
       findMany: vi.fn(),
       count: vi.fn(),
       create: vi.fn(),
@@ -93,7 +94,7 @@ function decisionRow(over: Record<string, unknown> = {}) {
       presentValue: 1,
       decisionMode: 'MUTLAK',
       decisionValue: 1,
-      decisionBasis: 'MUFTAKAT_FIRST',
+
     },
     voteSummary: { approve: 0, reject: 0, abstain: 0, present: 0, active: 3, totalVotes: 0 },
     finalPdfDigest: null,
@@ -561,6 +562,72 @@ describe('FoundationDecisionService.applyOutcome', () => {
     expect(updateData.finalPdfDigest).toBe(sha256bytes(archivedBytes));
     expect(updateData.finalPdfDigest).toBe(docData.sha256);
   });
+
+  /**
+   * Regresi: PDF yang disegel harus dirender dari bentuk keputusan FINAL,
+   * bukan dari baris yang masih VOTING.
+   *
+   * `applyOutcome` dulu memanggil `renderPdf(d)` SEBELUM `foundationDecision
+   * .update`, sehingga `d.status` masih VOTING dan `decidedAt` null — dan arsip
+   * permanen yang ditandatangani e-seal mencetak "Status: VOTING" serta
+   * menghilangkan tanggal putusan. Karena digest-nya mengunci byte itu, kesalahannya
+   * tersegel selamanya. Yang diperiksa di sini adalah argumen yang benar-benar
+   * diterima generator PDF.
+   */
+  it('merender PDF dari bentuk final (APPROVED + decidedAt), bukan VOTING', async () => {
+    const sealMaterialRow = createSealMaterial(config.foundation.esealPassphrase);
+    dm.foundationEseal.findFirst.mockResolvedValue({
+      id: 'seal-1',
+      ...sealMaterialRow,
+      revokedAt: null,
+      activatedAt: new Date(),
+      createdAt: new Date(),
+    });
+    dm.foundationDecisionDocument.create.mockResolvedValue({ id: 'doc-1' });
+    dm.foundationDecision.update.mockResolvedValue({ id: 'dec-1', status: 'APPROVED' });
+
+    const captured: Array<{ status: string; decidedAt: Date | null }> = [];
+    const spy = vi
+      .spyOn(FoundationDecisionService, 'renderPdf')
+      .mockImplementation(async (d: any) => {
+        captured.push({ status: d.status, decidedAt: d.decidedAt });
+        return Buffer.from('%PDF-1.7 arsip final');
+      });
+
+    const evaluation = {
+      outcome: 'APPROVED' as const,
+      activeCount: 3,
+      presentCount: 3,
+      approvedCount: 3,
+      rejectedCount: 0,
+      abstainCount: 0,
+      presentRequired: 3,
+      decisionRequired: 3,
+      presentMet: true,
+      decisionMet: true,
+      neededToApprove: 0,
+    };
+
+    try {
+      // `decisionRow()` berstatus VOTING dengan decidedAt null — persis baris
+      // yang dulu dirender apa adanya.
+      await FoundationDecisionService.applyOutcome(
+        { id: 'user-0', roleCode: 'YAYASAN_PEMBINA' },
+        decisionRow() as never,
+        evaluation as never
+      );
+
+      expect(captured).toHaveLength(1);
+      expect(captured[0].status).toBe('APPROVED');
+      expect(captured[0].decidedAt).toBeInstanceOf(Date);
+      // Tanggal yang tercetak di PDF harus sama dengan yang ditulis ke basis
+      // data — dua nilai berbeda berarti arsip dan DB menyebut waktu berbeda.
+      const updateData = dm.foundationDecision.update.mock.calls[0][0].data;
+      expect(updateData.decidedAt).toEqual(captured[0].decidedAt);
+    } finally {
+      spy.mockRestore();
+    }
+  });
 });
 
 describe('FoundationDecisionService.verifyByToken', () => {
@@ -569,6 +636,7 @@ describe('FoundationDecisionService.verifyByToken', () => {
     const res = await FoundationDecisionService.verifyByToken('nope');
     expect(res).toMatchObject({
       found: false,
+      isValid: false,
       decisionId: null,
       subject: null,
       organType: null,
@@ -578,12 +646,30 @@ describe('FoundationDecisionService.verifyByToken', () => {
       archiveDigest: null,
       digestOk: null,
       sealVerified: null,
+      reason: expect.any(String),
       voteCount: 0,
       approveCount: 0,
       rejectCount: 0,
       abstainCount: 0,
-      members: [],
     });
+  });
+
+  /**
+   * Regresi privasi: endpoint verifikasi anonim TIDAK boleh membocorkan roster
+   * tata kelola (userId/nama/roleCode setiap anggota). Cukup angka rekap suara
+   * untuk membuktikan kuorum; siapa yang memutus adalah data internal.
+   */
+  it('tidak mengembalikan roster anggota ke pemanggil anonim', async () => {
+    dm.foundationDecision.findUnique.mockResolvedValue({
+      ...decisionRow({ status: 'APPROVED' }),
+      finalPdfDigest: null,
+      finalPdfSealSignature: null,
+      esealId: null,
+      document: null,
+    });
+    const res = await FoundationDecisionService.verifyByToken('tok-1');
+    expect(res).not.toHaveProperty('members');
+    expect(JSON.stringify(res)).not.toContain('Anggota 0');
   });
 
   it('menghitung ulang hash byte arsip dan menandai byte yang diubah', async () => {
@@ -665,5 +751,110 @@ describe('FoundationDecisionService.getFinalDocument', () => {
     await expect(FoundationDecisionService.getFinalDocument('dec-1')).rejects.toThrow(
       /tidak ditemukan/
     );
+  });
+});
+
+describe('FoundationDecisionService.verifyByPdfBuffer', () => {
+  const sealMaterialRow = createSealMaterial(config.foundation.esealPassphrase);
+
+  function approvedRow(digest: string, signature: string | null) {
+    return {
+      ...decisionRow({ status: 'APPROVED' }),
+      finalPdfDigest: digest,
+      finalPdfSealSignature: signature,
+      esealId: signature ? 'seal-1' : null,
+    };
+  }
+
+  /**
+   * Regresi BUG KRITIS: PDF palsu yang mempertahankan token asli.
+   *
+   * Jalur token menghitung ulang hash arsip SERVER, sehingga sebuah PDF karangan
+   * yang menyalin token asli tetap lolos. Jalur unggahan menghitung hash byte
+   * yang BENAR-BENAR diunggah pemindai dan membandingkannya dengan digest yang
+   * ditandatangani e-seal — berkas asing itu harus ditolak.
+   */
+  it('menolak berkas unggahan yang tidak dikenal (digest tak cocok)', async () => {
+    dm.foundationDecision.findUnique.mockResolvedValue(null);
+    dm.foundationDecision.findFirst.mockResolvedValue(null);
+
+    const forged = Buffer.from('%PDF-1.7 isi karangan yang menyisipkan token asli');
+    const res = await FoundationDecisionService.verifyByPdfBuffer(forged);
+
+    expect(res.found).toBe(false);
+    expect(res.isValid).toBe(false);
+    // Pencarian dilakukan lewat digest unggahan, bukan sekadar token.
+    expect(dm.foundationDecision.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { finalPdfDigest: sha256bytes(forged) } })
+    );
+  });
+
+  it('menerima berkas unggahan yang byte-nya persis sama dengan arsip tersegel', async () => {
+    const bytes = Buffer.from('%PDF-1.7 arsip asli yang di-e-seal');
+    const digest = sha256bytes(bytes);
+    const signature = signSeal(sealMaterialRow, config.foundation.esealPassphrase, digest);
+
+    dm.foundationDecision.findUnique.mockResolvedValue(approvedRow(digest, signature));
+    dm.foundationEseal.findUnique.mockResolvedValue({
+      id: 'seal-1',
+      publicKey: sealMaterialRow.publicKey,
+    });
+
+    const res = await FoundationDecisionService.verifyByPdfBuffer(bytes);
+    expect(res.found).toBe(true);
+    expect(res.digestOk).toBe(true);
+    expect(res.sealVerified).toBe(true);
+    expect(res.isValid).toBe(true);
+  });
+
+  /**
+   * Regresi: rotasi passphrase e-seal tidak boleh membatalkan verifikasi
+   * keputusan lama.
+   *
+   * Versi sebelumnya menuntut `signSeal(material, SEAL_PASSPHRASE, digest)`
+   * sama dengan tanda tangan tersimpan — yang berarti mendekripsi kunci privat
+   * dengan passphrase yang berlaku SEKARANG. Setelah passphrase dirotasi, setiap
+   * keputusan lama gagal diverifikasi padahal dokumennya tidak berubah. Yang
+   * benar adalah memverifikasi dengan kunci PUBLIK, yang tidak ikut berubah.
+   */
+  it('tetap memverifikasi tanda tangan setelah passphrase dirotasi (kunci publik)', async () => {
+    const bytes = Buffer.from('%PDF-1.7 arsip lama sebelum rotasi');
+    const digest = sha256bytes(bytes);
+    // Ditandatangani dengan passphrase LAMA.
+    const oldMaterial = createSealMaterial('passphrase-e-seal-lama-2025');
+    const signature = signSeal(oldMaterial, 'passphrase-e-seal-lama-2025', digest);
+
+    dm.foundationDecision.findUnique.mockResolvedValue(approvedRow(digest, signature));
+    // Kunci publik seal LAMA — pasphrase SEKRANG di `config` berbeda dan tidak
+    // dapat mendekripsi kunci privat lama; verifikasi harus tetap berhasil.
+    dm.foundationEseal.findUnique.mockResolvedValue({
+      id: 'seal-1',
+      publicKey: oldMaterial.publicKey,
+    });
+
+    const res = await FoundationDecisionService.verifyByPdfBuffer(bytes);
+    expect(res.sealVerified).toBe(true);
+    expect(res.isValid).toBe(true);
+  });
+
+  it('menandai tidak sah bila berkas unggahan diubah setelah disegel', async () => {
+    const signed = Buffer.from('%PDF-1.7 arsip asli');
+    const digest = sha256bytes(signed);
+    const signature = signSeal(sealMaterialRow, config.foundation.esealPassphrase, digest);
+    // Byte server = arsip asli; berkas unggahan = arsip yang diubah. Pencarian
+    // memakai sha256 arsip (kolom sha256) menemukannya, lalu digestOk=false.
+    dm.foundationDecision.findUnique.mockResolvedValue(null);
+    dm.foundationDecision.findFirst.mockResolvedValue(approvedRow(digest, signature));
+    dm.foundationEseal.findUnique.mockResolvedValue({
+      id: 'seal-1',
+      publicKey: sealMaterialRow.publicKey,
+    });
+
+    const res = await FoundationDecisionService.verifyByPdfBuffer(
+      Buffer.from('%PDF-1.7 arsip yang diubah')
+    );
+    expect(res.found).toBe(true);
+    expect(res.digestOk).toBe(false);
+    expect(res.isValid).toBe(false);
   });
 });

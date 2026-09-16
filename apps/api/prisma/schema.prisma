@@ -10710,10 +10710,6 @@ model FoundationDecisionRule {
   quorumDecisionMode FoundationQuorumMode  @default(MAJORITY) @map("quorum_decision_mode")
   quorumDecisionValue Float                @default(0.5)     @map("quorum_decision_value")
 
-  /// Cara keputusan: "MUFTAKAT_FIRST" (utamakan musyawarah mufakat, baru
-  /// voting bila tak tercapai) atau "VOTE_ONLY" (langsung dipungut suara).
-  decisionBasis String @default("MUFTAKAT_FIRST") @map("decision_basis")
-
   updatedById String?  @map("updated_by_id")
   updatedAt   DateTime @updatedAt @map("updated_at")
 

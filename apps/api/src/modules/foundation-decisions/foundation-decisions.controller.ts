@@ -82,6 +82,24 @@ export const FoundationDecisionController = {
     return res.json(ApiResponse.success(result));
   },
 
+  /**
+   * Verifikasi publik lewat berkas PDF yang diunggah.
+   *
+   * Jalur ini yang benar-benar mengikat keabsahan pada dokumen yang dipegang
+   * pembaca: hash byte unggahan dibandingkan dengan digest yang ditandatangani
+   * e-seal. Jalur token hanya memeriksa arsip server, sehingga PDF berisi token
+   * asli yang isinya diganti tetap lolos. Turnstile sudah dipasang di rute,
+   * sebelum handler ini.
+   */
+  async verifyPdf(req: Request, res: Response) {
+    const file = (req as Request & { file?: { buffer?: Buffer } }).file;
+    if (!file || !file.buffer) {
+      throw Errors.badRequest('Berkas PDF wajib diunggah.');
+    }
+    const result = await FoundationDecisionService.verifyByPdfBuffer(file.buffer);
+    return res.json(ApiResponse.success(result));
+  },
+
   /** Unduh PDF risalah final (keputusan sah). */
   async download(req: Request, res: Response) {
     const doc = await FoundationDecisionService.getFinalDocument(req.params.id);

@@ -5,33 +5,18 @@ import type {
   CreateFoundationDecisionInput,
   CastFoundationVoteInput,
   UpsertFoundationRuleInput,
-  FoundationDecisionSummaryDTO,
   FoundationDecisionDetailDTO,
   FoundationDecisionVerificationDTO,
   FoundationDecisionStatus,
   FoundationOrganType,
-  VoteSummary,
+  FoundationDecisionPageDTO,
+  CastFoundationVoteResultDTO,
+  FoundationDecisionRuleDTO,
 } from "@cipansor/shared";
 import api from "@/lib/api";
 
-export interface FoundationDecisionPage {
-  items: FoundationDecisionSummaryDTO[];
-  total: number;
-  page: number;
-  limit: number;
-}
-
-export interface FoundationVoteOutcome {
-  outcome: "APPROVED" | "REJECTED" | "OPEN";
-  status: string;
-}
-
-export interface CastVoteResult {
-  voteId: string;
-  choice: string;
-  voteSummary: VoteSummary;
-  outcome: FoundationVoteOutcome;
-}
+export type FoundationDecisionPage = FoundationDecisionPageDTO;
+export type FoundationRuleDTO = FoundationDecisionRuleDTO;
 
 /** Peta label manusiawi untuk enum kecil agar UI tak menyebar ternary. */
 export const FOUNDATION_ORGAN_LABEL: Record<FoundationOrganType, string> = {
@@ -122,7 +107,7 @@ export function useCreateFoundationDecision() {
 export function useCastFoundationVote(decisionId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: CastFoundationVoteInput): Promise<CastVoteResult> =>
+    mutationFn: (input: CastFoundationVoteInput): Promise<CastFoundationVoteResultDTO> =>
       api
         .post(`/foundation/decisions/${decisionId}/vote`, input)
         .then((r) => r.data.data),
@@ -169,15 +154,36 @@ export function useVerifyFoundationDecision(token: string) {
   });
 }
 
-export interface FoundationRuleDTO {
-  id?: string;
-  organType: FoundationOrganType;
-  decisionKind: string;
-  quorumPresentMode: string;
-  quorumPresentValue: number;
-  quorumDecisionMode: string;
-  quorumDecisionValue: number;
-  decisionBasis: string;
+/**
+ * Verifikasi lewat unggahan PDF.
+ *
+ * Mutasi, bukan query: berkasnya besar dan tidak boleh disimpan di cache query
+ * (berisi dokumen tata kelola). Server membandingkan hash byte unggahan dengan
+ * digest yang ditandatangani e-seal — inilah bukti yang mengikat keabsahan pada
+ * berkas yang benar-benar dipegang pemindai, bukan pada catatan server.
+ *
+ * `turnstileToken` boleh null ketika gerbangnya dimatikan pada build ini (site
+ * key kosong); field-nya tidak dikirim sama sekali dalam keadaan itu, karena
+ * peladen pun mematikan gerbangnya lewat secret key kosong.
+ */
+export function useVerifyFoundationDecisionPdf() {
+  return useMutation({
+    mutationFn: async ({
+      file,
+      turnstileToken,
+    }: {
+      file: File;
+      turnstileToken: string | null;
+    }): Promise<FoundationDecisionVerificationDTO> => {
+      const form = new FormData();
+      form.append("file", file);
+      if (turnstileToken) form.append("turnstileToken", turnstileToken);
+      const res = await api.post("/foundation/verify-pdf", form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      return res.data.data;
+    },
+  });
 }
 
 export function useFoundationRules() {

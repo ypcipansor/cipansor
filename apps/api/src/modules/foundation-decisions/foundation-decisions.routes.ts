@@ -1,21 +1,74 @@
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
+import multer from 'multer';
 import { RoleCode } from '@prisma/client';
 import { FoundationDecisionController as c } from './foundation-decisions.controller';
 import { authenticate, authorize } from '@/middleware/auth';
 import { asyncHandler, validate, validateQuery } from '@/middleware/error';
+import { requireTurnstile } from '@/middleware/turnstile';
 import {
   castFoundationVoteSchema,
   createFoundationDecisionSchema,
+  finalizeFoundationDecisionSchema,
   listFoundationDecisionsQuerySchema,
   upsertFoundationRuleSchema,
 } from './foundation-decisions.schema';
 
 const router = Router();
 
+/**
+ * Rate limiter publik verifikasi keputusan — sejajar dengan esign.
+ */
+const publicVerifyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: Number(process.env.PUBLIC_VERIFY_RATE_LIMIT_MAX) || 30,
+  message: {
+    success: false,
+    error: {
+      code: 'RATE_LIMIT_EXCEEDED',
+      message: 'Terlalu banyak permintaan verifikasi dokumen. Coba lagi beberapa saat lagi.',
+    },
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+/**
+ * Unggah PDF di memori: berkas verifikasi hanya dibaca untuk hash-nya dan
+ * dibuang, tidak pernah menyentuh disk.
+ */
+const uploadPdf = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype === 'application/pdf' || file.originalname.toLowerCase().endsWith('.pdf')) {
+      cb(null, true);
+    } else {
+      cb(new Error('File yang diunggah harus berformat PDF.'));
+    }
+  },
+});
+
 // Verifikasi publik via token QR — sengaja TIDAK lewat authenticate, karena
 // orang yang memindai QR belumlah tentu masuk sistem. Hanya menampilkan hasil
 // verifikasi (bukan menulis).
 router.get('/verify', asyncHandler(c.verify));
+
+/**
+ * Verifikasi publik lewat unggahan PDF.
+ *
+ * Jalur ini yang mengikat keabsahan pada byte berkas yang dipegang pemindai —
+ * jalur token hanya memeriksa arsip server. Turnstile dipasang SESUDAH
+ * `uploadPdf.single` karena permintaannya multipart: sebelum multer berjalan,
+ * `req.body` masih kosong dan tokennya belum dapat dibaca (pola esign).
+ */
+router.post(
+  '/verify-pdf',
+  publicVerifyLimiter,
+  uploadPdf.single('file'),
+  requireTurnstile('verify-decision'),
+  asyncHandler(c.verifyPdf)
+);
 
 router.use(authenticate);
 
@@ -59,13 +112,29 @@ router.post(
 
 router.get('/decisions/:id', authorize(...READ), asyncHandler(c.detail));
 router.get('/decisions/:id/document', authorize(...READ), asyncHandler(c.download));
+/**
+ * Route vote HANYA `authenticate`, tanpa `authorize`.
+ *
+ * Hak suara ditentukan oleh SNAPSHOT anggota yang terkunci saat keputusan
+ * dibuat (`d.members.some(...)` di service), bukan oleh peran hari ini. Memasang
+ * `authorize(...READ)` di sini memeriksa `req.user.roleCode` SAAT INI dan
+ * menolak anggota snapshot yang rolenya sudah berubah lebih dari setahun
+ * kemudian — middleware menolaknya sebelum service sempat melihat snapshot,
+ * sehingga jaminan "keanggotaan immutable" tak pernah tercapai. `authenticate`
+ * tetap wajib (harus ada identitas untuk dicocokkan dengan snapshot).
+ */
 router.post(
   '/decisions/:id/vote',
-  authorize(...READ),
+  authenticate,
   validate(castFoundationVoteSchema),
   asyncHandler(c.castVote)
 );
-router.post('/decisions/:id/finalize', authorize(...WRITE), asyncHandler(c.finalize));
+router.post(
+  '/decisions/:id/finalize',
+  authorize(...WRITE),
+  validate(finalizeFoundationDecisionSchema),
+  asyncHandler(c.finalize)
+);
 
 router.get('/rules', authorize(RoleCode.SUPER_ADMIN), asyncHandler(c.listRules));
 router.put(

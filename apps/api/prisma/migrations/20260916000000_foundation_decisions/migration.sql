@@ -111,7 +111,6 @@ CREATE TABLE IF NOT EXISTS "foundation_decision_rules" (
     "quorum_present_value" DOUBLE PRECISION NOT NULL DEFAULT 0.5,
     "quorum_decision_mode" "FoundationQuorumMode" NOT NULL DEFAULT 'MAJORITY',
     "quorum_decision_value" DOUBLE PRECISION NOT NULL DEFAULT 0.5,
-    "decision_basis" TEXT NOT NULL DEFAULT 'MUFTAKAT_FIRST',
     "updated_by_id" TEXT,
     "updated_at" TIMESTAMP(3) NOT NULL,
 

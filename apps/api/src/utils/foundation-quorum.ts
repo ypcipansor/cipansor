@@ -15,7 +15,9 @@ import type {
  * Kolam keputusan berbeda menurut cara pengambilan:
  *   - CIRCULAR : seluruh anggota AKTIF organ (keputusan sirkuler umumnya wajib
  *                mufakat 100%, jadi orang yang tak hadir sekalipun harus
- *                menyetujui atau keputusan gugur).
+ *                menyetujui atau keputusan gugur). Karena kolamnya tetap,
+ *                keputusan gugur SEGERA begitu mufakat menjadi mustahil
+ *                (ada REJECT/ABSTAIN), tanpa menunggu sisa anggota bersuara.
  *   - MEETING  : hanya yang HADIR (yang sudah memberi suara).
  *
  * Semantik mode ambang:
@@ -97,10 +99,34 @@ export function evaluateQuorum(
     ? Math.max(0, decisionRequired - approvedCount)
     : Math.max(0, presentRequired - presentCount);
 
+  /**
+   * Sirkuler: keputusan gugur begitu mustahil tercapai, tanpa menunggu seluruh
+   * anggota bersuara.
+   *
+   * Pada sirkuler kolam keputusannya adalah SELURUH anggota aktif dan tidak
+   * bertambah lagi, jadi satu REJECT (atau ABSTAIN) sudah menutup pintu
+   * mufakat. Versi sebelumnya hanya menutup keputusan bila
+   * `presentCount >= activeCount`, sehingga satu penolakan di antara anggota
+   * yang selebihnya diam meninggalkan keputusan berstatus VOTING selamanya —
+   * pemungutan yang jelas-jelas sudah gugur tak pernah ditutup, dan pemanggil
+   * yang menunggu finalisasi menunggu tanpa akhir.
+   *
+   * Anggota yang belum bersuara diperlakukan sebagai suara yang MASIH MUNGKIN
+   * menyetujui: keputusan baru gugur bila jumlah maksimum penyetujuan yang
+   * mungkin (setuju sekarang + yang belum bersuara) masih kurang dari ambang.
+   * Untuk rapat, kolamnya bertambah setiap kali seseorang hadir, sehingga
+   * "mustahil" tidak dapat disimpulkan dari angka hari ini.
+   */
+  const decisionImpossible =
+    snapshot.kind === 'CIRCULAR' &&
+    approvedCount + (activeCount - presentCount) < decisionRequired;
+
   let outcome: QuorumOutcome = 'OPEN';
 
-  if (presentMet) {
-    if (decisionMet) {
+  if (decisionImpossible) {
+    outcome = 'REJECTED';
+  } else if (presentMet) {
+    if (decisionMet && approvedCount > 0) {
       outcome = 'APPROVED';
     } else {
       // Semua yang harus memutus sudah memberi suara dan tetap tak cukup →

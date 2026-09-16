@@ -59,4 +59,33 @@ describe('generateDecisionPdf', () => {
     const b = await generateDecisionPdf(data);
     expect(a.equals(b)).toBe(true);
   });
+
+  /**
+   * Regresi: teks Unicode (Arab/emoji) tidak boleh membuat `drawText` melempar.
+   *
+   * Font standar pdf-lib (Helvetica) hanya mendukung WinAnsi, dan `drawText`
+   * MELEMPAR untuk karakter di luarnya. Karena render terjadi DI DALAM
+   * transaksi suara yang mencapai kuorum, satu emoji di dalam naskah cukup
+   * untuk me-rollback suara yang sah dan meninggalkan keputusan terbuka
+   * selamanya. PDF harus tetap terbentuk, dengan isinya tetap tercetak.
+   */
+  it('menghasilkan PDF walau body memuat Arab dan emoji (font Unicode)', async () => {
+    const buf = await generateDecisionPdf({
+      ...data,
+      body: 'Keputusan ini ditulis dengan kaligrafi Arab بِسْمِ اللَّهِ الرَّحْمَنِ الرَّحِيم dan emoji ✅🎉 agar tetap aman.',
+    });
+    expect(buf.slice(0, 4).toString()).toBe('%PDF');
+    // PDF dapat dibuka ulang — bukti byte-nya utuh, bukan sekadar tak melempar.
+    const doc = await PDFDocument.load(buf);
+    expect(doc.getPageCount()).toBeGreaterThanOrEqual(1);
+  });
+
+  it('menghasilkan PDF walau PERIHAL memuat emoji', async () => {
+    const buf = await generateDecisionPdf({
+      ...data,
+      subject: 'Pengesahan 🎉 Rencana Kerja ✅',
+    });
+    expect(buf.slice(0, 4).toString()).toBe('%PDF');
+    expect((await PDFDocument.load(buf)).getPageCount()).toBeGreaterThanOrEqual(1);
+  });
 });
