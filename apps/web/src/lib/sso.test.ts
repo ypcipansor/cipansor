@@ -102,6 +102,85 @@ describe("loginWithGoogle", () => {
     });
   });
 
+  it("rejects when the user dismisses the prompt (BUG 9)", async () => {
+    const { loginWithGoogle } = await import("./sso");
+    let listener:
+      | ((n: {
+          isDismissedMoment: () => boolean;
+          isSkippedMoment: () => boolean;
+          isNotDisplayedMoment: () => boolean;
+        }) => void)
+      | undefined;
+    (window as unknown as { google: unknown }).google = {
+      accounts: {
+        id: {
+          initialize: () => {},
+          // GIS reports a dismissal through the moment notification; without
+          // this the promise never settles and the button looks stuck.
+          prompt: (cb: typeof listener) => {
+            listener = cb;
+            cb?.({
+              isDismissedMoment: () => true,
+              isSkippedMoment: () => false,
+              isNotDisplayedMoment: () => false,
+            });
+          },
+        },
+      },
+    };
+
+    await expect(loginWithGoogle("client-id")).rejects.toThrow(
+      /dibatalkan/,
+    );
+  });
+
+  it("rejects when the prompt is suppressed/not displayed (BUG 9)", async () => {
+    const { loginWithGoogle } = await import("./sso");
+    (window as unknown as { google: unknown }).google = {
+      accounts: {
+        id: {
+          initialize: () => {},
+          prompt: (cb: (n: {
+            isDismissedMoment: () => boolean;
+            isSkippedMoment: () => boolean;
+            isNotDisplayedMoment: () => boolean;
+          }) => void) =>
+            cb({
+              isDismissedMoment: () => false,
+              isSkippedMoment: () => false,
+              isNotDisplayedMoment: () => true,
+            }),
+        },
+      },
+    };
+
+    await expect(loginWithGoogle("client-id")).rejects.toThrow(
+      /dibatalkan/,
+    );
+  });
+
+  it("times out when GIS never reports anything (BUG 9)", async () => {
+    vi.useFakeTimers();
+    try {
+      const { loginWithGoogle } = await import("./sso");
+      (window as unknown as { google: unknown }).google = {
+        accounts: {
+          id: {
+            initialize: () => {},
+            prompt: () => {},
+          },
+        },
+      };
+
+      const promise = loginWithGoogle("client-id", 5_000);
+      const assertion = expect(promise).rejects.toThrow(/Waktu masuk Google habis/);
+      await vi.advanceTimersByTimeAsync(5_000);
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("rejects when Google returns no credential", async () => {
     const { loginWithGoogle } = await import("./sso");
     (window as unknown as { google: unknown }).google = {

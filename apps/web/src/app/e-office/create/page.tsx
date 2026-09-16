@@ -44,7 +44,7 @@ import {
 } from "@cipansor/shared";
 import { TembusanEditor } from "@/components/e-office/tembusan-editor";
 import { toast } from "sonner";
-import { api } from "@/lib/api";
+import { api, uploadApi } from "@/lib/api";
 import React from "react";
 import { Upload } from "lucide-react";
 
@@ -255,6 +255,15 @@ function CreateLetterForm() {
       );
       router.push("/e-office/inbox");
     } catch (error) {
+      // The letter never persisted, so the files just uploaded for it are
+      // orphaned. Discard each (the API refuses any blob a record references).
+      const orphaned = [
+        values.fileUrl,
+        ...(values.attachments ?? []).map((a) => a.fileUrl),
+      ].filter((u): u is string => !!u);
+      await Promise.all(
+        orphaned.map((u) => uploadApi.discard(u).catch(() => undefined)),
+      );
       toast.error("Gagal memproses surat");
       console.error(error);
     }

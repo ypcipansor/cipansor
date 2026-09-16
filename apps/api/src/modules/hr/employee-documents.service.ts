@@ -1,16 +1,104 @@
 import { prisma } from '../../lib/prisma';
 import { EmployeeDocumentType } from '@prisma/client';
-import { deleteFromCloudStorage, parseBlobUrl } from '../../utils/cloud-storage';
+import { cleanupBlobBestEffort } from '../../utils/cloud-storage';
+import { seesAllUnits } from '../../utils/resolve-unit-id';
+import { mayAdministerEmployeeDocuments } from '@cipansor/shared';
+import { Errors } from '../../middleware/error';
+
+/**
+ * The subset of the authenticated user needed to decide whether they own or
+ * administer an employee record.
+ */
+export interface EmployeeDocumentActor {
+  id: string;
+  roleCode?: string | null;
+  unitId?: string | null;
+}
+
+/**
+ * The user whose document is being deleted, or null if no such record.
+ *
+ * `unitId` is the home unit of the user's *primary active role assignment*,
+ * not `user.unitId`: the token scope for every login path is derived from the
+ * assignment (`tokenUnitId`), so an actor's `unitId` and a target's stored
+ * `user.unitId` can legitimately disagree when a person holds a role scoped to
+ * more than one unit. Comparing the assignment's unit is what keeps a unit
+ * admin's reach exactly as wide as their own token scope.
+ */
+async function findDocumentOwnerTarget(id: string) {
+  return prisma.employeeDocument.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      fileUrl: true,
+      userId: true,
+      user: {
+        select: {
+          unitId: true,
+          userRoles: {
+            where: { isActive: true },
+            orderBy: { isPrimary: 'desc' },
+            select: { unitId: true },
+          },
+        },
+      },
+    },
+  });
+}
+
+/**
+ * True when `actor` may delete (or create a document for) `targetUserId`.
+ *
+ * A user always reaches their own records. A role in
+ * {@link mayAdministerEmployeeDocuments} reaches any user in a unit it is
+ * scoped to; foundation roles reach every unit.
+ */
+async function assertActorMayManage(
+  actor: EmployeeDocumentActor,
+  target: { userId: string; unitId: string | null | undefined }
+): Promise<void> {
+  if (actor.id === target.userId) return;
+  if (seesAllUnits(actor)) return;
+  if (
+    !mayAdministerEmployeeDocuments(actor.roleCode) ||
+    !actor.unitId ||
+    target.unitId !== actor.unitId
+  ) {
+    throw Errors.forbidden('Anda tidak berwenang mengelola dokumen pegawai tersebut');
+  }
+}
 
 export const employeeDocumentService = {
-  async create(data: {
-    userId: string;
-    name: string;
-    type: EmployeeDocumentType;
-    fileUrl: string;
-    expiryDate?: Date;
-    notes?: string;
-  }) {
+  async create(
+    data: {
+      userId: string;
+      name: string;
+      type: EmployeeDocumentType;
+      fileUrl: string;
+      expiryDate?: Date;
+      notes?: string;
+    },
+    actor?: EmployeeDocumentActor
+  ) {
+    if (actor) {
+      const target = await prisma.user.findUnique({
+        where: { id: data.userId },
+        select: {
+          unitId: true,
+          userRoles: {
+            where: { isActive: true },
+            orderBy: { isPrimary: 'desc' },
+            select: { unitId: true },
+          },
+        },
+      });
+      if (!target) throw Errors.notFound('User');
+      await assertActorMayManage(actor, {
+        userId: data.userId,
+        unitId: target.userRoles[0]?.unitId ?? target.unitId,
+      });
+    }
+
     return prisma.employeeDocument.create({
       data: {
         userId: data.userId,
@@ -30,18 +118,38 @@ export const employeeDocumentService = {
     });
   },
 
-  async delete(id: string) {
-    // Best-effort cleanup of the backing cloud blob alongside the record, so a
-    // deleted personal document does not linger in private storage forever.
-    const doc = await prisma.employeeDocument.findUnique({ where: { id } });
-    if (doc) {
-      const parsed = parseBlobUrl(doc.fileUrl);
-      if (parsed) {
-        await deleteFromCloudStorage(parsed.containerName, parsed.blobName);
-      }
+  /**
+   * Delete an employee document.
+   *
+   * Two ordering rules matter here and both used to be wrong:
+   *
+   *  1. Authorization runs in the service, before anything is removed. Unit
+   *     admins could otherwise pass another unit's document id and destroy it
+   *     (the route's `authorize(UNIT_ADMIN)` proves a role, not ownership).
+   *  2. The database row is deleted FIRST and the backing blob second. Doing
+   *     it the other way round meant a failed delete left the record behind
+   *     while its file was already gone — unrecoverable. Best-effort cleanup
+   *     after a committed delete can at worst leave an orphan blob, which a
+   *     later sweep can reclaim.
+   */
+  async delete(id: string, actor?: EmployeeDocumentActor) {
+    const doc = await findDocumentOwnerTarget(id);
+    if (!doc) {
+      // Nothing to authorize against; preserve the previous not-found
+      // behaviour of `prisma.delete` (P2025 -> error).
+      return prisma.employeeDocument.delete({ where: { id } });
     }
-    return prisma.employeeDocument.delete({
-      where: { id },
-    });
+
+    if (actor) {
+      await assertActorMayManage(actor, {
+        userId: doc.userId,
+        unitId: doc.user.userRoles[0]?.unitId ?? doc.user.unitId,
+      });
+    }
+
+    const deleted = await prisma.employeeDocument.delete({ where: { id } });
+    // Best-effort, after the row is gone; never fails the request.
+    await cleanupBlobBestEffort(doc.fileUrl);
+    return deleted;
   },
 };

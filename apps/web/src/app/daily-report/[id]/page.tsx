@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { safeFormat } from "@/lib/date";
 import { resolveFileUrl } from "@/lib/files";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
   Edit2,
@@ -31,11 +31,8 @@ import { Separator } from "@/components/ui/separator";
 import { useDailyReport } from "@/hooks/use-daily-report";
 
 import { MainLayout } from "@/components/layout";
-function DailyReportDetailPageContent({
-  params,
-}: {
-  params: { id: string };
-}) {
+function DailyReportDetailPageContent() {
+  const params = useParams<{ id: string }>();
   const router = useRouter();
   const { data: report, isLoading } = useDailyReport(params.id);
 
@@ -425,10 +422,10 @@ function DailyReportDetailPageContent({
   );
 }
 
-export default function DailyReportDetailPage(props: Parameters<typeof DailyReportDetailPageContent>[0]) {
+export default function DailyReportDetailPage() {
   return (
     <MainLayout>
-      <DailyReportDetailPageContent {...props} />
+      <DailyReportDetailPageContent />
     </MainLayout>
   );
 }

@@ -150,4 +150,85 @@ test.describe("E-Office correspondence flows", () => {
     expect(sas.success).toBe(true);
     expect(sas.data?.url).toBeTruthy();
   });
+
+  test("attachment survives upload → persist → retrieve → download (real stack)", async () => {
+    // The full storage lifecycle, not just the SAS handshake: upload a real
+    // PDF, persist its stable URL as a letter attachment, read the letter back
+    // and confirm the reference survived, then actually download the bytes.
+    // This is the path a correspondence attachment takes after the storage
+    // migration — a URL that is saved once and opened much later.
+    const pdf = Buffer.from(
+      "%PDF-1.4\n% e2e fidelity\n1 0 obj<</Type/Catalog>>endobj\n%%EOF",
+      "utf8",
+    );
+    expect(pdf.subarray(0, 4).toString("ascii")).toBe("%PDF");
+
+    const form = new FormData();
+    form.append("file", new Blob([pdf], { type: "application/pdf" }), "bukti.pdf");
+    const upRes = await fetch(`${API_URL}/upload`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${session.accessToken}` },
+      body: form,
+    });
+    const upJson = await upRes.json();
+    expect(upRes.ok).toBe(true);
+    const stableUrl = upJson?.data?.url as string | undefined;
+    if (!stableUrl) throw new Error("Upload returned no stable url");
+
+    const participants = await apiRequest<{
+      data: Array<{ id: string; unitId: string | null }>;
+    }>(session, "GET", "/correspondence/participants?limit=100");
+    const callerId = session.user.id as string | undefined;
+    const candidate =
+      participants?.data?.find((p) => p.id !== callerId && !!p.unitId) ??
+      participants?.data?.[0];
+    if (!candidate?.unitId) {
+      throw new Error("Seeded stack returned no internal participant");
+    }
+
+    const created = await apiRequest<{
+      success: boolean;
+      data: { id: string; attachments?: Array<{ fileUrl: string; name: string }> };
+    }>(session, "POST", "/correspondence/letters", {
+      unitId: candidate.unitId,
+      direction: "INCOMING",
+      type: "SURAT_DINAS",
+      date: new Date().toISOString(),
+      subject: "E2E Lampiran Persist",
+      content: "Lampiran disimpan oleh e2e e-office-correspondence.spec.",
+      urgency: "NORMAL",
+      nature: "PUBLIC",
+      status: "DRAFT",
+      recipientIds: [candidate.id],
+      attachments: [{ name: "Bukti", fileUrl: stableUrl, mimeType: "application/pdf" }],
+    });
+    expect(created.success).toBe(true);
+
+    // Retrieve: the persisted stable reference must round-trip on the letter.
+    const fetched = await apiRequest<{
+      data: { attachments?: Array<{ fileUrl: string }> };
+    }>(session, "GET", `/correspondence/letters/${created.data.id}`);
+    const stored = fetched.data.attachments?.map((a) => a.fileUrl) ?? [];
+    expect(stored).toContain(stableUrl);
+
+    // Download: a local /uploads reference is fetched directly with the bearer
+    // token and the bytes must match what was uploaded. On Azure the reference
+    // is a private blob — mint the SAS and assert it resolves to a usable URL
+    // (the blob host is not reachable from the isolated e2e network).
+    if (stableUrl.includes("/uploads/")) {
+      const res = await fetch(stableUrl, {
+        headers: { authorization: `Bearer ${session.accessToken}` },
+      });
+      expect(res.ok).toBe(true);
+      const downloaded = Buffer.from(await res.arrayBuffer());
+      expect(downloaded.equals(pdf)).toBe(true);
+    } else {
+      const resolved = await apiRequest<{
+        data?: { downloadUrl?: string };
+      }>(session, "POST", "/upload/sas", { url: stableUrl });
+      expect(resolved.data?.downloadUrl).toMatch(
+        /\.blob\.core\.windows\.net\//,
+      );
+    }
+  });
 });

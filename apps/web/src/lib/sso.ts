@@ -39,6 +39,18 @@ export interface GoogleCredentialResult {
   idToken: string;
 }
 
+/**
+ * The GIS moment notification handed to the `prompt` callback. GIS fires it
+ * when a prompt will never yield a credential (dismissed, skipped, or
+ * suppressed by browser policy), which is the only signal we get in those
+ * cases — the credential callback then never runs.
+ */
+export interface GooglePromptMomentNotification {
+  isDismissedMoment?: () => boolean;
+  isSkippedMoment?: () => boolean;
+  isNotDisplayedMoment?: () => boolean;
+}
+
 /** Minimal shape of the Google Identity Services global we rely on. */
 interface GoogleIdentityServices {
   accounts: {
@@ -49,7 +61,7 @@ interface GoogleIdentityServices {
         auto_select?: boolean;
         use_fedcm_for_prompt?: boolean;
       }) => void;
-      prompt: () => void;
+      prompt: (momentListener?: (notification: GooglePromptMomentNotification) => void) => void;
     };
   };
 }
@@ -106,9 +118,17 @@ export function loadGoogleIdentityServices(): Promise<void> {
  *
  * The credential callback fires once per completed sign-in; the promise is
  * settled on the first one, so a later prompt cannot resolve an old request.
+ *
+ * A prompt is not a guaranteed callback: the user can dismiss it, the browser
+ * can suppress it, or it may simply never be shown. Left to the credential
+ * callback alone the promise would hang forever and the button would look
+ * stuck, so the GIS moment notification (dismissed / skipped / not displayed)
+ * rejects as well. A hard timeout backstops the cases GIS reports nothing at
+ * all (e.g. a suppressed One Tap under a browser policy).
  */
 export async function loginWithGoogle(
   clientId: string,
+  timeoutMs = 120_000,
 ): Promise<GoogleCredentialResult> {
   await loadGoogleIdentityServices();
 
@@ -119,22 +139,55 @@ export async function loginWithGoogle(
       return;
     }
 
-    let settled = false;
+    // Held in an object so `settle` can clear the timer that is assigned
+    // after it (a bare `let` cannot be read before its assignment safely).
+    const state: { settled: boolean; timer?: ReturnType<typeof setTimeout> } = {
+      settled: false,
+    };
+
+    const settle = (fn: () => void) => {
+      if (state.settled) return;
+      state.settled = true;
+      if (state.timer) clearTimeout(state.timer);
+      fn();
+    };
+
     gis.accounts.id.initialize({
       client_id: clientId,
       use_fedcm_for_prompt: false,
       callback: (response) => {
-        if (settled) return;
-        settled = true;
-        if (!response.credential) {
-          reject(new Error("Google tidak mengembalikan id_token"));
-          return;
-        }
-        resolve({ idToken: response.credential });
+        settle(() => {
+          if (!response.credential) {
+            reject(new Error("Google tidak mengembalikan id_token"));
+            return;
+          }
+          resolve({ idToken: response.credential });
+        });
       },
     });
 
-    gis.accounts.id.prompt();
+    // Settle on "no credential is coming", so the caller can re-enable the
+    // button and show a message instead of waiting on a dead promise.
+    const momentListener = (notification: {
+      isDismissedMoment?: () => boolean;
+      isSkippedMoment?: () => boolean;
+      isNotDisplayedMoment?: () => boolean;
+    }) => {
+      const dismissed = notification.isDismissedMoment?.() ?? false;
+      const skipped = notification.isSkippedMoment?.() ?? false;
+      const notDisplayed = notification.isNotDisplayedMoment?.() ?? false;
+      if (dismissed || skipped || notDisplayed) {
+        settle(() => reject(new Error("Pilih akun Google dibatalkan")));
+      }
+    };
+
+    state.timer = setTimeout(() => {
+      settle(() =>
+        reject(new Error("Waktu masuk Google habis. Silakan coba lagi.")),
+      );
+    }, timeoutMs);
+
+    gis.accounts.id.prompt(momentListener);
   });
 }
 

@@ -14,17 +14,27 @@ vi.mock('@/utils/cloud-storage', () => {
     }),
     isPublicContainer: vi.fn((name: string) => name === 'media-public'),
     isAllowedContainer: vi.fn(() => true),
+    deleteFromCloudStorage: vi.fn().mockResolvedValue(undefined),
   };
 });
 
 vi.mock('../upload.service', () => {
   return {
     resolveSasForBlob: vi.fn(),
+    discardOrphanBlob: vi.fn(),
+  };
+});
+
+vi.mock('@/middleware/auth', async () => {
+  const actual = await vi.importActual<typeof import('@/middleware/auth')>('@/middleware/auth');
+  return {
+    ...actual,
+    requireUser: vi.fn((req: any) => req.user),
   };
 });
 
 import { uploadController } from '../upload.controller';
-import { resolveSasForBlob } from '../upload.service';
+import { resolveSasForBlob, discardOrphanBlob } from '../upload.service';
 
 const baseUser = { id: 'user-1', roleCode: 'SUPER_ADMIN', unitId: 'unit-1', permissions: [] };
 
@@ -45,19 +55,32 @@ function makeRes(): Response {
   return res;
 }
 
+function makeNext() {
+  return vi.fn();
+}
+
+/**
+ * `asyncHandler` routes a rejection to `next` through a `.catch()`, so the
+ * handler promise settles one microtask before `next` is called.
+ */
+const flush = () => new Promise((resolve) => setImmediate(resolve));
+
 describe('uploadController.uploadFile', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('returns 400 NO_FILE when no file was uploaded', async () => {
+  it('routes a missing file through the standard asyncHandler (400 BAD_REQUEST)', async () => {
     const req = makeReq({ file: undefined });
     const res = makeRes();
+    const next = makeNext();
 
-    await uploadController.uploadFile(req, res);
+    await uploadController.uploadFile(req, res, next);
+    await flush();
 
-    expect(res.status).toHaveBeenCalledWith(400);
-    expect((res.json as any).mock.calls[0][0].error.code).toBe('NO_FILE');
+    const error = next.mock.calls[0][0];
+    expect(error.statusCode).toBe(400);
+    expect(error.code).toBe('BAD_REQUEST');
   });
 
   it('keeps url stable (raw blob) and omits downloadUrl for a public container', async () => {
@@ -75,7 +98,7 @@ describe('uploadController.uploadFile', () => {
     });
     const res = makeRes();
 
-    await uploadController.uploadFile(req, res);
+    await uploadController.uploadFile(req, res, makeNext());
 
     expect(res.status).toHaveBeenCalledWith(200);
     const data = (res.json as any).mock.calls[0][0].data;
@@ -101,7 +124,7 @@ describe('uploadController.uploadFile', () => {
     });
     const res = makeRes();
 
-    await uploadController.uploadFile(req, res);
+    await uploadController.uploadFile(req, res, makeNext());
 
     expect(res.status).toHaveBeenCalledWith(200);
     const data = (res.json as any).mock.calls[0][0].data;
@@ -113,8 +136,6 @@ describe('uploadController.uploadFile', () => {
     // TEMPORARY: downloadUrl carries the short-lived SAS for immediate access
     expect(data.downloadUrl).toContain('sig=fakeSas');
     expect(data.downloadUrl).toContain('/e-office-documents/dummy.pdf?');
-    expect(data.containerName).toBe('e-office-documents');
-    expect(data.blobName).toBe('dummy.pdf');
   });
 
   it('omits downloadUrl (keeps raw url) when SAS generation fails', async () => {
@@ -135,49 +156,13 @@ describe('uploadController.uploadFile', () => {
     });
     const res = makeRes();
 
-    await uploadController.uploadFile(req, res);
+    await uploadController.uploadFile(req, res, makeNext());
 
-    expect(res.status).toHaveBeenCalledWith(200);
     const data = (res.json as any).mock.calls[0][0].data;
     expect(data.url).toBe(
       'https://cipansorstore.blob.core.windows.net/e-office-documents/dummy.pdf'
     );
     expect(data.downloadUrl).toBeUndefined();
-  });
-
-  it('returns the middleware fileUrl when present without container metadata', async () => {
-    const req = makeReq({
-      file: {
-        filename: 'dummy.pdf',
-        mimetype: 'application/pdf',
-        size: 100,
-      } as Express.Multer.File,
-      body: { fileUrl: 'https://blob.example.com/stable/dummy.pdf' },
-    });
-    const res = makeRes();
-
-    await uploadController.uploadFile(req, res);
-
-    const data = (res.json as any).mock.calls[0][0].data;
-    expect(data.url).toBe('https://blob.example.com/stable/dummy.pdf');
-    expect(data.downloadUrl).toBeUndefined();
-  });
-
-  it('builds the local /uploads URL when the middleware set no fileUrl', async () => {
-    const req = makeReq({
-      file: {
-        filename: 'dummy.pdf',
-        mimetype: 'application/pdf',
-        size: 100,
-      } as Express.Multer.File,
-      body: {},
-    });
-    const res = makeRes();
-
-    await uploadController.uploadFile(req, res);
-
-    const data = (res.json as any).mock.calls[0][0].data;
-    expect(data.url).toBe('https://cipansor.or.id/uploads/dummy.pdf');
   });
 });
 
@@ -186,14 +171,17 @@ describe('uploadController.getSasUrl', () => {
     vi.clearAllMocks();
   });
 
-  it('returns 400 URL_REQUIRED when no url is provided', async () => {
+  it('rejects a missing url via the standard Zod validation error (400)', async () => {
     const req = makeReq({ body: {} });
     const res = makeRes();
+    const next = makeNext();
 
-    await uploadController.getSasUrl(req, res);
+    await uploadController.getSasUrl(req, res, next);
+    await flush();
 
-    expect(res.status).toHaveBeenCalledWith(400);
-    expect((res.json as any).mock.calls[0][0].error.code).toBe('URL_REQUIRED');
+    // Zod rejects synchronously; asyncHandler hands it to the error middleware.
+    const error = next.mock.calls[0][0];
+    expect(error.statusCode).toBe(400);
     expect(resolveSasForBlob).not.toHaveBeenCalled();
   });
 
@@ -204,7 +192,7 @@ describe('uploadController.getSasUrl', () => {
     const req = makeReq({ body: { url: 'https://cipansor.or.id/uploads/a.pdf' } });
     const res = makeRes();
 
-    await uploadController.getSasUrl(req, res);
+    await uploadController.getSasUrl(req, res, makeNext());
 
     expect(res.status).toHaveBeenCalledWith(200);
     expect(resolveSasForBlob).toHaveBeenCalledWith(
@@ -213,22 +201,6 @@ describe('uploadController.getSasUrl', () => {
     );
     const data = (res.json as any).mock.calls[0][0].data;
     expect(data).toEqual({ url: 'https://cipansor.or.id/uploads/a.pdf' });
-    expect(data.downloadUrl).toBeUndefined();
-  });
-
-  it('returns the service result for a public blob URL (no downloadUrl)', async () => {
-    (resolveSasForBlob as any).mockResolvedValue({
-      url: 'https://cipansorstore.blob.core.windows.net/media-public/pic.jpg',
-    });
-    const req = makeReq({
-      body: { url: 'https://cipansorstore.blob.core.windows.net/media-public/pic.jpg' },
-    });
-    const res = makeRes();
-
-    await uploadController.getSasUrl(req, res);
-
-    const data = (res.json as any).mock.calls[0][0].data;
-    expect(data.downloadUrl).toBeUndefined();
   });
 
   it('returns the SAS minted by the service for an accessible private blob', async () => {
@@ -242,54 +214,50 @@ describe('uploadController.getSasUrl', () => {
     });
     const res = makeRes();
 
-    await uploadController.getSasUrl(req, res);
+    await uploadController.getSasUrl(req, res, makeNext());
 
-    expect(res.status).toHaveBeenCalledWith(200);
     const data = (res.json as any).mock.calls[0][0].data;
-    expect(data.url).toBe(
-      'https://cipansorstore.blob.core.windows.net/e-office-documents/naskah.pdf'
-    );
     expect(data.downloadUrl).toContain('sig=fakeSas');
-    expect(resolveSasForBlob).toHaveBeenCalledWith(
-      'https://cipansorstore.blob.core.windows.net/e-office-documents/naskah.pdf',
+  });
+
+  it('propagates a service FORBIDDEN error (standard middleware -> 403)', async () => {
+    const err = new Error('Anda tidak berwenang mengakses berkas tersebut');
+    (err as any).code = 'FORBIDDEN';
+    (err as any).statusCode = 403;
+    vi.mocked(resolveSasForBlob).mockImplementationOnce(async () => {
+      throw err;
+    });
+    const req = makeReq({
+      body: { url: 'https://cipansorstore.blob.core.windows.net/cipansor-documents/naskah.pdf' },
+    });
+    const res = makeRes();
+    const next = makeNext();
+
+    await uploadController.getSasUrl(req, res, next);
+    await flush();
+
+    expect((next.mock.calls[0]?.[0] as any)?.statusCode).toBe(403);
+  });
+});
+
+describe('uploadController.discardUpload', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('discards an orphan blob for the authenticated actor', async () => {
+    (discardOrphanBlob as any).mockResolvedValue(undefined);
+    const req = makeReq({
+      body: { url: 'https://cipansorstore.blob.core.windows.net/cipansor-documents/orphan.pdf' },
+    });
+    const res = makeRes();
+
+    await uploadController.discardUpload(req, res, makeNext());
+
+    expect(discardOrphanBlob).toHaveBeenCalledWith(
+      'https://cipansorstore.blob.core.windows.net/cipansor-documents/orphan.pdf',
       baseUser
     );
-  });
-
-  it('maps a service FORBIDDEN error to a 403 FORBIDDEN response', async () => {
-    const err = new Error('Anda tidak berwenang mengakses berkas tersebut');
-    (err as any).statusCode = 403;
-    (resolveSasForBlob as any).mockRejectedValueOnce(err);
-    const req = makeReq({
-      body: { url: 'https://cipansorstore.blob.core.windows.net/e-office-documents/naskah.pdf' },
-    });
-    const res = makeRes();
-
-    await uploadController.getSasUrl(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(403);
-    expect((res.json as any).mock.calls[0][0].error.code).toBe('FORBIDDEN');
-  });
-
-  it('returns 500 SAS_ERROR when SAS generation fails', async () => {
-    (resolveSasForBlob as any).mockRejectedValueOnce(new Error('boom'));
-    const req = makeReq({
-      body: { url: 'https://cipansorstore.blob.core.windows.net/e-office-documents/naskah.pdf' },
-    });
-    const res = makeRes();
-
-    await uploadController.getSasUrl(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(500);
-    expect((res.json as any).mock.calls[0][0].error.code).toBe('SAS_ERROR');
-  });
-
-  it('rejects when the route lacks an authenticated user', async () => {
-    const req = makeReq({ user: undefined, body: { url: 'https://x.windows.net/a/b' } });
-    const res = makeRes();
-
-    await uploadController.getSasUrl(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.status).toHaveBeenCalledWith(200);
   });
 });

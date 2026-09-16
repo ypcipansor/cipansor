@@ -221,6 +221,29 @@ export function mayEditLetter(roleCode: string | null | undefined): boolean {
   );
 }
 
+/**
+ * Roles that administer personnel records beyond their own: unit admins,
+ * tata usaha, and foundation leadership. A holder of one of these may read
+ * (and, for admins, delete) an employee document belonging to any user in
+ * their scope. Everyone else reaches only their own employee documents.
+ *
+ * Single source of truth for the API's employee-document and blob-SAS
+ * authorization so the two guards cannot drift apart.
+ */
+export const HR_DOCUMENT_ROLE_CODES: readonly string[] = [
+  ...ADMIN_ROLE_CODES,
+  ...TATA_USAHA_ROLE_CODES,
+  ...GOVERNANCE_ROLE_CODES,
+];
+
+/** True when a role code may administer personnel documents in its scope. */
+export function mayAdministerEmployeeDocuments(
+  roleCode: string | null | undefined,
+): boolean {
+  if (!roleCode) return false;
+  return HR_DOCUMENT_ROLE_CODES.includes(roleCode);
+}
+
 /** Every RoleCode in the system — must equal the Prisma enum exactly. */
 export const ALL_ROLE_CODES: readonly string[] = [
   ...ADMIN_ROLE_CODES,

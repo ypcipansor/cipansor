@@ -415,6 +415,15 @@ export const uploadApi = {
     const body: GetSasUrlRequest = { url };
     return api.post<ApiResponse<GetSasUrlResult>>("/upload/sas", body);
   },
+  /**
+   * Discard an upload whose follow-up record was never saved, so the blob does
+   * not linger in private storage. Safe by construction: the API refuses to
+   * discard a blob any record references.
+   */
+  discard: async (url: string) => {
+    const body: GetSasUrlRequest = { url };
+    return api.post<ApiResponse<null>>("/upload/discard", body);
+  },
 };
 
 export default api;

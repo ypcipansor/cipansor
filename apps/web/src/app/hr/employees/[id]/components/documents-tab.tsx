@@ -35,7 +35,7 @@ import {
 } from "@/components/ui/select";
 import { Trash2, FileText, Upload } from "lucide-react";
 
-import api from "@/lib/api";
+import api, { uploadApi } from "@/lib/api";
 
 const DOCUMENT_TYPES: EmployeeDocumentType[] = [
   "KTP",
@@ -127,16 +127,22 @@ export function DocumentsTab({ userId }: { userId: string }) {
       // Handle response structure { success: true, data: { url: ... } }
       const fileUrl = uploadRes.data.data.url;
 
-      // 2. Create Record
-      await createDocument.mutateAsync({
-        userId,
-        name: formData.name,
-        type: formData.type,
-        fileUrl,
-        expiryDate: formData.expiryDate
-          ? new Date(formData.expiryDate).toISOString()
-          : undefined,
-      });
+      // 2. Create Record. If this fails, the just-uploaded blob is orphaned —
+      //    discard it so a failed save does not leave a file forever.
+      try {
+        await createDocument.mutateAsync({
+          userId,
+          name: formData.name,
+          type: formData.type,
+          fileUrl,
+          expiryDate: formData.expiryDate
+            ? new Date(formData.expiryDate).toISOString()
+            : undefined,
+        });
+      } catch (recordError) {
+        await uploadApi.discard(fileUrl).catch(() => undefined);
+        throw recordError;
+      }
 
       setIsOpen(false);
       setFormData({ name: "", type: "LAINNYA", expiryDate: "", file: null });

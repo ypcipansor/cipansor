@@ -198,4 +198,43 @@ test.describe("Single Sign-On (SSO) Buttons", () => {
     ).toHaveCount(0);
     await expect(page).toHaveURL(/\/login/);
   });
+
+  test("a real browser sign-in call reaches the API and fails without leaking verifier detail", async ({
+    page,
+  }) => {
+    // No /api/auth/sso/login mock: the credential from the stubbed GIS script
+    // is posted to the running API for real. The token is not a genuine Google
+    // ID token, so the API must reject it with the stable client message —
+    // proving the browser→API contract, and that the verifier's own message
+    // (BUG 13) never reaches the client.
+    await stubSsoConfig(page, {
+      googleEnabled: true,
+      googleClientId: "google-client-id",
+    });
+    await stubGoogleIdentityServices(page, "e2e-not-a-valid-google-id-token");
+
+    await page.goto("/login");
+    const ssoResponse = page.waitForResponse((response) =>
+      response.url().includes("/api/auth/sso/login"),
+    );
+    await page.getByRole("button", { name: /Google Workspace/i }).click();
+
+    const response = await ssoResponse;
+    expect(response.status()).toBe(401);
+    const body = (await response.json()) as {
+      error: { code: string; message: string };
+    };
+    expect(body.error.code).toBe("UNAUTHORIZED");
+    expect(body.error.message).toBe("Verifikasi token SSO gagal");
+    // The raw verifier reason (signature/audience/tenant) must not leak.
+    expect(JSON.stringify(body)).not.toMatch(
+      /signature|audience|issuer|tenant|jwt|token verification/i,
+    );
+
+    // The store renders the API's message inline above the form.
+    await expect(
+      page.getByText("Verifikasi token SSO gagal", { exact: true }),
+    ).toBeVisible({ timeout: 15000 });
+    await expect(page).toHaveURL(/\/login/);
+  });
 });

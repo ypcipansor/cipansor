@@ -1,21 +1,17 @@
 import { Request, Response } from 'express';
-import { ApiResponse, GetSasUrlRequest, GetSasUrlResult, UploadFileResult } from '@cipansor/shared';
+
+import { Errors, asyncHandler } from '@/middleware/error';
+import { ApiResponse as ApiResponseHelper } from '@/utils/response';
 import { generateSasUrl, isPublicContainer } from '@/utils/cloud-storage';
 import { requireUser } from '@/middleware/auth';
-import { resolveSasForBlob } from './upload.service';
+import { resolveSasForBlob, discardOrphanBlob } from './upload.service';
+
 
 export const uploadController = {
-  uploadFile: async (req: Request, res: Response<ApiResponse<UploadFileResult>>) => {
-    try {
+  uploadFile: asyncHandler(
+    async (req: Request, res: Response) => {
       if (!req.file) {
-        return res.status(400).json({
-          success: false,
-          data: null as any,
-          error: {
-            code: 'NO_FILE',
-            message: 'No file uploaded',
-          },
-        });
+        throw Errors.badRequest('No file uploaded');
       }
 
       /**
@@ -57,9 +53,8 @@ export const uploadController = {
         stableUrl = `${protocol}://${host}/uploads/${req.file.filename}`;
       }
 
-      return res.status(200).json({
-        success: true,
-        data: {
+      return res.status(200).json(
+        ApiResponseHelper.success({
           url: stableUrl,
           downloadUrl,
           containerName,
@@ -67,19 +62,10 @@ export const uploadController = {
           filename: req.file.filename,
           mimetype: req.file.mimetype,
           size: req.file.size,
-        },
-      });
-    } catch (error) {
-      return res.status(500).json({
-        success: false,
-        data: null as any,
-        error: {
-          code: 'UPLOAD_ERROR',
-          message: error instanceof Error ? error.message : 'Unknown upload error',
-        },
-      });
+        })
+      );
     }
-  },
+  ),
 
   /**
    * Mint a fresh short-lived SAS for a persisted stable blob URL (the raw URL
@@ -89,35 +75,34 @@ export const uploadController = {
    * or download time to obtain a valid link. Local /uploads URLs and public
    * blob URLs pass through unchanged.
    */
-  getSasUrl: async (req: Request, res: Response<ApiResponse<GetSasUrlResult>>) => {
-    try {
-      const { url } = (req.body ?? {}) as GetSasUrlRequest;
-      if (!url || typeof url !== 'string') {
-        return res.status(400).json({
-          success: false,
-          data: null as any,
-          error: { code: 'URL_REQUIRED', message: 'url wajib diisi' },
-        });
+  getSasUrl: asyncHandler(
+    async (req: Request, res: Response) => {
+      // Shape is validated at the route edge (`validate(getSasUrlSchema)`);
+      // container allowlist + record-ownership authorization live in the
+      // service. The controller only resolves the actor and shapes the response,
+      // and throws a 400 if a caller reaches it without the validated body.
+      const url = typeof req.body?.url === 'string' ? req.body.url : undefined;
+      if (!url) {
+        throw Errors.badRequest('url wajib diisi');
       }
-      // Container allowlist + record-ownership authorization live in the
-      // service layer; the controller only resolves the actor and shapes the
-      // response. Private blobs the caller may read get a fresh SAS.
       const actor = requireUser(req);
       const data = await resolveSasForBlob(url, actor);
-      return res.status(200).json({ success: true, data });
-    } catch (error) {
-      const status =
-        error instanceof Error && 'statusCode' in error
-          ? (error as { statusCode?: number }).statusCode
-          : undefined;
-      return res.status(status ?? 500).json({
-        success: false,
-        data: null as any,
-        error: {
-          code: status === 403 ? 'FORBIDDEN' : 'SAS_ERROR',
-          message: error instanceof Error ? error.message : 'Unknown SAS error',
-        },
-      });
+      return res.status(200).json(ApiResponseHelper.success(data));
     }
-  },
+  ),
+
+  /**
+   * Discard an upload whose follow-up record was never saved, so the blob does
+   * not linger in private storage forever. Only a blob no record references
+   * may be discarded; a live document is refused. See `discardOrphanBlob`.
+   */
+  discardUpload: asyncHandler(async (req: Request, res: Response) => {
+    const url = typeof req.body?.url === 'string' ? req.body.url : undefined;
+    if (!url) {
+      throw Errors.badRequest('url wajib diisi');
+    }
+    const actor = requireUser(req);
+    await discardOrphanBlob(url, actor);
+    return res.status(200).json(ApiResponseHelper.success(null));
+  }),
 };

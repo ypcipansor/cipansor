@@ -11,6 +11,7 @@
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/client';
+import { cleanupBlobBestEffort, cleanupBlobsBestEffort } from '@/utils/cloud-storage';
 
 // Portfolio types and categories
 export const PORTFOLIO_TYPES = [
@@ -205,10 +206,20 @@ export async function updatePortfolio(id: string, data: Partial<CreatePortfolioD
 }
 
 export async function deletePortfolio(id: string) {
+  // Snapshot the file URLs before the rows go, so their blobs can be reclaimed
+  // after the delete succeeds (best-effort — never blocks the delete).
+  const files = await prisma.portfolioFile.findMany({
+    where: { portfolioId: id },
+    select: { fileUrl: true },
+  });
+
   // Delete files first
   await prisma.portfolioFile.deleteMany({ where: { portfolioId: id } });
   await prisma.portfolioComment.deleteMany({ where: { portfolioId: id } });
-  return prisma.portfolio.delete({ where: { id } });
+  const deleted = await prisma.portfolio.delete({ where: { id } });
+
+  await cleanupBlobsBestEffort(files.map((f) => f.fileUrl));
+  return deleted;
 }
 
 // =====================================
@@ -266,7 +277,13 @@ export async function updatePortfolioFile(
 }
 
 export async function deletePortfolioFile(id: string) {
-  return prisma.portfolioFile.delete({ where: { id } });
+  const file = await prisma.portfolioFile.findUnique({
+    where: { id },
+    select: { fileUrl: true },
+  });
+  const deleted = await prisma.portfolioFile.delete({ where: { id } });
+  await cleanupBlobBestEffort(file?.fileUrl);
+  return deleted;
 }
 
 // =====================================

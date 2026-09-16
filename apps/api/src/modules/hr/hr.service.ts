@@ -6,7 +6,10 @@ import {
   LeaveType,
   UserRole,
   User,
+  Gender,
+  EducationLevel,
 } from '@prisma/client';
+import type { HrEmployee } from '@cipansor/shared';
 import {
   CreateStaffAttendanceInput,
   UpdateStaffAttendanceInput,
@@ -120,15 +123,177 @@ export async function getTeachers(params: {
   };
 }
 
+/**
+ * Flatten a User + Teacher/Staff profile into the shared `HrEmployee` DTO.
+ *
+ * The database has no `Employee` table — a teacher and a tendik are separate
+ * profile models — so the list and detail pages get one shape from here instead
+ * of each page re-deriving it from whichever profile it happened to load.
+ * Fields with no column (`employeeType`, `position`, `status`) are derived and
+ * deliberately default to the neutral value rather than guessing.
+ */
+function toHrEmployee(user: {
+  id: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  unitId: string | null;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  unit: { id: string; name: string } | null;
+  teacher: {
+    nip: string | null;
+    gender: Gender | null;
+    birthPlace: string | null;
+    birthDate: Date | null;
+    nik: string | null;
+    religion: string;
+    address: string | null;
+    joinDate: Date | null;
+    departmentId: string | null;
+    department: { id: string; name: string } | null;
+    lastEducation: EducationLevel | null;
+    lastEducationMajor: string | null;
+    lastEducationInstitution: string | null;
+    bankName: string | null;
+    bankAccountNumber: string | null;
+    bankAccountName: string | null;
+  } | null;
+  staff: {
+    nip: string | null;
+    position: string;
+    department: string | null;
+    departmentId: string | null;
+    departmentRel: { id: string; name: string } | null;
+    joinDate: Date | null;
+  } | null;
+}): HrEmployee {
+  const isTeacher = !!user.teacher;
+  const teacher = user.teacher;
+  const staff = user.staff;
+
+  return {
+    id: user.id,
+    userId: user.id,
+    nip: teacher?.nip ?? staff?.nip ?? '-',
+    user: { id: user.id, name: user.name, email: user.email },
+    unitId: user.unitId ?? '',
+    unit: user.unit ?? { id: '', name: '' },
+    departmentId: teacher?.departmentId ?? staff?.departmentId ?? undefined,
+    department:
+      teacher?.department ??
+      staff?.departmentRel ??
+      (staff?.department ? { id: '', name: staff.department } : undefined),
+
+    fullName: user.name,
+    gender: teacher?.gender ?? null,
+    birthPlace: teacher?.birthPlace ?? null,
+    birthDate: teacher?.birthDate?.toISOString() ?? null,
+    nik: teacher?.nik ?? null,
+    religion: teacher?.religion ?? null,
+    maritalStatus: null,
+
+    phone: user.phone,
+    email: user.email,
+    address: teacher?.address ?? null,
+
+    role: isTeacher ? 'TEACHER' : 'STAFF',
+    position: teacher ? 'Guru' : (staff?.position ?? ''),
+    // Neither the Teacher nor the Staff table records a contract type or a
+    // lifecycle status. PERMANENT/ACTIVE are the neutral defaults the pages
+    // already assume; inventing a status from `isActive` would mislabel a
+    // teacher on leave as inactive.
+    employeeType: 'PERMANENT',
+    status: user.isActive ? 'ACTIVE' : 'INACTIVE',
+    joinDate: (teacher?.joinDate ?? staff?.joinDate ?? user.createdAt).toISOString(),
+
+    lastEducation: teacher?.lastEducation ?? null,
+    educationMajor: teacher?.lastEducationMajor ?? null,
+    educationInstitution: teacher?.lastEducationInstitution ?? null,
+    graduationYear: null,
+
+    bankName: teacher?.bankName ?? null,
+    bankAccountNumber: teacher?.bankAccountNumber ?? null,
+    bankAccountName: teacher?.bankAccountName ?? null,
+
+    createdAt: user.createdAt.toISOString(),
+    updatedAt: user.updatedAt.toISOString(),
+  };
+}
+
+/** The profile selection every employee read shares. */
+const HR_EMPLOYEE_INCLUDE = {
+  unit: { select: { id: true, name: true } },
+  teacher: { include: { department: { select: { id: true, name: true } } } },
+  staff: { include: { departmentRel: { select: { id: true, name: true } } } },
+} as const;
+
+/**
+ * List employees (a User with a Teacher or Staff profile) as the flat
+ * `HrEmployee` DTO. Backs `GET /hr/employees` for the HR directory, the
+ * department head picker and the Merdeka supervisor picker.
+ */
+export async function getEmployeeDirectory(params: {
+  page: number;
+  limit: number;
+  unitId?: string;
+  role?: 'TEACHER' | 'STAFF';
+  status?: 'ACTIVE' | 'INACTIVE';
+  search?: string;
+}) {
+  const { page, limit, unitId, role, status, search } = params;
+  const skip = (page - 1) * limit;
+
+  const where: Prisma.UserWhereInput = {
+    deletedAt: null,
+    role: role
+      ? (role as UserRole)
+      : { in: [UserRole.TEACHER, UserRole.STAFF] },
+    ...(unitId ? { unitId } : {}),
+    ...(status ? { isActive: status === 'ACTIVE' } : {}),
+  };
+
+  if (search) {
+    where.OR = [
+      { name: { contains: search, mode: 'insensitive' } },
+      { email: { contains: search, mode: 'insensitive' } },
+      { teacher: { nip: { contains: search, mode: 'insensitive' } } },
+      { staff: { nip: { contains: search, mode: 'insensitive' } } },
+    ];
+  }
+
+  const [data, total] = await Promise.all([
+    prisma.user.findMany({
+      where,
+      skip,
+      take: limit,
+      orderBy: { name: 'asc' },
+      include: HR_EMPLOYEE_INCLUDE,
+    }),
+    prisma.user.count({ where }),
+  ]);
+
+  return {
+    data: data.map(toHrEmployee),
+    meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
+  };
+}
+
+/**
+ * Fetch one employee by user id as the flat `HrEmployee` DTO, or null when the
+ * id names no teacher/staff user (the caller turns that into a 404).
+ */
 export async function getEmployeeById(id: string) {
-  return prisma.user.findUnique({
-    where: { id },
-    include: {
-      unit: { select: { id: true, name: true } },
-      teacher: true,
-      staff: true,
+  const user = await prisma.user.findFirst({
+    where: {
+      id,
+      deletedAt: null,
+      role: { in: [UserRole.TEACHER, UserRole.STAFF] },
     },
+    include: HR_EMPLOYEE_INCLUDE,
   });
+  return user ? toHrEmployee(user) : null;
 }
 
 /**

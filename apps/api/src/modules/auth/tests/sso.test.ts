@@ -55,7 +55,7 @@ describe('SSO Authentication Security Unit Tests', () => {
         provider: 'google',
         idToken: 'some_token',
       })
-    ).rejects.toThrow('Google SSO is not configured on this server');
+    ).rejects.toThrow('Verifikasi token SSO gagal');
   });
 
   it('should reject Google SSO when token audience (aud) mismatches', async () => {
@@ -78,7 +78,7 @@ describe('SSO Authentication Security Unit Tests', () => {
         provider: 'google',
         idToken: 'token_with_wrong_aud',
       })
-    ).rejects.toThrow('Google token audience (aud) mismatch');
+    ).rejects.toThrow('Verifikasi token SSO gagal');
   });
 
   it('should reject Google SSO when token is expired', async () => {
@@ -101,7 +101,7 @@ describe('SSO Authentication Security Unit Tests', () => {
         provider: 'google',
         idToken: 'expired_token',
       })
-    ).rejects.toThrow('Google token has expired');
+    ).rejects.toThrow('Verifikasi token SSO gagal');
   });
 
   it('should reject Google SSO when email is not verified', async () => {
@@ -124,7 +124,7 @@ describe('SSO Authentication Security Unit Tests', () => {
         provider: 'google',
         idToken: 'unverified_email_token',
       })
-    ).rejects.toThrow('Google account email is missing or not verified');
+    ).rejects.toThrow('Verifikasi token SSO gagal');
   });
 
   it('should reject Google SSO when the issuer is not Google', async () => {
@@ -148,7 +148,7 @@ describe('SSO Authentication Security Unit Tests', () => {
         provider: 'google',
         idToken: 'wrong_issuer_token',
       })
-    ).rejects.toThrow('Google token issuer (iss) invalid');
+    ).rejects.toThrow('Verifikasi token SSO gagal');
   });
 
   it('should reject Google SSO when the token has no subject (sub)', async () => {
@@ -170,7 +170,7 @@ describe('SSO Authentication Security Unit Tests', () => {
         provider: 'google',
         idToken: 'no_subject_token',
       })
-    ).rejects.toThrow('Google token subject (sub) is missing');
+    ).rejects.toThrow('Verifikasi token SSO gagal');
   });
 
   it('should reject Google SSO when user is not found in database', async () => {
@@ -205,7 +205,7 @@ describe('SSO Authentication Security Unit Tests', () => {
         provider: 'microsoft',
         idToken: 'some_ms_token',
       })
-    ).rejects.toThrow('Microsoft SSO is not configured on this server');
+    ).rejects.toThrow('Verifikasi token SSO gagal');
   });
 
   it('should verify Microsoft token signature and claims successfully', async () => {
@@ -279,7 +279,7 @@ describe('SSO Authentication Security Unit Tests', () => {
         provider: 'microsoft',
         idToken: 'ms_token_wrong_tenant',
       })
-    ).rejects.toThrow('Microsoft token tenant (tid) mismatch');
+    ).rejects.toThrow('Verifikasi token SSO gagal');
   });
 
   it('should accept Microsoft token whose tenant matches MICROSOFT_TENANT_ID', async () => {
@@ -325,6 +325,76 @@ describe('SSO Authentication Security Unit Tests', () => {
     });
 
     expect(result).toHaveProperty('accessToken');
+  });
+
+  it('accepts a Microsoft token when MICROSOFT_TENANT_ID is a DOMAIN (BUG 7)', async () => {
+    process.env.MICROSOFT_CLIENT_ID = 'expected-ms-client-id';
+    // A domain-valued tenant: Entra still reports the directory GUID in `tid`
+    // and the issuer path, so a naive GUID comparison rejected every valid
+    // token. The verified e-mail's domain must be accepted instead.
+    process.env.MICROSOFT_TENANT_ID = 'cipansor.or.id';
+
+    const mockUser = {
+      id: 'usr_ms_domain',
+      email: 'guru@cipansor.or.id',
+      isActive: true,
+      unitId: 'unit_1',
+      userRoles: [
+        {
+          isPrimary: true,
+          roleId: 'role_1',
+          unitId: 'unit_1',
+          role: { code: 'SDIT_GURU', permissions: ['STUDENT_READ'] },
+        },
+      ],
+    };
+
+    vi.spyOn(jwt, 'decode').mockReturnValueOnce({
+      header: { kid: 'key_123' },
+      payload: {},
+    } as any);
+    vi.spyOn(jwt, 'verify').mockReturnValueOnce({
+      aud: 'expected-ms-client-id',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      tid: 'directory-guid-abc',
+      iss: 'https://login.microsoftonline.com/directory-guid-abc/v2.0',
+      preferred_username: 'guru@cipansor.or.id',
+      oid: 'ms-oid-domain',
+    } as any);
+
+    vi.spyOn(prisma.user, 'findFirst').mockResolvedValueOnce(mockUser as any);
+    vi.spyOn(prisma.refreshToken, 'create').mockResolvedValueOnce({} as any);
+    vi.spyOn(prisma.user, 'update').mockResolvedValueOnce({} as any);
+    vi.spyOn(prisma.academicYear, 'findFirst').mockResolvedValueOnce({ id: 'ay_1' } as any);
+
+    const result = await authService.ssoLogin({
+      provider: 'microsoft',
+      idToken: 'ms_token_domain_tenant',
+    });
+
+    expect(result).toHaveProperty('accessToken');
+  });
+
+  it('rejects a domain-tenant token whose email domain differs (BUG 7)', async () => {
+    process.env.MICROSOFT_CLIENT_ID = 'expected-ms-client-id';
+    process.env.MICROSOFT_TENANT_ID = 'cipansor.or.id';
+
+    vi.spyOn(jwt, 'decode').mockReturnValueOnce({
+      header: { kid: 'key_123' },
+      payload: {},
+    } as any);
+    vi.spyOn(jwt, 'verify').mockReturnValueOnce({
+      aud: 'expected-ms-client-id',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      tid: 'directory-guid-other',
+      iss: 'https://login.microsoftonline.com/directory-guid-other/v2.0',
+      preferred_username: 'guru@outlook.com',
+      oid: 'ms-oid-other',
+    } as any);
+
+    await expect(
+      authService.ssoLogin({ provider: 'microsoft', idToken: 'ms_token_wrong_domain' })
+    ).rejects.toThrow('Verifikasi token SSO gagal');
   });
 
   it('caches the JWKS client per tenant so signing keys are not refetched on every login', async () => {
@@ -521,11 +591,13 @@ describe('SSO Authentication Security Unit Tests', () => {
     stubMicrosoftSuccessClaims();
     stubLoginSideEffects();
 
-    vi.mocked(prisma.identityProvider.findUnique).mockResolvedValueOnce({
+    vi.mocked(prisma.identityProvider.findUnique).mockResolvedValue({
       id: 'idp_1',
       userId: 'usr_link_1',
       provider: 'MICROSOFT',
       providerSubjectId: 'ms-oid-link',
+      // Resolution-by-subject reads the linked user through this relation.
+      user: linkedUser,
     } as any);
 
     await authService.ssoLogin({ provider: 'microsoft', idToken: 'repeat_login_token' });
@@ -543,7 +615,7 @@ describe('SSO Authentication Security Unit Tests', () => {
     stubMicrosoftSuccessClaims();
     stubLoginSideEffects();
 
-    vi.mocked(prisma.identityProvider.findUnique).mockResolvedValueOnce({
+    vi.mocked(prisma.identityProvider.findUnique).mockResolvedValue({
       id: 'idp_other',
       userId: 'someone-else',
       provider: 'MICROSOFT',
@@ -556,6 +628,62 @@ describe('SSO Authentication Security Unit Tests', () => {
 
     expect(prisma.identityProvider.create).not.toHaveBeenCalled();
     expect(prisma.identityProvider.update).not.toHaveBeenCalled();
+  });
+
+  it('resolves the account through the subject link when the PROVIDER EMAIL changed (BUG 5)', async () => {
+    stubMicrosoftSuccessClaims();
+    // The mailbox moved provider-side; the local row still holds the old one.
+    stubLoginSideEffects(linkedUser);
+
+    vi.mocked(prisma.identityProvider.findUnique).mockResolvedValue({
+      id: 'idp_1',
+      userId: 'usr_link_1',
+      provider: 'MICROSOFT',
+      providerSubjectId: 'ms-oid-link',
+      user: linkedUser,
+    } as any);
+
+    const findFirstSpy = vi.spyOn(prisma.user, 'findFirst');
+
+    const result = await authService.ssoLogin({
+      provider: 'microsoft',
+      idToken: 'email_changed_token',
+    });
+
+    // Resolved by (provider, subject) — NOT by email — so the moved mailbox
+    // did not lock the user out.
+    expect(result).toHaveProperty('accessToken');
+    expect(findFirstSpy).not.toHaveBeenCalled();
+  });
+
+  it('treats a P2002 unique race as an existing link, not an error (BUG 10)', async () => {
+    stubMicrosoftSuccessClaims();
+    stubLoginSideEffects();
+
+    // First read (resolution) sees no link; the create then loses the race and
+    // the re-read finds the row this same request was trying to create.
+    vi.mocked(prisma.identityProvider.findUnique)
+      .mockResolvedValueOnce(null as any)
+      .mockResolvedValueOnce({
+        id: 'idp_raced',
+        userId: 'usr_link_1',
+        provider: 'MICROSOFT',
+        providerSubjectId: 'ms-oid-link',
+      } as any);
+
+    const p2002 = Object.assign(new Error('Unique constraint failed'), { code: 'P2002' });
+    vi.mocked(prisma.identityProvider.create).mockRejectedValueOnce(p2002);
+
+    const result = await authService.ssoLogin({
+      provider: 'microsoft',
+      idToken: 'raced_first_login_token',
+    });
+
+    // Idempotent: the concurrent first login is handled as a normal repeat.
+    expect(result).toHaveProperty('accessToken');
+    expect(prisma.identityProvider.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'idp_raced' } })
+    );
   });
 
   it('does not link an identity when the account does not exist', async () => {

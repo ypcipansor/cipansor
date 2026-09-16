@@ -1,5 +1,5 @@
 "use client";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { authFileUrl, resolveFileUrl } from "@/lib/files";
 import { safeFormat } from "@/lib/date";
 import { useCorrespondence } from "@/hooks/use-correspondence";
@@ -94,11 +94,8 @@ const REVIEWER_STATUS_LABEL: Record<string, string> = {
   REVISION_NEEDED: "Minta revisi",
 };
 
-export default function LetterDetailPage({
-  params,
-}: {
-  params: { id: string };
-}) {
+export default function LetterDetailPage() {
+  const params = useParams<{ id: string }>();
   const router = useRouter();
   const { user } = useAuth();
   const {

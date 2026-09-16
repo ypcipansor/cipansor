@@ -261,6 +261,28 @@ export async function getLeaveBalance(req: Request, res: Response, next: NextFun
 // STAFF CONTROLLERS (HR listing)
 // =====================================
 
+export async function getEmployees(req: Request, res: Response, next: NextFunction) {
+  try {
+    const query = res.locals.validatedQuery;
+    const result = await service.getEmployeeDirectory(query);
+    res.json({ success: true, ...result });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getEmployeeById(req: Request, res: Response, next: NextFunction) {
+  try {
+    const employee = await service.getEmployeeById(req.params.id);
+    if (!employee) {
+      throw Errors.notFound('Employee not found');
+    }
+    res.json({ success: true, data: employee });
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function getStaffList(req: Request, res: Response, next: NextFunction) {
   try {
     const query = res.locals.validatedQuery;

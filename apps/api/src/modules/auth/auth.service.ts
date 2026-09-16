@@ -161,6 +161,68 @@ function activeRoleWhere() {
   };
 }
 
+/**
+ * Shape of the user record SSO login needs, shared by the two resolution
+ * helpers (provider-subject link, e-mail fallback) so the payload derivation
+ * below sees an identical structure either way.
+ */
+type SsoUserRecord = {
+  id: string;
+  email: string;
+  isActive: boolean;
+  isTwoFactorEnabled: boolean;
+  deletedAt: Date | null;
+  unitId: string | null;
+  // Optional sensitive fields, present because the record feeds
+  // `stripSensitiveFields` before the user is returned to the client.
+  passwordHash?: unknown;
+  twoFactorSecret?: unknown;
+  twoFactorSecretPending?: unknown;
+  twoFactorRecoveryCodes?: unknown;
+  resetTokenHash?: unknown;
+  resetTokenExpiresAt?: unknown;
+  userRoles: Array<{
+    roleId: string;
+    unitId: string | null;
+    isPrimary: boolean;
+    role: { code: string; permissions: unknown };
+  }>;
+};
+
+const SSO_USER_SELECT = {
+  id: true,
+  email: true,
+  isActive: true,
+  isTwoFactorEnabled: true,
+  deletedAt: true,
+  unitId: true,
+  passwordHash: true,
+  twoFactorSecret: true,
+  twoFactorSecretPending: true,
+  twoFactorRecoveryCodes: true,
+  resetTokenHash: true,
+  resetTokenExpiresAt: true,
+  userRoles: {
+    where: activeRoleWhere(),
+    select: {
+      roleId: true,
+      unitId: true,
+      isPrimary: true,
+      role: { select: { code: true, permissions: true } },
+    },
+    orderBy: { isPrimary: 'desc' },
+  },
+} as const;
+
+/** True for a Prisma unique-constraint violation (create raced another insert). */
+function isUniqueConstraintError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { code?: string }).code === 'P2002'
+  );
+}
+
 export class AuthService {
   /**
    * Login user
@@ -391,15 +453,21 @@ export class AuthService {
         throw Errors.badRequest('Unsupported SSO provider');
       }
     } catch (err: any) {
+      // The verifier's own message (which can name the exact claim that failed,
+      // e.g. audience/issuer/tenant details) stays in the server log; the
+      // client gets one stable, non-enumerating message. Leaking which check
+      // failed hands an attacker a free oracle for probing tokens.
+      logger.warn('SSO token verification failed', {
+        method,
+        reason: err instanceof Error ? err.message : String(err),
+      });
       await this.recordLoginAudit({
         method,
         success: false,
         reason: 'token_verification_failed',
         context,
       });
-      throw Errors.unauthorized(
-        `SSO token verification failed: ${err.message || 'Invalid signature'}`
-      );
+      throw Errors.unauthorized('Verifikasi token SSO gagal');
     }
 
     const email = identity.email;
@@ -413,31 +481,19 @@ export class AuthService {
       throw Errors.badRequest('Email could not be verified from SSO provider token');
     }
 
-    // Email casing normalization: the same mailbox may arrive as
-    // user@cipansor.or.id or User@cipansor.or.id depending on the provider.
-    // Match against the stored account case-insensitively (provider issues the
-    // mailbox; local registration stores whichever casing the admin typed), so
-    // a registered user is never reported as "tidak terdaftar" just because a
-    // different casing reached this lookup.
     const normalizedEmail = email.toLowerCase();
+    const provider =
+      input.provider === 'google' ? SSOProvider.GOOGLE : SSOProvider.MICROSOFT;
 
-    const user = await prisma.user.findFirst({
-      where: {
-        email: normalizedEmail,
-        deletedAt: null,
-      },
-      include: {
-        unit: true,
-        userRoles: {
-          where: activeRoleWhere(),
-          include: {
-            role: true,
-            unit: true,
-          },
-          orderBy: { isPrimary: 'desc' },
-        },
-      },
-    });
+    // Resolve the account by the *durable* identity link first, then by email.
+    //
+    // The whole point of `IdentityProvider` (keyed on the provider subject, not
+    // the address) is that a provider-side e-mail change must not lock a user
+    // out. Looking up by e-mail alone defeated that: the mailbox moved, the
+    // local row did not, and the established link was never consulted.
+    const linkedUser = await this.findUserByProviderSubject(provider, identity.subject);
+
+    const user = linkedUser ?? (await this.findUserByEmailForSso(normalizedEmail));
 
     if (!user) {
       const isDomainEmail = normalizedEmail.endsWith('@cipansor.or.id');
@@ -485,7 +541,7 @@ export class AuthService {
     // subject is the durable key — an e-mail change on the provider side must
     // not detach an established login.
     await this.linkIdentityProvider({
-      provider: input.provider === 'google' ? SSOProvider.GOOGLE : SSOProvider.MICROSOFT,
+      provider,
       providerSubjectId: identity.subject,
       providerEmail: normalizedEmail,
       userId: user.id,
@@ -503,7 +559,12 @@ export class AuthService {
       email: user.email,
       roleId: roleId || '',
       roleCode,
-      unitId: assignmentUnitId || user.unitId,
+      // Same derivation as the password path (`tokenUnitId`), so a person's
+      // token scope cannot differ depending on which method they signed in
+      // with. The previous `assignmentUnitId || user.unitId` gave a foundation
+      // user their home unit under SSO but a null/foundation scope under
+      // password login.
+      unitId: tokenUnitId(assignmentUnitId, roleCode, user.unitId),
       permissions,
       role: deriveLegacyRole(roleCode),
     };
@@ -680,13 +741,27 @@ export class AuthService {
     // ('common'/'organizations'/'consumers'), reject tokens minted for a
     // different tenant. The `tid` claim is the directory GUID; the issuer
     // carries the same tenant (as GUID or verified domain) in its path.
+    //
+    // A domain-valued tenant is the trap: Entra always reports the directory
+    // GUID in `tid` and in the issuer path, so comparing either against a
+    // domain can never match and every valid token was rejected. In that case
+    // fall back to the verified e-mail's domain.
     const isMultiTenantAuth =
       tenantId === 'common' || tenantId === 'organizations' || tenantId === 'consumers';
     if (!isMultiTenantAuth) {
+      const isGuid =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId);
+      const tenantEmail = (payload.preferred_username || payload.email || payload.upn) as
+        | string
+        | undefined;
       const tidMatches = typeof payload.tid === 'string' && payload.tid === tenantId;
       const issuerMatchesTenant =
         typeof payload.iss === 'string' && payload.iss.includes(`/${tenantId}/`);
-      if (!tidMatches && !issuerMatchesTenant) {
+      const tenantDomainMatches =
+        !isGuid &&
+        typeof tenantEmail === 'string' &&
+        tenantEmail.toLowerCase().endsWith(`@${tenantId.toLowerCase()}`);
+      if (!tidMatches && !issuerMatchesTenant && !tenantDomainMatches) {
         throw new Error('Microsoft token tenant (tid) mismatch');
       }
     }
@@ -715,6 +790,12 @@ export class AuthService {
    * re-point an existing row at whichever user just signed in. A subject that
    * already belongs to somebody else is a hard conflict and must be surfaced,
    * not overwritten.
+   *
+   * Two first logins for the same subject can pass the `findUnique` together
+   * and then race on the insert; the loser gets P2002 from the unique key. That
+   * is not a failure — it means the link now exists, so the row is re-read and
+   * handled like any other existing link (idempotent) rather than surfacing a
+   * spurious error to a legitimate user.
    */
   private async linkIdentityProvider(params: {
     provider: SSOProvider;
@@ -748,9 +829,66 @@ export class AuthService {
       return;
     }
 
-    await prisma.identityProvider.create({
-      data: { provider, providerSubjectId, providerEmail, userId, lastLoginAt: new Date() },
+    try {
+      await prisma.identityProvider.create({
+        data: { provider, providerSubjectId, providerEmail, userId, lastLoginAt: new Date() },
+      });
+    } catch (error) {
+      // Unique-constraint race: another request created the link first.
+      if (isUniqueConstraintError(error)) {
+        const raced = await prisma.identityProvider.findUnique({
+          where: { provider_providerSubjectId: { provider, providerSubjectId } },
+        });
+        if (raced && raced.userId === userId) {
+          await prisma.identityProvider.update({
+            where: { id: raced.id },
+            data: { providerEmail, lastLoginAt: new Date() },
+          });
+          return;
+        }
+        if (raced) {
+          logger.warn('SSO subject already linked to another account', {
+            provider,
+            providerSubjectId,
+            linkedUserId: raced.userId,
+            attemptedUserId: userId,
+          });
+          throw Errors.conflict('Identitas SSO ini sudah tertaut ke akun lain');
+        }
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Resolve the local user from a durable provider identity link.
+   *
+   * Returns null when no link exists yet (first-time login) or when the linked
+   * account is soft-deleted; the caller then falls back to e-mail matching to
+   * establish the link.
+   */
+  private async findUserByProviderSubject(
+    provider: SSOProvider,
+    providerSubjectId: string
+  ): Promise<SsoUserRecord | null> {
+    const link = await prisma.identityProvider.findUnique({
+      where: { provider_providerSubjectId: { provider, providerSubjectId } },
+      select: { user: { select: SSO_USER_SELECT } },
     });
+    const user = link?.user as SsoUserRecord | undefined;
+    if (!user || user.deletedAt) return null;
+    return user;
+  }
+
+  /**
+   * Fallback account resolution for the first SSO login, before any provider
+   * link exists: match the verified e-mail against a stored, non-deleted user.
+   */
+  private async findUserByEmailForSso(email: string): Promise<SsoUserRecord | null> {
+    return (await prisma.user.findFirst({
+      where: { email, deletedAt: null },
+      select: SSO_USER_SELECT,
+    })) as SsoUserRecord | null;
   }
 
   /**

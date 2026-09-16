@@ -16,6 +16,10 @@ vi.mock('@/modules/notifications', () => ({
   },
 }));
 
+vi.mock('@/utils/cloud-storage', () => ({
+  cleanupBlobsBestEffort: vi.fn().mockResolvedValue(undefined),
+}));
+
 // Mock Prisma
 vi.mock('@/lib/prisma', () => ({
   prisma: {
@@ -32,6 +36,7 @@ vi.mock('@/lib/prisma', () => ({
     dailyReportPhoto: {
       createMany: vi.fn(),
       deleteMany: vi.fn(),
+      findMany: vi.fn(),
     },
     student: {
       findUnique: vi.fn(),
@@ -113,6 +118,9 @@ describe('DailyReportService', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Photo snapshots default to "no previous photos"; individual tests override
+    // this when they exercise blob reclamation.
+    vi.mocked(prisma.dailyReportPhoto.findMany).mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -560,6 +568,27 @@ describe('DailyReportService', () => {
       expect(prisma.dailyReportPhoto.deleteMany).toHaveBeenCalled();
       expect(prisma.dailyReportPhoto.createMany).not.toHaveBeenCalled();
     });
+
+    it('reclaims the blobs of photos removed by the update (BUG 4)', async () => {
+      const { cleanupBlobsBestEffort } = await import('@/utils/cloud-storage');
+      vi.mocked(prisma.dailyStudentReport.update).mockResolvedValue(mockReport as any);
+      vi.mocked(prisma.dailyReportPhoto.findMany).mockResolvedValue([
+        { photoUrl: 'https://store.blob.core.windows.net/cipansor-documents/old-1.jpg' },
+        { photoUrl: 'https://store.blob.core.windows.net/cipansor-documents/kept.jpg' },
+      ] as any);
+      vi.mocked(prisma.dailyReportPhoto.deleteMany).mockResolvedValue({ count: 2 } as any);
+      vi.mocked(prisma.dailyReportPhoto.createMany).mockResolvedValue({ count: 1 } as any);
+
+      await dailyReportService.update(mockReportId, {
+        ...updateInput,
+        photoUrls: ['https://store.blob.core.windows.net/cipansor-documents/kept.jpg'],
+      });
+
+      // Only the blob no longer referenced by any new photo is reclaimed.
+      expect(cleanupBlobsBestEffort).toHaveBeenCalledWith([
+        'https://store.blob.core.windows.net/cipansor-documents/old-1.jpg',
+      ]);
+    });
   });
 
   // ============================================
@@ -569,6 +598,7 @@ describe('DailyReportService', () => {
   describe('delete', () => {
     it('should delete daily report and photos', async () => {
       vi.mocked(prisma.dailyStudentReport.findUniqueOrThrow).mockResolvedValue(mockReport as any);
+      vi.mocked(prisma.dailyReportPhoto.findMany).mockResolvedValue([] as any);
       vi.mocked(prisma.dailyReportPhoto.deleteMany).mockResolvedValue({ count: 2 } as any);
       vi.mocked(prisma.dailyStudentReport.delete).mockResolvedValue(mockReport as any);
 
@@ -581,6 +611,38 @@ describe('DailyReportService', () => {
       expect(prisma.dailyStudentReport.delete).toHaveBeenCalledWith({
         where: { id: mockReportId },
       });
+    });
+
+    it('reclaims photo blobs after the record delete succeeds (BUG 4)', async () => {
+      const { cleanupBlobsBestEffort } = await import('@/utils/cloud-storage');
+      const blobs = [
+        'https://store.blob.core.windows.net/cipansor-documents/a.jpg',
+        'https://store.blob.core.windows.net/cipansor-documents/b.jpg',
+      ];
+      vi.mocked(prisma.dailyStudentReport.findUniqueOrThrow).mockResolvedValue(mockReport as any);
+      vi.mocked(prisma.dailyReportPhoto.findMany).mockResolvedValue(
+        blobs.map((photoUrl) => ({ photoUrl })) as any
+      );
+      vi.mocked(prisma.dailyReportPhoto.deleteMany).mockResolvedValue({ count: 2 } as any);
+      vi.mocked(prisma.dailyStudentReport.delete).mockResolvedValue(mockReport as any);
+
+      await dailyReportService.delete(mockReportId);
+
+      expect(cleanupBlobsBestEffort).toHaveBeenCalledWith(blobs);
+    });
+
+    it('does not reclaim blobs when the record delete fails', async () => {
+      const { cleanupBlobsBestEffort } = await import('@/utils/cloud-storage');
+      vi.mocked(prisma.dailyStudentReport.findUniqueOrThrow).mockResolvedValue(mockReport as any);
+      vi.mocked(prisma.dailyReportPhoto.findMany).mockResolvedValue([
+        { photoUrl: 'https://store.blob.core.windows.net/cipansor-documents/a.jpg' },
+      ] as any);
+      vi.mocked(prisma.dailyReportPhoto.deleteMany).mockResolvedValue({ count: 1 } as any);
+      vi.mocked(prisma.dailyStudentReport.delete).mockRejectedValue(new Error('db down'));
+
+      await expect(dailyReportService.delete(mockReportId)).rejects.toThrow('db down');
+
+      expect(cleanupBlobsBestEffort).not.toHaveBeenCalled();
     });
 
     it('should throw error if report not found', async () => {

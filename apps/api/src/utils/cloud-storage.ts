@@ -191,6 +191,45 @@ export async function deleteFromCloudStorage(
 }
 
 /**
+ * Best-effort removal of the blob backing a persisted record URL.
+ *
+ * Record-delete paths call this *after* the database row is gone. Failure to
+ * delete is logged and swallowed: the record is authoritative, and turning a
+ * stale-blob sweep into a failed delete would be worse for the user than
+ * leaving one orphan behind (which a later sweep can reclaim). For paths that
+ * must know whether the blob was actually removed (e.g. rollback), call
+ * {@link deleteFromCloudStorage} directly and handle its rejection.
+ */
+export async function cleanupBlobBestEffort(
+  fileUrl: string | null | undefined
+): Promise<boolean> {
+  if (!fileUrl) return false;
+  const parsed = parseBlobUrl(fileUrl);
+  if (!parsed) return false;
+  try {
+    await deleteFromCloudStorage(parsed.containerName, parsed.blobName);
+    return true;
+  } catch (error) {
+    logger.error('Best-effort blob cleanup failed; record already deleted', {
+      container: parsed.containerName,
+      blobName: parsed.blobName,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
+}
+
+/**
+ * Best-effort removal of several persisted record URLs (e.g. all photos of a
+ * report), so a bulk record delete does not leave a trail of orphaned blobs.
+ */
+export async function cleanupBlobsBestEffort(
+  fileUrls: Array<string | null | undefined>
+): Promise<void> {
+  await Promise.all(fileUrls.map((url) => cleanupBlobBestEffort(url)));
+}
+
+/**
  * Get cloud storage configuration details
  */
 export function getStorageConfig() {

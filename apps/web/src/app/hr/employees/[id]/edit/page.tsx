@@ -140,7 +140,8 @@ export default function EditEmployeePage() {
       form.reset({
         nip: employee.nip,
         fullName: employee.fullName,
-        gender: employee.gender,
+        // Staff profiles carry no gender; the form's enum treats that as unset.
+        gender: employee.gender ?? undefined,
         birthPlace: employee.birthPlace ?? "",
         birthDate: employee.birthDate
           ? new Date(employee.birthDate).toISOString().split("T")[0]
