@@ -1,5 +1,30 @@
 import { z } from 'zod';
-import { WBS_CATEGORIES, WBS_TARGET_LEVELS, WBS_STATUSES } from '@cipansor/shared';
+// WBS and suspension request contracts live in `@cipansor/shared` so the web
+// client and this edge validator describe the same payload. Re-exported below
+// so the controller keeps importing from one module.
+import {
+  createPublicWbsSchema,
+  trackPublicWbsSchema,
+  addPublicWbsCommentSchema,
+  updateWbsStatusSchema,
+  forwardWbsReportSchema,
+  addWbsHandlerCommentSchema,
+  createBoardSuspensionSchema,
+  liftBoardSuspensionSchema,
+  submitPeriodicReportSchema,
+} from '@cipansor/shared';
+
+export {
+  createPublicWbsSchema,
+  trackPublicWbsSchema,
+  addPublicWbsCommentSchema,
+  updateWbsStatusSchema,
+  forwardWbsReportSchema,
+  addWbsHandlerCommentSchema,
+  createBoardSuspensionSchema,
+  liftBoardSuspensionSchema,
+  submitPeriodicReportSchema,
+};
 
 const dateStringSchema = z.string().refine((val) => !isNaN(Date.parse(val)), {
   message: 'Format tanggal tidak valid',
@@ -24,7 +49,10 @@ export const updateAuditSchema = z.object({
   description: z.string().optional(),
   auditType: z.string().optional(),
   status: z.enum(['PLANNED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED']).optional(),
-  plannedDate: optionalDateSchema,
+  // `planned_date` is a required, non-null column in the schema. Accepting
+  // `null` here only pushed the failure from this validator down into a Prisma
+  // error at write time, so a mandatory field stays mandatory at the edge.
+  plannedDate: dateStringSchema.optional(),
   executedDate: optionalDateSchema,
   completedDate: optionalDateSchema,
   scope: z.string().optional(),
@@ -82,78 +110,3 @@ export const listAuditQuerySchema = z.object({
   riskId: z.string().uuid().optional(),
 });
 
-// WBS Validation Schemas
-// The category/targetLevel/status value lists live in `@cipansor/shared`
-// (`WBS_CATEGORIES`, …) so the public form's option list and this validation
-// cannot drift apart; only the field shape is declared here.
-export const createPublicWbsSchema = z.object({
-  unitId: z.string().uuid().optional().nullable(),
-  category: z.enum(WBS_CATEGORIES),
-  targetLevel: z.enum(WBS_TARGET_LEVELS),
-  targetName: z.string().optional(),
-  subject: z.string().min(3),
-  description: z.string().min(10),
-  location: z.string().optional(),
-  incidentDate: optionalDateSchema,
-  isAnonymous: z.boolean().optional(),
-  reporterName: z.string().optional(),
-  reporterContact: z.string().optional(),
-  attachments: z.array(z.string()).optional(),
-  turnstileToken: z.string().optional(),
-});
-
-export const trackPublicWbsSchema = z.object({
-  ticketCode: z.string().min(3),
-  trackingToken: z.string().min(5),
-  turnstileToken: z.string().optional(),
-});
-
-export const addPublicWbsCommentSchema = z.object({
-  ticketCode: z.string().min(3),
-  trackingToken: z.string().min(5),
-  message: z.string().min(1),
-  attachments: z.array(z.string()).optional(),
-  turnstileToken: z.string().optional(),
-});
-
-export const updateWbsStatusSchema = z.object({
-  status: z.enum(WBS_STATUSES),
-  resolution: z.string().optional(),
-  handlerNote: z.string().optional(),
-});
-
-export const forwardWbsReportSchema = z.object({
-  toRole: z.string().min(2),
-  toUserId: z.string().uuid().optional(),
-  reason: z.string().min(5),
-});
-
-export const addWbsHandlerCommentSchema = z.object({
-  message: z.string().min(1),
-  attachments: z.array(z.string()).optional(),
-});
-
-// Board Member Suspension Validation Schemas
-export const createBoardSuspensionSchema = z.object({
-  userId: z.string().uuid(),
-  skNumber: z.string().min(3),
-  auditReason: z.string().min(10),
-  documentUrl: z.string().optional(),
-  startDate: optionalDateSchema,
-  projectedEndDate: optionalDateSchema,
-  plhUserId: z.string().uuid().optional().nullable(),
-  plhRoleCode: z.string().optional().nullable(),
-});
-
-export const liftBoardSuspensionSchema = z.object({
-  liftReason: z.string().min(5),
-});
-
-// Periodic Report Submission Schema
-export const submitPeriodicReportSchema = z.object({
-  title: z.string().min(3),
-  period: z.string().min(2),
-  executiveSummary: z.string().min(10),
-  findingsSummary: z.string().optional(),
-  recommendations: z.string().optional(),
-});

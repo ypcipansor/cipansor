@@ -279,6 +279,21 @@ export class PengawasanService {
     return prisma.auditFinding.delete({ where: { id } });
   }
 
+  /**
+   * The unit that owns a finding, via its parent audit.
+   *
+   * Findings and follow-ups carry no unit of their own, so "which unit may
+   * write this?" is answered by walking up to the audit. Returning `null` means
+   * the finding does not exist; the caller turns that into a 404.
+   */
+  async getFindingAuditUnitId(id: string): Promise<string | null> {
+    const finding = await prisma.auditFinding.findUnique({
+      where: { id },
+      select: { audit: { select: { unitId: true } } },
+    });
+    return finding?.audit.unitId ?? null;
+  }
+
   // ==================== FOLLOW-UPS ====================
 
   async createFollowUp(data: {
@@ -373,6 +388,20 @@ export class PengawasanService {
 
   async deleteFollowUp(id: string) {
     return prisma.auditFollowUp.delete({ where: { id } });
+  }
+
+  /**
+   * The unit that owns a follow-up, via finding → audit.
+   *
+   * Same reasoning as {@link getFindingAuditUnitId}: the unit is not stored on
+   * the row, so the association is resolved rather than assumed.
+   */
+  async getFollowUpAuditUnitId(id: string): Promise<string | null> {
+    const followUp = await prisma.auditFollowUp.findUnique({
+      where: { id },
+      select: { finding: { select: { audit: { select: { unitId: true } } } } },
+    });
+    return followUp?.finding.audit.unitId ?? null;
   }
 
   // ==================== SUGGESTION ENGINE ====================
@@ -496,18 +525,27 @@ export class PengawasanService {
     const unpaidInvoices = await prisma.invoice.findMany({
       where: {
         status: { in: ['PENDING', 'PARTIAL', 'OVERDUE'] },
-        ...(unitId ? { student: { unitId } } : {}),
+        // Filter on the invoice's own unit of record. `student.unitId` is the
+        // pupil's *current* unit, so a transfer moved old arrears between
+        // units' books; legacy rows with no unit fall back to the student's.
+        ...(unitId
+          ? { OR: [{ unitId }, { unitId: null, student: { unitId } }] }
+          : {}),
       },
       include: {
         student: {
           select: {
             id: true,
-            name: true,
+            // `Student` has no `name` column — the person's name lives on the
+            // linked `User`. The old select asked for `student.name`, which is
+            // not a field, so the whole endpoint threw at query-build time.
             nis: true,
             unitId: true,
+            user: { select: { name: true } },
             unit: { select: { id: true, name: true } },
           },
         },
+        unit: { select: { id: true, name: true } },
         paymentType: { select: { id: true, name: true, code: true } },
       },
       orderBy: { dueDate: 'asc' },
@@ -540,8 +578,10 @@ export class PengawasanService {
       const isOverdue = inv.status === 'OVERDUE' || (inv.dueDate && inv.dueDate < now);
       if (isOverdue) overdueInvoicesCount++;
 
-      const uId = inv.student.unitId || 'PUSAT';
-      const uName = inv.student.unit?.name || 'Yayasan Pusat';
+      // The invoice's own unit when we have one; only rows predating the
+      // column fall back to the student's current unit.
+      const uId = inv.unitId || inv.student.unitId || 'PUSAT';
+      const uName = inv.unit?.name || inv.student.unit?.name || 'Yayasan Pusat';
 
       if (!unitMap[uId]) {
         unitMap[uId] = { unitId: uId, unitName: uName, totalUnpaid: 0, count: 0, overdueCount: 0 };
@@ -554,7 +594,7 @@ export class PengawasanService {
       if (!studentMap[sId]) {
         studentMap[sId] = {
           studentId: sId,
-          studentName: inv.student.name,
+          studentName: inv.student.user?.name ?? '-',
           nis: inv.student.nis || '-',
           unitName: uName,
           totalUnpaid: 0,
@@ -628,13 +668,25 @@ export class PengawasanService {
     userId: string,
     _actor: { roleCode?: string | null; unitId?: string | null }
   ) {
-    // Find a recipient user with Pembina role or Super Admin
+    // Find a recipient user with an *effective* Pembina role or Super Admin.
+    // "Effective" is the point: a Pembina whose assignment is inactive or
+    // expired is a former officer, and a LIMITED report should not be drafted
+    // for someone who no longer holds the office.
     const pembinaUser = await prisma.user.findFirst({
       where: {
         isActive: true,
+        deletedAt: null,
         OR: [
           { role: 'SUPER_ADMIN' },
-          { userRoles: { some: { role: { code: 'YAYASAN_PEMBINA' } } } },
+          {
+            userRoles: {
+              some: {
+                isActive: true,
+                OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+                role: { code: 'YAYASAN_PEMBINA' },
+              },
+            },
+          },
         ],
       },
       select: { id: true, unitId: true },

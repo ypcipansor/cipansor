@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
+import type { CreateBoardSuspensionInput, SubmitPeriodicReportInput } from "@cipansor/shared";
 
 export const useAudits = (params?: { status?: string; auditType?: string }) => {
   return useQuery({
@@ -159,7 +160,7 @@ export const useBoardSuspensions = () => {
 export const useCreateBoardSuspension = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (data: any) => (await api.post("/pengawasan/board-suspensions", data)).data,
+    mutationFn: async (data: CreateBoardSuspensionInput) => (await api.post("/pengawasan/board-suspensions", data)).data,
     onSuccess: () => { toast.success("SK Pembekuan Pengurus & Plh/Plt berhasil ditetapkan"); qc.invalidateQueries({ queryKey: ["board-suspensions"] }); },
     onError: (e: any) => { toast.error(e.response?.data?.message || "Gagal membekukan pengurus"); },
   });
@@ -189,7 +190,7 @@ export const useFinancialArrears = (unitId?: string) => {
 
 export const useSubmitPeriodicReportToEOffice = () => {
   return useMutation({
-    mutationFn: async (data: { title: string; period: string; executiveSummary: string; findingsSummary?: string; recommendations?: string }) =>
+    mutationFn: async (data: SubmitPeriodicReportInput) =>
       (await api.post("/pengawasan/periodic-reports/submit-eoffice", data)).data,
     onSuccess: () => { toast.success("Laporan Pengawasan Periodik berhasil diajukan ke E-Office Pembina"); },
     onError: (e: any) => { toast.error(e.response?.data?.message || "Gagal mengajukan Laporan Pengawasan"); },

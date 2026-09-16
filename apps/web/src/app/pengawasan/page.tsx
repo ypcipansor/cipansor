@@ -38,6 +38,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Pencil, Trash2, AlertTriangle, ShieldCheck, Filter, X, Send, Lock, ArrowRight, UserX, FileText, DollarSign, Users, RefreshCw, CheckCircle2 } from "lucide-react";
 import { safeFormat } from "@/lib/date";
 import { id as localeId } from "date-fns/locale";
+import {
+  PLH_ROLE_CODES,
+  createBoardSuspensionSchema,
+  submitPeriodicReportSchema,
+} from "@cipansor/shared";
 
 // ─── Schemas ────────────────────────────────────────
 const auditFormSchema = z.object({
@@ -58,22 +63,11 @@ const findingFormSchema = z.object({
   recommendation: z.string().optional(),
 });
 
-const boardSuspensionSchema = z.object({
-  userId: z.string().min(1, "Pengurus yang dibekukan wajib dipilih"),
-  skNumber: z.string().min(3, "Nomor SK wajib diisi"),
-  auditReason: z.string().min(10, "Alasan audit minimal 10 karakter"),
-  documentUrl: z.string().optional(),
-  plhUserId: z.string().optional(),
-  plhRoleCode: z.string().optional(),
-});
-
-const periodicReportSchema = z.object({
-  title: z.string().min(3, "Judul laporan wajib diisi"),
-  period: z.string().min(2, "Periode laporan wajib diisi"),
-  executiveSummary: z.string().min(10, "Ringkasan eksekutif minimal 10 karakter"),
-  findingsSummary: z.string().optional(),
-  recommendations: z.string().optional(),
-});
+// The suspension and periodic-report payloads come from `@cipansor/shared`, so
+// the form and the API validate against one contract. Only the schemas unique
+// to this page are declared here.
+const boardSuspensionSchema = createBoardSuspensionSchema;
+const periodicReportSchema = submitPeriodicReportSchema;
 
 type AuditFormValues = z.infer<typeof auditFormSchema>;
 
@@ -820,14 +814,23 @@ function PengawasanPageContent() {
                 <FormField control={suspensionForm.control} name="plhUserId" render={({ field }) => (
                   <FormItem>
                     <FormLabel>ID User Plh/Plt Pengganti</FormLabel>
-                    <FormControl><Input placeholder="ID Pengurus Pendamping..." {...field} /></FormControl>
+                    <FormControl><Input placeholder="ID Pengurus Pendamping..." {...field} value={field.value ?? ""} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
                 <FormField control={suspensionForm.control} name="plhRoleCode" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Peran / Role Plh</FormLabel>
-                    <FormControl><Input placeholder="YAYASAN_KETUA" {...field} /></FormControl>
+                    <Select value={field.value ?? undefined} onValueChange={field.onChange}>
+                      <FormControl>
+                        <SelectTrigger><SelectValue placeholder="Pilih peran Plh" /></SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {PLH_ROLE_CODES.map((code) => (
+                          <SelectItem key={code} value={code}>{code.replace("YAYASAN_", "Yayasan ")}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     <FormMessage />
                   </FormItem>
                 )} />

@@ -30,6 +30,9 @@ vi.mock('../../lib/prisma', () => {
       // No active scholarships by default — invoice amount stays as-is.
       findMany: vi.fn(async () => []),
     },
+    student: {
+      findUnique: vi.fn(async () => ({ unitId: 'unit-1' })),
+    },
     $transaction: vi.fn(),
   };
   mockPrisma.$transaction.mockImplementation((callback) => callback(mockPrisma));
@@ -128,6 +131,13 @@ describe('Finance Service Unit Tests', () => {
 
       expect(prisma.invoice.findFirst).toHaveBeenCalled();
       expect(prisma.invoice.create).toHaveBeenCalled();
+      // The issuing unit is frozen onto the invoice so a later transfer cannot
+      // relocate its arrears to the pupil's new unit.
+      expect(prisma.invoice.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ unitId: 'unit-1' }),
+        })
+      );
       expect(notificationService.createNotification).toHaveBeenCalled();
       expect(result).toEqual(mockInvoice);
     });

@@ -64,3 +64,25 @@ export const WBS_STATUSES = [
 ] as const;
 
 export type WbsStatusCode = (typeof WBS_STATUSES)[number];
+
+/**
+ * The only roles a *Pelaksana Harian / Pelaksana Tugas* (Plh/Plt) delegation
+ * may carry.
+ *
+ * `suspendBoardMember` used to accept whatever `plhRoleCode` the caller sent
+ * and mint a `UserRoleAssignment` for it, so a Pengawas — whose whole job is
+ * to audit the Pengurus — could issue `plhRoleCode: "SUPER_ADMIN"` and promote
+ * an accomplice past the very oversight that suspended the incumbent. A Plh
+ * stands in for a Pengurus organ, nothing else: not the Pembina that appoints
+ * it, not the Pengawas that audits it, and certainly not the system
+ * administrator. Kept in shared so the API's Zod schema, the service guard and
+ * the web form cannot disagree about which codes are legal.
+ */
+export const PLH_ROLE_CODES = [
+  "YAYASAN_KETUA",
+  "YAYASAN_SEKRETARIS",
+  "YAYASAN_BENDAHARA",
+  "YAYASAN_ANGGOTA",
+] as const;
+
+export type PlhRoleCode = (typeof PLH_ROLE_CODES)[number];

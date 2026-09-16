@@ -637,6 +637,7 @@ model Unit {
   classes                Class[]
   dormitories            Dormitory[]
   paymentTypes           PaymentType[]
+  invoices               Invoice[]
   accountCodes           AccountCode[]
   admissionPeriods       AdmissionPeriod[]
   bookCategories         BookCategory[]
@@ -1650,6 +1651,13 @@ model Invoice {
   id            String        @id @default(uuid())
   studentId     String        @map("student_id")
   paymentTypeId String        @map("payment_type_id")
+  /// Unit of record at issuance — NOT the student's current unit.
+  ///
+  /// Arrears used to be filtered and grouped by `student.unitId`, so when a
+  /// pupil transferred the old unit's overdue invoices vanished from its books
+  /// and reappeared on the new unit's, which had never issued them. The invoice
+  /// remembers the unit that raised it.
+  unitId        String?       @map("unit_id")
   invoiceNumber String        @unique @map("invoice_number") // e.g., "INV-2024-0001"
   amount        Decimal       @db.Decimal(15, 2)
   dueDate       DateTime      @map("due_date")
@@ -1663,11 +1671,13 @@ model Invoice {
   // Relations
   student     Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
   paymentType PaymentType @relation(fields: [paymentTypeId], references: [id])
+  unit        Unit?       @relation(fields: [unitId], references: [id], onDelete: SetNull)
   payments    Payment[]
 
   @@index([studentId])
   @@index([status])
   @@index([dueDate])
+  @@index([unitId])
   @@map("invoices")
 }
 
@@ -10693,6 +10703,17 @@ model BoardMemberSuspension {
   /// restore the exact prior value, and leaves keys created after suspension
   /// untouched.
   signingKeyLocks  Json?                 @map("signing_key_locks")
+  /// The account's `isActive` at the instant it was suspended, plus the
+  /// `updatedAt` the suspension's own write left behind.
+  ///
+  /// Suspension sets `is_active = false`. A lift used to write `is_active =
+  /// true` unconditionally, so an independent deactivation by an admin during
+  /// the suspension (e.g. a second, unrelated incident) was silently undone.
+  /// Recording the prior value lets a lift restore *what it changed* rather
+  /// than force the account on; the stored `updatedAt` lets it detect that the
+  /// row was touched after the suspension and leave it alone.
+  /// `{ isActiveBefore: boolean, updatedAtAfterSuspend: string }`.
+  accountStateSnapshot Json?             @map("account_state_snapshot")
   liftedAt         DateTime?             @map("lifted_at")
   liftedById       String?               @map("lifted_by_id")
   liftReason       String?               @map("lift_reason") @db.Text

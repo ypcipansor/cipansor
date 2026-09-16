@@ -51,7 +51,7 @@ export async function isUserSuspended(userId: string): Promise<boolean> {
   const [user, activeSuspension] = await Promise.all([
     prisma.user.findUnique({
       where: { id: userId },
-      select: { isActive: true },
+      select: { isActive: true, deletedAt: true },
     }),
     prisma.boardMemberSuspension.findFirst({
       where: { userId, status: BoardSuspensionStatus.ACTIVE },
@@ -59,8 +59,10 @@ export async function isUserSuspended(userId: string): Promise<boolean> {
     }),
   ]);
 
-  // A token whose user row is gone must not authenticate either.
-  const suspended = !user || !user.isActive || !!activeSuspension;
+  // A token whose user row is gone must not authenticate either. `deletedAt`
+  // is a soft delete that leaves `isActive` untouched, so without it a
+  // deleted user's still-valid access token kept working until it expired.
+  const suspended = !user || !user.isActive || !!user.deletedAt || !!activeSuspension;
   await writeCache(userId, suspended);
   return suspended;
 }
@@ -73,7 +75,26 @@ export async function markUserSuspended(userId: string): Promise<void> {
   await writeCache(userId, true);
 }
 
-/** Counterpart of {@link markUserSuspended} on lift. */
+/**
+ * Drop the cached answer on lift.
+ *
+ * Writing `false` here is a data race: a suspension that ran while the lift was
+ * in flight may already have primed the cache with `true`, and this
+ * unconditional `false` — written after it — would win for a whole TTL, letting
+ * the suspended account's old token authenticate again. Deleting the key
+ * instead forces the next request to read the persistent state, where the two
+ * events are ordered by the database and not by which writer finished last.
+ */
+export async function invalidateUserSuspensionCache(userId: string): Promise<void> {
+  try {
+    await redis.del(cacheKey(userId));
+  } catch {
+    // Best-effort, exactly like the write it replaces: the database read on
+    // the next request is what keeps the answer correct.
+  }
+}
+
+/** @deprecated Use {@link invalidateUserSuspensionCache}; kept for callers not yet migrated. */
 export async function unmarkUserSuspended(userId: string): Promise<void> {
-  await writeCache(userId, false);
+  await invalidateUserSuspensionCache(userId);
 }

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { wbsService } from './wbs.service';
 import { boardSuspensionService } from './board-suspension.service';
 import { pengawasanService } from './pengawasan.service';
+import { invalidateUserSuspensionCache } from '@/utils/user-suspension';
 import { prisma } from '@/lib/prisma';
 import { WbsCategory, WbsTargetLevel, WbsStatus } from '@prisma/client';
 
@@ -62,6 +63,12 @@ vi.mock('@/lib/prisma', () => ({
     filingClassification: {
       findFirst: vi.fn(),
     },
+    auditFinding: {
+      findUnique: vi.fn(),
+    },
+    auditFollowUp: {
+      findUnique: vi.fn(),
+    },
     $transaction: vi.fn((cb) => cb(prisma)),
   },
 }));
@@ -69,6 +76,7 @@ vi.mock('@/lib/prisma', () => ({
 vi.mock('@/utils/user-suspension', () => ({
   markUserSuspended: vi.fn().mockResolvedValue(undefined),
   unmarkUserSuspended: vi.fn().mockResolvedValue(undefined),
+  invalidateUserSuspensionCache: vi.fn().mockResolvedValue(undefined),
   isUserSuspended: vi.fn().mockResolvedValue(false),
 }));
 
@@ -236,6 +244,21 @@ describe('WbsService Unit Tests', () => {
       );
     });
 
+    it('lets a specifically assigned handler reach their assigned report', async () => {
+      (prisma.wbsReport.findMany as any).mockResolvedValue([]);
+      await wbsService.getReportsForUser({
+        id: 'user-assignee',
+        roleCode: 'SMAQ_ADMIN',
+        unitId: 'unit-smaq',
+      });
+
+      const call = (prisma.wbsReport.findMany as any).mock.calls[0][0];
+      expect(JSON.stringify(call.where)).toContain('user-assignee');
+      expect(call.where.OR.some((clause: any) => clause.assignedUserId === 'user-assignee')).toBe(
+        true
+      );
+    });
+
     it.each([
       [
         'updateReportStatus',
@@ -296,6 +319,7 @@ describe('BoardSuspensionService Unit Tests', () => {
       skNumber: 'SK/PENGAWAS/2026/001',
       status: 'ACTIVE',
     });
+    (prisma.user.update as any).mockResolvedValue({ updatedAt: new Date('2026-03-01T00:00:00.000Z') });
     (prisma.userSigningKey.findMany as any).mockResolvedValue([]);
     (prisma.role.findFirst as any).mockResolvedValue({
       id: 'role-ketua-id',
@@ -319,6 +343,7 @@ describe('BoardSuspensionService Unit Tests', () => {
     expect(prisma.user.update).toHaveBeenCalledWith({
       where: { id: 'user-pengurus' },
       data: { isActive: false },
+      select: { updatedAt: true },
     });
     expect(prisma.refreshToken.deleteMany).toHaveBeenCalledWith({
       where: { userId: 'user-pengurus' },
@@ -434,12 +459,21 @@ describe('BoardSuspensionService Unit Tests', () => {
       plhAssignmentId: 'assign-new',
       plhAssignmentRestore: null,
       signingKeyLocks: { 'key-1': null, 'key-2': '2026-01-01T00:00:00.000Z' },
+      accountStateSnapshot: {
+        isActiveBefore: true,
+        updatedAtAfterSuspend: '2026-03-01T00:00:00.000Z',
+      },
     };
 
     (prisma.boardMemberSuspension.findUnique as any).mockResolvedValue(mockSuspension);
     (prisma.boardMemberSuspension.update as any).mockResolvedValue({
       ...mockSuspension,
       status: 'LIFTED',
+    });
+    // The row still carries the suspension's own write, so it is restored.
+    (prisma.user.findUnique as any).mockResolvedValue({
+      isActive: false,
+      updatedAt: new Date('2026-03-01T00:00:00.000Z'),
     });
 
     const updated = await boardSuspensionService.liftBoardSuspension(
@@ -475,12 +509,20 @@ describe('BoardSuspensionService Unit Tests', () => {
       plhAssignmentId: null,
       plhAssignmentRestore: null,
       signingKeyLocks: null,
+      accountStateSnapshot: {
+        isActiveBefore: true,
+        updatedAtAfterSuspend: '2026-03-01T00:00:00.000Z',
+      },
     };
 
     (prisma.boardMemberSuspension.findUnique as any).mockResolvedValue(mockSuspension);
     (prisma.boardMemberSuspension.update as any).mockResolvedValue({
       ...mockSuspension,
       status: 'LIFTED',
+    });
+    (prisma.user.findUnique as any).mockResolvedValue({
+      isActive: false,
+      updatedAt: new Date('2026-03-01T00:00:00.000Z'),
     });
 
     await boardSuspensionService.liftBoardSuspension('susp-2', 'lifter-pembina', 'Pulih');
@@ -498,12 +540,20 @@ describe('BoardSuspensionService Unit Tests', () => {
       plhAssignmentId: 'assign-old',
       plhAssignmentRestore: { isActive: false, expiresAt: '2020-01-01T00:00:00.000Z' },
       signingKeyLocks: null,
+      accountStateSnapshot: {
+        isActiveBefore: true,
+        updatedAtAfterSuspend: '2026-03-01T00:00:00.000Z',
+      },
     };
 
     (prisma.boardMemberSuspension.findUnique as any).mockResolvedValue(mockSuspension);
     (prisma.boardMemberSuspension.update as any).mockResolvedValue({
       ...mockSuspension,
       status: 'LIFTED',
+    });
+    (prisma.user.findUnique as any).mockResolvedValue({
+      isActive: false,
+      updatedAt: new Date('2026-03-01T00:00:00.000Z'),
     });
 
     await boardSuspensionService.liftBoardSuspension('susp-3', 'lifter-pembina', 'Pulih');
@@ -524,6 +574,178 @@ describe('BoardSuspensionService Unit Tests', () => {
     await expect(
       boardSuspensionService.liftBoardSuspension('susp-4', 'lifter', 'Pulih')
     ).rejects.toMatchObject({ statusCode: 409 });
+  });
+
+  describe('privilege-escalation and snapshot guards', () => {
+    it('refuses a Plh role that is not a Pengurus role (SUPER_ADMIN)', async () => {
+      (prisma.user.findUnique as any).mockResolvedValue({
+        id: 'user-pengurus',
+        isActive: true,
+        userRoles: [{ isActive: true, expiresAt: null, role: { code: 'YAYASAN_KETUA' } }],
+      });
+
+      await expect(
+        boardSuspensionService.suspendBoardMember(
+          {
+            userId: 'user-pengurus',
+            skNumber: 'SK/1',
+            auditReason: 'alasan audit yang panjang',
+            plhUserId: 'user-accomplice',
+            plhRoleCode: 'SUPER_ADMIN',
+          },
+          'issuer-pengawas'
+        )
+      ).rejects.toMatchObject({ statusCode: 400 });
+
+      expect(prisma.userRoleAssignment.create).not.toHaveBeenCalled();
+      expect(prisma.boardMemberSuspension.create).not.toHaveBeenCalled();
+    });
+
+    it.each(['YAYASAN_PEMBINA', 'YAYASAN_PENGAWAS', 'SDIT_ADMIN'])(
+      'refuses a Plh role outside the Pengurus organ (%s)',
+      async (code) => {
+        (prisma.user.findUnique as any).mockResolvedValue({
+          id: 'user-pengurus',
+          isActive: true,
+          userRoles: [{ isActive: true, expiresAt: null, role: { code: 'YAYASAN_KETUA' } }],
+        });
+
+        await expect(
+          boardSuspensionService.suspendBoardMember(
+            {
+              userId: 'user-pengurus',
+              skNumber: 'SK/1',
+              auditReason: 'alasan audit yang panjang',
+              plhUserId: 'user-x',
+              plhRoleCode: code,
+            },
+            'issuer-pengawas'
+          )
+        ).rejects.toMatchObject({ statusCode: 400 });
+      }
+    );
+
+    it('does not treat an expired Pengurus assignment as a current Pengurus', async () => {
+      // The filter is applied in the query, so a returned empty set is exactly
+      // what a lapsed assignment yields.
+      (prisma.user.findUnique as any).mockResolvedValue({
+        id: 'user-x',
+        isActive: true,
+        userRoles: [],
+      });
+
+      await expect(
+        boardSuspensionService.suspendBoardMember(
+          { userId: 'user-x', skNumber: 'SK/1', auditReason: 'alasan audit yang panjang' },
+          'issuer-pengawas'
+        )
+      ).rejects.toMatchObject({ statusCode: 403 });
+
+      // The guard asks the DB to exclude inactive/expired assignments rather
+      // than filtering after the fact.
+      expect(prisma.user.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({
+          include: {
+            userRoles: {
+              where: {
+                isActive: true,
+                OR: [{ expiresAt: null }, { expiresAt: { gt: expect.any(Date) } }],
+              },
+              include: { role: { select: { code: true } } },
+            },
+          },
+        })
+      );
+    });
+
+    it('does not resurrect an account an admin deactivated during the suspension', async () => {
+      const mockSuspension = {
+        id: 'susp-9',
+        userId: 'user-pengurus',
+        status: 'ACTIVE',
+        plhAssignmentCreated: false,
+        plhAssignmentId: null,
+        signingKeyLocks: null,
+        accountStateSnapshot: {
+          isActiveBefore: true,
+          updatedAtAfterSuspend: '2026-03-01T00:00:00.000Z',
+        },
+      };
+
+      (prisma.boardMemberSuspension.findUnique as any).mockResolvedValue(mockSuspension);
+      (prisma.boardMemberSuspension.update as any).mockResolvedValue({
+        ...mockSuspension,
+        status: 'LIFTED',
+      });
+      // A later independent deactivation moved `updatedAt` past the
+      // suspension's own write.
+      (prisma.user.findUnique as any).mockResolvedValue({
+        isActive: false,
+        updatedAt: new Date('2026-04-01T00:00:00.000Z'),
+      });
+
+      await boardSuspensionService.liftBoardSuspension('susp-9', 'lifter', 'Pulih');
+
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('does not re-activate an account that was already inactive before suspension', async () => {
+      const mockSuspension = {
+        id: 'susp-10',
+        userId: 'user-pengurus',
+        status: 'ACTIVE',
+        plhAssignmentCreated: false,
+        plhAssignmentId: null,
+        signingKeyLocks: null,
+        accountStateSnapshot: {
+          // Suspension only proceeded because the pre-check saw it active;
+          // this asserts the snapshot value is what a lift applies.
+          isActiveBefore: false,
+          updatedAtAfterSuspend: '2026-03-01T00:00:00.000Z',
+        },
+      };
+
+      (prisma.boardMemberSuspension.findUnique as any).mockResolvedValue(mockSuspension);
+      (prisma.boardMemberSuspension.update as any).mockResolvedValue({
+        ...mockSuspension,
+        status: 'LIFTED',
+      });
+      (prisma.user.findUnique as any).mockResolvedValue({
+        isActive: false,
+        updatedAt: new Date('2026-03-01T00:00:00.000Z'),
+      });
+
+      await boardSuspensionService.liftBoardSuspension('susp-10', 'lifter', 'Pulih');
+
+      expect(prisma.user.update).toHaveBeenCalledWith({
+        where: { id: 'user-pengurus' },
+        data: { isActive: false },
+      });
+    });
+
+    it('invalidates the suspension cache on lift instead of writing false', async () => {
+      (prisma.boardMemberSuspension.findUnique as any).mockResolvedValue({
+        id: 'susp-11',
+        userId: 'user-pengurus',
+        status: 'ACTIVE',
+        plhAssignmentCreated: false,
+        plhAssignmentId: null,
+        signingKeyLocks: null,
+        accountStateSnapshot: {
+          isActiveBefore: true,
+          updatedAtAfterSuspend: '2026-03-01T00:00:00.000Z',
+        },
+      });
+      (prisma.boardMemberSuspension.update as any).mockResolvedValue({ id: 'susp-11', status: 'LIFTED' });
+      (prisma.user.findUnique as any).mockResolvedValue({
+        isActive: false,
+        updatedAt: new Date('2026-03-01T00:00:00.000Z'),
+      });
+
+      await boardSuspensionService.liftBoardSuspension('susp-11', 'lifter', 'Pulih');
+
+      expect(invalidateUserSuspensionCache).toHaveBeenCalledWith('user-pengurus');
+    });
   });
 });
 
@@ -581,5 +803,43 @@ describe('PengawasanService periodic oversight report', () => {
       )
     ).rejects.toMatchObject({ statusCode: 400 });
     expect(prisma.letter.create).not.toHaveBeenCalled();
+  });
+
+  it('only drafts the report for an effective (active, unexpired) Pembina', async () => {
+    (prisma.unit.findFirst as any).mockResolvedValue({ id: 'unit-pusat' });
+    (prisma.user.findFirst as any).mockResolvedValue({ id: 'pembina-1', unitId: null });
+    (prisma.filingClassification.findFirst as any).mockResolvedValue({ id: 'cls-1' });
+    (prisma.letter.create as any).mockResolvedValue({
+      id: 'letter-1',
+      letterNumber: null,
+      status: 'DRAFT',
+    });
+
+    await pengawasanService.submitPeriodicReportToEOffice(
+      { title: 'Audit Q1', period: '2026-Q1', executiveSummary: 'Ringkasan eksekutif.' },
+      'pengawas-1',
+      { roleCode: 'YAYASAN_PENGAWAS', unitId: null }
+    );
+
+    // A former Pembina (inactive or expired assignment) must not be selected.
+    expect(prisma.user.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          isActive: true,
+          deletedAt: null,
+          OR: expect.arrayContaining([
+            expect.objectContaining({
+              userRoles: {
+                some: expect.objectContaining({
+                  isActive: true,
+                  OR: [{ expiresAt: null }, { expiresAt: { gt: expect.any(Date) } }],
+                  role: { code: 'YAYASAN_PEMBINA' },
+                }),
+              },
+            }),
+          ]),
+        }),
+      })
+    );
   });
 });

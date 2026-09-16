@@ -48,6 +48,22 @@ function isFoundationWide(roleCode?: string): boolean {
   return roleCode ? FOUNDATION_WIDE_ROLES.includes(roleCode) : false;
 }
 
+/**
+ * Refuse a write to a record outside the actor's unit.
+ *
+ * `createAudit` / `updateAudit` / `deleteAudit` already did this, but the
+ * finding and follow-up handlers did not — so knowing a UUID was enough to
+ * write into another unit's audit, even though the record would not appear in
+ * that actor's own list. Same check, applied everywhere the unit is
+ * derivable from the record's parent.
+ */
+function assertUnitAccess(req: Request, recordUnitId: string | null | undefined): void {
+  if (isFoundationWide(req.user?.roleCode)) return;
+  if (!recordUnitId || recordUnitId !== req.user?.unitId) {
+    throw Errors.forbidden('Access denied');
+  }
+}
+
 /** The acting handler's identity, as the WBS service needs it for scoping. */
 function wbsActor(req: Request) {
   return {
@@ -149,17 +165,30 @@ export const deleteAudit = asyncHandler(async (req: Request, res: Response) => {
 
 export const createFinding = asyncHandler(async (req: Request, res: Response) => {
   const body = createFindingSchema.parse(req.body);
+
+  const audit = await pengawasanService.getAuditById(body.auditId);
+  if (!audit) throw Errors.notFound('Audit not found');
+  assertUnitAccess(req, audit.unitId);
+
   const finding = await pengawasanService.createFinding(body);
   res.status(201).json({ success: true, data: finding });
 });
 
 export const updateFinding = asyncHandler(async (req: Request, res: Response) => {
+  const recordUnitId = await pengawasanService.getFindingAuditUnitId(req.params.id);
+  if (recordUnitId === null) throw Errors.notFound('Finding not found');
+  assertUnitAccess(req, recordUnitId);
+
   const body = updateFindingSchema.parse(req.body);
   const finding = await pengawasanService.updateFinding(req.params.id, body);
   res.json(ApiResponse.success(finding));
 });
 
 export const deleteFinding = asyncHandler(async (req: Request, res: Response) => {
+  const recordUnitId = await pengawasanService.getFindingAuditUnitId(req.params.id);
+  if (recordUnitId === null) throw Errors.notFound('Finding not found');
+  assertUnitAccess(req, recordUnitId);
+
   await pengawasanService.deleteFinding(req.params.id);
   res.json(ApiResponse.success(undefined, 'Finding deleted'));
 });
@@ -168,17 +197,30 @@ export const deleteFinding = asyncHandler(async (req: Request, res: Response) =>
 
 export const createFollowUp = asyncHandler(async (req: Request, res: Response) => {
   const body = createFollowUpSchema.parse(req.body);
+
+  const findingUnitId = await pengawasanService.getFindingAuditUnitId(body.findingId);
+  if (findingUnitId === null) throw Errors.notFound('Finding not found');
+  assertUnitAccess(req, findingUnitId);
+
   const followUp = await pengawasanService.createFollowUp(body);
   res.status(201).json({ success: true, data: followUp });
 });
 
 export const updateFollowUp = asyncHandler(async (req: Request, res: Response) => {
+  const recordUnitId = await pengawasanService.getFollowUpAuditUnitId(req.params.id);
+  if (recordUnitId === null) throw Errors.notFound('Follow-up not found');
+  assertUnitAccess(req, recordUnitId);
+
   const body = updateFollowUpSchema.parse(req.body);
   const followUp = await pengawasanService.updateFollowUp(req.params.id, body, req.user?.sub);
   res.json(ApiResponse.success(followUp));
 });
 
 export const deleteFollowUp = asyncHandler(async (req: Request, res: Response) => {
+  const recordUnitId = await pengawasanService.getFollowUpAuditUnitId(req.params.id);
+  if (recordUnitId === null) throw Errors.notFound('Follow-up not found');
+  assertUnitAccess(req, recordUnitId);
+
   await pengawasanService.deleteFollowUp(req.params.id);
   res.json(ApiResponse.success(undefined, 'Follow-up deleted'));
 });

@@ -174,12 +174,22 @@ export async function createInvoice(data: CreateInvoiceDto, tx?: Prisma.Transact
         }
       }
 
+      // Resolve the unit of record at issuance. `student.unitId` is correct
+      // *here* — at creation it is the unit that issued the bill; freezing it
+      // onto the invoice is what stops a later transfer from moving the arrears
+      // to the new unit.
+      const student = await dbClient.student.findUnique({
+        where: { id: studentId },
+        select: { unitId: true },
+      });
+
       invoice = await dbClient.invoice.create({
         data: {
           ...invoiceData,
           invoiceNumber,
           amount: finalAmount.lt(0) ? 0 : finalAmount,
           dueDate: new Date(data.dueDate),
+          unitId: student?.unitId ?? null,
           student: { connect: { id: studentId } },
           paymentType: { connect: { id: paymentTypeId } },
         },
@@ -1404,6 +1414,9 @@ export async function generateBulkSppInvoices(data: {
           amount: paymentType.amount,
           dueDate,
           period,
+          // Freeze the issuing unit on the invoice so a later transfer does
+          // not relocate this arrears to the pupil's new unit.
+          unitId: student.unitId,
           notes: `Tagihan ${paymentType.name} untuk ${period}`,
         },
       });
@@ -1495,6 +1508,7 @@ export async function generateRecurringBills() {
             amount: paymentType.amount,
             dueDate,
             period,
+            unitId: student.unitId,
             notes: `Tagihan ${paymentType.name} otomatis untuk ${period}`,
           },
         });

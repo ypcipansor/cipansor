@@ -183,7 +183,7 @@ export class WbsService {
   /**
    * Query WBS reports for authenticated staff/governance according to role hierarchy.
    */
-  async getReportsForUser(actor: { roleCode?: string; unitId?: string | null }) {
+  async getReportsForUser(actor: { id?: string; roleCode?: string; unitId?: string | null }) {
     return prisma.wbsReport.findMany({
       where: this.buildScopeWhere(actor),
       include: {
@@ -224,15 +224,26 @@ export class WbsService {
   private buildScopeWhere(actor: {
     roleCode?: string;
     unitId?: string | null;
+    id?: string;
   }): Prisma.WbsReportWhereInput {
     const role = actor.roleCode || '';
     const unitId = actor.unitId;
+    // A report forwarded to a named person must be readable by that person.
+    // `forwardReport` stores the assignee in `assignedUserId`, but the scope
+    // where never looked at it, so the explicitly designated handler could be
+    // locked out of the report assigned to them. This is an OR-term on every
+    // branch below, because the assignment is orthogonal to role/unit scope.
+    const assignedToActor: Prisma.WbsReportWhereInput | null = actor.id
+      ? { assignedUserId: actor.id }
+      : null;
+    const withAssignment = (scope: Prisma.WbsReportWhereInput): Prisma.WbsReportWhereInput =>
+      assignedToActor ? (Object.keys(scope).length === 0 ? scope : { OR: [scope, assignedToActor] }) : scope;
 
     if (role === 'SUPER_ADMIN' || role === 'YAYASAN_PEMBINA') {
       return {};
     }
     if (role === 'YAYASAN_PENGAWAS') {
-      return {
+      return withAssignment({
         OR: [
           { primaryHandlerRole: 'YAYASAN_PENGAWAS' },
           {
@@ -246,12 +257,12 @@ export class WbsService {
             },
           },
         ],
-      };
+      });
     }
     if (
       ['YAYASAN_KETUA', 'YAYASAN_SEKRETARIS', 'YAYASAN_BENDAHARA', 'YAYASAN_ANGGOTA'].includes(role)
     ) {
-      return {
+      return withAssignment({
         OR: [
           { primaryHandlerRole: 'YAYASAN_KETUA' },
           {
@@ -264,12 +275,12 @@ export class WbsService {
             },
           },
         ],
-      };
+      });
     }
-    return {
+    return withAssignment({
       targetLevel: { in: [WbsTargetLevel.STAF_PEGAWAI, WbsTargetLevel.SISWA_SANTRI] },
       ...(unitId ? { unitId } : {}),
-    };
+    });
   }
 
   /**
@@ -281,7 +292,7 @@ export class WbsService {
    */
   private async loadReportInScope<T extends Prisma.WbsReportInclude | undefined = undefined>(
     id: string,
-    actor: { roleCode?: string; unitId?: string | null },
+    actor: { id?: string; roleCode?: string; unitId?: string | null },
     include?: T
   ) {
     const report = await prisma.wbsReport.findFirst({
@@ -306,7 +317,7 @@ export class WbsService {
   /**
    * Get WBS report details by ID for handler.
    */
-  async getReportById(id: string, actor: { roleCode?: string; unitId?: string | null }) {
+  async getReportById(id: string, actor: { id?: string; roleCode?: string; unitId?: string | null }) {
     return this.loadReportInScope(id, actor, {
       unit: { select: { id: true, name: true } },
       assignedUser: { select: { id: true, name: true, email: true } },

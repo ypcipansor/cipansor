@@ -1,8 +1,8 @@
 import { prisma } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
 import { BoardSuspensionStatus, Prisma } from '@prisma/client';
-import { PENGURUS_ROLE_CODES } from '@cipansor/shared';
-import { markUserSuspended, unmarkUserSuspended } from '@/utils/user-suspension';
+import { PENGURUS_ROLE_CODES, PLH_ROLE_CODES } from '@cipansor/shared';
+import { invalidateUserSuspensionCache, markUserSuspended } from '@/utils/user-suspension';
 
 export interface CreateBoardSuspensionInput {
   userId: string;
@@ -30,6 +30,12 @@ interface PlhAssignmentRestore {
   expiresAt: string | null;
 }
 
+/** The account's `isActive` before suspension, so a lift restores it exactly. */
+interface AccountStateSnapshot {
+  isActiveBefore: boolean;
+  updatedAtAfterSuspend: string;
+}
+
 export class BoardSuspensionService {
   /**
    * Suspend a Board Member / Pengurus due to audit findings or investigation.
@@ -42,7 +48,15 @@ export class BoardSuspensionService {
   async suspendBoardMember(data: CreateBoardSuspensionInput, suspendedById: string) {
     const targetUser = await prisma.user.findUnique({
       where: { id: data.userId },
-      include: { userRoles: { include: { role: { select: { code: true } } } } },
+      include: {
+        userRoles: {
+          where: {
+            isActive: true,
+            OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+          },
+          include: { role: { select: { code: true } } },
+        },
+      },
     });
 
     if (!targetUser) {
@@ -63,6 +77,17 @@ export class BoardSuspensionService {
 
     if (!targetUser.isActive) {
       throw Errors.conflict(`Akun pengurus ini sudah dalam keadaan non-aktif / dibekukan`);
+    }
+
+    // A Plh/Plt stands in for a Pengurus organ, so the delegated role must be
+    // one — never SUPER_ADMIN, the Pembina that appoints the board, the
+    // Pengawas that audits it, or any unit/staff role. Without this a Pengawas
+    // could mint Super Admin through the very endpoint that suspends the
+    // executive it audits.
+    if (data.plhRoleCode && !(PLH_ROLE_CODES as readonly string[]).includes(data.plhRoleCode)) {
+      throw Errors.badRequest(
+        `Peran Plh/Plt tidak sah: ${data.plhRoleCode}. Hanya peran Pengurus (${PLH_ROLE_CODES.join(', ')}) yang dapat didelegasikan.`
+      );
     }
 
     try {
@@ -92,6 +117,15 @@ export class BoardSuspensionService {
         for (const key of signingKeys) {
           signingKeyLocks[key.id] = key.lockedUntil ? key.lockedUntil.toISOString() : null;
         }
+
+        // Snapshot the account state before we flip it off. `updatedAt` is the
+        // marker the lift compares against: if the row changed after the
+        // suspension's own write, someone else (an admin deactivation) touched
+        // it and the lift must not force the account back on.
+        const accountStateSnapshot: AccountStateSnapshot = {
+          isActiveBefore: targetUser.isActive,
+          updatedAtAfterSuspend: '',
+        };
 
         // Resolve the Plh/Plt delegation before creating the suspension, so
         // its provenance travels in the same row.
@@ -146,7 +180,16 @@ export class BoardSuspensionService {
           }
         }
 
-        // 1. Create BoardMemberSuspension entry
+        // 1. Deactivate the target account first, so the `updatedAt` the write
+        //    leaves behind can be recorded as the "suspension wrote last" mark.
+        const deactivatedUser = await tx.user.update({
+          where: { id: data.userId },
+          data: { isActive: false },
+          select: { updatedAt: true },
+        });
+        accountStateSnapshot.updatedAtAfterSuspend = deactivatedUser.updatedAt.toISOString();
+
+        // 2. Create BoardMemberSuspension entry
         const suspension = await tx.boardMemberSuspension.create({
           data: {
             userId: data.userId,
@@ -165,18 +208,13 @@ export class BoardSuspensionService {
               ? (plhAssignmentRestore as unknown as Prisma.InputJsonValue)
               : undefined,
             signingKeyLocks: signingKeyLocks as unknown as Prisma.InputJsonValue,
+            accountStateSnapshot: accountStateSnapshot as unknown as Prisma.InputJsonValue,
           },
           include: {
             user: { select: { id: true, name: true, email: true, role: true } },
             suspendedBy: { select: { id: true, name: true } },
             plhUser: { select: { id: true, name: true, email: true } },
           },
-        });
-
-        // 2. Deactivate target user account
-        await tx.user.update({
-          where: { id: data.userId },
-          data: { isActive: false },
         });
 
         // 3. Invalidate target user refresh tokens (force immediate logout)
@@ -239,11 +277,34 @@ export class BoardSuspensionService {
         },
       });
 
-      // 2. Reactivate target user account
-      await tx.user.update({
+      // 2. Restore the account, but only if the suspension is still the last
+      //    thing that wrote to it.
+      //
+      //    A blind `isActive: true` resurrects an account an admin deactivated
+      //    for an unrelated reason while the suspension was in force. The
+      //    snapshot records the `updatedAt` the suspension's own write left
+      //    behind (and the `isActive` it replaced); if the row no longer
+      //    carries that timestamp, somebody else has touched it since — a
+      //    legitimately still-frozen account — and the lift leaves it alone.
+      const accountSnapshot = (suspension.accountStateSnapshot ?? null) as AccountStateSnapshot | null;
+      const currentUser = await tx.user.findUnique({
         where: { id: suspension.userId },
-        data: { isActive: true },
+        select: { isActive: true, updatedAt: true },
       });
+      if (currentUser) {
+        const suspensionMark = accountSnapshot?.updatedAtAfterSuspend
+          ? new Date(accountSnapshot.updatedAtAfterSuspend).getTime()
+          : suspension.createdAt.getTime();
+        // A millisecond of slack absorbs timestamp precision, not a real edit.
+        const touchedSinceSuspension = currentUser.updatedAt.getTime() > suspensionMark + 1;
+
+        if (!touchedSinceSuspension) {
+          await tx.user.update({
+            where: { id: suspension.userId },
+            data: { isActive: accountSnapshot?.isActiveBefore ?? true },
+          });
+        }
+      }
 
       // 3. Restore E-Sign lockouts captured at suspension time. Keys created
       //    after the suspension are not in the snapshot and stay untouched.
@@ -279,7 +340,12 @@ export class BoardSuspensionService {
       return updated;
     });
 
-    await unmarkUserSuspended(suspension.userId);
+    // Deliberately *invalidate*, not write `false`. A concurrent suspension
+    // that already primed the cache with `1` would be overwritten by that
+    // `false`, letting a suspended account's old token authenticate for a full
+    // TTL. Dropping the key makes the next request read the persistent state,
+    // which is the only writer that actually orders these two events.
+    await invalidateUserSuspensionCache(suspension.userId);
     return result;
   }
 
