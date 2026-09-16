@@ -21,6 +21,9 @@ const { mockUploadToCloudStorage } = vi.hoisted(() => {
 vi.mock('@/utils/cloud-storage', () => {
   return {
     uploadToCloudStorage: mockUploadToCloudStorage,
+    // The handler resolves a logical destination to a container before
+    // uploading; real mapping is covered in cloud-storage.test.ts.
+    containerForDestination: vi.fn(() => 'cipansor-documents'),
   };
 });
 

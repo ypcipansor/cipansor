@@ -281,11 +281,13 @@ function mayReadEmployee(
  * The directory is personnel data, so `actor` decides two things and neither is
  * optional:
  *
- *  - **Scope.** A caller who neither administers personnel nor sees all units
- *    is pinned to their own unit; a `unitId` query parameter from such a caller
- *    is ignored, because trusting it let any teacher read the whole yayasan.
- *    A unit-less non-admin is narrowed to their own record rather than left
- *    unfiltered (an undefined `unitId` filter would match every row).
+ *  - **Scope.** Only a caller who sees all units (`seesAllUnits`) may choose a
+ *    unit; a `unitId` query parameter from anyone else is ignored and the
+ *    query is pinned to their own unit, because trusting it let a unit admin
+ *    read the whole roster of a different unit and let any teacher read the
+ *    whole yayasan. A unit-less non-admin is narrowed to their own record
+ *    rather than left unfiltered (an undefined `unitId` filter would match
+ *    every row).
  *  - **Columns.** NIK and the bank fields are only emitted for a caller who may
  *    read them (see {@link mayReadSensitiveFields}).
  */
@@ -318,15 +320,21 @@ export async function getEmployeeDirectory(
     ...(status ? { isActive: status === 'ACTIVE' } : {}),
   };
 
-  if (actor && !seesAllUnits(actor) && !mayAdministerEmployeeDocuments(actor.roleCode)) {
-    // Non-admin: ignore the client's unitId entirely and pin to the actor's.
-    if (actor.unitId) {
+  if (actor) {
+    // Pin the roster to a unit the actor's token actually covers. Foundation
+    // roles (and other `seesAllUnits` roles) may narrow to any unit they ask
+    // for; everyone else is narrowed to their own unit — the client's
+    // `params.unitId` is ignored — because trusting it verbatim let an
+    // SDIT_ADMIN read the whole roster of a different unit even though the
+    // token only scopes one. A caller with no unit at all is narrowed to their
+    // own record (an absent `unitId` filter would match every row).
+    if (seesAllUnits(actor)) {
+      if (params.unitId) where.unitId = params.unitId;
+    } else if (actor.unitId) {
       where.unitId = actor.unitId;
     } else {
       where.id = actor.id;
     }
-  } else if (params.unitId) {
-    where.unitId = params.unitId;
   }
 
   if (search) {

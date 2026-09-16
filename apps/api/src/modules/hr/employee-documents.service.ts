@@ -1,7 +1,7 @@
 import { prisma } from '../../lib/prisma';
 import { EmployeeDocumentType } from '@prisma/client';
 import { cleanupBlobBestEffort } from '../../utils/cloud-storage';
-import { seesAllUnits } from '../../utils/resolve-unit-id';
+import { isFoundationScopedRole } from '../../utils/resolve-unit-id';
 import { mayAdministerEmployeeDocuments } from '@cipansor/shared';
 import { Errors } from '../../middleware/error';
 
@@ -49,16 +49,20 @@ async function findDocumentOwnerTarget(id: string) {
 /**
  * True when `actor` may delete (or create a document for) `targetUserId`.
  *
- * A user always reaches their own records. A role in
- * {@link mayAdministerEmployeeDocuments} reaches any user in a unit it is
- * scoped to; foundation roles reach every unit.
+ * A user always reaches their own records. Only a role that actually
+ * administers personnel reaches someone else's — a foundation role across
+ * every unit, a personnel administrator within its own unit. It deliberately
+ * does NOT use `seesAllUnits`: that flag means "this role's operational remit
+ * spans units" (perawat, ustadz, muhafidz …), which is about where people work
+ * and says nothing about authority over their KTP and bank records. Relying on
+ * it let a PERAWAT read and delete any employee's personal documents.
  */
 async function assertActorMayManage(
   actor: EmployeeDocumentActor,
   target: { userId: string; unitId: string | null | undefined }
 ): Promise<void> {
   if (actor.id === target.userId) return;
-  if (seesAllUnits(actor)) return;
+  if (isFoundationScopedRole(actor.roleCode)) return;
   if (
     !mayAdministerEmployeeDocuments(actor.roleCode) ||
     !actor.unitId ||

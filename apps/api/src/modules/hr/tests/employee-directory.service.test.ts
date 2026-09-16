@@ -226,11 +226,20 @@ describe('getEmployeeDirectory', () => {
     expect(call.where.unitId).toBeUndefined();
   });
 
-  it('lets a personnel admin choose a unit', async () => {
+  it('pins a personnel admin to their own unit, ignoring a foreign unitId (BUG 3)', async () => {
+    // A unit admin's token is scoped to one unit; trusting the client's
+    // `unitId` let SDIT_ADMIN read the entire roster of another unit.
     await getEmployeeDirectory({ page: 1, limit: 20, unitId: 'unit-9' }, UNIT_ADMIN_ACTOR);
 
     const call = (prisma.user.findMany as any).mock.calls[0][0];
-    expect(call.where.unitId).toBe('unit-9');
+    expect(call.where.unitId).toBe('unit-1');
+  });
+
+  it('lets a personnel admin still narrow within their own unit', async () => {
+    await getEmployeeDirectory({ page: 1, limit: 20, unitId: 'unit-1' }, UNIT_ADMIN_ACTOR);
+
+    const call = (prisma.user.findMany as any).mock.calls[0][0];
+    expect(call.where.unitId).toBe('unit-1');
   });
 
   it('lets a foundation role list across every unit', async () => {

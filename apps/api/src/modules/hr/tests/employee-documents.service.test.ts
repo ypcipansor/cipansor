@@ -131,6 +131,22 @@ describe('employeeDocumentService.delete', () => {
     expect(prisma.employeeDocument.delete).toHaveBeenCalledWith({ where: { id: 'doc-1' } });
   });
 
+  it('REFUSES a cross-unit service role (PERAWAT) deleting a document (BUG 2)', async () => {
+    mockDoc({ user: { unitId: 'unit-2', userRoles: [{ unitId: 'unit-2' }] } });
+    (seesAllUnits as any).mockReturnValue(true);
+
+    await expect(
+      employeeDocumentService.delete('doc-1', {
+        id: 'user-8',
+        roleCode: 'PERAWAT',
+        unitId: 'unit-9',
+      })
+    ).rejects.toThrow(/tidak berwenang mengelola dokumen pegawai/);
+
+    expect(prisma.employeeDocument.delete).not.toHaveBeenCalled();
+    expect(cleanupBlobBestEffort).not.toHaveBeenCalled();
+  });
+
   it('allows the owner to delete their own document', async () => {
     mockDoc();
 
@@ -258,6 +274,43 @@ describe('employeeDocumentService.findAll', () => {
     expect(prisma.employeeDocument.findMany).toHaveBeenCalled();
   });
 
+  it('REFUSES a cross-unit service role (PERAWAT) listing documents (BUG 2)', async () => {
+    // PERAWAT is in CROSS_UNIT_SCOPE_ROLES: seesAllUnits() is true for it, which
+    // is why the old check let it read any employee's personal documents. It is
+    // not a personnel administrator, so it must be refused.
+    (prisma.user.findUnique as any).mockResolvedValue({
+      unitId: 'unit-2',
+      userRoles: [{ unitId: 'unit-2' }],
+    });
+    (seesAllUnits as any).mockReturnValue(true);
+
+    await expect(
+      employeeDocumentService.findAll('target', {
+        id: 'user-8',
+        roleCode: 'PERAWAT',
+        unitId: 'unit-9',
+      })
+    ).rejects.toThrow(/tidak berwenang mengelola dokumen pegawai/);
+
+    expect(prisma.employeeDocument.findMany).not.toHaveBeenCalled();
+  });
+
+  it('still lets a cross-unit service role read their OWN documents (BUG 2)', async () => {
+    (prisma.user.findUnique as any).mockResolvedValue({
+      unitId: 'unit-9',
+      userRoles: [{ unitId: 'unit-9' }],
+    });
+    (seesAllUnits as any).mockReturnValue(true);
+
+    const result = await employeeDocumentService.findAll('own', {
+      id: 'own',
+      roleCode: 'PERAWAT',
+      unitId: 'unit-9',
+    });
+
+    expect(result).toEqual([{ id: 'doc-1' }]);
+  });
+
   it('404s when the target user does not exist', async () => {
     (prisma.user.findUnique as any).mockResolvedValue(null);
 
@@ -315,5 +368,22 @@ describe('employeeDocumentService.create', () => {
     );
 
     expect(prisma.employeeDocument.create).toHaveBeenCalled();
+  });
+
+  it('REFUSES a cross-unit service role (PERAWAT) creating a document (BUG 2)', async () => {
+    (prisma.user.findUnique as any).mockResolvedValue({
+      unitId: 'unit-2',
+      userRoles: [{ unitId: 'unit-2' }],
+    });
+    (seesAllUnits as any).mockReturnValue(true);
+
+    await expect(
+      employeeDocumentService.create(
+        { userId: 'target', name: 'KTP', type: 'KTP' as any, fileUrl: BLOB },
+        { id: 'user-8', roleCode: 'PERAWAT', unitId: 'unit-9' }
+      )
+    ).rejects.toThrow(/tidak berwenang mengelola dokumen pegawai/);
+
+    expect(prisma.employeeDocument.create).not.toHaveBeenCalled();
   });
 });

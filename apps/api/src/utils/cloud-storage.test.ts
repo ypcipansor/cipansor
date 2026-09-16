@@ -7,6 +7,9 @@ import {
   deleteFromCloudStorage,
   isAllowedContainer,
   cleanupBlobBestEffort,
+  containerForDestination,
+  isUploadDestination,
+  UPLOAD_DESTINATIONS,
 } from './cloud-storage';
 
 const {
@@ -414,5 +417,39 @@ describe('isAllowedContainer', () => {
     expect(isAllowedContainer('human-resources')).toBe(false);
     expect(isAllowedContainer('secret-reports')).toBe(false);
     expect(isAllowedContainer('')).toBe(false);
+  });
+});
+
+describe('containerForDestination', () => {
+  it('maps every known destination to an allowed container', () => {
+    for (const destination of UPLOAD_DESTINATIONS) {
+      const container = containerForDestination(destination);
+      expect(isAllowedContainer(container)).toBe(true);
+    }
+  });
+
+  it('maps media-public to the blob-level public container and private to the default', () => {
+    expect(containerForDestination('media-public')).toBe('media-public');
+    expect(containerForDestination('private')).toBe('cipansor-documents');
+    expect(containerForDestination('e-office')).toBe('e-office-documents');
+    expect(containerForDestination('student')).toBe('student-documents');
+  });
+
+  it('falls back to the private container for missing or unknown destinations', () => {
+    // A caller naming a container directly, or sending nonsense, must never be
+    // able to publish a file: only a known purpose selects a container.
+    expect(containerForDestination(undefined)).toBe('cipansor-documents');
+    expect(containerForDestination(null)).toBe('cipansor-documents');
+    expect(containerForDestination('')).toBe('cipansor-documents');
+    expect(containerForDestination('media-public-2')).toBe('cipansor-documents');
+    expect(containerForDestination('cipansor-documents')).toBe('cipansor-documents');
+  });
+
+  it('only accepts exact destination tokens', () => {
+    expect(isUploadDestination('media-public')).toBe(true);
+    expect(isUploadDestination('MEDIA-PUBLIC')).toBe(false);
+    expect(isUploadDestination(' media-public')).toBe(false);
+    expect(isUploadDestination(3)).toBe(false);
+    expect(isUploadDestination(undefined)).toBe(false);
   });
 });

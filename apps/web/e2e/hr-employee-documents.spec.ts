@@ -241,6 +241,56 @@ test.describe("HR employee directory access control", () => {
     }
   });
 
+  test("a unit admin is pinned to their own unit and cannot read a foreign roster (BUG 3)", async () => {
+    // A unit admin's token covers one unit. The old branch trusted the client's
+    // `unitId` for anyone with `mayAdministerEmployeeDocuments`, so SDIT_ADMIN
+    // could request another unit's id and read its whole roster.
+    const unitAdmin = await apiLogin(SEED_USERS.adminSdit);
+    const ownUnitId = unitAdmin.user.unitId as string;
+
+    const roster = await apiRequest<{
+      data: Array<{ id: string; unitId: string | null }>;
+    }>(session, "GET", "/hr/employees?limit=100");
+    const foreignUnitId = roster.data
+      .map((e) => e.unitId)
+      .find((u): u is string => !!u && u !== ownUnitId);
+    if (!foreignUnitId) {
+      test.skip(true, "seeded directory has no employee in another unit");
+      return;
+    }
+
+    const pinned = await apiRequest<{
+      data: Array<{ unitId: string | null }>;
+    }>(unitAdmin, "GET", `/hr/employees?limit=100&unitId=${foreignUnitId}`);
+
+    // The spoofed query unitId is ignored: every row stays in the admin's unit.
+    expect(pinned.data.length).toBeGreaterThan(0);
+    for (const row of pinned.data) {
+      expect(row.unitId).toBe(ownUnitId);
+    }
+  });
+
+  test("a foundation role may still choose any unit (BUG 3)", async () => {
+    const roster = await apiRequest<{
+      data: Array<{ unitId: string | null }>;
+    }>(session, "GET", "/hr/employees?limit=100");
+    const unitId = roster.data.find((e) => !!e.unitId)?.unitId;
+    if (!unitId) {
+      test.skip(true, "seeded directory is empty");
+      return;
+    }
+
+    const chosen = await apiRequest<{
+      data: Array<{ unitId: string | null }>;
+    }>(session, "GET", `/hr/employees?limit=100&unitId=${unitId}`);
+
+    // A `seesAllUnits` caller's explicit unitId is honored verbatim.
+    expect(chosen.data.length).toBeGreaterThan(0);
+    for (const row of chosen.data) {
+      expect(row.unitId).toBe(unitId);
+    }
+  });
+
   test("a plain teacher cannot read an employee in another unit (BUG 1)", async () => {
     const teacher = await apiLogin(SEED_USERS.teacher);
     const teacherUnitId = teacher.user.unitId as string;

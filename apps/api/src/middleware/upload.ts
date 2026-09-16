@@ -4,6 +4,7 @@ import fs from 'fs';
 import { randomUUID } from 'crypto';
 import { Request, Response, NextFunction } from 'express';
 import { verifyToken } from '@/lib/jwt';
+import { containerForDestination } from '@/utils/cloud-storage';
 import { Errors } from './error';
 
 // Ensure upload directory exists
@@ -196,10 +197,13 @@ export const handleSingleUpload = (fieldName: string) => {
           const mimeType = req.file.mimetype;
           const localPath = req.file.path;
 
+          const containerName = containerForDestination(
+            typeof req.query?.destination === 'string' ? req.query.destination : undefined
+          );
           const { uploadToCloudStorage } = await import('@/utils/cloud-storage');
           let storageResult;
           try {
-            storageResult = await uploadToCloudStorage(localPath, filename, mimeType);
+            storageResult = await uploadToCloudStorage(localPath, filename, mimeType, containerName);
           } catch (error) {
             // A failed cloud upload must not leave the staging file behind;
             // repeated failures would otherwise fill the upload volume.

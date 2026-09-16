@@ -207,16 +207,47 @@ export async function loginWithGoogle(
 /**
  * Authority MSAL should use for a client id.
  *
- * Microsoft client ids are scoped to exactly one tenant, and the authority is
- * derived from the *application object id* (the first segment of the client
- * id). The backend's `MICROSOFT_TENANT_ID` is used only when the client id is
- * not in the expected `<appId>.<tenantId>` SSO format (e.g. a GUID); otherwise
- * it is informational. Hardcoding `common` from the config alone would defeat
- * single-tenant enforcement, because MSAL falls back to `/common/`.
+ * Microsoft client ids minted by the `<appId>.<tenantId>` SSO flow are scoped
+ * to exactly one tenant, and the authority is derived from the *application
+ * object id* (the first segment of the client id). This is the fallback for a
+ * `clientId` that carries no usable tenant id; when the backend names one,
+ * {@link loginWithMicrosoft} uses it instead.
  */
 export function microsoftAuthority(clientId: string): string {
   const [appId] = clientId.split(".");
   return `https://login.microsoftonline.com/${appId}`;
+}
+
+/**
+ * The leading segment of the MSAL authority URL: the tenant (GUID, domain, or
+ * the multi-tenant sentinels `common`/`organizations`/`consumers`).
+ */
+export function microsoftAuthorityTenant(authority: string): string {
+  return authority.split("/").pop() ?? "common";
+}
+
+/**
+ * The tenant MSAL should target for a sign-in.
+ *
+ * `MICROSOFT_TENANT_ID` is authoritative whenever it names a directory:
+ *
+ *  - a GUID or a domain is that single tenant, honored as-is;
+ *  - `common`/`organizations`/`consumers` are Microsoft's multi-tenant
+ *    sentinels and must be passed through verbatim. The previous code folded
+ *    them into the "no tenant configured" branch, so MSAL received the appId
+ *    (the first segment of the client id) as its authority — a directory that
+ *    does not exist — and every multi-tenant sign-in failed.
+ *
+ * With no `MICROSOFT_TENANT_ID` at all the app id from the `<appId>.<tenantId>`
+ * client-id format is the right authority, matching
+ * {@link microsoftAuthority}.
+ */
+export function microsoftTenantId(
+  clientId: string,
+  tenantId?: string | null,
+): string {
+  if (tenantId) return tenantId;
+  return microsoftAuthorityTenant(microsoftAuthority(clientId));
 }
 
 /**
@@ -234,14 +265,11 @@ export async function loginWithMicrosoft(params: {
 }): Promise<GoogleCredentialResult> {
   const { PublicClientApplication } = await import("@azure/msal-browser");
 
-  // Prefer the backend-enforced tenant when it names one; otherwise derive the
-  // authority from the app id in the client id.
-  const tenant =
-    params.tenantId &&
-    params.tenantId !== "common" &&
-    params.tenantId !== "organizations"
-      ? params.tenantId
-      : microsoftAuthority(params.clientId).split("/").pop();
+  // `MICROSOFT_TENANT_ID` wins whenever it names a tenant; the multi-tenant
+  // sentinels (`common`/`organizations`/`consumers`) are honored verbatim so
+  // they do not collapse into the app-id fallback. With no tenant configured
+  // the app id from the `<appId>.<tenantId>` client id is the authority.
+  const tenant = microsoftTenantId(params.clientId, params.tenantId);
 
   const pca = new PublicClientApplication({
     auth: {

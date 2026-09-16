@@ -81,6 +81,12 @@ async function ownerForLetter(blobUrl: string): Promise<BlobOwner | null> {
  * This is a forward index over the record types that persist cloud blob URLs;
  * the on-demand SAS endpoint must not mint a link for a blob that no record in
  * this application references, or for a record the caller may not read.
+ *
+ * Every model that stores an uploaded URL needs a probe here — an unprobed
+ * record is a blob the upload endpoint can persist but the SAS endpoint can
+ * never sign, so its consumer 403s forever. The `upload.service.test.ts`
+ * "every URL field has an owner probe" guard fails when a new field is added
+ * without one.
  */
 async function findBlobOwner(containerName: string, blobUrl: string): Promise<BlobOwner | null> {
   if (containerName === 'e-office-documents') {
@@ -194,6 +200,62 @@ async function findBlobOwner(containerName: string, blobUrl: string): Promise<Bl
     select: { unitId: true },
   });
   if (asset) return { kind: 'unit', unitId: asset.unitId };
+
+  // A parent/student's transfer proof (Payment.proofUrl) is personal financial
+  // data: only the student it pays for, a personnel-record administrator in
+  // their unit, or a foundation role may read it.
+  const payment = await prisma.payment.findFirst({
+    where: { proofUrl: blobUrl },
+    select: { invoice: { select: { student: { select: { userId: true, unitId: true } } } } },
+  });
+  if (payment) {
+    return {
+      kind: 'user-document',
+      userId: payment.invoice.student.userId,
+      unitId: payment.invoice.student.unitId,
+    };
+  }
+
+  // Donation transfer proof. A donation may be foundation-wide (no unit), in
+  // which case only a foundation role may read it.
+  const donation = await prisma.donation.findFirst({
+    where: { paymentProof: blobUrl },
+    select: { unitId: true },
+  });
+  if (donation) return { kind: 'unit', unitId: donation.unitId };
+
+  // E-Simaan recitation recording: personal to the santri it belongs to.
+  const tahfidzRecord = await prisma.tahfidzRecord.findFirst({
+    where: { audioUrl: blobUrl },
+    select: { student: { select: { userId: true, unitId: true } } },
+  });
+  if (tahfidzRecord) {
+    return {
+      kind: 'user-document',
+      userId: tahfidzRecord.student.userId,
+      unitId: tahfidzRecord.student.unitId,
+    };
+  }
+
+  const muhadatsah = await prisma.muhadatsah.findFirst({
+    where: { recordingUrl: blobUrl },
+    select: { unitId: true },
+  });
+  if (muhadatsah) return { kind: 'unit', unitId: muhadatsah.unitId };
+
+  // Announcement attachment: unit-owned (null unitId = all units).
+  const announcement = await prisma.announcement.findFirst({
+    where: { attachmentUrl: blobUrl },
+    select: { unitId: true },
+  });
+  if (announcement) return { kind: 'unit', unitId: announcement.unitId };
+
+  // A revocation request's supporting document shares the letter's scope.
+  const revocationRequest = await prisma.letterRevocationRequest.findFirst({
+    where: { attachmentUrl: blobUrl },
+    select: { letterId: true },
+  });
+  if (revocationRequest) return { kind: 'letter', letterId: revocationRequest.letterId };
 
   // A student's own photo is personal data: reachable by the student
   // themselves, a personnel administrator in their unit, or foundation only.

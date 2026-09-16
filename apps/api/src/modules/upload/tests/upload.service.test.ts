@@ -35,6 +35,12 @@ vi.mock('@/lib/prisma', () => ({
     student: { findFirst: vi.fn() },
     boardMember: { findFirst: vi.fn() },
     foundationDocument: { findFirst: vi.fn() },
+    payment: { findFirst: vi.fn() },
+    donation: { findFirst: vi.fn() },
+    tahfidzRecord: { findFirst: vi.fn() },
+    muhadatsah: { findFirst: vi.fn() },
+    announcement: { findFirst: vi.fn() },
+    letterRevocationRequest: { findFirst: vi.fn() },
   },
 }));
 
@@ -93,6 +99,12 @@ function clearOwners() {
     'student',
     'boardMember',
     'foundationDocument',
+    'payment',
+    'donation',
+    'tahfidzRecord',
+    'muhadatsah',
+    'announcement',
+    'letterRevocationRequest',
   ] as const;
   for (const model of models) {
     (prisma as any)[model].findFirst.mockResolvedValue(null);
@@ -364,6 +376,139 @@ describe('resolveSasForBlob', () => {
       )
     ).rejects.toThrow(/tidak berwenang/);
     expect(generateSasUrl).not.toHaveBeenCalled();
+  });
+
+  // -----------------------------------------------------------------
+  // BUG 6 — records whose blob URL had no probe 403'd forever.
+  // -----------------------------------------------------------------
+
+  it("mints a SAS for a payment proof for the student's own unit admin (BUG 6)", async () => {
+    (parseBlobUrl as any).mockReturnValue({
+      containerName: 'cipansor-documents',
+      blobName: 'bukti.pdf',
+    });
+    (prisma.payment.findFirst as any).mockResolvedValue({
+      invoice: { student: { userId: 'student-user', unitId: 'unit-2' } },
+    });
+    (seesAllUnits as any).mockReturnValue(false);
+
+    const result = await resolveSasForBlob(
+      'https://store.blob.core.windows.net/cipansor-documents/bukti.pdf',
+      unitHrAdmin
+    );
+    expect(result.downloadUrl).toContain('sig=fakeSas');
+    expect(generateSasUrl).toHaveBeenCalledWith('cipansor-documents', 'bukti.pdf', 60);
+  });
+
+  it("refuses a payment proof to an actor outside the paying student's unit (BUG 6)", async () => {
+    (parseBlobUrl as any).mockReturnValue({
+      containerName: 'cipansor-documents',
+      blobName: 'bukti.pdf',
+    });
+    (prisma.payment.findFirst as any).mockResolvedValue({
+      invoice: { student: { userId: 'student-user', unitId: 'unit-99' } },
+    });
+    (seesAllUnits as any).mockReturnValue(false);
+
+    await expect(
+      resolveSasForBlob(
+        'https://store.blob.core.windows.net/cipansor-documents/bukti.pdf',
+        unitHrAdmin
+      )
+    ).rejects.toThrow(/tidak berwenang/);
+    expect(generateSasUrl).not.toHaveBeenCalled();
+  });
+
+  it('mints a SAS for an E-Simaan tahfidz recording for its owner (BUG 6)', async () => {
+    (parseBlobUrl as any).mockReturnValue({
+      containerName: 'cipansor-documents',
+      blobName: 'setoran.m4a',
+    });
+    (prisma.tahfidzRecord.findFirst as any).mockResolvedValue({
+      student: { userId: 'user-2', unitId: 'unit-2' },
+    });
+    (seesAllUnits as any).mockReturnValue(false);
+
+    const result = await resolveSasForBlob(
+      'https://store.blob.core.windows.net/cipansor-documents/setoran.m4a',
+      sameUnitPeer
+    );
+    expect(result.downloadUrl).toContain('sig=fakeSas');
+  });
+
+  it('resolves a donation transfer proof through its unit scope (BUG 6)', async () => {
+    (parseBlobUrl as any).mockReturnValue({
+      containerName: 'cipansor-documents',
+      blobName: 'infaq.jpg',
+    });
+    (prisma.donation.findFirst as any).mockResolvedValue({ unitId: 'unit-2' });
+    (seesAllUnits as any).mockReturnValue(false);
+
+    const result = await resolveSasForBlob(
+      'https://store.blob.core.windows.net/cipansor-documents/infaq.jpg',
+      unitHrAdmin
+    );
+    expect(result.downloadUrl).toContain('sig=fakeSas');
+  });
+
+  it('resolves an announcement attachment through its unit scope (BUG 6)', async () => {
+    (parseBlobUrl as any).mockReturnValue({
+      containerName: 'cipansor-documents',
+      blobName: 'pengumuman.pdf',
+    });
+    (prisma.announcement.findFirst as any).mockResolvedValue({ unitId: 'unit-2' });
+    (seesAllUnits as any).mockReturnValue(false);
+
+    const result = await resolveSasForBlob(
+      'https://store.blob.core.windows.net/cipansor-documents/pengumuman.pdf',
+      unitHrAdmin
+    );
+    expect(result.downloadUrl).toContain('sig=fakeSas');
+  });
+
+  it('resolves a revocation-request attachment through its letter scope (BUG 6)', async () => {
+    (parseBlobUrl as any).mockReturnValue({
+      containerName: 'cipansor-documents',
+      blobName: 'bukti-cabut.pdf',
+    });
+    (prisma.letterRevocationRequest.findFirst as any).mockResolvedValue({ letterId: 'letter-1' });
+    (prisma.letter.count as any).mockResolvedValue(1);
+    (seesAllUnits as any).mockReturnValue(false);
+
+    const result = await resolveSasForBlob(
+      'https://store.blob.core.windows.net/cipansor-documents/bukti-cabut.pdf',
+      unitHrAdmin
+    );
+    expect(result.downloadUrl).toContain('sig=fakeSas');
+  });
+
+  it('has a findBlobOwner probe for every stored blob-URL field it must serve (BUG 6)', async () => {
+    // Guard: each probe below, given a matching row, must resolve or refuse
+    // deliberately rather than falling through to "no record".
+    (parseBlobUrl as any).mockReturnValue({
+      containerName: 'cipansor-documents',
+      blobName: 'probe.bin',
+    });
+    (seesAllUnits as any).mockReturnValue(true);
+
+    const probes: Array<[string, unknown]> = [
+      ['payment', { invoice: { student: { userId: 'u', unitId: 'unit-2' } } }],
+      ['donation', { unitId: 'unit-2' }],
+      ['tahfidzRecord', { student: { userId: 'u', unitId: 'unit-2' } }],
+      ['muhadatsah', { unitId: 'unit-2' }],
+      ['announcement', { unitId: 'unit-2' }],
+      ['letterRevocationRequest', { letterId: 'letter-1' }],
+    ];
+
+    for (const [model, row] of probes) {
+      clearOwners();
+      (prisma as any)[model].findFirst.mockResolvedValue(row);
+      const result = await resolveSasForBlob(
+        'https://store.blob.core.windows.net/cipansor-documents/probe.bin',
+        superAdmin
+      );
+      expect(result.downloadUrl, model).toContain('sig=fakeSas');
+    }
   });
 });
 

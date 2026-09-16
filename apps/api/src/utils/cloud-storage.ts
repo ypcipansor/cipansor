@@ -45,6 +45,34 @@ export function isPublicContainer(containerName: string): boolean {
   return containerName === 'media-public';
 }
 
+/**
+ * Logical upload destinations, mapped server-side to a concrete container.
+ *
+ * The client picks a *purpose*, never a container name — a caller that could
+ * name the container freely could push a KTP scan into `media-public` and make
+ * it world-readable. Unknown/missing destinations fall back to the private
+ * default, so an un-migrated caller is never accidentally published.
+ */
+export const UPLOAD_DESTINATIONS = ['private', 'media-public', 'e-office', 'student'] as const;
+export type UploadDestination = (typeof UPLOAD_DESTINATIONS)[number];
+
+const DESTINATION_CONTAINERS: Record<UploadDestination, StorageContainer> = {
+  private: 'cipansor-documents',
+  'media-public': 'media-public',
+  'e-office': 'e-office-documents',
+  student: 'student-documents',
+};
+
+/** True when `value` is a destination this application recognises. */
+export function isUploadDestination(value: unknown): value is UploadDestination {
+  return typeof value === 'string' && (UPLOAD_DESTINATIONS as readonly string[]).includes(value);
+}
+
+/** Resolve a logical destination to its container. Anything unrecognised is private. */
+export function containerForDestination(destination?: string | null): StorageContainer {
+  return isUploadDestination(destination) ? DESTINATION_CONTAINERS[destination] : 'cipansor-documents';
+}
+
 interface ResolvedCredentials {
   accountName: string;
   accountKey: string;

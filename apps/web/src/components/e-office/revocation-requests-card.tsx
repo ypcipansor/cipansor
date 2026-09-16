@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useDecideRevocation, useWithdrawRevocationRequest } from "@/hooks/use-esign";
+import { useResolvedFileUrl } from "@/hooks/use-resolved-file-url";
 import type { LetterRevocationRequestDetail } from "@cipansor/shared";
 import { AlertTriangle, FileText, Gavel } from "lucide-react";
 
@@ -29,6 +30,26 @@ const STATUS: Record<string, { label: string; tone: string }> = {
   REJECTED: { label: "Ditolak", tone: "border-slate-400 bg-slate-50 text-slate-600" },
   WITHDRAWN: { label: "Ditarik pemohon", tone: "border-slate-400 bg-slate-50 text-slate-600" },
 };
+
+/**
+ * The supporting document is a private blob; mint a SAS before rendering the
+ * link. Extracted so the hook runs at component level, not inside the
+ * `requests.map` callback.
+ */
+function RevocationAttachmentLink({ url }: { url: string }) {
+  const resolved = useResolvedFileUrl(url);
+  return (
+    <a
+      href={resolved ?? url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+    >
+      <FileText className="h-3 w-3" />
+      Berkas pendukung
+    </a>
+  );
+}
 
 export function RevocationRequestsCard({
   letterId,
@@ -107,17 +128,7 @@ export function RevocationRequestsCard({
 
               <p className="rounded-md bg-muted/50 p-2">{r.reason}</p>
 
-              {r.attachmentUrl && (
-                <a
-                  href={r.attachmentUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                >
-                  <FileText className="h-3 w-3" />
-                  Berkas pendukung
-                </a>
-              )}
+              {r.attachmentUrl && <RevocationAttachmentLink url={r.attachmentUrl} />}
 
               {r.decidedBy && (
                 <p className="text-xs text-muted-foreground">

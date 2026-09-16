@@ -230,5 +230,78 @@ test.describe("E-Office correspondence flows", () => {
         /\.blob\.core\.windows\.net\//,
       );
     }
+
+    // A local /uploads reference is served directly by the API; the resolved
+    // stable URL must therefore be fetchable without a SAS round-trip.
+    if (stableUrl.includes("/uploads/")) {
+      const direct = await fetch(stableUrl, {
+        headers: { authorization: `Bearer ${session.accessToken}` },
+      });
+      expect(direct.ok).toBe(true);
+    }
+  });
+
+  test("a public-destination upload stays open without a SAS (BUG 5)", async () => {
+    // Public content (gallery/banner/announcement media) must not land in the
+    // private default container: a consumer that renders its raw URL would 403.
+    // The destination is a validated server-side purpose, never a container
+    // name — so a caller cannot publish a KTP scan into media-public.
+    const body = Buffer.from(
+      "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489",
+      "hex",
+    );
+    const form = new FormData();
+    form.append("file", new Blob([body], { type: "image/png" }), "banner.png");
+
+    const res = await fetch(`${API_URL}/upload?destination=media-public`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${session.accessToken}` },
+      body: form,
+    });
+    const json = await res.json();
+    expect(res.ok).toBe(true);
+
+    const data = json?.data as
+      | { url?: string; downloadUrl?: string; containerName?: string }
+      | undefined;
+    expect(data?.url).toBeTruthy();
+    // The mapping chose the public container, so no short-lived SAS is minted.
+    expect(data?.downloadUrl).toBeUndefined();
+
+    if (data?.url && data.url.includes("blob.core.windows.net")) {
+      expect(data.containerName).toBe("media-public");
+      expect(data.url).toContain("/media-public/");
+      // The SAS endpoint passes a public blob through unchanged.
+      const sas = await apiRequest<{
+        data?: { url?: string; downloadUrl?: string };
+      }>(session, "POST", "/upload/sas", { url: data.url });
+      expect(sas.data?.url).toBe(data.url);
+      expect(sas.data?.downloadUrl).toBeUndefined();
+    }
+  });
+
+  test("an unknown upload destination falls back to the private container (BUG 5)", async () => {
+    // A caller naming a container directly (or sending nonsense) must never be
+    // able to publish a file; only a known purpose selects a container.
+    const body = Buffer.from(
+      "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489",
+      "hex",
+    );
+    const form = new FormData();
+    form.append("file", new Blob([body], { type: "image/png" }), "ktp.png");
+
+    const res = await fetch(`${API_URL}/upload?destination=media-public-evil`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${session.accessToken}` },
+      body: form,
+    });
+    const json = await res.json();
+    expect(res.ok).toBe(true);
+
+    const data = json?.data as { url?: string; containerName?: string } | undefined;
+    expect(data?.url).toBeTruthy();
+    if (data?.url && data.url.includes("blob.core.windows.net")) {
+      expect(data.containerName).toBe("cipansor-documents");
+    }
   });
 });
