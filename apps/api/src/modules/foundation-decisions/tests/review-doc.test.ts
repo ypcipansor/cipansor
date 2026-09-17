@@ -59,4 +59,11 @@ describe('docs/REVIEW_GEMINI_RISALAH_DIGITAL_SIGNATURE.md — tidak kontradiktif
       expect(doc).toContain(realPath);
     }
   });
+
+  it('tidak lagi mengklaim belum di-commit / belum di-PR', () => {
+    // Dokumen ini dikirim bersama PR #509. Header yang menyatakan sebaliknya
+    // membuat pembaca berikutnya mengira tidak ada implementasi untuk dibaca.
+    expect(doc).not.toMatch(/Belum di-commit/);
+    expect(doc).not.toMatch(/belum di-PR/);
+  });
 });
