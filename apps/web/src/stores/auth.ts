@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { AxiosError } from "axios";
 import { User, authApi, rolesApi, LoginRequest } from "@/lib/api";
+import { authCookieValue } from "@/lib/auth-cookie";
 
 interface AuthState {
   user: User | null;
@@ -26,17 +27,20 @@ const customStorage = {
   getItem: (name: string) => {
     if (typeof window === "undefined") return null;
     const item = localStorage.getItem(name);
-    // Also sync to cookie for middleware
+    // Also sync to cookie for middleware. `authCookieValue` trims the payload
+    // when the full user would overflow the ~4 KB cookie limit — a dropped
+    // cookie makes the middleware fall back to `accessToken`, which carries no
+    // role and silently skips the RBAC gate.
     if (item) {
-      document.cookie = `${name}=${encodeURIComponent(item)}; path=/; max-age=86400; samesite=lax`;
+      document.cookie = `${name}=${encodeURIComponent(authCookieValue(item))}; path=/; max-age=86400; samesite=lax`;
     }
     return item;
   },
   setItem: (name: string, value: string) => {
     if (typeof window === "undefined") return;
     localStorage.setItem(name, value);
-    // Also sync to cookie for middleware
-    document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=86400; samesite=lax`;
+    // Also sync to cookie for middleware (see getItem).
+    document.cookie = `${name}=${encodeURIComponent(authCookieValue(value))}; path=/; max-age=86400; samesite=lax`;
   },
   removeItem: (name: string) => {
     if (typeof window === "undefined") return;

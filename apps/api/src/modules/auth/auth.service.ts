@@ -1024,9 +1024,17 @@ export class AuthService {
   }
 
   /**
-   * Strip every sensitive field from a user record before returning it to a
-   * client. Covers the password hash, the 2FA secrets/recovery codes, and the
-   * password-reset token hash + expiry (these must never leave the server).
+   * Strip every field that must not reach a client from a user record.
+   *
+   * Secrets: the password hash, the 2FA secrets/recovery codes, and the
+   * password-reset token hash + expiry.
+   *
+   * Internal bookkeeping: `accountStateWriter` is the write-ownership marker
+   * the suspension lift compares to prove it, and not a later admin, owns the
+   * current `isActive`. No client reads it and it is not part of the shared
+   * `User` DTO — and since the web mirrors the whole `/auth/me` payload into
+   * the `auth-storage` cookie, shipping it spent bytes that cookie does not
+   * have (see `apps/web/src/lib/auth-cookie.ts`).
    */
   private stripSensitiveFields<
     T extends {
@@ -1036,6 +1044,7 @@ export class AuthService {
       twoFactorRecoveryCodes?: unknown;
       resetTokenHash?: unknown;
       resetTokenExpiresAt?: unknown;
+      accountStateWriter?: unknown;
     },
   >(user: T) {
     const {
@@ -1045,6 +1054,7 @@ export class AuthService {
       twoFactorRecoveryCodes: _trc,
       resetTokenHash: _rth,
       resetTokenExpiresAt: _rte,
+      accountStateWriter: _asw,
       ...safe
     } = user;
     return safe;

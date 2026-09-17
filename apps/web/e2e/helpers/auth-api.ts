@@ -2,6 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import type { Page } from "@playwright/test";
 import { generate as generateTotp } from "otplib";
+import { authCookieValue } from "@/lib/auth-cookie";
 
 /**
  * API-based authentication for e2e tests.
@@ -156,15 +157,36 @@ async function apiLoginUncached(user: SeedUser): Promise<AuthSession> {
 }
 
 /**
+ * The persisted `auth-storage` JSON for a session — the form the store writes
+ * to localStorage.
+ */
+function persistedAuthStorage(session: AuthSession): string {
+  return JSON.stringify({
+    state: { user: session.user, isAuthenticated: true },
+    version: 0,
+  });
+}
+
+/**
+ * The `auth-storage` cookie value for a session.
+ *
+ * Cookies top out near 4 KB and a user with many role assignments overflowed it,
+ * making every `addCookies` throw `Invalid cookie fields` and taking out the
+ * whole authenticated suite. This delegates to the same `authCookieValue` the
+ * store uses, so the helper exercises the production trimming rather than a copy
+ * of it that can drift.
+ */
+export function cookieAuthStorage(session: AuthSession): string {
+  return authCookieValue(persistedAuthStorage(session));
+}
+
+/**
  * Inject a session into the page's origin, mirroring the zustand persist store
  * (`auth-storage`) and the raw `accessToken`/`refreshToken` items + cookies the
  * middleware checks. Call before navigating to a protected route.
  */
 export async function injectSession(page: Page, session: AuthSession) {
-  const authStorage = JSON.stringify({
-    state: { user: session.user, isAuthenticated: true },
-    version: 0,
-  });
+  const authStorage = persistedAuthStorage(session);
 
   // Cookies for the Next middleware (it JSON.parses the encoded auth-storage and
   // falls back to accessToken). Mirror the app's encodeURIComponent encoding.
@@ -176,7 +198,7 @@ export async function injectSession(page: Page, session: AuthSession) {
     },
     {
       name: "auth-storage",
-      value: encodeURIComponent(authStorage),
+      value: encodeURIComponent(cookieAuthStorage(session)),
       url: BASE_URL,
     },
   ]);
@@ -236,14 +258,11 @@ export async function loginAs(page: Page, role: SeedRole): Promise<AuthSession> 
  */
 export function buildStorageState(session: AuthSession) {
   const origin = new URL(BASE_URL).origin;
-  const authStorage = JSON.stringify({
-    state: { user: session.user, isAuthenticated: true },
-    version: 0,
-  });
+  const authStorage = persistedAuthStorage(session);
   return {
     cookies: [
       { name: "accessToken", value: session.accessToken },
-      { name: "auth-storage", value: encodeURIComponent(authStorage) },
+      { name: "auth-storage", value: encodeURIComponent(cookieAuthStorage(session)) },
     ].map((c) => ({
       ...c,
       domain: new URL(BASE_URL).hostname,

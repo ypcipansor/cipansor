@@ -425,6 +425,33 @@ describe('AuthService', () => {
       expect(result).not.toHaveProperty('passwordHash');
     });
 
+    it('should not leak the accountStateWriter ownership marker', async () => {
+      // `accountStateWriter` records which writer owns the current `isActive`,
+      // so the suspension lift can tell its own deactivation from a later admin
+      // one. It is server-side bookkeeping: not part of the shared `User` DTO,
+      // and shipping it spent bytes the web's `auth-storage` cookie does not
+      // have (see apps/web/src/lib/auth-cookie.ts).
+      const mockUser = {
+        id: 'user-1',
+        email: 'test@example.com',
+        name: 'Test User',
+        passwordHash: 'hashed-password',
+        role: UserRole.SUPER_ADMIN,
+        unitId: 'unit-1',
+        unit: { id: 'unit-1', name: 'Test Unit' },
+        student: null,
+        userRoles: [],
+        accountStateWriter: 'suspension:abc-123',
+      };
+      mockPrisma.user.findFirst.mockResolvedValue(mockUser);
+      mockPrisma.academicYear.findFirst.mockResolvedValue({ id: 'ay-1' });
+
+      const result = await authService.getCurrentUser('user-1');
+
+      expect(result).not.toHaveProperty('accountStateWriter');
+      expect(result).toHaveProperty('email');
+    });
+
     it('should throw error for non-existent user', async () => {
       mockPrisma.user.findFirst.mockResolvedValue(null);
 
