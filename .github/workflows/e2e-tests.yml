@@ -106,8 +106,10 @@ jobs:
       - name: Generate Prisma client
         run: pnpm --filter api db:generate
 
-      - name: Push database schema
-        run: pnpm --filter api db:push
+      # Migrations (not `db:push`) so the e2e stack has the real production
+      # schema, partial unique indexes included. See the note in ci.yml.
+      - name: Apply database migrations
+        run: pnpm --filter api db:deploy
 
       - name: Seed database (with fixed-secret 2FA for admins)
         run: pnpm --filter api db:seed
@@ -250,8 +252,10 @@ jobs:
       - name: Generate Prisma client
         run: pnpm --filter api db:generate
 
-      - name: Push database schema
-        run: pnpm --filter api db:push
+      # Migrations (not `db:push`) so the e2e stack has the real production
+      # schema, partial unique indexes included. See the note in ci.yml.
+      - name: Apply database migrations
+        run: pnpm --filter api db:deploy
 
       - name: Seed database (with fixed-secret 2FA for admins)
         run: pnpm --filter api db:seed

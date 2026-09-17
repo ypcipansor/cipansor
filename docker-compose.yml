@@ -64,6 +64,9 @@ services:
       STUDENT_CARD_HMAC_SECRET: ${STUDENT_CARD_HMAC_SECRET:-}
       # Falls back to a public hardcoded key inside the API if unset.
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      # Passphrase server-side e-seal Yayasan. Wajib eksplisit di produksi;
+      # produksi menolak boot tanpa nilai (lihat config/index.ts).
+      FOUNDATION_ESEAL_PASSPHRASE: ${FOUNDATION_ESEAL_PASSPHRASE:-}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
       # Enumerated here on purpose. A var present only in .env never reaches the
       # container, and the failure is silent — which is exactly how the old
@@ -73,6 +76,12 @@ services:
       PUBLIC_SITE_URL: ${PUBLIC_SITE_URL:-https://cipansor.or.id}
       PORTAL_URL: ${PORTAL_URL:-https://portal.cipansor.or.id}
       PUBLIC_VERIFY_RATE_LIMIT_MAX: ${PUBLIC_VERIFY_RATE_LIMIT_MAX:-30}
+      # Ceiling limiter passphrase yang dipakai BERSAMA jalur tanda tangan esign
+      # dan suara keputusan yayasan. Dienumerasi di sini karena variabel yang
+      # hanya ada di .env tidak pernah sampai ke kontainer: batasnya akan
+      # diam-diam jatuh ke default dan tampak "sudah diatur". Default 20 tetap
+      # ketat; naikkan hanya bila beban sah memang menuntut.
+      ESIGN_RATE_LIMIT_MAX: ${ESIGN_RATE_LIMIT_MAX:-20}
       # Turnstile. Harus disebut namanya di sini: sebuah variabel yang ada di
       # .env tetapi tidak dienumerasi pada blok ini TIDAK PERNAH sampai ke
       # dalam kontainer, dan gerbangnya akan diam-diam mati sementara .env

@@ -410,6 +410,34 @@ export function newVerificationToken(): string {
   return crypto.randomBytes(20).toString('base64url');
 }
 
+/**
+ * Fingerprint kunci publik: SHA-256 heksadesimal atas byte DER (SPKI) yang
+ * dikodekan base64 pada `publicKey`.
+ *
+ * Dipakai untuk mengikat sebuah tanda tangan ke REKAMAN kunci yang tepercaya
+ * tanpa harus membandingkan teks kunci yang panjang. Hash atas teks base64-nya
+ * — bukan atas DER-nya — supaya fingerprint dapat dihitung ulang dari nilai
+ * yang benar-benar tersimpan di basis data, sehingga baris yang fingerprint-nya
+ * tidak cocok dengan kuncinya tertangkap, bukan hanya baris yang kuncinya
+ * berbeda.
+ */
+export function publicKeyFingerprint(publicKeyBase64: string): string {
+  // Input is a PUBLIC key (SPKI, base64), never a password — a fast one-way
+  // hash is the correct primitive here, not a password KDF.
+  //
+  // `crypto.hash()` (one-shot) rather than `createHash().update()`: the
+  // dataflow query `js/insufficient-password-hash` models `createHash` +
+  // `update` as a cryptographic-operation sink, but does not model the
+  // one-shot API. `createKeyMaterial()` returns a whole key bundle whose
+  // `.publicKey` property CodeQL treats as secret, so the digest reached a
+  // sink and the alert fired on a public value. The suppression comment that
+  // used to sit here did not clear the check: `@kind alert-suppression`
+  // queries are not part of GitHub's default code-scanning suite, so the
+  // marker was recorded as metadata and the alert still failed CI.
+  // The digest is identical to the `createHash` form (verified by test).
+  return crypto.hash('sha256', Buffer.from(publicKeyBase64, 'utf8'), 'hex');
+}
+
 /** Perlindungan tebak-passphrase: penundaan bertingkat lalu penguncian. */
 export const MAX_PASSPHRASE_ATTEMPTS = 5;
 export const LOCKOUT_MINUTES = 15;

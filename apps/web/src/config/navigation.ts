@@ -23,6 +23,8 @@ import {
   School,
   Settings,
   FileSpreadsheet,
+  FileSignature,
+  SlidersHorizontal,
   Baby,
   Receipt,
   Megaphone,
@@ -185,11 +187,7 @@ const KOMITE_ROLES = [
   "SMAQ_KOMITE",
 ];
 
-const ALUMNI_ROLES = [
-  "SMPIT_ALUMNI",
-  "SMAQ_ALUMNI",
-  "PT_ALUMNI",
-];
+const ALUMNI_ROLES = ["SMPIT_ALUMNI", "SMAQ_ALUMNI", "PT_ALUMNI"];
 
 // Teacher-specific navigation
 const teacherNavigation: NavGroup[] = [
@@ -675,6 +673,11 @@ const yayasanNavigation: NavGroup[] = [
             title: "Units",
             href: "/units",
             icon: School,
+          },
+          {
+            title: "Keputusan & Notulen",
+            href: "/foundation/decisions",
+            icon: FileSignature,
           },
         ],
       },
@@ -1479,6 +1482,15 @@ const adminNavigation: NavGroup[] = [
             icon: School,
             roleCodes: ["SUPER_ADMIN"],
           },
+          {
+            // Mengelola override ambang kuorum Anggaran Dasar. Endpoint
+            // `GET/PUT /foundation/rules` hanya untuk SUPER_ADMIN, jadi menunya
+            // pun dikunci ke SUPER_ADMIN.
+            title: "Aturan Kuorum",
+            href: "/foundation/decisions/rules",
+            icon: SlidersHorizontal,
+            roleCodes: ["SUPER_ADMIN"],
+          },
         ],
       },
       {
@@ -1917,7 +1929,11 @@ const ptPimpinanNavigation: NavGroup[] = [
     title: "Alumni & Sertifikasi",
     items: [
       { title: "Direktori Alumni", href: "/alumni", icon: Users },
-      { title: "Penempatan Karier", href: "/alumni/placement", icon: Briefcase },
+      {
+        title: "Penempatan Karier",
+        href: "/alumni/placement",
+        icon: Briefcase,
+      },
       { title: "Sertifikat", href: "/certificates", icon: Award },
     ],
   },
@@ -2105,7 +2121,11 @@ const alumniNavigation: NavGroup[] = [
     title: "Alumni",
     items: [
       { title: "Direktori Alumni", href: "/alumni", icon: Users },
-      { title: "Penempatan Karier", href: "/alumni/placement", icon: Briefcase },
+      {
+        title: "Penempatan Karier",
+        href: "/alumni/placement",
+        icon: Briefcase,
+      },
       { title: "Sanad Keilmuan", href: "/alumni/sanad", icon: ScrollText },
     ],
   },
@@ -2186,7 +2206,10 @@ export interface ActiveRole {
  * its children took Settings and Users & Roles out of every unit admin's menu
  * once their SUPER_ADMIN-only screens were nested under them.
  */
-function filterNavItemsByRoleCode(items: NavItem[], roleCode: string): NavItem[] {
+function filterNavItemsByRoleCode(
+  items: NavItem[],
+  roleCode: string,
+): NavItem[] {
   return items
     .filter((item) => !item.roleCodes || item.roleCodes.includes(roleCode))
     .map((item) => {

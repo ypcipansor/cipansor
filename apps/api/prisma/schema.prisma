@@ -577,6 +577,14 @@ model User {
   // Business Unit Management
   managedBusinessUnits BusinessUnit[]        @relation("BusinessUnitManager")
 
+  // Foundation Decisions & Risalah Organ
+  decisionsCreated     FoundationDecision[] @relation("DecisionCreator")
+  decisionsDecided     FoundationDecision[] @relation("DecisionDecider")
+  decisionVotes        FoundationDecisionVote[] @relation("DecisionVoter")
+  decisionMemberShots  FoundationDecisionMember[] @relation("DecisionMemberSnapshot")
+  decisionRulesUpdated FoundationDecisionRule[] @relation("RuleUpdater")
+  signingKeyHistory    UserSigningKeyHistory[] @relation("SigningKeyHistoryOwner")
+
   @@index([email])
   @@index([role])
   @@index([unitId])
@@ -7400,6 +7408,39 @@ model UserSigningKey {
   @@map("user_signing_keys")
 }
 
+/// Riwayat kunci publik yang PERNAH diterbitkan untuk seorang pengguna.
+///
+/// `UserSigningKey` di atas adalah SATU baris per pengguna dan dihapus saat
+/// kunci diterbitkan ulang (`EsignService.activateKey` memanggil `deleteMany`).
+/// Sebuah suara terlampir pada kunci yang dipakai SAAT ITU, sehingga rekaman
+/// kunci publiknya harus hidup lebih lama daripada baris kunci yang berlaku —
+/// jika tidak, rotasi/pencabutan kunci membuat keputusan lama tak dapat
+/// diverifikasi ulang.
+///
+/// Tabel ini append-only: baris tidak pernah dihapus. Pencabutan ditandai
+/// `revokedAt`, penggantian oleh kunci yang lebih baru ditandai `supersededAt`
+/// — keduanya tetap dapat memverifikasi tanda tangan lama, sebab verifikasi
+/// memakai kunci PUBLIK dari rekaman yang ditunjuk baris suara.
+model UserSigningKeyHistory {
+  id          String @id @default(uuid())
+  userId      String @map("user_id")
+  algorithm   String @default("Ed25519")
+  publicKey   String @map("public_key") @db.Text
+  /// SHA-256(publicKey). Unik per pengguna, sehingga kunci yang sama tidak
+  /// pernah tercatat dua kali untuk orang yang sama.
+  fingerprint String
+  issuedAt     DateTime  @default(now()) @map("issued_at")
+  supersededAt DateTime? @map("superseded_at")
+  revokedAt    DateTime? @map("revoked_at")
+
+  user          User                     @relation("SigningKeyHistoryOwner", fields: [userId], references: [id], onDelete: Cascade)
+  decisionVotes FoundationDecisionVote[] @relation("DecisionVoteSigningKey")
+
+  @@unique([userId, fingerprint])
+  @@index([userId])
+  @@map("user_signing_key_history")
+}
+
 /// Sebab pencabutan kunci, mengikuti RFC 5280 §5.3.1.
 ///
 /// Adobe AATL (ICA6.a) menuntut kemampuan mencabut "segera setelah kehilangan,
@@ -10526,4 +10567,251 @@ model StudentCardState {
   @@index([studentId])
   @@index([status])
   @@map("student_card_state")
+}
+// ============================================================
+// KEPUTUSAN & RISALAH ORGAN YAYASAN (foundation-decisions)
+//
+// Mesin keputusan generik lintas organ (Pembina, Pengurus, Pengawas, Gabungan)
+// dengan kuorum yang dikonfigurasi per jenis keputusan (default legal dari
+// UU 16/2001 jo. UU 28/2004 & PP 63/2008, dapat disesuaikan dengan Anggaran
+// Dasar). Alur kriptografi memakai ulang primitif esign (utils/esign.ts):
+// tiap anggota menandatangani ringkasan (digest) kanonis draf keputusan dengan
+// kunci pribadinya; setelah kuorum sah, sistem me-finalisasi PDF dan
+// membubuhkan e-seal Yayasan atas hash byte PDF, lalu bytes + hash di-arsip.
+// ============================================================
+
+/// Organ yayasan yang berhak memutus.
+enum FoundationOrganType {
+  PEMBINA
+  PENGURUS
+  PENGAWAS
+  GABUNGAN // Rapat gabungan (mis. pemilihan Pembina saat kekosongan — ps. 28 UU Yayasan)
+}
+
+/// Cara pengambilan keputusan.
+enum FoundationDecisionKind {
+  CIRCULAR // Keputusan sirkuler (di luar rapat) — umumnya wajib mufakat 100% anggota aktif
+  MEETING // Risalah rapat
+}
+
+enum FoundationDecisionStatus {
+  DRAFT // Draf, belum mulai voting
+  VOTING // Sedang menerima suara
+  APPROVED // Kuorum sah terpenuhi; PDF final + e-seal dibubuhkan
+  REJECTED // Kuorum tidak terpenuhi / ada dissent yang mematikan (sirkuler)
+}
+
+enum FoundationVoteChoice {
+  APPROVE // Setuju
+  REJECT // Tidak setuju (dissenting opinion wajib dicatat utk sirkuler)
+  ABSTAIN // Abstain — terhitung hadir, tidak menambah approve
+}
+
+/// Derajat ambang kuorum. MUTLAK = 100% (sirkuler).
+enum FoundationQuorumMode {
+  MAJORITY // > 0.5
+  TWO_THIRDS // >= 2/3
+  THREE_QUARTERS // >= 3/4
+  MUTLAK // 1.0 (100%)
+}
+
+/// Keputusan organ yayasan.
+model FoundationDecision {
+  id          String                  @id @default(uuid())
+  organType   FoundationOrganType     @map("organ_type")
+  kind        FoundationDecisionKind
+  status      FoundationDecisionStatus @default(DRAFT)
+  /// Ringkas perihal keputusan.
+  subject     String
+  /// Isi/naskah keputusan (untuk rapat: notulen risalah).
+  body        String                  @db.Text
+  /// Label jenis keputusan (mis. "pengesahan-rencana-kerja", "perubahan-AD",
+  /// "anggaran", "pemberhentian-sementara"). Dikonsultasikan pada matriks
+  /// kewenangan organ (utils/foundation-authority.ts).
+  decisionType String                 @map("decision_type")
+
+  /// Snapshot kuorum ketika keputusan dibuat: jumlah anggota aktif organ saat
+  /// itu + ambang hadir & sah yang berlaku. Immutable — pembacaan status dan
+  /// finalisasi memakai angka ini, bukan angka hari ini.
+  quorumSnapshot Json                  @map("quorum_snapshot")
+
+  /// Rekapitulasi suara terkini, mis. { approve: 3, reject: 1, abstain: 1,
+  /// present: 5, active: 5 }. Ditulis ulang pada setiap vote dan finalisasi.
+  voteSummary    Json                  @map("vote_summary")
+
+  createdById  String   @map("created_by_id")
+  decidedById  String?  @map("decided_by_id")
+  decidedAt    DateTime? @map("decided_at")
+
+  /// SHA-256 atas byte PDF final yang juga di-tanda-tangani oleh e-seal.
+  finalPdfDigest   String? @unique @map("final_pdf_digest")
+  finalPdfByteSize Int?    @map("final_pdf_byte_size")
+  /// Tanda tangan e-seal Ed25519 (base64) atas `finalPdfDigest`. Tanda tangan
+  /// Ed25519 deterministik, sehingga dapat diverifikasi kapan pun tanpa
+  /// menyimpan kunci privat — hanya perlu `finalPdfDigest` + kunci publik seal.
+  finalPdfSealSignature String? @map("final_pdf_seal_signature") @db.Text
+  /// E-seal SPESIFIK yang membubuhkan tanda tangan di atas. Disimpan sebagai
+  /// referensi, bukan dibaca sebagai "seal tertua": rotasi atau pencabutan seal
+  /// setelahnya tidak boleh mengubah hasil verifikasi keputusan yang sudah sah.
+  esealId String? @map("eseal_id")
+  /// Token verifikasi QR, acak 160-bit, bukan turunan id (pola esign).
+  verificationToken String? @unique @map("verification_token")
+
+  /// Arsip byte PDF final (satu-satu dengan keputusan).
+  document FoundationDecisionDocument?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  createdBy User                      @relation("DecisionCreator", fields: [createdById], references: [id])
+  decidedBy User?                     @relation("DecisionDecider", fields: [decidedById], references: [id])
+  eseal     FoundationEseal?          @relation("DecisionEseal", fields: [esealId], references: [id], onDelete: SetNull)
+
+  votes   FoundationDecisionVote[]
+  members FoundationDecisionMember[]
+
+  @@index([organType, status])
+  @@index([createdById])
+  @@index([esealId])
+  @@map("foundation_decisions")
+}
+
+/// Satu suara anggota organ, ditandatangani dengan kunci pribadinya.
+model FoundationDecisionVote {
+  id         String               @id @default(uuid())
+  decisionId String               @map("decision_id")
+  userId     String               @map("user_id")
+  choice     FoundationVoteChoice
+
+  /// SHA-256 (hex) dari payload kanonis keputusan yang ditandatangani. Inilah
+  /// "digest" yang di-tanda-tangani — mengikat isi keputusan, bukan sekadar
+  /// pilihan. Satu karakter berubah pada naskah, digest berubah, tanda tangan
+  /// pun tak lagi cocok.
+  canonicalDigest String @map("canonical_digest")
+
+  /// Tanda tangan Ed25519 atas `canonicalDigest` (pola signPdfHash; lihat
+  /// utils/esign.ts).
+  signature  String @db.Text
+  /// Kunci publik disalin ke tiap suara agar pencabutan/kunci baru tidak
+  /// membuat keputusan yang sudah sah menjadi tampak palsu.
+  publicKey  String @db.Text @map("public_key")
+  algorithm  String @default("Ed25519")
+
+  /// Pengikat ke rekaman kunci yang TEPERCAYA (item audit #1).
+  ///
+  /// Tanpa kolom ini, verifikasi hanya memakai `publicKey` yang ditulis pada
+  /// baris suara itu sendiri — dan siapa pun yang dapat menulis langsung ke
+  /// `foundation_decision_votes` cukup membuat pasangan kunci baru, memakai
+  /// `userId` seorang anggota snapshot, menandatangani digest, lalu menyisipkan
+  /// kunci publik + tanda tangannya. Tanda tangan itu "sah" terhadap kuncinya
+  /// sendiri, sehingga suara palsu lolos hitungan kuorum dan memicu e-seal.
+  ///
+  /// `signingKeyId` menunjuk baris riwayat penerbitan kunci (`UserSigningKeyHistory`)
+  /// yang harus dimiliki pemilih yang sama; verifikasi membandingkan pemilik,
+  /// fingerprint, dan byte kunci publik dari rekaman itu, lalu memakai kuncinya.
+  /// Null (baris lama / sisipan) diperlakukan sebagai TIDAK sah.
+  signingKeyId         String? @map("signing_key_id")
+  /// SHA-256(publicKey) — pembanding ringkas terhadap rekaman kunci tepercaya.
+  publicKeyFingerprint String? @map("public_key_fingerprint")
+
+  /// Catatan dissent (wajib utk REJECT pada sirkuler; opsional lainnya).
+  note       String? @db.Text
+  signedAt   DateTime @default(now()) @map("signed_at")
+
+  decision FoundationDecision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+  user     User               @relation("DecisionVoter", fields: [userId], references: [id])
+  /// Rekaman kunci tepercaya yang menandatangani suara ini. `Restrict` karena
+  /// riwayat kunci tidak boleh hilang selama masih ada suara yang menunjuknya.
+  signingKey UserSigningKeyHistory? @relation("DecisionVoteSigningKey", fields: [signingKeyId], references: [id], onDelete: Restrict)
+
+  @@unique([decisionId, userId])
+  @@index([userId])
+  @@index([signingKeyId])
+  @@map("foundation_decision_votes")
+}
+
+/// Snapshot immutable anggota organ saat keputusan dibuat.
+///
+/// Disimpan sebagai baris (bukan hanya JSON) agar daftar anggota yang berhak
+/// memutus dapat dikueri tanpa mengurai blob, tetapi tidak pernah berubah
+/// setelah keputusan dibuat — perubahan organisasi setelah pemungutan tidak
+/// mengubah siapa yang sudah berhak memilih.
+model FoundationDecisionMember {
+  id         String @id @default(uuid())
+  decisionId String @map("decision_id")
+  userId     String @map("user_id")
+  roleCode   String @map("role_code")
+  name       String
+
+  decision FoundationDecision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+  user     User               @relation("DecisionMemberSnapshot", fields: [userId], references: [id])
+
+  @@unique([decisionId, userId])
+  @@map("foundation_decision_members")
+}
+
+/// Aturan kuorum per (organ × cara). Di-seed dari default legal; dapat
+/// disesuaikan mengikuti Anggaran Dasar Yayasan oleh SUPER_ADMIN.
+model FoundationDecisionRule {
+  id          String              @id @default(uuid())
+  organType   FoundationOrganType @map("organ_type")
+  decisionKind FoundationDecisionKind @map("decision_kind")
+
+  /// Kuorum kelayakan (berapa anggota harus hadir) & kuorum keputusan (berapa
+  /// dari yang hadir harus menyetujui). Ambang = mode × value (mis. MAJORITY
+  /// 0.5 → artinya "> ½"; TWO_THIRDS 2 / 3 → "≥ 2/3").
+  quorumPresentMode  FoundationQuorumMode @default(MAJORITY) @map("quorum_present_mode")
+  quorumPresentValue Float                 @default(0.5)     @map("quorum_present_value")
+  quorumDecisionMode FoundationQuorumMode  @default(MAJORITY) @map("quorum_decision_mode")
+  quorumDecisionValue Float                @default(0.5)     @map("quorum_decision_value")
+
+  updatedById String?  @map("updated_by_id")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  updatedBy User? @relation("RuleUpdater", fields: [updatedById], references: [id])
+
+  @@unique([organType, decisionKind])
+  @@map("foundation_decision_rules")
+}
+
+/// Kunci e-seal milik Yayasan (satu baris; passphrase server-side).
+///
+/// Kolom identik pola `UserSigningKey` — kunci privat disegel AES-256-GCM
+/// dengan KEK dari passphrase yang disimpan server-side (pola `system-secrets`),
+/// sehingga admin basis data hanya melihat blob tersegel, bukan kunci mentah.
+model FoundationEseal {
+  id                  String  @id @default(uuid())
+  algorithm           String  @default("Ed25519")
+  publicKey           String  @map("public_key") @db.Text
+  encryptedPrivateKey String  @map("encrypted_private_key") @db.Text
+  kdfSalt             String  @map("kdf_salt")
+  kdfParams           Json    @map("kdf_params")
+  iv                  String
+  authTag             String  @map("auth_tag")
+  activatedAt         DateTime? @map("activated_at")
+  revokedAt           DateTime? @map("revoked_at")
+  createdAt           DateTime  @default(now()) @map("created_at")
+
+  decisions FoundationDecision[] @relation("DecisionEseal")
+
+  @@map("foundation_eseals")
+}
+/// Arsip byte PDF final sebuah keputusan — pola `LetterSignedDocument`.
+///
+/// Byte disimpan apa adanya agar risalah dapat diunduh & diverifikasi; `sha256`
+/// ialah hash byte yang sama persis dengan `FoundationDecision.finalPdfDigest`
+/// (yang juga ditandatangani e-seal), sehingga arsip dapat memeriksa dirinya
+/// sendiri sebelum disajikan.
+model FoundationDecisionDocument {
+  id          String @id @default(uuid())
+  decisionId  String @unique @map("decision_id")
+  bytes       Bytes
+  sha256      String
+  byteSize    Int    @map("byte_size")
+  generator   String @default("decision-pdf")
+  archivedAt  DateTime @default(now()) @map("archived_at")
+
+  decision FoundationDecision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+
+  @@map("foundation_decision_documents")
 }
