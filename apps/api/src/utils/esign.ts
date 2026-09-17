@@ -422,6 +422,12 @@ export function newVerificationToken(): string {
  * berbeda.
  */
 export function publicKeyFingerprint(publicKeyBase64: string): string {
+  // Input is a PUBLIC key (SPKI, base64), never a password. `createKeyMaterial`
+  // returns a whole key bundle and CodeQL classifies that return value as
+  // secret, so `.publicKey` arrives here tainted — but a public key is public by
+  // definition, and a fast one-way hash is exactly the right primitive for a
+  // fingerprint. This is not a password KDF.
+  // codeql[js/insufficient-password-hash]
   return crypto.createHash('sha256').update(publicKeyBase64, 'utf8').digest('hex');
 }
 

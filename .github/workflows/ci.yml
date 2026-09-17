@@ -142,8 +142,17 @@ jobs:
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter api db:generate
-      - name: Push database schema
-        run: pnpm --filter api db:push
+      # Apply the schema through MIGRATIONS, not `db:push`. Production runs
+      # `prisma migrate deploy`, and migrations carry things `db:push` cannot
+      # express — partial unique indexes such as
+      # `foundation_eseals_single_active_key ON foundation_eseals ((true))
+      #  WHERE revoked_at IS NULL`, which is the DB-level invariant behind the
+      # "at most one active e-seal" guarantee. `db:push` silently omits it, so
+      # provisioning that way makes the suite test a schema production never
+      # has (and lets a concurrency regression pass CI). `migrate deploy` is
+      # idempotent from empty and matches what ships.
+      - name: Apply database migrations
+        run: pnpm --filter api db:deploy
       - name: Run API tests
         run: pnpm --filter api test
       # The web unit suite (~100 vitest specs, incl. the dead-link and RBAC
