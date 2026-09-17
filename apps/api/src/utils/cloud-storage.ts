@@ -108,7 +108,8 @@ export async function uploadToCloudStorage(
   localFilePath: string,
   filename: string,
   mimeType: string,
-  containerName: string = 'cipansor-documents'
+  containerName: string = 'cipansor-documents',
+  uploaderId?: string | null
 ): Promise<StorageUploadResult> {
   const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
 
@@ -126,6 +127,11 @@ export async function uploadToCloudStorage(
         blobHTTPHeaders: {
           blobContentType: mimeType,
         },
+        // Record who uploaded the blob so an orphan can later be discarded by
+        // its uploader only (see `upload.service.ts` `discardOrphanBlob`). It
+        // rides with the blob and is removed with it. Omitted entirely when
+        // there is no uploader, so the call shape is unchanged for other callers.
+        ...(uploaderId ? { metadata: { uploaderId } } : {}),
       });
 
       logger.info('File uploaded to Azure Blob Storage', {
@@ -251,8 +257,50 @@ export async function getBlobCreatedAt(
   }
 }
 
+/**
+ * The user id that uploaded `blobName`, from the blob's `uploaderId` metadata,
+ * or null when it is missing (no connection string / not found / uploaded
+ * before this metadata existed).
+ *
+ * Discard authorisation reads this: an orphan blob has no record to name an
+ * owner, so the uploader recorded at write time is the only thing that can
+ * bind the delete to a person. A null result is treated as "not yours" by the
+ * caller, never as "anyone may delete it".
+ */
+export async function getBlobUploaderId(
+  containerName: string,
+  blobName: string
+): Promise<string | null> {
+  const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
+  if (!connectionString) return null;
+
+  try {
+    const blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
+    const containerClient = blobServiceClient.getContainerClient(containerName);
+    const blobClient = containerClient.getBlobClient(blobName);
+    const properties = await blobClient.getProperties();
+    return properties.metadata?.uploaderId ?? null;
+  } catch (error) {
+    logger.warn('Blob uploader metadata could not be read', {
+      container: containerName,
+      blobName,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
 /** How long to wait before re-probing, so an in-flight create can commit. */
 export const RACE_RECHECK_DELAY_MS = 2_000;
+
+/**
+ * Gap between the settle probe and the final probe that guards the delete.
+ *
+ * Two separated observations rather than one: a create that commits between
+ * them is caught by the second, which leaves only the single-statement gap
+ * between that probe and the delete as the residual window.
+ */
+export const RACE_FINAL_RECHECK_DELAY_MS = 500;
 
 /**
  * Delete a blob only when it is still an orphan after a delayed re-probe.
@@ -260,16 +308,33 @@ export const RACE_RECHECK_DELAY_MS = 2_000;
  * Upload and create-record are two requests. A discard can slip between them:
  * it reads "no record references this" at the instant the create request is
  * committing, and an immediate delete would destroy a blob the new record just
- * started pointing at. Waiting {@link RACE_RECHECK_DELAY_MS} before the second
- * probe lets any in-flight create finish; a record committed by then makes this
- * a no-op (`false`), and the caller reports the discard as not-yet-done rather
- * than pretending it succeeded.
+ * started pointing at.
  *
- * Why not an age floor: the discard's only legitimate caller runs it *after* a
- * create request has definitely failed, so the blob is always seconds old. A
- * floor that refused young blobs would refuse every real discard and leave the
- * orphan on disk forever, which is the state BUG 4 exists to fix. Re-probing is
- * the guarantee; the delay is what makes the re-probe meaningful.
+ * Three things make the delete safe, in order of how much they buy:
+ *
+ *  1. **A soft age floor anchored to the blob's own creation time.** When
+ *     Azure can report `createdOn`, the settle window is measured from when the
+ *     blob appeared rather than from when the discard was invoked. A discard
+ *     called a moment after upload — the normal case — therefore still gives an
+ *     in-flight create the full {@link RACE_RECHECK_DELAY_MS}. (A *hard* age
+ *     floor would be wrong: the discard's only legitimate caller runs it right
+ *     after a create request has failed, so the blob is always seconds old and
+ *     a hard floor would refuse every real discard, leaving the orphan forever.)
+ *  2. **Two separated probes.** The settle probe catches anything that
+ *     committed during the window; the final probe, a
+ *     {@link RACE_FINAL_RECHECK_DELAY_MS} later, is a second, independent
+ *     observation, so a record committed *between* the two is still caught.
+ *  3. **Adjacency.** The delete is the very next statement after the final
+ *     probe returns false — no intervening await — so the window that remains
+ *     is as small as this design can make it.
+ *
+ * The residual window (a create committing in the instant between the final
+ * probe and Azure's delete) is inherent to a blob delete that is not
+ * transactional with the database write that references it; closing it fully
+ * would need a lease/marker the create path also honours. It is left here,
+ * documented, rather than papered over: the discard is the rare failure path
+ * (create already failed), and the two probes make the race require a create to
+ * land in a sub-second window *after* the settle delay has already elapsed.
  *
  * `recheck` returns true when a record now references the blob.
  */
@@ -279,10 +344,24 @@ export async function deleteBlobIfStillOrphaned(
   recheck: () => Promise<boolean>,
   delayMs: number = RACE_RECHECK_DELAY_MS
 ): Promise<boolean> {
-  if (delayMs > 0) {
-    await sleep(delayMs);
+  // Soft age floor: give an in-flight create the full window measured from the
+  // blob's creation, not from the moment the discard was invoked.
+  const createdAt = await getBlobCreatedAt(containerName, blobName);
+  const ageMs = createdAt ? Math.max(Date.now() - createdAt.getTime(), 0) : 0;
+  const settleDelay = Math.max(delayMs - ageMs, 0);
+  if (settleDelay > 0) {
+    await sleep(settleDelay);
   }
 
+  // Probe 1 (settle): anything that committed during the window stops us here.
+  if (await recheck()) return false;
+
+  // Probe 2 (final): a separate observation shortly before the irreversible
+  // delete, catching a create that committed between probe 1 and now.
+  const finalDelay = delayMs > 0 ? RACE_FINAL_RECHECK_DELAY_MS : 0;
+  if (finalDelay > 0) {
+    await sleep(finalDelay);
+  }
   if (await recheck()) return false;
 
   await deleteFromCloudStorage(containerName, blobName);

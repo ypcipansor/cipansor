@@ -53,6 +53,15 @@ export type BlobOwner =
    * would otherwise open one person's KTP/Ijazah to every colleague.
    */
   | { kind: 'user-document'; userId: string; unitId: UnitId }
+  /**
+   * A parent/student's transfer proof (`Payment.proofUrl`). Personal financial
+   * data, but read by a DIFFERENT set than employee documents: the student it
+   * pays for, a foundation role, or a finance verifier (TU/treasurer/admin) in
+   * the student's unit. Kept distinct because the HR-document rule excludes the
+   * unit treasurer, who is exactly who verifies payments — folding this into
+   * `user-document` 403'd every proof for the verifier.
+   */
+  | { kind: 'payment-proof'; studentUserId: string; unitId: UnitId }
   /** A record owned by a unit (report, photo, asset, book, …). */
   | { kind: 'unit'; unitId: UnitId }
   /** A foundation-owned record (board member photo, foundation document). */
@@ -236,16 +245,18 @@ export async function findBlobOwner(
   if (asset) return { kind: 'unit', unitId: asset.unitId };
 
   // A parent/student's transfer proof (Payment.proofUrl) is personal financial
-  // data: only the student it pays for, a personnel-record administrator in
-  // their unit, or a foundation role may read it.
+  // data: the student it pays for, a finance verifier in their unit, or a
+  // foundation role may read it. Deliberately NOT `user-document`: the unit
+  // treasurer verifies payments but is not a personnel-record administrator, so
+  // the employee-document rule refused them the proof they judge.
   const payment = await prisma.payment.findFirst({
     where: { proofUrl: blobUrl },
     select: { invoice: { select: { student: { select: { userId: true, unitId: true } } } } },
   });
   if (payment) {
     return {
-      kind: 'user-document',
-      userId: payment.invoice.student.userId,
+      kind: 'payment-proof',
+      studentUserId: payment.invoice.student.userId,
       unitId: payment.invoice.student.unitId,
     };
   }

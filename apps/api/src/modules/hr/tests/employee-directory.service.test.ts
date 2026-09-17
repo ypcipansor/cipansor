@@ -154,15 +154,17 @@ describe('getEmployeeDirectory', () => {
     const call = (prisma.user.findMany as any).mock.calls[0][0];
     expect(call.where).toMatchObject({
       deletedAt: null,
-      unitId: 'unit-9',
       isActive: true,
     });
     // Membership is a live RoleCode assignment, not the legacy `role` column.
     // "Live" includes the assignment not being expired: an expired holder must
     // not appear in the directory (BUG: expired roles counted as employees).
+    // The unit scope lives on the assignment too (FLAG 5): the token carries
+    // the assignment unit, so the directory filters on the same one.
     expect(call.where.userRoles.some).toMatchObject({
       isActive: true,
       OR: [{ expiresAt: null }, { expiresAt: { gt: expect.any(Date) } }],
+      unitId: 'unit-9',
       role: { code: { in: expect.arrayContaining(['SDIT_TATA_USAHA', 'PERAWAT']) } },
     });
     expect(call.where.role).toBeUndefined();
@@ -211,11 +213,14 @@ describe('getEmployeeDirectory', () => {
   // Unit scoping (BUG 1)
   // ---------------------------------------------------------------
 
-  it('pins a non-admin caller to their own unit and ignores the client unitId', async () => {
+  it('pins a non-admin caller to their own ASSIGNMENT unit and ignores the client unitId', async () => {
     await getEmployeeDirectory({ page: 1, limit: 20, unitId: 'unit-99' }, TEACHER_ACTOR);
 
     const call = (prisma.user.findMany as any).mock.calls[0][0];
-    expect(call.where.unitId).toBe('unit-1');
+    // The scope is the assignment unit (FLAG 5), matching the token, not the
+    // employee's home unit and not the client-supplied unitId.
+    expect(call.where.userRoles.some.unitId).toBe('unit-1');
+    expect(call.where.unitId).toBeUndefined();
   });
 
   it('narrows a unit-less non-admin to their own record, never the whole directory', async () => {
@@ -227,22 +232,25 @@ describe('getEmployeeDirectory', () => {
     const call = (prisma.user.findMany as any).mock.calls[0][0];
     expect(call.where.id).toBe('user-7');
     expect(call.where.unitId).toBeUndefined();
+    expect(call.where.userRoles.some.unitId).toBeUndefined();
   });
 
-  it('pins a personnel admin to their own unit, ignoring a foreign unitId (BUG 3)', async () => {
+  it('pins a personnel admin to their own ASSIGNMENT unit, ignoring a foreign unitId (BUG 3, FLAG 5)', async () => {
     // A unit admin's token is scoped to one unit; trusting the client's
     // `unitId` let SDIT_ADMIN read the entire roster of another unit.
     await getEmployeeDirectory({ page: 1, limit: 20, unitId: 'unit-9' }, UNIT_ADMIN_ACTOR);
 
     const call = (prisma.user.findMany as any).mock.calls[0][0];
-    expect(call.where.unitId).toBe('unit-1');
+    expect(call.where.userRoles.some.unitId).toBe('unit-1');
+    expect(call.where.unitId).toBeUndefined();
   });
 
   it('lets a personnel admin still narrow within their own unit', async () => {
     await getEmployeeDirectory({ page: 1, limit: 20, unitId: 'unit-1' }, UNIT_ADMIN_ACTOR);
 
     const call = (prisma.user.findMany as any).mock.calls[0][0];
-    expect(call.where.unitId).toBe('unit-1');
+    expect(call.where.userRoles.some.unitId).toBe('unit-1');
+    expect(call.where.unitId).toBeUndefined();
   });
 
   it('lets a foundation role list across every unit', async () => {
@@ -250,6 +258,90 @@ describe('getEmployeeDirectory', () => {
 
     const call = (prisma.user.findMany as any).mock.calls[0][0];
     expect(call.where.unitId).toBeUndefined();
+    expect(call.where.userRoles.some.unitId).toBeUndefined();
+  });
+
+  it('shows an employee reassigned to another unit in that unit directory (FLAG 5)', async () => {
+    // The home unit is unit-2, but the live assignment puts the person in
+    // unit-1. Filtering on the home unit dropped them from the roster of the
+    // unit they actually serve; the query must match the assignment, and the
+    // returned row must be treated as belonging to unit-1 for the sensitive
+    // field decision too.
+    (prisma.user.findMany as any).mockResolvedValue([
+      teacherUser({
+        unitId: 'unit-2',
+        unit: { id: 'unit-2', name: 'SMP IT' },
+        userRoles: [{ role: { code: 'SDIT_GURU' }, unitId: 'unit-1' }],
+      }),
+    ]);
+
+    const { data } = await getEmployeeDirectory({ page: 1, limit: 20 }, UNIT_ADMIN_ACTOR);
+
+    const call = (prisma.user.findMany as any).mock.calls[0][0];
+    expect(call.where.userRoles.some.unitId).toBe('unit-1');
+    // unit-1 admin, employee assigned to unit-1: personal fields are visible.
+    expect(data[0].nik).toBe('3201010101010001');
+  });
+
+  it('reports the assignment unit, not the home unit, on a reassigned row (FLAG 5)', async () => {
+    // The row must carry the unit the person actually serves. Reporting the
+    // home unit (unit-2) while the scope selected them for unit-1 is the exact
+    // inconsistency the e2e directory assertions caught: a unit-1 admin saw the
+    // employee listed under unit-1 but with unit-2 in the row.
+    (prisma.user.findMany as any).mockResolvedValue([
+      teacherUser({
+        unitId: 'unit-2',
+        unit: { id: 'unit-2', name: 'SMP IT' },
+        userRoles: [
+          {
+            role: { code: 'SDIT_GURU' },
+            unitId: 'unit-1',
+            unit: { id: 'unit-1', name: 'SD IT Cipansor' },
+          },
+        ],
+      }),
+    ]);
+
+    const { data } = await getEmployeeDirectory({ page: 1, limit: 20 }, UNIT_ADMIN_ACTOR);
+
+    expect(data[0].unitId).toBe('unit-1');
+    expect(data[0].unit).toEqual({ id: 'unit-1', name: 'SD IT Cipansor' });
+  });
+
+  it('falls back to the home unit when the assignment carries no unit', async () => {
+    (prisma.user.findMany as any).mockResolvedValue([
+      teacherUser({
+        unitId: 'unit-2',
+        unit: { id: 'unit-2', name: 'SMP IT' },
+        userRoles: [{ role: { code: 'SDIT_GURU' }, unitId: null, unit: null }],
+      }),
+    ]);
+
+    const { data } = await getEmployeeDirectory({ page: 1, limit: 20 }, FOUNDATION_ACTOR);
+
+    expect(data[0].unitId).toBe('unit-2');
+    expect(data[0].unit).toEqual({ id: 'unit-2', name: 'SMP IT' });
+  });
+
+  it('getEmployeeById reports the assignment unit too (FLAG 5)', async () => {
+    (prisma.user.findFirst as any).mockResolvedValue(
+      teacherUser({
+        unitId: 'unit-2',
+        unit: { id: 'unit-2', name: 'SMP IT' },
+        userRoles: [
+          {
+            role: { code: 'SDIT_GURU' },
+            unitId: 'unit-1',
+            unit: { id: 'unit-1', name: 'SD IT Cipansor' },
+          },
+        ],
+      })
+    );
+
+    const employee = await getEmployeeById('user-1', UNIT_ADMIN_ACTOR);
+
+    expect(employee?.unitId).toBe('unit-1');
+    expect(employee?.unit).toEqual({ id: 'unit-1', name: 'SD IT Cipansor' });
   });
 
   // ---------------------------------------------------------------

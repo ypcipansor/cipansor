@@ -9,6 +9,7 @@ import {
   cleanupBlobBestEffort,
   deleteBlobIfStillOrphaned,
   getBlobCreatedAt,
+  getBlobUploaderId,
   RACE_RECHECK_DELAY_MS,
   containerForDestination,
   isUploadDestination,
@@ -145,6 +146,40 @@ describe('Cloud Storage Utility (Azure Blob Storage Provider)', () => {
     expect(result.containerName).toBe('e-office-documents');
     expect(result.blobName).toBe('dummy.pdf');
     expect(mockCreateIfNotExists).toHaveBeenCalledWith({ access: undefined });
+  });
+
+  it('records the uploader id in blob metadata so a discard can be authorised (BUG 2)', async () => {
+    process.env.AZURE_STORAGE_CONNECTION_STRING = CONNECTION_STRING;
+
+    await uploadToCloudStorage(
+      '/tmp/dummy.pdf',
+      'dummy.pdf',
+      'application/pdf',
+      'cipansor-documents',
+      'user-42'
+    );
+
+    expect(mockUploadFile).toHaveBeenCalledWith('/tmp/dummy.pdf', {
+      blobHTTPHeaders: { blobContentType: 'application/pdf' },
+      metadata: { uploaderId: 'user-42' },
+    });
+  });
+
+  it('omits metadata entirely when no uploader is supplied', async () => {
+    process.env.AZURE_STORAGE_CONNECTION_STRING = CONNECTION_STRING;
+
+    await uploadToCloudStorage(
+      '/tmp/dummy.pdf',
+      'dummy.pdf',
+      'application/pdf',
+      'cipansor-documents'
+    );
+
+    // The metadata key is absent rather than `undefined`, so a non-request
+    // caller keeps the exact call shape it had before.
+    expect(mockUploadFile).toHaveBeenCalledWith('/tmp/dummy.pdf', {
+      blobHTTPHeaders: { blobContentType: 'application/pdf' },
+    });
   });
 
   it('resolves credentials from the connection string alone when env vars are absent', async () => {
@@ -416,9 +451,10 @@ describe('deleteBlobIfStillOrphaned (upload→create race)', () => {
       // Before the delay elapses the re-probe has not run yet.
       expect(recheck).not.toHaveBeenCalled();
 
-      await vi.advanceTimersByTimeAsync(RACE_RECHECK_DELAY_MS);
+      // Settle probe, then the final probe that guards the delete (BUG 3).
+      await vi.advanceTimersByTimeAsync(RACE_RECHECK_DELAY_MS + 500);
       await expect(pending).resolves.toBe(true);
-      expect(recheck).toHaveBeenCalledTimes(1);
+      expect(recheck).toHaveBeenCalledTimes(2);
       expect(mockDeleteBlob).toHaveBeenCalledWith('orphan.pdf', {
         deleteSnapshots: 'include',
       });
@@ -438,6 +474,58 @@ describe('deleteBlobIfStillOrphaned (upload→create race)', () => {
     ).resolves.toBe(false);
     expect(recheck).toHaveBeenCalledTimes(1);
     expect(mockDeleteBlob).not.toHaveBeenCalled();
+  });
+
+  it('cancels the delete when the create commits between the settle and final probe (BUG 3)', async () => {
+    // The strengthened guarantee: the settle probe (1) sees no record, but the
+    // create commits while the FINAL probe's own delay elapses, so the final
+    // probe (2) finds it and the irreversible delete is cancelled. This is the
+    // window a single probe could not see.
+    vi.useFakeTimers();
+    try {
+      const recheck = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+      const pending = deleteBlobIfStillOrphaned(
+        'cipansor-documents',
+        'orphan.pdf',
+        recheck,
+        RACE_RECHECK_DELAY_MS
+      );
+
+      await vi.advanceTimersByTimeAsync(RACE_RECHECK_DELAY_MS + 500);
+      await expect(pending).resolves.toBe(false);
+      expect(recheck).toHaveBeenCalledTimes(2);
+      expect(mockDeleteBlob).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('honours the soft age floor: a fresh blob keeps a window long enough for a create', async () => {
+    // A blob created a moment ago must still give an in-flight create the full
+    // window: the settle delay is measured from the blob's creation time, not
+    // from when the discard was invoked.
+    vi.useFakeTimers();
+    try {
+      const created = new Date(Date.now() - 500); // 500ms old
+      mockGetProperties.mockResolvedValue({ createdOn: created, lastModified: created });
+
+      const recheck = vi.fn().mockResolvedValue(false);
+      const pending = deleteBlobIfStillOrphaned(
+        'cipansor-documents',
+        'fresh.pdf',
+        recheck,
+        RACE_RECHECK_DELAY_MS
+      );
+
+      // 500ms less than the full window already elapsed, so the settle probe
+      // has not run yet.
+      expect(recheck).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(RACE_RECHECK_DELAY_MS + 500);
+      await expect(pending).resolves.toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('deletes a blob that is still an orphan after the delay', async () => {
@@ -490,6 +578,45 @@ describe('getBlobCreatedAt', () => {
     mockGetProperties.mockRejectedValueOnce(new Error('Not found'));
 
     await expect(getBlobCreatedAt('cipansor-documents', 'a.pdf')).resolves.toBeNull();
+  });
+});
+
+describe('getBlobUploaderId', () => {
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  it('returns the uploader recorded at upload time (BUG 2)', async () => {
+    process.env.AZURE_STORAGE_CONNECTION_STRING = CONNECTION_STRING;
+    mockGetProperties.mockResolvedValue({ metadata: { uploaderId: 'user-7' } });
+
+    await expect(getBlobUploaderId('cipansor-documents', 'a.pdf')).resolves.toBe('user-7');
+  });
+
+  it('returns null for a blob with no recorded uploader (refused by the caller)', async () => {
+    process.env.AZURE_STORAGE_CONNECTION_STRING = CONNECTION_STRING;
+    mockGetProperties.mockResolvedValue({ metadata: {} });
+
+    await expect(getBlobUploaderId('cipansor-documents', 'a.pdf')).resolves.toBeNull();
+  });
+
+  it('returns null when Azure is not configured', async () => {
+    delete process.env.AZURE_STORAGE_CONNECTION_STRING;
+    await expect(getBlobUploaderId('cipansor-documents', 'a.pdf')).resolves.toBeNull();
+  });
+
+  it('returns null (fail-closed) when properties cannot be read', async () => {
+    process.env.AZURE_STORAGE_CONNECTION_STRING = CONNECTION_STRING;
+    mockGetProperties.mockRejectedValueOnce(new Error('Not found'));
+
+    await expect(getBlobUploaderId('cipansor-documents', 'a.pdf')).resolves.toBeNull();
   });
 });
 

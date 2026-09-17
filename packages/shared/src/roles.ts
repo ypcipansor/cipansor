@@ -285,6 +285,59 @@ export function mayAdministerEmployeeDocuments(
   return HR_DOCUMENT_ROLE_CODES.includes(roleCode);
 }
 
+/**
+ * Roles that may act in the payment-verification queue — the Tata Usaha (maker)
+ * and administrative/treasurer (checker) who decide on a transfer proof.
+ *
+ * These are exactly the people the finance routes let into the verification
+ * queue (`authorize(SUPER_ADMIN, UNIT_ADMIN, STAFF)` on the legacy buckets), so
+ * they must also be able to OPEN the proof they are judging. The proof used to
+ * be classified as an employee document, whose read rule only admits
+ * `HR_DOCUMENT_ROLE_CODES` — which excludes `*_BENDAHARA` — so a unit treasurer
+ * could see the queue and then got a 403 on every "Lihat Bukti".
+ *
+ * Deliberately a separate group, NOT a widening of `HR_DOCUMENT_ROLE_CODES`:
+ * being able to verify a payment must not also open a colleague's KTP or Ijazah.
+ */
+export const FINANCE_VERIFIER_ROLE_CODES: readonly string[] = [
+  ...TATA_USAHA_ROLE_CODES,
+  ...BENDAHARA_ROLE_CODES,
+  ...ADMIN_ROLE_CODES,
+];
+
+/** True when a role may open a payment's transfer proof in its own unit. */
+export function mayVerifyPayments(roleCode: string | null | undefined): boolean {
+  if (!roleCode) return false;
+  return FINANCE_VERIFIER_ROLE_CODES.includes(roleCode);
+}
+
+/**
+ * Roles whose job includes PUBLISHING media, i.e. writing to the public blob
+ * container (`media-public`) that is served to the open internet with no SAS.
+ *
+ * Uploading there is a publishing act, not a storage preference: the container
+ * is world-readable (`access: 'blob'`), so an unauthorised caller could push a
+ * KTP scan or an internal memo into it and read it back with no credentials.
+ * Before this group existed any authenticated user — a parent, a santri — could
+ * select `destination=media-public`. The set is the people who actually author
+ * public content: system/unit admins, yayasan governance, the unit office and
+ * the unit head.
+ */
+export const PUBLIC_MEDIA_ROLE_CODES: readonly string[] = [
+  ...ADMIN_ROLE_CODES,
+  ...GOVERNANCE_ROLE_CODES,
+  ...TATA_USAHA_ROLE_CODES,
+  ...PRINCIPAL_ROLE_CODES,
+];
+
+/** True when a role may upload to the public media container. */
+export function mayUploadPublicMedia(
+  roleCode: string | null | undefined,
+): boolean {
+  if (!roleCode) return false;
+  return PUBLIC_MEDIA_ROLE_CODES.includes(roleCode);
+}
+
 /** Every RoleCode in the system — must equal the Prisma enum exactly. */
 export const ALL_ROLE_CODES: readonly string[] = [
   ...ADMIN_ROLE_CODES,

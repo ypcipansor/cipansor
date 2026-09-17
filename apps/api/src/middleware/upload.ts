@@ -5,6 +5,7 @@ import { randomUUID } from 'crypto';
 import { Request, Response, NextFunction } from 'express';
 import { verifyToken } from '@/lib/jwt';
 import { containerForDestination } from '@/utils/cloud-storage';
+import { mayUploadPublicMedia } from '@cipansor/shared';
 import { Errors } from './error';
 
 // Ensure upload directory exists
@@ -189,6 +190,32 @@ export async function verifyStoredFile(file: Express.Multer.File): Promise<boole
  */
 export type DestinationResolver = (req: Request, res: Response) => string | undefined;
 
+/**
+ * Authorise a requested upload destination against the actor's role.
+ *
+ * `media-public` is a PUBLISHING act: the container is world-readable
+ * (`access: 'blob'`), so an unauthorised caller who could select it would push
+ * a KTP scan or an internal memo to the open internet. Only a role that authors
+ * public content (`mayUploadPublicMedia`) may keep that purpose.
+ *
+ * Every other caller is downgraded to the private default rather than refused:
+ * the destination is a purpose, not a container, so an unprivileged upload
+ * still succeeds — it just cannot land anywhere world-readable. An unrecognised
+ * or absent purpose also collapses to private, the only safe direction.
+ *
+ * The container choice is therefore made server-side from the actor's role, and
+ * a query string alone can never select the public container.
+ */
+export function authorizedUploadDestination(
+  destination: string | undefined,
+  roleCode: string | null | undefined
+): string | undefined {
+  if (destination === 'media-public' && !mayUploadPublicMedia(roleCode)) {
+    return 'private';
+  }
+  return destination;
+}
+
 // Middleware to map uploaded file to body.fileUrl
 export const handleSingleUpload = (
   fieldName: string,
@@ -236,16 +263,30 @@ export const handleSingleUpload = (
           const mimeType = req.file.mimetype;
           const localPath = req.file.path;
 
+          // The container is chosen from the caller's ROLE, not the query
+          // string: a non-publisher who asks for `media-public` is downgraded
+          // to the private default before the mapping runs, so an
+          // authenticated-but-unauthorised caller can never write to the
+          // world-readable container.
           const containerName = containerForDestination(
-            // The module supplies the validated destination; the raw query is
-            // the fallback for a mount without `validateQuery`.
-            resolveDestination?.(req, res) ??
-              (typeof req.query?.destination === 'string' ? req.query.destination : undefined)
+            authorizedUploadDestination(
+              // The module supplies the validated destination; the raw query is
+              // the fallback for a mount without `validateQuery`.
+              resolveDestination?.(req, res) ??
+                (typeof req.query?.destination === 'string' ? req.query.destination : undefined),
+              req.user?.roleCode
+            )
           );
           const { uploadToCloudStorage } = await import('@/utils/cloud-storage');
           let storageResult;
           try {
-            storageResult = await uploadToCloudStorage(localPath, filename, mimeType, containerName);
+            storageResult = await uploadToCloudStorage(
+              localPath,
+              filename,
+              mimeType,
+              containerName,
+              req.user?.id
+            );
           } catch (error) {
             // A failed cloud upload must not leave the staging file behind;
             // repeated failures would otherwise fill the upload volume.

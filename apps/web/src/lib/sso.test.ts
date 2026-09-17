@@ -238,7 +238,7 @@ describe("loginWithGoogle", () => {
     );
   });
 
-  it("rejects when the prompt is suppressed/not displayed (BUG 9)", async () => {
+  it("rejects with a suppression-specific message when the prompt is not displayed (BUG 9, FLAG 6)", async () => {
     const { loginWithGoogle } = await import("./sso");
     (window as unknown as { google: unknown }).google = {
       accounts: {
@@ -258,8 +258,11 @@ describe("loginWithGoogle", () => {
       },
     };
 
+    // A suppressed prompt is not a dismissal: the caller needs a message that
+    // says the browser blocked it and points at the fallback button, not a bare
+    // "dibatalkan" that reads as if the user cancelled.
     await expect(loginWithGoogle("client-id")).rejects.toThrow(
-      /dibatalkan/,
+      /tidak dapat ditampilkan/,
     );
   });
 
@@ -304,5 +307,91 @@ describe("loginWithGoogle", () => {
     await expect(loginWithGoogle("client-id")).rejects.toThrow(
       /tidak mengembalikan id_token/,
     );
+  });
+});
+
+describe("loginWithGoogleButton (FLAG 6 fallback)", () => {
+  beforeEach(async () => {
+    vi.resetModules();
+    document.head.innerHTML = "";
+    delete (window as unknown as { google?: unknown }).google;
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("renders GIS's explicit button into the supplied container", async () => {
+    const { loginWithGoogleButton } = await import("./sso");
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+
+    let captured: ((response: { credential?: string }) => void) | undefined;
+    const renderButton = vi.fn((parent: HTMLElement) => {
+      const button = document.createElement("div");
+      button.textContent = "Sign in with Google";
+      parent.appendChild(button);
+    });
+    (window as unknown as { google: unknown }).google = {
+      accounts: {
+        id: {
+          initialize: (config: {
+            callback: (r: { credential?: string }) => void;
+          }) => {
+            captured = config.callback;
+          },
+          prompt: () => {},
+          renderButton,
+        },
+      },
+    };
+
+    const promise = loginWithGoogleButton("client-id", container);
+    // The SDK load resolves on a microtask, so let the flow reach renderButton.
+    await vi.waitFor(() => expect(renderButton).toHaveBeenCalled());
+    expect(renderButton).toHaveBeenCalledWith(container, expect.any(Object));
+    captured?.({ credential: "google-id-token" });
+
+    await expect(promise).resolves.toEqual({ idToken: "google-id-token" });
+    // The container is cleared once the flow settles, so a retry starts clean.
+    expect(container.childElementCount).toBe(0);
+  });
+
+  it("rejects when GIS returns no credential from the rendered button", async () => {
+    const { loginWithGoogleButton } = await import("./sso");
+    const container = document.createElement("div");
+
+    (window as unknown as { google: unknown }).google = {
+      accounts: {
+        id: {
+          initialize: (config: {
+            callback: (r: { credential?: string }) => void;
+          }) => {
+            config.callback({});
+          },
+          prompt: () => {},
+          renderButton: () => {},
+        },
+      },
+    };
+
+    await expect(loginWithGoogleButton("client-id", container)).rejects.toThrow(
+      /tidak mengembalikan id_token/,
+    );
+  });
+
+  it("rejects when the GIS SDK is unavailable", async () => {
+    const { loginWithGoogleButton } = await import("./sso");
+    const container = document.createElement("div");
+
+    // `loadGoogleIdentityServices` injects the script but never resolves; stub
+    // the global away after injection to hit the guard.
+    (window as unknown as { google: unknown }).google = undefined;
+
+    const attempt = loginWithGoogleButton("client-id", container);
+    const script = document.querySelector("script");
+    script?.dispatchEvent(new Event("load"));
+
+    await expect(attempt).rejects.toThrow(/tidak tersedia/);
   });
 });

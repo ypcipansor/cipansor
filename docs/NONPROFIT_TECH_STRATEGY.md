@@ -42,6 +42,18 @@ Dokumen ini menyusun strategi arsitektur dan bisnis terbaik untuk menggabungkan 
 
 **Status kode yang sudah ada di `apps/api`:** endpoint `POST /api/auth/sso/login` dan `GET /api/auth/sso/config` (menukarkan `idToken` Google/Microsoft yang sudah diverifikasi OIDC). Rute login SSO **sengaja tidak dipasangi Captcha/Turnstile** — kredensialnya adalah `idToken` yang diterbitkan oleh penyedia OIDC yang sudah menerapkan perlindungan bot-nya sendiri — dan dilindungi `authLimiter`. SSO disarankan **hanya diaktifkan bila alur web (login page → React Query hook → API) sudah terhubung ujung-ke-ujung dan semua tes e2e lulus**; jika belum, defer SSO ke fase lanjutan.
 
+**Batasan Google One Tap di produksi.** Alur utama tombol "Google Workspace" memakai
+`google.accounts.id.prompt()` (One Tap). Pop-up itu dirender di dalam iframe pihak ketiga,
+sehingga **browser boleh memblokirnya**: Safari dan Firefox (ITP / pembatasan cookie pihak
+ketiga) serta kebijakan enterprise yang memblokir cookie pihak ketiga sering menekan One Tap
+tanpa aksi pengguna. Karena itu GIS melaporkan `isNotDisplayedMoment()`, dan halaman masuk
+menampilkan pesan yang menjelaskan sebabnya lalu **menampilkan tombol fallback**
+`google.accounts.id.renderButton()` — tombol same-origin biasa yang tidak terkena pemblokiran
+yang sama (`loginWithGoogleButton` di `apps/web/src/lib/sso.ts`). One Tap tetap menjadi jalur
+utama karena lebih mulus; fallback hanya muncul setelah browser menyatakan prompt tidak bisa
+ditampilkan. Jalur masuk lain (kata sandi lokal, Microsoft 365) selalu tersedia, jadi tidak ada
+pengguna yang terkunci oleh perilaku browser ini.
+
 ---
 
 ## 3. STRATEGI PEMBAGIAN PERAN & EKOSISTEM SOFTWARE (BEST PRACTICE WORKFLOW)

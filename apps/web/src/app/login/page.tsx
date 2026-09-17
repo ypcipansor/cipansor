@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
@@ -33,7 +33,7 @@ import { TwoFactorVerify } from "@/components/auth/TwoFactorVerify";
 import { TwoFactorSetup } from "@/components/auth/TwoFactorSetup";
 import { toast } from "sonner";
 import { useSSOConfig } from "@/hooks/use-sso-config";
-import { loginWithGoogle, loginWithMicrosoft } from "@/lib/sso";
+import { loginWithGoogle, loginWithGoogleButton, loginWithMicrosoft } from "@/lib/sso";
 import {
   DEMO_ACCOUNTS,
   DEMO_TABS,
@@ -134,6 +134,13 @@ function LoginPageContent() {
   // SSO config via the React Query data-layer hook (never the Axios instance).
   const { data: ssoConfig, isError: ssoConfigError } = useSSOConfig();
 
+  // Declared before the SSO handlers because the One Tap fallback effect below
+  // reads them. Holds GIS's explicit renderButton when One Tap is suppressed;
+  // it stays empty on every browser where `prompt()` works, so the fallback UI
+  // only appears when the browser has said the prompt cannot be shown.
+  const [googleFallback, setGoogleFallback] = useState(false);
+  const googleButtonRef = useRef<HTMLDivElement | null>(null);
+
   /**
    * Shared tail of both SSO flows: hand the ID token to the backend and route
    * on success. Extracted because Google and Microsoft differ only in how the
@@ -177,6 +184,33 @@ function LoginPageContent() {
       const { idToken } = await loginWithGoogle(ssoConfig.googleClientId);
       await completeSsoLogin("google", idToken);
     } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Gagal memulai alur masuk Google Workspace.";
+      // One Tap was suppressed by the browser (Safari/Firefox ITP, enterprise
+      // cookie policy). Retrying `prompt()` cannot help, so surface GIS's
+      // explicit renderButton instead — it is an ordinary same-origin button
+      // and is not subject to the same suppression.
+      if (message.includes("tidak dapat ditampilkan")) {
+        setGoogleFallback(true);
+        toast.info(
+          "Pop-up akun Google tidak didukung di peramban ini. Gunakan tombol Google yang muncul di bawah.",
+        );
+        return;
+      }
+      toast.error(`Gagal masuk dengan Google Workspace: ${message}`);
+    }
+  };
+
+  const handleGoogleButtonLogin = async () => {
+    clearError();
+    if (ssoConfigError || !ssoConfig) return;
+    if (!ssoConfig.googleEnabled || !ssoConfig.googleClientId) return;
+    const container = googleButtonRef.current;
+    if (!container) return;
+    try {
+      const { idToken } = await loginWithGoogleButton(ssoConfig.googleClientId, container);
+      await completeSsoLogin("google", idToken);
+    } catch (err) {
       toast.error(
         err instanceof Error
           ? `Gagal masuk dengan Google Workspace: ${err.message}`
@@ -184,6 +218,17 @@ function LoginPageContent() {
       );
     }
   };
+
+  // Once the fallback is requested, GIS's button can be rendered into the
+  // container. Doing it in an effect (rather than in the click handler) means
+  // the container is committed to the DOM before `renderButton` touches it.
+  useEffect(() => {
+    if (!googleFallback) return;
+    void handleGoogleButtonLogin();
+    // `handleGoogleButtonLogin` is stable enough for this one-shot render; the
+    // guard is the `googleFallback` flag, not the callback identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [googleFallback]);
 
   const handleMicrosoftLogin = async () => {
     clearError();
@@ -554,6 +599,16 @@ function LoginPageContent() {
                 </svg>
                 Google Workspace
               </Button>
+
+              {/* GIS's own button, rendered only when One Tap is suppressed.
+                  It must not sit inside the React <Button> above: GIS injects
+                  its iframe into this container and would fight React's
+                  reconciler over the same DOM node. */}
+              <div
+                ref={googleButtonRef}
+                className={googleFallback ? "flex justify-center" : "hidden"}
+                data-testid="google-sso-fallback"
+              />
 
               <Button
                 type="button"

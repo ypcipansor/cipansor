@@ -62,6 +62,17 @@ interface GoogleIdentityServices {
         use_fedcm_for_prompt?: boolean;
       }) => void;
       prompt: (momentListener?: (notification: GooglePromptMomentNotification) => void) => void;
+      renderButton: (
+        parent: HTMLElement,
+        options: {
+          type?: string;
+          theme?: string;
+          size?: string;
+          text?: string;
+          shape?: string;
+          locale?: string;
+        },
+      ) => void;
     };
   };
 }
@@ -189,7 +200,22 @@ export async function loginWithGoogle(
       const dismissed = notification.isDismissedMoment?.() ?? false;
       const skipped = notification.isSkippedMoment?.() ?? false;
       const notDisplayed = notification.isNotDisplayedMoment?.() ?? false;
-      if (dismissed || skipped || notDisplayed) {
+      // A suppressed One Tap (Safari/Firefox ITP, an enterprise cookie policy)
+      // is not the user dismissing anything, and retrying the same path cannot
+      // help. Give the reason and point at the fallback button that does work,
+      // rather than a bare "dibatalkan".
+      if (notDisplayed) {
+        settle(() =>
+          reject(
+            new Error(
+              "Pilih akun Google tidak dapat ditampilkan di peramban ini. " +
+                "Gunakan tombol Google pada halaman, atau masuk dengan kata sandi / Microsoft 365.",
+            ),
+          ),
+        );
+        return;
+      }
+      if (dismissed || skipped) {
         settle(() => reject(new Error("Pilih akun Google dibatalkan")));
       }
     };
@@ -201,6 +227,80 @@ export async function loginWithGoogle(
     }, timeoutMs);
 
     gis.accounts.id.prompt(momentListener);
+  });
+}
+
+/**
+ * Render the explicit Google sign-in button as a fallback for browsers that
+ * suppress One Tap.
+ *
+ * `prompt()` is the only GIS entry point that can complete a sign-in without a
+ * user gesture, and precisely for that reason browsers are free to block it —
+ * Safari/Firefox ITP treats the One Tap iframe as third-party, and enterprise
+ * cookie policies do the same. `renderButton` is an ordinary same-origin
+ * button, so it is not subject to the same suppression.
+ *
+ * The login page keeps the One Tap `prompt()` as the primary flow (it is
+ * smoother, and was the behaviour before this change) and calls this only when
+ * that flow reports `isNotDisplayedMoment()` — i.e. once the browser has told
+ * us the prompt cannot be shown.
+ *
+ * Resolves with the ID token from the first credential the rendered button
+ * yields.
+ */
+export async function loginWithGoogleButton(
+  clientId: string,
+  container: HTMLElement,
+  timeoutMs = 120_000,
+): Promise<GoogleCredentialResult> {
+  await loadGoogleIdentityServices();
+
+  return new Promise<GoogleCredentialResult>((resolve, reject) => {
+    const gis = window.google;
+    if (!gis?.accounts?.id) {
+      reject(new Error("Google Identity Services tidak tersedia"));
+      return;
+    }
+
+    const state: { settled: boolean; timer?: ReturnType<typeof setTimeout> } = {
+      settled: false,
+    };
+    const settle = (fn: () => void) => {
+      if (state.settled) return;
+      state.settled = true;
+      if (state.timer) clearTimeout(state.timer);
+      container.replaceChildren();
+      fn();
+    };
+
+    gis.accounts.id.initialize({
+      client_id: clientId,
+      use_fedcm_for_prompt: false,
+      callback: (response) => {
+        settle(() => {
+          if (!response.credential) {
+            reject(new Error("Google tidak mengembalikan id_token"));
+            return;
+          }
+          resolve({ idToken: response.credential });
+        });
+      },
+    });
+
+    container.replaceChildren();
+    gis.accounts.id.renderButton(container, {
+      type: "standard",
+      theme: "outline",
+      size: "large",
+      text: "signin_with",
+      shape: "rectangular",
+    });
+
+    state.timer = setTimeout(() => {
+      settle(() =>
+        reject(new Error("Waktu masuk Google habis. Silakan coba lagi.")),
+      );
+    }, timeoutMs);
   });
 }
 

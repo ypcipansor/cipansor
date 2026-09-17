@@ -5,6 +5,7 @@ import {
   isAllowedContainer,
   isPublicContainer,
   deleteBlobIfStillOrphaned,
+  getBlobUploaderId,
 } from '@/utils/cloud-storage';
 import { Errors } from '@/middleware/error';
 import {
@@ -15,7 +16,7 @@ import {
 } from '@/utils/blob-owner';
 import { seesAllUnits, isFoundationScopedRole } from '@/utils/resolve-unit-id';
 import { letterScopeWhere } from '@/utils/letter-access';
-import { mayAdministerEmployeeDocuments } from '@cipansor/shared';
+import { mayAdministerEmployeeDocuments, mayVerifyPayments } from '@cipansor/shared';
 import type { JwtPayload } from '@/lib/jwt';
 import type { GetSasUrlResult } from '@cipansor/shared';
 
@@ -82,6 +83,20 @@ async function assertActorMayReadBlob(actor: BlobActor, owner: BlobOwner): Promi
         owner.unitId === actor.unitId
       );
     }
+    case 'payment-proof': {
+      // The student the payment is for reaches their own proof; a foundation
+      // role reaches any; a finance verifier (TU / treasurer / admin) reaches
+      // one in their own unit. Everyone else is refused — this is personal
+      // financial data, not a personnel document, so it is NOT widened by
+      // `mayAdministerEmployeeDocuments`.
+      if (owner.studentUserId === actor.id) return true;
+      if (isFoundationScopedRole(actor.roleCode)) return true;
+      return (
+        mayVerifyPayments(actor.roleCode) &&
+        !!owner.unitId &&
+        owner.unitId === actor.unitId
+      );
+    }
   }
 }
 
@@ -136,6 +151,31 @@ export async function resolveSasForBlob(url: string, actor: BlobActor): Promise<
 }
 
 /**
+ * Authorise a discard of an orphan blob.
+ *
+ * An orphan blob has no database record to name an owner, so the uploader
+ * recorded in blob metadata at upload time is the authority. Only that uploader
+ * (or a foundation/super-admin role sweeping on their behalf) may discard.
+ *
+ * A blob with no recorded uploader is refused for everyone: "we do not know who
+ * owns this" must never degrade into "anyone may delete it", which is exactly
+ * the bug this closes. The failure is a 403 rather than a silent success so a
+ * caller that genuinely needs cleanup can be told to re-upload/re-save.
+ */
+async function assertActorMayDiscardBlob(
+  actor: BlobActor,
+  containerName: string,
+  blobName: string
+): Promise<void> {
+  if (isFoundationScopedRole(actor.roleCode)) return;
+
+  const uploaderId = await getBlobUploaderId(containerName, blobName);
+  if (uploaderId && uploaderId === actor.id) return;
+
+  throw Errors.forbidden('Anda tidak berwenang membuang berkas tersebut');
+}
+
+/**
  * Discard an upload that never became a stored record.
  *
  * The upload and the record that references it are two separate requests
@@ -146,23 +186,33 @@ export async function resolveSasForBlob(url: string, actor: BlobActor): Promise<
  *
  * Safety: only a blob that NO record references may be discarded. A blob some
  * record points at is a live document and is refused (deleting it would be the
- * exact cross-record destruction the ownership checks exist to prevent). The
- * caller must already know the exact, unguessable blob URL, which bounds the
- * blast radius of an authenticated user discarding an orphan.
+ * exact cross-record destruction the ownership checks exist to prevent).
  *
- * **Race.** Upload and create are two requests, and a discard can slip between
- * them: it reads "no record references this" at the instant the create request
- * is committing. `deleteBlobIfStillOrphaned` closes this by waiting
- * `RACE_RECHECK_DELAY_MS` and then re-probing the reference index — a record
- * that committed during the wait makes the delete a no-op, and this function
- * then reports the discard as not-yet-done rather than pretending it succeeded.
+ * **Authorisation (BUG 2).** A blob that no record references has no owner to
+ * read off the database, so an attacker who knows an orphan URL — a colleague's
+ * upload whose record is committing, say — must not be able to destroy it. The
+ * discard is therefore bound to whoever uploaded the blob: `uploadToCloudStorage`
+ * records the uploader in the blob's own metadata, and this refuses any actor
+ * other than that uploader (foundation/super-admin roles may still sweep). A
+ * blob with no recorded uploader — one uploaded before this guard existed, or
+ * written out of band — is refused for everyone, because "no record of who owns
+ * this" cannot be turned into "anyone may delete it".
+ *
+ * **Race (BUG 3).** Upload and create are two requests, and a discard can slip
+ * between them: it reads "no record references this" at the instant the create
+ * request is committing. `deleteBlobIfStillOrphaned` closes this by waiting
+ * `RACE_RECHECK_DELAY_MS` and then re-probing the reference index immediately
+ * before the delete — a record that committed during the wait makes the delete
+ * a no-op. The re-probe and the delete are deliberately adjacent (no await of
+ * consequence between them), and the probe is exhaustive (`isBlobStillReferenced`
+ * covers every stored blob-URL field, not just the first matching owner).
  *
  * Both callers (HR documents, e-office letters) invoke this ONLY after a create
  * request has already failed, so the normal path never races a live write; the
  * delay exists for the window where a *different* request is committing the
  * record for the same blob.
  */
-export async function discardOrphanBlob(url: string, _actor: BlobActor): Promise<void> {
+export async function discardOrphanBlob(url: string, actor: BlobActor): Promise<void> {
   const parsed = parseBlobUrl(url);
   if (!parsed) return; // local /uploads path — nothing in this application to remove
   if (!isAllowedContainer(parsed.containerName)) {
@@ -177,6 +227,9 @@ export async function discardOrphanBlob(url: string, _actor: BlobActor): Promise
   if (await isBlobStillReferenced(url)) {
     throw Errors.conflict('Berkas sudah tersimpan pada sebuah catatan dan tidak dapat dibuang');
   }
+
+  // Only the uploader may discard their own abandoned blob (see the doc above).
+  await assertActorMayDiscardBlob(actor, parsed.containerName, parsed.blobName);
 
   // Wait out the race window, then re-probe: a create that commits while we
   // wait must make this a no-op.

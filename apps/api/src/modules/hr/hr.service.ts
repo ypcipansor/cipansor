@@ -161,8 +161,8 @@ function toHrEmployee(
     userId: user.id,
     nip: teacher?.nip ?? staff?.nip ?? '-',
     user: { id: user.id, name: user.name, email: user.email },
-    unitId: user.unitId ?? '',
-    unit: user.unit ?? { id: '', name: '' },
+    unitId: directoryUnitOf(user) ?? '',
+    unit: directoryUnitRelation(user) ?? { id: '', name: '' },
     departmentId: teacher?.departmentId ?? staff?.departmentId ?? undefined,
     department:
       teacher?.department ??
@@ -214,18 +214,48 @@ const HR_EMPLOYEE_INCLUDE = {
   unit: { select: { id: true, name: true } },
   teacher: { include: { department: { select: { id: true, name: true } } } },
   staff: { include: { departmentRel: { select: { id: true, name: true } } } },
-  // The DTO's TEACHER/STAFF label comes from the live assignment, not the
-  // deprecated `User.role` column (which is being removed).
+  // The DTO's TEACHER/STAFF label and the directory's unit scope both come from
+  // the live assignment (primary first), not the deprecated `User.role` column
+  // or the home unit. The assignment's own unit rides along so the row reports
+  // the unit the person actually serves — the same one the scope filtered on —
+  // rather than their home unit, which legitimately differs after a reassignment.
   userRoles: {
     where: { ...activeUserRoleWhere(), role: { code: { in: [...HR_EMPLOYEE_ROLE_CODES] } } },
     orderBy: { isPrimary: 'desc' },
     take: 1,
-    select: { role: { select: { code: true } } },
+    select: {
+      role: { select: { code: true } },
+      unitId: true,
+      unit: { select: { id: true, name: true } },
+    },
   },
 } satisfies Prisma.UserInclude;
 
 /** A User row with exactly the relations {@link toHrEmployee} reads. */
 type HrEmployeeRow = Prisma.UserGetPayload<{ include: typeof HR_EMPLOYEE_INCLUDE }>;
+
+/**
+ * The unit that decides an employee's directory scope *and* is reported in the
+ * row: their primary live role assignment's unit, falling back to the home unit.
+ * Mirrors `tokenUnitId` and `assignmentUnit` in `utils/blob-owner.ts`, so the
+ * directory, the SAS owner check and the token all agree on which unit a person
+ * belongs to. Reporting the home unit here while filtering on the assignment
+ * unit made a reassigned employee's row carry a different unit than the one the
+ * scope selected them for.
+ */
+function directoryUnitOf(user: HrEmployeeRow): string | null {
+  return user.userRoles?.[0]?.unitId ?? user.unitId;
+}
+
+/** The unit relation a directory row reports, tracking {@link directoryUnitOf}. */
+function directoryUnitRelation(
+  user: HrEmployeeRow
+): { id: string; name: string } | undefined {
+  const assignment = user.userRoles?.[0];
+  if (assignment?.unit) return assignment.unit;
+  if (assignment?.unitId) return { id: assignment.unitId, name: '' };
+  return user.unit ?? undefined;
+}
 
 /**
  * The caller of an employee read, used to scope the directory and decide
@@ -331,11 +361,21 @@ export async function getEmployeeDirectory(
     // SDIT_ADMIN read the whole roster of a different unit even though the
     // token only scopes one. A caller with no unit at all is narrowed to their
     // own record (an absent `unitId` filter would match every row).
-    if (seesAllUnits(actor)) {
-      if (params.unitId) where.unitId = params.unitId;
-    } else if (actor.unitId) {
-      where.unitId = actor.unitId;
-    } else {
+    //
+    // The scope names the ASSIGNMENT unit, matching `tokenUnitId` /
+    // `activeUserRoleWhere`, and is applied to the employee's live role
+    // assignment rather than to `User.unitId` (their home unit). The two
+    // legitimately disagree when someone is reassigned: filtering the home unit
+    // dropped a person from the roster of the unit they actually serve, and
+    // their token is scoped to the assignment.
+    const scopeUnitId = seesAllUnits(actor) ? params.unitId : actor.unitId;
+    if (scopeUnitId) {
+      (where.userRoles as Prisma.UserRoleAssignmentListRelationFilter).some = {
+        ...activeUserRoleWhere(),
+        unitId: scopeUnitId,
+        role: { code: { in: [...memberRoleCodes] } },
+      };
+    } else if (!seesAllUnits(actor)) {
       where.id = actor.id;
     }
   }
@@ -364,7 +404,7 @@ export async function getEmployeeDirectory(
     data: data.map((user) =>
       toHrEmployee(user, {
         includeSensitive: actor
-          ? mayReadSensitiveFields(actor, user.id, user.unitId)
+          ? mayReadSensitiveFields(actor, user.id, directoryUnitOf(user))
           : false,
       })
     ),
@@ -394,10 +434,11 @@ export async function getEmployeeById(id: string, actor?: EmployeeDirectoryActor
   });
   if (!user) return null;
 
-  if (actor && !mayReadEmployee(actor, user.id, user.unitId)) return null;
+  const targetUnitId = directoryUnitOf(user);
+  if (actor && !mayReadEmployee(actor, user.id, targetUnitId)) return null;
 
   return toHrEmployee(user, {
-    includeSensitive: actor ? mayReadSensitiveFields(actor, user.id, user.unitId) : false,
+    includeSensitive: actor ? mayReadSensitiveFields(actor, user.id, targetUnitId) : false,
   });
 }
 

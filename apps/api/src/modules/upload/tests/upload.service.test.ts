@@ -8,6 +8,7 @@ import {
   isPublicContainer,
   deleteFromCloudStorage,
   deleteBlobIfStillOrphaned,
+  getBlobUploaderId,
 } from '@/utils/cloud-storage';
 
 /**
@@ -76,6 +77,7 @@ vi.mock('@/utils/cloud-storage', () => ({
   // (throw vs no-op) is what gets exercised, without a real 2s wait.
   deleteBlobIfStillOrphaned: vi.fn().mockResolvedValue(true),
   getBlobCreatedAt: vi.fn().mockResolvedValue(null),
+  getBlobUploaderId: vi.fn().mockResolvedValue(null),
   RACE_RECHECK_DELAY_MS: 2_000,
 }));
 
@@ -99,6 +101,8 @@ const superAdmin = { id: 'user-1', roleCode: 'SUPER_ADMIN', unitId: 'unit-1', pe
 const sameUnitPeer = { id: 'user-2', roleCode: 'SDIT_GURU', unitId: 'unit-2', permissions: [] };
 /** Unit admin who may administer employee documents. */
 const unitHrAdmin = { id: 'user-3', roleCode: 'SDIT_ADMIN', unitId: 'unit-2', permissions: [] };
+/** Unit treasurer: verifies payments in unit-2 but is NOT a personnel admin. */
+const unitTreasurer = { id: 'user-4', roleCode: 'SDIT_BENDAHARA', unitId: 'unit-2', permissions: [] };
 
 /** Reset every `findFirst` probe to "no record". */
 function clearOwners() {
@@ -490,6 +494,82 @@ describe('resolveSasForBlob', () => {
     expect(result.downloadUrl).toContain('sig=fakeSas');
   });
 
+  it('lets a unit treasurer open a payment proof in their own unit (FLAG 4)', async () => {
+    // The verifier's whole job is judging the proof. Before the dedicated
+    // payment-proof rule, the proof was classified as an employee document and
+    // the treasurer — who does NOT administer personnel records — got a 403 on
+    // the very file the verification queue sends them to read.
+    (parseBlobUrl as any).mockReturnValue({
+      containerName: 'cipansor-documents',
+      blobName: 'bukti.jpg',
+    });
+    (prisma.payment.findFirst as any).mockResolvedValue({
+      invoice: { student: { userId: 'student-user', unitId: 'unit-2' } },
+    });
+    (seesAllUnits as any).mockReturnValue(false);
+
+    const result = await resolveSasForBlob(
+      'https://store.blob.core.windows.net/cipansor-documents/bukti.jpg',
+      unitTreasurer
+    );
+    expect(result.downloadUrl).toContain('sig=fakeSas');
+  });
+
+  it('refuses a payment proof to an unrelated role in the same unit (FLAG 4)', async () => {
+    // The treasurer rule must NOT widen to every colleague: a plain teacher in
+    // the unit still cannot read a family's transfer proof.
+    (parseBlobUrl as any).mockReturnValue({
+      containerName: 'cipansor-documents',
+      blobName: 'bukti.jpg',
+    });
+    (prisma.payment.findFirst as any).mockResolvedValue({
+      invoice: { student: { userId: 'student-user', unitId: 'unit-2' } },
+    });
+    (seesAllUnits as any).mockReturnValue(false);
+
+    await expect(
+      resolveSasForBlob(
+        'https://store.blob.core.windows.net/cipansor-documents/bukti.jpg',
+        sameUnitPeer
+      )
+    ).rejects.toThrow(/Anda tidak berwenang mengakses berkas tersebut/);
+  });
+
+  it('refuses a payment proof to a verifier from another unit (FLAG 4)', async () => {
+    (parseBlobUrl as any).mockReturnValue({
+      containerName: 'cipansor-documents',
+      blobName: 'bukti.jpg',
+    });
+    (prisma.payment.findFirst as any).mockResolvedValue({
+      invoice: { student: { userId: 'student-user', unitId: 'unit-9' } },
+    });
+    (seesAllUnits as any).mockReturnValue(false);
+
+    await expect(
+      resolveSasForBlob(
+        'https://store.blob.core.windows.net/cipansor-documents/bukti.jpg',
+        unitTreasurer
+      )
+    ).rejects.toThrow(/Anda tidak berwenang mengakses berkas tersebut/);
+  });
+
+  it('lets the student a payment is for read their own proof (FLAG 4)', async () => {
+    (parseBlobUrl as any).mockReturnValue({
+      containerName: 'cipansor-documents',
+      blobName: 'bukti.jpg',
+    });
+    (prisma.payment.findFirst as any).mockResolvedValue({
+      invoice: { student: { userId: sameUnitPeer.id, unitId: 'unit-9' } },
+    });
+    (seesAllUnits as any).mockReturnValue(false);
+
+    const result = await resolveSasForBlob(
+      'https://store.blob.core.windows.net/cipansor-documents/bukti.jpg',
+      sameUnitPeer
+    );
+    expect(result.downloadUrl).toContain('sig=fakeSas');
+  });
+
   it('resolves an announcement attachment through its unit scope (BUG 6)', async () => {
     (parseBlobUrl as any).mockReturnValue({
       containerName: 'cipansor-documents',
@@ -657,5 +737,59 @@ describe('discardOrphanBlob', () => {
     await expect(
       discardOrphanBlob('https://store.blob.core.windows.net/foreign/a.pdf', superAdmin)
     ).rejects.toThrow(/Akses ke kontainer penyimpanan tersebut ditolak/);
+  });
+
+  it('refuses an actor who is not the uploader (BUG 2)', async () => {
+    // The blob was uploaded by someone else; the caller is a plain teacher.
+    // An orphan has no record to name an owner, so without this binding anyone
+    // who knew the URL could destroy someone else's in-flight upload.
+    (getBlobUploaderId as any).mockResolvedValue('some-other-user');
+    (seesAllUnits as any).mockReturnValue(false);
+
+    await expect(
+      discardOrphanBlob(
+        'https://store.blob.core.windows.net/cipansor-documents/orphan.pdf',
+        sameUnitPeer
+      )
+    ).rejects.toThrow(/tidak berwenang membuang berkas/);
+    expect(deleteBlobIfStillOrphaned).not.toHaveBeenCalled();
+  });
+
+  it('allows the uploader to discard their own orphan blob (BUG 2)', async () => {
+    (getBlobUploaderId as any).mockResolvedValue(sameUnitPeer.id);
+    (seesAllUnits as any).mockReturnValue(false);
+
+    await discardOrphanBlob(
+      'https://store.blob.core.windows.net/cipansor-documents/orphan.pdf',
+      sameUnitPeer
+    );
+
+    expect(getBlobUploaderId).toHaveBeenCalledWith('cipansor-documents', 'orphan.pdf');
+    expect(deleteBlobIfStillOrphaned).toHaveBeenCalled();
+  });
+
+  it('refuses everyone when the blob has no recorded uploader (fail-closed) (BUG 2)', async () => {
+    (getBlobUploaderId as any).mockResolvedValue(null);
+    (seesAllUnits as any).mockReturnValue(false);
+
+    await expect(
+      discardOrphanBlob(
+        'https://store.blob.core.windows.net/cipansor-documents/orphan.pdf',
+        sameUnitPeer
+      )
+    ).rejects.toThrow(/tidak berwenang membuang berkas/);
+    expect(deleteBlobIfStillOrphaned).not.toHaveBeenCalled();
+  });
+
+  it('lets a foundation/super-admin role sweep any orphan, without a metadata read', async () => {
+    (seesAllUnits as any).mockReturnValue(true);
+
+    await discardOrphanBlob(
+      'https://store.blob.core.windows.net/cipansor-documents/orphan.pdf',
+      superAdmin
+    );
+
+    expect(getBlobUploaderId).not.toHaveBeenCalled();
+    expect(deleteBlobIfStillOrphaned).toHaveBeenCalled();
   });
 });
