@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { normalizeEmail } from '@/utils/email';
 
 // Query params
 export const listUsersQuerySchema = z.object({
@@ -12,7 +13,10 @@ export const listUsersQuerySchema = z.object({
 // Create user
 export const createUserSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
-  email: z.string().email('Invalid email format'),
+  email: z
+    .string()
+    .email('Invalid email format')
+    .transform((v) => normalizeEmail(v)),
   password: z
     .string()
     .min(8, 'Password must be at least 8 characters')
@@ -26,7 +30,11 @@ export const createUserSchema = z.object({
 // Update user
 export const updateUserSchema = z.object({
   name: z.string().min(2).optional(),
-  email: z.string().email().optional(),
+  email: z
+    .string()
+    .email()
+    .transform((v) => normalizeEmail(v))
+    .optional(),
   role: z.enum(['SUPER_ADMIN', 'UNIT_ADMIN', 'TEACHER', 'STUDENT', 'PARENT']).optional(),
   unitId: z.string().uuid().optional().nullable(),
   isActive: z.boolean().optional(),

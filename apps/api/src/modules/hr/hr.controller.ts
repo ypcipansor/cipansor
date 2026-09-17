@@ -9,9 +9,11 @@ import {
   updateLeaveSchema,
   approveLeaveSchema,
 } from './hr.schema';
-import { Errors } from '../../middleware/error';
+import { Errors, asyncHandler } from '../../middleware/error';
 import { z } from 'zod';
 import { UserRole } from '@prisma/client';
+import { ApiResponse } from '../../utils/response';
+import { requireUser } from '../../middleware/auth';
 
 // =====================================
 // STAFF ATTENDANCE CONTROLLERS
@@ -260,6 +262,31 @@ export async function getLeaveBalance(req: Request, res: Response, next: NextFun
 // =====================================
 // STAFF CONTROLLERS (HR listing)
 // =====================================
+
+export const getEmployees = asyncHandler(async (req: Request, res: Response) => {
+  const user = requireUser(req);
+  const result = await service.getEmployeeDirectory(res.locals.validatedQuery, {
+    id: user.id,
+    roleCode: user.roleCode,
+    unitId: user.unitId,
+  });
+  // `meta` (not `pagination`) is the contract the HR pages read — see
+  // `HrEmployeeListResult` in @cipansor/shared.
+  res.json({ ...ApiResponse.success(result.data), meta: result.meta });
+});
+
+export const getEmployeeById = asyncHandler(async (req: Request, res: Response) => {
+  const user = requireUser(req);
+  const employee = await service.getEmployeeById(req.params.id, {
+    id: user.id,
+    roleCode: user.roleCode,
+    unitId: user.unitId,
+  });
+  if (!employee) {
+    throw Errors.notFound('Employee');
+  }
+  res.json(ApiResponse.success(employee));
+});
 
 export async function getStaffList(req: Request, res: Response, next: NextFunction) {
   try {

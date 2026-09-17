@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { Prisma, DailyMood, MealConsumption, UnitType, TahfidzActivityType } from '@prisma/client';
 import { whatsAppService } from '../notifications';
 import { logger } from '@/lib/logger';
+import { cleanupBlobsBestEffort } from '@/utils/cloud-storage';
 import type {
   ListDailyReportsQuery,
   StudentDailySummaryQuery,
@@ -523,6 +524,14 @@ export const dailyReportService = {
 
     // Handle photo updates if provided
     if (data.photoUrls !== undefined) {
+      // Snapshot the outgoing photos before deleting the rows, so their blobs
+      // can be reclaimed once the new URLs are committed — otherwise every
+      // photo edit orphans the previous images in private storage forever.
+      const previousPhotos = await prisma.dailyReportPhoto.findMany({
+        where: { reportId: id },
+        select: { photoUrl: true },
+      });
+
       // Delete existing photos
       await prisma.dailyReportPhoto.deleteMany({ where: { reportId: id } });
 
@@ -536,6 +545,15 @@ export const dailyReportService = {
           })),
         });
       }
+
+      // Best-effort, after the new rows are committed: a blob whose URL is
+      // still referenced by one of the new photos is left in place.
+      const retained = new Set(data.photoUrls);
+      await cleanupBlobsBestEffort(
+        previousPhotos
+          .map((p) => p.photoUrl)
+          .filter((url) => !retained.has(url))
+      );
     }
 
     // Handle homework updates
@@ -567,10 +585,19 @@ export const dailyReportService = {
     // Check if report exists
     await prisma.dailyStudentReport.findUniqueOrThrow({ where: { id } });
 
+    // Snapshot photo URLs before the rows go; the blobs are reclaimed after the
+    // record delete succeeds so a failed delete never loses a live image.
+    const photos = await prisma.dailyReportPhoto.findMany({
+      where: { reportId: id },
+      select: { photoUrl: true },
+    });
+
     // Delete photos first
     await prisma.dailyReportPhoto.deleteMany({ where: { reportId: id } });
 
     await prisma.dailyStudentReport.delete({ where: { id } });
+
+    await cleanupBlobsBestEffort(photos.map((p) => p.photoUrl));
 
     return { message: 'Daily report deleted successfully' };
   },

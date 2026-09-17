@@ -21,7 +21,7 @@
   "packageManager": "pnpm@9.15.9",
   "pnpm": {
     "overrides": {
-      "qs": "^6.16.0",
+      "qs": ">=6.16.0",
       "@types/express-serve-static-core": "5.1.0",
       "@babel/core": ">=7.29.1",
       "@hono/node-server": ">=1.19.13",

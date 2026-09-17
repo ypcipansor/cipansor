@@ -225,6 +225,14 @@ pm2 startup
 ```bash
 cd apps/api
 
+# Pre-check: e-mail uniqueness migration
+# `20260915060000_users_email_lower_unique` lowercases every stored e-mail and
+# then creates a UNIQUE index on lower(trim(email)). If two rows normalize to
+# the same address the CREATE UNIQUE INDEX fails and the whole migration is
+# rolled back — deliberately, so the deploy stops instead of letting two
+# accounts collide silently. Resolve any collision BEFORE deploying:
+pnpm --filter api db:normalize-emails   # prints a collision report
+
 # Deploy pending migrations
 npx prisma migrate deploy
 

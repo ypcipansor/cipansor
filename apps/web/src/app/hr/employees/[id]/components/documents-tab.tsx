@@ -1,6 +1,6 @@
 "use client";
-import { useState } from "react";
-import { authFileUrl } from "@/lib/files";
+import { useEffect, useMemo, useState } from "react";
+import { authFileUrl, resolveFileUrl } from "@/lib/files";
 import { safeFormat } from "@/lib/date";
 import {
   useEmployeeDocuments,
@@ -35,7 +35,9 @@ import {
 } from "@/components/ui/select";
 import { Trash2, FileText, Upload } from "lucide-react";
 
-import api from "@/lib/api";
+import api, { uploadApi } from "@/lib/api";
+import { useAuth } from "@/hooks/use-auth";
+import { mayAdministerHr } from "@/lib/rbac";
 
 const DOCUMENT_TYPES: EmployeeDocumentType[] = [
   "KTP",
@@ -51,11 +53,56 @@ const DOCUMENT_TYPES: EmployeeDocumentType[] = [
 ];
 
 export function DocumentsTab({ userId }: { userId: string }) {
+  const { user } = useAuth();
+  // Governance roles reach this tab (oversight of the employee record) but the
+  // API refuses their document writes — hide the controls rather than let them
+  // 403. Same boundary as `HR_WRITE_ROLES` in hr.routes.ts.
+  const canWrite = mayAdministerHr(user);
   const { data: documents, isLoading } = useEmployeeDocuments(userId);
   const createDocument = useCreateEmployeeDocument();
   const deleteDocument = useDeleteEmployeeDocument();
   const [isOpen, setIsOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
+
+  // Persisted upload references stay stable (no expiring SAS) while Azure
+  // private blobs need a fresh SAS to render. Resolve private blob URLs on
+  // demand so a document uploaded to Azure can be opened from this list.
+  const [resolvedFiles, setResolvedFiles] = useState<Record<string, string>>(
+    {},
+  );
+
+  const documentUrls = useMemo(() => {
+    return (documents ?? [])
+      .map((d) => d.fileUrl)
+      .filter(
+        (u): u is string => !!u && /\.blob\.core\.windows\.net\//.test(u),
+      );
+  }, [documents]);
+
+  useEffect(() => {
+    if (documentUrls.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const entries = await Promise.all(
+        documentUrls.map(async (u) => [u, await resolveFileUrl(u)] as const),
+      );
+      if (cancelled) return;
+      setResolvedFiles((prev) => {
+        const next = { ...prev };
+        for (const [k, v] of entries) next[k] = v;
+        return next;
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [documentUrls]);
+
+  /** Prefer the on-demand SAS when a stable reference was resolved. */
+  const displayable = (u?: string | null): string => {
+    if (!u) return "";
+    return resolvedFiles[u] || authFileUrl(u);
+  };
 
   const [formData, setFormData] = useState({
     name: "",
@@ -87,16 +134,22 @@ export function DocumentsTab({ userId }: { userId: string }) {
       // Handle response structure { success: true, data: { url: ... } }
       const fileUrl = uploadRes.data.data.url;
 
-      // 2. Create Record
-      await createDocument.mutateAsync({
-        userId,
-        name: formData.name,
-        type: formData.type,
-        fileUrl,
-        expiryDate: formData.expiryDate
-          ? new Date(formData.expiryDate).toISOString()
-          : undefined,
-      });
+      // 2. Create Record. If this fails, the just-uploaded blob is orphaned —
+      //    discard it so a failed save does not leave a file forever.
+      try {
+        await createDocument.mutateAsync({
+          userId,
+          name: formData.name,
+          type: formData.type,
+          fileUrl,
+          expiryDate: formData.expiryDate
+            ? new Date(formData.expiryDate).toISOString()
+            : undefined,
+        });
+      } catch (recordError) {
+        await uploadApi.discard(fileUrl).catch(() => undefined);
+        throw recordError;
+      }
 
       setIsOpen(false);
       setFormData({ name: "", type: "LAINNYA", expiryDate: "", file: null });
@@ -114,12 +167,13 @@ export function DocumentsTab({ userId }: { userId: string }) {
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h3 className="text-lg font-medium">Dokumen Kepegawaian</h3>
-        <Dialog open={isOpen} onOpenChange={setIsOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Upload className="w-4 h-4 mr-2" /> Upload Dokumen
-            </Button>
-          </DialogTrigger>
+        {canWrite && (
+          <Dialog open={isOpen} onOpenChange={setIsOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Upload className="w-4 h-4 mr-2" /> Upload Dokumen
+              </Button>
+            </DialogTrigger>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Upload Dokumen</DialogTitle>
@@ -179,6 +233,7 @@ export function DocumentsTab({ userId }: { userId: string }) {
             </form>
           </DialogContent>
         </Dialog>
+        )}
       </div>
 
       <div className="border rounded-md">
@@ -207,7 +262,7 @@ export function DocumentsTab({ userId }: { userId: string }) {
               <TableRow key={doc.id}>
                 <TableCell className="font-medium">
                   <a
-                    href={authFileUrl(doc.fileUrl)}
+                    href={displayable(doc.fileUrl)}
                     target="_blank"
                     rel="noreferrer"
                     className="flex items-center hover:underline text-blue-600"
@@ -226,16 +281,18 @@ export function DocumentsTab({ userId }: { userId: string }) {
                   {safeFormat(new Date(doc.createdAt), "dd MMM yyyy")}
                 </TableCell>
                 <TableCell className="text-right">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => {
-                      if (confirm("Hapus dokumen ini?"))
-                        deleteDocument.mutate(doc.id);
-                    }}
-                  >
-                    <Trash2 className="w-4 h-4 text-red-500" />
-                  </Button>
+                  {canWrite && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => {
+                        if (confirm("Hapus dokumen ini?"))
+                          deleteDocument.mutate(doc.id);
+                      }}
+                    >
+                      <Trash2 className="w-4 h-4 text-red-500" />
+                    </Button>
+                  )}
                 </TableCell>
               </TableRow>
             ))}

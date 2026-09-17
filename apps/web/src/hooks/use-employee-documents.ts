@@ -1,28 +1,11 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
+import type {
+  EmployeeDocument,
+  CreateEmployeeDocumentInput,
+} from "@cipansor/shared";
 
-export type EmployeeDocumentType =
-  | "KTP"
-  | "KK"
-  | "NPWP"
-  | "IJAZAH"
-  | "TRANSKRIP_NILAI"
-  | "SERTIFIKAT"
-  | "SK_PENGANGKATAN"
-  | "KONTRAK_KERJA"
-  | "CV"
-  | "LAINNYA";
-
-export interface EmployeeDocument {
-  id: string;
-  userId: string;
-  name: string;
-  type: EmployeeDocumentType;
-  fileUrl: string;
-  expiryDate?: string;
-  notes?: string;
-  createdAt: string;
-}
+export type { EmployeeDocument, EmployeeDocumentType } from "@cipansor/shared";
 
 export function useEmployeeDocuments(userId: string) {
   return useQuery({
@@ -39,7 +22,7 @@ export function useCreateEmployeeDocument() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (data: Partial<EmployeeDocument>) => {
+    mutationFn: async (data: CreateEmployeeDocumentInput) => {
       const response = await api.post("/hr/documents", data);
       return response.data.data;
     },

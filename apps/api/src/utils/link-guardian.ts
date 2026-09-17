@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { hashPassword } from '@/lib/password';
 import { syncParentRoleAssignments, type ParentScopeClient } from './parent-scope';
+import { normalizeOptionalEmail } from './email';
 
 /**
  * Attach a guardian to a student, creating the account if it does not exist.
@@ -74,7 +75,7 @@ export async function linkGuardian(
   tx: GuardianClient,
   input: GuardianInput
 ): Promise<GuardianResult> {
-  const email = input.email?.trim() || null;
+  const email = normalizeOptionalEmail(input.email?.trim() || null) ?? null;
   const phone = input.phone?.trim() || null;
 
   if (!email && !phone) {

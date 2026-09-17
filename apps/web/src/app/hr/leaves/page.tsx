@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { getEffectiveRole } from "@/lib/rbac";
+import { mayAdministerHr } from "@/lib/rbac";
 import { safeFormat } from "@/lib/date";
 import {
   useLeaveRequests,
@@ -42,7 +42,10 @@ function LeavesPageContent() {
   // Fetch My Leaves
   // Since backend filters by user automatically if not admin, we can reuse query.
   // But for Admin, they might want to see "All".
-  const isAdmin = getEffectiveRole(user) === "SUPER_ADMIN" || getEffectiveRole(user) === "UNIT_ADMIN";
+  // Governance roles collapse to the legacy UNIT_ADMIN bucket but may only
+  // *oversee* personnel data — the API refuses their leave writes (403). Gate
+  // on the RoleCode so the UI never offers a button the server will reject.
+  const isAdmin = mayAdministerHr(user);
 
   // For "My Leaves", if admin, we might need to pass their own ID?
   // But admins usually don't apply for leave in this system or they do via same UI.

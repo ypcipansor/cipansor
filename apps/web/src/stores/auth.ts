@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { AxiosError } from "axios";
 import { User, authApi, rolesApi, LoginRequest } from "@/lib/api";
+import { SSOLoginRequest, LoginResponse } from "@cipansor/shared";
 
 interface AuthState {
   user: User | null;
@@ -13,6 +14,7 @@ interface AuthState {
   tempToken: string | null;
 
   login: (credentials: LoginRequest) => Promise<void>;
+  ssoLogin: (data: SSOLoginRequest) => Promise<void>;
   verifyTwoFactor: (token: string) => Promise<void>;
   logout: () => Promise<void>;
   fetchUser: () => Promise<void>;
@@ -66,6 +68,63 @@ export const useAuthStore = create<AuthState>()(
       requiresTwoFactor: false,
       requiresTwoFactorSetup: false,
       tempToken: null,
+
+      ssoLogin: async (data: SSOLoginRequest) => {
+        set({ isLoading: true, error: null });
+        try {
+          const response = await authApi.ssoLogin(data);
+          const responseData = response.data.data;
+
+          if ('requiresTwoFactor' in responseData && responseData.requiresTwoFactor) {
+            set({
+              requiresTwoFactor: true,
+              tempToken: responseData.tempToken,
+              isLoading: false,
+            });
+            return;
+          }
+
+          if ('requiresTwoFactorSetup' in responseData && responseData.requiresTwoFactorSetup) {
+            set({
+              requiresTwoFactorSetup: true,
+              tempToken: responseData.tempToken,
+              isLoading: false,
+            });
+            localStorage.setItem("accessToken", responseData.tempToken);
+            document.cookie = `accessToken=${responseData.tempToken}; path=/; max-age=3600; samesite=lax`;
+            return;
+          }
+
+          const { user, accessToken, refreshToken } = responseData as LoginResponse;
+
+          localStorage.setItem("accessToken", accessToken);
+          localStorage.setItem("refreshToken", refreshToken);
+          document.cookie = `accessToken=${accessToken}; path=/; max-age=86400; samesite=lax`;
+
+          set({
+            user,
+            isAuthenticated: true,
+            isLoading: false,
+            requiresTwoFactor: false,
+            requiresTwoFactorSetup: false,
+            tempToken: null,
+          });
+        } catch (error: unknown) {
+          const message =
+            error instanceof Error ? error.message : "SSO Login failed";
+          const axiosError = error as {
+            response?: { data?: { error?: { message?: string }; message?: string } };
+          };
+          set({
+            error:
+              axiosError.response?.data?.error?.message ||
+              axiosError.response?.data?.message ||
+              message,
+            isLoading: false,
+          });
+          throw error;
+        }
+      },
 
       login: async (credentials: LoginRequest) => {
         set({ isLoading: true, error: null });

@@ -1,4 +1,6 @@
 export * from "./types/auth";
+export * from "./types/upload";
+export * from "./types/hr";
 export * from "./types/class";
 export * from "./types/models";
 export * from "./types/attendance";

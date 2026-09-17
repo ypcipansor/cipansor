@@ -38,6 +38,7 @@ import {
   TahfidzType,
   TahfidzGrade,
 } from "@/hooks/use-tahfidz";
+import { useResolvedFileUrl } from "@/hooks/use-resolved-file-url";
 
 export default function TahfidzDetailPage() {
   const params = useParams();
@@ -47,6 +48,9 @@ export default function TahfidzDetailPage() {
 
   const { data: record, isLoading } = useTahfidzRecord(id);
   const deleteTahfidz = useDeleteTahfidz();
+  // The E-Simaan recording is stored in a private container; resolve it to a
+  // SAS so the <audio> element can actually stream it.
+  const recordingUrl = useResolvedFileUrl(record?.audioUrl);
 
   const handleDelete = async () => {
     try {
@@ -318,7 +322,7 @@ export default function TahfidzDetailPage() {
         </div>
 
         {/* Rekaman E-Simaan */}
-        {record.audioUrl && (
+        {recordingUrl && (
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -328,7 +332,7 @@ export default function TahfidzDetailPage() {
             </CardHeader>
             <CardContent>
               {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-              <audio controls src={record.audioUrl} className="w-full" />
+              <audio controls src={recordingUrl} className="w-full" />
             </CardContent>
           </Card>
         )}

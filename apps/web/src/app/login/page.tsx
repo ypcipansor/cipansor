@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
@@ -32,6 +32,8 @@ import {
 import { TwoFactorVerify } from "@/components/auth/TwoFactorVerify";
 import { TwoFactorSetup } from "@/components/auth/TwoFactorSetup";
 import { toast } from "sonner";
+import { useSSOConfig } from "@/hooks/use-sso-config";
+import { loginWithGoogle, loginWithGoogleButton, loginWithMicrosoft } from "@/lib/sso";
 import {
   DEMO_ACCOUNTS,
   DEMO_TABS,
@@ -119,6 +121,7 @@ function LoginPageContent() {
   const router = useRouter();
   const {
     login,
+    ssoLogin,
     isLoading,
     error,
     clearError,
@@ -127,6 +130,135 @@ function LoginPageContent() {
     verifyTwoFactor,
     resetAuth,
   } = useAuthStore();
+
+  // SSO config via the React Query data-layer hook (never the Axios instance).
+  const { data: ssoConfig, isError: ssoConfigError } = useSSOConfig();
+
+  // Declared before the SSO handlers because the One Tap fallback effect below
+  // reads them. Holds GIS's explicit renderButton when One Tap is suppressed;
+  // it stays empty on every browser where `prompt()` works, so the fallback UI
+  // only appears when the browser has said the prompt cannot be shown.
+  const [googleFallback, setGoogleFallback] = useState(false);
+  const googleButtonRef = useRef<HTMLDivElement | null>(null);
+
+  /**
+   * Shared tail of both SSO flows: hand the ID token to the backend and route
+   * on success. Extracted because Google and Microsoft differ only in how the
+   * token is obtained — the SDKs do the redirect handshake, so there is no
+   * `state`/`nonce`/hash handling left on this page.
+   */
+  const completeSsoLogin = async (
+    provider: "google" | "microsoft",
+    idToken: string,
+  ) => {
+    try {
+      await ssoLogin({ provider, idToken });
+      const storeState = useAuthStore.getState();
+      if (
+        !storeState.requiresTwoFactor &&
+        !storeState.requiresTwoFactorSetup &&
+        storeState.isAuthenticated
+      ) {
+        router.push(landingRouteForCurrentUser());
+      }
+    } catch {
+      // The store surfaces the error; nothing more to do here.
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    clearError();
+    if (ssoConfigError || !ssoConfig) {
+      toast.error(
+        "Gagal memuat konfigurasi SSO. Periksa koneksi Anda lalu coba lagi.",
+      );
+      return;
+    }
+    if (!ssoConfig.googleEnabled || !ssoConfig.googleClientId) {
+      toast.info(
+        "Google Workspace SSO belum dikonfigurasi di server. Minta administrator menyetel GOOGLE_CLIENT_ID.",
+      );
+      return;
+    }
+    try {
+      const { idToken } = await loginWithGoogle(ssoConfig.googleClientId);
+      await completeSsoLogin("google", idToken);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Gagal memulai alur masuk Google Workspace.";
+      // One Tap was suppressed by the browser (Safari/Firefox ITP, enterprise
+      // cookie policy). Retrying `prompt()` cannot help, so surface GIS's
+      // explicit renderButton instead — it is an ordinary same-origin button
+      // and is not subject to the same suppression.
+      if (message.includes("tidak dapat ditampilkan")) {
+        setGoogleFallback(true);
+        toast.info(
+          "Pop-up akun Google tidak didukung di peramban ini. Gunakan tombol Google yang muncul di bawah.",
+        );
+        return;
+      }
+      toast.error(`Gagal masuk dengan Google Workspace: ${message}`);
+    }
+  };
+
+  const handleGoogleButtonLogin = async () => {
+    clearError();
+    if (ssoConfigError || !ssoConfig) return;
+    if (!ssoConfig.googleEnabled || !ssoConfig.googleClientId) return;
+    const container = googleButtonRef.current;
+    if (!container) return;
+    try {
+      const { idToken } = await loginWithGoogleButton(ssoConfig.googleClientId, container);
+      await completeSsoLogin("google", idToken);
+    } catch (err) {
+      toast.error(
+        err instanceof Error
+          ? `Gagal masuk dengan Google Workspace: ${err.message}`
+          : "Gagal memulai alur masuk Google Workspace. Silakan coba lagi.",
+      );
+    }
+  };
+
+  // Once the fallback is requested, GIS's button can be rendered into the
+  // container. Doing it in an effect (rather than in the click handler) means
+  // the container is committed to the DOM before `renderButton` touches it.
+  useEffect(() => {
+    if (!googleFallback) return;
+    void handleGoogleButtonLogin();
+    // `handleGoogleButtonLogin` is stable enough for this one-shot render; the
+    // guard is the `googleFallback` flag, not the callback identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [googleFallback]);
+
+  const handleMicrosoftLogin = async () => {
+    clearError();
+    if (ssoConfigError || !ssoConfig) {
+      toast.error(
+        "Gagal memuat konfigurasi SSO. Periksa koneksi Anda lalu coba lagi.",
+      );
+      return;
+    }
+    if (!ssoConfig.microsoftEnabled || !ssoConfig.microsoftClientId) {
+      toast.info(
+        "Microsoft 365 SSO belum dikonfigurasi di server. Minta administrator menyetel MICROSOFT_CLIENT_ID.",
+      );
+      return;
+    }
+    try {
+      const { idToken } = await loginWithMicrosoft({
+        clientId: ssoConfig.microsoftClientId,
+        tenantId: ssoConfig.microsoftTenantId,
+      });
+      await completeSsoLogin("microsoft", idToken);
+    } catch (err) {
+      toast.error(
+        err instanceof Error
+          ? `Gagal masuk dengan Microsoft 365: ${err.message}`
+          : "Gagal memulai alur masuk Microsoft 365. Silakan coba lagi.",
+      );
+    }
+  };
+
   const [showPassword, setShowPassword] = useState(false);
   const [selectedDemo, setSelectedDemo] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>(DEMO_TABS[0]?.key ?? "");
@@ -440,6 +572,61 @@ function LoginPageContent() {
               </Button>
             </form>
 
+            <div className="relative my-4">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-card px-2 text-muted-foreground">
+                  Atau Masuk Dengan Akun Domain
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full flex items-center justify-center gap-2"
+                disabled={isLoading}
+                onClick={handleGoogleLogin}
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24">
+                  <path
+                    fill="currentColor"
+                    d="M12.545,10.239v3.821h5.445c-0.712,2.315-2.647,3.972-5.445,3.972c-3.332,0-6.033-2.701-6.033-6.032s2.701-6.032,6.033-6.032c1.498,0,2.866,0.549,3.921,1.453l2.814-2.814C17.503,2.988,15.139,2,12.545,2C7.021,2,2.543,6.477,2.543,12s4.478,10,10.002,10c8.396,0,10.249-7.85,9.426-11.761H12.545z"
+                  />
+                </svg>
+                Google Workspace
+              </Button>
+
+              {/* GIS's own button, rendered only when One Tap is suppressed.
+                  It must not sit inside the React <Button> above: GIS injects
+                  its iframe into this container and would fight React's
+                  reconciler over the same DOM node. */}
+              <div
+                ref={googleButtonRef}
+                className={googleFallback ? "flex justify-center" : "hidden"}
+                data-testid="google-sso-fallback"
+              />
+
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full flex items-center justify-center gap-2"
+                disabled={isLoading}
+                onClick={handleMicrosoftLogin}
+              >
+                <svg className="h-4 w-4 text-blue-600" viewBox="0 0 23 23">
+                  <path fill="#f35325" d="M1 1h10v10H1z" />
+                  <path fill="#81bc06" d="M12 1h10v10H12z" />
+                  <path fill="#05a6f0" d="M1 12h10v10H1z" />
+                  <path fill="#ffba08" d="M12 12h10v10H12z" />
+                </svg>
+                Microsoft 365
+              </Button>
+            </div>
+
             {/* Mobile Demo Credentials */}
             {SHOW_DEMO_LOGIN && (
               <div className="mt-6 border-t pt-4 lg:hidden">
@@ -480,9 +667,7 @@ function LoginPageContent() {
                       className={cn(
                         "flex items-center gap-2 p-2 rounded-lg border text-left transition-all text-xs",
                         "hover:bg-muted disabled:opacity-50",
-                        selectedDemo === acc.email
-                          ? "ring-2 ring-primary"
-                          : "",
+                        selectedDemo === acc.email ? "ring-2 ring-primary" : "",
                       )}
                     >
                       <DemoAvatar acc={acc} size={8} />

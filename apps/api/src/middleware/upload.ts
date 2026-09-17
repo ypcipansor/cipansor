@@ -4,6 +4,8 @@ import fs from 'fs';
 import { randomUUID } from 'crypto';
 import { Request, Response, NextFunction } from 'express';
 import { verifyToken } from '@/lib/jwt';
+import { containerForDestination } from '@/utils/cloud-storage';
+import { mayUploadPublicMedia } from '@cipansor/shared';
 import { Errors } from './error';
 
 // Ensure upload directory exists
@@ -11,6 +13,35 @@ const uploadDir = path.join(process.cwd(), 'public/uploads');
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
+
+const uploadDirResolved = path.resolve(uploadDir);
+const uploadDirPrefix = uploadDirResolved.endsWith(path.sep)
+  ? uploadDirResolved
+  : `${uploadDirResolved}${path.sep}`;
+
+export async function getSafeUploadPathForCleanup(candidatePath: string): Promise<string | null> {
+  const baseName = path.basename(candidatePath);
+  // Accept only expected generated upload names (UUID + extension), e.g. "<uuid>.png"
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.[a-z0-9]+$/i.test(baseName)) {
+    return null;
+  }
+
+  const resolvedCandidate = path.join(uploadDirResolved, baseName);
+  try {
+    const realCandidate = await fs.promises.realpath(resolvedCandidate);
+    if (realCandidate === uploadDirResolved || realCandidate.startsWith(uploadDirPrefix)) {
+      return realCandidate;
+    }
+  } catch {
+    // If the file no longer exists or cannot be resolved, skip cleanup safely.
+  }
+  return null;
+}
+
+const isPathWithinUploadDir = (candidatePath: string): boolean => {
+  const resolvedCandidate = path.resolve(candidatePath);
+  return resolvedCandidate === uploadDirResolved || resolvedCandidate.startsWith(uploadDirPrefix);
+};
 
 // Allowed types: client-declared MIME → { stored extension, magic-byte check }.
 // The extension comes from this table (never from the client's filename), and
@@ -82,24 +113,36 @@ export function matchesMagicBytes(mimetype: string, buf: Buffer): boolean {
   return allowed ? allowed.matches(buf) : false;
 }
 
+/**
+ * The stored filename for an upload of `mimetype`.
+ *
+ * Extension comes from the MIME table above, never from the client-supplied
+ * filename (which could smuggle .php, .html, ...).
+ *
+ * The name itself is crypto-random rather than `Date.now()` plus
+ * `Math.random()`. uploadsAuth below proves *that* a caller is signed in but
+ * not *which* files they may read, so until that gap is closed the filename
+ * is the only thing standing between one santri's documents and another
+ * parent's browser. A timestamp plus a non-cryptographic PRNG is guessable:
+ * the upload minute is often known, and Math.random() is not seeded for
+ * unpredictability. This is defence in depth, not authorisation.
+ *
+ * Uniqueness is also what lets record-delete paths reclaim a blob without
+ * asking whether another record shares the URL — see `cleanupBlobBestEffort`
+ * in `utils/cloud-storage.ts`.
+ */
+export function uploadFilenameFor(mimetype: string): string {
+  const extension = ALLOWED_TYPES[mimetype]?.extension ?? '.bin';
+  return `${randomUUID()}${extension}`;
+}
+
 // Configure storage
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => {
     cb(null, uploadDir);
   },
   filename: (_req, file, cb) => {
-    // Extension comes from the MIME table above, never from the client-supplied
-    // filename (which could smuggle .php, .html, ...).
-    //
-    // The name itself is crypto-random rather than `Date.now()` plus
-    // `Math.random()`. uploadsAuth below proves *that* a caller is signed in but
-    // not *which* files they may read, so until that gap is closed the filename
-    // is the only thing standing between one santri's documents and another
-    // parent's browser. A timestamp plus a non-cryptographic PRNG is guessable:
-    // the upload minute is often known, and Math.random() is not seeded for
-    // unpredictability. This is defence in depth, not authorisation.
-    const extension = ALLOWED_TYPES[file.mimetype]?.extension ?? '.bin';
-    cb(null, `${randomUUID()}${extension}`);
+    cb(null, uploadFilenameFor(file.mimetype));
   },
 });
 
@@ -140,8 +183,44 @@ export async function verifyStoredFile(file: Express.Multer.File): Promise<boole
   return false;
 }
 
+/**
+ * Resolve the logical upload destination for a request. Supplied by the module
+ * that owns the route, so the validated query value stays a module concern and
+ * the middleware never reaches into an unvalidated `req.query`.
+ */
+export type DestinationResolver = (req: Request, res: Response) => string | undefined;
+
+/**
+ * Authorise a requested upload destination against the actor's role.
+ *
+ * `media-public` is a PUBLISHING act: the container is world-readable
+ * (`access: 'blob'`), so an unauthorised caller who could select it would push
+ * a KTP scan or an internal memo to the open internet. Only a role that authors
+ * public content (`mayUploadPublicMedia`) may keep that purpose.
+ *
+ * Every other caller is downgraded to the private default rather than refused:
+ * the destination is a purpose, not a container, so an unprivileged upload
+ * still succeeds — it just cannot land anywhere world-readable. An unrecognised
+ * or absent purpose also collapses to private, the only safe direction.
+ *
+ * The container choice is therefore made server-side from the actor's role, and
+ * a query string alone can never select the public container.
+ */
+export function authorizedUploadDestination(
+  destination: string | undefined,
+  roleCode: string | null | undefined
+): string | undefined {
+  if (destination === 'media-public' && !mayUploadPublicMedia(roleCode)) {
+    return 'private';
+  }
+  return destination;
+}
+
 // Middleware to map uploaded file to body.fileUrl
-export const handleSingleUpload = (fieldName: string) => {
+export const handleSingleUpload = (
+  fieldName: string,
+  resolveDestination?: DestinationResolver
+) => {
   return (req: Request, res: Response, next: NextFunction) => {
     const uploadMiddleware = upload.single(fieldName);
 
@@ -179,11 +258,65 @@ export const handleSingleUpload = (fieldName: string) => {
             });
           }
 
-          // Construct public URL
-          const protocol = req.protocol;
-          const host = req.get('host');
+          // Construct public URL (or Azure Blob URL if configured)
           const filename = req.file.filename;
-          req.body.fileUrl = `${protocol}://${host}/uploads/${filename}`;
+          const mimeType = req.file.mimetype;
+          const localPath = req.file.path;
+
+          // The container is chosen from the caller's ROLE, not the query
+          // string: a non-publisher who asks for `media-public` is downgraded
+          // to the private default before the mapping runs, so an
+          // authenticated-but-unauthorised caller can never write to the
+          // world-readable container.
+          const containerName = containerForDestination(
+            authorizedUploadDestination(
+              // The module supplies the validated destination; the raw query is
+              // the fallback for a mount without `validateQuery`.
+              resolveDestination?.(req, res) ??
+                (typeof req.query?.destination === 'string' ? req.query.destination : undefined),
+              req.user?.roleCode
+            )
+          );
+          const { uploadToCloudStorage } = await import('@/utils/cloud-storage');
+          let storageResult;
+          try {
+            storageResult = await uploadToCloudStorage(
+              localPath,
+              filename,
+              mimeType,
+              containerName,
+              req.user?.id
+            );
+          } catch (error) {
+            // A failed cloud upload must not leave the staging file behind;
+            // repeated failures would otherwise fill the upload volume.
+            if (isPathWithinUploadDir(localPath)) {
+              const safeCleanupPath = await getSafeUploadPathForCleanup(localPath);
+              if (safeCleanupPath) {
+                await fs.promises.unlink(safeCleanupPath).catch(() => undefined);
+              }
+            }
+            throw error;
+          }
+
+          if (storageResult.provider === 'azure') {
+            req.body.fileUrl = storageResult.url;
+            // Container/blob name ride alongside so the upload controller can
+            // mint a SAS for a private container instead of the raw blob URL.
+            req.body.fileContainerName = storageResult.containerName;
+            req.body.fileBlobName = storageResult.blobName;
+            // Clean up staging file on local disk after successful Azure Blob upload
+            if (isPathWithinUploadDir(localPath)) {
+              const safeCleanupPath = await getSafeUploadPathForCleanup(localPath);
+              if (safeCleanupPath) {
+                await fs.promises.unlink(safeCleanupPath).catch(() => undefined);
+              }
+            }
+          } else {
+            const protocol = req.protocol;
+            const host = req.get('host');
+            req.body.fileUrl = `${protocol}://${host}/uploads/${filename}`;
+          }
 
           // Also map other metadata if needed
           if (!req.body.fileName) {

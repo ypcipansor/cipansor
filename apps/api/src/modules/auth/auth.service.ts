@@ -5,11 +5,157 @@ import { generateTokenPair, verifyToken, getExpirationDate, generateAccessToken 
 import { Errors } from '@/middleware/error';
 import { isAdminRoleCode, isGovernanceRoleCode, deriveLegacyRole } from '@/middleware/auth';
 import { config } from '@/config';
-import type { LoginInput, RegisterInput, ChangePasswordInput } from './auth.schema';
-import { RoleCode, UnitType } from '@prisma/client';
+import type { LoginInput, RegisterInput, ChangePasswordInput, SSOLoginInput } from './auth.schema';
+import { RoleCode, UnitType, SSOProvider } from '@prisma/client';
 import { generateSecret, generateURI, verify as verifyOtp } from 'otplib';
 import * as qrcode from 'qrcode';
 import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
+import { JwksClient } from 'jwks-rsa';
+import { SSOConfigResponse } from '@cipansor/shared';
+import { logger } from '@/lib/logger';
+import { normalizeEmail } from '@/utils/email';
+
+/**
+ * Context for an authentication attempt, used for the audit trail only.
+ * Optional so existing callers (and tests) keep working unchanged.
+ */
+export interface LoginAuditContext {
+  ipAddress?: string;
+  userAgent?: string;
+}
+
+/** Claims verified from an SSO ID token. */
+interface VerifiedSSOIdentity {
+  email: string;
+  subject: string;
+}
+
+/**
+ * Microsoft Entra ID JWKS clients, cached per tenantId so the
+ * `cache`/`rateLimit` options actually hold across requests instead of being
+ * recreated (and re-fetching the signing keys) on every login.
+ */
+const microsoftJwksClients = new Map<string, JwksClient>();
+
+function getMicrosoftJwksClient(tenantId: string): JwksClient {
+  const existing = microsoftJwksClients.get(tenantId);
+  if (existing) return existing;
+
+  const client = new JwksClient({
+    jwksUri: `https://login.microsoftonline.com/${tenantId}/discovery/v2.0/keys`,
+    cache: true,
+    cacheMaxAge: 86400000, // 24h — the OIDC key lifetime
+    rateLimit: true,
+    jwksRequestsPerMinute: 10,
+  });
+  microsoftJwksClients.set(tenantId, client);
+  return client;
+}
+
+/** Entra directory GUIDs look like a bare UUID. */
+const MICROSOFT_TENANT_GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isTenantGuid(value: string): boolean {
+  return MICROSOFT_TENANT_GUID_RE.test(value);
+}
+
+/**
+ * Directory-GUID resolution for a domain-valued `MICROSOFT_TENANT_ID`.
+ *
+ * A token's `tid`/issuer always carry the **directory GUID**, never the
+ * verified e-mail's domain, so a domain-configured tenant can only be enforced
+ * by first resolving the domain to the yayasan's directory GUID. Entra's OIDC
+ * discovery document is the authority for that mapping: its `issuer` embeds the
+ * GUID (`https://login.microsoftonline.com/<guid>/v2.0`).
+ *
+ * **Only successes are cached indefinitely.** A resolution failure means the
+ * discovery call did not answer (network blip, transient 5xx) or answered
+ * without a GUID. Caching that `null` forever poisoned the tenant for the
+ * lifetime of the process: once the network recovered, every Microsoft login
+ * still failed until the API restarted, because the stored `null` short-
+ * circuited the retry. Failures are therefore cached for at most
+ * {@link TENANT_FAILURE_TTL_MS}, after which the next login retries — recovery
+ * without a restart, while a genuinely bad domain is still not refetched on
+ * every single request.
+ *
+ * Resolution failing is NOT permission to fall back to the e-mail domain — that
+ * would re-open exactly the hole this closes (a token minted in a foreign
+ * directory that happens to host a mailbox on the same domain). The caller
+ * fails closed instead.
+ */
+export const TENANT_FAILURE_TTL_MS = 60_000;
+
+interface TenantGuidEntry {
+  guid: string | null;
+  /** For a null (failure) entry, when it stops being trusted; null = forever. */
+  expiresAt: number | null;
+}
+
+const microsoftTenantGuidCache = new Map<string, TenantGuidEntry>();
+
+/** Test-only: clear the module-level cache so cases do not bleed into each other. */
+export function __resetMicrosoftTenantGuidCache(): void {
+  microsoftTenantGuidCache.clear();
+}
+
+export async function resolveTenantGuidFromDomain(
+  domain: string,
+  now: number = Date.now()
+): Promise<string | null> {
+  const key = domain.toLowerCase();
+  const cached = microsoftTenantGuidCache.get(key);
+  if (cached) {
+    // A successful GUID is authoritative; a failure expires and is retried.
+    if (cached.guid !== null) return cached.guid;
+    if (cached.expiresAt === null || cached.expiresAt > now) return null;
+    microsoftTenantGuidCache.delete(key);
+  }
+
+  let guid: string | null = null;
+  try {
+    const response = await fetch(
+      `https://login.microsoftonline.com/${encodeURIComponent(key)}/v2.0/.well-known/openid-configuration`
+    );
+    if (response.ok) {
+      const document = (await response.json()) as { issuer?: unknown };
+      const match =
+        typeof document.issuer === 'string'
+          ? document.issuer.match(/login\.microsoftonline\.com\/([0-9a-f-]{36})\//i)
+          : null;
+      guid = match ? match[1].toLowerCase() : null;
+    }
+  } catch {
+    guid = null;
+  }
+
+  microsoftTenantGuidCache.set(
+    key,
+    guid === null
+      ? { guid: null, expiresAt: now + TENANT_FAILURE_TTL_MS }
+      : { guid, expiresAt: null }
+  );
+  return guid;
+}
+
+/**
+ * Google's JWKS endpoint. Google is not tenant-scoped, so one module-level
+ * client serves every request — same caching rationale as Microsoft above.
+ */
+let googleJwksClient: JwksClient | null = null;
+
+function getGoogleJwksClient(): JwksClient {
+  if (googleJwksClient) return googleJwksClient;
+
+  googleJwksClient = new JwksClient({
+    jwksUri: 'https://www.googleapis.com/oauth2/v3/certs',
+    cache: true,
+    cacheMaxAge: 86400000, // 24h — the OIDC key lifetime
+    rateLimit: true,
+    jwksRequestsPerMinute: 10,
+  });
+  return googleJwksClient;
+}
 
 /**
  * Resolve a legacy UserRole value (e.g. 'TEACHER', 'STAFF') into the correct
@@ -21,21 +167,26 @@ import crypto from 'crypto';
  */
 export function resolveLegacyRoleToRoleCode(
   legacyRole: string,
-  unitType: UnitType | null | undefined,
+  unitType: UnitType | null | undefined
 ): RoleCode | null {
   // Unit-agnostic mappings
   if (legacyRole === 'SUPER_ADMIN') return RoleCode.SUPER_ADMIN;
   if (legacyRole === 'UNIT_ADMIN') {
     switch (unitType) {
-      case UnitType.TK_QURAN: return RoleCode.TKQ_ADMIN;
-      case UnitType.SD_IT: return RoleCode.SDIT_ADMIN;
-      case UnitType.SMP_IT: return RoleCode.SMPIT_ADMIN;
-      case UnitType.SMA_QURAN: return RoleCode.SMAQ_ADMIN;
+      case UnitType.TK_QURAN:
+        return RoleCode.TKQ_ADMIN;
+      case UnitType.SD_IT:
+        return RoleCode.SDIT_ADMIN;
+      case UnitType.SMP_IT:
+        return RoleCode.SMPIT_ADMIN;
+      case UnitType.SMA_QURAN:
+        return RoleCode.SMAQ_ADMIN;
       // PESANTREN / OTHER / unknown: no dedicated per-unit admin RoleCode exists.
       // Do NOT silently fall back to a foundation-level role — that would be a privilege
       // escalation (foundation-level governance) for a unit-level admin.
       // Caller must supply `roleCode` explicitly for these unit types.
-      default: return null;
+      default:
+        return null;
     }
   }
 
@@ -91,18 +242,75 @@ export function resolveLegacyRoleToRoleCode(
 function activeRoleWhere() {
   return {
     isActive: true,
-    OR: [
-      { expiresAt: null },
-      { expiresAt: { gt: new Date() } },
-    ],
+    OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
   };
+}
+
+/**
+ * Shape of the user record SSO login needs, shared by the two resolution
+ * helpers (provider-subject link, e-mail fallback) so the payload derivation
+ * below sees an identical structure either way.
+ */
+type SsoUserRecord = {
+  id: string;
+  email: string;
+  isActive: boolean;
+  isTwoFactorEnabled: boolean;
+  deletedAt: Date | null;
+  unitId: string | null;
+  // Optional sensitive fields, present because the record feeds
+  // `stripSensitiveFields` before the user is returned to the client.
+  passwordHash?: unknown;
+  twoFactorSecret?: unknown;
+  twoFactorSecretPending?: unknown;
+  twoFactorRecoveryCodes?: unknown;
+  resetTokenHash?: unknown;
+  resetTokenExpiresAt?: unknown;
+  userRoles: Array<{
+    roleId: string;
+    unitId: string | null;
+    isPrimary: boolean;
+    role: { code: string; permissions: unknown };
+  }>;
+};
+
+const SSO_USER_SELECT = {
+  id: true,
+  email: true,
+  isActive: true,
+  isTwoFactorEnabled: true,
+  deletedAt: true,
+  unitId: true,
+  passwordHash: true,
+  twoFactorSecret: true,
+  twoFactorSecretPending: true,
+  twoFactorRecoveryCodes: true,
+  resetTokenHash: true,
+  resetTokenExpiresAt: true,
+  userRoles: {
+    where: activeRoleWhere(),
+    select: {
+      roleId: true,
+      unitId: true,
+      isPrimary: true,
+      role: { select: { code: true, permissions: true } },
+    },
+    orderBy: { isPrimary: 'desc' },
+  },
+} as const;
+
+/** True for a Prisma unique-constraint violation (create raced another insert). */
+function isUniqueConstraintError(error: unknown): boolean {
+  return (
+    typeof error === 'object' && error !== null && (error as { code?: string }).code === 'P2002'
+  );
 }
 
 export class AuthService {
   /**
    * Login user
    */
-  async login(input: LoginInput) {
+  async login(input: LoginInput, context?: LoginAuditContext) {
     const user = await prisma.user.findFirst({
       where: {
         email: input.email,
@@ -122,10 +330,24 @@ export class AuthService {
     });
 
     if (!user) {
+      await this.recordLoginAudit({
+        method: 'password',
+        success: false,
+        reason: 'user_not_found',
+        context,
+      });
       throw Errors.unauthorized('Invalid email or password');
     }
 
     if (!user.isActive) {
+      await this.recordLoginAudit({
+        method: 'password',
+        success: false,
+        reason: 'account_deactivated',
+        userId: user.id,
+        entityId: user.id,
+        context,
+      });
       throw Errors.unauthorized('Account is deactivated');
     }
 
@@ -135,12 +357,28 @@ export class AuthService {
     // not something authentication should depend on. The message stays generic
     // so it cannot be used to tell identities apart from real accounts.
     if (!user.passwordHash) {
+      await this.recordLoginAudit({
+        method: 'password',
+        success: false,
+        reason: 'no_credential',
+        userId: user.id,
+        entityId: user.id,
+        context,
+      });
       throw Errors.unauthorized('Invalid email or password');
     }
 
     const isValid = await comparePassword(input.password, user.passwordHash);
 
     if (!isValid) {
+      await this.recordLoginAudit({
+        method: 'password',
+        success: false,
+        reason: 'invalid_password',
+        userId: user.id,
+        entityId: user.id,
+        context,
+      });
       throw Errors.unauthorized('Invalid email or password');
     }
 
@@ -149,6 +387,14 @@ export class AuthService {
     // cannot log in — assign a role via /users/:id/roles first.
     const primaryAssignment = user.userRoles.find((r) => r.isPrimary) || user.userRoles[0];
     if (!primaryAssignment) {
+      await this.recordLoginAudit({
+        method: 'password',
+        success: false,
+        reason: 'no_role_assignment',
+        userId: user.id,
+        entityId: user.id,
+        context,
+      });
       throw Errors.forbidden('No active role assignment found for this user');
     }
 
@@ -191,10 +437,16 @@ export class AuthService {
 
     // Check for 2FA
     if (user.isTwoFactorEnabled && !isDemoAccount) {
-      const tempToken = generateAccessToken(
-        { ...basePayload, isTemp: true },
-        '5m'
-      );
+      const tempToken = generateAccessToken({ ...basePayload, isTemp: true }, '5m');
+
+      await this.recordLoginAudit({
+        method: 'password',
+        success: true,
+        userId: user.id,
+        entityId: user.id,
+        context,
+        newValues: { method: 'password', success: true, twoFactorPending: true },
+      });
 
       return {
         requiresTwoFactor: true,
@@ -204,10 +456,16 @@ export class AuthService {
 
     // Force 2FA setup for Admin/Super Admin
     if (isUserAdmin && !user.isTwoFactorEnabled && !isDemoAccount) {
-      const tempToken = generateAccessToken(
-        { ...basePayload, isTemp: true },
-        '10m'
-      );
+      const tempToken = generateAccessToken({ ...basePayload, isTemp: true }, '10m');
+
+      await this.recordLoginAudit({
+        method: 'password',
+        success: true,
+        userId: user.id,
+        entityId: user.id,
+        context,
+        newValues: { method: 'password', success: true, twoFactorSetupRequired: true },
+      });
 
       return {
         requiresTwoFactorSetup: true,
@@ -234,6 +492,14 @@ export class AuthService {
       this.getActiveAcademicYearId(),
     ]);
 
+    await this.recordLoginAudit({
+      method: 'password',
+      success: true,
+      userId: user.id,
+      entityId: user.id,
+      context,
+    });
+
     // Return user without sensitive fields
     const userWithoutPassword = this.stripSensitiveFields(user);
 
@@ -244,6 +510,558 @@ export class AuthService {
         permissions,
       },
       ...tokens,
+    };
+  }
+
+  /**
+   * SSO Login (Google Workspace & Microsoft 365)
+   * Cryptographically verifies the OIDC token with provider before authenticating.
+   */
+  async ssoLogin(input: SSOLoginInput, context?: LoginAuditContext) {
+    if (!input.idToken) {
+      throw Errors.badRequest(
+        'SSO idToken is required for cryptographically verified authentication'
+      );
+    }
+
+    const method = `sso:${input.provider}`;
+    let identity: VerifiedSSOIdentity;
+
+    try {
+      if (input.provider === 'google') {
+        identity = await this.verifyGoogleIdToken(input.idToken);
+      } else if (input.provider === 'microsoft') {
+        identity = await this.verifyMicrosoftIdToken(input.idToken);
+      } else {
+        throw Errors.badRequest('Unsupported SSO provider');
+      }
+    } catch (err: any) {
+      // The verifier's own message (which can name the exact claim that failed,
+      // e.g. audience/issuer/tenant details) stays in the server log; the
+      // client gets one stable, non-enumerating message. Leaking which check
+      // failed hands an attacker a free oracle for probing tokens.
+      logger.warn('SSO token verification failed', {
+        method,
+        reason: err instanceof Error ? err.message : String(err),
+      });
+      await this.recordLoginAudit({
+        method,
+        success: false,
+        reason: 'token_verification_failed',
+        context,
+      });
+      throw Errors.unauthorized('Verifikasi token SSO gagal');
+    }
+
+    const email = identity.email;
+    if (!email) {
+      await this.recordLoginAudit({
+        method,
+        success: false,
+        reason: 'email_missing',
+        context,
+      });
+      throw Errors.badRequest('Email could not be verified from SSO provider token');
+    }
+
+    const normalizedEmail = email.toLowerCase();
+    const provider = input.provider === 'google' ? SSOProvider.GOOGLE : SSOProvider.MICROSOFT;
+
+    // Resolve the account by the *durable* identity link first, then by email.
+    //
+    // The whole point of `IdentityProvider` (keyed on the provider subject, not
+    // the address) is that a provider-side e-mail change must not lock a user
+    // out. Looking up by e-mail alone defeated that: the mailbox moved, the
+    // local row did not, and the established link was never consulted.
+    const linkedUser = await this.findUserByProviderSubject(provider, identity.subject);
+
+    const user = linkedUser ?? (await this.findUserByEmailForSso(normalizedEmail));
+
+    if (!user) {
+      const isDomainEmail = normalizedEmail.endsWith('@cipansor.or.id');
+      await this.recordLoginAudit({
+        method,
+        success: false,
+        reason: 'user_not_found',
+        context,
+      });
+      if (isDomainEmail) {
+        throw Errors.unauthorized(
+          `Akun email ${input.provider === 'google' ? 'Google' : 'Microsoft'} (${email}) belum terdaftar di Sistem Cipansor. Silakan hubungi Administrator.`
+        );
+      }
+      throw Errors.unauthorized('Email tidak terdaftar di sistem');
+    }
+
+    if (!user.isActive) {
+      await this.recordLoginAudit({
+        method,
+        success: false,
+        reason: 'account_deactivated',
+        userId: user.id,
+        entityId: user.id,
+        context,
+      });
+      throw Errors.unauthorized('Account is deactivated');
+    }
+
+    const primaryAssignment = user.userRoles.find((r) => r.isPrimary) || user.userRoles[0];
+    if (!primaryAssignment) {
+      await this.recordLoginAudit({
+        method,
+        success: false,
+        reason: 'no_role_assignment',
+        userId: user.id,
+        entityId: user.id,
+        context,
+      });
+      throw Errors.forbidden('No active role assignment found for this user');
+    }
+
+    // Link (or refresh) the provider identity *after* the account is confirmed
+    // to be real and active, so a rejected login never plants a row. The
+    // subject is the durable key — an e-mail change on the provider side must
+    // not detach an established login.
+    await this.linkIdentityProvider({
+      provider,
+      providerSubjectId: identity.subject,
+      providerEmail: normalizedEmail,
+      userId: user.id,
+    });
+
+    const roleCode = primaryAssignment.role.code;
+    const permissions = (primaryAssignment.role.permissions as string[]) || [];
+    const roleId = primaryAssignment.roleId;
+    const assignmentUnitId = primaryAssignment.unitId;
+    const isUserAdmin = isAdminRoleCode(roleCode);
+
+    const basePayload = {
+      id: user.id,
+      sub: user.id,
+      email: user.email,
+      roleId: roleId || '',
+      roleCode,
+      // Same derivation as the password path (`tokenUnitId`), so a person's
+      // token scope cannot differ depending on which method they signed in
+      // with. The previous `assignmentUnitId || user.unitId` gave a foundation
+      // user their home unit under SSO but a null/foundation scope under
+      // password login.
+      unitId: tokenUnitId(assignmentUnitId, roleCode, user.unitId),
+      permissions,
+      role: deriveLegacyRole(roleCode),
+    };
+
+    const isDemoAccount = process.env.DEMO_MODE === 'true';
+
+    // Check 2FA
+    if (user.isTwoFactorEnabled && !isDemoAccount) {
+      const tempToken = generateAccessToken({ ...basePayload, isTemp: true }, '5m');
+      await this.recordLoginAudit({
+        method,
+        success: true,
+        userId: user.id,
+        entityId: user.id,
+        context,
+        newValues: { method, success: true, twoFactorPending: true },
+      });
+      return { requiresTwoFactor: true, tempToken };
+    }
+
+    if (isUserAdmin && !user.isTwoFactorEnabled && !isDemoAccount) {
+      const tempToken = generateAccessToken({ ...basePayload, isTemp: true }, '10m');
+      await this.recordLoginAudit({
+        method,
+        success: true,
+        userId: user.id,
+        entityId: user.id,
+        context,
+        newValues: { method, success: true, twoFactorSetupRequired: true },
+      });
+      return { requiresTwoFactorSetup: true, tempToken };
+    }
+
+    // Generate tokens
+    const tokens = generateTokenPair(basePayload);
+
+    const [, , activeAcademicYearId] = await Promise.all([
+      prisma.refreshToken.create({
+        data: {
+          token: tokens.refreshToken,
+          userId: user.id,
+          expiresAt: getExpirationDate(config.jwt.refreshExpiresIn),
+        },
+      }),
+      prisma.user.update({
+        where: { id: user.id },
+        data: { lastLoginAt: new Date() },
+      }),
+      this.getActiveAcademicYearId(),
+    ]);
+
+    await this.recordLoginAudit({
+      method,
+      success: true,
+      userId: user.id,
+      entityId: user.id,
+      context,
+    });
+
+    const userWithoutPassword = this.stripSensitiveFields(user);
+
+    return {
+      user: {
+        ...userWithoutPassword,
+        academicYearId: activeAcademicYearId,
+        permissions,
+      },
+      ...tokens,
+    };
+  }
+
+  /**
+   * Verify a Google OIDC ID token locally against Google's JWKS.
+   *
+   * This used to call `oauth2.googleapis.com/tokeninfo`, which put a network
+   * round-trip in the login path and made an external HTTP endpoint the thing
+   * that decided whether a token was valid. Microsoft verification has always
+   * been local; this mirrors it, so both providers are held to the same bar:
+   * the signature is checked against the published keys, and only then are the
+   * claims read.
+   */
+  private async verifyGoogleIdToken(idToken: string): Promise<VerifiedSSOIdentity> {
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    if (!clientId) {
+      throw Errors.badRequest('Google SSO is not configured on this server');
+    }
+
+    const decoded = jwt.decode(idToken, { complete: true });
+    if (!decoded || typeof decoded === 'string' || !decoded.header.kid) {
+      throw new Error('Invalid Google ID token format');
+    }
+
+    const key = await getGoogleJwksClient().getSigningKey(decoded.header.kid);
+    const signingKey = key.getPublicKey();
+
+    const payload = jwt.verify(idToken, signingKey, {
+      algorithms: ['RS256'],
+    }) as jwt.JwtPayload;
+
+    // `jwt.verify` enforces `exp` itself, but the check is repeated here so
+    // the failure is a message this service owns rather than the library's
+    // TokenExpiredError text — and so the behaviour is identical when the
+    // signature check is stubbed in tests.
+    if (payload.exp && payload.exp < Date.now() / 1000) {
+      throw new Error('Google token has expired');
+    }
+
+    if (payload.aud !== clientId) {
+      throw new Error('Google token audience (aud) mismatch');
+    }
+
+    // Google documents both spellings; tokens in the wild carry either.
+    if (
+      payload.iss &&
+      payload.iss !== 'https://accounts.google.com' &&
+      payload.iss !== 'accounts.google.com'
+    ) {
+      throw new Error('Google token issuer (iss) invalid');
+    }
+
+    if (!payload.email || (payload.email_verified !== 'true' && payload.email_verified !== true)) {
+      throw new Error('Google account email is missing or not verified');
+    }
+
+    if (typeof payload.sub !== 'string' || !payload.sub) {
+      throw new Error('Google token subject (sub) is missing');
+    }
+
+    return { email: payload.email as string, subject: payload.sub };
+  }
+
+  /**
+   * Cryptographically verify Microsoft Entra ID OIDC ID token using JWKS
+   */
+  private async verifyMicrosoftIdToken(idToken: string): Promise<VerifiedSSOIdentity> {
+    const clientId = process.env.MICROSOFT_CLIENT_ID;
+    if (!clientId) {
+      throw Errors.badRequest('Microsoft SSO is not configured on this server');
+    }
+
+    const decoded = jwt.decode(idToken, { complete: true });
+    if (!decoded || typeof decoded === 'string' || !decoded.header.kid) {
+      throw new Error('Invalid Microsoft ID token format');
+    }
+
+    const tenantId = process.env.MICROSOFT_TENANT_ID || 'common';
+    const jwksClient = getMicrosoftJwksClient(tenantId);
+
+    const key = await jwksClient.getSigningKey(decoded.header.kid);
+    const signingKey = key.getPublicKey();
+
+    const payload = jwt.verify(idToken, signingKey, {
+      algorithms: ['RS256'],
+    }) as jwt.JwtPayload;
+
+    if (payload.aud !== clientId) {
+      throw new Error('Microsoft token audience (aud) mismatch');
+    }
+
+    if (payload.exp && payload.exp < Date.now() / 1000) {
+      throw new Error('Microsoft token has expired');
+    }
+
+    if (
+      payload.iss &&
+      !payload.iss.startsWith('https://login.microsoftonline.com/') &&
+      !payload.iss.startsWith('https://sts.windows.net/')
+    ) {
+      throw new Error('Microsoft token issuer (iss) invalid');
+    }
+
+    // Single-tenant enforcement: when MICROSOFT_TENANT_ID names one tenant
+    // (a directory GUID or a domain) rather than a multi-tenant audience
+    // ('common'/'organizations'/'consumers'), reject tokens minted for a
+    // different tenant. The `tid` claim is the directory GUID; the issuer
+    // carries the same tenant (as GUID or verified domain) in its path.
+    //
+    // A domain-valued tenant must be resolved to the directory GUID through
+    // OIDC discovery before it can prove anything: Entra always reports the
+    // GUID in `tid`/issuer, and the verified e-mail's domain is NOT evidence of
+    // the directory — an attacker can mint a token in their own directory for a
+    // mailbox whose domain happens to end with ours. Domain alone used to pass
+    // that check, letting a foreign-directory token sign in as a local mailbox.
+    // Resolution failing (or a GUID mismatch on both `tid` and issuer) rejects.
+    const isMultiTenantAuth =
+      tenantId === 'common' || tenantId === 'organizations' || tenantId === 'consumers';
+    if (!isMultiTenantAuth) {
+      const expectedTenantGuid = isTenantGuid(tenantId)
+        ? tenantId.toLowerCase()
+        : await resolveTenantGuidFromDomain(tenantId);
+      const tidMatches =
+        !!expectedTenantGuid &&
+        typeof payload.tid === 'string' &&
+        payload.tid.toLowerCase() === expectedTenantGuid;
+      const issuerMatchesTenant =
+        !!expectedTenantGuid &&
+        typeof payload.iss === 'string' &&
+        payload.iss.toLowerCase().includes(`/${expectedTenantGuid}/`);
+      if (!tidMatches && !issuerMatchesTenant) {
+        throw new Error('Microsoft token tenant (tid) mismatch');
+      }
+    }
+
+    const email = (payload.preferred_username || payload.email || payload.upn) as
+      string | undefined;
+    if (!email) {
+      throw new Error('Microsoft token does not contain a valid email claim');
+    }
+
+    // Entra puts the immutable object id in `oid`; `sub` is pairwise per app
+    // registration and therefore not stable enough to key a durable link on.
+    const subject = (payload.oid || payload.sub) as string | undefined;
+    if (!subject) {
+      throw new Error('Microsoft token subject (oid/sub) is missing');
+    }
+
+    return { email, subject };
+  }
+
+  /**
+   * Create or refresh the link between an SSO subject and a local user.
+   *
+   * Deliberately a read followed by an explicit write rather than an `upsert`:
+   * the unique key is `(provider, subject)`, so an upsert would silently
+   * re-point an existing row at whichever user just signed in. A subject that
+   * already belongs to a *live* account is a hard conflict and must be
+   * surfaced, not overwritten.
+   *
+   * The one exception is a subject whose owner was soft-deleted. Resolution
+   * skips soft-deleted users (so the login falls back to the e-mail and finds
+   * the recreated account), but the old link survives with the dead user's id.
+   * Treating that as "belongs to someone else" locked the person out
+   * permanently: their subject could never be re-linked to the replacement
+   * account. Re-pointing the link at the live user is the repair.
+   *
+   * Two first logins for the same subject can pass the `findUnique` together
+   * and then race on the insert; the loser gets P2002 from the unique key. That
+   * is not a failure — it means the link now exists, so the row is re-read and
+   * handled like any other existing link (idempotent) rather than surfacing a
+   * spurious error to a legitimate user.
+   */
+  private async linkIdentityProvider(params: {
+    provider: SSOProvider;
+    providerSubjectId: string;
+    providerEmail: string;
+    userId: string;
+  }): Promise<void> {
+    const { provider, providerSubjectId, providerEmail, userId } = params;
+
+    const existing = await prisma.identityProvider.findUnique({
+      where: {
+        provider_providerSubjectId: { provider, providerSubjectId },
+      },
+    });
+
+    if (existing) {
+      if (existing.userId !== userId) {
+        if (!(await this.isSoftDeletedUser(existing.userId))) {
+          logger.warn('SSO subject already linked to another account', {
+            provider,
+            providerSubjectId,
+            linkedUserId: existing.userId,
+            attemptedUserId: userId,
+          });
+          throw Errors.conflict('Identitas SSO ini sudah tertaut ke akun lain');
+        }
+      }
+
+      await prisma.identityProvider.update({
+        where: { id: existing.id },
+        data: { userId, providerEmail, lastLoginAt: new Date() },
+      });
+      return;
+    }
+
+    try {
+      await prisma.identityProvider.create({
+        data: { provider, providerSubjectId, providerEmail, userId, lastLoginAt: new Date() },
+      });
+    } catch (error) {
+      // Unique-constraint race: another request created the link first.
+      if (isUniqueConstraintError(error)) {
+        const raced = await prisma.identityProvider.findUnique({
+          where: { provider_providerSubjectId: { provider, providerSubjectId } },
+        });
+        if (raced && raced.userId === userId) {
+          await prisma.identityProvider.update({
+            where: { id: raced.id },
+            data: { providerEmail, lastLoginAt: new Date() },
+          });
+          return;
+        }
+        if (raced && (await this.isSoftDeletedUser(raced.userId))) {
+          // Same repair as above, on the losing side of the race.
+          await prisma.identityProvider.update({
+            where: { id: raced.id },
+            data: { userId, providerEmail, lastLoginAt: new Date() },
+          });
+          return;
+        }
+        if (raced) {
+          logger.warn('SSO subject already linked to another account', {
+            provider,
+            providerSubjectId,
+            linkedUserId: raced.userId,
+            attemptedUserId: userId,
+          });
+          throw Errors.conflict('Identitas SSO ini sudah tertaut ke akun lain');
+        }
+      }
+      throw error;
+    }
+  }
+
+  /** True when `userId` no longer exists or has been soft-deleted. */
+  private async isSoftDeletedUser(userId: string): Promise<boolean> {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { deletedAt: true },
+    });
+    return !user || Boolean(user.deletedAt);
+  }
+
+  /**
+   * Resolve the local user from a durable provider identity link.
+   *
+   * Returns null when no link exists yet (first-time login) or when the linked
+   * account is soft-deleted; the caller then falls back to e-mail matching to
+   * establish the link.
+   */
+  private async findUserByProviderSubject(
+    provider: SSOProvider,
+    providerSubjectId: string
+  ): Promise<SsoUserRecord | null> {
+    const link = await prisma.identityProvider.findUnique({
+      where: { provider_providerSubjectId: { provider, providerSubjectId } },
+      select: { user: { select: SSO_USER_SELECT } },
+    });
+    const user = link?.user as SsoUserRecord | undefined;
+    if (!user || user.deletedAt) return null;
+    return user;
+  }
+
+  /**
+   * Fallback account resolution for the first SSO login, before any provider
+   * link exists: match the verified e-mail against a stored, non-deleted user.
+   */
+  private async findUserByEmailForSso(email: string): Promise<SsoUserRecord | null> {
+    return (await prisma.user.findFirst({
+      where: { email, deletedAt: null },
+      select: SSO_USER_SELECT,
+    })) as SsoUserRecord | null;
+  }
+
+  /**
+   * Write one `audit_logs` row for a login attempt, success or failure.
+   *
+   * Never allowed to break a login: the write is wrapped in its own try/catch
+   * and a failure is logged rather than thrown. A failed-login row is a write
+   * per attempt, which is only affordable because `authLimiter` (5/min/IP) and
+   * Turnstile already bound how many attempts can exist.
+   *
+   * PII: the attempted address is NOT written. An unauthenticated caller can
+   * type anything into the login form, so storing it would turn this table
+   * into a log of arbitrary third-party addresses (UU PDP); the reason code
+   * and the resolved `entityId` (when a real account was found) carry the
+   * investigative value without that cost.
+   */
+  private async recordLoginAudit(params: {
+    method: string;
+    success: boolean;
+    userId?: string;
+    entityId?: string;
+    reason?: string;
+    context?: LoginAuditContext;
+    newValues?: Record<string, unknown>;
+  }): Promise<void> {
+    const { method, success, userId, entityId, reason, context, newValues } = params;
+
+    try {
+      await prisma.auditLog.create({
+        data: {
+          userId: userId ?? null,
+          action: 'LOGIN',
+          entity: 'User',
+          entityId: entityId ?? null,
+          newValues: (newValues ?? { method, success, ...(reason ? { reason } : {}) }) as any,
+          ipAddress: context?.ipAddress ?? null,
+          userAgent: context?.userAgent ?? null,
+        },
+      });
+    } catch (err) {
+      logger.error('Failed to write login audit log', {
+        method,
+        success,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  /**
+   * Get SSO configuration status
+   */
+  getSSOConfig(): SSOConfigResponse {
+    const googleClientId = process.env.GOOGLE_CLIENT_ID || null;
+    const microsoftClientId = process.env.MICROSOFT_CLIENT_ID || null;
+    const microsoftTenantId = process.env.MICROSOFT_TENANT_ID || 'common';
+
+    return {
+      domain: 'cipansor.or.id',
+      googleEnabled: Boolean(googleClientId),
+      googleClientId,
+      microsoftEnabled: Boolean(microsoftClientId),
+      microsoftClientId,
+      microsoftTenantId,
     };
   }
 
@@ -280,7 +1098,7 @@ export class AuthService {
       if (!mapped) {
         throw Errors.badRequest(
           `Cannot resolve legacy role '${input.role}' for unit type '${unitType ?? 'unknown'}'. ` +
-          `Please send 'roleCode' instead.`
+            `Please send 'roleCode' instead.`
         );
       }
       resolvedRoleCode = mapped;
@@ -336,9 +1154,12 @@ export class AuthService {
       throw Errors.forbidden('Only Super Admin can create governance-level accounts');
     }
 
-    // Check if email exists
+    // Check if email exists. `register()` is reachable only through the Zod
+    // schema, which lower-cases — but the service is the layer that owns the
+    // write, so normalise again here rather than trusting the caller.
+    const email = normalizeEmail(input.email);
     const existing = await prisma.user.findFirst({
-      where: { email: input.email },
+      where: { email },
     });
 
     if (existing) {
@@ -364,12 +1185,19 @@ export class AuthService {
     // `role = NULL` would break any downstream consumer (BI tools, audit
     // queries, raw SQL reports) that assumes `role IS NOT NULL`. We would
     // rather fail loudly here than silently create unmapped rows.
-    const VALID_LEGACY_ROLES = ['SUPER_ADMIN', 'UNIT_ADMIN', 'TEACHER', 'STAFF', 'STUDENT', 'PARENT'];
+    const VALID_LEGACY_ROLES = [
+      'SUPER_ADMIN',
+      'UNIT_ADMIN',
+      'TEACHER',
+      'STAFF',
+      'STUDENT',
+      'PARENT',
+    ];
     const legacyRole = deriveLegacyRole(resolvedRoleCode);
     if (!VALID_LEGACY_ROLES.includes(legacyRole)) {
       throw Errors.badRequest(
         `RoleCode '${resolvedRoleCode}' has no legacy UserRole mapping. ` +
-        `Add a mapping to LEGACY_ROLE_EXPANSION in middleware/auth.ts or use an existing mapped role.`
+          `Add a mapping to LEGACY_ROLE_EXPANSION in middleware/auth.ts or use an existing mapped role.`
       );
     }
     const legacyRoleValue = legacyRole;
@@ -377,7 +1205,7 @@ export class AuthService {
       const newUser = await tx.user.create({
         data: {
           name: input.name,
-          email: input.email,
+          email,
           passwordHash,
           role: legacyRoleValue as any, // Populate legacy column (always non-null for new users)
           unitId: input.unitId,
@@ -658,7 +1486,9 @@ export class AuthService {
     }
 
     if (!user.isActive) {
-      throw Errors.badRequest('Akun ini nonaktif — aktifkan lebih dulu sebelum mengirim tautan reset');
+      throw Errors.badRequest(
+        'Akun ini nonaktif — aktifkan lebih dulu sebelum mengirim tautan reset'
+      );
     }
 
     // An identity row with no login cannot have its password reset.
@@ -1049,8 +1879,6 @@ export class AuthService {
     } = user;
     return safe;
   }
-
-
 }
 
 export const authService = new AuthService();

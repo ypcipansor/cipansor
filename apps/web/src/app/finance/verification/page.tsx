@@ -30,6 +30,7 @@ import {
   type PaymentVerificationStatus,
   type VerifiablePayment,
 } from "@/hooks/use-payment-verification";
+import { useResolvedFileUrl } from "@/hooks/use-resolved-file-url";
 
 function formatCurrency(amount: string | number): string {
   return new Intl.NumberFormat("id-ID", {
@@ -49,6 +50,9 @@ function PaymentCard({
   const verify = useVerifyPayment();
   const [rejectReason, setRejectReason] = useState("");
   const [showReject, setShowReject] = useState(false);
+  // Payment proofs land in a private container; resolve to a SAS before the
+  // browser opens the link, otherwise the raw blob URL 403s.
+  const proofUrl = useResolvedFileUrl(payment.proofUrl);
 
   const act = (
     action: "TU_APPROVE" | "FINAL_APPROVE" | "REJECT",
@@ -104,10 +108,10 @@ function PaymentCard({
             )}
           </div>
           <div className="flex flex-col items-end gap-2">
-            {payment.proofUrl ? (
+            {proofUrl ? (
               <Button variant="outline" size="sm" asChild>
                 <a
-                  href={payment.proofUrl}
+                  href={proofUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                 >

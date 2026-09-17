@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { assertProductionSecrets, findSecretIssues } from './assert-secrets';
+import {
+  assertProductionSecrets,
+  findSecretIssues,
+  warnOnLooseMicrosoftTenant,
+} from './assert-secrets';
 
 /** A key of the shape `openssl rand -hex 48` produces. */
 const GOOD = 'a'.repeat(96);
@@ -9,9 +13,9 @@ const SHIPPED = 'your-super-secret-key-change-this-in-production-min-32-chars';
 
 describe('production secret guard', () => {
   it('refuses the exact value that was live in production', () => {
-    expect(() =>
-      assertProductionSecrets({ env: 'production', jwtSecret: SHIPPED })
-    ).toThrow(/JWT_SECRET/);
+    expect(() => assertProductionSecrets({ env: 'production', jwtSecret: SHIPPED })).toThrow(
+      /JWT_SECRET/
+    );
   });
 
   // It is long enough and looks deliberate, which is why it survived review.
@@ -142,16 +146,12 @@ describe('production secret guard', () => {
     expect(SHIPPED.length).toBeGreaterThanOrEqual(32);
     expect(SHIPPED).not.toBe('change-this-secret-in-production');
 
-    expect(() => resolveJwtSecret(SHIPPED, 'production')).toThrow(
-      /example value/
-    );
+    expect(() => resolveJwtSecret(SHIPPED, 'production')).toThrow(/example value/);
   });
 
   it('leaves development and test alone', () => {
     for (const env of ['development', 'test', undefined]) {
-      expect(() =>
-        assertProductionSecrets({ env, jwtSecret: SHIPPED })
-      ).not.toThrow();
+      expect(() => assertProductionSecrets({ env, jwtSecret: SHIPPED })).not.toThrow();
     }
   });
 
@@ -161,6 +161,35 @@ describe('production secret guard', () => {
       throw new Error('should have thrown');
     } catch (error) {
       expect((error as Error).message).not.toContain(SHIPPED);
+    }
+  });
+});
+
+describe('loose Microsoft tenant warning', () => {
+  it('warns in production when the tenant is left at common', () => {
+    const warning = warnOnLooseMicrosoftTenant('production', 'common');
+    expect(warning).toContain('MICROSOFT_TENANT_ID');
+    expect(warning).toContain('ANY Entra tenant');
+  });
+
+  it('warns when the tenant is unset in production (defaults to common)', () => {
+    expect(warnOnLooseMicrosoftTenant('production', undefined)).not.toBeNull();
+  });
+
+  it('is case-insensitive about the common default', () => {
+    expect(warnOnLooseMicrosoftTenant('production', 'COMMON')).not.toBeNull();
+  });
+
+  it('stays quiet once a real tenant GUID or domain is configured', () => {
+    expect(
+      warnOnLooseMicrosoftTenant('production', '99999999-9999-9999-9999-999999999999')
+    ).toBeNull();
+    expect(warnOnLooseMicrosoftTenant('production', 'cipansor.or.id')).toBeNull();
+  });
+
+  it('stays quiet outside production', () => {
+    for (const env of ['development', 'test', undefined]) {
+      expect(warnOnLooseMicrosoftTenant(env, 'common')).toBeNull();
     }
   });
 });

@@ -16,6 +16,7 @@ import {
   CreateRegistrantDocumentInput,
 } from './admissions.schema';
 import { Errors } from '../../middleware/error';
+import { normalizeEmail } from '../../utils/email';
 
 type AuthUser = { id: string; role: string; roleCode?: string; unitId?: string | null };
 
@@ -627,7 +628,7 @@ async function createRegistrantOnce(
         birthDate: new Date(data.birthDate),
         address: data.address,
         phone: data.phone,
-        email: data.email && data.email !== '' ? data.email : undefined,
+        email: data.email && data.email !== '' ? normalizeEmail(data.email) : undefined,
         previousSchool: data.previousSchool,
         quranAbility: data.quranAbility,
         memorizedJuz: data.memorizedJuz,
@@ -704,7 +705,8 @@ export async function updateRegistrant(id: string, data: UpdateRegistrantInput, 
   // on create stores NULL — breaking downstream `if (registrant.email)`
   // checks and risking duplicate-empty-string collisions if `email` ever
   // becomes @unique.
-  const normalisedEmail = email === undefined ? undefined : email === '' ? null : email;
+  const normalisedEmail =
+    email === undefined ? undefined : email === '' ? null : normalizeEmail(email);
 
   return prisma.registrant.update({
     where: { id },

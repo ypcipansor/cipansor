@@ -7,7 +7,13 @@ import type { Request, Response, NextFunction } from 'express';
 vi.mock('@/lib/prisma', () => ({ prisma: {} }));
 vi.mock('@/lib/redis', () => ({ redis: {} }));
 
-import { matchesMagicBytes, verifyStoredFile, uploadsAuth } from './upload';
+import {
+  matchesMagicBytes,
+  verifyStoredFile,
+  uploadsAuth,
+  uploadFilenameFor,
+  getSafeUploadPathForCleanup,
+} from './upload';
 import { generateAccessToken } from '@/lib/jwt';
 import { ApiError } from './error';
 
@@ -51,6 +57,38 @@ describe('matchesMagicBytes', () => {
   it('rejects MIME types outside the allow-list entirely', () => {
     expect(matchesMagicBytes('text/html', Buffer.from('<html>'))).toBe(false);
     expect(matchesMagicBytes('application/x-php', phpScript)).toBe(false);
+  });
+});
+
+describe('uploadFilenameFor', () => {
+  it('derives the extension from the MIME table, never the client filename', () => {
+    expect(uploadFilenameFor('image/png')).toMatch(/^[0-9a-f-]{36}\.png$/);
+    expect(uploadFilenameFor('application/pdf')).toMatch(/^[0-9a-f-]{36}\.pdf$/);
+    expect(uploadFilenameFor('audio/webm')).toMatch(/^[0-9a-f-]{36}\.webm$/);
+  });
+
+  it('never trusts a caller-declared extension for a known MIME type', () => {
+    // There is no client filename in the signature at all — the only input is
+    // the declared MIME type, which the magic-byte check then has to back up.
+    const name = uploadFilenameFor('image/jpeg');
+    expect(name.endsWith('.jpg')).toBe(true);
+    expect(name).not.toContain('.php');
+    expect(name).not.toContain('.html');
+  });
+
+  it('falls back to .bin for a MIME type outside the allow-list', () => {
+    expect(uploadFilenameFor('application/x-php')).toMatch(/^[0-9a-f-]{36}\.bin$/);
+  });
+
+  it('mints a distinct crypto-random name for every upload (blob uniqueness)', () => {
+    // This uniqueness is what lets `cleanupBlobBestEffort` reclaim a record's
+    // blob without asking whether another record shares the URL (BUG 3).
+    const names = new Set(Array.from({ length: 200 }, () => uploadFilenameFor('image/png')));
+
+    expect(names.size).toBe(200);
+    for (const name of names) {
+      expect(name).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.png$/);
+    }
   });
 });
 
@@ -124,5 +162,59 @@ describe('uploadsAuth', () => {
     const token = generateAccessToken({ ...payload, isTemp: true });
     const next = run({ query: { token } as Request['query'] });
     expect((next.mock.calls[0][0] as ApiError).statusCode).toBe(401);
+  });
+});
+
+describe('getSafeUploadPathForCleanup', () => {
+  // The cleanup guard added UUID-name + symlink checks with no regression test;
+  // this pins both halves. It only ever returns a real path inside the upload
+  // directory, so a crafted value from a request cannot delete anything else.
+  const uploadDir = path.join(process.cwd(), 'public/uploads');
+  const uuid = '123e4567-e89b-42d3-a456-426614174000';
+
+  it('accepts a generated UUID filename that exists inside the upload dir', async () => {
+    fs.mkdirSync(uploadDir, { recursive: true });
+    const p = path.join(uploadDir, `${uuid}.png`);
+    fs.writeFileSync(p, png);
+    try {
+      await expect(getSafeUploadPathForCleanup(p)).resolves.toBe(fs.realpathSync(p));
+      // A bare filename (what a stored URL carries) resolves against the dir.
+      await expect(getSafeUploadPathForCleanup(`${uuid}.png`)).resolves.toBe(
+        fs.realpathSync(p)
+      );
+    } finally {
+      fs.unlinkSync(p);
+    }
+  });
+
+  it('rejects a non-UUID or extension-less name', async () => {
+    await expect(getSafeUploadPathForCleanup('/etc/passwd')).resolves.toBeNull();
+    await expect(getSafeUploadPathForCleanup('../../etc/passwd')).resolves.toBeNull();
+    await expect(getSafeUploadPathForCleanup(`${uuid}`)).resolves.toBeNull();
+    await expect(getSafeUploadPathForCleanup('not-a-uuid.png')).resolves.toBeNull();
+  });
+
+  it('rejects a symlink that escapes the upload directory', async () => {
+    fs.mkdirSync(uploadDir, { recursive: true });
+    const outside = path.join(os.tmpdir(), `escape-${uuid}.txt`);
+    fs.writeFileSync(outside, 'secret');
+    const link = path.join(uploadDir, `${uuid}.png`);
+    try {
+      fs.symlinkSync(outside, link);
+    } catch {
+      // Symlinks unavailable on this platform/filesystem; nothing to assert.
+      fs.unlinkSync(outside);
+      return;
+    }
+    try {
+      await expect(getSafeUploadPathForCleanup(link)).resolves.toBeNull();
+    } finally {
+      fs.unlinkSync(link);
+      fs.unlinkSync(outside);
+    }
+  });
+
+  it('returns null for a file that no longer exists', async () => {
+    await expect(getSafeUploadPathForCleanup(`${uuid}.png`)).resolves.toBeNull();
   });
 });
