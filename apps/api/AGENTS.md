@@ -74,6 +74,15 @@ Mount new modules in `src/app.ts`.
 - Import DB enums and `Prisma` namespace from `@prisma/client`.
 - Always add the matching `include`/`select` for any relation/field you access on
   a query result, or TypeScript will (correctly) reject the access.
+- **`OR: [{}]` matches NOTHING, not everything.** An empty object inside `OR`
+  becomes a clause with no conditions that Prisma 7 resolves to zero rows, so a
+  "match all" branch written that way silently returns an empty result set. Write
+  the match-all case as `{}` with no `OR` clause at all (`AND: [{}]` and `{}` do
+  match everything). This shipped once as a list ACL: Super Admin — a READ role
+  that should see every row — saw an empty list, and nothing failed because the
+  predicate still looked correct as an object. Unit tests with a mocked Prisma
+  cannot catch it; only running the predicate against real PostgreSQL
+  (`tests/integration.db.test.ts`) can.
 
 ## Auth & roles
 
