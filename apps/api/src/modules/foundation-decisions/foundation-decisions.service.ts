@@ -25,10 +25,11 @@ import { Errors } from '@/middleware/error';
 import { config } from '@/config';
 import { evaluateQuorum, type QuorumEvaluation } from '@/utils/foundation-quorum';
 import { organMayDecide, roleCodesForOrgan } from '@/utils/foundation-authority';
+import { canReadFoundationDecision } from '@/utils/foundation-decision-access';
 import {
   EsignError,
+  LOCKOUT_MINUTES,
   MAX_PASSPHRASE_ATTEMPTS,
-  lockoutUntil,
   signPdfHash,
   verifyPdfHashSignature,
   type EncryptedKeyMaterial,
@@ -45,7 +46,7 @@ import type { DecisionPdfVoteRow, DecisionPdfMemberRow } from '@/utils/generate-
 const DEFAULT_RULE = DEFAULT_FOUNDATION_RULE;
 
 /** Hash teks kanonis (payload suara, dsb). Selalu UTF-8. */
-function sha256hex(text: string): string {
+export function sha256hex(text: string): string {
   return createHash('sha256').update(text, 'utf8').digest('hex');
 }
 
@@ -96,7 +97,8 @@ export function canonicalDecisionPayload(params: {
   ].join('|');
 }
 
-function toMemberMaterial(key: {
+/** Baris `userSigningKey` → bahan kriptografi yang dimengerti utils/esign. */
+export function signingKeyToMaterial(key: {
   algorithm: string;
   publicKey: string;
   encryptedPrivateKey: string;
@@ -116,8 +118,140 @@ function toMemberMaterial(key: {
   };
 }
 
+/**
+ * Hitung ulang digest kanonis yang SEHARUSNYA untuk sebuah suara.
+ *
+ * Dipakai dua arah: saat suara ditulis (castVote) dan saat suara diperiksa
+ * ulang sebelum dihitung ke kuorum. Satu definisi, supaya pemeriksaan tidak
+ * pernah bisa menyimpang dari penulisan.
+ */
+export function canonicalDigestForVote(
+  d: DecisionSignatureContext,
+  vote: { userId: string; choice: string; signedAt: Date }
+): string {
+  const snapshot = d.quorumSnapshot as unknown as QuorumSnapshot;
+  return sha256hex(
+    canonicalDecisionPayload({
+      decisionId: d.id,
+      organType: d.organType,
+      kind: d.kind,
+      decisionType: d.decisionType,
+      subject: d.subject,
+      body: d.body,
+      createdAt: d.createdAt,
+      activeCount: snapshot.activeCount,
+      voterId: vote.userId,
+      choice: vote.choice,
+      signedAt: vote.signedAt,
+    })
+  );
+}
+
+/**
+ * Benarkah baris suara ini benar-benar ditandatangani anggota tersebut?
+ *
+ * Tiga hal yang diikat sekaligus, dan ketiganya penting:
+ *  - pemilihnya anggota organ pada SNAPSHOT yang terkunci (bukan peran hari
+ *    ini), karena baris suara dapat disisipkan langsung ke basis data;
+ *  - `canonicalDigest` tersimpan sama dengan digest yang dihitung ULANG dari
+ *    isi keputusan + pilihan + waktu tanda tangan — mengubah `choice` di baris
+ *    suara saja sudah cukup membuatnya berbeda;
+ *  - `signature` benar-benar tanda tangan atas digest itu menurut `publicKey`
+ *    yang tersimpan, sehingga memalsukan pilihan menuntut kunci privat
+ *    anggota.
+ *
+ * Baris yang gagal di sini TIDAK boleh dihitung ke kuorum: tanpa pemeriksaan
+ * ini, seorang admin basis data dapat menyisipkan suara "APPROVE" dan
+ * keputusan memperoleh e-seal Yayasan yang sah atas dasar suara palsu.
+ */
+export function isVoteAuthentic(
+  d: DecisionSignatureContext,
+  vote: VoteSignatureRecord
+): boolean {
+  if (!d.members.some((m) => m.userId === vote.userId)) return false;
+  if (!vote.canonicalDigest || !vote.signature || !vote.publicKey) return false;
+  // `signedAt` termasuk dalam payload kanonis; baris tanpa waktu tanda tangan
+  // tidak dapat diverifikasi dan karena itu tidak dihitung.
+  if (!vote.signedAt) return false;
+  let expected: string;
+  try {
+    expected = canonicalDigestForVote(d, vote);
+  } catch {
+    return false;
+  }
+  if (expected !== vote.canonicalDigest) return false;
+  return verifyPdfHashSignature(vote.publicKey, vote.canonicalDigest, vote.signature);
+}
+
 type VoteWithUser = FoundationDecisionVote & { user: { id: string; name: string } };
 type MemberWithUser = FoundationDecisionMember & { user: { id: string; name: string } };
+
+/**
+ * Sidik jari isi yang DICETAK ke PDF final: naskah, anggota, dan suara yang
+ * sah. Dipakai untuk memastikan artefak yang dirender di luar kunci masih
+ * cocok ketika kunci diperoleh — bila seorang pemilih lain menyisipkan suara
+ * di sela-selanya, sidik jarinya berbeda dan artefaknya dirender ulang.
+ */
+function approvalFingerprint(d: RichDecision): string {
+  return sha256hex(
+    JSON.stringify({
+      id: d.id,
+      subject: d.subject,
+      body: d.body,
+      decisionType: d.decisionType,
+      members: d.members.map((m) => m.userId),
+      votes: d.votes
+        .filter((v) => isVoteAuthentic(d, v))
+        .map((v) => `${v.userId}:${v.canonicalDigest}`)
+        .sort(),
+    })
+  );
+}
+
+/** Bagian keputusan yang dibutuhkan untuk memeriksa keaslian sebuah suara. */
+interface DecisionSignatureContext {
+  id: string;
+  organType: string;
+  kind: string;
+  decisionType: string;
+  subject: string;
+  body: string;
+  createdAt: Date;
+  quorumSnapshot: unknown;
+  members: Array<{ userId: string }>;
+}
+
+/** Baris suara yang diperiksa keasliannya. */
+interface VoteSignatureRecord {
+  userId: string;
+  choice: string;
+  canonicalDigest: string;
+  signature: string;
+  publicKey: string;
+  signedAt: Date;
+}
+
+/**
+ * Artefak persetujuan yang MAHAL: PDF final, hash byte-nya, dan e-seal atas
+ * hash itu.
+ *
+ * Dipisahkan dari penulisan status supaya pembuatan PDF + pembukaan kunci
+ * e-seal (scrypt) dapat dikerjakan DI LUAR kunci baris keputusan. Dulu semuanya
+ * berjalan selagi `SELECT … FOR UPDATE` dipegang, sehingga satu keputusan yang
+ * sedang difinalkan memblokir suara anggota lain selama puluhan milidetik
+ * kripto. `fingerprint` mengikat artefak ke isi keputusan + himpunan suara yang
+ * dirender; bila di dalam kunci ternyata himpunannya berbeda (pemilih lain
+ * masuk di sela-sela), artefak dibuang dan dirender ulang — jadi pemisahan ini
+ * tidak melonggarkan jaminan apa pun.
+ */
+interface ApprovalArtifact {
+  fingerprint: string;
+  buf: Buffer;
+  finalPdfDigest: string;
+  seal: FoundationEseal;
+  sealSignature: string;
+  decidedAt: Date;
+}
 type RichDecision = FoundationDecision & {
   members: MemberWithUser[];
   votes: VoteWithUser[];
@@ -231,24 +365,37 @@ async function lockDecision(client: DbClient, id: string): Promise<void> {
 /**
  * Catat percobaan passphrase gagal; dikunci setelah ambang esign tercapai.
  *
- * Penaikan memakai `increment` ATOMIK di basis data, bukan
- * `current + 1` dari nilai yang dibaca lebih dulu. Beberapa percobaan salah
- * yang berjalan paralel sama-sama membaca nilai basi yang sama, sehingga
- * penghitungnya tak pernah menembus ambang dan lockout tak pernah terjadi —
- * sesi yang dicuri bisa menebak passphrase tanpa batas. `lockedUntil`
- * dihitung dari nilai HASIL increment, bukan dari bacaan lama.
+ * Penaikan sekaligus penghitungan `locked_until` terjadi dalam SATU pernyataan
+ * SQL atomik. Bentuk lama (`update` increment, lalu `update` KEDUA yang menulis
+ * `lockedUntil` dari hasil bacaan) meninggalkan celah balapan: pada kegagalan
+ * paralel, update kedua dapat berjalan terbalik — percobaan yang menembus
+ * ambang menulis lockout lebih dulu, lalu percobaan lain yang hasil bacanya
+ * lebih rendah menimpanya dengan `null`, sehingga kunci justru terbuka tepat
+ * ketika ia seharusnya terkunci. Menghitung `locked_until` dari
+ * `failed_attempts + 1` di dalam basis data menutup celah itu, karena setiap
+ * penulis memakai nilai barisnya sendiri, bukan nilai yang dibaca sebelumnya.
  */
 async function recordFailedAttempt(keyId: string): Promise<number> {
-  const updated = await prisma.userSigningKey.update({
-    where: { id: keyId },
-    data: { failedAttempts: { increment: 1 } },
-  });
-  const failed = updated.failedAttempts;
-  await prisma.userSigningKey.update({
-    where: { id: keyId },
-    data: { lockedUntil: lockoutUntil(failed) },
-  });
-  return failed;
+  // Satu pernyataan untuk keduanya. Dua `update` terpisah pernah membuat
+  // `lockedUntil` ditulis dari luar urutan: percobaan yang increment-nya lebih
+  // dulu menembus ambang menulis lockout, lalu percobaan lain — yang membaca
+  // `failedAttempts` lebih rendah — menimpanya dengan `null`, sehingga lockout
+  // hilang dan tebakan passphrase kembali gratis. Di sini `locked_until`
+  // dihitung dari `failed_attempts + 1` DI DALAM basis data, jadi nilai yang
+  // tersimpan selalu mencerminkan hitungan tertinggi yang pernah terjadi.
+  await prisma.$executeRaw`
+    UPDATE "user_signing_keys"
+    SET "failed_attempts" = "failed_attempts" + 1,
+        "locked_until" = CASE
+          WHEN "failed_attempts" + 1 >= ${MAX_PASSPHRASE_ATTEMPTS}
+            THEN NOW() + (${LOCKOUT_MINUTES} * INTERVAL '1 minute')
+          ELSE "locked_until"
+        END
+    WHERE "id" = ${keyId}`;
+  // Baca ulang nilai pasca-increment: pemanggil memakainya untuk memberi tahu
+  // sisa percobaan, dan nilai itu harus yang benar-benar tersimpan.
+  const updated = await prisma.userSigningKey.findUnique({ where: { id: keyId } });
+  return updated?.failedAttempts ?? MAX_PASSPHRASE_ATTEMPTS;
 }
 
 /** Buka blokir setelah passphrase benar — penghitung kembali ke nol. */
@@ -328,8 +475,19 @@ export const FoundationDecisionService = {
       totalVotes: 0,
     };
 
-    const decision = await prisma.$transaction(async (tx) =>
-      tx.foundationDecision.create({
+    /**
+     * Pembuatan keputusan dan baris auditnya berbagi SATU transaksi.
+     *
+     * Dulu `auditLog.create` dipanggil setelah `$transaction` selesai. Bila
+     * auditnya gagal, keputusan sudah ter-commit tetapi permintaan melempar
+     * galat — dan karena token verifikasinya acak, tidak ada unique yang
+     * mencegah percobaan ulang membuat keputusan DUPLIKAT: dua keputusan
+     * identik dengan dua pemungutan suara, dua PDF, dan dua e-seal. Di dalam
+     * transaksi, kegagalan audit membatalkan pembuatan sekaligus, sehingga
+     * pemanggil dapat mencoba lagi tanpa meninggalkan sisa.
+     */
+    const decisionId = await prisma.$transaction(async (tx) => {
+      const decision = await tx.foundationDecision.create({
         data: {
           organType: input.organType,
           kind: input.kind,
@@ -349,25 +507,28 @@ export const FoundationDecisionService = {
             })),
           },
         },
-      })
-    );
+      });
 
-    await prisma.auditLog.create({
-      data: {
-        userId: actor.id,
-        action: 'CREATE',
-        entity: 'FoundationDecision',
-        entityId: decision.id,
-        newValues: {
-          organType: input.organType,
-          kind: input.kind,
-          subject: input.subject,
-          decisionType: input.decisionType,
-          activeCount: snapshot.activeCount,
+      await tx.auditLog.create({
+        data: {
+          userId: actor.id,
+          action: 'CREATE',
+          entity: 'FoundationDecision',
+          entityId: decision.id,
+          newValues: {
+            organType: input.organType,
+            kind: input.kind,
+            subject: input.subject,
+            decisionType: input.decisionType,
+            activeCount: snapshot.activeCount,
+          },
         },
-      },
+      });
+
+      return decision.id;
     });
-    return decision.id;
+
+    return decisionId;
   },
 
   /** Aturan kuorum untuk (organ × cara), dengan default legal bila tak diset. */
@@ -433,9 +594,22 @@ export const FoundationDecisionService = {
     return { items, total, page: query.page, limit: query.limit };
   },
 
-  /** Detail keputusan untuk peminta (termasuk hak suara pribadi). */
+  /**
+   * Detail keputusan untuk peminta (termasuk hak suara pribadi).
+   *
+   * Akses baca diperiksa DI SINI, bukan lewat `authorize(...READ)` di rute.
+   * Alasannya ada pada `canReadFoundationDecision`: anggota snapshot yang
+   * rolenya sudah berubah tetap berhak menandatangani keputusan ini (rute vote
+   * sengaja hanya `authenticate`), dan menolaknya membaca dokumen yang boleh ia
+   * tanda tangani adalah kontradiksi yang tak dapat diperbaiki dari middleware
+   * — middleware melihat peran hari ini, sedangkan keanggotaannya terkunci pada
+   * saat keputusan dibuat.
+   */
   async detail(actor: Actor, decisionId: string) {
     const d = await this.loadWithRelations(decisionId);
+    if (!canReadFoundationDecision(actor, d.members)) {
+      throw Errors.forbidden('Anda tidak berhak membaca keputusan ini.');
+    }
     const snapshot = d.quorumSnapshot as unknown as QuorumSnapshot;
     const summary = d.voteSummary as unknown as VoteSummary;
     // Hak suara mengikuti SNAPSHOT anggota, bukan peran hari ini: orang yang
@@ -458,9 +632,23 @@ export const FoundationDecisionService = {
     return d as unknown as RichDecision;
   },
 
-  /** Rekonstruksi daftar suara dari baris keputusan (untuk evaluasi kuorum). */
+  /**
+   * Suara yang SAH untuk dihitung ke kuorum.
+   *
+   * Setiap baris suara yang gagal `isVoteAuthentic` dibuang, bukan sekadar
+   * dikembalikan pilihannya. Tanpa saringan ini, baris
+   * `foundation_decision_votes` yang diubah langsung di basis data (pilihan
+   * diganti, atau baris disisipkan) tetap ikut evaluasi kuorum dan menerima
+   * e-seal Yayasan yang sah — arsip permanen yang mengesahkan keputusan atas
+   * dasar suara palsu.
+   */
+  authenticatedVotesOf(d: RichDecision) {
+    return d.votes.filter((v) => isVoteAuthentic(d, v));
+  },
+
+  /** Bentuk ringkas suara yang sah, untuk evaluasi kuorum. */
   votesOf(d: RichDecision): Array<{ choice: 'APPROVE' | 'REJECT' | 'ABSTAIN' }> {
-    return d.votes.map((v) => ({ choice: v.choice }));
+    return this.authenticatedVotesOf(d).map((v) => ({ choice: v.choice }));
   },
 
   /** Memberi suara + tanda tangan digital anggota, lalu evaluasi kuorum. */
@@ -494,7 +682,7 @@ export const FoundationDecisionService = {
     } catch (err) {
       throw Errors.badRequest((err as Error).message);
     }
-    const material = toMemberMaterial(signingKey as never);
+    const material = signingKeyToMaterial(signingKey as never);
 
     const signedAt = new Date();
     const snapshot = d.quorumSnapshot as unknown as QuorumSnapshot;
@@ -534,6 +722,43 @@ export const FoundationDecisionService = {
       throw error;
     }
 
+    // Baris suara sintetis untuk menghitung artefak SEBELUM kunci diambil.
+    // `isVoteAuthentic` akan meloloskannya (tanda tangan ini sah), sehingga
+    // render di sini menghasilkan PDF yang sama persis dengan yang akan dirender
+    // di dalam kunci bila tidak ada pemilih lain yang menyela. Nama pemilih
+    // diambil dari SNAPSHOT anggota — nama itulah yang tercetak di risalah.
+    const previewVote: VoteWithUser = {
+      id: 'preview',
+      decisionId: d.id,
+      userId: actor.id,
+      choice,
+      canonicalDigest: digest,
+      signature,
+      publicKey: material.publicKey,
+      algorithm: material.algorithm,
+      note: note?.trim() || null,
+      signedAt,
+      user: {
+        id: actor.id,
+        name: d.members.find((m) => m.userId === actor.id)?.name ?? '',
+      },
+    };
+    const previewDecision: RichDecision = { ...d, votes: [...d.votes, previewVote] };
+    const previewEvaluation = evaluateQuorum(
+      previewDecision.quorumSnapshot as unknown as QuorumSnapshot,
+      this.votesOf(previewDecision)
+    );
+    // Kerja mahal (render PDF + buka kunci e-seal) dikerjakan DI LUAR kunci
+    // baris. Sebelumnya semua ini berjalan selagi `SELECT … FOR UPDATE`, jadi
+    // satu finalisasi menahan suara anggota lain selama kripto berlangsung.
+    let previewArtifact: ApprovalArtifact | null = null;
+    if (
+      previewEvaluation.outcome === 'APPROVED' &&
+      previewDecision.status !== FoundationDecisionStatus.APPROVED
+    ) {
+      previewArtifact = await this.prepareApprovalArtifact(actor, previewDecision);
+    }
+
     const result = await prisma.$transaction(async (tx) => {
       // Kunci baris keputusan dan periksa ulang status DI DALAM transaksi.
       // Pembuatan suara, pembacaan ulang suara, evaluasi kuorum, dan
@@ -568,13 +793,17 @@ export const FoundationDecisionService = {
       });
 
       const votes = await tx.foundationDecisionVote.findMany({ where: { decisionId: d.id } });
+      // Ringkasan dihitung dari suara yang LOLOS verifikasi tanda tangan.
+      // Baris suara yang disisipkan/diubah langsung di basis data tidak boleh
+      // muncul di rekap maupun di PDF final yang di-e-seal.
+      const authentic = votes.filter((v) => isVoteAuthentic(locked, v as never));
       const summary: VoteSummary = {
-        approve: votes.filter((v) => v.choice === 'APPROVE').length,
-        reject: votes.filter((v) => v.choice === 'REJECT').length,
-        abstain: votes.filter((v) => v.choice === 'ABSTAIN').length,
-        present: votes.length,
+        approve: authentic.filter((v) => v.choice === 'APPROVE').length,
+        reject: authentic.filter((v) => v.choice === 'REJECT').length,
+        abstain: authentic.filter((v) => v.choice === 'ABSTAIN').length,
+        present: authentic.length,
         active: snapshot.activeCount,
-        totalVotes: votes.length,
+        totalVotes: authentic.length,
       };
       await tx.foundationDecision.update({
         where: { id: d.id },
@@ -590,7 +819,14 @@ export const FoundationDecisionService = {
         fresh.quorumSnapshot as unknown as QuorumSnapshot,
         this.votesOf(fresh)
       );
-      const outcome = await this.applyOutcome(actor, fresh, evaluation, tx);
+      // Artefak yang disiapkan di luar kunci hanya dipakai bila sidik jarinya
+      // masih sama. Bila pemilih lain menyisipkan suara di sela-selanya, PDF
+      // dirender ulang di sini supaya himpunan suara yang dicetak tetap benar.
+      const artifact =
+        previewArtifact && previewArtifact.fingerprint === approvalFingerprint(fresh)
+          ? previewArtifact
+          : null;
+      const outcome = await this.applyLocked(actor, fresh, evaluation, tx, artifact ?? undefined);
 
       // Audit VOTE ditulis DI DALAM transaksi yang sama dengan suaranya. Bila
       // ditulis di luar (seperti dulu), kegagalan `auditLog.create` membuat
@@ -624,62 +860,93 @@ export const FoundationDecisionService = {
 
   /** Finalisasi manual oleh pimpinan/kepala rapat bila kuorum sudah tercapai. */
   async finalize(actor: Actor, decisionId: string) {
+    const d = await this.loadWithRelations(decisionId);
+    const previewEvaluation = evaluateQuorum(
+      d.quorumSnapshot as unknown as QuorumSnapshot,
+      this.votesOf(d)
+    );
+    // Sama seperti `castVote`: render PDF + e-seal disiapkan di luar kunci.
+    let previewArtifact: ApprovalArtifact | null = null;
+    if (
+      previewEvaluation.outcome === 'APPROVED' &&
+      d.status !== FoundationDecisionStatus.APPROVED
+    ) {
+      previewArtifact = await this.prepareApprovalArtifact(actor, d);
+    }
+
     return prisma.$transaction(async (tx) => {
       await lockDecision(tx, decisionId);
-      const d = (await tx.foundationDecision.findUnique({
+      const locked = (await tx.foundationDecision.findUnique({
         where: { id: decisionId },
         include: decisionInclude,
       })) as unknown as RichDecision | null;
-      if (!d) throw Errors.notFound('Keputusan tidak ditemukan.');
-      if (d.status !== FoundationDecisionStatus.VOTING) {
-        throw Errors.badRequest(`Keputusan berstatus ${d.status} dan tidak lagi menerima suara.`);
+      if (!locked) throw Errors.notFound('Keputusan tidak ditemukan.');
+      if (locked.status !== FoundationDecisionStatus.VOTING) {
+        throw Errors.badRequest(`Keputusan berstatus ${locked.status} dan tidak lagi menerima suara.`);
       }
       const evaluation = evaluateQuorum(
-        d.quorumSnapshot as unknown as QuorumSnapshot,
-        this.votesOf(d)
+        locked.quorumSnapshot as unknown as QuorumSnapshot,
+        this.votesOf(locked)
       );
       if (evaluation.outcome === 'OPEN') {
         throw Errors.badRequest(
           `Kuorum belum terpenuhi (hadir ${evaluation.presentCount}/${evaluation.presentRequired}, butuh ${evaluation.neededToApprove} setuju lagi).`
         );
       }
-      return this.applyOutcome(actor, d, evaluation, tx);
+      const artifact =
+        previewArtifact && previewArtifact.fingerprint === approvalFingerprint(locked)
+          ? previewArtifact
+          : null;
+      return this.applyLocked(actor, locked, evaluation, tx, artifact ?? undefined);
     });
   },
 
-  /** Terapkan hasil kuorum: APPROVED (render PDF + e-seal) atau REJECTED. */
+  /**
+   * Terapkan hasil kuorum: APPROVED (render PDF + e-seal) atau REJECTED.
+   *
+   * `d` harus merupakan baris HASIL AKHIR (status sudah diperbarui) ketika
+   * `evaluation.outcome === 'APPROVED'`, karena PDF yang di-e-seal mencetak
+   * status dan `decidedAt` dari sini: merender baris VOTING mencetak "Status:
+   * VOTING" dan menghilangkan tanggal putusan ke dalam arsip permanen, dan
+   * digest-nya mengunci kesalahan itu selamanya.
+   *
+   * Pemisahan kerja mahal dari kunci (item 8) ditangani pemanggil: `applyLocked`
+   * menjalankan fungsi ini DI DALAM kunci (agar tetap benar saat dipanggil
+   * langsung oleh test/controller), sedangkan `castVote`/`finalize` merender
+   * artefaknya di luar kunci lewat `prepareApprovalArtifact` + `commitApproved`.
+   */
   async applyOutcome(
     actor: Actor,
     d: RichDecision,
     evaluation: QuorumEvaluation,
     client: DbClient = prisma
   ) {
+    const ownTransaction = client === prisma;
+    const run = async (tx: DbClient) => this.applyLocked(actor, d, evaluation, tx);
+    return ownTransaction ? prisma.$transaction(run) : run(client);
+  },
+
+  /**
+   * Bentuk persetujuan saat baris keputusan terkunci.
+   *
+   * Kerja yang memegang kunci sekecil mungkin: hanya penulisan status. PDF
+   * final dan e-seal sudah disiapkan sebelum kunci diambil (atau disiapkan
+   * sekarang bila pemanggil memanggil `applyOutcome` langsung), dan
+   * `prepared.seal` DIREUSE alih-alih memanggil `ensureSeal` lagi — scrypt di
+   * dalam kunci-lah yang memperpanjang lockout baris.
+   */
+  async applyLocked(
+    actor: Actor,
+    d: RichDecision,
+    evaluation: QuorumEvaluation,
+    client: DbClient,
+    prepared?: ApprovalArtifact
+  ) {
     if (evaluation.outcome === 'APPROVED' && d.status !== FoundationDecisionStatus.APPROVED) {
-      /**
-       * Keputusan dibentuk SEBELUM render, bukan dibaca dari baris yang masih
-       * VOTING.
-       *
-       * `applyOutcome` dipanggil dari dalam transaksi suara; baris `d` di sini
-       * masih memuat status VOTING dan `decidedAt` null, karena UPDATE-nya baru
-       * terjadi di bawah. Merender `d` apa adanya mencetak "Status: VOTING" dan
-       * menghilangkan tanggal putusan ke dalam PDF yang kemudian DISEGEL —
-       * arsip permanen yang menyatakan keputusan sah belum diputus, dan
-       * digest-nya (beserta tanda tangan e-seal) mengunci kesalahan itu
-       * selamanya.
-       */
-      const decidedAt = new Date();
-      const finalDecision: RichDecision = {
-        ...d,
-        status: FoundationDecisionStatus.APPROVED,
-        decidedById: actor.id,
-        decidedAt,
-      };
-      const buf = await this.renderPdf(finalDecision);
-      // Hash BYTE PDF, bukan teksnya. Ini yang membolehkan arsip memeriksa
-      // dirinya sendiri dan yang diikat e-seal.
-      const finalPdfDigest = sha256bytes(buf);
-      const seal = await ensureSeal(client);
-      const sealSignature = signSeal(sealMaterial(seal), SEAL_PASSPHRASE, finalPdfDigest);
+      const artifact =
+        prepared && prepared.fingerprint === approvalFingerprint(d)
+          ? prepared
+          : await this.prepareApprovalArtifact(actor, d, client);
 
       // Arsip byte PDF apa adanya, lalu tandai keputusan sah + e-seal. Sekali
       // ditulis, `finalPdfDigest` dikunci (immutable) dan diverifikasi e-seal.
@@ -688,11 +955,9 @@ export const FoundationDecisionService = {
       await client.foundationDecisionDocument.create({
         data: {
           decisionId: d.id,
-          // Buffer dari generator selalu berasal dari Uint8Array tidak
-          // bersandar pada SharedArrayBuffer; salin ke array polos.
-          bytes: new Uint8Array(buf),
-          sha256: finalPdfDigest,
-          byteSize: buf.length,
+          bytes: new Uint8Array(artifact.buf),
+          sha256: artifact.finalPdfDigest,
+          byteSize: artifact.buf.length,
         },
       });
       await client.foundationDecision.update({
@@ -702,11 +967,11 @@ export const FoundationDecisionService = {
           decidedById: actor.id,
           // Tanggal yang SAMA dengan yang tercetak di PDF — dua nilai berbeda
           // berarti arsip dan basis data menyebut waktu putusan yang berlainan.
-          decidedAt,
-          finalPdfDigest,
-          finalPdfByteSize: buf.length,
-          finalPdfSealSignature: sealSignature,
-          esealId: seal.id,
+          decidedAt: artifact.decidedAt,
+          finalPdfDigest: artifact.finalPdfDigest,
+          finalPdfByteSize: artifact.buf.length,
+          finalPdfSealSignature: artifact.sealSignature,
+          esealId: artifact.seal.id,
         },
       });
 
@@ -717,8 +982,8 @@ export const FoundationDecisionService = {
           entity: 'FoundationDecision',
           entityId: d.id,
           newValues: {
-            finalPdfDigest,
-            finalPdfByteSize: buf.length,
+            finalPdfDigest: artifact.finalPdfDigest,
+            finalPdfByteSize: artifact.buf.length,
             evaluation: { ...evaluation },
           },
         },
@@ -748,6 +1013,44 @@ export const FoundationDecisionService = {
     }
 
     return { outcome: 'OPEN' as const, status: d.status };
+  },
+
+  /**
+   * Hitung artefak persetujuan TANPA menyentuh kunci baris keputusan.
+   *
+   * Pembuatan PDF dan pembukaan kunci e-seal (scrypt) adalah bagian paling
+   * mahal dari approval. Menjalankannya di dalam `SELECT … FOR UPDATE` berarti
+   * setiap anggota lain yang hendak memberi suara menunggu kripto tersebut
+   * selesai. Hasilnya diikat ke `fingerprint` himpunan suara, sehingga bila
+   * pemilih lain menyisipkan suara di sela-sela, artefak ini dibuang dan
+   * dirender ulang di dalam kunci.
+   */
+  async prepareApprovalArtifact(
+    actor: Actor,
+    d: RichDecision,
+    client: DbClient = prisma
+  ): Promise<ApprovalArtifact> {
+    const decidedAt = new Date();
+    const finalDecision: RichDecision = {
+      ...d,
+      status: FoundationDecisionStatus.APPROVED,
+      decidedById: actor.id,
+      decidedAt,
+    };
+    const buf = await this.renderPdf(finalDecision);
+    // Hash BYTE PDF, bukan teksnya. Ini yang membolehkan arsip memeriksa
+    // dirinya sendiri dan yang diikat e-seal.
+    const finalPdfDigest = sha256bytes(buf);
+    const seal = await ensureSeal(client);
+    const sealSignature = signSeal(sealMaterial(seal), SEAL_PASSPHRASE, finalPdfDigest);
+    return {
+      fingerprint: approvalFingerprint(d),
+      buf,
+      finalPdfDigest,
+      seal,
+      sealSignature,
+      decidedAt,
+    };
   },
 
   /** Atur aturan kuorum (SUPER_ADMIN). */
@@ -970,13 +1273,26 @@ export const FoundationDecisionService = {
   },
 
   /** Ambil dokumen PDF final untuk diunduh, atau 404 bila belum final. */
-  async getFinalDocument(decisionId: string) {
+  async getFinalDocument(actor: Actor, decisionId: string) {
     const doc = await prisma.foundationDecisionDocument.findUnique({
       where: { decisionId },
-      include: { decision: { select: { status: true } } },
+      include: {
+        decision: {
+          select: {
+            status: true,
+            // Keanggotaan snapshot perlu ikut dibaca: unduhan diperlakukan sama
+            // dengan pembacaan detail, dan anggota snapshot yang rolenya sudah
+            // berubah tetap berhak mengunduh dokumen yang boleh ia tanda tangani.
+            members: { select: { userId: true } },
+          },
+        },
+      },
     });
     if (!doc || doc.decision.status !== FoundationDecisionStatus.APPROVED) {
       throw Errors.notFound('Dokumen final keputusan tidak ditemukan atau belum final.');
+    }
+    if (!canReadFoundationDecision(actor, doc.decision.members)) {
+      throw Errors.forbidden('Anda tidak berhak mengunduh dokumen keputusan ini.');
     }
     return doc;
   },
@@ -984,7 +1300,10 @@ export const FoundationDecisionService = {
   /** Render PDF risalah/keputusan final dari baris + relasinya. */
   async renderPdf(d: RichDecision): Promise<Buffer> {
     const roleByUserId = new Map(d.members.map((m) => [m.userId, m.roleCode]));
-    const votes: DecisionPdfVoteRow[] = d.votes.map((v) => ({
+    // Hanya suara yang LOLOS verifikasi tanda tangan yang dicetak. Baris yang
+    // disisipkan/diubah langsung di basis data tidak boleh muncul di risalah
+    // yang di-e-seal, sekalipun ia kebetulan tidak mengubah hasil kuorum.
+    const votes: DecisionPdfVoteRow[] = this.authenticatedVotesOf(d).map((v) => ({
       userId: v.userId,
       name: v.user.name,
       roleCode: roleByUserId.get(v.userId) ?? 'anggota',
@@ -1013,7 +1332,7 @@ export const FoundationDecisionService = {
       votes,
       voteSummary: d.voteSummary as unknown as VoteSummary,
       verificationToken: d.verificationToken,
-      verificationUrl: d.verificationToken ? decisionVerificationUrl(d.verificationToken) : null,
+      verificationUrl: d.verificationToken ? decisionVerificationUrl() : null,
     });
   },
 

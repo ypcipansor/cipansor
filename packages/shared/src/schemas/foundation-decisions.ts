@@ -5,6 +5,7 @@ import {
   FOUNDATION_QUORUM_MODES,
   FOUNDATION_VOTE_CHOICES,
   FoundationQuorumMode,
+  quorumValueForMode,
 } from "../types/foundation-decisions";
 
 /** Membuat draf keputusan organ. */
@@ -50,23 +51,50 @@ export type FinalizeFoundationDecisionInput = z.infer<
 >;
 
 /** Mengelola aturan kuorum (SUPER_ADMIN). */
-export const upsertFoundationRuleSchema = z.object({
-  organType: z.enum(FOUNDATION_ORGAN_TYPES),
-  decisionKind: z.enum(FOUNDATION_DECISION_KINDS),
-  quorumPresentMode: z
-    .enum(FOUNDATION_QUORUM_MODES)
-    .default(FoundationQuorumMode.MAJORITY),
+export const upsertFoundationRuleSchema = z
+  .object({
+    organType: z.enum(FOUNDATION_ORGAN_TYPES),
+    decisionKind: z.enum(FOUNDATION_DECISION_KINDS),
+    quorumPresentMode: z
+      .enum(FOUNDATION_QUORUM_MODES)
+      .default(FoundationQuorumMode.MAJORITY),
+    /**
+     * Wajib > 0, karena ambang nol berarti "kuorum terpenuhi tanpa satu pun
+     * suara" — keputusan dapat disahkan tanpa ada yang menyetujui.
+     */
+    quorumPresentValue: z.number().gt(0).max(1).default(0.5),
+    quorumDecisionMode: z
+      .enum(FOUNDATION_QUORUM_MODES)
+      .default(FoundationQuorumMode.MAJORITY),
+    /** Wajib > 0 — alasannya sama dengan `quorumPresentValue`. */
+    quorumDecisionValue: z.number().gt(0).max(1).default(0.5),
+  })
   /**
-   * Wajib > 0, karena ambang nol berarti "kuorum terpenuhi tanpa satu pun
-   * suara" — keputusan dapat disahkan tanpa ada yang menyetujui.
+   * **Mode mengikat, nilai harus mengikutinya.** `TWO_THIRDS` dengan value 0.5
+   * adalah aturan yang menyamar: labelnya menjanjikan dua pertiga sementara
+   * mesin kuorum mengevaluasi "≥ setengah". Menolaknya di sini berarti aturan
+   * yang TERSIMPAN selalu dapat dipercaya dari labelnya, dan nilai yang salah
+   * tidak pernah menjadi ambang yang mengikat keputusan.
+   *
+   * Toleransi kecil diberikan karena `2/3` dan `3/4` adalah pecahan yang tak
+   * dapat dinyatakan persis sebagai desimal (`0.67`, `0.75`).
    */
-  quorumPresentValue: z.number().gt(0).max(1).default(0.5),
-  quorumDecisionMode: z
-    .enum(FOUNDATION_QUORUM_MODES)
-    .default(FoundationQuorumMode.MAJORITY),
-  /** Wajib > 0 — alasannya sama dengan `quorumPresentValue`. */
-  quorumDecisionValue: z.number().gt(0).max(1).default(0.5),
-});
+  .superRefine((rule, ctx) => {
+    const pairs: Array<[FoundationQuorumMode, number, string]> = [
+      [rule.quorumPresentMode, rule.quorumPresentValue, 'quorumPresentValue'],
+      [rule.quorumDecisionMode, rule.quorumDecisionValue, 'quorumDecisionValue'],
+    ];
+    for (const [mode, value, field] of pairs) {
+      const expected = quorumValueForMode(mode);
+      if (Math.abs(value - expected) > 0.005) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [field],
+          message: `Mode ${mode} menyiratkan nilai ${expected}; nilai ${value} bertentangan dengan mode.`,
+        });
+      }
+    }
+  });
 
 export type UpsertFoundationRuleInput = z.infer<
   typeof upsertFoundationRuleSchema

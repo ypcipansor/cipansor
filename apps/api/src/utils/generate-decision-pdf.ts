@@ -159,6 +159,34 @@ function wrap(font: PDFFont, size: number, text: string, maxWidth: number): stri
   return lines;
 }
 
+/**
+ * Baris footer "PEMERIKSAAN KEABSAHAN" apa adanya.
+ *
+ * Diekspor agar dapat diuji tanpa mengekstrak teks dari PDF (pdf-lib tidak
+ * menyediakan pembacaan teks, dan font Unicode mengodekan glif, bukan aksara).
+ * Yang penting untuk dikunci di sini adalah KE MANA pembaca diarahkan: jalur
+ * UNGGAHAN berkas, bukan tautan bertoken yang hanya memeriksa arsip server —
+ * pemalsu yang mempertahankan token asli akan lolos lewat jalur token.
+ */
+export function decisionVerificationFooter(data: {
+  verificationUrl?: string | null;
+  verificationToken?: string | null;
+}): string[] {
+  const lines: string[] = [];
+  if (data.verificationUrl) {
+    lines.push(`Unggah & periksa berkasnya di: ${data.verificationUrl}`);
+    lines.push(
+      `Halaman itu membandingkan hash berkas PDF yang Anda pegang dengan arsip ber-e-seal.`
+    );
+  } else {
+    lines.push(`Periksa di: portal — unggah berkas PDF untuk verifikasi keputusan yayasan.`);
+  }
+  if (data.verificationToken) {
+    lines.push(`Nomor rujukan (bukan tautan verifikasi): ${data.verificationToken}`);
+  }
+  return lines;
+}
+
 export async function generateDecisionPdf(data: DecisionPdfData): Promise<Buffer> {
   const pdfDoc = await PDFDocument.create();
   pdfDoc.setCreationDate(new Date(0));
@@ -270,14 +298,20 @@ export async function generateDecisionPdf(data: DecisionPdfData): Promise<Buffer
   text('PEMERIKSAAN KEABSAHAN', { size: 12, bold: true, gap: 4 });
   paragraph(`Dokumen Sah: e-seal Yayasan + tanda tangan digital anggota.`, 9, 2);
   paragraph(`Cetak copy tidak dikontrol; verifikasi daring bila ada token.`, 9, 10);
-  if (data.verificationToken) {
-    paragraph(`Token verifikasi: ${data.verificationToken}`, 9, 2);
-    if (data.verificationUrl) {
-      paragraph(`Periksa di: ${data.verificationUrl}`, 9, 2);
-    } else {
-      paragraph(`Periksa di: portal — verifikasi keputusan yayasan.`, 9, 2);
-    }
-  }
+  /**
+   * Footer mengarahkan pembaca ke jalur UNGGAHAN, bukan jalur token.
+   *
+   * Jalur token hanya memeriksa byte arsip di server, sehingga PDF karangan
+   * yang mempertahankan token asli tetap dijawab "sah". Hanya dengan
+   * mengunggah berkas yang benar-benar dipegang pemindai, hash byte-nya dapat
+   * dibandingkan dengan `finalPdfDigest` yang ditandatangani e-seal. Karena itu
+   * yang dicetak adalah halaman unggah, dan token disebut sebagai nomor
+   * rujukan — bukan lagi sebagai tautan yang memberi jawaban instan.
+   */
+  const footerLines = decisionVerificationFooter(data);
+  footerLines.forEach((line, i) => {
+    paragraph(line, 9, i === footerLines.length - 1 ? 6 : 2);
+  });
 
   const bytes = await pdfDoc.save();
   return Buffer.from(bytes);

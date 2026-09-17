@@ -102,7 +102,10 @@ export const FoundationDecisionController = {
 
   /** Unduh PDF risalah final (keputusan sah). */
   async download(req: Request, res: Response) {
-    const doc = await FoundationDecisionService.getFinalDocument(req.params.id);
+    const doc = await FoundationDecisionService.getFinalDocument(
+      { id: req.user!.id, roleCode: req.user!.roleCode },
+      req.params.id
+    );
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(
       'Content-Disposition',

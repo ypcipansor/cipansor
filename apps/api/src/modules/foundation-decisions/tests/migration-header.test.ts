@@ -43,3 +43,47 @@ describe('migrasi foundation_decisions — header sesuai isi', () => {
     expect(headerCounts(sql)).toEqual({ tables: 6, enums: 5 });
   });
 });
+
+/**
+ * Regresi item review #6 — idempotensi migrasi TIDAK boleh menyembunyikan drift.
+ *
+ * Semua `CREATE TABLE`/`CREATE TYPE` memakai `IF NOT EXISTS`, sehingga tabel
+ * hasil `db push` dev dengan bentuk BERBEDA akan dilewati diam-diam dan
+ * `migrate deploy` "lolos" meski skema tak sesuai. Guard preflight di awal
+ * migrasi harus menolak artefak semacam itu — uji ini memaku keberadaannya,
+ * karena menghapusnya mengembalikan lubang yang sama tanpa jejak di UI.
+ */
+describe('migrasi foundation_decisions — guard drift skema', () => {
+  const sql = fs.readFileSync(MIGRATION, 'utf8');
+
+  it('memuat blok preflight yang memeriksa kolom tabel yang sudah ada', () => {
+    expect(sql).toContain('information_schema.columns');
+    expect(sql).toMatch(/RAISE EXCEPTION/);
+    expect(sql).toMatch(/kekurangan kolom/);
+  });
+
+  it('memuat pemeriksaan label enum yang sudah ada', () => {
+    expect(sql).toContain('pg_enum');
+    expect(sql).toMatch(/kekurangan nilai/);
+  });
+
+  it('preflight mendahului CREATE TABLE pertama', () => {
+    const guardAt = sql.indexOf('information_schema.columns');
+    const firstCreate = sql.indexOf('CREATE TABLE');
+    expect(guardAt).toBeGreaterThan(-1);
+    expect(guardAt).toBeLessThan(firstCreate);
+  });
+
+  it('mendaftarkan keenam tabel yang dijaga', () => {
+    for (const table of [
+      'foundation_decisions',
+      'foundation_decision_votes',
+      'foundation_decision_members',
+      'foundation_decision_rules',
+      'foundation_eseals',
+      'foundation_decision_documents',
+    ]) {
+      expect(sql).toContain(`'${table}'`);
+    }
+  });
+});

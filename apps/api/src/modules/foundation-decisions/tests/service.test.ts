@@ -5,8 +5,11 @@ import {
   FoundationDecisionService,
   canonicalDecisionPayload,
   sha256bytes,
+  sha256hex,
+  canonicalDigestForVote,
 } from '../foundation-decisions.service';
-import { createKeyMaterial } from '@/utils/esign';
+import { createKeyMaterial, signPdfHash } from '@/utils/esign';
+import * as pdfModule from '@/utils/generate-decision-pdf';
 import { createSealMaterial, signSeal } from '@/utils/foundation-eseal';
 import { config } from '@/config';
 
@@ -64,6 +67,37 @@ const signingKeyRow = {
 };
 
 const dm = prisma as unknown as Record<string, any>;
+
+
+/**
+ * Buat baris suara yang BENAR-BENAR bertanda tangan untuk sebuah keputusan.
+ *
+ * Sejak `votesOf` memverifikasi ulang tiap suara, mock `{ choice: 'APPROVE' }`
+ * tanpa digest/tanda tangan tidak lagi dihitung — dan itu memang tujuannya.
+ * Helper ini membangun baris yang lolos verifikasi sehingga test yang menguji
+ * jalur lain (kuorum, lock, audit) tetap menguji apa yang dimaksudkannya.
+ */
+function signedVoteRow(
+  d: any,
+  userId: string,
+  choice: 'APPROVE' | 'REJECT' | 'ABSTAIN',
+  signedAt = new Date('2026-01-02T00:00:00Z')
+) {
+  const digest = canonicalDigestForVote(d, { userId, choice, signedAt });
+  return {
+    id: `vote-${userId}`,
+    decisionId: d.id,
+    userId,
+    choice,
+    canonicalDigest: digest,
+    signature: signPdfHash(material, PASS, digest),
+    publicKey: material.publicKey,
+    algorithm: material.algorithm,
+    note: null,
+    signedAt,
+    user: { id: userId, name: `Anggota ${userId}` },
+  };
+}
 
 function memberAssignments(count: number, roleCode = 'YAYASAN_PEMBINA') {
   return Array.from({ length: count }, (_, i) => ({
@@ -200,9 +234,9 @@ describe('FoundationDecisionService.castVote', () => {
       signedAt: new Date(),
     });
     dm.foundationDecisionVote.findMany.mockResolvedValue([
-      { choice: 'APPROVE' },
-      { choice: 'APPROVE' },
-      { choice: 'REJECT' },
+      signedVoteRow(d, 'user-1', 'APPROVE'),
+      signedVoteRow(d, 'user-2', 'APPROVE'),
+      signedVoteRow(d, 'user-0', 'REJECT'),
     ]);
     dm.foundationDecision.update.mockResolvedValue({ ...d, status: 'VOTING' });
     dm.userSigningKey.findUnique.mockResolvedValue(signingKeyRow);
@@ -230,7 +264,7 @@ describe('FoundationDecisionService.castVote', () => {
     const d = decisionRow();
     dm.foundationDecision.findUnique.mockResolvedValue(d);
     dm.foundationDecisionVote.create.mockResolvedValue({ id: 'vote-1' });
-    dm.foundationDecisionVote.findMany.mockResolvedValue([{ choice: 'APPROVE' }]);
+    dm.foundationDecisionVote.findMany.mockResolvedValue([signedVoteRow(d, 'user-1', 'APPROVE')]);
     dm.foundationDecision.update.mockResolvedValue({ ...d, status: 'VOTING' });
     dm.userSigningKey.findUnique.mockResolvedValue(signingKeyRow);
     dm.userSigningKey.update.mockResolvedValue(signingKeyRow);
@@ -304,7 +338,7 @@ describe('FoundationDecisionService.castVote', () => {
     const d = decisionRow();
     dm.foundationDecision.findUnique.mockResolvedValue(d);
     dm.foundationDecisionVote.create.mockResolvedValue({ id: 'vote-1' });
-    dm.foundationDecisionVote.findMany.mockResolvedValue([{ choice: 'APPROVE' }]);
+    dm.foundationDecisionVote.findMany.mockResolvedValue([signedVoteRow(d, 'user-1', 'APPROVE')]);
     dm.foundationDecision.update.mockResolvedValue({ ...d, status: 'VOTING' });
     dm.userSigningKey.findUnique.mockResolvedValue(signingKeyRow);
     dm.userSigningKey.update.mockResolvedValue(signingKeyRow);
@@ -348,11 +382,12 @@ describe('FoundationDecisionService.castVote', () => {
     const d = decisionRow();
     dm.foundationDecision.findUnique.mockResolvedValue(d);
     dm.userSigningKey.findUnique.mockResolvedValue(signingKeyRow);
-    // `increment` atomik mengembalikan baris HASIL increment, bukan nilai basi
-    // yang dibaca sebelum update.
-    dm.userSigningKey.update
-      .mockResolvedValueOnce({ ...signingKeyRow, failedAttempts: 1 })
-      .mockResolvedValueOnce(signingKeyRow);
+    // Increment dan penghitungan lockout terjadi dalam SATU pernyataan SQL;
+    // bacaan sesudahnya mengembalikan nilai pasca-increment.
+    dm.userSigningKey.findUnique
+      .mockResolvedValueOnce(signingKeyRow)
+      .mockResolvedValueOnce({ ...signingKeyRow, failedAttempts: 1 });
+    dm.$executeRaw.mockResolvedValue(1);
 
     await expect(
       FoundationDecisionService.castVote({ id: 'user-1', roleCode: 'YAYASAN_PEMBINA' }, 'dec-1', {
@@ -361,19 +396,20 @@ describe('FoundationDecisionService.castVote', () => {
       })
     ).rejects.toThrow(/Sisa percobaan: 4/);
 
-    // Pernyataan increment atomik, bukan penulisan nilai hasil baca.
-    const incrementCall = dm.userSigningKey.update.mock.calls[0][0];
-    expect(incrementCall.data).toEqual({ failedAttempts: { increment: 1 } });
+    // Increment + `lockedUntil` ditulis dalam SATU pernyataan SQL, bukan dua
+    // update terpisah yang dapat berjalan terbalik.
+    const rawSql = (dm.$executeRaw.mock.calls[0][0] as string[]).join('?');
+    expect(rawSql).toContain('"failed_attempts" = "failed_attempts" + 1');
+    expect(rawSql).toContain('locked_until');
     expect(dm.foundationDecisionVote.create).not.toHaveBeenCalled();
   });
 
   it('mengunci kunci setelah percobaan gagal mencapai ambang', async () => {
     const d = decisionRow();
     dm.foundationDecision.findUnique.mockResolvedValue(d);
-    dm.userSigningKey.findUnique.mockResolvedValue({ ...signingKeyRow, failedAttempts: 4 });
-    dm.userSigningKey.update
-      .mockResolvedValueOnce({ ...signingKeyRow, failedAttempts: 5 })
-      .mockResolvedValueOnce(signingKeyRow);
+    dm.userSigningKey.findUnique
+      .mockResolvedValueOnce({ ...signingKeyRow, failedAttempts: 4 })
+      .mockResolvedValueOnce({ ...signingKeyRow, failedAttempts: 5 });
 
     await expect(
       FoundationDecisionService.castVote({ id: 'user-1', roleCode: 'YAYASAN_PEMBINA' }, 'dec-1', {
@@ -382,9 +418,10 @@ describe('FoundationDecisionService.castVote', () => {
       })
     ).rejects.toThrow(/dikunci sementara/);
 
-    // `lockedUntil` dihitung dari nilai HASIL increment (5), bukan dari 4.
-    const lockCall = dm.userSigningKey.update.mock.calls[1][0];
-    expect(lockCall.data.lockedUntil).toBeInstanceOf(Date);
+    // `locked_until` dihitung DI DALAM pernyataan yang sama dari
+    // `failed_attempts + 1` — tidak ada update kedua yang dapat menimpanya.
+    const rawSql = (dm.$executeRaw.mock.calls[0][0] as string[]).join('?');
+    expect(rawSql).toContain('"failed_attempts" + 1 >=');
   });
 
   /**
@@ -400,16 +437,26 @@ describe('FoundationDecisionService.castVote', () => {
   it('lima percobaan salah paralel tetap saling menaikkan until lockout tercapai', async () => {
     const d = decisionRow();
     dm.foundationDecision.findUnique.mockResolvedValue(d);
-    dm.userSigningKey.findUnique.mockResolvedValue({ ...signingKeyRow, failedAttempts: 0 });
 
-    // Simulasi penghitung yang benar-benar bertambah di basis data: setiap
-    // `increment` mengembalikan nilai berikutnya, membuktikan tiap panggilan
-    // bergantung pada hasil panggilan sebelumnya, bukan pada bacaan basi.
+    // Simulasi basis data yang benar-benar atomik: SATU pernyataan menaikkan
+    // penghitung dan mengunci bila ambang tercapai, berdasarkan nilai yang
+    // tersimpan saat itu. Inilah yang membuat kegagalan paralel tidak dapat
+    // saling menimpa — tak ada penulisan kedua yang dapat mengembalikan
+    // `lockedUntil` ke nilai lebih rendah.
     let stored = 0;
-    dm.userSigningKey.update.mockImplementation(async (args: any) => {
-      if (args.data.failedAttempts?.increment) stored += args.data.failedAttempts.increment;
-      return { ...signingKeyRow, failedAttempts: stored };
+    let lockedUntil: Date | null = null;
+    dm.$executeRaw.mockImplementation(async (strings: any, ...values: any[]) => {
+      const keyId = values[values.length - 1];
+      stored += 1;
+      if (stored >= 5) lockedUntil = new Date(Date.now() + 15 * 60_000);
+      void keyId;
+      return 1;
     });
+    dm.userSigningKey.findUnique.mockImplementation(async () => ({
+      ...signingKeyRow,
+      failedAttempts: stored,
+      lockedUntil,
+    }));
 
     const attempts = await Promise.all(
       Array.from({ length: 5 }, () =>
@@ -425,11 +472,8 @@ describe('FoundationDecisionService.castVote', () => {
     // bila kelimanya menulis nilai basi yang sama.
     expect(attempts.some((e) => /dikunci sementara/.test((e as Error).message))).toBe(true);
     expect(stored).toBe(5);
-    // Panggilan increment haruslah bentuk atomik, bukan `failedAttempts: n`.
-    const incrementCalls = dm.userSigningKey.update.mock.calls.filter(
-      (c: any) => c[0].data.failedAttempts?.increment
-    );
-    expect(incrementCalls).toHaveLength(5);
+    // Lockout tidak boleh kembali longgar: nilai akhirnya terkunci.
+    expect(lockedUntil).toBeInstanceOf(Date);
   });
 
   it('menolak menandatangani bila kunci sedang terkunci', async () => {
@@ -452,7 +496,7 @@ describe('FoundationDecisionService.castVote', () => {
     const d = decisionRow();
     dm.foundationDecision.findUnique.mockResolvedValue(d);
     dm.foundationDecisionVote.create.mockResolvedValue({ id: 'vote-1' });
-    dm.foundationDecisionVote.findMany.mockResolvedValue([{ choice: 'APPROVE' }]);
+    dm.foundationDecisionVote.findMany.mockResolvedValue([signedVoteRow(d, 'user-1', 'APPROVE')]);
     dm.foundationDecision.update.mockResolvedValue({ ...d, status: 'VOTING' });
     dm.userSigningKey.findUnique.mockResolvedValue(signingKeyRow);
     dm.userSigningKey.update.mockResolvedValue(signingKeyRow);
@@ -484,7 +528,7 @@ describe('FoundationDecisionService.castVote', () => {
     const d = decisionRow();
     dm.foundationDecision.findUnique.mockResolvedValue(d);
     dm.foundationDecisionVote.create.mockResolvedValue({ id: 'vote-1' });
-    dm.foundationDecisionVote.findMany.mockResolvedValue([{ choice: 'APPROVE' }]);
+    dm.foundationDecisionVote.findMany.mockResolvedValue([signedVoteRow(d, 'user-1', 'APPROVE')]);
     dm.foundationDecision.update.mockResolvedValue({ ...d, status: 'VOTING' });
     dm.userSigningKey.findUnique.mockResolvedValue(signingKeyRow);
     dm.userSigningKey.update.mockResolvedValue(signingKeyRow);
@@ -900,32 +944,63 @@ describe('FoundationDecisionService.verifyByToken', () => {
 });
 
 describe('FoundationDecisionService.getFinalDocument', () => {
+  const reader = { id: 'u-reader', roleCode: 'YAYASAN_KETUA' };
+
   it('mengembalikan dokumen untuk keputusan APPROVED', async () => {
     dm.foundationDecisionDocument.findUnique.mockResolvedValue({
       id: 'doc-1',
       bytes: new Uint8Array(Buffer.from('%PDF')),
-      decision: { status: 'APPROVED' },
+      decision: { status: 'APPROVED', members: [{ userId: reader.id }] },
     });
-    const doc = await FoundationDecisionService.getFinalDocument('dec-1');
+    const doc = await FoundationDecisionService.getFinalDocument(reader, 'dec-1');
     expect(doc.id).toBe('doc-1');
+  });
+
+  /**
+   * Regresi (item review #3): anggota snapshot yang rolenya sudah berubah tetap
+   * boleh mengunduh dokumen yang masih berhak ia tanda tangani. Akses bacanya
+   * tidak boleh lagi bergantung pada peran HARI INI.
+   */
+  it('mengizinkan anggota snapshot yang rolenya di luar READ untuk mengunduh', async () => {
+    dm.foundationDecisionDocument.findUnique.mockResolvedValue({
+      id: 'doc-1',
+      bytes: new Uint8Array(Buffer.from('%PDF')),
+      decision: { status: 'APPROVED', members: [{ userId: 'u-alumni' }] },
+    });
+    const doc = await FoundationDecisionService.getFinalDocument(
+      { id: 'u-alumni', roleCode: 'GURU' },
+      'dec-1'
+    );
+    expect(doc.id).toBe('doc-1');
+  });
+
+  it('menolak pihak luar tanpa hubungan dari mengunduh dokumen', async () => {
+    dm.foundationDecisionDocument.findUnique.mockResolvedValue({
+      id: 'doc-1',
+      bytes: new Uint8Array(Buffer.from('%PDF')),
+      decision: { status: 'APPROVED', members: [{ userId: 'u-member' }] },
+    });
+    await expect(
+      FoundationDecisionService.getFinalDocument({ id: 'u-outsider', roleCode: 'GURU' }, 'dec-1')
+    ).rejects.toThrow(/tidak berhak/);
   });
 
   it('melempar 404 bila dokumen belum final', async () => {
     dm.foundationDecisionDocument.findUnique.mockResolvedValue({
       id: 'doc-1',
       bytes: new Uint8Array(Buffer.from('%PDF')),
-      decision: { status: 'VOTING' },
+      decision: { status: 'VOTING', members: [] },
     });
-    await expect(FoundationDecisionService.getFinalDocument('dec-1')).rejects.toThrow(
-      /belum final/
-    );
+    await expect(
+      FoundationDecisionService.getFinalDocument(reader, 'dec-1')
+    ).rejects.toThrow(/belum final/);
   });
 
   it('melempar 404 bila dokumen tidak ada', async () => {
     dm.foundationDecisionDocument.findUnique.mockResolvedValue(null);
-    await expect(FoundationDecisionService.getFinalDocument('dec-1')).rejects.toThrow(
-      /tidak ditemukan/
-    );
+    await expect(
+      FoundationDecisionService.getFinalDocument(reader, 'dec-1')
+    ).rejects.toThrow(/tidak ditemukan/);
   });
 });
 
@@ -1031,5 +1106,256 @@ describe('FoundationDecisionService.verifyByPdfBuffer', () => {
     expect(res.found).toBe(true);
     expect(res.digestOk).toBe(false);
     expect(res.isValid).toBe(false);
+  });
+});
+
+
+/**
+ * Regresi item review #1 — suara palsu/termodifikasi tidak boleh dihitung.
+ *
+ * `votesOf` dulu hanya memetakan `choice`, tanpa memverifikasi ulang digest dan
+ * tanda tangan tiap suara. Baris `foundation_decision_votes` yang diubah
+ * langsung di basis data (pilihan diganti, atau baris disisipkan) tetap ikut
+ * evaluasi kuorum dan menerima e-seal Yayasan yang sah. Saringan baru membuang
+ * suara yang `canonicalDigest`/`signature`-nya tidak cocok.
+ */
+describe('FoundationDecisionService.votesOf — verifikasi ulang suara', () => {
+  it('membuang suara dengan pilihan yang tidak cocok dengan digest tertanda tangan', () => {
+    const d = decisionRow();
+    const authentic = signedVoteRow(d, 'user-1', 'APPROVE');
+    // Admin basis data mengganti pilihan menjadi APPROVE tanpa memalsukan
+    // tanda tangan: digest masih milik suara REJECT, jadi tak boleh dihitung.
+    const tampered = { ...signedVoteRow(d, 'user-2', 'REJECT'), choice: 'APPROVE' };
+
+    const counted = FoundationDecisionService.votesOf({
+      ...d,
+      votes: [authentic, tampered],
+    } as never);
+    expect(counted).toEqual([{ choice: 'APPROVE' }]);
+  });
+
+  it('membuang baris suara yang disisipkan tanpa tanda tangan yang sah', () => {
+    const d = decisionRow();
+    const forged = {
+      ...signedVoteRow(d, 'user-2', 'APPROVE'),
+      signature: Buffer.from('bukan tanda tangan asli').toString('base64'),
+    };
+    const counted = FoundationDecisionService.votesOf({ ...d, votes: [forged] } as never);
+    expect(counted).toEqual([]);
+  });
+
+  it('membuang suara dari userId yang bukan anggota snapshot', () => {
+    const d = decisionRow();
+    const outsider = signedVoteRow(d, 'user-9', 'APPROVE');
+    const counted = FoundationDecisionService.votesOf({ ...d, votes: [outsider] } as never);
+    expect(counted).toEqual([]);
+  });
+
+  it('keputusan TIDAK APPROVED saat satu-satunya suara setuju telah diubah', async () => {
+    const d = decisionRow({
+      quorumSnapshot: {
+        organType: 'PEMBINA',
+        kind: 'CIRCULAR',
+        activeCount: 1,
+        presentMode: 'MAJORITY',
+        presentValue: 0.5,
+        decisionMode: 'MAJORITY',
+        decisionValue: 0.5,
+      },
+    });
+    dm.foundationDecision.findUnique.mockResolvedValue(d);
+    dm.foundationDecisionVote.create.mockResolvedValue({ id: 'vote-1' });
+    // Satu suara palsu (pilihan diganti) — satu-satunya baris di basis data.
+    dm.foundationDecisionVote.findMany.mockResolvedValue([
+      { ...signedVoteRow(d, 'user-1', 'REJECT'), choice: 'APPROVE' },
+    ]);
+    dm.foundationDecision.update.mockResolvedValue({ ...d, status: 'VOTING' });
+    dm.userSigningKey.findUnique.mockResolvedValue(signingKeyRow);
+    dm.userSigningKey.update.mockResolvedValue(signingKeyRow);
+    dm.foundationEseal.findMany.mockResolvedValue([]);
+
+    const result = await FoundationDecisionService.castVote(
+      { id: 'user-1', roleCode: 'YAYASAN_PEMBINA' },
+      'dec-1',
+      { choice: 'REJECT', note: 'alasan yang cukup', passphrase: PASS }
+    );
+
+    // Ringkasan hanya memuat suara yang sah, dan e-seal tidak dibubuhkan.
+    expect(result.outcome.outcome).not.toBe('APPROVED');
+    expect(dm.foundationDecisionDocument.create).not.toHaveBeenCalled();
+    expect(result.voteSummary.approve).toBe(0);
+  });
+
+  it('PDF final tidak mencetak baris suara palsu, walau kuorum tetap tuntas', async () => {
+    // `renderPdf` langsung diuji: baris PALSU (pilihan diganti tanpa
+    // tanda tangan ulang) tidak boleh ikut dicetak ke risalah yang di-e-seal.
+    const d = decisionRow();
+    const authentic = [
+      signedVoteRow(d, 'user-0', 'APPROVE'),
+      signedVoteRow(d, 'user-1', 'APPROVE'),
+    ];
+    const tampered = { ...signedVoteRow(d, 'user-2', 'REJECT'), choice: 'APPROVE' };
+    const spy = vi.spyOn(pdfModule, 'generateDecisionPdf');
+
+    await FoundationDecisionService.renderPdf({
+      ...d,
+      votes: [...authentic, tampered],
+    } as never);
+
+    const printed = spy.mock.calls[0][0].votes;
+    expect(printed.map((v) => `${v.userId}:${v.choice}`)).toEqual([
+      'user-0:APPROVE',
+      'user-1:APPROVE',
+    ]);
+    // Bukti bahwa barisnya benar-benar sampai ke PDF, bukan hilang karena hal
+    // lain: anggota ketiga tetap ada di daftar anggota.
+    expect(spy.mock.calls[0][0].members.map((m) => m.userId)).toContain('user-2');
+  });
+});
+
+/**
+ * Regresi item review #4 — audit `create` di dalam transaksi.
+ *
+ * Dulu keputusan di-commit lebih dulu, lalu `auditLog.create` dipanggil di
+ * luar transaksi. Bila auditnya gagal, keputusan sudah ada tetapi request
+ * melempar galat — dan retry membuat keputusan DUPLIKAT (token verifikasinya
+ * acak, tidak ada unique yang mencegahnya).
+ */
+describe('FoundationDecisionService.create — audit dalam transaksi', () => {
+  it('audit gagal → create melempar tanpa meninggalkan keputusan ter-commit', async () => {
+    dm.userRoleAssignment.findMany.mockResolvedValue(memberAssignments(3));
+    dm.foundationDecisionRule.findUnique.mockResolvedValue(null);
+    dm.foundationDecision.create.mockResolvedValue({ id: 'dec-new' });
+    dm.auditLog.create.mockRejectedValueOnce(new Error('audit down'));
+
+    // Transaksi tiruan yang benar-benar rollback: efek `create` hanya dianggap
+    // commit bila callback selesai tanpa melempar.
+    let decisionCommitted = false;
+    dm.$transaction.mockImplementation(async (cb: any) => {
+      const tx = {
+        ...prisma,
+        foundationDecision: prisma.foundationDecision,
+        auditLog: prisma.auditLog,
+      };
+      const result = await cb(tx);
+      decisionCommitted = true;
+      return result;
+    });
+
+    await expect(
+      FoundationDecisionService.create(
+        { id: 'user-0', roleCode: 'YAYASAN_PEMBINA' },
+        {
+          organType: 'PEMBINA',
+          kind: 'CIRCULAR',
+          subject: 'Subjek Keputusan',
+          body: 'Isi keputusan yang cukup panjang minimal sepuluh karakter.',
+          decisionType: 'pengesahan-rencana-kerja',
+        }
+      )
+    ).rejects.toThrow(/audit down/);
+
+    // Audit dipanggil DI DALAM transaksi yang sama dengan pembuatan.
+    expect(dm.auditLog.create).toHaveBeenCalledTimes(1);
+    expect(decisionCommitted).toBe(false);
+  });
+});
+
+/**
+ * Regresi item review #3 — anggota snapshot tetap boleh MEMBACA.
+ *
+ * Rute detail dulu memakai `authorize(...READ)`, sehingga anggota snapshot
+ * yang rolenya sudah berubah ditolak membaca keputusan yang masih berhak ia
+ * tanda tangani (rute vote sengaja hanya `authenticate`).
+ */
+describe('FoundationDecisionService.detail — akses baca anggota snapshot', () => {
+  it('mengizinkan anggota snapshot walau roleCode-nya di luar READ', async () => {
+    dm.foundationDecision.findUnique.mockResolvedValue(decisionRow());
+    const detail = await FoundationDecisionService.detail(
+      { id: 'user-1', roleCode: 'GURU' },
+      'dec-1'
+    );
+    expect(detail.id).toBe('dec-1');
+  });
+
+  it('menolak pihak luar tanpa hubungan', async () => {
+    dm.foundationDecision.findUnique.mockResolvedValue(decisionRow());
+    await expect(
+      FoundationDecisionService.detail({ id: 'outsider', roleCode: 'GURU' }, 'dec-1')
+    ).rejects.toThrow(/tidak berhak/);
+  });
+});
+
+/**
+ * Regresi item review #8 — render PDF + e-seal DI LUAR kunci baris.
+ *
+ * `castVote` dulu merender PDF, menandatangani e-seal, menulis dokumen, dan
+ * meng-update status semuanya selagi `SELECT … FOR UPDATE` dipegang, sehingga
+ * satu finalisasi menahan suara anggota lain selama scrypt berlangsung.
+ * Sekarang artefak mahal disiapkan SEBELUM kunci diambil, dan di dalam kunci
+ * hanya penulisan status yang tersisa.
+ */
+describe('FoundationDecisionService.castVote — kerja mahal di luar kunci', () => {
+  it('merender PDF sebelum kunci baris diambil', async () => {
+    const d = decisionRow({
+      quorumSnapshot: {
+        organType: 'PEMBINA',
+        kind: 'CIRCULAR',
+        activeCount: 1,
+        presentMode: 'MUTLAK',
+        presentValue: 1,
+        decisionMode: 'MUTLAK',
+        decisionValue: 1,
+      },
+    });
+    const sealMaterialRow = createSealMaterial(config.foundation.esealPassphrase);
+    dm.foundationDecision.findUnique.mockResolvedValue(d);
+    dm.foundationDecisionVote.create.mockResolvedValue({ id: 'vote-1' });
+    dm.foundationDecisionVote.findMany.mockResolvedValue([signedVoteRow(d, 'user-1', 'APPROVE')]);
+    dm.foundationDecision.update.mockResolvedValue({ ...d, status: 'APPROVED' });
+    dm.userSigningKey.findUnique.mockResolvedValue(signingKeyRow);
+    dm.userSigningKey.update.mockResolvedValue(signingKeyRow);
+    dm.foundationEseal.findMany.mockResolvedValue([
+      {
+        id: 'seal-1',
+        ...sealMaterialRow,
+        revokedAt: null,
+        activatedAt: new Date(),
+        createdAt: new Date(),
+      },
+    ]);
+    dm.foundationDecisionDocument.create.mockResolvedValue({ id: 'doc-1' });
+
+    const order: string[] = [];
+    // Catat kapan kunci baris benar-benar diambil.
+    dm.$executeRaw.mockImplementation(async (strings: any) => {
+      if ((strings as string[]).join('?').includes('FOR UPDATE')) order.push('lock');
+      return 1;
+    });
+
+    // Simpan implementasi asli SEBELUM di-spy; `vi.spyOn` mengganti properti,
+    // sehingga `FoundationDecisionService.renderPdf` sesudahnya adalah mock
+    // itu sendiri dan `originalRender` akan berrekursi tanpa akhir.
+    const originalRender = FoundationDecisionService.renderPdf;
+    const lockSpy = vi
+      .spyOn(FoundationDecisionService, 'renderPdf')
+      .mockImplementation(async (decision: any) => {
+        order.push('render');
+        return originalRender.call(FoundationDecisionService, decision);
+      });
+
+    try {
+      const result = await FoundationDecisionService.castVote(
+        { id: 'user-1', roleCode: 'YAYASAN_PEMBINA' },
+        'dec-1',
+        { choice: 'APPROVE', passphrase: PASS }
+      );
+      // Render terjadi, dan ia mendahului pengambilan kunci.
+      expect(order).toContain('render');
+      expect(order.indexOf('render')).toBeLessThan(order.indexOf('lock'));
+      expect(result.voteId).toBe('vote-1');
+    } finally {
+      lockSpy.mockRestore();
+    }
   });
 });

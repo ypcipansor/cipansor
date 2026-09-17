@@ -8,9 +8,76 @@
 -- referensi e-seal (`foundation_decisions.eseal_id`). Tidak ada tabel/kolom
 -- lama yang diubah atau dihapus, sehingga image lama tetap berjalan.
 --
--- `prisma migrate deploy` dijalankan dari basis data kosong; pernyataan
--- idempoten (IF NOT EXISTS) dipakai agar aman dijalankan ulang pada basis
--- data pengembangan yang sudah ter-`db push`.
+-- `prisma migrate deploy` dijalankan dari basis data kosong. Pernyataan
+-- idempoten (IF NOT EXISTS) dipakai agar migrasi ini tidak melempar ketika
+-- dijalankan di basis data pengembangan yang sudah ter-`db push`.
+--
+-- Idempotensi itu TIDAK boleh berarti "terima apa pun". Sebuah tabel yang
+-- sudah ada dengan bentuk BERBEDA — hasil `db push` dari skema yang menyimpang —
+-- akan dilewati diam-diam oleh IF NOT EXISTS, sehingga `migrate deploy` "lolos"
+-- sementara basis data tidak sesuai skema yang dijanjikan Prisma. Guard di
+-- bawah ini menutup celah itu: bila tabel/enum yang menjadi milik migrasi ini
+-- sudah ada tetapi kolom/labelnya tidak lengkap, migrasi GAGAL dengan pesan
+-- yang menyebut apa yang hilang, bukan melanjutkan dengan skema yang salah.
+
+-- Preflight: tolak artefak `db push` yang tak kompatibel.
+DO $$
+DECLARE
+  expected_tables text[][] := ARRAY[
+    ARRAY['foundation_decisions', 'organ_type,kind,subject,body,decision_type,quorum_snapshot,vote_summary,created_by_id,decided_by_id,decided_at,final_pdf_digest,final_pdf_byte_size,final_pdf_seal_signature,eseal_id,verification_token,created_at,updated_at'],
+    ARRAY['foundation_decision_votes', 'decision_id,user_id,choice,canonical_digest,signature,public_key,algorithm,note,signed_at'],
+    ARRAY['foundation_decision_members', 'decision_id,user_id,role_code,name'],
+    ARRAY['foundation_decision_rules', 'organ_type,decision_kind,quorum_present_mode,quorum_present_value,quorum_decision_mode,quorum_decision_value,updated_by_id,updated_at'],
+    ARRAY['foundation_eseals', 'algorithm,public_key,encrypted_private_key,kdf_salt,kdf_params,iv,auth_tag,activated_at,revoked_at,created_at'],
+    ARRAY['foundation_decision_documents', 'decision_id,bytes,sha256,byte_size,generator,archived_at']
+  ];
+  expected_enums text[][] := ARRAY[
+    ARRAY['FoundationOrganType', 'PEMBINA,PENGURUS,PENGAWAS,GABUNGAN'],
+    ARRAY['FoundationDecisionKind', 'CIRCULAR,MEETING'],
+    ARRAY['FoundationDecisionStatus', 'DRAFT,VOTING,APPROVED,REJECTED'],
+    ARRAY['FoundationVoteChoice', 'APPROVE,REJECT,ABSTAIN'],
+    ARRAY['FoundationQuorumMode', 'MAJORITY,TWO_THIRDS,THREE_QUARTERS,MUTLAK']
+  ];
+  tbl text[];
+  enm text[];
+  missing text;
+BEGIN
+  FOREACH tbl SLICE 1 IN ARRAY expected_tables LOOP
+    IF EXISTS (SELECT 1 FROM information_schema.tables
+               WHERE table_schema = current_schema() AND table_name = tbl[1]) THEN
+      SELECT string_agg(c, ', ') INTO missing
+      FROM unnest(string_to_array(tbl[2], ',')) AS c
+      WHERE NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = tbl[1] AND column_name = c);
+      IF missing IS NOT NULL THEN
+        RAISE EXCEPTION
+          'Migrasi foundation_decisions: tabel % sudah ada tetapi kekurangan kolom: %. '
+          'Ini artefak db push yang tidak kompatibel — perbaiki skema sebelum migrate deploy.',
+          tbl[1], missing;
+      END IF;
+    END IF;
+  END LOOP;
+
+  FOREACH enm SLICE 1 IN ARRAY expected_enums LOOP
+    IF EXISTS (SELECT 1 FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
+               WHERE n.nspname = current_schema() AND t.typname = enm[1]) THEN
+      SELECT string_agg(l, ', ') INTO missing
+      FROM unnest(string_to_array(enm[2], ',')) AS l
+      WHERE NOT EXISTS (
+        SELECT 1 FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid
+        JOIN pg_namespace n ON n.oid = t.typnamespace
+        WHERE n.nspname = current_schema() AND t.typname = enm[1]
+          AND e.enumlabel = l);
+      IF missing IS NOT NULL THEN
+        RAISE EXCEPTION
+          'Migrasi foundation_decisions: enum % sudah ada tetapi kekurangan nilai: %.',
+          enm[1], missing;
+      END IF;
+    END IF;
+  END LOOP;
+END $$;
 
 -- CreateEnum
 DO $$

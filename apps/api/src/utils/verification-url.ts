@@ -61,10 +61,18 @@ export function certificateVerificationUrl(certificateNumber: string): string {
  * dalam PDF risalah dan dipindai lewat QR oleh siapa pun — dinas, wali santri,
  * atau pemeriksa. Halaman `/foundation/decisions/verify` berada DI BALIK tembok
  * sesi, sehingga pemindai anonim akan dilempar ke layar login staf sebelum
- * sempat melihat hasilnya. `/public/verify-decision` adalah halaman publik yang
- * membaca token dari query dan memanggil endpoint `/foundation/verify` — yang
- * memang sudah publik.
+ * sempat melihat hasilnya.
+ *
+ * **Tanpa token, dan itu disengaja.** Tautan yang membawa token hanya membuka
+ * jalur verifikasi TOKEN, yang memeriksa byte arsip di server — bukan berkas
+ * PDF yang dipegang pemindai. Pemalsu cukup mempertahankan token asli pada PDF
+ * karangannya untuk memperoleh jawaban "sah". Karena itu QR di risalah
+ * mengarahkan pembaca ke halaman UNGGAHAN (`/public/verify-decision`), satu-
+ * satunya jalur yang membandingkan hash byte berkas yang benar-benar dipegang
+ * orang dengan `finalPdfDigest` yang ditandatangani e-seal. Tautan lama yang
+ * membawa token tetap berfungsi (jalur token masih ada di halaman itu), tetapi
+ * tidak lagi dicetak.
  */
-export function decisionVerificationUrl(token: string): string {
-  return `${config.publicSiteUrl}/public/verify-decision?token=${encodeURIComponent(token)}`;
+export function decisionVerificationUrl(): string {
+  return `${config.publicSiteUrl}/public/verify-decision`;
 }

@@ -53,6 +53,32 @@ export type FoundationQuorumMode =
   (typeof FoundationQuorumMode)[keyof typeof FoundationQuorumMode];
 export const FOUNDATION_QUORUM_MODES = Object.values(FoundationQuorumMode);
 
+/**
+ * Pecahan tetap yang disiratkan tiap mode kuorum.
+ *
+ * **Mode-lah yang mengikat, bukan nilai numeriknya.** Label mode adalah janji
+ * kepada pembaca Anggaran Dasar: "dua pertiga" harus berarti 2/3, bukan angka
+ * apa pun yang kebetulan tersimpan di sebelahnya. Versi sebelumnya membiarkan
+ * `quorumDecisionValue` bebas (0<v≤1) dan mengevaluasinya secara literal,
+ * sehingga aturan yang tersimpan dapat saling bertentangan — `TWO_THIRDS`
+ * dengan value 0.5 menuntut "≥ setengah" sambil menamakan dirinya "dua
+ * pertiga", dan tak seorang pun dapat mengetahui ambang yang sebenarnya
+ * berlaku dari labelnya. Karena itu nilai selalu DITURUNKAN dari mode, baik di
+ * API (`requiredCount`) maupun saat menyimpan aturan (skema menolak nilai yang
+ * menyimpang).
+ */
+export const FOUNDATION_QUORUM_MODE_VALUE: Record<FoundationQuorumMode, number> = {
+  MAJORITY: 0.5,
+  TWO_THIRDS: 2 / 3,
+  THREE_QUARTERS: 3 / 4,
+  MUTLAK: 1,
+};
+
+/** Pecahan yang disiratkan sebuah mode. */
+export function quorumValueForMode(mode: FoundationQuorumMode): number {
+  return FOUNDATION_QUORUM_MODE_VALUE[mode];
+}
+
 /** Ambang kuorum yang berlaku pada sebuah keputusan (snapshot). */
 export interface QuorumSnapshot {
   organType: FoundationOrganType;

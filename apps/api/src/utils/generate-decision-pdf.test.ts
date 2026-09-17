@@ -3,6 +3,7 @@ import { PDFDocument } from 'pdf-lib';
 import {
   generateDecisionPdf,
   membersWithoutVote,
+  decisionVerificationFooter,
   type DecisionPdfData,
 } from './generate-decision-pdf';
 
@@ -135,5 +136,32 @@ describe('membersWithoutVote', () => {
     const buf = await generateDecisionPdf({ ...data, members, votes: [voteBy('u1')] });
     expect(buf.slice(0, 4).toString()).toBe('%PDF');
     expect((await PDFDocument.load(buf)).getPageCount()).toBeGreaterThanOrEqual(1);
+  });
+});
+
+/**
+ * Regresi item review #5 — QR/footer mengarah ke jalur UNGGAHAN, bukan token.
+ *
+ * Jalur token hanya memeriksa byte arsip di server; PDF karangan yang
+ * mempertahankan token asli akan dijawab "sah". Hanya jalur unggah yang
+ * membandingkan hash berkas yang benar-benar dipegang pemindai dengan
+ * `finalPdfDigest` yang ditandatangani e-seal.
+ */
+describe('decisionVerificationFooter', () => {
+  it('mencetak URL unggah, bukan tautan bertoken', () => {
+    const lines = decisionVerificationFooter({
+      verificationUrl: 'https://cipansor.or.id/public/verify-decision',
+      verificationToken: 'tok-123',
+    });
+    const joined = lines.join('\n');
+    expect(joined).toContain('/public/verify-decision');
+    expect(joined).not.toContain('token=');
+    // Token hanya boleh muncul sebagai nomor rujukan, bukan sebagai URL.
+    expect(lines[lines.length - 1]).toContain('Nomor rujukan');
+  });
+
+  it('tetap menghasilkan baris walau URL tidak tersedia', () => {
+    const lines = decisionVerificationFooter({ verificationUrl: null });
+    expect(lines.join(' ')).toContain('unggah');
   });
 });

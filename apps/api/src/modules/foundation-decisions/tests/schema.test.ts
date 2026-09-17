@@ -29,16 +29,44 @@ describe('upsertFoundationRuleSchema — ambang kuorum wajib > 0', () => {
     expect(res.success).toBe(false);
   });
 
-  it('menerima nilai pecahan kecil yang sah (> 0)', () => {
+  it('menerima nilai yang KONSISTEN dengan modenya', () => {
     const res = upsertFoundationRuleSchema.safeParse({
       ...base,
-      quorumPresentValue: 0.01,
-      quorumDecisionValue: 0.01,
+      quorumPresentMode: 'TWO_THIRDS',
+      quorumPresentValue: 2 / 3,
+      quorumDecisionMode: 'THREE_QUARTERS',
+      quorumDecisionValue: 0.75,
     });
     expect(res.success).toBe(true);
   });
 
-  it('menerima nilai bawaan 0.5', () => {
+  /**
+   * Item review #7 — mode yang mengikat, nilai harus mengikutinya.
+   *
+   * `TWO_THIRDS` dengan value 0.5 adalah aturan yang menyamar: labelnya
+   * menjanjikan dua pertiga sementara mesin kuorum mengevaluasi "≥ setengah".
+   * Skema harus menolak kombinasi yang bertentangan agar ambang yang
+   * TERSIMPAN selalu dapat dipercaya dari labelnya.
+   */
+  it('menolak TWO_THIRDS dengan nilai 0.5 yang bertentangan', () => {
+    const res = upsertFoundationRuleSchema.safeParse({
+      ...base,
+      quorumDecisionMode: 'TWO_THIRDS',
+      quorumDecisionValue: 0.5,
+    });
+    expect(res.success).toBe(false);
+  });
+
+  it('menolak MUTLAK dengan nilai kurang dari 1', () => {
+    const res = upsertFoundationRuleSchema.safeParse({
+      ...base,
+      quorumPresentMode: 'MUTLAK',
+      quorumPresentValue: 0.75,
+    });
+    expect(res.success).toBe(false);
+  });
+
+  it('menerima nilai bawaan 0.5 (MAJORITY)', () => {
     const res = upsertFoundationRuleSchema.safeParse(base);
     expect(res.success).toBe(true);
     if (res.success) {

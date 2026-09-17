@@ -169,7 +169,12 @@ describe('foundation-decisions controller', () => {
     (FoundationDecisionService.getFinalDocument as any).mockResolvedValue({ bytes });
     const { req, res } = mockReqRes({ params: { id: 'abcdef12-0000' } as any });
     await run(controller.download, req, res);
-    expect(FoundationDecisionService.getFinalDocument).toHaveBeenCalledWith('abcdef12-0000');
+    // Peminta diteruskan sebagai argumen pertama: akses bacanya diperiksa di
+    // service (anggota snapshot tetap boleh mengunduh walau rolenya berubah).
+    expect(FoundationDecisionService.getFinalDocument).toHaveBeenCalledWith(
+      { id: 'u1', roleCode: 'SUPER_ADMIN' },
+      'abcdef12-0000'
+    );
     expect((res as any).headers['Content-Type']).toBe('application/pdf');
     expect((res as any).sent).toBe(bytes);
   });

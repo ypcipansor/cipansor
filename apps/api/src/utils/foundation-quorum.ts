@@ -2,6 +2,7 @@ import type {
   FoundationQuorumMode,
   QuorumSnapshot,
 } from '@cipansor/shared';
+import { quorumValueForMode } from '@cipansor/shared';
 
 /**
  * Mesin kuorum keputusan organ yayasan — fungsi MURNI, tanpa Prisma.
@@ -49,21 +50,37 @@ export interface QuorumEvaluation {
   neededToApprove: number;
 }
 
-/** Jumlah yang dibutuhkan menurut mode dan nilai ambang. */
+/**
+ * Jumlah yang dibutuhkan menurut mode kuorum.
+ *
+ * **Mode yang menentukan ambang, bukan `value`.** Nilai pecahan yang tersimpan
+ * di baris aturan diabaikan — `quorumValueForMode` yang menetapkannya, karena
+ * label mode adalah janji yang dibaca orang ("dua pertiga" berarti 2/3).
+ * Versi sebelumnya mengevaluasi `value` secara literal, sehingga baris aturan
+ * ber-mode TWO_THIRDS dengan value 0.5 menuntut "≥ setengah" sambil menamakan
+ * dirinya "dua pertiga": ambang yang benar-benar berlaku tidak dapat diketahui
+ * dari labelnya, dan aturannya bertentangan dengan dirinya sendiri. Skema
+ * penyimpanan (upsertFoundationRuleSchema) menolak nilai yang menyimpang,
+ * sehingga baris lama pun tetap terbaca konsisten di sini.
+ *
+ * `value` tetap diterima sebagai argumen agar pemanggil tidak perlu berubah;
+ * ia hanya dipakai sebagai cadangan bila mode tidak dikenal (baris sangat lama).
+ */
 export function requiredCount(mode: FoundationQuorumMode, value: number, pool: number): number {
   if (pool <= 0) return 0;
+  const fraction = quorumValueForMode(mode) ?? value;
   switch (mode) {
     case 'MUTLAK':
-      return Math.ceil(pool * value);
+      return Math.ceil(pool * fraction);
     case 'MAJORITY':
       // > nilai×kolam. Untuk nilai 0.5 artinya "> setengah".
-      return Math.floor(pool * value) + 1;
+      return Math.floor(pool * fraction) + 1;
     case 'TWO_THIRDS':
-      return Math.ceil(pool * value);
+      return Math.ceil(pool * fraction);
     case 'THREE_QUARTERS':
-      return Math.ceil(pool * value);
+      return Math.ceil(pool * fraction);
     default:
-      return Math.ceil(pool * value);
+      return Math.ceil(pool * fraction);
   }
 }
 

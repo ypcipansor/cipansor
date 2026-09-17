@@ -34,6 +34,7 @@ import {
   FOUNDATION_DECISION_KINDS,
   FOUNDATION_ORGAN_TYPES,
   FOUNDATION_QUORUM_MODES,
+  quorumValueForMode,
   type FoundationDecisionKind,
   type FoundationOrganType,
   type FoundationQuorumMode,
@@ -196,12 +197,19 @@ export default function FoundationRulesPage() {
                     <Label>Mode Kuorum Hadir</Label>
                     <Select
                       value={form.quorumPresentMode}
-                      onValueChange={(v) =>
+                      onValueChange={(v) => {
+                        const mode = v as FoundationQuorumMode;
                         setForm((f) => ({
                           ...f,
-                          quorumPresentMode: v as FoundationQuorumMode,
-                        }))
-                      }
+                          quorumPresentMode: mode,
+                          // Nilai DITURUNKAN dari mode, bukan diketik bebas.
+                          // Nilai bebas pernah dapat bertentangan dengan
+                          // labelnya (TWO_THIRDS dengan 0.5), sehingga ambang
+                          // yang benar-benar berlaku tak dapat diketahui dari
+                          // nama modenya.
+                          quorumPresentValue: quorumValueForMode(mode),
+                        }));
+                      }}
                     >
                       <SelectTrigger>
                         <SelectValue />
@@ -216,31 +224,24 @@ export default function FoundationRulesPage() {
                     </Select>
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Nilai Kuorum Hadir (0–1)</Label>
+                    <Label>Ambang Kuorum Hadir</Label>
                     <Input
-                      type="number"
-                      step="0.01"
-                      min="0.01"
-                      max="1"
-                      value={form.quorumPresentValue}
-                      onChange={(e) =>
-                        setForm((f) => ({
-                          ...f,
-                          quorumPresentValue: Number(e.target.value),
-                        }))
-                      }
+                      readOnly
+                      value={`${form.quorumPresentMode} · ${form.quorumPresentValue.toFixed(2)}`}
                     />
                   </div>
                   <div className="space-y-1.5">
                     <Label>Mode Kuorum Sah</Label>
                     <Select
                       value={form.quorumDecisionMode}
-                      onValueChange={(v) =>
+                      onValueChange={(v) => {
+                        const mode = v as FoundationQuorumMode;
                         setForm((f) => ({
                           ...f,
-                          quorumDecisionMode: v as FoundationQuorumMode,
-                        }))
-                      }
+                          quorumDecisionMode: mode,
+                          quorumDecisionValue: quorumValueForMode(mode),
+                        }));
+                      }}
                     >
                       <SelectTrigger>
                         <SelectValue />
@@ -255,19 +256,10 @@ export default function FoundationRulesPage() {
                     </Select>
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Nilai Kuorum Sah (0–1)</Label>
+                    <Label>Ambang Kuorum Sah</Label>
                     <Input
-                      type="number"
-                      step="0.01"
-                      min="0.01"
-                      max="1"
-                      value={form.quorumDecisionValue}
-                      onChange={(e) =>
-                        setForm((f) => ({
-                          ...f,
-                          quorumDecisionValue: Number(e.target.value),
-                        }))
-                      }
+                      readOnly
+                      value={`${form.quorumDecisionMode} · ${form.quorumDecisionValue.toFixed(2)}`}
                     />
                   </div>
                 </div>

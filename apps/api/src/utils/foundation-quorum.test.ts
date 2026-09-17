@@ -30,6 +30,21 @@ describe('requiredCount', () => {
     expect(requiredCount('TWO_THIRDS', 2 / 3, 5)).toBe(4);
     expect(requiredCount('THREE_QUARTERS', 3 / 4, 5)).toBe(4);
   });
+
+  /**
+   * Regresi item review #7 — MODE yang mengikat, bukan nilai numeriknya.
+   *
+   * Versi sebelumnya mengevaluasi `value` secara literal, sehingga baris
+   * ber-mode TWO_THIRDS dengan value 0.5 menuntut "≥ setengah" sambil menamakan
+   * dirinya "dua pertiga". Sekarang `requiredCount` menurunkan ambang dari
+   * mode; `value` yang menyimpang tidak lagi menyetir hasil.
+   */
+  it('mengabaikan value yang bertentangan dengan mode', () => {
+    // 10 anggota: TWO_THIRDS menuntut 7, bukan 6 (yang akan dihasilkan 0.5).
+    expect(requiredCount('TWO_THIRDS', 0.5, 10)).toBe(7);
+    expect(requiredCount('MUTLAK', 0.5, 10)).toBe(10);
+    expect(requiredCount('THREE_QUARTERS', 0.5, 10)).toBe(8);
+  });
 });
 
 describe('evaluateQuorum — CIRCULAR (mufakat 100% aktif)', () => {

@@ -53,30 +53,34 @@ describe('certificateVerificationUrl', () => {
  * Keputusan organ yayasan punya kekeliruan yang sama persis dengan surat, satu
  * tingkat lebih buruk: tautannya dicetak di dalam PDF risalah yang dibaca orang
  * luar, dan halaman yang benar sudah ada — tetapi berada di balik tembok sesi.
+ *
+ * Regresi kedua (item review #5): tautan itu DULU membawa token, yang hanya
+ * membuka jalur verifikasi token — memeriksa byte arsip di server, bukan berkas
+ * yang dipegang pemindai. Pemalsu cukup mempertahankan token asli. Sekarang QR
+ * mengarah ke halaman UNGGAHAN tanpa token.
  */
 describe('decisionVerificationUrl', () => {
   it('points at a host we own', () => {
-    const url = decisionVerificationUrl('tok-123');
+    const url = decisionVerificationUrl();
     expect(new URL(url).hostname.endsWith('cipansor.or.id')).toBe(true);
     expect(url).not.toContain('cipansor.app');
     expect(url).not.toContain('cipansor.com');
   });
 
   it('points at the PUBLIC page, not the one behind the login wall', () => {
-    const url = decisionVerificationUrl('tok-123');
+    const url = decisionVerificationUrl();
     expect(new URL(url).pathname).toBe('/public/verify-decision');
     // `/foundation/decisions/verify` is inside the session wall — an anonymous
     // QR scanner is bounced to the staff login before seeing any result.
     expect(new URL(url).pathname).not.toContain('/foundation/');
   });
 
-  it('carries the token so the scanner does not retype it', () => {
-    const url = decisionVerificationUrl('tok-123');
-    expect(new URL(url).searchParams.get('token')).toBe('tok-123');
-  });
-
-  it('encodes a token that would otherwise break the query string', () => {
-    const url = decisionVerificationUrl('a/b #c&d');
-    expect(new URL(url).searchParams.get('token')).toBe('a/b #c&d');
+  it('tidak mencetak token: mengarahkan ke jalur unggah, bukan jalur token', () => {
+    const url = decisionVerificationUrl();
+    // Token pada tautan hanya membuka verifikasi arsip server; penghapusannya
+    // adalah inti perbaikan — pembaca harus mengunggah berkasnya sendiri agar
+    // hash byte-nya dibandingkan dengan digest yang di-e-seal.
+    expect(new URL(url).searchParams.get('token')).toBeNull();
+    expect(url).not.toContain('token=');
   });
 });

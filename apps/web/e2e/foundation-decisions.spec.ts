@@ -184,7 +184,14 @@ test.describe("daftar keputusan", () => {
 
     await combos.nth(3).click();
     await page.getByRole("option", { name: /Dua pertiga/ }).click();
-    await page.locator('input[type="number"]').nth(1).fill("0.67");
+    // Nilai ambang DITURUNKAN dari mode dan ditampilkan read-only (#7):
+    // tidak ada lagi isian angka bebas yang dapat bertentangan dengan label
+    // mode yang dipilih (mis. TWO_THIRDS dengan 0.5).
+    // Label tidak terhubung lewat htmlFor, jadi isian read-only kedua
+    // (Ambang Kuorum Sah) dicari berdasarkan urutannya.
+    await expect(page.locator('input[readonly]').nth(1)).toHaveValue(
+      /TWO_THIRDS · 0\.67/,
+    );
     await page.getByRole("button", { name: "Simpan Aturan" }).click();
 
     await expect(page.getByText("Aturan tersimpan.")).toBeVisible({

@@ -88,3 +88,30 @@ describe('foundation-decisions.routes public verify', () => {
     expect(isPublicRoute('post', '/decisions/:id/finalize')).toBe(false);
   });
 });
+
+/**
+ * Regresi item review #3 — rute detail & unduh TIDAK boleh memakai
+ * `authorize(...READ)`.
+ *
+ * Akses bacanya dipindahkan ke service (`canReadFoundationDecision`) justru
+ * karena `authorize` memeriksa peran HARI INI, sedangkan anggota organ
+ * terkunci pada SNAPSHOT saat keputusan dibuat. Anggota snapshot yang rolenya
+ * sudah berubah tetap boleh MENANDATANGANI (rute vote tanpa `authorize`), jadi
+ * menolaknya MEMBACA dokumen yang sama adalah kontradiksi.
+ */
+describe('foundation-decisions.routes — akses baca detail/dokumen', () => {
+  it('GET /decisions/:id is authenticated but not role-gated', () => {
+    // `authenticate` dipasang lewat `router.use` sebelum rute ini, bukan di
+    // dalam stack rute — jadi yang diperiksa adalah sifat publiknya (harus
+    // false) plus tidak adanya `authorize`.
+    expect(isPublicRoute('get', '/decisions/:id')).toBe(false);
+    const handlers = handlersFor('get', '/decisions/:id');
+    expect(handlers.some((h) => h.handle === authorize || h.name === 'authorize')).toBe(false);
+  });
+
+  it('GET /decisions/:id/document is authenticated but not role-gated', () => {
+    expect(isPublicRoute('get', '/decisions/:id/document')).toBe(false);
+    const handlers = handlersFor('get', '/decisions/:id/document');
+    expect(handlers.some((h) => h.handle === authorize || h.name === 'authorize')).toBe(false);
+  });
+});

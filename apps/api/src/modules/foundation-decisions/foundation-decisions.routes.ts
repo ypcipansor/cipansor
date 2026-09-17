@@ -110,8 +110,18 @@ router.post(
   asyncHandler(c.create)
 );
 
-router.get('/decisions/:id', authorize(...READ), asyncHandler(c.detail));
-router.get('/decisions/:id/document', authorize(...READ), asyncHandler(c.download));
+/**
+ * Detail & unduh dokumen hanya `authenticate`, TANPA `authorize(...READ)`.
+ *
+ * Akses bacanya diperiksa di service (`canReadFoundationDecision`), dan itu
+ * disengaja: `authorize` memeriksa `req.user.roleCode` HARI INI, sedangkan
+ * anggota organ terkunci pada SNAPSHOT saat keputusan dibuat. Anggota snapshot
+ * yang rolenya sudah berubah tetap boleh MENANDATANGANI (rute vote juga tanpa
+ * `authorize`), jadi menolaknya membaca/mengunduh dokumen yang sama adalah
+ * kontradiksi. Service menerima peran READ ATAU keanggotaan snapshot.
+ */
+router.get('/decisions/:id', asyncHandler(c.detail));
+router.get('/decisions/:id/document', asyncHandler(c.download));
 /**
  * Route vote HANYA `authenticate`, tanpa `authorize`.
  *
