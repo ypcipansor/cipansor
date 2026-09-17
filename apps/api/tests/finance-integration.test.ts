@@ -25,6 +25,13 @@ vi.mock('../src/lib/prisma', () => {
       // No active scholarships by default — invoice amount stays as-is.
       findMany: vi.fn(async () => []),
     },
+    student: {
+      findUnique: vi.fn(async () => ({ unitId: 'unit-1' })),
+    },
+    paymentType: {
+      // The issuing unit is the payment type's, not the student's.
+      findUnique: vi.fn(async () => ({ unitId: 'unit-1' })),
+    },
     $transaction: vi.fn(async (callback) => {
       // Execute the callback with the mockPrisma
       return await callback(mockPrisma);
@@ -107,6 +114,63 @@ describe('Finance Service Integration', () => {
       });
 
       expect(prisma.invoice.create).toHaveBeenCalledTimes(2);
+    });
+
+    it('attributes the invoice to the payment type\'s unit, not the student\'s', async () => {
+      // A "SPP SMP IT" bill raised for a pupil now enrolled at SMA belongs to
+      // SMP IT's books. Taking `student.unitId` filed the arrears under the
+      // wrong unit, so the oversight report blamed the wrong school.
+      (prisma.paymentType.findUnique as any).mockResolvedValueOnce({ unitId: 'unit-smpit' });
+      (prisma.student.findUnique as any).mockResolvedValueOnce({ unitId: 'unit-smaq' });
+      (prisma.invoice.findFirst as any).mockResolvedValue(null);
+      (prisma.invoice.create as any).mockResolvedValue({
+        id: 'inv-1',
+        invoiceNumber: 'INV-202401-00001',
+        amount: { toNumber: () => 500000 },
+        dueDate: new Date(),
+        student: { user: { id: 'u1' } },
+        paymentType: { name: 'SPP' },
+      });
+
+      await financeService.createInvoice({
+        studentId: 's1',
+        paymentTypeId: 'pt-smpit',
+        amount: 500000,
+        dueDate: '2024-01-10',
+      });
+
+      expect(prisma.invoice.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ unitId: 'unit-smpit' }),
+        })
+      );
+    });
+
+    it('falls back to the student\'s unit when the payment type carries none', async () => {
+      (prisma.paymentType.findUnique as any).mockResolvedValueOnce(null);
+      (prisma.student.findUnique as any).mockResolvedValueOnce({ unitId: 'unit-smaq' });
+      (prisma.invoice.findFirst as any).mockResolvedValue(null);
+      (prisma.invoice.create as any).mockResolvedValue({
+        id: 'inv-1',
+        invoiceNumber: 'INV-202401-00001',
+        amount: { toNumber: () => 500000 },
+        dueDate: new Date(),
+        student: { user: { id: 'u1' } },
+        paymentType: { name: 'SPP' },
+      });
+
+      await financeService.createInvoice({
+        studentId: 's1',
+        paymentTypeId: 'pt-1',
+        amount: 500000,
+        dueDate: '2024-01-10',
+      });
+
+      expect(prisma.invoice.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ unitId: 'unit-smaq' }),
+        })
+      );
     });
   });
 

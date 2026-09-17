@@ -74,6 +74,12 @@ const publicPrefixes = [
    * lists in agreement (Flag 11).
    */
   "/public/verify-card",
+  /**
+   * Whistleblowing System submission and tracking. Read-without-a-session is
+   * the whole point; kept in step with `PUBLIC_PATH_PREFIXES` in
+   * lib/host-split.ts, which decides the host.
+   */
+  "/public/wbs",
 ];
 
 // Helper function to get auth state from cookie

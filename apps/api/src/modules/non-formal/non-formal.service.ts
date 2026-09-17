@@ -114,6 +114,7 @@ export const courseService = {
             status: 'PENDING',
             studentId: data.studentId || null,
             paymentTypeId: paymentType.id,
+            unitId: course.unitId,
             notes: `Biaya pendaftaran kursus ${course.name} untuk ${data.externalName || 'Siswa Internal'}`,
           } as any,
         });

@@ -7,6 +7,8 @@ import { hashPassword } from '@/lib/password';
 import { Errors } from '@/middleware/error';
 import { assertStudentIdentifiersAvailable } from './student-identifiers';
 import { assignStudentNis } from '@/utils/student-nis';
+import { markUserSuspended } from '@/utils/user-suspension';
+import { softDeleteState } from '@/utils/account-state';
 import { UserRole, Gender, Prisma } from '@prisma/client';
 import type { ListStudentsQuery, CreateStudentInput, UpdateStudentInput } from './student.schema';
 import {
@@ -634,9 +636,13 @@ export class StudentService {
       }),
       prisma.user.update({
         where: { id: student.userId },
-        data: { deletedAt: new Date() },
+        data: softDeleteState(),
       }),
     ]);
+
+    // A soft-deleted account must stop authenticating immediately; the
+    // suspension cache would otherwise serve its cached "active" for a TTL.
+    await markUserSuspended(student.userId);
 
     return { message: 'Student deleted successfully' };
   }
