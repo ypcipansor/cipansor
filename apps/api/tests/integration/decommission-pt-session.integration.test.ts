@@ -186,6 +186,22 @@ VALUES
 INSERT INTO donations (id, campaign_id, unit_id, donor_name, amount, type, payment_method, status, donated_at, updated_at) VALUES
   ('don-pt', 'camp-pt', 'u-pt', 'Donor PT', 100000, 'ZAKAT_MAAL', 'BANK_TRANSFER', 'VERIFIED', now(), now()),
   ('don-tk', 'camp-tk', 'u-tk', 'Donor TK', 100000, 'ZAKAT_MAAL', 'BANK_TRANSFER', 'VERIFIED', now(), now());
+
+-- Finding 1 (review SEVERE, marketing half): a public ACTIVE marketing campaign
+-- owned by the PT unit. marketing.routes.ts:9 serves
+-- /public/campaigns/code/:code with no authenticate, and getCampaignByCode
+-- (marketing.service.ts:58-74) filters on code + isActive only, never on
+-- unit. Left to the FK (SET NULL, 0_init:9364) the PT campaign would survive
+-- with unit_id = NULL and is_active = true, so the public endpoint would
+-- keep resolving its code and attributing registrations. It must be deleted. The
+-- TK campaign is the sibling control. code is globally unique (0_init:7525),
+-- so this row also proves the generic unique-per-unit catalog rule does NOT
+-- already cover the table (there is no (unit_id, ...) UNIQUE).
+INSERT INTO marketing_campaigns
+  (id, unit_id, name, code, start_date, is_active, created_by_id, updated_at)
+VALUES
+  ('mkt-pt', 'u-pt', 'Kampanye PT', 'PT-RAMADHAN', now(), true, 'user-tkq', now()),
+  ('mkt-tk', 'u-tk', 'Kampanye TK', 'TK-RAMADHAN', now(), true, 'user-tkq', now());
 `;
 
 /** Rows that must be deleted because their unit is the PT unit. */
@@ -212,6 +228,10 @@ const PURGED_PT_ROWS: Array<[table: string, id: string]> = [
   // deleted -- not detached. Its dependent donation is NOT purged: see the
   // false-positive note in the campaign test below.
   ['donation_campaigns', 'camp-pt'],
+  // FINDING 1 (review SEVERE, marketing half): a public ACTIVE marketing
+  // campaign on the PT unit. Same shape as the donation campaign -- public read
+  // path, no unit filter, SET NULL FK -- so it must be deleted too.
+  ['marketing_campaigns', 'mkt-pt'],
 ];
 
 /** Rows of a surviving unit that the purge must not touch. */
@@ -239,6 +259,8 @@ const KEPT_TK_ROWS: Array<[table: string, id: string]> = [
   // The sibling campaign and its donation must survive the PT purge.
   ['donation_campaigns', 'camp-tk'],
   ['donations', 'don-tk'],
+  // The sibling marketing campaign must survive the PT purge untouched.
+  ['marketing_campaigns', 'mkt-tk'],
   // FINDING 2 control (scope half): the surviving unit's own assignment is left
   // active -- only the PT-scoped one was neutralised.
 ];
@@ -487,6 +509,56 @@ describeDb('decommission migration — legacy PT sessions end', () => {
     }
   });
 
+  // Finding 1 (review SEVERE, marketing half): a public ACTIVE marketing
+  // campaign on the PT unit. Its `unit_id` FK is SET NULL (0_init:9364), so the
+  // FK would detach it rather than retire it, and `getCampaignByCode`
+  // (marketing.service.ts:58-74) filters on `code` + `isActive` only -- never on
+  // unit -- behind the unauthenticated `/public/campaigns/code/:code` route
+  // (marketing.routes.ts:9). A detached PT campaign whose `is_active = true`
+  // would therefore keep resolving its code from the public site and keep
+  // attributing registrations. The table has no `(unit_id, ...)` UNIQUE (only a
+  // global `code`, 0_init:7525) and is unreachable from `units` over the
+  // followed edges (`registrants.campaign_id` is SET NULL, 0_init:8305), so the
+  // migration pins it by row and deletes every PT campaign regardless of status.
+  it('purges a PT marketing campaign so its public code stops resolving, and keeps the sibling', async () => {
+    const db = new Client({ connectionString: targetUrl });
+    await db.connect();
+    try {
+      const { rows: gone } = await db.query(
+        `SELECT count(*)::int AS n FROM marketing_campaigns WHERE id = 'mkt-pt'`
+      );
+      expect(gone[0].n).toBe(0);
+      // The real public read path, not a copied predicate: import the marketing
+      // service fresh with DATABASE_URL pointed at this throwaway database (its
+      // `prisma` singleton binds the env at import time), call
+      // `getCampaignByCode` with the retired PT code, and restore the env.
+      const previousUrl = process.env.DATABASE_URL;
+      process.env.DATABASE_URL = targetUrl;
+      vi.resetModules();
+      try {
+        const marketing = await import('../../src/modules/marketing/marketing.service');
+        expect(await marketing.getCampaignByCode('PT-RAMADHAN')).toBeNull();
+        const sibling = await marketing.getCampaignByCode('TK-RAMADHAN');
+        expect(sibling?.id).toBe('mkt-tk');
+      } finally {
+        process.env.DATABASE_URL = previousUrl;
+        vi.resetModules();
+      }
+      // It must not survive detached with a NULL unit either.
+      const { rows: detached } = await db.query(
+        `SELECT count(*)::int AS n FROM marketing_campaigns WHERE unit_id IS NULL`
+      );
+      expect(detached[0].n).toBe(0);
+      // The sibling keeps its unit and stays active.
+      const { rows: siblingRow } = await db.query<{ unit_id: string | null; is_active: boolean }>(
+        `SELECT unit_id, is_active FROM marketing_campaigns WHERE id = 'mkt-tk'`
+      );
+      expect(siblingRow).toEqual([{ unit_id: 'u-tk', is_active: true }]);
+    } finally {
+      await db.end();
+    }
+  });
+
   // Finding 2 (review SEVERE, scope half): a non-PT role scoped to the PT unit.
   // Neither PT marker catches it, but its scope is gone and a detached assignment
   // would mint a null-unit token on refresh -- which reads as "all units". The
@@ -686,7 +758,7 @@ describeDb('decommission migration — FK-catalog guards fail loud', () => {
     // Analysis item 2 of the PR #505 review: the purge deletes leaf-first and
     // aborts if a batch goes empty, which is what a non-self FK cycle among the
     // *doomed rows* would cause. The production closure has none (verified: 0
-    // non-self cycles over 230 tables), but a future relation could introduce
+    // non-self cycles over 231 tables), but a future relation could introduce
     // one -- so exercise the guard itself, not just the absent cycle. Two tables
     // reachable from `units` and each holding a PT-owned row, referencing each
     // other, must make the migration raise rather than spin.

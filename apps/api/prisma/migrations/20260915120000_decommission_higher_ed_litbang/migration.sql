@@ -74,7 +74,7 @@ DROP TYPE IF EXISTS "InnovationStatus";
 --        `dashboard_metric_snapshots` and `report_templates`, plus one table
 --        owned by another change that must not be named here.
 --
---   (ii) the seven `SET NULL` children whose read paths treat `unit_id IS NULL`
+--   (ii) the eight `SET NULL` children whose read paths treat `unit_id IS NULL`
 --        as "all units" / "foundation-wide". That is a property of the *reader*,
 --        not of the catalog, so it is a pinned list, audited against the read
 --        paths (file:line in the loop below) and guarded by
@@ -93,27 +93,44 @@ DROP TYPE IF EXISTS "InnovationStatus";
 -- nothing pulls it into the closure. Pinning it by row is what deletes the PT
 -- campaigns, whatever their status (ACTIVE / DRAFT / CLOSED).
 --
--- Blast radius: the purge deletes 229 dependent tables (230 including `units`
+-- `marketing_campaigns` is pinned for exactly the same shape, one layer less
+-- obvious because the leak is a *registration* code rather than a donation:
+--     - the route is public and needs no session:
+--       `marketing.routes.ts:9` (`router.get('/public/campaigns/code/:code', ...)`
+--       is declared before `router.use(authenticate)` at line 12);
+--     - the read path filters on `code` + `isActive` only, never on unit:
+--       `marketing.service.ts:58-74` (`getCampaignByCode`);
+--     - the FK is `SET NULL` (0_init:9364) and there is no `(unit_id, ...)`
+--       UNIQUE (0_init:7525 — only `code` is unique, foundation-wide), and the
+--       table is unreachable from `units` over the followed edges — its own
+--       child `registrants.campaign_id` is `SET NULL` too (0_init:8305), so
+--       nothing pulls it into the closure.
+-- Left to the FK, a PT campaign would survive with `unit_id = NULL` and
+-- `is_active = true`, and the public `getCampaignByCode` would keep resolving its
+-- code — so a retired PT campaign could still attribute registrations. Pin it by
+-- row to delete the PT campaigns, whatever their status.
+--
+-- Blast radius: the purge deletes 230 dependent tables (231 including `units`
 -- itself), at a maximum depth of 3. That set is the closure over the edges
 -- followed below, seeded with `units` plus every `SET NULL` child captured by
 -- row first -- the pinned NULL-means-global tables and the unique-per-unit
 -- tables matched by the catalog rule. Those seeds are not merely decorative:
--- the pinned seeds alone drag in 14 tables that `units` cannot reach over the
--- followed edges (213 -> 227), and the three unique-per-unit seeds add the last
+-- the pinned seeds alone drag in 15 tables that `units` cannot reach over the
+-- followed edges (213 -> 228), and the three unique-per-unit seeds add the last
 -- 3 (`dashboard_metric_snapshots`, `report_templates`, and one owned by PR
--- #504) to reach 230. (`users` and `user_role_assignments` are deliberately not
+-- #504) to reach 231. (`users` and `user_role_assignments` are deliberately not
 -- in the deleted set; they survive detached with `unit_id = NULL` and section 4
 -- ends the PT-only sessions.)
 -- Reproduce against the catalog this block runs on -- i.e. after the higher-ed
 -- tables of sections 1-2 are dropped. The seed set mirrors the loop below: the
--- seven pinned tables plus every `SET NULL` child whose `(unit_id, ...)` is
+-- eight pinned tables plus every `SET NULL` child whose `(unit_id, ...)` is
 -- UNIQUE (the `EXISTS` subquery):
 --
 --   WITH seeds(tbl) AS (
 --     SELECT unnest(ARRAY[
 --       'units', 'announcements', 'calendar_events', 'dashboard_history',
 --       'islamic_events', 'paud_development_indicators', 'strategic_plans',
---       'donation_campaigns'
+--       'donation_campaigns', 'marketing_campaigns'
 --     ])
 --     UNION
 --     SELECT format('public.%I', cc.relname)
@@ -138,10 +155,10 @@ DROP TYPE IF EXISTS "InnovationStatus";
 --                          AND c.confdeltype IN ('a','r','c')
 --     JOIN pg_class cc ON cc.oid = c.conrelid
 --     JOIN pg_namespace cn ON cn.oid = cc.relnamespace)
---   SELECT count(*) FROM (SELECT DISTINCT tbl FROM reach) t;  -- 230
+--   SELECT count(*) FROM (SELECT DISTINCT tbl FROM reach) t;  -- 231
 --
--- (Depth distribution over the distinct tables, min depth: 11 at 0, 86 at 1,
--- 107 at 2, 26 at 3 -- the eleven seeds at depth 0, of which `units` is one.)
+-- (Depth distribution over the distinct tables, min depth: 12 at 0, 86 at 1,
+-- 107 at 2, 26 at 3 -- the twelve seeds at depth 0, of which `units` is one.)
 -- This is why the deploy runbook requires a verified backup BEFORE
 -- `prisma migrate deploy`.
 
@@ -243,7 +260,15 @@ BEGIN
           -- unit (donation.service.ts:75-89), so a PT campaign the FK
           -- detached to `unit_id IS NULL` would keep accepting donations
           -- from the public site. Delete it instead -- any status.
-          'public.donation_campaigns'           -- donation.service.ts:75-89
+          'public.donation_campaigns',          -- donation.service.ts:75-89
+          -- The public campaign lookup needs no session
+          -- (marketing.routes.ts:9, declared before `router.use(authenticate)`
+          -- at line 12) and filters on `code` + `isActive` only, never on unit
+          -- (marketing.service.ts:58-74). A PT campaign the FK detached to
+          -- `unit_id IS NULL` with `is_active = true` would keep resolving its
+          -- code and keep attributing registrations from the public site.
+          -- Delete it instead -- any status.
+          'public.marketing_campaigns'          -- marketing.service.ts:58-74
         )
       )
   LOOP

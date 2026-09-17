@@ -306,6 +306,7 @@ describe('decommission purge — migrations', () => {
       'paud_development_indicators',
       'strategic_plans',
       'donation_campaigns',
+      'marketing_campaigns',
     ];
     expect(DECOMMISSION).toContain('pt_setnull_doomed_tmp');
     expect(DECOMMISSION).toMatch(/confdeltype\s*=\s*'n'/);
@@ -337,10 +338,10 @@ describe('decommission purge — migrations', () => {
     );
     expect(perencanaan).toMatch(/\{ unitId: null \}/);
 
-    // `donation_campaigns` is the one pinned entry whose read path never even
-    // looks at the unit: `findPublic` filters on status/date only, so a PT
-    // campaign the FK detached to `unit_id IS NULL` stays on the public site and
-    // keeps collecting donations. Pinned against that exact query shape.
+    // `donation_campaigns` is a pinned entry whose read path never even looks at
+    // the unit: `findPublic` filters on status/date only, so a PT campaign the
+    // FK detached to `unit_id IS NULL` stays on the public site and keeps
+    // collecting donations. Pinned against that exact query shape.
     const donation = read(join(API_ROOT, 'src', 'modules', 'donation', 'donation.service.ts'));
     const findPublic = donation.slice(
       donation.indexOf('async findPublic'),
@@ -354,6 +355,34 @@ describe('decommission purge — migrations', () => {
     const campaignFields = campaignBody.slice(0, campaignBody.indexOf('\n}'));
     expect(campaignFields).toMatch(/slug\s+String\s+@unique/);
     expect(campaignFields).not.toMatch(/@@unique\(\[unitId/);
+
+    // `marketing_campaigns` is the same shape: a *public* lookup for a single
+    // campaign by code, with no session (`marketing.routes.ts`, the public GET
+    // is declared before `router.use(authenticate)`) and no unit filter on the
+    // read (`getCampaignByCode` filters on code + isActive only). A PT campaign
+    // the FK detached to `unit_id IS NULL` with `is_active = true` would keep
+    // resolving its code and keep attributing registrations.
+    const marketingRoutes = read(
+      join(API_ROOT, 'src', 'modules', 'marketing', 'marketing.routes.ts')
+    );
+    const publicLookup = marketingRoutes.indexOf("'/public/campaigns/code/:code'");
+    const authenticate = marketingRoutes.indexOf('router.use(authenticate)');
+    expect(publicLookup).toBeGreaterThan(-1);
+    expect(authenticate).toBeGreaterThan(publicLookup);
+
+    const marketing = read(join(API_ROOT, 'src', 'modules', 'marketing', 'marketing.service.ts'));
+    const byCode = marketing.slice(
+      marketing.indexOf('export const getCampaignByCode'),
+      marketing.indexOf('export const getCampaignByCode') + 500
+    );
+    expect(byCode).toMatch(/isActive: true/);
+    expect(byCode).not.toMatch(/unitId/);
+    // Like the donation campaign it has no `(unit_id, ...)` UNIQUE; `code` is
+    // globally unique, so the generic catalog rule cannot reach it either.
+    const mktBody = SCHEMA.slice(SCHEMA.indexOf('model MarketingCampaign {'));
+    const mktFields = mktBody.slice(0, mktBody.indexOf('\n}'));
+    expect(mktFields).toMatch(/code\s+String\s+@unique/);
+    expect(mktFields).not.toMatch(/@@unique\(\[unitId/);
   });
 
   it('captures unique-per-unit `SET NULL` children generically, without naming them', () => {
@@ -390,6 +419,40 @@ describe('decommission purge — migrations', () => {
       const body = SCHEMA.slice(SCHEMA.indexOf(`model ${model} {`));
       expect(body.slice(0, body.indexOf('\n}')), model).toContain(unique);
     }
+  });
+
+  it('the unique-per-unit heuristic matches only genuinely unit-owned tables', () => {
+    // Analysis item B of the PR #505 review: the catalog rule reads "the leading
+    // key column of a UNIQUE index is the FK column" as *unit ownership* -- not
+    // merely "unique per unit". That is a destructive inference, so the tables
+    // it matches today are each audited here against their read path. All three
+    // are scoped by unit (a `unitId` filter or a per-unit precedence), none is a
+    // foundation-wide table that happens to carry a nullable `unit_id`.
+    const DASHBOARD = join(
+      API_ROOT,
+      'src',
+      'modules',
+      'dashboard-enhancement',
+      'dashboard.service.ts'
+    );
+    const dashboard = read(DASHBOARD);
+    // `listMetricSnapshots`/`getTrend` filter on the caller's unit when one is
+    // supplied: a NULL-unit snapshot is the foundation-wide roll-up, and a
+    // PT-unit snapshot (a unit-owned row) is read only for that unit.
+    expect(dashboard).toMatch(/if \(unitId\) where\.unitId = unitId;/);
+
+    const REPORTS = join(API_ROOT, 'src', 'modules', 'finance', 'reports.service.ts');
+    const reports = read(REPORTS);
+    // A report template is selected per unit, with the unit-specific row taking
+    // precedence over the default: `unitId` is a real ownership column.
+    expect(reports).toMatch(/OR: \[\{ unitId: query\.unitId \}, \{ isDefault: true \}\]/);
+
+    const SECRETS = join(API_ROOT, 'src', 'modules', 'system-secrets', 'secrets.service.ts');
+    const secrets = read(SECRETS);
+    // PR #504 owns the module, but the ownership semantics are the same: an
+    // explicit `unitId` selects that unit's secret; no unit reads the
+    // foundation-wide (`null`) scope.
+    expect(secrets).toMatch(/unitId \? \{ unitId \} : \{ unitId: null \}/);
   });
 
   it('leaves a detached PT donation alone: it never becomes global', () => {

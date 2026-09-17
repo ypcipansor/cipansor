@@ -233,8 +233,8 @@ As of this writing that applies to
 higher-education (Perguruan Tinggi) and Litbang/R&D tables **and deletes every
 row owned by a `PERGURUAN_TINGGI` unit** (its classes, students, teachers, staff,
 departments, budgets, letters, assets, attendance, invoices, …). The unit is
-removed outright rather than re-typed; the blast radius reaches 229 dependent
-tables (230 including `units`), at a maximum depth of 3 — reproduced from the
+removed outright rather than re-typed; the blast radius reaches 230 dependent
+tables (231 including `units`), at a maximum depth of 3 — reproduced from the
 post-drop FK catalog, seeded with the `SET NULL` children the migration purges by
 row (the NULL-means-global tables plus the catalog-matched unique-per-unit
 tables), in the migration header. `users` and `user_role_assignments` are not in
