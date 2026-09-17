@@ -10703,16 +10703,15 @@ model BoardMemberSuspension {
   /// restore the exact prior value, and leaves keys created after suspension
   /// untouched.
   signingKeyLocks  Json?                 @map("signing_key_locks")
-  /// The account's `isActive` at the instant it was suspended, plus the
-  /// `updatedAt` the suspension's own write left behind.
+  /// The account's `isActive` at the instant it was suspended.
   ///
   /// Suspension sets `is_active = false`. A lift used to write `is_active =
   /// true` unconditionally, so an independent deactivation by an admin during
   /// the suspension (e.g. a second, unrelated incident) was silently undone.
-  /// Recording the prior value lets a lift restore *what it changed* rather
-  /// than force the account on; the stored `updatedAt` lets it detect that the
-  /// row was touched after the suspension and leave it alone.
-  /// `{ isActiveBefore: boolean, updatedAtAfterSuspend: string }`.
+  /// Recording the prior value lets a lift restore *what it changed*: it
+  /// reactivates only when `isActiveBefore` is `true` (the suspension is what
+  /// switched the account off) and leaves an already-off account off.
+  /// `{ isActiveBefore: boolean }`.
   accountStateSnapshot Json?             @map("account_state_snapshot")
   liftedAt         DateTime?             @map("lifted_at")
   liftedById       String?               @map("lifted_by_id")

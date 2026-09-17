@@ -3,6 +3,7 @@ import { hashPassword } from '@/lib/password';
 import { Errors } from '@/middleware/error';
 import { UserRole, Prisma, type Unit } from '@prisma/client';
 import { resolveLegacyRoleToRoleCode } from '@/modules/auth/auth.service';
+import { invalidateUserSuspensionCache, markUserSuspended } from '@/utils/user-suspension';
 import type { ListUsersQuery, CreateUserInput, UpdateUserInput } from './user.schema';
 
 export class UserService {
@@ -292,6 +293,16 @@ export class UserService {
       include: { unit: true },
     });
 
+    // The suspension check caches its answer for a TTL, so flipping `isActive`
+    // off here without touching the cache left the old access token
+    // authenticating for up to a minute. Prime the cache on deactivation and
+    // drop it on any other change (a reactivation must not keep a cached `1`).
+    if (input.isActive === false) {
+      await markUserSuspended(id);
+    } else if (input.isActive === true) {
+      await invalidateUserSuspensionCache(id);
+    }
+
     const { passwordHash, ...userWithoutPassword } = updated;
     return userWithoutPassword;
   }
@@ -318,6 +329,11 @@ export class UserService {
     await prisma.refreshToken.deleteMany({
       where: { userId: id },
     });
+
+    // A soft-deleted account is suspended for authentication purposes, and that
+    // fact is cached — without this the deleted user's token kept working until
+    // the cached "not suspended" expired.
+    await markUserSuspended(id);
 
     return { message: 'User deleted successfully' };
   }

@@ -54,11 +54,12 @@ import {
   WBS_TARGET_LEVELS,
   WBS_TARGET_LEVEL_LABELS,
 } from "@cipansor/shared";
+import type { WbsCategoryCode, WbsTargetLevelCode } from "@cipansor/shared";
 
 function PublicWbsContent() {
   const [unitId, setUnitId] = useState<string>("");
-  const [category, setCategory] = useState<string>("KEUANGAN_ASET");
-  const [targetLevel, setTargetLevel] = useState<string>("KEPALA_UNIT");
+  const [category, setCategory] = useState<WbsCategoryCode>("KEUANGAN_ASET");
+  const [targetLevel, setTargetLevel] = useState<WbsTargetLevelCode>("KEPALA_UNIT");
   const [targetName, setTargetName] = useState<string>("");
   const [subject, setSubject] = useState<string>("");
   const [description, setDescription] = useState<string>("");
@@ -108,10 +109,10 @@ function PublicWbsContent() {
         turnstileToken: turnstile.token || undefined,
       });
 
-      if (res?.data) {
+      if (res) {
         setCreatedTicket({
-          ticketCode: res.data.ticketCode,
-          trackingToken: res.data.trackingToken,
+          ticketCode: res.ticketCode,
+          trackingToken: res.trackingToken,
         });
       }
       turnstile.refresh();
@@ -178,7 +179,7 @@ function PublicWbsContent() {
                   <Label htmlFor="category" className="font-semibold">
                     Kategori Laporan *
                   </Label>
-                  <Select value={category} onValueChange={setCategory}>
+                  <Select value={category} onValueChange={(v) => setCategory(v as WbsCategoryCode)}>
                     <SelectTrigger id="category" className="bg-white">
                       <SelectValue placeholder="Pilih Kategori" />
                     </SelectTrigger>
@@ -196,7 +197,7 @@ function PublicWbsContent() {
                   <Label htmlFor="targetLevel" className="font-semibold">
                     Subjek Teradu (Level Jabatan) *
                   </Label>
-                  <Select value={targetLevel} onValueChange={setTargetLevel}>
+                  <Select value={targetLevel} onValueChange={(v) => setTargetLevel(v as WbsTargetLevelCode)}>
                     <SelectTrigger id="targetLevel" className="bg-white">
                       <SelectValue placeholder="Pilih Subjek Teradu" />
                     </SelectTrigger>

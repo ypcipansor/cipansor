@@ -174,14 +174,24 @@ export async function createInvoice(data: CreateInvoiceDto, tx?: Prisma.Transact
         }
       }
 
-      // Resolve the unit of record at issuance. `student.unitId` is correct
-      // *here* — at creation it is the unit that issued the bill; freezing it
-      // onto the invoice is what stops a later transfer from moving the arrears
-      // to the new unit.
-      const student = await dbClient.student.findUnique({
-        where: { id: studentId },
-        select: { unitId: true },
-      });
+      // Resolve the unit of record at issuance. The issuing unit is the one
+      // that owns the payment type — a "SPP SMP IT" bill raised for a pupil
+      // belongs to SMP IT's books even if the pupil has since transferred to
+      // SMA. Taking `student.unitId` unconditionally attributed the arrears to
+      // whichever unit the pupil currently sits in, so a cross-unit payment
+      // type silently mis-filed the debt. `student.unitId` remains the fallback
+      // only for the (schema-impossible) case of a payment type with no unit.
+      const [paymentType, student] = await Promise.all([
+        dbClient.paymentType.findUnique({
+          where: { id: paymentTypeId },
+          select: { unitId: true },
+        }),
+        dbClient.student.findUnique({
+          where: { id: studentId },
+          select: { unitId: true },
+        }),
+      ]);
+      const issuingUnitId = paymentType?.unitId ?? student?.unitId ?? null;
 
       invoice = await dbClient.invoice.create({
         data: {
@@ -189,7 +199,7 @@ export async function createInvoice(data: CreateInvoiceDto, tx?: Prisma.Transact
           invoiceNumber,
           amount: finalAmount.lt(0) ? 0 : finalAmount,
           dueDate: new Date(data.dueDate),
-          unitId: student?.unitId ?? null,
+          unitId: issuingUnitId,
           student: { connect: { id: studentId } },
           paymentType: { connect: { id: paymentTypeId } },
         },

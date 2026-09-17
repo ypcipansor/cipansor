@@ -3,6 +3,7 @@ import {
   createBoardSuspensionSchema,
   updateAuditSchema,
   submitPeriodicReportSchema,
+  forwardWbsReportSchema,
 } from '../pengawasan.validation';
 import { PLH_ROLE_CODES } from '@cipansor/shared';
 
@@ -43,6 +44,44 @@ describe('pengawasan validation contracts', () => {
 
   it('allows omitting the Plh role entirely', () => {
     expect(createBoardSuspensionSchema.safeParse(baseSuspension).success).toBe(true);
+  });
+
+  it('treats an empty-string Plh as "not provided" rather than an invalid UUID', () => {
+    // The web form initialises the field to `""` and submits it verbatim. A
+    // bare `z.string().uuid()` rejects that — it is neither a UUID nor absent —
+    // so the suspension form refused to submit without a Plh, even though one
+    // is optional.
+    const parsed = createBoardSuspensionSchema.safeParse({
+      ...baseSuspension,
+      plhUserId: '',
+      plhRoleCode: '',
+    });
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.plhUserId).toBeUndefined();
+    expect(parsed.success && parsed.data.plhRoleCode).toBeUndefined();
+  });
+
+  it('still rejects a malformed Plh user id', () => {
+    expect(
+      createBoardSuspensionSchema.safeParse({ ...baseSuspension, plhUserId: 'not-a-uuid' }).success
+    ).toBe(false);
+  });
+
+  it('rejects a misspelled WBS forward role at the edge', () => {
+    // A free string here let a typo such as `primaryHandlerRole` through and the
+    // report landed in a queue no role's scope query matches.
+    expect(
+      forwardWbsReportSchema.safeParse({
+        toRole: 'primaryHandlerRole',
+        reason: 'alasan yang cukup panjang',
+      }).success
+    ).toBe(false);
+    expect(
+      forwardWbsReportSchema.safeParse({
+        toRole: 'YAYASAN_KETUA',
+        reason: 'alasan yang cukup panjang',
+      }).success
+    ).toBe(true);
   });
 
   it('rejects a null plannedDate on audit update — the column is NOT NULL', () => {

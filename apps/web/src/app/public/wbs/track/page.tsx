@@ -54,8 +54,8 @@ function PublicWbsTrackContent() {
         trackingToken: trackingToken.trim(),
         turnstileToken: trackTurnstile.token || undefined,
       });
-      if (res?.data) {
-        setReportData(res.data);
+      if (res) {
+        setReportData(res);
       }
       trackTurnstile.refresh();
     } catch (err) {

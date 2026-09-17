@@ -19,6 +19,7 @@ import {
 } from './hr.schema';
 import bcrypt from 'bcryptjs';
 import { Errors } from '../../middleware/error';
+import { invalidateUserSuspensionCache, markUserSuspended } from '../../utils/user-suspension';
 
 // =====================================
 // EMPLOYEE SERVICE (UNIFIED TEACHER & STAFF)
@@ -298,7 +299,7 @@ export async function updateEmployee(id: string, data: UpdateEmployeeInput) {
 
   if (!user) throw Errors.notFound('Employee not found');
 
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     // 1. Update User
     const updatedUser = await tx.user.update({
       where: { id },
@@ -347,11 +348,22 @@ export async function updateEmployee(id: string, data: UpdateEmployeeInput) {
 
     return updatedUser;
   });
+
+  // Cache invalidation must happen *after* the transaction commits: writing the
+  // suspension marker inside the rollback-able body would leave the cache
+  // claiming a deactivation the database never kept.
+  if (data.isActive === false) {
+    await markUserSuspended(id);
+  } else if (data.isActive === true) {
+    await invalidateUserSuspensionCache(id);
+  }
+
+  return result;
 }
 
 export async function deleteEmployee(id: string) {
   // Soft delete user and related profile
-  return prisma.$transaction(async (tx) => {
+  const user = await prisma.$transaction(async (tx) => {
     const user = await tx.user.update({
       where: { id },
       data: {
@@ -378,6 +390,9 @@ export async function deleteEmployee(id: string) {
 
     return user;
   });
+
+  await markUserSuspended(id);
+  return user;
 }
 
 // =====================================

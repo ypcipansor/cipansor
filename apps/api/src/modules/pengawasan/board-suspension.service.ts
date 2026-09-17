@@ -1,19 +1,16 @@
 import { prisma } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
 import { BoardSuspensionStatus, Prisma } from '@prisma/client';
-import { PENGURUS_ROLE_CODES, PLH_ROLE_CODES } from '@cipansor/shared';
+import {
+  PENGURUS_ROLE_CODES,
+  PLH_ROLE_CODES,
+  type CreateBoardSuspensionInput,
+} from '@cipansor/shared';
 import { invalidateUserSuspensionCache, markUserSuspended } from '@/utils/user-suspension';
 
-export interface CreateBoardSuspensionInput {
-  userId: string;
-  skNumber: string;
-  auditReason: string;
-  documentUrl?: string;
-  startDate?: string | null;
-  projectedEndDate?: string | null;
-  plhUserId?: string | null;
-  plhRoleCode?: string | null;
-}
+// The payload is the shared contract the controller validates with; a local
+// restatement of the same fields is exactly how the two drift apart.
+export type { CreateBoardSuspensionInput };
 
 /** Far-future sentinel written to `lockedUntil` to revoke signing capability. */
 const SIGNING_KEY_SUSPENSION_LOCK = new Date('2099-01-01T00:00:00Z');
@@ -30,10 +27,18 @@ interface PlhAssignmentRestore {
   expiresAt: string | null;
 }
 
-/** The account's `isActive` before suspension, so a lift restores it exactly. */
+/**
+ * The account's `isActive` at the moment the suspension switched it off.
+ *
+ * A lift reads it as the restore target: `true` means the suspension is what
+ * switched the account off, so lifting switches it back on; `false` means an
+ * admin had already deactivated it for an unrelated reason and the lift must
+ * leave it off. Comparing `updatedAt` instead was wrong in both directions — a
+ * profile edit moved the timestamp, so a lift refused to restore an account the
+ * suspension itself had disabled.
+ */
 interface AccountStateSnapshot {
   isActiveBefore: boolean;
-  updatedAtAfterSuspend: string;
 }
 
 export class BoardSuspensionService {
@@ -90,6 +95,31 @@ export class BoardSuspensionService {
       );
     }
 
+    // Plh/Plt eligibility. The delegate had no checks at all, so the endpoint
+    // accepted the suspended officer themselves (a self-appointment that undoes
+    // the suspension), a deleted account, or an inactive one — none of whom can
+    // act, all of whom would make the suspension look like it delegated power.
+    if (data.plhUserId) {
+      if (data.plhUserId === data.userId) {
+        throw Errors.badRequest(
+          'Pengurus yang dibekukan tidak dapat ditunjuk sebagai Plh/Plt untuk menggantikan dirinya sendiri.'
+        );
+      }
+
+      const plhUser = await prisma.user.findUnique({
+        where: { id: data.plhUserId },
+        select: { id: true, isActive: true, deletedAt: true },
+      });
+
+      if (!plhUser || plhUser.deletedAt) {
+        throw Errors.badRequest('Pengguna yang ditunjuk sebagai Plh/Plt tidak ditemukan atau telah dihapus.');
+      }
+
+      if (!plhUser.isActive) {
+        throw Errors.badRequest('Pengguna yang ditunjuk sebagai Plh/Plt tidak aktif dan tidak dapat didelegasikan.');
+      }
+    }
+
     try {
       const suspension = await prisma.$transaction(async (tx) => {
         // The ACTIVE check lives inside the transaction, and the database
@@ -118,13 +148,17 @@ export class BoardSuspensionService {
           signingKeyLocks[key.id] = key.lockedUntil ? key.lockedUntil.toISOString() : null;
         }
 
-        // Snapshot the account state before we flip it off. `updatedAt` is the
-        // marker the lift compares against: if the row changed after the
-        // suspension's own write, someone else (an admin deactivation) touched
-        // it and the lift must not force the account back on.
+        // The account state is read *inside* the transaction, immediately
+        // before it is flipped off. Reading it from the pre-transaction
+        // `targetUser` let a concurrent admin deactivation (or a lift) land in
+        // between, so the snapshot recorded a stale `isActive` and a later lift
+        // restored an account someone else had switched off.
+        const freshTarget = await tx.user.findUnique({
+          where: { id: data.userId },
+          select: { isActive: true },
+        });
         const accountStateSnapshot: AccountStateSnapshot = {
-          isActiveBefore: targetUser.isActive,
-          updatedAtAfterSuspend: '',
+          isActiveBefore: freshTarget?.isActive ?? false,
         };
 
         // Resolve the Plh/Plt delegation before creating the suspension, so
@@ -180,14 +214,11 @@ export class BoardSuspensionService {
           }
         }
 
-        // 1. Deactivate the target account first, so the `updatedAt` the write
-        //    leaves behind can be recorded as the "suspension wrote last" mark.
-        const deactivatedUser = await tx.user.update({
+        // 1. Deactivate the target account.
+        await tx.user.update({
           where: { id: data.userId },
           data: { isActive: false },
-          select: { updatedAt: true },
         });
-        accountStateSnapshot.updatedAtAfterSuspend = deactivatedUser.updatedAt.toISOString();
 
         // 2. Create BoardMemberSuspension entry
         const suspension = await tx.boardMemberSuspension.create({
@@ -262,46 +293,61 @@ export class BoardSuspensionService {
     }
 
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Update suspension record
-      const updated = await tx.boardMemberSuspension.update({
-        where: { id },
+      // 1. Claim the lift transactionally. The ACTIVE check above is only a
+      //    courtesy: two callers can both read ACTIVE at READ COMMITTED and both
+      //    write, the second silently overwriting the first's `liftedById` and
+      //    `liftReason`. A conditional `updateMany` moves the decision into the
+      //    same statement as the write, so exactly one caller sees a rowcount of
+      //    1 and the other is told the suspension was already lifted.
+      const claimed = await tx.boardMemberSuspension.updateMany({
+        where: { id, status: BoardSuspensionStatus.ACTIVE },
         data: {
           status: BoardSuspensionStatus.LIFTED,
           liftedAt: new Date(),
           liftedById,
           liftReason,
         },
+      });
+
+      if (claimed.count !== 1) {
+        throw Errors.conflict(
+          'Pembekuan ini baru saja dicabut oleh proses lain. Muat ulang untuk melihat status terbaru.'
+        );
+      }
+
+      const updated = await tx.boardMemberSuspension.findUniqueOrThrow({
+        where: { id },
         include: {
           user: { select: { id: true, name: true, email: true } },
           liftedBy: { select: { id: true, name: true } },
         },
       });
 
-      // 2. Restore the account, but only if the suspension is still the last
-      //    thing that wrote to it.
+      // 2. Restore the account, keyed on state rather than on `updatedAt`.
       //
       //    A blind `isActive: true` resurrects an account an admin deactivated
-      //    for an unrelated reason while the suspension was in force. The
-      //    snapshot records the `updatedAt` the suspension's own write left
-      //    behind (and the `isActive` it replaced); if the row no longer
-      //    carries that timestamp, somebody else has touched it since — a
-      //    legitimately still-frozen account — and the lift leaves it alone.
+      //    for an unrelated reason while the suspension was in force. But
+      //    comparing `updatedAt` over-corrected: any profile edit (a name or
+      //    email change) moved the timestamp, so a lift refused to restore an
+      //    account the suspension itself had switched off.
+      //
+      //    The real question is whether the account is *still* off. If it is
+      //    already active again, or deleted, leave it alone. If it is off, the
+      //    snapshot's `isActiveBefore` decides: `true` means the suspension is
+      //    what turned it off (restore), while `false` means it was already off
+      //    when the suspension began — an admin's own deactivation — and the
+      //    lift must leave it off rather than resurrect it.
       const accountSnapshot = (suspension.accountStateSnapshot ?? null) as AccountStateSnapshot | null;
       const currentUser = await tx.user.findUnique({
         where: { id: suspension.userId },
-        select: { isActive: true, updatedAt: true },
+        select: { isActive: true, deletedAt: true },
       });
-      if (currentUser) {
-        const suspensionMark = accountSnapshot?.updatedAtAfterSuspend
-          ? new Date(accountSnapshot.updatedAtAfterSuspend).getTime()
-          : suspension.createdAt.getTime();
-        // A millisecond of slack absorbs timestamp precision, not a real edit.
-        const touchedSinceSuspension = currentUser.updatedAt.getTime() > suspensionMark + 1;
-
-        if (!touchedSinceSuspension) {
+      if (currentUser && currentUser.isActive === false && !currentUser.deletedAt) {
+        const shouldReactivate = accountSnapshot?.isActiveBefore ?? true;
+        if (shouldReactivate) {
           await tx.user.update({
             where: { id: suspension.userId },
-            data: { isActive: accountSnapshot?.isActiveBefore ?? true },
+            data: { isActive: true },
           });
         }
       }

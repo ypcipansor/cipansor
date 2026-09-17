@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { LetterFlowAction, Prisma } from '@prisma/client';
 import { Errors } from '@/middleware/error';
+import type { SubmitPeriodicReportInput } from '@cipansor/shared';
 import { perencanaanService } from '../perencanaan/perencanaan.service';
 import { riskService } from '../risk/risk.service';
 
@@ -658,39 +659,43 @@ export class PengawasanService {
   }
 
   async submitPeriodicReportToEOffice(
-    data: {
-      title: string;
-      period: string;
-      executiveSummary: string;
-      findingsSummary?: string;
-      recommendations?: string;
-    },
+    data: SubmitPeriodicReportInput,
     userId: string,
     _actor: { roleCode?: string | null; unitId?: string | null }
   ) {
-    // Find a recipient user with an *effective* Pembina role or Super Admin.
+    // Resolve the recipient with Pembina first, Super Admin only as fallback.
+    //
+    // A single `findFirst` over `OR: [SUPER_ADMIN, Pembina-role]` let Postgres
+    // decide: whichever row it returned first won, so a foundation with both a
+    // Pembina and a Super Admin could have the oversight report addressed to the
+    // administrator instead of the officer it is meant for. Query them in
+    // priority order instead, each with a deterministic `orderBy`.
+    //
     // "Effective" is the point: a Pembina whose assignment is inactive or
-    // expired is a former officer, and a LIMITED report should not be drafted
-    // for someone who no longer holds the office.
-    const pembinaUser = await prisma.user.findFirst({
-      where: {
-        isActive: true,
-        deletedAt: null,
-        OR: [
-          { role: 'SUPER_ADMIN' },
-          {
-            userRoles: {
-              some: {
-                isActive: true,
-                OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
-                role: { code: 'YAYASAN_PEMBINA' },
-              },
+    // expired is a former officer, and the report should not be drafted for
+    // someone who no longer holds the office.
+    const nowForRoles = new Date();
+    const pembinaUser =
+      (await prisma.user.findFirst({
+        where: {
+          isActive: true,
+          deletedAt: null,
+          userRoles: {
+            some: {
+              isActive: true,
+              OR: [{ expiresAt: null }, { expiresAt: { gt: nowForRoles } }],
+              role: { code: 'YAYASAN_PEMBINA' },
             },
           },
-        ],
-      },
-      select: { id: true, unitId: true },
-    });
+        },
+        select: { id: true, unitId: true },
+        orderBy: { createdAt: 'asc' },
+      })) ??
+      (await prisma.user.findFirst({
+        where: { isActive: true, deletedAt: null, role: 'SUPER_ADMIN' },
+        select: { id: true, unitId: true },
+        orderBy: { createdAt: 'asc' },
+      }));
 
     const unitId = await this.resolveFoundationUnitId();
 

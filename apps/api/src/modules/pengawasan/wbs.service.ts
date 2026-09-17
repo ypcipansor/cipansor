@@ -1,22 +1,19 @@
 import { prisma } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
-import { WbsCategory, WbsTargetLevel, WbsStatus, WbsSenderType, Prisma } from '@prisma/client';
+import { WbsTargetLevel, WbsStatus, WbsSenderType, Prisma } from '@prisma/client';
+import {
+  WBS_FORWARD_ROLE_CODES,
+  type CreatePublicWbsInput,
+  type ForwardWbsReportInput,
+  type UpdateWbsStatusInput,
+  type WbsForwardRoleCode,
+} from '@cipansor/shared';
 import crypto from 'crypto';
 
-export interface CreatePublicWbsInput {
-  unitId?: string | null;
-  category: WbsCategory;
-  targetLevel: WbsTargetLevel;
-  targetName?: string;
-  subject: string;
-  description: string;
-  location?: string;
-  incidentDate?: string | null;
-  isAnonymous?: boolean;
-  reporterName?: string;
-  reporterContact?: string;
-  attachments?: string[];
-}
+// The payloads come from the shared contract, not a local restatement: the
+// controller validates with the same Zod schema and the web client types its
+// hooks from it, so a shape change lands in one place instead of three.
+export type { CreatePublicWbsInput };
 
 /** Identity of the staff member acting on a report. */
 export interface WbsActor {
@@ -134,6 +131,18 @@ export class WbsService {
       throw Errors.notFound('Laporan WBS tidak ditemukan atau token akses tidak valid');
     }
 
+    // The public tracking page is read by whoever holds the ticket code — the
+    // reporter, and anyone they shared it with. `senderName` on a handler
+    // comment was written as `${name} (${roleCode})`, which prints the officer's
+    // identity and their position to that audience. A confidential channel
+    // protects the reporter; it should not expose the staff member answering
+    // them either, so public replies are attributed to the team.
+    const comments = report.comments.map((comment) =>
+      comment.senderType === WbsSenderType.HANDLER
+        ? { ...comment, senderName: 'Tim Pemeriksa' }
+        : comment
+    );
+
     return {
       ticketCode: report.ticketCode,
       category: report.category,
@@ -146,7 +155,7 @@ export class WbsService {
       resolution: report.resolution,
       createdAt: report.createdAt,
       updatedAt: report.updatedAt,
-      comments: report.comments,
+      comments,
       forwardTimeline: report.forwardLogs,
     };
   }
@@ -342,11 +351,7 @@ export class WbsService {
    */
   async updateReportStatus(
     id: string,
-    data: {
-      status: WbsStatus;
-      resolution?: string;
-      handlerNote?: string;
-    },
+    data: UpdateWbsStatusInput,
     actor: WbsActor
   ) {
     const report = await this.loadReportInScope(id, actor);
@@ -356,7 +361,12 @@ export class WbsService {
       data: {
         status: data.status,
         resolution: data.resolution !== undefined ? data.resolution : report.resolution,
-        assignedUserId: actor.id,
+        // Only claim the report if nobody holds it yet. Writing `actor.id`
+        // unconditionally stole the assignee named by a `forward toUserId`, so
+        // any status change silently redirected the case to whoever happened to
+        // tick the next box. Taking over an assigned report is a deliberate act,
+        // not a side effect of setting its status.
+        assignedUserId: report.assignedUserId ?? actor.id,
       },
     });
 
@@ -380,16 +390,23 @@ export class WbsService {
    */
   async forwardReport(
     id: string,
-    data: {
-      toRole: string;
-      toUserId?: string;
-      reason: string;
-    },
+    data: ForwardWbsReportInput,
     actor: WbsActor
   ) {
     // Scope is resolved before the transaction so an out-of-scope caller is
     // refused without writing a forward log.
     const report = await this.loadReportInScope(id, actor);
+
+    // The shared schema already narrows `toRole` at the edge; this is the same
+    // guard for callers that reach the service directly (internal jobs, other
+    // modules). An unrecognised role here means the report is routed to a queue
+    // no role's scope query matches, and it disappears from every handler's
+    // list — silent, and indistinguishable from "nothing to do".
+    if (!(WBS_FORWARD_ROLE_CODES as readonly string[]).includes(data.toRole)) {
+      throw Errors.badRequest(
+        `Peran tujuan teruskan tidak sah: ${data.toRole}. Pilih salah satu dari ${WBS_FORWARD_ROLE_CODES.join(', ')}.`
+      );
+    }
 
     return prisma.$transaction(async (tx) => {
       await tx.wbsForwardLog.create({
