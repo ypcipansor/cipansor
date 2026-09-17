@@ -13,6 +13,8 @@ import type {
   WbsReportDto,
   WbsTrackingDto,
   WbsPublicSubmissionResultDto,
+  WbsCommentDto,
+  InternalAuditDto,
   BoardSuspensionDto,
   PengawasanCandidateDto,
   FinancialArrearsDto,
@@ -34,7 +36,7 @@ export const useAudits = (params?: { status?: string; auditType?: string }) => {
     queryKey: ["pengawasan", params],
     queryFn: async () => {
       const res = await api.get("/pengawasan", { params });
-      return res.data.data;
+      return res.data.data as InternalAuditDto[];
     },
   });
 };
@@ -44,7 +46,7 @@ export const useAudit = (id: string) => {
     queryKey: ["pengawasan", id],
     queryFn: async () => {
       const res = await api.get(`/pengawasan/${id}`);
-      return res.data.data;
+      return res.data.data as InternalAuditDto;
     },
     enabled: !!id,
   });
@@ -168,7 +170,7 @@ export const useAddWbsHandlerComment = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, ...body }: { id: string } & AddWbsHandlerCommentInput) =>
-      (await api.post(`/pengawasan/wbs/reports/${id}/comments`, body)).data.data,
+      (await api.post(`/pengawasan/wbs/reports/${id}/comments`, body)).data.data as WbsCommentDto,
     onSuccess: () => { toast.success("Tanggapan berhasil dikirim"); qc.invalidateQueries({ queryKey: ["wbs-reports"] }); },
     onError: (e: any) => { toast.error(e.response?.data?.message || "Gagal mengirim tanggapan"); },
   });

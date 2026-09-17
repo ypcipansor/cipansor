@@ -176,8 +176,11 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  // Redirect authenticated users from login to their role-specific dashboard
-  if (pathname === "/login" && isAuthenticated) {
+  // Redirect authenticated users from login to their role-specific dashboard.
+  // Only when the role is actually known: sending an authenticated-but-roleless
+  // visitor to a dashboard would just bounce them to /unauthorized, and the
+  // login page is the one place they can re-establish a resolvable session.
+  if (pathname === "/login" && isAuthenticated && role) {
     const dashboard = getDashboardForRole(role, roleCode);
     return NextResponse.redirect(new URL(dashboard, request.url));
   }
@@ -185,6 +188,11 @@ export function middleware(request: NextRequest) {
   // Redirect from root to appropriate page
   if (pathname === "/") {
     if (isAuthenticated) {
+      if (!role) {
+        // Same fail-closed rule as below: with no resolvable role we cannot
+        // pick a landing page, so send them to the login form rather than guess.
+        return NextResponse.redirect(new URL("/login", request.url));
+      }
       const dashboard = getDashboardForRole(role, roleCode);
       return NextResponse.redirect(new URL(dashboard, request.url));
     }
@@ -201,7 +209,19 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Role-based access control for authenticated users
+  // Role-based access control for authenticated users.
+  //
+  // An authenticated session whose role cannot be resolved is NOT allowed
+  // through. The old `role &&` guard skipped the check entirely in that case,
+  // so any holder of an `accessToken` (whose `auth-storage` cookie was missing
+  // or trimmed) could open every protected route. "Authenticated but role
+  // unknown" is exactly the state we can say least about, so it fails closed:
+  // we cannot pick a dashboard to land them on, and guessing is how the hole
+  // opened the first time. Public routes still pass.
+  if (isAuthenticated && !role && !isPublicRoute) {
+    return NextResponse.redirect(new URL("/login", request.url));
+  }
+
   if (isAuthenticated && role && !isPublicRoute) {
     if (!canAccessRoute(role, pathname)) {
       // Redirect to their proper dashboard if trying to access unauthorized route

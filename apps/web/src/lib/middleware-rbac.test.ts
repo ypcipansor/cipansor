@@ -76,13 +76,23 @@ describe("middleware RBAC with a trimmed auth-storage cookie", () => {
     expect(res.headers.get("location")).toBeNull();
   });
 
-  it("demonstrates the hole an absent role would open", () => {
-    // The failure mode being guarded: an `accessToken` with no `auth-storage`
-    // is "authenticated, role unknown", so the `role &&` guard skips RBAC and
-    // /finance passes through. Pinned so a future change cannot reintroduce the
-    // silent-fallthrough branch as the *normal* path.
+  it("fails closed for an access token with no role", () => {
+    // "Authenticated but role unknown" must NOT pass. The middleware used to
+    // skip the RBAC check when the role was absent (`role &&`), so any holder
+    // of an `accessToken` whose `auth-storage` cookie was missing could open
+    // /finance. It now redirects to the login form to re-establish a role.
     const res = middleware(
       request("/finance", { accessToken: "a".repeat(1197) }),
+    );
+
+    expect(res.status).toBe(307);
+    expect(res.headers.get("location")).toContain("/login");
+  });
+
+  it("still allows public routes with an access token but no role", () => {
+    // Fail-closed must not close the public surface the Ad Grants review reads.
+    const res = middleware(
+      request("/profil", { accessToken: "a".repeat(1197) }),
     );
 
     expect(res.headers.get("location")).toBeNull();

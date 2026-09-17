@@ -56,14 +56,26 @@ function wbsActor(req: Request) {
 // ==================== AUDITS ====================
 
 export const listAudits = asyncHandler(async (req: Request, res: Response) => {
-  const unitId = req.user?.unitId;
+  const unitId = req.user?.unitId ?? undefined;
   const isPrivilegedUser = isFoundationWide(req.user?.roleCode);
 
+  // A unit-scoped role without a unit cannot be allowed to fall through to an
+  // unscoped query — `undefined` means "every unit" to `getAudits`, so that
+  // would hand a unitless actor the foundation-wide list.
   if (!unitId && !isPrivilegedUser) throw Errors.unauthorized('Unit ID required');
-  const targetUnitId =
-    isPrivilegedUser && req.query.unitId ? String(req.query.unitId) : (unitId ?? undefined);
-  if (!targetUnitId && req.user?.roleCode !== RoleCode.SUPER_ADMIN) {
-    throw Errors.badRequest('Unit ID required');
+
+  // Foundation-wide governance sees every unit by default; an explicit
+  // `unitId` narrows it to one. `undefined` is a legitimate, intended value
+  // here (cross-unit view), so it must not be treated as "missing" — the old
+  // check required Super Admin specifically and rejected every other
+  // foundation-wide role that had already passed `isFoundationWide` with
+  // "Unit ID required".
+  let targetUnitId: string | undefined;
+  if (isPrivilegedUser) {
+    const requested = req.query.unitId ? String(req.query.unitId) : undefined;
+    targetUnitId = requested === 'all' ? undefined : requested;
+  } else {
+    targetUnitId = unitId;
   }
 
   const query = listAuditQuerySchema.parse({

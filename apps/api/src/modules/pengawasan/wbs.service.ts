@@ -357,33 +357,40 @@ export class WbsService {
   ) {
     const report = await this.loadReportInScope(id, actor);
 
-    const updated = await prisma.wbsReport.update({
-      where: { id },
-      data: {
-        status: data.status,
-        resolution: data.resolution !== undefined ? data.resolution : report.resolution,
-        // Only claim the report if nobody holds it yet. Writing `actor.id`
-        // unconditionally stole the assignee named by a `forward toUserId`, so
-        // any status change silently redirected the case to whoever happened to
-        // tick the next box. Taking over an assigned report is a deliberate act,
-        // not a side effect of setting its status.
-        assignedUserId: report.assignedUserId ?? actor.id,
-      },
-    });
-
-    if (data.handlerNote) {
-      await prisma.wbsComment.create({
+    // The status change and the handler's note are one event: a note that
+    // explains a transition no reader can find in the history is worse than no
+    // note, and a status that moved without its audit trail is untraceable.
+    // Both writes therefore commit together or not at all — a failed comment
+    // used to leave the report advanced but its history silent.
+    return prisma.$transaction(async (tx) => {
+      const updated = await tx.wbsReport.update({
+        where: { id },
         data: {
-          reportId: id,
-          senderType: WbsSenderType.HANDLER,
-          senderId: actor.id,
-          senderName: `${actor.name} (Pemeriksa)`,
-          message: `[Status Diperbarui ke ${data.status}] ${data.handlerNote}`,
+          status: data.status,
+          resolution: data.resolution !== undefined ? data.resolution : report.resolution,
+          // Only claim the report if nobody holds it yet. Writing `actor.id`
+          // unconditionally stole the assignee named by a `forward toUserId`, so
+          // any status change silently redirected the case to whoever happened to
+          // tick the next box. Taking over an assigned report is a deliberate act,
+          // not a side effect of setting its status.
+          assignedUserId: report.assignedUserId ?? actor.id,
         },
       });
-    }
 
-    return updated;
+      if (data.handlerNote) {
+        await tx.wbsComment.create({
+          data: {
+            reportId: id,
+            senderType: WbsSenderType.HANDLER,
+            senderId: actor.id,
+            senderName: `${actor.name} (Pemeriksa)`,
+            message: `[Status Diperbarui ke ${data.status}] ${data.handlerNote}`,
+          },
+        });
+      }
+
+      return updated;
+    });
   }
 
   /**

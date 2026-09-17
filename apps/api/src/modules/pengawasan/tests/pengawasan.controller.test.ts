@@ -12,6 +12,7 @@ import { Request, Response } from 'express';
 
 vi.mock('../pengawasan.service', () => ({
   pengawasanService: {
+    getAudits: vi.fn(),
     getAuditById: vi.fn(),
     createFinding: vi.fn(),
     updateFinding: vi.fn(),
@@ -29,6 +30,7 @@ vi.mock('../board-suspension.service', () => ({ boardSuspensionService: {} }));
 
 import { pengawasanService } from '../pengawasan.service';
 import {
+  listAudits,
   createFinding,
   updateFinding,
   deleteFinding,
@@ -195,5 +197,87 @@ describe('pengawasanController — finding/follow-up unit scope', () => {
 
     expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 403 }));
     expect(pengawasanService.deleteFollowUp).not.toHaveBeenCalled();
+  });
+});
+
+describe('pengawasanController — audit list unit scope', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (pengawasanService.getAudits as any).mockResolvedValue([]);
+  });
+
+  it('lets a unitless foundation-wide Pengawas list across every unit', async () => {
+    // `YAYASAN_PENGAWAS` passes `isFoundationWide` but carries no `unitId`.
+    // The old code then demanded a unit and 400'd; the cross-unit view must be
+    // the default for foundation-wide governance, not a Super-Admin-only perk.
+    const res = mockResponse();
+
+    await runHandler(
+      listAudits,
+      mockRequest({}, {}, { roleCode: RoleCode.YAYASAN_PENGAWAS, unitId: undefined }),
+      res
+    );
+
+    expect(pengawasanService.getAudits).toHaveBeenCalledWith(undefined, expect.anything());
+  });
+
+  it('still lists every unit for a foundation-wide actor that carries its own unit', async () => {
+    // Foundation-wide means every unit. Falling back to the actor's own `unitId`
+    // would have quietly narrowed a Pengawas to the foundation unit alone, which
+    // is the same defect the explicit-unit check used to cause.
+    const res = mockResponse();
+
+    await runHandler(
+      listAudits,
+      mockRequest({}, {}, { roleCode: RoleCode.YAYASAN_PENGAWAS, unitId: 'unit-yayasan' }),
+      res
+    );
+
+    expect(pengawasanService.getAudits).toHaveBeenCalledWith(undefined, expect.anything());
+  });
+
+  it('treats the `all` sentinel as an explicit cross-unit request', async () => {
+    const res = mockResponse();
+    const req = mockRequest({}, {}, { roleCode: RoleCode.YAYASAN_PENGAWAS, unitId: 'unit-yayasan' });
+    (req.query as any).unitId = 'all';
+
+    await runHandler(listAudits, req, res);
+
+    expect(pengawasanService.getAudits).toHaveBeenCalledWith(undefined, expect.anything());
+  });
+
+  it('refuses a unit-scoped role that has no unit', async () => {
+    const res = mockResponse();
+
+    const next = await runHandler(
+      listAudits,
+      mockRequest({}, {}, { roleCode: RoleCode.SDIT_ADMIN, unitId: undefined }),
+      res
+    );
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 401 }));
+    expect(pengawasanService.getAudits).not.toHaveBeenCalled();
+  });
+
+  it('keeps a unit-scoped role confined to its own unit', async () => {
+    const res = mockResponse();
+
+    await runHandler(
+      listAudits,
+      mockRequest({}, {}, { roleCode: RoleCode.SDIT_ADMIN, unitId: 'unit-sdit' }),
+      res
+    );
+
+    expect(pengawasanService.getAudits).toHaveBeenCalledWith('unit-sdit', expect.anything());
+  });
+
+  it('narrows a foundation-wide actor to an explicitly requested unit', async () => {
+    const res = mockResponse();
+    const req = mockRequest({}, {}, { roleCode: RoleCode.YAYASAN_PENGAWAS, unitId: undefined });
+    (req.query as any).unitId = 'unit-smp';
+
+    await runHandler(listAudits, req, res);
+
+    expect(pengawasanService.getAudits).toHaveBeenCalledWith('unit-smp', expect.anything());
   });
 });

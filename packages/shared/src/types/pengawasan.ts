@@ -198,6 +198,73 @@ export interface WbsReportDto {
   forwardLogs?: WbsForwardLogDto[];
 }
 
+/**
+ * A finding as the audit list/detail returns it.
+ *
+ * The list projection selects only `id`, `severity`, `title`; the detail
+ * include carries the responsible user and follow-ups. Optional fields model
+ * the narrower projection so one type serves both without lying about what is
+ * always present.
+ */
+export interface AuditFindingDto {
+  id: string;
+  findingNumber?: string;
+  title: string;
+  description?: string;
+  severity: string;
+  category?: string;
+  recommendation?: string | null;
+  dueDate?: string | null;
+  responsible?: { id: string; name: string } | null;
+  followUps?: AuditFollowUpDto[];
+  createdAt?: string;
+}
+
+/** A follow-up on an audit finding. */
+export interface AuditFollowUpDto {
+  id: string;
+  action?: string;
+  status: string;
+  dueDate?: string | null;
+  verifiedBy?: { id: string; name: string } | null;
+  createdAt?: string;
+}
+
+/**
+ * An internal audit as returned by `getAudits` / `getAuditById`.
+ *
+ * The page previously read every audit through `any`, so a renamed API field
+ * only surfaced as a blank cell at runtime. `findings` is present on both
+ * projections but with different widths, hence the optional finding fields.
+ */
+export interface InternalAuditDto {
+  id: string;
+  unitId: string;
+  title: string;
+  description?: string | null;
+  auditType: string;
+  status: string;
+  plannedDate: string;
+  executedDate?: string | null;
+  completedDate?: string | null;
+  leadAuditorId?: string;
+  scope?: string | null;
+  methodology?: string | null;
+  conclusion?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  unit?: { id: string; name: string } | null;
+  leadAuditor?: { id: string; name: string } | null;
+  strategicPlan?: { id: string; title: string } | null;
+  risk?: {
+    id: string;
+    code: string;
+    category: string;
+    riskLevel?: string;
+  } | null;
+  findings?: AuditFindingDto[];
+}
+
 /** Public tracking payload — handler identities are anonymized before it is returned. */
 export interface WbsTrackingDto {
   ticketCode: string;

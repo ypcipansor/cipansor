@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { wbsService } from './wbs.service';
-import { boardSuspensionService } from './board-suspension.service';
+import { boardSuspensionService, SIGNING_KEY_SUSPENSION_LOCK } from './board-suspension.service';
 import { pengawasanService } from './pengawasan.service';
 import { invalidateUserSuspensionCache } from '@/utils/user-suspension';
 import { prisma } from '@/lib/prisma';
@@ -34,6 +34,7 @@ vi.mock('@/lib/prisma', () => ({
       findUnique: vi.fn(),
       findFirst: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
     },
     refreshToken: {
       deleteMany: vi.fn(),
@@ -55,8 +56,10 @@ vi.mock('@/lib/prisma', () => ({
     },
     boardSuspensionPlhAssignment: {
       findMany: vi.fn(),
+      findFirst: vi.fn(),
       count: vi.fn(),
       create: vi.fn(),
+      update: vi.fn(),
       deleteMany: vi.fn(),
     },
     unit: {
@@ -264,6 +267,45 @@ describe('WbsService Unit Tests', () => {
     expect(prisma.wbsReport.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ assignedUserId: 'user-assignee' }),
+      })
+    );
+  });
+
+  it('rolls the status change back when the handler note fails to save', async () => {
+    // Status and note are one event. The status update and the comment both go
+    // through the same `tx`, so a failing comment aborts the transaction and
+    // the status change never commits — otherwise the report advances with no
+    // record of why.
+    const mockReport = {
+      id: 'report-1',
+      status: WbsStatus.DIAJUKAN,
+      resolution: null,
+      assignedUserId: 'actor-1',
+      ticketCode: 'WBS-1',
+      primaryHandlerRole: 'YAYASAN_PENGAWAS',
+    };
+    (prisma.wbsReport.findFirst as any).mockResolvedValue(mockReport);
+    (prisma.wbsReport.update as any).mockResolvedValue({
+      ...mockReport,
+      status: WbsStatus.SELESAI,
+    });
+    (prisma.wbsComment.create as any).mockRejectedValueOnce(new Error('comment write failed'));
+
+    await expect(
+      wbsService.updateReportStatus(
+        'report-1',
+        { status: WbsStatus.SELESAI, handlerNote: 'Catatan pemeriksa' },
+        { id: 'actor-1', name: 'Aktor', roleCode: 'YAYASAN_PENGAWAS', unitId: null }
+      )
+    ).rejects.toThrow('comment write failed');
+
+    // Both writes happen inside the same transaction callback; the assertion
+    // that matters is that the transaction was used and the error propagated
+    // rather than being swallowed after the status write.
+    expect(prisma.$transaction).toHaveBeenCalled();
+    expect(prisma.wbsComment.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ reportId: 'report-1', message: expect.stringContaining('Catatan pemeriksa') }),
       })
     );
   });
@@ -584,6 +626,9 @@ describe('BoardSuspensionService Unit Tests', () => {
     vi.clearAllMocks();
     // The lift claims the row with a conditional update; one caller wins.
     (prisma.boardMemberSuspension.updateMany as any).mockResolvedValue({ count: 1 });
+    // The suspension claims the account with a conditional update; one caller
+    // wins unless a test overrides this to simulate a concurrent admin change.
+    (prisma.user.updateMany as any).mockResolvedValue({ count: 1 });
     // Rows written before the dependency table existed have no dependency
     // rows; the legacy single-assignment path is exercised explicitly below.
     (prisma.boardSuspensionPlhAssignment.findMany as any).mockResolvedValue([]);
@@ -630,10 +675,11 @@ describe('BoardSuspensionService Unit Tests', () => {
     );
 
     expect(suspension.id).toBe('susp-1');
-    // The deactivation is stamped with a fresh ownership token so a later lift
-    // can prove the `false` is still this suspension's own write.
-    expect(prisma.user.update).toHaveBeenCalledWith({
-      where: { id: 'user-pengurus' },
+    // The deactivation is a conditional claim on the state that was just read,
+    // stamped with a fresh ownership token so a later lift can prove the
+    // `false` is still this suspension's own write.
+    expect(prisma.user.updateMany).toHaveBeenCalledWith({
+      where: { id: 'user-pengurus', isActive: true, accountStateWriter: null },
       data: { isActive: false, accountStateWriter: expect.stringMatching(/^asw_/) },
     });
     expect(prisma.refreshToken.deleteMany).toHaveBeenCalledWith({
@@ -658,6 +704,40 @@ describe('BoardSuspensionService Unit Tests', () => {
         }),
       })
     );
+  });
+
+  it('aborts when an admin changes the account state between the read and the claim', async () => {
+    // The snapshot read `isActive: true` / no writer, then an admin deactivated
+    // the account before the conditional claim ran. The claim matches nothing
+    // (count 0), so the suspension must not be created and must not overwrite
+    // the admin's state with its own writer token.
+    (prisma.user.findUnique as any).mockResolvedValue({
+      id: 'user-pengurus',
+      isActive: true,
+      accountStateWriter: null,
+      userRoles: [{ role: { code: 'YAYASAN_KETUA' } }],
+    });
+    (prisma.boardMemberSuspension.findFirst as any).mockResolvedValue(null);
+    (prisma.user.updateMany as any).mockResolvedValue({ count: 0 });
+
+    await expect(
+      boardSuspensionService.suspendBoardMember(
+        {
+          userId: 'user-pengurus',
+          skNumber: 'SK/PENGAWAS/2026/009',
+          auditReason: 'Indikasi penyalahgunaan wewenang keuangan yayasan',
+        },
+        'issuer-pengawas'
+      )
+    ).rejects.toMatchObject({ statusCode: 409 });
+
+    expect(prisma.boardMemberSuspension.create).not.toHaveBeenCalled();
+    // The compare-and-set is filtered on the values just read, including the
+    // `null` writer — not on `updatedAt`, and not unconditioned.
+    expect(prisma.user.updateMany).toHaveBeenCalledWith({
+      where: { id: 'user-pengurus', isActive: true, accountStateWriter: null },
+      data: { isActive: false, accountStateWriter: expect.stringMatching(/^asw_/) },
+    });
   });
 
   it.each(['SUPER_ADMIN', 'YAYASAN_PEMBINA', 'SDIT_SISWA', 'SDIT_GURU'])(
@@ -779,16 +859,58 @@ describe('BoardSuspensionService Unit Tests', () => {
       where: { id: 'user-pengurus' },
       data: { isActive: true, accountStateWriter: expect.stringMatching(/^asw_/) },
     });
+    // Both restores are gated on the sentinel the suspension itself wrote, so
+    // a key whose lock state changed in the meantime is left alone.
     expect(prisma.userSigningKey.updateMany).toHaveBeenCalledWith({
-      where: { id: 'key-1', userId: 'user-pengurus' },
+      where: { id: 'key-1', userId: 'user-pengurus', lockedUntil: SIGNING_KEY_SUSPENSION_LOCK },
       data: { lockedUntil: null },
     });
     expect(prisma.userSigningKey.updateMany).toHaveBeenCalledWith({
-      where: { id: 'key-2', userId: 'user-pengurus' },
+      where: { id: 'key-2', userId: 'user-pengurus', lockedUntil: SIGNING_KEY_SUSPENSION_LOCK },
       data: { lockedUntil: new Date('2026-01-01T00:00:00.000Z') },
     });
     expect(prisma.userRoleAssignment.deleteMany).toHaveBeenCalledWith({
       where: { id: 'assign-new' },
+    });
+  });
+
+  it('does not erase a lockout re-armed after the suspension', async () => {
+    // Suspension captured `key-1: null` and wrote the sentinel. Someone then
+    // locked that key for a newer, unrelated reason, so `lockedUntil` no longer
+    // matches the sentinel the suspension wrote. The lift must leave it alone
+    // rather than writing the stale `null` back and clearing the lockout.
+    const mockSuspension = {
+      id: 'susp-lock',
+      userId: 'user-pengurus',
+      status: 'ACTIVE',
+      accountStateWriter: 'asw_test',
+      plhUserId: null,
+      plhRoleCode: null,
+      plhAssignmentCreated: false,
+      plhAssignmentId: null,
+      plhAssignmentRestore: null,
+      signingKeyLocks: { 'key-1': null },
+      accountStateSnapshot: { isActiveBefore: false },
+    };
+
+    (prisma.boardMemberSuspension.findUnique as any).mockResolvedValue(mockSuspension);
+    (prisma.boardMemberSuspension.findUniqueOrThrow as any).mockResolvedValue({
+      ...mockSuspension,
+      status: 'LIFTED',
+    });
+    (prisma.user.findUnique as any).mockResolvedValue({
+      isActive: false,
+      deletedAt: null,
+      accountStateWriter: 'asw_admin_other',
+    });
+
+    await boardSuspensionService.liftBoardSuspension('susp-lock', 'lifter', 'Pulih');
+
+    // The restore is scoped to the sentinel, so a key re-armed in the meantime
+    // is not matched and survives.
+    expect(prisma.userSigningKey.updateMany).toHaveBeenCalledWith({
+      where: { id: 'key-1', userId: 'user-pengurus', lockedUntil: SIGNING_KEY_SUSPENSION_LOCK },
+      data: { lockedUntil: null },
     });
   });
 
@@ -971,14 +1093,91 @@ describe('BoardSuspensionService Unit Tests', () => {
       ]);
       // B is still ACTIVE and depends on the same assignment.
       (prisma.boardSuspensionPlhAssignment.count as any).mockResolvedValue(1);
+      // B's dependency row is the heir that must inherit the `created` flag.
+      (prisma.boardSuspensionPlhAssignment.findFirst as any).mockResolvedValue({
+        id: 'dep-b',
+        createdAt: new Date('2026-01-02T00:00:00.000Z'),
+      });
 
       await boardSuspensionService.liftBoardSuspension('susp-a', 'lifter', 'Pulih');
 
+      // Provenance is handed to the surviving dependent *before* A's row is
+      // deleted, so B still knows it must ultimately delete the assignment.
+      expect(prisma.boardSuspensionPlhAssignment.update).toHaveBeenCalledWith({
+        where: { id: 'dep-b' },
+        data: { created: true },
+      });
       expect(prisma.boardSuspensionPlhAssignment.deleteMany).toHaveBeenCalledWith({
         where: { id: 'dep-a' },
       });
       // The shared assignment survives: the last dependent has not lifted yet.
       expect(prisma.userRoleAssignment.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('deletes the suspension-minted assignment when the last dependent lifts after the creator (creator first)', async () => {
+      // Follow-on to the test above: A minted it and transferred `created` to
+      // B on the way out; B is now the last dependent and must delete it. This
+      // is the regression the old code failed — B lifted with `created: false`
+      // and left the assignment active forever.
+      const b = suspension('susp-b', false);
+      (prisma.boardMemberSuspension.findUnique as any).mockResolvedValue(b);
+      (prisma.boardMemberSuspension.findUniqueOrThrow as any).mockResolvedValue({
+        ...b,
+        status: 'LIFTED',
+      });
+      (prisma.user.findUnique as any).mockResolvedValue({
+        isActive: false,
+        deletedAt: null,
+        accountStateWriter: 'asw_test',
+      });
+      // B inherited provenance, so its row now carries `created: true`.
+      (prisma.boardSuspensionPlhAssignment.findMany as any).mockResolvedValue([
+        { id: 'dep-b', assignmentId: sharedAssignmentId, created: true, restore: null },
+      ]);
+      (prisma.boardSuspensionPlhAssignment.count as any).mockResolvedValue(0);
+
+      await boardSuspensionService.liftBoardSuspension('susp-b', 'lifter', 'Pulih');
+
+      expect(prisma.userRoleAssignment.deleteMany).toHaveBeenCalledWith({
+        where: { id: sharedAssignmentId },
+      });
+    });
+
+    it('transfers the reactivation restore payload to the surviving dependent', async () => {
+      // The creator had *reactivated* an expired pre-existing row, so its
+      // provenance is a restore payload rather than `created`. Lifting it while
+      // a dependent remains must move the payload, or the last dependent would
+      // leave the reactivated row active instead of restoring it.
+      const a = suspension('susp-a', false);
+      (prisma.boardMemberSuspension.findUnique as any).mockResolvedValue(a);
+      (prisma.boardMemberSuspension.findUniqueOrThrow as any).mockResolvedValue({
+        ...a,
+        status: 'LIFTED',
+      });
+      (prisma.user.findUnique as any).mockResolvedValue({
+        isActive: false,
+        deletedAt: null,
+        accountStateWriter: 'asw_test',
+      });
+      const restore = { isActive: false, expiresAt: null };
+      (prisma.boardSuspensionPlhAssignment.findMany as any).mockResolvedValue([
+        { id: 'dep-a', assignmentId: sharedAssignmentId, created: false, restore },
+      ]);
+      (prisma.boardSuspensionPlhAssignment.count as any).mockResolvedValue(1);
+      (prisma.boardSuspensionPlhAssignment.findFirst as any).mockResolvedValue({
+        id: 'dep-b',
+        created: false,
+        createdAt: new Date('2026-01-02T00:00:00.000Z'),
+      });
+
+      await boardSuspensionService.liftBoardSuspension('susp-a', 'lifter', 'Pulih');
+
+      expect(prisma.boardSuspensionPlhAssignment.update).toHaveBeenCalledWith({
+        where: { id: 'dep-b' },
+        data: { created: false, restore },
+      });
+      expect(prisma.userRoleAssignment.deleteMany).not.toHaveBeenCalled();
+      expect(prisma.userRoleAssignment.updateMany).not.toHaveBeenCalled();
     });
 
     it('releases the shared assignment when the last dependent lifts (creator first)', async () => {

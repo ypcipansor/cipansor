@@ -15,7 +15,7 @@ import { activationState, deactivationState } from '@/utils/account-state';
 export type { CreateBoardSuspensionInput };
 
 /** Far-future sentinel written to `lockedUntil` to revoke signing capability. */
-const SIGNING_KEY_SUSPENSION_LOCK = new Date('2099-01-01T00:00:00Z');
+export const SIGNING_KEY_SUSPENSION_LOCK = new Date('2099-01-01T00:00:00Z');
 
 /**
  * Prior `lockedUntil` per signing-key id, so a lift can undo exactly what the
@@ -200,16 +200,41 @@ export class BoardSuspensionService {
           signingKeyLocks[key.id] = key.lockedUntil ? key.lockedUntil.toISOString() : null;
         }
 
-        // The account state is read *inside* the transaction, immediately
-        // before it is flipped off. The switch writes an ownership token so a
-        // later lift can prove the current `false` is still ours.
+        // The account state is read *inside* the transaction, then claimed
+        // with a conditional compare-and-set. A plain read-then-update is a
+        // lost-update race: at READ COMMITTED an admin can change `isActive`
+        // (or its writer token) after this snapshot but before the flip, and
+        // the suspension's more permissive state would overwrite theirs — and
+        // install a writer token that lets a later lift resurrect an account
+        // that should have stayed off. Matching on the observed values means
+        // the write only lands if nothing moved; otherwise the transaction
+        // aborts and the suspension is never created.
         const freshTarget = await tx.user.findUnique({
           where: { id: data.userId },
-          select: { isActive: true },
+          select: { isActive: true, accountStateWriter: true },
         });
+        if (!freshTarget) {
+          throw Errors.notFound(`Pengurus / Pengguna dengan ID ${data.userId} tidak ditemukan`);
+        }
         const accountDeactivation = deactivationState();
+        const claimed = await tx.user.updateMany({
+          where: {
+            id: data.userId,
+            isActive: freshTarget.isActive,
+            // Prisma reads `undefined` as "do not filter this column" and
+            // would let a non-null writer match, so normalise to `null`, which
+            // actually means `IS NULL`.
+            accountStateWriter: freshTarget.accountStateWriter ?? null,
+          },
+          data: accountDeactivation,
+        });
+        if (claimed.count !== 1) {
+          throw Errors.conflict(
+            'Status akun pengurus berubah saat proses pembekuan berjalan. Muat ulang lalu coba lagi.'
+          );
+        }
         const accountStateSnapshot: AccountStateSnapshot = {
-          isActiveBefore: freshTarget?.isActive ?? false,
+          isActiveBefore: freshTarget.isActive,
           writer: accountDeactivation.accountStateWriter,
         };
 
@@ -279,11 +304,9 @@ export class BoardSuspensionService {
           }
         }
 
-        // 1. Deactivate the target account, stamped with the ownership token.
-        await tx.user.update({
-          where: { id: data.userId },
-          data: accountDeactivation,
-        });
+        // 1. The account was already deactivated above by the conditional
+        //    claim; it is stamped with the ownership token recorded in
+        //    `accountStateSnapshot`.
 
         // 2. Create BoardMemberSuspension entry
         const suspension = await tx.boardMemberSuspension.create({
@@ -446,13 +469,24 @@ export class BoardSuspensionService {
         }
       }
 
-      // 3. Restore E-Sign lockouts captured at suspension time. Keys created
-      //    after the suspension are not in the snapshot and stay untouched.
+      // 3. Restore E-Sign lockouts captured at suspension time — but only
+      //    where the key still holds the sentinel the suspension wrote.
+      //
+      //    A blind restore is itself a lost update: if a passphrase lockout
+      //    was re-armed after the suspension (a newer, shorter `lockedUntil`,
+      //    or a cleared one), writing the snapshot back either erases that
+      //    newer lockout or lengthens it erroneously. Keys created after the
+      //    suspension are not in the snapshot at all; keys whose state someone
+      //    else changed are skipped for the same reason.
       const snapshot = (suspension.signingKeyLocks ?? null) as SigningKeyLockSnapshot | null;
       if (snapshot) {
         for (const [keyId, priorValue] of Object.entries(snapshot)) {
           await tx.userSigningKey.updateMany({
-            where: { id: keyId, userId: suspension.userId },
+            where: {
+              id: keyId,
+              userId: suspension.userId,
+              lockedUntil: SIGNING_KEY_SUSPENSION_LOCK,
+            },
             data: { lockedUntil: priorValue ? new Date(priorValue) : null },
           });
         }
@@ -495,13 +529,50 @@ export class BoardSuspensionService {
           },
         });
 
+        // Provenance must outlive the row that carries it. If THIS suspension
+        // minted (or reactivated) the assignment and another ACTIVE suspension
+        // still depends on it, deleting our row would take `created`/`restore`
+        // with it — the surviving dependent then lifts with `created: false`
+        // and leaves a suspension-minted assignment active forever. Hand
+        // ownership to a surviving dependent *before* this row disappears.
+        const ownsProvenance = dependency.created || dependency.restore != null;
+        let lastDependent = otherDependents === 0;
+        if (!lastDependent && ownsProvenance) {
+          const heir = await tx.boardSuspensionPlhAssignment.findFirst({
+            where: {
+              assignmentId: dependency.assignmentId,
+              id: { not: dependency.id },
+              suspensionId: { not: id },
+              suspension: { status: BoardSuspensionStatus.ACTIVE },
+            },
+            orderBy: { createdAt: 'asc' },
+          });
+          if (heir) {
+            await tx.boardSuspensionPlhAssignment.update({
+              where: { id: heir.id },
+              data: {
+                created: dependency.created || heir.created,
+                // Only copy a restore payload the dying row actually owns; a
+                // null there means "the heir's own restore, if any, stands".
+                ...(dependency.restore != null
+                  ? { restore: dependency.restore as unknown as Prisma.InputJsonValue }
+                  : {}),
+              },
+            });
+          } else {
+            // The count and the heir query disagreed (a concurrent lift won in
+            // between); with no survivor to inherit, this lift is the last one.
+            lastDependent = true;
+          }
+        }
+
         // Remove this row first, so a concurrent lift of the other suspension
         // cannot both see "one other dependent" and both decline to act.
         await tx.boardSuspensionPlhAssignment.deleteMany({
           where: { id: dependency.id },
         });
 
-        if (otherDependents > 0) continue;
+        if (!lastDependent) continue;
 
         await releasePlhAssignment(
           tx,

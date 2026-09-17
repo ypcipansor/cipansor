@@ -46,9 +46,20 @@ import {
   draftPeriodicReportSchema,
   pengawasanAccessOf,
 } from "@cipansor/shared";
-import type { WbsForwardRoleCode, WbsStatusCode } from "@cipansor/shared";
+import type {
+  WbsForwardRoleCode,
+  WbsStatusCode,
+  WbsReportDto,
+  WbsCommentDto,
+  WbsForwardLogDto,
+  BoardSuspensionDto,
+  FinancialArrearsDto,
+  InternalAuditDto,
+  AuditFindingDto,
+} from "@cipansor/shared";
 import { useAuthStore } from "@/stores/auth";
 import { getPrimaryRoleCode } from "@/lib/rbac";
+import { boardSuspensionFormDefaults, plhSelectionPatch } from "@/lib/pengawasan-form";
 
 // ─── Schemas ────────────────────────────────────────
 const auditFormSchema = z.object({
@@ -103,7 +114,7 @@ const wbsStatusBadges: Record<string, { label: string; color: string }> = {
 };
 
 // ─── Audit Dialogs ────────────────────────────
-function AuditFormDialog({ editData, onClose }: { editData?: any; onClose: () => void }) {
+function AuditFormDialog({ editData, onClose }: { editData?: InternalAuditDto | null; onClose: () => void }) {
   const createAudit = useCreateAudit();
   const updateAudit = useUpdateAudit();
   const isEdit = !!editData;
@@ -272,12 +283,12 @@ function AddFindingDialog({ auditId, onClose }: { auditId: string; onClose: () =
 function PengawasanPageContent() {
   const [filterStatus, setFilterStatus] = useState<string | undefined>();
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editItem, setEditItem] = useState<any>(null);
+  const [editItem, setEditItem] = useState<InternalAuditDto | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [findingAuditId, setFindingAuditId] = useState<string | null>(null);
 
   // WBS States
-  const [selectedWbs, setSelectedWbs] = useState<any>(null);
+  const [selectedWbs, setSelectedWbs] = useState<WbsReportDto | null>(null);
   const [forwardRole, setForwardRole] = useState<WbsForwardRoleCode>("YAYASAN_KETUA");
   const [forwardReason, setForwardReason] = useState<string>("");
   const [forwardDialogOpen, setForwardRoleDialogOpen] = useState<boolean>(false);
@@ -322,11 +333,13 @@ function PengawasanPageContent() {
   // handler the *output*, so both generics are spelled out.
   const suspensionForm = useForm<
     z.input<typeof boardSuspensionSchema>,
-    any,
+    unknown,
     z.output<typeof boardSuspensionSchema>
   >({
     resolver: zodResolver(boardSuspensionSchema),
-    defaultValues: { userId: "", skNumber: "", auditReason: "", documentUrl: "", plhUserId: "", plhRoleCode: "YAYASAN_KETUA" },
+    // Both Plh fields blank: the pair is all-or-nothing, so a suspension with
+    // no Plh/Plt must submit without the operator clearing anything.
+    defaultValues: boardSuspensionFormDefaults(),
   });
 
   const periodicForm = useForm<z.infer<typeof periodicReportSchema>>({
@@ -338,10 +351,11 @@ function PengawasanPageContent() {
   // by the API: `candidates` is Pengurus with no ACTIVE suspension, and
   // `plhCandidates` excludes the officer being suspended.
   const suspendableUserId = useWatch({ control: suspensionForm.control, name: "userId" }) || undefined;
+  const plhUserId = useWatch({ control: suspensionForm.control, name: "plhUserId" }) || undefined;
   const { data: suspendableCandidates } = useSuspendableCandidates(suspensionDialogOpen);
   const { data: plhCandidates } = usePlhCandidates(suspendableUserId, suspensionDialogOpen);
 
-  const handleEdit = (audit: any) => { setEditItem(audit); setDialogOpen(true); };
+  const handleEdit = (audit: InternalAuditDto) => { setEditItem(audit); setDialogOpen(true); };
   const handleCreate = () => { setEditItem(null); setDialogOpen(true); };
   const handleDialogClose = () => { setDialogOpen(false); setEditItem(null); };
 
@@ -470,7 +484,7 @@ function PengawasanPageContent() {
               <CardHeader className="pb-2">
                 <CardDescription>Sedang Berjalan</CardDescription>
                 <CardTitle className="text-3xl text-yellow-600">
-                  {isAuditsLoading ? <Skeleton className="h-9 w-12" /> : audits?.filter((a: any) => a.status === "IN_PROGRESS").length || 0}
+                  {isAuditsLoading ? <Skeleton className="h-9 w-12" /> : audits?.filter((a) => a.status === "IN_PROGRESS").length || 0}
                 </CardTitle>
               </CardHeader>
             </Card>
@@ -478,7 +492,7 @@ function PengawasanPageContent() {
               <CardHeader className="pb-2">
                 <CardDescription>Total Temuan</CardDescription>
                 <CardTitle className="text-3xl">
-                  {isAuditsLoading ? <Skeleton className="h-9 w-12" /> : audits?.reduce((sum: number, a: any) => sum + (a.findings?.length || 0), 0) || 0}
+                  {isAuditsLoading ? <Skeleton className="h-9 w-12" /> : audits?.reduce((sum: number, a) => sum + (a.findings?.length || 0), 0) || 0}
                 </CardTitle>
               </CardHeader>
             </Card>
@@ -486,7 +500,7 @@ function PengawasanPageContent() {
               <CardHeader className="pb-2">
                 <CardDescription>Temuan Kritikal / Major</CardDescription>
                 <CardTitle className="text-3xl text-red-600">
-                  {isAuditsLoading ? <Skeleton className="h-9 w-12" /> : audits?.reduce((sum: number, a: any) => sum + (a.findings?.filter((f: any) => f.severity === "CRITICAL" || f.severity === "MAJOR").length || 0), 0) || 0}
+                  {isAuditsLoading ? <Skeleton className="h-9 w-12" /> : audits?.reduce((sum: number, a) => sum + (a.findings?.filter((f: AuditFindingDto) => f.severity === "CRITICAL" || f.severity === "MAJOR").length || 0), 0) || 0}
                 </CardTitle>
               </CardHeader>
             </Card>
@@ -504,7 +518,7 @@ function PengawasanPageContent() {
                 </CardContent>
               </Card>
             ) : (
-              audits?.map((audit: any) => (
+              audits?.map((audit) => (
                 <Card key={audit.id} className="hover:shadow-md transition-shadow group">
                   <CardHeader>
                     <div className="flex items-start justify-between">
@@ -541,7 +555,7 @@ function PengawasanPageContent() {
                       )}
                     </div>
                     <div className="flex gap-2 flex-wrap">
-                      {audit.findings?.map((f: any) => (
+                      {audit.findings?.map((f) => (
                         <Badge key={f.id} variant="outline" className={severityColor[f.severity]}>
                           <AlertTriangle className="h-3 w-3 mr-1" />
                           {f.severity}: {f.title}
@@ -583,7 +597,7 @@ function PengawasanPageContent() {
             </Card>
           ) : (
             <div className="space-y-4">
-              {wbsReports?.map((report: any) => (
+              {wbsReports?.map((report) => (
                 <Card key={report.id} className="border border-slate-200 hover:shadow-md transition-shadow">
                   <CardHeader className="pb-3">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -646,7 +660,7 @@ function PengawasanPageContent() {
                     {report.comments && report.comments.length > 0 && (
                       <div className="space-y-1 border-t pt-2">
                         <span className="text-[11px] font-semibold text-slate-500 uppercase">Percakapan:</span>
-                        {report.comments.map((c: any) => (
+                        {report.comments.map((c: WbsCommentDto) => (
                           <div
                             key={c.id}
                             className={`text-xs p-2 rounded border ${
@@ -708,7 +722,7 @@ function PengawasanPageContent() {
                     {report.forwardLogs && report.forwardLogs.length > 0 && (
                       <div className="space-y-1 border-t pt-2">
                         <span className="text-[11px] font-semibold text-slate-500 uppercase">Riwayat Diteruskan:</span>
-                        {report.forwardLogs.map((log: any) => (
+                        {report.forwardLogs.map((log: WbsForwardLogDto) => (
                           <div key={log.id} className="text-xs p-2 bg-amber-50/50 rounded border border-amber-200">
                             Laporan diteruskan dari <strong>{log.fromRole}</strong> ke <strong>{log.toRole}</strong> — Alasan: <em>{log.reason}</em>
                           </div>
@@ -751,7 +765,7 @@ function PengawasanPageContent() {
             </Card>
           ) : (
             <div className="space-y-4">
-              {boardSuspensions?.map((susp: any) => (
+              {boardSuspensions?.map((susp: BoardSuspensionDto) => (
                 <Card key={susp.id} className={`border ${susp.status === 'ACTIVE' ? 'border-red-300 bg-red-50/10' : 'border-slate-200'}`}>
                   <CardHeader className="pb-3">
                     <div className="flex items-center justify-between">
@@ -842,7 +856,7 @@ function PengawasanPageContent() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2">
-                    {arrearsData?.unitBreakdown?.map((u: any) => (
+                    {arrearsData?.unitBreakdown?.map((u) => (
                       <div key={u.unitId} className="flex items-center justify-between p-3 bg-slate-50 rounded border text-sm">
                         <div>
                           <span className="font-bold text-slate-900">{u.unitName}</span>
@@ -991,7 +1005,13 @@ function PengawasanPageContent() {
                     <FormLabel>Plh/Plt Pengganti (opsional)</FormLabel>
                     <Select
                       value={field.value ? String(field.value) : "__none__"}
-                      onValueChange={(v) => field.onChange(v === "__none__" ? "" : v)}
+                      onValueChange={(v) => {
+                        const patch = plhSelectionPatch(v === "__none__" ? "" : v);
+                        field.onChange(patch.plhUserId);
+                        if (patch.plhRoleCode !== undefined) {
+                          suspensionForm.setValue("plhRoleCode", patch.plhRoleCode);
+                        }
+                      }}
                     >
                       <FormControl>
                         <SelectTrigger><SelectValue placeholder="Pilih Plh/Plt..." /></SelectTrigger>
@@ -1015,6 +1035,7 @@ function PengawasanPageContent() {
                     <Select
                       value={field.value == null ? "__none__" : String(field.value)}
                       onValueChange={(v) => field.onChange(v === "__none__" ? "" : v)}
+                      disabled={!plhUserId}
                     >
                       <FormControl>
                         <SelectTrigger><SelectValue placeholder="Pilih peran Plh" /></SelectTrigger>
