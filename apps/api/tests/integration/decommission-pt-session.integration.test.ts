@@ -221,6 +221,20 @@ INSERT INTO alumni_events (id, name, type, event_date, unit_id, status, updated_
 INSERT INTO alumni_event_attendees (id, event_id, alumni_id, status, registered_at, updated_at) VALUES
   ('aatt-pt', 'aev-pt', 'al-pt', 'registered', now(), now()),
   ('aatt-tk', 'aev-tk', 'al-tk', 'registered', now(), now());
+
+-- account_codes (finance review finding): unit_id FK is SET NULL (0_init:8923)
+-- and the table is unreachable from units over the followed edges, so a PT row
+-- would survive detached. It has no (unit_id, ...) UNIQUE either -- code alone
+-- is globally unique (0_init:6982) -- so the catalog rule cannot reach it. The
+-- list reads never scope by unit (accounting.service.ts:61-82,
+-- finance-enhancement.service.ts:28-73) and getAccountOrFallback
+-- (accounting-config.service.ts:71-104) matches a unit's own code with unitId
+-- in the where, so a NULL-unit row both stays on every chart and keeps its code
+-- occupied. Deleted outright; the sibling TK code is the control and proves the
+-- code is freed for reuse afterwards.
+INSERT INTO account_codes (id, code, name, type, unit_id, is_active) VALUES
+  ('acct-pt', '9001', 'Kas PT', 'ASSET', 'u-pt', true),
+  ('acct-tk', '1101', 'Kas TK', 'ASSET', 'u-tk', true);
 `;
 
 /** Rows that must be deleted because their unit is the PT unit. */
@@ -256,6 +270,9 @@ const PURGED_PT_ROWS: Array<[table: string, id: string]> = [
   // `getEvents` list, so it must be deleted. Its attendee cascades with it.
   ['alumni_events', 'aev-pt'],
   ['alumni_event_attendees', 'aatt-pt'],
+  // Finance review finding: a PT-owned account code whose SET NULL FK would
+  // leave it detached with its globally-unique code still occupied.
+  ['account_codes', 'acct-pt'],
 ];
 
 /** Rows of a surviving unit that the purge must not touch. */
@@ -288,6 +305,8 @@ const KEPT_TK_ROWS: Array<[table: string, id: string]> = [
   // The sibling alumni event and its attendee must survive untouched.
   ['alumni_events', 'aev-tk'],
   ['alumni_event_attendees', 'aatt-tk'],
+  // The sibling account code must survive untouched (scoped to u-tk).
+  ['account_codes', 'acct-tk'],
   // FINDING 2 control (scope half): the surviving unit's own assignment is left
   // active -- only the PT-scoped one was neutralised.
 ];
@@ -702,6 +721,81 @@ describeDb('decommission migration — legacy PT sessions end', () => {
       expect(rows[0].n).toBe(1);
     } finally {
       await db.end();
+    }
+  });
+
+  it('frees a retired PT account code for reuse by a surviving unit', async () => {
+    // The finance finding: leaving `account_codes.unit_id` to the SET NULL FK
+    // detaches the PT row, but `code` is globally unique (0_init:6982), so the
+    // code stays occupied. Pinned by the migration's pinned list; assert both
+    // that the code is gone from the PT unit *and* that it can be recreated for
+    // the surviving unit, which is the contract the read paths rely on
+    // (getAccountOrFallback matches `unitId`, accounting-config.service.ts:71-104).
+    const db = new Client({ connectionString: targetUrl });
+    await db.connect();
+    try {
+      const detached = await db.query(
+        `SELECT count(*)::int AS n FROM account_codes WHERE code = '9001'`
+      );
+      expect(detached.rows[0].n).toBe(0);
+
+      // The code is free again: inserting it for the surviving unit must work.
+      await db.query(
+        `INSERT INTO account_codes (id, code, name, type, unit_id, is_active) ` +
+          `VALUES ('acct-tk-reused', '9001', 'Kas TK Baru', 'ASSET', 'u-tk', true)`
+      );
+      const reused = await db.query(
+        `SELECT unit_id FROM account_codes WHERE code = '9001'`
+      );
+      expect(reused.rows.map((r: { unit_id: string }) => r.unit_id)).toEqual(['u-tk']);
+    } finally {
+      // Drop the probe row so it does not leak into later assertions.
+      await db.query(`DELETE FROM account_codes WHERE id = 'acct-tk-reused'`);
+      await db.end();
+    }
+  });
+
+  it('refuses to delete a sibling budget that pointed at a PT account code', async () => {
+    // The cross-unit invariant: a finance row on a *surviving* unit can point
+    // at the doomed PT account code through a RESTRICT FK. Following the FK
+    // would delete a sibling-owned row, which the invariant must reject -- the
+    // migration refuses the deploy rather than wiping the sibling's data. This
+    // is asserted against the real migration on an isolated database, because
+    // the seed here has no such row (the invariant would otherwise never fire).
+    const childName = `cipansor_acct_reach_${Date.now()}`;
+    const childUrl = (() => {
+      const u = new URL(baseUrl);
+      u.pathname = `/${childName}`;
+      return u.toString();
+    })();
+    await admin.query(`CREATE DATABASE "${childName}"`);
+    const db = new Client({ connectionString: childUrl });
+    await db.connect();
+    try {
+      await db.query(ZERO_INIT);
+      await db.query(`
+        INSERT INTO units (id, name, type, address, updated_at) VALUES
+          ('u-pt','PT Legacy','PERGURUAN_TINGGI','addr',now()),
+          ('u-tk','TK','TK_QURAN','addr',now());
+        INSERT INTO users (id, name, email, role, is_active, unit_id, updated_at)
+          VALUES ('user-x','X','x@example.com','STAFF',true,'u-tk',now());
+        INSERT INTO account_codes (id, code, name, type, unit_id, is_active) VALUES
+          ('acct-pt','9001','Kas PT','ASSET','u-pt',true),
+          ('acct-tk','1101','Kas TK','ASSET','u-tk',true);
+        INSERT INTO academic_years (id, name, start_date, end_date, is_active, updated_at)
+          VALUES ('ay1','2026/2027',now(),now()+interval '1 year',true,now());
+        INSERT INTO budgets (id, unit_id, academic_year_id, account_id, amount, used_amount, period_type, created_by_id, updated_at)
+          VALUES ('b-tk','u-tk','ay1','acct-pt',1000,0,'YEARLY','user-x',now());
+      `);
+      await expect(db.query(DECOMMISSION)).rejects.toThrow(
+        /refusing to reach across units/
+      );
+      // The sibling budget survives; the migration aborted rather than deleting it.
+      const { rows } = await db.query(`SELECT count(*)::int AS n FROM budgets WHERE id = 'b-tk'`);
+      expect(rows[0].n).toBe(1);
+    } finally {
+      await db.end();
+      await admin.query(`DROP DATABASE IF EXISTS "${childName}" WITH (FORCE)`);
     }
   });
 

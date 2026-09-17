@@ -127,6 +127,62 @@ describe('decommission purge — migrations', () => {
     expect(() => readdirSync(removedDir)).toThrow();
   });
 
+  it('keeps the published blast radius consistent across migration and docs', () => {
+    // The operator-facing numbers drifted apart once already (the PR body, the
+    // migration header and docs/DEPLOYMENT.md disagreed, and one header count
+    // was not reproducible from the catalog at all). Pin the numbers the
+    // migration and the runbook must agree on, so the next schema change that
+    // moves the closure is told to update both rather than leaving one stale.
+    const deployment = read(resolve(API_ROOT, '..', '..', 'docs', 'DEPLOYMENT.md'));
+    const dependents = DECOMMISSION.match(/deletes (\d+) dependent tables \((\d+) including `units`/);
+    expect(dependents, 'migration header states the blast radius').not.toBeNull();
+    const [, migrationDependents, migrationTotal] = dependents!;
+    expect(migrationDependents).toBe('232');
+    expect(migrationTotal).toBe('233');
+    expect(Number(migrationTotal) - Number(migrationDependents)).toBe(1);
+
+    // docs/DEPLOYMENT.md must publish the same two numbers.
+    expect(deployment).toContain(`${migrationDependents} dependent`);
+    expect(deployment).toContain(`(${migrationTotal} including \`units\`)`);
+
+    // The depth distribution and the seed count must be internally consistent:
+    // depth 0 is exactly the seed set (units + the pinned tables + the
+    // unique-per-unit matches), and the distribution sums to the total.
+    const headerText = DECOMMISSION.split('\n')
+      .map((l) => l.replace(/^\s*--\s?/, ''))
+      .join('\n');
+    const dist = headerText.match(
+      /Depth distribution[^:]*:\s*(\d+) at 0,\s*(\d+) at 1,\s*(\d+) at 2,\s*(\d+) at 3/
+    );
+    expect(dist, 'migration header states the depth distribution').not.toBeNull();
+    const [, d0, d1, d2, d3] = dist!.map(Number);
+    expect(d0 + d1 + d2 + d3).toBe(Number(migrationTotal));
+
+    // The explicit `IN (...)` pin list in the loop must mirror the tables the
+    // header documents. `units` is the root of the closure and is seeded
+    // separately (`c.oid = 'units'::regclass`), so it is not part of the literal
+    // pin list -- its presence in the header's repro query is the closure root.
+    const pinnedInLoop = [
+      'announcements',
+      'alumni_events',
+      'calendar_events',
+      'dashboard_history',
+      'islamic_events',
+      'paud_development_indicators',
+      'strategic_plans',
+      'donation_campaigns',
+      'marketing_campaigns',
+      'account_codes',
+    ];
+    for (const table of pinnedInLoop) {
+      expect(DECOMMISSION, table).toContain(`'public.${table}'`);
+    }
+    // Depth 0 = `units` + the ten pinned tables + the three unique-per-unit
+    // matches. If a future change adds or drops a seed, this fails and forces
+    // the header numbers (232/233, distribution) to be recomputed too.
+    expect(d0).toBe(1 + pinnedInLoop.length + 3);
+  });
+
   it('deletes the PERGURUAN_TINGGI unit outright instead of re-typing it', () => {
     // Owner decision on PR #505: the PT unit is removed, not re-typed to OTHER.
     // A unit cannot simply be deleted while rows still point at it, so the
@@ -337,6 +393,7 @@ describe('decommission purge — migrations', () => {
       'strategic_plans',
       'donation_campaigns',
       'marketing_campaigns',
+      'account_codes',
     ];
     expect(DECOMMISSION).toContain('pt_setnull_doomed_tmp');
     expect(DECOMMISSION).toMatch(/confdeltype\s*=\s*'n'/);
@@ -441,6 +498,52 @@ describe('decommission purge — migrations', () => {
     const mktFields = mktBody.slice(0, mktBody.indexOf('\n}'));
     expect(mktFields).toMatch(/code\s+String\s+@unique/);
     expect(mktFields).not.toMatch(/@@unique\(\[unitId/);
+
+    // `account_codes` is the finance-side twin of the two campaigns: the list
+    // reads never scope by unit, and the account code it holds is globally
+    // unique, so a detached `unit_id = NULL` row both stays on every unit's
+    // chart and keeps its code occupied for a real unit.
+    const accounting = read(
+      join(API_ROOT, 'src', 'modules', 'finance', 'accounting.service.ts')
+    );
+    const getAccounts = accounting.slice(
+      accounting.indexOf('export async function getAccounts'),
+      accounting.indexOf('export async function getAccountById')
+    );
+    expect(getAccounts).toMatch(/isActive/);
+    expect(getAccounts).not.toMatch(/unitId/);
+
+    const financeEnhancement = read(
+      join(
+        API_ROOT,
+        'src',
+        'modules',
+        'finance-enhancement',
+        'finance-enhancement.service.ts'
+      )
+    );
+    const getAccountCodes = financeEnhancement.slice(
+      financeEnhancement.indexOf('async getAccountCodes'),
+      financeEnhancement.indexOf('async getAccountCodes') + 900
+    );
+    expect(getAccountCodes).toMatch(/isActive/);
+    expect(getAccountCodes).not.toMatch(/unitId/);
+
+    const accountingConfig = read(
+      join(API_ROOT, 'src', 'modules', 'finance', 'accounting-config.service.ts')
+    );
+    const fallback = accountingConfig.slice(
+      accountingConfig.indexOf('export async function getAccountOrFallback'),
+      accountingConfig.indexOf('export async function getAccountOrFallback') + 1200
+    );
+    expect(fallback).toMatch(/where: \{ code: fallbackCode, isActive: true, unitId \}/);
+    // No `(unit_id, ...)` UNIQUE, so the generic catalog rule cannot reach it
+    // either; `code` alone is unique (0_init `account_codes_code_key`).
+    const acctBody = SCHEMA.slice(SCHEMA.indexOf('model AccountCode {'));
+    const acctFields = acctBody.slice(0, acctBody.indexOf('\n}'));
+    expect(acctFields).toMatch(/code\s+String\s+@unique/);
+    expect(acctFields).not.toMatch(/@@unique\(\[unitId/);
+    expect(ZERO_INIT).toContain('CREATE UNIQUE INDEX "account_codes_code_key"');
   });
 
   it('captures unique-per-unit `SET NULL` children generically, without naming them', () => {

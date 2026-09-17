@@ -74,7 +74,7 @@ DROP TYPE IF EXISTS "InnovationStatus";
 --        `dashboard_metric_snapshots` and `report_templates`, plus one table
 --        owned by another change that must not be named here.
 --
---   (ii) the nine `SET NULL` children whose read paths treat `unit_id IS NULL`
+--   (ii) the ten `SET NULL` children whose read paths treat `unit_id IS NULL`
 --        as "all units" / "foundation-wide" -- or, for `alumni_events`, return
 --        the row at all regardless of caller scope. That is a property of the
 --        *reader*, not of the catalog, so it is a pinned list, audited against
@@ -111,6 +111,24 @@ DROP TYPE IF EXISTS "InnovationStatus";
 -- code — so a retired PT campaign could still attribute registrations. Pin it by
 -- row to delete the PT campaigns, whatever their status.
 --
+-- `account_codes` is pinned for the finance-side version of the same two
+-- hazards. It is not reachable from `units` over the followed edges at all: its
+-- `unit_id` is the `SET NULL` edge itself (0_init:8923) and the closure deliberately
+-- does not follow `SET NULL`, so a PT row is never captured. Left to the FK, the
+-- PT account survives with `unit_id = NULL`, while the list read paths do not
+-- scope by unit — `getAccounts` (`finance/accounting.service.ts:61-82`) and
+-- `getAccountCodes` (`finance-enhancement/finance-enhancement.service.ts:28-73`)
+-- filter on `isActive`/`type`/`search` only — so the retired account stays on
+-- every unit's chart. Worse, its `code` is globally unique (0_init:6982
+-- `account_codes_code_key`; there is no `(unit_id, ...)` UNIQUE for the catalog
+-- rule to match) and `getAccountOrFallback`
+-- (`finance/accounting-config.service.ts:71-104`) resolves a *unit's* posting
+-- account with `unitId` in the `where`, which a NULL-unit row can never satisfy:
+-- the code stays occupied and cannot be recreated for a real unit. Pin it by row
+-- so the PT accounts are deleted; the cross-unit invariant below then refuses to
+-- touch a sibling unit's `budget`/`journal_entries` that pointed at one, instead
+-- of silently deleting sibling-owned finance rows.
+--
 -- `alumni_events` is the one entry where the FK does not *widen* the row, it
 -- keeps it visible outright. Its `unit_id` is `SET NULL` (0_init:8563) and its
 -- only dependents are `alumni_event_attendees.event_id` (`CASCADE`,
@@ -125,27 +143,28 @@ DROP TYPE IF EXISTS "InnovationStatus";
 -- would survive too. Pin the table so the events are captured by row before the
 -- unit goes; the `CASCADE` then takes their attendees leaf-first.
 --
--- Blast radius: the purge deletes 231 dependent tables (232 including `units`
+-- Blast radius: the purge deletes 232 dependent tables (233 including `units`
 -- itself), at a maximum depth of 3. That set is the closure over the edges
 -- followed below, seeded with `units` plus every `SET NULL` child captured by
--- row first -- the pinned NULL-means-global tables and the unique-per-unit
+-- row first -- the ten pinned NULL-means-global tables and the unique-per-unit
 -- tables matched by the catalog rule. Those seeds are not merely decorative:
--- the pinned seeds alone drag in 16 tables that `units` cannot reach over the
--- followed edges (213 -> 229), and the three unique-per-unit seeds add the last
--- 3 (`dashboard_metric_snapshots`, `report_templates`, and one owned by PR
--- #504) to reach 232. (`users` and `user_role_assignments` are deliberately not
+-- the pinned seeds alone drag in 18 tables that `units` cannot reach over the
+-- followed edges (212 -> 230), and the unique-per-unit seeds add the last 3
+-- (`dashboard_metric_snapshots`, `report_templates`, and one owned by PR
+-- #504) to reach 233. (`users` and `user_role_assignments` are deliberately not
 -- in the deleted set; they survive detached with `unit_id = NULL` and section 4
 -- ends the PT-only sessions.)
 -- Reproduce against the catalog this block runs on -- i.e. after the higher-ed
 -- tables of sections 1-2 are dropped. The seed set mirrors the loop below: the
--- nine pinned tables plus every `SET NULL` child whose `(unit_id, ...)` is
+-- ten pinned tables plus every `SET NULL` child whose `(unit_id, ...)` is
 -- UNIQUE (the `EXISTS` subquery):
 --
 --   WITH seeds(tbl) AS (
 --     SELECT unnest(ARRAY[
 --       'units', 'announcements', 'alumni_events', 'calendar_events',
 --       'dashboard_history', 'islamic_events', 'paud_development_indicators',
---       'strategic_plans', 'donation_campaigns', 'marketing_campaigns'
+--       'strategic_plans', 'donation_campaigns', 'marketing_campaigns',
+--       'account_codes'
 --     ])
 --     UNION
 --     SELECT format('public.%I', cc.relname)
@@ -171,10 +190,10 @@ DROP TYPE IF EXISTS "InnovationStatus";
 --                          AND c.confdeltype IN ('a','r','c')
 --     JOIN pg_class cc ON cc.oid = c.conrelid
 --     JOIN pg_namespace cn ON cn.oid = cc.relnamespace)
---   SELECT count(*) FROM (SELECT DISTINCT tbl FROM reach) t;  -- 232
+--   SELECT count(*) FROM (SELECT DISTINCT tbl FROM reach) t;  -- 233
 --
--- (Depth distribution over the distinct tables, min depth: 13 at 0, 87 at 1,
--- 106 at 2, 26 at 3 -- the thirteen seeds at depth 0, of which `units` is one.)
+-- (Depth distribution over the distinct tables, min depth: 14 at 0, 89 at 1,
+-- 105 at 2, 25 at 3 -- the fourteen seeds at depth 0, of which `units` is one.)
 -- This is why the deploy runbook requires a verified backup BEFORE
 -- `prisma migrate deploy`.
 
@@ -303,7 +322,23 @@ BEGIN
           -- `unit_id IS NULL` with `is_active = true` would keep resolving its
           -- code and keep attributing registrations from the public site.
           -- Delete it instead -- any status.
-          'public.marketing_campaigns'          -- marketing.service.ts:58-74
+          'public.marketing_campaigns',         -- marketing.service.ts:58-74
+          -- A chart-of-accounts row carries the same two hazards as the
+          -- campaigns above, on the finance side. The list read paths do not
+          -- scope by unit at all -- `getAccounts` (accounting.service.ts:61-82)
+          -- and `getAccountCodes` (finance-enhancement.service.ts:28-73) both
+          -- filter on `isActive`/`type`/`search` only -- so a detached PT
+          -- account stays on every unit's chart. And `getAccountOrFallback`
+          -- (accounting-config.service.ts:71-104) resolves a *unit's* posting
+          -- account with `unitId` in the `where`; a detached `unit_id = NULL`
+          -- row can never satisfy that lookup, while the code it holds stays
+          -- occupied (the only unique is the global `code`, see 0_init
+          -- `account_codes_code_key`), so the same code cannot be recreated for
+          -- a real unit. The FK cannot be left to fire: it is `SET NULL`, the
+          -- table has no `(unit_id, ...)` UNIQUE, and `account_codes` is not
+          -- reachable from `units` over the followed edges either (its FK is
+          -- `SET NULL`, which the closure deliberately does not follow).
+          'public.account_codes'                -- accounting-config.service.ts:71-104
         )
       )
   LOOP
@@ -470,10 +505,12 @@ BEGIN
   -- Deleting it would reach across units. Reachability alone cannot rule this
   -- out -- a cross-unit child is only visible in the data, not in the catalog --
   -- so the invariant is asserted here rather than assumed: the migration stops
-  -- the deploy if a cross-unit row would be deleted. (The 42 closure tables that
-  -- carry both a `unit_id` and a non-unit FK to another closure table were
-  -- enumerated 2026-09-17, so a future cross-unit edge is at least known to be
-  -- possible in exactly that shape.)
+  -- the deploy if a cross-unit row would be deleted. (Tables in the closure
+  -- that carry both a `unit_id` and a non-unit FK to another closure table were
+  -- enumerated 2026-09-17 with `account_codes` pinned, so a future cross-unit
+  -- edge is at least known to be possible in exactly that shape; the count is
+  -- left out deliberately, because it moves with every schema change and a
+  -- stale number here reads as a verified one.)
   FOR edge IN
     SELECT d.tbl AS tbl, count(*) AS n
     FROM _decommission_doomed d
