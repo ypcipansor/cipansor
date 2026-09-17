@@ -1,0 +1,577 @@
+import { prisma } from '@/lib/prisma';
+import { Errors } from '@/middleware/error';
+import { WbsTargetLevel, WbsStatus, WbsSenderType, Prisma } from '@prisma/client';
+import {
+  WBS_FORWARD_ROLE_CODES,
+  isWbsForwardRecipientRole,
+  type CreatePublicWbsInput,
+  type ForwardWbsReportInput,
+  type UpdateWbsStatusInput,
+  type WbsForwardRoleCode,
+} from '@cipansor/shared';
+import crypto from 'crypto';
+
+// The payloads come from the shared contract, not a local restatement: the
+// controller validates with the same Zod schema and the web client types its
+// hooks from it, so a shape change lands in one place instead of three.
+export type { CreatePublicWbsInput };
+
+/** Identity of the staff member acting on a report. */
+export interface WbsActor {
+  id: string;
+  name: string;
+  roleCode?: string;
+  unitId?: string | null;
+}
+
+export class WbsService {
+  /**
+   * Determine primary handler role based on target level.
+   */
+  private getPrimaryHandlerRole(targetLevel: WbsTargetLevel): string {
+    switch (targetLevel) {
+      case 'PENGURUS_YAYASAN':
+        return 'YAYASAN_PENGAWAS';
+      case 'PENGAWAS_YAYASAN':
+        return 'YAYASAN_PEMBINA';
+      case 'KEPALA_UNIT':
+        return 'YAYASAN_KETUA';
+      case 'STAF_PEGAWAI':
+      case 'SISWA_SANTRI':
+        return 'UNIT_ADMIN';
+      default:
+        return 'YAYASAN_PENGAWAS';
+    }
+  }
+
+  /**
+   * Create public anonymous/identified WBS report.
+   */
+  async createPublicReport(data: CreatePublicWbsInput) {
+    const primaryHandlerRole = this.getPrimaryHandlerRole(data.targetLevel);
+
+    // Generate ticketCode e.g. WBS-YYYYMM-XXXXX
+    const datePrefix = new Date().toISOString().slice(0, 7).replace('-', '');
+    const randomSuffix = crypto.randomBytes(3).toString('hex').toUpperCase();
+    const ticketCode = `WBS-${datePrefix}-${randomSuffix}`;
+    const trackingToken = crypto.randomBytes(16).toString('hex');
+
+    // Resolve the effective anonymity once, then use it for the flag AND both
+    // identity fields. Reading `data.isAnonymous` directly for the identity
+    // made the default a lie: an omitted flag stored `isAnonymous: true` but
+    // still persisted the reporter's name and contact.
+    const isAnonymous = data.isAnonymous ?? true;
+
+    const report = await prisma.wbsReport.create({
+      data: {
+        ticketCode,
+        trackingToken,
+        unitId: data.unitId || null,
+        category: data.category,
+        targetLevel: data.targetLevel,
+        targetName: data.targetName || null,
+        subject: data.subject,
+        description: data.description,
+        location: data.location || null,
+        incidentDate: data.incidentDate ? new Date(data.incidentDate) : null,
+        isAnonymous,
+        reporterName: isAnonymous ? null : data.reporterName || null,
+        reporterContact: isAnonymous ? null : data.reporterContact || null,
+        attachments: data.attachments ? (data.attachments as Prisma.InputJsonValue) : undefined,
+        status: WbsStatus.DIAJUKAN,
+        primaryHandlerRole,
+      },
+      include: {
+        unit: { select: { id: true, name: true } },
+      },
+    });
+
+    return {
+      ticketCode: report.ticketCode,
+      trackingToken: report.trackingToken,
+      category: report.category,
+      targetLevel: report.targetLevel,
+      status: report.status,
+      createdAt: report.createdAt,
+    };
+  }
+
+  /**
+   * Get public tracking status and anonymous conversation history.
+   */
+  async getPublicTracking(ticketCode: string, trackingToken: string) {
+    const report = await prisma.wbsReport.findUnique({
+      where: { ticketCode },
+      include: {
+        unit: { select: { id: true, name: true } },
+        comments: {
+          orderBy: { createdAt: 'asc' },
+          select: {
+            id: true,
+            senderType: true,
+            senderName: true,
+            message: true,
+            attachments: true,
+            createdAt: true,
+          },
+        },
+        forwardLogs: {
+          orderBy: { createdAt: 'asc' },
+          select: {
+            id: true,
+            fromRole: true,
+            toRole: true,
+            reason: true,
+            createdAt: true,
+          },
+        },
+      },
+    });
+
+    if (!report || report.trackingToken !== trackingToken) {
+      throw Errors.notFound('Laporan WBS tidak ditemukan atau token akses tidak valid');
+    }
+
+    // The public tracking page is read by whoever holds the ticket code — the
+    // reporter, and anyone they shared it with. `senderName` on a handler
+    // comment was written as `${name} (${roleCode})`, which prints the officer's
+    // identity and their position to that audience. A confidential channel
+    // protects the reporter; it should not expose the staff member answering
+    // them either, so public replies are attributed to the team.
+    const comments = report.comments.map((comment) =>
+      comment.senderType === WbsSenderType.HANDLER
+        ? { ...comment, senderName: 'Tim Pemeriksa' }
+        : comment
+    );
+
+    return {
+      ticketCode: report.ticketCode,
+      category: report.category,
+      targetLevel: report.targetLevel,
+      targetName: report.targetName,
+      unitName: report.unit?.name || 'Yayasan Pusat',
+      subject: report.subject,
+      description: report.description,
+      status: report.status,
+      resolution: report.resolution,
+      createdAt: report.createdAt,
+      updatedAt: report.updatedAt,
+      comments,
+      forwardTimeline: report.forwardLogs,
+    };
+  }
+
+  /**
+   * Add public comment from reporter.
+   */
+  async addPublicComment(
+    ticketCode: string,
+    trackingToken: string,
+    message: string,
+    attachments?: string[]
+  ) {
+    const report = await prisma.wbsReport.findUnique({
+      where: { ticketCode },
+      select: { id: true, trackingToken: true, isAnonymous: true, reporterName: true },
+    });
+
+    if (!report || report.trackingToken !== trackingToken) {
+      throw Errors.notFound('Laporan WBS tidak ditemukan atau token akses tidak valid');
+    }
+
+    return prisma.wbsComment.create({
+      data: {
+        reportId: report.id,
+        senderType: WbsSenderType.REPORTER,
+        senderName: report.isAnonymous ? 'Pelapor Anonim' : report.reporterName || 'Pelapor',
+        message,
+        attachments: attachments ? (attachments as Prisma.InputJsonValue) : undefined,
+      },
+    });
+  }
+
+  /**
+   * Query WBS reports for authenticated staff/governance according to role hierarchy.
+   */
+  async getReportsForUser(actor: { id?: string; roleCode?: string; unitId?: string | null }) {
+    return prisma.wbsReport.findMany({
+      where: this.buildScopeWhere(actor),
+      include: {
+        unit: { select: { id: true, name: true } },
+        assignedUser: { select: { id: true, name: true, email: true } },
+        comments: {
+          orderBy: { createdAt: 'asc' },
+          select: {
+            id: true,
+            senderType: true,
+            senderName: true,
+            message: true,
+            createdAt: true,
+          },
+        },
+        forwardLogs: {
+          orderBy: { createdAt: 'asc' },
+          include: {
+            forwardedBy: { select: { id: true, name: true } },
+            toUser: { select: { id: true, name: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /**
+   * The single definition of "which reports may this actor see".
+   *
+   * Used for the list AND for the per-report authorization below, so the two
+   * can never disagree — a report hidden from the list must also be refused by
+   * `getReportById`, or the ID becomes a skeleton key into every unit.
+   *
+   * Governance roles see the foundation; unit-scoped handlers see only reports
+   * whose unit is their own.
+   *
+   * A unit-scoped role with no `unitId` gets the impossible predicate, not an
+   * unfiltered one. The final branch used to spread `...(unitId ? { unitId }
+   * : {})`, so a principal/admin whose token carried no unit silently read and
+   * mutated every unit's staff and student reports — the filter it was supposed
+   * to add simply vanished. Dropping the `unitId` term is only ever safe when
+   * the role is foundation-wide, which the branches above already handled.
+   */
+  private buildScopeWhere(actor: {
+    roleCode?: string;
+    unitId?: string | null;
+    id?: string;
+  }): Prisma.WbsReportWhereInput {
+    const role = actor.roleCode || '';
+    const unitId = actor.unitId;
+
+    // A report forwarded to a named person must be readable by that person.
+    // `forwardReport` stores the assignee in `assignedUserId`, but the scope
+    // where never looked at it, so the explicitly designated handler could be
+    // locked out of the report assigned to them. This is an OR-term on every
+    // branch below, because the assignment is orthogonal to role/unit scope.
+    //
+    // The assignment term is granted to foundation-wide and unit-scoped roles
+    // alike, but never rescues a unit-scoped actor that has no unit: the
+    // impossible predicate below is returned before this can apply.
+    const assignedToActor: Prisma.WbsReportWhereInput | null = actor.id
+      ? { assignedUserId: actor.id }
+      : null;
+    const withAssignment = (scope: Prisma.WbsReportWhereInput): Prisma.WbsReportWhereInput =>
+      assignedToActor
+        ? Object.keys(scope).length === 0
+          ? scope
+          : { OR: [scope, assignedToActor] }
+        : scope;
+
+    if (role === 'SUPER_ADMIN' || role === 'YAYASAN_PEMBINA') {
+      return {};
+    }
+    if (role === 'YAYASAN_PENGAWAS') {
+      return withAssignment({
+        OR: [
+          { primaryHandlerRole: 'YAYASAN_PENGAWAS' },
+          {
+            targetLevel: {
+              in: [
+                WbsTargetLevel.PENGURUS_YAYASAN,
+                WbsTargetLevel.KEPALA_UNIT,
+                WbsTargetLevel.STAF_PEGAWAI,
+                WbsTargetLevel.SISWA_SANTRI,
+              ],
+            },
+          },
+        ],
+      });
+    }
+    if (
+      ['YAYASAN_KETUA', 'YAYASAN_SEKRETARIS', 'YAYASAN_BENDAHARA', 'YAYASAN_ANGGOTA'].includes(role)
+    ) {
+      return withAssignment({
+        OR: [
+          { primaryHandlerRole: 'YAYASAN_KETUA' },
+          {
+            targetLevel: {
+              in: [
+                WbsTargetLevel.KEPALA_UNIT,
+                WbsTargetLevel.STAF_PEGAWAI,
+                WbsTargetLevel.SISWA_SANTRI,
+              ],
+            },
+          },
+        ],
+      });
+    }
+    // A unit-scoped role with no unit has no reports it may see. Returning the
+    // unscoped branch here (which the spread produced by omitting `unitId`)
+    // would hand it the whole foundation; an empty `id IN ()` set matches
+    // nothing on every query that consumes this scope — list, detail, status,
+    // forward and comment — so the fail-closed decision is made once.
+    if (!unitId) {
+      return { id: { in: [] } };
+    }
+
+    return withAssignment({
+      targetLevel: { in: [WbsTargetLevel.STAF_PEGAWAI, WbsTargetLevel.SISWA_SANTRI] },
+      unitId,
+    });
+  }
+
+  /**
+   * Load a report only if the actor is within its scope.
+   *
+   * Returns 404 when no such report exists and 403 when it exists but belongs
+   * to another unit's chain of handling — the caller cannot otherwise tell a
+   * typo from a probe, and the ID alone must never be enough.
+   */
+  private async loadReportInScope<T extends Prisma.WbsReportInclude | undefined = undefined>(
+    id: string,
+    actor: { id?: string; roleCode?: string; unitId?: string | null },
+    include?: T
+  ) {
+    const report = await prisma.wbsReport.findFirst({
+      where: { id, ...this.buildScopeWhere(actor) },
+      ...(include ? { include } : {}),
+    });
+
+    if (!report) {
+      const exists = await prisma.wbsReport.findUnique({
+        where: { id },
+        select: { id: true },
+      });
+      if (!exists) {
+        throw Errors.notFound(`Laporan WBS dengan ID ${id} tidak ditemukan`);
+      }
+      throw Errors.forbidden('Laporan WBS ini berada di luar wewenang peran/unit Anda');
+    }
+
+    return report;
+  }
+
+  /**
+   * Get WBS report details by ID for handler.
+   */
+  async getReportById(
+    id: string,
+    actor: { id?: string; roleCode?: string; unitId?: string | null }
+  ) {
+    return this.loadReportInScope(id, actor, {
+      unit: { select: { id: true, name: true } },
+      assignedUser: { select: { id: true, name: true, email: true } },
+      comments: {
+        orderBy: { createdAt: 'asc' },
+        include: {
+          sender: { select: { id: true, name: true } },
+        },
+      },
+      forwardLogs: {
+        orderBy: { createdAt: 'asc' },
+        include: {
+          forwardedBy: { select: { id: true, name: true } },
+          toUser: { select: { id: true, name: true } },
+        },
+      },
+    });
+  }
+
+  /**
+   * Update report status (DIAJUKAN, DALAM_PENYELIDIKAN, DITINDAKLANJUTI, SELESAI, TIDAK_DAPAT_DITINDAKLANJUTI).
+   */
+  async updateReportStatus(id: string, data: UpdateWbsStatusInput, actor: WbsActor) {
+    const report = await this.loadReportInScope(id, actor);
+
+    // The status change and the handler's note are one event: a note that
+    // explains a transition no reader can find in the history is worse than no
+    // note, and a status that moved without its audit trail is untraceable.
+    // Both writes therefore commit together or not at all — a failed comment
+    // used to leave the report advanced but its history silent.
+    return prisma.$transaction(async (tx) => {
+      // Claim the report only if nobody holds it yet, in the same statement
+      // that reads the column.
+      //
+      // The old code wrote `assignedUserId: report.assignedUserId ?? actor.id`
+      // from a row loaded *before* the transaction. A `forward toUserId` that
+      // committed in between was invisible to that read, so the status update
+      // stamped `actor.id` over the freshly named owner — a lost update, and
+      // the case silently moved back to whoever ticked the next box. A
+      // conditional `updateMany` filtered on `assignedUserId: null` matches
+      // zero rows once a forward has claimed the report, and the status write
+      // below never mentions the column, so a concurrent assignment survives.
+      if (!report.assignedUserId) {
+        await tx.wbsReport.updateMany({
+          where: { id, assignedUserId: null },
+          data: { assignedUserId: actor.id },
+        });
+      }
+
+      const updated = await tx.wbsReport.update({
+        where: { id },
+        data: {
+          status: data.status,
+          resolution: data.resolution !== undefined ? data.resolution : report.resolution,
+        },
+      });
+
+      if (data.handlerNote) {
+        await tx.wbsComment.create({
+          data: {
+            reportId: id,
+            senderType: WbsSenderType.HANDLER,
+            senderId: actor.id,
+            senderName: `${actor.name} (Pemeriksa)`,
+            message: `[Status Diperbarui ke ${data.status}] ${data.handlerNote}`,
+          },
+        });
+      }
+
+      return updated;
+    });
+  }
+
+  /**
+   * Forward / Refer report to another role e.g. from Pengawas to Pengurus or vice versa.
+   */
+  async forwardReport(id: string, data: ForwardWbsReportInput, actor: WbsActor) {
+    // Scope is resolved before the transaction so an out-of-scope caller is
+    // refused without writing a forward log.
+    const report = await this.loadReportInScope(id, actor);
+
+    // The shared schema already narrows `toRole` at the edge; this is the same
+    // guard for callers that reach the service directly (internal jobs, other
+    // modules). An unrecognised role here means the report is routed to a queue
+    // no role's scope query matches, and it disappears from every handler's
+    // list — silent, and indistinguishable from "nothing to do".
+    if (!(WBS_FORWARD_ROLE_CODES as readonly string[]).includes(data.toRole)) {
+      throw Errors.badRequest(
+        `Peran tujuan teruskan tidak sah: ${data.toRole}. Pilih salah satu dari ${WBS_FORWARD_ROLE_CODES.join(', ')}.`
+      );
+    }
+
+    // A named recipient must actually be able to hold the destination role.
+    // `buildScopeWhere` grants the `assignedUserId` read access unconditionally,
+    // so before this check the caller could name any user — the report's own
+    // subject, an unrelated staff member, a deleted account — and hand them the
+    // case regardless of role or unit.
+    if (data.toUserId) {
+      if (data.toUserId === actor.id) {
+        throw Errors.badRequest('Laporan tidak dapat diteruskan kepada diri sendiri.');
+      }
+
+      const recipient = await prisma.user.findUnique({
+        where: { id: data.toUserId },
+        select: {
+          id: true,
+          isActive: true,
+          deletedAt: true,
+          unitId: true,
+          userRoles: {
+            where: {
+              isActive: true,
+              OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+            },
+            select: { role: { select: { code: true } } },
+          },
+        },
+      });
+
+      if (!recipient || recipient.deletedAt) {
+        throw Errors.badRequest('Pengguna tujuan teruskan tidak ditemukan atau telah dihapus.');
+      }
+      if (!recipient.isActive) {
+        throw Errors.badRequest('Pengguna tujuan teruskan tidak aktif.');
+      }
+
+      const recipientRoleCodes = recipient.userRoles.map((ur) => ur.role.code);
+      const matchesDestination = recipientRoleCodes.some((code) =>
+        isWbsForwardRecipientRole(data.toRole, code)
+      );
+      if (!matchesDestination) {
+        throw Errors.badRequest(
+          `Pengguna tujuan tidak memiliki peran efektif yang sesuai untuk tujuan ${data.toRole}.`
+        );
+      }
+
+      // A unit-level destination must stay inside the report's unit. A
+      // foundation-wide recipient has no unit restriction, but a KEPALA_UNIT /
+      // UNIT_ADMIN named from another unit would otherwise gain access to a
+      // report its own scope query hides from it.
+      if (data.toRole === 'UNIT_ADMIN') {
+        if (!recipient.unitId) {
+          throw Errors.badRequest(
+            'Pengguna tujuan tingkat unit harus terikat pada satu unit organisasi.'
+          );
+        }
+        const reportUnitId = report.unitId ?? null;
+        if (!reportUnitId) {
+          throw Errors.badRequest(
+            'Laporan tanpa unit tidak dapat diteruskan ke peran tingkat unit.'
+          );
+        }
+        if (recipient.unitId !== reportUnitId) {
+          throw Errors.forbidden(
+            'Pengguna tujuan berada di unit yang berbeda dengan unit laporan.'
+          );
+        }
+      }
+    }
+
+    return prisma.$transaction(async (tx) => {
+      await tx.wbsForwardLog.create({
+        data: {
+          reportId: id,
+          forwardedById: actor.id,
+          fromRole: actor.roleCode || report.primaryHandlerRole,
+          toRole: data.toRole,
+          toUserId: data.toUserId || null,
+          reason: data.reason,
+        },
+      });
+
+      const updated = await tx.wbsReport.update({
+        where: { id },
+        data: {
+          primaryHandlerRole: data.toRole,
+          assignedUserId: data.toUserId || null,
+        },
+      });
+
+      await tx.wbsComment.create({
+        data: {
+          reportId: id,
+          senderType: WbsSenderType.HANDLER,
+          senderId: actor.id,
+          senderName: `${actor.name} (${actor.roleCode || 'Pemeriksa'})`,
+          message: `[Laporan Diteruskan ke ${data.toRole}] Alasan: ${data.reason}`,
+        },
+      });
+
+      return updated;
+    });
+  }
+
+  /**
+   * Add handler internal/external comment.
+   */
+  async addHandlerComment(
+    id: string,
+    message: string,
+    attachments: string[] | undefined,
+    actor: WbsActor
+  ) {
+    await this.loadReportInScope(id, actor);
+
+    return prisma.wbsComment.create({
+      data: {
+        reportId: id,
+        senderType: WbsSenderType.HANDLER,
+        senderId: actor.id,
+        senderName: `${actor.name} (${actor.roleCode || 'Pemeriksa'})`,
+        message,
+        attachments: attachments ? (attachments as Prisma.InputJsonValue) : undefined,
+      },
+    });
+  }
+}
+
+export const wbsService = new WbsService();

@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
-import { Prisma } from '@prisma/client';
+import { LetterFlowAction, Prisma } from '@prisma/client';
 import { Errors } from '@/middleware/error';
+import type { DraftPeriodicReportInput } from '@cipansor/shared';
 import { perencanaanService } from '../perencanaan/perencanaan.service';
 import { riskService } from '../risk/risk.service';
 
@@ -42,7 +43,10 @@ export class PengawasanService {
     });
   }
 
-  async getAudits(unitId: string | undefined, query: { status?: string; auditType?: string; strategicPlanId?: string; riskId?: string }) {
+  async getAudits(
+    unitId: string | undefined,
+    query: { status?: string; auditType?: string; strategicPlanId?: string; riskId?: string }
+  ) {
     const where: Prisma.InternalAuditWhereInput = unitId ? { unitId } : {};
     if (query.status) where.status = query.status as any;
     if (query.auditType) where.auditType = query.auditType;
@@ -117,7 +121,7 @@ export class PengawasanService {
     rootCause?: string;
     recommendation?: string;
     responsibleId?: string;
-    dueDate?: string;
+    dueDate?: string | null;
     planObjectiveId?: string;
     linkToRiskId?: string;
   }) {
@@ -126,7 +130,8 @@ export class PengawasanService {
       // friendly 404 instead of a raw Prisma P2025 from the `connect` call.
       // We also read consequence/status here to use in the side-effect below,
       // avoiding a redundant second query.
-      let existingRisk: { consequence: string | null; status: string; impact: string } | null = null;
+      let existingRisk: { consequence: string | null; status: string; impact: string } | null =
+        null;
       if (data.linkToRiskId) {
         existingRisk = await tx.risk.findUnique({
           where: { id: data.linkToRiskId },
@@ -150,7 +155,9 @@ export class PengawasanService {
           recommendation: data.recommendation,
           responsible: data.responsibleId ? { connect: { id: data.responsibleId } } : undefined,
           dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
-          planObjective: data.planObjectiveId ? { connect: { id: data.planObjectiveId } } : undefined,
+          planObjective: data.planObjectiveId
+            ? { connect: { id: data.planObjectiveId } }
+            : undefined,
           risk: data.linkToRiskId ? { connect: { id: data.linkToRiskId } } : undefined,
         },
         include: {
@@ -166,7 +173,8 @@ export class PengawasanService {
         const auditNote = `[Audit Finding ${data.findingNumber}: ${data.title}]`;
 
         // Guard against duplicate notes if createFinding is called twice with the same data
-        const alreadyLinked = existingRisk.consequence?.includes(`[Audit Finding ${data.findingNumber}:`) ?? false;
+        const alreadyLinked =
+          existingRisk.consequence?.includes(`[Audit Finding ${data.findingNumber}:`) ?? false;
 
         if (!alreadyLinked) {
           const updatedConsequence = existingRisk.consequence
@@ -182,7 +190,11 @@ export class PengawasanService {
           // Only escalate if the new impact is actually higher than the current one
           // to avoid accidentally downgrading a risk (e.g. CATASTROPHIC → MAJOR).
           const IMPACT_WEIGHTS: Record<string, number> = {
-            INSIGNIFICANT: 1, MINOR: 2, MODERATE: 3, MAJOR: 4, CATASTROPHIC: 5,
+            INSIGNIFICANT: 1,
+            MINOR: 2,
+            MODERATE: 3,
+            MAJOR: 4,
+            CATASTROPHIC: 5,
           };
 
           // Reuse impact from the earlier existingRisk read to avoid an extra query.
@@ -198,11 +210,15 @@ export class PengawasanService {
           if (impactEscalation) {
             // updateRisk recalculates riskScore, riskLevel, and residualRisk.
             // Pass `tx` so the risk update participates in the same transaction.
-            await riskService.updateRisk(data.linkToRiskId!, {
-              status: newStatus,
-              consequence: updatedConsequence,
-              ...impactEscalation,
-            } as Prisma.RiskUpdateInput, tx);
+            await riskService.updateRisk(
+              data.linkToRiskId!,
+              {
+                status: newStatus,
+                consequence: updatedConsequence,
+                ...impactEscalation,
+              } as Prisma.RiskUpdateInput,
+              tx
+            );
           } else {
             await tx.risk.update({
               where: { id: data.linkToRiskId },
@@ -213,7 +229,6 @@ export class PengawasanService {
             });
           }
         }
-
       }
 
       // If linked to a strategic objective, update its progress (conservative decrement if critical finding)
@@ -249,7 +264,13 @@ export class PengawasanService {
 
     if (planObjectiveId) updateData.planObjective = { connect: { id: planObjectiveId } };
     else if (planObjectiveId === null) updateData.planObjective = { disconnect: true };
-    if (rest.dueDate) updateData.dueDate = new Date(rest.dueDate);
+
+    // Nullable-date contract: `undefined` leaves the value alone, `null`
+    // clears it, a string sets it. The old truthy check conflated the first
+    // two, so "clear the due date" was a no-op.
+    if (rest.dueDate !== undefined) {
+      updateData.dueDate = rest.dueDate === null ? null : new Date(rest.dueDate);
+    }
 
     return prisma.auditFinding.update({
       where: { id },
@@ -265,12 +286,27 @@ export class PengawasanService {
     return prisma.auditFinding.delete({ where: { id } });
   }
 
+  /**
+   * The unit that owns a finding, via its parent audit.
+   *
+   * Findings and follow-ups carry no unit of their own, so "which unit may
+   * write this?" is answered by walking up to the audit. Returning `null` means
+   * the finding does not exist; the caller turns that into a 404.
+   */
+  async getFindingAuditUnitId(id: string): Promise<string | null> {
+    const finding = await prisma.auditFinding.findUnique({
+      where: { id },
+      select: { audit: { select: { unitId: true } } },
+    });
+    return finding?.audit.unitId ?? null;
+  }
+
   // ==================== FOLLOW-UPS ====================
 
   async createFollowUp(data: {
     findingId: string;
     action: string;
-    dueDate?: string;
+    dueDate?: string | null;
     evidence?: string;
   }) {
     return prisma.auditFollowUp.create({
@@ -286,7 +322,11 @@ export class PengawasanService {
   async updateFollowUp(id: string, data: any, verifiedById?: string) {
     const updateData: any = { ...data };
 
-    if (data.dueDate) updateData.dueDate = new Date(data.dueDate);
+    // Same nullable-date contract as findings: `undefined` leaves the value,
+    // `null` clears it, a string sets it.
+    if (data.dueDate !== undefined) {
+      updateData.dueDate = data.dueDate === null ? null : new Date(data.dueDate);
+    }
     if (data.status === 'VERIFIED' && verifiedById) {
       updateData.verifiedBy = { connect: { id: verifiedById } };
       updateData.verifiedAt = new Date();
@@ -359,6 +399,20 @@ export class PengawasanService {
 
   async deleteFollowUp(id: string) {
     return prisma.auditFollowUp.delete({ where: { id } });
+  }
+
+  /**
+   * The unit that owns a follow-up, via finding → audit.
+   *
+   * Same reasoning as {@link getFindingAuditUnitId}: the unit is not stored on
+   * the row, so the association is resolved rather than assumed.
+   */
+  async getFollowUpAuditUnitId(id: string): Promise<string | null> {
+    const followUp = await prisma.auditFollowUp.findUnique({
+      where: { id },
+      select: { finding: { select: { audit: { select: { unitId: true } } } } },
+    });
+    return followUp?.finding.audit.unitId ?? null;
   }
 
   // ==================== SUGGESTION ENGINE ====================
@@ -450,9 +504,7 @@ export class PengawasanService {
     //    correctly treat each unit independently. A risk in unit A is only "covered"
     //    if unit A itself has a non-cancelled audit for it — an audit in unit B
     //    should not suppress the suggestion for unit A.
-    const coveredKeys = new Set(
-      existingAudits.map((a) => `${a.riskId}::${a.unitId}`),
-    );
+    const coveredKeys = new Set(existingAudits.map((a) => `${a.riskId}::${a.unitId}`));
 
     // 4. Suggest audits for risks that don't have a linked internal audit
     //    in their own unit yet.
@@ -474,6 +526,289 @@ export class PengawasanService {
       const priorityMap: Record<string, number> = { URGENT: 3, HIGH: 2, MEDIUM: 1, LOW: 0 };
       return (priorityMap[b.priority] || 0) - (priorityMap[a.priority] || 0);
     });
+  }
+
+  // ==================== FINANCIAL ARREARS & OVERSIGHT ====================
+
+  async getFinancialArrears(unitId?: string) {
+    const now = new Date();
+
+    const unpaidInvoices = await prisma.invoice.findMany({
+      where: {
+        status: { in: ['PENDING', 'PARTIAL', 'OVERDUE'] },
+        // Filter on the invoice's own unit of record. `student.unitId` is the
+        // pupil's *current* unit, so a transfer moved old arrears between
+        // units' books; legacy rows with no unit fall back to the student's.
+        ...(unitId ? { OR: [{ unitId }, { unitId: null, student: { unitId } }] } : {}),
+      },
+      include: {
+        student: {
+          select: {
+            id: true,
+            // `Student` has no `name` column — the person's name lives on the
+            // linked `User`. The old select asked for `student.name`, which is
+            // not a field, so the whole endpoint threw at query-build time.
+            nis: true,
+            unitId: true,
+            user: { select: { name: true } },
+            unit: { select: { id: true, name: true } },
+          },
+        },
+        unit: { select: { id: true, name: true } },
+        paymentType: { select: { id: true, name: true, code: true } },
+      },
+      orderBy: { dueDate: 'asc' },
+    });
+
+    let totalUnpaidAmount = 0;
+    let overdueInvoicesCount = 0;
+
+    const unitMap: Record<
+      string,
+      { unitId: string; unitName: string; totalUnpaid: number; count: number; overdueCount: number }
+    > = {};
+    const studentMap: Record<
+      string,
+      {
+        studentId: string;
+        studentName: string;
+        nis: string;
+        unitName: string;
+        totalUnpaid: number;
+        invoiceCount: number;
+      }
+    > = {};
+
+    for (const inv of unpaidInvoices) {
+      const remaining = Number(inv.amount) - Number(inv.paidAmount);
+      if (remaining <= 0) continue;
+
+      totalUnpaidAmount += remaining;
+      const isOverdue = inv.status === 'OVERDUE' || (inv.dueDate && inv.dueDate < now);
+      if (isOverdue) overdueInvoicesCount++;
+
+      // The invoice's own unit when we have one; only rows predating the
+      // column fall back to the student's current unit.
+      const uId = inv.unitId || inv.student.unitId || 'PUSAT';
+      const uName = inv.unit?.name || inv.student.unit?.name || 'Yayasan Pusat';
+
+      if (!unitMap[uId]) {
+        unitMap[uId] = { unitId: uId, unitName: uName, totalUnpaid: 0, count: 0, overdueCount: 0 };
+      }
+      unitMap[uId].totalUnpaid += remaining;
+      unitMap[uId].count += 1;
+      if (isOverdue) unitMap[uId].overdueCount += 1;
+
+      const sId = inv.studentId;
+      if (!studentMap[sId]) {
+        studentMap[sId] = {
+          studentId: sId,
+          studentName: inv.student.user?.name ?? '-',
+          nis: inv.student.nis || '-',
+          unitName: uName,
+          totalUnpaid: 0,
+          invoiceCount: 0,
+        };
+      }
+      studentMap[sId].totalUnpaid += remaining;
+      studentMap[sId].invoiceCount += 1;
+    }
+
+    const topArrearsStudents = Object.values(studentMap)
+      .sort((a, b) => b.totalUnpaid - a.totalUnpaid)
+      .slice(0, 15);
+
+    return {
+      summary: {
+        totalUnpaidAmount,
+        totalUnpaidInvoicesCount: unpaidInvoices.length,
+        overdueInvoicesCount,
+      },
+      unitBreakdown: Object.values(unitMap),
+      topArrearsStudents,
+    };
+  }
+
+  // ==================== E-OFFICE PERIODIC OVERSIGHT REPORT ====================
+
+  /**
+   * The unit a foundation-wide letter is filed under.
+   *
+   * A periodic oversight report is not a school's correspondence — it is the
+   * board auditing the yayasan. The old code called `findFirst()` with no
+   * `where`, so the letter landed under whichever unit Postgres returned first
+   * (in practice SMP IT). That is not a policy, it is insertion order, and it
+   * puts the report in the wrong agenda book.
+   *
+   * `UnitType.OTHER` is the foundation-level unit type (`student-login-policy`,
+   * `dormitories.service`), so a unit of that type is the explicit "pusat"
+   * home. `PESANTREN` is the fallback. If neither exists the report cannot be
+   * filed honestly, so it is refused rather than attributed to a random school.
+   */
+  private async resolveFoundationUnitId(): Promise<string> {
+    const central = await prisma.unit.findFirst({
+      where: { type: 'OTHER', deletedAt: null },
+      select: { id: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (central) return central.id;
+
+    const pesantren = await prisma.unit.findFirst({
+      where: { type: 'PESANTREN', deletedAt: null },
+      select: { id: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (pesantren) return pesantren.id;
+
+    throw Errors.badRequest(
+      'Belum ada unit tingkat yayasan (unit pusat) untuk menampung Laporan Pengawasan Periodik. ' +
+        'Buat unit bertipe OTHER terlebih dahulu melalui menu Unit.'
+    );
+  }
+
+  async draftPeriodicReportToEOffice(
+    data: DraftPeriodicReportInput,
+    userId: string,
+    _actor: { roleCode?: string | null; unitId?: string | null }
+  ) {
+    // Resolve the recipient with Pembina first, Super Admin only as fallback.
+    //
+    // A single `findFirst` over `OR: [SUPER_ADMIN, Pembina-role]` let Postgres
+    // decide: whichever row it returned first won, so a foundation with both a
+    // Pembina and a Super Admin could have the oversight report addressed to the
+    // administrator instead of the officer it is meant for. Query them in
+    // priority order instead, each with a deterministic `orderBy`.
+    //
+    // "Effective" is the point: a Pembina whose assignment is inactive or
+    // expired is a former officer, and the report should not be drafted for
+    // someone who no longer holds the office.
+    const nowForRoles = new Date();
+    const pembinaUser =
+      (await prisma.user.findFirst({
+        where: {
+          isActive: true,
+          deletedAt: null,
+          userRoles: {
+            some: {
+              isActive: true,
+              OR: [{ expiresAt: null }, { expiresAt: { gt: nowForRoles } }],
+              role: { code: 'YAYASAN_PEMBINA' },
+            },
+          },
+        },
+        select: { id: true, unitId: true },
+        orderBy: { createdAt: 'asc' },
+      })) ??
+      (await prisma.user.findFirst({
+        where: { isActive: true, deletedAt: null, role: 'SUPER_ADMIN' },
+        select: { id: true, unitId: true },
+        orderBy: { createdAt: 'asc' },
+      }));
+
+    const unitId = await this.resolveFoundationUnitId();
+
+    // No recipient, no report. The draft's whole purpose is to reach the
+    // Pembina for verification and signature; with no effective Pembina and no
+    // active Super Admin there is nobody to address it to, and the letter would
+    // be filed as an orphan the E-Office flow can never advance. The check runs
+    // before the transaction, so nothing is written.
+    if (!pembinaUser) {
+      throw Errors.badRequest(
+        'Laporan Pengawasan Periodik tidak dapat dibuat: belum ada penerima yang sah. ' +
+          'Pastikan terdapat akun Pembina Yayasan dengan penugasan aktif (atau Super Admin aktif) ' +
+          'sebelum mengirim laporan.'
+      );
+    }
+
+    const letterContent = `
+LAPORAN PENGAWASAN PERIODIK YAYASAN PESANTREN CIPANSOR
+Periode: ${data.period}
+Judul: ${data.title}
+
+1. RINGKASAN EKSEKUTIF
+${data.executiveSummary}
+
+2. RINGKASAN TEMUAN AUDIT & PENGATASAN RISIKO
+${data.findingsSummary || 'Semua audit internal dan tindak lanjut temuan terpantau berjalan sesuai ketentuan.'}
+
+3. REKOMENDASI PENGAWAS YAYASAN
+${data.recommendations || 'Diharapkan Pengurus Yayasan dan Kepala Unit terus meningkatkan kepatuhan SOP dan efisiensi keuangan.'}
+    `.trim();
+
+    const defaultClassification = await prisma.filingClassification.findFirst();
+
+    /**
+     * Created as a DRAFT in the normal E-Office workflow, not as a `SENT`
+     * letter.
+     *
+     * The old code wrote `status: 'SENT'` straight into the row. That skipped
+     * every part of the lifecycle the rest of E-Office depends on: no
+     * `LetterFlowEvent` history, no reviewer rung, no `sentAt`, no dispatch —
+     * so the Pembina received a letter the system already believed had left
+     * the building, with no record of who sent it or how. A draft is the
+     * honest starting state: the Pembina verifies and signs it, and each step
+     * is recorded where E-Office expects to find it.
+     *
+     * Deliberately NOT via `CorrespondenceService.createLetter`: that admits
+     * only correspondence roles and executive foundations, and rejects the
+     * oversight-only YAYASAN_PENGAWAS by design (it does not run
+     * correspondence). This is the Pengawas's own output, filed on the
+     * foundation unit for the Pembina, so it is written here with the flow
+     * event that makes it legible in the E-Office history.
+     */
+    const letter = await prisma.$transaction(async (tx) => {
+      const created = await tx.letter.create({
+        data: {
+          unitId,
+          direction: 'OUTGOING',
+          type: 'SURAT_DINAS',
+          subject: `[Laporan Pengawasan] ${data.title} (${data.period})`,
+          content: letterContent,
+          date: new Date(),
+          status: 'DRAFT',
+          urgency: 'NORMAL',
+          nature: 'LIMITED',
+          authoringTrack: 'GENERATED',
+          createdById: userId,
+          classificationId: defaultClassification?.id,
+          recipients: {
+            create: [
+              {
+                userId: pembinaUser.id,
+                unitId,
+                isCC: false,
+              },
+            ],
+          },
+        },
+        include: {
+          createdBy: { select: { id: true, name: true, role: true } },
+          recipients: { select: { id: true, userId: true } },
+        },
+      });
+
+      // The letter's history begins where the letter does. Without this row the
+      // draft exists but nothing in E-Office can say when or by whom.
+      await tx.letterFlowEvent.create({
+        data: {
+          letterId: created.id,
+          actorId: userId,
+          action: LetterFlowAction.CREATED,
+          toStatus: 'DRAFT',
+          note: `Laporan Pengawasan Periodik: ${data.title} (${data.period})`,
+        },
+      });
+
+      return created;
+    });
+
+    return {
+      letterId: letter.id,
+      letterNumber: letter.letterNumber,
+      title: letter.subject,
+      status: letter.status,
+      contentPreview: letterContent,
+    };
   }
 }
 

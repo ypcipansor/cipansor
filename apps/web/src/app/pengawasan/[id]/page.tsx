@@ -11,6 +11,7 @@ import {
   useCreateFollowUp,
   useUpdateFollowUp,
 } from "@/hooks/use-pengawasan";
+import type { AuditFindingDto } from "@cipansor/shared";
 import { PageHeader } from "@/components/shared/page-header";
 import {
   Card,
@@ -160,7 +161,7 @@ function PengawasanAuditDetailPageContent() {
           <div className="flex items-center gap-3">
             <PageHeader
               title={audit.title}
-              description={`No. Dokumen: ${audit.documentNumber || "-"}`}
+              description={`Tipe Audit: ${audit.auditType || "-"}`}
             />
             <Badge
               className={`${statusColor} hover:${statusColor} ml-2 mt-[-24px]`}
@@ -258,8 +259,8 @@ function PengawasanAuditDetailPageContent() {
                 Tgl Selesai Realisasi
               </span>
               <span className="font-medium">
-                {audit.actualEndDate
-                  ? safeFormat(new Date(audit.actualEndDate), "dd MMM yyyy", {
+                {audit.completedDate
+                  ? safeFormat(new Date(audit.completedDate), "dd MMM yyyy", {
                       locale: localeId,
                     })
                   : "-"}
@@ -466,7 +467,7 @@ function PengawasanAuditDetailPageContent() {
         <CardContent>
           {audit.findings && audit.findings.length > 0 ? (
             <div className="space-y-4">
-              {audit.findings.map((finding: any) => {
+              {audit.findings.map((finding: AuditFindingDto) => {
                 const sevColors: Record<string, string> = {
                   CRITICAL: "bg-red-100 text-red-800 border-red-200",
                   MAJOR: "bg-orange-100 text-orange-800 border-orange-200",

@@ -34,6 +34,9 @@ vi.mock('../../lib/prisma', () => ({
     journalEntry: {
       groupBy: vi.fn(),
     },
+    invoice: {
+      findMany: vi.fn(),
+    },
     $transaction: vi.fn((callback) => callback(prisma)),
   },
 }));
@@ -205,12 +208,14 @@ describe('Pengawasan Service', () => {
       const suggestions = await pengawasanService.suggestAuditSchedules('unit-1');
 
       // Existing-audit query must be scoped to the same unitId
-      expect(prisma.internalAudit.findMany).toHaveBeenCalledWith(expect.objectContaining({
-        where: expect.objectContaining({ unitId: 'unit-1' }),
-      }));
+      expect(prisma.internalAudit.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ unitId: 'unit-1' }),
+        })
+      );
 
       expect(suggestions).toHaveLength(1);
-      expect(suggestions.find(s => s.riskId === 'risk-2')).toMatchObject({
+      expect(suggestions.find((s) => s.riskId === 'risk-2')).toMatchObject({
         riskCode: 'RSK-002',
         priority: 'HIGH',
       });
@@ -226,8 +231,8 @@ describe('Pengawasan Service', () => {
           unitId: 'unit-1',
           amount: { toNumber: () => 1000000 },
           accountId: 'acc-1',
-          account: { code: '5101', name: 'Beban Gaji' }
-        }
+          account: { code: '5101', name: 'Beban Gaji' },
+        },
       ] as any);
 
       vi.mocked(prisma.journalEntry.groupBy).mockResolvedValue([
@@ -236,9 +241,9 @@ describe('Pengawasan Service', () => {
           unitId: 'unit-1',
           _sum: {
             debit: { toNumber: () => 950000 },
-            credit: { toNumber: () => 0 }
-          }
-        }
+            credit: { toNumber: () => 0 },
+          },
+        },
       ] as any);
 
       const suggestions = await pengawasanService.suggestAuditSchedules('unit-1');
@@ -250,6 +255,56 @@ describe('Pengawasan Service', () => {
         priority: 'HIGH',
       });
       expect(suggestions[0].metadata.utilization).toBe(95);
+    });
+  });
+
+  describe('Financial arrears — unit of record', () => {
+    it("filters on the invoice unit, not the student's current unit", async () => {
+      vi.mocked(prisma.invoice.findMany).mockResolvedValue([] as any);
+
+      await pengawasanService.getFinancialArrears('unit-lama');
+
+      expect(prisma.invoice.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            OR: [{ unitId: 'unit-lama' }, { unitId: null, student: { unitId: 'unit-lama' } }],
+          }),
+        })
+      );
+    });
+
+    it("groups a transferred student's old invoice under the issuing unit", async () => {
+      vi.mocked(prisma.invoice.findMany).mockResolvedValue([
+        {
+          id: 'inv-1',
+          studentId: 'student-1',
+          amount: { toNumber: () => 500000 },
+          paidAmount: { toNumber: () => 0 },
+          dueDate: new Date('2026-01-01'),
+          status: 'PENDING',
+          // Frozen on the invoice: the unit that raised it.
+          unitId: 'unit-lama',
+          unit: { id: 'unit-lama', name: 'SD IT' },
+          student: {
+            id: 'student-1',
+            nis: '123',
+            user: { name: 'Santri Pindah' },
+            // The pupil has since moved.
+            unitId: 'unit-baru',
+            unit: { id: 'unit-baru', name: 'SMP IT' },
+          },
+          paymentType: { id: 'pt-1', name: 'SPP', code: 'SPP' },
+        },
+      ] as any);
+
+      const result = await pengawasanService.getFinancialArrears();
+
+      const breakdown = result.unitBreakdown as Array<{ unitId: string; unitName: string }>;
+      expect(breakdown).toHaveLength(1);
+      expect(breakdown[0]).toMatchObject({ unitId: 'unit-lama', unitName: 'SD IT' });
+      expect(breakdown.some((u) => u.unitId === 'unit-baru')).toBe(false);
+      // The name comes from the linked User; Student carries no `name`.
+      expect(result.topArrearsStudents[0]).toMatchObject({ studentName: 'Santri Pindah' });
     });
   });
 });

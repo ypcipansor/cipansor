@@ -7,6 +7,7 @@ import {
 } from '@cipansor/shared';
 import { verifyToken, JwtPayload } from '@/lib/jwt';
 import { prisma } from '@/lib/prisma';
+import { isUserSuspended } from '@/utils/user-suspension';
 import { Errors } from './error';
 
 // RoleCodes that are considered "admin" across the system.
@@ -171,8 +172,14 @@ export async function findTeacherIdForUser(userId: string): Promise<string | nul
 /**
  * Authentication middleware - verifies JWT token
  * Rejects temporary 2FA tokens
+ *
+ * The suspension check is deliberately here, on every request, rather than at
+ * the login and refresh doors only. A suspension must take effect against the
+ * access tokens already in circulation, and those were minted before it. The
+ * check reads persistent state (see `utils/user-suspension.ts`) so it holds on
+ * every replica, not just the process that handled the suspension.
  */
-export function authenticate(req: Request, res: Response, next: NextFunction) {
+export async function authenticate(req: Request, res: Response, next: NextFunction) {
   try {
     const authHeader = req.headers.authorization;
 
@@ -194,6 +201,10 @@ export function authenticate(req: Request, res: Response, next: NextFunction) {
 
     if (payload.isTemp) {
       throw Errors.unauthorized('2FA Verification Required');
+    }
+
+    if (await isUserSuspended(payload.sub)) {
+      throw Errors.unauthorized('Akun Anda non-aktif atau telah dibekukan.');
     }
 
     req.user = buildReqUser(payload);

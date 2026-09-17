@@ -61,13 +61,22 @@ vi.mock('@/lib/prisma', () => ({
     reward: {
       aggregate: vi.fn(),
     },
-    $transaction: vi.fn((callback) => callback(prisma)),
+    $transaction: vi.fn((callback) =>
+      Array.isArray(callback) ? Promise.all(callback) : callback(prisma)
+    ),
   },
 }));
 
 // Mock Password utility
 vi.mock('@/lib/password', () => ({
   hashPassword: vi.fn().mockResolvedValue('hashed_password'),
+}));
+
+// The soft-delete path primes the shared suspension cache so a deleted
+// account's still-valid access token stops authenticating immediately.
+vi.mock('@/utils/user-suspension', () => ({
+  markUserSuspended: vi.fn(async () => undefined),
+  invalidateUserSuspensionCache: vi.fn(async () => undefined),
 }));
 
 describe('StudentService', () => {
@@ -520,5 +529,21 @@ describe('StudentService', () => {
       expect(prisma.student.findFirst).toHaveBeenCalledTimes(1);
       expect(prisma.student.update).toHaveBeenCalled();
     });
+  });
+});
+
+describe('delete — soft delete stops authentication immediately', () => {
+  it('marks the linked user suspended right after the soft delete', async () => {
+    const svc = new StudentService();
+    const { markUserSuspended } = await import('@/utils/user-suspension');
+    (prisma.student.findFirst as any).mockResolvedValue({ id: 's1', userId: 'u1', unitId: 'unit-1' });
+    (prisma.student.update as any).mockResolvedValue({ id: 's1' });
+    (prisma.user.update as any).mockResolvedValue({ id: 'u1' });
+
+    await svc.delete('s1');
+
+    // Without this the deleted user's access token stayed valid for a TTL
+    // because the cache still answered "not suspended".
+    expect(markUserSuspended).toHaveBeenCalledWith('u1');
   });
 });

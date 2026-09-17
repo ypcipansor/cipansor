@@ -5,7 +5,6 @@ const nextConfig: NextConfig = {
   // Enable React Compiler (experimental - only in development for safety)
   reactCompiler: process.env.NODE_ENV === "development",
 
-
   // Standalone output is for the Docker image (the Dockerfile sets
   // BUILD_STANDALONE=1 and runs `node server.js`). For everything else — local
   // dev, `next start`, and the e2e/CI server — leave it unset so `next start`
@@ -140,6 +139,20 @@ const nextConfig: NextConfig = {
           {
             key: "Permissions-Policy",
             value: "camera=(self), microphone=(), geolocation=()",
+          },
+        ],
+      },
+      {
+        // Defence in depth for the public whistleblowing surface. The tracking
+        // token is no longer placed in the URL, but these pages can still carry
+        // a non-secret ticket code in a query string, and `strict-origin-when-
+        // cross-origin` would forward the full URL on same-origin navigations.
+        // `no-referrer` stops the address from ever leaving the page.
+        source: "/public/wbs/:path*",
+        headers: [
+          {
+            key: "Referrer-Policy",
+            value: "no-referrer",
           },
         ],
       },
