@@ -23,12 +23,13 @@ import {
   liftBoardSuspensionSchema,
   draftPeriodicReportSchema,
 } from './pengawasan.validation';
-import { RoleCode } from '@prisma/client';
 import {
   assertUnitAccess as assertActorUnitAccess,
   canAccessUnit,
   isFoundationWide,
+  resolveArrearsUnitId,
 } from './pengawasan-access';
+import type { Prisma } from '@prisma/client';
 
 /** The acting user's role/unit, as the unit policy needs it. */
 function actorOf(req: Request) {
@@ -131,10 +132,24 @@ export const updateAudit = asyncHandler(async (req: Request, res: Response) => {
   }
 
   const body = updateAuditSchema.parse(req.body);
-  const updateData: any = { ...body };
-  if (body.plannedDate) updateData.plannedDate = new Date(body.plannedDate);
-  if (body.executedDate) updateData.executedDate = new Date(body.executedDate);
-  if (body.completedDate) updateData.completedDate = new Date(body.completedDate);
+  const updateData: Prisma.InternalAuditUpdateInput = { ...body };
+
+  // Explicit nullable-date contract:
+  //   undefined → the field was omitted, leave the stored value alone;
+  //   null      → the caller asked to clear it;
+  //   string    → parse and set.
+  //
+  // The old code used a truthy check (`if (body.executedDate)`), which cannot
+  // distinguish `undefined` from `null` and so turned "clear this date" into
+  // "do not touch". `plannedDate` is a NOT NULL column, so `null` is rejected
+  // at the edge and never reaches here.
+  if (body.plannedDate !== undefined) updateData.plannedDate = new Date(body.plannedDate);
+  if (body.executedDate !== undefined) {
+    updateData.executedDate = body.executedDate === null ? null : new Date(body.executedDate);
+  }
+  if (body.completedDate !== undefined) {
+    updateData.completedDate = body.completedDate === null ? null : new Date(body.completedDate);
+  }
 
   const audit = await pengawasanService.updateAudit(req.params.id, updateData);
   res.json(ApiResponse.success(audit));
@@ -333,7 +348,8 @@ export const listSuspendableCandidates = asyncHandler(async (_req: Request, res:
 });
 
 export const listPlhCandidates = asyncHandler(async (req: Request, res: Response) => {
-  const excludeUserId = typeof req.query.excludeUserId === 'string' ? req.query.excludeUserId : undefined;
+  const excludeUserId =
+    typeof req.query.excludeUserId === 'string' ? req.query.excludeUserId : undefined;
   const candidates = await boardSuspensionService.listPlhCandidates(excludeUserId);
   res.json(ApiResponse.success(candidates));
 });
@@ -341,18 +357,10 @@ export const listPlhCandidates = asyncHandler(async (req: Request, res: Response
 // ==================== FINANCIAL OVERSIGHT CONTROLLERS ====================
 
 export const getFinancialArrears = asyncHandler(async (req: Request, res: Response) => {
-  const isExecutiveOversight =
-    req.user?.roleCode === RoleCode.SUPER_ADMIN ||
-    ['YAYASAN_PEMBINA', 'YAYASAN_PENGAWAS', 'YAYASAN_KETUA', 'YAYASAN_BENDAHARA'].includes(
-      req.user?.roleCode || ''
-    );
-
-  let targetUnitId: string | undefined = req.user?.unitId ?? undefined;
-
-  if (isExecutiveOversight && req.query.unitId) {
-    const qUnit = String(req.query.unitId);
-    targetUnitId = qUnit === 'all' ? undefined : qUnit;
-  }
+  const targetUnitId = resolveArrearsUnitId(
+    actorOf(req),
+    req.query.unitId ? String(req.query.unitId) : undefined
+  );
 
   const data = await pengawasanService.getFinancialArrears(targetUnitId);
   res.json(ApiResponse.success(data));

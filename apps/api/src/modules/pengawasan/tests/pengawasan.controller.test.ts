@@ -22,6 +22,7 @@ vi.mock('../pengawasan.service', () => ({
     updateFollowUp: vi.fn(),
     deleteFollowUp: vi.fn(),
     getFollowUpAuditUnitId: vi.fn(),
+    updateAudit: vi.fn(),
   },
 }));
 
@@ -37,6 +38,7 @@ import {
   createFollowUp,
   updateFollowUp,
   deleteFollowUp,
+  updateAudit,
 } from '../pengawasan.controller';
 import { RoleCode } from '@prisma/client';
 
@@ -85,13 +87,23 @@ describe('pengawasanController — finding/follow-up unit scope', () => {
     vi.clearAllMocks();
   });
 
-  it('refuses to create a finding on another unit\'s audit', async () => {
-    (pengawasanService.getAuditById as any).mockResolvedValue({ id: AUDIT_UUID, unitId: 'unit-lain' });
+  it("refuses to create a finding on another unit's audit", async () => {
+    (pengawasanService.getAuditById as any).mockResolvedValue({
+      id: AUDIT_UUID,
+      unitId: 'unit-lain',
+    });
     const res = mockResponse();
 
     const next = await runHandler(
       createFinding,
-      mockRequest({ auditId: AUDIT_UUID, findingNumber: 'F-1', title: 'Temuan', description: 'Deskripsi', severity: 'MINOR', category: 'KEUANGAN' }),
+      mockRequest({
+        auditId: AUDIT_UUID,
+        findingNumber: 'F-1',
+        title: 'Temuan',
+        description: 'Deskripsi',
+        severity: 'MINOR',
+        category: 'KEUANGAN',
+      }),
       res
     );
 
@@ -99,14 +111,24 @@ describe('pengawasanController — finding/follow-up unit scope', () => {
     expect(pengawasanService.createFinding).not.toHaveBeenCalled();
   });
 
-  it('allows creating a finding on the actor\'s own unit audit', async () => {
-    (pengawasanService.getAuditById as any).mockResolvedValue({ id: AUDIT_UUID, unitId: 'unit-sdit' });
+  it("allows creating a finding on the actor's own unit audit", async () => {
+    (pengawasanService.getAuditById as any).mockResolvedValue({
+      id: AUDIT_UUID,
+      unitId: 'unit-sdit',
+    });
     (pengawasanService.createFinding as any).mockResolvedValue({ id: 'finding-1' });
     const res = mockResponse();
 
     const next = await runHandler(
       createFinding,
-      mockRequest({ auditId: AUDIT_UUID, findingNumber: 'F-1', title: 'Temuan', description: 'Deskripsi', severity: 'MINOR', category: 'KEUANGAN' }),
+      mockRequest({
+        auditId: AUDIT_UUID,
+        findingNumber: 'F-1',
+        title: 'Temuan',
+        description: 'Deskripsi',
+        severity: 'MINOR',
+        category: 'KEUANGAN',
+      }),
       res
     );
 
@@ -115,15 +137,25 @@ describe('pengawasanController — finding/follow-up unit scope', () => {
     expect(res.status).toHaveBeenCalledWith(201);
   });
 
-  it('lets a foundation-wide role write to any unit\'s audit', async () => {
-    (pengawasanService.getAuditById as any).mockResolvedValue({ id: AUDIT_UUID, unitId: 'unit-lain' });
+  it("lets a foundation-wide role write to any unit's audit", async () => {
+    (pengawasanService.getAuditById as any).mockResolvedValue({
+      id: AUDIT_UUID,
+      unitId: 'unit-lain',
+    });
     (pengawasanService.createFinding as any).mockResolvedValue({ id: 'finding-1' });
     const res = mockResponse();
 
     const next = await runHandler(
       createFinding,
       mockRequest(
-        { auditId: AUDIT_UUID, findingNumber: 'F-1', title: 'Temuan', description: 'Deskripsi', severity: 'MINOR', category: 'KEUANGAN' },
+        {
+          auditId: AUDIT_UUID,
+          findingNumber: 'F-1',
+          title: 'Temuan',
+          description: 'Deskripsi',
+          severity: 'MINOR',
+          category: 'KEUANGAN',
+        },
         {},
         { roleCode: RoleCode.YAYASAN_PENGAWAS, unitId: null }
       ),
@@ -141,11 +173,7 @@ describe('pengawasanController — finding/follow-up unit scope', () => {
     (pengawasanService.getFindingAuditUnitId as any).mockResolvedValue('unit-lain');
     const res = mockResponse();
 
-    const next = await runHandler(
-      handler as any,
-      mockRequest({}, { id: FINDING_UUID }),
-      res
-    );
+    const next = await runHandler(handler as any, mockRequest({}, { id: FINDING_UUID }), res);
 
     expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 403 }));
     expect(pengawasanService.updateFinding).not.toHaveBeenCalled();
@@ -161,13 +189,17 @@ describe('pengawasanController — finding/follow-up unit scope', () => {
     expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 404 }));
   });
 
-  it('refuses to create a follow-up on another unit\'s finding', async () => {
+  it("refuses to create a follow-up on another unit's finding", async () => {
     (pengawasanService.getFindingAuditUnitId as any).mockResolvedValue('unit-lain');
     const res = mockResponse();
 
     const next = await runHandler(
       createFollowUp,
-      mockRequest({ findingId: FINDING_UUID, action: 'Rencana tindak lanjut', dueDate: '2026-12-31' }),
+      mockRequest({
+        findingId: FINDING_UUID,
+        action: 'Rencana tindak lanjut',
+        dueDate: '2026-12-31',
+      }),
       res
     );
 
@@ -175,7 +207,7 @@ describe('pengawasanController — finding/follow-up unit scope', () => {
     expect(pengawasanService.createFollowUp).not.toHaveBeenCalled();
   });
 
-  it('refuses to update a follow-up on another unit\'s audit', async () => {
+  it("refuses to update a follow-up on another unit's audit", async () => {
     (pengawasanService.getFollowUpAuditUnitId as any).mockResolvedValue('unit-lain');
     const res = mockResponse();
 
@@ -189,7 +221,7 @@ describe('pengawasanController — finding/follow-up unit scope', () => {
     expect(pengawasanService.updateFollowUp).not.toHaveBeenCalled();
   });
 
-  it('refuses to delete a follow-up on another unit\'s audit', async () => {
+  it("refuses to delete a follow-up on another unit's audit", async () => {
     (pengawasanService.getFollowUpAuditUnitId as any).mockResolvedValue('unit-lain');
     const res = mockResponse();
 
@@ -238,7 +270,11 @@ describe('pengawasanController — audit list unit scope', () => {
 
   it('treats the `all` sentinel as an explicit cross-unit request', async () => {
     const res = mockResponse();
-    const req = mockRequest({}, {}, { roleCode: RoleCode.YAYASAN_PENGAWAS, unitId: 'unit-yayasan' });
+    const req = mockRequest(
+      {},
+      {},
+      { roleCode: RoleCode.YAYASAN_PENGAWAS, unitId: 'unit-yayasan' }
+    );
     (req.query as any).unitId = 'all';
 
     await runHandler(listAudits, req, res);
@@ -279,5 +315,80 @@ describe('pengawasanController — audit list unit scope', () => {
     await runHandler(listAudits, req, res);
 
     expect(pengawasanService.getAudits).toHaveBeenCalledWith('unit-smp', expect.anything());
+  });
+});
+
+/**
+ * The nullable-date contract on `updateAudit` (review item 9). The schema
+ * accepts `null` for the optional dates, and the controller must distinguish
+ * `undefined` (leave alone) from `null` (clear) from a string (set). A truthy
+ * check collapsed the first two, so "clear this date" did nothing.
+ */
+describe('pengawasanController — updateAudit nullable-date contract', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (pengawasanService.getAuditById as any).mockResolvedValue({
+      id: AUDIT_UUID,
+      unitId: 'unit-sdit',
+    });
+    (pengawasanService.updateAudit as any).mockResolvedValue({ id: AUDIT_UUID });
+  });
+
+  it('leaves an omitted date untouched (`undefined`)', async () => {
+    const res = mockResponse();
+
+    const next = await runHandler(
+      updateAudit,
+      mockRequest({ title: 'Judul baru' }, { id: AUDIT_UUID }),
+      res
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    const data = (pengawasanService.updateAudit as any).mock.calls[0][1];
+    expect('executedDate' in data).toBe(false);
+    expect('completedDate' in data).toBe(false);
+    expect('plannedDate' in data).toBe(false);
+  });
+
+  it('clears an optional date when the caller sends `null`', async () => {
+    const res = mockResponse();
+
+    await runHandler(
+      updateAudit,
+      mockRequest({ executedDate: null, completedDate: null }, { id: AUDIT_UUID }),
+      res
+    );
+
+    const data = (pengawasanService.updateAudit as any).mock.calls[0][1];
+    expect(data.executedDate).toBeNull();
+    expect(data.completedDate).toBeNull();
+  });
+
+  it('sets a valid date when the caller sends a string', async () => {
+    const res = mockResponse();
+
+    await runHandler(
+      updateAudit,
+      mockRequest({ executedDate: '2026-06-01', completedDate: '2026-06-10' }, { id: AUDIT_UUID }),
+      res
+    );
+
+    const data = (pengawasanService.updateAudit as any).mock.calls[0][1];
+    expect(data.executedDate).toEqual(new Date('2026-06-01'));
+    expect(data.completedDate).toEqual(new Date('2026-06-10'));
+  });
+
+  it('rejects `null` for the NOT NULL plannedDate at the edge', async () => {
+    const res = mockResponse();
+
+    const next = await runHandler(
+      updateAudit,
+      mockRequest({ plannedDate: null }, { id: AUDIT_UUID }),
+      res
+    );
+
+    // The mandatory field stays mandatory: `null` is refused before any write.
+    expect(next).toHaveBeenCalledWith(expect.anything());
+    expect(pengawasanService.updateAudit).not.toHaveBeenCalled();
   });
 });

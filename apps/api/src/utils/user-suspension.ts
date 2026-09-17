@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { redis } from '@/lib/redis';
+import { logger } from '@/lib/logger';
 import { BoardSuspensionStatus } from '@prisma/client';
 
 /**
@@ -18,9 +19,15 @@ import { BoardSuspensionStatus } from '@prisma/client';
  * the service sets `isActive: false`, and the row is what makes the intent
  * legible in the governance module.
  *
- * The cache exists because this runs on every authenticated request. Its TTL
- * bounds how long a stale answer can survive a failed invalidation, and the
- * database is always the authority when Redis is unavailable.
+ * **Only the *suspended* answer is cached** (`1`). A cached "not suspended"
+ * (`0`) was trusted for a whole TTL while invalidation and priming are
+ * best-effort: if the Redis write that should have recorded a suspension
+ * failed, the stale `0` kept a revoked token authenticating until the TTL
+ * lapsed. A negative cache for a security decision has to guarantee that the
+ * miss path cannot outlive the state it denies, and a best-effort cache cannot
+ * give that guarantee — so it is not taken. A positive marker is monotonic and
+ * safe: a stale `1` that outlives a lift merely keeps an account denied until
+ * the TTL, which is the fail-closed direction.
  */
 const CACHE_PREFIX = 'suspension:user:';
 const CACHE_TTL_SECONDS = 60;
@@ -30,43 +37,47 @@ function cacheKey(userId: string): string {
 }
 
 /**
- * Set the cached answer, but never *lower* a suspended marker.
+ * Prime the cache with a positive (suspended) marker.
  *
- * The stale-negative race: a request misses the cache and reads the database
- * while the account is still active; the suspension then commits and
- * `markUserSuspended` writes `1`; the old request finishes and writes `0`,
- * which wins for a whole TTL and lets the suspended token authenticate again.
+ * There is deliberately no writer for `0`: writing "not suspended" is a claim
+ * that can be invalidated by another process after this one read it, and the
+ * whole point of consulting Redis first is that the answer must not go stale in
+ * the permissive direction. Only the new suspension request primes a marker —
+ * never a cache miss — so the cache can only ever over-deny, never under-deny.
  *
- * Reordering or shortening the TTL does not close it — the two writers are
- * genuinely concurrent. The write therefore carries a compare-and-set in Lua:
- * a `0` is refused while the stored value is `1`. Only the *suspended*
- * direction is monotonic, and that is the safe one: a stale `1` that outlives
- * a lift merely keeps an account denied until the TTL, while a stale `0` that
- * outlives a suspension lets a revoked token back in.
- *
- * Returns true when the value was stored (or was already the wanted value).
+ * Returns true when the value was stored.
  */
-const WRITE_SUSPENSION_CACHE = `
-local current = redis.call('GET', KEYS[1])
-if current == '1' and ARGV[1] == '0' then
-  return 0
-end
-redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])
-return 1
-`;
-
-async function writeCache(userId: string, suspended: boolean): Promise<void> {
+async function writeSuspendedMarker(userId: string): Promise<void> {
   try {
-    await redis.eval(
-      WRITE_SUSPENSION_CACHE,
-      1,
-      cacheKey(userId),
-      suspended ? '1' : '0',
-      String(CACHE_TTL_SECONDS)
-    );
-  } catch {
-    // Best-effort. A missed write costs at most one TTL of staleness; the
-    // database read below is what keeps the answer correct.
+    await redis.set(cacheKey(userId), '1', 'EX', CACHE_TTL_SECONDS);
+  } catch (error) {
+    // Best-effort, but not silent. A failed revocation prime means the next
+    // request on this replica still reads the database — correct, but slow —
+    // and on every other replica the marker was never set at all. That is an
+    // operational signal worth a log line, not a swallowed error.
+    logger.error('[user-suspension] gagal menulis penanda pembekuan ke Redis', {
+      userId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+/**
+ * Drop the cached answer on lift.
+ *
+ * There is no `false` write to race: `null` the key and the next request reads
+ * persistent state, where the events are ordered by the database rather than by
+ * whichever writer finished last.
+ */
+async function deleteCache(userId: string): Promise<void> {
+  try {
+    await redis.del(cacheKey(userId));
+  } catch (error) {
+    // Best-effort, but observable for the same reason as the prime above.
+    logger.error('[user-suspension] gagal menghapus cache pembekuan dari Redis', {
+      userId,
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 }
 
@@ -74,10 +85,16 @@ async function writeCache(userId: string, suspended: boolean): Promise<void> {
 export async function isUserSuspended(userId: string): Promise<boolean> {
   try {
     const cached = await redis.get(cacheKey(userId));
+    // Only a positive marker is trusted. A `0` is ignored — it cannot be relied
+    // on to reflect a write that may have failed — and the database decides.
     if (cached === '1') return true;
-    if (cached === '0') return false;
-  } catch {
-    // Redis unavailable — fall through to the database.
+  } catch (error) {
+    // Redis unavailable — fall through to the database. Logged because a
+    // sustained outage turns this hot path into a database read per request.
+    logger.warn('[user-suspension] Redis tidak tersedia, membaca status dari database', {
+      userId,
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 
   const [user, activeSuspension] = await Promise.all([
@@ -95,16 +112,20 @@ export async function isUserSuspended(userId: string): Promise<boolean> {
   // is a soft delete that leaves `isActive` untouched, so without it a
   // deleted user's still-valid access token kept working until it expired.
   const suspended = !user || !user.isActive || !!user.deletedAt || !!activeSuspension;
-  await writeCache(userId, suspended);
+  // Prime only the positive direction; a `false` is never cached, so a failed
+  // write can never leave a revoked token authenticated.
+  if (suspended) {
+    await writeSuspendedMarker(userId);
+  }
   return suspended;
 }
 
 /**
  * Record the suspension in the cache so the very next request on any replica
- * sees it, rather than waiting for the cached "not suspended" to expire.
+ * sees it, rather than waiting for the persistent read.
  */
 export async function markUserSuspended(userId: string): Promise<void> {
-  await writeCache(userId, true);
+  await writeSuspendedMarker(userId);
 }
 
 /**
@@ -118,12 +139,7 @@ export async function markUserSuspended(userId: string): Promise<void> {
  * events are ordered by the database and not by which writer finished last.
  */
 export async function invalidateUserSuspensionCache(userId: string): Promise<void> {
-  try {
-    await redis.del(cacheKey(userId));
-  } catch {
-    // Best-effort, exactly like the write it replaces: the database read on
-    // the next request is what keeps the answer correct.
-  }
+  await deleteCache(userId);
 }
 
 /** @deprecated Use {@link invalidateUserSuspensionCache}; kept for callers not yet migrated. */

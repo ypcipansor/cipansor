@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { RoleCode } from '@prisma/client';
-import { canAccessUnit, isFoundationWide, assertUnitAccess } from './pengawasan-access';
+import {
+  canAccessUnit,
+  isFoundationWide,
+  assertUnitAccess,
+  resolveArrearsUnitId,
+} from './pengawasan-access';
 
 /**
  * The unit policy lives outside the controller now (review item 10), so it can
@@ -49,5 +54,66 @@ describe('pengawasan unit policy', () => {
     expect(() =>
       assertUnitAccess({ roleCode: RoleCode.SDIT_ADMIN, unitId: 'unit-sdit' }, 'unit-sdit')
     ).not.toThrow();
+  });
+});
+
+/**
+ * Arrears scope resolution (review item 11). It used to live in the controller
+ * as a raw inline role list that did not match `PENGAWASAN_ARREARS_ROLES`, the
+ * set the route authorizes. The cases below are the ones the review named:
+ * governance, treasurer, unit admin, unitless actor, `unitId=all`, and another
+ * unit.
+ */
+describe('pengawasan arrears scope policy', () => {
+  it('lets a governance role read the whole foundation by default', () => {
+    expect(resolveArrearsUnitId({ roleCode: RoleCode.YAYASAN_PENGAWAS, unitId: null })).toBe(
+      undefined
+    );
+  });
+
+  it('lets a governance role narrow to a named unit', () => {
+    expect(
+      resolveArrearsUnitId({ roleCode: RoleCode.YAYASAN_PENGAWAS, unitId: null }, 'unit-sdit')
+    ).toBe('unit-sdit');
+  });
+
+  it('resolves the `all` sentinel to the whole foundation', () => {
+    expect(resolveArrearsUnitId({ roleCode: RoleCode.YAYASAN_PENGAWAS, unitId: null }, 'all')).toBe(
+      undefined
+    );
+  });
+
+  it('lets a Super Admin choose any unit', () => {
+    expect(
+      resolveArrearsUnitId({ roleCode: RoleCode.SUPER_ADMIN, unitId: null }, 'unit-smaq')
+    ).toBe('unit-smaq');
+  });
+
+  it('confines a unit admin to its own unit and ignores an override', () => {
+    // `unitId=other` must not widen a unit-scoped actor's view.
+    expect(
+      resolveArrearsUnitId({ roleCode: RoleCode.SDIT_ADMIN, unitId: 'unit-sdit' }, 'unit-smpit')
+    ).toBe('unit-sdit');
+    expect(resolveArrearsUnitId({ roleCode: RoleCode.SDIT_ADMIN, unitId: 'unit-sdit' })).toBe(
+      'unit-sdit'
+    );
+    // `all` is likewise not an escape hatch for a unit-scoped role.
+    expect(
+      resolveArrearsUnitId({ roleCode: RoleCode.SDIT_ADMIN, unitId: 'unit-sdit' }, 'all')
+    ).toBe('unit-sdit');
+  });
+
+  it('confines a treasurer to its own unit', () => {
+    expect(
+      resolveArrearsUnitId({ roleCode: RoleCode.SDIT_BENDAHARA, unitId: 'unit-sdit' }, 'unit-smaq')
+    ).toBe('unit-sdit');
+  });
+
+  it('refuses a unit-scoped actor with no unit instead of defaulting to every unit', () => {
+    // `undefined` means "every unit" downstream, so a unitless unit admin must
+    // not be silently promoted to a cross-unit read.
+    expect(() =>
+      resolveArrearsUnitId({ roleCode: RoleCode.SDIT_ADMIN, unitId: null })
+    ).toThrowError(/Unit ID required/);
   });
 });

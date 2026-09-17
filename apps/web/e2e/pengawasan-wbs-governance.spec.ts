@@ -198,6 +198,102 @@ test.describe.serial("WBS submission, anonymity and tracking", () => {
       ticket.trackingToken,
     );
   });
+
+  /**
+   * The tracking token is a bearer credential: whoever holds it can read the
+   * report and post as the reporter. It used to be handed to the tracking page
+   * in the query string (`?ticket=…&token=…`), which leaks it to browser
+   * history, telemetry, proxy logs, copied links and the `Referer` header. The
+   * two tests below pin the replacement handoff — `sessionStorage` — from both
+   * ends: the submission page must not navigate with the token, and the
+   * tracking page must recover it from storage rather than the address bar.
+   */
+  test("the submission UI hands the token over without ever putting it in the URL", async ({
+    page,
+  }) => {
+    await page.goto("/public/wbs");
+
+    await page
+      .getByLabel(/Judul \/ Perihal Laporan/i)
+      .fill(`E2E kebocoran token ${seed}`);
+    await page
+      .getByLabel(/Rincian & Kronologi Laporan/i)
+      .fill("Uji end-to-end bahwa token lacak tidak pernah masuk ke URL.");
+    await page
+      .getByRole("button", { name: /Kirimkan Laporan Pengaduan WBS/i })
+      .click();
+
+    // The success dialog is the only place the one-time token is displayed.
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible({ timeout: 15000 });
+
+    const stored = await page.evaluate(() => {
+      const found: Record<string, string> = {};
+      for (let i = 0; i < sessionStorage.length; i += 1) {
+        const key = sessionStorage.key(i);
+        if (key?.startsWith("wbs-tracking-token:")) {
+          found[key.slice("wbs-tracking-token:".length)] =
+            sessionStorage.getItem(key) ?? "";
+        }
+      }
+      return found;
+    });
+
+    const ticketCodes = Object.keys(stored);
+    expect(
+      ticketCodes,
+      "the submission must hand the token to sessionStorage",
+    ).toHaveLength(1);
+    const issuedTicket = ticketCodes[0];
+    const issuedToken = stored[issuedTicket];
+    expect(issuedToken.length).toBeGreaterThanOrEqual(16);
+
+    await page
+      .getByRole("button", { name: /Buka Halaman Lacak Progress/i })
+      .click();
+    await page.waitForURL(/\/public\/wbs\/track/);
+
+    const url = page.url();
+    expect(url).toContain(`ticket=${encodeURIComponent(issuedTicket)}`);
+    // The credential itself must not appear in the address in any form.
+    expect(url).not.toContain(issuedToken);
+    expect(url).not.toMatch(/[?&](token|trackingToken)=/i);
+  });
+
+  test("the tracking page recovers the token from sessionStorage, not the URL", async ({
+    page,
+  }) => {
+    await page.goto("/public/wbs/track");
+    // Seed the per-tab handoff exactly as the submission page does.
+    await page.evaluate(
+      ([code, tok]) => {
+        sessionStorage.setItem(`wbs-tracking-token:${code}`, tok);
+      },
+      [ticket.ticketCode, ticket.trackingToken] as const,
+    );
+
+    await page.goto(
+      `/public/wbs/track?ticket=${encodeURIComponent(ticket.ticketCode)}`,
+    );
+
+    // The URL carries the non-secret ticket only; the token comes from storage.
+    expect(page.url()).not.toContain(ticket.trackingToken);
+    await expect(page.getByLabel(/Kode Tiket WBS/i)).toHaveValue(
+      ticket.ticketCode,
+    );
+    await expect(page.getByLabel(/Token Akses Rahasia/i)).toHaveValue(
+      ticket.trackingToken,
+    );
+
+    // And the recovered credential actually works.
+    await page
+      .getByRole("button", { name: /Lacak|Cari|Cek/i })
+      .first()
+      .click();
+    await expect(
+      page.getByText(ticket.ticketCode, { exact: false }),
+    ).toBeVisible({ timeout: 15000 });
+  });
 });
 
 test.describe

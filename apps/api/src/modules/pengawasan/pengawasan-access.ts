@@ -37,7 +37,10 @@ export interface PengawasanActor {
 }
 
 /** True when the actor may act on a record belonging to `recordUnitId`. */
-export function canAccessUnit(actor: PengawasanActor, recordUnitId: string | null | undefined): boolean {
+export function canAccessUnit(
+  actor: PengawasanActor,
+  recordUnitId: string | null | undefined
+): boolean {
   if (isFoundationWide(actor.roleCode)) return true;
   return !!recordUnitId && recordUnitId === actor.unitId;
 }
@@ -52,8 +55,49 @@ export function canAccessUnit(actor: PengawasanActor, recordUnitId: string | nul
  * from the record's parent. Used by the controller and by the service-level
  * guards that resolve a parent record's unit.
  */
-export function assertUnitAccess(actor: PengawasanActor, recordUnitId: string | null | undefined): void {
+export function assertUnitAccess(
+  actor: PengawasanActor,
+  recordUnitId: string | null | undefined
+): void {
   if (!canAccessUnit(actor, recordUnitId)) {
     throw Errors.forbidden('Access denied');
   }
+}
+
+/**
+ * Resolve which unit an arrears request may read.
+ *
+ * The controller used to resolve this itself, with a raw inline list —
+ * `SUPER_ADMIN` + four `YAYASAN_*` codes — that was not the same set the route
+ * authorization uses (`PENGAWASAN_ARREARS_ROLES` is governance ∪ admins ∪
+ * treasurers). The two were maintained separately, so a role could be admitted
+ * to the endpoint and still be silently narrowed to its own unit, or the
+ * reverse. The cross-unit class is exactly `FOUNDATION_WIDE_ROLES`, so this
+ * reads that one definition rather than adding a second, drifting copy.
+ *
+ * A cross-unit role (governance, Super Admin) sees the foundation by default
+ * and may narrow to one unit with `unitId`; `"all"` is the explicit cross-unit
+ * sentinel and resolves to `undefined` (every unit). Every other role —
+ * including a unit admin or treasurer admitted by `PENGAWASAN_ARREARS_ROLES` —
+ * is confined to its own unit and **cannot** override it with a query
+ * parameter. A unit-scoped actor with no unit is refused rather than defaulted
+ * to an unscoped query, because `undefined` means "every unit" downstream.
+ */
+export function resolveArrearsUnitId(
+  actor: PengawasanActor,
+  requestedUnitId?: string
+): string | undefined {
+  const ownUnitId = actor.unitId ?? undefined;
+
+  if (isFoundationWide(actor.roleCode)) {
+    if (!requestedUnitId) return undefined;
+    return requestedUnitId === 'all' ? undefined : requestedUnitId;
+  }
+
+  if (!ownUnitId) {
+    throw Errors.unauthorized('Unit ID required');
+  }
+  // The request's own unit is authoritative for a unit-scoped actor; an
+  // override is ignored, never honoured.
+  return ownUnitId;
 }

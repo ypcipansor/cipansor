@@ -264,7 +264,13 @@ export class PengawasanService {
 
     if (planObjectiveId) updateData.planObjective = { connect: { id: planObjectiveId } };
     else if (planObjectiveId === null) updateData.planObjective = { disconnect: true };
-    if (rest.dueDate) updateData.dueDate = new Date(rest.dueDate);
+
+    // Nullable-date contract: `undefined` leaves the value alone, `null`
+    // clears it, a string sets it. The old truthy check conflated the first
+    // two, so "clear the due date" was a no-op.
+    if (rest.dueDate !== undefined) {
+      updateData.dueDate = rest.dueDate === null ? null : new Date(rest.dueDate);
+    }
 
     return prisma.auditFinding.update({
       where: { id },
@@ -316,7 +322,11 @@ export class PengawasanService {
   async updateFollowUp(id: string, data: any, verifiedById?: string) {
     const updateData: any = { ...data };
 
-    if (data.dueDate) updateData.dueDate = new Date(data.dueDate);
+    // Same nullable-date contract as findings: `undefined` leaves the value,
+    // `null` clears it, a string sets it.
+    if (data.dueDate !== undefined) {
+      updateData.dueDate = data.dueDate === null ? null : new Date(data.dueDate);
+    }
     if (data.status === 'VERIFIED' && verifiedById) {
       updateData.verifiedBy = { connect: { id: verifiedById } };
       updateData.verifiedAt = new Date();
@@ -529,9 +539,7 @@ export class PengawasanService {
         // Filter on the invoice's own unit of record. `student.unitId` is the
         // pupil's *current* unit, so a transfer moved old arrears between
         // units' books; legacy rows with no unit fall back to the student's.
-        ...(unitId
-          ? { OR: [{ unitId }, { unitId: null, student: { unitId } }] }
-          : {}),
+        ...(unitId ? { OR: [{ unitId }, { unitId: null, student: { unitId } }] } : {}),
       },
       include: {
         student: {

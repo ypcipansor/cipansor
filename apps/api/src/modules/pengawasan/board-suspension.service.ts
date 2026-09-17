@@ -110,6 +110,19 @@ export class BoardSuspensionService {
       throw Errors.notFound(`Pengurus / Pengguna dengan ID ${data.userId} tidak ditemukan`);
     }
 
+    // A soft-deleted account is not a Pengurus anyone can suspend, even when
+    // its `isActive` flag was never cleared. Without this the target passed the
+    // ACTIVE gate below (`isActive: true`) and a suspension was created —
+    // deactivating a user the application had already removed, and minting a
+    // Plh role to replace someone who is not there. `deletedAt` is checked
+    // again in the transactional claim so a delete that lands mid-flight aborts
+    // rather than being papered over.
+    if (targetUser.deletedAt) {
+      throw Errors.conflict(
+        `Akun pengurus ini telah dihapus (soft-deleted) dan tidak dapat dibekukan.`
+      );
+    }
+
     const targetRoleCodes = targetUser.userRoles.map((ur) => ur.role.code);
     const isPengurus = targetRoleCodes.some((code) =>
       (PENGURUS_ROLE_CODES as readonly string[]).includes(code)
@@ -164,11 +177,15 @@ export class BoardSuspensionService {
       });
 
       if (!plhUser || plhUser.deletedAt) {
-        throw Errors.badRequest('Pengguna yang ditunjuk sebagai Plh/Plt tidak ditemukan atau telah dihapus.');
+        throw Errors.badRequest(
+          'Pengguna yang ditunjuk sebagai Plh/Plt tidak ditemukan atau telah dihapus.'
+        );
       }
 
       if (!plhUser.isActive) {
-        throw Errors.badRequest('Pengguna yang ditunjuk sebagai Plh/Plt tidak aktif dan tidak dapat didelegasikan.');
+        throw Errors.badRequest(
+          'Pengguna yang ditunjuk sebagai Plh/Plt tidak aktif dan tidak dapat didelegasikan.'
+        );
       }
     }
 
@@ -190,14 +207,33 @@ export class BoardSuspensionService {
           );
         }
 
-        // Snapshot signing-key lockouts before overwriting them.
+        // Snapshot signing-key lockouts *and* soft-lock them in the same
+        // conditional statement per key.
+        //
+        // A snapshot read followed by an unconditional bulk `updateMany` is a
+        // lost update: a passphrase lockout re-armed after the read but before
+        // the write was erased by the blanket sentinel, and the lift then
+        // restored the stale snapshot. Matching each key on the `lockedUntil`
+        // value just observed claims it only if nobody else moved it; a key that
+        // changed is left alone and kept out of the snapshot, so the lift cannot
+        // resurrect a lockout this suspension never replaced.
         const signingKeys = await tx.userSigningKey.findMany({
           where: { userId: data.userId },
           select: { id: true, lockedUntil: true },
         });
         const signingKeyLocks: SigningKeyLockSnapshot = {};
         for (const key of signingKeys) {
-          signingKeyLocks[key.id] = key.lockedUntil ? key.lockedUntil.toISOString() : null;
+          const claimed = await tx.userSigningKey.updateMany({
+            where: {
+              id: key.id,
+              userId: data.userId,
+              lockedUntil: key.lockedUntil ?? null,
+            },
+            data: { lockedUntil: SIGNING_KEY_SUSPENSION_LOCK },
+          });
+          if (claimed.count === 1) {
+            signingKeyLocks[key.id] = key.lockedUntil ? key.lockedUntil.toISOString() : null;
+          }
         }
 
         // The account state is read *inside* the transaction, then claimed
@@ -216,11 +252,25 @@ export class BoardSuspensionService {
         if (!freshTarget) {
           throw Errors.notFound(`Pengurus / Pengguna dengan ID ${data.userId} tidak ditemukan`);
         }
+
+        // A soft delete that landed after the pre-flight read is re-checked
+        // here, under the row lock below, so a delete racing the suspension
+        // aborts the transaction instead of being suspended anyway.
+        const lockedTarget = await tx.$queryRaw<Array<{ deleted_at: Date | null }>>`
+          SELECT deleted_at FROM "users" WHERE id = ${data.userId} FOR UPDATE
+        `;
+        if (!lockedTarget[0] || lockedTarget[0].deleted_at) {
+          throw Errors.conflict(
+            'Akun pengurus ini telah dihapus (soft-deleted) dan tidak dapat dibekukan.'
+          );
+        }
+
         const accountDeactivation = deactivationState();
         const claimed = await tx.user.updateMany({
           where: {
             id: data.userId,
             isActive: freshTarget.isActive,
+            deletedAt: null,
             // Prisma reads `undefined` as "do not filter this column" and
             // would let a non-null writer match, so normalise to `null`, which
             // actually means `IS NULL`.
@@ -243,6 +293,47 @@ export class BoardSuspensionService {
         let plhDependency: PlhDependency | null = null;
 
         if (data.plhUserId && data.plhRoleCode) {
+          // Re-claim the delegate's eligibility *inside* this transaction,
+          // under a row lock, immediately before the grant.
+          //
+          // The pre-flight checks above ran before the transaction opened. An
+          // account deactivated or soft-deleted in the gap — by an admin, an HR
+          // offboarding, a student delete — still passed them, so the
+          // suspension went on to mint a Pengurus role for someone who can no
+          // longer act. `FOR UPDATE` serialises the moment against a concurrent
+          // `isActive`/`deletedAt` write, and the checks below then read the
+          // state that will actually hold at commit. Any change aborts.
+          const lockedPlh = await tx.$queryRaw<
+            Array<{ is_active: boolean; deleted_at: Date | null }>
+          >`
+            SELECT is_active, deleted_at FROM "users" WHERE id = ${data.plhUserId} FOR UPDATE
+          `;
+          if (!lockedPlh[0]) {
+            throw Errors.badRequest(
+              'Pengguna yang ditunjuk sebagai Plh/Plt tidak ditemukan atau telah dihapus.'
+            );
+          }
+          if (lockedPlh[0].deleted_at) {
+            throw Errors.badRequest(
+              'Pengguna yang ditunjuk sebagai Plh/Plt telah dihapus dan tidak dapat didelegasikan.'
+            );
+          }
+          if (!lockedPlh[0].is_active) {
+            throw Errors.badRequest(
+              'Pengguna yang ditunjuk sebagai Plh/Plt tidak aktif dan tidak dapat didelegasikan.'
+            );
+          }
+
+          // The delegate must not be the officer being suspended. The
+          // pre-flight guard covers the same ground, but the target's
+          // `deletedAt` is re-read under lock here anyway; keeping the pair
+          // check in the same place makes the invariant local to the grant.
+          if (data.plhUserId === data.userId) {
+            throw Errors.badRequest(
+              'Pengurus yang dibekukan tidak dapat ditunjuk sebagai Plh/Plt untuk menggantikan dirinya sendiri.'
+            );
+          }
+
           const role = await tx.role.findFirst({ where: { code: data.plhRoleCode } });
 
           if (role) {
@@ -356,11 +447,10 @@ export class BoardSuspensionService {
           where: { userId: data.userId },
         });
 
-        // 4. Soft-lock E-Sign keys (preserve audit trail while revoking signing capability)
-        await tx.userSigningKey.updateMany({
-          where: { userId: data.userId },
-          data: { lockedUntil: SIGNING_KEY_SUSPENSION_LOCK },
-        });
+        // 4. E-Sign soft-lock is applied above, per key, conditionally. It is
+        //    not repeated as an unconditional bulk write here: doing so would
+        //    clobber a lockout that landed after the conditional claim and
+        //    leave a stale snapshot for the lift to restore.
 
         return suspension;
       });
@@ -450,23 +540,34 @@ export class BoardSuspensionService {
       //    The reactivation stamps a fresh token of its own, so a stale lift of
       //    an older suspension cannot later mistake the restored state for its
       //    own write.
-      const reactivationData = activationState();
-      const accountSnapshot = (suspension.accountStateSnapshot ?? null) as AccountStateSnapshot | null;
-      const currentUser = await tx.user.findUnique({
-        where: { id: suspension.userId },
-        select: { isActive: true, deletedAt: true, accountStateWriter: true },
-      });
-      if (currentUser && currentUser.isActive === false && !currentUser.deletedAt) {
-        const ownedByThisSuspension =
-          accountSnapshot?.isActiveBefore === true &&
-          !!suspensionWriter &&
-          currentUser.accountStateWriter === suspensionWriter;
-        if (ownedByThisSuspension) {
-          await tx.user.update({
-            where: { id: suspension.userId },
-            data: reactivationData,
-          });
-        }
+      //
+      //    Ownership is claimed atomically. Reading the row and then issuing an
+      //    unconditional `update` is itself a lost update: at READ COMMITTED an
+      //    admin can deactivate the account after the read but before the
+      //    write, and the lift's `isActive: true` silently overwrites that
+      //    decision. The conditional `updateMany` below puts the whole
+      //    ownership test in the same statement as the write — `id`,
+      //    `isActive: false`, `deletedAt: null` and the exact writer token — so
+      //    it activates only while every one of those still holds, and only
+      //    when the row count is exactly one.
+      const accountSnapshot = (suspension.accountStateSnapshot ??
+        null) as AccountStateSnapshot | null;
+      const ownedByThisSuspension = accountSnapshot?.isActiveBefore === true && !!suspensionWriter;
+      if (ownedByThisSuspension) {
+        // The write lands only on a row that is still exactly the one this
+        // suspension switched off. A row count of zero means the account moved
+        // under us — an admin deactivation, a soft delete, or a newer writer
+        // token — so the suspension no longer owns the `false` and must not
+        // turn it back on. The conditional write simply does not land.
+        await tx.user.updateMany({
+          where: {
+            id: suspension.userId,
+            isActive: false,
+            deletedAt: null,
+            accountStateWriter: suspensionWriter,
+          },
+          data: activationState(),
+        });
       }
 
       // 3. Restore E-Sign lockouts captured at suspension time — but only

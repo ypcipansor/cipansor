@@ -143,9 +143,11 @@ export const WBS_FORWARD_ROLE_ALLOWED_ROLE_CODES: Record<
 /** True when `roleCode` may receive a report forwarded to `bucket`. */
 export function isWbsForwardRecipientRole(
   bucket: WbsForwardRoleCode,
-  roleCode: string
+  roleCode: string,
 ): boolean {
-  return (WBS_FORWARD_ROLE_ALLOWED_ROLE_CODES[bucket] as readonly string[]).includes(roleCode);
+  return (
+    WBS_FORWARD_ROLE_ALLOWED_ROLE_CODES[bucket] as readonly string[]
+  ).includes(roleCode);
 }
 
 // ---------------------------------------------------------------------------
@@ -162,7 +164,7 @@ export interface WbsCommentDto {
   senderType: string;
   senderName: string | null;
   message: string;
-  attachments?: unknown;
+  attachments?: string[] | null;
   createdAt: string;
 }
 
@@ -308,7 +310,12 @@ export interface BoardSuspensionDto {
   liftReason?: string | null;
   createdAt: string;
   updatedAt: string;
-  user?: { id: string; name: string; email: string; role?: string | null } | null;
+  user?: {
+    id: string;
+    name: string;
+    email: string;
+    role?: string | null;
+  } | null;
   suspendedBy?: { id: string; name: string } | null;
   plhUser?: { id: string; name: string; email: string } | null;
   liftedBy?: { id: string; name: string } | null;
@@ -371,6 +378,3 @@ export interface PeriodicReportDraftResultDto {
   status: string;
   contentPreview: string;
 }
-
-/** @deprecated Use {@link PeriodicReportDraftResultDto}; the action only drafts. */
-export type PeriodicReportSubmissionResultDto = PeriodicReportDraftResultDto;

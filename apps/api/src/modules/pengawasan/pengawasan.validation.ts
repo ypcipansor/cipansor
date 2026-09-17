@@ -112,4 +112,3 @@ export const listAuditQuerySchema = z.object({
   strategicPlanId: z.string().uuid().optional(),
   riskId: z.string().uuid().optional(),
 });
-

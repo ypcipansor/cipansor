@@ -55,11 +55,13 @@ import {
   WBS_TARGET_LEVEL_LABELS,
 } from "@cipansor/shared";
 import type { WbsCategoryCode, WbsTargetLevelCode } from "@cipansor/shared";
+import { storeWbsTrackingToken } from "@/lib/wbs-tracking";
 
 function PublicWbsContent() {
   const [unitId, setUnitId] = useState<string>("");
   const [category, setCategory] = useState<WbsCategoryCode>("KEUANGAN_ASET");
-  const [targetLevel, setTargetLevel] = useState<WbsTargetLevelCode>("KEPALA_UNIT");
+  const [targetLevel, setTargetLevel] =
+    useState<WbsTargetLevelCode>("KEPALA_UNIT");
   const [targetName, setTargetName] = useState<string>("");
   const [subject, setSubject] = useState<string>("");
   const [description, setDescription] = useState<string>("");
@@ -110,6 +112,10 @@ function PublicWbsContent() {
       });
 
       if (res) {
+        // Hand the bearer token to the tracking page through sessionStorage,
+        // never the URL: a query string leaks to browser history, telemetry,
+        // proxy logs and the `Referer` header of every third-party request.
+        storeWbsTrackingToken(res.ticketCode, res.trackingToken);
         setCreatedTicket({
           ticketCode: res.ticketCode,
           trackingToken: res.trackingToken,
@@ -179,7 +185,10 @@ function PublicWbsContent() {
                   <Label htmlFor="category" className="font-semibold">
                     Kategori Laporan *
                   </Label>
-                  <Select value={category} onValueChange={(v) => setCategory(v as WbsCategoryCode)}>
+                  <Select
+                    value={category}
+                    onValueChange={(v) => setCategory(v as WbsCategoryCode)}
+                  >
                     <SelectTrigger id="category" className="bg-white">
                       <SelectValue placeholder="Pilih Kategori" />
                     </SelectTrigger>
@@ -197,7 +206,12 @@ function PublicWbsContent() {
                   <Label htmlFor="targetLevel" className="font-semibold">
                     Subjek Teradu (Level Jabatan) *
                   </Label>
-                  <Select value={targetLevel} onValueChange={(v) => setTargetLevel(v as WbsTargetLevelCode)}>
+                  <Select
+                    value={targetLevel}
+                    onValueChange={(v) =>
+                      setTargetLevel(v as WbsTargetLevelCode)
+                    }
+                  >
                     <SelectTrigger id="targetLevel" className="bg-white">
                       <SelectValue placeholder="Pilih Subjek Teradu" />
                     </SelectTrigger>
@@ -490,7 +504,12 @@ function PublicWbsContent() {
                   <Button
                     className="w-full bg-emerald-600 hover:bg-emerald-700 text-white gap-2"
                     onClick={() => {
-                      window.location.href = `/public/wbs/track?ticket=${createdTicket.ticketCode}&token=${createdTicket.trackingToken}`;
+                      // The token is already in sessionStorage under this
+                      // ticket code; the URL carries only the non-secret
+                      // ticket so the address itself is safe to share.
+                      window.location.href = `/public/wbs/track?ticket=${encodeURIComponent(
+                        createdTicket.ticketCode,
+                      )}`;
                     }}
                   >
                     Buka Halaman Lacak Progress

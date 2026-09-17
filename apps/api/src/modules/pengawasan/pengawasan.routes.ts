@@ -132,8 +132,16 @@ router.get('/', authorize(...PENGAWASAN_AUDIT_GENERAL_ROLES), pengawasanControll
 router.post('/', authorize(...PENGAWASAN_AUDIT_WRITE_ROLES), pengawasanController.createAudit);
 
 // Findings
-router.post('/findings', authorize(...PENGAWASAN_AUDIT_WRITE_ROLES), pengawasanController.createFinding);
-router.put('/findings/:id', authorize(...PENGAWASAN_AUDIT_WRITE_ROLES), pengawasanController.updateFinding);
+router.post(
+  '/findings',
+  authorize(...PENGAWASAN_AUDIT_WRITE_ROLES),
+  pengawasanController.createFinding
+);
+router.put(
+  '/findings/:id',
+  authorize(...PENGAWASAN_AUDIT_WRITE_ROLES),
+  pengawasanController.updateFinding
+);
 router.delete(
   '/findings/:id',
   authorize(...PENGAWASAN_AUDIT_WRITE_ROLES),

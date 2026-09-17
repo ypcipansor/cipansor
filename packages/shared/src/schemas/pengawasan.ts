@@ -36,7 +36,7 @@ const optionalDateSchema = dateStringSchema.optional().nullable();
  */
 const optionalUuidSchema = z.preprocess(
   (val) => (val === "" || val === null || val === undefined ? undefined : val),
-  z.string().uuid().optional().nullable()
+  z.string().uuid().optional().nullable(),
 );
 
 // ---------------------------------------------------------------------------
@@ -77,7 +77,9 @@ export const addPublicWbsCommentSchema = z.object({
   turnstileToken: z.string().optional(),
 });
 
-export type AddPublicWbsCommentInput = z.infer<typeof addPublicWbsCommentSchema>;
+export type AddPublicWbsCommentInput = z.infer<
+  typeof addPublicWbsCommentSchema
+>;
 
 // ---------------------------------------------------------------------------
 // Authenticated WBS handlers
@@ -104,7 +106,9 @@ export const addWbsHandlerCommentSchema = z.object({
   attachments: z.array(z.string()).optional(),
 });
 
-export type AddWbsHandlerCommentInput = z.infer<typeof addWbsHandlerCommentSchema>;
+export type AddWbsHandlerCommentInput = z.infer<
+  typeof addWbsHandlerCommentSchema
+>;
 
 // ---------------------------------------------------------------------------
 // Board member suspension
@@ -128,7 +132,7 @@ export const createBoardSuspensionSchema = z
     // a legal role.
     plhRoleCode: z.preprocess(
       (val) => (val === "" ? undefined : val),
-      z.enum(PLH_ROLE_CODES).optional().nullable()
+      z.enum(PLH_ROLE_CODES).optional().nullable(),
     ),
   })
   // `plhUserId` and `plhRoleCode` describe one thing — a Plh/Plt delegation —
@@ -151,7 +155,9 @@ export const createBoardSuspensionSchema = z
     });
   });
 
-export type CreateBoardSuspensionInput = z.infer<typeof createBoardSuspensionSchema>;
+export type CreateBoardSuspensionInput = z.infer<
+  typeof createBoardSuspensionSchema
+>;
 
 export const liftBoardSuspensionSchema = z.object({
   liftReason: z.string().min(5),
@@ -178,9 +184,6 @@ export const draftPeriodicReportSchema = z.object({
   recommendations: z.string().optional(),
 });
 
-export type DraftPeriodicReportInput = z.infer<typeof draftPeriodicReportSchema>;
-
-/** @deprecated Use {@link draftPeriodicReportSchema}; the action only drafts. */
-export const submitPeriodicReportSchema = draftPeriodicReportSchema;
-/** @deprecated Use {@link DraftPeriodicReportInput}; the action only drafts. */
-export type SubmitPeriodicReportInput = DraftPeriodicReportInput;
+export type DraftPeriodicReportInput = z.infer<
+  typeof draftPeriodicReportSchema
+>;

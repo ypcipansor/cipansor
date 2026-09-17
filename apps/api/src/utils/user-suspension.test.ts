@@ -6,24 +6,21 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  * database read can overwrite a fresh suspension in the cache.
  */
 
-// A small in-memory Redis stand-in. `eval` implements the compare-and-set the
-// production Lua script performs, so the concurrency test exercises the real
-// "a stale `0` may not lower a `1`" rule rather than a stubbed return value.
+// A small in-memory Redis stand-in, exercising the real positive/delete
+// operations rather than stubbed return values.
 const store = new Map<string, string>();
 const redisGet = vi.fn(async (key: string) => store.get(key) ?? null);
-const redisDel = vi.fn(async (key: string) => (store.delete(key) ? 1 : 0));
-const redisEval = vi.fn(async (_script: string, _numKeys: number, key: string, value: string) => {
-  const current = store.get(key);
-  if (current === '1' && value === '0') return 0;
+const redisSet = vi.fn(async (key: string, value: string, _ex: string, _ttl: number) => {
   store.set(key, value);
-  return 1;
+  return 'OK';
 });
+const redisDel = vi.fn(async (key: string) => (store.delete(key) ? 1 : 0));
 
 vi.mock('@/lib/redis', () => ({
   redis: {
     get: (...args: [string]) => redisGet(...args),
+    set: (...args: [string, string, string, number]) => redisSet(...args),
     del: (...args: [string]) => redisDel(...args),
-    eval: (...args: [string, number, string, string]) => redisEval(...args),
   },
 }));
 
@@ -34,7 +31,12 @@ vi.mock('@/lib/prisma', () => ({
   },
 }));
 
+vi.mock('@/lib/logger', () => ({
+  logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn() },
+}));
+
 import { prisma } from '@/lib/prisma';
+import { logger } from '@/lib/logger';
 import {
   isUserSuspended,
   markUserSuspended,
@@ -92,6 +94,19 @@ describe('isUserSuspended', () => {
     mockUser({ isActive: false, deletedAt: null });
     await expect(isUserSuspended('u1')).resolves.toBe(true);
   });
+
+  it('does not write a negative answer to the cache', async () => {
+    mockUser({ isActive: true, deletedAt: null });
+    await isUserSuspended('u1');
+    expect(redisSet).not.toHaveBeenCalled();
+    expect(store.has('suspension:user:u1')).toBe(false);
+  });
+
+  it('primes only the positive answer when suspended', async () => {
+    mockUser({ isActive: false, deletedAt: null });
+    await isUserSuspended('u1');
+    expect(store.get('suspension:user:u1')).toBe('1');
+  });
 });
 
 describe('suspension cache writes', () => {
@@ -114,42 +129,40 @@ describe('suspension cache writes', () => {
     expect(store.has('suspension:user:u1')).toBe(false);
   });
 
-  it('swallows a Redis failure on invalidate', async () => {
+  it('swallows a Redis failure on invalidate but logs it', async () => {
     redisDel.mockRejectedValueOnce(new Error('redis down'));
     await expect(invalidateUserSuspensionCache('u1')).resolves.toBeUndefined();
+    expect(logger.error).toHaveBeenCalled();
+  });
+
+  it('logs a Redis failure when priming a suspension marker', async () => {
+    redisSet.mockRejectedValueOnce(new Error('redis down'));
+    await expect(markUserSuspended('u1')).resolves.toBeUndefined();
+    // Failure is observable: it must not be swallowed silently.
+    expect(logger.error).toHaveBeenCalled();
   });
 });
 
-describe('stale-negative race', () => {
+describe('cached-negative revocation guarantee', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     store.clear();
     noActiveSuspension();
   });
 
-  it('a stale database read cannot lower a suspension marker committed mid-read', async () => {
-    // The exact interleaving: request A misses the cache and reads the database
-    // while the account is still active; the suspension commits and writes `1`;
-    // A finishes last and tries to write `0`. The marker must survive, or the
-    // suspended token authenticates again for a whole TTL.
-    let releaseRead: (row: unknown) => void = () => {};
-    const readGate = new Promise((resolve) => {
-      releaseRead = resolve;
-    });
-    (prisma.user.findUnique as any).mockReturnValue(readGate);
+  it('keeps access denied after persistent state changes even when Redis invalidation fails', async () => {
+    // The account was usable, so a (hypothetical) cached negative could exist
+    // as a stale `0`. This simulates the failure mode the review called out:
+    // the invalidation/priming write fails, so the cache is not corrected.
+    // Because the implementation never trusts a `0`, the next request still
+    // reads the database and refuses.
+    store.set('suspension:user:u1', '0'); // stale negative, as if left behind
+    redisDel.mockRejectedValueOnce(new Error('redis down'));
+    mockUser({ isActive: false, deletedAt: null });
 
-    const staleRequest = isUserSuspended('u1');
-
-    // The suspension commits while A is still awaiting its database read.
-    await markUserSuspended('u1');
+    await expect(isUserSuspended('u1')).resolves.toBe(true);
+    // The stale `0` in the store was never consulted; the database decided.
+    // The suspended path then primes a positive marker over it.
     expect(store.get('suspension:user:u1')).toBe('1');
-
-    // A's read resolves to the pre-suspension row and it writes `0`.
-    releaseRead({ isActive: true, deletedAt: null });
-    await expect(staleRequest).resolves.toBe(false);
-
-    // The stored marker is still `1`: the next request on any replica refuses.
-    expect(store.get('suspension:user:u1')).toBe('1');
-    expect(await isUserSuspended('u1')).toBe(true);
   });
 });
