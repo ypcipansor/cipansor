@@ -74,32 +74,46 @@ DROP TYPE IF EXISTS "InnovationStatus";
 --        `dashboard_metric_snapshots` and `report_templates`, plus one table
 --        owned by another change that must not be named here.
 --
---   (ii) the six `SET NULL` children whose read paths treat `unit_id IS NULL`
+--   (ii) the seven `SET NULL` children whose read paths treat `unit_id IS NULL`
 --        as "all units" / "foundation-wide". That is a property of the *reader*,
 --        not of the catalog, so it is a pinned list, audited against the read
 --        paths (file:line in the loop below) and guarded by
 --        `apps/api/src/utils/decommissioned-modules.guard.test.ts`.
 --
--- Blast radius: the purge deletes 228 dependent tables (229 including `units`
+-- `donation_campaigns` is pinned for the same reason a public-facing read path
+-- makes it dangerous: the FK would turn a PT campaign's `unit_id` into NULL, and
+-- the *public* campaign list does not filter on unit at all --
+-- `campaignService.findPublic` (donation.service.ts:75-89) selects on
+-- `status`/dates only. A campaign the owner retired with the unit would keep
+-- collecting donations from the public site. It is not caught by the catalog
+-- rule either: `donation_campaigns` has no `(unit_id, ...)` UNIQUE (only a
+-- unique `slug`, 0_init:6553) and is unreachable from `units` over the followed
+-- edges -- `donation_campaigns.unit_id` is the `SET NULL` edge itself, and its
+-- own children (`donations.campaign_id`, 0_init:8599) are `SET NULL` too, so
+-- nothing pulls it into the closure. Pinning it by row is what deletes the PT
+-- campaigns, whatever their status (ACTIVE / DRAFT / CLOSED).
+--
+-- Blast radius: the purge deletes 229 dependent tables (230 including `units`
 -- itself), at a maximum depth of 3. That set is the closure over the edges
 -- followed below, seeded with `units` plus every `SET NULL` child captured by
 -- row first -- the pinned NULL-means-global tables and the unique-per-unit
 -- tables matched by the catalog rule. Those seeds are not merely decorative:
 -- the pinned seeds alone drag in 14 tables that `units` cannot reach over the
--- followed edges (212 -> 226), and the three unique-per-unit seeds add the last
+-- followed edges (213 -> 227), and the three unique-per-unit seeds add the last
 -- 3 (`dashboard_metric_snapshots`, `report_templates`, and one owned by PR
--- #504) to reach 229. (`users` and `user_role_assignments` are deliberately not
+-- #504) to reach 230. (`users` and `user_role_assignments` are deliberately not
 -- in the deleted set; they survive detached with `unit_id = NULL` and section 4
 -- ends the PT-only sessions.)
 -- Reproduce against the catalog this block runs on -- i.e. after the higher-ed
 -- tables of sections 1-2 are dropped. The seed set mirrors the loop below: the
--- six pinned tables plus every `SET NULL` child whose `(unit_id, ...)` is
+-- seven pinned tables plus every `SET NULL` child whose `(unit_id, ...)` is
 -- UNIQUE (the `EXISTS` subquery):
 --
 --   WITH seeds(tbl) AS (
 --     SELECT unnest(ARRAY[
 --       'units', 'announcements', 'calendar_events', 'dashboard_history',
---       'islamic_events', 'paud_development_indicators', 'strategic_plans'
+--       'islamic_events', 'paud_development_indicators', 'strategic_plans',
+--       'donation_campaigns'
 --     ])
 --     UNION
 --     SELECT format('public.%I', cc.relname)
@@ -124,11 +138,12 @@ DROP TYPE IF EXISTS "InnovationStatus";
 --                          AND c.confdeltype IN ('a','r','c')
 --     JOIN pg_class cc ON cc.oid = c.conrelid
 --     JOIN pg_namespace cn ON cn.oid = cc.relnamespace)
---   SELECT count(*) FROM (SELECT DISTINCT tbl FROM reach) t;  -- 229
+--   SELECT count(*) FROM (SELECT DISTINCT tbl FROM reach) t;  -- 230
 --
--- (Depth distribution over the distinct tables: 10 at 0, 88 at 1, 106 at 2,
--- 25 at 3 -- the ten seeds at depth 0 of which `units` is one.) This is why the
--- deploy runbook requires a verified backup BEFORE `prisma migrate deploy`.
+-- (Depth distribution over the distinct tables, min depth: 11 at 0, 86 at 1,
+-- 107 at 2, 26 at 3 -- the eleven seeds at depth 0, of which `units` is one.)
+-- This is why the deploy runbook requires a verified backup BEFORE
+-- `prisma migrate deploy`.
 
 -- Snapshot the accounts still attached to a PERGURUAN_TINGGI unit BEFORE the
 -- unit is deleted. This is section 4's second marker for a PT-only account and
@@ -141,6 +156,32 @@ CREATE TEMP TABLE "pt_unit_users_tmp" AS
 SELECT DISTINCT u."id" AS "user_id"
 FROM "users" u
 JOIN "units" un ON un."id" = u."unit_id"
+WHERE un."type"::text = 'PERGURUAN_TINGGI';
+
+-- Assignments whose *scope* is a PT unit but whose role is not PT. The unit
+-- DELETE cannot end these: `user_role_assignments.unit_id` is `SET NULL`
+-- (0_init:1212, FK conname user_role_assignments_unit_id_fkey), so the row
+-- survives detached. A detached non-PT assignment is not a harmless orphan --
+-- it is exactly what the token prison wants. `tokenUnitId` (resolve-unit-id.ts:
+-- 187-195) returns the *assignment's* unit when set, and no foundation role is
+-- involved here, so the next refresh mints a token with `unitId: null`
+-- (auth.service.ts:492, `refreshUnitId = primaryAssignment.unitId`). Read scopes
+-- are written as optional filters -- `...(unitId && { unitId })`, 42 sites, or
+-- `unitId ? { unitId } : {}`, 74 sites -- and a null token unit therefore reads
+-- as "every unit" rather than "no access". A non-PT staffer scoped to the PT
+-- unit would gain the foundation's reads the moment the unit is deleted, and
+-- their session would be untouched by section 4 below because they do hold an
+-- active non-PT role.
+--
+-- They are deactivated here (see further down, after the role purge) so their
+-- holder is treated as a lost-role user and swept by section 4. Deactivation,
+-- not deletion: the migration keeps the record of who held what, the same way
+-- `users` rows are kept and only detached.
+DROP TABLE IF EXISTS "pt_scoped_assignments_tmp";
+CREATE TEMP TABLE "pt_scoped_assignments_tmp" AS
+SELECT a."id" AS "assignment_id", a."user_id" AS "user_id"
+FROM "user_role_assignments" a
+JOIN "units" un ON un."id" = a."unit_id"
 WHERE un."type"::text = 'PERGURUAN_TINGGI';
 
 -- Rows whose `unit_id` points at a PT unit but which would be *globalised* or
@@ -197,7 +238,12 @@ BEGIN
           'public.dashboard_history',           -- dashboard.service.ts:593-594
           'public.islamic_events',              -- ibadah.schema.ts:219 ("null = semua unit")
           'public.paud_development_indicators', -- paud-assessment.schema.ts:46
-          'public.strategic_plans'              -- perencanaan.service.ts:150-154
+          'public.strategic_plans',             -- perencanaan.service.ts:150-154
+          -- The public campaign list filters on status/date only, never on
+          -- unit (donation.service.ts:75-89), so a PT campaign the FK
+          -- detached to `unit_id IS NULL` would keep accepting donations
+          -- from the public site. Delete it instead -- any status.
+          'public.donation_campaigns'           -- donation.service.ts:75-89
         )
       )
   LOOP
@@ -486,6 +532,13 @@ DROP TYPE "RoleCode_old";
 -- runtime's `activeRoleWhere()` (is_active AND not expired); a user who also
 -- holds an active non-PT role keeps their session.
 --
+-- A third class is not about a PT *role* at all but about a PT *scope*: a
+-- non-PT assignment whose `unit_id` pointed at the PT unit. The unit delete
+-- cannot end it (`SET NULL`), and on its own it widens the holder's reads to
+-- every unit after refresh, because a null token unit is read as "no limit"
+-- (see the marker-3 note below). Those assignments were deactivated just above
+-- and their holders are unioned in as marker 3, so the same sweep ends them.
+--
 -- Two residual shapes matter here. One is closed by the union below; the other
 -- is investigated and deliberately left alone:
 --
@@ -536,6 +589,18 @@ DROP TYPE "RoleCode_old";
 --     PT-specific hole. `apps/api/src/utils/decommissioned-modules.guard.test.ts`
 --     pins that no writer sets `expires_at`, so this reasoning fails loudly if
 --     that changes.
+-- Scope-neutralise every assignment that pointed at the PT unit. Their identity
+-- was captured into `pt_scoped_assignments_tmp` above, *before* the unit was
+-- deleted -- necessary, because the unit DELETE has already fired the `SET NULL`
+-- and cleared these rows' `unit_id` by now (verified: the surviving row reads
+-- `unit_id = NULL`). A detached-but-active non-PT assignment is exactly the hole:
+-- on the next refresh it mints a null-unit token that every optional unit filter
+-- reads as "all units". Deactivate it (the row stays, the scope does not), which
+-- also lines these users up with marker 3 of the candidate set below.
+UPDATE "user_role_assignments"
+SET "is_active" = false
+WHERE "id" IN (SELECT "assignment_id" FROM "pt_scoped_assignments_tmp");
+
 DROP TABLE IF EXISTS "pt_only_users_tmp";
 CREATE TEMP TABLE "pt_only_users_tmp" AS
 WITH pt_candidates AS (
@@ -551,6 +616,13 @@ WITH pt_candidates AS (
   -- deleted (PT-prefixed accounts were seeded onto that unit). This catches a
   -- PT user whose only assignment was removed by offboarding.
   SELECT "user_id" FROM "pt_unit_users_tmp"
+  UNION
+  -- Marker 3: the user held an assignment *scoped* to the PT unit. It may be a
+  -- non-PT role, so markers 1 and 2 both miss it -- yet the scope it carries is
+  -- gone, and on its own it would widen the holder's reads to every unit after
+  -- refresh. The assignment was just deactivated above, so the NOT EXISTS below
+  -- sees it as gone and the holder is swept like any other lost-role user.
+  SELECT "user_id" FROM "pt_scoped_assignments_tmp"
 )
 SELECT DISTINCT c."user_id"
 FROM pt_candidates c
@@ -586,6 +658,7 @@ WHERE "id" IN (SELECT "user_id" FROM "pt_only_users_tmp");
 
 DROP TABLE IF EXISTS "pt_only_users_tmp";
 DROP TABLE IF EXISTS "pt_unit_users_tmp";
+DROP TABLE IF EXISTS "pt_scoped_assignments_tmp";
 DROP TABLE IF EXISTS "pt_roles_tmp";
 DROP TABLE IF EXISTS "pt_setnull_doomed_tmp";
 

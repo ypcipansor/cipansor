@@ -233,8 +233,8 @@ As of this writing that applies to
 higher-education (Perguruan Tinggi) and Litbang/R&D tables **and deletes every
 row owned by a `PERGURUAN_TINGGI` unit** (its classes, students, teachers, staff,
 departments, budgets, letters, assets, attendance, invoices, …). The unit is
-removed outright rather than re-typed; the blast radius reaches 228 dependent
-tables (229 including `units`), at a maximum depth of 3 — reproduced from the
+removed outright rather than re-typed; the blast radius reaches 229 dependent
+tables (230 including `units`), at a maximum depth of 3 — reproduced from the
 post-drop FK catalog, seeded with the `SET NULL` children the migration purges by
 row (the NULL-means-global tables plus the catalog-matched unique-per-unit
 tables), in the migration header. `users` and `user_role_assignments` are not in
@@ -267,8 +267,13 @@ a non-standard code (roles are matched by `realm = 'PERGURUAN_TINGGI'` before th
 realm rewrite, not only by the known `PT_*` codes), and a PT user whose
 assignment was already removed by offboarding but who remains attached to the PT
 unit — the migration snapshots the unit's accounts before deleting the unit,
-because `users.unit_id` is `SET NULL` and the link is lost afterwards. An access
-token already issued stays valid until it expires — at most `JWT_EXPIRES_IN` (15
+because `users.unit_id` is `SET NULL` and the link is lost afterwards. It also
+covers a non-PT role whose assignment was _scoped_ to the PT unit: the
+assignment's `unit_id` is `SET NULL` too, and the token's unit comes from the
+assignment (`tokenUnitId`), so a detached assignment would mint a null-unit token
+that every optional unit filter reads as "all units". Such assignments are
+deactivated (not deleted) and their holders swept with the rest. An access token
+already issued stays valid until it expires — at most `JWT_EXPIRES_IN` (15
 minutes by default). This is the same short window the system already accepts for
 every other offboarding or role change, because `authenticate` is stateless by
 design and does not query the database per request.

@@ -305,6 +305,7 @@ describe('decommission purge — migrations', () => {
       'islamic_events',
       'paud_development_indicators',
       'strategic_plans',
+      'donation_campaigns',
     ];
     expect(DECOMMISSION).toContain('pt_setnull_doomed_tmp');
     expect(DECOMMISSION).toMatch(/confdeltype\s*=\s*'n'/);
@@ -335,6 +336,24 @@ describe('decommission purge — migrations', () => {
       join(API_ROOT, 'src', 'modules', 'perencanaan', 'perencanaan.service.ts')
     );
     expect(perencanaan).toMatch(/\{ unitId: null \}/);
+
+    // `donation_campaigns` is the one pinned entry whose read path never even
+    // looks at the unit: `findPublic` filters on status/date only, so a PT
+    // campaign the FK detached to `unit_id IS NULL` stays on the public site and
+    // keeps collecting donations. Pinned against that exact query shape.
+    const donation = read(join(API_ROOT, 'src', 'modules', 'donation', 'donation.service.ts'));
+    const findPublic = donation.slice(
+      donation.indexOf('async findPublic'),
+      donation.indexOf('async findPublic') + 600
+    );
+    expect(findPublic).toMatch(/status: 'ACTIVE'/);
+    expect(findPublic).not.toMatch(/unitId/);
+    // And the table carries no `(unit_id, ...)` UNIQUE, which is why the generic
+    // catalog rule cannot reach it: only `id` and `slug` are unique.
+    const campaignBody = SCHEMA.slice(SCHEMA.indexOf('model DonationCampaign {'));
+    const campaignFields = campaignBody.slice(0, campaignBody.indexOf('\n}'));
+    expect(campaignFields).toMatch(/slug\s+String\s+@unique/);
+    expect(campaignFields).not.toMatch(/@@unique\(\[unitId/);
   });
 
   it('captures unique-per-unit `SET NULL` children generically, without naming them', () => {
@@ -373,6 +392,33 @@ describe('decommission purge — migrations', () => {
     }
   });
 
+  it('leaves a detached PT donation alone: it never becomes global', () => {
+    // The inverse of Finding 1, pinned so a later "purge everything the PT unit
+    // touched" sweep cannot quietly delete real donation records. `donations`
+    // has a `SET NULL` `unit_id` like the campaign does, but a null unit is NOT
+    // read as foundation-wide here: `getRecent` (donation.service.ts:711-732)
+    // lists by status alone with no unit filter, and every unit-scoped list uses
+    // `...(unitId && { unitId })` (donation.service.ts:240,618), under which a
+    // null row is invisible rather than widened. It is also not a pinned
+    // NULL-means-global table.
+    const donation = read(join(API_ROOT, 'src', 'modules', 'donation', 'donation.service.ts'));
+    const scoped = () => [...donation.matchAll(/\.\.\.\(unitId && \{ unitId \}\)/g)];
+    expect(scoped().length).toBeGreaterThan(0);
+    // A copied `findPublic`-style predicate with no unit guard must NOT appear
+    // for donations -- that is what would make null global.
+    const recent = donation.slice(
+      donation.indexOf('async getRecent'),
+      donation.indexOf('async getRecent') + 400
+    );
+    expect(recent).not.toMatch(/unitId/);
+    // Not in the pinned global list.
+    const pinned = DECOMMISSION.slice(
+      DECOMMISSION.indexOf('IN (\n'),
+      DECOMMISSION.indexOf('IN (\n') + 900
+    );
+    expect(pinned).not.toContain('public.donations');
+  });
+
   it('purges PT roles by realm, not only the hard-coded PT_* codes', () => {
     // Finding 2 of the PR #505 review: `roles.code` is TEXT (0_init), and
     // `createRoleSchema` accepts any uppercase code, so `POST /roles` can mint a
@@ -398,5 +444,44 @@ describe('decommission purge — migrations', () => {
     expect(rehome).toBeGreaterThan(capture);
     expect(deleteRoles).toBeGreaterThan(rehome);
     expect(code).toMatch(/DELETE FROM "roles" WHERE "id" IN \(SELECT "id" FROM "pt_roles_tmp"\)/);
+  });
+
+  it('deactivates a non-PT assignment scoped to the PT unit and ends its session', () => {
+    // A role assignment carries a scope (`user_role_assignments.unit_id`), and the
+    // token's unit comes from that assignment (`tokenUnitId`, resolve-unit-id.ts:
+    // 187-195; refresh reads `primaryAssignment.unitId`, auth.service.ts:492). The
+    // column is `SET NULL`, so deleting the PT unit detaches a *non-PT* assignment
+    // instead of removing it -- and a null token unit is read as "no limit" by
+    // every optional unit filter (`...(unitId && { unitId })`,
+    // `unitId ? { unitId } : {}`), not as "no access". Markers 1 and 2 both miss
+    // this user (the role is not PT, the user is not on the PT unit), so the
+    // migration must snapshot the scoped assignments by unit, deactivate them, and
+    // union their holders into the lost-role set.
+    const resolveUnitId = read(join(API_ROOT, 'src', 'utils', 'resolve-unit-id.ts'));
+    expect(resolveUnitId).toMatch(/export function tokenUnitId/);
+    expect(resolveUnitId).toMatch(/if \(assignmentUnitId\) return assignmentUnitId/);
+
+    const auth = read(join(API_ROOT, 'src', 'modules', 'auth', 'auth.service.ts'));
+    expect(auth).toMatch(/refreshUnitId = primaryAssignment\.unitId/);
+    // Evidence the optional-unit filter reads null as "every unit".
+    const donation = read(join(API_ROOT, 'src', 'modules', 'donation', 'donation.service.ts'));
+    expect(donation).toMatch(/\.\.\.\(unitId && \{ unitId \}\)/);
+
+    const code = DECOMMISSION.replace(/--[^\n]*/g, '');
+    expect(code).toContain('pt_scoped_assignments_tmp');
+    // The snapshot is taken by unit, before the unit delete.
+    expect(code).toMatch(/JOIN "units" un ON un\."id" = a\."unit_id"/);
+    // The assignments are deactivated, not deleted.
+    expect(code).toMatch(/UPDATE "user_role_assignments"\s+SET "is_active" = false/);
+    // Their holders are unioned into the candidate set (marker 3). Compare the
+    // CTE's two markers, not the earlier UPDATE that also names the temp table.
+    const marker2 = code.lastIndexOf('SELECT "user_id" FROM "pt_unit_users_tmp"');
+    const marker3 = code.lastIndexOf('SELECT "user_id" FROM "pt_scoped_assignments_tmp"');
+    expect(marker2).toBeGreaterThan(-1);
+    expect(marker3).toBeGreaterThan(marker2);
+    // The snapshot must be taken before the unit delete, like marker 2.
+    const snapshotScoped = code.indexOf('pt_scoped_assignments_tmp');
+    const deleteUnits = code.search(/DELETE FROM\s+%s/);
+    expect(snapshotScoped).toBeLessThan(deleteUnits);
   });
 });

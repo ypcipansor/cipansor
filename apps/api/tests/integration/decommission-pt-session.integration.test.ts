@@ -15,7 +15,7 @@
  * RUN_DB_TESTS=1 (the default unit env points DATABASE_URL at a stub).
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Client } from 'pg';
@@ -112,10 +112,19 @@ INSERT INTO dashboard_history (id, metrics, unit_id) VALUES
   ('dh-pt', '{}'::jsonb, 'u-pt'),
   ('dh-tk', '{}'::jsonb, 'u-tk');
 -- A CASCADE child of a global-capable row: the closure must delete it before
--- its parent, and must not touch the sibling's.
+-- its parent, and must not touch the sibling's. The chain is carried two levels
+-- deeper (plan_objectives -> plan_activities -> plan_activity_budget_items) so the
+-- test also proves the purge's leaf-first ordering at the closure's real maximum
+-- depth of 3, not just at depth 1.
 INSERT INTO plan_objectives (id, plan_id, title, updated_at) VALUES
   ('po-pt', 'sp-pt', 'PT objective', now()),
   ('po-tk', 'sp-tk', 'TK objective', now());
+INSERT INTO plan_activities (id, objective_id, title, updated_at) VALUES
+  ('pa-pt', 'po-pt', 'PT activity', now()),
+  ('pa-tk', 'po-tk', 'TK activity', now());
+INSERT INTO plan_activity_budget_items (id, activity_id, description, unit, updated_at) VALUES
+  ('pabi-pt', 'pa-pt', 'PT budget item', 'orang', now()),
+  ('pabi-tk', 'pa-tk', 'TK budget item', 'orang', now());
 
 -- Finding 1 (review, remaining gap): a unit-scoped row whose unit_id FK is SET
 -- NULL and whose read path (secrets.service.ts:6-7) reads NULL as the
@@ -148,6 +157,35 @@ INSERT INTO user_role_assignments (id, user_id, role_id, is_primary, is_active, 
   ('a-custom-pt', 'user-custom-pt', 'r-custom-pt', true, true, now());
 INSERT INTO refresh_tokens (id, token, user_id, expires_at) VALUES
   ('rt-custom-pt', 'tok-custom-pt', 'user-custom-pt', now() + interval '30 days');
+
+-- Finding 2 (review SEVERE, scope half): a NON-PT role whose assignment is
+-- scoped to the PT unit. The user is not PT (marker 1 misses), is not on the PT
+-- unit (marker 2 misses), but carries a PT scope: user_role_assignments.unit_id
+-- is SET NULL, and tokenUnitId reads the token unit from the assignment, so after
+-- the unit delete the next refresh yields unitId null -- which every optional
+-- unit filter reads as "all units". The migration deactivates the assignment and
+-- unions the holder in (marker 3).
+INSERT INTO roles (id, code, name, realm, permissions, updated_at) VALUES
+  ('r-staff-sdit', 'SDIT_TATA_USAHA', 'TU SDIT', 'SD_IT', '[]'::jsonb, now());
+INSERT INTO users (id, name, email, role, is_active, unit_id, updated_at) VALUES
+  ('user-scoped-pt', 'Scoped to PT', 'scoped-pt@example.com', 'STAFF', true, NULL, now());
+INSERT INTO user_role_assignments (id, user_id, role_id, unit_id, is_primary, is_active, updated_at) VALUES
+  ('a-scoped-pt', 'user-scoped-pt', 'r-staff-sdit', 'u-pt', true, true, now());
+INSERT INTO refresh_tokens (id, token, user_id, expires_at) VALUES
+  ('rt-scoped-pt', 'tok-scoped-pt', 'user-scoped-pt', now() + interval '30 days');
+
+-- Finding 1 (review SEVERE): a public ACTIVE campaign owned by the PT unit.
+-- findPublic filters on status/date only -- never on unit -- so a campaign the FK
+-- detached to unit_id NULL would keep taking donations. It must be deleted. The
+-- TK campaign is the sibling control.
+INSERT INTO donation_campaigns
+  (id, unit_id, title, slug, description, target_amount, start_date, end_date, status, created_by_id, updated_at)
+VALUES
+  ('camp-pt', 'u-pt', 'Beasiswa PT', 'beasiswa-pt', 'd', 1000000, now() - interval '1 day', now() + interval '30 days', 'ACTIVE', 'user-tkq', now()),
+  ('camp-tk', 'u-tk', 'Beasiswa TK', 'beasiswa-tk', 'd', 1000000, now() - interval '1 day', now() + interval '30 days', 'ACTIVE', 'user-tkq', now());
+INSERT INTO donations (id, campaign_id, unit_id, donor_name, amount, type, payment_method, status, donated_at, updated_at) VALUES
+  ('don-pt', 'camp-pt', 'u-pt', 'Donor PT', 100000, 'ZAKAT_MAAL', 'BANK_TRANSFER', 'VERIFIED', now(), now()),
+  ('don-tk', 'camp-tk', 'u-tk', 'Donor TK', 100000, 'ZAKAT_MAAL', 'BANK_TRANSFER', 'VERIFIED', now(), now());
 `;
 
 /** Rows that must be deleted because their unit is the PT unit. */
@@ -164,9 +202,16 @@ const PURGED_PT_ROWS: Array<[table: string, id: string]> = [
   ['paud_development_indicators', 'pdi-pt'],
   ['strategic_plans', 'sp-pt'],
   ['dashboard_history', 'dh-pt'],
+  // Depth-3 chain: the leaf must be deleted before its parents.
   ['plan_objectives', 'po-pt'],
+  ['plan_activities', 'pa-pt'],
+  ['plan_activity_budget_items', 'pabi-pt'],
   // FINDING 1 (remaining gap): NULL-means-global SECRET on the PT unit.
   ['system_secrets', 'sec-pt'],
+  // FINDING 1 (review SEVERE): a public ACTIVE campaign on the PT unit must be
+  // deleted -- not detached. Its dependent donation is NOT purged: see the
+  // false-positive note in the campaign test below.
+  ['donation_campaigns', 'camp-pt'],
 ];
 
 /** Rows of a surviving unit that the purge must not touch. */
@@ -185,10 +230,17 @@ const KEPT_TK_ROWS: Array<[table: string, id: string]> = [
   ['strategic_plans', 'sp-tk'],
   ['dashboard_history', 'dh-tk'],
   ['plan_objectives', 'po-tk'],
+  ['plan_activities', 'pa-tk'],
+  ['plan_activity_budget_items', 'pabi-tk'],
   ['system_secrets', 'sec-tk'],
   // FINDING 2 control: the PT dormitory survives detached (unit_id -> NULL),
   // owed to the sibling, and no other dormitory row is touched.
   ['dormitories', 'dorm-tk'],
+  // The sibling campaign and its donation must survive the PT purge.
+  ['donation_campaigns', 'camp-tk'],
+  ['donations', 'don-tk'],
+  // FINDING 2 control (scope half): the surviving unit's own assignment is left
+  // active -- only the PT-scoped one was neutralised.
 ];
 
 interface UserState {
@@ -383,6 +435,101 @@ describeDb('decommission migration — legacy PT sessions end', () => {
     }
   });
 
+  // Finding 1 (review SEVERE): a public ACTIVE campaign on the PT unit. Its
+  // `unit_id` FK is SET NULL, so the FK would detach it rather than retire it, and
+  // `findPublic` (donation.service.ts:75-89) filters on status/date only -- never
+  // on unit -- so the detached campaign would stay on the public site and keep
+  // taking donations. The migration pins the table as NULL-means-global and
+  // deletes every PT campaign regardless of status.
+  it('purges a PT campaign so it cannot stay public, and keeps the sibling', async () => {
+    const db = new Client({ connectionString: targetUrl });
+    await db.connect();
+    try {
+      const { rows: gone } = await db.query(
+        `SELECT count(*)::int AS n FROM donation_campaigns WHERE id = 'camp-pt'`
+      );
+      expect(gone[0].n).toBe(0);
+      // The real public read path, not a copied predicate: import the campaign
+      // service fresh with DATABASE_URL pointed at this throwaway database (its
+      // `prisma` singleton binds the env at import time), call `findPublic`, and
+      // restore the env afterwards.
+      const previousUrl = process.env.DATABASE_URL;
+      process.env.DATABASE_URL = targetUrl;
+      vi.resetModules();
+      try {
+        const { campaignService } = await import('../../src/modules/donation/donation.service');
+        const visible = await campaignService.findPublic();
+        expect(visible.map((c) => c.id)).toEqual(['camp-tk']);
+      } finally {
+        process.env.DATABASE_URL = previousUrl;
+        vi.resetModules();
+      }
+      // It must not survive detached with a NULL unit either.
+      const { rows: detached } = await db.query(
+        `SELECT count(*)::int AS n FROM donation_campaigns WHERE unit_id IS NULL`
+      );
+      expect(detached[0].n).toBe(0);
+
+      // FALSE POSITIVE control: the dependent donation survives detached. Unlike
+      // the campaign it has no read path that treats a NULL unit as
+      // foundation-wide -- `getRecent` (donation.service.ts:711-732) lists by
+      // status alone with no unit filter, and the unit-scoped lists use
+      // `...(unitId && { unitId })` (donation.service.ts:240,618), under which a
+      // NULL row is simply invisible. It also has no dependents in the catalog.
+      // Deleting it would destroy a real (verified) donation record for no
+      // security gain, so it is left detached, like the PT dormitory.
+      const { rows: donation } = await db.query<{ unit_id: string | null }>(
+        `SELECT unit_id FROM donations WHERE id = 'don-pt'`
+      );
+      expect(donation).toEqual([{ unit_id: null }]);
+    } finally {
+      await db.end();
+    }
+  });
+
+  // Finding 2 (review SEVERE, scope half): a non-PT role scoped to the PT unit.
+  // Neither PT marker catches it, but its scope is gone and a detached assignment
+  // would mint a null-unit token on refresh -- which reads as "all units". The
+  // holder must be treated as a lost-role user: assignment inactive, tokens gone,
+  // legacy role cleared.
+  it('ends the session of a non-PT role scoped to the deleted PT unit', async () => {
+    const db = new Client({ connectionString: targetUrl });
+    await db.connect();
+    try {
+      const { rows: assignment } = await db.query<{ is_active: boolean; unit_id: string | null }>(
+        `SELECT is_active, unit_id FROM user_role_assignments WHERE id = 'a-scoped-pt'`
+      );
+      expect(assignment).toHaveLength(1);
+      expect(assignment[0].is_active).toBe(false);
+      // SET NULL fired: the scope is gone.
+      expect(assignment[0].unit_id).toBeNull();
+
+      const { rows: user } = await db.query<{ role: string | null; tokens: string }>(
+        `SELECT u.role::text AS role,
+                (SELECT count(*) FROM refresh_tokens rt WHERE rt.user_id = u.id) AS tokens
+         FROM users u WHERE u.id = 'user-scoped-pt'`
+      );
+      expect(user[0].tokens).toBe('0');
+      expect(user[0].role).toBeNull();
+    } finally {
+      await db.end();
+    }
+  });
+
+  // Control for the scope fix: the surviving unit's own assignment is untouched.
+  it('leaves an assignment scoped to a surviving unit active', async () => {
+    const db = new Client({ connectionString: targetUrl });
+    await db.connect();
+    try {
+      const { rows } = await db.query<{ is_active: boolean }>(
+        `SELECT a.is_active FROM user_role_assignments a WHERE a.user_id = 'user-tkq'`
+      );
+      expect(rows.map((r) => r.is_active)).toEqual([true]);
+    } finally {
+      await db.end();
+    }
+  });
+
   // Owner decision (PR #505 review): the PT unit and its operational data are
   // removed outright, not re-typed. These cases pin the two halves of that: the
   // PT-owned rows are gone, and the sibling unit is untouched.
@@ -535,6 +682,56 @@ describeDb('decommission migration — FK-catalog guards fail loud', () => {
     await admin.end();
   });
 
+  it('rejects a non-self FK cycle among the doomed tables instead of deadlocking', async () => {
+    // Analysis item 2 of the PR #505 review: the purge deletes leaf-first and
+    // aborts if a batch goes empty, which is what a non-self FK cycle among the
+    // *doomed rows* would cause. The production closure has none (verified: 0
+    // non-self cycles over 230 tables), but a future relation could introduce
+    // one -- so exercise the guard itself, not just the absent cycle. Two tables
+    // reachable from `units` and each holding a PT-owned row, referencing each
+    // other, must make the migration raise rather than spin.
+    //
+    // The guard is row-based, so the cycle has to be populated: empty tables
+    // contribute no doomed rows and the batch simply completes. The two-table FK
+    // pair is inserted with deferred constraints so the cyclic rows can exist.
+    const db = new Client({ connectionString: targetUrl });
+    await db.connect();
+    try {
+      await db.query(
+        `CREATE TABLE _cb_cycle_a (id text PRIMARY KEY, unit_id text REFERENCES units (id), b_id text)`
+      );
+      await db.query(
+        `CREATE TABLE _cb_cycle_b (id text PRIMARY KEY, a_id text REFERENCES _cb_cycle_a (id))`
+      );
+      await db.query(
+        `ALTER TABLE _cb_cycle_a ADD FOREIGN KEY (b_id) REFERENCES _cb_cycle_b (id) DEFERRABLE INITIALLY DEFERRED`
+      );
+      await db.query(`BEGIN`);
+      await db.query(
+        `INSERT INTO _cb_cycle_a (id, unit_id, b_id) VALUES ('ca', 'u-pt-guard', NULL)`
+      );
+      await db.query(`INSERT INTO _cb_cycle_b (id, a_id) VALUES ('cb', 'ca')`);
+      await db.query(`UPDATE _cb_cycle_a SET b_id = 'cb' WHERE id = 'ca'`);
+      await db.query(`COMMIT`);
+    } finally {
+      await db.end();
+    }
+
+    try {
+      await expect(replayMigration()).rejects.toThrow(/cycle/i);
+    } finally {
+      const cleanup = new Client({ connectionString: targetUrl });
+      await cleanup.connect();
+      try {
+        await cleanup.query(`ALTER TABLE _cb_cycle_a DROP CONSTRAINT _cb_cycle_a_b_id_fkey`);
+        await cleanup.query(`DROP TABLE _cb_cycle_b`);
+        await cleanup.query(`DROP TABLE _cb_cycle_a`);
+      } finally {
+        await cleanup.end();
+      }
+    }
+  });
+
   const replayMigration = async (): Promise<void> => {
     const db = new Client({ connectionString: targetUrl });
     await db.connect();
@@ -609,14 +806,16 @@ describeDb('decommission migration — FK-catalog guards fail loud', () => {
       await db.end();
     }
 
-    await expect(replayMigration()).rejects.toThrow(/no `id` column/i);
-
-    const cleanup = new Client({ connectionString: targetUrl });
-    await cleanup.connect();
     try {
-      await cleanup.query(`DROP TABLE _cb_probe_noid`);
+      await expect(replayMigration()).rejects.toThrow(/no `id` column/i);
     } finally {
-      await cleanup.end();
+      const cleanup = new Client({ connectionString: targetUrl });
+      await cleanup.connect();
+      try {
+        await cleanup.query(`DROP TABLE _cb_probe_noid`);
+      } finally {
+        await cleanup.end();
+      }
     }
   });
 });
