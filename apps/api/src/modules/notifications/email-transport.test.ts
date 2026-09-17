@@ -228,4 +228,44 @@ describe('htmlToText', () => {
     expect(text).not.toContain('<');
     expect(text).not.toContain('color:red');
   });
+
+  describe('regression: entity decoding is single-pass, &amp; last', () => {
+    // The fix that put `&amp;` last in the replacement chain (code scanning
+    // alert 29). With `&amp;` first, a nested `&amp;quot;` was double-unescaped
+    // into a literal `"`. Decoding specific entities before the escape
+    // character entity keeps a nested escape literal.
+
+    it('does not double-unescape an escaped double quote', () => {
+      expect(htmlToText('&amp;quot;')).toBe('&quot;');
+    });
+
+    it('does not double-unescape an escaped less-than', () => {
+      expect(htmlToText('&amp;lt;')).toBe('&lt;');
+    });
+
+    it('does not double-unescape an escaped ampersand', () => {
+      expect(htmlToText('&amp;amp;')).toBe('&amp;');
+    });
+
+    it.each([
+      ['&quot;', '"'],
+      ['&lt;', '<'],
+      ['&gt;', '>'],
+      ['&#039;', "'"],
+      ['&amp;', '&'],
+    ])('decodes the plain entity %j exactly once', (input, expected) => {
+      expect(htmlToText(input)).toBe(expected);
+    });
+
+    it('decodes a plain &nbsp; to a single space', () => {
+      // Standalone, `&nbsp;` becomes a space and the trailing `.trim()` in
+      // htmlToText would strip it, so assert it in context.
+      expect(htmlToText('a&nbsp;b')).toBe('a b');
+    });
+
+    it('drops tags and collapses whitespace without decoding nested entities twice', () => {
+      const text = htmlToText('<p>Berkah &amp;amp; damai</p>  <div>Rp&amp;nbsp;100</div>');
+      expect(text).toBe('Berkah &amp; damai\n Rp&nbsp;100');
+    });
+  });
 });
