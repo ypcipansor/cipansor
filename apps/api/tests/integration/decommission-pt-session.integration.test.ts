@@ -37,7 +37,8 @@ INSERT INTO units (id, name, type, address, updated_at) VALUES
 INSERT INTO roles (id, code, name, realm, permissions, updated_at) VALUES
   ('r-pt-dosen', 'PT_DOSEN', 'Dosen', 'PERGURUAN_TINGGI', '[]'::jsonb, now()),
   ('r-pt-mhs', 'PT_MAHASISWA', 'Mahasiswa', 'PERGURUAN_TINGGI', '[]'::jsonb, now()),
-  ('r-tkq', 'TKQ_GURU', 'Guru TKQ', 'TK_QURAN', '[]'::jsonb, now());
+  ('r-tkq', 'TKQ_GURU', 'Guru TKQ', 'TK_QURAN', '[]'::jsonb, now()),
+  ('r-yayasan-ketua', 'YAYASAN_KETUA', 'Ketua', 'YAYASAN', '[]'::jsonb, now());
 
 INSERT INTO users (id, name, email, role, is_active, unit_id, updated_at) VALUES
   ('user-pt-only', 'PT Only', 'pt-only@example.com', 'TEACHER', true, 'u-pt', now()),
@@ -235,6 +236,30 @@ INSERT INTO alumni_event_attendees (id, event_id, alumni_id, status, registered_
 INSERT INTO account_codes (id, code, name, type, unit_id, is_active) VALUES
   ('acct-pt', '9001', 'Kas PT', 'ASSET', 'u-pt', true),
   ('acct-tk', '1101', 'Kas TK', 'ASSET', 'u-tk', true);
+
+-- CRITICAL broken-access-control probe: a PT-HOME user whose only active
+-- assignment is a NON-foundation role with unit_id IS NULL. Before the unit
+-- delete the null scope was harmless (tokenUnitId fell back to the home unit
+-- 'u-pt'), but once users.unit_id is SET NULL the same assignment mints a
+-- null-unit token, and every optional unit filter reads that as "all units".
+-- The assignment must be deactivated before pt_only_users_tmp is computed, and
+-- the holder swept (tokens revoked, users.role nulled).
+INSERT INTO users (id, name, email, role, is_active, unit_id, updated_at) VALUES
+  ('user-pthome-nullscoped', 'PT Null Scoped', 'pt-nullscoped@example.com', 'TEACHER', true, 'u-pt', now()),
+  ('user-pthome-foundation', 'PT Foundation', 'pt-foundation@example.com', 'TEACHER', true, 'u-pt', now()),
+  ('user-pthome-unitvalid', 'PT Unit Valid', 'pt-unitvalid@example.com', 'TEACHER', true, 'u-pt', now());
+INSERT INTO user_role_assignments (id, user_id, role_id, unit_id, is_primary, is_active, updated_at) VALUES
+  -- non-foundation + NULL scope on a PT home: the escalation to close.
+  ('a-pthome-nullscoped', 'user-pthome-nullscoped', 'r-staff-sdit', NULL, true, true, now()),
+  -- foundation role: NULL scope is its intended foundation-wide scope, so it
+  -- must be left alone (marker-2 must not sweep the holder).
+  ('a-pthome-foundation', 'user-pthome-foundation', 'r-yayasan-ketua', NULL, true, true, now()),
+  -- non-foundation role scoped to a SURVIVING unit: valid, must stay active.
+  ('a-pthome-unitvalid', 'user-pthome-unitvalid', 'r-tkq', 'u-tk', true, true, now());
+INSERT INTO refresh_tokens (id, token, user_id, expires_at) VALUES
+  ('rt-pthome-nullscoped', 'tok-pthome-nullscoped', 'user-pthome-nullscoped', now() + interval '30 days'),
+  ('rt-pthome-foundation', 'tok-pthome-foundation', 'user-pthome-foundation', now() + interval '30 days'),
+  ('rt-pthome-unitvalid', 'tok-pthome-unitvalid', 'user-pthome-unitvalid', now() + interval '30 days');
 `;
 
 /** Rows that must be deleted because their unit is the PT unit. */
@@ -695,6 +720,90 @@ describeDb('decommission migration — legacy PT sessions end', () => {
     }
   });
 
+  // CRITICAL broken access control: a PT-home user whose only active assignment
+  // is a NON-foundation role with `unit_id IS NULL`. Deleting the PT unit nulls
+  // `users.unit_id`, and `tokenUnitId` then mints a null-unit token for that
+  // assignment, which every optional unit filter reads as "all units" -- the
+  // holder's scope would WIDEN from one unit to the foundation. The migration
+  // must deactivate the assignment before computing `pt_only_users_tmp`, then
+  // sweep the holder (0 tokens, `users.role = NULL`).
+  it('deactivates a null-scoped non-foundation assignment on a PT-home user and ends the session', async () => {
+    const db = new Client({ connectionString: targetUrl });
+    await db.connect();
+    try {
+      const { rows: assignment } = await db.query<{ is_active: boolean; unit_id: string | null }>(
+        `SELECT is_active, unit_id FROM user_role_assignments WHERE id = 'a-pthome-nullscoped'`
+      );
+      expect(assignment).toHaveLength(1);
+      expect(assignment[0].is_active).toBe(false);
+      // The row keeps its (already NULL) scope -- the record survives, the
+      // access does not.
+      expect(assignment[0].unit_id).toBeNull();
+
+      const { rows: user } = await db.query<{ role: string | null; unit_id: string | null; tokens: string }>(
+        `SELECT u.role::text AS role, u.unit_id,
+                (SELECT count(*) FROM refresh_tokens rt WHERE rt.user_id = u.id) AS tokens
+         FROM users u WHERE u.id = 'user-pthome-nullscoped'`
+      );
+      expect(user[0].tokens).toBe('0');
+      expect(user[0].role).toBeNull();
+      // The account survives, detached from the deleted unit.
+      expect(user[0].unit_id).toBeNull();
+    } finally {
+      await db.end();
+    }
+  });
+
+  // Control 1 for the null-scoped fix: a FOUNDATION role's null scope is its
+  // intended, foundation-wide scope (`isFoundationScopedRole`,
+  // resolve-unit-id.ts:77-88), so the holder keeps their session and their
+  // assignment stays active -- marker-2 must not sweep a legitimate yayasan
+  // account that merely sat on the PT unit.
+  it('leaves a null-scoped foundation assignment on a PT-home user active', async () => {
+    const db = new Client({ connectionString: targetUrl });
+    await db.connect();
+    try {
+      const { rows: assignment } = await db.query<{ is_active: boolean }>(
+        `SELECT is_active FROM user_role_assignments WHERE id = 'a-pthome-foundation'`
+      );
+      expect(assignment).toEqual([{ is_active: true }]);
+
+      const { rows: user } = await db.query<{ role: string | null; tokens: string }>(
+        `SELECT u.role::text AS role,
+                (SELECT count(*) FROM refresh_tokens rt WHERE rt.user_id = u.id) AS tokens
+         FROM users u WHERE u.id = 'user-pthome-foundation'`
+      );
+      expect(user[0].tokens).toBe('1');
+      expect(user[0].role).toBe('TEACHER');
+    } finally {
+      await db.end();
+    }
+  });
+
+  // Control 2 for the null-scoped fix: a non-foundation role scoped to a
+  // SURVIVING unit is a valid assignment -- `unit_id` is non-null, so the
+  // null-scoped UPDATE does not match it and the holder keeps their session.
+  it('leaves a non-foundation assignment scoped to a surviving unit active', async () => {
+    const db = new Client({ connectionString: targetUrl });
+    await db.connect();
+    try {
+      const { rows: assignment } = await db.query<{ is_active: boolean; unit_id: string | null }>(
+        `SELECT is_active, unit_id FROM user_role_assignments WHERE id = 'a-pthome-unitvalid'`
+      );
+      expect(assignment).toEqual([{ is_active: true, unit_id: 'u-tk' }]);
+
+      const { rows: user } = await db.query<{ role: string | null; tokens: string }>(
+        `SELECT u.role::text AS role,
+                (SELECT count(*) FROM refresh_tokens rt WHERE rt.user_id = u.id) AS tokens
+         FROM users u WHERE u.id = 'user-pthome-unitvalid'`
+      );
+      expect(user[0].tokens).toBe('1');
+      expect(user[0].role).toBe('TEACHER');
+    } finally {
+      await db.end();
+    }
+  });
+
   // Owner decision (PR #505 review): the PT unit and its operational data are
   // removed outright, not re-typed. These cases pin the two halves of that: the
   // PT-owned rows are gone, and the sibling unit is untouched.
@@ -809,7 +918,14 @@ describeDb('decommission migration — legacy PT sessions end', () => {
       const { rows } = await db.query<{ id: string; unit_id: string | null }>(
         `SELECT id, unit_id FROM users WHERE id LIKE 'user-pt%' ORDER BY id`
       );
-      expect(rows.map((r) => r.id)).toEqual(['user-pt-noassign', 'user-pt-only', 'user-pt-only2']);
+      expect(rows.map((r) => r.id)).toEqual([
+        'user-pthome-foundation',
+        'user-pthome-nullscoped',
+        'user-pthome-unitvalid',
+        'user-pt-noassign',
+        'user-pt-only',
+        'user-pt-only2',
+      ]);
       for (const row of rows) {
         expect(row.unit_id).toBeNull();
       }

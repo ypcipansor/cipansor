@@ -273,7 +273,13 @@ covers a non-PT role whose assignment was _scoped_ to the PT unit: the
 assignment's `unit_id` is `SET NULL` too, and the token's unit comes from the
 assignment (`tokenUnitId`), so a detached assignment would mint a null-unit token
 that every optional unit filter reads as "all units". Such assignments are
-deactivated (not deleted) and their holders swept with the rest. An access token
+deactivated (not deleted) and their holders swept with the rest. It also covers a
+PT-home account whose _only_ active assignment is a non-foundation role that was
+already null-scoped: the home unit's deletion makes `tokenUnitId` fall back to
+`users.unit_id = NULL`, which mints the same widening null-unit token, so those
+assignments are deactivated before the affected users are computed. A
+foundation/global role is exempt — its null scope is foundation-wide by design —
+as is any assignment scoped to a surviving unit. An access token
 already issued stays valid until it expires — at most `JWT_EXPIRES_IN` (15
 minutes by default). This is the same short window the system already accepts for
 every other offboarding or role change, because `authenticate` is stateless by

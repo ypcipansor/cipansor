@@ -264,7 +264,13 @@ describe('decommission purge — migrations', () => {
         /(userRoleAssignment\.(create|createMany|update|updateMany|upsert)|userRoles:\s*\{\s*(create|update))[\s\S]{0,200}?expiresAt/
       );
     }
-    // Raw SQL is the other way in; none of it touches user_role_assignments.
+    // Raw SQL is the other way in; none of it *writes* user_role_assignments.
+    // The regex must distinguish a write from a read: the section-4 sweep
+    // legitimately *reads* the column (`... AND (expires_at IS NULL OR
+    // expires_at > now())`) to mirror `activeRoleWhere`, so an `expires_at`
+    // followed by `IS NULL`/`>` must not trip the guard. What it must catch is
+    // an assignment (`expires_at =`) or an INSERT column list carrying the
+    // column.
     const migrationSql = readdirSync(join(API_ROOT, 'prisma', 'migrations'))
       .filter((d) => d !== 'migration_lock.toml')
       .map((d) => join(API_ROOT, 'prisma', 'migrations', d, 'migration.sql'))
@@ -272,7 +278,10 @@ describe('decommission purge — migrations', () => {
       .map((p) => read(p))
       .join('\n');
     expect(migrationSql).not.toMatch(
-      /(INSERT INTO|UPDATE)\s+"?user_role_assignments"?[\s\S]{0,300}?expires_at/
+      /UPDATE\s+"?user_role_assignments"?[\s\S]{0,400}?SET[\s\S]{0,300}?"?expires_at"?\s*=/
+    );
+    expect(migrationSql).not.toMatch(
+      /INSERT INTO\s+"?user_role_assignments"?\s*\([^)]*"?(expires_at|expiresAt)"?/
     );
   });
 
@@ -322,6 +331,47 @@ describe('decommission purge — migrations', () => {
     expect(unitSnapshot).toBeLessThan(deleteUnits);
     expect(code).toMatch(/UNION/);
     expect(code).toMatch(/FROM "pt_unit_users_tmp"/);
+  });
+
+  it('neutralises null-scoped non-foundation assignments on PT-home users', () => {
+    // CRITICAL broken access control (Devin Review): a PT-home user whose only
+    // active assignment is a NON-foundation role with `unit_id IS NULL`. The
+    // unit delete nulls `users.unit_id`, after which `tokenUnitId`
+    // (src/utils/resolve-unit-id.ts:187-195) mints a null-unit token for that
+    // assignment, and the 117 optional unit filter sites read null as "every unit":
+    // scope WIDENS from one unit to the foundation. The migration must
+    // deactivate the assignment before computing `pt_only_users_tmp`. Pinned
+    // statically here and end-to-end by
+    // tests/integration/decommission-pt-session.integration.test.ts.
+    const code = DECOMMISSION.replace(/--[^\n]*/g, '');
+    const deactivate = code.search(/"unit_id"\s+IS\s+NULL/);
+    const snapshot = code.indexOf('CREATE TEMP TABLE "pt_only_users_tmp"');
+    expect(snapshot).toBeGreaterThan(-1);
+    expect(deactivate).toBeGreaterThan(-1);
+    // A bare `unit_id IS NULL`-scoped deactivation exists ...
+    expect(code).toMatch(/"unit_id"\s+IS\s+NULL/);
+    // ... and it is scoped to PT-home users (the pre-delete snapshot) ...
+    expect(code).toMatch(/FROM "pt_unit_users_tmp"/);
+    // ... excludes the foundation/global codes the runtime treats as
+    // null-scope-by-design (`isFoundationScopedRole`) ...
+    const inMatch = code.match(/r\."code"\s+IN\s*\(([\s\S]*?)\)/);
+    expect(inMatch, 'migration has a role-code exemption list').not.toBeNull();
+    const exempted = [...inMatch![1].matchAll(/'([A-Z_]+)'/g)].map((m) => m[1]);
+    // ... mirroring the runtime's `FOUNDATION_SCOPE_ROLES`
+    // (src/utils/resolve-unit-id.ts:63-71) exactly, both directions. A code the
+    // runtime treats as foundation-scoped but the migration omits would sweep a
+    // legitimate yayasan account; a code the migration exempts but the runtime
+    // does not would leave a null-unit escalation open.
+    const resolveUnit = read(join(API_ROOT, 'src', 'utils', 'resolve-unit-id.ts'));
+    const foundation = resolveUnit.slice(resolveUnit.indexOf('FOUNDATION_SCOPE_ROLES'));
+    const runtimeCodes = [
+      ...foundation.slice(0, foundation.indexOf('];')).matchAll(/RoleCode\.([A-Z_]+)/g),
+    ].map((m) => m[1]);
+    expect(runtimeCodes.length).toBeGreaterThan(0);
+    expect(exempted.sort()).toEqual([...runtimeCodes].sort());
+    // ... and runs BEFORE the `pt_only_users_tmp` snapshot, so the sweep sees
+    // the neutralised assignment as gone.
+    expect(deactivate).toBeLessThan(snapshot);
   });
 
   it('guards the purge block against a catalog that breaks its assumptions', () => {
@@ -734,7 +784,7 @@ describe('decommission purge — migrations', () => {
   it('deactivates a non-PT assignment scoped to the PT unit and ends its session', () => {
     // A role assignment carries a scope (`user_role_assignments.unit_id`), and the
     // token's unit comes from that assignment (`tokenUnitId`, resolve-unit-id.ts:
-    // 187-195; refresh reads `primaryAssignment.unitId`, auth.service.ts:492). The
+    // 187-195; refresh reads `primaryAssignment.unitId`, auth.service.ts:475). The
     // column is `SET NULL`, so deleting the PT unit detaches a *non-PT* assignment
     // instead of removing it -- and a null token unit is read as "no limit" by
     // every optional unit filter (`...(unitId && { unitId })`,

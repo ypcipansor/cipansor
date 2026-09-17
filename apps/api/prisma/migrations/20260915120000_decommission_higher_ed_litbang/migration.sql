@@ -159,12 +159,13 @@ DROP TYPE IF EXISTS "InnovationStatus";
 -- ten pinned tables plus every `SET NULL` child whose `(unit_id, ...)` is
 -- UNIQUE (the `EXISTS` subquery):
 --
---   WITH seeds(tbl) AS (
+--   WITH RECURSIVE seeds(tbl) AS (
 --     SELECT unnest(ARRAY[
---       'units', 'announcements', 'alumni_events', 'calendar_events',
---       'dashboard_history', 'islamic_events', 'paud_development_indicators',
---       'strategic_plans', 'donation_campaigns', 'marketing_campaigns',
---       'account_codes'
+--       'public.units', 'public.announcements', 'public.alumni_events',
+--       'public.calendar_events', 'public.dashboard_history',
+--       'public.islamic_events', 'public.paud_development_indicators',
+--       'public.strategic_plans', 'public.donation_campaigns',
+--       'public.marketing_campaigns', 'public.account_codes'
 --     ])
 --     UNION
 --     SELECT format('public.%I', cc.relname)
@@ -180,20 +181,31 @@ DROP TYPE IF EXISTS "InnovationStatus";
 --                     AND i.indpred IS NULL
 --                     AND ia.attname = 'unit_id')
 --   ),
---   RECURSIVE reach(tbl, depth) AS (
+--   reach(tbl, depth) AS (
 --     SELECT tbl, 0 FROM seeds
---     UNION
+--     UNION ALL
 --     SELECT format('%I.%I', cn.nspname, cc.relname) COLLATE "C", r.depth + 1
 --     FROM reach r
 --     JOIN pg_class pc ON pc.oid = r.tbl::regclass
 --     JOIN pg_constraint c ON c.confrelid = pc.oid AND c.contype = 'f'
 --                          AND c.confdeltype IN ('a','r','c')
 --     JOIN pg_class cc ON cc.oid = c.conrelid
---     JOIN pg_namespace cn ON cn.oid = cc.relnamespace)
---   SELECT count(*) FROM (SELECT DISTINCT tbl FROM reach) t;  -- 233
+--     JOIN pg_namespace cn ON cn.oid = cc.relnamespace),
+--   mind AS (SELECT tbl, min(depth) AS depth FROM reach GROUP BY tbl)
+--   SELECT
+--     (SELECT count(*) FROM mind)                                   AS total,      -- 233
+--     (SELECT count(*) FROM mind WHERE tbl <> 'public.units')       AS dependents, -- 232
+--     (SELECT count(*) FROM mind WHERE depth = 0)                   AS d0,         -- 14
+--     (SELECT count(*) FROM mind WHERE depth = 1)                   AS d1,         -- 89
+--     (SELECT count(*) FROM mind WHERE depth = 2)                   AS d2,         -- 105
+--     (SELECT count(*) FROM mind WHERE depth = 3)                   AS d3,         -- 25
+--     (SELECT max(depth) FROM mind)                                 AS maxdepth;   -- 3
 --
 -- (Depth distribution over the distinct tables, min depth: 14 at 0, 89 at 1,
--- 105 at 2, 25 at 3 -- the fourteen seeds at depth 0, of which `units` is one.)
+-- 105 at 2, 25 at 3 -- the fourteen seeds at depth 0, of which `units` is one.
+-- All table names are normalised to `public.%I`; mixing a bare `units` with the
+-- `public.%I` form would count the root twice and report a spurious depth-4
+-- tail. `min(depth)` over the transitive closure is the depth of a table.)
 -- This is why the deploy runbook requires a verified backup BEFORE
 -- `prisma migrate deploy`.
 
@@ -217,10 +229,10 @@ WHERE un."type"::text = 'PERGURUAN_TINGGI';
 -- it is exactly what the token prison wants. `tokenUnitId` (resolve-unit-id.ts:
 -- 187-195) returns the *assignment's* unit when set, and no foundation role is
 -- involved here, so the next refresh mints a token with `unitId: null`
--- (auth.service.ts:492, `refreshUnitId = primaryAssignment.unitId`). Read scopes
--- are written as optional filters -- `...(unitId && { unitId })`, 42 sites, or
--- `unitId ? { unitId } : {}`, 74 sites -- and a null token unit therefore reads
--- as "every unit" rather than "no access". A non-PT staffer scoped to the PT
+-- (auth.service.ts:475, `refreshUnitId = primaryAssignment.unitId`). Read scopes
+-- are written as optional filters -- `...(unitId && { unitId })`, 42 occurrences,
+-- or `unitId ? { unitId } : {}`, 32 occurrences -- and a null token unit therefore
+-- reads as "every unit" rather than "no access". A non-PT staffer scoped to the PT
 -- unit would gain the foundation's reads the moment the unit is deleted, and
 -- their session would be untouched by section 4 below because they do hold an
 -- active non-PT role.
@@ -787,6 +799,56 @@ DROP TYPE "RoleCode_old";
 UPDATE "user_role_assignments"
 SET "is_active" = false
 WHERE "id" IN (SELECT "assignment_id" FROM "pt_scoped_assignments_tmp");
+
+-- Null-scoped NON-foundation assignments on a PT-home account. A PT-home user
+-- is one whose `users.unit_id` pointed at the PT unit, captured in
+-- `pt_unit_users_tmp` above. The unit DELETE has already fired the `SET NULL`
+-- on `users.unit_id`, so on the next refresh `tokenUnitId`
+-- (src/utils/resolve-unit-id.ts:187-195) receives `userUnitId = null`:
+--
+--   if (assignmentUnitId) return assignmentUnitId;
+--   if (isFoundationScopedRole(roleCode)) return null;
+--   return userUnitId ?? null;        -- null, because the home unit is gone
+--
+-- An assignment that was ALREADY null-scoped keeps `assignmentUnitId = null`,
+-- and a non-foundation role is not `isFoundationScopedRole`, so the token is
+-- minted with `unitId: null` (`auth.service.ts:475`,
+-- `refreshUnitId = primaryAssignment.unitId`). The 117 optional unit filters in
+-- the API (grep the patterns above) read that as "every unit". Before the unit
+-- was deleted the same assignment resolved to the user's home unit
+-- (`userUnitId = 'u-pt'`), so the purge would have *widened*
+-- the holder's reads from one unit to all of them. That is a broken-access-
+-- control escalation, not a harmless orphan.
+--
+-- Neutralise exactly those assignments. A foundation/global role is excluded:
+-- a null scope is its intended, foundation-wide scope, so `tokenUnitId` still
+-- returns null *by design* and the holder keeps their session (the marker-2
+-- snapshot would otherwise sweep a legitimate yayasan account that merely sat
+-- on the PT unit). The runtime's own definition of that set is
+-- `isFoundationScopedRole` (src/utils/resolve-unit-id.ts:81-83), mirrored here
+-- by code -- deliberately NOT by realm: a custom `GLOBAL`-realm role is not
+-- foundation-scoped at runtime, so its null-scoped assignment would still mint
+-- a null token and must be neutralised too. Assignments scoped to a *surviving*
+-- unit are untouched: their `unit_id` is non-null, so this WHERE does not match
+-- them. Once the rows are inactive the `pt_only_users_tmp` NOT EXISTS below sees
+-- no surviving assignment and sweeps the holder (tokens revoked, `users.role`
+-- nulled); a holder that also keeps a valid assignment is left alone.
+UPDATE "user_role_assignments" a
+SET "is_active" = false
+WHERE a."unit_id" IS NULL
+  AND a."is_active"
+  AND (a."expires_at" IS NULL OR a."expires_at" > now())
+  AND a."user_id" IN (SELECT "user_id" FROM "pt_unit_users_tmp")
+  AND NOT EXISTS (
+    SELECT 1
+    FROM "roles" r
+    WHERE r."id" = a."role_id"
+      AND r."code" IN (
+        'SUPER_ADMIN',
+        'YAYASAN_PEMBINA', 'YAYASAN_KETUA', 'YAYASAN_SEKRETARIS',
+        'YAYASAN_BENDAHARA', 'YAYASAN_ANGGOTA', 'YAYASAN_PENGAWAS'
+      )
+  );
 
 DROP TABLE IF EXISTS "pt_only_users_tmp";
 CREATE TEMP TABLE "pt_only_users_tmp" AS
