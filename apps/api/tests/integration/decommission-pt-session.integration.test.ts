@@ -202,6 +202,25 @@ INSERT INTO marketing_campaigns
 VALUES
   ('mkt-pt', 'u-pt', 'Kampanye PT', 'PT-RAMADHAN', now(), true, 'user-tkq', now()),
   ('mkt-tk', 'u-tk', 'Kampanye TK', 'TK-RAMADHAN', now(), true, 'user-tkq', now());
+
+-- FINDING 1 (remaining gap): an alumni event on the PT unit. Its unit_id FK is
+-- SET NULL (0_init:8563) and its own children (alumni_event_attendees.event_id,
+-- CASCADE, 0_init:8566) do not reach it from units over the followed edges, so
+-- nothing pulls it into the closure: the FK would detach it instead of retiring
+-- it. getEvents (alumni.service.ts:692-722) filters with
+-- ...(unitId && { unitId }), so the *unfiltered* list -- what the web calls by
+-- default (use-alumni.ts:340-361, no unitId param) -- returns a NULL-unit event
+-- to every unit, attendee count included. It must be deleted; the sibling TK
+-- event and its attendee are the control.
+INSERT INTO alumni (id, unit_id, registration_no, name, gender, graduation_year, updated_at) VALUES
+  ('al-pt', 'u-pt', 'AL-PT', 'Alumni PT', 'MALE', 2020, now()),
+  ('al-tk', 'u-tk', 'AL-TK', 'Alumni TK', 'MALE', 2020, now());
+INSERT INTO alumni_events (id, name, type, event_date, unit_id, status, updated_at) VALUES
+  ('aev-pt', 'Reuni PT', 'REUNION', now(), 'u-pt', 'upcoming', now()),
+  ('aev-tk', 'Reuni TK', 'REUNION', now(), 'u-tk', 'upcoming', now());
+INSERT INTO alumni_event_attendees (id, event_id, alumni_id, status, registered_at, updated_at) VALUES
+  ('aatt-pt', 'aev-pt', 'al-pt', 'registered', now(), now()),
+  ('aatt-tk', 'aev-tk', 'al-tk', 'registered', now(), now());
 `;
 
 /** Rows that must be deleted because their unit is the PT unit. */
@@ -232,6 +251,11 @@ const PURGED_PT_ROWS: Array<[table: string, id: string]> = [
   // campaign on the PT unit. Same shape as the donation campaign -- public read
   // path, no unit filter, SET NULL FK -- so it must be deleted too.
   ['marketing_campaigns', 'mkt-pt'],
+  // FINDING 1 (remaining gap): an alumni event on the PT unit. Detached to
+  // unit_id NULL it would be returned to every unit by the unfiltered
+  // `getEvents` list, so it must be deleted. Its attendee cascades with it.
+  ['alumni_events', 'aev-pt'],
+  ['alumni_event_attendees', 'aatt-pt'],
 ];
 
 /** Rows of a surviving unit that the purge must not touch. */
@@ -261,6 +285,9 @@ const KEPT_TK_ROWS: Array<[table: string, id: string]> = [
   ['donations', 'don-tk'],
   // The sibling marketing campaign must survive the PT purge untouched.
   ['marketing_campaigns', 'mkt-tk'],
+  // The sibling alumni event and its attendee must survive untouched.
+  ['alumni_events', 'aev-tk'],
+  ['alumni_event_attendees', 'aatt-tk'],
   // FINDING 2 control (scope half): the surviving unit's own assignment is left
   // active -- only the PT-scoped one was neutralised.
 ];
@@ -554,6 +581,53 @@ describeDb('decommission migration — legacy PT sessions end', () => {
         `SELECT unit_id, is_active FROM marketing_campaigns WHERE id = 'mkt-tk'`
       );
       expect(siblingRow).toEqual([{ unit_id: 'u-tk', is_active: true }]);
+    } finally {
+      await db.end();
+    }
+  });
+
+  // FINDING 1 (remaining gap): an alumni event on the PT unit. Its `unit_id`
+  // FK is SET NULL (0_init:8563), so the FK would detach it rather than retire
+  // it, and `getEvents` (alumni.service.ts:692-722) filters with
+  // `...(unitId && { unitId })` -- the unfiltered list, which is what the web
+  // calls by default (use-alumni.ts:340-361, no unitId param), returns a
+  // NULL-unit event to every unit with its attendee count. The event and its
+  // attendee must be deleted; the sibling TK event and attendee are the control.
+  it('purges a PT alumni event so the unfiltered list no longer returns it, and keeps the sibling', async () => {
+    const db = new Client({ connectionString: targetUrl });
+    await db.connect();
+    try {
+      const { rows: gone } = await db.query(
+        `SELECT count(*)::int AS n FROM alumni_events WHERE id = 'aev-pt'`
+      );
+      expect(gone[0].n).toBe(0);
+      // It must not survive detached with a NULL unit either -- that is exactly
+      // the shape the unfiltered read path would return.
+      const { rows: detached } = await db.query(
+        `SELECT count(*)::int AS n FROM alumni_events WHERE unit_id IS NULL`
+      );
+      expect(detached[0].n).toBe(0);
+      // The CASCADE child goes with it.
+      const { rows: attendee } = await db.query(
+        `SELECT count(*)::int AS n FROM alumni_event_attendees WHERE id = 'aatt-pt'`
+      );
+      expect(attendee[0].n).toBe(0);
+
+      // The real read path, not a copied predicate: import the alumni service
+      // fresh with DATABASE_URL pointed at this throwaway database (its `prisma`
+      // singleton binds the env at import time), call the unfiltered `getEvents`
+      // the web calls by default, and restore the env.
+      const previousUrl = process.env.DATABASE_URL;
+      process.env.DATABASE_URL = targetUrl;
+      vi.resetModules();
+      try {
+        const alumni = await import('../../src/modules/alumni/alumni.service');
+        const { data } = await alumni.getEvents({ page: 1, limit: 10 });
+        expect(data.map((e) => e.id)).toEqual(['aev-tk']);
+      } finally {
+        process.env.DATABASE_URL = previousUrl;
+        vi.resetModules();
+      }
     } finally {
       await db.end();
     }
@@ -866,6 +940,103 @@ describeDb('decommission migration — FK-catalog guards fail loud', () => {
       await cleanup.query(`DROP TABLE _cb_parent`);
     } finally {
       await cleanup.end();
+    }
+  });
+
+  it('rejects a doomed row that belongs to a surviving unit (cross-unit safety)', async () => {
+    // Finding 5 of the PR #505 review: the row walk follows every
+    // NO ACTION/RESTRICT/CASCADE FK, so a row can reach a doomed PT parent
+    // through a column that is *not* its `unit_id` -- a book whose `category_id`
+    // is a PT category while the book itself sits on a surviving unit. Deleting
+    // it would reach across units. The migration asserts that every doomed row
+    // carrying a `unit_id` belongs to a PT unit and raises when one does not.
+    const db = new Client({ connectionString: targetUrl });
+    await db.connect();
+    try {
+      // A surviving unit, a PT category, and a TK book filed under it: the book
+      // is unit-owned by TK but is pulled into the closure by its category FK.
+      await db.query(
+        `INSERT INTO units (id, name, type, address, updated_at)
+         VALUES ('u-tk', 'Taman Kanak', 'TK_QURAN', 'addr', now())`
+      );
+      await db.query(
+        `INSERT INTO book_categories (id, unit_id, name, code, updated_at)
+         VALUES ('cb-xu-cat-pt', 'u-pt-guard', 'Kat PT', 'CBXU', now())`
+      );
+      await db.query(
+        `INSERT INTO books (id, unit_id, category_id, title, author, updated_at)
+         VALUES ('cb-xu-book-tk', 'u-tk', 'cb-xu-cat-pt', 'Buku TK', 'Penulis', now())`
+      );
+    } finally {
+      await db.end();
+    }
+
+    try {
+      await expect(replayMigration()).rejects.toThrow(/reach across units/i);
+    } finally {
+      // Always clean up: a leftover PT-linked book would make the *next* probe
+      // migration fail with this guard's message instead of its own.
+      const cleanup = new Client({ connectionString: targetUrl });
+      await cleanup.connect();
+      try {
+        await cleanup.query(`DELETE FROM books WHERE id = 'cb-xu-book-tk'`);
+        await cleanup.query(`DELETE FROM book_categories WHERE id = 'cb-xu-cat-pt'`);
+        await cleanup.query(`DELETE FROM units WHERE id = 'u-tk'`);
+      } finally {
+        await cleanup.end();
+      }
+    }
+  });
+
+  it('does not purge through a partial unique index (finding 2)', async () => {
+    // A PARTIAL unique index on `(unit_id, ...)` does not prove one row per unit
+    // -- its predicate can exclude rows -- so the unique-per-unit rule must skip
+    // it, leaving the PT row to the FK's SET NULL (detached) instead of deleting
+    // it as if it were unit-owned. Self-contained on its own database so it can
+    // run the migration to completion without consuming the shared PT unit.
+    const ownName = `cipansor_decommission_partial_${Date.now()}`;
+    const ownUrl = (() => {
+      const u = new URL(baseUrl);
+      u.pathname = `/${ownName}`;
+      return u.toString();
+    })();
+    await admin.query(`CREATE DATABASE "${ownName}"`);
+
+    const db = new Client({ connectionString: ownUrl });
+    await db.connect();
+    try {
+      await db.query(ZERO_INIT);
+      await db.query(
+        `INSERT INTO units (id, name, type, address, updated_at)
+         VALUES ('u-pt', 'PT', 'PERGURUAN_TINGGI', 'addr', now())`
+      );
+      await db.query(
+        `CREATE TABLE _cb_partial_uniq (
+           id text PRIMARY KEY,
+           unit_id text REFERENCES units (id) ON DELETE SET NULL,
+           code text NOT NULL,
+           is_active boolean NOT NULL DEFAULT true
+         )`
+      );
+      // Partial: only *active* rows are unique per unit, so a PT unit can own
+      // both an active and an inactive row -- "UNIQUE on (unit_id)" is false.
+      await db.query(
+        `CREATE UNIQUE INDEX _cb_partial_uniq_unit_active
+           ON _cb_partial_uniq (unit_id, code) WHERE is_active`
+      );
+      await db.query(
+        `INSERT INTO _cb_partial_uniq (id, unit_id, code)
+         VALUES ('cb-pu-pt', 'u-pt', 'PU')`
+      );
+      await db.query(DECOMMISSION);
+
+      const { rows } = await db.query(
+        `SELECT unit_id FROM _cb_partial_uniq WHERE id = 'cb-pu-pt'`
+      );
+      expect(rows).toEqual([{ unit_id: null }]);
+    } finally {
+      await db.end();
+      await admin.query(`DROP DATABASE IF EXISTS "${ownName}" WITH (FORCE)`);
     }
   });
 

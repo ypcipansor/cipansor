@@ -283,6 +283,33 @@ describe('decommission purge — migrations', () => {
     expect(DECOMMISSION).toMatch(/RAISE EXCEPTION/);
   });
 
+  it('refuses to delete a doomed row that belongs to a surviving unit', () => {
+    // Finding 5 of the PR #505 review: the row walk follows every
+    // NO ACTION/RESTRICT/CASCADE FK, so a row can reach a doomed PT parent
+    // through a column that is not its `unit_id` -- a book whose `category_id`
+    // is a PT category while the book sits on a sibling unit. Deleting it would
+    // reach across units. The migration asserts that every doomed row carrying
+    // a `unit_id` belongs to a PT unit, and raises rather than delete the rest.
+    expect(DECOMMISSION).toMatch(/t\.unit_id NOT IN \(SELECT id FROM units/);
+    expect(DECOMMISSION).toMatch(/refusing to reach across units/);
+  });
+
+  it('orders the purge by doomed row, not whole table, so a table-level cycle is not fatal', () => {
+    // Finding 3 of the PR #505 review: the old purge deleted whole tables in
+    // leaf-first batches and raised as soon as a batch came back empty, which a
+    // table-level FK cycle would trigger even when no doomed row of either table
+    // referenced a doomed row of the other. The loop now falls back to deleting
+    // the doomed rows nothing still references, and raises only when that pass
+    // also makes no progress -- a genuine row-level deadlock. Pinned so the
+    // fallback is not quietly removed (which would reintroduce the false abort).
+    const code = DECOMMISSION.replace(/--[^\n]*/g, '');
+    expect(code).toMatch(/AND %s',\s*\n?\s*edge\.parent, edge\.parent, edge\.conds/);
+    expect(code).toMatch(/NOT EXISTS \(SELECT 1 FROM %s ch WHERE ch\.%I = t\.id\)/);
+    expect(code).toMatch(/IF total = 0 THEN/);
+    // The loud abort stays: a real row cycle must still stop the deploy.
+    expect(code).toMatch(/FK cycle prevents deleting PERGURUAN_TINGGI units/);
+  });
+
   it('deletes PT rows whose `SET NULL` unit FK would globalise them', () => {
     // Finding 1 of the PR #505 review: a `SET NULL` FK to `units` does not
     // delete the child row -- it nulls the column, and for these tables a
@@ -300,6 +327,9 @@ describe('decommission purge — migrations', () => {
     // generic below.
     const GLOBAL_NULL_TABLES = [
       'announcements',
+      // Not a "NULL widens the audience" table but the same pinned class: the
+      // unfiltered `getEvents` list returns a NULL-unit event to every unit.
+      'alumni_events',
       'calendar_events',
       'dashboard_history',
       'islamic_events',
@@ -337,6 +367,34 @@ describe('decommission purge — migrations', () => {
       join(API_ROOT, 'src', 'modules', 'perencanaan', 'perencanaan.service.ts')
     );
     expect(perencanaan).toMatch(/\{ unitId: null \}/);
+
+    // `alumni_events` is pinned for the same class, one step stronger: a NULL
+    // unit is not read as the foundation scope, it is read by the *unfiltered*
+    // list at all. `getEvents` (alumni.service.ts:692-722) filters with
+    // `...(unitId && { unitId })` -- a NULL-unit event matches no unit filter and
+    // is returned by the list the web calls by default (use-alumni.ts:340-361,
+    // no unitId param) -- so a detached PT event would stay visible to every
+    // unit, attendee count included. Pinned against that exact query shape.
+    const alumni = read(join(API_ROOT, 'src', 'modules', 'alumni', 'alumni.service.ts'));
+    const getEventsStart = alumni.indexOf('export async function getEvents');
+    const getEvents = alumni.slice(
+      getEventsStart,
+      alumni.indexOf('export async function getEventById', getEventsStart)
+    );
+    expect(getEvents).toMatch(/\.\.\.\(unitId && \{ unitId \}\)/);
+    expect(getEvents).toMatch(/_count: \{ select: \{ attendees: true \} \}/);
+    // It has no `(unit_id, ...)` UNIQUE either, so the generic catalog rule
+    // cannot reach it (the leading unique columns are `id` and
+    // event_id/alumni_id on the attendee table, not `unit_id`).
+    const eventBody = SCHEMA.slice(SCHEMA.indexOf('model AlumniEvent {'));
+    const eventFields = eventBody.slice(0, eventBody.indexOf('\n}'));
+    expect(eventFields).not.toMatch(/@@unique\(\[unitId/);
+    // And its own children do not reach it from `units` over the followed edges:
+    // both `alumni_event_attendees` FKs are CASCADE, so the closure picks the
+    // attendee up only once the event is doomed.
+    expect(ZERO_INIT).toMatch(
+      /ALTER TABLE "alumni_event_attendees" ADD CONSTRAINT "alumni_event_attendees_event_id_fkey" FOREIGN KEY \("event_id"\) REFERENCES "alumni_events"\("id"\) ON DELETE CASCADE/
+    );
 
     // `donation_campaigns` is a pinned entry whose read path never even looks at
     // the unit: `findPublic` filters on status/date only, so a PT campaign the
@@ -421,6 +479,18 @@ describe('decommission purge — migrations', () => {
     }
   });
 
+  it('excludes partial unique indexes from the unique-per-unit rule', () => {
+    // Finding 2 of the PR #505 review: a PARTIAL unique index does not prove
+    // "one row per unit" -- its predicate can exclude rows -- so matching it
+    // could over-delete. An expression index cannot match either (its `indkey`
+    // entry is 0, never a real `attnum`), and INCLUDE columns follow the key
+    // columns so they do not affect `indkey[0]`. Pin both the guard and the
+    // doc-query in the header, which must stay in sync with the DO block.
+    expect(DECOMMISSION).toMatch(/i\.indpred IS NULL/);
+    const header = DECOMMISSION.slice(0, DECOMMISSION.indexOf('DO \$decommission_setnull\$'));
+    expect(header).toMatch(/i\.indpred IS NULL/);
+  });
+
   it('the unique-per-unit heuristic matches only genuinely unit-owned tables', () => {
     // Analysis item B of the PR #505 review: the catalog rule reads "the leading
     // key column of a UNIQUE index is the FK column" as *unit ownership* -- not
@@ -453,6 +523,55 @@ describe('decommission purge — migrations', () => {
     // explicit `unitId` selects that unit's secret; no unit reads the
     // foundation-wide (`null`) scope.
     expect(secrets).toMatch(/unitId \? \{ unitId \} : \{ unitId: null \}/);
+  });
+
+  it('pins the exact set of tables the unique-per-unit catalog rule can match', () => {
+    // Finding 2 of the PR #505 review: the catalog rule is destructive and is
+    // applied to whatever the schema happens to carry at deploy time, so a new
+    // nullable `unit_id` + `@@unique([unitId, ...])` model would silently join
+    // the purge with no semantic audit. The set is derived from the *schema*
+    // here (the shape the rule keys on: an optional `unitId` mapped to
+    // `unit_id`, a `SET NULL`-style optional `Unit` relation, and a
+    // `@@unique([unitId, ...])`) and pinned by name. A new match fails this
+    // test until it is audited against its read path and added below.
+    //
+    // The catalog equivalent is in the migration's section-3 comment; this
+    // static form runs without a database. Keep the two in sync: today both
+    // yield exactly these three tables.
+    const models = [...SCHEMA.matchAll(/^model (\w+) \{([\s\S]*?)^\}/gm)];
+    const optionalUnitUnique = models
+      .filter(([, , body]) => body.includes('@@unique([unitId'))
+      .filter(([, , body]) => /unitId\s+String\?\s+@map\("unit_id"\)/.test(body))
+      .filter(([, , body]) =>
+        /unit\s+Unit\?\s+@relation\(fields: \[unitId\], references: \[id\]\)/.test(body)
+      )
+      .map(([, name, body]) => {
+        const map = body.match(/@@map\("([^"]+)"\)/);
+        return map ? map[1] : name;
+      })
+      .sort();
+
+    expect(optionalUnitUnique).toEqual([
+      // Audited: `listMetricSnapshots`/`getTrend` scope by the caller's unit; a
+      // NULL unit is the foundation-wide roll-up, a unit row is unit-owned.
+      'dashboard_metric_snapshots',
+      // Audited: a template is selected per unit, the unit row taking
+      // precedence over the default.
+      'report_templates',
+      // PR #504 owns the module; ownership semantics are per-unit (`unitId ? {
+      // unitId } : { unitId: null }` reads NULL as the foundation scope).
+      'system_secrets',
+    ]);
+
+    // Guard the derivation itself: a model with a *required* `unit_id` and
+    // `@@unique([unitId, ...])` is unit-owned along a RESTRICT edge and is
+    // already inside the closure, so the rule must NOT match it.
+    const required = models
+      .filter(([, , body]) => body.includes('@@unique([unitId'))
+      .filter(([, , body]) => /unitId\s+String\s+@map\("unit_id"\)/.test(body))
+      .map(([, name]) => name);
+    expect(required.length).toBeGreaterThan(0); // the derivation is not vacuous
+    expect(required).not.toContain('Driver');
   });
 
   it('leaves a detached PT donation alone: it never becomes global', () => {

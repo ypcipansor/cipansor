@@ -74,10 +74,11 @@ DROP TYPE IF EXISTS "InnovationStatus";
 --        `dashboard_metric_snapshots` and `report_templates`, plus one table
 --        owned by another change that must not be named here.
 --
---   (ii) the eight `SET NULL` children whose read paths treat `unit_id IS NULL`
---        as "all units" / "foundation-wide". That is a property of the *reader*,
---        not of the catalog, so it is a pinned list, audited against the read
---        paths (file:line in the loop below) and guarded by
+--   (ii) the nine `SET NULL` children whose read paths treat `unit_id IS NULL`
+--        as "all units" / "foundation-wide" -- or, for `alumni_events`, return
+--        the row at all regardless of caller scope. That is a property of the
+--        *reader*, not of the catalog, so it is a pinned list, audited against
+--        the read paths (file:line in the loop below) and guarded by
 --        `apps/api/src/utils/decommissioned-modules.guard.test.ts`.
 --
 -- `donation_campaigns` is pinned for the same reason a public-facing read path
@@ -110,27 +111,41 @@ DROP TYPE IF EXISTS "InnovationStatus";
 -- code — so a retired PT campaign could still attribute registrations. Pin it by
 -- row to delete the PT campaigns, whatever their status.
 --
--- Blast radius: the purge deletes 230 dependent tables (231 including `units`
+-- `alumni_events` is the one entry where the FK does not *widen* the row, it
+-- keeps it visible outright. Its `unit_id` is `SET NULL` (0_init:8563) and its
+-- only dependents are `alumni_event_attendees.event_id` (`CASCADE`,
+-- 0_init:8566) and `alumni_event_attendees.alumni_id` (`CASCADE`, 0_init:8569);
+-- nothing reaches it from `units` over the followed edges, so a PT event is not
+-- in the closure. `getEvents` (`alumni.service.ts:692-722`) builds its `where`
+-- with `...(unitId && { unitId })` and the caller passes a unit only when it
+-- asks for one, so a NULL-unit event is returned by the *unfiltered* list —
+-- which is what the web calls by default (`use-alumni.ts:340-361`, no `unitId`
+-- param). A retired PT reunion would therefore show on every unit's alumni
+-- screen, with its attendee count (`_count.attendees`), and its attendee rows
+-- would survive too. Pin the table so the events are captured by row before the
+-- unit goes; the `CASCADE` then takes their attendees leaf-first.
+--
+-- Blast radius: the purge deletes 231 dependent tables (232 including `units`
 -- itself), at a maximum depth of 3. That set is the closure over the edges
 -- followed below, seeded with `units` plus every `SET NULL` child captured by
 -- row first -- the pinned NULL-means-global tables and the unique-per-unit
 -- tables matched by the catalog rule. Those seeds are not merely decorative:
--- the pinned seeds alone drag in 15 tables that `units` cannot reach over the
--- followed edges (213 -> 228), and the three unique-per-unit seeds add the last
+-- the pinned seeds alone drag in 16 tables that `units` cannot reach over the
+-- followed edges (213 -> 229), and the three unique-per-unit seeds add the last
 -- 3 (`dashboard_metric_snapshots`, `report_templates`, and one owned by PR
--- #504) to reach 231. (`users` and `user_role_assignments` are deliberately not
+-- #504) to reach 232. (`users` and `user_role_assignments` are deliberately not
 -- in the deleted set; they survive detached with `unit_id = NULL` and section 4
 -- ends the PT-only sessions.)
 -- Reproduce against the catalog this block runs on -- i.e. after the higher-ed
 -- tables of sections 1-2 are dropped. The seed set mirrors the loop below: the
--- eight pinned tables plus every `SET NULL` child whose `(unit_id, ...)` is
+-- nine pinned tables plus every `SET NULL` child whose `(unit_id, ...)` is
 -- UNIQUE (the `EXISTS` subquery):
 --
 --   WITH seeds(tbl) AS (
 --     SELECT unnest(ARRAY[
---       'units', 'announcements', 'calendar_events', 'dashboard_history',
---       'islamic_events', 'paud_development_indicators', 'strategic_plans',
---       'donation_campaigns', 'marketing_campaigns'
+--       'units', 'announcements', 'alumni_events', 'calendar_events',
+--       'dashboard_history', 'islamic_events', 'paud_development_indicators',
+--       'strategic_plans', 'donation_campaigns', 'marketing_campaigns'
 --     ])
 --     UNION
 --     SELECT format('public.%I', cc.relname)
@@ -143,6 +158,7 @@ DROP TYPE IF EXISTS "InnovationStatus";
 --                   JOIN pg_attribute ia ON ia.attrelid = i.indrelid
 --                    AND ia.attnum = i.indkey[0]
 --                   WHERE i.indrelid = c.conrelid AND i.indisunique
+--                     AND i.indpred IS NULL
 --                     AND ia.attname = 'unit_id')
 --   ),
 --   RECURSIVE reach(tbl, depth) AS (
@@ -155,10 +171,10 @@ DROP TYPE IF EXISTS "InnovationStatus";
 --                          AND c.confdeltype IN ('a','r','c')
 --     JOIN pg_class cc ON cc.oid = c.conrelid
 --     JOIN pg_namespace cn ON cn.oid = cc.relnamespace)
---   SELECT count(*) FROM (SELECT DISTINCT tbl FROM reach) t;  -- 231
+--   SELECT count(*) FROM (SELECT DISTINCT tbl FROM reach) t;  -- 232
 --
--- (Depth distribution over the distinct tables, min depth: 12 at 0, 86 at 1,
--- 107 at 2, 26 at 3 -- the twelve seeds at depth 0, of which `units` is one.)
+-- (Depth distribution over the distinct tables, min depth: 13 at 0, 87 at 1,
+-- 106 at 2, 26 at 3 -- the thirteen seeds at depth 0, of which `units` is one.)
 -- This is why the deploy runbook requires a verified backup BEFORE
 -- `prisma migrate deploy`.
 
@@ -238,6 +254,18 @@ BEGIN
         -- and belongs to the PT unit rather than to the foundation. The first
         -- key column of the unique index is the same column as the FK.
         --   dashboard_metric_snapshots, report_templates
+        --   (audited 2026-09-17: exactly these three match, incl. the PR #504
+        --    table; all are full, non-partial unique indexes, and the static
+        --    twin of this rule in decommissioned-modules.guard.test.ts fails
+        --    when a new table starts matching)
+        -- `indpred IS NULL` excludes a PARTIAL unique index: its predicate can
+        -- exclude rows from the index, so "unique on (unit_id, ...)" no longer
+        -- proves one row per unit, and matching it would over-delete. An
+        -- expression index cannot match either -- its `indkey` entry is 0, never
+        -- a real `attnum`. INCLUDE columns follow the key columns in `indkey`,
+        -- so they do not affect `indkey[0]`; column order does, and a unique
+        -- index whose leading column is not the FK column is (deliberately) not
+        -- matched.
         EXISTS (
           SELECT 1
           FROM pg_index i
@@ -245,12 +273,19 @@ BEGIN
             ON ia.attrelid = i.indrelid AND ia.attnum = i.indkey[0]
           WHERE i.indrelid = c.conrelid
             AND i.indisunique
+            AND i.indpred IS NULL
             AND ia.attname = a.attname
         )
         OR
         -- (ii) Pinned: `unitId IS NULL` is read as "every unit" / foundation-wide:
         format('%I.%I', cn.nspname, cc.relname) IN (
           'public.announcements',               -- announcements.service.ts:44-49
+          -- `getEvents` filters on `...(unitId && { unitId })` only; the
+          -- unfiltered list the web calls by default returns a NULL-unit
+          -- event, so a detached PT event would stay visible to every unit,
+          -- attendee count included. Its own attendees cascade, so the row
+          -- delete takes them leaf-first.
+          'public.alumni_events',               -- alumni.service.ts:692-722
           'public.calendar_events',             -- calendar.service.ts:105,319
           'public.dashboard_history',           -- dashboard.service.ts:593-594
           'public.islamic_events',              -- ibadah.schema.ts:219 ("null = semua unit")
@@ -427,6 +462,42 @@ BEGIN
     EXIT WHEN total = 0;
   END LOOP;
 
+  -- Cross-unit invariant: a doomed row that carries a `unit_id` must belong to a
+  -- PT unit. The row walk follows every `NO ACTION`/`RESTRICT`/`CASCADE` FK, and a
+  -- row can reach a doomed parent through a column that is *not* its `unit_id` --
+  -- an attendance row pointing at a PT class, a letter recipient pointing at a PT
+  -- letter -- in which case the row's own unit may be a different (sibling) unit.
+  -- Deleting it would reach across units. Reachability alone cannot rule this
+  -- out -- a cross-unit child is only visible in the data, not in the catalog --
+  -- so the invariant is asserted here rather than assumed: the migration stops
+  -- the deploy if a cross-unit row would be deleted. (The 42 closure tables that
+  -- carry both a `unit_id` and a non-unit FK to another closure table were
+  -- enumerated 2026-09-17, so a future cross-unit edge is at least known to be
+  -- possible in exactly that shape.)
+  FOR edge IN
+    SELECT d.tbl AS tbl, count(*) AS n
+    FROM _decommission_doomed d
+    JOIN pg_attribute ua ON ua.attrelid = d.tbl::regclass AND ua.attname = 'unit_id'
+                         AND ua.attnum > 0 AND NOT ua.attisdropped
+    WHERE EXISTS (
+      SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE c.oid = d.tbl::regclass AND n.nspname = 'public'
+    )
+    GROUP BY d.tbl
+  LOOP
+    EXECUTE format(
+      'SELECT count(*) FROM %s t JOIN _decommission_doomed d ON d.tbl = %L AND d.id = t.id '
+      'WHERE t.unit_id IS NOT NULL '
+      'AND t.unit_id NOT IN (SELECT id FROM units WHERE type::text = ''PERGURUAN_TINGGI'')',
+      edge.tbl, edge.tbl
+    ) INTO total;
+    IF total > 0 THEN
+      RAISE EXCEPTION
+        'decommission: % row(s) in % belong to a non-PERGURUAN_TINGGI unit but would be deleted; refusing to reach across units',
+        total, edge.tbl;
+    END IF;
+  END LOOP;
+
   CREATE TEMPORARY TABLE _decommission_edges (
     child text NOT NULL, col text NOT NULL, parent text NOT NULL
   ) ON COMMIT DROP;
@@ -447,8 +518,16 @@ BEGIN
 
   -- Delete leaves first: the batch holds every table none of whose remaining
   -- children is still pending, so each DELETE runs before the row it points at.
-  -- The batch is empty only if the FK graph has a cycle -- raise rather than
-  -- spin, so a future schema change fails loudly instead of hanging the deploy.
+  --
+  -- The batch is empty only when the *tables* that remain form an FK cycle. That
+  -- is not the same as a cycle among doomed *rows*: two tables can point at each
+  -- other with no doomed row of either referenced by a doomed row of the other,
+  -- in which case both row sets are deletable and aborting would be a false
+  -- positive. So on an empty batch the loop falls back to a row-level pass that
+  -- deletes only the doomed rows nothing still references, and raises only when
+  -- that pass also makes no progress -- a genuine row-level deadlock. Verified
+  -- 2026-09-17 against the post-drop catalog: 0 non-self table cycles in the
+  -- closure, so the fallback is defence in depth, not the path production takes.
   WHILE EXISTS (SELECT 1 FROM _decommission_todo) LOOP
     CREATE TEMPORARY TABLE _decommission_batch ON COMMIT DROP AS
       SELECT t.tbl FROM _decommission_todo t
@@ -459,19 +538,65 @@ BEGIN
       );
 
     IF NOT EXISTS (SELECT 1 FROM _decommission_batch) THEN
-      RAISE EXCEPTION
-        'decommission: FK cycle prevents deleting PERGURUAN_TINGGI units: %',
-        (SELECT string_agg(tbl, ', ' ORDER BY tbl) FROM _decommission_todo);
+      -- Row-level pass: for each table still pending, delete the doomed rows no
+      -- remaining row references -- across *every* FK that points at it, so a
+      -- delete never violates a constraint. `e.child` may equal the parent (a
+      -- self-FK); such an edge is excluded from the table-level batch above but
+      -- is exactly what the per-row check has to see.
+      total := 0;
+      FOR edge IN
+        SELECT d.tbl AS parent,
+               string_agg(
+                 format(
+                   'NOT EXISTS (SELECT 1 FROM %s ch WHERE ch.%I = t.id)',
+                   e.child, e.col
+                 ),
+                 ' AND '
+               ) AS conds
+        FROM (SELECT DISTINCT tbl FROM _decommission_doomed) d
+        JOIN _decommission_edges e ON e.parent = d.tbl
+        GROUP BY d.tbl
+      LOOP
+        EXECUTE format(
+          'DELETE FROM %s t '
+          'WHERE t.id IN (SELECT id FROM _decommission_doomed WHERE tbl = %L) '
+          'AND %s',
+          edge.parent, edge.parent, edge.conds
+        );
+        GET DIAGNOSTICS inserted = ROW_COUNT;
+        total := total + inserted;
+      END LOOP;
+
+      IF total = 0 THEN
+        RAISE EXCEPTION
+          'decommission: FK cycle prevents deleting PERGURUAN_TINGGI units: %',
+          (SELECT string_agg(tbl, ', ' ORDER BY tbl) FROM _decommission_todo);
+      END IF;
+
+      -- Drop from the todo set every table whose doomed rows are now all gone.
+      FOR edge IN
+        SELECT DISTINCT tbl FROM _decommission_todo
+      LOOP
+        EXECUTE format(
+          'SELECT 1 FROM %s t '
+          'JOIN _decommission_doomed d ON d.tbl = %L AND d.id = t.id LIMIT 1',
+          edge.tbl, edge.tbl
+        );
+        IF NOT FOUND THEN
+          DELETE FROM _decommission_todo WHERE tbl = edge.tbl;
+        END IF;
+      END LOOP;
+    ELSE
+      FOR edge IN SELECT tbl FROM _decommission_batch LOOP
+        EXECUTE format(
+          'DELETE FROM %s WHERE id IN (SELECT id FROM _decommission_doomed WHERE tbl = %L)',
+          edge.tbl, edge.tbl
+        );
+      END LOOP;
+
+      DELETE FROM _decommission_todo WHERE tbl IN (SELECT tbl FROM _decommission_batch);
     END IF;
 
-    FOR edge IN SELECT tbl FROM _decommission_batch LOOP
-      EXECUTE format(
-        'DELETE FROM %s WHERE id IN (SELECT id FROM _decommission_doomed WHERE tbl = %L)',
-        edge.tbl, edge.tbl
-      );
-    END LOOP;
-
-    DELETE FROM _decommission_todo WHERE tbl IN (SELECT tbl FROM _decommission_batch);
     DROP TABLE _decommission_batch;
   END LOOP;
 
