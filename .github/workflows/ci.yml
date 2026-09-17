@@ -181,9 +181,10 @@ jobs:
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
       # Fail the build on known high/critical advisories in the dependency tree.
-      # (actions/dependency-review-action + CodeQL would add PR-diff scanning and
-      # SAST, but both require GitHub Advanced Security, which isn't enabled on
-      # this repo — this audit + Dependabot are the working equivalents here.)
+      # (CodeQL runs separately via GitHub's default code-scanning setup and
+      # gates PRs — an alert with security-severity >= 8 fails the CodeQL check.
+      # `pnpm audit` is kept here for the dependency half, which CodeQL does not
+      # cover.)
       # NOTE: `pnpm audit` (through 11.x) still calls npm's retired audit
       # endpoint and dies with HTTP 410, so we query the bulk advisory
       # endpoint directly — see scripts/audit-deps.mjs.

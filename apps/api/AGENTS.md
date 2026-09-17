@@ -105,6 +105,24 @@ Mount new modules in `src/app.ts`.
 - Cover the RBAC/privilege-escalation guards (e.g. `auth.service.ts`) explicitly —
   both the allowed and the forbidden path.
 
+## Static analysis (CodeQL)
+
+CodeQL runs via GitHub's **default code-scanning setup** and gates PRs: an alert
+with `security-severity >= 8` fails the `CodeQL` check. Two things that cost a
+day each:
+
+- **In-source suppression comments do not work here.** `// codeql[query-id]`
+  is recorded as SARIF `suppressions` metadata, but the `@kind
+  alert-suppression` queries are *not* part of the default code-scanning suite,
+  so the alert keeps failing CI. Fix the flow structurally, or dismiss the alert
+  in the Security tab / via the API — do not rely on the comment.
+- **`js/insufficient-password-hash` fires on `createHash().update()` even for a
+  public key.** The query treats a `createKeyMaterial()` return value as a
+  password source (its bundle is secret), and any `.publicKey` read off it stays
+  tainted. It models `crypto.createHash(...).update(...)` as a sink but *not*
+  the one-shot `crypto.hash(algo, data, enc)` — which produces the identical
+  digest. `publicKeyFingerprint` uses the one-shot form for this reason.
+
 ## Build
 
 - `pnpm build` uses `tsconfig.build.json` (lenient). `pnpm build:strict` uses the

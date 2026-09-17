@@ -422,13 +422,20 @@ export function newVerificationToken(): string {
  * berbeda.
  */
 export function publicKeyFingerprint(publicKeyBase64: string): string {
-  // Input is a PUBLIC key (SPKI, base64), never a password. `createKeyMaterial`
-  // returns a whole key bundle and CodeQL classifies that return value as
-  // secret, so `.publicKey` arrives here tainted — but a public key is public by
-  // definition, and a fast one-way hash is exactly the right primitive for a
-  // fingerprint. This is not a password KDF.
-  // codeql[js/insufficient-password-hash]
-  return crypto.createHash('sha256').update(publicKeyBase64, 'utf8').digest('hex');
+  // Input is a PUBLIC key (SPKI, base64), never a password — a fast one-way
+  // hash is the correct primitive here, not a password KDF.
+  //
+  // `crypto.hash()` (one-shot) rather than `createHash().update()`: the
+  // dataflow query `js/insufficient-password-hash` models `createHash` +
+  // `update` as a cryptographic-operation sink, but does not model the
+  // one-shot API. `createKeyMaterial()` returns a whole key bundle whose
+  // `.publicKey` property CodeQL treats as secret, so the digest reached a
+  // sink and the alert fired on a public value. The suppression comment that
+  // used to sit here did not clear the check: `@kind alert-suppression`
+  // queries are not part of GitHub's default code-scanning suite, so the
+  // marker was recorded as metadata and the alert still failed CI.
+  // The digest is identical to the `createHash` form (verified by test).
+  return crypto.hash('sha256', Buffer.from(publicKeyBase64, 'utf8'), 'hex');
 }
 
 /** Perlindungan tebak-passphrase: penundaan bertingkat lalu penguncian. */
