@@ -1,10 +1,10 @@
 # Ulasan & Koreksi: Proposal PKI Tanda Tangan Digital Risalah Dewan Pembina (dari Gemini)
 
-> **Status:** Dokumen ulasan (review), bukan implementasi. Ditulis berdasarkan
-> audit kode, pengecekan lintas ke skema basis data, dan riset standar.
-> Belum di-commit / belum di-PR. Ikuti aturan golden AGENTS.md: koreksi dalam
-> bentuk kode harus lewat branch + PR, dan "selesai" berarti kode **dan** tesnya
-> dalam satu commit.
+> **Status:** Dokumen review + ADR (koreksi), bukan spesifikasi implementasi.
+> Ditulis berdasarkan audit kode, pengecekan lintas ke skema basis data, dan riset standar.
+> Disertakan pada PR #509 bersama modul `foundation-decisions`. Ikuti aturan
+> golden AGENTS.md: koreksi dalam bentuk kode lewat branch + PR, dan "selesai"
+> berarti kode **dan** tesnya dalam satu commit.
 >
 > **⚠️ Sebagian rekomendasi di bawah SUDAH DITOLAK oleh implementasi.** Baca
 > §0 (Keputusan arsitektur final) lebih dulu. §5 dan §6 tetap disimpan sebagai
