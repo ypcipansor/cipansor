@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { MainLayout } from "@/components/layout";
-import { useForm, useWatch } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import {
@@ -17,12 +17,10 @@ import {
   useForwardWbsReport,
   useAddWbsHandlerComment,
   useBoardSuspensions,
-  useSuspendableCandidates,
-  usePlhCandidates,
   useCreateBoardSuspension,
   useLiftBoardSuspension,
   useFinancialArrears,
-  useDraftPeriodicReportToEOffice,
+  useSubmitPeriodicReportToEOffice,
 } from "@/hooks/use-pengawasan";
 import { PageHeader } from "@/components/shared/page-header";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
@@ -40,15 +38,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Pencil, Trash2, AlertTriangle, ShieldCheck, Filter, X, Send, Lock, ArrowRight, UserX, FileText, DollarSign, Users, RefreshCw, CheckCircle2 } from "lucide-react";
 import { safeFormat } from "@/lib/date";
 import { id as localeId } from "date-fns/locale";
-import {
-  PLH_ROLE_CODES,
-  createBoardSuspensionSchema,
-  draftPeriodicReportSchema,
-  pengawasanAccessOf,
-} from "@cipansor/shared";
-import type { WbsForwardRoleCode, WbsStatusCode } from "@cipansor/shared";
-import { useAuthStore } from "@/stores/auth";
-import { getPrimaryRoleCode } from "@/lib/rbac";
 
 // ─── Schemas ────────────────────────────────────────
 const auditFormSchema = z.object({
@@ -69,11 +58,22 @@ const findingFormSchema = z.object({
   recommendation: z.string().optional(),
 });
 
-// The suspension and periodic-report payloads come from `@cipansor/shared`, so
-// the form and the API validate against one contract. Only the schemas unique
-// to this page are declared here.
-const boardSuspensionSchema = createBoardSuspensionSchema;
-const periodicReportSchema = draftPeriodicReportSchema;
+const boardSuspensionSchema = z.object({
+  userId: z.string().min(1, "Pengurus yang dibekukan wajib dipilih"),
+  skNumber: z.string().min(3, "Nomor SK wajib diisi"),
+  auditReason: z.string().min(10, "Alasan audit minimal 10 karakter"),
+  documentUrl: z.string().optional(),
+  plhUserId: z.string().optional(),
+  plhRoleCode: z.string().optional(),
+});
+
+const periodicReportSchema = z.object({
+  title: z.string().min(3, "Judul laporan wajib diisi"),
+  period: z.string().min(2, "Periode laporan wajib diisi"),
+  executiveSummary: z.string().min(10, "Ringkasan eksekutif minimal 10 karakter"),
+  findingsSummary: z.string().optional(),
+  recommendations: z.string().optional(),
+});
 
 type AuditFormValues = z.infer<typeof auditFormSchema>;
 
@@ -278,11 +278,10 @@ function PengawasanPageContent() {
 
   // WBS States
   const [selectedWbs, setSelectedWbs] = useState<any>(null);
-  const [forwardRole, setForwardRole] = useState<WbsForwardRoleCode>("YAYASAN_KETUA");
+  const [forwardRole, setForwardRole] = useState<string>("YAYASAN_KETUA");
   const [forwardReason, setForwardReason] = useState<string>("");
   const [forwardDialogOpen, setForwardRoleDialogOpen] = useState<boolean>(false);
   const [handlerComment, setHandlerComment] = useState<string>("");
-  const [replyTargetId, setReplyTargetId] = useState<string | null>(null);
 
   // Board Suspension States
   const [suspensionDialogOpen, setSuspensionDialogOpen] = useState<boolean>(false);
@@ -291,12 +290,6 @@ function PengawasanPageContent() {
 
   // Periodic Report States
   const [periodicDialogOpen, setPeriodicDialogOpen] = useState<boolean>(false);
-
-  // Which governance controls this account may actually use. The API gates
-  // each action on its own role list; rendering them all to everyone meant a
-  // Pengawas saw "Tetapkan SK" and "Pulihkan Status" buttons that answered 403.
-  const authUser = useAuthStore((s) => s.user);
-  const access = pengawasanAccessOf(getPrimaryRoleCode(authUser));
 
   // Hooks
   const { data: audits, isLoading: isAuditsLoading } = useAudits(
@@ -311,20 +304,12 @@ function PengawasanPageContent() {
   const { data: boardSuspensions, isLoading: isSuspensionsLoading } = useBoardSuspensions();
   const createSuspensionMutation = useCreateBoardSuspension();
   const liftSuspensionMutation = useLiftBoardSuspension();
-  const handlerCommentMutation = useAddWbsHandlerComment();
 
   const { data: arrearsData, isLoading: isArrearsLoading } = useFinancialArrears();
-  const draftPeriodicReportMutation = useDraftPeriodicReportToEOffice();
+  const submitPeriodicReportMutation = useSubmitPeriodicReportToEOffice();
 
   // Forms
-  // The suspension schema preprocesses `""` to `undefined`, so its input and
-  // output types differ. React Hook Form validates the *input* and hands the
-  // handler the *output*, so both generics are spelled out.
-  const suspensionForm = useForm<
-    z.input<typeof boardSuspensionSchema>,
-    any,
-    z.output<typeof boardSuspensionSchema>
-  >({
+  const suspensionForm = useForm<z.infer<typeof boardSuspensionSchema>>({
     resolver: zodResolver(boardSuspensionSchema),
     defaultValues: { userId: "", skNumber: "", auditReason: "", documentUrl: "", plhUserId: "", plhRoleCode: "YAYASAN_KETUA" },
   });
@@ -334,18 +319,11 @@ function PengawasanPageContent() {
     defaultValues: { title: "Laporan Hasil Pengawasan Periodik 2026", period: "2026-Q1", executiveSummary: "", findingsSummary: "", recommendations: "" },
   });
 
-  // The suspension form selects people, not raw UUIDs. Both lists are scoped
-  // by the API: `candidates` is Pengurus with no ACTIVE suspension, and
-  // `plhCandidates` excludes the officer being suspended.
-  const suspendableUserId = useWatch({ control: suspensionForm.control, name: "userId" }) || undefined;
-  const { data: suspendableCandidates } = useSuspendableCandidates(suspensionDialogOpen);
-  const { data: plhCandidates } = usePlhCandidates(suspendableUserId, suspensionDialogOpen);
-
   const handleEdit = (audit: any) => { setEditItem(audit); setDialogOpen(true); };
   const handleCreate = () => { setEditItem(null); setDialogOpen(true); };
   const handleDialogClose = () => { setDialogOpen(false); setEditItem(null); };
 
-  const handleCreateSuspensionSubmit = async (values: z.output<typeof boardSuspensionSchema>) => {
+  const handleCreateSuspensionSubmit = async (values: z.infer<typeof boardSuspensionSchema>) => {
     await createSuspensionMutation.mutateAsync(values);
     setSuspensionDialogOpen(false);
     suspensionForm.reset();
@@ -370,31 +348,11 @@ function PengawasanPageContent() {
     setSelectedWbs(null);
   };
 
-  const handleSendHandlerComment = async (reportId: string) => {
-    const message = handlerComment.trim();
-    if (!message) return;
-    await handlerCommentMutation.mutateAsync({ id: reportId, message });
-    setHandlerComment("");
-    setReplyTargetId(null);
-  };
-
   const handlePeriodicReportSubmit = async (values: z.infer<typeof periodicReportSchema>) => {
-    await draftPeriodicReportMutation.mutateAsync(values);
+    await submitPeriodicReportMutation.mutateAsync(values);
     setPeriodicDialogOpen(false);
     periodicForm.reset();
   };
-
-  // Land on the first tab the role may actually use: `defaultValue` pointing at
-  // a hidden `TabsContent` renders an empty panel.
-  const defaultTab = access.canReadAudits
-    ? "audits"
-    : access.canHandleWbs
-      ? "wbs"
-      : access.canManageSuspensions
-        ? "suspensions"
-        : access.canViewArrears
-          ? "arrears"
-          : "eoffice";
 
   return (
     <div className="container mx-auto py-6 space-y-8">
@@ -404,58 +362,37 @@ function PengawasanPageContent() {
           description="Fungsi Audit Internal, Whistleblowing System (WBS), Pembekuan Pengurus & Plh/Plt, serta Laporan Pengawasan via E-Office."
         />
         <div className="flex gap-2 flex-wrap">
-          {access.canSubmitPeriodicReport && (
-            <Button onClick={() => setPeriodicDialogOpen(true)} variant="outline" className="border-blue-600 text-blue-600 hover:bg-blue-50 gap-1">
-              <FileText className="h-4 w-4" />
-              Laporan Pengawasan E-Office
-            </Button>
-          )}
-          {access.canWriteAudits && (
-            <Button onClick={handleCreate} className="gap-1 bg-blue-600 hover:bg-blue-700">
-              <Plus className="h-4 w-4" />
-              Jadwalkan Audit
-            </Button>
-          )}
+          <Button onClick={() => setPeriodicDialogOpen(true)} variant="outline" className="border-blue-600 text-blue-600 hover:bg-blue-50 gap-1">
+            <FileText className="h-4 w-4" />
+            Laporan Pengawasan E-Office
+          </Button>
+          <Button onClick={handleCreate} className="gap-1 bg-blue-600 hover:bg-blue-700">
+            <Plus className="h-4 w-4" />
+            Jadwalkan Audit
+          </Button>
         </div>
       </div>
 
-      <Tabs defaultValue={defaultTab} className="space-y-6">
-        {/*
-          Each tab is shown only to a role the API would answer. A tab whose
-          endpoint returns 403 is a dead end the user only discovers after
-          clicking it, so visibility follows the same `pengawasanAccessOf`
-          resolution as the buttons and the route guards.
-        */}
-        <TabsList className="flex flex-wrap gap-2 h-auto p-1 bg-slate-100 rounded-lg">
-          {access.canReadAudits && (
-            <TabsTrigger value="audits" className="py-2.5 text-xs md:text-sm font-medium">
-              <ShieldCheck className="h-4 w-4 mr-1.5" /> Audit & Temuan
-            </TabsTrigger>
-          )}
-          {access.canHandleWbs && (
-            <TabsTrigger value="wbs" className="py-2.5 text-xs md:text-sm font-medium">
-              <AlertTriangle className="h-4 w-4 mr-1.5" /> WBS & Pengaduan ({wbsReports?.length || 0})
-            </TabsTrigger>
-          )}
-          {access.canManageSuspensions && (
-            <TabsTrigger value="suspensions" className="py-2.5 text-xs md:text-sm font-medium">
-              <UserX className="h-4 w-4 mr-1.5" /> Pembekuan Pengurus
-            </TabsTrigger>
-          )}
-          {access.canViewArrears && (
-            <TabsTrigger value="arrears" className="py-2.5 text-xs md:text-sm font-medium">
-              <DollarSign className="h-4 w-4 mr-1.5" /> Tagihan Belum Dibayar
-            </TabsTrigger>
-          )}
-          {access.canSubmitPeriodicReport && (
-            <TabsTrigger value="eoffice" className="py-2.5 text-xs md:text-sm font-medium">
-              <Send className="h-4 w-4 mr-1.5" /> E-Office Report
-            </TabsTrigger>
-          )}
+      <Tabs defaultValue="audits" className="space-y-6">
+        <TabsList className="grid grid-cols-2 md:grid-cols-5 gap-2 h-auto p-1 bg-slate-100 rounded-lg">
+          <TabsTrigger value="audits" className="py-2.5 text-xs md:text-sm font-medium">
+            <ShieldCheck className="h-4 w-4 mr-1.5" /> Audit & Temuan
+          </TabsTrigger>
+          <TabsTrigger value="wbs" className="py-2.5 text-xs md:text-sm font-medium">
+            <AlertTriangle className="h-4 w-4 mr-1.5" /> WBS & Pengaduan ({wbsReports?.length || 0})
+          </TabsTrigger>
+          <TabsTrigger value="suspensions" className="py-2.5 text-xs md:text-sm font-medium">
+            <UserX className="h-4 w-4 mr-1.5" /> Pembekuan Pengurus
+          </TabsTrigger>
+          <TabsTrigger value="arrears" className="py-2.5 text-xs md:text-sm font-medium">
+            <DollarSign className="h-4 w-4 mr-1.5" /> Tagihan Belum Dibayar
+          </TabsTrigger>
+          <TabsTrigger value="eoffice" className="py-2.5 text-xs md:text-sm font-medium">
+            <Send className="h-4 w-4 mr-1.5" /> E-Office Report
+          </TabsTrigger>
         </TabsList>
 
         {/* ================= TAB 1: AUDIT & TEMUAN ================= */}
-        {access.canReadAudits && (
         <TabsContent value="audits" className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Card className="border-l-4 border-l-blue-500">
@@ -518,7 +455,6 @@ function PengawasanPageContent() {
                       </div>
                       <div className="flex items-center gap-2">
                         <Badge className={statusColor[audit.status]}>{audit.status}</Badge>
-                        {access.canWriteAudits && (
                         <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
                           <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => handleEdit(audit)}>
                             <Pencil className="h-4 w-4" />
@@ -527,18 +463,15 @@ function PengawasanPageContent() {
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
-                        )}
                       </div>
                     </div>
                   </CardHeader>
                   <CardContent>
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-sm font-medium">Temuan ({audit.findings?.length || 0})</span>
-                      {access.canWriteAudits && (
                       <Button size="sm" variant="outline" className="gap-1 h-7" onClick={() => setFindingAuditId(audit.id)}>
                         <Plus className="h-3 w-3" /> Tambah Temuan
                       </Button>
-                      )}
                     </div>
                     <div className="flex gap-2 flex-wrap">
                       {audit.findings?.map((f: any) => (
@@ -554,10 +487,8 @@ function PengawasanPageContent() {
             )}
           </div>
         </TabsContent>
-        )}
 
         {/* ================= TAB 2: WHISTLEBLOWING SYSTEM (WBS) ================= */}
-        {access.canHandleWbs && (
         <TabsContent value="wbs" className="space-y-6">
           <div className="flex items-center justify-between">
             <div>
@@ -597,11 +528,9 @@ function PengawasanPageContent() {
                         <CardTitle className="text-base font-bold text-slate-900 mt-1">{report.subject}</CardTitle>
                       </div>
                       <div className="flex items-center gap-2">
-                        {access.canHandleWbs && (
-                        <>
                         <Select
                           value={report.status}
-                          onValueChange={(status) => updateWbsStatusMutation.mutate({ id: report.id, status: status as WbsStatusCode })}
+                          onValueChange={(status) => updateWbsStatusMutation.mutate({ id: report.id, status })}
                         >
                           <SelectTrigger className="w-[180px] h-8 text-xs">
                             <SelectValue placeholder="Ubah Status" />
@@ -623,8 +552,6 @@ function PengawasanPageContent() {
                         >
                           Teruskan
                         </Button>
-                        </>
-                        )}
                       </div>
                     </div>
                   </CardHeader>
@@ -638,71 +565,6 @@ function PengawasanPageContent() {
                     <p className="text-xs text-slate-700 whitespace-pre-line bg-white p-3 rounded border">
                       {report.description}
                     </p>
-
-                    {/* Conversation thread. `senderType: HANDLER` is what the
-                        public tracking page anonymizes as "Tim Pemeriksa"; a
-                        reporter's own message is never shown with handler
-                        identity. */}
-                    {report.comments && report.comments.length > 0 && (
-                      <div className="space-y-1 border-t pt-2">
-                        <span className="text-[11px] font-semibold text-slate-500 uppercase">Percakapan:</span>
-                        {report.comments.map((c: any) => (
-                          <div
-                            key={c.id}
-                            className={`text-xs p-2 rounded border ${
-                              c.senderType === "HANDLER"
-                                ? "bg-blue-50/60 border-blue-200"
-                                : "bg-slate-50 border-slate-200"
-                            }`}
-                          >
-                            <span className="font-semibold text-slate-700">
-                              {c.senderType === "HANDLER" ? (c.senderName || "Tim Pemeriksa") : "Pelapor"}
-                            </span>
-                            <p className="text-slate-800 whitespace-pre-line">{c.message}</p>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Handler reply */}
-                    {access.canHandleWbs && (
-                      replyTargetId === report.id ? (
-                        <div className="space-y-2 border-t pt-2">
-                          <Textarea
-                            rows={2}
-                            value={handlerComment}
-                            onChange={(e) => setHandlerComment(e.target.value)}
-                            placeholder="Tulis tanggapan untuk pelapor..."
-                          />
-                          <div className="flex justify-end gap-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => { setReplyTargetId(null); setHandlerComment(""); }}
-                            >
-                              Batal
-                            </Button>
-                            <Button
-                              size="sm"
-                              className="bg-blue-600 hover:bg-blue-700 text-white"
-                              disabled={!handlerComment.trim() || handlerCommentMutation.isPending}
-                              onClick={() => handleSendHandlerComment(report.id)}
-                            >
-                              {handlerCommentMutation.isPending ? "Mengirim…" : "Kirim Tanggapan"}
-                            </Button>
-                          </div>
-                        </div>
-                      ) : (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-8 text-xs gap-1"
-                          onClick={() => { setReplyTargetId(report.id); setHandlerComment(""); }}
-                        >
-                          Tanggapi Pelapor
-                        </Button>
-                      )
-                    )}
 
                     {/* Forward Logs */}
                     {report.forwardLogs && report.forwardLogs.length > 0 && (
@@ -721,22 +583,18 @@ function PengawasanPageContent() {
             </div>
           )}
         </TabsContent>
-        )}
 
         {/* ================= TAB 3: PEMBEKUAN PENGURUS & PLH/PLT ================= */}
-        {access.canManageSuspensions && (
         <TabsContent value="suspensions" className="space-y-6">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-lg font-semibold text-slate-900">Pemberhentian Sementara Pengurus (Board Suspension)</h2>
               <p className="text-xs text-slate-500">Mekanisme penetapan pembekuan sementara akun Pengurus yang terindikasi pelanggaran serta penunjukan Plh/Plt.</p>
             </div>
-            {access.canManageSuspensions && (
-              <Button onClick={() => setSuspensionDialogOpen(true)} className="bg-red-600 hover:bg-red-700 text-white gap-1">
-                <UserX className="h-4 w-4" />
-                Tetapkan SK Pembekuan Pengurus
-              </Button>
-            )}
+            <Button onClick={() => setSuspensionDialogOpen(true)} className="bg-red-600 hover:bg-red-700 text-white gap-1">
+              <UserX className="h-4 w-4" />
+              Tetapkan SK Pembekuan Pengurus
+            </Button>
           </div>
 
           {isSuspensionsLoading ? (
@@ -766,7 +624,7 @@ function PengawasanPageContent() {
                           {susp.user?.name} ({susp.user?.email})
                         </CardTitle>
                       </div>
-                      {susp.status === 'ACTIVE' && access.canLiftSuspension && (
+                      {susp.status === 'ACTIVE' && (
                         <Button
                           size="sm"
                           variant="outline"
@@ -794,10 +652,8 @@ function PengawasanPageContent() {
             </div>
           )}
         </TabsContent>
-        )}
 
         {/* ================= TAB 4: TAGIHAN BELUM DIBAYAR ================= */}
-        {access.canViewArrears && (
         <TabsContent value="arrears" className="space-y-6">
           <div>
             <h2 className="text-lg font-semibold text-slate-900">Laporan Tagihan & Tunggakan Pembayaran (Arrears)</h2>
@@ -857,29 +713,24 @@ function PengawasanPageContent() {
             </div>
           )}
         </TabsContent>
-        )}
 
         {/* ================= TAB 5: E-OFFICE PERIODIC REPORT ================= */}
-        {access.canSubmitPeriodicReport && (
         <TabsContent value="eoffice" className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Konsep Laporan Pengawasan Periodik di E-Office</CardTitle>
+              <CardTitle className="text-base">Pengajuan Laporan Pengawasan Periodik via E-Office</CardTitle>
               <CardDescription>
-                Susun Laporan Pengawasan untuk didaftarkan sebagai konsep (draft) Surat Keluar E-Office.
-                Laporan belum terkirim: buka konsepnya di E-Office dan jalankan alur pengajuan/verifikasi
-                untuk mengirimkannya kepada Ketua Pembina Yayasan.
+                Pilih atau susun Laporan Pengawasan untuk diajukan secara resmi kepada Ketua Pembina Yayasan lewat modul Surat Keluar E-Office.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <Button onClick={() => setPeriodicDialogOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white gap-2">
                 <Send className="h-4 w-4" />
-                Buat Konsep Laporan Pengawasan di E-Office
+                Buat & Ajukan Laporan Pengawasan ke E-Office
               </Button>
             </CardContent>
           </Card>
         </TabsContent>
-        )}
       </Tabs>
 
       {/* Dialogs */}
@@ -901,7 +752,7 @@ function PengawasanPageContent() {
           <div className="space-y-4 py-2">
             <div>
               <Label>Role Penerima Utama Baru</Label>
-              <Select value={forwardRole} onValueChange={(v) => setForwardRole(v as WbsForwardRoleCode)}>
+              <Select value={forwardRole} onValueChange={setForwardRole}>
                 <SelectTrigger className="bg-white"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="YAYASAN_PEMBINA">Pembina Yayasan</SelectItem>
@@ -946,28 +797,8 @@ function PengawasanPageContent() {
             <form onSubmit={suspensionForm.handleSubmit(handleCreateSuspensionSubmit)} className="space-y-4">
               <FormField control={suspensionForm.control} name="userId" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Pengurus yang Dibekukan *</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Pilih Pengurus..." />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {suspendableCandidates?.length ? (
-                        suspendableCandidates.map((c) => (
-                          <SelectItem key={c.id} value={c.id}>
-                            {c.name} — {c.email}
-                            {c.roleCodes.length ? ` (${c.roleCodes.join(", ")})` : ""}
-                          </SelectItem>
-                        ))
-                      ) : (
-                        <SelectItem value="__none__" disabled>
-                          Tidak ada Pengurus yang dapat dibekukan
-                        </SelectItem>
-                      )}
-                    </SelectContent>
-                  </Select>
+                  <FormLabel>ID Pengurus yang Dibekukan *</FormLabel>
+                  <FormControl><Input placeholder="Masukkan ID Pengurus..." {...field} /></FormControl>
                   <FormMessage />
                 </FormItem>
               )} />
@@ -988,44 +819,15 @@ function PengawasanPageContent() {
               <div className="grid grid-cols-2 gap-4">
                 <FormField control={suspensionForm.control} name="plhUserId" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Plh/Plt Pengganti (opsional)</FormLabel>
-                    <Select
-                      value={field.value ? String(field.value) : "__none__"}
-                      onValueChange={(v) => field.onChange(v === "__none__" ? "" : v)}
-                    >
-                      <FormControl>
-                        <SelectTrigger><SelectValue placeholder="Pilih Plh/Plt..." /></SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="__none__">— Tidak menunjuk Plh/Plt —</SelectItem>
-                        {plhCandidates?.map((c) => (
-                          <SelectItem key={c.id} value={c.id}>
-                            {c.name} — {c.email}
-                            {c.roleCodes.length ? ` (${c.roleCodes.join(", ")})` : ""}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <FormLabel>ID User Plh/Plt Pengganti</FormLabel>
+                    <FormControl><Input placeholder="ID Pengurus Pendamping..." {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
                 <FormField control={suspensionForm.control} name="plhRoleCode" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Peran / Role Plh</FormLabel>
-                    <Select
-                      value={field.value == null ? "__none__" : String(field.value)}
-                      onValueChange={(v) => field.onChange(v === "__none__" ? "" : v)}
-                    >
-                      <FormControl>
-                        <SelectTrigger><SelectValue placeholder="Pilih peran Plh" /></SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="__none__">— Tidak ada peran —</SelectItem>
-                        {PLH_ROLE_CODES.map((code) => (
-                          <SelectItem key={code} value={code}>{code.replace("YAYASAN_", "Yayasan ")}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <FormControl><Input placeholder="YAYASAN_KETUA" {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
@@ -1072,11 +874,9 @@ function PengawasanPageContent() {
       <Dialog open={periodicDialogOpen} onOpenChange={setPeriodicDialogOpen}>
         <DialogContent className="sm:max-w-[600px]">
           <DialogHeader>
-            <DialogTitle>Konsep Laporan Pengawasan Periodik di E-Office</DialogTitle>
+            <DialogTitle>Pengajuan Laporan Pengawasan Periodik ke Pembina</DialogTitle>
             <DialogDescription>
-              Isi ringkasan laporan pengawasan. Laporan akan terdaftar sebagai konsep (draft) Surat Keluar
-              di E-Office dan belum dikirim; jalankan alur pengajuan/verifikasi E-Office untuk mengirimkannya
-              kepada Pembina.
+              Isi ringkasan laporan pengawasan. Laporan akan terdaftar sebagai Surat Keluar di E-Office.
             </DialogDescription>
           </DialogHeader>
           <Form {...periodicForm}>
@@ -1112,7 +912,7 @@ function PengawasanPageContent() {
               <div className="flex justify-end gap-2 pt-2">
                 <Button type="button" variant="outline" onClick={() => setPeriodicDialogOpen(false)}>Batal</Button>
                 <Button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white">
-                  Simpan sebagai Konsep di E-Office
+                  Ajukan Surat Laporan ke E-Office
                 </Button>
               </div>
             </form>

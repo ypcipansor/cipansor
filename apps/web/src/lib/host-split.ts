@@ -59,15 +59,6 @@ export const PUBLIC_PATH_PREFIXES = [
    * and so the two canonical lists stay in step (Flag 11).
    */
   "/public/verify-card",
-  /**
-   * Whistleblowing System — the page a whistleblower must reach without a
-   * session, and from a link that may well be on the public site. It is a
-   * `/public/*` page so the middleware matcher exempts it already, but it must
-   * also be classified here or the host split sends it to the portal, where the
-   * apex's own visitors cannot open it and the login wall greets them instead.
-   * Kept in step with `publicPrefixes` in middleware.ts (sync test enforced).
-   */
-  "/public/wbs",
 ];
 
 /** True when the request arrived on the portal, ignoring case and port. */
@@ -156,7 +147,8 @@ function underPublicPrefix(pathname: string): boolean {
  * single-host behaviour, so `pnpm dev` is unaffected.
  */
 export type HostSplitAction =
-  { kind: "redirect"; host: string } | { kind: "notFound" };
+  | { kind: "redirect"; host: string }
+  | { kind: "notFound" };
 
 export function hostSplitActionFor(
   host: string | null | undefined,

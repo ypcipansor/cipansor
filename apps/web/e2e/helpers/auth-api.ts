@@ -168,16 +168,21 @@ export async function injectSession(page: Page, session: AuthSession) {
 
   // Cookies for the Next middleware (it JSON.parses the encoded auth-storage and
   // falls back to accessToken). Mirror the app's encodeURIComponent encoding.
+  const hostname = new URL(BASE_URL).hostname;
   await page.context().addCookies([
     {
       name: "accessToken",
-      value: session.accessToken,
-      url: BASE_URL,
+      value: session.accessToken || "",
+      domain: hostname,
+      path: "/",
+      sameSite: "Lax",
     },
     {
       name: "auth-storage",
       value: encodeURIComponent(authStorage),
-      url: BASE_URL,
+      domain: hostname,
+      path: "/",
+      sameSite: "Lax",
     },
   ]);
 

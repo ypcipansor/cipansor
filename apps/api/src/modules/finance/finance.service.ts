@@ -174,32 +174,12 @@ export async function createInvoice(data: CreateInvoiceDto, tx?: Prisma.Transact
         }
       }
 
-      // Resolve the unit of record at issuance. The issuing unit is the one
-      // that owns the payment type — a "SPP SMP IT" bill raised for a pupil
-      // belongs to SMP IT's books even if the pupil has since transferred to
-      // SMA. Taking `student.unitId` unconditionally attributed the arrears to
-      // whichever unit the pupil currently sits in, so a cross-unit payment
-      // type silently mis-filed the debt. `student.unitId` remains the fallback
-      // only for the (schema-impossible) case of a payment type with no unit.
-      const [paymentType, student] = await Promise.all([
-        dbClient.paymentType.findUnique({
-          where: { id: paymentTypeId },
-          select: { unitId: true },
-        }),
-        dbClient.student.findUnique({
-          where: { id: studentId },
-          select: { unitId: true },
-        }),
-      ]);
-      const issuingUnitId = paymentType?.unitId ?? student?.unitId ?? null;
-
       invoice = await dbClient.invoice.create({
         data: {
           ...invoiceData,
           invoiceNumber,
           amount: finalAmount.lt(0) ? 0 : finalAmount,
           dueDate: new Date(data.dueDate),
-          unitId: issuingUnitId,
           student: { connect: { id: studentId } },
           paymentType: { connect: { id: paymentTypeId } },
         },
@@ -1424,13 +1404,6 @@ export async function generateBulkSppInvoices(data: {
           amount: paymentType.amount,
           dueDate,
           period,
-          // Freeze the issuing unit on the invoice so a later transfer does
-          // not relocate this arrears to the pupil's new unit. The unit of
-          // record is the one that owns the payment type — a "SPP SMP IT" bill
-          // raised for a pupil belongs to SMP IT's books even if the pupil has
-          // since moved to SMA. `student.unitId` is only the legacy fallback
-          // for a payment type with no unit.
-          unitId: paymentType.unitId ?? student.unitId,
           notes: `Tagihan ${paymentType.name} untuk ${period}`,
         },
       });
@@ -1522,10 +1495,6 @@ export async function generateRecurringBills() {
             amount: paymentType.amount,
             dueDate,
             period,
-            // Unit of record is the payment type's unit; see
-            // `generateBulkSppInvoices` for why the pupil's unit is only a
-            // legacy fallback.
-            unitId: paymentType.unitId ?? student.unitId,
             notes: `Tagihan ${paymentType.name} otomatis untuk ${period}`,
           },
         });

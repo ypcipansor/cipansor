@@ -42,4 +42,3 @@ export * from "./types/student-id-card";
 export * from "./roles";
 export * from "./types/demo-accounts";
 export * from "./types/admissions";
-export * from "./types/pengawasan";

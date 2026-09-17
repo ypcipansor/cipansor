@@ -1,15 +1,7 @@
 import { Router } from 'express';
 import { authenticate, authorize } from '@/middleware/auth';
 import { requireTurnstile } from '@/middleware/turnstile';
-import {
-  PENGAWASAN_ARREARS_ROLES,
-  PENGAWASAN_AUDIT_GENERAL_ROLES,
-  PENGAWASAN_AUDIT_WRITE_ROLES,
-  PENGAWASAN_LIFT_ROLES,
-  PENGAWASAN_PERIODIC_REPORT_ROLES,
-  PENGAWASAN_SUSPENSION_ROLES,
-  PENGAWASAN_WBS_HANDLER_ROLES,
-} from '@cipansor/shared';
+import { GOVERNANCE_ROLE_CODES, PRINCIPAL_ROLE_CODES } from '@cipansor/shared';
 import * as pengawasanController from './pengawasan.controller';
 
 const router = Router();
@@ -39,127 +31,105 @@ router.post(
 router.use(authenticate);
 
 // 1. Board Member Suspensions (Governance Only: Pengawas, Pembina & SuperAdmin)
-//
-// The role groups that decide these routes live in `@cipansor/shared`
-// (`PENGAWASAN_*`), because the governance page now hides each control for
-// roles the API would reject. A list duplicated here would let the button and
-// the policy drift apart again; there is one definition, read by both.
+const GOVERNANCE_SUPERVISOR_ROLES = ['SUPER_ADMIN', 'YAYASAN_PENGAWAS', 'YAYASAN_PEMBINA'];
 
 router.get(
   '/board-suspensions',
-  authorize(...PENGAWASAN_SUSPENSION_ROLES),
+  authorize(...GOVERNANCE_SUPERVISOR_ROLES),
   pengawasanController.listBoardSuspensions
-);
-// Scoped pickers: the form selects a person, not a UUID. Same authorization as
-// the suspension route — a role that cannot suspend must not enumerate the
-// candidate list either.
-router.get(
-  '/board-suspensions/candidates',
-  authorize(...PENGAWASAN_SUSPENSION_ROLES),
-  pengawasanController.listSuspendableCandidates
-);
-router.get(
-  '/board-suspensions/plh-candidates',
-  authorize(...PENGAWASAN_SUSPENSION_ROLES),
-  pengawasanController.listPlhCandidates
 );
 router.post(
   '/board-suspensions',
-  authorize(...PENGAWASAN_SUSPENSION_ROLES),
+  authorize(...GOVERNANCE_SUPERVISOR_ROLES),
   pengawasanController.createBoardSuspension
 );
-// Pemulihan status is the Pembina's act, not the Pengawas's.
-//
-// The Pengawas issues the SK Pembekuan; letting the same organ lift it means
-// the oversight body both suspends and un-suspends the executive it audits,
-// with no second signature. The Pembina appoints and dismisses — UU 16/2001
-// Pasal 28 — so restoring a board member's status is theirs. Super Admin
-// retains it for operational recovery.
 router.post(
   '/board-suspensions/:id/lift',
-  authorize(...PENGAWASAN_LIFT_ROLES),
+  authorize(...GOVERNANCE_SUPERVISOR_ROLES),
   pengawasanController.liftBoardSuspension
 );
 
 // 2. Periodic Oversight Report Submission to E-Office (Pengawas & SuperAdmin Only)
 router.post(
-  '/periodic-reports/draft-eoffice',
-  authorize(...PENGAWASAN_PERIODIC_REPORT_ROLES),
-  pengawasanController.draftPeriodicReportToEOffice
+  '/periodic-reports/submit-eoffice',
+  authorize('SUPER_ADMIN', 'YAYASAN_PENGAWAS'),
+  pengawasanController.submitPeriodicReportToEOffice
 );
 
 // 3. WBS Management (Governance + Unit Heads)
+const WBS_HANDLER_ROLES = [
+  ...GOVERNANCE_ROLE_CODES,
+  ...PRINCIPAL_ROLE_CODES,
+  'SUPER_ADMIN',
+  'UNIT_ADMIN',
+];
+
 router.get(
   '/wbs/reports',
-  authorize(...PENGAWASAN_WBS_HANDLER_ROLES),
+  authorize(...WBS_HANDLER_ROLES),
   pengawasanController.listWbsReports
 );
 router.get(
   '/wbs/reports/:id',
-  authorize(...PENGAWASAN_WBS_HANDLER_ROLES),
+  authorize(...WBS_HANDLER_ROLES),
   pengawasanController.getWbsReportById
 );
 router.patch(
   '/wbs/reports/:id/status',
-  authorize(...PENGAWASAN_WBS_HANDLER_ROLES),
+  authorize(...WBS_HANDLER_ROLES),
   pengawasanController.updateWbsStatus
 );
 router.post(
   '/wbs/reports/:id/forward',
-  authorize(...PENGAWASAN_WBS_HANDLER_ROLES),
+  authorize(...WBS_HANDLER_ROLES),
   pengawasanController.forwardWbsReport
 );
 router.post(
   '/wbs/reports/:id/comments',
-  authorize(...PENGAWASAN_WBS_HANDLER_ROLES),
+  authorize(...WBS_HANDLER_ROLES),
   pengawasanController.addHandlerWbsComment
 );
 
 // 4. Financial Arrears Oversight (Governance + Unit Admins/Treasurers)
+const FINANCIAL_OVERSIGHT_ROLES = [
+  ...GOVERNANCE_ROLE_CODES,
+  'SUPER_ADMIN',
+  'UNIT_ADMIN',
+];
+
 router.get(
   '/financial-arrears',
-  authorize(...PENGAWASAN_ARREARS_ROLES),
+  authorize(...FINANCIAL_OVERSIGHT_ROLES),
   pengawasanController.getFinancialArrears
 );
 
 // 5. Audits, Findings & Follow-ups (Auditors, Unit Admins, Teachers & Staff)
-router.get(
-  '/suggestions',
-  authorize(...PENGAWASAN_AUDIT_GENERAL_ROLES),
-  pengawasanController.getAuditSuggestions
-);
-router.get('/', authorize(...PENGAWASAN_AUDIT_GENERAL_ROLES), pengawasanController.listAudits);
-router.post('/', authorize(...PENGAWASAN_AUDIT_WRITE_ROLES), pengawasanController.createAudit);
+const AUDIT_GENERAL_ROLES = [
+  'SUPER_ADMIN',
+  'UNIT_ADMIN',
+  'TEACHER',
+  'STAFF',
+  ...GOVERNANCE_ROLE_CODES,
+  ...PRINCIPAL_ROLE_CODES,
+];
+
+router.get('/suggestions', authorize(...AUDIT_GENERAL_ROLES), pengawasanController.getAuditSuggestions);
+router.get('/', authorize(...AUDIT_GENERAL_ROLES), pengawasanController.listAudits);
+router.post('/', authorize('SUPER_ADMIN', 'UNIT_ADMIN', 'YAYASAN_PENGAWAS'), pengawasanController.createAudit);
 
 // Findings
-router.post('/findings', authorize(...PENGAWASAN_AUDIT_WRITE_ROLES), pengawasanController.createFinding);
-router.put('/findings/:id', authorize(...PENGAWASAN_AUDIT_WRITE_ROLES), pengawasanController.updateFinding);
-router.delete(
-  '/findings/:id',
-  authorize(...PENGAWASAN_AUDIT_WRITE_ROLES),
-  pengawasanController.deleteFinding
-);
+router.post('/findings', authorize('SUPER_ADMIN', 'UNIT_ADMIN', 'YAYASAN_PENGAWAS'), pengawasanController.createFinding);
+router.put('/findings/:id', authorize('SUPER_ADMIN', 'UNIT_ADMIN', 'YAYASAN_PENGAWAS'), pengawasanController.updateFinding);
+router.delete('/findings/:id', authorize('SUPER_ADMIN', 'UNIT_ADMIN', 'YAYASAN_PENGAWAS'), pengawasanController.deleteFinding);
 
 // Follow-ups (Unit Heads / Responsible Staff can submit follow-ups)
-router.post(
-  '/follow-ups',
-  authorize(...PENGAWASAN_AUDIT_GENERAL_ROLES),
-  pengawasanController.createFollowUp
-);
-router.put(
-  '/follow-ups/:id',
-  authorize(...PENGAWASAN_AUDIT_GENERAL_ROLES),
-  pengawasanController.updateFollowUp
-);
-router.delete(
-  '/follow-ups/:id',
-  authorize(...PENGAWASAN_AUDIT_WRITE_ROLES),
-  pengawasanController.deleteFollowUp
-);
+router.post('/follow-ups', authorize(...AUDIT_GENERAL_ROLES), pengawasanController.createFollowUp);
+router.put('/follow-ups/:id', authorize(...AUDIT_GENERAL_ROLES), pengawasanController.updateFollowUp);
+router.delete('/follow-ups/:id', authorize('SUPER_ADMIN', 'UNIT_ADMIN', 'YAYASAN_PENGAWAS'), pengawasanController.deleteFollowUp);
 
 // Single Audit Detail, Update & Delete MUST be placed LAST so /:id doesn't swallow sub-paths
-router.get('/:id', authorize(...PENGAWASAN_AUDIT_GENERAL_ROLES), pengawasanController.getAudit);
-router.put('/:id', authorize(...PENGAWASAN_AUDIT_WRITE_ROLES), pengawasanController.updateAudit);
-router.delete('/:id', authorize(...PENGAWASAN_AUDIT_WRITE_ROLES), pengawasanController.deleteAudit);
+router.get('/:id', authorize(...AUDIT_GENERAL_ROLES), pengawasanController.getAudit);
+router.put('/:id', authorize('SUPER_ADMIN', 'UNIT_ADMIN', 'YAYASAN_PENGAWAS'), pengawasanController.updateAudit);
+router.delete('/:id', authorize('SUPER_ADMIN', 'UNIT_ADMIN', 'YAYASAN_PENGAWAS'), pengawasanController.deleteAudit);
 
 export default router;
