@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { MainLayout } from "@/components/layout";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import {
@@ -17,10 +17,12 @@ import {
   useForwardWbsReport,
   useAddWbsHandlerComment,
   useBoardSuspensions,
+  useSuspendableCandidates,
+  usePlhCandidates,
   useCreateBoardSuspension,
   useLiftBoardSuspension,
   useFinancialArrears,
-  useSubmitPeriodicReportToEOffice,
+  useDraftPeriodicReportToEOffice,
 } from "@/hooks/use-pengawasan";
 import { PageHeader } from "@/components/shared/page-header";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
@@ -41,7 +43,7 @@ import { id as localeId } from "date-fns/locale";
 import {
   PLH_ROLE_CODES,
   createBoardSuspensionSchema,
-  submitPeriodicReportSchema,
+  draftPeriodicReportSchema,
   pengawasanAccessOf,
 } from "@cipansor/shared";
 import type { WbsForwardRoleCode, WbsStatusCode } from "@cipansor/shared";
@@ -71,7 +73,7 @@ const findingFormSchema = z.object({
 // the form and the API validate against one contract. Only the schemas unique
 // to this page are declared here.
 const boardSuspensionSchema = createBoardSuspensionSchema;
-const periodicReportSchema = submitPeriodicReportSchema;
+const periodicReportSchema = draftPeriodicReportSchema;
 
 type AuditFormValues = z.infer<typeof auditFormSchema>;
 
@@ -280,6 +282,7 @@ function PengawasanPageContent() {
   const [forwardReason, setForwardReason] = useState<string>("");
   const [forwardDialogOpen, setForwardRoleDialogOpen] = useState<boolean>(false);
   const [handlerComment, setHandlerComment] = useState<string>("");
+  const [replyTargetId, setReplyTargetId] = useState<string | null>(null);
 
   // Board Suspension States
   const [suspensionDialogOpen, setSuspensionDialogOpen] = useState<boolean>(false);
@@ -308,9 +311,10 @@ function PengawasanPageContent() {
   const { data: boardSuspensions, isLoading: isSuspensionsLoading } = useBoardSuspensions();
   const createSuspensionMutation = useCreateBoardSuspension();
   const liftSuspensionMutation = useLiftBoardSuspension();
+  const handlerCommentMutation = useAddWbsHandlerComment();
 
   const { data: arrearsData, isLoading: isArrearsLoading } = useFinancialArrears();
-  const submitPeriodicReportMutation = useSubmitPeriodicReportToEOffice();
+  const draftPeriodicReportMutation = useDraftPeriodicReportToEOffice();
 
   // Forms
   // The suspension schema preprocesses `""` to `undefined`, so its input and
@@ -329,6 +333,13 @@ function PengawasanPageContent() {
     resolver: zodResolver(periodicReportSchema),
     defaultValues: { title: "Laporan Hasil Pengawasan Periodik 2026", period: "2026-Q1", executiveSummary: "", findingsSummary: "", recommendations: "" },
   });
+
+  // The suspension form selects people, not raw UUIDs. Both lists are scoped
+  // by the API: `candidates` is Pengurus with no ACTIVE suspension, and
+  // `plhCandidates` excludes the officer being suspended.
+  const suspendableUserId = useWatch({ control: suspensionForm.control, name: "userId" }) || undefined;
+  const { data: suspendableCandidates } = useSuspendableCandidates(suspensionDialogOpen);
+  const { data: plhCandidates } = usePlhCandidates(suspendableUserId, suspensionDialogOpen);
 
   const handleEdit = (audit: any) => { setEditItem(audit); setDialogOpen(true); };
   const handleCreate = () => { setEditItem(null); setDialogOpen(true); };
@@ -359,8 +370,16 @@ function PengawasanPageContent() {
     setSelectedWbs(null);
   };
 
+  const handleSendHandlerComment = async (reportId: string) => {
+    const message = handlerComment.trim();
+    if (!message) return;
+    await handlerCommentMutation.mutateAsync({ id: reportId, message });
+    setHandlerComment("");
+    setReplyTargetId(null);
+  };
+
   const handlePeriodicReportSubmit = async (values: z.infer<typeof periodicReportSchema>) => {
-    await submitPeriodicReportMutation.mutateAsync(values);
+    await draftPeriodicReportMutation.mutateAsync(values);
     setPeriodicDialogOpen(false);
     periodicForm.reset();
   };
@@ -620,6 +639,71 @@ function PengawasanPageContent() {
                       {report.description}
                     </p>
 
+                    {/* Conversation thread. `senderType: HANDLER` is what the
+                        public tracking page anonymizes as "Tim Pemeriksa"; a
+                        reporter's own message is never shown with handler
+                        identity. */}
+                    {report.comments && report.comments.length > 0 && (
+                      <div className="space-y-1 border-t pt-2">
+                        <span className="text-[11px] font-semibold text-slate-500 uppercase">Percakapan:</span>
+                        {report.comments.map((c: any) => (
+                          <div
+                            key={c.id}
+                            className={`text-xs p-2 rounded border ${
+                              c.senderType === "HANDLER"
+                                ? "bg-blue-50/60 border-blue-200"
+                                : "bg-slate-50 border-slate-200"
+                            }`}
+                          >
+                            <span className="font-semibold text-slate-700">
+                              {c.senderType === "HANDLER" ? (c.senderName || "Tim Pemeriksa") : "Pelapor"}
+                            </span>
+                            <p className="text-slate-800 whitespace-pre-line">{c.message}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Handler reply */}
+                    {access.canHandleWbs && (
+                      replyTargetId === report.id ? (
+                        <div className="space-y-2 border-t pt-2">
+                          <Textarea
+                            rows={2}
+                            value={handlerComment}
+                            onChange={(e) => setHandlerComment(e.target.value)}
+                            placeholder="Tulis tanggapan untuk pelapor..."
+                          />
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => { setReplyTargetId(null); setHandlerComment(""); }}
+                            >
+                              Batal
+                            </Button>
+                            <Button
+                              size="sm"
+                              className="bg-blue-600 hover:bg-blue-700 text-white"
+                              disabled={!handlerComment.trim() || handlerCommentMutation.isPending}
+                              onClick={() => handleSendHandlerComment(report.id)}
+                            >
+                              {handlerCommentMutation.isPending ? "Mengirim…" : "Kirim Tanggapan"}
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 text-xs gap-1"
+                          onClick={() => { setReplyTargetId(report.id); setHandlerComment(""); }}
+                        >
+                          Tanggapi Pelapor
+                        </Button>
+                      )
+                    )}
+
                     {/* Forward Logs */}
                     {report.forwardLogs && report.forwardLogs.length > 0 && (
                       <div className="space-y-1 border-t pt-2">
@@ -780,15 +864,17 @@ function PengawasanPageContent() {
         <TabsContent value="eoffice" className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Pengajuan Laporan Pengawasan Periodik via E-Office</CardTitle>
+              <CardTitle className="text-base">Konsep Laporan Pengawasan Periodik di E-Office</CardTitle>
               <CardDescription>
-                Pilih atau susun Laporan Pengawasan untuk diajukan secara resmi kepada Ketua Pembina Yayasan lewat modul Surat Keluar E-Office.
+                Susun Laporan Pengawasan untuk didaftarkan sebagai konsep (draft) Surat Keluar E-Office.
+                Laporan belum terkirim: buka konsepnya di E-Office dan jalankan alur pengajuan/verifikasi
+                untuk mengirimkannya kepada Ketua Pembina Yayasan.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <Button onClick={() => setPeriodicDialogOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white gap-2">
                 <Send className="h-4 w-4" />
-                Buat & Ajukan Laporan Pengawasan ke E-Office
+                Buat Konsep Laporan Pengawasan di E-Office
               </Button>
             </CardContent>
           </Card>
@@ -860,8 +946,28 @@ function PengawasanPageContent() {
             <form onSubmit={suspensionForm.handleSubmit(handleCreateSuspensionSubmit)} className="space-y-4">
               <FormField control={suspensionForm.control} name="userId" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>ID Pengurus yang Dibekukan *</FormLabel>
-                  <FormControl><Input placeholder="Masukkan ID Pengurus..." {...field} /></FormControl>
+                  <FormLabel>Pengurus yang Dibekukan *</FormLabel>
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Pilih Pengurus..." />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {suspendableCandidates?.length ? (
+                        suspendableCandidates.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {c.name} — {c.email}
+                            {c.roleCodes.length ? ` (${c.roleCodes.join(", ")})` : ""}
+                          </SelectItem>
+                        ))
+                      ) : (
+                        <SelectItem value="__none__" disabled>
+                          Tidak ada Pengurus yang dapat dibekukan
+                        </SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
                   <FormMessage />
                 </FormItem>
               )} />
@@ -882,19 +988,39 @@ function PengawasanPageContent() {
               <div className="grid grid-cols-2 gap-4">
                 <FormField control={suspensionForm.control} name="plhUserId" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>ID User Plh/Plt Pengganti</FormLabel>
-                    <FormControl><Input placeholder="ID Pengurus Pendamping..." {...field} value={field.value == null ? "" : String(field.value)} /></FormControl>
+                    <FormLabel>Plh/Plt Pengganti (opsional)</FormLabel>
+                    <Select
+                      value={field.value ? String(field.value) : "__none__"}
+                      onValueChange={(v) => field.onChange(v === "__none__" ? "" : v)}
+                    >
+                      <FormControl>
+                        <SelectTrigger><SelectValue placeholder="Pilih Plh/Plt..." /></SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="__none__">— Tidak menunjuk Plh/Plt —</SelectItem>
+                        {plhCandidates?.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {c.name} — {c.email}
+                            {c.roleCodes.length ? ` (${c.roleCodes.join(", ")})` : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     <FormMessage />
                   </FormItem>
                 )} />
                 <FormField control={suspensionForm.control} name="plhRoleCode" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Peran / Role Plh</FormLabel>
-                    <Select value={field.value == null ? undefined : String(field.value)} onValueChange={field.onChange}>
+                    <Select
+                      value={field.value == null ? "__none__" : String(field.value)}
+                      onValueChange={(v) => field.onChange(v === "__none__" ? "" : v)}
+                    >
                       <FormControl>
                         <SelectTrigger><SelectValue placeholder="Pilih peran Plh" /></SelectTrigger>
                       </FormControl>
                       <SelectContent>
+                        <SelectItem value="__none__">— Tidak ada peran —</SelectItem>
                         {PLH_ROLE_CODES.map((code) => (
                           <SelectItem key={code} value={code}>{code.replace("YAYASAN_", "Yayasan ")}</SelectItem>
                         ))}
@@ -946,9 +1072,11 @@ function PengawasanPageContent() {
       <Dialog open={periodicDialogOpen} onOpenChange={setPeriodicDialogOpen}>
         <DialogContent className="sm:max-w-[600px]">
           <DialogHeader>
-            <DialogTitle>Pengajuan Laporan Pengawasan Periodik ke Pembina</DialogTitle>
+            <DialogTitle>Konsep Laporan Pengawasan Periodik di E-Office</DialogTitle>
             <DialogDescription>
-              Isi ringkasan laporan pengawasan. Laporan akan terdaftar sebagai Surat Keluar di E-Office.
+              Isi ringkasan laporan pengawasan. Laporan akan terdaftar sebagai konsep (draft) Surat Keluar
+              di E-Office dan belum dikirim; jalankan alur pengajuan/verifikasi E-Office untuk mengirimkannya
+              kepada Pembina.
             </DialogDescription>
           </DialogHeader>
           <Form {...periodicForm}>
@@ -984,7 +1112,7 @@ function PengawasanPageContent() {
               <div className="flex justify-end gap-2 pt-2">
                 <Button type="button" variant="outline" onClick={() => setPeriodicDialogOpen(false)}>Batal</Button>
                 <Button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white">
-                  Ajukan Surat Laporan ke E-Office
+                  Simpan sebagai Konsep di E-Office
                 </Button>
               </div>
             </form>

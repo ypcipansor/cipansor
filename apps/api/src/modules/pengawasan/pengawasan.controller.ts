@@ -21,47 +21,26 @@ import {
   addWbsHandlerCommentSchema,
   createBoardSuspensionSchema,
   liftBoardSuspensionSchema,
-  submitPeriodicReportSchema,
+  draftPeriodicReportSchema,
 } from './pengawasan.validation';
 import { RoleCode } from '@prisma/client';
+import {
+  assertUnitAccess as assertActorUnitAccess,
+  canAccessUnit,
+  isFoundationWide,
+} from './pengawasan-access';
 
-/**
- * Roles that see every unit's audit records.
- *
- * Written against `RoleCode` rather than the deprecated `UserRole` buckets:
- * `deriveLegacyRole()` maps every `YAYASAN_*` code onto 'UNIT_ADMIN', so a
- * `UserRole.SUPER_ADMIN` comparison silently classified the whole foundation
- * board as unit admins — the bug documented at length in
- * `utils/resolve-unit-id.ts`.
- */
-const FOUNDATION_WIDE_ROLES: string[] = [
-  RoleCode.SUPER_ADMIN,
-  RoleCode.YAYASAN_PEMBINA,
-  RoleCode.YAYASAN_KETUA,
-  RoleCode.YAYASAN_SEKRETARIS,
-  RoleCode.YAYASAN_BENDAHARA,
-  RoleCode.YAYASAN_ANGGOTA,
-  RoleCode.YAYASAN_PENGAWAS,
-];
-
-function isFoundationWide(roleCode?: string): boolean {
-  return roleCode ? FOUNDATION_WIDE_ROLES.includes(roleCode) : false;
+/** The acting user's role/unit, as the unit policy needs it. */
+function actorOf(req: Request) {
+  return { roleCode: req.user?.roleCode, unitId: req.user?.unitId };
 }
 
 /**
- * Refuse a write to a record outside the actor's unit.
- *
- * `createAudit` / `updateAudit` / `deleteAudit` already did this, but the
- * finding and follow-up handlers did not — so knowing a UUID was enough to
- * write into another unit's audit, even though the record would not appear in
- * that actor's own list. Same check, applied everywhere the unit is
- * derivable from the record's parent.
+ * Refuse a write to a record outside the actor's unit. Thin adapter over the
+ * reusable policy in `pengawasan-access.ts`, which the services share.
  */
 function assertUnitAccess(req: Request, recordUnitId: string | null | undefined): void {
-  if (isFoundationWide(req.user?.roleCode)) return;
-  if (!recordUnitId || recordUnitId !== req.user?.unitId) {
-    throw Errors.forbidden('Access denied');
-  }
+  assertActorUnitAccess(actorOf(req), recordUnitId);
 }
 
 /** The acting handler's identity, as the WBS service needs it for scoping. */
@@ -100,7 +79,7 @@ export const getAudit = asyncHandler(async (req: Request, res: Response) => {
   const audit = await pengawasanService.getAuditById(req.params.id);
   if (!audit) throw Errors.notFound('Audit not found');
 
-  if (!isFoundationWide(req.user?.roleCode) && audit.unitId !== req.user?.unitId) {
+  if (!canAccessUnit(actorOf(req), audit.unitId)) {
     throw Errors.forbidden('Access denied');
   }
 
@@ -135,7 +114,7 @@ export const updateAudit = asyncHandler(async (req: Request, res: Response) => {
   const existing = await pengawasanService.getAuditById(req.params.id);
   if (!existing) throw Errors.notFound('Audit not found');
 
-  if (!isFoundationWide(req.user?.roleCode) && existing.unitId !== req.user?.unitId) {
+  if (!canAccessUnit(actorOf(req), existing.unitId)) {
     throw Errors.forbidden('Access denied');
   }
 
@@ -153,7 +132,7 @@ export const deleteAudit = asyncHandler(async (req: Request, res: Response) => {
   const existing = await pengawasanService.getAuditById(req.params.id);
   if (!existing) throw Errors.notFound('Audit not found');
 
-  if (!isFoundationWide(req.user?.roleCode) && existing.unitId !== req.user?.unitId) {
+  if (!canAccessUnit(actorOf(req), existing.unitId)) {
     throw Errors.forbidden('Access denied');
   }
 
@@ -336,6 +315,17 @@ export const listBoardSuspensions = asyncHandler(async (_req: Request, res: Resp
   res.json(ApiResponse.success(suspensions));
 });
 
+export const listSuspendableCandidates = asyncHandler(async (_req: Request, res: Response) => {
+  const candidates = await boardSuspensionService.listSuspendableCandidates();
+  res.json(ApiResponse.success(candidates));
+});
+
+export const listPlhCandidates = asyncHandler(async (req: Request, res: Response) => {
+  const excludeUserId = typeof req.query.excludeUserId === 'string' ? req.query.excludeUserId : undefined;
+  const candidates = await boardSuspensionService.listPlhCandidates(excludeUserId);
+  res.json(ApiResponse.success(candidates));
+});
+
 // ==================== FINANCIAL OVERSIGHT CONTROLLERS ====================
 
 export const getFinancialArrears = asyncHandler(async (req: Request, res: Response) => {
@@ -358,12 +348,12 @@ export const getFinancialArrears = asyncHandler(async (req: Request, res: Respon
 
 // ==================== PERIODIC OVERSIGHT REPORT CONTROLLERS ====================
 
-export const submitPeriodicReportToEOffice = asyncHandler(async (req: Request, res: Response) => {
-  const body = submitPeriodicReportSchema.parse(req.body);
+export const draftPeriodicReportToEOffice = asyncHandler(async (req: Request, res: Response) => {
+  const body = draftPeriodicReportSchema.parse(req.body);
   const userId = req.user?.sub;
   if (!userId) throw Errors.unauthorized('User context missing');
   const actor = wbsActor(req);
 
-  const result = await pengawasanService.submitPeriodicReportToEOffice(body, userId, actor);
+  const result = await pengawasanService.draftPeriodicReportToEOffice(body, userId, actor);
   res.status(201).json(ApiResponse.success(result));
 });

@@ -1425,8 +1425,12 @@ export async function generateBulkSppInvoices(data: {
           dueDate,
           period,
           // Freeze the issuing unit on the invoice so a later transfer does
-          // not relocate this arrears to the pupil's new unit.
-          unitId: student.unitId,
+          // not relocate this arrears to the pupil's new unit. The unit of
+          // record is the one that owns the payment type — a "SPP SMP IT" bill
+          // raised for a pupil belongs to SMP IT's books even if the pupil has
+          // since moved to SMA. `student.unitId` is only the legacy fallback
+          // for a payment type with no unit.
+          unitId: paymentType.unitId ?? student.unitId,
           notes: `Tagihan ${paymentType.name} untuk ${period}`,
         },
       });
@@ -1518,7 +1522,10 @@ export async function generateRecurringBills() {
             amount: paymentType.amount,
             dueDate,
             period,
-            unitId: student.unitId,
+            // Unit of record is the payment type's unit; see
+            // `generateBulkSppInvoices` for why the pupil's unit is only a
+            // legacy fallback.
+            unitId: paymentType.unitId ?? student.unitId,
             notes: `Tagihan ${paymentType.name} otomatis untuk ${period}`,
           },
         });

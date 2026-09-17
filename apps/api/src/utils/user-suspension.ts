@@ -29,9 +29,41 @@ function cacheKey(userId: string): string {
   return `${CACHE_PREFIX}${userId}`;
 }
 
+/**
+ * Set the cached answer, but never *lower* a suspended marker.
+ *
+ * The stale-negative race: a request misses the cache and reads the database
+ * while the account is still active; the suspension then commits and
+ * `markUserSuspended` writes `1`; the old request finishes and writes `0`,
+ * which wins for a whole TTL and lets the suspended token authenticate again.
+ *
+ * Reordering or shortening the TTL does not close it — the two writers are
+ * genuinely concurrent. The write therefore carries a compare-and-set in Lua:
+ * a `0` is refused while the stored value is `1`. Only the *suspended*
+ * direction is monotonic, and that is the safe one: a stale `1` that outlives
+ * a lift merely keeps an account denied until the TTL, while a stale `0` that
+ * outlives a suspension lets a revoked token back in.
+ *
+ * Returns true when the value was stored (or was already the wanted value).
+ */
+const WRITE_SUSPENSION_CACHE = `
+local current = redis.call('GET', KEYS[1])
+if current == '1' and ARGV[1] == '0' then
+  return 0
+end
+redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])
+return 1
+`;
+
 async function writeCache(userId: string, suspended: boolean): Promise<void> {
   try {
-    await redis.set(cacheKey(userId), suspended ? '1' : '0', 'EX', CACHE_TTL_SECONDS);
+    await redis.eval(
+      WRITE_SUSPENSION_CACHE,
+      1,
+      cacheKey(userId),
+      suspended ? '1' : '0',
+      String(CACHE_TTL_SECONDS)
+    );
   } catch {
     // Best-effort. A missed write costs at most one TTL of staleness; the
     // database read below is what keeps the answer correct.

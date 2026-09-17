@@ -20,6 +20,7 @@ import {
 import bcrypt from 'bcryptjs';
 import { Errors } from '../../middleware/error';
 import { invalidateUserSuspensionCache, markUserSuspended } from '../../utils/user-suspension';
+import { activationState, deactivationState, softDeleteState } from '../../utils/account-state';
 
 // =====================================
 // EMPLOYEE SERVICE (UNIFIED TEACHER & STAFF)
@@ -300,7 +301,15 @@ export async function updateEmployee(id: string, data: UpdateEmployeeInput) {
   if (!user) throw Errors.notFound('Employee not found');
 
   const result = await prisma.$transaction(async (tx) => {
-    // 1. Update User
+    // 1. Update User. When `isActive` is being changed, the write also takes
+    //    ownership of the account state (see `utils/account-state.ts`) so a
+    //    board suspension cannot mistake this admin/HR change for its own.
+    const stateChange =
+      data.isActive === false
+        ? deactivationState()
+        : data.isActive === true
+          ? activationState()
+          : {};
     const updatedUser = await tx.user.update({
       where: { id },
       data: {
@@ -308,7 +317,7 @@ export async function updateEmployee(id: string, data: UpdateEmployeeInput) {
         email: data.email,
         unitId: data.unitId,
         phone: data.phone,
-        isActive: data.isActive,
+        ...stateChange,
       },
     });
 
@@ -367,7 +376,7 @@ export async function deleteEmployee(id: string) {
     const user = await tx.user.update({
       where: { id },
       data: {
-        deletedAt: new Date(),
+        ...softDeleteState(),
         isActive: false,
         email: `deleted_${id}_${Date.now()}@example.com`, // Free up email
       },

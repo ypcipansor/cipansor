@@ -12,6 +12,12 @@
  * by building its Zod schemas from these same arrays.
  */
 
+import {
+  ADMIN_ROLE_CODES,
+  PESANTREN_LEADER_ROLE_CODES,
+  PRINCIPAL_ROLE_CODES,
+} from "../roles";
+
 export const WBS_CATEGORIES = [
   "KEUANGAN_ASET",
   "SOP_TATA_KELOLA",
@@ -107,6 +113,40 @@ export const WBS_FORWARD_ROLE_CODES = [
 ] as const;
 
 export type WbsForwardRoleCode = (typeof WBS_FORWARD_ROLE_CODES)[number];
+
+/**
+ * The effective role codes a forward target must hold, per destination bucket.
+ *
+ * `forwardReport` accepted a `toUserId` without checking it against `toRole`,
+ * and `buildScopeWhere` then grants the `assignedUserId` read access
+ * unconditionally — so naming any user as the assignee handed them the report
+ * regardless of their role or unit. Each bucket now resolves to the concrete
+ * role codes that legitimately sit in it: a foundation destination requires the
+ * matching governance role, and `UNIT_ADMIN` is the unit-level bucket of school
+ * administrators and heads (unit leadership, never foundation governance and
+ * never the system administrator).
+ */
+export const WBS_FORWARD_ROLE_ALLOWED_ROLE_CODES: Record<
+  WbsForwardRoleCode,
+  readonly string[]
+> = {
+  YAYASAN_PEMBINA: ["YAYASAN_PEMBINA"],
+  YAYASAN_PENGAWAS: ["YAYASAN_PENGAWAS"],
+  YAYASAN_KETUA: ["YAYASAN_KETUA"],
+  UNIT_ADMIN: [
+    ...ADMIN_ROLE_CODES.filter((code) => code !== "SUPER_ADMIN"),
+    ...PRINCIPAL_ROLE_CODES,
+    ...PESANTREN_LEADER_ROLE_CODES,
+  ],
+};
+
+/** True when `roleCode` may receive a report forwarded to `bucket`. */
+export function isWbsForwardRecipientRole(
+  bucket: WbsForwardRoleCode,
+  roleCode: string
+): boolean {
+  return (WBS_FORWARD_ROLE_ALLOWED_ROLE_CODES[bucket] as readonly string[]).includes(roleCode);
+}
 
 // ---------------------------------------------------------------------------
 // Response contracts
@@ -234,10 +274,36 @@ export interface FinancialArrearsDto {
   topArrearsStudents: FinancialArrearsStudentDto[];
 }
 
-export interface PeriodicReportSubmissionResultDto {
+/**
+ * A selectable account in the suspension / Plh pickers.
+ *
+ * The form used to ask the operator to paste a raw UUID for both the Pengurus
+ * being suspended and the Plh replacing them — a workflow that could not be
+ * completed without a database query, and that made a mistyped ID look like a
+ * valid submission until the API rejected it. The pickers are fed by scoped
+ * endpoints instead: only accounts that can legally hold the role are listed,
+ * and the chosen `id` is what the form submits. The server still validates.
+ */
+export interface PengawasanCandidateDto {
+  id: string;
+  name: string;
+  email: string;
+  roleCodes: string[];
+  unit: { id: string; name: string } | null;
+}
+
+/**
+ * Result of filing a periodic oversight report. `status` is always `DRAFT` and
+ * `letterNumber` is null: the action creates the letter in the E-Office draft
+ * workflow, and the number is issued when it is actually sent.
+ */
+export interface PeriodicReportDraftResultDto {
   letterId: string;
   letterNumber: string | null;
   title: string;
   status: string;
   contentPreview: string;
 }
+
+/** @deprecated Use {@link PeriodicReportDraftResultDto}; the action only drafts. */
+export type PeriodicReportSubmissionResultDto = PeriodicReportDraftResultDto;

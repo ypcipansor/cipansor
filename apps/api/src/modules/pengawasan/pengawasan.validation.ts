@@ -11,8 +11,9 @@ import {
   addWbsHandlerCommentSchema,
   createBoardSuspensionSchema,
   liftBoardSuspensionSchema,
-  submitPeriodicReportSchema,
+  draftPeriodicReportSchema,
 } from '@cipansor/shared';
+import type { DraftPeriodicReportInput } from '@cipansor/shared';
 
 export {
   createPublicWbsSchema,
@@ -23,8 +24,10 @@ export {
   addWbsHandlerCommentSchema,
   createBoardSuspensionSchema,
   liftBoardSuspensionSchema,
-  submitPeriodicReportSchema,
+  draftPeriodicReportSchema,
 };
+
+export type { DraftPeriodicReportInput };
 
 const dateStringSchema = z.string().refine((val) => !isNaN(Date.parse(val)), {
   message: 'Format tanggal tidak valid',

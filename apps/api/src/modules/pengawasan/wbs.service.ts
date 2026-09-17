@@ -3,6 +3,7 @@ import { Errors } from '@/middleware/error';
 import { WbsTargetLevel, WbsStatus, WbsSenderType, Prisma } from '@prisma/client';
 import {
   WBS_FORWARD_ROLE_CODES,
+  isWbsForwardRecipientRole,
   type CreatePublicWbsInput,
   type ForwardWbsReportInput,
   type UpdateWbsStatusInput,
@@ -406,6 +407,74 @@ export class WbsService {
       throw Errors.badRequest(
         `Peran tujuan teruskan tidak sah: ${data.toRole}. Pilih salah satu dari ${WBS_FORWARD_ROLE_CODES.join(', ')}.`
       );
+    }
+
+    // A named recipient must actually be able to hold the destination role.
+    // `buildScopeWhere` grants the `assignedUserId` read access unconditionally,
+    // so before this check the caller could name any user — the report's own
+    // subject, an unrelated staff member, a deleted account — and hand them the
+    // case regardless of role or unit.
+    if (data.toUserId) {
+      if (data.toUserId === actor.id) {
+        throw Errors.badRequest('Laporan tidak dapat diteruskan kepada diri sendiri.');
+      }
+
+      const recipient = await prisma.user.findUnique({
+        where: { id: data.toUserId },
+        select: {
+          id: true,
+          isActive: true,
+          deletedAt: true,
+          unitId: true,
+          userRoles: {
+            where: {
+              isActive: true,
+              OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+            },
+            select: { role: { select: { code: true } } },
+          },
+        },
+      });
+
+      if (!recipient || recipient.deletedAt) {
+        throw Errors.badRequest('Pengguna tujuan teruskan tidak ditemukan atau telah dihapus.');
+      }
+      if (!recipient.isActive) {
+        throw Errors.badRequest('Pengguna tujuan teruskan tidak aktif.');
+      }
+
+      const recipientRoleCodes = recipient.userRoles.map((ur) => ur.role.code);
+      const matchesDestination = recipientRoleCodes.some((code) =>
+        isWbsForwardRecipientRole(data.toRole, code)
+      );
+      if (!matchesDestination) {
+        throw Errors.badRequest(
+          `Pengguna tujuan tidak memiliki peran efektif yang sesuai untuk tujuan ${data.toRole}.`
+        );
+      }
+
+      // A unit-level destination must stay inside the report's unit. A
+      // foundation-wide recipient has no unit restriction, but a KEPALA_UNIT /
+      // UNIT_ADMIN named from another unit would otherwise gain access to a
+      // report its own scope query hides from it.
+      if (data.toRole === 'UNIT_ADMIN') {
+        if (!recipient.unitId) {
+          throw Errors.badRequest(
+            'Pengguna tujuan tingkat unit harus terikat pada satu unit organisasi.'
+          );
+        }
+        const reportUnitId = report.unitId ?? null;
+        if (!reportUnitId) {
+          throw Errors.badRequest(
+            'Laporan tanpa unit tidak dapat diteruskan ke peran tingkat unit.'
+          );
+        }
+        if (recipient.unitId !== reportUnitId) {
+          throw Errors.forbidden(
+            'Pengguna tujuan berada di unit yang berbeda dengan unit laporan.'
+          );
+        }
+      }
     }
 
     return prisma.$transaction(async (tx) => {

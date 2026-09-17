@@ -50,6 +50,19 @@ router.get(
   authorize(...PENGAWASAN_SUSPENSION_ROLES),
   pengawasanController.listBoardSuspensions
 );
+// Scoped pickers: the form selects a person, not a UUID. Same authorization as
+// the suspension route — a role that cannot suspend must not enumerate the
+// candidate list either.
+router.get(
+  '/board-suspensions/candidates',
+  authorize(...PENGAWASAN_SUSPENSION_ROLES),
+  pengawasanController.listSuspendableCandidates
+);
+router.get(
+  '/board-suspensions/plh-candidates',
+  authorize(...PENGAWASAN_SUSPENSION_ROLES),
+  pengawasanController.listPlhCandidates
+);
 router.post(
   '/board-suspensions',
   authorize(...PENGAWASAN_SUSPENSION_ROLES),
@@ -70,9 +83,9 @@ router.post(
 
 // 2. Periodic Oversight Report Submission to E-Office (Pengawas & SuperAdmin Only)
 router.post(
-  '/periodic-reports/submit-eoffice',
+  '/periodic-reports/draft-eoffice',
   authorize(...PENGAWASAN_PERIODIC_REPORT_ROLES),
-  pengawasanController.submitPeriodicReportToEOffice
+  pengawasanController.draftPeriodicReportToEOffice
 );
 
 // 3. WBS Management (Governance + Unit Heads)

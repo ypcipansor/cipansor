@@ -5,8 +5,10 @@ import {
   PENGURUS_ROLE_CODES,
   PLH_ROLE_CODES,
   type CreateBoardSuspensionInput,
+  type PengawasanCandidateDto,
 } from '@cipansor/shared';
 import { invalidateUserSuspensionCache, markUserSuspended } from '@/utils/user-suspension';
+import { activationState, deactivationState } from '@/utils/account-state';
 
 // The payload is the shared contract the controller validates with; a local
 // restatement of the same fields is exactly how the two drift apart.
@@ -27,18 +29,58 @@ interface PlhAssignmentRestore {
   expiresAt: string | null;
 }
 
+/** A Plh delegate's effective assignment, as resolved at suspension time. */
+interface PlhDependency {
+  assignmentId: string;
+  roleCode: string;
+  created: boolean;
+  restore: PlhAssignmentRestore | null;
+}
+
 /**
- * The account's `isActive` at the moment the suspension switched it off.
+ * The account's `isActive` at the moment the suspension switched it off, plus
+ * the ownership token the switch wrote.
  *
- * A lift reads it as the restore target: `true` means the suspension is what
- * switched the account off, so lifting switches it back on; `false` means an
- * admin had already deactivated it for an unrelated reason and the lift must
- * leave it off. Comparing `updatedAt` instead was wrong in both directions — a
- * profile edit moved the timestamp, so a lift refused to restore an account the
- * suspension itself had disabled.
+ * `isActiveBefore` alone could not distinguish "still off because of this
+ * suspension" from "off because an admin deactivated it again during the
+ * suspension", so a lift could resurrect an account someone else had just
+ * switched off. `writer` is the token stamped on `User.accountStateWriter` by
+ * the suspension's own write (see `utils/account-state.ts`); the lift
+ * reactivates only while that exact token is still stored.
  */
 interface AccountStateSnapshot {
   isActiveBefore: boolean;
+  writer?: string | null;
+}
+
+/**
+ * Undo one suspension's claim on a Plh assignment, once no ACTIVE suspension
+ * still needs it.
+ *
+ * `created` means the suspension minted the assignment, so the last dependent
+ * deletes it. Otherwise a recorded `restore` puts a reactivated row back to its
+ * prior state; an assignment that was already effective when a suspension
+ * merely reused it is left untouched.
+ */
+async function releasePlhAssignment(
+  tx: Prisma.TransactionClient,
+  assignmentId: string,
+  created: boolean,
+  restore: PlhAssignmentRestore | null
+): Promise<void> {
+  if (created) {
+    await tx.userRoleAssignment.deleteMany({ where: { id: assignmentId } });
+    return;
+  }
+  if (restore) {
+    await tx.userRoleAssignment.updateMany({
+      where: { id: assignmentId },
+      data: {
+        isActive: restore.isActive,
+        expiresAt: restore.expiresAt ? new Date(restore.expiresAt) : null,
+      },
+    });
+  }
 }
 
 export class BoardSuspensionService {
@@ -92,6 +134,16 @@ export class BoardSuspensionService {
     if (data.plhRoleCode && !(PLH_ROLE_CODES as readonly string[]).includes(data.plhRoleCode)) {
       throw Errors.badRequest(
         `Peran Plh/Plt tidak sah: ${data.plhRoleCode}. Hanya peran Pengurus (${PLH_ROLE_CODES.join(', ')}) yang dapat didelegasikan.`
+      );
+    }
+
+    // The pair is all-or-nothing. The edge schema enforces this for HTTP
+    // callers; internal callers reach the service directly, and a half-filled
+    // delegation would be stored as metadata that looks like a delegation
+    // without granting anyone the role.
+    if (!!data.plhUserId !== !!data.plhRoleCode) {
+      throw Errors.badRequest(
+        'Data Plh/Plt harus lengkap: isi pengguna dan peran delegasinya, atau kosongkan keduanya.'
       );
     }
 
@@ -149,23 +201,21 @@ export class BoardSuspensionService {
         }
 
         // The account state is read *inside* the transaction, immediately
-        // before it is flipped off. Reading it from the pre-transaction
-        // `targetUser` let a concurrent admin deactivation (or a lift) land in
-        // between, so the snapshot recorded a stale `isActive` and a later lift
-        // restored an account someone else had switched off.
+        // before it is flipped off. The switch writes an ownership token so a
+        // later lift can prove the current `false` is still ours.
         const freshTarget = await tx.user.findUnique({
           where: { id: data.userId },
           select: { isActive: true },
         });
+        const accountDeactivation = deactivationState();
         const accountStateSnapshot: AccountStateSnapshot = {
           isActiveBefore: freshTarget?.isActive ?? false,
+          writer: accountDeactivation.accountStateWriter,
         };
 
-        // Resolve the Plh/Plt delegation before creating the suspension, so
-        // its provenance travels in the same row.
-        let plhAssignmentCreated = false;
-        let plhAssignmentId: string | null = null;
-        let plhAssignmentRestore: PlhAssignmentRestore | null = null;
+        // Resolve the Plh/Plt delegation dependency before creating the
+        // suspension, so its provenance travels in the same row.
+        let plhDependency: PlhDependency | null = null;
 
         if (data.plhUserId && data.plhRoleCode) {
           const role = await tx.role.findFirst({ where: { code: data.plhRoleCode } });
@@ -183,27 +233,42 @@ export class BoardSuspensionService {
                   isPrimary: false,
                 },
               });
-              plhAssignmentCreated = true;
-              plhAssignmentId = created.id;
+              plhDependency = {
+                assignmentId: created.id,
+                roleCode: data.plhRoleCode,
+                created: true,
+                restore: null,
+              };
             } else {
               // Only an assignment that is *currently effective* can be left
               // as it is. An inactive or expired row must be reactivated — a
               // replacement officer with no live delegation is not a Plh — and
-              // the prior state recorded so the lift can restore it.
+              // the prior state recorded so the last dependent can restore it.
               const isEffective =
                 existingAssign.isActive &&
                 (!existingAssign.expiresAt || existingAssign.expiresAt > new Date());
 
               if (isEffective) {
-                plhAssignmentCreated = false;
-                plhAssignmentId = null;
+                // Reuse a live delegation. It stays; this suspension just
+                // records that it depends on it, so a lift of the *other*
+                // suspension cannot remove it underneath us either.
+                plhDependency = {
+                  assignmentId: existingAssign.id,
+                  roleCode: data.plhRoleCode,
+                  created: false,
+                  restore: null,
+                };
               } else {
-                plhAssignmentId = existingAssign.id;
-                plhAssignmentRestore = {
-                  isActive: existingAssign.isActive,
-                  expiresAt: existingAssign.expiresAt
-                    ? existingAssign.expiresAt.toISOString()
-                    : null,
+                plhDependency = {
+                  assignmentId: existingAssign.id,
+                  roleCode: data.plhRoleCode,
+                  created: false,
+                  restore: {
+                    isActive: existingAssign.isActive,
+                    expiresAt: existingAssign.expiresAt
+                      ? existingAssign.expiresAt.toISOString()
+                      : null,
+                  },
                 };
                 await tx.userRoleAssignment.update({
                   where: { id: existingAssign.id },
@@ -214,10 +279,10 @@ export class BoardSuspensionService {
           }
         }
 
-        // 1. Deactivate the target account.
+        // 1. Deactivate the target account, stamped with the ownership token.
         await tx.user.update({
           where: { id: data.userId },
-          data: { isActive: false },
+          data: accountDeactivation,
         });
 
         // 2. Create BoardMemberSuspension entry
@@ -233,13 +298,28 @@ export class BoardSuspensionService {
             suspendedById,
             plhUserId: data.plhUserId || null,
             plhRoleCode: data.plhRoleCode || null,
-            plhAssignmentCreated,
-            plhAssignmentId,
-            plhAssignmentRestore: plhAssignmentRestore
-              ? (plhAssignmentRestore as unknown as Prisma.InputJsonValue)
+            plhAssignmentCreated: plhDependency?.created ?? false,
+            plhAssignmentId: plhDependency?.assignmentId ?? null,
+            plhAssignmentRestore: plhDependency?.restore
+              ? (plhDependency.restore as unknown as Prisma.InputJsonValue)
               : undefined,
             signingKeyLocks: signingKeyLocks as unknown as Prisma.InputJsonValue,
             accountStateSnapshot: accountStateSnapshot as unknown as Prisma.InputJsonValue,
+            accountStateWriter: accountDeactivation.accountStateWriter,
+            plhAssignments: plhDependency
+              ? {
+                  create: [
+                    {
+                      assignmentId: plhDependency.assignmentId,
+                      roleCode: plhDependency.roleCode,
+                      created: plhDependency.created,
+                      restore: plhDependency.restore
+                        ? (plhDependency.restore as unknown as Prisma.InputJsonValue)
+                        : undefined,
+                    },
+                  ],
+                }
+              : undefined,
           },
           include: {
             user: { select: { id: true, name: true, email: true, role: true } },
@@ -323,31 +403,45 @@ export class BoardSuspensionService {
         },
       });
 
-      // 2. Restore the account, keyed on state rather than on `updatedAt`.
+      // The account-state ownership token this suspension wrote, read from the
+      // same row just claimed above.
+      const suspensionWriter = updated.accountStateWriter;
+
+      // 2. Restore the account, keyed on ownership rather than on `updatedAt`.
       //
       //    A blind `isActive: true` resurrects an account an admin deactivated
-      //    for an unrelated reason while the suspension was in force. But
-      //    comparing `updatedAt` over-corrected: any profile edit (a name or
-      //    email change) moved the timestamp, so a lift refused to restore an
-      //    account the suspension itself had switched off.
+      //    for an unrelated reason while the suspension was in force. Comparing
+      //    `updatedAt` over-corrected: any profile edit (a name or email change)
+      //    moved the timestamp, so a lift refused to restore an account the
+      //    suspension itself had switched off.
       //
-      //    The real question is whether the account is *still* off. If it is
-      //    already active again, or deleted, leave it alone. If it is off, the
-      //    snapshot's `isActiveBefore` decides: `true` means the suspension is
-      //    what turned it off (restore), while `false` means it was already off
-      //    when the suspension began — an admin's own deactivation — and the
-      //    lift must leave it off rather than resurrect it.
+      //    Ownership is the answer. The suspension stamped a token onto
+      //    `User.accountStateWriter` when it switched the account off, and the
+      //    lift reactivates only while that exact token is still stored — proof
+      //    that no other writer (an admin deactivation, an HR offboarding) has
+      //    claimed the account since. A profile edit does not touch the column,
+      //    so it never blocks the lift. `isActiveBefore` still guards the case
+      //    where the account was already off before the suspension began: then
+      //    this suspension never owned the off state and must not claim it.
+      //
+      //    The reactivation stamps a fresh token of its own, so a stale lift of
+      //    an older suspension cannot later mistake the restored state for its
+      //    own write.
+      const reactivationData = activationState();
       const accountSnapshot = (suspension.accountStateSnapshot ?? null) as AccountStateSnapshot | null;
       const currentUser = await tx.user.findUnique({
         where: { id: suspension.userId },
-        select: { isActive: true, deletedAt: true },
+        select: { isActive: true, deletedAt: true, accountStateWriter: true },
       });
       if (currentUser && currentUser.isActive === false && !currentUser.deletedAt) {
-        const shouldReactivate = accountSnapshot?.isActiveBefore ?? true;
-        if (shouldReactivate) {
+        const ownedByThisSuspension =
+          accountSnapshot?.isActiveBefore === true &&
+          !!suspensionWriter &&
+          currentUser.accountStateWriter === suspensionWriter;
+        if (ownedByThisSuspension) {
           await tx.user.update({
             where: { id: suspension.userId },
-            data: { isActive: true },
+            data: reactivationData,
           });
         }
       }
@@ -364,23 +458,57 @@ export class BoardSuspensionService {
         }
       }
 
-      // 4. Undo the Plh delegation only if this suspension is what put it
-      //    there — a pre-existing, already-effective assignment is left alone.
-      const restore = (suspension.plhAssignmentRestore ?? null) as PlhAssignmentRestore | null;
-      if (suspension.plhAssignmentId) {
-        if (suspension.plhAssignmentCreated) {
-          await tx.userRoleAssignment.deleteMany({
-            where: { id: suspension.plhAssignmentId },
-          });
-        } else if (restore) {
-          await tx.userRoleAssignment.updateMany({
-            where: { id: suspension.plhAssignmentId },
-            data: {
-              isActive: restore.isActive,
-              expiresAt: restore.expiresAt ? new Date(restore.expiresAt) : null,
-            },
-          });
+      // 4. Release this suspension's Plh dependency — but only if no OTHER
+      //    ACTIVE suspension still depends on the same assignment. Two
+      //    suspensions can share one delegate+role; the first lift used to
+      //    delete the assignment the second was still relying on.
+      const dependencies = await tx.boardSuspensionPlhAssignment.findMany({
+        where: { suspensionId: id },
+      });
+
+      if (dependencies.length === 0 && updated.plhAssignmentId) {
+        // Legacy row written before the dependency table existed. It owns its
+        // single assignment outright, so apply the old rule exactly, but never
+        // while another ACTIVE suspension has since claimed the same one.
+        const stillRequired = await tx.boardSuspensionPlhAssignment.count({
+          where: {
+            assignmentId: updated.plhAssignmentId,
+            suspension: { status: BoardSuspensionStatus.ACTIVE },
+          },
+        });
+        if (stillRequired === 0) {
+          await releasePlhAssignment(
+            tx,
+            updated.plhAssignmentId,
+            updated.plhAssignmentCreated,
+            (updated.plhAssignmentRestore ?? null) as PlhAssignmentRestore | null
+          );
         }
+      }
+
+      for (const dependency of dependencies) {
+        const otherDependents = await tx.boardSuspensionPlhAssignment.count({
+          where: {
+            assignmentId: dependency.assignmentId,
+            suspensionId: { not: id },
+            suspension: { status: BoardSuspensionStatus.ACTIVE },
+          },
+        });
+
+        // Remove this row first, so a concurrent lift of the other suspension
+        // cannot both see "one other dependent" and both decline to act.
+        await tx.boardSuspensionPlhAssignment.deleteMany({
+          where: { id: dependency.id },
+        });
+
+        if (otherDependents > 0) continue;
+
+        await releasePlhAssignment(
+          tx,
+          dependency.assignmentId,
+          dependency.created,
+          (dependency.restore ?? null) as PlhAssignmentRestore | null
+        );
       }
 
       return updated;
@@ -408,6 +536,101 @@ export class BoardSuspensionService {
       },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  /**
+   * Accounts that may be suspended — the Pengurus, and only those.
+   *
+   * Feeds the picker so the operator no longer pastes a UUID. The scope is the
+   * same one `suspendBoardMember` enforces: an active, undeleted user whose
+   * effective role assignment is a Pengurus role. Accounts already under an
+   * ACTIVE suspension are excluded, since the endpoint answers them with a
+   * conflict. The server remains the authority; this only narrows the list.
+   */
+  async listSuspendableCandidates(): Promise<PengawasanCandidateDto[]> {
+    const users = await prisma.user.findMany({
+      where: {
+        isActive: true,
+        deletedAt: null,
+        userRoles: {
+          some: {
+            isActive: true,
+            OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+            role: { code: { in: [...PENGURUS_ROLE_CODES] } },
+          },
+        },
+        boardSuspensions: {
+          none: { status: BoardSuspensionStatus.ACTIVE },
+        },
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        unit: { select: { id: true, name: true } },
+        userRoles: {
+          where: {
+            isActive: true,
+            OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+            role: { code: { in: [...PENGURUS_ROLE_CODES] } },
+          },
+          select: { role: { select: { code: true } } },
+        },
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    return users.map((user) => ({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      roleCodes: user.userRoles.map((ur) => ur.role.code),
+      unit: user.unit,
+    }));
+  }
+
+  /**
+   * Accounts that may serve as Plh/Plt for the given role.
+   *
+   * Eligible: active, undeleted, not the suspended officer, not a system
+   * administrator (a Plh stands in for the Pengurus organ, never the
+   * administrator), and not a pure student/parent/alumni account. The optional
+   * `excludeUserId` is how the form omits the person being suspended, so a
+   * self-delegation cannot even be selected.
+   */
+  async listPlhCandidates(excludeUserId?: string): Promise<PengawasanCandidateDto[]> {
+    const users = await prisma.user.findMany({
+      where: {
+        isActive: true,
+        deletedAt: null,
+        ...(excludeUserId ? { id: { not: excludeUserId } } : {}),
+        role: { notIn: ['STUDENT', 'PARENT'] },
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        unit: { select: { id: true, name: true } },
+        userRoles: {
+          where: {
+            isActive: true,
+            OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+          },
+          select: { role: { select: { code: true } } },
+        },
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    return users
+      .filter((user) => !user.userRoles.some((ur) => ur.role.code === 'SUPER_ADMIN'))
+      .map((user) => ({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        roleCodes: user.userRoles.map((ur) => ur.role.code),
+        unit: user.unit,
+      }));
   }
 }
 

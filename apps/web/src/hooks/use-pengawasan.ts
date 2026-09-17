@@ -3,7 +3,7 @@ import { api } from "@/lib/api";
 import { toast } from "sonner";
 import type {
   CreateBoardSuspensionInput,
-  SubmitPeriodicReportInput,
+  DraftPeriodicReportInput,
   CreatePublicWbsInput,
   TrackPublicWbsInput,
   AddPublicWbsCommentInput,
@@ -14,8 +14,9 @@ import type {
   WbsTrackingDto,
   WbsPublicSubmissionResultDto,
   BoardSuspensionDto,
+  PengawasanCandidateDto,
   FinancialArrearsDto,
-  PeriodicReportSubmissionResultDto,
+  PeriodicReportDraftResultDto,
 } from "@cipansor/shared";
 
 /**
@@ -127,7 +128,7 @@ export const usePublicTrackWbs = () => {
 export const usePublicAddWbsComment = () => {
   return useMutation({
     mutationFn: async (data: AddPublicWbsCommentInput) =>
-      (await api.post("/pengawasan/public/wbs/comments", data)).data,
+      (await api.post("/pengawasan/public/wbs/comments", data)).data.data,
     onSuccess: () => { toast.success("Pesan tanggapan terkirim"); },
     onError: (e: any) => { toast.error(e.response?.data?.message || "Gagal mengirim pesan"); },
   });
@@ -147,7 +148,7 @@ export const useUpdateWbsStatus = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, ...body }: { id: string } & UpdateWbsStatusInput) =>
-      (await api.patch(`/pengawasan/wbs/reports/${id}/status`, body)).data as WbsReportDto,
+      (await api.patch(`/pengawasan/wbs/reports/${id}/status`, body)).data.data as WbsReportDto,
     onSuccess: () => { toast.success("Status WBS diperbarui"); qc.invalidateQueries({ queryKey: ["wbs-reports"] }); },
     onError: (e: any) => { toast.error(e.response?.data?.message || "Gagal memperbarui status WBS"); },
   });
@@ -157,7 +158,7 @@ export const useForwardWbsReport = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, ...body }: { id: string } & ForwardWbsReportInput) =>
-      (await api.post(`/pengawasan/wbs/reports/${id}/forward`, body)).data as WbsReportDto,
+      (await api.post(`/pengawasan/wbs/reports/${id}/forward`, body)).data.data as WbsReportDto,
     onSuccess: () => { toast.success("Laporan WBS berhasil diteruskan"); qc.invalidateQueries({ queryKey: ["wbs-reports"] }); },
     onError: (e: any) => { toast.error(e.response?.data?.message || "Gagal meneruskan WBS"); },
   });
@@ -167,7 +168,7 @@ export const useAddWbsHandlerComment = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, ...body }: { id: string } & AddWbsHandlerCommentInput) =>
-      (await api.post(`/pengawasan/wbs/reports/${id}/comments`, body)).data,
+      (await api.post(`/pengawasan/wbs/reports/${id}/comments`, body)).data.data,
     onSuccess: () => { toast.success("Tanggapan berhasil dikirim"); qc.invalidateQueries({ queryKey: ["wbs-reports"] }); },
     onError: (e: any) => { toast.error(e.response?.data?.message || "Gagal mengirim tanggapan"); },
   });
@@ -185,11 +186,40 @@ export const useBoardSuspensions = () => {
   });
 };
 
+/** Accounts that may be suspended (Pengurus with no ACTIVE suspension). */
+export const useSuspendableCandidates = (enabled = true) => {
+  return useQuery({
+    queryKey: ["board-suspensions", "candidates"],
+    enabled,
+    queryFn: async () => {
+      const res = await api.get("/pengawasan/board-suspensions/candidates");
+      return res.data.data as PengawasanCandidateDto[];
+    },
+  });
+};
+
+/**
+ * Accounts that may serve as Plh/Plt. `excludeUserId` keeps the officer being
+ * suspended out of their own replacement list.
+ */
+export const usePlhCandidates = (excludeUserId?: string, enabled = true) => {
+  return useQuery({
+    queryKey: ["board-suspensions", "plh-candidates", excludeUserId ?? null],
+    enabled,
+    queryFn: async () => {
+      const res = await api.get("/pengawasan/board-suspensions/plh-candidates", {
+        params: excludeUserId ? { excludeUserId } : undefined,
+      });
+      return res.data.data as PengawasanCandidateDto[];
+    },
+  });
+};
+
 export const useCreateBoardSuspension = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (data: CreateBoardSuspensionInput) =>
-      (await api.post("/pengawasan/board-suspensions", data)).data as BoardSuspensionDto,
+      (await api.post("/pengawasan/board-suspensions", data)).data.data as BoardSuspensionDto,
     onSuccess: () => { toast.success("SK Pembekuan Pengurus & Plh/Plt berhasil ditetapkan"); qc.invalidateQueries({ queryKey: ["board-suspensions"] }); },
     onError: (e: any) => { toast.error(e.response?.data?.message || "Gagal membekukan pengurus"); },
   });
@@ -199,7 +229,7 @@ export const useLiftBoardSuspension = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, liftReason }: { id: string; liftReason: string }) =>
-      (await api.post(`/pengawasan/board-suspensions/${id}/lift`, { liftReason })).data as BoardSuspensionDto,
+      (await api.post(`/pengawasan/board-suspensions/${id}/lift`, { liftReason })).data.data as BoardSuspensionDto,
     onSuccess: () => { toast.success("Status pembekuan pengurus berhasil dicabut (dipulihkan)"); qc.invalidateQueries({ queryKey: ["board-suspensions"] }); },
     onError: (e: any) => { toast.error(e.response?.data?.message || "Gagal memulihkan status"); },
   });
@@ -217,11 +247,22 @@ export const useFinancialArrears = (unitId?: string) => {
   });
 };
 
-export const useSubmitPeriodicReportToEOffice = () => {
+export const useDraftPeriodicReportToEOffice = () => {
   return useMutation({
-    mutationFn: async (data: SubmitPeriodicReportInput) =>
-      (await api.post("/pengawasan/periodic-reports/submit-eoffice", data)).data as PeriodicReportSubmissionResultDto,
-    onSuccess: () => { toast.success("Laporan Pengawasan Periodik berhasil diajukan ke E-Office Pembina"); },
-    onError: (e: any) => { toast.error(e.response?.data?.message || "Gagal mengajukan Laporan Pengawasan"); },
+    mutationFn: async (data: DraftPeriodicReportInput) =>
+      (await api.post("/pengawasan/periodic-reports/draft-eoffice", data)).data
+        .data as PeriodicReportDraftResultDto,
+    onSuccess: () => {
+      toast.success(
+        "Laporan Pengawasan Periodik dibuat sebagai konsep (draft) di E-Office. " +
+          "Laporan belum dikirim — ajukan/sahkan melalui alur E-Office untuk mengirimkannya ke Pembina.",
+      );
+    },
+    onError: (e: any) => {
+      toast.error(e.response?.data?.error?.message || e.response?.data?.message || "Gagal membuat konsep Laporan Pengawasan");
+    },
   });
 };
+
+/** @deprecated Use {@link useDraftPeriodicReportToEOffice}; the action only drafts. */
+export const useSubmitPeriodicReportToEOffice = useDraftPeriodicReportToEOffice;

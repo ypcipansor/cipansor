@@ -53,6 +53,12 @@ vi.mock('@/lib/prisma', () => ({
       update: vi.fn(),
       updateMany: vi.fn(),
     },
+    boardSuspensionPlhAssignment: {
+      findMany: vi.fn(),
+      count: vi.fn(),
+      create: vi.fn(),
+      deleteMany: vi.fn(),
+    },
     unit: {
       findFirst: vi.fn(),
     },
@@ -244,7 +250,10 @@ describe('WbsService Unit Tests', () => {
       primaryHandlerRole: 'YAYASAN_PENGAWAS',
     };
     (prisma.wbsReport.findFirst as any).mockResolvedValue(mockReport);
-    (prisma.wbsReport.update as any).mockResolvedValue({ ...mockReport, status: WbsStatus.SELESAI });
+    (prisma.wbsReport.update as any).mockResolvedValue({
+      ...mockReport,
+      status: WbsStatus.SELESAI,
+    });
 
     await wbsService.updateReportStatus(
       'report-1',
@@ -269,7 +278,10 @@ describe('WbsService Unit Tests', () => {
       primaryHandlerRole: 'YAYASAN_PENGAWAS',
     };
     (prisma.wbsReport.findFirst as any).mockResolvedValue(mockReport);
-    (prisma.wbsReport.update as any).mockResolvedValue({ ...mockReport, status: WbsStatus.DALAM_PENYELIDIKAN });
+    (prisma.wbsReport.update as any).mockResolvedValue({
+      ...mockReport,
+      status: WbsStatus.DALAM_PENYELIDIKAN,
+    });
 
     await wbsService.updateReportStatus(
       'report-1',
@@ -327,6 +339,156 @@ describe('WbsService Unit Tests', () => {
 
     expect(prisma.wbsForwardLog.create).not.toHaveBeenCalled();
     expect(prisma.wbsReport.update).not.toHaveBeenCalled();
+  });
+
+  describe('forward recipient validation', () => {
+    const actor = {
+      id: 'user-pengawas',
+      name: 'Pengawas',
+      roleCode: 'YAYASAN_PENGAWAS',
+      unitId: null,
+    };
+
+    function reportInScope(unitId: string | null = 'unit-sdit') {
+      return {
+        id: 'report-1',
+        ticketCode: 'WBS-1',
+        primaryHandlerRole: 'YAYASAN_PENGAWAS',
+        unitId,
+      };
+    }
+
+    function recipient(overrides: Record<string, unknown> = {}) {
+      return {
+        id: 'user-target',
+        isActive: true,
+        deletedAt: null,
+        unitId: null,
+        userRoles: [{ role: { code: 'YAYASAN_KETUA' } }],
+        ...overrides,
+      };
+    }
+
+    it('refuses to forward to yourself', async () => {
+      (prisma.wbsReport.findFirst as any).mockResolvedValue(reportInScope());
+
+      await expect(
+        wbsService.forwardReport(
+          'report-1',
+          { toRole: 'YAYASAN_PENGAWAS', reason: 'alasan panjang', toUserId: 'user-pengawas' },
+          actor
+        )
+      ).rejects.toMatchObject({ statusCode: 400 });
+
+      expect(prisma.user.findUnique).not.toHaveBeenCalled();
+      expect(prisma.wbsForwardLog.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses a recipient whose effective role does not match the destination', async () => {
+      // The recipient is a live Pengawas, but the report is being sent to the
+      // Ketua bucket. `buildScopeWhere` would have granted them access anyway.
+      (prisma.wbsReport.findFirst as any).mockResolvedValue(reportInScope());
+      (prisma.user.findUnique as any).mockResolvedValue(
+        recipient({ userRoles: [{ role: { code: 'YAYASAN_PENGAWAS' } }] })
+      );
+
+      await expect(
+        wbsService.forwardReport(
+          'report-1',
+          { toRole: 'YAYASAN_KETUA', reason: 'alasan panjang', toUserId: 'user-target' },
+          actor
+        )
+      ).rejects.toMatchObject({ statusCode: 400 });
+
+      expect(prisma.wbsForwardLog.create).not.toHaveBeenCalled();
+      expect(prisma.wbsReport.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses an unrelated user with no matching role assignment', async () => {
+      (prisma.wbsReport.findFirst as any).mockResolvedValue(reportInScope());
+      (prisma.user.findUnique as any).mockResolvedValue(
+        recipient({ userRoles: [{ role: { code: 'SDIT_GURU' } }] })
+      );
+
+      await expect(
+        wbsService.forwardReport(
+          'report-1',
+          { toRole: 'YAYASAN_KETUA', reason: 'alasan panjang', toUserId: 'user-target' },
+          actor
+        )
+      ).rejects.toMatchObject({ statusCode: 400 });
+
+      expect(prisma.wbsForwardLog.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses an inactive, deleted or unknown recipient', async () => {
+      (prisma.wbsReport.findFirst as any).mockResolvedValue(reportInScope());
+
+      for (const bad of [
+        recipient({ isActive: false }),
+        recipient({ deletedAt: new Date() }),
+        null,
+      ]) {
+        vi.clearAllMocks();
+        (prisma.boardMemberSuspension.updateMany as any).mockResolvedValue({ count: 1 });
+        (prisma.wbsReport.findFirst as any).mockResolvedValue(reportInScope());
+        (prisma.user.findUnique as any).mockResolvedValue(bad);
+
+        await expect(
+          wbsService.forwardReport(
+            'report-1',
+            { toRole: 'YAYASAN_KETUA', reason: 'alasan panjang', toUserId: 'user-target' },
+            actor
+          )
+        ).rejects.toMatchObject({ statusCode: 400 });
+      }
+
+      expect(prisma.wbsForwardLog.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses a UNIT_ADMIN recipient bound to a different unit', async () => {
+      (prisma.wbsReport.findFirst as any).mockResolvedValue(reportInScope('unit-sdit'));
+      (prisma.user.findUnique as any).mockResolvedValue(
+        recipient({ unitId: 'unit-smpit', userRoles: [{ role: { code: 'SDIT_ADMIN' } }] })
+      );
+
+      await expect(
+        wbsService.forwardReport(
+          'report-1',
+          { toRole: 'UNIT_ADMIN', reason: 'alasan panjang', toUserId: 'user-target' },
+          actor
+        )
+      ).rejects.toMatchObject({ statusCode: 403 });
+
+      expect(prisma.wbsForwardLog.create).not.toHaveBeenCalled();
+    });
+
+    it('forwards to a valid foundation recipient and records the assignment', async () => {
+      (prisma.wbsReport.findFirst as any).mockResolvedValue(reportInScope());
+      (prisma.user.findUnique as any).mockResolvedValue(recipient());
+      (prisma.wbsReport.update as any).mockResolvedValue({
+        ...reportInScope(),
+        primaryHandlerRole: 'YAYASAN_KETUA',
+        assignedUserId: 'user-target',
+      });
+
+      const updated = await wbsService.forwardReport(
+        'report-1',
+        { toRole: 'YAYASAN_KETUA', reason: 'alasan panjang', toUserId: 'user-target' },
+        actor
+      );
+
+      expect(prisma.wbsForwardLog.create).toHaveBeenCalled();
+      expect(prisma.wbsReport.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            primaryHandlerRole: 'YAYASAN_KETUA',
+            assignedUserId: 'user-target',
+          }),
+        })
+      );
+      expect(updated.assignedUserId).toBe('user-target');
+    });
   });
 
   describe('per-report scope enforcement', () => {
@@ -422,6 +584,10 @@ describe('BoardSuspensionService Unit Tests', () => {
     vi.clearAllMocks();
     // The lift claims the row with a conditional update; one caller wins.
     (prisma.boardMemberSuspension.updateMany as any).mockResolvedValue({ count: 1 });
+    // Rows written before the dependency table existed have no dependency
+    // rows; the legacy single-assignment path is exercised explicitly below.
+    (prisma.boardSuspensionPlhAssignment.findMany as any).mockResolvedValue([]);
+    (prisma.boardSuspensionPlhAssignment.count as any).mockResolvedValue(0);
   });
 
   it('suspends board member, deactivates account, soft-locks e-sign keys, and delegates Plh role', async () => {
@@ -441,7 +607,9 @@ describe('BoardSuspensionService Unit Tests', () => {
       skNumber: 'SK/PENGAWAS/2026/001',
       status: 'ACTIVE',
     });
-    (prisma.user.update as any).mockResolvedValue({ updatedAt: new Date('2026-03-01T00:00:00.000Z') });
+    (prisma.user.update as any).mockResolvedValue({
+      updatedAt: new Date('2026-03-01T00:00:00.000Z'),
+    });
     (prisma.userSigningKey.findMany as any).mockResolvedValue([]);
     (prisma.role.findFirst as any).mockResolvedValue({
       id: 'role-ketua-id',
@@ -462,9 +630,11 @@ describe('BoardSuspensionService Unit Tests', () => {
     );
 
     expect(suspension.id).toBe('susp-1');
+    // The deactivation is stamped with a fresh ownership token so a later lift
+    // can prove the `false` is still this suspension's own write.
     expect(prisma.user.update).toHaveBeenCalledWith({
       where: { id: 'user-pengurus' },
-      data: { isActive: false },
+      data: { isActive: false, accountStateWriter: expect.stringMatching(/^asw_/) },
     });
     expect(prisma.refreshToken.deleteMany).toHaveBeenCalledWith({
       where: { userId: 'user-pengurus' },
@@ -574,6 +744,7 @@ describe('BoardSuspensionService Unit Tests', () => {
       id: 'susp-1',
       userId: 'user-pengurus',
       status: 'ACTIVE',
+      accountStateWriter: 'asw_test',
       plhUserId: 'user-sekretaris',
       plhRoleCode: 'YAYASAN_KETUA',
       plhAssignmentCreated: true,
@@ -593,6 +764,7 @@ describe('BoardSuspensionService Unit Tests', () => {
     // The row still carries the suspension's own write, so it is restored.
     (prisma.user.findUnique as any).mockResolvedValue({
       isActive: false,
+      accountStateWriter: 'asw_test',
       updatedAt: new Date('2026-03-01T00:00:00.000Z'),
     });
 
@@ -605,7 +777,7 @@ describe('BoardSuspensionService Unit Tests', () => {
     expect(updated.status).toBe('LIFTED');
     expect(prisma.user.update).toHaveBeenCalledWith({
       where: { id: 'user-pengurus' },
-      data: { isActive: true },
+      data: { isActive: true, accountStateWriter: expect.stringMatching(/^asw_/) },
     });
     expect(prisma.userSigningKey.updateMany).toHaveBeenCalledWith({
       where: { id: 'key-1', userId: 'user-pengurus' },
@@ -625,6 +797,7 @@ describe('BoardSuspensionService Unit Tests', () => {
       id: 'susp-2',
       userId: 'user-pengurus',
       status: 'ACTIVE',
+      accountStateWriter: 'asw_test',
       plhAssignmentCreated: false,
       plhAssignmentId: null,
       plhAssignmentRestore: null,
@@ -641,6 +814,7 @@ describe('BoardSuspensionService Unit Tests', () => {
     });
     (prisma.user.findUnique as any).mockResolvedValue({
       isActive: false,
+      accountStateWriter: 'asw_test',
       updatedAt: new Date('2026-03-01T00:00:00.000Z'),
     });
 
@@ -655,6 +829,7 @@ describe('BoardSuspensionService Unit Tests', () => {
       id: 'susp-3',
       userId: 'user-pengurus',
       status: 'ACTIVE',
+      accountStateWriter: 'asw_test',
       plhAssignmentCreated: false,
       plhAssignmentId: 'assign-old',
       plhAssignmentRestore: { isActive: false, expiresAt: '2020-01-01T00:00:00.000Z' },
@@ -671,6 +846,7 @@ describe('BoardSuspensionService Unit Tests', () => {
     });
     (prisma.user.findUnique as any).mockResolvedValue({
       isActive: false,
+      accountStateWriter: 'asw_test',
       updatedAt: new Date('2026-03-01T00:00:00.000Z'),
     });
 
@@ -683,6 +859,69 @@ describe('BoardSuspensionService Unit Tests', () => {
     });
   });
 
+  it('does not undo an admin deactivation that landed during the suspension', async () => {
+    // The suspension switched the account off and stamped `asw_ours`. An
+    // admin then deactivated it again for an unrelated reason, stamping a new
+    // token. The lift must not claim that `false` as its own.
+    const mockSuspension = {
+      id: 'susp-adm',
+      userId: 'user-pengurus',
+      status: 'ACTIVE',
+      accountStateWriter: 'asw_ours',
+      plhAssignmentCreated: false,
+      plhAssignmentId: null,
+      signingKeyLocks: null,
+      accountStateSnapshot: { isActiveBefore: true, writer: 'asw_ours' },
+    };
+
+    (prisma.boardMemberSuspension.findUnique as any).mockResolvedValue(mockSuspension);
+    (prisma.boardMemberSuspension.findUniqueOrThrow as any).mockResolvedValue({
+      ...mockSuspension,
+      status: 'LIFTED',
+    });
+    (prisma.user.findUnique as any).mockResolvedValue({
+      isActive: false,
+      deletedAt: null,
+      // A different writer owns the current value.
+      accountStateWriter: 'asw_admin',
+    });
+
+    await boardSuspensionService.liftBoardSuspension('susp-adm', 'lifter', 'Pulih');
+
+    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it('reactivates when the suspension still owns the current deactivation', async () => {
+    const mockSuspension = {
+      id: 'susp-own',
+      userId: 'user-pengurus',
+      status: 'ACTIVE',
+      accountStateWriter: 'asw_ours',
+      plhAssignmentCreated: false,
+      plhAssignmentId: null,
+      signingKeyLocks: null,
+      accountStateSnapshot: { isActiveBefore: true, writer: 'asw_ours' },
+    };
+
+    (prisma.boardMemberSuspension.findUnique as any).mockResolvedValue(mockSuspension);
+    (prisma.boardMemberSuspension.findUniqueOrThrow as any).mockResolvedValue({
+      ...mockSuspension,
+      status: 'LIFTED',
+    });
+    (prisma.user.findUnique as any).mockResolvedValue({
+      isActive: false,
+      deletedAt: null,
+      accountStateWriter: 'asw_ours',
+    });
+
+    await boardSuspensionService.liftBoardSuspension('susp-own', 'lifter', 'Pulih');
+
+    expect(prisma.user.update).toHaveBeenCalledWith({
+      where: { id: 'user-pengurus' },
+      data: { isActive: true, accountStateWriter: expect.stringMatching(/^asw_/) },
+    });
+  });
+
   it('refuses to lift a suspension that is not ACTIVE', async () => {
     (prisma.boardMemberSuspension.findUnique as any).mockResolvedValue({
       id: 'susp-4',
@@ -692,6 +931,108 @@ describe('BoardSuspensionService Unit Tests', () => {
     await expect(
       boardSuspensionService.liftBoardSuspension('susp-4', 'lifter', 'Pulih')
     ).rejects.toMatchObject({ statusCode: 409 });
+  });
+
+  describe('shared Plh delegation dependencies', () => {
+    const sharedAssignmentId = 'assign-shared';
+
+    function suspension(id: string, created: boolean) {
+      return {
+        id,
+        userId: 'user-pengurus',
+        status: 'ACTIVE',
+        accountStateWriter: 'asw_test',
+        plhAssignmentCreated: created,
+        plhAssignmentId: sharedAssignmentId,
+        plhAssignmentRestore: null,
+        signingKeyLocks: null,
+        accountStateSnapshot: { isActiveBefore: true },
+      };
+    }
+
+    it('keeps a shared Plh assignment alive until the last ACTIVE dependent is lifted (creator first)', async () => {
+      // Suspension A minted the assignment; B reused the same effective
+      // delegate+role. Lifting A must not delete what B still relies on.
+      const a = suspension('susp-a', true);
+      const b = suspension('susp-b', false);
+
+      (prisma.boardMemberSuspension.findUnique as any).mockResolvedValue(a);
+      (prisma.boardMemberSuspension.findUniqueOrThrow as any).mockResolvedValue({
+        ...a,
+        status: 'LIFTED',
+      });
+      (prisma.user.findUnique as any).mockResolvedValue({
+        isActive: false,
+        deletedAt: null,
+        accountStateWriter: 'asw_test',
+      });
+      (prisma.boardSuspensionPlhAssignment.findMany as any).mockResolvedValue([
+        { id: 'dep-a', assignmentId: sharedAssignmentId, created: true, restore: null },
+      ]);
+      // B is still ACTIVE and depends on the same assignment.
+      (prisma.boardSuspensionPlhAssignment.count as any).mockResolvedValue(1);
+
+      await boardSuspensionService.liftBoardSuspension('susp-a', 'lifter', 'Pulih');
+
+      expect(prisma.boardSuspensionPlhAssignment.deleteMany).toHaveBeenCalledWith({
+        where: { id: 'dep-a' },
+      });
+      // The shared assignment survives: the last dependent has not lifted yet.
+      expect(prisma.userRoleAssignment.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('releases the shared assignment when the last dependent lifts (creator first)', async () => {
+      const b = suspension('susp-b', false);
+      (prisma.boardMemberSuspension.findUnique as any).mockResolvedValue(b);
+      (prisma.boardMemberSuspension.findUniqueOrThrow as any).mockResolvedValue({
+        ...b,
+        status: 'LIFTED',
+      });
+      (prisma.user.findUnique as any).mockResolvedValue({
+        isActive: false,
+        deletedAt: null,
+        accountStateWriter: 'asw_test',
+      });
+      (prisma.boardSuspensionPlhAssignment.findMany as any).mockResolvedValue([
+        { id: 'dep-b', assignmentId: sharedAssignmentId, created: false, restore: null },
+      ]);
+      // No other ACTIVE suspension needs it anymore.
+      (prisma.boardSuspensionPlhAssignment.count as any).mockResolvedValue(0);
+
+      await boardSuspensionService.liftBoardSuspension('susp-b', 'lifter', 'Pulih');
+
+      // `created: false` + no restore ⇒ the pre-existing assignment is left
+      // alone, but the dependency row is gone.
+      expect(prisma.boardSuspensionPlhAssignment.deleteMany).toHaveBeenCalledWith({
+        where: { id: 'dep-b' },
+      });
+    });
+
+    it('deletes the shared assignment only when the minting suspension lifts last', async () => {
+      // Reverse order: B lifts first and leaves the assignment for A; then A
+      // lifts and — as the creator — removes it.
+      const a = suspension('susp-a', true);
+      (prisma.boardMemberSuspension.findUnique as any).mockResolvedValue(a);
+      (prisma.boardMemberSuspension.findUniqueOrThrow as any).mockResolvedValue({
+        ...a,
+        status: 'LIFTED',
+      });
+      (prisma.user.findUnique as any).mockResolvedValue({
+        isActive: false,
+        deletedAt: null,
+        accountStateWriter: 'asw_test',
+      });
+      (prisma.boardSuspensionPlhAssignment.findMany as any).mockResolvedValue([
+        { id: 'dep-a', assignmentId: sharedAssignmentId, created: true, restore: null },
+      ]);
+      (prisma.boardSuspensionPlhAssignment.count as any).mockResolvedValue(0);
+
+      await boardSuspensionService.liftBoardSuspension('susp-a', 'lifter', 'Pulih');
+
+      expect(prisma.userRoleAssignment.deleteMany).toHaveBeenCalledWith({
+        where: { id: sharedAssignmentId },
+      });
+    });
   });
 
   describe('privilege-escalation and snapshot guards', () => {
@@ -842,6 +1183,7 @@ describe('BoardSuspensionService Unit Tests', () => {
         id: 'susp-9',
         userId: 'user-pengurus',
         status: 'ACTIVE',
+        accountStateWriter: 'asw_test',
         plhAssignmentCreated: false,
         plhAssignmentId: null,
         signingKeyLocks: null,
@@ -859,6 +1201,7 @@ describe('BoardSuspensionService Unit Tests', () => {
       (prisma.user.findUnique as any).mockResolvedValue({
         isActive: false,
         deletedAt: null,
+        accountStateWriter: 'asw_test',
         updatedAt: new Date('2026-04-01T00:00:00.000Z'),
       });
 
@@ -866,7 +1209,7 @@ describe('BoardSuspensionService Unit Tests', () => {
 
       expect(prisma.user.update).toHaveBeenCalledWith({
         where: { id: 'user-pengurus' },
-        data: { isActive: true },
+        data: { isActive: true, accountStateWriter: expect.stringMatching(/^asw_/) },
       });
     });
 
@@ -966,9 +1309,13 @@ describe('BoardSuspensionService Unit Tests', () => {
           isActiveBefore: true,
         },
       });
-      (prisma.boardMemberSuspension.findUniqueOrThrow as any).mockResolvedValue({ id: 'susp-11', status: 'LIFTED' });
+      (prisma.boardMemberSuspension.findUniqueOrThrow as any).mockResolvedValue({
+        id: 'susp-11',
+        status: 'LIFTED',
+      });
       (prisma.user.findUnique as any).mockResolvedValue({
         isActive: false,
+        accountStateWriter: 'asw_test',
         updatedAt: new Date('2026-03-01T00:00:00.000Z'),
       });
 
@@ -995,7 +1342,7 @@ describe('PengawasanService periodic oversight report', () => {
       status: 'DRAFT',
     });
 
-    const result = await pengawasanService.submitPeriodicReportToEOffice(
+    const result = await pengawasanService.draftPeriodicReportToEOffice(
       {
         title: 'Audit Q1',
         period: '2026-Q1',
@@ -1026,7 +1373,7 @@ describe('PengawasanService periodic oversight report', () => {
     (prisma.unit.findFirst as any).mockResolvedValue(null);
 
     await expect(
-      pengawasanService.submitPeriodicReportToEOffice(
+      pengawasanService.draftPeriodicReportToEOffice(
         { title: 'Audit Q1', period: '2026-Q1', executiveSummary: 'Ringkasan eksekutif.' },
         'pengawas-1',
         { roleCode: 'YAYASAN_PENGAWAS', unitId: null }
@@ -1045,7 +1392,7 @@ describe('PengawasanService periodic oversight report', () => {
       status: 'DRAFT',
     });
 
-    await pengawasanService.submitPeriodicReportToEOffice(
+    await pengawasanService.draftPeriodicReportToEOffice(
       { title: 'Audit Q1', period: '2026-Q1', executiveSummary: 'Ringkasan eksekutif.' },
       'pengawas-1',
       { roleCode: 'YAYASAN_PENGAWAS', unitId: null }
@@ -1096,7 +1443,7 @@ describe('PengawasanService periodic oversight report', () => {
     (prisma.filingClassification.findFirst as any).mockResolvedValue({ id: 'cls-1' });
     (prisma.letter.create as any).mockResolvedValue({ id: 'letter-1', status: 'DRAFT' });
 
-    await pengawasanService.submitPeriodicReportToEOffice(
+    await pengawasanService.draftPeriodicReportToEOffice(
       { title: 'Audit Q1', period: '2026-Q1', executiveSummary: 'Ringkasan eksekutif.' },
       'pengawas-1',
       { roleCode: 'YAYASAN_PENGAWAS', unitId: null }
@@ -1117,7 +1464,7 @@ describe('PengawasanService periodic oversight report', () => {
     (prisma.filingClassification.findFirst as any).mockResolvedValue({ id: 'cls-1' });
     (prisma.letter.create as any).mockResolvedValue({ id: 'letter-1', status: 'DRAFT' });
 
-    const result = await pengawasanService.submitPeriodicReportToEOffice(
+    const result = await pengawasanService.draftPeriodicReportToEOffice(
       { title: 'Audit Q1', period: '2026-Q1', executiveSummary: 'Ringkasan eksekutif.' },
       'pengawas-1',
       { roleCode: 'YAYASAN_PENGAWAS', unitId: null }
@@ -1131,5 +1478,24 @@ describe('PengawasanService periodic oversight report', () => {
       })
     );
     expect(result.status).toBe('DRAFT');
+  });
+
+  it('refuses to draft when neither an effective Pembina nor an active Super Admin exists', async () => {
+    // No recipient means the letter would be filed as an orphan the E-Office
+    // flow can never advance. The check must run before any write, so neither
+    // the letter nor its flow event is created.
+    (prisma.unit.findFirst as any).mockResolvedValue({ id: 'unit-pusat' });
+    (prisma.user.findFirst as any).mockResolvedValue(null);
+
+    await expect(
+      pengawasanService.draftPeriodicReportToEOffice(
+        { title: 'Audit Q1', period: '2026-Q1', executiveSummary: 'Ringkasan eksekutif.' },
+        'pengawas-1',
+        { roleCode: 'YAYASAN_PENGAWAS', unitId: null }
+      )
+    ).rejects.toMatchObject({ statusCode: 400 });
+
+    expect(prisma.letter.create).not.toHaveBeenCalled();
+    expect(prisma.letterFlowEvent.create).not.toHaveBeenCalled();
   });
 });

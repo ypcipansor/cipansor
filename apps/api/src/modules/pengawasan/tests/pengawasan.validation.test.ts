@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   createBoardSuspensionSchema,
   updateAuditSchema,
-  submitPeriodicReportSchema,
+  draftPeriodicReportSchema,
   forwardWbsReportSchema,
 } from '../pengawasan.validation';
 import { PLH_ROLE_CODES } from '@cipansor/shared';
@@ -67,6 +67,42 @@ describe('pengawasan validation contracts', () => {
     ).toBe(false);
   });
 
+  it('rejects a user-only Plh delegation', () => {
+    // Half a delegation looks like one in the stored metadata but grants no
+    // role — the service ignores a roleless pair, so the suspension would
+    // record a replacement officer who holds nothing.
+    const parsed = createBoardSuspensionSchema.safeParse({
+      ...baseSuspension,
+      plhUserId: '22222222-2222-4222-8222-222222222222',
+    });
+    expect(parsed.success).toBe(false);
+    expect(!parsed.success && parsed.error.issues.some((i) => i.path[0] === 'plhRoleCode')).toBe(
+      true
+    );
+  });
+
+  it('rejects a role-only Plh delegation', () => {
+    const parsed = createBoardSuspensionSchema.safeParse({
+      ...baseSuspension,
+      plhRoleCode: 'YAYASAN_KETUA',
+    });
+    expect(parsed.success).toBe(false);
+    expect(!parsed.success && parsed.error.issues.some((i) => i.path[0] === 'plhUserId')).toBe(
+      true
+    );
+  });
+
+  it('accepts a complete Plh delegation', () => {
+    const parsed = createBoardSuspensionSchema.safeParse({
+      ...baseSuspension,
+      plhUserId: '22222222-2222-4222-8222-222222222222',
+      plhRoleCode: 'YAYASAN_KETUA',
+    });
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.plhUserId).toBe('22222222-2222-4222-8222-222222222222');
+    expect(parsed.success && parsed.data.plhRoleCode).toBe('YAYASAN_KETUA');
+  });
+
   it('rejects a misspelled WBS forward role at the edge', () => {
     // A free string here let a typo such as `primaryHandlerRole` through and the
     // report landed in a queue no role's scope query matches.
@@ -95,9 +131,9 @@ describe('pengawasan validation contracts', () => {
   });
 
   it('requires the mandatory periodic-report fields', () => {
-    expect(submitPeriodicReportSchema.safeParse({ title: 'x' }).success).toBe(false);
+    expect(draftPeriodicReportSchema.safeParse({ title: 'x' }).success).toBe(false);
     expect(
-      submitPeriodicReportSchema.safeParse({
+      draftPeriodicReportSchema.safeParse({
         title: 'Laporan',
         period: '2026-Q1',
         executiveSummary: 'Ringkasan eksekutif.',

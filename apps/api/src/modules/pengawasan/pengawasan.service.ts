@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { LetterFlowAction, Prisma } from '@prisma/client';
 import { Errors } from '@/middleware/error';
-import type { SubmitPeriodicReportInput } from '@cipansor/shared';
+import type { DraftPeriodicReportInput } from '@cipansor/shared';
 import { perencanaanService } from '../perencanaan/perencanaan.service';
 import { riskService } from '../risk/risk.service';
 
@@ -658,8 +658,8 @@ export class PengawasanService {
     );
   }
 
-  async submitPeriodicReportToEOffice(
-    data: SubmitPeriodicReportInput,
+  async draftPeriodicReportToEOffice(
+    data: DraftPeriodicReportInput,
     userId: string,
     _actor: { roleCode?: string | null; unitId?: string | null }
   ) {
@@ -698,6 +698,19 @@ export class PengawasanService {
       }));
 
     const unitId = await this.resolveFoundationUnitId();
+
+    // No recipient, no report. The draft's whole purpose is to reach the
+    // Pembina for verification and signature; with no effective Pembina and no
+    // active Super Admin there is nobody to address it to, and the letter would
+    // be filed as an orphan the E-Office flow can never advance. The check runs
+    // before the transaction, so nothing is written.
+    if (!pembinaUser) {
+      throw Errors.badRequest(
+        'Laporan Pengawasan Periodik tidak dapat dibuat: belum ada penerima yang sah. ' +
+          'Pastikan terdapat akun Pembina Yayasan dengan penugasan aktif (atau Super Admin aktif) ' +
+          'sebelum mengirim laporan.'
+      );
+    }
 
     const letterContent = `
 LAPORAN PENGAWASAN PERIODIK YAYASAN PESANTREN CIPANSOR
@@ -750,17 +763,15 @@ ${data.recommendations || 'Diharapkan Pengurus Yayasan dan Kepala Unit terus men
           authoringTrack: 'GENERATED',
           createdById: userId,
           classificationId: defaultClassification?.id,
-          recipients: pembinaUser
-            ? {
-                create: [
-                  {
-                    userId: pembinaUser.id,
-                    unitId,
-                    isCC: false,
-                  },
-                ],
-              }
-            : undefined,
+          recipients: {
+            create: [
+              {
+                userId: pembinaUser.id,
+                unitId,
+                isCC: false,
+              },
+            ],
+          },
         },
         include: {
           createdBy: { select: { id: true, name: true, role: true } },
