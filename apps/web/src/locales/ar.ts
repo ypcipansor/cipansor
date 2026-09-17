@@ -173,7 +173,6 @@ export const ar = {
     studentCompliance: "انضباط الطلاب",
     teacherCompliance: "انضباط المعلمين",
     placement: "خارطة انتشار الخريجين",
-    secrets: "مفاتيح النظام المشفرة",
   },
   settings: {
     title: "الإعدادات",
