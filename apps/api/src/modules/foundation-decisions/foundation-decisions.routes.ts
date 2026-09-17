@@ -49,10 +49,19 @@ const uploadPdf = multer({
   },
 });
 
-// Verifikasi publik via token QR — sengaja TIDAK lewat authenticate, karena
-// orang yang memindai QR belumlah tentu masuk sistem. Hanya menampilkan hasil
-// verifikasi (bukan menulis).
-router.get('/verify', asyncHandler(c.verify));
+/**
+ * Verifikasi publik via token QR — sengaja TIDAK lewat authenticate, karena
+ * orang yang memindai QR belumlah tentu masuk sistem. Hanya menampilkan hasil
+ * verifikasi (bukan menulis).
+ *
+ * Rate limit tetap dipasang walau jalurnya "hanya membaca": satu permintaan
+ * men-token menempuh beberapa operasi mahal — pencarian baris keputusan,
+ * pembacaan arsip PDF (`bytea`), hashing byte arsip, lalu pencarian + verifikasi
+ * kunci e-seal. Tanpa pembatas, endpoint anonim ini dapat dipakai menghabiskan
+ * CPU/IO. Dulu hanya `POST /verify-pdf` yang dibatasi, sehingga justru jalur
+ * termurah bagi penyerang (GET, tanpa Turnstile, tanpa unggahan) yang terbuka.
+ */
+router.get('/verify', publicVerifyLimiter, asyncHandler(c.verify));
 
 /**
  * Verifikasi publik lewat unggahan PDF.
@@ -97,9 +106,20 @@ const WRITE = [
   RoleCode.YAYASAN_SEKRETARIS,
 ];
 
+/**
+ * Daftar keputusan HANYA `authenticate`, tanpa `authorize(...READ)`.
+ *
+ * Aksesnya diperiksa di service lewat `foundationDecisionListWhere`, dan itu
+ * disengaja: daftar harus konsisten dengan detail. Detail mengizinkan anggota
+ * snapshot yang rolenya sudah berubah (lihat komentar di bawah), sehingga
+ * daftar yang memakai `authorize(...READ)` membuat orang itu dapat membuka
+ * keputusan tetapi tidak dapat menemukannya — kontradiksi yang sama, hanya
+ * berpindah tempat. Filter query membatasi peran non-READ pada keputusan yang
+ * memuat dirinya sebagai anggota snapshot; peran READ tetap melihat seluruh
+ * daftar.
+ */
 router.get(
   '/decisions',
-  authorize(...READ),
   validateQuery(listFoundationDecisionsQuerySchema),
   asyncHandler(c.list)
 );

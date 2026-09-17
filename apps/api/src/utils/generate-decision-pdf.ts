@@ -142,21 +142,80 @@ export function membersWithoutVote(
   return members.filter((m) => !votedIds.has(m.userId));
 }
 
-function wrap(font: PDFFont, size: number, text: string, maxWidth: number): string[] {
-  const words = text.split(/\s+/);
+/**
+ * Pecah teks menjadi baris yang lebarnya tidak melebihi `maxWidth`.
+ *
+ * Satu kata yang lebih lebar dari `maxWidth` TIDAK boleh dibiarkan utuh:
+ * `widthOfTextAtSize` untuk kata sepanjang itu melebihi lebar halaman, dan
+ * pdf-lib menggambar baris apa adanya tanpa membungkusnya — teksnya meluber
+ * keluar halaman dan terpotong saat dipindai/dicetak. Ini bukan kasus teoretis:
+ * token verifikasi `base64url`, digest SHA-256 heksadesimal, dan URL pendek
+ * ke `publicSiteUrl` semuanya berupa satu token tanpa spasi, dan risalah ini
+ * yang di-e-seal.
+ *
+ * Pemecahan dilakukan per grapheme cluster (bukan per byte/UTF-16 code unit),
+ * sehingga pasangan pengganti dan aksara beraksen tidak terbelah di tengah
+ * karakter — pecahan yang salah dapat menghasilkan glif rusak. `Intl.Segmenter`
+ * dipakai bila tersedia; bila tidak (mis. lingkungan lama), fallback ke iterasi
+ * code point yang tetap aman untuk surrogate pair.
+ *
+ * Diekspor agar dapat diuji langsung: yang perlu dikunci adalah "setiap baris
+ * muat", dan sifat itu tidak dapat diperiksa dari byte PDF (pdf-lib tidak
+ * menyediakan pembacaan teks).
+ */
+export function wrap(
+  font: PDFFont,
+  size: number,
+  text: string,
+  maxWidth: number
+): string[] {
   const lines: string[] = [];
+  const words = text.split(/\s+/).filter((w) => w.length > 0);
   let cur = '';
   for (const word of words) {
     const trial = cur ? `${cur} ${word}` : word;
-    if (font.widthOfTextAtSize(trial, size) > maxWidth && cur) {
-      lines.push(cur);
-      cur = word;
-    } else {
+    if (font.widthOfTextAtSize(trial, size) <= maxWidth) {
       cur = trial;
+      continue;
     }
+    if (cur) {
+      lines.push(cur);
+      cur = '';
+    }
+    if (font.widthOfTextAtSize(word, size) <= maxWidth) {
+      cur = word;
+      continue;
+    }
+    // Kata itu sendiri lebih lebar dari satu baris: pecah per grapheme.
+    let chunk = '';
+    for (const cluster of graphemeClusters(word)) {
+      const next = chunk + cluster;
+      // `chunk` kosong berarti satu cluster pun sudah melebihi lebar baris;
+      // tetap dimasukkan agar pemecahan tidak berputar tanpa henti.
+      if (chunk && font.widthOfTextAtSize(next, size) > maxWidth) {
+        lines.push(chunk);
+        chunk = cluster;
+      } else {
+        chunk = next;
+      }
+    }
+    cur = chunk;
   }
   if (cur) lines.push(cur);
   return lines;
+}
+
+/** Grapheme cluster dari sebuah kata, dengan fallback code point. */
+function graphemeClusters(word: string): string[] {
+  const Segmenter = (
+    Intl as unknown as { Segmenter?: new (locale?: string, opts?: object) => { segment(s: string): Iterable<{ segment: string }> } }
+  ).Segmenter;
+  if (Segmenter) {
+    return [...new Segmenter('id', { granularity: 'grapheme' }).segment(word)].map(
+      (s) => s.segment
+    );
+  }
+  return Array.from(word);
 }
 
 /**

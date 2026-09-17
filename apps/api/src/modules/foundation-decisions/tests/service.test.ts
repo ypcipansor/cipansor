@@ -8,7 +8,7 @@ import {
   sha256hex,
   canonicalDigestForVote,
 } from '../foundation-decisions.service';
-import { createKeyMaterial, signPdfHash } from '@/utils/esign';
+import { createKeyMaterial, publicKeyFingerprint, signPdfHash } from '@/utils/esign';
 import * as pdfModule from '@/utils/generate-decision-pdf';
 import { createSealMaterial, signSeal } from '@/utils/foundation-eseal';
 import { config } from '@/config';
@@ -38,10 +38,12 @@ vi.mock('@/lib/prisma', () => ({
       findMany: vi.fn(),
       findUnique: vi.fn(),
       create: vi.fn(),
+      updateMany: vi.fn(),
     },
     foundationDecisionDocument: { create: vi.fn(), findUnique: vi.fn() },
     userRoleAssignment: { findMany: vi.fn() },
     userSigningKey: { findUnique: vi.fn(), update: vi.fn() },
+    userSigningKeyHistory: { upsert: vi.fn(), findMany: vi.fn(), findUnique: vi.fn() },
     auditLog: { create: vi.fn() },
     $transaction: vi.fn((cb: any) => cb(prisma)),
     $executeRaw: vi.fn().mockResolvedValue(1),
@@ -77,6 +79,27 @@ const dm = prisma as unknown as Record<string, any>;
  * Helper ini membangun baris yang lolos verifikasi sehingga test yang menguji
  * jalur lain (kuorum, lock, audit) tetap menguji apa yang dimaksudkannya.
  */
+/**
+ * Rekaman kunci publik tepercaya untuk seorang anggota.
+ *
+ * Sejak audit #1, sebuah suara hanya sah bila menunjuk rekaman riwayat kunci
+ * yang dimiliki pemilih yang SAMA (`signingKeyId` + fingerprint). Baris yang
+ * hanya membawa `publicKey` sendiri TIDAK lagi dihitung — itulah perbaikannya.
+ * Helper ini membangun rekaman yang membuat test jalur lain tetap bermakna.
+ */
+function keyHistoryRow(userId: string) {
+  return {
+    id: `kh-${userId}`,
+    userId,
+    algorithm: material.algorithm,
+    publicKey: material.publicKey,
+    fingerprint: publicKeyFingerprint(material.publicKey),
+    issuedAt: new Date('2026-01-01T00:00:00Z'),
+    supersededAt: null,
+    revokedAt: null,
+  };
+}
+
 function signedVoteRow(
   d: any,
   userId: string,
@@ -84,6 +107,7 @@ function signedVoteRow(
   signedAt = new Date('2026-01-02T00:00:00Z')
 ) {
   const digest = canonicalDigestForVote(d, { userId, choice, signedAt });
+  const key = keyHistoryRow(userId);
   return {
     id: `vote-${userId}`,
     decisionId: d.id,
@@ -95,7 +119,10 @@ function signedVoteRow(
     algorithm: material.algorithm,
     note: null,
     signedAt,
+    signingKeyId: key.id,
+    publicKeyFingerprint: key.fingerprint,
     user: { id: userId, name: `Anggota ${userId}` },
+    signingKey: key,
   };
 }
 
@@ -171,6 +198,19 @@ beforeEach(() => {
   vi.clearAllMocks();
   dm.$executeRaw.mockResolvedValue(1);
   dm.$transaction.mockImplementation((cb: any) => cb(prisma));
+  // `ensureSigningKeyHistory` meng-upsert rekaman kunci tepercaya; kembalikan
+  // baris yang dibentuk dari argumennya supaya suara yang dibuat terikat ke
+  // rekaman milik pemilih yang benar.
+  dm.userSigningKeyHistory.upsert.mockImplementation((args: any) => ({
+    id: `kh-${args.create.userId}`,
+    userId: args.create.userId,
+    algorithm: args.create.algorithm,
+    publicKey: args.create.publicKey,
+    fingerprint: args.create.fingerprint,
+    issuedAt: new Date('2026-01-01T00:00:00Z'),
+    supersededAt: null,
+    revokedAt: null,
+  }));
 });
 
 describe('sha256bytes', () => {
@@ -847,6 +887,79 @@ describe('FoundationDecisionService.applyOutcome', () => {
     expect(updateData.esealId).toBe('seal-baru');
     expect(updateData.finalPdfSealSignature).toBeTruthy();
   });
+
+  /**
+   * Regresi: rotasi passphrase DENGAN indeks unik seal-aktif ditegakkan.
+   *
+   * Uji di atas membiarkan `create` seal baru berhasil. Di PostgreSQL nyata,
+   * indeks unik parsial `foundation_eseals_single_active_key` menolak insert
+   * itu selama seal LAMA masih `revoked_at IS NULL` — dan seal lama memang
+   * masih aktif, hanya saja tak dapat ditandatangani. Sebelum perbaikan,
+   * `ensureSeal` hanya melewatinya lalu mencoba membuat seal kedua, ditolak
+   * P2002, membaca ulang "pemenang" yang ternyata seal lama yang tak dapat
+   * dipakai, dan mengembalikannya — sehingga `signSeal` melempar di dalam
+   * transaksi approval dan SETIAP approval baru gagal 500 setelah rotasi.
+   * Perbaikan: seal yang tak dapat dipakai DICABUT lebih dulu.
+   */
+  it('mencabut seal lama yang tak dapat dipakai sebelum menerbitkan seal baru (rotasi + indeks unik)', async () => {
+    const oldMaterial = createSealMaterial('passphrase-e-seal-lama-2025');
+    const oldSealRow = {
+      id: 'seal-lama',
+      ...oldMaterial,
+      revokedAt: null,
+      activatedAt: new Date(),
+      createdAt: new Date(),
+    };
+    dm.foundationEseal.findMany.mockResolvedValue([oldSealRow]);
+    dm.foundationEseal.findFirst.mockResolvedValue(oldSealRow);
+    // Indeks unik parsial menolak selama seal lama masih aktif.
+    const uniqueViolation = Object.assign(new Error('Unique constraint failed'), {
+      code: 'P2002',
+    });
+    dm.foundationEseal.create
+      .mockRejectedValueOnce(uniqueViolation)
+      .mockResolvedValue({
+        id: 'seal-baru',
+        ...createSealMaterial(config.foundation.esealPassphrase),
+        revokedAt: null,
+        activatedAt: new Date(),
+        createdAt: new Date(),
+      });
+    dm.foundationDecisionDocument.create.mockResolvedValue({ id: 'doc-1' });
+    dm.foundationDecision.update.mockResolvedValue({ id: 'dec-1', status: 'APPROVED' });
+    dm.auditLog.create.mockResolvedValue({ id: 'log-1' });
+
+    const evaluation = {
+      outcome: 'APPROVED' as const,
+      activeCount: 3,
+      presentCount: 3,
+      approvedCount: 3,
+      rejectedCount: 0,
+      abstainCount: 0,
+      presentRequired: 3,
+      decisionRequired: 3,
+      presentMet: true,
+      decisionMet: true,
+      neededToApprove: 0,
+    };
+
+    const result = await FoundationDecisionService.applyOutcome(
+      { id: 'user-0', roleCode: 'YAYASAN_PEMBINA' },
+      decisionRow() as never,
+      evaluation as never
+    );
+
+    expect(result.outcome).toBe('APPROVED');
+    // Seal lama DICABUT, bukan dibiarkan aktif lalu dilewati.
+    expect(dm.foundationEseal.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: expect.objectContaining({ in: ['seal-lama'] }) }),
+        data: expect.objectContaining({ revokedAt: expect.any(Date) }),
+      })
+    );
+    // Dan keputusannya mereferensikan seal BARU yang dapat ditandatangani.
+    expect(dm.foundationDecision.update.mock.calls[0][0].data.esealId).toBe('seal-baru');
+  });
 });
 
 describe('FoundationDecisionService.verifyByToken', () => {
@@ -940,6 +1053,44 @@ describe('FoundationDecisionService.verifyByToken', () => {
       where: { id: 'seal-spesifik' },
     });
     expect(dm.foundationEseal.findFirst).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Regresi audit #10 — rekap PUBLIK hanya menghitung suara autentik.
+   *
+   * `verifyDecisionCore` dulu menghitung semua baris `foundation_decision_votes`
+   * apa adanya, berbeda dari finalisasi yang menyaring suara lewat verifikasi
+   * tanda tangan. Baris suara palsu yang disisipkan langsung ke basis data
+   * karenanya mengubah angka yang dilihat pengunjung halaman verifikasi —
+   * meskipun suara itu tidak pernah masuk ke PDF tersegel. Angka publik harus
+   * berasal dari himpunan suara yang SAMA dengan yang menentukan kuorum.
+   */
+  it('rekap publik hanya menghitung suara autentik, bukan baris palsu', async () => {
+    const d = decisionRow({ status: 'APPROVED' });
+    const authentic0 = signedVoteRow(d, 'user-0', 'APPROVE');
+    const authentic1 = signedVoteRow(d, 'user-1', 'APPROVE');
+    // Baris palsu: pilihan APPROVE, tetapi tidak menunjuk rekaman kunci
+    // tepercaya mana pun (relasi `signingKey` null).
+    const forged = {
+      ...signedVoteRow(d, 'user-2', 'APPROVE'),
+      signature: 'sig-karangan',
+      publicKey: 'pk-karangan',
+      signingKeyId: null,
+      publicKeyFingerprint: null,
+      signingKey: null,
+    };
+    dm.foundationDecision.findUnique.mockResolvedValue({
+      ...d,
+      finalPdfDigest: null,
+      finalPdfSealSignature: null,
+      esealId: null,
+      document: null,
+      votes: [authentic0, authentic1, forged],
+    });
+
+    const res = await FoundationDecisionService.verifyByToken('tok-1');
+    expect(res.voteCount).toBe(2);
+    expect(res.approveCount).toBe(2);
   });
 });
 
@@ -1211,6 +1362,40 @@ describe('FoundationDecisionService.votesOf — verifikasi ulang suara', () => {
     // lain: anggota ketiga tetap ada di daftar anggota.
     expect(spy.mock.calls[0][0].members.map((m) => m.userId)).toContain('user-2');
   });
+
+  /**
+   * Regresi audit #4 — identitas pemilih berasal dari SNAPSHOT, bukan profil
+   * hidup.
+   *
+   * `renderPdf` dulu memakai `v.user.name`. Mengganti nama profil setelah
+   * keputusan dibuat karena itu mengubah nama yang dicetak pada risalah yang
+   * sudah di-e-seal, sehingga identitas di PDF bertentangan dengan roster
+   * anggota yang justru dijanjikan immutable.
+   */
+  it('PDF memakai nama SNAPSHOT walau profil pengguna sudah diganti nama', async () => {
+    const d = decisionRow({
+      members: [
+        {
+          id: 'm0',
+          userId: 'user-0',
+          name: 'Nama Saat Keputusan',
+          roleCode: 'YAYASAN_PEMBINA',
+          user: { id: 'user-0', name: 'Nama Sudah Diganti' },
+        },
+      ],
+    });
+    const vote = signedVoteRow(d, 'user-0', 'APPROVE');
+    // Relasi `user` membawa nama profil LIVE yang sudah berubah.
+    vote.user = { id: 'user-0', name: 'Nama Sudah Diganti' };
+    const spy = vi.spyOn(pdfModule, 'generateDecisionPdf');
+
+    await FoundationDecisionService.renderPdf({ ...d, votes: [vote] } as never);
+
+    const printed = spy.mock.calls[0][0].votes;
+    expect(printed).toHaveLength(1);
+    expect(printed[0].name).toBe('Nama Saat Keputusan');
+    expect(printed[0].name).not.toBe('Nama Sudah Diganti');
+  });
 });
 
 /**
@@ -1357,5 +1542,237 @@ describe('FoundationDecisionService.castVote — kerja mahal di luar kunci', () 
     } finally {
       lockSpy.mockRestore();
     }
+  });
+});
+
+
+/**
+ * PRIORITAS 0 audit #1 — ikatan public key suara tidak tepercaya.
+ *
+ * Sebelum perbaikan, `isVoteAuthentic` memverifikasi tanda tangan terhadap
+ * `vote.publicKey` yang DISIMPAN PADA BARIS SUARA ITU SENDIRI. Seorang admin
+ * basis data cukup membuat pasangan kunci baru, memakai `userId` anggota
+ * snapshot, menandatangani digest kanonis dengan kunci karangannya, lalu
+ * menyisipkan baris suara berisi public key dan tanda tangan yang saling
+ * cocok. Suara palsu itu lolos verifikasi dan dapat memicu e-seal Yayasan.
+ *
+ * Perbaikannya mengikat suara ke rekaman `user_signing_key_history` milik
+ * pemilih yang SAMA: `signingKeyId` + `publicKeyFingerprint` harus menunjuk
+ * rekaman tepercaya, dan kunci yang dipakai memverifikasi adalah kunci PUBLIK
+ * dari rekaman itu — bukan dari baris suara.
+ */
+describe('FoundationDecisionService.votesOf — ikatan kunci tepercaya (audit #1)', () => {
+  /** Pasangan kunci milik PENYERANG, terpisah dari material anggota yang sah. */
+  const attacker = createKeyMaterial('passphrase-penyerang-2026');
+
+  /**
+   * Baris suara karangan: `userId` anggota snapshot yang sah, tetapi
+   * ditandatangani kunci penyerang, dan — inilah inti serangannya —
+   * `publicKey` beserta tanda tangannya saling konsisten.
+   */
+  function attackerVote(d: any, userId: string): any {
+    const attackerKey = {
+      id: `kh-attacker-${userId}`,
+      userId,
+      algorithm: attacker.algorithm,
+      publicKey: attacker.publicKey,
+      fingerprint: publicKeyFingerprint(attacker.publicKey),
+      issuedAt: new Date('2026-01-01T00:00:00Z'),
+      supersededAt: null,
+      revokedAt: null,
+    };
+    const digest = canonicalDigestForVote(d, {
+      userId,
+      choice: 'APPROVE',
+      signedAt: new Date('2026-01-02T00:00:00Z'),
+    });
+    return {
+      id: `vote-forged-${userId}`,
+      decisionId: d.id,
+      userId,
+      choice: 'APPROVE',
+      canonicalDigest: digest,
+      signature: signPdfHash(attacker, 'passphrase-penyerang-2026', digest),
+      publicKey: attacker.publicKey,
+      algorithm: attacker.algorithm,
+      note: null,
+      signedAt: new Date('2026-01-02T00:00:00Z'),
+      signingKeyId: attackerKey.id,
+      publicKeyFingerprint: attackerKey.fingerprint,
+      user: { id: userId, name: 'Anggota palsu' },
+      signingKey: attackerKey,
+    };
+  }
+
+  it('menolak suara karangan meski public key-nya cocok dengan tanda tangannya sendiri', () => {
+    const d = decisionRow();
+    const forged = attackerVote(d, 'user-1');
+    // Baris disisipkan langsung ke basis data: ia menunjuk `signingKeyId`
+    // karangan yang TIDAK ada di `user_signing_key_history`, jadi relasinya
+    // kosong saat dibaca.
+    forged.signingKey = null;
+    // Bukti bahwa serangan ini NYATA pada head lama: tanda tangannya sah untuk
+    // public key yang dibawanya sendiri, dan digest-nya cocok.
+    expect(forged.signature).toBeTruthy();
+    expect(new Set(d.members.map((m) => m.userId)).has(forged.userId)).toBe(true);
+
+    const counted = FoundationDecisionService.votesOf({ ...d, votes: [forged] } as never);
+    // Yang membedakan tepercaya dari karangan adalah rekaman riwayat kunci:
+    // baris suara yang tidak menunjuk rekaman tepercaya TIDAK dihitung.
+    expect(counted).toEqual([]);
+  });
+
+  it('menolak suara yang menunjuk rekaman kunci milik ORANG LAIN', () => {
+    const d = decisionRow();
+    const forged = attackerVote(d, 'user-1');
+    // Rekaman ada dan fingerprint-nya cocok dengan kuncinya, tetapi milik
+    // user-2 — bukan pemilik baris suara.
+    forged.signingKey = { ...forged.signingKey, userId: 'user-2' };
+    const counted = FoundationDecisionService.votesOf({ ...d, votes: [forged] } as never);
+    expect(counted).toEqual([]);
+  });
+
+  it('menolak suara yang fingerprint-nya tidak cocok dengan rekamannya', () => {
+    const d = decisionRow();
+    const forged = attackerVote(d, 'user-1');
+    // fingerprint ditulis ulang agar tampak menunjuk rekaman lain.
+    forged.publicKeyFingerprint = publicKeyFingerprint(material.publicKey);
+    const counted = FoundationDecisionService.votesOf({ ...d, votes: [forged] } as never);
+    expect(counted).toEqual([]);
+  });
+
+  it('menolak suara yang tidak memuat relasi rekaman kunci sama sekali', () => {
+    const d = decisionRow();
+    const forged = attackerVote(d, 'user-1');
+    delete (forged as any).signingKey;
+    const counted = FoundationDecisionService.votesOf({ ...d, votes: [forged] } as never);
+    expect(counted).toEqual([]);
+  });
+
+  it('suara palsu tidak dihitung ke kuorum, jadi e-seal tidak dapat dipicu', async () => {
+    const d = decisionRow({
+      quorumSnapshot: {
+        organType: 'PEMBINA',
+        kind: 'CIRCULAR',
+        activeCount: 3,
+        presentMode: 'MUTLAK',
+        presentValue: 1,
+        decisionMode: 'MUTLAK',
+        decisionValue: 1,
+      },
+    });
+    dm.foundationDecision.findUnique.mockResolvedValue(d);
+    dm.foundationDecisionVote.create.mockResolvedValue({ id: 'vote-1' });
+    // Basis data hanya berisi suara karangan.
+    dm.foundationDecisionVote.findMany.mockResolvedValue([attackerVote(d, 'user-1')]);
+    dm.foundationDecision.update.mockResolvedValue({ ...d, status: 'VOTING' });
+    dm.userSigningKey.findUnique.mockResolvedValue(signingKeyRow);
+    dm.userSigningKey.update.mockResolvedValue(signingKeyRow);
+    dm.foundationEseal.findFirst.mockResolvedValue(null);
+
+    const result = await FoundationDecisionService.castVote(
+      { id: 'user-2', roleCode: 'YAYASAN_PEMBINA' },
+      'dec-1',
+      { choice: 'APPROVE', passphrase: PASS }
+    );
+
+    // Suara penyerang tidak pernah masuk rekap...
+    expect(result.voteSummary.approve).toBe(1);
+    // ...dan tidak memicukan finalisasi/e-seal.
+    expect(dm.foundationEseal.create).not.toHaveBeenCalled();
+    expect(dm.foundationDecisionDocument.create).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Suara lama harus tetap terverifikasi setelah kunci dirotasi/dicabut.
+   *
+   * Inilah alasan `user_signing_key_history` append-only ada: `UserSigningKey`
+   * satu baris per pengguna dan diganti saat penerbitan ulang. Bila riwayatnya
+   * tidak hidup di tabel sendiri, memperbaiki lubang di atas justru akan
+   * membatalkan setiap keputusan yang sudah sah.
+   */
+  it('suara lama tetap sah walau rekaman kuncinya sudah superseded/revoked', () => {
+    const d = decisionRow();
+    const old: any = signedVoteRow(d, 'user-1', 'APPROVE');
+    // Rotasi: rekaman lama ditandai superseded dan revoked, tetapi TETAP ada.
+    old.signingKey = {
+      ...old.signingKey,
+      supersededAt: new Date('2026-06-01T00:00:00Z'),
+      revokedAt: new Date('2026-06-01T00:00:00Z'),
+    };
+
+    const counted = FoundationDecisionService.votesOf({ ...d, votes: [old] } as never);
+    expect(counted).toEqual([{ choice: 'APPROVE' }]);
+  });
+});
+
+/**
+ * PRIORITAS 1 audit #2 — rekap suara yang dicetak PDF harus mencakup suara
+ * penentu.
+ *
+ * `prepareApprovalArtifact` merender PDF dari `previewDecision` yang memuat
+ * `previewVote`, tetapi mempertahankan `voteSummary` LAMA. `approvalFingerprint`
+ * juga tidak mengikat `voteSummary`. Akibatnya artefak preview yang dirender
+ * SEBELUM suara penentu dinyatakan masih cocok ketika suara itu masuk, lalu
+ * PDF final mencetak rekap sebelum suara penentu — sementara basis data
+ * menyimpan rekap yang sudah memuatnya.
+ */
+describe('feature: artefak approval mengikat rekap suara (audit #2)', () => {
+  it('rekap pada PDF memuat suara terakhir yang menentukan', async () => {
+    const d = decisionRow({
+      quorumSnapshot: {
+        organType: 'PEMBINA',
+        kind: 'CIRCULAR',
+        activeCount: 1,
+        presentMode: 'MUTLAK',
+        presentValue: 1,
+        decisionMode: 'MUTLAK',
+        decisionValue: 1,
+      },
+      members: [
+        {
+          id: 'm0',
+          userId: 'user-0',
+          name: 'Anggota 0',
+          roleCode: 'YAYASAN_PEMBINA',
+          user: { id: 'user-0', name: 'Anggota 0' },
+        },
+      ],
+    });
+    dm.foundationDecision.findUnique.mockResolvedValue(d);
+    dm.foundationDecisionVote.create.mockResolvedValue({ id: 'vote-1' });
+    dm.foundationDecisionVote.findMany.mockResolvedValue([signedVoteRow(d, 'user-0', 'APPROVE')]);
+    dm.foundationDecision.update.mockResolvedValue({ ...d, status: 'APPROVED' });
+    dm.userSigningKey.findUnique.mockResolvedValue(signingKeyRow);
+    dm.userSigningKey.update.mockResolvedValue(signingKeyRow);
+    dm.foundationEseal.findFirst.mockResolvedValue({
+      id: 'seal-1',
+      algorithm: material.algorithm,
+      publicKey: material.publicKey,
+      encryptedPrivateKey: material.encryptedPrivateKey,
+      kdfSalt: material.kdfSalt,
+      kdfParams: material.kdfParams,
+      iv: material.iv,
+      authTag: material.authTag,
+      activatedAt: new Date(),
+      revokedAt: null,
+    });
+    const renderSpy = vi.spyOn(FoundationDecisionService, 'renderPdf');
+
+    await FoundationDecisionService.castVote(
+      { id: 'user-0', roleCode: 'YAYASAN_PEMBINA' },
+      'dec-1',
+      { choice: 'APPROVE', passphrase: PASS }
+    );
+
+    expect(renderSpy).toHaveBeenCalled();
+    // Setiap render (preview maupun final) harus memuat rekap dengan SATU
+    // suara setuju — bukan rekap kosong dari snapshot pra-suara.
+    for (const call of renderSpy.mock.calls) {
+      const summary = (call[0] as any).voteSummary;
+      expect(summary.approve).toBe(1);
+      expect(summary.present).toBe(1);
+    }
+    renderSpy.mockRestore();
   });
 });

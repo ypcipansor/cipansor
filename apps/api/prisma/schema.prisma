@@ -583,6 +583,7 @@ model User {
   decisionVotes        FoundationDecisionVote[] @relation("DecisionVoter")
   decisionMemberShots  FoundationDecisionMember[] @relation("DecisionMemberSnapshot")
   decisionRulesUpdated FoundationDecisionRule[] @relation("RuleUpdater")
+  signingKeyHistory    UserSigningKeyHistory[] @relation("SigningKeyHistoryOwner")
 
   @@index([email])
   @@index([role])
@@ -7407,6 +7408,39 @@ model UserSigningKey {
   @@map("user_signing_keys")
 }
 
+/// Riwayat kunci publik yang PERNAH diterbitkan untuk seorang pengguna.
+///
+/// `UserSigningKey` di atas adalah SATU baris per pengguna dan dihapus saat
+/// kunci diterbitkan ulang (`EsignService.activateKey` memanggil `deleteMany`).
+/// Sebuah suara terlampir pada kunci yang dipakai SAAT ITU, sehingga rekaman
+/// kunci publiknya harus hidup lebih lama daripada baris kunci yang berlaku —
+/// jika tidak, rotasi/pencabutan kunci membuat keputusan lama tak dapat
+/// diverifikasi ulang.
+///
+/// Tabel ini append-only: baris tidak pernah dihapus. Pencabutan ditandai
+/// `revokedAt`, penggantian oleh kunci yang lebih baru ditandai `supersededAt`
+/// — keduanya tetap dapat memverifikasi tanda tangan lama, sebab verifikasi
+/// memakai kunci PUBLIK dari rekaman yang ditunjuk baris suara.
+model UserSigningKeyHistory {
+  id          String @id @default(uuid())
+  userId      String @map("user_id")
+  algorithm   String @default("Ed25519")
+  publicKey   String @map("public_key") @db.Text
+  /// SHA-256(publicKey). Unik per pengguna, sehingga kunci yang sama tidak
+  /// pernah tercatat dua kali untuk orang yang sama.
+  fingerprint String
+  issuedAt     DateTime  @default(now()) @map("issued_at")
+  supersededAt DateTime? @map("superseded_at")
+  revokedAt    DateTime? @map("revoked_at")
+
+  user          User                     @relation("SigningKeyHistoryOwner", fields: [userId], references: [id], onDelete: Cascade)
+  decisionVotes FoundationDecisionVote[] @relation("DecisionVoteSigningKey")
+
+  @@unique([userId, fingerprint])
+  @@index([userId])
+  @@map("user_signing_key_history")
+}
+
 /// Sebab pencabutan kunci, mengikuti RFC 5280 §5.3.1.
 ///
 /// Adobe AATL (ICA6.a) menuntut kemampuan mencabut "segera setelah kehilangan,
@@ -10663,15 +10697,36 @@ model FoundationDecisionVote {
   publicKey  String @db.Text @map("public_key")
   algorithm  String @default("Ed25519")
 
+  /// Pengikat ke rekaman kunci yang TEPERCAYA (item audit #1).
+  ///
+  /// Tanpa kolom ini, verifikasi hanya memakai `publicKey` yang ditulis pada
+  /// baris suara itu sendiri — dan siapa pun yang dapat menulis langsung ke
+  /// `foundation_decision_votes` cukup membuat pasangan kunci baru, memakai
+  /// `userId` seorang anggota snapshot, menandatangani digest, lalu menyisipkan
+  /// kunci publik + tanda tangannya. Tanda tangan itu "sah" terhadap kuncinya
+  /// sendiri, sehingga suara palsu lolos hitungan kuorum dan memicu e-seal.
+  ///
+  /// `signingKeyId` menunjuk baris riwayat penerbitan kunci (`UserSigningKeyHistory`)
+  /// yang harus dimiliki pemilih yang sama; verifikasi membandingkan pemilik,
+  /// fingerprint, dan byte kunci publik dari rekaman itu, lalu memakai kuncinya.
+  /// Null (baris lama / sisipan) diperlakukan sebagai TIDAK sah.
+  signingKeyId         String? @map("signing_key_id")
+  /// SHA-256(publicKey) — pembanding ringkas terhadap rekaman kunci tepercaya.
+  publicKeyFingerprint String? @map("public_key_fingerprint")
+
   /// Catatan dissent (wajib utk REJECT pada sirkuler; opsional lainnya).
   note       String? @db.Text
   signedAt   DateTime @default(now()) @map("signed_at")
 
   decision FoundationDecision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
   user     User               @relation("DecisionVoter", fields: [userId], references: [id])
+  /// Rekaman kunci tepercaya yang menandatangani suara ini. `Restrict` karena
+  /// riwayat kunci tidak boleh hilang selama masih ada suara yang menunjuknya.
+  signingKey UserSigningKeyHistory? @relation("DecisionVoteSigningKey", fields: [signingKeyId], references: [id], onDelete: Restrict)
 
   @@unique([decisionId, userId])
   @@index([userId])
+  @@index([signingKeyId])
   @@map("foundation_decision_votes")
 }
 

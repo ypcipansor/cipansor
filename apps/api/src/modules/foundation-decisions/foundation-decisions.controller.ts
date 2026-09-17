@@ -20,7 +20,10 @@ export const FoundationDecisionController = {
   /** Daftar keputusan (paginated). */
   async list(req: Request, res: Response) {
     const query = (res.locals.validatedQuery || req.query) as ListFoundationDecisionsQuery;
-    const result = await FoundationDecisionService.list(query);
+    const result = await FoundationDecisionService.list(
+      { id: req.user!.id, roleCode: req.user!.roleCode },
+      query
+    );
     return res.json(
       ApiResponse.success(result.items, 'Daftar keputusan diterima.', {
         page: result.page,

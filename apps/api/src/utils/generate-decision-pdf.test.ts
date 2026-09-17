@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { PDFDocument } from 'pdf-lib';
+import { PDFDocument, StandardFonts } from 'pdf-lib';
 import {
   generateDecisionPdf,
   membersWithoutVote,
   decisionVerificationFooter,
+  wrap,
   type DecisionPdfData,
 } from './generate-decision-pdf';
 
@@ -163,5 +164,89 @@ describe('decisionVerificationFooter', () => {
   it('tetap menghasilkan baris walau URL tidak tersedia', () => {
     const lines = decisionVerificationFooter({ verificationUrl: null });
     expect(lines.join(' ')).toContain('unggah');
+  });
+});
+
+
+/**
+ * Regresi audit #6 — token tanpa spasi harus DIPECAH, bukan dibiarkan meluber.
+ *
+ * `widthOfTextAtSize` untuk token verifikasi `base64url`, digest SHA-256, atau
+ * URL tanpa spasi melebihi lebar kolom; `drawText` menggambar baris apa adanya
+ * tanpa membungkus, sehingga teksnya keluar halaman dan terpotong pada cetakan
+ * atau pindaian. Sifat yang dikunci di sini — "setiap baris muat" — tidak dapat
+ * diperiksa dari byte PDF (pdf-lib tidak menyediakan pembacaan teks), jadi
+ * `wrap` diuji langsung dengan font NYATA dari pdf-lib, bukan stub.
+ */
+describe('wrap — pemecahan token panjang', () => {
+  async function realFont() {
+    const doc = await PDFDocument.create();
+    return doc.embedFont(StandardFonts.Helvetica);
+  }
+
+  const maxWidth = 300;
+  const size = 10;
+
+  function expectAllLinesFit(font: Awaited<ReturnType<typeof realFont>>, text: string) {
+    const lines = wrap(font, size, text, maxWidth);
+    for (const line of lines) {
+      expect(font.widthOfTextAtSize(line, size)).toBeLessThanOrEqual(maxWidth);
+    }
+    return lines;
+  }
+
+  it('memecah URL panjang tanpa spasi', async () => {
+    const font = await realFont();
+    expectAllLinesFit(
+      font,
+      'https://cipansor.or.id/public/verify-decision?document=risalah-keputusan-organ-yayasan-2026'
+    );
+  });
+
+  it('memecah verification token base64url', async () => {
+    const font = await realFont();
+    const token = 'tok_' + 'aB3x'.repeat(40);
+    const lines = expectAllLinesFit(font, token);
+    expect(lines.length).toBeGreaterThan(1);
+    // Tidak ada karakter yang hilang oleh pemecahan.
+    expect(lines.join('')).toBe(token);
+  });
+
+  it('memecah digest SHA-256 heksadesimal', async () => {
+    const font = await realFont();
+    const digest = 'ab12'.repeat(16);
+    expectAllLinesFit(font, digest);
+  });
+
+  it('kata tanpa spasi yang sangat panjang tetap muat', async () => {
+    const font = await realFont();
+    expectAllLinesFit(font, 'A'.repeat(400));
+  });
+
+  it('teks biasa tetap dibungkus per kata', async () => {
+    const font = await realFont();
+    const lines = wrap(font, size, 'Rencana kerja tahunan disetujui seluruh anggota', 120);
+    expect(lines.length).toBeGreaterThan(1);
+    for (const line of lines) {
+      expect(line).not.toMatch(/^\s|\s$/);
+      expect(font.widthOfTextAtSize(line, size)).toBeLessThanOrEqual(maxWidth);
+    }
+  });
+
+  it('tidak membelah pasangan pengganti (surrogate pair) di tengah karakter', async () => {
+    // Font dengan pengukuran deterministik berbasis panjang teks. `wrap` tidak
+    // sedang diuji melalui font ini — yang diuji adalah PEMECAHAN-nya tetap
+    // utuh di batas grapheme. Font standar pdf-lib tidak dapat mengukur emoji
+    // (WinAnsi), sedangkan font Unicode tidak menjamin memiliki glif emoji.
+    const font = {
+      widthOfTextAtSize: (t: string, s: number) => t.length * s,
+    } as unknown as Parameters<typeof wrap>[0];
+    const lines = wrap(font, size, '😀'.repeat(40), maxWidth);
+    expect(lines.length).toBeGreaterThan(1);
+    for (const line of lines) {
+      // Tidak ada lone surrogate di ujung mana pun.
+      expect(line).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+      expect(line).not.toMatch(/(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/);
+    }
   });
 });

@@ -5,11 +5,91 @@
 > Belum di-commit / belum di-PR. Ikuti aturan golden AGENTS.md: koreksi dalam
 > bentuk kode harus lewat branch + PR, dan "selesai" berarti kode **dan** tesnya
 > dalam satu commit.
+>
+> **⚠️ Sebagian rekomendasi di bawah SUDAH DITOLAK oleh implementasi.** Baca
+> §0 (Keputusan arsitektur final) lebih dulu. §5 dan §6 tetap disimpan sebagai
+> catatan historis alasan rekomendasi tersebut diajukan, tetapi **bukan** peta
+> yang diikuti PR #509. Jangan mengikuti §5/§6 tanpa membaca §0.
 
 **Topik yang diulas:** proposal Gemini untuk membangun sistem TTE/PKI internal
 bagi risalah & penetapan keputusan Dewan Pembina (5 anggota, skenario mufakat /
 voting mayoritas / dominan tidak setuju), dengan kunci per anggota, E-Seal
 yayasan, verifikasi + audit trail.
+
+---
+
+## 0. Keputusan arsitektur final (ADR) — koreksi terhadap §5 & §6
+
+Implementasi yang benar-benar di-merge (PR #509, modul
+`apps/api/src/modules/foundation-decisions`) **tidak** mengikuti rekomendasi §5
+"perluas `Letter`" dan **tidak** menunda e-seal sebagaimana §6 butir 8. Bagian ini
+mencatat keputusannya secara eksplisit, supaya dokumen ini tidak lagi menyatakan
+kebalikan dari arsitektur aktual.
+
+**Keputusan: modul `foundation-decisions` berdiri sendiri, dengan model
+`FoundationDecision`/`…Vote`/`…Member`/`…Rule`/`FoundationEseal`/`…Document`
+— bukan perluasan `Letter`.**
+
+Alasan menolak rekomendasi "perluas `Letter`":
+
+1. **Bentuk data berbeda, bukan sekadar nilai enum baru.** `Letter` adalah
+   naskah korespondensi (perihal, tujuan, isi, alur review). Keputusan organ
+   adalah *kuorum terkunci*: snapshot anggota yang **immutable** pada saat
+   keputusan dibuat, matriks kewenangan per organ, aturan kuorum yang dapat
+   dikonfigurasi (UU 16/2001 jo. 28/2004 & PP 63/2008), dan hasil yang
+   menutup/membuka keputusan. Memaksakan bentuk ini ke `Letter` + `LetterReviewer`
+   berarti menambah kolom khusus-keputusan yang tak pernah dipakai surat, dan
+   membuat setiap query surat harus menyaring baris keputusan keluar.
+2. **Snapshot bukan relasi hidup.** Rekomendasi §5 memakai `LetterReviewer`
+   (relasi ke pengguna *saat ini*). Semantik keputusan menuntut roster yang
+   terkunci: anggota yang kemudian berpindah peran tetap dapat menandatangani
+   dan membaca keputusannya, dan nama yang dicetak adalah nama **saat keputusan
+   dibuat**. Relasi hidup tidak dapat menjamin itu tanpa mengubah arti
+   `LetterReviewer` bagi surat.
+3. **Kewenangan organ berbeda dari review surat.** Matriks Pembina/Pengurus/
+   Pengawas dan komposisi GABUNGAN punya aturan komposisi sendiri
+   (`foundation-authority.ts`); memetakannya ke `LetterReviewer` menuntut
+   mengubah model itu untuk dua konsumen yang aturannya tidak sama.
+
+**Keputusan kedua: e-seal internal Yayasan benar-benar diterbitkan pada PR ini,
+tidak ditunda.** Rekomendasi §6 butir 8 ditolak karena tanpa sesuatu yang
+membubuhkan tanda tangan akhir, "keputusan sah" tidak punya artefak yang dapat
+diverifikasi publik; menunda berarti mengirim alur kuorum tanpa penutupnya.
+Trade-off yang diterima dan dinyatakan jujur:
+
+- **Trust model.** e-seal adalah kunci milik Yayasan, bukan kunci pihak ketiga.
+  Kunci privat disegel AES-256-GCM dengan KEK dari passphrase server-side
+  (`FOUNDATION_ESEAL_PASSPHRASE`, produksi menolak boot tanpa nilai eksplisit);
+  admin basis data hanya melihat blob tersegel. Ini **bukan** PKI dan **bukan**
+  sertifikat.
+- **Status TTE: Tidak Tersertifikasi** (PP 71/2019 Ps. 60). Konsekuensinya persis
+  seperti yang ditulis §4: bobot pembuktian ada pada pihak yang mengandalkannya.
+  Karena itu bahasa UI/halaman verifikasi menyebut verifikasi arsip internal,
+  tidak pernah mengklaim "tersertifikasi", dan tidak menyalin kalimat BSrE.
+- **Mengapa bukan PAdES.** Sejalan dengan §4/§6 butir 5: PAdES menuntut
+  Ed25519 → RSA-3072/ECDSA P-256 + `@signpdf` + sertifikat. Itu Tier-1 terpisah
+  dan tidak dicampur ke PR ini. Yang dipakai adalah **detached Ed25519 atas
+  digest kanonis** + arsip byte PDF (`FoundationDecisionDocument`) — tanda tangan
+  tidak ditanam ke dalam PDF, sehingga digest yang ditandatangani sama persis
+  dengan arsip yang disimpan dan diunggah pemverifikasi.
+- **Yang TIDAK berubah dari rekomendasi ini:** jangan menyebut kunci raw
+  Yayasan sebagai "sertifikat"; JANGAN menyalin kalimat BSrE; tandai dokumen
+  sebagai TTE internal tidak tersertifikasi (§4 & §6 butir 9 tetap berlaku).
+
+**Ikatan kunci suara (dikoreksi saat audit PR).** Suara anggota tidak boleh
+dipercaya dari `publicKey` yang menempel pada baris suara — admin basis data
+dapat menyisipkan pasangan kunci karangan. Perbaikannya mengikat setiap suara ke
+`user_signing_key_history` (append-only) milik pemilih yang sama lewat
+`signingKeyId` + `publicKeyFingerprint`, dan memverifikasi memakai kunci publik
+dari **rekaman tepercaya itu**. Riwayat append-only inilah yang menjaga tanda
+tangan lama tetap sah setelah rotasi/pencabutan kunci
+(`apps/api/src/modules/foundation-decisions/foundation-decisions.service.ts`).
+
+**Jadi, untuk pembaca berikutnya:** §5 dan §6 di bawah adalah proposal awal yang
+ditolak, bukan deskripsi sistem. Peta kode yang benar adalah modul
+`apps/api/src/modules/foundation-decisions` dan util murni
+`foundation-authority.ts`, `foundation-quorum.ts`, `foundation-eseal.ts`,
+`generate-decision-pdf.ts`.
 
 ---
 
@@ -183,6 +263,9 @@ perlu ekspektasi jujur soal residu risiko
 
 ## 5. Alur keputusan Dewan Pembina: desain modul `risalah` yang benar
 
+> **⛔ SUPERSEDED — lihat §0.** Rancangan ini DITOLAK; implementasi memakai modul
+> `foundation-decisions` mandiri. Bagian ini disimpan sebagai catatan historis.
+
 Yang benar-benar belum ada bukan kriptografinya, melainkan **lapisan keputusan
 bareng** (quorum Dewan Pembina). Ini pikiran desain:
 
@@ -246,6 +329,10 @@ enum RisalahDecisionStatus { DRAFT VOTING APPROVED REJECTED }
 ---
 
 ## 6. Checklist koreksi konkret (prioritas)
+
+> **⛔ SUPERSEDED — lihat §0.** Butir 1–4 dan 8 di bawah bertentangan dengan
+> arsitektur final dan tidak diikuti. Butir 5/6/9 (PAdES Tier-1 terpisah, scrypt,
+> bahasa TTE jujur) tetap relevan.
 
 1. [ ] JANGAN tambah tabel `Certificate`/`Document`/`AuditLog` paralel.
 2. [ ] Tambah `RisalahDecision` (+ tipe/status), kolom `vote` pada `LetterReviewer`,

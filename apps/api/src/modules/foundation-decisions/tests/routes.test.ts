@@ -66,6 +66,21 @@ describe('foundation-decisions.routes public verify', () => {
   });
 
   /**
+   * Regresi audit #3 — GET /verify WAJIB dibatasi lajunya.
+   *
+   * Dulu hanya `POST /verify-pdf` yang punya limiter, sehingga justru jalur
+   * termurah bagi penyerang (GET, tanpa Turnstile, tanpa unggahan) yang
+   * terbuka — padahal satu permintaan men-token melakukan lookup baris,
+   * membaca arsip PDF `bytea`, menghash byte-nya, lalu membaca + memverifikasi
+   * kunci e-seal. `hasLimiter` memeriksa Express MELAKUKAN pemasangan handler
+   * limiter di stack rute (middleware `express-rate-limit` membawa `resetKey`),
+   * bukan sekadar membaca sumber.
+   */
+  it('GET /verify is rate limited', () => {
+    expect(hasLimiter('get', '/verify')).toBe(true);
+  });
+
+  /**
    * Rute vote TIDAK memakai `authorize(...)`.
    *
    * Hak suara ditentukan oleh snapshot anggota yang terkunci, diperiksa di
@@ -112,6 +127,21 @@ describe('foundation-decisions.routes — akses baca detail/dokumen', () => {
   it('GET /decisions/:id/document is authenticated but not role-gated', () => {
     expect(isPublicRoute('get', '/decisions/:id/document')).toBe(false);
     const handlers = handlersFor('get', '/decisions/:id/document');
+    expect(handlers.some((h) => h.handle === authorize || h.name === 'authorize')).toBe(false);
+  });
+
+  /**
+   * Regresi audit #9 — daftar harus sejalan dengan detail.
+   *
+   * Anggota snapshot yang rolenya sudah berubah boleh MEMBUKA keputusannya
+   * (detail tidak `authorize`), jadi daftar yang memakai `authorize(...READ)`
+   * membuat orang itu tidak dapat menemukan dokumen yang boleh ia tanda
+   * tangani. Aksesnya karena itu dipindahkan ke query service
+   * (`foundationDecisionListWhere`), bukan ke middleware.
+   */
+  it('GET /decisions is authenticated but not role-gated', () => {
+    expect(isPublicRoute('get', '/decisions')).toBe(false);
+    const handlers = handlersFor('get', '/decisions');
     expect(handlers.some((h) => h.handle === authorize || h.name === 'authorize')).toBe(false);
   });
 });

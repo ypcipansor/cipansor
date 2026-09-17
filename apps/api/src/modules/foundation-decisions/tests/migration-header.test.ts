@@ -59,12 +59,14 @@ describe('migrasi foundation_decisions — guard drift skema', () => {
   it('memuat blok preflight yang memeriksa kolom tabel yang sudah ada', () => {
     expect(sql).toContain('information_schema.columns');
     expect(sql).toMatch(/RAISE EXCEPTION/);
-    expect(sql).toMatch(/kekurangan kolom/);
+    // Pesan yang benar-benar di-RAISE untuk kolom yang hilang.
+    expect(sql).toMatch(/tidak memiliki kolom/);
   });
 
   it('memuat pemeriksaan label enum yang sudah ada', () => {
     expect(sql).toContain('pg_enum');
-    expect(sql).toMatch(/kekurangan nilai/);
+    // Label berlebih MAUPUN kurang ditolak lewat perbandingan himpunan.
+    expect(sql).toMatch(/label enum % adalah/);
   });
 
   it('preflight mendahului CREATE TABLE pertama', () => {

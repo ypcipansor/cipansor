@@ -211,12 +211,24 @@ test.describe("daftar keputusan", () => {
     ).toHaveCount(0);
   });
 
-  test("API menolak guru pada daftar dan pembuatan keputusan", async () => {
+  test("API memberi guru daftar KOSONG (bukan seluruh daftar) dan menolak pembuatan", async () => {
     const teacher = await apiLogin(SEED_USERS.teacher);
+    // Daftar hanya `authenticate`: akses diperiksa di query supaya konsisten
+    // dengan detail, yang mengizinkan anggota snapshot yang rolenya berubah.
+    // Karena itu guru TIDAK mendapat 403 — yang penting ia tidak melihat satu
+    // keputusan pun. Sebelumnya rute memakai `authorize(...READ)`; tes lama
+    // memaku 403, dan itu justru mengunci bug item #9 (mantan anggota tidak
+    // dapat menemukan keputusannya sendiri).
     const list = await fetch(`${API_URL}/foundation/decisions`, {
       headers: { authorization: `Bearer ${teacher.accessToken}` },
     });
-    expect(list.status).toBe(403);
+    expect(list.status).toBe(200);
+    const body = (await list.json()) as {
+      data: unknown[];
+      pagination: { total: number };
+    };
+    expect(body.data).toEqual([]);
+    expect(body.pagination.total).toBe(0);
     const create = await fetch(`${API_URL}/foundation/decisions`, {
       method: "POST",
       headers: {
@@ -292,6 +304,21 @@ test.describe("membuat keputusan", () => {
     await expect(
       page.getByRole("heading", { level: 1, name: subject }),
     ).toBeVisible();
+  });
+
+  test("daftar Super Admin benar-benar memuat keputusan (regresi OR: [{}])", async () => {
+    expect(decisionId).toBeTruthy();
+    // Regresi: predikat akses daftar pernah berbentuk `OR: [{}, …]`. Objek
+    // kosong di dalam `OR` cocok dengan NOL baris di Prisma 7, sehingga peran
+    // READ — Super Admin sekalipun — melihat daftar kosong meski keputusan
+    // sudah ada. Predikat "semua" harus berupa `{}` tanpa klausa OR.
+    const admin = await apiLogin(SEED_USERS.superAdmin);
+    const list = await apiRequest<Envelope<DecisionRow[]>>(
+      admin,
+      "GET",
+      "/foundation/decisions?limit=50",
+    );
+    expect(list.data.some((d) => d.id === decisionId)).toBe(true);
   });
 
   test("sirkuler baru berstatus VOTING dan menampilkan ringkasan kuorum", async () => {

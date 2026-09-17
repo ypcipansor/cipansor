@@ -410,6 +410,21 @@ export function newVerificationToken(): string {
   return crypto.randomBytes(20).toString('base64url');
 }
 
+/**
+ * Fingerprint kunci publik: SHA-256 heksadesimal atas byte DER (SPKI) yang
+ * dikodekan base64 pada `publicKey`.
+ *
+ * Dipakai untuk mengikat sebuah tanda tangan ke REKAMAN kunci yang tepercaya
+ * tanpa harus membandingkan teks kunci yang panjang. Hash atas teks base64-nya
+ * — bukan atas DER-nya — supaya fingerprint dapat dihitung ulang dari nilai
+ * yang benar-benar tersimpan di basis data, sehingga baris yang fingerprint-nya
+ * tidak cocok dengan kuncinya tertangkap, bukan hanya baris yang kuncinya
+ * berbeda.
+ */
+export function publicKeyFingerprint(publicKeyBase64: string): string {
+  return crypto.createHash('sha256').update(publicKeyBase64, 'utf8').digest('hex');
+}
+
 /** Perlindungan tebak-passphrase: penundaan bertingkat lalu penguncian. */
 export const MAX_PASSPHRASE_ATTEMPTS = 5;
 export const LOCKOUT_MINUTES = 15;
