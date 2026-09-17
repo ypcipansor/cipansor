@@ -82,13 +82,8 @@ export const ROLE_CODE_TO_LEGACY: Record<string, LegacyRole> = {
   MUHAFIDZAH: "TEACHER",
   MURABBI: "TEACHER",
   WALI_KAMAR: "TEACHER",
-  PT_REKTOR: "TEACHER",
-  PT_WAKIL_REKTOR: "TEACHER",
-  PT_DEKAN: "TEACHER",
-  PT_KAPRODI: "TEACHER",
-  PT_DOSEN: "TEACHER",
 
-  // Tata usaha + bendahara + pesantren/PT administration + business units
+  // Tata usaha + bendahara + pesantren administration + business units
   // → STAFF (business managers are NOT admins — see backend note)
   TKQ_TATA_USAHA: "STAFF",
   SDIT_TATA_USAHA: "STAFF",
@@ -99,8 +94,6 @@ export const ROLE_CODE_TO_LEGACY: Record<string, LegacyRole> = {
   SMPIT_BENDAHARA: "STAFF",
   SMAQ_BENDAHARA: "STAFF",
   PESANTREN_TATA_USAHA: "STAFF",
-  PT_TATA_USAHA: "STAFF",
-  PT_STAF_AKADEMIK: "STAFF",
   PUSTAKAWAN: "STAFF",
   PERAWAT: "STAFF",
   KEAMANAN: "STAFF",
@@ -112,7 +105,6 @@ export const ROLE_CODE_TO_LEGACY: Record<string, LegacyRole> = {
   SDIT_SISWA: "STUDENT",
   SMPIT_SISWA: "STUDENT",
   SMAQ_SISWA: "STUDENT",
-  PT_MAHASISWA: "STUDENT",
 
   // Parents → PARENT
   TKQ_ORANG_TUA: "PARENT",
@@ -254,7 +246,6 @@ export const roleRouteAccess: Record<LegacyRole, string[]> = {
     "/kitab-progress",
     "/laundry",
     "/library",
-    "/litbang",
     "/meals",
     "/muhadatsah",
     "/muhadhoroh",
@@ -435,7 +426,6 @@ export function canAccessRoute(
 const roleCodeDashboardOverrides: Record<string, string> = {
   SMPIT_ALUMNI: "/alumni",
   SMAQ_ALUMNI: "/alumni",
-  PT_ALUMNI: "/alumni",
   TKQ_KOMITE: "/reports",
   SDIT_KOMITE: "/reports",
   SMPIT_KOMITE: "/reports",

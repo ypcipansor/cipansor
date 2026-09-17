@@ -42,7 +42,6 @@ enum Realm {
   SMP_IT // SMP IT (Islam Terpadu)
   SMA_QURAN // SMA Qur'an
   PESANTREN // Pesantren (cross-unit)
-  PERGURUAN_TINGGI // Perguruan Tinggi
   UNIT_USAHA // Business units (Kantin, Laundry, Koperasi, dll)
 }
 
@@ -126,17 +125,6 @@ enum RoleCode {
   SMAQ_SISWA
   SMAQ_ALUMNI
 
-  // Perguruan Tinggi roles
-  PT_REKTOR
-  PT_WAKIL_REKTOR
-  PT_DEKAN
-  PT_KAPRODI
-  PT_DOSEN
-  PT_MAHASISWA
-  PT_STAF_AKADEMIK
-  PT_TATA_USAHA
-  PT_ALUMNI
-
   // Pesantren roles (cross-unit)
   PESANTREN_PENGASUH // Kyai / pimpinan tertinggi pesantren
   PESANTREN_DIREKTUR // Pengelola operasional harian
@@ -167,7 +155,6 @@ enum UnitType {
   SD_IT // SD Islam Terpadu
   SMP_IT // SMP Islam Terpadu  
   SMA_QURAN // SMA Qur'an
-  PERGURUAN_TINGGI // Perguruan Tinggi
   UNIT_USAHA // Business unit (Kantin, Laundry, Koperasi, dll)
   OTHER
 }
@@ -563,11 +550,6 @@ model User {
   sopsApproved  StandardOperatingProcedure[] @relation("SOPApprover")
   sopRevisions  SOPRevision[]               @relation("SOPRevisor")
 
-  // Litbang / Inovasi (R&D)
-  researchProjects     ResearchProject[]     @relation("ResearchLeader")
-  innovationsProposed  InnovationProposal[]  @relation("InnovationProposer")
-  innovationsApproved  InnovationProposal[]  @relation("InnovationApprover")
-
   // Non-formal Education, ZIS & Social Services
   instructedCourses        Course[]                @relation("UserCourseInstructor")
   zisDistributions         ZisDistribution[]       @relation("ZisDistributor")
@@ -751,19 +733,12 @@ model Unit {
   // Tata Laksana (SOP Management)
   standardOperatingProcedures StandardOperatingProcedure[]
 
-  // Litbang / Inovasi (R&D)
-  researchProjects     ResearchProject[]
-  innovationProposals  InnovationProposal[]
-
   // Business Units (Unit Usaha)
   businessUnits        BusinessUnit[]
 
   // Non-formal Education & Social Services
   courses             Course[]
   socialServiceOrders SocialServiceOrder[]
-
-  // Perguruan Tinggi (Higher Ed)
-  faculties Faculty[]
 
   @@index([type])
   @@index([foundationId])
@@ -951,10 +926,6 @@ model AcademicYear {
   practicumLessonPlans PracticumLessonPlan[]
   studentOrgs          StudentOrg[]
   researchThemes       ResearchTheme[]
-
-  // Perguruan Tinggi (Higher Ed)
-  courseClasses HigherEdCourseClass[]
-  krs           Krs[]
   qualityEvidences      QualityEvidence[]
   qualityAudits         QualityAudit[]
   assignments           Assignment[]
@@ -1189,9 +1160,6 @@ model Student {
 
   // Non-formal Education
   courseEnrollments CourseEnrollment[]
-
-  // Perguruan Tinggi (Higher Ed)
-  higherEdProfile StudentHigherEd?
 
   // Clinic
   clinicAppointments ClinicAppointment[]
@@ -5134,7 +5102,6 @@ model Budget {
   createdBy            User                  @relation("BudgetCreator", fields: [createdById], references: [id])
   purchaseRequestItems PurchaseRequestItem[]
   planActivities       PlanActivity[]
-  researchProjects     ResearchProject[]
 
   @@unique([unitId, academicYearId, accountId])
   @@index([unitId])
@@ -5509,9 +5476,6 @@ model BusinessUnit {
   canteenTransactions  CanteenTransaction[]
   laundryPricings      LaundryPricing[]
   laundryTransactions  LaundryTransaction[]
-
-  // Litbang integration
-  researchProjects     ResearchProject[]
 
   @@unique([unitId, code])
   @@index([unitId])
@@ -9220,9 +9184,6 @@ model EnvironmentProgram {
   // Relations
   unit Unit  @relation(fields: [unitId], references: [id])
   pic  User? @relation("EnvironmentPIC", fields: [picId], references: [id])
-  // Integration with Higher Ed academics
-  courseId String?         @map("course_id")
-  course   HigherEdCourse? @relation(fields: [courseId], references: [id])
 
   @@index([unitId])
   @@index([status])
@@ -9547,86 +9508,6 @@ model SOPRevision {
 }
 
 // =====================================
-// LITBANG / INOVASI (R&D / INNOVATION)
-// =====================================
-
-enum ResearchStatus {
-  PROPOSAL
-  APPROVED
-  IN_PROGRESS
-  COMPLETED
-  PUBLISHED
-  CANCELLED
-}
-
-enum InnovationStatus {
-  IDEA
-  EVALUATION
-  PILOT
-  IMPLEMENTED
-  SCALED
-  REJECTED
-}
-
-/// ResearchProject - Proyek penelitian
-model ResearchProject {
-  id            String         @id @default(uuid())
-  unitId        String         @map("unit_id")
-  title         String
-  abstract      String?        @db.Text
-  category      String         // Pendidikan, Teknologi, Sosial, Agama, dll
-  status        ResearchStatus @default(PROPOSAL)
-  leaderId      String         @map("leader_id")
-  startDate     DateTime?      @map("start_date")
-  endDate       DateTime?      @map("end_date")
-  budget        Decimal?       @db.Decimal(15, 2)
-  fundingSource String?        @map("funding_source")
-  methodology   String?        @db.Text
-  findings      String?        @db.Text
-  publishedUrl  String?        @map("published_url")
-  progress      Float          @default(0) // 0-100
-  createdAt     DateTime       @default(now()) @map("created_at")
-  updatedAt     DateTime       @updatedAt @map("updated_at")
-
-  // Relations
-  unit       Unit                @relation(fields: [unitId], references: [id])
-  leader     User                @relation("ResearchLeader", fields: [leaderId], references: [id])
-  milestones ResearchMilestone[]
-  budgetRel  Budget?             @relation(fields: [budgetId], references: [id])
-  budgetId   String?             @map("budget_id")
-
-  // Business Unit Integration (Litbang -> Unit Usaha)
-  businessUnitId String?       @map("business_unit_id")
-  businessUnit   BusinessUnit? @relation(fields: [businessUnitId], references: [id])
-  impactScore    Float?        @map("impact_score") // Skor dampak terhadap unit usaha
-  impactNotes    String?       @map("impact_notes") @db.Text
-
-  @@index([unitId])
-  @@index([status])
-  @@index([leaderId])
-  @@map("research_projects")
-}
-
-/// ResearchMilestone - Milestone proyek penelitian
-model ResearchMilestone {
-  id          String    @id @default(uuid())
-  projectId   String    @map("project_id")
-  title       String
-  description String?   @db.Text
-  dueDate     DateTime? @map("due_date")
-  completedAt DateTime? @map("completed_at")
-  status      String    @default("PENDING") // PENDING, IN_PROGRESS, COMPLETED
-  sortOrder   Int       @default(0) @map("sort_order")
-  createdAt   DateTime  @default(now()) @map("created_at")
-
-  // Relations
-  project ResearchProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  @@index([projectId])
-  @@map("research_milestones")
-}
-
-// =====================================
 // PRACTICUM (AMALIYAH TADRIS), QIYADAH & TURATS LAB (from PR #295, hardened)
 // =====================================
 
@@ -9819,35 +9700,6 @@ model ResearchReference {
 
   @@index([submissionId])
   @@map("research_references")
-}
-
-/// InnovationProposal - Usulan inovasi
-model InnovationProposal {
-  id          String           @id @default(uuid())
-  unitId      String           @map("unit_id")
-  title       String
-  description String?          @db.Text
-  category    String           // Teknologi, Pedagogi, Administrasi, Layanan
-  status      InnovationStatus @default(IDEA)
-  proposerId  String           @map("proposer_id")
-  impact      String?          @db.Text // Dampak yang diharapkan
-  resources   String?          @db.Text // Sumber daya yang dibutuhkan
-  timeline    String?          // Estimasi waktu implementasi
-  score       Float?           // Skor evaluasi 0-100
-  feedback    String?          @db.Text
-  approvedById String?         @map("approved_by_id")
-  approvedAt  DateTime?        @map("approved_at")
-  createdAt   DateTime         @default(now()) @map("created_at")
-  updatedAt   DateTime         @updatedAt @map("updated_at")
-
-  // Relations
-  unit       Unit  @relation(fields: [unitId], references: [id])
-  proposer   User  @relation("InnovationProposer", fields: [proposerId], references: [id])
-  approvedBy User? @relation("InnovationApprover", fields: [approvedById], references: [id])
-
-  @@index([unitId])
-  @@index([status])
-  @@map("innovation_proposals")
 }
 
 // =====================================
@@ -10047,157 +9899,6 @@ model SocialServiceMaterial {
 
   @@index([orderId])
   @@map("social_service_materials")
-}
-
-// =====================================
-// PERGURUAN TINGGI (HIGHER EDUCATION)
-// =====================================
-
-/// Faculty - Fakultas
-model Faculty {
-  id          String   @id @default(uuid())
-  unitId      String   @map("unit_id")
-  name        String
-  code        String   @unique
-  description String?  @db.Text
-  deanId      String?  @map("dean_id")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  unit     Unit      @relation(fields: [unitId], references: [id])
-  programs StudyProgram[]
-
-  @@index([unitId])
-  @@map("faculties")
-}
-
-/// StudyProgram - Program Studi
-model StudyProgram {
-  id          String   @id @default(uuid())
-  facultyId   String   @map("faculty_id")
-  name        String
-  code        String   @unique
-  degree      String   // S1, S2, D3, dll
-  accreditation String?
-  headId      String?  @map("head_id") // Kaprodi
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  faculty  Faculty   @relation(fields: [facultyId], references: [id], onDelete: Cascade)
-  courses  HigherEdCourse[]
-  students StudentHigherEd[]
-
-  @@index([facultyId])
-  @@map("study_programs")
-}
-
-/// HigherEdCourse - Mata Kuliah (renamed from PR #312 to avoid clashing with the non-formal Course model)
-model HigherEdCourse {
-  id             String   @id @default(uuid())
-  programId      String   @map("program_id")
-  name           String
-  code           String   @unique
-  credits        Int      @default(2) // SKS
-  semester       Int      // Semester penawaran (1-8)
-  description    String?  @db.Text
-  isActive       Boolean  @default(true) @map("is_active")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  program  StudyProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
-  classes  HigherEdCourseClass[]
-
-  // Lingkungan integration
-  environmentPrograms EnvironmentProgram[]
-
-  @@index([programId])
-  @@map("higher_ed_courses")
-}
-
-/// HigherEdCourseClass - Kelas Mata Kuliah
-model HigherEdCourseClass {
-  id             String   @id @default(uuid())
-  courseId       String   @map("course_id")
-  academicYearId String   @map("academic_year_id")
-  name           String   // e.g., "A", "B", "Eksekutif"
-  lecturerId     String   @map("lecturer_id")
-  capacity       Int      @default(40)
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  course       HigherEdCourse @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
-  enrollments  KrsCourseEnrollment[]
-
-  @@index([courseId])
-  @@index([academicYearId])
-  @@map("higher_ed_course_classes")
-}
-
-/// StudentHigherEd - Profil Mahasiswa
-model StudentHigherEd {
-  id             String   @id @default(uuid())
-  studentId      String   @unique @map("student_id")
-  programId      String   @map("program_id")
-  nim            String   @unique // Nomor Induk Mahasiswa
-  currentSemester Int     @default(1) @map("current_semester")
-  gpa            Decimal? @db.Decimal(3, 2) // IPK
-  totalCredits   Int      @default(0) @map("total_credits")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  student  Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  program  StudyProgram @relation(fields: [programId], references: [id])
-  krs      Krs[]
-
-  @@index([programId])
-  @@map("students_higher_ed")
-}
-
-/// KRS - Kartu Rencana Studi
-model Krs {
-  id             String   @id @default(uuid())
-  studentHeId    String   @map("student_he_id")
-  academicYearId String   @map("academic_year_id")
-  semester       Int
-  status         String   @default("DRAFT") // DRAFT, SUBMITTED, APPROVED
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  studentHigherEd StudentHigherEd    @relation(fields: [studentHeId], references: [id], onDelete: Cascade)
-  academicYear    AcademicYear       @relation(fields: [academicYearId], references: [id])
-  enrollments     KrsCourseEnrollment[]
-
-  @@unique([studentHeId, academicYearId, semester])
-  @@index([studentHeId])
-  @@map("krs")
-}
-
-/// KrsCourseEnrollment - Pengambilan Mata Kuliah (KRS Detail)
-model KrsCourseEnrollment {
-  id            String   @id @default(uuid())
-  krsId         String   @map("krs_id")
-  classId       String   @map("class_id")
-  grade         Decimal? @db.Decimal(5, 2) // Nilai angka (0-100 atau 0-4)
-  letterGrade   String?  @map("letter_grade") // A, B, C, D, E
-  status        String   @default("ENROLLED") // ENROLLED, COMPLETED, DROPPED
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  krs   Krs         @relation(fields: [krsId], references: [id], onDelete: Cascade)
-  class HigherEdCourseClass @relation(fields: [classId], references: [id])
-
-  @@unique([krsId, classId])
-  @@index([krsId])
-  @@index([classId])
-  @@map("krs_course_enrollments")
 }
 
 // =====================================

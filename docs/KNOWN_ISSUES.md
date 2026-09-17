@@ -518,7 +518,9 @@ warm session.
   had `unitId: null`. They logged in and landed on empty portals, which the
   audit reported as "near-blank" pages. Fixed in `prisma/seed.ts`; because the
   seed starts with `TRUNCATE … CASCADE`, existing databases are updated with the
-  additive, idempotent `wire-demo-personas.sql` instead.
+  additive, idempotent `wire-demo-personas.sql` instead. (Since resolved:
+  `PERGURUAN_TINGGI` and the `PT_*` roles were decommissioned, so this
+  row-specific history is moot.)
 - **Contract mismatches.** `/api/attendance/summary` demanded a mandatory
   `startDate`+`endDate` pair (a single day and an unbounded student history are
   both legitimate); `/api/curriculum/schedules` silently stripped the
@@ -535,6 +537,7 @@ warm session.
   even though the Axios `baseURL` already ends in `/api`, so they hit
   `/api/api/...` and 404'd against the live backend. The e2e mocks' `**/api/...`
   globs masked it. Fixed all 59 call sites to match the majority convention.
+  (`use-litbang` has since been removed with the Litbang module.)
 - **Docker images reworked & verified runnable.** `apps/api` is a multi-stage
   build using a fresh `pnpm install --prod` closure + compiled `dist` + the
   generated Prisma client (~929 MB; boots, `/health` 200, PrismaClient loads);
@@ -738,8 +741,8 @@ injections (`grc-live`, `integration-grc`), none of which mock product data.
 
 ### New follow-ups surfaced by the 2026-07-22 critique
 
-- **Consolidate the live `-enhancement`/`litbang`/`research` modules by design,
-  not by delete.** `dashboard-enhancement`, `finance-enhancement`, `litbang`, and
+- **Consolidate the live `-enhancement`/`research` modules by design,
+  not by delete.** `dashboard-enhancement`, `finance-enhancement`, and
   `research` are separately mounted and in active use — merging them is a
   contract-changing refactor (route-name collisions with `dashboard`, ~34 web
   call sites into `/finance-enhancement`, separate nav/RBAC entries), so it was
@@ -762,7 +765,7 @@ injections (`grc-live`, `integration-grc`), none of which mock product data.
   whose nav offers a route the middleware then bounces to `/unauthorized` — e.g.
   most non-teaching staff (`*_TATA_USAHA`, `*_BENDAHARA`, `*_KOMITE`, pustakawan,
   perawat, keamanan, laboran, business-*) get `/students`; alumni get
-  `/alumni/sanad`; `PT_MAHASISWA` gets `/classes`. Decide per route: grant access
+  `/alumni/sanad`. Decide per route: grant access
   or hide the menu item. `screenshot-roles` reproduces the list.
 - **Prettier is not enforced and the tree isn't clean.** `prettier --check`
   currently flags ~464 files, so it can't go into CI as-is. Do a one-time
@@ -848,8 +851,8 @@ and follow-through:
   10+ merged migrations, truncated `schema.prisma`/`seed.ts`, and weakened
   CI. Closed; vocabulary rebuilt **additively** (enum-only migration
   `20260716000000_expand_roles_realms_hierarchy`) with backend + web mapping,
-  seeds, and tests. Deviation: `BUSINESS_MANAGER`/`PT_TATA_USAHA` map to
-  STAFF, not admin. Also added research-grounded support roles
+  seeds, and tests. Deviation: `BUSINESS_MANAGER`/`PT_TATA_USAHA` (the latter
+  since removed) map to STAFF, not admin. Also added research-grounded support roles
   (`PUSTAKAWAN`, `PERAWAT`, `KEAMANAN`, `LABORAN`) backed by existing modules.
 - **#320 (security deps):** right goal, wrong means (pnpm 11 **RC** pinned,
   global `resolution-mode=highest`; `pnpm audit` is broken upstream — npm
