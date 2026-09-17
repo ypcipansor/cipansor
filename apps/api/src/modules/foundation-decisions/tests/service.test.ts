@@ -691,6 +691,52 @@ describe('FoundationDecisionService.create', () => {
     expect(where.OR).toEqual([{ expiresAt: null }, { expiresAt: { gt: expect.any(Date) } }]);
     expect(where.user).toEqual({ isActive: true, deletedAt: null });
   });
+  /**
+   * Regresi BUG — satu orang dengan DUA peran pada organ yang sama dulu
+   * disusutkan lewat `distinct: ['userId']` tanpa urutan yang dijanjikan.
+   * Snapshot bisa menyimpan jabatan yang salah (dan berubah antar-render),
+   * sehingga PDF ber-e-seal mencetak jabatan yang bukan kebijakan organ.
+   * Sekarang `selectSnapshotAssignments` memilih deterministik: primary menang,
+   * lalu senioritas jabatan.
+   */
+  it('satu orang dengan dua peran organ menghasilkan SATU anggota berjabatan deterministik', async () => {
+    dm.userRoleAssignment.findMany.mockResolvedValue([
+      {
+        id: 'asg-bendahara',
+        userId: 'user-1',
+        isPrimary: false,
+        user: { id: 'user-1', name: 'Rangkap Dua' },
+        role: { code: 'YAYASAN_BENDAHARA' },
+      },
+      {
+        id: 'asg-ketua',
+        userId: 'user-1',
+        isPrimary: false,
+        user: { id: 'user-1', name: 'Rangkap Dua' },
+        role: { code: 'YAYASAN_KETUA' },
+      },
+    ]);
+    dm.foundationDecisionRule.findUnique.mockResolvedValue(null);
+    dm.foundationDecision.create.mockResolvedValue({ id: 'dec-new' });
+
+    await FoundationDecisionService.create(
+      { id: 'user-0', roleCode: 'YAYASAN_KETUA' },
+      {
+        organType: 'PENGURUS',
+        kind: 'MEETING',
+        subject: 'Subjek Keputusan',
+        body: 'Isi keputusan yang cukup panjang minimal sepuluh karakter.',
+        decisionType: 'keputusan-operasional',
+      }
+    );
+
+    const data = dm.foundationDecision.create.mock.calls[0][0].data;
+    expect(data.members.create).toHaveLength(1);
+    expect(data.members.create[0].userId).toBe('user-1');
+    expect(data.members.create[0].roleCode).toBe('YAYASAN_KETUA');
+    // activeCount menghitung ORANG unik, bukan jumlah penugasan.
+    expect(data.quorumSnapshot.activeCount).toBe(1);
+  });
 });
 
 describe('FoundationDecisionService.applyOutcome', () => {

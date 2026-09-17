@@ -1,9 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { PDFDocument, StandardFonts } from 'pdf-lib';
+import jsQR from 'jsqr';
+import { PDFDict, PDFName, PDFRawStream, decodePDFRawStream } from 'pdf-lib';
+import { createHash } from 'crypto';
+
 import {
   generateDecisionPdf,
   membersWithoutVote,
   decisionVerificationFooter,
+  verificationQrPayload,
   wrap,
   type DecisionPdfData,
 } from './generate-decision-pdf';
@@ -65,6 +70,20 @@ describe('generateDecisionPdf', () => {
   it('konsisten (deterministik) untuk data yang sama', async () => {
     const a = await generateDecisionPdf(data);
     const b = await generateDecisionPdf(data);
+    expect(a.equals(b)).toBe(true);
+  });
+
+  /**
+   * Determinisme HARUS mencakup halaman QR: `finalPdfDigest` dihitung dari byte
+   * PDF final dan ditandatangani e-seal, jadi byte yang sama harus dihasilkan
+   * dari data yang sama — termasuk saat QR ikut dirender. QR tanpa
+   * `setCreationDate` bersama akan membuat dua render berbeda dan verifikasi
+   * unggahan gagal untuk dokumen yang sah.
+   */
+  it('konsisten (deterministik) juga saat halaman QR dirender', async () => {
+    const withQr = { ...data, verificationUrl: 'https://cipansor.or.id/public/verify-decision' };
+    const a = await generateDecisionPdf(withQr);
+    const b = await generateDecisionPdf(withQr);
     expect(a.equals(b)).toBe(true);
   });
 
@@ -248,5 +267,87 @@ describe('wrap — pemecahan token panjang', () => {
       expect(line).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
       expect(line).not.toMatch(/(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/);
     }
+  });
+});
+
+describe('QR verifikasi di dalam PDF', () => {
+  /** Resolusi XObject /Image pada sebuah halaman, sebagai raster RGBA. */
+  async function pageQrRaster(pdf: Buffer, pageIndex: number) {
+    const doc = await PDFDocument.load(pdf);
+    const resources = doc.getPages()[pageIndex].node.Resources();
+    if (!resources) return null;
+    const xobj = resources.lookupMaybe(PDFName.of('XObject'), PDFDict);
+    if (!xobj) return null;
+    for (const key of xobj.keys()) {
+      const resolved = doc.context.lookup(xobj.get(key));
+      if (!(resolved instanceof PDFRawStream)) continue;
+      if (resolved.dict.lookup(PDFName.of('Subtype'))?.toString() !== '/Image') continue;
+      const dict = resolved.dict;
+      const width = Number(dict.lookup(PDFName.of('Width'))?.toString());
+      const height = Number(dict.lookup(PDFName.of('Height'))?.toString());
+      const space = dict.lookup(PDFName.of('ColorSpace'))?.toString();
+      const bpc = Number(dict.lookup(PDFName.of('BitsPerComponent'))?.toString());
+      const data = decodePDFRawStream(resolved).decode();
+      if (space !== '/DeviceRGB' || bpc !== 8 || !width || !height) continue;
+      const rgba = Buffer.alloc(width * height * 4, 255);
+      for (let i = 0, p = 0; i < width * height; i += 1, p += 3) {
+        rgba[i * 4] = data[p];
+        rgba[i * 4 + 1] = data[p + 1];
+        rgba[i * 4 + 2] = data[p + 2];
+      }
+      return { rgba, width, height };
+    }
+    return null;
+  }
+
+  it('meng-embed QR yang dapat dipindai dan mengarah ke halaman unggah tanpa token', async () => {
+    const buf = await generateDecisionPdf({
+      ...data,
+      verificationUrl: 'https://cipansor.or.id/public/verify-decision',
+    });
+    // Halaman QR adalah halaman terakhir.
+    const doc = await PDFDocument.load(buf);
+    const raster = await pageQrRaster(buf, doc.getPageCount() - 1);
+    if (!raster) throw new Error('PDF tidak memuat raster QR pada halaman terakhir');
+    const decoded = jsQR(
+      new Uint8ClampedArray(raster.rgba.buffer, raster.rgba.byteOffset, raster.rgba.byteLength),
+      raster.width,
+      raster.height
+    );
+    if (!decoded) throw new Error('QR pada PDF tidak dapat didekode');
+    expect(decoded.data).toBe('https://cipansor.or.id/public/verify-decision');
+    expect(decoded.data).toContain('/public/verify-decision');
+    expect(decoded.data).not.toContain('token=');
+  });
+
+  it('QR tidak pernah membawa token walau URL diberi query/hash', () => {
+    expect(
+      verificationQrPayload('https://cipansor.or.id/public/verify-decision?token=rahasia#x')
+    ).toBe('https://cipansor.or.id/public/verify-decision');
+  });
+
+  it('tanpa verificationUrl tidak ada halaman QR (satu halaman, tanpa image)', async () => {
+    const buf = await generateDecisionPdf({ ...data, verificationUrl: null });
+    const doc = await PDFDocument.load(buf);
+    expect(doc.getPageCount()).toBe(1);
+    expect(await pageQrRaster(buf, 0)).toBeNull();
+  });
+
+  it('QR TIDAK membawa token: hanya token berbeda, byte QR identik', async () => {
+    // Bila token ikut tersandikan, dua PDF dengan token berbeda akan menghasilkan
+    // raster QR yang berbeda. Yang dibandingkan di sini adalah raster QR-nya
+    // sendiri, bukan seluruh PDF (footer tetap mencetak nomor rujukan).
+    const qrBytesFor = async (verificationToken: string) => {
+      const buf = await generateDecisionPdf({
+        ...data,
+        verificationToken,
+        verificationUrl: 'https://cipansor.or.id/public/verify-decision',
+      });
+      const doc = await PDFDocument.load(buf);
+      const raster = await pageQrRaster(buf, doc.getPageCount() - 1);
+      if (!raster) throw new Error('PDF tidak memuat raster QR pada halaman terakhir');
+      return createHash('sha256').update(raster.rgba).digest('hex');
+    };
+    expect(await qrBytesFor('token-pertama')).toBe(await qrBytesFor('token-kedua'));
   });
 });

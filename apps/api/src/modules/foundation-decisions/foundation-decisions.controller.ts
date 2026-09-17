@@ -77,7 +77,7 @@ export const FoundationDecisionController = {
     return res.json(ApiResponse.success(result, 'Aturan kuorum disimpan.'));
   },
 
-  /** Verifikasi keputusan akhir lewat token (QR/publik). */
+  /** Verifikasi keputusan akhir lewat nomor rujukan/token cetak (publik). */
   async verify(req: Request, res: Response) {
     const token = String(req.query.token ?? '');
     if (!token) throw Errors.badRequest('Token verifikasi wajib diisi.');

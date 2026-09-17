@@ -93,9 +93,7 @@ describe('foundation-decisions.routes public verify', () => {
     const handlers = handlersFor('post', '/decisions/:id/vote');
     expect(handlers.some((h) => h.name === 'authenticate')).toBe(true);
     // `authorize` mengembalikan middleware bernama 'authorize'.
-    expect(handlers.some((h) => h.handle === authorize || h.name === 'authorize')).toBe(
-      false
-    );
+    expect(handlers.some((h) => h.handle === authorize || h.name === 'authorize')).toBe(false);
     expect(isPublicRoute('post', '/decisions/:id/vote')).toBe(false);
   });
 

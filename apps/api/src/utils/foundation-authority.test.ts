@@ -5,6 +5,8 @@ import {
   organForDecisionType,
   organMayDecide,
   roleCodesForOrgan,
+  rolePriorityForOrgan,
+  selectSnapshotAssignments,
 } from './foundation-authority';
 
 describe('organForDecisionType', () => {
@@ -84,5 +86,85 @@ describe('keanggotaan organ', () => {
     expect(isMemberOfOrgan('PENGURUS', RoleCode.YAYASAN_SEKRETARIS)).toBe(true);
     expect(isMemberOfOrgan('PENGURUS', RoleCode.YAYASAN_PEMBINA)).toBe(false);
     expect(isMemberOfOrgan('PEMBINA', RoleCode.YAYASAN_PEMBINA)).toBe(true);
+  });
+});
+describe('selectSnapshotAssignments', () => {
+  type Assignment = Parameters<typeof selectSnapshotAssignments>[1][number];
+  const a = (over: Partial<Assignment>): Assignment => ({
+    id: over.id ?? 'asg',
+    userId: over.userId ?? 'u1',
+    isPrimary: over.isPrimary ?? false,
+    roleCode: over.roleCode ?? RoleCode.YAYASAN_ANGGOTA,
+  });
+
+  it('memilih penugasan primary walau ada jabatan yang lebih senior', () => {
+    const picked = selectSnapshotAssignments('PENGURUS', [
+      a({ id: 'a1', userId: 'u1', isPrimary: false, roleCode: RoleCode.YAYASAN_KETUA }),
+      a({ id: 'a2', userId: 'u1', isPrimary: true, roleCode: RoleCode.YAYASAN_BENDAHARA }),
+    ]);
+    expect(picked).toHaveLength(1);
+    expect(picked[0].roleCode).toBe(RoleCode.YAYASAN_BENDAHARA);
+  });
+
+  it('tanpa primary, jabatan yang lebih senior menang (Ketua > Bendahara)', () => {
+    const picked = selectSnapshotAssignments('PENGURUS', [
+      a({ id: 'a2', userId: 'u1', roleCode: RoleCode.YAYASAN_BENDAHARA }),
+      a({ id: 'a1', userId: 'u1', roleCode: RoleCode.YAYASAN_KETUA }),
+    ]);
+    expect(picked[0].roleCode).toBe(RoleCode.YAYASAN_KETUA);
+  });
+
+  it('hasil SAMA walau urutan baris dibalik (deterministik)', () => {
+    const rows = [
+      a({ id: 'a2', userId: 'u1', roleCode: RoleCode.YAYASAN_BENDAHARA }),
+      a({ id: 'a1', userId: 'u1', roleCode: RoleCode.YAYASAN_SEKRETARIS }),
+      a({ id: 'a3', userId: 'u2', roleCode: RoleCode.YAYASAN_KETUA }),
+    ];
+    const forward = selectSnapshotAssignments('PENGURUS', rows);
+    const backward = selectSnapshotAssignments('PENGURUS', [...rows].reverse());
+    expect(forward.map((r) => `${r.userId}:${r.roleCode}`)).toEqual(
+      backward.map((r) => `${r.userId}:${r.roleCode}`)
+    );
+    // Ketua lebih dulu, lalu Sekretaris.
+    expect(forward.map((r) => r.roleCode)).toEqual([
+      RoleCode.YAYASAN_KETUA,
+      RoleCode.YAYASAN_SEKRETARIS,
+    ]);
+  });
+
+  it('menghitung ORANG unik, bukan jumlah penugasan', () => {
+    const picked = selectSnapshotAssignments('PENGURUS', [
+      a({ id: 'a1', userId: 'u1', roleCode: RoleCode.YAYASAN_KETUA }),
+      a({ id: 'a2', userId: 'u1', roleCode: RoleCode.YAYASAN_ANGGOTA }),
+      a({ id: 'a3', userId: 'u2', roleCode: RoleCode.YAYASAN_BENDAHARA }),
+    ]);
+    expect(picked.map((r) => r.userId).sort()).toEqual(['u1', 'u2']);
+  });
+
+  it('GABUNGAN: peran Pengurus menang atas Pengawas untuk orang yang sama', () => {
+    const picked = selectSnapshotAssignments('GABUNGAN', [
+      a({ id: 'a1', userId: 'u1', roleCode: RoleCode.YAYASAN_PENGAWAS }),
+      a({ id: 'a2', userId: 'u1', roleCode: RoleCode.YAYASAN_SEKRETARIS }),
+    ]);
+    expect(picked).toHaveLength(1);
+    expect(picked[0].roleCode).toBe(RoleCode.YAYASAN_SEKRETARIS);
+  });
+
+  it('peran di luar organ tidak pernah menang secara diam-diam', () => {
+    const picked = selectSnapshotAssignments('PENGURUS', [
+      a({ id: 'a1', userId: 'u1', roleCode: RoleCode.SUPER_ADMIN }),
+      a({ id: 'a2', userId: 'u1', roleCode: RoleCode.YAYASAN_ANGGOTA }),
+    ]);
+    expect(picked[0].roleCode).toBe(RoleCode.YAYASAN_ANGGOTA);
+  });
+
+  it('rolePriorityForOrgan menaik sesuai senioritas', () => {
+    expect(rolePriorityForOrgan('PENGURUS', RoleCode.YAYASAN_KETUA)).toBeLessThan(
+      rolePriorityForOrgan('PENGURUS', RoleCode.YAYASAN_BENDAHARA)
+    );
+    // Role yang tidak tergolong organ berakhir di urutan terakhir.
+    expect(rolePriorityForOrgan('PENGURUS', RoleCode.SUPER_ADMIN)).toBeGreaterThan(
+      rolePriorityForOrgan('PENGURUS', RoleCode.YAYASAN_ANGGOTA)
+    );
   });
 });

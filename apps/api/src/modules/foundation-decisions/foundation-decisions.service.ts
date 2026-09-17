@@ -25,7 +25,7 @@ import { prisma } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
 import { config } from '@/config';
 import { evaluateQuorum, type QuorumEvaluation } from '@/utils/foundation-quorum';
-import { organMayDecide, roleCodesForOrgan } from '@/utils/foundation-authority';
+import { organMayDecide, roleCodesForOrgan, selectSnapshotAssignments } from '@/utils/foundation-authority';
 import {
   canReadFoundationDecision,
   foundationDecisionListWhere,
@@ -653,16 +653,40 @@ export const FoundationDecisionService = {
     // aktif, penugasan belum kedaluwarsa, dan akunnya sendiri masih aktif.
     // Anggota yang sudah habis masa tugasnya tidak boleh menggelembungkan
     // kuorum yang terkunci selamanya.
-    const assignments = await prisma.userRoleAssignment.findMany({
+    //
+    // SATU orang dapat memegang lebih dari satu peran yang tergolong organ yang
+    // sama (Sekretaris merangkap Bendahara, dsb.). Snapshot menyimpan satu
+    // jabatan per orang, jadi penyusutan dilakukan FUNGSI MURNI
+    // `selectSnapshotAssignments`: penugasan `isPrimary` menang, lalu senioritas
+    // jabatan per organ, lalu tie-break leksikografis. `distinct: ['userId']`
+    // yang lama TIDAK punya urutan yang dijanjikan, sehingga jabatan pada PDF
+    // ber-e-seal dapat berubah mengikuti rencana query — bukan kebijakan organ.
+    const assignmentRows = await prisma.userRoleAssignment.findMany({
       where: {
         isActive: true,
         OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
         role: { code: { in: roleCodesForOrgan(input.organType) }, isActive: true },
         user: { isActive: true, deletedAt: null },
       },
-      include: { user: { select: { id: true, name: true } }, role: { select: { code: true } } },
-      distinct: ['userId'],
+      select: {
+        id: true,
+        userId: true,
+        isPrimary: true,
+        user: { select: { id: true, name: true } },
+        role: { select: { code: true } },
+      },
+      orderBy: [{ isPrimary: 'desc' }, { assignedAt: 'asc' }, { id: 'asc' }],
     });
+    const assignments = selectSnapshotAssignments(
+      input.organType,
+      assignmentRows.map((a) => ({
+        id: a.id,
+        userId: a.userId,
+        isPrimary: a.isPrimary,
+        roleCode: a.role.code,
+        user: a.user,
+      }))
+    );
 
     if (assignments.length === 0) {
       throw Errors.badRequest(
@@ -717,7 +741,7 @@ export const FoundationDecisionService = {
             create: assignments.map((a) => ({
               userId: a.user.id,
               name: a.user.name,
-              roleCode: a.role.code,
+              roleCode: a.roleCode,
             })),
           },
         },
@@ -1474,8 +1498,10 @@ export const FoundationDecisionService = {
   },
 
   /**
-   * Verifikasi lewat token (QR), memeriksa arsip yang tersimpan di server.
+   * Verifikasi lewat token cetak (nomor rujukan), memeriksa arsip server.
    *
+   * Token ini TIDAK datang dari QR — QR risalah hanya membawa alamat halaman
+   * unggah tanpa token. Ia adalah nomor rujukan yang tercetak di kaki PDF.
    * Ini membuktikan bahwa arsip server belum berubah sejak disegel. Ia TIDAK
    * membuktikan apa pun tentang berkas yang dipegang pemindai — lihat
    * `verifyByPdfBuffer` untuk itu, yang membandingkan byte unggahan.

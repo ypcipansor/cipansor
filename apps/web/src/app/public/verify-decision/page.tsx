@@ -37,7 +37,9 @@ import {
  * Berada di bawah `/public/*` dan TIDAK memakai shell aplikasi, sehingga pemindai
  * QR anonim tidak pernah dibelokkan ke layar login staf.
  *
- * **Dua jalur, dan keduanya dijawab oleh server, bukan oleh UI.**
+ * **Dua jalur, dan keduanya dijawab oleh server, bukan oleh UI.** QR pada
+ * risalah hanya membawa alamat halaman ini tanpa token; jalur token dipakai
+ * dengan mengetik nomor rujukan yang tercetak di risalah.
  *
  * Jalur token hanya memeriksa arsip yang tersimpan di server: ia membuktikan
  * catatan server belum berubah, dan TIDAK membuktikan apa pun tentang berkas
@@ -52,7 +54,7 @@ function VerifyContent() {
   const params = useSearchParams();
   const token = params.get("token") ?? "";
 
-  // --- Jalur token (QR) ---
+  // --- Jalur token (nomor rujukan yang tercetak; QR sendiri tanpa token) ---
   const {
     data: tokenData,
     isLoading: tokenLoading,
@@ -105,12 +107,14 @@ function VerifyContent() {
       });
       setUploadResult(data);
     } catch (err: unknown) {
-      const e = err as { response?: { status?: number; data?: { error?: { message?: string } } } };
+      const e = err as {
+        response?: { status?: number; data?: { error?: { message?: string } } };
+      };
       setUploadError(
         e.response?.status === 429
           ? "Terlalu banyak permintaan verifikasi. Silakan tunggu beberapa saat."
-          : e.response?.data?.error?.message ??
-              "Terjadi kesalahan saat memverifikasi berkas.",
+          : (e.response?.data?.error?.message ??
+              "Terjadi kesalahan saat memverifikasi berkas."),
       );
     } finally {
       turnstile.refresh();
@@ -162,7 +166,8 @@ function VerifyContent() {
               {selectedFile && (
                 <p className="mt-1 flex items-center gap-1 text-xs text-slate-600">
                   <FileUp className="h-3.5 w-3.5 text-blue-600" />
-                  {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
+                  {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)}{" "}
+                  KB)
                 </p>
               )}
             </div>
@@ -183,7 +188,9 @@ function VerifyContent() {
             <Button
               className="w-full bg-blue-600 font-semibold text-white hover:bg-blue-700"
               onClick={handleVerifyPdf}
-              disabled={verifyPdf.isPending || !selectedFile || !turnstile.ready}
+              disabled={
+                verifyPdf.isPending || !selectedFile || !turnstile.ready
+              }
             >
               {verifyPdf.isPending ? (
                 <>
@@ -206,19 +213,25 @@ function VerifyContent() {
 
         {uploadResult && <VerificationResult data={uploadResult} uploaded />}
 
-        {/* Jalur token: hanya menyatakan "tercatat", tidak pernah "sah". */}
+        {/* Jalur token: hanya menyatakan "tercatat", tidak pernah "sah".
+            Token datang dari nomor rujukan yang tercetak di risalah, BUKAN
+            dari QR — QR pada risalah sengaja hanya membawa alamat halaman
+            unggah ini tanpa token, karena tautan bertoken hanya dapat
+            menjawab "ada keputusan yang pernah disahkan", bukan "berkas yang
+            Anda pegang inilah berkas itu". */}
         {!token && (
           <Card className="shadow-md">
             <CardHeader>
               <CardTitle className="text-lg">
-                Sudah punya token dari QR?
+                Punya nomor rujukan/token?
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <p className="text-sm text-muted-foreground">
                 Token hanya menunjukkan bahwa keputusan ini tercatat di sistem
-                Yayasan beserta arsipnya. Untuk membuktikan <em>berkas yang Anda
-                pegang</em> adalah berkas resmi, unggah PDF-nya di atas.
+                Yayasan beserta arsipnya. Untuk membuktikan{" "}
+                <em>berkas yang Anda pegang</em> adalah berkas resmi, unggah
+                PDF-nya di atas.
               </p>
               <div className="space-y-1.5">
                 <Label htmlFor="token">Token Verifikasi</Label>

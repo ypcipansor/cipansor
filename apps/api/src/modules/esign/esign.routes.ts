@@ -1,5 +1,4 @@
 import { Router } from 'express';
-import rateLimit from 'express-rate-limit';
 import multer from 'multer';
 import { EsignController } from './esign.controller';
 import { authenticate, isSuperAdmin } from '@/middleware/auth';
@@ -22,40 +21,9 @@ import {
   isAcceptedIdentityDocument,
   MAX_IDENTITY_DOCUMENT_BYTES,
 } from '@/utils/identity-document-store';
+import { passphraseLimiter, publicVerifyLimiter } from '@/middleware/rate-limit';
 
 const router = Router();
-
-const passphraseLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: Number(process.env.ESIGN_RATE_LIMIT_MAX) || 20,
-  message: {
-    success: false,
-    error: {
-      code: 'RATE_LIMIT_EXCEEDED',
-      message:
-        'Terlalu banyak percobaan tanda tangan elektronik. Coba lagi beberapa saat lagi.',
-    },
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-/**
- * Rate limiter publik khusus verifikasi dokumen.
- */
-const publicVerifyLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: Number(process.env.PUBLIC_VERIFY_RATE_LIMIT_MAX) || 30,
-  message: {
-    success: false,
-    error: {
-      code: 'RATE_LIMIT_EXCEEDED',
-      message: 'Terlalu banyak permintaan verifikasi dokumen. Coba lagi beberapa saat lagi.',
-    },
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
 
 /**
  * Multer memory storage untuk mengunggah file PDF sementara.

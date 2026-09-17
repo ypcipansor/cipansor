@@ -66,4 +66,25 @@ describe('docs/REVIEW_GEMINI_RISALAH_DIGITAL_SIGNATURE.md — tidak kontradiktif
     expect(doc).not.toMatch(/Belum di-commit/);
     expect(doc).not.toMatch(/belum di-PR/);
   });
+
+  /**
+   * Regresi FLAG INVESTIGATION — klaim QR tidak boleh bertentangan dengan
+   * artefak yang benar-benar dihasilkan.
+   *
+   * Temuan Devin: generator risalah dulu hanya mencetak URL sebagai TEKS,
+   * sementara deskripsi/komentar menyebut pemindaian QR. Sekarang QR-nya
+   * benar-benar dirender (lihat `generate-decision-pdf.test.ts` yang
+   * membongkar PDF dan mendekode QR-nya). Yang dipaku di sini adalah sisi
+   * dokumen: tabel "yang sudah ada" memakai kata "QR" untuk jalur e-sign
+   * surat yang MEMANG memuat QR (`generate-letter-pdf.ts`), sedangkan
+   * risalah keputusan mengarah ke halaman UNGGAH tanpa token. Klaim lama
+   * "verifikasi berbasis token/QR" pada baris itu keliru untuk surat: QR surat
+   * membawa alamat, bukan token.
+   */
+  it('tidak lagi menyebut verifikasi e-sign sebagai "berbasis token/QR"', () => {
+    expect(doc).not.toMatch(/verifikasi berbasis token\/QR/);
+    // Penggantinya menyebut QR secara jujur: ia membawa ALAMAT halaman, bukan token.
+    expect(doc).toMatch(/QR yang benar-benar dirender/);
+    expect(doc).toMatch(/bukan token/);
+  });
 });

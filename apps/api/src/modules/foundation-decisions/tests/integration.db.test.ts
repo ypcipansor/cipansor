@@ -17,6 +17,7 @@ import path from 'path';
 import { createPrismaClient } from '../../../../prisma/client';
 import { createSealMaterial, sealCanSign } from '@/utils/foundation-eseal';
 import { foundationDecisionListWhere } from '@/utils/foundation-decision-access';
+import { selectSnapshotAssignments } from '@/utils/foundation-authority';
 import type { PrismaClient } from '@prisma/client';
 
 const RUN = process.env.RUN_DB_TESTS === '1';
@@ -285,9 +286,7 @@ describe.skipIf(!RUN)('foundation-decisions integrasi PostgreSQL', () => {
         "name"        TEXT NOT NULL
       )`);
     const faked = guard.replace(/foundation_decision_members\b/g, 'foundation_decisions_bad');
-    await expect(prisma.$executeRawUnsafe(faked)).rejects.toThrowError(
-      /tidak memiliki kolom id/
-    );
+    await expect(prisma.$executeRawUnsafe(faked)).rejects.toThrowError(/tidak memiliki kolom id/);
     await prisma.$executeRawUnsafe('DROP TABLE IF EXISTS "foundation_decisions_bad"');
   });
 
@@ -360,6 +359,144 @@ describe.skipIf(!RUN)('foundation-decisions integrasi PostgreSQL', () => {
     expect(after?.quorumPresentValue ?? null).toEqual(before?.quorumPresentValue ?? null);
 
     await prisma.foundationDecisionRule.deleteMany({ where: { updatedById: user.id } });
+    await prisma.user.delete({ where: { id: user.id } });
+  });
+
+  /**
+   * Regresi BUG — satu orang dengan DUA peran pada organ yang SAMA.
+   *
+   * Inilah bentuk yang tidak dapat dibuktikan mock: `distinct: ['userId']` di
+   * PostgreSQL memilih baris mana yang bertahan TANPA urutan yang dijanjikan,
+   * sehingga `roleCode` pada snapshot immutable (dan jabatan di PDF ber-e-seal)
+   * dapat berubah mengikuti rencana query. Uji ini membuat dua penugasan nyata
+   * (Bendahara lalu Ketua, TANPA primary) pada satu pengguna, menjalankan query
+   * snapshot yang sama seperti `create`, lalu menyusutkannya dengan fungsi
+   * produksi dan memastikan jabatannya Ketua — bukan kebetulan urutan baris.
+   *
+   * Barisnya sengaja di-insert dengan urutan "Bendahara dulu" supaya bila
+   * penyusutan kembali bergantung pada urutan kembalian, yang menang adalah
+   * Bendahara dan uji ini gagal.
+   */
+  it('satu orang dua peran satu organ → satu jabatan deterministik (Ketua)', async () => {
+    const suffix = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const user = await prisma.user.create({
+      data: {
+        id: `itest-multi-${suffix}`,
+        email: `itest-multi-${suffix}@example.test`,
+        name: 'Rangkap Dua Organ',
+        passwordHash: 'x',
+      },
+    });
+    // Pakai RoleCode NYATA (upsert, agar aman bila seed sudah membuatnya):
+    // daftar prioritas jabatan memetakan nilai enum, jadi kode bersuffix akan
+    // jatuh ke peringkat yang sama dan tie-break leksikografis yang menang.
+    const bendahara = await prisma.role.upsert({
+      where: { code: 'YAYASAN_BENDAHARA' },
+      create: { code: 'YAYASAN_BENDAHARA', name: 'Bendahara', realm: 'YAYASAN' },
+      update: {},
+    });
+    const ketua = await prisma.role.upsert({
+      where: { code: 'YAYASAN_KETUA' },
+      create: { code: 'YAYASAN_KETUA', name: 'Ketua', realm: 'YAYASAN' },
+      update: {},
+    });
+    // Sengaja tanpa `isPrimary`, dan Bendahara di-insert lebih dulu.
+    await prisma.userRoleAssignment.create({
+      data: { userId: user.id, roleId: bendahara.id, isPrimary: false },
+    });
+    await prisma.userRoleAssignment.create({
+      data: { userId: user.id, roleId: ketua.id, isPrimary: false },
+    });
+
+    const rows = await prisma.userRoleAssignment.findMany({
+      where: { userId: user.id, isActive: true },
+      select: {
+        id: true,
+        userId: true,
+        isPrimary: true,
+        user: { select: { id: true, name: true } },
+        role: { select: { code: true } },
+      },
+    });
+    // Prasyarat uji: barisnya benar-benar dua, dan urutan kembalian PostgreSQL
+    // bukan yang menentukan hasil.
+    expect(rows).toHaveLength(2);
+    const collapsed = selectSnapshotAssignments(
+      'PENGURUS',
+      rows.map((r) => ({
+        id: r.id,
+        userId: r.userId,
+        isPrimary: r.isPrimary,
+        roleCode: r.role.code,
+        user: r.user,
+      }))
+    );
+    expect(collapsed).toHaveLength(1);
+    expect(collapsed[0].roleCode).toBe('YAYASAN_KETUA');
+
+    await prisma.userRoleAssignment.deleteMany({ where: { userId: user.id } });
+    await prisma.user.delete({ where: { id: user.id } });
+  });
+
+  /**
+   * Pasangan dari uji di atas: penugasan PRIMARY menang atas senioritas.
+   *
+   * Aturan organ yang sebenarnya adalah `isPrimary` penugasan resmi — daftar
+   * prioritas hanya menengahi ketika tidak ada primary yang jelas. Uji ini
+   * memaku bahwa Bendahara yang ditandai primary TETAP menang walau Ketua
+   * (tanpa primary) lebih senior.
+   */
+  it('penugasan primary menang atas senioritas jabatan', async () => {
+    const suffix = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const user = await prisma.user.create({
+      data: {
+        id: `itest-primary-${suffix}`,
+        email: `itest-primary-${suffix}@example.test`,
+        name: 'Primary Menang',
+        passwordHash: 'x',
+      },
+    });
+    const bendahara = await prisma.role.upsert({
+      where: { code: 'YAYASAN_BENDAHARA' },
+      create: { code: 'YAYASAN_BENDAHARA', name: 'Bendahara', realm: 'YAYASAN' },
+      update: {},
+    });
+    const ketua = await prisma.role.upsert({
+      where: { code: 'YAYASAN_KETUA' },
+      create: { code: 'YAYASAN_KETUA', name: 'Ketua', realm: 'YAYASAN' },
+      update: {},
+    });
+    await prisma.userRoleAssignment.create({
+      data: { userId: user.id, roleId: ketua.id, isPrimary: false },
+    });
+    await prisma.userRoleAssignment.create({
+      data: { userId: user.id, roleId: bendahara.id, isPrimary: true },
+    });
+
+    const rows = await prisma.userRoleAssignment.findMany({
+      where: { userId: user.id, isActive: true },
+      select: {
+        id: true,
+        userId: true,
+        isPrimary: true,
+        user: { select: { id: true, name: true } },
+        role: { select: { code: true } },
+      },
+    });
+    const collapsed = selectSnapshotAssignments(
+      'PENGURUS',
+      rows.map((r) => ({
+        id: r.id,
+        userId: r.userId,
+        isPrimary: r.isPrimary,
+        roleCode: r.role.code,
+        user: r.user,
+      }))
+    );
+    expect(collapsed).toHaveLength(1);
+    expect(collapsed[0].roleCode).toBe('YAYASAN_BENDAHARA');
+
+    await prisma.userRoleAssignment.deleteMany({ where: { userId: user.id } });
     await prisma.user.delete({ where: { id: user.id } });
   });
 });

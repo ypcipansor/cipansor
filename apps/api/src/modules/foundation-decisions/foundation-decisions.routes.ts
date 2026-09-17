@@ -1,11 +1,11 @@
 import { Router } from 'express';
-import rateLimit from 'express-rate-limit';
 import multer from 'multer';
 import { RoleCode } from '@prisma/client';
 import { FoundationDecisionController as c } from './foundation-decisions.controller';
 import { authenticate, authorize } from '@/middleware/auth';
 import { asyncHandler, validate, validateQuery } from '@/middleware/error';
 import { requireTurnstile } from '@/middleware/turnstile';
+import { passphraseLimiter, publicVerifyLimiter } from '@/middleware/rate-limit';
 import {
   castFoundationVoteSchema,
   createFoundationDecisionSchema,
@@ -15,23 +15,6 @@ import {
 } from './foundation-decisions.schema';
 
 const router = Router();
-
-/**
- * Rate limiter publik verifikasi keputusan — sejajar dengan esign.
- */
-const publicVerifyLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: Number(process.env.PUBLIC_VERIFY_RATE_LIMIT_MAX) || 30,
-  message: {
-    success: false,
-    error: {
-      code: 'RATE_LIMIT_EXCEEDED',
-      message: 'Terlalu banyak permintaan verifikasi dokumen. Coba lagi beberapa saat lagi.',
-    },
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
 
 /**
  * Unggah PDF di memori: berkas verifikasi hanya dibaca untuk hash-nya dan
@@ -50,9 +33,13 @@ const uploadPdf = multer({
 });
 
 /**
- * Verifikasi publik via token QR — sengaja TIDAK lewat authenticate, karena
- * orang yang memindai QR belumlah tentu masuk sistem. Hanya menampilkan hasil
- * verifikasi (bukan menulis).
+ * Verifikasi publik via token cetak — sengaja TIDAK lewat authenticate, karena
+ * pembaca risalah yang mengetik nomor rujukannya belumlah tentu masuk sistem.
+ * Hanya menampilkan hasil verifikasi (bukan menulis).
+ *
+ * Token ini BUKAN isi QR. QR pada risalah membawa alamat halaman unggah tanpa
+ * token; hanya jalur unggahan yang membuktikan berkas di tangan pembaca. Token
+ * cetak tetap dilayani karena ia sudah tercetak pada arsip lama.
  *
  * Rate limit tetap dipasang walau jalurnya "hanya membaca": satu permintaan
  * men-token menempuh beberapa operasi mahal — pencarian baris keputusan,
@@ -152,9 +139,17 @@ router.get('/decisions/:id/document', asyncHandler(c.download));
  * kemudian — middleware menolaknya sebelum service sempat melihat snapshot,
  * sehingga jaminan "keanggotaan immutable" tak pernah tercapai. `authenticate`
  * tetap wajib (harus ada identitas untuk dicocokkan dengan snapshot).
+ *
+ * `passphraseLimiter` dipasang SEBELUM `authenticate` dan controller, sama
+ * seperti rute tanda tangan esign. Membuka kunci privat ber-scrypt adalah
+ * operasi mahal, dan mencoba passphrase adalah permukaan tebak yang tidak
+ * dibatasi oleh lockout per kunci: lockout hanya mengunci SATU kunci, sehingga
+ * penyerang dengan banyak akun/sesi tetap dapat menghabiskan CPU. Middleware
+ * ini membatasi percobaan lintas akun dengan satu definisi yang sama.
  */
 router.post(
   '/decisions/:id/vote',
+  passphraseLimiter,
   authenticate,
   validate(castFoundationVoteSchema),
   asyncHandler(c.castVote)

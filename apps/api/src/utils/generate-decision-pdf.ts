@@ -1,5 +1,6 @@
 import { PDFDocument, PDFFont, StandardFonts, rgb } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
+import QRCode from 'qrcode';
 import fs from 'fs';
 import path from 'path';
 
@@ -64,7 +65,13 @@ export interface DecisionPdfData {
     abstain: number;
   };
   verificationToken?: string | null;
-  /** URL halaman verifikasi publik yang dimuat QR; null = token saja. */
+  /**
+   * URL halaman verifikasi publik yang dimuat QR — WAJIB tanpa token.
+   *
+   * Yang disandikan di sini adalah tempat pembaca menyerahkan berkasnya,
+   * bukan sebuah token: tautan bertoken hanya dapat menjawab "ada keputusan
+   * yang pernah disahkan", tidak "berkas yang Anda pegang inilah berkas itu".
+   */
   verificationUrl?: string | null;
 }
 
@@ -246,6 +253,21 @@ export function decisionVerificationFooter(data: {
   return lines;
 }
 
+/**
+ * Isi QR pada risalah: alamat halaman verifikasi TANPA token.
+ *
+ * Dua hal yang dijaga di sini. Pertama, token tidak pernah masuk ke dalam QR:
+ * tautan bertoken hanya membuka jalur verifikasi token, yang memeriksa byte
+ * arsip di server — bukan berkas yang dipegang pemindai — sehingga pemalsu yang
+ * mempertahankan token asli tetap dijawab "sah". Yang boleh disandikan adalah
+ * tempat pembaca menyerahkan berkasnya. Kedua, pembersihan ini TIDAK melempar:
+ * render berjalan di dalam transaksi suara yang mencapai kuorum, dan lemparan
+ * di sana me-rollback suara yang sah (lihat catatan font di atas).
+ */
+export function verificationQrPayload(url: string): string {
+  return url.split('#')[0].split('?')[0];
+}
+
 export async function generateDecisionPdf(data: DecisionPdfData): Promise<Buffer> {
   const pdfDoc = await PDFDocument.create();
   pdfDoc.setCreationDate(new Date(0));
@@ -371,6 +393,74 @@ export async function generateDecisionPdf(data: DecisionPdfData): Promise<Buffer
   footerLines.forEach((line, i) => {
     paragraph(line, 9, i === footerLines.length - 1 ? 6 : 2);
   });
+
+  /**
+   * Halaman pengesahan dengan QR yang BENAR-BENAR dapat dipindai.
+   *
+   * Sebelum ini halaman itu hanya mencetak URL sebagai teks, sementara
+   * deskripsi PR dan komentar menyebut "pemindaian QR" - klaim yang tidak
+   * sesuai dengan artefaknya. Karena risalah memang benda cetak yang berpindah
+   * tangan, QR-nya nyata: halaman terpisah supaya tetap lapang dan tidak
+   * bergantung pada posisi teks yang sudah mengalir, dan isinya alamat halaman
+   * UNGGAH tanpa token (lihat `verificationQrPayload`) - memindai lalu
+   * mengunggah berkas adalah satu-satunya jalur yang membuktikan berkas yang
+   * dipegang pembaca. Koreksi galat H dipakai agar lambang yayasan boleh
+   * menutupi tengahnya tanpa membuat kode gagal dibaca.
+   */
+  const qrPayload = data.verificationUrl
+    ? verificationQrPayload(data.verificationUrl)
+    : null;
+  if (qrPayload) {
+    const qrPage = pdfDoc.addPage([pageW, 842]);
+    const qrSize = 150;
+    const qrX = margin + 8;
+    const qrY = 842 - margin - 60 - qrSize;
+
+    qrPage.drawText(safe('PENGESAHAN & VERIFIKASI BERKAS'), {
+      x: margin,
+      y: 842 - margin - 18,
+      size: 13,
+      font: bold,
+      color: rgb(0, 0, 0),
+    });
+    qrPage.drawLine({
+      start: { x: margin, y: 842 - margin - 30 },
+      end: { x: pageW - margin, y: 842 - margin - 30 },
+      thickness: 1,
+      color: rgb(0.2, 0.2, 0.2),
+    });
+    qrPage.drawText(safe('Pindai untuk memeriksa keabsahan berkas ini'), {
+      x: qrX,
+      y: qrY + qrSize + 14,
+      size: 10,
+      font: bold,
+      color: rgb(0, 0, 0),
+    });
+    const qrImage = await pdfDoc.embedPng(
+      await QRCode.toBuffer(qrPayload, {
+        type: 'png',
+        margin: 1,
+        width: 360,
+        errorCorrectionLevel: 'H',
+      })
+    );
+    qrPage.drawImage(qrImage, { x: qrX, y: qrY, width: qrSize, height: qrSize });
+
+    const infoX = qrX + qrSize + 24;
+    const infoW = pageW - margin - infoX;
+    let infoY = qrY + qrSize;
+    for (const line of wrap(font, 9, safe(qrPayload), infoW)) {
+      qrPage.drawText(line, { x: infoX, y: infoY, size: 9, font, color: rgb(0.2, 0.2, 0.2) });
+      infoY -= 12;
+    }
+    infoY -= 6;
+    const hint =
+      'Halaman itu membandingkan hash berkas PDF yang Anda pegang dengan arsip ber-e-seal. Pindai lalu unggah berkasnya.';
+    for (const line of wrap(font, 9, safe(hint), infoW)) {
+      qrPage.drawText(line, { x: infoX, y: infoY, size: 9, font, color: rgb(0.35, 0.35, 0.35) });
+      infoY -= 12;
+    }
+  }
 
   const bytes = await pdfDoc.save();
   return Buffer.from(bytes);
