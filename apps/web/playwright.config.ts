@@ -60,7 +60,9 @@ export default defineConfig({
     trace: process.env.CI ? "retain-on-failure" : "on-first-retry",
 
     /* Screenshots */
-    screenshot: "only-on-failure",
+    /* Capture on every test (not just failures) so the PR comment can show both
+     * the passing screenshots and the failure ones, side by side. */
+    screenshot: "on",
 
     /* Videos */
     video: process.env.CI ? "retain-on-failure" : "off",

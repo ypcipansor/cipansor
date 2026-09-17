@@ -28,7 +28,8 @@ jobs:
     timeout-minutes: 40
     permissions:
       contents: read
-      pull-requests: write # for the report comment on PRs
+      issues: write # post the screenshot-summary comment on PRs (issues/{n}/comments)
+      pull-requests: write # read the issues/PR conversations if needed
 
     # The API reads these from the shell (its dotenv path is build-relative and
     # unreliable), so we set them job-wide rather than via a .env file.
@@ -142,32 +143,49 @@ jobs:
         if: always()
         run: '[ -f /tmp/api.pid ] && kill "$(cat /tmp/api.pid)" || true'
 
-      - name: Upload Playwright report
+      # Artifact names are stable per ref: on a PR it's e2e-screenshots-pr-<n>
+      # (so concurrent runs on different PRs don't collide and `overwrite: true`
+      # replaces this PR's previous run's screenshots instead of accumulating);
+      # on a push to main ref_name="main" keeps a single e2e-screenshots-main.
+      # The full set of screenshots (passed + failed) lives here; the PR comment
+      # lists them by filename and links to this artifact.
+      - name: Upload E2E screenshots (passed + failed)
+        id: upload-screenshots
         if: always()
-        continue-on-error: true # diagnostic artifact; storage-quota issues must not fail the gate
+        continue-on-error: true # storage-quota issues must not fail the gate
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-report
-          path: apps/web/playwright-report/
-          retention-days: 14
-
-      - name: Upload test results (traces/screenshots)
-        if: failure()
-        continue-on-error: true
-        uses: actions/upload-artifact@v7
-        with:
-          name: playwright-test-results
+          name: e2e-screenshots-${{ github.event.pull_request.number || github.ref_name }}
           path: apps/web/test-results/
           retention-days: 7
+          overwrite: true
+          if-no-files-found: warn
 
-      - name: Comment PR with test results
-        # Cosmetic PR comment — never let it fail the gate (e.g. when an earlier
-        # step failed and no report was produced). v3 takes the JSON report file.
-        if: ${{ always() && github.event_name == 'pull_request' }}
+      - name: Upload Playwright report
+        id: upload-report
+        if: always()
         continue-on-error: true
-        uses: daun/playwright-report-comment@v4
+        uses: actions/upload-artifact@v7
         with:
-          report-file: apps/web/test-results/results.json
+          name: playwright-report-${{ github.event.pull_request.number || github.ref_name }}
+          path: apps/web/playwright-report/
+          retention-days: 7
+          overwrite: true
+          if-no-files-found: warn
+
+      # Build the comment with the two screenshot groups and link the artifacts.
+      # Uses GITHUB_TOKEN and `issues: write` (permission set on the job).
+      - name: Comment PR with E2E screenshots
+        if: ${{ always() && github.event_name == 'pull_request' }}
+        continue-on-error: true # cosmetic comment — never fail the gate
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RESULT_JSON: apps/web/test-results/results.json
+          SCREENSHOT_ARTIFACT_URL: ${{ steps.upload-screenshots.outputs.artifact-url }}
+          REPORT_ARTIFACT_URL: ${{ steps.upload-report.outputs.artifact-url }}
+        run: node scripts/e2e-comment.mjs
 
   # Supplementary cross-browser coverage on main. Firefox/WebKit are not the
   # primary target and can surface engine-specific quirks, so this is reported

@@ -1,0 +1,58 @@
+# Delete the e2e artifacts (screenshots + report) once their PR is merged or
+# closed, so PR runs don't accumulate storage forever. GitHub deletes a run's
+# artifacts when the run is deleted, so we remove the runs_used_for_artifacts
+# PR workflows. This keeps the workspace clean even though artifacts default
+# to a 90-day retention.
+#
+# Diagnostics are a nicety — never fail the workflow because a run was already
+# gone or a build is still in flight.
+
+name: E2E Cleanup
+
+on:
+  pull_request:
+    types: [closed]
+  workflow_dispatch: # allow manual cleanup
+
+permissions:
+  contents: read
+  actions: write # delete the PR's workflow runs (and with them, their artifacts)
+
+jobs:
+  cleanup:
+    name: Remove PR e2e artifacts
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.action == 'closed' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Delete e2e runs for this PR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR="${{ github.event.pull_request.number }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          echo "Cleaning up e2e workflow runs for PR #${PR} (head ${HEAD_SHA})"
+
+          # Delete this PR's E2E workflow runs by head SHA (targeted to
+          # e2e-tests.yml so we never touch other workflows like CI). Deleting a
+          # run also deletes its artifacts. We key on the head SHA rather than
+          # the branch name because GitHub may already have deleted the branch
+          # on merge — the SHA stays in the event payload regardless.
+          # overwrite:true already drops fruit from re-runs, so this closes the
+          # last gap (PRs that are no longer open).
+          gh api --paginate \
+            "/repos/${{ github.repository }}/actions/workflows/e2e-tests.yml/runs?head_sha=${HEAD_SHA}" \
+            --jq '.workflow_runs[]?.id' 2>/dev/null > /tmp/e2e_run_ids.txt || true
+
+          while read -r run_id; do
+            [ -z "$run_id" ] && continue
+            echo "Deleting run $run_id"
+            gh api -X DELETE "/repos/${{ github.repository }}/actions/runs/${run_id}" >/dev/null 2>&1 || \
+              echo "Run ${run_id}: delete failed (may already be gone)"
+          done < /tmp/e2e_run_ids.txt
+
+          echo "Done."
