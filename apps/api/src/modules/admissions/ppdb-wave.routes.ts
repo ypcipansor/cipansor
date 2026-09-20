@@ -113,6 +113,18 @@ router.post(
 );
 
 /**
+ * @route GET /api/admissions/waves/internal-candidates/:registrantId
+ * @desc Santri lama (alumni) yang kemungkinan adalah pendaftar ini — lintas unit
+ *       dengan sengaja, dengan data diri yang dibatasi (lihat servicenya).
+ * @access Private - Admin, Staff (hanya pendaftaran unit sendiri)
+ */
+router.get(
+  '/internal-candidates/:registrantId',
+  authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'STAFF'),
+  waveController.internalCandidates
+);
+
+/**
  * @route POST /api/ppdb-wave/onboard-registrant
  * @desc Execute E2E sequence processing a successful registrant
  * @access Private - Admin, Staff

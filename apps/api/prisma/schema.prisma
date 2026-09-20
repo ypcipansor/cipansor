@@ -663,7 +663,6 @@ model Unit {
   ibadahLeaderboards     IbadahLeaderboard[]
   // Settings and Rapor Pesantren
   settings               Setting[]
-  systemSecrets          SystemSecret[]
   raporPesantren         RaporPesantren[]            @relation("RaporPesantrenUnit")
   // PAUD & Enhancement relations
   paudIndicators         PAUDDevelopmentIndicator[]
@@ -987,7 +986,12 @@ model Student {
   id           String   @id @default(uuid())
   userId       String   @unique @map("user_id")
   unitId       String   @map("unit_id")
-  nis          String   @unique // Nomor Induk Siswa
+  /// Cuplikan NIS di unit santri SEKARANG. Sumbernya `student_unit_identifiers`:
+  /// NIS milik unit yang menerbitkannya, jadi SD IT dan SMP IT boleh memakai
+  /// nomor yang sama — keunikannya per unit (@@unique [unitId, nis] di sana),
+  /// bukan per yayasan. Kolom ini sengaja dipertahankan (bukan dibuang) supaya
+  /// image rilis sebelumnya tetap bisa membaca dan menulis.
+  nis          String   // Nomor Induk Siswa (unik per unit, lihat StudentUnitIdentifier)
   /// Nomor Induk Siswa Nasional: 10 digit angka, satu untuk satu peserta didik
   /// seumur hidup. Unik bila diisi, dan bentuknya dijaga CHECK
   /// `students_nisn_format_check` (migrasi 20260914000000).
@@ -1101,12 +1105,16 @@ model Student {
   rewards                     Reward[]
   invoices                    Invoice[]
   borrowings                  Borrowing[]
-  registrant                  Registrant? // Link dari pendaftaran PSB
+  /// Satu baris per pendaftaran: lulusan SD IT yang mendaftar SMP IT memakai
+  /// baris santri yang sama dengan pendaftaran BARU (progresi internal).
+  registrants                 Registrant[]
   medicalRecords              MedicalRecord[]
   medicationUsage             MedicationUsageLog[]
   grades                      Grade[]
   reportCards                 ReportCard[]
-  alumniRecord                Alumni? // Link ke data alumni jika sudah lulus
+  /// Satu baris per unit yang meluluskannya: santri TK → SD IT → SMP IT lulus
+  /// tiga kali, dari tiga unit (unik per santri × unit × tahun lulus).
+  alumniRecords               Alumni[]
   // New relations for Phase 8
   takhosusEnrollment          TakhosusEnrollment?
   dailyMuhasabah              DailyMuhasabah[]
@@ -1795,7 +1803,7 @@ model Registrant {
   registrationFeeAmount   Decimal?  @map("registration_fee_amount") @db.Decimal(12, 2)
   registrationFeeVerifiedById String? @map("registration_fee_verified_by_id")
   registrationFeeNote     String?   @map("registration_fee_note") @db.Text
-  studentId         String?         @unique @map("student_id") // Link ke student jika sudah enrolled
+  studentId         String?         @map("student_id") // Link ke student jika sudah enrolled (satu santri boleh punya beberapa pendaftaran)
   campaignId        String?         @map("campaign_id")
   source            String?
   createdAt         DateTime        @default(now()) @map("created_at")
@@ -1815,6 +1823,7 @@ model Registrant {
   @@index([waveId])
   @@index([status])
   @@index([registrationNo])
+  @@index([studentId])
   @@map("registrants")
 }
 
@@ -3009,7 +3018,7 @@ enum AlumniEventType {
 /// Alumni - Data Alumni/Lulusan
 model Alumni {
   id             String       @id @default(uuid())
-  studentId      String?      @unique @map("student_id") // Link ke data santri
+  studentId      String?      @map("student_id") // Link ke data santri — satu per unit yang meluluskannya
   unitId         String       @map("unit_id")
   registrationNo String       @unique @map("registration_no") // Nomor alumni
   name           String // Nama lengkap
@@ -3041,6 +3050,9 @@ model Alumni {
   donations        AlumniDonation[]
   eventAttendances AlumniEventAttendee[]
 
+  /// Lulus dari satu unit sekali per tahun; unit lain boleh meluluskan santri yang sama.
+  @@unique([studentId, unitId, graduationYear])
+  @@index([studentId])
   @@index([unitId])
   @@index([graduationYear])
   @@index([status])
@@ -6160,24 +6172,6 @@ model Setting {
 
   @@unique([unitId, key])
   @@map("settings")
-}
-
-/// SystemSecret - Encrypted system configuration/secrets
-model SystemSecret {
-  id          String   @id @default(uuid())
-  unitId      String?  @map("unit_id")
-  key         String
-  value       String // Encrypted value
-  description String?  @db.Text
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  unit Unit? @relation(fields: [unitId], references: [id])
-
-  @@unique([unitId, key])
-  @@index([unitId])
-  @@map("system_secrets")
 }
 
 /// ChatbotPersona - the editable tone/style layer for the AI assistant, keyed

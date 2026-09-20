@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import {
   useRegistrant,
   useOnboardRegistrant,
+  useInternalCandidates,
   useRecordRegistrationFee,
   useUpdateRegistrantScore,
   useUpdateRegistrantStatus,
@@ -28,7 +29,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Loader2, Rocket, GraduationCap, Wallet, Check, X, FileText, Award, Eye, ExternalLink } from "lucide-react";
+import { Loader2, Rocket, GraduationCap, Wallet, Check, X, FileText, Award, Eye, ExternalLink, UserCheck } from "lucide-react";
 
 const STATUS_LABEL: Record<string, string> = {
   REGISTERED: "Mendaftar",
@@ -63,11 +64,19 @@ export default function RegistrationDetailPage({
   const updateScore = useUpdateRegistrantScore();
   const updateStatus = useUpdateRegistrantStatus();
   const verifyDoc = useVerifyRegistrantDocument();
+  // Kandidat santri lama hanya dicari untuk pendaftar yang sudah DITERIMA —
+  // pencarian lintas unit tidak perlu berjalan pada setiap pendaftar baru.
+  const { data: kandidat = [] } = useInternalCandidates(
+    params.id,
+    registrant?.status === "ACCEPTED",
+  );
 
   const userRole = getPrimaryRoleCode(user);
   const canManageDecisions = userRole === "SUPER_ADMIN" || userRole === "UNIT_ADMIN";
 
   const [isOnboarding, setIsOnboarding] = useState(false);
+  // Santri lama yang dipilih untuk ditautkan (progresi internal antarunit).
+  const [santriLamaId, setSantriLamaId] = useState<string | null>(null);
   const [testScore, setTestScore] = useState<string>("");
   const [interviewScore, setInterviewScore] = useState<string>("");
   const [tahfidzScore, setTahfidzScore] = useState<string>("");
@@ -152,8 +161,18 @@ export default function RegistrationDetailPage({
       // PATCH the status to ENROLLED here — the status endpoint forbids that
       // transition ("use the enrollment endpoint instead"), which previously
       // made every onboarding surface an error toast despite succeeding.
-      await onboard.mutateAsync({ registrantId: registrant.id, unitId });
-      toast.success("Siswa berhasil di-Onboard secara terpadu!");
+      await onboard.mutateAsync({
+        registrantId: registrant.id,
+        unitId,
+        // Bila petugas menautkan pendaftaran ini ke santri lama, orkestrator
+        // memakai akun dan baris santri yang sama — bukan membuat orang kedua.
+        existingStudentId: santriLamaId ?? undefined,
+      });
+      toast.success(
+        santriLamaId
+          ? "Santri lama berhasil dilanjutkan ke unit ini."
+          : "Siswa berhasil di-Onboard secara terpadu!",
+      );
     } catch (e: unknown) {
       const message =
         (e as { response?: { data?: { message?: string } } })?.response?.data
@@ -244,6 +263,66 @@ export default function RegistrationDetailPage({
           </Card>
         )}
 
+        {canOnboard && kandidat.length > 0 && (
+          <Card className="border-l-4 border-l-sky-500 bg-sky-50/40">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <UserCheck className="h-5 w-5 text-sky-600" /> Santri Lama?
+              </CardTitle>
+              <CardDescription>
+                Pendaftar ini cocok dengan {kandidat.length} lulusan unit lain.
+                Tautkan agar ia memakai data santri yang sama — satu NISN, satu
+                riwayat — bukan tercatat sebagai santri baru.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {kandidat.map((k) => {
+                const dipilih = santriLamaId === k.studentId;
+                return (
+                  <div
+                    key={k.studentId}
+                    className={`flex flex-wrap items-center justify-between gap-3 rounded-md border p-3 ${
+                      dipilih ? "border-sky-500 bg-white" : "bg-white/70"
+                    }`}
+                  >
+                    <div className="space-y-1">
+                      <p className="font-medium">{k.nama}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {[
+                          k.unitAsal,
+                          k.tahunLulus ? `lulus ${k.tahunLulus}` : null,
+                          k.tahunLahir ? `lahir ${k.tahunLahir}` : null,
+                          k.nisnTersamar ? `NISN ${k.nisnTersamar}` : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </p>
+                      <div className="flex flex-wrap gap-1">
+                        {k.cocokLewat.map((c) => (
+                          <Badge key={c} variant="outline" className="text-xs">
+                            cocok: {c}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                    <Button
+                      variant={dipilih ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setSantriLamaId(dipilih ? null : k.studentId)}
+                    >
+                      {dipilih ? "Dipilih" : "Tautkan"}
+                    </Button>
+                  </div>
+                );
+              })}
+              <p className="text-xs text-muted-foreground">
+                Hanya lulusan yang muncul di sini. Santri yang masih aktif di unit
+                lain harus diluluskan dulu oleh unitnya.
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
         {canOnboard && (
           <Card className="border-l-4 border-l-emerald-500 bg-emerald-50/40">
             <CardHeader>
@@ -251,9 +330,9 @@ export default function RegistrationDetailPage({
                 <Rocket className="h-5 w-5 text-emerald-600" /> Onboarding Terpadu
               </CardTitle>
               <CardDescription>
-                Pendaftar telah diterima. Jalankan onboarding terpadu untuk
-                membuat data siswa, tagihan SPP, rekam medis, dan akun wali
-                secara otomatis.
+                {santriLamaId
+                  ? "Pendaftar ditautkan ke santri lama: akun, NISN, dan riwayatnya dipakai kembali; unit barunya menerbitkan NIS sendiri dan riwayat unit lamanya ditutup."
+                  : "Pendaftar telah diterima. Jalankan onboarding terpadu untuk membuat data siswa, tagihan SPP, rekam medis, dan akun wali secara otomatis."}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -263,7 +342,7 @@ export default function RegistrationDetailPage({
                 ) : (
                   <GraduationCap className="mr-2 h-4 w-4" />
                 )}
-                Jalankan Onboarding Terpadu
+                {santriLamaId ? "Lanjutkan Santri Lama" : "Jalankan Onboarding Terpadu"}
               </Button>
             </CardContent>
           </Card>

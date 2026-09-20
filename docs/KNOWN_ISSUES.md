@@ -959,16 +959,48 @@ halaman membaca `name`), kartu ringkasan membaca bentuk respons yang berbeda
 dari yang dikirim `report/completeness`, dan **NIK anak tampil penuh** di tabel
 (minimisasi tampilan data pribadi spesifik, UU 27/2022 Ps. 4).
 
-### NIS per unit — sisa (bagian 3 dan 4 pengganti #489)
+### Menunggu keputusan pengguna (dibuka 2026-09-20 setelah #513/#514/#515)
 
-- `students.nis` masih unik lintas yayasan, jadi dua unit belum bisa memakai
-  nomor yang sama. Melonggarkannya butuh lingkup unit di
-  `analytics/bulk.service.ts#bulkImportAttendance`, yang mencari santri hanya
-  lewat NIS.
-- Rapor Kurikulum Merdeka mencetak nama/jenis unit SEKARANG (`student.unit`)
-  untuk rapor tahun ajaran lama; seharusnya unit rombelnya.
-- Onboarding santri lama masih mengganti NISN tersimpan dengan NISN yang
-  diketik di formulir (`nisn || student.nisn`) — NISN berlaku seumur hidup.
+Tiga hal yang sengaja **tidak** diputuskan sendiri saat mengerjakan pengganti
+#489. Semuanya terukur, dan semuanya menunggu jawaban yayasan.
+
+1. **Tata Usaha tidak melihat tombol "Luluskan".** API mengizinkan TU
+   meluluskan (`manageAlumni` = admin + TU, #500), tetapi halaman
+   `students/[id]` dibuka dengan `MainLayout allowedRoles={["SUPER_ADMIN",
+   "UNIT_ADMIN", "TEACHER"]}` sejak lama, sehingga TU terpental ke
+   `/unauthorized` — terbukti di rig dengan akun `smpit.tu@`. **Pertanyaan:**
+   apakah TU boleh membuka detail santri (dan karenanya meluluskan lewat UI),
+   atau kelulusan memang hanya wewenang kepala/admin unit? Jangan longgarkan
+   halamannya tanpa jawaban itu: halaman detail memuat data pribadi lengkap.
+2. **Kolom `students.nis` masih ada.** #515 hanya membuang indeks uniknya;
+   kolomnya dipertahankan sebagai cuplikan supaya image `:rollback` tetap bisa
+   menulis. **Pertanyaan:** buang kolomnya di rilis tersendiri setelah satu
+   rilis penuh berjalan tanpa penulis lama, atau biarkan sebagai cuplikan
+   permanen (mempercepat daftar santri, dengan risiko dua fakta menyimpang)?
+3. **`canManageDecisions` di halaman SPMB tidak pernah cocok.**
+   `apps/web/src/app/spmb/registrations/[id]/page.tsx` membandingkan
+   `getPrimaryRoleCode(user)` dengan `"UNIT_ADMIN"`, padahal katalog perannya
+   `SDIT_ADMIN`/`SMPIT_ADMIN`/… — jadi tombol Terima/Tolak/Jadwalkan Tes
+   tampil **nonaktif** untuk admin unit yang sebenarnya berwenang (Super Admin
+   lolos karena dicek terpisah). Perbaikannya sebaris (pakai ember peran yang
+   sama dengan API), tetapi ia mengubah siapa yang bisa memutuskan penerimaan —
+   **pertanyaan:** siapa yang seharusnya boleh menekan tombol itu?
+
+### NIS per unit — SELESAI (bagian 3 dan 4 pengganti #489)
+
+Ketiga sisa di bawah sudah dikerjakan; disimpan sebagai jejak keputusan.
+
+- ~~`students.nis` unik lintas yayasan~~ → #515: indeks uniknya dibuang
+  (kolomnya sengaja tetap ada demi jendela rollback), pencarian NIS kini
+  berlingkup unit lewat `findStudentIdByNisInUnit`, dan
+  `analytics/bulk.service.ts` — 352 baris tanpa satu pun pemanggil — dihapus
+  karena mencocokkan santri hanya lewat NIS. Penjaga sumber memindai
+  `apps/api/src` agar `where: { nis }` tanpa `unitId` tidak kembali.
+- ~~Rapor Merdeka memakai unit SEKARANG~~ → #502: kop, jenis unit, jabatan
+  kepala, fase, dan lingkup aksesnya dari unit rombel tahun ajaran itu.
+- ~~Onboarding santri lama menimpa NISN tersimpan~~ → #514: NISN yang berbeda
+  ditolak 409 (bukan ditimpa, bukan ditebak), dan progresi internal antarunit
+  memakai baris santri yang sama lewat `existingStudentId`.
 
 ## How to contribute a build fix
 

@@ -238,7 +238,6 @@ History of the stabilization (all root-caused, no suppressions):
 | `/dashboard` | auth, authenticated-smoke, dashboard-realtime | ✅ | 🟡 | 🟡 | 🟡 | 🟡 |
 | `/dashboard/comparison` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `/dashboard/executive` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `/dashboard/settings/system-secrets` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
 
 ### `/donation`
 

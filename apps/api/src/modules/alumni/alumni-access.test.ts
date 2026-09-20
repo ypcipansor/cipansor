@@ -190,9 +190,11 @@ describe('pengelola alumni', () => {
     db.student.findFirst.mockResolvedValue({
       id: SANTRI_SMP,
       unitId: SMP,
-      graduateYear: 2026,
+      status: 'active',
       gender: 'FEMALE',
       user: { name: 'Fulanah', email: null },
+      unit: { name: 'SMP IT Cipansor' },
+      enrollments: [],
     });
     db.alumni.count.mockResolvedValue(0);
     db.$transaction.mockResolvedValue([{ id: 'baru', unitId: SMP }]);
