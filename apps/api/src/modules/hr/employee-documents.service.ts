@@ -1,6 +1,7 @@
 import { prisma } from '../../lib/prisma';
 import { EmployeeDocumentType } from '@prisma/client';
 import { cleanupBlobBestEffort } from '../../utils/cloud-storage';
+import { claimBlobForRecord, releaseBlobClaim } from '../../utils/blob-claim';
 import { isFoundationScopedRole } from '../../utils/resolve-unit-id';
 import { mayAdministerEmployeeDocuments } from '@cipansor/shared';
 import { Errors } from '../../middleware/error';
@@ -104,15 +105,33 @@ export const employeeDocumentService = {
       });
     }
 
-    return prisma.employeeDocument.create({
-      data: {
-        userId: data.userId,
-        name: data.name,
-        type: data.type,
-        fileUrl: data.fileUrl,
-        expiryDate: data.expiryDate,
-        notes: data.notes,
-      },
+    // Claim the blob before the record can reference it (BUG 4). A concurrent
+    // discard holds a `DISCARD` claim for the same URL and would otherwise be
+    // free to delete it between our probe and our insert. Claiming and releasing
+    // inside the transaction serializes on the unique claim row: a discard whose
+    // `DISCARD` claim commits first makes this insert conflict and the create
+    // fails with no dangling reference; one that arrives after our commit
+    // re-probes and finds the record. The claim is released in the same
+    // transaction because the committed record is now the durable protection.
+    return prisma.$transaction(async (tx) => {
+      const claimed = await claimBlobForRecord(data.fileUrl, actor?.id ?? data.userId, tx);
+      if (!claimed) {
+        throw Errors.conflict(
+          'Berkas lampiran sedang diproses pihak lain; unggah ulang berkas tersebut'
+        );
+      }
+      const document = await tx.employeeDocument.create({
+        data: {
+          userId: data.userId,
+          name: data.name,
+          type: data.type,
+          fileUrl: data.fileUrl,
+          expiryDate: data.expiryDate,
+          notes: data.notes,
+        },
+      });
+      await releaseBlobClaim(data.fileUrl, actor?.id ?? data.userId, tx);
+      return document;
     });
   },
 

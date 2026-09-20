@@ -137,10 +137,45 @@ az webapp config appsettings set --resource-group rg-cipansor-prod --name app-ci
 > **MICROSOFT_TENANT_ID wajib diisi eksplisit di produksi.** Ambil dari Entra
 > portal → Overview → **Tenant ID**. Nilai `common` menerima token dari direktori
 > Entra mana pun yang emailnya cocok dengan akun lokal — terlalu longgar untuk
-> penerapan single-tenant. Saat `NODE_ENV=production` dan nilainya `common`
-> (atau kosong), API tetap berjalan tetapi menulis peringatan yang jelas di log
-> setiap kali start (`warnOnLooseMicrosoftTenant`). Aturan lengkap ada di
+> penerapan single-tenant. Saat `NODE_ENV=production` dan `MICROSOFT_CLIENT_ID`
+> diisi sementara nilai ini `common`/`organizations`/`consumers` atau kosong,
+> **API MENOLAK START** (`assertProductionMicrosoftTenant`) — bukan sekadar
+> menulis peringatan. Deployment yang memang multi-tenant harus menyatakannya
+> secara eksplisit dengan `MICROSOFT_ALLOW_MULTI_TENANT=true`; hanya dengan
+> flag itu API mulai dan menulis peringatan di log. Aturan lengkap ada di
 > `.env.example`.
+
+> **Runtime Node.js 22+ wajib.** `@azure/storage-blob@12.33.0` (dan beberapa
+> dependency transitifnya) mensyaratkan Node >= 22. Dockerfile API memakai
+> `node:22-alpine`, CI memakai `NODE_VERSION: '22'`. Konfigurasikan Azure App
+> Service / Container Apps pada Node 22+; menjalankan runtime yang lebih lama
+> akan gagal saat memuat Azure SDK.
+
+---
+
+## 3b. PRE-CHECK MIGRASI E-MAIL (WAJIB SEBELUM `migrate deploy`)
+
+Migrasi `20260915060000_users_email_lower_unique` menormalkan setiap e-mail
+(`lower(trim(email))`) lalu membuat UNIQUE index. Bila dua akun menormalkan ke
+alamat yang sama, migrasi **gagal secara sengaja** (fail-closed) dan menyebutkan
+alamat beserta id akunnya — deploy berhenti daripada membiarkan dua akun
+bertabrakan diam-diam.
+
+```bash
+# 1. Backup dulu — selalu, sebelum menyentuh tabel akun.
+pg_dump -U postgres cipansor > backup_$(date +%Y%m%d_%H%M%S).sql
+
+# 2. Dry-run preflight: menampilkan collision + id akun tanpa menulis apa pun.
+pnpm --filter api db:normalize-emails --dry-run
+
+# 3. Bila ada collision: putuskan secara manual untuk tiap pasangan id —
+#    gabungkan akun (pindahkan referensi ke akun yang dipertahankan) atau ubah
+#    salah satu alamat. Jangan biarkan skrip menggabungkan akun otomatis.
+
+# 4. Ulangi preflight sampai bersih, baru terapkan normalisasi + deploy.
+pnpm --filter api db:normalize-emails
+npx prisma migrate deploy
+```
 
 ---
 

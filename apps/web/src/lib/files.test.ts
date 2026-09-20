@@ -1,51 +1,45 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { authFileUrl, isPrivateAzureBlob, resolveFileUrl } from "./files";
+import {
+  appendFileToken,
+  evidenceFileType,
+  isImageEvidence,
+  isLocalUploadUrl,
+  isPrivateAzureBlob,
+  needsResolvedAccess,
+  resolveFileUrl,
+  resolveFileWithExpiry,
+} from "./files";
 
 // Control the /upload/sas response from top level so vi.mock stays hoisted.
 const apiMock = { post: vi.fn() };
 vi.mock("@/lib/api", () => ({ default: apiMock }));
 
-describe("authFileUrl", () => {
-  beforeEach(() => {
-    localStorage.clear();
-  });
-
-  it("returns empty string for null/undefined", () => {
-    expect(authFileUrl(null)).toBe("");
-    expect(authFileUrl(undefined)).toBe("");
-  });
-
-  it("passes non-upload URLs through untouched", () => {
-    expect(authFileUrl("https://example.com/doc.pdf")).toBe(
-      "https://example.com/doc.pdf",
+describe("appendFileToken", () => {
+  it("appends the token and drops any token already in the URL", () => {
+    expect(appendFileToken("https://host/uploads/a.pdf", "tok")).toBe(
+      "https://host/uploads/a.pdf?token=tok",
     );
-  });
-
-  it("appends the stored access token to /uploads URLs", () => {
-    localStorage.setItem("accessToken", "tok-123");
-    expect(authFileUrl("http://localhost:3001/uploads/a.pdf")).toBe(
-      "http://localhost:3001/uploads/a.pdf?token=tok-123",
-    );
-  });
-
-  it("uses & when the URL already has a query string", () => {
-    localStorage.setItem("accessToken", "tok-123");
-    expect(authFileUrl("http://localhost:3001/uploads/a.pdf?v=2")).toBe(
-      "http://localhost:3001/uploads/a.pdf?v=2&token=tok-123",
+    // Refreshing must REPLACE the token, not chain a second one onto a URL that
+    // already carries an (about to expire) one.
+    expect(appendFileToken("https://host/uploads/a.pdf?token=old", "new")).toBe(
+      "https://host/uploads/a.pdf?token=new",
     );
   });
 
   it("URL-encodes the token", () => {
-    localStorage.setItem("accessToken", "a+b/c");
-    expect(authFileUrl("http://localhost:3001/uploads/a.pdf")).toBe(
-      "http://localhost:3001/uploads/a.pdf?token=a%2Bb%2Fc",
+    expect(appendFileToken("https://host/uploads/a.pdf", "a+b/c")).toBe(
+      "https://host/uploads/a.pdf?token=a%2Bb%2Fc",
     );
   });
 
-  it("returns the bare URL when no token is stored", () => {
-    expect(authFileUrl("http://localhost:3001/uploads/a.pdf")).toBe(
-      "http://localhost:3001/uploads/a.pdf",
-    );
+  it("never emits the session access token from storage (BUG 6)", () => {
+    // The old authFileUrl read localStorage.accessToken and put it in the URL.
+    // Nothing in the resolver may touch it now.
+    localStorage.setItem("accessToken", "session-bearer-secret");
+    const resolved = appendFileToken("https://host/uploads/a.pdf", "file-scoped");
+    expect(resolved).not.toContain("session-bearer-secret");
+    expect(resolved).toContain("file-scoped");
+    localStorage.clear();
   });
 });
 
@@ -76,10 +70,30 @@ describe("isPrivateAzureBlob", () => {
   });
 });
 
-describe("resolveFileUrl", () => {
+describe("isLocalUploadUrl / needsResolvedAccess", () => {
+  it("recognises both spellings of a local upload", () => {
+    expect(isLocalUploadUrl("/uploads/a.pdf")).toBe(true);
+    expect(isLocalUploadUrl("https://host/uploads/a.pdf")).toBe(true);
+    expect(isLocalUploadUrl("https://host/api/a.pdf")).toBe(false);
+    expect(isLocalUploadUrl(null)).toBe(false);
+  });
+
+  it("needs resolution for private blobs and local uploads, not for public/external", () => {
+    expect(needsResolvedAccess("https://host/uploads/a.pdf")).toBe(true);
+    expect(
+      needsResolvedAccess("https://acct.blob.core.windows.net/documents/a.pdf"),
+    ).toBe(true);
+    expect(
+      needsResolvedAccess("https://acct.blob.core.windows.net/media-public/a.jpg"),
+    ).toBe(false);
+    expect(needsResolvedAccess("https://example.com/a.pdf")).toBe(false);
+  });
+});
+
+describe("resolveFileWithExpiry", () => {
   beforeEach(() => {
     localStorage.clear();
-    localStorage.setItem("accessToken", "tok-123");
+    localStorage.setItem("accessToken", "session-bearer-secret");
     apiMock.post.mockReset();
   });
 
@@ -97,19 +111,41 @@ describe("resolveFileUrl", () => {
           url: "https://acct.blob.core.windows.net/e-office-documents/naskah.pdf",
           downloadUrl:
             "https://acct.blob.core.windows.net/e-office-documents/naskah.pdf?sig=fresh",
+          expiresIn: 3600,
         },
       },
     });
 
-    const result = await resolveFileUrl(
+    const result = await resolveFileWithExpiry(
       "https://acct.blob.core.windows.net/e-office-documents/naskah.pdf",
     );
-    expect(result).toBe(
+    expect(result.url).toBe(
       "https://acct.blob.core.windows.net/e-office-documents/naskah.pdf?sig=fresh",
     );
+    expect(result.expiresAt).toBeGreaterThan(Date.now());
     expect(apiMock.post).toHaveBeenCalledWith("/upload/sas", {
       url: "https://acct.blob.core.windows.net/e-office-documents/naskah.pdf",
     });
+  });
+
+  it("uses the single-file accessToken for a local upload (never the session JWT)", async () => {
+    apiMock.post.mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          url: "/uploads/a.pdf",
+          downloadUrl: "/uploads/a.pdf",
+          accessToken: "file-scoped-token",
+          expiresIn: 300,
+        },
+      },
+    });
+
+    const result = await resolveFileWithExpiry("/uploads/a.pdf");
+    expect(result.url).toBe("/uploads/a.pdf?token=file-scoped-token");
+    expect(result.url).not.toContain("session-bearer-secret");
+    expect(result.expiresAt).toBeGreaterThan(Date.now());
+    expect(apiMock.post).toHaveBeenCalledWith("/upload/sas", { url: "/uploads/a.pdf" });
   });
 
   it("falls back to the stable URL when the SAS request fails", async () => {
@@ -131,9 +167,56 @@ describe("resolveFileUrl", () => {
     expect(apiMock.post).not.toHaveBeenCalled();
   });
 
-  it("appends the token to a local /uploads URL", async () => {
-    const result = await resolveFileUrl("https://cipansor.or.id/uploads/a.pdf");
-    expect(result).toBe("https://cipansor.or.id/uploads/a.pdf?token=tok-123");
+  it("leaves external URLs alone (no session token appended)", async () => {
+    const result = await resolveFileUrl("https://example.com/doc.pdf");
+    expect(result).toBe("https://example.com/doc.pdf");
+    expect(result).not.toContain("session-bearer-secret");
     expect(apiMock.post).not.toHaveBeenCalled();
+  });
+});
+
+describe("evidenceFileType (PAUD evidence upload contract)", () => {
+  const file = (type: string, name = "x") =>
+    ({ type, name } as unknown as File);
+
+  it("maps an image MIME type to the `image` bucket the API accepts", () => {
+    expect(evidenceFileType(file("image/png"))).toBe("image");
+    expect(evidenceFileType(file("image/jpeg"))).toBe("image");
+  });
+
+  it("maps a video MIME type to `video`", () => {
+    expect(evidenceFileType(file("video/mp4"))).toBe("video");
+  });
+
+  it("falls back to `document` for anything else", () => {
+    expect(evidenceFileType(file("application/pdf"))).toBe("document");
+    expect(evidenceFileType(file(""))).toBe("document");
+  });
+
+  it("never returns the uppercase bucket that failed schema validation", () => {
+    // Regression: the pages sent "IMAGE"/"VIDEO", which `createEvidenceSchema`
+    // (z.enum(['image','video','document'])) rejected with a 400.
+    expect(evidenceFileType(file("image/png"))).not.toBe("IMAGE");
+    expect(evidenceFileType(file("video/mp4"))).not.toBe("VIDEO");
+  });
+});
+
+describe("isImageEvidence", () => {
+  it("accepts the server bucket used by new rows", () => {
+    expect(isImageEvidence("image")).toBe(true);
+  });
+
+  it("accepts the MIME spelling used by legacy rows and the seed fixture", () => {
+    expect(isImageEvidence("image/jpeg")).toBe(true);
+    expect(isImageEvidence("image/png")).toBe(true);
+  });
+
+  it("rejects video/document buckets and empty values", () => {
+    expect(isImageEvidence("video")).toBe(false);
+    expect(isImageEvidence("video/mp4")).toBe(false);
+    expect(isImageEvidence("document")).toBe(false);
+    expect(isImageEvidence(null)).toBe(false);
+    expect(isImageEvidence(undefined)).toBe(false);
+    expect(isImageEvidence("")).toBe(false);
   });
 });

@@ -12,7 +12,7 @@ Sentry.init({
 
 import { app } from './app';
 import { config } from '@/config';
-import { assertProductionSecrets, warnOnLooseMicrosoftTenant } from '@/config/assert-secrets';
+import { assertProductionSecrets, assertProductionMicrosoftTenant, warnOnLooseMicrosoftTenant } from '@/config/assert-secrets';
 import { logger } from '@/lib/logger';
 import { prisma } from '@/lib/prisma';
 import { initializeScheduler, stopScheduler } from '@/jobs';
@@ -28,8 +28,13 @@ async function bootstrap() {
     // by a key published in .env.example is worse than not serving at all.
     assertProductionSecrets();
 
-    // Not fatal — a tenant id is not a secret — but silently accepting tokens
-    // from any Entra directory is not what a single-tenant deployment intends.
+    // Refuse to serve in production with multi-tenant Microsoft sign-in that no
+    // one explicitly opted into. A warning is absorbed by the deploy log; the
+    // default is the hole, so the safe failure is not to start.
+    assertProductionMicrosoftTenant();
+
+    // Reached only when multi-tenant sign-in was explicitly allowed, or the
+    // tenant is a concrete GUID/domain. In the former case say so, at every boot.
     const tenantWarning = warnOnLooseMicrosoftTenant();
     if (tenantWarning) logger.warn(tenantWarning);
 

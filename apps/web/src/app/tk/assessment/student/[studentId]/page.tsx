@@ -306,7 +306,7 @@ export default function StudentProgressDashboardPage() {
                     key={assessment.id}
                     className="cursor-pointer hover:shadow-md transition-shadow"
                     onClick={() =>
-                      router.push(`/paud/assessment/${assessment.id}`)
+                      router.push(`/tk/assessment/${assessment.id}`)
                     }
                   >
                     <CardContent className="py-4">

@@ -5,6 +5,12 @@ import { randomUUID } from 'crypto';
 import { Request, Response, NextFunction } from 'express';
 import { verifyToken } from '@/lib/jwt';
 import { containerForDestination } from '@/utils/cloud-storage';
+import {
+  findBlobOwnerByRefs,
+  blobReferenceCandidates,
+} from '@/utils/blob-owner';
+import { actorMayReadBlob, type BlobActor } from '@/modules/upload/upload.service';
+import { normalizeUploadPath, verifyFileAccessToken } from '@/utils/file-token';
 import { mayUploadPublicMedia } from '@cipansor/shared';
 import { Errors } from './error';
 
@@ -336,48 +342,109 @@ export const handleSingleUpload = (
 };
 
 /**
- * Authentication gate for serving stored uploads. Files contain personal data
- * (student photos, documents — UU 27/2022 PDP territory), so /uploads is no
- * longer an anonymous public directory.
+ * Authentication + object-level authorisation gate for serving stored uploads.
  *
- * Browsers fetch these via <img src>/<a href>, which cannot send an
- * Authorization header, so a valid access token is also accepted as a
- * `?token=` query parameter (appended by the web client's authFileUrl helper).
+ * Files contain personal data (student photos, documents — UU 27/2022 PDP
+ * territory), so `/uploads` is not an anonymous public directory.
  *
- * KNOWN LIMIT — authentication, not authorisation. This proves the caller is
- * signed in. It does not check that *this* caller may read *this* file: any
- * valid access token, including a santri's or a parent's, opens every file in
- * the directory. Closing that needs an ownership index — a lookup from stored
- * filename back to the record that references it (Student.photoUrl,
- * StudentDocument.fileUrl, and the rest) — which does not exist yet. Until it
- * does, filenames are crypto-random (see the storage config above) so they
- * cannot be enumerated, and that is the only thing separating one family's
- * documents from another's. Treat it as an open item, not as done.
+ * Two kinds of credential are accepted, and NEITHER is a session access token
+ * in the query string:
  *
- * Second known limit: passing the token in the query string writes it into the
- * nginx access log, which uses the default `combined` format and records the
- * full request URI. Short access-token TTLs limit the damage. The proper fix is
- * a short-lived URL signed for one file rather than the session token itself.
+ *  - `Authorization: Bearer <session access token>` — used by `fetch`-based
+ *    callers (an Axios download, an object-URL blob fetch) that can set a
+ *    header. The caller is authorised against the record that owns the file.
+ *  - `?token=<file-access token>` — the short-lived, single-file, path-bound
+ *    token `POST /upload/sas` mints after it has already authorised the caller
+ *    (see `utils/file-token.ts`). A browser loading an `<img src>` cannot send a
+ *    header, so it carries this instead. It cannot be replayed against another
+ *    file, and it is useless as a session token: the session verifier rejects
+ *    it for lacking `type: 'access'`.
+ *
+ * Authorisation (BUG 5): a valid token is no longer sufficient. The request
+ * path is mapped back to the record that references it through the shared
+ * `findBlobOwner` index and checked with the SAME rule the Azure SAS path uses
+ * (`actorMayReadBlob`) — so a file served from disk and the same file served
+ * from a private container cannot disagree about who may read it. A file no
+ * record owns is refused outright; a crypto-random filename is not a
+ * capability. This closes the old gap where any signed-in account — a parent's,
+ * a santri's — could open every file in the directory.
  */
-export function uploadsAuth(req: Request, _res: Response, next: NextFunction) {
+export async function uploadsAuth(req: Request, _res: Response, next: NextFunction) {
   try {
-    let token: string | undefined;
     const authHeader = req.headers.authorization;
-    if (authHeader?.startsWith('Bearer ')) {
-      token = authHeader.slice('Bearer '.length);
-    } else if (typeof req.query.token === 'string') {
-      token = req.query.token;
-    }
+    const headerToken = authHeader?.startsWith('Bearer ')
+      ? authHeader.slice('Bearer '.length)
+      : undefined;
+    const queryToken = typeof req.query.token === 'string' ? req.query.token : undefined;
 
-    if (!token) {
+    // This middleware is mounted at `/uploads`, so Express strips the mount
+    // prefix from `req.path`/`req.url` — reading either alone yields
+    // `/497d….pdf`, which `normalizeUploadPath` (correctly) rejects as "not an
+    // uploads path". Every local file then 401s, including the ones the caller
+    // owns. `originalUrl` keeps the full path; `baseUrl + path` is the fallback
+    // for a request object that lacks it. The query is dropped by
+    // `normalizeUploadPath`'s URL parse, so a `?token=` never leaks into the
+    // path comparison either.
+    const requestPath = normalizeUploadPath(
+      req.originalUrl || `${req.baseUrl ?? ''}${req.path ?? ''}` || req.url
+    );
+    if (!requestPath) {
       throw Errors.unauthorized('Authentication required to access uploaded files');
     }
 
-    const payload = verifyToken(token);
-    if (payload.type !== 'access' || payload.isTemp) {
-      throw Errors.unauthorized('Invalid token');
+    let actor: BlobActor | null = null;
+
+    if (headerToken) {
+      // A session token: verify it, then authorise this specific file.
+      const payload = verifyToken(headerToken);
+      if (payload.type !== 'access' || payload.isTemp) {
+        throw Errors.unauthorized('Invalid token');
+      }
+      actor = { id: payload.id, roleCode: payload.roleCode, unitId: payload.unitId, permissions: payload.permissions };
+    } else if (queryToken) {
+      // A file-access token. It proves the access decision `POST /upload/sas`
+      // already made, and the middleware re-checks that it names THIS path.
+      let claims: { path: string; userId: string };
+      try {
+        claims = verifyFileAccessToken(queryToken);
+      } catch {
+        throw Errors.unauthorized('Invalid token');
+      }
+      if (claims.path !== requestPath) {
+        // A token minted for one file cannot be replayed against another.
+        throw Errors.forbidden('Token berkas tidak berlaku untuk berkas ini');
+      }
+      // The access decision was made at mint time; serve without re-resolving
+      // the owner (the token is path-bound and short-lived).
+      return next();
+    } else {
+      throw Errors.unauthorized('Authentication required to access uploaded files');
     }
 
+    // Header path: authorise against the owning record, exactly as the SAS
+    // endpoint does.
+    //
+    // The request gives us a path, but records persist whichever spelling the
+    // upload response handed them: the absolute `http://host/uploads/x` form
+    // (what `uploadFile` returns for local storage) or, for older rows, the
+    // relative one. `blobReferenceCandidates` folds an absolute URL down to its
+    // pathname, so probing the path alone silently misses every absolute-stored
+    // row and 403s a file the caller owns. Reconstruct the origin from the
+    // request and probe both spellings.
+    const absoluteRequestUrl = `${req.protocol}://${req.get('host') ?? ''}${requestPath}`;
+    const refs = Array.from(
+      new Set([
+        ...blobReferenceCandidates(requestPath),
+        ...blobReferenceCandidates(absoluteRequestUrl),
+      ])
+    );
+    const owner = await findBlobOwnerByRefs('cipansor-documents', refs);
+    if (!owner) {
+      throw Errors.forbidden('Berkas tidak ditemukan atau tidak dapat diakses');
+    }
+    if (!(await actorMayReadBlob(actor, owner))) {
+      throw Errors.forbidden('Anda tidak berwenang mengakses berkas tersebut');
+    }
     next();
   } catch (error) {
     next(error instanceof Error && 'statusCode' in error ? error : Errors.unauthorized());

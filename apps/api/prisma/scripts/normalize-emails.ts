@@ -30,11 +30,18 @@ async function main() {
 
   try {
     // Penjaga 1: dua akun dengan e-mail yang sama setelah dinormalkan.
+    //
+    // Kunci tabrakan harus `lower(trim(email))`, sama persis dengan kunci
+    // indeks unik di migrasi. Sebelumnya hanya `lower(email)`, sehingga
+    // `guru@cipansor.or.id` dan ` guru@cipansor.or.id ` (spasi di sekeliling)
+    // lolos preflight, lalu `UPDATE` di migrasi menabrakkan keduanya saat
+    // `CREATE UNIQUE INDEX` — kegagalan yang terlambat dan membingungkan,
+    // padahal preflight ada untuk menangkapnya lebih awal.
     const collisions = await prisma.$queryRaw<Array<{ normalized: string; count: bigint }>>`
-      SELECT lower(email) AS normalized, count(*) AS count
+      SELECT lower(trim(email)) AS normalized, count(*) AS count
       FROM users
       WHERE email IS NOT NULL
-      GROUP BY lower(email)
+      GROUP BY lower(trim(email))
       HAVING count(*) > 1
     `;
 
@@ -43,8 +50,23 @@ async function main() {
       for (const row of collisions) {
         console.error(`  ${row.normalized} -> ${row.count} akun`);
       }
+      // Daftarkan id akun yang bertabrakan supaya operator tahu baris mana yang
+      // harus digabung/diubah, bukan sekadar tahu alamatnya.
+      const ids = await prisma.$queryRaw<Array<{ id: string; email: string; normalized: string }>>`
+        SELECT id, email, lower(trim(email)) AS normalized
+        FROM users
+        WHERE email IS NOT NULL AND lower(trim(email)) IN (
+          SELECT lower(trim(email)) FROM users
+          WHERE email IS NOT NULL
+          GROUP BY lower(trim(email)) HAVING count(*) > 1
+        )
+        ORDER BY normalized, email
+      `;
+      for (const row of ids) {
+        console.error(`    id=${row.id} email="${row.email}"`);
+      }
       console.error(
-        'Skrip berhenti tanpa mengubah apa pun. Gabungkan akun-akun itu secara manual lebih dulu.'
+        'Skrip berhenti tanpa mengubah apa pun. Gabungkan/ubah akun-akun itu secara manual lebih dulu.'
       );
       process.exitCode = 1;
       return;

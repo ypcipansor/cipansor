@@ -15,6 +15,7 @@ import {
   getSafeUploadPathForCleanup,
 } from './upload';
 import { generateAccessToken } from '@/lib/jwt';
+import { generateFileAccessToken } from '@/utils/file-token';
 import { ApiError } from './error';
 
 const png = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
@@ -130,7 +131,11 @@ describe('uploadsAuth', () => {
 
   function run(req: Partial<Request>) {
     const next = vi.fn() as unknown as NextFunction & ReturnType<typeof vi.fn>;
-    uploadsAuth({ headers: {}, query: {}, ...req } as Request, res, next);
+    uploadsAuth(
+      { path: '/uploads/abc.pdf', headers: {}, query: {}, ...req } as Request,
+      res,
+      next,
+    );
     return next;
   }
 
@@ -146,14 +151,15 @@ describe('uploadsAuth', () => {
     expect((next.mock.calls[0][0] as ApiError).statusCode).toBe(401);
   });
 
-  it('accepts a valid access token via Authorization header', () => {
-    const token = generateAccessToken(payload);
-    const next = run({ headers: { authorization: `Bearer ${token}` } });
-    expect(next).toHaveBeenCalledWith();
-  });
-
-  it('accepts a valid access token via ?token= (for <img>/<a> fetches)', () => {
-    const token = generateAccessToken(payload);
+  // The Authorization-header path (session token + object-level authorisation)
+  // is covered end-to-end in upload-auth.test.ts, where the owner probe is
+  // mocked; here the module-level prisma stub cannot answer it.
+  it('accepts a path-bound file token via ?token= (for <img>/<a> fetches)', () => {
+    // The query credential is no longer the session access token: it is the
+    // short-lived, single-file token `POST /upload/sas` mints after it has
+    // already authorised the caller. See upload-auth.test.ts for the full
+    // authorization contract.
+    const token = generateFileAccessToken('/uploads/abc.pdf', 'u1');
     const next = run({ query: { token } as Request['query'] });
     expect(next).toHaveBeenCalledWith();
   });

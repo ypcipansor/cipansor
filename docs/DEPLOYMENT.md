@@ -226,12 +226,21 @@ pm2 startup
 cd apps/api
 
 # Pre-check: e-mail uniqueness migration
-# `20260915060000_users_email_lower_unique` lowercases every stored e-mail and
-# then creates a UNIQUE index on lower(trim(email)). If two rows normalize to
-# the same address the CREATE UNIQUE INDEX fails and the whole migration is
-# rolled back — deliberately, so the deploy stops instead of letting two
-# accounts collide silently. Resolve any collision BEFORE deploying:
-pnpm --filter api db:normalize-emails   # prints a collision report
+# `20260915060000_users_email_lower_unique` first checks for collisions on
+# `lower(trim(email))` and RAISES with the colliding addresses and account ids
+# BEFORE any row is updated. Only if that check passes does it lowercase every
+# stored e-mail and create a UNIQUE index on lower(trim(email)). So a collision
+# stops the deploy early, with a clear message, instead of surfacing later as an
+# opaque `unique_violation`. Resolve any collision BEFORE deploying:
+#
+#   1. Back up the database (pg_dump, below).
+#   2. `pnpm --filter api db:normalize-emails --dry-run` — report only, no writes.
+#   3. Decide per colliding pair: merge the accounts (move references to the one
+#      you keep) or change one address. The script never merges for you.
+#   4. Re-run the dry-run until it reports no collisions.
+#   5. `pnpm --filter api db:normalize-emails`   # apply the normalization
+#   6. `npx prisma migrate deploy`
+pnpm --filter api db:normalize-emails --dry-run
 
 # Deploy pending migrations
 npx prisma migrate deploy

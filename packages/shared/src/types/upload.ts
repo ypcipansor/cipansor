@@ -50,4 +50,21 @@ export interface GetSasUrlResult {
   url: string;
   /** Fresh short-lived SAS for a private blob. Absent for public/local URLs. */
   downloadUrl?: string;
+  /**
+   * Short-lived, single-file token for the LOCAL `/uploads` provider, bound to
+   * exactly the requested path. The client appends it as `?token=` when the
+   * browser must load the file itself (an `<img src>`, an `<a download>`), which
+   * cannot carry an `Authorization` header.
+   *
+   * It is NOT a session credential: it carries no role/unit/permission claims,
+   * is tagged `scope: 'file-access'`, names only the one path it may read, and
+   * expires in minutes. Azure blobs use `downloadUrl` (a real SAS) instead.
+   */
+  accessToken?: string;
+  /**
+   * Seconds until `downloadUrl` / `accessToken` stops working. The client uses
+   * it to refresh the link before it expires, so an open page never holds a
+   * dead URL. Absent for URLs that need no temporary credential.
+   */
+  expiresIn?: number;
 }

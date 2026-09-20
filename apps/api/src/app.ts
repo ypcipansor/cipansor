@@ -160,9 +160,27 @@ app.use(compression());
 // Stored uploads hold personal data (student photos/documents), so serving
 // them requires a valid access token — via Authorization header or ?token=
 // (see uploadsAuth). Directory listing stays off; static only serves files.
+//
+// `uploadsAuth` already authorizes the caller against the owning record, so the
+// browser only ever fetches a file it is allowed to read. But helmet's default
+// `Cross-Origin-Resource-Policy: same-origin` still refuses the response when
+// the web app and the API are on different origins — the normal split-origin
+// deployment (web on :3000 / portal.cipansor.or.id, API on :3001 / api.*). The
+// browser reports that as `ERR_BLOCKED_BY_RESPONSE.NotSameOrigin` and every
+// authorized `<img>`, `<audio>` and `<a download>` stays broken even though the
+// API said 200. The file is private *by authorization*, not by same-origin, so
+// this route opts out of CORP while the rest of the API keeps the default.
 import path from 'path';
 import { uploadsAuth } from './middleware/upload';
-app.use('/uploads', uploadsAuth, express.static(path.join(process.cwd(), 'public/uploads')));
+app.use(
+  '/uploads',
+  uploadsAuth,
+  (_req, res, next) => {
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    next();
+  },
+  express.static(path.join(process.cwd(), 'public/uploads'))
+);
 
 // Rate limiting - apply to all routes except health check
 // Active in all environments except test and development

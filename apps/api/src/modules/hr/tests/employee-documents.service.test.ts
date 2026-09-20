@@ -14,7 +14,18 @@ vi.mock('@/lib/prisma', () => ({
     user: {
       findUnique: vi.fn(),
     },
+    // The shared mocked client doubles as the transaction handle (see the
+    // `$transaction` stub), matching the correspondence test's pattern.
+    $transaction: vi.fn((callback: (tx: unknown) => unknown) => callback(prisma)),
   },
+}));
+
+// The create path claims the blob before inserting the record (BUG 4). The
+// protocol itself is covered by its own unit + DB integration tests; here we
+// only need a claim that always succeeds.
+vi.mock('@/utils/blob-claim', () => ({
+  claimBlobForRecord: vi.fn().mockResolvedValue(true),
+  releaseBlobClaim: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('@/utils/cloud-storage', () => ({

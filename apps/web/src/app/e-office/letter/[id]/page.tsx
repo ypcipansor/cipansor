@@ -1,6 +1,6 @@
 "use client";
 import { useParams, useRouter } from "next/navigation";
-import { authFileUrl, resolveFileUrl } from "@/lib/files";
+import { useResolvedFileUrls } from "@/hooks/use-resolved-file-url";
 import { safeFormat } from "@/lib/date";
 import { useCorrespondence } from "@/hooks/use-correspondence";
 import { useAuth } from "@/hooks/use-auth";
@@ -32,7 +32,7 @@ import {
 } from "lucide-react";
 
 import { id } from "date-fns/locale";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 /*
  * Tidak ada html2canvas dan jsPDF di sini lagi.
  *
@@ -116,41 +116,24 @@ export default function LetterDetailPage() {
   });
   const { data: letter, isLoading } = useLetter(params.id);
 
-  // Persisted upload references stay stable (no expiring SAS) while Azure
-  // private blobs need a fresh SAS to render. Resolve naskah + attachment URLs
-  // on demand when the letter loads.
-  const [resolvedFiles, setResolvedFiles] = useState<Record<string, string>>(
-    {},
+  // Persisted upload references stay stable (no expiring SAS) while private
+  // blobs and local uploads need a short-lived credential to render. One batch
+  // resolver handles the naskah and every attachment, refreshing each link
+  // before its credential expires so an open letter keeps its files.
+  const letterFileUrls = useMemo(
+    () =>
+      [
+        letter?.fileUrl,
+        ...(letter?.attachments ?? []).map((a) => a.fileUrl),
+      ].filter((u): u is string => !!u),
+    [letter],
   );
-  useEffect(() => {
-    if (!letter) return;
-    const urls = [
-      letter.fileUrl,
-      ...(letter.attachments ?? []).map((a) => a.fileUrl).filter(Boolean),
-    ].filter((u): u is string => !!u);
-    const needs = urls.filter((u) => /\.blob\.core\.windows\.net\//.test(u));
-    if (needs.length === 0) return;
-    let cancelled = false;
-    (async () => {
-      const entries = await Promise.all(
-        needs.map(async (u) => [u, await resolveFileUrl(u)] as const),
-      );
-      if (cancelled) return;
-      setResolvedFiles((prev) => {
-        const next = { ...prev };
-        for (const [k, v] of entries) next[k] = v;
-        return next;
-      });
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [letter]);
+  const resolvedFiles = useResolvedFileUrls(letterFileUrls);
 
-  /** Prefer the on-demand SAS when a stable reference was resolved. */
+  /** Prefer the on-demand SAS/file token when a stable reference was resolved. */
   const displayable = (u?: string | null): string => {
     if (!u) return "";
-    return resolvedFiles[u] || authFileUrl(u);
+    return resolvedFiles[u] || u;
   };
 
   const [notes, setNotes] = useState("");

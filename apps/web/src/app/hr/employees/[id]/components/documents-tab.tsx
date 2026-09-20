@@ -1,6 +1,6 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
-import { authFileUrl, resolveFileUrl } from "@/lib/files";
+import { useMemo, useState } from "react";
+import { useResolvedFileUrls } from "@/hooks/use-resolved-file-url";
 import { safeFormat } from "@/lib/date";
 import {
   useEmployeeDocuments,
@@ -64,44 +64,21 @@ export function DocumentsTab({ userId }: { userId: string }) {
   const [isOpen, setIsOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
 
-  // Persisted upload references stay stable (no expiring SAS) while Azure
-  // private blobs need a fresh SAS to render. Resolve private blob URLs on
-  // demand so a document uploaded to Azure can be opened from this list.
-  const [resolvedFiles, setResolvedFiles] = useState<Record<string, string>>(
-    {},
-  );
-
+  // Persisted upload references stay stable (no expiring SAS) while private
+  // blobs and local uploads need a short-lived credential. One batch resolver
+  // handles every document and refreshes each link before it expires, so an
+  // open list keeps working.
   const documentUrls = useMemo(() => {
     return (documents ?? [])
       .map((d) => d.fileUrl)
-      .filter(
-        (u): u is string => !!u && /\.blob\.core\.windows\.net\//.test(u),
-      );
+      .filter((u): u is string => !!u);
   }, [documents]);
+  const resolvedFiles = useResolvedFileUrls(documentUrls);
 
-  useEffect(() => {
-    if (documentUrls.length === 0) return;
-    let cancelled = false;
-    (async () => {
-      const entries = await Promise.all(
-        documentUrls.map(async (u) => [u, await resolveFileUrl(u)] as const),
-      );
-      if (cancelled) return;
-      setResolvedFiles((prev) => {
-        const next = { ...prev };
-        for (const [k, v] of entries) next[k] = v;
-        return next;
-      });
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [documentUrls]);
-
-  /** Prefer the on-demand SAS when a stable reference was resolved. */
+  /** Prefer the on-demand SAS/file token when a stable reference was resolved. */
   const displayable = (u?: string | null): string => {
     if (!u) return "";
-    return resolvedFiles[u] || authFileUrl(u);
+    return resolvedFiles[u] || u;
   };
 
   const [formData, setFormData] = useState({

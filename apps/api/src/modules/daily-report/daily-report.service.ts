@@ -491,69 +491,81 @@ export const dailyReportService = {
   // ============================================
 
   async update(id: string, data: UpdateDailyReportInput) {
-    const report = await prisma.dailyStudentReport.update({
-      where: { id },
-      data: {
-        mood: data.morningMood as DailyMood | undefined,
-        healthStatus: data.healthNotes,
-        temperature: data.temperature,
-        hadBreakfast: data.breakfastConsumption
-          ? data.breakfastConsumption === 'HABIS' || data.breakfastConsumption === 'SETENGAH'
-          : undefined,
-        mealStatus: data.lunchConsumption as MealConsumption | undefined,
-        snackStatus: data.snackConsumption as MealConsumption | undefined,
-        napDuration: data.napDurationMinutes,
-        toiletNotes: data.toiletingNotes,
-        sholatDhuha: data.sholatDhuha,
-        sholatDzuhur: data.sholatDzuhur,
-        sholatAshar: data.sholatAshar,
-        sholatJamaah: data.sholatJamaah,
-        activitiesSummary: data.activitiesSummary,
-        achievements: data.learningAchievements,
-        tahfidzActivity: data.surahPractice,
-        behaviorNotes: data.behaviorNotes,
-        teacherNotes: data.parentNotes,
-        homeActivity: data.homeworkSuggestion,
-      },
-      include: {
-        student: { select: { id: true, user: { select: { name: true } } } },
-        photos: true,
-        homework: true,
-      },
-    });
-
-    // Handle photo updates if provided
-    if (data.photoUrls !== undefined) {
-      // Snapshot the outgoing photos before deleting the rows, so their blobs
-      // can be reclaimed once the new URLs are committed — otherwise every
-      // photo edit orphans the previous images in private storage forever.
-      const previousPhotos = await prisma.dailyReportPhoto.findMany({
-        where: { reportId: id },
-        select: { photoUrl: true },
+    // Photo replacement must be atomic (BUG 8): the report update, the delete
+    // of the old photo rows and the insert of the new ones either all commit or
+    // none do. Previously an insert failure after the delete left the report
+    // with no photos at all, and a concurrent reader could observe the gap. The
+    // blob sweep runs only after the transaction commits, so a rollback never
+    // destroys a blob whose row is still live.
+    const { report, retiredPhotoUrls } = await prisma.$transaction(async (tx) => {
+      const report = await tx.dailyStudentReport.update({
+        where: { id },
+        data: {
+          mood: data.morningMood as DailyMood | undefined,
+          healthStatus: data.healthNotes,
+          temperature: data.temperature,
+          hadBreakfast: data.breakfastConsumption
+            ? data.breakfastConsumption === 'HABIS' || data.breakfastConsumption === 'SETENGAH'
+            : undefined,
+          mealStatus: data.lunchConsumption as MealConsumption | undefined,
+          snackStatus: data.snackConsumption as MealConsumption | undefined,
+          napDuration: data.napDurationMinutes,
+          toiletNotes: data.toiletingNotes,
+          sholatDhuha: data.sholatDhuha,
+          sholatDzuhur: data.sholatDzuhur,
+          sholatAshar: data.sholatAshar,
+          sholatJamaah: data.sholatJamaah,
+          activitiesSummary: data.activitiesSummary,
+          achievements: data.learningAchievements,
+          tahfidzActivity: data.surahPractice,
+          behaviorNotes: data.behaviorNotes,
+          teacherNotes: data.parentNotes,
+          homeActivity: data.homeworkSuggestion,
+        },
+        include: {
+          student: { select: { id: true, user: { select: { name: true } } } },
+          photos: true,
+          homework: true,
+        },
       });
 
-      // Delete existing photos
-      await prisma.dailyReportPhoto.deleteMany({ where: { reportId: id } });
-
-      // Create new photos
-      if (data.photoUrls.length > 0) {
-        await prisma.dailyReportPhoto.createMany({
-          data: data.photoUrls.map((url) => ({
-            reportId: id,
-            photoUrl: url,
-            caption: '',
-          })),
+      // Handle photo updates if provided
+      if (data.photoUrls !== undefined) {
+        // Snapshot the outgoing photos inside the transaction, so the URLs to
+        // reclaim are exactly the ones the delete removes.
+        const previousPhotos = await tx.dailyReportPhoto.findMany({
+          where: { reportId: id },
+          select: { photoUrl: true },
         });
+
+        await tx.dailyReportPhoto.deleteMany({ where: { reportId: id } });
+
+        if (data.photoUrls.length > 0) {
+          await tx.dailyReportPhoto.createMany({
+            data: data.photoUrls.map((url) => ({
+              reportId: id,
+              photoUrl: url,
+              caption: '',
+            })),
+          });
+        }
+
+        const retained = new Set(data.photoUrls);
+        return {
+          report,
+          retiredPhotoUrls: previousPhotos
+            .map((p) => p.photoUrl)
+            .filter((url) => !retained.has(url)),
+        };
       }
 
-      // Best-effort, after the new rows are committed: a blob whose URL is
-      // still referenced by one of the new photos is left in place.
-      const retained = new Set(data.photoUrls);
-      await cleanupBlobsBestEffort(
-        previousPhotos
-          .map((p) => p.photoUrl)
-          .filter((url) => !retained.has(url))
-      );
+      return { report, retiredPhotoUrls: [] as string[] };
+    });
+
+    // Best-effort, after the transaction committed: a blob whose URL is still
+    // referenced by one of the new photos is left in place.
+    if (retiredPhotoUrls.length > 0) {
+      await cleanupBlobsBestEffort(retiredPhotoUrls);
     }
 
     // Handle homework updates

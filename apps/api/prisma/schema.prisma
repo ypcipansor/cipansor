@@ -2209,6 +2209,60 @@ model IdentityProvider {
   @@index([userId])
   @@map("identity_providers")
 }
+/// BlobClaim — the durable handshake that makes "discard an orphan upload" safe.
+///
+/// An upload and the record that references it are two requests: the browser
+/// PUTs bytes (or POSTs them to `/upload`) and only afterwards saves the record
+/// that points at them. If that second request fails, the blob is unreachable —
+/// no row references it, so no read path can authorize it — yet it lives in
+/// private storage forever. `/upload/discard` reclaims such a blob.
+///
+/// The hazard is the race: a discard that reads "no record references this"
+/// at the instant a create is committing would destroy a blob the new record
+/// just started pointing at. Two delayed re-probes, however many, only narrow
+/// the window — they cannot close a TOCTOU between the last probe and Azure's
+/// delete. A claim row closes it, because both sides take a row lock:
+///
+///  - **Create-record** claims the blob (`claimBlobForRecord`): at most one
+///    live claim per blob URL (`blobUrl` is UNIQUE), so a discard sees the
+///    claim and refuses. The claim is deleted in the same DB transaction that
+///    inserts the record.
+///  - **Discard** claims the blob too (`claimBlobForDiscard`): it flips a
+///    still-live `RECORD` claim to `DISCARD` only with a conditional update,
+///    which serializes against the create that is deleting its own claim.
+///    Whichever commits first wins; the loser sees no row and backs off.
+///
+/// A blob's claim is `expiresAt`-bounded. A create that crashes before saving
+/// its record leaves a claim that expires, so the orphan can still be reclaimed
+/// later rather than being pinned forever.
+model BlobClaim {
+  id        String          @id @default(uuid())
+  /// The stable blob URL, exactly as persisted on the owning record. Unique:
+  /// one blob, one live claim, which is what makes the mutual exclusion work.
+  blobUrl   String          @unique @map("blob_url")
+  kind      BlobClaimKind
+  /// Who holds the claim: the uploader for a discard, the record author for a
+  /// record claim. Recorded for audit and for the cross-user safety check.
+  holderId  String          @map("holder_id")
+  /// Set once a record claim has been materialized into a saved record, so the
+  /// caller can tell "I still hold it" from "it was retired under me".
+  recordId  String?         @map("record_id")
+  createdAt DateTime        @default(now()) @map("created_at")
+  /// After this instant the claim no longer blocks a discard: a crashed create
+  /// must not pin its orphan forever.
+  expiresAt DateTime        @map("expires_at")
+
+  @@index([expiresAt])
+  @@map("blob_claims")
+}
+
+/// The two sides of the handshake. `RECORD` is a create that is about to
+/// persist a reference; `DISCARD` is a reclamation that has taken ownership of
+/// an orphan and is about to delete it.
+enum BlobClaimKind {
+  RECORD
+  DISCARD
+}
 
 // =====================================
 // PHASE 4: PERPUSTAKAAN (LIBRARY)

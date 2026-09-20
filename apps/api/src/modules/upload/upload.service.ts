@@ -4,18 +4,27 @@ import {
   parseBlobUrl,
   isAllowedContainer,
   isPublicContainer,
-  deleteBlobIfStillOrphaned,
+  deleteFromCloudStorage,
   getBlobUploaderId,
+  SAS_TTL_MINUTES,
 } from '@/utils/cloud-storage';
 import { Errors } from '@/middleware/error';
 import {
   findBlobOwner,
+  findBlobOwnerByRefs,
+  blobReferenceCandidates,
   isBlobStillReferenced,
   type BlobOwner,
   type UnitId,
 } from '@/utils/blob-owner';
 import { seesAllUnits, isFoundationScopedRole } from '@/utils/resolve-unit-id';
 import { letterScopeWhere } from '@/utils/letter-access';
+import { normalizeUploadPath, generateFileAccessToken, FILE_TOKEN_TTL_SECONDS } from '@/utils/file-token';
+import {
+  claimBlobForDiscard,
+  releaseBlobClaimById,
+  blobClaimStillHeld,
+} from '@/utils/blob-claim';
 import { mayAdministerEmployeeDocuments, mayVerifyPayments } from '@cipansor/shared';
 import type { JwtPayload } from '@/lib/jwt';
 import type { GetSasUrlResult } from '@cipansor/shared';
@@ -30,19 +39,6 @@ function actorInUnit(actor: BlobActor, unitId: UnitId): boolean {
 }
 
 /**
- * True when `url` is a local storage reference (`/uploads/...`) rather than a
- * cloud blob. Accepted as a relative path or an absolute URL on any host; the
- * path prefix is what identifies the storage provider.
- */
-function isLocalUploadPath(url: string): boolean {
-  try {
-    return new URL(url, 'http://localhost').pathname.startsWith('/uploads/');
-  } catch {
-    return false;
-  }
-}
-
-/**
  * True when the authenticated actor may read the record that owns `blob`.
  *
  * A letter reuses the correspondence scoping rules (`letterScopeWhere`).
@@ -50,8 +46,13 @@ function isLocalUploadPath(url: string): boolean {
  * the owner, a personnel-record administrator in the owner's unit, or a
  * foundation role may read them. Unit-owned records (reports, assets, books)
  * are readable by anyone scoped to that unit.
+ *
+ * Exported because the local `/uploads` provider must apply the *same* rule as
+ * the Azure SAS path (`uploadsAuth`): a file in `public/uploads` and the same
+ * file in a private blob container are the same record and must not answer
+ * "who may read this" differently depending on where the bytes happen to live.
  */
-async function assertActorMayReadBlob(actor: BlobActor, owner: BlobOwner): Promise<boolean> {
+export async function actorMayReadBlob(actor: BlobActor, owner: BlobOwner): Promise<boolean> {
   switch (owner.kind) {
     case 'letter': {
       if (seesAllUnits(actor)) return true;
@@ -100,6 +101,52 @@ async function assertActorMayReadBlob(actor: BlobActor, owner: BlobOwner): Promi
   }
 }
 
+/** Back-compat internal alias; the exported name is `actorMayReadBlob`. */
+const assertActorMayReadBlob = actorMayReadBlob;
+
+/**
+ * Resolve access to a local `/uploads/<file>` reference.
+ *
+ * The local provider has no object store and therefore no blob metadata to
+ * carry an owner: the only record of who may read a file is the row that
+ * references it. This maps the request path back to that row through the same
+ * `findBlobOwner` index the Azure path uses, applies the same ownership rule
+ * (`actorMayReadBlob`), and refuses a file no record owns. A UUID filename is
+ * NOT authorization — anyone the URL leaks to would otherwise read it.
+ *
+ * Both storage spellings of the referenced file are probed (`/uploads/x` and
+ * any absolute form), because the record may hold either.
+ */
+export async function resolveLocalFileAccess(
+  url: string,
+  actor: BlobActor
+): Promise<GetSasUrlResult> {
+  const path = normalizeUploadPath(url);
+  if (!path) {
+    // An arbitrary external URL is not a stored upload reference this endpoint
+    // vouches for.
+    throw Errors.badRequest('Referensi berkas tidak dikenali');
+  }
+
+  const refs = blobReferenceCandidates(url);
+  const owner = await findBlobOwnerByRefs('cipansor-documents', refs);
+  if (!owner) {
+    // A local file no record references cannot be authorized to any caller.
+    // This is the check the old `uploadsAuth` never made: a valid session token
+    // used to open every file in the directory, without an owner in sight.
+    throw Errors.forbidden('Berkas tidak ditemukan atau tidak dapat diakses');
+  }
+
+  const canRead = await actorMayReadBlob(actor, owner);
+  if (!canRead) {
+    throw Errors.forbidden('Anda tidak berwenang mengakses berkas tersebut');
+  }
+
+  // A scoped, short-lived token bound to this path — never the session token.
+  const accessToken = generateFileAccessToken(path, actor.id);
+  return { url, downloadUrl: url, accessToken, expiresIn: FILE_TOKEN_TTL_SECONDS };
+}
+
 /**
  * Mint a short-lived SAS for a persisted stable blob URL, enforcing that the
  * blob lives in an application-owned container AND belongs to a record the
@@ -111,16 +158,15 @@ async function assertActorMayReadBlob(actor: BlobActor, owner: BlobOwner): Promi
 export async function resolveSasForBlob(url: string, actor: BlobActor): Promise<GetSasUrlResult> {
   const parsed = parseBlobUrl(url);
 
-  // Not a cloud blob. The endpoint exists to sign *persisted upload
-  // references*, so a local `/uploads/...` path (the other storage provider)
-  // passes through unsigned. An arbitrary external URL is NOT a stored upload
-  // reference this endpoint vouches for — returning it as `{ url }` success
-  // implied a validation the callers never got, so it is refused instead.
+  // Not a cloud blob. A local `/uploads/...` path (the other storage provider)
+  // is authorized against the record that references it and returns a scoped,
+  // short-lived file token — the same ownership rule as the Azure path, so the
+  // two providers cannot disagree about who may read a file. An arbitrary
+  // external URL is NOT a stored upload reference this endpoint vouches for —
+  // returning it as `{ url }` success implied a validation the callers never
+  // got, so it is refused instead.
   if (!parsed) {
-    if (isLocalUploadPath(url)) {
-      return { url };
-    }
-    throw Errors.badRequest('Referensi berkas tidak dikenali');
+    return resolveLocalFileAccess(url, actor);
   }
 
   if (isPublicContainer(parsed.containerName)) {
@@ -146,8 +192,8 @@ export async function resolveSasForBlob(url: string, actor: BlobActor): Promise<
     throw Errors.forbidden('Anda tidak berwenang mengakses berkas tersebut');
   }
 
-  const downloadUrl = await generateSasUrl(parsed.containerName, parsed.blobName, 60);
-  return { url, downloadUrl };
+  const downloadUrl = await generateSasUrl(parsed.containerName, parsed.blobName, SAS_TTL_MINUTES);
+  return { url, downloadUrl, expiresIn: SAS_TTL_MINUTES * 60 };
 }
 
 /**
@@ -198,19 +244,26 @@ async function assertActorMayDiscardBlob(
  * written out of band — is refused for everyone, because "no record of who owns
  * this" cannot be turned into "anyone may delete it".
  *
- * **Race (BUG 3).** Upload and create are two requests, and a discard can slip
+ * **Race (BUG 4).** Upload and create are two requests, and a discard can slip
  * between them: it reads "no record references this" at the instant the create
- * request is committing. `deleteBlobIfStillOrphaned` closes this by waiting
- * `RACE_RECHECK_DELAY_MS` and then re-probing the reference index immediately
- * before the delete — a record that committed during the wait makes the delete
- * a no-op. The re-probe and the delete are deliberately adjacent (no await of
- * consequence between them), and the probe is exhaustive (`isBlobStillReferenced`
- * covers every stored blob-URL field, not just the first matching owner).
+ * request is committing. The durable `BlobClaim` row closes it:
+ *
+ *   1. Claim the blob for discard FIRST (`claimBlobForDiscard`). This can only
+ *      win when no live `RECORD` claim (or `DISCARD` claim) already holds the
+ *      blob, so a create that has claimed it is respected.
+ *   2. THEN probe the reference index once. Anything that committed before the
+ *      claim is caught here.
+ *   3. Delete. Any create that tried to start after step 1 must first take a
+ *      `RECORD` claim (`claimBlobForRecord`), which conflicts with the live
+ *      `DISCARD` claim we hold — so no record referencing the blob can commit
+ *      between step 2 and the delete. No TOCTOU remains.
+ *
+ * A partial failure releases the claim so the orphan can be retried rather than
+ * being pinned until the claim TTL lapses.
  *
  * Both callers (HR documents, e-office letters) invoke this ONLY after a create
- * request has already failed, so the normal path never races a live write; the
- * delay exists for the window where a *different* request is committing the
- * record for the same blob.
+ * request has already failed, but the coordination holds even when a *different*
+ * request is committing the record for the same blob.
  */
 export async function discardOrphanBlob(url: string, actor: BlobActor): Promise<void> {
   const parsed = parseBlobUrl(url);
@@ -231,14 +284,42 @@ export async function discardOrphanBlob(url: string, actor: BlobActor): Promise<
   // Only the uploader may discard their own abandoned blob (see the doc above).
   await assertActorMayDiscardBlob(actor, parsed.containerName, parsed.blobName);
 
-  // Wait out the race window, then re-probe: a create that commits while we
-  // wait must make this a no-op.
-  const deleted = await deleteBlobIfStillOrphaned(parsed.containerName, parsed.blobName, () =>
-    isBlobStillReferenced(url)
-  );
-  if (!deleted) {
+  // Take durable ownership BEFORE the final probe: from here, no create-record
+  // request that honours the claim protocol can materialise a reference.
+  const claimId = await claimBlobForDiscard(url, actor.id);
+  if (!claimId) {
+    // A live claim held by someone else: either a create is materialising or
+    // another discard already owns it. Refuse; deleting would be unsafe.
     throw Errors.conflict(
-      'Berkas belum dapat dibuang karena masih berpotensi dirujuk catatan baru; coba lagi nanti'
+      'Berkas sedang diproses pihak lain; coba lagi nanti'
     );
   }
+
+  try {
+    // Re-probe under the claim: catches anything that committed before the
+    // claim was taken. After this point the claim blocks any new commit.
+    if (await isBlobStillReferenced(url)) {
+      throw Errors.conflict('Berkas sudah tersimpan pada sebuah catatan dan tidak dapat dibuang');
+    }
+
+    // Last step before the irreversible delete. The claim is held across the
+    // re-probe and this delete, so a create cannot take it while we hold it —
+    // but if the claim has lapsed (its TTL is shorter than a very large blob's
+    // delete) or was otherwise stolen, a create may have materialised a
+    // reference since the re-probe above. Re-assert ownership here so the
+    // delete cannot run on a blob that is now live.
+    if (!(await blobClaimStillHeld(claimId, actor.id))) {
+      throw Errors.conflict('Berkas sedang diproses pihak lain; coba lagi nanti');
+    }
+
+    await deleteFromCloudStorage(parsed.containerName, parsed.blobName);
+  } catch (error) {
+    // The blob was not deleted (or the re-probe refused); release the claim so
+    // a later discard can retry instead of waiting for the TTL.
+    await releaseBlobClaimById(claimId, actor.id).catch(() => undefined);
+    throw error;
+  }
+
+  // The blob is gone. Clear the claim so the URL could be re-uploaded later.
+  await releaseBlobClaimById(claimId, actor.id).catch(() => undefined);
 }

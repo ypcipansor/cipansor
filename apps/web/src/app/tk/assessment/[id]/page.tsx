@@ -1,6 +1,8 @@
 "use client";
+import { useMemo } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { authFileUrl } from "@/lib/files";
+import { useResolvedFileUrls } from "@/hooks/use-resolved-file-url";
+import { isImageEvidence } from "@/lib/files";
 import { safeFormat } from "@/lib/date";
 import { MainLayout } from "@/components/layout";
 import { PageHeader } from "@/components/shared";
@@ -55,11 +57,27 @@ export default function TKAssessmentDetailPage() {
   const { data: assessment, isLoading, error } = useTKAssessment(id);
   const deleteMutation = useDeleteTKAssessment();
 
+  // Evidence files are private uploads (local token or private-blob SAS), so a
+  // raw URL 403s. Resolve them through the batch hook, which also refreshes
+  // each link before its credential expires. This was the PAUD gap: the page
+  // rendered `evidence.fileUrl` directly and every evidence image broke once
+  // uploads started landing in a private container.
+  const evidenceUrls = useMemo(
+    () =>
+      (assessment?.evidences ?? [])
+        .map((e) => e.fileUrl)
+        .filter((u): u is string => !!u),
+    [assessment],
+  );
+  const resolvedEvidence = useResolvedFileUrls(evidenceUrls);
+  const evidenceUrl = (u?: string | null): string =>
+    (u && resolvedEvidence[u]) || u || "";
+
   const handleDelete = async () => {
     try {
       await deleteMutation.mutateAsync(id);
       toast.success("Penilaian berhasil dihapus");
-      router.push("/paud/assessment");
+      router.push("/tk/assessment");
     } catch {
       toast.error("Gagal menghapus penilaian");
     }
@@ -90,7 +108,7 @@ export default function TKAssessmentDetailPage() {
           <p className="text-muted-foreground mb-4">
             Data penilaian yang Anda cari tidak tersedia.
           </p>
-          <Button onClick={() => router.push("/paud/assessment")}>
+          <Button onClick={() => router.push("/tk/assessment")}>
             <ArrowLeft className="mr-2 h-4 w-4" />
             Kembali ke Daftar
           </Button>
@@ -113,7 +131,7 @@ export default function TKAssessmentDetailPage() {
               </Button>
               <Button
                 variant="outline"
-                onClick={() => router.push(`/paud/assessment/${id}/edit`)}
+                onClick={() => router.push(`/tk/assessment/${id}/edit`)}
               >
                 <Pencil className="mr-2 h-4 w-4" />
                 Edit
@@ -316,14 +334,14 @@ export default function TKAssessmentDetailPage() {
                       {assessment.evidences.map((evidence) => (
                         <a
                           key={evidence.id}
-                          href={authFileUrl(evidence.fileUrl)}
+                          href={evidenceUrl(evidence.fileUrl)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="group relative aspect-square rounded-lg overflow-hidden border bg-muted"
                         >
-                          {evidence.fileType.startsWith("image/") ? (
+                          {isImageEvidence(evidence.fileType) ? (
                             <img
-                              src={authFileUrl(evidence.fileUrl)}
+                              src={evidenceUrl(evidence.fileUrl)}
                               alt={evidence.caption || "Evidence"}
                               className="w-full h-full object-cover transition-transform group-hover:scale-105"
                             />

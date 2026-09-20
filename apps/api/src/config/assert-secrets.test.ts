@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   assertProductionSecrets,
+  assertProductionMicrosoftTenant,
   findSecretIssues,
+  microsoftMultiTenantAllowed,
   warnOnLooseMicrosoftTenant,
 } from './assert-secrets';
 
@@ -190,6 +192,131 @@ describe('loose Microsoft tenant warning', () => {
   it('stays quiet outside production', () => {
     for (const env of ['development', 'test', undefined]) {
       expect(warnOnLooseMicrosoftTenant(env, 'common')).toBeNull();
+    }
+  });
+});
+
+describe('production Microsoft tenant fail-fast (BUG 10)', () => {
+  const clientId = 'microsoft-client-id';
+
+  it('refuses to start in production when Microsoft SSO is configured and the tenant is common', () => {
+    expect(() =>
+      assertProductionMicrosoftTenant({
+        env: 'production',
+        clientId,
+        tenantId: 'common',
+        allowMultiTenant: false,
+      })
+    ).toThrow(/Refusing to start the API in production/);
+  });
+
+  it('refuses when the tenant is unset in production (defaults to common)', () => {
+    expect(() =>
+      assertProductionMicrosoftTenant({
+        env: 'production',
+        clientId,
+        tenantId: undefined,
+        allowMultiTenant: false,
+      })
+    ).toThrow(/MICROSOFT_TENANT_ID/);
+  });
+
+  it('refuses for organizations/consumers too, not only common', () => {
+    for (const tenantId of ['organizations', 'consumers', 'COMMON']) {
+      expect(() =>
+        assertProductionMicrosoftTenant({
+          env: 'production',
+          clientId,
+          tenantId,
+          allowMultiTenant: false,
+        })
+      ).toThrow(/Refusing to start/);
+    }
+  });
+
+  it('starts when a concrete tenant GUID or domain is configured', () => {
+    for (const tenantId of [
+      '99999999-9999-9999-9999-999999999999',
+      'cipansor.or.id',
+    ]) {
+      expect(() =>
+        assertProductionMicrosoftTenant({
+          env: 'production',
+          clientId,
+          tenantId,
+          allowMultiTenant: false,
+        })
+      ).not.toThrow();
+    }
+  });
+
+  it('allows the explicit multi-tenant opt-in', () => {
+    expect(() =>
+      assertProductionMicrosoftTenant({
+        env: 'production',
+        clientId,
+        tenantId: 'common',
+        allowMultiTenant: true,
+      })
+    ).not.toThrow();
+  });
+
+  it('leaves development and test alone', () => {
+    for (const env of ['development', 'test', undefined]) {
+      expect(() =>
+        assertProductionMicrosoftTenant({
+          env,
+          clientId,
+          tenantId: 'common',
+          allowMultiTenant: false,
+        })
+      ).not.toThrow();
+    }
+  });
+
+  it('does not block a deployment that never configured Microsoft SSO', () => {
+    // Microsoft login is off; the unused tenant default is not a hole.
+    expect(() =>
+      assertProductionMicrosoftTenant({
+        env: 'production',
+        clientId: undefined,
+        tenantId: 'common',
+        allowMultiTenant: false,
+      })
+    ).not.toThrow();
+  });
+
+  it('names the escape hatch in the failure message', () => {
+    try {
+      assertProductionMicrosoftTenant({
+        env: 'production',
+        clientId,
+        tenantId: 'common',
+        allowMultiTenant: false,
+      });
+      throw new Error('should have thrown');
+    } catch (error) {
+      expect((error as Error).message).toContain('MICROSOFT_ALLOW_MULTI_TENANT');
+    }
+  });
+
+  it('reads the opt-in flag from the environment, case-insensitively', () => {
+    const previous = process.env.MICROSOFT_ALLOW_MULTI_TENANT;
+    try {
+      process.env.MICROSOFT_ALLOW_MULTI_TENANT = 'TRUE';
+      expect(microsoftMultiTenantAllowed()).toBe(true);
+      expect(() =>
+        assertProductionMicrosoftTenant({ env: 'production', clientId, tenantId: 'common' })
+      ).not.toThrow();
+
+      process.env.MICROSOFT_ALLOW_MULTI_TENANT = 'no';
+      expect(microsoftMultiTenantAllowed()).toBe(false);
+      expect(() =>
+        assertProductionMicrosoftTenant({ env: 'production', clientId, tenantId: 'common' })
+      ).toThrow();
+    } finally {
+      if (previous === undefined) delete process.env.MICROSOFT_ALLOW_MULTI_TENANT;
+      else process.env.MICROSOFT_ALLOW_MULTI_TENANT = previous;
     }
   });
 });

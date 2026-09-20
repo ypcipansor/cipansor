@@ -7,8 +7,8 @@ import { MainLayout } from "@/components/layout";
  * Halaman manajemen portofolio digital siswa
  * Kategori: Akademik, P5, Ekstrakurikuler, Prestasi, Seni, Tahfidz
  */
-import { useState } from "react";
-import { authFileUrl } from "@/lib/files";
+import { useMemo, useState } from "react";
+import { useResolvedFileUrls } from "@/hooks/use-resolved-file-url";
 import { safeFormat } from "@/lib/date";
 import { useRouter } from "next/navigation";
 import {
@@ -124,6 +124,19 @@ function PortfolioPageContent() {
   // Mutations
   const createPortfolio = useCreatePortfolio();
   const deletePortfolio = useDeletePortfolio();
+
+  // Portfolio cover images are private uploads: resolve them (and keep each
+  // link fresh) rather than rendering a raw URL that 403s.
+  const coverUrls = useMemo(
+    () =>
+      (portfoliosData?.data ?? [])
+        .map((p) => p.files?.[0]?.fileUrl)
+        .filter((u): u is string => !!u),
+    [portfoliosData],
+  );
+  const resolvedCovers = useResolvedFileUrls(coverUrls);
+  const coverUrl = (u?: string | null): string =>
+    (u && resolvedCovers[u]) || u || "";
 
   // Form state
   const [formData, setFormData] = useState({
@@ -341,7 +354,7 @@ function PortfolioPageContent() {
               <div className="h-32 bg-gradient-to-br from-primary/20 to-primary/5 relative">
                 {portfolio.files?.[0]?.fileUrl && (
                   <img
-                    src={authFileUrl(portfolio.files[0].fileUrl)}
+                    src={coverUrl(portfolio.files[0].fileUrl)}
                     alt={portfolio.title}
                     className="w-full h-full object-cover"
                   />

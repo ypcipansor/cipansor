@@ -20,9 +20,10 @@ vi.mock('@/utils/cloud-storage', () => ({
   cleanupBlobsBestEffort: vi.fn().mockResolvedValue(undefined),
 }));
 
-// Mock Prisma
-vi.mock('@/lib/prisma', () => ({
-  prisma: {
+// Mock Prisma. `$transaction` runs the callback against the same mock client so
+// the transactional work in `update` (BUG 8) still hits the assertions below.
+const prismaMock = vi.hoisted(() => {
+  const mock: any = {
     dailyStudentReport: {
       findMany: vi.fn(),
       findUnique: vi.fn(),
@@ -58,7 +59,13 @@ vi.mock('@/lib/prisma', () => ({
       createMany: vi.fn(),
       deleteMany: vi.fn(),
     },
-  },
+  };
+  mock.$transaction = vi.fn(async (fn: (tx: typeof mock) => unknown) => fn(mock));
+  return mock;
+});
+
+vi.mock('@/lib/prisma', () => ({
+  prisma: prismaMock,
 }));
 
 describe('DailyReportService', () => {

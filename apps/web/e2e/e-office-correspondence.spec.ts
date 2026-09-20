@@ -107,6 +107,37 @@ test.describe("E-Office correspondence flows", () => {
     expect(fetched.data.status).toBe("PENDING_REVIEW");
   });
 
+  test("an unowned upload (no record references it) gets no SAS (BUG 5)", async () => {
+    // A freshly uploaded blob is an orphan until a record claims it. The SAS
+    // endpoint authorizes against the record that owns the blob, so an orphan a
+    // caller just uploaded is still refused: possession of an upload response is
+    // not a read capability, and a leaked blob URL cannot be turned into a
+    // signed link. This is the ownership gate the old endpoint lacked.
+    const body = Buffer.from("%PDF-1.4\n%% orphan\n%%EOF", "utf8");
+    const form = new FormData();
+    form.append("file", new Blob([body], { type: "application/pdf" }), "orphan.pdf");
+    const upRes = await fetch(`${API_URL}/upload`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${session.accessToken}` },
+      body: form,
+    });
+    expect(upRes.ok).toBe(true);
+    const stableUrl = (await upRes.json())?.data?.url as string | undefined;
+    if (!stableUrl) throw new Error("Upload returned no stable url");
+
+    // No record references this blob, so the SAS endpoint must refuse it.
+    const refused = await fetch(`${API_URL}/upload/sas`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${session.accessToken}`,
+      },
+      body: JSON.stringify({ url: stableUrl }),
+    });
+    expect(refused.ok).toBe(false);
+    expect(refused.status).toBe(403);
+  });
+
   test("uploaded file persists and is re-resolvable via the SAS endpoint (real stack)", async () => {
     // Exercises the storage migration path end-to-end against the real API: a
     // letter attachment (or any upload) returns a stable URL that must be saved,
@@ -141,8 +172,42 @@ test.describe("E-Office correspondence flows", () => {
       throw new Error("Upload returned no stable url to persist");
     }
 
-    // Persisting the upload is the consumer's job; prove the endpoint can mint a
-    // fresh SAS for whatever stable reference was actually stored.
+    // Persisting the upload is the consumer's job. Attach the stable reference
+    // to a real letter, then prove the SAS endpoint resolves that persisted
+    // reference back into a browser-usable link. Until a record references it,
+    // the blob is an orphan and the endpoint refuses it (see the BUG 5 test) —
+    // so the persist step is what makes it resolvable, not the upload itself.
+    const participants = await apiRequest<{
+      data: Array<{ id: string; unitId: string | null }>;
+    }>(session, "GET", "/correspondence/participants?limit=100");
+    const callerId = session.user.id as string | undefined;
+    const candidate =
+      participants?.data?.find((p) => p.id !== callerId && !!p.unitId) ??
+      participants?.data?.[0];
+    if (!candidate?.unitId) {
+      throw new Error("Seeded stack returned no internal participant");
+    }
+    const letter = await apiRequest<{ success: boolean; data: { id: string } }>(
+      session,
+      "POST",
+      "/correspondence/letters",
+      {
+        unitId: candidate.unitId,
+        direction: "INCOMING",
+        type: "SURAT_DINAS",
+        date: new Date().toISOString(),
+        subject: "E2E Lampiran SAS",
+        content: "Lampiran dipersist oleh e2e e-office-correspondence.spec.",
+        urgency: "NORMAL",
+        nature: "PUBLIC",
+        status: "DRAFT",
+        recipientIds: [candidate.id],
+        attachments: [{ name: "Lampiran", fileUrl: stableUrl, mimeType: "application/pdf" }],
+      },
+    );
+    expect(letter.success).toBe(true);
+
+    // The persisted reference now resolves for a caller who may read the letter.
     const sas = await apiRequest<{
       success: boolean;
       data?: { url?: string; downloadUrl?: string };

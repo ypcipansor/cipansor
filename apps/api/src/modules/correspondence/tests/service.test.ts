@@ -58,6 +58,14 @@ vi.mock('@/lib/prisma', () => ({
   },
 }));
 
+// The create path claims each referenced blob before writing the letter (BUG 4).
+// The protocol has its own unit + DB integration tests; here the default claim
+// always succeeds, and the conflict path is asserted explicitly below.
+vi.mock('@/utils/blob-claim', () => ({
+  claimBlobsForRecord: vi.fn().mockResolvedValue(true),
+  releaseBlobClaims: vi.fn().mockResolvedValue(undefined),
+}));
+
 describe('CorrespondenceService', () => {
   beforeEach(() => {
     vi.clearAllMocks();

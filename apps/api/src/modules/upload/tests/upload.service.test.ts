@@ -1,15 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { prisma } from '@/lib/prisma';
-import { resolveSasForBlob, discardOrphanBlob } from '../upload.service';
+import { resolveSasForBlob, discardOrphanBlob, actorMayReadBlob } from '../upload.service';
 import {
   generateSasUrl,
   parseBlobUrl,
   isAllowedContainer,
   isPublicContainer,
   deleteFromCloudStorage,
-  deleteBlobIfStillOrphaned,
   getBlobUploaderId,
 } from '@/utils/cloud-storage';
+import {
+  claimBlobForDiscard,
+  releaseBlobClaimById,
+  blobClaimStillHeld,
+} from '@/utils/blob-claim';
 
 /**
  * Every record type `findBlobOwner` probes for in the shared
@@ -72,13 +76,21 @@ vi.mock('@/utils/cloud-storage', () => ({
   isAllowedContainer: vi.fn(),
   isPublicContainer: vi.fn(),
   deleteFromCloudStorage: vi.fn().mockResolvedValue(undefined),
-  // The race-safe delete: the delayed re-probe lives in cloud-storage and is
-  // covered there. Here it is stubbed so the service's handling of its result
-  // (throw vs no-op) is what gets exercised, without a real 2s wait.
-  deleteBlobIfStillOrphaned: vi.fn().mockResolvedValue(true),
-  getBlobCreatedAt: vi.fn().mockResolvedValue(null),
+  // The uploader-metadata read is stubbed; its own behaviour is covered in
+  // cloud-storage.test.ts. Here the service's use of it (authorize vs refuse)
+  // is what gets exercised.
   getBlobUploaderId: vi.fn().mockResolvedValue(null),
-  RACE_RECHECK_DELAY_MS: 2_000,
+  SAS_TTL_MINUTES: 60,
+}));
+
+vi.mock('@/utils/blob-claim', () => ({
+  claimBlobForRecord: vi.fn().mockResolvedValue(true),
+  claimBlobForDiscard: vi.fn().mockResolvedValue('claim-1'),
+  releaseBlobClaim: vi.fn().mockResolvedValue(undefined),
+  releaseBlobClaimById: vi.fn().mockResolvedValue(undefined),
+  claimBlobsForRecord: vi.fn().mockResolvedValue(true),
+  releaseBlobClaims: vi.fn().mockResolvedValue(undefined),
+  blobClaimStillHeld: vi.fn().mockResolvedValue(true),
 }));
 
 vi.mock('@/utils/letter-access', () => ({
@@ -103,6 +115,8 @@ const sameUnitPeer = { id: 'user-2', roleCode: 'SDIT_GURU', unitId: 'unit-2', pe
 const unitHrAdmin = { id: 'user-3', roleCode: 'SDIT_ADMIN', unitId: 'unit-2', permissions: [] };
 /** Unit treasurer: verifies payments in unit-2 but is NOT a personnel admin. */
 const unitTreasurer = { id: 'user-4', roleCode: 'SDIT_BENDAHARA', unitId: 'unit-2', permissions: [] };
+/** A pupil/parent actor: authenticated, but no document or finance role. */
+const waliSantri = { id: 'user-5', roleCode: 'SDIT_ORANG_TUA', unitId: 'unit-2', permissions: [] };
 
 /** Reset every `findFirst` probe to "no record". */
 function clearOwners() {
@@ -168,11 +182,27 @@ describe('resolveSasForBlob', () => {
     (isPublicContainer as any).mockImplementation((c: string) => c === 'media-public');
   });
 
-  it('returns url unchanged (no SAS) for a non-blob /uploads path', async () => {
+  it('returns a scoped local file token (not a raw passthrough) for a /uploads path (BUG 5)', async () => {
     (parseBlobUrl as any).mockReturnValue(null);
+    (seesAllUnits as any).mockReturnValue(true);
+    // A record references the local file; without one it is refused outright.
+    (prisma.letter.findFirst as any).mockResolvedValue({ id: 'letter-1' });
 
     const result = await resolveSasForBlob('https://cipansor.or.id/uploads/a.pdf', superAdmin);
-    expect(result).toEqual({ url: 'https://cipansor.or.id/uploads/a.pdf' });
+    // The local provider has no SAS, so it returns a short-lived, path-bound
+    // file token instead of handing back the raw path unauthenticated.
+    expect(result.url).toBe('https://cipansor.or.id/uploads/a.pdf');
+    expect(result.accessToken).toBeTruthy();
+    expect(result.expiresIn).toBeGreaterThan(0);
+    expect(generateSasUrl).not.toHaveBeenCalled();
+  });
+
+  it('refuses a /uploads file no record owns, even for a super admin (BUG 5)', async () => {
+    (parseBlobUrl as any).mockReturnValue(null);
+
+    await expect(
+      resolveSasForBlob('https://cipansor.or.id/uploads/unowned.pdf', superAdmin)
+    ).rejects.toThrow(/Berkas tidak ditemukan atau tidak dapat diakses/);
     expect(generateSasUrl).not.toHaveBeenCalled();
   });
 
@@ -649,6 +679,102 @@ describe('resolveSasForBlob', () => {
   });
 });
 
+describe('actorMayReadBlob (BUG 5 ownership matrix)', () => {
+  // The local `/uploads` middleware applies this exact function. The middleware
+  // suite mocks it to prove the middleware *calls* it; these tests prove the
+  // function itself returns the right answer for each kind of owner and actor,
+  // which is what makes the mocked call meaningful. A file served from disk and
+  // the same file served from a private blob container must agree here.
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // `seesAllUnits` is module-mocked and `clearAllMocks` does not reset a
+    // leaked implementation, so state the real rule explicitly: only foundation
+    // roles (SUPER_ADMIN + YAYASAN_*) see across units.
+    (seesAllUnits as any).mockImplementation(
+      (u: { roleCode?: string | null }) =>
+        u?.roleCode === 'SUPER_ADMIN' || !!u?.roleCode?.startsWith('YAYASAN_')
+    );
+  });
+
+  it('user-document: the owner may read, a same-unit peer may not', async () => {
+    // The owner is the HR admin (user-3); sameUnitPeer sits in the same unit but
+    // is neither the owner nor a personnel admin, so it must be refused.
+    const owner = { kind: 'user-document' as const, userId: unitHrAdmin.id, unitId: 'unit-2' };
+    await expect(actorMayReadBlob(unitHrAdmin, owner)).resolves.toBe(true);
+    await expect(actorMayReadBlob(sameUnitPeer, owner)).resolves.toBe(false);
+    await expect(actorMayReadBlob(waliSantri, owner)).resolves.toBe(false);
+    await expect(actorMayReadBlob(superAdmin, owner)).resolves.toBe(true);
+  });
+
+  it('user-document: a personnel admin from ANOTHER unit may not read it', async () => {
+    // The HR role grants reach only inside its own unit; a cross-unit admin is
+    // refused, which is the whole point of pinning the write/read boundary.
+    const owner = { kind: 'user-document' as const, userId: 'someone-else', unitId: 'unit-2' };
+    const crossUnitHrAdmin = { ...unitHrAdmin, unitId: 'unit-9' };
+    await expect(actorMayReadBlob(crossUnitHrAdmin, owner)).resolves.toBe(false);
+  });
+
+  it('unit: a same-unit actor may read, a cross-unit actor may not', async () => {
+    const owner = { kind: 'unit' as const, unitId: 'unit-2' };
+    await expect(actorMayReadBlob(waliSantri, owner)).resolves.toBe(true);
+    await expect(actorMayReadBlob({ ...waliSantri, unitId: 'unit-3' }, owner)).resolves.toBe(false);
+    await expect(actorMayReadBlob(superAdmin, owner)).resolves.toBe(true);
+  });
+
+  it('payment-proof: a finance verifier may read its unit\u2019s proof, a teacher may not', async () => {
+    const owner = { kind: 'payment-proof' as const, studentUserId: 'some-student', unitId: 'unit-2' };
+    // The treasurer verifies payments but is not a personnel admin; the proof
+    // rule must admit them without opening employee documents.
+    await expect(actorMayReadBlob(unitTreasurer, owner)).resolves.toBe(true);
+    await expect(actorMayReadBlob(waliSantri, owner)).resolves.toBe(false);
+    await expect(actorMayReadBlob(sameUnitPeer, owner)).resolves.toBe(false);
+  });
+
+  it('payment-proof: the student it pays for reaches their own proof', async () => {
+    const owner = {
+      kind: 'payment-proof' as const,
+      studentUserId: waliSantri.id,
+      unitId: 'unit-2',
+    };
+    await expect(actorMayReadBlob(waliSantri, owner)).resolves.toBe(true);
+  });
+
+  it('payment-proof: a finance verifier from another unit may not read it', async () => {
+    const owner = { kind: 'payment-proof' as const, studentUserId: 'some-student', unitId: 'unit-2' };
+    await expect(
+      actorMayReadBlob({ ...unitTreasurer, unitId: 'unit-9' }, owner)
+    ).resolves.toBe(false);
+  });
+
+  it('foundation: only a foundation-scoped role may read it', async () => {
+    const owner = { kind: 'foundation' as const };
+    const yayasan = { id: 'user-6', roleCode: 'YAYASAN_SEKRETARIS', unitId: null, permissions: [] };
+    await expect(actorMayReadBlob(yayasan, owner)).resolves.toBe(true);
+    await expect(actorMayReadBlob(unitHrAdmin, owner)).resolves.toBe(false);
+  });
+
+  it('authenticated: any signed-in actor may read site-wide media', async () => {
+    await expect(actorMayReadBlob(waliSantri, { kind: 'authenticated' })).resolves.toBe(true);
+  });
+
+  it('public: readable with no ownership check', async () => {
+    await expect(actorMayReadBlob(waliSantri, { kind: 'public' })).resolves.toBe(true);
+  });
+
+  it('letter: a foundation role bypasses the correspondence scope, others go through it', async () => {
+    const owner = { kind: 'letter' as const, letterId: 'letter-1' };
+    (seesAllUnits as any).mockReturnValue(false);
+    (prisma.letter.count as any).mockResolvedValue(0);
+    await expect(actorMayReadBlob(waliSantri, owner)).resolves.toBe(false);
+    (prisma.letter.count as any).mockResolvedValue(1);
+    await expect(actorMayReadBlob(waliSantri, owner)).resolves.toBe(true);
+
+    (seesAllUnits as any).mockReturnValue(true);
+    (prisma.letter.count as any).mockResolvedValue(0);
+    await expect(actorMayReadBlob(superAdmin, owner)).resolves.toBe(true);
+  });
+});
+
 describe('discardOrphanBlob', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -658,39 +784,69 @@ describe('discardOrphanBlob', () => {
       blobName: 'orphan.pdf',
     });
     (isAllowedContainer as any).mockReturnValue(true);
-    (deleteBlobIfStillOrphaned as any).mockResolvedValue(true);
+    (claimBlobForDiscard as any).mockResolvedValue('claim-1');
+    // Default to "we still hold the claim"; a test that wants the stolen-claim
+    // path overrides it for itself only.
+    (blobClaimStillHeld as any).mockResolvedValue(true);
   });
 
-  it('deletes a blob no record references (BUG 4)', async () => {
+  it('claims the blob then deletes it, releasing the claim (BUG 4)', async () => {
     await discardOrphanBlob(
       'https://store.blob.core.windows.net/cipansor-documents/orphan.pdf',
       superAdmin
     );
 
-    expect(deleteBlobIfStillOrphaned).toHaveBeenCalledWith(
-      'cipansor-documents',
-      'orphan.pdf',
-      expect.any(Function)
+    expect(claimBlobForDiscard).toHaveBeenCalledWith(
+      'https://store.blob.core.windows.net/cipansor-documents/orphan.pdf',
+      superAdmin.id
     );
+    expect(deleteFromCloudStorage).toHaveBeenCalledWith('cipansor-documents', 'orphan.pdf');
+    expect(releaseBlobClaimById).toHaveBeenCalledWith('claim-1', superAdmin.id);
   });
 
-  it('re-probes inside the race-safe delete, so a create committing mid-flight blocks it (race)', async () => {
-    // First probe (line: isBlobStillReferenced) says orphan; by the time the
-    // re-probe runs a record has committed, so it must report referenced and
-    // the delete must not happen. This is the exact upload→create race: the
-    // decision was made before the record existed.
-    (prisma as any).book.count
-      .mockResolvedValueOnce(0) // first exhaustive probe
-      .mockResolvedValue(1); // re-probe after the create committed
-    (deleteBlobIfStillOrphaned as any).mockResolvedValue(false);
+  it('refuses when a live claim held by another actor already owns the blob (BUG 4)', async () => {
+    // A concurrent create (or another discard) holds the claim. The delete must
+    // not proceed; the loser backs off rather than racing.
+    (claimBlobForDiscard as any).mockResolvedValue(null);
 
     await expect(
       discardOrphanBlob(
         'https://store.blob.core.windows.net/cipansor-documents/orphan.pdf',
         superAdmin
       )
-    ).rejects.toThrow(/belum dapat dibuang/);
+    ).rejects.toThrow(/sedang diproses pihak lain/);
     expect(deleteFromCloudStorage).not.toHaveBeenCalled();
+  });
+
+  it('re-probes under the claim, so a create that committed before the claim blocks it (race)', async () => {
+    // First probe says orphan; by the time the claim is held a record has
+    // committed. The claim cannot undo that, so the under-claim re-probe must
+    // report referenced and the delete must not happen.
+    (prisma as any).book.count
+      .mockResolvedValueOnce(0) // first exhaustive probe
+      .mockResolvedValue(1); // re-probe under the claim
+
+    await expect(
+      discardOrphanBlob(
+        'https://store.blob.core.windows.net/cipansor-documents/orphan.pdf',
+        superAdmin
+      )
+    ).rejects.toThrow(/Berkas sudah tersimpan/);
+    expect(deleteFromCloudStorage).not.toHaveBeenCalled();
+    // The claim is released so a later retry is possible.
+    expect(releaseBlobClaimById).toHaveBeenCalledWith('claim-1', superAdmin.id);
+  });
+
+  it('releases the claim when the delete itself fails, so a retry is possible', async () => {
+    (deleteFromCloudStorage as any).mockRejectedValueOnce(new Error('azure down'));
+
+    await expect(
+      discardOrphanBlob(
+        'https://store.blob.core.windows.net/cipansor-documents/orphan.pdf',
+        superAdmin
+      )
+    ).rejects.toThrow('azure down');
+    expect(releaseBlobClaimById).toHaveBeenCalledWith('claim-1', superAdmin.id);
   });
 
   it('refuses to discard a blob a live record references', async () => {
@@ -705,7 +861,7 @@ describe('discardOrphanBlob', () => {
       )
     ).rejects.toThrow(/Berkas sudah tersimpan/);
     expect(deleteFromCloudStorage).not.toHaveBeenCalled();
-    expect(deleteBlobIfStillOrphaned).not.toHaveBeenCalled();
+    expect(claimBlobForDiscard).not.toHaveBeenCalled();
   });
 
   it('refuses to discard when ANY stored blob-URL field still references the URL', async () => {
@@ -723,12 +879,42 @@ describe('discardOrphanBlob', () => {
     expect(deleteFromCloudStorage).not.toHaveBeenCalled();
   });
 
+  it('refuses to delete when the claim was taken over between the re-probe and the delete (BUG 4 residual)', async () => {
+    // The re-probe says orphan, but by the time the delete would run a create
+    // has committed and now holds the claim. Deleting here would destroy a blob
+    // the new record points at, so the liveness check must abort.
+    (blobClaimStillHeld as any).mockResolvedValue(false);
+
+    await expect(
+      discardOrphanBlob(
+        'https://store.blob.core.windows.net/cipansor-documents/orphan.pdf',
+        superAdmin
+      )
+    ).rejects.toThrow(/sedang diproses pihak lain/);
+
+    expect(deleteFromCloudStorage).not.toHaveBeenCalled();
+    // The (now-lost) claim is released so a later retry can reclaim the blob.
+    expect(releaseBlobClaimById).toHaveBeenCalledWith('claim-1', superAdmin.id);
+  });
+
+  it('re-asserts the claim immediately before the irreversible delete', async () => {
+    // Ordering is the point: the liveness check must sit after the reference
+    // re-probe and before the delete, or it proves nothing.
+    await discardOrphanBlob(
+      'https://store.blob.core.windows.net/cipansor-documents/orphan.pdf',
+      superAdmin
+    );
+
+    expect(blobClaimStillHeld).toHaveBeenCalledWith('claim-1', superAdmin.id);
+    expect(deleteFromCloudStorage).toHaveBeenCalled();
+  });
+
   it('is a no-op for a local /uploads path', async () => {
     (parseBlobUrl as any).mockReturnValue(null);
 
     await discardOrphanBlob('https://cipansor.or.id/uploads/a.pdf', superAdmin);
     expect(deleteFromCloudStorage).not.toHaveBeenCalled();
-    expect(deleteBlobIfStillOrphaned).not.toHaveBeenCalled();
+    expect(deleteFromCloudStorage).not.toHaveBeenCalled();
   });
 
   it('refuses a foreign container', async () => {
@@ -752,7 +938,7 @@ describe('discardOrphanBlob', () => {
         sameUnitPeer
       )
     ).rejects.toThrow(/tidak berwenang membuang berkas/);
-    expect(deleteBlobIfStillOrphaned).not.toHaveBeenCalled();
+    expect(deleteFromCloudStorage).not.toHaveBeenCalled();
   });
 
   it('allows the uploader to discard their own orphan blob (BUG 2)', async () => {
@@ -765,7 +951,7 @@ describe('discardOrphanBlob', () => {
     );
 
     expect(getBlobUploaderId).toHaveBeenCalledWith('cipansor-documents', 'orphan.pdf');
-    expect(deleteBlobIfStillOrphaned).toHaveBeenCalled();
+    expect(deleteFromCloudStorage).toHaveBeenCalled();
   });
 
   it('refuses everyone when the blob has no recorded uploader (fail-closed) (BUG 2)', async () => {
@@ -778,7 +964,7 @@ describe('discardOrphanBlob', () => {
         sameUnitPeer
       )
     ).rejects.toThrow(/tidak berwenang membuang berkas/);
-    expect(deleteBlobIfStillOrphaned).not.toHaveBeenCalled();
+    expect(deleteFromCloudStorage).not.toHaveBeenCalled();
   });
 
   it('lets a foundation/super-admin role sweep any orphan, without a metadata read', async () => {
@@ -790,6 +976,6 @@ describe('discardOrphanBlob', () => {
     );
 
     expect(getBlobUploaderId).not.toHaveBeenCalled();
-    expect(deleteBlobIfStillOrphaned).toHaveBeenCalled();
+    expect(deleteFromCloudStorage).toHaveBeenCalled();
   });
 });

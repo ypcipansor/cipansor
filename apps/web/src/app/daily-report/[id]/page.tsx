@@ -1,7 +1,7 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useMemo } from "react";
 import { safeFormat } from "@/lib/date";
-import { resolveFileUrl } from "@/lib/files";
+import { useResolvedFileUrls } from "@/hooks/use-resolved-file-url";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -36,30 +36,20 @@ function DailyReportDetailPageContent() {
   const router = useRouter();
   const { data: report, isLoading } = useDailyReport(params.id);
 
-  // Persisted daily-report photo URLs are stable references (raw blob URL, no
-  // expiring SAS). The browser cannot send an Authorization header for a blob
-  // URL, so at display time we mint a fresh SAS for each private Azure photo
-  // (or fall back to authFileUrl for local /uploads paths) and cache it here.
-  const [resolvedPhotos, setResolvedPhotos] = useState<Record<string, string>>(
-    {},
-  );
+  // Persisted daily-report photo URLs are stable references (raw blob URL or a
+  // local /uploads path, no expiring credential). The browser cannot attach an
+  // Authorization header when loading them, so resolve each to a short-lived
+  // SAS/file token — and keep refreshing before it expires, so a report left
+  // open does not lose its photos.
   const reportPhotos = report?.photos;
-  useEffect(() => {
-    const urls = (reportPhotos ?? [])
-      .map((p) => p.photoUrl)
-      .filter(Boolean) as string[];
-    if (urls.length === 0) return;
-    let cancelled = false;
-    (async () => {
-      const entries = await Promise.all(
-        urls.map(async (u) => [u, await resolveFileUrl(u)] as const),
-      );
-      if (!cancelled) setResolvedPhotos(Object.fromEntries(entries));
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [reportPhotos]);
+  const photoUrls = useMemo(
+    () =>
+      (reportPhotos ?? [])
+        .map((p) => p.photoUrl)
+        .filter((u): u is string => !!u),
+    [reportPhotos],
+  );
+  const resolvedPhotos = useResolvedFileUrls(photoUrls);
   const photoSrc = (url: string) => resolvedPhotos[url] || url;
 
   if (isLoading) {

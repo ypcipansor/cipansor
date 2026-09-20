@@ -235,14 +235,14 @@ export async function loginWithGoogle(
  * suppress One Tap.
  *
  * `prompt()` is the only GIS entry point that can complete a sign-in without a
- * user gesture, and precisely for that reason browsers are free to block it —
+ * user gesture, and precisely for that reason browsers are free to block it â€”
  * Safari/Firefox ITP treats the One Tap iframe as third-party, and enterprise
  * cookie policies do the same. `renderButton` is an ordinary same-origin
  * button, so it is not subject to the same suppression.
  *
  * The login page keeps the One Tap `prompt()` as the primary flow (it is
  * smoother, and was the behaviour before this change) and calls this only when
- * that flow reports `isNotDisplayedMoment()` — i.e. once the browser has told
+ * that flow reports `isNotDisplayedMoment()` â€” i.e. once the browser has told
  * us the prompt cannot be shown.
  *
  * Resolves with the ID token from the first credential the rendered button

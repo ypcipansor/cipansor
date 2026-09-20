@@ -125,6 +125,97 @@ describe('findBlobOwner probe coverage', () => {
   });
 });
 
+describe('findBlobOwner parallel probe batches (flag 7)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    for (const model of OWNER_MODELS) {
+      (prisma as any)[model].findFirst.mockResolvedValue(null);
+    }
+  });
+
+  it('stops probing later batches once an earlier batch matches', async () => {
+    // `letter` is in the first batch; `portfolioFile` is in the second. A match
+    // in batch 1 must short-circuit batch 2 entirely, or a lower-priority
+    // record could never be reached — and the authorization rule would change.
+    (prisma as any).letter.findFirst.mockResolvedValue({ id: 'letter-1' });
+
+    await expect(
+      findBlobOwner('cipansor-documents', 'https://store/cipansor-documents/x.pdf')
+    ).resolves.toEqual({ kind: 'letter', letterId: 'letter-1' });
+
+    expect((prisma as any).portfolioFile.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('issues every probe of a batch together, even when the first one matches', async () => {
+    // A serial implementation would stop at `portfolioFile` and never reach
+    // `qualityEvidence`. Both being called is what proves the batch ran in
+    // parallel rather than one call at a time.
+    (prisma as any).portfolioFile.findFirst.mockResolvedValue({
+      portfolio: { student: { userId: 'student-user', unitId: 'unit-1' }, isShowcase: false },
+    });
+
+    await findBlobOwner('cipansor-documents', 'https://store/cipansor-documents/x.pdf');
+
+    expect((prisma as any).portfolioFile.findFirst).toHaveBeenCalled();
+    expect((prisma as any).qualityEvidence.findFirst).toHaveBeenCalled();
+  });
+
+  it('keeps the exact probe priority order the serial implementation had', () => {
+    // The batch refactor must not reorder the owner probes: whichever record
+    // wins decides the authorization rule, and a reshuffle silently weakens or
+    // strengthens read access. This pins the order left-to-right, top to bottom.
+    const source = readFileSync(join(process.cwd(), 'src', 'utils', 'blob-owner.ts'), 'utf8');
+    const body = source.slice(
+      source.indexOf('const batches:'),
+      source.indexOf('for (const batch of batches)')
+    );
+    const order = [...body.matchAll(/^\s*const (\w+) = await /gm)].map((m) => m[1]);
+
+    expect(order).toEqual([
+      'letter',
+      'employeeDoc',
+      'studentDoc',
+      'portfolioFile',
+      'reportPhoto',
+      'paudPhoto',
+      'paudEvidence',
+      'registrantDoc',
+      'courseCert',
+      'qualityEvidence',
+      'studentPackage',
+      'achievement',
+      'book',
+      'asset',
+      'payment',
+      'donation',
+      'tahfidzRecord',
+      'muhadatsah',
+      'announcement',
+      'revocationRequest',
+      'student',
+      'boardMember',
+      'foundationDocument',
+      'employmentContract',
+      'alumni',
+      'course',
+      'extracurricular',
+      'canteenItem',
+      'muhadhoroh',
+      'researchProject',
+      'assetMaintenance',
+      'letterDispatch',
+      'calendarEvent',
+      'donationCampaign',
+      'kitab',
+      'unit',
+      'foundation',
+      'digitalCertificate',
+      'certificateVerification',
+      'studentNote',
+    ]);
+  });
+});
+
 describe('assignment unit vs home unit (BUG 1)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -300,6 +391,8 @@ describe('isBlobStillReferenced', () => {
  */
 const NON_BLOB_FIELDS: Record<string, string> = {
   'AlumniDonation.receiptNo': 'kwitansi number, not a file',
+  'BlobClaim.blobUrl':
+    'coordination key for the upload/discard handshake, not a stored blob reference (no owner to resolve and no record points at it)',
   'Book.fileType': 'MIME type string, not a URL',
   'Donation.receiptNumber': 'receipt number, not a file',
   'LetterRevocationRequest.signatureId': 'FK to a LetterSignature row',

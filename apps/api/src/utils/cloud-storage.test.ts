@@ -7,10 +7,8 @@ import {
   deleteFromCloudStorage,
   isAllowedContainer,
   cleanupBlobBestEffort,
-  deleteBlobIfStillOrphaned,
-  getBlobCreatedAt,
+
   getBlobUploaderId,
-  RACE_RECHECK_DELAY_MS,
   containerForDestination,
   isUploadDestination,
   UPLOAD_DESTINATIONS,
@@ -418,169 +416,6 @@ describe('deleteFromCloudStorage', () => {
   });
 });
 
-describe('deleteBlobIfStillOrphaned (upload→create race)', () => {
-  const originalEnv = process.env;
-
-  beforeEach(() => {
-    process.env = { ...originalEnv };
-    process.env.AZURE_STORAGE_CONNECTION_STRING = CONNECTION_STRING;
-    vi.clearAllMocks();
-    mockGetProperties.mockResolvedValue({
-      createdOn: undefined,
-      lastModified: undefined,
-    });
-  });
-
-  afterEach(() => {
-    process.env = originalEnv;
-  });
-
-  it('waits for the race window before re-probing', async () => {
-    // The delay is the whole point: it gives an in-flight create time to
-    // commit, so the re-probe is not just re-reading the same pre-create state.
-    vi.useFakeTimers();
-    try {
-      const recheck = vi.fn().mockResolvedValue(false);
-      const pending = deleteBlobIfStillOrphaned(
-        'cipansor-documents',
-        'orphan.pdf',
-        recheck,
-        RACE_RECHECK_DELAY_MS
-      );
-
-      // Before the delay elapses the re-probe has not run yet.
-      expect(recheck).not.toHaveBeenCalled();
-
-      // Settle probe, then the final probe that guards the delete (BUG 3).
-      await vi.advanceTimersByTimeAsync(RACE_RECHECK_DELAY_MS + 500);
-      await expect(pending).resolves.toBe(true);
-      expect(recheck).toHaveBeenCalledTimes(2);
-      expect(mockDeleteBlob).toHaveBeenCalledWith('orphan.pdf', {
-        deleteSnapshots: 'include',
-      });
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('does not delete when the re-probe finds a record that committed mid-flight', async () => {
-    // The upload→create race: the first probe (in the caller) saw an orphan,
-    // but by the time the delayed re-probe runs the record is committed.
-    // Deleting here would destroy a live document.
-    const recheck = vi.fn().mockResolvedValue(true);
-
-    await expect(
-      deleteBlobIfStillOrphaned('cipansor-documents', 'orphan.pdf', recheck, 0)
-    ).resolves.toBe(false);
-    expect(recheck).toHaveBeenCalledTimes(1);
-    expect(mockDeleteBlob).not.toHaveBeenCalled();
-  });
-
-  it('cancels the delete when the create commits between the settle and final probe (BUG 3)', async () => {
-    // The strengthened guarantee: the settle probe (1) sees no record, but the
-    // create commits while the FINAL probe's own delay elapses, so the final
-    // probe (2) finds it and the irreversible delete is cancelled. This is the
-    // window a single probe could not see.
-    vi.useFakeTimers();
-    try {
-      const recheck = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
-      const pending = deleteBlobIfStillOrphaned(
-        'cipansor-documents',
-        'orphan.pdf',
-        recheck,
-        RACE_RECHECK_DELAY_MS
-      );
-
-      await vi.advanceTimersByTimeAsync(RACE_RECHECK_DELAY_MS + 500);
-      await expect(pending).resolves.toBe(false);
-      expect(recheck).toHaveBeenCalledTimes(2);
-      expect(mockDeleteBlob).not.toHaveBeenCalled();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('honours the soft age floor: a fresh blob keeps a window long enough for a create', async () => {
-    // A blob created a moment ago must still give an in-flight create the full
-    // window: the settle delay is measured from the blob's creation time, not
-    // from when the discard was invoked.
-    vi.useFakeTimers();
-    try {
-      const created = new Date(Date.now() - 500); // 500ms old
-      mockGetProperties.mockResolvedValue({ createdOn: created, lastModified: created });
-
-      const recheck = vi.fn().mockResolvedValue(false);
-      const pending = deleteBlobIfStillOrphaned(
-        'cipansor-documents',
-        'fresh.pdf',
-        recheck,
-        RACE_RECHECK_DELAY_MS
-      );
-
-      // 500ms less than the full window already elapsed, so the settle probe
-      // has not run yet.
-      expect(recheck).not.toHaveBeenCalled();
-
-      await vi.advanceTimersByTimeAsync(RACE_RECHECK_DELAY_MS + 500);
-      await expect(pending).resolves.toBe(true);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('deletes a blob that is still an orphan after the delay', async () => {
-    const recheck = vi.fn().mockResolvedValue(false);
-
-    await expect(
-      deleteBlobIfStillOrphaned('cipansor-documents', 'orphan.pdf', recheck, 0)
-    ).resolves.toBe(true);
-    expect(mockDeleteBlob).toHaveBeenCalledWith('orphan.pdf', {
-      deleteSnapshots: 'include',
-    });
-  });
-});
-
-describe('getBlobCreatedAt', () => {
-  const originalEnv = process.env;
-
-  beforeEach(() => {
-    process.env = { ...originalEnv };
-    vi.clearAllMocks();
-  });
-
-  afterEach(() => {
-    process.env = originalEnv;
-  });
-
-  it('returns null when Azure is not configured', async () => {
-    delete process.env.AZURE_STORAGE_CONNECTION_STRING;
-    await expect(getBlobCreatedAt('cipansor-documents', 'a.pdf')).resolves.toBeNull();
-  });
-
-  it('returns the blob creation time when available', async () => {
-    process.env.AZURE_STORAGE_CONNECTION_STRING = CONNECTION_STRING;
-    const created = new Date('2026-01-01T00:00:00Z');
-    mockGetProperties.mockResolvedValue({ createdOn: created, lastModified: created });
-
-    await expect(getBlobCreatedAt('cipansor-documents', 'a.pdf')).resolves.toEqual(created);
-  });
-
-  it('falls back to lastModified when createdOn is absent', async () => {
-    process.env.AZURE_STORAGE_CONNECTION_STRING = CONNECTION_STRING;
-    const modified = new Date('2026-02-01T00:00:00Z');
-    mockGetProperties.mockResolvedValue({ createdOn: undefined, lastModified: modified });
-
-    await expect(getBlobCreatedAt('cipansor-documents', 'a.pdf')).resolves.toEqual(modified);
-  });
-
-  it('returns null (fail-closed) when properties cannot be read', async () => {
-    process.env.AZURE_STORAGE_CONNECTION_STRING = CONNECTION_STRING;
-    mockGetProperties.mockRejectedValueOnce(new Error('Not found'));
-
-    await expect(getBlobCreatedAt('cipansor-documents', 'a.pdf')).resolves.toBeNull();
-  });
-});
-
 describe('getBlobUploaderId', () => {
   const originalEnv = process.env;
 
@@ -686,6 +521,33 @@ describe('cleanupBlobBestEffort', () => {
     await expect(
       cleanupBlobBestEffort('https://cipansorstore.blob.core.windows.net/cipansor-documents/a.pdf')
     ).resolves.toBe(false);
+  });
+
+  it('swallows a reference-probe failure after the record delete (BUG 2)', async () => {
+    // The probe is a DB query that runs AFTER the caller's row is gone. A throw
+    // here would fail a request whose delete already committed, and the retry
+    // would find no record left to delete — an unrecoverable-looking error for
+    // a cleanup that is supposed to be best-effort.
+    mockIsBlobStillReferenced.mockRejectedValueOnce(new Error('DB connection lost'));
+
+    await expect(
+      cleanupBlobBestEffort('https://cipansorstore.blob.core.windows.net/cipansor-documents/a.pdf')
+    ).resolves.toBe(false);
+
+    expect(mockDeleteBlob).not.toHaveBeenCalled();
+  });
+
+  it('never deletes a blob when the probe fails (fail-closed)', async () => {
+    // A probe that cannot prove "no record references this" must not be read as
+    // an orphan: the safe direction is to leave the blob rather than destroy a
+    // file a live record may still point at.
+    mockIsBlobStillReferenced.mockRejectedValueOnce(new Error('timeout'));
+
+    await cleanupBlobBestEffort(
+      'https://cipansorstore.blob.core.windows.net/cipansor-documents/maybe-live.pdf'
+    );
+
+    expect(mockDeleteBlob).not.toHaveBeenCalled();
   });
 });
 

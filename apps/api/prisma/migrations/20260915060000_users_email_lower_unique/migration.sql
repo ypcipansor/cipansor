@@ -15,11 +15,45 @@
 -- dan `db:deploy` tidak pernah menjalankan `db:normalize-emails`. Normalisasi
 -- di sini berarti urutan yang benar dijamin, di lingkungan mana pun.
 --
--- Bila masih ada dua baris dengan `lower(email)` yang sama, `CREATE UNIQUE
--- INDEX` di bawah gagal dan seluruh migrasi dibatalkan — dan itu memang
--- tujuannya: kegagalan itu sendiri adalah buktinya, dan lebih baik deploy
--- berhenti daripada dua akun bertabrakan tanpa disadari. Skrip
--- `db:normalize-emails` tetap ada untuk pemeriksaan dan laporan lebih awal.
+-- Bila masih ada dua baris dengan `lower(trim(email))` yang sama, hentikan
+-- migrasi DI SINI — sebelum `UPDATE` menyentuh apa pun — dengan pesan yang
+-- menyebut alamat dan id akunnya. Sebelumnya kegagalan baru muncul sebagai
+-- `unique_violation` dari `CREATE UNIQUE INDEX` setelah `UPDATE` berjalan,
+-- yang memberitahu operator bahwa ada tabrakan tetapi tidak akun mana yang
+-- bertabrakan dan pada tahap apa deploy berhenti. Skrip
+-- `db:normalize-emails` memakai kunci yang sama untuk pemeriksaan lebih awal.
+DO $$
+DECLARE
+  collisions text;
+BEGIN
+  -- Dua tingkat agregasi: `string_agg` per alamat dulu (di dalam subquery yang
+  -- di-`GROUP BY`), baru digabung jadi satu laporan. `string_agg(id, ...)` yang
+  -- bersarang langsung di dalam `string_agg(...)` ditolak Postgres
+  -- ("aggregate function calls cannot be nested"), sehingga migrasi ini gagal
+  -- bahkan pada basis data kosong.
+  SELECT string_agg(
+           format('  %s (akun: %s)', email, ids),
+           E'\n'
+           ORDER BY email
+         )
+    INTO collisions
+    FROM (
+      SELECT
+        lower(trim(email)) AS email,
+        string_agg(id, ', ' ORDER BY id) AS ids
+      FROM "users"
+      WHERE "email" IS NOT NULL
+      GROUP BY lower(trim(email))
+      HAVING count(*) > 1
+    ) AS conflicting;
+
+  IF collisions IS NOT NULL THEN
+    RAISE EXCEPTION
+      E'Tidak dapat menerapkan indeks unik e-mail: beberapa alamat dimiliki lebih dari satu akun.\n%\nGabungkan atau ubah akun-akun itu secara manual, jalankan `pnpm --filter api db:normalize-emails` untuk memverifikasi, lalu ulangi deploy.',
+      collisions;
+  END IF;
+END $$;
+
 UPDATE "users"
 SET "email" = lower(trim("email"))
 WHERE "email" IS NOT NULL AND "email" <> lower(trim("email"));

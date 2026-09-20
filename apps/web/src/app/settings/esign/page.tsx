@@ -12,7 +12,7 @@ import {
   Card, CardContent, CardDescription, CardHeader, CardTitle,
 } from "@/components/ui/card";
 import { useEsignRequests } from "@/hooks/use-esign";
-import { authFileUrl } from "@/lib/files";
+import { openAuthenticatedFile } from "@/lib/files";
 import { EsignKeyInventory } from "@/components/settings/esign-key-inventory";
 import { safeFormat } from "@/lib/date";
 import { id as idLocale } from "date-fns/locale";
@@ -240,17 +240,17 @@ export default function EsignRequestsPage() {
                     </p>
 
                     {hasKtp ? (
-                      <Button variant="outline" size="sm" asChild>
-                        <a
-                          href={authFileUrl(
-                            `/api/esign/identities/${r.user.id}/ktp`,
-                          )}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          <FileImage className="mr-2 h-4 w-4" />
-                          Buka Foto KTP
-                        </a>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          openAuthenticatedFile(
+                            `/esign/identities/${r.user.id}/ktp`,
+                          )
+                        }
+                      >
+                        <FileImage className="mr-2 h-4 w-4" />
+                        Buka Foto KTP
                       </Button>
                     ) : (
                       <p className="flex items-start gap-2 text-sm text-amber-800">

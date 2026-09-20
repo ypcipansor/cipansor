@@ -28,6 +28,7 @@ import {
   type LetterActor,
 } from '@/utils/letter-access';
 import { seesAllUnits } from '@/utils/resolve-unit-id';
+import { claimBlobsForRecord, releaseBlobClaims } from '@/utils/blob-claim';
 import {
   assertMayArchive,
   assertMayDispatch,
@@ -361,6 +362,25 @@ export const CorrespondenceService = {
     const academicYearId = activeYear?.id || 'DEFAULT';
 
     const result = await prisma.$transaction(async (tx) => {
+      // Claim every blob this letter will reference before writing it (BUG 4).
+      // A concurrent discard of one of these URLs holds a `DISCARD` claim and
+      // would otherwise be free to delete the blob between its probe and its
+      // delete while we are committing. Claim, insert the letter + attachments,
+      // then release in the SAME transaction: the committed record is the
+      // durable protection, and the claim only needs to serialize the two
+      // writers. If any URL is already claimed, the create fails rather than
+      // saving a reference to a blob someone else may be deleting.
+      const letterBlobUrls = [
+        data.fileUrl,
+        ...(data.attachments ?? []).map((att) => att.fileUrl),
+      ];
+      const claimed = await claimBlobsForRecord(letterBlobUrls, userId, tx);
+      if (!claimed) {
+        throw Errors.conflict(
+          'Berkas lampiran sedang diproses pihak lain; unggah ulang berkas tersebut'
+        );
+      }
+
       // Generate number inside transaction so rollback cancels increment on failure
       let agendaNumber = data.agendaNumber;
       let letterNumber = data.letterNumber;
@@ -526,6 +546,11 @@ export const CorrespondenceService = {
           }
         }
       }
+
+      // The letter and its attachments are written; release the claims so the
+      // blob URLs become claimable again. In the same transaction, so either the
+      // records and the release both commit, or neither does.
+      await releaseBlobClaims(letterBlobUrls, userId, tx);
 
       return { letter, createdDispositionsToNotify };
     });

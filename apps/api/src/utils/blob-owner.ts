@@ -75,10 +75,31 @@ export type BlobOwner =
   /** Intentionally public — e.g. a portfolio marked `isShowcase`. */
   | { kind: 'public' };
 
+/**
+ * One stored reference to a blob, or the set of equivalent spellings of it.
+ * See {@link findBlobOwnerByRefs} for why more than one is needed.
+ */
+export type BlobRef = string | readonly string[];
+
+/** `where` fragment matching `column` against one reference or any of several. */
+function refWhere(column: string, ref: BlobRef): Record<string, unknown> {
+  return Array.isArray(ref) ? { [column]: { in: ref } } : { [column]: ref };
+}
+
+/** `where` fragment for a `String[]` column containing one reference or any of several. */
+function refHas(column: string, ref: BlobRef): Record<string, unknown> {
+  return Array.isArray(ref) ? { [column]: { hasSome: ref } } : { [column]: { has: ref } };
+}
+
+/** Normalise a candidate list: one entry stays a scalar for the indexed path. */
+function normalizeRef(refs: readonly string[]): BlobRef {
+  return refs.length === 1 ? refs[0] : refs;
+}
+
 /** Locate a student's owning user id + unit, for a personal-document blob. */
-async function ownerForStudentDocument(blobUrl: string): Promise<BlobOwner | null> {
+async function ownerForStudentDocument(ref: BlobRef): Promise<BlobOwner | null> {
   const doc = await prisma.studentDocument.findFirst({
-    where: { fileUrl: blobUrl },
+    where: refWhere('fileUrl', ref),
     select: { student: { select: { userId: true, unitId: true } } },
   });
   if (doc) {
@@ -92,16 +113,16 @@ function unitOrAuthenticatedOwner(unitId: UnitId): BlobOwner {
   return unitId ? { kind: 'unit', unitId } : { kind: 'authenticated' };
 }
 
-/** Locate the letter or letter attachment that references `blobUrl`. */
-async function ownerForLetter(blobUrl: string): Promise<BlobOwner | null> {
+/** Locate the letter or letter attachment that references `ref`. */
+async function ownerForLetter(ref: BlobRef): Promise<BlobOwner | null> {
   const letter = await prisma.letter.findFirst({
-    where: { fileUrl: blobUrl },
+    where: refWhere('fileUrl', ref),
     select: { id: true },
   });
   if (letter) return { kind: 'letter', letterId: letter.id };
 
   const attachment = await prisma.letterAttachment.findFirst({
-    where: { fileUrl: blobUrl },
+    where: refWhere('fileUrl', ref),
     select: { letterId: true },
   });
   if (attachment) return { kind: 'letter', letterId: attachment.letterId };
@@ -126,349 +147,510 @@ export async function findBlobOwner(
   containerName: string,
   blobUrl: string
 ): Promise<BlobOwner | null> {
+  return findBlobOwnerByRefs(containerName, [blobUrl]);
+}
+
+/**
+ * {@link findBlobOwner} over any of several equivalent stored references.
+ *
+ * A single physical upload can be stored in more than one spelling: the local
+ * provider persists a host-relative `/uploads/<file>` path, while the same
+ * recording may also be addressed absolutely (`https://host/uploads/<file>`),
+ * and a URL persisted before a host change may name a different origin for the
+ * same blob. The probes below are therefore parameterised by every reference the
+ * caller considers equivalent (see `blobReferenceCandidates`), and every
+ * `where` clause compares against the whole set. Passing one reference keeps the
+ * original behaviour.
+ *
+ * The first record type that matches in priority order still decides the rule:
+ * the widening adds address spellings, not record types, so it cannot change
+ * which owner wins when one URL is referenced by several records.
+ */
+export async function findBlobOwnerByRefs(
+  containerName: string,
+  refs: readonly string[]
+): Promise<BlobOwner | null> {
+  if (refs.length === 0) return null;
+  // The probes compare a single column against each candidate. A one-element
+  // list stays a scalar, which keeps `where: { fileUrl: <url> }` on the fast,
+  // index-friendly path and leaves a single-URL lookup byte-for-byte unchanged.
+  const ref = normalizeRef(refs);
   if (containerName === 'e-office-documents') {
-    return ownerForLetter(blobUrl);
+    return ownerForLetter(ref);
   }
 
   if (containerName === 'student-documents') {
-    return ownerForStudentDocument(blobUrl);
+    return ownerForStudentDocument(ref);
   }
 
   if (containerName !== 'cipansor-documents') return null;
 
   // ---- cipansor-documents: the shared default container ----
-  // Every distinct record type that can land here is tried in turn; the first
-  // match decides the authorization rule.
+  //
+  // Every distinct record type that can land here is tried, and the
+  // highest-priority match decides the authorization rule. The probes are
+  // grouped into ordered batches that run in parallel: the probes are
+  // independent `findFirst`s on different tables, so 40 of them serially is
+  // 40 round trips (~30ms measured) where a bounded number of parallel
+  // round trips does the same work. Within a batch the winner is the first
+  // non-null in array order, and batches run in order, so the priority
+  // order below is exactly the one a fully serial version had.
   //
   // Correspondence is probed here too, not only in `e-office-documents`. The
   // upload middleware routes every upload to this container (its default), so
   // a letter attachment uploaded through it lands here; searching only
   // `e-office-documents` meant a letter file had "no owner" and its SAS request
   // 403'd even though the record existed and the caller could read it.
-  const letter = await ownerForLetter(blobUrl);
-  if (letter) return letter;
-
-  const employeeDoc = await prisma.employeeDocument.findFirst({
-    where: { fileUrl: blobUrl },
-    select: { userId: true, user: { select: ASSIGNMENT_UNIT_SELECT } },
-  });
-  if (employeeDoc) {
-    return {
-      kind: 'user-document',
-      userId: employeeDoc.userId,
-      unitId: assignmentUnit(employeeDoc.user),
-    };
-  }
-
-  const studentDoc = await ownerForStudentDocument(blobUrl);
-  if (studentDoc) return studentDoc;
-
-  const portfolioFile = await prisma.portfolioFile.findFirst({
-    where: { fileUrl: blobUrl },
-    select: {
-      portfolio: {
-        select: { student: { select: { userId: true, unitId: true } }, isShowcase: true },
+  const batches: Array<Array<() => Promise<BlobOwner | null>>> = [
+    [
+      async () => {
+        const letter = await ownerForLetter(ref);
+        if (letter) return letter;
+        return null;
       },
-    },
-  });
-  if (portfolioFile) {
-    if (portfolioFile.portfolio.isShowcase) return { kind: 'public' };
-    return {
-      kind: 'user-document',
-      userId: portfolioFile.portfolio.student.userId,
-      unitId: portfolioFile.portfolio.student.unitId,
-    };
-  }
+      async () => {
+        const employeeDoc = await prisma.employeeDocument.findFirst({
+          where: { ...refWhere('fileUrl', ref) },
+          select: { userId: true, user: { select: ASSIGNMENT_UNIT_SELECT } },
+        });
+        if (employeeDoc) {
+          return {
+            kind: 'user-document',
+            userId: employeeDoc.userId,
+            unitId: assignmentUnit(employeeDoc.user),
+          };
+        }
+        return null;
+      },
+      async () => {
+        const studentDoc = await ownerForStudentDocument(ref);
+        if (studentDoc) return studentDoc;
+        return null;
+      },
+    ],
+    [
+      async () => {
+        const portfolioFile = await prisma.portfolioFile.findFirst({
+          where: { ...refWhere('fileUrl', ref) },
+          select: {
+            portfolio: {
+              select: { student: { select: { userId: true, unitId: true } }, isShowcase: true },
+            },
+          },
+        });
+        if (portfolioFile) {
+          if (portfolioFile.portfolio.isShowcase) return { kind: 'public' };
+          return {
+            kind: 'user-document',
+            userId: portfolioFile.portfolio.student.userId,
+            unitId: portfolioFile.portfolio.student.unitId,
+          };
+        }
+        return null;
+      },
+      async () => {
+        const reportPhoto = await prisma.dailyReportPhoto.findFirst({
+          where: { ...refWhere('photoUrl', ref) },
+          select: { report: { select: { unitId: true, student: { select: { userId: true } } } } },
+        });
+        if (reportPhoto) {
+          return { kind: 'unit', unitId: reportPhoto.report.unitId };
+        }
+        return null;
+      },
+      async () => {
+        const paudPhoto = await prisma.pAUDReportPhoto.findFirst({
+          where: { ...refWhere('photoUrl', ref) },
+          select: { report: { select: { unitId: true } } },
+        });
+        if (paudPhoto) return { kind: 'unit', unitId: paudPhoto.report.unitId };
+        return null;
+      },
+      async () => {
+        const paudEvidence = await prisma.pAUDAssessmentEvidence.findFirst({
+          where: { ...refWhere('fileUrl', ref) },
+          select: { assessment: { select: { unitId: true } } },
+        });
+        if (paudEvidence) return { kind: 'unit', unitId: paudEvidence.assessment.unitId };
+        return null;
+      },
+      async () => {
+        const registrantDoc = await prisma.registrantDocument.findFirst({
+          where: { ...refWhere('fileUrl', ref) },
+          select: { registrant: { select: { admissionPeriod: { select: { unitId: true } } } } },
+        });
+        if (registrantDoc) {
+          return { kind: 'unit', unitId: registrantDoc.registrant.admissionPeriod.unitId };
+        }
+        return null;
+      },
+      async () => {
+        const courseCert = await prisma.courseCertificate.findFirst({
+          where: { ...refWhere('fileUrl', ref) },
+          select: { enrollment: { select: { course: { select: { unitId: true } } } } },
+        });
+        if (courseCert) return { kind: 'unit', unitId: courseCert.enrollment.course.unitId };
+        return null;
+      },
+      async () => {
+        const qualityEvidence = await prisma.qualityEvidence.findFirst({
+          where: { ...refWhere('fileUrl', ref) },
+          select: { unitId: true },
+        });
+        if (qualityEvidence) return { kind: 'unit', unitId: qualityEvidence.unitId };
+        return null;
+      },
+    ],
+    [
+      async () => {
+        const studentPackage = await prisma.studentPackage.findFirst({
+          where: { ...refWhere('photoUrl', ref) },
+          select: { unitId: true },
+        });
+        if (studentPackage) return { kind: 'unit', unitId: studentPackage.unitId };
+        return null;
+      },
+      async () => {
+        const achievement = await prisma.extracurricularAchievement.findFirst({
+          where: { OR: [refWhere('certificateUrl', ref), refWhere('photoUrl', ref)] },
+          select: { extracurricular: { select: { unitId: true } } },
+        });
+        if (achievement) return { kind: 'unit', unitId: achievement.extracurricular.unitId };
+        return null;
+      },
+      async () => {
+        const book = await prisma.book.findFirst({
+          where: { OR: [refWhere('coverUrl', ref), refWhere('fileUrl', ref)] },
+          select: { unitId: true },
+        });
+        if (book) return { kind: 'unit', unitId: book.unitId };
+        return null;
+      },
+      async () => {
+        const asset = await prisma.asset.findFirst({
+          where: { ...refWhere('photoUrl', ref) },
+          select: { unitId: true },
+        });
+        if (asset) return { kind: 'unit', unitId: asset.unitId };
 
-  const reportPhoto = await prisma.dailyReportPhoto.findFirst({
-    where: { photoUrl: blobUrl },
-    select: { report: { select: { unitId: true, student: { select: { userId: true } } } } },
-  });
-  if (reportPhoto) {
-    return { kind: 'unit', unitId: reportPhoto.report.unitId };
-  }
+        // A parent/student's transfer proof (Payment.proofUrl) is personal financial
+        // data: the student it pays for, a finance verifier in their unit, or a
+        // foundation role may read it. Deliberately NOT `user-document`: the unit
+        // treasurer verifies payments but is not a personnel-record administrator, so
+        // the employee-document rule refused them the proof they judge.
+        return null;
+      },
+      async () => {
+        const payment = await prisma.payment.findFirst({
+          where: { ...refWhere('proofUrl', ref) },
+          select: { invoice: { select: { student: { select: { userId: true, unitId: true } } } } },
+        });
+        if (payment) {
+          return {
+            kind: 'payment-proof',
+            studentUserId: payment.invoice.student.userId,
+            unitId: payment.invoice.student.unitId,
+          };
+        }
 
-  const paudPhoto = await prisma.pAUDReportPhoto.findFirst({
-    where: { photoUrl: blobUrl },
-    select: { report: { select: { unitId: true } } },
-  });
-  if (paudPhoto) return { kind: 'unit', unitId: paudPhoto.report.unitId };
+        // Donation transfer proof. A donation may be foundation-wide (no unit), in
+        // which case only a foundation role may read it.
+        return null;
+      },
+      async () => {
+        const donation = await prisma.donation.findFirst({
+          where: { ...refWhere('paymentProof', ref) },
+          select: { unitId: true },
+        });
+        if (donation) return { kind: 'unit', unitId: donation.unitId };
 
-  const paudEvidence = await prisma.pAUDAssessmentEvidence.findFirst({
-    where: { fileUrl: blobUrl },
-    select: { assessment: { select: { unitId: true } } },
-  });
-  if (paudEvidence) return { kind: 'unit', unitId: paudEvidence.assessment.unitId };
+        // E-Simaan recitation recording: personal to the santri it belongs to.
+        return null;
+      },
+      async () => {
+        const tahfidzRecord = await prisma.tahfidzRecord.findFirst({
+          where: { ...refWhere('audioUrl', ref) },
+          select: { student: { select: { userId: true, unitId: true } } },
+        });
+        if (tahfidzRecord) {
+          return {
+            kind: 'user-document',
+            userId: tahfidzRecord.student.userId,
+            unitId: tahfidzRecord.student.unitId,
+          };
+        }
+        return null;
+      },
+    ],
+    [
+      async () => {
+        const muhadatsah = await prisma.muhadatsah.findFirst({
+          where: { ...refWhere('recordingUrl', ref) },
+          select: { unitId: true },
+        });
+        if (muhadatsah) return { kind: 'unit', unitId: muhadatsah.unitId };
 
-  const registrantDoc = await prisma.registrantDocument.findFirst({
-    where: { fileUrl: blobUrl },
-    select: { registrant: { select: { admissionPeriod: { select: { unitId: true } } } } },
-  });
-  if (registrantDoc) {
-    return { kind: 'unit', unitId: registrantDoc.registrant.admissionPeriod.unitId };
-  }
+        // Announcement attachment. `unitId = null` means "all units": an
+        // announcement every user is meant to receive. Treating that as an unowned
+        // unit blob made `actorInUnit` reject everyone but a cross-unit role, so the
+        // attachment 403'd for the recipients the announcement was addressed to.
+        return null;
+      },
+      async () => {
+        const announcement = await prisma.announcement.findFirst({
+          where: { ...refWhere('attachmentUrl', ref) },
+          select: { unitId: true },
+        });
+        if (announcement) return unitOrAuthenticatedOwner(announcement.unitId);
 
-  const courseCert = await prisma.courseCertificate.findFirst({
-    where: { fileUrl: blobUrl },
-    select: { enrollment: { select: { course: { select: { unitId: true } } } } },
-  });
-  if (courseCert) return { kind: 'unit', unitId: courseCert.enrollment.course.unitId };
+        // A revocation request's supporting document shares the letter's scope.
+        return null;
+      },
+      async () => {
+        const revocationRequest = await prisma.letterRevocationRequest.findFirst({
+          where: { ...refWhere('attachmentUrl', ref) },
+          select: { letterId: true },
+        });
+        if (revocationRequest) return { kind: 'letter', letterId: revocationRequest.letterId };
 
-  const qualityEvidence = await prisma.qualityEvidence.findFirst({
-    where: { fileUrl: blobUrl },
-    select: { unitId: true },
-  });
-  if (qualityEvidence) return { kind: 'unit', unitId: qualityEvidence.unitId };
+        // A student's own photo is personal data: reachable by the student
+        // themselves, a personnel administrator in their unit, or foundation only.
+        return null;
+      },
+      async () => {
+        const student = await prisma.student.findFirst({
+          where: { ...refWhere('photoUrl', ref) },
+          select: { userId: true, unitId: true },
+        });
+        if (student) {
+          return { kind: 'user-document', userId: student.userId, unitId: student.unitId };
+        }
+        return null;
+      },
+      async () => {
+        const boardMember = await prisma.boardMember.findFirst({
+          where: { ...refWhere('photoUrl', ref) },
+          select: { id: true },
+        });
+        if (boardMember) return { kind: 'foundation' };
+        return null;
+      },
+      async () => {
+        const foundationDocument = await prisma.foundationDocument.findFirst({
+          where: { ...refWhere('fileUrl', ref) },
+          select: { id: true },
+        });
+        if (foundationDocument) return { kind: 'foundation' };
 
-  const studentPackage = await prisma.studentPackage.findFirst({
-    where: { photoUrl: blobUrl },
-    select: { unitId: true },
-  });
-  if (studentPackage) return { kind: 'unit', unitId: studentPackage.unitId };
+        // ---- Fields found by auditing every stored blob-URL field in the schema ----
+        // (flag 9). Each of these the upload middleware can persist — they share the
+        // default private container — but without a probe the SAS endpoint treated
+        // the blob as unowned and refused every signed-in consumer.
 
-  const achievement = await prisma.extracurricularAchievement.findFirst({
-    where: { OR: [{ certificateUrl: blobUrl }, { photoUrl: blobUrl }] },
-    select: { extracurricular: { select: { unitId: true } } },
-  });
-  if (achievement) return { kind: 'unit', unitId: achievement.extracurricular.unitId };
+        // An employment contract scan is personal: same rule as an employee document.
+        return null;
+      },
+      async () => {
+        const employmentContract = await prisma.employmentContract.findFirst({
+          where: { ...refWhere('documentUrl', ref) },
+          select: { userId: true, user: { select: ASSIGNMENT_UNIT_SELECT } },
+        });
+        if (employmentContract) {
+          return {
+            kind: 'user-document',
+            userId: employmentContract.userId,
+            unitId: assignmentUnit(employmentContract.user),
+          };
+        }
 
-  const book = await prisma.book.findFirst({
-    where: { OR: [{ coverUrl: blobUrl }, { fileUrl: blobUrl }] },
-    select: { unitId: true },
-  });
-  if (book) return { kind: 'unit', unitId: book.unitId };
+        // Alumni photo: an alumnus belongs to a unit, so a unit-owned record.
+        return null;
+      },
+    ],
+    [
+      async () => {
+        const alumni = await prisma.alumni.findFirst({
+          where: { ...refWhere('photo', ref) },
+          select: { unitId: true },
+        });
+        if (alumni) return { kind: 'unit', unitId: alumni.unitId };
 
-  const asset = await prisma.asset.findFirst({
-    where: { photoUrl: blobUrl },
-    select: { unitId: true },
-  });
-  if (asset) return { kind: 'unit', unitId: asset.unitId };
+        // Course / extracurricular / canteen-item images are catalogue media owned by
+        // a unit; extension and video likewise.
+        return null;
+      },
+      async () => {
+        const course = await prisma.course.findFirst({
+          where: { ...refWhere('imageUrl', ref) },
+          select: { unitId: true },
+        });
+        if (course) return { kind: 'unit', unitId: course.unitId };
+        return null;
+      },
+      async () => {
+        const extracurricular = await prisma.extracurricular.findFirst({
+          where: { ...refWhere('imageUrl', ref) },
+          select: { unitId: true },
+        });
+        if (extracurricular) return { kind: 'unit', unitId: extracurricular.unitId };
+        return null;
+      },
+      async () => {
+        const canteenItem = await prisma.canteenItem.findFirst({
+          where: { ...refWhere('imageUrl', ref) },
+          select: { unitId: true },
+        });
+        if (canteenItem) return { kind: 'unit', unitId: canteenItem.unitId };
+        return null;
+      },
+      async () => {
+        const muhadhoroh = await prisma.muhadhoroh.findFirst({
+          where: { ...refWhere('videoUrl', ref) },
+          select: { unitId: true },
+        });
+        if (muhadhoroh) return { kind: 'unit', unitId: muhadhoroh.unitId };
+        return null;
+      },
+      async () => {
+        const researchProject = await prisma.researchProject.findFirst({
+          where: { ...refWhere('publishedUrl', ref) },
+          select: { unitId: true },
+        });
+        if (researchProject) return { kind: 'unit', unitId: researchProject.unitId };
 
-  // A parent/student's transfer proof (Payment.proofUrl) is personal financial
-  // data: the student it pays for, a finance verifier in their unit, or a
-  // foundation role may read it. Deliberately NOT `user-document`: the unit
-  // treasurer verifies payments but is not a personnel-record administrator, so
-  // the employee-document rule refused them the proof they judge.
-  const payment = await prisma.payment.findFirst({
-    where: { proofUrl: blobUrl },
-    select: { invoice: { select: { student: { select: { userId: true, unitId: true } } } } },
-  });
-  if (payment) {
-    return {
-      kind: 'payment-proof',
-      studentUserId: payment.invoice.student.userId,
-      unitId: payment.invoice.student.unitId,
-    };
-  }
+        // A maintenance invoice belongs to the asset it was filed against.
+        return null;
+      },
+      async () => {
+        const assetMaintenance = await prisma.assetMaintenance.findFirst({
+          where: { ...refWhere('invoiceUrl', ref) },
+          select: { asset: { select: { unitId: true } } },
+        });
+        if (assetMaintenance) return { kind: 'unit', unitId: assetMaintenance.asset.unitId };
 
-  // Donation transfer proof. A donation may be foundation-wide (no unit), in
-  // which case only a foundation role may read it.
-  const donation = await prisma.donation.findFirst({
-    where: { paymentProof: blobUrl },
-    select: { unitId: true },
-  });
-  if (donation) return { kind: 'unit', unitId: donation.unitId };
+        // A dispatch receipt shares the scope of the letter it proves delivery of.
+        return null;
+      },
+    ],
+    [
+      async () => {
+        const letterDispatch = await prisma.letterDispatch.findFirst({
+          where: { ...refWhere('receiptUrl', ref) },
+          select: { letterId: true },
+        });
+        if (letterDispatch) return { kind: 'letter', letterId: letterDispatch.letterId };
 
-  // E-Simaan recitation recording: personal to the santri it belongs to.
-  const tahfidzRecord = await prisma.tahfidzRecord.findFirst({
-    where: { audioUrl: blobUrl },
-    select: { student: { select: { userId: true, unitId: true } } },
-  });
-  if (tahfidzRecord) {
-    return {
-      kind: 'user-document',
-      userId: tahfidzRecord.student.userId,
-      unitId: tahfidzRecord.student.unitId,
-    };
-  }
+        // A calendar's meeting link: `unitId = null` means every unit may see it.
+        return null;
+      },
+      async () => {
+        const calendarEvent = await prisma.calendarEvent.findFirst({
+          where: { ...refWhere('onlineUrl', ref) },
+          select: { unitId: true },
+        });
+        if (calendarEvent) return unitOrAuthenticatedOwner(calendarEvent.unitId);
 
-  const muhadatsah = await prisma.muhadatsah.findFirst({
-    where: { recordingUrl: blobUrl },
-    select: { unitId: true },
-  });
-  if (muhadatsah) return { kind: 'unit', unitId: muhadatsah.unitId };
+        // Campaign image: a foundation-wide campaign (null unit) is readable by all.
+        return null;
+      },
+      async () => {
+        const donationCampaign = await prisma.donationCampaign.findFirst({
+          where: { ...refWhere('imageUrl', ref) },
+          select: { unitId: true },
+        });
+        if (donationCampaign) return unitOrAuthenticatedOwner(donationCampaign.unitId);
 
-  // Announcement attachment. `unitId = null` means "all units": an
-  // announcement every user is meant to receive. Treating that as an unowned
-  // unit blob made `actorInUnit` reject everyone but a cross-unit role, so the
-  // attachment 403'd for the recipients the announcement was addressed to.
-  const announcement = await prisma.announcement.findFirst({
-    where: { attachmentUrl: blobUrl },
-    select: { unitId: true },
-  });
-  if (announcement) return unitOrAuthenticatedOwner(announcement.unitId);
+        // Branding / catalog media with no unit owner: any signed-in user displays it.
+        return null;
+      },
+      async () => {
+        const kitab = await prisma.kitabKuning.findFirst({
+          where: { ...refWhere('coverUrl', ref) },
+          select: { id: true },
+        });
+        if (kitab) return { kind: 'authenticated' };
+        return null;
+      },
+      async () => {
+        const unit = await prisma.unit.findFirst({
+          where: { ...refWhere('logoUrl', ref) },
+          select: { id: true },
+        });
+        if (unit) return { kind: 'authenticated' };
+        return null;
+      },
+      async () => {
+        const foundation = await prisma.foundation.findFirst({
+          where: { ...refWhere('logoUrl', ref) },
+          select: { id: true },
+        });
+        if (foundation) return { kind: 'authenticated' };
 
-  // A revocation request's supporting document shares the letter's scope.
-  const revocationRequest = await prisma.letterRevocationRequest.findFirst({
-    where: { attachmentUrl: blobUrl },
-    select: { letterId: true },
-  });
-  if (revocationRequest) return { kind: 'letter', letterId: revocationRequest.letterId };
+        // A digital certificate's stored artefacts (PDF, signature image, thumbnail)
+        // belong to the certificate's student. Nothing writes these fields today —
+        // certificates render from data rather than a stored PDF — but they are
+        // `String?` URL columns, so a future writer must not be a silent 403.
+        return null;
+      },
+      async () => {
+        const digitalCertificate = await prisma.digitalCertificate.findFirst({
+          where: {
+            OR: [
+              refWhere('pdfUrl', ref),
+              refWhere('signatureUrl', ref),
+              refWhere('thumbnailUrl', ref),
+            ],
+          },
+          select: { student: { select: { userId: true, unitId: true } } },
+        });
+        if (digitalCertificate) {
+          return {
+            kind: 'user-document',
+            userId: digitalCertificate.student.userId,
+            unitId: digitalCertificate.student.unitId,
+          };
+        }
 
-  // A student's own photo is personal data: reachable by the student
-  // themselves, a personnel administrator in their unit, or foundation only.
-  const student = await prisma.student.findFirst({
-    where: { photoUrl: blobUrl },
-    select: { userId: true, unitId: true },
-  });
-  if (student) {
-    return { kind: 'user-document', userId: student.userId, unitId: student.unitId };
-  }
+        // `verificationUrl` is built from `config.publicSiteUrl` — a public link, not
+        // a private upload — so it is readable by any signed-in user.
+        return null;
+      },
+    ],
+    [
+      async () => {
+        const certificateVerification = await prisma.digitalCertificate.findFirst({
+          where: { ...refWhere('verificationUrl', ref) },
+          select: { id: true },
+        });
+        if (certificateVerification) return { kind: 'authenticated' };
 
-  const boardMember = await prisma.boardMember.findFirst({
-    where: { photoUrl: blobUrl },
-    select: { id: true },
-  });
-  if (boardMember) return { kind: 'foundation' };
+        // A homeroom note's attachments are a `String[]` of URLs about one student.
+        // Same personal-document rule as that student's own documents. Nothing
+        // persists these today, but the field is a URL list the upload middleware
+        // could populate, so a future writer must not become a silent 403.
+        return null;
+      },
+      async () => {
+        const studentNote = await prisma.studentNote.findFirst({
+          where: { ...refHas('attachments', ref) },
+          select: { student: { select: { userId: true, unitId: true } } },
+        });
+        if (studentNote) {
+          return {
+            kind: 'user-document',
+            userId: studentNote.student.userId,
+            unitId: studentNote.student.unitId,
+          };
+        }
+        return null;
+      },
+    ],
+  ];
 
-  const foundationDocument = await prisma.foundationDocument.findFirst({
-    where: { fileUrl: blobUrl },
-    select: { id: true },
-  });
-  if (foundationDocument) return { kind: 'foundation' };
-
-  // ---- Fields found by auditing every stored blob-URL field in the schema ----
-  // (flag 9). Each of these the upload middleware can persist — they share the
-  // default private container — but without a probe the SAS endpoint treated
-  // the blob as unowned and refused every signed-in consumer.
-
-  // An employment contract scan is personal: same rule as an employee document.
-  const employmentContract = await prisma.employmentContract.findFirst({
-    where: { documentUrl: blobUrl },
-    select: { userId: true, user: { select: ASSIGNMENT_UNIT_SELECT } },
-  });
-  if (employmentContract) {
-    return {
-      kind: 'user-document',
-      userId: employmentContract.userId,
-      unitId: assignmentUnit(employmentContract.user),
-    };
-  }
-
-  // Alumni photo: an alumnus belongs to a unit, so a unit-owned record.
-  const alumni = await prisma.alumni.findFirst({
-    where: { photo: blobUrl },
-    select: { unitId: true },
-  });
-  if (alumni) return { kind: 'unit', unitId: alumni.unitId };
-
-  // Course / extracurricular / canteen-item images are catalogue media owned by
-  // a unit; extension and video likewise.
-  const course = await prisma.course.findFirst({
-    where: { imageUrl: blobUrl },
-    select: { unitId: true },
-  });
-  if (course) return { kind: 'unit', unitId: course.unitId };
-
-  const extracurricular = await prisma.extracurricular.findFirst({
-    where: { imageUrl: blobUrl },
-    select: { unitId: true },
-  });
-  if (extracurricular) return { kind: 'unit', unitId: extracurricular.unitId };
-
-  const canteenItem = await prisma.canteenItem.findFirst({
-    where: { imageUrl: blobUrl },
-    select: { unitId: true },
-  });
-  if (canteenItem) return { kind: 'unit', unitId: canteenItem.unitId };
-
-  const muhadhoroh = await prisma.muhadhoroh.findFirst({
-    where: { videoUrl: blobUrl },
-    select: { unitId: true },
-  });
-  if (muhadhoroh) return { kind: 'unit', unitId: muhadhoroh.unitId };
-
-  const researchProject = await prisma.researchProject.findFirst({
-    where: { publishedUrl: blobUrl },
-    select: { unitId: true },
-  });
-  if (researchProject) return { kind: 'unit', unitId: researchProject.unitId };
-
-  // A maintenance invoice belongs to the asset it was filed against.
-  const assetMaintenance = await prisma.assetMaintenance.findFirst({
-    where: { invoiceUrl: blobUrl },
-    select: { asset: { select: { unitId: true } } },
-  });
-  if (assetMaintenance) return { kind: 'unit', unitId: assetMaintenance.asset.unitId };
-
-  // A dispatch receipt shares the scope of the letter it proves delivery of.
-  const letterDispatch = await prisma.letterDispatch.findFirst({
-    where: { receiptUrl: blobUrl },
-    select: { letterId: true },
-  });
-  if (letterDispatch) return { kind: 'letter', letterId: letterDispatch.letterId };
-
-  // A calendar's meeting link: `unitId = null` means every unit may see it.
-  const calendarEvent = await prisma.calendarEvent.findFirst({
-    where: { onlineUrl: blobUrl },
-    select: { unitId: true },
-  });
-  if (calendarEvent) return unitOrAuthenticatedOwner(calendarEvent.unitId);
-
-  // Campaign image: a foundation-wide campaign (null unit) is readable by all.
-  const donationCampaign = await prisma.donationCampaign.findFirst({
-    where: { imageUrl: blobUrl },
-    select: { unitId: true },
-  });
-  if (donationCampaign) return unitOrAuthenticatedOwner(donationCampaign.unitId);
-
-  // Branding / catalog media with no unit owner: any signed-in user displays it.
-  const kitab = await prisma.kitabKuning.findFirst({
-    where: { coverUrl: blobUrl },
-    select: { id: true },
-  });
-  if (kitab) return { kind: 'authenticated' };
-
-  const unit = await prisma.unit.findFirst({
-    where: { logoUrl: blobUrl },
-    select: { id: true },
-  });
-  if (unit) return { kind: 'authenticated' };
-
-  const foundation = await prisma.foundation.findFirst({
-    where: { logoUrl: blobUrl },
-    select: { id: true },
-  });
-  if (foundation) return { kind: 'authenticated' };
-
-  // A digital certificate's stored artefacts (PDF, signature image, thumbnail)
-  // belong to the certificate's student. Nothing writes these fields today —
-  // certificates render from data rather than a stored PDF — but they are
-  // `String?` URL columns, so a future writer must not be a silent 403.
-  const digitalCertificate = await prisma.digitalCertificate.findFirst({
-    where: { OR: [{ pdfUrl: blobUrl }, { signatureUrl: blobUrl }, { thumbnailUrl: blobUrl }] },
-    select: { student: { select: { userId: true, unitId: true } } },
-  });
-  if (digitalCertificate) {
-    return {
-      kind: 'user-document',
-      userId: digitalCertificate.student.userId,
-      unitId: digitalCertificate.student.unitId,
-    };
-  }
-
-  // `verificationUrl` is built from `config.publicSiteUrl` — a public link, not
-  // a private upload — so it is readable by any signed-in user.
-  const certificateVerification = await prisma.digitalCertificate.findFirst({
-    where: { verificationUrl: blobUrl },
-    select: { id: true },
-  });
-  if (certificateVerification) return { kind: 'authenticated' };
-
-  // A homeroom note's attachments are a `String[]` of URLs about one student.
-  // Same personal-document rule as that student's own documents. Nothing
-  // persists these today, but the field is a URL list the upload middleware
-  // could populate, so a future writer must not become a silent 403.
-  const studentNote = await prisma.studentNote.findFirst({
-    where: { attachments: { has: blobUrl } },
-    select: { student: { select: { userId: true, unitId: true } } },
-  });
-  if (studentNote) {
-    return {
-      kind: 'user-document',
-      userId: studentNote.student.userId,
-      unitId: studentNote.student.unitId,
-    };
+  for (const batch of batches) {
+    const results = await Promise.all(batch.map((probe) => probe()));
+    const match = results.find((owner): owner is BlobOwner => owner !== null);
+    if (match) return match;
   }
 
   return null;
@@ -691,4 +873,33 @@ export async function isBlobStillReferenced(blobUrl: string): Promise<boolean> {
     if (count > 0) return true;
   }
   return false;
+}
+
+/**
+ * Every stored spelling of the blob named by `url` that a record could hold.
+ *
+ * The local storage provider persists a host-relative path (`/uploads/<file>`)
+ * while a caller may address it absolutely (`https://host/uploads/<file>`), and
+ * a URL persisted before a host change may name a different origin for the same
+ * file. All three identify one blob on disk, so an authorization or reference
+ * check that compares only the string it was handed will call a live file
+ * unowned (403) or an orphan (destroy a live document) depending on which
+ * spelling happened to be stored.
+ *
+ * Azure URLs are canonical — the account + container + blob path IS the
+ * identity, and there is only one spelling of it — so they return unchanged.
+ * The widening is limited to the local provider, where the path is the identity
+ * and the origin is incidental.
+ */
+export function blobReferenceCandidates(url: string): string[] {
+  let pathname: string;
+  try {
+    pathname = new URL(url, 'http://localhost').pathname;
+  } catch {
+    return [url];
+  }
+  if (!pathname.startsWith('/uploads/')) return [url];
+  // The blob path is the identity; every origin (relative, absolute, or a URL
+  // that carried a SAS/query) refers to the same file.
+  return Array.from(new Set([url, pathname]));
 }
