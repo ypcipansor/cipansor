@@ -339,3 +339,37 @@ export async function closeUnitEnrollments(
   }
   return terbuka.length;
 }
+
+/**
+ * Tutup keanggotaan santri di SEMUA unit selain unit tujuan, pada saat ia
+ * diterima di unit tujuan.
+ *
+ * Alasan keluarnya dibedakan seperti backfill 20260914020000: unit berikutnya
+ * pada tahun ajaran yang BERBEDA adalah kelulusan/kenaikan jenjang (`LULUS`),
+ * sedangkan berpindah di tengah tahun ajaran yang SAMA adalah `PINDAH_UNIT`.
+ * Baris di unit tujuan sendiri tidak disentuh — di situlah ia sekarang.
+ *
+ * Santri yang sudah diluluskan lewat tombol Luluskan (#513) biasanya tidak
+ * punya baris terbuka lagi, jadi fungsi ini mengembalikan 0; yang lewat jalur
+ * lama (atau data lama yang tidak pernah ditutup) dibereskan di sini.
+ */
+export async function closeOtherUnitEnrollments(
+  db: Pick<typeof prisma, 'studentUnitEnrollment'>,
+  input: { studentId: string; toUnitId: string; academicYearId: string; at: Date }
+): Promise<number> {
+  const terbuka = await db.studentUnitEnrollment.findMany({
+    where: { studentId: input.studentId, exitDate: null, unitId: { not: input.toUnitId } },
+    select: { id: true, entryDate: true, academicYearId: true },
+  });
+  for (const baris of terbuka) {
+    const exitDate = input.at < baris.entryDate ? baris.entryDate : input.at;
+    await db.studentUnitEnrollment.update({
+      where: { id: baris.id },
+      data: {
+        exitDate,
+        exitReason: baris.academicYearId === input.academicYearId ? 'PINDAH_UNIT' : 'LULUS',
+      },
+    });
+  }
+  return terbuka.length;
+}

@@ -9,7 +9,9 @@ import { assignStudentNis } from '@/utils/student-nis';
 import {
   recordUnitEnrollmentFromClass,
   ensureUnitEnrollment,
+  closeOtherUnitEnrollments,
 } from '@/utils/student-unit-history';
+import { STUDENT_STATUS } from '@cipansor/shared';
 
 /**
  * The per-unit student RoleCode that grants the onboarding user a real role
@@ -32,6 +34,14 @@ export function studentRoleForUnitType(
 }
 
 export interface EnrollmentOptions {
+  /**
+   * Santri LAMA yang melanjutkan ke unit ini (progresi internal, audit #489
+   * bagian 3b-2). Hanya santri berstatus alumni: tanpa batas itu, formulir
+   * SPMB bisa "memindahkan" santri aktif unit lain tanpa sepengetahuan unitnya.
+   * Bila diisi, tidak ada akun baru, tidak ada baris santri baru, dan riwayat
+   * unit lamanya ditutup.
+   */
+  existingStudentId?: string;
   classId?: string;
   assignedClassId?: string;
   academicYearId?: string;
@@ -54,6 +64,8 @@ export interface EnrollmentResult {
   parentName?: string;
   studentName?: string;
   effectiveUnitId?: string;
+  /** true bila pendaftar ini ditautkan ke santri yang sudah ada (progresi internal). */
+  santriLanjutan?: boolean;
 }
 
 export class StudentOnboardingOrchestrator {
@@ -75,6 +87,7 @@ export class StudentOnboardingOrchestrator {
     let customNis: string | undefined = undefined;
     let nisn: string | undefined = undefined;
     let roomId: string | undefined = undefined;
+    let existingStudentId: string | undefined = undefined;
 
     if (typeof options === 'string') {
       classId = options;
@@ -84,6 +97,7 @@ export class StudentOnboardingOrchestrator {
       customNis = options.nis;
       nisn = options.nisn;
       roomId = options.roomId;
+      existingStudentId = options.existingStudentId;
     }
 
     // Reset tokens are SECRETS. They are generated inside the transaction but
@@ -163,7 +177,48 @@ export class StudentOnboardingOrchestrator {
         academicYearId = period.academicYearId;
       }
 
-      // 2. Create User Account for Student
+      // 2. Santri LAMA yang melanjutkan ke unit ini (progresi internal).
+      //
+      // Tanpa ini, orkestrator SELALU membuat akun baru, sehingga
+      // `student.findUnique({ userId })` di bawah selalu null dan cabang "santri
+      // lama" tidak pernah hidup: lulusan SD IT yang mendaftar SMP IT menjadi
+      // ORANG KEDUA di basis data (NIS baru, kartu baru, riwayat terputus) —
+      // atau, sejak #494, ditolak 409 karena NISN-nya sudah dipakai "santri lain"
+      // yang sebenarnya dirinya sendiri.
+      const santriLanjutan = existingStudentId
+        ? await tx.student.findFirst({
+            where: { id: existingStudentId, deletedAt: null },
+            include: {
+              user: { select: { id: true, role: true, email: true } },
+              unit: { select: { name: true } },
+            },
+          })
+        : null;
+
+      if (existingStudentId && !santriLanjutan) {
+        throw Errors.notFound('Student');
+      }
+      if (santriLanjutan) {
+        // Hanya ALUMNI. Santri yang masih aktif di unit lain hanya boleh pindah
+        // lewat unitnya sendiri (diluluskan / dikeluarkan lebih dulu); kalau
+        // tidak, formulir SPMB unit mana pun bisa menarik santri aktif unit lain.
+        if (santriLanjutan.status !== STUDENT_STATUS.ALUMNI) {
+          throw Errors.conflict(
+            `Hanya santri berstatus alumni yang bisa melanjutkan lewat SPMB. ${
+              santriLanjutan.unit?.name ?? 'Unit asalnya'
+            } perlu meluluskannya lebih dulu.`
+          );
+        }
+        // NISN itu nomor seumur hidup: kalau formulir menyebut NISN lain,
+        // kemungkinan besar yang dipilih adalah ORANG LAIN. Jangan tebak.
+        if (nisn && santriLanjutan.nisn && santriLanjutan.nisn !== nisn) {
+          throw Errors.conflict(
+            `NISN pada pendaftaran (${nisn}) berbeda dengan NISN santri yang dipilih (${santriLanjutan.nisn}).`
+          );
+        }
+      }
+
+      // 3. Create User Account for Student
       const crypto = await import('crypto');
       const { hashPassword } = await import('@/lib/password');
 
@@ -244,77 +299,87 @@ export class StudentOnboardingOrchestrator {
       // Resolve the email actually used for the *new* student account.
       let email: string;
       let user: { id: string; role: string | null } | null = null;
-      if (realEmail) {
-        const existing = await tx.user.findUnique({ where: { email: realEmail } });
-        if (existing) {
-          // An existing non-student account (staff, teacher, parent, admin) must
-          // never be repurposed into a student login — that would let a registrant
-          // take over an existing account using only its (unverified) email.
-          if (existing.role !== 'STUDENT') {
-            throw Errors.conflict('Email sudah terdaftar pada akun lain yang tidak sesuai');
-          }
-          // The email belongs to a student account but the registrant has not
-          // proven ownership of it, so we must NOT recycle that account (which
-          // would also steal that student's Student record). Create a fresh,
-          // unit-scoped .local account instead; the same registrant can later be
-          // merged onto the existing student record by an authorised operator.
-          email = fallbackBase;
-        } else {
-          email = realEmail;
-        }
-      } else {
-        email = fallbackBase;
-      }
-
-      // A .local fallback must be unique — it embeds a per-unit NIS so it is
-      // already highly unlikely to collide, but take no chance: append a suffix
-      // until the address is free rather than reusing (or chasing) another row.
-      // The loop is bounded: each candidate is a distinct address (incrementing
-      // suffix), so under sane data it breaks on the first free one; the cap is
-      // only an escape hatch so a pathological store (or a test mock that never
-      // returns null) cannot wedge onboarding in an infinite loop.
-      let candidate = email;
-      let suffix = 2;
-      const MAX_UNIQUE_EMAIL_ATTEMPTS = 25;
-      // A fallback address colliding with an existing row gets a numeric suffix
-      // inserted *inside the local part* so the address still ends in `.local`.
-      const FALLBACK_DOMAIN = '@student.cipansor.local';
-      const fallbackLocal = fallbackBase.slice(0, fallbackBase.length - FALLBACK_DOMAIN.length);
-      for (let attempt = 0; attempt < MAX_UNIQUE_EMAIL_ATTEMPTS; attempt++) {
-        const taken = await tx.user.findUnique({ where: { email: candidate } });
-        if (!taken) break;
-        candidate = `${fallbackLocal}:${suffix}${FALLBACK_DOMAIN}`;
-        suffix += 1;
-      }
-      email = candidate;
-
-      {
-        user = await tx.user.create({
-          data: {
-            name: registrant.fullName,
-            email,
-            passwordHash,
-            // Identity-only pupils (TK Qur'an) get no reset token and can never
-            // sign in; a credential-holding student gets a real reset secret.
-            ...(withLogin && resetToken
-              ? {
-                  resetTokenHash: crypto.createHash('sha256').update(resetToken).digest('hex'),
-                  resetTokenExpiresAt: resetTokenExpiry,
-                }
-              : {}),
-            role: 'STUDENT',
-            unitId: effectiveUnitId,
-            isActive: withLogin,
-          },
-        });
-
-        emittedSecret.isNewUser = withLogin;
+      if (santriLanjutan) {
+        // Progresi internal: akun, kata sandi, dan tautan resetnya sudah ada.
+        // Membuat akun baru di sini akan menggandakan orangnya; membuat token
+        // reset baru akan mencabut akses akun yang sedang dipakai keluarganya.
+        user = { id: santriLanjutan.user.id, role: santriLanjutan.user.role };
+        email = santriLanjutan.user.email ?? '';
+        emittedSecret.isNewUser = false;
         emittedSecret.studentHasLogin = withLogin;
-        if (withLogin && resetToken) {
-          emittedSecret.studentResetToken = resetToken;
-          emittedSecret.studentResetEmail = email;
-          emittedSecret.studentResetUserId = user.id;
-          emittedSecret.studentResetName = registrant.fullName;
+      } else {
+        if (realEmail) {
+          const existing = await tx.user.findUnique({ where: { email: realEmail } });
+          if (existing) {
+            // An existing non-student account (staff, teacher, parent, admin) must
+            // never be repurposed into a student login — that would let a registrant
+            // take over an existing account using only its (unverified) email.
+            if (existing.role !== 'STUDENT') {
+              throw Errors.conflict('Email sudah terdaftar pada akun lain yang tidak sesuai');
+            }
+            // The email belongs to a student account but the registrant has not
+            // proven ownership of it, so we must NOT recycle that account (which
+            // would also steal that student's Student record). Create a fresh,
+            // unit-scoped .local account instead; the same registrant can later be
+            // merged onto the existing student record by an authorised operator.
+            email = fallbackBase;
+          } else {
+            email = realEmail;
+          }
+        } else {
+          email = fallbackBase;
+        }
+
+        // A .local fallback must be unique — it embeds a per-unit NIS so it is
+        // already highly unlikely to collide, but take no chance: append a suffix
+        // until the address is free rather than reusing (or chasing) another row.
+        // The loop is bounded: each candidate is a distinct address (incrementing
+        // suffix), so under sane data it breaks on the first free one; the cap is
+        // only an escape hatch so a pathological store (or a test mock that never
+        // returns null) cannot wedge onboarding in an infinite loop.
+        let candidate = email;
+        let suffix = 2;
+        const MAX_UNIQUE_EMAIL_ATTEMPTS = 25;
+        // A fallback address colliding with an existing row gets a numeric suffix
+        // inserted *inside the local part* so the address still ends in `.local`.
+        const FALLBACK_DOMAIN = '@student.cipansor.local';
+        const fallbackLocal = fallbackBase.slice(0, fallbackBase.length - FALLBACK_DOMAIN.length);
+        for (let attempt = 0; attempt < MAX_UNIQUE_EMAIL_ATTEMPTS; attempt++) {
+          const taken = await tx.user.findUnique({ where: { email: candidate } });
+          if (!taken) break;
+          candidate = `${fallbackLocal}:${suffix}${FALLBACK_DOMAIN}`;
+          suffix += 1;
+        }
+        email = candidate;
+
+        {
+          user = await tx.user.create({
+            data: {
+              name: registrant.fullName,
+              email,
+              passwordHash,
+              // Identity-only pupils (TK Qur'an) get no reset token and can never
+              // sign in; a credential-holding student gets a real reset secret.
+              ...(withLogin && resetToken
+                ? {
+                    resetTokenHash: crypto.createHash('sha256').update(resetToken).digest('hex'),
+                    resetTokenExpiresAt: resetTokenExpiry,
+                  }
+                : {}),
+              role: 'STUDENT',
+              unitId: effectiveUnitId,
+              isActive: withLogin,
+            },
+          });
+
+          emittedSecret.isNewUser = withLogin;
+          emittedSecret.studentHasLogin = withLogin;
+          if (withLogin && resetToken) {
+            emittedSecret.studentResetToken = resetToken;
+            emittedSecret.studentResetEmail = email;
+            emittedSecret.studentResetUserId = user.id;
+            emittedSecret.studentResetName = registrant.fullName;
+          }
         }
       }
 
@@ -349,6 +414,21 @@ export class StudentOnboardingOrchestrator {
             },
           });
         }
+      }
+
+      if (santriLanjutan) {
+        // Akses rute berasal dari PENUGASAN AKTIF, bukan kolom `users.role`:
+        // penugasan santri di unit lama yang dibiarkan aktif membuat lulusan SD
+        // IT tetap melihat data SD IT dari portal SMP IT-nya.
+        await tx.userRoleAssignment.updateMany({
+          where: {
+            userId: user.id,
+            isActive: true,
+            unitId: { not: effectiveUnitId },
+            role: { code: { in: Object.values(STUDENT_ROLE_BY_UNIT_TYPE) } },
+          },
+          data: { isActive: false },
+        });
       }
 
       let student = await tx.student.findUnique({
@@ -387,7 +467,7 @@ export class StudentOnboardingOrchestrator {
             nis,
             nisn: nisn || student.nisn || undefined,
             status: 'active',
-            registrant: {
+            registrants: {
               connect: { id: registrant.id },
             },
           },
@@ -412,7 +492,7 @@ export class StudentOnboardingOrchestrator {
             parentEmail: registrant.parentEmail,
 
             // Link back
-            registrant: {
+            registrants: {
               connect: { id: registrant.id },
             },
           },
@@ -425,7 +505,13 @@ export class StudentOnboardingOrchestrator {
       // 4. Create Parent User Account
       let parentResetToken: string | undefined;
       let parentUser: { id: string; email: string | null; name: string | null } | null = null;
-      if (registrant.parentPhone || registrant.parentEmail) {
+      // Santri lanjutan sudah punya wali yang tertaut; formulir unit berikutnya
+      // tidak boleh melahirkan identitas wali KEDUA untuk anak yang sama (dan
+      // token reset barunya akan mengganggu akun wali yang sedang dipakai).
+      const sudahPunyaWali = santriLanjutan
+        ? (await tx.studentParent.count({ where: { studentId: student.id } })) > 0
+        : false;
+      if (!sudahPunyaWali && (registrant.parentPhone || registrant.parentEmail)) {
         // ACCOUNT-TAKEOVER PREVENTION (mirrors the student path above): the
         // parent's email/phone on the registrant is UNVERIFIED — nothing in this
         // flow proves the registrant owns the account they wrote down. Linking
@@ -599,6 +685,19 @@ export class StudentOnboardingOrchestrator {
         await ensureUnitEnrollment(tx, student.id, effectiveUnitId);
       }
 
+      if (santriLanjutan) {
+        // Baris unit barunya sudah ada di atas; sekarang tutup yang lain supaya
+        // ia tidak terhitung di dua unit sekaligus. Beda tahun ajaran = LULUS,
+        // tahun ajaran sama = PINDAH_UNIT (aturan yang sama dengan backfill
+        // 20260914020000).
+        await closeOtherUnitEnrollments(tx, {
+          studentId: student.id,
+          toUnitId: effectiveUnitId,
+          academicYearId: academicYearId ?? '',
+          at: new Date(),
+        });
+      }
+
       // 8. Assign room if roomId provided
       // Tenant-isolation: the room must not belong to another unit's asrama.
       // A room lives under a Dormitory whose `unitId` may be null — the
@@ -651,6 +750,7 @@ export class StudentOnboardingOrchestrator {
 
       return {
         success: true,
+        santriLanjutan: !!santriLanjutan,
         studentId: student.id,
         userId: user.id,
         nis,

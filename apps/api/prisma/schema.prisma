@@ -1130,7 +1130,9 @@ model Student {
   rewards                     Reward[]
   invoices                    Invoice[]
   borrowings                  Borrowing[]
-  registrant                  Registrant? // Link dari pendaftaran PSB
+  /// Satu baris per pendaftaran: lulusan SD IT yang mendaftar SMP IT memakai
+  /// baris santri yang sama dengan pendaftaran BARU (progresi internal).
+  registrants                 Registrant[]
   medicalRecords              MedicalRecord[]
   medicationUsage             MedicationUsageLog[]
   grades                      Grade[]
@@ -1829,7 +1831,7 @@ model Registrant {
   registrationFeeAmount   Decimal?  @map("registration_fee_amount") @db.Decimal(12, 2)
   registrationFeeVerifiedById String? @map("registration_fee_verified_by_id")
   registrationFeeNote     String?   @map("registration_fee_note") @db.Text
-  studentId         String?         @unique @map("student_id") // Link ke student jika sudah enrolled
+  studentId         String?         @map("student_id") // Link ke student jika sudah enrolled (satu santri boleh punya beberapa pendaftaran)
   campaignId        String?         @map("campaign_id")
   source            String?
   createdAt         DateTime        @default(now()) @map("created_at")
@@ -1849,6 +1851,7 @@ model Registrant {
   @@index([waveId])
   @@index([status])
   @@index([registrationNo])
+  @@index([studentId])
   @@map("registrants")
 }
 
