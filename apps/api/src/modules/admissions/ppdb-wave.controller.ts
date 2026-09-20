@@ -166,6 +166,27 @@ export const waveController = {
   },
 
   /**
+   * GET /api/admissions/waves/internal-candidates/:registrantId
+   * Santri lama (alumni) yang kemungkinan adalah pendaftar ini.
+   */
+  async internalCandidates(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.user?.id) {
+        throw Errors.unauthorized('User not authenticated');
+      }
+      const { registrantId } = req.params;
+      // Lingkup yang sama dengan onboarding: hanya pendaftaran unit sendiri.
+      await assertRegistrantUnitAccess(registrantId, req.user);
+      const { findInternalCandidates } = await import('./internal-candidates.service');
+      const nisn = typeof req.query.nisn === 'string' ? req.query.nisn : undefined;
+      const data = await findInternalCandidates(registrantId, nisn);
+      res.json(ApiResponse.success(data, 'Kandidat santri lama'));
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  /**
    * POST /api/ppdb-waves/onboard-registrant
    * End-to-end Student Onboarding using Orchestrator
    */
@@ -186,6 +207,7 @@ export const waveController = {
         /** Sudah dinormalkan skema: 10 digit, atau null bila dikosongkan. */
         nisn?: string | null;
         academicYearId?: string;
+        existingStudentId?: string;
       };
 
       if (!req.user?.id) {
@@ -208,6 +230,7 @@ export const waveController = {
           assignedClassId: data.assignedClassId || data.classId,
           roomId: data.roomId,
           academicYearId: data.academicYearId,
+          existingStudentId: data.existingStudentId,
         }
       );
       res.status(200).json(ApiResponse.success(result, 'Registrant onboarded successfully (E2E Integration complete)'));
