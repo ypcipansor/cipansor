@@ -83,7 +83,7 @@ export default function NewStudentPage() {
   };
 
   return (
-    <MainLayout allowedRoles={["SUPER_ADMIN", "UNIT_ADMIN"]}>
+    <MainLayout allowedPermissions={["STUDENT_CREATE"]}>
       <div className="space-y-6">
         <PageHeader
           title="Add New Student"

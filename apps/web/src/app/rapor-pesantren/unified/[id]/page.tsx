@@ -76,7 +76,7 @@ function UnifiedRaporPageContent() {
   });
 
   if (loading) return <div className="p-8 text-center text-gray-500 animate-pulse">Memuat Unified Rapor Pesantren...</div>;
-  if (error) return <Alert variant="destructive" className="m-8"><AlertTitle>Error</AlertTitle><AlertDescription>Gagal mengambil data Rapor Pesantren</AlertDescription></Alert>;
+  if (error) return <Alert variant="destructive" className="m-8 w-auto"><AlertTitle>Error</AlertTitle><AlertDescription>Gagal mengambil data Rapor Pesantren</AlertDescription></Alert>;
   if (!rapor) return <div className="p-8 text-center text-gray-500">Rapor tidak ditemukan</div>;
 
   const fmt = (v?: number | null, digits = 1) =>

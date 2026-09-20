@@ -151,3 +151,27 @@ export async function getViolationCategories() {
   });
   return categories.map((c) => c.category);
 }
+
+/**
+ * Mirror of `getRewardCategoryById` for violations: the UI's "violation type"
+ * is the free-text `category` column, and `/violations/types/ketertiban/edit`
+ * addresses it by that string. Aggregate the matching rows into the shape the
+ * edit form reads; null (→ 404) when the category is unused.
+ */
+export async function getViolationCategoryById(category: string) {
+  const agg = await prisma.violation.aggregate({
+    where: { category: { equals: category, mode: 'insensitive' } },
+    _count: true,
+    _sum: { points: true },
+    _max: { points: true },
+  });
+  if (!agg._count) return null;
+  return {
+    id: category,
+    name: category.charAt(0).toUpperCase() + category.slice(1),
+    category: category.toUpperCase(),
+    points: agg._max.points ?? 0,
+    count: agg._count,
+    isActive: true,
+  };
+}

@@ -24,6 +24,29 @@ import { Errors } from '../../middleware/error';
 // EMPLOYEE SERVICE (UNIFIED TEACHER & STAFF)
 // =====================================
 
+/**
+ * Columns safe to return to a client. `prisma.user.findMany` without a select
+ * returns every scalar — including `passwordHash`, `twoFactorSecret` and
+ * `resetTokenHash` — and the HR roster/detail endpoints are read by any teacher
+ * or admin, so the credential material must never leave the server.
+ */
+const SAFE_USER_SELECT = {
+  id: true,
+  name: true,
+  email: true,
+  phone: true,
+  role: true,
+  unitId: true,
+  isActive: true,
+  isTwoFactorEnabled: true,
+  lastLoginAt: true,
+  createdAt: true,
+  updatedAt: true,
+  deletedAt: true,
+} satisfies Prisma.UserSelect;
+
+export type SafeUser = Prisma.UserGetPayload<{ select: typeof SAFE_USER_SELECT }>;
+
 export async function getEmployees(params: {
   page: number;
   limit: number;
@@ -56,7 +79,8 @@ export async function getEmployees(params: {
       skip,
       take: limit,
       orderBy: { createdAt: 'desc' },
-      include: {
+      select: {
+        ...SAFE_USER_SELECT,
         unit: { select: { id: true, name: true } },
         teacher: true,
         staff: true,
@@ -122,7 +146,8 @@ export async function getTeachers(params: {
 export async function getEmployeeById(id: string) {
   return prisma.user.findUnique({
     where: { id },
-    include: {
+    select: {
+      ...SAFE_USER_SELECT,
       unit: { select: { id: true, name: true } },
       teacher: true,
       staff: true,
@@ -134,10 +159,11 @@ export async function getEmployeeById(id: string) {
  * Calculate Retention Risk for employees in a unit.
  * Best Practice: Early warning system for talent turnover.
  */
-export async function getRetentionRiskAnalytics(unitId: string) {
+export async function getRetentionRiskAnalytics(unitId?: string) {
   const employees = await prisma.user.findMany({
     where: {
-      unitId,
+      // Omitted for a super admin aggregating the whole yayasan.
+      ...(unitId ? { unitId } : {}),
       role: { in: [UserRole.TEACHER, UserRole.STAFF] },
       deletedAt: null,
       isActive: true,

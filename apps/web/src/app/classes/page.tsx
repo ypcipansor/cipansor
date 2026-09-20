@@ -178,7 +178,7 @@ export default function ClassesPage() {
   ];
 
   return (
-    <MainLayout allowedRoles={["SUPER_ADMIN", "UNIT_ADMIN", "TEACHER"]}>
+    <MainLayout allowedRoles={["SUPER_ADMIN", "UNIT_ADMIN", "TEACHER", "STUDENT"]}>
       <div className="space-y-6">
         <PageHeader
           title="Classes"

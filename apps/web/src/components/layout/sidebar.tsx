@@ -15,6 +15,7 @@ import {
   type NavItem,
 } from "@/config/navigation";
 import { useAuthStore } from "@/stores/auth";
+import { realmColorClass, realmLabel } from "@/hooks/use-roles";
 import { demoPhotoForEmail } from "@/lib/demo-avatar";
 import { ChevronDown, ChevronLeft, LogOut } from "lucide-react";
 import { useState } from "react";
@@ -31,23 +32,14 @@ interface UserRole {
     id: string;
     code: string;
     name: string;
-    realm: string;
+    // Optional: a session persisted before the field existed omits it.
+    realm?: string;
   };
   unit?: {
     id: string;
     name: string;
   } | null;
 }
-
-// Realm colors for badges
-const realmColors: Record<string, string> = {
-  GLOBAL: "bg-purple-500",
-  YAYASAN: "bg-amber-500",
-  TK: "bg-pink-500",
-  SD_IT: "bg-green-500",
-  SMP_IT: "bg-blue-500",
-  SMA_ALQURAN: "bg-emerald-500",
-};
 
 export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
   const pathname = usePathname();
@@ -163,10 +155,10 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
                   <Badge
                     className={cn(
                       "text-[10px] px-1 py-0 text-white",
-                      realmColors[activeRole.role.realm],
+                      realmColorClass(activeRole.role.realm),
                     )}
                   >
-                    {activeRole.role.realm.replace("_", " ")}
+                    {realmLabel(activeRole.role.realm)}
                   </Badge>
                   <span className="truncate text-xs text-muted-foreground">
                     {activeRole.role.name}

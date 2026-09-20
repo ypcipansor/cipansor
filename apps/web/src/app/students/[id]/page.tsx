@@ -97,7 +97,7 @@ export default function StudentDetailPage() {
   };
 
   return (
-    <MainLayout allowedRoles={["SUPER_ADMIN", "UNIT_ADMIN", "TEACHER"]}>
+    <MainLayout allowedPermissions={["STUDENT_VIEW"]}>
       <div className="space-y-6">
         <PageHeader title={student.name} description={`NIS: ${student.nis}`}>
           <Button variant="outline" asChild>

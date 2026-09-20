@@ -104,3 +104,16 @@ export async function getViolationCategories(req: Request, res: Response, next: 
     next(error);
   }
 }
+
+export async function getViolationCategoryById(req: Request, res: Response, next: NextFunction) {
+  try {
+    const category = await violationService.getViolationCategoryById(req.params.id);
+    if (!category) throw Errors.notFound('Violation category');
+    res.json({
+      success: true,
+      data: category,
+    });
+  } catch (error) {
+    next(error);
+  }
+}

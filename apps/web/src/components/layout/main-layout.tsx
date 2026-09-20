@@ -9,6 +9,11 @@ import { ProtectedRoute } from "@/components/auth/protected-route";
 interface MainLayoutProps {
   children: React.ReactNode;
   allowedRoles?: string[];
+  /**
+   * Permission strings from the API (`user.permissions`, e.g. "STUDENT_VIEW").
+   * Prefer this for a page whose endpoint is gated by `hasPermission(...)`.
+   */
+  allowedPermissions?: string[];
   showSidebar?: boolean;
 }
 
@@ -17,13 +22,17 @@ import { PageTransition } from "./page-transition";
 export function MainLayout({
   children,
   allowedRoles,
+  allowedPermissions,
   showSidebar = true,
 }: MainLayoutProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
-    <ProtectedRoute allowedRoles={allowedRoles}>
+    <ProtectedRoute
+      allowedRoles={allowedRoles}
+      allowedPermissions={allowedPermissions}
+    >
       {/* The skip link lives in the root layout, where it is genuinely the
           first focusable thing on the page and covers the public site too.
           This one was a second link with a different label ("Langsung ke

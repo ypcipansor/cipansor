@@ -42,12 +42,14 @@ export const EMPLOYEE_TYPE_LABELS: Record<EmployeeType, string> = {
 
 export interface Employee {
   id: string;
-  nip: string;
+  nip?: string;
   userId?: string;
   user?: {
     id: string;
     name: string;
     email: string;
+    phone?: string | null;
+    isActive?: boolean;
   };
   unitId: string;
   unit?: {
@@ -55,27 +57,24 @@ export interface Employee {
     name: string;
   };
   departmentId?: string;
-  department?: {
-    id: string;
-    name: string;
-  };
+  department?: string;
 
   // Personal info
   fullName: string;
-  gender: Gender;
-  birthPlace: string;
-  birthDate: string;
+  gender?: Gender;
+  birthPlace?: string;
+  birthDate?: string;
   nationalId?: string;
   nik?: string;
   taxId?: string;
   npwp?: string;
-  maritalStatus: string;
-  religion: string;
+  maritalStatus?: string;
+  religion?: string;
 
   // Contact
-  phone: string;
-  email?: string;
-  address: string;
+  phone?: string;
+  email: string;
+  address?: string;
   city?: string;
   province?: string;
   postalCode?: string;
@@ -84,7 +83,8 @@ export interface Employee {
   position: string;
   employeeType: EmployeeType;
   status: EmployeeStatus;
-  joinDate: string;
+  role?: string;
+  joinDate?: string;
   endDate?: string;
   resignDate?: string;
 
@@ -118,8 +118,68 @@ export interface Employee {
     uploadedAt?: string;
   }[];
 
-  createdAt: string;
-  updatedAt: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+// ---------------------------------------------------------------------------
+// The API models an employee as a User with either a Teacher or a Staff row
+// (`/hr/employees` returns the User with both relations). The HR pages read a
+// flat `Employee`, so normalize once here — and derive the two fields the API
+// has no column for:
+//
+//   status       from `user.isActive`
+//   employeeType from `employmentStatus` (PNS/GTY…), defaulting to PERMANENT
+//
+// Without this the roster renders blank cells and a "Total Karyawan 0" count,
+// even though the endpoint returns dozens of people.
+// ---------------------------------------------------------------------------
+const EMPLOYEE_TYPE_BY_EMPLOYMENT_STATUS: Record<string, EmployeeType> = {
+  PNS: "PERMANENT",
+  PPPK: "CONTRACT",
+  GTY: "PERMANENT",
+  GTT: "CONTRACT",
+  HONOR: "PART_TIME",
+  KONTRAK: "CONTRACT",
+};
+
+export function normalizeEmployee(raw: any): Employee {
+  const teacher = raw?.teacher ?? null;
+  const staff = raw?.staff ?? null;
+  const profile = staff ?? teacher ?? {};
+  const user = raw?.user ?? raw ?? {};
+
+  const employmentStatus = profile.employmentStatus ?? teacher?.employmentStatus;
+
+  return {
+    ...profile,
+    id: raw?.id ?? user.id,
+    userId: user.id ?? raw?.userId,
+    user,
+    nip: profile.nip ?? undefined,
+    unitId: raw?.unitId ?? user.unitId ?? "",
+    unit: raw?.unit ?? user.unit ?? undefined,
+    departmentId: profile.departmentId ?? undefined,
+    department: staff?.department ?? teacher?.department ?? undefined,
+
+    fullName: user.name ?? raw?.name ?? "",
+    email: user.email ?? raw?.email ?? "",
+    phone: user.phone ?? undefined,
+    gender: profile.gender ?? undefined,
+    birthPlace: profile.birthPlace ?? undefined,
+    birthDate: profile.birthDate ?? undefined,
+    nik: profile.nik ?? undefined,
+    address: profile.address ?? undefined,
+    religion: profile.religion ?? undefined,
+    joinDate: profile.joinDate ?? undefined,
+
+    position: staff?.position ?? (teacher ? "Guru" : "Pegawai"),
+    employeeType: EMPLOYEE_TYPE_BY_EMPLOYMENT_STATUS[employmentStatus] ?? "PERMANENT",
+    status: user.isActive === false ? "INACTIVE" : "ACTIVE",
+    role: raw?.role,
+    createdAt: raw?.createdAt,
+    updatedAt: raw?.updatedAt,
+  };
 }
 
 export interface Department {
@@ -220,16 +280,24 @@ export interface Payroll {
   periodId: string;
   period?: PayrollPeriod;
   staffId: string;
+  // The API stores the employee name/NIP/department/position as flat snapshot
+  // columns on the Payroll row (`employeeName`, `employeeNo`, `department`,
+  // `position`), not as nested `staff.*` fields. The page reads the flat ones;
+  // `staff` carries only the live user + unit.
+  employeeName?: string;
+  employeeNo?: string;
+  department?: string;
+  position?: string;
   staff?: {
     id: string;
     employeeId?: string;
-    fullName: string;
+    fullName?: string;
     nip?: string;
     position?: string;
     unitId?: string;
     unit?: { id: string; name: string };
+    user?: { name: string; email: string };
     departmentId?: string;
-    department?: { id: string; name: string };
     bankName?: string;
     bankAccount?: string;
     employeeType?: string;
@@ -432,8 +500,8 @@ export function useEmployees(params?: {
     queryKey: ["employees", params],
     queryFn: async () => {
       const response = await api.get("/hr/employees", { params });
-      return response.data as {
-        data: Employee[];
+      const body = response.data as {
+        data: unknown[];
         meta: {
           total: number;
           page: number;
@@ -441,6 +509,7 @@ export function useEmployees(params?: {
           totalPages: number;
         };
       };
+      return { ...body, data: (body.data ?? []).map(normalizeEmployee) };
     },
   });
 }
@@ -473,7 +542,7 @@ export function useEmployee(id: string) {
     queryKey: ["employee", id],
     queryFn: async () => {
       const response = await api.get(`/hr/employees/${id}`);
-      return response.data.data as Employee;
+      return normalizeEmployee(response.data.data);
     },
     enabled: !!id,
   });

@@ -172,7 +172,7 @@ export default function StudentsPage() {
   ];
 
   return (
-    <MainLayout allowedRoles={["SUPER_ADMIN", "UNIT_ADMIN", "TEACHER"]}>
+    <MainLayout allowedPermissions={["STUDENT_VIEW"]}>
       <div className="space-y-6">
         <PageHeader
           title="Students"

@@ -31,6 +31,9 @@ export interface Extracurricular {
   maxMembers?: number;
   currentMembers: number;
   coachName?: string;
+  scheduleDay?: string;
+  scheduleTime?: string;
+  venue?: string;
   coachId?: string;
   coach?: {
     id: string;
@@ -276,6 +279,31 @@ export const DAY_NAMES = [
 ];
 
 // Hooks
+/**
+ * The API returns the raw Prisma row: capacity is `maxParticipants`, the
+ * enrolled tally is `_count.enrollments`, and the coach's name sits under
+ * `coach.user.name`. The UI was written against friendlier field names, so an
+ * unmapped response left `currentMembers` undefined — `Math`/`Progress` then
+ * rendered the literal string "NaN". Normalise once here so every consumer
+ * (list, detail, stats) sees the same shape.
+ */
+function normalizeExtracurricular(raw: any): Extracurricular {
+  const coachUser = raw.coach?.user;
+  return {
+    ...raw,
+    maxMembers: raw.maxMembers ?? raw.maxParticipants ?? undefined,
+    currentMembers: raw.currentMembers ?? raw._count?.enrollments ?? 0,
+    coachName: raw.coachName ?? coachUser?.name,
+    coach: raw.coach
+      ? {
+          id: raw.coach.id ?? coachUser?.id,
+          name: coachUser?.name ?? raw.coach.name,
+          email: coachUser?.email ?? raw.coach.email,
+        }
+      : undefined,
+  } as Extracurricular;
+}
+
 export function useExtracurriculars(params: ExtracurricularListParams = {}) {
   return useQuery({
     queryKey: ["extracurriculars", params],
@@ -286,7 +314,11 @@ export function useExtracurriculars(params: ExtracurricularListParams = {}) {
           params,
         },
       );
-      return response.data;
+      const rows = response.data.data ?? [];
+      return {
+        ...response.data,
+        data: rows.map(normalizeExtracurricular),
+      };
     },
   });
 }
@@ -298,7 +330,9 @@ export function useExtracurricular(id: string) {
       const response = await api.get<ApiResponse<Extracurricular>>(
         `/extracurricular/${id}`,
       );
-      return response.data.data;
+      return response.data.data
+        ? normalizeExtracurricular(response.data.data)
+        : response.data.data;
     },
     enabled: !!id,
   });

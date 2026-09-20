@@ -8,25 +8,25 @@ refresh token). Semua respons berbentuk `{ success, data, ... }`.
 
 ## 1. Autentikasi
 
-| Endpoint | Keterangan |
-|---|---|
-| `POST /auth/login` `{email, password}` | Orang tua login. Admin ber-2FA mendapat `requiresTwoFactor + tempToken`. |
-| `POST /auth/refresh` `{refreshToken}` | Perpanjang sesi. |
-| `PUT /notifications/fcm-token` `{token}` | Daftarkan token push FCM perangkat (kirim `{token: null}` saat logout). |
+| Endpoint                                 | Keterangan                                                               |
+| ---------------------------------------- | ------------------------------------------------------------------------ |
+| `POST /auth/login` `{email, password}`   | Orang tua login. Admin ber-2FA mendapat `requiresTwoFactor + tempToken`. |
+| `POST /auth/refresh` `{refreshToken}`    | Perpanjang sesi.                                                         |
+| `PUT /notifications/fcm-token` `{token}` | Daftarkan token push FCM perangkat (kirim `{token: null}` saat logout).  |
 
 ## 2. Capaian anak (role PARENT)
 
-| Endpoint | Keterangan |
-|---|---|
-| `GET /parent/children` | Daftar anak. |
-| `GET /parent/children/:studentId/weekly-progress` | Ringkasan mingguan: kehadiran, tahfidz (ziyadah/murojaah/nilai), perilaku, akademik. |
-| `GET /parent/children/:studentId/tahfidz` / `attendance` / `grades` | Detail per domain. |
+| Endpoint                                                            | Keterangan                                                                           |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `GET /parent/children`                                              | Daftar anak.                                                                         |
+| `GET /parent/children/:studentId/weekly-progress`                   | Ringkasan mingguan: kehadiran, tahfidz (ziyadah/murojaah/nilai), perilaku, akademik. |
+| `GET /parent/children/:studentId/tahfidz` / `attendance` / `grades` | Detail per domain.                                                                   |
 
 ## 3. Tagihan & pembayaran SPP
 
-| Endpoint | Keterangan |
-|---|---|
-| `GET /parent/children/:studentId/finance` | Tagihan + ringkasan pembayaran anak. |
+| Endpoint                                   | Keterangan                                                                                                                                                                                                                                                                                       |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /parent/children/:studentId/finance`  | Tagihan + ringkasan pembayaran anak.                                                                                                                                                                                                                                                             |
 | `POST /finance/invoices/:id/payment-proof` | **Upload bukti transfer** — body `{amount, method, referenceNo?, proofUrl, notes?}`. Membuat Payment `PENDING_VERIFICATION`; kepemilikan diverifikasi (orang tua hanya bisa membayar tagihan anaknya). Unggah berkas gambarnya sendiri via `POST /upload` lalu pakai URL-nya sebagai `proofUrl`. |
 
 ### Alur verifikasi (maker-checker Tata Usaha)
@@ -46,10 +46,10 @@ PENDING/TU_APPROVED → REJECTED (dengan alasan)
 
 ## 4. Notifikasi
 
-| Endpoint | Keterangan |
-|---|---|
-| `GET /parent/notifications` | Daftar notifikasi + unread count. |
-| `PUT /parent/notifications/:id/read` | Tandai dibaca. |
+| Endpoint                             | Keterangan                        |
+| ------------------------------------ | --------------------------------- |
+| `GET /parent/notifications`          | Daftar notifikasi + unread count. |
+| `PUT /parent/notifications/:id/read` | Tandai dibaca.                    |
 
 **Pengingat bulanan otomatis**: setiap tanggal 1 pukul 06:00 scheduler
 mengirim pengingat tagihan SPP bulan berjalan ke SEMUA orang tua
@@ -57,10 +57,10 @@ mengirim pengingat tagihan SPP bulan berjalan ke SEMUA orang tua
 
 ## 5. Konfigurasi server (env)
 
-| Variabel | Fungsi |
-|---|---|
+| Variabel                                                      | Fungsi                                            |
+| ------------------------------------------------------------- | ------------------------------------------------- |
 | `WA_PROVIDER` = `META` \| `FONNTE` \| `WABLAS` \| `SIMULATOR` | Provider WhatsApp (default SIMULATOR = log saja). |
-| `WA_ACCESS_TOKEN`, `WA_PHONE_NUMBER_ID` | Kredensial Meta Cloud API. |
+| `WA_ACCESS_TOKEN`, `WA_PHONE_NUMBER_ID`                       | Kredensial Meta Cloud API.                        |
 
 ## Status implementasi mobile
 
@@ -73,7 +73,7 @@ Dart terpisah, toko aplikasi, atau CI mobile tambahan.
 Yang sudah ada di repo:
 
 - `apps/web/public/manifest.json` — nama, ikon (72–512, maskable), `display:
-  standalone`, shortcuts.
+standalone`, shortcuts.
 - `apps/web/public/icons/icon-*.png` — set ikon aplikasi.
 - `apps/web/public/sw.js` — service worker: navigasi network-first + fallback
   `offline.html`, aset statis cache-first, `/api/**` selalu ke jaringan (tidak
