@@ -5,7 +5,7 @@ import * as path from 'path';
 
 vi.mock('@/lib/prisma', () => ({
   prisma: {
-    studentUnitEnrollment: { findFirst: vi.fn(), findMany: vi.fn(), upsert: vi.fn() },
+    studentUnitEnrollment: { findFirst: vi.fn(), findMany: vi.fn(), upsert: vi.fn(), update: vi.fn() },
     student: { findUnique: vi.fn() },
     class: { findUnique: vi.fn() },
     academicYear: { findFirst: vi.fn() },
@@ -22,6 +22,7 @@ import {
   ensureUnitEnrollment,
   studentInUnitAt,
   studentInUnitForYear,
+  closeUnitEnrollments,
 } from './student-unit-history';
 
 /**
@@ -302,5 +303,63 @@ describe('santri yang dibuat tanpa rombel', () => {
     await ensureUnitEnrollment(prisma as any, 's-9', SDIT);
 
     expect(prisma.studentUnitEnrollment.upsert).not.toHaveBeenCalled();
+  });
+});
+
+describe('menutup keanggotaan unit (kelulusan)', () => {
+  const db = prisma as unknown as {
+    studentUnitEnrollment: { findMany: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
+  };
+
+  it('hanya baris TERBUKA di unit itu, dengan tanggal dan alasan keluar', async () => {
+    db.studentUnitEnrollment.findMany.mockResolvedValue([
+      { id: 'sd-2025', entryDate: new Date('2025-07-14') },
+    ]);
+
+    const n = await closeUnitEnrollments(prisma, {
+      studentId: 's1',
+      unitId: SDIT,
+      exitDate: new Date('2026-06-20'),
+      exitReason: 'LULUS',
+    });
+
+    expect(n).toBe(1);
+    expect(db.studentUnitEnrollment.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { studentId: 's1', unitId: SDIT, exitDate: null } })
+    );
+    expect(db.studentUnitEnrollment.update).toHaveBeenCalledWith({
+      where: { id: 'sd-2025' },
+      data: { exitDate: new Date('2026-06-20'), exitReason: 'LULUS' },
+    });
+  });
+
+  it('baris yang masuknya SESUDAH tanggal keluar ditutup pada tanggal masuknya (CHECK exit >= entry)', async () => {
+    db.studentUnitEnrollment.findMany.mockResolvedValue([
+      { id: 'sd-2026', entryDate: new Date('2026-07-13') },
+    ]);
+
+    await closeUnitEnrollments(prisma, {
+      studentId: 's1',
+      unitId: SDIT,
+      exitDate: new Date('2026-06-20'),
+      exitReason: 'LULUS',
+    });
+
+    expect(db.studentUnitEnrollment.update).toHaveBeenCalledWith({
+      where: { id: 'sd-2026' },
+      data: { exitDate: new Date('2026-07-13'), exitReason: 'LULUS' },
+    });
+  });
+
+  it('alasan keluar yang ditulis aplikasi termasuk daftar CHECK migrasinya', () => {
+    const migrasi = fs.readFileSync(
+      path.join(__dirname, '../../prisma/migrations/20260912020000_student_unit_enrollment/migration.sql'),
+      'utf-8'
+    );
+    const sumber = fs.readFileSync(path.join(__dirname, 'student-unit-history.ts'), 'utf-8');
+    const tipe = sumber.slice(sumber.indexOf('export type UnitExitReason'), sumber.indexOf(';', sumber.indexOf('export type UnitExitReason')));
+    const nilai = [...tipe.matchAll(/'([A-Z_]+)'/g)].map((m) => m[1]);
+    expect(nilai.length).toBeGreaterThan(0);
+    for (const v of nilai) expect(migrasi, v).toContain(`'${v}'`);
   });
 });

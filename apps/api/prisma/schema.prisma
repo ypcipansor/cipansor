@@ -1135,7 +1135,9 @@ model Student {
   medicationUsage             MedicationUsageLog[]
   grades                      Grade[]
   reportCards                 ReportCard[]
-  alumniRecord                Alumni? // Link ke data alumni jika sudah lulus
+  /// Satu baris per unit yang meluluskannya: santri TK → SD IT → SMP IT lulus
+  /// tiga kali, dari tiga unit (unik per santri × unit × tahun lulus).
+  alumniRecords               Alumni[]
   // New relations for Phase 8
   takhosusEnrollment          TakhosusEnrollment?
   dailyMuhasabah              DailyMuhasabah[]
@@ -3041,7 +3043,7 @@ enum AlumniEventType {
 /// Alumni - Data Alumni/Lulusan
 model Alumni {
   id             String       @id @default(uuid())
-  studentId      String?      @unique @map("student_id") // Link ke data santri
+  studentId      String?      @map("student_id") // Link ke data santri — satu per unit yang meluluskannya
   unitId         String       @map("unit_id")
   registrationNo String       @unique @map("registration_no") // Nomor alumni
   name           String // Nama lengkap
@@ -3073,6 +3075,9 @@ model Alumni {
   donations        AlumniDonation[]
   eventAttendances AlumniEventAttendee[]
 
+  /// Lulus dari satu unit sekali per tahun; unit lain boleh meluluskan santri yang sama.
+  @@unique([studentId, unitId, graduationYear])
+  @@index([studentId])
   @@index([unitId])
   @@index([graduationYear])
   @@index([status])

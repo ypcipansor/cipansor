@@ -19,6 +19,8 @@ import {
 } from './alumni.schema';
 import { Prisma } from '@prisma/client';
 import { Errors } from '@/middleware/error';
+import { CLASS_ENROLLMENT_STATUS, STUDENT_STATUS } from '@cipansor/shared';
+import { closeUnitEnrollments } from '@/utils/student-unit-history';
 import {
   AlumniActor,
   alumniUnitScope,
@@ -293,7 +295,16 @@ export async function convertFromStudent(
 ) {
   const student = await prisma.student.findFirst({
     where: { id: studentId, deletedAt: null },
-    include: { user: true },
+    include: {
+      user: true,
+      unit: { select: { name: true } },
+      enrollments: {
+        where: { status: CLASS_ENROLLMENT_STATUS.ACTIVE },
+        include: { class: { select: { name: true, unitId: true } } },
+        orderBy: { enrolledAt: 'desc' },
+        take: 1,
+      },
+    },
   });
 
   if (!student) {
@@ -302,16 +313,34 @@ export async function convertFromStudent(
   // Meluluskan santri mengubah statusnya; hanya pengelola unit santri itu.
   assertAlumniRecordInScope(actor, student.unitId, 'Student');
 
+  // Yang diluluskan adalah santri AKTIF dari unitnya sekarang. Alumni SD IT yang
+  // belum diterima di unit berikutnya tidak bisa "lulus" lagi.
+  if (student.status !== STUDENT_STATUS.ACTIVE) {
+    throw Errors.conflict('Hanya santri aktif yang bisa diluluskan.');
+  }
+
+  const graduationDate = data.graduationDate ? new Date(data.graduationDate) : new Date();
+  // Tahun lulus = tahun tanggal lulusnya. Dulu `students.graduate_year` dipakai
+  // lebih dulu, sehingga santri yang pernah lulus dari unit sebelumnya tercatat
+  // lulus lagi pada tahun LAMA.
+  const year = graduationDate.getFullYear();
+
+  const sudah = await prisma.alumni.findFirst({
+    where: { studentId: student.id, unitId: student.unitId, graduationYear: year },
+    select: { id: true },
+  });
+  if (sudah) {
+    throw Errors.conflict(`Santri ini sudah tercatat lulus dari ${student.unit.name} pada ${year}.`);
+  }
+
   // Generate registration number
-  const year = student.graduateYear || new Date().getFullYear();
   const count = await prisma.alumni.count({
     where: { graduationYear: year },
   });
   const registrationNo = `ALM-${year}-${String(count + 1).padStart(4, '0')}`;
 
-  // Create alumni record and update student status
-  const [alumni] = await prisma.$transaction([
-    prisma.alumni.create({
+  return prisma.$transaction(async (tx) => {
+    const alumni = await tx.alumni.create({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       data: {
         studentId: student.id,
@@ -322,8 +351,8 @@ export async function convertFromStudent(
         birthPlace: student.birthPlace,
         birthDate: student.birthDate,
         graduationYear: year,
-        graduationDate: data.graduationDate ? new Date(data.graduationDate) : new Date(),
-        lastClass: data.lastClass,
+        graduationDate,
+        lastClass: data.lastClass ?? student.enrollments[0]?.class.name,
         tahfidzLevel: data.tahfidzLevel,
         email: student.user.email,
         phone: student.parentPhone,
@@ -334,75 +363,35 @@ export async function convertFromStudent(
         unit: { select: { id: true, name: true, type: true } },
         student: { select: { id: true, nis: true } },
       },
-    }),
-    prisma.student.update({
+    });
+
+    await tx.student.update({
       where: { id: studentId },
       data: {
-        status: 'alumni',
+        status: STUDENT_STATUS.ALUMNI,
         graduateYear: year,
       },
-    }),
-  ]);
+    });
 
-  return alumni;
-}
+    // Rombel unit ini selesai, dan keanggotaan unitnya ditutup LULUS pada
+    // tanggal lulus — tanpa ini santri tetap terhitung di unit asal pada setiap
+    // tanggal sesudahnya, termasuk setelah diterima di unit berikutnya.
+    await tx.classEnrollment.updateMany({
+      where: {
+        studentId: student.id,
+        status: CLASS_ENROLLMENT_STATUS.ACTIVE,
+        class: { unitId: student.unitId },
+      },
+      data: { status: CLASS_ENROLLMENT_STATUS.COMPLETED },
+    });
+    await closeUnitEnrollments(tx, {
+      studentId: student.id,
+      unitId: student.unitId,
+      exitDate: graduationDate,
+      exitReason: 'LULUS',
+    });
 
-export async function batchGraduateStudents(data: {
-  studentIds: string[];
-  graduationDate: string;
-  graduationYear: number;
-  notes?: string;
-}) {
-  return prisma.$transaction(async (tx) => {
-    const results = [];
-    for (const studentId of data.studentIds) {
-      const student = await tx.student.findUnique({
-        where: { id: studentId },
-        include: { user: true, enrollments: { where: { status: 'active' }, include: { class: true }, take: 1 } },
-      });
-
-      if (!student) continue;
-
-      const count = await tx.alumni.count({
-        where: { graduationYear: data.graduationYear },
-      });
-      const registrationNo = `ALM-${data.graduationYear}-${String(count + 1).padStart(4, '0')}`;
-
-      const alumni = await tx.alumni.create({
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        data: {
-          studentId: student.id,
-          unitId: student.unitId,
-          registrationNo,
-          name: student.user.name,
-          gender: student.gender,
-          birthPlace: student.birthPlace,
-          birthDate: student.birthDate,
-          graduationYear: data.graduationYear,
-          graduationDate: new Date(data.graduationDate),
-          lastClass: student.enrollments[0]?.class.name || '-',
-          email: student.user.email,
-          phone: student.parentPhone,
-          address: student.address,
-          notes: data.notes,
-        } as any,
-      });
-
-      await tx.student.update({
-        where: { id: studentId },
-        data: { status: 'alumni', graduateYear: data.graduationYear },
-      });
-
-      // Using classEnrollment instead of enrollment to match common schema naming
-      // or check if it should be studentEnrollment/classEnrollment
-      await tx.classEnrollment.updateMany({
-        where: { studentId, status: 'active' },
-        data: { status: 'completed' },
-      });
-
-      results.push(alumni);
-    }
-    return results;
+    return alumni;
   });
 }
 
