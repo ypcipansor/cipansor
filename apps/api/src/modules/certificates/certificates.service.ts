@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { prisma } from '../../lib/prisma';
 import { certificateVerificationUrl } from '../../utils/verification-url';
 import type {
@@ -22,16 +23,22 @@ const studentInclude = {
   createdBy: { select: { id: true, name: true } },
 } as const;
 
-/** The DigitalCertificate table has no generated QR; verification is keyed by number. */
+/**
+ * The DigitalCertificate table has no generated QR; verification is keyed by
+ * number. The blob itself must still be unguessable — it is printed on every
+ * certificate — so it comes from the CSPRNG, not `Math.random`.
+ */
 function qrCode() {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  return crypto.randomUUID();
 }
 
 function certificateNumber(type: string) {
   const year = new Date().getFullYear();
   const month = String(new Date().getMonth() + 1).padStart(2, '0');
-  const seq = String(Math.floor(Math.random() * 9000) + 1000);
-  return `${type.slice(0, 3)}/${month}/${year}/${seq}`;
+  // The number is the public verification key, so a guessable four-digit
+  // sequence would let anyone enumerate other students' certificates.
+  const seq = crypto.randomBytes(5).toString('hex').toUpperCase();
+  return `${type.slice(0, 3).toUpperCase()}/${month}/${year}/${seq}`;
 }
 
 export async function createCertificate(data: CreateCertificateDto, createdById: string) {

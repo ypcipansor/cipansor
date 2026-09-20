@@ -47,9 +47,24 @@ describe('certificates service', () => {
     expect(result).toEqual({ id: 'cert-1' });
     const arg = mocked.digitalCertificate.create.mock.calls[0][0];
     expect(arg.data.studentId).toBe(base.studentId);
-    expect(arg.data.certificateNumber).toMatch(/^TAH\//);
+    expect(arg.data.certificateNumber).toMatch(/^TAH\/\d{2}\/\d{4}\/[0-9A-F]{10}$/);
     expect(arg.data.verificationUrl).toContain('/public/verify-sanad?code=');
     expect(arg.data.verificationUrl).toContain(encodeURIComponent(arg.data.certificateNumber));
+  });
+
+  it('generates unguessable certificate numbers and QR blobs', async () => {
+    mocked.digitalCertificate.create.mockResolvedValue({ id: 'cert-1' });
+    const seen = new Set<string>();
+    for (let i = 0; i < 50; i++) {
+      await createCertificate({ ...base, certificateType: 'IJAZAH' }, 'user-1');
+      const arg = mocked.digitalCertificate.create.mock.calls[i][0];
+      seen.add(arg.data.certificateNumber);
+      expect(arg.data.qrCode).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+      );
+    }
+    // Four-digit sequences collide within a few dozen draws; 10 hex bytes do not.
+    expect(seen.size).toBe(50);
   });
 
   it('returns a certificate by id', async () => {
