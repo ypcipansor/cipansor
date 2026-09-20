@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync } from 'fs';
+import { existsSync, readFileSync, readdirSync } from 'fs';
 import { join, resolve } from 'path';
 import * as PrismaClientNS from '@prisma/client';
 import { createPrismaClient } from '../../prisma/client';
@@ -625,11 +625,28 @@ describe('decommission purge — migrations', () => {
     for (const [model, unique] of [
       ['DashboardMetricSnapshot', '@@unique([unitId, metricType, periodType, periodDate])'],
       ['ReportTemplate', '@@unique([unitId, type])'],
-      ['SystemSecret', '@@unique([unitId, key])'],
     ]) {
       const body = SCHEMA.slice(SCHEMA.indexOf(`model ${model} {`));
       expect(body.slice(0, body.indexOf('\n}')), model).toContain(unique);
     }
+    // `system_secrets` is the third match, and its evidence cannot come from
+    // `schema.prisma` any more: PR #504 deleted the model. The TABLE still
+    // exists when this migration runs, because #504's `DROP TABLE` sorts
+    // *after* this folder and Prisma applies migrations in folder order. So the
+    // evidence is the baseline the database actually carries, plus that
+    // ordering -- if the drop is ever renamed to sort earlier, the catalog rule
+    // matches two tables instead of three and the header's blast radius
+    // (233/232, 14 at depth 0) is wrong by one.
+    expect(ZERO_INIT).toContain(
+      'CREATE UNIQUE INDEX "system_secrets_unit_id_key_key" ON "system_secrets"("unit_id", "key")'
+    );
+    expect(ZERO_INIT).toMatch(
+      /ALTER TABLE "system_secrets" ADD CONSTRAINT "system_secrets_unit_id_fkey"[\s\S]{0,120}ON DELETE SET NULL/
+    );
+    const dropSecrets = migrationDirs.find((d) => d.endsWith('_drop_system_secrets'));
+    expect(dropSecrets, 'PR #504 ships the system_secrets drop').toBeDefined();
+    expect(DECOMMISSION_DIR).toBeDefined();
+    expect(dropSecrets! > DECOMMISSION_DIR!).toBe(true);
   });
 
   it('excludes partial unique indexes from the unique-per-unit rule', () => {
@@ -670,12 +687,13 @@ describe('decommission purge — migrations', () => {
     // precedence over the default: `unitId` is a real ownership column.
     expect(reports).toMatch(/OR: \[\{ unitId: query\.unitId \}, \{ isDefault: true \}\]/);
 
-    const SECRETS = join(API_ROOT, 'src', 'modules', 'system-secrets', 'secrets.service.ts');
-    const secrets = read(SECRETS);
-    // PR #504 owns the module, but the ownership semantics are the same: an
-    // explicit `unitId` selects that unit's secret; no unit reads the
-    // foundation-wide (`null`) scope.
-    expect(secrets).toMatch(/unitId \? \{ unitId \} : \{ unitId: null \}/);
+    // The third match, `system_secrets`, no longer has a read path to audit:
+    // PR #504 deleted the module (`secrets.service.ts` read an explicit
+    // `unitId` as that unit's secret and `null` as the foundation scope --
+    // per-unit ownership, same as the two above). Its table outlives this
+    // migration only because #504's drop sorts later, and it holds no rows in
+    // production, so capturing it here retires it rather than globalising it.
+    expect(existsSync(join(API_ROOT, 'src', 'modules', 'system-secrets'))).toBe(false);
   });
 
   it('pins the exact set of tables the unique-per-unit catalog rule can match', () => {
@@ -711,10 +729,22 @@ describe('decommission purge — migrations', () => {
       // Audited: a template is selected per unit, the unit row taking
       // precedence over the default.
       'report_templates',
-      // PR #504 owns the module; ownership semantics are per-unit (`unitId ? {
-      // unitId } : { unitId: null }` reads NULL as the foundation scope).
-      'system_secrets',
     ]);
+
+    // The schema is no longer the whole story: the rule runs against the
+    // database, which still carries `system_secrets` at this point (PR #504
+    // deleted the model but its `DROP TABLE` sorts after this migration). So
+    // the catalog matches three tables where the schema now shows two, and the
+    // header's blast radius counts three. Pin the difference explicitly rather
+    // than letting it read as a stale number.
+    const alsoInDatabase = ['system_secrets'];
+    for (const table of alsoInDatabase) {
+      expect(ZERO_INIT, `${table} exists in the deployed baseline`).toContain(
+        `CREATE TABLE "${table}"`
+      );
+      expect(SCHEMA, `${table} has no Prisma model left`).not.toContain(`@@map("${table}")`);
+    }
+    expect(optionalUnitUnique.length + alsoInDatabase.length).toBe(3);
 
     // Guard the derivation itself: a model with a *required* `unit_id` and
     // `@@unique([unitId, ...])` is unit-owned along a RESTRICT edge and is

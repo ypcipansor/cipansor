@@ -28,6 +28,14 @@ const DECOMMISSION = readMigration('20260915120000_decommission_higher_ed_litban
 
 const describeDb = process.env.RUN_DB_TESTS ? describe : describe.skip;
 
+// Every case here restores the `0_init` baseline and replays the decommission
+// migration against a real database, which the repo-wide `testTimeout: 10000`
+// cannot cover: the two cross-unit cases (sibling budget on a PT account code,
+// partial unique index) measure ~12s each, so with the default the suite fails
+// on timeouts rather than on behaviour. Measured 2026-09-20 on a local
+// postgres:16: slowest case 12.1s, whole file 52s.
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
+
 /** SQL state as it existed before the purge. */
 const LEGACY_SEED = `
 INSERT INTO units (id, name, type, address, updated_at) VALUES
