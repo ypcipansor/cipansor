@@ -956,6 +956,33 @@ halaman membaca `name`), kartu ringkasan membaca bentuk respons yang berbeda
 dari yang dikirim `report/completeness`, dan **NIK anak tampil penuh** di tabel
 (minimisasi tampilan data pribadi spesifik, UU 27/2022 Ps. 4).
 
+### Menunggu keputusan pengguna (dibuka 2026-09-20 setelah #513/#514/#515)
+
+Tiga hal yang sengaja **tidak** diputuskan sendiri saat mengerjakan pengganti
+#489. Semuanya terukur, dan semuanya menunggu jawaban yayasan.
+
+1. **Tata Usaha tidak melihat tombol "Luluskan".** API mengizinkan TU
+   meluluskan (`manageAlumni` = admin + TU, #500), tetapi halaman
+   `students/[id]` dibuka dengan `MainLayout allowedRoles={["SUPER_ADMIN",
+   "UNIT_ADMIN", "TEACHER"]}` sejak lama, sehingga TU terpental ke
+   `/unauthorized` — terbukti di rig dengan akun `smpit.tu@`. **Pertanyaan:**
+   apakah TU boleh membuka detail santri (dan karenanya meluluskan lewat UI),
+   atau kelulusan memang hanya wewenang kepala/admin unit? Jangan longgarkan
+   halamannya tanpa jawaban itu: halaman detail memuat data pribadi lengkap.
+2. **Kolom `students.nis` masih ada.** #515 hanya membuang indeks uniknya;
+   kolomnya dipertahankan sebagai cuplikan supaya image `:rollback` tetap bisa
+   menulis. **Pertanyaan:** buang kolomnya di rilis tersendiri setelah satu
+   rilis penuh berjalan tanpa penulis lama, atau biarkan sebagai cuplikan
+   permanen (mempercepat daftar santri, dengan risiko dua fakta menyimpang)?
+3. **`canManageDecisions` di halaman SPMB tidak pernah cocok.**
+   `apps/web/src/app/spmb/registrations/[id]/page.tsx` membandingkan
+   `getPrimaryRoleCode(user)` dengan `"UNIT_ADMIN"`, padahal katalog perannya
+   `SDIT_ADMIN`/`SMPIT_ADMIN`/… — jadi tombol Terima/Tolak/Jadwalkan Tes
+   tampil **nonaktif** untuk admin unit yang sebenarnya berwenang (Super Admin
+   lolos karena dicek terpisah). Perbaikannya sebaris (pakai ember peran yang
+   sama dengan API), tetapi ia mengubah siapa yang bisa memutuskan penerimaan —
+   **pertanyaan:** siapa yang seharusnya boleh menekan tombol itu?
+
 ### NIS per unit — SELESAI (bagian 3 dan 4 pengganti #489)
 
 Ketiga sisa di bawah sudah dikerjakan; disimpan sebagai jejak keputusan.

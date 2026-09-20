@@ -841,6 +841,28 @@ benar untuk itu; query "sepanjang tahun ajaran Y" akan menghitungnya di dua unit
 Untuk laporan tahunan per unit, putuskan mana yang dipakai — keadaan pada tanggal
 potong (mis. akhir semester) atau keduanya — dan tulis keputusannya di sini.
 
+## ❓ 17. Menunggu keputusan yayasan (dibuka 2026-09-20)
+
+Bukan pekerjaan yang tertunda karena sulit — tiga hal yang **tidak boleh**
+diputuskan sendiri karena mengubah wewenang atau membuka data pribadi. Bukti
+dan kalimat pertanyaannya ada di
+[`KNOWN_ISSUES.md`](./KNOWN_ISSUES.md) → "Menunggu keputusan pengguna".
+
+1. **Tata Usaha dan tombol Luluskan.** API mengizinkan TU (#500); halaman detail
+   santri tidak (`allowedRoles` lama). Melonggarkannya membuka seluruh data
+   pribadi santri untuk TU.
+2. **Kolom `students.nis`.** #515 membuang indeks uniknya dan mempertahankan
+   kolomnya demi jendela rollback. Membuangnya = rilis tersendiri setelah satu
+   rilis penuh tanpa penulis lama.
+3. **Siapa yang boleh memutuskan penerimaan SPMB.** `canManageDecisions`
+   membandingkan peran utama dengan `"UNIT_ADMIN"` yang tak pernah cocok, jadi
+   admin unit melihat tombol keputusan dalam keadaan nonaktif.
+
+Setelah dijawab: kerjakan, lalu hapus butirnya dari sini dan dari
+`KNOWN_ISSUES.md`, dan catat keputusannya di memori keputusan yang sesuai.
+
+---
+
 ## Operating notes that keep costing time when forgotten
 
 - **`node` is not on this host's PATH.** Everything runs through
