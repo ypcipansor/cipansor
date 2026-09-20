@@ -72,6 +72,81 @@ test.describe("Daily report detail", () => {
     );
   });
 
+  test("the tk detail viewer resolves a private report photo instead of using the raw URL (finding 14)", async ({
+    page,
+  }) => {
+    // `/tk/daily-reports/[id]` renders `photo.photoUrl` directly before the
+    // fix, so once uploads land in the private container the tile 403s. It must
+    // go through the same resolver as every other private viewer.
+    const template = await apiRequest<{
+      data: Array<{ studentId: string; unitId: string; academicYearId: string }>;
+    }>(session, "GET", "/daily-report?limit=1");
+    const base = template.data[0];
+    if (!base) {
+      test.skip(true, "no seeded daily report to derive student/unit/year");
+      return;
+    }
+
+    const photoUrl = await uploadPng(session, "e2e-tk-photo.png");
+
+    const existing = await apiRequest<{ data: Array<{ reportDate: string }> }>(
+      session,
+      "GET",
+      `/daily-report?studentId=${base.studentId}&limit=100`,
+    );
+    const taken = new Set(existing.data.map((r) => r.reportDate.slice(0, 10)));
+    let reportDate = "";
+    for (let offset = 900; offset < 1400; offset += 1) {
+      const candidate = new Date(Date.now() + offset * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .slice(0, 10);
+      if (!taken.has(candidate)) {
+        reportDate = candidate;
+        break;
+      }
+    }
+    expect(reportDate).not.toBe("");
+
+    const created = await apiRequest<{ data: { id: string } }>(
+      session,
+      "POST",
+      "/daily-report",
+      {
+        studentId: base.studentId,
+        unitId: base.unitId,
+        academicYearId: base.academicYearId,
+        reportDate: `${reportDate}T00:00:00.000Z`,
+        activitiesSummary: "E2E tk photo resolution",
+        photoUrls: [photoUrl],
+      },
+    );
+
+    try {
+      await page.goto(`/tk/daily-reports/${created.data.id}`);
+      await page.waitForLoadState("domcontentloaded");
+
+      // The reporter photo must be resolved through `/upload/sas` into a
+      // token-bearing URL, never the raw persisted path...
+      const resolvedPhoto = page.locator('img[src*="token="]').first();
+      await expect(resolvedPhoto).toBeVisible({ timeout: 20_000 });
+      // ...and the bytes must actually load (a resolved-but-still-403 URL would
+      // leave naturalWidth at 0).
+      await expect
+        .poll(
+          async () =>
+            resolvedPhoto.evaluate(
+              (el) =>
+                (el as HTMLImageElement).complete &&
+                (el as HTMLImageElement).naturalWidth > 0,
+            ),
+          { timeout: 20_000 },
+        )
+        .toBe(true);
+    } finally {
+      await apiRequest(session, "DELETE", `/daily-report/${created.data.id}`);
+    }
+  });
+
   test("create → attach photo → remove photo → delete (real stack)", async () => {
     const template = await apiRequest<{
       data: Array<{ studentId: string; unitId: string; academicYearId: string }>;

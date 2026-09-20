@@ -19,7 +19,7 @@ import {
   claimBlobForDiscard,
   releaseBlobClaim,
   releaseBlobClaimById,
-  blobClaimStillHeld,
+  markBlobDiscarded,
 } from '@/utils/blob-claim';
 
 const describeDb = process.env.RUN_DB_TESTS ? describe : describe.skip;
@@ -169,10 +169,11 @@ describeDb('BlobClaim protocol (BUG 4)', () => {
     await releaseBlobClaim(URL_A, 'author-1');
   });
 
-  it('a create waits out a live discard claim instead of failing (BUG 4 residual)', async () => {
-    // This is the window the old protocol lost on: the discard holds the claim
-    // across its own probe, so a create arriving now must neither steal the row
-    // nor be rejected — it waits, and takes over once the discard releases.
+  it('a create waits out a live discard claim instead of failing (BUG 4)', async () => {
+    // The discard holds the claim across its probe/delete, so a create arriving
+    // now must neither steal the row nor be rejected — it waits, and takes over
+    // once the discard releases (which, on the real delete path, happens only
+    // when the tombstone could NOT be set, i.e. the discard aborted).
     const discardId = await claimBlobForDiscard(URL_B, 'discard-holder');
     expect(discardId).not.toBeNull();
 
@@ -196,28 +197,88 @@ describeDb('BlobClaim protocol (BUG 4)', () => {
     await releaseBlobClaim(URL_B, 'author-1');
   });
 
-  it('a discard that lost its claim to a create can see it is no longer held', async () => {
-    // The discard's last check before deleting. Here a create has taken the row
-    // after the discard's claim was released, exactly as the residual race
-    // would leave it — the discard must observe false and abort.
+  it('markBlobDiscarded only succeeds for the live holder, and only once (BUG 4)', async () => {
+    // The tombstone is the atomic switch the delete hinges on: it must fail for
+    // a foreign holder, fail on a second call, and fail for an expired claim.
     const discardId = await claimBlobForDiscard(URL_B, 'discard-holder');
-    expect(await blobClaimStillHeld(discardId as string, 'discard-holder')).toBe(true);
+    expect(discardId).not.toBeNull();
 
-    await releaseBlobClaimById(discardId as string, 'discard-holder');
-    expect(await claimBlobForRecord(URL_B, 'author-1')).toBe(true);
+    // A different actor cannot tombstone someone else's claim.
+    expect(await markBlobDiscarded(discardId as string, 'other-actor')).toBe(false);
 
-    expect(await blobClaimStillHeld(discardId as string, 'discard-holder')).toBe(false);
-    await releaseBlobClaim(URL_B, 'author-1');
-  });
+    // The holder's first call wins...
+    expect(await markBlobDiscarded(discardId as string, 'discard-holder')).toBe(true);
+    // ...and a second is a no-op: the row is already terminal.
+    expect(await markBlobDiscarded(discardId as string, 'discard-holder')).toBe(false);
 
-  it('treats an expired claim as no longer held', async () => {
+    // An expired claim cannot be tombstoned either (nothing to release safely).
     await clientA.query(
       `INSERT INTO "blob_claims"
          ("id", "blob_url", "kind", "holder_id", "created_at", "expires_at")
-       VALUES ('liveness-expired', $1, 'DISCARD', 'discard-holder', now() - interval '20 minutes', now() - interval '10 minutes')`,
+       VALUES ('tombstone-expired', $1, 'DISCARD', 'discard-holder', now() - interval '20 minutes', now() - interval '10 minutes')`,
+      [URL_A]
+    );
+    expect(await markBlobDiscarded('tombstone-expired', 'discard-holder')).toBe(false);
+
+    await clientA.query(`DELETE FROM "blob_claims" WHERE "blob_url" = ANY($1)`, [
+      [URL_A, URL_B],
+    ]);
+  });
+
+  it('the tombstone is terminal: a create can never claim a discarded blob, even after expiry (BUG 4)', async () => {
+    // This is the deterministic proof the residual TOCTOU is gone. The old
+    // protocol released the row after the delete, so a create waiting on it
+    // reclaimed the URL and referenced a blob that no longer existed.
+    const discardId = await claimBlobForDiscard(URL_A, 'discard-holder');
+    expect(discardId).not.toBeNull();
+    expect(await markBlobDiscarded(discardId as string, 'discard-holder')).toBe(true);
+
+    // A create arriving now must refuse immediately — not wait, not take over.
+    const started = Date.now();
+    expect(await claimBlobForRecord(URL_A, 'author-1')).toBe(false);
+    expect(Date.now() - started).toBeLessThan(500);
+
+    // Even once the tombstoned row's TTL lapses — the old protocol's escape
+    // hatch — the create is still refused. The blob is gone; nothing may
+    // resurrect its URL.
+    await clientA.query(
+      `UPDATE "blob_claims" SET "expires_at" = now() - interval '1 hour' WHERE "id" = $1`,
+      [discardId]
+    );
+    expect(await claimBlobForRecord(URL_A, 'author-1')).toBe(false);
+
+    // A second discard also cannot re-open it (the blob is already gone).
+    expect(await claimBlobForDiscard(URL_A, 'discard-holder')).toBeNull();
+
+    await clientA.query(`DELETE FROM "blob_claims" WHERE "blob_url" = $1`, [URL_A]);
+  });
+
+  it('only one side wins a discard/create race: tombstone and record claim are mutually exclusive', async () => {
+    // Deterministic interleaving: open a transaction that would insert the
+    // create's RECORD claim but hold it, then let the discard run. The discard
+    // must either fail to tombstone (create won) or force the create to refuse
+    // (tombstone won) — never both.
+    await clientA.query('BEGIN');
+    await clientA.query(
+      `INSERT INTO "blob_claims"
+         ("id", "blob_url", "kind", "holder_id", "created_at", "expires_at")
+       VALUES ('race-claim-3', $1, 'DISCARD', 'discard-holder', now(), now() + interval '10 minutes')`,
       [URL_B]
     );
-    expect(await blobClaimStillHeld('liveness-expired', 'discard-holder')).toBe(false);
-    await clientA.query(`DELETE FROM "blob_claims" WHERE "id" = 'liveness-expired'`);
+
+    // The create blocks on the unique row while the discard transaction is open.
+    const recordPromise = claimBlobForRecord(URL_B, 'author-1');
+    expect(await isPending(recordPromise, 300)).toBe(true);
+
+    // The discard (a different connection via the shared client) commits its
+    // tombstone inside its transaction, then the transaction ends. The waiting
+    // create must NOT win: the tombstone survives the commit.
+    await clientA.query(
+      `UPDATE "blob_claims" SET "discarded_at" = now() WHERE "id" = 'race-claim-3'`
+    );
+    await clientA.query('COMMIT');
+    expect(await recordPromise).toBe(false);
+
+    await clientA.query(`DELETE FROM "blob_claims" WHERE "blob_url" = $1`, [URL_B]);
   });
 });

@@ -1,5 +1,11 @@
 import { test, expect } from "./fixtures/auth.fixture";
-import { apiLogin, apiRequest, injectSession, SEED_USERS } from "./helpers/auth-api";
+import {
+  apiLogin,
+  apiRequest,
+  injectSession,
+  SEED_USERS,
+  type AuthSession,
+} from "./helpers/auth-api";
 
 /**
  * PAUD evidence, end to end: upload → persist → open (BUG 1).
@@ -20,10 +26,26 @@ import { apiLogin, apiRequest, injectSession, SEED_USERS } from "./helpers/auth-
  * real backend and then reloads the viewer.
  */
 
-// The seeded PAUD assessment (prisma/seed.ts). It belongs to the TK unit, so a
-// super admin can read it, and it already carries one evidence row — which is
-// what lets the "existing evidence also resolves" assertion below be real.
-const ASSESSMENT_ID = "6bb56eef-ac55-407c-a75c-7851a6292d50";
+/**
+ * The seeded PAUD assessment, discovered at runtime.
+ *
+ * `prisma/seed.ts` creates it without an explicit id, so its id is a fresh
+ * UUID on every seed. The spec used to hardcode one, which silently stopped
+ * matching after a reseed and made the whole suite fail against a real, intact
+ * seed. Discover the row that actually carries an evidence file instead.
+ */
+async function findSeededAssessmentId(session: AuthSession): Promise<string> {
+  const list = await apiRequest<{
+    data: Array<{ id: string; evidences: Array<{ id: string }> }>;
+  }>(session, "GET", "/paud-assessment/assessments?limit=50");
+  const withEvidence = list.data.find((a) => a.evidences.length > 0);
+  if (!withEvidence) {
+    throw new Error(
+      "no seeded PAUD assessment has an evidence row; run `pnpm --filter api db:seed`",
+    );
+  }
+  return withEvidence.id;
+}
 
 const PNG_BUFFER = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
@@ -43,11 +65,12 @@ async function pickOption(
 /** Open the edit page and wait until the form's data fetches have resolved. */
 async function openEditFormReady(
   page: import("@playwright/test").Page,
+  assessmentId: string,
 ): Promise<void> {
   await Promise.all([
     page.waitForResponse(
       (r) =>
-        r.url().includes(`/paud-assessment/assessments/${ASSESSMENT_ID}`) &&
+        r.url().includes(`/paud-assessment/assessments/${assessmentId}`) &&
         r.ok(),
       { timeout: 30_000 },
     ),
@@ -55,7 +78,7 @@ async function openEditFormReady(
       (r) => r.url().includes("/students?") && r.ok(),
       { timeout: 30_000 },
     ),
-    page.goto(`/tk/assessment/${ASSESSMENT_ID}/edit`),
+    page.goto(`/tk/assessment/${assessmentId}/edit`),
   ]);
 }
 
@@ -97,6 +120,7 @@ test.describe("PAUD evidence upload → persist → open", () => {
   }) => {
     const session = await apiLogin(SEED_USERS.superAdmin);
     await injectSession(page, session);
+    const assessmentId = await findSeededAssessmentId(session);
     type AssessmentPayload = {
       data: {
         evidences: Array<{ id: string; fileUrl: string; fileType: string }>;
@@ -105,11 +129,11 @@ test.describe("PAUD evidence upload → persist → open", () => {
     const before = await apiRequest<AssessmentPayload>(
       session,
       "GET",
-      `/paud-assessment/assessments/${ASSESSMENT_ID}`,
+      `/paud-assessment/assessments/${assessmentId}`,
     );
     const existingIds = new Set(before.data.evidences.map((e) => e.id));
 
-    await openEditFormReady(page);
+    await openEditFormReady(page, assessmentId);
 
     await advanceToReviewStep(page);
     // Step 4 has just mounted; the existing-evidence resolver settles a render
@@ -145,7 +169,7 @@ test.describe("PAUD evidence upload → persist → open", () => {
     const after = await apiRequest<AssessmentPayload>(
       session,
       "GET",
-      `/paud-assessment/assessments/${ASSESSMENT_ID}`,
+      `/paud-assessment/assessments/${assessmentId}`,
     );
     const uploaded = after.data.evidences.find((e) => !existingIds.has(e.id));
     expect(
@@ -162,7 +186,7 @@ test.describe("PAUD evidence upload → persist → open", () => {
     // raw path, which would 403. Evidence tiles live under the "Dokumentasi
     // Kegiatan" section; the seeded row's `alt` is its caption, so scope by
     // section rather than by alt text.
-    await page.goto(`/tk/assessment/${ASSESSMENT_ID}`);
+    await page.goto(`/tk/assessment/${assessmentId}`);
     await page.waitForLoadState("domcontentloaded");
     const evidenceImgs = page
       .locator("section", { has: page.getByText("Dokumentasi Kegiatan") })
@@ -226,8 +250,10 @@ test.describe("PAUD evidence upload → persist → open", () => {
   test("the existing seeded evidence resolves through the resolver, not a raw URL (BUG 1)", async ({
     page,
   }) => {
-    await injectSession(page, await apiLogin(SEED_USERS.superAdmin));
-    await page.goto(`/tk/assessment/${ASSESSMENT_ID}`);
+    const session = await apiLogin(SEED_USERS.superAdmin);
+    await injectSession(page, session);
+    const assessmentId = await findSeededAssessmentId(session);
+    await page.goto(`/tk/assessment/${assessmentId}`);
     await page.waitForLoadState("domcontentloaded");
 
     // The seeded row uses a MIME-spelled `fileType` ("image"), so it must be

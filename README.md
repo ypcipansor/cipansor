@@ -3,7 +3,7 @@
 > **Sistem Informasi Cipansor** - Platform terintegrasi untuk TK, SD IT, SMP IT, SMA Al-Qur'an dengan fokus tahfidz dan kurikulum pesantren terintegrasi.
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg)](https://www.typescriptlang.org/)
-[![Node.js](https://img.shields.io/badge/Node.js-20+-green.svg)](https://nodejs.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-22+-green.svg)](https://nodejs.org/)
 [![Next.js](https://img.shields.io/badge/Next.js-16-black.svg)](https://nextjs.org/)
 [![Prisma](https://img.shields.io/badge/Prisma-7-blueviolet.svg)](https://www.prisma.io/)
 [![Express](https://img.shields.io/badge/Express-5-green.svg)](https://expressjs.com/)
@@ -322,7 +322,7 @@ Ikuti langkah berikut untuk menjalankan proyek di lingkungan lokal Anda:
 
 ### Prasyarat
 
-- Node.js (v20+)
+- Node.js (v22+)
 - pnpm
 - PostgreSQL
 - Docker (Opsional)

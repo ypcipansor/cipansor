@@ -2251,8 +2251,16 @@ model BlobClaim {
   /// After this instant the claim no longer blocks a discard: a crashed create
   /// must not pin its orphan forever.
   expiresAt DateTime        @map("expires_at")
+  /// Terminal tombstone. Set atomically immediately before the irreversible
+  /// Azure delete; from then on NO create may ever take this row over, so a
+  /// create that was waiting out the discard's delete cannot claim a blob that
+  /// is about to vanish. The row is deliberately kept after a successful delete
+  /// (not released), because releasing it would reopen the very window the
+  /// tombstone closes.
+  discardedAt DateTime?   @map("discarded_at")
 
   @@index([expiresAt])
+  @@index([discardedAt])
   @@map("blob_claims")
 }
 

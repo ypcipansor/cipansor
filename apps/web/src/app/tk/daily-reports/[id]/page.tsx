@@ -50,7 +50,8 @@ import { format } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
+import { useState, useMemo } from "react";
+import { useResolvedFileUrls } from "@/hooks/use-resolved-file-url";
 
 const ATTENDANCE_LABELS: Record<string, string> = {
   PRESENT: "Hadir",
@@ -107,6 +108,16 @@ export default function DailyReportDetailPage() {
   const { data: photos, isLoading: photosLoading } =
     useDailyReportPhotos(reportId);
   const addParentNotesMutation = useAddParentNotes();
+
+  // Daily-report photos land in the private `cipansor-documents` container
+  // (the generic upload default), so a raw `photoUrl` 403s once Azure is on.
+  // Resolve them the same way every other private viewer does.
+  const photoUrls = useMemo(
+    () => (photos ?? []).map((p: { photoUrl: string }) => p.photoUrl),
+    [photos]
+  );
+  const resolvedPhotos = useResolvedFileUrls(photoUrls);
+  const photoSrc = (url: string) => resolvedPhotos[url] || url;
 
   const handleAddParentNotes = async () => {
     // This feature is currently not supported in the backend
@@ -484,7 +495,7 @@ export default function DailyReportDetailPage() {
                     {photos.map((photo: any) => (
                       <div key={photo.id} className="group relative">
                         <img
-                          src={photo.photoUrl}
+                          src={photoSrc(photo.photoUrl)}
                           alt={photo.caption || "Kegiatan"}
                           className="aspect-square object-cover rounded-lg border"
                         />

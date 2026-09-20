@@ -21,6 +21,13 @@ import { Prisma } from '@prisma/client';
  *     take a `RECORD` claim, which now conflicts with the live `DISCARD` claim —
  *     so no record referencing the blob can commit between the re-probe and the
  *     delete.
+ *  3. Before it calls Azure, the discard flips `discardedAt` on its own claim —
+ *     a conditional UPDATE that only succeeds while the claim is still its own
+ *     and untombstoned. Once the tombstone is set NO create may ever take the
+ *     row over, no matter how long the delete takes. The old protocol instead
+ *     released the row right after the delete, which let a waiting create slip
+ *     in between the delete and the release and persist a reference to a blob
+ *     that was already gone.
  *
  * Whichever side inserts first wins; the loser backs off. A claim is
  * `expiresAt`-bounded so a create that crashes before saving its record cannot
@@ -56,6 +63,12 @@ function ttlMs(kind: 'RECORD' | 'DISCARD'): number {
  * A single `ON CONFLICT ... DO UPDATE ... WHERE` is what makes this atomic: two
  * concurrent claimers serialize on the unique row, and only one UPDATE's WHERE
  * can pass. No read-then-write gap for a race to slip through.
+ *
+ * A tombstoned row (`discardedAt IS NOT NULL`) is never taken over — not even
+ * when it is expired or held by the same actor. That is what makes a completed
+ * discard permanent: the blob is gone, so no create may ever claim its URL
+ * again. Without this clause a waiter would reclaim the row the moment the
+ * discard released it.
  */
 async function upsertClaim(
   client: ClaimClient,
@@ -76,8 +89,9 @@ async function upsertClaim(
           "record_id" = EXCLUDED."record_id",
           "created_at" = now(),
           "expires_at" = EXCLUDED."expires_at"
-      WHERE "blob_claims"."expires_at" < now()
-         OR "blob_claims"."holder_id" = EXCLUDED."holder_id"
+      WHERE ("blob_claims"."discarded_at" IS NULL)
+        AND ("blob_claims"."expires_at" < now()
+          OR "blob_claims"."holder_id" = EXCLUDED."holder_id")
     RETURNING "id"
   `);
 
@@ -102,9 +116,13 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * backing off means neither makes progress on a legitimate request.
  *
  * So the create waits for that short-lived `DISCARD` claim to clear and then
- * takes the row; the discard's liveness check (`blobClaimStillHeld`) sees the
- * claim gone and abandons the delete. A claim held by another *record* is not
- * waited for — it is a genuine concurrent duplicate the caller should refuse.
+ * takes the row; the discard, on failing to tombstone its claim, abandons the
+ * delete. A claim held by another *record* is not waited for — it is a genuine
+ * concurrent duplicate the caller should refuse.
+ *
+ * A tombstoned row (`discardedAt` set) is terminal and NOT retried: the blob has
+ * been deleted, so waiting is pointless and succeeding would be fatal. The
+ * create refuses at once.
  */
 async function claimRecordWithRetry(
   client: ClaimClient,
@@ -116,12 +134,16 @@ async function claimRecordWithRetry(
     const id = await upsertClaim(client, blobUrl, 'RECORD', holderId);
     if (id !== null) return true;
 
-    const holder = await client.$queryRaw<Array<{ kind: string }>>(Prisma.sql`
-      SELECT "kind"::text AS "kind" FROM "blob_claims" WHERE "blob_url" = ${blobUrl}
+    const holder = await client.$queryRaw<Array<{ kind: string; discardedAt: Date | null }>>(Prisma.sql`
+      SELECT "kind"::text AS "kind", "discarded_at" AS "discardedAt"
+      FROM "blob_claims" WHERE "blob_url" = ${blobUrl}
     `);
-    const blockingKind = holder[0]?.kind;
+    const blocking = holder[0];
+    // The blob this URL pointed at has been deleted; no create may resurrect it.
+    // Retrying would only burn the timeout before failing anyway.
+    if (blocking?.discardedAt) return false;
     // Only a discard is transient by design; anything else is a real conflict.
-    if (blockingKind !== 'DISCARD' || Date.now() >= deadline) return false;
+    if (blocking?.kind !== 'DISCARD' || Date.now() >= deadline) return false;
     await sleep(CLAIM_RETRY_DELAY_MS);
   }
 }
@@ -159,6 +181,37 @@ export async function claimBlobForDiscard(
 }
 
 /**
+ * Permanently tombstone a discard claim immediately before the irreversible
+ * blob delete (BUG 4).
+ *
+ * This is the atomic switch that removes the last TOCTOU. It flips
+ * `discarded_at` in a single conditional UPDATE, which only succeeds while the
+ * claim is still this actor's own, still live, and not already tombstoned:
+ *
+ *  - If it returns true, the row can never be taken over again (every claim
+ *    path filters on `discarded_at IS NULL`), so the delete that follows cannot
+ *    race a create — even one already waiting on the row.
+ *  - If it returns false, the claim was lost to a create (or another discard)
+ *    since the re-probe; the caller MUST abort without deleting.
+ *
+ * Unlike {@link releaseBlobClaimById}, this does not remove the row: releasing
+ * it is exactly what let a waiting create reclaim the URL between the delete and
+ * the release.
+ */
+export async function markBlobDiscarded(claimId: string, holderId: string): Promise<boolean> {
+  const rows = await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+    UPDATE "blob_claims"
+    SET "discarded_at" = now()
+    WHERE "id" = ${claimId}
+      AND "holder_id" = ${holderId}
+      AND "discarded_at" IS NULL
+      AND "expires_at" > now()
+    RETURNING "id"
+  `);
+  return rows.length > 0;
+}
+
+/**
  * Release a claim this actor holds, by URL (used by the create path).
  * `holderId` scoping means a release can never delete another actor's claim.
  */
@@ -179,32 +232,6 @@ export async function releaseBlobClaimById(id: string, holderId: string): Promis
     DELETE FROM "blob_claims"
     WHERE "id" = ${id} AND "holder_id" = ${holderId}
   `;
-}
-
-/**
- * True while `id` is still the live claim this actor holds.
- *
- * The discard path runs its last reference probe, then deletes the blob. Those
- * two steps are not one atomic operation, so there is a window between them —
- * and a create-record whose *claim insert* was already waiting on the unique
- * row can commit inside it: the discard's claim is deleted (with the record's
- * insert), the waiting create then takes the row, and the delete that follows
- * destroys a blob the record now points at.
- *
- * This check does not remove that window on its own; it is the discard's half of
- * closing it. `claimBlobForRecord` retries its claim, so a create that loses the
- * row to a discard's still-live claim waits rather than failing; a discard that
- * finds its claim gone knows a create won and aborts the delete. The residual
- * window is now a sub-millisecond local comparison instead of a network call to
- * Azure, and the durable guarantee remains "the record's committed claim
- * conflicts with the discard's claim".
- */
-export async function blobClaimStillHeld(id: string, holderId: string): Promise<boolean> {
-  const rows = await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-    SELECT "id" FROM "blob_claims"
-    WHERE "id" = ${id} AND "holder_id" = ${holderId} AND "expires_at" > now()
-  `);
-  return rows.length > 0;
 }
 
 /**

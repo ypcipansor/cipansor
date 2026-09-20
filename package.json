@@ -19,6 +19,9 @@
     "yaml": "^2.8.2"
   },
   "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "pnpm": {
     "overrides": {
       "qs": ">=6.16.0",

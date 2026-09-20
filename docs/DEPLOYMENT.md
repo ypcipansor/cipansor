@@ -19,7 +19,7 @@ Panduan deployment sistem Cipansor untuk production.
 
 ### System Requirements
 
-- **Node.js**: v20 LTS atau lebih baru
+- **Node.js**: v22 LTS atau lebih baru (wajib — `@azure/storage-blob@12.33.0` mensyaratkan Node >= 22)
 - **PostgreSQL**: v14 atau lebih baru
 - **pnpm**: v10 atau lebih baru
 - **Docker** (opsional): v24 atau lebih baru

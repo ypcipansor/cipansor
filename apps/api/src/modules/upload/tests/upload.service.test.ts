@@ -12,7 +12,7 @@ import {
 import {
   claimBlobForDiscard,
   releaseBlobClaimById,
-  blobClaimStillHeld,
+  markBlobDiscarded,
 } from '@/utils/blob-claim';
 
 /**
@@ -90,7 +90,7 @@ vi.mock('@/utils/blob-claim', () => ({
   releaseBlobClaimById: vi.fn().mockResolvedValue(undefined),
   claimBlobsForRecord: vi.fn().mockResolvedValue(true),
   releaseBlobClaims: vi.fn().mockResolvedValue(undefined),
-  blobClaimStillHeld: vi.fn().mockResolvedValue(true),
+  markBlobDiscarded: vi.fn().mockResolvedValue(true),
 }));
 
 vi.mock('@/utils/letter-access', () => ({
@@ -785,12 +785,12 @@ describe('discardOrphanBlob', () => {
     });
     (isAllowedContainer as any).mockReturnValue(true);
     (claimBlobForDiscard as any).mockResolvedValue('claim-1');
-    // Default to "we still hold the claim"; a test that wants the stolen-claim
+    // Default to "the tombstone succeeded"; a test that wants the stolen-claim
     // path overrides it for itself only.
-    (blobClaimStillHeld as any).mockResolvedValue(true);
+    (markBlobDiscarded as any).mockResolvedValue(true);
   });
 
-  it('claims the blob then deletes it, releasing the claim (BUG 4)', async () => {
+  it('claims the blob, tombstones it, then deletes it (BUG 4)', async () => {
     await discardOrphanBlob(
       'https://store.blob.core.windows.net/cipansor-documents/orphan.pdf',
       superAdmin
@@ -800,8 +800,16 @@ describe('discardOrphanBlob', () => {
       'https://store.blob.core.windows.net/cipansor-documents/orphan.pdf',
       superAdmin.id
     );
+    // The tombstone must be set before the irreversible delete — the whole
+    // point of the fix is that the row is terminal at delete time.
+    expect(markBlobDiscarded).toHaveBeenCalledWith('claim-1', superAdmin.id);
     expect(deleteFromCloudStorage).toHaveBeenCalledWith('cipansor-documents', 'orphan.pdf');
-    expect(releaseBlobClaimById).toHaveBeenCalledWith('claim-1', superAdmin.id);
+    const tombstoneOrder = (markBlobDiscarded as any).mock.invocationCallOrder[0];
+    const deleteOrder = (deleteFromCloudStorage as any).mock.invocationCallOrder[0];
+    expect(tombstoneOrder).toBeLessThan(deleteOrder);
+    // The claim is NOT released on success: releasing it would let a waiting
+    // create reclaim the URL of a blob that no longer exists.
+    expect(releaseBlobClaimById).not.toHaveBeenCalled();
   });
 
   it('refuses when a live claim held by another actor already owns the blob (BUG 4)', async () => {
@@ -879,11 +887,11 @@ describe('discardOrphanBlob', () => {
     expect(deleteFromCloudStorage).not.toHaveBeenCalled();
   });
 
-  it('refuses to delete when the claim was taken over between the re-probe and the delete (BUG 4 residual)', async () => {
-    // The re-probe says orphan, but by the time the delete would run a create
-    // has committed and now holds the claim. Deleting here would destroy a blob
-    // the new record points at, so the liveness check must abort.
-    (blobClaimStillHeld as any).mockResolvedValue(false);
+  it('refuses to delete when the tombstone cannot be set (claim stolen since the re-probe, BUG 4 residual)', async () => {
+    // The re-probe says orphan, but by the time the tombstone would be set a
+    // create has won the row. The conditional UPDATE returns false; deleting
+    // here would destroy a blob the new record points at, so it must abort.
+    (markBlobDiscarded as any).mockResolvedValue(false);
 
     await expect(
       discardOrphanBlob(
@@ -897,15 +905,16 @@ describe('discardOrphanBlob', () => {
     expect(releaseBlobClaimById).toHaveBeenCalledWith('claim-1', superAdmin.id);
   });
 
-  it('re-asserts the claim immediately before the irreversible delete', async () => {
-    // Ordering is the point: the liveness check must sit after the reference
-    // re-probe and before the delete, or it proves nothing.
+  it('tombstones the claim immediately before the irreversible delete', async () => {
+    // Ordering is the point: the tombstone must sit after the reference
+    // re-probe and before the delete, and it must be the terminal mark (not a
+    // release), or it proves nothing.
     await discardOrphanBlob(
       'https://store.blob.core.windows.net/cipansor-documents/orphan.pdf',
       superAdmin
     );
 
-    expect(blobClaimStillHeld).toHaveBeenCalledWith('claim-1', superAdmin.id);
+    expect(markBlobDiscarded).toHaveBeenCalledWith('claim-1', superAdmin.id);
     expect(deleteFromCloudStorage).toHaveBeenCalled();
   });
 

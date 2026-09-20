@@ -23,7 +23,7 @@ import { normalizeUploadPath, generateFileAccessToken, FILE_TOKEN_TTL_SECONDS } 
 import {
   claimBlobForDiscard,
   releaseBlobClaimById,
-  blobClaimStillHeld,
+  markBlobDiscarded,
 } from '@/utils/blob-claim';
 import { mayAdministerEmployeeDocuments, mayVerifyPayments } from '@cipansor/shared';
 import type { JwtPayload } from '@/lib/jwt';
@@ -253,10 +253,19 @@ async function assertActorMayDiscardBlob(
  *      blob, so a create that has claimed it is respected.
  *   2. THEN probe the reference index once. Anything that committed before the
  *      claim is caught here.
- *   3. Delete. Any create that tried to start after step 1 must first take a
- *      `RECORD` claim (`claimBlobForRecord`), which conflicts with the live
- *      `DISCARD` claim we hold — so no record referencing the blob can commit
- *      between step 2 and the delete. No TOCTOU remains.
+ *   3. Tombstone the claim atomically (`markBlobDiscarded`) BEFORE the Azure
+ *      delete. From the instant that conditional UPDATE succeeds the row can
+ *      never be taken over again, so a create that was waiting out our delete
+ *      cannot claim the URL. If the tombstone fails, a create won the row since
+ *      the re-probe and we abort without deleting.
+ *   4. Delete. Any create that tried to start after step 1 must first take a
+ *      `RECORD` claim, which the tombstone now blocks permanently — so no record
+ *      referencing the blob can commit between step 3 and the delete. No TOCTOU
+ *      remains.
+ *
+ * The tombstone is deliberately NOT released after a successful delete: the blob
+ * is gone, so leaving the row in place keeps every future create from
+ * resurrecting the URL.
  *
  * A partial failure releases the claim so the orphan can be retried rather than
  * being pinned until the claim TTL lapses.
@@ -302,24 +311,25 @@ export async function discardOrphanBlob(url: string, actor: BlobActor): Promise<
       throw Errors.conflict('Berkas sudah tersimpan pada sebuah catatan dan tidak dapat dibuang');
     }
 
-    // Last step before the irreversible delete. The claim is held across the
-    // re-probe and this delete, so a create cannot take it while we hold it —
-    // but if the claim has lapsed (its TTL is shorter than a very large blob's
-    // delete) or was otherwise stolen, a create may have materialised a
-    // reference since the re-probe above. Re-assert ownership here so the
-    // delete cannot run on a blob that is now live.
-    if (!(await blobClaimStillHeld(claimId, actor.id))) {
+    // Close the last window: tombstone the claim atomically. From this instant
+    // no create — including one already blocked on the row and retrying — can
+    // take the claim over, so the delete that follows cannot land on a blob a
+    // record just started referencing. If the tombstone fails, a create won the
+    // row since the re-probe and the delete must not run.
+    if (!(await markBlobDiscarded(claimId, actor.id))) {
       throw Errors.conflict('Berkas sedang diproses pihak lain; coba lagi nanti');
     }
 
     await deleteFromCloudStorage(parsed.containerName, parsed.blobName);
   } catch (error) {
-    // The blob was not deleted (or the re-probe refused); release the claim so
-    // a later discard can retry instead of waiting for the TTL.
+    // The blob was not deleted (or a guard refused); release the claim so a
+    // later discard can retry instead of waiting for the TTL. A tombstone is
+    // never set on this path, so the release is safe.
     await releaseBlobClaimById(claimId, actor.id).catch(() => undefined);
     throw error;
   }
 
-  // The blob is gone. Clear the claim so the URL could be re-uploaded later.
-  await releaseBlobClaimById(claimId, actor.id).catch(() => undefined);
+  // The blob is gone. The tombstone stays in place on purpose: releasing the
+  // row here is exactly what let a waiting create reclaim the URL after the
+  // delete and persist a reference to a blob that no longer existed.
 }
