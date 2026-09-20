@@ -1016,7 +1016,12 @@ model Student {
   id           String   @id @default(uuid())
   userId       String   @unique @map("user_id")
   unitId       String   @map("unit_id")
-  nis          String   @unique // Nomor Induk Siswa
+  /// Cuplikan NIS di unit santri SEKARANG. Sumbernya `student_unit_identifiers`:
+  /// NIS milik unit yang menerbitkannya, jadi SD IT dan SMP IT boleh memakai
+  /// nomor yang sama — keunikannya per unit (@@unique [unitId, nis] di sana),
+  /// bukan per yayasan. Kolom ini sengaja dipertahankan (bukan dibuang) supaya
+  /// image rilis sebelumnya tetap bisa membaca dan menulis.
+  nis          String   // Nomor Induk Siswa (unik per unit, lihat StudentUnitIdentifier)
   /// Nomor Induk Siswa Nasional: 10 digit angka, satu untuk satu peserta didik
   /// seumur hidup. Unik bila diisi, dan bentuknya dijaga CHECK
   /// `students_nisn_format_check` (migrasi 20260914000000).

@@ -956,16 +956,21 @@ halaman membaca `name`), kartu ringkasan membaca bentuk respons yang berbeda
 dari yang dikirim `report/completeness`, dan **NIK anak tampil penuh** di tabel
 (minimisasi tampilan data pribadi spesifik, UU 27/2022 Ps. 4).
 
-### NIS per unit — sisa (bagian 3 dan 4 pengganti #489)
+### NIS per unit — SELESAI (bagian 3 dan 4 pengganti #489)
 
-- `students.nis` masih unik lintas yayasan, jadi dua unit belum bisa memakai
-  nomor yang sama. Melonggarkannya butuh lingkup unit di
-  `analytics/bulk.service.ts#bulkImportAttendance`, yang mencari santri hanya
-  lewat NIS.
-- Rapor Kurikulum Merdeka mencetak nama/jenis unit SEKARANG (`student.unit`)
-  untuk rapor tahun ajaran lama; seharusnya unit rombelnya.
-- Onboarding santri lama masih mengganti NISN tersimpan dengan NISN yang
-  diketik di formulir (`nisn || student.nisn`) — NISN berlaku seumur hidup.
+Ketiga sisa di bawah sudah dikerjakan; disimpan sebagai jejak keputusan.
+
+- ~~`students.nis` unik lintas yayasan~~ → #515: indeks uniknya dibuang
+  (kolomnya sengaja tetap ada demi jendela rollback), pencarian NIS kini
+  berlingkup unit lewat `findStudentIdByNisInUnit`, dan
+  `analytics/bulk.service.ts` — 352 baris tanpa satu pun pemanggil — dihapus
+  karena mencocokkan santri hanya lewat NIS. Penjaga sumber memindai
+  `apps/api/src` agar `where: { nis }` tanpa `unitId` tidak kembali.
+- ~~Rapor Merdeka memakai unit SEKARANG~~ → #502: kop, jenis unit, jabatan
+  kepala, fase, dan lingkup aksesnya dari unit rombel tahun ajaran itu.
+- ~~Onboarding santri lama menimpa NISN tersimpan~~ → #514: NISN yang berbeda
+  ditolak 409 (bukan ditimpa, bukan ditebak), dan progresi internal antarunit
+  memakai baris santri yang sama lewat `existingStudentId`.
 
 ## How to contribute a build fix
 
