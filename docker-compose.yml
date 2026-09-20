@@ -52,9 +52,8 @@ services:
     environment:
       # Deliberately NOT driven by .env's NODE_ENV=development. This API is
       # internet-facing, and outside production the error middleware returns
-      # raw error.message to clients (middleware/error.ts) and the invalid
-      # ENCRYPTION_KEY guard downgrades from throw to console.warn
-      # (utils/encryption.ts). Flip this only for a local, non-public stack.
+      # raw error.message to clients (middleware/error.ts). Flip this only for
+      # a local, non-public stack.
       NODE_ENV: production
       PORT: 3001
       DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/cipansor
@@ -62,8 +61,6 @@ services:
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-15m}
       JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-30d}
       STUDENT_CARD_HMAC_SECRET: ${STUDENT_CARD_HMAC_SECRET:-}
-      # Falls back to a public hardcoded key inside the API if unset.
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
       # Enumerated here on purpose. A var present only in .env never reaches the
       # container, and the failure is silent — which is exactly how the old

@@ -43,8 +43,14 @@ test.describe("Integration - Perencanaan to Finance linkage", () => {
     await page.getByRole("tab", { name: /Program & Kegiatan/i }).click();
     await expect(page.getByText("Daftar Program & Kegiatan")).toBeVisible();
 
-    // Open Create Activity Dialog on the first objective
-    await page.getByRole("button", { name: /\+ Tambah Kegiatan/i }).first().click();
+    // Open Create Activity Dialog on the first objective. The objectives load
+    // async from the plan detail API after the tab activates, so wait for the
+    // add button rather than clicking immediately (flaky on slow CI runners).
+    const addActivityButton = page
+      .getByRole("button", { name: /\+ Tambah Kegiatan/i })
+      .first();
+    await addActivityButton.waitFor({ state: "visible", timeout: 15000 });
+    await addActivityButton.click();
 
     await expect(page.getByRole("dialog")).toBeVisible({ timeout: 10000 });
     // Scope to the dialog heading — "Tambah Kegiatan" also appears on the
