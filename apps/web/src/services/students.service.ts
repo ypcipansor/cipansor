@@ -291,17 +291,6 @@ export const studentsService = {
   },
 
   /**
-   * Graduate student
-   */
-  async graduate(studentId: string, graduationDate?: string): Promise<Student> {
-    const response = await api.post<ApiResponse<Student>>(
-      `/students/${studentId}/graduate`,
-      { graduationDate },
-    );
-    return response.data.data;
-  },
-
-  /**
    * Transfer student to another unit
    */
   async transfer(

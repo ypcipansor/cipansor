@@ -201,7 +201,14 @@ export function useStudent(id: string) {
     queryKey: ["students", id],
     queryFn: async () => {
       const response = await api.get<ApiResponse<Student>>(`/students/${id}`);
-      return response.data.data;
+      // Sama dengan useStudents: nama ada di `user.name`. Tanpa ini judul halaman
+      // detail santri dan baris "Full Name" kosong, dan dialog Luluskan menulis
+      // "undefined tercatat lulus".
+      const s = response.data.data;
+      return {
+        ...s,
+        name: s.name ?? (s as { user?: { name?: string } }).user?.name ?? "",
+      };
     },
     enabled: !!id,
   });
@@ -374,7 +381,12 @@ export function useTransferStudent() {
 }
 
 /**
- * Graduate student
+ * Luluskan santri dari unitnya sekarang.
+ *
+ * Satu-satunya jalur yang juga menulis baris Alumni, menyelesaikan rombel unit
+ * itu, dan menutup riwayat unitnya dengan LULUS (`POST /alumni/from-student`).
+ * Hook ini dulu memanggil `POST /students/:id/graduate`, rute yang tidak pernah
+ * ada, dan tidak dipakai halaman mana pun.
  */
 export function useGraduateStudent() {
   const queryClient = useQueryClient();
@@ -382,14 +394,17 @@ export function useGraduateStudent() {
   return useMutation({
     mutationFn: async ({
       studentId,
-      graduationDate,
+      ...body
     }: {
       studentId: string;
-      graduationDate?: string;
+      graduationDate: string;
+      lastClass?: string;
+      tahfidzLevel?: string;
+      notes?: string;
     }) => {
-      const response = await api.post<ApiResponse<Student>>(
-        `/students/${studentId}/graduate`,
-        { graduationDate: graduationDate || new Date().toISOString() },
+      const response = await api.post<ApiResponse<{ id: string; graduationYear: number }>>(
+        `/alumni/from-student/${studentId}`,
+        body,
       );
       return response.data.data;
     },
@@ -398,6 +413,7 @@ export function useGraduateStudent() {
         queryKey: ["students", variables.studentId],
       });
       queryClient.invalidateQueries({ queryKey: ["students"] });
+      queryClient.invalidateQueries({ queryKey: ["alumni"] });
     },
   });
 }

@@ -298,3 +298,44 @@ export async function ensureUnitEnrollment(
     update: {},
   });
 }
+
+/** Nilai yang diizinkan CHECK `student_unit_enrollments_exit_reason_check`. */
+export type UnitExitReason =
+  | 'LULUS'
+  | 'PINDAH_UNIT'
+  | 'PINDAH_SEKOLAH'
+  | 'MENGUNDURKAN_DIRI'
+  | 'DIKELUARKAN'
+  | 'MENINGGAL'
+  | 'TAHUN_AJARAN_SELESAI';
+
+/**
+ * Tutup keanggotaan santri di satu unit: setiap baris riwayat unit itu yang
+ * masih terbuka mendapat tanggal dan alasan keluar.
+ *
+ * Sampai fungsi ini ada, satu-satunya penulis `exit_date` adalah migrasi
+ * backfill — produksi 14 baris, 0 tertutup — sehingga santri yang naik ke SD IT
+ * tetap terhitung di TK pada setiap tanggal sesudahnya, di dua unit sekaligus.
+ *
+ * Tanggal keluar tidak boleh mendahului tanggal masuk (CHECK
+ * `student_unit_enrollments_exit_after_entry`): baris yang masuknya sesudah
+ * tanggal keluar (rombel tahun depan yang sudah didaftarkan) ditutup pada
+ * tanggal masuknya sendiri, yaitu periode nol hari — bukan ditolak.
+ */
+export async function closeUnitEnrollments(
+  db: Pick<typeof prisma, 'studentUnitEnrollment'>,
+  input: { studentId: string; unitId: string; exitDate: Date; exitReason: UnitExitReason }
+): Promise<number> {
+  const terbuka = await db.studentUnitEnrollment.findMany({
+    where: { studentId: input.studentId, unitId: input.unitId, exitDate: null },
+    select: { id: true, entryDate: true },
+  });
+  for (const baris of terbuka) {
+    const exitDate = input.exitDate < baris.entryDate ? baris.entryDate : input.exitDate;
+    await db.studentUnitEnrollment.update({
+      where: { id: baris.id },
+      data: { exitDate, exitReason: input.exitReason },
+    });
+  }
+  return terbuka.length;
+}
