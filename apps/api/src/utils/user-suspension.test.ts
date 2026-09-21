@@ -1,26 +1,40 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 /**
- * The suspension check runs on every authenticated request, so its two
- * dangerous modes are silent: it can let a deleted user back in, and a stale
- * database read can overwrite a fresh suspension in the cache.
+ * The suspension check runs on every authenticated request, so its dangerous
+ * modes are silent: it can let a deleted user back in, and a stale cache write
+ * can resurrect a marker for an account that has already been restored.
  */
 
-// A small in-memory Redis stand-in, exercising the real positive/delete
-// operations rather than stubbed return values.
+// A small in-memory Redis stand-in. `eval` interprets the compare-and-set
+// script with the same version ordering Redis would apply, so the tests exercise
+// the real write path (argument shape + ordering) rather than stubbed returns.
 const store = new Map<string, string>();
 const redisGet = vi.fn(async (key: string) => store.get(key) ?? null);
-const redisSet = vi.fn(async (key: string, value: string, _ex: string, _ttl: number) => {
-  store.set(key, value);
-  return 'OK';
-});
-const redisDel = vi.fn(async (key: string) => (store.delete(key) ? 1 : 0));
+const redisEval = vi.fn(
+  async (
+    _script: string,
+    _numKeys: number,
+    key: string,
+    state: string,
+    version: string,
+    _ttl: string
+  ) => {
+    const raw = store.get(key) ?? null;
+    const match = raw ? /^([sn]):(\d+)$/.exec(raw) : null;
+    const current = match ? Number(match[2]) : -1;
+    if (Number(version) >= current) {
+      store.set(key, `${state}:${version}`);
+      return 1;
+    }
+    return 0;
+  }
+);
 
 vi.mock('@/lib/redis', () => ({
   redis: {
     get: (...args: [string]) => redisGet(...args),
-    set: (...args: [string, string, string, number]) => redisSet(...args),
-    del: (...args: [string]) => redisDel(...args),
+    eval: (...args: [string, number, string, string, string, string]) => redisEval(...args),
   },
 }));
 
@@ -41,6 +55,7 @@ import {
   isUserSuspended,
   markUserSuspended,
   invalidateUserSuspensionCache,
+  SUSPENSION_CACHE_CAS_SCRIPT,
 } from './user-suspension';
 
 function mockUser(row: unknown) {
@@ -59,22 +74,22 @@ describe('isUserSuspended', () => {
   });
 
   it('treats a soft-deleted user as suspended even when isActive is true', async () => {
-    mockUser({ isActive: true, deletedAt: new Date('2026-01-01') });
+    mockUser({ isActive: true, deletedAt: new Date('2026-01-01'), accountStateVersion: 4 });
 
     await expect(isUserSuspended('u1')).resolves.toBe(true);
     expect(prisma.user.findUnique).toHaveBeenCalledWith({
       where: { id: 'u1' },
-      select: { isActive: true, deletedAt: true },
+      select: { isActive: true, deletedAt: true, accountStateVersion: true },
     });
   });
 
   it('treats an inactive user as suspended', async () => {
-    mockUser({ isActive: false, deletedAt: null });
+    mockUser({ isActive: false, deletedAt: null, accountStateVersion: 1 });
     await expect(isUserSuspended('u1')).resolves.toBe(true);
   });
 
   it('treats a live user with no active suspension as usable', async () => {
-    mockUser({ isActive: true, deletedAt: null });
+    mockUser({ isActive: true, deletedAt: null, accountStateVersion: 1 });
     await expect(isUserSuspended('u1')).resolves.toBe(false);
   });
 
@@ -83,62 +98,95 @@ describe('isUserSuspended', () => {
     await expect(isUserSuspended('u1')).resolves.toBe(true);
   });
 
-  it('honours a cached positive without hitting the database', async () => {
-    store.set('suspension:user:u1', '1');
+  it('honours a versioned positive marker without hitting the database', async () => {
+    store.set('suspension:user:u1', 's:7');
     await expect(isUserSuspended('u1')).resolves.toBe(true);
     expect(prisma.user.findUnique).not.toHaveBeenCalled();
   });
 
+  it('does not trust a legacy marker without a version', async () => {
+    // A `1` written by an older build carries no ordering, so it must not
+    // short-circuit a decision that could already have been reversed.
+    store.set('suspension:user:u1', '1');
+    mockUser({ isActive: true, deletedAt: null, accountStateVersion: 9 });
+    await expect(isUserSuspended('u1')).resolves.toBe(false);
+    expect(prisma.user.findUnique).toHaveBeenCalled();
+  });
+
+  it('does not trust a restore tombstone as a negative answer', async () => {
+    store.set('suspension:user:u1', 'n:9');
+    mockUser({ isActive: true, deletedAt: null, accountStateVersion: 9 });
+    await expect(isUserSuspended('u1')).resolves.toBe(false);
+    expect(prisma.user.findUnique).toHaveBeenCalled();
+  });
+
   it('falls back to the database when Redis throws', async () => {
     redisGet.mockRejectedValueOnce(new Error('redis down'));
-    mockUser({ isActive: false, deletedAt: null });
+    mockUser({ isActive: false, deletedAt: null, accountStateVersion: 2 });
     await expect(isUserSuspended('u1')).resolves.toBe(true);
   });
 
   it('does not write a negative answer to the cache', async () => {
-    mockUser({ isActive: true, deletedAt: null });
+    mockUser({ isActive: true, deletedAt: null, accountStateVersion: 3 });
     await isUserSuspended('u1');
-    expect(redisSet).not.toHaveBeenCalled();
     expect(store.has('suspension:user:u1')).toBe(false);
   });
 
-  it('primes only the positive answer when suspended', async () => {
-    mockUser({ isActive: false, deletedAt: null });
+  it('primes the positive answer with the version it read', async () => {
+    mockUser({ isActive: false, deletedAt: null, accountStateVersion: 12 });
     await isUserSuspended('u1');
-    expect(store.get('suspension:user:u1')).toBe('1');
+    expect(store.get('suspension:user:u1')).toBe('s:12');
   });
 });
 
-describe('suspension cache writes', () => {
+describe('suspension cache writes are ordered by the durable version', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     store.clear();
   });
 
-  it('markUserSuspended primes a positive cached answer', async () => {
-    await markUserSuspended('u1');
-    expect(store.get('suspension:user:u1')).toBe('1');
+  it('markUserSuspended records the version it was given', async () => {
+    await markUserSuspended('u1', 3);
+    expect(store.get('suspension:user:u1')).toBe('s:3');
   });
 
-  it('invalidateUserSuspensionCache deletes the key rather than writing false', async () => {
-    store.set('suspension:user:u1', '1');
-    await invalidateUserSuspensionCache('u1');
+  it('a delayed prime cannot outrank a newer restore', async () => {
+    // The exact race: suspension commits at version 5, the lift commits at 6 and
+    // records its tombstone, then the suspension's post-commit prime arrives late.
+    await invalidateUserSuspensionCache('u1', 6);
+    await markUserSuspended('u1', 5);
 
-    expect(redisDel).toHaveBeenCalledWith('suspension:user:u1');
-    // The regression: a blind `false` outlives a concurrent suspension's `true`.
-    expect(store.has('suspension:user:u1')).toBe(false);
+    // The stale prime is rejected, so the restored account is not re-marked.
+    expect(store.get('suspension:user:u1')).toBe('n:6');
+    mockUser({ isActive: true, deletedAt: null, accountStateVersion: 6 });
+    await expect(isUserSuspended('u1')).resolves.toBe(false);
+  });
+
+  it('an older suspension event cannot overwrite a newer suspension marker', async () => {
+    await markUserSuspended('u1', 7);
+    await markUserSuspended('u1', 6);
+    expect(store.get('suspension:user:u1')).toBe('s:7');
+  });
+
+  it('a restore with an equal version still lands (idempotent replay)', async () => {
+    await markUserSuspended('u1', 4);
+    await invalidateUserSuspensionCache('u1', 4);
+    expect(store.get('suspension:user:u1')).toBe('n:4');
+  });
+
+  it('the compare-and-set script orders integer versions', () => {
+    expect(SUSPENSION_CACHE_CAS_SCRIPT).toContain("tonumber(ARGV[2]) >= current");
   });
 
   it('swallows a Redis failure on invalidate but logs it', async () => {
-    redisDel.mockRejectedValueOnce(new Error('redis down'));
-    await expect(invalidateUserSuspensionCache('u1')).resolves.toBeUndefined();
+    redisEval.mockRejectedValueOnce(new Error('redis down'));
+    await expect(invalidateUserSuspensionCache('u1', 1)).resolves.toBeUndefined();
     expect(logger.error).toHaveBeenCalled();
   });
 
   it('logs a Redis failure when priming a suspension marker', async () => {
-    redisSet.mockRejectedValueOnce(new Error('redis down'));
-    await expect(markUserSuspended('u1')).resolves.toBeUndefined();
-    // Failure is observable: it must not be swallowed silently.
+    redisEval.mockRejectedValueOnce(new Error('redis down'));
+    await expect(markUserSuspended('u1', 1)).resolves.toBeUndefined();
     expect(logger.error).toHaveBeenCalled();
   });
 });
@@ -151,18 +199,14 @@ describe('cached-negative revocation guarantee', () => {
   });
 
   it('keeps access denied after persistent state changes even when Redis invalidation fails', async () => {
-    // The account was usable, so a (hypothetical) cached negative could exist
-    // as a stale `0`. This simulates the failure mode the review called out:
-    // the invalidation/priming write fails, so the cache is not corrected.
-    // Because the implementation never trusts a `0`, the next request still
-    // reads the database and refuses.
-    store.set('suspension:user:u1', '0'); // stale negative, as if left behind
-    redisDel.mockRejectedValueOnce(new Error('redis down'));
-    mockUser({ isActive: false, deletedAt: null });
+    // A hypothetical stale `0` left behind by an older build. Because the
+    // implementation never trusts a negative, the next request still reads the
+    // database and refuses.
+    store.set('suspension:user:u1', '0');
+    redisEval.mockRejectedValueOnce(new Error('redis down'));
+    mockUser({ isActive: false, deletedAt: null, accountStateVersion: 8 });
 
     await expect(isUserSuspended('u1')).resolves.toBe(true);
-    // The stale `0` in the store was never consulted; the database decided.
-    // The suspended path then primes a positive marker over it.
-    expect(store.get('suspension:user:u1')).toBe('1');
+    expect(prisma.user.findUnique).toHaveBeenCalled();
   });
 });

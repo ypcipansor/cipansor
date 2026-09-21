@@ -25,6 +25,19 @@ export interface WbsActor {
   unitId?: string | null;
 }
 
+/**
+ * Statuses that close a WBS case to new public messages.
+ *
+ * `SELESAI` is a resolution and `TIDAK_DAPAT_DITINDAKLANJUTI` is a decision not
+ * to act; both end the case, so the reporter's thread stops there. Kept next to
+ * the status writes so the enforcement in `addPublicComment` and the wording in
+ * `updateReportStatus` cannot drift apart.
+ */
+const CLOSED_WBS_STATUSES: readonly WbsStatus[] = [
+  WbsStatus.SELESAI,
+  WbsStatus.TIDAK_DAPAT_DITINDAKLANJUTI,
+];
+
 export class WbsService {
   /**
    * Determine primary handler role based on target level.
@@ -177,7 +190,20 @@ export class WbsService {
   }
 
   /**
-   * Add public comment from reporter.
+   * Add a public comment from the reporter.
+   *
+   * Product decision (2026-09-21): a case in a terminal state
+   * (`SELESAI` / `TIDAK_DAPAT_DITINDAKLANJUTI`) is closed to new public
+   * messages. The reporter keeps read access through the tracking page — the
+   * history stays visible — but the two-way thread ends with the resolution, so
+   * the record cannot be reopened informally and a closed case cannot be made
+   * to look active again.
+   *
+   * The status check and the write share one transaction and the report row is
+   * locked `FOR UPDATE` first, so a handler cannot flip the case to final
+   * between the check and the insert: either the comment commits into a
+   * still-open case, or the status change waits for it. Checking the status on
+   * the pre-transaction read would have left exactly that window.
    */
   async addPublicComment(
     ticketCode: string,
@@ -185,23 +211,44 @@ export class WbsService {
     message: string,
     attachments?: string[]
   ) {
-    const report = await prisma.wbsReport.findUnique({
-      where: { ticketCode },
-      select: { id: true, trackingToken: true, isAnonymous: true, reporterName: true },
-    });
+    return prisma.$transaction(async (tx) => {
+      const locked = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM "wbs_reports" WHERE ticket_code = ${ticketCode} FOR UPDATE
+      `;
+      if (locked.length !== 1) {
+        throw Errors.notFound('Laporan WBS tidak ditemukan atau token akses tidak valid');
+      }
 
-    if (!report || report.trackingToken !== trackingToken) {
-      throw Errors.notFound('Laporan WBS tidak ditemukan atau token akses tidak valid');
-    }
+      const report = await tx.wbsReport.findUnique({
+        where: { id: locked[0].id },
+        select: {
+          id: true,
+          trackingToken: true,
+          isAnonymous: true,
+          reporterName: true,
+          status: true,
+        },
+      });
 
-    return prisma.wbsComment.create({
-      data: {
-        reportId: report.id,
-        senderType: WbsSenderType.REPORTER,
-        senderName: report.isAnonymous ? 'Pelapor Anonim' : report.reporterName || 'Pelapor',
-        message,
-        attachments: attachments ? (attachments as Prisma.InputJsonValue) : undefined,
-      },
+      if (!report || report.trackingToken !== trackingToken) {
+        throw Errors.notFound('Laporan WBS tidak ditemukan atau token akses tidak valid');
+      }
+
+      if (CLOSED_WBS_STATUSES.includes(report.status)) {
+        throw Errors.conflict(
+          'Laporan WBS ini sudah ditutup; percakapan lanjutan tidak dapat dikirim.'
+        );
+      }
+
+      return tx.wbsComment.create({
+        data: {
+          reportId: report.id,
+          senderType: WbsSenderType.REPORTER,
+          senderName: report.isAnonymous ? 'Pelapor Anonim' : report.reporterName || 'Pelapor',
+          message,
+          attachments: attachments ? (attachments as Prisma.InputJsonValue) : undefined,
+        },
+      });
     });
   }
 
@@ -526,6 +573,93 @@ export class WbsService {
   }
 
   /**
+   * Fetch a candidate forward recipient with the fields eligibility depends on.
+   *
+   * The role list is resolved with the same effective-role predicate the
+   * assignment scope uses (`isActive` + not expired), so a stale or expired
+   * grant cannot qualify someone the scope query would then hide the report
+   * from.
+   */
+  private async loadForwardRecipient(toUserId: string) {
+    return prisma.user.findUnique({
+      where: { id: toUserId },
+      select: {
+        id: true,
+        isActive: true,
+        deletedAt: true,
+        unitId: true,
+        userRoles: {
+          where: {
+            isActive: true,
+            OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+          },
+          select: { role: { select: { code: true } } },
+        },
+      },
+    });
+  }
+
+  /**
+   * The eligibility rules for a named forward recipient, in one place.
+   *
+   * Called twice: once before the transaction for an early, log-free refusal,
+   * and again inside the transaction on the recipient row locked `FOR UPDATE`.
+   * The pre-flight pass is a courtesy — it cannot be the decision, because the
+   * recipient's account state, roles and unit can all change in the window
+   * between it and the write, and acting on that stale read is exactly how a
+   * deactivated or role-revoked user was handed a confidential report.
+   */
+  private assertForwardRecipientEligible(
+    recipient: Awaited<ReturnType<WbsService['loadForwardRecipient']>>,
+    data: ForwardWbsReportInput,
+    reportUnitId: string | null
+  ): void {
+    if (!recipient || recipient.deletedAt) {
+      throw Errors.badRequest('Pengguna tujuan teruskan tidak ditemukan atau telah dihapus.');
+    }
+    if (!recipient.isActive) {
+      throw Errors.badRequest('Pengguna tujuan teruskan tidak aktif.');
+    }
+
+    // A named recipient must actually be able to hold the destination role.
+    // `buildScopeWhere` grants the `assignedUserId` read access, so without this
+    // the caller could name any user — the report's own subject, an unrelated
+    // staff member — and hand them the case regardless of role or unit.
+    const recipientRoleCodes = recipient.userRoles.map((ur) => ur.role.code);
+    const matchesDestination = recipientRoleCodes.some((code) =>
+      isWbsForwardRecipientRole(data.toRole, code)
+    );
+    if (!matchesDestination) {
+      throw Errors.badRequest(
+        `Pengguna tujuan tidak memiliki peran efektif yang sesuai untuk tujuan ${data.toRole}.`
+      );
+    }
+
+    // A unit-level destination must stay inside the report's unit. A
+    // foundation-wide recipient has no unit restriction, but a KEPALA_UNIT /
+    // UNIT_ADMIN named from another unit would otherwise gain access to a report
+    // its own scope query hides from it. `reportUnitId` is the *locked* report's
+    // unit when this runs inside the transaction, never the pre-transaction read.
+    if (data.toRole === 'UNIT_ADMIN') {
+      if (!recipient.unitId) {
+        throw Errors.badRequest(
+          'Pengguna tujuan tingkat unit harus terikat pada satu unit organisasi.'
+        );
+      }
+      if (!reportUnitId) {
+        throw Errors.badRequest(
+          'Laporan tanpa unit tidak dapat diteruskan ke peran tingkat unit.'
+        );
+      }
+      if (recipient.unitId !== reportUnitId) {
+        throw Errors.forbidden(
+          'Pengguna tujuan berada di unit yang berbeda dengan unit laporan.'
+        );
+      }
+    }
+  }
+
+  /**
    * Forward / Refer report to another role e.g. from Pengawas to Pengurus or vice versa.
    */
   async forwardReport(id: string, data: ForwardWbsReportInput, actor: WbsActor) {
@@ -544,72 +678,18 @@ export class WbsService {
       );
     }
 
-    // A named recipient must actually be able to hold the destination role.
-    // `buildScopeWhere` grants the `assignedUserId` read access unconditionally,
-    // so before this check the caller could name any user — the report's own
-    // subject, an unrelated staff member, a deleted account — and hand them the
-    // case regardless of role or unit.
+    if (data.toUserId && data.toUserId === actor.id) {
+      throw Errors.badRequest('Laporan tidak dapat diteruskan kepada diri sendiri.');
+    }
+
+    // Pre-flight eligibility check, for a prompt refusal. The authoritative
+    // check runs inside the transaction below, on the locked recipient row.
     if (data.toUserId) {
-      if (data.toUserId === actor.id) {
-        throw Errors.badRequest('Laporan tidak dapat diteruskan kepada diri sendiri.');
-      }
-
-      const recipient = await prisma.user.findUnique({
-        where: { id: data.toUserId },
-        select: {
-          id: true,
-          isActive: true,
-          deletedAt: true,
-          unitId: true,
-          userRoles: {
-            where: {
-              isActive: true,
-              OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
-            },
-            select: { role: { select: { code: true } } },
-          },
-        },
-      });
-
-      if (!recipient || recipient.deletedAt) {
-        throw Errors.badRequest('Pengguna tujuan teruskan tidak ditemukan atau telah dihapus.');
-      }
-      if (!recipient.isActive) {
-        throw Errors.badRequest('Pengguna tujuan teruskan tidak aktif.');
-      }
-
-      const recipientRoleCodes = recipient.userRoles.map((ur) => ur.role.code);
-      const matchesDestination = recipientRoleCodes.some((code) =>
-        isWbsForwardRecipientRole(data.toRole, code)
+      this.assertForwardRecipientEligible(
+        await this.loadForwardRecipient(data.toUserId),
+        data,
+        report.unitId ?? null
       );
-      if (!matchesDestination) {
-        throw Errors.badRequest(
-          `Pengguna tujuan tidak memiliki peran efektif yang sesuai untuk tujuan ${data.toRole}.`
-        );
-      }
-
-      // A unit-level destination must stay inside the report's unit. A
-      // foundation-wide recipient has no unit restriction, but a KEPALA_UNIT /
-      // UNIT_ADMIN named from another unit would otherwise gain access to a
-      // report its own scope query hides from it.
-      if (data.toRole === 'UNIT_ADMIN') {
-        if (!recipient.unitId) {
-          throw Errors.badRequest(
-            'Pengguna tujuan tingkat unit harus terikat pada satu unit organisasi.'
-          );
-        }
-        const reportUnitId = report.unitId ?? null;
-        if (!reportUnitId) {
-          throw Errors.badRequest(
-            'Laporan tanpa unit tidak dapat diteruskan ke peran tingkat unit.'
-          );
-        }
-        if (recipient.unitId !== reportUnitId) {
-          throw Errors.forbidden(
-            'Pengguna tujuan berada di unit yang berbeda dengan unit laporan.'
-          );
-        }
-      }
     }
 
     return prisma.$transaction(async (tx) => {
@@ -620,11 +700,54 @@ export class WbsService {
       // stale snapshot the actor was authorised against.
       await this.assertReportInScopeTx(tx, id, actor);
 
+      // The report is now locked, so its unit cannot move under the recipient
+      // decision below. Read it fresh rather than reusing the pre-transaction
+      // snapshot: the unit and routing that will hold at commit are the ones the
+      // eligibility check must be made against.
+      const lockedReport = await tx.wbsReport.findUnique({
+        where: { id },
+        select: { unitId: true, assignedUserId: true, primaryHandlerRole: true },
+      });
+      if (!lockedReport) {
+        throw Errors.notFound(`Laporan WBS dengan ID ${id} tidak ditemukan`);
+      }
+
+      // Lock ordering: report first (above), then recipient. Every forward and
+      // status/comment path takes the report lock first, so a recipient lock
+      // taken strictly after it cannot cycle with another WBS mutation. The
+      // recipient is re-read only after `FOR UPDATE`, so its account state,
+      // roles and unit are the committed values — not the pre-flight snapshot.
+      if (data.toUserId) {
+        const lockedRecipient = await tx.$queryRaw<Array<{ id: string }>>`
+          SELECT id FROM "users" WHERE id = ${data.toUserId} FOR UPDATE
+        `;
+        if (lockedRecipient.length !== 1) {
+          throw Errors.badRequest('Pengguna tujuan teruskan tidak ditemukan atau telah dihapus.');
+        }
+        const recipient = await tx.user.findUnique({
+          where: { id: data.toUserId },
+          select: {
+            id: true,
+            isActive: true,
+            deletedAt: true,
+            unitId: true,
+            userRoles: {
+              where: {
+                isActive: true,
+                OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+              },
+              select: { role: { select: { code: true } } },
+            },
+          },
+        });
+        this.assertForwardRecipientEligible(recipient, data, lockedReport.unitId ?? null);
+      }
+
       await tx.wbsForwardLog.create({
         data: {
           reportId: id,
           forwardedById: actor.id,
-          fromRole: actor.roleCode || report.primaryHandlerRole,
+          fromRole: actor.roleCode || lockedReport.primaryHandlerRole,
           toRole: data.toRole,
           toUserId: data.toUserId || null,
           reason: data.reason,

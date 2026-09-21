@@ -28,6 +28,7 @@ import {
   canAccessUnit,
   isFoundationWide,
   resolveArrearsUnitId,
+  resolveAuditUnitId,
 } from './pengawasan-access';
 import type { Prisma } from '@prisma/client';
 
@@ -104,15 +105,12 @@ export const createAudit = asyncHandler(async (req: Request, res: Response) => {
   if (!userId) throw Errors.unauthorized('User context missing');
 
   const body = createAuditSchema.parse(req.body);
-  let targetUnitId = req.user?.unitId;
 
-  if (!targetUnitId) {
-    if (isFoundationWide(req.user?.roleCode) && body.unitId) {
-      targetUnitId = body.unitId;
-    } else {
-      throw Errors.badRequest('Unit ID is required');
-    }
-  }
+  // The target unit is a policy decision, not an inline preference. A
+  // foundation-wide reviewer who names a unit gets that unit; a unit-scoped
+  // actor can only ever file into its own, and a target that cannot be
+  // determined fails closed rather than being guessed. See `resolveAuditUnitId`.
+  const targetUnitId = resolveAuditUnitId(actorOf(req), body.unitId);
 
   const audit = await pengawasanService.createAudit({
     ...body,
@@ -120,7 +118,7 @@ export const createAudit = asyncHandler(async (req: Request, res: Response) => {
     leadAuditorId: userId,
   });
 
-  res.status(201).json({ success: true, data: audit });
+  res.status(201).json(ApiResponse.success(audit));
 });
 
 export const updateAudit = asyncHandler(async (req: Request, res: Response) => {

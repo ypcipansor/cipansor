@@ -50,6 +50,10 @@ vi.mock('@/lib/prisma', () => ({
       deleteMany: vi.fn(),
     },
     $queryRaw: vi.fn().mockResolvedValue([{ deleted_at: null, is_active: true }]),
+    // The Plh delegate+role advisory lock runs through `$executeRaw` (it returns
+    // `void`). The serialization it provides is proven against real PostgreSQL in
+    // the integration suite; here the mock only needs to not throw.
+    $executeRaw: vi.fn().mockResolvedValue(1),
     $transaction: vi.fn((cb) => cb(prisma)),
   },
 }));
@@ -135,7 +139,11 @@ describe('BoardSuspensionService Unit Tests', () => {
         deletedAt: null,
         accountStateWriter: null,
       },
-      data: { isActive: false, accountStateWriter: expect.stringMatching(/^asw_/) },
+      data: {
+        isActive: false,
+        accountStateWriter: expect.stringMatching(/^asw_/),
+        accountStateVersion: { increment: 1 },
+      },
     });
     expect(prisma.refreshToken.deleteMany).toHaveBeenCalledWith({
       where: { userId: 'user-pengurus' },
@@ -199,7 +207,11 @@ describe('BoardSuspensionService Unit Tests', () => {
         deletedAt: null,
         accountStateWriter: null,
       },
-      data: { isActive: false, accountStateWriter: expect.stringMatching(/^asw_/) },
+      data: {
+        isActive: false,
+        accountStateWriter: expect.stringMatching(/^asw_/),
+        accountStateVersion: { increment: 1 },
+      },
     });
   });
 
@@ -587,7 +599,11 @@ describe('BoardSuspensionService Unit Tests', () => {
         deletedAt: null,
         accountStateWriter: 'asw_test',
       },
-      data: { isActive: true, accountStateWriter: expect.stringMatching(/^asw_/) },
+      data: {
+        isActive: true,
+        accountStateWriter: expect.stringMatching(/^asw_/),
+        accountStateVersion: { increment: 1 },
+      },
     });
     // Both restores are gated on the sentinel the suspension itself wrote, so
     // a key whose lock state changed in the meantime is left alone.
@@ -643,6 +659,47 @@ describe('BoardSuspensionService Unit Tests', () => {
       data: { lockedUntil: null },
     });
   });
+
+  it('suspends signing by a reversible lock and never writes the audited revocation field', async () => {
+    // Product decision (2026-09-21): a suspension is temporary, so it locks
+    // signing via `lockedUntil` and leaves `revokedAt` untouched. Writing
+    // `revokedAt` would be irreversible on lift (a revoked key stays revoked),
+    // and "un-revoking" is exactly what the e-sign lifecycle forbids. This pins
+    // the decision to the code so the PR description cannot drift back to
+    // claiming a formal revocation.
+    const mockUser = {
+      id: 'user-pengurus',
+      name: 'Pengurus Fulan',
+      email: 'pengurus@cipansor.or.id',
+      isActive: true,
+      userRoles: [{ isActive: true, expiresAt: null, role: { code: 'YAYASAN_BENDAHARA' } }],
+    };
+    (prisma.user.findUnique as any).mockResolvedValue(mockUser);
+    (prisma.boardMemberSuspension.findFirst as any).mockResolvedValue(null);
+    (prisma.boardMemberSuspension.create as any).mockResolvedValue({ id: 'susp-1', status: 'ACTIVE' });
+    (prisma.user.updateMany as any).mockResolvedValue({ count: 1 });
+    (prisma.userSigningKey.findMany as any).mockResolvedValue([{ id: 'key-1', lockedUntil: null }]);
+    (prisma.userSigningKey.updateMany as any).mockResolvedValue({ count: 1 });
+
+    await boardSuspensionService.suspendBoardMember(
+      {
+        userId: 'user-pengurus',
+        skNumber: 'SK/PENGAWAS/2026/010',
+        auditReason: 'Indikasi penyalahgunaan wewenang keuangan yayasan',
+      },
+      'issuer-pengawas'
+    );
+
+    for (const call of (prisma.userSigningKey.updateMany as any).mock.calls) {
+      expect(call[0].data).not.toHaveProperty('revokedAt');
+      expect(call[0].data).not.toHaveProperty('revokedReason');
+    }
+    expect(prisma.userSigningKey.updateMany).toHaveBeenCalledWith({
+      where: { id: 'key-1', userId: 'user-pengurus', lockedUntil: null },
+      data: { lockedUntil: SIGNING_KEY_SUSPENSION_LOCK },
+    });
+  });
+
 
   it('leaves a pre-existing effective Plh assignment alone on lift', async () => {
     const mockSuspension = {
@@ -750,7 +807,11 @@ describe('BoardSuspensionService Unit Tests', () => {
         deletedAt: null,
         accountStateWriter: 'asw_ours',
       },
-      data: { isActive: true, accountStateWriter: expect.stringMatching(/^asw_/) },
+      data: {
+        isActive: true,
+        accountStateWriter: expect.stringMatching(/^asw_/),
+        accountStateVersion: { increment: 1 },
+      },
     });
   });
 
@@ -786,7 +847,11 @@ describe('BoardSuspensionService Unit Tests', () => {
         deletedAt: null,
         accountStateWriter: 'asw_ours',
       },
-      data: { isActive: true, accountStateWriter: expect.stringMatching(/^asw_/) },
+      data: {
+        isActive: true,
+        accountStateWriter: expect.stringMatching(/^asw_/),
+        accountStateVersion: { increment: 1 },
+      },
     });
   });
 
@@ -1159,7 +1224,11 @@ describe('BoardSuspensionService Unit Tests', () => {
           deletedAt: null,
           accountStateWriter: 'asw_test',
         },
-        data: { isActive: true, accountStateWriter: expect.stringMatching(/^asw_/) },
+        data: {
+        isActive: true,
+        accountStateWriter: expect.stringMatching(/^asw_/),
+        accountStateVersion: { increment: 1 },
+      },
       });
     });
 
@@ -1233,7 +1302,11 @@ describe('BoardSuspensionService Unit Tests', () => {
           deletedAt: null,
           accountStateWriter: 'asw_test',
         },
-        data: { isActive: true, accountStateWriter: expect.stringMatching(/^asw_/) },
+        data: {
+        isActive: true,
+        accountStateWriter: expect.stringMatching(/^asw_/),
+        accountStateVersion: { increment: 1 },
+      },
       });
     });
 
@@ -1284,7 +1357,7 @@ describe('BoardSuspensionService Unit Tests', () => {
 
       await boardSuspensionService.liftBoardSuspension('susp-11', 'lifter', 'Pulih');
 
-      expect(invalidateUserSuspensionCache).toHaveBeenCalledWith('user-pengurus');
+      expect(invalidateUserSuspensionCache).toHaveBeenCalledWith('user-pengurus', expect.any(Number));
     });
   });
 });

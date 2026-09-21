@@ -360,11 +360,12 @@ export async function updateEmployee(id: string, data: UpdateEmployeeInput) {
 
   // Cache invalidation must happen *after* the transaction commits: writing the
   // suspension marker inside the rollback-able body would leave the cache
-  // claiming a deactivation the database never kept.
+  // claiming a deactivation the database never kept. The version is the one the
+  // committed write produced, so a delayed prime cannot outrank a later restore.
   if (data.isActive === false) {
-    await markUserSuspended(id);
+    await markUserSuspended(id, result.accountStateVersion);
   } else if (data.isActive === true) {
-    await invalidateUserSuspensionCache(id);
+    await invalidateUserSuspensionCache(id, result.accountStateVersion);
   }
 
   return result;
@@ -400,7 +401,7 @@ export async function deleteEmployee(id: string) {
     return user;
   });
 
-  await markUserSuspended(id);
+  await markUserSuspended(id, user.accountStateVersion);
   return user;
 }
 

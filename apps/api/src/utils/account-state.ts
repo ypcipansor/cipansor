@@ -23,7 +23,18 @@ import crypto from 'crypto';
  * lift.
  */
 
-/** A fresh, opaque owner token for one account-state write. */
+/**
+ * The payload that records one account-state change.
+ *
+ * `accountStateVersion` is bumped in the *same* statement as `isActive` /
+ * `deletedAt` / `accountStateWriter`, so the counter and the state it describes
+ * can never disagree — a version read elsewhere is always the version of the
+ * state that was actually committed.
+ */
+export interface AccountStateChange {
+  accountStateVersion: { increment: number };
+  accountStateWriter: string;
+}
 export function newAccountStateWriter(): string {
   return `asw_${crypto.randomBytes(12).toString('hex')}`;
 }
@@ -34,8 +45,16 @@ export function newAccountStateWriter(): string {
  * Returns the token alongside the payload so a caller that needs to remember
  * ownership (the suspension service) can persist it on its own row.
  */
-export function deactivationState(): { isActive: false; accountStateWriter: string } {
-  return { isActive: false, accountStateWriter: newAccountStateWriter() };
+export function deactivationState(): {
+  isActive: false;
+  accountStateWriter: string;
+  accountStateVersion: { increment: number };
+} {
+  return {
+    isActive: false,
+    accountStateWriter: newAccountStateWriter(),
+    accountStateVersion: { increment: 1 },
+  };
 }
 
 /**
@@ -45,8 +64,16 @@ export function deactivationState(): { isActive: false; accountStateWriter: stri
  * account off again must not be undone by a stale lift of an older suspension,
  * which would otherwise still see its own token.
  */
-export function activationState(): { isActive: true; accountStateWriter: string } {
-  return { isActive: true, accountStateWriter: newAccountStateWriter() };
+export function activationState(): {
+  isActive: true;
+  accountStateWriter: string;
+  accountStateVersion: { increment: number };
+} {
+  return {
+    isActive: true,
+    accountStateWriter: newAccountStateWriter(),
+    accountStateVersion: { increment: 1 },
+  };
 }
 
 /**
@@ -60,6 +87,11 @@ export function activationState(): { isActive: true; accountStateWriter: string 
 export function softDeleteState(now: Date = new Date()): {
   deletedAt: Date;
   accountStateWriter: string;
+  accountStateVersion: { increment: number };
 } {
-  return { deletedAt: now, accountStateWriter: newAccountStateWriter() };
+  return {
+    deletedAt: now,
+    accountStateWriter: newAccountStateWriter(),
+    accountStateVersion: { increment: 1 },
+  };
 }

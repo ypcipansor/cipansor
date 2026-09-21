@@ -20,14 +20,21 @@ const { mockInternalAudit, mockAuditFinding, mockAuditFollowUp } = vi.hoisted(()
   },
 }));
 
-vi.mock('@prisma/client', () => ({
-  PrismaClient: class {
-    internalAudit = mockInternalAudit;
-    auditFinding = mockAuditFinding;
-    auditFollowUp = mockAuditFollowUp;
-  },
-  Prisma: {},
-}));
+vi.mock('@prisma/client', async (importOriginal) => {
+  // The service pulls in `CorrespondenceService`, which reads DB enums
+  // (`RoleCode`, `LetterFlowAction`, …) at module load. Keep the real enums and
+  // override only the client class.
+  const actual = await importOriginal<typeof import('@prisma/client')>();
+  return {
+    ...actual,
+    PrismaClient: class {
+      internalAudit = mockInternalAudit;
+      auditFinding = mockAuditFinding;
+      auditFollowUp = mockAuditFollowUp;
+    },
+    Prisma: actual.Prisma,
+  };
+});
 
 vi.mock('../../../../src/lib/prisma', () => ({
   prisma: {

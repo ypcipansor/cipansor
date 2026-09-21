@@ -23,7 +23,7 @@ const mock = prisma as any;
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mock.user.update.mockResolvedValue({ id: 'u1' });
+  mock.user.update.mockResolvedValue({ id: 'u1', accountStateVersion: 4 });
 });
 
 /**
@@ -37,7 +37,7 @@ describe('hr employee suspension-cache invalidation', () => {
 
     await updateEmployee('u1', { isActive: false });
 
-    expect(markUserSuspended).toHaveBeenCalledWith('u1');
+    expect(markUserSuspended).toHaveBeenCalledWith('u1', 4);
   });
 
   it('drops the cached answer when an employee is reactivated', async () => {
@@ -45,7 +45,7 @@ describe('hr employee suspension-cache invalidation', () => {
 
     await updateEmployee('u1', { isActive: true });
 
-    expect(invalidateUserSuspensionCache).toHaveBeenCalledWith('u1');
+    expect(invalidateUserSuspensionCache).toHaveBeenCalledWith('u1', 4);
     expect(markUserSuspended).not.toHaveBeenCalled();
   });
 
@@ -60,12 +60,12 @@ describe('hr employee suspension-cache invalidation', () => {
 
   it('marks a deleted employee suspended so the token stops working', async () => {
     mock.user.findUnique.mockResolvedValue({ id: 'u1', role: 'STAFF', staff: { id: 'st1' } });
-    mock.user.update.mockResolvedValue({ id: 'u1', teacher: null, staff: { id: 'st1' } });
+    mock.user.update.mockResolvedValue({ id: 'u1', teacher: null, staff: { id: 'st1' }, accountStateVersion: 9 });
     // The transaction body reads `user.teacher`/`user.staff` off the update result.
     mock.$transaction.mockImplementation((cb: any) => cb(mock));
 
     await deleteEmployee('u1');
 
-    expect(markUserSuspended).toHaveBeenCalledWith('u1');
+    expect(markUserSuspended).toHaveBeenCalledWith('u1', 9);
   });
 });

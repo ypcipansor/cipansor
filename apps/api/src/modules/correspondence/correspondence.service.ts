@@ -564,6 +564,108 @@ export const CorrespondenceService = {
   },
 
   /**
+   * Create a DRAFT outgoing letter on behalf of a module that generates
+   * correspondence but does not run E-Office.
+   *
+   * Why this exists: the Pengawas oversight report is the Pengawas's own output,
+   * filed on the foundation unit for the Pembina to verify and sign. It must
+   * enter E-Office as a normal draft, but `createLetter` intentionally refuses
+   * the oversight-only roles (`YAYASAN_PENGAWAS`, `YAYASAN_PEMBINA`) because they
+   * do not hold correspondence authority — widening that allowlist would hand
+   * those roles the whole letter-creation surface, which is not what the boundary
+   * is for. So the minimal, sanctioned write is extracted here, where the letter
+   * invariants live, and the caller supplies only content plus a recipient.
+   *
+   * It reads and writes only what a DRAFT needs, so it cannot skip a lifecycle
+   * step the draft does not yet have: the nature is checked against the type
+   * (`assertNatureAllowed`), recipients are validated for existence, activity and
+   * an effective internal role (a draft addressed to a role the letter-access
+   * rules exclude would be unreadable to its own recipient), no letter number is
+   * allocated (numbers are reserved for letters that leave DRAFT), and the
+   * `CREATED` flow event is written in the same transaction as the letter so the
+   * history begins where the letter does. Reviewers, notices and dispatch are
+   * deliberately absent — the Pembina drives those through the ordinary flow.
+   */
+  async createGeneratedDraftLetter(
+    input: {
+      unitId: string;
+      subject: string;
+      content: string;
+      recipientUserIds: string[];
+      type?: DbLetterType;
+      nature?: DbLetterNature;
+      urgency?: 'NORMAL' | 'IMMEDIATE' | 'URGENT';
+      classificationId?: string | null;
+      note?: string | null;
+    },
+    userId: string
+  ) {
+    const type = input.type ?? DbLetterType.SURAT_DINAS;
+    const nature = input.nature ?? DbLetterNature.PUBLIC;
+    const urgency = input.urgency ?? 'NORMAL';
+
+    if (!input.unitId) {
+      throw Errors.badRequest('Unit ID wajib diisi');
+    }
+    if (!input.recipientUserIds || input.recipientUserIds.length === 0) {
+      throw Errors.badRequest('Surat harus memiliki minimal satu penerima');
+    }
+
+    // The jenis/sifat rule is a domain invariant, not a form rule — enforce it
+    // before the row exists, exactly as `createLetter` does.
+    assertNatureAllowed(type as never, nature as never);
+
+    // A generated letter is authored by the module, which is foundation-wide;
+    // eligibility is therefore checked without a unit-narrowing actor, but the
+    // existence / active / effective-internal-role rules still apply.
+    await this.validateParticipantEligibility(input.recipientUserIds);
+
+    const uniqueRecipients = Array.from(new Set(input.recipientUserIds));
+
+    return prisma.$transaction(async (tx) => {
+      const letter = await tx.letter.create({
+        data: {
+          unitId: input.unitId,
+          direction: 'OUTGOING',
+          type,
+          nature,
+          urgency,
+          subject: input.subject,
+          content: input.content,
+          date: new Date(),
+          // A generated report starts where every letter starts. No number is
+          // allocated while it is a draft, no dispatch is recorded.
+          status: DbLetterStatus.DRAFT,
+          authoringTrack: 'GENERATED',
+          createdById: userId,
+          classificationId: input.classificationId ?? null,
+          recipients: {
+            create: uniqueRecipients.map((recipientId) => ({
+              userId: recipientId,
+              unitId: input.unitId,
+              isCC: false,
+            })),
+          },
+        },
+        include: {
+          createdBy: { select: { id: true, name: true, role: true } },
+          recipients: { select: { id: true, userId: true } },
+        },
+      });
+
+      await recordFlow(tx, {
+        letterId: letter.id,
+        actorId: userId,
+        action: LetterFlowAction.CREATED,
+        toStatus: DbLetterStatus.DRAFT,
+        note: input.note ?? letter.subject,
+      });
+
+      return letter;
+    });
+  },
+
+  /**
    * Update a letter draft or a returned draft (REVISION_NEEDED).
    */
   async updateLetter(

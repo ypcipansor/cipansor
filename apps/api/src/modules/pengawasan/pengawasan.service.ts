@@ -1,8 +1,9 @@
 import { prisma } from '@/lib/prisma';
-import { LetterFlowAction, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { Errors } from '@/middleware/error';
 import type { DraftPeriodicReportInput } from '@cipansor/shared';
 import { perencanaanService } from '../perencanaan/perencanaan.service';
+import { CorrespondenceService } from '../correspondence/correspondence.service';
 import { riskService } from '../risk/risk.service';
 
 export class PengawasanService {
@@ -738,69 +739,39 @@ ${data.recommendations || 'Diharapkan Pengurus Yayasan dan Kepala Unit terus men
     const defaultClassification = await prisma.filingClassification.findFirst();
 
     /**
-     * Created as a DRAFT in the normal E-Office workflow, not as a `SENT`
-     * letter.
+     * Created as a DRAFT through the sanctioned E-Office primitive, not as a
+     * `SENT` letter and not by writing the correspondence tables directly.
      *
      * The old code wrote `status: 'SENT'` straight into the row. That skipped
      * every part of the lifecycle the rest of E-Office depends on: no
      * `LetterFlowEvent` history, no reviewer rung, no `sentAt`, no dispatch —
      * so the Pembina received a letter the system already believed had left
-     * the building, with no record of who sent it or how. A draft is the
-     * honest starting state: the Pembina verifies and signs it, and each step
-     * is recorded where E-Office expects to find it.
+     * the building, with no record of who sent it or how. A draft is the honest
+     * starting state: the Pembina verifies and signs it, and each step is
+     * recorded where E-Office expects to find it.
      *
-     * Deliberately NOT via `CorrespondenceService.createLetter`: that admits
-     * only correspondence roles and executive foundations, and rejects the
-     * oversight-only YAYASAN_PENGAWAS by design (it does not run
-     * correspondence). This is the Pengawas's own output, filed on the
-     * foundation unit for the Pembina, so it is written here with the flow
-     * event that makes it legible in the E-Office history.
+     * `createGeneratedDraftLetter` is the one door for a non-correspondence
+     * module to file a draft. It lives in `CorrespondenceService` because that
+     * is where the letter invariants are — nature/type validity, recipient
+     * eligibility, and the `CREATED` flow event in the same transaction.
+     * Writing `Letter`/`LetterFlowEvent` from here would put a second, drifting
+     * copy of those rules in the oversight module, which is exactly the
+     * duplication this boundary is meant to prevent. Widen the allowlist of
+     * `createLetter` instead and the oversight roles gain the whole
+     * correspondence-creation surface; this primitive grants only the draft.
      */
-    const letter = await prisma.$transaction(async (tx) => {
-      const created = await tx.letter.create({
-        data: {
-          unitId,
-          direction: 'OUTGOING',
-          type: 'SURAT_DINAS',
-          subject: `[Laporan Pengawasan] ${data.title} (${data.period})`,
-          content: letterContent,
-          date: new Date(),
-          status: 'DRAFT',
-          urgency: 'NORMAL',
-          nature: 'LIMITED',
-          authoringTrack: 'GENERATED',
-          createdById: userId,
-          classificationId: defaultClassification?.id,
-          recipients: {
-            create: [
-              {
-                userId: pembinaUser.id,
-                unitId,
-                isCC: false,
-              },
-            ],
-          },
-        },
-        include: {
-          createdBy: { select: { id: true, name: true, role: true } },
-          recipients: { select: { id: true, userId: true } },
-        },
-      });
-
-      // The letter's history begins where the letter does. Without this row the
-      // draft exists but nothing in E-Office can say when or by whom.
-      await tx.letterFlowEvent.create({
-        data: {
-          letterId: created.id,
-          actorId: userId,
-          action: LetterFlowAction.CREATED,
-          toStatus: 'DRAFT',
-          note: `Laporan Pengawasan Periodik: ${data.title} (${data.period})`,
-        },
-      });
-
-      return created;
-    });
+    const letter = await CorrespondenceService.createGeneratedDraftLetter(
+      {
+        unitId,
+        subject: `[Laporan Pengawasan] ${data.title} (${data.period})`,
+        content: letterContent,
+        recipientUserIds: [pembinaUser.id],
+        nature: 'LIMITED',
+        classificationId: defaultClassification?.id ?? null,
+        note: `Laporan Pengawasan Periodik: ${data.title} (${data.period})`,
+      },
+      userId
+    );
 
     return {
       letterId: letter.id,

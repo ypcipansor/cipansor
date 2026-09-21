@@ -339,4 +339,72 @@ describeDb('board suspension concurrency (real PostgreSQL)', () => {
       await unloadService(previousUrl);
     }
   });
+
+  it('two parallel suspensions of different officers mint ONE delegation for the shared delegate+role', async () => {
+    // Review item 3: `findFirst` then `create` on a unitless (user, role) row is
+    // unconstrained by `(user, role, unit)` because Postgres treats NULLs as
+    // distinct. Two suspensions running concurrently must still produce exactly
+    // one effective Plh assignment and point both dependency rows at it.
+    await withClient(targetUrl, async (db) => {
+      await db.query(`DELETE FROM board_suspension_plh_assignments`);
+      await db.query(`DELETE FROM board_member_suspensions`);
+      await db.query(`DELETE FROM user_role_assignments WHERE user_id = 'u-delegate'`);
+      await db.query(
+        `UPDATE users SET is_active = true, account_state_writer = NULL WHERE id LIKE 'u-target-%'`
+      );
+    });
+
+    const { service, previousUrl } = await loadService();
+    try {
+      const results = await Promise.allSettled([
+        suspend(service, 'u-target-a', 'SK/RACE-A'),
+        suspend(service, 'u-target-b', 'SK/RACE-B'),
+      ]);
+      expect(
+        results.filter((r) => r.status === 'rejected').map((r: any) => r.reason?.message),
+        'both suspensions must succeed; the advisory lock makes the second reuse the first delegation'
+      ).toEqual([]);
+
+      await withClient(targetUrl, async (db) => {
+        const assignments = await db.query(
+          `SELECT id FROM user_role_assignments WHERE user_id = 'u-delegate' AND unit_id IS NULL`
+        );
+        expect(
+          assignments.rows,
+          'the partial unique index must leave exactly one unitless delegation'
+        ).toHaveLength(1);
+
+        const deps = await db.query(
+          `SELECT suspension_id, assignment_id FROM board_suspension_plh_assignments`
+        );
+        expect(deps.rows).toHaveLength(2);
+        expect(
+          new Set(deps.rows.map((r: any) => r.assignment_id)).size,
+          'both suspensions must depend on the same assignment'
+        ).toBe(1);
+      });
+    } finally {
+      await unloadService(previousUrl);
+    }
+  });
+
+  it('the database rejects a second unitless delegation for the same user+role', async () => {
+    // The guarantee itself, independent of the service: the partial index is what
+    // stops the duplicate even if every application-level check were bypassed.
+    await withClient(targetUrl, async (db) => {
+      await db.query(`DELETE FROM board_suspension_plh_assignments`);
+      await db.query(`DELETE FROM board_member_suspensions`);
+      await db.query(`DELETE FROM user_role_assignments WHERE user_id = 'u-delegate'`);
+      await db.query(
+        `INSERT INTO user_role_assignments (id, user_id, role_id, is_primary, is_active, updated_at)
+         VALUES ('a-dup-1', 'u-delegate', 'role-anggota', false, true, now())`
+      );
+      await expect(
+        db.query(
+          `INSERT INTO user_role_assignments (id, user_id, role_id, is_primary, is_active, updated_at)
+           VALUES ('a-dup-2', 'u-delegate', 'role-anggota', false, true, now())`
+        )
+      ).rejects.toMatchObject({ code: '23505' });
+    });
+  });
 });

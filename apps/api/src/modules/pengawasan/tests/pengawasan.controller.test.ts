@@ -14,6 +14,7 @@ vi.mock('../pengawasan.service', () => ({
   pengawasanService: {
     getAudits: vi.fn(),
     getAuditById: vi.fn(),
+    createAudit: vi.fn(),
     createFinding: vi.fn(),
     updateFinding: vi.fn(),
     deleteFinding: vi.fn(),
@@ -32,6 +33,7 @@ vi.mock('../board-suspension.service', () => ({ boardSuspensionService: {} }));
 import { pengawasanService } from '../pengawasan.service';
 import {
   listAudits,
+  createAudit,
   createFinding,
   updateFinding,
   deleteFinding,
@@ -44,6 +46,16 @@ import { RoleCode } from '@prisma/client';
 
 const AUDIT_UUID = '11111111-1111-4111-8111-111111111111';
 const FINDING_UUID = '22222222-2222-4222-8222-222222222222';
+
+/** A minimal valid `createAudit` payload; `unitId` is added per case. */
+function newAuditBody(extra: Record<string, unknown> = {}) {
+  return {
+    title: 'Audit Mutu Internal',
+    auditType: 'INTERNAL',
+    plannedDate: '2026-10-01',
+    ...extra,
+  };
+}
 
 function mockRequest(
   body: Record<string, unknown> = {},
@@ -390,5 +402,142 @@ describe('pengawasanController — updateAudit nullable-date contract', () => {
     // The mandatory field stays mandatory: `null` is refused before any write.
     expect(next).toHaveBeenCalledWith(expect.anything());
     expect(pengawasanService.updateAudit).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Regression coverage for review item 1 (cross-unit audit used the wrong unit).
+ *
+ * `createAudit` used to prefer the actor's token `unitId` and consult
+ * `body.unitId` only when the token had none, so a foundation-wide Pengawas that
+ * carries its own unit found its explicit target silently discarded. The target
+ * unit now comes from the shared policy `resolveAuditUnitId`.
+ */
+describe('pengawasanController — createAudit target unit', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (pengawasanService.createAudit as any).mockResolvedValue({ id: AUDIT_UUID });
+  });
+
+  const unitOfCreateCall = () => (pengawasanService.createAudit as any).mock.calls[0][0].unitId;
+
+  it('files a foundation-wide Pengawas audit against the unit it names, not its token unit', async () => {
+    const res = mockResponse();
+
+    const next = await runHandler(
+      createAudit,
+      mockRequest(
+        newAuditBody({ unitId: AUDIT_UUID }),
+        {},
+        { roleCode: RoleCode.YAYASAN_PENGAWAS, unitId: 'unit-yayasan' }
+      ),
+      res
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect(unitOfCreateCall()).toBe(AUDIT_UUID);
+    expect(res.status).toHaveBeenCalledWith(201);
+  });
+
+  it('lets a unitless foundation-wide Pengawas choose the target unit', async () => {
+    const res = mockResponse();
+
+    const next = await runHandler(
+      createAudit,
+      mockRequest(
+        newAuditBody({ unitId: AUDIT_UUID }),
+        {},
+        { roleCode: RoleCode.YAYASAN_PENGAWAS, unitId: undefined }
+      ),
+      res
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect(unitOfCreateCall()).toBe(AUDIT_UUID);
+  });
+
+  it('falls back to the actor unit for a foundation-wide role with no explicit target', async () => {
+    const res = mockResponse();
+
+    await runHandler(
+      createAudit,
+      mockRequest(
+        newAuditBody(),
+        {},
+        {
+          roleCode: RoleCode.YAYASAN_PENGAWAS,
+          unitId: 'unit-yayasan',
+        }
+      ),
+      res
+    );
+
+    expect(unitOfCreateCall()).toBe('unit-yayasan');
+  });
+
+  it('fails closed for a foundation-wide role with neither an explicit nor a token unit', async () => {
+    const res = mockResponse();
+
+    const next = await runHandler(
+      createAudit,
+      mockRequest(newAuditBody(), {}, { roleCode: RoleCode.YAYASAN_PENGAWAS, unitId: undefined }),
+      res
+    );
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
+    expect(pengawasanService.createAudit).not.toHaveBeenCalled();
+  });
+
+  it('ignores a unit-scoped actor attempt to file into another unit', async () => {
+    const res = mockResponse();
+
+    const next = await runHandler(
+      createAudit,
+      mockRequest(
+        // A different, valid unit than the actor's own.
+        newAuditBody({ unitId: '99999999-9999-4999-8999-999999999999' }),
+        {},
+        { roleCode: RoleCode.SDIT_ADMIN, unitId: 'unit-sdit' }
+      ),
+      res
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect(unitOfCreateCall()).toBe('unit-sdit');
+  });
+
+  it('refuses a unitless non-foundation actor instead of writing an unscoped audit', async () => {
+    const res = mockResponse();
+
+    const next = await runHandler(
+      createAudit,
+      mockRequest(
+        newAuditBody({ unitId: AUDIT_UUID }),
+        {},
+        { roleCode: RoleCode.SDIT_ADMIN, unitId: undefined }
+      ),
+      res
+    );
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 401 }));
+    expect(pengawasanService.createAudit).not.toHaveBeenCalled();
+  });
+
+  it('returns the audit in the standard ApiResponse envelope, not a literal', async () => {
+    const res = mockResponse();
+
+    await runHandler(
+      createAudit,
+      mockRequest(
+        newAuditBody({ unitId: AUDIT_UUID }),
+        {},
+        { roleCode: RoleCode.YAYASAN_PENGAWAS }
+      ),
+      res
+    );
+
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ success: true, data: { id: AUDIT_UUID } })
+    );
   });
 });

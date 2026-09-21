@@ -4,7 +4,7 @@ import { Errors } from '@/middleware/error';
 import { UserRole, Prisma, type Unit } from '@prisma/client';
 import { resolveLegacyRoleToRoleCode } from '@/modules/auth/auth.service';
 import { invalidateUserSuspensionCache, markUserSuspended } from '@/utils/user-suspension';
-import { newAccountStateWriter, softDeleteState } from '@/utils/account-state';
+import { activationState, deactivationState, softDeleteState } from '@/utils/account-state';
 import type { ListUsersQuery, CreateUserInput, UpdateUserInput } from './user.schema';
 
 export class UserService {
@@ -292,9 +292,9 @@ export class UserService {
     // it in force.
     const stateChange =
       input.isActive === false
-        ? { isActive: false, accountStateWriter: newAccountStateWriter() }
+        ? { ...deactivationState() }
         : input.isActive === true
-          ? { isActive: true, accountStateWriter: newAccountStateWriter() }
+          ? { ...activationState() }
           : {};
 
     const updated = await prisma.user.update({
@@ -310,9 +310,9 @@ export class UserService {
     });
 
     if (input.isActive === false) {
-      await markUserSuspended(id);
+      await markUserSuspended(id, updated.accountStateVersion);
     } else if (input.isActive === true) {
-      await invalidateUserSuspensionCache(id);
+      await invalidateUserSuspensionCache(id, updated.accountStateVersion);
     }
 
     const { passwordHash, ...userWithoutPassword } = updated;
@@ -334,7 +334,7 @@ export class UserService {
     // Soft delete. The state writer is stamped too, so a board suspension that
     // later lifts cannot mistake this for its own deactivation (the `deletedAt`
     // check already blocks reactivation; the token keeps the ledger complete).
-    await prisma.user.update({
+    const softDeleted = await prisma.user.update({
       where: { id },
       data: softDeleteState(),
     });
@@ -346,8 +346,9 @@ export class UserService {
 
     // A soft-deleted account is suspended for authentication purposes, and that
     // fact is cached — without this the deleted user's token kept working until
-    // the cached "not suspended" expired.
-    await markUserSuspended(id);
+    // the cached "not suspended" expired. The version comes from the write above,
+    // so a delayed prime can never outrank a later restore.
+    await markUserSuspended(id, softDeleted.accountStateVersion);
 
     return { message: 'User deleted successfully' };
   }

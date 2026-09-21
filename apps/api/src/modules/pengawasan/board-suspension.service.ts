@@ -106,6 +106,9 @@ export class BoardSuspensionService {
    * thing standing between a Pengawas and freezing the Super Admin account.
    */
   async suspendBoardMember(data: CreateBoardSuspensionInput, suspendedById: string) {
+    // Version of the account-state write this suspension performs, carried out of
+    // the transaction so the post-commit cache prime can be ordered by it.
+    let suspensionAccountStateVersion = 0;
     const targetUser = await prisma.user.findUnique({
       where: { id: data.userId },
       include: {
@@ -303,6 +306,7 @@ export class BoardSuspensionService {
           select: {
             isActive: true,
             accountStateWriter: true,
+            accountStateVersion: true,
             // The Pengurus role is re-resolved from this same read: an
             // assignment revoked or expired between the pre-flight check and
             // this point would otherwise let the suspension switch off an
@@ -352,12 +356,33 @@ export class BoardSuspensionService {
           isActiveBefore: freshTarget.isActive,
           writer: accountDeactivation.accountStateWriter,
         };
+        // The version this suspension's write produced. Read back in the same
+        // transaction, on the row it just locked and updated, so it is the value
+        // that holds at commit — the cache prime below is ordered by it, and a
+        // lift that commits in between will have bumped it further.
+        const claimedState = await tx.user.findUnique({
+          where: { id: data.userId },
+          select: { accountStateVersion: true },
+        });
+        suspensionAccountStateVersion = claimedState?.accountStateVersion ?? 0;
 
         // Resolve the Plh/Plt delegation dependency before creating the
         // suspension, so its provenance travels in the same row.
         let plhDependency: PlhDependency | null = null;
 
         if (data.plhUserId && data.plhRoleCode) {
+          // Serialise the delegate+role grant before reading it. `findFirst`
+          // followed by `create` is a TOCTOU: two suspensions of *different*
+          // officers that name the same delegate for the same role can both read
+          // "no assignment" and both insert, and because the Plh delegation is
+          // unitless the `(user, role, unit)` unique does not fire on NULLs. The
+          // partial unique index added in `20260921130000` is the database
+          // guarantee; this transaction-scoped advisory lock is what lets the
+          // common path *reuse* one row instead of racing and aborting the loser.
+          // Keyed to delegate+role, in the pengawasan namespace so it cannot
+          // collide with the canteen/onboarding lockspaces.
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(1002::int, hashtext(${`${data.plhUserId}:${data.plhRoleCode}`})::int)`;
+
           // Re-claim the delegate's eligibility *inside* this transaction,
           // under a row lock, immediately before the grant.
           //
@@ -403,7 +428,16 @@ export class BoardSuspensionService {
 
           if (role) {
             const existingAssign = await tx.userRoleAssignment.findFirst({
-              where: { userId: data.plhUserId, roleId: role.id },
+              // The delegation the suspension grants is foundation-wide, so it
+              // owns the unitless row. Matching `unitId: null` explicitly keeps
+              // this from "reusing" an unrelated unit-scoped assignment for the
+              // same role — which would record provenance against a row the lift
+              // must not touch — and pairs with the partial unique index on
+              // (user, role) WHERE unit_id IS NULL. Ordered by id so the row
+              // picked is the same one the migration keeps when it collapses
+              // historical duplicates.
+              where: { userId: data.plhUserId, roleId: role.id, unitId: null },
+              orderBy: { id: 'asc' },
             });
 
             if (!existingAssign) {
@@ -521,8 +555,11 @@ export class BoardSuspensionService {
       });
 
       // Prime the shared cache (best-effort) so the next request on ANY replica
-      // refuses the token without waiting out the TTL.
-      await markUserSuspended(data.userId);
+      // refuses the token without waiting out the TTL. The version is the one the
+      // suspension's own conditional write produced, so a lift that commits in
+      // the meantime (bumping it again) outranks this prime instead of being
+      // overwritten by it.
+      await markUserSuspended(data.userId, suspensionAccountStateVersion);
       return suspension;
     } catch (error) {
       // The partial unique index is what actually prevents a second ACTIVE
@@ -538,6 +575,8 @@ export class BoardSuspensionService {
    * Lift a Board Member's suspension (Pemulihan Status oleh Pembina).
    */
   async liftBoardSuspension(id: string, liftedById: string, liftReason: string) {
+    // Version of the restored account state, carried out for the cache tombstone.
+    let restoredAccountStateVersion = 0;
     const suspension = await prisma.boardMemberSuspension.findUnique({
       where: { id },
     });
@@ -634,6 +673,15 @@ export class BoardSuspensionService {
           data: activationState(),
         });
       }
+
+      // The version the account state holds at commit: the activation above bumps
+      // it, and a lift that does not own the state leaves it as-is. Either way
+      // this is the value a delayed suspension prime must be compared against.
+      const restoredState = await tx.user.findUnique({
+        where: { id: suspension.userId },
+        select: { accountStateVersion: true },
+      });
+      restoredAccountStateVersion = restoredState?.accountStateVersion ?? 0;
 
       // 3. Restore E-Sign lockouts captured at suspension time — but only
       //    where the key still holds the sentinel the suspension wrote.
@@ -811,7 +859,7 @@ export class BoardSuspensionService {
     // `false`, letting a suspended account's old token authenticate for a full
     // TTL. Dropping the key makes the next request read the persistent state,
     // which is the only writer that actually orders these two events.
-    await invalidateUserSuspensionCache(suspension.userId);
+    await invalidateUserSuspensionCache(suspension.userId, restoredAccountStateVersion);
     return result;
   }
 

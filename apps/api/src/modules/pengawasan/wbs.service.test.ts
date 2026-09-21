@@ -616,6 +616,7 @@ describe('WbsService Unit Tests', () => {
 
     it('forwards to a valid foundation recipient and records the assignment', async () => {
       (prisma.wbsReport.findFirst as any).mockResolvedValue(reportInScope());
+      (prisma.wbsReport.findUnique as any).mockResolvedValue(reportInScope());
       (prisma.user.findUnique as any).mockResolvedValue(recipient());
       (prisma.wbsReport.update as any).mockResolvedValue({
         ...reportInScope(),
@@ -639,6 +640,162 @@ describe('WbsService Unit Tests', () => {
         })
       );
       expect(updated.assignedUserId).toBe('user-target');
+    });
+
+    it('re-validates the recipient under the transaction and aborts when it was deactivated in the gap', async () => {
+      // Pre-flight sees a live recipient; by the time the transaction runs, the
+      // account has been switched off. Acting on the pre-flight snapshot would
+      // hand a confidential report to a deactivated user.
+      (prisma.wbsReport.findFirst as any).mockResolvedValue(reportInScope());
+      (prisma.wbsReport.findUnique as any).mockResolvedValue(reportInScope());
+      (prisma.user.findUnique as any)
+        .mockResolvedValueOnce(recipient())
+        .mockResolvedValueOnce(recipient({ isActive: false }));
+
+      await expect(
+        wbsService.forwardReport(
+          'report-1',
+          { toRole: 'YAYASAN_KETUA', reason: 'alasan panjang', toUserId: 'user-target' },
+          actor
+        )
+      ).rejects.toMatchObject({ statusCode: 400 });
+
+      expect(prisma.wbsForwardLog.create).not.toHaveBeenCalled();
+      expect(prisma.wbsReport.update).not.toHaveBeenCalled();
+    });
+
+    it('re-validates the recipient role under the transaction and aborts when it was revoked in the gap', async () => {
+      (prisma.wbsReport.findFirst as any).mockResolvedValue(reportInScope());
+      (prisma.wbsReport.findUnique as any).mockResolvedValue(reportInScope());
+      (prisma.user.findUnique as any)
+        .mockResolvedValueOnce(recipient())
+        .mockResolvedValueOnce(recipient({ userRoles: [] }));
+
+      await expect(
+        wbsService.forwardReport(
+          'report-1',
+          { toRole: 'YAYASAN_KETUA', reason: 'alasan panjang', toUserId: 'user-target' },
+          actor
+        )
+      ).rejects.toMatchObject({ statusCode: 400 });
+
+      expect(prisma.wbsForwardLog.create).not.toHaveBeenCalled();
+    });
+
+    it('re-validates the unit compatibility under the transaction when the recipient moved in the gap', async () => {
+      (prisma.wbsReport.findFirst as any).mockResolvedValue(reportInScope('unit-sdit'));
+      (prisma.wbsReport.findUnique as any).mockResolvedValue(reportInScope('unit-sdit'));
+      (prisma.user.findUnique as any)
+        .mockResolvedValueOnce(
+          recipient({ unitId: 'unit-sdit', userRoles: [{ role: { code: 'SDIT_ADMIN' } }] })
+        )
+        .mockResolvedValueOnce(
+          recipient({ unitId: 'unit-smpit', userRoles: [{ role: { code: 'SDIT_ADMIN' } }] })
+        );
+
+      await expect(
+        wbsService.forwardReport(
+          'report-1',
+          { toRole: 'UNIT_ADMIN', reason: 'alasan panjang', toUserId: 'user-target' },
+          actor
+        )
+      ).rejects.toMatchObject({ statusCode: 403 });
+
+      expect(prisma.wbsForwardLog.create).not.toHaveBeenCalled();
+    });
+
+    it('locks the recipient row FOR UPDATE after locking the report', async () => {
+      (prisma.wbsReport.findFirst as any).mockResolvedValue(reportInScope());
+      (prisma.wbsReport.findUnique as any).mockResolvedValue(reportInScope());
+      (prisma.user.findUnique as any).mockResolvedValue(recipient());
+      (prisma.wbsReport.update as any).mockResolvedValue({
+        ...reportInScope(),
+        primaryHandlerRole: 'YAYASAN_KETUA',
+        assignedUserId: 'user-target',
+      });
+
+      await wbsService.forwardReport(
+        'report-1',
+        { toRole: 'YAYASAN_KETUA', reason: 'alasan panjang', toUserId: 'user-target' },
+        actor
+      );
+
+      const sql = (prisma.$queryRaw as any).mock.calls.map((call: unknown[]) =>
+        (call[0] as string[]).join('?')
+      );
+      const reportLock = sql.findIndex((q: string) => q.includes('wbs_reports'));
+      const recipientLock = sql.findIndex((q: string) => q.includes('users'));
+      expect(reportLock).toBeGreaterThanOrEqual(0);
+      expect(recipientLock).toBeGreaterThanOrEqual(0);
+      // Deterministic order: the report is locked before the recipient, so a
+      // forward cannot deadlock with the other WBS mutation paths.
+      expect(reportLock).toBeLessThan(recipientLock);
+    });
+  });
+
+  describe('public comments on closed cases', () => {
+    const openReport = {
+      id: 'report-1',
+      trackingToken: 'tok-1',
+      isAnonymous: true,
+      reporterName: null,
+      status: WbsStatus.DALAM_PENYELIDIKAN,
+    };
+
+    beforeEach(() => {
+      (prisma.$queryRaw as any).mockResolvedValue([{ id: 'report-1' }]);
+    });
+
+    it.each([WbsStatus.SELESAI, WbsStatus.TIDAK_DAPAT_DITINDAKLANJUTI])(
+      'refuses a public reply while the case is %s',
+      async (status) => {
+        (prisma.wbsReport.findUnique as any).mockResolvedValue({ ...openReport, status });
+
+        await expect(
+          wbsService.addPublicComment('WBS-1', 'tok-1', 'Mohon ditinjau ulang.')
+        ).rejects.toMatchObject({ statusCode: 409 });
+
+        expect(prisma.wbsComment.create).not.toHaveBeenCalled();
+      }
+    );
+
+    it('accepts a public reply while the case is still open', async () => {
+      (prisma.wbsReport.findUnique as any).mockResolvedValue(openReport);
+      (prisma.wbsComment.create as any).mockResolvedValue({ id: 'comment-1' });
+
+      const created = await wbsService.addPublicComment('WBS-1', 'tok-1', 'Tambahan bukti.');
+
+      expect(created.id).toBe('comment-1');
+      expect(prisma.wbsComment.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ reportId: 'report-1', senderType: 'REPORTER' }),
+        })
+      );
+    });
+
+    it('locks the report row before reading its status', async () => {
+      (prisma.wbsReport.findUnique as any).mockResolvedValue(openReport);
+      (prisma.wbsComment.create as any).mockResolvedValue({ id: 'comment-1' });
+
+      await wbsService.addPublicComment('WBS-1', 'tok-1', 'Tambahan bukti.');
+
+      // The status that decides admission must be read under the row lock,
+      // otherwise a handler closing the case could interleave between the two.
+      const lockCall = (prisma.$queryRaw as any).mock.calls.find((call: unknown[]) =>
+        (call[0] as string[]).join('?').includes('FOR UPDATE')
+      );
+      expect(lockCall).toBeDefined();
+      expect((lockCall[0] as string[]).join('?')).toContain('wbs_reports');
+    });
+
+    it('rejects a wrong tracking token without writing a comment', async () => {
+      (prisma.wbsReport.findUnique as any).mockResolvedValue(openReport);
+
+      await expect(
+        wbsService.addPublicComment('WBS-1', 'wrong-token', 'Halo')
+      ).rejects.toMatchObject({ statusCode: 404 });
+
+      expect(prisma.wbsComment.create).not.toHaveBeenCalled();
     });
   });
 

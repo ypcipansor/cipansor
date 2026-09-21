@@ -147,22 +147,23 @@ describe('user.service suspension-cache invalidation', () => {
 
   it('primes the suspension cache when an admin deactivates an account', async () => {
     mock.user.findFirst.mockResolvedValue({ id: 'u1', unitId: null, email: 'x@y.z', isActive: true });
-    mock.user.update.mockResolvedValue({ id: 'u1', passwordHash: 'hashed' });
+    mock.user.update.mockResolvedValue({ id: 'u1', passwordHash: 'hashed', accountStateVersion: 5 });
 
     await userService.update('u1', { isActive: false } as UpdateUserInput, superUser);
 
     // Without this the old access token kept authenticating for a whole TTL.
-    expect(markUserSuspended).toHaveBeenCalledWith('u1');
+    // The version is carried so a delayed prime cannot outrank a later restore.
+    expect(markUserSuspended).toHaveBeenCalledWith('u1', 5);
     expect(invalidateUserSuspensionCache).not.toHaveBeenCalled();
   });
 
   it('drops the cached answer when an account is reactivated', async () => {
     mock.user.findFirst.mockResolvedValue({ id: 'u1', unitId: null, email: 'x@y.z', isActive: false });
-    mock.user.update.mockResolvedValue({ id: 'u1', passwordHash: 'hashed' });
+    mock.user.update.mockResolvedValue({ id: 'u1', passwordHash: 'hashed', accountStateVersion: 6 });
 
     await userService.update('u1', { isActive: true } as UpdateUserInput, superUser);
 
-    expect(invalidateUserSuspensionCache).toHaveBeenCalledWith('u1');
+    expect(invalidateUserSuspensionCache).toHaveBeenCalledWith('u1', 6);
     expect(markUserSuspended).not.toHaveBeenCalled();
   });
 
@@ -178,10 +179,10 @@ describe('user.service suspension-cache invalidation', () => {
 
   it('marks a soft-deleted account suspended so its token stops working', async () => {
     mock.user.findFirst.mockResolvedValue({ id: 'u1', unitId: null, email: 'x@y.z' });
-    mock.user.update.mockResolvedValue({ id: 'u1' });
+    mock.user.update.mockResolvedValue({ id: 'u1', accountStateVersion: 7 });
 
     await userService.delete('u1');
 
-    expect(markUserSuspended).toHaveBeenCalledWith('u1');
+    expect(markUserSuspended).toHaveBeenCalledWith('u1', 7);
   });
 });

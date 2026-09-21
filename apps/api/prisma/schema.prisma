@@ -364,6 +364,20 @@ model User {
   /// the state predates the marker (or was never touched through a guarded
   /// path), which is treated as "not ours" — the safe direction.
   accountStateWriter     String?   @map("account_state_writer")
+  /// Monotonic version of the account-state ledger — see `AccountStateWriter`.
+  ///
+  /// `account_state_writer` is opaque, not ordered, so it can prove *who* owns the
+  /// current state but not *which of two writes is newer*. The suspension cache
+  /// needs that ordering: the marker primed by a suspension must not be allowed
+  /// to land after a lift has already cleared it, or a restored account stays
+  /// refused until the TTL. Every guarded account-state write bumps this counter
+  /// in the same statement, and the cache write only accepts a version greater
+  /// than or equal to the one already stored — so a delayed prime from an older
+  /// event is rejected rather than resurrecting a stale positive marker.
+  ///
+  /// Integer, not BigInt: one increment per account-state change, so 2^31 is
+  /// decades of headroom and avoids bigint/JSON serialisation friction.
+  accountStateVersion    Int       @default(0) @map("account_state_version")
   isTwoFactorEnabled     Boolean   @default(false) @map("is_two_factor_enabled")
   twoFactorSecret        String?   @map("two_factor_secret")
   twoFactorSecretPending String?   @map("two_factor_secret_pending")
@@ -2158,6 +2172,12 @@ model UserRoleAssignment {
   boardSuspensionPlhAssignments BoardSuspensionPlhAssignment[]
 
   @@unique([userId, roleId, unitId])
+  /// Partial unique on the unitless delegation — see migration
+  /// `20260921130000_plh_assignment_effective_unique`. The three-column unique
+  /// above cannot constrain `unit_id IS NULL` rows (Postgres treats NULLs as
+  /// distinct), so the Plh/Plt grant — always unitless — was unconstrained and
+  /// two parallel suspensions could mint duplicate delegations for one
+  /// delegate+role. Prisma cannot express `WHERE`, so this lives in the migration.
   @@index([userId])
   @@index([roleId])
   @@index([unitId])

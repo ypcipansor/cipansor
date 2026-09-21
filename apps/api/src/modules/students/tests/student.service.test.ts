@@ -585,12 +585,14 @@ describe('delete — soft delete stops authentication immediately', () => {
     const { markUserSuspended } = await import('@/utils/user-suspension');
     (prisma.student.findFirst as any).mockResolvedValue({ id: 's1', userId: 'u1', unitId: 'unit-1' });
     (prisma.student.update as any).mockResolvedValue({ id: 's1' });
-    (prisma.user.update as any).mockResolvedValue({ id: 'u1' });
+    // `$transaction` resolves in array order, so the user write is the second
+    // element — the version it produced must reach the cache prime.
+    (prisma.user.update as any).mockResolvedValue({ id: 'u1', accountStateVersion: 3 });
 
     await svc.delete('s1');
 
     // Without this the deleted user's access token stayed valid for a TTL
     // because the cache still answered "not suspended".
-    expect(markUserSuspended).toHaveBeenCalledWith('u1');
+    expect(markUserSuspended).toHaveBeenCalledWith('u1', 3);
   });
 });

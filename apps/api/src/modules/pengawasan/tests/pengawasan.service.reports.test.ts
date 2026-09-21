@@ -5,7 +5,7 @@ import { prisma } from '@/lib/prisma';
 vi.mock('@/lib/prisma', () => ({
   prisma: {
     unit: { findFirst: vi.fn() },
-    user: { findFirst: vi.fn() },
+    user: { findFirst: vi.fn(), findMany: vi.fn() },
     letter: { create: vi.fn() },
     letterFlowEvent: { create: vi.fn() },
     filingClassification: { findFirst: vi.fn() },
@@ -16,6 +16,47 @@ vi.mock('@/lib/prisma', () => ({
 describe('PengawasanService periodic oversight report', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // The draft now goes through the E-Office primitive, which validates the
+    // recipient set before writing: an active account with an effective
+    // internal role. One eligible Pembina by default.
+    (prisma.user.findMany as any).mockResolvedValue([
+      {
+        id: 'pembina-1',
+        unitId: null,
+        teacher: null,
+        staff: null,
+        userRoles: [{ unitId: null, role: { code: 'YAYASAN_PEMBINA' } }],
+      },
+    ]);
+  });
+
+  it('delegates to the correspondence draft primitive instead of writing the letter tables itself', async () => {
+    // The oversight module must not own a second copy of the letter rules. The
+    // draft is created through `CorrespondenceService` and the recipient
+    // eligibility check runs there — proven by `user.findMany` being queried.
+    (prisma.unit.findFirst as any).mockResolvedValue({ id: 'unit-pusat' });
+    (prisma.user.findFirst as any).mockResolvedValue({ id: 'pembina-1', unitId: null });
+    (prisma.filingClassification.findFirst as any).mockResolvedValue({ id: 'cls-1' });
+    (prisma.letter.create as any).mockResolvedValue({ id: 'letter-1', status: 'DRAFT' });
+
+    await pengawasanService.draftPeriodicReportToEOffice(
+      { title: 'Audit Q1', period: '2026-Q1', executiveSummary: 'Ringkasan eksekutif.' },
+      'pengawas-1',
+      { roleCode: 'YAYASAN_PENGAWAS', unitId: null }
+    );
+
+    expect(prisma.user.findMany).toHaveBeenCalled();
+    // No letter number is allocated for a draft, and the type/nature pair is the
+    // one the correspondence rules allow.
+    expect(prisma.letter.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: 'SURAT_DINAS',
+          nature: 'LIMITED',
+          status: 'DRAFT',
+        }),
+      })
+    );
   });
 
   it('files the report as a DRAFT on the foundation unit with a CREATED flow event', async () => {

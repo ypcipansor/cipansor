@@ -630,7 +630,7 @@ export class StudentService {
     }
 
     // Soft delete both student and user
-    await prisma.$transaction([
+    const [, deletedUser] = await prisma.$transaction([
       prisma.student.update({
         where: { id },
         data: { deletedAt: new Date() },
@@ -642,8 +642,10 @@ export class StudentService {
     ]);
 
     // A soft-deleted account must stop authenticating immediately; the
-    // suspension cache would otherwise serve its cached "active" for a TTL.
-    await markUserSuspended(student.userId);
+    // suspension cache would otherwise serve its cached "active" for a TTL. The
+    // version comes from the committed write, so a delayed prime cannot outrank
+    // a later restore.
+    await markUserSuspended(student.userId, deletedUser.accountStateVersion);
 
     return { message: 'Student deleted successfully' };
   }

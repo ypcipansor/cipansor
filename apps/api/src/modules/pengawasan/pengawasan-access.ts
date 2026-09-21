@@ -65,6 +65,49 @@ export function assertUnitAccess(
 }
 
 /**
+ * Resolve which unit a newly created audit belongs to.
+ *
+ * The controller used to prefer the actor's token `unitId` and only fall back to
+ * `body.unitId` when the token carried none. A foundation-wide reviewer who
+ * carries a unit (the foundation unit, say) but deliberately conducts an audit of
+ * a different unit therefore had that choice discarded: the audit was filed
+ * against the reviewer's own unit, quietly, and the target unit's head never saw
+ * it. The request's explicit unit is authoritative for a cross-unit role.
+ *
+ * - Foundation-wide: `body.unitId` wins when present; otherwise the actor's own
+ *   unit is the explicit fallback; with neither, the target is undeterminable and
+ *   the request is refused rather than guessed.
+ * - Unit-scoped: the actor's own unit is the only possible target. An override in
+ *   the body is ignored, never honoured, exactly as `resolveArrearsUnitId` does;
+ *   without a unit the request fails closed instead of writing an unscoped audit.
+ *
+ * `createAudit` persists a required `unitId`, so unlike the list/arrears readers
+ * there is no `undefined` ("every unit") outcome — a missing target is an error.
+ */
+export function resolveAuditUnitId(
+  actor: PengawasanActor,
+  requestedUnitId?: string | null
+): string {
+  const requested = requestedUnitId ?? undefined;
+
+  if (isFoundationWide(actor.roleCode)) {
+    const target = requested ?? actor.unitId ?? undefined;
+    if (!target) {
+      throw Errors.badRequest('Unit ID is required: pilih unit tempat audit ini dilaksanakan.');
+    }
+    return target;
+  }
+
+  const ownUnitId = actor.unitId ?? undefined;
+  if (!ownUnitId) {
+    throw Errors.unauthorized('Unit ID required');
+  }
+  // The actor's own unit is authoritative for a unit-scoped actor; an override is
+  // ignored, never honoured.
+  return ownUnitId;
+}
+
+/**
  * Resolve which unit an arrears request may read.
  *
  * The controller used to resolve this itself, with a raw inline list —
