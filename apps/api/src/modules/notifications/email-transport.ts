@@ -145,6 +145,10 @@ export function describeEmailTransport(): EmailTransportStatus {
  * Each destructive pattern is re-applied until the string stops changing. A
  * single pass over `<<script>script>` leaves `<script>` behind, because the
  * regex consumes the inner tag and the two halves join into a new one.
+ *
+ * The result is plain text, NOT HTML-safe markup. A decoded entity can produce
+ * a literal `<script>` in the output (e.g. from `&lt;script&gt;`), which is
+ * inert only while the consumer does not re-embed it as HTML without escaping.
  */
 export function htmlToText(html: string): string {
   let text = stripUntilStable(html, /<style[\s\S]*?<\/style>/gi, '');
@@ -199,7 +203,7 @@ function decodeBasicEntities(text: string): string {
       if (numericCode === '39') return "'";
       if (numericCode === '38') return '&';
       return named[match] ?? match;
-    },
+    }
   );
 }
 
@@ -371,7 +375,7 @@ export async function deliverEmail(input: DeliverEmailInput): Promise<DeliverEma
 
   logger.warn(
     'Email transport not configured (no Gmail service account, no SMTP_HOST) — message logged only.',
-    { to: input.to, subject: input.subject },
+    { to: input.to, subject: input.subject }
   );
 
   return { kind: 'log', delivered: false, messageId: `log_${Date.now()}` };

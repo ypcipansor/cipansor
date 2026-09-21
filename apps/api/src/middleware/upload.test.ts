@@ -96,6 +96,87 @@ describe('verifyStoredFile', () => {
       fs.unlinkSync(outside);
     }
   });
+
+  it('rejects a sibling directory whose path shares the upload prefix', async () => {
+    // `public/uploads-evil` starts with `public/uploads` but is not inside it.
+    const siblingDir = `${uploadDir}-evil`;
+    const sibling = path.join(siblingDir, `upload-test-sibling-${Date.now()}`);
+    fs.mkdirSync(siblingDir, { recursive: true });
+    fs.writeFileSync(sibling, png);
+    try {
+      const ok = await verifyStoredFile({
+        path: sibling,
+        mimetype: 'image/png',
+      } as Express.Multer.File);
+      expect(ok).toBe(false);
+      expect(fs.existsSync(sibling)).toBe(true);
+    } finally {
+      fs.rmSync(siblingDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a `..` traversal that escapes the upload directory', async () => {
+    const escaping = path.join(uploadDir, '..', '..', `upload-test-escape-${Date.now()}`);
+    const resolvedOutside = path.resolve(escaping);
+    fs.writeFileSync(resolvedOutside, png);
+    try {
+      const ok = await verifyStoredFile({
+        path: escaping,
+        mimetype: 'image/png',
+      } as Express.Multer.File);
+      expect(ok).toBe(false);
+      expect(fs.existsSync(resolvedOutside)).toBe(true);
+    } finally {
+      fs.unlinkSync(resolvedOutside);
+    }
+  });
+
+  it('rejects the upload directory itself as a path', async () => {
+    const ok = await verifyStoredFile({
+      path: uploadDir,
+      mimetype: 'image/png',
+    } as Express.Multer.File);
+    expect(ok).toBe(false);
+    expect(fs.existsSync(uploadDir)).toBe(true);
+  });
+
+  it('accepts a genuine file given as a path relative to the cwd', async () => {
+    const abs = tmpFile(png);
+    const relative = path.relative(process.cwd(), abs);
+    try {
+      const ok = await verifyStoredFile({
+        path: relative,
+        mimetype: 'image/png',
+      } as Express.Multer.File);
+      expect(ok).toBe(true);
+      expect(fs.existsSync(abs)).toBe(true);
+    } finally {
+      if (fs.existsSync(abs)) fs.unlinkSync(abs);
+    }
+  });
+
+  it('rejects a symlink inside the upload directory that points outside it', async () => {
+    // Lexical containment cannot see this; the realpath check must, and the
+    // target must survive untouched.
+    const outside = path.join(
+      os.tmpdir(),
+      `upload-test-link-target-${Date.now()}-${Math.random()}`
+    );
+    fs.writeFileSync(outside, png);
+    const link = path.join(uploadDir, `upload-test-link-${Date.now()}`);
+    try {
+      fs.symlinkSync(outside, link);
+      const ok = await verifyStoredFile({
+        path: link,
+        mimetype: 'image/png',
+      } as Express.Multer.File);
+      expect(ok).toBe(false);
+      expect(fs.existsSync(outside)).toBe(true);
+    } finally {
+      fs.rmSync(link, { force: true });
+      fs.unlinkSync(outside);
+    }
+  });
 });
 
 describe('uploadsAuth', () => {

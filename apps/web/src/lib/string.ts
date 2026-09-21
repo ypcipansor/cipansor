@@ -97,11 +97,32 @@ export function slugify(str: string): string {
 }
 
 /**
- * Remove HTML tags
+ * Remove HTML tags, keeping the text content.
+ *
+ * Plain-text extraction, not escaping: `<b>Hello</b>` becomes `Hello`. Tags are
+ * stripped to a fixed point, so removing one tag can never concatenate its
+ * neighbours into a new one (`<<script>script>` -> `<script>`). Entities are
+ * left alone, so `a &lt; b` stays `a &lt; b`.
+ *
+ * The result is text, not HTML-safe markup. Do not interpolate it into HTML
+ * without escaping — call `escapeHtml` at that call site for that.
  */
 export function stripHtml(html: string): string {
   if (!html) return "";
-  return escapeHtml(html);
+  return stripToFixedPoint(html, /<\/?[a-z][^>]*>/gi);
+}
+
+/**
+ * Apply `pattern` until it stops changing the string. Removing one match can
+ * expose a new one, so a single pass is not enough for tag-shaped input.
+ */
+function stripToFixedPoint(text: string, pattern: RegExp): string {
+  let current = text;
+  for (;;) {
+    const next = current.replace(pattern, "");
+    if (next === current) return current;
+    current = next;
+  }
 }
 
 /**

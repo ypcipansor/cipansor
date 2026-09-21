@@ -121,22 +121,43 @@ export const upload = multer({
 });
 
 /**
+ * True when `candidate` (already absolute) is a file strictly inside the upload
+ * directory. `path.resolve` + `path.relative` is a lexical check: it stops `..`
+ * traversal and sibling-prefix paths but says nothing about symlinks.
+ */
+function isInsideUploadDir(candidate: string): boolean {
+  const relative = path.relative(path.resolve(uploadDir), candidate);
+  return relative.length > 0 && !relative.startsWith('..') && !path.isAbsolute(relative);
+}
+
+/**
  * Read the stored file's first bytes and verify they match the declared MIME
  * type. Deletes the file and returns false on mismatch, so nothing that fails
  * the check survives on disk.
+ *
+ * Containment is enforced twice. The lexical check rejects `..` and a sibling
+ * directory whose path shares a prefix; the `realpath` check then rejects a
+ * symlink inside the upload directory that points outside it, which the lexical
+ * check cannot see. A path that fails either is never opened or unlinked.
  */
 export async function verifyStoredFile(file: Express.Multer.File): Promise<boolean> {
-  const resolvedUploadDir = path.resolve(uploadDir);
   const resolvedFilePath = path.resolve(file.path);
-  const relativePath = path.relative(resolvedUploadDir, resolvedFilePath);
+  if (!isInsideUploadDir(resolvedFilePath)) {
+    return false;
+  }
 
-  // Enforce that all file operations stay inside the configured upload directory.
-  if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
+  let realFilePath: string;
+  try {
+    realFilePath = await fs.promises.realpath(resolvedFilePath);
+  } catch {
+    return false;
+  }
+  if (!isInsideUploadDir(realFilePath)) {
     return false;
   }
 
   const head = Buffer.alloc(16);
-  const fd = await fs.promises.open(resolvedFilePath, 'r');
+  const fd = await fs.promises.open(realFilePath, 'r');
   try {
     const { bytesRead } = await fd.read(head, 0, head.length, 0);
     if (matchesMagicBytes(file.mimetype, head.subarray(0, bytesRead))) {
@@ -145,7 +166,7 @@ export async function verifyStoredFile(file: Express.Multer.File): Promise<boole
   } finally {
     await fd.close();
   }
-  await fs.promises.unlink(resolvedFilePath).catch(() => undefined);
+  await fs.promises.unlink(realFilePath).catch(() => undefined);
   return false;
 }
 

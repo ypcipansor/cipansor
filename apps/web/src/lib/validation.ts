@@ -401,6 +401,28 @@ export const maxFileSize = (
 });
 
 /**
+ * Does `file` match one allowed-type rule? Rules are one of:
+ *   - `.ext`      — the filename ends with the extension;
+ *   - `type/sub`  — the MIME type is exactly this;
+ *   - `type/*`    — the MIME type's major type is `type`.
+ *
+ * Only the `type/*` wildcard is supported. Anything else containing `*`
+ * (a bare `*`, `*\/*`, `image/pn*g`, a second slash) is rejected rather than
+ * having its `*` deleted, which is what made a rule like `image/*` looser than
+ * intended.
+ */
+function matchesAllowedType(file: File, allowed: string): boolean {
+  if (allowed.startsWith(".")) {
+    return file.name.toLowerCase().endsWith(allowed.toLowerCase());
+  }
+  if (!allowed.includes("*")) {
+    return file.type === allowed;
+  }
+  const wildcard = /^([a-z0-9][a-z0-9!#$&^_.+-]*)\/\*$/i.exec(allowed);
+  return wildcard !== null && file.type.startsWith(`${wildcard[1]}/`);
+}
+
+/**
  * File type validation
  */
 export const fileType = (
@@ -410,14 +432,7 @@ export const fileType = (
   validate: (value) => {
     if (!value) return true;
     if (value instanceof File) {
-      return allowedTypes.some((type) => {
-        if (type.startsWith(".")) {
-          return value.name.toLowerCase().endsWith(type.toLowerCase());
-        }
-        return (
-          value.type === type || value.type.startsWith(type.replace(/\*/g, ""))
-        );
-      });
+      return allowedTypes.some((type) => matchesAllowedType(value, type));
     }
     return true;
   },

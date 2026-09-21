@@ -512,7 +512,10 @@ export default function CreateTKAssessmentPage() {
                                     "flex flex-col items-center justify-between rounded-xl border-2 border-muted bg-card p-4 hover:scale-[1.02] transition-all cursor-pointer h-full relative overflow-hidden group shadow-sm hover:shadow-md",
                                     "peer-data-[state=checked]:border-primary peer-data-[state=checked]:shadow-lg",
                                     field.value === option.value &&
-                                      option.color + " bg-accent/20",
+                                      option.color.replace(
+                                        "border-",
+                                        "border-",
+                                      ) + " bg-accent/20",
                                   )}
                                 >
                                   {/* Color Indicator Strip */}

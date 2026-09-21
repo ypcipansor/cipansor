@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api, { ApiResponse, PaginatedResponse } from "@/lib/api";
 
@@ -394,4 +395,25 @@ export function generateCertificateNumber(
   const random = (value % 10000).toString().padStart(4, "0");
   const typeCode = type.substring(0, 3).toUpperCase();
   return `${unitCode}/${typeCode}/${year}${month}/${random}`;
+}
+
+/**
+ * A certificate number that is stable for a given identity.
+ *
+ * `generateCertificateNumber` is random, so calling it in a component body gave
+ * a new number on every render — an unrelated state update redrew the printed
+ * certificate with a different number. `useMemo` ties the value to its real
+ * inputs: it changes only when `type` or `unitCode` changes, not on a re-render.
+ *
+ * The value is a display convenience, not an authoritative identifier; the
+ * backend issues the recorded certificate number.
+ */
+export function useCertificateNumber(
+  type: CertificateType,
+  unitCode: string = "CPN",
+): string {
+  return useMemo(
+    () => generateCertificateNumber(type, unitCode),
+    [type, unitCode],
+  );
 }

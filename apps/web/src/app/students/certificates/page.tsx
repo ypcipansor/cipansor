@@ -30,7 +30,7 @@ import { useClasses } from "@/hooks/use-classes";
 import {
   CERTIFICATE_TEMPLATES,
   CertificateType,
-  generateCertificateNumber,
+  useCertificateNumber,
 } from "@/hooks/use-certificate";
 import {
   Award,
@@ -101,7 +101,7 @@ export default function CertificateGeneratorPage() {
   const selectedTemplate = CERTIFICATE_TEMPLATES.find(
     (t) => t.type === formData.type,
   );
-  const certificateNumber = generateCertificateNumber(formData.type, "CPN");
+  const certificateNumber = useCertificateNumber(formData.type, "CPN");
 
   const handleSelectStudent = (student: Student) => {
     setSelectedStudent(student);

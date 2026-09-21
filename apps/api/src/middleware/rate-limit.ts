@@ -8,6 +8,18 @@ import { config } from '@/config';
 import { logger } from '@/lib/logger';
 
 /**
+ * Whether rate limiting applies in this environment.
+ *
+ * Policy: active everywhere except development and test (see app.ts). Kept as a
+ * named predicate so the decision is asserted in one place instead of being
+ * duplicated by two `if (env !== 'test' && env !== 'development')` branches that
+ * can drift apart.
+ */
+export function rateLimitEnabled(env: string): boolean {
+  return env !== 'test' && env !== 'development';
+}
+
+/**
  * Default rate limiter for general API endpoints
  */
 export const defaultLimiter: RateLimitRequestHandler = rateLimit({

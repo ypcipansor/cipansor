@@ -10,15 +10,9 @@ import type {
   BulkCreateSanadInput,
   SanadGrade,
 } from './sanad-certificate.schema';
-import { GRADE_LABELS } from './sanad-certificate.schema';
+import { GRADE_LABELS, MAX_BULK_CREATE_RECORDS } from './sanad-certificate.schema';
 import { certificateVerificationUrl } from '@/utils/verification-url';
-
-// ============================================
-// CONSTANTS
-// ============================================
-
-const MAX_BULK_CREATE_RECORDS = 1000;
-// ============================================
+import { Errors } from '@/middleware/error';
 
 const JUZ_NAMES: Record<number, string> = {
   1: 'Juz Amma',
@@ -293,11 +287,13 @@ export async function bulkCreateSanadRecords(
   };
 
   if (!Array.isArray(input.records)) {
-    throw new Error('Invalid records payload');
+    throw Errors.badRequest('Invalid records payload');
   }
 
   if (input.records.length > MAX_BULK_CREATE_RECORDS) {
-    throw new Error(`Cannot create more than ${MAX_BULK_CREATE_RECORDS} records in one request`);
+    throw Errors.badRequest(
+      `Cannot create more than ${MAX_BULK_CREATE_RECORDS} records in one request`
+    );
   }
 
   const records = input.records;

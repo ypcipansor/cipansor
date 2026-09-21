@@ -9,7 +9,7 @@ import { config } from '@/config';
 import { buildCorsOptions } from '@/config/cors';
 import { logger } from '@/lib/logger';
 import { errorHandler, notFoundHandler } from '@/middleware/error';
-import { defaultLimiter, authLimiter } from '@/middleware/rate-limit';
+import { defaultLimiter, authLimiter, rateLimitEnabled } from '@/middleware/rate-limit';
 import { normalizePagination } from '@/middleware/normalize-pagination';
 import { swaggerSpec } from '@/config/swagger';
 
@@ -157,17 +157,35 @@ app.use(compression());
 // Stored uploads hold personal data (student photos/documents), so serving
 // them requires a valid access token — via Authorization header or ?token=
 // (see uploadsAuth). Directory listing stays off; static only serves files.
+//
+// The default limiter guards this route where rate limiting is in force; in
+// development and test it is omitted, matching the global policy below. The
+// earlier version mounted it in every environment, so dev and test inherited
+// the production ceiling despite the policy saying otherwise.
 import path from 'path';
 import { uploadsAuth } from './middleware/upload';
-if (config.env !== 'test' && config.env !== 'development') {
-  app.use('/uploads', defaultLimiter, uploadsAuth, express.static(path.join(process.cwd(), 'public/uploads')));
-} else {
-  app.use('/uploads', defaultLimiter, uploadsAuth, express.static(path.join(process.cwd(), 'public/uploads')));
+
+/**
+ * Build the `/uploads` middleware chain for an environment.
+ *
+ * Rate limiting is prepended only where it is in force (`rateLimitEnabled`), so
+ * development and test are not silently throttled by the production limiter.
+ * Authentication (`uploadsAuth`) is unconditional: stored uploads are private
+ * in every environment.
+ */
+export function buildUploadsMiddleware(env: string) {
+  return [
+    ...(rateLimitEnabled(env) ? [defaultLimiter] : []),
+    uploadsAuth,
+    express.static(path.join(process.cwd(), 'public/uploads')),
+  ];
 }
+
+app.use('/uploads', ...buildUploadsMiddleware(config.env));
 
 // Rate limiting - apply to all routes except health check
 // Active in all environments except test and development
-if (config.env !== 'test' && config.env !== 'development') {
+if (rateLimitEnabled(config.env)) {
   app.use(defaultLimiter);
 }
 
