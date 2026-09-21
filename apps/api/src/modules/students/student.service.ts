@@ -6,7 +6,7 @@ import { prisma } from '@/lib/prisma';
 import { hashPassword } from '@/lib/password';
 import { Errors } from '@/middleware/error';
 import { assertStudentIdentifiersAvailable } from './student-identifiers';
-import { assignStudentNis } from '@/utils/student-nis';
+import { assignStudentNis, findStudentIdByNisInUnit } from '@/utils/student-nis';
 import { UserRole, Gender, Prisma } from '@prisma/client';
 import type { ListStudentsQuery, CreateStudentInput, UpdateStudentInput } from './student.schema';
 import { normalizeEmail } from '@/utils/email';
@@ -391,15 +391,6 @@ export class StudentService {
    * Create new student (with user account)
    */
   async create(input: CreateStudentInput) {
-    // Check if NIS already exists
-    const existingNis = await prisma.student.findFirst({
-      where: { nis: input.nis },
-    });
-
-    if (existingNis) {
-      throw Errors.conflict('NIS already exists');
-    }
-
     // Check if email exists (if provided)
     const emailToCheck = normalizeEmail(input.email || `${input.nis}@student.cipansor.local`);
     const existingEmail = await prisma.user.findFirst({
@@ -426,6 +417,15 @@ export class StudentService {
     }
 
     const unitId = input.unitId; // TypeScript narrowing
+
+    // NIS milik unit yang menerbitkannya: SD IT dan SMP IT boleh memakai nomor
+    // yang sama. Yang ditolak adalah nomor kembar DI UNIT YANG SAMA (audit #489
+    // bagian 4) — dulu satu nomor mengunci seluruh yayasan. Diperiksa setelah
+    // unitnya dipastikan ada, karena pertanyaannya "sudah dipakai di unit mana".
+    const pemilikNis = await findStudentIdByNisInUnit(prisma, { unitId, nis: input.nis });
+    if (pemilikNis) {
+      throw Errors.conflict('NIS ini sudah dipakai santri lain di unit yang sama.');
+    }
 
     // Generate email if not provided
     const email = normalizeEmail(input.email || `${input.nis}@student.cipansor.local`);
@@ -551,13 +551,14 @@ export class StudentService {
       throw Errors.notFound('Student');
     }
 
-    // Check NIS uniqueness if changing
+    // Nomor kembar hanya dilarang di unit yang sama (lihat `create`).
     if (input.nis && input.nis !== student.nis) {
-      const existingNis = await prisma.student.findFirst({
-        where: { nis: input.nis, id: { not: id } },
+      const pemilikNis = await findStudentIdByNisInUnit(prisma, {
+        unitId: input.unitId ?? student.unitId,
+        nis: input.nis,
       });
-      if (existingNis) {
-        throw Errors.conflict('NIS already in use');
+      if (pemilikNis && pemilikNis !== id) {
+        throw Errors.conflict('NIS ini sudah dipakai santri lain di unit yang sama.');
       }
     }
 

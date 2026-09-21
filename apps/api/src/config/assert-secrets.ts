@@ -47,15 +47,20 @@ const PLACEHOLDER_MARKERS = [
 const MIN_SECRET_LENGTH = 32;
 
 /**
- * Known hardcoded defaults that pass every generic check.
+ * Known default/leaked values that pass every generic check.
  *
- * utils/encryption.ts falls back to a sequential byte pattern
- * (00 01 02 … 1f) when ENCRYPTION_KEY is unset. It is exactly 32 bytes, so the
- * length validation right below it accepts it and production encrypts system
- * secrets with a key printed in a public repository. Same shape of mistake as
- * JWT_SECRET, and equally invisible: forgetting produces no symptom.
+ * The former SystemSecret subsystem's fallback key was a sequential byte
+ * pattern (00 01 02 … 1f) exposed as a hardcoded default in this public
+ * repository. It is 64 hex characters and looks deliberate, so the length and
+ * placeholder checks below both accept it — yet signing tokens or printed
+ * cards with it hands the verifier to anyone who can read the source. Any
+ * signer (JWT, card HMAC, …) must reject it. Values here are exact matches;
+ * anything added must be a value already public in this repository, not a
+ * guess about a future default.
  */
-const KNOWN_DEFAULT_VALUES = ['000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f'];
+const LEAKED_OR_DEFAULT_VALUES = [
+  '000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f',
+];
 
 export interface SecretIssue {
   variable: string;
@@ -65,7 +70,6 @@ export interface SecretIssue {
 export interface SecretCheckInput {
   env?: string;
   jwtSecret?: string;
-  encryptionKey?: string;
   studentCardHmacSecret?: string;
 }
 
@@ -87,10 +91,12 @@ function inspect(variable: string, value: string | undefined, issues: SecretIssu
 
   const lowered = value.toLowerCase();
 
-  if (KNOWN_DEFAULT_VALUES.includes(lowered)) {
+  if (LEAKED_OR_DEFAULT_VALUES.includes(lowered)) {
     issues.push({
       variable,
-      reason: 'is still the hardcoded default from the source — that key is public',
+      reason:
+        'is still a leaked/default value from this public repository — that ' +
+        'key is public',
     });
     return;
   }
@@ -110,10 +116,6 @@ function inspect(variable: string, value: string | undefined, issues: SecretIssu
 export function findSecretIssues(input: SecretCheckInput): SecretIssue[] {
   const issues: SecretIssue[] = [];
   inspect('JWT_SECRET', input.jwtSecret, issues);
-  // Required, not optional. An unset ENCRYPTION_KEY does not fail loudly — it
-  // silently substitutes the sequential default above, and system secrets get
-  // encrypted with a key anyone can read.
-  inspect('ENCRYPTION_KEY', input.encryptionKey, issues);
   // Required, not optional, in production. A card signer that falls back to
   // the session key means every printed card dies on the next JWT rotation;
   // a card signer that falls back to a hardcoded value means anyone can mint
@@ -133,8 +135,8 @@ export function assertProductionSecrets(input: SecretCheckInput = {}): void {
   const issues = findSecretIssues({
     env,
     jwtSecret: input.jwtSecret ?? process.env.JWT_SECRET,
-    encryptionKey: input.encryptionKey ?? process.env.ENCRYPTION_KEY,
-    studentCardHmacSecret: input.studentCardHmacSecret ?? process.env.STUDENT_CARD_HMAC_SECRET,
+    studentCardHmacSecret:
+      input.studentCardHmacSecret ?? process.env.STUDENT_CARD_HMAC_SECRET,
   });
 
   if (issues.length === 0) return;
@@ -145,9 +147,8 @@ export function assertProductionSecrets(input: SecretCheckInput = {}): void {
     'Refusing to start the API in production with insecure secrets:\n' +
       `${detail}\n\n` +
       'Generate new values, e.g.:  openssl rand -hex 48\n' +
-      'Rotating JWT_SECRET only ends live sessions — no data becomes ' +
-      'unreadable. (Unlike ENCRYPTION_KEY, which must not be rotated once ' +
-      'data is encrypted.)'
+      'Rotating JWT_SECRET only ends live sessions — no stored data becomes ' +
+      'unreadable.'
   );
 }
 

@@ -90,20 +90,10 @@ export const PESANTREN_EDUCATOR_ROLE_CODES: readonly string[] = [
   "WALI_KAMAR",
 ];
 
-/** Perguruan Tinggi academic leadership & lecturers. */
-export const PT_ACADEMIC_ROLE_CODES: readonly string[] = [
-  "PT_REKTOR",
-  "PT_WAKIL_REKTOR",
-  "PT_DEKAN",
-  "PT_KAPRODI",
-  "PT_DOSEN",
-];
-
-/** Tata usaha (administrative office) across school units, pesantren, and PT. */
+/** Tata usaha (administrative office) across school units and pesantren. */
 export const TATA_USAHA_ROLE_CODES: readonly string[] = [
   ...perSchool("TATA_USAHA"),
   "PESANTREN_TATA_USAHA",
-  "PT_TATA_USAHA",
 ];
 
 /** Unit treasurers (yayasan treasurer is in GOVERNANCE_ROLE_CODES). */
@@ -123,15 +113,11 @@ export const BUSINESS_ROLE_CODES: readonly string[] = [
   "BUSINESS_STAFF",
 ];
 
-/** PT non-academic staff (PT_TATA_USAHA already counts as tata usaha). */
-export const PT_STAFF_ROLE_CODES: readonly string[] = ["PT_STAF_AKADEMIK"];
-
-/** Students across school units + PT. TK Qur'an has no per-student SISWA role. */
+/** Students across school units. TK Qur'an has no per-student SISWA role. */
 export const STUDENT_ROLE_CODES: readonly string[] = [
   "SDIT_SISWA",
   "SMPIT_SISWA",
   "SMAQ_SISWA",
-  "PT_MAHASISWA",
 ];
 
 /** Parents/guardians. */
@@ -140,11 +126,10 @@ export const PARENT_ROLE_CODES: readonly string[] = perSchool("ORANG_TUA");
 /** School committees (komite sekolah). */
 export const KOMITE_ROLE_CODES: readonly string[] = perSchool("KOMITE");
 
-/** Alumni across the secondary units + PT (no TK Qur'an / SD IT alumni role). */
+/** Alumni across the secondary units (no TK Qur'an / SD IT alumni role). */
 export const ALUMNI_ROLE_CODES: readonly string[] = [
   "SMPIT_ALUMNI",
   "SMAQ_ALUMNI",
-  "PT_ALUMNI",
 ];
 
 /** HrEmployeeRole, kept local to avoid importing the DTO type here. */
@@ -162,14 +147,12 @@ export const HR_TEACHER_ROLE_CODES: readonly string[] = [
   ...VICE_PRINCIPAL_ROLE_CODES,
   ...PESANTREN_LEADER_ROLE_CODES,
   ...PESANTREN_EDUCATOR_ROLE_CODES,
-  ...PT_ACADEMIC_ROLE_CODES,
 ];
 
 /** RoleCodes whose holder appears in the HR directory as (non-teaching) staff. */
 export const HR_STAFF_ROLE_CODES: readonly string[] = [
   ...TATA_USAHA_ROLE_CODES,
   ...BENDAHARA_ROLE_CODES,
-  ...PT_STAFF_ROLE_CODES,
   ...SUPPORT_ROLE_CODES,
   ...BUSINESS_ROLE_CODES,
 ];
@@ -347,12 +330,10 @@ export const ALL_ROLE_CODES: readonly string[] = [
   ...SCHOOL_TEACHER_ROLE_CODES,
   ...PESANTREN_LEADER_ROLE_CODES,
   ...PESANTREN_EDUCATOR_ROLE_CODES,
-  ...PT_ACADEMIC_ROLE_CODES,
   ...TATA_USAHA_ROLE_CODES,
   ...BENDAHARA_ROLE_CODES,
   ...SUPPORT_ROLE_CODES,
   ...BUSINESS_ROLE_CODES,
-  ...PT_STAFF_ROLE_CODES,
   ...STUDENT_ROLE_CODES,
   ...PARENT_ROLE_CODES,
   ...KOMITE_ROLE_CODES,
@@ -392,12 +373,10 @@ export const LEGACY_ROLE_EXPANSION: Record<LegacyRole, string[]> = {
     ...VICE_PRINCIPAL_ROLE_CODES,
     ...PESANTREN_LEADER_ROLE_CODES,
     ...PESANTREN_EDUCATOR_ROLE_CODES,
-    ...PT_ACADEMIC_ROLE_CODES,
   ],
   STAFF: [
     ...TATA_USAHA_ROLE_CODES,
     ...BENDAHARA_ROLE_CODES,
-    ...PT_STAFF_ROLE_CODES,
     ...SUPPORT_ROLE_CODES,
     ...BUSINESS_ROLE_CODES,
   ],

@@ -137,38 +137,6 @@ export class TataLaksanaService {
     return prisma.standardOperatingProcedure.delete({ where: { id } });
   }
 
-  async createDraftFromResearch(data: {
-    unitId: string;
-    researchId: string;
-    title: string;
-    findings: string;
-    createdById: string;
-  }) {
-    // Check if an SOP already exists for this research to prevent duplicates
-    const existing = await prisma.standardOperatingProcedure.findFirst({
-      where: {
-        title: { contains: `(Litbang: ${data.researchId})` }
-      }
-    });
-
-    if (existing) return existing;
-
-    const documentNumber = `SOP-RES-${Date.now().toString().slice(-6)}`;
-
-    return prisma.standardOperatingProcedure.create({
-      data: {
-        unitId: data.unitId,
-        documentNumber,
-        title: `Peningkatan Berbasis Penelitian: ${data.title} (Litbang: ${data.researchId})`,
-        description: `SOP ini diusulkan secara otomatis dari temuan penelitian Litbang.`,
-        category: "OPERASIONAL",
-        content: data.findings,
-        status: "DRAFT",
-        createdById: data.createdById,
-      }
-    });
-  }
-
   async getSOPSummary(unitId?: string) {
     const where = unitId ? { unitId } : {};
     const [total, active, draft, deprecated] = await Promise.all([

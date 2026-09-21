@@ -181,7 +181,6 @@ describe('getEmployeeDirectory', () => {
     const call = (prisma.user.findMany as any).mock.calls[0][0];
     const codes = call.where.userRoles.some.role.code.in;
     expect(codes).toContain('SDIT_GURU');
-    expect(codes).toContain('PT_DOSEN');
     // Staff-only codes must not leak into the teacher filter.
     expect(codes).not.toContain('SDIT_TATA_USAHA');
     expect(codes).not.toContain('PERAWAT');

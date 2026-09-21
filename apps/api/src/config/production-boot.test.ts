@@ -30,7 +30,6 @@ const SHIPPED_PLACEHOLDER =
   'your-super-secret-key-change-this-in-production-min-32-chars';
 
 const GOOD_SECRET = 'f'.repeat(96);
-const GOOD_ENCRYPTION_KEY = 'a'.repeat(64);
 
 interface BootResult {
   ok: boolean;
@@ -78,7 +77,6 @@ describe('production boot guard (real module load)', () => {
     const result = loadConfigWith({
       NODE_ENV: 'production',
       JWT_SECRET: SHIPPED_PLACEHOLDER,
-      ENCRYPTION_KEY: GOOD_ENCRYPTION_KEY,
       STUDENT_CARD_HMAC_SECRET: GOOD_SECRET,
     });
 
@@ -93,7 +91,6 @@ describe('production boot guard (real module load)', () => {
     const result = loadConfigWith({
       NODE_ENV: 'production',
       JWT_SECRET: 'terlalu-pendek',
-      ENCRYPTION_KEY: GOOD_ENCRYPTION_KEY,
       STUDENT_CARD_HMAC_SECRET: GOOD_SECRET,
     });
 
@@ -118,7 +115,6 @@ describe('production boot guard (real module load)', () => {
     const result = loadConfigWith({
       NODE_ENV: 'production',
       JWT_SECRET: GOOD_SECRET,
-      ENCRYPTION_KEY: GOOD_ENCRYPTION_KEY,
       STUDENT_CARD_HMAC_SECRET: GOOD_SECRET,
     });
 
@@ -146,9 +142,8 @@ describe('bootstrap wiring', () => {
 
     expect(
       source.includes('assertProductionSecrets('),
-      'main.ts no longer calls assertProductionSecrets(). Without it, a ' +
-        'missing ENCRYPTION_KEY is not checked at boot — utils/encryption.ts ' +
-        'silently substitutes a key printed in the source.'
+      'main.ts no longer calls assertProductionSecrets(). Without it, ' +
+        'production could boot next to a printed, live JWT secret.'
     ).toBe(true);
 
     const callIndex = source.indexOf('assertProductionSecrets(');

@@ -13,6 +13,15 @@ const GOOD = 'a'.repeat(96);
 /** The value cipansor.or.id was actually running with. */
 const SHIPPED = 'your-super-secret-key-change-this-in-production-min-32-chars';
 
+/**
+ * The old SystemSecret subsystem's fallback key: a sequential byte pattern
+ * (00 01 02 … 1f) hardcoded in this public repository. 64 hex chars and
+ * deliberate-looking, which is why the length and placeholder checks alone
+ * would let it through.
+ */
+const LEAKED_SEQUENTIAL_HEX =
+  '000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f';
+
 describe('production secret guard', () => {
   it('refuses the exact value that was live in production', () => {
     expect(() => assertProductionSecrets({ env: 'production', jwtSecret: SHIPPED })).toThrow(
@@ -64,43 +73,31 @@ describe('production secret guard', () => {
       assertProductionSecrets({
         env: 'production',
         jwtSecret: GOOD,
-        encryptionKey: GOOD,
         studentCardHmacSecret: GOOD,
       })
     ).not.toThrow();
   });
 
-  it('checks ENCRYPTION_KEY too', () => {
-    expect(() =>
-      assertProductionSecrets({
-        env: 'production',
-        jwtSecret: GOOD,
-        encryptionKey: 'changeme-changeme-changeme-changeme',
-        studentCardHmacSecret: GOOD,
-      })
-    ).toThrow(/ENCRYPTION_KEY/);
+  it('rejects the leaked sequential key as a JWT signer', () => {
+    expect(LEAKED_SEQUENTIAL_HEX.length).toBeGreaterThanOrEqual(32);
+    const issues = findSecretIssues({ jwtSecret: LEAKED_SEQUENTIAL_HEX });
+    const jwt = issues.find((i) => i.variable === 'JWT_SECRET');
+    expect(jwt?.reason).toMatch(/public/);
   });
 
-  // utils/encryption.ts substitutes this when ENCRYPTION_KEY is unset. It is
-  // exactly 32 bytes, so the length check beside it accepts it and production
-  // encrypts with a key printed in the repository.
-  it("refuses encryption.ts's sequential default key", () => {
+  it('rejects the leaked sequential key as the student-card HMAC signer', () => {
     const issues = findSecretIssues({
       jwtSecret: GOOD,
-      encryptionKey: '000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f',
-      studentCardHmacSecret: GOOD,
+      studentCardHmacSecret: LEAKED_SEQUENTIAL_HEX,
     });
-
-    expect(issues).toHaveLength(1);
-    expect(issues[0].variable).toBe('ENCRYPTION_KEY');
-    expect(issues[0].reason).toMatch(/hardcoded default/);
+    const card = issues.find((i) => i.variable === 'STUDENT_CARD_HMAC_SECRET');
+    expect(card?.reason).toMatch(/public/);
   });
 
   it('reports every problem at once, not just the first', () => {
-    const issues = findSecretIssues({ jwtSecret: 'short', encryptionKey: SHIPPED });
+    const issues = findSecretIssues({ jwtSecret: 'short' });
     expect(issues.map((i) => i.variable)).toEqual([
       'JWT_SECRET',
-      'ENCRYPTION_KEY',
       'STUDENT_CARD_HMAC_SECRET',
     ]);
   });
@@ -113,7 +110,6 @@ describe('production secret guard', () => {
       assertProductionSecrets({
         env: 'production',
         jwtSecret: GOOD,
-        encryptionKey: GOOD,
       })
     ).toThrow(/STUDENT_CARD_HMAC_SECRET/);
   });
@@ -128,7 +124,6 @@ describe('production secret guard', () => {
   it('throws in production when the card secret is still an example value', () => {
     const issues = findSecretIssues({
       jwtSecret: GOOD,
-      encryptionKey: GOOD,
       studentCardHmacSecret: 'change-me-this-is-an-example-value-for-cards',
     });
     expect(issues.map((i) => i.variable)).toContain('STUDENT_CARD_HMAC_SECRET');

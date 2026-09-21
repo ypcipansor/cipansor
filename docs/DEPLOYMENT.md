@@ -220,6 +220,71 @@ pm2 startup
 
 ## Database Migration
 
+### Irreversible migrations — backup is a hard prerequisite
+
+Some migrations `DROP TABLE` and cannot be undone by re-running anything: the
+`0_init` baseline never re-runs on an existing database, so a dropped table is
+gone. **Take and verify a full backup before `prisma migrate deploy`** whenever a
+pending migration drops tables, and confirm the dump is complete and restorable
+before proceeding — rollback is restore-from-backup only.
+
+As of this writing that applies to
+`20260915120000_decommission_higher_ed_litbang`, which permanently removes the
+higher-education (Perguruan Tinggi) and Litbang/R&D tables **and deletes every
+row owned by a `PERGURUAN_TINGGI` unit** (its classes, students, teachers, staff,
+departments, budgets, letters, assets, attendance, invoices, …). The unit is
+removed outright rather than re-typed; the blast radius reaches 232 dependent
+tables (233 including `units`), at a maximum depth of 3 — reproduced from the
+post-drop FK catalog, seeded with the `SET NULL` children the migration purges by
+row (the NULL-means-global tables, including `alumni_events` and
+`account_codes`, plus the catalog-matched unique-per-unit tables), in the
+migration header. `users` and `user_role_assignments` are not in
+the deleted set: they survive detached with `unit_id = NULL`.
+Back up, then deploy:
+
+```bash
+# 1. Backup — REQUIRED before the decommission migration
+pg_dump -U postgres -Fc cipansor > cipansor_$(date +%Y%m%d_%H%M).dump
+
+# 2. Verify the dump is readable and non-empty before trusting it
+pg_restore --list cipansor_$(date +%Y%m%d_%H%M).dump | head
+# (or, for a plain .sql dump: `wc -l` + grep for the tables you expect)
+
+# 3. Only then apply
+cd apps/api && npx prisma migrate deploy
+```
+
+This gate is an operator decision, not an automated one: no CI/CD or `Makefile`
+deploy target runs `prisma migrate deploy` (the `CI` workflow has no deploy
+stage; `Makefile deploy` uses `prisma db push`, and the API image starts with
+`node dist/main.js`). Nothing in this repository can therefore _enforce_ that a
+backup exists — the backup and its restorability check above are manual steps
+the deploying operator must complete and confirm. If that ever needs to be
+enforced, it belongs in whatever pipeline runs `migrate deploy`, not here.
+Note: the decommission migration also ends the sessions of users left without any
+role by the purge (their refresh tokens are revoked). That covers a user who
+still holds a `PT_*` assignment at deploy time, a user attached to a PT role with
+a non-standard code (roles are matched by `realm = 'PERGURUAN_TINGGI'` before the
+realm rewrite, not only by the known `PT_*` codes), and a PT user whose
+assignment was already removed by offboarding but who remains attached to the PT
+unit — the migration snapshots the unit's accounts before deleting the unit,
+because `users.unit_id` is `SET NULL` and the link is lost afterwards. It also
+covers a non-PT role whose assignment was _scoped_ to the PT unit: the
+assignment's `unit_id` is `SET NULL` too, and the token's unit comes from the
+assignment (`tokenUnitId`), so a detached assignment would mint a null-unit token
+that every optional unit filter reads as "all units". Such assignments are
+deactivated (not deleted) and their holders swept with the rest. It also covers a
+PT-home account whose _only_ active assignment is a non-foundation role that was
+already null-scoped: the home unit's deletion makes `tokenUnitId` fall back to
+`users.unit_id = NULL`, which mints the same widening null-unit token, so those
+assignments are deactivated before the affected users are computed. A
+foundation/global role is exempt — its null scope is foundation-wide by design —
+as is any assignment scoped to a surviving unit. An access token
+already issued stays valid until it expires — at most `JWT_EXPIRES_IN` (15
+minutes by default). This is the same short window the system already accepts for
+every other offboarding or role change, because `authenticate` is stateless by
+design and does not query the database per request.
+
 ### Production Migration
 
 ```bash

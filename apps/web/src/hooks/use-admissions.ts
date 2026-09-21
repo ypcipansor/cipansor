@@ -241,6 +241,35 @@ export function useRegistrant(id: string) {
   });
 }
 
+/** Kandidat santri lama (alumni) untuk satu pendaftaran — audit #489 bagian 3b-2. */
+export interface KandidatSantriLama {
+  studentId: string;
+  nama: string;
+  tahunLahir: number | null;
+  unitAsal: string | null;
+  tahunLulus: number | null;
+  nisnTersamar: string | null;
+  cocokLewat: string[];
+}
+
+/**
+ * Lulusan unit lain yang kemungkinan adalah pendaftar ini. Tanpa daftar ini
+ * petugas unit tujuan tidak punya cara menautkan pendaftaran ke santri yang
+ * sudah ada, dan onboarding membuat orang kedua di basis data.
+ */
+export function useInternalCandidates(registrantId: string, enabled = true) {
+  return useQuery({
+    queryKey: ["admission-internal-candidates", registrantId],
+    queryFn: async () => {
+      const response = await api.get<{ data: KandidatSantriLama[] }>(
+        `/admissions/waves/internal-candidates/${registrantId}`,
+      );
+      return response.data.data ?? [];
+    },
+    enabled: !!registrantId && enabled,
+  });
+}
+
 export function useOnboardRegistrant() {
   const queryClient = useQueryClient();
   return useMutation({

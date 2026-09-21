@@ -512,16 +512,7 @@ export async function findBlobOwnerByRefs(
         return null;
       },
       async () => {
-        const researchProject = await prisma.researchProject.findFirst({
-          where: { ...refWhere('publishedUrl', ref) },
-          select: { unitId: true },
-        });
-        if (researchProject) return { kind: 'unit', unitId: researchProject.unitId };
-
         // A maintenance invoice belongs to the asset it was filed against.
-        return null;
-      },
-      async () => {
         const assetMaintenance = await prisma.assetMaintenance.findFirst({
           where: { ...refWhere('invoiceUrl', ref) },
           select: { asset: { select: { unitId: true } } },
@@ -803,11 +794,6 @@ const BLOB_REFERENCE_COUNTERS: ReadonlyArray<{
     label: 'muhadhoroh',
     where: (u) => ({ videoUrl: u }),
     count: (a) => prisma.muhadhoroh.count(a),
-  },
-  {
-    label: 'researchProject',
-    where: (u) => ({ publishedUrl: u }),
-    count: (a) => prisma.researchProject.count(a),
   },
   {
     label: 'assetMaintenance',

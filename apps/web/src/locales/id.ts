@@ -187,7 +187,6 @@ export const id = {
     studentCompliance: "Kepatuhan Siswa",
     teacherCompliance: "Kepatuhan Guru",
     placement: "Si-Taka (Sebaran)",
-    secrets: "Secrets",
   },
   settings: {
     title: "Pengaturan",
