@@ -10,8 +10,8 @@ vi.mock('@/lib/prisma', () => ({
 
 import { prisma } from '@/lib/prisma';
 import { ApiError } from '@/middleware/error';
-import { MAX_BULK_CREATE_RECORDS } from './sanad-certificate.schema';
-import { bulkCreateSanadRecords, createSanadRecord } from './sanad-certificate.service';
+import { MAX_BULK_CREATE_RECORDS } from '../sanad-certificate.schema';
+import { bulkCreateSanadRecords, createSanadRecord } from '../sanad-certificate.service';
 
 const db = prisma as unknown as {
   sanadRecord: {

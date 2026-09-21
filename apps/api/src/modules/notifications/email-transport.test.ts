@@ -175,7 +175,7 @@ describe('Gmail API delivery', () => {
           });
         }
         return new Response(JSON.stringify({ id: 'm' }), { status: 200 });
-      }),
+      })
     );
 
     await deliverEmail({ to: 'a@example.test', subject: 's', html: '<p>a</p>' });
@@ -196,13 +196,13 @@ describe('Gmail API delivery', () => {
         }
         return new Response(
           JSON.stringify({ error: { message: 'Delegation denied for noreply@cipansor.or.id' } }),
-          { status: 403 },
+          { status: 403 }
         );
-      }),
+      })
     );
 
     await expect(
-      deliverEmail({ to: 'wali@example.test', subject: 's', html: '<p>x</p>' }),
+      deliverEmail({ to: 'wali@example.test', subject: 's', html: '<p>x</p>' })
     ).rejects.toThrow(/Delegation denied/);
   });
 
@@ -216,13 +216,13 @@ describe('Gmail API delivery', () => {
               error: 'unauthorized_client',
               error_description: 'Client is unauthorized to retrieve access tokens',
             }),
-            { status: 401 },
-          ),
-      ),
+            { status: 401 }
+          )
+      )
     );
 
     await expect(
-      deliverEmail({ to: 'wali@example.test', subject: 's', html: '<p>x</p>' }),
+      deliverEmail({ to: 'wali@example.test', subject: 's', html: '<p>x</p>' })
     ).rejects.toThrow(/unauthorized/i);
   });
 });
@@ -252,8 +252,8 @@ describe('hasHostname exact matching', () => {
     expect(
       hasHostname(
         new URL('https://gmail.googleapis.com/gmail/v1/users/me/messages'),
-        'gmail.googleapis.com',
-      ),
+        'gmail.googleapis.com'
+      )
     ).toBe(true);
   });
 });
@@ -261,7 +261,7 @@ describe('hasHostname exact matching', () => {
 describe('htmlToText', () => {
   it('keeps the words and drops the markup', () => {
     const text = htmlToText(
-      '<html><head><style>p{color:red}</style></head><body><h2>Tagihan</h2><p>Rp 500.000</p><p>Jatuh tempo &amp; ditunggu</p></body></html>',
+      '<html><head><style>p{color:red}</style></head><body><h2>Tagihan</h2><p>Rp 500.000</p><p>Jatuh tempo &amp; ditunggu</p></body></html>'
     );
 
     expect(text).toContain('Tagihan');
@@ -284,7 +284,7 @@ describe('htmlToText', () => {
 
     it('drops style and head elements together with their contents', () => {
       const text = htmlToText(
-        '<head><title>Not shown</title></head><style>.x{color:red}</style><body><p>Shown</p></body>',
+        '<head><title>Not shown</title></head><style>.x{color:red}</style><body><p>Shown</p></body>'
       );
 
       expect(text).toBe('Shown');
@@ -304,6 +304,22 @@ describe('htmlToText', () => {
       // point leaves no tag-shaped residue.
       expect(htmlToText('<<script>script>alert(1)')).not.toMatch(/<\/?script/i);
       expect(htmlToText('<scr<script>ipt>alert(1)')).not.toMatch(/<\/?script/i);
+    });
+
+    it('removes comments, declarations/doctype and processing instructions', () => {
+      expect(htmlToText('before<!-- note -->after')).toBe('beforeafter');
+      expect(htmlToText('before<!DOCTYPE html>after')).toBe('beforeafter');
+      expect(htmlToText('before<?xml version="1.0"?>after')).toBe('beforeafter');
+      // Concatenation across a removed comment must not re-form a tag.
+      expect(htmlToText('<<!---->script>alert(1)')).not.toMatch(/<\/?script/i);
+    });
+
+    it('terminates on pathological tag input without a matching close', () => {
+      const input = '<a'.repeat(20000);
+      const start = Date.now();
+      const out = htmlToText(input);
+      expect(Date.now() - start).toBeLessThan(2000);
+      expect(typeof out).toBe('string');
     });
   });
 
@@ -336,9 +352,7 @@ describe('htmlToText', () => {
     it('turns encoded dangerous markup into inert text, not active markup', () => {
       // The entities decode to their literal characters, which is what a
       // text/plain part needs; nothing re-parses them as tags.
-      expect(htmlToText('&lt;script&gt;alert(1)&lt;/script&gt;')).toBe(
-        '<script>alert(1)</script>',
-      );
+      expect(htmlToText('&lt;script&gt;alert(1)&lt;/script&gt;')).toBe('<script>alert(1)</script>');
     });
   });
 

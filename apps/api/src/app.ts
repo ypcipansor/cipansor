@@ -158,10 +158,14 @@ app.use(compression());
 // them requires a valid access token — via Authorization header or ?token=
 // (see uploadsAuth). Directory listing stays off; static only serves files.
 //
-// The default limiter guards this route where rate limiting is in force; in
-// development and test it is omitted, matching the global policy below. The
-// earlier version mounted it in every environment, so dev and test inherited
-// the production ceiling despite the policy saying otherwise.
+// `/uploads` carries its own limiter ahead of auth (see buildUploadsMiddleware)
+// and is excluded from the global limiter below. Mounting the same limiter both
+// on the route and globally counted a request twice whenever `express.static`
+// missed and fell through — a missing/stale upload consumed two slots instead
+// of one. Keeping the route limiter (so valid and rejected uploads are both
+// counted at the point of access) and skipping the prefix globally gives every
+// `/uploads` request exactly one slot, while auth still gates it in every
+// environment. In development and test no limiter is mounted at all.
 import path from 'path';
 import { uploadsAuth } from './middleware/upload';
 
@@ -183,11 +187,27 @@ export function buildUploadsMiddleware(env: string) {
 
 app.use('/uploads', ...buildUploadsMiddleware(config.env));
 
-// Rate limiting - apply to all routes except health check
-// Active in all environments except test and development
-if (rateLimitEnabled(config.env)) {
-  app.use(defaultLimiter);
+/**
+ * The global default limiter.
+ *
+ * `buildUploadsMiddleware` already mounts the same limiter on `/uploads`; the
+ * global pass must not touch that prefix or one request costs two slots (the
+ * route pass plus the fall-through). Every non-upload route still gets the
+ * limiter once. Inactive entirely in development and test.
+ */
+export function buildGlobalLimiter(env: string): express.RequestHandler {
+  if (!rateLimitEnabled(env)) {
+    return (_req, _res, next) => next();
+  }
+  return (req, res, next) => {
+    if (req.path === '/uploads' || req.path.startsWith('/uploads/')) {
+      return next();
+    }
+    return defaultLimiter(req, res, next);
+  };
 }
+
+app.use(buildGlobalLimiter(config.env));
 
 // Logging
 if (config.env !== 'test') {

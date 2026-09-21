@@ -97,9 +97,11 @@ export function slugify(str: string): string {
 }
 
 /**
- * Remove HTML tags, keeping the text content.
+ * Remove HTML markup, keeping the text content.
  *
- * Plain-text extraction, not escaping: `<b>Hello</b>` becomes `Hello`. Tags are
+ * Plain-text extraction, not escaping: `<b>Hello</b>` becomes `Hello`.
+ * Element tags, comments (`<!-- -->`), declarations/doctype (`<!DOCTYPE html>`)
+ * and processing instructions (`<?xml ... ?>`) are all removed. Tags are
  * stripped to a fixed point, so removing one tag can never concatenate its
  * neighbours into a new one (`<<script>script>` -> `<script>`). Entities are
  * left alone, so `a &lt; b` stays `a &lt; b`.
@@ -111,9 +113,21 @@ export function stripHtml(html: string): string {
   if (!html) return "";
   // `[^<>]*` rather than `[^>]*`: a `[^>]*` body rescans to end-of-string from
   // every `<` in input that never closes a tag, which is quadratic. Excluding
-  // `<` bounds each attempt.
-  return stripToFixedPoint(html, /<\/?[a-z][^<>]*>/gi);
+  // `<` bounds each attempt. The `<` alternatives below are likewise single
+  // linear scans, not nested quantifiers.
+  return stripToFixedPoint(html, STRIP_HTML_PATTERN);
 }
+
+// One tag-shaped match per alternative. Every alternative consumes a single
+// linear scan and bounds its body with `[^<>]`, so none nests a quantifier over
+// the same characters (which is what made the old pattern polynomial):
+//   - `<!-- ... -->`  comment, matched with the linear `(?:[^-]|-(?!->))*` form
+//   - `<! ... >`      declaration / doctype
+//   - `<? ... ?>`     processing instruction
+//   - `</?name ... >` opening/closing element tag
+// A bare `<` that starts none of these is plain text and is left in place.
+const STRIP_HTML_PATTERN =
+  /<!--(?:[^-]|-(?!->))*-->|<![^<>]*>|<\?[^<>]*\?>|<\/?[a-z][^<>]*>/gi;
 
 /**
  * Apply `pattern` until it stops changing the string. Removing one match can
