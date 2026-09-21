@@ -55,8 +55,12 @@ describe('matchesMagicBytes', () => {
 });
 
 describe('verifyStoredFile', () => {
+  // verifyStoredFile only touches paths inside the configured upload directory,
+  // so fixtures must live there too (upload.ts creates it on import).
+  const uploadDir = path.join(process.cwd(), 'public/uploads');
+
   function tmpFile(content: Buffer): string {
-    const p = path.join(os.tmpdir(), `upload-test-${Date.now()}-${Math.random()}`);
+    const p = path.join(uploadDir, `upload-test-${Date.now()}-${Math.random()}`);
     fs.writeFileSync(p, content);
     return p;
   }
@@ -74,6 +78,23 @@ describe('verifyStoredFile', () => {
     const ok = await verifyStoredFile({ path: p, mimetype: 'image/png' } as Express.Multer.File);
     expect(ok).toBe(false);
     expect(fs.existsSync(p)).toBe(false);
+  });
+
+  it('rejects a path outside the upload directory without touching it', async () => {
+    // A traversal attempt must fail before any read or unlink, so a file the
+    // app does not own is left alone.
+    const outside = path.join(os.tmpdir(), `upload-test-outside-${Date.now()}-${Math.random()}`);
+    fs.writeFileSync(outside, png);
+    try {
+      const ok = await verifyStoredFile({
+        path: outside,
+        mimetype: 'image/png',
+      } as Express.Multer.File);
+      expect(ok).toBe(false);
+      expect(fs.existsSync(outside)).toBe(true);
+    } finally {
+      fs.unlinkSync(outside);
+    }
   });
 });
 
