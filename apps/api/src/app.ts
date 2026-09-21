@@ -174,6 +174,7 @@ import path from 'path';
 import { uploadsAuth } from './middleware/upload';
 app.use(
   '/uploads',
+  defaultLimiter,
   uploadsAuth,
   (_req, res, next) => {
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
