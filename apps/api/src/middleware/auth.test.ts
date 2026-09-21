@@ -61,10 +61,6 @@ describe('middleware/auth RBAC', () => {
       expect(deriveLegacyRole(RoleCode.MUSYRIFAH)).toBe('TEACHER');
       expect(deriveLegacyRole(RoleCode.MUHAFIDZAH)).toBe('TEACHER');
       expect(deriveLegacyRole(RoleCode.PESANTREN_TATA_USAHA)).toBe('STAFF');
-      // Perguruan Tinggi
-      expect(deriveLegacyRole(RoleCode.PT_REKTOR)).toBe('TEACHER');
-      expect(deriveLegacyRole(RoleCode.PT_MAHASISWA)).toBe('STUDENT');
-      expect(deriveLegacyRole(RoleCode.PT_TATA_USAHA)).toBe('STAFF');
       // Business units map to STAFF — never to an admin bucket
       expect(deriveLegacyRole(RoleCode.BUSINESS_MANAGER)).toBe('STAFF');
       expect(deriveLegacyRole(RoleCode.BUSINESS_STAFF)).toBe('STAFF');
@@ -80,9 +76,8 @@ describe('middleware/auth RBAC', () => {
       expect(deriveLegacyRole(RoleCode.SMPIT_ALUMNI)).toBe(RoleCode.SMPIT_ALUMNI);
     });
 
-    it('business/PT administration roles are NOT system admins', () => {
+    it('business administration roles are NOT system admins', () => {
       expect(isAdminRoleCode(RoleCode.BUSINESS_MANAGER)).toBe(false);
-      expect(isAdminRoleCode(RoleCode.PT_TATA_USAHA)).toBe(false);
       expect(isAdminRoleCode(RoleCode.PESANTREN_PENGASUH)).toBe(false);
     });
 
@@ -163,7 +158,6 @@ describe('middleware/auth RBAC', () => {
         RoleCode.MUSYRIFAH,
         RoleCode.MUHAFIDZAH,
         RoleCode.PESANTREN_PENGASUH,
-        RoleCode.PT_DOSEN,
       ]) {
         const n = vi.fn();
         isTeacherOrAbove(makeReq({ roleCode: code }), makeRes(), n as unknown as NextFunction);

@@ -4,14 +4,17 @@ _Headline count + spec-inventory table re-audited 2026-07-20 from source; the ro
 
 ## Summary
 
-- **Routes (App Router pages):** 430
-- **Routes visited by ≥1 spec:** 78 (18%)
-- **Spec files:** 83 — 82 at `e2e/` plus `cbt/cbt.spec.ts` (recounted 2026-09-14); every one has a row
+- **Routes (App Router pages):** 447
+- **Routes visited by ≥1 spec:** 73 (16%)
+- **Spec files:** 83 — 81 at `e2e/` plus `cbt/cbt.spec.ts` and
+  `cbt/take-exam.spec.ts` (recounted 2026-09-15; `litbang.spec.ts` removed with
+  the Litbang decommission); every one has a row
   in the inventory below. Active specs authenticate for real (`loginAs` /
-  `apiLogin` + `injectSession`) and assert real seeded/API data. Six specs still
-  call `page.route` (re-checked 2026-09-12): `grc-live` and `integration-grc`
+  `apiLogin` + `injectSession`) and assert real seeded/API data. Seven specs still
+  call `page.route` (re-checked 2026-09-15): `grc-live` and `integration-grc`
   (deliberate failure injection to prove an error state), `auth`,
-  `chatbot-widget`, `e-office-verify`, and the config-**ignored**
+  `chatbot-widget`, `e-office-verify`, `cbt/take-exam` (failure injection on the
+  exam autosave path), and the config-**ignored**
   `verify_reception`. The dev utilities the earlier audit named here
   (`debug-*`, `generate-screenshots`, `verify-screenshots`) have since been
   deleted.
@@ -440,18 +443,11 @@ History of the stabilization (all root-caused, no suppressions):
 |---|---|---|---|---|---|---|
 | `/lingkungan` | lingkungan | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 |
 
-### `/litbang`
-
-| Route | Specs | Nav | CRUD | Buttons | Fields | RBAC |
-|---|---|---|---|---|---|---|
-| `/litbang` | litbang | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 |
-| `/litbang/[id]` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
-
 ### `/login`
 
 | Route | Specs | Nav | CRUD | Buttons | Fields | RBAC |
 |---|---|---|---|---|---|---|
-| `/login` | academic-years, alumni, announcements, assessment, attendance, auth, calendar, canteen, classes, counseling, curriculum, dashboard, dormitories, extracurricular, integration-grc, inventory, library, lingkungan, litbang, muhadatsah, organisasi, paud-main, pengawasan, perencanaan, pwa, schedule, syariah, tahfidz-transcript, tata-laksana | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 |
+| `/login` | academic-years, alumni, announcements, assessment, attendance, auth, calendar, canteen, classes, counseling, curriculum, dashboard, dormitories, extracurricular, integration-grc, inventory, library, lingkungan, muhadatsah, organisasi, paud-main, pengawasan, perencanaan, pwa, schedule, syariah, tahfidz-transcript, tata-laksana | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 |
 
 ### `/marketing`
 
@@ -945,6 +941,7 @@ old addresses, and `spmb.spec.ts` asserts that redirect still lands on `/spmb`.
 | `calendar.spec.ts` | loginAs | real backend | 1 route(s) visited |
 | `canteen.spec.ts` | loginAs | real backend | 1 route(s) visited |
 | `cbt/cbt.spec.ts` | loginAs | real backend | 4 route(s) visited |
+| `cbt/take-exam.spec.ts` | apiLogin | real backend (`page.route` failure injection) | 1 route(s) visited |
 | `chatbot-widget.spec.ts` | — | `page.route` mocks | 2 route(s) visited |
 | `class-management.spec.ts` | — | skipped | 0 route(s) visited |
 | `classes.spec.ts` | loginAs | real backend | 1 route(s) visited |
@@ -972,7 +969,6 @@ old addresses, and `spmb.spec.ts` asserts that redirect still lands on `/spmb`.
 | `landing.spec.ts` | — | public/unauthenticated | 1 route(s) visited |
 | `library.spec.ts` | loginAs | real backend | 1 route(s) visited |
 | `lingkungan.spec.ts` | — | public/unauthenticated | 2 route(s) visited |
-| `litbang.spec.ts` | loginAs | real backend | 1 route(s) visited |
 | `muhadatsah.spec.ts` | loginAs | real backend | 2 route(s) visited |
 | `nav-breakpoint.spec.ts` | storageState | real backend | sidebar breakpoints, no goto |
 | `new-modular-features-smoke.spec.ts` | — | public/unauthenticated | 3 route(s) visited |
