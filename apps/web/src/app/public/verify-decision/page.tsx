@@ -318,6 +318,11 @@ function VerificationResult({
   }
 
   const valid = data.isValid === true;
+  // Bila metadata disensor (keputusan PRIVATE), server mengembalikan
+  // subject/status/tally sebagai null/0. UI tidak boleh menampilkan "Disahkan"
+  // atau angka nol yang menyesatkan — ia hanya menyatakan apa yang benar-benar
+  // diketahui: keabsahan dokumen.
+  const metadataHidden = data.subject === null;
   return (
     <Card
       className={
@@ -332,34 +337,47 @@ function VerificationResult({
             <>
               <ShieldCheck className="h-5 w-5 text-emerald-600" />
               Dokumen Sah &amp; Terverifikasi
-              <Badge className="ml-auto bg-emerald-100 text-emerald-700">
-                {FOUNDATION_STATUS_LABEL[data.status ?? "APPROVED"]}
-              </Badge>
+              {data.status && (
+                <Badge className="ml-auto bg-emerald-100 text-emerald-700">
+                  {FOUNDATION_STATUS_LABEL[data.status]}
+                </Badge>
+              )}
             </>
           ) : (
             <>
               <ShieldAlert className="h-5 w-5 text-amber-600" />
               Rekaman Tercatat — Keabsahan Tidak Terbukti
-              <Badge className="ml-auto bg-amber-100 text-amber-800">
-                {FOUNDATION_STATUS_LABEL[data.status ?? "APPROVED"]}
-              </Badge>
+              {data.status && (
+                <Badge className="ml-auto bg-amber-100 text-amber-800">
+                  {FOUNDATION_STATUS_LABEL[data.status]}
+                </Badge>
+              )}
             </>
           )}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
-        <div>
-          <p className="font-medium">{data.subject}</p>
-          <p className="text-muted-foreground">
-            {data.organType ? FOUNDATION_ORGAN_LABEL[data.organType] : ""} ·{" "}
-            {data.kind ? FOUNDATION_KIND_LABEL[data.kind] : ""}
+        {metadataHidden ? (
+          <p className="rounded-md border border-slate-200 bg-slate-50 p-3 text-slate-600">
+            Rincian keputusan ini tidak dipublikasikan. Yayasan hanya
+            menampilkan status keabsahan dokumen untuk keputusan yang tidak
+            diterbitkan — perihal, organ, tanggal, dan rekap suara tetap
+            bersifat internal.
           </p>
-          {data.decidedAt && (
+        ) : (
+          <div>
+            <p className="font-medium">{data.subject}</p>
             <p className="text-muted-foreground">
-              Diputus {new Date(data.decidedAt).toLocaleString("id-ID")}
+              {data.organType ? FOUNDATION_ORGAN_LABEL[data.organType] : ""} ·{" "}
+              {data.kind ? FOUNDATION_KIND_LABEL[data.kind] : ""}
             </p>
-          )}
-        </div>
+            {data.decidedAt && (
+              <p className="text-muted-foreground">
+                Diputus {new Date(data.decidedAt).toLocaleString("id-ID")}
+              </p>
+            )}
+          </div>
+        )}
 
         {!valid && data.reason && (
           <p className="rounded-md border border-amber-300 bg-amber-100 p-3 text-amber-900">
@@ -367,24 +385,26 @@ function VerificationResult({
           </p>
         )}
 
-        <div className="grid grid-cols-4 gap-3 border-t pt-3 text-center">
-          <div>
-            <p className="text-lg font-semibold">{data.approveCount}</p>
-            <p className="text-xs text-muted-foreground">Setuju</p>
+        {!metadataHidden && (
+          <div className="grid grid-cols-4 gap-3 border-t pt-3 text-center">
+            <div>
+              <p className="text-lg font-semibold">{data.approveCount}</p>
+              <p className="text-xs text-muted-foreground">Setuju</p>
+            </div>
+            <div>
+              <p className="text-lg font-semibold">{data.rejectCount}</p>
+              <p className="text-xs text-muted-foreground">Tidak Setuju</p>
+            </div>
+            <div>
+              <p className="text-lg font-semibold">{data.abstainCount}</p>
+              <p className="text-xs text-muted-foreground">Abstain</p>
+            </div>
+            <div>
+              <p className="text-lg font-semibold">{data.voteCount}</p>
+              <p className="text-xs text-muted-foreground">Total Suara</p>
+            </div>
           </div>
-          <div>
-            <p className="text-lg font-semibold">{data.rejectCount}</p>
-            <p className="text-xs text-muted-foreground">Tidak Setuju</p>
-          </div>
-          <div>
-            <p className="text-lg font-semibold">{data.abstainCount}</p>
-            <p className="text-xs text-muted-foreground">Abstain</p>
-          </div>
-          <div>
-            <p className="text-lg font-semibold">{data.voteCount}</p>
-            <p className="text-xs text-muted-foreground">Total Suara</p>
-          </div>
-        </div>
+        )}
 
         {/*
           Dua pemeriksaan yang berbeda, dan sengaja dipisah.

@@ -56,6 +56,7 @@ function dto(
     found: true,
     isValid: true,
     decisionId: "d1",
+    publication: "PUBLIC",
     subject: "Pengesahan Rencana Kerja",
     organType: "PEMBINA",
     kind: "CIRCULAR",
@@ -106,7 +107,11 @@ describe("halaman verifikasi keputusan publik", () => {
 
   it("'tidak diperiksa' (null) bukan 'aman': sealVerified null tidak sah", () => {
     // isValid tidak boleh lulus dari null — "tidak diperiksa" bukan bukti.
-    tokenState.data = dto({ isValid: false, sealVerified: null, digestOk: null });
+    tokenState.data = dto({
+      isValid: false,
+      sealVerified: null,
+      digestOk: null,
+    });
     render(<PublicVerifyDecisionPage />);
     expect(screen.queryByText(/Dokumen Sah/)).toBeNull();
     expect(
@@ -118,5 +123,36 @@ describe("halaman verifikasi keputusan publik", () => {
     tokenState.data = dto({ found: false, isValid: false, subject: null });
     render(<PublicVerifyDecisionPage />);
     expect(screen.getByText(/tidak ditemukan atau belum final/i)).toBeTruthy();
+  });
+
+  /**
+   * Regresi SECURITY CRITICAL — verifikasi anonim membocorkan metadata.
+   *
+   * Server menyensor `subject`/organ/tanggal/rekap suara untuk keputusan
+   * PRIVATE. Klien tidak boleh mengarang isinya: ia harus menyatakan bahwa
+   * rinciannya tidak dipublikasikan, dan TIDAK menampilkan "Disahkan" atau
+   * angka nol yang menyesatkan — keabsahan dokumen tetap terbaca.
+   */
+  it("menyembunyikan metadata yang disensor dan menyatakan alasannya", () => {
+    tokenState.data = dto({
+      publication: "PRIVATE",
+      subject: null,
+      organType: null,
+      kind: null,
+      status: null,
+      decidedAt: null,
+      voteCount: 0,
+      approveCount: 0,
+      rejectCount: 0,
+      abstainCount: 0,
+    });
+    render(<PublicVerifyDecisionPage />);
+
+    expect(screen.queryByText(/Pengesahan Rencana Kerja/)).toBeNull();
+    expect(screen.queryByText("Disahkan")).toBeNull();
+    expect(screen.queryByText("Setuju")).toBeNull();
+    // Keabsahan TETAP dinyatakan — itu satu-satunya hal yang boleh dibaca anonim.
+    expect(screen.getByText(/Dokumen Sah & Terverifikasi/)).toBeTruthy();
+    expect(screen.getByText(/tidak dipublikasikan/)).toBeTruthy();
   });
 });

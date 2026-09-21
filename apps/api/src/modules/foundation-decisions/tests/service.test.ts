@@ -70,7 +70,6 @@ const signingKeyRow = {
 
 const dm = prisma as unknown as Record<string, any>;
 
-
 /**
  * Buat baris suara yang BENAR-BENAR bertanda tangan untuk sebuah keputusan.
  *
@@ -134,7 +133,7 @@ function memberAssignments(count: number, roleCode = 'YAYASAN_PEMBINA') {
   }));
 }
 
-function decisionRow(over: Record<string, unknown> = {}) {
+function decisionRow(over: Record<string, unknown> = {}): any {
   return {
     id: 'dec-1',
     organType: 'PEMBINA',
@@ -156,9 +155,9 @@ function decisionRow(over: Record<string, unknown> = {}) {
       presentValue: 1,
       decisionMode: 'MUTLAK',
       decisionValue: 1,
-
     },
     voteSummary: { approve: 0, reject: 0, abstain: 0, present: 0, active: 3, totalVotes: 0 },
+    publication: 'PRIVATE',
     finalPdfDigest: null,
     finalPdfByteSize: null,
     finalPdfSealSignature: null,
@@ -500,11 +499,10 @@ describe('FoundationDecisionService.castVote', () => {
 
     const attempts = await Promise.all(
       Array.from({ length: 5 }, () =>
-        FoundationDecisionService.castVote(
-          { id: 'user-1', roleCode: 'YAYASAN_PEMBINA' },
-          'dec-1',
-          { choice: 'APPROVE', passphrase: 'passphrase-yang-salah-sekali' }
-        ).catch((e) => e as Error)
+        FoundationDecisionService.castVote({ id: 'user-1', roleCode: 'YAYASAN_PEMBINA' }, 'dec-1', {
+          choice: 'APPROVE',
+          passphrase: 'passphrase-yang-salah-sekali',
+        }).catch((e) => e as Error)
       )
     );
 
@@ -594,17 +592,185 @@ describe('FoundationDecisionService.castVote', () => {
     });
 
     await expect(
-      FoundationDecisionService.castVote(
-        { id: 'user-1', roleCode: 'YAYASAN_PEMBINA' },
-        'dec-1',
-        { choice: 'APPROVE', passphrase: PASS }
-      )
+      FoundationDecisionService.castVote({ id: 'user-1', roleCode: 'YAYASAN_PEMBINA' }, 'dec-1', {
+        choice: 'APPROVE',
+        passphrase: PASS,
+      })
     ).rejects.toThrow(/audit down/);
 
     // Audit dipanggil di dalam callback transaksi, dan transaksi TIDAK pernah
     // mencapai titik commit — vote tidak tercommit.
     expect(dm.auditLog.create).toHaveBeenCalledTimes(1);
     expect(committed).toEqual([]);
+  });
+
+  /**
+   * Regresi BUG SEVERE — hasil rapat bergantung pada urutan suara.
+   *
+   * `castVote` dulu memanggil `evaluateQuorum` TANPA `closed`, dan mesin kuorum
+   * lama memulangkan APPROVED begitu peserta yang SEDANG hadir menyetujui —
+   * sehingga dua orang yang membuka rapat lalu setuju langsung mengesahkannya,
+   * dan anggota ketiga yang datang kemudian ditolak. Pada rapat, satu suara
+   * yang masuk TIDAK boleh menutup rapat; statusnya tetap VOTING sampai
+   * pemimpin menutupnya lewat `finalize`.
+   */
+  it('suara pada rapat TIDAK menutup rapat sendiri (outcome tetap OPEN)', async () => {
+    const d = decisionRow({
+      kind: 'MEETING',
+      status: 'VOTING',
+      quorumSnapshot: {
+        organType: 'PEMBINA',
+        kind: 'MEETING',
+        activeCount: 3,
+        presentMode: 'MAJORITY',
+        presentValue: 0.5,
+        decisionMode: 'MAJORITY',
+        decisionValue: 0.5,
+      },
+    });
+    dm.foundationDecision.findUnique.mockResolvedValue(d);
+    dm.foundationDecisionVote.create.mockResolvedValue({ id: 'vote-1' });
+    // Setelah suara ini, kuorum hadir (3/3) dan mayoritas setuju tercapai —
+    // cukup untuk APPROVED pada mesin lama. Tetap OPEN selama belum ditutup.
+    dm.foundationDecisionVote.findMany.mockResolvedValue([
+      signedVoteRow(d, 'user-0', 'APPROVE'),
+      signedVoteRow(d, 'user-1', 'APPROVE'),
+      signedVoteRow(d, 'user-2', 'APPROVE'),
+    ]);
+    dm.foundationDecision.update.mockResolvedValue(d);
+    dm.userSigningKey.findUnique.mockResolvedValue(signingKeyRow);
+    dm.userSigningKey.update.mockResolvedValue(signingKeyRow);
+    dm.foundationEseal.findFirst.mockResolvedValue(null);
+
+    const result = await FoundationDecisionService.castVote(
+      { id: 'user-1', roleCode: 'YAYASAN_PEMBINA' },
+      'dec-1',
+      { choice: 'APPROVE', passphrase: PASS }
+    );
+
+    expect(result.outcome.outcome).toBe('OPEN');
+    expect(result.outcome.status).toBe('VOTING');
+  });
+});
+
+describe('FoundationDecisionService.finalize', () => {
+  /**
+   * Rapat 3 anggota: kuorum hadir MAJORITY (>½ → 2), keputusan MAJORITY hadir.
+   */
+  const meeting = (votes: any[]) =>
+    decisionRow({
+      kind: 'MEETING',
+      status: 'VOTING',
+      quorumSnapshot: {
+        organType: 'PEMBINA',
+        kind: 'MEETING',
+        activeCount: 3,
+        presentMode: 'MAJORITY',
+        presentValue: 0.5,
+        decisionMode: 'MAJORITY',
+        decisionValue: 0.5,
+      },
+      votes,
+    });
+
+  beforeEach(() => {
+    dm.foundationEseal.findFirst.mockResolvedValue(null);
+    dm.auditLog.create.mockResolvedValue({ id: 'audit-1' });
+  });
+
+  /**
+   * Regresi BUG SEVERE — rapat quorate yang gagal mencapai approval menggantung
+   * selamanya.
+   *
+   * Rapat yang kuorum tetapi tidak cukup setuju menunggu seluruh anggota aktif
+   * memilih; anggota absen membuatnya tak pernah dapat ditutup. Penutupan
+   * manual (`closed: true`) menghitung hasil sekali terhadap suara yang ada dan
+   * menutupnya sebagai REJECTED tanpa menunggu yang absen.
+   */
+  it('menutup rapat quorate tanpa approval cukup sebagai REJECTED', async () => {
+    // 2 hadir (kuorum terpenuhi), 1 setuju & 1 menolak → mayoritas TIDAK
+    // tercapai. Anggota ketiga absen dan tidak boleh membuat rapat menggantung.
+    const d = meeting([]);
+    d.votes = [signedVoteRow(d, 'user-0', 'APPROVE'), signedVoteRow(d, 'user-1', 'REJECT')];
+    dm.foundationDecision.findUnique.mockResolvedValue(d);
+    dm.foundationDecision.update.mockResolvedValue({ ...d, status: 'REJECTED' });
+
+    const res = await FoundationDecisionService.finalize(
+      { id: 'user-0', roleCode: 'YAYASAN_PEMBINA' },
+      'dec-1'
+    );
+
+    expect(res.outcome).toBe('REJECTED');
+    expect(dm.foundationDecision.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'REJECTED' }) })
+    );
+  });
+
+  it('menolak menutup rapat yang belum memenuhi kuorum hadir', async () => {
+    // Hanya 1 dari 3 hadir → kuorum hadir (2) belum terpenuhi.
+    const d = meeting([]);
+    d.votes = [signedVoteRow(d, 'user-0', 'APPROVE')];
+    dm.foundationDecision.findUnique.mockResolvedValue(d);
+
+    await expect(
+      FoundationDecisionService.finalize({ id: 'user-0', roleCode: 'YAYASAN_PEMBINA' }, 'dec-1')
+    ).rejects.toThrow(/belum dapat ditutup/);
+    expect(dm.foundationDecision.update).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Regresi BUG — Pengawas tidak dapat memulai/menutup keputusan kewenangannya.
+   *
+   * Rute FINALIZE memuat Pengawas supaya ia dapat menutup rapat organnya, tetapi
+   * service memperketatnya: finalizer yang bukan pimpinan/Super Admin hanya
+   * boleh menutup keputusan yang memuatnya sebagai anggota snapshot. Tanpa itu
+   * satu-satunya cara Pengawas memperoleh hak buka rapatnya adalah sekaligus
+   * memperoleh hak menutup rapat organ mana pun.
+   */
+  it('menolak Pengawas yang bukan anggota snapshot menutup keputusan organ lain', async () => {
+    const d = meeting([]); // anggota snapshot: user-0, user-1, user-2
+    d.votes = [signedVoteRow(d, 'user-0', 'APPROVE'), signedVoteRow(d, 'user-1', 'APPROVE')];
+    dm.foundationDecision.findUnique.mockResolvedValue(d);
+
+    await expect(
+      FoundationDecisionService.finalize(
+        { id: 'pengawas-luar', roleCode: 'YAYASAN_PENGAWAS' },
+        'dec-1'
+      )
+    ).rejects.toThrow(/tidak berhak menutup/);
+    expect(dm.foundationDecision.update).not.toHaveBeenCalled();
+  });
+
+  it('mengizinkan Pengawas anggota snapshot menutup rapat organnya', async () => {
+    const d = decisionRow({
+      kind: 'MEETING',
+      status: 'VOTING',
+      members: [
+        { id: 'm0', userId: 'user-0', name: 'Anggota 0', roleCode: 'YAYASAN_PENGAWAS' },
+        { id: 'm1', userId: 'pengawas-1', name: 'Pengawas', roleCode: 'YAYASAN_PENGAWAS' },
+      ],
+      quorumSnapshot: {
+        organType: 'PENGAWAS',
+        kind: 'MEETING',
+        activeCount: 2,
+        presentMode: 'MAJORITY',
+        presentValue: 0.5,
+        decisionMode: 'MAJORITY',
+        decisionValue: 0.5,
+      },
+    });
+    // 2 hadir (kuorum), 1 setuju & 1 menolak → tidak ada mayoritas → REJECTED.
+    // Finalisasi REJECTED tidak menyentuh jalur PDF/e-seal, jadi yang benar-benar
+    // diuji di sini adalah OTORISASI finalizer, bukan kripto seal.
+    d.votes = [signedVoteRow(d, 'pengawas-1', 'APPROVE'), signedVoteRow(d, 'user-0', 'REJECT')];
+    dm.foundationDecision.findUnique.mockResolvedValue(d);
+    dm.foundationDecision.update.mockResolvedValue({ ...d, status: 'REJECTED' });
+
+    const res = await FoundationDecisionService.finalize(
+      { id: 'pengawas-1', roleCode: 'YAYASAN_PENGAWAS' },
+      'dec-1'
+    );
+    expect(res.outcome).toBe('REJECTED');
   });
 });
 
@@ -650,6 +816,57 @@ describe('FoundationDecisionService.create', () => {
     ).rejects.toThrow(/tidak berwenang/);
 
     expect(dm.userRoleAssignment.findMany).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Regresi BUG — Pengawas tidak dapat memulai keputusan yang menjadi
+   * kewenangannya.
+   *
+   * `YAYASAN_PENGAWAS` tidak ada di daftar rute WRITE, padahal matriks
+   * kewenangan menetapkan `pemberhentian-sementara-pengurus` kepadanya. Organ
+   * yang berwenang tetapi tak dapat membuka rapatnya sendiri adalah kontradiksi.
+   */
+  it('mengizinkan Pengawas membuat keputusan kewenangannya sendiri', async () => {
+    dm.userRoleAssignment.findMany.mockResolvedValue([
+      {
+        id: 'asg-pengawas',
+        userId: 'user-9',
+        isPrimary: true,
+        user: { id: 'user-9', name: 'Pengawas Satu' },
+        role: { code: 'YAYASAN_PENGAWAS' },
+      },
+    ]);
+    dm.foundationDecisionRule.findUnique.mockResolvedValue(null);
+    dm.foundationDecision.create.mockResolvedValue({ id: 'dec-pengawas' });
+
+    const id = await FoundationDecisionService.create(
+      { id: 'user-9', roleCode: 'YAYASAN_PENGAWAS' },
+      {
+        organType: 'PENGAWAS',
+        kind: 'MEETING',
+        subject: 'Pemberhentian sementara',
+        body: 'Isi keputusan yang cukup panjang minimal sepuluh karakter.',
+        decisionType: 'pemberhentian-sementara-pengurus',
+      }
+    );
+
+    expect(id).toBe('dec-pengawas');
+    expect(dm.foundationDecision.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('tetap menolak Pengawas membuat keputusan organ LAIN', async () => {
+    await expect(
+      FoundationDecisionService.create(
+        { id: 'user-9', roleCode: 'YAYASAN_PENGAWAS' },
+        {
+          organType: 'PEMBINA',
+          kind: 'CIRCULAR',
+          subject: 'Perubahan AD',
+          body: 'Isi keputusan yang cukup panjang minimal sepuluh karakter.',
+          decisionType: 'perubahan-anggaran-dasar',
+        }
+      )
+    ).rejects.toThrow(/tidak berwenang/);
   });
 
   it('menolak organ kosong (tanpa anggota aktif) alih-alih meloloskan kuorum', async () => {
@@ -962,15 +1179,13 @@ describe('FoundationDecisionService.applyOutcome', () => {
     const uniqueViolation = Object.assign(new Error('Unique constraint failed'), {
       code: 'P2002',
     });
-    dm.foundationEseal.create
-      .mockRejectedValueOnce(uniqueViolation)
-      .mockResolvedValue({
-        id: 'seal-baru',
-        ...createSealMaterial(config.foundation.esealPassphrase),
-        revokedAt: null,
-        activatedAt: new Date(),
-        createdAt: new Date(),
-      });
+    dm.foundationEseal.create.mockRejectedValueOnce(uniqueViolation).mockResolvedValue({
+      id: 'seal-baru',
+      ...createSealMaterial(config.foundation.esealPassphrase),
+      revokedAt: null,
+      activatedAt: new Date(),
+      createdAt: new Date(),
+    });
     dm.foundationDecisionDocument.create.mockResolvedValue({ id: 'doc-1' });
     dm.foundationDecision.update.mockResolvedValue({ id: 'dec-1', status: 'APPROVED' });
     dm.auditLog.create.mockResolvedValue({ id: 'log-1' });
@@ -1112,7 +1327,7 @@ describe('FoundationDecisionService.verifyByToken', () => {
    * berasal dari himpunan suara yang SAMA dengan yang menentukan kuorum.
    */
   it('rekap publik hanya menghitung suara autentik, bukan baris palsu', async () => {
-    const d = decisionRow({ status: 'APPROVED' });
+    const d = decisionRow({ status: 'APPROVED', publication: 'PUBLIC' });
     const authentic0 = signedVoteRow(d, 'user-0', 'APPROVE');
     const authentic1 = signedVoteRow(d, 'user-1', 'APPROVE');
     // Baris palsu: pilihan APPROVE, tetapi tidak menunjuk rekaman kunci
@@ -1137,6 +1352,65 @@ describe('FoundationDecisionService.verifyByToken', () => {
     const res = await FoundationDecisionService.verifyByToken('tok-1');
     expect(res.voteCount).toBe(2);
     expect(res.approveCount).toBe(2);
+  });
+
+  /**
+   * Regresi SECURITY — verifikasi publik membocorkan metadata tata kelola.
+   *
+   * `verifyDecisionCore` dulu mengembalikan subject/organ/tanggal/rekap suara
+   * ke endpoint anonim tanpa syarat. Keputusan yayasan dapat menyangkut
+   * personalia ("Pemberhentian Sementara Pengurus X") atau operasi internal,
+   * dan tautan maupun PDF-nya dapat sampai ke pihak luar tanpa persetujuan
+   * publikasi. Klasifikasi `publication` bawaannya PRIVATE: metadata disensor
+   * sampai seseorang (Super Admin) sengaja menerbitkannya — sedangkan bukti
+   * keabsahan tetap dapat diperiksa.
+   *
+   * `decisionRow` memakai klasifikasi bawaan (PRIVATE) bila tidak disebut.
+   */
+  it('menyensor metadata keputusan PRIVATE, tetapi keabsahan tetap diperiksa', async () => {
+    const d = decisionRow({ status: 'APPROVED', finalPdfDigest: 'digest-abc' });
+    dm.foundationDecision.findUnique.mockResolvedValue({
+      ...d,
+      finalPdfSealSignature: 'sig-abc',
+      esealId: 'seal-1',
+      document: null,
+      votes: [signedVoteRow(d, 'user-0', 'APPROVE')],
+    });
+    dm.foundationEseal.findUnique.mockResolvedValue({
+      id: 'seal-1',
+      publicKey: 'pk',
+      algorithm: 'Ed25519',
+    });
+
+    const res = await FoundationDecisionService.verifyByToken('tok-1');
+    // Metadata tata kelola TIDAK bocor.
+    expect(res.subject).toBeNull();
+    expect(res.organType).toBeNull();
+    expect(res.kind).toBeNull();
+    expect(res.status).toBeNull();
+    expect(res.decidedAt).toBeNull();
+    expect(res.voteCount).toBe(0);
+    expect(res.approveCount).toBe(0);
+    // Keabsahan tetap dapat diperiksa, dan referensi non-sensitif tetap ada.
+    expect(res.decisionId).toBe('dec-1');
+    expect(res.digestOk).toBeNull(); // jalur token tanpa byte pembanding
+    expect(res.publication).toBe('PRIVATE');
+    expect(res.sealVerified).not.toBeNull();
+  });
+
+  it('menampilkan metadata HANYA untuk keputusan yang diterbitkan (PUBLIC)', async () => {
+    const d = decisionRow({ status: 'APPROVED', publication: 'PUBLIC' });
+    dm.foundationDecision.findUnique.mockResolvedValue({
+      ...d,
+      document: null,
+      votes: [signedVoteRow(d, 'user-0', 'APPROVE')],
+    });
+
+    const res = await FoundationDecisionService.verifyByToken('tok-1');
+    expect(res.subject).toBe('Pengesahan Rencana Kerja');
+    expect(res.organType).toBe('PEMBINA');
+    expect(res.publication).toBe('PUBLIC');
+    expect(res.voteCount).toBe(1);
   });
 });
 
@@ -1188,16 +1462,16 @@ describe('FoundationDecisionService.getFinalDocument', () => {
       bytes: new Uint8Array(Buffer.from('%PDF')),
       decision: { status: 'VOTING', members: [] },
     });
-    await expect(
-      FoundationDecisionService.getFinalDocument(reader, 'dec-1')
-    ).rejects.toThrow(/belum final/);
+    await expect(FoundationDecisionService.getFinalDocument(reader, 'dec-1')).rejects.toThrow(
+      /belum final/
+    );
   });
 
   it('melempar 404 bila dokumen tidak ada', async () => {
     dm.foundationDecisionDocument.findUnique.mockResolvedValue(null);
-    await expect(
-      FoundationDecisionService.getFinalDocument(reader, 'dec-1')
-    ).rejects.toThrow(/tidak ditemukan/);
+    await expect(FoundationDecisionService.getFinalDocument(reader, 'dec-1')).rejects.toThrow(
+      /tidak ditemukan/
+    );
   });
 });
 
@@ -1304,8 +1578,54 @@ describe('FoundationDecisionService.verifyByPdfBuffer', () => {
     expect(res.digestOk).toBe(false);
     expect(res.isValid).toBe(false);
   });
-});
 
+  /**
+   * Regresi SECURITY CRITICAL (jalur unggahan) — verifikasi anonim tidak boleh
+   * membocorkan metadata tata kelola.
+   *
+   * Klasifikasi `publication` harus mengalir sampai ke INTI verifikasi di jalur
+   * ini juga, bukan hanya jalur token. Bila tidak, dua jalur publik dapat
+   * menyimpang: satu menyensor dan satu tidak. Yang diuji di sini adalah
+   * PERILAKU: keputusan PRIVATE tetap menjawab "sah" tanpa subject/status/tally.
+   */
+  it('menyensor metadata keputusan PRIVATE pada jalur unggahan, keabsahan tetap', async () => {
+    const bytes = Buffer.from('%PDF-1.7 dokumen privat yang tetap sah');
+    const digest = sha256bytes(bytes);
+    const signature = signSeal(sealMaterialRow, config.foundation.esealPassphrase, digest);
+    // `approvedRow` mewarisi publication bawaan PRIVATE dari `decisionRow`.
+    const row = { ...approvedRow(digest, signature), publication: 'PRIVATE' };
+    dm.foundationDecision.findUnique.mockResolvedValue(row);
+    dm.foundationEseal.findUnique.mockResolvedValue({
+      id: 'seal-1',
+      publicKey: sealMaterialRow.publicKey,
+    });
+
+    const res = await FoundationDecisionService.verifyByPdfBuffer(bytes);
+    expect(res.found).toBe(true);
+    expect(res.isValid).toBe(true);
+    expect(res.publication).toBe('PRIVATE');
+    expect(res.subject).toBeNull();
+    expect(res.status).toBeNull();
+    expect(res.voteCount).toBe(0);
+  });
+
+  it('menampilkan metadata keputusan PUBLIC pada jalur unggahan', async () => {
+    const bytes = Buffer.from('%PDF-1.7 dokumen terbit untuk publik');
+    const digest = sha256bytes(bytes);
+    const signature = signSeal(sealMaterialRow, config.foundation.esealPassphrase, digest);
+    const row = { ...approvedRow(digest, signature), publication: 'PUBLIC' };
+    dm.foundationDecision.findUnique.mockResolvedValue(row);
+    dm.foundationEseal.findUnique.mockResolvedValue({
+      id: 'seal-1',
+      publicKey: sealMaterialRow.publicKey,
+    });
+
+    const res = await FoundationDecisionService.verifyByPdfBuffer(bytes);
+    expect(res.publication).toBe('PUBLIC');
+    expect(res.subject).toBe('Pengesahan Rencana Kerja');
+    expect(res.status).toBe('APPROVED');
+  });
+});
 
 /**
  * Regresi item review #1 — suara palsu/termodifikasi tidak boleh dihitung.
@@ -1591,7 +1911,6 @@ describe('FoundationDecisionService.castVote — kerja mahal di luar kunci', () 
   });
 });
 
-
 /**
  * PRIORITAS 0 audit #1 — ikatan public key suara tidak tepercaya.
  *
@@ -1660,7 +1979,9 @@ describe('FoundationDecisionService.votesOf — ikatan kunci tepercaya (audit #1
     // Bukti bahwa serangan ini NYATA pada head lama: tanda tangannya sah untuk
     // public key yang dibawanya sendiri, dan digest-nya cocok.
     expect(forged.signature).toBeTruthy();
-    expect(new Set(d.members.map((m) => m.userId)).has(forged.userId)).toBe(true);
+    expect(new Set(d.members.map((m: { userId: string }) => m.userId)).has(forged.userId)).toBe(
+      true
+    );
 
     const counted = FoundationDecisionService.votesOf({ ...d, votes: [forged] } as never);
     // Yang membedakan tepercaya dari karangan adalah rekaman riwayat kunci:

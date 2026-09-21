@@ -24,13 +24,13 @@ const data: DecisionPdfData = {
   decidedAt: new Date('2026-01-02T00:00:00Z'),
   body: 'Rencana kerja tahunan disetujui seluruh anggota Dewan Pembina dengan penuh tanggung jawab.',
   members: [
-    { userId: "u0", name: 'Anggota 0', roleCode: 'YAYASAN_PEMBINA' },
-    { userId: "u1", name: 'Anggota 1', roleCode: 'YAYASAN_PEMBINA' },
-    { userId: "u2", name: 'Anggota 2', roleCode: 'YAYASAN_PEMBINA' },
+    { userId: 'u0', name: 'Anggota 0', roleCode: 'YAYASAN_PEMBINA' },
+    { userId: 'u1', name: 'Anggota 1', roleCode: 'YAYASAN_PEMBINA' },
+    { userId: 'u2', name: 'Anggota 2', roleCode: 'YAYASAN_PEMBINA' },
   ],
   votes: [
     {
-      userId: "u0",
+      userId: 'u0',
       name: 'Anggota 0',
       roleCode: 'YAYASAN_PEMBINA',
       choice: 'APPROVE',
@@ -39,7 +39,7 @@ const data: DecisionPdfData = {
       note: null,
     },
     {
-      userId: "u1",
+      userId: 'u1',
       name: 'Anggota 1',
       roleCode: 'YAYASAN_PEMBINA',
       choice: 'APPROVE',
@@ -186,7 +186,6 @@ describe('decisionVerificationFooter', () => {
   });
 });
 
-
 /**
  * Regresi audit #6 — token tanpa spasi harus DIPECAH, bukan dibiarkan meluber.
  *
@@ -267,6 +266,64 @@ describe('wrap — pemecahan token panjang', () => {
       expect(line).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
       expect(line).not.toMatch(/(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/);
     }
+  });
+
+  /**
+   * Regresi BUG — line break naskah hilang di PDF tersegel.
+   *
+   * `wrap` lama memecah dengan `/\s+/` lalu menyambung ulang dengan spasi,
+   * sehingga newline dan baris kosong pemisah paragraf hilang di arsip PDF
+   * final — struktur yang ditulis penandatangan tidak sampai ke dokumen yang
+   * di-e-seal. Fungsi murni ini yang diuji: `/n` tidak dapat dibaca kembali
+   * dari byte PDF (pdf-lib tidak menyediakan pembacaan teks), jadi sifat
+   * "struktur dipertahankan" harus dikunci di sini.
+   */
+  it('mempertahankan hard line break sebagai baris terpisah', async () => {
+    const font = await realFont();
+    const lines = wrap(font, size, 'Baris pertama\nBaris kedua\nBaris ketiga', maxWidth);
+    expect(lines).toEqual(['Baris pertama', 'Baris kedua', 'Baris ketiga']);
+  });
+
+  it('mempertahankan baris kosong sebagai pemisah paragraf', async () => {
+    const font = await realFont();
+    const lines = wrap(font, size, 'Paragraf satu.\n\nParagraf dua.', maxWidth);
+    expect(lines).toContain('');
+    // Dua paragraf tetap terpisah oleh elemen kosong, bukan disatukan.
+    const gap = lines.indexOf('');
+    expect(gap).toBeGreaterThan(0);
+    expect(lines[gap - 1]).toBe('Paragraf satu.');
+    expect(lines[gap + 1]).toBe('Paragraf dua.');
+  });
+
+  it('mempertahankan penanda daftar di awal barisnya', async () => {
+    const font = await realFont();
+    const lines = wrap(font, size, '- Butir pertama\n- Butir kedua\n1. Butir ketiga', maxWidth);
+    expect(lines[0]).toBe('- Butir pertama');
+    expect(lines[1]).toBe('- Butir kedua');
+    expect(lines[2]).toBe('1. Butir ketiga');
+  });
+
+  it('CRLF dianggap satu line break', async () => {
+    const font = await realFont();
+    const lines = wrap(font, size, 'Satu\r\nDua', maxWidth);
+    expect(lines).toEqual(['Satu', 'Dua']);
+  });
+
+  it('hard break yang barisnya panjang tetap dibungkus visual per baris', async () => {
+    const font = await realFont();
+    const long =
+      'ini baris pertama yang sengaja dibuat panjang sekali agar terbelah beberapa baris visual\npendek';
+    const lines = wrap(font, size, long, 120);
+    // Baris logis pertama terbelah, tetapi baris logis kedua tetap terpisah.
+    expect(lines[lines.length - 1]).toBe('pendek');
+    for (const line of lines) {
+      expect(font.widthOfTextAtSize(line, size)).toBeLessThanOrEqual(120);
+    }
+  });
+
+  it('tidak menyisipkan baris kosong di awal atau akhir naskah', async () => {
+    const font = await realFont();
+    expect(wrap(font, size, '\n\nA\n\n', maxWidth)).toEqual(['A']);
   });
 });
 

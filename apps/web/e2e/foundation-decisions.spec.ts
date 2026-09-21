@@ -40,11 +40,18 @@ type DecisionRow = { id: string; subject: string; status: string };
 type VerifyResult = {
   found: boolean;
   isValid: boolean;
+  publication: string | null;
+  subject: string | null;
+  organType: string | null;
+  kind: string | null;
   status: string | null;
+  decidedAt: string | null;
   digest: string | null;
   archiveDigest: string | null;
   digestOk: boolean | null;
   sealVerified: boolean | null;
+  voteCount: number;
+  approveCount: number;
   reason: string | null;
 };
 
@@ -121,7 +128,9 @@ test.describe("daftar keputusan", () => {
     const nav = page.getByRole("navigation");
     await expect(nav.first()).toBeVisible({ timeout: 20000 });
     await expect(
-      page.getByRole("link", { name: /Keputusan & Notulen|Keputusan & Risalah/ }),
+      page.getByRole("link", {
+        name: /Keputusan & Notulen|Keputusan & Risalah/,
+      }),
     ).toHaveCount(0);
   });
 
@@ -141,9 +150,7 @@ test.describe("daftar keputusan", () => {
     // Daftarnya sendiri tetap terbaca — yang hilang hanya aksinya. Isinya
     // bergantung pada data seed, jadi yang dipaku adalah halaman daftarnya
     // benar-benar merender (heading + kontrol filter).
-    await expect(
-      page.getByRole("combobox").first(),
-    ).toBeVisible();
+    await expect(page.getByRole("combobox").first()).toBeVisible();
   });
 
   test("peran read-only ditolak API saat mencoba menulis (#6)", async () => {
@@ -189,7 +196,7 @@ test.describe("daftar keputusan", () => {
     // mode yang dipilih (mis. TWO_THIRDS dengan 0.5).
     // Label tidak terhubung lewat htmlFor, jadi isian read-only kedua
     // (Ambang Kuorum Sah) dicari berdasarkan urutannya.
-    await expect(page.locator('input[readonly]').nth(1)).toHaveValue(
+    await expect(page.locator("input[readonly]").nth(1)).toHaveValue(
       /TWO_THIRDS · 0\.67/,
     );
     await page.getByRole("button", { name: "Simpan Aturan" }).click();
@@ -206,9 +213,9 @@ test.describe("daftar keputusan", () => {
     await expect(
       page.getByRole("heading", { name: "Keputusan & Risalah Organ" }),
     ).toBeVisible({ timeout: 20000 });
-    await expect(
-      page.getByRole("link", { name: /Aturan Kuorum/ }),
-    ).toHaveCount(0);
+    await expect(page.getByRole("link", { name: /Aturan Kuorum/ })).toHaveCount(
+      0,
+    );
   });
 
   test("API memberi guru daftar KOSONG (bukan seluruh daftar) dan menolak pembuatan", async () => {
@@ -269,6 +276,60 @@ test.describe("membuat keputusan", () => {
     expect(res.status).toBe(403);
   });
 
+  /**
+   * Regresi BUG — Pengawas tidak dapat memulai keputusan kewenangannya.
+   *
+   * Matriks kewenangan menetapkan `pemberhentian-sementara-pengurus` kepada
+   * PENGAWAS, tetapi `YAYASAN_PENGAWAS` tidak ada di daftar rute — organ yang
+   * berwenang justru tak dapat membuka rapatnya sendiri. Hak CREATE dan
+   * FINALIZE kini dipisah, dan Pengawas ada di keduanya; kewenangan organ×jenis
+   * tetap diperiksa di service.
+   */
+  test("Pengawas DAPAT membuka keputusan organnya (#4)", async ({ page }) => {
+    const pengawas = await apiLogin(SEED_USERS.pengawas);
+    const res = await fetch(`${API_URL}/foundation/decisions`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${pengawas.accessToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        organType: "PENGAWAS",
+        kind: "MEETING",
+        subject: `Rapat Pengawas Uji Kewenangan ${Date.now()}`,
+        body: "Isi rapat pengawas yang cukup panjang untuk lolos validasi skema.",
+        decisionType: "pemberhentian-sementara-pengurus",
+      }),
+    });
+    expect(res.status).toBe(201);
+
+    // Dan UI menawarkan tombolnya — bukan hanya API yang mengizinkan.
+    await signIn(page, "pengawas");
+    await page.goto("/foundation/decisions");
+    await expect(
+      page.getByRole("link", { name: /Buat Keputusan/ }),
+    ).toBeVisible({ timeout: 20000 });
+  });
+
+  test("Pengawas tetap DITOLAK membuka keputusan organ lain (#4)", async () => {
+    const pengawas = await apiLogin(SEED_USERS.pengawas);
+    const res = await fetch(`${API_URL}/foundation/decisions`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${pengawas.accessToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        organType: "PEMBINA",
+        kind: "CIRCULAR",
+        subject: `Pembina Uji Kewenangan ${Date.now()}`,
+        body: "Isi keputusan yang cukup panjang untuk lolos validasi skema.",
+        decisionType: "perubahan-anggaran-dasar",
+      }),
+    });
+    expect(res.status).toBe(403);
+  });
+
   test("Super Admin membuka sirkuler Pengawas lewat form", async ({ page }) => {
     await signIn(page, "superAdmin");
     await page.goto("/foundation/decisions/new");
@@ -281,10 +342,13 @@ test.describe("membuat keputusan", () => {
     await page.getByRole("option", { name: "Dewan Pengawas" }).click();
     await page.getByRole("combobox").nth(1).click();
     await page.getByRole("option", { name: /Sirkuler/ }).click();
-
+    // Jenis keputusan kini Select berkosakata terkendali (#6): isian bebas
+    // sudah tidak ada, sehingga salah ketik tak dapat memindahkan keputusan
+    // ke organ yang salah.
+    await page.getByRole("combobox").nth(2).click();
     await page
-      .getByPlaceholder("mis. pengesahan-rencana-kerja")
-      .fill("pemberhentian-sementara-pengurus");
+      .getByRole("option", { name: "pemberhentian-sementara-pengurus" })
+      .click();
     await page
       .getByPlaceholder("mis. Pengesahan Rencana Kerja Yayasan 2026")
       .fill(subject);
@@ -440,7 +504,19 @@ test.describe("voting dengan modal passphrase", () => {
 });
 
 test.describe("verifikasi publik", () => {
-  test("pemindai anonim melihat hasil tanpa login (#8)", async ({ page }) => {
+  /**
+   * Regresi SECURITY CRITICAL — verifikasi anonim membocorkan metadata tata
+   * kelola.
+   *
+   * Keputusan baru bawaannya PRIVATE (fail closed). Endpoint anonim hanya boleh
+   * menyatakan KEABSAHAN; subject, organ, tanggal, dan rekap suara tetap
+   * internal sampai seseorang (Super Admin) sengaja menerbitkannya. Keputusan
+   * ini berjudul "Pemberhentian Sementara Pengurus …" — persis contoh metadata
+   * yang tidak boleh bocor.
+   */
+  test("pemindai anonim melihat keabsahan tanpa login, TANPA metadata (#8)", async ({
+    page,
+  }) => {
     expect(verificationToken).toBeTruthy();
     // Tanpa injectSession: halaman ini untuk orang luar (dinas, wali santri).
     await page.goto(`/public/verify-decision?token=${verificationToken}`);
@@ -449,21 +525,101 @@ test.describe("verifikasi publik", () => {
     await expect(
       page.getByRole("heading", { name: "Verifikasi Keputusan Yayasan" }),
     ).toBeVisible();
-    await expect(page.getByText(subject)).toBeVisible({ timeout: 20000 });
-    // Arsip memeriksa dirinya sendiri, dan e-seal diverifikasi ulang (#12).
+    // Keabsahan tetap dinyatakan...
     await expect(page.getByText(/E-seal Yayasan terverifikasi/)).toBeVisible();
-    // Jalur token tidak memeriksa byte yang dipegang pemindai, jadi salinan
-    // yang benar di sini adalah "arsip server" — kalimat "berkas yang Anda
-    // unggah cocok byte-per-byte" hanya keluar lewat jalur unggahan.
     await expect(
       page.getByText(/Arsip server cocok dengan digest yang ditandatangani/),
     ).toBeVisible();
+    // ...tetapi metadata tata kelola TIDAK.
+    await expect(page.getByText(subject)).toHaveCount(0);
+    await expect(page.getByText(/tidak dipublikasikan/)).toBeVisible();
+  });
+
+  test("verifikasi anonim menyensor metadata tetapi tetap memeriksa keabsahan (#8)", async () => {
+    expect(verificationToken).toBeTruthy();
+    const res = await fetch(
+      `${API_URL}/foundation/verify?token=${verificationToken}`,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Envelope<VerifyResult>;
+    expect(body.data.found).toBe(true);
+    expect(body.data.isValid).toBe(true);
+    // Metadata disensor — null, bukan kebetulan kosong.
+    expect(body.data.subject).toBeNull();
+    expect(body.data.organType).toBeNull();
+    expect(body.data.kind).toBeNull();
+    expect(body.data.status).toBeNull();
+    expect(body.data.decidedAt).toBeNull();
+    expect(body.data.voteCount).toBe(0);
+    expect(body.data.approveCount).toBe(0);
+    expect(body.data.publication).toBe("PRIVATE");
+    // Bukti keabsahan tak ikut disensor.
+    expect(body.data.digest).toBeTruthy();
+    expect(body.data.archiveDigest).toBe(body.data.digest);
+    expect(body.data.digestOk).toBe(true);
+    expect(body.data.sealVerified).toBe(true);
+  });
+
+  /**
+   * Sisi lain kontrak: setelah Super Admin menerbitkan metadata, pemindai
+   * anonim melihatnya lagi. Penyensoran bukan sekadar menghapus field.
+   */
+  test("metadata tampil kembali setelah Super Admin menerbitkan (#8)", async ({
+    page,
+  }) => {
+    expect(decisionId).toBeTruthy();
+    const admin = await apiLogin(SEED_USERS.superAdmin);
+    const pub = await fetch(
+      `${API_URL}/foundation/decisions/${decisionId}/publication`,
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${admin.accessToken}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ publication: "PUBLIC" }),
+      },
+    );
+    expect(pub.status).toBe(200);
+
+    const res = await fetch(
+      `${API_URL}/foundation/verify?token=${verificationToken}`,
+    );
+    const body = (await res.json()) as Envelope<VerifyResult>;
+    expect(body.data.publication).toBe("PUBLIC");
+    expect(body.data.subject).toBe(subject);
+    expect(body.data.organType).toBe("PENGAWAS");
+    expect(body.data.status).toBe("APPROVED");
+    expect(body.data.approveCount).toBe(1);
+
+    await page.goto(`/public/verify-decision?token=${verificationToken}`);
+    await expect(page.getByText(subject)).toBeVisible({ timeout: 20000 });
+    await expect(page.getByText(/tidak dipublikasikan/)).toHaveCount(0);
+  });
+
+  test("peran non-Super Admin tidak dapat mengubah publikasi (#8)", async () => {
+    expect(decisionId).toBeTruthy();
+    const ketua = await apiLogin(SEED_USERS.ketuaPengurus);
+    const res = await fetch(
+      `${API_URL}/foundation/decisions/${decisionId}/publication`,
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${ketua.accessToken}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ publication: "PUBLIC" }),
+      },
+    );
+    expect(res.status).toBe(403);
   });
 
   test("token tak dikenal menjawab 'tidak ditemukan', bukan galat (#14)", async ({
     page,
   }) => {
-    await page.goto("/public/verify-decision?token=tidak-ada-token-seperti-ini");
+    await page.goto(
+      "/public/verify-decision?token=tidak-ada-token-seperti-ini",
+    );
     await expect(page.getByText(/tidak ditemukan/i).first()).toBeVisible({
       timeout: 20000,
     });
@@ -477,7 +633,6 @@ test.describe("verifikasi publik", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as Envelope<VerifyResult>;
     expect(body.data.found).toBe(true);
-    expect(body.data.status).toBe("APPROVED");
     expect(body.data.digest).toBeTruthy();
     expect(body.data.archiveDigest).toBe(body.data.digest);
     expect(body.data.digestOk).toBe(true);
@@ -521,6 +676,13 @@ test.describe("verifikasi publik", () => {
     expect(body.data.digestOk).toBe(true);
     expect(body.data.sealVerified).toBe(true);
     expect(body.data.isValid).toBe(true);
+    // Jalur unggahan WAJIB tunduk pada klasifikasi yang sama dengan jalur
+    // token. Keputusan ini sudah diterbitkan oleh uji publikasi di atas, jadi
+    // metadatanya ikut tampil di sini; sebelumnya `publication` tidak
+    // diteruskan ke inti verifikasi pada jalur ini dan hasilnya selalu
+    // tersensor — dua jalur publik yang menyimpang.
+    expect(body.data.publication).toBe("PUBLIC");
+    expect(body.data.subject).toBe(subject);
   });
 
   /**

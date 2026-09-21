@@ -51,7 +51,9 @@ export const FOUNDATION_KIND_LABEL: Record<string, string> = {
 export const FOUNDATION_FILTER_ALL = "all";
 
 /** Ubah nilai filter Select menjadi parameter API (undefined = tanpa filter). */
-export function normalizeFoundationFilter(value: string | undefined): string | undefined {
+export function normalizeFoundationFilter(
+  value: string | undefined,
+): string | undefined {
   if (!value || value === FOUNDATION_FILTER_ALL) return undefined;
   return value;
 }
@@ -107,7 +109,9 @@ export function useCreateFoundationDecision() {
 export function useCastFoundationVote(decisionId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: CastFoundationVoteInput): Promise<CastFoundationVoteResultDTO> =>
+    mutationFn: (
+      input: CastFoundationVoteInput,
+    ): Promise<CastFoundationVoteResultDTO> =>
       api
         .post(`/foundation/decisions/${decisionId}/vote`, input)
         .then((r) => r.data.data),
@@ -122,6 +126,27 @@ export function useFinalizeFoundationDecision(decisionId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => api.post(`/foundation/decisions/${decisionId}/finalize`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["foundation-decision", decisionId] });
+      qc.invalidateQueries({ queryKey: ["foundation-decisions"] });
+    },
+  });
+}
+
+/**
+ * Ubah klasifikasi publikasi metadata (SUPER_ADMIN).
+ *
+ * Bawaannya PRIVATE: endpoint verifikasi anonim menyensor subject, organ,
+ * tanggal, dan rekap suara sampai keputusan sengaja diterbitkan. Hook ini
+ * adalah satu-satunya jalan menerbitkannya.
+ */
+export function useSetFoundationPublication(decisionId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (publication: "PRIVATE" | "PUBLIC") =>
+      api.post(`/foundation/decisions/${decisionId}/publication`, {
+        publication,
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["foundation-decision", decisionId] });
       qc.invalidateQueries({ queryKey: ["foundation-decisions"] });

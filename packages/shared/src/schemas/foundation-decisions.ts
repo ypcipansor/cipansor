@@ -1,6 +1,8 @@
 import { z } from "zod";
 import {
   FOUNDATION_DECISION_KINDS,
+  FOUNDATION_DECISION_PUBLICATIONS,
+  FOUNDATION_DECISION_TYPES,
   FOUNDATION_ORGAN_TYPES,
   FOUNDATION_QUORUM_MODES,
   FOUNDATION_VOTE_CHOICES,
@@ -8,14 +10,25 @@ import {
   quorumValueForMode,
 } from "../types/foundation-decisions";
 
+/**
+ * Kosakata jenis keputusan TERKENDALI.
+ *
+ * Jenis tak dikenal dulu jatuh diam-diam ke kewenangan Pembina, sehingga satu
+ * salah ketik memindahkan keputusan ke organ yang salah tanpa peringatan.
+ * `z.enum` menolaknya di edge, dan tipe hasilnya mengalir ke matriks kewenangan
+ * yang ber-`Record<DecisionAuthorityKey, …>` sehingga kedua sisi tak dapat
+ * menyimpang.
+ */
+const decisionTypeSchema = z.enum(FOUNDATION_DECISION_TYPES);
+
 /** Membuat draf keputusan organ. */
 export const createFoundationDecisionSchema = z.object({
   organType: z.enum(FOUNDATION_ORGAN_TYPES),
   kind: z.enum(FOUNDATION_DECISION_KINDS),
   subject: z.string().trim().min(3).max(255),
   body: z.string().trim().min(10),
-  /** Label jenis keputusan, mis. "pengesahan-rencana-kerja", "perubahan-AD". */
-  decisionType: z.string().trim().min(2).max(100),
+  /** Jenis keputusan, mis. "pengesahan-rencana-kerja", "perubahan-anggaran-dasar". */
+  decisionType: decisionTypeSchema,
 });
 
 export type CreateFoundationDecisionInput = z.infer<
@@ -40,7 +53,7 @@ export type CastFoundationVoteInput = z.infer<typeof castFoundationVoteSchema>;
  * menandatangani apa pun dengan kunci pribadi pemanggil: yang dibubuhkan adalah
  * e-seal Yayasan, dan kunci privatnya disegel oleh passphrase SERVER
  * (`FOUNDATION_ESEAL_PASSPHRASE`), bukan oleh rahasia pengguna. Otorisasinya
- * adalah peran (`WRITE` di routes) — meminta passphrase di sini berarti
+ * adalah peran (`FINALIZE` di routes) — meminta passphrase di sini berarti
  * menuntut rahasia yang tidak dipakai untuk apa pun, dan menyimpannya di
  * kontrak berarti mengundang klien mengirimkannya.
  */
@@ -48,6 +61,22 @@ export const finalizeFoundationDecisionSchema = z.object({});
 
 export type FinalizeFoundationDecisionInput = z.infer<
   typeof finalizeFoundationDecisionSchema
+>;
+
+/**
+ * Mengubah klasifikasi publikasi metadata keputusan (SUPER_ADMIN).
+ *
+ * Terpisah dari finalisasi, dan sengaja: memutuskan hasil rapat dan
+ * menerbitkan metadatanya ke internet adalah dua keputusan yang berbeda.
+ * Menyatukannya berarti setiap finalisasi otomatis mempublikasikan judul dan
+ * rekap suara keputusan — termasuk yang menyangkut personalia.
+ */
+export const setFoundationDecisionPublicationSchema = z.object({
+  publication: z.enum(FOUNDATION_DECISION_PUBLICATIONS),
+});
+
+export type SetFoundationDecisionPublicationInput = z.infer<
+  typeof setFoundationDecisionPublicationSchema
 >;
 
 /** Mengelola aturan kuorum (SUPER_ADMIN). */
@@ -81,8 +110,12 @@ export const upsertFoundationRuleSchema = z
    */
   .superRefine((rule, ctx) => {
     const pairs: Array<[FoundationQuorumMode, number, string]> = [
-      [rule.quorumPresentMode, rule.quorumPresentValue, 'quorumPresentValue'],
-      [rule.quorumDecisionMode, rule.quorumDecisionValue, 'quorumDecisionValue'],
+      [rule.quorumPresentMode, rule.quorumPresentValue, "quorumPresentValue"],
+      [
+        rule.quorumDecisionMode,
+        rule.quorumDecisionValue,
+        "quorumDecisionValue",
+      ],
     ];
     for (const [mode, value, field] of pairs) {
       const expected = quorumValueForMode(mode);

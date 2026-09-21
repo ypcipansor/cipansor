@@ -10,6 +10,7 @@ import {
   castFoundationVoteSchema,
   createFoundationDecisionSchema,
   finalizeFoundationDecisionSchema,
+  setFoundationDecisionPublicationSchema,
   listFoundationDecisionsQuerySchema,
   upsertFoundationRuleSchema,
 } from './foundation-decisions.schema';
@@ -73,9 +74,28 @@ router.use(authenticate);
  * SEBELUM router foundation yang punya wildcard `/:id`, agar literal
  * `/decisions` tidak tertelan jadi id).
  *
- * Semua peran yayasan bisa membaca; pembina/ketua/sekretaris/Super Admin
- * membuat & me-finalisasi; keanggotaan organ untuk memberi suara diperiksa di
- * service (bukan sekadar role). Hanya Super Admin yang menyunting aturan.
+ * Semua peran yayasan bisa membaca.
+ *
+ * **Hak MEMBUAT dan hak MEM-FINALISASI dipisah, dan itu disengaja.**
+ * Sebelumnya keduanya memakai satu array `WRITE`, sehingga menambahkan
+ * Pengawas agar dapat membuka keputusan yang memang kewenangannya juga diam-
+ * diam memberinya hak finalisasi atas keputusan organ LAIN — hak yang tidak
+ * dimaksudkan. Dua array bernama membuat masing-masing hak dapat ditinjau
+ * sendiri.
+ *
+ *  - `CREATE` memuat Pengawas: matriks kewenangan menetapkan
+ *    `pemberhentian-sementara-pengurus` kepada PENGAWAS (ps. 40–41 UU
+ *    16/2001), dan organ yang berwenang tetapi tak dapat membuka rapatnya
+ *    sendiri adalah kontradiksi. Kewenangan organ×jenis tetap diperiksa di
+ *    service (`organMayDecide`), sehingga Pengawas hanya dapat membuat
+ *    keputusan organ PENGAWAS dengan jenis yang memang miliknya — keputusan
+ *    organ lain ditolak.
+ *  - `FINALIZE` memuat Pengawas juga, tetapi service memperketatnya: finalizer
+ *    yang bukan Super Admin/pimpinan yayasan hanya boleh menutup keputusan
+ *    organ yang memuatnya sebagai anggota snapshot. Ini yang mencegah Pengawas
+ *    menutup rapat Pembina/Pengurus.
+ *
+ * Hanya Super Admin yang menyunting aturan kuorum.
  */
 const READ = [
   RoleCode.SUPER_ADMIN,
@@ -86,11 +106,19 @@ const READ = [
   RoleCode.YAYASAN_ANGGOTA,
   RoleCode.YAYASAN_PENGAWAS,
 ];
-const WRITE = [
+const CREATE = [
   RoleCode.SUPER_ADMIN,
   RoleCode.YAYASAN_PEMBINA,
   RoleCode.YAYASAN_KETUA,
   RoleCode.YAYASAN_SEKRETARIS,
+  RoleCode.YAYASAN_PENGAWAS,
+];
+const FINALIZE = [
+  RoleCode.SUPER_ADMIN,
+  RoleCode.YAYASAN_PEMBINA,
+  RoleCode.YAYASAN_KETUA,
+  RoleCode.YAYASAN_SEKRETARIS,
+  RoleCode.YAYASAN_PENGAWAS,
 ];
 
 /**
@@ -105,14 +133,10 @@ const WRITE = [
  * memuat dirinya sebagai anggota snapshot; peran READ tetap melihat seluruh
  * daftar.
  */
-router.get(
-  '/decisions',
-  validateQuery(listFoundationDecisionsQuerySchema),
-  asyncHandler(c.list)
-);
+router.get('/decisions', validateQuery(listFoundationDecisionsQuerySchema), asyncHandler(c.list));
 router.post(
   '/decisions',
-  authorize(...WRITE),
+  authorize(...CREATE),
   validate(createFoundationDecisionSchema),
   asyncHandler(c.create)
 );
@@ -156,9 +180,24 @@ router.post(
 );
 router.post(
   '/decisions/:id/finalize',
-  authorize(...WRITE),
+  authorize(...FINALIZE),
   validate(finalizeFoundationDecisionSchema),
   asyncHandler(c.finalize)
+);
+
+/**
+ * Publikasi metadata — HANYA Super Admin.
+ *
+ * Rute terpisah dari finalisasi, dan itu disengaja: menerbitkan metadata
+ * keputusan (judul, organ, tanggal, rekap suara) ke endpoint verifikasi anonim
+ * adalah keputusan tersendiri. Bila ia menempel pada finalisasi mana pun,
+ * setiap keputusan otomatis terpublikasi — termasuk yang menyangkut personalia.
+ */
+router.post(
+  '/decisions/:id/publication',
+  authorize(RoleCode.SUPER_ADMIN),
+  validate(setFoundationDecisionPublicationSchema),
+  asyncHandler(c.setPublication)
 );
 
 router.get('/rules', authorize(RoleCode.SUPER_ADMIN), asyncHandler(c.listRules));

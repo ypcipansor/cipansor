@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'crypto';
 import {
   FoundationDecision,
   FoundationDecisionMember,
+  FoundationDecisionPublication,
   FoundationDecisionRule,
   FoundationDecisionStatus,
   FoundationDecisionVote,
@@ -25,7 +26,11 @@ import { prisma } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
 import { config } from '@/config';
 import { evaluateQuorum, type QuorumEvaluation } from '@/utils/foundation-quorum';
-import { organMayDecide, roleCodesForOrgan, selectSnapshotAssignments } from '@/utils/foundation-authority';
+import {
+  organMayDecide,
+  roleCodesForOrgan,
+  selectSnapshotAssignments,
+} from '@/utils/foundation-authority';
 import {
   canReadFoundationDecision,
   foundationDecisionListWhere,
@@ -41,7 +46,12 @@ import {
   type ScryptParams,
 } from '@/utils/esign';
 import { assertCanSign } from '@/utils/esign-lifecycle';
-import { createSealMaterial, sealCanSign, signSeal, toSealMaterial } from '@/utils/foundation-eseal';
+import {
+  createSealMaterial,
+  sealCanSign,
+  signSeal,
+  toSealMaterial,
+} from '@/utils/foundation-eseal';
 import { decisionVerificationUrl } from '@/utils/verification-url';
 import { generateDecisionPdf } from '@/utils/generate-decision-pdf';
 import type { DecisionPdfVoteRow, DecisionPdfMemberRow } from '@/utils/generate-decision-pdf';
@@ -215,10 +225,7 @@ export function canonicalDigestForVote(
  * ini, seorang admin basis data dapat menyisipkan suara "APPROVE" dan
  * keputusan memperoleh e-seal Yayasan yang sah atas dasar suara palsu.
  */
-export function isVoteAuthentic(
-  d: DecisionSignatureContext,
-  vote: VoteSignatureRecord
-): boolean {
+export function isVoteAuthentic(d: DecisionSignatureContext, vote: VoteSignatureRecord): boolean {
   if (!d.members.some((m) => m.userId === vote.userId)) return false;
   if (!vote.canonicalDigest || !vote.signature || !vote.publicKey) return false;
   // `signedAt` termasuk dalam payload kanonis; baris tanpa waktu tanda tangan
@@ -418,19 +425,34 @@ type Actor = { id: string; roleCode: string };
 type DbClient = Prisma.TransactionClient;
 
 /**
+ * Peran yang boleh MEM-FINALISASI keputusan organ MANA PUN.
+ *
+ * Pimpinan yayasan (dan Super Admin, yang mengelola sistem). Pengawas TIDAK
+ * termasuk: rute `FINALIZE` memuatnya supaya ia dapat menutup rapat organnya
+ * sendiri, tetapi service mensyaratkan keanggotaan snapshot — tanpa itu
+ * Pengawas dapat membereskan hasil rapat Pembina/Pengurus yang tidak pernah
+ * ia ikuti. Lihat `finalize`.
+ */
+const FOUNDATION_FINALIZE_ANY_ROLES: readonly string[] = [
+  'SUPER_ADMIN',
+  'YAYASAN_PEMBINA',
+  'YAYASAN_KETUA',
+  'YAYASAN_SEKRETARIS',
+];
+
+/**
  * Bentuk DTO verifikasi saat tidak ada yang dapat dinyatakan.
  *
  * Fungsi, bukan konstanta: sebuah objek yang dibagikan lalu disebar oleh
  * pemanggil akan tetap terlihat sama, tetapi nilai `null`-nya mudah tertukar
  * dengan "belum diperiksa" pada pemakaian berikutnya.
  */
-function emptyVerification(
-  reason: string | null = null
-): FoundationDecisionVerificationDTO {
+function emptyVerification(reason: string | null = null): FoundationDecisionVerificationDTO {
   return {
     found: false,
     isValid: false,
     decisionId: null,
+    publication: null,
     subject: null,
     organType: null,
     kind: null,
@@ -486,9 +508,7 @@ async function ensureSeal(client: DbClient = prisma): Promise<FoundationEseal> {
     where: { revokedAt: null },
     orderBy: { createdAt: 'asc' },
   });
-  const usable = candidates.find((seal) =>
-    sealCanSign(sealMaterial(seal), SEAL_PASSPHRASE)
-  );
+  const usable = candidates.find((seal) => sealCanSign(sealMaterial(seal), SEAL_PASSPHRASE));
   if (usable) return usable;
 
   // Tidak ada seal aktif yang dapat dipakai: setelah rotasi passphrase, seal
@@ -558,11 +578,7 @@ async function ensureSeal(client: DbClient = prisma): Promise<FoundationEseal> {
 
 /** Benarkah galat ini pelanggaran keunikan Prisma (P2002)? */
 function isUniqueConstraintError(err: unknown): boolean {
-  return (
-    typeof err === 'object' &&
-    err !== null &&
-    (err as { code?: unknown }).code === 'P2002'
-  );
+  return typeof err === 'object' && err !== null && (err as { code?: unknown }).code === 'P2002';
 }
 
 /**
@@ -860,8 +876,7 @@ export const FoundationDecisionService = {
     // baru diangkat setelah keputusan dibuat bukan bagian dari badan yang
     // memutus saat itu.
     const canVote =
-      d.status === FoundationDecisionStatus.VOTING &&
-      d.members.some((m) => m.userId === actor.id);
+      d.status === FoundationDecisionStatus.VOTING && d.members.some((m) => m.userId === actor.id);
     const mine = d.votes.find((v) => v.userId === actor.id);
     return this.toDetailDTO(d, snapshot, summary, canVote, mine?.choice ?? null, actor.id);
   },
@@ -1129,12 +1144,39 @@ export const FoundationDecisionService = {
     };
   },
 
-  /** Finalisasi manual oleh pimpinan/kepala rapat bila kuorum sudah tercapai. */
+  /**
+   * Finalisasi manual oleh pimpinan/kepala rapat.
+   *
+   * Finalisasi berarti **menutup** rapat/pemungutan: hasil dihitung SEKALI
+   * terhadap himpunan suara yang ada, dengan `closed: true`. Inilah satu-satunya
+   * cara sebuah RAPAT memperoleh hasil akhir — sebelumnya rapat menutup diri
+   * sendiri begitu peserta yang sedang hadir menyetujui, sehingga anggota yang
+   * datang kemudian ditolak dan hasil akhir bergantung pada urutan suara.
+   *
+   * Kuorum hadir tetap wajib: rapat yang belum memenuhi kuorum tidak dapat
+   * ditutup dengan hasil apa pun (`outcome === 'OPEN'` → ditolak). Setelah
+   * kuorum hadir terpenuhi, pemimpin rapat bebas menutupnya sebagai APPROVED
+   * atau REJECTED tanpa menunggu anggota yang absen — anggota absen tidak boleh
+   * membuat keputusan menggantung selamanya.
+   */
   async finalize(actor: Actor, decisionId: string) {
     const d = await this.loadWithRelations(decisionId);
+    // Rute `FINALIZE` juga terbuka bagi Pengawas supaya ia dapat menutup rapat
+    // organnya. Kewenangan itu diperketat DI SINI: selain pimpinan/Super Admin,
+    // finalizer hanya boleh menutup keputusan yang memuatnya sebagai anggota
+    // snapshot. Tanpa pemeriksaan ini, satu-satunya cara Pengawas memperoleh
+    // hak buka rapat organnya adalah dengan sekaligus memperoleh hak menutup
+    // rapat organ mana pun.
+    if (
+      !FOUNDATION_FINALIZE_ANY_ROLES.includes(actor.roleCode) &&
+      !d.members.some((m) => m.userId === actor.id)
+    ) {
+      throw Errors.forbidden('Anda tidak berhak menutup keputusan organ ini.');
+    }
     const previewEvaluation = evaluateQuorum(
       d.quorumSnapshot as unknown as QuorumSnapshot,
-      this.votesOf(d)
+      this.votesOf(d),
+      { closed: true }
     );
     // Sama seperti `castVote`: render PDF + e-seal disiapkan di luar kunci.
     let previewArtifact: ApprovalArtifact | null = null;
@@ -1154,15 +1196,18 @@ export const FoundationDecisionService = {
       const locked = lockedRow as unknown as RichDecision | null;
       if (!locked) throw Errors.notFound('Keputusan tidak ditemukan.');
       if (locked.status !== FoundationDecisionStatus.VOTING) {
-        throw Errors.badRequest(`Keputusan berstatus ${locked.status} dan tidak lagi menerima suara.`);
+        throw Errors.badRequest(
+          `Keputusan berstatus ${locked.status} dan tidak lagi menerima suara.`
+        );
       }
       const evaluation = evaluateQuorum(
         locked.quorumSnapshot as unknown as QuorumSnapshot,
-        this.votesOf(locked)
+        this.votesOf(locked),
+        { closed: true }
       );
       if (evaluation.outcome === 'OPEN') {
         throw Errors.badRequest(
-          `Kuorum belum terpenuhi (hadir ${evaluation.presentCount}/${evaluation.presentRequired}, butuh ${evaluation.neededToApprove} setuju lagi).`
+          `Kuorum belum terpenuhi (hadir ${evaluation.presentCount}/${evaluation.presentRequired}, butuh ${evaluation.neededToApprove} setuju lagi); rapat belum dapat ditutup.`
         );
       }
       const artifact =
@@ -1171,6 +1216,40 @@ export const FoundationDecisionService = {
           : null;
       return this.applyLocked(actor, locked, evaluation, tx, artifact ?? undefined);
     });
+  },
+
+  /**
+   * Ubah klasifikasi publikasi metadata (SUPER_ADMIN).
+   *
+   * Terpisah dari finalisasi dengan sengaja: memutuskan hasil rapat dan
+   * menerbitkan judul + rekap suaranya ke internet adalah dua keputusan yang
+   * berbeda. Dijalankan dengan `authenticate` + `authorize(SUPER_ADMIN)` di
+   * rute, dan setiap perubahan dicatat ke audit karena ia mengubah apa yang
+   * dapat dibaca publik.
+   */
+  async setPublication(
+    actor: Actor,
+    decisionId: string,
+    publication: FoundationDecisionPublication
+  ) {
+    await this.loadWithRelations(decisionId);
+    const at = new Date();
+    await prisma.$transaction(async (tx) => {
+      await tx.foundationDecision.update({
+        where: { id: decisionId },
+        data: { publication },
+      });
+      await tx.auditLog.create({
+        data: {
+          userId: actor.id,
+          action: 'UPDATE',
+          entity: 'FoundationDecision',
+          entityId: decisionId,
+          newValues: { publication },
+        },
+      });
+    });
+    return { id: decisionId, publication, updatedAt: at.toISOString() };
   },
 
   /**
@@ -1385,6 +1464,8 @@ export const FoundationDecisionService = {
       organType: string;
       kind: string;
       status: string;
+      /** Klasifikasi publikasi — menentukan apakah metadata ditampilkan. */
+      publication?: string;
       decidedAt: Date | null;
       finalPdfDigest: string | null;
       finalPdfSealSignature: string | null;
@@ -1476,24 +1557,45 @@ export const FoundationDecisionService = {
       reason = 'Keputusan ini belum memiliki arsip PDF yang di-e-seal.';
     }
 
+    /**
+     * Sensor metadata tata kelola untuk keputusan yang tidak diterbitkan.
+     *
+     * Endpoint ini anonim. `subject`/organ/tanggal/rekap suara dapat mengungkap
+     * personalia atau operasi internal ("Pemberhentian Sementara Pengurus X"),
+     * dan tautan ataupun berkas PDF dapat sampai ke tangan pihak luar tanpa
+     * persetujuan yayasan untuk mempublikasikan ISI-nya. Karena itu metadata
+     * hanya keluar bila keputusannya memang `PUBLIC`; bawaannya PRIVATE —
+     * fail closed, sehingga keputusan lama tidak membocorkan apa pun sampai
+     * seseorang sengaja menerbitkannya.
+     *
+     * Yang TIDAK disensor adalah bukti keabsahan: `isValid`, `digest`,
+     * `archiveDigest`, `digestOk`, `sealVerified`, `reason`, dan `decisionId`
+     * (referensi non-sensitif). Pemindai tetap dapat menjawab "dokumen ini sah?"
+     * — itulah satu-satunya pertanyaan yang halaman verifikasi publik janjikan.
+     */
+    const isPublic = d.publication === FoundationDecisionPublication.PUBLIC;
+
     return {
       found: true,
       isValid,
       decisionId: d.id,
-      subject: d.subject,
-      organType: d.organType as FoundationDecisionVerificationDTO['organType'],
-      kind: d.kind as FoundationDecisionVerificationDTO['kind'],
-      status: d.status as FoundationDecisionVerificationDTO['status'],
-      decidedAt: d.decidedAt ? d.decidedAt.toISOString() : null,
+      publication:
+        (d.publication as FoundationDecisionPublication | undefined) ??
+        FoundationDecisionPublication.PRIVATE,
+      subject: isPublic ? d.subject : null,
+      organType: isPublic ? (d.organType as FoundationDecisionVerificationDTO['organType']) : null,
+      kind: isPublic ? (d.kind as FoundationDecisionVerificationDTO['kind']) : null,
+      status: isPublic ? (d.status as FoundationDecisionVerificationDTO['status']) : null,
+      decidedAt: isPublic && d.decidedAt ? d.decidedAt.toISOString() : null,
       digest: d.finalPdfDigest,
       archiveDigest,
       digestOk,
       sealVerified,
       reason,
-      voteCount: authentic.length,
-      approveCount: authentic.filter((v) => v.choice === 'APPROVE').length,
-      rejectCount: authentic.filter((v) => v.choice === 'REJECT').length,
-      abstainCount: authentic.filter((v) => v.choice === 'ABSTAIN').length,
+      voteCount: isPublic ? authentic.length : 0,
+      approveCount: isPublic ? authentic.filter((v) => v.choice === 'APPROVE').length : 0,
+      rejectCount: isPublic ? authentic.filter((v) => v.choice === 'REJECT').length : 0,
+      abstainCount: isPublic ? authentic.filter((v) => v.choice === 'ABSTAIN').length : 0,
     };
   },
 
@@ -1525,6 +1627,7 @@ export const FoundationDecisionService = {
         organType: row.organType,
         kind: row.kind,
         status: row.status,
+        publication: row.publication,
         decidedAt: row.decidedAt,
         finalPdfDigest: row.finalPdfDigest,
         finalPdfSealSignature: row.finalPdfSealSignature,
@@ -1558,6 +1661,7 @@ export const FoundationDecisionService = {
       status: true,
       createdAt: true,
       quorumSnapshot: true,
+      publication: true,
       decidedAt: true,
       finalPdfDigest: true,
       finalPdfSealSignature: true,
@@ -1593,6 +1697,10 @@ export const FoundationDecisionService = {
         organType: d.organType,
         kind: d.kind,
         status: d.status,
+        // Tanpa baris ini publikasi tidak sampai ke inti verifikasi, sehingga
+        // keputusan yang sengaja diterbitkan tetap tampak PRIVATE di jalur
+        // unggahan — kontrak yang sama harus berlaku di kedua jalur.
+        publication: d.publication,
         decidedAt: d.decidedAt,
         finalPdfDigest: d.finalPdfDigest,
         finalPdfSealSignature: d.finalPdfSealSignature,
@@ -1708,6 +1816,7 @@ export const FoundationDecisionService = {
       voteSummary: summary,
       finalPdfDigest: d.finalPdfDigest ?? null,
       verificationToken: d.verificationToken ?? null,
+      publication: d.publication,
       decidedById: d.decidedById,
       decidedAt: d.decidedAt,
       createdAt: d.createdAt,

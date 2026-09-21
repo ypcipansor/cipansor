@@ -23,20 +23,46 @@ describe('organForDecisionType', () => {
   it('pemilihan pembina = GABUNGAN (ps. 28)', () => {
     expect(organForDecisionType('pemilihan-pembina')).toEqual(['GABUNGAN']);
   });
-  it('jenis tak dikenal jatuh ke Pembina (organ puncak)', () => {
-    expect(organForDecisionType('apa-pun')).toEqual(['PEMBINA']);
+
+  /**
+   * Regresi Flags–Investigation — typo `decisionType` mengubah authority
+   * secara diam-diam.
+   *
+   * Versi lama jatuh ke `?? umum`, sehingga SEMUA string tak dikenal menjadi
+   * kewenangan Pembina: satu salah ketik ("pengesahan-rancana-kerja") cukup
+   * untuk memindahkan keputusan milik Pengawas ke Pembina tanpa peringatan,
+   * dan matriks kewenangan yang justru menjadi jaminan legalnya tak pernah
+   * menolak apa pun. Sekarang unknown gagal TERTUTUP (`[]`), dan kategori
+   * umum tetap ada sebagai pilihan EKSPLISIT.
+   */
+  it('jenis tak dikenal DITOLAK (fail closed), bukan jatuh ke Pembina', () => {
+    expect(organForDecisionType('apa-pun')).toEqual([]);
+    expect(organForDecisionType('pengesahan-rancana-kerja')).toEqual([]);
+    expect(organForDecisionType('')).toEqual([]);
+  });
+
+  it('kategori umum tetap ada sebagai pilihan eksplisit untuk Pembina', () => {
+    expect(organForDecisionType('umum')).toEqual(['PEMBINA']);
   });
 });
 
 describe('organMayDecide', () => {
   it('Pengurus tidak boleh memutus hal kewenangan Pembina', () => {
-    expect(organMayDecide('PENGURUS', 'perubahan-anggaran-dasar', RoleCode.YAYASAN_ANGGOTA)).toBe(false);
+    expect(organMayDecide('PENGURUS', 'perubahan-anggaran-dasar', RoleCode.YAYASAN_ANGGOTA)).toBe(
+      false
+    );
   });
   it('Pembina boleh memutus kewenangannya sendiri', () => {
-    expect(organMayDecide('PEMBINA', 'perubahan-anggaran-dasar', RoleCode.YAYASAN_PEMBINA)).toBe(true);
+    expect(organMayDecide('PEMBINA', 'perubahan-anggaran-dasar', RoleCode.YAYASAN_PEMBINA)).toBe(
+      true
+    );
   });
   it('SUPER_ADMIN diizinkan membuat draf bila allowSuperAdmin', () => {
-    expect(organMayDecide('PENGURUS', 'keputusan-operasional', RoleCode.SUPER_ADMIN, { allowSuperAdmin: true })).toBe(true);
+    expect(
+      organMayDecide('PENGURUS', 'keputusan-operasional', RoleCode.SUPER_ADMIN, {
+        allowSuperAdmin: true,
+      })
+    ).toBe(true);
   });
   it('SUPER_ADMIN TIDAK otomatis boleh memberi suara (allowSuperAdmin default false)', () => {
     expect(organMayDecide('PEMBINA', 'perubahan-anggaran-dasar', RoleCode.SUPER_ADMIN)).toBe(false);

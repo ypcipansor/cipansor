@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
+  createFoundationDecisionSchema,
+  setFoundationDecisionPublicationSchema,
   upsertFoundationRuleSchema,
   finalizeFoundationDecisionSchema,
 } from '../foundation-decisions.schema';
@@ -92,5 +94,61 @@ describe('upsertFoundationRuleSchema — ambang kuorum wajib > 0', () => {
 describe('finalizeFoundationDecisionSchema', () => {
   it('menerima body kosong (otorisasi lewat peran, bukan passphrase)', () => {
     expect(finalizeFoundationDecisionSchema.safeParse({}).success).toBe(true);
+  });
+});
+
+/**
+ * Regresi Flags–Investigation — typo `decisionType` mengubah authority diam-diam.
+ *
+ * `decisionType` dulu string bebas: `"pengesahan-rancana-kerja"` lolos validasi
+ * di edge, lalu matriks kewenangan memetakannya (lewat fallback lama) ke organ
+ * Pembina. Sekarang ia `z.enum` kosakata bersama, sehingga typo ditolak
+ * SEBELUM service sempat memutuskan organ yang berwenang.
+ */
+describe('createFoundationDecisionSchema — decisionType terkontrol', () => {
+  const base = {
+    organType: 'PENGAWAS' as const,
+    kind: 'MEETING' as const,
+    subject: 'Pemberhentian sementara',
+    body: 'Naskah keputusan yang cukup panjang.',
+    decisionType: 'pemberhentian-sementara-pengurus',
+  };
+
+  it('menerima jenis yang ada di kosakata bersama', () => {
+    expect(createFoundationDecisionSchema.safeParse(base).success).toBe(true);
+  });
+
+  it('menolak typo jenis keputusan', () => {
+    const res = createFoundationDecisionSchema.safeParse({
+      ...base,
+      decisionType: 'pemberhentian-sementara-penguruz',
+    });
+    expect(res.success).toBe(false);
+  });
+
+  it('menolak jenis tak dikenal (bukan fallback ke Pembina)', () => {
+    const res = createFoundationDecisionSchema.safeParse({
+      ...base,
+      decisionType: 'apa-pun',
+    });
+    expect(res.success).toBe(false);
+  });
+});
+
+describe('setFoundationDecisionPublicationSchema', () => {
+  it('menerima PRIVATE dan PUBLIC', () => {
+    expect(
+      setFoundationDecisionPublicationSchema.safeParse({ publication: 'PRIVATE' }).success
+    ).toBe(true);
+    expect(
+      setFoundationDecisionPublicationSchema.safeParse({ publication: 'PUBLIC' }).success
+    ).toBe(true);
+  });
+
+  it('menolak nilai klasifikasi lain', () => {
+    expect(setFoundationDecisionPublicationSchema.safeParse({ publication: 'DRAFT' }).success).toBe(
+      false
+    );
+    expect(setFoundationDecisionPublicationSchema.safeParse({}).success).toBe(false);
   });
 });

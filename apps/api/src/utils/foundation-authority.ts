@@ -1,4 +1,6 @@
 import type { FoundationOrganType } from '@cipansor/shared';
+import { FOUNDATION_DECISION_TYPES } from '@cipansor/shared';
+import type { FoundationDecisionType } from '@cipansor/shared';
 import { RoleCode } from '@prisma/client';
 
 /**
@@ -14,24 +16,18 @@ import { RoleCode } from '@prisma/client';
  * dipertahankan di lapisan service (lihat foundation-decisions.service.ts).
  */
 
-/** Jenis keputusan yang dikenal. Nilai disimpan sebagai string label. */
-export type DecisionAuthorityKey =
-  | 'pengesahan-rencana-kerja'
-  | 'pengesahan-anggaran'
-  | 'perubahan-anggaran-dasar'
-  | 'pengangkatan-pengurus'
-  | 'pemberhentian-pengurus'
-  | 'pengangkatan-pengawas'
-  | 'pemberhentian-pengawas'
-  | 'penggabungan'
-  | 'pembubaran'
-  | 'peralihan-kekayaan'
-  | 'keputusan-operasional'
-  | 'kebijakan-internal'
-  | 'pemberhentian-sementara-pengurus'
-  | 'pemilihan-pembina'
-  | 'kegiatan-program'
-  | 'umum';
+/**
+ * Jenis keputusan yang dikenal. Nilai disimpan sebagai string label.
+ *
+ * Alias dari kosakata bersama `FOUNDATION_DECISION_TYPES` — bukan daftar kedua.
+ * Dua daftar yang seharusnya sama adalah bug yang menunggu waktu: matriks di
+ * bawah memetakan SETIAP jenis ke organnya, dan jenis yang lolos dari skema
+ * tetapi tak ada di sini akan jatuh ke cabang "umum" yang berwenang Pembina.
+ */
+export type DecisionAuthorityKey = FoundationDecisionType;
+
+/** Jenis keputusan yang dikenal, sebagai himpunan untuk penolakan eksplisit. */
+const KNOWN_DECISION_TYPES: ReadonlySet<string> = new Set(FOUNDATION_DECISION_TYPES);
 
 /** Organ yang berwenang atas tiap jenis keputusan. */
 export const DECISION_AUTHORITY: Record<DecisionAuthorityKey, FoundationOrganType[]> = {
@@ -58,9 +54,15 @@ export const DECISION_AUTHORITY: Record<DecisionAuthorityKey, FoundationOrganTyp
   umum: ['PEMBINA'],
 };
 
-/** Organ yang berwenang atas sebuah `decisionType`; default ke Pembina. */
+/** Organ yang berwenang atas sebuah `decisionType`, atau `[]` bila tak dikenal. */
 export function organForDecisionType(decisionType: string): FoundationOrganType[] {
-  return DECISION_AUTHORITY[decisionType as DecisionAuthorityKey] ?? DECISION_AUTHORITY.umum;
+  // Fail closed untuk jenis tak dikenal. Fallback lama (`?? umum`) menjadikan
+  // Pembina organ yang berwenang atas SEMUA string — satu salah ketik
+  // ("pengesahan-rancana-kerja") membuat keputusan milik Pengawas berubah
+  // menjadi keputusan Pembina tanpa peringatan. Kategori umum tetap ada, tetapi
+  // sebagai pilihan EKSPLISIT ('umum'), bukan jaring penampung untuk apa pun.
+  if (!KNOWN_DECISION_TYPES.has(decisionType)) return [];
+  return DECISION_AUTHORITY[decisionType as DecisionAuthorityKey];
 }
 
 /**

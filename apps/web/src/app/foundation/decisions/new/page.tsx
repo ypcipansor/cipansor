@@ -6,6 +6,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   createFoundationDecisionSchema,
+  FOUNDATION_DECISION_TYPES,
   type CreateFoundationDecisionInput,
 } from "@cipansor/shared";
 import { MainLayout } from "@/components/layout";
@@ -55,7 +56,7 @@ export default function NewFoundationDecisionPage() {
       organType: "PEMBINA",
       kind: "CIRCULAR",
       subject: "",
-      decisionType: "",
+      decisionType: "pengesahan-rencana-kerja",
       body: "",
     },
   });
@@ -149,10 +150,29 @@ export default function NewFoundationDecisionPage() {
 
             <div className="space-y-1.5">
               <Label>Jenis Keputusan</Label>
-              <Input
-                placeholder="mis. pengesahan-rencana-kerja"
-                {...register("decisionType")}
-              />
+              {/* Kosakata terkendali dari @cipansor/shared: jenis tak dikenal
+                  dulu jatuh diam-diam ke kewenangan Pembina, sehingga satu
+                  salah ketik memindahkan keputusan ke organ yang salah.
+                  Memilih dari daftar menutup celah itu di sisi UI. */}
+              <Select
+                value={watch("decisionType") || undefined}
+                onValueChange={(v) =>
+                  setValue("decisionType", v as FormValues["decisionType"], {
+                    shouldValidate: true,
+                  })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Pilih jenis keputusan" />
+                </SelectTrigger>
+                <SelectContent>
+                  {FOUNDATION_DECISION_TYPES.map((t) => (
+                    <SelectItem key={t} value={t}>
+                      {t}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               {errors.decisionType && (
                 <p className="text-xs text-destructive">
                   {errors.decisionType.message}

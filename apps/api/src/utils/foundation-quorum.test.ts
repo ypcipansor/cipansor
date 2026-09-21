@@ -60,17 +60,11 @@ describe('evaluateQuorum — CIRCULAR (mufakat 100% aktif)', () => {
     expect(e.approvedCount).toBe(5);
   });
   it('dissent (REJECT) membuat sirkuler gugur walau sisanya setuju', () => {
-    const e = evaluateQuorum(
-      circ,
-      votes(['APPROVE', 'APPROVE', 'APPROVE', 'APPROVE', 'REJECT'])
-    );
+    const e = evaluateQuorum(circ, votes(['APPROVE', 'APPROVE', 'APPROVE', 'APPROVE', 'REJECT']));
     expect(e.outcome).toBe('REJECTED');
   });
   it('ABSTAIN pada sirkuler juga mematikan mufakat', () => {
-    const e = evaluateQuorum(
-      circ,
-      votes(['APPROVE', 'APPROVE', 'APPROVE', 'APPROVE', 'ABSTAIN'])
-    );
+    const e = evaluateQuorum(circ, votes(['APPROVE', 'APPROVE', 'APPROVE', 'APPROVE', 'ABSTAIN']));
     expect(e.outcome).toBe('REJECTED');
   });
 
@@ -145,29 +139,97 @@ describe('evaluateQuorum — MEETING (hadir >½, sah mayoritas hadir)', () => {
     expect(e.presentMet).toBe(false);
     expect(e.outcome).toBe('OPEN');
   });
-  it('sah bila hadir ≥½ dan mayoritas hadir setuju', () => {
-    const e = evaluateQuorum(meeting, votes(['APPROVE', 'APPROVE', 'APPROVE', 'REJECT', 'ABSTAIN']));
+
+  /**
+   * Regresi BUG SEVERE — hasil rapat bergantung pada urutan suara.
+   *
+   * Versi lama mengevaluasi ambang terhadap `presentCount` saat itu dan
+   * mengembalikan APPROVED begitu peserta yang SEDANG hadir menyetujui. Dua
+   * orang yang membuka rapat lalu setuju langsung mengesahkannya; anggota
+   * ketiga yang datang kemudian ditolak karena statusnya sudah bukan VOTING.
+   * Urutan suara mengubah hasil akhir — pelanggaran invarian paling dasar.
+   *
+   * Sekarang rapat yang BELUM ditutup tidak pernah punya hasil akhir: apa pun
+   * suaranya, selama `closed` belum true, outcome adalah OPEN.
+   */
+  it('TIDAK pernah APPROVED sebelum rapat ditutup, walau kuorum hadir & setuju tercapai', () => {
+    const e = evaluateQuorum(
+      meeting,
+      votes(['APPROVE', 'APPROVE', 'APPROVE', 'REJECT', 'ABSTAIN'])
+    );
     expect(e.presentMet).toBe(true);
     expect(e.decisionMet).toBe(true);
+    expect(e.outcome).toBe('OPEN');
+  });
+
+  it('APPROVED hanya setelah ditutup (closed: true)', () => {
+    const e = evaluateQuorum(
+      meeting,
+      votes(['APPROVE', 'APPROVE', 'APPROVE', 'REJECT', 'ABSTAIN']),
+      { closed: true }
+    );
     expect(e.outcome).toBe('APPROVED');
   });
+
   it('tetap terbuka bila kuorum hadir tercapai tetapi setuju belum mayoritas dan masih ada anggota yang belum bersuara', () => {
-    // 4 dari 5 hadir, baru 1 setuju. Kuorum hadir tercapai, tetapi anggota
-    // kelima yang berhak masih bisa hadir & menyetujui — jadi belum boleh
-    // ditolak. Inilah regresi tautologi `presentCount === decisionPool`.
+    // 4 dari 5 hadir, baru 1 setuju. Anggota kelima yang berhak masih bisa
+    // hadir & menyetujui — jadi belum boleh ditolak.
     const e = evaluateQuorum(meeting, votes(['APPROVE', 'REJECT', 'REJECT', 'ABSTAIN']));
     expect(e.presentMet).toBe(true); // 4 dari 5 hadir
     expect(e.decisionMet).toBe(false);
     expect(e.outcome).toBe('OPEN');
   });
-  it('ditolak hanya ketika SELURUH anggota aktif sudah bersuara dan setuju tak sampai mayoritas', () => {
-    const e = evaluateQuorum(
-      meeting,
-      votes(['APPROVE', 'REJECT', 'REJECT', 'ABSTAIN', 'REJECT'])
-    );
+
+  /**
+   * Regresi BUG SEVERE — rapat yang DITOLAK menggantung selamanya.
+   *
+   * Rapat yang kuorum tetapi gagal mencapai approval tidak boleh menunggu
+   * seluruh anggota aktif memilih agar dapat ditutup sebagai REJECTED: anggota
+   * yang absen akan membuat keputusan tak pernah selesai. Penutupan manual
+   * (`closed: true`) menyelesaikannya — pemimpin rapat menutup dengan hasil apa
+   * pun yang sudah sah, tanpa menunggu yang absen.
+   */
+  it('DITUTUP sebagai REJECTED tanpa menunggu seluruh anggota aktif bersuara', () => {
+    const e = evaluateQuorum(meeting, votes(['APPROVE', 'REJECT', 'REJECT', 'ABSTAIN']), {
+      closed: true,
+    });
     expect(e.presentMet).toBe(true);
     expect(e.decisionMet).toBe(false);
     expect(e.outcome).toBe('REJECTED');
+  });
+
+  it('rapat yang BELUM memenuhi kuorum hadir tidak dapat ditutup sebagai hasil apa pun', () => {
+    // 1 dari 5 hadir, ditutup paksa → bukan APPROVED/REJECTED, tetap OPEN
+    // sehingga `finalize` menolaknya.
+    const e = evaluateQuorum(meeting, votes(['APPROVE']), { closed: true });
+    expect(e.presentMet).toBe(false);
+    expect(e.outcome).toBe('OPEN');
+  });
+
+  /**
+   * Invarian urutan: permutasi himpunan suara yang SAMA menghasilkan outcome
+   * akhir yang sama, baik saat masih terbuka maupun setelah ditutup.
+   */
+  it('outcome tidak bergantung pada urutan suara (property)', () => {
+    const combo: Array<QuorumVoteInput['choice']> = ['APPROVE', 'REJECT', 'APPROVE', 'ABSTAIN'];
+    const perms: Array<Array<QuorumVoteInput['choice']>> = [];
+    const permute = (rest: typeof combo, cur: typeof combo) => {
+      if (rest.length === 0) {
+        perms.push([...cur]);
+        return;
+      }
+      for (let i = 0; i < rest.length; i++) {
+        permute([...rest.slice(0, i), ...rest.slice(i + 1)], [...cur, rest[i]]);
+      }
+    };
+    permute(combo, []);
+
+    const open = new Set(perms.map((p) => evaluateQuorum(meeting, votes(p)).outcome));
+    const closed = new Set(
+      perms.map((p) => evaluateQuorum(meeting, votes(p), { closed: true }).outcome)
+    );
+    expect(open.size).toBe(1);
+    expect(closed.size).toBe(1);
   });
 });
 
@@ -181,7 +243,9 @@ describe('evaluateQuorum — MEETING dengan ambang hadir 2/3 & keputusan mayorit
   });
   it('butuh ≥2/3 hadir, lalu mayoritas hadir setuju untuk APPROVED', () => {
     // 4 dari 5 hadir (approved 4) → present 4 >= ceil(5*2/3)=4; decision mayoritas(4)=3; 4>=3
-    const e = evaluateQuorum(rule, votes(['APPROVE', 'APPROVE', 'APPROVE', 'APPROVE']));
+    const e = evaluateQuorum(rule, votes(['APPROVE', 'APPROVE', 'APPROVE', 'APPROVE']), {
+      closed: true,
+    });
     expect(e.presentMet).toBe(true);
     expect(e.decisionMet).toBe(true);
     expect(e.outcome).toBe('APPROVED');

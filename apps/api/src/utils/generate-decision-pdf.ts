@@ -152,6 +152,17 @@ export function membersWithoutVote(
 /**
  * Pecah teks menjadi baris yang lebarnya tidak melebihi `maxWidth`.
  *
+ * **Struktur naskah dipertahankan.** Naskah keputusan/notulen adalah teks
+ * berparagraf: hard line break, baris kosong pemisah paragraf, dan penanda
+ * daftar (`-`, `•`, `1.`) adalah bagian dari maknanya. Versi sebelumnya
+ * memecah dengan `/\s+/` dan menyambung ulang dengan spasi, sehingga seluruh
+ * paragraf dan daftar runtuh menjadi satu blok — arsip permanen yang di-e-seal
+ * kehilangan struktur yang ditulis penandatangannya. Di sini setiap baris
+ * logis dibungkus SENDIRI; baris kosong menjadi elemen `''` (pemisah paragraf),
+ * dan penanda daftar tetap di awal barisnya.
+ *
+ * Pembungkusan VISUAL per baris tetap dilakukan, jadi teks panjang tak meluber.
+ *
  * Satu kata yang lebih lebar dari `maxWidth` TIDAK boleh dibiarkan utuh:
  * `widthOfTextAtSize` untuk kata sepanjang itu melebihi lebar halaman, dan
  * pdf-lib menggambar baris apa adanya tanpa membungkusnya — teksnya meluber
@@ -167,55 +178,67 @@ export function membersWithoutVote(
  * code point yang tetap aman untuk surrogate pair.
  *
  * Diekspor agar dapat diuji langsung: yang perlu dikunci adalah "setiap baris
- * muat", dan sifat itu tidak dapat diperiksa dari byte PDF (pdf-lib tidak
- * menyediakan pembacaan teks).
+ * muat" DAN "struktur tidak berubah", dan sifat itu tidak dapat diperiksa dari
+ * byte PDF (pdf-lib tidak menyediakan pembacaan teks).
  */
-export function wrap(
-  font: PDFFont,
-  size: number,
-  text: string,
-  maxWidth: number
-): string[] {
+export function wrap(font: PDFFont, size: number, text: string, maxWidth: number): string[] {
   const lines: string[] = [];
-  const words = text.split(/\s+/).filter((w) => w.length > 0);
-  let cur = '';
-  for (const word of words) {
-    const trial = cur ? `${cur} ${word}` : word;
-    if (font.widthOfTextAtSize(trial, size) <= maxWidth) {
-      cur = trial;
+  for (const logical of text.split(/\r\n|\r|\n/)) {
+    const words = logical.split(/[^\S\n]+/).filter((w) => w.length > 0);
+    if (words.length === 0) {
+      // Baris kosong: pemisah paragraf/daftar. Pertahankan sebagai elemen
+      // kosong, bukan dibuang — membuangnya menyatukan dua paragraf. Baris
+      // kosong beruntun runtuh jadi satu, dan yang di ujung dibuang nanti.
+      if (lines.length > 0 && lines[lines.length - 1] !== '') lines.push('');
       continue;
     }
-    if (cur) {
-      lines.push(cur);
-      cur = '';
-    }
-    if (font.widthOfTextAtSize(word, size) <= maxWidth) {
-      cur = word;
-      continue;
-    }
-    // Kata itu sendiri lebih lebar dari satu baris: pecah per grapheme.
-    let chunk = '';
-    for (const cluster of graphemeClusters(word)) {
-      const next = chunk + cluster;
-      // `chunk` kosong berarti satu cluster pun sudah melebihi lebar baris;
-      // tetap dimasukkan agar pemecahan tidak berputar tanpa henti.
-      if (chunk && font.widthOfTextAtSize(next, size) > maxWidth) {
-        lines.push(chunk);
-        chunk = cluster;
-      } else {
-        chunk = next;
+    let cur = '';
+    for (const word of words) {
+      const trial = cur ? `${cur} ${word}` : word;
+      if (font.widthOfTextAtSize(trial, size) <= maxWidth) {
+        cur = trial;
+        continue;
       }
+      if (cur) {
+        lines.push(cur);
+        cur = '';
+      }
+      if (font.widthOfTextAtSize(word, size) <= maxWidth) {
+        cur = word;
+        continue;
+      }
+      // Kata itu sendiri lebih lebar dari satu baris: pecah per grapheme.
+      let chunk = '';
+      for (const cluster of graphemeClusters(word)) {
+        const next = chunk + cluster;
+        // `chunk` kosong berarti satu cluster pun sudah melebihi lebar baris;
+        // tetap dimasukkan agar pemecahan tidak berputar tanpa henti.
+        if (chunk && font.widthOfTextAtSize(next, size) > maxWidth) {
+          lines.push(chunk);
+          chunk = cluster;
+        } else {
+          chunk = next;
+        }
+      }
+      cur = chunk;
     }
-    cur = chunk;
+    if (cur) lines.push(cur);
   }
-  if (cur) lines.push(cur);
+  // Baris kosong yang tersisa di ujung adalah sisa line break akhir naskah,
+  // bukan pemisah paragraf — jangan menggambar jarak kosong di ujung halaman.
+  while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
   return lines;
 }
 
 /** Grapheme cluster dari sebuah kata, dengan fallback code point. */
 function graphemeClusters(word: string): string[] {
   const Segmenter = (
-    Intl as unknown as { Segmenter?: new (locale?: string, opts?: object) => { segment(s: string): Iterable<{ segment: string }> } }
+    Intl as unknown as {
+      Segmenter?: new (
+        locale?: string,
+        opts?: object
+      ) => { segment(s: string): Iterable<{ segment: string }> };
+    }
   ).Segmenter;
   if (Segmenter) {
     return [...new Segmenter('id', { granularity: 'grapheme' }).segment(word)].map(
@@ -275,16 +298,13 @@ export async function generateDecisionPdf(data: DecisionPdfData): Promise<Buffer
   let page = pdfDoc.addPage([pageW, 842]); // A4 portrait
   const unicodeFont = await embedUnicodeFont(pdfDoc);
   const keepUnicode = unicodeFont !== null;
-  const font =
-    unicodeFont ?? (await pdfDoc.embedFont(StandardFonts.Helvetica));
-  const bold =
-    unicodeFont ?? (await pdfDoc.embedFont(StandardFonts.HelveticaBold));
+  const font = unicodeFont ?? (await pdfDoc.embedFont(StandardFonts.Helvetica));
+  const bold = unicodeFont ?? (await pdfDoc.embedFont(StandardFonts.HelveticaBold));
 
   // Setiap teks yang akan digambar/disusun melewati ini. Ketika font Unicode
   // tidak dapat dimuat, aksara asing diganti supaya `drawText` tidak melempar;
   // ketika tersedia, teksnya dibiarkan apa adanya agar Arab/emoji ikut tercetak.
-  const safe = (txt: string): string =>
-    keepUnicode ? txt : sanitizeForFallbackFont(txt);
+  const safe = (txt: string): string => (keepUnicode ? txt : sanitizeForFallbackFont(txt));
 
   let y = 800;
   const lineHeight = 14;
@@ -307,7 +327,10 @@ export async function generateDecisionPdf(data: DecisionPdfData): Promise<Buffer
   const paragraph = (txt: string, size = 11, gap = 6) => {
     for (const line of wrap(font, size, safe(txt), contentW)) {
       ensureSpace(lineHeight);
-      page.drawText(line, { x: margin, y, size, font, color: rgb(0.05, 0.05, 0.05) });
+      // Baris kosong adalah pemisah paragraf: cukup majukan `y`, jangan gambar.
+      if (line) {
+        page.drawText(line, { x: margin, y, size, font, color: rgb(0.05, 0.05, 0.05) });
+      }
       y -= size + 3;
     }
     y -= gap;
@@ -407,9 +430,7 @@ export async function generateDecisionPdf(data: DecisionPdfData): Promise<Buffer
    * dipegang pembaca. Koreksi galat H dipakai agar lambang yayasan boleh
    * menutupi tengahnya tanpa membuat kode gagal dibaca.
    */
-  const qrPayload = data.verificationUrl
-    ? verificationQrPayload(data.verificationUrl)
-    : null;
+  const qrPayload = data.verificationUrl ? verificationQrPayload(data.verificationUrl) : null;
   if (qrPayload) {
     const qrPage = pdfDoc.addPage([pageW, 842]);
     const qrSize = 150;

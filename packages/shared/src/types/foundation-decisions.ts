@@ -22,6 +22,66 @@ export type FoundationDecisionKind =
   (typeof FoundationDecisionKind)[keyof typeof FoundationDecisionKind];
 export const FOUNDATION_DECISION_KINDS = Object.values(FoundationDecisionKind);
 
+/**
+ * Kosakata TERKENDALI untuk `decisionType`.
+ *
+ * Nilai-nilai ini bukan sekadar label: matriks kewenangan organ
+ * (`DECISION_AUTHORITY`) memetakan setiap jenis ke organ yang berwenang, dan
+ * `umum` adalah satu-satunya kategori sengaja yang boleh diputus Pembina.
+ *
+ * Sebelumnya skema menerima string bebas, dan jenis tak dikenal jatuh DIAM-DIAM
+ * ke kewenangan Pembina lewat fallback `?? umum`. Satu salah ketik
+ * ("pengesahan-rancana-kerja") cukup untuk memindahkan keputusan ke organ yang
+ * salah tanpa satu pun peringatan — dan matriks kewenangan yang justru menjadi
+ * jaminan legalnya tak pernah menolak apa pun. Karena itu jenisnya kini
+ * diaudit di sini, dan setiap pemakaian (skema, matriks, form web) mengambil
+ * daftar yang sama.
+ */
+export const FOUNDATION_DECISION_TYPES = [
+  "pengesahan-rencana-kerja",
+  "pengesahan-anggaran",
+  "perubahan-anggaran-dasar",
+  "pengangkatan-pengurus",
+  "pemberhentian-pengurus",
+  "pengangkatan-pengawas",
+  "pemberhentian-pengawas",
+  "penggabungan",
+  "pembubaran",
+  "peralihan-kekayaan",
+  "keputusan-operasional",
+  "kebijakan-internal",
+  "pemberhentian-sementara-pengurus",
+  "pemilihan-pembina",
+  "kegiatan-program",
+  "umum",
+] as const;
+export type FoundationDecisionType = (typeof FOUNDATION_DECISION_TYPES)[number];
+
+/**
+ * Klasifikasi publikasi metadata keputusan.
+ *
+ * Endpoint verifikasi (`GET /foundation/verify`, `POST /foundation/verify-pdf`)
+ * terbuka untuk anonim. Sebelum ini ia mengembalikan subject, organ, tanggal,
+ * dan rekap suara tanpa syarat — padahal keputusan yayasan dapat menyangkut
+ * personalia atau operasi internal yang tidak untuk dibaca siapa pun yang
+ * menemukan token/berkasnya. Judul rapat "Pemberhentian Sementara Pengurus X"
+ * yang bocor ke pihak luar bukan kebocoran yang dapat ditarik kembali.
+ *
+ * Karena itu metadata sensitif hanya ditampilkan bila keputusan memang
+ * diterbitkan untuk publik. Bawaannya PRIVATE — fail closed: keputusan lama
+ * (dan setiap keputusan baru) tetap tidak membocorkan apa pun sampai seseorang
+ * sengaja menyatakannya publik.
+ */
+export const FoundationDecisionPublication = {
+  PRIVATE: "PRIVATE",
+  PUBLIC: "PUBLIC",
+} as const;
+export type FoundationDecisionPublication =
+  (typeof FoundationDecisionPublication)[keyof typeof FoundationDecisionPublication];
+export const FOUNDATION_DECISION_PUBLICATIONS = Object.values(
+  FoundationDecisionPublication,
+);
+
 export const FoundationDecisionStatus = {
   DRAFT: "DRAFT",
   VOTING: "VOTING",
@@ -67,7 +127,10 @@ export const FOUNDATION_QUORUM_MODES = Object.values(FoundationQuorumMode);
  * API (`requiredCount`) maupun saat menyimpan aturan (skema menolak nilai yang
  * menyimpang).
  */
-export const FOUNDATION_QUORUM_MODE_VALUE: Record<FoundationQuorumMode, number> = {
+export const FOUNDATION_QUORUM_MODE_VALUE: Record<
+  FoundationQuorumMode,
+  number
+> = {
   MAJORITY: 0.5,
   TWO_THIRDS: 2 / 3,
   THREE_QUARTERS: 3 / 4,
@@ -172,6 +235,11 @@ export interface FoundationDecisionSummaryDTO {
 /** Detail keputusan untuk halaman detail / verifikasi. */
 export interface FoundationDecisionDetailDTO extends FoundationDecisionSummaryDTO {
   body: string;
+  /**
+   * Klasifikasi publikasi metadata pada endpoint verifikasi anonim.
+   * Bawaannya PRIVATE; hanya SUPER_ADMIN yang dapat mengubahnya.
+   */
+  publication: FoundationDecisionPublication;
   members: DecisionMemberDTO[];
   votes: DecisionVoteDTO[];
   decidedByName: string | null;
@@ -186,8 +254,16 @@ export interface FoundationDecisionDetailDTO extends FoundationDecisionSummaryDT
  * **Tidak memuat roster anggota.** Endpoint verifikasi terbuka untuk anonim
  * (pemindai QR, dinas luar), dan daftar nama + jabatan seluruh Pembina/
  * Pengurus/Pengawas adalah data tata kelola yang tidak dibutuhkan untuk
- * menjawab "dokumen ini sah?". Yang ditampilkan hanyalah angka rekap suara,
- * yang memang membuktikan kuorum terpenuhi tanpa menyebut siapa pun.
+ * menjawab "dokumen ini sah?".
+ *
+ * **Metadata tata kelola hanya ditampilkan untuk keputusan yang memang
+ * diterbitkan.** `subject`, `organType`, `kind`, `decidedAt`, dan angka rekap
+ * suara dapat mengungkap personalia/operasi internal (mis. "Pemberhentian
+ * Sementara Pengurus X"). Karena itu server menyensor semuanya untuk keputusan
+ * `PRIVATE` (bawaan), dan hanya menyisakan status keabsahan (`isValid`,
+ * `digestOk`, `sealVerified`, `digest`, `archiveDigest`, `reason`,
+ * `decisionId`). Field itu tetap ada di bentuk DTO (bernilai `null`/nol) supaya
+ * klien tidak perlu menebak bentuk, tetapi isinya tidak pernah sensitif.
  */
 export interface FoundationDecisionVerificationDTO {
   found: boolean;
@@ -202,6 +278,12 @@ export interface FoundationDecisionVerificationDTO {
    */
   isValid: boolean;
   decisionId: string | null;
+  /**
+   * Klasifikasi publikasi keputusan. `PRIVATE` (bawaan) menyensor field
+   * tata kelola di bawah; `PUBLIC` menampilkannya. Field ini sendiri tidak
+   * sensitif dan selalu diisi bila `found` bernilai true.
+   */
+  publication: FoundationDecisionPublication | null;
   subject: string | null;
   organType: FoundationOrganType | null;
   kind: FoundationDecisionKind | null;
@@ -219,6 +301,10 @@ export interface FoundationDecisionVerificationDTO {
   sealVerified: boolean | null;
   /** Kalimat sebab saat tidak sah, untuk dibaca pengunjung. */
   reason: string | null;
+  /**
+   * Rekap suara hanya untuk keputusan `PUBLIC`; `0` bila disensor.
+   * Keabsahan dokumen tetap dapat dibuktikan tanpa angka-angka ini.
+   */
   voteCount: number;
   approveCount: number;
   rejectCount: number;

@@ -18,6 +18,12 @@ import { createPrismaClient } from '../../../../prisma/client';
 import { createSealMaterial, sealCanSign } from '@/utils/foundation-eseal';
 import { foundationDecisionListWhere } from '@/utils/foundation-decision-access';
 import { selectSnapshotAssignments } from '@/utils/foundation-authority';
+import {
+  isVoteAuthentic,
+  canonicalDigestForVote,
+} from '@/modules/foundation-decisions/foundation-decisions.service';
+import { createKeyMaterial, publicKeyFingerprint, signPdfHash } from '@/utils/esign';
+import { supersedeSigningKeyHistory, revokeSigningKeyHistory } from '@/utils/signing-key-history';
 import type { PrismaClient } from '@prisma/client';
 
 const RUN = process.env.RUN_DB_TESTS === '1';
@@ -497,6 +503,133 @@ describe.skipIf(!RUN)('foundation-decisions integrasi PostgreSQL', () => {
     expect(collapsed[0].roleCode).toBe('YAYASAN_BENDAHARA');
 
     await prisma.userRoleAssignment.deleteMany({ where: { userId: user.id } });
+    await prisma.user.delete({ where: { id: user.id } });
+  });
+
+  /**
+   * Flags–Investigation #7 — daur hidup `UserSigningKeyHistory` ditulis, dan
+   * suara historis tetap terverifikasi setelah kunci digantikan/dicabut.
+   *
+   * Tidak dapat dibuktikan dengan mock: yang diuji adalah baris NYATA di
+   * `user_signing_key_history` yang di-`UPDATE` oleh jalur supersede/revoke,
+   * dan verifikasi tanda tangan Ed25519 atas digest kanonis lewat rekaman
+   * riwayat itu — bukan sekadar bahwa sebuah fungsi mock dipanggil.
+   */
+  it('daur hidup kunci: supersede/revoke menstempel riwayat, suara lama tetap sah', async () => {
+    const suffix = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const PASS = 'integrasi-passphrase-2026';
+    const material = createKeyMaterial(PASS);
+    const user = await prisma.user.create({
+      data: {
+        id: `itest-key-${suffix}`,
+        email: `itest-key-${suffix}@example.test`,
+        name: 'Pemilik Kunci Integrasi',
+        passwordHash: 'x',
+      },
+    });
+    const fingerprint = publicKeyFingerprint(material.publicKey);
+    const history = await prisma.userSigningKeyHistory.create({
+      data: {
+        id: `itest-kh-${suffix}`,
+        userId: user.id,
+        algorithm: material.algorithm,
+        publicKey: material.publicKey,
+        fingerprint,
+      },
+    });
+    const decision = await prisma.foundationDecision.create({
+      data: {
+        id: `itest-kd-${suffix}`,
+        organType: 'PEMBINA',
+        kind: 'MEETING',
+        status: 'VOTING',
+        subject: 'Integrasi daur hidup kunci',
+        body: 'Isi keputusan yang cukup panjang.',
+        decisionType: 'umum',
+        quorumSnapshot: { activeCount: 1, kind: 'MEETING' } as never,
+        voteSummary: {} as never,
+        createdById: user.id,
+      },
+    });
+    await prisma.foundationDecisionMember.create({
+      data: {
+        id: `itest-km-${suffix}`,
+        decisionId: decision.id,
+        userId: user.id,
+        roleCode: 'YAYASAN_PEMBINA',
+        name: user.name,
+      },
+    });
+
+    const signedAt = new Date();
+    const digest = canonicalDigestForVote(
+      { ...decision, members: [{ userId: user.id }] } as never,
+      { userId: user.id, choice: 'APPROVE', signedAt }
+    );
+    const vote = await prisma.foundationDecisionVote.create({
+      data: {
+        id: `itest-kv-${suffix}`,
+        decisionId: decision.id,
+        userId: user.id,
+        choice: 'APPROVE',
+        canonicalDigest: digest,
+        signature: signPdfHash(material, PASS, digest),
+        publicKey: material.publicKey,
+        algorithm: material.algorithm,
+        signedAt,
+        signingKeyId: history.id,
+        publicKeyFingerprint: fingerprint,
+      },
+      include: { signingKey: true },
+    });
+
+    const context = {
+      ...decision,
+      members: [{ userId: user.id }],
+    };
+    expect(
+      isVoteAuthentic(context as never, { ...vote, signingKey: vote.signingKey } as never)
+    ).toBe(true);
+
+    // Kunci digantikan: riwayatnya distempel, bukan dihapus.
+    await supersedeSigningKeyHistory(prisma, {
+      userId: user.id,
+      publicKey: material.publicKey,
+    });
+    const superseded = await prisma.userSigningKeyHistory.findUnique({
+      where: { id: history.id },
+    });
+    expect(superseded?.supersededAt).toBeInstanceOf(Date);
+
+    // Kunci dicabut: `revokedAt` pula, tanpa menghapus `supersededAt`.
+    const revokedAt = new Date(Date.now() + 1000);
+    await revokeSigningKeyHistory(
+      prisma,
+      { userId: user.id, publicKey: material.publicKey },
+      revokedAt
+    );
+    const revoked = await prisma.userSigningKeyHistory.findUnique({
+      where: { id: history.id },
+    });
+    expect(revoked?.revokedAt?.getTime()).toBe(revokedAt.getTime());
+    expect(revoked?.supersededAt).toBeInstanceOf(Date);
+
+    // Suara yang sudah sah TETAP terverifikasi lewat kunci publik lamanya.
+    const reloadedVote = await prisma.foundationDecisionVote.findUnique({
+      where: { id: vote.id },
+      include: { signingKey: true },
+    });
+    expect(
+      isVoteAuthentic(
+        context as never,
+        { ...reloadedVote!, signingKey: reloadedVote!.signingKey } as never
+      )
+    ).toBe(true);
+
+    await prisma.foundationDecisionVote.deleteMany({ where: { decisionId: decision.id } });
+    await prisma.foundationDecisionMember.deleteMany({ where: { decisionId: decision.id } });
+    await prisma.foundationDecision.delete({ where: { id: decision.id } });
+    await prisma.userSigningKeyHistory.delete({ where: { id: history.id } });
     await prisma.user.delete({ where: { id: user.id } });
   });
 });

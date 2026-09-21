@@ -62,6 +62,22 @@ export const FoundationDecisionController = {
     return res.json(ApiResponse.success(result, 'Keputusan difinalisasi.'));
   },
 
+  /**
+   * Ubah klasifikasi publikasi metadata (SUPER_ADMIN).
+   *
+   * Ini yang membuka penyensoran verifikasi anonim: selama PRIVATE (bawaan),
+   * endpoint verifikasi publik hanya menyatakan keabsahan, tanpa membocorkan
+   * subject/organ/tanggal/rekap suara.
+   */
+  async setPublication(req: Request, res: Response) {
+    const result = await FoundationDecisionService.setPublication(
+      { id: req.user!.id, roleCode: req.user!.roleCode },
+      req.params.id,
+      req.body.publication
+    );
+    return res.json(ApiResponse.success(result, 'Klasifikasi publikasi keputusan diperbarui.'));
+  },
+
   /** Daftar aturan kuorum (SUPER_ADMIN). */
   async listRules(_req: Request, res: Response) {
     const result = await FoundationDecisionService.listRules();

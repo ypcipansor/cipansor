@@ -66,29 +66,62 @@ export function yayasanOrganConflict(
 }
 
 /**
- * Peran yang boleh MENULIS keputusan organ: membuat, finalisasi, dan (untuk
- * aturan kuorum) mengubah konfigurasi.
+ * Peran yang boleh MEMBUAT keputusan organ, dan yang boleh MEM-FINALISASI-nya.
  *
- * Cermin dari `WRITE` di
+ * Cermin dari `CREATE` dan `FINALIZE` di
  * `apps/api/src/modules/foundation-decisions/foundation-decisions.routes.ts`.
  * Halaman daftar/detail dulu merender tombol "Buat Keputusan"/"Finalisasi" ke
  * SEMUA pembaca, termasuk Bendahara dan Anggota yang hanya boleh membaca —
  * klik mereka berakhir 403. UI tidak boleh menjanjikan aksi yang peladen pasti
  * tolak.
  *
- * Ini salinan, bukan aturannya: yang mengikat tetap `authorize(...WRITE)` di
- * rute, dan `foundation-decision-write-gate.test.ts` memaku kedua daftar agar
- * tidak menyimpang.
+ * Keduanya dipisah sejak audit Pengawas: satu daftar `WRITE` bersama membuat
+ * menambahkan Pengawas agar dapat membuka rapat organnya juga memberinya hak
+ * finalisasi atas rapat organ lain. Pengawas kini ada di `CREATE` (matriks
+ * kewenangan menetapkan `pemberhentian-sementara-pengurus` kepadanya) dan di
+ * `FINALIZE`; service tetap memperketat finalisasi ke anggota snapshot.
+ *
+ * Ini salinan, bukan aturannya: yang mengikat tetap `authorize(...)` di rute,
+ * dan `foundation-decision-write-gate.test.ts` memaku kedua daftar agar tidak
+ * menyimpang.
  */
-export const FOUNDATION_DECISION_WRITE_ROLES: readonly string[] = [
+export const FOUNDATION_DECISION_CREATE_ROLES: readonly string[] = [
   "SUPER_ADMIN",
   "YAYASAN_PEMBINA",
   "YAYASAN_KETUA",
   "YAYASAN_SEKRETARIS",
+  "YAYASAN_PENGAWAS",
 ];
 
+export const FOUNDATION_DECISION_FINALIZE_ROLES: readonly string[] = [
+  "SUPER_ADMIN",
+  "YAYASAN_PEMBINA",
+  "YAYASAN_KETUA",
+  "YAYASAN_SEKRETARIS",
+  "YAYASAN_PENGAWAS",
+];
+
+export function canCreateFoundationDecisions(
+  roleCode: string | null | undefined,
+): boolean {
+  return !!roleCode && FOUNDATION_DECISION_CREATE_ROLES.includes(roleCode);
+}
+
+export function canFinalizeFoundationDecisions(
+  roleCode: string | null | undefined,
+): boolean {
+  return !!roleCode && FOUNDATION_DECISION_FINALIZE_ROLES.includes(roleCode);
+}
+
+/**
+ * Peran yang melihat tombol tulis pada daftar keputusan.
+ *
+ * Halaman daftar hanya menawarkan "Buat Keputusan", jadi gerbangnya adalah
+ * izin CREATE. Finalisasi diperiksa terpisah di halaman detail — dan di sana
+ * server tetap dapat menolaknya bila pengguna bukan anggota snapshot organ itu.
+ */
 export function canManageFoundationDecisions(
   roleCode: string | null | undefined,
 ): boolean {
-  return !!roleCode && FOUNDATION_DECISION_WRITE_ROLES.includes(roleCode);
+  return canCreateFoundationDecisions(roleCode);
 }

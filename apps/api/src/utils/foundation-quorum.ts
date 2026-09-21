@@ -1,7 +1,4 @@
-import type {
-  FoundationQuorumMode,
-  QuorumSnapshot,
-} from '@cipansor/shared';
+import type { FoundationQuorumMode, QuorumSnapshot } from '@cipansor/shared';
 import { quorumValueForMode } from '@cipansor/shared';
 
 /**
@@ -51,6 +48,32 @@ export interface QuorumEvaluation {
 }
 
 /**
+ * Apakah pemungutan sudah DITUTUP?
+ *
+ * Ini parameter yang membedakan dua daur hidup yang berbeda, dan
+ * ketiadaannya adalah bug yang diperbaiki di sini.
+ *
+ * **Sirkuler** tidak punya "rapat" yang harus ditutup: kolam keputusannya
+ * adalah SELURUH anggota aktif dan tidak bertambah, sehingga hasilnya sudah
+ * dapat disimpulkan kapan saja (dan keputusan gugur segera setelah mufakat
+ * mustahil). `closed` tidak mengubah apa pun untuknya.
+ *
+ * **Rapat** sebaliknya. Selama rapat masih berlangsung, siapa pun yang belum
+ * bersuara masih dapat hadir dan mengubah hasil — jadi TIDAK ADA hasil akhir
+ * yang sah sebelum rapat ditutup. Versi sebelumnya menghitung ambang terhadap
+ * `presentCount` saat itu juga, lalu memulangkan APPROVED begitu peserta yang
+ * sedang hadir menyetujui. Akibatnya keputusan menutup diri di tengah rapat,
+ * anggota yang datang kemudian ditolak (`status !== VOTING`), dan hasil akhir
+ * bergantung pada URUTAN suara — bukan pada suara yang terkumpul. Penutupan
+ * manual (`closed: true`) menghapus ketergantungan itu: hasil dihitung sekali,
+ * terhadap himpunan suara yang sudah tetap.
+ */
+export interface QuorumOptions {
+  /** Rapat/pemungutan sudah dinyatakan selesai oleh pemimpinnya. */
+  closed?: boolean;
+}
+
+/**
  * Jumlah yang dibutuhkan menurut mode kuorum.
  *
  * **Mode yang menentukan ambang, bukan `value`.** Nilai pecahan yang tersimpan
@@ -86,18 +109,19 @@ export function requiredCount(mode: FoundationQuorumMode, value: number, pool: n
 
 /**
  * Evaluasi satu keputusan terhadap snapshot kuorum dan daftar suara terkini.
+ *
+ * `opts.closed` menyatakan rapat/pemungutan sudah ditutup. Hanya dengan itu
+ * sebuah RAPAT dapat memperoleh hasil akhir; sirkuler tidak membutuhkannya
+ * (lihat `QuorumOptions`). Ini yang membuat hasil akhir INVARIANT terhadap
+ * urutan suara: himpunan suara yang sama menghasilkan outcome yang sama, tak
+ * peduli siapa yang menekan tombol lebih dulu.
  */
 export function evaluateQuorum(
   snapshot: QuorumSnapshot,
-  votes: QuorumVoteInput[]
+  votes: QuorumVoteInput[],
+  opts: QuorumOptions = {}
 ): QuorumEvaluation {
-  const {
-    activeCount,
-    presentMode,
-    presentValue,
-    decisionMode,
-    decisionValue,
-  } = snapshot;
+  const { activeCount, presentMode, presentValue, decisionMode, decisionValue } = snapshot;
 
   const approvedCount = votes.filter((v) => v.choice === 'APPROVE').length;
   const rejectedCount = votes.filter((v) => v.choice === 'REJECT').length;
@@ -135,32 +159,36 @@ export function evaluateQuorum(
    * "mustahil" tidak dapat disimpulkan dari angka hari ini.
    */
   const decisionImpossible =
-    snapshot.kind === 'CIRCULAR' &&
-    approvedCount + (activeCount - presentCount) < decisionRequired;
+    snapshot.kind === 'CIRCULAR' && approvedCount + (activeCount - presentCount) < decisionRequired;
 
   let outcome: QuorumOutcome = 'OPEN';
 
   if (decisionImpossible) {
     outcome = 'REJECTED';
   } else if (presentMet) {
-    if (decisionMet && approvedCount > 0) {
-      outcome = 'APPROVED';
-    } else {
-      // Semua yang harus memutus sudah memberi suara dan tetap tak cukup →
-      // keputusan tertolak. Pada CIRCULAR: seluruh anggota aktif sudah
-      // bersuara (mufakat tak tercapai). Pada MEETING: seluruh anggota aktif
-      // sudah bersuara — bukan sekadar kuorum hadir tercapai.
-      //
-      // Untuk MEETING, `presentCount === decisionPool` adalah tautologi
-      // (`decisionPool` = presentCount), sehingga REJECTED keluar begitu kuorum
-      // hadir terpenuhi tanpa cukup setuju — padahal anggota lain yang berhak
-      // masih bisa hadir dan menyetujui. Sama seperti CIRCULAR, penolakan hanya
-      // sah ketika tidak ada lagi suara yang mungkin masuk.
-      const decisionBodyFinished = presentCount >= activeCount;
-      if (decisionBodyFinished) {
-        outcome = 'REJECTED';
-      }
+    if (snapshot.kind === 'CIRCULAR') {
+      /**
+       * Sirkuler: kolamnya tetap (seluruh anggota aktif), jadi ambangnya sah
+       * begitu terpenuhi. APPROVED menuntut minimal satu suara setuju — ambang
+       * nol pada aturan lama tidak boleh mengesahkan keputusan tanpa suara.
+       */
+      if (decisionMet && approvedCount > 0) outcome = 'APPROVED';
+    } else if (opts.closed) {
+      /**
+       * Rapat yang SUDAH DITUTUP: hasil dihitung sekali terhadap himpunan
+       * suara yang tetap. Di sinilah satu-satunya tempat sebuah rapat boleh
+       * berakhir APPROVED/REJECTED — sebelum ditutup, outcome tetap OPEN dan
+       * anggota yang belum bersuara tetap dapat mengubahnya. Karena itu urutan
+       * suara tidak dapat mengubah hasil akhir.
+       *
+       * Bila approval tidak tercapai padahal kuorum hadir terpenuhi, rapat
+       * ditutup sebagai REJECTED. Anggota yang absen TIDAK dapat membuat
+       * keputusan menggantung: penutupan manual adalah wewenang pemimpin rapat,
+       * bukan menunggu seluruh anggota aktif bersuara.
+       */
+      outcome = decisionMet && approvedCount > 0 ? 'APPROVED' : 'REJECTED';
     }
+    // Rapat yang belum ditutup tetap OPEN.
   }
 
   return {

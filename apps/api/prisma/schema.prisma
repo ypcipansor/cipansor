@@ -10302,6 +10302,18 @@ enum FoundationVoteChoice {
   ABSTAIN // Abstain — terhitung hadir, tidak menambah approve
 }
 
+/// Klasifikasi publikasi metadata keputusan.
+///
+/// Endpoint verifikasi terbuka untuk anonim. `subject`, organ, tanggal, dan
+/// rekap suara dapat mengungkap personalia/operasi internal, jadi hanya
+/// keputusan yang sengaja diterbitkan (PUBLIC) yang menampilkannya. Bawaannya
+/// PRIVATE supaya keputusan lama — dan setiap keputusan baru — tidak
+/// membocorkan apa pun sampai dinyatakan publik secara eksplisit.
+enum FoundationDecisionPublication {
+  PRIVATE
+  PUBLIC
+}
+
 /// Derajat ambang kuorum. MUTLAK = 100% (sirkuler).
 enum FoundationQuorumMode {
   MAJORITY // > 0.5
@@ -10329,6 +10341,11 @@ model FoundationDecision {
   /// itu + ambang hadir & sah yang berlaku. Immutable — pembacaan status dan
   /// finalisasi memakai angka ini, bukan angka hari ini.
   quorumSnapshot Json                  @map("quorum_snapshot")
+
+  /// Klasifikasi publikasi metadata untuk endpoint verifikasi anonim.
+  /// Bawaannya PRIVATE (fail closed): subject/organ/tanggal/rekap suara tidak
+  /// ditampilkan sampai keputusan ini sengaja diterbitkan untuk publik.
+  publication   FoundationDecisionPublication @default(PRIVATE)
 
   /// Rekapitulasi suara terkini, mis. { approve: 3, reject: 1, abstain: 1,
   /// present: 5, active: 5 }. Ditulis ulang pada setiap vote dan finalisasi.

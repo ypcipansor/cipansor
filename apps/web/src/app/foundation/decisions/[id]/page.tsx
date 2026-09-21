@@ -8,6 +8,7 @@ import {
   useCastFoundationVote,
   useFinalizeFoundationDecision,
   useDownloadFoundationDecisionDocument,
+  useSetFoundationPublication,
   FOUNDATION_ORGAN_LABEL,
   FOUNDATION_STATUS_LABEL,
   FOUNDATION_KIND_LABEL,
@@ -52,7 +53,7 @@ import {
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { getPrimaryRoleCode } from "@/lib/rbac";
-import { canManageFoundationDecisions } from "@/lib/yayasan-organ";
+import { canFinalizeFoundationDecisions } from "@/lib/yayasan-organ";
 
 const statusColor: Record<string, string> = {
   VOTING: "bg-amber-100 text-amber-700",
@@ -79,11 +80,16 @@ export default function FoundationDecisionDetailPage() {
   const finalize = useFinalizeFoundationDecision(id);
   const downloadDoc = useDownloadFoundationDecisionDocument();
 
-  // Finalisasi adalah aksi TULIS: rute memakai `authorize(...WRITE)`, jadi
+  // Finalisasi adalah aksi TULIS: rute memakai `authorize(...FINALIZE)`, jadi
   // Bendahara & Anggota pasti ditolak 403. Tombolnya dulu tampil ke semua
-  // pembaca.
+  // pembaca. Gerbangnya DIPISAH dari izin membuat: Pengawas boleh membuka rapat
+  // organnya sendiri, tetapi server tetap menolak finalisasi bila ia bukan
+  // anggota snapshot organ keputusan itu.
   const { user } = useAuthStore();
-  const canWrite = canManageFoundationDecisions(getPrimaryRoleCode(user));
+  const roleCode = getPrimaryRoleCode(user);
+  const canFinalize = canFinalizeFoundationDecisions(roleCode);
+  const canPublish = roleCode === "SUPER_ADMIN";
+  const setPublication = useSetFoundationPublication(id);
 
   const handleDownload = async () => {
     try {
@@ -249,12 +255,14 @@ export default function FoundationDecisionDetailPage() {
                   Anda sudah suara: {choiceLabel[d.myVote]}
                 </Badge>
               )}
-              {d.status === "VOTING" && canWrite && (
+              {d.status === "VOTING" && canFinalize && (
                 <Button
                   variant="outline"
                   onClick={() => {
                     if (
-                      window.confirm("Finalisasi bila kuorum sudah tercapai?")
+                      window.confirm(
+                        "Tutup rapat/pemungutan sekarang? Hasil dihitung dari suara yang sudah masuk dan tidak dapat diubah lagi.",
+                      )
                     )
                       finalize.mutate();
                   }}
@@ -319,6 +327,37 @@ export default function FoundationDecisionDetailPage() {
                   </div>
                 </div>
               )}
+              {/*
+                Publikasi metadata. Bawaannya PRIVATE: halaman verifikasi
+                publik hanya menyatakan keabsahan tanpa membocorkan judul,
+                organ, tanggal, dan rekap suara. Hanya Super Admin yang dapat
+                mengubahnya, dan setiap perubahan tercatat di audit.
+              */}
+              <div className="flex items-center justify-between border-t pt-2">
+                <span className="text-muted-foreground">
+                  Publikasi metadata
+                </span>
+                {canPublish ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={setPublication.isPending}
+                    onClick={() =>
+                      setPublication.mutate(
+                        d.publication === "PUBLIC" ? "PRIVATE" : "PUBLIC",
+                      )
+                    }
+                  >
+                    {d.publication === "PUBLIC"
+                      ? "Tarik ke privat"
+                      : "Terbitkan"}
+                  </Button>
+                ) : (
+                  <Badge className="bg-gray-100 text-gray-700">
+                    {d.publication === "PUBLIC" ? "Publik" : "Privat"}
+                  </Badge>
+                )}
+              </div>
             </CardContent>
           </Card>
 

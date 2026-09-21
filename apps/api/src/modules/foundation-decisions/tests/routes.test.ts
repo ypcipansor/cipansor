@@ -143,3 +143,69 @@ describe('foundation-decisions.routes — akses baca detail/dokumen', () => {
     expect(handlers.some((h) => h.handle === authorize || h.name === 'authorize')).toBe(false);
   });
 });
+
+/**
+ * Regresi BUG — Pengawas tidak dapat memulai keputusan yang menjadi
+ * kewenangannya.
+ *
+ * `YAYASAN_PENGAWAS` tidak ada di daftar izin `POST /decisions`, padahal
+ * matriks kewenangan menetapkan `pemberhentian-sementara-pengurus` kepadanya:
+ * organ yang berwenang tetapi tak dapat membuka rapatnya sendiri. Yang diuji di
+ * sini adalah PERILAKU middleware `authorize` pada rute yang sesungguhnya —
+ * bukan membaca teks sumber — dengan memanggil handler-nya memakai `req.user`
+ * tiruan dan mengamati apakah ia meneruskan atau melempar 403. Kewenangan
+ * organ×jenis tetap diperiksa di service, jadi lolosnya middleware TIDAK
+ * berarti Pengawas boleh membuat keputusan organ lain (lihat service.test.ts).
+ */
+describe('foundation-decisions.routes — izin tulis Pengawas', () => {
+  /**
+   * Cari middleware `authorize` di stack rute berdasarkan PERILAKU, bukan nama.
+   *
+   * `authorize(...)` mengembalikan closure anonim, jadi tidak ada nama atau
+   * identitas modul yang dapat dicocokkan — dan menguji dengan `import` lalu
+   * membandingkan referensi tidak akan pernah cocok. Kandidatnya adalah
+   * middleware ber-arity 3 yang menolak peran yang jelas tidak berhak
+   * (`GURU`); yang memenuhi syarat itulah gerbang izinnya.
+   */
+  function authorizeGate(method: string, path: string) {
+    for (const h of handlersFor(method, path)) {
+      const fn = h.handle as (r: unknown, s: unknown, n: (e?: unknown) => void) => void;
+      if (typeof fn !== 'function' || fn.length !== 3) continue;
+      const errors: unknown[] = [];
+      fn({ user: { roleCode: 'GURU', permissions: [], unitId: null } }, {}, (e?: unknown) => {
+        if (e) errors.push(e);
+      });
+      if (errors.length > 0) return fn;
+    }
+    throw new Error(`No authorize gate for ${method.toUpperCase()} ${path}`);
+  }
+
+  function runAuthorize(method: string, path: string, roleCode: string) {
+    const gate = authorizeGate(method, path);
+    const errors: unknown[] = [];
+    let forwarded = false;
+    gate({ user: { roleCode, permissions: [], unitId: null } }, {}, (e?: unknown) => {
+      if (e) errors.push(e);
+      else forwarded = true;
+    });
+    return { forwarded, forbidden: errors.length > 0 };
+  }
+
+  it('Pengawas DIIZINKAN membuka keputusan (POST /decisions)', () => {
+    expect(runAuthorize('post', '/decisions', 'YAYASAN_PENGAWAS').forwarded).toBe(true);
+  });
+
+  it('Pengawas DIIZINKAN memanggil finalize, dan service tetap membatasi ke snapshot', () => {
+    // Rute memuatnya supaya ia dapat menutup rapat organnya; `finalize` di
+    // service menolak finalizer non-pimpinan yang bukan anggota snapshot.
+    expect(runAuthorize('post', '/decisions/:id/finalize', 'YAYASAN_PENGAWAS').forwarded).toBe(
+      true
+    );
+  });
+
+  it('peran read-only tetap DITOLAK membuka keputusan', () => {
+    for (const role of ['YAYASAN_BENDAHARA', 'YAYASAN_ANGGOTA', 'GURU']) {
+      expect(runAuthorize('post', '/decisions', role).forbidden).toBe(true);
+    }
+  });
+});
