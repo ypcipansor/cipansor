@@ -14,7 +14,20 @@ import { activationState, deactivationState } from '@/utils/account-state';
 // restatement of the same fields is exactly how the two drift apart.
 export type { CreateBoardSuspensionInput };
 
-/** Far-future sentinel written to `lockedUntil` to revoke signing capability. */
+/**
+ * Far-future sentinel written to `lockedUntil` to suspend signing capability.
+ *
+ * This is a *temporary lock*, not a formal revocation: `UserSigningKey.revokedAt`
+ * is the audited revocation field (set with a reason, and never cleared), and the
+ * suspension deliberately does not touch it. The reasoning is that a suspension
+ * is reversible — a Pembina can lift it — so a signing key that was merely locked
+ * must come back exactly as it was, which is what the snapshot restore below
+ * does. Writing `revokedAt` here would either be irreversible on lift or would
+ * require "un-revoking" a key, which the e-sign lifecycle rightly does not allow
+ * (a revoked key stays revoked — see `utils/esign-lifecycle.ts`). The sentinel
+ * therefore means "locked until this far-future date", which the lifecycle maps
+ * to LOCKED, and the lift restores the prior `lockedUntil`.
+ */
 export const SIGNING_KEY_SUSPENSION_LOCK = new Date('2099-01-01T00:00:00Z');
 
 /**
@@ -150,6 +163,19 @@ export class BoardSuspensionService {
       );
     }
 
+    // Suspension is effective on issuance — this method switches the account
+    // off, purges sessions and grants the Plh in one transaction. A future
+    // `startDate` therefore cannot defer any of that, and storing it would
+    // promise a schedule the service does not honour. The date is accepted as
+    // a record of when the SK takes effect (today or earlier); a future one is
+    // refused here as well as at the edge, because internal callers reach the
+    // service directly.
+    if (data.startDate && Date.parse(data.startDate) > Date.now()) {
+      throw Errors.badRequest(
+        'Pembekuan berlaku sejak SK ditetapkan; tanggal mulai tidak boleh di masa depan.'
+      );
+    }
+
     // The pair is all-or-nothing. The edge schema enforces this for HTTP
     // callers; internal callers reach the service directly, and a half-filled
     // delegation would be stored as metadata that looks like a delegation
@@ -236,32 +262,71 @@ export class BoardSuspensionService {
           }
         }
 
-        // The account state is read *inside* the transaction, then claimed
-        // with a conditional compare-and-set. A plain read-then-update is a
-        // lost-update race: at READ COMMITTED an admin can change `isActive`
-        // (or its writer token) after this snapshot but before the flip, and
-        // the suspension's more permissive state would overwrite theirs — and
-        // install a writer token that lets a later lift resurrect an account
-        // that should have stayed off. Matching on the observed values means
-        // the write only lands if nothing moved; otherwise the transaction
-        // aborts and the suspension is never created.
+        // The account state is read *inside* the transaction — and after the row
+        // is locked — then claimed with a conditional compare-and-set. A plain
+        // read-then-update is a lost-update race: at READ COMMITTED an admin can
+        // change `isActive` (or its writer token) after this snapshot but before
+        // the flip, and the suspension's more permissive state would overwrite
+        // theirs — and install a writer token that lets a later lift resurrect
+        // an account that should have stayed off. Matching on the observed
+        // values means the write only lands if nothing moved; otherwise the
+        // transaction aborts and the suspension is never created.
+        //
+        // Locking first is what makes the snapshot trustworthy: it serialises
+        // this moment against a concurrent `isActive`/`deletedAt` write, so the
+        // read below sees the state that will actually hold at commit. The
+        // pre-flight checks above ran before the transaction opened; an account
+        // deactivated or soft-deleted in the gap still passed them, and without
+        // this re-read the suspension went on to switch off an already-dead
+        // account and mint a Plh for an officer who cannot act.
+        const lockedTarget = await tx.$queryRaw<
+          Array<{ is_active: boolean; deleted_at: Date | null }>
+        >`
+          SELECT is_active, deleted_at FROM "users" WHERE id = ${data.userId} FOR UPDATE
+        `;
+        if (!lockedTarget[0]) {
+          throw Errors.notFound(`Pengurus / Pengguna dengan ID ${data.userId} tidak ditemukan`);
+        }
+        if (lockedTarget[0].deleted_at) {
+          throw Errors.conflict(
+            'Akun pengurus ini telah dihapus (soft-deleted) dan tidak dapat dibekukan.'
+          );
+        }
+        if (!lockedTarget[0].is_active) {
+          throw Errors.conflict(
+            'Akun pengurus ini sudah dalam keadaan non-aktif / dibekukan dan tidak dapat dibekukan.'
+          );
+        }
+
         const freshTarget = await tx.user.findUnique({
           where: { id: data.userId },
-          select: { isActive: true, accountStateWriter: true },
+          select: {
+            isActive: true,
+            accountStateWriter: true,
+            // The Pengurus role is re-resolved from this same read: an
+            // assignment revoked or expired between the pre-flight check and
+            // this point would otherwise let the suspension switch off an
+            // account and mint a replacement for a vacancy already handled
+            // elsewhere. Reading it here rather than in a separate query keeps
+            // the whole eligibility decision on one locked snapshot.
+            userRoles: {
+              where: {
+                isActive: true,
+                OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+              },
+              select: { role: { select: { code: true } } },
+            },
+          },
         });
         if (!freshTarget) {
           throw Errors.notFound(`Pengurus / Pengguna dengan ID ${data.userId} tidak ditemukan`);
         }
-
-        // A soft delete that landed after the pre-flight read is re-checked
-        // here, under the row lock below, so a delete racing the suspension
-        // aborts the transaction instead of being suspended anyway.
-        const lockedTarget = await tx.$queryRaw<Array<{ deleted_at: Date | null }>>`
-          SELECT deleted_at FROM "users" WHERE id = ${data.userId} FOR UPDATE
-        `;
-        if (!lockedTarget[0] || lockedTarget[0].deleted_at) {
-          throw Errors.conflict(
-            'Akun pengurus ini telah dihapus (soft-deleted) dan tidak dapat dibekukan.'
+        const stillPengurus = freshTarget.userRoles.some((assignment) =>
+          (PENGURUS_ROLE_CODES as readonly string[]).includes(assignment.role.code)
+        );
+        if (!stillPengurus) {
+          throw Errors.forbidden(
+            'Peran Pengurus Yayasan pengguna ini sudah tidak efektif dan tidak dapat dibekukan melalui mekanisme ini.'
           );
         }
 
@@ -594,12 +659,67 @@ export class BoardSuspensionService {
       }
 
       // 4. Release this suspension's Plh dependency — but only if no OTHER
-      //    ACTIVE suspension still depends on the same assignment. Two
-      //    suspensions can share one delegate+role; the first lift used to
-      //    delete the assignment the second was still relying on.
-      const dependencies = await tx.boardSuspensionPlhAssignment.findMany({
+      //    ACTIVE suspension still depends on the same assignment.
+      //
+      //    Two suspensions can share one delegate+role. A `count → find heir →
+      //    delete` sequence cannot decide this at READ COMMITTED: two parallel
+      //    lifts can each observe "one other dependent", each decline to
+      //    release, and the assignment survives forever with no ACTIVE
+      //    suspension that needs it. The decision is therefore serialised with
+      //    a row lock: every assignment a suspension depends on is locked
+      //    `FOR UPDATE`, in a deterministic (uuid) order so two lifts taking
+      //    the same set cannot deadlock, and only then are the dependent rows
+      //    read and the last one computed. The second lift blocks until the
+      //    first commits, re-reads the remaining dependents, and becomes the
+      //    last one itself.
+      //
+      //    The first read is only for lock ordering — it must NOT be reused for
+      //    the decision. Reading the dependency rows before the lock and then
+      //    acting on that snapshot after it is the same lost update one level
+      //    up: while a lift waits for the assignment lock, the other lift can
+      //    hand it the `created` provenance (see the heir transfer below), and
+      //    the waiting lift would then decide from its stale `created: false`,
+      //    delete its own row and release nothing. The assignment survives with
+      //    no ACTIVE suspension behind it. Re-reading under the lock — and
+      //    locking the dependency rows themselves so a sibling lift cannot
+      //    mutate them between the read and the delete — closes that.
+      const dependencyRefs = await tx.boardSuspensionPlhAssignment.findMany({
         where: { suspensionId: id },
+        select: { id: true, assignmentId: true },
       });
+
+      const lockAssignmentIds = Array.from(
+        new Set(
+          [
+            ...dependencyRefs.map((d) => d.assignmentId),
+            ...(dependencyRefs.length === 0 && updated.plhAssignmentId
+              ? [updated.plhAssignmentId]
+              : []),
+          ].filter((value): value is string => !!value)
+        )
+      ).sort();
+
+      if (lockAssignmentIds.length > 0) {
+        // `Prisma.join` produces the parameter list; the cast keeps the column
+        // comparison against the `text` id type rather than an untyped uuid.
+        await tx.$queryRaw(
+          Prisma.sql`SELECT id FROM "user_role_assignments" WHERE id::text IN (${Prisma.join(
+            lockAssignmentIds
+          )}) ORDER BY id FOR UPDATE`
+        );
+        await tx.$queryRaw(
+          Prisma.sql`SELECT id FROM "board_suspension_plh_assignments" WHERE assignment_id::text IN (${Prisma.join(
+            lockAssignmentIds
+          )}) ORDER BY id FOR UPDATE`
+        );
+      }
+
+      // Fresh read, now that both the assignment and every dependency row for
+      // it are held. `created`/`restore` may have changed hands while we waited.
+      const dependencies =
+        lockAssignmentIds.length > 0 || updated.plhAssignmentId
+          ? await tx.boardSuspensionPlhAssignment.findMany({ where: { suspensionId: id } })
+          : [];
 
       if (dependencies.length === 0 && updated.plhAssignmentId) {
         // Legacy row written before the dependency table existed. It owns its

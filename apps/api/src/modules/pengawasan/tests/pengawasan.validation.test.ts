@@ -5,6 +5,11 @@ import {
   draftPeriodicReportSchema,
   forwardWbsReportSchema,
 } from '../pengawasan.validation';
+import {
+  createPublicWbsSchema,
+  addPublicWbsCommentSchema,
+  addWbsHandlerCommentSchema,
+} from '@cipansor/shared';
 import { PLH_ROLE_CODES } from '@cipansor/shared';
 
 /**
@@ -139,5 +144,98 @@ describe('pengawasan validation contracts', () => {
         executiveSummary: 'Ringkasan eksekutif.',
       }).success
     ).toBe(true);
+  });
+
+  it('rejects a future suspension startDate — the SK is effective on issuance', () => {
+    const future = new Date(Date.now() + 86_400_000).toISOString();
+    expect(
+      createBoardSuspensionSchema.safeParse({ ...baseSuspension, startDate: future }).success
+    ).toBe(false);
+
+    // A date in the past/today is fine: it records when the SK took effect.
+    const past = new Date(Date.now() - 86_400_000).toISOString();
+    expect(
+      createBoardSuspensionSchema.safeParse({ ...baseSuspension, startDate: past }).success
+    ).toBe(true);
+    expect(createBoardSuspensionSchema.safeParse(baseSuspension).success).toBe(true);
+  });
+});
+
+/**
+ * Attachment links come from an *anonymous* visitor and are rendered as links
+ * inside a handler's authenticated session. Every scheme that a browser would
+ * execute or resolve is refused at the edge; only an https URL with a real
+ * host survives.
+ */
+describe('WBS attachment URL validation', () => {
+  const comment = (attachments: unknown) =>
+    addPublicWbsCommentSchema.safeParse({
+      ticketCode: 'WBS-202601-ABCDEF',
+      trackingToken: 'a-tracking-token',
+      message: 'Pesan',
+      attachments,
+    });
+  const handler = (attachments: unknown) =>
+    addWbsHandlerCommentSchema.safeParse({ message: 'Pesan', attachments });
+  const report = (attachments: unknown) =>
+    createPublicWbsSchema.safeParse({
+      category: 'KEUANGAN_ASET',
+      targetLevel: 'PENGURUS_YAYASAN',
+      subject: 'Judul laporan',
+      description: 'Deskripsi laporan yang cukup panjang.',
+      attachments,
+    });
+
+  it.each([
+    'javascript:alert(1)',
+    'JavaScript:alert(1)',
+    'data:text/html,<script>alert(1)</script>',
+    'file:///etc/passwd',
+    'http://evil.example/payload',
+    'ftp://evil.example/x',
+    '//evil.example/x',
+    '/relative/path.png',
+    'https://user:pass@evil.example/x',
+    'https://',
+    'https:///nohost',
+    'https://exa mple.com/x',
+    'https://evil.example\\@good.example',
+    'not a url at all',
+    '',
+  ])('rejects %s on the public comment', (value) => {
+    expect(comment([value]).success).toBe(false);
+  });
+
+  it.each([
+    'javascript:alert(1)',
+    'data:text/html,<script>alert(1)</script>',
+    'file:///etc/passwd',
+    'http://evil.example/payload',
+    'https://user:pass@evil.example/x',
+  ])('rejects %s on the handler comment too', (value) => {
+    expect(handler([value]).success).toBe(false);
+  });
+
+  it.each(['javascript:alert(1)', 'data:text/plain,x', 'https://user:pass@h.example/x'])(
+    'rejects %s on the new public report',
+    (value) => {
+      expect(report([value]).success).toBe(false);
+    }
+  );
+
+  it('accepts a plain https link on all three surfaces', () => {
+    const url = 'https://storage.cipansor.or.id/evidence/bukti-1.pdf';
+    expect(comment([url]).success).toBe(true);
+    expect(handler([url]).success).toBe(true);
+    expect(report([url]).success).toBe(true);
+    // A host-only URL with no path is legitimate (a signed bucket root).
+    expect(comment(['https://storage.cipansor.or.id']).success).toBe(true);
+    expect(comment(['https://storage.cipansor.or.id:8443/a']).success).toBe(true);
+  });
+
+  it('caps the list at ten entries', () => {
+    const url = 'https://storage.cipansor.or.id/e.pdf';
+    expect(comment(Array.from({ length: 10 }, () => url)).success).toBe(true);
+    expect(comment(Array.from({ length: 11 }, () => url)).success).toBe(false);
   });
 });

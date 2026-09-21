@@ -217,8 +217,22 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
 /**
  * Authentication middleware for 2FA routes
  * Accepts both regular and temporary 2FA tokens
+ *
+ * The suspension check is here too, not only on `authenticate`.
+ *
+ * A temporary token is issued at the *start* of a 2FA login, before the second
+ * factor is presented. It can outlive a suspension that lands in between: the
+ * account is switched off, but this door only ever checked the signature, so
+ * the holder could still call `/2fa/login`, complete the OTP and be handed a
+ * fresh access + refresh pair for a suspended account. `authenticate` refuses
+ * those tokens on every later request, so the account was not reachable — but
+ * a token that should never be minted was, and the door that mints it is this
+ * one.
+ *
+ * Async because the check reads persistent state (never a per-process cache),
+ * which is the only writer-ordered answer available on every replica.
  */
-export function authenticate2FA(req: Request, res: Response, next: NextFunction) {
+export async function authenticate2FA(req: Request, res: Response, next: NextFunction) {
   try {
     const authHeader = req.headers.authorization;
 
@@ -236,6 +250,10 @@ export function authenticate2FA(req: Request, res: Response, next: NextFunction)
 
     if (payload.type !== 'access') {
       throw Errors.unauthorized('Invalid token type');
+    }
+
+    if (await isUserSuspended(payload.sub)) {
+      throw Errors.unauthorized('Akun Anda non-aktif atau telah dibekukan.');
     }
 
     req.user = buildReqUser(payload);

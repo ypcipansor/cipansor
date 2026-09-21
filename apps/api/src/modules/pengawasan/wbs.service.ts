@@ -4,6 +4,7 @@ import { WbsTargetLevel, WbsStatus, WbsSenderType, Prisma } from '@prisma/client
 import {
   WBS_FORWARD_ROLE_CODES,
   isWbsForwardRecipientRole,
+  wbsAssignmentBucketsForRole,
   type CreatePublicWbsInput,
   type ForwardWbsReportInput,
   type UpdateWbsStatusInput,
@@ -27,8 +28,21 @@ export interface WbsActor {
 export class WbsService {
   /**
    * Determine primary handler role based on target level.
+   *
+   * Every value returned must be a role whose scope query can actually match
+   * the report it is handed, or the report enters a queue no handler reads.
+   * That was exactly the case for `STAF_PEGAWAI` / `SISWA_SANTRI` reports filed
+   * without a unit: they were routed to `UNIT_ADMIN`, but the unit-handler
+   * scope requires the actor's unit to equal the report's, and a report with
+   * `unitId: null` matches no unit — so it was visible to nobody.
+   *
+   * The routing therefore depends on whether the report *has* a unit. With a
+   * unit, the unit's administrator handles it as before. Without one, the
+   * foundation oversight role (`YAYASAN_PENGAWAS`, whose scope covers every
+   * staff/student report by target level) is the fallback, so the report is
+   * never stored into an empty queue.
    */
-  private getPrimaryHandlerRole(targetLevel: WbsTargetLevel): string {
+  private getPrimaryHandlerRole(targetLevel: WbsTargetLevel, unitId?: string | null): string {
     switch (targetLevel) {
       case 'PENGURUS_YAYASAN':
         return 'YAYASAN_PENGAWAS';
@@ -38,7 +52,7 @@ export class WbsService {
         return 'YAYASAN_KETUA';
       case 'STAF_PEGAWAI':
       case 'SISWA_SANTRI':
-        return 'UNIT_ADMIN';
+        return unitId ? 'UNIT_ADMIN' : 'YAYASAN_PENGAWAS';
       default:
         return 'YAYASAN_PENGAWAS';
     }
@@ -48,7 +62,8 @@ export class WbsService {
    * Create public anonymous/identified WBS report.
    */
   async createPublicReport(data: CreatePublicWbsInput) {
-    const primaryHandlerRole = this.getPrimaryHandlerRole(data.targetLevel);
+    const unitId = data.unitId || null;
+    const primaryHandlerRole = this.getPrimaryHandlerRole(data.targetLevel, unitId);
 
     // Generate ticketCode e.g. WBS-YYYYMM-XXXXX
     const datePrefix = new Date().toISOString().slice(0, 7).replace('-', '');
@@ -66,7 +81,7 @@ export class WbsService {
       data: {
         ticketCode,
         trackingToken,
-        unitId: data.unitId || null,
+        unitId,
         category: data.category,
         targetLevel: data.targetLevel,
         targetName: data.targetName || null,
@@ -237,6 +252,16 @@ export class WbsService {
    * mutated every unit's staff and student reports — the filter it was supposed
    * to add simply vanished. Dropping the `unitId` term is only ever safe when
    * the role is foundation-wide, which the branches above already handled.
+   *
+   * **The assignment term is role-bound and unit-bound, not a bare OR.** It
+   * used to be `{ assignedUserId: actor.id }` added unconditionally, which
+   * made a named assignment a grant independent of the role the request
+   * carried: an account holding both a foundation role and a unit role could
+   * be handed a confidential report as Pengawas, then switch its active token
+   * to the unit role and still read and mutate the case. The term now also
+   * requires the report's current routing (`primaryHandlerRole`) to be a
+   * destination this actor's active role may hold, and — for the unit-level
+   * destination — that the assignment lives inside the actor's own unit.
    */
   private buildScopeWhere(actor: {
     roleCode?: string;
@@ -246,24 +271,42 @@ export class WbsService {
     const role = actor.roleCode || '';
     const unitId = actor.unitId;
 
-    // A report forwarded to a named person must be readable by that person.
-    // `forwardReport` stores the assignee in `assignedUserId`, but the scope
-    // where never looked at it, so the explicitly designated handler could be
-    // locked out of the report assigned to them. This is an OR-term on every
-    // branch below, because the assignment is orthogonal to role/unit scope.
-    //
-    // The assignment term is granted to foundation-wide and unit-scoped roles
-    // alike, but never rescues a unit-scoped actor that has no unit: the
-    // impossible predicate below is returned before this can apply.
-    const assignedToActor: Prisma.WbsReportWhereInput | null = actor.id
-      ? { assignedUserId: actor.id }
-      : null;
-    const withAssignment = (scope: Prisma.WbsReportWhereInput): Prisma.WbsReportWhereInput =>
-      assignedToActor
-        ? Object.keys(scope).length === 0
-          ? scope
-          : { OR: [scope, assignedToActor] }
-        : scope;
+    // A report forwarded to a named person must stay readable by that person —
+    // `forwardReport` stores the assignee in `assignedUserId`, and before this
+    // term existed the explicitly designated handler could be locked out of the
+    // report assigned to them. What it must NOT be is a grant that outlives the
+    // role that justified it, so the term is derived from the actor's *active*
+    // role: only the buckets that role may be assigned into are matched, and a
+    // unit-level bucket additionally requires the report to be in this actor's
+    // unit. An actor with no unit therefore has no assignment term at all, and
+    // never reaches the impossible-predicate branch below with a way around it.
+    const buckets = wbsAssignmentBucketsForRole(role);
+    const assignmentTerms: Prisma.WbsReportWhereInput[] = [];
+    if (actor.id && buckets.length > 0) {
+      const foundationBuckets = buckets.filter((bucket) => bucket !== 'UNIT_ADMIN');
+      if (foundationBuckets.length > 0) {
+        assignmentTerms.push({
+          assignedUserId: actor.id,
+          primaryHandlerRole: { in: foundationBuckets },
+        });
+      }
+      if (unitId && buckets.includes('UNIT_ADMIN')) {
+        assignmentTerms.push({
+          assignedUserId: actor.id,
+          primaryHandlerRole: 'UNIT_ADMIN',
+          unitId,
+        });
+      }
+    }
+
+    const withAssignment = (scope: Prisma.WbsReportWhereInput): Prisma.WbsReportWhereInput => {
+      // An empty scope already means "the whole foundation" — OR-ing an
+      // assignment term into it changes nothing, and replacing it with the
+      // term would wrongly narrow a Pembina to only the reports named to them.
+      if (Object.keys(scope).length === 0) return {};
+      if (assignmentTerms.length === 0) return scope;
+      return { OR: [scope, ...assignmentTerms] };
+    };
 
     if (role === 'SUPER_ADMIN' || role === 'YAYASAN_PEMBINA') {
       return {};
@@ -307,7 +350,9 @@ export class WbsService {
     // unscoped branch here (which the spread produced by omitting `unitId`)
     // would hand it the whole foundation; an empty `id IN ()` set matches
     // nothing on every query that consumes this scope — list, detail, status,
-    // forward and comment — so the fail-closed decision is made once.
+    // forward and comment — so the fail-closed decision is made once. No
+    // assignment term is added ahead of it: a unitless actor cannot own a
+    // unit-level assignment, and the foundation buckets are not theirs to hold.
     if (!unitId) {
       return { id: { in: [] } };
     }
@@ -350,6 +395,44 @@ export class WbsService {
   }
 
   /**
+   * Re-assert scope *inside* a transaction, with the report row locked.
+   *
+   * `loadReportInScope` runs before the transaction opens, which leaves the
+   * window the caller asked about: a forward can commit between that check and
+   * the write, moving the report to a destination the actor's role may no
+   * longer hold. Because the scope term is now bound to `primaryHandlerRole`
+   * and unit, that window would otherwise let a role switch plus a concurrent
+   * forward open or close access with a stale decision.
+   *
+   * `SELECT … FOR UPDATE` serialises against a concurrent `forwardReport`, which
+   * takes the same lock first; a blocked caller re-reads the committed routing
+   * when it proceeds, and the scope query that follows sees the state that will
+   * actually hold at commit. The lock is taken before the row is read, so every
+   * mutation path (status, forward, comment) resolves scope and writes in one
+   * order.
+   */
+  private async assertReportInScopeTx(
+    tx: Prisma.TransactionClient,
+    id: string,
+    actor: { id?: string; roleCode?: string; unitId?: string | null }
+  ): Promise<void> {
+    const locked = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM "wbs_reports" WHERE id = ${id} FOR UPDATE
+    `;
+    if (locked.length !== 1) {
+      throw Errors.notFound(`Laporan WBS dengan ID ${id} tidak ditemukan`);
+    }
+
+    const inScope = await tx.wbsReport.findFirst({
+      where: { id, ...this.buildScopeWhere(actor) },
+      select: { id: true },
+    });
+    if (!inScope) {
+      throw Errors.forbidden('Laporan WBS ini berada di luar wewenang peran/unit Anda');
+    }
+  }
+
+  /**
    * Get WBS report details by ID for handler.
    */
   async getReportById(
@@ -379,14 +462,27 @@ export class WbsService {
    * Update report status (DIAJUKAN, DALAM_PENYELIDIKAN, DITINDAKLANJUTI, SELESAI, TIDAK_DAPAT_DITINDAKLANJUTI).
    */
   async updateReportStatus(id: string, data: UpdateWbsStatusInput, actor: WbsActor) {
-    const report = await this.loadReportInScope(id, actor);
-
     // The status change and the handler's note are one event: a note that
     // explains a transition no reader can find in the history is worse than no
     // note, and a status that moved without its audit trail is untraceable.
     // Both writes therefore commit together or not at all — a failed comment
     // used to leave the report advanced but its history silent.
+    //
+    // Scope is re-resolved inside the transaction, under the row lock, rather
+    // than only before it: a forward committed in the gap can move the report
+    // to a destination the actor's active role may not hold, and the stale
+    // pre-check would have allowed the mutation anyway.
     return prisma.$transaction(async (tx) => {
+      await this.assertReportInScopeTx(tx, id, actor);
+
+      const report = await tx.wbsReport.findFirst({
+        where: { id },
+        select: { assignedUserId: true, resolution: true },
+      });
+      if (!report) {
+        throw Errors.notFound(`Laporan WBS dengan ID ${id} tidak ditemukan`);
+      }
+
       // Claim the report only if nobody holds it yet, in the same statement
       // that reads the column.
       //
@@ -517,6 +613,13 @@ export class WbsService {
     }
 
     return prisma.$transaction(async (tx) => {
+      // Scope is re-resolved under the row lock, not just before the
+      // transaction. A concurrent forward can move the report between the
+      // pre-check and this write; taking the lock first serialises the two,
+      // and the scope query then sees the committed routing rather than the
+      // stale snapshot the actor was authorised against.
+      await this.assertReportInScopeTx(tx, id, actor);
+
       await tx.wbsForwardLog.create({
         data: {
           reportId: id,
@@ -559,17 +662,23 @@ export class WbsService {
     attachments: string[] | undefined,
     actor: WbsActor
   ) {
-    await this.loadReportInScope(id, actor);
+    // Comment is the third mutation path, so it takes the same lock and
+    // re-resolves the same scope before writing — otherwise a role switch plus
+    // a concurrent forward would let a comment land on a case the actor no
+    // longer holds.
+    return prisma.$transaction(async (tx) => {
+      await this.assertReportInScopeTx(tx, id, actor);
 
-    return prisma.wbsComment.create({
-      data: {
-        reportId: id,
-        senderType: WbsSenderType.HANDLER,
-        senderId: actor.id,
-        senderName: `${actor.name} (${actor.roleCode || 'Pemeriksa'})`,
-        message,
-        attachments: attachments ? (attachments as Prisma.InputJsonValue) : undefined,
-      },
+      return tx.wbsComment.create({
+        data: {
+          reportId: id,
+          senderType: WbsSenderType.HANDLER,
+          senderId: actor.id,
+          senderName: `${actor.name} (${actor.roleCode || 'Pemeriksa'})`,
+          message,
+          attachments: attachments ? (attachments as Prisma.InputJsonValue) : undefined,
+        },
+      });
     });
   }
 }

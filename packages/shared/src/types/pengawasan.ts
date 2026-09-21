@@ -150,6 +150,33 @@ export function isWbsForwardRecipientRole(
   ).includes(roleCode);
 }
 
+/**
+ * The forward buckets a role may be *assigned into* — the inverse of
+ * {@link WBS_FORWARD_ROLE_ALLOWED_ROLE_CODES}.
+ *
+ * `WbsReport.assignedUserId` used to be an unconditional read/write grant: any
+ * actor whose id matched could see and mutate the report, whatever their active
+ * role. A multi-role account could receive a confidential report while acting
+ * as Pengawas, then switch its active token to a unit handler role and still
+ * open the case — the role that legitimately held the assignment was never
+ * checked against the role the request carried. Reading the assignment through
+ * this inverse map lets the scope query bind the grant to the *destination* the
+ * report was routed to (`primaryHandlerRole`), so switching roles loses the
+ * access exactly the way the role-based scope already did.
+ */
+export function wbsAssignmentBucketsForRole(
+  roleCode: string | null | undefined,
+): WbsForwardRoleCode[] {
+  if (!roleCode) return [];
+  return (
+    Object.keys(WBS_FORWARD_ROLE_ALLOWED_ROLE_CODES) as WbsForwardRoleCode[]
+  ).filter((bucket) =>
+    (WBS_FORWARD_ROLE_ALLOWED_ROLE_CODES[bucket] as readonly string[]).includes(
+      roleCode,
+    ),
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Response contracts
 //
@@ -299,7 +326,16 @@ export interface BoardSuspensionDto {
   skNumber: string;
   auditReason: string;
   documentUrl?: string | null;
+  /**
+   * When the SK takes effect. A suspension is enforced on issuance — the
+   * account is switched off, sessions are revoked and the Plh is granted in the
+   * same transaction — so this may be today or earlier but never the future.
+   */
   startDate: string;
+  /**
+   * Estimated end date. Informational only: it does not expire the suspension.
+   * Only an explicit `Pemulihan Status` (lift) by the Pembina ends it.
+   */
   projectedEndDate?: string | null;
   status: string;
   suspendedById: string;

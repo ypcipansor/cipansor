@@ -6,7 +6,7 @@ import { Errors } from '@/middleware/error';
 import { isAdminRoleCode, isGovernanceRoleCode, deriveLegacyRole } from '@/middleware/auth';
 import { config } from '@/config';
 import type { LoginInput, RegisterInput, ChangePasswordInput } from './auth.schema';
-import { RoleCode, UnitType } from '@prisma/client';
+import { BoardSuspensionStatus, RoleCode, UnitType } from '@prisma/client';
 import { generateSecret, generateURI, verify as verifyOtp } from 'otplib';
 import * as qrcode from 'qrcode';
 import crypto from 'crypto';
@@ -21,21 +21,26 @@ import crypto from 'crypto';
  */
 export function resolveLegacyRoleToRoleCode(
   legacyRole: string,
-  unitType: UnitType | null | undefined,
+  unitType: UnitType | null | undefined
 ): RoleCode | null {
   // Unit-agnostic mappings
   if (legacyRole === 'SUPER_ADMIN') return RoleCode.SUPER_ADMIN;
   if (legacyRole === 'UNIT_ADMIN') {
     switch (unitType) {
-      case UnitType.TK_QURAN: return RoleCode.TKQ_ADMIN;
-      case UnitType.SD_IT: return RoleCode.SDIT_ADMIN;
-      case UnitType.SMP_IT: return RoleCode.SMPIT_ADMIN;
-      case UnitType.SMA_QURAN: return RoleCode.SMAQ_ADMIN;
+      case UnitType.TK_QURAN:
+        return RoleCode.TKQ_ADMIN;
+      case UnitType.SD_IT:
+        return RoleCode.SDIT_ADMIN;
+      case UnitType.SMP_IT:
+        return RoleCode.SMPIT_ADMIN;
+      case UnitType.SMA_QURAN:
+        return RoleCode.SMAQ_ADMIN;
       // PESANTREN / OTHER / unknown: no dedicated per-unit admin RoleCode exists.
       // Do NOT silently fall back to a foundation-level role — that would be a privilege
       // escalation (foundation-level governance) for a unit-level admin.
       // Caller must supply `roleCode` explicitly for these unit types.
-      default: return null;
+      default:
+        return null;
     }
   }
 
@@ -91,10 +96,7 @@ export function resolveLegacyRoleToRoleCode(
 function activeRoleWhere() {
   return {
     isActive: true,
-    OR: [
-      { expiresAt: null },
-      { expiresAt: { gt: new Date() } },
-    ],
+    OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
   };
 }
 
@@ -191,10 +193,7 @@ export class AuthService {
 
     // Check for 2FA
     if (user.isTwoFactorEnabled && !isDemoAccount) {
-      const tempToken = generateAccessToken(
-        { ...basePayload, isTemp: true },
-        '5m'
-      );
+      const tempToken = generateAccessToken({ ...basePayload, isTemp: true }, '5m');
 
       return {
         requiresTwoFactor: true,
@@ -204,10 +203,7 @@ export class AuthService {
 
     // Force 2FA setup for Admin/Super Admin
     if (isUserAdmin && !user.isTwoFactorEnabled && !isDemoAccount) {
-      const tempToken = generateAccessToken(
-        { ...basePayload, isTemp: true },
-        '10m'
-      );
+      const tempToken = generateAccessToken({ ...basePayload, isTemp: true }, '10m');
 
       return {
         requiresTwoFactorSetup: true,
@@ -280,7 +276,7 @@ export class AuthService {
       if (!mapped) {
         throw Errors.badRequest(
           `Cannot resolve legacy role '${input.role}' for unit type '${unitType ?? 'unknown'}'. ` +
-          `Please send 'roleCode' instead.`
+            `Please send 'roleCode' instead.`
         );
       }
       resolvedRoleCode = mapped;
@@ -364,12 +360,19 @@ export class AuthService {
     // `role = NULL` would break any downstream consumer (BI tools, audit
     // queries, raw SQL reports) that assumes `role IS NOT NULL`. We would
     // rather fail loudly here than silently create unmapped rows.
-    const VALID_LEGACY_ROLES = ['SUPER_ADMIN', 'UNIT_ADMIN', 'TEACHER', 'STAFF', 'STUDENT', 'PARENT'];
+    const VALID_LEGACY_ROLES = [
+      'SUPER_ADMIN',
+      'UNIT_ADMIN',
+      'TEACHER',
+      'STAFF',
+      'STUDENT',
+      'PARENT',
+    ];
     const legacyRole = deriveLegacyRole(resolvedRoleCode);
     if (!VALID_LEGACY_ROLES.includes(legacyRole)) {
       throw Errors.badRequest(
         `RoleCode '${resolvedRoleCode}' has no legacy UserRole mapping. ` +
-        `Add a mapping to LEGACY_ROLE_EXPANSION in middleware/auth.ts or use an existing mapped role.`
+          `Add a mapping to LEGACY_ROLE_EXPANSION in middleware/auth.ts or use an existing mapped role.`
       );
     }
     const legacyRoleValue = legacyRole;
@@ -450,14 +453,15 @@ export class AuthService {
       throw Errors.unauthorized('Refresh token not found or expired');
     }
 
-    if (!storedToken.user.isActive) {
+    // Re-validate the persistent state, not just `isActive`. A suspension
+    // deletes the refresh tokens it can see, but a token issued after that
+    // delete — or one whose row survived a partial failure — must still be
+    // refused here, which is the last gate before new tokens are written. A
+    // soft delete is checked for the same reason `authenticate` checks it:
+    // `deletedAt` leaves `isActive` untouched.
+    if (await this.isAccountUnusable(payload.sub)) {
       throw Errors.unauthorized('Account is deactivated');
     }
-
-    // Delete old refresh token
-    await prisma.refreshToken.delete({
-      where: { id: storedToken.id },
-    });
 
     // Get primary role — with legacy fallback for unmigrated users
     const primaryAssignment =
@@ -482,28 +486,58 @@ export class AuthService {
       throw Errors.forbidden('No active role assignment found');
     }
 
-    // Generate new tokens
-    const tokens = generateTokenPair({
-      id: storedToken.user.id,
-      sub: storedToken.user.id,
-      email: storedToken.user.email,
-      roleId: refreshRoleId || '',
-      roleCode: refreshRoleCode,
-      unitId: tokenUnitId(refreshUnitId, refreshRoleCode, storedToken.user.unitId),
-      permissions,
-      role: deriveLegacyRole(refreshRoleCode),
-    });
+    // Rotate the token inside a transaction that re-asserts the account state
+    // under a row lock, then mints the replacement in the same commit.
+    //
+    // The check above and the rotation below are separated by a round trip; a
+    // suspension that commits in between deletes the refresh tokens it can see
+    // and switches the account off — but a token *created* after that delete
+    // survives it and would authenticate away the suspension. Locking the user
+    // row for the check and the insert serialises the two: a suspension cannot
+    // commit between them, and a suspension that already committed is visible
+    // to the locked re-read. The loser gets a plain 401 rather than a token.
+    return prisma.$transaction(async (tx) => {
+      const claimed = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM "users"
+        WHERE id = ${payload.sub} AND is_active = true AND deleted_at IS NULL
+        FOR UPDATE
+      `;
+      if (claimed.length !== 1) {
+        throw Errors.unauthorized('Account is deactivated');
+      }
 
-    // Store new refresh token
-    await prisma.refreshToken.create({
-      data: {
-        token: tokens.refreshToken,
-        userId: storedToken.user.id,
-        expiresAt: getExpirationDate(config.jwt.refreshExpiresIn),
-      },
-    });
+      const blockingSuspension = await tx.boardMemberSuspension.findFirst({
+        where: { userId: payload.sub, status: BoardSuspensionStatus.ACTIVE },
+        select: { id: true },
+      });
+      if (blockingSuspension) {
+        throw Errors.unauthorized('Account is deactivated');
+      }
 
-    return tokens;
+      // Delete old refresh token
+      await tx.refreshToken.delete({ where: { id: storedToken.id } });
+
+      const tokens = generateTokenPair({
+        id: storedToken.user.id,
+        sub: storedToken.user.id,
+        email: storedToken.user.email,
+        roleId: refreshRoleId || '',
+        roleCode: refreshRoleCode,
+        unitId: tokenUnitId(refreshUnitId, refreshRoleCode, storedToken.user.unitId),
+        permissions,
+        role: deriveLegacyRole(refreshRoleCode),
+      });
+
+      await tx.refreshToken.create({
+        data: {
+          token: tokens.refreshToken,
+          userId: storedToken.user.id,
+          expiresAt: getExpirationDate(config.jwt.refreshExpiresIn),
+        },
+      });
+
+      return tokens;
+    });
   }
 
   /**
@@ -578,6 +612,31 @@ export class AuthService {
       select: { id: true },
     });
     return activeAcademicYear?.id;
+  }
+
+  /**
+   * True when the account may not hold a session at all: soft-deleted,
+   * inactive, or under an ACTIVE board suspension.
+   *
+   * Reads the same three persistent facts `utils/user-suspension.ts` does, but
+   * directly rather than through the Redis-cached helper: a token-issuing path
+   * must not be answered from a cache that can lag the database. The cache is
+   * there to answer "is this *existing* token still usable" quickly; the
+   * question here is "may a *new* one exist", and a stale permissive answer to
+   * that is exactly the failure this guards.
+   */
+  private async isAccountUnusable(userId: string): Promise<boolean> {
+    const [user, activeSuspension] = await Promise.all([
+      prisma.user.findUnique({
+        where: { id: userId },
+        select: { isActive: true, deletedAt: true },
+      }),
+      prisma.boardMemberSuspension.findFirst({
+        where: { userId, status: BoardSuspensionStatus.ACTIVE },
+        select: { id: true },
+      }),
+    ]);
+    return !user || !user.isActive || !!user.deletedAt || !!activeSuspension;
   }
 
   /**
@@ -658,7 +717,9 @@ export class AuthService {
     }
 
     if (!user.isActive) {
-      throw Errors.badRequest('Akun ini nonaktif — aktifkan lebih dulu sebelum mengirim tautan reset');
+      throw Errors.badRequest(
+        'Akun ini nonaktif — aktifkan lebih dulu sebelum mengirim tautan reset'
+      );
     }
 
     // An identity row with no login cannot have its password reset.
@@ -802,6 +863,10 @@ export class AuthService {
       throw Errors.unauthorized('Invalid authentication flow');
     }
 
+    if (await this.isAccountUnusable(userId)) {
+      throw Errors.unauthorized('Account is deactivated or not found');
+    }
+
     const user = await prisma.user.findFirst({
       where: { id: userId, deletedAt: null },
       include: {
@@ -845,64 +910,97 @@ export class AuthService {
       throw Errors.unauthorized('Invalid OTP code');
     }
 
-    // Generate tokens — with legacy fallback for unmigrated users
-    const primaryAssignment = user.userRoles.find((r) => r.isPrimary) || user.userRoles[0];
+    // Re-validate the persistent account state immediately before the tokens
+    // exist, and create them in the same transaction that asserts it.
+    //
+    // The check at the top of this method and the token issuance below are
+    // separated by an OTP verification (and, for a recovery code, a raw UPDATE)
+    // — plenty of time for a suspension to commit. Without this second read,
+    // the exact race the caller asked about survives: a temporary token minted
+    // before the suspension, a suspension that commits while the operator types
+    // the code, and a brand-new access+refresh pair for an account that was
+    // switched off a moment earlier. The suspension deletes the refresh tokens
+    // it can see; this one would be created after that delete and outlive it.
+    return prisma.$transaction(async (tx) => {
+      const claimed = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM "users"
+        WHERE id = ${userId} AND is_active = true AND deleted_at IS NULL
+        FOR UPDATE
+      `;
+      if (claimed.length !== 1) {
+        throw Errors.unauthorized('Account is deactivated or not found');
+      }
 
-    let twoFaRoleCode: string;
-    let permissions: string[];
-    let twoFaRoleId: string | undefined;
-    let twoFaUnitId: string | null | undefined;
-
-    if (primaryAssignment) {
-      twoFaRoleCode = primaryAssignment.role.code;
-      permissions = (primaryAssignment.role.permissions as string[]) || [];
-      twoFaRoleId = primaryAssignment.roleId;
-      twoFaUnitId = primaryAssignment.unitId;
-    } else if (user.role) {
-      twoFaRoleCode = user.role;
-      permissions = [];
-      twoFaRoleId = undefined;
-      twoFaUnitId = undefined;
-    } else {
-      throw Errors.forbidden('No active role assignment found');
-    }
-
-    const tokens = generateTokenPair({
-      id: user.id,
-      sub: user.id,
-      email: user.email,
-      roleId: twoFaRoleId || '',
-      roleCode: twoFaRoleCode,
-      unitId: tokenUnitId(twoFaUnitId, twoFaRoleCode, user.unitId),
-      permissions,
-      role: deriveLegacyRole(twoFaRoleCode),
-    });
-
-    const [, , activeAcademicYearId] = await Promise.all([
-      prisma.refreshToken.create({
-        data: {
-          token: tokens.refreshToken,
-          userId: user.id,
-          expiresAt: getExpirationDate(config.jwt.refreshExpiresIn),
+      const blockingSuspension = await tx.boardMemberSuspension.findFirst({
+        where: {
+          userId,
+          status: BoardSuspensionStatus.ACTIVE,
         },
-      }),
-      prisma.user.update({
-        where: { id: user.id },
-        data: { lastLoginAt: new Date() },
-      }),
-      this.getActiveAcademicYearId(),
-    ]);
+        select: { id: true },
+      });
+      if (blockingSuspension) {
+        throw Errors.unauthorized('Account is deactivated or not found');
+      }
 
-    const userWithoutPassword = this.stripSensitiveFields(user);
+      // Generate tokens — with legacy fallback for unmigrated users
+      const primaryAssignment = user.userRoles.find((r) => r.isPrimary) || user.userRoles[0];
 
-    return {
-      user: {
-        ...userWithoutPassword,
-        academicYearId: activeAcademicYearId,
+      let twoFaRoleCode: string;
+      let permissions: string[];
+      let twoFaRoleId: string | undefined;
+      let twoFaUnitId: string | null | undefined;
+
+      if (primaryAssignment) {
+        twoFaRoleCode = primaryAssignment.role.code;
+        permissions = (primaryAssignment.role.permissions as string[]) || [];
+        twoFaRoleId = primaryAssignment.roleId;
+        twoFaUnitId = primaryAssignment.unitId;
+      } else if (user.role) {
+        twoFaRoleCode = user.role;
+        permissions = [];
+        twoFaRoleId = undefined;
+        twoFaUnitId = undefined;
+      } else {
+        throw Errors.forbidden('No active role assignment found');
+      }
+
+      const tokens = generateTokenPair({
+        id: user.id,
+        sub: user.id,
+        email: user.email,
+        roleId: twoFaRoleId || '',
+        roleCode: twoFaRoleCode,
+        unitId: tokenUnitId(twoFaUnitId, twoFaRoleCode, user.unitId),
         permissions,
-      },
-      ...tokens,
-    };
+        role: deriveLegacyRole(twoFaRoleCode),
+      });
+
+      const [, , activeAcademicYearId] = await Promise.all([
+        tx.refreshToken.create({
+          data: {
+            token: tokens.refreshToken,
+            userId: user.id,
+            expiresAt: getExpirationDate(config.jwt.refreshExpiresIn),
+          },
+        }),
+        tx.user.update({
+          where: { id: user.id },
+          data: { lastLoginAt: new Date() },
+        }),
+        this.getActiveAcademicYearId(),
+      ]);
+
+      const userWithoutPassword = this.stripSensitiveFields(user);
+
+      return {
+        user: {
+          ...userWithoutPassword,
+          academicYearId: activeAcademicYearId,
+          permissions,
+        },
+        ...tokens,
+      };
+    });
   }
 
   /**
@@ -1059,8 +1157,6 @@ export class AuthService {
     } = user;
     return safe;
   }
-
-
 }
 
 export const authService = new AuthService();

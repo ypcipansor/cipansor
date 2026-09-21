@@ -48,7 +48,13 @@ const {
       userRoleAssignment: {
         create: vi.fn(),
       },
-      // register() runs user + role-assignment creation in a transaction.
+      boardMemberSuspension: {
+        findFirst: vi.fn(),
+      },
+      // refreshToken() re-asserts the account state under a row lock before
+      // rotating; the register()/2FA transaction runs its callback against the
+      // mock client below.
+      $queryRaw: vi.fn(),
       $transaction: vi.fn(),
     },
     mockComparePassword: vi.fn(),
@@ -149,8 +155,17 @@ describe('AuthService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     authService = new AuthService();
-    // The register() transaction simply runs its callback against the mock client.
+    // The transactions (register, refresh rotation, 2FA issuance) simply run
+    // their callback against the mock client.
     (mockPrisma.$transaction as any).mockImplementation(async (cb: any) => cb(mockPrisma));
+    // The account-state re-assertion returns the claimed row by default.
+    (mockPrisma.$queryRaw as any).mockResolvedValue([{ id: 'user-1' }]);
+    // Token-issuing paths re-read the persistent account state before minting.
+    (mockPrisma.user.findUnique as any).mockResolvedValue({
+      isActive: true,
+      deletedAt: null,
+    });
+    (mockPrisma.boardMemberSuspension.findFirst as any).mockResolvedValue(null);
   });
 
   describe('login', () => {

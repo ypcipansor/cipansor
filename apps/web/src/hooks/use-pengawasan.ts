@@ -55,56 +55,100 @@ export const useAudit = (id: string) => {
 export const useCreateAudit = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (data: Record<string, unknown>) => (await api.post("/pengawasan", data)).data,
-    onSuccess: () => { toast.success("Audit berhasil dijadwalkan"); qc.invalidateQueries({ queryKey: ["pengawasan"] }); },
-    onError: (e: any) => { toast.error(e.response?.data?.message || "Gagal membuat audit"); },
+    mutationFn: async (data: Record<string, unknown>) =>
+      (await api.post("/pengawasan", data)).data,
+    onSuccess: () => {
+      toast.success("Audit berhasil dijadwalkan");
+      qc.invalidateQueries({ queryKey: ["pengawasan"] });
+    },
+    onError: (e: any) => {
+      toast.error(e.response?.data?.message || "Gagal membuat audit");
+    },
   });
 };
 
 export const useUpdateAudit = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, ...data }: { id: string } & Record<string, unknown>) =>
+    mutationFn: async ({
+      id,
+      ...data
+    }: { id: string } & Record<string, unknown>) =>
       (await api.put(`/pengawasan/${id}`, data)).data,
-    onSuccess: () => { toast.success("Audit berhasil diperbarui"); qc.invalidateQueries({ queryKey: ["pengawasan"] }); },
-    onError: (e: any) => { toast.error(e.response?.data?.message || "Gagal memperbarui audit"); },
+    onSuccess: () => {
+      toast.success("Audit berhasil diperbarui");
+      qc.invalidateQueries({ queryKey: ["pengawasan"] });
+    },
+    onError: (e: any) => {
+      toast.error(e.response?.data?.message || "Gagal memperbarui audit");
+    },
   });
 };
 
 export const useDeleteAudit = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (id: string) => (await api.delete(`/pengawasan/${id}`)).data,
-    onSuccess: () => { toast.success("Audit berhasil dihapus"); qc.invalidateQueries({ queryKey: ["pengawasan"] }); },
-    onError: (e: any) => { toast.error(e.response?.data?.message || "Gagal menghapus audit"); },
+    mutationFn: async (id: string) =>
+      (await api.delete(`/pengawasan/${id}`)).data,
+    onSuccess: () => {
+      toast.success("Audit berhasil dihapus");
+      qc.invalidateQueries({ queryKey: ["pengawasan"] });
+    },
+    onError: (e: any) => {
+      toast.error(e.response?.data?.message || "Gagal menghapus audit");
+    },
   });
 };
 
 export const useCreateFinding = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (data: Record<string, unknown>) => (await api.post("/pengawasan/findings", data)).data,
-    onSuccess: () => { toast.success("Temuan berhasil dicatat"); qc.invalidateQueries({ queryKey: ["pengawasan"] }); },
-    onError: (e: any) => { toast.error(e.response?.data?.message || "Gagal mencatat temuan"); },
+    mutationFn: async (data: Record<string, unknown>) =>
+      (await api.post("/pengawasan/findings", data)).data,
+    onSuccess: () => {
+      toast.success("Temuan berhasil dicatat");
+      qc.invalidateQueries({ queryKey: ["pengawasan"] });
+    },
+    onError: (e: any) => {
+      toast.error(e.response?.data?.message || "Gagal mencatat temuan");
+    },
   });
 };
 
 export const useCreateFollowUp = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (data: Record<string, unknown>) => (await api.post("/pengawasan/follow-ups", data)).data,
-    onSuccess: () => { toast.success("Tindak lanjut berhasil ditambahkan"); qc.invalidateQueries({ queryKey: ["pengawasan"] }); },
-    onError: (e: any) => { toast.error(e.response?.data?.message || "Gagal menambahkan tindak lanjut"); },
+    mutationFn: async (data: Record<string, unknown>) =>
+      (await api.post("/pengawasan/follow-ups", data)).data,
+    onSuccess: () => {
+      toast.success("Tindak lanjut berhasil ditambahkan");
+      qc.invalidateQueries({ queryKey: ["pengawasan"] });
+    },
+    onError: (e: any) => {
+      toast.error(
+        e.response?.data?.message || "Gagal menambahkan tindak lanjut",
+      );
+    },
   });
 };
 
 export const useUpdateFollowUp = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, ...data }: { id: string } & Record<string, unknown>) =>
+    mutationFn: async ({
+      id,
+      ...data
+    }: { id: string } & Record<string, unknown>) =>
       (await api.put(`/pengawasan/follow-ups/${id}`, data)).data,
-    onSuccess: () => { toast.success("Tindak lanjut berhasil diperbarui"); qc.invalidateQueries({ queryKey: ["pengawasan"] }); },
-    onError: (e: any) => { toast.error(e.response?.data?.message || "Gagal memperbarui tindak lanjut"); },
+    onSuccess: () => {
+      toast.success("Tindak lanjut berhasil diperbarui");
+      qc.invalidateQueries({ queryKey: ["pengawasan"] });
+    },
+    onError: (e: any) => {
+      toast.error(
+        e.response?.data?.message || "Gagal memperbarui tindak lanjut",
+      );
+    },
   });
 };
 
@@ -113,26 +157,39 @@ export const useUpdateFollowUp = () => {
 export const usePublicCreateWbs = () => {
   return useMutation({
     mutationFn: async (data: CreatePublicWbsInput) =>
-      (await api.post("/pengawasan/public/wbs/reports", data)).data.data as WbsPublicSubmissionResultDto,
-    onSuccess: () => { toast.success("Laporan WBS berhasil diajukan"); },
-    onError: (e: any) => { toast.error(e.response?.data?.message || "Gagal mengajukan laporan WBS"); },
+      (await api.post("/pengawasan/public/wbs/reports", data)).data
+        .data as WbsPublicSubmissionResultDto,
+    onSuccess: () => {
+      toast.success("Laporan WBS berhasil diajukan");
+    },
+    onError: (e: any) => {
+      toast.error(e.response?.data?.message || "Gagal mengajukan laporan WBS");
+    },
   });
 };
 
 export const usePublicTrackWbs = () => {
   return useMutation({
     mutationFn: async (data: TrackPublicWbsInput) =>
-      (await api.post("/pengawasan/public/wbs/track", data)).data.data as WbsTrackingDto,
-    onError: (e: any) => { toast.error(e.response?.data?.message || "Laporan tidak ditemukan"); },
+      (await api.post("/pengawasan/public/wbs/track", data)).data
+        .data as WbsTrackingDto,
+    onError: (e: any) => {
+      toast.error(e.response?.data?.message || "Laporan tidak ditemukan");
+    },
   });
 };
 
 export const usePublicAddWbsComment = () => {
   return useMutation({
     mutationFn: async (data: AddPublicWbsCommentInput) =>
-      (await api.post("/pengawasan/public/wbs/comments", data)).data.data,
-    onSuccess: () => { toast.success("Pesan tanggapan terkirim"); },
-    onError: (e: any) => { toast.error(e.response?.data?.message || "Gagal mengirim pesan"); },
+      (await api.post("/pengawasan/public/wbs/comments", data)).data
+        .data as WbsCommentDto,
+    onSuccess: () => {
+      toast.success("Pesan tanggapan terkirim");
+    },
+    onError: (e: any) => {
+      toast.error(e.response?.data?.message || "Gagal mengirim pesan");
+    },
   });
 };
 
@@ -149,30 +206,57 @@ export const useWbsReports = () => {
 export const useUpdateWbsStatus = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, ...body }: { id: string } & UpdateWbsStatusInput) =>
-      (await api.patch(`/pengawasan/wbs/reports/${id}/status`, body)).data.data as WbsReportDto,
-    onSuccess: () => { toast.success("Status WBS diperbarui"); qc.invalidateQueries({ queryKey: ["wbs-reports"] }); },
-    onError: (e: any) => { toast.error(e.response?.data?.message || "Gagal memperbarui status WBS"); },
+    mutationFn: async ({
+      id,
+      ...body
+    }: { id: string } & UpdateWbsStatusInput) =>
+      (await api.patch(`/pengawasan/wbs/reports/${id}/status`, body)).data
+        .data as WbsReportDto,
+    onSuccess: () => {
+      toast.success("Status WBS diperbarui");
+      qc.invalidateQueries({ queryKey: ["wbs-reports"] });
+    },
+    onError: (e: any) => {
+      toast.error(e.response?.data?.message || "Gagal memperbarui status WBS");
+    },
   });
 };
 
 export const useForwardWbsReport = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, ...body }: { id: string } & ForwardWbsReportInput) =>
-      (await api.post(`/pengawasan/wbs/reports/${id}/forward`, body)).data.data as WbsReportDto,
-    onSuccess: () => { toast.success("Laporan WBS berhasil diteruskan"); qc.invalidateQueries({ queryKey: ["wbs-reports"] }); },
-    onError: (e: any) => { toast.error(e.response?.data?.message || "Gagal meneruskan WBS"); },
+    mutationFn: async ({
+      id,
+      ...body
+    }: { id: string } & ForwardWbsReportInput) =>
+      (await api.post(`/pengawasan/wbs/reports/${id}/forward`, body)).data
+        .data as WbsReportDto,
+    onSuccess: () => {
+      toast.success("Laporan WBS berhasil diteruskan");
+      qc.invalidateQueries({ queryKey: ["wbs-reports"] });
+    },
+    onError: (e: any) => {
+      toast.error(e.response?.data?.message || "Gagal meneruskan WBS");
+    },
   });
 };
 
 export const useAddWbsHandlerComment = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, ...body }: { id: string } & AddWbsHandlerCommentInput) =>
-      (await api.post(`/pengawasan/wbs/reports/${id}/comments`, body)).data.data as WbsCommentDto,
-    onSuccess: () => { toast.success("Tanggapan berhasil dikirim"); qc.invalidateQueries({ queryKey: ["wbs-reports"] }); },
-    onError: (e: any) => { toast.error(e.response?.data?.message || "Gagal mengirim tanggapan"); },
+    mutationFn: async ({
+      id,
+      ...body
+    }: { id: string } & AddWbsHandlerCommentInput) =>
+      (await api.post(`/pengawasan/wbs/reports/${id}/comments`, body)).data
+        .data as WbsCommentDto,
+    onSuccess: () => {
+      toast.success("Tanggapan berhasil dikirim");
+      qc.invalidateQueries({ queryKey: ["wbs-reports"] });
+    },
+    onError: (e: any) => {
+      toast.error(e.response?.data?.message || "Gagal mengirim tanggapan");
+    },
   });
 };
 
@@ -209,9 +293,12 @@ export const usePlhCandidates = (excludeUserId?: string, enabled = true) => {
     queryKey: ["board-suspensions", "plh-candidates", excludeUserId ?? null],
     enabled,
     queryFn: async () => {
-      const res = await api.get("/pengawasan/board-suspensions/plh-candidates", {
-        params: excludeUserId ? { excludeUserId } : undefined,
-      });
+      const res = await api.get(
+        "/pengawasan/board-suspensions/plh-candidates",
+        {
+          params: excludeUserId ? { excludeUserId } : undefined,
+        },
+      );
       return res.data.data as PengawasanCandidateDto[];
     },
   });
@@ -221,19 +308,40 @@ export const useCreateBoardSuspension = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (data: CreateBoardSuspensionInput) =>
-      (await api.post("/pengawasan/board-suspensions", data)).data.data as BoardSuspensionDto,
-    onSuccess: () => { toast.success("SK Pembekuan Pengurus & Plh/Plt berhasil ditetapkan"); qc.invalidateQueries({ queryKey: ["board-suspensions"] }); },
-    onError: (e: any) => { toast.error(e.response?.data?.message || "Gagal membekukan pengurus"); },
+      (await api.post("/pengawasan/board-suspensions", data)).data
+        .data as BoardSuspensionDto,
+    onSuccess: () => {
+      toast.success("SK Pembekuan Pengurus & Plh/Plt berhasil ditetapkan");
+      qc.invalidateQueries({ queryKey: ["board-suspensions"] });
+    },
+    onError: (e: any) => {
+      toast.error(e.response?.data?.message || "Gagal membekukan pengurus");
+    },
   });
 };
 
 export const useLiftBoardSuspension = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, liftReason }: { id: string; liftReason: string }) =>
-      (await api.post(`/pengawasan/board-suspensions/${id}/lift`, { liftReason })).data.data as BoardSuspensionDto,
-    onSuccess: () => { toast.success("Status pembekuan pengurus berhasil dicabut (dipulihkan)"); qc.invalidateQueries({ queryKey: ["board-suspensions"] }); },
-    onError: (e: any) => { toast.error(e.response?.data?.message || "Gagal memulihkan status"); },
+    mutationFn: async ({
+      id,
+      liftReason,
+    }: {
+      id: string;
+      liftReason: string;
+    }) =>
+      (
+        await api.post(`/pengawasan/board-suspensions/${id}/lift`, {
+          liftReason,
+        })
+      ).data.data as BoardSuspensionDto,
+    onSuccess: () => {
+      toast.success("Status pembekuan pengurus berhasil dicabut (dipulihkan)");
+      qc.invalidateQueries({ queryKey: ["board-suspensions"] });
+    },
+    onError: (e: any) => {
+      toast.error(e.response?.data?.message || "Gagal memulihkan status");
+    },
   });
 };
 
@@ -243,7 +351,9 @@ export const useFinancialArrears = (unitId?: string) => {
   return useQuery({
     queryKey: ["financial-arrears", unitId],
     queryFn: async () => {
-      const res = await api.get("/pengawasan/financial-arrears", { params: { unitId } });
+      const res = await api.get("/pengawasan/financial-arrears", {
+        params: { unitId },
+      });
       return res.data.data as FinancialArrearsDto;
     },
   });
@@ -261,7 +371,11 @@ export const useDraftPeriodicReportToEOffice = () => {
       );
     },
     onError: (e: any) => {
-      toast.error(e.response?.data?.error?.message || e.response?.data?.message || "Gagal membuat konsep Laporan Pengawasan");
+      toast.error(
+        e.response?.data?.error?.message ||
+          e.response?.data?.message ||
+          "Gagal membuat konsep Laporan Pengawasan",
+      );
     },
   });
 };

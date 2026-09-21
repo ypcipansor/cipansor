@@ -44,6 +44,20 @@ import type {
 } from "@cipansor/shared";
 import { readWbsTrackingToken } from "@/lib/wbs-tracking";
 
+/**
+ * Turn an unknown thrown value into a message worth showing the reporter.
+ *
+ * The previous handlers discarded the error entirely and only refreshed the
+ * Turnstile challenge, so a rejection looked identical to nothing happening.
+ */
+function errorMessage(err: unknown, fallback: string): string {
+  const maybe = err as {
+    response?: { data?: { message?: string } };
+    message?: string;
+  };
+  return maybe?.response?.data?.message || maybe?.message || fallback;
+}
+
 const STATUS_BADGES: Record<string, { label: string; color: string }> = {
   DIAJUKAN: {
     label: "Diajukan",
@@ -74,6 +88,8 @@ function PublicWbsTrackContent() {
   const [reportData, setReportData] = useState<WbsTrackingDto | null>(null);
 
   const [newMessage, setNewMessage] = useState<string>("");
+  const [trackError, setTrackError] = useState<string | null>(null);
+  const [commentError, setCommentError] = useState<string | null>(null);
 
   const trackTurnstile = useTurnstile();
   const commentTurnstile = useTurnstile();
@@ -96,6 +112,7 @@ function PublicWbsTrackContent() {
     if (e) e.preventDefault();
     if (!ticketCode || !trackingToken) return;
 
+    setTrackError(null);
     try {
       const res = await trackMutation.mutateAsync({
         ticketCode: ticketCode.trim(),
@@ -107,6 +124,7 @@ function PublicWbsTrackContent() {
       }
       trackTurnstile.refresh();
     } catch (err) {
+      setTrackError(errorMessage(err, "Gagal memuat status laporan."));
       trackTurnstile.refresh();
     }
   };
@@ -115,18 +133,42 @@ function PublicWbsTrackContent() {
     e.preventDefault();
     if (!newMessage.trim() || !ticketCode || !trackingToken) return;
 
+    setCommentError(null);
     try {
-      await addCommentMutation.mutateAsync({
+      const created = await addCommentMutation.mutateAsync({
         ticketCode: ticketCode.trim(),
         trackingToken: trackingToken.trim(),
         message: newMessage.trim(),
         turnstileToken: commentTurnstile.token || undefined,
       });
       setNewMessage("");
+
+      /**
+       * Show the reply immediately by folding the mutation's own response into
+       * the loaded report, instead of re-running the tracking lookup.
+       *
+       * Re-running `handleTrack()` here was a silent failure: the tracking (and
+       * comment) Turnstile tokens are single-use, `commentTurnstile.refresh()`
+       * clears the comment token, and the track widget's token had already been
+       * spent by the lookup that loaded this page. The refetch therefore went
+       * out with no token, the server's Turnstile gate rejected it, and the
+       * catch swallowed it — the message was stored but never appeared until a
+       * manual reload. The comment endpoint already returns the created row, so
+       * appending it is both correct and one round trip fewer.
+       */
+      if (created) {
+        setReportData((prev) =>
+          prev
+            ? {
+                ...prev,
+                comments: [...(prev.comments ?? []), created as WbsCommentDto],
+              }
+            : prev,
+        );
+      }
       commentTurnstile.refresh();
-      // Refresh report data
-      handleTrack();
     } catch (err) {
+      setCommentError(errorMessage(err, "Gagal mengirim pesan."));
       commentTurnstile.refresh();
     }
   };
@@ -213,6 +255,15 @@ function PublicWbsTrackContent() {
                     {...trackTurnstile.widgetProps}
                   />
                 </div>
+              )}
+
+              {trackError && (
+                <p
+                  role="alert"
+                  className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800"
+                >
+                  {trackError}
+                </p>
               )}
 
               <Button
@@ -449,6 +500,15 @@ function PublicWbsTrackContent() {
                         {...commentTurnstile.widgetProps}
                       />
                     </div>
+                  )}
+
+                  {commentError && (
+                    <p
+                      role="alert"
+                      className="rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-800"
+                    >
+                      {commentError}
+                    </p>
                   )}
 
                   <Button

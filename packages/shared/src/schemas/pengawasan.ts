@@ -39,6 +39,83 @@ const optionalUuidSchema = z.preprocess(
   z.string().uuid().optional().nullable(),
 );
 
+/**
+ * Attachment entries: an HTTPS URL only.
+ *
+ * `attachments` accepted any string from an anonymous visitor. Stored verbatim
+ * and later rendered as a link, that is a stored-XSS and open-redirect vector:
+ * `javascript:alert(1)` executes in the handler's session, `data:text/html,…`
+ * renders attacker HTML on the portal origin, and `file://` or a credential-
+ * bearing URL leaks or confuses. The URL is also never fetched server-side, so
+ * SSRF is out of scope by construction — but a link the *handler* clicks must
+ * still be a real HTTPS destination.
+ *
+ * Parsed by hand rather than with the `URL` constructor: this package compiles
+ * with `lib: ["ES2022"]` and must not pull in DOM or Node globals, so `URL` is
+ * not in scope. The checks below cover the whole scheme/authority surface that
+ * matters — scheme, credentials, host, port, and control characters — and are
+ * deliberately stricter than the browser's lenient normalization.
+ *
+ * An allowlist of storage hosts is deliberately NOT applied: the product has
+ * more than one legitimate bucket (E-Office letters, complaint evidence, the
+ * legacy uploads directory) and a wrong allowlist silently drops valid
+ * evidence — the failure mode is lost reports, not a blocked attack. Restricting
+ * to a controlled upload endpoint that mints the object reference is the better
+ * design and is tracked separately; until then the protocol/userinfo/host checks
+ * are the enforceable minimum.
+ */
+const ATTACHMENT_URL_MAX = 2048;
+const HOSTNAME_RE =
+  /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$/i;
+
+function attachmentUrlIssue(raw: string): string | null {
+  const value = raw.trim();
+  if (value.length === 0) return "Lampiran harus berupa URL yang valid";
+  if (value.length > ATTACHMENT_URL_MAX)
+    return "Tautan lampiran terlalu panjang";
+  // No whitespace or control characters anywhere: they are how a truncated or
+  // header-injected value gets smuggled past a naive check.
+  if (/[\u0000-\u001f\u007f\s]/.test(value))
+    return "Lampiran harus berupa URL yang valid";
+  // A backslash is normalized to a forward slash by browsers, which is how
+  // `https:\/evil.example` would otherwise be accepted as a host-less string.
+  if (value.includes("\\")) return "Lampiran harus berupa URL yang valid";
+
+  const scheme = /^https:\/\//i.exec(value);
+  if (!scheme) return "Lampiran harus menggunakan tautan HTTPS";
+
+  const rest = value.slice(scheme[0].length);
+  const authority = rest.split(/[/?#]/, 1)[0];
+  if (authority.length === 0)
+    return "Lampiran harus memiliki alamat host yang sah";
+
+  // `user:pass@host` is a cleartext credential in a report handlers read and
+  // audit dumps print; refused outright.
+  if (authority.includes("@"))
+    return "Lampiran tidak boleh memuat kredensial pada URL";
+
+  const [hostPart, port, ...extra] = authority.split(":");
+  if (extra.length > 0) return "Lampiran harus berupa URL yang valid";
+  if (port !== undefined && !/^\d{1,5}$/.test(port)) {
+    return "Lampiran harus berupa URL yang valid";
+  }
+  if (!HOSTNAME_RE.test(hostPart))
+    return "Lampiran harus memiliki alamat host yang sah";
+  return null;
+}
+
+const attachmentUrlSchema = z
+  .string()
+  .trim()
+  .superRefine((val, ctx) => {
+    const issue = attachmentUrlIssue(val);
+    if (issue) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: issue });
+    }
+  });
+
+const attachmentsSchema = z.array(attachmentUrlSchema).max(10).optional();
+
 // ---------------------------------------------------------------------------
 // Public WBS
 // ---------------------------------------------------------------------------
@@ -55,7 +132,7 @@ export const createPublicWbsSchema = z.object({
   isAnonymous: z.boolean().optional(),
   reporterName: z.string().optional(),
   reporterContact: z.string().optional(),
-  attachments: z.array(z.string()).optional(),
+  attachments: attachmentsSchema,
   turnstileToken: z.string().optional(),
 });
 
@@ -73,7 +150,7 @@ export const addPublicWbsCommentSchema = z.object({
   ticketCode: z.string().min(3),
   trackingToken: z.string().min(5),
   message: z.string().min(1),
-  attachments: z.array(z.string()).optional(),
+  attachments: attachmentsSchema,
   turnstileToken: z.string().optional(),
 });
 
@@ -103,7 +180,7 @@ export type ForwardWbsReportInput = z.infer<typeof forwardWbsReportSchema>;
 
 export const addWbsHandlerCommentSchema = z.object({
   message: z.string().min(1),
-  attachments: z.array(z.string()).optional(),
+  attachments: attachmentsSchema,
 });
 
 export type AddWbsHandlerCommentInput = z.infer<
@@ -144,7 +221,29 @@ export const createBoardSuspensionSchema = z
   .superRefine((data, ctx) => {
     const hasUser = !!data.plhUserId;
     const hasRole = !!data.plhRoleCode;
-    if (hasUser === hasRole) return;
+    if (hasUser === hasRole) {
+      // A suspension is effective the moment the SK is issued: the account is
+      // switched off and the Plh is granted in the same transaction. A future
+      // `startDate` cannot therefore schedule anything — it would only sit in
+      // the row as metadata that looks like a delayed effect while the effect
+      // has already happened. `projectedEndDate` is an estimate that likewise
+      // does not expire the suspension; a Pembina lifts it explicitly. Given
+      // the decision that suspension is immediate, a future date must be
+      // refused at the edge rather than stored as a promise the code does not
+      // keep.
+      if (data.startDate) {
+        const start = Date.parse(data.startDate);
+        if (start > Date.now()) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["startDate"],
+            message:
+              "Pembekuan berlaku sejak SK ditetapkan, sehingga tanggal mulai tidak boleh di masa depan.",
+          });
+        }
+      }
+      return;
+    }
 
     const missing = hasUser ? "plhRoleCode" : "plhUserId";
     ctx.addIssue({
