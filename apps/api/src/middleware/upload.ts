@@ -121,28 +121,24 @@ export const upload = multer({
 });
 
 /**
- * True when `candidate` (already absolute) is a file strictly inside the upload
- * directory. `path.resolve` + `path.relative` is a lexical check: it stops `..`
- * traversal and sibling-prefix paths but says nothing about symlinks.
- */
-function isInsideUploadDir(candidate: string): boolean {
-  const relative = path.relative(path.resolve(uploadDir), candidate);
-  return relative.length > 0 && !relative.startsWith('..') && !path.isAbsolute(relative);
-}
-
-/**
  * Read the stored file's first bytes and verify they match the declared MIME
  * type. Deletes the file and returns false on mismatch, so nothing that fails
  * the check survives on disk.
  *
- * Containment is enforced twice. The lexical check rejects `..` and a sibling
- * directory whose path shares a prefix; the `realpath` check then rejects a
- * symlink inside the upload directory that points outside it, which the lexical
- * check cannot see. A path that fails either is never opened or unlinked.
+ * Containment is enforced twice, inline so the check is not lost behind a
+ * helper. The lexical check rejects `..` traversal, a sibling directory sharing
+ * the path prefix, and the upload directory itself; the `realpath` check then
+ * rejects a symlink inside the upload directory that points outside it, which
+ * the lexical check cannot see. A path that fails either is never opened or
+ * unlinked.
  */
 export async function verifyStoredFile(file: Express.Multer.File): Promise<boolean> {
+  const resolvedUploadDir = path.resolve(uploadDir);
   const resolvedFilePath = path.resolve(file.path);
-  if (!isInsideUploadDir(resolvedFilePath)) {
+  const relativePath = path.relative(resolvedUploadDir, resolvedFilePath);
+
+  // Enforce that the lexical path stays inside the upload directory.
+  if (relativePath.length === 0 || relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
     return false;
   }
 
@@ -152,7 +148,13 @@ export async function verifyStoredFile(file: Express.Multer.File): Promise<boole
   } catch {
     return false;
   }
-  if (!isInsideUploadDir(realFilePath)) {
+  const realRelativePath = path.relative(resolvedUploadDir, realFilePath);
+  // Enforce the same containment on the canonical path, which resolves symlinks.
+  if (
+    realRelativePath.length === 0 ||
+    realRelativePath.startsWith('..') ||
+    path.isAbsolute(realRelativePath)
+  ) {
     return false;
   }
 

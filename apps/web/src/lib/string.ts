@@ -109,7 +109,10 @@ export function slugify(str: string): string {
  */
 export function stripHtml(html: string): string {
   if (!html) return "";
-  return stripToFixedPoint(html, /<\/?[a-z][^>]*>/gi);
+  // `[^<>]*` rather than `[^>]*`: a `[^>]*` body rescans to end-of-string from
+  // every `<` in input that never closes a tag, which is quadratic. Excluding
+  // `<` bounds each attempt.
+  return stripToFixedPoint(html, /<\/?[a-z][^<>]*>/gi);
 }
 
 /**
