@@ -415,7 +415,7 @@ export const fileType = (
           return value.name.toLowerCase().endsWith(type.toLowerCase());
         }
         return (
-          value.type === type || value.type.startsWith(type.replace("*", ""))
+          value.type === type || value.type.startsWith(type.replace(/\*/g, ""))
         );
       });
     }
