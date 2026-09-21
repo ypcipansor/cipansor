@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -11,7 +11,10 @@ import {
   type CreateFoundationDecisionInput,
 } from "@cipansor/shared";
 import { MainLayout } from "@/components/layout";
-import { useCreateFoundationDecision } from "@/hooks/use-foundation-decisions";
+import {
+  useCreateFoundationDecision,
+  useFoundationCreateOptions,
+} from "@/hooks/use-foundation-decisions";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,6 +27,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
   SelectContent,
@@ -31,6 +35,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { AccessDenied } from "@/components/shared";
+import { useAuthStore } from "@/stores/auth";
+import { getPrimaryRoleCode } from "@/lib/rbac";
+import { canCreateFoundationDecisions } from "@/lib/yayasan-organ";
 
 /**
  * Skema create adalah milik bersama: validasi di edge (API) dan tipe di web
@@ -41,10 +49,30 @@ import {
  */
 type FormValues = CreateFoundationDecisionInput;
 
+const ORGAN_LABEL: Record<FoundationOrganType, string> = {
+  PEMBINA: "Dewan Pembina",
+  PENGURUS: "Pengurus Yayasan",
+  PENGAWAS: "Dewan Pengawas",
+  GABUNGAN: "Rapat Gabungan",
+};
+
 export default function NewFoundationDecisionPage() {
   const router = useRouter();
   const create = useCreateFoundationDecision();
   const [error, setError] = useState<string | null>(null);
+  const { user, isAuthenticated, isLoading: authLoading } = useAuthStore();
+  const canCreate = canCreateFoundationDecisions(getPrimaryRoleCode(user));
+  // Organ yang boleh dibuat aktor datang dari PELADEN, bukan default statis.
+  // Sebelumnya form selalu membuka dengan `PEMBINA` dan menawarkan seluruh
+  // organ, sehingga Pengawas/Pengurus dapat mengisi form yang submission-nya
+  // pasti 403 — kebijakan "siapa boleh membuat organ apa" hidup di service.
+  // Query ditahan sampai auth siap DAN peran terbukti boleh membuat; peran
+  // read-only yang mengetik URL langsung tak pernah mengirim permintaan 403.
+  const { data: options, isLoading: optionsLoading } = useFoundationCreateOptions({
+    enabled: canCreate,
+  });
+  const allowed = options?.allowedOrgans ?? [];
+
   const {
     register,
     handleSubmit,
@@ -62,6 +90,31 @@ export default function NewFoundationDecisionPage() {
     },
   });
 
+  // Setelah daftar organ tiba, kunci form ke organ pertama yang SAH — bukan
+  // `PEMBINA` buta. Bila aktor tidak punya organ sah, form operasional tidak
+  // ditampilkan sama sekali.
+  const firstAllowed = allowed[0];
+  useEffect(() => {
+    if (!firstAllowed) return;
+    const current = watch("organType");
+    if (!allowed.some((o) => o.organType === current)) {
+      setValue("organType", firstAllowed.organType);
+      const valid = decisionTypesForOrgan(firstAllowed.organType);
+      if (!valid.includes(watch("decisionType"))) {
+        setValue("decisionType", valid[0], { shouldValidate: true });
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [options]);
+
+  const allowedOrgans = useMemo(() => allowed.map((o) => o.organType), [allowed]);
+  const decisionTypes = useMemo(
+    () => decisionTypesForOrgan(watch("organType")),
+    // `watch` returns a new function identity each render; depend on the value.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [watch("organType")],
+  );
+
   const onSubmit = async (values: FormValues) => {
     setError(null);
     // Guard klien: matriks kewenangan yang SAMA dengan API. Server tetap
@@ -71,6 +124,10 @@ export default function NewFoundationDecisionPage() {
       setError(
         `Organ yang dipilih tidak berwenang memutus "${values.decisionType}". Pilih organ lain atau jenis keputusan yang sesuai.`,
       );
+      return;
+    }
+    if (!allowedOrgans.includes(values.organType)) {
+      setError("Anda tidak berwenang membuat keputusan untuk organ tersebut.");
       return;
     }
     try {
@@ -85,6 +142,90 @@ export default function NewFoundationDecisionPage() {
       setError("Gagal menyimpan keputusan. Periksa kembali isian Anda.");
     }
   };
+
+  // Gerbang auth/peran: sebelum status auth siap jangan menebak; setelah siap,
+  // peran yang rute-nya tolak langsung memperoleh halaman akses ditolak, bukan
+  // form kosong. Ini UX, bukan boundary — otorisasi backend tetap utama.
+  if (authLoading && !user) {
+    return (
+      <MainLayout>
+        <div className="space-y-4">
+          <Skeleton className="h-8 w-1/3" />
+          <Skeleton className="h-64 w-full" />
+        </div>
+      </MainLayout>
+    );
+  }
+
+  if (!isAuthenticated || !canCreate) {
+    return (
+      <MainLayout>
+        <PageHeader
+          title="Buat Keputusan Baru"
+          description="Anda tidak berwenang membuat keputusan organ."
+          actions={
+            <Button variant="outline" onClick={() => router.back()}>
+              Kembali
+            </Button>
+          }
+        />
+        <AccessDenied
+          title="Akses Ditolak"
+          description="Peran Anda tidak berwenang membuka keputusan organ yayasan."
+        />
+      </MainLayout>
+    );
+  }
+
+  if (optionsLoading) {
+    return (
+      <MainLayout>
+        <div className="space-y-4">
+          <Skeleton className="h-8 w-1/3" />
+          <Skeleton className="h-64 w-full" />
+        </div>
+      </MainLayout>
+    );
+  }
+
+  // Aktor tanpa organ sah (mis. peran yang dibatasi rute, atau keanggotaan
+  // organ kosong) tidak diberi form operasional.
+  if (allowed.length === 0) {
+    return (
+      <MainLayout>
+        <PageHeader
+          title="Buat Keputusan Baru"
+          description="Anda tidak berwenang membuat keputusan organ."
+          actions={
+            <Button variant="outline" onClick={() => router.back()}>
+              Kembali
+            </Button>
+          }
+        />
+        <AccessDenied
+          title="Akses Ditolak"
+          description="Tidak ada organ yang dapat Anda buatkan keputusan. Hubungi administrator bila ini keliru."
+        />
+      </MainLayout>
+    );
+  }
+
+  // `options` tiba tanpa mengubah nilai form; sebelum efek di atas sempat
+  // mengunci organ ke pilihan yang sah, `organType` masih default `PEMBINA`.
+  // Merender Select dengan nilai di luar daftar item membuat Radix jatuh ke
+  // placeholder, dan React menegur Select yang berpindah dari uncontrolled ke
+  // controlled saat efek menyetel nilainya. Tunggu satu render sampai nilainya
+  // berada di dalam daftar organ yang sah.
+  if (!allowedOrgans.includes(watch("organType"))) {
+    return (
+      <MainLayout>
+        <div className="space-y-4">
+          <Skeleton className="h-8 w-1/3" />
+          <Skeleton className="h-64 w-full" />
+        </div>
+      </MainLayout>
+    );
+  }
 
   return (
     <MainLayout>
@@ -132,10 +273,11 @@ export default function NewFoundationDecisionPage() {
                     <SelectValue placeholder="Pilih organ" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="PEMBINA">Dewan Pembina</SelectItem>
-                    <SelectItem value="PENGURUS">Pengurus Yayasan</SelectItem>
-                    <SelectItem value="PENGAWAS">Dewan Pengawas</SelectItem>
-                    <SelectItem value="GABUNGAN">Rapat Gabungan</SelectItem>
+                    {allowedOrgans.map((o) => (
+                      <SelectItem key={o} value={o}>
+                        {ORGAN_LABEL[o]}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 {errors.organType && (
@@ -190,7 +332,7 @@ export default function NewFoundationDecisionPage() {
                   <SelectValue placeholder="Pilih jenis keputusan" />
                 </SelectTrigger>
                 <SelectContent>
-                  {decisionTypesForOrgan(watch("organType")).map((t) => (
+                  {decisionTypes.map((t) => (
                     <SelectItem key={t} value={t}>
                       {t}
                     </SelectItem>

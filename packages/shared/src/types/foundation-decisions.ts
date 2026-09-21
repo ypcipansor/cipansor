@@ -108,6 +108,89 @@ export function organsForDecisionType(
   return FOUNDATION_DECISION_AUTHORITY[decisionType as FoundationDecisionType] ?? [];
 }
 
+/**
+ * RoleCode yang tergolong anggota tiap organ.
+ *
+ * Definisi TUNGGAL — dipakai API (`utils/foundation-authority.ts`) untuk
+ * membentuk snapshot anggota, dan web untuk menurunkan organ yang boleh dibuat
+ * seorang aktor. Sebelumnya hanya API yang punya peta ini, sehingga form web
+ * menawarkan semua organ dan pengguna non-admin baru ditolak 403 setelah
+ * submit. Nilai-nilainya adalah label RoleCode dari `@prisma/client`; paket
+ * ini murni jadi ia menyimpannya sebagai string dan API memetakannya kembali.
+ *
+ * GABUNGAN = Pengurus + Pengawas (UU 16/2001 Pasal 28 ayat (4)); Pembina TIDAK
+ * ikut, sebab justru kekosongan Pembina-lah yang menjadikan rapat gabungan
+ * perlu.
+ */
+export const FOUNDATION_ORGAN_ROLE_CODES: Record<
+  FoundationOrganType,
+  readonly string[]
+> = {
+  PEMBINA: ["YAYASAN_PEMBINA"],
+  PENGURUS: [
+    "YAYASAN_KETUA",
+    "YAYASAN_SEKRETARIS",
+    "YAYASAN_BENDAHARA",
+    "YAYASAN_ANGGOTA",
+  ],
+  PENGAWAS: ["YAYASAN_PENGAWAS"],
+  GABUNGAN: [
+    "YAYASAN_KETUA",
+    "YAYASAN_SEKRETARIS",
+    "YAYASAN_BENDAHARA",
+    "YAYASAN_ANGGOTA",
+    "YAYASAN_PENGAWAS",
+  ],
+};
+
+/** Apakah `roleCode` tergolong anggota `organType`? */
+export function isRoleCodeMemberOfOrgan(
+  organType: FoundationOrganType,
+  roleCode: string,
+): boolean {
+  return FOUNDATION_ORGAN_ROLE_CODES[organType]?.includes(roleCode) ?? false;
+}
+
+/**
+ * Apakah seorang pemegang `roleCode` berwenang ikut serta pada keputusan
+ * ber-`organType` dengan jenis `decisionType`?
+ *
+ * Matriks kewenangan organ×jenis diperiksa LEBIH DULU dan tidak pernah
+ * dilonggarkan — termasuk oleh `allowSuperAdmin`. Cabang itu hanya melewati
+ * syarat "pembuat harus anggota organ" (Super Admin mengelola sistem, bukan
+ * anggota organ yang memutus).
+ */
+export function organMayDecideByRoleCode(
+  organType: FoundationOrganType,
+  decisionType: string,
+  roleCode: string,
+  opts: { allowSuperAdmin?: boolean } = {},
+): boolean {
+  if (!organAuthorizedForDecisionType(organType, decisionType)) return false;
+  if (opts.allowSuperAdmin && roleCode === "SUPER_ADMIN") return true;
+  return isRoleCodeMemberOfOrgan(organType, roleCode);
+}
+
+/**
+ * Organ yang boleh DIBUAT aktornya menurut matriks kewenangan organ×jenis.
+ *
+ * Untuk tiap organ dicari satu jenis keputusan yang berwenang sebagai
+ * representasi; bila aktor berwenang atas representasi itu (dan, bagi
+ * non-admin, tergolong anggotanya), organ tsb dapat dibuat. Jenis keputusan
+ * yang benar-benar boleh dipilih pada organ itu tetap `decisionTypesForOrgan`.
+ */
+export function allowedCreateOrgansForRole(
+  roleCode: string,
+  opts: { allowSuperAdmin?: boolean } = {},
+): FoundationOrganType[] {
+  return FOUNDATION_ORGAN_TYPES.filter((organ) => {
+    const type = FOUNDATION_DECISION_TYPES.find((t) =>
+      FOUNDATION_DECISION_AUTHORITY[t].includes(organ),
+    );
+    return !!type && organMayDecideByRoleCode(organ, type, roleCode, opts);
+  });
+}
+
 /** Apakah `organType` berwenang atas `decisionType` menurut matriks? */
 export function organAuthorizedForDecisionType(
   organType: FoundationOrganType,
@@ -314,6 +397,25 @@ export interface FoundationDecisionDetailDTO extends FoundationDecisionSummaryDT
   decidedByName: string | null;
   verificationToken: string | null;
   canVote: boolean;
+  /**
+   * Bolehkah PEMINTA memfinalisasi keputusan ini sekarang?
+   *
+   * Dihitung server dari aturan yang SAMA dengan `finalize` — pimpinan/Super
+   * Admin boleh organ mana pun, peran lain hanya bila menjadi anggota snapshot
+   * — dan hanya `true` saat status masih `VOTING`. UI harus memakai field ini,
+   * bukan menyimpulkan dari peran, agar tidak menawarkan tombol yang peladen
+   * pasti tolak.
+   */
+  canFinalize: boolean;
+  /**
+   * Apakah keputusan ini memenuhi syarat untuk DITERBITKAN?
+   *
+   * `PUBLIC` hanya bermakna bagi keputusan `APPROVED` dengan artefak final
+   * lengkap (`finalPdfDigest`, tanda tangan e-seal, `esealId`, arsip dokumen).
+   * Dihitung server dengan syarat yang SAMA dengan `setPublication`, sehingga
+   * UI tidak menawarkan "Terbitkan" pada draf/VOTING yang peladen tolak.
+   */
+  publishable: boolean;
   myVote: FoundationVoteChoice | null;
 }
 
@@ -400,6 +502,30 @@ export interface FoundationDecisionPageDTO {
   total: number;
   page: number;
   limit: number;
+}
+
+/**
+ * Organ yang boleh dibuat aktor, beserta jenis keputusan yang berwenang untuk
+ * organ itu — dihitung PELADEN.
+ *
+ * Form create membutuhkan dua hal ini SEBELUM dikirim: organ mana yang boleh
+ * dipilih, dan jenis keputusan sah untuk organ itu. Menyalin matriks kewenangan
+ * + peta keanggotaan ke web berarti form dapat menawarkan kombinasi yang
+ * peladen tolak (persis bug "Pengawas dapat mengisi form organ Pembina").
+ * Karena itu server mengirimkannya sebagai kontrak, dan UI hanya memilih dari
+ * daftar ini.
+ */
+export interface FoundationCreateOptionsDTO {
+  /**
+   * Organ yang boleh dibuat aktor. `SUPER_ADMIN` mendapat semua organ yang
+   * diizinkan matriks; peran lain hanya organ yang beranggotakan dirinya.
+   * Daftar kosong berarti aktor tidak boleh membuat keputusan apa pun.
+   */
+  allowedOrgans: Array<{
+    organType: FoundationOrganType;
+    /** Jenis keputusan yang berwenang untuk organ ini. */
+    decisionTypes: FoundationDecisionType[];
+  }>;
 }
 
 /** Baris aturan kuorum yang tersimpan (Respons GET/PUT /foundation/rules). */

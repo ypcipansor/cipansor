@@ -774,6 +774,270 @@ describe('FoundationDecisionService.finalize', () => {
   });
 });
 
+/**
+ * Regresi BUG — tombol finalisasi ditawarkan kepada pengguna yang peladen
+ * tolak (audit A).
+ *
+ * DTO detail kini membawa `canFinalize` yang dihitung dengan definisi yang
+ * SAMA dengan `finalize`. Test ini memaku perilakunya untuk tiap kelas aktor.
+ */
+describe('FoundationDecisionService.detail — canFinalize pada DTO (audit A)', () => {
+  it('pimpinan/Super Admin mendapat canFinalize=true pada keputusan VOTING', async () => {
+    dm.foundationDecision.findUnique.mockResolvedValue(decisionRow());
+    const detail = await FoundationDecisionService.detail(
+      { id: 'super', roleCode: 'SUPER_ADMIN' },
+      'dec-1'
+    );
+    expect(detail.canFinalize).toBe(true);
+  });
+
+  it('Pengawas BUKAN anggota snapshot mendapat canFinalize=false', async () => {
+    dm.foundationDecision.findUnique.mockResolvedValue(decisionRow());
+    const detail = await FoundationDecisionService.detail(
+      { id: 'pengawas-luar', roleCode: 'YAYASAN_PENGAWAS' },
+      'dec-1'
+    );
+    expect(detail.canFinalize).toBe(false);
+  });
+
+  it('Pengawas anggota snapshot mendapat canFinalize=true', async () => {
+    const d = decisionRow();
+    d.members = [
+      { id: 'm1', userId: 'pengawas-1', name: 'Pengawas', roleCode: 'YAYASAN_PENGAWAS' },
+    ];
+    dm.foundationDecision.findUnique.mockResolvedValue(d);
+    const detail = await FoundationDecisionService.detail(
+      { id: 'pengawas-1', roleCode: 'YAYASAN_PENGAWAS' },
+      'dec-1'
+    );
+    expect(detail.canFinalize).toBe(true);
+  });
+
+  it('canFinalize=false saat keputusan sudah tidak VOTING', async () => {
+    dm.foundationDecision.findUnique.mockResolvedValue(
+      decisionRow({ status: 'APPROVED' })
+    );
+    const detail = await FoundationDecisionService.detail(
+      { id: 'super', roleCode: 'SUPER_ADMIN' },
+      'dec-1'
+    );
+    expect(detail.canFinalize).toBe(false);
+  });
+
+  /**
+   * Regresi BUG (audit A) — anggota snapshot yang rute TOLAK tidak boleh
+   * memperoleh tombol.
+   *
+   * Bendahara & Anggota adalah anggota snapshot organ PENGURUS, tetapi tidak
+   * ada di `FINALIZE` rute: `authorize(...FINALIZE)` menolak mereka 403 sebelum
+   * service berjalan. Bila eligibility hanya dari keanggotaan, UI menawarkan
+   * tombol yang peladen pasti tolak.
+   */
+  it('Bendahara & Anggota anggota snapshot → canFinalize=false & finalize ditolak', async () => {
+    const d = decisionRow();
+    d.members = [
+      { id: 'm1', userId: 'bendahara-1', name: 'Bendahara', roleCode: 'YAYASAN_BENDAHARA' },
+      { id: 'm2', userId: 'anggota-1', name: 'Anggota', roleCode: 'YAYASAN_ANGGOTA' },
+    ];
+    dm.foundationDecision.findUnique.mockResolvedValue(d);
+    for (const actor of [
+      { id: 'bendahara-1', roleCode: 'YAYASAN_BENDAHARA' },
+      { id: 'anggota-1', roleCode: 'YAYASAN_ANGGOTA' },
+    ]) {
+      const detail = await FoundationDecisionService.detail(actor, 'dec-1');
+      expect(detail.canFinalize).toBe(false);
+      await expect(FoundationDecisionService.finalize(actor, 'dec-1')).rejects.toThrow(
+        /tidak berhak menutup/
+      );
+    }
+  });
+});
+
+/**
+ * Regresi INVESTIGATION D — status publikasi dapat diubah ketika keputusan
+ * masih VOTING.
+ *
+ * `PUBLIC` hanya bermakna bagi keputusan APPROVED dengan artefak final lengkap;
+ * selain itu peladen menolak, dan DTO menandai `publishable` sejalan.
+ */
+describe('FoundationDecisionService.setPublication (audit D)', () => {
+  beforeEach(() => {
+    dm.auditLog.create.mockResolvedValue({ id: 'audit-1' });
+    dm.foundationDecision.updateMany = vi.fn().mockResolvedValue({ count: 1 });
+  });
+
+  it('menolak PUBLIC untuk keputusan VOTING', async () => {
+    dm.foundationDecision.findUnique.mockResolvedValue(
+      decisionRow({ status: 'VOTING', finalPdfDigest: 'd', finalPdfSealSignature: 's', esealId: 'e', document: { id: 'doc' } })
+    );
+    await expect(
+      FoundationDecisionService.setPublication(
+        { id: 'super', roleCode: 'SUPER_ADMIN' },
+        'dec-1',
+        'PUBLIC'
+      )
+    ).rejects.toThrow(/disahkan/);
+    expect(dm.foundationDecision.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('menolak PUBLIC untuk keputusan REJECTED', async () => {
+    dm.foundationDecision.findUnique.mockResolvedValue(
+      decisionRow({ status: 'REJECTED', finalPdfDigest: null, finalPdfSealSignature: null, esealId: null, document: null })
+    );
+    await expect(
+      FoundationDecisionService.setPublication(
+        { id: 'super', roleCode: 'SUPER_ADMIN' },
+        'dec-1',
+        'PUBLIC'
+      )
+    ).rejects.toThrow(/disahkan/);
+  });
+
+  it('menolak PUBLIC bila artefak final belum lengkap walau APPROVED', async () => {
+    dm.foundationDecision.findUnique.mockResolvedValue(
+      decisionRow({ status: 'APPROVED', finalPdfDigest: 'd', finalPdfSealSignature: null, esealId: null, document: null })
+    );
+    await expect(
+      FoundationDecisionService.setPublication(
+        { id: 'super', roleCode: 'SUPER_ADMIN' },
+        'dec-1',
+        'PUBLIC'
+      )
+    ).rejects.toThrow(/disahkan/);
+  });
+
+  it('menerima PUBLIC untuk APPROVED dengan artefak lengkap', async () => {
+    dm.foundationDecision.findUnique.mockResolvedValue(
+      decisionRow({
+        status: 'APPROVED',
+        finalPdfDigest: 'd',
+        finalPdfSealSignature: 's',
+        esealId: 'e',
+        document: { id: 'doc' },
+      })
+    );
+    const res = await FoundationDecisionService.setPublication(
+      { id: 'super', roleCode: 'SUPER_ADMIN' },
+      'dec-1',
+      'PUBLIC'
+    );
+    expect(res.publication).toBe('PUBLIC');
+    expect(dm.auditLog.create).toHaveBeenCalled();
+  });
+
+  it('PRIVATE selalu boleh, juga pada VOTING', async () => {
+    dm.foundationDecision.findUnique.mockResolvedValue(
+      decisionRow({ status: 'VOTING', publication: 'PUBLIC' })
+    );
+    const res = await FoundationDecisionService.setPublication(
+      { id: 'super', roleCode: 'SUPER_ADMIN' },
+      'dec-1',
+      'PRIVATE'
+    );
+    expect(res.publication).toBe('PRIVATE');
+  });
+
+  it('update bersyarat atomik: nol baris → ditolak tanpa audit', async () => {
+    dm.foundationDecision.findUnique.mockResolvedValue(
+      decisionRow({
+        status: 'APPROVED',
+        finalPdfDigest: 'd',
+        finalPdfSealSignature: 's',
+        esealId: 'e',
+        document: { id: 'doc' },
+      })
+    );
+    // Race: baris berubah (mis. e-seal dicabut) antara baca dan tulis.
+    dm.foundationDecision.updateMany.mockResolvedValue({ count: 0 });
+    await expect(
+      FoundationDecisionService.setPublication(
+        { id: 'super', roleCode: 'SUPER_ADMIN' },
+        'dec-1',
+        'PUBLIC'
+      )
+    ).rejects.toThrow(/disahkan/);
+    expect(dm.auditLog.create).not.toHaveBeenCalled();
+  });
+
+  it('publishable pada DTO detail sejalan dengan policy setPublication', async () => {
+    dm.foundationDecision.findUnique.mockResolvedValue(
+      decisionRow({
+        status: 'APPROVED',
+        finalPdfDigest: 'd',
+        finalPdfSealSignature: 's',
+        esealId: 'e',
+        document: { id: 'doc' },
+      })
+    );
+    const detail = await FoundationDecisionService.detail(
+      { id: 'super', roleCode: 'SUPER_ADMIN' },
+      'dec-1'
+    );
+    expect(detail.publishable).toBe(true);
+  });
+
+  it('publishable=false saat VOTING', async () => {
+    dm.foundationDecision.findUnique.mockResolvedValue(decisionRow());
+    const detail = await FoundationDecisionService.detail(
+      { id: 'super', roleCode: 'SUPER_ADMIN' },
+      'dec-1'
+    );
+    expect(detail.publishable).toBe(false);
+  });
+});
+
+/**
+ * Regresi BUG (audit B) — form pembuatan menawarkan organ yang tidak dapat
+ * dibuat pengguna. `createOptions` menghitung daftar dari kebijakan yang sama
+ * dengan gerbang create.
+ */
+describe('FoundationDecisionService.createOptions (audit B)', () => {
+  it('Pengawas mendapat PENGAWAS & GABUNGAN, bukan PEMBINA/PENGURUS', async () => {
+    const opts = await FoundationDecisionService.createOptions({
+      id: 'p',
+      roleCode: 'YAYASAN_PENGAWAS',
+    });
+    expect(opts.allowedOrgans.map((o) => o.organType).sort()).toEqual([
+      'GABUNGAN',
+      'PENGAWAS',
+    ]);
+    const pengawas = opts.allowedOrgans.find((o) => o.organType === 'PENGAWAS');
+    expect(pengawas!.decisionTypes).toEqual(['pemberhentian-sementara-pengurus']);
+  });
+
+  it('Super Admin mendapat semua organ beserta jenis yang berwenang', async () => {
+    const opts = await FoundationDecisionService.createOptions({
+      id: 's',
+      roleCode: 'SUPER_ADMIN',
+    });
+    expect(opts.allowedOrgans.map((o) => o.organType).sort()).toEqual([
+      'GABUNGAN',
+      'PEMBINA',
+      'PENGAWAS',
+      'PENGURUS',
+    ]);
+    const pengawas = opts.allowedOrgans.find((o) => o.organType === 'PENGAWAS');
+    expect(pengawas!.decisionTypes).toEqual(['pemberhentian-sementara-pengurus']);
+    const gabungan = opts.allowedOrgans.find((o) => o.organType === 'GABUNGAN');
+    expect(gabungan!.decisionTypes).toEqual(['pemilihan-pembina']);
+  });
+
+  it('kombinasi organ×decisionType yang dikirim selalu berwenang', async () => {
+    const opts = await FoundationDecisionService.createOptions({
+      id: 's',
+      roleCode: 'SUPER_ADMIN',
+    });
+    const { organMayDecide } = await import('@/utils/foundation-authority');
+    for (const { organType, decisionTypes } of opts.allowedOrgans) {
+      for (const t of decisionTypes) {
+        expect(
+          organMayDecide(organType, t, 'SUPER_ADMIN', { allowSuperAdmin: true })
+        ).toBe(true);
+      }
+    }
+  });
+});
+
 describe('FoundationDecisionService.create', () => {
   it('membuat keputusan + snapshot anggota organ dan mencatat audit', async () => {
     dm.userRoleAssignment.findMany.mockResolvedValue(memberAssignments(3));

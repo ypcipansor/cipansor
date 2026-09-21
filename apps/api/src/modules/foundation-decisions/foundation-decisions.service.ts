@@ -13,6 +13,7 @@ import {
 import type {
   CastFoundationVoteInput,
   CreateFoundationDecisionInput,
+  FoundationCreateOptionsDTO,
   FoundationDecisionKind,
   FoundationDecisionVerificationDTO,
   FoundationOrganType,
@@ -21,7 +22,7 @@ import type {
   UpsertFoundationRuleInput,
   VoteSummary,
 } from '@cipansor/shared';
-import { DEFAULT_FOUNDATION_RULE } from '@cipansor/shared';
+import { DEFAULT_FOUNDATION_RULE, decisionTypesForOrgan } from '@cipansor/shared';
 import { prisma } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
 import { config } from '@/config';
@@ -30,6 +31,8 @@ import {
   organMayDecide,
   roleCodesForOrgan,
   selectSnapshotAssignments,
+  canFinalizeDecision,
+  allowedCreateOrgansForRole,
 } from '@/utils/foundation-authority';
 import {
   canReadFoundationDecision,
@@ -422,6 +425,7 @@ type RichDecision = FoundationDecision & {
   votes: VoteWithTrustedKey[];
   createdBy: { id: string; name: string };
   decidedBy: { id: string; name: string } | null;
+  document: { id: string } | null;
 };
 
 /** Relasi kunci tepercaya yang ikut dimuat bersama setiap baris suara. */
@@ -453,6 +457,10 @@ const decisionInclude = {
   },
   createdBy: { select: { id: true, name: true } },
   decidedBy: { select: { id: true, name: true } },
+  // Keberadaan arsip PDF final menentukan `publishable` (dan syarat publish
+  // di `setPublication`). Hanya `id` yang dipilih — byte PDF tidak pernah
+  // ikut ke DTO detail.
+  document: { select: { id: true } },
 } satisfies Prisma.FoundationDecisionInclude;
 
 type Actor = { id: string; roleCode: string };
@@ -460,20 +468,10 @@ type Actor = { id: string; roleCode: string };
 type DbClient = Prisma.TransactionClient;
 
 /**
- * Peran yang boleh MEM-FINALISASI keputusan organ MANA PUN.
- *
- * Pimpinan yayasan (dan Super Admin, yang mengelola sistem). Pengawas TIDAK
- * termasuk: rute `FINALIZE` memuatnya supaya ia dapat menutup rapat organnya
- * sendiri, tetapi service mensyaratkan keanggotaan snapshot — tanpa itu
- * Pengawas dapat membereskan hasil rapat Pembina/Pengurus yang tidak pernah
- * ia ikuti. Lihat `finalize`.
+ * Peran yang boleh MEM-FINALISASI keputusan organ MANA PUN hidup di
+ * `utils/foundation-authority.ts` (`FOUNDATION_FINALIZE_ANY_ROLES`) bersama
+ * `canFinalizeDecision`, satu definisi untuk route, service, dan DTO detail.
  */
-const FOUNDATION_FINALIZE_ANY_ROLES: readonly string[] = [
-  'SUPER_ADMIN',
-  'YAYASAN_PEMBINA',
-  'YAYASAN_KETUA',
-  'YAYASAN_SEKRETARIS',
-];
 
 /**
  * Bentuk DTO verifikasi saat tidak ada yang dapat dinyatakan.
@@ -820,6 +818,25 @@ export const FoundationDecisionService = {
     return decisionId;
   },
 
+  /**
+   * Organ yang boleh DIBUAT aktor + jenis yang berwenang, dihitung dari
+   * matriks yang sama dengan `create`.
+   *
+   * Form create membutuhkannya SEBELUM submit. Menyalin kebijakan ini ke web
+   * berarti form dapat menawarkan organ yang peladen tolak (Pengawas mengisi
+   * form organ Pembina lalu 403). Daftar dibatasi `CREATE` di rute, jadi aktor
+   * read-only tidak pernah sampai ke sini.
+   */
+  async createOptions(actor: Actor): Promise<FoundationCreateOptionsDTO> {
+    const organs = allowedCreateOrgansForRole(actor.roleCode, { allowSuperAdmin: true });
+    return {
+      allowedOrgans: organs.map((organType) => ({
+        organType,
+        decisionTypes: decisionTypesForOrgan(organType),
+      })),
+    };
+  },
+
   /** Aturan kuorum untuk (organ × cara), dengan default legal bila tak diset. */
   async loadRule(
     organType: FoundationOrganType,
@@ -912,8 +929,31 @@ export const FoundationDecisionService = {
     // memutus saat itu.
     const canVote =
       d.status === FoundationDecisionStatus.VOTING && d.members.some((m) => m.userId === actor.id);
+    // Eligibility finalisasi dihitung dengan definisi yang SAMA dengan
+    // `finalize` — bukan dari role saja. UI tidak boleh menawarkan tombol yang
+    // peladen pasti tolak (Pengawas membuka keputusan organ lain).
+    const canFinalize =
+      d.status === FoundationDecisionStatus.VOTING && canFinalizeDecision(actor, d.members);
+    // Syarat publikasi dihitung dengan definisi yang SAMA dengan
+    // `setPublication`, sehingga UI tidak menawarkan "Terbitkan" pada
+    // draf/VOTING yang peladen tolak.
+    const publishable =
+      d.status === FoundationDecisionStatus.APPROVED &&
+      !!d.finalPdfDigest &&
+      !!d.finalPdfSealSignature &&
+      !!d.esealId &&
+      !!d.document;
     const mine = d.votes.find((v) => v.userId === actor.id);
-    return this.toDetailDTO(d, snapshot, summary, canVote, mine?.choice ?? null, actor.id);
+    return this.toDetailDTO(
+      d,
+      snapshot,
+      summary,
+      canVote,
+      canFinalize,
+      publishable,
+      mine?.choice ?? null,
+      actor.id
+    );
   },
 
   /** Ambil keputusan dengan relasi, atau 404. */
@@ -1202,10 +1242,11 @@ export const FoundationDecisionService = {
     // snapshot. Tanpa pemeriksaan ini, satu-satunya cara Pengawas memperoleh
     // hak buka rapat organnya adalah dengan sekaligus memperoleh hak menutup
     // rapat organ mana pun.
-    if (
-      !FOUNDATION_FINALIZE_ANY_ROLES.includes(actor.roleCode) &&
-      !d.members.some((m) => m.userId === actor.id)
-    ) {
+    //
+    // Definisi ini adalah fungsi yang SAMA dengan yang mengisi `canFinalize`
+    // pada DTO detail, sehingga tombol yang ditampilkan tidak dapat menyimpang
+    // dari yang diterima peladen.
+    if (!canFinalizeDecision(actor, d.members)) {
       throw Errors.forbidden('Anda tidak berhak menutup keputusan organ ini.');
     }
     const previewEvaluation = evaluateQuorum(
@@ -1261,25 +1302,69 @@ export const FoundationDecisionService = {
    * berbeda. Dijalankan dengan `authenticate` + `authorize(SUPER_ADMIN)` di
    * rute, dan setiap perubahan dicatat ke audit karena ia mengubah apa yang
    * dapat dibaca publik.
+   *
+   * **Policy `PUBLIC` (eksplisit, bukan efek samping):** publikasi hanya
+   * bermakna bagi keputusan final yang sah, jadi `PUBLIC` hanya diterima bila
+   * status `APPROVED` DAN artefak finalnya lengkap — `finalPdfDigest`, tanda
+   * tangan e-seal, `esealId`, dan arsip dokumen. Endpoint verifikasi anonim
+   * sendiri hanya menganggap `APPROVED` valid; tanpa syarat ini, draf/VOTING
+   * dapat ditandai `PUBLIC` dan menciptakan janji publik yang belum bermakna
+   * (metadata tampil, tetapi `isValid` tetap false sampai disahkan).
+   * `REJECTED` TIDAK boleh diterbitkan — keputusan yang gugur bukan risalah
+   * yang layak dipublikasikan, dan menerbitkannya membocorkan metadata tata
+   * kelola tanpa dasar. Perubahan kembali ke `PRIVATE` selalu boleh, kapan pun,
+   * sebagai jalan keluar darurat.
    */
   async setPublication(
     actor: Actor,
     decisionId: string,
     publication: FoundationDecisionPublication
   ) {
-    await this.loadWithRelations(decisionId);
+    const d = await this.loadWithRelations(decisionId);
+
+    if (publication === FoundationDecisionPublication.PUBLIC) {
+      const artifactsComplete =
+        !!d.finalPdfDigest && !!d.finalPdfSealSignature && !!d.esealId && !!d.document;
+      if (d.status !== FoundationDecisionStatus.APPROVED || !artifactsComplete) {
+        throw Errors.badRequest(
+          'Hanya keputusan yang sudah disahkan dengan dokumen final dan e-seal lengkap yang dapat diterbitkan.'
+        );
+      }
+    }
+
     const at = new Date();
     await prisma.$transaction(async (tx) => {
-      await tx.foundationDecision.update({
-        where: { id: decisionId },
+      // Update bersyarat ATOMIK: status & artefak diperiksa ulang di dalam
+      // transaksi, sehingga finalisasi yang berjalan bersamaan tidak dapat
+      // membuat kondisi berubah di antara pemeriksaan dan penulisan.
+      const updated = await tx.foundationDecision.updateMany({
+        where:
+          publication === FoundationDecisionPublication.PUBLIC
+            ? {
+                id: decisionId,
+                status: FoundationDecisionStatus.APPROVED,
+                finalPdfDigest: { not: null },
+                finalPdfSealSignature: { not: null },
+                esealId: { not: null },
+                document: { isNot: null },
+              }
+            : { id: decisionId },
         data: { publication },
       });
+      if (updated.count === 0) {
+        throw Errors.badRequest(
+          'Hanya keputusan yang sudah disahkan dengan dokumen final dan e-seal lengkap yang dapat diterbitkan.'
+        );
+      }
+      // Audit berada di transaksi yang SAMA: kegagalan mencatat membatalkan
+      // perubahan, sehingga tidak ada perubahan publikasi tanpa jejak.
       await tx.auditLog.create({
         data: {
           userId: actor.id,
           action: 'UPDATE',
           entity: 'FoundationDecision',
           entityId: decisionId,
+          oldValues: { publication: d.publication },
           newValues: { publication },
         },
       });
@@ -1830,6 +1915,8 @@ export const FoundationDecisionService = {
     snapshot: QuorumSnapshot,
     summary: VoteSummary,
     canVote: boolean,
+    canFinalize: boolean,
+    publishable: boolean,
     myVote: 'APPROVE' | 'REJECT' | 'ABSTAIN' | null,
     myId: string
   ) {
@@ -1860,6 +1947,8 @@ export const FoundationDecisionService = {
       memberCount: d.members.length,
       votedCount: d.votes.length,
       canVote,
+      canFinalize,
+      publishable,
       myVote,
       members: d.members.map((m) => ({ userId: m.userId, name: m.name, roleCode: m.roleCode })),
       votes: d.votes.map((v) => ({

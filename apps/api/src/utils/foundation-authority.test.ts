@@ -1,8 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { RoleCode } from '@prisma/client';
-import { FOUNDATION_DECISION_AUTHORITY, FOUNDATION_DECISION_TYPES } from '@cipansor/shared';
+import {
+  FOUNDATION_DECISION_AUTHORITY,
+  FOUNDATION_DECISION_TYPES,
+  FOUNDATION_ORGAN_ROLE_CODES,
+  FOUNDATION_ORGAN_TYPES,
+} from '@cipansor/shared';
 import {
   DECISION_AUTHORITY,
+  allowedCreateOrgansForRole,
+  canFinalizeDecision,
   isMemberOfOrgan,
   organForDecisionType,
   organMayDecide,
@@ -257,5 +264,143 @@ describe('selectSnapshotAssignments', () => {
     expect(rolePriorityForOrgan('PENGURUS', RoleCode.SUPER_ADMIN)).toBeGreaterThan(
       rolePriorityForOrgan('PENGURUS', RoleCode.YAYASAN_ANGGOTA)
     );
+  });
+});
+
+/**
+ * Regresi BUG (audit `canFinalize`) — tombol finalisasi ditawarkan kepada
+ * pengguna yang peladen pasti tolak.
+ *
+ * Definisi eligibility finalisasi adalah fungsi TUNGGAL ini. Sebelumnya UI
+ * menebaknya dari role utama, sehingga Pengawas yang membuka keputusan organ
+ * lain melihat tombol "Finalisasi" yang klik-nya selalu 403.
+ */
+describe('canFinalizeDecision — definisi tunggal eligibility finalisasi', () => {
+  const members = [{ userId: 'u1' }];
+
+  it('pimpinan & Super Admin boleh menutup keputusan organ mana pun', () => {
+    for (const roleCode of [
+      RoleCode.SUPER_ADMIN,
+      RoleCode.YAYASAN_PEMBINA,
+      RoleCode.YAYASAN_KETUA,
+      RoleCode.YAYASAN_SEKRETARIS,
+    ]) {
+      expect(canFinalizeDecision({ id: 'outsider', roleCode }, members)).toBe(true);
+    }
+  });
+
+  it('Pengawas BUKAN anggota snapshot ditolak — ini yang menyembunyikan tombolnya', () => {
+    expect(
+      canFinalizeDecision({ id: 'pengawas-luar', roleCode: RoleCode.YAYASAN_PENGAWAS }, members)
+    ).toBe(false);
+  });
+
+  it('Pengawas yang anggota snapshot boleh menutup rapat organnya', () => {
+    expect(
+      canFinalizeDecision(
+        { id: 'u1', roleCode: RoleCode.YAYASAN_PENGAWAS },
+        members
+      )
+    ).toBe(true);
+  });
+
+  /**
+   * Regresi BUG (audit A) — keanggotaan snapshot SAJA tidak cukup.
+   *
+   * Bendahara & Anggota adalah anggota snapshot organ PENGURUS, tetapi TIDAK
+   * ada di `FINALIZE` rute: `authorize(...FINALIZE)` menolak mereka sebelum
+   * service berjalan. Bila eligibility dihitung dari keanggotaan saja, DTO
+   * menandai `canFinalize=true` dan UI menawarkan tombol Finalisasi yang
+   * klik-nya selalu 403 — tepatnya bug yang dilaporkan.
+   */
+  it('Bendahara & Anggota anggota snapshot TETAP tidak boleh menutup (ditolak rute)', () => {
+    for (const roleCode of [RoleCode.YAYASAN_BENDAHARA, RoleCode.YAYASAN_ANGGOTA]) {
+      expect(canFinalizeDecision({ id: 'u1', roleCode }, members)).toBe(false);
+    }
+  });
+
+  it('peran yang tidak tergolong organ (guru) ditolak walau id-nya ada di snapshot', () => {
+    expect(canFinalizeDecision({ id: 'u1', roleCode: RoleCode.SDIT_GURU }, members)).toBe(false);
+  });
+});
+
+/**
+ * Regresi BUG (audit form create) — form menawarkan organ yang tidak dapat
+ * dibuat pengguna.
+ *
+ * Dulu form selalu default `PEMBINA` dan menawarkan semua organ; Pengawas dapat
+ * mengisi form organ Pembina yang submission-nya pasti 403. Daftar organ yang
+ * sah kini dihitung fungsi ini, definisi yang sama dengan gerbang create.
+ */
+describe('allowedCreateOrgansForRole — organ yang boleh dibuat aktor', () => {
+  it('Pengawas boleh membuat PENGAWAS & GABUNGAN (anggota keduanya)', () => {
+    // GABUNGAN = Pengurus + Pengawas (UU 16/2001 ps. 28), jadi seorang Pengawas
+    // memang anggota organ gabungan itu dan boleh memulai rapat
+    // `pemilihan-pembina`. Yang TIDAK boleh ia buat adalah organ PEMBINA/
+    // PENGURUS — tepatnya bug form yang diperbaiki.
+    expect(allowedCreateOrgansForRole(RoleCode.YAYASAN_PENGAWAS).sort()).toEqual([
+      'GABUNGAN',
+      'PENGAWAS',
+    ]);
+    expect(allowedCreateOrgansForRole(RoleCode.YAYASAN_PENGAWAS)).not.toContain('PEMBINA');
+    expect(allowedCreateOrgansForRole(RoleCode.YAYASAN_PENGAWAS)).not.toContain('PENGURUS');
+  });
+
+  it('Pembina hanya boleh membuat keputusan organ PEMBINA', () => {
+    // Pembina BUKAN anggota GABUNGAN — justru kekosongan Pembina yang membuat
+    // rapat gabungan perlu. Ini pernah salah dan mengembalikan kewenangan ke
+    // organ yang seharusnya kosong.
+    expect(allowedCreateOrgansForRole(RoleCode.YAYASAN_PEMBINA)).toEqual(['PEMBINA']);
+  });
+
+  it('Pengurus boleh membuat PENGURUS & GABUNGAN', () => {
+    expect(allowedCreateOrgansForRole(RoleCode.YAYASAN_KETUA).sort()).toEqual([
+      'GABUNGAN',
+      'PENGURUS',
+    ]);
+    expect(allowedCreateOrgansForRole(RoleCode.YAYASAN_SEKRETARIS)).toContain('PENGURUS');
+    expect(allowedCreateOrgansForRole(RoleCode.YAYASAN_KETUA)).not.toContain('PEMBINA');
+    expect(allowedCreateOrgansForRole(RoleCode.YAYASAN_KETUA)).not.toContain('PENGAWAS');
+  });
+
+  it('SUPER_ADMIN mendapat semua organ (menyertakan GABUNGAN)', () => {
+    expect(
+      allowedCreateOrgansForRole(RoleCode.SUPER_ADMIN, { allowSuperAdmin: true }).sort()
+    ).toEqual([...FOUNDATION_ORGAN_TYPES].sort());
+    expect(
+      allowedCreateOrgansForRole(RoleCode.SUPER_ADMIN, { allowSuperAdmin: true })
+    ).toContain('GABUNGAN');
+  });
+
+  it('peran di luar yayasan tidak mendapat organ apa pun', () => {
+    expect(allowedCreateOrgansForRole(RoleCode.SDIT_GURU)).toEqual([]);
+    expect(allowedCreateOrgansForRole('SUPER_ADMIN', { allowSuperAdmin: false })).toEqual([]);
+  });
+
+  it('setiap organ yang dikembalikan benar-benar lolos gerbang create', () => {
+    for (const roleCode of Object.values(RoleCode)) {
+      for (const organ of allowedCreateOrgansForRole(roleCode, { allowSuperAdmin: true })) {
+        const type = FOUNDATION_DECISION_TYPES.find((t) =>
+          FOUNDATION_DECISION_AUTHORITY[t].includes(organ)
+        )!;
+        expect(
+          organMayDecide(organ, type, roleCode, { allowSuperAdmin: true })
+        ).toBe(true);
+      }
+    }
+  });
+});
+
+/**
+ * Guard drift: peta keanggotaan organ di API harus SAMA PERSIS dengan kontrak
+ * bersama. Bila keduanya menyimpang, snapshot pemilih (dan karenanya kuorum
+ * terkunci) dapat memasukkan organ yang salah — GABUNGAN pernah menghilangkan
+ * Pengawas dan memasukkan Pembina.
+ */
+describe('roleCodesForOrgan identik dengan FOUNDATION_ORGAN_ROLE_CODES', () => {
+  it('setiap organ memetakan tepat RoleCode yang sama', () => {
+    for (const organ of FOUNDATION_ORGAN_TYPES) {
+      expect(roleCodesForOrgan(organ)).toEqual([...FOUNDATION_ORGAN_ROLE_CODES[organ]]);
+    }
   });
 });

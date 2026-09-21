@@ -53,7 +53,6 @@ import {
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { getPrimaryRoleCode } from "@/lib/rbac";
-import { canFinalizeFoundationDecisions } from "@/lib/yayasan-organ";
 
 const statusColor: Record<string, string> = {
   VOTING: "bg-amber-100 text-amber-700",
@@ -80,14 +79,15 @@ export default function FoundationDecisionDetailPage() {
   const finalize = useFinalizeFoundationDecision(id);
   const downloadDoc = useDownloadFoundationDecisionDocument();
 
-  // Finalisasi adalah aksi TULIS: rute memakai `authorize(...FINALIZE)`, jadi
-  // Bendahara & Anggota pasti ditolak 403. Tombolnya dulu tampil ke semua
-  // pembaca. Gerbangnya DIPISAH dari izin membuat: Pengawas boleh membuka rapat
-  // organnya sendiri, tetapi server tetap menolak finalisasi bila ia bukan
-  // anggota snapshot organ keputusan itu.
+  // Finalisasi adalah aksi TULIS, dan eligibility-nya TIDAK dapat disimpulkan
+  // dari role saja: rute memakai `authorize(...FINALIZE)` (Pengawas termasuk),
+  // tetapi service menolak finalizer yang bukan pimpinan/Super Admin kecuali ia
+  // anggota snapshot organ keputusan itu. Server menghitungnya untuk kita lewat
+  // `d.canFinalize` — definisi yang sama persis dengan `finalize` — sehingga UI
+  // tidak pernah menawarkan tombol yang peladen pasti tolak.
   const { user } = useAuthStore();
   const roleCode = getPrimaryRoleCode(user);
-  const canFinalize = canFinalizeFoundationDecisions(roleCode);
+  const canFinalize = d?.canFinalize ?? false;
   const canPublish = roleCode === "SUPER_ADMIN";
   const setPublication = useSetFoundationPublication(id);
 
@@ -332,12 +332,17 @@ export default function FoundationDecisionDetailPage() {
                 publik hanya menyatakan keabsahan tanpa membocorkan judul,
                 organ, tanggal, dan rekap suara. Hanya Super Admin yang dapat
                 mengubahnya, dan setiap perubahan tercatat di audit.
+
+                "Terbitkan" hanya ditawarkan bila server menyatakan
+                `publishable` — `PUBLIC` hanya bermakna bagi keputusan APPROVED
+                dengan dokumen final + e-seal lengkap, dan peladen menolak
+                publikasi draf/VOTING. Menarik kembali ke privat selalu boleh.
               */}
               <div className="flex items-center justify-between border-t pt-2">
                 <span className="text-muted-foreground">
                   Publikasi metadata
                 </span>
-                {canPublish ? (
+                {canPublish && (d.publishable || d.publication === "PUBLIC") ? (
                   <Button
                     size="sm"
                     variant="outline"
@@ -353,9 +358,16 @@ export default function FoundationDecisionDetailPage() {
                       : "Terbitkan"}
                   </Button>
                 ) : (
-                  <Badge className="bg-gray-100 text-gray-700">
-                    {d.publication === "PUBLIC" ? "Publik" : "Privat"}
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge className="bg-gray-100 text-gray-700">
+                      {d.publication === "PUBLIC" ? "Publik" : "Privat"}
+                    </Badge>
+                    {canPublish && d.status === "VOTING" && (
+                      <span className="text-xs text-muted-foreground">
+                        Akan dapat diterbitkan setelah disahkan
+                      </span>
+                    )}
+                  </div>
                 )}
               </div>
             </CardContent>

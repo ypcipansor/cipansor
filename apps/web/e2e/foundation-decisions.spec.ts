@@ -789,3 +789,292 @@ test.describe("unduh risalah", () => {
     expect(download.suggestedFilename()).toMatch(/\.pdf$/);
   });
 });
+
+test.describe("audit PR #509 — eligibility server & policy publikasi", () => {
+  /**
+   * Regresi BUG (audit A) — tombol finalisasi ditawarkan kepada pengguna yang
+   * peladen pasti tolak.
+   *
+   * UI dulu menebak eligibility dari role utama, sehingga Pengawas yang
+   * membuka keputusan organ lain melihat tombol "Finalisasi" yang klik-nya
+   * selalu 403. Backend kini mengirim `canFinalize` pada DTO, dihitung dengan
+   * definisi yang sama dengan `finalize`.
+   */
+  test("Pengawas bukan anggota snapshot tidak melihat tombol Finalisasi (audit A)", async ({
+    page,
+  }) => {
+    // Buat keputusan Pembina baru agar ada keputusan organ lain yang VOTING.
+    const admin = await apiLogin(SEED_USERS.superAdmin);
+    const createRes = await fetch(`${API_URL}/foundation/decisions`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${admin.accessToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        organType: "PEMBINA",
+        kind: "CIRCULAR",
+        subject: `Pembina Uji Eligibility ${Date.now()}`,
+        body: "Isi keputusan Pembina yang cukup panjang untuk lolos validasi.",
+        decisionType: "umum",
+      }),
+    });
+    expect(createRes.status).toBe(201);
+    const created = (await createRes.json()) as Envelope<{ decisionId: string }>;
+
+    const pengawas = await apiLogin(SEED_USERS.pengawas);
+    const detail = await apiRequest<Envelope<{ canFinalize: boolean }>>(
+      pengawas,
+      "GET",
+      `/foundation/decisions/${created.data.decisionId}`,
+    );
+    // Server menyatakan false karena Pengawas bukan anggota snapshot Pembina.
+    expect(detail.data.canFinalize).toBe(false);
+
+    await signIn(page, "pengawas");
+    await page.goto(`/foundation/decisions/${created.data.decisionId}`);
+    await expect(
+      page.getByRole("heading", { level: 1, name: /Pembina Uji Eligibility/ }),
+    ).toBeVisible({ timeout: 20000 });
+    await expect(page.getByRole("button", { name: "Finalisasi" })).toHaveCount(
+      0,
+    );
+  });
+
+  /**
+   * Regresi BUG (audit B) — form menawarkan organ yang tak dapat dibuat aktor.
+   *
+   * Pengawas dulu membuka form dengan default `PEMBINA` dan semua organ
+   * ditawarkan; submission-nya pasti 403. Kini daftar organ datang dari
+   * `GET /decisions/create-options` yang dibatasi kebijakan create.
+   */
+  test("Pengawas membuka form dengan organ sah dari server (audit B)", async ({
+    page,
+  }) => {
+    await signIn(page, "pengawas");
+    await page.goto("/foundation/decisions/new");
+    await expect(
+      page.getByRole("heading", { name: "Buat Keputusan Baru" }),
+    ).toBeVisible({ timeout: 20000 });
+
+    // Organ default & pilihan dibatasi server: PENGAWAS (dan GABUNGAN), bukan
+    // PEMBINA. Label trigger dibaca setelah form ter-render penuh (nilai default
+    // di luar daftar organ sah kini ditahan sebagai skeleton oleh halaman).
+    await expect(page.getByRole("combobox").nth(0)).toHaveText(
+      /Dewan Pengawas/,
+      { timeout: 20000 },
+    );
+    await page.getByRole("combobox").nth(0).click();
+    await expect(
+      page.getByRole("option", { name: "Dewan Pengawas" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("option", { name: "Dewan Pembina" }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("option", { name: "Pengurus Yayasan" }),
+    ).toHaveCount(0);
+    await page.keyboard.press("Escape");
+  });
+
+  test("create-options Pengawas bukan organ Pembina (audit B)", async () => {
+    const pengawas = await apiLogin(SEED_USERS.pengawas);
+    const res = await apiRequest<
+      Envelope<{ allowedOrgans: Array<{ organType: string }> }>
+    >(pengawas, "GET", "/foundation/decisions/create-options");
+    const organs = res.data.allowedOrgans.map((o) => o.organType).sort();
+    expect(organs).toContain("PENGAWAS");
+    expect(organs).not.toContain("PEMBINA");
+    expect(organs).not.toContain("PENGURUS");
+  });
+
+  /**
+   * Regresi BUG (audit A) — finalizer SAH harus TETAP melihat tombolnya.
+   *
+   * Memperketat gerbang tidak boleh menyembunyikan tombol dari yang berhak:
+   * Pengawas yang menjadi anggota snapshot keputusan organnya sendiri harus
+   * melihat tombol Finalisasi, dan `canFinalize` DTO harus true.
+   */
+  test("finalizer sah (Pengawas anggota snapshot) melihat tombol & DTO true (audit A)", async ({
+    page,
+  }) => {
+    const pengawas = await apiLogin(SEED_USERS.pengawas);
+    // Keputusan sirkuler organ PENGAWAS: Pengawas satu-satunya anggota snapshot.
+    const createRes = await fetch(`${API_URL}/foundation/decisions`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${pengawas.accessToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        organType: "PENGAWAS",
+        kind: "MEETING",
+        subject: `Rapat Pengawas Uji Finalizer ${Date.now()}`,
+        body: "Isi keputusan Pengawas yang cukup panjang untuk lolos validasi.",
+        decisionType: "pemberhentian-sementara-pengurus",
+      }),
+    });
+    expect(createRes.status).toBe(201);
+    const created = (await createRes.json()) as Envelope<{ decisionId: string }>;
+
+    const detail = await apiRequest<Envelope<{ canFinalize: boolean; canVote: boolean }>>(
+      pengawas,
+      "GET",
+      `/foundation/decisions/${created.data.decisionId}`,
+    );
+    expect(detail.data.canFinalize).toBe(true);
+
+    await signIn(page, "pengawas");
+    await page.goto(`/foundation/decisions/${created.data.decisionId}`);
+    await expect(
+      page.getByRole("heading", { level: 1, name: /Rapat Pengawas Uji Finalizer/ }),
+    ).toBeVisible({ timeout: 20000 });
+    await expect(page.getByRole("button", { name: "Finalisasi" })).toBeVisible({
+      timeout: 20000,
+    });
+  });
+
+  /**
+   * Regresi BUG (audit A) — anggota snapshot yang rute TOLAK tidak melihat
+   * tombol.
+   *
+   * Bendahara & Anggota adalah anggota snapshot organ PENGURUS, jadi
+   * keanggotaan saja membuat DTO `canFinalize=true`; tetapi `authorize(...FINALIZE)`
+   * tidak memuat mereka, sehingga klik selalu 403. UI tidak boleh menawarkannya.
+   */
+  test("Bendahara anggota snapshot tidak melihat tombol Finalisasi (audit A)", async ({
+    page,
+  }) => {
+    const admin = await apiLogin(SEED_USERS.superAdmin);
+    const createRes = await fetch(`${API_URL}/foundation/decisions`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${admin.accessToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        organType: "PENGURUS",
+        kind: "MEETING",
+        subject: `Rapat Pengurus Uji Bendahara ${Date.now()}`,
+        body: "Isi keputusan Pengurus yang cukup panjang untuk lolos validasi.",
+        decisionType: "keputusan-operasional",
+      }),
+    });
+    expect(createRes.status).toBe(201);
+    const created = (await createRes.json()) as Envelope<{ decisionId: string }>;
+
+    const bendahara = await apiLogin(SEED_USERS.bendahara);
+    const detail = await apiRequest<Envelope<{ canFinalize: boolean }>>(
+      bendahara,
+      "GET",
+      `/foundation/decisions/${created.data.decisionId}`,
+    );
+    expect(detail.data.canFinalize).toBe(false);
+
+    await signIn(page, "bendahara");
+    await page.goto(`/foundation/decisions/${created.data.decisionId}`);
+    await expect(
+      page.getByRole("heading", { level: 1, name: /Rapat Pengurus Uji Bendahara/ }),
+    ).toBeVisible({ timeout: 20000 });
+    await expect(page.getByRole("button", { name: "Finalisasi" })).toHaveCount(
+      0,
+    );
+  });
+
+  test("peran read-only tidak mengirim permintaan create-options (audit B)", async ({
+    page,
+  }) => {
+    await signIn(page, "bendahara");
+    const requests: string[] = [];
+    page.on("request", (r) => {
+      if (r.url().includes("/foundation/decisions/create-options"))
+        requests.push(r.url());
+    });
+    await page.goto("/foundation/decisions/new");
+    // Halaman akses ditolak, bukan form kosong.
+    await expect(page.getByText(/Akses Ditolak/)).toBeVisible({ timeout: 20000 });
+    expect(requests).toHaveLength(0);
+  });
+
+  /**
+   * Regresi INVESTIGATION C — halaman aturan kuorum tanpa gerbang SUPER_ADMIN.
+   */
+  test("non-admin membuka /rules langsung: akses ditolak tanpa query (audit C)", async ({
+    page,
+  }) => {
+    await signIn(page, "pengawas");
+    const requests: string[] = [];
+    page.on("request", (r) => {
+      if (r.url().includes("/foundation/rules")) requests.push(r.url());
+    });
+    await page.goto("/foundation/decisions/rules");
+    await expect(page.getByText(/Akses Ditolak/)).toBeVisible({ timeout: 20000 });
+    expect(
+      requests.filter((u) => u.includes("/foundation/rules")),
+    ).toHaveLength(0);
+  });
+
+  /**
+   * Regresi INVESTIGATION D — publikasi hanya bermakna untuk APPROVED lengkap.
+   */
+  test("keputusan VOTING ditolak saat dijadikan PUBLIC (audit D)", async () => {
+    const admin = await apiLogin(SEED_USERS.superAdmin);
+    const list = await apiRequest<Envelope<DecisionRow[]>>(
+      admin,
+      "GET",
+      "/foundation/decisions?status=VOTING&limit=50",
+    );
+    const voting = list.data.find((d) => d.status === "VOTING");
+    expect(voting).toBeTruthy();
+    const res = await fetch(
+      `${API_URL}/foundation/decisions/${voting!.id}/publication`,
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${admin.accessToken}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ publication: "PUBLIC" }),
+      },
+    );
+    expect(res.status).toBe(400);
+  });
+
+  test("APPROVED lengkap dapat diterbitkan lalu ditarik ke PRIVATE (audit D)", async ({
+    page,
+  }) => {
+    expect(decisionId).toBeTruthy();
+    const admin = await apiLogin(SEED_USERS.superAdmin);
+    // Keputusan sudah APPROVED + e-seal dari suite pemungutan suara di atas.
+    const privateRes = await fetch(
+      `${API_URL}/foundation/decisions/${decisionId}/publication`,
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${admin.accessToken}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ publication: "PRIVATE" }),
+      },
+    );
+    expect(privateRes.status).toBe(200);
+
+    await signIn(page, "superAdmin");
+    await page.goto(`/foundation/decisions/${decisionId}`);
+    // publishable + PRIVATE → tombol "Terbitkan" ditawarkan (bukan badge).
+    const publishBtn = page.getByRole("button", { name: "Terbitkan" });
+    await expect(publishBtn).toBeVisible({ timeout: 20000 });
+    await publishBtn.click();
+    // Setelah terbit, tombolnya berbalik menjadi "Tarik ke privat".
+    await expect(
+      page.getByRole("button", { name: "Tarik ke privat" }),
+    ).toBeVisible({ timeout: 20000 });
+
+    // Menarik kembali ke privat selalu boleh.
+    await page.getByRole("button", { name: "Tarik ke privat" }).click();
+    await expect(page.getByRole("button", { name: "Terbitkan" })).toBeVisible({
+      timeout: 20000,
+    });
+  });
+});
+

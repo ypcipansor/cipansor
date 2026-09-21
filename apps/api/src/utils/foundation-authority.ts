@@ -1,5 +1,10 @@
 import type { FoundationOrganType } from '@cipansor/shared';
-import { FOUNDATION_DECISION_AUTHORITY, FOUNDATION_DECISION_TYPES } from '@cipansor/shared';
+import {
+  FOUNDATION_DECISION_AUTHORITY,
+  FOUNDATION_DECISION_TYPES,
+  FOUNDATION_ORGAN_ROLE_CODES,
+  organsForDecisionType,
+} from '@cipansor/shared';
 import type { FoundationDecisionType } from '@cipansor/shared';
 import { RoleCode } from '@prisma/client';
 
@@ -29,9 +34,6 @@ import { RoleCode } from '@prisma/client';
  */
 export type DecisionAuthorityKey = FoundationDecisionType;
 
-/** Jenis keputusan yang dikenal, sebagai himpunan untuk penolakan eksplisit. */
-const KNOWN_DECISION_TYPES: ReadonlySet<string> = new Set(FOUNDATION_DECISION_TYPES);
-
 /**
  * Organ yang berwenang atas tiap jenis keputusan.
  *
@@ -51,8 +53,7 @@ export function organForDecisionType(decisionType: string): FoundationOrganType[
   // ("pengesahan-rancana-kerja") membuat keputusan milik Pengawas berubah
   // menjadi keputusan Pembina tanpa peringatan. Kategori umum tetap ada, tetapi
   // sebagai pilihan EKSPLISIT ('umum'), bukan jaring penampung untuk apa pun.
-  if (!KNOWN_DECISION_TYPES.has(decisionType)) return [];
-  return DECISION_AUTHORITY[decisionType as DecisionAuthorityKey];
+  return [...organsForDecisionType(decisionType)];
 }
 
 /**
@@ -90,35 +91,94 @@ export function organMayDecide(
  * untuk mengambil snapshot anggota aktif organ dari `UserRoleAssignment`.
  */
 export function roleCodesForOrgan(organType: FoundationOrganType): RoleCode[] {
-  switch (organType) {
-    case 'PEMBINA':
-      return [RoleCode.YAYASAN_PEMBINA];
-    case 'PENGURUS':
-      return [
-        RoleCode.YAYASAN_KETUA,
-        RoleCode.YAYASAN_SEKRETARIS,
-        RoleCode.YAYASAN_BENDAHARA,
-        RoleCode.YAYASAN_ANGGOTA,
-      ];
-    case 'PENGAWAS':
-      return [RoleCode.YAYASAN_PENGAWAS];
-    case 'GABUNGAN':
-      // Rapat gabungan Pengurus + Pengawas (UU 16/2001 Pasal 28 ayat (4)):
-      // ketika Yayasan kehilangan seluruh Pembina, Pengurus dan Pengawas
-      // bersama-sama mengangkat Pembina baru. Pembina TIDAK ikut — justru
-      // kekosongan Pembina-lah yang menjadikan rapat ini perlu, dan mengikut-
-      // sertakannya mengembalikan kewenangan ke organ yang sedang kosong.
-      return [
-        RoleCode.YAYASAN_KETUA,
-        RoleCode.YAYASAN_SEKRETARIS,
-        RoleCode.YAYASAN_BENDAHARA,
-        RoleCode.YAYASAN_ANGGOTA,
-        RoleCode.YAYASAN_PENGAWAS,
-      ];
-    default:
-      return [];
-  }
+  // Sumber tunggalnya `FOUNDATION_ORGAN_ROLE_CODES` di shared; peta lokal yang
+  // seharusnya sama adalah bug yang menunggu waktu (GABUNGAN pernah salah
+  // memasukkan Pembina dan menghilangkan Pengawas).
+  return (FOUNDATION_ORGAN_ROLE_CODES[organType] ?? []).map((code) => code as RoleCode);
 }
+
+/**
+ * Peran yang lolos gerbang RUTE `POST /decisions/:id/finalize`.
+ *
+ * Ini himpunan yang sama dengan `const FINALIZE` di `routes.ts` (Pengawas
+ * termasuk, agar ia dapat menutup rapat organnya). Dipisahkan dari
+ * `FOUNDATION_FINALIZE_ANY_ROLES` di bawah karena keduanya menjawab pertanyaan
+ * berbeda: yang ini "boleh MENCOBA", yang bawah "boleh menutup organ mana pun
+ * tanpa menjadi anggota". `canFinalizeDecision` memakai KEDUANYA, sehingga DTO
+ * detail tidak dapat menjanjikan tombol yang middleware rute tolak.
+ *
+ * Definisinya hidup DI SINI (bukan hanya di `routes.ts`) supaya service dan
+ * gerbang UI memakai himpunan yang sama; `routes.test.ts` memaku literal
+ * `routes.ts` terhadap konstanta ini agar tidak menyimpang.
+ */
+export const FOUNDATION_FINALIZE_ROUTE_ROLES: readonly string[] = [
+  RoleCode.SUPER_ADMIN,
+  RoleCode.YAYASAN_PEMBINA,
+  RoleCode.YAYASAN_KETUA,
+  RoleCode.YAYASAN_SEKRETARIS,
+  RoleCode.YAYASAN_PENGAWAS,
+];
+
+/**
+ * Peran yang boleh MEM-FINALISASI keputusan organ MANA PUN.
+ *
+ * Pimpinan yayasan (dan Super Admin, yang mengelola sistem). Pengawas TIDAK
+ * termasuk: rute `FINALIZE` memuatnya supaya ia dapat menutup rapat organnya
+ * sendiri, tetapi service mensyaratkan keanggotaan snapshot — tanpa itu
+ * Pengawas dapat membereskan hasil rapat Pembina/Pengurus yang tidak pernah
+ * ia ikuti.
+ *
+ * Definisinya hidup DI SINI (bukan di service) karena route dan service harus
+ * memakai himpunan yang sama; dua salinan yang seharusnya sama adalah bug yang
+ * menunggu waktu. `routes.ts` mengimpornya, dan service memakainya lewat
+ * `canFinalizeDecision`, sehingga gerbang UI (`canFinalize` pada DTO detail)
+ * tidak dapat menyimpang dari penolakan server.
+ */
+export const FOUNDATION_FINALIZE_ANY_ROLES: readonly string[] = [
+  RoleCode.SUPER_ADMIN,
+  RoleCode.YAYASAN_PEMBINA,
+  RoleCode.YAYASAN_KETUA,
+  RoleCode.YAYASAN_SEKRETARIS,
+];
+
+/**
+ * Apakah `actor` boleh MEM-FINALISASI keputusan yang `members`-nya terkunci?
+ *
+ * **Ini definisi TUNGGAL otorisasi finalisasi** — dipakai `finalize` untuk
+ * benar-benar menerima/menolak, dan `detail` untuk mengisi `canFinalize` pada
+ * DTO. Menghitung di satu tempat membuat "apa yang ditampilkan" dan "apa yang
+ * diterima" tidak dapat berbeda.
+ *
+ * Dua ambang diperiksa berurutan, persis seperti yang dilalui permintaan:
+ *
+ *  1. **Gerbang rute** (`FOUNDATION_FINALIZE_ROUTE_ROLES`): peran yang tidak
+ *     ada di sini ditolak `authorize(...FINALIZE)` sebelum service berjalan.
+ *     Bendahara & Anggota hanya boleh MEMBACA — mereka anggota snapshot organ
+ *     PENGURUS, jadi keanggotaan saja membuat `canFinalize` benar dan UI
+ *     menawarkan tombol yang middleware pasti tolak. Karena itu keanggotaan
+ *     TIDAK boleh dihitung tanpa lolos syarat pertama.
+ *  2. **Pengecualian organ** (`FOUNDATION_FINALIZE_ANY_ROLES`): pimpinan/Super
+ *     Admin boleh menutup organ mana pun. Peran lain yang lolos rute (yakni
+ *     Pengawas) hanya boleh menutup keputusan yang memuatnya sebagai anggota
+ *     snapshot.
+ */
+export function canFinalizeDecision(
+  actor: { id: string; roleCode: string },
+  members: ReadonlyArray<{ userId: string }>
+): boolean {
+  if (!FOUNDATION_FINALIZE_ROUTE_ROLES.includes(actor.roleCode)) return false;
+  if (FOUNDATION_FINALIZE_ANY_ROLES.includes(actor.roleCode)) return true;
+  return members.some((m) => m.userId === actor.id);
+}
+
+/**
+ * Organ yang boleh DIBUAT aktornya — re-ekspor definisi bersama.
+ *
+ * Logikanya hidup di `@cipansor/shared` karena web memakainya untuk membatasi
+ * pilihan organ pada form create; dua salinan yang seharusnya sama adalah bug
+ * yang menunggu waktu. API memakai satu definisi yang sama.
+ */
+export { allowedCreateOrgansForRole } from '@cipansor/shared';
 
 /** Apakah RoleCode tergolong anggota sebuah organ? */
 export function isMemberOfOrgan(organType: FoundationOrganType, roleCode: string): boolean {

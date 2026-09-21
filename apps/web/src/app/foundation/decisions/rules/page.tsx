@@ -45,6 +45,10 @@ import {
   useFoundationRules,
   useUpsertFoundationRule,
 } from "@/hooks/use-foundation-decisions";
+import { AccessDenied } from "@/components/shared";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useAuthStore } from "@/stores/auth";
+import { getPrimaryRoleCode } from "@/lib/rbac";
 
 const QUORUM_MODE_LABEL: Record<FoundationQuorumMode, string> = {
   MUTLAK: "Mutlak (seluruh kolam)",
@@ -72,7 +76,18 @@ interface RuleFormState {
  * yang sedang berlaku ketika aturan (organ × cara) belum disimpan.
  */
 export default function FoundationRulesPage() {
-  const { data: rules, isLoading } = useFoundationRules();
+  // Halaman ini khusus SUPER_ADMIN (endpoint GET/PUT /foundation/rules memakai
+  // isSuperAdmin). Sebelumnya ia langsung memanggil hook, sehingga pengguna
+  // yayasan non-admin yang mengetik URL langsung tetap mengirim permintaan yang
+  // pasti 403 dan hanya melihat form kosong + toast. Gerbang ini hanyalah UX —
+  // otorisasi backend tetap boundary utama.
+  const { user, isAuthenticated, isLoading: authLoading } = useAuthStore();
+  const roleCode = getPrimaryRoleCode(user);
+  const isSuperAdmin = roleCode === "SUPER_ADMIN";
+
+  // Tahan query sampai status auth siap DAN peran terbukti SUPER_ADMIN, agar
+  // permintaan yang pasti gagal tidak pernah dikirim.
+  const { data: rules, isLoading } = useFoundationRules({ enabled: isSuperAdmin });
   const upsert = useUpsertFoundationRule();
 
   const [organType, setOrganType] = useState<FoundationOrganType>("PEMBINA");
@@ -128,7 +143,24 @@ export default function FoundationRulesPage() {
           description="Ambang kuorum per organ dan cara pengambilan keputusan. Nilai ini menggantikan default Anggaran Dasar."
         />
 
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+        {authLoading && !user ? (
+          <div className="space-y-4">
+            <Skeleton className="h-8 w-1/3" />
+            <Skeleton className="h-64 w-full" />
+          </div>
+        ) : !isAuthenticated || !isSuperAdmin ? (
+          <AccessDenied
+            title="Akses Ditolak"
+            description="Pengaturan aturan kuorum hanya dapat diakses oleh Super Admin."
+          />
+        ) : isLoading ? (
+          <div className="space-y-4">
+            <Skeleton className="h-8 w-1/3" />
+            <Skeleton className="h-64 w-full" />
+          </div>
+        ) : (
+          <>
+            <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
@@ -338,6 +370,8 @@ export default function FoundationRulesPage() {
             </Table>
           </CardContent>
         </Card>
+          </>
+        )}
       </div>
     </MainLayout>
   );

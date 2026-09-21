@@ -34,6 +34,15 @@ export const FoundationDecisionController = {
     );
   },
 
+  /** Organ & jenis keputusan yang boleh dibuat aktor (gerbang form create). */
+  async createOptions(req: Request, res: Response) {
+    const result = await FoundationDecisionService.createOptions({
+      id: req.user!.id,
+      roleCode: req.user!.roleCode,
+    });
+    return res.json(ApiResponse.success(result));
+  },
+
   /** Detail keputusan. */
   async detail(req: Request, res: Response) {
     const result = await FoundationDecisionService.detail(

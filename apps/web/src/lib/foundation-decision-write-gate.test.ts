@@ -33,6 +33,14 @@ const API_ROUTES = path.join(
   "foundation-decisions",
   "foundation-decisions.routes.ts",
 );
+const API_AUTHORITY = path.join(
+  WEB_DIR,
+  "..",
+  "api",
+  "src",
+  "utils",
+  "foundation-authority.ts",
+);
 
 /** Parse `const NAME = [RoleCode.A, ...]` out of the API routes file. */
 function apiRoles(name: string): string[] {
@@ -42,7 +50,19 @@ function apiRoles(name: string): string[] {
   );
   if (!block)
     throw new Error(`${name} not found in foundation-decisions.routes.ts`);
-  return [...block[1].matchAll(/RoleCode\.([A-Z_]+)/g)].map((m) => m[1]).sort();
+  const direct = [...block[1].matchAll(/RoleCode\.([A-Z_]+)/g)].map((m) => m[1]);
+  if (direct.length > 0) return direct.sort();
+  // `FINALIZE` derives from `FOUNDATION_FINALIZE_ROUTE_ROLES` in
+  // `utils/foundation-authority.ts` (route + service + DTO share one set).
+  // Follow the re-export so the mirror test still reads the real values.
+  const referenced = block[1].match(/FOUNDATION_[A-Z_]+/)?.[0];
+  if (!referenced) throw new Error(`${name} has no RoleCode list or reference`);
+  const util = fs.readFileSync(API_AUTHORITY, "utf8");
+  const utilBlock = util.match(
+    new RegExp(`const ${referenced}\\b[^=]*=\\s*\\[([\\s\\S]*?)\\];`),
+  );
+  if (!utilBlock) throw new Error(`${referenced} not found in foundation-authority.ts`);
+  return [...utilBlock[1].matchAll(/RoleCode\.([A-Z_]+)/g)].map((m) => m[1]).sort();
 }
 
 describe("foundation decisions — write gate cermin dari API", () => {
@@ -116,17 +136,26 @@ describe("halaman keputusan memakai gerbang tulis", () => {
     expect(src).toMatch(/canWrite\s*\?/);
   });
 
-  it("detail menyembunyikan 'Finalisasi' dari peran non-tulis", () => {
+  it("detail menyembunyikan 'Finalisasi' kecuali server menyatakan canFinalize", () => {
     const src = read("foundation/decisions/[id]/page.tsx");
-    expect(src).toContain("canFinalizeFoundationDecisions");
+    // Gerbang finalisasi kini berasal dari DTO server (`d.canFinalize`), bukan
+    // role utama — peladen adalah sumber kebenaran eligibility.
+    expect(src).toMatch(/const canFinalize = d\?\.canFinalize/);
     expect(src).toMatch(/d\.status === "VOTING" && canFinalize/);
   });
 
-  it("detail memakai gerbang finalisasi TERPISAH dari izin membuat", () => {
+  it("detail TIDAK lagi menyimpulkan finalisasi dari role saja", () => {
     const src = read("foundation/decisions/[id]/page.tsx");
-    // Finalisasi TIDAK lagi memakai canCreate/canManage — gerbangnya sendiri.
-    expect(src).toContain("canFinalizeFoundationDecisions");
+    // `canFinalizeFoundationDecisions` (role-only) tidak boleh menggerakkan
+    // tombol; itu justru bug yang diperbaiki (Pengawas organ lain melihat
+    // tombol yang peladen tolak).
+    expect(src).not.toMatch(/canFinalizeFoundationDecisions/);
     expect(src).not.toMatch(/canManageFoundationDecisions/);
+  });
+
+  it("kontrol publikasi hanya tampil saat server menyatakan publishable", () => {
+    const src = read("foundation/decisions/[id]/page.tsx");
+    expect(src).toMatch(/d\.publishable/);
   });
 });
 
@@ -156,6 +185,22 @@ describe("skema create tidak diduplikasi di web (#8)", () => {
     expect(page).not.toMatch(/z\.object\(/);
     expect(page).not.toMatch(/as never/);
     expect(page).not.toMatch(/from "zod"/);
+  });
+
+  /**
+   * Regresi BUG (audit B) — form menawarkan organ yang tak dapat dibuat aktor.
+   *
+   * Organ & jenis yang sah datang dari PELADEN lewat create-options, bukan
+   * default statis `PEMBINA` dan daftar organ utuh. Halaman juga menahan query
+   * untuk peran non-create agar tidak mengirim permintaan yang pasti 403.
+   */
+  it("mengambil daftar organ dari create-options server, bukan default statis", () => {
+    expect(page).toContain("useFoundationCreateOptions");
+    expect(page).toMatch(/enabled: canCreate/);
+    expect(page).toContain("allowedOrgans");
+    // Peran non-create memperoleh akses ditolak, bukan form operasional.
+    expect(page).toContain("AccessDenied");
+    expect(page).toContain("canCreateFoundationDecisions");
   });
 });
 
@@ -190,5 +235,31 @@ describe("hook aturan kuorum punya halaman (#7)", () => {
       "utf8",
     );
     expect(src).toContain("DEFAULT_FOUNDATION_RULE");
+  });
+
+  /**
+   * Regresi INVESTIGATION C — halaman aturan kuorum tanpa gerbang SUPER_ADMIN.
+   *
+   * Halaman dulu langsung memanggil `useFoundationRules()` tanpa memeriksa
+   * peran, sehingga pengguna yayasan non-admin yang mengetik URL menerima
+   * permintaan 403 + form kosong. Kini ada gerbang halaman dan query ditahan
+   * dengan `enabled` sampai peran terbukti SUPER_ADMIN.
+   */
+  it("memasang gerbang SUPER_ADMIN pada halaman dan menahan query", () => {
+    const src = fs.readFileSync(
+      path.join(
+        WEB_DIR,
+        "src",
+        "app",
+        "foundation",
+        "decisions",
+        "rules",
+        "page.tsx",
+      ),
+      "utf8",
+    );
+    expect(src).toContain('=== "SUPER_ADMIN"');
+    expect(src).toMatch(/useFoundationRules\(\{ enabled: isSuperAdmin \}\)/);
+    expect(src).toContain("AccessDenied");
   });
 });

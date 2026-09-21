@@ -5,6 +5,7 @@ vi.mock('@/lib/redis', () => ({ redis: {} }));
 
 import router from '../foundation-decisions.routes';
 import { authorize } from '@/middleware/auth';
+import { FOUNDATION_FINALIZE_ROUTE_ROLES } from '@/utils/foundation-authority';
 
 interface RouteLayer {
   route?: {
@@ -207,5 +208,52 @@ describe('foundation-decisions.routes — izin tulis Pengawas', () => {
     for (const role of ['YAYASAN_BENDAHARA', 'YAYASAN_ANGGOTA', 'GURU']) {
       expect(runAuthorize('post', '/decisions', role).forbidden).toBe(true);
     }
+  });
+
+  /**
+   * Regresi BUG (audit A) — daftar `FINALIZE` rute harus SAMA PERSIS dengan
+   * `FOUNDATION_FINALIZE_ROUTE_ROLES` yang dipakai `canFinalizeDecision`.
+   *
+   * Dulu service menghitung `canFinalize` dari keanggotaan snapshot saja, tanpa
+   * gerbang rute, sehingga Bendahara/Anggota (anggota snapshot PENGURUS tetapi
+   * tidak ada di `FINALIZE`) memperoleh `canFinalize=true` dan UI menawarkan
+   * tombol yang rute ini tolak 403. Dua daftar yang seharusnya sama dipaku di
+   * sini agar tidak menyimpang lagi.
+   */
+  it('FINALIZE rute identik dengan FOUNDATION_FINALIZE_ROUTE_ROLES', () => {
+    // Periksa lewat PERILAKU (handler `authorize` adalah closure anonim tanpa
+    // nama): setiap peran konstanta lolos, Bendahara/Anggota/GURU ditolak.
+    for (const role of FOUNDATION_FINALIZE_ROUTE_ROLES) {
+      expect(runAuthorize('post', '/decisions/:id/finalize', role).forwarded).toBe(true);
+    }
+    for (const role of ['YAYASAN_BENDAHARA', 'YAYASAN_ANGGOTA', 'GURU']) {
+      expect(runAuthorize('post', '/decisions/:id/finalize', role).forbidden).toBe(true);
+    }
+  });
+
+  /**
+   * Regresi BUG (audit B) — form create membutuhkan daftar organ yang boleh
+   * dibuat aktor, dan endpoint-nya harus ada serta dibatasi `CREATE`.
+   *
+   * Didaftarkan SEBELUM `/decisions/:id` agar "create-options" tidak tertelan
+   * sebagai id keputusan.
+   */
+  it('GET /decisions/create-options terautentikasi & dibatasi CREATE', () => {
+    expect(isPublicRoute('get', '/decisions/create-options')).toBe(false);
+    expect(runAuthorize('get', '/decisions/create-options', 'YAYASAN_PENGAWAS').forwarded).toBe(
+      true
+    );
+    expect(runAuthorize('get', '/decisions/create-options', 'GURU').forbidden).toBe(true);
+  });
+
+  it('/decisions/create-options terdaftar sebelum /decisions/:id', () => {
+    const stack = router.stack as unknown as RouteLayer[];
+    const literal = stack.findIndex(
+      (l) => l.route && l.route.path === '/decisions/create-options'
+    );
+    const wildcard = stack.findIndex((l) => l.route && l.route.path === '/decisions/:id');
+    expect(literal).toBeGreaterThanOrEqual(0);
+    expect(wildcard).toBeGreaterThanOrEqual(0);
+    expect(literal).toBeLessThan(wildcard);
   });
 });

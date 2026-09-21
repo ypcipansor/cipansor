@@ -12,6 +12,7 @@ import type {
   FoundationDecisionPageDTO,
   CastFoundationVoteResultDTO,
   FoundationDecisionRuleDTO,
+  FoundationCreateOptionsDTO,
 } from "@cipansor/shared";
 import api from "@/lib/api";
 
@@ -103,6 +104,27 @@ export function useCreateFoundationDecision() {
       api.post("/foundation/decisions", input),
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: ["foundation-decisions"] }),
+  });
+}
+
+/**
+ * Organ + jenis keputusan yang boleh dibuat aktor, dihitung PELADEN.
+ *
+ * Form create dulu menawarkan semua organ dengan default statis `PEMBINA`,
+ * sehingga Pengawas dapat mengisi form organ Pembina yang submission-nya pasti
+ * 403. Kebijakan "siapa boleh membuat organ apa" hanya ada di peladen, jadi UI
+ * meminta daftarnya alih-alih menyalinnya.
+ */
+export function useFoundationCreateOptions(opts: { enabled?: boolean } = {}) {
+  return useQuery({
+    queryKey: ["foundation-create-options"],
+    queryFn: async (): Promise<FoundationCreateOptionsDTO> =>
+      (await api.get("/foundation/decisions/create-options")).data.data,
+    staleTime: 5 * 60 * 1000,
+    // `enabled` dipakai halaman create untuk menahan permintaan sampai peran
+    // terbukti boleh membuat keputusan. Tanpa itu, peran read-only yang
+    // mengetik URL langsung mengirim permintaan yang peladen pasti 403.
+    enabled: opts.enabled ?? true,
   });
 }
 
@@ -211,11 +233,15 @@ export function useVerifyFoundationDecisionPdf() {
   });
 }
 
-export function useFoundationRules() {
+export function useFoundationRules(opts: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: ["foundation-rules"],
     queryFn: async (): Promise<FoundationRuleDTO[]> =>
       (await api.get("/foundation/rules")).data.data,
+    // `enabled` dipakai halaman untuk menahan permintaan sampai peran terbukti
+    // SUPER_ADMIN. Tanpa itu, pengguna yayasan non-admin yang mengetik URL
+    // langsung tetap mengirim permintaan yang pasti 403.
+    enabled: opts.enabled ?? true,
   });
 }
 

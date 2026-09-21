@@ -3,6 +3,7 @@ import multer from 'multer';
 import { RoleCode } from '@prisma/client';
 import { FoundationDecisionController as c } from './foundation-decisions.controller';
 import { authenticate, authorize } from '@/middleware/auth';
+import { FOUNDATION_FINALIZE_ROUTE_ROLES } from '@/utils/foundation-authority';
 import { asyncHandler, validate, validateQuery } from '@/middleware/error';
 import { requireTurnstile } from '@/middleware/turnstile';
 import { passphraseLimiter, publicVerifyLimiter } from '@/middleware/rate-limit';
@@ -113,13 +114,7 @@ const CREATE = [
   RoleCode.YAYASAN_SEKRETARIS,
   RoleCode.YAYASAN_PENGAWAS,
 ];
-const FINALIZE = [
-  RoleCode.SUPER_ADMIN,
-  RoleCode.YAYASAN_PEMBINA,
-  RoleCode.YAYASAN_KETUA,
-  RoleCode.YAYASAN_SEKRETARIS,
-  RoleCode.YAYASAN_PENGAWAS,
-];
+const FINALIZE = [...FOUNDATION_FINALIZE_ROUTE_ROLES];
 
 /**
  * Daftar keputusan HANYA `authenticate`, tanpa `authorize(...READ)`.
@@ -134,6 +129,18 @@ const FINALIZE = [
  * daftar.
  */
 router.get('/decisions', validateQuery(listFoundationDecisionsQuerySchema), asyncHandler(c.list));
+/**
+ * Organ & jenis keputusan yang boleh dibuat aktor — gerbang form create.
+ *
+ * Didaftarkan SEBELUM `/decisions/:id` agar "create-options" tidak tertelan
+ * sebagai id keputusan. Dibatasi `CREATE` karena jawabannya adalah kebijakan
+ * pembuatan itu sendiri.
+ */
+router.get(
+  '/decisions/create-options',
+  authorize(...CREATE),
+  asyncHandler(c.createOptions)
+);
 router.post(
   '/decisions',
   authorize(...CREATE),
