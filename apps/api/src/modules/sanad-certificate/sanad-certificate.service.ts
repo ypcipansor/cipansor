@@ -17,6 +17,9 @@ import { certificateVerificationUrl } from '@/utils/verification-url';
 // CONSTANTS
 // ============================================
 
+const MAX_BULK_CREATE_RECORDS = 1000;
+// ============================================
+
 const JUZ_NAMES: Record<number, string> = {
   1: 'Juz Amma',
   30: 'Juz 30',
@@ -289,9 +292,19 @@ export async function bulkCreateSanadRecords(
     errors: [] as { index: number; error: string }[],
   };
 
-  for (let i = 0; i < input.records.length; i++) {
+  if (!Array.isArray(input.records)) {
+    throw new Error('Invalid records payload');
+  }
+
+  if (input.records.length > MAX_BULK_CREATE_RECORDS) {
+    throw new Error(`Cannot create more than ${MAX_BULK_CREATE_RECORDS} records in one request`);
+  }
+
+  const records = input.records;
+
+  for (let i = 0; i < records.length; i++) {
     try {
-      await createSanadRecord(input.records[i], context);
+      await createSanadRecord(records[i], context);
       results.success++;
     } catch (error) {
       results.failed++;
