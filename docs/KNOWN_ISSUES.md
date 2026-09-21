@@ -518,7 +518,9 @@ warm session.
   had `unitId: null`. They logged in and landed on empty portals, which the
   audit reported as "near-blank" pages. Fixed in `prisma/seed.ts`; because the
   seed starts with `TRUNCATE … CASCADE`, existing databases are updated with the
-  additive, idempotent `wire-demo-personas.sql` instead.
+  additive, idempotent `wire-demo-personas.sql` instead. (Since resolved:
+  `PERGURUAN_TINGGI` and the `PT_*` roles were decommissioned, so this
+  row-specific history is moot.)
 - **Contract mismatches.** `/api/attendance/summary` demanded a mandatory
   `startDate`+`endDate` pair (a single day and an unbounded student history are
   both legitimate); `/api/curriculum/schedules` silently stripped the
@@ -535,6 +537,7 @@ warm session.
   even though the Axios `baseURL` already ends in `/api`, so they hit
   `/api/api/...` and 404'd against the live backend. The e2e mocks' `**/api/...`
   globs masked it. Fixed all 59 call sites to match the majority convention.
+  (`use-litbang` has since been removed with the Litbang module.)
 - **Docker images reworked & verified runnable.** `apps/api` is a multi-stage
   build using a fresh `pnpm install --prod` closure + compiled `dist` + the
   generated Prisma client (~929 MB; boots, `/health` 200, PrismaClient loads);
@@ -738,8 +741,8 @@ injections (`grc-live`, `integration-grc`), none of which mock product data.
 
 ### New follow-ups surfaced by the 2026-07-22 critique
 
-- **Consolidate the live `-enhancement`/`litbang`/`research` modules by design,
-  not by delete.** `dashboard-enhancement`, `finance-enhancement`, `litbang`, and
+- **Consolidate the live `-enhancement`/`research` modules by design,
+  not by delete.** `dashboard-enhancement`, `finance-enhancement`, and
   `research` are separately mounted and in active use — merging them is a
   contract-changing refactor (route-name collisions with `dashboard`, ~34 web
   call sites into `/finance-enhancement`, separate nav/RBAC entries), so it was
@@ -762,7 +765,7 @@ injections (`grc-live`, `integration-grc`), none of which mock product data.
   whose nav offers a route the middleware then bounces to `/unauthorized` — e.g.
   most non-teaching staff (`*_TATA_USAHA`, `*_BENDAHARA`, `*_KOMITE`, pustakawan,
   perawat, keamanan, laboran, business-*) get `/students`; alumni get
-  `/alumni/sanad`; `PT_MAHASISWA` gets `/classes`. Decide per route: grant access
+  `/alumni/sanad`. Decide per route: grant access
   or hide the menu item. `screenshot-roles` reproduces the list.
 - **Prettier is not enforced and the tree isn't clean.** `prettier --check`
   currently flags ~464 files, so it can't go into CI as-is. Do a one-time
@@ -848,8 +851,8 @@ and follow-through:
   10+ merged migrations, truncated `schema.prisma`/`seed.ts`, and weakened
   CI. Closed; vocabulary rebuilt **additively** (enum-only migration
   `20260716000000_expand_roles_realms_hierarchy`) with backend + web mapping,
-  seeds, and tests. Deviation: `BUSINESS_MANAGER`/`PT_TATA_USAHA` map to
-  STAFF, not admin. Also added research-grounded support roles
+  seeds, and tests. Deviation: `BUSINESS_MANAGER`/`PT_TATA_USAHA` (the latter
+  since removed) map to STAFF, not admin. Also added research-grounded support roles
   (`PUSTAKAWAN`, `PERAWAT`, `KEAMANAN`, `LABORAN`) backed by existing modules.
 - **#320 (security deps):** right goal, wrong means (pnpm 11 **RC** pinned,
   global `resolution-mode=highest`; `pnpm audit` is broken upstream — npm
@@ -956,16 +959,48 @@ halaman membaca `name`), kartu ringkasan membaca bentuk respons yang berbeda
 dari yang dikirim `report/completeness`, dan **NIK anak tampil penuh** di tabel
 (minimisasi tampilan data pribadi spesifik, UU 27/2022 Ps. 4).
 
-### NIS per unit — sisa (bagian 3 dan 4 pengganti #489)
+### Menunggu keputusan pengguna (dibuka 2026-09-20 setelah #513/#514/#515)
 
-- `students.nis` masih unik lintas yayasan, jadi dua unit belum bisa memakai
-  nomor yang sama. Melonggarkannya butuh lingkup unit di
-  `analytics/bulk.service.ts#bulkImportAttendance`, yang mencari santri hanya
-  lewat NIS.
-- Rapor Kurikulum Merdeka mencetak nama/jenis unit SEKARANG (`student.unit`)
-  untuk rapor tahun ajaran lama; seharusnya unit rombelnya.
-- Onboarding santri lama masih mengganti NISN tersimpan dengan NISN yang
-  diketik di formulir (`nisn || student.nisn`) — NISN berlaku seumur hidup.
+Tiga hal yang sengaja **tidak** diputuskan sendiri saat mengerjakan pengganti
+#489. Semuanya terukur, dan semuanya menunggu jawaban yayasan.
+
+1. **Tata Usaha tidak melihat tombol "Luluskan".** API mengizinkan TU
+   meluluskan (`manageAlumni` = admin + TU, #500), tetapi halaman
+   `students/[id]` dibuka dengan `MainLayout allowedRoles={["SUPER_ADMIN",
+   "UNIT_ADMIN", "TEACHER"]}` sejak lama, sehingga TU terpental ke
+   `/unauthorized` — terbukti di rig dengan akun `smpit.tu@`. **Pertanyaan:**
+   apakah TU boleh membuka detail santri (dan karenanya meluluskan lewat UI),
+   atau kelulusan memang hanya wewenang kepala/admin unit? Jangan longgarkan
+   halamannya tanpa jawaban itu: halaman detail memuat data pribadi lengkap.
+2. **Kolom `students.nis` masih ada.** #515 hanya membuang indeks uniknya;
+   kolomnya dipertahankan sebagai cuplikan supaya image `:rollback` tetap bisa
+   menulis. **Pertanyaan:** buang kolomnya di rilis tersendiri setelah satu
+   rilis penuh berjalan tanpa penulis lama, atau biarkan sebagai cuplikan
+   permanen (mempercepat daftar santri, dengan risiko dua fakta menyimpang)?
+3. **`canManageDecisions` di halaman SPMB tidak pernah cocok.**
+   `apps/web/src/app/spmb/registrations/[id]/page.tsx` membandingkan
+   `getPrimaryRoleCode(user)` dengan `"UNIT_ADMIN"`, padahal katalog perannya
+   `SDIT_ADMIN`/`SMPIT_ADMIN`/… — jadi tombol Terima/Tolak/Jadwalkan Tes
+   tampil **nonaktif** untuk admin unit yang sebenarnya berwenang (Super Admin
+   lolos karena dicek terpisah). Perbaikannya sebaris (pakai ember peran yang
+   sama dengan API), tetapi ia mengubah siapa yang bisa memutuskan penerimaan —
+   **pertanyaan:** siapa yang seharusnya boleh menekan tombol itu?
+
+### NIS per unit — SELESAI (bagian 3 dan 4 pengganti #489)
+
+Ketiga sisa di bawah sudah dikerjakan; disimpan sebagai jejak keputusan.
+
+- ~~`students.nis` unik lintas yayasan~~ → #515: indeks uniknya dibuang
+  (kolomnya sengaja tetap ada demi jendela rollback), pencarian NIS kini
+  berlingkup unit lewat `findStudentIdByNisInUnit`, dan
+  `analytics/bulk.service.ts` — 352 baris tanpa satu pun pemanggil — dihapus
+  karena mencocokkan santri hanya lewat NIS. Penjaga sumber memindai
+  `apps/api/src` agar `where: { nis }` tanpa `unitId` tidak kembali.
+- ~~Rapor Merdeka memakai unit SEKARANG~~ → #502: kop, jenis unit, jabatan
+  kepala, fase, dan lingkup aksesnya dari unit rombel tahun ajaran itu.
+- ~~Onboarding santri lama menimpa NISN tersimpan~~ → #514: NISN yang berbeda
+  ditolak 409 (bukan ditimpa, bukan ditebak), dan progresi internal antarunit
+  memakai baris santri yang sama lewat `existingStudentId`.
 
 ## How to contribute a build fix
 

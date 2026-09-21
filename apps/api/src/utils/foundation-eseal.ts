@@ -9,12 +9,12 @@ import {
 /**
  * e-seal Yayasan — pembungkus tipis di atas primitif esign untuk kunci milik
  * organ/yayasan (bukan perorangan). Kunci privat disegel dengan passphrase
- * server-side (pola `system-secrets`), sehingga admin basis data hanya
- * melihat blob tersegel, bukan kunci mentah.
+ * server-side, pola yang sama dengan `UserSigningKey` esign, sehingga admin
+ * basis data hanya melihat blob tersegel, bukan kunci mentah.
  *
  * Fungsi-fungsi di sini MURNI: tidak menyentuh Prisma, supaya unit-testable.
  * Pemanggil (service) yang mengambil baris `FoundationEseal` dan passphrase
- * dari secret store.
+ * dari `config.foundation.esealPassphrase`.
  */
 
 /** Baris e-seal → bahan kriptografi yang dimengerti utils/esign. */

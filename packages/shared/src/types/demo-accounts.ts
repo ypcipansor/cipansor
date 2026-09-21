@@ -40,7 +40,6 @@ export const DEMO_TABS: DemoTab[] = [
   { key: "SD_IT", label: "SD IT" },
   { key: "SMP_IT", label: "SMP IT" },
   { key: "SMA_QURAN", label: "SMA Qur'an" },
-  { key: "PERGURUAN_TINGGI", label: "Perguruan Tinggi" },
   { key: "SARANA_USAHA", label: "Sarana & Unit Usaha" },
 ];
 
@@ -118,17 +117,6 @@ export const DEMO_ACCOUNTS: DemoAccount[] = [
   { group: "SMA_QURAN", roleCode: "SMAQ_ORANG_TUA", name: "Bapak Agus Salim", email: "smaq.ortu@cipansor.or.id", password: P, description: "Orang tua santri SMA Qur'an" },
   { group: "SMA_QURAN", roleCode: "SMAQ_SISWA", name: "Ananda Zaidan Abdullah", email: "smaq.siswa@cipansor.or.id", password: P, description: "Santri SMA Qur'an" },
   { group: "SMA_QURAN", roleCode: "SMAQ_ALUMNI", name: "Arya Satria", email: "smaq.alumni@cipansor.or.id", password: P, description: "Alumni SMA Qur'an" },
-
-  // ── Perguruan Tinggi ────────────────────────────────────────────────
-  { group: "PERGURUAN_TINGGI", roleCode: "PT_REKTOR", name: "Prof. Dr. K.H. Abdul Somad, M.A.", email: "pt.rektor@cipansor.or.id", password: P, description: "Rektor Perguruan Tinggi" },
-  { group: "PERGURUAN_TINGGI", roleCode: "PT_WAKIL_REKTOR", name: "Dr. Hasan Basri, M.A.", email: "pt.wakilrektor@cipansor.or.id", password: P, description: "Wakil Rektor" },
-  { group: "PERGURUAN_TINGGI", roleCode: "PT_DEKAN", name: "Dr. Zainal Abidin, M.Ag.", email: "pt.dekan@cipansor.or.id", password: P, description: "Dekan Fakultas" },
-  { group: "PERGURUAN_TINGGI", roleCode: "PT_KAPRODI", name: "Dr. Umar Faruq, M.Pd.", email: "pt.kaprodi@cipansor.or.id", password: P, description: "Ketua Program Studi" },
-  { group: "PERGURUAN_TINGGI", roleCode: "PT_DOSEN", name: "Dr. Ibrahim Adham, Lc.", email: "pt.dosen@cipansor.or.id", password: P, description: "Dosen" },
-  { group: "PERGURUAN_TINGGI", roleCode: "PT_MAHASISWA", name: "Ananda Bilal Musthofa", email: "pt.mahasiswa@cipansor.or.id", password: P, description: "Mahasiswa" },
-  { group: "PERGURUAN_TINGGI", roleCode: "PT_STAF_AKADEMIK", name: "Nurul Hidayah, S.Kom.", email: "pt.staf@cipansor.or.id", password: P, description: "Staf Akademik" },
-  { group: "PERGURUAN_TINGGI", roleCode: "PT_TATA_USAHA", name: "Firmansyah", email: "pt.tu@cipansor.or.id", password: P, description: "Tata Usaha Perguruan Tinggi" },
-  { group: "PERGURUAN_TINGGI", roleCode: "PT_ALUMNI", name: "Zulfikar Ali", email: "pt.alumni@cipansor.or.id", password: P, description: "Alumni Perguruan Tinggi" },
 
   // ── Sarana & Unit Usaha ─────────────────────────────────────────────
   { group: "SARANA_USAHA", roleCode: "PUSTAKAWAN", name: "Lestari Ningsih, S.IP.", email: "sarana.pustakawan@cipansor.or.id", password: P, description: "Pustakawan / perpustakaan" },

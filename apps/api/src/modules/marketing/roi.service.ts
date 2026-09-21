@@ -44,8 +44,10 @@ export async function calculateCampaignROI(unitId?: string) {
     prisma.invoice.findMany({
       where: {
         student: {
-          registrant: {
-            campaignId: { in: campaignIds },
+          // Satu santri kini boleh punya beberapa pendaftaran (progresi internal
+          // antarunit), jadi penyaringnya `some`, bukan relasi tunggal.
+          registrants: {
+            some: { campaignId: { in: campaignIds } },
           },
         },
         status: 'PAID',
@@ -54,7 +56,12 @@ export async function calculateCampaignROI(unitId?: string) {
         paidAmount: true,
         student: {
           select: {
-            registrant: {
+            // Pendapatannya diakui pada kampanye yang PERTAMA membawanya masuk,
+            // supaya santri dengan dua pendaftaran tidak dihitung dua kali.
+            registrants: {
+              where: { campaignId: { in: campaignIds } },
+              orderBy: { createdAt: 'asc' },
+              take: 1,
               select: { campaignId: true }
             }
           }
@@ -83,7 +90,7 @@ export async function calculateCampaignROI(unitId?: string) {
 
   // Add revenue from students
   studentRevenueData.forEach(inv => {
-    const cid = inv.student?.registrant?.campaignId;
+    const cid = inv.student?.registrants?.[0]?.campaignId;
     if (cid) {
       revenueMap.set(cid, (revenueMap.get(cid) || 0) + Number(inv.paidAmount));
     }

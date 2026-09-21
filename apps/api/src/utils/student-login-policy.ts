@@ -26,7 +26,6 @@ export const STUDENT_LOGIN_POLICY: Record<UnitType, boolean> = {
   [UnitType.SMP_IT]: true,
   [UnitType.SMA_QURAN]: true,
   [UnitType.PESANTREN]: true,
-  [UnitType.PERGURUAN_TINGGI]: true,
   // No students of their own; the value is never consulted.
   [UnitType.UNIT_USAHA]: false,
   [UnitType.OTHER]: true,

@@ -103,10 +103,6 @@ export const LEADERSHIP_ROLES: readonly string[] = [
   RoleCode.SMAQ_KEPALA_SEKOLAH,
   RoleCode.PESANTREN_PENGASUH,
   RoleCode.PESANTREN_DIREKTUR,
-  RoleCode.PT_REKTOR,
-  RoleCode.PT_WAKIL_REKTOR,
-  RoleCode.PT_DEKAN,
-  RoleCode.PT_KAPRODI,
 ];
 
 /**

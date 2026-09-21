@@ -41,23 +41,14 @@ describe('requiredParentRoles', () => {
     ).toHaveLength(1);
   });
 
-  // A mahasiswa is an adult; the RoleCode enum has no guardian role for PT and
-  // inventing one would model something the institution does not do.
-  it('skips Perguruan Tinggi', () => {
-    expect(
-      requiredParentRoles([
-        { unitId: 'u-pt', unitType: UnitType.PERGURUAN_TINGGI },
-      ])
-    ).toEqual([]);
-  });
-
-  it('keeps the school roles when a child is at PT and another at school', () => {
+  it('spans units across the school levels a child may study in', () => {
     const roles = requiredParentRoles([
-      { unitId: 'u-pt', unitType: UnitType.PERGURUAN_TINGGI },
+      { unitId: 'u-sd', unitType: UnitType.SD_IT },
       { unitId: 'u-sma', unitType: UnitType.SMA_QURAN },
     ]);
 
     expect(roles).toEqual([
+      { unitId: 'u-sd', roleCode: RoleCode.SDIT_ORANG_TUA },
       { unitId: 'u-sma', roleCode: RoleCode.SMAQ_ORANG_TUA },
     ]);
   });

@@ -27,8 +27,8 @@
  *
  * **Sengaja TIDAK ditaruh di `types/enums.ts`.** Berkas itu sudah memegang
  * `UnitType` dan `UserRole` versinya sendiri yang menyimpang dari enum Prisma
- * (`UnitType` di sana punya `PAUD` dan tidak punya `PERGURUAN_TINGGI`), jadi ia
- * contoh persis dari penyakit yang berkas ini obati. Jangan tambah ke sana.
+ * (`UnitType` di sana punya `PAUD` yang tidak ada di Prisma), jadi ia contoh
+ * persis dari penyakit yang berkas ini obati. Jangan tambah ke sana.
  */
 
 /**

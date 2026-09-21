@@ -69,7 +69,6 @@ import raporPesantrenRoutes from '@/modules/rapor-pesantren/rapor-pesantren.rout
 import { procurementRoutes } from '@/modules/procurement/procurement.routes';
 import { supplierRoutes } from '@/modules/suppliers/suppliers.routes';
 import { uploadRoutes } from '@/modules/upload/upload.routes';
-import secretsRoutes from '@/modules/system-secrets/secrets.routes';
 
 // Phase 12 routes
 import extracurricularRoutes from '@/modules/extracurricular/extracurricular.routes';
@@ -93,7 +92,6 @@ import { studentOrgRoutes } from '@/modules/student-org/student-org.routes';
 import { researchRoutes } from '@/modules/research/research.routes';
 import nonFormalRoutes from '@/modules/non-formal';
 import socialServiceRoutes from '@/modules/social-service';
-import higherEducationRoutes from '@/modules/higher-education/higher-education.routes';
 import performanceAgreementRoutes from '@/modules/performance-management/pk.routes';
 
 // Enhancement module routes
@@ -119,7 +117,6 @@ import lingkunganRoutes from '@/modules/lingkungan/lingkungan.routes';
 import talentaRoutes from '@/modules/talenta/talenta.routes';
 import organisasiRoutes from '@/modules/organisasi/organisasi.routes';
 import tataLaksanaRoutes from '@/modules/tatalaksana/tatalaksana.routes';
-import litbangRoutes from '@/modules/litbang/litbang.routes';
 import businessUnitRoutes from '@/modules/business-unit/business-unit.routes';
 
 // Create Express app
@@ -289,7 +286,6 @@ apiRouter.use('/rapor-pesantren', raporPesantrenRoutes);
 apiRouter.use('/procurement', procurementRoutes);
 apiRouter.use('/suppliers', supplierRoutes);
 apiRouter.use('/upload', uploadRoutes);
-apiRouter.use('/secrets', secretsRoutes);
 
 // Phase 12 routes
 apiRouter.use('/extracurricular', extracurricularRoutes);
@@ -313,7 +309,6 @@ apiRouter.use('/student-org', studentOrgRoutes);
 apiRouter.use('/research', researchRoutes);
 apiRouter.use('/non-formal', nonFormalRoutes);
 apiRouter.use('/social-service', socialServiceRoutes);
-apiRouter.use('/higher-education', higherEducationRoutes);
 apiRouter.use('/performance-agreements', performanceAgreementRoutes);
 
 // Enhancement modules
@@ -338,7 +333,6 @@ apiRouter.use('/lingkungan', lingkunganRoutes);
 apiRouter.use('/talenta', talentaRoutes);
 apiRouter.use('/organisasi', organisasiRoutes);
 apiRouter.use('/tata-laksana', tataLaksanaRoutes);
-apiRouter.use('/litbang', litbangRoutes);
 apiRouter.use('/business-units', businessUnitRoutes);
 
 // API info
@@ -404,7 +398,6 @@ apiRouter.get('/', (_req, res) => {
       ibadah: '/api/ibadah',
       raporPesantren: '/api/rapor-pesantren',
       reception: '/api/reception',
-      secrets: '/api/secrets',
       // New modules
       perencanaan: '/api/perencanaan',
       pengawasan: '/api/pengawasan',
@@ -413,7 +406,6 @@ apiRouter.get('/', (_req, res) => {
       talenta: '/api/talenta',
       organisasi: '/api/organisasi',
       tataLaksana: '/api/tata-laksana',
-      litbang: '/api/litbang',
       businessUnits: '/api/business-units',
     },
   });

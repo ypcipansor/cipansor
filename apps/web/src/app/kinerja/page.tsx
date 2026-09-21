@@ -51,10 +51,6 @@ function KinerjaHubPageContent() {
     "SMAQ_KEPALA_SEKOLAH",
     "PESANTREN_PENGASUH",
     "PESANTREN_DIREKTUR",
-    "PT_REKTOR",
-    "PT_WAKIL_REKTOR",
-    "PT_DEKAN",
-    "PT_KAPRODI",
     "UNIT_ADMIN",
   ];
 

@@ -5,11 +5,10 @@ import { UnitType } from '@prisma/client';
  * Derived from the Prisma enum rather than hand-listed.
  *
  * The literal list was repeated three times below and had fallen behind the
- * schema: it was missing PERGURUAN_TINGGI and UNIT_USAHA. STAI Cipansor was
- * seeded as PERGURUAN_TINGGI, so it existed in the database but could not be
- * edited through the API — the update would fail validation on a value the
- * row already held. Deriving it means adding a UnitType to schema.prisma is
- * the only change ever needed.
+ * schema: it was missing UNIT_USAHA, so a business unit existed in the
+ * database but could not be edited through the API — the update would fail
+ * validation on a value the row already held. Deriving it means adding a
+ * UnitType to schema.prisma is the only change ever needed.
  */
 const unitTypeSchema = z.nativeEnum(UnitType);
 

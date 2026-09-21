@@ -7,10 +7,10 @@ import api, { ApiResponse } from "@/lib/api";
  *
  * This list used to stop at SMA_QURAN and was copy-pasted into five places
  * (here, both unit forms, and three times in the API's Zod schema). The
- * database already had PERGURUAN_TINGGI, UNIT_USAHA and OTHER, so STAI
- * Cipansor rendered its type as the raw string "PERGURUAN_TINGGI" — no label
- * matched — and neither form could create or even re-save one, because the
- * value the row already held was not in the form's own enum.
+ * database already had UNIT_USAHA and OTHER, so such a unit rendered its type
+ * as the raw string — no label matched — and neither form could create or even
+ * re-save one, because the value the row already held was not in the form's
+ * own enum.
  *
  * Everything below is derived from this array, so adding a type is one edit.
  */
@@ -20,7 +20,6 @@ export const UNIT_TYPES = [
   { value: "SD_IT", label: "SD Islam Terpadu" },
   { value: "SMP_IT", label: "SMP Islam Terpadu" },
   { value: "SMA_QURAN", label: "SMA Qur'an" },
-  { value: "PERGURUAN_TINGGI", label: "Perguruan Tinggi" },
   { value: "UNIT_USAHA", label: "Unit Usaha" },
   { value: "OTHER", label: "Lainnya" },
 ] as const;
