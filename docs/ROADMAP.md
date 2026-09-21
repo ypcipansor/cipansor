@@ -11,12 +11,28 @@ a visitor sees, then correctness work, then deliverables, then tidiness.
 
 ## Current deployment state
 
-- As of **2026-09-20** production runs `main @ 46d3755c`, rolled in two steps
-  that day with `deploy-images.sh` (both containers): first #513 (19.04 UTC),
-  then #514 + #515 (22.17 UTC). Each roll applied its migrations with
-  `prisma migrate deploy` **before** swapping the images, and each was verified
-  inside the running container (`verify-3b1.js`, `verify-3b2.js`, `verify-d.js`)
-  rather than from the outside.
+- As of **2026-09-21** production runs `main @ d1fdc9b0`. The latest roll
+  (00.36 UTC) shipped #504 (System Secrets removed) and #505 (Perguruan Tinggi
+  and Litbang decommissioned) together: backup first — and that backup was
+  *restored into a throwaway Postgres to prove it works*, because #505 drops
+  tables and deletes rows — then `prisma migrate deploy`
+  (`20260915120000_decommission_higher_ed_litbang`, then
+  `20260920160000_drop_system_secrets`), then `deploy-images.sh`, then
+  `verify-504-505.js` inside the API container: 11/11. The STAI Cipansor unit
+  and the nine `pt.*` accounts are gone by owner decision (units 5 → 4,
+  users 107 → 98).
+- Before that, on **2026-09-20**, the same host rolled `46d3755c` in two steps
+  with `deploy-images.sh`: first #513 (19.04 UTC), then #514 + #515 (22.17 UTC).
+  Each roll applied its migrations with `prisma migrate deploy` **before**
+  swapping the images, and each was verified inside the running container
+  (`verify-3b1.js`, `verify-3b2.js`, `verify-d.js`) rather than from the
+  outside.
+- **The two migrations #504/#505 shipped are order-sensitive on purpose.**
+  `drop_system_secrets` is timestamped *after* `decommission_higher_ed_litbang`
+  so that `system_secrets` still exists when the decommission's FK-catalog rule
+  runs — which is why its documented blast radius is 233 tables, not 232.
+  Renaming that folder earlier would silently invalidate the published numbers;
+  `decommissioned-modules.guard.test.ts` now pins the ordering.
 - **A merge is not a deploy, and this section is how that gets caught.** Until
   the 2026-09-04 roll, production was still serving a build that predated #462
   — the containers were created 2026-09-03 23:49 UTC and both Turnstile PRs
