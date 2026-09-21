@@ -138,12 +138,17 @@ export function htmlToText(html: string): string {
     .replace(/&quot;/g, '"')
     .replace(/&#039;/g, "'")
     .replace(/&amp;/g, '&')
-    .replace(/<style[\s\S]*?<\/style>/gi, '')
-    .replace(/<head[\s\S]*?<\/head>/gi, '')
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/(p|div|tr|h1|h2|h3|li)>/gi, '\n');
 
   let previous: string;
+  do {
+    previous = text;
+    text = text
+      .replace(/<style[\s\S]*?<\/style>/gi, '')
+      .replace(/<head[\s\S]*?<\/head>/gi, '');
+  } while (text !== previous);
+
   do {
     previous = text;
     text = text.replace(/<[^>]+>/g, '');
