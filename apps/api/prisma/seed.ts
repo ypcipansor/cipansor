@@ -113,8 +113,6 @@ import {
   InternalAuditStatus,
   ShariaCategory,
   TrainingStatus,
-  ResearchStatus,
-  InnovationStatus,
   AssetDisposalReason,
   WasteCategory,
   EnvironmentProgramStatus,
@@ -344,20 +342,6 @@ async function main() {
       address: 'Kp. Cipansor, Kec. Kadipaten, Kab. Tasikmalaya, Jawa Barat 46157',
       phone: '0811110400',
       email: 'smaquran@cipansor.or.id',
-    },
-  });
-
-  // The PT_* RoleCodes existed but had no unit to belong to, so every
-  // Perguruan Tinggi demo account was created with `unitId: null` and every
-  // unit-scoped query returned nothing for them.
-  const perguruanTinggi = await prisma.unit.create({
-    data: {
-      foundationId: foundation.id,
-      name: 'STAI Cipansor',
-      type: UnitType.PERGURUAN_TINGGI,
-      address: 'Kp. Cipansor, Kec. Kadipaten, Kab. Tasikmalaya, Jawa Barat 46157',
-      phone: '0811110400',
-      email: 'stai@cipansor.or.id',
     },
   });
 
@@ -620,62 +604,6 @@ async function main() {
         : []),
     ]),
 
-    // Perguruan Tinggi roles
-    {
-      code: RoleCode.PT_REKTOR,
-      name: 'Rektor',
-      realm: Realm.PERGURUAN_TINGGI,
-      description: 'Rektor perguruan tinggi',
-    },
-    {
-      code: RoleCode.PT_WAKIL_REKTOR,
-      name: 'Wakil Rektor',
-      realm: Realm.PERGURUAN_TINGGI,
-      description: 'Wakil rektor perguruan tinggi',
-    },
-    {
-      code: RoleCode.PT_DEKAN,
-      name: 'Dekan',
-      realm: Realm.PERGURUAN_TINGGI,
-      description: 'Dekan fakultas',
-    },
-    {
-      code: RoleCode.PT_KAPRODI,
-      name: 'Ketua Program Studi',
-      realm: Realm.PERGURUAN_TINGGI,
-      description: 'Ketua program studi',
-    },
-    {
-      code: RoleCode.PT_DOSEN,
-      name: 'Dosen',
-      realm: Realm.PERGURUAN_TINGGI,
-      description: 'Dosen pengajar',
-    },
-    {
-      code: RoleCode.PT_MAHASISWA,
-      name: 'Mahasiswa',
-      realm: Realm.PERGURUAN_TINGGI,
-      description: 'Mahasiswa perguruan tinggi',
-    },
-    {
-      code: RoleCode.PT_STAF_AKADEMIK,
-      name: 'Staf Akademik',
-      realm: Realm.PERGURUAN_TINGGI,
-      description: 'Staf akademik perguruan tinggi',
-    },
-    {
-      code: RoleCode.PT_TATA_USAHA,
-      name: 'Tata Usaha PT',
-      realm: Realm.PERGURUAN_TINGGI,
-      description: 'Tata usaha perguruan tinggi',
-    },
-    {
-      code: RoleCode.PT_ALUMNI,
-      name: 'Alumni PT',
-      realm: Realm.PERGURUAN_TINGGI,
-      description: 'Alumni perguruan tinggi',
-    },
-
     // Pesantren roles (cross-unit)
     {
       code: RoleCode.PESANTREN_PENGASUH,
@@ -841,7 +769,6 @@ async function main() {
     if (code.startsWith('SDIT_')) return sdIt.id;
     if (code.startsWith('SMPIT_')) return smpIt.id;
     if (code.startsWith('SMAQ_')) return smaQuran.id;
-    if (code.startsWith('PT_')) return perguruanTinggi.id;
     // Boarding-side and shared-service roles: see PESANTREN_REALM_ROLES above
     // for why they land on SMP IT and what that costs.
     if (PESANTREN_REALM_ROLES.has(code)) return smpIt.id;
@@ -858,7 +785,7 @@ async function main() {
     if (code === 'SUPER_ADMIN') return UserRole.SUPER_ADMIN;
     if (code.startsWith('YAYASAN_') || code.endsWith('_ADMIN'))
       return UserRole.UNIT_ADMIN;
-    if (code.endsWith('_SISWA') || code === 'PT_MAHASISWA' || code.endsWith('_ALUMNI'))
+    if (code.endsWith('_SISWA') || code.endsWith('_ALUMNI'))
       return UserRole.STUDENT;
     if (code.endsWith('_ORANG_TUA')) return UserRole.PARENT;
     const teacherSuffix = ['_GURU', '_KEPALA_SEKOLAH', '_WAKASEK', '_WALI_KELAS', '_GURU_BK'];
@@ -866,7 +793,6 @@ async function main() {
     const teacherExact = [
       'PESANTREN_PENGASUH', 'PESANTREN_DIREKTUR', 'USTADZ', 'MUSYRIF', 'MUSYRIFAH',
       'MUHAFIDZ', 'MUHAFIDZAH', 'MURABBI', 'WALI_KAMAR',
-      'PT_REKTOR', 'PT_WAKIL_REKTOR', 'PT_DEKAN', 'PT_KAPRODI', 'PT_DOSEN',
     ];
     if (teacherExact.includes(code)) return UserRole.TEACHER;
     return UserRole.STAFF;
@@ -1656,7 +1582,7 @@ async function main() {
   for (const [roleCode, demo] of demoUsers) {
     if (!demo.unitId) continue;
 
-    const isStudent = roleCode.endsWith('_SISWA') || roleCode === 'PT_MAHASISWA';
+    const isStudent = roleCode.endsWith('_SISWA');
     const isParent = roleCode.endsWith('_ORANG_TUA');
     // A kepala sekolah is an office, not a teaching record, so they get no
     // Teacher row — except where SECONDARY_ROLES also hands them a teaching
@@ -1697,7 +1623,7 @@ async function main() {
       await prisma.classEnrollment.create({
         data: {
           studentId: student.id,
-          classId: await classForUnit(demo.unitId, roleCode === 'PT_MAHASISWA' ? '1' : '7'),
+          classId: await classForUnit(demo.unitId, '7'),
           status: 'active',
         },
       });
@@ -7536,56 +7462,6 @@ async function main() {
     },
   });
   console.log('   ✅ Green Campus tables created');
-
-  // 5. Research & Development / Litbang (research_projects, research_milestones, innovation_proposals)
-  console.log('   Seeding Litbang (Research & Development)...');
-  const resProject = await prisma.researchProject.create({
-    data: {
-      unitId: smpIt.id,
-      title: 'Pengembangan Metode Murattal Cepat untuk Anak PAUD',
-      abstract: 'Penelitian eksperimental menguji efektivitas metode irama nahawand bagi ingatan balita.',
-      category: 'Pendidikan',
-      status: ResearchStatus.IN_PROGRESS,
-      budget: new Prisma.Decimal(15000000.0),
-      startDate: new Date('2026-05-01'),
-      endDate: new Date('2026-11-30'),
-      leaderId: teacherPesantrenUser.id,
-      progress: 30,
-    },
-  });
-
-  await prisma.researchMilestone.create({
-    data: {
-      projectId: resProject.id,
-      title: 'Desain kurikulum dan pre-test',
-      description: 'Membuat modul materi dan melakukan pre-test kemampuan awal santri PAUD.',
-      dueDate: new Date('2026-06-30'),
-      status: 'COMPLETED',
-      completedAt: new Date('2026-06-28'),
-    },
-  });
-
-  await prisma.researchMilestone.create({
-    data: {
-      projectId: resProject.id,
-      title: 'Penerapan metode nahawand',
-      description: 'Memulai sesi pengenalan irama secara rutin di kelas.',
-      dueDate: new Date('2026-09-15'),
-      status: 'IN_PROGRESS',
-    },
-  });
-
-  await prisma.innovationProposal.create({
-    data: {
-      unitId: smpIt.id,
-      title: 'Aplikasi Tabungan Santri Berbasis Barcode',
-      description: 'Usulan sistem pembayaran non-tunai di kantin menggunakan ID Card santri berkode batang.',
-      category: 'TEKNOLOGI',
-      status: InnovationStatus.IDEA,
-      proposerId: teacherPesantrenUser.id,
-    },
-  });
-  console.log('   ✅ Litbang / R&D tables created');
 
   // 6. Strategic Planning (strategic_plans, plan_objectives, plan_indicators, plan_activities)
   //    The yayasan's RPJP → Renstra → RKA cascade, modelled on the three

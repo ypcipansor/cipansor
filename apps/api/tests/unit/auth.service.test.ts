@@ -76,7 +76,9 @@ const {
       UNIT_ADMIN: 'UNIT_ADMIN',
     },
     mockGenerateSecret: vi.fn(() => 'GENERATED_SECRET'),
-    mockGenerateURI: vi.fn(() => 'otpauth://totp/Cipansor%20App:test@example.com?secret=GENERATED_SECRET'),
+    mockGenerateURI: vi.fn(
+      () => 'otpauth://totp/Cipansor%20App:test@example.com?secret=GENERATED_SECRET'
+    ),
     mockVerifyOtp: vi.fn(),
     mockToDataURL: vi.fn().mockResolvedValue('data:image/png;base64,QRCODE'),
   };
@@ -374,6 +376,35 @@ describe('AuthService', () => {
       await expect(authService.refreshToken('invalid-type-token')).rejects.toThrow(
         'Invalid token type'
       );
+    });
+
+    it('rejects a user left with no role and a nulled legacy role by the PT purge', async () => {
+      // What the decommission migration produces for a PT-only user: their
+      // assignment is gone and `users.role` was set to NULL (the legacy
+      // UserRole enum has no PT member, so it previously held e.g. TEACHER and
+      // kept the session alive). With both empty, refresh must reject.
+      mockVerifyToken.mockReturnValue({ sub: 'user-pt', type: 'refresh' });
+      mockPrisma.refreshToken.findFirst.mockResolvedValue({
+        id: 'token-pt',
+        token: 'pt-refresh-token',
+        userId: 'user-pt',
+        expiresAt: new Date(Date.now() + 86400000),
+        user: {
+          id: 'user-pt',
+          email: 'pt@example.com',
+          role: null,
+          unitId: null,
+          isActive: true,
+          userRoles: [],
+        },
+      });
+      mockPrisma.refreshToken.delete.mockResolvedValue({});
+
+      await expect(authService.refreshToken('pt-refresh-token')).rejects.toThrow(
+        'No active role assignment found'
+      );
+      // The token is consumed, but no new one is minted.
+      expect(mockPrisma.refreshToken.create).not.toHaveBeenCalled();
     });
   });
 

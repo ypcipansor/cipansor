@@ -102,3 +102,35 @@ export async function nisForUnit(
 ): Promise<string | null> {
   return (await nisMapForUnit(db, unitId, [student])).get(student.id) ?? null;
 }
+
+/**
+ * Cari santri lewat NIS DI SATU UNIT.
+ *
+ * Selama `students.nis` unik seluruh yayasan, `findFirst({ where: { nis } })`
+ * kebetulan selalu benar. Begitu keunikannya dilonggarkan menjadi per unit
+ * (audit #489 bagian 4) pencarian global bisa mengembalikan santri sekolah
+ * lain yang kebetulan bernomor sama — dan impor kehadiran akan menuliskan absen
+ * ke anak yang salah. Karena itu jawabannya diambil dari
+ * `student_unit_identifiers`, yang memang unik per (unit, NIS), dengan
+ * `students.nis` sebagai cadangan untuk baris lama yang belum punya identitas
+ * unit (dan tetap dibatasi pada santri unit itu).
+ */
+export async function findStudentIdByNisInUnit(
+  db: Pick<typeof prisma, 'studentUnitIdentifier' | 'student'>,
+  input: { unitId: string; nis: string }
+): Promise<string | null> {
+  const nis = input.nis.trim();
+  if (!nis) return null;
+
+  const identitas = await db.studentUnitIdentifier.findFirst({
+    where: { unitId: input.unitId, nis },
+    select: { studentId: true },
+  });
+  if (identitas) return identitas.studentId;
+
+  const santri = await db.student.findFirst({
+    where: { nis, unitId: input.unitId, deletedAt: null },
+    select: { id: true },
+  });
+  return santri?.id ?? null;
+}
