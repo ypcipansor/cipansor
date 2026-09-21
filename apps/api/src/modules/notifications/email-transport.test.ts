@@ -271,11 +271,81 @@ describe('htmlToText', () => {
     expect(text).not.toContain('color:red');
   });
 
-  describe('regression: entity decoding is single-pass, &amp; last', () => {
-    // The fix that put `&amp;` last in the replacement chain (code scanning
-    // alert 29). With `&amp;` first, a nested `&amp;quot;` was double-unescaped
-    // into a literal `"`. Decoding specific entities before the escape
-    // character entity keeps a nested escape literal.
+  describe('removing real markup', () => {
+    it('removes a script tag but never lets it survive as markup', () => {
+      // Real markup is processed before anything is decoded, so the tag cannot
+      // survive. Its text content stays as inert plain text, which is all a
+      // tag stripper promises.
+      const text = htmlToText('<p>Hi</p><script>alert(1)</script>');
+
+      expect(text).not.toContain('<script');
+      expect(text).toBe('Hi\nalert(1)');
+    });
+
+    it('drops style and head elements together with their contents', () => {
+      const text = htmlToText(
+        '<head><title>Not shown</title></head><style>.x{color:red}</style><body><p>Shown</p></body>',
+      );
+
+      expect(text).toBe('Shown');
+      expect(text).not.toContain('Not shown');
+      expect(text).not.toContain('color:red');
+    });
+
+    it('turns br and closing block tags into line breaks', () => {
+      expect(htmlToText('<p>satu</p><div>dua</div>')).toBe('satu\ndua');
+      expect(htmlToText('satu<br>dua<br/>tiga')).toBe('satu\ndua\ntiga');
+      expect(htmlToText('<tr><td>lima</td></tr>')).toBe('lima');
+    });
+
+    it('does not leave a tag behind when removing tags concatenates them', () => {
+      // `<<script>script>` loses the inner `<script>` and the halves would join
+      // into a live tag if the strip ran only once. Re-applying it to a fixed
+      // point leaves no tag-shaped residue.
+      expect(htmlToText('<<script>script>alert(1)')).not.toMatch(/<\/?script/i);
+      expect(htmlToText('<scr<script>ipt>alert(1)')).not.toMatch(/<\/?script/i);
+    });
+  });
+
+  describe('entity decoding', () => {
+    it.each([
+      ['&quot;', '"'],
+      ['&lt;', '<'],
+      ['&gt;', '>'],
+      ['&#039;', "'"],
+      ['&#38;', '&'],
+      ['&amp;', '&'],
+    ])('decodes the plain entity %j exactly once', (input, expected) => {
+      expect(htmlToText(input)).toBe(expected);
+    });
+
+    it('decodes a plain &nbsp; to a single space', () => {
+      // Standalone, `&nbsp;` becomes a space and the trailing `.trim()` in
+      // htmlToText would strip it, so assert it in context.
+      expect(htmlToText('a&nbsp;b')).toBe('a b');
+    });
+
+    it('keeps escaped literal tag-like text instead of deleting it', () => {
+      // The bug this guards: decoding before stripping turned `&lt;code&gt;`
+      // into a real `<code>` tag, and the tag strip then removed it. Users who
+      // typed that literal saw it vanish.
+      expect(htmlToText('Use &lt;code&gt; here')).toBe('Use <code> here');
+      expect(htmlToText('a &lt; b')).toBe('a < b');
+    });
+
+    it('turns encoded dangerous markup into inert text, not active markup', () => {
+      // The entities decode to their literal characters, which is what a
+      // text/plain part needs; nothing re-parses them as tags.
+      expect(htmlToText('&lt;script&gt;alert(1)&lt;/script&gt;')).toBe(
+        '<script>alert(1)</script>',
+      );
+    });
+  });
+
+  describe('regression: entity decoding is single-pass', () => {
+    // A one-pass walk is what keeps a nested escape literal (code scanning
+    // alert 29). With a sequential `.replace()` chain the escape character
+    // decodes first and the remainder is then decoded a second time.
 
     it('does not double-unescape an escaped double quote', () => {
       expect(htmlToText('&amp;quot;')).toBe('&quot;');
@@ -290,24 +360,28 @@ describe('htmlToText', () => {
     });
 
     it.each([
-      ['&quot;', '"'],
-      ['&lt;', '<'],
-      ['&gt;', '>'],
-      ['&#039;', "'"],
-      ['&amp;', '&'],
-    ])('decodes the plain entity %j exactly once', (input, expected) => {
+      ['&amp;lt;script&amp;gt;', '&lt;script&gt;'],
+      [
+        '&amp;lt;script&amp;gt;alert(1)&amp;lt;/script&amp;gt;',
+        '&lt;script&gt;alert(1)&lt;/script&gt;',
+      ],
+    ])('does not let double-encoded markup (%j) slip through', (input, expected) => {
+      // The nested escape survives as literal text, so no `<script>` is ever
+      // formed — the property code scanning alert 27 is about.
       expect(htmlToText(input)).toBe(expected);
-    });
-
-    it('decodes a plain &nbsp; to a single space', () => {
-      // Standalone, `&nbsp;` becomes a space and the trailing `.trim()` in
-      // htmlToText would strip it, so assert it in context.
-      expect(htmlToText('a&nbsp;b')).toBe('a b');
+      expect(htmlToText(input)).not.toContain('<script>');
     });
 
     it('drops tags and collapses whitespace without decoding nested entities twice', () => {
       const text = htmlToText('<p>Berkah &amp;amp; damai</p>  <div>Rp&amp;nbsp;100</div>');
       expect(text).toBe('Berkah &amp; damai\n Rp&nbsp;100');
+    });
+  });
+
+  describe('whitespace', () => {
+    it('collapses runs of spaces and tabs, caps blank lines, and trims', () => {
+      expect(htmlToText('  satu   dua\t\ttiga  ')).toBe('satu dua tiga');
+      expect(htmlToText('<p>a</p><p></p><p></p><p>b</p>')).toBe('a\n\nb');
     });
   });
 });

@@ -129,35 +129,78 @@ export function describeEmailTransport(): EmailTransportStatus {
  * scores worse with spam filters and is unreadable in text-only clients, and
  * every template here is a table of labelled facts, so dropping the tags and
  * collapsing whitespace gives a usable fallback.
+ *
+ * Markup is stripped BEFORE entities are decoded, and nothing strips tags
+ * afterwards. That ordering is the whole point:
+ *
+ *   - Real `<script>`/`<style>`/tags are removed while still markup, so they
+ *     can never survive into the result. Decoding first would turn an escaped
+ *     `&lt;script&gt;` into a `<script>` the tag regex is then expected to
+ *     remove — an inherently incomplete second pass that leaves an injection
+ *     aperture.
+ *   - Entities are decoded once, on a string that is already markup-free, so
+ *     `&lt;code&gt;` becomes the literal text `<code>` rather than being
+ *     mistaken for a tag and deleted.
+ *
+ * Each destructive pattern is re-applied until the string stops changing. A
+ * single pass over `<<script>script>` leaves `<script>` behind, because the
+ * regex consumes the inner tag and the two halves join into a new one.
  */
 export function htmlToText(html: string): string {
-  let text = html
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#039;/g, "'")
-    .replace(/&amp;/g, '&')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/(p|div|tr|h1|h2|h3|li)>/gi, '\n');
+  let text = stripUntilStable(html, /<style[\s\S]*?<\/style>/gi, '');
+  text = stripUntilStable(text, /<head[\s\S]*?<\/head>/gi, '');
+  text = text.replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|tr|h1|h2|h3|li)>/gi, '\n');
+  text = stripUntilStable(text, /<[^>]*>/g, '');
 
-  let previous: string;
-  do {
-    previous = text;
-    text = text
-      .replace(/<style[\s\S]*?<\/style>/gi, '')
-      .replace(/<head[\s\S]*?<\/head>/gi, '');
-  } while (text !== previous);
-
-  do {
-    previous = text;
-    text = text.replace(/<[^>]+>/g, '');
-  } while (text !== previous);
-
-  return text
+  return decodeBasicEntities(text)
     .replace(/[ \t]+/g, ' ')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
+
+/**
+ * Apply `pattern` until it stops changing the string.
+ *
+ * The terminating condition is the fixed point, so the loop is bounded by the
+ * string shrinking a whole match each round — it cannot spin on input that the
+ * pattern matches but does not shorten.
+ */
+function stripUntilStable(text: string, pattern: RegExp, replacement: string): string {
+  let current = text;
+  for (;;) {
+    const next = current.replace(pattern, replacement);
+    if (next === current) return current;
+    current = next;
+  }
+}
+
+/**
+ * Decode the handful of entities the mail templates use, in a single pass that
+ * runs each entity exactly once.
+ *
+ * The one-pass walk is what keeps a nested escape literal: `&amp;quot;` yields
+ * `&quot;`, not `"`. A sequential `.replace()` chain cannot do that, because
+ * after `&amp;` decodes to `&` the remainder is then decoded a second time by
+ * whichever specific-entity replacement runs later in the chain.
+ */
+function decodeBasicEntities(text: string): string {
+  const named: Record<string, string> = {
+    '&nbsp;': ' ',
+    '&lt;': '<',
+    '&gt;': '>',
+    '&quot;': '"',
+    '&apos;': "'",
+    '&amp;': '&',
+  };
+
+  return text.replace(
+    /&#0*(39|38);|&(?:nbsp|lt|gt|quot|apos|amp);/g,
+    (match, numericCode?: string) => {
+      if (numericCode === '39') return "'";
+      if (numericCode === '38') return '&';
+      return named[match] ?? match;
+    },
+  );
 }
 
 /**
