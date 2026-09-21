@@ -68,6 +68,7 @@ describe('production secret guard', () => {
         env: 'production',
         jwtSecret: GOOD,
         studentCardHmacSecret: GOOD,
+        foundationEsealPassphrase: GOOD,
       })
     ).not.toThrow();
   });
@@ -93,7 +94,40 @@ describe('production secret guard', () => {
     expect(issues.map((i) => i.variable)).toEqual([
       'JWT_SECRET',
       'STUDENT_CARD_HMAC_SECRET',
+      'FOUNDATION_ESEAL_PASSPHRASE',
     ]);
+  });
+
+  /**
+   * Flag Investigation — validasi passphrase e-seal produksi tidak boleh
+   * bergantung pada import/getter.
+   *
+   * `config.foundation.esealPassphrase` dulu hanya melempar ketika getter-nya
+   * DIBACA, yaitu saat modul keputusan pertama kali memakai e-seal. Aplikasi
+   * produksi dapat boot, melayani, lalu gagal pada keputusan pertama. Gerbang
+   * startup `assertProductionSecrets` sekarang menolak boot tanpa nilai
+   * eksplisit, dan getter memakai definisi "nilai buruk" yang sama supaya
+   * nilai contoh/dev pun ditolak, bukan hanya string kosong.
+   */
+  it('refuses production without an explicit FOUNDATION_ESEAL_PASSPHRASE', () => {
+    expect(() =>
+      assertProductionSecrets({
+        env: 'production',
+        jwtSecret: GOOD,
+        studentCardHmacSecret: GOOD,
+      })
+    ).toThrow(/FOUNDATION_ESEAL_PASSPHRASE/);
+  });
+
+  it('refuses the published dev-fallback value as the e-seal passphrase', () => {
+    expect(() =>
+      assertProductionSecrets({
+        env: 'production',
+        jwtSecret: GOOD,
+        studentCardHmacSecret: GOOD,
+        foundationEsealPassphrase: 'dev-foundation-eseal-passphrase-not-for-production',
+      })
+    ).toThrow(/FOUNDATION_ESEAL_PASSPHRASE/);
   });
 
   // The card signer must be its OWN secret, required in production. A missing

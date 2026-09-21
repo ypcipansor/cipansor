@@ -924,15 +924,18 @@ describeDb('decommission migration — legacy PT sessions end', () => {
     await db.connect();
     try {
       const { rows } = await db.query<{ id: string; unit_id: string | null }>(
-        `SELECT id, unit_id FROM users WHERE id LIKE 'user-pt%' ORDER BY id`
+        // `COLLATE "C"` pins byte order: under en_US.utf8 PostgreSQL sorts
+        // "user-pt-only" before "user-pthome-*" (hyphen vs 'h'), so the
+        // hard-coded expectation below only holds on a C-collation database.
+        `SELECT id, unit_id FROM users WHERE id LIKE 'user-pt%' ORDER BY id COLLATE "C"`
       );
       expect(rows.map((r) => r.id)).toEqual([
-        'user-pthome-foundation',
-        'user-pthome-nullscoped',
-        'user-pthome-unitvalid',
         'user-pt-noassign',
         'user-pt-only',
         'user-pt-only2',
+        'user-pthome-foundation',
+        'user-pthome-nullscoped',
+        'user-pthome-unitvalid',
       ]);
       for (const row of rows) {
         expect(row.unit_id).toBeNull();

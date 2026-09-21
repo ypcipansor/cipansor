@@ -58,6 +58,75 @@ export const FOUNDATION_DECISION_TYPES = [
 export type FoundationDecisionType = (typeof FOUNDATION_DECISION_TYPES)[number];
 
 /**
+ * Matriks kewenangan organ atas tiap jenis keputusan.
+ *
+ * Kontrak ini hidup SEKALI di sini karena DUA sisi memakainya: API
+ * (`utils/foundation-authority.ts`) menolak keputusan yang organnya tidak
+ * berwenang, dan web menyaring pilihan jenis keputusan agar kombinasi
+ * organ×jenis yang salah tidak pernah dapat dipilih di UI. Dulu matriksnya
+ * hanya ada di API, sehingga form web membiarkan kombinasi apa pun dikirim dan
+ * pengguna baru diberi tahu setelah submit.
+ *
+ * Nilainya adalah himpunan organ yang berwenang; jenis tak dikenal tidak ada di
+ * peta dan karenanya gagal TERTUTUP (bukan fallback ke Pembina).
+ */
+export const FOUNDATION_DECISION_AUTHORITY: Record<
+  FoundationDecisionType,
+  readonly FoundationOrganType[]
+> = {
+  // Kewenangan Pembina (ps. 28 UU 28/2004) — selebihnya boleh diserahkan.
+  "pengesahan-rencana-kerja": ["PEMBINA"],
+  "pengesahan-anggaran": ["PEMBINA"],
+  "perubahan-anggaran-dasar": ["PEMBINA"],
+  "pengangkatan-pengurus": ["PEMBINA"],
+  "pemberhentian-pengurus": ["PEMBINA"],
+  "pengangkatan-pengawas": ["PEMBINA"],
+  "pemberhentian-pengawas": ["PEMBINA"],
+  penggabungan: ["PEMBINA"],
+  pembubaran: ["PEMBINA"],
+  "peralihan-kekayaan": ["PEMBINA"],
+  // Eksekutif harian Pengurus (ps. 31, 35).
+  "keputusan-operasional": ["PENGURUS"],
+  "kebijakan-internal": ["PENGURUS"],
+  "kegiatan-program": ["PENGURUS"],
+  // Pengawas (ps. 40-41) — nasihat & pemberhentian sementara.
+  "pemberhentian-sementara-pengurus": ["PENGAWAS"],
+  // Pemilihan Pembina ketika kekosongan → rapat gabungan (ps. 28).
+  "pemilihan-pembina": ["GABUNGAN"],
+  // Kategori sengaja untuk keputusan umum milik Pembina (organ puncak).
+  umum: ["PEMBINA"],
+};
+
+/**
+ * Organ yang berwenang atas `decisionType`, atau `[]` bila tak dikenal.
+ *
+ * Fail closed: jenis tak dikenal tidak pernah dianggap milik organ mana pun.
+ */
+export function organsForDecisionType(
+  decisionType: string,
+): readonly FoundationOrganType[] {
+  return FOUNDATION_DECISION_AUTHORITY[decisionType as FoundationDecisionType] ?? [];
+}
+
+/** Apakah `organType` berwenang atas `decisionType` menurut matriks? */
+export function organAuthorizedForDecisionType(
+  organType: FoundationOrganType,
+  decisionType: string,
+): boolean {
+  return organsForDecisionType(decisionType).includes(organType);
+}
+
+/** Jenis keputusan yang berwenang diputus oleh `organType`. */
+export function decisionTypesForOrgan(
+  organType: FoundationOrganType,
+): FoundationDecisionType[] {
+  return FOUNDATION_DECISION_TYPES.filter((t) =>
+    FOUNDATION_DECISION_AUTHORITY[t].includes(organType),
+  );
+}
+
+
+/**
  * Klasifikasi publikasi metadata keputusan.
  *
  * Endpoint verifikasi (`GET /foundation/verify`, `POST /foundation/verify-pdf`)

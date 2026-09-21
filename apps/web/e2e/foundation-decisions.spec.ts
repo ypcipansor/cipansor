@@ -370,6 +370,52 @@ test.describe("membuat keputusan", () => {
     ).toBeVisible();
   });
 
+  /**
+   * Regresi SECURITY CRITICAL (A) di sisi UI.
+   *
+   * Form baru dulu menawarkan SELURUH jenis keputusan untuk organ apa pun,
+   * sehingga Super Admin dapat memilih jenis milik Pembina sambil memilih
+   * organ PENGURUS/PENGAWAS — kombinasi yang kemudian ditolak API, tetapi
+   * hanya setelah submit. Kini daftar jenis disaring oleh matriks kewenangan
+   * yang SAMA dengan API (`decisionTypesForOrgan`), jadi kombinasi salah tidak
+   * pernah dapat dipilih. Uji ini membuktikan penyaringan itu benar-benar
+   * berjalan pada alur nyata, bukan hanya di unit test matriks.
+   */
+  test("form menolak kombinasi organ×jenis yang tidak berwenang (#A)", async ({
+    page,
+  }) => {
+    await signIn(page, "superAdmin");
+    await page.goto("/foundation/decisions/new");
+    await expect(
+      page.getByRole("heading", { name: "Buat Keputusan Baru" }),
+    ).toBeVisible({ timeout: 20000 });
+
+    // Organ PENGURUS: `perubahan-anggaran-dasar` (milik PEMBINA) tidak boleh
+    // muncul, sedangkan `keputusan-operasional` (milik PENGURUS) harus ada.
+    await page.getByRole("combobox").nth(0).click();
+    await page.getByRole("option", { name: "Pengurus Yayasan" }).click();
+    await page.getByRole("combobox").nth(2).click();
+    await expect(
+      page.getByRole("option", { name: "keputusan-operasional" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("option", { name: "perubahan-anggaran-dasar" }),
+    ).toHaveCount(0);
+    await page.keyboard.press("Escape");
+
+    // Organ PENGAWAS: hanya `pemberhentian-sementara-pengurus` yang berwenang.
+    await page.getByRole("combobox").nth(0).click();
+    await page.getByRole("option", { name: "Dewan Pengawas" }).click();
+    await page.getByRole("combobox").nth(2).click();
+    await expect(
+      page.getByRole("option", { name: "pemberhentian-sementara-pengurus" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("option", { name: "keputusan-operasional" }),
+    ).toHaveCount(0);
+    await page.keyboard.press("Escape");
+  });
+
   test("daftar Super Admin benar-benar memuat keputusan (regresi OR: [{}])", async () => {
     expect(decisionId).toBeTruthy();
     // Regresi: predikat akses daftar pernah berbentuk `OR: [{}, …]`. Objek

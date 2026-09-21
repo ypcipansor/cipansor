@@ -250,6 +250,37 @@ export function isVoteAuthentic(d: DecisionSignatureContext, vote: VoteSignature
 }
 
 /**
+ * Apakah rekaman kunci berhak menandatangani pada `at`?
+ *
+ * Stempel waktu daur hidup dimuat dari awal (`issuedAt`, `supersededAt`,
+ * `revokedAt`) tetapi sebelumnya tidak pernah DIBACA, sehingga kunci yang
+ * dicabut atau diganti tetap tampak berlaku selamanya bagi setiap suara yang
+ * menunjuk rekamannya. Tiga aturan, sengaja dibedakan:
+ *
+ *  - `issuedAt`: tanda tangan sebelum kunci diterbitkan mustahil secara
+ *    kriptografis. Baris seperti itu tidak sah kapan pun.
+ *  - `revokedAt`: tanda tangan pada/di setelah pencabutan ditolak. Pencabutan
+ *    justru dimaksudkan menghentikan pemakaian BARU; tanpa batas ini, kunci
+ *    yang bocor lalu dicabut tetap dapat dipakai menandatangani selamanya.
+ *  - `supersededAt`: tanda tangan pada/di setelah kunci digantikan ditolak
+ *    sebagai tanda tangan baru. Kunci pengganti sudah ada dan semestinya
+ *    dipakai; menerima kunci lama akan membuat rotasi tidak bermakna.
+ *
+ * **Suara HISTORIS tetap dapat diverifikasi.** Acuan waktunya adalah
+ * `vote.signedAt` — waktu tanda tangan itu dibuat — bukan hari ini. Tanda
+ * tangan yang dibuat sebelum pencabutan/penggantian karena itu tetap sah; yang
+ * ditolak hanyalah tanda tangan SETELAH peristiwa itu. Karena `signedAt`
+ * termasuk payload kanonis yang diverifikasi terhadap tanda tangan, penyerang
+ * tidak dapat memindah-mundurkan `signedAt` tanpa memalsukan tanda tangan.
+ */
+function keyUsableAt(record: UserSigningKeyHistory, at: Date): boolean {
+  if (at < record.issuedAt) return false;
+  if (record.revokedAt && at >= record.revokedAt) return false;
+  if (record.supersededAt && at >= record.supersededAt) return false;
+  return true;
+}
+
+/**
  * Rekaman kunci tepercaya yang berhak menandatangani atas nama pemilih ini.
  *
  * Pencocokan dilakukan pada TIGA hal sekaligus — id rekaman, pemiliknya, dan
@@ -272,6 +303,10 @@ export function trustedKeyForVote(
   if (record.userId !== vote.userId) return null;
   if (record.fingerprint !== vote.publicKeyFingerprint) return null;
   if (publicKeyFingerprint(record.publicKey) !== vote.publicKeyFingerprint) return null;
+  // Daur hidup kunci: tanda tangan harus berada DI DALAM masa berlaku rekaman.
+  // Tanpa ini, kunci yang dicabut/digantikan tetap dianggap sah untuk setiap
+  // suara yang menunjuknya, sehingga pencabutan dan rotasi tidak mengikat.
+  if (!keyUsableAt(record, vote.signedAt)) return null;
   return record;
 }
 

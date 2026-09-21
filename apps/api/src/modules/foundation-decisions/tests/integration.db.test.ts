@@ -31,6 +31,10 @@ const MIGRATION_SQL = path.resolve(
   __dirname,
   '../../../../prisma/migrations/20260916000000_foundation_decisions/migration.sql'
 );
+const MIGRATION_SQL_VOTE_KEY_BINDING = path.resolve(
+  __dirname,
+  '../../../../prisma/migrations/20260917000000_foundation_decision_vote_key_binding/migration.sql'
+);
 
 describe.skipIf(!RUN)('foundation-decisions integrasi PostgreSQL', () => {
   let prisma: PrismaClient;
@@ -632,6 +636,178 @@ describe.skipIf(!RUN)('foundation-decisions integrasi PostgreSQL', () => {
     await prisma.userSigningKeyHistory.delete({ where: { id: history.id } });
     await prisma.user.delete({ where: { id: user.id } });
   });
+
+  /**
+   * Flag Investigation (D) — migrasi tidak boleh MEMPROMOSIKAN public key yang
+   * di-assert suara menjadi kunci tepercaya.
+   *
+   * Versi lama migrasi membuat baris `user_signing_key_history` dari
+   * `foundation_decision_votes.public_key`. Bila baris suara disisipkan di luar
+   * jalur aplikasi (kunci karangan penyerang), migrasi mengangkatnya menjadi
+   * rekaman tepercaya — dan suara palsu yang seharusnya ditolak `isVoteAuthentic`
+   * berubah menjadi "sah" hanya karena migrasi dijalankan. Uji ini menjalankan
+   * blok migrasi terhadap PostgreSQL nyata pada baris suara dengan kunci
+   * arbitrer, dan membuktikan (a) migrasi MENOLAK dengan keras, dan (b) bila
+   * guard dilonggarkan, kunci itu tidak akan pernah menjadi tepercaya karena
+   * `signing_key_id` tetap NULL.
+   */
+  it('guard migrasi menolak suara dengan public key yang tidak dapat dibuktikan', async () => {
+    const suffix = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const user = await prisma.user.create({
+      data: {
+        id: `itest-backfill-${suffix}`,
+        email: `itest-backfill-${suffix}@example.test`,
+        name: 'Pemilih Tanpa Terbitan',
+        passwordHash: 'x',
+      },
+    });
+    const decision = await prisma.foundationDecision.create({
+      data: {
+        id: `itest-backfill-d-${suffix}`,
+        organType: 'PEMBINA',
+        kind: 'CIRCULAR',
+        status: 'VOTING',
+        subject: 'Integrasi backfill',
+        body: 'Isi',
+        decisionType: 'umum',
+        quorumSnapshot: {} as never,
+        voteSummary: {} as never,
+        createdById: user.id,
+      },
+    });
+    const arbitraryPublicKey = `arbitrary-public-key-${suffix}`;
+    const vote = await prisma.foundationDecisionVote.create({
+      data: {
+        id: `itest-backfill-v-${suffix}`,
+        decisionId: decision.id,
+        userId: user.id,
+        choice: 'APPROVE',
+        canonicalDigest: 'digest',
+        signature: 'sig',
+        publicKey: arbitraryPublicKey,
+        algorithm: 'Ed25519',
+        signedAt: new Date(),
+      },
+    });
+
+    const sql = fs.readFileSync(MIGRATION_SQL_VOTE_KEY_BINDING, 'utf8');
+    const guard = parseDoBlockContaining(sql, 'tidak dapat dibuktikan berasal dari penerbitan resmi');
+
+    // (a) Migrasi MENOLAK: baris suara ber-kunci arbitrer tidak boleh ada.
+    await expect(prisma.$executeRawUnsafe(guard)).rejects.toThrowError(
+      /tidak dapat dibuktikan berasal dari penerbitan resmi/
+    );
+
+    // (b) Kunci arbitrer itu TIDAK pernah menjadi rekaman tepercaya, dan
+    //     baris suara tetap tanpa pengikat.
+    const leaked = await prisma.userSigningKeyHistory.findFirst({
+      where: { userId: user.id, publicKey: arbitraryPublicKey },
+    });
+    expect(leaked).toBeNull();
+
+    const reloadedVote = await prisma.foundationDecisionVote.findUnique({
+      where: { id: vote.id },
+      include: { signingKey: { select: { publicKey: true } } },
+    });
+    expect(reloadedVote?.signingKeyId).toBeNull();
+    expect(reloadedVote?.signingKey).toBeNull();
+    // Fail closed: `trustedKeyForVote` mengembalikan null untuk baris tanpa
+    // pengikat, sehingga suara ini tidak pernah dihitung ke kuorum.
+    expect(
+      isVoteAuthentic(
+        {
+          id: decision.id,
+          organType: 'PEMBINA',
+          kind: 'CIRCULAR',
+          decisionType: 'umum',
+          subject: 'Integrasi backfill',
+          body: 'Isi',
+          createdAt: decision.createdAt,
+          quorumSnapshot: { activeCount: 1 },
+          members: [{ userId: user.id }],
+        } as never,
+        reloadedVote as never
+      )
+    ).toBe(false);
+
+    await prisma.foundationDecisionVote.deleteMany({ where: { decisionId: decision.id } });
+    await prisma.foundationDecision.delete({ where: { id: decision.id } });
+    await prisma.user.delete({ where: { id: user.id } });
+  });
+
+  /**
+   * Sisi lain: suara yang public key-nya MEMANG milik kunci yang sedang
+   * diterbitkan (rekaman backfill dari `user_signing_keys`) tidak membuat
+   * guard menyala, dan barisnya juga tidak dipromosikan — pengikatnya tetap
+   * NULL sampai aplikasi menuliskannya sendiri.
+   */
+  it('guard migrasi tidak menyala untuk suara yang kuncinya ada di riwayat resmi', async () => {
+    const suffix = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const user = await prisma.user.create({
+      data: {
+        id: `itest-backfill-ok-${suffix}`,
+        email: `itest-backfill-ok-${suffix}@example.test`,
+        name: 'Pemilih Resmi',
+        passwordHash: 'x',
+      },
+    });
+    const material = createKeyMaterial(`pass-${suffix}`);
+    const fingerprint = publicKeyFingerprint(material.publicKey);
+    await prisma.userSigningKeyHistory.create({
+      data: {
+        id: `itest-backfill-k-${suffix}`,
+        userId: user.id,
+        algorithm: material.algorithm,
+        publicKey: material.publicKey,
+        fingerprint,
+      },
+    });
+    const decision = await prisma.foundationDecision.create({
+      data: {
+        id: `itest-backfill-okd-${suffix}`,
+        organType: 'PEMBINA',
+        kind: 'CIRCULAR',
+        status: 'VOTING',
+        subject: 'Integrasi backfill ok',
+        body: 'Isi',
+        decisionType: 'umum',
+        quorumSnapshot: {} as never,
+        voteSummary: {} as never,
+        createdById: user.id,
+      },
+    });
+    const vote = await prisma.foundationDecisionVote.create({
+      data: {
+        id: `itest-backfill-okv-${suffix}`,
+        decisionId: decision.id,
+        userId: user.id,
+        choice: 'APPROVE',
+        canonicalDigest: 'digest',
+        signature: 'sig',
+        publicKey: material.publicKey,
+        algorithm: material.algorithm,
+        signedAt: new Date(),
+      },
+    });
+
+    const sql = fs.readFileSync(MIGRATION_SQL_VOTE_KEY_BINDING, 'utf8');
+    const guard = parseDoBlockContaining(sql, 'tidak dapat dibuktikan berasal dari penerbitan resmi');
+    // `$executeRawUnsafe` returns a command tag/count for a `DO` block, not
+    // `undefined`, so assert only that it does NOT throw.
+    await expect(prisma.$executeRawUnsafe(guard)).resolves.not.toThrow();
+
+    // Guard tidak menulis pengikat apa pun: baris suara tetap NULL.
+    const reloadedVote = await prisma.foundationDecisionVote.findUnique({
+      where: { id: vote.id },
+    });
+    expect(reloadedVote?.signingKeyId).toBeNull();
+    expect(reloadedVote?.publicKeyFingerprint).toBeNull();
+
+    await prisma.foundationDecisionVote.deleteMany({ where: { decisionId: decision.id } });
+    await prisma.foundationDecision.delete({ where: { id: decision.id } });
+    await prisma.userSigningKeyHistory.deleteMany({ where: { userId: user.id } });
+    await prisma.user.delete({ where: { id: user.id } });
+  });
 });
 
 /** Ambil blok `DO $$ ... $$;` pertama dari SQL migrasi. */
@@ -640,4 +816,19 @@ function parsePreflightBlock(sql: string): string {
   const end = sql.indexOf('END $$;', start);
   if (start === -1 || end === -1) throw new Error('Blok preflight tidak ditemukan.');
   return sql.slice(start, end + 'END $$'.length);
+}
+
+/** Ambil blok `DO $$ ... $$;` yang memuat `marker` (bukan selalu yang pertama). */
+function parseDoBlockContaining(sql: string, marker: string): string {
+  let from = 0;
+  for (;;) {
+    const start = sql.indexOf('DO $$', from);
+    if (start === -1) {
+      throw new Error(`Blok DO yang memuat "${marker}" tidak ditemukan.`);
+    }
+    const end = sql.indexOf('END $$;', start);
+    const block = sql.slice(start, end + 'END $$;'.length);
+    if (block.includes(marker)) return block;
+    from = end + 'END $$;'.length;
+  }
 }

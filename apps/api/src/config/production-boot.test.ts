@@ -68,6 +68,40 @@ function loadConfigWith(env: Record<string, string>): BootResult {
   }
 }
 
+/**
+ * Run the real `assertProductionSecrets()` gate — the exact call main.ts makes
+ * before `.listen()` — in a child process with a controlled environment.
+ *
+ * Loading `src/config` alone cannot prove this: the e-seal getter only throws
+ * when *read*, so a config import succeeds without the passphrase and the
+ * process would keep serving until the first decision touched the e-seal. This
+ * calls the gate directly, which is what bootstrap does.
+ */
+function runBootGuard(env: Record<string, string>): BootResult {
+  const script =
+    "import('./src/config/assert-secrets.ts')" +
+    '.then((m) => { m.assertProductionSecrets(); console.log(\"BOOT_OK\"); })' +
+    '.catch((e) => { console.log("BOOT_REFUSED:" + e.message); process.exit(3); });';
+
+  try {
+    const stdout = execFileSync(TSX, ['-e', script], {
+      cwd: API_ROOT,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 60_000,
+      env: {
+        PATH: process.env.PATH ?? '',
+        HOME: process.env.HOME ?? '',
+        ...env,
+      },
+    });
+    return { ok: stdout.includes('BOOT_OK'), output: stdout };
+  } catch (error) {
+    const e = error as { stdout?: string; stderr?: string; message?: string };
+    return { ok: false, output: `${e.stdout ?? ''}${e.stderr ?? ''}${e.message ?? ''}` };
+  }
+}
+
 describe('production boot guard (real module load)', () => {
   it('has tsx available to run the child process', () => {
     expect(fs.existsSync(TSX), `expected ${TSX} to exist`).toBe(true);
@@ -137,6 +171,56 @@ describe('production boot guard (real module load)', () => {
  * could quietly drop while every other test stayed green.
  */
 describe('bootstrap wiring', () => {
+  /**
+   * Flag Investigation (F) — the e-seal passphrase guard must stop a production
+   * boot, not surface later when the first decision touches the e-seal.
+   *
+   * `config.foundation.esealPassphrase` is a getter: importing config cannot
+   * fail for a missing value, so a test that only loads config would stay green
+   * while production served happily until the first decision. This drives the
+   * real gate `main.ts` calls before `.listen()`.
+   */
+  it('refuses a production boot with no FOUNDATION_ESEAL_PASSPHRASE', () => {
+    const result = runBootGuard({
+      NODE_ENV: 'production',
+      JWT_SECRET: GOOD_SECRET,
+      STUDENT_CARD_HMAC_SECRET: GOOD_SECRET,
+    });
+
+    expect(
+      result.ok,
+      `production booted without an e-seal passphrase:\n${result.output}`
+    ).toBe(false);
+    expect(result.output).toContain('BOOT_REFUSED');
+    expect(result.output).toMatch(/FOUNDATION_ESEAL_PASSPHRASE/);
+  }, 90_000);
+
+  it('refuses the published dev-fallback e-seal passphrase in production', () => {
+    const result = runBootGuard({
+      NODE_ENV: 'production',
+      JWT_SECRET: GOOD_SECRET,
+      STUDENT_CARD_HMAC_SECRET: GOOD_SECRET,
+      FOUNDATION_ESEAL_PASSPHRASE: 'dev-foundation-eseal-passphrase-not-for-production',
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.output).toMatch(/FOUNDATION_ESEAL_PASSPHRASE/);
+  }, 90_000);
+
+  it('boots in production with an explicit e-seal passphrase', () => {
+    const result = runBootGuard({
+      NODE_ENV: 'production',
+      JWT_SECRET: GOOD_SECRET,
+      STUDENT_CARD_HMAC_SECRET: GOOD_SECRET,
+      FOUNDATION_ESEAL_PASSPHRASE: GOOD_SECRET,
+    });
+
+    expect(
+      result.ok,
+      `production refused a valid e-seal passphrase:\n${result.output}`
+    ).toBe(true);
+  }, 90_000);
+
   it('calls assertProductionSecrets before the server starts listening', () => {
     const source = fs.readFileSync(path.join(API_ROOT, 'src', 'main.ts'), 'utf8');
 

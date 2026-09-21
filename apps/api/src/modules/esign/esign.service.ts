@@ -782,32 +782,48 @@ export const EsignService = {
     const days = approved.grantedDays ?? DEFAULT_VALIDITY_DAYS;
     const now = new Date();
 
-    const previous = await prisma.userSigningKey.findUnique({ where: { userId } });
-    if (previous) {
-      // Kunci lama digantikan: cap riwayatnya sebelum baris kuncinya dihapus.
-      await supersedeSigningKeyHistory(prisma, {
-        userId,
-        publicKey: previous.publicKey,
+    /**
+     * Semua penulisan daur hidup kunci dalam SATU transaksi.
+     *
+     * Sebelumnya cap `supersededAt` pada riwayat dan `deleteMany` kunci lama
+     * dijalankan di luar transaksi, sebelum `create` penggantinya. Bila
+     * pembuatan pengganti gagal (atau salah satu penulisan sebelumnya gagal),
+     * pengguna ditinggalkan tanpa kunci sama sekali: kunci lama sudah dihapus,
+     * riwayat sudah ditandai digantikan, sementara penggantinya tidak pernah
+     * ada — dan ia kehilangan akses tanda tangan tanpa jalan pulih selain
+     * penerbitan ulang oleh Super Admin. Di dalam transaksi, kegagalan mana pun
+     * mengembalikan kunci lama beserta status riwayatnya.
+     */
+    return prisma.$transaction(async (tx) => {
+      const previous = await tx.userSigningKey.findUnique({ where: { userId } });
+      if (previous) {
+        // Kunci lama digantikan: cap riwayatnya SEBELUM baris kuncinya dihapus,
+        // dengan cap waktu yang sama untuk kedua sisi peristiwa.
+        await supersedeSigningKeyHistory(
+          tx,
+          { userId, publicKey: previous.publicKey },
+          now
+        );
+      }
+      await tx.userSigningKey.deleteMany({ where: { userId } });
+      const key = await tx.userSigningKey.create({
+        data: {
+          userId,
+          algorithm: material.algorithm,
+          publicKey: material.publicKey,
+          encryptedPrivateKey: material.encryptedPrivateKey,
+          kdfSalt: material.kdfSalt,
+          kdfParams: material.kdfParams as unknown as Prisma.InputJsonValue,
+          iv: material.iv,
+          authTag: material.authTag,
+          approvedById: approved.decidedById,
+          approvedAt: approved.decidedAt ?? now,
+          expiresAt: expiryFrom(now, days),
+        },
       });
-    }
-    await prisma.userSigningKey.deleteMany({ where: { userId } });
-    const key = await prisma.userSigningKey.create({
-      data: {
-        userId,
-        algorithm: material.algorithm,
-        publicKey: material.publicKey,
-        encryptedPrivateKey: material.encryptedPrivateKey,
-        kdfSalt: material.kdfSalt,
-        kdfParams: material.kdfParams as unknown as Prisma.InputJsonValue,
-        iv: material.iv,
-        authTag: material.authTag,
-        approvedById: approved.decidedById,
-        approvedAt: approved.decidedAt ?? now,
-        expiresAt: expiryFrom(now, days),
-      },
-    });
 
-    return { id: key.id, expiresAt: key.expiresAt, state: effectiveState(key) };
+      return { id: key.id, expiresAt: key.expiresAt, state: effectiveState(key) };
+    });
   },
 
   /**
@@ -970,47 +986,68 @@ export const EsignService = {
     }
 
     const revokedAt = new Date();
-    await prisma.userSigningKey.update({
-      where: { id: key.id },
-      data: { revokedAt, revokedReason: trimmed, revocationCode: code, revokedById: actorId },
-    });
-    // Cap riwayatnya juga. Selama ini hanya `UserSigningKey` yang ditandai,
-    // sehingga tabel riwayat — satu-satunya yang dipercaya saat memverifikasi
-    // suara keputusan — tetap memperlihatkan kunci ini berlaku. Suara yang
-    // sudah sah TIDAK ikut dicabut: pembacaan `revokedAt` memisahkan "kunci ini
-    // berhenti menjadi kunci yang berlaku pada tanggal ini" dari "tanda tangan
-    // ini masih dapat diverifikasi", dan yang kedua tetap benar lewat kunci
-    // publik lamanya.
-    await revokeSigningKeyHistory(prisma, { userId, publicKey: key.publicKey }, revokedAt);
 
-    // Surat yang ditandatangani dengan kunci ini — dicocokkan pada salinan
-    // kunci publiknya, bukan sekadar pada penandatangannya, karena orang yang
-    // sama bisa pernah memegang kunci lain sebelumnya.
-    const signedWithThisKey = await prisma.letterSignature.findMany({
-      where: { signerId: userId, publicKey: key.publicKey, revokedAt: null },
-      select: {
-        id: true,
-        signedAt: true,
-        letter: { select: { id: true, letterNumber: true, subject: true, date: true } },
-      },
-      orderBy: { signedAt: 'desc' },
-      take: 200,
-    });
+    /**
+     * Pencabutan — update kunci, cap riwayat, temuan surat, dan audit — dalam
+     * SATU transaksi.
+     *
+     * Sebelumnya keempatnya berjalan berurutan di luar transaksi. Bila cap
+     * riwayat atau penulisan audit gagal setelah `userSigningKey.update`
+     * berhasil, permintaan melempar galat padahal kuncinya SUDAH dicabut:
+     * pemanggil (dan pemiliknya) melihat kegagalan, mencoba lagi, dan
+     * mendapati "kunci sudah dicabut" — sementara baris audit pencabutan tidak
+     * pernah ada, sehingga tindakan yang justru paling perlu
+     * dipertanggungjawabkan itu tidak meninggalkan jejak. Di dalam transaksi,
+     * kegagalan mana pun membatalkan pencabutan seluruhnya.
+     *
+     * Satu `revokedAt` dipakai untuk seluruh baris, sehingga cap waktu kunci,
+     * riwayat, dan audit tidak dapat menyimpang satu sama lain.
+     */
+    const { signedWithThisKey } = await prisma.$transaction(async (tx) => {
+      await tx.userSigningKey.update({
+        where: { id: key.id },
+        data: { revokedAt, revokedReason: trimmed, revocationCode: code, revokedById: actorId },
+      });
+      // Cap riwayatnya juga. Selama ini hanya `UserSigningKey` yang ditandai,
+      // sehingga tabel riwayat — satu-satunya yang dipercaya saat memverifikasi
+      // suara keputusan — tetap memperlihatkan kunci ini berlaku. Suara yang
+      // sudah sah TIDAK ikut dicabut: pembacaan `revokedAt` memisahkan "kunci ini
+      // berhenti menjadi kunci yang berlaku pada tanggal ini" dari "tanda tangan
+      // ini masih dapat diverifikasi", dan yang kedua tetap benar lewat kunci
+      // publik lamanya.
+      await revokeSigningKeyHistory(tx, { userId, publicKey: key.publicKey }, revokedAt);
 
-    await prisma.auditLog.create({
-      data: {
-        userId: actorId,
-        action: 'REVOKE',
-        entity: 'UserSigningKey',
-        entityId: key.id,
-        newValues: {
-          revokedAt: revokedAt.toISOString(),
-          revokedReason: trimmed,
-          keyHolderId: userId,
-          revocationCode: code,
-          lettersStillValid: signedWithThisKey.length,
+      // Surat yang ditandatangani dengan kunci ini — dicocokkan pada salinan
+      // kunci publiknya, bukan sekadar pada penandatangannya, karena orang yang
+      // sama bisa pernah memegang kunci lain sebelumnya.
+      const affected = await tx.letterSignature.findMany({
+        where: { signerId: userId, publicKey: key.publicKey, revokedAt: null },
+        select: {
+          id: true,
+          signedAt: true,
+          letter: { select: { id: true, letterNumber: true, subject: true, date: true } },
         },
-      },
+        orderBy: { signedAt: 'desc' },
+        take: 200,
+      });
+
+      await tx.auditLog.create({
+        data: {
+          userId: actorId,
+          action: 'REVOKE',
+          entity: 'UserSigningKey',
+          entityId: key.id,
+          newValues: {
+            revokedAt: revokedAt.toISOString(),
+            revokedReason: trimmed,
+            keyHolderId: userId,
+            revocationCode: code,
+            lettersStillValid: affected.length,
+          },
+        },
+      });
+
+      return { signedWithThisKey: affected };
     });
 
     eventBus.emit('notification:send', {

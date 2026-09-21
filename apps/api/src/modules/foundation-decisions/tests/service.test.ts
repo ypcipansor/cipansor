@@ -869,6 +869,85 @@ describe('FoundationDecisionService.create', () => {
     ).rejects.toThrow(/tidak berwenang/);
   });
 
+  /**
+   * Regresi SECURITY CRITICAL — Super Admin tetap terikat matriks kewenangan
+   * organ.
+   *
+   * `organMayDecide` dulu mengembalikan `true` untuk Super Admin SEBELUM
+   * memeriksa jenis keputusan, sehingga Super Admin dapat membuka keputusan
+   * milik Pembina sambil memilih organ PENGURUS/PENGAWAS/GABUNGAN. Organ yang
+   * salah itu menjadi snapshot pemilih, memenuhi kuorum, dan memperoleh PDF +
+   * e-seal Yayasan yang sah. Uji ini membuktikan tidak ada satu pun langkah
+   * berikutnya yang berjalan: tidak ada snapshot anggota, tidak ada keputusan
+   * (sehingga tidak ada voting dan tidak ada e-seal).
+   */
+  it('Super Admin DITOLAK bila organ tidak cocok dengan jenis keputusan', async () => {
+    await expect(
+      FoundationDecisionService.create(
+        { id: 'admin-1', roleCode: 'SUPER_ADMIN' },
+        {
+          organType: 'PENGURUS',
+          kind: 'MEETING',
+          subject: 'Perubahan AD',
+          body: 'Isi keputusan yang cukup panjang minimal sepuluh karakter.',
+          decisionType: 'perubahan-anggaran-dasar',
+        }
+      )
+    ).rejects.toThrow(/tidak berwenang/);
+
+    expect(dm.userRoleAssignment.findMany).not.toHaveBeenCalled();
+    expect(dm.foundationDecision.create).not.toHaveBeenCalled();
+    expect(dm.foundationEseal.create).not.toHaveBeenCalled();
+    expect(dm.foundationDecisionDocument.create).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Sisi positifnya: Super Admin BOLEH memulai workflow yang organ dan
+   * jenisnya memang cocok. Tanpa uji ini, memperketat matriks dapat diam-diam
+   * menutup satu-satunya jalur admin sistem.
+   */
+  it('Super Admin DIIZINKAN memulai workflow yang organ dan jenisnya cocok', async () => {
+    dm.userRoleAssignment.findMany.mockResolvedValue(memberAssignments(2));
+    dm.foundationDecisionRule.findUnique.mockResolvedValue(null);
+    dm.foundationDecision.create.mockResolvedValue({ id: 'dec-admin' });
+
+    const id = await FoundationDecisionService.create(
+      { id: 'admin-1', roleCode: 'SUPER_ADMIN' },
+      {
+        organType: 'PEMBINA',
+        kind: 'CIRCULAR',
+        subject: 'Pengesahan rencana kerja',
+        body: 'Isi keputusan yang cukup panjang minimal sepuluh karakter.',
+        decisionType: 'pengesahan-rencana-kerja',
+      }
+    );
+
+    expect(id).toBe('dec-admin');
+    expect(dm.foundationDecision.create).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * Pengguna organ biasa tetap tunduk pada keanggotaan DAN matriks kewenangan:
+   * anggota Pengurus tidak dapat memutus hal milik Pembina walau roleCode-nya
+   * sah sebagai anggota sebuah organ.
+   */
+  it('anggota organ biasa tetap tunduk pada keanggotaan + matriks kewenangan', async () => {
+    await expect(
+      FoundationDecisionService.create(
+        { id: 'user-1', roleCode: 'YAYASAN_KETUA' },
+        {
+          organType: 'PEMBINA',
+          kind: 'CIRCULAR',
+          subject: 'Pengesahan anggaran',
+          body: 'Isi keputusan yang cukup panjang minimal sepuluh karakter.',
+          decisionType: 'pengesahan-anggaran',
+        }
+      )
+    ).rejects.toThrow(/tidak berwenang/);
+
+    expect(dm.foundationDecision.create).not.toHaveBeenCalled();
+  });
+
   it('menolak organ kosong (tanpa anggota aktif) alih-alih meloloskan kuorum', async () => {
     dm.userRoleAssignment.findMany.mockResolvedValue([]);
 
@@ -2070,6 +2149,107 @@ describe('FoundationDecisionService.votesOf — ikatan kunci tepercaya (audit #1
 
     const counted = FoundationDecisionService.votesOf({ ...d, votes: [old] } as never);
     expect(counted).toEqual([{ choice: 'APPROVE' }]);
+  });
+});
+
+/**
+ * Flag Investigation (E) — stempel waktu daur hidup kunci harus MENGIKAT.
+ *
+ * `issuedAt`, `supersededAt`, dan `revokedAt` sudah lama dimuat tetapi tidak
+ * pernah dibaca, sehingga kunci yang dicabut atau digantikan tetap dianggap
+ * sah untuk setiap suara yang menunjuk rekamannya — pencabutan dan rotasi
+ * tidak mengikat apa pun. Aturan yang dipaku: tanda tangan harus berada DI
+ * DALAM masa berlaku kunci, dipandang dari `vote.signedAt`.
+ *
+ * Semua helper di bawah menandatangani ulang digest dengan `signedAt` yang
+ * diberikan, karena `signedAt` termasuk payload kanonis.
+ */
+describe('FoundationDecisionService — stempel waktu daur hidup kunci (E)', () => {
+  function voteSignedAt(d: any, userId: string, signedAt: Date, choice: 'APPROVE' = 'APPROVE') {
+    const digest = canonicalDigestForVote(d, { userId, choice, signedAt });
+    const key = keyHistoryRow(userId);
+    return {
+      id: `vote-ts-${userId}`,
+      decisionId: d.id,
+      userId,
+      choice,
+      canonicalDigest: digest,
+      signature: signPdfHash(material, PASS, digest),
+      publicKey: material.publicKey,
+      algorithm: material.algorithm,
+      note: null,
+      signedAt,
+      signingKeyId: key.id,
+      publicKeyFingerprint: key.fingerprint,
+      user: { id: userId, name: `Anggota ${userId}` },
+      signingKey: key,
+    };
+  }
+
+  it('menolak tanda tangan SEBELUM kunci diterbitkan', () => {
+    const d = decisionRow();
+    const vote: any = voteSignedAt(d, 'user-1', new Date('2025-12-31T00:00:00Z'));
+    vote.signingKey = { ...vote.signingKey, issuedAt: new Date('2026-01-01T00:00:00Z') };
+    expect(FoundationDecisionService.votesOf({ ...d, votes: [vote] } as never)).toEqual([]);
+  });
+
+  it('menolak tanda tangan pada/di setelah pencabutan', () => {
+    const d = decisionRow();
+    const vote: any = voteSignedAt(d, 'user-1', new Date('2026-06-01T00:00:00Z'));
+    vote.signingKey = { ...vote.signingKey, revokedAt: new Date('2026-06-01T00:00:00Z') };
+    expect(FoundationDecisionService.votesOf({ ...d, votes: [vote] } as never)).toEqual([]);
+  });
+
+  it('menolak tanda tangan pada/di setelah kunci digantikan', () => {
+    const d = decisionRow();
+    const vote: any = voteSignedAt(d, 'user-1', new Date('2026-06-01T00:00:00Z'));
+    vote.signingKey = { ...vote.signingKey, supersededAt: new Date('2026-06-01T00:00:00Z') };
+    expect(FoundationDecisionService.votesOf({ ...d, votes: [vote] } as never)).toEqual([]);
+  });
+
+  it('menerima tanda tangan tepat SEBELUM pencabutan (historis tetap sah)', () => {
+    const d = decisionRow();
+    const vote: any = voteSignedAt(d, 'user-1', new Date('2026-05-31T23:59:59Z'));
+    vote.signingKey = { ...vote.signingKey, revokedAt: new Date('2026-06-01T00:00:00Z') };
+    expect(FoundationDecisionService.votesOf({ ...d, votes: [vote] } as never)).toEqual([
+      { choice: 'APPROVE' },
+    ]);
+  });
+
+  it('menerima tanda tangan tepat SEBELUM penggantian (historis tetap sah)', () => {
+    const d = decisionRow();
+    const vote: any = voteSignedAt(d, 'user-1', new Date('2026-05-31T23:59:59Z'));
+    vote.signingKey = { ...vote.signingKey, supersededAt: new Date('2026-06-01T00:00:00Z') };
+    expect(FoundationDecisionService.votesOf({ ...d, votes: [vote] } as never)).toEqual([
+      { choice: 'APPROVE' },
+    ]);
+  });
+
+  it('menerima tanda tangan setelah issuedAt dan tanpa pencabutan/penggantian', () => {
+    const d = decisionRow();
+    const vote: any = voteSignedAt(d, 'user-1', new Date('2026-01-02T00:00:00Z'));
+    expect(FoundationDecisionService.votesOf({ ...d, votes: [vote] } as never)).toEqual([
+      { choice: 'APPROVE' },
+    ]);
+  });
+
+  /**
+   * Bukti bahwa aturan ini benar-benar baru: tanpa pembacaan stempel waktu,
+   * tanda tangan SETELAH pencabutan akan dihitung. Uji ini menegaskan hasilnya
+   * berbeda dari sekadar "rekaman ada dan fingerprint cocok".
+   */
+  it('pencabutan tidak memengaruhi suara yang dibuat sebelum pencabutan, tetapi menolak yang sesudahnya', () => {
+    const d = decisionRow();
+    const revokedAt = new Date('2026-06-01T00:00:00Z');
+    const before: any = voteSignedAt(d, 'user-1', new Date('2026-05-01T00:00:00Z'));
+    before.signingKey = { ...before.signingKey, revokedAt };
+    const after: any = voteSignedAt(d, 'user-1', new Date('2026-07-01T00:00:00Z'));
+    after.signingKey = { ...after.signingKey, revokedAt };
+
+    expect(FoundationDecisionService.votesOf({ ...d, votes: [before] } as never)).toEqual([
+      { choice: 'APPROVE' },
+    ]);
+    expect(FoundationDecisionService.votesOf({ ...d, votes: [after] } as never)).toEqual([]);
   });
 });
 

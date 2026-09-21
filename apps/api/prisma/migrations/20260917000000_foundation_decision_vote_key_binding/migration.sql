@@ -237,34 +237,57 @@ ALTER TABLE "foundation_decision_votes"
   ADD COLUMN IF NOT EXISTS "public_key_fingerprint" TEXT;
 
 /**
- * Riwayat untuk kunci yang dipakai suara-suara yang SUDAH ada (basis data
- * pengembangan). Baris history-nya dibuat dari kunci publik yang tercatat di
- * baris suara — bukan dari `user_signing_keys` — karena kunci itulah yang
- * benar-benar menandatangani, dan pemiliknya harus pemilih yang sama. Ini
- * hanya memindahkan pengikat yang sebelumnya implisit ("percaya pada
- * public_key baris suara") menjadi eksplisit untuk data yang sudah terlanjur
- * ada; tidak ada suara baru yang dibuat.
+ * Preflight — JANGAN mempromosikan public key yang di-assert suara menjadi
+ * riwayat kunci TEPERCAYA.
+ *
+ * Versi sebelumnya membuat baris `user_signing_key_history` dari
+ * `foundation_decision_votes.public_key` — data yang justru hendak dibuat tidak
+ * tepercaya oleh kolom `signing_key_id`/`public_key_fingerprint`. Siapa pun
+ * yang dapat menulis langsung ke tabel suara cukup menyisipkan pasangan kunci
+ * karangannya; migrasi lalu mengangkatnya menjadi rekaman tepercaya, dan suara
+ * palsu berubah dari "akan ditolak" menjadi "sah" hanya karena migrasi
+ * dijalankan. Itu kebalikan dari tujuannya.
+ *
+ * Backfill dari `user_signing_keys` (di atas) tetap dilakukan: kunci yang
+ * SEDANG diterbitkan memang kunci yang pernah diterbitkan. Sebaliknya, tidak
+ * ada satu pun baris suara yang dapat dibuktikan berasal dari penerbitan resmi
+ * (`foundation_decision_votes` dulu tidak menyimpan pengikat apa pun), jadi
+ * suara lama TIDAK dipromosikan.
+ *
+ * Keputusan deployment: fitur ini belum pernah dirilis (ia baru masuk pada
+ * rangkaian migrasi yang sama), sehingga basis data produksi tidak dapat
+ * memuat suara keputusan yayasan. Bila ternyata ada, tulisan itu datang dari
+ * luar jalur aplikasi — bukti manipulasi, bukan bukti pemungutan suara — dan
+ * fail closed adalah satu-satunya jawaban yang aman. Operator yang menemui
+ * kegagalan ini harus MENYELIDIKI asal-usul baris tersebut lebih dahulu, bukan
+ * melonggarkan guard ini.
+ *
+ * `signing_key_id`/`public_key_fingerprint` pada baris lama dibiarkan NULL.
+ * `trustedKeyForVote` memperlakukan NULL sebagai TIDAK sah (fail closed),
+ * sehingga suara lama tidak pernah dapat dihitung ke kuorum, membuat PDF, dan
+ * memperoleh e-seal.
  */
-INSERT INTO "user_signing_key_history"
-  ("id", "user_id", "algorithm", "public_key", "fingerprint", "issued_at")
-SELECT
-  gen_random_uuid()::text,
-  v."user_id",
-  v."algorithm",
-  v."public_key",
-  encode(sha256(convert_to(v."public_key", 'UTF8')), 'hex'),
-  v."signed_at"
-FROM "foundation_decision_votes" v
-WHERE v."public_key" IS NOT NULL
-ON CONFLICT ("user_id", "fingerprint") DO NOTHING;
+DO $$
+DECLARE
+  unbound_votes bigint;
+BEGIN
+  IF to_regclass(current_schema() || '.foundation_decision_votes') IS NOT NULL THEN
+    SELECT count(*) INTO unbound_votes
+    FROM "foundation_decision_votes" v
+    WHERE v."public_key" IS NOT NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM "user_signing_key_history" h
+        WHERE h."user_id" = v."user_id"
+          AND h."fingerprint" = encode(sha256(convert_to(v."public_key", 'UTF8')), 'hex')
+      );
 
-UPDATE "foundation_decision_votes" v
-SET "signing_key_id" = h."id",
-    "public_key_fingerprint" = h."fingerprint"
-FROM "user_signing_key_history" h
-WHERE v."signing_key_id" IS NULL
-  AND h."user_id" = v."user_id"
-  AND h."fingerprint" = encode(sha256(convert_to(v."public_key", 'UTF8')), 'hex');
+    IF unbound_votes > 0 THEN
+      RAISE EXCEPTION
+        'Migrasi foundation_decision_vote_key_binding menolak mempromosikan % suara yang public key-nya tidak dapat dibuktikan berasal dari penerbitan resmi. Suara seperti ini adalah data self-asserted; menyelidiki asal-usulnya lebih dahulu (mereka tidak seharusnya ada pada basis data yang belum memuat fitur ini).',
+        unbound_votes;
+    END IF;
+  END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS "foundation_decision_votes_signing_key_id_idx"
   ON "foundation_decision_votes"("signing_key_id");

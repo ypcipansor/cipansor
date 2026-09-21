@@ -6,7 +6,8 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   createFoundationDecisionSchema,
-  FOUNDATION_DECISION_TYPES,
+  decisionTypesForOrgan,
+  type FoundationOrganType,
   type CreateFoundationDecisionInput,
 } from "@cipansor/shared";
 import { MainLayout } from "@/components/layout";
@@ -63,6 +64,15 @@ export default function NewFoundationDecisionPage() {
 
   const onSubmit = async (values: FormValues) => {
     setError(null);
+    // Guard klien: matriks kewenangan yang SAMA dengan API. Server tetap
+    // memeriksanya lagi (jangan pernah mempercayai UI), tetapi kombinasi yang
+    // salah tidak boleh pernah dikirim dan baru ditolak setelah submit.
+    if (!decisionTypesForOrgan(values.organType).includes(values.decisionType)) {
+      setError(
+        `Organ yang dipilih tidak berwenang memutus "${values.decisionType}". Pilih organ lain atau jenis keputusan yang sesuai.`,
+      );
+      return;
+    }
     try {
       const res = await create.mutateAsync(values);
       const decisionId = res.data?.data?.decisionId;
@@ -102,9 +112,21 @@ export default function NewFoundationDecisionPage() {
                 <Label>Organ</Label>
                 <Select
                   value={watch("organType")}
-                  onValueChange={(v) =>
-                    setValue("organType", v as FormValues["organType"])
-                  }
+                  onValueChange={(v) => {
+                    const organ = v as FoundationOrganType;
+                    setValue("organType", organ);
+                    // Jenis keputusan yang berlaku bisa berbeda antar-organ.
+                    // Bila pilihan saat ini tidak lagi berwenang, ganti ke
+                    // yang pertama sah supaya tidak ada kombinasi salah yang
+                    // tertinggal di form.
+                    const valid = decisionTypesForOrgan(organ);
+                    const current = watch("decisionType");
+                    if (!valid.includes(current)) {
+                      setValue("decisionType", valid[0], {
+                        shouldValidate: true,
+                      });
+                    }
+                  }}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Pilih organ" />
@@ -153,7 +175,9 @@ export default function NewFoundationDecisionPage() {
               {/* Kosakata terkendali dari @cipansor/shared: jenis tak dikenal
                   dulu jatuh diam-diam ke kewenangan Pembina, sehingga satu
                   salah ketik memindahkan keputusan ke organ yang salah.
-                  Memilih dari daftar menutup celah itu di sisi UI. */}
+                  Daftar di sini disaring oleh matriks kewenangan yang SAMA
+                  dengan API, jadi kombinasi organ×jenis yang salah tidak
+                  pernah dapat dipilih. */}
               <Select
                 value={watch("decisionType") || undefined}
                 onValueChange={(v) =>
@@ -166,7 +190,7 @@ export default function NewFoundationDecisionPage() {
                   <SelectValue placeholder="Pilih jenis keputusan" />
                 </SelectTrigger>
                 <SelectContent>
-                  {FOUNDATION_DECISION_TYPES.map((t) => (
+                  {decisionTypesForOrgan(watch("organType")).map((t) => (
                     <SelectItem key={t} value={t}>
                       {t}
                     </SelectItem>

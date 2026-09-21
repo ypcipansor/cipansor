@@ -1,5 +1,5 @@
 import type { FoundationOrganType } from '@cipansor/shared';
-import { FOUNDATION_DECISION_TYPES } from '@cipansor/shared';
+import { FOUNDATION_DECISION_AUTHORITY, FOUNDATION_DECISION_TYPES } from '@cipansor/shared';
 import type { FoundationDecisionType } from '@cipansor/shared';
 import { RoleCode } from '@prisma/client';
 
@@ -11,9 +11,12 @@ import { RoleCode } from '@prisma/client';
  * PP 63/2008. Pemetaan "jenis keputusan → organ yang berwenang" di bawah ini
  * adalah garis besar legal; Anggaran Dasar yayasan dapat mempersempitnya.
  *
- * Penting: SUVER_ADMIN dapat memulai keputusan mana pun (ia mengelola sistem),
- * tetapi VOtE tetap hanya boleh datang dari anggota organ bersangkutan. Ini
- * dipertahankan di lapisan service (lihat foundation-decisions.service.ts).
+ * Penting: SUPER_ADMIN dapat MEMULAI keputusan organ mana pun (ia mengelola
+ * sistem dan boleh menjadi pembuat draf), tetapi ia tetap terikat matriks
+ * kewenangan organ: organ pada draf harus organ yang berwenang atas jenis
+ * keputusan itu. VOTE tetap hanya boleh datang dari anggota organ bersangkutan.
+ * Ini dipertahankan di lapisan service (lihat
+ * foundation-decisions.service.ts).
  */
 
 /**
@@ -29,30 +32,17 @@ export type DecisionAuthorityKey = FoundationDecisionType;
 /** Jenis keputusan yang dikenal, sebagai himpunan untuk penolakan eksplisit. */
 const KNOWN_DECISION_TYPES: ReadonlySet<string> = new Set(FOUNDATION_DECISION_TYPES);
 
-/** Organ yang berwenang atas tiap jenis keputusan. */
-export const DECISION_AUTHORITY: Record<DecisionAuthorityKey, FoundationOrganType[]> = {
-  // Kewenangan Pembina (ps. 28 UU 28/2004) — selebihnya boleh diserahkan.
-  'pengesahan-rencana-kerja': ['PEMBINA'],
-  'pengesahan-anggaran': ['PEMBINA'],
-  'perubahan-anggaran-dasar': ['PEMBINA'],
-  'pengangkatan-pengurus': ['PEMBINA'],
-  'pemberhentian-pengurus': ['PEMBINA'],
-  'pengangkatan-pengawas': ['PEMBINA'],
-  'pemberhentian-pengawas': ['PEMBINA'],
-  penggabungan: ['PEMBINA'],
-  pembubaran: ['PEMBINA'],
-  'peralihan-kekayaan': ['PEMBINA'],
-  // Eksekutif harian Pengurus (ps. 31, 35).
-  'keputusan-operasional': ['PENGURUS'],
-  'kebijakan-internal': ['PENGURUS'],
-  'kegiatan-program': ['PENGURUS'],
-  // Pengawas (ps. 40-41) — nasihat & pemberhentian sementara.
-  'pemberhentian-sementara-pengurus': ['PENGAWAS'],
-  // Pemilihan Pembina ketika kekosongan → rapat gabungan (ps. 28).
-  'pemilihan-pembina': ['GABUNGAN'],
-  // Cabang untuk jenis yang tidak tercantum: Pembina (organ puncak).
-  umum: ['PEMBINA'],
-};
+/**
+ * Organ yang berwenang atas tiap jenis keputusan.
+ *
+ * Matriksnya hidup di `@cipansor/shared` (`FOUNDATION_DECISION_AUTHORITY`)
+ * karena web memakainya untuk menyaring pilihan organ×jenis SEBELUM dikirim.
+ * Re-ekspor di sini supaya API tetap punya satu nama, tetapi definisinya bukan
+ * salinan kedua: dua peta yang seharusnya sama adalah bug yang menunggu waktu,
+ * dan `foundation-authority.test.ts` membandingkannya dengan daftar bersama.
+ */
+export const DECISION_AUTHORITY: Record<DecisionAuthorityKey, FoundationOrganType[]> =
+  FOUNDATION_DECISION_AUTHORITY as Record<DecisionAuthorityKey, FoundationOrganType[]>;
 
 /** Organ yang berwenang atas sebuah `decisionType`, atau `[]` bila tak dikenal. */
 export function organForDecisionType(decisionType: string): FoundationOrganType[] {
@@ -79,9 +69,19 @@ export function organMayDecide(
   roleCode: string,
   opts: { allowSuperAdmin?: boolean } = {}
 ): boolean {
-  if (opts.allowSuperAdmin && roleCode === RoleCode.SUPER_ADMIN) return true;
+  // Matriks kewenangan organ×jenis diperiksa LEBIH DULU dan TIDAK PERNAH
+  // dilewati siapa pun — termasuk Super Admin. Cabang `allowSuperAdmin` dulu
+  // mengembalikan `true` sebelum pemeriksaan ini, sehingga Super Admin dapat
+  // membuka keputusan milik Pembina sambil memilih organ PENGURUS/PENGAWAS/
+  // GABUNGAN: organ yang salah lalu menjadi snapshot pemilih, memenuhi kuorum,
+  // dan memperoleh PDF + e-seal Yayasan yang sah.
   const authorized = organForDecisionType(decisionType).includes(organType);
-  return authorized && isMemberOfOrgan(organType, roleCode);
+  if (!authorized) return false;
+  // Pengecualian Super Admin HANYA melewati syarat bahwa pembuat harus anggota
+  // organ — ia mengelola sistem, tetapi bukan anggota organ yang memutus.
+  // Kewenangan organ tidak pernah dilonggarkan oleh peran sistem.
+  if (opts.allowSuperAdmin && roleCode === RoleCode.SUPER_ADMIN) return true;
+  return isMemberOfOrgan(organType, roleCode);
 }
 
 /**

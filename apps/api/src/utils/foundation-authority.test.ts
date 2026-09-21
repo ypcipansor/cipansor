@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { RoleCode } from '@prisma/client';
+import { FOUNDATION_DECISION_AUTHORITY, FOUNDATION_DECISION_TYPES } from '@cipansor/shared';
 import {
+  DECISION_AUTHORITY,
   isMemberOfOrgan,
   organForDecisionType,
   organMayDecide,
@@ -44,6 +46,18 @@ describe('organForDecisionType', () => {
   it('kategori umum tetap ada sebagai pilihan eksplisit untuk Pembina', () => {
     expect(organForDecisionType('umum')).toEqual(['PEMBINA']);
   });
+
+  /**
+   * Guard drift: matriks di API harus SAMA PERSIS dengan kontrak bersama yang
+   * dipakai web. Bila keduanya menyimpang, UI akan menawarkan kombinasi yang
+   * ditolak API (atau sebaliknya), dan pengguna baru tahu setelah submit.
+   */
+  it('matriks API identik dengan FOUNDATION_DECISION_AUTHORITY di shared', () => {
+    expect(DECISION_AUTHORITY).toEqual(FOUNDATION_DECISION_AUTHORITY);
+    for (const t of FOUNDATION_DECISION_TYPES) {
+      expect(organForDecisionType(t)).toEqual([...FOUNDATION_DECISION_AUTHORITY[t]]);
+    }
+  });
 });
 
 describe('organMayDecide', () => {
@@ -66,6 +80,57 @@ describe('organMayDecide', () => {
   });
   it('SUPER_ADMIN TIDAK otomatis boleh memberi suara (allowSuperAdmin default false)', () => {
     expect(organMayDecide('PEMBINA', 'perubahan-anggaran-dasar', RoleCode.SUPER_ADMIN)).toBe(false);
+  });
+
+  /**
+   * Regresi SECURITY CRITICAL — Super Admin tidak boleh mengganti organ yang
+   * berwenang.
+   *
+   * Cabang `allowSuperAdmin` dulu mengembalikan `true` SEBELUM matriks
+   * jenis-keputusan diperiksa, sehingga Super Admin dapat membuka keputusan
+   * milik Pembina sambil menuliskan organ PENGURUS/PENGAWAS/GABUNGAN. Organ
+   * yang salah itu lalu menjadi snapshot pemilih, memenuhi kuorum, dan
+   * memperoleh PDF + e-seal Yayasan yang sah. Pengecualian Super Admin hanya
+   * boleh melewati syarat "pembuat harus anggota organ", tidak pernah matriks
+   * kewenangan organ.
+   */
+  it('SUPER_ADMIN ditolak bila organ tidak cocok dengan jenis keputusan', () => {
+    // "perubahan-anggaran-dasar" adalah kewenangan PEMBINA — organ lain ditolak.
+    for (const organ of ['PENGURUS', 'PENGAWAS', 'GABUNGAN'] as const) {
+      expect(
+        organMayDecide(organ, 'perubahan-anggaran-dasar', RoleCode.SUPER_ADMIN, {
+          allowSuperAdmin: true,
+        })
+      ).toBe(false);
+    }
+    // "keputusan-operasional" adalah kewenangan PENGURUS.
+    expect(
+      organMayDecide('PEMBINA', 'keputusan-operasional', RoleCode.SUPER_ADMIN, {
+        allowSuperAdmin: true,
+      })
+    ).toBe(false);
+    // Jenis tak dikenal tetap fail closed, walau Super Admin.
+    expect(
+      organMayDecide('PEMBINA', 'apa-pun', RoleCode.SUPER_ADMIN, { allowSuperAdmin: true })
+    ).toBe(false);
+  });
+
+  it('SUPER_ADMIN boleh memulai workflow yang organ dan jenisnya cocok', () => {
+    expect(
+      organMayDecide('PEMBINA', 'perubahan-anggaran-dasar', RoleCode.SUPER_ADMIN, {
+        allowSuperAdmin: true,
+      })
+    ).toBe(true);
+    expect(
+      organMayDecide('GABUNGAN', 'pemilihan-pembina', RoleCode.SUPER_ADMIN, {
+        allowSuperAdmin: true,
+      })
+    ).toBe(true);
+    expect(
+      organMayDecide('PENGAWAS', 'pemberhentian-sementara-pengurus', RoleCode.SUPER_ADMIN, {
+        allowSuperAdmin: true,
+      })
+    ).toBe(true);
   });
 });
 
