@@ -131,7 +131,7 @@ export function describeEmailTransport(): EmailTransportStatus {
  * collapsing whitespace gives a usable fallback.
  */
 export function htmlToText(html: string): string {
-  return html
+  let text = html
     .replace(/&nbsp;/g, ' ')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
@@ -141,8 +141,15 @@ export function htmlToText(html: string): string {
     .replace(/<style[\s\S]*?<\/style>/gi, '')
     .replace(/<head[\s\S]*?<\/head>/gi, '')
     .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/(p|div|tr|h1|h2|h3|li)>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
+    .replace(/<\/(p|div|tr|h1|h2|h3|li)>/gi, '\n');
+
+  let previous: string;
+  do {
+    previous = text;
+    text = text.replace(/<[^>]+>/g, '');
+  } while (text !== previous);
+
+  return text
     .replace(/[ \t]+/g, ' ')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
