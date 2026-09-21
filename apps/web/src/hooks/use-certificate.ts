@@ -383,7 +383,7 @@ export function generateCertificateNumber(
 ): string {
   const year = new Date().getFullYear();
   const month = String(new Date().getMonth() + 1).padStart(2, "0");
-  const random = Math.floor(Math.random() * 10000)
+  const random = (globalThis.crypto.getRandomValues(new Uint16Array(1))[0] % 10000)
     .toString()
     .padStart(4, "0");
   const typeCode = type.substring(0, 3).toUpperCase();
