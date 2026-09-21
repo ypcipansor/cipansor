@@ -383,9 +383,15 @@ export function generateCertificateNumber(
 ): string {
   const year = new Date().getFullYear();
   const month = String(new Date().getMonth() + 1).padStart(2, "0");
-  const random = (globalThis.crypto.getRandomValues(new Uint16Array(1))[0] % 10000)
-    .toString()
-    .padStart(4, "0");
+
+  // Use rejection sampling to avoid modulo bias when generating 0..9999
+  const maxUnbiasedValue = 60000; // largest multiple of 10000 less than 65536
+  let value: number;
+  do {
+    value = globalThis.crypto.getRandomValues(new Uint16Array(1))[0];
+  } while (value >= maxUnbiasedValue);
+
+  const random = (value % 10000).toString().padStart(4, "0");
   const typeCode = type.substring(0, 3).toUpperCase();
   return `${unitCode}/${typeCode}/${year}${month}/${random}`;
 }
