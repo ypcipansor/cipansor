@@ -11,11 +11,30 @@ import {
   type WbsForwardRoleCode,
 } from '@cipansor/shared';
 import crypto from 'crypto';
+import {
+  generateWbsTrackingToken,
+  verifyWbsTrackingToken,
+} from '@/utils/wbs-token';
 
 // The payloads come from the shared contract, not a local restatement: the
 // controller validates with the same Zod schema and the web client types its
 // hooks from it, so a shape change lands in one place instead of three.
 export type { CreatePublicWbsInput };
+
+/**
+ * True when a Prisma write failed because of a `ticket_code` unique violation.
+ *
+ * Narrow on purpose: only the ticket-code constraint earns a retry. A generic
+ * "unique constraint failed" would retry on some other invariant and mask the
+ * real error, and any other failure must surface unchanged.
+ */
+function isTicketCodeCollision(error: unknown): boolean {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false;
+  if (error.code !== 'P2002') return false;
+  const target = error.meta?.target;
+  if (Array.isArray(target)) return target.includes('ticket_code');
+  return typeof target === 'string' ? target.includes('ticket_code') : true;
+}
 
 /** Identity of the staff member acting on a report. */
 export interface WbsActor {
@@ -73,16 +92,15 @@ export class WbsService {
 
   /**
    * Create public anonymous/identified WBS report.
+   *
+   * The tracking token is persisted only as an HMAC digest (see
+   * `utils/wbs-token.ts`); the raw value is returned here, once, and never
+   * stored. The ticket code gets a bounded retry on unique collision so a
+   * legitimate report is not dropped when the random suffix happens to repeat.
    */
   async createPublicReport(data: CreatePublicWbsInput) {
     const unitId = data.unitId || null;
     const primaryHandlerRole = this.getPrimaryHandlerRole(data.targetLevel, unitId);
-
-    // Generate ticketCode e.g. WBS-YYYYMM-XXXXX
-    const datePrefix = new Date().toISOString().slice(0, 7).replace('-', '');
-    const randomSuffix = crypto.randomBytes(3).toString('hex').toUpperCase();
-    const ticketCode = `WBS-${datePrefix}-${randomSuffix}`;
-    const trackingToken = crypto.randomBytes(16).toString('hex');
 
     // Resolve the effective anonymity once, then use it for the flag AND both
     // identity fields. Reading `data.isAnonymous` directly for the identity
@@ -90,33 +108,64 @@ export class WbsService {
     // still persisted the reporter's name and contact.
     const isAnonymous = data.isAnonymous ?? true;
 
-    const report = await prisma.wbsReport.create({
-      data: {
-        ticketCode,
-        trackingToken,
-        unitId,
-        category: data.category,
-        targetLevel: data.targetLevel,
-        targetName: data.targetName || null,
-        subject: data.subject,
-        description: data.description,
-        location: data.location || null,
-        incidentDate: data.incidentDate ? new Date(data.incidentDate) : null,
-        isAnonymous,
-        reporterName: isAnonymous ? null : data.reporterName || null,
-        reporterContact: isAnonymous ? null : data.reporterContact || null,
-        attachments: data.attachments ? (data.attachments as Prisma.InputJsonValue) : undefined,
-        status: WbsStatus.DIAJUKAN,
-        primaryHandlerRole,
-      },
-      include: {
-        unit: { select: { id: true, name: true } },
-      },
-    });
+    const { raw: trackingToken, digest: trackingTokenDigest } =
+      generateWbsTrackingToken();
+
+    // The random suffix is 4 bytes (32 bits, ~4.3B values) made unique by the
+    // `wbs_reports_ticket_code_key` index. A collision is rare but possible;
+    // retrying the *insert* (never the validation, never a non-unique DB
+    // error) turns a dropped report into a fresh code.
+    const MAX_ATTEMPTS = 5;
+    let report: Awaited<ReturnType<typeof prisma.wbsReport.create>> | undefined;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      const datePrefix = new Date().toISOString().slice(0, 7).replace('-', '');
+      const randomSuffix = crypto.randomBytes(4).toString('hex').toUpperCase();
+      const ticketCode = `WBS-${datePrefix}-${randomSuffix}`;
+      try {
+        report = await prisma.wbsReport.create({
+          data: {
+            ticketCode,
+            trackingToken: trackingTokenDigest,
+            unitId,
+            category: data.category,
+            targetLevel: data.targetLevel,
+            targetName: data.targetName || null,
+            subject: data.subject,
+            description: data.description,
+            location: data.location || null,
+            incidentDate: data.incidentDate ? new Date(data.incidentDate) : null,
+            isAnonymous,
+            reporterName: isAnonymous ? null : data.reporterName || null,
+            reporterContact: isAnonymous ? null : data.reporterContact || null,
+            attachments: data.attachments ? (data.attachments as Prisma.InputJsonValue) : undefined,
+            status: WbsStatus.DIAJUKAN,
+            primaryHandlerRole,
+          },
+          include: {
+            unit: { select: { id: true, name: true } },
+          },
+        });
+        break;
+      } catch (error) {
+        if (isTicketCodeCollision(error) && attempt < MAX_ATTEMPTS) continue;
+        if (isTicketCodeCollision(error)) {
+          throw Errors.internal(
+            'Gagal membuat nomor tiket WBS yang unik. Silakan coba lagi.'
+          );
+        }
+        throw error;
+      }
+    }
+
+    if (!report) {
+      throw Errors.internal('Gagal membuat laporan WBS. Silakan coba lagi.');
+    }
 
     return {
       ticketCode: report.ticketCode,
-      trackingToken: report.trackingToken,
+      // The RAW token, not `report.trackingToken` (which is now the stored
+      // digest). This is the only time the bearer value is handed out.
+      trackingToken,
       category: report.category,
       targetLevel: report.targetLevel,
       status: report.status,
@@ -156,7 +205,7 @@ export class WbsService {
       },
     });
 
-    if (!report || report.trackingToken !== trackingToken) {
+    if (!report || !verifyWbsTrackingToken(trackingToken, report.trackingToken)) {
       throw Errors.notFound('Laporan WBS tidak ditemukan atau token akses tidak valid');
     }
 
@@ -230,7 +279,7 @@ export class WbsService {
         },
       });
 
-      if (!report || report.trackingToken !== trackingToken) {
+      if (!report || !verifyWbsTrackingToken(trackingToken, report.trackingToken)) {
         throw Errors.notFound('Laporan WBS tidak ditemukan atau token akses tidak valid');
       }
 

@@ -22,6 +22,7 @@ vi.mock('../../lib/prisma', () => ({
       findUnique: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
       deleteMany: vi.fn(),
     },
     signingKeyRequest: {
@@ -598,6 +599,33 @@ describe('menandatangani surat', () => {
         pdfHash: expect.stringMatching(/^[0-9a-f]{64}$/),
         pdfSignature: expect.any(String),
       }),
+    });
+  });
+
+  it('tidak menghapus sentinel pembekuan saat membersihkan lockout setelah tanda tangan sukses', async () => {
+    // Skenario: pembekuan Pengurus dipasang tepat saat permintaan tanda tangan
+    // sedang berjalan. Penandatanganan sukses lalu memanggil pembersih lockout
+    // — yang, tanpa penjagaan, menulis `lockedUntil: null` dan menghidupkan
+    // kembali kunci yang baru saja dibekukan. Pembersihnya harus mengecualikan
+    // nilai sentinel.
+    vi.mocked(prisma.letter.findUnique).mockResolvedValue(letter() as any);
+    vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(activeKey() as any);
+    vi.mocked(prisma.letterSignature.create).mockResolvedValue({
+      id: 'sig-1', verificationToken: 'tok', signedAt: new Date(),
+    } as any);
+    vi.mocked(prisma.letterSignature.update).mockResolvedValue({
+      id: 'sig-1', verificationToken: 'tok', signedAt: new Date(),
+    } as any);
+
+    await EsignService.signLetter('letter-1', 'ketua', PASS);
+
+    const clearCall = vi
+      .mocked(prisma.userSigningKey.updateMany)
+      .mock.calls.find((c) => c[0].data && 'lockedUntil' in (c[0].data as object));
+    expect(clearCall).toBeDefined();
+    expect(clearCall![0].where).toMatchObject({
+      id: 'key-1',
+      NOT: { lockedUntil: { gte: expect.any(Date) } },
     });
   });
 

@@ -116,6 +116,22 @@ const attachmentUrlSchema = z
 
 const attachmentsSchema = z.array(attachmentUrlSchema).max(10).optional();
 
+/**
+ * The SK Pembekuan document link.
+ *
+ * `documentUrl` was an unrestricted `z.string()`: a Pengawas could store
+ * `javascript:…`, a `data:text/html` payload, a `file://` path, or a
+ * credential-bearing URL, and it is rendered as a link for whoever opens the
+ * suspension register. It gets the same HTTPS-only validation as WBS
+ * attachments — scheme, userinfo, host, port, control characters, backslash —
+ * because the threat is identical. Optional and blank-tolerant: the form's
+ * empty `<Input>` sends `""` for a suspension issued without a scanned SK.
+ */
+const documentUrlSchema = z.preprocess(
+  (val) => (val === "" || val === null ? undefined : val),
+  attachmentUrlSchema.optional(),
+);
+
 // ---------------------------------------------------------------------------
 // Public WBS
 // ---------------------------------------------------------------------------
@@ -196,7 +212,7 @@ export const createBoardSuspensionSchema = z
     userId: z.string().uuid(),
     skNumber: z.string().min(3),
     auditReason: z.string().min(10),
-    documentUrl: z.string().optional(),
+    documentUrl: documentUrlSchema,
     startDate: optionalDateSchema,
     projectedEndDate: optionalDateSchema,
     plhUserId: optionalUuidSchema,

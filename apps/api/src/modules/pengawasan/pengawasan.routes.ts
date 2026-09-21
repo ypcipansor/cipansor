@@ -7,7 +7,8 @@ import {
   PENGAWASAN_AUDIT_WRITE_ROLES,
   PENGAWASAN_LIFT_ROLES,
   PENGAWASAN_PERIODIC_REPORT_ROLES,
-  PENGAWASAN_SUSPENSION_ROLES,
+  PENGAWASAN_SUSPENSION_ISSUE_ROLES,
+  PENGAWASAN_SUSPENSION_READ_ROLES,
   PENGAWASAN_WBS_HANDLER_ROLES,
 } from '@cipansor/shared';
 import * as pengawasanController from './pengawasan.controller';
@@ -47,25 +48,25 @@ router.use(authenticate);
 
 router.get(
   '/board-suspensions',
-  authorize(...PENGAWASAN_SUSPENSION_ROLES),
+  authorize(...PENGAWASAN_SUSPENSION_READ_ROLES),
   pengawasanController.listBoardSuspensions
 );
-// Scoped pickers: the form selects a person, not a UUID. Same authorization as
-// the suspension route — a role that cannot suspend must not enumerate the
-// candidate list either.
+// Scoped pickers: the form selects a person, not a UUID. Issuance-level
+// authorization — a role that cannot suspend must not enumerate the candidate
+// list either, and the Pembina (read-only on the register) is excluded.
 router.get(
   '/board-suspensions/candidates',
-  authorize(...PENGAWASAN_SUSPENSION_ROLES),
+  authorize(...PENGAWASAN_SUSPENSION_ISSUE_ROLES),
   pengawasanController.listSuspendableCandidates
 );
 router.get(
   '/board-suspensions/plh-candidates',
-  authorize(...PENGAWASAN_SUSPENSION_ROLES),
+  authorize(...PENGAWASAN_SUSPENSION_ISSUE_ROLES),
   pengawasanController.listPlhCandidates
 );
 router.post(
   '/board-suspensions',
-  authorize(...PENGAWASAN_SUSPENSION_ROLES),
+  authorize(...PENGAWASAN_SUSPENSION_ISSUE_ROLES),
   pengawasanController.createBoardSuspension
 );
 // Pemulihan status is the Pembina's act, not the Pengawas's.

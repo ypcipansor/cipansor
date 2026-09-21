@@ -29,7 +29,7 @@ import {
   isFoundationWide,
   resolveArrearsUnitId,
   resolveAuditUnitId,
-} from './pengawasan-access';
+} from './pengawasan.policy';
 import type { Prisma } from '@prisma/client';
 
 /** The acting user's role/unit, as the unit policy needs it. */
@@ -39,7 +39,7 @@ function actorOf(req: Request) {
 
 /**
  * Refuse a write to a record outside the actor's unit. Thin adapter over the
- * reusable policy in `pengawasan-access.ts`, which the services share.
+ * reusable policy in `pengawasan.policy.ts`, which the services share.
  */
 function assertUnitAccess(req: Request, recordUnitId: string | null | undefined): void {
   assertActorUnitAccess(actorOf(req), recordUnitId);
@@ -318,7 +318,13 @@ export const createBoardSuspension = asyncHandler(async (req: Request, res: Resp
   const suspendedById = req.user?.sub;
   if (!suspendedById) throw Errors.unauthorized('User context missing');
 
-  const suspension = await boardSuspensionService.suspendBoardMember(body, suspendedById);
+  // Pass the actor's role so the service can re-enforce the issuance policy,
+  // not just rely on the route guard.
+  const suspension = await boardSuspensionService.suspendBoardMember(
+    body,
+    suspendedById,
+    req.user?.roleCode
+  );
   res.status(201).json(ApiResponse.success(suspension));
 });
 

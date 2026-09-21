@@ -125,7 +125,8 @@ describe('BoardSuspensionService Unit Tests', () => {
         plhUserId: 'user-sekretaris',
         plhRoleCode: 'YAYASAN_KETUA',
       },
-      'issuer-pengawas'
+      'issuer-pengawas',
+      'YAYASAN_PENGAWAS'
     );
 
     expect(suspension.id).toBe('susp-1');
@@ -192,7 +193,8 @@ describe('BoardSuspensionService Unit Tests', () => {
           skNumber: 'SK/PENGAWAS/2026/009',
           auditReason: 'Indikasi penyalahgunaan wewenang keuangan yayasan',
         },
-        'issuer-pengawas'
+        'issuer-pengawas',
+        'YAYASAN_PENGAWAS'
       )
     ).rejects.toMatchObject({ statusCode: 409 });
 
@@ -228,7 +230,8 @@ describe('BoardSuspensionService Unit Tests', () => {
       await expect(
         boardSuspensionService.suspendBoardMember(
           { userId: 'user-x', skNumber: 'SK/1', auditReason: 'alasan audit yang panjang' },
-          'issuer-pengawas'
+          'issuer-pengawas',
+          'YAYASAN_PENGAWAS'
         )
       ).rejects.toMatchObject({ statusCode: 403 });
 
@@ -252,7 +255,8 @@ describe('BoardSuspensionService Unit Tests', () => {
     await expect(
       boardSuspensionService.suspendBoardMember(
         { userId: 'user-pengurus', skNumber: 'SK/1', auditReason: 'alasan audit yang panjang' },
-        'issuer-pengawas'
+        'issuer-pengawas',
+        'YAYASAN_PENGAWAS'
       )
     ).rejects.toMatchObject({ statusCode: 409 });
 
@@ -280,7 +284,8 @@ describe('BoardSuspensionService Unit Tests', () => {
           auditReason: 'alasan audit yang panjang',
           startDate: new Date(Date.now() + 86_400_000).toISOString(),
         },
-        'issuer-pengawas'
+        'issuer-pengawas',
+        'YAYASAN_PENGAWAS'
       )
     ).rejects.toMatchObject({ statusCode: 400 });
 
@@ -306,7 +311,8 @@ describe('BoardSuspensionService Unit Tests', () => {
     await expect(
       boardSuspensionService.suspendBoardMember(
         { userId: 'user-pengurus', skNumber: 'SK/1', auditReason: 'alasan audit yang panjang' },
-        'issuer-pengawas'
+        'issuer-pengawas',
+        'YAYASAN_PENGAWAS'
       )
     ).rejects.toMatchObject({ statusCode: 409 });
 
@@ -339,7 +345,8 @@ describe('BoardSuspensionService Unit Tests', () => {
           plhUserId: 'user-sekretaris',
           plhRoleCode: 'YAYASAN_KETUA',
         },
-        'issuer-pengawas'
+        'issuer-pengawas',
+        'YAYASAN_PENGAWAS'
       )
     ).rejects.toMatchObject({ statusCode: 409 });
 
@@ -373,7 +380,8 @@ describe('BoardSuspensionService Unit Tests', () => {
     await expect(
       boardSuspensionService.suspendBoardMember(
         { userId: 'user-pengurus', skNumber: 'SK/1', auditReason: 'alasan audit yang panjang' },
-        'issuer-pengawas'
+        'issuer-pengawas',
+        'YAYASAN_PENGAWAS'
       )
     ).rejects.toMatchObject({ statusCode: 403 });
 
@@ -409,7 +417,8 @@ describe('BoardSuspensionService Unit Tests', () => {
           plhUserId: 'user-sekretaris',
           plhRoleCode: 'YAYASAN_KETUA',
         },
-        'issuer-pengawas'
+        'issuer-pengawas',
+        'YAYASAN_PENGAWAS'
       )
     ).rejects.toMatchObject({ statusCode: 400 });
 
@@ -441,7 +450,8 @@ describe('BoardSuspensionService Unit Tests', () => {
           plhUserId: 'user-sekretaris',
           plhRoleCode: 'YAYASAN_KETUA',
         },
-        'issuer-pengawas'
+        'issuer-pengawas',
+        'YAYASAN_PENGAWAS'
       )
     ).rejects.toMatchObject({ statusCode: 400 });
 
@@ -473,7 +483,8 @@ describe('BoardSuspensionService Unit Tests', () => {
 
     await boardSuspensionService.suspendBoardMember(
       { userId: 'user-pengurus', skNumber: 'SK/1', auditReason: 'alasan audit yang panjang' },
-      'issuer-pengawas'
+      'issuer-pengawas',
+      'YAYASAN_PENGAWAS'
     );
 
     // Each key is claimed against the value just observed, not blanket-matched.
@@ -507,7 +518,8 @@ describe('BoardSuspensionService Unit Tests', () => {
     await expect(
       boardSuspensionService.suspendBoardMember(
         { userId: 'user-pengurus', skNumber: 'SK/BARU', auditReason: 'alasan audit yang panjang' },
-        'issuer-pengawas'
+        'issuer-pengawas',
+        'YAYASAN_PENGAWAS'
       )
     ).rejects.toMatchObject({ statusCode: 409 });
   });
@@ -536,7 +548,8 @@ describe('BoardSuspensionService Unit Tests', () => {
         plhUserId: 'user-sekretaris',
         plhRoleCode: 'YAYASAN_KETUA',
       },
-      'issuer-pengawas'
+      'issuer-pengawas',
+      'YAYASAN_PENGAWAS'
     );
 
     expect(prisma.userRoleAssignment.update).toHaveBeenCalledWith({
@@ -687,7 +700,8 @@ describe('BoardSuspensionService Unit Tests', () => {
         skNumber: 'SK/PENGAWAS/2026/010',
         auditReason: 'Indikasi penyalahgunaan wewenang keuangan yayasan',
       },
-      'issuer-pengawas'
+      'issuer-pengawas',
+      'YAYASAN_PENGAWAS'
     );
 
     for (const call of (prisma.userSigningKey.updateMany as any).mock.calls) {
@@ -1046,6 +1060,77 @@ describe('BoardSuspensionService Unit Tests', () => {
   });
 
   describe('privilege-escalation and snapshot guards', () => {
+    it.each(['YAYASAN_PEMBINA', 'YAYASAN_SEKRETARIS', 'SDIT_ADMIN'])(
+      'rejects issuance by a role outside the issue policy (%s) even when the route would not run',
+      async (roleCode) => {
+        // Service-level re-enforcement: the route guards PASS this role for
+        // read/lift, so the only thing stopping an internal caller is the
+        // service check. The target is a valid Pengurus — the rejection must
+        // come from the actor's role, not the target.
+        (prisma.user.findUnique as any).mockResolvedValue({
+          id: 'user-pengurus',
+          isActive: true,
+          deletedAt: null,
+          userRoles: [{ isActive: true, expiresAt: null, role: { code: 'YAYASAN_KETUA' } }],
+        });
+
+        await expect(
+          boardSuspensionService.suspendBoardMember(
+            { userId: 'user-pengurus', skNumber: 'SK/1', auditReason: 'alasan audit yang panjang' },
+            'issuer-x',
+            roleCode
+          )
+        ).rejects.toMatchObject({ statusCode: 403 });
+
+        expect(prisma.boardMemberSuspension.create).not.toHaveBeenCalled();
+      }
+    );
+
+    it('rejects a missing actor role — fail closed, not a trusted system caller', async () => {
+      (prisma.user.findUnique as any).mockResolvedValue({
+        id: 'user-pengurus',
+        isActive: true,
+        deletedAt: null,
+        userRoles: [{ isActive: true, expiresAt: null, role: { code: 'YAYASAN_KETUA' } }],
+      });
+
+      await expect(
+        boardSuspensionService.suspendBoardMember(
+          { userId: 'user-pengurus', skNumber: 'SK/1', auditReason: 'alasan audit yang panjang' },
+          'issuer-internal',
+          undefined
+        )
+      ).rejects.toMatchObject({ statusCode: 403 });
+
+      expect(prisma.boardMemberSuspension.create).not.toHaveBeenCalled();
+    });
+
+    it.each(['SUPER_ADMIN', 'YAYASAN_PENGAWAS'])(
+      'allows issuance by an authorized role (%s)',
+      async (roleCode) => {
+        (prisma.user.findUnique as any).mockResolvedValue({
+          id: 'user-pengurus',
+          isActive: true,
+          deletedAt: null,
+          userRoles: [{ isActive: true, expiresAt: null, role: { code: 'YAYASAN_KETUA' } }],
+        });
+        (prisma.boardMemberSuspension.create as any).mockResolvedValue({
+          id: 'susp-1',
+          status: 'ACTIVE',
+          plhAssignmentId: null,
+        });
+        (prisma.$transaction as any).mockImplementation((cb: any) => cb(prisma));
+
+        await expect(
+          boardSuspensionService.suspendBoardMember(
+            { userId: 'user-pengurus', skNumber: 'SK/1', auditReason: 'alasan audit yang panjang' },
+            'issuer-ok',
+            roleCode
+          )
+        ).resolves.toBeDefined();
+      }
+    );
+
     it('refuses to name the suspended officer as their own Plh', async () => {
       // Self-appointment undoes the suspension: the frozen account would hold
       // the very office it was removed from.
@@ -1065,7 +1150,8 @@ describe('BoardSuspensionService Unit Tests', () => {
             plhUserId: 'user-pengurus',
             plhRoleCode: 'YAYASAN_KETUA',
           },
-          'issuer-pengawas'
+          'issuer-pengawas',
+          'YAYASAN_PENGAWAS'
         )
       ).rejects.toMatchObject({ statusCode: 400 });
 
@@ -1094,7 +1180,8 @@ describe('BoardSuspensionService Unit Tests', () => {
             plhUserId: 'user-sekretaris',
             plhRoleCode: 'YAYASAN_KETUA',
           },
-          'issuer-pengawas'
+          'issuer-pengawas',
+          'YAYASAN_PENGAWAS'
         )
       ).rejects.toMatchObject({ statusCode: 400 });
     });
@@ -1117,7 +1204,8 @@ describe('BoardSuspensionService Unit Tests', () => {
             // test is exercising, so the cast is deliberate.
             plhRoleCode: 'SUPER_ADMIN' as any,
           },
-          'issuer-pengawas'
+          'issuer-pengawas',
+          'YAYASAN_PENGAWAS'
         )
       ).rejects.toMatchObject({ statusCode: 400 });
 
@@ -1145,7 +1233,8 @@ describe('BoardSuspensionService Unit Tests', () => {
               // behaviour under test.
               plhRoleCode: code as any,
             },
-            'issuer-pengawas'
+            'issuer-pengawas',
+            'YAYASAN_PENGAWAS'
           )
         ).rejects.toMatchObject({ statusCode: 400 });
       }
@@ -1163,7 +1252,8 @@ describe('BoardSuspensionService Unit Tests', () => {
       await expect(
         boardSuspensionService.suspendBoardMember(
           { userId: 'user-x', skNumber: 'SK/1', auditReason: 'alasan audit yang panjang' },
-          'issuer-pengawas'
+          'issuer-pengawas',
+          'YAYASAN_PENGAWAS'
         )
       ).rejects.toMatchObject({ statusCode: 403 });
 

@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
 import { BoardSuspensionStatus, Prisma } from '@prisma/client';
 import {
+  PENGAWASAN_SUSPENSION_ISSUE_ROLES,
   PENGURUS_ROLE_CODES,
   PLH_ROLE_CODES,
   type CreateBoardSuspensionInput,
@@ -9,26 +10,19 @@ import {
 } from '@cipansor/shared';
 import { invalidateUserSuspensionCache, markUserSuspended } from '@/utils/user-suspension';
 import { activationState, deactivationState } from '@/utils/account-state';
+import { SIGNING_KEY_SUSPENSION_LOCK } from '@/utils/esign-suspension-lock';
 
 // The payload is the shared contract the controller validates with; a local
 // restatement of the same fields is exactly how the two drift apart.
 export type { CreateBoardSuspensionInput };
 
 /**
- * Far-future sentinel written to `lockedUntil` to suspend signing capability.
- *
- * This is a *temporary lock*, not a formal revocation: `UserSigningKey.revokedAt`
- * is the audited revocation field (set with a reason, and never cleared), and the
- * suspension deliberately does not touch it. The reasoning is that a suspension
- * is reversible — a Pembina can lift it — so a signing key that was merely locked
- * must come back exactly as it was, which is what the snapshot restore below
- * does. Writing `revokedAt` here would either be irreversible on lift or would
- * require "un-revoking" a key, which the e-sign lifecycle rightly does not allow
- * (a revoked key stays revoked — see `utils/esign-lifecycle.ts`). The sentinel
- * therefore means "locked until this far-future date", which the lifecycle maps
- * to LOCKED, and the lift restores the prior `lockedUntil`.
+ * The signing-key suspension sentinel lives in `utils/esign-suspension-lock.ts`
+ * so the E-Sign service can recognise (and refuse to clear) it without importing
+ * this module. Re-exported here because the suspension tests and callers expect
+ * it from the service.
  */
-export const SIGNING_KEY_SUSPENSION_LOCK = new Date('2099-01-01T00:00:00Z');
+export { SIGNING_KEY_SUSPENSION_LOCK, isSuspensionSigningLock } from '@/utils/esign-suspension-lock';
 
 /**
  * Prior `lockedUntil` per signing-key id, so a lift can undo exactly what the
@@ -105,7 +99,30 @@ export class BoardSuspensionService {
    * administrators or ordinary staff — without this check the ID was the only
    * thing standing between a Pengawas and freezing the Super Admin account.
    */
-  async suspendBoardMember(data: CreateBoardSuspensionInput, suspendedById: string) {
+  async suspendBoardMember(
+    data: CreateBoardSuspensionInput,
+    suspendedById: string,
+    actorRoleCode?: string | null
+  ) {
+    // Service-level re-enforcement of the route policy.
+    //
+    // The route `authorize(...)` list is the edge; this is the backstop. An
+    // internal caller (a future job, a different route, a service-to-service
+    // command) that reaches this method directly must not be able to mint a
+    // suspension the governance policy forbids. The Pembina is deliberately
+    // outside the issuing set — it appoints the Pengurus, and must not be the
+    // organ that also freezes them through oversight.
+    //
+    // Fail closed: a missing role is treated as unauthorised, not as a trusted
+    // system caller. An optional check (`actorRoleCode != null && …`) reads
+    // more forgiving but is a hole — the one caller that forgets to pass a role
+    // is exactly the internal path this guard exists to stop.
+    if (!actorRoleCode || !PENGAWASAN_SUSPENSION_ISSUE_ROLES.includes(actorRoleCode)) {
+      throw Errors.forbidden(
+        'Hanya Pengawas Yayasan atau Super Admin yang dapat menerbitkan SK Pembekuan Pengurus.'
+      );
+    }
+
     // Version of the account-state write this suspension performs, carried out of
     // the transaction so the post-commit cache prime can be ordered by it.
     let suspensionAccountStateVersion = 0;

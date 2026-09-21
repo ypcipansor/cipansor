@@ -4,6 +4,8 @@ import {
   PENGAWASAN_ARREARS_ROLES,
   PENGAWASAN_LIFT_ROLES,
   PENGAWASAN_PERIODIC_REPORT_ROLES,
+  PENGAWASAN_SUSPENSION_ISSUE_ROLES,
+  PENGAWASAN_SUSPENSION_READ_ROLES,
   PENGAWASAN_SUSPENSION_ROLES,
   pengawasanAccessOf,
 } from '@cipansor/shared';
@@ -30,6 +32,18 @@ describe('pengawasan governance role groups', () => {
     expect(PENGAWASAN_LIFT_ROLES).not.toContain('YAYASAN_PENGAWAS');
   });
 
+  it('separates read, issue and lift so the Pembina can see but not freeze', () => {
+    // The Pembina may read the register (it appoints and dismisses), but must
+    // not issue an SK Pembekuan: that is the Pengawas's oversight act.
+    expect(PENGAWASAN_SUSPENSION_READ_ROLES).toContain('YAYASAN_PEMBINA');
+    expect(PENGAWASAN_SUSPENSION_ISSUE_ROLES).not.toContain('YAYASAN_PEMBINA');
+    expect(PENGAWASAN_SUSPENSION_ISSUE_ROLES).not.toContain('YAYASAN_SEKRETARIS');
+    // Issuance is Pengawas + Super Admin; the lift is the inverse grant.
+    expect([...PENGAWASAN_SUSPENSION_ISSUE_ROLES].sort()).toEqual(
+      ['SUPER_ADMIN', 'YAYASAN_PENGAWAS'].sort()
+    );
+  });
+
   it('limits periodic report submission to Pengawas and Super Admin', () => {
     expect([...PENGAWASAN_PERIODIC_REPORT_ROLES].sort()).toEqual(
       ['SUPER_ADMIN', 'YAYASAN_PENGAWAS'].sort()
@@ -38,17 +52,28 @@ describe('pengawasan governance role groups', () => {
 
   it('resolves visibility from the same lists the routes authorize', () => {
     expect(pengawasanAccessOf('YAYASAN_PEMBINA')).toMatchObject({
-      canManageSuspensions: true,
+      canReadSuspensions: true,
+      canIssueSuspension: false,
       canLiftSuspension: true,
       canSubmitPeriodicReport: false,
     });
     expect(pengawasanAccessOf('YAYASAN_PENGAWAS')).toMatchObject({
-      canManageSuspensions: true,
+      canReadSuspensions: true,
+      canIssueSuspension: true,
       canLiftSuspension: false,
       canSubmitPeriodicReport: true,
     });
     expect(pengawasanAccessOf('SDIT_BENDAHARA').canViewArrears).toBe(true);
     expect(pengawasanAccessOf(null).canManageSuspensions).toBe(false);
+    expect(pengawasanAccessOf(null).canIssueSuspension).toBe(false);
+  });
+
+  it('keeps the deprecated alias pointing at the read list', () => {
+    // Any consumer that only gates visibility keeps compiling; the write routes
+    // no longer read this constant.
+    expect([...PENGAWASAN_SUSPENSION_ROLES]).toEqual([
+      ...PENGAWASAN_SUSPENSION_READ_ROLES,
+    ]);
   });
 
   it('lists only roles the suspension policy actually admits', () => {

@@ -219,9 +219,14 @@ test.describe.serial("WBS submission, anonymity and tracking", () => {
     await page
       .getByLabel(/Rincian & Kronologi Laporan/i)
       .fill("Uji end-to-end bahwa token lacak tidak pernah masuk ke URL.");
-    await page
-      .getByRole("button", { name: /Kirimkan Laporan Pengaduan WBS/i })
-      .click();
+    const submit = page.getByRole("button", {
+      name: /Kirimkan Laporan Pengaduan WBS/i,
+    });
+    // The form is long on a phone viewport; a field below the fold intercepts
+    // the first synthetic click while the layout settles. apps/web/AGENTS.md
+    // prescribes waiting for visibility then forcing the click for this class.
+    await submit.waitFor({ state: "visible" });
+    await submit.click({ force: true });
 
     // The success dialog is the only place the one-time token is displayed.
     const dialog = page.getByRole("dialog");
@@ -248,9 +253,13 @@ test.describe.serial("WBS submission, anonymity and tracking", () => {
     const issuedToken = stored[issuedTicket];
     expect(issuedToken.length).toBeGreaterThanOrEqual(16);
 
-    await page
-      .getByRole("button", { name: /Buka Halaman Lacak Progress/i })
-      .click();
+    const openTrack = page.getByRole("button", {
+      name: /Buka Halaman Lacak Progress/i,
+    });
+    // Same Radix open animation as the dialog header intercepting the first
+    // synthetic click; wait for it to settle, then force.
+    await openTrack.waitFor({ state: "visible" });
+    await openTrack.click({ force: true });
     await page.waitForURL(/\/public\/wbs\/track/);
 
     const url = page.url();
@@ -463,6 +472,66 @@ test.describe
     await expect(
       page.getByRole("heading", { name: "Pengawasan Internal", level: 1 }),
     ).toBeVisible({ timeout: 20000 });
+  });
+
+  test("the Pembina may read the register but cannot issue an SK Pembekuan", async () => {
+    // Read and issuance were one grant, so the organ that appoints the Pengurus
+    // could also freeze them. The route now splits the pair; this proves the
+    // Pembina's token is accepted on the list and refused on issuance, against
+    // the real API.
+    const pembina = await apiLogin(SEED_USERS.pembina);
+
+    const list = await apiRequest<Envelope<unknown[]>>(
+      pembina,
+      "GET",
+      "/pengawasan/board-suspensions",
+    );
+    expect(list.success).toBe(true);
+
+    const superAdmin = await apiLogin(SEED_USERS.superAdmin);
+    const target = await apiRequest<Envelope<{ id: string }>>(
+      superAdmin,
+      "GET",
+      "/auth/me",
+    );
+
+    const res = await fetch(
+      `${process.env.API_URL || "http://localhost:3001/api"}/pengawasan/board-suspensions`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${pembina.accessToken}`,
+        },
+        body: JSON.stringify({
+          userId: target.data.id,
+          skNumber: `SK/E2E-PEMBINA/${Date.now()}`,
+          auditReason:
+            "Uji coba: Pembina tidak boleh menerbitkan SK Pembekuan terhadap Pengurus.",
+        }),
+      },
+    );
+
+    // 403 from the route guard, and the service re-enforces it.
+    expect(res.status).toBe(403);
+  });
+
+  test("only the Pengawas/Super Admin may enumerate the candidate pickers", async () => {
+    const pembina = await apiLogin(SEED_USERS.pembina);
+    const pengawas = await apiLogin(SEED_USERS.pengawas);
+
+    const refused = await fetch(
+      `${process.env.API_URL || "http://localhost:3001/api"}/pengawasan/board-suspensions/plh-candidates`,
+      { headers: { authorization: `Bearer ${pembina.accessToken}` } },
+    );
+    expect(refused.status).toBe(403);
+
+    const allowed = await apiRequest<Envelope<unknown[]>>(
+      pengawas,
+      "GET",
+      "/pengawasan/board-suspensions/plh-candidates",
+    );
+    expect(allowed.success).toBe(true);
   });
 });
 

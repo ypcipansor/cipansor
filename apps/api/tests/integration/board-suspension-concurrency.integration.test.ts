@@ -133,6 +133,8 @@ describeDb('board suspension concurrency (real PostgreSQL)', () => {
     vi.resetModules();
   };
 
+  // The service is fail-closed on the actor role (`PENGAWASAN_SUSPENSION_ISSUE_ROLES`),
+  // so the direct call must carry one, exactly as the controller now does.
   const suspend = async (service: any, userId: string, skNumber: string) =>
     service.suspendBoardMember(
       {
@@ -142,7 +144,8 @@ describeDb('board suspension concurrency (real PostgreSQL)', () => {
         plhUserId: 'u-delegate',
         plhRoleCode: 'YAYASAN_ANGGOTA',
       },
-      'u-issuer'
+      'u-issuer',
+      'YAYASAN_PENGAWAS'
     );
 
   it('two parallel lifts sharing one assignment release it exactly once', async () => {

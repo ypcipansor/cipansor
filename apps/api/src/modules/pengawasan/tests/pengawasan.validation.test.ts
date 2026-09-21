@@ -162,6 +162,50 @@ describe('pengawasan validation contracts', () => {
 });
 
 /**
+ * The SK Pembekuan `documentUrl` was an unrestricted string and is rendered as
+ * a link in the suspension register; it gets the same HTTPS-only treatment as
+ * WBS attachments.
+ */
+describe('board suspension documentUrl validation', () => {
+  const base = {
+    userId: '11111111-1111-4111-8111-111111111111',
+    skNumber: 'SK/001',
+    auditReason: 'Alasan audit yang cukup panjang.',
+  };
+
+  it.each([
+    'javascript:alert(1)',
+    'data:text/html,<script>alert(1)</script>',
+    'file:///etc/passwd',
+    'http://evil.example/sk.pdf',
+    'https://user:pass@evil.example/sk.pdf',
+    'https://',
+    'https:///nohost',
+    'https:\\/evil.example/sk.pdf',
+    'https://evil.example/sk.pdf\nx',
+  ])('rejects the unsafe documentUrl %j', (documentUrl) => {
+    expect(
+      createBoardSuspensionSchema.safeParse({ ...base, documentUrl }).success,
+      `${documentUrl} should be rejected`
+    ).toBe(false);
+  });
+
+  it('accepts a valid HTTPS documentUrl and an omitted/blank one', () => {
+    expect(
+      createBoardSuspensionSchema.safeParse({
+        ...base,
+        documentUrl: 'https://storage.cipansor.or.id/sk/sk-001.pdf',
+      }).success
+    ).toBe(true);
+    expect(createBoardSuspensionSchema.safeParse(base).success).toBe(true);
+    // The form's untouched input submits "".
+    expect(
+      createBoardSuspensionSchema.safeParse({ ...base, documentUrl: '' }).success
+    ).toBe(true);
+  });
+});
+
+/**
  * Attachment links come from an *anonymous* visitor and are rendered as links
  * inside a handler's authenticated session. Every scheme that a browser would
  * execute or resolve is refused at the edge; only an https URL with a real

@@ -616,7 +616,7 @@ function PengawasanPageContent() {
     ? "audits"
     : access.canHandleWbs
       ? "wbs"
-      : access.canManageSuspensions
+      : access.canReadSuspensions
         ? "suspensions"
         : access.canViewArrears
           ? "arrears"
@@ -677,7 +677,7 @@ function PengawasanPageContent() {
               {wbsReports?.length || 0})
             </TabsTrigger>
           )}
-          {access.canManageSuspensions && (
+          {access.canReadSuspensions && (
             <TabsTrigger
               value="suspensions"
               className="py-2.5 text-xs md:text-sm font-medium"
@@ -1129,7 +1129,7 @@ function PengawasanPageContent() {
         )}
 
         {/* ================= TAB 3: PEMBEKUAN PENGURUS & PLH/PLT ================= */}
-        {access.canManageSuspensions && (
+        {access.canReadSuspensions && (
           <TabsContent value="suspensions" className="space-y-6">
             <div className="flex items-center justify-between">
               <div>
@@ -1141,7 +1141,7 @@ function PengawasanPageContent() {
                   terindikasi pelanggaran serta penunjukan Plh/Plt.
                 </p>
               </div>
-              {access.canManageSuspensions && (
+              {access.canIssueSuspension && (
                 <Button
                   onClick={() => setSuspensionDialogOpen(true)}
                   className="bg-red-600 hover:bg-red-700 text-white gap-1"

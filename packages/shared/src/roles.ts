@@ -313,11 +313,46 @@ export function legacyRoleFor(roleCode: string): LegacyRole | undefined {
  * only shown when the request behind it will be accepted. Scope (which unit or
  * report) is still the API's decision; this is authorization, not ownership.
  */
-export const PENGAWASAN_SUSPENSION_ROLES: readonly string[] = [
+
+/**
+ * Read/list access to board suspensions and their scoped pickers.
+ *
+ * The Pembina may *see* the register — it is the organ that appoints and
+ * dismisses (UU 16/2001 Pasal 28), so oversight of who is currently frozen is
+ * theirs — but read access is deliberately NOT the same grant as issuing an SK.
+ * The three grants (read, issue, lift) used to be one list, which meant every
+ * role that could open the tab could also mint a suspension and a Plh role.
+ */
+export const PENGAWASAN_SUSPENSION_READ_ROLES: readonly string[] = [
   "SUPER_ADMIN",
   "YAYASAN_PENGAWAS",
   "YAYASAN_PEMBINA",
 ];
+
+/**
+ * Issuing an SK Pembekuan (and enumerating the suspend/Plh candidate lists).
+ *
+ * Reserved for the Pengawas — the oversight organ that audits the Pengurus —
+ * and Super Admin for operational recovery. The Pembina is intentionally
+ * excluded: it is the body that *appoints* the Pengurus, so letting it also
+ * freeze them through the oversight endpoint collapses the separation between
+ * the appointing organ and the supervising one, and lets the same officer
+ * suspend and (as lifter) restore with no second signature. The service
+ * re-enforces this, so an internal caller cannot bypass the route.
+ */
+export const PENGAWASAN_SUSPENSION_ISSUE_ROLES: readonly string[] = [
+  "SUPER_ADMIN",
+  "YAYASAN_PENGAWAS",
+];
+
+/**
+ * @deprecated Use {@link PENGAWASAN_SUSPENSION_READ_ROLES} (list) or
+ * {@link PENGAWASAN_SUSPENSION_ISSUE_ROLES} (issuance). Kept as an alias of the
+ * read list so any consumer that only gates visibility keeps compiling; the
+ * API's write routes no longer read it.
+ */
+export const PENGAWASAN_SUSPENSION_ROLES: readonly string[] =
+  PENGAWASAN_SUSPENSION_READ_ROLES;
 
 /** Pemulihan status is the Pembina's, with Super Admin for operational recovery. */
 export const PENGAWASAN_LIFT_ROLES: readonly string[] = [
@@ -377,7 +412,16 @@ export function pengawasanAccessOf(roleCode: string | null | undefined) {
   const code = roleCode ?? "";
   const has = (list: readonly string[]) => list.includes(code);
   return {
-    canManageSuspensions: has(PENGAWASAN_SUSPENSION_ROLES),
+    /** Can *see* the register and its tabs (read/list). */
+    canReadSuspensions: has(PENGAWASAN_SUSPENSION_READ_ROLES),
+    /** Can issue an SK Pembekuan and enumerate the candidate pickers. */
+    canIssueSuspension: has(PENGAWASAN_SUSPENSION_ISSUE_ROLES),
+    /**
+     * @deprecated Retained for a control that only needs the tab to render.
+     * Use `canReadSuspensions` for visibility and `canIssueSuspension` for the
+     * button that posts the SK. The page no longer offers issuance on this.
+     */
+    canManageSuspensions: has(PENGAWASAN_SUSPENSION_READ_ROLES),
     canLiftSuspension: has(PENGAWASAN_LIFT_ROLES),
     canSubmitPeriodicReport: has(PENGAWASAN_PERIODIC_REPORT_ROLES),
     canHandleWbs: has(PENGAWASAN_WBS_HANDLER_ROLES),

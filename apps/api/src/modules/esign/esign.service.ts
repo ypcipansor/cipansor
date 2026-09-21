@@ -25,6 +25,7 @@ import {
   storeIdentityDocument,
 } from '@/utils/identity-document-store';
 import crypto from 'crypto';
+import { SIGNING_KEY_SUSPENSION_LOCK } from '@/utils/esign-suspension-lock';
 import {
   createKeyMaterial,
   lockoutUntil,
@@ -112,8 +113,16 @@ async function recordFailedAttempt(keyId: string, current: number) {
 }
 
 async function clearFailedAttempts(keyId: string) {
-  await prisma.userSigningKey.update({
-    where: { id: keyId },
+  // Never clear the board-suspension sentinel. A successful signature normally
+  // clears the short passphrase lockout; if a suspension landed while the sign
+  // request was in flight, that clear would null the sentinel and re-enable
+  // signing for an officer who was just suspended. The conditional update leaves
+  // `lockedUntil` alone when it is the sentinel (see utils/esign-suspension-lock.ts).
+  await prisma.userSigningKey.updateMany({
+    where: {
+      id: keyId,
+      NOT: { lockedUntil: { gte: SIGNING_KEY_SUSPENSION_LOCK } },
+    },
     data: { failedAttempts: 0, lockedUntil: null, lastUsedAt: new Date() },
   });
 }

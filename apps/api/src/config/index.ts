@@ -116,6 +116,20 @@ export const config = {
     },
   },
 
+  /**
+   * Optional dedicated key for the WBS tracking-token digest.
+   *
+   * Absent, `utils/wbs-token.ts` derives a domain-separated key from
+   * `JWT_SECRET` with HKDF, so no new mandatory production env var is required
+   * and the boot guard is unchanged. Set it only to rotate this digest
+   * independently of the session signer.
+   */
+  wbsTracking: {
+    get hmacSecret(): string | undefined {
+      return process.env.WBS_TRACKING_HMAC_SECRET || undefined;
+    },
+  },
+
   bcrypt: {
     saltRounds: 10,
   },

@@ -1,7 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { wbsService } from './wbs.service';
 import { prisma } from '@/lib/prisma';
-import { WbsCategory, WbsTargetLevel, WbsStatus } from '@prisma/client';
+import { WbsCategory, WbsTargetLevel, WbsStatus, Prisma } from '@prisma/client';
+import { hashWbsTrackingToken, verifyWbsTrackingToken } from '@/utils/wbs-token';
+
+/** A digest as the service would store it, for fixtures that must verify. */
+const digestOf = (raw: string) => hashWbsTrackingToken(raw);
 
 vi.mock('@/lib/prisma', () => ({
   prisma: {
@@ -98,7 +102,8 @@ describe('WbsService Unit Tests', () => {
   it('creates public WBS report with correct primary handler role for PENGURUS_YAYASAN', async () => {
     const mockReport = {
       ticketCode: 'WBS-202603-ABC123',
-      trackingToken: 'secret-token-123',
+      // The stored value is the digest; the raw token is what is returned.
+      trackingToken: digestOf('secret-token-123'),
       category: WbsCategory.KEUANGAN_ASET,
       targetLevel: WbsTargetLevel.PENGURUS_YAYASAN,
       status: WbsStatus.DIAJUKAN,
@@ -124,6 +129,110 @@ describe('WbsService Unit Tests', () => {
         }),
       })
     );
+  });
+
+  it('persists only the token digest and returns the raw token exactly once', async () => {
+    const created = {
+      ticketCode: 'WBS-202603-ABC123',
+      // What the row would hold after the service's write; if the service ever
+      // echoed this back, the test below would catch a raw-token leak.
+      trackingToken: 'stored-digest-placeholder',
+      category: WbsCategory.KEUANGAN_ASET,
+      targetLevel: WbsTargetLevel.PENGURUS_YAYASAN,
+      status: WbsStatus.DIAJUKAN,
+      createdAt: new Date(),
+    };
+    (prisma.wbsReport.create as any).mockResolvedValue(created);
+
+    const result = await wbsService.createPublicReport({
+      category: WbsCategory.KEUANGAN_ASET,
+      targetLevel: WbsTargetLevel.PENGURUS_YAYASAN,
+      subject: 'Dugaan Penyalahgunaan Anggaran',
+      description: 'Ditemukan ketidaksesuaian laporan pengadaan...',
+      isAnonymous: true,
+    });
+
+    const persisted = (prisma.wbsReport.create as any).mock.calls[0][0].data;
+    // The write holds a digest, not the raw bearer value.
+    expect(persisted.trackingToken).toMatch(/^[0-9a-f]{64}$/);
+    // The returned token is the raw value whose digest was stored...
+    expect(result.trackingToken).toBeDefined();
+    expect(hashWbsTrackingToken(result.trackingToken)).toBe(persisted.trackingToken);
+    // ...and it is never the stored digest.
+    expect(result.trackingToken).not.toBe(persisted.trackingToken);
+    // The response must not carry the stored digest field at all.
+    expect(result).not.toHaveProperty('trackingTokenDigest');
+    expect(JSON.stringify(result)).not.toContain(persisted.trackingToken);
+  });
+
+  it('retries on a ticket_code collision and succeeds on a later attempt', async () => {
+    const collision = new Prisma.PrismaClientKnownRequestError('unique', {
+      code: 'P2002',
+      clientVersion: 'test',
+      meta: { target: ['ticket_code'] },
+    });
+    (prisma.wbsReport.create as any)
+      .mockRejectedValueOnce(collision)
+      .mockResolvedValueOnce({
+        ticketCode: 'WBS-202603-ABCDEF',
+        category: WbsCategory.KEUANGAN_ASET,
+        targetLevel: WbsTargetLevel.PENGURUS_YAYASAN,
+        status: WbsStatus.DIAJUKAN,
+        createdAt: new Date(),
+      });
+
+    const result = await wbsService.createPublicReport({
+      category: WbsCategory.KEUANGAN_ASET,
+      targetLevel: WbsTargetLevel.PENGURUS_YAYASAN,
+      subject: 'Dugaan Penyalahgunaan Anggaran',
+      description: 'Ditemukan ketidaksesuaian laporan pengadaan...',
+    });
+
+    expect(prisma.wbsReport.create).toHaveBeenCalledTimes(2);
+    expect(result.ticketCode).toBe('WBS-202603-ABCDEF');
+  });
+
+  it('gives up with an operational error after exhausting ticket_code retries', async () => {
+    const collision = new Prisma.PrismaClientKnownRequestError('unique', {
+      code: 'P2002',
+      clientVersion: 'test',
+      meta: { target: ['ticket_code'] },
+    });
+    (prisma.wbsReport.create as any).mockRejectedValue(collision);
+
+    await expect(
+      wbsService.createPublicReport({
+        category: WbsCategory.KEUANGAN_ASET,
+        targetLevel: WbsTargetLevel.PENGURUS_YAYASAN,
+        subject: 'Dugaan Penyalahgunaan Anggaran',
+        description: 'Ditemukan ketidaksesuaian laporan pengadaan...',
+      })
+    ).rejects.toMatchObject({ statusCode: 500 });
+
+    // Bounded: the loop must not spin forever on a persistent collision.
+    expect((prisma.wbsReport.create as any).mock.calls.length).toBeLessThanOrEqual(5);
+  });
+
+  it('does not retry a non-collision database error', async () => {
+    const other = new Prisma.PrismaClientKnownRequestError('fk', {
+      code: 'P2003',
+      clientVersion: 'test',
+      meta: { field_name: 'unit_id' },
+    });
+    (prisma.wbsReport.create as any).mockRejectedValue(other);
+
+    await expect(
+      wbsService.createPublicReport({
+        category: WbsCategory.KEUANGAN_ASET,
+        targetLevel: WbsTargetLevel.PENGURUS_YAYASAN,
+        subject: 'Dugaan Penyalahgunaan Anggaran',
+        description: 'Ditemukan ketidaksesuaian laporan pengadaan...',
+      })
+    ).rejects.toBe(other);
+
+    // A foreign-key failure must surface unchanged, not be retried as a code
+    // collision.
+    expect(prisma.wbsReport.create).toHaveBeenCalledTimes(1);
   });
 
   it('routes a unitless staff/student report to a handler that can actually see it', async () => {
@@ -232,7 +341,7 @@ describe('WbsService Unit Tests', () => {
   it('fetches public tracking with valid token', async () => {
     const mockReport = {
       ticketCode: 'WBS-202603-ABC123',
-      trackingToken: 'valid-token',
+      trackingToken: digestOf('valid-token'),
       category: WbsCategory.KEUANGAN_ASET,
       targetLevel: WbsTargetLevel.PENGURUS_YAYASAN,
       subject: 'Test Subject',
@@ -250,6 +359,11 @@ describe('WbsService Unit Tests', () => {
     const data = await wbsService.getPublicTracking('WBS-202603-ABC123', 'valid-token');
     expect(data.ticketCode).toBe('WBS-202603-ABC123');
     expect(data.status).toBe('DIAJUKAN');
+
+    // A wrong token against the same digest must fail closed.
+    await expect(
+      wbsService.getPublicTracking('WBS-202603-ABC123', 'token-yang-salah')
+    ).rejects.toMatchObject({ statusCode: 404 });
   });
 
   it('anonymises handler identities on the public tracking response', async () => {
@@ -258,7 +372,7 @@ describe('WbsService Unit Tests', () => {
     // would name the officer and their position to the reporter's audience.
     (prisma.wbsReport.findUnique as any).mockResolvedValue({
       ticketCode: 'WBS-202603-ABC123',
-      trackingToken: 'valid-token',
+      trackingToken: digestOf('valid-token'),
       category: WbsCategory.KEUANGAN_ASET,
       targetLevel: WbsTargetLevel.PENGURUS_YAYASAN,
       status: WbsStatus.DALAM_PENYELIDIKAN,
@@ -736,7 +850,7 @@ describe('WbsService Unit Tests', () => {
   describe('public comments on closed cases', () => {
     const openReport = {
       id: 'report-1',
-      trackingToken: 'tok-1',
+      trackingToken: digestOf('tok-1'),
       isAnonymous: true,
       reporterName: null,
       status: WbsStatus.DALAM_PENYELIDIKAN,
