@@ -162,7 +162,7 @@ import { uploadsAuth } from './middleware/upload';
 if (config.env !== 'test' && config.env !== 'development') {
   app.use('/uploads', defaultLimiter, uploadsAuth, express.static(path.join(process.cwd(), 'public/uploads')));
 } else {
-  app.use('/uploads', uploadsAuth, express.static(path.join(process.cwd(), 'public/uploads')));
+  app.use('/uploads', defaultLimiter, uploadsAuth, express.static(path.join(process.cwd(), 'public/uploads')));
 }
 
 // Rate limiting - apply to all routes except health check
