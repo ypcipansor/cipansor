@@ -126,8 +126,17 @@ export const upload = multer({
  * the check survives on disk.
  */
 export async function verifyStoredFile(file: Express.Multer.File): Promise<boolean> {
+  const resolvedUploadDir = path.resolve(uploadDir);
+  const resolvedFilePath = path.resolve(file.path);
+  const relativePath = path.relative(resolvedUploadDir, resolvedFilePath);
+
+  // Enforce that all file operations stay inside the configured upload directory.
+  if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
+    return false;
+  }
+
   const head = Buffer.alloc(16);
-  const fd = await fs.promises.open(file.path, 'r');
+  const fd = await fs.promises.open(resolvedFilePath, 'r');
   try {
     const { bytesRead } = await fd.read(head, 0, head.length, 0);
     if (matchesMagicBytes(file.mimetype, head.subarray(0, bytesRead))) {
@@ -136,7 +145,7 @@ export async function verifyStoredFile(file: Express.Multer.File): Promise<boole
   } finally {
     await fd.close();
   }
-  await fs.promises.unlink(file.path).catch(() => undefined);
+  await fs.promises.unlink(resolvedFilePath).catch(() => undefined);
   return false;
 }
 
