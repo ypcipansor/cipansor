@@ -35,6 +35,19 @@ function clearTransports() {
   (config.smtp as { host: string }).host = '';
 }
 
+/**
+ * Exact-host check for a fetch URL.
+ *
+ * Substring matching mistakes a URL that merely *mentions* the host for one
+ * that is served by it: `https://oauth2.googleapis.com.evil.example/` and
+ * `https://evil.example/?next=oauth2.googleapis.com` both contain the string
+ * but neither is the OAuth endpoint. Parsing and comparing the hostname
+ * exactly rejects both.
+ */
+function hasHostname(url: string | URL, hostname: string): boolean {
+  return new URL(typeof url === 'string' ? url : url.toString()).hostname === hostname;
+}
+
 describe('email transport selection', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -115,7 +128,7 @@ describe('Gmail API delivery', () => {
     // tuple is what the assertions below index into, and a one-parameter mock
     // gives them nothing at position 1.
     const fetchMock = vi.fn(async (url: string | URL, _init?: RequestInit) => {
-      if (String(url).includes('oauth2.googleapis.com')) {
+      if (hasHostname(url, 'oauth2.googleapis.com')) {
         return new Response(JSON.stringify({ access_token: 'tok-123', expires_in: 3600 }), {
           status: 200,
         });
@@ -132,9 +145,7 @@ describe('Gmail API delivery', () => {
 
     expect(result).toMatchObject({ kind: 'gmail_api', delivered: true, messageId: 'gmail-msg-1' });
 
-    const sendCall = fetchMock.mock.calls.find(([url]) =>
-      String(url).includes('gmail.googleapis.com'),
-    );
+    const sendCall = fetchMock.mock.calls.find(([url]) => hasHostname(url, 'gmail.googleapis.com'));
     expect(sendCall).toBeDefined();
 
     const sendInit = sendCall![1] as unknown as RequestInit;
@@ -157,8 +168,7 @@ describe('Gmail API delivery', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string | URL) => {
-        const parsedUrl = new URL(typeof url === 'string' ? url : url.toString());
-        if (parsedUrl.hostname === 'oauth2.googleapis.com') {
+        if (hasHostname(url, 'oauth2.googleapis.com')) {
           tokenRequests += 1;
           return new Response(JSON.stringify({ access_token: 'tok', expires_in: 3600 }), {
             status: 200,
@@ -179,7 +189,7 @@ describe('Gmail API delivery', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string | URL) => {
-        if (String(url).includes('oauth2.googleapis.com')) {
+        if (hasHostname(url, 'oauth2.googleapis.com')) {
           return new Response(JSON.stringify({ access_token: 'tok', expires_in: 3600 }), {
             status: 200,
           });
@@ -214,6 +224,37 @@ describe('Gmail API delivery', () => {
     await expect(
       deliverEmail({ to: 'wali@example.test', subject: 's', html: '<p>x</p>' }),
     ).rejects.toThrow(/unauthorized/i);
+  });
+});
+
+describe('hasHostname exact matching', () => {
+  // Regression coverage for code scanning alert 25: a URL that merely contains
+  // the host string is not the host. These are the shapes a substring check
+  // lets through — a suffix spoof and a query-string decoy.
+  it.each([
+    'https://oauth2.googleapis.com.evil.example/',
+    'https://evil.example/?next=oauth2.googleapis.com',
+    'https://notoauth2.googleapis.com/',
+  ])('does not treat %s as the OAuth host', (url) => {
+    expect(hasHostname(url, 'oauth2.googleapis.com')).toBe(false);
+  });
+
+  it.each([
+    'https://gmail.googleapis.com.evil.example/',
+    'https://evil.example/?next=gmail.googleapis.com',
+    'https://notgmail.googleapis.com/',
+  ])('does not treat %s as the Gmail host', (url) => {
+    expect(hasHostname(url, 'gmail.googleapis.com')).toBe(false);
+  });
+
+  it('accepts the exact hosts, as a string or a URL object', () => {
+    expect(hasHostname('https://oauth2.googleapis.com/token', 'oauth2.googleapis.com')).toBe(true);
+    expect(
+      hasHostname(
+        new URL('https://gmail.googleapis.com/gmail/v1/users/me/messages'),
+        'gmail.googleapis.com',
+      ),
+    ).toBe(true);
   });
 });
 
