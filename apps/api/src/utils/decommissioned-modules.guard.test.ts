@@ -114,8 +114,11 @@ describe('decommission purge — migrations', () => {
     for (const table of ['research_projects', 'research_milestones', 'innovation_proposals']) {
       expect(DECOMMISSION).toContain(`DROP TABLE IF EXISTS "${table}"`);
     }
-    // PR #504 owns the system-secrets removal; #505 must not touch it.
-    expect(DECOMMISSION).not.toContain('system_secrets');
+    // PR #504 owns the system-secrets removal; #505's SQL must not act on it.
+    // The header does name the table -- it has to explain why the catalog rule
+    // still matches three tables after #504 deleted the model -- so strip the
+    // comments before asserting that no statement touches it.
+    expect(DECOMMISSION.replace(/--[^\n]*/g, '')).not.toContain('system_secrets');
   });
 
   it('no longer references the removed modules from active source', () => {

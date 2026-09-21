@@ -71,8 +71,13 @@ DROP TYPE IF EXISTS "InnovationStatus";
 --        Whether a table carries such a unique index is read from
 --        `pg_index`/`pg_attribute` in the loop below (its first key column is
 --        the same column as the FK). Today that matches
---        `dashboard_metric_snapshots` and `report_templates`, plus one table
---        owned by another change that must not be named here.
+--        `dashboard_metric_snapshots`, `report_templates` and `system_secrets`.
+--        The third one has no Prisma model any more -- PR #504 removed the
+--        module -- but its TABLE is still there when this migration runs,
+--        because #504's `DROP TABLE` lives in `20260920160000_drop_system_secrets`
+--        and Prisma applies migrations in folder order. That is why the rule is
+--        read from the catalog and not from `schema.prisma`, and why the counts
+--        below say three.
 --
 --   (ii) the ten `SET NULL` children whose read paths treat `unit_id IS NULL`
 --        as "all units" / "foundation-wide" -- or, for `alumni_events`, return
@@ -150,8 +155,10 @@ DROP TYPE IF EXISTS "InnovationStatus";
 -- tables matched by the catalog rule. Those seeds are not merely decorative:
 -- the pinned seeds alone drag in 18 tables that `units` cannot reach over the
 -- followed edges (212 -> 230), and the unique-per-unit seeds add the last 3
--- (`dashboard_metric_snapshots`, `report_templates`, and one owned by PR
--- #504) to reach 233. (`users` and `user_role_assignments` are deliberately not
+-- (`dashboard_metric_snapshots`, `report_templates` and `system_secrets`, whose
+-- table outlives this migration by one folder) to reach 233. Measured against a
+-- restore of production on 2026-09-20, after #513/#514/#515: total 233,
+-- dependents 232, depths 14/89/105/25. (`users` and `user_role_assignments` are deliberately not
 -- in the deleted set; they survive detached with `unit_id = NULL` and section 4
 -- ends the PT-only sessions.)
 -- Reproduce against the catalog this block runs on -- i.e. after the higher-ed
