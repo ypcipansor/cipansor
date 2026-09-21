@@ -4,6 +4,36 @@ Status of production-readiness work and the remaining roadmap. Updated as part o
 the production-readiness / architecture-standardization effort. For the system
 overview see [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 
+## 🔴 OPEN — `docs/DEPLOYMENT.md` menyuruh operator menghapus data produksi (2026-09-21)
+
+Bagian **Database Migration → Production Migration** memuat, berurutan:
+
+```bash
+npx prisma migrate deploy
+npx prisma db seed          # ← ini yang berbahaya
+```
+
+`apps/api/prisma/seed.ts` membuka pekerjaannya dengan
+`TRUNCATE TABLE … RESTART IDENTITY CASCADE` atas hampir seluruh tabel. Seorang
+operator yang mengikuti runbook ini apa adanya akan mengosongkan basis data
+produksi. Tidak ada pagar apa pun di berkas itu yang memperingatkannya.
+
+Dua ketidakcocokan lain di berkas yang sama, lebih ringan tapi tetap menyesatkan:
+
+- **"pnpm: v10 atau lebih baru"** — repo ini dipaku ke `pnpm@9.15.9` lewat
+  `packageManager` di `package.json`, dan CI memakai `--frozen-lockfile`.
+- **"Node.js v20 LTS"** — seluruh image dan kontainer gerbang memakai `node:22`.
+- **`docker compose exec api sh` lalu `npx prisma migrate deploy`** tidak bisa
+  jalan di host ini: image produksi sengaja tidak memuat Prisma CLI maupun
+  `tsx` (lihat [[docker-image-size-traps]] soal closure `--prod`). Jalur yang
+  benar-benar dipakai adalah kontainer `node:22-alpine` sekali pakai dengan repo
+  di-mount, lalu `deploy-images.sh` — seperti pada penggelaran 2026-09-21.
+
+Yang **benar** di berkas itu dan jangan ikut dibuang saat memperbaikinya:
+bagian "Irreversible migrations — backup is a hard prerequisite" yang ditambahkan
+#505, termasuk kewajiban memverifikasi bahwa dump-nya memang bisa dipulihkan
+sebelum `migrate deploy` dijalankan.
+
 ## 🔴 OPEN — empat PR terbuka akan MELINDAS pekerjaan yang sudah tergelar (2026-09-05)
 
 Keempat PR fitur yang terbuka bercabang dari basis yang sudah jauh tertinggal,
