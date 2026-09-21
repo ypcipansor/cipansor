@@ -252,12 +252,13 @@ export async function authorizedUploadDestination(
   if (destination !== 'media-public') return destination;
   // Fast path: even the (possibly stale) snapshot must look like a publisher.
   if (!mayUploadPublicMedia(roleCode)) return 'private';
+  // No identity to re-check against means the live authorization cannot be
+  // performed; fail closed rather than fall back to the stale snapshot.
+  if (!userId) return 'private';
   // Live re-check before trusting the snapshot: only a currently active,
   // unexpired publisher assignment may write to the world-readable container.
-  if (userId) {
-    const liveRole = await livePrimaryRoleCode(userId);
-    if (!mayUploadPublicMedia(liveRole)) return 'private';
-  }
+  const liveRole = await livePrimaryRoleCode(userId);
+  if (!mayUploadPublicMedia(liveRole)) return 'private';
   return destination;
 }
 

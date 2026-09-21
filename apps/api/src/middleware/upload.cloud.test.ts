@@ -320,4 +320,15 @@ describe('handleSingleUpload public-media LIVE revocation guard (finding E)', ()
     });
     expect(passed).toBe('media-public');
   });
+
+  it('fails closed when there is no user id to re-check against', async () => {
+    // The JWT snapshot claims a publisher but carries no id, so the live
+    // authorization cannot be performed; the stale snapshot must not be trusted.
+    const passed = await runWithLive(
+      'media-public',
+      { roleCode: 'SDIT_ADMIN', unitId: 'unit-1', permissions: [] },
+      { isActive: true, userRoles: [{ role: { code: 'SDIT_ADMIN' } }] }
+    );
+    expect(passed).toBe('private');
+  });
 });
