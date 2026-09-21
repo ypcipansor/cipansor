@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
-import { claimBlobForRecord, releaseBlobClaim } from '@/utils/blob-claim';
+import { claimBlobForRecord, releaseBlobClaimById, type BlobClaimHandle } from '@/utils/blob-claim';
 import { Prisma, PAUDAspect, PAUDAchievementLevel, UserRole } from '@prisma/client';
 import type {
   ListReportsQuery,
@@ -686,8 +686,8 @@ export async function addPhoto(
   // Claim the photo before the row references it, so a concurrent discard of a
   // just-uploaded file cannot delete it between its reference probe and this
   // insert (BUG 4 / flag 9).
-  const claimed = await claimBlobForRecord(input.photoUrl, context.userId);
-  if (!claimed) {
+  const claim = await claimBlobForRecord(input.photoUrl, context.userId);
+  if (!claim) {
     throw Errors.conflict('Foto sedang diproses pihak lain; unggah ulang berkas tersebut');
   }
 
@@ -701,7 +701,7 @@ export async function addPhoto(
       },
     });
   } finally {
-    await releaseBlobClaim(input.photoUrl, context.userId).catch(() => undefined);
+    if (claim) await releaseBlobClaimById(claim).catch(() => undefined);
   }
 }
 

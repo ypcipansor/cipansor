@@ -1,6 +1,6 @@
 import { prisma } from '../../lib/prisma';
 import { Errors } from '@/middleware/error';
-import { claimBlobForRecord, releaseBlobClaim } from '@/utils/blob-claim';
+import { claimBlobForRecord, releaseBlobClaimById, type BlobClaimHandle } from '@/utils/blob-claim';
 import { PaymentStatus, PaymentMethod, PaymentVerificationStatus, Prisma, NotificationType, UserRole } from '@prisma/client';
 import * as notificationService from '../notifications/notifications.service';
 import { eventBus } from '@/lib/event-bus';
@@ -584,8 +584,8 @@ export async function submitPaymentProof(
   // Claim the upload before the row references it, so a concurrent discard of
   // a just-uploaded proof cannot delete it between its reference probe and
   // this insert (BUG 4 / flag 9). The submitter is the claim holder.
-  const claimed = await claimBlobForRecord(input.proofUrl, currentUser.sub);
-  if (!claimed) {
+  const claim = await claimBlobForRecord(input.proofUrl, currentUser.sub);
+  if (!claim) {
     throw Errors.conflict('Bukti pembayaran sedang diproses pihak lain; unggah ulang berkas');
   }
 
@@ -603,7 +603,7 @@ export async function submitPaymentProof(
       },
     });
   } finally {
-    await releaseBlobClaim(input.proofUrl, currentUser.sub).catch(() => undefined);
+    if (claim) await releaseBlobClaimById(claim).catch(() => undefined);
   }
 
   try {

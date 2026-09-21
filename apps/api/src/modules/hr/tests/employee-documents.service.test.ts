@@ -24,8 +24,8 @@ vi.mock('@/lib/prisma', () => ({
 // protocol itself is covered by its own unit + DB integration tests; here we
 // only need a claim that always succeeds.
 vi.mock('@/utils/blob-claim', () => ({
-  claimBlobForRecord: vi.fn().mockResolvedValue(true),
-  releaseBlobClaim: vi.fn().mockResolvedValue(undefined),
+  claimBlobForRecord: vi.fn().mockResolvedValue({ id: 'claim-1', operationToken: 'tok-1', kind: 'RECORD' }),
+  releaseBlobClaimById: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('@/utils/cloud-storage', () => ({

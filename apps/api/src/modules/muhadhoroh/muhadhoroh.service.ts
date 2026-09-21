@@ -2,7 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
 import { UserRole, Prisma } from '@prisma/client';
 import { seesAllUnits } from '@/utils/resolve-unit-id';
-import { claimBlobForRecord, releaseBlobClaim } from '@/utils/blob-claim';
+import { claimBlobForRecord, releaseBlobClaimById, type BlobClaimHandle } from '@/utils/blob-claim';
 import { CLASS_ENROLLMENT_STATUS } from '@cipansor/shared';
 
 // Status enum
@@ -268,9 +268,10 @@ export class MuhadhorohService {
 
     // A recorded video added by an evaluation is a new blob reference, so it
     // takes the claim protocol (BUG 4 / flag 9).
+    let claim: BlobClaimHandle | null = null;
     if (input.videoUrl) {
-      const claimed = await claimBlobForRecord(input.videoUrl, currentUser.sub);
-      if (!claimed) {
+      claim = await claimBlobForRecord(input.videoUrl, currentUser.sub);
+      if (!claim) {
         throw Errors.conflict('Rekaman video sedang diproses pihak lain; unggah ulang berkas');
       }
     }
@@ -295,7 +296,7 @@ export class MuhadhorohService {
       });
     } finally {
       if (input.videoUrl) {
-        await releaseBlobClaim(input.videoUrl, currentUser.sub).catch(() => undefined);
+        if (claim) await releaseBlobClaimById(claim).catch(() => undefined);
       }
     }
 

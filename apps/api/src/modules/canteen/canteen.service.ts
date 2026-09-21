@@ -4,7 +4,7 @@ import { JournalReferenceType } from '@cipansor/shared';
 import { getAccountOrFallback, ACCOUNT_MAPPING_KEYS } from '../finance/accounting-config.service';
 import { isPeriodOpen } from '../finance-enhancement/period.service';
 import { Errors } from '../../middleware/error';
-import { claimBlobForRecord, releaseBlobClaim } from '../../utils/blob-claim';
+import { claimBlobForRecord, releaseBlobClaimById, type BlobClaimHandle } from '../../utils/blob-claim';
 import type {
   CreateCategoryInput,
   UpdateCategoryInput,
@@ -271,9 +271,10 @@ export const itemService = {
     // Claim the item image before the row references it, so a concurrent
     // discard of a just-uploaded image cannot delete it between its reference
     // probe and this insert (BUG 4 / flag 9).
+    let claim: BlobClaimHandle | null = null;
     if (data.imageUrl) {
-      const claimed = await claimBlobForRecord(data.imageUrl, holderId);
-      if (!claimed) {
+      claim = await claimBlobForRecord(data.imageUrl, holderId);
+      if (!claim) {
         throw Errors.conflict('Foto item sedang diproses pihak lain; unggah ulang berkas tersebut');
       }
     }
@@ -301,7 +302,7 @@ export const itemService = {
       });
     } finally {
       if (data.imageUrl) {
-        await releaseBlobClaim(data.imageUrl, holderId).catch(() => undefined);
+        if (claim) await releaseBlobClaimById(claim).catch(() => undefined);
       }
     }
   },
@@ -337,9 +338,10 @@ export const itemService = {
 
     // A replaced image is a new blob reference, so it takes the same claim as
     // create (flag 9).
+    let claim: BlobClaimHandle | null = null;
     if (data.imageUrl) {
-      const claimed = await claimBlobForRecord(data.imageUrl, holderId);
-      if (!claimed) {
+      claim = await claimBlobForRecord(data.imageUrl, holderId);
+      if (!claim) {
         throw Errors.conflict('Foto item sedang diproses pihak lain; unggah ulang berkas tersebut');
       }
     }
@@ -353,7 +355,7 @@ export const itemService = {
       });
     } finally {
       if (data.imageUrl) {
-        await releaseBlobClaim(data.imageUrl, holderId).catch(() => undefined);
+        if (claim) await releaseBlobClaimById(claim).catch(() => undefined);
       }
     }
   },

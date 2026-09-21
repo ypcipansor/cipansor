@@ -6,7 +6,9 @@ import {
   type BlobSASSignatureValues,
 } from '@azure/storage-blob';
 import { logger } from '@/lib/logger';
-import { isBlobStillReferenced } from '@/utils/blob-owner';
+import { isBlobStillReferenced, blobReferenceCandidates } from '@/utils/blob-owner';
+import { discardUnderClaim } from '@/utils/blob-discard';
+import { resolveLocalUploadPath, removeLocalUpload } from '@/utils/local-upload-store';
 import {
   UPLOAD_DESTINATIONS as SHARED_UPLOAD_DESTINATIONS,
   type UploadDestination as SharedUploadDestination,
@@ -243,14 +245,33 @@ export async function generateSasUrl(
 }
 
 /**
+ * True when an Azure storage error means "the blob is not there".
+ *
+ * Delete on an absent blob must be an idempotent SUCCESS, or reconciliation
+ * retries it forever. The check uses the stable `code` (`BlobNotFound`) and
+ * `statusCode` (404) the SDK exposes — never a free-text message match, which
+ * would also catch a 404 that is not about the blob. 401/403/429/5xx are NOT
+ * not-found: they are auth, throttling or server errors and must propagate.
+ */
+function isBlobNotFoundError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const e = error as { code?: unknown; statusCode?: unknown; details?: { errorCode?: unknown } };
+  if (e.code === 'BlobNotFound' || e.details?.errorCode === 'BlobNotFound') return true;
+  return e.statusCode === 404;
+}
+
+/**
  * Delete a blob from Cloud Storage.
  *
  * Wired into record-delete paths so removing a record does not leave its
  * private document (HR records, letters, student docs) stored forever. When
  * Azure is not configured there is no remote blob to remove; the function
  * resolves successfully (the local staging file, if any, is the caller's
- * concern). Throws when deletion fails so the caller can decide whether to
- * roll back.
+ * concern).
+ *
+ * A 404 / `BlobNotFound` counts as success: the blob is already gone, which is
+ * exactly what the caller wanted, and treating it as an error made every later
+ * reconciliation attempt fail too. Auth/throttling/server errors still throw.
  */
 export async function deleteFromCloudStorage(
   containerName: string,
@@ -268,6 +289,14 @@ export async function deleteFromCloudStorage(
     await containerClient.deleteBlob(blobName, { deleteSnapshots: 'include' });
     logger.info('Blob deleted from Azure Blob Storage', { container: containerName, blobName });
   } catch (error) {
+    if (isBlobNotFoundError(error)) {
+      // Idempotent: the blob is already absent, so the delete succeeded.
+      logger.info('Blob already absent from Azure Blob Storage', {
+        container: containerName,
+        blobName,
+      });
+      return;
+    }
     logger.error('Azure Blob Storage delete failed', { container: containerName, blobName, error });
     throw new Error(
       `Gagal menghapus berkas dari Azure Blob Storage: ${error instanceof Error ? error.message : String(error)}`
@@ -318,15 +347,18 @@ export async function getBlobUploaderId(
  * must know whether the blob was actually removed (e.g. rollback), call
  * {@link deleteFromCloudStorage} directly and handle its rejection.
  *
- * **Cross-record owner probe.** The blob name is normally a
- * `crypto.randomUUID()` minted per physical upload (see the multer disk
- * storage in `middleware/upload.ts`), so the URL usually identifies exactly
- * one upload. That is not guaranteed across all data — a copy/clone path or
- * imported legacy rows can point a second record at the same URL, and the
- * deleting record may itself be one that was cloned forward. So this checks
- * {@link isBlobStillReferenced} first and refuses to delete while any record
- * still references the blob; only a genuinely orphaned blob is reclaimed.
- * Covered by the shared-URL test in `cloud-storage.test.ts`.
+ * **Race (BUG 9).** The probe-then-delete is not atomic, so a reference created
+ * between the two would be destroyed. Cleanup therefore runs the SAME claim
+ * protocol as `discardOrphanBlob` (`discardUnderClaim`): claim → final probe
+ * under the claim → tombstone → physical delete. Cleanup here has no actor
+ * (the record is already gone), so it identifies itself with a constant
+ * operation holder — never a user id.
+ *
+ * **Local files (BUG 8).** A `/uploads/...` URL used to make `parseBlobUrl`
+ * return null and the whole function return false, so the file and its sidecar
+ * leaked forever on a local-only deployment. Local references are now resolved
+ * through the same hardened name/realpath/containment check the discard path
+ * uses, claimed, re-probed, then unlinked.
  */
 export async function cleanupBlobBestEffort(fileUrl: string | null | undefined): Promise<boolean> {
   if (!fileUrl) return false;
@@ -338,12 +370,33 @@ export async function cleanupBlobBestEffort(fileUrl: string | null | undefined):
   // thrown here is logged and reported as "not cleaned", never propagated.
   try {
     const parsed = parseBlobUrl(fileUrl);
-    if (!parsed) return false;
-    if (await isBlobStillReferenced(fileUrl)) {
-      return false;
+
+    if (!parsed) {
+      // Not a cloud blob. Distinguish a valid local upload from an
+      // external/malformed URL. `resolveLocalUploadPath` returns null for the
+      // latter (and for a missing file), so a foreign URL is left alone while a
+      // real local file is reclaimed.
+      const resolved = await resolveLocalUploadPath(fileUrl);
+      if (!resolved) return false;
+
+      const refs = referenceCandidates(fileUrl);
+      const outcome = await discardUnderClaim(
+        fileUrl,
+        CLEANUP_CLAIM_HOLDER,
+        () => isStillReferencedByRefs(refs),
+        () => removeLocalUpload(resolved)
+      );
+      // "referenced" / "busy" / "claim-lost" all mean we did not delete.
+      return outcome === 'deleted';
     }
-    await deleteFromCloudStorage(parsed.containerName, parsed.blobName);
-    return true;
+
+    const outcome = await discardUnderClaim(
+      fileUrl,
+      CLEANUP_CLAIM_HOLDER,
+      () => isStillReferencedByRefs(referenceCandidates(fileUrl)),
+      () => deleteFromCloudStorage(parsed.containerName, parsed.blobName)
+    );
+    return outcome === 'deleted';
   } catch (error) {
     logger.error('Best-effort blob cleanup failed; record already deleted', {
       fileUrl,
@@ -351,6 +404,27 @@ export async function cleanupBlobBestEffort(fileUrl: string | null | undefined):
     });
     return false;
   }
+}
+
+/**
+ * A stable holder id for record-delete cleanup. The record is already gone, so
+ * there is no acting user; a constant keeps the audit trail honest without
+ * pretending a person did it. The claim's identity is its operation token, not
+ * this string.
+ */
+const CLEANUP_CLAIM_HOLDER = 'system:cleanup';
+
+/** Every stored spelling of `url` a record could hold (local provider only). */
+function referenceCandidates(url: string): string[] {
+  return Array.from(new Set([...blobReferenceCandidates(url)]));
+}
+
+/** True when any spelling in `refs` is still referenced by a live record. */
+async function isStillReferencedByRefs(refs: readonly string[]): Promise<boolean> {
+  for (const ref of refs) {
+    if (await isBlobStillReferenced(ref)) return true;
+  }
+  return false;
 }
 
 /**

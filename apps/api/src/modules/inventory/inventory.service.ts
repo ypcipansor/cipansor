@@ -12,7 +12,7 @@ import { config } from '../../config';
 import { createNotification } from '../notifications/notifications.service';
 import { createPurchaseJournal } from './asset-accounting.service';
 import { Errors } from '../../middleware/error';
-import { claimBlobForRecord, releaseBlobClaim } from '../../utils/blob-claim';
+import { claimBlobForRecord, releaseBlobClaimById, type BlobClaimHandle } from '../../utils/blob-claim';
 import type {
   CreateInventoryCategoryInput,
   UpdateInventoryCategoryInput,
@@ -170,9 +170,10 @@ export async function createItem(data: CreateInventoryItemInput, userId?: string
   // Claim the asset photo before the row references it, so a concurrent discard
   // of a just-uploaded photo cannot delete it between its reference probe and
   // this insert (BUG 4 / flag 9).
+  let claim: BlobClaimHandle | null = null;
   if (data.photoUrl) {
-    const claimed = await claimBlobForRecord(data.photoUrl, holderId);
-    if (!claimed) {
+    claim = await claimBlobForRecord(data.photoUrl, holderId);
+    if (!claim) {
       throw Errors.conflict('Foto aset sedang diproses pihak lain; unggah ulang berkas tersebut');
     }
   }
@@ -217,7 +218,7 @@ export async function createItem(data: CreateInventoryItemInput, userId?: string
     });
   } finally {
     if (data.photoUrl) {
-      await releaseBlobClaim(data.photoUrl, holderId).catch(() => undefined);
+      if (claim) await releaseBlobClaimById(claim).catch(() => undefined);
     }
   }
 }
@@ -229,9 +230,10 @@ export async function updateItem(
 ) {
   const holderId = userId ?? 'inventory';
   // A photo added or replaced by an update is a new blob reference (flag 9).
+  let claim: BlobClaimHandle | null = null;
   if (data.photoUrl) {
-    const claimed = await claimBlobForRecord(data.photoUrl, holderId);
-    if (!claimed) {
+    claim = await claimBlobForRecord(data.photoUrl, holderId);
+    if (!claim) {
       throw Errors.conflict('Foto aset sedang diproses pihak lain; unggah ulang berkas tersebut');
     }
   }
@@ -247,7 +249,7 @@ export async function updateItem(
     });
   } finally {
     if (data.photoUrl) {
-      await releaseBlobClaim(data.photoUrl, holderId).catch(() => undefined);
+      if (claim) await releaseBlobClaimById(claim).catch(() => undefined);
     }
   }
 }
@@ -423,7 +425,7 @@ export async function updateMaintenance(id: string, data: UpdateMaintenanceInput
   });
 }
 
-export async function updateMaintenanceStatus(id: string, data: UpdateMaintenanceStatusInput) {
+export async function updateMaintenanceStatus(id: string, data: UpdateMaintenanceStatusInput, actorId?: string) {
   const maintenance = await prisma.assetMaintenance.findUnique({ where: { id } });
   if (!maintenance) throw new Error('Maintenance record not found');
 
@@ -439,28 +441,43 @@ export async function updateMaintenanceStatus(id: string, data: UpdateMaintenanc
     invoiceUrl: data.invoiceUrl,
   };
 
-  if (data.status === AssetMaintenanceStatus.COMPLETED) {
-    await prisma.asset.update({
-      where: { id: maintenance.assetId },
-      data: { status: AssetStatus.ACTIVE },
-    });
-    if (!updateData.completionDate) {
-      updateData.completionDate = new Date();
-    }
-  } else if (data.status === AssetMaintenanceStatus.IN_PROGRESS) {
-    await prisma.asset.update({
-      where: { id: maintenance.assetId },
-      data: { status: AssetStatus.MAINTENANCE },
-    });
+  // Claim the invoice blob before the row references it, so a concurrent
+  // discard cannot delete it between its reference probe and this update
+  // (BUG 4 / flag 9).
+  const invoiceClaim =
+    data.invoiceUrl !== undefined
+      ? await claimBlobForRecord(data.invoiceUrl, actorId ?? 'inventory-maintenance')
+      : null;
+  if (data.invoiceUrl !== undefined && !invoiceClaim) {
+    throw Errors.conflict('Faktur pemeliharaan sedang diproses pihak lain; unggah ulang berkas');
   }
 
-  return prisma.assetMaintenance.update({
-    where: { id },
-    data: updateData,
-    include: {
-      asset: true,
-    },
-  });
+  try {
+    if (data.status === AssetMaintenanceStatus.COMPLETED) {
+      await prisma.asset.update({
+        where: { id: maintenance.assetId },
+        data: { status: AssetStatus.ACTIVE },
+      });
+      if (!updateData.completionDate) {
+        updateData.completionDate = new Date();
+      }
+    } else if (data.status === AssetMaintenanceStatus.IN_PROGRESS) {
+      await prisma.asset.update({
+        where: { id: maintenance.assetId },
+        data: { status: AssetStatus.MAINTENANCE },
+      });
+    }
+
+    return await prisma.assetMaintenance.update({
+      where: { id },
+      data: updateData,
+      include: {
+        asset: true,
+      },
+    });
+  } finally {
+    if (invoiceClaim) await releaseBlobClaimById(invoiceClaim).catch(() => undefined);
+  }
 }
 
 export async function completeMaintenance(id: string) {

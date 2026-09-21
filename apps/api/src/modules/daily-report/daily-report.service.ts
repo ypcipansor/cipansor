@@ -3,7 +3,7 @@ import { Prisma, DailyMood, MealConsumption, UnitType, TahfidzActivityType } fro
 import { whatsAppService } from '../notifications';
 import { logger } from '@/lib/logger';
 import { cleanupBlobsBestEffort } from '@/utils/cloud-storage';
-import { claimBlobsForRecord, releaseBlobClaims } from '@/utils/blob-claim';
+import { claimBlobsForRecord, releaseBlobClaims, type BlobClaimHandle } from '@/utils/blob-claim';
 import { Errors } from '@/middleware/error';
 import type {
   ListDailyReportsQuery,
@@ -212,8 +212,8 @@ export const dailyReportService = {
     // two writers; the committed record is the durable protection after that.
     const photoUrls = data.photoUrls ?? [];
     const report = await prisma.$transaction(async (tx) => {
-      const claimed = await claimBlobsForRecord(photoUrls, userId, tx);
-      if (!claimed) {
+      const claims = await claimBlobsForRecord(photoUrls, userId, tx);
+      if (!claims) {
         throw Errors.conflict(
           'Foto laporan sedang diproses pihak lain; unggah ulang berkas tersebut'
         );
@@ -276,7 +276,7 @@ export const dailyReportService = {
 
       // The report and its photo rows are committed in this transaction; the
       // record itself is now the durable claim, so release the transient one.
-      await releaseBlobClaims(photoUrls, userId, tx);
+      await releaseBlobClaims(claims, tx);
       return created;
     });
 
@@ -560,12 +560,13 @@ export const dailyReportService = {
       let retiredPhotoUrls: string[] = [];
 
       // Handle photo updates if provided
+      let claims: BlobClaimHandle[] | null = null;
       if (data.photoUrls !== undefined) {
         // Claim every incoming photo URL before any row references it, so a
         // concurrent discard of a just-uploaded photo cannot delete the blob
         // after its reference probe but before our insert (BUG 4 / flag 9).
-        const claimed = await claimBlobsForRecord(data.photoUrls, userId, tx);
-        if (!claimed) {
+        claims = await claimBlobsForRecord(data.photoUrls, userId, tx);
+        if (!claims) {
           throw Errors.conflict(
             'Foto laporan sedang diproses pihak lain; unggah ulang berkas tersebut'
           );
@@ -622,8 +623,8 @@ export const dailyReportService = {
 
       // The new rows are committed in this transaction; the record now names
       // them durably, so release the transient claims.
-      if (data.photoUrls !== undefined) {
-        await releaseBlobClaims(data.photoUrls, userId, tx);
+      if (claims) {
+        await releaseBlobClaims(claims, tx);
       }
 
       return {

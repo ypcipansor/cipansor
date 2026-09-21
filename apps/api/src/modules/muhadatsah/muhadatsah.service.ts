@@ -2,7 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
 import { UserRole, Prisma } from '@prisma/client';
 import { seesAllUnits } from '@/utils/resolve-unit-id';
-import { claimBlobForRecord, releaseBlobClaim } from '@/utils/blob-claim';
+import { claimBlobForRecord, releaseBlobClaimById, type BlobClaimHandle } from '@/utils/blob-claim';
 import { CLASS_ENROLLMENT_STATUS } from '@cipansor/shared';
 
 // Status enum
@@ -322,9 +322,10 @@ export class MuhadatsahService {
 
     // A recording added by an evaluation is a new blob reference, so it takes
     // the claim protocol (BUG 4 / flag 9).
+    let claim: BlobClaimHandle | null = null;
     if (input.recordingUrl) {
-      const claimed = await claimBlobForRecord(input.recordingUrl, currentUser.sub);
-      if (!claimed) {
+      claim = await claimBlobForRecord(input.recordingUrl, currentUser.sub);
+      if (!claim) {
         throw Errors.conflict('Rekaman audio sedang diproses pihak lain; unggah ulang berkas');
       }
     }
@@ -350,7 +351,7 @@ export class MuhadatsahService {
       });
     } finally {
       if (input.recordingUrl) {
-        await releaseBlobClaim(input.recordingUrl, currentUser.sub).catch(() => undefined);
+        if (claim) await releaseBlobClaimById(claim).catch(() => undefined);
       }
     }
 

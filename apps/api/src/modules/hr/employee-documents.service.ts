@@ -1,7 +1,7 @@
 import { prisma } from '../../lib/prisma';
 import { EmployeeDocumentType } from '@prisma/client';
 import { cleanupBlobBestEffort } from '../../utils/cloud-storage';
-import { claimBlobForRecord, releaseBlobClaim } from '../../utils/blob-claim';
+import { claimBlobForRecord, releaseBlobClaimById } from '../../utils/blob-claim';
 import { isFoundationScopedRole } from '../../utils/resolve-unit-id';
 import { mayAdministerEmployeeDocuments } from '@cipansor/shared';
 import { Errors } from '../../middleware/error';
@@ -114,8 +114,8 @@ export const employeeDocumentService = {
     // re-probes and finds the record. The claim is released in the same
     // transaction because the committed record is now the durable protection.
     return prisma.$transaction(async (tx) => {
-      const claimed = await claimBlobForRecord(data.fileUrl, actor?.id ?? data.userId, tx);
-      if (!claimed) {
+      const claim = await claimBlobForRecord(data.fileUrl, actor?.id ?? data.userId, tx);
+      if (!claim) {
         throw Errors.conflict(
           'Berkas lampiran sedang diproses pihak lain; unggah ulang berkas tersebut'
         );
@@ -130,7 +130,7 @@ export const employeeDocumentService = {
           notes: data.notes,
         },
       });
-      await releaseBlobClaim(data.fileUrl, actor?.id ?? data.userId, tx);
+      await releaseBlobClaimById(claim, tx);
       return document;
     });
   },

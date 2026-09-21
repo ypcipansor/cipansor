@@ -200,6 +200,31 @@ export async function verifyStoredFile(file: Express.Multer.File): Promise<boole
 export type DestinationResolver = (req: Request, res: Response) => string | undefined;
 
 /**
+ * Resolve a user's CURRENT primary active role, or null when the account is
+ * disabled/deleted or has no live assignment.
+ *
+ * Used only where authorization must be live rather than JWT-snapshot: the
+ * token's `roleCode` is a snapshot that stays valid until it expires, so a role
+ * revoked minutes ago still authorises until then.
+ */
+async function livePrimaryRoleCode(userId: string): Promise<string | null> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      isActive: true,
+      userRoles: {
+        where: activeUserRoleWhere(),
+        select: { role: { select: { code: true } } },
+        orderBy: { isPrimary: 'desc' },
+        take: 1,
+      },
+    },
+  });
+  if (!user || !user.isActive) return null;
+  return user.userRoles[0]?.role.code ?? null;
+}
+
+/**
  * Authorise a requested upload destination against the actor's role.
  *
  * `media-public` is a PUBLISHING act: the container is world-readable
@@ -207,20 +232,31 @@ export type DestinationResolver = (req: Request, res: Response) => string | unde
  * a KTP scan or an internal memo to the open internet. Only a role that authors
  * public content (`mayUploadPublicMedia`) may keep that purpose.
  *
+ * **Revocation (SECURITY CRITICAL — finding E).** `roleCode` from the JWT is a
+ * snapshot, so a user whose publisher role was revoked could keep writing to
+ * the public container until the token expired. For `media-public` the role is
+ * therefore re-read LIVE from the database: a disabled/deleted user, an expired
+ * role assignment, or a role that is no longer a publisher all collapse the
+ * purpose to private. The JWT is used only as the initial identity.
+ *
  * Every other caller is downgraded to the private default rather than refused:
  * the destination is a purpose, not a container, so an unprivileged upload
  * still succeeds — it just cannot land anywhere world-readable. An unrecognised
  * or absent purpose also collapses to private, the only safe direction.
- *
- * The container choice is therefore made server-side from the actor's role, and
- * a query string alone can never select the public container.
  */
-export function authorizedUploadDestination(
+export async function authorizedUploadDestination(
   destination: string | undefined,
-  roleCode: string | null | undefined
-): string | undefined {
-  if (destination === 'media-public' && !mayUploadPublicMedia(roleCode)) {
-    return 'private';
+  roleCode: string | null | undefined,
+  userId?: string | null
+): Promise<string | undefined> {
+  if (destination !== 'media-public') return destination;
+  // Fast path: even the (possibly stale) snapshot must look like a publisher.
+  if (!mayUploadPublicMedia(roleCode)) return 'private';
+  // Live re-check before trusting the snapshot: only a currently active,
+  // unexpired publisher assignment may write to the world-readable container.
+  if (userId) {
+    const liveRole = await livePrimaryRoleCode(userId);
+    if (!mayUploadPublicMedia(liveRole)) return 'private';
   }
   return destination;
 }
@@ -278,12 +314,13 @@ export const handleSingleUpload = (
           // authenticated-but-unauthorised caller can never write to the
           // world-readable container.
           const containerName = containerForDestination(
-            authorizedUploadDestination(
+            await authorizedUploadDestination(
               // The module supplies the validated destination; the raw query is
               // the fallback for a mount without `validateQuery`.
               resolveDestination?.(req, res) ??
                 (typeof req.query?.destination === 'string' ? req.query.destination : undefined),
-              req.user?.roleCode
+              req.user?.roleCode,
+              req.user?.id
             )
           );
           const { uploadToCloudStorage } = await import('@/utils/cloud-storage');

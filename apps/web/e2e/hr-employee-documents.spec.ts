@@ -155,12 +155,10 @@ test.describe("HR employee directory + documents", () => {
 
   test("a discard never removes a blob a record references (real stack)", async () => {
     // The race's observable contract: once a record points at the blob, the
-    // discard endpoint must not destroy it and the document must survive. On a
-    // local-only stack (no Azure configured) uploads are `/uploads` paths and
-    // discard is a documented no-op, so this asserts the surviving record
-    // rather than a 409 — the Azure-specific delete path (the delayed re-probe
-    // and its refusal) is covered by the API unit tests, which CI runs without
-    // an Azure account.
+    // discard endpoint must not destroy it and the document must survive. The
+    // discard now REFUSES with a 409 (a referenced blob is not an orphan), for
+    // the local and Azure providers alike — the old spec expected a silent 200
+    // from the pre-hardening local no-op.
     const list = await apiRequest<{ data: Array<{ id: string; userId: string }> }>(
       session,
       "GET",
@@ -179,7 +177,7 @@ test.describe("HR employee directory + documents", () => {
     );
 
     const discard = await discardUpload(session, fileUrl);
-    expect(discard.status).toBe(200);
+    expect(discard.status).toBe(409);
 
     // The document still resolves: the discard did not remove a live record.
     const documents = await apiRequest<{
@@ -190,7 +188,7 @@ test.describe("HR employee directory + documents", () => {
 
   test("discards an upload whose record create failed (no record references it)", async () => {
     // The normal discard path: a create that definitively failed leaves an
-    // orphan, and the discard is accepted (locally a no-op for `/uploads`).
+    // orphan, and the discard is accepted for the local provider too.
     const fileUrl = await uploadPdf(session, "e2e orphan");
 
     const discard = await discardUpload(session, fileUrl);

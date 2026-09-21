@@ -134,6 +134,15 @@ describe('handleSingleUpload public-media role guard (BUG 1)', () => {
     } as unknown as Response;
     const next = vi.fn() as unknown as NextFunction;
 
+    // The live publisher re-check (finding E) reads the primary active role.
+    // These tests model an unchanged database: the live role equals the JWT's.
+    const prismaMod = await import('@/lib/prisma');
+    (prismaMod.prisma as any).user = {
+      findUnique: vi
+        .fn()
+        .mockResolvedValue({ isActive: true, userRoles: [{ role: { code: (user as any).roleCode } }] }),
+    };
+
     const { containerForDestination } = await import('@/utils/cloud-storage');
     (containerForDestination as unknown as ReturnType<typeof vi.fn>).mockClear();
 
@@ -198,5 +207,117 @@ describe('handleSingleUpload public-media role guard (BUG 1)', () => {
       permissions: [],
     });
     expect(passed).toBe('private');
+  });
+});
+
+/**
+ * SECURITY CRITICAL (finding E): a revoked publisher must not still be able to
+ * write to the world-readable container just because their JWT still carries
+ * the old `roleCode`. The guard re-reads the primary active role LIVE, so a
+ * disabled user, an expired assignment or a downgraded role collapses the
+ * purpose to private before the upload happens.
+ */
+describe('handleSingleUpload public-media LIVE revocation guard (finding E)', () => {
+  async function runWithLive(
+    destination: string,
+    user: unknown,
+    liveRow: unknown
+  ): Promise<string | undefined> {
+    const p = tmpFile(png);
+    const req = {
+      body: {},
+      query: { destination },
+      user,
+      file: {
+        filename: 'x.png',
+        originalname: 'x.png',
+        mimetype: 'image/png',
+        size: png.length,
+        path: p,
+      },
+      __fileToAssign: {
+        filename: 'x.png',
+        originalname: 'x.png',
+        mimetype: 'image/png',
+        size: png.length,
+        path: p,
+      },
+    } as unknown as Request;
+    const res = {
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn(),
+    } as unknown as Response;
+    const next = vi.fn() as unknown as NextFunction;
+
+    const prismaLive = await import('@/lib/prisma');
+    (prismaLive.prisma as any).user = {
+      findUnique: vi.fn().mockResolvedValue(liveRow),
+    };
+
+    const { containerForDestination } = await import('@/utils/cloud-storage');
+    (containerForDestination as unknown as ReturnType<typeof vi.fn>).mockClear();
+
+    handleSingleUpload('file')(req, res, next);
+    await vi.waitFor(() => expect(next).toHaveBeenCalled());
+
+    const [passedDestination] = (containerForDestination as unknown as ReturnType<typeof vi.fn>)
+      .mock.calls[0] as [string | undefined];
+    return passedDestination;
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const PUBLISHER_JWT = {
+    id: 'u-9',
+    roleCode: 'SDIT_ADMIN', // stale snapshot: this is what the JWT claims
+    unitId: 'unit-1',
+    permissions: [],
+  };
+
+  it('downgrades when the live role was REVOKED (no active assignment)', async () => {
+    const passed = await runWithLive('media-public', PUBLISHER_JWT, {
+      isActive: true,
+      userRoles: [],
+    });
+    expect(passed).toBe('private');
+  });
+
+  it('downgrades when the live role is no longer a publisher (downgraded)', async () => {
+    const passed = await runWithLive('media-public', PUBLISHER_JWT, {
+      isActive: true,
+      userRoles: [{ role: { code: 'SDIT_GURU' } }],
+    });
+    expect(passed).toBe('private');
+  });
+
+  it('downgrades when the account is disabled', async () => {
+    const passed = await runWithLive('media-public', PUBLISHER_JWT, {
+      isActive: false,
+      userRoles: [{ role: { code: 'SDIT_ADMIN' } }],
+    });
+    expect(passed).toBe('private');
+  });
+
+  it('downgrades when the account is deleted (no row)', async () => {
+    const passed = await runWithLive('media-public', PUBLISHER_JWT, null);
+    expect(passed).toBe('private');
+  });
+
+  it('allows a CURRENTLY-active publisher to use media-public', async () => {
+    const passed = await runWithLive('media-public', PUBLISHER_JWT, {
+      isActive: true,
+      userRoles: [{ role: { code: 'SDIT_ADMIN' } }],
+    });
+    expect(passed).toBe('media-public');
+  });
+
+  it('allows a cross-unit publisher (role has no unit restriction)', async () => {
+    const passed = await runWithLive('media-public', PUBLISHER_JWT, {
+      isActive: true,
+      userRoles: [{ role: { code: 'SDIT_TATA_USAHA' } }],
+    });
+    expect(passed).toBe('media-public');
   });
 });

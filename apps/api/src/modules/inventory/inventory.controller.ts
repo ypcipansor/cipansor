@@ -329,7 +329,7 @@ export async function updateMaintenance(req: Request, res: Response, next: NextF
 export async function updateMaintenanceStatus(req: Request, res: Response, next: NextFunction) {
   try {
     const data = updateMaintenanceStatusSchema.parse(req.body);
-    const maintenance = await service.updateMaintenanceStatus(req.params.id, data);
+    const maintenance = await service.updateMaintenanceStatus(req.params.id, data, req.user?.id);
     res.json({ success: true, data: maintenance });
   } catch (error) {
     next(error);

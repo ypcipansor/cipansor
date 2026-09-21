@@ -5,7 +5,7 @@ import {
   QualityStandardType,
 } from '@cipansor/shared';
 import { ApiError, ErrorCode, Errors } from '@/middleware/error';
-import { claimBlobForRecord, releaseBlobClaim } from '@/utils/blob-claim';
+import { claimBlobForRecord, releaseBlobClaimById, type BlobClaimHandle } from '@/utils/blob-claim';
 
 // Define inputs locally if not in shared
 interface CreateAuditInput {
@@ -72,8 +72,8 @@ export const qualityService = {
     // Claim the evidence blob before the row references it, so a concurrent
     // discard of a just-uploaded file cannot delete it between its reference
     // probe and this insert (BUG 4 / flag 9).
-    const claimed = await claimBlobForRecord(data.fileUrl, userId);
-    if (!claimed) {
+    const claim = await claimBlobForRecord(data.fileUrl, userId);
+    if (!claim) {
       throw Errors.conflict(
         'Berkas bukti sedang diproses pihak lain; unggah ulang berkas tersebut'
       );
@@ -92,7 +92,7 @@ export const qualityService = {
       });
     } finally {
       // The row (or the failure) is now durable; the reference is the claim.
-      await releaseBlobClaim(data.fileUrl, userId).catch(() => undefined);
+      if (claim) await releaseBlobClaimById(claim).catch(() => undefined);
     }
   },
 

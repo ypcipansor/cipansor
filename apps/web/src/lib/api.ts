@@ -34,6 +34,7 @@ import {
   UploadFileResult,
   UploadDestination,
 } from "@cipansor/shared";
+import { clearSessionCookies } from "@/lib/session-cookie";
 
 // 2FA Types
 export interface TwoFactorGenerateResponse {
@@ -167,7 +168,8 @@ function refreshAccessToken(): Promise<string> {
     const { accessToken, refreshToken: newRefreshToken } = response.data.data;
     localStorage.setItem("accessToken", accessToken);
     localStorage.setItem("refreshToken", newRefreshToken);
-    document.cookie = `accessToken=${accessToken}; path=/; max-age=86400; samesite=lax`;
+    // The rotated bearer token must NOT be mirrored into a JS-readable cookie
+    // (finding F); middleware routes off `auth-storage`, never the raw token.
     return accessToken as string;
   })().finally(() => {
     refreshInFlight = null;
@@ -234,8 +236,7 @@ api.interceptors.response.use(
 
         localStorage.removeItem("accessToken");
         localStorage.removeItem("refreshToken");
-        document.cookie = "accessToken=; path=/; max-age=0";
-        document.cookie = "auth-storage=; path=/; max-age=0";
+        clearSessionCookies();
         if (
           typeof window !== "undefined" &&
           !window.location.pathname.includes("/login")

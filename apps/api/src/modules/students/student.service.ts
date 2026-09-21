@@ -5,7 +5,7 @@ import { linkGuardian, type GuardianClient } from '@/utils/link-guardian';
 import { prisma } from '@/lib/prisma';
 import { hashPassword } from '@/lib/password';
 import { Errors } from '@/middleware/error';
-import { claimBlobForRecord, releaseBlobClaim } from '@/utils/blob-claim';
+import { claimBlobForRecord, releaseBlobClaimById, type BlobClaimHandle } from '@/utils/blob-claim';
 import { assertStudentIdentifiersAvailable } from './student-identifiers';
 import { assignStudentNis, findStudentIdByNisInUnit } from '@/utils/student-nis';
 import { UserRole, Gender, Prisma } from '@prisma/client';
@@ -556,9 +556,10 @@ export class StudentService {
     // claim protocol (BUG 4 / flag 9). The holder is the acting user, falling
     // back to the student's own login when no actor was supplied.
     const holderId = actorId ?? student.userId;
+    let claim: BlobClaimHandle | null = null;
     if (input.photoUrl) {
-      const claimed = await claimBlobForRecord(input.photoUrl, holderId);
-      if (!claimed) {
+      claim = await claimBlobForRecord(input.photoUrl, holderId);
+      if (!claim) {
         throw Errors.conflict('Foto santri sedang diproses pihak lain; unggah ulang berkas');
       }
     }
@@ -628,7 +629,7 @@ export class StudentService {
       });
     } finally {
       if (input.photoUrl) {
-        await releaseBlobClaim(input.photoUrl, holderId).catch(() => undefined);
+        if (claim) await releaseBlobClaimById(claim).catch(() => undefined);
       }
     }
 

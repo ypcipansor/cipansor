@@ -3,10 +3,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // evaluate() claims a new video blob before writing the reference (BUG 4 /
 // flag 9). The claim protocol itself is covered by `blob-claim.integration`
 // (real Postgres); this drives the service's control flow around it.
-const claimBlobForRecord = vi.hoisted(() => vi.fn().mockResolvedValue(true));
-const releaseBlobClaim = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const claimBlobForRecord = vi.hoisted(() => vi.fn().mockResolvedValue({ id: 'claim-1', operationToken: 'tok-1', kind: 'RECORD' }));
+const releaseBlobClaimById = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const CLAIM = { id: 'claim-1', operationToken: 'tok-1', kind: 'RECORD' };
 
-vi.mock('@/utils/blob-claim', () => ({ claimBlobForRecord, releaseBlobClaim }));
+vi.mock('@/utils/blob-claim', () => ({ claimBlobForRecord, releaseBlobClaimById }));
 
 const mockPrisma = vi.hoisted(() => ({
   muhadhoroh: { findUnique: vi.fn(), update: vi.fn() },
@@ -36,8 +37,8 @@ const scores = { contentScore: 90, deliveryScore: 80, languageScore: 70 };
 describe('MuhadhorohService.evaluate — video blob claim (BUG 4)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    claimBlobForRecord.mockResolvedValue(true);
-    releaseBlobClaim.mockResolvedValue(undefined);
+    claimBlobForRecord.mockResolvedValue({ id: 'claim-1', operationToken: 'tok-1', kind: 'RECORD' });
+    releaseBlobClaimById.mockResolvedValue(undefined);
     mockPrisma.teacher.findFirst.mockResolvedValue({ id: 'teacher-1' });
   });
 
@@ -48,7 +49,7 @@ describe('MuhadhorohService.evaluate — video blob claim (BUG 4)', () => {
     await muhadhorohService.evaluate('mh-1', { ...scores, videoUrl: 'https://store/v.mp4' }, user);
 
     expect(claimBlobForRecord).toHaveBeenCalledWith('https://store/v.mp4', 'user-1');
-    expect(releaseBlobClaim).toHaveBeenCalledWith('https://store/v.mp4', 'user-1');
+    expect(releaseBlobClaimById).toHaveBeenCalledWith(CLAIM);
     expect(claimBlobForRecord.mock.invocationCallOrder[0]).toBeLessThan(
       mockPrisma.muhadhoroh.update.mock.invocationCallOrder[0]
     );
@@ -56,14 +57,14 @@ describe('MuhadhorohService.evaluate — video blob claim (BUG 4)', () => {
 
   it('rejects when a discard holds the video, without writing the record', async () => {
     mockPrisma.muhadhoroh.findUnique.mockResolvedValue(scheduledRecord());
-    claimBlobForRecord.mockResolvedValue(false);
+    claimBlobForRecord.mockResolvedValue(null);
 
     await expect(
       muhadhorohService.evaluate('mh-1', { ...scores, videoUrl: 'https://store/v.mp4' }, user)
     ).rejects.toThrow(/sedang diproses/);
 
     expect(mockPrisma.muhadhoroh.update).not.toHaveBeenCalled();
-    expect(releaseBlobClaim).not.toHaveBeenCalled();
+    expect(releaseBlobClaimById).not.toHaveBeenCalled();
   });
 
   it('does not claim when no video is supplied', async () => {
@@ -73,7 +74,7 @@ describe('MuhadhorohService.evaluate — video blob claim (BUG 4)', () => {
     await muhadhorohService.evaluate('mh-1', { ...scores }, user);
 
     expect(claimBlobForRecord).not.toHaveBeenCalled();
-    expect(releaseBlobClaim).not.toHaveBeenCalled();
+    expect(releaseBlobClaimById).not.toHaveBeenCalled();
   });
 
   it('releases the claim even when the update throws', async () => {
@@ -84,7 +85,7 @@ describe('MuhadhorohService.evaluate — video blob claim (BUG 4)', () => {
       muhadhorohService.evaluate('mh-1', { ...scores, videoUrl: 'https://store/v.mp4' }, user)
     ).rejects.toThrow('db down');
 
-    expect(releaseBlobClaim).toHaveBeenCalledWith('https://store/v.mp4', 'user-1');
+    expect(releaseBlobClaimById).toHaveBeenCalledWith(CLAIM);
   });
 
   it('refuses to evaluate a record from another unit', async () => {

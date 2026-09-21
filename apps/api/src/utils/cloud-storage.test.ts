@@ -13,6 +13,8 @@ import {
   isUploadDestination,
   UPLOAD_DESTINATIONS,
 } from './cloud-storage';
+import { claimBlobForDiscard, markBlobDiscarded } from '@/utils/blob-claim';
+import { resolveLocalUploadPath, removeLocalUpload } from '@/utils/local-upload-store';
 
 const {
   mockUploadFile,
@@ -64,6 +66,26 @@ const {
 
 vi.mock('@/utils/blob-owner', () => ({
   isBlobStillReferenced: mockIsBlobStillReferenced,
+  // The cleanup path enumerates equivalent spellings of a URL; the real helper
+  // is identity for a cloud URL, which is all this suite needs.
+  blobReferenceCandidates: (url: string) => [url],
+}));
+
+// The cleanup path now participates in the claim protocol (BUG 9): claim →
+// final probe under the claim → tombstone → physical delete. The primitives are
+// mocked (the protocol's own ordering is pinned in blob-discard.test.ts and the
+// real-Postgres integration suite).
+vi.mock('@/utils/blob-claim', () => ({
+  claimBlobForDiscard: vi
+    .fn()
+    .mockResolvedValue({ id: 'claim-cleanup', operationToken: 'tok', kind: 'DISCARD' }),
+  releaseBlobClaimById: vi.fn().mockResolvedValue(undefined),
+  markBlobDiscarded: vi.fn().mockResolvedValue(true),
+}));
+
+vi.mock('@/utils/local-upload-store', () => ({
+  resolveLocalUploadPath: vi.fn().mockResolvedValue(null),
+  removeLocalUpload: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('@azure/storage-blob', () => {
@@ -466,6 +488,68 @@ describe('deleteFromCloudStorage', () => {
       /Gagal menghapus berkas dari Azure Blob Storage/
     );
   });
+
+  // ── Flag 10: a 404 must be an idempotent success, not a permanent failure ──
+
+  it('treats BlobNotFound as an idempotent success (flag 10)', async () => {
+    process.env.AZURE_STORAGE_CONNECTION_STRING = CONNECTION_STRING;
+    mockDeleteBlob.mockRejectedValueOnce(
+      Object.assign(new Error('The specified blob does not exist.'), { code: 'BlobNotFound' })
+    );
+
+    await expect(
+      deleteFromCloudStorage('e-office-documents', 'already-gone.pdf')
+    ).resolves.toBeUndefined();
+  });
+
+  it('treats a bare 404 status as an idempotent success', async () => {
+    process.env.AZURE_STORAGE_CONNECTION_STRING = CONNECTION_STRING;
+    mockDeleteBlob.mockRejectedValueOnce(
+      Object.assign(new Error('Not Found'), { statusCode: 404 })
+    );
+
+    await expect(
+      deleteFromCloudStorage('e-office-documents', 'already-gone.pdf')
+    ).resolves.toBeUndefined();
+  });
+
+  it('does NOT swallow an authentication error (401/403)', async () => {
+    process.env.AZURE_STORAGE_CONNECTION_STRING = CONNECTION_STRING;
+    mockDeleteBlob.mockRejectedValueOnce(
+      Object.assign(new Error('AuthenticationFailed'), { statusCode: 403 })
+    );
+
+    await expect(deleteFromCloudStorage('e-office-documents', 'a.pdf')).rejects.toThrow(
+      /Gagal menghapus berkas/
+    );
+  });
+
+  it('does NOT swallow throttling (429) or a 5xx server error', async () => {
+    process.env.AZURE_STORAGE_CONNECTION_STRING = CONNECTION_STRING;
+    mockDeleteBlob.mockRejectedValueOnce(
+      Object.assign(new Error('Too Many Requests'), { statusCode: 429 })
+    );
+    await expect(deleteFromCloudStorage('e-office-documents', 'a.pdf')).rejects.toThrow(
+      /Gagal menghapus berkas/
+    );
+
+    mockDeleteBlob.mockRejectedValueOnce(
+      Object.assign(new Error('Server Busy'), { statusCode: 503 })
+    );
+    await expect(deleteFromCloudStorage('e-office-documents', 'a.pdf')).rejects.toThrow(
+      /Gagal menghapus berkas/
+    );
+  });
+
+  it('does NOT treat an unrelated 404-message as not-found (stable code over free text)', async () => {
+    process.env.AZURE_STORAGE_CONNECTION_STRING = CONNECTION_STRING;
+    // No `code`/`statusCode`, just a message that mentions 404: must still throw.
+    mockDeleteBlob.mockRejectedValueOnce(new Error('request failed with status 404 somewhere'));
+
+    await expect(deleteFromCloudStorage('e-office-documents', 'a.pdf')).rejects.toThrow(
+      /Gagal menghapus berkas/
+    );
+  });
 });
 
 describe('getBlobUploaderId', () => {
@@ -649,5 +733,94 @@ describe('containerForDestination', () => {
     expect(isUploadDestination(' media-public')).toBe(false);
     expect(isUploadDestination(3)).toBe(false);
     expect(isUploadDestination(undefined)).toBe(false);
+  });
+});
+
+/**
+ * BUG 8: `cleanupBlobBestEffort` returned false for any `/uploads/...` URL
+ * because `parseBlobUrl` yields null, so local files and their sidecars leaked
+ * on every record delete. BUG 9: the probe-then-delete was not claim-guarded.
+ * The tests above cover the Azure path; these cover the local path and the
+ * claim participation.
+ */
+describe('cleanupBlobBestEffort — local uploads & claim protocol (BUG 8 / BUG 9)', () => {
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    vi.clearAllMocks();
+    process.env.AZURE_STORAGE_CONNECTION_STRING = CONNECTION_STRING;
+    process.env.AZURE_STORAGE_ACCOUNT = 'cipansorstore';
+    mockIsBlobStillReferenced.mockResolvedValue(false);
+    (resolveLocalUploadPath as any).mockResolvedValue(null);
+    (removeLocalUpload as any).mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  it('deletes a local /uploads file and its sidecar instead of silently returning false', async () => {
+    (resolveLocalUploadPath as any).mockResolvedValue('/tmp/uploads-test/a.png');
+
+    await expect(cleanupBlobBestEffort('/uploads/a.png')).resolves.toBe(true);
+
+    expect(removeLocalUpload).toHaveBeenCalledWith('/tmp/uploads-test/a.png');
+    expect(mockDeleteBlob).not.toHaveBeenCalled();
+  });
+
+  it('keeps a local file a live record still references', async () => {
+    (resolveLocalUploadPath as any).mockResolvedValue('/tmp/uploads-test/a.png');
+    mockIsBlobStillReferenced.mockResolvedValue(true);
+
+    await expect(cleanupBlobBestEffort('/uploads/a.png')).resolves.toBe(false);
+    expect(removeLocalUpload).not.toHaveBeenCalled();
+  });
+
+  it('reports false for a local path that is missing or escapes the uploads root', async () => {
+    (resolveLocalUploadPath as any).mockResolvedValue(null);
+    await expect(cleanupBlobBestEffort('/uploads/missing.png')).resolves.toBe(false);
+    expect(removeLocalUpload).not.toHaveBeenCalled();
+  });
+
+  it('leaves an external/malformed URL entirely alone', async () => {
+    await expect(cleanupBlobBestEffort('https://evil.example.com/x.png')).resolves.toBe(false);
+    expect(removeLocalUpload).not.toHaveBeenCalled();
+    expect(mockDeleteBlob).not.toHaveBeenCalled();
+  });
+
+  it('takes a claim, re-probes under it, then tombstones before deleting (BUG 9)', async () => {
+    const order: string[] = [];
+    (claimBlobForDiscard as any).mockImplementation(async () => {
+      order.push('claim');
+      return { id: 'claim-cleanup', operationToken: 'tok', kind: 'DISCARD' };
+    });
+    mockIsBlobStillReferenced.mockImplementation(async () => {
+      order.push('probe');
+      return false;
+    });
+    (markBlobDiscarded as any).mockImplementation(async () => {
+      order.push('tombstone');
+      return true;
+    });
+    mockDeleteBlob.mockImplementation(async () => {
+      order.push('delete');
+    });
+
+    await expect(
+      cleanupBlobBestEffort('https://cipansorstore.blob.core.windows.net/cipansor-documents/a.pdf')
+    ).resolves.toBe(true);
+
+    expect(order).toEqual(['claim', 'probe', 'tombstone', 'delete']);
+  });
+
+  it('does not delete when another operation already holds the claim (BUG 9)', async () => {
+    (claimBlobForDiscard as any).mockResolvedValue(null);
+
+    await expect(
+      cleanupBlobBestEffort('https://cipansorstore.blob.core.windows.net/cipansor-documents/a.pdf')
+    ).resolves.toBe(false);
+
+    expect(mockDeleteBlob).not.toHaveBeenCalled();
   });
 });

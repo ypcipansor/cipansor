@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
-import { claimBlobForRecord, releaseBlobClaim } from '@/utils/blob-claim';
+import { claimBlobForRecord, releaseBlobClaimById, type BlobClaimHandle } from '@/utils/blob-claim';
 import { UserRole, Prisma, KitabCategory, KitabLevel } from '@prisma/client';
 
 // User type from JwtPayload
@@ -141,9 +141,10 @@ export class KitabProgressService {
     // a just-uploaded file cannot delete it between its reference probe and
     // this insert (BUG 4 / flag 9).
     const holderId = actorId ?? 'kitab';
+    let claim: BlobClaimHandle | null = null;
     if (input.coverUrl) {
-      const claimed = await claimBlobForRecord(input.coverUrl, holderId);
-      if (!claimed) {
+      claim = await claimBlobForRecord(input.coverUrl, holderId);
+      if (!claim) {
         throw Errors.conflict('Sampul kitab sedang diproses pihak lain; unggah ulang berkas');
       }
     }
@@ -165,7 +166,7 @@ export class KitabProgressService {
       return kitab;
     } finally {
       if (input.coverUrl) {
-        await releaseBlobClaim(input.coverUrl, holderId).catch(() => undefined);
+        if (claim) await releaseBlobClaimById(claim).catch(() => undefined);
       }
     }
   }
@@ -178,9 +179,10 @@ export class KitabProgressService {
 
     // A replaced cover is a new blob reference (flag 9).
     const holderId = actorId ?? 'kitab';
+    let claim: BlobClaimHandle | null = null;
     if (input.coverUrl) {
-      const claimed = await claimBlobForRecord(input.coverUrl, holderId);
-      if (!claimed) {
+      claim = await claimBlobForRecord(input.coverUrl, holderId);
+      if (!claim) {
         throw Errors.conflict('Sampul kitab sedang diproses pihak lain; unggah ulang berkas');
       }
     }
@@ -193,7 +195,7 @@ export class KitabProgressService {
       return updated;
     } finally {
       if (input.coverUrl) {
-        await releaseBlobClaim(input.coverUrl, holderId).catch(() => undefined);
+        if (claim) await releaseBlobClaimById(claim).catch(() => undefined);
       }
     }
   }

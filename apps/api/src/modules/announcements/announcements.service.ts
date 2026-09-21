@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { Prisma, NotificationType } from '@prisma/client';
 import { Errors } from '@/middleware/error';
-import { claimBlobForRecord, releaseBlobClaim } from '@/utils/blob-claim';
+import { claimBlobForRecord, releaseBlobClaimById, type BlobClaimHandle } from '@/utils/blob-claim';
 
 interface CreateAnnouncementInput {
   unitId?: string;
@@ -112,9 +112,10 @@ export class AnnouncementService {
     // Claim the attachment blob before the row references it, so a concurrent
     // discard of a just-uploaded file cannot delete it between its reference
     // probe and this insert (BUG 4 / flag 9).
+    let claim: BlobClaimHandle | null = null;
     if (data.attachmentUrl) {
-      const claimed = await claimBlobForRecord(data.attachmentUrl, data.createdById);
-      if (!claimed) {
+      claim = await claimBlobForRecord(data.attachmentUrl, data.createdById);
+      if (!claim) {
         throw Errors.conflict(
           'Lampiran pengumuman sedang diproses pihak lain; unggah ulang berkas tersebut'
         );
@@ -145,7 +146,7 @@ export class AnnouncementService {
       });
     } finally {
       if (data.attachmentUrl) {
-        await releaseBlobClaim(data.attachmentUrl, data.createdById).catch(() => undefined);
+        if (claim) await releaseBlobClaimById(claim).catch(() => undefined);
       }
     }
   }
@@ -153,9 +154,10 @@ export class AnnouncementService {
   async update(id: string, data: UpdateAnnouncementInput, actorId: string) {
     // An attachment added by an update is a new blob reference, so it takes the
     // same claim as create (flag 9).
+    let claim: BlobClaimHandle | null = null;
     if (data.attachmentUrl) {
-      const claimed = await claimBlobForRecord(data.attachmentUrl, actorId);
-      if (!claimed) {
+      claim = await claimBlobForRecord(data.attachmentUrl, actorId);
+      if (!claim) {
         throw Errors.conflict(
           'Lampiran pengumuman sedang diproses pihak lain; unggah ulang berkas tersebut'
         );
@@ -176,7 +178,7 @@ export class AnnouncementService {
       });
     } finally {
       if (data.attachmentUrl) {
-        await releaseBlobClaim(data.attachmentUrl, actorId).catch(() => undefined);
+        if (claim) await releaseBlobClaimById(claim).catch(() => undefined);
       }
     }
   }

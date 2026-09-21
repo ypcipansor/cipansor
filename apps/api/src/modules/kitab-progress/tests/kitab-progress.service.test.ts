@@ -4,10 +4,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // is a client upload, so the row must not reference it until the blob is
 // claimed. Real race behaviour lives in `blob-claim.integration`; this drives
 // the service branches.
-const claimBlobForRecord = vi.hoisted(() => vi.fn().mockResolvedValue(true));
-const releaseBlobClaim = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const claimBlobForRecord = vi.hoisted(() => vi.fn().mockResolvedValue({ id: 'claim-1', operationToken: 'tok-1', kind: 'RECORD' }));
+const releaseBlobClaimById = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const CLAIM = { id: 'claim-1', operationToken: 'tok-1', kind: 'RECORD' };
 
-vi.mock('@/utils/blob-claim', () => ({ claimBlobForRecord, releaseBlobClaim }));
+vi.mock('@/utils/blob-claim', () => ({ claimBlobForRecord, releaseBlobClaimById }));
 
 const mockPrisma = vi.hoisted(() => ({
   kitabKuning: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
@@ -22,8 +23,8 @@ const baseKitab = { title: 'Kitab', author: 'A', category: 'NAHWU', level: 'AWAL
 describe('KitabProgressService kitab cover claim (BUG 4)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    claimBlobForRecord.mockResolvedValue(true);
-    releaseBlobClaim.mockResolvedValue(undefined);
+    claimBlobForRecord.mockResolvedValue({ id: 'claim-1', operationToken: 'tok-1', kind: 'RECORD' });
+    releaseBlobClaimById.mockResolvedValue(undefined);
   });
 
   it('createKitab claims the cover before insert and releases after', async () => {
@@ -35,14 +36,14 @@ describe('KitabProgressService kitab cover claim (BUG 4)', () => {
     );
 
     expect(claimBlobForRecord).toHaveBeenCalledWith('https://store/c.png', 'actor-1');
-    expect(releaseBlobClaim).toHaveBeenCalledWith('https://store/c.png', 'actor-1');
+    expect(releaseBlobClaimById).toHaveBeenCalledWith(CLAIM);
     expect(claimBlobForRecord.mock.invocationCallOrder[0]).toBeLessThan(
       mockPrisma.kitabKuning.create.mock.invocationCallOrder[0]
     );
   });
 
   it('createKitab refuses when a discard holds the cover', async () => {
-    claimBlobForRecord.mockResolvedValue(false);
+    claimBlobForRecord.mockResolvedValue(null);
 
     await expect(
       kitabProgressService.createKitab({ ...baseKitab, coverUrl: 'https://store/c.png' } as any, 'actor-1')
@@ -68,7 +69,7 @@ describe('KitabProgressService kitab cover claim (BUG 4)', () => {
     ).rejects.toThrow('db down');
 
     expect(claimBlobForRecord).toHaveBeenCalledWith('https://store/new.png', 'actor-1');
-    expect(releaseBlobClaim).toHaveBeenCalledWith('https://store/new.png', 'actor-1');
+    expect(releaseBlobClaimById).toHaveBeenCalledWith(CLAIM);
   });
 
   it('updateKitab without a cover does not claim', async () => {

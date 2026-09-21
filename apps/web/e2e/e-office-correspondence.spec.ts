@@ -3,6 +3,24 @@ import { loginAs, apiRequest, type AuthSession } from "./helpers/auth-api";
 
 const API_URL = process.env.API_URL || "http://localhost:3001/api";
 
+/**
+ * True when the URL is served by Azure Blob Storage.
+ *
+ * Parses the URL and matches the HOSTNAME exactly (or as a subdomain), never a
+ * substring of the whole URL. A `url.includes("blob.core.windows.net")` test
+ * would also match `https://evil.example/?x=blob.core.windows.net` or
+ * `blob.core.windows.net.attacker.test` — the "incomplete URL substring
+ * sanitization" class.
+ */
+function isAzureBlobHost(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host === "blob.core.windows.net" || host.endsWith(".blob.core.windows.net");
+  } catch {
+    return false;
+  }
+}
+
 test.describe("E-Office correspondence flows", () => {
   let session: AuthSession;
 
@@ -334,15 +352,7 @@ test.describe("E-Office correspondence flows", () => {
     expect(data?.downloadUrl).toBeUndefined();
 
     if (data?.url) {
-      let isAzureBlobHost = false;
-      try {
-        const host = new URL(data.url).hostname;
-        isAzureBlobHost =
-          host === "blob.core.windows.net" || host.endsWith(".blob.core.windows.net");
-      } catch {
-        isAzureBlobHost = false;
-      }
-      if (isAzureBlobHost) {
+      if (isAzureBlobHost(data.url)) {
         expect(data.containerName).toBe("media-public");
         expect(data.url).toContain("/media-public/");
         // The SAS endpoint passes a public blob through unchanged.
@@ -376,15 +386,7 @@ test.describe("E-Office correspondence flows", () => {
     const data = json?.data as { url?: string; containerName?: string } | undefined;
     expect(data?.url).toBeTruthy();
     if (data?.url) {
-      let isAzureBlobHost = false;
-      try {
-        const host = new URL(data.url).hostname;
-        isAzureBlobHost =
-          host === "blob.core.windows.net" || host.endsWith(".blob.core.windows.net");
-      } catch {
-        isAzureBlobHost = false;
-      }
-      if (isAzureBlobHost) {
+      if (isAzureBlobHost(data.url)) {
         expect(data.containerName).toBe("cipansor-documents");
       }
     }

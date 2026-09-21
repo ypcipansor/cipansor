@@ -13,7 +13,7 @@ import { Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/client';
 import { cleanupBlobBestEffort, cleanupBlobsBestEffort } from '@/utils/cloud-storage';
 import { Errors } from '@/middleware/error';
-import { claimBlobForRecord, releaseBlobClaim } from '@/utils/blob-claim';
+import { claimBlobForRecord, releaseBlobClaimById, type BlobClaimHandle } from '@/utils/blob-claim';
 
 // Portfolio types and categories
 export const PORTFOLIO_TYPES = [
@@ -242,8 +242,8 @@ export async function addPortfolioFile(data: {
   // of a just-uploaded file cannot delete it between its reference probe and
   // this insert (BUG 4 / flag 9).
   const { holderId, ...file } = data;
-  const claimed = await claimBlobForRecord(file.fileUrl, holderId);
-  if (!claimed) {
+  const claim = await claimBlobForRecord(file.fileUrl, holderId);
+  if (!claim) {
     throw Errors.conflict('Berkas portofolio sedang diproses pihak lain; unggah ulang berkas');
   }
 
@@ -271,7 +271,7 @@ export async function addPortfolioFile(data: {
     });
   } finally {
     // The row (or the failure) is now durable; the reference is the claim.
-    await releaseBlobClaim(file.fileUrl, holderId).catch(() => undefined);
+    if (claim) await releaseBlobClaimById(claim).catch(() => undefined);
   }
 }
 

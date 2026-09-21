@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
-import { claimBlobForRecord, releaseBlobClaim } from '@/utils/blob-claim';
+import { claimBlobForRecord, releaseBlobClaimById, type BlobClaimHandle } from '@/utils/blob-claim';
 import { UnitType, Prisma } from '@prisma/client';
 import { isFoundationScopedRole } from '@/utils/resolve-unit-id';
 import type { ListUnitsQuery, CreateUnitInput, UpdateUnitInput } from './unit.schema';
@@ -113,9 +113,10 @@ export class UnitService {
     // of a just-uploaded file cannot delete it between its reference probe and
     // this insert (BUG 4 / flag 9).
     const holderId = actorId ?? 'unit';
+    let claim: BlobClaimHandle | null = null;
     if (input.logoUrl) {
-      const claimed = await claimBlobForRecord(input.logoUrl, holderId);
-      if (!claimed) {
+      claim = await claimBlobForRecord(input.logoUrl, holderId);
+      if (!claim) {
         throw Errors.conflict('Logo unit sedang diproses pihak lain; unggah ulang berkas');
       }
     }
@@ -134,7 +135,7 @@ export class UnitService {
       return unit;
     } finally {
       if (input.logoUrl) {
-        await releaseBlobClaim(input.logoUrl, holderId).catch(() => undefined);
+        if (claim) await releaseBlobClaimById(claim).catch(() => undefined);
       }
     }
   }
@@ -152,9 +153,10 @@ export class UnitService {
     }
 
     const holderId = actorId ?? 'unit';
+    let claim: BlobClaimHandle | null = null;
     if (input.logoUrl) {
-      const claimed = await claimBlobForRecord(input.logoUrl, holderId);
-      if (!claimed) {
+      claim = await claimBlobForRecord(input.logoUrl, holderId);
+      if (!claim) {
         throw Errors.conflict('Logo unit sedang diproses pihak lain; unggah ulang berkas');
       }
     }
@@ -174,7 +176,7 @@ export class UnitService {
       return updated;
     } finally {
       if (input.logoUrl) {
-        await releaseBlobClaim(input.logoUrl, holderId).catch(() => undefined);
+        if (claim) await releaseBlobClaimById(claim).catch(() => undefined);
       }
     }
   }

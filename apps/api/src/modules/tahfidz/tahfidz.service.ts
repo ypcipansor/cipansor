@@ -3,7 +3,7 @@ import { seesAllUnits } from '@/utils/resolve-unit-id';
 import { certificateVerificationUrl } from '@/utils/verification-url';
 import { logger } from '@/lib/logger';
 import { Errors } from '@/middleware/error';
-import { claimBlobForRecord, releaseBlobClaim } from '@/utils/blob-claim';
+import { claimBlobForRecord, releaseBlobClaimById, type BlobClaimHandle } from '@/utils/blob-claim';
 import { UserRole, TahfidzActivityType, Prisma } from '@prisma/client';
 import { eventBus } from '@/lib/event-bus';
 import type { ListTahfidzQuery, GenerateCertificateInput } from './tahfidz.schema';
@@ -226,9 +226,10 @@ export class TahfidzService {
     // Claim the recording before the row references it, so a concurrent discard
     // of a just-uploaded file cannot delete it between its reference probe and
     // this insert (BUG 4 / flag 9).
+    let claim: BlobClaimHandle | null = null;
     if (input.audioUrl) {
-      const claimed = await claimBlobForRecord(input.audioUrl, recordedById);
-      if (!claimed) {
+      claim = await claimBlobForRecord(input.audioUrl, recordedById);
+      if (!claim) {
         throw Errors.conflict('Rekaman audio sedang diproses pihak lain; unggah ulang berkas');
       }
     }
@@ -263,7 +264,7 @@ export class TahfidzService {
     } finally {
       // The row (or the failure) is now durable; the reference is the claim.
       if (input.audioUrl) {
-        await releaseBlobClaim(input.audioUrl, recordedById).catch(() => undefined);
+        if (claim) await releaseBlobClaimById(claim).catch(() => undefined);
       }
     }
 

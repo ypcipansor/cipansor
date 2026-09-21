@@ -88,15 +88,25 @@ vi.mock('@/utils/cloud-storage', () => ({
   SAS_TTL_MINUTES: 60,
 }));
 
+// Operation-token claims are objects now: a claim is identified by
+// (id, operationToken, kind), never by the acting user (finding D).
 vi.mock('@/utils/blob-claim', () => ({
-  claimBlobForRecord: vi.fn().mockResolvedValue(true),
-  claimBlobForDiscard: vi.fn().mockResolvedValue('claim-1'),
-  releaseBlobClaim: vi.fn().mockResolvedValue(undefined),
+  claimBlobForRecord: vi
+    .fn()
+    .mockResolvedValue({ id: 'claim-1', operationToken: 'tok-record', kind: 'RECORD' }),
+  claimBlobForDiscard: vi
+    .fn()
+    .mockResolvedValue({ id: 'claim-1', operationToken: 'tok-discard', kind: 'DISCARD' }),
   releaseBlobClaimById: vi.fn().mockResolvedValue(undefined),
-  claimBlobsForRecord: vi.fn().mockResolvedValue(true),
+  claimBlobsForRecord: vi
+    .fn()
+    .mockResolvedValue([{ id: 'claim-1', operationToken: 'tok-record', kind: 'RECORD' }]),
   releaseBlobClaims: vi.fn().mockResolvedValue(undefined),
   markBlobDiscarded: vi.fn().mockResolvedValue(true),
 }));
+// Referenced only inside tests (never in the hoisted factory).
+const DISCARD_HANDLE = { id: 'claim-1', operationToken: 'tok-discard', kind: 'DISCARD' };
+
 
 vi.mock('@/utils/letter-access', () => ({
   letterScopeWhere: vi.fn(() => ({})),
@@ -798,7 +808,7 @@ describe('discardOrphanBlob', () => {
       blobName: 'orphan.pdf',
     });
     (isAllowedContainer as any).mockReturnValue(true);
-    (claimBlobForDiscard as any).mockResolvedValue('claim-1');
+    (claimBlobForDiscard as any).mockResolvedValue(DISCARD_HANDLE);
     // Default to "the tombstone succeeded"; a test that wants the stolen-claim
     // path overrides it for itself only.
     (markBlobDiscarded as any).mockResolvedValue(true);
@@ -816,7 +826,7 @@ describe('discardOrphanBlob', () => {
     );
     // The tombstone must be set before the irreversible delete — the whole
     // point of the fix is that the row is terminal at delete time.
-    expect(markBlobDiscarded).toHaveBeenCalledWith('claim-1', superAdmin.id);
+    expect(markBlobDiscarded).toHaveBeenCalledWith(DISCARD_HANDLE);
     expect(deleteFromCloudStorage).toHaveBeenCalledWith('cipansor-documents', 'orphan.pdf');
     const tombstoneOrder = (markBlobDiscarded as any).mock.invocationCallOrder[0];
     const deleteOrder = (deleteFromCloudStorage as any).mock.invocationCallOrder[0];
@@ -841,12 +851,9 @@ describe('discardOrphanBlob', () => {
   });
 
   it('re-probes under the claim, so a create that committed before the claim blocks it (race)', async () => {
-    // First probe says orphan; by the time the claim is held a record has
-    // committed. The claim cannot undo that, so the under-claim re-probe must
-    // report referenced and the delete must not happen.
-    (prisma as any).book.count
-      .mockResolvedValueOnce(0) // first exhaustive probe
-      .mockResolvedValue(1); // re-probe under the claim
+    // The final exhaustive probe runs UNDER the claim, so a record that
+    // committed before it is seen and the delete must not happen.
+    (prisma as any).book.count.mockResolvedValue(1);
 
     await expect(
       discardOrphanBlob(
@@ -856,7 +863,7 @@ describe('discardOrphanBlob', () => {
     ).rejects.toThrow(/Berkas sudah tersimpan/);
     expect(deleteFromCloudStorage).not.toHaveBeenCalled();
     // The claim is released so a later retry is possible.
-    expect(releaseBlobClaimById).toHaveBeenCalledWith('claim-1', superAdmin.id);
+    expect(releaseBlobClaimById).toHaveBeenCalledWith(DISCARD_HANDLE);
   });
 
   it('KEEPS the tombstone when the delete fails, so a waiting create cannot resurrect the URL (BUG 7)', async () => {
@@ -872,7 +879,7 @@ describe('discardOrphanBlob', () => {
         superAdmin
       )
     ).rejects.toThrow('azure down');
-    expect(markBlobDiscarded).toHaveBeenCalledWith('claim-1', superAdmin.id);
+    expect(markBlobDiscarded).toHaveBeenCalledWith(DISCARD_HANDLE);
     expect(releaseBlobClaimById).not.toHaveBeenCalled();
   });
 
@@ -888,7 +895,10 @@ describe('discardOrphanBlob', () => {
       )
     ).rejects.toThrow(/Berkas sudah tersimpan/);
     expect(deleteFromCloudStorage).not.toHaveBeenCalled();
-    expect(claimBlobForDiscard).not.toHaveBeenCalled();
+    // The claim is taken BEFORE the final probe (the probe must run under it),
+    // then released when the probe reports a live reference.
+    expect(claimBlobForDiscard).toHaveBeenCalled();
+    expect(releaseBlobClaimById).toHaveBeenCalledWith(DISCARD_HANDLE);
   });
 
   it('refuses to discard when ANY stored blob-URL field still references the URL', async () => {
@@ -921,7 +931,7 @@ describe('discardOrphanBlob', () => {
 
     expect(deleteFromCloudStorage).not.toHaveBeenCalled();
     // The (now-lost) claim is released so a later retry can reclaim the blob.
-    expect(releaseBlobClaimById).toHaveBeenCalledWith('claim-1', superAdmin.id);
+    expect(releaseBlobClaimById).toHaveBeenCalledWith(DISCARD_HANDLE);
   });
 
   it('tombstones the claim immediately before the irreversible delete', async () => {
@@ -933,7 +943,7 @@ describe('discardOrphanBlob', () => {
       superAdmin
     );
 
-    expect(markBlobDiscarded).toHaveBeenCalledWith('claim-1', superAdmin.id);
+    expect(markBlobDiscarded).toHaveBeenCalledWith(DISCARD_HANDLE);
     expect(deleteFromCloudStorage).toHaveBeenCalled();
   });
 
@@ -1028,6 +1038,8 @@ describe('discardOrphanBlob — local /uploads storage (local orphan bug)', () =
     (resolveLocalUploadPath as any).mockResolvedValue(
       '/tmp/uploads-test/123e4567-e89b-42d3-a456-426614174000.png'
     );
+    (claimBlobForDiscard as any).mockResolvedValue(DISCARD_HANDLE);
+    (markBlobDiscarded as any).mockResolvedValue(true);
   });
 
   it('removes an orphan local file owned by the caller', async () => {

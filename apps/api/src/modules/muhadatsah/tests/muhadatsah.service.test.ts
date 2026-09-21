@@ -3,10 +3,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // The evaluate path claims a new recording blob before writing the reference
 // (BUG 4 / flag 9). The claim protocol has its own unit + real-Postgres
 // integration tests; here we drive the service's own control flow around it.
-const claimBlobForRecord = vi.hoisted(() => vi.fn().mockResolvedValue(true));
-const releaseBlobClaim = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const claimBlobForRecord = vi.hoisted(() => vi.fn().mockResolvedValue({ id: 'claim-1', operationToken: 'tok-1', kind: 'RECORD' }));
+const releaseBlobClaimById = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const CLAIM = { id: 'claim-1', operationToken: 'tok-1', kind: 'RECORD' };
 
-vi.mock('@/utils/blob-claim', () => ({ claimBlobForRecord, releaseBlobClaim }));
+vi.mock('@/utils/blob-claim', () => ({ claimBlobForRecord, releaseBlobClaimById }));
 
 const mockPrisma = vi.hoisted(() => ({
   muhadatsah: { findUnique: vi.fn(), update: vi.fn() },
@@ -42,8 +43,8 @@ const validScores = {
 describe('MuhadatsahService.evaluate — recording blob claim (BUG 4)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    claimBlobForRecord.mockResolvedValue(true);
-    releaseBlobClaim.mockResolvedValue(undefined);
+    claimBlobForRecord.mockResolvedValue({ id: 'claim-1', operationToken: 'tok-1', kind: 'RECORD' });
+    releaseBlobClaimById.mockResolvedValue(undefined);
     mockPrisma.teacher.findFirst.mockResolvedValue({ id: 'teacher-1' });
   });
 
@@ -58,7 +59,7 @@ describe('MuhadatsahService.evaluate — recording blob claim (BUG 4)', () => {
     );
 
     expect(claimBlobForRecord).toHaveBeenCalledWith('https://store/m.mp3', 'user-1');
-    expect(releaseBlobClaim).toHaveBeenCalledWith('https://store/m.mp3', 'user-1');
+    expect(releaseBlobClaimById).toHaveBeenCalledWith(CLAIM);
     // Claim order: taken before the row that references it is written.
     expect(claimBlobForRecord.mock.invocationCallOrder[0]).toBeLessThan(
       mockPrisma.muhadatsah.update.mock.invocationCallOrder[0]
@@ -67,7 +68,7 @@ describe('MuhadatsahService.evaluate — recording blob claim (BUG 4)', () => {
 
   it('rejects when a discard already holds the recording, and does not write the record', async () => {
     mockPrisma.muhadatsah.findUnique.mockResolvedValue(scheduledRecord());
-    claimBlobForRecord.mockResolvedValue(false);
+    claimBlobForRecord.mockResolvedValue(null);
 
     await expect(
       muhadatsahService.evaluate(
@@ -78,7 +79,7 @@ describe('MuhadatsahService.evaluate — recording blob claim (BUG 4)', () => {
     ).rejects.toThrow(/sedang diproses/);
 
     expect(mockPrisma.muhadatsah.update).not.toHaveBeenCalled();
-    expect(releaseBlobClaim).not.toHaveBeenCalled();
+    expect(releaseBlobClaimById).not.toHaveBeenCalled();
   });
 
   it('does not claim when no recording is supplied', async () => {
@@ -88,7 +89,7 @@ describe('MuhadatsahService.evaluate — recording blob claim (BUG 4)', () => {
     await muhadatsahService.evaluate('m-1', { ...validScores }, user);
 
     expect(claimBlobForRecord).not.toHaveBeenCalled();
-    expect(releaseBlobClaim).not.toHaveBeenCalled();
+    expect(releaseBlobClaimById).not.toHaveBeenCalled();
   });
 
   it('releases the claim even when the update throws', async () => {
@@ -103,7 +104,7 @@ describe('MuhadatsahService.evaluate — recording blob claim (BUG 4)', () => {
       )
     ).rejects.toThrow('db down');
 
-    expect(releaseBlobClaim).toHaveBeenCalledWith('https://store/m.mp3', 'user-1');
+    expect(releaseBlobClaimById).toHaveBeenCalledWith(CLAIM);
   });
 
   it('refuses to evaluate a record from another unit', async () => {

@@ -11,7 +11,7 @@ import {
   StudentPackage,
 } from '@cipansor/shared';
 import { Errors } from '../../middleware/error';
-import { claimBlobForRecord, releaseBlobClaim } from '../../utils/blob-claim';
+import { claimBlobForRecord, releaseBlobClaimById, type BlobClaimHandle } from '../../utils/blob-claim';
 // DB enums are the source of truth from Prisma, not the shared package.
 import { Prisma, VisitStatus, PackageStatus } from '@prisma/client';
 
@@ -305,9 +305,10 @@ export const createPackage = async (
   // Claim the package photo before the row references it, so a concurrent
   // discard of a just-uploaded photo cannot delete it between its reference
   // probe and this insert (BUG 4 / flag 9).
+  let claim: BlobClaimHandle | null = null;
   if (data.photoUrl) {
-    const claimed = await claimBlobForRecord(data.photoUrl, userId);
-    if (!claimed) {
+    claim = await claimBlobForRecord(data.photoUrl, userId);
+    if (!claim) {
       throw Errors.conflict('Foto paket sedang diproses pihak lain; unggah ulang berkas tersebut');
     }
   }
@@ -345,7 +346,7 @@ export const createPackage = async (
     return toStudentPackage(row);
   } finally {
     if (data.photoUrl) {
-      await releaseBlobClaim(data.photoUrl, userId).catch(() => undefined);
+      if (claim) await releaseBlobClaimById(claim).catch(() => undefined);
     }
   }
 };

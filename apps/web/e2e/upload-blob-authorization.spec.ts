@@ -136,14 +136,10 @@ test.describe("upload blob authorization (BUG 1 / BUG 2)", () => {
 
     const result = await upload(uploader);
 
-    if (!result.containerName) {
-      // Local stack: the discard path is a documented no-op for /uploads, so
-      // there is no cross-user delete to refuse here.
-      const local = await discard(other, result.url);
-      expect(local.status).toBe(200);
-      return;
-    }
-
+    // The local provider now gives the SAME ownership guarantee as Azure
+    // (BUG 9): the uploader sidecar is read live, so a second actor is refused
+    // on `/uploads` too — not just on a blob. The old spec asserted a no-op
+    // 200 here, which the hardened local path correctly turns into a 403.
     const refused = await discard(other, result.url);
     expect(refused.status).toBe(403);
 
@@ -159,8 +155,6 @@ test.describe("upload blob authorization (BUG 1 / BUG 2)", () => {
     const teacher = await loginAs(page, "teacher");
 
     const result = await upload(admin);
-
-    if (!result.containerName) return; // local stack: discard is a no-op
 
     // A foundation/super-admin role may sweep, so the admin is permitted...
     const swept = await discard(admin, result.url);

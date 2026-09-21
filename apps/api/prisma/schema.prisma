@@ -2218,9 +2218,16 @@ model BlobClaim {
   /// one blob, one live claim, which is what makes the mutual exclusion work.
   blobUrl   String          @unique @map("blob_url")
   kind      BlobClaimKind
-  /// Who holds the claim: the uploader for a discard, the record author for a
-  /// record claim. Recorded for audit and for the cross-user safety check.
+  /// Who initiated the operation. Audit only — never an identity or an
+  /// authorization key. Two operations by the same user must remain mutually
+  /// exclusive, so `holderId` alone can never be used to take a claim over.
   holderId  String          @map("holder_id")
+  /// Cryptographically random per-operation secret. Every claim is identified
+  /// by `(id, operationToken, kind)`; a refresh, release, tombstone or
+  /// commit-time ownership check must match all three. Without it a same-user
+  /// RECORD could silently assume a DISCARD (or a stale release could delete a
+  /// newer claim), which is the takeover this column closes.
+  operationToken String      @map("operation_token")
   /// Set once a record claim has been materialized into a saved record, so the
   /// caller can tell "I still hold it" from "it was retired under me".
   recordId  String?         @map("record_id")
@@ -2235,10 +2242,31 @@ model BlobClaim {
   /// (not released), because releasing it would reopen the very window the
   /// tombstone closes.
   discardedAt DateTime?   @map("discarded_at")
+  /// Reconciliation bookkeeping (BUG 7 / flag 11). A successful (or
+  /// already-absent) physical delete stamps `reconciledAt` so the row is never
+  /// selected again; a failure bumps `reconcileAttempts` and schedules
+  /// `nextReconcileAt` with backoff so one poison row cannot starve the queue.
+  reconciledAt      DateTime?  @map("reconciled_at")
+  reconcileAttempts Int        @default(0) @map("reconcile_attempts")
+  lastReconcileAt   DateTime?  @map("last_reconcile_at")
+  nextReconcileAt   DateTime?  @map("next_reconcile_at")
+  /// Terminal disposition for rows that must never be retried (malformed URL,
+  /// foreign storage account), so they stop consuming the bounded batch.
+  reconcileStatus   BlobReconcileStatus @default(PENDING) @map("reconcile_status")
 
   @@index([expiresAt])
   @@index([discardedAt])
+  @@index([reconcileStatus, nextReconcileAt])
   @@map("blob_claims")
+}
+
+/// Reconciliation lifecycle of a tombstoned claim whose delete outcome is not
+/// yet known. `PENDING` is eligible (subject to `nextReconcileAt`); `DONE` and
+/// `QUARANTINED` are terminal and never selected again.
+enum BlobReconcileStatus {
+  PENDING
+  DONE
+  QUARANTINED
 }
 
 /// The two sides of the handshake. `RECORD` is a create that is about to

@@ -105,10 +105,13 @@ function getAuthState(request: NextRequest): {
     }
   }
 
-  // Fallback: check for accessToken
-  const token =
-    request.cookies.get("accessToken")?.value ||
-    request.headers.get("authorization")?.replace("Bearer ", "");
+  // Fallback: a bearer token supplied as an Authorization header.
+  //
+  // There is deliberately NO `accessToken` cookie fallback (finding F): the web
+  // app no longer mirrors the session bearer into a JS-readable cookie, so a
+  // cookie of that name can only be a stale artefact and must not be trusted
+  // for a routing decision.
+  const token = request.headers.get("authorization")?.replace("Bearer ", "");
 
   if (token) {
     return { isAuthenticated: true };

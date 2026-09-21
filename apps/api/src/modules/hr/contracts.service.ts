@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { SharedPaginatedResponse } from '@cipansor/shared';
 import { Errors } from '@/middleware/error';
-import { claimBlobForRecord, releaseBlobClaim } from '@/utils/blob-claim';
+import { claimBlobForRecord, releaseBlobClaimById, type BlobClaimHandle } from '@/utils/blob-claim';
 
 export const contractService = {
   async create(data: {
@@ -19,9 +19,10 @@ export const contractService = {
     // Claim the contract document before the row references it, so a concurrent
     // discard of a just-uploaded file cannot delete it between its reference
     // probe and this insert (BUG 4 / flag 9).
+    let claim: BlobClaimHandle | null = null;
     if (data.documentUrl) {
-      const claimed = await claimBlobForRecord(data.documentUrl, data.actorId ?? data.userId);
-      if (!claimed) {
+      claim = await claimBlobForRecord(data.documentUrl, data.actorId ?? data.userId);
+      if (!claim) {
         throw Errors.conflict(
           'Dokumen kontrak sedang diproses pihak lain; unggah ulang berkas tersebut'
         );
@@ -41,7 +42,7 @@ export const contractService = {
       });
     } finally {
       if (data.documentUrl) {
-        await releaseBlobClaim(data.documentUrl, data.actorId ?? data.userId).catch(() => undefined);
+        if (claim) await releaseBlobClaimById(claim).catch(() => undefined);
       }
     }
   },
@@ -60,9 +61,10 @@ export const contractService = {
     }
   ) {
     const holderId = data.actorId ?? 'hr-contract';
+    let claim: BlobClaimHandle | null = null;
     if (data.documentUrl) {
-      const claimed = await claimBlobForRecord(data.documentUrl, holderId);
-      if (!claimed) {
+      claim = await claimBlobForRecord(data.documentUrl, holderId);
+      if (!claim) {
         throw Errors.conflict(
           'Dokumen kontrak sedang diproses pihak lain; unggah ulang berkas tersebut'
         );
@@ -76,7 +78,7 @@ export const contractService = {
       });
     } finally {
       if (data.documentUrl) {
-        await releaseBlobClaim(data.documentUrl, holderId).catch(() => undefined);
+        if (claim) await releaseBlobClaimById(claim).catch(() => undefined);
       }
     }
   },

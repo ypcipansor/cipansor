@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 import { Errors } from '@/middleware/error';
-import { claimBlobForRecord, releaseBlobClaim } from '@/utils/blob-claim';
+import { claimBlobForRecord, releaseBlobClaimById, type BlobClaimHandle } from '@/utils/blob-claim';
 import {
   PAUDAspect,
   PAUDAchievementLevel,
@@ -486,8 +486,8 @@ async function createEvidence(input: CreatePAUDEvidenceInput, actorId?: string) 
   // discard of a just-uploaded file cannot delete it between its reference
   // probe and this insert (BUG 4 / flag 9).
   const holderId = actorId ?? 'paud-assessment';
-  const claimed = await claimBlobForRecord(input.fileUrl, holderId);
-  if (!claimed) {
+  const claim = await claimBlobForRecord(input.fileUrl, holderId);
+  if (!claim) {
     throw Errors.conflict('Berkas bukti sedang diproses pihak lain; unggah ulang berkas tersebut');
   }
 
@@ -502,7 +502,7 @@ async function createEvidence(input: CreatePAUDEvidenceInput, actorId?: string) 
       },
     });
   } finally {
-    await releaseBlobClaim(input.fileUrl, holderId).catch(() => undefined);
+    if (claim) await releaseBlobClaimById(claim).catch(() => undefined);
   }
 }
 

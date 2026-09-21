@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import { AxiosError } from "axios";
 import { User, authApi, rolesApi, LoginRequest } from "@/lib/api";
 import { SSOLoginRequest, LoginResponse } from "@cipansor/shared";
+import { clearBearerTokenCookie, clearSessionCookies } from "@/lib/session-cookie";
 
 interface AuthState {
   user: User | null;
@@ -23,7 +24,11 @@ interface AuthState {
   resetAuth: () => void;
 }
 
-// Custom storage that syncs with cookies for middleware
+// Custom storage that syncs the PERSISTED PROFILE with cookies for middleware.
+// It deliberately never writes the session bearer token to a cookie (finding F):
+// the `auth-storage` payload carries only `{ user, isAuthenticated }` (see
+// `partialize`), and middleware uses it purely for routing. See
+// `lib/session-cookie.ts` for the rationale and the residual localStorage risk.
 const customStorage = {
   getItem: (name: string) => {
     if (typeof window === "undefined") return null;
@@ -91,7 +96,6 @@ export const useAuthStore = create<AuthState>()(
               isLoading: false,
             });
             localStorage.setItem("accessToken", responseData.tempToken);
-            document.cookie = `accessToken=${responseData.tempToken}; path=/; max-age=3600; samesite=lax`;
             return;
           }
 
@@ -99,7 +103,6 @@ export const useAuthStore = create<AuthState>()(
 
           localStorage.setItem("accessToken", accessToken);
           localStorage.setItem("refreshToken", refreshToken);
-          document.cookie = `accessToken=${accessToken}; path=/; max-age=86400; samesite=lax`;
 
           set({
             user,
@@ -151,7 +154,6 @@ export const useAuthStore = create<AuthState>()(
             // The UI should redirect to setup page if this flag is true
             // We need to store tempToken to use it for enabling 2FA
             localStorage.setItem("accessToken", data.tempToken); // Use temp token as access token for setup
-            document.cookie = `accessToken=${data.tempToken}; path=/; max-age=3600; samesite=lax`;
             return;
           }
 
@@ -160,7 +162,6 @@ export const useAuthStore = create<AuthState>()(
           localStorage.setItem("accessToken", accessToken);
           localStorage.setItem("refreshToken", refreshToken);
           // Also set token in cookie for middleware
-          document.cookie = `accessToken=${accessToken}; path=/; max-age=86400; samesite=lax`;
 
           set({
             user,
@@ -207,7 +208,6 @@ export const useAuthStore = create<AuthState>()(
 
           localStorage.setItem("accessToken", accessToken);
           localStorage.setItem("refreshToken", refreshToken);
-          document.cookie = `accessToken=${accessToken}; path=/; max-age=86400; samesite=lax`;
 
           set({
             user,
@@ -242,8 +242,7 @@ export const useAuthStore = create<AuthState>()(
           localStorage.removeItem("accessToken");
           localStorage.removeItem("refreshToken");
           // Also remove from cookies
-          document.cookie = "accessToken=; path=/; max-age=0";
-          document.cookie = "auth-storage=; path=/; max-age=0";
+          clearSessionCookies();
           set({
             user: null,
             isAuthenticated: false,
@@ -277,9 +276,7 @@ export const useAuthStore = create<AuthState>()(
               // Token genuinely rejected — clear the session.
               localStorage.removeItem("accessToken");
               localStorage.removeItem("refreshToken");
-              // Also remove from cookies
-              document.cookie = "accessToken=; path=/; max-age=0";
-              document.cookie = "auth-storage=; path=/; max-age=0";
+              clearSessionCookies();
               set({ user: null, isAuthenticated: false, isLoading: false });
             } else {
               // Transient failure (network blip, timeout, 5xx). Do NOT log the
@@ -307,7 +304,6 @@ export const useAuthStore = create<AuthState>()(
           // Update tokens
           localStorage.setItem("accessToken", accessToken);
           localStorage.setItem("refreshToken", refreshToken);
-          document.cookie = `accessToken=${accessToken}; path=/; max-age=86400; samesite=lax`;
 
           // Fetch updated user data
           const userResponse = await authApi.me();
@@ -335,8 +331,7 @@ export const useAuthStore = create<AuthState>()(
       resetAuth: () => {
         localStorage.removeItem("accessToken");
         localStorage.removeItem("refreshToken");
-        document.cookie = "accessToken=; path=/; max-age=0";
-        document.cookie = "auth-storage=; path=/; max-age=0";
+        clearSessionCookies();
         set({
           user: null,
           isAuthenticated: false,
@@ -359,6 +354,12 @@ export const useAuthStore = create<AuthState>()(
       onRehydrateStorage: () => (state) => {
         // After hydration, trigger fetchUser if token exists
         if (state && typeof window !== "undefined") {
+          // Finding F: a session cookie is written once and outlives the page
+          // that set it. An earlier build mirrored the bearer into
+          // `document.cookie`, so a returning visitor still carries the exposed
+          // credential even after the write site is gone. Clear it at bootstrap,
+          // not only at logout.
+          clearBearerTokenCookie();
           const token = localStorage.getItem("accessToken");
           if (token) {
             // Delay fetchUser to next tick to ensure store is ready

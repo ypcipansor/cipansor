@@ -166,14 +166,11 @@ export async function injectSession(page: Page, session: AuthSession) {
     version: 0,
   });
 
-  // Cookies for the Next middleware (it JSON.parses the encoded auth-storage and
-  // falls back to accessToken). Mirror the app's encodeURIComponent encoding.
+  // Cookies for the Next middleware. It reads the `auth-storage` profile blob
+  // (and never a credential cookie — the bearer token intentionally lives only
+  // in localStorage + the Authorization header, finding F). Mirror the app's
+  // encodeURIComponent encoding.
   await page.context().addCookies([
-    {
-      name: "accessToken",
-      value: session.accessToken,
-      url: BASE_URL,
-    },
     {
       name: "auth-storage",
       value: encodeURIComponent(authStorage),
@@ -215,6 +212,9 @@ export async function apiRequest<T = unknown>(
   if (!res.ok) {
     throw new Error(`${method} ${apiPath} → ${res.status}: ${text.slice(0, 200)}`);
   }
+  // 204 No Content (e.g. removing a role assignment) has an empty body; there is
+  // nothing to parse and `JSON.parse("")` would throw a misleading non-JSON error.
+  if (text.length === 0) return undefined as T;
   try {
     return JSON.parse(text) as T;
   } catch {
