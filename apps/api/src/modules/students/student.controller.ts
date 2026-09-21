@@ -73,7 +73,7 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
 export const update = asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params;
   const input: UpdateStudentInput = req.body;
-  const student = await studentService.update(id, input);
+  const student = await studentService.update(id, input, req.user?.sub);
 
   res.json({
     success: true,

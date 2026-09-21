@@ -1,5 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
+import { Errors } from '@/middleware/error';
+import { claimBlobForRecord, releaseBlobClaim } from '@/utils/blob-claim';
 import {
   PAUDAspect,
   PAUDAchievementLevel,
@@ -470,7 +472,7 @@ async function deleteAssessment(id: string) {
 // EVIDENCE SERVICE
 // ============================================
 
-async function createEvidence(input: CreatePAUDEvidenceInput) {
+async function createEvidence(input: CreatePAUDEvidenceInput, actorId?: string) {
   // Validate assessment exists
   const assessment = await prisma.pAUDDevelopmentAssessment.findUnique({
     where: { id: input.assessmentId },
@@ -480,15 +482,28 @@ async function createEvidence(input: CreatePAUDEvidenceInput) {
     throw new Error('Assessment not found');
   }
 
-  return prisma.pAUDAssessmentEvidence.create({
-    data: {
-      assessmentId: input.assessmentId,
-      fileUrl: input.fileUrl,
-      fileType: input.fileType,
-      fileName: input.fileName,
-      caption: input.caption,
-    },
-  });
+  // Claim the evidence file before the row references it, so a concurrent
+  // discard of a just-uploaded file cannot delete it between its reference
+  // probe and this insert (BUG 4 / flag 9).
+  const holderId = actorId ?? 'paud-assessment';
+  const claimed = await claimBlobForRecord(input.fileUrl, holderId);
+  if (!claimed) {
+    throw Errors.conflict('Berkas bukti sedang diproses pihak lain; unggah ulang berkas tersebut');
+  }
+
+  try {
+    return await prisma.pAUDAssessmentEvidence.create({
+      data: {
+        assessmentId: input.assessmentId,
+        fileUrl: input.fileUrl,
+        fileType: input.fileType,
+        fileName: input.fileName,
+        caption: input.caption,
+      },
+    });
+  } finally {
+    await releaseBlobClaim(input.fileUrl, holderId).catch(() => undefined);
+  }
 }
 
 async function deleteEvidence(id: string) {

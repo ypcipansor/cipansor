@@ -3,6 +3,14 @@ import { prisma } from '../../lib/prisma';
 import { qualityService } from './quality.service';
 import { ApiError } from '@/middleware/error';
 
+// The create path claims the blob before inserting the record (BUG 4). The
+// protocol itself has its own unit + DB integration tests; here we only need a
+// claim that always succeeds.
+vi.mock('@/utils/blob-claim', () => ({
+  claimBlobForRecord: vi.fn().mockResolvedValue(true),
+  releaseBlobClaim: vi.fn().mockResolvedValue(undefined),
+}));
+
 // Mock all external dependencies
 vi.mock('../../lib/prisma', () => ({
   prisma: {

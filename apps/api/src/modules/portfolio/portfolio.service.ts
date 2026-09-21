@@ -12,6 +12,8 @@ import { prisma } from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/client';
 import { cleanupBlobBestEffort, cleanupBlobsBestEffort } from '@/utils/cloud-storage';
+import { Errors } from '@/middleware/error';
+import { claimBlobForRecord, releaseBlobClaim } from '@/utils/blob-claim';
 
 // Portfolio types and categories
 export const PORTFOLIO_TYPES = [
@@ -233,28 +235,44 @@ export async function addPortfolioFile(data: {
   fileType: string;
   fileSize?: number;
   isCover?: boolean;
+  /** The actor creating the reference, used to claim the blob (flag 9). */
+  holderId: string;
 }) {
+  // Claim the file blob before the row references it, so a concurrent discard
+  // of a just-uploaded file cannot delete it between its reference probe and
+  // this insert (BUG 4 / flag 9).
+  const { holderId, ...file } = data;
+  const claimed = await claimBlobForRecord(file.fileUrl, holderId);
+  if (!claimed) {
+    throw Errors.conflict('Berkas portofolio sedang diproses pihak lain; unggah ulang berkas');
+  }
+
   // If setting as cover, unset other covers
-  if (data.isCover) {
+  if (file.isCover) {
     await prisma.portfolioFile.updateMany({
-      where: { portfolioId: data.portfolioId, isCover: true },
+      where: { portfolioId: file.portfolioId, isCover: true },
       data: { isCover: false },
     });
   }
 
   // Get next sort order
   const lastFile = await prisma.portfolioFile.findFirst({
-    where: { portfolioId: data.portfolioId },
+    where: { portfolioId: file.portfolioId },
     orderBy: { sortOrder: 'desc' },
   });
   const sortOrder = (lastFile?.sortOrder || 0) + 1;
 
-  return prisma.portfolioFile.create({
-    data: {
-      ...data,
-      sortOrder,
-    },
-  });
+  try {
+    return await prisma.portfolioFile.create({
+      data: {
+        ...file,
+        sortOrder,
+      },
+    });
+  } finally {
+    // The row (or the failure) is now durable; the reference is the claim.
+    await releaseBlobClaim(file.fileUrl, holderId).catch(() => undefined);
+  }
 }
 
 export async function updatePortfolioFile(

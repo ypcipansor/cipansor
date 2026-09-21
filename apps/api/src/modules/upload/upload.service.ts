@@ -25,6 +25,11 @@ import {
   releaseBlobClaimById,
   markBlobDiscarded,
 } from '@/utils/blob-claim';
+import {
+  resolveLocalUploadPath,
+  readLocalUploadOwner,
+  removeLocalUpload,
+} from '@/utils/local-upload-store';
 import { mayAdministerEmployeeDocuments, mayVerifyPayments } from '@cipansor/shared';
 import type { JwtPayload } from '@/lib/jwt';
 import type { GetSasUrlResult } from '@cipansor/shared';
@@ -197,6 +202,80 @@ export async function resolveSasForBlob(url: string, actor: BlobActor): Promise<
 }
 
 /**
+ * Discard a local-storage orphan upload (BUG: local orphans were never removed).
+ *
+ * The cloud path refused to touch `/uploads` at all, so every abandoned local
+ * upload — the normal case when Azure is not configured — stayed on disk
+ * forever. This gives the local provider the same three guarantees the cloud
+ * path has: an exhaustive reference check, an ownership check against the
+ * recorded uploader, and path containment that survives traversal/symlink
+ * attacks.
+ *
+ * Safety order (the same as the cloud path, minus the durable claim — local
+ * files are deleted through the filesystem, and the reference re-probe is the
+ * authority):
+ *
+ *  1. Resolve the request name to a real path INSIDE the uploads directory, or
+ *     refuse. The untrusted string never becomes a path by itself.
+ *  2. Refuse if any record still references the file (exhaustive check).
+ *  3. Refuse unless the actor is the recorded uploader, or a foundation role.
+ *  4. Delete the file and its owner sidecar.
+ */
+async function discardLocalOrphanBlob(url: string, actor: BlobActor): Promise<void> {
+  const path0 = normalizeUploadPath(url);
+  if (!path0) {
+    // An arbitrary external URL is not a stored upload reference.
+    throw Errors.badRequest('Referensi berkas tidak dikenali');
+  }
+
+  const resolved = await resolveLocalUploadPath(path0);
+  if (!resolved) {
+    // Malformed name, missing file, or a path that escaped the uploads root.
+    // Treat as "nothing to discard", not as a server error: an orphan that is
+    // already gone satisfies the caller's intent.
+    return;
+  }
+
+  const refs = Array.from(
+    new Set([
+      ...blobReferenceCandidates(url),
+      ...blobReferenceCandidates(path0),
+      path0,
+    ])
+  );
+  if (await isBlobStillReferencedByRefs(refs)) {
+    throw Errors.conflict('Berkas sudah tersimpan pada sebuah catatan dan tidak dapat dibuang');
+  }
+
+  if (!isFoundationScopedRole(actor.roleCode)) {
+    const uploaderId = await readLocalUploadOwner(resolved);
+    if (!uploaderId || uploaderId !== actor.id) {
+      // No recorded uploader (pre-sidecar upload, or written out of band) is
+      // refused for everyone: unknown ownership must not become "anyone may
+      // delete it", matching the cloud path.
+      throw Errors.forbidden('Anda tidak berwenang membuang berkas tersebut');
+    }
+  }
+
+  await removeLocalUpload(resolved);
+}
+
+/**
+ * Exhaustive reference check over a set of equivalent spellings.
+ *
+ * `isBlobStillReferenced` takes one URL; local files can be stored as a
+ * relative path or an absolute URL, so every spelling must be probed. Reuses
+ * the same every-field counter index the cloud path uses — a reference in any
+ * covered field blocks the delete.
+ */
+async function isBlobStillReferencedByRefs(refs: readonly string[]): Promise<boolean> {
+  for (const ref of refs) {
+    if (await isBlobStillReferenced(ref)) return true;
+  }
+  return false;
+}
+
+/**
  * Authorise a discard of an orphan blob.
  *
  * An orphan blob has no database record to name an owner, so the uploader
@@ -267,8 +346,18 @@ async function assertActorMayDiscardBlob(
  * is gone, so leaving the row in place keeps every future create from
  * resurrecting the URL.
  *
- * A partial failure releases the claim so the orphan can be retried rather than
- * being pinned until the claim TTL lapses.
+ * A release runs only while the claim is still untombstoned. Once the tombstone
+ * is set the row is terminal and is NEVER released, even if the delete throws:
+ *
+ *  - The delete may have reached Azure and been applied despite a transport
+ *    error on the response. Releasing the row would then let a create claim the
+ *    URL and persist a reference to a blob that no longer exists (BUG 7).
+ *  - "Could not delete an orphan" must fail closed; a released tombstone would
+ *    silently re-open the window. A later retry reconciles from the tombstone.
+ *
+ * The claim is released only on the paths that abort BEFORE the tombstone (the
+ * reference re-probe, or a lost/stolen claim), where nothing irreversible has
+ * been attempted and a retry is safe.
  *
  * Both callers (HR documents, e-office letters) invoke this ONLY after a create
  * request has already failed, but the coordination holds even when a *different*
@@ -276,7 +365,15 @@ async function assertActorMayDiscardBlob(
  */
 export async function discardOrphanBlob(url: string, actor: BlobActor): Promise<void> {
   const parsed = parseBlobUrl(url);
-  if (!parsed) return; // local /uploads path — nothing in this application to remove
+  if (!parsed) {
+    // Not a cloud blob. Either a local `/uploads/...` path or an arbitrary
+    // external URL. The raw string is never used as a filesystem path — a
+    // storage URL is untrusted input and `path.join` on it would be a
+    // traversal/symlink/arbitrary-delete hole. Instead the middleware resolves
+    // the *basename* against the uploads root with a strict shape check and
+    // `realpath`, and only then is the resolved file unlinked.
+    return discardLocalOrphanBlob(url, actor);
+  }
   if (!isAllowedContainer(parsed.containerName)) {
     throw Errors.forbidden('Akses ke kontainer penyimpanan tersebut ditolak');
   }
@@ -304,6 +401,7 @@ export async function discardOrphanBlob(url: string, actor: BlobActor): Promise<
     );
   }
 
+  let tombstoned = false;
   try {
     // Re-probe under the claim: catches anything that committed before the
     // claim was taken. After this point the claim blocks any new commit.
@@ -319,13 +417,23 @@ export async function discardOrphanBlob(url: string, actor: BlobActor): Promise<
     if (!(await markBlobDiscarded(claimId, actor.id))) {
       throw Errors.conflict('Berkas sedang diproses pihak lain; coba lagi nanti');
     }
+    tombstoned = true;
 
+    // The delete outcome is deliberately NOT recorded. A throw here leaves it
+    // genuinely unknown — the request may or may not have reached Azure — so
+    // claiming either result would be a lie. The tombstone plus reconciliation
+    // (see `reconcileDiscardedBlobs`) resolves it later.
     await deleteFromCloudStorage(parsed.containerName, parsed.blobName);
   } catch (error) {
-    // The blob was not deleted (or a guard refused); release the claim so a
-    // later discard can retry instead of waiting for the TTL. A tombstone is
-    // never set on this path, so the release is safe.
-    await releaseBlobClaimById(claimId, actor.id).catch(() => undefined);
+    // NEVER release a tombstoned claim, even though the delete threw: the
+    // delete may have been applied at Azure before the error reached us, and
+    // releasing the row would let a create reclaim the URL of a blob that no
+    // longer exists (BUG 7). The tombstone keeps the URL terminal; a later
+    // reconciliation retries the delete. Only a pre-tombstone abort releases,
+    // so a transient conflict can be retried normally.
+    if (!tombstoned) {
+      await releaseBlobClaimById(claimId, actor.id).catch(() => undefined);
+    }
     throw error;
   }
 

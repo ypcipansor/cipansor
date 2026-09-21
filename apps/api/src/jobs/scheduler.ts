@@ -12,6 +12,7 @@ import { purgeIdentityDocuments } from './identity-purge.job';
 import { runChatbotSpendCheck } from './chatbot-spend.job';
 import { runChatbotTranscriptPurge } from './chatbot-transcript-purge.job';
 import { runChatbotEscalationRetry } from './chatbot-escalation-retry.job';
+import { reconcileDiscardedBlobs } from './blob-discard-reconcile.job';
 import { prisma } from '@/lib/prisma';
 
 /**
@@ -280,6 +281,44 @@ export function initializeScheduler(): void {
   scheduledTasks.push(chatbotEscalationTask);
   logger.info('[Scheduler] Chatbot escalation retry scheduled every 30 minutes');
 
+  /**
+   * Rekonsiliasi hapus blob yang tertombstone — tiap jam, pukul :10.
+   *
+   * BUG 7: bila `deleteFromCloudStorage` melempar, tombstone SENGAJA tidak
+   * dilepas (hapusnya mungkin sudah diterapkan Azure). Akibatnya keadaan blob
+   * itu tidak diketahui sampai ada yang mencoba menghapusnya lagi. Pekerjaan
+   * inilah percobaan ulang itu. Menghapus blob yang sudah lenyap adalah
+   * keberhasilan idempoten, dan tombstone menjamin tidak ada catatan yang
+   * dapat menunjuk URL itu lagi — jadi mengulangnya tidak berbahaya.
+   *
+   * Tiap jam, bukan harian seperti penyapu lain, karena ini bukan retensi
+   * melainkan pemulihan keadaan: tiap blob yang tertunda adalah satu URL yang
+   * statusnya tidak diketahui. Dibatasi 200 baris tiap jalan supaya tumpukan
+   * tidak berubah menjadi sapuan Azure tanpa batas.
+   */
+  const blobReconcileTask = cron.schedule(
+    '10 * * * *',
+    async () => {
+      logger.debug('[Scheduler] Running blob discard reconciliation');
+      try {
+        const summary = await reconcileDiscardedBlobs();
+        if (summary.failed > 0) {
+          logger.warn(
+            `[Scheduler] Blob reconcile: ${summary.deleted} deleted, ` +
+              `${summary.failed} failed, ${summary.skipped} skipped`
+          );
+        }
+      } catch (error) {
+        logger.error('[Scheduler] Blob discard reconciliation failed:', error);
+      }
+    },
+    {
+      timezone: 'Asia/Jakarta',
+    }
+  );
+  scheduledTasks.push(blobReconcileTask);
+  logger.info('[Scheduler] Blob discard reconciliation scheduled hourly at :10 WIB');
+
   logger.info(`[Scheduler] ${scheduledTasks.length} jobs scheduled successfully`);
 }
 
@@ -307,6 +346,7 @@ export async function runJob(
     | 'chatbot-spend'
     | 'chatbot-transcript-purge'
     | 'chatbot-escalation-retry'
+    | 'blob-discard-reconcile'
 ): Promise<void> {
   logger.info(`[Scheduler] Manually running job: ${jobName}`);
 
@@ -340,6 +380,9 @@ export async function runJob(
       break;
     case 'chatbot-escalation-retry':
       await runChatbotEscalationRetry();
+      break;
+    case 'blob-discard-reconcile':
+      await reconcileDiscardedBlobs();
       break;
     default:
       throw new Error(`Unknown job: ${jobName}`);

@@ -3,6 +3,8 @@ import { Prisma, DailyMood, MealConsumption, UnitType, TahfidzActivityType } fro
 import { whatsAppService } from '../notifications';
 import { logger } from '@/lib/logger';
 import { cleanupBlobsBestEffort } from '@/utils/cloud-storage';
+import { claimBlobsForRecord, releaseBlobClaims } from '@/utils/blob-claim';
+import { Errors } from '@/middleware/error';
 import type {
   ListDailyReportsQuery,
   StudentDailySummaryQuery,
@@ -203,59 +205,79 @@ export const dailyReportService = {
       throw new Error('Daily report already exists for this student on this date');
     }
 
-    const report = await prisma.dailyStudentReport.create({
-      data: {
-        studentId: data.studentId,
-        unitId: data.unitId,
-        academicYearId: data.academicYearId,
-        reportDate,
-        unitType: unit.type as UnitType,
-        mood: data.morningMood as DailyMood | undefined,
-        healthStatus: data.healthNotes,
-        temperature: data.temperature,
-        hadBreakfast:
-          data.breakfastConsumption === 'HABIS' || data.breakfastConsumption === 'SETENGAH',
-        mealStatus: data.lunchConsumption as MealConsumption | undefined,
-        snackStatus: data.snackConsumption as MealConsumption | undefined,
-        napDuration: data.napDurationMinutes,
-        toiletNotes: data.toiletingNotes,
-        sholatDhuha: data.sholatDhuha,
-        sholatDzuhur: data.sholatDzuhur,
-        sholatAshar: data.sholatAshar,
-        sholatJamaah: data.sholatJamaah,
-        activitiesSummary: data.activitiesSummary,
-        achievements: data.learningAchievements,
-        tahfidzActivity: data.surahPractice,
-        behaviorNotes: data.behaviorNotes,
-        teacherNotes: data.parentNotes,
-        homeActivity: data.homeworkSuggestion,
-        createdById: userId,
-        photos:
-          data.photoUrls && data.photoUrls.length > 0
-            ? {
-                create: data.photoUrls.map((url) => ({
-                  photoUrl: url,
-                  caption: '',
-                })),
-              }
-            : undefined,
-        homework:
-          data.homework && data.homework.length > 0
-            ? {
-                create: data.homework.map((hw) => ({
-                  subjectName: hw.subjectName,
-                  description: hw.description,
-                  dueDate: hw.dueDate ? new Date(hw.dueDate) : null,
-                })),
-              }
-            : undefined,
-      },
-      include: {
-        student: { select: { id: true, user: { select: { name: true } } } },
-        unit: { select: { id: true, name: true } },
-        createdBy: { select: { id: true, name: true } },
-        photos: true,
-      },
+    // Claim every blob this report will reference before creating it (BUG 4 /
+    // flag 9). The upload → create sequence is two requests, so a discard for a
+    // just-uploaded photo could otherwise delete the blob between its reference
+    // probe and its Azure call while we are committing. The claim serializes the
+    // two writers; the committed record is the durable protection after that.
+    const photoUrls = data.photoUrls ?? [];
+    const report = await prisma.$transaction(async (tx) => {
+      const claimed = await claimBlobsForRecord(photoUrls, userId, tx);
+      if (!claimed) {
+        throw Errors.conflict(
+          'Foto laporan sedang diproses pihak lain; unggah ulang berkas tersebut'
+        );
+      }
+
+      const created = await tx.dailyStudentReport.create({
+        data: {
+          studentId: data.studentId,
+          unitId: data.unitId,
+          academicYearId: data.academicYearId,
+          reportDate,
+          unitType: unit.type as UnitType,
+          mood: data.morningMood as DailyMood | undefined,
+          healthStatus: data.healthNotes,
+          temperature: data.temperature,
+          hadBreakfast:
+            data.breakfastConsumption === 'HABIS' || data.breakfastConsumption === 'SETENGAH',
+          mealStatus: data.lunchConsumption as MealConsumption | undefined,
+          snackStatus: data.snackConsumption as MealConsumption | undefined,
+          napDuration: data.napDurationMinutes,
+          toiletNotes: data.toiletingNotes,
+          sholatDhuha: data.sholatDhuha,
+          sholatDzuhur: data.sholatDzuhur,
+          sholatAshar: data.sholatAshar,
+          sholatJamaah: data.sholatJamaah,
+          activitiesSummary: data.activitiesSummary,
+          achievements: data.learningAchievements,
+          tahfidzActivity: data.surahPractice,
+          behaviorNotes: data.behaviorNotes,
+          teacherNotes: data.parentNotes,
+          homeActivity: data.homeworkSuggestion,
+          createdById: userId,
+          photos:
+            data.photoUrls && data.photoUrls.length > 0
+              ? {
+                  create: data.photoUrls.map((url) => ({
+                    photoUrl: url,
+                    caption: '',
+                  })),
+                }
+              : undefined,
+          homework:
+            data.homework && data.homework.length > 0
+              ? {
+                  create: data.homework.map((hw) => ({
+                    subjectName: hw.subjectName,
+                    description: hw.description,
+                    dueDate: hw.dueDate ? new Date(hw.dueDate) : null,
+                  })),
+                }
+              : undefined,
+        },
+        include: {
+          student: { select: { id: true, user: { select: { name: true } } } },
+          unit: { select: { id: true, name: true } },
+          createdBy: { select: { id: true, name: true } },
+          photos: true,
+        },
+      });
+
+      // The report and its photo rows are committed in this transaction; the
+      // record itself is now the durable claim, so release the transient one.
+      await releaseBlobClaims(photoUrls, userId, tx);
+      return created;
     });
 
     // Send WhatsApp notification
@@ -490,13 +512,21 @@ export const dailyReportService = {
   // UPDATE
   // ============================================
 
-  async update(id: string, data: UpdateDailyReportInput) {
-    // Photo replacement must be atomic (BUG 8): the report update, the delete
-    // of the old photo rows and the insert of the new ones either all commit or
-    // none do. Previously an insert failure after the delete left the report
-    // with no photos at all, and a concurrent reader could observe the gap. The
-    // blob sweep runs only after the transaction commits, so a rollback never
-    // destroys a blob whose row is still live.
+  async update(id: string, data: UpdateDailyReportInput, userId: string) {
+    // Photo AND homework replacement must be atomic (BUG 11): the report
+    // update, the delete of the old child rows and the insert of the new ones
+    // either all commit or none do. Previously an insert failure after the
+    // delete left the report with no photos (or no homework) at all, and a
+    // concurrent reader could observe the gap. The blob sweep runs only after
+    // the transaction commits, so a rollback never destroys a blob whose row is
+    // still live.
+    //
+    // The returned report must reflect the state AFTER replacement (BUG 12):
+    // the old code included `photos`/`homework` from the `update` call, which
+    // ran BEFORE the delete+insert, so the response carried the previous
+    // photos and the client showed stale images until it refetched. The child
+    // collections are re-read inside the transaction once the replacements are
+    // in place.
     const { report, retiredPhotoUrls } = await prisma.$transaction(async (tx) => {
       const report = await tx.dailyStudentReport.update({
         where: { id },
@@ -524,13 +554,23 @@ export const dailyReportService = {
         },
         include: {
           student: { select: { id: true, user: { select: { name: true } } } },
-          photos: true,
-          homework: true,
         },
       });
 
+      let retiredPhotoUrls: string[] = [];
+
       // Handle photo updates if provided
       if (data.photoUrls !== undefined) {
+        // Claim every incoming photo URL before any row references it, so a
+        // concurrent discard of a just-uploaded photo cannot delete the blob
+        // after its reference probe but before our insert (BUG 4 / flag 9).
+        const claimed = await claimBlobsForRecord(data.photoUrls, userId, tx);
+        if (!claimed) {
+          throw Errors.conflict(
+            'Foto laporan sedang diproses pihak lain; unggah ulang berkas tersebut'
+          );
+        }
+
         // Snapshot the outgoing photos inside the transaction, so the URLs to
         // reclaim are exactly the ones the delete removes.
         const previousPhotos = await tx.dailyReportPhoto.findMany({
@@ -551,39 +591,51 @@ export const dailyReportService = {
         }
 
         const retained = new Set(data.photoUrls);
-        return {
-          report,
-          retiredPhotoUrls: previousPhotos
-            .map((p) => p.photoUrl)
-            .filter((url) => !retained.has(url)),
-        };
+        retiredPhotoUrls = previousPhotos
+          .map((p) => p.photoUrl)
+          .filter((url) => !retained.has(url));
       }
 
-      return { report, retiredPhotoUrls: [] as string[] };
+      // Handle homework updates — in the SAME transaction as the report update,
+      // so a failed insert leaves the previous homework intact (BUG 11).
+      if (data.homework !== undefined) {
+        await tx.dailyHomework.deleteMany({ where: { reportId: id } });
+
+        if (data.homework.length > 0) {
+          await tx.dailyHomework.createMany({
+            data: data.homework.map((hw) => ({
+              reportId: id,
+              subjectName: hw.subjectName,
+              description: hw.description,
+              dueDate: hw.dueDate ? new Date(hw.dueDate) : null,
+            })),
+          });
+        }
+      }
+
+      // Re-read the child collections AFTER replacement so the caller gets the
+      // current photos and homework, not the pre-replacement snapshot (BUG 12).
+      const [photos, homework] = await Promise.all([
+        tx.dailyReportPhoto.findMany({ where: { reportId: id } }),
+        tx.dailyHomework.findMany({ where: { reportId: id } }),
+      ]);
+
+      // The new rows are committed in this transaction; the record now names
+      // them durably, so release the transient claims.
+      if (data.photoUrls !== undefined) {
+        await releaseBlobClaims(data.photoUrls, userId, tx);
+      }
+
+      return {
+        report: { ...report, photos, homework },
+        retiredPhotoUrls,
+      };
     });
 
     // Best-effort, after the transaction committed: a blob whose URL is still
     // referenced by one of the new photos is left in place.
     if (retiredPhotoUrls.length > 0) {
       await cleanupBlobsBestEffort(retiredPhotoUrls);
-    }
-
-    // Handle homework updates
-    if (data.homework !== undefined) {
-      // Delete existing homework
-      await prisma.dailyHomework.deleteMany({ where: { reportId: id } });
-
-      // Create new homework
-      if (data.homework.length > 0) {
-        await prisma.dailyHomework.createMany({
-          data: data.homework.map((hw) => ({
-            reportId: id,
-            subjectName: hw.subjectName,
-            description: hw.description,
-            dueDate: hw.dueDate ? new Date(hw.dueDate) : null,
-          })),
-        });
-      }
     }
 
     return report;

@@ -21,6 +21,7 @@ const {
   mockSasToString,
   mockDeleteBlob,
   mockGetProperties,
+  mockSetAccessPolicy,
   mockIsBlobStillReferenced,
 } = vi.hoisted(() => {
   const mockUploadFile = vi.fn().mockResolvedValue({});
@@ -32,11 +33,16 @@ const {
     uploadFile: mockUploadFile,
     url: 'https://cipansorstore.blob.core.windows.net/e-office-documents/dummy.pdf',
   });
-  const mockCreateIfNotExists = vi.fn().mockResolvedValue({});
+  // Creating the container is the common case; the reconciling `getProperties`
+  // / `setAccessPolicy` pair only runs for a container that already exists.
+  const mockCreateIfNotExists = vi.fn().mockResolvedValue({ succeeded: true });
+  const mockSetAccessPolicy = vi.fn().mockResolvedValue({});
   const mockGetContainerClient = vi.fn().mockReturnValue({
     createIfNotExists: mockCreateIfNotExists,
     getBlockBlobClient: mockGetBlockBlobClient,
     deleteBlob: mockDeleteBlob,
+    getProperties: mockGetProperties,
+    setAccessPolicy: mockSetAccessPolicy,
     getBlobClient: vi.fn().mockReturnValue({ getProperties: mockGetProperties }),
   });
   const mockSasToString = vi.fn(() => 'sig=fakeSasToken&se=2026-01-01T00%3A00%3A00Z');
@@ -51,6 +57,7 @@ const {
     mockSasToString,
     mockDeleteBlob,
     mockGetProperties,
+    mockSetAccessPolicy,
     mockIsBlobStillReferenced,
   };
 });
@@ -125,6 +132,51 @@ describe('Cloud Storage Utility (Azure Blob Storage Provider)', () => {
     expect(mockUploadFile).toHaveBeenCalledWith('/tmp/dummy.pdf', {
       blobHTTPHeaders: { blobContentType: 'application/pdf' },
     });
+  });
+
+  it('re-applies blob access when an existing public container has the wrong policy (F9)', async () => {
+    process.env.AZURE_STORAGE_CONNECTION_STRING = CONNECTION_STRING;
+    // Container already exists with no public access: `createIfNotExists` did
+    // not apply the policy, so the reconciling read is what has to catch it.
+    mockCreateIfNotExists.mockResolvedValueOnce({ succeeded: false });
+    mockGetProperties.mockResolvedValueOnce({ blobPublicAccess: undefined });
+
+    await uploadToCloudStorage(
+      '/tmp/dummy.pdf',
+      'dummy.pdf',
+      'application/pdf',
+      'media-public'
+    );
+
+    expect(mockSetAccessPolicy).toHaveBeenCalledWith('blob');
+  });
+
+  it('leaves an existing public container alone when it is already blob-readable (F9)', async () => {
+    process.env.AZURE_STORAGE_CONNECTION_STRING = CONNECTION_STRING;
+    mockCreateIfNotExists.mockResolvedValueOnce({ succeeded: false });
+    mockGetProperties.mockResolvedValueOnce({ blobPublicAccess: 'blob' });
+
+    await uploadToCloudStorage(
+      '/tmp/dummy.pdf',
+      'dummy.pdf',
+      'application/pdf',
+      'media-public'
+    );
+
+    expect(mockSetAccessPolicy).not.toHaveBeenCalled();
+  });
+
+  it('fails the upload if a public container cannot be made blob-readable (F9)', async () => {
+    process.env.AZURE_STORAGE_CONNECTION_STRING = CONNECTION_STRING;
+    mockCreateIfNotExists.mockResolvedValueOnce({ succeeded: false });
+    mockGetProperties.mockResolvedValueOnce({ blobPublicAccess: undefined });
+    mockSetAccessPolicy.mockRejectedValueOnce(new Error('forbidden'));
+
+    // Fail-fast rather than reporting success for a blob no anonymous request
+    // can fetch.
+    await expect(
+      uploadToCloudStorage('/tmp/dummy.pdf', 'dummy.pdf', 'application/pdf', 'media-public')
+    ).rejects.toThrow(/Gagal mengunggah berkas ke Azure Blob Storage/);
   });
 
   it('uploads a private container without baking a SAS; stores a stable blob reference', async () => {

@@ -126,7 +126,7 @@ export const createItem = asyncHandler(async (req: Request, res: Response) => {
   if (!unitId) {
     return res.status(400).json(ApiResponse.error('Unit ID tidak ditemukan', 'UNIT_REQUIRED'));
   }
-  const item = await itemService.create(unitId, req.body);
+  const item = await itemService.create(unitId, req.body, req.user?.sub);
   return res.status(201).json(ApiResponse.success(item, 'Item berhasil dibuat'));
 });
 
@@ -136,7 +136,7 @@ export const updateItem = asyncHandler(async (req: Request, res: Response) => {
   if (!unitId) {
     return res.status(400).json(ApiResponse.error('Unit ID tidak ditemukan', 'UNIT_REQUIRED'));
   }
-  const item = await itemService.update(req.params.id, unitId, req.body);
+  const item = await itemService.update(req.params.id, unitId, req.body, req.user?.sub);
   return res.json(ApiResponse.success(item, 'Item berhasil diperbarui'));
 });
 

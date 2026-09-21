@@ -56,6 +56,13 @@ vi.mock('@/lib/prisma', () => ({
   prisma: mockPrisma,
 }));
 
+// The addPhoto path claims the blob before inserting the row (BUG 4). The
+// protocol has its own unit + DB integration tests; here the claim succeeds.
+vi.mock('@/utils/blob-claim', () => ({
+  claimBlobForRecord: vi.fn().mockResolvedValue(true),
+  releaseBlobClaim: vi.fn().mockResolvedValue(undefined),
+}));
+
 // Import service after mocking
 import * as paudReportService from '@/modules/paud-report/paud-report.service';
 

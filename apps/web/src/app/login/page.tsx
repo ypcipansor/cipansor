@@ -141,17 +141,43 @@ function LoginPageContent() {
   const googleButtonRef = useRef<HTMLDivElement | null>(null);
 
   /**
+   * Turnstile di halaman masuk.
+   *
+   * `authLimiter` membatasi 5 percobaan per menit **per IP**, dan itu memang
+   * menghentikan satu mesin yang menebak kata sandi. Yang tidak dihentikannya
+   * adalah percobaan yang tersebar di ribuan IP, karena tidak satu pun dari
+   * mereka menyentuh batasnya. Turnstile menaikkan ongkos setiap percobaan,
+   * bukan ongkos setiap alamat.
+   *
+   * Dua instance, bukan satu: token Turnstile terikat pada `action` yang
+   * memasangnya, jadi token formulir kata sandi (`login`) DITOLAK di
+   * `/auth/sso/login` (`sso-login`) dan sebaliknya. Tombol SSO karena itu
+   * menunggu tokennya sendiri.
+   */
+  const turnstile = useTurnstile();
+  const ssoTurnstile = useTurnstile();
+
+  /**
    * Shared tail of both SSO flows: hand the ID token to the backend and route
    * on success. Extracted because Google and Microsoft differ only in how the
    * token is obtained — the SDKs do the redirect handshake, so there is no
    * `state`/`nonce`/hash handling left on this page.
+   *
+   * The SSO endpoint carries the same Turnstile gate as the password form (a
+   * bearer ID token is just as worth replaying as a password), so the widget's
+   * token rides along and is refreshed after every attempt — Turnstile tokens
+   * are single-use and a second exchange is rejected by Cloudflare.
    */
   const completeSsoLogin = async (
     provider: "google" | "microsoft",
     idToken: string,
   ) => {
     try {
-      await ssoLogin({ provider, idToken });
+      await ssoLogin({
+        provider,
+        idToken,
+        turnstileToken: ssoTurnstile.token ?? undefined,
+      });
       const storeState = useAuthStore.getState();
       if (
         !storeState.requiresTwoFactor &&
@@ -162,6 +188,7 @@ function LoginPageContent() {
       }
     } catch {
       // The store surfaces the error; nothing more to do here.
+      ssoTurnstile.refresh();
     }
   };
 
@@ -261,17 +288,6 @@ function LoginPageContent() {
   const [showPassword, setShowPassword] = useState(false);
   const [selectedDemo, setSelectedDemo] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>(DEMO_TABS[0]?.key ?? "");
-
-  /**
-   * Turnstile di halaman masuk.
-   *
-   * `authLimiter` membatasi 5 percobaan per menit **per IP**, dan itu memang
-   * menghentikan satu mesin yang menebak kata sandi. Yang tidak dihentikannya
-   * adalah percobaan yang tersebar di ribuan IP, karena tidak satu pun dari
-   * mereka menyentuh batasnya. Turnstile menaikkan ongkos setiap percobaan,
-   * bukan ongkos setiap alamat.
-   */
-  const turnstile = useTurnstile();
 
   const {
     register,
@@ -583,11 +599,17 @@ function LoginPageContent() {
             </div>
 
             <div className="grid grid-cols-1 gap-2">
+              {/* Token for `/auth/sso/login`. It must be its own widget: a
+                  Turnstile token is bound to the `action` that rendered it, and
+                  the password form mints `login`, which the SSO endpoint
+                  rejects. */}
+              <TurnstileWidget action="sso-login" {...ssoTurnstile.widgetProps} />
+
               <Button
                 type="button"
                 variant="outline"
                 className="w-full flex items-center justify-center gap-2"
-                disabled={isLoading}
+                disabled={isLoading || !ssoTurnstile.ready}
                 onClick={handleGoogleLogin}
               >
                 <svg className="h-4 w-4" viewBox="0 0 24 24">
@@ -613,7 +635,7 @@ function LoginPageContent() {
                 type="button"
                 variant="outline"
                 className="w-full flex items-center justify-center gap-2"
-                disabled={isLoading}
+                disabled={isLoading || !ssoTurnstile.ready}
                 onClick={handleMicrosoftLogin}
               >
                 <svg className="h-4 w-4 text-blue-600" viewBox="0 0 23 23">

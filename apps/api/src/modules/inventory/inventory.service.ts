@@ -11,6 +11,8 @@ import { prisma } from '../../lib/prisma';
 import { config } from '../../config';
 import { createNotification } from '../notifications/notifications.service';
 import { createPurchaseJournal } from './asset-accounting.service';
+import { Errors } from '../../middleware/error';
+import { claimBlobForRecord, releaseBlobClaim } from '../../utils/blob-claim';
 import type {
   CreateInventoryCategoryInput,
   UpdateInventoryCategoryInput,
@@ -164,56 +166,90 @@ export async function getItemById(id: string) {
 }
 
 export async function createItem(data: CreateInventoryItemInput, userId?: string) {
-  return prisma.$transaction(async (tx) => {
-    const asset = await tx.asset.create({
-      data: {
-        unitId: data.unitId,
-        categoryId: data.categoryId,
-        code: data.code,
-        name: data.name,
-        brand: data.brand,
-        model: data.model,
-        serialNumber: data.serialNumber,
-        purchaseDate: data.purchaseDate,
-        purchasePrice: data.purchasePrice,
-        supplier: data.supplier,
-        location: data.location,
-        roomId: data.roomId,
-        purchaseOrderNo: data.purchaseOrderNo,
-        usefulLife: data.usefulLife,
-        residualValue: data.residualValue,
-        condition: data.condition,
-        status: data.status,
-        warrantyExpiry: data.warrantyExpiry,
-        notes: data.notes,
-        photoUrl: data.photoUrl,
-      },
+  const holderId = userId ?? 'inventory';
+  // Claim the asset photo before the row references it, so a concurrent discard
+  // of a just-uploaded photo cannot delete it between its reference probe and
+  // this insert (BUG 4 / flag 9).
+  if (data.photoUrl) {
+    const claimed = await claimBlobForRecord(data.photoUrl, holderId);
+    if (!claimed) {
+      throw Errors.conflict('Foto aset sedang diproses pihak lain; unggah ulang berkas tersebut');
+    }
+  }
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const asset = await tx.asset.create({
+        data: {
+          unitId: data.unitId,
+          categoryId: data.categoryId,
+          code: data.code,
+          name: data.name,
+          brand: data.brand,
+          model: data.model,
+          serialNumber: data.serialNumber,
+          purchaseDate: data.purchaseDate,
+          purchasePrice: data.purchasePrice,
+          supplier: data.supplier,
+          location: data.location,
+          roomId: data.roomId,
+          purchaseOrderNo: data.purchaseOrderNo,
+          usefulLife: data.usefulLife,
+          residualValue: data.residualValue,
+          condition: data.condition,
+          status: data.status,
+          warrantyExpiry: data.warrantyExpiry,
+          notes: data.notes,
+          photoUrl: data.photoUrl,
+        },
+        include: {
+          category: { select: { id: true, name: true, code: true } },
+          unit: { select: { id: true, name: true } },
+          room: { select: { id: true, name: true } },
+        },
+      });
+
+      if (userId) {
+        // Propagate error to rollback transaction if journaling fails
+        await createPurchaseJournal(asset, userId, tx);
+      }
+
+      return asset;
+    });
+  } finally {
+    if (data.photoUrl) {
+      await releaseBlobClaim(data.photoUrl, holderId).catch(() => undefined);
+    }
+  }
+}
+
+export async function updateItem(
+  id: string,
+  data: UpdateInventoryItemInput,
+  userId?: string
+) {
+  const holderId = userId ?? 'inventory';
+  // A photo added or replaced by an update is a new blob reference (flag 9).
+  if (data.photoUrl) {
+    const claimed = await claimBlobForRecord(data.photoUrl, holderId);
+    if (!claimed) {
+      throw Errors.conflict('Foto aset sedang diproses pihak lain; unggah ulang berkas tersebut');
+    }
+  }
+  try {
+    return await prisma.asset.update({
+      where: { id },
+      data,
       include: {
         category: { select: { id: true, name: true, code: true } },
         unit: { select: { id: true, name: true } },
         room: { select: { id: true, name: true } },
       },
     });
-
-    if (userId) {
-      // Propagate error to rollback transaction if journaling fails
-      await createPurchaseJournal(asset, userId, tx);
+  } finally {
+    if (data.photoUrl) {
+      await releaseBlobClaim(data.photoUrl, holderId).catch(() => undefined);
     }
-
-    return asset;
-  });
-}
-
-export async function updateItem(id: string, data: UpdateInventoryItemInput) {
-  return prisma.asset.update({
-    where: { id },
-    data,
-    include: {
-      category: { select: { id: true, name: true, code: true } },
-      unit: { select: { id: true, name: true } },
-      room: { select: { id: true, name: true } },
-    },
-  });
+  }
 }
 
 export async function deleteItem(id: string) {

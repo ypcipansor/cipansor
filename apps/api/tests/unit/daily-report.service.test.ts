@@ -20,6 +20,15 @@ vi.mock('@/utils/cloud-storage', () => ({
   cleanupBlobsBestEffort: vi.fn().mockResolvedValue(undefined),
 }));
 
+// The create/update paths now participate in the blob-claim protocol (flag 9):
+// every incoming photo URL is claimed before any row references it. The claim
+// protocol has its own unit + real-Postgres integration tests; here it always
+// succeeds, so the behavior these tests exercise is unchanged.
+vi.mock('@/utils/blob-claim', () => ({
+  claimBlobsForRecord: vi.fn().mockResolvedValue(true),
+  releaseBlobClaims: vi.fn().mockResolvedValue(undefined),
+}));
+
 // Mock Prisma. `$transaction` runs the callback against the same mock client so
 // the transactional work in `update` (BUG 8) still hits the assertions below.
 const prismaMock = vi.hoisted(() => {
@@ -58,6 +67,7 @@ const prismaMock = vi.hoisted(() => {
     dailyHomework: {
       createMany: vi.fn(),
       deleteMany: vi.fn(),
+      findMany: vi.fn(),
     },
   };
   mock.$transaction = vi.fn(async (fn: (tx: typeof mock) => unknown) => fn(mock));
@@ -543,7 +553,7 @@ describe('DailyReportService', () => {
       const updatedReport = { ...mockReport, mood: 'NEUTRAL' as DailyMood };
       vi.mocked(prisma.dailyStudentReport.update).mockResolvedValue(updatedReport as any);
 
-      const result = await dailyReportService.update(mockReportId, updateInput);
+      const result = await dailyReportService.update(mockReportId, updateInput, mockUserId);
 
       expect(result.mood).toBe('NEUTRAL');
       expect(prisma.dailyStudentReport.update).toHaveBeenCalledWith(
@@ -558,7 +568,7 @@ describe('DailyReportService', () => {
       vi.mocked(prisma.dailyReportPhoto.deleteMany).mockResolvedValue({ count: 1 } as any);
       vi.mocked(prisma.dailyReportPhoto.createMany).mockResolvedValue({ count: 1 } as any);
 
-      await dailyReportService.update(mockReportId, updateInput);
+      await dailyReportService.update(mockReportId, updateInput, mockUserId);
 
       expect(prisma.dailyReportPhoto.deleteMany).toHaveBeenCalledWith({
         where: { reportId: mockReportId },
@@ -570,7 +580,7 @@ describe('DailyReportService', () => {
       vi.mocked(prisma.dailyStudentReport.update).mockResolvedValue(mockReport as any);
       vi.mocked(prisma.dailyReportPhoto.deleteMany).mockResolvedValue({ count: 1 } as any);
 
-      await dailyReportService.update(mockReportId, { ...updateInput, photoUrls: [] });
+      await dailyReportService.update(mockReportId, { ...updateInput, photoUrls: [] }, mockUserId);
 
       expect(prisma.dailyReportPhoto.deleteMany).toHaveBeenCalled();
       expect(prisma.dailyReportPhoto.createMany).not.toHaveBeenCalled();
@@ -589,7 +599,7 @@ describe('DailyReportService', () => {
       await dailyReportService.update(mockReportId, {
         ...updateInput,
         photoUrls: ['https://store.blob.core.windows.net/cipansor-documents/kept.jpg'],
-      });
+      }, mockUserId);
 
       // Only the blob no longer referenced by any new photo is reclaimed.
       expect(cleanupBlobsBestEffort).toHaveBeenCalledWith([

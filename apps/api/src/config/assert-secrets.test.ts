@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import fs from 'fs';
+import path from 'path';
 import {
   assertProductionSecrets,
   assertProductionMicrosoftTenant,
@@ -313,5 +315,36 @@ describe('production Microsoft tenant fail-fast (BUG 10)', () => {
       if (previous === undefined) delete process.env.MICROSOFT_ALLOW_MULTI_TENANT;
       else process.env.MICROSOFT_ALLOW_MULTI_TENANT = previous;
     }
+  });
+});
+
+/**
+ * The opt-in flag has to actually reach the container. Compose enumerates the
+ * environment by name — a variable only in `.env` and missing from
+ * `docker-compose.yml` is silently dropped, and `MICROSOFT_ALLOW_MULTI_TENANT`
+ * would then look ignored: production would keep refusing to boot with
+ * `common` even though an operator set the flag. Pin the forwarding, and the
+ * safe default for deployments that never set it.
+ */
+describe('MICROSOFT_ALLOW_MULTI_TENANT reaches the API container (BUG: not forwarded)', () => {
+  const compose = fs.readFileSync(
+    path.resolve(__dirname, '..', '..', '..', '..', 'docker-compose.yml'),
+    'utf8'
+  );
+
+  it('is enumerated in the api service environment', () => {
+    expect(compose).toMatch(
+      /MICROSOFT_ALLOW_MULTI_TENANT:\s*\$\{MICROSOFT_ALLOW_MULTI_TENANT:-/
+    );
+  });
+
+  it('defaults to a non-multi-tenant value when unset', () => {
+    // The default must not read as "multi-tenant allowed": an unset flag is the
+    // fail-closed single-tenant path, so `true` as a default would invert it.
+    const match = compose.match(
+      /MICROSOFT_ALLOW_MULTI_TENANT:\s*\$\{MICROSOFT_ALLOW_MULTI_TENANT:-([^}]*)\}/
+    );
+    expect(match, 'MICROSOFT_ALLOW_MULTI_TENANT not found in docker-compose.yml').not.toBeNull();
+    expect(match![1].trim().toLowerCase()).not.toBe('true');
   });
 });

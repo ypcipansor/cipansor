@@ -25,6 +25,14 @@ vi.mock('jwks-rsa', () => {
   };
 });
 
+// The contract test below drives the real `login()` too, so the password
+// comparison is stubbed to a constant truth instead of running bcrypt against a
+// fixture hash. `ssoLogin` never touches this module.
+vi.mock('@/lib/password', () => ({
+  comparePassword: vi.fn(async () => true),
+  hashPassword: vi.fn(async () => 'hashed'),
+}));
+
 describe('SSO Authentication Security Unit Tests', () => {
   const originalEnv = process.env;
 
@@ -79,6 +87,7 @@ describe('SSO Authentication Security Unit Tests', () => {
       email_verified: true,
       sub: 'google-sub-1',
       aud: 'wrong-google-client-id',
+      iss: 'https://accounts.google.com',
       exp: Math.floor(Date.now() / 1000) + 3600,
     } as any);
 
@@ -102,6 +111,7 @@ describe('SSO Authentication Security Unit Tests', () => {
       email_verified: true,
       sub: 'google-sub-1',
       aud: 'expected-google-client-id',
+      iss: 'https://accounts.google.com',
       exp: Math.floor(Date.now() / 1000) - 100, // Expired
     } as any);
 
@@ -125,6 +135,7 @@ describe('SSO Authentication Security Unit Tests', () => {
       email_verified: false,
       sub: 'google-sub-1',
       aud: 'expected-google-client-id',
+      iss: 'https://accounts.google.com',
       exp: Math.floor(Date.now() / 1000) + 3600,
     } as any);
 
@@ -160,6 +171,200 @@ describe('SSO Authentication Security Unit Tests', () => {
     ).rejects.toThrow('Verifikasi token SSO gagal');
   });
 
+  // The issuer is REQUIRED (CRITICAL: an issuer-less token was accepted). Each
+  // of these would have signed in before the fix; the signature check alone
+  // decided trust whenever `iss` was absent or non-string.
+  it('rejects a Google token whose issuer (iss) is missing', async () => {
+    process.env.GOOGLE_CLIENT_ID = 'expected-google-client-id';
+
+    vi.spyOn(jwt, 'decode').mockReturnValueOnce({
+      header: { kid: 'google_key_1' },
+      payload: {},
+    } as any);
+    vi.spyOn(jwt, 'verify').mockReturnValueOnce({
+      email: 'user@cipansor.or.id',
+      email_verified: true,
+      sub: 'google-sub-1',
+      aud: 'expected-google-client-id',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    } as any);
+
+    await expect(
+      authService.ssoLogin({ provider: 'google', idToken: 'issuer_less_google_token' })
+    ).rejects.toThrow('Verifikasi token SSO gagal');
+  });
+
+  it('rejects a Google token whose issuer (iss) is not a string', async () => {
+    process.env.GOOGLE_CLIENT_ID = 'expected-google-client-id';
+
+    vi.spyOn(jwt, 'decode').mockReturnValueOnce({
+      header: { kid: 'google_key_1' },
+      payload: {},
+    } as any);
+    vi.spyOn(jwt, 'verify').mockReturnValueOnce({
+      email: 'user@cipansor.or.id',
+      email_verified: true,
+      sub: 'google-sub-1',
+      aud: 'expected-google-client-id',
+      iss: ['https://accounts.google.com'] as any,
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    } as any);
+
+    await expect(
+      authService.ssoLogin({ provider: 'google', idToken: 'non_string_issuer_token' })
+    ).rejects.toThrow('Verifikasi token SSO gagal');
+  });
+
+  it('accepts a Google token carrying the official issuer', async () => {
+    process.env.GOOGLE_CLIENT_ID = 'expected-google-client-id';
+
+    const mockUser = {
+      id: 'usr_google_ok',
+      email: 'user@cipansor.or.id',
+      isActive: true,
+      unitId: 'unit_1',
+      userRoles: [
+        {
+          isPrimary: true,
+          roleId: 'role_1',
+          unitId: 'unit_1',
+          role: { code: 'SDIT_GURU', permissions: ['STUDENT_READ'] },
+        },
+      ],
+    };
+
+    vi.spyOn(jwt, 'decode').mockReturnValueOnce({
+      header: { kid: 'google_key_1' },
+      payload: {},
+    } as any);
+    vi.spyOn(jwt, 'verify').mockReturnValueOnce({
+      email: 'user@cipansor.or.id',
+      email_verified: true,
+      sub: 'google-sub-1',
+      aud: 'expected-google-client-id',
+      iss: 'https://accounts.google.com',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    } as any);
+
+    vi.spyOn(prisma.user, 'findFirst').mockResolvedValueOnce(mockUser as any);
+    vi.spyOn(prisma.refreshToken, 'create').mockResolvedValueOnce({} as any);
+    vi.spyOn(prisma.user, 'update').mockResolvedValueOnce({} as any);
+    vi.spyOn(prisma.academicYear, 'findFirst').mockResolvedValueOnce({ id: 'ay_1' } as any);
+
+    const result = await authService.ssoLogin({
+      provider: 'google',
+      idToken: 'valid_google_token',
+    });
+
+    expect(result).toHaveProperty('accessToken');
+  });
+
+  it('rejects a Microsoft token whose issuer (iss) is missing', async () => {
+    process.env.MICROSOFT_CLIENT_ID = 'expected-ms-client-id';
+
+    vi.spyOn(jwt, 'decode').mockReturnValueOnce({
+      header: { kid: 'key_123' },
+      payload: {},
+    } as any);
+    vi.spyOn(jwt, 'verify').mockReturnValueOnce({
+      aud: 'expected-ms-client-id',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      preferred_username: 'guru@cipansor.or.id',
+      oid: 'ms-oid-issuerless',
+    } as any);
+
+    await expect(
+      authService.ssoLogin({ provider: 'microsoft', idToken: 'issuer_less_ms_token' })
+    ).rejects.toThrow('Verifikasi token SSO gagal');
+  });
+
+  it('rejects a Microsoft token whose issuer (iss) is not an Entra issuer', async () => {
+    process.env.MICROSOFT_CLIENT_ID = 'expected-ms-client-id';
+
+    vi.spyOn(jwt, 'decode').mockReturnValueOnce({
+      header: { kid: 'key_123' },
+      payload: {},
+    } as any);
+    vi.spyOn(jwt, 'verify').mockReturnValueOnce({
+      aud: 'expected-ms-client-id',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      // A look-alike host that merely *ends with* the real one must not pass.
+      iss: 'https://login.microsoftonline.com.attacker.example/11111111-1111-1111-1111-111111111111/v2.0',
+      preferred_username: 'guru@cipansor.or.id',
+      oid: 'ms-oid-bad-issuer',
+    } as any);
+
+    await expect(
+      authService.ssoLogin({ provider: 'microsoft', idToken: 'bad_issuer_ms_token' })
+    ).rejects.toThrow('Verifikasi token SSO gagal');
+  });
+
+  it('rejects a Microsoft token whose issuer (iss) is not a string', async () => {
+    process.env.MICROSOFT_CLIENT_ID = 'expected-ms-client-id';
+
+    vi.spyOn(jwt, 'decode').mockReturnValueOnce({
+      header: { kid: 'key_123' },
+      payload: {},
+    } as any);
+    vi.spyOn(jwt, 'verify').mockReturnValueOnce({
+      aud: 'expected-ms-client-id',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      iss: { toString: () => 'https://login.microsoftonline.com/x/' } as any,
+      preferred_username: 'guru@cipansor.or.id',
+      oid: 'ms-oid-nonstring',
+    } as any);
+
+    await expect(
+      authService.ssoLogin({ provider: 'microsoft', idToken: 'non_string_ms_issuer' })
+    ).rejects.toThrow('Verifikasi token SSO gagal');
+  });
+
+  it('accepts a Microsoft v1.0 (sts.windows.net) token with a valid tenant issuer', async () => {
+    process.env.MICROSOFT_CLIENT_ID = 'expected-ms-client-id';
+    process.env.MICROSOFT_TENANT_ID = '11111111-1111-1111-1111-111111111111';
+
+    const mockUser = {
+      id: 'usr_ms_v1',
+      email: 'guru@cipansor.or.id',
+      isActive: true,
+      unitId: 'unit_1',
+      userRoles: [
+        {
+          isPrimary: true,
+          roleId: 'role_1',
+          unitId: 'unit_1',
+          role: { code: 'SDIT_GURU', permissions: ['STUDENT_READ'] },
+        },
+      ],
+    };
+
+    vi.spyOn(jwt, 'decode').mockReturnValueOnce({
+      header: { kid: 'key_123' },
+      payload: {},
+    } as any);
+    vi.spyOn(jwt, 'verify').mockReturnValueOnce({
+      aud: 'expected-ms-client-id',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      tid: '11111111-1111-1111-1111-111111111111',
+      iss: 'https://sts.windows.net/11111111-1111-1111-1111-111111111111/',
+      preferred_username: 'guru@cipansor.or.id',
+      oid: 'ms-oid-v1',
+    } as any);
+
+    vi.spyOn(prisma.user, 'findFirst').mockResolvedValueOnce(mockUser as any);
+    vi.spyOn(prisma.refreshToken, 'create').mockResolvedValueOnce({} as any);
+    vi.spyOn(prisma.user, 'update').mockResolvedValueOnce({} as any);
+    vi.spyOn(prisma.academicYear, 'findFirst').mockResolvedValueOnce({ id: 'ay_1' } as any);
+
+    const result = await authService.ssoLogin({
+      provider: 'microsoft',
+      idToken: 'ms_v1_token',
+    });
+
+    expect(result).toHaveProperty('accessToken');
+  });
+
+
   it('should reject Google SSO when the token has no subject (sub)', async () => {
     process.env.GOOGLE_CLIENT_ID = 'expected-google-client-id';
 
@@ -171,6 +376,7 @@ describe('SSO Authentication Security Unit Tests', () => {
       email: 'user@cipansor.or.id',
       email_verified: true,
       aud: 'expected-google-client-id',
+      iss: 'https://accounts.google.com',
       exp: Math.floor(Date.now() / 1000) + 3600,
     } as any);
 
@@ -194,6 +400,7 @@ describe('SSO Authentication Security Unit Tests', () => {
       email_verified: true,
       sub: 'google-sub-unregistered',
       aud: 'expected-google-client-id',
+      iss: 'https://accounts.google.com',
       exp: Math.floor(Date.now() / 1000) + 3600,
     } as any);
 
@@ -246,6 +453,7 @@ describe('SSO Authentication Security Unit Tests', () => {
     vi.spyOn(jwt, 'verify').mockReturnValueOnce({
       aud: 'expected-ms-client-id',
       exp: Math.floor(Date.now() / 1000) + 3600,
+      iss: 'https://login.microsoftonline.com/55555555-5555-5555-5555-555555555555/v2.0',
       preferred_username: 'guru@cipansor.or.id',
       oid: 'ms-oid-1',
     } as any);
@@ -562,6 +770,7 @@ describe('SSO Authentication Security Unit Tests', () => {
     vi.spyOn(jwt, 'verify').mockReturnValueOnce({
       aud: 'expected-ms-client-id',
       exp: Math.floor(Date.now() / 1000) + 3600,
+      iss: 'https://login.microsoftonline.com/55555555-5555-5555-5555-555555555555/v2.0',
       preferred_username: 'GURU@cipansor.or.id',
       oid: 'ms-oid-1',
     } as any);
@@ -598,6 +807,7 @@ describe('SSO Authentication Security Unit Tests', () => {
     vi.spyOn(jwt, 'verify').mockReturnValueOnce({
       aud: 'expected-ms-client-id',
       exp: Math.floor(Date.now() / 1000) + 3600,
+      iss: 'https://login.microsoftonline.com/55555555-5555-5555-5555-555555555555/v2.0',
       preferred_username: 'guru@cipansor.or.id',
       oid: 'ms-oid-link',
     } as any);
@@ -853,6 +1063,140 @@ describe('SSO Authentication Security Unit Tests', () => {
     });
 
     expect(result).toHaveProperty('accessToken');
+  });
+});
+
+describe('password login and SSO login return the same user contract (BUG: SSO returned an incomplete user)', () => {
+  const originalEnv = process.env;
+
+  /**
+   * A user record in the shape the DB actually returns for the shared
+   * `PASSWORD_USER_INCLUDE`. Password login and SSO login must both surface an
+   * identical `user` object from it — same top-level keys, same role-assignment
+   * keys, same nested role keys.
+   */
+  const fullUser = {
+    id: 'usr_contract',
+    email: 'guru@cipansor.or.id',
+    name: 'Guru Kontrak',
+    phone: '0812',
+    isActive: true,
+    isTwoFactorEnabled: false,
+    isEmployee: false,
+    deletedAt: null,
+    unitId: 'unit_1',
+    passwordHash: 'stored-hash',
+    twoFactorSecret: null,
+    twoFactorSecretPending: null,
+    twoFactorRecoveryCodes: null,
+    resetTokenHash: null,
+    resetTokenExpiresAt: null,
+    createdAt: new Date('2025-01-01'),
+    updatedAt: new Date('2025-01-02'),
+    unit: { id: 'unit_1', name: 'SD IT', type: 'SDIT' },
+    userRoles: [
+      {
+        id: 'assign_1',
+        userId: 'usr_contract',
+        roleId: 'role_1',
+        unitId: 'unit_1',
+        isPrimary: true,
+        isActive: true,
+        assignedAt: new Date('2025-01-01'),
+        expiresAt: null,
+        unit: { id: 'unit_1', name: 'SD IT', type: 'SDIT' },
+        role: {
+          id: 'role_1',
+          code: 'SDIT_GURU',
+          name: 'Guru SD IT',
+          realm: 'ACADEMIC',
+          description: null,
+          permissions: ['STUDENT_READ'],
+        },
+      },
+    ],
+  };
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    process.env.GOOGLE_CLIENT_ID = 'expected-google-client-id';
+    vi.restoreAllMocks();
+    vi.spyOn(prisma.identityProvider, 'findUnique').mockResolvedValue(null as any);
+    vi.spyOn(prisma.identityProvider, 'create').mockResolvedValue({} as any);
+    vi.spyOn(prisma.identityProvider, 'update').mockResolvedValue({} as any);
+    vi.spyOn(prisma.auditLog, 'create').mockResolvedValue({} as any);
+    vi.spyOn(prisma.user, 'findUnique').mockResolvedValue({ deletedAt: null } as any);
+    vi.spyOn(prisma.refreshToken, 'create').mockResolvedValue({} as any);
+    vi.spyOn(prisma.user, 'update').mockResolvedValue({} as any);
+    vi.spyOn(prisma.academicYear, 'findFirst').mockResolvedValue({ id: 'ay_1' } as any);
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  it('exposes the identifiers, unit and role assignment fields the web client reads', async () => {
+    process.env.MICROSOFT_CLIENT_ID = 'expected-ms-client-id';
+
+    // --- Password login ---
+    vi.spyOn(prisma.user, 'findFirst').mockResolvedValueOnce(fullUser as any);
+    const passwordResult: any = await authService.login({
+      email: 'guru@cipansor.or.id',
+      password: 'secret',
+    });
+
+    // --- SSO login over the same record ---
+    vi.spyOn(jwt, 'decode').mockReturnValueOnce({
+      header: { kid: 'key_123' },
+      payload: {},
+    } as any);
+    vi.spyOn(jwt, 'verify').mockReturnValueOnce({
+      aud: 'expected-ms-client-id',
+      iss: 'https://login.microsoftonline.com/55555555-5555-5555-5555-555555555555/v2.0',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      preferred_username: 'guru@cipansor.or.id',
+      oid: 'ms-oid-contract',
+    } as any);
+    vi.spyOn(prisma.user, 'findFirst').mockResolvedValueOnce(fullUser as any);
+    const ssoResult: any = await authService.ssoLogin({
+      provider: 'microsoft',
+      idToken: 'contract_token',
+    });
+
+    // Identical top-level keys on the returned user.
+    expect(Object.keys(ssoResult.user).sort()).toEqual(Object.keys(passwordResult.user).sort());
+
+    // Both paths must ask the database for the SAME relation shape. Prisma is
+    // mocked here, so asserting on the returned fixture alone would pass even
+    // if the query had narrowed again — the include is what actually decides
+    // which fields exist in production.
+    const passwordQuery = vi.mocked(prisma.user.findFirst).mock.calls[0][0] as any;
+    const ssoQuery = vi.mocked(prisma.user.findFirst).mock.calls[1][0] as any;
+    expect(passwordQuery.include.unit).toBe(true);
+    expect(passwordQuery.include.userRoles.include.role).toBe(true);
+    expect(ssoQuery.include).toEqual(passwordQuery.include);
+
+    // The fields the password path returns and SSO used to omit entirely.
+    expect(ssoResult.user.unit).toEqual(passwordResult.user.unit);
+    expect(ssoResult.user.userRoles).toHaveLength(1);
+    expect(ssoResult.user.userRoles[0].id).toBe('assign_1');
+    expect(ssoResult.user.userRoles[0].unit).toEqual(passwordResult.user.userRoles[0].unit);
+    expect(ssoResult.user.userRoles[0].role.realm).toBe('ACADEMIC');
+    expect(ssoResult.user.userRoles[0].role.name).toBe('Guru SD IT');
+    expect(ssoResult.user.userRoles[0].role).toEqual(passwordResult.user.userRoles[0].role);
+
+    // Sensitive fields must never leave the server on either path.
+    for (const key of [
+      'passwordHash',
+      'twoFactorSecret',
+      'twoFactorSecretPending',
+      'twoFactorRecoveryCodes',
+      'resetTokenHash',
+      'resetTokenExpiresAt',
+    ]) {
+      expect(ssoResult.user).not.toHaveProperty(key);
+      expect(passwordResult.user).not.toHaveProperty(key);
+    }
   });
 });
 

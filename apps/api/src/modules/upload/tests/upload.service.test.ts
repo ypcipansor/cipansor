@@ -14,6 +14,11 @@ import {
   releaseBlobClaimById,
   markBlobDiscarded,
 } from '@/utils/blob-claim';
+import {
+  resolveLocalUploadPath,
+  readLocalUploadOwner,
+  removeLocalUpload,
+} from '@/utils/local-upload-store';
 
 /**
  * Every record type `findBlobOwner` probes for in the shared
@@ -95,6 +100,15 @@ vi.mock('@/utils/blob-claim', () => ({
 
 vi.mock('@/utils/letter-access', () => ({
   letterScopeWhere: vi.fn(() => ({})),
+}));
+
+// Local-upload store: the discard path for `/uploads` files. Mocked so the
+// path-safety and ownership logic can be driven without touching the real disk.
+vi.mock('@/utils/local-upload-store', () => ({
+  LOCAL_UPLOAD_DIR: '/tmp/uploads-test',
+  resolveLocalUploadPath: vi.fn(),
+  readLocalUploadOwner: vi.fn(),
+  removeLocalUpload: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('@/utils/resolve-unit-id', async () => {
@@ -845,7 +859,11 @@ describe('discardOrphanBlob', () => {
     expect(releaseBlobClaimById).toHaveBeenCalledWith('claim-1', superAdmin.id);
   });
 
-  it('releases the claim when the delete itself fails, so a retry is possible', async () => {
+  it('KEEPS the tombstone when the delete fails, so a waiting create cannot resurrect the URL (BUG 7)', async () => {
+    // The delete may have been applied at Azure before the error reached us.
+    // Releasing the tombstone would let a create reclaim the URL and persist a
+    // reference to a blob that no longer exists — so the claim must NOT be
+    // released once `markBlobDiscarded` has succeeded.
     (deleteFromCloudStorage as any).mockRejectedValueOnce(new Error('azure down'));
 
     await expect(
@@ -854,7 +872,8 @@ describe('discardOrphanBlob', () => {
         superAdmin
       )
     ).rejects.toThrow('azure down');
-    expect(releaseBlobClaimById).toHaveBeenCalledWith('claim-1', superAdmin.id);
+    expect(markBlobDiscarded).toHaveBeenCalledWith('claim-1', superAdmin.id);
+    expect(releaseBlobClaimById).not.toHaveBeenCalled();
   });
 
   it('refuses to discard a blob a live record references', async () => {
@@ -988,3 +1007,119 @@ describe('discardOrphanBlob', () => {
     expect(deleteFromCloudStorage).toHaveBeenCalled();
   });
 });
+
+/**
+ * BUG: local-storage orphans were never removed. `discardOrphanBlob` returned
+ * early for any non-Azure URL, so `/uploads/...` files stayed on disk forever.
+ *
+ * The tests below pin the three things that make the local delete safe: strict
+ * path resolution (no traversal / symlink / arbitrary delete), the exhaustive
+ * reference check, and ownership via the recorded uploader — the same
+ * guarantees the cloud path has.
+ */
+describe('discardOrphanBlob — local /uploads storage (local orphan bug)', () => {
+  const localUrl = 'http://localhost:3001/uploads/123e4567-e89b-42d3-a456-426614174000.png';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    clearOwners();
+    // Not an Azure URL, so the service takes the local branch.
+    (parseBlobUrl as any).mockReturnValue(null);
+    (resolveLocalUploadPath as any).mockResolvedValue(
+      '/tmp/uploads-test/123e4567-e89b-42d3-a456-426614174000.png'
+    );
+  });
+
+  it('removes an orphan local file owned by the caller', async () => {
+    (readLocalUploadOwner as any).mockResolvedValue(sameUnitPeer.id);
+    (seesAllUnits as any).mockReturnValue(false);
+
+    await discardOrphanBlob(localUrl, sameUnitPeer);
+
+    expect(resolveLocalUploadPath).toHaveBeenCalledWith(
+      '/uploads/123e4567-e89b-42d3-a456-426614174000.png'
+    );
+    expect(removeLocalUpload).toHaveBeenCalledWith(
+      '/tmp/uploads-test/123e4567-e89b-42d3-a456-426614174000.png'
+    );
+    // No cloud delete for a local file.
+    expect(deleteFromCloudStorage).not.toHaveBeenCalled();
+  });
+
+  it('refuses to delete a local file a live record still references', async () => {
+    (prisma.book.count as any).mockResolvedValue(1);
+
+    await expect(discardOrphanBlob(localUrl, sameUnitPeer)).rejects.toThrow(
+      /Berkas sudah tersimpan/
+    );
+    expect(removeLocalUpload).not.toHaveBeenCalled();
+  });
+
+  it('refuses to delete a local file uploaded by someone else', async () => {
+    (readLocalUploadOwner as any).mockResolvedValue('some-other-user');
+    (seesAllUnits as any).mockReturnValue(false);
+
+    await expect(discardOrphanBlob(localUrl, sameUnitPeer)).rejects.toThrow(
+      /tidak berwenang membuang berkas/
+    );
+    expect(removeLocalUpload).not.toHaveBeenCalled();
+  });
+
+  it('refuses a local file with no recorded uploader (fail-closed)', async () => {
+    (readLocalUploadOwner as any).mockResolvedValue(null);
+    (seesAllUnits as any).mockReturnValue(false);
+
+    await expect(discardOrphanBlob(localUrl, sameUnitPeer)).rejects.toThrow(
+      /tidak berwenang membuang berkas/
+    );
+    expect(removeLocalUpload).not.toHaveBeenCalled();
+  });
+
+  it('lets a foundation role sweep any local orphan without reading ownership', async () => {
+    (seesAllUnits as any).mockReturnValue(true);
+
+    await discardOrphanBlob(localUrl, superAdmin);
+
+    expect(readLocalUploadOwner).not.toHaveBeenCalled();
+    expect(removeLocalUpload).toHaveBeenCalled();
+  });
+
+  it('refuses a traversal path without touching the filesystem', async () => {
+    // `new URL` normalizes `..`, so the path leaves `/uploads/` entirely and is
+    // refused as "not an uploads reference" before any filesystem call.
+    await expect(
+      discardOrphanBlob('http://localhost:3001/uploads/../../etc/passwd', sameUnitPeer)
+    ).rejects.toThrow(/Referensi berkas tidak dikenali/);
+    expect(removeLocalUpload).not.toHaveBeenCalled();
+    expect(resolveLocalUploadPath).not.toHaveBeenCalled();
+  });
+
+  it('refuses a /uploads path whose name is not a generated UUID', async () => {
+    // The name gate inside `resolveLocalUploadPath` rejects a non-generated
+    // basename; the service treats the resulting null as "nothing to discard".
+    (resolveLocalUploadPath as any).mockResolvedValue(null);
+
+    await discardOrphanBlob('http://localhost:3001/uploads/passwd', sameUnitPeer);
+
+    expect(removeLocalUpload).not.toHaveBeenCalled();
+  });
+
+  it('refuses an arbitrary external URL that is not an uploads path', async () => {
+    await expect(
+      discardOrphanBlob('https://evil.example.com/steal.png', sameUnitPeer)
+    ).rejects.toThrow(/Referensi berkas tidak dikenali/);
+    expect(removeLocalUpload).not.toHaveBeenCalled();
+  });
+
+  it('treats a symlink escape as nothing to discard (resolver returns null)', async () => {
+    // `resolveLocalUploadPath` compares realpath against the resolved root, so a
+    // symlink pointing outside the directory yields null here.
+    (resolveLocalUploadPath as any).mockResolvedValue(null);
+
+    await discardOrphanBlob(localUrl, sameUnitPeer);
+
+    expect(removeLocalUpload).not.toHaveBeenCalled();
+    expect(readLocalUploadOwner).not.toHaveBeenCalled();
+  });
+});
+

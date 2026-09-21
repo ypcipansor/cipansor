@@ -5,8 +5,32 @@ import { generateAccessToken } from '@/lib/jwt';
 import { generateFileAccessToken } from '@/utils/file-token';
 import type { BlobOwner } from '@/utils/blob-owner';
 
-vi.mock('@/lib/prisma', () => ({ prisma: {} }));
 vi.mock('@/lib/redis', () => ({ redis: {} }));
+
+/**
+ * F3: a file-access token must not outlive the access it proves. The middleware
+ * re-resolves the user's LIVE identity and re-runs the ownership rule, so a
+ * token minted before the account was disabled / the role revoked cannot still
+ * read the file. These mocks drive that re-resolution.
+ */
+const { mockUserFindUnique } = vi.hoisted(() => ({
+  mockUserFindUnique: vi.fn(),
+}));
+
+vi.mock('@/lib/prisma', () => ({
+  prisma: { user: { findUnique: mockUserFindUnique } },
+}));
+
+/** A live, active user with `roleCode` in `unitId`. */
+function liveUser(roleCode: string, unitId: string | null, isActive = true) {
+  return {
+    id: 'user-1',
+    isActive,
+    userRoles: roleCode
+      ? [{ unitId, role: { code: roleCode, permissions: [] } }]
+      : [],
+  };
+}
 
 /**
  * `uploadsAuth` is the object-level authorization gate in front of
@@ -80,6 +104,7 @@ describe('uploadsAuth', () => {
   beforeEach(() => {
     mockFindOwner.mockReset();
     mockActorMayRead.mockReset();
+    mockUserFindUnique.mockReset();
   });
 
   it('rejects a request with no credential', async () => {
@@ -145,24 +170,91 @@ describe('uploadsAuth', () => {
     expect(mockFindOwner).not.toHaveBeenCalled();
   });
 
-  it('accepts a path-bound file token in the query string', async () => {
+  it('accepts a path-bound file token in the query string and re-checks the LIVE owner (F3)', async () => {
     const fileToken = generateFileAccessToken('/uploads/abc.pdf', 'user-1');
+    mockUserFindUnique.mockResolvedValue(liveUser('TEACHER', 'unit-1'));
+    mockFindOwner.mockResolvedValue({ kind: 'unit', unitId: 'unit-1' });
+    mockActorMayRead.mockResolvedValue(true);
+
     const req = makeReq({ query: { token: fileToken } } as Partial<Request>);
     const { nextArg } = await run(req);
 
     expect(nextArg).toBeUndefined();
-    // The access decision was made when the token was minted; serving it must
-    // not re-resolve the owner.
+    // The mint-time decision is re-checked against the owner, so the owner IS
+    // resolved — the old "serve without re-resolving" contract is what let a
+    // revoked user keep reading for the token's lifetime.
+    expect(mockFindOwner).toHaveBeenCalled();
+    // And the actor used is the live one, not the token's snapshot.
+    expect(mockActorMayRead.mock.calls[0][0]).toMatchObject({
+      id: 'user-1',
+      roleCode: 'TEACHER',
+      unitId: 'unit-1',
+    });
+  });
+
+  it('refuses a file token once the account is disabled (F3)', async () => {
+    const fileToken = generateFileAccessToken('/uploads/abc.pdf', 'user-1');
+    mockUserFindUnique.mockResolvedValue(liveUser('TEACHER', 'unit-1', false));
+
+    const req = makeReq({ query: { token: fileToken } } as Partial<Request>);
+    const { nextArg } = await run(req);
+
+    expect(nextArg).toBeInstanceOf(Error);
+    expect((nextArg as { statusCode?: number }).statusCode).toBe(401);
     expect(mockFindOwner).not.toHaveBeenCalled();
   });
 
-  it('refuses a file token minted for a DIFFERENT path', async () => {
+  it('refuses a file token when the user no longer exists (F3)', async () => {
+    const fileToken = generateFileAccessToken('/uploads/abc.pdf', 'user-1');
+    mockUserFindUnique.mockResolvedValue(null);
+
+    const req = makeReq({ query: { token: fileToken } } as Partial<Request>);
+    const { nextArg } = await run(req);
+
+    expect(nextArg).toBeInstanceOf(Error);
+    expect((nextArg as { statusCode?: number }).statusCode).toBe(401);
+  });
+
+  it('refuses a file token whose owner moved to another unit, until the role is re-granted (F3)', async () => {
+    // The token was minted for a file owned by unit-1. The user's active role
+    // now sits in unit-2, so the live owner rule denies it even though the
+    // token is still unexpired.
+    const fileToken = generateFileAccessToken('/uploads/abc.pdf', 'user-1');
+    mockUserFindUnique.mockResolvedValue(liveUser('TEACHER', 'unit-2'));
+    mockFindOwner.mockResolvedValue({ kind: 'unit', unitId: 'unit-1' });
+    mockActorMayRead.mockResolvedValue(false);
+
+    const req = makeReq({ query: { token: fileToken } } as Partial<Request>);
+    const { nextArg } = await run(req);
+
+    expect(nextArg).toBeInstanceOf(Error);
+    expect((nextArg as { statusCode?: number }).statusCode).toBe(403);
+    // The live actor was used for the decision.
+    expect(mockActorMayRead.mock.calls[0][0]).toMatchObject({ unitId: 'unit-2' });
+  });
+
+  it('refuses a file token when every role has been revoked, unless the user owns it (F3)', async () => {
+    const fileToken = generateFileAccessToken('/uploads/abc.pdf', 'user-1');
+    mockUserFindUnique.mockResolvedValue(liveUser('', null));
+    // The file is a unit-owned record; a roleless user may not read it.
+    mockFindOwner.mockResolvedValue({ kind: 'unit', unitId: 'unit-1' });
+    mockActorMayRead.mockResolvedValue(false);
+
+    const req = makeReq({ query: { token: fileToken } } as Partial<Request>);
+    const { nextArg } = await run(req);
+
+    expect(nextArg).toBeInstanceOf(Error);
+    expect((nextArg as { statusCode?: number }).statusCode).toBe(403);
+  });
+
+  it('still refuses a file token minted for a DIFFERENT path, before the live re-check (F3)', async () => {
     const fileToken = generateFileAccessToken('/uploads/other.pdf', 'user-1');
     const req = makeReq({ query: { token: fileToken } } as Partial<Request>);
     const { nextArg } = await run(req);
 
     expect(nextArg).toBeInstanceOf(Error);
     expect((nextArg as { statusCode?: number }).statusCode).toBe(403);
+    expect(mockUserFindUnique).not.toHaveBeenCalled();
   });
 
   it('refuses a refresh token used as a credential', async () => {
@@ -198,6 +290,7 @@ describe('uploadsAuth — Express mount prefix (regression)', () => {
   beforeEach(() => {
     mockFindOwner.mockReset();
     mockActorMayRead.mockReset();
+    mockUserFindUnique.mockReset();
   });
 
   it('resolves the path from originalUrl when the mount strips it from req.path', async () => {
@@ -246,12 +339,22 @@ describe('uploadsAuth — Express mount prefix (regression)', () => {
     expect(refs).toContain('http://localhost:3001/uploads/abc.pdf');
   });
 
-  it('matches a file token minted for the path against a mounted request', async () => {
+  it('matches a file token minted for the path against a mounted request (F3)', async () => {
     const fileToken = generateFileAccessToken('/uploads/abc.pdf', 'user-1');
+    mockUserFindUnique.mockResolvedValue(liveUser('TEACHER', 'unit-1'));
+    mockFindOwner.mockResolvedValue({ kind: 'unit', unitId: 'unit-1' });
+    mockActorMayRead.mockResolvedValue(true);
+
     const req = makeReq({ query: { token: fileToken } } as Partial<Request>);
     const { nextArg } = await run(req);
 
     expect(nextArg).toBeUndefined();
-    expect(mockFindOwner).not.toHaveBeenCalled();
+    expect(mockFindOwner.mock.calls[0][1]).toContain('/uploads/abc.pdf');
+  });
+
+  it('resets the live-user mock between cases', async () => {
+    // Guard: the F3 tests above share one module-level mock; a leak between
+    // them would let a disabled-account case pass on a stale active user.
+    expect(mockUserFindUnique).not.toHaveBeenCalled();
   });
 });

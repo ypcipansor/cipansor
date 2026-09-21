@@ -241,7 +241,7 @@ export async function runDepreciation(req: Request, res: Response, next: NextFun
 export async function updateItem(req: Request, res: Response, next: NextFunction) {
   try {
     const data = updateInventoryItemSchema.parse(req.body);
-    const item = await service.updateItem(req.params.id, data);
+    const item = await service.updateItem(req.params.id, data, requireUser(req).id);
     res.json({ success: true, data: item });
   } catch (error) {
     next(error);

@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
+import { claimBlobForRecord, releaseBlobClaim } from '@/utils/blob-claim';
 import { UserRole, Prisma, KitabCategory, KitabLevel } from '@prisma/client';
 
 // User type from JwtPayload
@@ -135,36 +136,66 @@ export class KitabProgressService {
   /**
    * Create kitab
    */
-  async createKitab(input: CreateKitabInput) {
-    const kitab = await prisma.kitabKuning.create({
-      data: {
-        title: input.title,
-        author: input.author,
-        category: input.category,
-        level: input.level,
-        totalPages: input.totalPages,
-        totalBab: input.totalBab,
-        description: input.description,
-        coverUrl: input.coverUrl,
-        isActive: input.isActive ?? true,
-      },
-    });
+  async createKitab(input: CreateKitabInput, actorId?: string) {
+    // Claim the cover before the row references it, so a concurrent discard of
+    // a just-uploaded file cannot delete it between its reference probe and
+    // this insert (BUG 4 / flag 9).
+    const holderId = actorId ?? 'kitab';
+    if (input.coverUrl) {
+      const claimed = await claimBlobForRecord(input.coverUrl, holderId);
+      if (!claimed) {
+        throw Errors.conflict('Sampul kitab sedang diproses pihak lain; unggah ulang berkas');
+      }
+    }
+    try {
+      const kitab = await prisma.kitabKuning.create({
+        data: {
+          title: input.title,
+          author: input.author,
+          category: input.category,
+          level: input.level,
+          totalPages: input.totalPages,
+          totalBab: input.totalBab,
+          description: input.description,
+          coverUrl: input.coverUrl,
+          isActive: input.isActive ?? true,
+        },
+      });
 
-    return kitab;
+      return kitab;
+    } finally {
+      if (input.coverUrl) {
+        await releaseBlobClaim(input.coverUrl, holderId).catch(() => undefined);
+      }
+    }
   }
 
   /**
    * Update kitab
    */
-  async updateKitab(id: string, input: UpdateKitabInput) {
+  async updateKitab(id: string, input: UpdateKitabInput, actorId?: string) {
     await this.getKitabById(id);
 
-    const updated = await prisma.kitabKuning.update({
-      where: { id },
-      data: input,
-    });
+    // A replaced cover is a new blob reference (flag 9).
+    const holderId = actorId ?? 'kitab';
+    if (input.coverUrl) {
+      const claimed = await claimBlobForRecord(input.coverUrl, holderId);
+      if (!claimed) {
+        throw Errors.conflict('Sampul kitab sedang diproses pihak lain; unggah ulang berkas');
+      }
+    }
+    try {
+      const updated = await prisma.kitabKuning.update({
+        where: { id },
+        data: input,
+      });
 
-    return updated;
+      return updated;
+    } finally {
+      if (input.coverUrl) {
+        await releaseBlobClaim(input.coverUrl, holderId).catch(() => undefined);
+      }
+    }
   }
 
   /**

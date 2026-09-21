@@ -5,6 +5,7 @@ import { linkGuardian, type GuardianClient } from '@/utils/link-guardian';
 import { prisma } from '@/lib/prisma';
 import { hashPassword } from '@/lib/password';
 import { Errors } from '@/middleware/error';
+import { claimBlobForRecord, releaseBlobClaim } from '@/utils/blob-claim';
 import { assertStudentIdentifiersAvailable } from './student-identifiers';
 import { assignStudentNis, findStudentIdByNisInUnit } from '@/utils/student-nis';
 import { UserRole, Gender, Prisma } from '@prisma/client';
@@ -541,7 +542,7 @@ export class StudentService {
   /**
    * Update student
    */
-  async update(id: string, input: UpdateStudentInput) {
+  async update(id: string, input: UpdateStudentInput, actorId?: string) {
     const student = await prisma.student.findFirst({
       where: { id, deletedAt: null },
       include: { user: true },
@@ -549,6 +550,17 @@ export class StudentService {
 
     if (!student) {
       throw Errors.notFound('Student');
+    }
+
+    // A photo replaced by this update is a new blob reference, so it takes the
+    // claim protocol (BUG 4 / flag 9). The holder is the acting user, falling
+    // back to the student's own login when no actor was supplied.
+    const holderId = actorId ?? student.userId;
+    if (input.photoUrl) {
+      const claimed = await claimBlobForRecord(input.photoUrl, holderId);
+      if (!claimed) {
+        throw Errors.conflict('Foto santri sedang diproses pihak lain; unggah ulang berkas');
+      }
     }
 
     // Nomor kembar hanya dilarang di unit yang sama (lihat `create`).
@@ -565,7 +577,9 @@ export class StudentService {
     await assertStudentIdentifiersAvailable({ nisn: input.nisn }, student);
 
     // Update in transaction
-    const updated = await prisma.$transaction(async (tx) => {
+    let updated;
+    try {
+      updated = await prisma.$transaction(async (tx) => {
       // Update user name if provided
       if (input.name) {
         await tx.user.update({
@@ -611,7 +625,12 @@ export class StudentService {
           },
         },
       });
-    });
+      });
+    } finally {
+      if (input.photoUrl) {
+        await releaseBlobClaim(input.photoUrl, holderId).catch(() => undefined);
+      }
+    }
 
     return updated;
   }

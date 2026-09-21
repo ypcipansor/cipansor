@@ -11,6 +11,7 @@ import {
   StudentPackage,
 } from '@cipansor/shared';
 import { Errors } from '../../middleware/error';
+import { claimBlobForRecord, releaseBlobClaim } from '../../utils/blob-claim';
 // DB enums are the source of truth from Prisma, not the shared package.
 import { Prisma, VisitStatus, PackageStatus } from '@prisma/client';
 
@@ -301,37 +302,52 @@ export const createPackage = async (
   userId: string,
   data: CreateStudentPackageInput
 ) => {
-  const row = await prisma.studentPackage.create({
-    data: {
-      unitId,
-      studentId: data.studentId,
-      senderName: data.senderName,
-      expedition: data.expedition,
-      content: data.content,
-      photoUrl: data.photoUrl,
-      notes: data.notes,
-      receivedById: userId,
-      receivedAt: new Date(),
-      status: PackageStatus.RECEIVED,
-    },
-    include: {
-      student: {
-        select: {
-          user: { select: { name: true } },
-          nis: true,
-          enrollments: {
-            where: { status: 'active' },
-            select: { class: { select: { name: true } } },
-            take: 1,
+  // Claim the package photo before the row references it, so a concurrent
+  // discard of a just-uploaded photo cannot delete it between its reference
+  // probe and this insert (BUG 4 / flag 9).
+  if (data.photoUrl) {
+    const claimed = await claimBlobForRecord(data.photoUrl, userId);
+    if (!claimed) {
+      throw Errors.conflict('Foto paket sedang diproses pihak lain; unggah ulang berkas tersebut');
+    }
+  }
+  try {
+    const row = await prisma.studentPackage.create({
+      data: {
+        unitId,
+        studentId: data.studentId,
+        senderName: data.senderName,
+        expedition: data.expedition,
+        content: data.content,
+        photoUrl: data.photoUrl,
+        notes: data.notes,
+        receivedById: userId,
+        receivedAt: new Date(),
+        status: PackageStatus.RECEIVED,
+      },
+      include: {
+        student: {
+          select: {
+            user: { select: { name: true } },
+            nis: true,
+            enrollments: {
+              where: { status: 'active' },
+              select: { class: { select: { name: true } } },
+              take: 1,
+            },
           },
         },
+        receivedBy: {
+          select: { name: true },
+        },
       },
-      receivedBy: {
-        select: { name: true },
-      },
-    },
-  });
-  return toStudentPackage(row);
+    });
+    return toStudentPackage(row);
+  } finally {
+    if (data.photoUrl) {
+      await releaseBlobClaim(data.photoUrl, userId).catch(() => undefined);
+    }
+  }
 };
 
 export const updatePackage = async (id: string, data: UpdateStudentPackageInput) => {

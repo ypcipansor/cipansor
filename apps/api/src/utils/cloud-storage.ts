@@ -51,6 +51,40 @@ export function isPublicContainer(containerName: string): boolean {
 }
 
 /**
+ * Guarantee a public container's access policy is actually `blob`.
+ *
+ * `createIfNotExists` sets the access policy ONLY when it creates the container.
+ * For one that already exists it is a no-op, so a `media-public` provisioned
+ * earlier by hand, by a different tool, or with a renamed container keeps
+ * whatever policy it had — and `isPublicContainer()` still reports it public, so
+ * the code serves raw `blob.core.windows.net/media-public/...` URLs that Azure
+ * then rejects with 404 (private) for every anonymous `<img>`. Public media
+ * therefore appeared in the app but not in the browser, with nothing in the
+ * logs.
+ *
+ * Reconcile the existing policy explicitly instead of trusting the create. On
+ * divergence this corrects the policy and warns; if the correction itself
+ * fails, the error propagates and the upload fails loudly rather than reporting
+ * success for a blob no one can fetch.
+ */
+async function ensurePublicBlobAccess(
+  containerClient: ReturnType<BlobServiceClient['getContainerClient']>,
+  containerName: string,
+  justCreated: boolean
+): Promise<void> {
+  const current = justCreated
+    ? 'blob'
+    : (await containerClient.getProperties()).blobPublicAccess;
+  if (current === 'blob' || current === 'container') return;
+
+  logger.warn('Public container had the wrong access policy; applying blob access', {
+    container: containerName,
+    found: current ?? 'private',
+  });
+  await containerClient.setAccessPolicy('blob');
+}
+
+/**
  * Logical upload destinations, mapped server-side to a concrete container.
  *
  * The contract lives in `@cipansor/shared` so the web client names the same
@@ -118,9 +152,12 @@ export async function uploadToCloudStorage(
       const blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
       const containerClient = blobServiceClient.getContainerClient(containerName);
       const publicContainer = isPublicContainer(containerName);
-      await containerClient.createIfNotExists({
+      const created = await containerClient.createIfNotExists({
         access: publicContainer ? 'blob' : undefined,
       });
+      if (publicContainer) {
+        await ensurePublicBlobAccess(containerClient, containerName, created.succeeded);
+      }
 
       const blockBlobClient = containerClient.getBlockBlobClient(filename);
       await blockBlobClient.uploadFile(localFilePath, {

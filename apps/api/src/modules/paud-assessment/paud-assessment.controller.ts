@@ -221,7 +221,7 @@ export const deleteAssessment = asyncHandler(async (req: Request, res: Response)
  */
 export const createEvidence = asyncHandler(async (req: Request, res: Response) => {
   const input: CreatePAUDEvidenceInput = req.body;
-  const evidence = await paudAssessmentService.createEvidence(input);
+  const evidence = await paudAssessmentService.createEvidence(input, req.user?.sub);
 
   res.status(201).json({
     success: true,

@@ -86,7 +86,18 @@ router.post('/login', requireTurnstile('login'), validate(loginSchema), controll
  *       200:
  *         description: SSO Login successful
  */
-router.post('/sso/login', validate(ssoLoginSchema), controller.ssoLogin);
+router.post(
+  '/sso/login',
+  // The SSO endpoint is as unauthenticated as `/login` — it accepts a bearer
+  // ID token and mints a session — so it carries the SAME Turnstile gate. It
+  // used to rely on the per-IP `authLimiter` alone, which a botnet spread
+  // across thousands of addresses never touches. Its own `action` binds the
+  // token to this surface (see turnstile-actions.contract.test.ts); the gate
+  // sits BEFORE `validate`, which would strip the token from `req.body`.
+  requireTurnstile('sso-login'),
+  validate(ssoLoginSchema),
+  controller.ssoLogin
+);
 
 /**
  * @swagger

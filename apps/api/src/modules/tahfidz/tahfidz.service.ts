@@ -3,6 +3,7 @@ import { seesAllUnits } from '@/utils/resolve-unit-id';
 import { certificateVerificationUrl } from '@/utils/verification-url';
 import { logger } from '@/lib/logger';
 import { Errors } from '@/middleware/error';
+import { claimBlobForRecord, releaseBlobClaim } from '@/utils/blob-claim';
 import { UserRole, TahfidzActivityType, Prisma } from '@prisma/client';
 import { eventBus } from '@/lib/event-bus';
 import type { ListTahfidzQuery, GenerateCertificateInput } from './tahfidz.schema';
@@ -222,22 +223,34 @@ export class TahfidzService {
     // Calculate total ayah if not provided
     const totalAyah = input.totalAyah || input.ayahEnd - input.ayahStart + 1;
 
-    const record = await prisma.tahfidzRecord.create({
-      data: {
-        studentId: input.studentId,
-        activityType: input.activityType as TahfidzActivityType,
-        surahNumber: input.surahNumber,
-        surahName: input.surahName,
-        ayahStart: input.ayahStart,
-        ayahEnd: input.ayahEnd,
-        juz: input.juz,
-        totalAyah,
-        score: input.score,
-        notes: input.notes,
-        audioUrl: input.audioUrl,
-        recordedAt: input.recordedAt || new Date(),
-        recordedById,
-      },
+    // Claim the recording before the row references it, so a concurrent discard
+    // of a just-uploaded file cannot delete it between its reference probe and
+    // this insert (BUG 4 / flag 9).
+    if (input.audioUrl) {
+      const claimed = await claimBlobForRecord(input.audioUrl, recordedById);
+      if (!claimed) {
+        throw Errors.conflict('Rekaman audio sedang diproses pihak lain; unggah ulang berkas');
+      }
+    }
+
+    let record;
+    try {
+      record = await prisma.tahfidzRecord.create({
+        data: {
+          studentId: input.studentId,
+          activityType: input.activityType as TahfidzActivityType,
+          surahNumber: input.surahNumber,
+          surahName: input.surahName,
+          ayahStart: input.ayahStart,
+          ayahEnd: input.ayahEnd,
+          juz: input.juz,
+          totalAyah,
+          score: input.score,
+          notes: input.notes,
+          audioUrl: input.audioUrl,
+          recordedAt: input.recordedAt || new Date(),
+          recordedById,
+        },
       include: {
         student: {
           include: {
@@ -246,7 +259,13 @@ export class TahfidzService {
           },
         },
       },
-    });
+      });
+    } finally {
+      // The row (or the failure) is now durable; the reference is the claim.
+      if (input.audioUrl) {
+        await releaseBlobClaim(input.audioUrl, recordedById).catch(() => undefined);
+      }
+    }
 
     // Emit event for cross-module integration
     eventBus.emit('tahfidz:created', {

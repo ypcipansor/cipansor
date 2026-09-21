@@ -2,6 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { qualityService } from '../../../../src/modules/quality/quality.service';
 import { prisma } from '../../../../src/lib/prisma';
 
+// The create path claims the blob before inserting the record (BUG 4). The
+// protocol has its own unit + DB integration tests; here the claim succeeds.
+vi.mock('@/utils/blob-claim', () => ({
+  claimBlobForRecord: vi.fn().mockResolvedValue(true),
+  releaseBlobClaim: vi.fn().mockResolvedValue(undefined),
+}));
+
 // Mock Prisma
 vi.mock('../../../../src/lib/prisma', () => ({
   prisma: {

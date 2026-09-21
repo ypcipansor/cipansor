@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
 import { UserRole, Prisma } from '@prisma/client';
 import { seesAllUnits } from '@/utils/resolve-unit-id';
+import { claimBlobForRecord, releaseBlobClaim } from '@/utils/blob-claim';
 import { CLASS_ENROLLMENT_STATUS } from '@cipansor/shared';
 
 // Status enum
@@ -265,22 +266,38 @@ export class MuhadhorohService {
       where: { userId: currentUser.sub },
     });
 
-    const updated = await prisma.muhadhoroh.update({
-      where: { id },
-      data: {
-        contentScore: input.contentScore,
-        deliveryScore: input.deliveryScore,
-        languageScore: input.languageScore,
-        totalScore,
-        grade,
-        feedback: input.feedback,
-        videoUrl: input.videoUrl,
-        duration: input.duration,
-        evaluatorId: teacher?.id || null,
-        evaluatedAt: new Date(),
-        status: 'COMPLETED',
-      },
-    });
+    // A recorded video added by an evaluation is a new blob reference, so it
+    // takes the claim protocol (BUG 4 / flag 9).
+    if (input.videoUrl) {
+      const claimed = await claimBlobForRecord(input.videoUrl, currentUser.sub);
+      if (!claimed) {
+        throw Errors.conflict('Rekaman video sedang diproses pihak lain; unggah ulang berkas');
+      }
+    }
+
+    let updated;
+    try {
+      updated = await prisma.muhadhoroh.update({
+        where: { id },
+        data: {
+          contentScore: input.contentScore,
+          deliveryScore: input.deliveryScore,
+          languageScore: input.languageScore,
+          totalScore,
+          grade,
+          feedback: input.feedback,
+          videoUrl: input.videoUrl,
+          duration: input.duration,
+          evaluatorId: teacher?.id || null,
+          evaluatedAt: new Date(),
+          status: 'COMPLETED',
+        },
+      });
+    } finally {
+      if (input.videoUrl) {
+        await releaseBlobClaim(input.videoUrl, currentUser.sub).catch(() => undefined);
+      }
+    }
 
     return updated;
   }

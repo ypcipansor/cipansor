@@ -217,4 +217,23 @@ describe('rute yang dijaga memasang gerbangnya pada urutan yang benar', () => {
     expect(call).toContain('upload.single');
     expect(call.indexOf('upload.single')).toBeLessThan(call.indexOf('requireTurnstile'));
   });
+
+  it('/sso/login memasang requireTurnstile(\'sso-login\') sebelum validate (BUG: SSO tanpa proteksi bot)', () => {
+    // The SSO endpoint mints a session from a bearer idToken, exactly like
+    // `/login` does from a password, so it carries the SAME bot gate. Its own
+    // action binds the token to this surface, and the gate must precede
+    // `validate` (which would strip `turnstileToken` from `req.body`).
+    const src = fs.readFileSync(path.join(MODULES, 'auth/auth.routes.ts'), 'utf8');
+    const start = src.indexOf("router.post(\n  '/sso/login'");
+    expect(start, 'rute /sso/login tidak ditemukan di auth.routes.ts').toBeGreaterThan(-1);
+    // End the slice at the handler name, then the following `);`. Scanning for
+    // the first `);` would stop inside the comment above (which contains one).
+    const handler = src.indexOf('controller.ssoLogin', start);
+    expect(handler, 'handler ssoLogin tidak ditemukan').toBeGreaterThan(-1);
+    const call = src.slice(start, src.indexOf(');', handler));
+
+    expect(call).toContain("requireTurnstile('sso-login')");
+    expect(call).toContain('validate(');
+    expect(call.indexOf('requireTurnstile')).toBeLessThan(call.indexOf('validate('));
+  });
 });

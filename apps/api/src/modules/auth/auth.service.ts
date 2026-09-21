@@ -250,6 +250,16 @@ function activeRoleWhere() {
  * Shape of the user record SSO login needs, shared by the two resolution
  * helpers (provider-subject link, e-mail fallback) so the payload derivation
  * below sees an identical structure either way.
+ *
+ * Deliberately the SAME relation shape the password path uses
+ * ({@link PASSWORD_USER_INCLUDE}) — including the full `role` and `unit`
+ * records and the assignment `id`. SSO used to select only
+ * `role { code, permissions }` and no `unit`, so an SSO session's user object
+ * was missing `role.realm`, `role.name`, `userRoles[].id` and `user.unit`.
+ * The web client reads all of those (`RoleSwitcher`, `Sidebar`, the header), so
+ * an SSO login rendered a broken nav — and `role.realm.replace(...)` threw for
+ * a user with more than one role. `ssoLogin` must return the same contract as
+ * `login`; the fix belongs here, not in a UI-side patch.
  */
 type SsoUserRecord = {
   id: string;
@@ -258,6 +268,7 @@ type SsoUserRecord = {
   isTwoFactorEnabled: boolean;
   deletedAt: Date | null;
   unitId: string | null;
+  unit?: { id: string; name: string; type: string } | null;
   // Optional sensitive fields, present because the record feeds
   // `stripSensitiveFields` before the user is returned to the client.
   passwordHash?: unknown;
@@ -267,37 +278,41 @@ type SsoUserRecord = {
   resetTokenHash?: unknown;
   resetTokenExpiresAt?: unknown;
   userRoles: Array<{
+    id: string;
     roleId: string;
     unitId: string | null;
     isPrimary: boolean;
-    role: { code: string; permissions: unknown };
+    unit?: { id: string; name: string; type: string } | null;
+    role: {
+      id: string;
+      code: string;
+      name: string;
+      realm: string;
+      description?: string | null;
+      permissions: unknown;
+    };
   }>;
 };
 
-const SSO_USER_SELECT = {
-  id: true,
-  email: true,
-  isActive: true,
-  isTwoFactorEnabled: true,
-  deletedAt: true,
-  unitId: true,
-  passwordHash: true,
-  twoFactorSecret: true,
-  twoFactorSecretPending: true,
-  twoFactorRecoveryCodes: true,
-  resetTokenHash: true,
-  resetTokenExpiresAt: true,
+/**
+ * The user relation shape every successful login returns, so the password and
+ * SSO paths cannot drift apart (BUG: SSO login returned an incomplete user).
+ */
+const PASSWORD_USER_INCLUDE = {
+  unit: true,
   userRoles: {
     where: activeRoleWhere(),
-    select: {
-      roleId: true,
-      unitId: true,
-      isPrimary: true,
-      role: { select: { code: true, permissions: true } },
-    },
+    include: { role: true, unit: true },
     orderBy: { isPrimary: 'desc' },
   },
 } as const;
+
+/**
+ * The same shape for the SSO resolvers. `include` (not `select`) so every
+ * scalar — including the sensitive ones `stripSensitiveFields` removes — comes
+ * back exactly as the password path returns it.
+ */
+const SSO_USER_INCLUDE = PASSWORD_USER_INCLUDE;
 
 /** True for a Prisma unique-constraint violation (create raced another insert). */
 function isUniqueConstraintError(error: unknown): boolean {
@@ -316,17 +331,7 @@ export class AuthService {
         email: input.email,
         deletedAt: null,
       },
-      include: {
-        unit: true,
-        userRoles: {
-          where: activeRoleWhere(),
-          include: {
-            role: true,
-            unit: true,
-          },
-          orderBy: { isPrimary: 'desc' },
-        },
-      },
+      include: PASSWORD_USER_INCLUDE,
     });
 
     if (!user) {
@@ -744,6 +749,10 @@ export class AuthService {
 
     const payload = jwt.verify(idToken, signingKey, {
       algorithms: ['RS256'],
+      // Hand audience to the library too, so a token for another client is
+      // rejected before the claims below are read. The explicit check further
+      // down stays authoritative (and is what the tests exercise).
+      audience: clientId,
     }) as jwt.JwtPayload;
 
     // `jwt.verify` enforces `exp` itself, but the check is repeated here so
@@ -759,10 +768,16 @@ export class AuthService {
     }
 
     // Google documents both spellings; tokens in the wild carry either.
+    //
+    // The issuer is REQUIRED. This used to be `payload.iss && iss !== ...`,
+    // which accepted any token carrying no `iss` at all — the signature check
+    // alone then decided trust. An attacker who obtains a Google-signed token
+    // that lacks the issuer (or crafts one through a different Google service)
+    // would be admitted. Every genuine Google ID token carries one of the two
+    // spellings, so an absent or non-string `iss` is refused.
     if (
-      payload.iss &&
-      payload.iss !== 'https://accounts.google.com' &&
-      payload.iss !== 'accounts.google.com'
+      typeof payload.iss !== 'string' ||
+      (payload.iss !== 'https://accounts.google.com' && payload.iss !== 'accounts.google.com')
     ) {
       throw new Error('Google token issuer (iss) invalid');
     }
@@ -800,6 +815,7 @@ export class AuthService {
 
     const payload = jwt.verify(idToken, signingKey, {
       algorithms: ['RS256'],
+      audience: clientId,
     }) as jwt.JwtPayload;
 
     if (payload.aud !== clientId) {
@@ -810,11 +826,17 @@ export class AuthService {
       throw new Error('Microsoft token has expired');
     }
 
-    if (
-      payload.iss &&
-      !payload.iss.startsWith('https://login.microsoftonline.com/') &&
-      !payload.iss.startsWith('https://sts.windows.net/')
-    ) {
+    // The issuer is REQUIRED and must be one of the two Entra issuers.
+    //
+    // The previous form was `payload.iss && !startsWith(...)`, so an absent
+    // (or non-string) `iss` sailed through on signature alone. Tokens in the
+    // wild carry either `https://login.microsoftonline.com/<tenant-guid>/v2.0`
+    // (v2.0) or `https://sts.windows.net/<tenant-guid>/` (v1.0); anything else
+    // — including a missing claim — is refused. The tenant inside the issuer is
+    // checked against the configured tenant below.
+    const microsoftIssuerPattern =
+      /^https:\/\/(login\.microsoftonline\.com|sts\.windows\.net)\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/(v2\.0\/?)?$/i;
+    if (typeof payload.iss !== 'string' || !microsoftIssuerPattern.test(payload.iss)) {
       throw new Error('Microsoft token issuer (iss) invalid');
     }
 
@@ -983,7 +1005,7 @@ export class AuthService {
   ): Promise<SsoUserRecord | null> {
     const link = await prisma.identityProvider.findUnique({
       where: { provider_providerSubjectId: { provider, providerSubjectId } },
-      select: { user: { select: SSO_USER_SELECT } },
+      select: { user: { include: SSO_USER_INCLUDE } },
     });
     const user = link?.user as SsoUserRecord | undefined;
     if (!user || user.deletedAt) return null;
@@ -997,7 +1019,7 @@ export class AuthService {
   private async findUserByEmailForSso(email: string): Promise<SsoUserRecord | null> {
     return (await prisma.user.findFirst({
       where: { email, deletedAt: null },
-      select: SSO_USER_SELECT,
+      include: SSO_USER_INCLUDE,
     })) as SsoUserRecord | null;
   }
 

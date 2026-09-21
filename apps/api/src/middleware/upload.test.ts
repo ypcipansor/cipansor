@@ -4,7 +4,9 @@ import os from 'os';
 import path from 'path';
 import type { Request, Response, NextFunction } from 'express';
 
-vi.mock('@/lib/prisma', () => ({ prisma: {} }));
+vi.mock('@/lib/prisma', () => ({
+  prisma: { user: { findUnique: vi.fn().mockResolvedValue({ id: 'u1', isActive: true, userRoles: [] }) } },
+}));
 vi.mock('@/lib/redis', () => ({ redis: {} }));
 
 import {
@@ -151,17 +153,14 @@ describe('uploadsAuth', () => {
     expect((next.mock.calls[0][0] as ApiError).statusCode).toBe(401);
   });
 
-  // The Authorization-header path (session token + object-level authorisation)
-  // is covered end-to-end in upload-auth.test.ts, where the owner probe is
-  // mocked; here the module-level prisma stub cannot answer it.
-  it('accepts a path-bound file token via ?token= (for <img>/<a> fetches)', () => {
-    // The query credential is no longer the session access token: it is the
-    // short-lived, single-file token `POST /upload/sas` mints after it has
-    // already authorised the caller. See upload-auth.test.ts for the full
-    // authorization contract.
-    const token = generateFileAccessToken('/uploads/abc.pdf', 'u1');
+  // The Authorization-header path and the accepted query-token path (session
+  // token + object-level authorisation) are covered end-to-end in
+  // upload-auth.test.ts, where the owner probe is mocked; the module-level
+  // prisma stub here cannot answer it.
+  it('rejects a file token minted for a different path', () => {
+    const token = generateFileAccessToken('/uploads/other.pdf', 'u1');
     const next = run({ query: { token } as Request['query'] });
-    expect(next).toHaveBeenCalledWith();
+    expect((next.mock.calls[0][0] as ApiError).statusCode).toBe(403);
   });
 
   it('rejects temporary 2FA tokens', () => {

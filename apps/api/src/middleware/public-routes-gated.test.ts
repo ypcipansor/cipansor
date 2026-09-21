@@ -38,10 +38,6 @@ const DELIBERATELY_UNGATED: Record<string, string> = {
   'student.routes.ts POST /id-cards/verify':
     'Endpoint pemindai QR untuk petugas, tanpa halaman web yang memanggilnya — captcha adalah alat yang ' +
     'salah untuk konsumen mesin dan akan mematikannya. Dijaga defaultLimiter.',
-  'auth.routes.ts POST /sso/login':
-    'Login SSO menukarkan idToken yang sudah diverifikasi Google/Microsoft (OIDC) — kredensialnya ' +
-    'bukan rahasia portal, dan penyedia OIDC sendiri yang menerapkan perlindungan bot pada penerbitan ' +
-    'idToken. Menaruh captcha di alur OIDC akan menolak pengguna yang sah. Dijaga authLimiter.',
   'admissions.routes.ts POST /public/registrants/:registrantId/documents':
     'Unggah dokumen pasca-pendaftaran. Izinnya adalah `registrationToken` bertanda-tangan HMAC (kadaluarsa ' +
     '2 jam) yang hanya dicetak peladen di `/public/registrants` — permukaan yang SUDAH dijaga ' +

@@ -140,6 +140,14 @@ services:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:-}
       MICROSOFT_TENANT_ID: ${MICROSOFT_TENANT_ID:-common}
+      # Opt-in for multi-tenant Entra sign-in. Off by default (fail-closed): a
+      # production boot with MICROSOFT_TENANT_ID=common refuses to start unless
+      # this is explicitly `true`. It MUST be enumerated here — Compose passes
+      # only the names it lists, so a value living solely in `.env` never
+      # reaches the container and the single-tenant guard could never be lifted
+      # deliberately (it would look like the flag was ignored). Verified with
+      # `docker exec cipansor-api sh -c 'env | grep ^MICROSOFT_ALLOW_MULTI_TENANT='`.
+      MICROSOFT_ALLOW_MULTI_TENANT: ${MICROSOFT_ALLOW_MULTI_TENANT:-false}
       # Azure Blob Storage Grant Provider
       AZURE_STORAGE_CONNECTION_STRING: ${AZURE_STORAGE_CONNECTION_STRING:-}
       AZURE_STORAGE_ACCOUNT: ${AZURE_STORAGE_ACCOUNT:-}

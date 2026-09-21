@@ -4,6 +4,8 @@ import fs from 'fs';
 import { randomUUID } from 'crypto';
 import { Request, Response, NextFunction } from 'express';
 import { verifyToken } from '@/lib/jwt';
+import { prisma } from '@/lib/prisma';
+import { activeUserRoleWhere } from '@/utils/active-role';
 import { containerForDestination } from '@/utils/cloud-storage';
 import {
   findBlobOwnerByRefs,
@@ -11,6 +13,7 @@ import {
 } from '@/utils/blob-owner';
 import { actorMayReadBlob, type BlobActor } from '@/modules/upload/upload.service';
 import { normalizeUploadPath, verifyFileAccessToken } from '@/utils/file-token';
+import { writeLocalUploadOwner } from '@/utils/local-upload-store';
 import { mayUploadPublicMedia } from '@cipansor/shared';
 import { Errors } from './error';
 
@@ -322,6 +325,11 @@ export const handleSingleUpload = (
             const protocol = req.protocol;
             const host = req.get('host');
             req.body.fileUrl = `${protocol}://${host}/uploads/${filename}`;
+            // Record who uploaded the local file, so an abandoned orphan can
+            // later be discarded by its uploader only — the same guarantee the
+            // Azure path gets from the blob's `uploaderId` metadata. Best-effort:
+            // an upload the user is entitled to must not fail over a sidecar.
+            await writeLocalUploadOwner(filename, req.user?.id);
           }
 
           // Also map other metadata if needed
@@ -392,7 +400,7 @@ export async function uploadsAuth(req: Request, _res: Response, next: NextFuncti
       throw Errors.unauthorized('Authentication required to access uploaded files');
     }
 
-    let actor: BlobActor | null = null;
+    let actor: BlobActor;
 
     if (headerToken) {
       // A session token: verify it, then authorise this specific file.
@@ -414,39 +422,105 @@ export async function uploadsAuth(req: Request, _res: Response, next: NextFuncti
         // A token minted for one file cannot be replayed against another.
         throw Errors.forbidden('Token berkas tidak berlaku untuk berkas ini');
       }
-      // The access decision was made at mint time; serve without re-resolving
-      // the owner (the token is path-bound and short-lived).
-      return next();
+      // The access decision was made at mint time, but the token lives for
+      // minutes and a lot can change in that window: the account can be
+      // disabled, its role/unit revoked, or the owning record reassigned. The
+      // old code served the file for the whole TTL without looking, so a
+      // revoked user kept reading (F3). Re-resolve the user's LIVE identity and
+      // re-run the same ownership check the header path uses, so a token is
+      // only as good as the access that exists at serve time.
+      const liveActor = await liveBlobActorForUserId(claims.userId);
+      if (!liveActor) {
+        throw Errors.unauthorized('Akun tidak lagi aktif');
+      }
+      actor = liveActor;
     } else {
       throw Errors.unauthorized('Authentication required to access uploaded files');
     }
 
-    // Header path: authorise against the owning record, exactly as the SAS
-    // endpoint does.
-    //
-    // The request gives us a path, but records persist whichever spelling the
-    // upload response handed them: the absolute `http://host/uploads/x` form
-    // (what `uploadFile` returns for local storage) or, for older rows, the
-    // relative one. `blobReferenceCandidates` folds an absolute URL down to its
-    // pathname, so probing the path alone silently misses every absolute-stored
-    // row and 403s a file the caller owns. Reconstruct the origin from the
-    // request and probe both spellings.
-    const absoluteRequestUrl = `${req.protocol}://${req.get('host') ?? ''}${requestPath}`;
-    const refs = Array.from(
-      new Set([
-        ...blobReferenceCandidates(requestPath),
-        ...blobReferenceCandidates(absoluteRequestUrl),
-      ])
-    );
-    const owner = await findBlobOwnerByRefs('cipansor-documents', refs);
-    if (!owner) {
-      throw Errors.forbidden('Berkas tidak ditemukan atau tidak dapat diakses');
-    }
-    if (!(await actorMayReadBlob(actor, owner))) {
-      throw Errors.forbidden('Anda tidak berwenang mengakses berkas tersebut');
-    }
-    next();
+    await assertActorMayReadRequestPath(req, actor, requestPath);
+    return next();
   } catch (error) {
     next(error instanceof Error && 'statusCode' in error ? error : Errors.unauthorized());
+  }
+}
+
+/**
+ * Resolve the live identity of a user for blob authorization, or null when the
+ * account no longer exists / is disabled.
+ *
+ * The JWT payload and the file-access token both embed a snapshot of the user's
+ * role assignment taken when the credential was minted. Serving a file from
+ * that snapshot means a disabled account or a revoked role keeps its access
+ * until the credential expires. This reads the CURRENT active role assignment
+ * (`activeUserRoleWhere`) so the check reflects the present, not the past.
+ */
+async function liveBlobActorForUserId(userId: string): Promise<BlobActor | null> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      isActive: true,
+      userRoles: {
+        where: activeUserRoleWhere(),
+        select: {
+          unitId: true,
+          role: { select: { code: true, permissions: true } },
+        },
+        orderBy: { isPrimary: 'desc' },
+        take: 1,
+      },
+    },
+  });
+  if (!user || !user.isActive) return null;
+  const assignment = user.userRoles[0];
+  const rawPermissions = assignment?.role.permissions;
+  return {
+    id: user.id,
+    // A user whose roles were all revoked still has an identity but no access:
+    // an empty roleCode matches no ownership rule, so every read is refused
+    // unless the owner is the user themselves.
+    roleCode: assignment?.role.code ?? '',
+    unitId: assignment?.unitId ?? null,
+    permissions: Array.isArray(rawPermissions)
+      ? rawPermissions.filter((p): p is string => typeof p === 'string')
+      : [],
+  };
+}
+
+/**
+ * Authorise `actor` to read the record owning `requestPath`, using the SAME
+ * rule the Azure SAS path applies (`actorMayReadBlob`).
+ *
+ * Both credential kinds converge here so a file served from disk cannot answer
+ * "who may read this" differently from the same file served from a private
+ * container — and so the query-token path re-checks a live decision rather than
+ * trusting one made at mint time.
+ */
+async function assertActorMayReadRequestPath(
+  req: Request,
+  actor: BlobActor,
+  requestPath: string
+): Promise<void> {
+  // The request gives us a path, but records persist whichever spelling the
+  // upload response handed them: the absolute `http://host/uploads/x` form
+  // (what `uploadFile` returns for local storage) or, for older rows, the
+  // relative one. `blobReferenceCandidates` folds an absolute URL down to its
+  // pathname, so probing the path alone silently misses every absolute-stored
+  // row and 403s a file the caller owns. Reconstruct the origin from the
+  // request and probe both spellings.
+  const absoluteRequestUrl = `${req.protocol}://${req.get('host') ?? ''}${requestPath}`;
+  const refs = Array.from(
+    new Set([
+      ...blobReferenceCandidates(requestPath),
+      ...blobReferenceCandidates(absoluteRequestUrl),
+    ])
+  );
+  const owner = await findBlobOwnerByRefs('cipansor-documents', refs);
+  if (!owner) {
+    throw Errors.forbidden('Berkas tidak ditemukan atau tidak dapat diakses');
+  }
+  if (!(await actorMayReadBlob(actor, owner))) {
+    throw Errors.forbidden('Anda tidak berwenang mengakses berkas tersebut');
   }
 }
