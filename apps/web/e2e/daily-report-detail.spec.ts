@@ -129,6 +129,29 @@ test.describe("Daily report detail", () => {
       // token-bearing URL, never the raw persisted path...
       const resolvedPhoto = page.locator('img[src*="token="]').first();
       await expect(resolvedPhoto).toBeVisible({ timeout: 20_000 });
+
+      // ...anchored to the API ORIGIN, not the origin that served the page. The
+      // upload was made against API_URL (host A) while the page runs on the web
+      // origin (host B); a host-relative `/uploads/<file>` left unanchored would
+      // resolve against host B and 404. This is the finding-1 host-change
+      // regression, proven in a real browser.
+      const apiOrigin = new URL(API_URL).origin;
+      const webOrigin = new URL(page.url()).origin;
+      expect(apiOrigin).not.toBe(webOrigin);
+      await expect
+        .poll(
+          async () =>
+            resolvedPhoto.evaluate((el) => {
+              try {
+                return new URL((el as HTMLImageElement).src).origin;
+              } catch {
+                return null;
+              }
+            }),
+          { timeout: 20_000 },
+        )
+        .toBe(apiOrigin);
+
       // ...and the bytes must actually load (a resolved-but-still-403 URL would
       // leave naturalWidth at 0).
       await expect

@@ -144,7 +144,9 @@ function CreateDailyReportPageContent() {
         behaviorNotes,
         parentNotes: teacherNotes,
         homeworkSuggestion: homework,
-        photoUrls: photos.map((p) => p.url),
+        photoUrls: photos
+          .map((p) => p.url)
+          .filter((u): u is string => !!u),
       });
 
       toast.success("Laporan berhasil dibuat");

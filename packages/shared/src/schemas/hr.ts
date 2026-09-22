@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { uploadedFileRefSchema } from "./upload";
 
 /**
  * Request contract for `GET /hr/employees` — the flat employee directory.
@@ -54,7 +55,7 @@ export const createEmployeeDocumentSchema = z.object({
     "CV",
     "LAINNYA",
   ]),
-  fileUrl: z.string().url(),
+  fileUrl: uploadedFileRefSchema,
   expiryDate: z.coerce.date().optional(),
   notes: z.string().optional(),
 });

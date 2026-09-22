@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/popover";
 import { useDailyReports } from "@/hooks/use-daily-report";
 import { useResolvedFileUrls } from "@/hooks/use-resolved-file-url";
+import { displayableResolvedUrl } from "@/lib/files";
 import { format } from "date-fns";
 import { id } from "date-fns/locale";
 import { cn } from "@/lib/utils";
@@ -88,7 +89,8 @@ export default function ParentDailyReportsPage() {
     [reports]
   );
   const resolvedPhotos = useResolvedFileUrls(photoUrls);
-  const photoSrc = (url: string) => resolvedPhotos[url] || url;
+  const photoSrc = (url: string): string | null =>
+    displayableResolvedUrl(url, resolvedPhotos);
 
   return (
     <MainLayout>
@@ -293,7 +295,7 @@ export default function ParentDailyReportsPage() {
                               className="w-20 h-20 rounded-lg bg-muted flex-shrink-0 overflow-hidden"
                             >
                               <img
-                                src={photoSrc(photo.photoUrl)}
+                                src={photoSrc(photo.photoUrl) ?? undefined}
                                 alt={photo.caption || `Photo ${idx + 1}`}
                                 className="w-full h-full object-cover"
                               />

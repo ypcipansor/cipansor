@@ -71,6 +71,15 @@ noted.
   by the _web_ image, so the pairing that matters is web-new + API-new. During
   the window where web is new and API is old, logins mint a routing cookie only
   when `/auth/me` confirms — which the old API already does. No hard cutover.
+- **Token refresh re-mints the routing cookie.** After a 401-driven
+  `refreshAccessToken()` the web calls `POST /api/session` again with the
+  rotated bearer, so a role change surfaced by the refresh is reflected in
+  routing immediately. The remint goes through native `fetch`, not the Axios
+  instance, so it cannot recurse into `refreshAccessToken()`. If the remint
+  fails (non-2xx, `session:false`, network), the client **fails closed**: it
+  clears the session and sends the user to `/login`, rather than let a new
+  bearer run beside a stale routing identity. A rollback to a pre-PR web image
+  loses this (it kept the old cookie); the API is unaffected.
 - **API replicas:** the blob reconciliation worker takes a per-row lease
   (`reconcile_lease_owner` / `reconcile_lease_expires_at`) via a single
   conditional UPDATE, so more than one replica running the scheduler is safe.

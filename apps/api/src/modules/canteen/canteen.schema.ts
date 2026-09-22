@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { uploadedFileRefSchema } from '@cipansor/shared';
+
 import { partialUpdateSchema } from '@/lib/partial';
 
 // =============================================================================
@@ -30,7 +32,7 @@ export const CreateItemSchema = z.object({
   stock: z.number().int().min(0).default(0),
   minStock: z.number().int().min(0).default(5),
   unit: z.string().default('pcs'),
-  imageUrl: z.string().url().optional().nullable(),
+  imageUrl: uploadedFileRefSchema.optional().nullable(),
   isAvailable: z.boolean().default(true),
   isActive: z.boolean().default(true),
 });

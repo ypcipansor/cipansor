@@ -2,6 +2,7 @@
 import { useMemo } from "react";
 import { safeFormat } from "@/lib/date";
 import { useResolvedFileUrls } from "@/hooks/use-resolved-file-url";
+import { displayableResolvedUrl } from "@/lib/files";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -50,7 +51,8 @@ function DailyReportDetailPageContent() {
     [reportPhotos],
   );
   const resolvedPhotos = useResolvedFileUrls(photoUrls);
-  const photoSrc = (url: string) => resolvedPhotos[url] || url;
+  const photoSrc = (url: string): string | null =>
+    displayableResolvedUrl(url, resolvedPhotos);
 
   if (isLoading) {
     return (

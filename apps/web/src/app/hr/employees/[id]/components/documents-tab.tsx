@@ -1,6 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 import { useResolvedFileUrls } from "@/hooks/use-resolved-file-url";
+import { displayableResolvedUrl } from "@/lib/files";
 import { safeFormat } from "@/lib/date";
 import {
   useEmployeeDocuments,
@@ -75,11 +76,12 @@ export function DocumentsTab({ userId }: { userId: string }) {
   }, [documents]);
   const resolvedFiles = useResolvedFileUrls(documentUrls);
 
-  /** Prefer the on-demand SAS/file token when a stable reference was resolved. */
-  const displayable = (u?: string | null): string => {
-    if (!u) return "";
-    return resolvedFiles[u] || u;
-  };
+  /**
+   * Prefer the on-demand SAS/file token; return null (not the raw private
+   * reference) until it is minted, so a protected URL never reaches the browser.
+   */
+  const displayable = (u?: string | null): string | null =>
+    displayableResolvedUrl(u, resolvedFiles);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -239,7 +241,7 @@ export function DocumentsTab({ userId }: { userId: string }) {
               <TableRow key={doc.id}>
                 <TableCell className="font-medium">
                   <a
-                    href={displayable(doc.fileUrl)}
+                    href={displayable(doc.fileUrl) ?? undefined}
                     target="_blank"
                     rel="noreferrer"
                     className="flex items-center hover:underline text-blue-600"

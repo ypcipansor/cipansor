@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { uploadedFileRefSchema } from '@cipansor/shared';
+
 
 export const CourseStatus = z.enum(['DRAFT', 'PUBLISHED', 'ONGOING', 'COMPLETED', 'CANCELLED']);
 
@@ -14,7 +16,7 @@ export const createCourseSchema = z.object({
   startDate: z.string().datetime().optional(),
   endDate: z.string().datetime().optional(),
   maxParticipants: z.number().optional(),
-  imageUrl: z.string().url().optional(),
+  imageUrl: uploadedFileRefSchema.optional(),
 });
 
 export const updateCourseSchema = createCourseSchema.partial();

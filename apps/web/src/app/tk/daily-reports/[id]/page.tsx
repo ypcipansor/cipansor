@@ -52,6 +52,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useState, useMemo } from "react";
 import { useResolvedFileUrls } from "@/hooks/use-resolved-file-url";
+import { displayableResolvedUrl } from "@/lib/files";
 
 const ATTENDANCE_LABELS: Record<string, string> = {
   PRESENT: "Hadir",
@@ -117,7 +118,8 @@ export default function DailyReportDetailPage() {
     [photos]
   );
   const resolvedPhotos = useResolvedFileUrls(photoUrls);
-  const photoSrc = (url: string) => resolvedPhotos[url] || url;
+  const photoSrc = (url: string): string | null =>
+    displayableResolvedUrl(url, resolvedPhotos);
 
   const handleAddParentNotes = async () => {
     // This feature is currently not supported in the backend
@@ -495,7 +497,7 @@ export default function DailyReportDetailPage() {
                     {photos.map((photo: any) => (
                       <div key={photo.id} className="group relative">
                         <img
-                          src={photoSrc(photo.photoUrl)}
+                          src={photoSrc(photo.photoUrl) ?? undefined}
                           alt={photo.caption || "Kegiatan"}
                           className="aspect-square object-cover rounded-lg border"
                         />

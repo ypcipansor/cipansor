@@ -6,7 +6,11 @@ import {
   configuredStorageAccount,
 } from '@/utils/cloud-storage';
 import { parseAzureBlobIdentityKey } from '@/utils/blob-identity';
-import { resolveLocalUploadPath, removeLocalUpload } from '@/utils/local-upload-store';
+import {
+  inspectLocalUploadRef,
+  removeLocalUpload,
+  type LocalUploadRef,
+} from '@/utils/local-upload-store';
 import { BlobReconcileStatus, Prisma } from '@prisma/client';
 
 /**
@@ -76,8 +80,7 @@ export const BLOB_DISCARD_RETRY_MAX_MS = 60 * 60 * 1000;
 export const BLOB_DISCARD_LEASE_MS = 5 * 60 * 1000;
 
 /** Identifies this worker process in `blob_claims.reconcile_lease_owner`. */
-export const BLOB_DISCARD_WORKER_ID =
-  `${process.env.HOSTNAME ?? 'worker'}:${process.pid}:${Math.random().toString(36).slice(2, 10)}`;
+export const BLOB_DISCARD_WORKER_ID = `${process.env.HOSTNAME ?? 'worker'}:${process.pid}:${Math.random().toString(36).slice(2, 10)}`;
 
 export interface BlobDiscardReconcileSummary {
   /** Tombstoned claims considered this run. */
@@ -142,9 +145,7 @@ export async function claimRowForReconcile(id: string): Promise<boolean> {
  * The configured account is enforced: a claim naming an account we do not own
  * is refused (quarantined) rather than sent to our storage client.
  */
-function resolveAzureClaim(
-  key: string
-): { containerName: string; blobName: string } | null {
+function resolveAzureClaim(key: string): { containerName: string; blobName: string } | null {
   const identity = parseAzureBlobIdentityKey(key);
   if (!identity) return null;
   const account = configuredStorageAccount();
@@ -194,8 +195,15 @@ export async function reconcileDiscardedBlobs(
     if (dryRun) {
       summary.examined += 1;
       const parsed = parseBlobUrl(row.blobUrl) ?? resolveAzureClaim(row.blobUrl);
-      const localPath = parsed ? null : await resolveLocalUploadPath(row.blobUrl).catch(() => null);
-      if (parsed || localPath) summary.deleted += 1;
+      if (parsed) {
+        summary.deleted += 1;
+        continue;
+      }
+      const inspected = await inspectLocalUploadRef(row.blobUrl).catch((): LocalUploadRef => ({
+        kind: 'error',
+      }));
+      // A resolved OR already-absent trusted local reference would end DONE.
+      if (inspected.kind === 'resolved' || inspected.kind === 'absent') summary.deleted += 1;
       else summary.skipped += 1;
       continue;
     }
@@ -211,17 +219,42 @@ export async function reconcileDiscardedBlobs(
     const parsed = parseBlobUrl(row.blobUrl) ?? resolveAzureClaim(row.blobUrl);
 
     if (!parsed) {
-      // Could be a valid LOCAL upload path, or a malformed/foreign URL. A local
-      // file is still ours to reclaim; anything else is quarantined terminal so
-      // it stops consuming the batch.
-      const localPath = await resolveLocalUploadPath(row.blobUrl).catch(() => null);
-      if (!localPath) {
+      // Could be a valid LOCAL upload reference, an already-absent one, a
+      // malformed/traversal/foreign URL, or a transient filesystem failure.
+      const inspected = await inspectLocalUploadRef(row.blobUrl).catch((): LocalUploadRef => ({
+        kind: 'error',
+      }));
+
+      if (inspected.kind === 'invalid') {
+        // Malformed, traversal, a foreign URL, or a symlink out of the root:
+        // never ours to delete, terminal so it stops consuming the batch.
         summary.skipped += 1;
         await quarantineRow(row.id);
         continue;
       }
+
+      if (inspected.kind === 'error') {
+        // The filesystem could not be inspected (EACCES/EIO). Retry rather than
+        // quarantine or stamp DONE — the file may still be on disk.
+        summary.failed += 1;
+        await scheduleRetry(row.id, row.reconcileAttempts);
+        logger.warn('[BlobReconcile] Local reference could not be inspected; rescheduled', {
+          blobUrl: row.blobUrl,
+        });
+        continue;
+      }
+
+      if (inspected.kind === 'absent') {
+        // A trusted local reference whose file is already gone: the earlier
+        // delete succeeded (or the file was removed out of band). Idempotent
+        // success — terminal DONE, never a quarantine.
+        summary.deleted += 1;
+        await markDone(row.id);
+        continue;
+      }
+
       try {
-        await removeLocalUpload(localPath);
+        await removeLocalUpload(inspected.path);
         summary.deleted += 1;
         await markDone(row.id);
       } catch (error) {
@@ -308,10 +341,7 @@ async function scheduleRetry(
   }
   // Cap the wait so a transmission that may recover soon (missing credentials)
   // is still retried within the hour rather than doubling unbounded.
-  const backoffMs = Math.min(
-    BLOB_DISCARD_RETRY_BASE_MS * 2 ** attempts,
-    BLOB_DISCARD_RETRY_MAX_MS
-  );
+  const backoffMs = Math.min(BLOB_DISCARD_RETRY_BASE_MS * 2 ** attempts, BLOB_DISCARD_RETRY_MAX_MS);
   await prisma.blobClaim.update({
     where: { id },
     data: {

@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { uploadedFileRefSchema } from '@cipansor/shared';
+
 
 // ============================================
 // QUERY SCHEMAS
@@ -96,7 +98,7 @@ export type FinalizeReportInput = z.infer<typeof finalizeReportSchema>;
 // ============================================
 
 export const addPhotoSchema = z.object({
-  photoUrl: z.string().url(),
+  photoUrl: uploadedFileRefSchema,
   caption: z.string().max(500).optional(),
   orderNumber: z.number().int().min(0).default(0),
 });

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useResolvedFileUrls } from "@/hooks/use-resolved-file-url";
+import { displayableResolvedUrl } from "@/lib/files";
 import { safeFormat } from "@/lib/date";
 import { MainLayout } from "@/components/layout";
 import { Button } from "@/components/ui/button";
@@ -114,8 +115,8 @@ export default function FoundationPage() {
     [documents],
   );
   const resolvedDocuments = useResolvedFileUrls(documentUrls);
-  const documentUrl = (u?: string | null): string =>
-    (u && resolvedDocuments[u]) || u || "";
+  const documentUrl = (u?: string | null): string | null =>
+    displayableResolvedUrl(u, resolvedDocuments);
   // This used to call useFinancialSummary(foundation?.id) — the SPP/invoice
   // summary hook, passed a foundation id where it expects an academic year id.
   // Every read below was cast through `as any` because the shapes do not match
@@ -538,7 +539,7 @@ export default function FoundationPage() {
                             <div className="flex justify-end gap-2">
                               <Button variant="ghost" size="icon" asChild>
                                 <a
-                                  href={documentUrl(doc.fileUrl)}
+                                  href={documentUrl(doc.fileUrl) ?? undefined}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                 >
@@ -546,7 +547,7 @@ export default function FoundationPage() {
                                 </a>
                               </Button>
                               <Button variant="ghost" size="icon" asChild>
-                                <a href={documentUrl(doc.fileUrl)} download>
+                                <a href={documentUrl(doc.fileUrl) ?? undefined} download>
                                   <Download className="h-4 w-4" />
                                 </a>
                               </Button>

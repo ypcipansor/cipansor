@@ -1,11 +1,13 @@
 import { z } from 'zod';
+import { uploadedFileRefSchema } from '@cipansor/shared';
+
 
 export const createEvidenceSchema = z.object({
   unitId: z.string().uuid(),
   indicatorId: z.string().uuid(),
   academicYearId: z.string().uuid(),
   name: z.string().min(3),
-  fileUrl: z.string().url(),
+  fileUrl: uploadedFileRefSchema,
   description: z.string().optional(),
 });
 

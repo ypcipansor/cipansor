@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
   appendFileToken,
+  displayableResolvedUrl,
   evidenceFileType,
   isImageEvidence,
   isLocalUploadUrl,
@@ -36,7 +37,10 @@ describe("appendFileToken", () => {
     // The old authFileUrl read localStorage.accessToken and put it in the URL.
     // Nothing in the resolver may touch it now.
     localStorage.setItem("accessToken", "session-bearer-secret");
-    const resolved = appendFileToken("https://host/uploads/a.pdf", "file-scoped");
+    const resolved = appendFileToken(
+      "https://host/uploads/a.pdf",
+      "file-scoped",
+    );
     expect(resolved).not.toContain("session-bearer-secret");
     expect(resolved).toContain("file-scoped");
     localStorage.clear();
@@ -84,7 +88,9 @@ describe("isLocalUploadUrl / needsResolvedAccess", () => {
       needsResolvedAccess("https://acct.blob.core.windows.net/documents/a.pdf"),
     ).toBe(true);
     expect(
-      needsResolvedAccess("https://acct.blob.core.windows.net/media-public/a.jpg"),
+      needsResolvedAccess(
+        "https://acct.blob.core.windows.net/media-public/a.jpg",
+      ),
     ).toBe(false);
     expect(needsResolvedAccess("https://example.com/a.pdf")).toBe(false);
   });
@@ -142,10 +148,66 @@ describe("resolveFileWithExpiry", () => {
     });
 
     const result = await resolveFileWithExpiry("/uploads/a.pdf");
-    expect(result.url).toBe("/uploads/a.pdf?token=file-scoped-token");
+    // Anchored to the API origin of this split-origin build (web :3000 / API
+    // :3001). A bare `/uploads/a.pdf` would resolve against the page origin and
+    // 404 against the web container.
+    expect(result.url).toBe(
+      "http://localhost:3001/uploads/a.pdf?token=file-scoped-token",
+    );
     expect(result.url).not.toContain("session-bearer-secret");
     expect(result.expiresAt).toBeGreaterThan(Date.now());
-    expect(apiMock.post).toHaveBeenCalledWith("/upload/sas", { url: "/uploads/a.pdf" });
+    expect(apiMock.post).toHaveBeenCalledWith("/upload/sas", {
+      url: "/uploads/a.pdf",
+    });
+  });
+
+  it("anchors a relative local upload to the API origin (finding 1 regression)", async () => {
+    // The upload middleware now persists a host-independent `/uploads/<file>`
+    // path (finding 1). In a split-origin deployment the browser would resolve
+    // it against the WEB origin, where it 404s; the resolver must hand back a
+    // URL the API origin actually serves.
+    apiMock.post.mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          url: "/uploads/3f9b3824-fc01-452b-96d4-2caec27c1a4d.png",
+          downloadUrl: "/uploads/3f9b3824-fc01-452b-96d4-2caec27c1a4d.png",
+          accessToken: "file-scoped-token",
+          expiresIn: 300,
+        },
+      },
+    });
+
+    const result = await resolveFileWithExpiry(
+      "/uploads/3f9b3824-fc01-452b-96d4-2caec27c1a4d.png",
+    );
+    expect(result.url).toBe(
+      "http://localhost:3001/uploads/3f9b3824-fc01-452b-96d4-2caec27c1a4d.png?token=file-scoped-token",
+    );
+  });
+
+  it("leaves a legacy absolute /uploads URL untouched (pre-host-change row)", async () => {
+    // Rows written before finding 1 hold an absolute origin. It must not be
+    // re-anchored or otherwise rewritten — the API authorizes on the canonical
+    // path, and the stored origin is still what the browser should try.
+    apiMock.post.mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          url: "http://oldhost:3000/uploads/legacy.png",
+          downloadUrl: "http://oldhost:3000/uploads/legacy.png",
+          accessToken: "file-scoped-token",
+          expiresIn: 300,
+        },
+      },
+    });
+
+    const result = await resolveFileWithExpiry(
+      "http://oldhost:3000/uploads/legacy.png",
+    );
+    expect(result.url).toBe(
+      "http://oldhost:3000/uploads/legacy.png?token=file-scoped-token",
+    );
   });
 
   it("falls back to the stable URL when the SAS request fails", async () => {
@@ -163,7 +225,9 @@ describe("resolveFileWithExpiry", () => {
     const result = await resolveFileUrl(
       "https://acct.blob.core.windows.net/media-public/pic.jpg",
     );
-    expect(result).toBe("https://acct.blob.core.windows.net/media-public/pic.jpg");
+    expect(result).toBe(
+      "https://acct.blob.core.windows.net/media-public/pic.jpg",
+    );
     expect(apiMock.post).not.toHaveBeenCalled();
   });
 
@@ -177,7 +241,7 @@ describe("resolveFileWithExpiry", () => {
 
 describe("evidenceFileType (PAUD evidence upload contract)", () => {
   const file = (type: string, name = "x") =>
-    ({ type, name } as unknown as File);
+    ({ type, name }) as unknown as File;
 
   it("maps an image MIME type to the `image` bucket the API accepts", () => {
     expect(evidenceFileType(file("image/png"))).toBe("image");
@@ -218,5 +282,38 @@ describe("isImageEvidence", () => {
     expect(isImageEvidence(null)).toBe(false);
     expect(isImageEvidence(undefined)).toBe(false);
     expect(isImageEvidence("")).toBe(false);
+  });
+});
+
+describe("displayableResolvedUrl (finding 4 — never leak a raw protected ref)", () => {
+  const PRIVATE = "https://acct.blob.core.windows.net/documents/a.pdf";
+  const LOCAL = "/uploads/a.pdf";
+  const PUBLIC = "https://acct.blob.core.windows.net/media-public/a.jpg";
+  const EXTERNAL = "https://example.com/a.pdf";
+
+  it("returns the resolved credential when the map has one", () => {
+    expect(
+      displayableResolvedUrl(PRIVATE, { [PRIVATE]: `${PRIVATE}?sig=ok` }),
+    ).toBe(`${PRIVATE}?sig=ok`);
+  });
+
+  it("returns null for a protected ref not yet resolved (the old `|| u` bug)", () => {
+    // The exact pattern `resolvedMap[u] || u` returned PRIVATE here, sending the
+    // browser a guaranteed-403 request.
+    expect(displayableResolvedUrl(PRIVATE, {})).toBeNull();
+    expect(displayableResolvedUrl(LOCAL, {})).toBeNull();
+    // A resolved entry that is explicitly null (failed mint) is still null.
+    expect(displayableResolvedUrl(PRIVATE, { [PRIVATE]: null })).toBeNull();
+  });
+
+  it("passes through a public/external URL that needs no credential", () => {
+    expect(displayableResolvedUrl(PUBLIC, {})).toBe(PUBLIC);
+    expect(displayableResolvedUrl(EXTERNAL, {})).toBe(EXTERNAL);
+  });
+
+  it("returns null for empty input", () => {
+    expect(displayableResolvedUrl(null, {})).toBeNull();
+    expect(displayableResolvedUrl(undefined, {})).toBeNull();
+    expect(displayableResolvedUrl("", {})).toBeNull();
   });
 });

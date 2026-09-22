@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { uploadedFileRefSchema } from '@cipansor/shared';
+
 import { AdmissionStatus } from '@prisma/client';
 import { partialUpdateSchema } from '@/lib/partial';
 import { normalizeEmail } from '@/utils/email';
@@ -149,7 +151,7 @@ export const createRegistrantDocumentSchema = z.object({
   registrantId: z.string().uuid(),
   name: z.string().min(2).max(200),
   type: z.enum(['akta', 'ijazah', 'kk', 'foto', 'rapor', 'lainnya']),
-  fileUrl: z.string().url().optional(),
+  fileUrl: uploadedFileRefSchema.optional(),
   notes: z.string().optional(),
 });
 

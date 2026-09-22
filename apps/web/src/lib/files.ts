@@ -19,6 +19,8 @@
  * it had already authorized the caller.
  */
 
+import { API_ORIGIN } from "./api-origin";
+
 /** A resolved URL together with the moment its credential stops working. */
 export interface ResolvedFile {
   /** Browser-usable URL (may carry a short-lived file token or SAS). */
@@ -49,7 +51,8 @@ export function isPrivateAzureBlob(url: string | null | undefined): boolean {
   return match !== null && match[1] !== "media-public";
 }
 
-/** True when `url` is a local `/uploads/...` reference (either spelling). */
+/**
+ * True when `url` is a local `/uploads/...` reference (either spelling). */
 export function isLocalUploadUrl(url: string | null | undefined): boolean {
   if (!url) return false;
   if (url.startsWith("/uploads/")) return true;
@@ -61,12 +64,56 @@ export function isLocalUploadUrl(url: string | null | undefined): boolean {
 }
 
 /**
+ * Anchor a host-relative `/uploads/<file>` reference to the API origin.
+ *
+ * A new local upload persists the host-relative path by design (it survives a
+ * hostname change, see `uploadedFileRefSchema`). The browser would resolve that
+ * against the origin serving the PAGE, which is the API origin only when web and
+ * API share a host — false in `pnpm dev` and the CI e2e stack (web :3000, API
+ * :3001), where the relative path 404s against the web container. When the API
+ * base is itself relative (`NEXT_PUBLIC_API_URL=""`, the same-origin production
+ * deployment) the path is already correct and is returned unchanged.
+ *
+ * An absolute URL — a legacy pre-host-change row or an external link — is left
+ * exactly as it is; only a bare `/uploads/...` path is re-anchored.
+ */
+function anchorLocalUploadRef(url: string): string {
+  if (!url.startsWith("/uploads/")) return url;
+  if (!API_ORIGIN || typeof window === "undefined") return url;
+  return `${API_ORIGIN}${url}`;
+}
+
+/**
  * A URL that needs a temporary credential minted server-side: a private Azure
  * blob (SAS) or a local upload (single-file token). Public and external URLs
  * are returned as-is.
  */
 export function needsResolvedAccess(url: string | null | undefined): boolean {
   return isPrivateAzureBlob(url) || isLocalUploadUrl(url);
+}
+
+/**
+ * Pick the browser-usable URL for a stored reference from a resolved map.
+ *
+ * `useResolvedFileUrls` deliberately leaves a protected reference OUT of the
+ * map until its SAS/file token is minted, and it never stores a raw private URL.
+ * The old per-page pattern `resolvedMap[u] || u` undid that: it fell back to the
+ * raw protected reference, so the browser fired a failing request and rendered a
+ * broken element on first paint and again for each credential refresh. This
+ * helper returns null instead — the caller renders a loading/empty state and
+ * nothing uncredentialised ever reaches the browser.
+ *
+ * A public blob or an external URL needs no credential and is returned as-is
+ * (the hook publishes it directly).
+ */
+export function displayableResolvedUrl(
+  url: string | null | undefined,
+  resolvedMap: Record<string, string | null>,
+): string | null {
+  if (!url) return null;
+  const resolved = resolvedMap[url];
+  if (resolved) return resolved;
+  return needsResolvedAccess(url) ? null : anchorLocalUploadRef(url);
 }
 
 /** Append a short-lived token to a URL, replacing any token already present. */
@@ -79,7 +126,12 @@ export function appendFileToken(url: string, token: string): string {
 
 interface SasResponse {
   success: boolean;
-  data?: { url: string; downloadUrl?: string; accessToken?: string; expiresIn?: number };
+  data?: {
+    url: string;
+    downloadUrl?: string;
+    accessToken?: string;
+    expiresIn?: number;
+  };
 }
 
 /**
@@ -107,7 +159,14 @@ export async function resolveFileWithExpiry(
         : null;
 
     if (data?.accessToken) {
-      return { url: appendFileToken(url, data.accessToken), expiresAt };
+      // A local upload: anchor the host-relative path to the API origin the
+      // token was minted for, then attach the token. Leaving it relative would
+      // resolve against the page origin and 404 whenever web and API are split
+      // (pnpm dev, the CI e2e stack, any split-origin deploy).
+      return {
+        url: appendFileToken(anchorLocalUploadRef(url), data.accessToken),
+        expiresAt,
+      };
     }
     if (data?.downloadUrl) {
       return { url: data.downloadUrl, expiresAt };

@@ -391,9 +391,15 @@ export const handleSingleUpload = (fieldName: string, resolveDestination?: Desti
               }
             }
           } else {
-            const protocol = req.protocol;
-            const host = req.get('host');
-            req.body.fileUrl = `${protocol}://${host}/uploads/${filename}`;
+            // A STABLE, host-independent reference. Building this from
+            // `req.protocol`/`req.get('host')` made every stored row depend on
+            // the origin in force at upload time: after a domain or proxy
+            // change the old absolute URL pointed at a host that no longer
+            // serves the file. `/uploads/<file>` resolves against whatever
+            // origin the client is on and survives a hostname change. Legacy
+            // absolute rows are matched on read by `blobReferenceCandidates` /
+            // `normalizeUploadPath`, which fold both spellings to the same path.
+            req.body.fileUrl = `/uploads/${filename}`;
             // Record who uploaded the local file, so an abandoned orphan can
             // later be discarded by its uploader only — the same guarantee the
             // Azure path gets from the blob's `uploaderId` metadata. Best-effort:

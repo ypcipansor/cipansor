@@ -78,8 +78,15 @@ Next.js 16 App Router (RSC + client components). Conventions in
   API same-origin on each — hence `??` rather than `||` at every read of it, since
   `||` would fold the empty string into the localhost fallback. Wrap calls in React Query hooks under
   `src/hooks/*`; surface errors via `src/lib/api-error.ts`.
-- **Auth** — `accessToken` cookie read by `middleware.ts` before page JS; the
-  Axios response interceptor refreshes on 401 then redirects to `/login`.
+- **Auth** — the page guard (`middleware.ts`) reads ONE **server-signed,
+  `HttpOnly` cookie**, `cipansor-session` (minted by `POST /api/session` after
+  the API's `/auth/me` confirms the bearer, verified HMAC-SHA-256 in
+  `src/lib/session.ts`). It never reads the client-writable `auth-storage`
+  cookie, localStorage or the `Authorization` header. The bearer stays in
+  localStorage and goes per-request as `Authorization`. The Axios response
+  interceptor refreshes on 401 (`refreshAccessToken`), re-mints the routing
+  session with the new bearer, and redirects to `/login` when that cannot be
+  done — so a rotated token never sits beside a stale routing identity.
 - **Routing/menus** — gate by role/permission (`config/navigation.ts`,
   `components/auth/protected-route.tsx`).
 

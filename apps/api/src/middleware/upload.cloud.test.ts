@@ -138,12 +138,10 @@ describe('handleSingleUpload public-media role guard (BUG 1)', () => {
     // These tests model an unchanged database: the live role equals the JWT's.
     const prismaMod = await import('@/lib/prisma');
     (prismaMod.prisma as any).user = {
-      findUnique: vi
-        .fn()
-        .mockResolvedValue({
-          isActive: true,
-          userRoles: [{ role: { code: (user as any).roleCode } }],
-        }),
+      findUnique: vi.fn().mockResolvedValue({
+        isActive: true,
+        userRoles: [{ role: { code: (user as any).roleCode } }],
+      }),
     };
 
     const { containerForDestination } = await import('@/utils/cloud-storage');
@@ -333,5 +331,56 @@ describe('handleSingleUpload public-media LIVE revocation guard (finding E)', ()
       { isActive: true, userRoles: [{ role: { code: 'SDIT_ADMIN' } }] }
     );
     expect(passed).toBe('private');
+  });
+});
+
+/**
+ * Finding 1: a local upload's stored reference must not depend on the request
+ * origin. Building `fileUrl` from `req.get('host')` made every stored row point
+ * at the host in force at upload time, so a domain/proxy change broke the link.
+ * New uploads persist the host-relative `/uploads/<file>`, which resolves on
+ * whichever origin serves the page.
+ */
+describe('handleSingleUpload local fallback emits a host-independent reference (finding 1)', () => {
+  it('stores /uploads/<file>, not an absolute URL built from the request host', async () => {
+    mockUploadToCloudStorage.mockResolvedValueOnce({
+      provider: 'local',
+      url: '/uploads/x.png',
+      filename: 'x.png',
+    });
+    const p = tmpFile(png);
+    const req = {
+      body: {},
+      protocol: 'https',
+      get: (name: string) => (name.toLowerCase() === 'host' ? 'cipansor.or.id' : undefined),
+      user: { id: 'u-1', roleCode: 'SDIT_GURU', unitId: 'unit-1', permissions: [] },
+      file: {
+        filename: path.basename(p),
+        originalname: 'x.png',
+        mimetype: 'image/png',
+        size: png.length,
+        path: p,
+      },
+      __fileToAssign: {
+        filename: path.basename(p),
+        originalname: 'x.png',
+        mimetype: 'image/png',
+        size: png.length,
+        path: p,
+      },
+    } as unknown as Request;
+    const res = {
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn(),
+      req,
+    } as unknown as Response;
+    const next = vi.fn() as unknown as NextFunction;
+
+    handleSingleUpload('file')(req, res, next);
+    await vi.waitFor(() => expect(next).toHaveBeenCalled());
+
+    expect(req.body.fileUrl).toBe(`/uploads/${path.basename(p)}`);
+    expect(req.body.fileUrl).not.toContain('cipansor.or.id');
+    expect(req.body.fileUrl).not.toContain('https://');
   });
 });

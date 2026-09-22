@@ -20,7 +20,7 @@ import {
 } from "@/hooks/use-tk-assessment";
 import { useStudents } from "@/hooks/use-students";
 import { useAcademicYears } from "@/hooks/use-academic-years";
-import { evidenceFileType, isImageEvidence } from "@/lib/files";
+import { displayableResolvedUrl, evidenceFileType, isImageEvidence } from "@/lib/files";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -166,8 +166,8 @@ export default function EditTKAssessmentPage() {
     [existingEvidences],
   );
   const resolvedEvidence = useResolvedFileUrls(existingEvidenceUrls);
-  const evidenceUrl = (u?: string | null): string =>
-    (u && resolvedEvidence[u]) || u || "";
+  const evidenceUrl = (u?: string | null): string | null =>
+    displayableResolvedUrl(u, resolvedEvidence);
 
   const updateMutation = useUpdateTKAssessment();
   const addEvidenceMutation = useAddEvidence();
@@ -686,7 +686,7 @@ export default function EditTKAssessmentPage() {
                             >
                               {isImageEvidence(evidence.fileType) ? (
                                 <img
-                                  src={evidenceUrl(evidence.fileUrl)}
+                                  src={evidenceUrl(evidence.fileUrl) ?? undefined}
                                   alt="Evidence"
                                   className="object-cover w-full h-full"
                                 />

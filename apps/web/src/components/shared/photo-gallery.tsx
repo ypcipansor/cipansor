@@ -28,11 +28,21 @@ import { cn } from "@/lib/utils";
 
 export interface PhotoGalleryItem {
   id: string;
-  url: string;
+  /**
+   * The browser-usable URL, or null while a protected photo's SAS/file token is
+   * still being minted. Never a raw private reference — the gallery renders a
+   * muted placeholder instead, so an uncredentialised URL is never requested.
+   */
+  url: string | null;
   thumbnail?: string;
   caption?: string;
   category?: string;
   uploadedAt: Date;
+}
+
+/** The URL actually usable as an image source, or null while unresolved. */
+function gallerySrc(photo: PhotoGalleryItem): string | null {
+  return photo.thumbnail || photo.url || null;
 }
 
 interface PhotoGalleryProps {
@@ -196,12 +206,18 @@ export function PhotoGallery({
             className="aspect-square cursor-pointer overflow-hidden group relative"
             onClick={() => setSelectedPhoto(photo)}
           >
-            <Image
-              src={photo.thumbnail || photo.url}
-              alt={photo.caption || "Photo"}
-              fill
-              className="object-cover group-hover:scale-105 transition-transform"
-            />
+            {gallerySrc(photo) ? (
+              <Image
+                src={gallerySrc(photo) as string}
+                alt={photo.caption || "Photo"}
+                fill
+                className="object-cover group-hover:scale-105 transition-transform"
+              />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center text-muted-foreground">
+                <ImageIcon className="h-6 w-6" />
+              </div>
+            )}
             {/* Overlay */}
             <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
               <ZoomIn className="h-6 w-6 text-white" />
@@ -250,12 +266,14 @@ export function PhotoGallery({
 
           {selectedPhoto && (
             <div className="relative aspect-video bg-black">
-              <Image
-                src={selectedPhoto.url}
-                alt={selectedPhoto.caption || "Photo"}
-                fill
-                className="object-contain"
-              />
+              {gallerySrc(selectedPhoto) && (
+                <Image
+                  src={gallerySrc(selectedPhoto) as string}
+                  alt={selectedPhoto.caption || "Photo"}
+                  fill
+                  className="object-contain"
+                />
+              )}
 
               {/* Navigation Arrows */}
               {filteredPhotos.length > 1 && (
@@ -297,12 +315,14 @@ export function PhotoGallery({
                     Share WA
                   </Button>
                 )}
-                <Button variant="secondary" size="sm" asChild>
-                  <a href={selectedPhoto.url} download>
-                    <Download className="h-4 w-4 mr-1" />
-                    Download
-                  </a>
-                </Button>
+                {gallerySrc(selectedPhoto) && (
+                  <Button variant="secondary" size="sm" asChild>
+                    <a href={gallerySrc(selectedPhoto) as string} download>
+                      <Download className="h-4 w-4 mr-1" />
+                      Download
+                    </a>
+                  </Button>
+                )}
                 {editable && onDelete && (
                   <Button
                     variant="destructive"
@@ -350,12 +370,18 @@ export function DailyReportPhotoPreview({
             index === maxPreview - 1 && remaining > 0 ? onViewAll : undefined
           }
         >
-          <Image
-            src={photo.thumbnail || photo.url}
-            alt=""
-            fill
-            className="object-cover"
-          />
+          {gallerySrc(photo) ? (
+            <Image
+              src={gallerySrc(photo) as string}
+              alt=""
+              fill
+              className="object-cover"
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center text-muted-foreground">
+              <ImageIcon className="h-4 w-4" />
+            </div>
+          )}
           {index === maxPreview - 1 && remaining > 0 && (
             <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
               <span className="text-white font-bold">+{remaining}</span>

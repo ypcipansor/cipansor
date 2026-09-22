@@ -9,6 +9,7 @@ import { MainLayout } from "@/components/layout";
  */
 import { useMemo, useState } from "react";
 import { useResolvedFileUrls } from "@/hooks/use-resolved-file-url";
+import { displayableResolvedUrl } from "@/lib/files";
 import { safeFormat } from "@/lib/date";
 import { useRouter } from "next/navigation";
 import {
@@ -135,8 +136,8 @@ function PortfolioPageContent() {
     [portfoliosData],
   );
   const resolvedCovers = useResolvedFileUrls(coverUrls);
-  const coverUrl = (u?: string | null): string =>
-    (u && resolvedCovers[u]) || u || "";
+  const coverUrl = (u?: string | null): string | null =>
+    displayableResolvedUrl(u, resolvedCovers);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -354,7 +355,7 @@ function PortfolioPageContent() {
               <div className="h-32 bg-gradient-to-br from-primary/20 to-primary/5 relative">
                 {portfolio.files?.[0]?.fileUrl && (
                   <img
-                    src={coverUrl(portfolio.files[0].fileUrl)}
+                    src={coverUrl(portfolio.files[0].fileUrl) ?? undefined}
                     alt={portfolio.title}
                     className="w-full h-full object-cover"
                   />

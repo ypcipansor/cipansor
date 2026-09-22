@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { uploadedFileRefSchema } from '@cipansor/shared';
+
 
 // Activity type enum
 const TahfidzActivityEnum = z.enum(['ZIYADAH', 'MUROJAAH', 'TASMI', 'ASSESSMENT']);
@@ -27,7 +29,7 @@ export const createTahfidzSchema = z
     totalAyah: z.number().int().min(1).optional(),
     score: z.number().min(0).max(100).optional(), // For assessment
     notes: z.string().max(1000).optional(),
-    audioUrl: z.string().url().optional(), // E-Simaan recording (uploaded via /upload)
+    audioUrl: uploadedFileRefSchema.optional(), // E-Simaan recording (uploaded via /upload)
     recordedAt: z.coerce.date().optional(),
   })
   .refine((data) => data.ayahEnd >= data.ayahStart, {

@@ -1,6 +1,7 @@
 "use client";
 import { useParams, useRouter } from "next/navigation";
 import { useResolvedFileUrls } from "@/hooks/use-resolved-file-url";
+import { displayableResolvedUrl } from "@/lib/files";
 import { safeFormat } from "@/lib/date";
 import { useCorrespondence } from "@/hooks/use-correspondence";
 import { useAuth } from "@/hooks/use-auth";
@@ -130,11 +131,12 @@ export default function LetterDetailPage() {
   );
   const resolvedFiles = useResolvedFileUrls(letterFileUrls);
 
-  /** Prefer the on-demand SAS/file token when a stable reference was resolved. */
-  const displayable = (u?: string | null): string => {
-    if (!u) return "";
-    return resolvedFiles[u] || u;
-  };
+  /**
+   * Prefer the on-demand SAS/file token; return null (not the raw private
+   * reference) until it is minted, so a protected URL never reaches the browser.
+   */
+  const displayable = (u?: string | null): string | null =>
+    displayableResolvedUrl(u, resolvedFiles);
 
   const [notes, setNotes] = useState("");
   const [dispositionOpen, setDispositionOpen] = useState(false);
@@ -1135,7 +1137,7 @@ export default function LetterDetailPage() {
                     </span>
                     <Button variant="ghost" size="sm" asChild>
                       <a
-                        href={displayable(letter.fileUrl)}
+                        href={displayable(letter.fileUrl) ?? undefined}
                         target="_blank"
                         rel="noopener noreferrer"
                       >
@@ -1172,7 +1174,7 @@ export default function LetterDetailPage() {
                         </span>
                         <Button variant="ghost" size="sm" asChild>
                           <a
-                            href={displayable(att.fileUrl)}
+                            href={displayable(att.fileUrl) ?? undefined}
                             target="_blank"
                             rel="noopener noreferrer"
                           >
@@ -1303,7 +1305,7 @@ export default function LetterDetailPage() {
               </CardHeader>
               <CardContent>
                 <object
-                  data={displayable(letter.fileUrl)}
+                  data={displayable(letter.fileUrl) ?? undefined}
                   type="application/pdf"
                   className="w-full h-[600px] rounded border bg-muted"
                 >
@@ -1312,7 +1314,7 @@ export default function LetterDetailPage() {
                     <p className="mb-2">Pratinjau tidak tersedia.</p>
                     <Button variant="outline" size="sm" asChild>
                       <a
-                        href={displayable(letter.fileUrl)}
+                        href={displayable(letter.fileUrl) ?? undefined}
                         target="_blank"
                         rel="noopener noreferrer"
                       >

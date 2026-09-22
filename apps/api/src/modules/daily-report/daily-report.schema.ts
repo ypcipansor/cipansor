@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { uploadedFileRefListSchema } from '@cipansor/shared';
+
 
 // Daily Mood enum
 export const DailyMoodEnum = z.enum(['HAPPY', 'NEUTRAL', 'SAD', 'SICK', 'TIRED', 'EXCITED']);
@@ -90,7 +92,7 @@ export const createDailyReportSchema = z.object({
     .optional(),
 
   // Photos of activities (URLs)
-  photoUrls: z.array(z.string().url()).max(10).optional().default([]),
+  photoUrls: uploadedFileRefListSchema.max(10).optional().default([]),
 });
 
 export const updateDailyReportSchema = z.object({
@@ -134,7 +136,7 @@ export const updateDailyReportSchema = z.object({
     )
     .optional(),
 
-  photoUrls: z.array(z.string().url()).max(10).optional(),
+  photoUrls: uploadedFileRefListSchema.max(10).optional(),
 });
 
 // ============================================

@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { uploadedFileRefListSchema } from '@cipansor/shared';
+
 import { ComplaintCategory, ComplaintStatus } from '@prisma/client';
 
 export const createComplaintSchema = z.object({
@@ -11,7 +13,7 @@ export const createComplaintSchema = z.object({
   roomId: z.string().uuid().optional(),
   assetId: z.string().uuid().optional(),
   isAnonymous: z.boolean().optional(),
-  attachments: z.array(z.string().url()).optional(),
+  attachments: uploadedFileRefListSchema.optional(),
   unitId: z.string().uuid().optional(), // Optional, required for SUPER_ADMIN if token unitId is missing
 });
 

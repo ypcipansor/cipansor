@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Search, FileText, Download, Eye } from "lucide-react";
 import type { Book } from "@cipansor/shared";
 import { useResolvedFileUrls } from "@/hooks/use-resolved-file-url";
+import { displayableResolvedUrl } from "@/lib/files";
 
 interface DigitalLibraryViewerProps {
   books: Book[];
@@ -31,8 +32,8 @@ export function DigitalLibraryViewer({ books }: DigitalLibraryViewerProps) {
     [books],
   );
   const resolvedBookFiles = useResolvedFileUrls(bookUrls);
-  const bookFileUrl = (u?: string | null): string =>
-    (u && resolvedBookFiles[u]) || u || "";
+  const bookFileUrl = (u?: string | null): string | null =>
+    displayableResolvedUrl(u, resolvedBookFiles);
 
   const filteredBooks = books.filter(
     (book) =>
@@ -62,7 +63,7 @@ export function DigitalLibraryViewer({ books }: DigitalLibraryViewerProps) {
               {book.coverUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={bookFileUrl(book.coverUrl)}
+                  src={bookFileUrl(book.coverUrl) ?? undefined}
                   alt={book.title}
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                 />
@@ -77,14 +78,14 @@ export function DigitalLibraryViewer({ books }: DigitalLibraryViewerProps) {
                   <Button
                     size="sm"
                     variant="secondary"
-                    onClick={() => window.open(bookFileUrl(book.fileUrl), "_blank")}
+                    onClick={() => window.open(bookFileUrl(book.fileUrl) ?? undefined, "_blank")}
                   >
                     <Eye className="w-4 h-4 mr-2" /> Baca
                   </Button>
                   <Button
                     size="sm"
                     variant="secondary"
-                    onClick={() => window.open(bookFileUrl(book.fileUrl), "_blank")}
+                    onClick={() => window.open(bookFileUrl(book.fileUrl) ?? undefined, "_blank")}
                     title="Unduh"
                   >
                     <Download className="w-4 h-4" />

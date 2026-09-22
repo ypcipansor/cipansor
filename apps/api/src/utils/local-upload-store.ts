@@ -28,7 +28,109 @@ const META_DIR = path.join(LOCAL_UPLOAD_DIR, '.meta');
  * Anchored and extension-bounded; the actual containment check is `realpath`
  * below, this only rejects obvious junk before touching the filesystem.
  */
-const GENERATED_NAME = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.[a-z0-9]+$/i;
+const GENERATED_NAME =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.[a-z0-9]+$/i;
+
+/**
+ * The three non-resolved outcomes of inspecting a local upload reference, plus
+ * a transient filesystem failure. Kept apart because the reconciliation worker
+ * must treat them differently: an absent file that was a legitimate local
+ * upload is a terminal success (the delete already happened), a malformed or
+ * foreign reference is quarantined, and a transient error must be retried.
+ */
+export type LocalUploadRef =
+  | { kind: 'resolved'; path: string }
+  | { kind: 'absent'; path: string }
+  | { kind: 'invalid' }
+  | { kind: 'error' };
+
+/**
+ * Every stored spelling of a local upload reduces to the same identity: the
+ * host-relative `/uploads/<file>` path. The origin and any query/fragment are
+ * irrelevant (a legacy absolute URL written before a host change names the same
+ * file), so they are dropped before the name gate runs.
+ *
+ * A bare filename (no scheme, no leading slash) is accepted too, for callers
+ * that pass just the name; `path.basename` still strips any directory
+ * component, and the {@link GENERATED_NAME} gate still rejects anything that is
+ * not a generated upload name. Returns null for a foreign URL (an Azure blob,
+ * an external link) — those are not ours to inspect as local files.
+ */
+function normalizeLocalRef(ref: string): string | null {
+  if (!ref.includes('://') && !ref.startsWith('/')) {
+    return `/uploads/${path.basename(ref)}`;
+  }
+  let pathname: string;
+  try {
+    pathname = new URL(ref, 'http://localhost').pathname;
+  } catch {
+    return null;
+  }
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(pathname);
+  } catch {
+    return null;
+  }
+  return decoded.startsWith('/uploads/') ? decoded : null;
+}
+
+/**
+ * Inspect a persisted/local reference and classify it, WITHOUT deleting
+ * anything.
+ *
+ * The bug this exists to fix: `resolveLocalUploadPath` collapses "the file was
+ * already deleted" and "this reference is malformed/foreign" into one `null`,
+ * so the reconciliation worker quarantined a row whose unlink had in fact
+ * already succeeded. A trusted local reference whose file is gone is a
+ * successful, idempotent delete; only a malformed/traversal/foreign reference
+ * may be quarantined.
+ *
+ * The name/containment/symlink gates of {@link resolveLocalUploadPath} are kept
+ * intact and are the only reason a reference is ever called `resolved`:
+ *
+ *  - `kind: 'resolved'` — a real file at a realpath inside the uploads root.
+ *  - `kind: 'absent'`   — a canonical `/uploads/<uuid>.<ext>` name, lexically
+ *    inside the root, whose file (and no dangling symlink) is gone.
+ *  - `kind: 'invalid'`  — malformed, traversal, foreign (non-`/uploads/`) or a
+ *    symlink that escapes the uploads root. Quarantined, never deleted.
+ *  - `kind: 'error'`    — a non-`ENOENT` filesystem failure (EACCES/EIO/…); the
+ *    file may exist, so this must be retried, never stamped DONE.
+ */
+export async function inspectLocalUploadRef(ref: string): Promise<LocalUploadRef> {
+  const normalized = normalizeLocalRef(ref);
+  if (!normalized) return { kind: 'invalid' };
+
+  const baseName = path.basename(normalized);
+  if (!GENERATED_NAME.test(baseName)) return { kind: 'invalid' };
+
+  const resolved = path.join(LOCAL_UPLOAD_DIR, baseName);
+  try {
+    const real = await fs.promises.realpath(resolved);
+    const root = await fs.promises.realpath(LOCAL_UPLOAD_DIR);
+    const prefix = root.endsWith(path.sep) ? root : `${root}${path.sep}`;
+    if (real !== root && real.startsWith(prefix)) return { kind: 'resolved', path: real };
+    // realpath succeeded but lands outside the root: a planted symlink. Refuse.
+    return { kind: 'invalid' };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+      // Transient/permission failure — the file may still be there.
+      return { kind: 'error' };
+    }
+    // The target is gone. Distinguish a genuinely absent file from a dangling
+    // symlink (something IS there, it just points nowhere): the latter is not a
+    // local upload we ever wrote and must not be called a clean success.
+    try {
+      await fs.promises.lstat(resolved);
+      return { kind: 'invalid' };
+    } catch (lstatError) {
+      if ((lstatError as NodeJS.ErrnoException)?.code === 'ENOENT') {
+        return { kind: 'absent', path: resolved };
+      }
+      return { kind: 'error' };
+    }
+  }
+}
 
 /**
  * Resolve a candidate upload NAME to an absolute path that is provably inside
@@ -45,22 +147,13 @@ const GENERATED_NAME = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]
  *     planted in the directory that points outside it is refused — the file is
  *     resolved to its true location before the containment test, not after.
  *
- * Returns null when any gate fails or the file does not exist.
+ * Returns null when any gate fails or the file does not exist. For callers that
+ * must tell "already deleted" from "malformed" (the reconciliation worker), use
+ * {@link inspectLocalUploadRef} instead.
  */
 export async function resolveLocalUploadPath(candidate: string): Promise<string | null> {
-  const baseName = path.basename(candidate);
-  if (!GENERATED_NAME.test(baseName)) return null;
-
-  const resolved = path.join(LOCAL_UPLOAD_DIR, baseName);
-  try {
-    const real = await fs.promises.realpath(resolved);
-    const root = await fs.promises.realpath(LOCAL_UPLOAD_DIR);
-    const prefix = root.endsWith(path.sep) ? root : `${root}${path.sep}`;
-    if (real !== root && real.startsWith(prefix)) return real;
-  } catch {
-    // Missing file or unresolvable link — nothing safe to act on.
-  }
-  return null;
+  const inspected = await inspectLocalUploadRef(candidate);
+  return inspected.kind === 'resolved' ? inspected.path : null;
 }
 
 function metaPathFor(resolvedUploadPath: string): string {
@@ -76,9 +169,13 @@ export async function writeLocalUploadOwner(
   if (!uploaderId) return;
   try {
     await fs.promises.mkdir(META_DIR, { recursive: true, mode: 0o700 });
-    await fs.promises.writeFile(metaPathFor(path.join(LOCAL_UPLOAD_DIR, filename)), JSON.stringify({ uploaderId }), {
-      mode: 0o600,
-    });
+    await fs.promises.writeFile(
+      metaPathFor(path.join(LOCAL_UPLOAD_DIR, filename)),
+      JSON.stringify({ uploaderId }),
+      {
+        mode: 0o600,
+      }
+    );
   } catch {
     // Logged by the caller if needed; the upload itself already succeeded.
   }

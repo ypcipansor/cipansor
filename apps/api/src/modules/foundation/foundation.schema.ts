@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { uploadedFileRefSchema } from '@cipansor/shared';
+
 
 // Foundation schemas
 export const createFoundationSchema = z.object({
@@ -10,7 +12,7 @@ export const createFoundationSchema = z.object({
   phone: z.string().max(20).optional(),
   email: z.string().email().optional(),
   website: z.string().url().optional(),
-  logoUrl: z.string().url().optional(),
+  logoUrl: uploadedFileRefSchema.optional(),
   vision: z.string().optional(),
   mission: z.string().optional(),
 });
@@ -30,7 +32,7 @@ export const createBoardMemberSchema = z.object({
   position: z.string().min(2).max(50),
   phone: z.string().max(20).optional(),
   email: z.string().email().optional(),
-  photoUrl: z.string().url().optional(),
+  photoUrl: uploadedFileRefSchema.optional(),
   startDate: z.string().datetime(),
   endDate: z.string().datetime().optional(),
 });
@@ -58,7 +60,7 @@ export const createDocumentSchema = z.object({
   documentNo: z.string().max(100).optional(),
   issueDate: z.string().datetime(),
   expiryDate: z.string().datetime().optional(),
-  fileUrl: z.string().url().optional(),
+  fileUrl: uploadedFileRefSchema.optional(),
   notes: z.string().optional(),
 });
 

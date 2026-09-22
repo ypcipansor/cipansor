@@ -35,6 +35,7 @@ import {
 import Link from "next/link";
 import { EvidenceUploadDialog } from "@/components/quality/evidence-upload-dialog";
 import { useResolvedFileUrls } from "@/hooks/use-resolved-file-url";
+import { displayableResolvedUrl } from "@/lib/files";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 export default function StandardDetailPage() {
@@ -61,8 +62,8 @@ export default function StandardDetailPage() {
     [standard],
   );
   const resolvedEvidence = useResolvedFileUrls(evidenceUrls);
-  const evidenceUrl = (u?: string | null): string =>
-    (u && resolvedEvidence[u]) || u || "";
+  const evidenceUrl = (u?: string | null): string | null =>
+    displayableResolvedUrl(u, resolvedEvidence);
 
   const deleteEvidence = useDeleteEvidence();
 
@@ -182,7 +183,7 @@ export default function StandardDetailPage() {
                                 <div className="flex items-center gap-2">
                                   <Button variant="ghost" size="icon" asChild>
                                     <a
-                                      href={evidenceUrl(evidence.fileUrl)}
+                                      href={evidenceUrl(evidence.fileUrl) ?? undefined}
                                       target="_blank"
                                       rel="noopener noreferrer"
                                     >

@@ -6,11 +6,20 @@ import { id as localeId } from "date-fns/locale";
 import { safeFormat } from "@/lib/date";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { useDecideRevocation, useWithdrawRevocationRequest } from "@/hooks/use-esign";
+import {
+  useDecideRevocation,
+  useWithdrawRevocationRequest,
+} from "@/hooks/use-esign";
 import { useResolvedFileUrl } from "@/hooks/use-resolved-file-url";
 import type { LetterRevocationRequestDetail } from "@cipansor/shared";
 import { AlertTriangle, FileText, Gavel } from "lucide-react";
@@ -25,22 +34,46 @@ import { AlertTriangle, FileText, Gavel } from "lucide-react";
  */
 
 const STATUS: Record<string, { label: string; tone: string }> = {
-  PENDING: { label: "Menunggu keputusan", tone: "border-amber-600 bg-amber-50 text-amber-700" },
-  APPROVED: { label: "Disetujui — naskah dicabut", tone: "border-orange-600 bg-orange-50 text-orange-700" },
-  REJECTED: { label: "Ditolak", tone: "border-slate-400 bg-slate-50 text-slate-600" },
-  WITHDRAWN: { label: "Ditarik pemohon", tone: "border-slate-400 bg-slate-50 text-slate-600" },
+  PENDING: {
+    label: "Menunggu keputusan",
+    tone: "border-amber-600 bg-amber-50 text-amber-700",
+  },
+  APPROVED: {
+    label: "Disetujui — naskah dicabut",
+    tone: "border-orange-600 bg-orange-50 text-orange-700",
+  },
+  REJECTED: {
+    label: "Ditolak",
+    tone: "border-slate-400 bg-slate-50 text-slate-600",
+  },
+  WITHDRAWN: {
+    label: "Ditarik pemohon",
+    tone: "border-slate-400 bg-slate-50 text-slate-600",
+  },
 };
 
 /**
  * The supporting document is a private blob; mint a SAS before rendering the
  * link. Extracted so the hook runs at component level, not inside the
  * `requests.map` callback.
+ *
+ * While the SAS is in flight the hook returns `null`. The raw private reference
+ * is deliberately NOT used as a fallback: it 403s and would flash a broken link
+ * (and, for the refresh window, surface an uncredentialised URL to the browser).
  */
 function RevocationAttachmentLink({ url }: { url: string }) {
   const resolved = useResolvedFileUrl(url);
+  if (!resolved) {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+        <FileText className="h-3 w-3" />
+        Berkas pendukung
+      </span>
+    );
+  }
   return (
     <a
-      href={resolved ?? url}
+      href={resolved}
       target="_blank"
       rel="noopener noreferrer"
       className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
@@ -74,7 +107,9 @@ export function RevocationRequestsCard({
 
   async function submit(requestId: string, approve: boolean) {
     if (approve && !passphrase) {
-      toast.error("Passphrase tanda tangan Anda diperlukan untuk mencabut naskah.");
+      toast.error(
+        "Passphrase tanda tangan Anda diperlukan untuk mencabut naskah.",
+      );
       return;
     }
     try {
@@ -87,13 +122,15 @@ export function RevocationRequestsCard({
       });
       setNote("");
       setPassphrase("");
-      toast.success(approve ? "Naskah dinas telah dicabut." : "Permohonan ditolak.");
+      toast.success(
+        approve ? "Naskah dinas telah dicabut." : "Permohonan ditolak.",
+      );
     } catch (e: any) {
       setPassphrase("");
       toast.error(
         e?.response?.data?.error?.message ??
           e?.response?.data?.message ??
-          "Gagal memproses permohonan"
+          "Gagal memproses permohonan",
       );
     }
   }
@@ -117,18 +154,24 @@ export function RevocationRequestsCard({
           return (
             <div key={r.id} className="space-y-2 rounded-lg border p-3 text-sm">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="font-medium">{r.requester?.name ?? "Tidak diketahui"}</span>
+                <span className="font-medium">
+                  {r.requester?.name ?? "Tidak diketahui"}
+                </span>
                 <Badge variant="outline" className={status.tone}>
                   {status.label}
                 </Badge>
                 <span className="ml-auto text-xs text-muted-foreground">
-                  {safeFormat(new Date(r.createdAt), "dd MMM yyyy HH:mm", { locale: localeId })}
+                  {safeFormat(new Date(r.createdAt), "dd MMM yyyy HH:mm", {
+                    locale: localeId,
+                  })}
                 </span>
               </div>
 
               <p className="rounded-md bg-muted/50 p-2">{r.reason}</p>
 
-              {r.attachmentUrl && <RevocationAttachmentLink url={r.attachmentUrl} />}
+              {r.attachmentUrl && (
+                <RevocationAttachmentLink url={r.attachmentUrl} />
+              )}
 
               {r.decidedBy && (
                 <p className="text-xs text-muted-foreground">
@@ -162,9 +205,10 @@ export function RevocationRequestsCard({
             <div className="flex gap-2 text-sm text-amber-900">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
               <p>
-                Menyetujui berarti <strong>mencabut naskah ini sekarang juga</strong>,
-                dengan alasan yang tertulis di atas — dan alasan itu akan dibaca
-                publik apa adanya. Pencabutan tidak dapat dibatalkan.
+                Menyetujui berarti{" "}
+                <strong>mencabut naskah ini sekarang juga</strong>, dengan
+                alasan yang tertulis di atas — dan alasan itu akan dibaca publik
+                apa adanya. Pencabutan tidak dapat dibatalkan.
               </p>
             </div>
 

@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { uploadedFileRefSchema } from '@cipansor/shared';
+
 import { UnitType } from '@prisma/client';
 
 /**
@@ -27,7 +29,7 @@ export const createUnitSchema = z.object({
   address: z.string().min(5, 'Address must be at least 5 characters'),
   phone: z.string().optional(),
   email: z.string().email().optional(),
-  logoUrl: z.string().url().optional(),
+  logoUrl: uploadedFileRefSchema.optional(),
 });
 
 // Update unit
@@ -37,7 +39,7 @@ export const updateUnitSchema = z.object({
   address: z.string().min(5).optional(),
   phone: z.string().optional().nullable(),
   email: z.string().email().optional().nullable(),
-  logoUrl: z.string().url().optional().nullable(),
+  logoUrl: uploadedFileRefSchema.optional().nullable(),
 });
 
 // ID param

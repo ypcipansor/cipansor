@@ -1,5 +1,6 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from "axios";
 import { toast } from "sonner";
+import { API_BASE_URL } from "./api-origin";
 
 // Allow any request to opt out of the global error toast in the response
 // interceptor. Best-effort aggregation calls (the role dashboards fire several
@@ -84,20 +85,11 @@ export interface UpdateRoleInput {
   permissions?: string[];
 }
 
-// NEXT_PUBLIC_API_URL is the API *base* origin (no /api suffix); the `/api`
-// prefix is appended here so every consumer of this env var uses one
-// convention. Callers of this axios instance use bare paths (e.g. "/students").
-//
-// `??`, not `||`, on purpose. An empty value is a meaningful setting: it makes
-// the base relative ("/api"), so the bundle talks to whichever origin served
-// the page. That is what lets one image serve both cipansor.or.id and
-// portal.cipansor.or.id with the API same-origin on each — the value is inlined
-// at build time, so an absolute origin baked here would make one of the two
-// hosts cross-origin and put CORS on the critical path. `||` would have folded
-// that empty string into the localhost fallback and silently broken it.
-// Unset still falls back to localhost:3001 for `pnpm dev`, where the web dev
-// server (:3000) and the API (:3001) really are different origins.
-const API_URL = `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001"}/api`;
+// The API origin/base URL live in `lib/api-origin.ts` so the file resolver can
+// anchor a host-relative `/uploads/<file>` reference to the same origin this
+// instance talks to. `API_URL` is kept as the local alias every call site below
+// already uses.
+const API_URL = API_BASE_URL;
 
 export const api = axios.create({
   baseURL: API_URL,
@@ -152,7 +144,68 @@ class NoSessionError extends Error {
   }
 }
 
-function refreshAccessToken(): Promise<string> {
+/**
+ * The bearer rotated, but the server-signed routing cookie could not be
+ * re-minted against the new token.
+ *
+ * This is a definitive, fail-closed outcome, not a transient one to swallow: if
+ * the API now reports a different primary role/RoleCode, the Proxy would keep
+ * routing off the old cookie until it expired. Rather than let a new bearer sit
+ * beside a stale routing identity, the caller treats this like a rejected
+ * session and signs the user back in.
+ */
+class RoutingSessionRefreshError extends Error {
+  constructor() {
+    super("Routing session could not be re-minted after token refresh");
+    this.name = "RoutingSessionRefreshError";
+  }
+}
+
+/**
+ * Re-mint the server-signed `cipansor-session` cookie for a freshly rotated
+ * bearer, so the Next Proxy routes off the CURRENT role instead of the one the
+ * previous cookie carried.
+ *
+ * Uses native `fetch`, deliberately NOT the `api` axios instance. Two reasons,
+ * both correctness-critical:
+ *
+ *  - **No recursion.** A 401 from this call would run through the response
+ *    interceptor, which calls `refreshAccessToken()` again — the token was just
+ *    rotated, so that path could loop. `fetch` is below the interceptor layer.
+ *  - **No stale header.** The request interceptor attaches whatever
+ *    `localStorage.accessToken` holds; going direct lets us send the exact
+ *    token we just received.
+ *
+ * `POST /api/session` answers `200 { session: false }` whenever it did NOT sign
+ * a cookie, so only `session === true` counts as success. Any network failure,
+ * non-2xx, malformed body or `session: false` resolves `false` — never a
+ * rejection — so the caller can decide the fail-closed path.
+ */
+async function remintRoutingSession(accessToken: string): Promise<boolean> {
+  if (typeof window === "undefined") return false;
+  try {
+    const response = await fetch("/api/session", {
+      method: "POST",
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    if (!response.ok) return false;
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch {
+      return false;
+    }
+    return (
+      typeof body === "object" &&
+      body !== null &&
+      (body as { session?: unknown }).session === true
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function refreshAccessToken(): Promise<string> {
   if (refreshInFlight) return refreshInFlight;
 
   refreshInFlight = (async () => {
@@ -171,6 +224,13 @@ function refreshAccessToken(): Promise<string> {
     // The rotated bearer token must NOT be mirrored into a JS-readable cookie
     // (finding F); middleware routes off the server-signed `cipansor-session`
     // cookie, never the raw token or a client-writable profile blob.
+    //
+    // The routing cookie is re-minted here (finding 2): a refresh can return a
+    // different primary role/RoleCode, and leaving the old cookie in place
+    // would route the user to the wrong dashboard until it expired.
+    if (!(await remintRoutingSession(accessToken as string))) {
+      throw new RoutingSessionRefreshError();
+    }
     return accessToken as string;
   })().finally(() => {
     refreshInFlight = null;
@@ -228,6 +288,7 @@ api.interceptors.response.use(
         const status = (refreshError as AxiosError)?.response?.status;
         const isDefinitive =
           refreshError instanceof NoSessionError ||
+          refreshError instanceof RoutingSessionRefreshError ||
           status === 400 ||
           status === 401 ||
           status === 403;
@@ -402,13 +463,15 @@ export const uploadApi = {
     const formData = new FormData();
     formData.append("file", file);
     return api.post<ApiResponse<UploadFileResult>>(
-      destination ? `/upload?destination=${encodeURIComponent(destination)}` : "/upload",
+      destination
+        ? `/upload?destination=${encodeURIComponent(destination)}`
+        : "/upload",
       formData,
       {
         headers: {
           "Content-Type": "multipart/form-data",
         },
-      }
+      },
     );
   },
   /**

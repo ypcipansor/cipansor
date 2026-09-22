@@ -4,6 +4,24 @@ import { loginAs, apiRequest, type AuthSession } from "./helpers/auth-api";
 const API_URL = process.env.API_URL || "http://localhost:3001/api";
 
 /**
+ * This API's origin, with the `/api` suffix stripped — the host that serves
+ * `/uploads/<file>`, not the router prefix.
+ */
+const API_BASE_URL = API_URL.replace(/\/api\/?$/, "");
+
+/**
+ * Resolve a stored upload reference to an absolute URL against the API origin.
+ *
+ * An upload now persists a host-relative `/uploads/<file>` (finding 1): it is
+ * stable across host moves, but a Node `fetch()` needs an absolute URL, and
+ * leaving it relative would resolve against no origin at all. Only a
+ * host-relative reference is anchored; an absolute Azure URL is returned as-is.
+ */
+function absoluteApiUrl(url: string): string {
+  return url.startsWith("/") ? `${API_BASE_URL}${url}` : url;
+}
+
+/**
  * True when the URL is served by Azure Blob Storage.
  *
  * Parses the URL and matches the HOSTNAME exactly (or as a subdomain), never a
@@ -33,7 +51,10 @@ function isAzureBlobHost(url: string): boolean {
  */
 function isLocalUploadUrl(url: string): boolean {
   try {
-    return new URL(url).pathname.startsWith("/uploads/");
+    // The stored reference may be host-relative (`/uploads/<file>`), which
+    // `new URL(url)` alone rejects — parse it against a base so both spellings
+    // are recognised, then match the PATH prefix only.
+    return new URL(url, API_BASE_URL).pathname.startsWith("/uploads/");
   } catch {
     return false;
   }
@@ -332,7 +353,7 @@ test.describe("E-Office correspondence flows", () => {
     // is a private blob — mint the SAS and assert it resolves to a usable URL
     // (the blob host is not reachable from the isolated e2e network).
     if (isLocalUploadUrl(stableUrl)) {
-      const res = await fetch(stableUrl, {
+      const res = await fetch(absoluteApiUrl(stableUrl), {
         headers: { authorization: `Bearer ${session.accessToken}` },
       });
       expect(res.ok).toBe(true);
@@ -348,7 +369,7 @@ test.describe("E-Office correspondence flows", () => {
     // A local /uploads reference is served directly by the API; the resolved
     // stable URL must therefore be fetchable without a SAS round-trip.
     if (isLocalUploadUrl(stableUrl)) {
-      const direct = await fetch(stableUrl, {
+      const direct = await fetch(absoluteApiUrl(stableUrl), {
         headers: { authorization: `Bearer ${session.accessToken}` },
       });
       expect(direct.ok).toBe(true);

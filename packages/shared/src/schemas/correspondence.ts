@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { uploadedFileRefSchema } from "./upload";
 import {
   LetterDirection,
   LetterDispatchChannel,
@@ -14,7 +15,9 @@ export const listParticipantsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional().default(100),
 });
 
-export type ListParticipantsQueryInput = z.infer<typeof listParticipantsQuerySchema>;
+export type ListParticipantsQueryInput = z.infer<
+  typeof listParticipantsQuerySchema
+>;
 
 /**
  * Satu lampiran. `fileUrl` sudah harus ada — berkasnya diunggah lebih dulu
@@ -27,7 +30,9 @@ export const letterAttachmentSchema = z.object({
   sizeBytes: z.number().int().nonnegative().optional(),
 });
 
-export type LetterAttachmentSchemaInput = z.infer<typeof letterAttachmentSchema>;
+export type LetterAttachmentSchemaInput = z.infer<
+  typeof letterAttachmentSchema
+>;
 
 /**
  * Satu baris tembusan. Persis satu dari kedua bentuknya.
@@ -42,7 +47,8 @@ export const letterCcSchema = z
     externalName: z.string().trim().min(1).max(255).optional(),
   })
   .refine((v) => Boolean(v.userId) !== Boolean(v.externalName), {
-    message: "Tembusan diisi pengguna internal atau nama pihak luar, bukan keduanya",
+    message:
+      "Tembusan diisi pengguna internal atau nama pihak luar, bukan keduanya",
   });
 
 export type LetterCcSchemaInput = z.infer<typeof letterCcSchema>;
@@ -75,7 +81,7 @@ export const createLetterSchema = z.object({
     }),
   subject: z.string().min(1),
   content: z.string().optional(),
-  fileUrl: z.string().url().optional(),
+  fileUrl: uploadedFileRefSchema.optional(),
   urgency: z.nativeEnum(LetterUrgency),
   nature: z.nativeEnum(LetterNature),
   status: z.nativeEnum(LetterStatus),
@@ -93,7 +99,7 @@ export const createLetterSchema = z.object({
 export type CreateLetterSchemaInput = z.infer<typeof createLetterSchema>;
 
 export const reviewLetterSchema = z.object({
-  action: z.enum(['APPROVE', 'REJECT']),
+  action: z.enum(["APPROVE", "REJECT"]),
   notes: z.string().optional(),
   nextReviewerId: z.string().uuid().optional(),
   isFinalSigner: z.boolean().optional(),
@@ -101,27 +107,37 @@ export const reviewLetterSchema = z.object({
 
 export type ReviewLetterSchemaInput = z.infer<typeof reviewLetterSchema>;
 
-export const createDispositionSchema = z.object({
-  letterId: z.string().uuid(),
-  recipientId: z.string().uuid().optional(),
-  recipientIds: z.array(z.string().uuid()).optional(),
-  instruction: z.string().min(1),
-  deadline: z.string().optional(),
-  parentDispositionId: z.string().uuid().optional(),
-  notes: z.string().optional(),
-}).refine((data) => data.recipientId || (data.recipientIds && data.recipientIds.length > 0), {
-  message: 'Harus memilih minimal satu penerima disposisi',
-  path: ['recipientIds'],
-});
+export const createDispositionSchema = z
+  .object({
+    letterId: z.string().uuid(),
+    recipientId: z.string().uuid().optional(),
+    recipientIds: z.array(z.string().uuid()).optional(),
+    instruction: z.string().min(1),
+    deadline: z.string().optional(),
+    parentDispositionId: z.string().uuid().optional(),
+    notes: z.string().optional(),
+  })
+  .refine(
+    (data) =>
+      data.recipientId || (data.recipientIds && data.recipientIds.length > 0),
+    {
+      message: "Harus memilih minimal satu penerima disposisi",
+      path: ["recipientIds"],
+    },
+  );
 
-export type CreateDispositionSchemaInput = z.infer<typeof createDispositionSchema>;
+export type CreateDispositionSchemaInput = z.infer<
+  typeof createDispositionSchema
+>;
 
 export const updateDispositionStatusSchema = z.object({
-  status: z.enum(['IN_PROGRESS', 'COMPLETED']),
+  status: z.enum(["IN_PROGRESS", "COMPLETED"]),
   notes: z.string().optional(),
 });
 
-export type UpdateDispositionStatusSchemaInput = z.infer<typeof updateDispositionStatusSchema>;
+export type UpdateDispositionStatusSchemaInput = z.infer<
+  typeof updateDispositionStatusSchema
+>;
 
 export const letterNoteSchema = z.object({
   note: z.string().max(2000).optional(),
@@ -183,7 +199,7 @@ export const updateLetterSchema = z.object({
     }),
   subject: z.string().min(1).optional(),
   content: z.string().optional(),
-  fileUrl: z.string().url().optional().nullable(),
+  fileUrl: uploadedFileRefSchema.optional().nullable(),
   urgency: z.nativeEnum(LetterUrgency).optional(),
   nature: z.nativeEnum(LetterNature).optional(),
   senderName: z.string().optional().nullable(),

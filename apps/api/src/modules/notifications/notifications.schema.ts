@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { partialUpdateSchema } from '@/lib/partial';
+import { uploadedFileRefSchema } from '@cipansor/shared';
 
 // We define the enum manually to match @cipansor/shared and include Prisma's types for compatibility
 // Shared: ANNOUNCEMENT, ATTENDANCE, FINANCE, ACADEMIC, PERMIT, HEALTH, VIOLATION, REWARD, SYSTEM
@@ -42,7 +43,7 @@ export const createNotificationSchema = z.object({
   role: z.string().optional(),
 
   link: z.string().url().optional(),
-  imageUrl: z.string().url().optional(),
+  imageUrl: uploadedFileRefSchema.optional(),
   data: z.record(z.string(), z.unknown()).optional(),
   scheduledAt: z.coerce.date().optional(),
 });
@@ -106,7 +107,7 @@ export const createAnnouncementSchema = z.object({
   publishedAt: z.coerce.date().optional(),
   expiresAt: z.coerce.date().optional(),
   targetRoles: z.array(z.string()).optional(),
-  attachmentUrl: z.string().url().optional(),
+  attachmentUrl: uploadedFileRefSchema.optional(),
 });
 
 export const updateAnnouncementSchema = partialUpdateSchema(createAnnouncementSchema);

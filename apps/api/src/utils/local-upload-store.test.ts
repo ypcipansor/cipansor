@@ -8,6 +8,7 @@ import {
   readLocalUploadOwner,
   removeLocalUpload,
   resolveLocalUploadPath,
+  inspectLocalUploadRef,
 } from './local-upload-store';
 
 /**
@@ -81,6 +82,92 @@ describe('resolveLocalUploadPath (real filesystem)', () => {
 
   it('returns null for a file that does not exist', async () => {
     expect(await resolveLocalUploadPath(generatedName())).toBeNull();
+  });
+});
+
+describe('inspectLocalUploadRef (absent vs invalid vs error)', () => {
+  /**
+   * The reconciliation worker must not conflate "the file was already deleted"
+   * with "this reference is malformed/foreign". Only the former is an
+   * idempotent DONE; the latter is a quarantine. A transient filesystem error
+   * is neither — it must be retried.
+   */
+
+  it('classifies a real, contained file as resolved', async () => {
+    const name = generatedName();
+    const full = await materializeFile(name);
+    const result = await inspectLocalUploadRef(`/uploads/${name}`);
+    expect(result).toEqual({ kind: 'resolved', path: await fs.promises.realpath(full) });
+  });
+
+  it('classifies a legacy absolute URL to a missing file as absent', async () => {
+    // A row written before the host change holds `https://host/uploads/<file>`,
+    // and the file has already been unlinked: that is a successful delete.
+    const name = generatedName();
+    const result = await inspectLocalUploadRef(`https://old-host.example/uploads/${name}`);
+    expect(result.kind).toBe('absent');
+  });
+
+  it('classifies a missing host-relative path as absent', async () => {
+    const result = await inspectLocalUploadRef(`/uploads/${generatedName()}`);
+    expect(result.kind).toBe('absent');
+  });
+
+  it('classifies a malformed value as invalid', async () => {
+    expect((await inspectLocalUploadRef('not a url with spaces')).kind).toBe('invalid');
+    expect((await inspectLocalUploadRef('')).kind).toBe('invalid');
+  });
+
+  it('classifies a traversal reference as invalid, never absent', async () => {
+    // `../../etc/passwd` normalizes outside `/uploads/`; it must be quarantined,
+    // not reported as a clean success.
+    expect((await inspectLocalUploadRef('../../etc/passwd')).kind).toBe('invalid');
+    expect((await inspectLocalUploadRef('/uploads/../../etc/passwd')).kind).toBe('invalid');
+  });
+
+  it('classifies a foreign (non-/uploads) URL as invalid', async () => {
+    expect((await inspectLocalUploadRef('https://acct.blob.core.windows.net/c/x.pdf')).kind).toBe(
+      'invalid'
+    );
+    expect((await inspectLocalUploadRef('https://example.com/doc.pdf')).kind).toBe('invalid');
+  });
+
+  it('classifies a non-generated basename as invalid', async () => {
+    await materializeFile('passwd');
+    expect((await inspectLocalUploadRef('/uploads/passwd')).kind).toBe('invalid');
+  });
+
+  it('classifies a UUID symlink that escapes the root as invalid', async () => {
+    const target = path.join(os.tmpdir(), `escape-${crypto.randomUUID()}.png`);
+    await fs.promises.writeFile(target, 'secret');
+    const linkName = generatedName();
+    const linkPath = path.join(LOCAL_UPLOAD_DIR, linkName);
+    await fs.promises.mkdir(LOCAL_UPLOAD_DIR, { recursive: true });
+    await fs.promises.symlink(target, linkPath);
+    created.push(linkPath, target);
+
+    expect((await inspectLocalUploadRef(`/uploads/${linkName}`)).kind).toBe('invalid');
+  });
+
+  it('classifies a dangling symlink as invalid, not absent', async () => {
+    // Something IS present at the path; it merely points nowhere. Calling that
+    // a clean success would be wrong — we never wrote it.
+    const linkName = generatedName();
+    const linkPath = path.join(LOCAL_UPLOAD_DIR, linkName);
+    await fs.promises.mkdir(LOCAL_UPLOAD_DIR, { recursive: true });
+    await fs.promises.symlink(path.join(os.tmpdir(), `gone-${crypto.randomUUID()}`), linkPath);
+    created.push(linkPath);
+
+    expect((await inspectLocalUploadRef(`/uploads/${linkName}`)).kind).toBe('invalid');
+  });
+
+  it('classifies a non-ENOENT filesystem failure as error (retry, never DONE)', async () => {
+    const name = generatedName();
+    const errno = Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+    const spy = vi.spyOn(fs.promises, 'realpath').mockRejectedValue(errno);
+    const result = await inspectLocalUploadRef(`/uploads/${name}`);
+    spy.mockRestore();
+    expect(result.kind).toBe('error');
   });
 });
 

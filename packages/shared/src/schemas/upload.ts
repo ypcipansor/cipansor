@@ -16,3 +16,34 @@ export const uploadQuerySchema = z.object({
 });
 
 export type UploadQuery = z.infer<typeof uploadQuerySchema>;
+
+/**
+ * A stored reference to an uploaded file.
+ *
+ * New local-storage uploads persist a host-relative `/uploads/<file>` path,
+ * never an absolute URL built from the request `Host`: a domain/proxy change
+ * would leave every stored row pointing at an origin that no longer serves the
+ * file. A row written before that change may still hold the absolute
+ * `https://<any-host>/uploads/<file>` spelling, and public media or an external
+ * link is an ordinary absolute URL, so both spellings must validate.
+ *
+ * This is a shape check, not an authorization one — ownership is decided at
+ * read time against the record that references the file.
+ */
+export const uploadedFileRefSchema = z
+  .string()
+  .min(1)
+  .max(2048)
+  .refine(
+    (value) =>
+      value.startsWith("/uploads/") ||
+      z.string().url().safeParse(value).success,
+    {
+      message: "Referensi berkas harus berupa URL atau jalur /uploads/",
+    },
+  );
+
+export type UploadedFileRef = z.infer<typeof uploadedFileRefSchema>;
+
+/** An array of uploaded-file references (e.g. a record's attachment list). */
+export const uploadedFileRefListSchema = z.array(uploadedFileRefSchema);

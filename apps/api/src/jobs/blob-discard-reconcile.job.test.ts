@@ -49,12 +49,13 @@ vi.mock('@/utils/cloud-storage', () => ({
 }));
 
 vi.mock('@/utils/local-upload-store', () => ({
+  inspectLocalUploadRef: vi.fn().mockResolvedValue({ kind: 'invalid' }),
   resolveLocalUploadPath: vi.fn().mockResolvedValue(null),
   removeLocalUpload: vi.fn(),
 }));
 
 import { deleteBlobFromCloudStorage } from '@/utils/cloud-storage';
-import { removeLocalUpload, resolveLocalUploadPath } from '@/utils/local-upload-store';
+import { removeLocalUpload, inspectLocalUploadRef } from '@/utils/local-upload-store';
 import {
   reconcileDiscardedBlobs,
   BLOB_DISCARD_RECONCILE_AUDIT_ACTION,
@@ -77,7 +78,7 @@ describe('reconcileDiscardedBlobs (BUG 7 / flag 11)', () => {
     updateMock.mockResolvedValue({});
     auditCreateMock.mockResolvedValue({});
     queryRawMock.mockResolvedValue([{ id: 'leased' }]);
-    (resolveLocalUploadPath as any).mockResolvedValue(null);
+    (inspectLocalUploadRef as any).mockResolvedValue({ kind: 'invalid' });
   });
 
   it('retries the delete for a tombstoned, expired claim and marks it DONE', async () => {
@@ -114,7 +115,10 @@ describe('reconcileDiscardedBlobs (BUG 7 / flag 11)', () => {
     // Only PENDING rows that are due are selected, so a poison row cannot be
     // picked ahead of a fresh one on every run (flag 11).
     expect(arg.where.reconcileStatus).toBe(BlobReconcileStatus.PENDING);
-    expect(arg.where.OR).toEqual([{ nextReconcileAt: null }, { nextReconcileAt: { lte: expect.any(Date) } }]);
+    expect(arg.where.OR).toEqual([
+      { nextReconcileAt: null },
+      { nextReconcileAt: { lte: expect.any(Date) } },
+    ]);
     expect(arg.take).toBe(BLOB_DISCARD_RECONCILE_LIMIT);
   });
 
@@ -295,9 +299,16 @@ describe('reconcileDiscardedBlobs (BUG 7 / flag 11)', () => {
   });
 
   it('reclaims a local /uploads file rather than skipping it', async () => {
-    (resolveLocalUploadPath as any).mockResolvedValue('/tmp/uploads-test/a.png');
+    (inspectLocalUploadRef as any).mockResolvedValue({
+      kind: 'resolved',
+      path: '/tmp/uploads-test/a.png',
+    });
     findManyMock.mockResolvedValue([
-      { id: 'c1', blobUrl: '/uploads/123e4567-e89b-42d3-a456-426614174000.png', reconcileAttempts: 0 },
+      {
+        id: 'c1',
+        blobUrl: '/uploads/123e4567-e89b-42d3-a456-426614174000.png',
+        reconcileAttempts: 0,
+      },
     ]);
 
     const summary = await reconcileDiscardedBlobs();
@@ -305,7 +316,9 @@ describe('reconcileDiscardedBlobs (BUG 7 / flag 11)', () => {
     expect(removeLocalUpload).toHaveBeenCalledWith('/tmp/uploads-test/a.png');
     expect(summary).toMatchObject({ deleted: 1, skipped: 0 });
     expect(updateMock).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ reconcileStatus: BlobReconcileStatus.DONE }) })
+      expect.objectContaining({
+        data: expect.objectContaining({ reconcileStatus: BlobReconcileStatus.DONE }),
+      })
     );
   });
 
@@ -313,12 +326,19 @@ describe('reconcileDiscardedBlobs (BUG 7 / flag 11)', () => {
     // A permission/IO failure on the local unlink must propagate out of
     // `removeLocalUpload` (finding: swallowed unlink) and make the job retry,
     // never stamp DONE while the file is still on disk.
-    (resolveLocalUploadPath as any).mockResolvedValue('/tmp/uploads-test/a.png');
+    (inspectLocalUploadRef as any).mockResolvedValue({
+      kind: 'resolved',
+      path: '/tmp/uploads-test/a.png',
+    });
     (removeLocalUpload as any).mockRejectedValue(
       Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' })
     );
     findManyMock.mockResolvedValue([
-      { id: 'c1', blobUrl: '/uploads/123e4567-e89b-42d3-a456-426614174000.png', reconcileAttempts: 0 },
+      {
+        id: 'c1',
+        blobUrl: '/uploads/123e4567-e89b-42d3-a456-426614174000.png',
+        reconcileAttempts: 0,
+      },
     ]);
 
     const summary = await reconcileDiscardedBlobs();
@@ -334,7 +354,9 @@ describe('reconcileDiscardedBlobs (BUG 7 / flag 11)', () => {
       })
     );
     expect(updateMock).not.toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ reconcileStatus: BlobReconcileStatus.DONE }) })
+      expect.objectContaining({
+        data: expect.objectContaining({ reconcileStatus: BlobReconcileStatus.DONE }),
+      })
     );
   });
 
@@ -423,7 +445,11 @@ describe('reconcileDiscardedBlobs (BUG 7 / flag 11)', () => {
 
   it('quarantines a canonical key for a foreign storage account rather than deleting', async () => {
     findManyMock.mockResolvedValue([
-      { id: 'c1', blobUrl: 'azure://someone-elses-account/cipansor-documents/gone.pdf', reconcileAttempts: 0 },
+      {
+        id: 'c1',
+        blobUrl: 'azure://someone-elses-account/cipansor-documents/gone.pdf',
+        reconcileAttempts: 0,
+      },
     ]);
 
     const summary = await reconcileDiscardedBlobs();
@@ -445,19 +471,23 @@ describe('reconcileDiscardedBlobs (BUG 7 / flag 11)', () => {
     expect(findManyMock.mock.calls[0][0].where.reconcileStatus).toBe(BlobReconcileStatus.PENDING);
     // A DONE row would not match a PENDING-only filter; assert the contract
     // explicitly so a future widening of the filter is caught.
-    expect(findManyMock.mock.calls[0][0].where.reconcileStatus).not.toBe(
-      BlobReconcileStatus.DONE
-    );
+    expect(findManyMock.mock.calls[0][0].where.reconcileStatus).not.toBe(BlobReconcileStatus.DONE);
   });
 
   it('does not quarantine a local row whose file was already successfully deleted (finding 4e)', async () => {
-    // `removeLocalUpload` is idempotent for ENOENT (already gone), so a second
-    // pass over a successfully-deleted file resolves as a clean success — never
-    // a quarantine.
-    (resolveLocalUploadPath as any).mockResolvedValue('/tmp/uploads-test/a.png');
-    (removeLocalUpload as any).mockResolvedValue(undefined);
+    // The first discard's unlink succeeded, so the file is gone when the row is
+    // reconciled. A trusted `/uploads/<uuid>` reference with no file on disk is
+    // an idempotent SUCCESS (terminal DONE), never a malformed quarantine.
+    (inspectLocalUploadRef as any).mockResolvedValue({
+      kind: 'absent',
+      path: '/tmp/uploads-test/a.png',
+    });
     findManyMock.mockResolvedValue([
-      { id: 'c1', blobUrl: '/uploads/123e4567-e89b-42d3-a456-426614174000.png', reconcileAttempts: 0 },
+      {
+        id: 'c1',
+        blobUrl: '/uploads/123e4567-e89b-42d3-a456-426614174000.png',
+        reconcileAttempts: 0,
+      },
     ]);
 
     const summary = await reconcileDiscardedBlobs();
@@ -471,6 +501,57 @@ describe('reconcileDiscardedBlobs (BUG 7 / flag 11)', () => {
     expect(updateMock).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ reconcileStatus: BlobReconcileStatus.DONE }),
+      })
+    );
+  });
+
+  it('reschedules (never DONE, never quarantine) a transient local inspection failure', async () => {
+    // EACCES/EIO on the local file: the file may still be on disk, so the row
+    // must be retried rather than stamped DONE or quarantined.
+    (inspectLocalUploadRef as any).mockResolvedValue({ kind: 'error' });
+    findManyMock.mockResolvedValue([
+      {
+        id: 'c1',
+        blobUrl: '/uploads/123e4567-e89b-42d3-a456-426614174000.png',
+        reconcileAttempts: 0,
+      },
+    ]);
+
+    const summary = await reconcileDiscardedBlobs();
+
+    expect(summary).toMatchObject({ deleted: 0, failed: 1, skipped: 0 });
+    expect(removeLocalUpload).not.toHaveBeenCalled();
+    expect(updateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'c1' },
+        data: expect.objectContaining({ nextReconcileAt: expect.any(Date) }),
+      })
+    );
+    expect(updateMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ reconcileStatus: BlobReconcileStatus.DONE }),
+      })
+    );
+    expect(updateMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ reconcileStatus: BlobReconcileStatus.QUARANTINED }),
+      })
+    );
+  });
+
+  it('quarantines a malformed/traversal local reference (never treats it as absent)', async () => {
+    (inspectLocalUploadRef as any).mockResolvedValue({ kind: 'invalid' });
+    findManyMock.mockResolvedValue([
+      { id: 'c1', blobUrl: '/uploads/../../etc/passwd', reconcileAttempts: 0 },
+    ]);
+
+    const summary = await reconcileDiscardedBlobs();
+
+    expect(summary).toMatchObject({ skipped: 1, deleted: 0 });
+    expect(removeLocalUpload).not.toHaveBeenCalled();
+    expect(updateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ reconcileStatus: BlobReconcileStatus.QUARANTINED }),
       })
     );
   });
