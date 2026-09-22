@@ -96,21 +96,16 @@ export const api = axios.create({
   headers: {
     "Content-Type": "application/json",
   },
+  // The session lives in server-issued `HttpOnly` cookies, which the browser
+  // attaches automatically only when the request is same-origin *and* this is
+  // set. Production is same-origin (`NEXT_PUBLIC_API_URL` empty → "/api"); in
+  // `pnpm dev` the API is a different origin (localhost:3001), where the API's
+  // CORS config must echo the origin and allow credentials.
+  withCredentials: true,
 });
 
-// Request interceptor to add auth token
-api.interceptors.request.use(
-  (config: InternalAxiosRequestConfig) => {
-    if (typeof window !== "undefined") {
-      const token = localStorage.getItem("accessToken");
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-      }
-    }
-    return config;
-  },
-  (error) => Promise.reject(error),
-);
+// No request interceptor sets an Authorization header from storage: there is no
+// JavaScript-readable token to attach. The cookie travels with the request.
 
 /**
  * Single-flight refresh.
@@ -124,8 +119,9 @@ api.interceptors.request.use(
  * and then, via middleware, to the role dashboard, losing the requested page.
  *
  * Now the first 401 performs the refresh and everyone else awaits its result.
+ * The refresh token is presented by the `HttpOnly` cookie; a body is not sent.
  */
-let refreshInFlight: Promise<string> | null = null;
+let refreshInFlight: Promise<void> | null = null;
 
 /**
  * There is no session to refresh.
@@ -144,24 +140,25 @@ class NoSessionError extends Error {
   }
 }
 
-function refreshAccessToken(): Promise<string> {
+function hasSessionHint(): boolean {
+  if (typeof window === "undefined") return false;
+  // The `auth-storage` key holds the (non-credential) user blob the store
+  // persists while a session is expected to exist. Its presence is only a hint
+  // used to decide whether a 401 should bounce to /login; the credential is the
+  // HttpOnly cookie.
+  return !!localStorage.getItem("auth-storage");
+}
+
+function refreshSession(): Promise<void> {
   if (refreshInFlight) return refreshInFlight;
 
   refreshInFlight = (async () => {
-    const refreshToken =
-      typeof window !== "undefined"
-        ? localStorage.getItem("refreshToken")
-        : null;
-    if (!refreshToken) throw new NoSessionError();
-
-    const response = await axios.post(`${API_URL}/auth/refresh`, {
-      refreshToken,
-    });
-    const { accessToken, refreshToken: newRefreshToken } = response.data.data;
-    localStorage.setItem("accessToken", accessToken);
-    localStorage.setItem("refreshToken", newRefreshToken);
-    document.cookie = `accessToken=${accessToken}; path=/; max-age=86400; samesite=lax`;
-    return accessToken as string;
+    if (typeof window === "undefined" || !hasSessionHint()) {
+      throw new NoSessionError();
+    }
+    // No body: the API reads the refresh token from its `HttpOnly` cookie and
+    // sets the replacement access/refresh cookies on the response.
+    await axios.post(`${API_URL}/auth/refresh`, {}, { withCredentials: true });
   })().finally(() => {
     refreshInFlight = null;
   });
@@ -193,18 +190,14 @@ api.interceptors.response.use(
       originalRequest._retry = true;
 
       try {
-        const accessToken = await refreshAccessToken();
-        if (originalRequest.headers) {
-          originalRequest.headers.Authorization = `Bearer ${accessToken}`;
-        }
+        await refreshSession();
         return api(originalRequest);
       } catch (refreshError) {
         // An anonymous visitor never had a session to lose. Public pages call
         // protected endpoints (the SPMB page reads /units), and bouncing a
         // prospective parent to the staff login screen over that 401 is far
         // worse than letting the caller render its own empty state.
-        const hadSession =
-          typeof window !== "undefined" && !!localStorage.getItem("accessToken");
+        const hadSession = hasSessionHint();
         if (!hadSession) {
           return Promise.reject(error);
         }
@@ -224,6 +217,9 @@ api.interceptors.response.use(
           return Promise.reject(error);
         }
 
+        // Clear the non-credential user blob; the server cleared its cookies on
+        // the failed refresh. Best-effort legacy cleanup too.
+        localStorage.removeItem("auth-storage");
         localStorage.removeItem("accessToken");
         localStorage.removeItem("refreshToken");
         document.cookie = "accessToken=; path=/; max-age=0";

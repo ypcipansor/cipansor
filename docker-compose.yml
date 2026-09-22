@@ -65,6 +65,10 @@ services:
       # JWT_SECRET. Enumerated here so an operator can set it — a var present
       # only in .env never reaches the container.
       WBS_TRACKING_HMAC_SECRET: ${WBS_TRACKING_HMAC_SECRET:-}
+      # Forces the `Secure` flag on the session cookies. Sensible default: on in
+      # production (NODE_ENV=production → true). Set to `false` only to run the
+      # container on plain http, where a `Secure` cookie would never be stored.
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-true}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
       # Enumerated here on purpose. A var present only in .env never reaches the
       # container, and the failure is silent — which is exactly how the old

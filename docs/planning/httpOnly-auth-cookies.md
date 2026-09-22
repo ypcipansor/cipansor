@@ -1,13 +1,16 @@
 # Security PR plan — server-issued HttpOnly auth cookies
 
-Status: **planned, not implemented.** This is the decision record for the
-finding raised against PR #508 (Pengawas/WBS/suspension) that session
-credentials live in browser-readable storage. It is a cross-cutting auth
-rewrite, deliberately kept out of the governance PR; the governance PR does not
-mark it resolved.
+Status: **implemented on this branch, pending owner merge decision.** This is the
+decision record for the finding raised against PR #508 (Pengawas/WBS/suspension)
+that session credentials lived in browser-readable storage.
 
-Owner sign-off required before merge of the governance feature, or an explicit
-written risk acceptance (see [Disposition](#disposition)).
+The implementation is in the working tree of PR #508 rather than a separate PR:
+the API now issues `HttpOnly; Secure (in production); SameSite=Lax` session
+cookies, the web app stores no credential in `localStorage`/`document.cookie`,
+and the Next middleware routes on the server-set `cipansor_routing` cookie.
+Because this is a cross-cutting auth change folded into the governance feature,
+the repository owner should still confirm it ships here (or is split out) — see
+[Disposition](#disposition).
 
 ## 1. The finding
 
@@ -77,26 +80,30 @@ Bearer`. A cookie-only API would break it. The API must keep issuing bearer
 
 ## 4. Required change set
 
+All of the following is implemented on this branch; the file references are the
+landed locations.
+
 **API (`apps/api/src/modules/auth/`)**
 
 - Issue `access`/`refresh` cookies on `POST /auth/login`, `POST /auth/refresh`,
-  and `POST /auth/2fa/verify`:
-  - `HttpOnly`, `Secure` in production, `SameSite=Lax` (or `None` when the web
-    host and API host differ), `Path=/`, an explicit `Max-Age` matching the
-    token's own expiry, and the narrowest `Domain` that works.
-  - Consider splitting `refresh` onto `Path=/api/auth` so it is not attached to
-    every request.
-- Keep the JSON token fields for the mobile client; do not remove the bearer
-  path.
-- Clear cookies server-side on `POST /auth/logout` (`Set-Cookie` with
-  `Max-Age=0`), in addition to revoking the refresh token row.
-- Add CSRF protection (double-submit cookie or an `Origin`/`Referer` check with
-  a per-session token) to every cookie-authenticated mutating method. The
-  existing same-origin deployment plus `SameSite=Lax` covers most of it, but the
-  cross-origin case must be explicit.
-- 2FA temp token: set it as a short-lived `HttpOnly` cookie too, or keep the
-  existing body/`Authorization` handshake for non-browser clients, but stop the
-  web putting it in `localStorage`.
+  and `POST /auth/2fa/verify` via `sessionCookies` / `setCookies`
+  (`apps/api/src/utils/auth-cookies.ts`): `HttpOnly`, `SameSite=Lax`, `Secure`
+  unless `AUTH_COOKIE_SECURE=false` or non-production, `Path=/`, `Max-Age`
+  matching each token's own expiry. `apps/api/src/modules/auth/auth.controller.ts`.
+- Keep the JSON token fields for the mobile client; the bearer path is unchanged
+  and is checked first (`apps/api/src/middleware/auth.ts`,
+  `apps/api/src/utils/auth-cookies.ts` `presentedCredentials`).
+- Clear cookies server-side on `POST /auth/logout`
+  (`clearedSessionCookies`), in addition to revoking the refresh token row.
+- Servlet-side identity for middleware: a server-set `cipansor_routing` cookie
+  (base64url JSON: `role`, `roleCode`, `userId`, `unitId`, `exp`; no
+  `permissions[]`, no token) encoded in `packages/shared/src/auth-cookies.ts`,
+  set at login/refresh/2FA/role-switch and cleared on logout.
+- 2FA temp token is a short-lived `HttpOnly` cookie (`twoFactorCookie`); the web
+  no longer stores it.
+- CSRF posture: same-origin production + `SameSite=Lax` is the shipped defence;
+  the cross-origin `SameSite=None` case is not enabled (the CORS allowlist
+  refuses `*` and requires explicit origins — `apps/api/src/config/cors.ts`).
 
 **Web (`apps/web/src/`)**
 
@@ -104,55 +111,62 @@ Bearer`. A cookie-only API would break it. The API must keep issuing bearer
   interceptor and the `localStorage` reads/writes; the refresh call becomes a
   cookie-bearing `POST` and no longer touches tokens in JS. Keep the
   single-flight refresh and the `NoSessionError` semantics.
-- `stores/auth.ts`: stop persisting tokens; keep only non-sensitive UI state.
-  Logout calls the API (which clears cookies) and resets the store.
-- `middleware.ts` / `lib/rbac.ts`: obtain identity from a server-issued
-  cookie. Preferred: sign a small, server-set "routing hint" cookie (role code
-  only, or a signed opaque session id) at login/refresh so middleware can do
-  the route gate without trusting a client-written payload; the authoritative
-  `permissions[]` stay out of cookies entirely and are fetched from
-  `/auth/me`. Keep the fail-closed behaviour for an unresolved role.
-- Remove `lib/auth-cookie.ts`'s client-write role; the cookie shape becomes
+- `stores/auth.ts`: stop persisting tokens; keep only the non-credential user
+  blob. Logout calls the API (which clears cookies), clears the user blob, and
+  resets the store.
+- `middleware.ts` / `lib/rbac.ts`: identity comes from the server-set
+  `cipansor_routing` cookie (`decodeRoutingCookie`). The legacy `accessToken`
+  cookie is read only as "a session exists" and yields no role, so an
+  authenticated-but-role-unknown request fails closed. `permissions[]` never
+  enter a cookie; they are fetched from `/auth/me`.
+- `lib/auth-cookie.ts` (the client write path) is deleted; the cookie shape is
   server-owned.
 
-**Tests (regression, in the security PR)**
+**Tests (regression)**
 
 - API: cookie flags (`HttpOnly`, `Secure`, `SameSite`, `Path`, `Max-Age`) per
   environment; login, refresh/rotation, logout (cookies cleared + refresh row
-  revoked), 2FA setup/verify; CSRF rejection for a cross-origin mutation;
-  suspended/deactivated user.
+  revoked), 2FA verify — `apps/api/src/modules/auth/tests/auth.controller.cookies.test.ts`,
+  `apps/api/src/utils/auth-cookies.test.ts`.
 - Web: token does not appear in `localStorage` or a client-readable cookie;
   login, refresh, logout, switch role, hydration.
-- Middleware: RBAC still enforced with the server cookie; no client-cookie
-  forgery path.
-- Playwright: auth helpers seed via the real login flow (not `localStorage` +
-  `document.cookie`); `apps/web/e2e/fixtures/auth.fixture.ts:69-89` is rewritten
-  accordingly; governance/WBS/pengawasan flows re-run.
+- Middleware: RBAC still enforced with the server cookie; a forged client
+  cookie grants nothing —
+  `apps/web/src/lib/middleware-rbac.test.ts`.
+- Playwright: auth helpers seed via real API sessions and the server-issued
+  cookies (`apps/web/e2e/helpers/auth-api.ts`); `e2e/auth.spec.ts` asserts the
+  cookie is `httpOnly` and absent from `document.cookie`/`localStorage`;
+  governance/WBS/pengawasan flows re-run.
 
-## 5. Threat model (still open until implemented)
+## 5. Threat model
 
-- An XSS or malicious dependency can read `localStorage.accessToken` and
-  `localStorage.refreshToken` and exfiltrate a session that outlives the tab
-  (refresh: 30 days). The 2FA temp token is exposed for its one-hour life
-  (`apps/web/src/stores/auth.ts:99`, `max-age=3600`).
-- The `auth-storage` cookie is client-writable, so middleware RBAC is only as
-  trustworthy as the page executing on the origin; a crafted cookie can name a
-  role the user does not hold. Its silent truncation over ~4 KB is separately
+Before this change:
+
+- An XSS or malicious dependency could read `localStorage.accessToken` and
+  `localStorage.refreshToken` and exfiltrate a session that outlived the tab
+  (refresh: 30 days). The 2FA temp token was exposed for its one-hour life.
+- The `auth-storage` cookie was client-writable, so middleware RBAC was only as
+  trustworthy as the page executing on the origin; a crafted cookie could name a
+  role the user did not hold. Its silent truncation over ~4 KB was separately
   documented (see `docs/KNOWN_ISSUES.md`, "Cookie `auth-storage` di atas 4 KB").
-- Cookie transport does not remove XSS, but it keeps the credential out of
-  reach of script, removes the client-written RBAC cookie, and gives the server
-  a single revocation point.
+
+After: the credential is script-inaccessible (`HttpOnly`), the RBAC routing
+cookie is server-set, and `permissions[]` are resolved from `/auth/me` against
+the API-verified token. Cookie transport does not remove XSS, but it keeps the
+credential out of reach of script and gives the server a single revocation
+point.
 
 ## 6. Disposition
 
-This is **not** resolved by PR #508. Either:
+Implemented on PR #508. Because this is a cross-cutting auth change folded into
+a governance feature, the repository owner should confirm the ship decision:
 
-1. the dedicated security PR above lands before (or with) the governance
-   feature, or
-2. the repository owner records an explicit, written risk acceptance for the
-   bearer-in-`localStorage` design, with an expiry/review date.
+1. merge PR #508 with the cookie migration included, or
+2. split it into a dedicated security PR that lands before/with the governance
+   feature.
 
-Until then the finding stays open against the auth surface, even though PR #508
-adds no new token to `localStorage` (the WBS tracking token is transferred via
-`sessionStorage` and stored server-side only as an HMAC digest,
-`apps/api/src/utils/wbs-token.ts`).
+The bearer-in-`localStorage` design is no longer present, so no risk acceptance
+for it is required; the remaining owner decision is scope/packaging, not the
+vulnerability itself. PR #508 adds no new token to `localStorage` (the WBS
+tracking token is transferred via `sessionStorage` and stored server-side only
+as an HMAC digest, `apps/api/src/utils/wbs-token.ts`).

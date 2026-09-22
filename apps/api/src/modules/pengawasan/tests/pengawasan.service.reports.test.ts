@@ -9,6 +9,12 @@ vi.mock('@/lib/prisma', () => ({
     letter: { create: vi.fn() },
     letterFlowEvent: { create: vi.fn() },
     filingClassification: { findFirst: vi.fn() },
+    // `createGeneratedDraftLetter` locks the recipient and assignment rows
+    // inside its transaction (`SELECT ... FOR UPDATE`). The mock is a
+    // pass-through — the real locking invariant is proven against PostgreSQL in
+    // `tests/integration/correspondence-generated-draft-recipient-race.integration.test.ts`.
+    $queryRaw: vi.fn().mockResolvedValue([]),
+    $executeRaw: vi.fn().mockResolvedValue(0),
     $transaction: vi.fn((cb) => cb(prisma)),
   },
 }));

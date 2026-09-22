@@ -11,6 +11,16 @@ import {
 } from './auth.schema';
 import { eventBus } from '@/lib/event-bus';
 import { logger } from '@/lib/logger';
+import { Errors } from '@/middleware/error';
+import {
+  clearedSessionCookies,
+  readCookie,
+  routingPayloadFor,
+  sessionCookies,
+  setCookies,
+  twoFactorCookie,
+} from '@/utils/auth-cookies';
+import { ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE } from '@cipansor/shared';
 
 /**
  * Login
@@ -19,6 +29,25 @@ import { logger } from '@/lib/logger';
 export const login = asyncHandler(async (req: Request, res: Response) => {
   const input: LoginInput = req.body;
   const result = await authService.login(input);
+
+  // Issue the session as server-set `HttpOnly` cookies. On the 2FA-challenge
+  // response only the temporary token is minted, and it is short-lived.
+  if ('accessToken' in result && 'refreshToken' in result) {
+    const tokens = result as { accessToken: string; refreshToken: string };
+    setCookies(res, sessionCookies(tokens));
+    // The routing hint is included for the web's own scenarios (Playwright
+    // storageState, which cannot originate a Set-Cookie). A browser ignores it
+    // and uses the cookie.
+    res.json({
+      success: true,
+      data: { ...result, routing: routingPayloadFor(tokens) },
+    });
+    return;
+  }
+
+  if ('tempToken' in result && result.tempToken) {
+    setCookies(res, [twoFactorCookie(result.tempToken)]);
+  }
 
   res.json({
     success: true,
@@ -47,8 +76,21 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
  * POST /api/auth/refresh
  */
 export const refreshToken = asyncHandler(async (req: Request, res: Response) => {
-  const { refreshToken }: RefreshTokenInput = req.body;
-  const tokens = await authService.refreshToken(refreshToken);
+  // Cookie-first: the browser presents no body. A body token is still accepted
+  // for the native Bearer client, and Express 5 leaves `req.body` undefined for
+  // a bodyless request, so the cast is safe.
+  const body = (req.body ?? {}) as Partial<RefreshTokenInput>;
+  const refresh = body.refreshToken || readCookie(req, REFRESH_TOKEN_COOKIE);
+
+  if (!refresh) {
+    throw Errors.unauthorized('No refresh token provided');
+  }
+
+  const tokens = await authService.refreshToken(refresh);
+
+  // Rotation is server-side: the replacement pair is written straight back as
+  // new cookies, so the browser never handles the raw token.
+  setCookies(res, sessionCookies(tokens));
 
   res.json({
     success: true,
@@ -75,7 +117,11 @@ export const logout = asyncHandler(async (req: Request, res: Response) => {
 
   // Undefined here is meaningful, not a fallback: authService.logout() revokes
   // every refresh token for the user when no specific token is named.
-  await authService.logout(userId, refreshToken);
+  await authService.logout(userId, refreshToken ?? readCookie(req, REFRESH_TOKEN_COOKIE));
+
+  // Clear every session cookie, so a browser that never held the refresh token
+  // in script-reaching storage still ends the session cleanly.
+  setCookies(res, clearedSessionCookies());
 
   res.json({
     success: true,
@@ -143,6 +189,20 @@ export const verifyTwoFactorLogin = asyncHandler(async (req: Request, res: Respo
   const { token } = req.body;
   const isTemp = req.user?.isTemp;
   const result = await authService.verifyTwoFactorLogin(userId, token, isTemp);
+
+  // The challenge is satisfied: replace the short-lived temp cookie with the
+  // full session, so the browser needs no token handling at all.
+  if ('accessToken' in result && 'refreshToken' in result) {
+    const tokens = result as { accessToken: string; refreshToken: string };
+    setCookies(res, sessionCookies(tokens));
+    // Same routing hint as `login`, for the web's Playwright storageState path.
+    res.json({
+      success: true,
+      data: { ...result, routing: routingPayloadFor(tokens) },
+    });
+    return;
+  }
+
   res.json({ success: true, data: result });
 });
 

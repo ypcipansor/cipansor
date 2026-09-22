@@ -83,12 +83,8 @@ export const authService = {
       }>
     >("/auth/login", credentials);
 
-    const { tokens } = response.data.data;
-
-    // Store tokens
-    localStorage.setItem("accessToken", tokens.accessToken);
-    localStorage.setItem("refreshToken", tokens.refreshToken);
-
+    // Tokens are issued as `HttpOnly` cookies by the API; nothing is stored
+    // here.
     return response.data.data;
   },
 
@@ -106,12 +102,8 @@ export const authService = {
       }>
     >("/auth/register", input);
 
-    const { tokens } = response.data.data;
-
-    // Store tokens
-    localStorage.setItem("accessToken", tokens.accessToken);
-    localStorage.setItem("refreshToken", tokens.refreshToken);
-
+    // Tokens are issued as `HttpOnly` cookies by the API; nothing is stored
+    // here.
     return response.data.data;
   },
 
@@ -119,36 +111,20 @@ export const authService = {
    * Logout current user
    */
   async logout(): Promise<void> {
-    try {
-      await api.post("/auth/logout");
-    } finally {
-      // Always clear tokens
-      localStorage.removeItem("accessToken");
-      localStorage.removeItem("refreshToken");
-    }
+    // The API revokes the refresh token and clears the session cookies.
+    await api.post("/auth/logout");
   },
 
   /**
    * Refresh access token
    */
   async refreshToken(): Promise<AuthTokens> {
-    const refreshToken = localStorage.getItem("refreshToken");
-
-    if (!refreshToken) {
-      throw new Error("No refresh token available");
-    }
-
-    const response = await api.post<ApiResponse<AuthTokens>>("/auth/refresh", {
-      refreshToken,
-    });
-
-    const tokens = response.data.data;
-
-    // Update stored tokens
-    localStorage.setItem("accessToken", tokens.accessToken);
-    localStorage.setItem("refreshToken", tokens.refreshToken);
-
-    return tokens;
+    // The API reads the refresh token from its `HttpOnly` cookie and rotates it.
+    const response = await api.post<ApiResponse<AuthTokens>>(
+      "/auth/refresh",
+      {},
+    );
+    return response.data.data;
   },
 
   /**
@@ -216,13 +192,9 @@ export const authService = {
    * Check if user is authenticated
    */
   isAuthenticated(): boolean {
-    return !!localStorage.getItem("accessToken");
-  },
-
-  /**
-   * Get stored access token
-   */
-  getAccessToken(): string | null {
-    return localStorage.getItem("accessToken");
+    // Only a hint: the credential is the `HttpOnly` cookie. The store's
+    // persisted user blob marks that a session is expected.
+    if (typeof window === "undefined") return false;
+    return !!localStorage.getItem("auth-storage");
   },
 };

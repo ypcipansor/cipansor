@@ -8,11 +8,10 @@ import type { NextRequest } from "next/server";
 import {
   canAccessRoute,
   getDashboardForRole,
-  getPrimaryRoleCode,
-  getEffectiveRole,
   type LegacyRole,
 } from "@/lib/rbac";
 import { hostSplitActionFor, isPortalHost } from "@/lib/host-split";
+import { decodeRoutingCookie, ROUTING_COOKIE } from "@cipansor/shared";
 
 // Public routes that don't require authentication.
 // "/unauthorized" is the access-denied page ProtectedRoute redirects to; it
@@ -83,38 +82,40 @@ const publicPrefixes = [
   "/public",
 ];
 
-// Helper function to get auth state from cookie
+/**
+ * Resolve auth state from cookies.
+ *
+ * The session is server-issued: the API sets `HttpOnly` cookies and the
+ * `cipansor_routing` hint the middleware routes on. Nothing here trusts a
+ * client-written cookie for a role. The legacy `accessToken` cookie is read
+ * only as "a session exists" for one deploy cycle, and deliberately yields no
+ * role — so the RBAC gate below fails closed rather than granting a route.
+ */
 function getAuthState(request: NextRequest): {
   isAuthenticated: boolean;
   role?: LegacyRole;
   roleCode?: string;
 } {
-  // Check for auth storage in cookies (set by zustand persist)
-  const authStorage = request.cookies.get("auth-storage")?.value;
-
-  if (authStorage) {
-    try {
-      const parsed = JSON.parse(authStorage);
-      if (parsed.state?.isAuthenticated === true && parsed.state?.user) {
-        // The primary assignment's RoleCode decides, as on the API; the legacy
-        // `user.role` column is only the fallback (see getEffectiveRole).
-        const role = getEffectiveRole(parsed.state.user);
-        if (role) {
-          return {
-            isAuthenticated: true,
-            role,
-            roleCode: getPrimaryRoleCode(parsed.state.user),
-          };
-        }
-      }
-    } catch {
-      // Parse error - not authenticated
-    }
+  // Preferred and authoritative for routing: the server-issued routing cookie.
+  // `HttpOnly`, so it cannot be forged by script.
+  const routing = decodeRoutingCookie(
+    request.cookies.get(ROUTING_COOKIE)?.value,
+  );
+  if (routing) {
+    return {
+      isAuthenticated: true,
+      role: routing.role as LegacyRole,
+      roleCode: routing.roleCode,
+    };
   }
 
-  // Fallback: check for accessToken
+  // Transitional: a session opened before the migration, holding the old
+  // client-readable access cookie, or a native Bearer header. Presence attests
+  // a session but supplies no role, so protected routes fail closed until the
+  // next login sets the routing cookie.
   const token =
     request.cookies.get("accessToken")?.value ||
+    request.cookies.get("access_token")?.value ||
     request.headers.get("authorization")?.replace("Bearer ", "");
 
   if (token) {

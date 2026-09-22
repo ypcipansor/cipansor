@@ -39,21 +39,11 @@ export function useRealtimeDashboard(
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
   const [connectionError, setConnectionError] = useState<string | null>(null);
 
-  // Get access token from storage
-  const getAccessToken = useCallback(() => {
-    if (typeof window === "undefined") return null;
-    return localStorage.getItem("accessToken");
-  }, []);
+  // Memoize unitIds and metrics to prevent unnecessary re-connections
+  const memoizedUnitIds = useDeepCompareMemoize(unitIds);
+  const memoizedMetrics = useDeepCompareMemoize(metrics);
 
-  // Calculate exponential backoff delay
-  const getReconnectDelay = useCallback((attempt: number) => {
-    const baseDelay = 1000; // 1 second
-    const maxDelay = 30000; // 30 seconds
-    const delay = Math.min(baseDelay * Math.pow(2, attempt), maxDelay);
-    return delay + Math.random() * 1000; // Add jitter
-  }, []);
-
-  // Use refs for callbacks to avoid re-creating socket on callback change
+  // Callbacks in refs so a changing handler does not tear down the socket.
   const onMetricsUpdateRef = useRef(onMetricsUpdate);
   const onAlertRef = useRef(onAlert);
 
@@ -62,18 +52,8 @@ export function useRealtimeDashboard(
     onAlertRef.current = onAlert;
   }, [onMetricsUpdate, onAlert]);
 
-  // Memoize unitIds and metrics to prevent unnecessary re-connections
-  const memoizedUnitIds = useDeepCompareMemoize(unitIds);
-  const memoizedMetrics = useDeepCompareMemoize(metrics);
-
   useEffect(() => {
     if (!enabled) return;
-
-    const token = getAccessToken();
-    if (!token) {
-      console.warn("No access token found, skipping WebSocket connection");
-      return;
-    }
 
     // Connect to WebSocket server.
     //
@@ -91,7 +71,9 @@ export function useRealtimeDashboard(
 
     // Create socket instance
     const newSocket = io(wsUrl, {
-      auth: { token },
+      // The session cookie is `HttpOnly`; there is no token for JS to hand over.
+      // Send the cookie with the handshake instead.
+      withCredentials: true,
       transports: ["websocket", "polling"],
       reconnection: true,
       reconnectionDelay: 1000,
@@ -233,7 +215,7 @@ export function useRealtimeDashboard(
       setSocket(null);
     };
     // We intentionally omit reconnectAttempts from deps to avoid reconnecting on attempt increment
-  }, [enabled, getAccessToken, queryClient, memoizedUnitIds, memoizedMetrics]);
+  }, [enabled, queryClient, memoizedUnitIds, memoizedMetrics]);
 
   // Manual subscription update
   const updateSubscription = useCallback(

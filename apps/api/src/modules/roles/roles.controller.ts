@@ -4,6 +4,7 @@ import { generateTokenPair, getExpirationDate } from '@/lib/jwt';
 import { prisma } from '@/lib/prisma';
 import { config } from '@/config';
 import { tokenUnitId } from '@/utils/resolve-unit-id';
+import { sessionCookies, setCookies } from '@/utils/auth-cookies';
 import type { Realm } from '@prisma/client';
 import type {
   GetRolesQuery,
@@ -160,7 +161,7 @@ export class RolesController {
         unitId: tokenUnitId(
           result.activeRole.unitId,
           result.activeRole.role.code,
-          result.user.unitId,
+          result.user.unitId
         ),
         permissions: (result.activeRole.role.permissions as string[]) ?? [],
       });
@@ -173,6 +174,12 @@ export class RolesController {
           expiresAt: getExpirationDate(config.jwt.refreshExpiresIn),
         },
       });
+
+      // Re-issue the session cookies so the browser's `HttpOnly` access token
+      // and routing hint carry the newly active role, not the previous one. A
+      // bug here is exactly the "switched role has a stale scope" class the
+      // tokenUnitId comment below guards against.
+      setCookies(res, sessionCookies(tokens));
 
       res.json({
         success: true,

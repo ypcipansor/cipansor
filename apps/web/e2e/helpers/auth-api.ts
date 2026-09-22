@@ -2,7 +2,11 @@ import * as fs from "fs";
 import * as path from "path";
 import type { Page } from "@playwright/test";
 import { generate as generateTotp } from "otplib";
-import { authCookieValue } from "@/lib/auth-cookie";
+import {
+  ACCESS_TOKEN_COOKIE,
+  REFRESH_TOKEN_COOKIE,
+  ROUTING_COOKIE,
+} from "@cipansor/shared";
 
 /**
  * API-based authentication for e2e tests.
@@ -29,7 +33,10 @@ export interface SeedUser {
 
 /** Seed credentials, keyed by a friendly role name. */
 export const SEED_USERS = {
-  superAdmin: { email: "superadmin@cipansor.or.id", password: "SuperAdmin123!" },
+  superAdmin: {
+    email: "superadmin@cipansor.or.id",
+    password: "SuperAdmin123!",
+  },
   adminSdit: { email: "admin.sdit@cipansor.or.id", password: "Admin123!" },
   teacher: { email: "fatimah@cipansor.or.id", password: "Teacher123!" },
   parent: { email: "parent3@cipansor.or.id", password: "Parent123!" },
@@ -37,9 +44,18 @@ export const SEED_USERS = {
   // The three yayasan organs, each with one step in ratifying a yayasan
   // document (perencanaan-pengesahan.spec.ts). Legacy UNIT_ADMIN, so CI's
   // E2E_FIXED_2FA seed gives them the fixed TOTP secret like any admin.
-  ketuaPengurus: { email: "yayasan.ketua@cipansor.or.id", password: "Cipansor123!" },
-  pengawas: { email: "yayasan.pengawas@cipansor.or.id", password: "Cipansor123!" },
-  pembina: { email: "yayasan.pembina@cipansor.or.id", password: "Cipansor123!" },
+  ketuaPengurus: {
+    email: "yayasan.ketua@cipansor.or.id",
+    password: "Cipansor123!",
+  },
+  pengawas: {
+    email: "yayasan.pengawas@cipansor.or.id",
+    password: "Cipansor123!",
+  },
+  pembina: {
+    email: "yayasan.pembina@cipansor.or.id",
+    password: "Cipansor123!",
+  },
 } satisfies Record<string, SeedUser>;
 
 export type SeedRole = keyof typeof SEED_USERS;
@@ -48,6 +64,13 @@ export interface AuthSession {
   user: Record<string, unknown> & { role?: string };
   accessToken: string;
   refreshToken: string;
+  /**
+   * The routing hint the API sends alongside the tokens. `middleware.ts` reads
+   * the `cipansor_routing` cookie the API sets; a Playwright storageState can
+   * seed that cookie directly, but a per-page `loginAs` cannot depend on a
+   * cross-origin Set-Cookie landing, so the hint is injected here.
+   */
+  routing?: Record<string, unknown>;
 }
 
 async function postJson(path: string, body: unknown, bearer?: string) {
@@ -106,7 +129,9 @@ export async function apiLogin(user: SeedUser): Promise<AuthSession> {
 
   // If global-setup ran (sessions file exists) but couldn't authenticate this
   // seed role, don't have every worker retry the 2FA flow — fail fast.
-  const isSeedRole = Object.values(SEED_USERS).some((u) => u.email === user.email);
+  const isSeedRole = Object.values(SEED_USERS).some(
+    (u) => u.email === user.email,
+  );
   if (isSeedRole && fs.existsSync(SESSIONS_FILE)) {
     const err = new Error(
       `global-setup failed to pre-authenticate ${user.email} (see setup logs); ` +
@@ -132,14 +157,21 @@ async function apiLoginUncached(user: SeedUser): Promise<AuthSession> {
     password: user.password,
   });
   const data = login?.data;
-  if (!data) throw new Error(`Login failed for ${user.email}: ${JSON.stringify(login)}`);
+  if (!data)
+    throw new Error(`Login failed for ${user.email}: ${JSON.stringify(login)}`);
 
   // Admin accounts are gated behind 2FA; complete it with a fresh TOTP.
   if (data.requiresTwoFactor) {
     const token = await generateTotp({ secret: FIXED_2FA_SECRET });
-    const verified = await postJson("/auth/2fa/login", { token }, data.tempToken);
+    const verified = await postJson(
+      "/auth/2fa/login",
+      { token },
+      data.tempToken,
+    );
     if (!verified?.data?.accessToken) {
-      throw new Error(`2FA login failed for ${user.email}: ${JSON.stringify(verified)}`);
+      throw new Error(
+        `2FA login failed for ${user.email}: ${JSON.stringify(verified)}`,
+      );
     }
     return verified.data as AuthSession;
   }
@@ -151,7 +183,9 @@ async function apiLoginUncached(user: SeedUser): Promise<AuthSession> {
   }
 
   if (!data.accessToken) {
-    throw new Error(`Unexpected login response for ${user.email}: ${JSON.stringify(data)}`);
+    throw new Error(
+      `Unexpected login response for ${user.email}: ${JSON.stringify(data)}`,
+    );
   }
   return data as AuthSession;
 }
@@ -167,51 +201,56 @@ function persistedAuthStorage(session: AuthSession): string {
   });
 }
 
-/**
- * The `auth-storage` cookie value for a session.
- *
- * Cookies top out near 4 KB and a user with many role assignments overflowed it,
- * making every `addCookies` throw `Invalid cookie fields` and taking out the
- * whole authenticated suite. This delegates to the same `authCookieValue` the
- * store uses, so the helper exercises the production trimming rather than a copy
- * of it that can drift.
- */
-export function cookieAuthStorage(session: AuthSession): string {
-  return authCookieValue(persistedAuthStorage(session));
+/** Encode the routing hint the way the API's shared `encodeRoutingCookie` does. */
+function encodeRouting(routing: Record<string, unknown>): string {
+  return Buffer.from(JSON.stringify(routing), "utf8").toString("base64url");
+}
+
+/** The cookies the middleware and API read for a session. */
+function authCookies(session: AuthSession) {
+  const cookies = [
+    { name: ACCESS_TOKEN_COOKIE, value: session.accessToken },
+    { name: REFRESH_TOKEN_COOKIE, value: session.refreshToken },
+  ];
+  if (session.routing) {
+    cookies.push({
+      name: ROUTING_COOKIE,
+      value: encodeRouting(session.routing),
+    });
+  }
+  return cookies;
 }
 
 /**
- * Inject a session into the page's origin, mirroring the zustand persist store
- * (`auth-storage`) and the raw `accessToken`/`refreshToken` items + cookies the
- * middleware checks. Call before navigating to a protected route.
+ * Inject a session into the page's origin.
+ *
+ * The session is entirely server-issued cookies now: the API's
+ * `access_token` / `refresh_token` / `cipansor_routing`. `addCookies` names them
+ * with `url: BASE_URL`; Playwright stores cookies by host, so a `localhost`
+ * cookie is presented to the API on `localhost:3001` too. The zustand store's
+ * `auth-storage` (the non-credential user blob) is still seeded from the API
+ * session so the shell renders before `/auth/me` answers.
  */
 export async function injectSession(page: Page, session: AuthSession) {
   const authStorage = persistedAuthStorage(session);
 
-  // Cookies for the Next middleware (it JSON.parses the encoded auth-storage and
-  // falls back to accessToken). Mirror the app's encodeURIComponent encoding.
-  await page.context().addCookies([
-    {
-      name: "accessToken",
-      value: session.accessToken,
+  await page.context().addCookies(
+    authCookies(session).map((c) => ({
+      ...c,
       url: BASE_URL,
-    },
-    {
-      name: "auth-storage",
-      value: encodeURIComponent(cookieAuthStorage(session)),
-      url: BASE_URL,
-    },
-  ]);
+      httpOnly: true,
+      secure: false,
+      sameSite: "Lax" as const,
+    })),
+  );
 
-  // localStorage so the store rehydrates authenticated and the axios interceptor
-  // finds the bearer token. addInitScript runs before app JS on every load.
+  // localStorage carries only the non-credential user blob. addInitScript runs
+  // before app JS on every load.
   await page.addInitScript(
-    ([token, refresh, storage]) => {
-      localStorage.setItem("accessToken", token);
-      localStorage.setItem("refreshToken", refresh);
+    ([storage]) => {
       localStorage.setItem("auth-storage", storage);
     },
-    [session.accessToken, session.refreshToken, authStorage] as const,
+    [authStorage] as const,
   );
 }
 
@@ -235,17 +274,24 @@ export async function apiRequest<T = unknown>(
   });
   const text = await res.text();
   if (!res.ok) {
-    throw new Error(`${method} ${apiPath} → ${res.status}: ${text.slice(0, 200)}`);
+    throw new Error(
+      `${method} ${apiPath} → ${res.status}: ${text.slice(0, 200)}`,
+    );
   }
   try {
     return JSON.parse(text) as T;
   } catch {
-    throw new Error(`${method} ${apiPath} → non-JSON response: ${text.slice(0, 120)}`);
+    throw new Error(
+      `${method} ${apiPath} → non-JSON response: ${text.slice(0, 120)}`,
+    );
   }
 }
 
 /** Convenience: log in as a seed role and inject the session into the page. */
-export async function loginAs(page: Page, role: SeedRole): Promise<AuthSession> {
+export async function loginAs(
+  page: Page,
+  role: SeedRole,
+): Promise<AuthSession> {
   const session = await apiLogin(SEED_USERS[role]);
   await injectSession(page, session);
   return session;
@@ -260,26 +306,19 @@ export function buildStorageState(session: AuthSession) {
   const origin = new URL(BASE_URL).origin;
   const authStorage = persistedAuthStorage(session);
   return {
-    cookies: [
-      { name: "accessToken", value: session.accessToken },
-      { name: "auth-storage", value: encodeURIComponent(cookieAuthStorage(session)) },
-    ].map((c) => ({
+    cookies: authCookies(session).map((c) => ({
       ...c,
       domain: new URL(BASE_URL).hostname,
       path: "/",
       expires: Math.floor(Date.now() / 1000) + 86400,
-      httpOnly: false,
+      httpOnly: true,
       secure: false,
       sameSite: "Lax" as const,
     })),
     origins: [
       {
         origin,
-        localStorage: [
-          { name: "accessToken", value: session.accessToken },
-          { name: "refreshToken", value: session.refreshToken },
-          { name: "auth-storage", value: authStorage },
-        ],
+        localStorage: [{ name: "auth-storage", value: authStorage }],
       },
     ],
   };

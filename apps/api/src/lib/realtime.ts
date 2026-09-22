@@ -11,7 +11,7 @@ import { prisma } from '@/lib/prisma';
 import { verifyToken, JwtPayload } from '@/lib/jwt';
 import Redis from 'ioredis';
 import type { DashboardMetrics, DashboardAlert } from '@cipansor/shared';
-import { STUDENT_STATUS } from '@cipansor/shared';
+import { STUDENT_STATUS, parseCookieHeader, ACCESS_TOKEN_COOKIE } from '@cipansor/shared';
 
 // Event types
 export interface LiveEvent {
@@ -131,7 +131,13 @@ export function initializeSocketIO(httpServer: HTTPServer): SocketIOServer {
    * Verifies JWT token and returns user payload
    */
   async function authenticateSocket(socket: Socket): Promise<JwtPayload | null> {
-    const token = socket.handshake.auth.token;
+    // The browser sends no token in the handshake any more — the session cookie
+    // is `HttpOnly`, so script cannot read it to copy into `auth.token`. Read it
+    // from the handshake's cookie header instead; the explicit token remains
+    // supported for the native client.
+    const cookieHeader = socket.handshake.headers?.cookie ?? '';
+    const cookieToken = parseCookieHeader(cookieHeader)[ACCESS_TOKEN_COOKIE];
+    const token = socket.handshake.auth?.token || cookieToken;
 
     if (!token) {
       logger.warn('Socket connection without auth token', { socketId: socket.id });

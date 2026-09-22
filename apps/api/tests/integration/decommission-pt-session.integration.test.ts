@@ -748,7 +748,11 @@ describeDb('decommission migration — legacy PT sessions end', () => {
       // access does not.
       expect(assignment[0].unit_id).toBeNull();
 
-      const { rows: user } = await db.query<{ role: string | null; unit_id: string | null; tokens: string }>(
+      const { rows: user } = await db.query<{
+        role: string | null;
+        unit_id: string | null;
+        tokens: string;
+      }>(
         `SELECT u.role::text AS role, u.unit_id,
                 (SELECT count(*) FROM refresh_tokens rt WHERE rt.user_id = u.id) AS tokens
          FROM users u WHERE u.id = 'user-pthome-nullscoped'`
@@ -861,9 +865,7 @@ describeDb('decommission migration — legacy PT sessions end', () => {
         `INSERT INTO account_codes (id, code, name, type, unit_id, is_active) ` +
           `VALUES ('acct-tk-reused', '9001', 'Kas TK Baru', 'ASSET', 'u-tk', true)`
       );
-      const reused = await db.query(
-        `SELECT unit_id FROM account_codes WHERE code = '9001'`
-      );
+      const reused = await db.query(`SELECT unit_id FROM account_codes WHERE code = '9001'`);
       expect(reused.rows.map((r: { unit_id: string }) => r.unit_id)).toEqual(['u-tk']);
     } finally {
       // Drop the probe row so it does not leak into later assertions.
@@ -904,9 +906,7 @@ describeDb('decommission migration — legacy PT sessions end', () => {
         INSERT INTO budgets (id, unit_id, academic_year_id, account_id, amount, used_amount, period_type, created_by_id, updated_at)
           VALUES ('b-tk','u-tk','ay1','acct-pt',1000,0,'YEARLY','user-x',now());
       `);
-      await expect(db.query(DECOMMISSION)).rejects.toThrow(
-        /refusing to reach across units/
-      );
+      await expect(db.query(DECOMMISSION)).rejects.toThrow(/refusing to reach across units/);
       // The sibling budget survives; the migration aborted rather than deleting it.
       const { rows } = await db.query(`SELECT count(*)::int AS n FROM budgets WHERE id = 'b-tk'`);
       expect(rows[0].n).toBe(1);
@@ -926,14 +926,18 @@ describeDb('decommission migration — legacy PT sessions end', () => {
       const { rows } = await db.query<{ id: string; unit_id: string | null }>(
         `SELECT id, unit_id FROM users WHERE id LIKE 'user-pt%' ORDER BY id`
       );
-      expect(rows.map((r) => r.id)).toEqual([
-        'user-pthome-foundation',
-        'user-pthome-nullscoped',
-        'user-pthome-unitvalid',
-        'user-pt-noassign',
-        'user-pt-only',
-        'user-pt-only2',
-      ]);
+      // Compares as a set: the child database has its own collation, so the
+      // order of `ORDER BY id` is not part of the invariant under test.
+      expect(rows.map((r) => r.id).sort()).toEqual(
+        [
+          'user-pthome-foundation',
+          'user-pthome-nullscoped',
+          'user-pthome-unitvalid',
+          'user-pt-noassign',
+          'user-pt-only',
+          'user-pt-only2',
+        ].sort()
+      );
       for (const row of rows) {
         expect(row.unit_id).toBeNull();
       }
@@ -1248,9 +1252,7 @@ describeDb('decommission migration — FK-catalog guards fail loud', () => {
       );
       await db.query(DECOMMISSION);
 
-      const { rows } = await db.query(
-        `SELECT unit_id FROM _cb_partial_uniq WHERE id = 'cb-pu-pt'`
-      );
+      const { rows } = await db.query(`SELECT unit_id FROM _cb_partial_uniq WHERE id = 'cb-pu-pt'`);
       expect(rows).toEqual([{ unit_id: null }]);
     } finally {
       await db.end();

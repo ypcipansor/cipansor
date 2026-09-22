@@ -206,14 +206,21 @@ export const CorrespondenceService = {
 
   /**
    * Validate that all supplied user IDs exist, are active, have active internal roles, and fall within permitted unit scope.
+   *
+   * `db` lets a caller run the very same rules on a transaction handle so a
+   * decision read is made against the state that will hold at commit, not a
+   * snapshot an earlier round trip can invalidate. It defaults to the live
+   * client for the existing pre-flight callers, which are still correct as a
+   * fast fail before work begins (see `createGeneratedDraftLetter` for why a
+   * pre-flight read alone is not enough).
    */
-  async validateParticipantEligibility(userIds: string[], actor?: LetterActor) {
+  async validateParticipantEligibility(userIds: string[], actor?: LetterActor, db: Db = prisma) {
     if (!userIds || userIds.length === 0) return;
 
     const uniqueIds = Array.from(new Set(userIds));
     const now = new Date();
 
-    const users = await prisma.user.findMany({
+    const users = await db.user.findMany({
       where: {
         id: { in: uniqueIds },
         isActive: true,
@@ -618,11 +625,48 @@ export const CorrespondenceService = {
     // A generated letter is authored by the module, which is foundation-wide;
     // eligibility is therefore checked without a unit-narrowing actor, but the
     // existence / active / effective-internal-role rules still apply.
+    //
+    // This pre-flight read is only a fast fail. The decision that matters is
+    // re-made inside the transaction below, on the recipient rows locked
+    // `FOR UPDATE` — otherwise an account deactivation or role revocation that
+    // commits between this read and the insert produces a draft addressed to a
+    // recipient who is no longer eligible, and the Pembina who is supposed to
+    // review it may be the very person who was revoked.
     await this.validateParticipantEligibility(input.recipientUserIds);
 
     const uniqueRecipients = Array.from(new Set(input.recipientUserIds));
 
     return prisma.$transaction(async (tx) => {
+      // Lock order: users (uuid order), then their role assignments, then the
+      // letters row is created. Every account/role writer that must serialise
+      // with this one — the Plh delegation in `BoardSuspensionService`, a
+      // revocation in `wbsService.forwardReport`, an admin deactivation in
+      // `userService.update` — takes the user row first and the assignment rows
+      // next, so this order is compatible rather than a new cycle. The
+      // assignment rows must be locked explicitly: a revocation updates those
+      // rows, which are different rows from `users`, so locking `users` alone
+      // does not make the eligibility read below wait for it. The `ORDER BY id`
+      // keeps the rows' lock order deterministic so two generated drafts with
+      // overlapping recipients cannot deadlock.
+      await tx.$queryRaw`
+        SELECT id FROM "users"
+        WHERE id IN (${Prisma.join(uniqueRecipients)})
+        ORDER BY id
+        FOR UPDATE
+      `;
+      await tx.$queryRaw`
+        SELECT id FROM "user_role_assignments"
+        WHERE user_id IN (${Prisma.join(uniqueRecipients)})
+        ORDER BY id
+        FOR UPDATE
+      `;
+
+      // Same predicate as every other caller, now evaluated against the locked
+      // rows: a recipient who is inactive, soft-deleted, or no longer holds an
+      // effective (active, unexpired, non-excluded) role fails the whole
+      // transaction and no letter is written.
+      await this.validateParticipantEligibility(uniqueRecipients, undefined, tx);
+
       const letter = await tx.letter.create({
         data: {
           unitId: input.unitId,

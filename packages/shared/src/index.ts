@@ -32,6 +32,7 @@ export * from "./types/letter-revocation-authority";
 export * from "./types/letter-template";
 export * from "./types/chatbot";
 export * from "./public-site";
+export * from "./auth-cookies";
 export * from "./schemas";
 export * from "./types/marketing";
 export * from "./types/quality";

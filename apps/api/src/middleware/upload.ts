@@ -4,6 +4,7 @@ import fs from 'fs';
 import { randomUUID } from 'crypto';
 import { Request, Response, NextFunction } from 'express';
 import { verifyToken } from '@/lib/jwt';
+import { parseCookieHeader, ACCESS_TOKEN_COOKIE } from '@cipansor/shared';
 import { Errors } from './error';
 
 // Ensure upload directory exists
@@ -232,8 +233,18 @@ export function uploadsAuth(req: Request, _res: Response, next: NextFunction) {
     const authHeader = req.headers.authorization;
     if (authHeader?.startsWith('Bearer ')) {
       token = authHeader.slice('Bearer '.length);
-    } else if (typeof req.query.token === 'string') {
-      token = req.query.token;
+    } else {
+      // The `HttpOnly` access cookie, which the browser attaches to a
+      // same-origin `<img src>` / `<a href>` — the fetch shapes that cannot set
+      // an Authorization header. `?token=` is still accepted as a documented
+      // native-client path (and transitional for a bookmarked URL), with the
+      // access-log exposure that carries.
+      const cookieToken = parseCookieHeader(req.headers.cookie ?? null)[ACCESS_TOKEN_COOKIE];
+      if (cookieToken) {
+        token = cookieToken;
+      } else if (typeof req.query.token === 'string') {
+        token = req.query.token;
+      }
     }
 
     if (!token) {

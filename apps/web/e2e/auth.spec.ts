@@ -95,12 +95,21 @@ test.describe("Authentication", () => {
     // Verify we're on dashboard
     await expect(page).toHaveURL(/dashboard/);
 
-    // Verify token is stored
-    const token = await page.evaluate(() =>
-      localStorage.getItem("accessToken"),
-    );
-    expect(token).toBeTruthy();
-    expect(token?.length).toBeGreaterThan(20);
+    // The session is a server-issued `HttpOnly` cookie: present in the
+    // context's cookie jar, absent from `document.cookie` and localStorage.
+    const cookies = await page.context().cookies();
+    const session = cookies.find((c) => c.name === "access_token");
+    expect(session?.value?.length).toBeGreaterThan(20);
+    expect(session?.httpOnly).toBe(true);
+
+    const scriptVisible = await page.evaluate(() => ({
+      cookie: document.cookie.includes("access_token"),
+      storage: localStorage.getItem("accessToken"),
+      refresh: localStorage.getItem("refreshToken"),
+    }));
+    expect(scriptVisible.cookie).toBe(false);
+    expect(scriptVisible.storage).toBeNull();
+    expect(scriptVisible.refresh).toBeNull();
   });
 
   test("should persist session after page reload", async ({ page }) => {
@@ -135,18 +144,20 @@ test.describe("Authentication", () => {
     // Logout lives in the header user menu (avatar dropdown, aria-label
     // "User menu") as a menuitem.
     await page.getByRole("button", { name: "User menu" }).click();
-    await page
-      .getByRole("menuitem", { name: /logout|keluar/i })
-      .click();
+    await page.getByRole("menuitem", { name: /logout|keluar/i }).click();
 
     // Should redirect to login
     await expect(page).toHaveURL(/login/, { timeout: 10000 });
 
-    // Verify token is cleared
-    const token = await page.evaluate(() =>
-      localStorage.getItem("accessToken"),
-    );
-    expect(token).toBeNull();
+    // Verify the session cookie is cleared and nothing sensitive lingers.
+    const cookies = await page.context().cookies();
+    expect(cookies.find((c) => c.name === "access_token")).toBeUndefined();
+    const leftovers = await page.evaluate(() => ({
+      access: localStorage.getItem("accessToken"),
+      refresh: localStorage.getItem("refreshToken"),
+    }));
+    expect(leftovers.access).toBeNull();
+    expect(leftovers.refresh).toBeNull();
   });
 
   test("should prevent access to protected routes when not authenticated", async ({

@@ -8,6 +8,8 @@ import {
 import { verifyToken, JwtPayload } from '@/lib/jwt';
 import { prisma } from '@/lib/prisma';
 import { isUserSuspended } from '@/utils/user-suspension';
+import { readCookie } from '@/utils/auth-cookies';
+import { ACCESS_TOKEN_COOKIE, TWO_FACTOR_TOKEN_COOKIE } from '@cipansor/shared';
 import { Errors } from './error';
 
 // RoleCodes that are considered "admin" across the system.
@@ -170,6 +172,21 @@ export async function findTeacherIdForUser(userId: string): Promise<string | nul
 }
 
 /**
+ * Extract the bearer token from an `Authorization` header, if present.
+ *
+ * The header remains the first choice so the documented native Bearer client
+ * (`docs/MOBILE_API.md`) and service-to-service calls keep working; the cookie
+ * is the fallback the browser uses.
+ */
+function bearerFromHeader(req: Request): string | null {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return null;
+  const [type, token] = authHeader.split(' ');
+  if (type !== 'Bearer' || !token) return null;
+  return token;
+}
+
+/**
  * Authentication middleware - verifies JWT token
  * Rejects temporary 2FA tokens
  *
@@ -181,16 +198,12 @@ export async function findTeacherIdForUser(userId: string): Promise<string | nul
  */
 export async function authenticate(req: Request, res: Response, next: NextFunction) {
   try {
-    const authHeader = req.headers.authorization;
+    // Bearer header first (native clients), then the `HttpOnly` access cookie
+    // the browser carries. `||` is safe here: an empty string is not a token.
+    const token = bearerFromHeader(req) || readCookie(req, ACCESS_TOKEN_COOKIE);
 
-    if (!authHeader) {
+    if (!token) {
       throw Errors.unauthorized('No authorization header');
-    }
-
-    const [type, token] = authHeader.split(' ');
-
-    if (type !== 'Bearer' || !token) {
-      throw Errors.unauthorized('Invalid authorization format');
     }
 
     const payload = verifyToken(token);
@@ -234,16 +247,10 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
  */
 export async function authenticate2FA(req: Request, res: Response, next: NextFunction) {
   try {
-    const authHeader = req.headers.authorization;
+    const token = bearerFromHeader(req) || readCookie(req, TWO_FACTOR_TOKEN_COOKIE);
 
-    if (!authHeader) {
+    if (!token) {
       throw Errors.unauthorized('No authorization header');
-    }
-
-    const [type, token] = authHeader.split(' ');
-
-    if (type !== 'Bearer' || !token) {
-      throw Errors.unauthorized('Invalid authorization format');
     }
 
     const payload = verifyToken(token);
@@ -268,19 +275,15 @@ export async function authenticate2FA(req: Request, res: Response, next: NextFun
  */
 export function optionalAuth(req: Request, res: Response, next: NextFunction) {
   try {
-    const authHeader = req.headers.authorization;
+    const token = bearerFromHeader(req) || readCookie(req, ACCESS_TOKEN_COOKIE);
 
-    if (!authHeader) {
+    if (!token) {
       return next();
     }
 
-    const [type, token] = authHeader.split(' ');
-
-    if (type === 'Bearer' && token) {
-      const payload = verifyToken(token);
-      if (payload.type === 'access' && !payload.isTemp) {
-        req.user = buildReqUser(payload);
-      }
+    const payload = verifyToken(token);
+    if (payload.type === 'access' && !payload.isTemp) {
+      req.user = buildReqUser(payload);
     }
 
     next();

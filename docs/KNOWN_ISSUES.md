@@ -40,12 +40,12 @@ Keempat PR fitur yang terbuka bercabang dari basis yang sudah jauh tertinggal,
 dan menggabungkannya apa adanya akan **menghapus berkas yang hidup di `main`
 dan berjalan di produksi**. Diukur 2026-09-05:
 
-| PR | tertinggal dari `main` | maju | catatan |
-|---|---|---|---|
-| #415 | **45 commit** | 46 | Manajemen Kinerja Terintegrasi |
-| #438 | **42 commit** | 12 | Audit Ujian Online / CBT |
-| #439 | **42 commit** | 14 | Standardisasi SPMB |
-| #441 | **38 commit** | 15 | Google Workspace / Microsoft Nonprofits |
+| PR   | tertinggal dari `main` | maju | catatan                                 |
+| ---- | ---------------------- | ---- | --------------------------------------- |
+| #415 | **45 commit**          | 46   | Manajemen Kinerja Terintegrasi          |
+| #438 | **42 commit**          | 12   | Audit Ujian Online / CBT                |
+| #439 | **42 commit**          | 14   | Standardisasi SPMB                      |
+| #441 | **38 commit**          | 15   | Google Workspace / Microsoft Nonprofits |
 
 **#441 yang paling berbahaya.** Diff dua-titik dari basisnya menunjukkan ia
 **menghapus 24 berkas**, dan tidak menyediakan penggantinya — di antaranya
@@ -74,7 +74,7 @@ ulang daftar penghapusannya.
 
 **Ralat 2026-09-05.** Separuh entri ini sudah tidak berlaku. Halaman naskah
 dinas **tidak lagi** meraster: `apps/web/src/app/e-office/letter/[id]/page.tsx`
-kini menyatakan sendiri *"Tidak ada html2canvas dan jsPDF di sini lagi"*, dan
+kini menyatakan sendiri _"Tidak ada html2canvas dan jsPDF di sini lagi"_, dan
 generator sisi-server `apps/api/src/utils/generate-letter-pdf.ts` sudah dipakai
 (7 panggilan `drawText`, teks tetap teks).
 
@@ -85,8 +85,8 @@ merdeka masih diunduh sebagai satu gambar raster per halaman.
 Deskripsi aslinya, untuk raport merdeka, tetap benar:
 
 The letter template even documents it, at `letter-pdf-template.tsx:40`:
-*"This template is not only displayed — html2canvas rasterises it into the
-downloaded PDF."*
+_"This template is not only displayed — html2canvas rasterises it into the
+downloaded PDF."_
 
 Costs: the text cannot be selected, searched, or indexed by the archive; screen
 readers get nothing; files are far larger than they need to be; and — the reason
@@ -125,7 +125,7 @@ Isi lama, disimpan sebagai catatan bagaimana lubangnya dulu ditemukan:
   the application.
 - **Letter signatures.** `LetterSignature` carries `revokedAt`, `revokedReason`
   and `revokedById`. `letter-verification.ts` branches on them, the public
-  verification page is written to report *"Surat telah dicabut: …"*, and the
+  verification page is written to report _"Surat telah dicabut: …"_, and the
   naskah template filters revoked signatures out of the QR block. But the only
   `letterSignature.update` in the whole tree writes `{ pdfHash, pdfSignature }`.
   **No route, controller or service method ever sets `revokedAt`.**
@@ -138,23 +138,23 @@ issued SK is an ordinary administrative need, and today it is impossible.
 **Was.** Switching the public site to English or Arabic translated the
 navigation and the breadcrumb, but the page content stayed Indonesian: 1 of 9
 public pages and 0 of 7 landing sections were localized. PR #356 had built the
-switching *mechanism* — cookie, server-side locale read, `router.refresh()`,
+switching _mechanism_ — cookie, server-side locale read, `router.refresh()`,
 RTL, the switcher — and translated `/profil` alone to prove it worked. The
 switcher then advertised a capability the content did not deliver.
 
 **Now: all 9 public pages localized end to end**, including page titles and
 meta descriptions:
 
-| Surface | State |
-|---|---|
-| Public navbar + mobile drawer, breadcrumb | ✅ |
-| `/` — all 7 landing sections + footer | ✅ |
-| `/profil`, `/profil/pimpinan` | ✅ |
-| `/unit`, `/unit/[slug]` | ✅ |
-| `/program-unggulan` | ✅ |
-| `/berita`, `/berita/[slug]` | ✅ chrome, headline and standfirst |
-| `/kontak` | ✅ |
-| `/wakaf-infaq` | ✅ including the donation form |
+| Surface                                   | State                              |
+| ----------------------------------------- | ---------------------------------- |
+| Public navbar + mobile drawer, breadcrumb | ✅                                 |
+| `/` — all 7 landing sections + footer     | ✅                                 |
+| `/profil`, `/profil/pimpinan`             | ✅                                 |
+| `/unit`, `/unit/[slug]`                   | ✅                                 |
+| `/program-unggulan`                       | ✅                                 |
+| `/berita`, `/berita/[slug]`               | ✅ chrome, headline and standfirst |
+| `/kontak`                                 | ✅                                 |
+| `/wakaf-infaq`                            | ✅ including the donation form     |
 
 **What is still Indonesian, deliberately.**
 
@@ -166,7 +166,7 @@ meta descriptions:
 2. **Leaders' mottos and the donation page's scripture** — see below; these are
    deliberate and permanent.
 3. **`ANONYMOUS_DONOR_NAME` ("Hamba Allah")** on the donation form. It is
-   *recorded on the donation*, not merely displayed, so it stays one value in
+   _recorded on the donation_, not merely displayed, so it stays one value in
    every locale rather than three the finance team has to reconcile. Likewise
    the bank details and the donation JSON-LD.
 
@@ -339,7 +339,7 @@ even if those routes existed. What installed was the brochure.
 **Where the question actually lives now: `portal.cipansor.or.id`.** Verified
 live after the #401 deploy — the portal serves `<link rel="manifest">`, the
 `beforeinstallprompt` capture script, and `mobile-web-app-capable`; the apex
-serves none of the three. Whether Chrome then *fires* the event on the portal is
+serves none of the three. Whether Chrome then _fires_ the event on the portal is
 the open half, and the diagnostic steps below still apply — run them against the
 portal, not the apex:
 
@@ -352,7 +352,7 @@ portal, not the apex:
 4. **Chrome's user-engagement heuristic**, which the original investigation did
    not list: Chrome withholds `beforeinstallprompt` until the user has interacted
    with the origin for a threshold of engagement. A fresh Incognito window — the
-   test used to rule out a stale dismissal — has *zero* engagement by
+   test used to rule out a stale dismissal — has _zero_ engagement by
    construction, so it can never satisfy this. Worth ruling in or out before
    suspecting the code.
 
@@ -361,7 +361,7 @@ mounts on the public site, where its job is inverted: it calls
 `getRegistrations().unregister()` and drops the `cipansor-*` caches. A service
 worker outlives the page that registered it, so every earlier apex visitor would
 otherwise have kept a navigation-intercepting worker that no code registers any
-more and no deploy would ever dislodge. `/sw.js` is still *served* on the apex —
+more and no deploy would ever dislodge. `/sw.js` is still _served_ on the apex —
 it is a static file in `public/` — and that is not the defect; nothing registers
 it there.
 
@@ -420,7 +420,7 @@ bare `sha256(payload)` truncated to 8 hex characters and **no secret**. Anyone
 who reads one card can mint a payload that verifies. `verificationUrl` is now
 `null` rather than pointing at a fabricated address (it used to read
 `https://cipansor.app/verify?q=…` — a domain the yayasan does not own, and a
-path that has never routed). Building the page is worthwhile only *after* the
+path that has never routed). Building the page is worthwhile only _after_ the
 hash becomes an HMAC keyed on a server-side secret; a verification page over an
 unkeyed hash attests nothing.
 
@@ -438,7 +438,7 @@ returns the letter body.
 **3. The dashboard metrics job writes 6 rows a minute, forever.**
 `aggregateDashboardMetrics` runs on `* * * * *`: 8,640 rows/day, ~3.2M/year, for
 an institution whose figures move on the timescale of a class period. The
-retention *schedule* was fixed in #401 (the 24-hour window was being pruned
+retention _schedule_ was fixed in #401 (the 24-hour window was being pruned
 monthly, leaving 131,190 rows across 16 days). The **cadence** was left alone
 because it is a product decision about how "real-time" the dashboards need to be.
 
@@ -469,66 +469,42 @@ still answers **404** on the apex, **307 → /login** on the portal — measured
 again 2026-09-02. What it discloses still needs deciding before it joins the
 public list.
 
-**8. Session tokens live in `localStorage`; moving them to server-set cookies is
-a cross-cutting security PR, not a patch on the governance feature.** Flagged
-against PR #508 (Pengawas/WBS/suspension) and left as a decision, not a repair.
+**8. Session tokens now live in server-set cookies; the credential is no longer
+JavaScript-readable.** Fixed on PR #508 (Pengawas/WBS/suspension); the owner
+still needs to confirm the scope/packaging decision (ship here vs. split).
 
-- **What is there now.** `apps/web/src/stores/auth.ts` writes the access token and
-  refresh token to `localStorage` (`:98-99`, `:149-151`, `:156-158`) and mirrors
-  a JavaScript-readable `accessToken` cookie via `document.cookie`. The 2FA
-  temporary token is written the same way (`:98-99`, `:147`). `middleware.ts`
-  reads the role out of the `auth-storage` cookie, which the same client code
-  writes (`apps/web/src/lib/auth-cookie.ts`).
-- **Why it is not "fixed in passing".** Any bearer token in `localStorage` is
-  readable by any script that achieves XSS, and the 2FA temp token is no
-  different. The task's own constraint rules out the tempting middle ground: no
-  hybrid that still exposes the *refresh* token to JavaScript. A correct
-  migration therefore has to change all of: the API issuing `HttpOnly` +
-  `Secure` + `SameSite` cookies on login/refresh/2FA-verify
-  (`apps/api/src/modules/auth/auth.controller.ts:19-56`, `:141-147`); CSRF
-  protection for the now-cookie-authenticated mutations; server-side cookie
-  clearing on logout; the Axios interceptors in `apps/web/src/lib/api.ts`; the
-  `/auth/refresh` call, which is a bare `axios.post` today and would need to
-  become a cookie-bearing request (`apps/web/src/lib/api.ts:157-159`); the
-  `middleware.ts` identity path, which needs a server-issued cookie (or a
-  server-side session) instead of a client-written one, plus the corresponding
-  `ProtectedRoute`/RBAC store rework; the cross-origin/CORS + `SameSite`
-  interaction in `apps/api/src/config/cors.ts`; and the Playwright auth helpers
-  that seed `localStorage` and a client cookie today
-  (`apps/web/e2e/fixtures/auth.fixture.ts:69-89`).
-- **Deployment topology (this is what makes it non-trivial).** The web bundle
-  talks to the API same-origin in production (`NEXT_PUBLIC_API_URL=""` per
-  `docs/DEPLOYMENT.md:67-72`, one image serving both hosts), so cookies would be
-  first-party — good. But `apps/web/next.config.ts` has **no rewrite/proxy of
-  `/api` to the API service**, and in `pnpm dev` the web (`:3000`) and API
-  (`:3001`) are genuinely different origins (`apps/web/src/lib/api.ts:88-92`).
-  A cookie the API sets on `:3001` is not sent to the `:3000` origin the Next
-  middleware runs on, so routing would lose its role signal in dev. The same
-  applies to the documented mobile/parent app, which is a **Bearer-JWT client**
-  (`docs/MOBILE_API.md:6`, `:13-14`) and cannot adopt browser cookies at all.
-  See `docs/planning/httpOnly-auth-cookies.md` for the full decision record and
-  the required change set.
-- **Threat model still open.** XSS or a malicious third-party script can read
-  `localStorage.accessToken` and `localStorage.refreshToken` and exfiltrate a
-  session that outlives the tab; the 2FA temp token is exposed for its one-hour
-  life (`apps/web/src/stores/auth.ts:99`, `max-age=3600`). Cookie transport does
-  not remove XSS, but it keeps the credential out of reach of script and removes
-  the client-written RBAC cookie, whose silent truncation is already a documented
-  hazard.
-- **Neutralising what this PR itself added.** The governance changes ship a
-  public WBS surface; its tracking credential does **not** use this path — the
-  tracking token is a bearer handed over via `sessionStorage`, never a URL query
-  string, and stored server-side only as an HMAC-SHA-256 digest
-  (`apps/api/src/utils/wbs-token.ts`). No new token was moved into
-  `localStorage`.
-- **Disposition.** Tracked as issue #523 (`https://github.com/ypcipansor/cipansor/issues/523`),
-  a dedicated security PR that must land before or with the governance feature,
-  unless the repository owner explicitly accepts the risk in writing. It is
-  **not** marked resolved here, and PR #508 is **not** merge-ready on this
-  finding until #523 lands or the owner accepts the risk. The concrete plan,
-  threat model, deployment analysis and required tests live in
+- **What it was.** `apps/web/src/stores/auth.ts` wrote the access and refresh
+  tokens to `localStorage` and mirrored a JavaScript-readable `accessToken`
+  cookie via `document.cookie`; `middleware.ts` read the role out of the
+  client-written `auth-storage` cookie (`apps/web/src/lib/auth-cookie.ts`). Any
+  XSS could read and replay a 30-day refresh token, and the client-written RBAC
+  cookie could name a role the user did not hold.
+- **What it is now.** The API issues `HttpOnly; Secure (production);
+SameSite=Lax` cookies on login/refresh/2FA/role-switch and clears them on
+  logout (`apps/api/src/utils/auth-cookies.ts`,
+  `apps/api/src/modules/auth/auth.controller.ts`,
+  `apps/api/src/modules/roles/roles.controller.ts`). The web stores no
+  credential in `localStorage`/`document.cookie`; `apps/web/src/lib/api.ts` uses
+  `withCredentials` and refreshes from the cookie. Middleware routes on the
+  server-set `cipansor_routing` cookie (`packages/shared/src/auth-cookies.ts`,
+  `decodeRoutingCookie`), and an authenticated-but-role-unknown request fails
+  closed. `lib/auth-cookie.ts` (the client write path) is gone.
+- **Bearer clients unaffected.** The JSON token fields remain for the mobile /
+  parent Bearer client (`docs/MOBILE_API.md`); `presentedCredentials` checks the
+  `Authorization` header first, then the cookie.
+- **Superseded sub-issue.** The old "cookie `auth-storage` di atas 4 KB"
+  truncation hazard no longer applies: the browser no longer writes that cookie,
+  and the routing cookie carries no `permissions[]`.
+- **Verification.** API cookie issuance/clearing
+  (`apps/api/src/modules/auth/tests/auth.controller.cookies.test.ts`,
+  `apps/api/src/utils/auth-cookies.test.ts`); middleware forgery resistance
+  (`apps/web/src/lib/middleware-rbac.test.ts`); e2e session assertions
+  (`apps/web/e2e/auth.spec.ts`). Full change set and threat model:
   `docs/planning/httpOnly-auth-cookies.md`.
-
+- **Remaining owner decision.** Whether the cross-cutting auth change ships
+  inside PR #508 or as its own PR — scope, not the vulnerability. Not a merge
+  blocker for the security property itself. See issue #523
+  (`https://github.com/ypcipansor/cipansor/issues/523`).
 
 ## ✅ Resolved by this effort (2026-07-22)
 
@@ -577,17 +553,17 @@ warm session.
 - **Authenticated users were thrown off the page they requested.** Three
   independent causes, each confirmed from the captured document redirect chain
   (`200 /inventory | 307 /login -> /dashboard | 200 /dashboard`):
-  1. *Refresh-token stampede.* The API rotates refresh tokens, so parallel
+  1. _Refresh-token stampede._ The API rotates refresh tokens, so parallel
      requests with an expired access token each fired `/auth/refresh`; the first
      rotated it and the rest presented a token the server had just deleted, and
      the axios catch block wiped the session. Now single-flight, and only
      400/401/403 counts as a real logout — a 429 or network blip no longer
      discards a working session.
-  2. *Pre-rehydration redirect.* `zustand/persist` reports
+  2. _Pre-rehydration redirect._ `zustand/persist` reports
      `isAuthenticated: false` on first render; the parent layout redirected on
      it, and middleware bounced `/login` back to the PARENT dashboard — which is
      `/parent`. All thirteen `/parent/*` links landed on the portal home.
-  3. *The spinner ate the app shell.* `ProtectedRoute` rendered a full-screen
+  3. _The spinner ate the app shell._ `ProtectedRoute` rendered a full-screen
      spinner whenever `isLoading` and re-fetched on every mount, so the sidebar
      and header vanished on every page load. Now gated on `isLoading && !user`;
      `fetchUser` is single-flight, halving `/auth/me` traffic.
@@ -745,7 +721,7 @@ stabilization history (2FA rate-limiter 429 cascade → cross-worker session
 cache persisted across runs; 24 specs migrated off the impossible UI-form
 superadmin login; teardown no longer wipes `.auth/`). Also fixed along the
 way: `config/index.ts` loaded dotenv from a path that never existed, so the
-*running* API server had no DATABASE_URL (prisma CLI masked it), and the
+_running_ API server had no DATABASE_URL (prisma CLI masked it), and the
 offline banner trusted `navigator.onLine` blindly (now verified against a
 real `/api/health` probe on the web origin).
 
@@ -760,8 +736,8 @@ injections (`grc-live`, `integration-grc`), none of which mock product data.
 
 - **Module architecture standardization.** ✅ **The 12 controller-less modules
   now follow the standard** — `wallet, payroll, canteen, portfolio, laundry,
-  ibadah, announcements, rapor-pesantren, student-compliance, teacher-compliance,
-  wilayah, pkg` each have a thin `controller.ts` (and, where they were missing,
+ibadah, announcements, rapor-pesantren, student-compliance, teacher-compliance,
+wilayah, pkg` each have a thin `controller.ts` (and, where they were missing,
   `service.ts`/`schema.ts`), with `routes.ts` reduced to routing + authorize +
   validate and a controller test per module. ✅ **File-naming unified:** all
   module files now use the `<name>.<type>.ts` convention (Angular/NestJS
@@ -836,7 +812,7 @@ injections (`grc-live`, `integration-grc`), none of which mock product data.
   `research` are separately mounted and in active use — merging them is a
   contract-changing refactor (route-name collisions with `dashboard`, ~34 web
   call sites into `/finance-enhancement`, separate nav/RBAC entries), so it was
-  deliberately *not* rushed as part of dead-code removal.
+  deliberately _not_ rushed as part of dead-code removal.
 - **`/ppdb` → `/admissions/registrants`.** Build the canonical admissions
   registrant listing/detail (currently unbuilt dead-links), move the onboarding
   UI there, then redirect `/ppdb`. Until then `/ppdb/registrations` stays because
@@ -872,7 +848,7 @@ injections (`grc-live`, `integration-grc`), none of which mock product data.
   a privacy policy, data-subject access/erasure, data-access audit); ISAK 35
   non-profit financial statements + the UU Yayasan annual-report package;
   backup/restore scripts + a DR runbook (currently none, for a DB of children's
-  and financial data); a zakat *collection* (muzakki) model to complement the
+  and financial data); a zakat _collection_ (muzakki) model to complement the
   existing distribution side.
 
 ## ✅ SELESAI 2026-09-05 (#480/#481) — rantai migrasi sudah di-baseline
@@ -932,8 +908,8 @@ and follow-through:
   bridge, tahfidz prediction/gamification, Flutter mobile + FCM/WhatsApp).
   All fail CI and change the schema without migrations.
 - **#293 (demo seeding)** is the only non-generated PR; left open — needs its
-  e2e failure fixed by its author before merge. *(Update: closed by the
-  maintainer 2026-07; safe parts were adopted on the feature branch.)*
+  e2e failure fixed by its author before merge. _(Update: closed by the
+  maintainer 2026-07; safe parts were adopted on the feature branch.)_
 
 ### Second wave (#318–#320, 2026-07-15) — all reviewed, rebuilt, closed
 
@@ -961,6 +937,7 @@ and follow-through:
 
 `apps/api/src/modules/perencanaan/perencanaan.service.ts` (`createPlan`)
 menegakkan "satu RKA Yayasan aktif per tahun" lewat `findFirst` saja:
+
 ```ts
 if (data.type === 'RKA' && !data.unitId) {
   const year = new Date(data.startDate).getUTCFullYear();
@@ -968,6 +945,7 @@ if (data.type === 'RKA' && !data.unitId) {
   if (clash) throw Errors.badRequest(...);
 }
 ```
+
 Tidak ada constraint unik di DB. Dua permintaan bersamaan bisa sama-sama lolos
 `findFirst` sebelum salah satu `commit`, menghasilkan dua RKA Yayasan untuk
 tahun yang sama. Perbaikan murni memerlukan **partial unique index** Postgres
@@ -982,14 +960,20 @@ satu PR — kutipan sebelumnya keliru. PR #415 sendiri kini membawa migrasi
 
 ### Cookie `auth-storage` di atas 4 KB dibuang peramban — middleware tanpa peran
 
-Objek pengguna kepala sekolah, dengan seluruh izinnya, berukuran 4.308 byte.
-`customStorage` (`apps/web/src/stores/auth.ts`) menuliskannya ke
-`document.cookie`; peramban menolak cookie di atas ~4 KB tanpa pesan, dan
-`apps/web/middleware.ts` lalu jatuh ke cabang `accessToken` saja —
-terautentikasi **tanpa peran**, sehingga pemeriksaan rute dilewati. API tetap
-menegakkan otorisasi, jadi data tidak bocor, tetapi gerbang rute web tidak
-berlaku bagi akun berizin banyak. Arah perbaikan: cookie cukup membawa
-identitas + kode peran primer, bukan seluruh objek pengguna.
+**Selesai (PR #508).** Cookie itu tidak lagi ditulis peramban: kanal peran
+sekarang cookie `cipansor_routing` milik server (base64url, hanya
+`role`/`roleCode`/`userId`/`unitId`/`exp` — tanpa `permissions[]` dan tanpa
+token), dan permintaan "terautentikasi tanpa peran" sekarang gagal-tertutup
+(redirect ke `/login`), bukan melewati gerbang rute. Lihat entri #8 di bagian
+atas dan `apps/web/src/lib/middleware-rbac.test.ts`.
+
+- **Gejala lama.** Objek pengguna kepala sekolah, dengan seluruh izinnya,
+  berukuran 4.308 byte. `customStorage` (`apps/web/src/stores/auth.ts`)
+  menuliskannya ke `document.cookie`; peramban menolak cookie di atas ~4 KB
+  tanpa pesan, dan `apps/web/middleware.ts` lalu jatuh ke cabang `accessToken`
+  saja — terautentikasi **tanpa peran**, sehingga pemeriksaan rute dilewati.
+  API tetap menegakkan otorisasi, jadi data tidak bocor, tetapi gerbang rute web
+  tidak berlaku bagi akun berizin banyak.
 
 ### Tombol tambah pada rencana yang tidak boleh ditulis
 
@@ -1057,7 +1041,7 @@ Tiga hal yang sengaja **tidak** diputuskan sendiri saat mengerjakan pengganti
 1. **Tata Usaha tidak melihat tombol "Luluskan".** API mengizinkan TU
    meluluskan (`manageAlumni` = admin + TU, #500), tetapi halaman
    `students/[id]` dibuka dengan `MainLayout allowedRoles={["SUPER_ADMIN",
-   "UNIT_ADMIN", "TEACHER"]}` sejak lama, sehingga TU terpental ke
+"UNIT_ADMIN", "TEACHER"]}` sejak lama, sehingga TU terpental ke
    `/unauthorized` — terbukti di rig dengan akun `smpit.tu@`. **Pertanyaan:**
    apakah TU boleh membuka detail santri (dan karenanya meluluskan lewat UI),
    atau kelulusan memang hanya wewenang kepala/admin unit? Jangan longgarkan

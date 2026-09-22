@@ -10,6 +10,8 @@ vi.mock('../roles.service', () => ({
 vi.mock('@/lib/jwt', () => ({
   generateTokenPair: vi.fn(() => ({ accessToken: 'token-123', refreshToken: 'refresh-123' })),
   getExpirationDate: vi.fn(() => new Date()),
+  // `sessionCookies` derives the routing hint from the access token's claims.
+  decodeToken: vi.fn(() => null),
 }));
 
 vi.mock('@/lib/prisma', () => ({
@@ -36,12 +38,31 @@ function mockReqRes(overrides: Partial<Request> = {}) {
     ...overrides,
   } as unknown as Request;
 
+  const headers: Record<string, unknown> = {};
   const res = {
     statusCode: 200,
     jsonPayload: undefined as unknown,
-    status(code: number) { (this as any).statusCode = code; return this; },
-    json(payload: unknown) { (this as any).jsonPayload = payload; return this; },
-  } as unknown as Response & { statusCode: number; jsonPayload: any };
+    headers,
+    status(code: number) {
+      (this as any).statusCode = code;
+      return this;
+    },
+    json(payload: unknown) {
+      (this as any).jsonPayload = payload;
+      return this;
+    },
+    getHeader(name: string) {
+      return headers[name];
+    },
+    setHeader(name: string, value: unknown) {
+      headers[name] = value;
+      return this;
+    },
+  } as unknown as Response & {
+    statusCode: number;
+    jsonPayload: any;
+    headers: Record<string, unknown>;
+  };
 
   return { req, res, next: vi.fn() };
 }
