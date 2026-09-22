@@ -469,6 +469,40 @@ still answers **404** on the apex, **307 → /login** on the portal — measured
 again 2026-09-02. What it discloses still needs deciding before it joins the
 public list.
 
+**8. Session tokens live in `localStorage`; moving them to server-set cookies is
+a cross-cutting security PR, not a patch on the governance feature.** Flagged
+against PR #508 (Pengawas/WBS/suspension) and left as a decision, not a repair.
+
+- **What is there now.** `apps/web/src/stores/auth.ts` writes the access token and
+  refresh token to `localStorage` (`:98-99`, `:149-151`, `:156-158`) and mirrors
+  a JavaScript-readable `accessToken` cookie via `document.cookie`. The 2FA
+  temporary token is written the same way (`:98-99`, `:147`). `middleware.ts`
+  reads the role out of the `auth-storage` cookie, which the same client code
+  writes (`apps/web/src/lib/auth-cookie.ts`).
+- **Why it is not "fixed in passing".** Any bearer token in `localStorage` is
+  readable by any script that achieves XSS, and the 2FA temp token is no
+  different. The task's own constraint rules out the tempting middle ground: no
+  hybrid that still exposes the *refresh* token to JavaScript. A correct
+  migration therefore has to change all of: the API issuing `HttpOnly` +
+  `Secure` + `SameSite` cookies on login/refresh/2FA-verify
+  (`apps/api/src/modules/auth/auth.controller.ts:19-56`, `:141-147`), CSRF
+  protection for the now-cookie-authenticated mutations, server-side cookie
+  clearing on logout, the Axios interceptors in `apps/web/src/lib/api.ts`, the
+  SSR/`middleware.ts` identity path that currently depends on a client-written
+  cookie, the cross-origin/CORS + `SameSite` interaction in
+  `apps/api/src/config/cors.ts`, and the Playwright auth helpers that seed state
+  today. Each has its own failure mode, and a half-done version is strictly
+  worse than the status quo because it looks fixed.
+- **Threat model still open.** XSS or a malicious third-party script can read
+  `localStorage.accessToken` and `localStorage.refreshToken` and exfiltrate a
+  session that outlives the tab; the 2FA temp token is exposed for its one-hour
+  life (`:99`, `max-age=3600`). Cookie transport does not remove XSS, but it
+  keeps the credential out of reach of script and removes the client-written
+  RBAC cookie, whose silent truncation is already a documented hazard.
+- **Disposition.** Track as a separate security PR that must land before or with
+  the governance feature, unless the repository owner explicitly accepts the
+  risk. It is **not** marked resolved here.
+
 
 ## ✅ Resolved by this effort (2026-07-22)
 

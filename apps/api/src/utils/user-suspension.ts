@@ -38,6 +38,25 @@ import { BoardSuspensionStatus } from '@prisma/client';
  * only when its version is not older than the version already recorded, which
  * makes a delayed prime from a superseded event a no-op. The comparison runs
  * inside Redis so two replicas cannot interleave a read and a write.
+ *
+ * **A positive marker is only trusted while its version still matches the
+ * durable account version.** Ordering the *writes* is not enough: the lift's
+ * tombstone is best-effort too, so if that write fails the positive marker left
+ * behind keeps refusing the account even though the database has already been
+ * restored. A positive marker therefore never decides on its own — before it
+ * short-circuits, its recorded version is compared against the user's current
+ * `accountStateVersion`, and only an exact match (no account-state write has
+ * happened since) is accepted. A marker whose version is behind is stale and
+ * the database decides, which closes the "lift committed at V+1, tombstone write
+ * failed, `s:V` still cached" window without shortening the TTL.
+ *
+ * **Redis unavailable fails closed to the database.** If the read throws, the
+ * request reads `User.isActive` + `deletedAt` + any ACTIVE suspension and
+ * answers from persistent state — correct, only slower. The one asymmetry worth
+ * stating: the *positive* prime is best-effort, so during a sustained outage a
+ * suspension is still enforced everywhere (every request consults the database),
+ * while the cache can lag only in the direction of doing more work, never in the
+ * direction of allowing a suspended account.
  */
 const CACHE_PREFIX = 'suspension:user:';
 const CACHE_TTL_SECONDS = 60;
@@ -167,12 +186,9 @@ async function writeEntry(userId: string, state: string, version: number): Promi
 
 /** True when the account is inactive, deleted, or under an ACTIVE suspension. */
 export async function isUserSuspended(userId: string): Promise<boolean> {
+  let cached: { state: string; version: number } | null = null;
   try {
-    const cached = await redis.get(cacheKey(userId));
-    // Only a positive marker short-circuits. A tombstone or a legacy `0` is not
-    // trusted — it cannot be relied on to reflect a write that may have failed —
-    // and the database decides.
-    if (parseEntry(cached)?.state === SUSPENDED) return true;
+    cached = parseEntry(await redis.get(cacheKey(userId)));
   } catch (error) {
     // Redis unavailable — fall through to the database. Logged because a
     // sustained outage turns this hot path into a database read per request.
@@ -182,28 +198,49 @@ export async function isUserSuspended(userId: string): Promise<boolean> {
     });
   }
 
-  const [user, activeSuspension] = await Promise.all([
-    prisma.user.findUnique({
-      where: { id: userId },
-      select: { isActive: true, deletedAt: true, accountStateVersion: true },
-    }),
-    prisma.boardMemberSuspension.findFirst({
-      where: { userId, status: BoardSuspensionStatus.ACTIVE },
-      select: { id: true },
-    }),
-  ]);
-
   // A token whose user row is gone must not authenticate either. `deletedAt`
   // is a soft delete that leaves `isActive` untouched, so without it a
   // deleted user's still-valid access token kept working until it expired.
-  const suspended = !user || !user.isActive || !!user.deletedAt || !!activeSuspension;
-  // Prime only the positive direction, carrying the version this answer was read
-  // at: a `false` is never cached, so a failed write can never leave a revoked
-  // token authenticated, and a superseded prime cannot outrank a later restore.
-  if (suspended && user) {
-    await writeEntry(userId, SUSPENDED, user.accountStateVersion ?? 0);
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { isActive: true, deletedAt: true, accountStateVersion: true },
+  });
+
+  // A positive marker is trusted *only* while its version still matches the
+  // durable account version. The compare-and-set writer applies a marker only
+  // when its version is not older than the stored one, so an equal version
+  // means no account-state write has happened since — and every state write
+  // that would lift a suspension (a lift, an admin reactivation) bumps that
+  // version. This is the "prove the marker still describes the account"
+  // requirement, and it also lets the hit path skip the suspension-row read.
+  if (user && cached?.state === SUSPENDED && cached.version === (user.accountStateVersion ?? 0)) {
+    return true;
   }
-  return suspended;
+
+  const suspended = !user || !user.isActive || !!user.deletedAt;
+  if (suspended) {
+    // Prime only the positive direction, carrying the version this answer was
+    // read at: a `false` is never cached, so a failed write can never leave a
+    // revoked token authenticated, and a superseded prime cannot outrank a
+    // later restore.
+    if (user) await writeEntry(userId, SUSPENDED, user.accountStateVersion ?? 0);
+    return true;
+  }
+
+  // `isActive`/`deletedAt` are clear — only an ACTIVE suspension row can still
+  // refuse, so this second read is reached only on the miss path. A stale
+  // positive marker (version behind) lands here too: the tombstone that should
+  // have replaced it was a best-effort write that failed, and the database —
+  // not the marker — decides the restored account.
+  const activeSuspension = await prisma.boardMemberSuspension.findFirst({
+    where: { userId, status: BoardSuspensionStatus.ACTIVE },
+    select: { id: true },
+  });
+  if (activeSuspension) {
+    await writeEntry(userId, SUSPENDED, user.accountStateVersion ?? 0);
+    return true;
+  }
+  return false;
 }
 
 /**

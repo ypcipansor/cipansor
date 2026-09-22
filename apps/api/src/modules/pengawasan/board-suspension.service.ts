@@ -306,6 +306,43 @@ export class BoardSuspensionService {
           );
         }
 
+        // Lock the user row FIRST, before any signing-key row.
+        //
+        // Lock order must be identical here and in every e-sign writer
+        // (`assertSigningKeyNotSuspendedTx` locks the key row; `activateKey`
+        // locks the user row and then the key rows). This transaction has the
+        // same shape as `activateKey`: user, then key. Taking the key row
+        // first — as the soft-lock below does — inverted that order against
+        // `activateKey` and produced a genuine deadlock (PostgreSQL 40P01)
+        // when an activation and a suspension interleaved on the same account
+        // that already held a key.
+        //
+        // Locking first also makes the snapshot below trustworthy: it
+        // serialises this moment against a concurrent `isActive`/`deletedAt`
+        // write, so the read sees the state that will actually hold at commit.
+        // The pre-flight checks above ran before the transaction opened; an
+        // account deactivated or soft-deleted in the gap still passed them, and
+        // without this re-read the suspension went on to switch off an
+        // already-dead account and mint a Plh for an officer who cannot act.
+        const lockedTarget = await tx.$queryRaw<
+          Array<{ is_active: boolean; deleted_at: Date | null }>
+        >`
+          SELECT is_active, deleted_at FROM "users" WHERE id = ${data.userId} FOR UPDATE
+        `;
+        if (!lockedTarget[0]) {
+          throw Errors.notFound(`Pengurus / Pengguna dengan ID ${data.userId} tidak ditemukan`);
+        }
+        if (lockedTarget[0].deleted_at) {
+          throw Errors.conflict(
+            'Akun pengurus ini telah dihapus (soft-deleted) dan tidak dapat dibekukan.'
+          );
+        }
+        if (!lockedTarget[0].is_active) {
+          throw Errors.conflict(
+            'Akun pengurus ini sudah dalam keadaan non-aktif / dibekukan dan tidak dapat dibekukan.'
+          );
+        }
+
         // Snapshot signing-key lockouts *and* soft-lock them in the same
         // conditional statement per key.
         //
@@ -335,42 +372,15 @@ export class BoardSuspensionService {
           }
         }
 
-        // The account state is read *inside* the transaction — and after the row
-        // is locked — then claimed with a conditional compare-and-set. A plain
-        // read-then-update is a lost-update race: at READ COMMITTED an admin can
-        // change `isActive` (or its writer token) after this snapshot but before
-        // the flip, and the suspension's more permissive state would overwrite
-        // theirs — and install a writer token that lets a later lift resurrect
-        // an account that should have stayed off. Matching on the observed
-        // values means the write only lands if nothing moved; otherwise the
-        // transaction aborts and the suspension is never created.
-        //
-        // Locking first is what makes the snapshot trustworthy: it serialises
-        // this moment against a concurrent `isActive`/`deletedAt` write, so the
-        // read below sees the state that will actually hold at commit. The
-        // pre-flight checks above ran before the transaction opened; an account
-        // deactivated or soft-deleted in the gap still passed them, and without
-        // this re-read the suspension went on to switch off an already-dead
-        // account and mint a Plh for an officer who cannot act.
-        const lockedTarget = await tx.$queryRaw<
-          Array<{ is_active: boolean; deleted_at: Date | null }>
-        >`
-          SELECT is_active, deleted_at FROM "users" WHERE id = ${data.userId} FOR UPDATE
-        `;
-        if (!lockedTarget[0]) {
-          throw Errors.notFound(`Pengurus / Pengguna dengan ID ${data.userId} tidak ditemukan`);
-        }
-        if (lockedTarget[0].deleted_at) {
-          throw Errors.conflict(
-            'Akun pengurus ini telah dihapus (soft-deleted) dan tidak dapat dibekukan.'
-          );
-        }
-        if (!lockedTarget[0].is_active) {
-          throw Errors.conflict(
-            'Akun pengurus ini sudah dalam keadaan non-aktif / dibekukan dan tidak dapat dibekukan.'
-          );
-        }
-
+        // The account state is read *inside* the transaction — and after the
+        // user row lock above — then claimed with a conditional compare-and-set.
+        // A plain read-then-update is a lost-update race: at READ COMMITTED an
+        // admin can change `isActive` (or its writer token) after this snapshot
+        // but before the flip, and the suspension's more permissive state would
+        // overwrite theirs — and install a writer token that lets a later lift
+        // resurrect an account that should have stayed off. Matching on the
+        // observed values means the write only lands if nothing moved;
+        // otherwise the transaction aborts and the suspension is never created.
         const freshTarget = await tx.user.findUnique({
           where: { id: data.userId },
           select: {

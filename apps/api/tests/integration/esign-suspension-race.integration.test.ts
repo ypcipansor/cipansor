@@ -57,7 +57,14 @@ INSERT INTO units (id, name, type, address, updated_at) VALUES
 
 INSERT INTO users (id, name, email, password_hash, is_active, updated_at) VALUES
   ('u-pengawas', 'Pengawas', 'pengawas@example.com', NULL, true, now()),
-  ('u-ketua',    'Ketua',    'ketua@example.com',    '${passwordHash}', true, now());
+  ('u-ketua',    'Ketua',    'ketua@example.com',    '${passwordHash}', true, now()),
+  ('u-enroll',   'Enrollee', 'enroll@example.com',   '${passwordHash}', true, now());
+
+-- An approved ENROLLMENT request, awaiting passphrase activation.
+INSERT INTO signing_key_requests
+  (id, user_id, kind, status, decided_by_id, decided_at, granted_days, updated_at)
+VALUES
+  ('req-enroll', 'u-enroll', 'ENROLLMENT', 'APPROVED', 'u-pengawas', now(), 365, now());
 
 INSERT INTO roles (id, code, name, realm, permissions, updated_at) VALUES
   ('role-pengawas', 'YAYASAN_PENGAWAS', 'Pengawas Yayasan', 'YAYASAN', '[]'::jsonb, now()),
@@ -133,6 +140,15 @@ describeDb('esign suspension race (real PostgreSQL)', () => {
       await db.query(`UPDATE letters SET status = 'SIGNED' WHERE id = 'letter-revoke'`);
       await db.query(
         `UPDATE user_signing_keys SET locked_until = NULL, failed_attempts = 0 WHERE id = 'key-ketua'`
+      );
+      // The activation subject: ensure no stray key and a live approved request.
+      await db.query(`DELETE FROM user_signing_keys WHERE user_id = 'u-enroll'`);
+      await db.query(`UPDATE users SET is_active = true, deleted_at = NULL WHERE id = 'u-enroll'`);
+      await db.query(`DELETE FROM board_member_suspensions WHERE user_id = 'u-enroll'`);
+      await db.query(
+        `UPDATE signing_key_requests
+         SET status = 'APPROVED', decided_by_id = 'u-pengawas', decided_at = now(), granted_days = 365
+         WHERE id = 'req-enroll'`
       );
     });
   }
@@ -429,7 +445,9 @@ describeDb('esign suspension race (real PostgreSQL)', () => {
       });
 
       // The new passphrase really is the live one: signing with it verifies.
-      await expect(EsignService.signLetter('letter-sign', 'u-ketua', NEW_PASS)).resolves.toBeTruthy();
+      await expect(
+        EsignService.signLetter('letter-sign', 'u-ketua', NEW_PASS)
+      ).resolves.toBeTruthy();
     } finally {
       await unloadModules(previousUrl);
     }
@@ -459,6 +477,183 @@ describeDb('esign suspension race (real PostgreSQL)', () => {
         ).toBe(new Date(SENTINEL).toISOString());
       });
     } finally {
+      await unloadModules(previousUrl);
+    }
+  });
+
+  /**
+   * Commit a real board suspension for `u-enroll`, exactly as
+   * `BoardSuspensionService` ends up doing: user switched off (writer token)
+   * and an ACTIVE `BoardMemberSuspension`.
+   */
+  async function commitSuspensionForEnroll(): Promise<void> {
+    await withClient(targetUrl, async (db) => {
+      await db.query(`UPDATE users SET is_active = false WHERE id = 'u-enroll'`);
+      await db.query(`
+        INSERT INTO board_member_suspensions
+          (id, user_id, sk_number, audit_reason, status, suspended_by_id, updated_at)
+        VALUES
+          ('susp-enroll', 'u-enroll', 'SK/ENROLL/1', 'Pembekuan uji aktivasi.', 'ACTIVE',
+           'u-pengawas', now())
+        ON CONFLICT (id) DO UPDATE SET status = 'ACTIVE'
+      `);
+    });
+  }
+
+  it('activation started before a suspension but writing after it leaves no unlocked key', async () => {
+    await resetState();
+    const { EsignService, prisma, previousUrl } = await loadModules();
+    try {
+      // The pre-flight approval read passes, then the suspension commits — the
+      // exact interleaving the old read-then-write lacked. Because activation
+      // re-checks under the user row lock, and it blocks on the same row a
+      // suspension writes, whichever commits first is visible to the other.
+      const original = prisma.signingKeyRequest.findFirst.bind(prisma.signingKeyRequest);
+      let first = true;
+      vi.spyOn(prisma.signingKeyRequest, 'findFirst').mockImplementation((async (args: any) => {
+        const result = await original(args);
+        if (first) {
+          first = false;
+          await commitSuspensionForEnroll();
+        }
+        return result;
+      }) as any);
+
+      await expect(EsignService.activateKey('u-enroll', PASS)).rejects.toThrow(
+        /dibekukan|Pembekuan|non-aktif/i
+      );
+
+      await withClient(targetUrl, async (db) => {
+        const key = await db.query(
+          `SELECT count(*)::int AS n FROM user_signing_keys WHERE user_id = 'u-enroll'`
+        );
+        expect(
+          key.rows[0].n,
+          'no unlocked signing key may be born for a just-suspended officer'
+        ).toBe(0);
+      });
+    } finally {
+      await unloadModules(previousUrl);
+    }
+  });
+
+  it('a suspension that commits first refuses activation outright', async () => {
+    await resetState();
+    const { EsignService, previousUrl } = await loadModules();
+    try {
+      await commitSuspensionForEnroll();
+
+      await expect(EsignService.activateKey('u-enroll', PASS)).rejects.toThrow(
+        /dibekukan|Pembekuan|non-aktif/i
+      );
+
+      await withClient(targetUrl, async (db) => {
+        const key = await db.query(
+          `SELECT count(*)::int AS n FROM user_signing_keys WHERE user_id = 'u-enroll'`
+        );
+        expect(key.rows[0].n).toBe(0);
+      });
+    } finally {
+      await unloadModules(previousUrl);
+    }
+  });
+
+  it('normal activation with no suspension still succeeds', async () => {
+    await resetState();
+    const { EsignService, previousUrl } = await loadModules();
+    try {
+      const out = await EsignService.activateKey('u-enroll', PASS);
+      expect(out.id).toBeTruthy();
+
+      await withClient(targetUrl, async (db) => {
+        const key = await db.query(
+          `SELECT user_id, locked_until FROM user_signing_keys WHERE user_id = 'u-enroll'`
+        );
+        expect(key.rows).toHaveLength(1);
+        expect(key.rows[0].locked_until).toBeNull();
+      });
+    } finally {
+      await unloadModules(previousUrl);
+    }
+  });
+
+  it('an internal direct service call cannot bypass the suspension guard', async () => {
+    // No route, no middleware: the check lives in the transaction, so calling
+    // the service directly is still refused.
+    await resetState();
+    const { EsignService, previousUrl } = await loadModules();
+    try {
+      await commitSuspensionForEnroll();
+
+      await expect(EsignService.activateKey('u-enroll', PASS)).rejects.toThrow(
+        /dibekukan|Pembekuan|non-aktif/i
+      );
+
+      await withClient(targetUrl, async (db) => {
+        const key = await db.query(
+          `SELECT count(*)::int AS n FROM user_signing_keys WHERE user_id = 'u-enroll'`
+        );
+        expect(key.rows[0].n).toBe(0);
+      });
+    } finally {
+      await unloadModules(previousUrl);
+    }
+  });
+
+  it('activation refuses a soft-deleted or inactive account', async () => {
+    await resetState();
+    const { EsignService, previousUrl } = await loadModules();
+    try {
+      await withClient(targetUrl, async (db) => {
+        await db.query(`UPDATE users SET is_active = false WHERE id = 'u-enroll'`);
+      });
+      await expect(EsignService.activateKey('u-enroll', PASS)).rejects.toThrow();
+
+      await withClient(targetUrl, async (db) => {
+        await db.query(
+          `UPDATE users SET is_active = true, deleted_at = now() WHERE id = 'u-enroll'`
+        );
+      });
+      await expect(EsignService.activateKey('u-enroll', PASS)).rejects.toThrow();
+    } finally {
+      await unloadModules(previousUrl);
+    }
+  });
+
+  it('no deadlock when activation and suspension interleave on the user row', async () => {
+    await resetState();
+    const { EsignService, previousUrl } = await loadModules();
+    const blocker = new Client({ connectionString: targetUrl });
+    await blocker.connect();
+    try {
+      // A suspension holds the user row lock and commits the sentinel state;
+      // activation must wait, then fail closed — not deadlock.
+      await blocker.query('BEGIN');
+      await blocker.query(`SELECT id FROM "users" WHERE id = 'u-enroll' FOR UPDATE`);
+      await blocker.query(`UPDATE users SET is_active = false WHERE id = 'u-enroll'`);
+      await blocker.query(`
+        INSERT INTO board_member_suspensions
+          (id, user_id, sk_number, audit_reason, status, suspended_by_id, updated_at)
+        VALUES
+          ('susp-enroll', 'u-enroll', 'SK/ENROLL/1', 'Pembekuan uji aktivasi.', 'ACTIVE',
+           'u-pengawas', now())
+        ON CONFLICT (id) DO UPDATE SET status = 'ACTIVE'
+      `);
+
+      const pending = EsignService.activateKey('u-enroll', PASS);
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      await blocker.query('COMMIT');
+
+      await expect(pending).rejects.toThrow(/dibekukan|Pembekuan|non-aktif/i);
+
+      await withClient(targetUrl, async (db) => {
+        const key = await db.query(
+          `SELECT count(*)::int AS n FROM user_signing_keys WHERE user_id = 'u-enroll'`
+        );
+        expect(key.rows[0].n).toBe(0);
+      });
+    } finally {
+      await blocker.end();
       await unloadModules(previousUrl);
     }
   });

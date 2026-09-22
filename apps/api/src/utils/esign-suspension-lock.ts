@@ -14,7 +14,7 @@
  * e-sign lifecycle rightly does not allow. The far-future date maps to LOCKED in
  * `effectiveState`, and the lift restores the prior `lockedUntil`.
  */
-import { Prisma } from '@prisma/client';
+import { BoardSuspensionStatus, Prisma } from '@prisma/client';
 import { Errors } from '@/middleware/error';
 
 export const SIGNING_KEY_SUSPENSION_LOCK = new Date('2099-01-01T00:00:00Z');
@@ -106,6 +106,48 @@ export async function assertSigningKeyNotSuspendedTx(
     throw Errors.badRequest('Kunci tanda tangan tidak ditemukan.');
   }
   if (isSuspensionSigningLock(locked[0].locked_until)) {
+    throw new SigningKeySuspensionRaceError();
+  }
+}
+
+/**
+ * Assert, on a locked snapshot taken inside the activation transaction, that a
+ * user may hold a signing key at all.
+ *
+ * Activation (`activateKey`) creates a key where none existed, so it has no key
+ * row to `FOR UPDATE` — the suspension's own soft-lock writes to a row that may
+ * not be there yet, and a read-then-`deleteMany`+`create` would let a key be
+ * born *after* a suspension committed. Locking the user row instead serialises
+ * the two: `BoardSuspensionService` reads the same user row `FOR UPDATE` (and
+ * reads it before it touches any signing-key row), so a suspension cannot commit
+ * between this check and the key insert, and a suspension that already committed
+ * is visible to the locked re-read.
+ *
+ * The guard is fail-closed: inactive, soft-deleted, or ACTIVE-suspension all
+ * refuse. It runs inside the transaction even for an internal direct service
+ * call, so it cannot be bypassed by merely reaching the service without the
+ * route middleware.
+ */
+export async function assertUserNotSuspendedTx(
+  tx: Prisma.TransactionClient,
+  userId: string
+): Promise<void> {
+  await tx.$executeRaw`SELECT set_config('lock_timeout', ${LOCK_STATEMENT_TIMEOUT}, true)`;
+  const target = await tx.$queryRaw<Array<{ is_active: boolean; deleted_at: Date | null }>>`
+    SELECT is_active, deleted_at FROM "users" WHERE id = ${userId} FOR UPDATE
+  `;
+  if (!Array.isArray(target) || target.length !== 1) {
+    throw Errors.badRequest('Akun tidak ditemukan.');
+  }
+  if (target[0].deleted_at || !target[0].is_active) {
+    throw new SigningKeySuspensionRaceError();
+  }
+
+  const activeSuspension = await tx.boardMemberSuspension.findFirst({
+    where: { userId, status: BoardSuspensionStatus.ACTIVE },
+    select: { id: true },
+  });
+  if (activeSuspension) {
     throw new SigningKeySuspensionRaceError();
   }
 }

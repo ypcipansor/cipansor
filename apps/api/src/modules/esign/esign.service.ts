@@ -28,6 +28,7 @@ import crypto from 'crypto';
 import {
   SIGNING_KEY_SUSPENSION_LOCK,
   assertSigningKeyNotSuspendedTx,
+  assertUserNotSuspendedTx,
   asSuspensionRefusal,
   isSuspensionSigningLock,
 } from '@/utils/esign-suspension-lock';
@@ -828,6 +829,17 @@ export const EsignService = {
    *
    * Kunci baru dibuat di sini — bukan saat disetujui — karena passphrase-nya
    * hanya boleh diketahui pemiliknya.
+   *
+   * Pembuatan kunci berjalan di dalam satu transaksi PostgreSQL yang mengunci
+   * row user (§ `assertUserNotSuspendedTx`). Sebelumnya approval/key dibaca
+   * lalu `deleteMany` + `create` dijalankan tanpa transaksi, lock, maupun
+   * pemeriksaan pembekuan: pembekuan yang commit di sela pembacaan dan
+   * penulisan tidak menemukan key untuk di-soft-lock (key-nya belum ada),
+   * sehingga kunci lahir dalam keadaan terbuka untuk pengurus yang baru saja
+   * dibekukan. Mengunci row user lebih dulu — urutan yang sama dengan
+   * `BoardSuspensionService` (user dulu, baru key) — membuat pemeriksaan dan
+   * penulisan key serial terhadap penerbitan SK, dan pembekuan yang sudah
+   * commit terlihat oleh pembacaan ulang di bawah lock.
    */
   async activateKey(userId: string, passphrase: string) {
     const approved = await prisma.signingKeyRequest.findFirst({
@@ -853,22 +865,35 @@ export const EsignService = {
     const days = approved.grantedDays ?? DEFAULT_VALIDITY_DAYS;
     const now = new Date();
 
-    await prisma.userSigningKey.deleteMany({ where: { userId } });
-    const key = await prisma.userSigningKey.create({
-      data: {
-        userId,
-        algorithm: material.algorithm,
-        publicKey: material.publicKey,
-        encryptedPrivateKey: material.encryptedPrivateKey,
-        kdfSalt: material.kdfSalt,
-        kdfParams: material.kdfParams as unknown as Prisma.InputJsonValue,
-        iv: material.iv,
-        authTag: material.authTag,
-        approvedById: approved.decidedById,
-        approvedAt: approved.decidedAt ?? now,
-        expiresAt: expiryFrom(now, days),
-      },
-    });
+    let key;
+    try {
+      key = await prisma.$transaction(async (tx) => {
+        // Kunci row user dan baca ulang status akun di titik commit. Pembekuan
+        // yang mendarat setelah pre-flight di atas harus terlihat di sini;
+        // guard ini juga berjalan untuk pemanggilan service langsung, jadi
+        // tidak bisa dilewati hanya karena melewati middleware route.
+        await assertUserNotSuspendedTx(tx, userId);
+
+        await tx.userSigningKey.deleteMany({ where: { userId } });
+        return tx.userSigningKey.create({
+          data: {
+            userId,
+            algorithm: material.algorithm,
+            publicKey: material.publicKey,
+            encryptedPrivateKey: material.encryptedPrivateKey,
+            kdfSalt: material.kdfSalt,
+            kdfParams: material.kdfParams as unknown as Prisma.InputJsonValue,
+            iv: material.iv,
+            authTag: material.authTag,
+            approvedById: approved.decidedById,
+            approvedAt: approved.decidedAt ?? now,
+            expiresAt: expiryFrom(now, days),
+          },
+        });
+      });
+    } catch (error) {
+      throw asSuspensionRefusal(error);
+    }
 
     return { id: key.id, expiresAt: key.expiresAt, state: effectiveState(key) };
   },

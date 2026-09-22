@@ -29,8 +29,7 @@ const redisEval = vi.fn(
     // Mirror the Lua exactly: a strictly newer version always wins; an equal
     // version is won only by a tombstone that is not already the stored state.
     const accept =
-      incoming > current ||
-      (incoming === current && state === 'n' && currentState !== 'n');
+      incoming > current || (incoming === current && state === 'n' && currentState !== 'n');
     if (accept) {
       store.set(key, `${state}:${version}`);
       return 1;
@@ -106,10 +105,24 @@ describe('isUserSuspended', () => {
     await expect(isUserSuspended('u1')).resolves.toBe(true);
   });
 
-  it('honours a versioned positive marker without hitting the database', async () => {
+  it('honours a versioned positive marker that matches the durable version', async () => {
+    // A marker whose version equals the account's current `accountStateVersion`
+    // is still authoritative: no account-state write has happened since. The
+    // durable read confirms it, so the short-circuit is safe.
     store.set('suspension:user:u1', 's:7');
+    mockUser({ isActive: false, deletedAt: null, accountStateVersion: 7 });
     await expect(isUserSuspended('u1')).resolves.toBe(true);
-    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+    expect(prisma.user.findUnique).toHaveBeenCalled();
+  });
+
+  it('ignores a stale positive marker whose version is behind the account', async () => {
+    // The lift committed at version 8 (its tombstone write failed) but the stale
+    // `s:7` remains in Redis. The durable version moved on, so the marker must
+    // not decide and the restored account must be allowed.
+    store.set('suspension:user:u1', 's:7');
+    mockUser({ isActive: true, deletedAt: null, accountStateVersion: 8 });
+    await expect(isUserSuspended('u1')).resolves.toBe(false);
+    expect(prisma.user.findUnique).toHaveBeenCalled();
   });
 
   it('does not trust a legacy marker without a version', async () => {
@@ -197,8 +210,8 @@ describe('suspension cache writes are ordered by the durable version', () => {
     // The re-suspension bumps the counter, so its positive marker must win.
     await markUserSuspended('u1', 6);
     expect(store.get('suspension:user:u1')).toBe('s:6');
+    mockUser({ isActive: false, deletedAt: null, accountStateVersion: 6 });
     await expect(isUserSuspended('u1')).resolves.toBe(true);
-    expect(prisma.user.findUnique).not.toHaveBeenCalled();
   });
 
   it('an idempotent replay of the same tombstone does not reshuffle state', async () => {
@@ -226,6 +239,38 @@ describe('suspension cache writes are ordered by the durable version', () => {
     redisEval.mockRejectedValueOnce(new Error('redis down'));
     await expect(markUserSuspended('u1', 1)).resolves.toBeUndefined();
     expect(logger.error).toHaveBeenCalled();
+  });
+});
+
+describe('a failed lift invalidation cannot lock out a restored account', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    store.clear();
+    noActiveSuspension();
+  });
+
+  it('allows the restored account even though the tombstone write failed', async () => {
+    // Suspend at version 5 records `s:5`. The lift commits at version 6, but
+    // its best-effort `n:6` tombstone write fails. The stale `s:5` is now
+    // behind the durable version, so it must not keep the account refused
+    // until the TTL; the database decides and the account is active.
+    await markUserSuspended('u1', 5);
+    redisEval.mockRejectedValueOnce(new Error('redis down'));
+    await invalidateUserSuspensionCache('u1', 6);
+    expect(store.get('suspension:user:u1')).toBe('s:5');
+
+    mockUser({ isActive: true, deletedAt: null, accountStateVersion: 6 });
+    await expect(isUserSuspended('u1')).resolves.toBe(false);
+  });
+
+  it('still refuses when the durable account state really is suspended', async () => {
+    // Guard against the comparison being read as "ignore all positive
+    // markers": a current-version marker (no state write since) still refuses.
+    await markUserSuspended('u1', 5);
+    await invalidateUserSuspensionCache('u1', 6);
+    await markUserSuspended('u1', 6);
+    mockUser({ isActive: false, deletedAt: null, accountStateVersion: 6 });
+    await expect(isUserSuspended('u1')).resolves.toBe(true);
   });
 });
 
