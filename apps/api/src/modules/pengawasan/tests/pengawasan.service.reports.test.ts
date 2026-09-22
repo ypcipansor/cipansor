@@ -181,13 +181,20 @@ describe('PengawasanService periodic oversight report', () => {
     expect(prisma.user.findFirst).toHaveBeenCalledTimes(1);
   });
 
-  it('falls back to an active Super Admin when no effective Pembina exists', async () => {
+  it('selects an assignment-only Super Admin when no effective Pembina exists', async () => {
+    // The bug: the fallback only looked at the legacy `User.role` column, so an
+    // active account whose Super Admin grant lives solely in
+    // `UserRoleAssignment` was never selected — the report failed even though a
+    // legitimate recipient existed. The first fallback query is by effective
+    // assignment; the legacy column is only a last resort for an account that
+    // was never migrated.
     (prisma.unit.findFirst as any).mockResolvedValue({ id: 'unit-pusat' });
-    let call = 0;
     (prisma.user.findFirst as any).mockImplementation(async (args: any) => {
-      call += 1;
-      // First query is Pembina-only and comes back empty.
-      return args?.where?.role === 'SUPER_ADMIN' ? { id: 'superadmin-1', unitId: null } : null;
+      // Pembina query: empty. Assignment-based Super Admin query: hit.
+      if (args?.where?.userRoles?.some?.role?.code === 'SUPER_ADMIN') {
+        return { id: 'superadmin-assignment', unitId: null };
+      }
+      return null;
     });
     (prisma.filingClassification.findFirst as any).mockResolvedValue({ id: 'cls-1' });
     (prisma.letter.create as any).mockResolvedValue({ id: 'letter-1', status: 'DRAFT' });
@@ -198,14 +205,53 @@ describe('PengawasanService periodic oversight report', () => {
       { roleCode: 'YAYASAN_PENGAWAS', unitId: null }
     );
 
-    expect(call).toBe(2);
-    expect(prisma.user.findFirst).toHaveBeenLastCalledWith(
+    // The report is addressed to the assignment-only Super Admin.
+    expect(prisma.letter.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { isActive: true, deletedAt: null, role: 'SUPER_ADMIN' },
-        orderBy: { createdAt: 'asc' },
+        data: expect.objectContaining({
+          recipients: {
+            create: [{ userId: 'superadmin-assignment', unitId: 'unit-pusat', isCC: false }],
+          },
+        }),
       })
     );
+    // The assignment query ran before the legacy column was even considered.
+    const queriedAssignment = (prisma.user.findFirst as any).mock.calls.some(
+      ([args]: any[]) =>
+        args?.where?.userRoles?.some?.role?.code === 'SUPER_ADMIN' &&
+        args?.where?.isActive === true &&
+        args?.where?.deletedAt === null
+    );
+    expect(queriedAssignment).toBe(true);
     expect(result.status).toBe('DRAFT');
+  });
+
+  it('does not fall through to the legacy column for an inactive or expired Super Admin assignment', async () => {
+    // An assignment that is inactive/expired is a former officer. Only the
+    // effective-assignment query may return it; the legacy fallback is not
+    // reached because that query is what fails.
+    (prisma.unit.findFirst as any).mockResolvedValue({ id: 'unit-pusat' });
+    (prisma.user.findFirst as any).mockResolvedValue(null);
+
+    await expect(
+      pengawasanService.draftPeriodicReportToEOffice(
+        { title: 'Audit Q1', period: '2026-Q1', executiveSummary: 'Ringkasan eksekutif.' },
+        'pengawas-1',
+        { roleCode: 'YAYASAN_PENGAWAS', unitId: null }
+      )
+    ).rejects.toMatchObject({ statusCode: 400 });
+
+    // Pembina query, assignment Super Admin query, legacy Super Admin query —
+    // each of the two Super Admin queries carries the effective filter.
+    const superAdminQueries = (prisma.user.findFirst as any).mock.calls
+      .map(([args]: any[]) => args?.where)
+      .filter((w: any) => w?.userRoles?.some?.role?.code === 'SUPER_ADMIN');
+    expect(superAdminQueries.length).toBe(1);
+    expect(superAdminQueries[0].userRoles.some).toMatchObject({
+      isActive: true,
+      OR: [{ expiresAt: null }, { expiresAt: { gt: expect.any(Date) } }],
+    });
+    expect(prisma.letter.create).not.toHaveBeenCalled();
   });
 
   it('refuses to draft when neither an effective Pembina nor an active Super Admin exists', async () => {

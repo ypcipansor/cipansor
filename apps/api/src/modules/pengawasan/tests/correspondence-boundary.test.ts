@@ -24,7 +24,12 @@ import { join, relative } from 'node:path';
  * services." — and `apps/api/AGENTS.md:58-59` repeats it: "Cross-module side
  * effects: emit via `eventBus` (typed `AppEvents`), don't reach into other
  * modules' services." The narrowed reading is what the tree actually does, and
- * it is the reading the guard below assumes.
+ * it is the reading the guard below assumes. The exception is now stated in
+ * the architecture docs themselves, not only here, so it is a rule rather
+ * than a local comment — see
+ * `docs/planning/pengawasan-correspondence-boundary.md` (accepted decision,
+ * PR #508 review) and the synchronous-command paragraph in
+ * `docs/ARCHITECTURE.md`.
  *
  * Real precedents for the synchronous direction: `analytics/alerts.service.ts`
  * imports `notifications.service`, `users/user.service.ts` imports

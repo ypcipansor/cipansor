@@ -56,7 +56,13 @@ Mount new modules in `src/app.ts`.
   silently inert. Give it a default that degrades to *correct* rather than to
   localhost. Verify with `docker exec cipansor-api sh -c 'env | grep ^NAME='`.
 - Cross-module side effects: emit via `eventBus` (typed `AppEvents`), don't reach
-  into other modules' services.
+  into other modules' services. A **synchronous command that must return a
+  value** is not a side effect — the bus has no reply channel — and goes through
+  a _narrow, typed primitive_ the owning module exports (never its tables or its
+  broad CRUD surface). Documented case:
+  `pengawasan.service.ts` → `CorrespondenceService.createGeneratedDraftLetter`,
+  pinned by `pengawasan/tests/correspondence-boundary.test.ts`; see
+  `docs/planning/pengawasan-correspondence-boundary.md`.
 - **Contracts: `@cipansor/shared`.** A user-facing endpoint's request/response
   DTO is a shared Zod type reused by the web client — reuse it, or add it to
   shared when missing (never redeclare per-app). A new endpoint that serves the

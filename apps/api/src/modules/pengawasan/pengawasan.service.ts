@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma';
-import { Prisma } from '@prisma/client';
+import { Prisma, RoleCode } from '@prisma/client';
 import { Errors } from '@/middleware/error';
 import type { DraftPeriodicReportInput } from '@cipansor/shared';
 import { perencanaanService } from '../perencanaan/perencanaan.service';
@@ -675,6 +675,44 @@ export class PengawasanService {
     );
   }
 
+  /**
+   * The last-resort recipient: an active Super Admin.
+   *
+   * `UserRoleAssignment` is the source of truth for who holds a role (golden
+   * rule #3); the legacy `User.role` column is a fallback that is no longer kept
+   * in step. A `findFirst({ role: 'SUPER_ADMIN' })` therefore misses the very
+   * accounts this branch exists to catch — an active account whose only
+   * Super Admin grant is an assignment — and the report fails even though a
+   * legitimate recipient is available. Resolve by effective assignment first,
+   * exactly as the Pembina query does, and consult the legacy column only as an
+   * explicit last resort for an un-migrated account.
+   */
+  private async findSuperAdminRecipient(): Promise<{ id: string; unitId: string | null } | null> {
+    const now = new Date();
+    const byAssignment = await prisma.user.findFirst({
+      where: {
+        isActive: true,
+        deletedAt: null,
+        userRoles: {
+          some: {
+            isActive: true,
+            OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+            role: { code: RoleCode.SUPER_ADMIN },
+          },
+        },
+      },
+      select: { id: true, unitId: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (byAssignment) return byAssignment;
+
+    return prisma.user.findFirst({
+      where: { isActive: true, deletedAt: null, role: 'SUPER_ADMIN' },
+      select: { id: true, unitId: true },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
   async draftPeriodicReportToEOffice(
     data: DraftPeriodicReportInput,
     userId: string,
@@ -690,7 +728,9 @@ export class PengawasanService {
     //
     // "Effective" is the point: a Pembina whose assignment is inactive or
     // expired is a former officer, and the report should not be drafted for
-    // someone who no longer holds the office.
+    // someone who no longer holds the office. The Super Admin fallback resolves
+    // by effective assignment too (see `findSuperAdminRecipient`) — the legacy
+    // `User.role` column alone would miss an assignment-only Super Admin.
     const nowForRoles = new Date();
     const pembinaUser =
       (await prisma.user.findFirst({
@@ -707,12 +747,7 @@ export class PengawasanService {
         },
         select: { id: true, unitId: true },
         orderBy: { createdAt: 'asc' },
-      })) ??
-      (await prisma.user.findFirst({
-        where: { isActive: true, deletedAt: null, role: 'SUPER_ADMIN' },
-        select: { id: true, unitId: true },
-        orderBy: { createdAt: 'asc' },
-      }));
+      })) ?? (await this.findSuperAdminRecipient());
 
     const unitId = await this.resolveFoundationUnitId();
 

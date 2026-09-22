@@ -9,6 +9,8 @@ export interface SeededPlan {
   id: string;
   title: string;
   unitId: string;
+  /** The plan detail's objectives, as the list endpoint returns them. */
+  objectives?: Array<{ id: string; activities?: Array<{ id: string }> }>;
 }
 
 /**
@@ -18,8 +20,20 @@ export interface SeededPlan {
  * those now surface under every unit's list via the foundation-scope read
  * path. Walk the units and return the first plan whose unitId matches the unit
  * it was listed under, i.e. a genuinely unit-owned plan.
+ *
+ * The plan must also carry at least one objective. The list endpoint returns
+ * objectives, and the callers that act *on* a plan — the activity dialog in
+ * `perencanaan-finance.spec.ts` renders one "+ Tambah Kegiatan" button per
+ * objective — need one. A freshly-created RKA (every run of
+ * `perencanaan-pengesahan.spec.ts` creates two) is unit-owned but objective-less,
+ * and the list orders by `createdAt desc`, so without this filter the helper
+ * hands those specs a plan with nothing to act on and the flow times out. The
+ * seed's own plume-owned plans always have objectives, so filtering does not
+ * starve the callers.
  */
-export async function findStrategicPlan(session: AuthSession): Promise<SeededPlan> {
+export async function findStrategicPlan(
+  session: AuthSession,
+): Promise<SeededPlan> {
   const units = await apiRequest<{ data: Array<{ id: string; name: string }> }>(
     session,
     "GET",
@@ -31,10 +45,12 @@ export async function findStrategicPlan(session: AuthSession): Promise<SeededPla
       "GET",
       `/perencanaan?unitId=${unit.id}`,
     );
-    const unitOwned = plans.data?.find((p) => p.unitId === unit.id);
+    const unitOwned = plans.data?.find(
+      (p) => p.unitId === unit.id && (p.objectives?.length ?? 0) > 0,
+    );
     if (unitOwned) return unitOwned;
   }
   throw new Error(
-    "No unit-owned strategic plan found — is the database seeded?",
+    "No unit-owned strategic plan with an objective found — is the database seeded?",
   );
 }

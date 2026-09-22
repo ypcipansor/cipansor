@@ -49,6 +49,17 @@ Cross-cutting foundations (reuse, don't reinvent):
 - **Cross-module side effects** — emit typed events on `eventBus` (`AppEvents`);
   don't reach into other modules' services. `notification:send` drives the
   notifications module; socket.io (`lib/realtime.ts`) pushes live updates.
+  _Side effects_ are fire-and-forget work another module owns. A **synchronous
+  command that must return a value** cannot go through the bus — it has no reply
+  channel — so the call is made directly through a _narrow, typed primitive_
+  exported by the owning module, never by writing its tables or reaching for its
+  broad CRUD surface. The precedent is `users/user.service.ts` →
+  `auth.service.ts` and `analytics/alerts.service.ts` → `notifications.service.ts`.
+  The Pengawasan oversight report is the documented case: it files an E-Office
+  draft through `CorrespondenceService.createGeneratedDraftLetter` (which returns
+  the `letterId` the caller must return) and is forbidden by an architecture test
+  from touching the `Letter`/`LetterFlowEvent` tables; see
+  [`docs/planning/pengawasan-correspondence-boundary.md`](planning/pengawasan-correspondence-boundary.md).
 - **Scheduled work** — `src/jobs/` (node-cron): snapshots, summaries, cleanup,
   auto-billing.
 

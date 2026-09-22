@@ -66,20 +66,21 @@ const publicPrefixes = [
    */
   "/verifikasi",
   /**
-   * Where a printed student ID card's QR points. Kept in step with
-   * `PUBLIC_PATH_PREFIXES` in lib/host-split.ts (the two lists must describe
-   * the same set; a sync test enforces it). It is a `/public/*` page so the
-   * matcher below exempts it from middleware anyway, but listing it here makes
-   * the read-without-a-session intent explicit and keeps the two canonical
-   * lists in agreement (Flag 11).
+   * Every anonymous page served under the `/public/` URL segment.
+   *
+   * These were previously public only by accident: the matcher below excluded
+   * the `public` segment, so middleware never ran for them and they bypassed
+   * both the session wall and the host split. That broke the canonical host for
+   * `/public/wbs` (served on both hosts) and left the rest unclassified by
+   * `hostSplitActionFor`, which reads `PUBLIC_PATH_PREFIXES` in
+   * lib/host-split.ts — a page not on that list is answered 404 on the apex.
+   * The matcher now sends page URLs here, so the classification is explicit:
+   * `/public/spmb`, `/public/spmb/track`, `/public/verify-card`,
+   * `/public/verify-letter`, `/public/verify-sanad`, `/public/wbs` and
+   * `/public/wbs/track` are all read-without-a-session and all belong to the
+   * public host. Kept in step with `PUBLIC_PATH_PREFIXES` (sync test enforced).
    */
-  "/public/verify-card",
-  /**
-   * Whistleblowing System submission and tracking. Read-without-a-session is
-   * the whole point; kept in step with `PUBLIC_PATH_PREFIXES` in
-   * lib/host-split.ts, which decides the host.
-   */
-  "/public/wbs",
+  "/public",
 ];
 
 // Helper function to get auth state from cookie
@@ -241,8 +242,23 @@ export const config = {
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
-     * - public files (images, etc.)
+     * - any path with a file extension (static assets in `public/`, etc.)
+     *
+     * The page URL segment `/public/...` is deliberately NOT excluded. It used
+     * to be — the old matcher ended in `|public)` — which meant middleware never
+     * ran for `/public/wbs`, and `hostSplitActionFor` could not redirect it from
+     * the portal to the canonical public host. The whistleblowing page answered
+     * on both hosts: the portal served an anonymous page the split says belongs
+     * to the apex, and the login wall the split exists to enforce was bypassed
+     * on that one prefix.
+     *
+     * "public" the URL segment and `public/` the static-asset directory are
+     * different things that happen to share a name. The `.*\\..*` clause already
+     * excludes every real static file (they all carry an extension), so nothing
+     * under the static directory is matched; only the extensionless page route
+     * `/public/wbs` (and its subroutes) now reaches middleware, where the host
+     * split and the session wall (as a public route) both apply.
      */
-    "/((?!api|_next/static|_next/image|favicon.ico|.*\\..*|public).*)",
+    "/((?!api|_next/static|_next/image|favicon.ico|.*\\..*).*)",
   ],
 };

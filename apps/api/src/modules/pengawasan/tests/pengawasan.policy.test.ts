@@ -5,7 +5,7 @@ import {
   isFoundationWide,
   assertUnitAccess,
   resolveArrearsUnitId,
-} from './pengawasan.policy';
+} from '../pengawasan.policy';
 
 /**
  * The unit policy lives outside the controller now (review item 10), so it can

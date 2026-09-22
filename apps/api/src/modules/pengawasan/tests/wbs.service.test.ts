@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { wbsService, CLOSED_WBS_STATUSES } from './wbs.service';
+import { wbsService, CLOSED_WBS_STATUSES } from '../wbs.service';
 import { prisma } from '@/lib/prisma';
 import { WbsCategory, WbsTargetLevel, WbsStatus, Prisma } from '@prisma/client';
 import { CLOSED_WBS_STATUSES as CLOSED_WBS_STATUSES_SHARED } from '@cipansor/shared';

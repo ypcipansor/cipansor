@@ -521,9 +521,11 @@ against PR #508 (Pengawas/WBS/suspension) and left as a decision, not a repair.
   string, and stored server-side only as an HMAC-SHA-256 digest
   (`apps/api/src/utils/wbs-token.ts`). No new token was moved into
   `localStorage`.
-- **Disposition.** Track as a dedicated security PR that must land before or
-  with the governance feature, unless the repository owner explicitly accepts
-  the risk in writing. It is **not** marked resolved here. The concrete plan,
+- **Disposition.** Tracked as issue #523 (`https://github.com/ypcipansor/cipansor/issues/523`),
+  a dedicated security PR that must land before or with the governance feature,
+  unless the repository owner explicitly accepts the risk in writing. It is
+  **not** marked resolved here, and PR #508 is **not** merge-ready on this
+  finding until #523 lands or the owner accepts the risk. The concrete plan,
   threat model, deployment analysis and required tests live in
   `docs/planning/httpOnly-auth-cookies.md`.
 
