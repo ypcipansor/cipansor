@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authenticate } from '../../middleware/auth';
 import { handleSingleUpload } from '../../middleware/upload';
+import { uploadLimiter } from '../../middleware/rate-limit';
 import { validate, validateQuery } from '../../middleware/error';
 import { uploadController } from './upload.controller';
 import { getSasUrlSchema, uploadQuerySchema } from './upload.schema';
@@ -15,7 +16,10 @@ router.use(authenticate);
 // the schema (an unknown purpose can only collapse to private, never select a
 // container). The resolver reads it out of `res.locals` — `req.query` is
 // read-only in Express 5.
+// The write endpoint is the only rate-limited one. `uploadLimiter` skips
+// development/test internally; production caps multipart uploads per minute.
 router.post('/',
+  uploadLimiter,
   validateQuery(uploadQuerySchema),
   handleSingleUpload(
     'file',

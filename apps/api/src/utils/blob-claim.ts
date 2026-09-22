@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { normalizeUploadPath } from '@/utils/file-token';
+import { azureBlobIdentityKey, parseAzureBlobIdentity } from '@/utils/blob-identity';
 
 /**
  * The durable claim that closes the upload → create-record race (BUG 4), now
@@ -87,10 +88,15 @@ function newOperationToken(): string {
  * absolute `https://host/uploads/<file>` form, and the two are the same file.
  * Writers and the discard path must therefore claim the SAME row or the mutual
  * exclusion silently does nothing. Local paths collapse to `/uploads/<file>`;
- * Azure URLs are already canonical and pass through unchanged.
+ * Azure blobs collapse to `azure://<account>/<container>/<blob>` so a raw URL
+ * and its SAS form — which name the same object — claim the same row.
  */
 export function canonicalBlobClaimKey(url: string): string {
-  return normalizeUploadPath(url) ?? url;
+  const local = normalizeUploadPath(url);
+  if (local) return local;
+  const azure = parseAzureBlobIdentity(url);
+  if (azure) return azureBlobIdentityKey(azure);
+  return url;
 }
 
 /**

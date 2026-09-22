@@ -95,8 +95,30 @@ export async function readLocalUploadOwner(resolvedUploadPath: string): Promise<
   }
 }
 
-/** Remove a local file and its owner sidecar. Idempotent. */
+/**
+ * Remove a local file and its owner sidecar.
+ *
+ * Idempotent ONLY for `ENOENT` ("already absent"), which is a successful delete
+ * of something already gone. Every other failure — EACCES/EPERM (permission),
+ * EBUSY, EIO (transient I/O), EROFS — is RE-THROWN.
+ *
+ * Swallowing those was a real bug: the reconciliation job reads a resolved
+ * `removeLocalUpload` as success, stamps the claim `DONE`, and the orphan is
+ * never retried — so a permission error or a transient I/O blip left the file
+ * on disk forever with the job reporting a clean sweep. A thrown error makes
+ * the job reschedule the row with backoff instead.
+ */
 export async function removeLocalUpload(resolvedUploadPath: string): Promise<void> {
-  await fs.promises.unlink(resolvedUploadPath).catch(() => undefined);
-  await fs.promises.unlink(metaPathFor(resolvedUploadPath)).catch(() => undefined);
+  await unlinkUnlessAbsent(resolvedUploadPath);
+  await unlinkUnlessAbsent(metaPathFor(resolvedUploadPath));
+}
+
+/** `unlink` where "already absent" is success and every other error propagates. */
+async function unlinkUnlessAbsent(target: string): Promise<void> {
+  try {
+    await fs.promises.unlink(target);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') return;
+    throw error;
+  }
 }

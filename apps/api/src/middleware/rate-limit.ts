@@ -89,11 +89,24 @@ export const passwordResetLimiter: RateLimitRequestHandler = rateLimit({
 });
 
 /**
- * Rate limiter for file uploads
+ * Rate limiter for file uploads — the multipart write endpoint only.
+ *
+ * This limiter existed but was mounted on nothing (flag: "upload limiter
+ * appears unused"), while a write endpoint consumed bandwidth and billed Azure
+ * storage with no ceiling of its own. It is now applied to `POST /upload`
+ * (see `modules/upload/upload.routes.ts`) and NOWHERE ELSE on purpose:
+ * `/upload/sas` is a read (mint a short-lived link) and `/upload/discard` is a
+ * cleanup, and a gallery that legitimately renders hundreds of images must not
+ * hit a *write* cap on either.
+ *
+ * Development and test are exempt for the same reason as `defaultLimiter`: a
+ * dashboard full of uploads is normal there and a 429 on a legitimate write is
+ * a false failure. The exemption lives inside `skip`, so the mount stays
+ * visible to a reader and to static analysis. Production always limits.
  */
 export const uploadLimiter: RateLimitRequestHandler = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  max: 10, // 10 uploads per minute
+  windowMs: config.rateLimit.upload.windowMs,
+  max: config.rateLimit.upload.maxRequests,
   standardHeaders: true,
   legacyHeaders: false,
   message: {
@@ -103,6 +116,15 @@ export const uploadLimiter: RateLimitRequestHandler = rateLimit({
       message: 'Too many file uploads, please try again later.',
     },
   },
+  handler: (req, res, _next, options) => {
+    logger.warn('Upload rate limit exceeded', {
+      ip: req.ip,
+      path: req.path,
+      method: req.method,
+    });
+    res.status(options.statusCode).json(options.message);
+  },
+  skip: () => config.env === 'test' || config.env === 'development',
 });
 
 /**

@@ -3,7 +3,11 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import { AxiosError } from "axios";
 import { User, authApi, rolesApi, LoginRequest } from "@/lib/api";
 import { SSOLoginRequest, LoginResponse } from "@cipansor/shared";
-import { clearBearerTokenCookie, clearSessionCookies } from "@/lib/session-cookie";
+import {
+  clearBearerTokenCookie,
+  clearLegacyAuthStorageCookie,
+  clearSessionCookies,
+} from "@/lib/session-cookie";
 
 interface AuthState {
   user: User | null;
@@ -24,34 +28,45 @@ interface AuthState {
   resetAuth: () => void;
 }
 
-// Custom storage that syncs the PERSISTED PROFILE with cookies for middleware.
-// It deliberately never writes the session bearer token to a cookie (finding F):
-// the `auth-storage` payload carries only `{ user, isAuthenticated }` (see
-// `partialize`), and middleware uses it purely for routing. See
-// `lib/session-cookie.ts` for the rationale and the residual localStorage risk.
+// Storage for the persisted PROFILE. localStorage only.
+//
+// It used to ALSO mirror the payload into a `auth-storage` cookie so the Next
+// Proxy could route on it — which made that cookie the page guard's source of
+// truth. The cookie was client-writable, so any visitor could forge
+// `isAuthenticated`/role and open restricted pages (SECURITY CRITICAL).
+// Middleware now trusts only a server-signed, HttpOnly session cookie minted by
+// `POST /api/session` (see `lib/session.ts`); the profile blob stays in
+// localStorage for the app's own rendering and is never an authorization input.
 const customStorage = {
   getItem: (name: string) => {
     if (typeof window === "undefined") return null;
-    const item = localStorage.getItem(name);
-    // Also sync to cookie for middleware
-    if (item) {
-      document.cookie = `${name}=${encodeURIComponent(item)}; path=/; max-age=86400; samesite=lax`;
-    }
-    return item;
+    return localStorage.getItem(name);
   },
   setItem: (name: string, value: string) => {
     if (typeof window === "undefined") return;
     localStorage.setItem(name, value);
-    // Also sync to cookie for middleware
-    document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=86400; samesite=lax`;
   },
   removeItem: (name: string) => {
     if (typeof window === "undefined") return;
     localStorage.removeItem(name);
-    // Also remove from cookie
-    document.cookie = `${name}=; path=/; max-age=0`;
   },
 };
+
+/**
+ * Ask the server to mint (or, on logout, clear) the signed routing session.
+ * Fire-and-forget and best-effort: the store already holds the session, and a
+ * failed sync only means the Proxy guard will not recognise it — the API still
+ * authenticates every real call.
+ */
+function syncRoutingSession(clear = false) {
+  if (typeof window === "undefined") return;
+  const token = clear ? null : localStorage.getItem("accessToken");
+  if (!clear && !token) return;
+  fetch("/api/session", {
+    method: clear ? "DELETE" : "POST",
+    headers: token ? { authorization: `Bearer ${token}` } : undefined,
+  }).catch(() => undefined);
+}
 
 /**
  * In-flight `/auth/me` request, shared by every caller.
@@ -112,6 +127,7 @@ export const useAuthStore = create<AuthState>()(
             requiresTwoFactorSetup: false,
             tempToken: null,
           });
+          syncRoutingSession();
         } catch (error: unknown) {
           const message =
             error instanceof Error ? error.message : "SSO Login failed";
@@ -171,6 +187,7 @@ export const useAuthStore = create<AuthState>()(
             requiresTwoFactorSetup: false,
             tempToken: null,
           });
+          syncRoutingSession();
         } catch (error: unknown) {
           const message =
             error instanceof Error ? error.message : "Login failed";
@@ -216,6 +233,7 @@ export const useAuthStore = create<AuthState>()(
             requiresTwoFactor: false,
             tempToken: null,
           });
+          syncRoutingSession();
         } catch (error: unknown) {
           const message =
             error instanceof Error ? error.message : "2FA Verification failed";
@@ -243,6 +261,7 @@ export const useAuthStore = create<AuthState>()(
           localStorage.removeItem("refreshToken");
           // Also remove from cookies
           clearSessionCookies();
+          syncRoutingSession(true);
           set({
             user: null,
             isAuthenticated: false,
@@ -332,6 +351,7 @@ export const useAuthStore = create<AuthState>()(
         localStorage.removeItem("accessToken");
         localStorage.removeItem("refreshToken");
         clearSessionCookies();
+        syncRoutingSession(true);
         set({
           user: null,
           isAuthenticated: false,
@@ -360,6 +380,10 @@ export const useAuthStore = create<AuthState>()(
           // credential even after the write site is gone. Clear it at bootstrap,
           // not only at logout.
           clearBearerTokenCookie();
+          // Remove a legacy `auth-storage` cookie an earlier build wrote. It is
+          // no longer trusted by middleware, but leaving it lets an out-of-date
+          // build keep reading a forgeable value.
+          clearLegacyAuthStorageCookie();
           const token = localStorage.getItem("accessToken");
           if (token) {
             // Delay fetchUser to next tick to ensure store is ready

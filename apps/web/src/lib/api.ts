@@ -169,7 +169,8 @@ function refreshAccessToken(): Promise<string> {
     localStorage.setItem("accessToken", accessToken);
     localStorage.setItem("refreshToken", newRefreshToken);
     // The rotated bearer token must NOT be mirrored into a JS-readable cookie
-    // (finding F); middleware routes off `auth-storage`, never the raw token.
+    // (finding F); middleware routes off the server-signed `cipansor-session`
+    // cookie, never the raw token or a client-writable profile blob.
     return accessToken as string;
   })().finally(() => {
     refreshInFlight = null;

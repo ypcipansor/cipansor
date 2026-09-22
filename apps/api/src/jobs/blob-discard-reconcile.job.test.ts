@@ -308,6 +308,35 @@ describe('reconcileDiscardedBlobs (BUG 7 / flag 11)', () => {
     );
   });
 
+  it('does NOT mark a local row DONE when the local delete fails; reschedules instead', async () => {
+    // A permission/IO failure on the local unlink must propagate out of
+    // `removeLocalUpload` (finding: swallowed unlink) and make the job retry,
+    // never stamp DONE while the file is still on disk.
+    (resolveLocalUploadPath as any).mockResolvedValue('/tmp/uploads-test/a.png');
+    (removeLocalUpload as any).mockRejectedValue(
+      Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' })
+    );
+    findManyMock.mockResolvedValue([
+      { id: 'c1', blobUrl: '/uploads/123e4567-e89b-42d3-a456-426614174000.png', reconcileAttempts: 0 },
+    ]);
+
+    const summary = await reconcileDiscardedBlobs();
+
+    expect(summary).toMatchObject({ deleted: 0, failed: 1 });
+    // The row is RESCHEDULED (backoff stamped), never terminal. `PENDING` is the
+    // schema default, so `scheduleRetry` does not set it explicitly — the proof
+    // that it is not DONE is that no UPDATE set DONE and a next attempt is due.
+    expect(updateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'c1' },
+        data: expect.objectContaining({ nextReconcileAt: expect.any(Date) }),
+      })
+    );
+    expect(updateMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ reconcileStatus: BlobReconcileStatus.DONE }) })
+    );
+  });
+
   it('writes exactly one audit row per run, even when nothing was found', async () => {
     findManyMock.mockResolvedValue([]);
 

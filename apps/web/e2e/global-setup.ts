@@ -109,7 +109,7 @@ async function globalSetup() {
         sessions[user.email] = session;
         fs.writeFileSync(
           path.join(authDir, `${file}.json`),
-          JSON.stringify(buildStorageState(session), null, 2),
+          JSON.stringify(await buildStorageState(session), null, 2),
         );
         console.log(`✅ Saved storageState for ${role}${session === reusable ? " (reused)" : ""}`);
       } catch (error) {

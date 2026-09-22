@@ -249,6 +249,14 @@ services:
       # value present only in .env never reaches the container. Adding a
       # variable means editing both files.
       API_INTERNAL_URL: ${API_INTERNAL_URL:-http://api:3001}
+      # Server-side only: signs the HttpOnly `cipansor-session` routing cookie
+      # that the Next Proxy verifies (lib/session.ts). Falls back to JWT_SECRET
+      # when empty, so leaving it blank keeps working; set it to rotate the
+      # routing identity independently of API tokens.
+      SESSION_SECRET: ${SESSION_SECRET:-}
+      # Required for the signed routing cookie when SESSION_SECRET is empty.
+      # Must match the API's JWT_SECRET.
+      JWT_SECRET: ${JWT_SECRET}
     volumes:
       # next/image resizes on first request and caches the result here. Without
       # a volume that cache dies with every redeploy, so the next visitor — very

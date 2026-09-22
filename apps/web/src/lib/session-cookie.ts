@@ -47,9 +47,24 @@ export function clearBearerTokenCookie(): void {
   document.cookie = `${FORBIDDEN_TOKEN_COOKIE}=; path=/; max-age=0; samesite=lax`;
 }
 
+/**
+ * Remove a legacy `auth-storage` cookie.
+ *
+ * Earlier builds mirrored the persisted profile (including `isAuthenticated` and
+ * role) into this cookie for the Next Proxy to read. That made a client-writable
+ * cookie the page guard's source of truth; the Proxy now trusts only the
+ * server-signed `cipansor-session` cookie (see `lib/session.ts`). This is still
+ * removed so a returning visitor's browser does not carry a forgeable profile
+ * blob that any stale build could use.
+ */
+export function clearLegacyAuthStorageCookie(): void {
+  if (typeof document === "undefined") return;
+  document.cookie = `${AUTH_STORAGE_COOKIE}=; path=/; max-age=0; samesite=lax`;
+}
+
 /** Remove every session cookie this app owns, for logout/rejection paths. */
 export function clearSessionCookies(): void {
   if (typeof document === "undefined") return;
   clearBearerTokenCookie();
-  document.cookie = `${AUTH_STORAGE_COOKIE}=; path=/; max-age=0; samesite=lax`;
+  clearLegacyAuthStorageCookie();
 }

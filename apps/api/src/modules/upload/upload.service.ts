@@ -181,7 +181,9 @@ export async function resolveSasForBlob(url: string, actor: BlobActor): Promise<
     throw Errors.forbidden('Akses ke kontainer penyimpanan tersebut ditolak');
   }
 
-  const owner = await findBlobOwner(parsed.containerName, url);
+  // Probe every equivalent spelling: a record may have stored the raw URL while
+  // this request carries its SAS form (or vice versa), and both name one blob.
+  const owner = await findBlobOwnerByRefs(parsed.containerName, blobReferenceCandidates(url));
   if (!owner) {
     // A private blob with no record in this application backing it cannot be
     // authorized to any caller.

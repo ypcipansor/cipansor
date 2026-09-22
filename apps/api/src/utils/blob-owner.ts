@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { activeUserRoleWhere } from '@/utils/active-role';
+import { azureBlobReferenceCandidates } from '@/utils/blob-identity';
 
 export type UnitId = string | null | undefined;
 
@@ -81,13 +82,58 @@ export type BlobOwner =
  */
 export type BlobRef = string | readonly string[];
 
-/** `where` fragment matching `column` against one reference or any of several. */
+/**
+ * `where` fragment matching `column` against one reference or any of several.
+ *
+ * A stored local upload URL may name a host the app no longer runs on, so an
+ * exact-string match silently misses the row and the file 403s. When `blobUrl`
+ * is a local `/uploads/<file>` path the candidate ALSO matches every stored
+ * origin that ends in that path. The suffix is anchored at `/uploads/` and the
+ * match is restricted to `http(s)://…` strings, so it can never widen to a
+ * foreign path that merely contains the filename, and a path-traversal stored
+ * value (which normalizes outside `/uploads/`) is not suffix-matched.
+ */
 function refWhere(column: string, ref: BlobRef): Record<string, unknown> {
+  const candidates = Array.isArray(ref) ? ref : [ref];
+  const localSuffix = localOriginSuffix(candidates);
+  if (localSuffix) {
+    const origins = candidates
+      .filter((c) => c.startsWith('http://') || c.startsWith('https://'))
+      .map((c) => ({ [column]: { endsWith: localSuffix } }));
+    return { OR: [...origins, { [column]: localSuffix }] };
+  }
   return Array.isArray(ref) ? { [column]: { in: ref } } : { [column]: ref };
+}
+
+/**
+ * The anchored local suffix to match, or null when this is not a local
+ * `/uploads/<file>` reference. `blobReferenceCandidates` folds an absolute
+ * local URL down to its pathname (only when that pathname starts with
+ * `/uploads/`), so any candidate starting with `/uploads/` is a real local
+ * upload path.
+ */
+function localOriginSuffix(candidates: readonly string[]): string | null {
+  for (const candidate of candidates) {
+    if (candidate.startsWith('/uploads/')) return candidate;
+  }
+  return null;
 }
 
 /** `where` fragment for a `String[]` column containing one reference or any of several. */
 function refHas(column: string, ref: BlobRef): Record<string, unknown> {
+  const candidates = Array.isArray(ref) ? ref : [ref];
+  const localSuffix = localOriginSuffix(candidates);
+  if (localSuffix) {
+    return {
+      OR: [
+        { [column]: { has: localSuffix } },
+        ...[...candidates]
+          .filter((c) => c.startsWith('http://') || c.startsWith('https://'))
+          .map((c) => ({ [column]: { has: c } })),
+        { [column]: { hasSome: [localSuffix] } },
+      ],
+    };
+  }
   return Array.isArray(ref) ? { [column]: { hasSome: ref } } : { [column]: { has: ref } };
 }
 
@@ -662,183 +708,183 @@ export async function findBlobOwnerByRefs(
  */
 const BLOB_REFERENCE_COUNTERS: ReadonlyArray<{
   label: string;
-  where: (url: string) => Record<string, unknown>;
+  where: (ref: BlobRef) => Record<string, unknown>;
   count: (args: { where: Record<string, unknown> }) => Promise<number>;
 }> = [
-  { label: 'letter', where: (u) => ({ fileUrl: u }), count: (a) => prisma.letter.count(a) },
+  { label: 'letter', where: (u) => refWhere('fileUrl', u), count: (a) => prisma.letter.count(a) },
   {
     label: 'letterAttachment',
-    where: (u) => ({ fileUrl: u }),
+    where: (u) => refWhere('fileUrl', u),
     count: (a) => prisma.letterAttachment.count(a),
   },
   {
     label: 'employeeDocument',
-    where: (u) => ({ fileUrl: u }),
+    where: (u) => refWhere('fileUrl', u),
     count: (a) => prisma.employeeDocument.count(a),
   },
   {
     label: 'studentDocument',
-    where: (u) => ({ fileUrl: u }),
+    where: (u) => refWhere('fileUrl', u),
     count: (a) => prisma.studentDocument.count(a),
   },
   {
     label: 'portfolioFile',
-    where: (u) => ({ fileUrl: u }),
+    where: (u) => refWhere('fileUrl', u),
     count: (a) => prisma.portfolioFile.count(a),
   },
   {
     label: 'dailyReportPhoto',
-    where: (u) => ({ photoUrl: u }),
+    where: (u) => refWhere('photoUrl', u),
     count: (a) => prisma.dailyReportPhoto.count(a),
   },
   {
     label: 'paudReportPhoto',
-    where: (u) => ({ photoUrl: u }),
+    where: (u) => refWhere('photoUrl', u),
     count: (a) => prisma.pAUDReportPhoto.count(a),
   },
   {
     label: 'paudAssessmentEvidence',
-    where: (u) => ({ fileUrl: u }),
+    where: (u) => refWhere('fileUrl', u),
     count: (a) => prisma.pAUDAssessmentEvidence.count(a),
   },
   {
     label: 'registrantDocument',
-    where: (u) => ({ fileUrl: u }),
+    where: (u) => refWhere('fileUrl', u),
     count: (a) => prisma.registrantDocument.count(a),
   },
   {
     label: 'courseCertificate',
-    where: (u) => ({ fileUrl: u }),
+    where: (u) => refWhere('fileUrl', u),
     count: (a) => prisma.courseCertificate.count(a),
   },
   {
     label: 'qualityEvidence',
-    where: (u) => ({ fileUrl: u }),
+    where: (u) => refWhere('fileUrl', u),
     count: (a) => prisma.qualityEvidence.count(a),
   },
   {
     label: 'studentPackage',
-    where: (u) => ({ photoUrl: u }),
+    where: (u) => refWhere('photoUrl', u),
     count: (a) => prisma.studentPackage.count(a),
   },
   {
     label: 'extracurricularAchievement',
-    where: (u) => ({ OR: [{ certificateUrl: u }, { photoUrl: u }] }),
+    where: (u) => ({ OR: [refWhere('certificateUrl', u), refWhere('photoUrl', u)] }),
     count: (a) => prisma.extracurricularAchievement.count(a),
   },
   {
     label: 'book',
-    where: (u) => ({ OR: [{ coverUrl: u }, { fileUrl: u }] }),
+    where: (u) => ({ OR: [refWhere('coverUrl', u), refWhere('fileUrl', u)] }),
     count: (a) => prisma.book.count(a),
   },
-  { label: 'asset', where: (u) => ({ photoUrl: u }), count: (a) => prisma.asset.count(a) },
-  { label: 'payment', where: (u) => ({ proofUrl: u }), count: (a) => prisma.payment.count(a) },
+  { label: 'asset', where: (u) => refWhere('photoUrl', u), count: (a) => prisma.asset.count(a) },
+  { label: 'payment', where: (u) => refWhere('proofUrl', u), count: (a) => prisma.payment.count(a) },
   {
     label: 'donation',
-    where: (u) => ({ paymentProof: u }),
+    where: (u) => refWhere('paymentProof', u),
     count: (a) => prisma.donation.count(a),
   },
   {
     label: 'tahfidzRecord',
-    where: (u) => ({ audioUrl: u }),
+    where: (u) => refWhere('audioUrl', u),
     count: (a) => prisma.tahfidzRecord.count(a),
   },
   {
     label: 'muhadatsah',
-    where: (u) => ({ recordingUrl: u }),
+    where: (u) => refWhere('recordingUrl', u),
     count: (a) => prisma.muhadatsah.count(a),
   },
   {
     label: 'announcement',
-    where: (u) => ({ attachmentUrl: u }),
+    where: (u) => refWhere('attachmentUrl', u),
     count: (a) => prisma.announcement.count(a),
   },
   {
     label: 'letterRevocationRequest',
-    where: (u) => ({ attachmentUrl: u }),
+    where: (u) => refWhere('attachmentUrl', u),
     count: (a) => prisma.letterRevocationRequest.count(a),
   },
-  { label: 'student', where: (u) => ({ photoUrl: u }), count: (a) => prisma.student.count(a) },
+  { label: 'student', where: (u) => refWhere('photoUrl', u), count: (a) => prisma.student.count(a) },
   {
     label: 'boardMember',
-    where: (u) => ({ photoUrl: u }),
+    where: (u) => refWhere('photoUrl', u),
     count: (a) => prisma.boardMember.count(a),
   },
   {
     label: 'foundationDocument',
-    where: (u) => ({ fileUrl: u }),
+    where: (u) => refWhere('fileUrl', u),
     count: (a) => prisma.foundationDocument.count(a),
   },
   {
     label: 'employmentContract',
-    where: (u) => ({ documentUrl: u }),
+    where: (u) => refWhere('documentUrl', u),
     count: (a) => prisma.employmentContract.count(a),
   },
-  { label: 'alumni', where: (u) => ({ photo: u }), count: (a) => prisma.alumni.count(a) },
+  { label: 'alumni', where: (u) => refWhere('photo', u), count: (a) => prisma.alumni.count(a) },
   {
     label: 'course',
-    where: (u) => ({ imageUrl: u }),
+    where: (u) => refWhere('imageUrl', u),
     count: (a) => prisma.course.count(a),
   },
   {
     label: 'extracurricular',
-    where: (u) => ({ imageUrl: u }),
+    where: (u) => refWhere('imageUrl', u),
     count: (a) => prisma.extracurricular.count(a),
   },
   {
     label: 'canteenItem',
-    where: (u) => ({ imageUrl: u }),
+    where: (u) => refWhere('imageUrl', u),
     count: (a) => prisma.canteenItem.count(a),
   },
   {
     label: 'muhadhoroh',
-    where: (u) => ({ videoUrl: u }),
+    where: (u) => refWhere('videoUrl', u),
     count: (a) => prisma.muhadhoroh.count(a),
   },
   {
     label: 'assetMaintenance',
-    where: (u) => ({ invoiceUrl: u }),
+    where: (u) => refWhere('invoiceUrl', u),
     count: (a) => prisma.assetMaintenance.count(a),
   },
   {
     label: 'letterDispatch',
-    where: (u) => ({ receiptUrl: u }),
+    where: (u) => refWhere('receiptUrl', u),
     count: (a) => prisma.letterDispatch.count(a),
   },
   {
     label: 'calendarEvent',
-    where: (u) => ({ onlineUrl: u }),
+    where: (u) => refWhere('onlineUrl', u),
     count: (a) => prisma.calendarEvent.count(a),
   },
   {
     label: 'donationCampaign',
-    where: (u) => ({ imageUrl: u }),
+    where: (u) => refWhere('imageUrl', u),
     count: (a) => prisma.donationCampaign.count(a),
   },
   {
     label: 'kitabKuning',
-    where: (u) => ({ coverUrl: u }),
+    where: (u) => refWhere('coverUrl', u),
     count: (a) => prisma.kitabKuning.count(a),
   },
-  { label: 'unit', where: (u) => ({ logoUrl: u }), count: (a) => prisma.unit.count(a) },
+  { label: 'unit', where: (u) => refWhere('logoUrl', u), count: (a) => prisma.unit.count(a) },
   {
     label: 'foundation',
-    where: (u) => ({ logoUrl: u }),
+    where: (u) => refWhere('logoUrl', u),
     count: (a) => prisma.foundation.count(a),
   },
   {
     label: 'digitalCertificate',
-    where: (u) => ({ OR: [{ pdfUrl: u }, { signatureUrl: u }, { thumbnailUrl: u }] }),
+    where: (u) => ({ OR: [refWhere('pdfUrl', u), refWhere('signatureUrl', u), refWhere('thumbnailUrl', u)] }),
     count: (a) => prisma.digitalCertificate.count(a),
   },
   {
     label: 'digitalCertificateVerification',
-    where: (u) => ({ verificationUrl: u }),
+    where: (u) => refWhere('verificationUrl', u),
     count: (a) => prisma.digitalCertificate.count(a),
   },
   {
     label: 'studentNote',
-    where: (u) => ({ attachments: { has: u } }),
+    where: (u) => refHas('attachments', u),
     count: (a) => prisma.studentNote.count(a),
   },
 ];
@@ -854,8 +900,16 @@ const BLOB_REFERENCE_COUNTERS: ReadonlyArray<{
  * be reclaimed.
  */
 export async function isBlobStillReferenced(blobUrl: string): Promise<boolean> {
+  // The probe must match EVERY equivalent spelling of the same physical blob,
+  // not just the string it was handed. For Azure the raw URL and its SAS form
+  // name one object; for the local provider the path is the identity and the
+  // origin is incidental. `counter.where` already accepts a set (scalar `=` for
+  // one candidate, `in`/`hasSome` for several), so widening here closes the
+  // hole where a record holding the other spelling looked like no record at all.
+  const refs = blobReferenceCandidates(blobUrl);
+  const ref: BlobRef = refs.length === 1 ? refs[0] : refs;
   for (const counter of BLOB_REFERENCE_COUNTERS) {
-    const count = await counter.count({ where: counter.where(blobUrl) });
+    const count = await counter.count({ where: counter.where(ref) });
     if (count > 0) return true;
   }
   return false;
@@ -872,10 +926,10 @@ export async function isBlobStillReferenced(blobUrl: string): Promise<boolean> {
  * unowned (403) or an orphan (destroy a live document) depending on which
  * spelling happened to be stored.
  *
- * Azure URLs are canonical — the account + container + blob path IS the
- * identity, and there is only one spelling of it — so they return unchanged.
- * The widening is limited to the local provider, where the path is the identity
- * and the origin is incidental.
+ * Azure blobs have TWO common spellings of one object — the raw URL and the
+ * SAS URL — so they widen to the candidate set from `blob-identity.ts`
+ * (account + container + decoded path, query/fragment dropped). A non-blob URL
+ * (an external link, a malformed string) returns itself unchanged.
  */
 export function blobReferenceCandidates(url: string): string[] {
   let pathname: string;
@@ -884,8 +938,14 @@ export function blobReferenceCandidates(url: string): string[] {
   } catch {
     return [url];
   }
-  if (!pathname.startsWith('/uploads/')) return [url];
-  // The blob path is the identity; every origin (relative, absolute, or a URL
-  // that carried a SAS/query) refers to the same file.
-  return Array.from(new Set([url, pathname]));
+  if (pathname.startsWith('/uploads/')) {
+    // The local blob path is the identity; every origin (relative, absolute, or
+    // a URL that carried a query) refers to the same file.
+    return Array.from(new Set([url, pathname]));
+  }
+  // Azure: the identity is account + container + decoded path, so a raw URL and
+  // its SAS form are the same object. Anything that is not a blob URL (an
+  // external link, a malformed string) returns itself unchanged.
+  return Array.from(new Set(azureBlobReferenceCandidates(url)));
 }
+

@@ -24,6 +24,10 @@ import path from 'path';
  */
 const APP_SOURCE = fs.readFileSync(path.join(__dirname, 'app.ts'), 'utf8');
 const LIMITER_SOURCE = fs.readFileSync(path.join(__dirname, 'middleware', 'rate-limit.ts'), 'utf8');
+const UPLOAD_ROUTES_SOURCE = fs.readFileSync(
+  path.join(__dirname, 'modules', 'upload', 'upload.routes.ts'),
+  'utf8'
+);
 
 /** The `app.use('/uploads', ...)` statement, up to its closing `);`. */
 function uploadsMount(): string {
@@ -65,5 +69,31 @@ describe('/uploads read limiter follows the global environment policy', () => {
   it('still authorizes every upload read (the limiter is not the only guard)', () => {
     // Removing the limiter in dev/test must not remove the authorization gate.
     expect(uploadsMount()).toContain('uploadsAuth');
+  });
+});
+
+describe('upload write limiter is mounted on exactly the write route', () => {
+  it('applies uploadLimiter to POST / and to no other upload route', () => {
+    // The limiter existed but was mounted on NOTHING, so a write endpoint had no
+    // ceiling. It must guard the multipart POST `/`...
+    const writeStart = UPLOAD_ROUTES_SOURCE.indexOf("router.post('/'");
+    expect(writeStart).toBeGreaterThan(-1);
+    const writeBlock = UPLOAD_ROUTES_SOURCE.slice(writeStart, UPLOAD_ROUTES_SOURCE.indexOf(');', writeStart));
+    expect(writeBlock).toContain('uploadLimiter');
+
+    // ...and must NOT throttle the read (SAS mint) or cleanup (discard), which a
+    // gallery rendering many images would otherwise exhaust.
+    for (const path of ["'/sas'", "'/discard'"]) {
+      const start = UPLOAD_ROUTES_SOURCE.indexOf(`router.post(${path}`);
+      expect(start, `router.post(${path}) not found`).toBeGreaterThan(-1);
+      const block = UPLOAD_ROUTES_SOURCE.slice(start, UPLOAD_ROUTES_SOURCE.indexOf(');', start));
+      expect(block).not.toContain('uploadLimiter');
+    }
+  });
+
+  it('keeps the dev/test exemption inside the upload limiter, not the mount', () => {
+    const uploadBlock = LIMITER_SOURCE.slice(LIMITER_SOURCE.indexOf('export const uploadLimiter'));
+    expect(uploadBlock).toContain('skip:');
+    expect(uploadBlock).toMatch(/config\.env === 'test'/);
   });
 });

@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -125,5 +125,56 @@ describe('local upload ownership sidecar', () => {
     expect(fs.existsSync(meta)).toBe(false);
     // Second call is a no-op, not a throw.
     await expect(removeLocalUpload(resolved!)).resolves.toBeUndefined();
+  });
+});
+
+describe('removeLocalUpload failure semantics', () => {
+  /**
+   * Reconciliation reads a resolved `removeLocalUpload` as a completed delete
+   * and stamps the claim DONE. Swallowing a permission/IO error therefore made
+   * the orphan permanent: the file stayed on disk and no run ever retried it.
+   * Only ENOENT may be treated as success.
+   */
+  it('succeeds when the file is already absent (ENOENT is idempotent)', async () => {
+    const name = generatedName();
+    await materializeFile(name);
+    const resolved = await resolveLocalUploadPath(name);
+    // Delete it once, then delete again: the second unlink is ENOENT, which
+    // must be a resolved success (idempotent already-absent), not a throw.
+    await removeLocalUpload(resolved!);
+    await expect(removeLocalUpload(resolved!)).resolves.toBeUndefined();
+  });
+
+  it('propagates a permission error so reconciliation reschedules', async () => {
+    const name = generatedName();
+    await materializeFile(name);
+    const resolved = await resolveLocalUploadPath(name);
+
+    const errno = Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+    const spy = vi.spyOn(fs.promises, 'unlink').mockRejectedValue(errno);
+    await expect(removeLocalUpload(resolved!)).rejects.toThrow(/EACCES/);
+    spy.mockRestore();
+  });
+
+  it('propagates a transient I/O error so reconciliation reschedules', async () => {
+    const name = generatedName();
+    await materializeFile(name);
+    const resolved = await resolveLocalUploadPath(name);
+
+    const errno = Object.assign(new Error('EIO: i/o error'), { code: 'EIO' });
+    const spy = vi.spyOn(fs.promises, 'unlink').mockRejectedValue(errno);
+    await expect(removeLocalUpload(resolved!)).rejects.toThrow(/EIO/);
+    spy.mockRestore();
+  });
+
+  it('treats ENOENT as success even when it comes from unlink directly', async () => {
+    const name = generatedName();
+    await materializeFile(name);
+    const resolved = await resolveLocalUploadPath(name);
+
+    const errno = Object.assign(new Error('ENOENT: no such file'), { code: 'ENOENT' });
+    const spy = vi.spyOn(fs.promises, 'unlink').mockRejectedValue(errno);
+    await expect(removeLocalUpload(resolved!)).resolves.toBeUndefined();
+    spy.mockRestore();
   });
 });

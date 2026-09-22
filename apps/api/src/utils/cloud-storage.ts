@@ -458,7 +458,7 @@ export async function cleanupBlobBestEffort(fileUrl: string | null | undefined):
  */
 const CLEANUP_CLAIM_HOLDER = 'system:cleanup';
 
-/** Every stored spelling of `url` a record could hold (local provider only). */
+/** Every stored spelling of `url` a record could hold (local or Azure). */
 function referenceCandidates(url: string): string[] {
   return Array.from(new Set([...blobReferenceCandidates(url)]));
 }

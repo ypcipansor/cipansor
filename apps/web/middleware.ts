@@ -7,12 +7,13 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import {
   canAccessRoute,
+  deriveLegacyRole,
   getDashboardForRole,
-  getPrimaryRoleCode,
-  getEffectiveRole,
+  isLegacyRole,
   type LegacyRole,
 } from "@/lib/rbac";
 import { hostSplitActionFor, isPortalHost } from "@/lib/host-split";
+import { SESSION_COOKIE, resolveSessionSecret, verifySession } from "@/lib/session";
 
 // Public routes that don't require authentication.
 // "/unauthorized" is the access-denied page ProtectedRoute redirects to; it
@@ -76,51 +77,46 @@ const publicPrefixes = [
   "/public/verify-card",
 ];
 
-// Helper function to get auth state from cookie
-function getAuthState(request: NextRequest): {
+/**
+ * Resolve the routing identity from the server-signed session cookie.
+ *
+ * SECURITY: this is the ONLY source of truth for the guard. It used to read
+ * `auth-storage` — a client-writable cookie — so any visitor could forge
+ * `isAuthenticated`/role and open role-restricted pages. `auth-storage` is now
+ * explicitly NOT consulted: the signed cookie cannot be produced by the browser
+ * without the server secret, and a tampered value verifies as null.
+ *
+ * The Authorization header is also no longer trusted. This proxy runs as a
+ * browser navigation guard; a browser does not attach an `Authorization` header
+ * to a top-level document request, so falling back to one only ever accepted a
+ * value an attacker could set with curl. The legitimate API shape for a
+ * non-browser client is unaffected — it authenticates directly against the API,
+ * never through this page guard.
+ */
+async function getAuthState(request: NextRequest): Promise<{
   isAuthenticated: boolean;
   role?: LegacyRole;
   roleCode?: string;
-} {
-  // Check for auth storage in cookies (set by zustand persist)
-  const authStorage = request.cookies.get("auth-storage")?.value;
+}> {
+  const token = request.cookies.get(SESSION_COOKIE)?.value;
+  const session = await verifySession(token, resolveSessionSecret());
+  if (!session) return { isAuthenticated: false };
 
-  if (authStorage) {
-    try {
-      const parsed = JSON.parse(authStorage);
-      if (parsed.state?.isAuthenticated === true && parsed.state?.user) {
-        // The primary assignment's RoleCode decides, as on the API; the legacy
-        // `user.role` column is only the fallback (see getEffectiveRole).
-        const role = getEffectiveRole(parsed.state.user);
-        if (role) {
-          return {
-            isAuthenticated: true,
-            role,
-            roleCode: getPrimaryRoleCode(parsed.state.user),
-          };
-        }
-      }
-    } catch {
-      // Parse error - not authenticated
-    }
-  }
+  // Fail closed on a signed cookie that carries no role: the RBAC block below
+  // only runs when `role` is truthy, so an authenticated-but-roleless state
+  // would otherwise skip route authorization entirely. A session always names
+  // a role in this app, so "no role" means "do not treat as signed in".
+  const role: LegacyRole | undefined = isLegacyRole(session.role)
+    ? session.role
+    : session.roleCode
+      ? deriveLegacyRole(session.roleCode)
+      : undefined;
+  if (!role) return { isAuthenticated: false };
 
-  // Fallback: a bearer token supplied as an Authorization header.
-  //
-  // There is deliberately NO `accessToken` cookie fallback (finding F): the web
-  // app no longer mirrors the session bearer into a JS-readable cookie, so a
-  // cookie of that name can only be a stale artefact and must not be trusted
-  // for a routing decision.
-  const token = request.headers.get("authorization")?.replace("Bearer ", "");
-
-  if (token) {
-    return { isAuthenticated: true };
-  }
-
-  return { isAuthenticated: false };
+  return { isAuthenticated: true, role, roleCode: session.roleCode };
 }
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Host split, before anything else.
@@ -164,7 +160,7 @@ export function middleware(request: NextRequest) {
     );
 
   // Get authentication state
-  const { isAuthenticated, role, roleCode } = getAuthState(request);
+  const { isAuthenticated, role, roleCode } = await getAuthState(request);
 
   // Redirect unauthenticated users to login
   if (!isPublicRoute && !isAuthenticated) {

@@ -337,6 +337,21 @@ describe('homeroom note attachments (flag 9 audit)', () => {
   });
 });
 
+
+/** Capture the `where` a count mock received for one call. */
+async function captureWhere(
+  model: { count: unknown },
+  fn: () => Promise<unknown>
+): Promise<any> {
+  const count = model.count as {
+    mockClear?: () => void;
+    mock: { calls: unknown[][] };
+  };
+  count.mockClear?.();
+  await fn();
+  return (count.mock.calls[0][0] as any).where;
+}
+
 describe('isBlobStillReferenced', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -365,6 +380,82 @@ describe('isBlobStillReferenced', () => {
         where: expect.any(Object),
       });
     }
+  });
+
+  it('matches the other equivalent spelling of an Azure blob (raw vs SAS)', async () => {
+    // Severe finding: a raw Azure URL and its SAS form name ONE blob. A record
+    // that stored the raw URL must be counted when the SAS form is probed, or
+    // cleanup deletes a live blob.
+    const sas = 'https://store.blob.core.windows.net/cipansor-documents/ktp.pdf?sig=abc&se=2026';
+    const raw = 'https://store.blob.core.windows.net/cipansor-documents/ktp.pdf';
+    (prisma as any).studentDocument.count.mockResolvedValue(1);
+
+    await expect(isBlobStillReferenced(sas)).resolves.toBe(true);
+
+    const where = (prisma as any).studentDocument.count.mock.calls[0][0].where;
+    expect(where.fileUrl).toEqual({ in: expect.arrayContaining([sas, raw]) });
+  });
+
+  it('matches a local upload stored under a host the app no longer runs on', async () => {
+    // The stored URL names an old origin; the request names the current one.
+    // Both are the same file on disk, so the reference must be found.
+    (prisma as any).letter.count.mockResolvedValue(1);
+    const where = await captureWhere((prisma as any).letter, () =>
+      isBlobStillReferenced('http://newhost:3001/uploads/abc.pdf')
+    );
+    // The suffix match is anchored at /uploads/ so it cannot widen to a foreign
+    // path, and it never matches a path outside /uploads/.
+    expect(JSON.stringify(where)).toContain('endsWith');
+    expect(JSON.stringify(where)).toContain('/uploads/abc.pdf');
+  });
+
+  it('matches a stored URL whose host/port/protocol all differ (origin is incidental)', async () => {
+    // A row written before a host move holds `http://oldhost:3000/uploads/x`
+    // while the request names the current origin. The suffix match on the
+    // canonical `/uploads/<file>` path is what bridges them.
+    (prisma as any).studentDocument.count.mockResolvedValue(1);
+    const where = await captureWhere((prisma as any).studentDocument, () =>
+      isBlobStillReferenced('https://portal.cipansor.or.id/uploads/xyz.png')
+    );
+    expect(JSON.stringify(where)).toContain('/uploads/xyz.png');
+    expect(JSON.stringify(where)).toContain('endsWith');
+  });
+
+  it('keeps a relative /uploads reference an exact scalar match (indexed fast path)', async () => {
+    (prisma as any).letter.count.mockResolvedValue(0);
+    const where = await captureWhere((prisma as any).letter, () =>
+      isBlobStillReferenced('/uploads/rel.png')
+    );
+    // A relative path is still widened to the origin form, but the exact path
+    // remains in the OR so the indexed equality can be used.
+    expect(JSON.stringify(where)).toContain('/uploads/rel.png');
+  });
+
+  it('does NOT widen a malformed URL (returns it unchanged, exact)', async () => {
+    (prisma as any).letter.count.mockResolvedValue(0);
+    const where = await captureWhere((prisma as any).letter, () =>
+      isBlobStillReferenced('http://[not-a-url')
+    );
+    expect(JSON.stringify(where)).not.toContain('endsWith');
+  });
+
+  it('does NOT widen a traversal string (normalizes outside /uploads/)', async () => {
+    (prisma as any).letter.count.mockResolvedValue(0);
+    const where = await captureWhere((prisma as any).letter, () =>
+      isBlobStillReferenced('../../etc/passwd')
+    );
+    expect(JSON.stringify(where)).not.toContain('endsWith');
+    expect(JSON.stringify(where)).not.toContain('/uploads/');
+  });
+
+  it('does NOT suffix-match a non-upload path (traversal cannot widen the probe)', async () => {
+    (prisma as any).letter.count.mockResolvedValue(0);
+    const where = await captureWhere((prisma as any).letter, () =>
+      isBlobStillReferenced('/etc/passwd')
+    );
+    // A bare non-upload string is matched exactly, never by suffix.
+    expect(JSON.stringify(where)).not.toContain('endsWith');
+    expect(where.fileUrl).toBe('/etc/passwd');
   });
 
   it('keeps the delete guard in sync with every findBlobOwner probe (drift guard)', () => {

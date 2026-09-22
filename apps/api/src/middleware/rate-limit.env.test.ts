@@ -10,13 +10,13 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
  * `config.env` is captured at module load, so each case resets the module
  * registry and stubs `process.env.NODE_ENV` before importing the limiter.
  */
-async function loadLimiter(env: string) {
+async function loadLimiter(env: string, name: 'defaultLimiter' | 'uploadLimiter' = 'defaultLimiter') {
   vi.resetModules();
   const saved = process.env.NODE_ENV;
   process.env.NODE_ENV = env;
   try {
     const mod = await import('@/middleware/rate-limit');
-    return mod.defaultLimiter;
+    return mod[name];
   } finally {
     process.env.NODE_ENV = saved;
   }
@@ -116,5 +116,27 @@ describe('defaultLimiter environment policy (behavioral)', () => {
   it('never limits /health, even in production', async () => {
     const limiter = await loadLimiter('production');
     expect(await run(limiter, 500, '/health')).toBe(0);
+  });
+});
+
+describe('uploadLimiter environment policy (behavioral)', () => {
+  afterEach(() => {
+    vi.resetModules();
+  });
+
+  it('blocks past the configured max in production', async () => {
+    // The write endpoint had no ceiling at all (the limiter was mounted on
+    // nothing). Config default is 10/min, so 20 uploads must leave some blocked.
+    const limiter = await loadLimiter('production', 'uploadLimiter');
+    const blocked = await run(limiter, 20, '/');
+    expect(blocked).toBeGreaterThan(0);
+    expect(blocked).toBeLessThanOrEqual(10);
+  });
+
+  it('never blocks in development or test', async () => {
+    const dev = await loadLimiter('development', 'uploadLimiter');
+    expect(await run(dev, 50, '/')).toBe(0);
+    const test = await loadLimiter('test', 'uploadLimiter');
+    expect(await run(test, 50, '/')).toBe(0);
   });
 });

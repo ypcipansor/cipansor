@@ -23,12 +23,37 @@
  */
 import { createPrismaClient } from '../client';
 
-const dryRun = process.argv.includes('--dry-run');
+export interface NormalizeEmailsResult {
+  /** Colliding `lower(trim(email))` addresses, with the accounts that share them. */
+  collisions: Array<{ normalized: string; count: number }>;
+  /** Rows whose email still differed from its normalized form. */
+  normalized: Array<{ email: string; next: string }>;
+  /** True when the run wrote (false for a dry run or a collision abort). */
+  wrote: boolean;
+}
 
-async function main() {
-  const prisma = createPrismaClient();
+/**
+ * The small Prisma surface the core uses. Deliberately loose (`any`) so both a
+ * real `PrismaClient` and the `pg`-backed test adapter satisfy it; the core is
+ * exercised by its result shape, not by re-deriving Prisma's generic types.
+ */
+export interface NormalizeEmailsClient {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  $queryRaw: <T = any>(query: any, ...values: any[]) => Promise<T>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  $transaction: (ops: any) => Promise<any>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  user: { update: (args: any) => any };
+}
 
-  try {
+export async function normalizeEmails(
+  prisma: NormalizeEmailsClient,
+  options: { dryRun?: boolean } = {}
+): Promise<NormalizeEmailsResult> {
+  const dryRun = options.dryRun ?? false;
+  const result: NormalizeEmailsResult = { collisions: [], normalized: [], wrote: false };
+
+  {
     // Penjaga 1: dua akun dengan e-mail yang sama setelah dinormalkan.
     //
     // Kunci tabrakan harus `lower(trim(email))`, sama persis dengan kunci
@@ -45,6 +70,7 @@ async function main() {
       HAVING count(*) > 1
     `;
 
+    result.collisions = collisions.map((c) => ({ normalized: c.normalized, count: Number(c.count) }));
     if (collisions.length > 0) {
       console.error(`Ditemukan ${collisions.length} alamat yang dimiliki lebih dari satu akun.`);
       for (const row of collisions) {
@@ -68,8 +94,7 @@ async function main() {
       console.error(
         'Skrip berhenti tanpa mengubah apa pun. Gabungkan/ubah akun-akun itu secara manual lebih dulu.'
       );
-      process.exitCode = 1;
-      return;
+      return result;
     }
 
     const dirty = await prisma.$queryRaw<Array<{ id: string; email: string }>>`
@@ -79,9 +104,11 @@ async function main() {
       ORDER BY email
     `;
 
+    result.normalized = dirty.map((row) => ({ email: row.email, next: row.email.trim().toLowerCase() }));
+
     if (dirty.length === 0) {
       console.log('Tidak ada e-mail yang perlu dinormalkan.');
-      return;
+      return result;
     }
 
     console.log(`${dirty.length} e-mail akan dinormalkan:`);
@@ -91,7 +118,7 @@ async function main() {
 
     if (dryRun) {
       console.log('Mode --dry-run: tidak ada perubahan yang ditulis.');
-      return;
+      return result;
     }
 
     // Penjaga 2: satu transaksi, sehingga kegagalan di tengah jalan tidak
@@ -105,13 +132,28 @@ async function main() {
       )
     );
 
+    result.wrote = true;
     console.log(`Selesai. ${dirty.length} baris diperbarui.`);
+  }
+
+  return result;
+}
+
+async function main() {
+  const prisma = createPrismaClient();
+  try {
+    const result = await normalizeEmails(prisma, { dryRun: process.argv.includes('--dry-run') });
+    if (result.collisions.length > 0) process.exitCode = 1;
   } finally {
     await prisma.$disconnect();
   }
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+// Only run when executed directly, so importing the module (tests) has no side
+// effects.
+if (process.argv[1] && process.argv[1].endsWith('normalize-emails.ts')) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}
