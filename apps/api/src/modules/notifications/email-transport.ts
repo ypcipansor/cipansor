@@ -210,6 +210,102 @@ function endsWith(out: string[], pattern: string): boolean {
   return true;
 }
 
+/** True for the ASCII letters HTML tag and attribute names are built from. */
+function isAsciiLetter(code: number): boolean {
+  return (code >= 0x41 && code <= 0x5a) || (code >= 0x61 && code <= 0x7a);
+}
+
+/** True for HTML whitespace (space, tab, LF, FF, CR). */
+function isHtmlWhitespace(code: number): boolean {
+  return code === 0x20 || code === 0x09 || code === 0x0a || code === 0x0c || code === 0x0d;
+}
+
+/**
+ * Mark, per source position, whether it sits inside a quoted attribute value of
+ * a tag (`Uint8Array`, `1` for yes).
+ *
+ * `stripHiddenElements` recognises its patterns from the current output tail, so
+ * a `<!--` that is merely the text of a quoted attribute (`<a title="<!--">`)
+ * looks exactly like a real comment opener there. This mask tells them apart: a
+ * `<` inside a quoted value starts no markup, so the tail scan ignores any
+ * candidate opener whose `<` is masked.
+ *
+ * One left-to-right pass. A tag starts at `<` followed by a name character
+ * (optionally after `/`) and runs to the first `>` outside a `'…'`/`"…"` value;
+ * everything from an opening quote to its match is marked. A quote opens a
+ * value only directly after `=` (whitespace allowed around it), so a stray quote
+ * in a tag name or between attributes cannot mask later markup. A quote that is
+ * never closed runs to end-of-input. Comments carry no attributes, so they are
+ * skipped whole to their `-->` (or EOF) — a quote in a comment body is not a
+ * value and must not mask later markup — while doctypes and processing
+ * instructions (`<!…`/`<?…`) run to the next `>`. Each character is visited a
+ * constant number of times, so the mask is O(n).
+ */
+function quotedAttributeMask(text: string): Uint8Array {
+  const quoted = new Uint8Array(text.length);
+  let i = 0;
+
+  while (i < text.length) {
+    if (text.charCodeAt(i) !== 0x3c /* < */) {
+      i++;
+      continue;
+    }
+
+    const next = text.charCodeAt(i + 1);
+    if (next === 0x21 /* ! */ || next === 0x3f /* ? */) {
+      // A comment runs to its `-->` (or EOF), not the first `>`; a quote in the
+      // body after a `>` must not be read as a value and mask later markup.
+      let skip: number;
+      if (text.startsWith('<!--', i)) {
+        const end = text.indexOf('-->', i + 4);
+        skip = end === -1 ? text.length : end + 3;
+      } else {
+        const gt = text.indexOf('>', i + 2);
+        skip = gt === -1 ? text.length : gt + 1;
+      }
+      i = skip;
+      continue;
+    }
+
+    const afterSlash = text.charCodeAt(i + 2);
+    if (!isAsciiLetter(next) && !(next === 0x2f /* / */ && isAsciiLetter(afterSlash))) {
+      i++;
+      continue;
+    }
+
+    let j = i + 1;
+    let quote = 0;
+    let quoteStart = -1;
+    let canOpenQuote = false;
+    for (; j < text.length; j++) {
+      const code = text.charCodeAt(j);
+      if (quote !== 0) {
+        if (code === quote) {
+          for (let k = quoteStart; k <= j; k++) quoted[k] = 1;
+          quote = 0;
+          canOpenQuote = false;
+        }
+        continue;
+      }
+      if (code === 0x3e /* > */) break;
+      if (code === 0x22 /* " */ || code === 0x27 /* ' */) {
+        if (canOpenQuote) {
+          quote = code;
+          quoteStart = j;
+        }
+        continue;
+      }
+      if (!isHtmlWhitespace(code)) canOpenQuote = code === 0x3d /* = */;
+    }
+    if (quote !== 0) {
+      for (let k = quoteStart; k < text.length; k++) quoted[k] = 1;
+    }
+    i = j + 1;
+  }
+
+  return quoted;
+}
+
 /**
  * Remove `<style>`/`<head>` elements (contents included) and HTML comments to
  * the JOINT fixed point of all three, in one linear interleaved scan.
@@ -247,11 +343,23 @@ function endsWith(out: string[], pattern: string): boolean {
  * tail-based, deletion is global) are normalised by that strip, which cannot
  * re-create `<` or `>`.
  *
+ * A tail match alone does not make an opener real: `<!--` (and `<style`/`<head`)
+ * can appear *as text* inside a quoted attribute value — `<a title="<!--">` —
+ * where it opens nothing, and a `>` inside such a value ends no tag. The
+ * scanner therefore consults `quotedAttributeMask` and refuses an opener whose
+ * `<` is masked, and refuses a `>` that is masked as a close. Treating the
+ * masked `<!--` as a real comment made the unclosed-comment rule below truncate
+ * the whole output at the attribute, deleting the visible `link</a>…` that
+ * followed (code scanning alert 27 regression). A masked `<` is copied through
+ * untouched; the mask is computed from the raw input up front so a fusion later
+ * in the scan can never move a boundary.
+ *
  * A comment opener that is still pending when the input ends has no `-->`, so
  * per HTML's comment parsing rule it runs to end-of-input: everything from
- * `<!--` onward is dropped. Leaving it to the generic tag strip instead would
- * bound it at the first `>` and leak the rest of the body, which is the
- * incomplete-sanitization class this scan exists to close.
+ * `<!--` onward is dropped. This applies only to a `<!--` that the mask does
+ * NOT consider attribute text; leaving an unmasked one to the generic tag
+ * strip instead would bound it at the first `>` and leak the rest of the body,
+ * which is the incomplete-sanitization class this scan exists to close.
  */
 function stripHiddenElements(text: string): string {
   const patterns = [
@@ -259,32 +367,43 @@ function stripHiddenElements(text: string): string {
     { open: '<style', close: '</style>' },
     { open: '<head', close: '</head>' },
   ].map((p) => ({ open: p.open.toLowerCase(), close: p.close.toLowerCase() }));
+  const quoted = quotedAttributeMask(text);
+  const isLiveOpen = (start: number) => !quoted[start];
   const out: string[] = [];
+  const outPos: number[] = [];
   const openStart: number[] = patterns.map(() => -1);
 
   for (let i = 0; i < text.length; i++) {
     out.push(text[i]);
+    outPos.push(i);
 
     for (let p = 0; p < patterns.length; p++) {
       if (openStart[p] === -1 && endsWith(out, patterns[p].open)) {
-        openStart[p] = out.length - patterns[p].open.length;
+        const start = out.length - patterns[p].open.length;
+        if (isLiveOpen(outPos[start])) openStart[p] = start;
       }
     }
 
     for (let p = 0; p < patterns.length; p++) {
-      if (openStart[p] !== -1 && endsWith(out, patterns[p].close)) {
-        const start = openStart[p];
-        out.length = start;
-        for (let q = 0; q < patterns.length; q++) {
-          if (openStart[q] >= start) openStart[q] = -1;
-        }
-        break;
+      if (openStart[p] === -1 || !endsWith(out, patterns[p].close)) continue;
+      // A `>` inside a quoted attribute value ends no tag; a masked close must
+      // not be allowed to terminate a real element.
+      if (quoted[outPos[out.length - 1]]) continue;
+      const start = openStart[p];
+      out.length = start;
+      outPos.length = start;
+      for (let q = 0; q < patterns.length; q++) {
+        if (openStart[q] >= start) openStart[q] = -1;
       }
+      break;
     }
   }
 
   // patterns[0] is the comment; an unclosed one swallows the rest of the input.
-  if (openStart[0] !== -1) out.length = openStart[0];
+  if (openStart[0] !== -1) {
+    out.length = openStart[0];
+    outPos.length = openStart[0];
+  }
 
   return out.join('');
 }
@@ -303,19 +422,40 @@ function stripHiddenElements(text: string): string {
  * Comments are NOT handled here — a `<!-- … > … -->` body would break the
  * "next `>`" rule — so `stripHiddenElements` removes every comment first; this
  * pass cannot re-create a comment either, since it only deletes.
+ *
+ * A `>` inside a quoted attribute value (`<a title="a > b">`) ends no tag, so a
+ * quote opens inside an unmatched run and only its matching quote lets a later
+ * `>` close the run; this mirrors the mask `stripHiddenElements` uses and keeps
+ * the two passes consistent on the same input.
  */
 function stripTags(text: string): string {
   const out: string[] = [];
   let openStart = -1;
+  let quote = '';
+  let canOpenQuote = false;
 
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
     out.push(ch);
-    if (ch === '<') {
-      if (openStart === -1) openStart = out.length - 1;
-    } else if (ch === '>' && openStart !== -1) {
+    if (openStart === -1) {
+      if (ch === '<') openStart = out.length - 1;
+      continue;
+    }
+    if (quote !== '') {
+      if (ch === quote) {
+        quote = '';
+        canOpenQuote = false;
+      }
+      continue;
+    }
+    if (ch === '>') {
       out.length = openStart;
       openStart = -1;
+      canOpenQuote = false;
+    } else if (ch === '"' || ch === "'") {
+      if (canOpenQuote) quote = ch;
+    } else if (ch !== ' ' && ch !== '\t' && ch !== '\n' && ch !== '\f' && ch !== '\r') {
+      canOpenQuote = ch === '=';
     }
   }
 

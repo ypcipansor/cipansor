@@ -461,6 +461,79 @@ describe('htmlToText', () => {
       expect(htmlToText('before<!-- note > hidden')).not.toContain('hidden');
     });
 
+    it('does not treat a <!-- inside a quoted attribute as a comment opener', () => {
+      // Regression for code scanning alert 27: the tail scan saw `<!--` as text
+      // inside an attribute value, treated it as a real comment, and the
+      // unclosed-comment-to-EOF rule then swallowed the whole visible remainder.
+      const html = '<a title="<!--">link</a><p>Visible afterward</p>';
+      const text = htmlToText(html);
+
+      expect(text).toContain('link');
+      expect(text).toContain('Visible afterward');
+    });
+
+    it('does not treat a <!-- inside a single-quoted attribute as a comment opener', () => {
+      const html = "<a title='<!--'>link</a><p>Visible afterward</p>";
+      const text = htmlToText(html);
+
+      expect(text).toContain('link');
+      expect(text).toContain('Visible afterward');
+    });
+
+    it('strips a real comment that follows an attribute carrying <!--', () => {
+      // Only the genuine comment is markup; the attribute text stays literal
+      // and the words around it survive.
+      const html = '<a title="<!--">link</a><!-- real > comment --><p>Visible</p>';
+      const text = htmlToText(html);
+
+      expect(text).toContain('link');
+      expect(text).toContain('Visible');
+      expect(text).not.toContain('real');
+      expect(text).not.toContain('comment');
+    });
+
+    it('does not let a > inside a quoted attribute end the tag early', () => {
+      // If the `>` in the attribute value were treated as a close, the tag
+      // would end at `a > b` and the trailing quote/`>` would leak as text.
+      const text = htmlToText('<a title="a > b">link</a>');
+
+      expect(text).toBe('link');
+      expect(text).not.toContain('title');
+    });
+
+    it('keeps an unterminated real comment dropping to end of input', () => {
+      // The intentional rule still applies to a comment that is NOT attribute
+      // text. An attribute-quoted `<!--` is handled by the case above.
+      expect(htmlToText('before<!-- note > hidden')).toBe('before');
+      expect(htmlToText('<a title="x">link</a><!-- note > hidden')).toBe('link');
+    });
+
+    it('keeps the original fragment-fusion cases working', () => {
+      // A quoted attribute must not disable the joint-scan fusion handling:
+      // delete-and-refuse only changes which `<!--` counts as an opener.
+      expect(htmlToText('<<!---->script>alert(1)')).not.toMatch(/<\/?script/i);
+      expect(htmlToText('<sty<!--c-->le>SECRET</style>')).toBe('');
+      expect(htmlToText('<sty<head>h</head>le>css</style>')).toBe('');
+    });
+
+    it('does not let a quote in a comment body mask later markup', () => {
+      // The mask skips comments whole, so a `"` after a `>` inside the body is
+      // not mistaken for an attribute value that would hide the tag below.
+      const text = htmlToText('before<!-- a" > b --><a title="x">link</a>');
+
+      expect(text).toContain('link');
+      expect(text).not.toContain('b"');
+      expect(text).not.toContain('title');
+    });
+
+    it('stays linear with quoted attributes scattered through the input', () => {
+      const input = '<a title="<!--">'.repeat(100_000);
+      const start = Date.now();
+      const out = htmlToText(input);
+      expect(Date.now() - start).toBeLessThan(1000);
+      expect(typeof out).toBe('string');
+    });
+
     it('terminates on pathological tag input without a matching close', () => {
       const input = '<a'.repeat(20000);
       const start = Date.now();
