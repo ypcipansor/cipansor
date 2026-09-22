@@ -82,26 +82,18 @@ FROM ranked
 WHERE rn > 1;
 
 -- 1. Dependency rows that would collide with the (suspension_id, assignment_id)
---    unique after repointing: fold their provenance into the row already
---    pointing at the survivor, so `created` / `restore` are not lost.
-UPDATE "board_suspension_plh_assignments" surv
-SET
-  "created" = surv."created" OR agg.created,
-  "restore" = COALESCE(surv."restore", agg.restore)
-FROM (
-  SELECT
-    loser."suspension_id" AS suspension_id,
-    m.survivor_id AS survivor_id,
-    bool_or(loser."created") AS created,
-    (array_agg(loser."restore") FILTER (WHERE loser."restore" IS NOT NULL))[1] AS restore
-  FROM "board_suspension_plh_assignments" loser
-  JOIN _plh_dedup_map m ON m.loser_id = loser."assignment_id"
-  GROUP BY loser."suspension_id", m.survivor_id
-) agg
-WHERE surv."suspension_id" = agg.suspension_id
-  AND surv."assignment_id" = agg.survivor_id;
-
--- 2. Drop those now-redundant dependency rows (their provenance was merged).
+--    unique after repointing are redundant: the suspension already records a
+--    dependency on the survivor. Delete them.
+--
+--    Their provenance is deliberately NOT merged into the survivor's row.
+--    `created`/`restore` describe the assignment the dependency points at, and
+--    the loser is a *different* assignment from the survivor. The survivor's
+--    own provenance is already recorded on the rows that pointed at it. OR-ing
+--    the loser's `created` into the survivor marked a legitimate, pre-existing
+--    survivor as suspension-owned, so the last lift deleted an assignment no
+--    suspension had ever created. The loser's `restore` is worse still: it is
+--    the prior state of the *loser*, and writing it onto the survivor restores
+--    state the survivor never had.
 DELETE FROM "board_suspension_plh_assignments" loser
 USING _plh_dedup_map m
 WHERE loser."assignment_id" = m.loser_id
@@ -112,18 +104,30 @@ WHERE loser."assignment_id" = m.loser_id
       AND surv."assignment_id" = m.survivor_id
   );
 
--- 3. Repoint every remaining reference to the survivor.
+-- 2. Repoint every remaining reference to the survivor.
+--
+--    A moved dependency now depends on the SURVIVOR, so it must take the
+--    survivor's provenance — which is whatever the rows already pointing at
+--    the survivor say — and never the loser's. Provenance is therefore reset:
+--    `created` false, because any suspension that genuinely minted the
+--    survivor already has a dependency row carrying `true`; and `restore`
+--    cleared, because the loser's prior state does not describe the survivor.
+--    This is the correction for the review finding: the migration used to
+--    carry `created` across, so a suspension that had created only the loser
+--    appeared to own a legitimate survivor and deleted it on the final lift.
 UPDATE "board_suspension_plh_assignments" dep
-SET "assignment_id" = m.survivor_id
+SET "assignment_id" = m.survivor_id,
+    "created" = false,
+    "restore" = NULL
 FROM _plh_dedup_map m
 WHERE dep."assignment_id" = m.loser_id;
 
--- 4. Only now are the duplicate assignments safe to delete.
+-- 3. Only now are the duplicate assignments safe to delete.
 DELETE FROM "user_role_assignments" ura
 USING _plh_dedup_map m
 WHERE ura.id = m.loser_id;
 
--- 5. The mapping is session-scoped and no longer needed.
+-- 4. The mapping is session-scoped and no longer needed.
 DROP TABLE _plh_dedup_map;
 
 CREATE UNIQUE INDEX "user_role_assignments_user_id_role_id_unitless_key"

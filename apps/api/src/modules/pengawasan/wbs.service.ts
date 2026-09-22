@@ -511,7 +511,7 @@ export class WbsService {
     tx: Prisma.TransactionClient,
     id: string,
     actor: { id?: string; roleCode?: string; unitId?: string | null }
-  ): Promise<void> {
+  ): Promise<{ status: WbsStatus }> {
     const locked = await tx.$queryRaw<Array<{ id: string }>>`
       SELECT id FROM "wbs_reports" WHERE id = ${id} FOR UPDATE
     `;
@@ -521,11 +521,14 @@ export class WbsService {
 
     const inScope = await tx.wbsReport.findFirst({
       where: { id, ...this.buildScopeWhere(actor) },
-      select: { id: true },
+      select: { id: true, status: true },
     });
     if (!inScope) {
       throw Errors.forbidden('Laporan WBS ini berada di luar wewenang peran/unit Anda');
     }
+    // Returned from the *locked* read, so a caller that must branch on the
+    // terminal state sees the value that will hold at commit.
+    return { status: inScope.status };
   }
 
   /**
@@ -838,8 +841,24 @@ export class WbsService {
     // re-resolves the same scope before writing — otherwise a role switch plus
     // a concurrent forward would let a comment land on a case the actor no
     // longer holds.
+    //
+    // A terminal case is immutable for BOTH sides of the thread. A public reply
+    // is refused once `SELESAI` / `TIDAK_DAPAT_DITINDAKLANJUTI`, and a handler
+    // comment is refused too: it is stored as `WbsSenderType.HANDLER`, which
+    // `getPublicTracking` renders on the reporter's page (anonymised, but
+    // visible). Letting a handler append after closure would therefore reopen
+    // the public thread the reporter can no longer answer, and make a closed
+    // case look active again — exactly what the public-comment rule exists to
+    // prevent. The status is read under the same `FOR UPDATE` lock, so a
+    // handler cannot close the case between the check and the insert.
     return prisma.$transaction(async (tx) => {
-      await this.assertReportInScopeTx(tx, id, actor);
+      const report = await this.assertReportInScopeTx(tx, id, actor);
+
+      if (CLOSED_WBS_STATUSES.includes(report.status)) {
+        throw Errors.conflict(
+          'Laporan WBS ini sudah ditutup; catatan pemeriksa tidak dapat ditambahkan.'
+        );
+      }
 
       return tx.wbsComment.create({
         data: {

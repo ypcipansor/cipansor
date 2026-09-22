@@ -25,7 +25,12 @@ import {
   storeIdentityDocument,
 } from '@/utils/identity-document-store';
 import crypto from 'crypto';
-import { SIGNING_KEY_SUSPENSION_LOCK } from '@/utils/esign-suspension-lock';
+import {
+  SIGNING_KEY_SUSPENSION_LOCK,
+  assertSigningKeyNotSuspendedTx,
+  asSuspensionRefusal,
+  isSuspensionSigningLock,
+} from '@/utils/esign-suspension-lock';
 import {
   createKeyMaterial,
   lockoutUntil,
@@ -104,11 +109,62 @@ function toMaterial(key: {
  * bertambah walaupun operasi utamanya dibatalkan — kalau tidak, menebak
  * passphrase menjadi gratis.
  */
-async function recordFailedAttempt(keyId: string, current: number) {
+async function recordFailedAttempt(
+  keyId: string,
+  current: number
+): Promise<'recorded' | 'locked-by-suspension'> {
   const failed = current + 1;
-  await prisma.userSigningKey.update({
-    where: { id: keyId },
-    data: { failedAttempts: failed, lockedUntil: lockoutUntil(failed) },
+  const target = lockoutUntil(failed);
+
+  // A board suspension writes a far-future sentinel to `lockedUntil` and must
+  // win over a stale passphrase attempt. The pre-flight `assertCanSign` let this
+  // call through, but a suspension can commit before the write below; an
+  // unconditional `update` would then overwrite the sentinel with a
+  // minutes-scale lockout — turning a hard signing prohibition into a lockout
+  // that expires by itself, and re-enabling signing for a suspended officer.
+  //
+  // This used to be a `update` keyed on `id` alone. The write is now conditional
+  // on the value it observed: if nobody moved `lockedUntil`, the attempt counts;
+  // if a suspension took the key, the sentinel stands. `failedAttempts` may still
+  // advance under a suspension, which is harmless — the sign gate reads
+  // `lockedUntil` first, so a sentinel-held key keeps refusing until the lift
+  // restores the actual prior lockout. A read-modify-write was rejected: two
+  // concurrent failures would each compute `current + 1` and the counter would
+  // be lost, under-counting guesses and defeating the lockout.
+  //
+  // The claim also matches an *expired* lockout, not just `NULL`. A lockout that
+  // has run out leaves a past `lockedUntil` in place until a successful signature
+  // clears it, so keying the claim on `NULL` alone would refuse to re-arm the
+  // lockout after the window passed — a 6th wrong passphrase would then be
+  // recorded but never re-locked, letting the same key be guessed again
+  // immediately. The upper bound keeps a live lockout (and the far-future
+  // sentinel) out of the match: a newer lockout is the stricter state and must
+  // not be shortened, and the sentinel is the suspension's.
+  const cutoff = new Date();
+  const result = await prisma.userSigningKey.updateMany({
+    where: {
+      id: keyId,
+      OR: [{ lockedUntil: null }, { lockedUntil: { lt: cutoff } }],
+    },
+    data: { failedAttempts: failed, lockedUntil: target },
+  });
+
+  if (result.count === 1) return 'recorded';
+
+  // The claim matched nothing: either a suspension owns the key, or a lockout
+  // was armed between the read and this write. Re-read under a row lock, so the
+  // decision sees the committed value rather than a guess. Fail closed while
+  // the sentinel is present.
+  return prisma.$transaction(async (tx) => {
+    const locked = await tx.$queryRaw<Array<{ locked_until: Date | null }>>`
+      SELECT locked_until FROM "user_signing_keys" WHERE id = ${keyId} FOR UPDATE
+    `;
+    if (locked.length === 1 && isSuspensionSigningLock(locked[0].locked_until)) {
+      return 'locked-by-suspension';
+    }
+    // Neither the sentinel nor a lockout is ours to overwrite — a newer lockout
+    // is already in force, which is the stricter state anyway.
+    return 'recorded';
   });
 }
 
@@ -848,18 +904,52 @@ export const EsignService = {
       throw error;
     }
 
-    await prisma.userSigningKey.update({
-      where: { id: key.id },
-      data: {
-        encryptedPrivateKey: rewrapped.encryptedPrivateKey,
-        kdfSalt: rewrapped.kdfSalt,
-        kdfParams: rewrapped.kdfParams as unknown as Prisma.InputJsonValue,
-        iv: rewrapped.iv,
-        authTag: rewrapped.authTag,
-        failedAttempts: 0,
-        lockedUntil: null,
-      },
-    });
+    /**
+     * The passphrase swap is committed with the suspension check in the same
+     * transaction, on the key row, locked and re-read.
+     *
+     * The pre-flight `assertCanSign` above runs before the (deliberately
+     * expensive) scrypt re-wrap. A board suspension can commit in that window,
+     * and the unconditional update that used to sit here cleared `lockedUntil`
+     * — removing the sentinel and handing a suspended officer their signing
+     * rights back. Re-asserting the sentinel under the row lock, immediately
+     * before the write, is what closes it; the write is conditional so it can
+     * only land on a key no suspension owns.
+     */
+    let updated;
+    try {
+      updated = await prisma.$transaction(async (tx) => {
+        await assertSigningKeyNotSuspendedTx(tx, key.id);
+
+        return tx.userSigningKey.updateMany({
+          where: {
+            id: key.id,
+            userId,
+            NOT: { lockedUntil: { gte: SIGNING_KEY_SUSPENSION_LOCK } },
+          },
+          data: {
+            encryptedPrivateKey: rewrapped.encryptedPrivateKey,
+            kdfSalt: rewrapped.kdfSalt,
+            kdfParams: rewrapped.kdfParams as unknown as Prisma.InputJsonValue,
+            iv: rewrapped.iv,
+            authTag: rewrapped.authTag,
+            failedAttempts: 0,
+            lockedUntil: null,
+          },
+        });
+      });
+    } catch (error) {
+      throw asSuspensionRefusal(error);
+    }
+
+    // Zero rows means the key moved under us — a suspension took it between the
+    // in-transaction re-read and the write. That is not a success: report the
+    // same refusal the pre-flight gate would have raised.
+    if (updated.count !== 1) {
+      throw Errors.badRequest(
+        'Kunci tanda tangan berubah saat penggantian passphrase berjalan. Coba lagi.'
+      );
+    }
 
     return { success: true };
   },
@@ -1146,6 +1236,14 @@ export const EsignService = {
     }
 
     const updated = await prisma.$transaction(async (tx) => {
+      // A revocation is signed with the actor's key, so it is a signing
+      // operation and must obey the same suspension gate as `signLetter`.
+      // `assertCanSign` ran before the crypto work; a suspension that committed
+      // since then would otherwise still let this produce a valid revocation
+      // statement. The key lock is taken first, before the signature/letter
+      // writes, so the order matches `signLetter` and the two cannot deadlock.
+      await assertSigningKeyNotSuspendedTx(tx, key!.id);
+
       const sig = await tx.letterSignature.update({
         where: { id: target!.id },
         data: {
@@ -1186,6 +1284,9 @@ export const EsignService = {
       });
 
       return sig;
+    }).catch((error) => {
+      // A suspension that landed mid-revocation is a refusal, not a 500.
+      throw asSuspensionRefusal(error);
     });
 
     await clearFailedAttempts(key!.id);
@@ -1305,6 +1406,19 @@ export const EsignService = {
     let result;
     try {
       result = await prisma.$transaction(async (tx) => {
+      // Re-assert the signing key is not held by a board suspension, on the same
+      // row and in the same transaction as the signature write.
+      //
+      // `assertCanSign` above ran before the crypto work and before this
+      // transaction opened. A suspension that commits in between would otherwise
+      // still produce a valid signature and a SIGNED letter for an officer the
+      // board just froze. The check re-reads `lockedUntil` under a row lock
+      // (transaction-scoped advisory lock + `FOR UPDATE`), and because the key
+      // lock is taken before the letter lock — matching the order in
+      // `revokeLetterSignature` — two signing paths cannot deadlock. A lost race
+      // throws, the transaction rolls back, and no signature is written.
+      await assertSigningKeyNotSuspendedTx(tx, key!.id);
+
       // Lock letter row and re-verify reviewer state under concurrency
       await tx.$executeRaw`SELECT id FROM letters WHERE id = ${letterId} FOR UPDATE`;
 
@@ -1467,7 +1581,8 @@ export const EsignService = {
     } catch (e) {
       // An unrenderable naskah is the author's to fix, not a server fault.
       if (e instanceof LetterPdfError) throw Errors.badRequest(e.message);
-      throw e;
+      // A suspension that landed mid-signature is a refusal, not a 500.
+      throw asSuspensionRefusal(e);
     }
 
     await clearFailedAttempts(key!.id);

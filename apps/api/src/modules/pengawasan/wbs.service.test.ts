@@ -913,6 +913,71 @@ describe('WbsService Unit Tests', () => {
     });
   });
 
+  describe('handler comments on closed cases', () => {
+    const handlerActor = { id: 'handler-1', name: 'Pemeriksa', roleCode: 'YAYASAN_PENGAWAS' };
+
+    beforeEach(() => {
+      (prisma.$queryRaw as any).mockResolvedValue([{ id: 'report-1' }]);
+    });
+
+    it.each([WbsStatus.SELESAI, WbsStatus.TIDAK_DAPAT_DITINDAKLANJUTI])(
+      'refuses a handler note while the case is %s',
+      async (status) => {
+        // The scope read returns the row under lock; the terminal status makes
+        // the case immutable for the handler too, because its comments are
+        // rendered on the reporter's public tracking page.
+        (prisma.wbsReport.findFirst as any).mockResolvedValue({ id: 'report-1', status });
+
+        await expect(
+          wbsService.addHandlerComment('report-1', 'Catatan internal.', undefined, handlerActor)
+        ).rejects.toMatchObject({ statusCode: 409 });
+
+        expect(prisma.wbsComment.create).not.toHaveBeenCalled();
+      }
+    );
+
+    it('accepts a handler note while the case is still open', async () => {
+      (prisma.wbsReport.findFirst as any).mockResolvedValue({
+        id: 'report-1',
+        status: WbsStatus.DALAM_PENYELIDIKAN,
+      });
+      (prisma.wbsComment.create as any).mockResolvedValue({ id: 'comment-1' });
+
+      const created = await wbsService.addHandlerComment(
+        'report-1',
+        'Catatan pemeriksa.',
+        undefined,
+        handlerActor
+      );
+
+      expect(created.id).toBe('comment-1');
+      expect(prisma.wbsComment.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ reportId: 'report-1', senderType: 'HANDLER' }),
+        })
+      );
+    });
+
+    it('reads the status under the row lock so a concurrent closure cannot be missed', async () => {
+      // The admission check must use the status returned from the locked scope
+      // read, not a pre-transaction snapshot — otherwise a handler could close
+      // the case in the gap and the comment would land on a closed thread.
+      (prisma.wbsReport.findFirst as any).mockResolvedValue({
+        id: 'report-1',
+        status: WbsStatus.SELESAI,
+      });
+
+      await expect(
+        wbsService.addHandlerComment('report-1', 'Terlambat.', undefined, handlerActor)
+      ).rejects.toMatchObject({ statusCode: 409 });
+
+      const lockCall = (prisma.$queryRaw as any).mock.calls.find((call: unknown[]) =>
+        (call[0] as string[]).join('?').includes('FOR UPDATE')
+      );
+      expect(lockCall).toBeDefined();
+    });
+  });
+
   describe('per-report scope enforcement', () => {
     const actor = { id: 'u1', name: 'Pengawas', roleCode: 'YAYASAN_PENGAWAS', unitId: null };
 
