@@ -303,6 +303,18 @@ describe('htmlToText', () => {
       expect(htmlToText('<stylesheet>keep</stylesheet>')).toBe('keep');
     });
 
+    it('strips a <head> element whose open tag is fragmented across layers', () => {
+      // The same fixed-point hazard as the `<style>` case above, but on the
+      // element pass `htmlToText` invokes second: closing an inner `</head>`
+      // re-fuses the outer `<he…` with a stale `ad>` into a fresh `<head>`,
+      // layer by layer. The single-scan strip must retire every layer at once
+      // and leave no markup behind.
+      expect(htmlToText('<he<head>x</head>ad>y</head>')).toBe('');
+      expect(htmlToText('<head>hidden</head>shown')).toBe('shown');
+      expect(htmlToText('<<head>head>inside')).not.toMatch(/<\/?head/i);
+      expect(htmlToText('<sty<style>x</style>le><he<head>y</head>ad>z</head>')).toBe('');
+    });
+
     it('turns br and closing block tags into line breaks', () => {
       expect(htmlToText('<p>satu</p><div>dua</div>')).toBe('satu\ndua');
       expect(htmlToText('satu<br>dua<br/>tiga')).toBe('satu\ndua\ntiga');
@@ -370,37 +382,53 @@ describe('htmlToText', () => {
     });
 
     it('stays linear when a tag is fragmented across many nested layers', () => {
-      // Regression for the fixed-point loop: `layer(d)` is `<sty` + layer(d-1) +
-      // `le>Y</style>` nested d deep. Closing the innermost `</style>` re-fuses
-      // the stale `le` with the outer `<sty` into a fresh `<style`, so the old
-      // `stripToFixedPoint` needed d rounds over an O(d)-sized string, i.e.
-      // O(n^2): measured 10k->1.2s, 20k->6.5s, 40k->27s on the previous code.
-      // The single stack scan must finish every depth in well under a second.
-      const layer = (d: number): string => {
+      // Regression for the fixed-point loop. `styleLayer(d)` is `<sty` +
+      // layer(d-1) + `le>Y</style>` nested d deep; closing the innermost
+      // `</style>` re-fuses the stale `le` with the outer `<sty` into a fresh
+      // `<style>`, so the old `stripToFixedPoint` needed d rounds over an
+      // O(d)-sized string, i.e. O(n^2): measured 10k->1.2s, 20k->6.5s,
+      // 40k->27s on the previous code.
+      //
+      // `headLayer` is the same hazard on the *second* element pass, which the
+      // first version of this test left uncovered even though that pass runs
+      // the very same helper: the old code measured 20k->5.7s, 80k->95s.
+      const styleLayer = (d: number): string => {
         let s = '<style>Z</style>';
         for (let i = 1; i < d; i++) s = `<sty${s}le>Y</style>`;
         return s;
       };
-
-      // Correctness: all of it is `<style>` markup, so nothing survives.
-      expect(htmlToText(layer(2000))).toBe('');
-      expect(htmlToText(layer(2000))).not.toMatch(/<\/?style/i);
-
-      // Complexity: doubling the depth must not quadruple the time.
-      const timed = (d: number): number => {
-        const input = layer(d);
-        const start = Date.now();
-        htmlToText(input);
-        return Date.now() - start;
+      const headLayer = (d: number): string => {
+        let s = '<head>Z</head>';
+        for (let i = 1; i < d; i++) s = `<he${s}ad>Y</head>`;
+        return s;
       };
-      timed(4000); // warm up
 
-      const small = Math.max(timed(20000), 1);
-      const large = timed(80000);
-      // Quadratic growth would be ~16x; allow generous headroom for CI jitter
-      // while still failing an O(n^2) implementation (which measured ~400x
-      // here, well past any plausible noise).
-      expect(large).toBeLessThan(small * 8);
+      for (const [name, build] of [
+        ['style', styleLayer],
+        ['head', headLayer],
+      ] as const) {
+        // Correctness: every layer is element markup, so nothing survives.
+        expect(htmlToText(build(2000)), `${name} correctness`).toBe('');
+        expect(htmlToText(build(2000)), `${name} residue`).not.toMatch(
+          new RegExp(`</?${name}`, 'i')
+        );
+
+        // Complexity: doubling the depth must not quadruple the time.
+        const timed = (d: number): number => {
+          const input = build(d);
+          const start = Date.now();
+          htmlToText(input);
+          return Date.now() - start;
+        };
+        timed(4000); // warm up
+
+        const small = Math.max(timed(20000), 1);
+        const large = timed(80000);
+        // Quadratic growth would be ~16x; allow generous headroom for CI
+        // jitter while still failing an O(n^2) implementation (the old code
+        // measured ~16x here, and ~400x before the per-pass fix).
+        expect(large, `${name} complexity`).toBeLessThan(small * 8);
+      }
     });
   });
 
