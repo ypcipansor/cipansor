@@ -808,6 +808,71 @@ describe.skipIf(!RUN)('foundation-decisions integrasi PostgreSQL', () => {
     await prisma.userSigningKeyHistory.deleteMany({ where: { userId: user.id } });
     await prisma.user.delete({ where: { id: user.id } });
   });
+  /**
+   * Bug A — backfill migrasi WAJIB berjalan pada PostgreSQL kosong.
+   *
+   * Temuan Devin Review menduga `sha256(...)` di
+   * `apps/api/prisma/migrations/20260917000000_foundation_decision_vote_key_binding/migration.sql`
+   * tidak tersedia pada baseline sehingga `prisma migrate deploy` selalu gagal
+   * di basis data baru. Itu TIDAK benar untuk PostgreSQL 16 (lihat laporan
+   * audit), tetapi tebakannya menyentuh invariant yang nyata: fingerprint yang
+   * direkonstruksi migrasi HARUS sama persis dengan `publicKeyFingerprint()`
+   * yang dipakai aplikasi, dan mekanismenya harus benar-benar ada di server.
+   *
+   * Uji ini menjalankan pernyataan backfill ASLI dari berkas migrasi (bukan
+   * salinannya) terhadap basis data nyata, lalu membandingkan hasilnya dengan
+   * fingerprint aplikasi. Mengganti `sha256(convert_to(...,'UTF8'))` dengan
+   * sesuatu yang tidak setara — termasuk `sha256(text)` yang tidak ada — akan
+   * menggagalkannya.
+   */
+  it('backfill migrasi merekonstruksi fingerprint yang sama dengan aplikasi', async () => {
+    const sql = fs.readFileSync(MIGRATION_SQL_VOTE_KEY_BINDING, 'utf8');
+    const insertStart = sql.indexOf('INSERT INTO "user_signing_key_history"');
+    const insertEnd = sql.indexOf('ON CONFLICT ("user_id", "fingerprint") DO NOTHING;', insertStart);
+    expect(insertStart).toBeGreaterThan(-1);
+    expect(insertEnd).toBeGreaterThan(insertStart);
+    const backfill = sql.slice(insertStart, insertEnd + 'ON CONFLICT ("user_id", "fingerprint") DO NOTHING;'.length);
+
+    const suffix = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const user = await prisma.user.create({
+      data: {
+        id: `itest-backfill-${suffix}`,
+        email: `itest-backfill-${suffix}@example.test`,
+        name: 'Backfill Integrasi',
+        passwordHash: 'x',
+      },
+    });
+    const material = createKeyMaterial('backfill-passphrase-2026');
+    await prisma.userSigningKey.create({
+      data: {
+        id: `itest-key-${suffix}`,
+        userId: user.id,
+        algorithm: material.algorithm,
+        publicKey: material.publicKey,
+        encryptedPrivateKey: material.encryptedPrivateKey,
+        kdfSalt: material.kdfSalt,
+        kdfParams: material.kdfParams as never,
+        iv: material.iv,
+        authTag: material.authTag,
+      },
+    });
+
+    await prisma.$executeRawUnsafe(backfill);
+
+    const history = await prisma.userSigningKeyHistory.findFirst({
+      where: { userId: user.id },
+      orderBy: { issuedAt: 'desc' },
+    });
+    expect(history).not.toBeNull();
+    // Inti invariant: fingerprint yang ditulis SQL identik dengan yang dihitung
+    // aplikasi. Kalau tidak, setiap suara yang menunjuk rekaman ini akan
+    // ditolak `trustedKeyForVote` (fail closed) — fitur diam-diam mati.
+    expect(history!.fingerprint).toBe(publicKeyFingerprint(material.publicKey));
+
+    await prisma.userSigningKeyHistory.deleteMany({ where: { userId: user.id } });
+    await prisma.userSigningKey.deleteMany({ where: { userId: user.id } });
+    await prisma.user.delete({ where: { id: user.id } });
+  });
 });
 
 /** Ambil blok `DO $$ ... $$;` pertama dari SQL migrasi. */

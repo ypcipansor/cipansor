@@ -21,7 +21,7 @@ _Headline count + spec-inventory table re-audited 2026-07-20 from source; the ro
 
 ## Verified full-suite run (chromium, real seeded stack — 2026-07-16)
 
-Stack: local Postgres 16 + Redis (`scripts/dev-stack.sh`), `db:push` +
+Stack: local Postgres 16 + Redis (`scripts/dev-stack.sh`), `db:deploy` +
 `E2E_FIXED_2FA=1 db:seed`, API dev server + web **production** build
 (`next start`; dev-mode Turbopack compile-on-demand times out Playwright's
 240s webServer wait — use `pnpm build && pnpm start` locally).

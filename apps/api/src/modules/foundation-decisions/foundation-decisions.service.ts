@@ -22,7 +22,7 @@ import type {
   UpsertFoundationRuleInput,
   VoteSummary,
 } from '@cipansor/shared';
-import { DEFAULT_FOUNDATION_RULE, decisionTypesForOrgan } from '@cipansor/shared';
+import { DEFAULT_FOUNDATION_RULE, decisionTypesForOrgan, quorumValueForMode } from '@cipansor/shared';
 import { prisma } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
 import { config } from '@/config';
@@ -670,6 +670,30 @@ async function clearFailedAttempts(keyId: string, client: DbClient = prisma): Pr
 }
 
 /**
+ * Selaraskan `value` sebuah aturan dengan `mode`-nya.
+ *
+ * Mesin kuorum (`requiredCount`) mengabaikan nilai pecahan yang tersimpan dan
+ * memakai `quorumValueForMode(mode)` — label mode adalah janji yang dibaca
+ * orang. Skema penyimpanan (`upsertFoundationRuleSchema`) sudah menolak nilai
+ * yang menyimpang, tetapi itu hanya menjaga penulisan BARU lewat API. Baris
+ * yang ditulis sebelum refinement itu ada — atau disisipkan langsung ke basis
+ * data — tetap dapat memuat mode TWO_THIRDS dengan value 0.5.
+ *
+ * Baris seperti itu tidak mengubah ambang yang DITEGAKKAN (mode yang menang),
+ * tetapi membuat API MENAMPILKAN nilai yang berbeda dari yang benar-benar
+ * dievaluasi: halaman pengelolaan aturan membaca `quorumPresentValue`/
+ * `quorumDecisionValue` apa adanya. Normalisasi ini membuat yang ditampilkan
+ * sama persis dengan yang dievaluasi, tanpa menyentuh basis data.
+ */
+export function normalizeRule(rule: FoundationDecisionRule): FoundationDecisionRule {
+  return {
+    ...rule,
+    quorumPresentValue: quorumValueForMode(rule.quorumPresentMode),
+    quorumDecisionValue: quorumValueForMode(rule.quorumDecisionMode),
+  };
+}
+
+/**
  * Mesin keputusan organ yayasan. Prisma hanya disentuh di sini.
  *
  * Audit ditulis langsung ke `auditLog` — BUKAN lewat eventBus — dan itu
@@ -845,7 +869,7 @@ export const FoundationDecisionService = {
     const found = await prisma.foundationDecisionRule.findUnique({
       where: { organType_decisionKind: { organType, decisionKind: kind } },
     });
-    if (found) return found;
+    if (found) return normalizeRule(found);
     const d = DEFAULT_RULE[kind];
     return {
       id: 'default',
@@ -1560,9 +1584,13 @@ export const FoundationDecisionService = {
 
   /** Daftar aturan kuorum (SUPER_ADMIN). */
   async listRules(): Promise<FoundationDecisionRule[]> {
-    return prisma.foundationDecisionRule.findMany({
+    const rows = await prisma.foundationDecisionRule.findMany({
       orderBy: [{ organType: 'asc' }, { decisionKind: 'asc' }],
     });
+    // Dinormalisasi dengan definisi yang SAMA seperti `loadRule`, supaya halaman
+    // pengelolaan aturan tidak pernah menampilkan nilai yang berbeda dari ambang
+    // yang benar-benar dievaluasi (mode mengikat, bukan value tersimpan).
+    return rows.map(normalizeRule);
   },
 
   /**

@@ -120,6 +120,66 @@ test.describe("daftar keputusan", () => {
     expect(requests.some((u) => /organType=all/.test(u))).toBe(false);
   });
 
+  /**
+   * Regresi BUG — daftar keputusan dulu "berhenti pada sepuluh baris".
+   *
+   * Halaman tidak pernah mengirim `page`/`limit`, sehingga hook selalu meminta
+   * halaman default dan `pagination.total` dari peladen diabaikan. Uji ini
+   * membuat LEBIH dari sepuluh keputusan lewat API nyata, lalu membuktikan
+   * keputusan ke-11 dapat dicapai lewat kontrol paginasi — bukan sekadar
+   * membaca bahwa kontrolnya ada.
+   */
+  test("lebih dari sepuluh keputusan dapat diakses lewat paginasi", async ({
+    page,
+  }) => {
+    const admin = await apiLogin(SEED_USERS.superAdmin);
+    const first = await apiRequest<
+      Envelope<DecisionRow[]> & { pagination: { total: number } }
+    >(admin, "GET", "/foundation/decisions?limit=1&page=1");
+    const total = first.pagination.total;
+
+    // Pastikan setidaknya 11 keputusan ada. Tanpa `page`/`limit` yang dihitung
+    // peladen, kontrol paginasi tak akan pernah muncul walau barisnya ada.
+    for (let i = 0; i < Math.max(0, 11 - total); i++) {
+      const res = await fetch(`${API_URL}/foundation/decisions`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${admin.accessToken}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          organType: "PENGAWAS",
+          kind: "MEETING",
+          subject: `Keputusan Paginasi ${Date.now()}-${i}`,
+          body: "Isi keputusan uji paginasi yang cukup panjang untuk lolos validasi skema.",
+          decisionType: "pemberhentian-sementara-pengurus",
+        }),
+      });
+      expect(res.status).toBe(201);
+    }
+
+    await signIn(page, "superAdmin");
+    await page.goto("/foundation/decisions");
+    await expect(
+      page.getByRole("heading", { name: "Keputusan & Risalah Organ" }),
+    ).toBeVisible({ timeout: 20000 });
+
+    // Halaman 1 menampilkan pager dan menyatakan total seluruh hasil, bukan
+    // hanya sepuluh baris yang kebetulan muat.
+    await expect(page.getByText(/Page 1 of \d+/)).toBeVisible();
+    await expect(page.getByText(/Showing 1 to 10 of 1[1-9]|Showing 1 to 10 of [2-9]\d/)).toBeVisible();
+
+    // Tombol "next page" membawa ke halaman 2 — barisnya benar-benar dimuat,
+    // bukan sekadar label halaman. Keputusan terbaru (yang dibuat di atas)
+    // berada di halaman 1 karena urutannya `createdAt desc`, jadi halaman 2
+    // harus memuat baris LAMA yang tak terlihat di halaman 1.
+    await page.getByRole("button", { name: /Go to next page/i }).click();
+    await expect(page.getByText(/Page 2 of \d+/)).toBeVisible({ timeout: 20000 });
+    await expect(
+      page.getByRole("link", { name: /Keputusan/ }).first(),
+    ).toBeVisible({ timeout: 20000 });
+  });
+
   test("guru tidak melihat menu keputusan yayasan", async ({ page }) => {
     await signIn(page, "teacher");
     await page.goto("/teacher");

@@ -11,6 +11,7 @@ import {
 import { createKeyMaterial, publicKeyFingerprint, signPdfHash } from '@/utils/esign';
 import * as pdfModule from '@/utils/generate-decision-pdf';
 import { createSealMaterial, signSeal } from '@/utils/foundation-eseal';
+import { requiredCount } from '@/utils/foundation-quorum';
 import { config } from '@/config';
 
 vi.mock('@/lib/prisma', () => ({
@@ -2585,5 +2586,67 @@ describe('feature: artefak approval mengikat rekap suara (audit #2)', () => {
       expect(summary.present).toBe(1);
     }
     renderSpy.mockRestore();
+  });
+});
+
+/**
+ * Flag D — tampilan kuorum legacy harus sama dengan yang DITEGAKKAN.
+ *
+ * Mesin kuorum mengabaikan `value` yang tersimpan dan memakai
+ * `quorumValueForMode(mode)` (mode mengikat). Skema upsert menolak nilai yang
+ * menyimpang, tetapi baris LAMA — ditulis sebelum refinement ada, atau
+ * disisipkan langsung ke basis data — dapat memuat `TWO_THIRDS` dengan value
+ * 0.5. Tanpa normalisasi, API menampilkan 0.5 sementara yang dievaluasi 2/3:
+ * halaman pengelolaan aturan berbohong tentang ambang yang mengikat.
+ *
+ * Regresi ini GAGAL pada `loadRule`/`listRules` yang mengembalikan baris apa
+ * adanya, dan LULUS setelah `normalizeRule`.
+ */
+describe('FoundationDecisionService.loadRule / listRules — normalisasi kuorum legacy (Flag D)', () => {
+  const legacyRule = {
+    id: 'rule-legacy',
+    organType: 'PENGAWAS',
+    decisionKind: 'MEETING',
+    // Kontradiksi yang disengaja: label menjanjikan dua pertiga, nilai menulis
+    // setengah.
+    quorumPresentMode: 'TWO_THIRDS',
+    quorumPresentValue: 0.5,
+    quorumDecisionMode: 'THREE_QUARTERS',
+    quorumDecisionValue: 0.5,
+    updatedById: 'user-admin',
+    updatedAt: new Date('2026-01-01T00:00:00Z'),
+  };
+
+  it('loadRule menampilkan nilai yang mengikuti MODE, bukan value legacy', async () => {
+    dm.foundationDecisionRule.findUnique.mockResolvedValue(legacyRule);
+
+    const rule = await FoundationDecisionService.loadRule('PENGAWAS', 'MEETING');
+
+    expect(rule.quorumPresentMode).toBe('TWO_THIRDS');
+    expect(rule.quorumPresentValue).toBeCloseTo(2 / 3, 6);
+    expect(rule.quorumDecisionMode).toBe('THREE_QUARTERS');
+    expect(rule.quorumDecisionValue).toBeCloseTo(3 / 4, 6);
+  });
+
+  it('snapshot keputusan memakai nilai yang sudah dinormalisasi (tampil = ditegakkan)', async () => {
+    dm.foundationDecisionRule.findUnique.mockResolvedValue(legacyRule);
+
+    const rule = await FoundationDecisionService.loadRule('PENGAWAS', 'MEETING');
+
+    // Ambang yang benar-benar dievaluasi untuk kolam 12: ceil(12 * 2/3) = 8.
+    // Bila value legacy 0.5 dipakai, hasilnya akan 7 — perbedaan yang mengubah
+    // hasil kuorum.
+    expect(requiredCount(rule.quorumPresentMode, rule.quorumPresentValue, 12)).toBe(8);
+    expect(requiredCount(rule.quorumDecisionMode, rule.quorumDecisionValue, 12)).toBe(9);
+  });
+
+  it('listRules menormalkan SETIAP baris legacy', async () => {
+    dm.foundationDecisionRule.findMany.mockResolvedValue([legacyRule]);
+
+    const rules = await FoundationDecisionService.listRules();
+
+    expect(rules).toHaveLength(1);
+    expect(rules[0].quorumPresentValue).toBeCloseTo(2 / 3, 6);
+    expect(rules[0].quorumDecisionValue).toBeCloseTo(3 / 4, 6);
   });
 });

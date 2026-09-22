@@ -353,7 +353,7 @@ Ikuti langkah berikut untuk menjalankan proyek di lingkungan lokal Anda:
     Pastikan PostgreSQL berjalan, lalu jalankan migrasi dan seeding data awal.
 
     ```bash
-    pnpm db:push
+    pnpm db:deploy
     pnpm db:seed
     ```
 

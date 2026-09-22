@@ -24,6 +24,7 @@ import path from 'path';
  * `integration.db.test.ts`.
  */
 const WORKFLOWS_DIR = path.resolve(__dirname, '../../../../../../.github/workflows');
+const REPO_ROOT = path.resolve(__dirname, '../../../../../..');
 
 function workflowFiles(): { name: string; text: string }[] {
   return fs
@@ -74,5 +75,67 @@ describe('penyediaan basis data CI memakai migrasi', () => {
     expect(seedIdx).toBeGreaterThan(-1);
     // Migrasi harus mendahului seed; seed di atas skema kosong akan gagal.
     expect(deployIdx).toBeLessThan(seedIdx);
+  });
+});
+
+/**
+ * Flag C — provisioning LOKAL juga harus memakai migrasi.
+ *
+ * Guard di atas hanya menjaga workflow CI. Tetapi `scripts/dev-up.sh` dan
+ * `.claude/skills/stack/SKILL.md` — jalur yang benar-benar dipakai developer
+ * untuk menyalakan stack lokal dan menjalankan e2e — masih mengarahkan
+ * `db:push`. Akibatnya basis data lokal tidak pernah mendapat indeks unik
+ * parsial `foundation_eseals_single_active_key`, sehingga perilaku lokal
+ * berbeda dari CI/produksi: regresi konkurensi e-seal lolos di laptop dan gagal
+ * di produksi. Dokumentasi (AGENTS.md, prisma/AGENTS.md, README) ikut dijaga
+ * supaya tidak menuntun orang kembali ke `db:push`.
+ *
+ * Yang diuji memang kontrak konfigurasi/provisioning, jadi dibaca dari berkas;
+ * sisi perilakunya (indeks benar-benar menolak seal kedua) diuji terhadap
+ * PostgreSQL nyata di `integration.db.test.ts`.
+ */
+/**
+ * Hanya baris yang benar-benar DIEKSEKUSI, dengan komentar dibuang.
+ *
+ * Baris yang seluruhnya komentar dan komentar di ujung baris (`cmd  # …`)
+ * sering menyebut `db:push` justru untuk menjelaskan mengapa migrasi dipakai;
+ * itu bukan instruksi. Yang dicari adalah perintah yang benar-benar dijalankan.
+ */
+function commandLines(text: string): string {
+  return text
+    .split('\n')
+    .map((line) => line.replace(/\s+#.*$/, ''))
+    .filter((line) => !/^\s*#/.test(line))
+    .join('\n');
+}
+
+describe('penyediaan basis data lokal memakai migrasi (Flag C)', () => {
+  function read(rel: string): string {
+    return fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
+  }
+
+  it('scripts/dev-up.sh menjalankan `db:deploy`, bukan `db:push`', () => {
+    const text = commandLines(read('scripts/dev-up.sh'));
+    expect(text).toMatch(/\bdb:deploy\b/);
+    expect(text).not.toMatch(/\bdb:push\b/);
+  });
+
+  it('skill stack tidak lagi menginstruksikan `db:push`', () => {
+    const text = read('.claude/skills/stack/SKILL.md');
+    // Skill memuat blok bash yang dieksekusi sesama agen; `db:push` di dalamnya
+    // sama berbahayanya dengan `db:push` di workflow.
+    const codeBlocks = text
+      .split('```')
+      .filter((_, i) => i % 2 === 1)
+      .join('\n');
+    expect(commandLines(codeBlocks)).toMatch(/\bdb:deploy\b/);
+    expect(commandLines(codeBlocks)).not.toMatch(/\bdb:push\b/);
+  });
+
+  it('dokumentasi developer tidak menyuruh `db:push` sebagai cara menyiapkan skema', () => {
+    for (const rel of ['AGENTS.md', 'apps/api/prisma/AGENTS.md', 'README.md']) {
+      const text = commandLines(read(rel));
+      expect(text, `${rel} masih menyuruh db:push`).not.toMatch(/\bdb:push\b/);
+    }
   });
 });

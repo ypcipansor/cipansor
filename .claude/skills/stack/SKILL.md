@@ -13,7 +13,7 @@ If a Docker daemon is available, `docker-compose.yml` defines `db`, `api`, and
 ```bash
 docker compose up -d db
 pnpm --filter api db:generate
-pnpm --filter api db:push
+pnpm --filter api db:deploy
 pnpm --filter api db:seed
 pnpm --filter api dev &   # API on :3001
 pnpm --filter web dev &   # web on :3000
@@ -33,7 +33,7 @@ su postgres -c "createdb cipansor"
 # apps/api/.env (gitignored) — password must be IN the URL; Prisma ignores PGPASSWORD:
 #   DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:5432/cipansor?schema=public"
 pnpm --filter api db:generate
-pnpm --filter api db:push
+pnpm --filter api db:deploy              # MIGRATIONS, not `db:push` — see below
 pnpm --filter api db:seed                # creates the 75 DEMO_ACCOUNTS, one per RoleCode
 
 # Build once, then run the built output (more stable than dev under a browser sweep):
@@ -42,6 +42,21 @@ pnpm --filter api build && pnpm --filter web build
 DEMO_MODE=true node apps/api/dist/main.js &         # :3001
 ( cd apps/web && node_modules/.bin/next start -p 3000 ) &
 ```
+
+## Provision with migrations, never `db:push`
+
+Apply the schema with `pnpm --filter api db:deploy`, not `pnpm --filter api
+db:push`. `db:push` syncs the database to `schema.prisma`, and `schema.prisma`
+cannot express a partial unique index — including
+`foundation_eseals_single_active_key … WHERE revoked_at IS NULL`, which
+enforces "at most one active e-seal". A `db:push` database therefore behaves
+differently from CI and production: the DB-backed test that should catch a seal
+concurrency regression passes locally and fails in production. CI already uses
+`db:deploy`; `apps/api/src/modules/foundation-decisions/tests/ci-provisioning.test.ts`
+guards the workflows and this skill against drifting back.
+
+An existing local database created with `db:push` has no `_prisma_migrations`
+table and cannot be `migrate deploy`-ed. Drop and recreate it.
 
 ## Gotchas
 

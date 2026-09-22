@@ -11,6 +11,7 @@ import {
   FOUNDATION_KIND_LABEL,
 } from "@/hooks/use-foundation-decisions";
 import { PageHeader } from "@/components/shared/page-header";
+import { Pagination } from "@/components/shared/pagination";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -45,9 +46,21 @@ const statusColor: Record<string, string> = {
 export default function FoundationDecisionsPage() {
   const [organType, setOrganType] = useState<string>(FOUNDATION_FILTER_ALL);
   const [status, setStatus] = useState<string>(FOUNDATION_FILTER_ALL);
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
   // Hook menerjemahkan sentinel "all" menjadi undefined; halaman cukup
   // meneruskan nilai Select apa adanya.
-  const { data, isLoading } = useFoundationDecisions({ organType, status });
+  //
+  // Halaman WAJIB mengirim `page`/`limit`. Sebelumnya ia tidak mengirim keduanya,
+  // sehingga hook selalu meminta halaman default (10 baris) dan tidak ada kontrol
+  // apa pun untuk berpindah — keputusan ke-11 dan seterusnya tak pernah dapat
+  // ditemukan pengguna, sementara `pagination.total` dari peladen diabaikan.
+  const { data, isLoading, isError } = useFoundationDecisions({
+    organType,
+    status,
+    page,
+    limit,
+  });
 
   // Bendahara & Anggota hanya boleh MEMBACA; peladen menolak POST /decisions
   // untuk mereka. Tombol "Buat Keputusan" dulu dirender ke semua pembaca,
@@ -56,6 +69,23 @@ export default function FoundationDecisionsPage() {
   const canWrite = canManageFoundationDecisions(getPrimaryRoleCode(user));
 
   const items = data?.items ?? [];
+  const total = data?.total ?? 0;
+
+  /**
+   * Setiap perubahan filter mengembalikan ke halaman 1.
+   *
+   * Tanpa ini, pengguna yang sedang di halaman 3 lalu menyaring ke organ dengan
+   * dua baris melihat daftar KOSONG (skip melewati seluruh hasil) — dan
+   * menyimpulkan tidak ada keputusan, padahal halaman 1 memuatnya.
+   */
+  const handleOrganChange = (value: string) => {
+    setOrganType(value);
+    setPage(1);
+  };
+  const handleStatusChange = (value: string) => {
+    setStatus(value);
+    setPage(1);
+  };
 
   return (
     <MainLayout>
@@ -75,7 +105,7 @@ export default function FoundationDecisionsPage() {
         />
 
         <div className="flex flex-wrap gap-3">
-          <Select value={organType} onValueChange={setOrganType}>
+          <Select value={organType} onValueChange={handleOrganChange}>
             <SelectTrigger className="w-[200px]">
               <SelectValue placeholder="Semua organ" />
             </SelectTrigger>
@@ -88,7 +118,7 @@ export default function FoundationDecisionsPage() {
               ))}
             </SelectContent>
           </Select>
-          <Select value={status} onValueChange={setStatus}>
+          <Select value={status} onValueChange={handleStatusChange}>
             <SelectTrigger className="w-[180px]">
               <SelectValue placeholder="Semua status" />
             </SelectTrigger>
@@ -111,55 +141,73 @@ export default function FoundationDecisionsPage() {
                   <Skeleton key={i} className="h-12 w-full" />
                 ))}
               </div>
+            ) : isError ? (
+              <div className="p-10 text-center text-sm text-destructive">
+                Gagal memuat daftar keputusan. Periksa koneksi lalu coba lagi.
+              </div>
             ) : items.length === 0 ? (
               <div className="p-10 text-center text-sm text-muted-foreground">
-                Belum ada keputusan. Buat keputusan baru untuk membuka
-                sirkuler/rapat.
+                {total === 0 && page === 1
+                  ? "Belum ada keputusan. Buat keputusan baru untuk membuka sirkuler/rapat."
+                  : "Tidak ada keputusan pada halaman ini."}
               </div>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Perihal</TableHead>
-                    <TableHead>Organ</TableHead>
-                    <TableHead>Cara</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Suara</TableHead>
-                    <TableHead>Dibuat</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {items.map((d) => (
-                    <TableRow key={d.id}>
-                      <TableCell>
-                        <Link
-                          href={`/foundation/decisions/${d.id}`}
-                          className="flex items-center gap-2 font-medium"
-                        >
-                          <FileText className="h-4 w-4 text-muted-foreground" />
-                          {d.subject}
-                        </Link>
-                      </TableCell>
-                      <TableCell>
-                        {FOUNDATION_ORGAN_LABEL[d.organType]}
-                      </TableCell>
-                      <TableCell>{FOUNDATION_KIND_LABEL[d.kind]}</TableCell>
-                      <TableCell>
-                        <Badge className={statusColor[d.status]}>
-                          {FOUNDATION_STATUS_LABEL[d.status]}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {d.voteSummary.approve}✓ · {d.voteSummary.reject}✗ ·{" "}
-                        {d.votedCount}/{d.memberCount}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {new Date(d.createdAt).toLocaleDateString("id-ID")}
-                      </TableCell>
+              <>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Perihal</TableHead>
+                      <TableHead>Organ</TableHead>
+                      <TableHead>Cara</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Suara</TableHead>
+                      <TableHead>Dibuat</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {items.map((d) => (
+                      <TableRow key={d.id}>
+                        <TableCell>
+                          <Link
+                            href={`/foundation/decisions/${d.id}`}
+                            className="flex items-center gap-2 font-medium"
+                          >
+                            <FileText className="h-4 w-4 text-muted-foreground" />
+                            {d.subject}
+                          </Link>
+                        </TableCell>
+                        <TableCell>
+                          {FOUNDATION_ORGAN_LABEL[d.organType]}
+                        </TableCell>
+                        <TableCell>{FOUNDATION_KIND_LABEL[d.kind]}</TableCell>
+                        <TableCell>
+                          <Badge className={statusColor[d.status]}>
+                            {FOUNDATION_STATUS_LABEL[d.status]}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {d.voteSummary.approve}✓ · {d.voteSummary.reject}✗ ·{" "}
+                          {d.votedCount}/{d.memberCount}
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {new Date(d.createdAt).toLocaleDateString("id-ID")}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                <Pagination
+                  page={page}
+                  totalPages={Math.max(1, Math.ceil(total / limit))}
+                  pageSize={limit}
+                  total={total}
+                  onPageChange={setPage}
+                  onPageSizeChange={(size) => {
+                    setLimit(size);
+                    setPage(1);
+                  }}
+                />
+              </>
             )}
           </CardContent>
         </Card>
