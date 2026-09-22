@@ -50,9 +50,6 @@ export interface QuorumEvaluation {
 /**
  * Apakah pemungutan sudah DITUTUP?
  *
- * Ini parameter yang membedakan dua daur hidup yang berbeda, dan
- * ketiadaannya adalah bug yang diperbaiki di sini.
- *
  * **Sirkuler** tidak punya "rapat" yang harus ditutup: kolam keputusannya
  * adalah SELURUH anggota aktif dan tidak bertambah, sehingga hasilnya sudah
  * dapat disimpulkan kapan saja (dan keputusan gugur segera setelah mufakat
@@ -60,13 +57,10 @@ export interface QuorumEvaluation {
  *
  * **Rapat** sebaliknya. Selama rapat masih berlangsung, siapa pun yang belum
  * bersuara masih dapat hadir dan mengubah hasil — jadi TIDAK ADA hasil akhir
- * yang sah sebelum rapat ditutup. Versi sebelumnya menghitung ambang terhadap
- * `presentCount` saat itu juga, lalu memulangkan APPROVED begitu peserta yang
- * sedang hadir menyetujui. Akibatnya keputusan menutup diri di tengah rapat,
- * anggota yang datang kemudian ditolak (`status !== VOTING`), dan hasil akhir
- * bergantung pada URUTAN suara — bukan pada suara yang terkumpul. Penutupan
- * manual (`closed: true`) menghapus ketergantungan itu: hasil dihitung sekali,
- * terhadap himpunan suara yang sudah tetap.
+ * yang sah sebelum rapat ditutup. Tanpa `closed`, keputusan akan menutup diri
+ * di tengah rapat begitu peserta yang sedang hadir menyetujui, sehingga hasil
+ * akhir bergantung pada URUTAN suara. Penutupan manual (`closed: true`)
+ * menghitung hasil sekali terhadap himpunan suara yang sudah tetap.
  */
 export interface QuorumOptions {
   /** Rapat/pemungutan sudah dinyatakan selesai oleh pemimpinnya. */
@@ -79,12 +73,10 @@ export interface QuorumOptions {
  * **Mode yang menentukan ambang, bukan `value`.** Nilai pecahan yang tersimpan
  * di baris aturan diabaikan — `quorumValueForMode` yang menetapkannya, karena
  * label mode adalah janji yang dibaca orang ("dua pertiga" berarti 2/3).
- * Versi sebelumnya mengevaluasi `value` secara literal, sehingga baris aturan
- * ber-mode TWO_THIRDS dengan value 0.5 menuntut "≥ setengah" sambil menamakan
- * dirinya "dua pertiga": ambang yang benar-benar berlaku tidak dapat diketahui
- * dari labelnya, dan aturannya bertentangan dengan dirinya sendiri. Skema
- * penyimpanan (upsertFoundationRuleSchema) menolak nilai yang menyimpang,
- * sehingga baris lama pun tetap terbaca konsisten di sini.
+ * Mengevaluasi `value` secara literal akan membuat baris ber-mode TWO_THIRDS
+ * dengan value 0.5 menuntut "≥ setengah" sambil menamakan dirinya "dua
+ * pertiga": ambang yang berlaku tidak dapat diketahui dari labelnya. Skema
+ * penyimpanan (upsertFoundationRuleSchema) menolak nilai yang menyimpang.
  *
  * `value` tetap diterima sebagai argumen agar pemanggil tidak perlu berubah;
  * ia hanya dipakai sebagai cadangan bila mode tidak dikenal (baris sangat lama).

@@ -128,10 +128,8 @@ export const FOUNDATION_FINALIZE_ROUTE_ROLES: readonly string[] = [
  * Pengawas dapat membereskan hasil rapat Pembina/Pengurus yang tidak pernah
  * ia ikuti.
  *
- * Definisinya hidup DI SINI (bukan di service) karena route dan service harus
- * memakai himpunan yang sama; dua salinan yang seharusnya sama adalah bug yang
- * menunggu waktu. `routes.ts` mengimpornya, dan service memakainya lewat
- * `canFinalizeDecision`, sehingga gerbang UI (`canFinalize` pada DTO detail)
+ * Definisinya dipakai `routes.ts` (lewat impor) dan service (lewat
+ * `canFinalizeDecision`), sehingga gerbang UI (`canFinalize` pada DTO detail)
  * tidak dapat menyimpang dari penolakan server.
  */
 export const FOUNDATION_FINALIZE_ANY_ROLES: readonly string[] = [
@@ -154,9 +152,8 @@ export const FOUNDATION_FINALIZE_ANY_ROLES: readonly string[] = [
  *  1. **Gerbang rute** (`FOUNDATION_FINALIZE_ROUTE_ROLES`): peran yang tidak
  *     ada di sini ditolak `authorize(...FINALIZE)` sebelum service berjalan.
  *     Bendahara & Anggota hanya boleh MEMBACA — mereka anggota snapshot organ
- *     PENGURUS, jadi keanggotaan saja membuat `canFinalize` benar dan UI
- *     menawarkan tombol yang middleware pasti tolak. Karena itu keanggotaan
- *     TIDAK boleh dihitung tanpa lolos syarat pertama.
+ *     PENGURUS, jadi keanggotaan saja akan membuat UI menawarkan tombol yang
+ *     middleware pasti tolak. Keanggotaan TIDAK dihitung tanpa lolos syarat ini.
  *  2. **Pengecualian organ** (`FOUNDATION_FINALIZE_ANY_ROLES`): pimpinan/Super
  *     Admin boleh menutup organ mana pun. Peran lain yang lolos rute (yakni
  *     Pengawas) hanya boleh menutup keputusan yang memuatnya sebagai anggota

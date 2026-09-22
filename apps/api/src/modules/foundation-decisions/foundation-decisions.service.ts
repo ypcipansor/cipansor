@@ -423,10 +423,9 @@ interface VoteSignatureRecord {
  * hash itu.
  *
  * Dipisahkan dari penulisan status supaya pembuatan PDF + pembukaan kunci
- * e-seal (scrypt) dapat dikerjakan DI LUAR kunci baris keputusan. Dulu semuanya
- * berjalan selagi `SELECT … FOR UPDATE` dipegang, sehingga satu keputusan yang
- * sedang difinalkan memblokir suara anggota lain selama puluhan milidetik
- * kripto. `fingerprint` mengikat artefak ke isi keputusan + himpunan suara yang
+ * e-seal (scrypt) dapat dikerjakan DI LUAR kunci baris keputusan — scrypt di
+ * dalam kunci memperpanjang lockout baris dan memblokir suara anggota lain.
+ * `fingerprint` mengikat artefak ke isi keputusan + himpunan suara yang
  * dirender; bila di dalam kunci ternyata himpunannya berbeda (pemilih lain
  * masuk di sela-sela), artefak dibuang dan dirender ulang — jadi pemisahan ini
  * tidak melonggarkan jaminan apa pun.
@@ -631,24 +630,15 @@ async function lockDecision(client: DbClient, id: string): Promise<void> {
 /**
  * Catat percobaan passphrase gagal; dikunci setelah ambang esign tercapai.
  *
- * Penaikan sekaligus penghitungan `locked_until` terjadi dalam SATU pernyataan
- * SQL atomik. Bentuk lama (`update` increment, lalu `update` KEDUA yang menulis
- * `lockedUntil` dari hasil bacaan) meninggalkan celah balapan: pada kegagalan
- * paralel, update kedua dapat berjalan terbalik — percobaan yang menembus
- * ambang menulis lockout lebih dulu, lalu percobaan lain yang hasil bacanya
- * lebih rendah menimpanya dengan `null`, sehingga kunci justru terbuka tepat
- * ketika ia seharusnya terkunci. Menghitung `locked_until` dari
- * `failed_attempts + 1` di dalam basis data menutup celah itu, karena setiap
- * penulis memakai nilai barisnya sendiri, bukan nilai yang dibaca sebelumnya.
+ * Penaikan dan penghitungan `locked_until` terjadi dalam SATU pernyataan SQL.
+ * Bila keduanya dua pernyataan terpisah, pada kegagalan paralel penulis dengan
+ * hitungan lebih rendah dapat menimpa lockout dengan `null` — kunci justru
+ * terbuka tepat ketika ia seharusnya terkunci, dan tebakan passphrase kembali
+ * gratis. Menghitung `locked_until` dari `failed_attempts + 1` di dalam basis
+ * data menutup celah itu, karena setiap penulis memakai nilai barisnya sendiri,
+ * bukan nilai yang dibaca sebelumnya.
  */
 async function recordFailedAttempt(keyId: string): Promise<number> {
-  // Satu pernyataan untuk keduanya. Dua `update` terpisah pernah membuat
-  // `lockedUntil` ditulis dari luar urutan: percobaan yang increment-nya lebih
-  // dulu menembus ambang menulis lockout, lalu percobaan lain — yang membaca
-  // `failedAttempts` lebih rendah — menimpanya dengan `null`, sehingga lockout
-  // hilang dan tebakan passphrase kembali gratis. Di sini `locked_until`
-  // dihitung dari `failed_attempts + 1` DI DALAM basis data, jadi nilai yang
-  // tersimpan selalu mencerminkan hitungan tertinggi yang pernah terjadi.
   await prisma.$executeRaw`
     UPDATE "user_signing_keys"
     SET "failed_attempts" = "failed_attempts" + 1,
@@ -785,13 +775,11 @@ export const FoundationDecisionService = {
     /**
      * Pembuatan keputusan dan baris auditnya berbagi SATU transaksi.
      *
-     * Dulu `auditLog.create` dipanggil setelah `$transaction` selesai. Bila
-     * auditnya gagal, keputusan sudah ter-commit tetapi permintaan melempar
-     * galat — dan karena token verifikasinya acak, tidak ada unique yang
-     * mencegah percobaan ulang membuat keputusan DUPLIKAT: dua keputusan
-     * identik dengan dua pemungutan suara, dua PDF, dan dua e-seal. Di dalam
-     * transaksi, kegagalan audit membatalkan pembuatan sekaligus, sehingga
-     * pemanggil dapat mencoba lagi tanpa meninggalkan sisa.
+     * Bila audit ditulis di luar transaksi dan gagal, keputusan sudah
+     * ter-commit tetapi permintaan melempar galat — dan karena token
+     * verifikasinya acak, tidak ada unique yang mencegah percobaan ulang
+     * membuat keputusan DUPLIKAT (dua pemungutan suara, dua PDF, dua e-seal).
+     * Di dalam transaksi, kegagalan audit membatalkan pembuatan sekaligus.
      */
     const decisionId = await prisma.$transaction(async (tx) => {
       const decision = await tx.foundationDecision.create({
@@ -1110,10 +1098,9 @@ export const FoundationDecisionService = {
       signingKey: keyRecord,
     };
     // Ringkasan dihitung ULANG dari himpunan suara yang memuat `previewVote`.
-    // Sebelumnya `voteSummary` lama dipertahankan, sehingga artefak preview
-    // dapat lolos pemeriksaan sidik jari sementara PDF-nya mencetak rekap
-    // SEBELUM suara penentu — sedangkan basis data menyimpan rekap yang sudah
-    // memuatnya. Selisih itu terlihat pada risalah final yang di-e-seal.
+    // Mempertahankan `voteSummary` lama akan membuat artefak preview lolos
+    // pemeriksaan sidik jari sementara PDF-nya mencetak rekap SEBELUM suara
+    // penentu — selisih itu terlihat pada risalah final yang di-e-seal.
     const previewDecision = {
       ...d,
       votes: [...d.votes, previewVote],
@@ -1128,8 +1115,8 @@ export const FoundationDecisionService = {
       this.votesOf(previewDecision)
     );
     // Kerja mahal (render PDF + buka kunci e-seal) dikerjakan DI LUAR kunci
-    // baris. Sebelumnya semua ini berjalan selagi `SELECT … FOR UPDATE`, jadi
-    // satu finalisasi menahan suara anggota lain selama kripto berlangsung.
+    // baris, agar satu finalisasi tidak menahan suara anggota lain selama
+    // kripto berlangsung.
     let previewArtifact: ApprovalArtifact | null = null;
     if (
       previewEvaluation.outcome === 'APPROVED' &&
@@ -1223,10 +1210,10 @@ export const FoundationDecisionService = {
       const outcome = await this.applyLocked(actor, fresh, evaluation, tx, artifact ?? undefined);
 
       // Audit VOTE ditulis DI DALAM transaksi yang sama dengan suaranya. Bila
-      // ditulis di luar (seperti dulu), kegagalan `auditLog.create` membuat
-      // suara sudah tercommit tetapi `castVote` melempar galat — retry ditolak
-      // sebagai suara ganda dan suara sah kehilangan baris auditnya. Di sini
-      // keduanya ikut rollback bersama.
+      // di luar, kegagalan `auditLog.create` membuat suara sudah tercommit
+      // tetapi `castVote` melempar galat — retry ditolak sebagai suara ganda
+      // dan suara sah kehilangan baris auditnya. Di sini keduanya rollback
+      // bersama.
       await tx.auditLog.create({
         data: {
           userId: actor.id,
@@ -1356,11 +1343,11 @@ export const FoundationDecisionService = {
 
     const at = new Date();
     const result = await prisma.$transaction(async (tx) => {
-      // SERIALISASI (audit C): kunci baris keputusan lebih dulu, lalu baca
-      // `publication` AKTUAL setelah lock. Sebelumnya `d.publication` dibaca di
-      // luar transaksi dan ditulis apa adanya sebagai `oldValues`, sehingga dua
-      // request paralel dapat mencatat nilai sebelumnya yang sama — audit lalu
-      // memuat urutan yang tidak pernah terjadi.
+      // SERIALISASI: kunci baris keputusan lebih dulu, lalu baca `publication`
+      // AKTUAL setelah lock. Membaca nilai itu di luar transaksi dan
+      // menulisnya sebagai `oldValues` membuat dua request paralel mencatat
+      // nilai sebelumnya yang sama — audit lalu memuat urutan yang tidak
+      // pernah terjadi.
       await lockDecision(tx, decisionId);
       const locked = await tx.foundationDecision.findUnique({ where: { id: decisionId } });
       if (!locked) throw Errors.notFound('Keputusan tidak ditemukan.');
@@ -1653,13 +1640,11 @@ export const FoundationDecisionService = {
     /**
      * Verifikasi e-seal HANYA dengan kunci PUBLIK.
      *
-     * Dulu ia menuntut `signSeal(sealMaterial, SEAL_PASSPHRASE, digest)` sama
-     * dengan tanda tangan tersimpan, yang berarti mendekripsi kunci privat
-     * dengan passphrase yang berlaku SEKARANG. Setelah passphrase e-seal
-     * dirotasi, setiap keputusan lama tiba-tiba gagal diverifikasi — padahal
-     * tidak ada yang berubah pada dokumennya. Yang membuktikan keaslian adalah
-     * kunci publik yang tercatat bersama tanda tangan itu, dan kunci publik
-     * tidak pernah berubah oleh rotasi passphrase.
+     * Verifikasi memakai kunci publik yang tercatat bersama tanda tangan,
+     * TIDAK mendekripsi kunci privat dengan passphrase yang berlaku sekarang.
+     * Kalau ia menuntut passphrase sekarang, rotasi e-seal membuat setiap
+     * keputusan lama gagal diverifikasi padahal dokumennya tidak berubah.
+     * Kunci publik tidak pernah berubah oleh rotasi passphrase.
      */
     let sealVerified: boolean | null = null;
     if (d.finalPdfDigest && d.finalPdfSealSignature) {
@@ -1695,10 +1680,10 @@ export const FoundationDecisionService = {
     /**
      * Rekap yang ditampilkan ke publik dihitung dari suara yang LOLOS
      * verifikasi tanda tangan — himpunan yang sama dengan yang dipakai
-     * finalisasi. Sebelumnya ia menghitung seluruh baris `foundation_decision_votes`
-     * apa adanya, sehingga suara palsu hasil sisipan langsung ke basis data
-     * mengubah angka yang dilihat pengunjung halaman verifikasi, sekalipun
-     * suara itu tidak pernah masuk ke PDF tersegel.
+     * finalisasi. Menghitung seluruh baris `foundation_decision_votes` apa
+     * adanya akan membuat suara palsu hasil sisipan langsung ke basis data
+     * mengubah angka yang dilihat pengunjung, sekalipun suara itu tidak
+     * pernah masuk ke PDF tersegel.
      */
     const authentic = d.votes.filter((v) =>
       isVoteAuthentic(d.signatureContext, v as unknown as VoteSignatureRecord)

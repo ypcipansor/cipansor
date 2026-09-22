@@ -462,6 +462,38 @@ mencatat `oldValues` yang sama; perubahan no-op tidak menulis audit.
 bawaannya PRIVATE (fail closed). Bukti keabsahan (`isValid`, `digest`,
 `digestOk`, `sealVerified`, `reason`, `decisionId`) tetap dikembalikan.
 
+### 7.8 Rationale lain yang dipindahkan dari kode
+
+- **Audit atomik.** `create` (keputusan), `castVote` (suara), `upsertRule`
+  (aturan kuorum), dan `setPublication` menulis baris audit di dalam transaksi
+  yang sama dengan perubahannya. Bila audit ditulis di luar transaksi dan gagal,
+  perubahan sudah ter-commit tanpa jejak — dan untuk `create` khususnya, token
+  verifikasi yang acak membuat percobaan ulang dapat menghasilkan keputusan
+  DUPLIKAT (dua pemungutan suara, dua PDF, dua e-seal).
+- **Audit artefak approval & fingerprint.** Render PDF + pembukaan e-seal
+  (scrypt) dikerjakan di luar `SELECT … FOR UPDATE` karena scrypt di dalam kunci
+  memperpanjang lockout baris dan memblokir suara anggota lain. `fingerprint`
+  mengikat artefak ke isi keputusan + himpunan suara yang dirender; bila pemilih
+  lain menyisipkan suara di sela-sela, sidik jari berbeda dan artefak dirender
+  ulang di dalam kunci, sehingga pemisahan ini tidak melonggarkan jaminan apa
+  pun. Rekap preview dihitung ulang dari himpunan yang memuat suara penentu,
+  agar PDF preview mencetak rekap yang sama dengan basis data.
+- **Lockout percobaan passphrase.** Penaikan `failed_attempts` dan penghitungan
+  `locked_until` berada dalam satu pernyataan SQL; bila terpisah, penulis dengan
+  hitungan lebih rendah dapat menimpa lockout dengan `null` dan tebakan
+  passphrase kembali gratis.
+- **Verifikasi e-seal & rotasi passphrase.** Verifikasi memakai kunci PUBLIK
+  yang tercatat bersama tanda tangan, bukan mendekripsi kunci privat dengan
+  passphrase sekarang. `ensureSeal` menyaring kandidat dengan probe kemampuan
+  menandatangani memakai passphrase sekarang; seal yang tak dapat dipakai
+  dicabut sebelum seal baru diterbitkan, dan `esealId` pada keputusan menyimpan
+  seal spesifik sehingga verifikasi tidak terpengaruh rotasi berikutnya.
+- **Fingerprint kunci & migrasi.** `publicKeyFingerprint()` menghitung
+  SHA-256 dari byte UTF-8 teks kunci publik (base64). Migrasi backfill memakai
+  `pg_catalog.convert_to(public_key, 'UTF8')` + `pg_catalog.sha256(bytea)` —
+  bukan `sha256(text)`, yang tidak ada di PostgreSQL sebelum 18 — agar
+  representasi hexadecimal-nya persis sama dengan aplikasi.
+
 ---
 
 ## 8. Referensi
