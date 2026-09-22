@@ -169,15 +169,21 @@ describe("stripHtml", () => {
   it("grows sub-quadratically on adversarially layered input", () => {
     // A single generous timeout would not catch the O(n²) regression: the old
     // fixed-point loop removed one layer per pass, so `"<a".repeat(n) +
-    // ">".repeat(n)` took n+1 rounds. At these sizes the old code needs seconds
-    // and its time ratio is ~4× per doubling; the scanner is linear (~2×).
-    // Both an absolute bound and the ratio are asserted, and the absolute bound
-    // fires on the first old-code iteration so a regression fails fast.
+    // ">".repeat(n)` took n+1 rounds. At these sizes the old code needs tens of
+    // seconds and its time ratio is ~4× per doubling; the scanner is linear
+    // (~2×). Both an absolute bound and the ratio are asserted, and the
+    // absolute bound fires on the first old-code iteration so a regression
+    // fails fast.
+    //
+    // The sizes are deliberately large: at ~15k a single pass is a couple of
+    // milliseconds and a scheduling blip swamps the ratio. At 200k the per-pass
+    // cost is ~50ms, and taking the min of five samples keeps the ratio stable
+    // at ~2× even when the suite runs under CI CPU contention.
     const layered = (n: number) => "<a".repeat(n) + ">".repeat(n);
     const time = (n: number) => {
-      layered(1000); // warm up the JIT and the allocation paths
+      layered(2000); // warm up the JIT and the allocation paths
       let best = Infinity;
-      for (let i = 0; i < 3; i++) {
+      for (let i = 0; i < 5; i++) {
         const start = performance.now();
         expect(stripHtml(layered(n))).toBe("");
         const elapsed = performance.now() - start;
@@ -187,8 +193,8 @@ describe("stripHtml", () => {
       return best;
     };
 
-    const base = time(15000);
-    const doubled = time(30000);
+    const base = time(200000);
+    const doubled = time(400000);
     // Quadratic would give ~4×; linear gives ~2×. 3× leaves CI headroom while
     // still failing the old implementation.
     expect(doubled / Math.max(base, 0.05)).toBeLessThan(3);
