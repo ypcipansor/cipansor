@@ -241,7 +241,7 @@ describeDb('WBS forward recipient unit-assignment eligibility (real PostgreSQL)'
 
       const updated = await service.updateReportStatus(
         'r-unit',
-        { status: 'DITINDAKLANJUTI' } as never,
+        { status: 'DITINDAKLANJUTI' },
         recipient
       );
       expect(updated.status).toBe('DITINDAKLANJUTI');
