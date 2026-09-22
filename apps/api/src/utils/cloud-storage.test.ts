@@ -83,6 +83,7 @@ vi.mock('@/utils/blob-claim', () => ({
     .mockResolvedValue({ id: 'claim-cleanup', operationToken: 'tok', kind: 'DISCARD' }),
   releaseBlobClaimById: vi.fn().mockResolvedValue(undefined),
   markBlobDiscarded: vi.fn().mockResolvedValue(true),
+  markBlobReconcileDone: vi.fn().mockResolvedValue(true),
 }));
 
 vi.mock('@/utils/local-upload-store', () => ({

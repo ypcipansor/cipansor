@@ -150,6 +150,30 @@ export function isAzureBlobUrl(url: string): boolean {
 }
 
 /**
+ * Inverse of {@link azureBlobIdentityKey}: parse a canonical `azure://…` claim
+ * key back into its identity, or `null` when it is not one.
+ *
+ * The claim protocol persists the canonical key (`blob_claims.blob_url`), so a
+ * reader that needs the physical container/blob path — the reconciliation
+ * worker — cannot use the URL parser on it. Kept here, next to the key builder,
+ * so the two spellings can never drift.
+ */
+export function parseAzureBlobIdentityKey(key: string): AzureBlobIdentity | null {
+  if (!key.startsWith('azure://')) return null;
+  const rest = key.slice('azure://'.length);
+  const slash = rest.indexOf('/');
+  if (slash <= 0) return null;
+  const account = rest.slice(0, slash).toLowerCase();
+  const remainder = rest.slice(slash + 1);
+  const containerSlash = remainder.indexOf('/');
+  if (containerSlash <= 0) return null;
+  const container = remainder.slice(0, containerSlash);
+  const blobPath = remainder.slice(containerSlash + 1);
+  if (!container || !blobPath) return null;
+  return { account, container, blobPath };
+}
+
+/**
  * Every stored spelling of the Azure blob named by `url` that a record could
  * hold: the caller's URL, the path with no query/fragment, and both the
  * percent-encoded and decoded forms of that path.

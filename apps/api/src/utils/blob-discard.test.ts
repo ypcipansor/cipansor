@@ -4,6 +4,7 @@ import {
   claimBlobForDiscard,
   releaseBlobClaimById,
   markBlobDiscarded,
+  markBlobReconcileDone,
   type BlobClaimHandle,
 } from '@/utils/blob-claim';
 
@@ -11,6 +12,7 @@ vi.mock('@/utils/blob-claim', () => ({
   claimBlobForDiscard: vi.fn(),
   releaseBlobClaimById: vi.fn().mockResolvedValue(undefined),
   markBlobDiscarded: vi.fn(),
+  markBlobReconcileDone: vi.fn().mockResolvedValue(true),
 }));
 
 const HANDLE: BlobClaimHandle = {
@@ -94,6 +96,45 @@ describe('discardUnderClaim', () => {
     );
     expect(markBlobDiscarded).toHaveBeenCalled();
     // Releasing here would let a create reference a possibly-deleted blob.
+    expect(releaseBlobClaimById).not.toHaveBeenCalled();
+    // A failed delete must stay reconcilable, NOT terminal.
+    expect(markBlobReconcileDone).not.toHaveBeenCalled();
+  });
+
+  // ── Finding 4: a successful delete is terminal ─────────────────────────────
+
+  it('marks reconciliation DONE after a successful physical delete (finding 4a)', async () => {
+    (markBlobReconcileDone as any).mockClear();
+    const del = vi.fn(async () => {});
+
+    await expect(discardUnderClaim('u', 'holder', async () => false, del)).resolves.toBe('deleted');
+
+    expect(markBlobReconcileDone).toHaveBeenCalledWith(HANDLE);
+    // Never release the tombstone: the URL must stay terminal.
+    expect(releaseBlobClaimById).not.toHaveBeenCalled();
+  });
+
+  it('does not mark DONE when the physical delete fails (finding 4b — still retryable)', async () => {
+    (markBlobReconcileDone as any).mockClear();
+    const del = vi.fn().mockRejectedValue(new Error('transient'));
+
+    await expect(discardUnderClaim('u', 'holder', async () => false, del)).rejects.toThrow(
+      'transient'
+    );
+
+    expect(markBlobReconcileDone).not.toHaveBeenCalled();
+    // The tombstone remains, so reconciliation retries the delete.
+    expect(markBlobDiscarded).toHaveBeenCalled();
+  });
+
+  it('keeps the tombstone when recording DONE fails after a successful delete (finding 4c)', async () => {
+    (markBlobReconcileDone as any).mockClear();
+    (markBlobReconcileDone as any).mockRejectedValueOnce(new Error('db blip'));
+    const del = vi.fn(async () => {});
+
+    // The delete succeeded, so the request must still resolve as `deleted`; the
+    // failed bookkeeping must not turn it into an error or reopen the URL.
+    await expect(discardUnderClaim('u', 'holder', async () => false, del)).resolves.toBe('deleted');
     expect(releaseBlobClaimById).not.toHaveBeenCalled();
   });
 });

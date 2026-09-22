@@ -52,20 +52,81 @@ const customStorage = {
   },
 };
 
+/** Shown when the server cannot mint the routing session after a login. */
+const ROUTING_SESSION_ERROR =
+  "Sesi masuk tidak dapat diselesaikan (cookie routing gagal dibuat). Silakan coba lagi.";
+
 /**
  * Ask the server to mint (or, on logout, clear) the signed routing session.
- * Fire-and-forget and best-effort: the store already holds the session, and a
- * failed sync only means the Proxy guard will not recognise it — the API still
- * authenticates every real call.
+ *
+ * Resolves to whether the server confirmed the operation. Two details matter:
+ *
+ *  - `fetch()` does NOT reject on a non-2xx status, so the status is checked
+ *    explicitly. A `500` from the mint endpoint (e.g. a missing signing secret)
+ *    must never be mistaken for a created cookie.
+ *  - A network failure resolves `false` instead of rejecting, so a caller can
+ *    `await` it without risking an unhandled rejection.
+ *
+ * Await this before treating a login as navigable. The Next Proxy only sees the
+ * session once this `POST` has committed its `Set-Cookie`; navigating first
+ * races the write and the Proxy bounces the user back to `/login`.
  */
-function syncRoutingSession(clear = false) {
-  if (typeof window === "undefined") return;
+async function syncRoutingSession(clear = false): Promise<boolean> {
+  if (typeof window === "undefined") return false;
   const token = clear ? null : localStorage.getItem("accessToken");
-  if (!clear && !token) return;
-  fetch("/api/session", {
-    method: clear ? "DELETE" : "POST",
-    headers: token ? { authorization: `Bearer ${token}` } : undefined,
-  }).catch(() => undefined);
+  if (!clear && !token) return false;
+  try {
+    const response = await fetch("/api/session", {
+      method: clear ? "DELETE" : "POST",
+      headers: token ? { authorization: `Bearer ${token}` } : undefined,
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Clear the routing session on every sign-out path (logout, reset, a rejected
+ * session), awaiting the server so the `HttpOnly` cookie is actually removed.
+ *
+ * `cipansor-session` is `HttpOnly`, so client JavaScript cannot delete it — only
+ * the server's `DELETE /api/session` can. Merely clearing localStorage left the
+ * Proxy believing the visitor was still signed in and bouncing `/login` back to
+ * a protected page until the cookie expired.
+ *
+ * Best-effort by design: it never rejects (so no unhandled rejection) and never
+ * blocks the caller's local cleanup, which must run regardless. Callers that
+ * need the outcome use {@link syncRoutingSession}.
+ */
+async function clearRoutingSession(): Promise<void> {
+  if (typeof window !== "undefined") clearSessionCookies();
+  await syncRoutingSession(true);
+}
+
+/**
+ * Fail a login that could not establish its routing session.
+ *
+ * The API may have accepted the credentials, but without the signed cookie the
+ * Proxy will not recognise the session, so the UI must NOT treat this as a
+ * navigable success. Tokens/state are cleared so no half-login survives.
+ */
+function rejectRoutingSession(
+  set: (partial: Partial<AuthState>) => void
+): never {
+  localStorage.removeItem("accessToken");
+  localStorage.removeItem("refreshToken");
+  clearSessionCookies();
+  set({
+    user: null,
+    isAuthenticated: false,
+    isLoading: false,
+    requiresTwoFactor: false,
+    requiresTwoFactorSetup: false,
+    tempToken: null,
+    error: ROUTING_SESSION_ERROR,
+  });
+  throw new Error(ROUTING_SESSION_ERROR);
 }
 
 /**
@@ -127,7 +188,10 @@ export const useAuthStore = create<AuthState>()(
             requiresTwoFactorSetup: false,
             tempToken: null,
           });
-          syncRoutingSession();
+          // The Proxy cannot see the session until the cookie is minted. Await
+          // it so the caller navigates only after the server has confirmed,
+          // instead of racing the write and bouncing off `/login`.
+          if (!(await syncRoutingSession())) rejectRoutingSession(set);
         } catch (error: unknown) {
           const message =
             error instanceof Error ? error.message : "SSO Login failed";
@@ -187,7 +251,7 @@ export const useAuthStore = create<AuthState>()(
             requiresTwoFactorSetup: false,
             tempToken: null,
           });
-          syncRoutingSession();
+          if (!(await syncRoutingSession())) rejectRoutingSession(set);
         } catch (error: unknown) {
           const message =
             error instanceof Error ? error.message : "Login failed";
@@ -233,7 +297,7 @@ export const useAuthStore = create<AuthState>()(
             requiresTwoFactor: false,
             tempToken: null,
           });
-          syncRoutingSession();
+          if (!(await syncRoutingSession())) rejectRoutingSession(set);
         } catch (error: unknown) {
           const message =
             error instanceof Error ? error.message : "2FA Verification failed";
@@ -259,9 +323,10 @@ export const useAuthStore = create<AuthState>()(
         } finally {
           localStorage.removeItem("accessToken");
           localStorage.removeItem("refreshToken");
-          // Also remove from cookies
-          clearSessionCookies();
-          syncRoutingSession(true);
+          // The routing cookie is `HttpOnly`, so only the server can delete it
+          // — await the `DELETE` before declaring the logout done, or the Proxy
+          // keeps treating the visitor as signed in.
+          await clearRoutingSession();
           set({
             user: null,
             isAuthenticated: false,
@@ -292,10 +357,15 @@ export const useAuthStore = create<AuthState>()(
           } catch (error: unknown) {
             const status = (error as AxiosError)?.response?.status;
             if (status === 401 || status === 403) {
-              // Token genuinely rejected — clear the session.
+              // Token genuinely rejected — clear the session. The routing
+              // cookie is `HttpOnly`, so the client cannot remove it itself:
+              // deleting only localStorage left the Proxy believing the visitor
+              // was signed in and bouncing `/login` back to a protected page
+              // until the cookie expired. Await the server-side deletion so the
+              // guard and the token state agree.
               localStorage.removeItem("accessToken");
               localStorage.removeItem("refreshToken");
-              clearSessionCookies();
+              await clearRoutingSession();
               set({ user: null, isAuthenticated: false, isLoading: false });
             } else {
               // Transient failure (network blip, timeout, 5xx). Do NOT log the
@@ -328,6 +398,29 @@ export const useAuthStore = create<AuthState>()(
           const userResponse = await authApi.me();
           set({ user: userResponse.data.data, isLoading: false });
 
+          // The Proxy routes on the signed `cipansor-session` payload, which
+          // still carries the OLD role. Re-mint it from the new token BEFORE
+          // reloading, or the reload lands on a page the stale role may not
+          // open and the nav is wrong until the cookie expires.
+          if (!(await syncRoutingSession())) {
+            // Reloading now would serve the previous role's routing. The new
+            // tokens are already stored, so leaving them would pair a new role
+            // with a cookie that still names the old one — an inconsistent
+            // half-switch. Roll the whole session back instead: clear the
+            // tokens AND the routing cookie server-side, fail closed.
+            localStorage.removeItem("accessToken");
+            localStorage.removeItem("refreshToken");
+            await clearRoutingSession();
+            set({
+              user: null,
+              isAuthenticated: false,
+              isLoading: false,
+              error:
+                "Peran tidak dapat disinkronkan dengan sesi. Silakan masuk kembali.",
+            });
+            throw new Error("Failed to sync routing session after role switch");
+          }
+
           // Reload page to refresh navigation and permissions
           window.location.reload();
         } catch (error: unknown) {
@@ -351,7 +444,10 @@ export const useAuthStore = create<AuthState>()(
         localStorage.removeItem("accessToken");
         localStorage.removeItem("refreshToken");
         clearSessionCookies();
-        syncRoutingSession(true);
+        // The HttpOnly routing cookie needs the server round-trip; fire it and
+        // let it settle. Not awaited because this action is synchronous, but
+        // the promise is handled so it can never be an unhandled rejection.
+        void clearRoutingSession();
         set({
           user: null,
           isAuthenticated: false,

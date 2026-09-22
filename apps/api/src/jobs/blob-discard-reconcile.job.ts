@@ -1,6 +1,11 @@
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger';
-import { parseBlobUrl, deleteBlobFromCloudStorage } from '@/utils/cloud-storage';
+import {
+  parseBlobUrl,
+  deleteBlobFromCloudStorage,
+  configuredStorageAccount,
+} from '@/utils/cloud-storage';
+import { parseAzureBlobIdentityKey } from '@/utils/blob-identity';
 import { resolveLocalUploadPath, removeLocalUpload } from '@/utils/local-upload-store';
 import { BlobReconcileStatus, Prisma } from '@prisma/client';
 
@@ -126,6 +131,28 @@ export async function claimRowForReconcile(id: string): Promise<boolean> {
 }
 
 /**
+ * Resolve a persisted claim key to the storage coordinates to delete, or null
+ * when the row does not name a blob this deployment owns.
+ *
+ * Claim rows persist the CANONICAL key (`azure://<account>/<container>/<blob>`,
+ * or `/uploads/<file>`), not a raw URL — `parseBlobUrl` therefore returns null
+ * for a valid Azure claim and the job used to quarantine it as a foreign URL,
+ * silently never reclaiming the blob. Parse the canonical key here.
+ *
+ * The configured account is enforced: a claim naming an account we do not own
+ * is refused (quarantined) rather than sent to our storage client.
+ */
+function resolveAzureClaim(
+  key: string
+): { containerName: string; blobName: string } | null {
+  const identity = parseAzureBlobIdentityKey(key);
+  if (!identity) return null;
+  const account = configuredStorageAccount();
+  if (!account || identity.account !== account) return null;
+  return { containerName: identity.container, blobName: identity.blobPath };
+}
+
+/**
  * Re-run the delete for tombstoned blobs whose outcome is unknown.
  *
  * A tombstone older than the discard claim TTL is eligible: before that the
@@ -166,7 +193,7 @@ export async function reconcileDiscardedBlobs(
     // Dry run takes nothing and touches nothing; report and move on.
     if (dryRun) {
       summary.examined += 1;
-      const parsed = parseBlobUrl(row.blobUrl);
+      const parsed = parseBlobUrl(row.blobUrl) ?? resolveAzureClaim(row.blobUrl);
       const localPath = parsed ? null : await resolveLocalUploadPath(row.blobUrl).catch(() => null);
       if (parsed || localPath) summary.deleted += 1;
       else summary.skipped += 1;
@@ -181,7 +208,7 @@ export async function reconcileDiscardedBlobs(
     }
     summary.examined += 1;
 
-    const parsed = parseBlobUrl(row.blobUrl);
+    const parsed = parseBlobUrl(row.blobUrl) ?? resolveAzureClaim(row.blobUrl);
 
     if (!parsed) {
       // Could be a valid LOCAL upload path, or a malformed/foreign URL. A local

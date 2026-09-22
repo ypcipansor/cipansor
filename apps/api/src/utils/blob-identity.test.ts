@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   parseAzureBlobIdentity,
+  parseAzureBlobIdentityKey,
   azureBlobIdentityKey,
   azureBlobReferenceCandidates,
   canonicalAzureBlobUrl,
@@ -164,5 +165,43 @@ describe('isAzureBlobUrl', () => {
     expect(isAzureBlobUrl('https://any.blob.core.windows.net/c/x.pdf')).toBe(true);
     expect(isAzureBlobUrl('https://cipansor.or.id/uploads/a.pdf')).toBe(false);
     expect(isAzureBlobUrl('/uploads/a.pdf')).toBe(false);
+  });
+});
+
+describe('parseAzureBlobIdentityKey (canonical claim key inverse)', () => {
+  it('round-trips the canonical key back to its identity', () => {
+    const url = 'https://s.blob.core.windows.net/c/a%20b/x.pdf?sig=z';
+    const identity = parseAzureBlobIdentity(url)!;
+    const key = azureBlobIdentityKey(identity);
+    expect(parseAzureBlobIdentityKey(key)).toEqual({
+      account: 's',
+      container: 'c',
+      blobPath: 'a b/x.pdf',
+    });
+  });
+
+  it('preserves nested blob paths', () => {
+    expect(parseAzureBlobIdentityKey('azure://acct/container/2026/09/file.pdf')).toEqual({
+      account: 'acct',
+      container: 'container',
+      blobPath: '2026/09/file.pdf',
+    });
+  });
+
+  it('lowercases the account but not the container (containers are case-sensitive)', () => {
+    expect(parseAzureBlobIdentityKey('azure://Acct/CaseContainer/x.pdf')).toEqual({
+      account: 'acct',
+      container: 'CaseContainer',
+      blobPath: 'x.pdf',
+    });
+  });
+
+  it('refuses anything that is not a canonical azure key', () => {
+    expect(parseAzureBlobIdentityKey('/uploads/a.pdf')).toBeNull();
+    expect(parseAzureBlobIdentityKey('https://s.blob.core.windows.net/c/x.pdf')).toBeNull();
+    expect(parseAzureBlobIdentityKey('azure://acct')).toBeNull();
+    expect(parseAzureBlobIdentityKey('azure://acct/')).toBeNull();
+    expect(parseAzureBlobIdentityKey('azure://acct/container')).toBeNull();
+    expect(parseAzureBlobIdentityKey('azure:///container/x.pdf')).toBeNull();
   });
 });

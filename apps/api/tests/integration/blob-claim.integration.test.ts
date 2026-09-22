@@ -18,6 +18,8 @@ import {
   releaseBlobClaimById,
   markBlobDiscarded,
   assertBlobClaimHeld,
+  markBlobReconcileDone,
+  canonicalBlobClaimKey,
   type BlobClaimHandle,
 } from '@/utils/blob-claim';
 
@@ -26,6 +28,14 @@ const describeDb = process.env.RUN_DB_TESTS ? describe : describe.skip;
 const URL_A = 'https://store.blob.core.windows.net/cipansor-documents/race-a.pdf';
 const URL_B = 'https://store.blob.core.windows.net/cipansor-documents/race-b.pdf';
 const URL_C = 'https://store.blob.core.windows.net/cipansor-documents/race-c.pdf';
+
+// The claim helper persists and reads the CANONICAL key (`azure://…`), not the
+// raw URL. Raw SQL fixtures must therefore use the same key, or they insert a
+// row the helper never contends with and the serialization test passes vacuously
+// (it did: every raw-insert test "succeeded" without the discard ever blocking).
+const KEY_A = canonicalBlobClaimKey(URL_A);
+const KEY_B = canonicalBlobClaimKey(URL_B);
+const KEY_C = canonicalBlobClaimKey(URL_C);
 
 function openClient(): Client {
   return new Client({ connectionString: process.env.DATABASE_URL });
@@ -51,14 +61,14 @@ describeDb('BlobClaim protocol', () => {
     await clientA.connect();
     await clientA.query(
       `DELETE FROM "blob_claims" WHERE "blob_url" = ANY($1)`,
-      [[URL_A, URL_B, URL_C]]
+      [[KEY_A, KEY_B, KEY_C]]
     );
   });
 
   afterAll(async () => {
     await clientA.query(
       `DELETE FROM "blob_claims" WHERE "blob_url" = ANY($1)`,
-      [[URL_A, URL_B, URL_C]]
+      [[KEY_A, KEY_B, KEY_C]]
     );
     await clientA.end();
   });
@@ -94,7 +104,7 @@ describeDb('BlobClaim protocol', () => {
       `INSERT INTO "blob_claims"
          ("id", "blob_url", "kind", "holder_id", "operation_token", "created_at", "expires_at")
        VALUES ('race-claim-1', $1, 'RECORD', 'author-tx', 'tok-1', now(), now() + interval '10 minutes')`,
-      [URL_B]
+      [KEY_B]
     );
 
     const discardPromise = claimBlobForDiscard(URL_B, 'discard-holder');
@@ -104,7 +114,7 @@ describeDb('BlobClaim protocol', () => {
     await clientA.query('COMMIT');
     expect(await discardPromise).toBeNull();
 
-    await clientA.query(`DELETE FROM "blob_claims" WHERE "blob_url" = $1`, [URL_B]);
+    await clientA.query(`DELETE FROM "blob_claims" WHERE "blob_url" = $1`, [KEY_B]);
   });
 
   it('lets a create claim the blob when the blocking transaction rolls back', async () => {
@@ -113,7 +123,7 @@ describeDb('BlobClaim protocol', () => {
       `INSERT INTO "blob_claims"
          ("id", "blob_url", "kind", "holder_id", "operation_token", "created_at", "expires_at")
        VALUES ('race-claim-2', $1, 'DISCARD', 'other-discard', 'tok-2', now(), now() + interval '10 minutes')`,
-      [URL_B]
+      [KEY_B]
     );
 
     const recordPromise = claimBlobForRecord(URL_B, 'author-tx');
@@ -130,14 +140,14 @@ describeDb('BlobClaim protocol', () => {
       `INSERT INTO "blob_claims"
          ("id", "blob_url", "kind", "holder_id", "operation_token", "created_at", "expires_at")
        VALUES ('expired-claim', $1, 'RECORD', 'crashed-author', 'tok-e', now() - interval '20 minutes', now() - interval '10 minutes')`,
-      [URL_A]
+      [KEY_A]
     );
 
     const claim = await claimBlobForDiscard(URL_A, 'discard-holder');
     expect(claim).not.toBeNull();
     const { rows } = await clientA.query(
       'SELECT kind, holder_id FROM "blob_claims" WHERE "blob_url" = $1',
-      [URL_A]
+      [KEY_A]
     );
     expect(rows[0]).toEqual({ kind: 'DISCARD', holder_id: 'discard-holder' });
     await releaseBlobClaimById(claim as BlobClaimHandle);
@@ -189,7 +199,7 @@ describeDb('BlobClaim protocol', () => {
     await releaseBlobClaimById(first as BlobClaimHandle);
     const { rows } = await clientA.query(
       'SELECT id FROM "blob_claims" WHERE "blob_url" = $1',
-      [URL_A]
+      [KEY_A]
     );
     expect(rows[0].id).toBe(second!.id);
     await releaseBlobClaimById(second as BlobClaimHandle);
@@ -210,7 +220,7 @@ describeDb('BlobClaim protocol', () => {
       `INSERT INTO "blob_claims"
          ("id", "blob_url", "kind", "holder_id", "operation_token", "created_at", "expires_at")
        VALUES ('expired-discard', $1, 'DISCARD', 'holder', 'old-token', now() - interval '20 minutes', now() - interval '10 minutes')`,
-      [URL_A]
+      [KEY_A]
     );
     const claim = await claimBlobForDiscard(URL_A, 'holder');
     expect(claim).not.toBeNull();
@@ -236,7 +246,7 @@ describeDb('BlobClaim protocol', () => {
       `INSERT INTO "blob_claims"
          ("id", "blob_url", "kind", "holder_id", "operation_token", "created_at", "expires_at")
        VALUES ('tombstone-expired', $1, 'DISCARD', 'discard-holder', 'tok-te', now() - interval '20 minutes', now() - interval '10 minutes')`,
-      [URL_A]
+      [KEY_A]
     );
     expect(
       await markBlobDiscarded({
@@ -247,7 +257,7 @@ describeDb('BlobClaim protocol', () => {
     ).toBe(false);
 
     await clientA.query(`DELETE FROM "blob_claims" WHERE "blob_url" = ANY($1)`, [
-      [URL_A, URL_B],
+      [KEY_A, KEY_B],
     ]);
   });
 
@@ -277,7 +287,7 @@ describeDb('BlobClaim protocol', () => {
     );
     expect(await claimBlobForRecord(URL_A, 'author-1')).toBeNull();
 
-    await clientA.query(`DELETE FROM "blob_claims" WHERE "blob_url" = $1`, [URL_A]);
+    await clientA.query(`DELETE FROM "blob_claims" WHERE "blob_url" = $1`, [KEY_A]);
   });
 
   it('a create waits out a live discard claim instead of failing', async () => {
@@ -307,10 +317,73 @@ describeDb('BlobClaim protocol', () => {
     await claimBlobForRecord(URL_A, 'author-2'); // blocked, no second row
     const { rows } = await clientA.query(
       'SELECT count(*)::int AS count FROM "blob_claims" WHERE "blob_url" = $1',
-      [URL_A]
+      [KEY_A]
     );
     expect(rows[0].count).toBe(1);
-    await clientA.query(`DELETE FROM "blob_claims" WHERE "blob_url" = $1`, [URL_A]);
+    await clientA.query(`DELETE FROM "blob_claims" WHERE "blob_url" = $1`, [KEY_A]);
+  });
+
+  // ── Finding 4: terminal DONE after a successful physical delete ────────────
+
+  it('marks a tombstoned claim DONE for the exact operation that holds it (finding 4a)', async () => {
+    const discard = await claimBlobForDiscard(URL_A, 'discard-holder');
+    expect(discard).not.toBeNull();
+    expect(await markBlobDiscarded(discard as BlobClaimHandle)).toBe(true);
+
+    expect(await markBlobReconcileDone(discard as BlobClaimHandle)).toBe(true);
+
+    const { rows } = await clientA.query(
+      'SELECT reconcile_status AS status, reconciled_at AS at, next_reconcile_at AS next FROM "blob_claims" WHERE "id" = $1',
+      [discard!.id]
+    );
+    expect(rows[0]).toMatchObject({ status: 'DONE', next: null });
+    expect(rows[0].at).not.toBeNull();
+    // The tombstone is preserved: marking DONE must not reopen the URL.
+    const tomb = await clientA.query(
+      'SELECT discarded_at AS "discardedAt" FROM "blob_claims" WHERE "id" = $1',
+      [discard!.id]
+    );
+    expect(tomb.rows[0].discardedAt).not.toBeNull();
+
+    await clientA.query(`DELETE FROM "blob_claims" WHERE "blob_url" = $1`, [KEY_A]);
+  });
+
+  it('refuses to mark DONE for a mismatched token or an untombstoned claim (finding 4f)', async () => {
+    const discard = await claimBlobForDiscard(URL_A, 'discard-holder');
+    expect(discard).not.toBeNull();
+
+    // Not tombstoned yet: a stale operation must not resolve the lifecycle.
+    expect(await markBlobReconcileDone(discard as BlobClaimHandle)).toBe(false);
+
+    // Tombstoned by the true owner...
+    expect(await markBlobDiscarded(discard as BlobClaimHandle)).toBe(true);
+    // ...but a mismatched token cannot resolve it.
+    expect(
+      await markBlobReconcileDone({ ...discard!, operationToken: 'stale-token' })
+    ).toBe(false);
+
+    // The true owner still can.
+    expect(await markBlobReconcileDone(discard as BlobClaimHandle)).toBe(true);
+
+    await clientA.query(`DELETE FROM "blob_claims" WHERE "blob_url" = $1`, [KEY_A]);
+  });
+
+  it('a DONE row is no longer eligible for reconciliation (finding 4d)', async () => {
+    const discard = await claimBlobForDiscard(URL_A, 'discard-holder');
+    expect(await markBlobDiscarded(discard as BlobClaimHandle)).toBe(true);
+    expect(await markBlobReconcileDone(discard as BlobClaimHandle)).toBe(true);
+
+    // Simulate the worker's selection filter; the row must not be returned.
+    const { rows } = await clientA.query(
+      `SELECT id FROM "blob_claims"
+        WHERE "discarded_at" IS NOT NULL
+          AND "reconcile_status" = 'PENDING'::"BlobReconcileStatus"
+          AND "id" = $1`,
+      [discard!.id]
+    );
+    expect(rows).toHaveLength(0);
+
+    await clientA.query(`DELETE FROM "blob_claims" WHERE "blob_url" = $1`, [KEY_A]);
   });
 
   // ── A/B: cleanup-vs-create with a real Postgres transaction ────────────────
@@ -323,7 +396,7 @@ describeDb('BlobClaim protocol', () => {
       `INSERT INTO "blob_claims"
          ("id", "blob_url", "kind", "holder_id", "operation_token", "created_at", "expires_at")
        VALUES ('cleanup-vs-create', $1, 'RECORD', 'author', 'tok-c', now(), now() + interval '10 minutes')`,
-      [URL_C]
+      [KEY_C]
     );
 
     // Cleanup's discard claim blocks on the row while the writer is open.
@@ -334,6 +407,6 @@ describeDb('BlobClaim protocol', () => {
     await clientA.query('COMMIT');
     expect(await cleanup).toBeNull();
 
-    await clientA.query(`DELETE FROM "blob_claims" WHERE "blob_url" = $1`, [URL_C]);
+    await clientA.query(`DELETE FROM "blob_claims" WHERE "blob_url" = $1`, [KEY_C]);
   });
 });

@@ -299,6 +299,49 @@ export async function markBlobDiscarded(
 }
 
 /**
+ * Mark a discard's reconciliation lifecycle terminal after its physical delete
+ * succeeded.
+ *
+ * Without this, a successful `discardUnderClaim` left the row `PENDING`, so the
+ * reconciliation worker selected it again, deleted a second time, and — for a
+ * local file already unlinked — could treat the resulting `ENOENT` as an
+ * abnormal result and quarantine it. The delete work was also repeated and a
+ * backlog of already-finished rows could starve newer ones.
+ *
+ * This is an atomic conditional UPDATE, so the transition is only applied while
+ * the row still belongs to the operation that did the delete:
+ *
+ *  - `id` + `operation_token` + `kind` pin it to the exact operation;
+ *  - `discarded_at IS NOT NULL` proves the tombstone is still set — a row whose
+ *    tombstone was cleared (it never should be) is not marked done.
+ *
+ * The tombstone is deliberately left in place: it is what keeps a create from
+ * ever claiming a URL whose bytes are gone. Marking `DONE` only stops the
+ * reconciliation worker from re-deleting; it does not reopen the URL.
+ *
+ * Returns false when the claim/token no longer matches (a stale operation must
+ * not be able to resolve a claim it no longer holds) or when the row was
+ * already resolved.
+ */
+export async function markBlobReconcileDone(
+  handle: BlobClaimHandle,
+  c?: ClaimClient
+): Promise<boolean> {
+  const rows = await client(c).$queryRaw<Array<{ id: string }>>(Prisma.sql`
+    UPDATE "blob_claims"
+    SET "reconcile_status" = 'DONE'::"BlobReconcileStatus",
+        "reconciled_at" = now(),
+        "next_reconcile_at" = NULL
+    WHERE "id" = ${handle.id}
+      AND "operation_token" = ${handle.operationToken}
+      AND "kind" = ${handle.kind}::"BlobClaimKind"
+      AND "discarded_at" IS NOT NULL
+    RETURNING "id"
+  `);
+  return rows.length > 0;
+}
+
+/**
  * Release a claim by id, conditional on the operation token and kind.
  *
  * The old API released by URL + user id, which meant a stale release for a

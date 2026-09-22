@@ -44,6 +44,7 @@ vi.mock('@/utils/cloud-storage', () => ({
     url.startsWith('https://store.blob.core.windows.net/cipansor-documents/')
       ? { containerName: 'cipansor-documents', blobName: url.split('/').pop() as string }
       : null,
+  configuredStorageAccount: () => 'store',
   deleteBlobFromCloudStorage: vi.fn(),
 }));
 
@@ -395,5 +396,82 @@ describe('reconcileDiscardedBlobs (BUG 7 / flag 11)', () => {
     // The selection excludes anything already terminal, which is what lets the
     // second run reach a row the first could not fit.
     expect(findManyMock.mock.calls[1][0].where.reconcileStatus).toBe(BlobReconcileStatus.PENDING);
+  });
+
+  // ── Finding 4: canonical claim keys, DONE exclusivity, idempotent local ────
+
+  it('reclaims an AZURE claim persisted under its canonical `azure://` key (finding 4)', async () => {
+    // A successful discard now marks its claim DONE, so the worker no longer
+    // sees the common case; but a row left PENDING (e.g. the DONE write failed)
+    // stores the canonical key, which `parseBlobUrl` rejects. The worker must
+    // still resolve it instead of quarantining a legitimate blob.
+    findManyMock.mockResolvedValue([
+      { id: 'c1', blobUrl: 'azure://store/cipansor-documents/gone.pdf', reconcileAttempts: 0 },
+    ]);
+
+    const summary = await reconcileDiscardedBlobs();
+
+    expect(deleteMock).toHaveBeenCalledWith('cipansor-documents', 'gone.pdf');
+    expect(summary).toMatchObject({ deleted: 1, skipped: 0, failed: 0 });
+    expect(updateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'c1' },
+        data: expect.objectContaining({ reconcileStatus: BlobReconcileStatus.DONE }),
+      })
+    );
+  });
+
+  it('quarantines a canonical key for a foreign storage account rather than deleting', async () => {
+    findManyMock.mockResolvedValue([
+      { id: 'c1', blobUrl: 'azure://someone-elses-account/cipansor-documents/gone.pdf', reconcileAttempts: 0 },
+    ]);
+
+    const summary = await reconcileDiscardedBlobs();
+
+    expect(deleteMock).not.toHaveBeenCalled();
+    expect(summary).toMatchObject({ skipped: 1, deleted: 0 });
+    expect(updateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ reconcileStatus: BlobReconcileStatus.QUARANTINED }),
+      })
+    );
+  });
+
+  it('never selects a DONE row (finding 4d)', async () => {
+    findManyMock.mockResolvedValue([]);
+
+    await reconcileDiscardedBlobs();
+
+    expect(findManyMock.mock.calls[0][0].where.reconcileStatus).toBe(BlobReconcileStatus.PENDING);
+    // A DONE row would not match a PENDING-only filter; assert the contract
+    // explicitly so a future widening of the filter is caught.
+    expect(findManyMock.mock.calls[0][0].where.reconcileStatus).not.toBe(
+      BlobReconcileStatus.DONE
+    );
+  });
+
+  it('does not quarantine a local row whose file was already successfully deleted (finding 4e)', async () => {
+    // `removeLocalUpload` is idempotent for ENOENT (already gone), so a second
+    // pass over a successfully-deleted file resolves as a clean success — never
+    // a quarantine.
+    (resolveLocalUploadPath as any).mockResolvedValue('/tmp/uploads-test/a.png');
+    (removeLocalUpload as any).mockResolvedValue(undefined);
+    findManyMock.mockResolvedValue([
+      { id: 'c1', blobUrl: '/uploads/123e4567-e89b-42d3-a456-426614174000.png', reconcileAttempts: 0 },
+    ]);
+
+    const summary = await reconcileDiscardedBlobs();
+
+    expect(summary).toMatchObject({ deleted: 1, skipped: 0, failed: 0 });
+    expect(updateMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ reconcileStatus: BlobReconcileStatus.QUARANTINED }),
+      })
+    );
+    expect(updateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ reconcileStatus: BlobReconcileStatus.DONE }),
+      })
+    );
   });
 });

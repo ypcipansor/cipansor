@@ -103,6 +103,7 @@ vi.mock('@/utils/blob-claim', () => ({
     .mockResolvedValue([{ id: 'claim-1', operationToken: 'tok-record', kind: 'RECORD' }]),
   releaseBlobClaims: vi.fn().mockResolvedValue(undefined),
   markBlobDiscarded: vi.fn().mockResolvedValue(true),
+  markBlobReconcileDone: vi.fn().mockResolvedValue(true),
 }));
 // Referenced only inside tests (never in the hoisted factory).
 const DISCARD_HANDLE = { id: 'claim-1', operationToken: 'tok-discard', kind: 'DISCARD' };

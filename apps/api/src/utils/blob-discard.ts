@@ -2,6 +2,7 @@ import {
   claimBlobForDiscard,
   releaseBlobClaimById,
   markBlobDiscarded,
+  markBlobReconcileDone,
 } from '@/utils/blob-claim';
 
 /** Result of {@link discardUnderClaim}; the caller maps it to a response. */
@@ -54,6 +55,17 @@ export async function discardUnderClaim(
     tombstoned = true;
 
     await physicalDelete();
+    // The bytes are gone, so this discard is FINISHED. Mark the reconciliation
+    // lifecycle terminal so the worker never selects the row again: re-deleting
+    // is wasted work, and for a local file that is already absent the second
+    // pass would see `ENOENT` and could quarantine a row that in fact succeeded.
+    //
+    // Deliberately best-effort and non-throwing. If this UPDATE fails the
+    // tombstone stays set and the row stays reconcilable — the worker simply
+    // retries the (idempotent) delete later. Releasing the claim or clearing the
+    // tombstone here would let a create resurrect a deleted URL, which is far
+    // worse than one redundant retry.
+    await markBlobReconcileDone(claim).catch(() => false);
     return 'deleted';
   } catch (error) {
     // Only a pre-tombstone abort releases; a post-tombstone failure keeps the
