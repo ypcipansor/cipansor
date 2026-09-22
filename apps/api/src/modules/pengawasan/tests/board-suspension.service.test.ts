@@ -720,7 +720,10 @@ describe('BoardSuspensionService Unit Tests', () => {
     };
     (prisma.user.findUnique as any).mockResolvedValue(mockUser);
     (prisma.boardMemberSuspension.findFirst as any).mockResolvedValue(null);
-    (prisma.boardMemberSuspension.create as any).mockResolvedValue({ id: 'susp-1', status: 'ACTIVE' });
+    (prisma.boardMemberSuspension.create as any).mockResolvedValue({
+      id: 'susp-1',
+      status: 'ACTIVE',
+    });
     (prisma.user.updateMany as any).mockResolvedValue({ count: 1 });
     (prisma.userSigningKey.findMany as any).mockResolvedValue([{ id: 'key-1', lockedUntil: null }]);
     (prisma.userSigningKey.updateMany as any).mockResolvedValue({ count: 1 });
@@ -745,6 +748,52 @@ describe('BoardSuspensionService Unit Tests', () => {
     });
   });
 
+  it('a lift never clears a formal revocation — revokedAt is not a suspension lock', async () => {
+    // A key may carry a formal, permanent revocation (`revokedAt`) set through
+    // the e-sign lifecycle by a different operator. A suspension is a temporary
+    // lock, so its lift restores `lockedUntil` only: it must write neither
+    // `revokedAt` nor `revokedReason`, and the restore is keyed on the sentinel,
+    // so a revoked key (whose `lockedUntil` is not the sentinel) is not touched
+    // at all. If this ever regresses, a lift would silently un-revoke a key the
+    // yayasan deliberately revoked — the one thing the e-sign lifecycle forbids.
+    const mockSuspension = {
+      id: 'susp-revoked',
+      userId: 'user-pengurus',
+      status: 'ACTIVE',
+      accountStateWriter: 'asw_test',
+      plhUserId: null,
+      plhRoleCode: null,
+      plhAssignmentCreated: false,
+      plhAssignmentId: null,
+      plhAssignmentRestore: null,
+      signingKeyLocks: { 'key-1': null },
+      accountStateSnapshot: { isActiveBefore: true },
+    };
+
+    (prisma.boardMemberSuspension.findUnique as any).mockResolvedValue(mockSuspension);
+    (prisma.boardMemberSuspension.findUniqueOrThrow as any).mockResolvedValue({
+      ...mockSuspension,
+      status: 'LIFTED',
+    });
+    (prisma.user.findUnique as any).mockResolvedValue({
+      isActive: false,
+      accountStateWriter: 'asw_test',
+      updatedAt: new Date('2026-03-01T00:00:00.000Z'),
+    });
+
+    await boardSuspensionService.liftBoardSuspension('susp-revoked', 'lifter', 'Pulih');
+
+    for (const call of (prisma.userSigningKey.updateMany as any).mock.calls) {
+      expect(call[0].data).not.toHaveProperty('revokedAt');
+      expect(call[0].data).not.toHaveProperty('revokedReason');
+    }
+    // The restore still targets only the sentinel-locked column; a formally
+    // revoked key (lockedUntil not the sentinel) falls outside the predicate.
+    expect(prisma.userSigningKey.updateMany).toHaveBeenCalledWith({
+      where: { id: 'key-1', userId: 'user-pengurus', lockedUntil: SIGNING_KEY_SUSPENSION_LOCK },
+      data: { lockedUntil: null },
+    });
+  });
 
   it('leaves a pre-existing effective Plh assignment alone on lift', async () => {
     const mockSuspension = {
@@ -1346,10 +1395,10 @@ describe('BoardSuspensionService Unit Tests', () => {
           accountStateWriter: 'asw_test',
         },
         data: {
-        isActive: true,
-        accountStateWriter: expect.stringMatching(/^asw_/),
-        accountStateVersion: { increment: 1 },
-      },
+          isActive: true,
+          accountStateWriter: expect.stringMatching(/^asw_/),
+          accountStateVersion: { increment: 1 },
+        },
       });
     });
 
@@ -1424,10 +1473,10 @@ describe('BoardSuspensionService Unit Tests', () => {
           accountStateWriter: 'asw_test',
         },
         data: {
-        isActive: true,
-        accountStateWriter: expect.stringMatching(/^asw_/),
-        accountStateVersion: { increment: 1 },
-      },
+          isActive: true,
+          accountStateWriter: expect.stringMatching(/^asw_/),
+          accountStateVersion: { increment: 1 },
+        },
       });
     });
 
@@ -1478,7 +1527,10 @@ describe('BoardSuspensionService Unit Tests', () => {
 
       await boardSuspensionService.liftBoardSuspension('susp-11', 'lifter', 'Pulih');
 
-      expect(invalidateUserSuspensionCache).toHaveBeenCalledWith('user-pengurus', expect.any(Number));
+      expect(invalidateUserSuspensionCache).toHaveBeenCalledWith(
+        'user-pengurus',
+        expect.any(Number)
+      );
     });
   });
 
@@ -1505,10 +1557,7 @@ describe('BoardSuspensionService Unit Tests', () => {
       // The legacy enum is expressed as an OR with `role: null`, because
       // `notIn` alone evaluates NULL and silently dropped accounts without a
       // legacy role.
-      expect(where.OR).toEqual([
-        { role: null },
-        { role: { notIn: ['STUDENT', 'PARENT'] } },
-      ]);
+      expect(where.OR).toEqual([{ role: null }, { role: { notIn: ['STUDENT', 'PARENT'] } }]);
     });
 
     it('marks each candidate with its resolved plhEligible flag', async () => {
@@ -1660,7 +1709,10 @@ describe('BoardSuspensionService Unit Tests', () => {
       (prisma.boardMemberSuspension.findFirst as any).mockResolvedValue(null);
       (prisma.$queryRaw as any).mockResolvedValue([{ is_active: true, deleted_at: null }]);
       (prisma.userRoleAssignment.findMany as any).mockResolvedValue([]);
-      (prisma.role.findFirst as any).mockResolvedValue({ id: 'role-anggota', code: 'YAYASAN_ANGGOTA' });
+      (prisma.role.findFirst as any).mockResolvedValue({
+        id: 'role-anggota',
+        code: 'YAYASAN_ANGGOTA',
+      });
       (prisma.userRoleAssignment.findFirst as any).mockResolvedValue(null);
       (prisma.userRoleAssignment.create as any).mockRejectedValue(triggerError);
 

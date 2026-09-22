@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { wbsService } from './wbs.service';
+import { wbsService, CLOSED_WBS_STATUSES } from './wbs.service';
 import { prisma } from '@/lib/prisma';
 import { WbsCategory, WbsTargetLevel, WbsStatus, Prisma } from '@prisma/client';
+import { CLOSED_WBS_STATUSES as CLOSED_WBS_STATUSES_SHARED } from '@cipansor/shared';
 import { hashWbsTrackingToken, verifyWbsTrackingToken } from '@/utils/wbs-token';
 
 /** A digest as the service would store it, for fixtures that must verify. */
@@ -171,15 +172,13 @@ describe('WbsService Unit Tests', () => {
       clientVersion: 'test',
       meta: { target: ['ticket_code'] },
     });
-    (prisma.wbsReport.create as any)
-      .mockRejectedValueOnce(collision)
-      .mockResolvedValueOnce({
-        ticketCode: 'WBS-202603-ABCDEF',
-        category: WbsCategory.KEUANGAN_ASET,
-        targetLevel: WbsTargetLevel.PENGURUS_YAYASAN,
-        status: WbsStatus.DIAJUKAN,
-        createdAt: new Date(),
-      });
+    (prisma.wbsReport.create as any).mockRejectedValueOnce(collision).mockResolvedValueOnce({
+      ticketCode: 'WBS-202603-ABCDEF',
+      category: WbsCategory.KEUANGAN_ASET,
+      targetLevel: WbsTargetLevel.PENGURUS_YAYASAN,
+      status: WbsStatus.DIAJUKAN,
+      createdAt: new Date(),
+    });
 
     const result = await wbsService.createPublicReport({
       category: WbsCategory.KEUANGAN_ASET,
@@ -910,6 +909,15 @@ describe('WbsService Unit Tests', () => {
       ).rejects.toMatchObject({ statusCode: 404 });
 
       expect(prisma.wbsComment.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('the terminal-status list and the shared contract agree', () => {
+    it('matches CLOSED_WBS_STATUSES in @cipansor/shared, in both directions', () => {
+      // The API owns the DB enum (golden rule #2); the web hides the reply
+      // control from the shared mirror. A drift here would let the UI offer a
+      // reply the API refuses, or hide one it would accept.
+      expect([...CLOSED_WBS_STATUSES].sort()).toEqual([...CLOSED_WBS_STATUSES_SHARED].sort());
     });
   });
 

@@ -15,14 +15,18 @@ import { join, relative } from 'node:path';
  * — and the previous PR revision did exactly that (`status: 'SENT'` written
  * straight into the row, skipping the lifecycle).
  *
- * Direct service-to-service calls are the repository's sanctioned pattern
- * (AGENTS.md, docs/ARCHITECTURE.md reserve the typed event bus for *side
- * effects*; ~20 modules import another module's service for a synchronous
- * read/write, e.g. payroll → accounting-config, laundry → period, admissions →
- * finance). The event bus is explicitly not usable here: `createGeneratedDraftLetter`
- * returns a `letterId` the caller must return to its own client, and the bus is
- * fire-and-forget. What this test pins is the narrower rule that survived the
- * review: no direct table access, and the primitive stays the only entry.
+ * Direct service-to-service calls are the repository's sanctioned pattern for
+ * synchronous, value-returning work (AGENTS.md and docs/ARCHITECTURE.md reserve
+ * the typed event bus for *side effects*, and they say so explicitly: "Cross-module
+ * side effects — emit typed events on `eventBus`; don't reach into other modules'
+ * services"). Real precedents in this tree: `analytics/alerts.service.ts` imports
+ * `notifications.service`, `users/user.service.ts` imports `auth.service`, and
+ * `lib/event-bus.ts` imports the notification services that consume its events.
+ * The bus is explicitly not usable here: `createGeneratedDraftLetter` returns a
+ * `letterId` the caller must return to its own client, and the bus is
+ * fire-and-forget — there is no reply channel to carry it back. What this test
+ * pins is the narrower rule that survived the review: no direct table access,
+ * and the primitive stays the only entry.
  */
 
 const PENGAWASAN_DIR = join(__dirname, '..');
@@ -42,7 +46,8 @@ describe('pengawasan → correspondence boundary', () => {
   it('never writes the correspondence letter tables directly', () => {
     // Reads of reference data (a filing classification) are fine; *writes* to
     // the letter tables are not — those belong to the correspondence module.
-    const forbidden = /\bprisma\.(letter|letterFlowEvent|letterRecipient)\.(create|createMany|update|updateMany|upsert|delete|deleteMany)\b/;
+    const forbidden =
+      /\bprisma\.(letter|letterFlowEvent|letterRecipient)\.(create|createMany|update|updateMany|upsert|delete|deleteMany)\b/;
     const offenders = sourceFiles(PENGAWASAN_DIR)
       .filter((file) => forbidden.test(readFileSync(file, 'utf8')))
       .map((file) => relative(PENGAWASAN_DIR, file));

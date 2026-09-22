@@ -87,6 +87,7 @@ import {
   PLH_ROLE_CODES,
   createBoardSuspensionSchema,
   draftPeriodicReportSchema,
+  isClosedWbsStatus,
   pengawasanAccessOf,
 } from "@cipansor/shared";
 import type {
@@ -1047,8 +1048,13 @@ function PengawasanPageContent() {
                         </div>
                       )}
 
-                      {/* Handler reply */}
+                      {/* Handler reply. A terminal case is immutable for both
+                          sides of the thread, so the reply control is hidden
+                          for the same statuses the API refuses under its row
+                          lock — keeping the two in lockstep via the shared
+                          predicate. */}
                       {access.canHandleWbs &&
+                        !isClosedWbsStatus(report.status) &&
                         (replyTargetId === report.id ? (
                           <div className="space-y-2 border-t pt-2">
                             <Textarea

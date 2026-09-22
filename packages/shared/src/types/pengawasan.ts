@@ -76,6 +76,24 @@ export const WBS_STATUSES = [
 export type WbsStatusCode = (typeof WBS_STATUSES)[number];
 
 /**
+ * Statuses after which a WBS case is closed.
+ *
+ * A closed case is immutable on both sides of the thread: no public reply and
+ * no handler comment. The API refuses both under the row lock, and the web
+ * hides the reply control for these statuses. Kept in shared so the two cannot
+ * drift - the earlier revision refused the public reply while the UI still
+ * offered a handler reply the API then rejected.
+ */
+export const CLOSED_WBS_STATUSES: readonly WbsStatusCode[] = [
+  "SELESAI",
+  "TIDAK_DAPAT_DITINDAKLANJUTI",
+];
+
+export function isClosedWbsStatus(status: string): boolean {
+  return (CLOSED_WBS_STATUSES as readonly string[]).includes(status);
+}
+
+/**
  * The only roles a *Pelaksana Harian / Pelaksana Tugas* (Plh/Plt) delegation
  * may carry.
  *

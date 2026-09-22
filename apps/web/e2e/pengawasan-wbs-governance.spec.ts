@@ -642,4 +642,71 @@ test.describe.serial("Scoped account pickers and WBS handler replies", () => {
     // The Pengawas's real name/email must not leak to the reporter.
     expect(body).not.toContain("yayasan.pengawas@cipansor.or.id");
   });
+
+  test("a terminal case is immutable for the handler too, and the reply button is hidden", async ({
+    page,
+  }) => {
+    // Closing the case ends the thread for both sides: the handler's note is
+    // rendered on the reporter's public tracking page, so admitting one after
+    // closure would mutate a case the reporter can no longer answer and could
+    // leak reviewer-only context. The API refuses under its row lock; the UI
+    // must not offer the control at all.
+    const closed = await apiRequest<Envelope<{ id: string; status: string }>>(
+      pengawas,
+      "PATCH",
+      `/pengawasan/wbs/reports/${reportId}/status`,
+      {
+        status: "SELESAI",
+        handlerNote: "Kasus ditutup.",
+      },
+    );
+    expect(closed.data.status).toBe("SELESAI");
+
+    const refused = await fetch(
+      `${process.env.API_URL || "http://localhost:3001/api"}/pengawasan/wbs/reports/${reportId}/comments`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${pengawas.accessToken}`,
+        },
+        body: JSON.stringify({ message: "Catatan setelah penutupan." }),
+      },
+    );
+    expect(refused.status).toBe(409);
+
+    // And the reporter's tracker never receives it.
+    const tracked = await fetch(
+      `${process.env.API_URL || "http://localhost:3001/api"}/pengawasan/public/wbs/track`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          ticketCode: ticket.ticketCode,
+          trackingToken: ticket.trackingToken,
+        }),
+      },
+    );
+    expect(await tracked.text()).not.toContain("Catatan setelah penutupan");
+
+    await signIn(page, "pengawas");
+    await page.goto("/pengawasan");
+    // The shell lands on the first tab the role may use; the WBS panel is its
+    // own tab, so open it before looking for the card.
+    await page.getByRole("tab", { name: /WBS & Pengaduan/i }).click();
+    // Scope to this ticket's card — other open reports legitimately still offer
+    // the reply control.
+    const card = page
+      .locator('[data-slot="card"]')
+      .filter({ hasText: ticket.ticketCode });
+    await expect(card).toBeVisible({ timeout: 20000 });
+    // Non-vacuous: the control exists on other, still-open reports...
+    await expect(
+      page.getByRole("button", { name: /Tanggapi Pelapor/i }),
+    ).not.toHaveCount(0);
+    // ...but not on the closed one.
+    await expect(
+      card.getByRole("button", { name: /Tanggapi Pelapor/i }),
+    ).toHaveCount(0);
+  });
 });

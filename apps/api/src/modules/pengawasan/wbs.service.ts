@@ -11,10 +11,7 @@ import {
   type WbsForwardRoleCode,
 } from '@cipansor/shared';
 import crypto from 'crypto';
-import {
-  generateWbsTrackingToken,
-  verifyWbsTrackingToken,
-} from '@/utils/wbs-token';
+import { generateWbsTrackingToken, verifyWbsTrackingToken } from '@/utils/wbs-token';
 
 // The payloads come from the shared contract, not a local restatement: the
 // controller validates with the same Zod schema and the web client types its
@@ -45,14 +42,16 @@ export interface WbsActor {
 }
 
 /**
- * Statuses that close a WBS case to new public messages.
+ * Statuses that close a WBS case to new public messages AND handler comments.
  *
  * `SELESAI` is a resolution and `TIDAK_DAPAT_DITINDAKLANJUTI` is a decision not
- * to act; both end the case, so the reporter's thread stops there. Kept next to
- * the status writes so the enforcement in `addPublicComment` and the wording in
- * `updateReportStatus` cannot drift apart.
+ * to act; both end the case, so the thread stops there for both sides. The DB
+ * enum is the source of truth for the values (golden rule #2); the web reads
+ * the mirror in `@cipansor/shared`, and a unit test pins the two together so a
+ * rename on either side fails loudly rather than silently leaving a terminal
+ * status writable.
  */
-const CLOSED_WBS_STATUSES: readonly WbsStatus[] = [
+export const CLOSED_WBS_STATUSES: readonly WbsStatus[] = [
   WbsStatus.SELESAI,
   WbsStatus.TIDAK_DAPAT_DITINDAKLANJUTI,
 ];
@@ -108,8 +107,7 @@ export class WbsService {
     // still persisted the reporter's name and contact.
     const isAnonymous = data.isAnonymous ?? true;
 
-    const { raw: trackingToken, digest: trackingTokenDigest } =
-      generateWbsTrackingToken();
+    const { raw: trackingToken, digest: trackingTokenDigest } = generateWbsTrackingToken();
 
     // The random suffix is 4 bytes (32 bits, ~4.3B values) made unique by the
     // `wbs_reports_ticket_code_key` index. A collision is rare but possible;
@@ -149,9 +147,7 @@ export class WbsService {
       } catch (error) {
         if (isTicketCodeCollision(error) && attempt < MAX_ATTEMPTS) continue;
         if (isTicketCodeCollision(error)) {
-          throw Errors.internal(
-            'Gagal membuat nomor tiket WBS yang unik. Silakan coba lagi.'
-          );
+          throw Errors.internal('Gagal membuat nomor tiket WBS yang unik. Silakan coba lagi.');
         }
         throw error;
       }
@@ -699,14 +695,10 @@ export class WbsService {
         );
       }
       if (!reportUnitId) {
-        throw Errors.badRequest(
-          'Laporan tanpa unit tidak dapat diteruskan ke peran tingkat unit.'
-        );
+        throw Errors.badRequest('Laporan tanpa unit tidak dapat diteruskan ke peran tingkat unit.');
       }
       if (recipient.unitId !== reportUnitId) {
-        throw Errors.forbidden(
-          'Pengguna tujuan berada di unit yang berbeda dengan unit laporan.'
-        );
+        throw Errors.forbidden('Pengguna tujuan berada di unit yang berbeda dengan unit laporan.');
       }
     }
   }
