@@ -159,12 +159,18 @@ export async function resolveFileWithExpiry(
         : null;
 
     if (data?.accessToken) {
-      // A local upload: anchor the host-relative path to the API origin the
-      // token was minted for, then attach the token. Leaving it relative would
-      // resolve against the page origin and 404 whenever web and API are split
-      // (pnpm dev, the CI e2e stack, any split-origin deploy).
+      // A local upload. The API canonicalizes the reference to `/uploads/<file>`
+      // (finding B) — a legacy absolute row would otherwise send the browser to
+      // a host that no longer serves the file. Prefer that canonical reference
+      // over the input (an older API that echoes the input back is still handled
+      // by `anchorLocalUploadRef`, which leaves an absolute URL alone). Then
+      // anchor the host-relative path to the API origin the token was minted
+      // for: leaving it relative would resolve against the page origin and 404
+      // whenever web and API are split (pnpm dev, the CI e2e stack, any
+      // split-origin deploy).
+      const reference = data.url && isLocalUploadUrl(data.url) ? data.url : url;
       return {
-        url: appendFileToken(anchorLocalUploadRef(url), data.accessToken),
+        url: appendFileToken(anchorLocalUploadRef(reference), data.accessToken),
         expiresAt,
       };
     }

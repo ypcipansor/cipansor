@@ -68,3 +68,31 @@ export function clearSessionCookies(): void {
   clearBearerTokenCookie();
   clearLegacyAuthStorageCookie();
 }
+
+/**
+ * Clear the server-signed routing session via the API endpoint, then the
+ * client-owned cookies locally.
+ *
+ * `cipansor-session` is `HttpOnly`, so `document.cookie` cannot remove it —
+ * only the server's `DELETE /api/session` can. A definitive refresh failure
+ * that only called {@link clearSessionCookies} redirected the browser to
+ * `/login` while the Proxy still saw the old routing session and bounced the
+ * user back into a protected page until the cookie expired (finding A).
+ *
+ * Uses native `fetch`, deliberately NOT the `api` axios instance: this runs
+ * from the response interceptor's failure branch, so an axios call whose 401
+ * would re-enter `refreshAccessToken()` could recurse.
+ *
+ * Best-effort by contract: it NEVER rejects and never blocks the caller's local
+ * cleanup. A network failure resolves `false`; the local cookies are still
+ * cleared, so the caller can redirect to `/login` either way.
+ */
+export async function clearRoutingSessionOnServer(): Promise<boolean> {
+  if (typeof window === "undefined") return false;
+  try {
+    const response = await fetch("/api/session", { method: "DELETE" });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}

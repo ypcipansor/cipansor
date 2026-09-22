@@ -19,7 +19,11 @@ import {
 } from '@/utils/blob-owner';
 import { seesAllUnits, isFoundationScopedRole } from '@/utils/resolve-unit-id';
 import { letterScopeWhere } from '@/utils/letter-access';
-import { normalizeUploadPath, generateFileAccessToken, FILE_TOKEN_TTL_SECONDS } from '@/utils/file-token';
+import {
+  normalizeUploadPath,
+  generateFileAccessToken,
+  FILE_TOKEN_TTL_SECONDS,
+} from '@/utils/file-token';
 import { discardUnderClaim } from '@/utils/blob-discard';
 import {
   resolveLocalUploadPath,
@@ -93,11 +97,7 @@ export async function actorMayReadBlob(actor: BlobActor, owner: BlobOwner): Prom
       // `mayAdministerEmployeeDocuments`.
       if (owner.studentUserId === actor.id) return true;
       if (isFoundationScopedRole(actor.roleCode)) return true;
-      return (
-        mayVerifyPayments(actor.roleCode) &&
-        !!owner.unitId &&
-        owner.unitId === actor.unitId
-      );
+      return mayVerifyPayments(actor.roleCode) && !!owner.unitId && owner.unitId === actor.unitId;
     }
   }
 }
@@ -117,6 +117,14 @@ const assertActorMayReadBlob = actorMayReadBlob;
  *
  * Both storage spellings of the referenced file are probed (`/uploads/x` and
  * any absolute form), because the record may hold either.
+ *
+ * The returned reference is the CANONICAL `/uploads/<file>` path, never the
+ * caller's input origin (finding B). A legacy row may hold an absolute URL such
+ * as `https://old-host/uploads/<file>`; handing that back — as `{ url, downloadUrl:
+ * url }` did — minted a valid token but sent the browser to a host that no
+ * longer serves the file. The canonical path is also what the middleware binds
+ * the token to and what `apps/web/src/lib/files.ts` re-anchors to the API
+ * origin, so a raw URL and its SAS form resolve to one physical file.
  */
 export async function resolveLocalFileAccess(
   url: string,
@@ -143,9 +151,10 @@ export async function resolveLocalFileAccess(
     throw Errors.forbidden('Anda tidak berwenang mengakses berkas tersebut');
   }
 
-  // A scoped, short-lived token bound to this path — never the session token.
+  // A scoped, short-lived token bound to this canonical path — never the
+  // session token, and never the caller's (possibly legacy/foreign) origin.
   const accessToken = generateFileAccessToken(path, actor.id);
-  return { url, downloadUrl: url, accessToken, expiresIn: FILE_TOKEN_TTL_SECONDS };
+  return { url: path, downloadUrl: path, accessToken, expiresIn: FILE_TOKEN_TTL_SECONDS };
 }
 
 /**
@@ -238,11 +247,7 @@ async function discardLocalOrphanBlob(url: string, actor: BlobActor): Promise<vo
   }
 
   const refs = Array.from(
-    new Set([
-      ...blobReferenceCandidates(url),
-      ...blobReferenceCandidates(path0),
-      path0,
-    ])
+    new Set([...blobReferenceCandidates(url), ...blobReferenceCandidates(path0), path0])
   );
 
   // Same protocol as the cloud path: claim, final probe under the claim,

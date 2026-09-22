@@ -35,7 +35,10 @@ import {
   UploadFileResult,
   UploadDestination,
 } from "@cipansor/shared";
-import { clearSessionCookies } from "@/lib/session-cookie";
+import {
+  clearSessionCookies,
+  clearRoutingSessionOnServer,
+} from "@/lib/session-cookie";
 
 // 2FA Types
 export interface TwoFactorGenerateResponse {
@@ -298,6 +301,15 @@ api.interceptors.response.use(
 
         localStorage.removeItem("accessToken");
         localStorage.removeItem("refreshToken");
+        // Finding A: `cipansor-session` is `HttpOnly`, so `clearSessionCookies`
+        // alone cannot remove it. Redirecting to `/login` while the Proxy still
+        // saw the old routing session bounced the user back into a protected
+        // page until the cookie expired. Ask the SERVER to clear it first, via
+        // native `fetch` (NOT the axios instance, whose 401 interceptor would
+        // re-enter this refresh path and recurse). Best-effort: it never
+        // rejects, so an offline browser still clears localStorage and lands on
+        // `/login`.
+        await clearRoutingSessionOnServer().catch(() => undefined);
         clearSessionCookies();
         if (
           typeof window !== "undefined" &&

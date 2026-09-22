@@ -76,8 +76,33 @@ export const BLOB_DISCARD_RETRY_MAX_MS = 60 * 60 * 1000;
  * How long a worker's lease on a row lasts. The scheduler runs hourly, so a
  * lease that outlives the run but is shorter than the schedule guarantees a
  * crashed replica's rows become eligible again on the next run.
+ *
+ * The lease is RENEWED while a row is being processed (finding D). The Azure
+ * SDK does not apply a client-side per-request timeout by default
+ * (`tryTimeoutInMs` is undefined and the server default governs), and a single
+ * `deleteBlob` can retry 4 times with exponential backoff — so one row's work
+ * was not provably under 5 minutes, and a second replica could take the row and
+ * race the delete/retry/audit. A short per-operation abort
+ * ({@link BLOB_DISCARD_OPERATION_TIMEOUT_MS}) plus the heartbeat below keep a
+ * live worker's lease from lapsing mid-operation, while a crashed worker's rows
+ * still return on the next run.
  */
 export const BLOB_DISCARD_LEASE_MS = 5 * 60 * 1000;
+
+/**
+ * Hard ceiling on one storage operation (an Azure delete), well under the
+ * lease. Without it a hung connection could hold a worker past the lease and
+ * let a second replica start the same row.
+ */
+export const BLOB_DISCARD_OPERATION_TIMEOUT_MS = 2 * 60 * 1000;
+
+/**
+ * How often the worker renews a lease it still holds while processing a row.
+ * Deliberately shorter than {@link BLOB_DISCARD_OPERATION_TIMEOUT_MS}, so a
+ * renewal always lands before the operation deadline and a live worker's lease
+ * cannot lapse mid-delete.
+ */
+export const BLOB_DISCARD_LEASE_RENEW_INTERVAL_MS = 60 * 1000;
 
 /** Identifies this worker process in `blob_claims.reconcile_lease_owner`. */
 export const BLOB_DISCARD_WORKER_ID = `${process.env.HOSTNAME ?? 'worker'}:${process.pid}:${Math.random().toString(36).slice(2, 10)}`;
@@ -131,6 +156,42 @@ export async function claimRowForReconcile(id: string): Promise<boolean> {
     RETURNING "id"
   `);
   return rows.length > 0;
+}
+
+/**
+ * Renew this worker's lease on a row it still owns (finding D).
+ *
+ * Called on a heartbeat while a row is being processed, so a storage operation
+ * that approaches the lease duration cannot let the lease lapse mid-flight and
+ * hand the row to a second replica. Returns false once the lease is no longer
+ * ours (a takeover), which a caller could use to abort; the status writes are
+ * themselves lease-guarded, so a lost lease can never stamp the row.
+ */
+export async function renewReconcileLease(id: string): Promise<boolean> {
+  const rows = await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+    UPDATE "blob_claims"
+    SET "reconcile_lease_expires_at" = now() + (${BLOB_DISCARD_LEASE_MS}::int * interval '1 millisecond')
+    WHERE "id" = ${id}
+      AND "reconcile_lease_owner" = ${BLOB_DISCARD_WORKER_ID}
+    RETURNING "id"
+  `);
+  return rows.length > 0;
+}
+
+/**
+ * Run `fn` while renewing this worker's lease on `id` every
+ * {@link BLOB_DISCARD_LEASE_RENEW_INTERVAL_MS}, clearing the timer on every
+ * exit (success or failure) so a test or a completed row leaves nothing behind.
+ */
+async function withLeaseHeartbeat<T>(id: string, fn: () => Promise<T>): Promise<T> {
+  const timer = setInterval(() => {
+    void renewReconcileLease(id).catch(() => undefined);
+  }, BLOB_DISCARD_LEASE_RENEW_INTERVAL_MS);
+  try {
+    return await fn();
+  } finally {
+    clearInterval(timer);
+  }
 }
 
 /**
@@ -216,97 +277,151 @@ export async function reconcileDiscardedBlobs(
     }
     summary.examined += 1;
 
-    const parsed = parseBlobUrl(row.blobUrl) ?? resolveAzureClaim(row.blobUrl);
-
-    if (!parsed) {
-      // Could be a valid LOCAL upload reference, an already-absent one, a
-      // malformed/traversal/foreign URL, or a transient filesystem failure.
-      const inspected = await inspectLocalUploadRef(row.blobUrl).catch((): LocalUploadRef => ({
-        kind: 'error',
-      }));
-
-      if (inspected.kind === 'invalid') {
-        // Malformed, traversal, a foreign URL, or a symlink out of the root:
-        // never ours to delete, terminal so it stops consuming the batch.
-        summary.skipped += 1;
-        await quarantineRow(row.id);
-        continue;
-      }
-
-      if (inspected.kind === 'error') {
-        // The filesystem could not be inspected (EACCES/EIO). Retry rather than
-        // quarantine or stamp DONE — the file may still be on disk.
-        summary.failed += 1;
-        await scheduleRetry(row.id, row.reconcileAttempts);
-        logger.warn('[BlobReconcile] Local reference could not be inspected; rescheduled', {
-          blobUrl: row.blobUrl,
-        });
-        continue;
-      }
-
-      if (inspected.kind === 'absent') {
-        // A trusted local reference whose file is already gone: the earlier
-        // delete succeeded (or the file was removed out of band). Idempotent
-        // success — terminal DONE, never a quarantine.
-        summary.deleted += 1;
-        await markDone(row.id);
-        continue;
-      }
-
-      try {
-        await removeLocalUpload(inspected.path);
-        summary.deleted += 1;
-        await markDone(row.id);
-      } catch (error) {
-        summary.failed += 1;
-        await scheduleRetry(row.id, row.reconcileAttempts);
-        logger.warn('[BlobReconcile] Local delete retry failed; rescheduled', {
-          blobUrl: row.blobUrl,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-      continue;
-    }
-
-    try {
-      // The explicit outcome is what makes "credentials missing" impossible to
-      // mistake for "deleted": `unavailable` means no remote request ran, so the
-      // row is rescheduled (never marked DONE) and a later run — after the
-      // credentials are restored — retries it.
-      const outcome = await deleteBlobFromCloudStorage(parsed.containerName, parsed.blobName);
-      if (outcome === 'unavailable') {
-        summary.unavailable += 1;
-        summary.failed += 1;
-        // A missing connection string is a deploy/configuration condition, not
-        // a poison row: it WILL recover, so this must never quarantine. Just
-        // reschedule and keep the retry counter for observability.
-        await scheduleRetry(row.id, row.reconcileAttempts, { quarantineAtCap: false });
-        logger.warn(
-          '[BlobReconcile] Azure credentials unavailable; delete not attempted, rescheduled',
-          { blobUrl: row.blobUrl }
-        );
-        continue;
-      }
-      summary.deleted += 1;
-      await markDone(row.id);
-    } catch (error) {
-      summary.failed += 1;
-      await scheduleRetry(row.id, row.reconcileAttempts);
-      logger.warn('[BlobReconcile] Retry delete failed; rescheduled', {
-        blobUrl: row.blobUrl,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
+    // While this row is processed, keep renewing the lease (finding D), and cap
+    // every storage operation well under it, so a slow delete can neither lose
+    // the row to a second replica nor hold the lease past its expiry.
+    await withLeaseHeartbeat(row.id, () => processReconcileRow(row, summary));
   }
 
   await recordReconcileAudit(summary, dryRun);
   return summary;
 }
 
+/**
+ * The work for one leased row, isolated so it can run under the lease
+ * heartbeat. Returns nothing; it records its outcome on `summary` and on the
+ * row (lease-guarded).
+ */
+async function processReconcileRow(
+  row: { id: string; blobUrl: string; reconcileAttempts: number },
+  summary: BlobDiscardReconcileSummary
+): Promise<void> {
+  const parsed = parseBlobUrl(row.blobUrl) ?? resolveAzureClaim(row.blobUrl);
+
+  if (!parsed) {
+    // Could be a valid LOCAL upload reference, an already-absent one, a
+    // malformed/traversal/foreign URL, or a transient filesystem failure.
+    const inspected = await inspectLocalUploadRef(row.blobUrl).catch((): LocalUploadRef => ({
+      kind: 'error',
+    }));
+
+    if (inspected.kind === 'invalid') {
+      // Malformed, traversal, a foreign URL, or a symlink out of the root:
+      // never ours to delete, terminal so it stops consuming the batch.
+      summary.skipped += 1;
+      await quarantineRow(row.id);
+      return;
+    }
+
+    if (inspected.kind === 'error') {
+      // The filesystem could not be inspected (EACCES/EIO). Retry rather than
+      // quarantine or stamp DONE — the file may still be on disk.
+      summary.failed += 1;
+      await scheduleRetry(row.id, row.reconcileAttempts);
+      logger.warn('[BlobReconcile] Local reference could not be inspected; rescheduled', {
+        blobUrl: row.blobUrl,
+      });
+      return;
+    }
+
+    if (inspected.kind === 'absent') {
+      // A trusted local reference whose file is already gone: the earlier
+      // delete succeeded (or the file was removed out of band). Idempotent
+      // success — terminal DONE, never a quarantine.
+      summary.deleted += 1;
+      await markDone(row.id);
+      return;
+    }
+
+    try {
+      await withTimeout(removeLocalUpload(inspected.path), BLOB_DISCARD_OPERATION_TIMEOUT_MS);
+      summary.deleted += 1;
+      await markDone(row.id);
+    } catch (error) {
+      summary.failed += 1;
+      await scheduleRetry(row.id, row.reconcileAttempts);
+      logger.warn('[BlobReconcile] Local delete retry failed; rescheduled', {
+        blobUrl: row.blobUrl,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return;
+  }
+
+  try {
+    // The explicit outcome is what makes "credentials missing" impossible to
+    // mistake for "deleted": `unavailable` means no remote request ran, so the
+    // row is rescheduled (never marked DONE) and a later run — after the
+    // credentials are restored — retries it.
+    //
+    // `abortSignal` is passed to the SDK AND the whole call is wrapped in a
+    // local deadline: the abort makes the request stop, the wrapper guarantees
+    // this job never waits past the ceiling even if a retry policy ignores the
+    // signal. Either way a timeout throws (non-404), so the row is rescheduled.
+    const outcome = await withTimeout(
+      deleteBlobFromCloudStorage(parsed.containerName, parsed.blobName, {
+        timeoutMs: BLOB_DISCARD_OPERATION_TIMEOUT_MS,
+      }),
+      BLOB_DISCARD_OPERATION_TIMEOUT_MS
+    );
+    if (outcome === 'unavailable') {
+      summary.unavailable += 1;
+      summary.failed += 1;
+      // A missing connection string is a deploy/configuration condition, not
+      // a poison row: it WILL recover, so this must never quarantine. Just
+      // reschedule and keep the retry counter for observability.
+      await scheduleRetry(row.id, row.reconcileAttempts, { quarantineAtCap: false });
+      logger.warn(
+        '[BlobReconcile] Azure credentials unavailable; delete not attempted, rescheduled',
+        { blobUrl: row.blobUrl }
+      );
+      return;
+    }
+    summary.deleted += 1;
+    await markDone(row.id);
+  } catch (error) {
+    summary.failed += 1;
+    await scheduleRetry(row.id, row.reconcileAttempts);
+    logger.warn('[BlobReconcile] Retry delete failed; rescheduled', {
+      blobUrl: row.blobUrl,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+/** Reject when `work` has not settled within `ms`. */
+function withTimeout<T>(work: T | Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`storage operation timed out after ${ms}ms`)),
+      ms
+    );
+    Promise.resolve(work).then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
+}
+
+/**
+ * Guard every terminal/retry status write with the lease owner, so a worker
+ * whose lease has expired (a second replica took the row) can never stamp
+ * status, retry counter or audit as if it still owned the row (finding D).
+ */
+function leasedBlobClaimWhere(id: string): { id: string; reconcileLeaseOwner: string } {
+  return { id, reconcileLeaseOwner: BLOB_DISCARD_WORKER_ID };
+}
+
 /** Terminal success: never selected again. */
 async function markDone(id: string): Promise<void> {
-  await prisma.blobClaim.update({
-    where: { id },
+  await prisma.blobClaim.updateMany({
+    where: leasedBlobClaimWhere(id),
     data: {
       reconcileStatus: BlobReconcileStatus.DONE,
       reconciledAt: new Date(),
@@ -317,8 +432,8 @@ async function markDone(id: string): Promise<void> {
 
 /** Terminal quarantine: malformed/foreign URL, never retried. */
 async function quarantineRow(id: string): Promise<void> {
-  await prisma.blobClaim.update({
-    where: { id },
+  await prisma.blobClaim.updateMany({
+    where: leasedBlobClaimWhere(id),
     data: {
       reconcileStatus: BlobReconcileStatus.QUARANTINED,
       reconciledAt: new Date(),
@@ -342,8 +457,8 @@ async function scheduleRetry(
   // Cap the wait so a transmission that may recover soon (missing credentials)
   // is still retried within the hour rather than doubling unbounded.
   const backoffMs = Math.min(BLOB_DISCARD_RETRY_BASE_MS * 2 ** attempts, BLOB_DISCARD_RETRY_MAX_MS);
-  await prisma.blobClaim.update({
-    where: { id },
+  await prisma.blobClaim.updateMany({
+    where: leasedBlobClaimWhere(id),
     data: {
       reconcileAttempts: nextAttempt,
       lastReconcileAt: new Date(),

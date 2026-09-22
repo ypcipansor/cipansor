@@ -192,3 +192,144 @@ describe("refreshAccessToken routing-session remint (finding 2)", () => {
     expect(axiosPostMock).toHaveBeenCalledTimes(2);
   });
 });
+
+/**
+ * Finding A: a definitive refresh failure must clear the HttpOnly routing
+ * cookie SERVER-SIDE before redirecting to `/login`.
+ *
+ * `clearSessionCookies()` cannot delete `cipansor-session` (HttpOnly), so
+ * redirecting while it survived let the Proxy bounce the user back into a
+ * protected page until the cookie expired. The interceptor must call
+ * `DELETE /api/session` via native fetch — not the axios instance, whose 401
+ * interceptor would re-enter the refresh path and recurse — and a failed
+ * cleanup must still end at `/login`.
+ */
+describe("interceptor: definitive refresh failure clears the routing session (finding A)", () => {
+  /** The error branch of the response interceptor, captured by the mock. */
+  function responseErrorHandler(): (error: unknown) => Promise<unknown> {
+    const handlers = (apiInstance as any).__responseHandlers as [
+      unknown,
+      (error: unknown) => Promise<unknown>,
+    ][];
+    return handlers[0][1];
+  }
+
+  let href = "";
+
+  beforeEach(() => {
+    localStorage.clear();
+    localStorage.setItem("accessToken", "access-old");
+    localStorage.setItem("refreshToken", "refresh-old");
+    axiosPostMock.mockReset();
+    (apiInstance as any).mockReset();
+    vi.unstubAllGlobals();
+    // jsdom has no navigation; capture the redirect target instead of throwing
+    // "Not implemented: navigation".
+    href = "";
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: {
+        pathname: "/dashboard",
+        get href() {
+          return href;
+        },
+        set href(value: string) {
+          href = value;
+        },
+      },
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it("calls DELETE /api/session before redirecting to /login", async () => {
+    // The refresh itself is definitively rejected (a 401 from /auth/refresh).
+    axiosPostMock.mockRejectedValue(
+      Object.assign(new Error("Refresh token not found"), {
+        isAxiosError: true,
+        response: { status: 401 },
+      }),
+    );
+    const fetchMock = mockSessionFetch({ ok: true, body: { session: false } });
+
+    await expect(
+      responseErrorHandler()({
+        response: { status: 401 },
+        config: { url: "/students" },
+      }),
+    ).rejects.toBeDefined();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [
+      string,
+      RequestInit,
+    ];
+    expect(url).toBe("/api/session");
+    expect(init.method).toBe("DELETE");
+    expect(localStorage.getItem("accessToken")).toBeNull();
+    expect(localStorage.getItem("refreshToken")).toBeNull();
+    expect(href).toBe("/login");
+  });
+
+  it("does NOT call the axios instance for the clear (no interceptor recursion)", async () => {
+    axiosPostMock.mockRejectedValue(
+      Object.assign(new Error("Refresh token not found"), {
+        response: { status: 401 },
+      }),
+    );
+    mockSessionFetch({ ok: true, body: { session: false } });
+
+    await expect(
+      responseErrorHandler()({
+        response: { status: 401 },
+        config: { url: "/students" },
+      }),
+    ).rejects.toBeDefined();
+
+    expect(apiInstance).not.toHaveBeenCalled();
+  });
+
+  it("still redirects to /login when the server-side clear fails (network)", async () => {
+    axiosPostMock.mockRejectedValue(
+      Object.assign(new Error("Refresh token not found"), {
+        response: { status: 401 },
+      }),
+    );
+    // The cleanup request is offline; the local cleanup and redirect must run
+    // regardless, with no unhandled rejection.
+    mockSessionFetch({ throw: true });
+
+    await expect(
+      responseErrorHandler()({
+        response: { status: 401 },
+        config: { url: "/students" },
+      }),
+    ).rejects.toBeDefined();
+
+    expect(localStorage.getItem("accessToken")).toBeNull();
+    expect(href).toBe("/login");
+  });
+
+  it("does NOT clear the routing session for an anonymous public-page failure", async () => {
+    // No local session: a protected endpoint called from a public page must not
+    // force a logout.
+    localStorage.clear();
+    const fetchMock = mockSessionFetch({ ok: true, body: { session: false } });
+
+    await expect(
+      responseErrorHandler()({
+        response: { status: 401 },
+        config: { url: "/units", skipErrorToast: true },
+      }),
+    ).rejects.toBeDefined();
+
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      "/api/session",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+    expect(href).toBe("");
+  });
+});

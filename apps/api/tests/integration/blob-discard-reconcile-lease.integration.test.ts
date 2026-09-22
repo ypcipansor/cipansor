@@ -11,7 +11,11 @@
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { Client } from 'pg';
-import { claimRowForReconcile } from '@/jobs/blob-discard-reconcile.job';
+import {
+  claimRowForReconcile,
+  renewReconcileLease,
+  BLOB_DISCARD_WORKER_ID,
+} from '@/jobs/blob-discard-reconcile.job';
 
 const describeDb = process.env.RUN_DB_TESTS ? describe : describe.skip;
 
@@ -82,10 +86,9 @@ describeDb('blob discard reconcile worker lease', () => {
   });
 
   it('refuses a row that is not PENDING or not yet due', async () => {
-    await client.query(
-      `UPDATE "blob_claims" SET "reconcile_status" = 'DONE' WHERE "id" = $1`,
-      [ROW_ID]
-    );
+    await client.query(`UPDATE "blob_claims" SET "reconcile_status" = 'DONE' WHERE "id" = $1`, [
+      ROW_ID,
+    ]);
     expect(await claimRowForReconcile(ROW_ID)).toBe(false);
 
     await client.query(
@@ -96,5 +99,45 @@ describeDb('blob discard reconcile worker lease', () => {
       [ROW_ID]
     );
     expect(await claimRowForReconcile(ROW_ID)).toBe(false);
+  });
+
+  it('renews the lease for the owner and extends its expiry (finding D)', async () => {
+    expect(await claimRowForReconcile(ROW_ID)).toBe(true);
+    await client.query(
+      `UPDATE "blob_claims" SET "reconcile_lease_expires_at" = now() + interval '1 min'
+        WHERE "id" = $1`,
+      [ROW_ID]
+    );
+
+    expect(await renewReconcileLease(ROW_ID)).toBe(true);
+
+    const { rows } = await client.query(
+      `SELECT "reconcile_lease_owner", "reconcile_lease_expires_at"
+         FROM "blob_claims" WHERE "id" = $1`,
+      [ROW_ID]
+    );
+    expect(rows[0].reconcile_lease_owner).toBe(BLOB_DISCARD_WORKER_ID);
+    // Renewed well past the original one-minute expiry.
+    expect(new Date(rows[0].reconcile_lease_expires_at).getTime()).toBeGreaterThan(
+      Date.now() + 4 * 60 * 1000
+    );
+  });
+
+  it('refuses to renew a lease held by another replica (finding D)', async () => {
+    await client.query(
+      `UPDATE "blob_claims"
+          SET "reconcile_lease_owner" = 'other-replica:999',
+              "reconcile_lease_expires_at" = now() + interval '5 min'
+        WHERE "id" = $1`,
+      [ROW_ID]
+    );
+
+    expect(await renewReconcileLease(ROW_ID)).toBe(false);
+
+    const { rows } = await client.query(
+      `SELECT "reconcile_lease_owner" FROM "blob_claims" WHERE "id" = $1`,
+      [ROW_ID]
+    );
+    expect(rows[0].reconcile_lease_owner).toBe('other-replica:999');
   });
 });

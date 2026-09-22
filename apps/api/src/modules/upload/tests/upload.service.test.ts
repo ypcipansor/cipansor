@@ -9,11 +9,7 @@ import {
   deleteFromCloudStorage,
   getBlobUploaderId,
 } from '@/utils/cloud-storage';
-import {
-  claimBlobForDiscard,
-  releaseBlobClaimById,
-  markBlobDiscarded,
-} from '@/utils/blob-claim';
+import { claimBlobForDiscard, releaseBlobClaimById, markBlobDiscarded } from '@/utils/blob-claim';
 import {
   resolveLocalUploadPath,
   readLocalUploadOwner,
@@ -116,7 +112,6 @@ vi.mock('@/utils/blob-claim', () => ({
 // Referenced only inside tests (never in the hoisted factory).
 const DISCARD_HANDLE = { id: 'claim-1', operationToken: 'tok-discard', kind: 'DISCARD' };
 
-
 vi.mock('@/utils/letter-access', () => ({
   letterScopeWhere: vi.fn(() => ({})),
 }));
@@ -130,6 +125,13 @@ vi.mock('@/utils/local-upload-store', () => ({
   removeLocalUpload: vi.fn().mockResolvedValue(undefined),
 }));
 
+// Finding B: keep the real `normalizeUploadPath` (the canonicalization under
+// test) but spy the token mint so the canonical path binding is asserted.
+vi.mock('@/utils/file-token', async () => {
+  const actual = await vi.importActual<typeof import('@/utils/file-token')>('@/utils/file-token');
+  return { ...actual, generateFileAccessToken: vi.fn().mockReturnValue('file-access-token') };
+});
+
 vi.mock('@/utils/resolve-unit-id', async () => {
   const actual =
     await vi.importActual<typeof import('@/utils/resolve-unit-id')>('@/utils/resolve-unit-id');
@@ -140,6 +142,7 @@ vi.mock('@/utils/resolve-unit-id', async () => {
 });
 
 import { seesAllUnits } from '@/utils/resolve-unit-id';
+import { generateFileAccessToken } from '@/utils/file-token';
 
 const superAdmin = { id: 'user-1', roleCode: 'SUPER_ADMIN', unitId: 'unit-1', permissions: [] };
 /** Same unit as the target document's owner, but NOT a personnel-record admin. */
@@ -147,7 +150,12 @@ const sameUnitPeer = { id: 'user-2', roleCode: 'SDIT_GURU', unitId: 'unit-2', pe
 /** Unit admin who may administer employee documents. */
 const unitHrAdmin = { id: 'user-3', roleCode: 'SDIT_ADMIN', unitId: 'unit-2', permissions: [] };
 /** Unit treasurer: verifies payments in unit-2 but is NOT a personnel admin. */
-const unitTreasurer = { id: 'user-4', roleCode: 'SDIT_BENDAHARA', unitId: 'unit-2', permissions: [] };
+const unitTreasurer = {
+  id: 'user-4',
+  roleCode: 'SDIT_BENDAHARA',
+  unitId: 'unit-2',
+  permissions: [],
+};
 /** A pupil/parent actor: authenticated, but no document or finance role. */
 const waliSantri = { id: 'user-5', roleCode: 'SDIT_ORANG_TUA', unitId: 'unit-2', permissions: [] };
 
@@ -228,11 +236,91 @@ describe('resolveSasForBlob', () => {
 
     const result = await resolveSasForBlob('https://cipansor.or.id/uploads/a.pdf', superAdmin);
     // The local provider has no SAS, so it returns a short-lived, path-bound
-    // file token instead of handing back the raw path unauthenticated.
-    expect(result.url).toBe('https://cipansor.or.id/uploads/a.pdf');
+    // file token instead of handing back the raw path unauthenticated. The
+    // reference itself is canonicalized to `/uploads/a.pdf` (finding B): a
+    // legacy absolute URL must not send the browser to its old host.
+    expect(result.url).toBe('/uploads/a.pdf');
+    expect(result.downloadUrl).toBe('/uploads/a.pdf');
     expect(result.accessToken).toBeTruthy();
     expect(result.expiresIn).toBeGreaterThan(0);
     expect(generateSasUrl).not.toHaveBeenCalled();
+  });
+
+  // ── Finding B: the canonical path/origin, never the caller's input origin ──
+
+  it('returns the canonical path for an old-host absolute URL (finding B)', async () => {
+    // A row written before the host change holds `https://old-host/uploads/x`.
+    // The token must be minted for, and the returned reference anchored to, the
+    // canonical `/uploads/x` — not the dead origin.
+    (parseBlobUrl as any).mockReturnValue(null);
+    (seesAllUnits as any).mockReturnValue(true);
+    (prisma.letter.findFirst as any).mockResolvedValue({ id: 'letter-1' });
+
+    const result = await resolveSasForBlob(
+      'https://old-host.example.com/uploads/a.pdf',
+      superAdmin
+    );
+
+    expect(result.url).toBe('/uploads/a.pdf');
+    expect(result.downloadUrl).toBe('/uploads/a.pdf');
+    expect(result.url).not.toContain('old-host');
+    expect(generateFileAccessToken).toHaveBeenCalledWith('/uploads/a.pdf', superAdmin.id);
+  });
+
+  it('normalizes query, fragment and encoded spellings to one canonical path (finding B)', async () => {
+    (parseBlobUrl as any).mockReturnValue(null);
+    (seesAllUnits as any).mockReturnValue(true);
+    (prisma.letter.findFirst as any).mockResolvedValue({ id: 'letter-1' });
+
+    for (const input of [
+      '/uploads/a.pdf?token=stale',
+      'https://cipansor.or.id/uploads/a.pdf#frag',
+      'https://cipansor.or.id/uploads/a%2Epdf',
+    ]) {
+      const result = await resolveSasForBlob(input, superAdmin);
+      expect(result.url).toBe('/uploads/a.pdf');
+      expect(generateFileAccessToken).toHaveBeenCalledWith('/uploads/a.pdf', superAdmin.id);
+    }
+  });
+
+  it('refuses a traversal path instead of canonicalizing it (finding B)', async () => {
+    (parseBlobUrl as any).mockReturnValue(null);
+    (seesAllUnits as any).mockReturnValue(true);
+
+    await expect(
+      resolveSasForBlob('https://cipansor.or.id/uploads/../../etc/passwd', superAdmin)
+    ).rejects.toThrow(/Referensi berkas tidak dikenali/);
+    expect(generateFileAccessToken).not.toHaveBeenCalled();
+  });
+
+  it('refuses a foreign-host /uploads URL with no owning record (finding B)', async () => {
+    // The origin is irrelevant to authorization: only the canonical path is
+    // probed. With no record owning it, the file is refused (403) — the same
+    // outcome as any unowned local file, and never a passthrough of the foreign
+    // origin.
+    (parseBlobUrl as any).mockReturnValue(null);
+
+    await expect(
+      resolveSasForBlob('https://evil.example.com/uploads/a.pdf', superAdmin)
+    ).rejects.toThrow(/Berkas tidak ditemukan atau tidak dapat diakses/);
+    expect(generateFileAccessToken).not.toHaveBeenCalled();
+  });
+
+  it('refuses a foreign non-upload URL (finding B)', async () => {
+    (parseBlobUrl as any).mockReturnValue(null);
+
+    await expect(
+      resolveSasForBlob('https://evil.example.com/steal.pdf', superAdmin)
+    ).rejects.toThrow(/Referensi berkas tidak dikenali/);
+    expect(generateFileAccessToken).not.toHaveBeenCalled();
+  });
+
+  it('refuses a malformed URL (finding B)', async () => {
+    (parseBlobUrl as any).mockReturnValue(null);
+
+    await expect(resolveSasForBlob('not-a-url', superAdmin)).rejects.toThrow(
+      /Referensi berkas tidak dikenali/
+    );
   });
 
   it('refuses a /uploads file no record owns, even for a super admin (BUG 5)', async () => {
@@ -760,7 +848,11 @@ describe('actorMayReadBlob (BUG 5 ownership matrix)', () => {
   });
 
   it('payment-proof: a finance verifier may read its unit\u2019s proof, a teacher may not', async () => {
-    const owner = { kind: 'payment-proof' as const, studentUserId: 'some-student', unitId: 'unit-2' };
+    const owner = {
+      kind: 'payment-proof' as const,
+      studentUserId: 'some-student',
+      unitId: 'unit-2',
+    };
     // The treasurer verifies payments but is not a personnel admin; the proof
     // rule must admit them without opening employee documents.
     await expect(actorMayReadBlob(unitTreasurer, owner)).resolves.toBe(true);
@@ -778,10 +870,14 @@ describe('actorMayReadBlob (BUG 5 ownership matrix)', () => {
   });
 
   it('payment-proof: a finance verifier from another unit may not read it', async () => {
-    const owner = { kind: 'payment-proof' as const, studentUserId: 'some-student', unitId: 'unit-2' };
-    await expect(
-      actorMayReadBlob({ ...unitTreasurer, unitId: 'unit-9' }, owner)
-    ).resolves.toBe(false);
+    const owner = {
+      kind: 'payment-proof' as const,
+      studentUserId: 'some-student',
+      unitId: 'unit-2',
+    };
+    await expect(actorMayReadBlob({ ...unitTreasurer, unitId: 'unit-9' }, owner)).resolves.toBe(
+      false
+    );
   });
 
   it('foundation: only a foundation-scoped role may read it', async () => {

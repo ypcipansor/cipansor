@@ -186,16 +186,17 @@ describe("resolveFileWithExpiry", () => {
     );
   });
 
-  it("leaves a legacy absolute /uploads URL untouched (pre-host-change row)", async () => {
-    // Rows written before finding 1 hold an absolute origin. It must not be
-    // re-anchored or otherwise rewritten — the API authorizes on the canonical
-    // path, and the stored origin is still what the browser should try.
+  it("anchors the canonical /uploads path the API returns for a legacy absolute row (finding B)", async () => {
+    // The API canonicalizes a legacy absolute row (`https://old-host/uploads/x`)
+    // down to `/uploads/x` before minting the token (finding B). The client must
+    // therefore anchor the canonical path to the API origin, never echo the dead
+    // host back to the browser.
     apiMock.post.mockResolvedValue({
       data: {
         success: true,
         data: {
-          url: "http://oldhost:3000/uploads/legacy.png",
-          downloadUrl: "http://oldhost:3000/uploads/legacy.png",
+          url: "/uploads/legacy.png",
+          downloadUrl: "/uploads/legacy.png",
           accessToken: "file-scoped-token",
           expiresIn: 300,
         },
@@ -206,8 +207,9 @@ describe("resolveFileWithExpiry", () => {
       "http://oldhost:3000/uploads/legacy.png",
     );
     expect(result.url).toBe(
-      "http://oldhost:3000/uploads/legacy.png?token=file-scoped-token",
+      "http://localhost:3001/uploads/legacy.png?token=file-scoped-token",
     );
+    expect(result.url).not.toContain("oldhost");
   });
 
   it("falls back to the stable URL when the SAS request fails", async () => {

@@ -24,6 +24,7 @@ const {
   clearSessionCookiesMock,
   clearBearerTokenCookieMock,
   clearLegacyAuthStorageCookieMock,
+  clearRoutingSessionOnServerMock,
 } = vi.hoisted(() => ({
   authApiMock: {
     login: vi.fn(),
@@ -36,6 +37,7 @@ const {
   clearSessionCookiesMock: vi.fn(),
   clearBearerTokenCookieMock: vi.fn(),
   clearLegacyAuthStorageCookieMock: vi.fn(),
+  clearRoutingSessionOnServerMock: vi.fn(),
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -47,6 +49,7 @@ vi.mock("@/lib/session-cookie", () => ({
   clearSessionCookies: clearSessionCookiesMock,
   clearBearerTokenCookie: clearBearerTokenCookieMock,
   clearLegacyAuthStorageCookie: clearLegacyAuthStorageCookieMock,
+  clearRoutingSessionOnServer: clearRoutingSessionOnServerMock,
 }));
 
 import { useAuthStore } from "@/stores/auth";
@@ -62,7 +65,13 @@ const USER = {
 } as never;
 
 const LOGIN_RESPONSE = {
-  data: { data: { user: USER, accessToken: "new-access", refreshToken: "new-refresh" } },
+  data: {
+    data: {
+      user: USER,
+      accessToken: "new-access",
+      refreshToken: "new-refresh",
+    },
+  },
 };
 
 /** A response whose `ok` mirrors its status. */
@@ -104,6 +113,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
   resetStore();
+  clearRoutingSessionOnServerMock.mockResolvedValue(true);
   fetchMock = vi.fn();
   vi.stubGlobal("fetch", fetchMock);
   // jsdom has no navigation; `reload` must be a spy so a role switch can be
@@ -183,6 +193,85 @@ describe("fetchUser — rejected sessions must clear the HttpOnly cookie server-
     expect(fetchMock).not.toHaveBeenCalled();
     expect(localStorage.getItem("accessToken")).toBe("still-good");
   });
+
+  it("clears a stale routing session when there is no bearer (no redirect loop, finding A)", async () => {
+    // A routed visitor with no local bearer (a refresh failure whose best-effort
+    // DELETE never landed, a cleared localStorage): the Proxy would still treat
+    // them as signed in and bounce `/login` back to a protected page. `fetchUser`
+    // must clear the server session so `/login` sticks.
+    fetchMock.mockResolvedValue(jsonResponse(200));
+
+    await useAuthStore.getState().fetchUser();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/session");
+    expect(init.method).toBe("DELETE");
+    expect(useAuthStore.getState().isAuthenticated).toBe(false);
+    expect(useAuthStore.getState().user).toBeNull();
+  });
+
+  it("resolves (never rejects) when the stale-session clear fails offline (finding A)", async () => {
+    fetchMock.mockRejectedValue(new Error("offline"));
+
+    await expect(useAuthStore.getState().fetchUser()).resolves.toBeUndefined();
+
+    expect(useAuthStore.getState().isAuthenticated).toBe(false);
+  });
+});
+
+/**
+ * Finding C — the routing cookie (24h) outlives the access token (15m) and, on
+ * its own, could keep the Proxy routing off a role the server has since
+ * revoked/changed. `/auth/me` is the routine point where that change becomes
+ * visible, so a successful fetchUser must re-mint the routing session from the
+ * CURRENT bearer. The routing cookie is still never an authorization token —
+ * every API call re-authenticates from the bearer — so a failed re-mint is
+ * best-effort and must not sign a valid session out.
+ */
+describe("fetchUser — a successful /auth/me re-mints the routing session (finding C)", () => {
+  it("re-mints from the current bearer after /auth/me succeeds", async () => {
+    localStorage.setItem("accessToken", "current-access");
+    authApiMock.me.mockResolvedValue({ data: { data: USER } });
+    fetchMock.mockResolvedValue(jsonResponse(200, { session: true }));
+
+    await useAuthStore.getState().fetchUser();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/session");
+    expect(init.method).toBe("POST");
+    expect(init.headers.authorization).toBe("Bearer current-access");
+    expect(useAuthStore.getState().isAuthenticated).toBe(true);
+  });
+
+  it("does NOT sign a valid session out when the re-mint fails", async () => {
+    localStorage.setItem("accessToken", "current-access");
+    authApiMock.me.mockResolvedValue({ data: { data: USER } });
+    fetchMock.mockResolvedValue(jsonResponse(500, { session: false }));
+
+    await useAuthStore.getState().fetchUser();
+
+    // The bearer is still valid; a failed routing re-mint must not tear it down.
+    expect(useAuthStore.getState().isAuthenticated).toBe(true);
+    expect(localStorage.getItem("accessToken")).toBe("current-access");
+  });
+
+  it("fails closed when a logout clears the bearer while the mint is in flight", async () => {
+    localStorage.setItem("accessToken", "current-access");
+    authApiMock.me.mockResolvedValue({ data: { data: USER } });
+    // The mint resolves `session: true`, but the bearer it was minted from is
+    // gone by then (a logout raced the mount-time refresh). The resurrected
+    // cookie must be cleared, not reported as success.
+    fetchMock.mockImplementation(async () => {
+      localStorage.removeItem("accessToken");
+      return jsonResponse(200, { session: true });
+    });
+
+    await useAuthStore.getState().fetchUser();
+
+    expect(clearRoutingSessionOnServerMock).toHaveBeenCalled();
+  });
 });
 
 describe("login — navigation must not race session creation", () => {
@@ -192,16 +281,22 @@ describe("login — navigation must not race session creation", () => {
     fetchMock.mockReturnValue(gate.promise);
 
     let settled = false;
-    const loginPromise = useAuthStore.getState().login({ email: "x", password: "y" }).then(() => {
-      settled = true;
-    });
+    const loginPromise = useAuthStore
+      .getState()
+      .login({ email: "x", password: "y" })
+      .then(() => {
+        settled = true;
+      });
 
     // Give the microtask queue a chance to run everything except the held
     // `/api/session` response.
     await Promise.resolve();
     await Promise.resolve();
     expect(settled).toBe(false);
-    expect(fetchMock).toHaveBeenCalledWith("/api/session", expect.objectContaining({ method: "POST" }));
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/session",
+      expect.objectContaining({ method: "POST" }),
+    );
 
     gate.resolve(jsonResponse(200, { session: true }));
     await loginPromise;
@@ -224,7 +319,7 @@ describe("login — navigation must not race session creation", () => {
     fetchMock.mockResolvedValue(jsonResponse(500, { session: false }));
 
     await expect(
-      useAuthStore.getState().login({ email: "x", password: "y" })
+      useAuthStore.getState().login({ email: "x", password: "y" }),
     ).rejects.toThrow();
 
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
@@ -240,7 +335,7 @@ describe("login — navigation must not race session creation", () => {
     fetchMock.mockRejectedValue(new Error("offline"));
 
     await expect(
-      useAuthStore.getState().login({ email: "x", password: "y" })
+      useAuthStore.getState().login({ email: "x", password: "y" }),
     ).rejects.toThrow();
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
     expect(localStorage.getItem("accessToken")).toBeNull();
@@ -255,7 +350,7 @@ describe("login — navigation must not race session creation", () => {
     fetchMock.mockResolvedValue(jsonResponse(200, { session: false }));
 
     await expect(
-      useAuthStore.getState().login({ email: "x", password: "y" })
+      useAuthStore.getState().login({ email: "x", password: "y" }),
     ).rejects.toThrow();
 
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
@@ -278,7 +373,7 @@ describe("login — navigation must not race session creation", () => {
     } as unknown as Response);
 
     await expect(
-      useAuthStore.getState().login({ email: "x", password: "y" })
+      useAuthStore.getState().login({ email: "x", password: "y" }),
     ).rejects.toThrow();
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
     expect(localStorage.getItem("accessToken")).toBeNull();
@@ -289,7 +384,7 @@ describe("login — navigation must not race session creation", () => {
     fetchMock.mockResolvedValue(jsonResponse(200, "ok"));
 
     await expect(
-      useAuthStore.getState().login({ email: "x", password: "y" })
+      useAuthStore.getState().login({ email: "x", password: "y" }),
     ).rejects.toThrow();
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
   });
@@ -299,7 +394,7 @@ describe("login — navigation must not race session creation", () => {
     fetchMock.mockResolvedValue(jsonResponse(200, { session: true }));
 
     await expect(
-      useAuthStore.getState().login({ email: "x", password: "y" })
+      useAuthStore.getState().login({ email: "x", password: "y" }),
     ).resolves.toBeUndefined();
 
     expect(useAuthStore.getState().isAuthenticated).toBe(true);
@@ -312,33 +407,50 @@ describe("ssoLogin / verifyTwoFactor — same awaited session contract", () => {
   it("ssoLogin waits for /api/session and sends its token", async () => {
     authApiMock.ssoLogin.mockResolvedValue({
       data: {
-        data: { user: USER, accessToken: "sso-access", refreshToken: "sso-refresh" },
+        data: {
+          user: USER,
+          accessToken: "sso-access",
+          refreshToken: "sso-refresh",
+        },
       },
     });
     const gate = deferred<Response>();
     fetchMock.mockReturnValue(gate.promise);
 
     let settled = false;
-    const p = useAuthStore.getState().ssoLogin({ provider: "google", idToken: "id" }).then(() => {
-      settled = true;
-    });
+    const p = useAuthStore
+      .getState()
+      .ssoLogin({ provider: "google", idToken: "id" })
+      .then(() => {
+        settled = true;
+      });
     await Promise.resolve();
     await Promise.resolve();
     expect(settled).toBe(false);
 
     gate.resolve(jsonResponse(200, { session: true }));
     await p;
-    expect(fetchMock.mock.calls[0][1].headers.authorization).toBe("Bearer sso-access");
+    expect(fetchMock.mock.calls[0][1].headers.authorization).toBe(
+      "Bearer sso-access",
+    );
   });
 
   it("verifyTwoFactor waits for /api/session and fails hard if the mint fails", async () => {
     useAuthStore.setState({ tempToken: "temp" });
     authApiMock.verify2FA.mockResolvedValue({
-      data: { data: { user: USER, accessToken: "2fa-access", refreshToken: "2fa-refresh" } },
+      data: {
+        data: {
+          user: USER,
+          accessToken: "2fa-access",
+          refreshToken: "2fa-refresh",
+        },
+      },
     });
     fetchMock.mockResolvedValue(jsonResponse(500, { session: false }));
 
-    await expect(useAuthStore.getState().verifyTwoFactor("123456")).rejects.toThrow();
+    await expect(
+      useAuthStore.getState().verifyTwoFactor("123456"),
+    ).rejects.toThrow();
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
   });
 });
@@ -346,7 +458,9 @@ describe("ssoLogin / verifyTwoFactor — same awaited session contract", () => {
 describe("switchRole — routing role must be re-minted before reload", () => {
   it("POSTs the NEW token to /api/session, then reloads only after it succeeds", async () => {
     rolesApiMock.switchRole.mockResolvedValue({
-      data: { data: { accessToken: "role-access", refreshToken: "role-refresh" } },
+      data: {
+        data: { accessToken: "role-access", refreshToken: "role-refresh" },
+      },
     });
     authApiMock.me.mockResolvedValue({ data: { data: USER } });
 
@@ -354,9 +468,12 @@ describe("switchRole — routing role must be re-minted before reload", () => {
     fetchMock.mockReturnValue(gate.promise);
 
     let settled = false;
-    const p = useAuthStore.getState().switchRole("assign-1").then(() => {
-      settled = true;
-    });
+    const p = useAuthStore
+      .getState()
+      .switchRole("assign-1")
+      .then(() => {
+        settled = true;
+      });
 
     await Promise.resolve();
     await Promise.resolve();
@@ -376,12 +493,16 @@ describe("switchRole — routing role must be re-minted before reload", () => {
 
   it("does NOT reload when the routing-session mint fails, and fails closed", async () => {
     rolesApiMock.switchRole.mockResolvedValue({
-      data: { data: { accessToken: "role-access", refreshToken: "role-refresh" } },
+      data: {
+        data: { accessToken: "role-access", refreshToken: "role-refresh" },
+      },
     });
     authApiMock.me.mockResolvedValue({ data: { data: USER } });
     fetchMock.mockResolvedValue(jsonResponse(500, { session: false }));
 
-    await expect(useAuthStore.getState().switchRole("assign-1")).rejects.toThrow();
+    await expect(
+      useAuthStore.getState().switchRole("assign-1"),
+    ).rejects.toThrow();
 
     expect(reloadMock).not.toHaveBeenCalled();
     expect(useAuthStore.getState().error).toBeTruthy();

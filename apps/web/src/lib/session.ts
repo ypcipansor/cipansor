@@ -30,6 +30,33 @@
  * dashboard/menu. Every API call re-authenticates from the bearer token, so a
  * stale-but-valid signature cannot grant data access.
  *
+ * ## Lifetime: routing TTL vs token TTL (finding C)
+ *
+ * The cookie lives {@link SESSION_TTL_SECONDS} (24h), which is deliberately
+ * longer than the 15m access token and shorter than the 30d refresh token. That
+ * is safe because the cookie grants NO data access — the Proxy only decides
+ * which page shell to render, and the only server code that reads it is the
+ * page guard; every `/api/**` call carries the bearer and is re-authenticated
+ * by the API. The residual risk is therefore bounded to stale ROUTING (page
+ * chrome, menu, `canAccessRoute`) — never data — for at most the cookie's
+ * remaining life, and to a page shell that immediately fails its data calls:
+ *
+ *  - Definitive refresh failure, a rejected session (401/403 to `/auth/me`) and
+ *    logout all clear the cookie SERVER-SIDE (`DELETE /api/session`); see
+ *    `lib/api.ts` and `stores/auth.ts`.
+ *  - A role change/revocation becomes visible to the client through `/auth/me`,
+ *    and a successful `fetchUser` re-mints the cookie from the current bearer,
+ *    bounding the stale-routing window to one app load.
+ *
+ * A routing-only cookie with no valid bearer still cannot fetch a single row:
+ * the API answers 401 and the client clears the cookie (the `api.ts` interceptor
+ * and `fetchUser`). The remaining residual — a visitor who closes the tab and
+ * reopens a bookmarked protected URL with only the routing cookie left — sees
+ * that page's shell attempt its calls, get 401, and sign out. Shortening the TTL
+ * to the access-token window was rejected: the Proxy cannot refresh, so an idle
+ * tab would bounce to `/login` on every navigation despite a valid refresh
+ * token, trading a routing-only staleness for a broken session.
+ *
  * This module is runtime-agnostic (Web Crypto) so the Proxy (Node runtime) and
  * the route handler that mints the cookie share ONE implementation.
  */
@@ -63,7 +90,11 @@ export interface SessionPayload {
  * inherits that guarantee; locally the dev default is fine.
  */
 export function resolveSessionSecret(
-  env: { SESSION_SECRET?: string; JWT_SECRET?: string; NODE_ENV?: string } = process.env
+  env: {
+    SESSION_SECRET?: string;
+    JWT_SECRET?: string;
+    NODE_ENV?: string;
+  } = process.env,
 ): string {
   const secret = env.SESSION_SECRET || env.JWT_SECRET;
   if (secret) return secret;
@@ -74,7 +105,10 @@ export function resolveSessionSecret(
 function base64UrlEncode(bytes: Uint8Array): string {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
 }
 
 function base64UrlDecode(value: string): Uint8Array | null {
@@ -96,20 +130,29 @@ async function importKey(secret: string): Promise<CryptoKey> {
     new TextEncoder().encode(secret),
     { name: "HMAC", hash: "SHA-256" },
     false,
-    ["sign", "verify"]
+    ["sign", "verify"],
   );
 }
 
 async function sign(data: string, secret: string): Promise<string> {
   const key = await importKey(secret);
-  const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(data));
+  const signature = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(data),
+  );
   return base64UrlEncode(new Uint8Array(signature));
 }
 
 /** Mint a signed session cookie value. Returns "" when no secret is configured. */
-export async function signSession(payload: SessionPayload, secret: string): Promise<string> {
+export async function signSession(
+  payload: SessionPayload,
+  secret: string,
+): Promise<string> {
   if (!secret) return "";
-  const body = base64UrlEncode(new TextEncoder().encode(JSON.stringify(payload)));
+  const body = base64UrlEncode(
+    new TextEncoder().encode(JSON.stringify(payload)),
+  );
   const signature = await sign(body, secret);
   return `${body}.${signature}`;
 }
@@ -124,7 +167,7 @@ export async function signSession(payload: SessionPayload, secret: string): Prom
 export async function verifySession(
   token: string | undefined | null,
   secret: string,
-  nowSeconds: number = Math.floor(Date.now() / 1000)
+  nowSeconds: number = Math.floor(Date.now() / 1000),
 ): Promise<SessionPayload | null> {
   if (!token || !secret) return null;
   const dot = token.indexOf(".");
@@ -172,8 +215,14 @@ function isSessionPayload(value: unknown): value is SessionPayload {
 
 /** The `Set-Cookie` attributes for the routing session. */
 export function sessionCookieOptions(
-  env: { NODE_ENV?: string } = process.env
-): { httpOnly: true; secure: boolean; sameSite: "lax"; path: string; maxAge: number } {
+  env: { NODE_ENV?: string } = process.env,
+): {
+  httpOnly: true;
+  secure: boolean;
+  sameSite: "lax";
+  path: string;
+  maxAge: number;
+} {
   return {
     httpOnly: true,
     secure: env.NODE_ENV === "production",

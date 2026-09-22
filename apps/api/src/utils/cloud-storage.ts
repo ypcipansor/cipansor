@@ -74,9 +74,7 @@ async function ensurePublicBlobAccess(
   containerName: string,
   justCreated: boolean
 ): Promise<void> {
-  const current = justCreated
-    ? 'blob'
-    : (await containerClient.getProperties()).blobPublicAccess;
+  const current = justCreated ? 'blob' : (await containerClient.getProperties()).blobPublicAccess;
   if (current === 'blob' || current === 'container') return;
 
   logger.warn('Public container had the wrong access policy; applying blob access', {
@@ -296,7 +294,8 @@ export type BlobDeleteOutcome = 'deleted' | 'already-absent' | 'unavailable';
  */
 export async function deleteBlobFromCloudStorage(
   containerName: string,
-  blobName: string
+  blobName: string,
+  options: { timeoutMs?: number } = {}
 ): Promise<BlobDeleteOutcome> {
   const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
   if (!connectionString) {
@@ -306,7 +305,13 @@ export async function deleteBlobFromCloudStorage(
   try {
     const blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
     const containerClient = blobServiceClient.getContainerClient(containerName);
-    await containerClient.deleteBlob(blobName, { deleteSnapshots: 'include' });
+    // Finding D: the Azure SDK sets no client-side per-request timeout by
+    // default (`tryTimeoutInMs` is undefined) and retries up to 4 times, so a
+    // hung connection could outlast the reconcile lease. The caller passes a
+    // ceiling well under it; aborting throws (a non-404), so the row is
+    // rescheduled rather than mistaken for a delete.
+    const abortSignal = options.timeoutMs ? AbortSignal.timeout(options.timeoutMs) : undefined;
+    await containerClient.deleteBlob(blobName, { deleteSnapshots: 'include', abortSignal });
     logger.info('Blob deleted from Azure Blob Storage', { container: containerName, blobName });
     return 'deleted';
   } catch (error) {

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 /**
  * Reconciliation for tombstoned blobs whose physical delete outcome is unknown
@@ -29,7 +29,8 @@ const { findManyMock, updateMock, auditCreateMock, warnMock, queryRawMock } = vi
 
 vi.mock('@/lib/prisma', () => ({
   prisma: {
-    blobClaim: { findMany: findManyMock, update: updateMock },
+    // Status/retry writes are lease-guarded `updateMany` (finding D).
+    blobClaim: { findMany: findManyMock, update: updateMock, updateMany: updateMock },
     auditLog: { create: auditCreateMock },
     $queryRaw: queryRawMock,
   },
@@ -58,10 +59,14 @@ import { deleteBlobFromCloudStorage } from '@/utils/cloud-storage';
 import { removeLocalUpload, inspectLocalUploadRef } from '@/utils/local-upload-store';
 import {
   reconcileDiscardedBlobs,
+  renewReconcileLease,
   BLOB_DISCARD_RECONCILE_AUDIT_ACTION,
   BLOB_DISCARD_RECONCILE_LIMIT,
   BLOB_DISCARD_MAX_ATTEMPTS,
   BLOB_DISCARD_RETRY_MAX_MS,
+  BLOB_DISCARD_OPERATION_TIMEOUT_MS,
+  BLOB_DISCARD_LEASE_MS,
+  BLOB_DISCARD_LEASE_RENEW_INTERVAL_MS,
   BLOB_DISCARD_WORKER_ID,
 } from './blob-discard-reconcile.job';
 import { BlobReconcileStatus } from '@prisma/client';
@@ -86,12 +91,14 @@ describe('reconcileDiscardedBlobs (BUG 7 / flag 11)', () => {
 
     const summary = await reconcileDiscardedBlobs();
 
-    expect(deleteMock).toHaveBeenCalledWith('cipansor-documents', 'gone.pdf');
+    expect(deleteMock).toHaveBeenCalledWith('cipansor-documents', 'gone.pdf', {
+      timeoutMs: BLOB_DISCARD_OPERATION_TIMEOUT_MS,
+    });
     expect(summary).toMatchObject({ examined: 1, deleted: 1, failed: 0, skipped: 0 });
     // Terminal: a successful delete must never be selected again.
     expect(updateMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'c1' },
+        where: { id: 'c1', reconcileLeaseOwner: BLOB_DISCARD_WORKER_ID },
         data: expect.objectContaining({
           reconcileStatus: BlobReconcileStatus.DONE,
           reconciledAt: expect.any(Date),
@@ -131,7 +138,7 @@ describe('reconcileDiscardedBlobs (BUG 7 / flag 11)', () => {
     expect(summary).toMatchObject({ examined: 1, deleted: 0, failed: 0, skipped: 1 });
     expect(updateMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'c1' },
+        where: { id: 'c1', reconcileLeaseOwner: BLOB_DISCARD_WORKER_ID },
         data: expect.objectContaining({ reconcileStatus: BlobReconcileStatus.QUARANTINED }),
       })
     );
@@ -147,7 +154,7 @@ describe('reconcileDiscardedBlobs (BUG 7 / flag 11)', () => {
     expect(warnMock).toHaveBeenCalled();
     expect(updateMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'c1' },
+        where: { id: 'c1', reconcileLeaseOwner: BLOB_DISCARD_WORKER_ID },
         data: expect.objectContaining({
           reconcileAttempts: 1,
           lastReconcileAt: expect.any(Date),
@@ -181,7 +188,7 @@ describe('reconcileDiscardedBlobs (BUG 7 / flag 11)', () => {
     );
     expect(updateMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'c1' },
+        where: { id: 'c1', reconcileLeaseOwner: BLOB_DISCARD_WORKER_ID },
         data: expect.objectContaining({
           reconcileAttempts: 1,
           lastReconcileAt: expect.any(Date),
@@ -247,7 +254,7 @@ describe('reconcileDiscardedBlobs (BUG 7 / flag 11)', () => {
     expect(summary).toMatchObject({ examined: 1, deleted: 1, failed: 0, unavailable: 0 });
     expect(updateMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'c1' },
+        where: { id: 'c1', reconcileLeaseOwner: BLOB_DISCARD_WORKER_ID },
         data: expect.objectContaining({ reconcileStatus: BlobReconcileStatus.DONE }),
       })
     );
@@ -292,7 +299,7 @@ describe('reconcileDiscardedBlobs (BUG 7 / flag 11)', () => {
 
     expect(updateMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'c1' },
+        where: { id: 'c1', reconcileLeaseOwner: BLOB_DISCARD_WORKER_ID },
         data: expect.objectContaining({ reconcileStatus: BlobReconcileStatus.QUARANTINED }),
       })
     );
@@ -349,7 +356,7 @@ describe('reconcileDiscardedBlobs (BUG 7 / flag 11)', () => {
     // that it is not DONE is that no UPDATE set DONE and a next attempt is due.
     expect(updateMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'c1' },
+        where: { id: 'c1', reconcileLeaseOwner: BLOB_DISCARD_WORKER_ID },
         data: expect.objectContaining({ nextReconcileAt: expect.any(Date) }),
       })
     );
@@ -433,11 +440,13 @@ describe('reconcileDiscardedBlobs (BUG 7 / flag 11)', () => {
 
     const summary = await reconcileDiscardedBlobs();
 
-    expect(deleteMock).toHaveBeenCalledWith('cipansor-documents', 'gone.pdf');
+    expect(deleteMock).toHaveBeenCalledWith('cipansor-documents', 'gone.pdf', {
+      timeoutMs: BLOB_DISCARD_OPERATION_TIMEOUT_MS,
+    });
     expect(summary).toMatchObject({ deleted: 1, skipped: 0, failed: 0 });
     expect(updateMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'c1' },
+        where: { id: 'c1', reconcileLeaseOwner: BLOB_DISCARD_WORKER_ID },
         data: expect.objectContaining({ reconcileStatus: BlobReconcileStatus.DONE }),
       })
     );
@@ -523,7 +532,7 @@ describe('reconcileDiscardedBlobs (BUG 7 / flag 11)', () => {
     expect(removeLocalUpload).not.toHaveBeenCalled();
     expect(updateMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'c1' },
+        where: { id: 'c1', reconcileLeaseOwner: BLOB_DISCARD_WORKER_ID },
         data: expect.objectContaining({ nextReconcileAt: expect.any(Date) }),
       })
     );
@@ -552,6 +561,166 @@ describe('reconcileDiscardedBlobs (BUG 7 / flag 11)', () => {
     expect(updateMock).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ reconcileStatus: BlobReconcileStatus.QUARANTINED }),
+      })
+    );
+  });
+});
+
+/**
+ * Finding D — the five-minute lease was not renewed and the storage operation
+ * had no client-side timeout, so a slow/hung delete could outlast the lease and
+ * let a second replica take the row and race the delete/retry/audit.
+ *
+ * These tests drive the worker with fake timers: a storage operation that
+ * outlives the lease must not hand the row to another replica, a heartbeat must
+ * renew the lease while the row is in flight, and a worker that has lost the
+ * lease (its renewal returns nothing) must not stamp status by its own request.
+ */
+describe('reconcileDiscardedBlobs lease renewal + operation timeout (finding D)', () => {
+  beforeEach(() => {
+    // mockReset (not clearAllMocks) so a hanging implementation from the
+    // previous test cannot leak into the next.
+    deleteMock.mockReset();
+    (removeLocalUpload as any).mockReset();
+    (inspectLocalUploadRef as any).mockReset();
+    updateMock.mockReset();
+    auditCreateMock.mockReset();
+    queryRawMock.mockReset();
+    deleteMock.mockResolvedValue('deleted');
+    (removeLocalUpload as any).mockResolvedValue(undefined);
+    (inspectLocalUploadRef as any).mockResolvedValue({ kind: 'invalid' });
+    updateMock.mockResolvedValue({});
+    auditCreateMock.mockResolvedValue({});
+    queryRawMock.mockResolvedValue([{ id: 'leased' }]);
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Flush the mock promise chain so the code reaches its first real timer. */
+  const flushMicrotasks = () => vi.advanceTimersByTimeAsync(0);
+
+  it('keeps the per-operation timeout shorter than the lease (safe margin)', () => {
+    expect(BLOB_DISCARD_OPERATION_TIMEOUT_MS).toBeLessThan(BLOB_DISCARD_LEASE_MS);
+  });
+
+  it('renews the lease on a heartbeat while a slow delete is in flight', async () => {
+    findManyMock.mockResolvedValue([{ id: 'c1', blobUrl: BLOB, reconcileAttempts: 0 }]);
+
+    // A delete that takes longer than one renew interval but less than the
+    // timeout: the row must stay ours throughout.
+    let settle!: (outcome: 'deleted') => void;
+    deleteMock.mockImplementation(
+      (() => new Promise<'deleted'>((resolve) => (settle = resolve))) as any
+    );
+
+    const run = reconcileDiscardedBlobs();
+    await flushMicrotasks(); // claim + install the heartbeat
+    await vi.advanceTimersByTimeAsync(BLOB_DISCARD_LEASE_RENEW_INTERVAL_MS + 1);
+
+    // A renewal must have run: the conditional UPDATE keyed to this worker.
+    expect(queryRawMock).toHaveBeenCalledTimes(2); // claim + renew
+    const renewSql = queryRawMock.mock.calls.at(-1)![0];
+    expect(JSON.stringify(renewSql)).toContain('reconcile_lease_owner');
+
+    settle('deleted');
+    await vi.advanceTimersByTimeAsync(1);
+    const summary = await run;
+    expect(summary).toMatchObject({ deleted: 1, failed: 0 });
+    // The status write is lease-guarded.
+    expect(updateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'c1', reconcileLeaseOwner: BLOB_DISCARD_WORKER_ID },
+      })
+    );
+  });
+
+  it('clears the heartbeat once the row finishes (no timer leak)', async () => {
+    findManyMock.mockResolvedValue([{ id: 'c1', blobUrl: BLOB, reconcileAttempts: 0 }]);
+    deleteMock.mockResolvedValue('deleted');
+
+    await reconcileDiscardedBlobs();
+    const callsAfterFinish = queryRawMock.mock.calls.length;
+
+    // Time passes; a leaked interval would renew again.
+    await vi.advanceTimersByTimeAsync(BLOB_DISCARD_LEASE_RENEW_INTERVAL_MS * 3);
+    expect(queryRawMock.mock.calls.length).toBe(callsAfterFinish);
+  });
+
+  it('renewReconcileLease returns false when the lease is no longer ours (takeover)', async () => {
+    queryRawMock.mockResolvedValueOnce([]);
+    await expect(renewReconcileLease('c1')).resolves.toBe(false);
+  });
+
+  it('does NOT stamp DONE when the row was taken over mid-operation (lease lost)', async () => {
+    findManyMock.mockResolvedValue([{ id: 'c1', blobUrl: BLOB, reconcileAttempts: 0 }]);
+    // The claim succeeds once; every later conditional write (a renew or the
+    // terminal status) matches no row — the lease moved to another replica.
+    queryRawMock.mockResolvedValueOnce([{ id: 'leased' }]).mockResolvedValue([]);
+    let updateManyWhere: any;
+    updateMock.mockImplementation(async (arg: any) => {
+      updateManyWhere = arg.where;
+      return { count: 0 };
+    });
+
+    await reconcileDiscardedBlobs();
+
+    // The write is conditioned on this worker still owning the lease, so a
+    // taken-over row can never be marked DONE by the losing worker.
+    expect(updateManyWhere).toEqual({
+      id: 'c1',
+      reconcileLeaseOwner: BLOB_DISCARD_WORKER_ID,
+    });
+  });
+
+  it('reschedules (never DONE) when the storage operation exceeds its timeout', async () => {
+    findManyMock.mockResolvedValue([{ id: 'c1', blobUrl: BLOB, reconcileAttempts: 0 }]);
+    // The delete hangs past the per-operation timeout.
+    deleteMock.mockImplementation((() => new Promise(() => {})) as any);
+
+    const run = reconcileDiscardedBlobs();
+    await flushMicrotasks(); // reach the timeout wrapping the hung delete
+    await vi.advanceTimersByTimeAsync(BLOB_DISCARD_OPERATION_TIMEOUT_MS + 1);
+    const summary = await run;
+
+    expect(summary).toMatchObject({ failed: 1, deleted: 0 });
+    expect(updateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ reconcileAttempts: 1 }),
+      })
+    );
+    expect(updateMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ reconcileStatus: BlobReconcileStatus.DONE }),
+      })
+    );
+  });
+
+  it('reschedules (never DONE) when a local delete exceeds its timeout', async () => {
+    (inspectLocalUploadRef as any).mockResolvedValue({
+      kind: 'resolved',
+      path: '/tmp/uploads-test/a.png',
+    });
+    (removeLocalUpload as any).mockImplementation(() => new Promise(() => {}));
+    findManyMock.mockResolvedValue([
+      {
+        id: 'c1',
+        blobUrl: '/uploads/123e4567-e89b-42d3-a456-426614174000.png',
+        reconcileAttempts: 0,
+      },
+    ]);
+
+    const run = reconcileDiscardedBlobs();
+    await flushMicrotasks();
+    await vi.advanceTimersByTimeAsync(BLOB_DISCARD_OPERATION_TIMEOUT_MS + 1);
+    const summary = await run;
+
+    expect(summary).toMatchObject({ failed: 1, deleted: 0 });
+    expect(updateMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ reconcileStatus: BlobReconcileStatus.DONE }),
       })
     );
   });

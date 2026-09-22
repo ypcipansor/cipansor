@@ -6,6 +6,7 @@ import { SSOLoginRequest, LoginResponse } from "@cipansor/shared";
 import {
   clearBearerTokenCookie,
   clearLegacyAuthStorageCookie,
+  clearRoutingSessionOnServer,
   clearSessionCookies,
 } from "@/lib/session-cookie";
 
@@ -100,11 +101,22 @@ async function syncRoutingSession(clear = false): Promise<boolean> {
     } catch {
       return false;
     }
-    return (
+    const minted =
       typeof body === "object" &&
       body !== null &&
-      (body as { session?: unknown }).session === true
-    );
+      (body as { session?: unknown }).session === true;
+    if (!minted) return false;
+    // The bearer may have been cleared while the mint was in flight — a logout
+    // racing a mount-time refresh. Its `DELETE` can land before this response
+    // commits its `Set-Cookie`, resurrecting a routing session on a browser that
+    // just signed out. Re-check the token the cookie was minted from and, if it
+    // is no longer the current bearer, clear the session again (fail closed)
+    // rather than reporting a success that reopens a protected route.
+    if (localStorage.getItem("accessToken") !== token) {
+      await clearRoutingSessionOnServer().catch(() => undefined);
+      return false;
+    }
+    return true;
   } catch {
     return false;
   }
@@ -136,7 +148,7 @@ async function clearRoutingSession(): Promise<void> {
  * navigable success. Tokens/state are cleared so no half-login survives.
  */
 function rejectRoutingSession(
-  set: (partial: Partial<AuthState>) => void
+  set: (partial: Partial<AuthState>) => void,
 ): never {
   localStorage.removeItem("accessToken");
   localStorage.removeItem("refreshToken");
@@ -180,7 +192,10 @@ export const useAuthStore = create<AuthState>()(
           const response = await authApi.ssoLogin(data);
           const responseData = response.data.data;
 
-          if ('requiresTwoFactor' in responseData && responseData.requiresTwoFactor) {
+          if (
+            "requiresTwoFactor" in responseData &&
+            responseData.requiresTwoFactor
+          ) {
             set({
               requiresTwoFactor: true,
               tempToken: responseData.tempToken,
@@ -189,7 +204,10 @@ export const useAuthStore = create<AuthState>()(
             return;
           }
 
-          if ('requiresTwoFactorSetup' in responseData && responseData.requiresTwoFactorSetup) {
+          if (
+            "requiresTwoFactorSetup" in responseData &&
+            responseData.requiresTwoFactorSetup
+          ) {
             set({
               requiresTwoFactorSetup: true,
               tempToken: responseData.tempToken,
@@ -199,7 +217,8 @@ export const useAuthStore = create<AuthState>()(
             return;
           }
 
-          const { user, accessToken, refreshToken } = responseData as LoginResponse;
+          const { user, accessToken, refreshToken } =
+            responseData as LoginResponse;
 
           localStorage.setItem("accessToken", accessToken);
           localStorage.setItem("refreshToken", refreshToken);
@@ -220,7 +239,9 @@ export const useAuthStore = create<AuthState>()(
           const message =
             error instanceof Error ? error.message : "SSO Login failed";
           const axiosError = error as {
-            response?: { data?: { error?: { message?: string }; message?: string } };
+            response?: {
+              data?: { error?: { message?: string }; message?: string };
+            };
           };
           set({
             error:
@@ -280,7 +301,9 @@ export const useAuthStore = create<AuthState>()(
           const message =
             error instanceof Error ? error.message : "Login failed";
           const axiosError = error as {
-            response?: { data?: { error?: { message?: string }; message?: string } };
+            response?: {
+              data?: { error?: { message?: string }; message?: string };
+            };
           };
           set({
             error:
@@ -326,7 +349,9 @@ export const useAuthStore = create<AuthState>()(
           const message =
             error instanceof Error ? error.message : "2FA Verification failed";
           const axiosError = error as {
-            response?: { data?: { error?: { message?: string }; message?: string } };
+            response?: {
+              data?: { error?: { message?: string }; message?: string };
+            };
           };
           set({
             error:
@@ -364,6 +389,15 @@ export const useAuthStore = create<AuthState>()(
       fetchUser: async () => {
         const token = localStorage.getItem("accessToken");
         if (!token) {
+          // No bearer to authenticate with. If a server-signed routing cookie
+          // survived (a cleared localStorage, a storage eviction, or a refresh
+          // failure whose best-effort `DELETE` did not reach the server), the
+          // Proxy would keep treating this visitor as signed in: `ProtectedRoute`
+          // sends them to `/login`, the Proxy sees the stale cookie and bounces
+          // them back — a redirect loop that only ends when the cookie expires.
+          // Clearing the routing session here makes `/login` stick. Best-effort
+          // and never rejecting, so it cannot block the local state update.
+          await clearRoutingSession();
           set({ isAuthenticated: false, user: null });
           return;
         }
@@ -378,6 +412,16 @@ export const useAuthStore = create<AuthState>()(
               isAuthenticated: true,
               isLoading: false,
             });
+            // Finding C: `/auth/me` is the server's current view of the user,
+            // and the only routine place a role revocation/change becomes
+            // visible to the client. Re-mint the routing session from the
+            // bearer so the Proxy stops routing off the role the previous
+            // cookie carried — otherwise a revoked/reshuffled role kept its
+            // page chrome and menu for up to the 24h cookie TTL. Best-effort:
+            // a failed re-mint must NOT sign the user out (the bearer is still
+            // valid and every API call re-authenticates from it), so the
+            // outcome is deliberately ignored.
+            void syncRoutingSession().catch(() => undefined);
           } catch (error: unknown) {
             const status = (error as AxiosError)?.response?.status;
             if (status === 401 || status === 403) {
@@ -451,7 +495,9 @@ export const useAuthStore = create<AuthState>()(
           const message =
             error instanceof Error ? error.message : "Failed to switch role";
           const axiosError = error as {
-            response?: { data?: { error?: { message?: string }; message?: string } };
+            response?: {
+              data?: { error?: { message?: string }; message?: string };
+            };
           };
           set({
             error:
