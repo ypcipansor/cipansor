@@ -161,6 +161,19 @@ export function describeEmailTransport(): EmailTransportStatus {
  * follows cannot re-introduce `<` or `>` — it only deletes — so no later pass
  * can re-open the hole the element scan just closed.
  *
+ * HTML comments are handled by the SAME joint scan, not by a separate
+ * pre-pass. A comment body may contain `<` and `>`, so the generic tag strip
+ * below — which bounds a run at the next `>` — cannot tell
+ * `<!-- note > hidden -->` from a tag and would stop at the first `>` and leak
+ * the rest of the comment (code scanning alert 27's class). A separate
+ * `comment-strip` pass would itself be vulnerable to the same fusion this
+ * function exists to close: deleting a comment can glue a stray `<!-` and a
+ * `-` into a fresh `<!--`, and deleting a `<style>`/`<head>` element can glue
+ * a comment's own `<!--` back together, so the newly formed comment (with a
+ * `>` in its body) would survive every later pass. Folding the pattern into
+ * the joint scan lets a fusion re-fire in the same pass, so the fixed point is
+ * reached without rescanning.
+ *
  * Every pass is a hand-written left-to-right scan, not a regex: a `<...>` body
  * is bounded by the next `<`, and each character is visited a constant number
  * of times. The `<style>`/`<head>` and generic patterns used to be regexes that
@@ -198,41 +211,54 @@ function endsWith(out: string[], pattern: string): boolean {
 }
 
 /**
- * Remove `<style>`/`<head>` elements (contents included) to the JOINT fixed
- * point of both, in one linear interleaved scan.
+ * Remove `<style>`/`<head>` elements (contents included) and HTML comments to
+ * the JOINT fixed point of all three, in one linear interleaved scan.
  *
- * The two element passes are not independent. A `</head>` removal can fuse an
- * earlier `<sty` with a later `le>` into a fresh `<style` opener, and a
- * `</style>` removal can do the mirror image for `head`; a sequential
+ * The passes are not independent. A `</head>` removal can fuse an earlier
+ * `<sty` with a later `le>` into a fresh `<style` opener, and a `</style>`
+ * removal can do the mirror image for `head`; a sequential
  * `stripElement(x,'style')` then `stripElement(x,'head')` leaves that freshly
- * formed element — and the text it hides — in the output.
+ * formed element — and the text it hides — in the output. Comments fuse the
+ * same way: deleting a `<style>` element can glue a comment's own `<!--` back
+ * together, and deleting a comment can glue a stray `<!-` and `-` into a fresh
+ * `<!--`. A comment processed by a separate pass would carry its body's `>`
+ * past every later pass.
  *
  * One scan sees every such fusion as it happens, because it only ever looks at
- * the *current tail* of the growing output. Detection and deletion are the
- * element passes' own greedy rules, applied per pattern:
+ * the *current tail* of the growing output. Detection and deletion are each
+ * pattern's own greedy rule:
  *
- *   - An opener is the literal `<name` (no `>` needed), tracked by that
- *     pattern's earliest still-unmatched position.
+ *   - An opener is tracked by that pattern's earliest still-unmatched position.
+ *     For `style`/`head` the opener is the literal `<name` (no `>` needed); for
+ *     comments it is the full `<!--`, since the terminator is `-->` and the
+ *     body must not be split on `>`.
  *   - When a close arrives while its pattern has an unmatched opener, delete
  *     from that earliest opener through the close. Every opener at or after it
- *     — of EITHER pattern, since all sit inside the deleted span — is retired
+ *     — of ANY pattern, since all sit inside the deleted span — is retired
  *     too. Because each pattern's earliest unmatched opener is always the one
- *     that would fire next, this is exactly what re-applying the two passes to
- *     a shared fixed point would do, but without rescanning: a character is
+ *     that would fire next, this is exactly what re-applying the three passes
+ *     to a shared fixed point would do, but without rescanning: a character is
  *     appended once and dropped at most once, so the scan is O(n).
  *
  * This is order-independent by construction: the earliest pending opener across
  * the live tail determines each truncation regardless of which pass you imagine
- * running. A pattern with an opener but no close is left for the generic tag
+ * running. A `style`/`head` opener with no close is left for the generic tag
  * strip, and input stutters near an already-deleted prefix (detection is
  * tail-based, deletion is global) are normalised by that strip, which cannot
  * re-create `<` or `>`.
+ *
+ * A comment opener that is still pending when the input ends has no `-->`, so
+ * per HTML's comment parsing rule it runs to end-of-input: everything from
+ * `<!--` onward is dropped. Leaving it to the generic tag strip instead would
+ * bound it at the first `>` and leak the rest of the body, which is the
+ * incomplete-sanitization class this scan exists to close.
  */
 function stripHiddenElements(text: string): string {
-  const patterns = ['style', 'head'].map((name) => ({
-    open: `<${name}`.toLowerCase(),
-    close: `</${name}>`.toLowerCase(),
-  }));
+  const patterns = [
+    { open: '<!--', close: '-->' },
+    { open: '<style', close: '</style>' },
+    { open: '<head', close: '</head>' },
+  ].map((p) => ({ open: p.open.toLowerCase(), close: p.close.toLowerCase() }));
   const out: string[] = [];
   const openStart: number[] = patterns.map(() => -1);
 
@@ -257,6 +283,9 @@ function stripHiddenElements(text: string): string {
     }
   }
 
+  // patterns[0] is the comment; an unclosed one swallows the rest of the input.
+  if (openStart[0] !== -1) out.length = openStart[0];
+
   return out.join('');
 }
 
@@ -270,6 +299,10 @@ function stripHiddenElements(text: string): string {
  * unmatched `<` through the `>`. Retiring the whole run at once is what makes
  * one scan suffice, and a `<` with no following `>` is left as literal text,
  * exactly as the regex'd single pass did.
+ *
+ * Comments are NOT handled here — a `<!-- … > … -->` body would break the
+ * "next `>`" rule — so `stripHiddenElements` removes every comment first; this
+ * pass cannot re-create a comment either, since it only deletes.
  */
 function stripTags(text: string): string {
   const out: string[] = [];

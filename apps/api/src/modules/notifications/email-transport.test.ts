@@ -379,9 +379,7 @@ describe('htmlToText', () => {
       // `<style>` (and a second `<style>` layer) around text that must not
       // escape. A per-pass fixed point peels one layer per round; the joint
       // scan removes all of them at once.
-      expect(
-        htmlToText('<sty<head>x</head>le>Y<sty<head>z</head>le>W</style></style>')
-      ).toBe('');
+      expect(htmlToText('<sty<head>x</head>le>Y<sty<head>z</head>le>W</style></style>')).toBe('');
       expect(htmlToText('<sty<head>x</head>le>Y<sty<head>z</head>le>W</style>')).toBe('');
       // Text after the fully closed element still comes through.
       expect(htmlToText('<sty<head>one</head>le>css1</style>after')).toBe('after');
@@ -405,6 +403,62 @@ describe('htmlToText', () => {
       expect(htmlToText('before<?xml version="1.0"?>after')).toBe('beforeafter');
       // Concatenation across a removed comment must not re-form a tag.
       expect(htmlToText('<<!---->script>alert(1)')).not.toMatch(/<\/?script/i);
+    });
+
+    it('removes a whole comment even when its body contains >', () => {
+      // Code scanning alert 27: `stripTags` is bounded by the next `>`, so a
+      // comment body with a `>` used to end the strip early and leak the rest
+      // of the comment (`note > hidden -->`) into the plain-text email. A
+      // comment must be matched by its `-->`, not by the next `>`.
+      expect(htmlToText('before<!-- note > hidden -->after')).toBe('beforeafter');
+      expect(htmlToText('before<!-- a > b > c -->after')).toBe('beforeafter');
+      expect(htmlToText('before<!-- -->after')).toBe('beforeafter');
+      expect(htmlToText('<!-- only -->')).toBe('');
+    });
+
+    it('removes a multiline comment', () => {
+      expect(htmlToText('before<!--\nmulti > line\nstill hidden\n-->after')).toBe('beforeafter');
+      // A `>` on a later line is covered by the same terminator match.
+      expect(htmlToText('a<!-- one\n>two\n>three -->b')).toBe('ab');
+    });
+
+    it('removes a comment whose body looks like an element', () => {
+      // The comment must go as a unit; the `<script>`/`<style>` inside it are
+      // not elements that could otherwise consume or leak.
+      expect(htmlToText('before<!-- <script>alert(1)</script> -->after')).toBe('beforeafter');
+      expect(htmlToText('before<!-- <style>p{color:red}</style> -->after')).toBe('beforeafter');
+      expect(htmlToText('<!-- <head>hidden</head> -->shown')).toBe('shown');
+    });
+
+    it('does not leave a live tag when a comment removal concatenates its neighbours', () => {
+      // Removing the comment fuses `<<` and `script>`; the tag strip that runs
+      // after the joint scan must not let the halves form a live tag.
+      expect(htmlToText('<<!---->script>alert(1)')).not.toMatch(/<\/?script/i);
+      expect(htmlToText('<scr<!--x-->ipt>alert(1)')).not.toMatch(/<\/?script/i);
+    });
+
+    it('does not leak a comment that removing an element re-forms', () => {
+      // A separate comment pass would miss this: deleting `<style>…</style>`
+      // fuses the surrounding `<!-` and `-->` (or `-` and `-->`) into a fresh
+      // comment whose body carries a `>`. The joint scan re-fires in the same
+      // pass, so nothing of the body leaks.
+      expect(htmlToText('a<!-<style>X</style>- b > c --> d')).not.toContain('b > c');
+      expect(htmlToText('a<!-<style>X</style>- b > c --> d')).not.toContain('-->');
+      // Mirror: a comment deletion re-forms an element, whose content is then
+      // removed rather than leaked.
+      expect(htmlToText('<sty<!--c-->le>SECRET</style>')).toBe('');
+      expect(htmlToText('<sty<!--c-->le>SECRET</style>')).not.toContain('SECRET');
+    });
+
+    it('drops an unterminated comment to end of input', () => {
+      // Explicit behaviour: with no `-->` the comment runs to EOF (HTML's
+      // comment-parsing rule), so no part of the body can leak — including
+      // after a `>`. This replaced the generic tag strip's first-`>` bound,
+      // which leaked `hidden > tail`.
+      expect(htmlToText('before<!-- note > hidden')).toBe('before');
+      expect(htmlToText('before<!-- note')).toBe('before');
+      expect(htmlToText('before<!--')).toBe('before');
+      expect(htmlToText('before<!-- note > hidden')).not.toContain('hidden');
     });
 
     it('terminates on pathological tag input without a matching close', () => {
@@ -438,6 +492,28 @@ describe('htmlToText', () => {
         htmlToText(input);
         expect(Date.now() - start).toBeLessThan(1000);
       }
+    });
+
+    it('stays linear on pathological comment bodies', () => {
+      // A naive comment scan that searched for `-->` from every `<!--`, or that
+      // rescanned after each deletion, would go quadratic on these. The single
+      // left-to-right scan appends each character once, so all stay linear.
+      const noTerminator = '<!--' + '>'.repeat(200_000); // many `>`, no close
+      const longBody = '<!--' + 'x>'.repeat(200_000) + '-->'; // one long comment
+      const manyStarters = '<!--'.repeat(100_000) + '-->'; // one pending opener
+      const manyComments = '<!--a>b-->'.repeat(50_000); // many closed comments
+
+      for (const input of [noTerminator, longBody, manyStarters, manyComments]) {
+        htmlToText(input); // warm up
+        const start = Date.now();
+        htmlToText(input);
+        expect(Date.now() - start).toBeLessThan(1000);
+      }
+
+      // Correctness alongside the timing: the long single comment is removed
+      // whole and nothing of its body survives.
+      expect(htmlToText(longBody)).toBe('');
+      expect(htmlToText(manyComments)).toBe('');
     });
 
     it('stays linear when a tag is fragmented across many nested layers', () => {
