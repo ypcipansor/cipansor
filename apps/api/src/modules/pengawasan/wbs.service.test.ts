@@ -924,6 +924,90 @@ describe('WbsService Unit Tests', () => {
       // forward cannot deadlock with the other WBS mutation paths.
       expect(reportLock).toBeLessThan(recipientLock);
     });
+
+    it('locks the recipient role assignments before reading them, after the user row', async () => {
+      // Locking only the `users` row does not serialise a `UserRoleAssignment`
+      // change: a concurrent revocation writes a different row. The assignment
+      // rows must be locked (and, crucially, *before* the eligibility read that
+      // follows) so a revocation cannot slip between the decision and commit.
+      (prisma.wbsReport.findFirst as any).mockResolvedValue(reportInScope());
+      (prisma.wbsReport.findUnique as any).mockResolvedValue(reportInScope());
+      (prisma.user.findUnique as any).mockResolvedValue(recipient());
+      (prisma.wbsReport.update as any).mockResolvedValue({
+        ...reportInScope(),
+        primaryHandlerRole: 'YAYASAN_KETUA',
+        assignedUserId: 'user-target',
+      });
+
+      await wbsService.forwardReport(
+        'report-1',
+        { toRole: 'YAYASAN_KETUA', reason: 'alasan panjang', toUserId: 'user-target' },
+        actor
+      );
+
+      const sql = (prisma.$queryRaw as any).mock.calls.map((call: unknown[]) =>
+        (call[0] as string[]).join('?')
+      );
+      const reportLock = sql.findIndex((q: string) => q.includes('wbs_reports'));
+      const userLock = sql.findIndex((q: string) => q.includes('FROM "users"'));
+      const assignmentLock = sql.findIndex((q: string) =>
+        q.includes('FROM "user_role_assignments"')
+      );
+      expect(reportLock).toBeGreaterThanOrEqual(0);
+      expect(userLock).toBeGreaterThanOrEqual(0);
+      expect(assignmentLock).toBeGreaterThanOrEqual(0);
+      expect(assignmentLock).toBeGreaterThan(userLock);
+      expect(assignmentLock).toBeGreaterThan(reportLock);
+    });
+
+    it.each([WbsStatus.SELESAI, WbsStatus.TIDAK_DAPAT_DITINDAKLANJUTI])(
+      'refuses to forward a report already closed as %s, with no side effects',
+      async (status) => {
+        // The scope read inside the transaction returns the locked status.
+        // A terminal case is immutable: no `WbsForwardLog`, no routing change,
+        // no timeline comment. The check is inside the transaction on the locked
+        // row, not a pre-flight outside it.
+        (prisma.wbsReport.findFirst as any).mockResolvedValue({
+          ...reportInScope(),
+          status,
+        });
+        (prisma.user.findUnique as any).mockResolvedValue(recipient());
+
+        await expect(
+          wbsService.forwardReport(
+            'report-1',
+            { toRole: 'YAYASAN_KETUA', reason: 'alasan panjang', toUserId: 'user-target' },
+            actor
+          )
+        ).rejects.toMatchObject({ statusCode: 409 });
+
+        expect(prisma.wbsForwardLog.create).not.toHaveBeenCalled();
+        expect(prisma.wbsReport.update).not.toHaveBeenCalled();
+        expect(prisma.wbsComment.create).not.toHaveBeenCalled();
+      }
+    );
+
+    it('still forwards a case that is not terminal', async () => {
+      (prisma.wbsReport.findFirst as any).mockResolvedValue({
+        ...reportInScope(),
+        status: WbsStatus.DALAM_PENYELIDIKAN,
+      });
+      (prisma.wbsReport.findUnique as any).mockResolvedValue(reportInScope());
+      (prisma.user.findUnique as any).mockResolvedValue(recipient());
+      (prisma.wbsReport.update as any).mockResolvedValue({
+        ...reportInScope(),
+        primaryHandlerRole: 'YAYASAN_KETUA',
+        assignedUserId: 'user-target',
+      });
+
+      await wbsService.forwardReport(
+        'report-1',
+        { toRole: 'YAYASAN_KETUA', reason: 'alasan panjang', toUserId: 'user-target' },
+        actor
+      );
+
+      expect(prisma.wbsForwardLog.create).toHaveBeenCalled();
+    });
   });
 
   describe('public comments on closed cases', () => {

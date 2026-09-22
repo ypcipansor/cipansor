@@ -7,8 +7,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  */
 
 // A small in-memory Redis stand-in. `eval` interprets the compare-and-set
-// script with the same version ordering Redis would apply, so the tests exercise
-// the real write path (argument shape + ordering) rather than stubbed returns.
+// script with the same version *and state-precedence* ordering Redis would
+// apply, so the tests exercise the real write path (argument shape + ordering)
+// rather than stubbed returns.
 const store = new Map<string, string>();
 const redisGet = vi.fn(async (key: string) => store.get(key) ?? null);
 const redisEval = vi.fn(
@@ -23,7 +24,14 @@ const redisEval = vi.fn(
     const raw = store.get(key) ?? null;
     const match = raw ? /^([sn]):(\d+)$/.exec(raw) : null;
     const current = match ? Number(match[2]) : -1;
-    if (Number(version) >= current) {
+    const currentState = match ? match[1] : null;
+    const incoming = Number(version);
+    // Mirror the Lua exactly: a strictly newer version always wins; an equal
+    // version is won only by a tombstone that is not already the stored state.
+    const accept =
+      incoming > current ||
+      (incoming === current && state === 'n' && currentState !== 'n');
+    if (accept) {
       store.set(key, `${state}:${version}`);
       return 1;
     }
@@ -174,8 +182,38 @@ describe('suspension cache writes are ordered by the durable version', () => {
     expect(store.get('suspension:user:u1')).toBe('n:4');
   });
 
-  it('the compare-and-set script orders integer versions', () => {
-    expect(SUSPENSION_CACHE_CAS_SCRIPT).toContain("tonumber(ARGV[2]) >= current");
+  it('a stale suspension prime cannot overwrite a same-version lift tombstone', async () => {
+    // The exact race in the review: a request reads the account as suspended
+    // (version 5), the lift commits and records `n:5`, then the stale read primes
+    // `s:5`. The tombstone must survive, or the restored account is refused for
+    // the whole TTL.
+    await invalidateUserSuspensionCache('u1', 5);
+    await markUserSuspended('u1', 5);
+    expect(store.get('suspension:user:u1')).toBe('n:5');
+  });
+
+  it('a newer re-suspension still overwrites an older tombstone', async () => {
+    await invalidateUserSuspensionCache('u1', 5);
+    // The re-suspension bumps the counter, so its positive marker must win.
+    await markUserSuspended('u1', 6);
+    expect(store.get('suspension:user:u1')).toBe('s:6');
+    await expect(isUserSuspended('u1')).resolves.toBe(true);
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('an idempotent replay of the same tombstone does not reshuffle state', async () => {
+    await invalidateUserSuspensionCache('u1', 8);
+    await invalidateUserSuspensionCache('u1', 8);
+    expect(store.get('suspension:user:u1')).toBe('n:8');
+  });
+
+  it('the compare-and-set script decides equal versions by state precedence', () => {
+    // A strictly newer version always wins; an equal version is won only by a
+    // tombstone over a different marker. The old `>=` accepted the stale
+    // positive marker and is the bug this replaces.
+    expect(SUSPENSION_CACHE_CAS_SCRIPT).toContain('incoming > current');
+    expect(SUSPENSION_CACHE_CAS_SCRIPT).toContain("ARGV[1] == 'n' and currentState ~= 'n'");
+    expect(SUSPENSION_CACHE_CAS_SCRIPT).not.toContain('>= current');
   });
 
   it('swallows a Redis failure on invalidate but logs it', async () => {

@@ -399,4 +399,67 @@ describeDb('esign suspension race (real PostgreSQL)', () => {
       await unloadModules(previousUrl);
     }
   });
+
+  it('changePassphrase succeeds for a key whose lockedUntil is NULL', async () => {
+    // The predicate must accept `lockedUntil IS NULL`. A negated comparison
+    // (`NOT (locked_until >= $1)`) is NULL in SQL when `locked_until` is NULL,
+    // so it matched no row and an ordinary, unlocked key could never swap its
+    // passphrase — the regression this covers.
+    await resetState();
+    const { EsignService, previousUrl } = await loadModules();
+    try {
+      await withClient(targetUrl, async (db) => {
+        await db.query(
+          `UPDATE user_signing_keys
+           SET locked_until = NULL, failed_attempts = 3
+           WHERE id = 'key-ketua'`
+        );
+      });
+
+      await expect(
+        EsignService.changePassphrase('u-ketua', PASS, ACCOUNT_PASSWORD, NEW_PASS)
+      ).resolves.toBeTruthy();
+
+      await withClient(targetUrl, async (db) => {
+        const key = await db.query(
+          `SELECT locked_until, failed_attempts FROM user_signing_keys WHERE id = 'key-ketua'`
+        );
+        expect(key.rows[0].locked_until, 'the swap keeps the key unlocked').toBeNull();
+        expect(key.rows[0].failed_attempts, 'a successful swap clears the counter').toBe(0);
+      });
+
+      // The new passphrase really is the live one: signing with it verifies.
+      await expect(EsignService.signLetter('letter-sign', 'u-ketua', NEW_PASS)).resolves.toBeTruthy();
+    } finally {
+      await unloadModules(previousUrl);
+    }
+  });
+
+  it('changePassphrase is still refused while the suspension sentinel holds', async () => {
+    await resetState();
+    const { EsignService, previousUrl } = await loadModules();
+    try {
+      await commitSuspensionLock();
+
+      // The sentinel is refused. Depending on where the guard trips the message
+      // is either the suspension refusal or the generic "locked" message, so
+      // the decision asserted here is *refusal plus the sentinel surviving*,
+      // not the wording.
+      await expect(
+        EsignService.changePassphrase('u-ketua', PASS, ACCOUNT_PASSWORD, NEW_PASS)
+      ).rejects.toThrow();
+
+      await withClient(targetUrl, async (db) => {
+        const key = await db.query(
+          `SELECT locked_until FROM user_signing_keys WHERE id = 'key-ketua'`
+        );
+        expect(
+          new Date(key.rows[0].locked_until).toISOString(),
+          'the sentinel must survive the refused swap'
+        ).toBe(new Date(SENTINEL).toISOString());
+      });
+    } finally {
+      await unloadModules(previousUrl);
+    }
+  });
 });

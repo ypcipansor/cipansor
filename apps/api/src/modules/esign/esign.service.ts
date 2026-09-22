@@ -174,10 +174,18 @@ async function clearFailedAttempts(keyId: string) {
   // request was in flight, that clear would null the sentinel and re-enable
   // signing for an officer who was just suspended. The conditional update leaves
   // `lockedUntil` alone when it is the sentinel (see utils/esign-suspension-lock.ts).
+  //
+  // The predicate is an explicit `IS NULL OR < sentinel`, not `NOT (>= sentinel)`.
+  // A three-valued negation (`NOT (NULL >= $1)` → `NOT NULL` → `NULL`) matches no
+  // row, so the old form silently failed to clear `failedAttempts` for the
+  // ordinary unlocked key — every successful signature left the counter at its
+  // previous value and a lockout that had run out in the past was never cleared.
+  // Stating the two accepted cases directly keeps NULL matchable while still
+  // refusing the sentinel and anything above it.
   await prisma.userSigningKey.updateMany({
     where: {
       id: keyId,
-      NOT: { lockedUntil: { gte: SIGNING_KEY_SUSPENSION_LOCK } },
+      OR: [{ lockedUntil: null }, { lockedUntil: { lt: SIGNING_KEY_SUSPENSION_LOCK } }],
     },
     data: { failedAttempts: 0, lockedUntil: null, lastUsedAt: new Date() },
   });
@@ -922,10 +930,20 @@ export const EsignService = {
         await assertSigningKeyNotSuspendedTx(tx, key.id);
 
         return tx.userSigningKey.updateMany({
+          // The predicate accepts the two states that are not the suspension's:
+          // `lockedUntil IS NULL` (the ordinary unlocked key) or a value below
+          // the sentinel (a short passphrase lockout). It must NOT be written as
+          // `NOT: { lockedUntil: { gte: SIGNING_KEY_SUSPENSION_LOCK } }` — that
+          // becomes `NOT (locked_until >= $1)`, and in SQL a NULL comparison is
+          // NULL, so the negated form also yields NULL and matches no row. The
+          // effect was that a key with `lockedUntil = NULL` could never swap its
+          // passphrase at all: an ordinary, unlocked key was refused as if a
+          // suspension held it. Stating the accepted cases explicitly keeps NULL
+          // matchable while the sentinel and anything above it stay refused.
           where: {
             id: key.id,
             userId,
-            NOT: { lockedUntil: { gte: SIGNING_KEY_SUSPENSION_LOCK } },
+            OR: [{ lockedUntil: null }, { lockedUntil: { lt: SIGNING_KEY_SUSPENSION_LOCK } }],
           },
           data: {
             encryptedPrivateKey: rewrapped.encryptedPrivateKey,

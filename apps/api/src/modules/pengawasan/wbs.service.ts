@@ -764,7 +764,22 @@ export class WbsService {
       // pre-check and this write; taking the lock first serialises the two,
       // and the scope query then sees the committed routing rather than the
       // stale snapshot the actor was authorised against.
-      await this.assertReportInScopeTx(tx, id, actor);
+      //
+      // The scope read returns the status of the *locked* row, which is the
+      // state that will hold at commit. That is what makes the terminal check
+      // below a decision rather than a guess: a handler can close the case
+      // between the pre-flight scope check and this write, and a forward that
+      // landed anyway would append a `WbsForwardLog`, move the routing and post
+      // a timeline comment onto a case the board has already ended — the same
+      // immutability `updateReportStatus` and `addHandlerComment` enforce. The
+      // check is inside the transaction, on the locked row, not a pre-flight
+      // outside it.
+      const scope = await this.assertReportInScopeTx(tx, id, actor);
+      if (isClosedWbsStatus(scope.status)) {
+        throw Errors.conflict(
+          'Laporan WBS ini sudah ditutup (SELESAI / TIDAK_DAPAT_DITINDAKLANJUTI) dan tidak dapat diteruskan lagi.'
+        );
+      }
 
       // The report is now locked, so its unit cannot move under the recipient
       // decision below. Read it fresh rather than reusing the pre-transaction
@@ -778,11 +793,14 @@ export class WbsService {
         throw Errors.notFound(`Laporan WBS dengan ID ${id} tidak ditemukan`);
       }
 
-      // Lock ordering: report first (above), then recipient. Every forward and
-      // status/comment path takes the report lock first, so a recipient lock
-      // taken strictly after it cannot cycle with another WBS mutation. The
-      // recipient is re-read only after `FOR UPDATE`, so its account state,
-      // roles and unit are the committed values — not the pre-flight snapshot.
+      // Lock ordering: report first (above), then recipient, then the
+      // recipient's role assignments. Every forward and status/comment path
+      // takes the report lock first, so a recipient lock taken strictly after it
+      // cannot cycle with another WBS mutation. `BoardSuspensionService` locks
+      // the delegate's user row and then its assignment rows in the same order,
+      // and every role writer mutates assignments with `UPDATE`/`DELETE`, which
+      // takes the row lock implicitly — so this is a compatible lock order with
+      // the writers, not a lock only forwarding honours.
       if (data.toUserId) {
         const lockedRecipient = await tx.$queryRaw<Array<{ id: string }>>`
           SELECT id FROM "users" WHERE id = ${data.toUserId} FOR UPDATE
@@ -790,6 +808,29 @@ export class WbsService {
         if (lockedRecipient.length !== 1) {
           throw Errors.badRequest('Pengguna tujuan teruskan tidak ditemukan atau telah dihapus.');
         }
+
+        // Lock the recipient's effective-role rows, in a deterministic (uuid)
+        // order, *before* reading them.
+        //
+        // Locking the `users` row does not serialise a `UserRoleAssignment`
+        // change: a concurrent revocation deletes/updates the assignment row,
+        // which is a different row and takes a different lock. Without this,
+        // the eligibility decision below is made on a read the revocation can
+        // invalidate before the forward commits, and the report ends up routed
+        // to someone whose role is gone — the lost update the review asked to
+        // close. Holding these rows `FOR UPDATE` makes the revocation wait
+        // until the forward finishes; the read that follows therefore sees
+        // either the assignment as it was when the lock was taken (forward
+        // committed first) or, when the revocation committed first and released
+        // the lock, its removal — and the eligibility check refuses. An insert
+        // of a *new* assignment cannot be locked and cannot remove a role, so
+        // it cannot make an eligible recipient ineligible; the
+        // organ-exclusivity trigger remains the backstop for a conflicting
+        // insert.
+        await tx.$queryRaw`
+          SELECT id FROM "user_role_assignments" WHERE user_id = ${data.toUserId} ORDER BY id FOR UPDATE
+        `;
+
         const recipient = await tx.user.findUnique({
           where: { id: data.toUserId },
           select: {

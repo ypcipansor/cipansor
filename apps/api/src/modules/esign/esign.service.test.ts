@@ -644,9 +644,12 @@ describe('menandatangani surat', () => {
       .mocked(prisma.userSigningKey.updateMany)
       .mock.calls.find((c) => c[0].data && 'lockedUntil' in (c[0].data as object));
     expect(clearCall).toBeDefined();
+    // `IS NULL OR < sentinel`, stated explicitly. The old `NOT (>= sentinel)`
+    // form was a three-valued negation that matched no row for an unlocked key,
+    // so the counter was never cleared.
     expect(clearCall![0].where).toMatchObject({
       id: 'key-1',
-      NOT: { lockedUntil: { gte: expect.any(Date) } },
+      OR: [{ lockedUntil: null }, { lockedUntil: { lt: expect.any(Date) } }],
     });
   });
 

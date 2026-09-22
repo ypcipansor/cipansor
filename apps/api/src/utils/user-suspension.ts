@@ -56,6 +56,30 @@ const CACHE_TTL_SECONDS = 60;
 const SUSPENDED = 's';
 const RESTORED = 'n';
 
+/**
+ * Which marker wins when two writes carry the same version.
+ *
+ * The version counter is bumped by every guarded account-state write, but a
+ * *read* also carries the version it observed. A read that saw a suspended
+ * state at version V and then tries to prime `s:V` is not an authoritative
+ * write: it describes the same version a lift may already have recorded as
+ * `n:V`. If the CAS accepted equal versions, the stale prime's `s:V` would
+ * overwrite the lift's tombstone and the restored account would be refused
+ * until the TTL — the exact race this encoding exists to remove.
+ *
+ * So on an equal version the tombstone wins: a restore/state-change record is
+ * authoritative, while a positive marker at that version may be a read-through
+ * prime. A positive marker still wins outright when its version is strictly
+ * newer, which is the re-suspension case — the newer state write bumped the
+ * counter, so its `s` must land over an older `n`.
+ *
+ * Concretely, the accepted write is:
+ *   - strictly newer version: accept either state (later write wins);
+ *   - equal version: accept only the tombstone, and only when the stored state
+ *     is identical (an idempotent replay is a no-op).
+ */
+export const SUSPENSION_CACHE_STATE_PRECEDENCE = { [SUSPENDED]: 0, [RESTORED]: 1 } as const;
+
 function parseEntry(raw: string | null): { state: string; version: number } | null {
   if (!raw) return null;
   const [state, versionText] = raw.split(':');
@@ -77,15 +101,41 @@ function cacheKey(userId: string): string {
  * version and each write, which is the same race one level down, so the whole
  * decision runs inside Redis. `KEYS[1]` is the cache key; `ARGV[1]` the state
  * (`s`/`n`), `ARGV[2]` the version, `ARGV[3]` the TTL.
+ *
+ * **Equal versions are decided by state precedence, not by arrival.** A
+ * strictly newer version always wins, whichever marker it carries — that is the
+ * suspend → lift → re-suspend sequence, where each state write bumps the
+ * counter. On an equal version the *tombstone* (`n`) wins, because a positive
+ * marker at the same version may be a read-through prime from a read that
+ * observed the pre-lift state, and letting it win would resurrect a marker the
+ * lift already cleared. `s:V` therefore cannot overwrite `n:V`, while `n:V`
+ * over `s:V` still lands (and an identical replay is idempotent). This is the
+ * tie-break the previous `>=` lacked: it accepted equal-version writes
+ * unconditionally, so the stale `s:V` beat the lift's `n:V`.
  */
 export const SUSPENSION_CACHE_CAS_SCRIPT = `
 local raw = redis.call('GET', KEYS[1])
 local current = -1
+local currentState = nil
 if raw then
   local state, version = string.match(raw, '^([sn]):(%d+)$')
-  if state then current = tonumber(version) end
+  if state then
+    current = tonumber(version)
+    currentState = state
+  end
 end
-if tonumber(ARGV[2]) >= current then
+local incoming = tonumber(ARGV[2])
+local accept = false
+if incoming > current then
+  accept = true
+elseif incoming == current then
+  -- Equal version: only the tombstone may win, and only over a different
+  -- marker. A replay of the stored marker is already the desired state.
+  if ARGV[1] == 'n' and currentState ~= 'n' then
+    accept = true
+  end
+end
+if accept then
   redis.call('SET', KEYS[1], ARGV[1] .. ':' .. ARGV[2], 'EX', tonumber(ARGV[3]))
   return 1
 end
