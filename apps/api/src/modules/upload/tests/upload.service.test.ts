@@ -68,6 +68,14 @@ vi.mock('@/lib/prisma', () => ({
     foundation: { findFirst: vi.fn(), count: vi.fn() },
     digitalCertificate: { findFirst: vi.fn(), count: vi.fn() },
     studentNote: { findFirst: vi.fn(), count: vi.fn() },
+    teachingModule: { findFirst: vi.fn(), count: vi.fn() },
+    merdekaAssessmentResult: { findFirst: vi.fn(), count: vi.fn() },
+    assignment: { findFirst: vi.fn(), count: vi.fn() },
+    assignmentSubmission: { findFirst: vi.fn(), count: vi.fn() },
+    complaint: { findFirst: vi.fn(), count: vi.fn() },
+    // The JSON attachment columns (teaching modules, assignments, complaints,
+    // …) are matched with raw SQL, not a Prisma model query.
+    $queryRaw: vi.fn().mockResolvedValue([]),
   },
 }));
 
@@ -186,6 +194,11 @@ function clearOwners() {
     'foundation',
     'digitalCertificate',
     'studentNote',
+    'teachingModule',
+    'merdekaAssessmentResult',
+    'assignment',
+    'assignmentSubmission',
+    'complaint',
   ] as const;
   for (const model of models) {
     (prisma as any)[model].findFirst.mockResolvedValue(null);

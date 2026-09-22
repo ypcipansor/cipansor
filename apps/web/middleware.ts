@@ -106,11 +106,17 @@ async function getAuthState(request: NextRequest): Promise<{
   // only runs when `role` is truthy, so an authenticated-but-roleless state
   // would otherwise skip route authorization entirely. A session always names
   // a role in this app, so "no role" means "do not treat as signed in".
-  const role: LegacyRole | undefined = isLegacyRole(session.role)
-    ? session.role
-    : session.roleCode
-      ? deriveLegacyRole(session.roleCode)
-      : undefined;
+  //
+  // The RoleCode is the source of truth for routing: `session.role` is the
+  // LEGACY bucket and may be stale after a role switch, while `roleCode` is the
+  // primary active assignment the session was minted from. Derive the bucket
+  // from the RoleCode first and fall back to the legacy field only for a
+  // RoleCode this map deliberately does not bucket (komite/alumni) — never the
+  // other way around, or a stale legacy bucket would override the live role.
+  const roleCode = session.roleCode;
+  const derivedFromCode = roleCode ? deriveLegacyRole(roleCode) : undefined;
+  const role: LegacyRole | undefined =
+    derivedFromCode ?? (isLegacyRole(session.role) ? session.role : undefined);
   if (!role) return { isAuthenticated: false };
 
   return { isAuthenticated: true, role, roleCode: session.roleCode };

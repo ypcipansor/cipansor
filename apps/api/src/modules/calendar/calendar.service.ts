@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
 import { UserRole, Prisma, EventType, EventScope } from '@prisma/client';
 import { seesAllUnits } from '@/utils/resolve-unit-id';
+import { claimBlobForRecord, releaseBlobClaimById } from '@/utils/blob-claim';
 
 interface ListEventsQuery {
   unitId?: string;
@@ -211,33 +212,53 @@ export class CalendarService {
       throw Errors.forbidden('Cannot create event for another unit');
     }
 
-    const event = await prisma.calendarEvent.create({
-      data: {
-        unitId: input.unitId || null,
-        classId: input.classId || null,
-        title: input.title,
-        description: input.description,
-        eventType: input.eventType,
-        scope: input.scope || EventScope.ALL_UNITS,
-        startDate: new Date(input.startDate),
-        endDate: input.endDate ? new Date(input.endDate) : null,
-        isAllDay: input.isAllDay ?? false,
-        startTime: input.startTime,
-        endTime: input.endTime,
-        location: input.location,
-        isOnline: input.isOnline ?? false,
-        onlineUrl: input.onlineUrl,
-        isRecurring: input.isRecurring ?? false,
-        recurrenceRule: input.recurrenceRule,
-        isPublic: input.isPublic ?? true,
-        color: input.color,
-        createdById: currentUser.sub,
-      },
-      include: {
-        unit: { select: { id: true, name: true } },
-        class: { select: { id: true, name: true } },
-        createdBy: { select: { id: true, name: true } },
-      },
+    const event = await prisma.$transaction(async (tx) => {
+      // Claim the meeting/blob URL before the row references it (BUG 4 / flag 9).
+      // An upload → create is two requests, so a discard for a just-uploaded
+      // file could otherwise delete it between its reference probe and this
+      // insert. The claim is released in the same transaction because the
+      // committed row is the durable protection after that.
+      let claim = null;
+      if (input.onlineUrl) {
+        claim = await claimBlobForRecord(input.onlineUrl, currentUser.sub, tx);
+        if (!claim) {
+          throw Errors.conflict(
+            'Tautan berkas sedang diproses pihak lain; unggah ulang berkas tersebut'
+          );
+        }
+      }
+
+      const created = await tx.calendarEvent.create({
+        data: {
+          unitId: input.unitId || null,
+          classId: input.classId || null,
+          title: input.title,
+          description: input.description,
+          eventType: input.eventType,
+          scope: input.scope || EventScope.ALL_UNITS,
+          startDate: new Date(input.startDate),
+          endDate: input.endDate ? new Date(input.endDate) : null,
+          isAllDay: input.isAllDay ?? false,
+          startTime: input.startTime,
+          endTime: input.endTime,
+          location: input.location,
+          isOnline: input.isOnline ?? false,
+          onlineUrl: input.onlineUrl,
+          isRecurring: input.isRecurring ?? false,
+          recurrenceRule: input.recurrenceRule,
+          isPublic: input.isPublic ?? true,
+          color: input.color,
+          createdById: currentUser.sub,
+        },
+        include: {
+          unit: { select: { id: true, name: true } },
+          class: { select: { id: true, name: true } },
+          createdBy: { select: { id: true, name: true } },
+        },
+      });
+
+      if (claim) await releaseBlobClaimById(claim, tx);
+      return created;
     });
 
     return event;
@@ -256,31 +277,51 @@ export class CalendarService {
       }
     }
 
-    const updated = await prisma.calendarEvent.update({
-      where: { id },
-      data: {
-        title: input.title,
-        description: input.description,
-        eventType: input.eventType,
-        scope: input.scope,
-        startDate: input.startDate ? new Date(input.startDate) : undefined,
-        endDate: input.endDate ? new Date(input.endDate) : undefined,
-        isAllDay: input.isAllDay,
-        startTime: input.startTime,
-        endTime: input.endTime,
-        location: input.location,
-        isOnline: input.isOnline,
-        onlineUrl: input.onlineUrl,
-        isRecurring: input.isRecurring,
-        recurrenceRule: input.recurrenceRule,
-        isPublic: input.isPublic,
-        color: input.color,
-      },
-      include: {
-        unit: { select: { id: true, name: true } },
-        class: { select: { id: true, name: true } },
-        createdBy: { select: { id: true, name: true } },
-      },
+    const updated = await prisma.$transaction(async (tx) => {
+      // A replacement URL is a NEW blob reference: claim it before the update can
+      // commit, so a discard of the replacement cannot win the race (BUG 4 /
+      // flag 9). The previous URL is simply no longer referenced once this row
+      // commits, so a discard of it can proceed safely — the committed update is
+      // what removes the reference, not an early delete.
+      let claim = null;
+      if (input.onlineUrl) {
+        claim = await claimBlobForRecord(input.onlineUrl, currentUser.sub, tx);
+        if (!claim) {
+          throw Errors.conflict(
+            'Tautan berkas sedang diproses pihak lain; unggah ulang berkas tersebut'
+          );
+        }
+      }
+
+      const result = await tx.calendarEvent.update({
+        where: { id },
+        data: {
+          title: input.title,
+          description: input.description,
+          eventType: input.eventType,
+          scope: input.scope,
+          startDate: input.startDate ? new Date(input.startDate) : undefined,
+          endDate: input.endDate ? new Date(input.endDate) : undefined,
+          isAllDay: input.isAllDay,
+          startTime: input.startTime,
+          endTime: input.endTime,
+          location: input.location,
+          isOnline: input.isOnline,
+          onlineUrl: input.onlineUrl,
+          isRecurring: input.isRecurring,
+          recurrenceRule: input.recurrenceRule,
+          isPublic: input.isPublic,
+          color: input.color,
+        },
+        include: {
+          unit: { select: { id: true, name: true } },
+          class: { select: { id: true, name: true } },
+          createdBy: { select: { id: true, name: true } },
+        },
+      });
+
+      if (claim) await releaseBlobClaimById(claim, tx);
+      return result;
     });
 
     return updated;

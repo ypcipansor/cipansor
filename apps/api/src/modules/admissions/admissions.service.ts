@@ -17,6 +17,8 @@ import {
 } from './admissions.schema';
 import { Errors } from '../../middleware/error';
 import { normalizeEmail } from '../../utils/email';
+import { claimBlobForRecord, releaseBlobClaimById } from '../../utils/blob-claim';
+import { isBlobReference } from '../../utils/blob-attachments';
 
 type AuthUser = { id: string; role: string; roleCode?: string; unitId?: string | null };
 
@@ -1078,8 +1080,29 @@ export async function getRegistrantDocuments(registrantId: string, actor?: AuthU
 
 export async function createRegistrantDocument(data: CreateRegistrantDocumentInput, actor?: AuthUser) {
   if (actor) await assertRegistrantUnitAccess(data.registrantId, actor);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return prisma.registrantDocument.create({ data: data as any });
+  // A registrant document's fileUrl is a client-supplied upload reference (the
+  // upload middleware can persist it to object storage), so it takes the same
+  // claim protocol as every other blob writer (BUG 4 / flag 9): claim before the
+  // row references it, release inside the transaction once the row is durable.
+  // A data: URI or an external URL is not a blob and is claimed not at all.
+  const fileUrl = data.fileUrl;
+  const isBlobRef = fileUrl ? isBlobReference(fileUrl) : false;
+  return prisma.$transaction(async (tx) => {
+    let claim = null;
+    if (isBlobRef && fileUrl) {
+      claim = await claimBlobForRecord(fileUrl, actor?.id ?? 'admissions', tx);
+      if (!claim) {
+        throw Errors.conflict(
+          'Berkas dokumen sedang diproses pihak lain; unggah ulang berkas tersebut'
+        );
+      }
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const document = await tx.registrantDocument.create({ data: data as any });
+    if (claim) await releaseBlobClaimById(claim, tx);
+    return document;
+  });
 }
 
 export async function createPublicRegistrantDocumentService(
@@ -1240,7 +1263,24 @@ export async function createPublicRegistrantDocumentService(
       throw Errors.badRequest('Jumlah dokumen pendaftar telah mencapai batas maksimum (10 dokumen)');
     }
 
-    return tx.registrantDocument.create({ data: docData as any });
+    // The submitted `docUrl` may be a `/uploads/<file>` reference (the schema
+    // whitelists only data: URIs and external https URLs, but the local upload
+    // form persists a path). When it IS a blob, claim it before the row points
+    // at it so a discard cannot delete it mid-commit (BUG 4 / flag 9). A data
+    // URI or external URL is not a blob, so the claim is skipped for it.
+    let claim = null;
+    if (isBlobReference(docUrl)) {
+      claim = await claimBlobForRecord(docUrl, 'admissions-public', tx);
+      if (!claim) {
+        throw Errors.conflict(
+          'Berkas dokumen sedang diproses pihak lain; unggah ulang berkas tersebut'
+        );
+      }
+    }
+
+    const created = await tx.registrantDocument.create({ data: docData as any });
+    if (claim) await releaseBlobClaimById(claim, tx);
+    return created;
   });
 }
 

@@ -138,4 +138,56 @@ describe("middleware session guard", () => {
     const res = await middleware(request("https://portal.cipansor.or.id/profil"));
     expect(location(res)).not.toContain("/login");
   });
+
+  // ── RoleCode-first routing (stale legacy role must not win) ──────────────
+
+  it("uses the primary RoleCode when the legacy role is MORE privileged (a)", async () => {
+    // Legacy says SUPER_ADMIN; the active assignment is a teacher. Trusting the
+    // legacy bucket would open the admin-only /finance route to a teacher.
+    const res = await middleware(
+      request("https://portal.cipansor.or.id/finance", {
+        cookie: await validCookies("SUPER_ADMIN", "SDIT_GURU"),
+      })
+    );
+    expect(res.status).toBe(307);
+    expect(location(res)).not.toBeNull();
+  });
+
+  it("uses the primary RoleCode when the legacy role is LESS privileged (b)", async () => {
+    // Legacy says STUDENT; the active assignment is a unit admin. Trusting the
+    // legacy bucket would bounce the admin off their own /finance page.
+    const res = await middleware(
+      request("https://portal.cipansor.or.id/finance", {
+        cookie: await validCookies("STUDENT", "SDIT_ADMIN"),
+      })
+    );
+    expect(location(res)).toBeNull();
+  });
+
+  it("fails closed on a signed cookie carrying neither a RoleCode nor a legacy role", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const token = await signSession(
+      { v: 1, sub: "u1", iat: now, exp: now + SESSION_TTL_SECONDS },
+      SECRET
+    );
+    const res = await middleware(
+      request("https://portal.cipansor.or.id/dashboard", {
+        cookie: `${SESSION_COOKIE}=${token}`,
+      })
+    );
+    expect(res.status).toBe(307);
+    expect(location(res)).toContain("/login");
+  });
+
+  it("still routes on the legacy role when the RoleCode is unmapped (komite/alumni)", async () => {
+    // SDIT_KOMITE is deliberately absent from ROLE_CODE_TO_LEGACY; the legacy
+    // bucket is the only routing signal, so it must be used rather than failing
+    // the visitor out of an otherwise valid session.
+    const res = await middleware(
+      request("https://portal.cipansor.or.id/reports", {
+        cookie: await validCookies("STAFF", "SDIT_KOMITE"),
+      })
+    );
+    expect(location(res)).toBeNull();
+  });
 });

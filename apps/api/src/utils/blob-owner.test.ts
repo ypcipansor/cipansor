@@ -48,6 +48,11 @@ const OWNER_MODELS = [
   'foundation',
   'digitalCertificate',
   'studentNote',
+  'teachingModule',
+  'merdekaAssessmentResult',
+  'assignment',
+  'assignmentSubmission',
+  'complaint',
 ] as const;
 
 vi.mock('@/lib/prisma', () => {
@@ -92,14 +97,52 @@ vi.mock('@/lib/prisma', () => {
     'foundation',
     'digitalCertificate',
     'studentNote',
+    'teachingModule',
+    'merdekaAssessmentResult',
+    'assignment',
+    'assignmentSubmission',
+    'complaint',
   ]) {
     models[model] = { findFirst: vi.fn(), count: vi.fn() };
   }
-  return { prisma: models };
+  // The JSON attachment columns are matched with raw SQL (`$queryRaw`), because
+  // Prisma's `string_contains` cannot see into a JSON array (SEVERE BUG).
+  return { prisma: { ...models, $queryRaw: vi.fn().mockResolvedValue([]) } };
 });
 
 import { prisma } from '@/lib/prisma';
 import { isBlobStillReferenced, findBlobOwner } from './blob-owner';
+
+/**
+ * Flatten a `$queryRaw` call (tagged template, possibly carrying `Prisma.sql`
+ * fragments) into one searchable string. The values are inlined so a test can
+ * assert that a URL/table/column actually travelled into the query.
+ */
+function flattenQuery(args: unknown[]): string {
+  const one = (arg: unknown): string => {
+    if (typeof arg === 'string') return arg;
+    if (Array.isArray(arg)) {
+      if (Object.prototype.hasOwnProperty.call(arg, 'raw')) return (arg as string[]).join('?');
+      return arg.map(one).join('');
+    }
+    if (arg && typeof arg === 'object') {
+      const obj = arg as { strings?: unknown[]; values?: unknown[] };
+      if (Array.isArray(obj.strings)) {
+        return obj.strings
+          .map((s, i) => one(s) + (i < (obj.values?.length ?? 0) ? one(obj.values![i]) : ''))
+          .join('');
+      }
+      return '';
+    }
+    return String(arg);
+  };
+  return args.map(one).join('');
+}
+
+/** Every raw-SQL call issued so far, flattened. */
+function rawCalls(): string[] {
+  return ((prisma as any).$queryRaw as { mock: { calls: unknown[][] } }).mock.calls.map(flattenQuery);
+}
 
 describe('findBlobOwner probe coverage', () => {
   beforeEach(() => {
@@ -107,6 +150,7 @@ describe('findBlobOwner probe coverage', () => {
     for (const model of OWNER_MODELS) {
       (prisma as any)[model].findFirst.mockResolvedValue(null);
     }
+    (prisma as any).$queryRaw.mockResolvedValue([]);
   });
 
   it('names the record that references the URL', async () => {
@@ -121,6 +165,28 @@ describe('findBlobOwner probe coverage', () => {
       findBlobOwner('cipansor-documents', 'https://store/cipansor-documents/x.pdf')
     ).resolves.toBeNull();
   });
+
+  it('resolves a blob referenced only from a JSON attachment list (BUG 4)', async () => {
+    // `Complaint.attachments`/`Assignment.attachments` store upload URLs inside
+    // opaque JSON. Without a probe the file "has no owner" and 403s on read.
+    (prisma as any).$queryRaw.mockImplementation((...args: unknown[]) =>
+      flattenQuery(args).includes('complaints') ? [{ unitId: 'unit-7' }] : []
+    );
+
+    await expect(
+      findBlobOwner('cipansor-documents', 'https://store/cipansor-documents/adu.pdf')
+    ).resolves.toEqual({ kind: 'unit', unitId: 'unit-7' });
+
+    const complaintQuery = rawCalls().find((q) => q.includes('complaints'));
+    expect(complaintQuery).toBeDefined();
+    expect(complaintQuery).toContain('attachments');
+    expect(complaintQuery).toContain('adu.pdf');
+    // The old Prisma `string_contains` filter never matched the JSON arrays
+    // these rows actually store — it guarded `JSONB_TYPEOF(col) = 'string'`.
+    // The probe must use the array-walking predicate instead.
+    expect(complaintQuery).toContain('jsonb_path_query');
+    expect(complaintQuery).not.toContain('string_contains');
+  });
 });
 
 describe('findBlobOwner parallel probe batches (flag 7)', () => {
@@ -129,6 +195,7 @@ describe('findBlobOwner parallel probe batches (flag 7)', () => {
     for (const model of OWNER_MODELS) {
       (prisma as any)[model].findFirst.mockResolvedValue(null);
     }
+    (prisma as any).$queryRaw.mockResolvedValue([]);
   });
 
   it('stops probing later batches once an earlier batch matches', async () => {
@@ -209,6 +276,11 @@ describe('findBlobOwner parallel probe batches (flag 7)', () => {
       'digitalCertificate',
       'certificateVerification',
       'studentNote',
+      'module',
+      'result',
+      'assignment',
+      'submission',
+      'complaint',
     ]);
   });
 });
@@ -219,6 +291,7 @@ describe('assignment unit vs home unit (BUG 1)', () => {
     for (const model of OWNER_MODELS) {
       (prisma as any)[model].findFirst.mockResolvedValue(null);
     }
+    (prisma as any).$queryRaw.mockResolvedValue([]);
   });
 
   it('scopes an employee document by the primary active role assignment, not the home unit', async () => {
@@ -283,6 +356,7 @@ describe('global announcement attachment (FLAG)', () => {
     for (const model of OWNER_MODELS) {
       (prisma as any)[model].findFirst.mockResolvedValue(null);
     }
+    (prisma as any).$queryRaw.mockResolvedValue([]);
   });
 
   it('treats an all-units announcement (unitId = null) as readable by any authenticated user', async () => {
@@ -308,6 +382,7 @@ describe('homeroom note attachments (flag 9 audit)', () => {
     for (const model of OWNER_MODELS) {
       (prisma as any)[model].findFirst.mockResolvedValue(null);
     }
+    (prisma as any).$queryRaw.mockResolvedValue([]);
   });
 
   it('scopes a String[] attachment by the student it belongs to', async () => {
@@ -352,12 +427,26 @@ async function captureWhere(
   return (count.mock.calls[0][0] as any).where;
 }
 
+const JSON_ATTACHMENT_MODELS = [
+  'teachingModule',
+  'merdekaAssessmentResult',
+  'assignment',
+  'assignmentSubmission',
+  'complaint',
+] as const;
+
+/** The models counted with a Prisma `count` (JSON ones use raw SQL instead). */
+const PRISMA_COUNT_MODELS = OWNER_MODELS.filter(
+  (model) => !(JSON_ATTACHMENT_MODELS as readonly string[]).includes(model)
+);
+
 describe('isBlobStillReferenced', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     for (const model of OWNER_MODELS) {
       (prisma as any)[model].count.mockResolvedValue(0);
     }
+    (prisma as any).$queryRaw.mockResolvedValue([]);
   });
 
   it('returns false when no record references the URL', async () => {
@@ -375,11 +464,45 @@ describe('isBlobStillReferenced', () => {
   it('queries the URL as a stored blob reference on every probed model', async () => {
     await isBlobStillReferenced('https://store/container/shared.pdf');
 
-    for (const model of OWNER_MODELS) {
+    for (const model of PRISMA_COUNT_MODELS) {
       expect((prisma as any)[model].count, model).toHaveBeenCalledWith({
         where: expect.any(Object),
       });
     }
+    // The JSON attachment columns are counted with raw SQL, not `count`.
+    for (const model of JSON_ATTACHMENT_MODELS) {
+      expect((prisma as any)[model].count, model).not.toHaveBeenCalled();
+    }
+    const sql = rawCalls().join('\n');
+    for (const table of [
+      'teaching_modules',
+      'merdeka_assessment_results',
+      'assignments',
+      'assignment_submissions',
+      'complaints',
+    ]) {
+      expect(sql, table).toContain(table);
+    }
+    expect(sql).toContain('jsonb_path_query');
+    expect(sql).not.toContain('string_contains');
+  });
+
+  it('sees a reference held inside a JSON attachment list (BUG 4)', async () => {
+    // A complaint/assignment attachment lives in opaque JSON; if the counter
+    // cannot see it, `discard` deletes a blob a live record still points at.
+    // Prisma's `string_contains` filter could never match the JSON array these
+    // rows store, so the counter must go through the raw jsonpath predicate.
+    (prisma as any).$queryRaw.mockImplementation((...args: unknown[]) =>
+      flattenQuery(args).includes('complaints') ? [{ c: 1 }] : [{ c: 0 }]
+    );
+
+    await expect(isBlobStillReferenced('/uploads/adu.pdf')).resolves.toBe(true);
+
+    const complaintQuery = rawCalls().find((q) => q.includes('complaints'));
+    expect(complaintQuery).toBeDefined();
+    expect(complaintQuery).toContain('jsonb_path_query');
+    expect(complaintQuery).toContain('/uploads/adu.pdf');
+    expect(complaintQuery).not.toContain('string_contains');
   });
 
   it('matches the other equivalent spelling of an Azure blob (raw vs SAS)', async () => {
@@ -463,9 +586,20 @@ describe('isBlobStillReferenced', () => {
     // touches and require the reference index to cover the owner probes. A new
     // `findBlobOwner` probe without a matching counter is a blob that could be
     // deleted while still live (flag 9).
+    //
+    // JSON attachment columns appear in neither `prisma.<m>.findFirst` nor
+    // `prisma.<m>.count` — they are probed through the raw-SQL helpers by model
+    // name. They are counted from `countJsonRefs(...)` / `jsonRefOwnerRow(...)`
+    // instead, and must appear on BOTH sides of that pair.
     const source = readFileSync(join(process.cwd(), 'src', 'utils', 'blob-owner.ts'), 'utf8');
-    const ownerModels = new Set([...source.matchAll(/prisma\.(\w+)\.findFirst/g)].map((m) => m[1]));
-    const counterModels = new Set([...source.matchAll(/prisma\.(\w+)\.count/g)].map((m) => m[1]));
+    const ownerModels = new Set([
+      ...[...source.matchAll(/prisma\.(\w+)\.findFirst/g)].map((m) => m[1]),
+      ...[...source.matchAll(/jsonRefOwnerRow<[^>]*>\(\s*'(\w+)'/g)].map((m) => m[1]),
+    ]);
+    const counterModels = new Set([
+      ...[...source.matchAll(/prisma\.(\w+)\.count/g)].map((m) => m[1]),
+      ...[...source.matchAll(/countJsonRefs\('(\w+)'/g)].map((m) => m[1]),
+    ]);
 
     expect([...ownerModels].sort()).toEqual([...counterModels].sort());
     expect([...ownerModels].sort()).toEqual([...OWNER_MODELS].sort());
@@ -500,16 +634,18 @@ const NON_BLOB_FIELDS: Record<string, string> = {
 
 describe('stored blob-URL field audit (flag 9)', () => {
   /**
-   * Split `findBlobOwner`'s source into one segment per `prisma.<model>.findFirst`
-   * probe, keyed by model name. A segment runs from its own probe call to the
-   * next probe, so the fields it references are the ones *that* model queries.
+   * Split `findBlobOwner`'s source into one segment per probe, keyed by client
+   * model name. A segment runs from its own probe call to the next probe, so the
+   * fields it references are the ones *that* model queries. Both probe styles
+   * count: a Prisma `findFirst` and a raw-SQL `jsonRefOwnerRow('model', 'col')`
+   * for the JSON attachment columns.
    */
   function probeSegments(source: string): Map<string, string[]> {
-    const probeRe = /prisma\.(\w+)\.findFirst/g;
+    const probeRe = /prisma\.(\w+)\.findFirst|jsonRefOwnerRow<[^>]*>\(\s*'(\w+)'/g;
     const starts: Array<{ model: string; index: number }> = [];
     let match: RegExpExecArray | null;
     while ((match = probeRe.exec(source)) !== null) {
-      starts.push({ model: match[1], index: match.index });
+      starts.push({ model: match[1] ?? match[2], index: match.index });
     }
     const segments = new Map<string, string[]>();
     starts.forEach((start, i) => {
@@ -562,6 +698,49 @@ describe('stored blob-URL field audit (flag 9)', () => {
       if (NON_BLOB_FIELDS[field]) return false;
       const [modelName, fieldName] = field.split('.');
       // Prisma model names are camelCase in the client (the DB is snake_case).
+      const clientModel = modelName[0].toLowerCase() + modelName.slice(1);
+      const ownSegments = segments.get(clientModel);
+      return !ownSegments || !ownSegments.some((segment) => segment.includes(fieldName));
+    });
+
+    expect(unaccounted).toEqual([]);
+  });
+
+  it('probes every blob-like Json and String[] field in the Prisma schema', () => {
+    // The `String` audit above missed the JSON attachment lists entirely, and
+    // that blind spot is exactly where a "writer that never takes a claim" hid:
+    // `Assignment.attachments`/`Complaint.attachments` were writable blob
+    // references with no owner probe and no reference counter. Read the schema
+    // for `Json?`/`String[]` blob-like fields too, so a future one is caught.
+    const schema = readFileSync(join(process.cwd(), 'prisma', 'schema.prisma'), 'utf8');
+    const source = readFileSync(join(process.cwd(), 'src', 'utils', 'blob-owner.ts'), 'utf8');
+    const segments = probeSegments(source);
+
+    const blobLike =
+      /(url|photo|image|file|logo|banner|attach|cover|signature|receipt|audio|video|scan|proof)/i;
+    const found: string[] = [];
+    let model: string | null = null;
+    for (const line of schema.split('\n')) {
+      const modelMatch = /^model\s+(\w+)\s*\{/.exec(line);
+      if (modelMatch) {
+        model = modelMatch[1];
+        continue;
+      }
+      if (line.startsWith('}')) {
+        model = null;
+        continue;
+      }
+      if (!model) continue;
+      const fieldMatch = /^\s*(\w+)\s+(Json\??|String\[\])\b/.exec(line);
+      if (fieldMatch && blobLike.test(fieldMatch[1])) {
+        found.push(`${model}.${fieldMatch[1]}`);
+      }
+    }
+
+    expect(found.length).toBeGreaterThan(0);
+    const unaccounted = found.filter((field) => {
+      if (NON_BLOB_FIELDS[field]) return false;
+      const [modelName, fieldName] = field.split('.');
       const clientModel = modelName[0].toLowerCase() + modelName.slice(1);
       const ownSegments = segments.get(clientModel);
       return !ownSegments || !ownSegments.some((segment) => segment.includes(fieldName));

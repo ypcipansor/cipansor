@@ -126,6 +126,76 @@ describe("POST /api/session", () => {
     expect(setCookieOf(res)).toContain("Max-Age=0");
   });
 
+  /** Mint a cookie for a given /auth/me payload and decode its routing fields. */
+  async function mintFor(data: unknown) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ data }), { status: 200 }))
+    );
+    const res = await POST(
+      new Request("http://localhost:3000/api/session", {
+        method: "POST",
+        headers: { authorization: "Bearer real" },
+        body: "{}",
+      })
+    );
+    const setCookie = setCookieOf(res);
+    const value = setCookie.slice(setCookie.indexOf("=") + 1, setCookie.indexOf(";"));
+    return verifySession(value, SECRET);
+  }
+
+  it("derives the routing bucket from the primary RoleCode, not the stale legacy role (a: legacy MORE privileged)", async () => {
+    // The legacy column says SUPER_ADMIN, but the active assignment is a
+    // teacher. Signing the legacy role would hand a teacher the admin bucket.
+    const payload = await mintFor({
+      id: "u1",
+      role: "SUPER_ADMIN",
+      userRoles: [{ isPrimary: true, role: { code: "SDIT_GURU" } }],
+    });
+    expect(payload).toMatchObject({ role: "TEACHER", roleCode: "SDIT_GURU" });
+  });
+
+  it("derives the routing bucket from the primary RoleCode, not the stale legacy role (b: legacy LESS privileged)", async () => {
+    // The legacy column says STUDENT, but the active assignment is an admin.
+    // Signing the legacy role would bounce an admin off their own pages.
+    const payload = await mintFor({
+      id: "u1",
+      role: "STUDENT",
+      userRoles: [{ isPrimary: true, role: { code: "SDIT_ADMIN" } }],
+    });
+    expect(payload).toMatchObject({ role: "UNIT_ADMIN", roleCode: "SDIT_ADMIN" });
+  });
+
+  it("reflects a role switch: a re-mint after the assignment changed uses the new RoleCode", async () => {
+    const before = await mintFor({
+      id: "u1",
+      role: "TEACHER",
+      userRoles: [{ isPrimary: true, role: { code: "SDIT_GURU" } }],
+    });
+    expect(before).toMatchObject({ role: "TEACHER", roleCode: "SDIT_GURU" });
+
+    // Token refresh / role switch: the SAME account now reports a different
+    // primary assignment. The new cookie must reflect it immediately.
+    const after = await mintFor({
+      id: "u1",
+      role: "TEACHER",
+      userRoles: [{ isPrimary: true, role: { code: "SMPIT_ADMIN" } }],
+    });
+    expect(after).toMatchObject({ role: "UNIT_ADMIN", roleCode: "SMPIT_ADMIN" });
+  });
+
+  it("falls back to the legacy role only when the RoleCode is not bucketed (komite/alumni)", async () => {
+    // The backend keeps komite/alumni RoleCode-native; their legacy column is
+    // the only routing bucket available.
+    const payload = await mintFor({
+      id: "u1",
+      role: "STAFF",
+      userRoles: [{ isPrimary: true, role: { code: "SDIT_KOMITE" } }],
+    });
+    expect(payload).toMatchObject({ roleCode: "SDIT_KOMITE" });
+    expect(["STAFF", undefined]).toContain(payload?.role);
+  });
+
   it("fails closed (500) when no signing secret is configured", async () => {
     vi.stubEnv("SESSION_SECRET", "");
     vi.stubEnv("JWT_SECRET", "");

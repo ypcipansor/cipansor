@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { Prisma } from '@prisma/client';
 import { activeUserRoleWhere } from '@/utils/active-role';
 import { azureBlobReferenceCandidates } from '@/utils/blob-identity';
 
@@ -135,6 +136,97 @@ function refHas(column: string, ref: BlobRef): Record<string, unknown> {
     };
   }
   return Array.isArray(ref) ? { [column]: { hasSome: ref } } : { [column]: { has: ref } };
+}
+
+/**
+ * SQL predicate for a `Json?` column whose value is (or nests) one or more URL
+ * strings — the attachment fields stored as opaque JSON rather than a
+ * `String[]`.
+ *
+ * ## Why this is raw SQL and not a Prisma `where` (SEVERE BUG — writer + index)
+ *
+ * The obvious Prisma form, `{ attachments: { string_contains: needle } }`,
+ * compiles to `col::text LIKE '%needle%' AND JSONB_TYPEOF(col) = 'string'`. The
+ * `JSONB_TYPEOF = 'string'` guard means it only ever matches a column whose
+ * whole value is a JSON **string** — it can never match the JSON **array**
+ * (`["/uploads/a"]`) or array-of-object (`[{ "url": "/uploads/a" }]`) these
+ * models actually store. Verified against a real Postgres: every array row was
+ * invisible to the Prisma filter. The consequence is the severe one — the
+ * reference index reported "no record references this blob", so both the SAS
+ * owner probe 403'd a live file and `discardUnderClaim` deleted a blob a record
+ * still pointed at.
+ *
+ * `jsonb_path_query(col, '$.**')` walks every string anywhere in the document
+ * (bare list, object, nested), and the match is done in SQL so a local upload is
+ * found regardless of the origin it was stored under (`https://old-host/uploads/a`
+ * matches the canonical `/uploads/a`) without a `LIKE` that would also match
+ * prose or a `.bak` sibling.
+ *
+ * Every user input is a bound parameter; the table and column names are
+ * allow-listed constants supplied by this module, never caller data, so the raw
+ * fragment CodeQL cannot trace as parameterized stays safe.
+ */
+export function refJsonPredicate(
+  table: string,
+  column: string,
+  ref: BlobRef
+): Prisma.Sql {
+  const candidates = Array.isArray(ref) ? ref : [ref];
+  const localSuffix = localOriginSuffix(candidates);
+  const col = Prisma.raw(`"${table}"."${column}"`);
+  return Prisma.sql`EXISTS (
+    SELECT 1 FROM jsonb_path_query(${col}, '$.**') AS v
+    WHERE jsonb_typeof(v) = 'string'
+      AND (
+        (v #>> '{}') = ANY(${candidates}::text[])
+        OR (
+          ${localSuffix}::text IS NOT NULL
+          AND (left(v #>> '{}', 7) = 'http://' OR left(v #>> '{}', 8) = 'https://')
+          AND right(v #>> '{}', length(${localSuffix}::text)) = ${localSuffix}::text
+        )
+      )
+  )`;
+}
+
+/**
+ * Prisma client model → physical table for the models whose blob references
+ * live in a `Json?` `attachments` column. Kept explicit (rather than derived)
+ * and used by both the SQL helpers below and the drift-guard tests, so a new
+ * JSON-attachment model is a one-line addition the guards can see.
+ */
+const JSON_ATTACHMENT_TABLES: Record<string, string> = {
+  teachingModule: 'teaching_modules',
+  merdekaAssessmentResult: 'merdeka_assessment_results',
+  assignment: 'assignments',
+  assignmentSubmission: 'assignment_submissions',
+  complaint: 'complaints',
+};
+
+/**
+ * Count rows of `model` whose `attachments` JSON column references `ref`, using
+ * the raw-SQL predicate. The table name is a module constant, never caller
+ * input; only `ref` is bound as a parameter.
+ */
+async function countJsonRefs(model: string, column: string, ref: BlobRef): Promise<number> {
+  const table = JSON_ATTACHMENT_TABLES[model];
+  const rows = await prisma.$queryRaw<Array<{ c: number }>>(
+    Prisma.sql`SELECT count(*)::int AS c FROM ${Prisma.raw(`"${table}"`)} WHERE ${refJsonPredicate(table, column, ref)}`
+  );
+  return rows[0]?.c ?? 0;
+}
+
+/** `findFirst`-equivalent for a JSON attachment column, via the SQL predicate. */
+async function jsonRefOwnerRow<T>(
+  model: string,
+  column: string,
+  ref: BlobRef,
+  columns: string
+): Promise<T | null> {
+  const table = JSON_ATTACHMENT_TABLES[model];
+  const rows = await prisma.$queryRaw<T[]>(
+    Prisma.sql`SELECT ${Prisma.raw(columns)} FROM ${Prisma.raw(`"${table}"`)} WHERE ${refJsonPredicate(table, column, ref)} LIMIT 1`
+  );
+  return rows[0] ?? null;
 }
 
 /** Normalise a candidate list: one entry stays a scalar for the indexed path. */
@@ -681,6 +773,76 @@ export async function findBlobOwnerByRefs(
         }
         return null;
       },
+      async () => {
+        // Teaching modules and Merdeka assessment results store their attachment
+        // lists as opaque JSON. The upload middleware's default container is
+        // where an uploaded attachment lands, so a blob referenced only from one
+        // of these would otherwise have "no owner" and 403 on every read.
+        //
+        // These probes go through `refJsonPredicate` (raw SQL), not a Prisma
+        // `string_contains`, because Prisma's JSON filter only matches a column
+        // whose whole value is a JSON *string* — it never sees the arrays these
+        // rows hold (SEVERE BUG, see the predicate's doc comment).
+        const module = await jsonRefOwnerRow<{ unitId: string | null }>(
+          'teachingModule',
+          'attachments',
+          ref,
+          `(SELECT "unit_id" FROM "teachers" WHERE "teachers"."id" = "teaching_modules"."teacher_id") AS "unitId"`
+        );
+        if (module) return unitOrAuthenticatedOwner(module.unitId);
+
+        const result = await jsonRefOwnerRow<{ userId: string; unitId: string | null }>(
+          'merdekaAssessmentResult',
+          'attachments',
+          ref,
+          `(SELECT "user_id" FROM "students" WHERE "students"."id" = "merdeka_assessment_results"."student_id") AS "userId",
+           (SELECT "unit_id" FROM "students" WHERE "students"."id" = "merdeka_assessment_results"."student_id") AS "unitId"`
+        );
+        if (result) {
+          return {
+            kind: 'user-document',
+            userId: result.userId,
+            unitId: result.unitId,
+          };
+        }
+        return null;
+      },
+      async () => {
+        // Assignment and submission attachments are JSON lists of `{ url }`.
+        const assignment = await jsonRefOwnerRow<{ unitId: string | null }>(
+          'assignment',
+          'attachments',
+          ref,
+          `"unit_id" AS "unitId"`
+        );
+        if (assignment) return unitOrAuthenticatedOwner(assignment.unitId);
+
+        const submission = await jsonRefOwnerRow<{ userId: string; unitId: string | null }>(
+          'assignmentSubmission',
+          'attachments',
+          ref,
+          `(SELECT "user_id" FROM "students" WHERE "students"."id" = "assignment_submissions"."student_id") AS "userId",
+           (SELECT "unit_id" FROM "students" WHERE "students"."id" = "assignment_submissions"."student_id") AS "unitId"`
+        );
+        if (submission) {
+          return {
+            kind: 'user-document',
+            userId: submission.userId,
+            unitId: submission.unitId,
+          };
+        }
+        return null;
+      },
+      async () => {
+        const complaint = await jsonRefOwnerRow<{ unitId: string | null }>(
+          'complaint',
+          'attachments',
+          ref,
+          `"unit_id" AS "unitId"`
+        );
+        if (complaint) return unitOrAuthenticatedOwner(complaint.unitId);
+        return null;
+      },
     ],
   ];
 
@@ -708,8 +870,11 @@ export async function findBlobOwnerByRefs(
  */
 const BLOB_REFERENCE_COUNTERS: ReadonlyArray<{
   label: string;
-  where: (ref: BlobRef) => Record<string, unknown>;
-  count: (args: { where: Record<string, unknown> }) => Promise<number>;
+  where?: (ref: BlobRef) => Record<string, unknown>;
+  count?: (args: { where: Record<string, unknown> }) => Promise<number>;
+  /** Raw-SQL counter for this model's JSON attachment column (see `refJsonPredicate`). */
+  table?: string;
+  countJson?: (ref: BlobRef) => Promise<number>;
 }> = [
   { label: 'letter', where: (u) => refWhere('fileUrl', u), count: (a) => prisma.letter.count(a) },
   {
@@ -887,6 +1052,34 @@ const BLOB_REFERENCE_COUNTERS: ReadonlyArray<{
     where: (u) => refHas('attachments', u),
     count: (a) => prisma.studentNote.count(a),
   },
+  // JSON-array attachment columns. Prisma's `string_contains` cannot see into an
+  // array (see `refJsonPredicate`), so these are counted with the same raw SQL
+  // predicate the owner probes use — one definition of "references this blob".
+  {
+    label: 'teachingModule',
+    table: 'teachingModule',
+    countJson: (u) => countJsonRefs('teachingModule', 'attachments', u),
+  },
+  {
+    label: 'merdekaAssessmentResult',
+    table: 'merdekaAssessmentResult',
+    countJson: (u) => countJsonRefs('merdekaAssessmentResult', 'attachments', u),
+  },
+  {
+    label: 'assignment',
+    table: 'assignment',
+    countJson: (u) => countJsonRefs('assignment', 'attachments', u),
+  },
+  {
+    label: 'assignmentSubmission',
+    table: 'assignmentSubmission',
+    countJson: (u) => countJsonRefs('assignmentSubmission', 'attachments', u),
+  },
+  {
+    label: 'complaint',
+    table: 'complaint',
+    countJson: (u) => countJsonRefs('complaint', 'attachments', u),
+  },
 ];
 
 /**
@@ -909,7 +1102,12 @@ export async function isBlobStillReferenced(blobUrl: string): Promise<boolean> {
   const refs = blobReferenceCandidates(blobUrl);
   const ref: BlobRef = refs.length === 1 ? refs[0] : refs;
   for (const counter of BLOB_REFERENCE_COUNTERS) {
-    const count = await counter.count({ where: counter.where(ref) });
+    // JSON attachment columns need the raw-SQL predicate: the Prisma form
+    // (`string_contains`) only ever matches a whole-value JSON string and would
+    // silently report "no reference" for the arrays these rows actually hold.
+    const count = counter.countJson
+      ? await counter.countJson(ref)
+      : await counter.count!({ where: counter.where!(ref) });
     if (count > 0) return true;
   }
   return false;

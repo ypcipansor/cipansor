@@ -1,6 +1,8 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 import { Errors } from '../../middleware/error';
+import { claimBlobsForRecord, releaseBlobClaims } from '../../utils/blob-claim';
+import { extractBlobUrlsFromAttachmentValue } from '../../utils/blob-attachments';
 import {
   CreateAssignmentRequest,
   UpdateAssignmentRequest,
@@ -30,24 +32,41 @@ export class AssignmentsService {
       attachments,
     } = input;
 
-    const assignment = await prisma.assignment.create({
-      data: {
-        unitId,
-        academicYearId,
+    const assignment = await prisma.$transaction(async (tx) => {
+      // Attachments may be upload references; claim them before the row points
+      // at them so a concurrent discard cannot delete a just-uploaded file
+      // between its reference probe and this insert (BUG 4 / flag 9).
+      const claims = await claimBlobsForRecord(
+        extractBlobUrlsFromAttachmentValue(attachments),
         teacherId,
-        subjectId,
-        classId,
-        title,
-        description,
-        type: type as any,
-        dueDate: new Date(dueDate),
-        attachments: attachments ? (attachments as any) : Prisma.JsonNull,
-      },
-      include: {
-        subject: { select: { name: true, code: true } },
-        class: { select: { name: true } },
-        teacher: { include: { user: { select: { name: true } } } },
-      },
+        tx
+      );
+      if (!claims) {
+        throw Errors.conflict('Lampiran tugas sedang diproses pihak lain; unggah ulang berkas tersebut');
+      }
+
+      const created = await tx.assignment.create({
+        data: {
+          unitId,
+          academicYearId,
+          teacherId,
+          subjectId,
+          classId,
+          title,
+          description,
+          type: type as any,
+          dueDate: new Date(dueDate),
+          attachments: attachments ? (attachments as any) : Prisma.JsonNull,
+        },
+        include: {
+          subject: { select: { name: true, code: true } },
+          class: { select: { name: true } },
+          teacher: { include: { user: { select: { name: true } } } },
+        },
+      });
+
+      await releaseBlobClaims(claims, tx);
+      return created;
     });
 
     return assignment;
@@ -161,15 +180,31 @@ export class AssignmentsService {
 
     await this.findOne(id);
 
-    const updated = await prisma.assignment.update({
-      where: { id },
-      data: {
-        ...(title && { title }),
-        ...(description !== undefined && { description }),
-        ...(type && { type: type as any }),
-        ...(dueDate && { dueDate: new Date(dueDate) }),
-        ...(attachments && { attachments: attachments as any }),
-      },
+    const updated = await prisma.$transaction(async (tx) => {
+      // Replacement attachments introduce new blob references; claim them before
+      // the update commits (flag 9).
+      const claims = await claimBlobsForRecord(
+        extractBlobUrlsFromAttachmentValue(attachments),
+        'assignments',
+        tx
+      );
+      if (!claims) {
+        throw Errors.conflict('Lampiran tugas sedang diproses pihak lain; unggah ulang berkas tersebut');
+      }
+
+      const row = await tx.assignment.update({
+        where: { id },
+        data: {
+          ...(title && { title }),
+          ...(description !== undefined && { description }),
+          ...(type && { type: type as any }),
+          ...(dueDate && { dueDate: new Date(dueDate) }),
+          ...(attachments && { attachments: attachments as any }),
+        },
+      });
+
+      await releaseBlobClaims(claims, tx);
+      return row;
     });
     return updated;
   }
@@ -195,27 +230,44 @@ export class AssignmentsService {
     const isLate = now > new Date(assignment.dueDate);
     const status = isLate ? SubmissionStatus.LATE : SubmissionStatus.SUBMITTED;
 
-    const submission = await prisma.assignmentSubmission.upsert({
-      where: {
-        assignmentId_studentId: {
+    const submission = await prisma.$transaction(async (tx) => {
+      // A student submission's attachments are upload references too; claim them
+      // before either the upsert-create or the upsert-update can commit a row
+      // that points at a blob a discard may already own (BUG 4 / flag 9).
+      const claims = await claimBlobsForRecord(
+        extractBlobUrlsFromAttachmentValue(attachments),
+        studentId,
+        tx
+      );
+      if (!claims) {
+        throw Errors.conflict('Lampiran pengumpulan sedang diproses pihak lain; unggah ulang berkas tersebut');
+      }
+
+      const row = await tx.assignmentSubmission.upsert({
+        where: {
+          assignmentId_studentId: {
+            assignmentId,
+            studentId,
+          },
+        },
+        create: {
           assignmentId,
           studentId,
+          content,
+          attachments: attachments ? (attachments as any) : Prisma.JsonNull,
+          status: status as any,
+          submittedAt: now,
         },
-      },
-      create: {
-        assignmentId,
-        studentId,
-        content,
-        attachments: attachments ? (attachments as any) : Prisma.JsonNull,
-        status: status as any,
-        submittedAt: now,
-      },
-      update: {
-        content,
-        attachments: attachments ? (attachments as any) : Prisma.JsonNull,
-        status: status as any,
-        submittedAt: now,
-      },
+        update: {
+          content,
+          attachments: attachments ? (attachments as any) : Prisma.JsonNull,
+          status: status as any,
+          submittedAt: now,
+        },
+      });
+
+      await releaseBlobClaims(claims, tx);
+      return row;
     });
 
     return submission;

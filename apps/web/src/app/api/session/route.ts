@@ -44,11 +44,27 @@ function primaryRoleCode(user: MeUser): string | undefined {
   return primary?.role?.code ?? undefined;
 }
 
-/** The legacy bucket, preferring the API's `role` column and deriving otherwise. */
+/**
+ * The legacy routing bucket, derived from the primary active RoleCode.
+ *
+ * SECURITY / CORRECTNESS: the API's persisted `role` column is the LEGACY
+ * vocabulary and can be stale after a role switch or an assignment change — the
+ * active assignment (RoleCode) is what `/auth/me` reports as the source of
+ * truth. Reading `role` first signed a cookie whose legacy bucket contradicted
+ * the live RoleCode, and the guard then made routing decisions on the stale
+ * value (too-broad or too-narrow access after a switch).
+ *
+ * So the RoleCode decides first and the legacy column is only a fallback for
+ * RoleCodes this map deliberately does not bucket (komite/alumni, which the
+ * backend keeps RoleCode-native and reaches through the persisted column).
+ */
 function effectiveLegacyRole(user: MeUser): LegacyRole | undefined {
-  if (isLegacyRole(user.role)) return user.role;
   const code = primaryRoleCode(user);
-  if (code) return deriveLegacyRole(code);
+  if (code) {
+    const derived = deriveLegacyRole(code);
+    if (derived) return derived;
+  }
+  if (isLegacyRole(user.role)) return user.role;
   if (typeof user.role === "string") return deriveLegacyRole(user.role);
   return undefined;
 }

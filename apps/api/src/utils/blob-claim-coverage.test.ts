@@ -52,6 +52,13 @@ export const BLOB_URL_FIELDS = [
   'paymentProof',
   'recordingUrl',
   'certificateUrl',
+  // Fields that are genuinely stored blob references but are spelled in the
+  // singular (`onlineUrl`) or as a list (`attachments`). They are claimed by the
+  // same protocol as the rest; leaving them out of this set is exactly how the
+  // "writer that never takes a claim" regression hides (BUG 4).
+  'onlineUrl',
+  'attachments',
+  'photo',
 ] as const;
 
 const BLOB_FIELD_SET = new Set<string>(BLOB_URL_FIELDS);
@@ -99,6 +106,15 @@ function looksLikeUrlIdentifier(node: ts.Expression): boolean {
 
 /** Does the value derive from a client-supplied URL? */
 function isClientDerivedValue(node: ts.Expression): boolean {
+  // Unwrap `x as any`, `(x)`, and `x!` so the shape underneath is examined.
+  if (ts.isAsExpression(node) || ts.isParenthesizedExpression(node) || ts.isNonNullExpression(node)) {
+    return isClientDerivedValue(node.expression);
+  }
+  // `attachments ? (attachments as any) : Prisma.JsonNull` — the conditional
+  // shape hid assignments.service.ts from the first version of this scanner.
+  if (ts.isConditionalExpression(node)) {
+    return isClientDerivedValue(node.whenTrue) || isClientDerivedValue(node.whenFalse);
+  }
   if (CLIENT_VALUE_RE.test(node.getText())) return true;
   if (ts.isPropertyAccessExpression(node)) {
     const root = rootIdentifier(node);
@@ -220,11 +236,7 @@ export function findWriteSites(source: string, fileName = 'service.ts'): WriteSi
  * client-uploaded blob. Keyed by filename so an exemption cannot silently cover
  * an unrelated writer.
  */
-const CLAIM_EXEMPT: Record<string, string> = {
-  'admissions.service.ts':
-    'Registrant documents are stored inline as a data: URI or an external https URL — ' +
-    'never an object-store blob — so there is no blob to discard and nothing to claim.',
-};
+const CLAIM_EXEMPT: Record<string, string> = {};
 
 /**
  * Filenames that must be detected as writers, so the scanner cannot go quiet on
@@ -262,7 +274,6 @@ describe('blob writer claim coverage (flag 9)', () => {
   const writers = files.filter((file) => (sitesByFile.get(file) as WriteSite[]).length > 0);
 
   it('finds the expected writers (the scanner itself has not gone blind)', () => {
-    // An empty writer list would make the assertion below vacuously true.
     expect(
       writers.length,
       `writers=${writers.map(byName).join(',')} | expects=${ALIAS_WRITER_EXPECTATIONS.join(',')}`

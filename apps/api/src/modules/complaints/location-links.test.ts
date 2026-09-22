@@ -1,24 +1,36 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+const tx = { complaint: { create: vi.fn() } };
+
 vi.mock('@/lib/prisma', () => ({
   prisma: {
+    $transaction: vi.fn(),
     complaint: { create: vi.fn() },
   },
 }));
 
+vi.mock('@/utils/blob-claim', () => ({
+  claimBlobsForRecord: vi.fn(),
+  releaseBlobClaims: vi.fn().mockResolvedValue(undefined),
+}));
+
 import { prisma } from '@/lib/prisma';
+import { claimBlobsForRecord } from '@/utils/blob-claim';
 import { complaintsService } from './complaints.service';
 
 const mocked = prisma as unknown as {
-  complaint: { create: ReturnType<typeof vi.fn> };
+  $transaction: ReturnType<typeof vi.fn>;
 };
 
 describe('complaintsService.create (Si-Peka location links)', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocked.$transaction.mockImplementation(async (fn: any) => fn(tx));
+    tx.complaint.create.mockResolvedValue({ id: 'c1' });
+    (claimBlobsForRecord as any).mockResolvedValue([]);
+  });
 
   it('persists building/room/asset references when provided', async () => {
-    mocked.complaint.create.mockResolvedValue({ id: 'c1' });
-
     await complaintsService.create({
       unitId: 'unit-1',
       userId: 'user-1',
@@ -30,7 +42,7 @@ describe('complaintsService.create (Si-Peka location links)', () => {
       assetId: 'asset-ac-1',
     });
 
-    expect(mocked.complaint.create).toHaveBeenCalledWith(
+    expect(tx.complaint.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           buildingId: 'bld-1',
@@ -42,8 +54,6 @@ describe('complaintsService.create (Si-Peka location links)', () => {
   });
 
   it('leaves location links undefined when not supplied (plain complaints unchanged)', async () => {
-    mocked.complaint.create.mockResolvedValue({ id: 'c2' });
-
     await complaintsService.create({
       unitId: 'unit-1',
       userId: 'user-1',
@@ -52,7 +62,7 @@ describe('complaintsService.create (Si-Peka location links)', () => {
       description: 'Pelayanan tata usaha memakan waktu lebih dari satu jam.',
     });
 
-    const args = mocked.complaint.create.mock.calls[0][0];
+    const args = tx.complaint.create.mock.calls[0][0];
     expect(args.data.buildingId).toBeUndefined();
     expect(args.data.roomId).toBeUndefined();
     expect(args.data.assetId).toBeUndefined();
