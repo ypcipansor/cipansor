@@ -164,8 +164,13 @@ describe('foundation-decisions controller', () => {
     expect((res as any).jsonPayload?.data?.found).toBe(true);
   });
 
-  it('download: mengambil dokumen dari service dan mengirim byte PDF', async () => {
-    const bytes = Buffer.from('%PDF-1.7');
+  it('download: mengambil dokumen dari service dan mengirim byte PDF sebagai Buffer', async () => {
+    // Prisma mengembalikan kolom `Bytes` sebagai `Uint8Array`, BUKAN `Buffer`.
+    // Handler harus menormalkannya: `res.send` yang menerima non-Buffer dapat
+    // jatuh ke `res.json` (bergantung versi Express) dan mengirim serialisasi
+    // JSON alih-alih PDF. Yang dipaku di sini: argumen `res.send` adalah
+    // `Buffer` yang byte-nya identik dengan arsip.
+    const bytes = new Uint8Array(Buffer.from('%PDF-1.7'));
     (FoundationDecisionService.getFinalDocument as any).mockResolvedValue({ bytes });
     const { req, res } = mockReqRes({ params: { id: 'abcdef12-0000' } as any });
     await run(controller.download, req, res);
@@ -175,8 +180,21 @@ describe('foundation-decisions controller', () => {
       { id: 'u1', roleCode: 'SUPER_ADMIN' },
       'abcdef12-0000'
     );
+    const sent = (res as any).sent;
+    expect(Buffer.isBuffer(sent)).toBe(true);
+    expect(sent.equals(Buffer.from(bytes))).toBe(true);
     expect((res as any).headers['Content-Type']).toBe('application/pdf');
-    expect((res as any).sent).toBe(bytes);
+  });
+
+  it('download: menetapkan Content-Disposition unduhan', async () => {
+    (FoundationDecisionService.getFinalDocument as any).mockResolvedValue({
+      bytes: Buffer.from('%PDF-1.7 arsip'),
+    });
+    const { req, res } = mockReqRes({ params: { id: 'abcdef12-0000' } as any });
+    await run(controller.download, req, res);
+    expect((res as any).headers['Content-Disposition']).toBe(
+      'inline; filename="risalah-abcdef12.pdf"'
+    );
   });
 
   /**

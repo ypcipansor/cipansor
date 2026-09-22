@@ -139,6 +139,11 @@ export const FoundationDecisionController = {
       'Content-Disposition',
       `inline; filename="risalah-${req.params.id.slice(0, 8)}.pdf"`
     );
-    res.send(doc.bytes);
+    // Kolom `Bytes` Prisma adalah `Uint8Array`. Konversi eksplisit ke `Buffer`
+    // menjaga jalur ini tetap mengirim byte biner mentah apa pun versi Express:
+    // `res.send` yang menerima non-Buffer (objek) akan jatuh ke `res.json` dan
+    // mengirim serialisasi JSON alih-alih PDF. `Buffer` selalu dikenali sebagai
+    // badan biner oleh Express.
+    res.send(Buffer.from(doc.bytes));
   },
 };

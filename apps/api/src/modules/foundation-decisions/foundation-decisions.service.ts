@@ -730,13 +730,14 @@ export const FoundationDecisionService = {
     // Anggota yang sudah habis masa tugasnya tidak boleh menggelembungkan
     // kuorum yang terkunci selamanya.
     //
-    // SATU orang dapat memegang lebih dari satu peran yang tergolong organ yang
-    // sama (Sekretaris merangkap Bendahara, dsb.). Snapshot menyimpan satu
-    // jabatan per orang, jadi penyusutan dilakukan FUNGSI MURNI
+    // SATU orang dapat memegang lebih dari satu peran dalam organ yang sama
+    // (Sekretaris merangkap Bendahara, dsb.), sedangkan snapshot menyimpan satu
+    // jabatan per orang. Penyusutan memakai FUNGSI MURNI
     // `selectSnapshotAssignments`: penugasan `isPrimary` menang, lalu senioritas
-    // jabatan per organ, lalu tie-break leksikografis. `distinct: ['userId']`
-    // yang lama TIDAK punya urutan yang dijanjikan, sehingga jabatan pada PDF
-    // ber-e-seal dapat berubah mengikuti rencana query — bukan kebijakan organ.
+    // jabatan per organ, lalu tie-break leksikografis. Urutannya harus
+    // ditetapkan eksplisit — `distinct` tanpa kriteria tidak menjanjikan
+    // jabatan mana yang bertahan, sehingga jabatan pada PDF ber-e-seal dapat
+    // berubah mengikuti rencana query, bukan kebijakan organ.
     const assignmentRows = await prisma.userRoleAssignment.findMany({
       where: {
         isActive: true,
@@ -1184,12 +1185,11 @@ export const FoundationDecisionService = {
         throw Errors.badRequest('Anda sudah memberikan suara pada keputusan ini.');
       }
 
-      // Anti-TOCTOU (audit B): buktikan ULANG bahwa kunci yang menandatangani
-      // masih kunci yang berlaku, DI DALAM transaksi dan SEBELUM `INSERT`.
-      // Tanpa ini, rotasi/pencabutan paralel dapat meninggalkan baris suara
-      // yang ditolak `isVoteAuthentic` sekaligus memblokir percobaan ulang.
-      // Bila rotasi menang, transaksi ini dibatalkan sehingga TIDAK ada baris
-      // suara yang tercommit dan pengguna dapat mencoba lagi dengan kunci baru.
+      // TOCTOU: buktikan ULANG, DI DALAM transaksi dan SEBELUM `INSERT`, bahwa
+      // kunci yang menandatangani masih berlaku. Bila rotasi/pencabutan commit
+      // di sela-sela, transaksi ini dibatalkan sehingga TIDAK ada baris suara
+      // yang tercommit — bukan baris yang ditolak `isVoteAuthentic` sekaligus
+      // memblokir percobaan ulang.
       await assertSigningKeyStillCurrent(
         tx,
         actor.id,
@@ -1646,11 +1646,10 @@ export const FoundationDecisionService = {
           updatedById: actor.id,
         },
       });
-      // Audit ditulis DI DALAM transaksi yang sama dengan perubahannya. Sebelum
-      // ini keduanya terpisah: kegagalan `auditLog.create` meninggalkan aturan
-      // kuorum yang SUDAH berubah tetapi tanpa jejak audit — dan aturan kuorum
-      // menentukan ambang yang mengesahkan keputusan, sehingga perubahan yang
-      // tak tercatat justru yang paling perlu tercatat.
+      // Audit ditulis DI DALAM transaksi yang sama dengan perubahannya: aturan
+      // kuorum menentukan ambang yang mengesahkan keputusan, jadi perubahan
+      // yang tak tercatat justru yang paling perlu tercatat. Kegagalan
+      // `auditLog.create` harus membatalkan perubahannya bersamanya.
       await tx.auditLog.create({
         data: {
           userId: actor.id,
@@ -2023,9 +2022,9 @@ export const FoundationDecisionService = {
   ) {
     const roleByUserId = new Map(d.members.map((m) => [m.userId, m.roleCode]));
     // Nama pemilih diambil dari SNAPSHOT anggota, bukan profil pengguna hidup —
-    // sama dengan `renderPdf`. DTO ini menggambarkan keputusan historis, jadi
-    // mengganti nama profil setelah keputusan dibuat tidak boleh mengubah
-    // identitas yang tercatat di dalamnya (audit #4).
+    // sama dengan `renderPdf`. DTO ini menggambarkan keputusan yang sudah
+    // terjadi, jadi mengganti nama profil setelahnya tidak boleh mengubah
+    // identitas yang tercatat di dalamnya.
     const nameByUserId = new Map(d.members.map((m) => [m.userId, m.name]));
     return {
       id: d.id,
