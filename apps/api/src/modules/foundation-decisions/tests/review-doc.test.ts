@@ -87,4 +87,33 @@ describe('docs/REVIEW_GEMINI_RISALAH_DIGITAL_SIGNATURE.md — tidak kontradiktif
     expect(doc).toMatch(/QR yang benar-benar dirender/);
     expect(doc).toMatch(/bukan token/);
   });
+
+  /**
+   * FLAG INVESTIGATION E — rationale audit dipindahkan dari service ke dokumen.
+   *
+   * `foundation-decisions.service.ts` dulu memuat narasi audit historis yang
+   * panjang di dalam komentar, sehingga logika operasional sulit dibaca. Yang
+   * dipertahankan di kode hanya komentar singkat tentang invariant setempat;
+   * rationale lengkap ada di §7 dokumen ini. Guard di bawah memaku sisi dokumen
+   * (setiap invariant punya bagiannya), sedangkan sisi kode diperiksa
+   * `service-comments.test.ts`.
+   */
+  it('memuat §7 yang mendokumentasikan invariant keamanan service', () => {
+    const s7 = doc.indexOf('## 7. Catatan invariant keamanan modul');
+    const s8 = doc.indexOf('## 8. Referensi');
+    expect(s7).toBeGreaterThan(-1);
+    expect(s8).toBeGreaterThan(s7);
+    const section = doc.slice(s7, s8);
+    for (const topic of [
+      'user_signing_key_history',
+      'TOCTOU',
+      'signedAt',
+      'indeks unik parsial',
+      'backfill',
+      'CIRCULAR',
+      'verifyByToken',
+    ]) {
+      expect(section.toLowerCase()).toContain(topic.toLowerCase());
+    }
+  });
 });

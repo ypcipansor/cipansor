@@ -115,9 +115,18 @@ describe('penyediaan basis data lokal memakai migrasi (Flag C)', () => {
   }
 
   it('scripts/dev-up.sh menjalankan `db:deploy`, bukan `db:push`', () => {
-    const text = commandLines(read('scripts/dev-up.sh'));
-    expect(text).toMatch(/\bdb:deploy\b/);
-    expect(text).not.toMatch(/\bdb:push\b/);
+    // The migration logic lives in `scripts/db-provision.sh` (delegated by
+    // dev-up.sh so the failure path is testable); both files must stay on
+    // migrations.
+    const provision = commandLines(read('scripts/db-provision.sh'));
+    expect(provision).toMatch(/\bdb:deploy\b/);
+    expect(provision).not.toMatch(/\bdb:push\b/);
+
+    const devup = commandLines(read('scripts/dev-up.sh'));
+    expect(devup).toMatch(/db-provision\.sh/);
+    expect(devup).not.toMatch(/\bdb:push\b/);
+    // Migrations must run on EVERY startup, not be gated behind an empty DB.
+    expect(provision).not.toMatch(/USERS[\s\S]{0,80}db:deploy/);
   });
 
   it('skill stack tidak lagi menginstruksikan `db:push`', () => {
@@ -156,8 +165,83 @@ describe('penyediaan basis data lokal memakai migrasi (Flag C)', () => {
     expect(text).not.toMatch(/prisma\s+db\s+push/);
   });
 
+  /**
+   * Audit G — jalur executable, bukan dokumentasi.
+   *
+   * `apps/api/package.json` masih menyediakan script `db:push`, dan `turbo.json`
+   * masih meng-cache task bernama sama. Keduanya adalah pintu yang mengundang
+   * orang menjalankan `db push` dan diam-diam membuang indeks unik parsial.
+   * Script itu dihapus; guard di bawah memaku ketiadaannya sebagai PERILAKU
+   * (script tidak dapat dipanggil), bukan sekadar komentar.
+   */
+  it('apps/api/package.json tidak menyediakan script db:push', () => {
+    const pkg = JSON.parse(read('apps/api/package.json')) as {
+      scripts?: Record<string, string>;
+    };
+    expect(pkg.scripts?.['db:push']).toBeUndefined();
+    expect(pkg.scripts?.['db:deploy']).toMatch(/migrate deploy/);
+  });
+
+  it('turbo.json tidak mendefinisikan task db:push', () => {
+    const turbo = JSON.parse(read('turbo.json')) as { tasks?: Record<string, unknown> };
+    expect(turbo.tasks?.['db:push']).toBeUndefined();
+  });
+
+  /**
+   * Audit A — jalur deployment produksi harus benar-benar dapat menjalankan
+   * migrasi.
+   *
+   * Runtime image (`apps/api/Dockerfile` stage `runner`) menghapus cluster
+   * Prisma CLI, sehingga `docker exec cipansor-api npx prisma migrate deploy`
+   * tidak menjalankan apa pun. Makefile harus memakai service `migrate`
+   * (stage `migrate` di image yang sama) dan TIDAK boleh kembali ke `exec ģ
+   * npx`. Sisi perilakunya diuji terhadap image nyata oleh
+   * `deployment-migration.db.test.ts`, yang membangun stage `migrate` dan
+   * menjalankannya terhadap PostgreSQL kosong nyata.
+   */
+  it('Makefile menjalankan migrasi lewat service `migrate`, bukan npx di container api', () => {
+    const text = commandLines(read('Makefile'));
+    expect(text).toMatch(/compose run[\s\S]{0,120}\bmigrate\b/);
+    expect(text).not.toMatch(/docker exec cipansor-api[\s\S]{0,120}prisma migrate/);
+  });
+
+  it('docker-compose mendefinisikan service migrate yang dijalankan sebelum api', () => {
+    const compose = read('docker-compose.yml');
+    expect(compose).toMatch(/\n\s+migrate:/);
+    // API menunggu migrasi selesai sukses.
+    expect(compose).toMatch(/migrate:\s*\n\s*condition:\s*service_completed_successfully/);
+  });
+
+  it('Dockerfile menyediakan stage `migrate` untuk release job', () => {
+    const dockerfile = read('apps/api/Dockerfile');
+    expect(dockerfile).toMatch(/FROM deps AS migrate/);
+    expect(dockerfile).toMatch(/prisma.*migrate.*deploy/);
+  });
+
   it('DEPLOYMENT.md tidak lagi mengklaim Makefile deploy memakai db push', () => {
     const text = commandLines(read('docs/DEPLOYMENT.md'));
     expect(text).not.toMatch(/Makefile[\s\S]{0,80}prisma db push/);
+  });
+
+  /**
+   * Audit A (docs) — the runbook must not teach the path that silently applies
+   * nothing. `docker compose exec api npx prisma migrate deploy` resolves to
+   * nothing in the runtime image (the Prisma CLI is stripped), so documenting it
+   * would send an operator through a no-op deploy. Migrations go through the
+   * `migrate` service.
+   */
+  it('DEPLOYMENT.md mengarahkan migrasi ke service `migrate`, bukan exec di container api', () => {
+    const text = read('docs/DEPLOYMENT.md');
+    expect(text).toMatch(/compose run[\s\S]{0,160}\bmigrate\b/);
+    // Only the executable examples (fenced blocks) matter; prose may quote the
+    // broken form to explain why it does not work.
+    const fenced = text
+      .split('\n')
+      .filter((line, i, all) => {
+        const fencesBefore = all.slice(0, i).filter((l) => l.trim().startsWith('```')).length;
+        return fencesBefore % 2 === 1;
+      })
+      .join('\n');
+    expect(fenced).not.toMatch(/compose exec api[\s\S]{0,80}prisma migrate/);
   });
 });

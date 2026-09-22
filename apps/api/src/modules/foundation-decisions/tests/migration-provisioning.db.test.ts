@@ -27,12 +27,14 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { execFileSync } from 'child_process';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { Client } from 'pg';
 import { randomBytes } from 'crypto';
-import { createPrismaClient } from '../../../../prisma/client';
+import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { createKeyMaterial, publicKeyFingerprint } from '@/utils/esign';
-import type { PrismaClient } from '@prisma/client';
+import type { PrismaClient as PrismaClientType } from '@prisma/client';
 
 const RUN = process.env.RUN_DB_TESTS === '1';
 const API_DIR = path.resolve(__dirname, '../../../..');
@@ -91,6 +93,11 @@ function migrateDeploy(databaseUrl: string): string {
   // `migrate deploy` never uses a shadow database; leaving one configured that
   // equals the target makes Prisma abort before running anything.
   delete env.SHADOW_DATABASE_URL;
+  // Ignore a developer `.env`: `prisma.config.ts` loads `dotenv/config`, which
+  // would otherwise restore the deleted `SHADOW_DATABASE_URL` (or an empty one)
+  // from disk and reintroduce P1013. CI has no `.env`, so this only affects
+  // local runs — but it makes them match CI.
+  env.DOTENV_CONFIG_PATH = '/dev/null';
   // The workspace-local Prisma binary, not `npx` — `npx` may fetch a different
   // major from the registry (it resolved an 8.x release candidate here) and
   // fail before any migration runs.
@@ -101,6 +108,71 @@ function migrateDeploy(databaseUrl: string): string {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
   });
+}
+
+/**
+ * Deploy using a TEMPORARY `prisma/` directory that contains only a prefix of
+ * the migration history.
+ *
+ * This is how the upgrade path is exercised: first deploy everything up to an
+ * older baseline (`keep` filter), seed data into those tables, then deploy the
+ * remaining foundation migrations on top of a database that already has rows —
+ * the exact shape a production upgrade has, as opposed to a fresh database.
+ */
+function migrateDeployWithMigrations(
+  databaseUrl: string,
+  migrationsDir: string,
+  configPath: string
+): string {
+  const env: NodeJS.ProcessEnv = { ...process.env, DATABASE_URL: databaseUrl };
+  delete env.SHADOW_DATABASE_URL;
+  env.DOTENV_CONFIG_PATH = '/dev/null';
+  const prismaBin = path.resolve(API_DIR, 'node_modules/.bin/prisma');
+  return execFileSync(prismaBin, ['migrate', 'deploy', '--config', configPath], {
+    cwd: path.dirname(path.dirname(configPath)),
+    env,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+}
+
+/** Build a temp prisma dir whose migrations are a filtered copy of the real set. */
+function stagedMigrations(keep: (name: string) => boolean): {
+  dir: string;
+  schemaPath: string;
+  configPath: string;
+} {
+  const src = path.resolve(API_DIR, 'prisma/migrations');
+  // Create the staged prisma dir INSIDE apps/api so `prisma/config` resolves
+  // through apps/api/node_modules when the temp config is evaluated.
+  const dir = fs.mkdtempSync(path.join(API_DIR, '.mig-stage-'));
+  fs.mkdirSync(path.join(dir, 'migrations'), { recursive: true });
+  for (const entry of fs.readdirSync(src)) {
+    const from = path.join(src, entry);
+    if (!fs.statSync(from).isDirectory()) {
+      // `migration_lock.toml` sits beside the migration directories and tells
+      // Prisma the provider; copy it so the staged history is complete.
+      if (entry !== 'migration_lock.toml') continue;
+      fs.copyFileSync(from, path.join(dir, 'migrations', entry));
+      continue;
+    }
+    if (!keep(entry)) continue;
+    fs.cpSync(from, path.join(dir, 'migrations', entry), { recursive: true });
+  }
+  // Only `schema.prisma` and a minimal Prisma config are needed to deploy
+  // (the seed command is irrelevant here).
+  fs.copyFileSync(path.resolve(API_DIR, 'prisma/schema.prisma'), path.join(dir, 'schema.prisma'));
+  const configPath = path.join(dir, 'prisma.config.ts');
+  fs.writeFileSync(
+    configPath,
+    `import 'dotenv/config';\n` +
+      `import { defineConfig } from 'prisma/config';\n` +
+      `export default defineConfig({\n` +
+      `  schema: './schema.prisma',\n` +
+      `  datasource: { url: process.env.DATABASE_URL },\n` +
+      `});\n`
+  );
+  return { dir, schemaPath: path.join(dir, 'schema.prisma'), configPath };
 }
 
 /**
@@ -117,16 +189,23 @@ function backfillSql(): string {
 }
 
 describe.skipIf(!RUN)('finding A — provisioning dari database kosong', () => {
-  let prisma: PrismaClient;
   const databases: string[] = [];
+  const clients: PrismaClientType[] = [];
+  // Client on the configured (already-migrated) database, for the backfill
+  // parity tests that only need `user_signing_keys`.
+  let prisma: PrismaClientType;
 
-  beforeAll(async () => {
-    prisma = createPrismaClient();
-    await prisma.$connect();
+  beforeAll(() => {
+    prisma = new PrismaClient({
+      adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
+    });
+    clients.push(prisma);
   });
 
   afterAll(async () => {
-    await prisma.$disconnect();
+    for (const client of clients) {
+      await client.$disconnect();
+    }
     for (const db of databases) {
       await dropDatabase(db);
     }
@@ -136,6 +215,15 @@ describe.skipIf(!RUN)('finding A — provisioning dari database kosong', () => {
     const name = `cipansor_mig_${prefix}_${randomBytes(4).toString('hex')}`;
     databases.push(name);
     return name;
+  }
+
+  /** Prisma client bound to one freshly-migrated database. */
+  function clientFor(name: string): PrismaClientType {
+    const client = new PrismaClient({
+      adapter: new PrismaPg({ connectionString: urlForDatabase(name) }),
+    });
+    clients.push(client);
+    return client;
   }
 
   /**
@@ -384,6 +472,119 @@ describe.skipIf(!RUN)('finding A — provisioning dari database kosong', () => {
       await prisma.userSigningKeyHistory.deleteMany({ where: { userId: user.id } });
       await prisma.userSigningKey.deleteMany({ where: { userId: user.id } });
       await prisma.user.delete({ where: { id: user.id } });
+    }
+  });
+});
+
+/**
+ * Finding C — upgrade migration on a database that ALREADY holds data.
+ *
+ * `migrate deploy` from empty proves the history replays; it does not prove the
+ * foundation migrations behave when earlier tables already hold rows. This
+ * deploys the real history in two stages against one database: everything up to
+ * and including `20260916000000_foundation_decisions`, then rows are inserted
+ * into the tables those migrations create, then the remaining migrations
+ * (including the vote key-binding backfill) run on top. A backfill that assumed
+ * an empty target, or an idempotency guard that skipped the ALTER, would fail
+ * here and not in the fresh-database case.
+ */
+describe.skipIf(!RUN)('finding C — migrate deploy di atas database berisi data', () => {
+  const databases: string[] = [];
+  const tempDirs: string[] = [];
+
+  afterAll(async () => {
+    for (const db of databases) {
+      await dropDatabase(db);
+    }
+    for (const dir of tempDirs) {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('backfill berjalan pada database yang sudah memuat baris kunci & seal', async () => {
+    const name = `cipansor_mig_upgrade_${randomBytes(4).toString('hex')}`;
+    databases.push(name);
+    await createDatabase(name);
+    const url = urlForDatabase(name);
+
+    // Stage 1: everything up to the foundation_decisions migration.
+    const base = stagedMigrations((n) => n <= '20260916000000_foundation_decisions');
+    tempDirs.push(base.dir);
+    const first = migrateDeployWithMigrations(
+      url,
+      path.join(base.dir, 'migrations'),
+      base.configPath
+    );
+    expect(first).toMatch(/migrations have been successfully applied/);
+
+    // Seed rows into the pre-existing tables. A user + an issued signing key is
+    // exactly the state the vote-key-binding backfill reconstructs history from.
+    const suffix = randomBytes(4).toString('hex');
+    const material = createKeyMaterial(`upgrade-pass-${suffix}`);
+    const admin = new Client({ connectionString: url });
+    await admin.connect();
+    try {
+      await admin.query(
+        `INSERT INTO "users" (id, email, name, password_hash, updated_at)
+         VALUES ($1, $2, $3, 'x', NOW())`,
+        [`mig-up-u-${suffix}`, `mig-up-${suffix}@example.test`, 'Upgrade']
+      );
+      await admin.query(
+        `INSERT INTO "user_signing_keys"
+           (id, user_id, algorithm, public_key, encrypted_private_key, kdf_salt, kdf_params, iv, auth_tag, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())`,
+        [
+          `mig-up-k-${suffix}`,
+          `mig-up-u-${suffix}`,
+          material.algorithm,
+          material.publicKey,
+          material.encryptedPrivateKey,
+          material.kdfSalt,
+          JSON.stringify(material.kdfParams),
+          material.iv,
+          material.authTag,
+        ]
+      );
+    } finally {
+      await admin.end();
+    }
+
+    // Stage 2: every remaining migration, including the key-binding backfill,
+    // runs against a database that already holds rows.
+    const rest = stagedMigrations((n) => n > '20260916000000_foundation_decisions');
+    tempDirs.push(rest.dir);
+    const second = migrateDeployWithMigrations(
+      url,
+      path.join(rest.dir, 'migrations'),
+      rest.configPath
+    );
+    expect(second).toMatch(/migrations have been successfully applied/);
+
+    // The backfill reconstructed the same fingerprint the app computes.
+    const client = new Client({ connectionString: url });
+    await client.connect();
+    try {
+      const { rows } = await client.query<{ fingerprint: string; signing_key_id: string | null }>(
+        `SELECT fingerprint FROM "user_signing_key_history" WHERE user_id = $1`,
+        [`mig-up-u-${suffix}`]
+      );
+      expect(rows).toHaveLength(1);
+      expect(rows[0].fingerprint).toBe(publicKeyFingerprint(material.publicKey));
+
+      // The ALTER that adds the binding columns really ran on the populated
+      // table (idempotency guards included `IF NOT EXISTS`, which could else
+      // have skipped it).
+      const { rows: cols } = await client.query<{ column_name: string }>(
+        `SELECT column_name FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'foundation_decision_votes'
+            AND column_name IN ('signing_key_id', 'public_key_fingerprint')`
+      );
+      expect(cols.map((c) => c.column_name).sort()).toEqual([
+        'public_key_fingerprint',
+        'signing_key_id',
+      ]);
+    } finally {
+      await client.end();
     }
   });
 });

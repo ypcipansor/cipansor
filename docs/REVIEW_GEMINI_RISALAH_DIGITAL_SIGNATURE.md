@@ -34,14 +34,14 @@ Alasan menolak rekomendasi "perluas `Letter`":
 
 1. **Bentuk data berbeda, bukan sekadar nilai enum baru.** `Letter` adalah
    naskah korespondensi (perihal, tujuan, isi, alur review). Keputusan organ
-   adalah *kuorum terkunci*: snapshot anggota yang **immutable** pada saat
+   adalah _kuorum terkunci_: snapshot anggota yang **immutable** pada saat
    keputusan dibuat, matriks kewenangan per organ, aturan kuorum yang dapat
    dikonfigurasi (UU 16/2001 jo. 28/2004 & PP 63/2008), dan hasil yang
    menutup/membuka keputusan. Memaksakan bentuk ini ke `Letter` + `LetterReviewer`
    berarti menambah kolom khusus-keputusan yang tak pernah dipakai surat, dan
    membuat setiap query surat harus menyaring baris keputusan keluar.
 2. **Snapshot bukan relasi hidup.** Rekomendasi §5 memakai `LetterReviewer`
-   (relasi ke pengguna *saat ini*). Semantik keputusan menuntut roster yang
+   (relasi ke pengguna _saat ini_). Semantik keputusan menuntut roster yang
    terkunci: anggota yang kemudian berpindah peran tetap dapat menandatangani
    dan membaca keputusannya, dan nama yang dicetak adalah nama **saat keputusan
    dibuat**. Relasi hidup tidak dapat menjamin itu tanpa mengubah arti
@@ -107,16 +107,16 @@ paling penting:
    pencabutan (RFC 5280-style), dan verifikasi publik. Yang **tidak ada** hanyalah
    lapisan **alur keputusan Dewan Pembina / risalah** (skenario mufakat/voting) —
    justru lapisan yang paling sedikit butuh kriptografi baru.
-2. **"X.509 Public Key" adalah kesalahan konsep.** X.509 adalah *sertifikat*
+2. **"X.509 Public Key" adalah kesalahan konsep.** X.509 adalah _sertifikat_
    (pengikat identitas oleh CA), bukan tipe kunci. Proposal mencampur "buat
    pasangan kunci" dengan "terbitkan sertifikat X.509". Self-signed X.509 **tidak
    menaikkan bobot hukum apa pun** di Indonesia dan justru bisa menyesatkan
    (lihat `docs/EOFFICE_ESIGN_PLAN.md` §4.3 & (c), dan bagian 4 di bawah).
 3. **"PBKDF2/Argon2 + AES-GCM" lebih lemah dari yang sudah ada.** Kode sekarang
-   memakai **scrypt + AES-256-GCM** dengan *tidak menyimpan hash passphrase sama
-   sekali* — pekerjaan yang lebih benar daripada menebak arsitektur ulang.
+   memakai **scrypt + AES-256-GCM** dengan _tidak menyimpan hash passphrase sama
+   sekali_ — pekerjaan yang lebih benar daripada menebak arsitektur ulang.
 4. **Pilihan library PDF keliru kategorinya.** `pdf-lib` **tidak bisa** membuat
-   PAdES; ia hanya dipakai untuk render *visual*. PAdES embedded butuh
+   PAdES; ia hanya dipakai untuk render _visual_. PAdES embedded butuh
    `@signpdf/signpdf` + `node-forge`/`signer-p12` + sertifikat, dan itu menuntut
    **migrasi Ed25519 → RSA-3072/ECDSA P-256** (EdDSA-in-CMS dukungan Acrobat
    tipis, RFC 8419). Ini bukan tweak, ini Tier-1 utuh (`EOFFICE_ESIGN_PLAN.md` §4.3).
@@ -128,7 +128,7 @@ paling penting:
 
 **Rekomendasi:** Jangan membangun PKI paralel. Bangun **modul `risalah`** yang
 memperluas alur `Letter`/`LetterReviewer` yang sudah ada untuk memodelkan quorum
-Dewan Pembina, dan *reuse* seluruh infrastruktur penandatanganan yang ada. Berikut
+Dewan Pembina, dan _reuse_ seluruh infrastruktur penandatanganan yang ada. Berikut
 rinciannya.
 
 ---
@@ -137,18 +137,18 @@ rinciannya.
 
 Crosscheck ke kode & skema basis data saat ini:
 
-| Kebutuhan dalam proposal | Implementasi yang sudah ada |
-|---|---|
-| Pasangan kunci per anggota | `UserSigningKey` (+ `UserIdentity` untuk identitas, `SigningKeyRequest` untuk lifecycle, `SigningKeyRevocationCode` untuk sebab pencabutan RFC 5280) |
-| Privat key terenkripsi di DB, tanpa plaintext | `utils/esign.ts` — **scrypt (RFC 7914) + AES-256-GCM**, IV/salt/authTag per kunci. Passphrase **tidak pernah disimpan** (buat sebagai hash pun tidak); bukti benar = GCM berhasil didekripsi. Ada penguncian setelah 5x salah (`MAX_PASSPHRASE_ATTEMPTS`, `lockoutUntil`) |
-| Dekripsi private key di memori saat menandatangani | `signPayload` / `signPdfHash` / `signRevocation` di `utils/esign.ts` (`unsealPrivateKey`) |
-| Penandatanganan PDF | `POST /esign/letters/:letterId/sign` — tanda tangan Ed25519 atas **SHA-256 byte PDF final** (detached), disimpan di `LetterSignature` (`pdfHash`/`pdfSignature`), byte PDF di-arsip-kan di `LetterSignedDocument` |
-| Akumulasi banyak tanda tangan tanpa membatalkan sebelumnya | Setiap tanda tangan menimbulkan **arsip byte PDF baru** yang berisi panel tanda tangan sebelumnya; `pdfHash` per tanda tangan mengikat byte terkini. `resolveLetterPdf` (`modules/correspondence/signed-pdf.ts`) selalu menyajikan byte arsip, **tidak pernah render ulang ulang** naskah yang sudah ditandatangani |
-| Verifikasi keutuhan (integrity) | `POST /esign/verify-pdf` (publik, dibatasi rate, di belakang Turnstile) + **QR yang benar-benar dirender** di kaki surat (`generate-letter-pdf.ts`) yang mengarah ke halaman unggah `/public/verify-letter` — QR membawa **alamat halaman, bukan token**, dan token cetak dilayani terpisah; `utils/letter-verification.ts`; checksum `documents`-style + signer list |
-| Audit log | `LetterFlowEvent` (append-only, terstruktur per surat), `AuditLog` (generik), `SigningKeyRequest` (riwayat penerbitan kunci tidak pernah dihapus) |
-| UI modal passphrase & status verifikasi | `apps/web/src/components/settings/esign-panel.tsx`, `esign-key-inventory.tsx`, `hooks/use-esign.ts`, halaman `app/public/verify-letter` |
-| Role Dewan Pembina | `RoleCode.YAYASAN_PEMBINA` + `YAYASAN_KETUA`, `YAYASAN_SEKRETARIS` (Pembina/Pengurus/Pengawas sudah sebagai organ, bukan admin) |
-| Jenis naskah keputusan | `LetterType.SURAT_KEPUTUSAN`, `BERITA_ACARA`, `PENGUMUMAN` sudah ada (tidak ada `RISALAH` — bagian 5) |
+| Kebutuhan dalam proposal                                   | Implementasi yang sudah ada                                                                                                                                                                                                                                                                                                                                           |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pasangan kunci per anggota                                 | `UserSigningKey` (+ `UserIdentity` untuk identitas, `SigningKeyRequest` untuk lifecycle, `SigningKeyRevocationCode` untuk sebab pencabutan RFC 5280)                                                                                                                                                                                                                  |
+| Privat key terenkripsi di DB, tanpa plaintext              | `utils/esign.ts` — **scrypt (RFC 7914) + AES-256-GCM**, IV/salt/authTag per kunci. Passphrase **tidak pernah disimpan** (buat sebagai hash pun tidak); bukti benar = GCM berhasil didekripsi. Ada penguncian setelah 5x salah (`MAX_PASSPHRASE_ATTEMPTS`, `lockoutUntil`)                                                                                             |
+| Dekripsi private key di memori saat menandatangani         | `signPayload` / `signPdfHash` / `signRevocation` di `utils/esign.ts` (`unsealPrivateKey`)                                                                                                                                                                                                                                                                             |
+| Penandatanganan PDF                                        | `POST /esign/letters/:letterId/sign` — tanda tangan Ed25519 atas **SHA-256 byte PDF final** (detached), disimpan di `LetterSignature` (`pdfHash`/`pdfSignature`), byte PDF di-arsip-kan di `LetterSignedDocument`                                                                                                                                                     |
+| Akumulasi banyak tanda tangan tanpa membatalkan sebelumnya | Setiap tanda tangan menimbulkan **arsip byte PDF baru** yang berisi panel tanda tangan sebelumnya; `pdfHash` per tanda tangan mengikat byte terkini. `resolveLetterPdf` (`modules/correspondence/signed-pdf.ts`) selalu menyajikan byte arsip, **tidak pernah render ulang ulang** naskah yang sudah ditandatangani                                                   |
+| Verifikasi keutuhan (integrity)                            | `POST /esign/verify-pdf` (publik, dibatasi rate, di belakang Turnstile) + **QR yang benar-benar dirender** di kaki surat (`generate-letter-pdf.ts`) yang mengarah ke halaman unggah `/public/verify-letter` — QR membawa **alamat halaman, bukan token**, dan token cetak dilayani terpisah; `utils/letter-verification.ts`; checksum `documents`-style + signer list |
+| Audit log                                                  | `LetterFlowEvent` (append-only, terstruktur per surat), `AuditLog` (generik), `SigningKeyRequest` (riwayat penerbitan kunci tidak pernah dihapus)                                                                                                                                                                                                                     |
+| UI modal passphrase & status verifikasi                    | `apps/web/src/components/settings/esign-panel.tsx`, `esign-key-inventory.tsx`, `hooks/use-esign.ts`, halaman `app/public/verify-letter`                                                                                                                                                                                                                               |
+| Role Dewan Pembina                                         | `RoleCode.YAYASAN_PEMBINA` + `YAYASAN_KETUA`, `YAYASAN_SEKRETARIS` (Pembina/Pengurus/Pengawas sudah sebagai organ, bukan admin)                                                                                                                                                                                                                                       |
+| Jenis naskah keputusan                                     | `LetterType.SURAT_KEPUTUSAN`, `BERITA_ACARA`, `PENGUMUMAN` sudah ada (tidak ada `RISALAH` — bagian 5)                                                                                                                                                                                                                                                                 |
 
 > Konsekuensi golden rule #8: **kode TTE yang baru harus memakai primitif di
 > atas, bukan menduplikasinya.** Menambahkan tabel `Certificate`/`Document`/
@@ -160,7 +160,8 @@ Crosscheck ke kode & skema basis data saat ini:
 ## 3. Cacat konsep & kriptografi yang harus dikoreksi
 
 ### 3.1 "X.509 Public Key" untuk tiap anggota → salah konsep
-- X.509 adalah format *sertifikat*, bukan tipe pasangan kunci. "Generate
+
+- X.509 adalah format _sertifikat_, bukan tipe pasangan kunci. "Generate
   pasangan kunci X.509" tidak masuk akal; yang bisa dibuat adalah kunci
   RSA/EC/Ed25519 lalu dibungkus sertifikat X.509 v3.
 - **Membuat sendiri self-signed X.509 tidak menambah jaminan yayasan mana
@@ -178,9 +179,10 @@ Tier-1 — naikkan sekaligus ke **RSA-3072 / ECDSA P-256**, lihat 3.3). Jangan
 menambah tabel `Certificate` sampai Tier-1/2 benar-benar diimplementasi.
 
 ### 3.2 KDF: "PBKDF2/Argon2" → sebaiknya pertahankan scrypt, naikkan parameter
+
 - OWASP 2024/2025: **Argon2id** pilihan utama; **scrypt** bila Argon2id tidak
   tersedia; **PBKDF2** hanya untuk kepatuhan FIPS. Kode sekarang memakai
-  **scrypt** (tanpa dependensi biner, di Node inti) — sudah *memory-hard*, dan
+  **scrypt** (tanpa dependensi biner, di Node inti) — sudah _memory-hard_, dan
   parameternya **disimpan per kunci** (`kdfParams`) sehingga bisa dinaikkan tanpa
   migrasi.
 - Koreksi kecil yang bernilai nyata: `SCRYPT_PARAMS = { N: 1<<15, r, p }`
@@ -194,6 +196,7 @@ menambah tabel `Certificate` sampai Tier-1/2 benar-benar diimplementasi.
   menambah hash passphrase, karena itu justru menambah vektor serangan).
 
 ### 3.3 Pilihan library PDF: `pdf-lib` ≠ PAdES
+
 - `pdf-lib` **tidak dapat menghasilkan tanda tangan PAdES** (tidak ada
   CMS/PKCS#7, tidak ada `Sig` dictionary + `ByteRange`). Di repositori ini ia
   hanya merender naskah secara **visual**.
@@ -214,6 +217,7 @@ menambah tabel `Certificate` sampai Tier-1/2 benar-benar diimplementasi.
   Tier-1), lalu Tier-2 tukar dengan sertifikat BSrE/PSrE.
 
 ### 3.4 E-Seal yayasan → koreksi bobot & urutan
+
 - PP 71/2019 mendefinisikan segel elektronik sebagai TTE milik **badan
   usaha/instansi**. Petunjuk Teknis BSrE v2.0 (per `EOFFICE_ESIGN_PLAN.md` §(c)):
   **satu segel per dokumen**, boleh nol/satu/banyak tanda tangan; **segel harus
@@ -231,7 +235,9 @@ menambah tabel `Certificate` sampai Tier-1/2 benar-benar diimplementasi.
   → (nanti) segel → tanda tangan. Desain `risalah` di bagian 5 berpijak pada itu.
 
 ### 3.5 "Server tidak boleh menyimpan private key plaintext" → sudah benar, tapi
+
 perlu ekspektasi jujur soal residu risiko
+
 - Klaim proposal benar dan sudah terpenuhi. Tambahan yang perlu ditegaskan:
   - Pencuri DB hanya mendapat **blob tersegel**, tanpa bahan tebak passphrase
     (tidak ada hash passphrase) → tidak bisa memalsukan tanda tangan secara
@@ -251,9 +257,9 @@ perlu ekspektasi jujur soal residu risiko
   yang mengandalkannya**. Hanya TTE yang dibuat di PSrE Indonesia yang
   "tersertifikasi".
 - Konsekuensi: (1) split biarkan pembuktian klarifikasi itu jujur;
-  (2) **jangan menyalin kalimat** *"Dokumen ini telah ditandatangani secara
+  (2) **jangan menyalin kalimat** _"Dokumen ini telah ditandatangani secara
   elektronik menggunakan sertifikat elektronik yang diterbitkan oleh Balai
-  Sertifikasi Elektronik (BSrE), BSSN"* — itu tidak benar untuk kunci yayasan
+  Sertifikasi Elektronik (BSrE), BSSN"_ — itu tidak benar untuk kunci yayasan
   sendiri (`EOFFICE_ESIGN_PLAN.md` §4.3). Tulis nama yang sebenarnya: "dibuat &
   diverifikasi oleh sistem TTE internal yayasan".
 - **Jangan menulis "sertifikat"** di dokumentasi/UI untuk kunci raw yayasan;
@@ -314,14 +320,15 @@ enum RisalahDecisionStatus { DRAFT VOTING APPROVED REJECTED }
      `Letter.status` batal; **tidak** ada yang menandatangani (atau dicatat
      "ditolak" tanpa tanda tangan).
    - PDF final memuat **rincian perolehan suara** (dihitung dari `RisalahDecision`
-     + `LetterReviewer.vote`) — data ini di-render ke dalam PDF oleh
-     `generateLetterPdfBuffer` *sebelum* ditandatangani, sehingga tercakup dalam
-     `pdfHash` yang ditandatangani setiap anggota.
+     - `LetterReviewer.vote`) — data ini di-render ke dalam PDF oleh
+       `generateLetterPdfBuffer` _sebelum_ ditandatangani, sehingga tercakup dalam
+       `pdfHash` yang ditandatangani setiap anggota.
 4. Setelah semua pihak yang berwenang menandatangani, tanda tangan orang
    terakhir menutup dokumen (status `SIGNED`); arsip byte final otomatis
    (mekanisme `LetterSignedDocument` yang ada).
 
 **c. Api dibangun di atas modul `esign` yang ada:**
+
 - Semua primitif (`signLetter`, `verifyPdf`, `resolveLetterPdf`, dll.) di-reuse.
 - Tes vitest wajib untuk logika quorum (mufakat/voting/rejected) — golden rule #7;
   Perlu e2e Playwright untuk alur voting + render suara + pasangan passphrase.
@@ -336,28 +343,128 @@ enum RisalahDecisionStatus { DRAFT VOTING APPROVED REJECTED }
 
 1. [ ] JANGAN tambah tabel `Certificate`/`Document`/`AuditLog` paralel.
 2. [ ] Tambah `RisalahDecision` (+ tipe/status), kolom `vote` pada `LetterReviewer`,
-      `LetterType` risalah, status `REJECTED` — lewat migrasi Prisma + `db:generate`.
+       `LetterType` risalah, status `REJECTED` — lewat migrasi Prisma + `db:generate`.
 3. [ ] Tulis layanan `risalah.{service,controller,routes,schema,index}` + tes
-      quorum (mufakat/voting/rejected), reuse `esign.signLetter`.
+       quorum (mufakat/voting/rejected), reuse `esign.signLetter`.
 4. [ ] Render "perolehan suara" ke PDF di `generateLetterPdfBuffer` (sebelum
-      finalisasi) dan pastikan tercakup di `pdfHash`.
+       finalisasi) dan pastikan tercakup di `pdfHash`.
 5. [ ] Putuskan visi PAdES: sekarang cukup **detached + arsip**. Jika ingin PDF
-      yang "bisa diverifikasi di Acrobat", lakukan **Tier-1 sebagai PR terpisah**:
-      naikkan ke RSA-3072/ECDSA P-256 + `@signpdf` + `node-forge`, pertahankan
-      arsip & upload-verify. Jangan campur ke PR donor risalah.
+       yang "bisa diverifikasi di Acrobat", lakukan **Tier-1 sebagai PR terpisah**:
+       naikkan ke RSA-3072/ECDSA P-256 + `@signpdf` + `node-forge`, pertahankan
+       arsip & upload-verify. Jangan campur ke PR donor risalah.
 6. [ ] Naikkan `SCRYPT_PARAMS.N` ke `1<<17` (rewrap pada `changePassphrase`),
-      dengan tes bahwa kunci lama tetap terbaca.
+       dengan tes bahwa kunci lama tetap terbaca.
 7. [ ] Dependensi baru (bila Tier-1): `@signpdf/signpdf`, `node-forge`,
-      `@signpdf/signer-p12`; tambah ke `docker-compose.yml` bila ada env baru
-      (aturan `apps/api/AGENTS.md`).
+       `@signpdf/signer-p12`; tambah ke `docker-compose.yml` bila ada env baru
+       (aturan `apps/api/AGENTS.md`).
 8. [ ] E-Seal: tunda atau wujudkan sebagai tanda tangan organ yayasan, bukan
-      kunci paralel; patuhi urutan finalise→segel→sign.
+       kunci paralel; patuhi urutan finalise→segel→sign.
 9. [ ] Bahasa UI/dokumen yang jujur: "TTE internal (tidak tersertifikasi)", bukan
-      kutipan BSrE, bukan kata "sertifikat resmi".
+       kutipan BSrE, bukan kata "sertifikat resmi".
 
 ---
 
-## 7. Referensi
+## 7. Catatan invariant keamanan modul `foundation-decisions`
+
+Narasi audit yang dulu hidup sebagai komentar panjang di dalam
+`apps/api/src/modules/foundation-decisions/foundation-decisions.service.ts`
+dipindahkan ke sini. Kode hanya menyisakan komentar singkat yang menjelaskan
+invariant setempat; rationale historis ("cacat apa yang diperbaiki") ada di
+bagian ini agar logika operasional tidak terkubur.
+
+### 7.1 Verifikasi suara terikat pada riwayat kunci yang tepercaya
+
+`isVoteAuthentic` mengikat empat hal sekaligus: pemilih adalah anggota organ
+pada SNAPSHOT terkunci; `canonicalDigest` tersimpan sama dengan digest yang
+dihitung ulang dari isi keputusan + pilihan + `signedAt`; kunci yang
+memverifikasi menunjuk rekaman `user_signing_key_history` milik pemilih yang
+sama; dan `signature` benar atas digest itu menurut kunci tepercaya tersebut.
+
+Sebelum perbaikan, verifikasi memakai `vote.publicKey` — kunci yang ditulis pada
+baris suara itu sendiri. Siapa pun yang dapat menulis langsung ke
+`foundation_decision_votes` cukup menyisipkan pasangan kunci karangan,
+menandatangani digest dengannya, lalu menulis baris suara. Tanda tangan itu
+"sah" terhadap kuncinya sendiri, suara palsu lolos, dan keputusan memperoleh
+e-seal Yayasan atas dasar suara palsu. Sekarang `vote.publicKey` hanya menjadi
+pembanding terhadap kunci tepercaya; kunci yang benar-benar memverifikasi
+berasal dari rekaman riwayat. Baris yang gagal tidak pernah dihitung ke kuorum.
+
+### 7.2 TOCTOU rotasi/pencabutan kunci di dalam transaksi suara
+
+`castVote` membaca `UserSigningKey`, menandatangani, lalu membuka transaksi.
+Antara pembacaan dan `INSERT`, jalur lain dapat merotasi kunci
+(`esign.activateKey`) atau mencabutnya (`esign.revokeKey`) — keduanya di
+transaksi sendiri. Bila rotasi menang, baris suara yang terlanjur ditulis akan
+ditolak `isVoteAuthentic`, sehingga (a) suara tidak masuk rekap tetapi barisnya
+tetap ada, dan (b) percobaan ulang ditolak "sudah memberikan suara" — pengguna
+terkunci tanpa suara dan tanpa jalan pulih.
+
+`assertSigningKeyStillCurrent` membuktikan ULANG di dalam transaksi suara bahwa
+kunci yang menandatangani masih berlaku bagi pemiliknya. Ini cukup tanpa lock
+baru karena segmen kritis rotasi dan pencabutan masing-masing berjalan dalam
+satu transaksi, sehingga pembacaan ulang hanya dapat melihat keadaan SEBELUM
+atau SESUDAH, bukan di tengahnya. `signedAt` sengaja ditetapkan sebelum
+penandatanganan: bila ditetapkan sesudah, cap rotasi akan jatuh mendahuluinya
+dan suara yang sudah commit menjadi tidak autentik.
+
+### 7.3 Masa berlaku kunci pada `vote.signedAt`
+
+`keyUsableAt` membaca `issuedAt`, `revokedAt`, dan `supersededAt` terhadap
+`vote.signedAt`, bukan hari ini: tanda tangan sebelum penerbitan mustahil;
+tanda tangan pada/di setelah pencabutan atau penggantian ditolak sebagai tanda
+tangan BARU; suara historis tetap sah. Karena `signedAt` termasuk payload
+kanonis yang diverifikasi, penyerang tidak dapat memindah-mundurkannya tanpa
+memalsukan tanda tangan.
+
+### 7.4 Invariant satu e-seal aktif
+
+`ensureSeal` sengaja tidak mengambil "seal tertua" (yang mungkin sudah dicabut),
+dan menyaring kandidat dengan probe kemampuan menandatangani memakai passphrase
+SEKARANG — setelah rotasi passphrase, seal lama masih `revokedAt: null` tetapi
+kunci privatnya tersegel dengan passphrase lama. Pola find-then-create memiliki
+balapan nyata: dua approval paralel sama-sama membaca "tidak ada seal" lalu
+sama-sama membuat seal baru. Indeks unik parsial
+`foundation_eseals_single_active_key` (migrasi
+`20260917000000_foundation_decision_vote_key_binding`) menegakkan invariant di
+tingkat basis data; aplikasi menangani balapan dengan membaca ulang pemenangnya.
+
+### 7.5 Riwayat kunci & backfill migrasi
+
+`UserSigningKey` dihapus saat kunci diterbitkan ulang, sehingga tanpa
+`user_signing_key_history` tidak ada tempat tepercaya untuk memverifikasi suara
+setelah rotasi. Rekaman dibuat idempoten (`upsert` pada `(userId, fingerprint)`).
+Migrasi backfill merekonstruksi riwayat dari `user_signing_keys` yang SEDANG
+berlaku; ia tidak mempromosikan `foundation_decision_votes.public_key` (data
+yang justru ingin dibuat tidak tepercaya) menjadi riwayat tepercaya. Suara lama
+dibiarkan tanpa pengikat — `trustedKeyForVote` memperlakukannya sebagai tidak
+sah (fail closed).
+
+### 7.6 Rapat vs sirkuler & finalisasi
+
+Rapat ditutup lewat `finalize` dengan `closed: true` setelah kuorum hadir
+terpenuhi. Sirkuler tidak punya "rapat": `closed` sengaja tidak diteruskan
+(`closed: d.kind !== 'CIRCULAR'`), sehingga hasilnya hanya bergantung pada
+himpunan suara. Konsekuensinya: sirkuler APPROVED hanya saat ambang mufakat
+tercapai, REJECTED hanya saat mufakat terbukti mustahil, dan selama masih
+mungkin statusnya tetap VOTING — pimpinan tidak boleh menggugurkannya lebih
+awal.
+
+### 7.7 Publikasi metadata & sensor verifikasi publik
+
+`setPublication` hanya menerima `PUBLIC` bila status `APPROVED` DAN artefak
+final lengkap (`finalPdfDigest`, tanda tangan e-seal, `esealId`, arsip dokumen).
+`REJECTED` tidak boleh diterbitkan. Baris keputusan dikunci lebih dulu dan
+`publication` dibaca setelah lock, sehingga dua request paralel tidak dapat
+mencatat `oldValues` yang sama; perubahan no-op tidak menulis audit.
+
+`verifyByToken`/`verifyPdf` adalah endpoint anonim: metadata tata kelola
+(subject, organ, tanggal, rekap suara) hanya keluar bila keputusannya `PUBLIC`,
+bawaannya PRIVATE (fail closed). Bukti keabsahan (`isValid`, `digest`,
+`digestOk`, `sealVerified`, `reason`, `decisionId`) tetap dikembalikan.
+
+---
+
+## 8. Referensi
 
 - `docs/EOFFICE_ESIGN_PLAN.md` (audit sebelumnya + peta Tier PAdES + aturan segel BSrE)
 - `apps/api/src/modules/esign/*`, `apps/api/src/utils/esign.ts`, `esign-lifecycle.ts`,

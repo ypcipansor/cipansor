@@ -165,12 +165,18 @@ check-health:
 # `foundation_eseals_single_active_key … WHERE revoked_at IS NULL` that
 # enforces "at most one active e-seal". A `db push` database therefore silently
 # omits that invariant, so the concurrent-seal regression passes locally and
-# fails in production. This target runs the same mechanism production and CI
-# use (`prisma migrate deploy`); see `.github/workflows/ci.yml` and
-# `scripts/dev-up.sh` for the same choice.
+# fails in production.
+#
+# The command runs in the `migrate` compose service (the API image's `migrate`
+# target), NOT in the running API container: the runtime stage strips the Prisma
+# CLI, so `docker exec cipansor-api npx prisma migrate deploy` resolved to
+# nothing and exited without applying a migration. `make deploy`/`quick-start`
+# also order `db-migrate` after `up`, which now waits on the same one-shot
+# service via `service_completed_successfully`; this target is the manual
+# re-run/entry point. See `apps/api/Dockerfile` and `docker-compose.yml`.
 db-migrate:
 	@echo "$(BLUE)Applying Prisma migrations to database...$(NC)"
-	docker exec cipansor-api sh -c "cd /app/apps/api && npx prisma migrate deploy --schema=prisma/schema.prisma"
+	docker compose run --rm --no-deps --entrypoint sh migrate -c "cd /app/apps/api && ./node_modules/.bin/prisma migrate deploy --config prisma/prisma.config.ts"
 	@echo "$(GREEN)✓ Database migrations applied$(NC)"
 
 # Seed database

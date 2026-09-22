@@ -14,7 +14,6 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "db:generate": "prisma generate --config prisma/prisma.config.ts",
-    "db:push": "prisma db push --config prisma/prisma.config.ts",
     "db:migrate": "prisma migrate dev --config prisma/prisma.config.ts",
     "db:deploy": "prisma migrate deploy --config prisma/prisma.config.ts",
     "db:seed": "tsx prisma/seed.ts",

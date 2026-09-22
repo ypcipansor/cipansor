@@ -153,16 +153,34 @@ CHATBOT_MODEL=DeepSeek-V4-Flash
 
 ### Database Migration dengan Docker
 
+Migrations run as a **one-shot `migrate` service**, not inside the API
+container. The runtime image deliberately deletes the Prisma CLI cluster
+(`prisma`, `@prisma/studio-core`, `effect`, `@typescript-eslint`, …), so
+`docker compose exec api npx prisma migrate deploy` resolves to nothing and
+exits _without applying a single migration_ — a deploy that looks green against
+a stale schema.
+
 ```bash
-# Masuk ke container API
-docker compose exec api sh
+# Apply migrations (manual re-run / entry point).
+# `make db-migrate` wraps exactly this command.
+docker compose run --rm --no-deps --entrypoint sh migrate \
+  -c "cd /app/apps/api && ./node_modules/.bin/prisma migrate deploy --config prisma/prisma.config.ts"
 
-# Jalankan migration
-npx prisma migrate deploy
+# Normal deployment: `migrate` is a one-shot service and `api` waits on it with
+# `depends_on: migrate: condition: service_completed_successfully`, so
+# `docker compose up -d` applies migrations first and a failed migration keeps
+# the API stopped. `make deploy` / `make quick-start` build the images and run
+# the same path.
 
-# Jalankan seed (untuk data awal)
-npx prisma db seed
+# Seed (untuk data awal) — needs the dev install (tsx + seed), run from the host
+pnpm --filter api db:seed
 ```
+
+> Do **not** provision this database with `prisma db push`. `schema.prisma`
+> cannot express the partial unique index
+> `foundation_eseals_single_active_key … WHERE revoked_at IS NULL` that enforces
+> "at most one active e-seal"; a `db push` database silently lacks it. Use
+> `prisma migrate deploy` (deployment) or `prisma migrate dev` (authoring).
 
 ---
 

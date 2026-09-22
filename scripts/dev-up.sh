@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Bring the full local stack up for e2e: Postgres + Redis + seeded DB + API + web.
 # Idempotent and safe to re-run after a container recycle.
-set -uo pipefail
-ROOT=/home/user/cipansor
+set -euo pipefail
+ROOT="${DEV_UP_ROOT:-/home/user/cipansor}"
 cd "$ROOT"
 
 bash scripts/dev-stack.sh >/tmp/devstack.log 2>&1
@@ -29,25 +29,11 @@ fi
 set -a; . apps/api/.env; set +a
 export E2E_FIXED_2FA=1 TWO_FACTOR_RATE_LIMIT_MAX=100000 LOG_LEVEL=error
 
-USERS=$(su pgrunner -c "$PGBIN/psql -h 127.0.0.1 -U postgres -d cipansor -tc 'SELECT count(*) FROM users;'" 2>/dev/null | tr -d ' ')
-if ! [ "${USERS:-0}" -gt 0 ] 2>/dev/null; then
-  echo "Seeding DB..."
-  # MIGRASI, bukan `db push`. `db push` menyelaraskan basis data dengan
-  # `schema.prisma`, dan `schema.prisma` tidak dapat menyatakan indeks unik
-  # parsial — termasuk `foundation_eseals_single_active_key`, invariant
-  # "paling banyak satu e-seal aktif". Basis data lokal hasil `db push` karena
-  # itu berperilaku BEDA dari CI/produksi, dan tes DB-backed yang seharusnya
-  # menangkap regresi justru lolos. Lihat
-  # apps/api/src/modules/foundation-decisions/tests/ci-provisioning.test.ts.
-  #
-  # Basis data lama yang dibuat lewat `db push` tidak punya `_prisma_migrations`
-  # dan tidak dapat di-`deploy`; hapus lalu buat ulang bila itu terjadi.
-  (cd apps/api && pnpm db:generate && pnpm db:deploy && E2E_FIXED_2FA=1 pnpm db:seed) >/tmp/seed.log 2>&1 \
-    && echo "seeded" || { echo "SEED FAILED"; tail -5 /tmp/seed.log; }
-else
-  (cd apps/api && pnpm db:generate >/tmp/gen.log 2>&1) || true
-  echo "DB already has $USERS users"
-fi
+# Migrations ALWAYS run, then seed only when the database is empty. This is a
+# separate script so its failure path is unit-testable with a stub `pnpm`; see
+# `provisioning-script.test.ts`. A non-zero exit here aborts this script (set -e)
+# and the API below is never started.
+bash scripts/db-provision.sh
 
 # Build web if missing
 if [ ! -f apps/web/.next/BUILD_ID ]; then

@@ -40,6 +40,24 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     --mount=type=secret,id=proxyca,required=false \
     NODE_EXTRA_CA_CERTS=/run/secrets/proxyca pnpm install --frozen-lockfile --prod
 
+# ---- migrate: the release job that applies migrations ----
+#
+# Migrations CANNOT run from the `runner` image: it deliberately deletes the
+# Prisma CLI cluster (`prisma`, `@prisma/studio-core`, …) and the CLI is a
+# devDependency, so `npx prisma migrate deploy` there resolves to nothing and
+# exits without applying a single migration. (Verified: `npx` inside the runner
+# reports "npx canceled due to missing packages"; the CLI directory is gone.)
+#
+# This target keeps the full dependency closure and runs the exact command CI,
+# `scripts/dev-up.sh` and the Makefile use, so a deployment has one real path
+# that can apply the schema. Compose runs it as a one-shot service that `api`
+# waits on (`service_completed_successfully`), so a failed migration fails the
+# deploy instead of booting the API against a stale schema.
+FROM deps AS migrate
+COPY . .
+WORKDIR /app/apps/api
+CMD ["./node_modules/.bin/prisma", "migrate", "deploy", "--config", "prisma/prisma.config.ts"]
+
 # ---- builder: compile shared + api, generate the Prisma client ----
 FROM base AS builder
 ENV NODE_OPTIONS=--max-old-space-size=4096

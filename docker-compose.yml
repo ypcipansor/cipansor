@@ -41,6 +41,30 @@ services:
     networks:
       - cipansor-network
 
+  # One-shot release job: apply Prisma migrations before the API starts.
+  #
+  # Migrations cannot run in the runtime image — it strips the Prisma CLI (see
+  # apps/api/Dockerfile). This service builds the `migrate` target and runs
+  # `prisma migrate deploy`; `api` waits for it to exit 0, so a failed migration
+  # aborts the deploy instead of booting an API against a stale schema. Migrations
+  # from multiple API replicas are safe regardless: Prisma takes an advisory lock
+  # around `migrate deploy`, and compose only starts `api` after this exits.
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: migrate
+    container_name: cipansor-migrate
+    restart: "no"
+    logging: *default-logging
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/cipansor
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - cipansor-network
+
   # API Service
   api:
     build:
@@ -184,6 +208,11 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      # Migrations must complete before the API serves a request. Without this
+      # the API starts against a stale schema and endpoints touching new tables
+      # fail until an operator runs `prisma migrate deploy` by hand.
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:3001/health || exit 1"]
       interval: 30s

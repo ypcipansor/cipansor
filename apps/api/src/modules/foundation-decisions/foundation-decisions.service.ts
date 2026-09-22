@@ -22,7 +22,11 @@ import type {
   UpsertFoundationRuleInput,
   VoteSummary,
 } from '@cipansor/shared';
-import { DEFAULT_FOUNDATION_RULE, decisionTypesForOrgan, quorumValueForMode } from '@cipansor/shared';
+import {
+  DEFAULT_FOUNDATION_RULE,
+  decisionTypesForOrgan,
+  quorumValueForMode,
+} from '@cipansor/shared';
 import { prisma } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
 import { config } from '@/config';
@@ -140,16 +144,11 @@ export function signingKeyToMaterial(key: {
  * Catat kunci publik yang dipakai menandatangani ke riwayat append-only, dan
  * kembalikan rekamannya.
  *
- * `UserSigningKey` dihapus saat kunci diterbitkan ulang, sehingga tanpa tabel
- * riwayat tidak ada tempat yang dapat dipercaya untuk memverifikasi suara
- * setelah rotasi. Rekaman dibuat idempoten lewat `upsert` pada
- * `(userId, fingerprint)`: menandatangani dua kali dengan kunci yang sama tidak
- * menciptakan baris ganda.
- *
- * Pencabutan kunci berlaku-untuk-masa-depan: rekaman lama TIDAK dicabut di
- * sini, sebab suara yang sudah sah harus tetap terverifikasi. Yang dicabut
- * hanyalah hak menandatangani baru, dan itu sudah ditegakkan `assertCanSign`
- * atas `UserSigningKey` sebelum sampai ke sini.
+ * `UserSigningKey` dihapus saat kunci diterbitkan ulang, sehingga riwayat inilah
+ * satu-satunya tempat tepercaya untuk memverifikasi suara setelah rotasi.
+ * `upsert` pada `(userId, fingerprint)` membuatnya idempoten. Pencabutan berlaku
+ * untuk masa depan: rekaman lama TIDAK dicabut di sini agar suara yang sudah sah
+ * tetap terverifikasi; hak menandatangani baru sudah ditegakkan `assertCanSign`.
  */
 export async function ensureSigningKeyHistory(
   client: DbClient,
@@ -176,41 +175,15 @@ export const SIGNING_KEY_CONTENDED =
  * Buktikan ULANG, di dalam transaksi suara, bahwa kunci yang benar-benar
  * menandatangani masih kunci yang berlaku bagi pemiliknya.
  *
- * ### Cacat yang diperbaiki
- *
- * `castVote` membaca `UserSigningKey`, menandatangani, lalu membuka transaksi.
- * Antara pembacaan dan `INSERT` suara, jalur lain dapat merotasi
- * (`esign.activateKey`) atau mencabut (`esign.revokeKey`) kunci itu — keduanya
- * berjalan di transaksi mereka sendiri. Bila rotasi menang, baris suara yang
- * sudah terlanjur ditulis akan ditolak `isVoteAuthentic` karena
- * `supersededAt`/`revokedAt` berada pada/sebelum `signedAt`. Akibatnya:
- *  - `voteSummary` dihitung dari suara yang LOLOS verifikasi, sehingga suara
- *    yang tidak autentik itu tidak masuk rekap — padahal baris suaranya tetap
- *    ada;
- *  - percobaan ulang pengguna ditolak "sudah memberikan suara", sehingga suara
- *    yang gagal tidak dapat digantikan. Pengguna terkunci tanpa suara dan tanpa
- *    jalan pulih.
- *
- * ### Mengapa pemeriksaan ini cukup tanpa lock baru
- *
- * Segmen kritis jalur rotasi (`design.activateKey` — cap `supersededAt` pada
- * riwayat + hapus kunci lama + buat kunci baru) dan jalur pencabutan
- * (`esign.revokeKey` — `userSigningKey.update` + cap `revokedAt` pada riwayat)
- * seluruhnya berjalan dalam satu transaksi. Karena itu tidak ada keadaan
- * antara yang dapat terlihat: pembacaan ulang di dalam transaksi suara
- * mengembalikan keadaan SEBELUM atau SESUDAH, bukan di tengahnya.
- *
- * Bila rotasi sudah commit lebih dulu, pembacaan ini melihat kunci/riwayat
- * yang baru (atau baris `UserSigningKey` yang hilang sama sekali → fail
- * closed), dan suara dibatalkan SEBELUM `INSERT` — sehingga pengguna dapat
- * mencoba lagi dengan kunci baru. Bila suara menang, ia commit dengan kunci
- * yang belum tersentuh, dan `signedAt` (yang dihitung klien di sini) mendahului
- * cap rotasi yang datang kemudian, sehingga suara itu sah menurut
- * `keyUsableAt`.
- *
- * `signedAt` sengaja dipilih sebelum penandatanganan. Bila ditetapkan SESUDAH
- * rotasi menang, cap rotasi akan jatuh sebelum `signedAt` dan suara yang
- * terlanjur commit menjadi tidak autentik — persis cacat yang dicegah.
+ * TOCTOU: antara pembacaan kunci oleh `castVote` dan `INSERT` suara, jalur lain
+ * dapat merotasi/mencabut kunci (di transaksi terpisah). Bila rotasi menang,
+ * suara yang terlanjur ditulis ditolak `isVoteAuthentic` — ia tidak masuk rekap
+ * tetapi barisnya tetap ada, dan percobaan ulang ditolak "sudah memberikan
+ * suara". Ini cukup tanpa lock baru karena segmen kritis rotasi/pencabutan
+ * masing-masing satu transaksi, sehingga pembacaan ulang melihat keadaan SEBELUM
+ * atau SESUDAH, bukan di tengah. `signedAt` ditetapkan sebelum penandatanganan
+ * agar cap rotasi yang datang kemudian tidak mendahuluinya. Lihat §7.2 dokumen
+ * review untuk rationale lengkap.
  */
 async function assertSigningKeyStillCurrent(
   tx: DbClient,
@@ -273,33 +246,16 @@ export function canonicalDigestForVote(
 /**
  * Benarkah baris suara ini benar-benar ditandatangani anggota tersebut?
  *
- * Empat hal yang diikat sekaligus, dan semuanya penting:
- *  - pemilihnya anggota organ pada SNAPSHOT yang terkunci (bukan peran hari
- *    ini), karena baris suara dapat disisipkan langsung ke basis data;
- *  - `canonicalDigest` tersimpan sama dengan digest yang dihitung ULANG dari
- *    isi keputusan + pilihan + waktu tanda tangan — mengubah `choice` di baris
- *    suara saja sudah cukup membuatnya berbeda;
- *  - kunci yang memverifikasi adalah kunci TEPERCAYA: baris suara harus
- *    menunjuk rekaman `user_signing_key_history` milik pemilih yang SAMA,
- *    dengan fingerprint yang cocok, dan byte kunci publik dari rekaman itulah
- *    yang memverifikasi tanda tangan;
- *  - `signature` benar-benar tanda tangan atas digest itu menurut kunci
- *    tepercaya tersebut, sehingga memalsukan pilihan menuntut kunci privat
- *    anggota.
- *
- * Pengikatan kunci (butir ketiga) adalah inti perbaikan audit #1. Sebelumnya
- * verifikasi memakai `vote.publicKey` — kunci yang ditulis pada baris suara itu
- * sendiri. Siapa pun yang dapat menulis langsung ke `foundation_decision_votes`
- * cukup membuat pasangan kunci baru, memakai `userId` seorang anggota snapshot,
- * menandatangani digest dengan kunci karangannya, lalu menyisipkan kunci publik
- * + tanda tangan yang cocok. Tanda tangan itu "sah" terhadap kuncinya sendiri,
- * sehingga suara palsu lolos dan memicu e-seal Yayasan. Sekarang `vote.publicKey`
- * hanya dipakai sebagai pembanding terhadap kunci tepercaya; kunci yang
- * benar-benar memverifikasi datang dari rekaman riwayat.
- *
- * Baris yang gagal di sini TIDAK boleh dihitung ke kuorum: tanpa pemeriksaan
- * ini, seorang admin basis data dapat menyisipkan suara "APPROVE" dan
- * keputusan memperoleh e-seal Yayasan yang sah atas dasar suara palsu.
+ * Mengikat sekaligus: pemilih adalah anggota organ pada SNAPSHOT terkunci;
+ * `canonicalDigest` tersimpan sama dengan digest yang dihitung ULANG dari isi
+ * keputusan + pilihan + waktu tanda tangan; kunci yang memverifikasi menunjuk
+ * rekaman `user_signing_key_history` milik pemilih yang SAMA dengan fingerprint
+ * yang cocok; dan `signature` benar atas digest itu menurut kunci tepercaya
+ * tersebut. Butir ketiga adalah intinya — memakai `vote.publicKey` sebagai kunci
+ * yang memverifikasi membuat siapa pun yang dapat menulis langsung ke tabel suara
+ * dapat menyisipkan pasangan kunci karangan dan meloloskan suara palsu hingga
+ * memicu e-seal (lihat §7.1 dokumen review). Baris yang gagal TIDAK dihitung ke
+ * kuorum.
  */
 export function isVoteAuthentic(d: DecisionSignatureContext, vote: VoteSignatureRecord): boolean {
   if (!d.members.some((m) => m.userId === vote.userId)) return false;
@@ -328,26 +284,11 @@ export function isVoteAuthentic(d: DecisionSignatureContext, vote: VoteSignature
 /**
  * Apakah rekaman kunci berhak menandatangani pada `at`?
  *
- * Stempel waktu daur hidup dimuat dari awal (`issuedAt`, `supersededAt`,
- * `revokedAt`) tetapi sebelumnya tidak pernah DIBACA, sehingga kunci yang
- * dicabut atau diganti tetap tampak berlaku selamanya bagi setiap suara yang
- * menunjuk rekamannya. Tiga aturan, sengaja dibedakan:
- *
- *  - `issuedAt`: tanda tangan sebelum kunci diterbitkan mustahil secara
- *    kriptografis. Baris seperti itu tidak sah kapan pun.
- *  - `revokedAt`: tanda tangan pada/di setelah pencabutan ditolak. Pencabutan
- *    justru dimaksudkan menghentikan pemakaian BARU; tanpa batas ini, kunci
- *    yang bocor lalu dicabut tetap dapat dipakai menandatangani selamanya.
- *  - `supersededAt`: tanda tangan pada/di setelah kunci digantikan ditolak
- *    sebagai tanda tangan baru. Kunci pengganti sudah ada dan semestinya
- *    dipakai; menerima kunci lama akan membuat rotasi tidak bermakna.
- *
- * **Suara HISTORIS tetap dapat diverifikasi.** Acuan waktunya adalah
- * `vote.signedAt` — waktu tanda tangan itu dibuat — bukan hari ini. Tanda
- * tangan yang dibuat sebelum pencabutan/penggantian karena itu tetap sah; yang
- * ditolak hanyalah tanda tangan SETELAH peristiwa itu. Karena `signedAt`
- * termasuk payload kanonis yang diverifikasi terhadap tanda tangan, penyerang
- * tidak dapat memindah-mundurkan `signedAt` tanpa memalsukan tanda tangan.
+ * Tiga aturan terhadap `vote.signedAt` (bukan hari ini), lihat §7.3 dokumen
+ * review: tanda tangan sebelum `issuedAt` mustahil; pada/di setelah `revokedAt`
+ * atau `supersededAt` ditolak sebagai tanda tangan BARU. Suara historis tetap
+ * sah; `signedAt` termasuk payload kanonis sehingga penyerang tidak dapat
+ * memindah-mundurkannya tanpa memalsukan tanda tangan.
  */
 function keyUsableAt(record: UserSigningKeyHistory, at: Date): boolean {
   if (at < record.issuedAt) return false;
@@ -591,28 +532,12 @@ function sealMaterial(seal: FoundationEseal): EncryptedKeyMaterial {
  * Pastikan e-seal Yayasan yang AKTIF dan DAPAT DIPAKAI tersedia; buat satu
  * baris bila belum ada.
  *
- * Sengaja tidak mengambil "seal tertua": seal yang sudah dicabut bukan seal
- * yang boleh membubuhkan tanda tangan baru, dan mengambilnya akan menghasilkan
- * tanda tangan baru di bawah kunci yang sudah tidak berlaku.
- *
- * Sebuah seal `revokedAt: null` pun belum tentu dapat dipakai. Setelah
- * `FOUNDATION_ESEAL_PASSPHRASE` dirotasi, seal lama masih aktif tetapi kunci
- * privatnya tersegel dengan passphrase lama, sehingga `signSeal` melempar dan
- * transaksi approval rollback — keputusan tak pernah tertutup. Karena itu
- * kandidat disaring dengan probe kemampuan menandatangani memakai passphrase
- * SEKARANG; bila tak satu pun mampu, seal baru diterbitkan. Keputusan lama
- * tetap dapat diverifikasi karena verifikasi memakai kunci PUBLIK seal yang
- * tercatat di barisnya, bukan passphrase hari ini.
- *
- * **Invariant satu seal aktif ditegakkan basis data, bukan disiplin aplikasi.**
- * Pola find-then-create di bawah memiliki balapan yang nyata: dua approval
- * pertama yang berjalan paralel sama-sama membaca "tidak ada seal yang dapat
- * dipakai", lalu sama-sama membuat seal baru. Sebuah indeks unik parsial
- * (`foundation_eseals_single_active_key`, lihat migrasi
- * `20260917000000_foundation_decision_vote_key_binding`) membuat keadaan
- * "dua seal aktif" mustahil. Balapan aplikasi ditangani dengan menangkap
- * pelanggaran unik lalu membaca ulang pemenangnya — sehingga kedua permintaan
- * memakai seal yang SAMA, bukan dua seal berbeda.
+ * Tidak mengambil "seal tertua" (mungkin sudah dicabut), dan menyaring kandidat
+ * dengan probe kemampuan menandatangani memakai passphrase SEKARANG — pasca
+ * rotasi passphrase, seal lama masih aktif tetapi kuncinya tersegel dengan
+ * passphrase lama. **Invariant satu seal aktif ditegakkan basis data** lewat
+ * indeks unik parsial `foundation_eseals_single_active_key`; find-then-create di
+ * bawah memiliki balapan nyata (dua approval paralel). Lihat §7.4 dokumen review.
  */
 async function ensureSeal(client: DbClient = prisma): Promise<FoundationEseal> {
   const candidates = await client.foundationEseal.findMany({
@@ -750,18 +675,11 @@ async function clearFailedAttempts(keyId: string, client: DbClient = prisma): Pr
 /**
  * Selaraskan `value` sebuah aturan dengan `mode`-nya.
  *
- * Mesin kuorum (`requiredCount`) mengabaikan nilai pecahan yang tersimpan dan
- * memakai `quorumValueForMode(mode)` — label mode adalah janji yang dibaca
- * orang. Skema penyimpanan (`upsertFoundationRuleSchema`) sudah menolak nilai
- * yang menyimpang, tetapi itu hanya menjaga penulisan BARU lewat API. Baris
- * yang ditulis sebelum refinement itu ada — atau disisipkan langsung ke basis
- * data — tetap dapat memuat mode TWO_THIRDS dengan value 0.5.
- *
- * Baris seperti itu tidak mengubah ambang yang DITEGAKKAN (mode yang menang),
- * tetapi membuat API MENAMPILKAN nilai yang berbeda dari yang benar-benar
- * dievaluasi: halaman pengelolaan aturan membaca `quorumPresentValue`/
- * `quorumDecisionValue` apa adanya. Normalisasi ini membuat yang ditampilkan
- * sama persis dengan yang dievaluasi, tanpa menyentuh basis data.
+ * `requiredCount` mengabaikan nilai pecahan tersimpan dan memakai
+ * `quorumValueForMode(mode)`, tetapi halaman pengelolaan aturan menampilkan
+ * `quorum*Value` apa adanya. Baris lama (atau yang disisipkan langsung ke basis
+ * data) dapat memuat mode TWO_THIRDS dengan value 0.5. Normalisasi ini membuat
+ * yang ditampilkan sama dengan yang dievaluasi, tanpa menyentuh basis data.
  */
 export function normalizeRule(rule: FoundationDecisionRule): FoundationDecisionRule {
   return {
@@ -1337,37 +1255,16 @@ export const FoundationDecisionService = {
   /**
    * Finalisasi manual oleh pimpinan/kepala rapat.
    *
-   * Finalisasi berarti **menutup** rapat/pemungutan: hasil dihitung SEKALI
-   * terhadap himpunan suara yang ada, dengan `closed: true`. Inilah satu-satunya
-   * cara sebuah RAPAT memperoleh hasil akhir — sebelumnya rapat menutup diri
-   * sendiri begitu peserta yang sedang hadir menyetujui, sehingga anggota yang
-   * datang kemudian ditolak dan hasil akhir bergantung pada urutan suara.
+   * Finalisasi **menutup** rapat: hasil dihitung SEKALI dengan `closed: true`.
+   * Kuorum hadir tetap wajib; setelah terpenuhi pimpinan bebas memilih APPROVED
+   * atau REJECTED tanpa menunggu anggota absen.
    *
-   * Kuorum hadir tetap wajib: rapat yang belum memenuhi kuorum tidak dapat
-   * ditutup dengan hasil apa pun (`outcome === 'OPEN'` → ditolak). Setelah
-   * kuorum hadir terpenuhi, pemimpin rapat bebas menutupnya sebagai APPROVED
-   * atau REJECTED tanpa menunggu anggota yang absen — anggota absen tidak boleh
-   * membuat keputusan menggantung selamanya.
-   *
-   * **CIRCULAR: tidak ada penutupan dini (audit D).** Untuk sirkuler, `closed`
-   * sengaja TIDAK diteruskan (`closed: d.kind !== 'CIRCULAR'`). Sirkuler tidak
-   * punya "rapat" yang perlu ditutup: kolam keputusannya adalah seluruh anggota
-   * aktif yang jumlahnya tetap, sehingga hasil akhirnya hanya bergantung pada
-   * himpunan suara — bukan pada siapa yang menekan tombol lebih dulu.
-   * Konsekuensinya:
-   *  - sirkuler baru APPROVED ketika ambang mufakat tercapai (biasanya 100%);
-   *  - sirkuler baru REJECTED ketika mufakat terbukti MUSTAHIL (ada REJECT/
-   *    ABSTAIN, atau sisa anggota tak cukup untuk mencapai ambang);
-   *  - selama mufakat masih mungkin, `finalize` menolak ("belum dapat ditutup")
-   *    dan statusnya tetap VOTING — pimpinan TIDAK boleh menggugurkan sirkuler
-   *    yang hasilnya masih dapat berubah.
-   *
-   * Itu sejalan dengan UU 16/2001 jo. 28/2004 & PP 63/2008 (keputusan organ
-   * diambil secara musyawarah/mufakat) dan dengan makna "sirkuler" di repo:
-   * persetujuan diedarkan tanpa rapat, jadi setiap anggota berhak menyatakan
-   * sikapnya sebelum hasil ditetapkan. `finalize` pada sirkuler karenanya
-   * efektif hanya sebagai penyegel untuk kasus yang sudah pasti, bukan sebagai
-   * alat menutup lebih awal.
+   * **CIRCULAR: tidak ada penutupan dini.** `closed` sengaja tidak diteruskan
+   * (`closed: d.kind !== 'CIRCULAR'`) karena sirkuler tidak punya rapat untuk
+   * ditutup — hasilnya hanya bergantung pada himpunan suara. Sirkuler baru
+   * APPROVED saat ambang mufakat tercapai, REJECTED saat mufakat terbukti
+   * mustahil, dan selama masih mungkin statusnya tetap VOTING. Lihat §7.6
+   * dokumen review.
    */
   async finalize(actor: Actor, decisionId: string) {
     const d = await this.loadWithRelations(decisionId);
@@ -1432,30 +1329,13 @@ export const FoundationDecisionService = {
   /**
    * Ubah klasifikasi publikasi metadata (SUPER_ADMIN).
    *
-   * Terpisah dari finalisasi dengan sengaja: memutuskan hasil rapat dan
-   * menerbitkan judul + rekap suaranya ke internet adalah dua keputusan yang
-   * berbeda. Dijalankan dengan `authenticate` + `authorize(SUPER_ADMIN)` di
-   * rute, dan setiap perubahan dicatat ke audit karena ia mengubah apa yang
-   * dapat dibaca publik.
-   *
-   * **Policy `PUBLIC` (eksplisit, bukan efek samping):** publikasi hanya
-   * bermakna bagi keputusan final yang sah, jadi `PUBLIC` hanya diterima bila
-   * status `APPROVED` DAN artefak finalnya lengkap — `finalPdfDigest`, tanda
-   * tangan e-seal, `esealId`, dan arsip dokumen. Endpoint verifikasi anonim
-   * sendiri hanya menganggap `APPROVED` valid; tanpa syarat ini, draf/VOTING
-   * dapat ditandai `PUBLIC` dan menciptakan janji publik yang belum bermakna
-   * (metadata tampil, tetapi `isValid` tetap false sampai disahkan).
-   * `REJECTED` TIDAK boleh diterbitkan — keputusan yang gugur bukan risalah
-   * yang layak dipublikasikan, dan menerbitkannya membocorkan metadata tata
-   * kelola tanpa dasar. Perubahan kembali ke `PRIVATE` selalu boleh, kapan pun,
-   * sebagai jalan keluar darurat.
-   *
-   * **Serialisasi & audit (audit C):** baris keputusan DIKUNCI lebih dulu,
-   * `publication` dibaca setelah lock, dan audit memakai nilai sebelum-update
-   * dari pembacaan terkunci itu. Dua request paralel karena itu tidak dapat
-   * mencatat `oldValues` yang sama. Publikasi yang TIDAK berubah tidak menulis
-   * audit (no-op), supaya jejak hanya memuat perubahan yang benar-benar
-   * terjadi.
+   * Terpisah dari finalisasi: memutuskan hasil dan menerbitkan judul + rekap ke
+   * internet adalah dua keputusan berbeda. **`PUBLIC` hanya diterima bila status
+   * `APPROVED` DAN artefak final lengkap** (`finalPdfDigest`, tanda tangan
+   * e-seal, `esealId`, arsip); `REJECTED` tidak boleh diterbitkan; kembali ke
+   * `PRIVATE` selalu boleh. **Serialisasi & audit:** baris keputusan dikunci
+   * lebih dulu, `publication` dibaca setelah lock, audit memakai nilai
+   * sebelum-update; no-op tidak menulis audit. Lihat §7.7 dokumen review.
    */
   async setPublication(
     actor: Actor,
@@ -1540,16 +1420,12 @@ export const FoundationDecisionService = {
   /**
    * Terapkan hasil kuorum: APPROVED (render PDF + e-seal) atau REJECTED.
    *
-   * `d` harus merupakan baris HASIL AKHIR (status sudah diperbarui) ketika
-   * `evaluation.outcome === 'APPROVED'`, karena PDF yang di-e-seal mencetak
-   * status dan `decidedAt` dari sini: merender baris VOTING mencetak "Status:
-   * VOTING" dan menghilangkan tanggal putusan ke dalam arsip permanen, dan
-   * digest-nya mengunci kesalahan itu selamanya.
-   *
-   * Pemisahan kerja mahal dari kunci (item 8) ditangani pemanggil: `applyLocked`
-   * menjalankan fungsi ini DI DALAM kunci (agar tetap benar saat dipanggil
-   * langsung oleh test/controller), sedangkan `castVote`/`finalize` merender
-   * artefaknya di luar kunci lewat `prepareApprovalArtifact` + `commitApproved`.
+   * `d` harus merupakan baris HASIL AKHIR ketika `outcome === 'APPROVED'`: PDF
+   * yang di-e-seal mencetak status dan `decidedAt` dari sini, dan digest-nya
+   * mengunci nilai itu selamanya. Pemisahan kerja mahal dari kunci ditangani
+   * pemanggil: `applyLocked` memanggil DI DALAM kunci, sedangkan
+   * `castVote`/`finalize` merender artefaknya di luar kunci lewat
+   * `prepareApprovalArtifact` + `commitApproved`.
    */
   async applyOutcome(
     actor: Actor,
@@ -1849,18 +1725,11 @@ export const FoundationDecisionService = {
     /**
      * Sensor metadata tata kelola untuk keputusan yang tidak diterbitkan.
      *
-     * Endpoint ini anonim. `subject`/organ/tanggal/rekap suara dapat mengungkap
-     * personalia atau operasi internal ("Pemberhentian Sementara Pengurus X"),
-     * dan tautan ataupun berkas PDF dapat sampai ke tangan pihak luar tanpa
-     * persetujuan yayasan untuk mempublikasikan ISI-nya. Karena itu metadata
-     * hanya keluar bila keputusannya memang `PUBLIC`; bawaannya PRIVATE —
-     * fail closed, sehingga keputusan lama tidak membocorkan apa pun sampai
-     * seseorang sengaja menerbitkannya.
-     *
-     * Yang TIDAK disensor adalah bukti keabsahan: `isValid`, `digest`,
-     * `archiveDigest`, `digestOk`, `sealVerified`, `reason`, dan `decisionId`
-     * (referensi non-sensitif). Pemindai tetap dapat menjawab "dokumen ini sah?"
-     * — itulah satu-satunya pertanyaan yang halaman verifikasi publik janjikan.
+     * Endpoint ini anonim dan `subject`/organ/tanggal/rekap dapat mengungkap
+     * personalia, jadi metadata hanya keluar bila `PUBLIC` — bawaannya PRIVATE
+     * (fail closed). Bukti keabsahan (`isValid`, `digest`, `digestOk`,
+     * `sealVerified`, `reason`, `decisionId`) tidak disensor; lihat §7.7 dokumen
+     * review.
      */
     const isPublic = d.publication === FoundationDecisionPublication.PUBLIC;
 
