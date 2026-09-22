@@ -9,13 +9,21 @@ import path from 'path';
  * where nothing else is limited — a false failure that teaches nothing and
  * cannot be reproduced in production.
  *
+ * The exemption used to live in the MOUNT (`...readLimiter`, an array that was
+ * empty outside production). That hid the protection from both a reader and
+ * static analysis: CodeQL flagged the route as un-rate-limited because the
+ * limiter was not a literal argument. The exemption now lives INSIDE
+ * `defaultLimiter.skip`, so the mount is unconditional and visibly limited in
+ * every environment while dev/test stay unlimited.
+ *
  * `config.env` is read at module load, so flipping `NODE_ENV` inside a test
  * cannot re-evaluate it. The guard is therefore source-based, the same way
- * `public-routes-gated.test.ts` audits route wiring: it reads the mount and
- * pins that the uploads limiter is gated on the SAME environment condition as
- * the global mount below it.
+ * `public-routes-gated.test.ts` audits route wiring: it reads both files and
+ * pins that the uploads route mounts `defaultLimiter` directly, and that the
+ * dev/test exemption is in the limiter's `skip`.
  */
 const APP_SOURCE = fs.readFileSync(path.join(__dirname, 'app.ts'), 'utf8');
+const LIMITER_SOURCE = fs.readFileSync(path.join(__dirname, 'middleware', 'rate-limit.ts'), 'utf8');
 
 /** The `app.use('/uploads', ...)` statement, up to its closing `);`. */
 function uploadsMount(): string {
@@ -26,21 +34,31 @@ function uploadsMount(): string {
 }
 
 describe('/uploads read limiter follows the global environment policy', () => {
-  it('gates the uploads limiter on config.env, not an unconditional mount', () => {
+  it('mounts the limiter statically so the route is visibly rate-limited', () => {
     const mount = uploadsMount();
-    // The limiter must be selected by the environment, so it can be absent.
-    expect(APP_SOURCE).toMatch(
-      /const readLimiter = config\.env !== 'test' && config\.env !== 'development' \? \[defaultLimiter\] : \[\]/
-    );
-    expect(mount).toContain('...readLimiter');
-    // A bare `defaultLimiter,` in the mount is the regression: unconditional.
-    expect(mount).not.toMatch(/^\s*defaultLimiter,\s*$/m);
+    // The limiter is a direct argument, not an array spread that can be empty:
+    // CodeQL (and a reader) can see the protection.
+    expect(mount).toMatch(/^\s*defaultLimiter,\s*$/m);
+    expect(APP_SOURCE).not.toMatch(/const readLimiter/);
   });
 
-  it('gates the global limiter with the same condition', () => {
-    // The two mounts must not disagree: dev/test gets neither, production both.
-    expect(APP_SOURCE).toMatch(
-      /if \(config\.env !== 'test' && config\.env !== 'development'\) \{\s*app\.use\(defaultLimiter\)/
+  it('puts the dev/test exemption inside defaultLimiter.skip, not the mount', () => {
+    // The exemption must exist, and must be keyed on the environment.
+    expect(LIMITER_SOURCE).toMatch(/config\.env === 'test' \|\| config\.env === 'development'/);
+    const defaultLimiterBlock = LIMITER_SOURCE.slice(
+      LIMITER_SOURCE.indexOf('export const defaultLimiter'),
+      LIMITER_SOURCE.indexOf('export const authLimiter')
+    );
+    expect(defaultLimiterBlock).toContain('skip:');
+    expect(defaultLimiterBlock).toMatch(/config\.env === 'test'/);
+  });
+
+  it('gates the global limiter with an unconditional mount too', () => {
+    // The two mounts must not disagree: both are statically limited, and the
+    // environment policy is entirely inside the limiter.
+    expect(APP_SOURCE).toMatch(/\/\/ Rate limiting[\s\S]{0,200}app\.use\(defaultLimiter\);/);
+    expect(APP_SOURCE).not.toMatch(
+      /if \(config\.env !== 'test'[\s\S]{0,80}app\.use\(defaultLimiter\)/
     );
   });
 

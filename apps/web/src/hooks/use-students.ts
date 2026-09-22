@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import api, { PaginatedResponse, ApiResponse } from "@/lib/api";
+import api, { SharedPaginatedResponse, ApiResponse } from "@/lib/api";
 import {
   STUDENT_STATUS,
   type StudentStatus,
@@ -175,7 +175,7 @@ export function useStudents(params: StudentListParams = {}) {
   return useQuery({
     queryKey: ["students", params],
     queryFn: async () => {
-      const response = await api.get<PaginatedResponse<Student>>("/students", {
+      const response = await api.get<SharedPaginatedResponse<Student>>("/students", {
         params,
       });
       // Students carry their display name on the related user record. Normalize
@@ -190,7 +190,7 @@ export function useStudents(params: StudentListParams = {}) {
           ...s,
           name: s.name ?? (s as { user?: { name?: string } }).user?.name ?? "",
         })),
-      } as PaginatedResponse<Student>;
+      } as SharedPaginatedResponse<Student>;
     },
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
@@ -274,7 +274,7 @@ export function useStudentSearch(query: string, unitId?: string) {
   return useQuery({
     queryKey: ["students", "search", query, unitId],
     queryFn: async () => {
-      const response = await api.get<PaginatedResponse<Student>>("/students", {
+      const response = await api.get<SharedPaginatedResponse<Student>>("/students", {
         params: {
           search: query,
           unitId,
@@ -295,7 +295,7 @@ export function useStudentsByClass(classId: string) {
   return useQuery({
     queryKey: ["students", "by-class", classId],
     queryFn: async () => {
-      const response = await api.get<PaginatedResponse<Student>>("/students", {
+      const response = await api.get<SharedPaginatedResponse<Student>>("/students", {
         params: { classId, limit: 100 },
       });
       // Students carry their display name on the related user record; normalize

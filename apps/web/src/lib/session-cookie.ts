@@ -24,6 +24,12 @@
  * session as a server-set `HttpOnly; Secure; SameSite` cookie and reworking
  * CSRF — an architectural change tracked separately; this mitigation is the
  * safe, in-scope reduction requested while that is agreed.
+ *
+ * Two layers remove a legacy cookie rather than merely not writing one:
+ * `clearBearerTokenCookie()` from the auth store/bootstrap, and the
+ * always-mounted `SessionCookieHygiene` component in the root layout, which
+ * runs the same clear for a visitor who never hydrates the store (a public
+ * marketing page does not import it).
  */
 
 export const AUTH_STORAGE_COOKIE = "auth-storage";

@@ -158,12 +158,13 @@ app.use(compression());
 // them requires a valid access token — via Authorization header or ?token=
 // (see uploadsAuth). Directory listing stays off; static only serves files.
 //
-// The rate limiter is mounted on the SAME environment policy as the global one
-// below: `defaultLimiter` counts every read here, so an unconditional mount
-// 429'd the 101st image in development and test even though the global limiter
-// is deliberately off there — a dashboard full of uploads is normal, and a
-// dev/test 429 is a false failure that teaches nothing. Production keeps the
-// limiter; dev and test do not (BUG: upload reads hit the limiter in dev/test).
+// The rate limiter is mounted unconditionally and follows the same environment
+// policy as the global mount below: `defaultLimiter` counts every read here, but
+// skips development and test internally, so a dashboard full of uploads is
+// normal there while production stays limited. The exemption lives in the
+// limiter (middleware/rate-limit.ts), not in the mount — a conditional spread
+// here both hid the protection from static analysis and let the uploads route
+// drift from the global policy.
 //
 // `uploadsAuth` already authorizes the caller against the owning record, so the
 // browser only ever fetches a file it is allowed to read. But helmet's default
@@ -176,13 +177,12 @@ app.use(compression());
 // this route opts out of CORP while the rest of the API keeps the default.
 import path from 'path';
 import { uploadsAuth } from './middleware/upload';
-// Rate limiting is off in test and development (see the global mount below);
-// the uploads route follows the same policy rather than applying its own
-// unconditional limiter. Production still gets `defaultLimiter` on every read.
-const readLimiter = config.env !== 'test' && config.env !== 'development' ? [defaultLimiter] : [];
+// The limiter is mounted unconditionally; `defaultLimiter` itself skips dev and
+// test (see middleware/rate-limit.ts), so a reader and CodeQL can both see the
+// route is rate-limited while the deliberate dev/test exemption is preserved.
 app.use(
   '/uploads',
-  ...readLimiter,
+  defaultLimiter,
   uploadsAuth,
   (_req, res, next) => {
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
@@ -191,11 +191,9 @@ app.use(
   express.static(path.join(process.cwd(), 'public/uploads'))
 );
 
-// Rate limiting - apply to all routes except health check
-// Active in all environments except test and development
-if (config.env !== 'test' && config.env !== 'development') {
-  app.use(defaultLimiter);
-}
+// Rate limiting - apply to all routes except health check.
+// `defaultLimiter` skips test/development internally.
+app.use(defaultLimiter);
 
 // Logging
 if (config.env !== 'test') {

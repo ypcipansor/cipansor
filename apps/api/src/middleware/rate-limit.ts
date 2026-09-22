@@ -31,8 +31,15 @@ export const defaultLimiter: RateLimitRequestHandler = rateLimit({
     res.status(options.statusCode).json(options.message);
   },
   skip: (req) => {
-    // Skip rate limiting for health checks
-    return req.path === '/health';
+    // Health checks are never limited.
+    if (req.path === '/health') return true;
+    // Development and test are deliberately unlimited: a dashboard full of
+    // student photos is normal there, and a 429 on the 101st image is a false
+    // failure that teaches nothing. The exemption lives HERE rather than in the
+    // mount condition so every route can be mounted with `defaultLimiter`
+    // statically — a conditional spread hid the protection from readers and
+    // static analysis alike. Production always limits.
+    return config.env === 'test' || config.env === 'development';
   },
 });
 

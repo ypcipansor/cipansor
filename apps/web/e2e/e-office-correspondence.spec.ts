@@ -15,7 +15,25 @@ const API_URL = process.env.API_URL || "http://localhost:3001/api";
 function isAzureBlobHost(url: string): boolean {
   try {
     const host = new URL(url).hostname.toLowerCase();
-    return host === "blob.core.windows.net" || host.endsWith(".blob.core.windows.net");
+    return (
+      host === "blob.core.windows.net" ||
+      host.endsWith(".blob.core.windows.net")
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * True when the URL is a local upload served by this API (`/uploads/<file>`).
+ *
+ * Parses the URL and matches the PATH PREFIX, never a substring of the whole
+ * URL — `url.includes("/uploads/")` would also match `https://evil.test/x/uploads/`
+ * or a query string carrying the same text.
+ */
+function isLocalUploadUrl(url: string): boolean {
+  try {
+    return new URL(url).pathname.startsWith("/uploads/");
   } catch {
     return false;
   }
@@ -133,7 +151,11 @@ test.describe("E-Office correspondence flows", () => {
     // signed link. This is the ownership gate the old endpoint lacked.
     const body = Buffer.from("%PDF-1.4\n%% orphan\n%%EOF", "utf8");
     const form = new FormData();
-    form.append("file", new Blob([body], { type: "application/pdf" }), "orphan.pdf");
+    form.append(
+      "file",
+      new Blob([body], { type: "application/pdf" }),
+      "orphan.pdf",
+    );
     const upRes = await fetch(`${API_URL}/upload`, {
       method: "POST",
       headers: { authorization: `Bearer ${session.accessToken}` },
@@ -220,7 +242,9 @@ test.describe("E-Office correspondence flows", () => {
         nature: "PUBLIC",
         status: "DRAFT",
         recipientIds: [candidate.id],
-        attachments: [{ name: "Lampiran", fileUrl: stableUrl, mimeType: "application/pdf" }],
+        attachments: [
+          { name: "Lampiran", fileUrl: stableUrl, mimeType: "application/pdf" },
+        ],
       },
     );
     expect(letter.success).toBe(true);
@@ -247,7 +271,11 @@ test.describe("E-Office correspondence flows", () => {
     expect(pdf.subarray(0, 4).toString("ascii")).toBe("%PDF");
 
     const form = new FormData();
-    form.append("file", new Blob([pdf], { type: "application/pdf" }), "bukti.pdf");
+    form.append(
+      "file",
+      new Blob([pdf], { type: "application/pdf" }),
+      "bukti.pdf",
+    );
     const upRes = await fetch(`${API_URL}/upload`, {
       method: "POST",
       headers: { authorization: `Bearer ${session.accessToken}` },
@@ -271,7 +299,10 @@ test.describe("E-Office correspondence flows", () => {
 
     const created = await apiRequest<{
       success: boolean;
-      data: { id: string; attachments?: Array<{ fileUrl: string; name: string }> };
+      data: {
+        id: string;
+        attachments?: Array<{ fileUrl: string; name: string }>;
+      };
     }>(session, "POST", "/correspondence/letters", {
       unitId: candidate.unitId,
       direction: "INCOMING",
@@ -283,7 +314,9 @@ test.describe("E-Office correspondence flows", () => {
       nature: "PUBLIC",
       status: "DRAFT",
       recipientIds: [candidate.id],
-      attachments: [{ name: "Bukti", fileUrl: stableUrl, mimeType: "application/pdf" }],
+      attachments: [
+        { name: "Bukti", fileUrl: stableUrl, mimeType: "application/pdf" },
+      ],
     });
     expect(created.success).toBe(true);
 
@@ -298,7 +331,7 @@ test.describe("E-Office correspondence flows", () => {
     // token and the bytes must match what was uploaded. On Azure the reference
     // is a private blob — mint the SAS and assert it resolves to a usable URL
     // (the blob host is not reachable from the isolated e2e network).
-    if (stableUrl.includes("/uploads/")) {
+    if (isLocalUploadUrl(stableUrl)) {
       const res = await fetch(stableUrl, {
         headers: { authorization: `Bearer ${session.accessToken}` },
       });
@@ -309,14 +342,12 @@ test.describe("E-Office correspondence flows", () => {
       const resolved = await apiRequest<{
         data?: { downloadUrl?: string };
       }>(session, "POST", "/upload/sas", { url: stableUrl });
-      expect(resolved.data?.downloadUrl).toMatch(
-        /\.blob\.core\.windows\.net\//,
-      );
+      expect(isAzureBlobHost(resolved.data?.downloadUrl ?? "")).toBe(true);
     }
 
     // A local /uploads reference is served directly by the API; the resolved
     // stable URL must therefore be fetchable without a SAS round-trip.
-    if (stableUrl.includes("/uploads/")) {
+    if (isLocalUploadUrl(stableUrl)) {
       const direct = await fetch(stableUrl, {
         headers: { authorization: `Bearer ${session.accessToken}` },
       });
@@ -383,7 +414,8 @@ test.describe("E-Office correspondence flows", () => {
     const json = await res.json();
     expect(res.ok).toBe(true);
 
-    const data = json?.data as { url?: string; containerName?: string } | undefined;
+    const data = json?.data as
+      { url?: string; containerName?: string } | undefined;
     expect(data?.url).toBeTruthy();
     if (data?.url) {
       if (isAzureBlobHost(data.url)) {

@@ -5,7 +5,9 @@ import path from 'path';
 import type { Request, Response, NextFunction } from 'express';
 
 vi.mock('@/lib/prisma', () => ({
-  prisma: { user: { findUnique: vi.fn().mockResolvedValue({ id: 'u1', isActive: true, userRoles: [] }) } },
+  prisma: {
+    user: { findUnique: vi.fn().mockResolvedValue({ id: 'u1', isActive: true, userRoles: [] }) },
+  },
 }));
 vi.mock('@/lib/redis', () => ({ redis: {} }));
 
@@ -96,25 +98,48 @@ describe('uploadFilenameFor', () => {
 });
 
 describe('verifyStoredFile', () => {
-  function tmpFile(content: Buffer): string {
-    const p = path.join(os.tmpdir(), `upload-test-${Date.now()}-${Math.random()}`);
+  const uploadDir = path.join(process.cwd(), 'public/uploads');
+  const uuid = '123e4567-e89b-42d3-a456-426614174000';
+
+  /** Write a real upload-dir file and return the multer-style file object. */
+  function storedFile(content: Buffer, mimetype: string, name = `${uuid}.png`) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+    const p = path.join(uploadDir, name);
     fs.writeFileSync(p, content);
-    return p;
+    return { filename: name, path: p, mimetype } as Express.Multer.File;
   }
 
   it('keeps a file whose bytes match its declared type', async () => {
-    const p = tmpFile(png);
-    const ok = await verifyStoredFile({ path: p, mimetype: 'image/png' } as Express.Multer.File);
+    const file = storedFile(png, 'image/png');
+    const ok = await verifyStoredFile(file);
     expect(ok).toBe(true);
-    expect(fs.existsSync(p)).toBe(true);
-    fs.unlinkSync(p);
+    expect(fs.existsSync(file.path)).toBe(true);
+    fs.unlinkSync(file.path);
   });
 
   it('deletes a file whose bytes do not match (renamed script as image)', async () => {
-    const p = tmpFile(phpScript);
-    const ok = await verifyStoredFile({ path: p, mimetype: 'image/png' } as Express.Multer.File);
+    const file = storedFile(phpScript, 'image/png');
+    const ok = await verifyStoredFile(file);
     expect(ok).toBe(false);
-    expect(fs.existsSync(p)).toBe(false);
+    expect(fs.existsSync(file.path)).toBe(false);
+  });
+
+  it('refuses a path that escapes the upload dir, without touching the target', async () => {
+    // A crafted `filename` (the only file field that reaches the path builder)
+    // must not let verification read or delete a file outside the uploads dir.
+    const outside = path.join(os.tmpdir(), `escape-${uuid}.png`);
+    fs.writeFileSync(outside, png);
+    try {
+      const ok = await verifyStoredFile({
+        filename: `../../../${path.basename(outside)}`,
+        path: outside,
+        mimetype: 'image/png',
+      } as Express.Multer.File);
+      expect(ok).toBe(false);
+      expect(fs.existsSync(outside)).toBe(true);
+    } finally {
+      fs.unlinkSync(outside);
+    }
   });
 });
 
@@ -133,11 +158,7 @@ describe('uploadsAuth', () => {
 
   function run(req: Partial<Request>) {
     const next = vi.fn() as unknown as NextFunction & ReturnType<typeof vi.fn>;
-    uploadsAuth(
-      { path: '/uploads/abc.pdf', headers: {}, query: {}, ...req } as Request,
-      res,
-      next,
-    );
+    uploadsAuth({ path: '/uploads/abc.pdf', headers: {}, query: {}, ...req } as Request, res, next);
     return next;
   }
 
@@ -184,9 +205,7 @@ describe('getSafeUploadPathForCleanup', () => {
     try {
       await expect(getSafeUploadPathForCleanup(p)).resolves.toBe(fs.realpathSync(p));
       // A bare filename (what a stored URL carries) resolves against the dir.
-      await expect(getSafeUploadPathForCleanup(`${uuid}.png`)).resolves.toBe(
-        fs.realpathSync(p)
-      );
+      await expect(getSafeUploadPathForCleanup(`${uuid}.png`)).resolves.toBe(fs.realpathSync(p));
     } finally {
       fs.unlinkSync(p);
     }

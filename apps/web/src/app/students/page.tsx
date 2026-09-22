@@ -221,9 +221,9 @@ export default function StudentsPage() {
           onRowClick={(row) => router.push(`/students/${row.id}`)}
           pagination={{
             page,
-            totalPages: data?.meta?.totalPages || 1,
+            totalPages: data?.meta?.pagination?.totalPages || 1,
             pageSize,
-            total: data?.meta?.total || 0,
+            total: data?.meta?.pagination?.total || 0,
             onPageChange: setPage,
             onPageSizeChange: (size) => {
               setPageSize(size);

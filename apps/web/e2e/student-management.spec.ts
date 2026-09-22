@@ -86,7 +86,7 @@ test.describe("Student Management - List & View", () => {
     if (await searchInput.isVisible({ timeout: 3000 }).catch(() => false)) {
       // Data-agnostic: derive a search term from a real seeded student rather
       // than hardcoding a name that may not exist.
-      const rows = page.locator('table tbody tr');
+      const rows = page.locator("table tbody tr");
       if ((await rows.count()) === 0) {
         test.skip(true, "No students to search");
         return;
@@ -111,7 +111,8 @@ test.describe("Student Management - List & View", () => {
       // land before asserting, otherwise the table may still show stale rows.
       const searchResponse = page
         .waitForResponse(
-          (r) => /\/students(\?|$)/.test(r.url()) && r.request().method() === "GET",
+          (r) =>
+            /\/students(\?|$)/.test(r.url()) && r.request().method() === "GET",
           { timeout: 10000 },
         )
         .catch(() => null);
@@ -159,15 +160,14 @@ test.describe("Student Management - List & View", () => {
   });
 
   test("should paginate through students", async ({ page }) => {
-    // Look for pagination controls
-    const nextButton = page.getByRole("button", {
-      name: /next|selanjutnya|>/i,
-    });
+    // The pager is icon-only; it exposes Indonesian aria-labels, so target the
+    // next-page control by its accessible name rather than a glyph.
+    const nextButton = page.getByRole("button", { name: "Halaman berikutnya" });
 
-    if (await nextButton.isEnabled({ timeout: 3000 }).catch(() => false)) {
+    if (await nextButton.isEnabled({ timeout: 5000 }).catch(() => false)) {
       // Get first student name
       const firstStudent = await page
-        .locator('table tbody tr, [role="row"]')
+        .locator("table tbody tr")
         .first()
         .textContent();
 
@@ -177,7 +177,7 @@ test.describe("Student Management - List & View", () => {
 
       // Should show different students
       const newFirstStudent = await page
-        .locator('table tbody tr, [role="row"]')
+        .locator("table tbody tr")
         .first()
         .textContent();
       expect(newFirstStudent).not.toBe(firstStudent);
@@ -214,10 +214,20 @@ test.describe("Student Management - List & View", () => {
       }
 
       // Should show student details
-      await expect(page.getByRole("main").getByText(/nama|name/i).first()).toBeVisible({
+      await expect(
+        page
+          .getByRole("main")
+          .getByText(/nama|name/i)
+          .first(),
+      ).toBeVisible({
         timeout: 8000,
       });
-      await expect(page.getByRole("main").getByText(/nisn|nis/i).first()).toBeVisible();
+      await expect(
+        page
+          .getByRole("main")
+          .getByText(/nisn|nis/i)
+          .first(),
+      ).toBeVisible();
     } else {
       test.skip(true, "No students available");
     }
@@ -300,7 +310,9 @@ test.describe("Student Management - Create", () => {
     // closed. Retried as a unit — under parallel workers on a production build,
     // interacting before hydration (or before async options load) silently drops
     // the value and leaves overlays that block the next control.
-    const pickFirstOption = async (trigger: import("@playwright/test").Locator) => {
+    const pickFirstOption = async (
+      trigger: import("@playwright/test").Locator,
+    ) => {
       await expect(async () => {
         await trigger.click();
         const option = page.getByRole("option").first();

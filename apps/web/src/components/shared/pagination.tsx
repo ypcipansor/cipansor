@@ -85,6 +85,7 @@ export function Pagination({
           variant="outline"
           size="icon"
           className="h-8 w-8"
+          aria-label="Halaman pertama"
           onClick={() => onPageChange(1)}
           disabled={page <= 1}
         >
@@ -94,6 +95,7 @@ export function Pagination({
           variant="outline"
           size="icon"
           className="h-8 w-8"
+          aria-label="Halaman sebelumnya"
           onClick={() => onPageChange(page - 1)}
           disabled={page <= 1}
         >
@@ -106,6 +108,7 @@ export function Pagination({
           variant="outline"
           size="icon"
           className="h-8 w-8"
+          aria-label="Halaman berikutnya"
           onClick={() => onPageChange(page + 1)}
           disabled={page >= totalPages}
         >
@@ -115,6 +118,7 @@ export function Pagination({
           variant="outline"
           size="icon"
           className="h-8 w-8"
+          aria-label="Halaman terakhir"
           onClick={() => onPageChange(totalPages)}
           disabled={page >= totalPages}
         >

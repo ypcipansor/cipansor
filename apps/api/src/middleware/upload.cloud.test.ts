@@ -69,14 +69,14 @@ describe('handleSingleUpload cloud failure', () => {
     const req = {
       body: {},
       file: {
-        filename: 'x.png',
+        filename: path.basename(p),
         originalname: 'x.png',
         mimetype: 'image/png',
         size: png.length,
         path: p,
       },
       __fileToAssign: {
-        filename: 'x.png',
+        filename: path.basename(p),
         originalname: 'x.png',
         mimetype: 'image/png',
         size: png.length,
@@ -114,14 +114,14 @@ describe('handleSingleUpload public-media role guard (BUG 1)', () => {
       query: { destination },
       user,
       file: {
-        filename: 'x.png',
+        filename: path.basename(p),
         originalname: 'x.png',
         mimetype: 'image/png',
         size: png.length,
         path: p,
       },
       __fileToAssign: {
-        filename: 'x.png',
+        filename: path.basename(p),
         originalname: 'x.png',
         mimetype: 'image/png',
         size: png.length,
@@ -140,7 +140,10 @@ describe('handleSingleUpload public-media role guard (BUG 1)', () => {
     (prismaMod.prisma as any).user = {
       findUnique: vi
         .fn()
-        .mockResolvedValue({ isActive: true, userRoles: [{ role: { code: (user as any).roleCode } }] }),
+        .mockResolvedValue({
+          isActive: true,
+          userRoles: [{ role: { code: (user as any).roleCode } }],
+        }),
     };
 
     const { containerForDestination } = await import('@/utils/cloud-storage');
@@ -229,14 +232,14 @@ describe('handleSingleUpload public-media LIVE revocation guard (finding E)', ()
       query: { destination },
       user,
       file: {
-        filename: 'x.png',
+        filename: path.basename(p),
         originalname: 'x.png',
         mimetype: 'image/png',
         size: png.length,
         path: p,
       },
       __fileToAssign: {
-        filename: 'x.png',
+        filename: path.basename(p),
         originalname: 'x.png',
         mimetype: 'image/png',
         size: png.length,

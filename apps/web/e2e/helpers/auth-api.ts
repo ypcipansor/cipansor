@@ -28,7 +28,10 @@ export interface SeedUser {
 
 /** Seed credentials, keyed by a friendly role name. */
 export const SEED_USERS = {
-  superAdmin: { email: "superadmin@cipansor.or.id", password: "SuperAdmin123!" },
+  superAdmin: {
+    email: "superadmin@cipansor.or.id",
+    password: "SuperAdmin123!",
+  },
   adminSdit: { email: "admin.sdit@cipansor.or.id", password: "Admin123!" },
   teacher: { email: "fatimah@cipansor.or.id", password: "Teacher123!" },
   parent: { email: "parent3@cipansor.or.id", password: "Parent123!" },
@@ -36,9 +39,18 @@ export const SEED_USERS = {
   // The three yayasan organs, each with one step in ratifying a yayasan
   // document (perencanaan-pengesahan.spec.ts). Legacy UNIT_ADMIN, so CI's
   // E2E_FIXED_2FA seed gives them the fixed TOTP secret like any admin.
-  ketuaPengurus: { email: "yayasan.ketua@cipansor.or.id", password: "Cipansor123!" },
-  pengawas: { email: "yayasan.pengawas@cipansor.or.id", password: "Cipansor123!" },
-  pembina: { email: "yayasan.pembina@cipansor.or.id", password: "Cipansor123!" },
+  ketuaPengurus: {
+    email: "yayasan.ketua@cipansor.or.id",
+    password: "Cipansor123!",
+  },
+  pengawas: {
+    email: "yayasan.pengawas@cipansor.or.id",
+    password: "Cipansor123!",
+  },
+  pembina: {
+    email: "yayasan.pembina@cipansor.or.id",
+    password: "Cipansor123!",
+  },
 } satisfies Record<string, SeedUser>;
 
 export type SeedRole = keyof typeof SEED_USERS;
@@ -105,7 +117,9 @@ export async function apiLogin(user: SeedUser): Promise<AuthSession> {
 
   // If global-setup ran (sessions file exists) but couldn't authenticate this
   // seed role, don't have every worker retry the 2FA flow — fail fast.
-  const isSeedRole = Object.values(SEED_USERS).some((u) => u.email === user.email);
+  const isSeedRole = Object.values(SEED_USERS).some(
+    (u) => u.email === user.email,
+  );
   if (isSeedRole && fs.existsSync(SESSIONS_FILE)) {
     const err = new Error(
       `global-setup failed to pre-authenticate ${user.email} (see setup logs); ` +
@@ -131,14 +145,21 @@ async function apiLoginUncached(user: SeedUser): Promise<AuthSession> {
     password: user.password,
   });
   const data = login?.data;
-  if (!data) throw new Error(`Login failed for ${user.email}: ${JSON.stringify(login)}`);
+  if (!data)
+    throw new Error(`Login failed for ${user.email}: ${JSON.stringify(login)}`);
 
   // Admin accounts are gated behind 2FA; complete it with a fresh TOTP.
   if (data.requiresTwoFactor) {
     const token = await generateTotp({ secret: FIXED_2FA_SECRET });
-    const verified = await postJson("/auth/2fa/login", { token }, data.tempToken);
+    const verified = await postJson(
+      "/auth/2fa/login",
+      { token },
+      data.tempToken,
+    );
     if (!verified?.data?.accessToken) {
-      throw new Error(`2FA login failed for ${user.email}: ${JSON.stringify(verified)}`);
+      throw new Error(
+        `2FA login failed for ${user.email}: ${JSON.stringify(verified)}`,
+      );
     }
     return verified.data as AuthSession;
   }
@@ -150,7 +171,9 @@ async function apiLoginUncached(user: SeedUser): Promise<AuthSession> {
   }
 
   if (!data.accessToken) {
-    throw new Error(`Unexpected login response for ${user.email}: ${JSON.stringify(data)}`);
+    throw new Error(
+      `Unexpected login response for ${user.email}: ${JSON.stringify(data)}`,
+    );
   }
   return data as AuthSession;
 }
@@ -210,7 +233,9 @@ export async function apiRequest<T = unknown>(
   });
   const text = await res.text();
   if (!res.ok) {
-    throw new Error(`${method} ${apiPath} → ${res.status}: ${text.slice(0, 200)}`);
+    throw new Error(
+      `${method} ${apiPath} → ${res.status}: ${text.slice(0, 200)}`,
+    );
   }
   // 204 No Content (e.g. removing a role assignment) has an empty body; there is
   // nothing to parse and `JSON.parse("")` would throw a misleading non-JSON error.
@@ -218,12 +243,17 @@ export async function apiRequest<T = unknown>(
   try {
     return JSON.parse(text) as T;
   } catch {
-    throw new Error(`${method} ${apiPath} → non-JSON response: ${text.slice(0, 120)}`);
+    throw new Error(
+      `${method} ${apiPath} → non-JSON response: ${text.slice(0, 120)}`,
+    );
   }
 }
 
 /** Convenience: log in as a seed role and inject the session into the page. */
-export async function loginAs(page: Page, role: SeedRole): Promise<AuthSession> {
+export async function loginAs(
+  page: Page,
+  role: SeedRole,
+): Promise<AuthSession> {
   const session = await apiLogin(SEED_USERS[role]);
   await injectSession(page, session);
   return session;
@@ -241,8 +271,11 @@ export function buildStorageState(session: AuthSession) {
     version: 0,
   });
   return {
+    // No `accessToken` cookie: the app must not mirror the bearer into a
+    // JS-readable cookie (finding F), and middleware routes off `auth-storage`.
+    // Leaving one here would let a spec pass on a credential the real app never
+    // sets.
     cookies: [
-      { name: "accessToken", value: session.accessToken },
       { name: "auth-storage", value: encodeURIComponent(authStorage) },
     ].map((c) => ({
       ...c,
