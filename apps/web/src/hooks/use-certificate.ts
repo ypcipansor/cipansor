@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api, { ApiResponse, PaginatedResponse } from "@/lib/api";
 
@@ -423,13 +423,41 @@ function msUntilNextMonth(now: Date = new Date()): number {
 const MAX_TIMEOUT_MS = 2 ** 31 - 1;
 
 /**
+ * Shown until the client has mounted, in place of a certificate number.
+ *
+ * The number is random and must not be drawn during render: the page is a
+ * Client Component but Next still renders it on the server and hydrates it in
+ * the browser, and two independent `generateCertificateNumber` calls produce
+ * two different numbers — a hydration mismatch. This placeholder is itself the
+ * initial state on both sides, so the first client render matches the server's
+ * byte for byte, and the real number is minted in an effect after mount.
+ *
+ * It cannot be mistaken for a number the student received: it is not
+ * `unit/type/YYYYMM/NNNN`, and the page suppresses printing until the number
+ * is available.
+ */
+export const PENDING_CERTIFICATE_NUMBER = "Memuat nomor...";
+
+interface CertificateNumber {
+  /** `null` until the post-mount effect mints a number. */
+  value: string | null;
+  /** The localised `YYYYMM` segment of `value`, or `null` while pending. */
+  monthBucket: string | null;
+}
+
+/**
  * A certificate number that is stable for a given identity and calendar month.
  *
- * `generateCertificateNumber` is random, so calling it in a component body gave
- * a new number on every render — an unrelated state update redrew the printed
- * certificate with a different number. `useMemo` ties the value to its real
- * inputs: it changes only when `type`, `unitCode` or the current month changes,
- * not on a re-render.
+ * `generateCertificateNumber` is random, so calling it during render gave a
+ * different value on the server and on the client (`generateCertificateNumber`
+ * is not pure), and a different one again on every re-render — React reports a
+ * hydration mismatch and an unrelated state update redrew the printed
+ * certificate under a number the student never received.
+ *
+ * The initial state is therefore `null` on both server and client, so the two
+ * renders agree; the number is minted from an effect once mounted, and then
+ * tied to `type`, `unitCode` and the current month, changing only when one of
+ * those genuinely changes.
  *
  * The month is part of the identity because the number embeds a `YYYYMM`
  * segment: a page left open across midnight on the last day of a month would
@@ -437,7 +465,7 @@ const MAX_TIMEOUT_MS = 2 ** 31 - 1;
  * timeout fires at the next month boundary to advance the bucket; it is cleared
  * on unmount and re-armed when the identity changes, so there is never more
  * than one pending timer and none leaks. The timer is scheduled from an effect,
- * so no browser API is touched during render (SSR-safe).
+ * so no browser API is touched during render.
  *
  * The value is a display convenience, not an authoritative identifier; the
  * backend issues the recorded certificate number.
@@ -445,31 +473,60 @@ const MAX_TIMEOUT_MS = 2 ** 31 - 1;
 export function useCertificateNumber(
   type: CertificateType,
   unitCode: string = "CPN",
-): string {
-  const [monthBucket, setMonthBucket] = useState(() => currentMonthBucket());
+): CertificateNumber {
+  const [value, setValue] = useState<string | null>(null);
+  // The bucket the current `value` was minted in, so a rollover is detected by
+  // comparison rather than by reading a second piece of state.
+  const monthBucketRef = useRef(currentMonthBucket());
+
+  // Mint the initial number after mount. Reading the clock and the random
+  // source here (not during render) is what removes the divergence.
+  //
+  // StrictMode runs this effect twice on mount (setup → cleanup → setup).
+  // Re-minting on the second pass is intentional: the first number must be
+  // discarded, because the first cleanup also tore down its rollover timer.
+  useEffect(() => {
+    monthBucketRef.current = currentMonthBucket();
+    setValue(generateCertificateNumber(type, unitCode));
+  }, [type, unitCode]);
 
   useEffect(() => {
+    // A chain that has already fired can still be queued when the identity
+    // changes; without this flag its callback would re-arm *after* cleanup and
+    // leave a second, orphaned timer running alongside the new chain.
+    let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
     const arm = () => {
       timer = setTimeout(() => {
+        if (cancelled) return;
         const next = currentMonthBucket();
+        if (monthBucketRef.current !== next) {
+          monthBucketRef.current = next;
+          // Re-mint so the displayed number carries the new `YYYYMM` segment;
+          // this runs only at a real boundary, not on unrelated re-renders.
+          setValue(generateCertificateNumber(type, unitCode));
+        }
         // Same bucket after an early (clamped) wake-up: keep the value, but
         // re-arm so the real boundary is still reached.
-        setMonthBucket((prev) => (prev === next ? prev : next));
         arm();
       }, Math.min(msUntilNextMonth(), MAX_TIMEOUT_MS));
     };
     arm();
-    return () => clearTimeout(timer);
-    // `monthBucket` is deliberately absent: the chain re-arms itself, so adding
-    // it would tear down and rebuild the timer on every rollover for no gain.
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    // `type`/`unitCode` re-arm the chain on an identity change (the ref is
+    // re-aligned by the mint effect above); the bucket is not a dependency
+    // because the chain re-arms itself.
   }, [type, unitCode]);
 
   return useMemo(
-    () => generateCertificateNumber(type, unitCode),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- monthBucket is
-    // the re-key signal: it is not read here, but advancing it must mint a
-    // number carrying the new month.
-    [type, unitCode, monthBucket],
+    () => ({
+      value,
+      // Derived from the value itself, so the two can never disagree.
+      monthBucket: value === null ? null : value.split("/")[2],
+    }),
+    [value],
   );
 }

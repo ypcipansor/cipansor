@@ -30,6 +30,7 @@ import { useClasses } from "@/hooks/use-classes";
 import {
   CERTIFICATE_TEMPLATES,
   CertificateType,
+  PENDING_CERTIFICATE_NUMBER,
   useCertificateNumber,
 } from "@/hooks/use-certificate";
 import {
@@ -101,7 +102,11 @@ export default function CertificateGeneratorPage() {
   const selectedTemplate = CERTIFICATE_TEMPLATES.find(
     (t) => t.type === formData.type,
   );
-  const certificateNumber = useCertificateNumber(formData.type, "CPN");
+  const { value: certificateNumber } = useCertificateNumber(
+    formData.type,
+    "CPN",
+  );
+  const numberReady = certificateNumber !== null;
 
   const handleSelectStudent = (student: Student) => {
     setSelectedStudent(student);
@@ -132,6 +137,12 @@ export default function CertificateGeneratorPage() {
   const handlePrint = () => {
     if (!selectedStudent) {
       toast.error("Pilih siswa terlebih dahulu");
+      return;
+    }
+    // Never print the pending placeholder — the document would carry a number
+    // the student did not receive.
+    if (!numberReady) {
+      toast.error("Nomor sertifikat belum siap. Coba lagi sebentar.");
       return;
     }
 
@@ -291,7 +302,11 @@ export default function CertificateGeneratorPage() {
           </div>
 
           {/* Certificate Number */}
-          <p className="text-xs opacity-60 mb-4">No: {certificateNumber}</p>
+          <p className="text-xs opacity-60 mb-4" data-testid="certificate-number">
+            {numberReady
+              ? `No: ${certificateNumber}`
+              : PENDING_CERTIFICATE_NUMBER}
+          </p>
 
           {/* Main Text */}
           <div className="text-center mb-6">
@@ -455,7 +470,7 @@ export default function CertificateGeneratorPage() {
             <Button
               variant="default"
               onClick={handlePrint}
-              disabled={!selectedStudent}
+              disabled={!selectedStudent || !numberReady}
               className="transition-all hover:shadow-md hover:-translate-y-0.5"
             >
               <Printer className="h-4 w-4 mr-2" />
@@ -804,7 +819,11 @@ export default function CertificateGeneratorPage() {
                     >
                       Kembali
                     </Button>
-                    <Button onClick={handlePrint} className="flex-1">
+                    <Button
+                      onClick={handlePrint}
+                      disabled={!numberReady}
+                      className="flex-1"
+                    >
                       <Printer className="h-4 w-4 mr-2" />
                       Cetak Sertifikat
                     </Button>

@@ -16,9 +16,29 @@ import { waitForLoadingComplete } from "./helpers/page-helpers";
  * asserts stability and change-of-input.
  */
 
-/** The certificate number as it appears in the preview: "No: CPN/...". */
+/**
+ * The printed number: only a final `No: CPN/...`, never the placeholder.
+ *
+ * The page renders the certificate twice — a visible preview and the hidden
+ * `printRef` subtree the print handler copies — so both carry the test id; the
+ * first is the visible one and both always show the same value.
+ */
 function previewNumber(page: import("@playwright/test").Page) {
-  return page.locator("text=/No: [A-Z]+\\//").first();
+  return page.getByTestId("certificate-number").first();
+}
+
+/**
+ * Wait for the post-mount number. The hook's initial state is a deterministic
+ * placeholder shared by the server and the first client render (that is what
+ * removes the hydration mismatch), so the final number only appears after the
+ * client effect runs — every read must wait for it rather than race it.
+ */
+async function waitForFinalNumber(page: import("@playwright/test").Page) {
+  const number = previewNumber(page);
+  await expect(number).toHaveText(/^No: [A-Z]+\/[A-Z]{3}\/\d{6}\/\d{4}$/, {
+    timeout: 15_000,
+  });
+  return number;
 }
 
 async function pickFirstStudent(page: import("@playwright/test").Page) {
@@ -47,6 +67,19 @@ test.describe("Generator Sertifikat — stabilitas nomor", () => {
     // action budget.
     test.setTimeout(120_000);
 
+    // The number is random and must not be drawn during render: a server and
+    // client that each drew one would render different markup and React would
+    // log a hydration mismatch. Fail the spec if that regresses.
+    const hydrationErrors: string[] = [];
+    page.on("console", (message) => {
+      if (
+        message.type() === "error" &&
+        /hydrat|did not match|mismatch/i.test(message.text())
+      ) {
+        hydrationErrors.push(message.text());
+      }
+    });
+
     await loginAs(page, "superAdmin");
     await page.goto("/students/certificates");
     await waitForLoadingComplete(page);
@@ -57,8 +90,8 @@ test.describe("Generator Sertifikat — stabilitas nomor", () => {
     await pickFirstStudent(page);
     await pickTemplate(page, /Ijazah \/ Surat Kelulusan/i);
 
-    const number = previewNumber(page);
-    await expect(number).toBeVisible({ timeout: 15_000 });
+    // The final number is minted after mount; wait for it before asserting.
+    const number = await waitForFinalNumber(page);
     const first = (await number.textContent())?.trim();
     expect(first).toMatch(/^No: [A-Z]+\/[A-Z]{3}\/\d{6}\/\d{4}$/);
 
@@ -73,9 +106,11 @@ test.describe("Generator Sertifikat — stabilitas nomor", () => {
     // number (and a new type segment).
     await page.getByRole("button", { name: /^Kembali$/ }).click();
     await pickTemplate(page, /Syahadah Tahfidz/i);
-    const second = (await previewNumber(page).textContent())?.trim();
+    const second = (await (await waitForFinalNumber(page)).textContent())?.trim();
     expect(second).not.toBe(first);
     expect(second).toMatch(/\/TAH\//);
+
+    expect(hydrationErrors).toEqual([]);
   });
 
   test("preview dan dokumen cetak memakai nomor yang sama", async ({
@@ -90,8 +125,7 @@ test.describe("Generator Sertifikat — stabilitas nomor", () => {
     await pickFirstStudent(page);
     await pickTemplate(page, /Ijazah \/ Surat Kelulusan/i);
 
-    const number = previewNumber(page);
-    await expect(number).toBeVisible({ timeout: 15_000 });
+    const number = await waitForFinalNumber(page);
     const previewText = (await number.textContent())?.trim();
 
     // The print handler builds the document with `document.write` and calls
