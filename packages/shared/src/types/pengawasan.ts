@@ -373,7 +373,6 @@ export interface WbsTrackingDto {
   createdAt: string;
   updatedAt: string;
   comments: WbsCommentDto[];
-  forwardTimeline: WbsForwardLogDto[];
 }
 
 export interface WbsPublicSubmissionResultDto {

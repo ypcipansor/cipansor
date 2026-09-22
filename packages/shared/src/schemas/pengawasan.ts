@@ -107,6 +107,11 @@ function attachmentUrlIssue(raw: string): string | null {
 const attachmentUrlSchema = z
   .string()
   .trim()
+  // A URL longer than this is not a stored document; it is a payload/DoS
+  // attempt against the JSON column, the handler UI and the audit trail. The
+  // scheme/host checks above already reject the dangerous shapes; the cap keeps
+  // a *valid-looking* https URL from being unbounded.
+  .max(2048, "Lampiran terlalu panjang")
   .superRefine((val, ctx) => {
     const issue = attachmentUrlIssue(val);
     if (issue) {
@@ -136,18 +141,44 @@ const documentUrlSchema = z.preprocess(
 // Public WBS
 // ---------------------------------------------------------------------------
 
+/**
+ * Domain maxima for the public (unauthenticated) WBS surface.
+ *
+ * The `express.json({ limit: '10mb' })` cap in `apps/api/src/app.ts` is a
+ * transport limit, not a domain limit: a 9 MB body of a single field passes it
+ * and then lands in a `String`/`Text` column, on an audit screen and in the
+ * handler's list. These are the field-level bounds the DB, the UI and the audit
+ * trail actually assume. `ticketCode` / `trackingToken` are matched to what the
+ * server issues: `WBS-YYYYMM-XXXXXXXX` (a fixed shape, well under the cap) and a
+ * 64-hex-character token; the caps are deliberately generous so a future format
+ * change is not silently rejected, while an oversized probe still fails at the
+ * edge with a stable 400.
+ */
+export const WBS_MAX = {
+  targetName: 200,
+  subject: 200,
+  description: 10_000,
+  location: 300,
+  reporterName: 150,
+  reporterContact: 200,
+  message: 10_000,
+  ticketCode: 64,
+  trackingToken: 200,
+  attachmentUrl: 2048,
+} as const;
+
 export const createPublicWbsSchema = z.object({
   unitId: z.string().uuid().optional().nullable(),
   category: z.enum(WBS_CATEGORIES),
   targetLevel: z.enum(WBS_TARGET_LEVELS),
-  targetName: z.string().optional(),
-  subject: z.string().min(3),
-  description: z.string().min(10),
-  location: z.string().optional(),
+  targetName: z.string().max(WBS_MAX.targetName).optional(),
+  subject: z.string().min(3).max(WBS_MAX.subject),
+  description: z.string().min(10).max(WBS_MAX.description),
+  location: z.string().max(WBS_MAX.location).optional(),
   incidentDate: optionalDateSchema,
   isAnonymous: z.boolean().optional(),
-  reporterName: z.string().optional(),
-  reporterContact: z.string().optional(),
+  reporterName: z.string().max(WBS_MAX.reporterName).optional(),
+  reporterContact: z.string().max(WBS_MAX.reporterContact).optional(),
   attachments: attachmentsSchema,
   turnstileToken: z.string().optional(),
 });
@@ -155,17 +186,17 @@ export const createPublicWbsSchema = z.object({
 export type CreatePublicWbsInput = z.infer<typeof createPublicWbsSchema>;
 
 export const trackPublicWbsSchema = z.object({
-  ticketCode: z.string().min(3),
-  trackingToken: z.string().min(5),
+  ticketCode: z.string().min(3).max(WBS_MAX.ticketCode),
+  trackingToken: z.string().min(5).max(WBS_MAX.trackingToken),
   turnstileToken: z.string().optional(),
 });
 
 export type TrackPublicWbsInput = z.infer<typeof trackPublicWbsSchema>;
 
 export const addPublicWbsCommentSchema = z.object({
-  ticketCode: z.string().min(3),
-  trackingToken: z.string().min(5),
-  message: z.string().min(1),
+  ticketCode: z.string().min(3).max(WBS_MAX.ticketCode),
+  trackingToken: z.string().min(5).max(WBS_MAX.trackingToken),
+  message: z.string().min(1).max(WBS_MAX.message),
   attachments: attachmentsSchema,
   turnstileToken: z.string().optional(),
 });

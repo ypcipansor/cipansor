@@ -9,6 +9,8 @@ import {
   createPublicWbsSchema,
   addPublicWbsCommentSchema,
   addWbsHandlerCommentSchema,
+  trackPublicWbsSchema,
+  WBS_MAX,
 } from '@cipansor/shared';
 import { PLH_ROLE_CODES } from '@cipansor/shared';
 
@@ -199,9 +201,7 @@ describe('board suspension documentUrl validation', () => {
     ).toBe(true);
     expect(createBoardSuspensionSchema.safeParse(base).success).toBe(true);
     // The form's untouched input submits "".
-    expect(
-      createBoardSuspensionSchema.safeParse({ ...base, documentUrl: '' }).success
-    ).toBe(true);
+    expect(createBoardSuspensionSchema.safeParse({ ...base, documentUrl: '' }).success).toBe(true);
   });
 });
 
@@ -281,5 +281,94 @@ describe('WBS attachment URL validation', () => {
     const url = 'https://storage.cipansor.or.id/e.pdf';
     expect(comment(Array.from({ length: 10 }, () => url)).success).toBe(true);
     expect(comment(Array.from({ length: 11 }, () => url)).success).toBe(false);
+  });
+});
+
+/**
+ * The public surface is unauthenticated, so every string is a payload until it
+ * is bounded. The transport cap (`express.json({ limit })`) is not a domain
+ * cap: a single 9 MB field passes it. These boundaries pin the shared contract
+ * so a body of `limit+1` is rejected at the edge with a stable 400 rather than
+ * reaching a column, a handler list or the audit trail.
+ */
+describe('public WBS field maxima', () => {
+  const base = {
+    category: 'KEUANGAN_ASET' as const,
+    targetLevel: 'PENGURUS_YAYASAN' as const,
+    subject: 'Judul laporan',
+    description: 'Deskripsi laporan yang cukup panjang.',
+  };
+
+  function parseReport(overrides: Record<string, unknown>) {
+    return createPublicWbsSchema.safeParse({ ...base, ...overrides });
+  }
+
+  it.each([
+    ['subject', WBS_MAX.subject],
+    ['description', WBS_MAX.description],
+    ['targetName', WBS_MAX.targetName],
+    ['location', WBS_MAX.location],
+    ['reporterName', WBS_MAX.reporterName],
+    ['reporterContact', WBS_MAX.reporterContact],
+  ] as const)('accepts %s exactly at the limit and rejects limit+1', (field, limit) => {
+    expect(parseReport({ [field]: 'a'.repeat(limit) }).success, `${field} at limit`).toBe(true);
+    expect(parseReport({ [field]: 'a'.repeat(limit + 1) }).success, `${field} over limit`).toBe(
+      false
+    );
+  });
+
+  it('bounds the public comment message', () => {
+    const at = addPublicWbsCommentSchema.safeParse({
+      ticketCode: 'WBS-202601-ABCDEF',
+      trackingToken: 'a-tracking-token',
+      message: 'a'.repeat(WBS_MAX.message),
+    });
+    expect(at.success).toBe(true);
+    const over = addPublicWbsCommentSchema.safeParse({
+      ticketCode: 'WBS-202601-ABCDEF',
+      trackingToken: 'a-tracking-token',
+      message: 'a'.repeat(WBS_MAX.message + 1),
+    });
+    expect(over.success).toBe(false);
+  });
+
+  it('bounds the tracking ticket code and token on both track and comment', () => {
+    for (const schema of [trackPublicWbsSchema, addPublicWbsCommentSchema]) {
+      const longTicket = schema.safeParse({
+        ticketCode: 'WBS-' + 'a'.repeat(WBS_MAX.ticketCode),
+        trackingToken: 'a-tracking-token',
+        message: 'Pesan',
+      });
+      expect(longTicket.success).toBe(false);
+
+      const longToken = schema.safeParse({
+        ticketCode: 'WBS-202601-ABCDEF',
+        trackingToken: 'a'.repeat(WBS_MAX.trackingToken + 1),
+        message: 'Pesan',
+      });
+      expect(longToken.success).toBe(false);
+    }
+  });
+
+  it('bounds an attachment URL', () => {
+    const prefix = 'https://storage.cipansor.or.id/';
+    const atLimit = prefix + 'a'.repeat(WBS_MAX.attachmentUrl - prefix.length);
+    // Exactly at 2048 characters.
+    expect(atLimit.length).toBe(WBS_MAX.attachmentUrl);
+    const ok = addPublicWbsCommentSchema.safeParse({
+      ticketCode: 'WBS-202601-ABCDEF',
+      trackingToken: 'a-tracking-token',
+      message: 'Pesan',
+      attachments: [atLimit],
+    });
+    expect(ok.success).toBe(true);
+
+    const over = addPublicWbsCommentSchema.safeParse({
+      ticketCode: 'WBS-202601-ABCDEF',
+      trackingToken: 'a-tracking-token',
+      message: 'Pesan',
+      attachments: [atLimit + 'a'],
+    });
+    expect(over.success).toBe(false);
   });
 });

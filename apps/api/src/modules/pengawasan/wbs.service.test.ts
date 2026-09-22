@@ -408,6 +408,50 @@ describe('WbsService Unit Tests', () => {
     expect(reporter?.senderName).toBe('Pelapor');
   });
 
+  it('does not expose the internal forwarding audit log on the public tracking response', async () => {
+    // `WbsForwardLog` carries the internal routing reason plus actor/user/role
+    // identifiers. The public tracking response used to return `report.forwardLogs`
+    // verbatim as `forwardTimeline`, publishing that audit trail to anyone
+    // holding the ticket code. The response must not carry it at all.
+    (prisma.wbsReport.findUnique as any).mockResolvedValue({
+      ticketCode: 'WBS-202603-ABC123',
+      trackingToken: digestOf('valid-token'),
+      category: WbsCategory.KEUANGAN_ASET,
+      targetLevel: WbsTargetLevel.PENGURUS_YAYASAN,
+      status: WbsStatus.DALAM_PENYELIDIKAN,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      unit: null,
+      comments: [],
+      forwardLogs: [
+        {
+          id: 'log-1',
+          fromRole: 'YAYASAN_PENGAWAS',
+          toRole: 'YAYASAN_KETUA',
+          reason: 'Dugaan menyangkut Kepala Sekolah SD IT, perlu pemeriksaan keuangan.',
+          forwardedById: 'user-internal-1',
+          toUserId: 'user-internal-2',
+          createdAt: new Date(),
+        },
+      ],
+    });
+
+    const data: any = await wbsService.getPublicTracking('WBS-202603-ABC123', 'valid-token');
+
+    expect(data).not.toHaveProperty('forwardTimeline');
+    const serialised = JSON.stringify(data);
+    expect(serialised).not.toContain('Dugaan menyangkut Kepala Sekolah SD IT');
+    expect(serialised).not.toContain('user-internal-1');
+    expect(serialised).not.toContain('user-internal-2');
+    expect(serialised).not.toContain('YAYASAN_KETUA');
+    expect(serialised).not.toContain('forwardedById');
+
+    // And the query never even selects the log, so a future field cannot leak
+    // by being added to the included relation.
+    const query = (prisma.wbsReport.findUnique as any).mock.calls[0][0];
+    expect(query.include).not.toHaveProperty('forwardLogs');
+  });
+
   it('keeps the existing assignee on a status change', async () => {
     // `updateReportStatus` used to write `assignedUserId: actor.id`, so ticking
     // a status box stole a case that `forward toUserId` had assigned to someone
@@ -755,6 +799,42 @@ describe('WbsService Unit Tests', () => {
       expect(updated.assignedUserId).toBe('user-target');
     });
 
+    it('does not write the internal routing reason into the reporter-visible timeline comment', async () => {
+      // The HANDLER comment created on a forward is rendered on the *public*
+      // tracking page (anonymised, but its `message` is shown verbatim). It used
+      // to embed `Alasan: <reason>`, publishing the internal triage note to
+      // whoever held the tracking token, even though the audit log is withheld.
+      // The routing reason stays in `WbsForwardLog.reason` only.
+      (prisma.wbsReport.findFirst as any).mockResolvedValue(reportInScope());
+      (prisma.wbsReport.findUnique as any).mockResolvedValue(reportInScope());
+      (prisma.user.findUnique as any).mockResolvedValue(recipient());
+      (prisma.wbsReport.update as any).mockResolvedValue({
+        ...reportInScope(),
+        primaryHandlerRole: 'YAYASAN_KETUA',
+        assignedUserId: 'user-target',
+      });
+      (prisma.wbsComment.create as any).mockResolvedValue({ id: 'comment-1' });
+
+      const internalReason = 'Dugaan menyangkut Kepala Sekolah SD IT — jangan sampai bocor.';
+      await wbsService.forwardReport(
+        'report-1',
+        { toRole: 'YAYASAN_KETUA', reason: internalReason, toUserId: 'user-target' },
+        actor
+      );
+
+      // The audit log legitimately holds the reason...
+      expect(prisma.wbsForwardLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ reason: internalReason }) })
+      );
+      // ...but the public comment must not.
+      const commentData = (prisma.wbsComment.create as any).mock.calls
+        .map((c: any[]) => c[0].data)
+        .find((d: any) => d.senderType === 'HANDLER');
+      expect(commentData).toBeDefined();
+      expect(commentData.message).not.toContain(internalReason);
+      expect(commentData.message).not.toContain('Alasan:');
+    });
+
     it('re-validates the recipient under the transaction and aborts when it was deactivated in the gap', async () => {
       // Pre-flight sees a live recipient; by the time the transaction runs, the
       // account has been switched off. Acting on the pre-flight snapshot would
@@ -909,6 +989,114 @@ describe('WbsService Unit Tests', () => {
       ).rejects.toMatchObject({ statusCode: 404 });
 
       expect(prisma.wbsComment.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('updateReportStatus on a terminal case', () => {
+    // A terminal case (`SELESAI` / `TIDAK_DAPAT_DITINDAKLANJUTI`) is frozen:
+    // status, resolution and handler note. `updateReportStatus` used to accept
+    // any new status unconditionally, so a closed report could be moved back to
+    // an open status even though the public thread was already closed on both
+    // sides. The check reads the *locked* status returned by
+    // `assertReportInScopeTx`, so no concurrent closure can slip through.
+    const actor = {
+      id: 'actor-1',
+      name: 'Aktor',
+      roleCode: 'YAYASAN_PENGAWAS',
+      unitId: null,
+    };
+
+    function inScope(status: WbsStatus) {
+      // The mocked scope query (`$queryRaw … FOR UPDATE`, then `findFirst`)
+      // returns the requested status from `assertReportInScopeTx`.
+      (prisma.wbsReport.findFirst as any).mockResolvedValue({
+        id: 'report-1',
+        status,
+        resolution: null,
+        assignedUserId: 'actor-1',
+        ticketCode: 'WBS-1',
+        primaryHandlerRole: 'YAYASAN_PENGAWAS',
+      });
+    }
+
+    it.each([WbsStatus.SELESAI, WbsStatus.TIDAK_DAPAT_DITINDAKLANJUTI])(
+      'refuses to reopen a %s case to an open status',
+      async (terminal) => {
+        inScope(terminal);
+
+        await expect(
+          wbsService.updateReportStatus('report-1', { status: WbsStatus.DALAM_PENYELIDIKAN }, actor)
+        ).rejects.toMatchObject({ statusCode: 409 });
+
+        expect(prisma.wbsReport.update).not.toHaveBeenCalled();
+        expect(prisma.wbsReport.updateMany).not.toHaveBeenCalled();
+        expect(prisma.wbsComment.create).not.toHaveBeenCalled();
+      }
+    );
+
+    it.each([WbsStatus.SELESAI, WbsStatus.TIDAK_DAPAT_DITINDAKLANJUTI])(
+      'refuses a terminal→terminal status/resolution mutation on a %s case',
+      async (terminal) => {
+        // Immutable means immutable: without a dedicated reopen endpoint this
+        // must refuse even a same-status write that rewrites the resolution.
+        inScope(terminal);
+
+        await expect(
+          wbsService.updateReportStatus(
+            'report-1',
+            {
+              status: WbsStatus.SELESAI,
+              resolution: 'Resolusi ditimpa.',
+              handlerNote: 'Catatan baru',
+            },
+            actor
+          )
+        ).rejects.toMatchObject({ statusCode: 409 });
+
+        expect(prisma.wbsReport.update).not.toHaveBeenCalled();
+        expect(prisma.wbsComment.create).not.toHaveBeenCalled();
+      }
+    );
+
+    it.each([WbsStatus.DIAJUKAN, WbsStatus.DALAM_PENYELIDIKAN, WbsStatus.DITINDAKLANJUTI])(
+      'still allows an open %s case to be closed',
+      async (openStatus) => {
+        inScope(openStatus);
+        (prisma.wbsReport.update as any).mockResolvedValue({
+          id: 'report-1',
+          status: WbsStatus.SELESAI,
+        });
+
+        const updated = await wbsService.updateReportStatus(
+          'report-1',
+          { status: WbsStatus.SELESAI },
+          actor
+        );
+
+        expect(updated.status).toBe(WbsStatus.SELESAI);
+        expect(prisma.wbsReport.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({ status: WbsStatus.SELESAI }),
+          })
+        );
+      }
+    );
+
+    it('reads the terminal status under the row lock before deciding', async () => {
+      // The decisive read must be the locked one; an unlocked pre-read would
+      // leave the reopen race open. `assertReportInScopeTx` locks `wbs_reports`
+      // first and returns the status from the query that follows.
+      inScope(WbsStatus.SELESAI);
+
+      await expect(
+        wbsService.updateReportStatus('report-1', { status: WbsStatus.DIAJUKAN }, actor)
+      ).rejects.toMatchObject({ statusCode: 409 });
+
+      const lockCall = (prisma.$queryRaw as any).mock.calls.find((call: unknown[]) =>
+        (call[0] as string[]).join('?').includes('FOR UPDATE')
+      );
+      expect(lockCall).toBeDefined();
+      expect((lockCall[0] as string[]).join('?')).toContain('wbs_reports');
     });
   });
 

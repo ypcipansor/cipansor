@@ -31,17 +31,13 @@ import {
   Send,
   MessageSquare,
   ArrowLeft,
-  Clock,
   CheckCircle2,
 } from "lucide-react";
 import Link from "next/link";
 import { safeFormat } from "@/lib/date";
 import { id as localeId } from "date-fns/locale";
-import type {
-  WbsTrackingDto,
-  WbsCommentDto,
-  WbsForwardLogDto,
-} from "@cipansor/shared";
+import type { WbsTrackingDto, WbsCommentDto } from "@cipansor/shared";
+import { isClosedWbsStatus } from "@cipansor/shared";
 import { readWbsTrackingToken } from "@/lib/wbs-tracking";
 
 /**
@@ -377,44 +373,6 @@ function PublicWbsTrackContent() {
                     </p>
                   </div>
                 )}
-
-                {/* Forwarding Log Timeline */}
-                {reportData.forwardTimeline &&
-                  reportData.forwardTimeline.length > 0 && (
-                    <div className="space-y-2 border-t pt-4">
-                      <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-1">
-                        <Clock className="h-3.5 w-3.5 text-blue-600" /> Riwayat
-                        Penanganan & Diteruskan
-                      </h3>
-                      <div className="space-y-2">
-                        {reportData.forwardTimeline.map(
-                          (log: WbsForwardLogDto) => (
-                            <div
-                              key={log.id}
-                              className="p-3 bg-slate-100 rounded border text-xs text-slate-700 flex justify-between items-center"
-                            >
-                              <div>
-                                <span className="font-bold text-slate-900">
-                                  Laporan Diteruskan dari {log.fromRole} ke{" "}
-                                  {log.toRole}
-                                </span>
-                                <p className="text-slate-600 italic mt-0.5">
-                                  Alasan: {log.reason}
-                                </p>
-                              </div>
-                              <span className="text-[10px] text-slate-400">
-                                {safeFormat(
-                                  new Date(log.createdAt),
-                                  "dd/MM/yyyy HH:mm",
-                                  { locale: localeId },
-                                )}
-                              </span>
-                            </div>
-                          ),
-                        )}
-                      </div>
-                    </div>
-                  )}
               </CardContent>
             </Card>
 
@@ -470,65 +428,83 @@ function PublicWbsTrackContent() {
                   )}
                 </div>
 
-                {/* Send Reply Form */}
-                <form
-                  onSubmit={handleSendComment}
-                  className="border-t pt-4 space-y-3"
-                >
-                  <div className="space-y-1">
-                    <Label
-                      htmlFor="newMessage"
-                      className="text-xs font-semibold"
-                    >
-                      Kirim Pesan Tanggapan / Tambahan Bukti
-                    </Label>
-                    <Textarea
-                      id="newMessage"
-                      rows={3}
-                      placeholder="Ketik pesan Anda di sini..."
-                      value={newMessage}
-                      onChange={(e) => setNewMessage(e.target.value)}
-                      required
-                      className="bg-white"
-                    />
+                {/* Send Reply Form — hidden entirely for a terminal case.
+                    The API refuses a public reply once the case is `SELESAI`
+                    or `TIDAK_DAPAT_DITINDAKLANJUTI` (both sides of the thread
+                    close under the same row lock). Disabling just the button
+                    would still render an input the reporter cannot use and
+                    invite a message the server then rejects, so the whole
+                    control — textarea, Turnstile and submit — is removed and
+                    replaced with a plain notice. The status predicate is the
+                    shared `isClosedWbsStatus`, not a local list. */}
+                {isClosedWbsStatus(reportData.status) ? (
+                  <div className="border-t pt-4">
+                    <p className="rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 text-center">
+                      Kasus ini telah ditutup. Percakapan lanjutan tidak dapat
+                      dikirim, namun seluruh riwayat di atas tetap dapat Anda
+                      baca.
+                    </p>
                   </div>
-
-                  {commentTurnstile.required && (
-                    <div className="p-2 bg-slate-100 rounded border text-xs">
-                      <TurnstileWidget
-                        action="wbs_comment"
-                        {...commentTurnstile.widgetProps}
+                ) : (
+                  <form
+                    onSubmit={handleSendComment}
+                    className="border-t pt-4 space-y-3"
+                  >
+                    <div className="space-y-1">
+                      <Label
+                        htmlFor="newMessage"
+                        className="text-xs font-semibold"
+                      >
+                        Kirim Pesan Tanggapan / Tambahan Bukti
+                      </Label>
+                      <Textarea
+                        id="newMessage"
+                        rows={3}
+                        placeholder="Ketik pesan Anda di sini..."
+                        value={newMessage}
+                        onChange={(e) => setNewMessage(e.target.value)}
+                        required
+                        className="bg-white"
                       />
                     </div>
-                  )}
 
-                  {commentError && (
-                    <p
-                      role="alert"
-                      className="rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-800"
-                    >
-                      {commentError}
-                    </p>
-                  )}
-
-                  <Button
-                    type="submit"
-                    size="sm"
-                    className="bg-blue-600 hover:bg-blue-700 text-white gap-2"
-                    disabled={
-                      addCommentMutation.isPending ||
-                      !newMessage.trim() ||
-                      !commentTurnstile.ready
-                    }
-                  >
-                    {addCommentMutation.isPending ? (
-                      <RefreshCw className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Send className="h-4 w-4" />
+                    {commentTurnstile.required && (
+                      <div className="p-2 bg-slate-100 rounded border text-xs">
+                        <TurnstileWidget
+                          action="wbs_comment"
+                          {...commentTurnstile.widgetProps}
+                        />
+                      </div>
                     )}
-                    Kirim Pesan
-                  </Button>
-                </form>
+
+                    {commentError && (
+                      <p
+                        role="alert"
+                        className="rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-800"
+                      >
+                        {commentError}
+                      </p>
+                    )}
+
+                    <Button
+                      type="submit"
+                      size="sm"
+                      className="bg-blue-600 hover:bg-blue-700 text-white gap-2"
+                      disabled={
+                        addCommentMutation.isPending ||
+                        !newMessage.trim() ||
+                        !commentTurnstile.ready
+                      }
+                    >
+                      {addCommentMutation.isPending ? (
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Send className="h-4 w-4" />
+                      )}
+                      Kirim Pesan
+                    </Button>
+                  </form>
+                )}
               </CardContent>
             </Card>
           </div>

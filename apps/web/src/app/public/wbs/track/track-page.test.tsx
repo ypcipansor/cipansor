@@ -135,3 +135,56 @@ describe("PublicWbsTrackPage — reply without a stale Turnstile refetch", () =>
     ).toBeDefined();
   });
 });
+
+/**
+ * A terminal case must not offer a reply control. The API refuses a public
+ * reply once the case is `SELESAI` / `TIDAK_DAPAT_DITINDAKLANJUTI`, so the page
+ * has to agree with it: an input the server will reject is worse than none. The
+ * predicate is the shared `isClosedWbsStatus`, matching the API's decision.
+ */
+describe("PublicWbsTrackPage — reply control respects a closed case", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  async function loadWithStatus(status: string) {
+    const user = userEvent.setup();
+    trackMutate.mockResolvedValueOnce({ ...report, status });
+
+    render(<PublicWbsTrackPage />);
+
+    await user.type(
+      screen.getByLabelText(/Kode Tiket WBS/i),
+      report.ticketCode,
+    );
+    await user.type(
+      screen.getByLabelText(/Token Akses Rahasia/i),
+      report.trackingToken,
+    );
+    await user.click(screen.getByRole("button", { name: /Lacak|Cari|Cek/i }));
+
+    await waitFor(() => expect(trackMutate).toHaveBeenCalledTimes(1));
+    // The detail card only renders after the report is loaded.
+    await screen.findByText(report.ticketCode, { exact: false });
+    return user;
+  }
+
+  it.each(["SELESAI", "TIDAK_DAPAT_DITINDAKLANJUTI"])(
+    "hides the reply form and shows a closed notice while the case is %s",
+    async (status) => {
+      await loadWithStatus(status);
+
+      expect(screen.queryByPlaceholderText(/Ketik pesan Anda/i)).toBeNull();
+      expect(screen.queryByRole("button", { name: /Kirim Pesan/i })).toBeNull();
+      expect(screen.getByText(/telah ditutup/i)).toBeDefined();
+    },
+  );
+
+  it("still renders the reply form while the case is open", async () => {
+    await loadWithStatus("DALAM_PENYELIDIKAN");
+
+    expect(screen.getByPlaceholderText(/Ketik pesan Anda/i)).toBeDefined();
+    expect(screen.getByRole("button", { name: /Kirim Pesan/i })).toBeDefined();
+    expect(screen.queryByText(/telah ditutup/i)).toBeNull();
+  });
+});

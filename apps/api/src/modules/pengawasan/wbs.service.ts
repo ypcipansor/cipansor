@@ -3,6 +3,7 @@ import { Errors } from '@/middleware/error';
 import { WbsTargetLevel, WbsStatus, WbsSenderType, Prisma } from '@prisma/client';
 import {
   WBS_FORWARD_ROLE_CODES,
+  isClosedWbsStatus,
   isWbsForwardRecipientRole,
   wbsAssignmentBucketsForRole,
   type CreatePublicWbsInput,
@@ -188,16 +189,6 @@ export class WbsService {
             createdAt: true,
           },
         },
-        forwardLogs: {
-          orderBy: { createdAt: 'asc' },
-          select: {
-            id: true,
-            fromRole: true,
-            toRole: true,
-            reason: true,
-            createdAt: true,
-          },
-        },
       },
     });
 
@@ -217,6 +208,17 @@ export class WbsService {
         : comment
     );
 
+    // The forwarding audit trail is NOT returned to the public surface.
+    //
+    // `WbsForwardLog` is an *internal* routing log: `reason` is the free-text
+    // triage note the forwarding officer writes ("dugaan menyangkut Kepala
+    // Sekolah SD IT", "perlu pemeriksaan keuangan"), and the row also carries
+    // `forwardedById` / `toUserId` / internal role codes. Handing it to a
+    // bearer of the tracking token would leak the shape of the investigation —
+    // who is looking at it, and why they routed it where they did — to the
+    // reporter and anyone the ticket was shared with. The reporter's own window
+    // into the case is the anonymised comment thread; routing stays internal.
+    // (Verified 2026-09-22: no internal/role/identity field is exposed here.)
     return {
       ticketCode: report.ticketCode,
       category: report.category,
@@ -230,7 +232,6 @@ export class WbsService {
       createdAt: report.createdAt,
       updatedAt: report.updatedAt,
       comments,
-      forwardTimeline: report.forwardLogs,
     };
   }
 
@@ -568,7 +569,28 @@ export class WbsService {
     // to a destination the actor's active role may not hold, and the stale
     // pre-check would have allowed the mutation anyway.
     return prisma.$transaction(async (tx) => {
-      await this.assertReportInScopeTx(tx, id, actor);
+      // The status is returned from the *locked* read, so the terminal check
+      // below and the write it guards are made against the state that will hold
+      // at commit. Reading `status` from the unlocked `findFirst` underneath
+      // would leave exactly the race this closes: a concurrent handler could
+      // commit the closure between the check and the update, and the reopen
+      // would land anyway.
+      const scope = await this.assertReportInScopeTx(tx, id, actor);
+
+      // A terminal case is immutable. Once `SELESAI` /
+      // `TIDAK_DAPAT_DITINDAKLANJUTI`, the status, the resolution and the
+      // handler note are frozen together — including terminal → terminal,
+      // because there is no re-opening endpoint with its own permission and
+      // audit trail. Allowing any write here would let a closed report
+      // re-enter an active state (or silently rewrite its resolution) even
+      // though the public thread is already closed on both sides by
+      // `addPublicComment` / `addHandlerComment`. The predicate is the shared
+      // `isClosedWbsStatus`, not a second local list that could drift.
+      if (isClosedWbsStatus(scope.status)) {
+        throw Errors.conflict(
+          'Laporan WBS ini sudah ditutup (SELESAI / TIDAK_DAPAT_DITINDAKLANJUTI) dan status/penyelesaiannya tidak dapat diubah lagi.'
+        );
+      }
 
       const report = await tx.wbsReport.findFirst({
         where: { id },
@@ -806,13 +828,20 @@ export class WbsService {
         },
       });
 
+      // The handler's *own* timeline entry is a neutral status note. The
+      // internal routing reason stays in `WbsForwardLog.reason` (above), which
+      // `getPublicTracking` no longer returns: `WbsComment` rows of type
+      // HANDLER are rendered on the reporter's public page, so putting
+      // `Alasan: <internal triage note>` here published the investigation's
+      // reasoning to whoever held the tracking token. The action (that the case
+      // moved to the next tier) is still visible; the why stays internal.
       await tx.wbsComment.create({
         data: {
           reportId: id,
           senderType: WbsSenderType.HANDLER,
           senderId: actor.id,
           senderName: `${actor.name} (${actor.roleCode || 'Pemeriksa'})`,
-          message: `[Laporan Diteruskan ke ${data.toRole}] Alasan: ${data.reason}`,
+          message: `[Laporan Diteruskan ke ${data.toRole}] Laporan dialihkan ke tingkat penanganan berikutnya.`,
         },
       });
 
