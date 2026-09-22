@@ -16,17 +16,25 @@ import { join, relative } from 'node:path';
  * straight into the row, skipping the lifecycle).
  *
  * Direct service-to-service calls are the repository's sanctioned pattern for
- * synchronous, value-returning work (AGENTS.md and docs/ARCHITECTURE.md reserve
- * the typed event bus for *side effects*, and they say so explicitly: "Cross-module
- * side effects — emit typed events on `eventBus`; don't reach into other modules'
- * services"). Real precedents in this tree: `analytics/alerts.service.ts` imports
- * `notifications.service`, `users/user.service.ts` imports `auth.service`, and
- * `lib/event-bus.ts` imports the notification services that consume its events.
- * The bus is explicitly not usable here: `createGeneratedDraftLetter` returns a
- * `letterId` the caller must return to its own client, and the bus is
- * fire-and-forget — there is no reply channel to carry it back. What this test
- * pins is the narrower rule that survived the review: no direct table access,
- * and the primitive stays the only entry.
+ * synchronous, value-returning work. The canonical root `AGENTS.md` states the
+ * rule broadly ("Cross-module communication goes through the typed `eventBus`"),
+ * but the operative per-area guide narrows it to side effects and says so
+ * verbatim: `docs/ARCHITECTURE.md:49-51` — "**Cross-module side effects** —
+ * emit typed events on `eventBus` (`AppEvents`); don't reach into other modules'
+ * services." — and `apps/api/AGENTS.md:58-59` repeats it: "Cross-module side
+ * effects: emit via `eventBus` (typed `AppEvents`), don't reach into other
+ * modules' services." The narrowed reading is what the tree actually does, and
+ * it is the reading the guard below assumes.
+ *
+ * Real precedents for the synchronous direction: `analytics/alerts.service.ts`
+ * imports `notifications.service`, `users/user.service.ts` imports
+ * `auth.service`, and `lib/event-bus.ts` itself imports the notification
+ * services that consume its events. The bus is not usable here at all:
+ * `createGeneratedDraftLetter` returns a `letterId` the caller must return to
+ * its own client, and the bus is fire-and-forget — `event-bus.ts` exposes only
+ * `emit`/`on`/`once`/`off`, with no reply channel to carry a value back. What
+ * this test pins is the narrower invariant that survived review: no direct
+ * correspondence-table access, and the primitive stays the only entry.
  */
 
 const PENGAWASAN_DIR = join(__dirname, '..');
@@ -55,6 +63,22 @@ describe('pengawasan → correspondence boundary', () => {
     expect(
       offenders,
       'file correspondence through CorrespondenceService.createGeneratedDraftLetter, not by writing its tables'
+    ).toEqual([]);
+  });
+
+  it('never calls the broad createLetter surface or writes a flow event', () => {
+    // The primitive files a DRAFT and records its own `CREATED` flow event in
+    // the correspondence module. Reaching for `createLetter` � or emitting a
+    // flow event from here � would put a second, drifting copy of the letter
+    // invariants in the oversight module.
+    const forbidden = /\bCorrespondenceService\.(createLetter|dispatch|submit)\b/;
+    const offenders = sourceFiles(PENGAWASAN_DIR)
+      .filter((file) => forbidden.test(readFileSync(file, 'utf8')))
+      .map((file) => relative(PENGAWASAN_DIR, file));
+
+    expect(
+      offenders,
+      'file correspondence through CorrespondenceService.createGeneratedDraftLetter'
     ).toEqual([]);
   });
 

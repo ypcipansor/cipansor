@@ -107,6 +107,99 @@ describe('AuthService.verifyTwoFactorLogin — suspension race', () => {
   });
 });
 
+/**
+ * A recovery code is validated and consumed in the same locked transaction that
+ * mints the tokens — not by a raw UPDATE ahead of it.
+ *
+ * The old order deleted the code first: a suspension or deactivation landing
+ * before token issuance refused the login but destroyed the code, locking the
+ * operator out of an account that never actually let them in. And because the
+ * delete was outside the row lock, two parallel redemptions of the same code
+ * could both observe `ANY(...) = true` and both succeed.
+ */
+describe('AuthService.verifyTwoFactorLogin — recovery codes are consumed atomically', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    prismaMock.user.findFirst.mockResolvedValue(twoFaUser);
+    prismaMock.user.findUnique.mockResolvedValue({ isActive: true, deletedAt: null });
+    prismaMock.boardMemberSuspension.findFirst.mockResolvedValue(null);
+    prismaMock.$queryRaw.mockResolvedValue([{ id: 'user-1' }]);
+    prismaMock.$executeRaw.mockResolvedValue(0);
+    prismaMock.refreshToken.create.mockResolvedValue({});
+    prismaMock.user.update.mockResolvedValue({});
+    verifyOtp.mockResolvedValue({ valid: false });
+  });
+
+  it('consumes a valid recovery code inside the locked transaction', async () => {
+    prismaMock.$executeRaw.mockResolvedValueOnce(1);
+
+    await service.verifyTwoFactorLogin('user-1', 'RECOVERY-CODE', true);
+
+    const sql = (prismaMock.$executeRaw as any).mock.calls[0][0].join(' ');
+    expect(sql).toMatch(/array_remove/i);
+    // The lock is taken before the code is removed: a parallel redemption
+    // cannot observe the code as still present.
+    expect(prismaMock.$queryRaw).toHaveBeenCalled();
+    expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+    expect(prismaMock.refreshToken.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not consume a recovery code when the account is suspended at issuance', async () => {
+    // The account was live at the pre-flight read; an ACTIVE suspension lands
+    // before the locked re-read. The login must fail *and* the code must
+    // survive, so the operator can retry once the suspension is lifted.
+    prismaMock.boardMemberSuspension.findFirst.mockResolvedValueOnce({ id: 'susp-1' });
+
+    await expect(
+      service.verifyTwoFactorLogin('user-1', 'RECOVERY-CODE', true)
+    ).rejects.toMatchObject({ statusCode: 401 });
+
+    expect(prismaMock.$executeRaw).not.toHaveBeenCalled();
+    expect(prismaMock.refreshToken.create).not.toHaveBeenCalled();
+  });
+
+  it('does not consume a recovery code when the locked re-read finds the account off', async () => {
+    prismaMock.$queryRaw.mockResolvedValueOnce([]);
+
+    await expect(
+      service.verifyTwoFactorLogin('user-1', 'RECOVERY-CODE', true)
+    ).rejects.toMatchObject({ statusCode: 401 });
+
+    expect(prismaMock.$executeRaw).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unknown code and mints no tokens', async () => {
+    prismaMock.$executeRaw.mockResolvedValueOnce(0);
+
+    await expect(service.verifyTwoFactorLogin('user-1', 'NOT-A-CODE', true)).rejects.toMatchObject({
+      statusCode: 401,
+    });
+
+    expect(prismaMock.refreshToken.create).not.toHaveBeenCalled();
+  });
+
+  it('falls through to the recovery-code path when otplib throws on a malformed token', async () => {
+    // otplib v13 throws `TokenLengthError` for a non-6-digit token; that must
+    // not surface as a 500 and must not skip the recovery-code fallback.
+    verifyOtp.mockRejectedValueOnce(new Error('Token must be 6 digits, got 10'));
+    prismaMock.$executeRaw.mockResolvedValueOnce(1);
+
+    await service.verifyTwoFactorLogin('user-1', 'ABCDEF1234', true);
+
+    expect(prismaMock.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(prismaMock.refreshToken.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('never touches recovery codes when the TOTP itself is valid', async () => {
+    verifyOtp.mockResolvedValueOnce({ valid: true });
+
+    await service.verifyTwoFactorLogin('user-1', '123456', true);
+
+    expect(prismaMock.$executeRaw).not.toHaveBeenCalled();
+    expect(prismaMock.refreshToken.create).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('AuthService.refreshToken — rotation under suspension', () => {
   const storedToken = {
     id: 'rt-1',

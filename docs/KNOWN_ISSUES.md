@@ -485,23 +485,47 @@ against PR #508 (Pengawas/WBS/suspension) and left as a decision, not a repair.
   hybrid that still exposes the *refresh* token to JavaScript. A correct
   migration therefore has to change all of: the API issuing `HttpOnly` +
   `Secure` + `SameSite` cookies on login/refresh/2FA-verify
-  (`apps/api/src/modules/auth/auth.controller.ts:19-56`, `:141-147`), CSRF
-  protection for the now-cookie-authenticated mutations, server-side cookie
-  clearing on logout, the Axios interceptors in `apps/web/src/lib/api.ts`, the
-  SSR/`middleware.ts` identity path that currently depends on a client-written
-  cookie, the cross-origin/CORS + `SameSite` interaction in
-  `apps/api/src/config/cors.ts`, and the Playwright auth helpers that seed state
-  today. Each has its own failure mode, and a half-done version is strictly
-  worse than the status quo because it looks fixed.
+  (`apps/api/src/modules/auth/auth.controller.ts:19-56`, `:141-147`); CSRF
+  protection for the now-cookie-authenticated mutations; server-side cookie
+  clearing on logout; the Axios interceptors in `apps/web/src/lib/api.ts`; the
+  `/auth/refresh` call, which is a bare `axios.post` today and would need to
+  become a cookie-bearing request (`apps/web/src/lib/api.ts:157-159`); the
+  `middleware.ts` identity path, which needs a server-issued cookie (or a
+  server-side session) instead of a client-written one, plus the corresponding
+  `ProtectedRoute`/RBAC store rework; the cross-origin/CORS + `SameSite`
+  interaction in `apps/api/src/config/cors.ts`; and the Playwright auth helpers
+  that seed `localStorage` and a client cookie today
+  (`apps/web/e2e/fixtures/auth.fixture.ts:69-89`).
+- **Deployment topology (this is what makes it non-trivial).** The web bundle
+  talks to the API same-origin in production (`NEXT_PUBLIC_API_URL=""` per
+  `docs/DEPLOYMENT.md:67-72`, one image serving both hosts), so cookies would be
+  first-party — good. But `apps/web/next.config.ts` has **no rewrite/proxy of
+  `/api` to the API service**, and in `pnpm dev` the web (`:3000`) and API
+  (`:3001`) are genuinely different origins (`apps/web/src/lib/api.ts:88-92`).
+  A cookie the API sets on `:3001` is not sent to the `:3000` origin the Next
+  middleware runs on, so routing would lose its role signal in dev. The same
+  applies to the documented mobile/parent app, which is a **Bearer-JWT client**
+  (`docs/MOBILE_API.md:6`, `:13-14`) and cannot adopt browser cookies at all.
+  See `docs/planning/httpOnly-auth-cookies.md` for the full decision record and
+  the required change set.
 - **Threat model still open.** XSS or a malicious third-party script can read
   `localStorage.accessToken` and `localStorage.refreshToken` and exfiltrate a
   session that outlives the tab; the 2FA temp token is exposed for its one-hour
-  life (`:99`, `max-age=3600`). Cookie transport does not remove XSS, but it
-  keeps the credential out of reach of script and removes the client-written
-  RBAC cookie, whose silent truncation is already a documented hazard.
-- **Disposition.** Track as a separate security PR that must land before or with
-  the governance feature, unless the repository owner explicitly accepts the
-  risk. It is **not** marked resolved here.
+  life (`apps/web/src/stores/auth.ts:99`, `max-age=3600`). Cookie transport does
+  not remove XSS, but it keeps the credential out of reach of script and removes
+  the client-written RBAC cookie, whose silent truncation is already a documented
+  hazard.
+- **Neutralising what this PR itself added.** The governance changes ship a
+  public WBS surface; its tracking credential does **not** use this path — the
+  tracking token is a bearer handed over via `sessionStorage`, never a URL query
+  string, and stored server-side only as an HMAC-SHA-256 digest
+  (`apps/api/src/utils/wbs-token.ts`). No new token was moved into
+  `localStorage`.
+- **Disposition.** Track as a dedicated security PR that must land before or
+  with the governance feature, unless the repository owner explicitly accepts
+  the risk in writing. It is **not** marked resolved here. The concrete plan,
+  threat model, deployment analysis and required tests live in
+  `docs/planning/httpOnly-auth-cookies.md`.
 
 
 ## ✅ Resolved by this effort (2026-07-22)

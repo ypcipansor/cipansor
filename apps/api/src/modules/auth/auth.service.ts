@@ -890,37 +890,40 @@ export class AuthService {
       throw Errors.unauthorized('2FA is not enabled for this user');
     }
 
-    let isValid = (await verifyOtp({ token, secret: user.twoFactorSecret })).valid;
-
-    // Check recovery codes if OTP failed (with atomic update to prevent race conditions)
-    if (!isValid) {
-      const result = await prisma.$executeRaw`
-        UPDATE "users"
-        SET "two_factor_recovery_codes" = array_remove("two_factor_recovery_codes", ${token})
-        WHERE "id" = ${userId}
-        AND ${token} = ANY("two_factor_recovery_codes")
-      `;
-
-      if (Number(result) > 0) {
-        isValid = true;
-      }
-    }
-
-    if (!isValid) {
-      throw Errors.unauthorized('Invalid OTP code');
+    // A recovery code is not a 6-digit TOTP, and otplib v13 *throws*
+    // (`TokenLengthError`) rather than answering `{ valid: false }` for one.
+    // Letting that bubble meant a recovery code surfaced as a 500 and never
+    // reached the fallback below — the codes were unreachable through the very
+    // endpoint meant to redeem them. A malformed OTP is simply not a valid
+    // TOTP, so it falls through to the recovery-code path.
+    let isTotpValid = false;
+    try {
+      isTotpValid = (await verifyOtp({ token, secret: user.twoFactorSecret })).valid;
+    } catch {
+      isTotpValid = false;
     }
 
     // Re-validate the persistent account state immediately before the tokens
     // exist, and create them in the same transaction that asserts it.
     //
     // The check at the top of this method and the token issuance below are
-    // separated by an OTP verification (and, for a recovery code, a raw UPDATE)
-    // — plenty of time for a suspension to commit. Without this second read,
-    // the exact race the caller asked about survives: a temporary token minted
-    // before the suspension, a suspension that commits while the operator types
-    // the code, and a brand-new access+refresh pair for an account that was
-    // switched off a moment earlier. The suspension deletes the refresh tokens
-    // it can see; this one would be created after that delete and outlive it.
+    // separated by an OTP verification — plenty of time for a suspension to
+    // commit. Without this second read, the exact race the caller asked about
+    // survives: a temporary token minted before the suspension, a suspension
+    // that commits while the operator types the code, and a brand-new
+    // access+refresh pair for an account that was switched off a moment
+    // earlier. The suspension deletes the refresh tokens it can see; this one
+    // would be created after that delete and outlive it.
+    //
+    // A recovery code is both *validated* and *consumed* here, not before it,
+    // and in the same transaction that takes the row lock. The previous version
+    // removed the code with a raw `UPDATE` ahead of this transaction, so a
+    // suspension or deactivation that landed in the gap refused the login but
+    // destroyed the code — the operator was permanently locked out of the
+    // account by a login that never succeeded. Consuming it only after the
+    // account-state checks pass, under the same `FOR UPDATE` lock that
+    // serialises two parallel redemptions, means a failed login leaves the code
+    // intact and the same code cannot be redeemed twice.
     return prisma.$transaction(async (tx) => {
       const claimed = await tx.$queryRaw<Array<{ id: string }>>`
         SELECT id FROM "users"
@@ -940,6 +943,34 @@ export class AuthService {
       });
       if (blockingSuspension) {
         throw Errors.unauthorized('Account is deactivated or not found');
+      }
+
+      // Recovery-code path. The row is locked above, so the matching UPDATE and
+      // the rowcount together are an atomic compare-and-remove: the first
+      // parallel request to reach this point removes the code and sees one row
+      // affected; a second request with the same code blocks on the lock, then
+      // re-evaluates `ANY` against the now-removed code and sees none. Only a
+      // positive rowcount may authorise the login — an unknown code never does.
+      //
+      // This runs *after* the account-state checks on purpose: a code is
+      // consumed only once the login is otherwise permitted, so a suspension or
+      // deactivation that lands before token issuance cannot destroy a code for
+      // a login that was refused.
+      let isValid = isTotpValid;
+      if (!isValid) {
+        const consumed = await tx.$executeRaw`
+          UPDATE "users"
+          SET "two_factor_recovery_codes" = array_remove("two_factor_recovery_codes", ${token})
+          WHERE "id" = ${userId}
+          AND ${token} = ANY("two_factor_recovery_codes")
+        `;
+        if (Number(consumed) > 0) {
+          isValid = true;
+        }
+      }
+
+      if (!isValid) {
+        throw Errors.unauthorized('Invalid OTP code');
       }
 
       // Generate tokens — with legacy fallback for unmigrated users

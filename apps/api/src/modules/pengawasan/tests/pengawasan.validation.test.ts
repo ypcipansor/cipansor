@@ -161,6 +161,73 @@ describe('pengawasan validation contracts', () => {
     ).toBe(true);
     expect(createBoardSuspensionSchema.safeParse(baseSuspension).success).toBe(true);
   });
+
+  describe('suspension projectedEndDate ordering', () => {
+    const start = new Date(Date.now() - 10 * 86_400_000).toISOString();
+    const before = new Date(Date.now() - 20 * 86_400_000).toISOString();
+    const equal = start;
+    const after = new Date(Date.now() - 1 * 86_400_000).toISOString();
+
+    it('rejects a projectedEndDate earlier than startDate, on that field', () => {
+      const parsed = createBoardSuspensionSchema.safeParse({
+        ...baseSuspension,
+        startDate: start,
+        projectedEndDate: before,
+      });
+      expect(parsed.success).toBe(false);
+      if (!parsed.success) {
+        expect(parsed.error.issues.some((i) => i.path[0] === 'projectedEndDate')).toBe(true);
+      }
+    });
+
+    it('accepts a projectedEndDate equal to startDate', () => {
+      expect(
+        createBoardSuspensionSchema.safeParse({
+          ...baseSuspension,
+          startDate: start,
+          projectedEndDate: equal,
+        }).success
+      ).toBe(true);
+    });
+
+    it('accepts a projectedEndDate later than startDate', () => {
+      expect(
+        createBoardSuspensionSchema.safeParse({
+          ...baseSuspension,
+          startDate: start,
+          projectedEndDate: after,
+        }).success
+      ).toBe(true);
+    });
+
+    it('accepts each date on its own', () => {
+      expect(
+        createBoardSuspensionSchema.safeParse({ ...baseSuspension, startDate: start }).success
+      ).toBe(true);
+      expect(
+        createBoardSuspensionSchema.safeParse({
+          ...baseSuspension,
+          projectedEndDate: after,
+        }).success
+      ).toBe(true);
+    });
+
+    it('reports the date ordering and the Plh completeness together in one parse', () => {
+      // A half-filled Plh must not suppress the independent date rule.
+      const parsed = createBoardSuspensionSchema.safeParse({
+        ...baseSuspension,
+        startDate: start,
+        projectedEndDate: before,
+        plhUserId: '11111111-1111-4111-8111-111111111111',
+      });
+      expect(parsed.success).toBe(false);
+      if (!parsed.success) {
+        const paths = parsed.error.issues.map((i) => i.path[0]);
+        expect(paths).toContain('projectedEndDate');
+        expect(paths).toContain('plhRoleCode');
+      }
+    });
+  });
 });
 
 /**

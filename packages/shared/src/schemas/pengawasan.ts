@@ -259,46 +259,68 @@ export const createBoardSuspensionSchema = z
       z.enum(PLH_ROLE_CODES).optional().nullable(),
     ),
   })
-  // `plhUserId` and `plhRoleCode` describe one thing — a Plh/Plt delegation —
-  // so supplying half of it is never meaningful. The form could previously send
-  // a user with no role (a delegation the service silently ignores) or a role
-  // with no user (a role nothing carries), and both stored suspension metadata
-  // that looks like a delegation without being one. They are now all-or-nothing;
-  // an empty form sends neither and normalises to an absent pair.
+  // Each rule below is independent and runs on every parse. The previous shape
+  // nested the date rule inside the "Plh pair is complete or empty" branch and
+  // `return`ed there, so a half-filled Plh skipped the date checks entirely
+  // (and a bad date was reported only when the Plh happened to be valid). All
+  // issues are now collected in one pass, so a request with several problems
+  // reports all of them at once.
   .superRefine((data, ctx) => {
-    const hasUser = !!data.plhUserId;
-    const hasRole = !!data.plhRoleCode;
-    if (hasUser === hasRole) {
-      // A suspension is effective the moment the SK is issued: the account is
-      // switched off and the Plh is granted in the same transaction. A future
-      // `startDate` cannot therefore schedule anything — it would only sit in
-      // the row as metadata that looks like a delayed effect while the effect
-      // has already happened. `projectedEndDate` is an estimate that likewise
-      // does not expire the suspension; a Pembina lifts it explicitly. Given
-      // the decision that suspension is immediate, a future date must be
-      // refused at the edge rather than stored as a promise the code does not
-      // keep.
-      if (data.startDate) {
-        const start = Date.parse(data.startDate);
-        if (start > Date.now()) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ["startDate"],
-            message:
-              "Pembekuan berlaku sejak SK ditetapkan, sehingga tanggal mulai tidak boleh di masa depan.",
-          });
-        }
+    // A suspension is effective the moment the SK is issued: the account is
+    // switched off and the Plh is granted in the same transaction. A future
+    // `startDate` cannot therefore schedule anything — it would only sit in the
+    // row as metadata that looks like a delayed effect while the effect has
+    // already happened. `projectedEndDate` is an estimate that likewise does not
+    // expire the suspension; a Pembina lifts it explicitly. Given the decision
+    // that suspension is immediate, a future start date must be refused at the
+    // edge rather than stored as a promise the code does not keep.
+    if (data.startDate) {
+      const start = Date.parse(data.startDate);
+      if (start > Date.now()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["startDate"],
+          message:
+            "Pembekuan berlaku sejak SK ditetapkan, sehingga tanggal mulai tidak boleh di masa depan.",
+        });
       }
-      return;
     }
 
-    const missing = hasUser ? "plhRoleCode" : "plhUserId";
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: [missing],
-      message:
-        "Data Plh/Plt harus lengkap: isi pengguna dan peran delegasinya, atau kosongkan keduanya.",
-    });
+    // An end that precedes the start describes a window that can never exist.
+    // `projectedEndDate` is the field the operator edits, so the issue is
+    // reported there; equality is allowed (a same-day is still valid). Only
+    // checked when both dates are present — each is optional on its own.
+    if (data.startDate && data.projectedEndDate) {
+      const start = Date.parse(data.startDate);
+      const end = Date.parse(data.projectedEndDate);
+      if (!isNaN(start) && !isNaN(end) && end < start) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["projectedEndDate"],
+          message:
+            "Tanggal perkiraan berakhir tidak boleh lebih awal dari tanggal mulai pembekuan.",
+        });
+      }
+    }
+
+    // `plhUserId` and `plhRoleCode` describe one thing — a Plh/Plt delegation —
+    // so supplying half of it is never meaningful. The form could previously
+    // send a user with no role (a delegation the service silently ignores) or a
+    // role with no user (a role nothing carries), and both stored suspension
+    // metadata that looks like a delegation without being one. They are
+    // all-or-nothing; an empty form sends neither and normalises to an absent
+    // pair.
+    const hasUser = !!data.plhUserId;
+    const hasRole = !!data.plhRoleCode;
+    if (hasUser !== hasRole) {
+      const missing = hasUser ? "plhRoleCode" : "plhUserId";
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [missing],
+        message:
+          "Data Plh/Plt harus lengkap: isi pengguna dan peran delegasinya, atau kosongkan keduanya.",
+      });
+    }
   });
 
 export type CreateBoardSuspensionInput = z.infer<

@@ -307,4 +307,107 @@ describe('Pengawasan Service', () => {
       expect(result.topArrearsStudents[0]).toMatchObject({ studentName: 'Santri Pindah' });
     });
   });
+
+  describe('Financial arrears — summary counts only positive balances', () => {
+    const invoice = (
+      over: Partial<{
+        id: string;
+        studentId: string;
+        amount: number;
+        paidAmount: number;
+        dueDate: Date;
+        status: string;
+        unitId: string | null;
+        unitName: string;
+      }> = {}
+    ) => {
+      const {
+        id = 'inv-x',
+        studentId = 'student-1',
+        amount = 100000,
+        paidAmount = 0,
+        dueDate = new Date('2026-01-01'),
+        status = 'PENDING',
+        unitId = 'unit-1',
+        unitName = 'SD IT',
+      } = over;
+      return {
+        id,
+        studentId,
+        // Plain numbers: the service coerces with `Number(...)`, which is NaN
+        // for a `{ toNumber }` stub.
+        amount,
+        paidAmount,
+        dueDate,
+        status,
+        unitId,
+        unit: unitId ? { id: unitId, name: unitName } : null,
+        student: {
+          id: studentId,
+          nis: '123',
+          user: { name: `Santri ${studentId}` },
+          unitId: 'unit-1',
+          unit: { id: 'unit-1', name: 'SD IT' },
+        },
+        paymentType: { id: 'pt-1', name: 'SPP', code: 'SPP' },
+      } as any;
+    };
+
+    const load = async (invoices: any[]) => {
+      vi.mocked(prisma.invoice.findMany).mockResolvedValue(invoices);
+      return pengawasanService.getFinancialArrears();
+    };
+
+    it('excludes a fully paid PENDING invoice from every figure', async () => {
+      const result = await load([
+        invoice({ id: 'settled', amount: 100000, paidAmount: 100000, status: 'PENDING' }),
+        invoice({ id: 'real', amount: 250000, paidAmount: 50000, status: 'PARTIAL' }),
+      ]);
+
+      expect(result.summary.totalUnpaidInvoicesCount).toBe(1);
+      expect(result.summary.totalUnpaidAmount).toBe(200000);
+      const units = result.unitBreakdown as Array<{ count: number; totalUnpaid: number }>;
+      expect(units.reduce((n, u) => n + u.count, 0)).toBe(1);
+      expect(result.topArrearsStudents[0].invoiceCount).toBe(1);
+    });
+
+    it('excludes an overpaid invoice (negative balance) from every figure', async () => {
+      const result = await load([
+        invoice({ id: 'over', amount: 100000, paidAmount: 150000, status: 'OVERDUE' }),
+        invoice({ id: 'real', amount: 100000, paidAmount: 0, status: 'OVERDUE' }),
+      ]);
+
+      expect(result.summary.totalUnpaidInvoicesCount).toBe(1);
+      expect(result.summary.overdueInvoicesCount).toBe(1);
+      expect(result.summary.totalUnpaidAmount).toBe(100000);
+    });
+
+    it('keeps summary, unit breakdown and student counts consistent', async () => {
+      const result = await load([
+        invoice({ id: 'a', studentId: 's1', amount: 300000, paidAmount: 0, status: 'PENDING' }),
+        invoice({
+          id: 'b',
+          studentId: 's1',
+          amount: 100000,
+          paidAmount: 100000,
+          status: 'PENDING',
+        }),
+        invoice({
+          id: 'c',
+          studentId: 's2',
+          amount: 400000,
+          paidAmount: 100000,
+          status: 'OVERDUE',
+        }),
+        invoice({ id: 'd', studentId: 's2', amount: 50000, paidAmount: 80000, status: 'PARTIAL' }),
+      ]);
+
+      const units = result.unitBreakdown as Array<{ count: number }>;
+      const unitCount = units.reduce((n, u) => n + u.count, 0);
+      const studentInvoiceCount = result.topArrearsStudents.reduce((n, s) => n + s.invoiceCount, 0);
+      expect(result.summary.totalUnpaidInvoicesCount).toBe(2);
+      expect(unitCount).toBe(result.summary.totalUnpaidInvoicesCount);
+      expect(studentInvoiceCount).toBe(result.summary.totalUnpaidInvoicesCount);
+    });
+  });
 });

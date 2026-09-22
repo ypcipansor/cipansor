@@ -563,6 +563,13 @@ export class PengawasanService {
 
     let totalUnpaidAmount = 0;
     let overdueInvoicesCount = 0;
+    // Only invoices with an actual positive balance count. The summary used to
+    // report `unpaidInvoices.length` — the size of the *query* result — while
+    // every other figure (the amount, the per-invoice counter each breakdown
+    // aggregates) skipped invoices whose balance was already settled. A PENDING
+    // row fully paid, or an overpaid one, therefore inflated the headline count
+    // above both the amount and the sum of the per-unit counts.
+    let totalUnpaidInvoicesCount = 0;
 
     const unitMap: Record<
       string,
@@ -585,6 +592,7 @@ export class PengawasanService {
       if (remaining <= 0) continue;
 
       totalUnpaidAmount += remaining;
+      totalUnpaidInvoicesCount += 1;
       const isOverdue = inv.status === 'OVERDUE' || (inv.dueDate && inv.dueDate < now);
       if (isOverdue) overdueInvoicesCount++;
 
@@ -622,7 +630,7 @@ export class PengawasanService {
     return {
       summary: {
         totalUnpaidAmount,
-        totalUnpaidInvoicesCount: unpaidInvoices.length,
+        totalUnpaidInvoicesCount,
         overdueInvoicesCount,
       },
       unitBreakdown: Object.values(unitMap),
