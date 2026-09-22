@@ -142,9 +142,13 @@ export function describeEmailTransport(): EmailTransportStatus {
  *     `&lt;code&gt;` becomes the literal text `<code>` rather than being
  *     mistaken for a tag and deleted.
  *
- * Each destructive pass is re-applied until the string stops changing. A
- * single pass over `<<script>script>` leaves `<script>` behind, because the
- * inner tag is consumed and the two halves join into a new one.
+ * A single tag-strip pass over `<<script>script>` leaves `<script>` behind,
+ * because the inner tag is consumed and the two halves join into a new one.
+ * Re-applying the pass to a fixed point closes that hole, but a fixed-point
+ * loop is not free: a tag split across many layers (closing an inner `</style>`
+ * re-fuses an outer `<sty…` into `<style`) peels one layer per round, so O(n)
+ * rounds of an O(n) scan is quadratic. Both strip passes below build the same
+ * fixed point in a single left-to-right stack scan instead, which is O(n).
  *
  * Every pass is a hand-written left-to-right scan, not a regex: a `<...>` body
  * is bounded by the next `<`, and each character is visited a constant number
@@ -157,10 +161,10 @@ export function describeEmailTransport(): EmailTransportStatus {
  * inert only while the consumer does not re-embed it as HTML without escaping.
  */
 export function htmlToText(html: string): string {
-  let text = stripElementToFixedPoint(html, 'style');
-  text = stripElementToFixedPoint(text, 'head');
+  let text = stripElement(html, 'style');
+  text = stripElement(text, 'head');
   text = text.replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|tr|h1|h2|h3|li)>/gi, '\n');
-  text = stripTagsToFixedPoint(text);
+  text = stripTags(text);
 
   return decodeBasicEntities(text)
     .replace(/[ \t]+/g, ' ')
@@ -169,122 +173,84 @@ export function htmlToText(html: string): string {
 }
 
 /**
- * Apply `transform` until it stops changing the string.
+ * True when `out` ends with `pattern`, compared case-insensitively.
  *
- * The terminating condition is the fixed point. Each round must remove at least
- * one character or the string is returned, so the loop cannot spin.
+ * `out` is a plain array of single characters, so a character is a single
+ * UTF-16 code unit and its length equals the number of appended elements.
  */
-function stripToFixedPoint(text: string, transform: (input: string) => string): string {
-  let current = text;
-  for (;;) {
-    const next = transform(current);
-    if (next === current) return current;
-    current = next;
+function endsWith(out: string[], pattern: string): boolean {
+  if (out.length < pattern.length) return false;
+  const base = out.length - pattern.length;
+  for (let k = 0; k < pattern.length; k++) {
+    if (out[base + k].toLowerCase() !== pattern[k]) return false;
   }
-}
-
-/** Remove `<name ...> ... </name>` (with its contents) to a fixed point. */
-function stripElementToFixedPoint(text: string, tagName: string): string {
-  return stripToFixedPoint(text, (input) => stripElementOnce(input, tagName));
+  return true;
 }
 
 /**
- * Remove one pass of `<name ...> ... </name>` runs, contents included.
+ * Remove `<name …> … </name>` runs (contents included) to a fixed point, in one
+ * linear stack scan.
  *
- * This reproduces `/<name[\s\S]*?<\/name>/gi` exactly: the open token is the
- * literal `<name` (no `>` required, no name boundary) and the match ends at the
- * *earliest* `</name>` after it. An open with no later close is no match, so it
- * is left for the generic tag strip to remove as a plain tag — the behaviour
- * the lazy regex had. The close search is memoised, so a run of open tags with
- * no close never rescans to end-of-string per open (which is what made the
- * regex quadratic); the ranges scanned by successive searches do not overlap,
- * so one pass is linear.
+ * The reference behaviour (`/<name[\s\S]*?<\/name>/gi` re-applied until the
+ * string stops changing) deletes, on its first pass, the earliest open plus the
+ * *first* close after it, then repeats. That fixed point is the greedy rule:
+ * whenever a close arrives while an open is unmatched, delete from the
+ * *earliest* unmatched open through the close. Retiring the whole unmatched run
+ * at once is safe because every open after the earliest is either swallowed by
+ * the same truncation or would only be matched by a later close that has not
+ * been reached yet, so one truncation reaches the same state the next pass
+ * would — no re-scan, no per-layer pass.
+ *
+ * The open token is the literal `<name` (no `>` required, no name boundary),
+ * matching the lazy regex; an open with no later close is no match and is left
+ * for the generic tag strip. Amortised linear: a character is pushed once and
+ * dropped at most once.
  */
-function stripElementOnce(text: string, tagName: string): string {
-  const lower = text.toLowerCase();
-  const open = `<${tagName}`;
-  const close = `</${tagName}>`;
-  const parts: string[] = [];
-  let copiedUpTo = 0;
-  let from = 0;
-  let searchedFrom = -1;
-  let found = -1;
+function stripElement(text: string, tagName: string): string {
+  const open = `<${tagName}`.toLowerCase();
+  const close = `</${tagName}>`.toLowerCase();
+  const out: string[] = [];
+  let openStart = -1;
 
-  // Earliest `close` at or after `from`, memoised across the loop.
-  const findClose = (searchFrom: number): number => {
-    if (found !== -1 && found >= searchFrom) return found;
-    // A previous search reached end-of-string with no match; anything at or
-    // after that start is likewise a miss.
-    if (found === -1 && searchedFrom !== -1 && searchFrom >= searchedFrom) return -1;
-    searchedFrom = searchFrom;
-    found = lower.indexOf(close, searchFrom);
-    return found;
-  };
-
-  for (;;) {
-    const start = lower.indexOf(open, from);
-    if (start === -1) break;
-    const closeAt = findClose(start + open.length);
-    if (closeAt === -1) break;
-    const end = closeAt + close.length;
-
-    parts.push(text.slice(copiedUpTo, start));
-    copiedUpTo = end;
-    from = end;
+  for (let i = 0; i < text.length; i++) {
+    out.push(text[i]);
+    if (openStart === -1 && endsWith(out, open)) openStart = out.length - open.length;
+    if (openStart !== -1 && endsWith(out, close)) {
+      out.length = openStart;
+      openStart = -1;
+    }
   }
 
-  parts.push(text.slice(copiedUpTo));
-  return parts.join('');
-}
-
-/** Remove every `<...>` run to a fixed point. */
-function stripTagsToFixedPoint(text: string): string {
-  return stripToFixedPoint(text, stripTagsOnce);
+  return out.join('');
 }
 
 /**
- * One pass that drops `<...>` runs and copies everything else.
+ * Remove every `<…>` run to a fixed point, in one linear stack scan.
  *
- * A run is `<`, then any characters that are neither `<` nor... nothing: the
- * committed regex was `<[^>]*>`, whose body may cross `<`. It is reproduced
- * exactly here (a `<` runs to the next `>`), but linearly: a "next `>`" table is
- * built once per pass, so a `<` with no following `>` costs O(1) instead of the
- * O(n) rescan the regex paid — the quadratic blow-up code scanning alert 49
- * flagged on input such as `<a` repeated. Removing one run can concatenate its
- * neighbours into a new one, which is why the caller repeats this to a fixed
- * point.
+ * The run regex is `<[^>]*>`'s committed shape: a `<` runs to the next `>` even
+ * across other `<`. Re-applying it deletes the earliest open plus the first
+ * close after it, then repeats; that fixed point is the greedy rule, so
+ * whenever a `>` is seen with a `<` still unmatched, delete from the *earliest*
+ * unmatched `<` through the `>`. Retiring the whole run at once is what makes
+ * one scan suffice, and a `<` with no following `>` is left as literal text,
+ * exactly as the regex'd single pass did.
  */
-function stripTagsOnce(text: string): string {
-  const parts: string[] = [];
-  let copiedUpTo = 0;
-  let i = 0;
-  const n = text.length;
+function stripTags(text: string): string {
+  const out: string[] = [];
+  let openStart = -1;
 
-  // nextGt[i] = index of the first `>` at or after i, or -1.
-  const nextGt = new Int32Array(n + 1);
-  nextGt[n] = -1;
-  for (let k = n - 1; k >= 0; k--) {
-    nextGt[k] = text[k] === '>' ? k : nextGt[k + 1];
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    out.push(ch);
+    if (ch === '<') {
+      if (openStart === -1) openStart = out.length - 1;
+    } else if (ch === '>' && openStart !== -1) {
+      out.length = openStart;
+      openStart = -1;
+    }
   }
 
-  while (i < n) {
-    if (text[i] !== '<') {
-      i++;
-      continue;
-    }
-    const gt = nextGt[i + 1];
-    if (gt === -1) {
-      // No `>` after this `<`: not a tag, leave it as literal text.
-      i++;
-      continue;
-    }
-    parts.push(text.slice(copiedUpTo, i));
-    copiedUpTo = gt + 1;
-    i = gt + 1;
-  }
-
-  parts.push(text.slice(copiedUpTo));
-  return parts.join('');
+  return out.join('');
 }
 
 /**

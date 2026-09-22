@@ -317,6 +317,17 @@ describe('htmlToText', () => {
       expect(htmlToText('<scr<script>ipt>alert(1)')).not.toMatch(/<\/?script/i);
     });
 
+    it('strips a tag that is fragmented across several layers, not just one', () => {
+      // Harder than `<<script>script>`: closing the inner tag re-fuses an outer
+      // `<sty` with a stale `le`, so `<style` re-forms one layer at a time and
+      // a fixed-point loop peels exactly one layer per round (this input needs
+      // three). The single-scan stack strip removes every layer at once.
+      expect(htmlToText('<sty<style>X</style>le>Y</style>Z')).toBe('Z');
+      // Two fragments re-fuse into a second `<style>` layer, which the same
+      // scan must also consume — nothing is left.
+      expect(htmlToText('<st<style>X</style>y<style>Y</style>le>Z</style>')).toBe('');
+    });
+
     it('removes comments, declarations/doctype and processing instructions', () => {
       expect(htmlToText('before<!-- note -->after')).toBe('beforeafter');
       expect(htmlToText('before<!DOCTYPE html>after')).toBe('beforeafter');
@@ -337,7 +348,11 @@ describe('htmlToText', () => {
       // Regression for code scanning alert 49: the `<style[\s\S]*?<\/style>`
       // and `<[^>]*>` regexes backtracked quadratically — 80k `<a` took ~8s,
       // 80k `<style` ~12s. The hand-written scans must stay linear.
-      for (const input of ['<a'.repeat(200_000), '<style'.repeat(200_000), '<!--'.repeat(200_000)]) {
+      for (const input of [
+        '<a'.repeat(200_000),
+        '<style'.repeat(200_000),
+        '<!--'.repeat(200_000),
+      ]) {
         const start = Date.now();
         htmlToText(input);
         expect(Date.now() - start).toBeLessThan(1000);
@@ -352,6 +367,40 @@ describe('htmlToText', () => {
         htmlToText(input);
         expect(Date.now() - start).toBeLessThan(1000);
       }
+    });
+
+    it('stays linear when a tag is fragmented across many nested layers', () => {
+      // Regression for the fixed-point loop: `layer(d)` is `<sty` + layer(d-1) +
+      // `le>Y</style>` nested d deep. Closing the innermost `</style>` re-fuses
+      // the stale `le` with the outer `<sty` into a fresh `<style`, so the old
+      // `stripToFixedPoint` needed d rounds over an O(d)-sized string, i.e.
+      // O(n^2): measured 10k->1.2s, 20k->6.5s, 40k->27s on the previous code.
+      // The single stack scan must finish every depth in well under a second.
+      const layer = (d: number): string => {
+        let s = '<style>Z</style>';
+        for (let i = 1; i < d; i++) s = `<sty${s}le>Y</style>`;
+        return s;
+      };
+
+      // Correctness: all of it is `<style>` markup, so nothing survives.
+      expect(htmlToText(layer(2000))).toBe('');
+      expect(htmlToText(layer(2000))).not.toMatch(/<\/?style/i);
+
+      // Complexity: doubling the depth must not quadruple the time.
+      const timed = (d: number): number => {
+        const input = layer(d);
+        const start = Date.now();
+        htmlToText(input);
+        return Date.now() - start;
+      };
+      timed(4000); // warm up
+
+      const small = Math.max(timed(20000), 1);
+      const large = timed(80000);
+      // Quadratic growth would be ~16x; allow generous headroom for CI jitter
+      // while still failing an O(n^2) implementation (which measured ~400x
+      // here, well past any plausible noise).
+      expect(large).toBeLessThan(small * 8);
     });
   });
 
