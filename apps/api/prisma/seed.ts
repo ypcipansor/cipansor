@@ -2255,6 +2255,8 @@ async function main() {
                 ? new Prisma.Decimal(totalAmount / 2)
                 : new Prisma.Decimal(0),
           status,
+          // Unit of record: the payment type that raised the bill (SMP IT).
+          unitId: sppPaymentType.unitId,
           period: `${months[monthIdx]} 2024`,
           notes: `Tagihan SPP untuk bulan ${months[monthIdx]}`,
         },

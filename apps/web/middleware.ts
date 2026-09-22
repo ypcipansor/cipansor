@@ -11,7 +11,12 @@ import {
   type LegacyRole,
 } from "@/lib/rbac";
 import { hostSplitActionFor, isPortalHost } from "@/lib/host-split";
-import { decodeRoutingCookie, ROUTING_COOKIE } from "@cipansor/shared";
+import {
+  ROUTING_COOKIE,
+  resolveRoutingCookieSecret,
+  verifyRoutingCookie,
+  type RoutingCookiePayload,
+} from "@cipansor/shared";
 
 // Public routes that don't require authentication.
 // "/unauthorized" is the access-denied page ProtectedRoute redirects to; it
@@ -83,24 +88,48 @@ const publicPrefixes = [
 ];
 
 /**
+ * The routing-cookie signing key, resolved once per middleware instance.
+ *
+ * Next inlines `process.env.X` references for the Edge/runtime boundary, so the
+ * three names are read literally. Falling back to `JWT_SECRET` keeps the key in
+ * one place; if neither is configured the resolver throws, and `getAuthState`
+ * catches that and fails closed rather than routing on an unsigned cookie.
+ */
+function routingCookieSecret(): string {
+  return resolveRoutingCookieSecret({
+    ROUTING_COOKIE_SECRET: process.env.ROUTING_COOKIE_SECRET,
+    JWT_SECRET: process.env.JWT_SECRET,
+    NODE_ENV: process.env.NODE_ENV,
+  });
+}
+
+/**
  * Resolve auth state from cookies.
  *
  * The session is server-issued: the API sets `HttpOnly` cookies and the
- * `cipansor_routing` hint the middleware routes on. Nothing here trusts a
- * client-written cookie for a role. The legacy `accessToken` cookie is read
- * only as "a session exists" for one deploy cycle, and deliberately yields no
- * role — so the RBAC gate below fails closed rather than granting a route.
+ * `cipansor_routing` hint the middleware routes on. **`HttpOnly` does not make
+ * the routing hint trustworthy** — the browser sends back whatever value a
+ * same-site request could set, so the hint is only accepted when its MAC
+ * verifies (`verifyRoutingCookie`). A missing, forged, malformed or expired
+ * cookie yields no route authority, and the legacy token cookies attest only
+ * that *a* session exists, never a role: protected routes then fail closed.
  */
-function getAuthState(request: NextRequest): {
+async function getAuthState(request: NextRequest): Promise<{
   isAuthenticated: boolean;
   role?: LegacyRole;
   roleCode?: string;
-} {
-  // Preferred and authoritative for routing: the server-issued routing cookie.
-  // `HttpOnly`, so it cannot be forged by script.
-  const routing = decodeRoutingCookie(
-    request.cookies.get(ROUTING_COOKIE)?.value,
-  );
+}> {
+  // Preferred and authoritative for routing: the server-signed routing cookie.
+  // A value that does not carry a valid MAC is treated exactly like no cookie.
+  let routing: RoutingCookiePayload | null = null;
+  try {
+    routing = await verifyRoutingCookie(
+      request.cookies.get(ROUTING_COOKIE)?.value,
+      routingCookieSecret(),
+    );
+  } catch {
+    routing = null;
+  }
   if (routing) {
     return {
       isAuthenticated: true,
@@ -125,7 +154,7 @@ function getAuthState(request: NextRequest): {
   return { isAuthenticated: false };
 }
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Host split, before anything else.
@@ -169,7 +198,7 @@ export function middleware(request: NextRequest) {
     );
 
   // Get authentication state
-  const { isAuthenticated, role, roleCode } = getAuthState(request);
+  const { isAuthenticated, role, roleCode } = await getAuthState(request);
 
   // Redirect unauthenticated users to login
   if (!isPublicRoute && !isAuthenticated) {

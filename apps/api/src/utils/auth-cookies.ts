@@ -7,7 +7,7 @@ import {
   ROUTING_COOKIE,
   buildAuthCookie,
   buildClearAuthCookie,
-  encodeRoutingCookie,
+  signRoutingCookie,
   parseCookieHeader,
   type RoutingCookiePayload,
 } from '@cipansor/shared';
@@ -52,10 +52,14 @@ function secondsFromExpiry(expiresIn: string): number {
   return Math.max(0, Math.floor((getExpirationDate(expiresIn).getTime() - Date.now()) / 1000));
 }
 
+/** The signed `cipansor_routing` cookie value for a freshly minted token pair. */
+export async function signedRoutingCookieValue(tokens: TokenPair): Promise<string> {
+  return signRoutingCookie(routingPayloadFor(tokens), config.routingCookie.secret);
+}
+
 /** The cookies that carry an authenticated session. */
-export function sessionCookies(tokens: TokenPair): string[] {
+export async function sessionCookies(tokens: TokenPair): Promise<string[]> {
   const secure = cookieSecure();
-  const routing = routingPayloadFor(tokens);
 
   return [
     buildAuthCookie(ACCESS_TOKEN_COOKIE, tokens.accessToken, {
@@ -66,7 +70,7 @@ export function sessionCookies(tokens: TokenPair): string[] {
       secure,
       maxAgeSeconds: secondsFromExpiry(config.jwt.refreshExpiresIn),
     }),
-    buildAuthCookie(ROUTING_COOKIE, encodeRoutingCookie(routing), {
+    buildAuthCookie(ROUTING_COOKIE, await signedRoutingCookieValue(tokens), {
       secure,
       maxAgeSeconds: secondsFromExpiry(config.jwt.refreshExpiresIn),
     }),

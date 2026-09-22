@@ -649,6 +649,14 @@ export class WbsService {
    * assignment scope uses (`isActive` + not expired), so a stale or expired
    * grant cannot qualify someone the scope query would then hide the report
    * from.
+   *
+   * Each assignment's own `unitId` is selected too. `User.unitId` is a single
+   * home unit; a person can hold the same role in several units through
+   * `UserRoleAssignment.unitId`, and the token that decides `buildScopeWhere`
+   * takes its unit from the *active assignment* (`tokenUnitId`), not the user
+   * row. Deciding eligibility from `User.unitId` therefore named recipients
+   * whose matching assignment was in the report's unit but whose home unit was
+   * elsewhere, and the report landed in a queue its new owner could not read.
    */
   private async loadForwardRecipient(toUserId: string) {
     return prisma.user.findUnique({
@@ -663,7 +671,7 @@ export class WbsService {
             isActive: true,
             OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
           },
-          select: { role: { select: { code: true } } },
+          select: { unitId: true, role: { select: { code: true } } },
         },
       },
     });
@@ -678,6 +686,21 @@ export class WbsService {
    * recipient's account state, roles and unit can all change in the window
    * between it and the write, and acting on that stale read is exactly how a
    * deactivated or role-revoked user was handed a confidential report.
+   *
+   * The check is made against the same facts `buildScopeWhere` reads, so a
+   * recipient who passes here can actually list, read and mutate the report
+   * afterwards:
+   *
+   * - **Foundation destination** (`YAYASAN_PEMBINA`/`PENGAWAS`/`KETUA`): the
+   *   recipient needs an effective assignment for the matching role. Those
+   *   roles are foundation-scoped, so no unit restricts them.
+   * - **Unit destination** (`UNIT_ADMIN`): the recipient needs an effective
+   *   assignment for a role in the unit bucket *whose effective unit is the
+   *   report's unit*. An assignment with its own unit uses that unit; only an
+   *   assignment with no unit falls back to the user's home unit — the same
+   *   rule `tokenUnitId` applies when it mints the recipient's token. A
+   *   matching `User.unitId` with a mismatching assignment unit is therefore
+   *   refused, which is the bug this replaces.
    */
   private assertForwardRecipientEligible(
     recipient: Awaited<ReturnType<WbsService['loadForwardRecipient']>>,
@@ -691,37 +714,38 @@ export class WbsService {
       throw Errors.badRequest('Pengguna tujuan teruskan tidak aktif.');
     }
 
-    // A named recipient must actually be able to hold the destination role.
-    // `buildScopeWhere` grants the `assignedUserId` read access, so without this
-    // the caller could name any user — the report's own subject, an unrelated
-    // staff member — and hand them the case regardless of role or unit.
-    const recipientRoleCodes = recipient.userRoles.map((ur) => ur.role.code);
-    const matchesDestination = recipientRoleCodes.some((code) =>
-      isWbsForwardRecipientRole(data.toRole, code)
+    if (data.toRole === 'UNIT_ADMIN') {
+      // A unit-level destination is only readable when the report has a unit
+      // and the recipient holds the destination role *in that unit* — through
+      // an assignment whose effective unit matches. `buildScopeWhere`'s
+      // unit-scoped branch keys on the recipient's token unit, which comes from
+      // the active assignment, so an assignment with its own unit is judged on
+      // that unit and never on the user's home unit instead.
+      if (!reportUnitId) {
+        throw Errors.badRequest('Laporan tanpa unit tidak dapat diteruskan ke peran tingkat unit.');
+      }
+      const hasMatchingUnitAssignment = recipient.userRoles.some((assignment) => {
+        if (!isWbsForwardRecipientRole(data.toRole, assignment.role.code)) return false;
+        const effectiveUnit = assignment.unitId ?? recipient.unitId ?? null;
+        return effectiveUnit === reportUnitId;
+      });
+      if (!hasMatchingUnitAssignment) {
+        throw Errors.forbidden(
+          'Pengguna tujuan tidak memiliki penugasan peran yang cocok pada unit laporan ini.'
+        );
+      }
+      return;
+    }
+
+    // A foundation destination has no unit restriction, so any effective
+    // assignment for the matching role qualifies the recipient.
+    const matchesDestination = recipient.userRoles.some((assignment) =>
+      isWbsForwardRecipientRole(data.toRole, assignment.role.code)
     );
     if (!matchesDestination) {
       throw Errors.badRequest(
         `Pengguna tujuan tidak memiliki peran efektif yang sesuai untuk tujuan ${data.toRole}.`
       );
-    }
-
-    // A unit-level destination must stay inside the report's unit. A
-    // foundation-wide recipient has no unit restriction, but a KEPALA_UNIT /
-    // UNIT_ADMIN named from another unit would otherwise gain access to a report
-    // its own scope query hides from it. `reportUnitId` is the *locked* report's
-    // unit when this runs inside the transaction, never the pre-transaction read.
-    if (data.toRole === 'UNIT_ADMIN') {
-      if (!recipient.unitId) {
-        throw Errors.badRequest(
-          'Pengguna tujuan tingkat unit harus terikat pada satu unit organisasi.'
-        );
-      }
-      if (!reportUnitId) {
-        throw Errors.badRequest('Laporan tanpa unit tidak dapat diteruskan ke peran tingkat unit.');
-      }
-      if (recipient.unitId !== reportUnitId) {
-        throw Errors.forbidden('Pengguna tujuan berada di unit yang berbeda dengan unit laporan.');
-      }
     }
   }
 
@@ -843,7 +867,7 @@ export class WbsService {
                 isActive: true,
                 OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
               },
-              select: { role: { select: { code: true } } },
+              select: { unitId: true, role: { select: { code: true } } },
             },
           },
         });

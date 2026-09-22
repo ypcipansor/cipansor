@@ -117,12 +117,9 @@ function storageStateFor(session: Session) {
     { name: "access_token", value: session.accessToken },
     { name: "refresh_token", value: session.refreshToken },
   ];
-  const routing = (session as { routing?: Record<string, unknown> }).routing;
+  const routing = (session as { routing?: string }).routing;
   if (routing) {
-    cookies.push({
-      name: "cipansor_routing",
-      value: Buffer.from(JSON.stringify(routing), "utf8").toString("base64url"),
-    });
+    cookies.push({ name: "cipansor_routing", value: routing });
   }
   return {
     cookies: cookies.map((c) => ({

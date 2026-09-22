@@ -65,12 +65,12 @@ export interface AuthSession {
   accessToken: string;
   refreshToken: string;
   /**
-   * The routing hint the API sends alongside the tokens. `middleware.ts` reads
-   * the `cipansor_routing` cookie the API sets; a Playwright storageState can
-   * seed that cookie directly, but a per-page `loginAs` cannot depend on a
-   * cross-origin Set-Cookie landing, so the hint is injected here.
+   * The **server-signed** `cipansor_routing` cookie value, exactly as the API
+   * set it. `middleware.ts` only accepts a routing cookie whose MAC verifies, so
+   * the helper must forward this value verbatim; a hand-encoded JSON blob would
+   * be treated as forged and the session would fail closed.
    */
-  routing?: Record<string, unknown>;
+  routing?: string;
 }
 
 async function postJson(path: string, body: unknown, bearer?: string) {
@@ -201,11 +201,6 @@ function persistedAuthStorage(session: AuthSession): string {
   });
 }
 
-/** Encode the routing hint the way the API's shared `encodeRoutingCookie` does. */
-function encodeRouting(routing: Record<string, unknown>): string {
-  return Buffer.from(JSON.stringify(routing), "utf8").toString("base64url");
-}
-
 /** The cookies the middleware and API read for a session. */
 function authCookies(session: AuthSession) {
   const cookies = [
@@ -215,7 +210,7 @@ function authCookies(session: AuthSession) {
   if (session.routing) {
     cookies.push({
       name: ROUTING_COOKIE,
-      value: encodeRouting(session.routing),
+      value: session.routing,
     });
   }
   return cookies;

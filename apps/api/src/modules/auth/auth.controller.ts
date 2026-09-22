@@ -15,9 +15,9 @@ import { Errors } from '@/middleware/error';
 import {
   clearedSessionCookies,
   readCookie,
-  routingPayloadFor,
   sessionCookies,
   setCookies,
+  signedRoutingCookieValue,
   twoFactorCookie,
 } from '@/utils/auth-cookies';
 import { ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE } from '@cipansor/shared';
@@ -34,13 +34,13 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
   // response only the temporary token is minted, and it is short-lived.
   if ('accessToken' in result && 'refreshToken' in result) {
     const tokens = result as { accessToken: string; refreshToken: string };
-    setCookies(res, sessionCookies(tokens));
+    setCookies(res, await sessionCookies(tokens));
     // The routing hint is included for the web's own scenarios (Playwright
-    // storageState, which cannot originate a Set-Cookie). A browser ignores it
-    // and uses the cookie.
+    // storageState, which cannot originate a Set-Cookie). It is the same signed
+    // value the cookie carries — a browser ignores the field and uses the cookie.
     res.json({
       success: true,
-      data: { ...result, routing: routingPayloadFor(tokens) },
+      data: { ...result, routing: await signedRoutingCookieValue(tokens) },
     });
     return;
   }
@@ -90,7 +90,7 @@ export const refreshToken = asyncHandler(async (req: Request, res: Response) => 
 
   // Rotation is server-side: the replacement pair is written straight back as
   // new cookies, so the browser never handles the raw token.
-  setCookies(res, sessionCookies(tokens));
+  setCookies(res, await sessionCookies(tokens));
 
   res.json({
     success: true,
@@ -194,11 +194,11 @@ export const verifyTwoFactorLogin = asyncHandler(async (req: Request, res: Respo
   // full session, so the browser needs no token handling at all.
   if ('accessToken' in result && 'refreshToken' in result) {
     const tokens = result as { accessToken: string; refreshToken: string };
-    setCookies(res, sessionCookies(tokens));
+    setCookies(res, await sessionCookies(tokens));
     // Same routing hint as `login`, for the web's Playwright storageState path.
     res.json({
       success: true,
-      data: { ...result, routing: routingPayloadFor(tokens) },
+      data: { ...result, routing: await signedRoutingCookieValue(tokens) },
     });
     return;
   }

@@ -1659,7 +1659,13 @@ model Invoice {
   /// pupil transferred the old unit's overdue invoices vanished from its books
   /// and reappeared on the new unit's, which had never issued them. The invoice
   /// remembers the unit that raised it.
-  unitId        String?       @map("unit_id")
+  ///
+  /// NOT NULL and RESTRICT-delete since
+  /// `20260922100000_invoice_unit_backfill`: every invoice resolves its issuing
+  /// unit from its payment type (whose `unitId` is itself NOT NULL), so there is
+  /// no such thing as an invoice with no unit of record. Units are soft-deleted,
+  /// so RESTRICT never blocks a real operation.
+  unitId        String        @map("unit_id")
   invoiceNumber String        @unique @map("invoice_number") // e.g., "INV-2024-0001"
   amount        Decimal       @db.Decimal(15, 2)
   dueDate       DateTime      @map("due_date")
@@ -1673,7 +1679,7 @@ model Invoice {
   // Relations
   student     Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
   paymentType PaymentType @relation(fields: [paymentTypeId], references: [id])
-  unit        Unit?       @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  unit        Unit        @relation(fields: [unitId], references: [id], onDelete: Restrict)
   payments    Payment[]
 
   @@index([studentId])

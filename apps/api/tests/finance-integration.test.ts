@@ -116,7 +116,7 @@ describe('Finance Service Integration', () => {
       expect(prisma.invoice.create).toHaveBeenCalledTimes(2);
     });
 
-    it('attributes the invoice to the payment type\'s unit, not the student\'s', async () => {
+    it("attributes the invoice to the payment type's unit, not the student's", async () => {
       // A "SPP SMP IT" bill raised for a pupil now enrolled at SMA belongs to
       // SMP IT's books. Taking `student.unitId` filed the arrears under the
       // wrong unit, so the oversight report blamed the wrong school.
@@ -146,31 +146,24 @@ describe('Finance Service Integration', () => {
       );
     });
 
-    it('falls back to the student\'s unit when the payment type carries none', async () => {
+    it('refuses to raise an invoice whose payment type cannot be resolved', async () => {
+      // There is no honest unit of record for an invoice with no payment type.
+      // The old code fell back to `student.unitId` — the pupil's *current* unit
+      // — which is exactly the moving attribution that let a transfer relocate
+      // historical arrears. Refuse instead of guessing.
       (prisma.paymentType.findUnique as any).mockResolvedValueOnce(null);
-      (prisma.student.findUnique as any).mockResolvedValueOnce({ unitId: 'unit-smaq' });
       (prisma.invoice.findFirst as any).mockResolvedValue(null);
-      (prisma.invoice.create as any).mockResolvedValue({
-        id: 'inv-1',
-        invoiceNumber: 'INV-202401-00001',
-        amount: { toNumber: () => 500000 },
-        dueDate: new Date(),
-        student: { user: { id: 'u1' } },
-        paymentType: { name: 'SPP' },
-      });
 
-      await financeService.createInvoice({
-        studentId: 's1',
-        paymentTypeId: 'pt-1',
-        amount: 500000,
-        dueDate: '2024-01-10',
-      });
-
-      expect(prisma.invoice.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({ unitId: 'unit-smaq' }),
+      await expect(
+        financeService.createInvoice({
+          studentId: 's1',
+          paymentTypeId: 'pt-1',
+          amount: 500000,
+          dueDate: '2024-01-10',
         })
-      );
+      ).rejects.toThrow(/cannot attribute the invoice/);
+
+      expect(prisma.invoice.create).not.toHaveBeenCalled();
     });
   });
 

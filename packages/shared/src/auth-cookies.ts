@@ -8,11 +8,28 @@
  * flags and payload shape must have exactly one definition, on the server side,
  * rather than a copy in the browser that can drift.
  *
- * The routing payload is a small, base64url-encoded JSON blob carrying only
- * what `middleware.ts` needs to place a visitor (role code, legacy role, user
- * id, unit id) — never `permissions[]` and never a token. The routing cookie is
- * `HttpOnly` too, so it is a server-set hint, not a client-forgeable grant; the
- * authoritative identity is still the API-verified token.
+ * The routing payload is a small JSON blob carrying only what `middleware.ts`
+ * needs to place a visitor (role code, legacy role, user id, unit id) — never
+ * `permissions[]` and never a token.
+ *
+ * **`HttpOnly` does NOT make the payload trustworthy.** A cookie is set by the
+ * server, but the value the *browser sends back* is just a string the client
+ * controls: any request the user's own browser can be made to issue — a `fetch`
+ * with `credentials: 'include'`, a same-site form post, a subdomain that can set
+ * a cookie-scoped response — can carry a `cipansor_routing` value the attacker
+ * chose. Middleware that trusted it would mint a route grant (and, through
+ * `roleCode`, an RBAC decision) from unsigned JSON. So the routing cookie is
+ * MAC'd: `signRoutingCookie` appends an HMAC over a purpose- and
+ * version-separated message, and `verifyRoutingCookie` is the only reader. A
+ * payload without a valid signature is treated exactly like no cookie at all —
+ * the middleware then falls back to the verified token cookie and, failing
+ * that, fails closed.
+ *
+ * The signing secret is supplied by the caller and is deliberately **not** read
+ * here: this module is bundled for the browser as well as run on the server, and
+ * a `process.env`/secret reference that can reach a client bundle is how a
+ * server-only key leaks. The API and the Next middleware each resolve the same
+ * value through `resolveRoutingCookieSecret`.
  */
 
 /** Access token cookie. `HttpOnly`, so script can never read or replay it. */
@@ -114,8 +131,38 @@ type GlobalWithCodecs = {
   atob?: (value: string) => string;
   escape?: (value: string) => string;
   unescape?: (value: string) => string;
+  crypto?: {
+    subtle?: {
+      importKey(
+        format: string,
+        keyData: Uint8Array,
+        algorithm: { name: string; hash: string },
+        extractable: boolean,
+        keyUsages: string[],
+      ): Promise<unknown>;
+      sign(
+        algorithm: string,
+        key: unknown,
+        data: Uint8Array,
+      ): Promise<ArrayBuffer>;
+      verify(
+        algorithm: string,
+        key: unknown,
+        signature: Uint8Array,
+        data: Uint8Array,
+      ): Promise<boolean>;
+    };
+  };
+  TextEncoder?: new () => { encode(input: string): Uint8Array };
 };
 const codecs = globalThis as unknown as GlobalWithCodecs;
+
+function utf8Encode(text: string): Uint8Array {
+  if (codecs.TextEncoder) return new codecs.TextEncoder().encode(text);
+  return new Uint8Array(
+    [...unescape(encodeURIComponent(text))].map((c) => c.charCodeAt(0)),
+  );
+}
 
 function base64UrlEncode(text: string): string {
   if (codecs.Buffer) {
@@ -139,29 +186,155 @@ function base64UrlDecode(value: string): string {
   return decodeURIComponent(decoded);
 }
 
-/** Encode the routing payload into a cookie-safe (base64url) value. */
-export function encodeRoutingCookie(payload: RoutingCookiePayload): string {
-  return base64UrlEncode(JSON.stringify(payload));
+/**
+ * The purpose/version prefix that every routing-cookie MAC is computed over.
+ *
+ * This is what stops a signature from being replayed into a different
+ * context: a MAC that only covered the payload bytes would also be valid for
+ * any other value signed with the same key, and a future cookie format could be
+ * confused with this one. Bump `v1` if the signed message layout ever changes.
+ */
+export const ROUTING_COOKIE_PURPOSE = "cipansor:routing-cookie:v1";
+
+/** The keyed message the MAC is computed over, as UTF-8 bytes. */
+function routingCookieMessage(payloadB64: string): Uint8Array {
+  return utf8Encode(`${ROUTING_COOKIE_PURPOSE}.${payloadB64}`);
 }
 
 /**
- * Decode a routing cookie value. Returns null for anything malformed or
- * expired — the middleware then falls back to the token cookie and, failing
- * that, fails closed. Never throws on attacker-controlled input.
+ * Sign a routing payload into a `<base64url(payload)>.<base64url(mac)>` value.
+ *
+ * `secret` is required: there is no development fallback here, because a
+ * fallback is exactly the shape that let a published JWT placeholder sign
+ * production sessions (`apps/api/src/config/assert-secrets.ts`). Production
+ * refuses to boot without a real value; development passes the same dev-only
+ * constant the API and middleware resolve, so no cookie is ever signed with an
+ * unset key.
+ *
+ * The primitive is WebCrypto (`globalThis.crypto.subtle`), not a Node `crypto`
+ * import, so the exact same code runs in the API (Node) and in the Next
+ * middleware/proxy (which may run on the Edge runtime) and is testable under
+ * jsdom.
  */
-export function decodeRoutingCookie(
-  value: string | null | undefined,
-): RoutingCookiePayload | null {
-  if (!value) return null;
+export async function signRoutingCookie(
+  payload: RoutingCookiePayload,
+  secret: string,
+): Promise<string> {
+  const subtle = codecs.crypto?.subtle;
+  if (!subtle) {
+    throw new Error("WebCrypto is unavailable; cannot sign the routing cookie");
+  }
+  const payloadB64 = base64UrlEncode(JSON.stringify(payload));
+  const key = await subtle.importKey(
+    "raw",
+    utf8Encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await subtle.sign(
+    "HMAC",
+    key,
+    routingCookieMessage(payloadB64),
+  );
+  return `${payloadB64}.${base64UrlEncodeBytes(new Uint8Array(signature))}`;
+}
+
+/** base64url for raw bytes, without going through a UTF-8 string round-trip. */
+function base64UrlEncodeBytes(bytes: Uint8Array): string {
+  if (codecs.Buffer) {
+    return codecs.Buffer.from(formBinaryString(bytes), "binary").toString(
+      "base64url",
+    );
+  }
+  let binary = formBinaryString(bytes);
+  return (codecs.btoa ? codecs.btoa(binary) : "")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+function formBinaryString(bytes: Uint8Array): string {
+  let out = "";
+  for (const byte of bytes) out += String.fromCharCode(byte);
+  return out;
+}
+
+function base64UrlDecodeBytes(value: string): Uint8Array | null {
   try {
-    const parsed = JSON.parse(
-      base64UrlDecode(value),
-    ) as Partial<RoutingCookiePayload>;
+    const b64 = value.replace(/-/g, "+").replace(/_/g, "/");
+    let binary: string;
+    if (codecs.Buffer) {
+      binary = codecs.Buffer.from(value, "base64url").toString("binary");
+    } else {
+      binary = codecs.atob ? codecs.atob(b64) : "";
+    }
+    if (!binary) return null;
+    const out = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Verify a routing cookie and decode its payload.
+ *
+ * Any unsigned, malformed, expired, or wrongly-signed value returns null, which
+ * the middleware treats the same as "no routing cookie". The MAC is compared by
+ * WebCrypto's `verify`, which is constant-time over the signature. Never throws
+ * on attacker-controlled input.
+ */
+export async function verifyRoutingCookie(
+  value: string | null | undefined,
+  secret: string,
+): Promise<RoutingCookiePayload | null> {
+  if (!value || !secret) return null;
+  const dotted = value.indexOf(".");
+  if (dotted <= 0) return null;
+  const payloadB64 = value.slice(0, dotted);
+  const signatureB64 = value.slice(dotted + 1);
+  if (!payloadB64 || !signatureB64) return null;
+
+  const subtle = codecs.crypto?.subtle;
+  if (!subtle) return null;
+  const signature = base64UrlDecodeBytes(signatureB64);
+  if (!signature) return null;
+
+  let valid = false;
+  try {
+    const key = await subtle.importKey(
+      "raw",
+      utf8Encode(secret),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["verify"],
+    );
+    valid = await subtle.verify(
+      "HMAC",
+      key,
+      signature,
+      routingCookieMessage(payloadB64),
+    );
+  } catch {
+    return null;
+  }
+  if (!valid) return null;
+
+  return parseRoutingPayload(base64UrlDecode(payloadB64));
+}
+
+/** Structured-parse a decoded routing payload, rejecting anything malformed. */
+function parseRoutingPayload(raw: string): RoutingCookiePayload | null {
+  try {
+    const parsed = JSON.parse(raw) as Partial<RoutingCookiePayload>;
     if (
       typeof parsed?.role !== "string" ||
       typeof parsed?.roleCode !== "string" ||
       typeof parsed?.userId !== "string" ||
-      typeof parsed?.exp !== "number"
+      typeof parsed?.exp !== "number" ||
+      !Number.isFinite(parsed.exp)
     ) {
       return null;
     }
@@ -176,6 +349,58 @@ export function decodeRoutingCookie(
   } catch {
     return null;
   }
+}
+
+/** Encode the routing payload into a cookie-safe (base64url) value. */
+export function encodeRoutingCookie(payload: RoutingCookiePayload): string {
+  return base64UrlEncode(JSON.stringify(payload));
+}
+
+/**
+ * Decode a routing cookie value without verifying its signature.
+ *
+ * **This is not an authentication primitive.** It returns null for anything
+ * malformed or expired and never throws, but it accepts an unsigned or forged
+ * payload — it exists only so already-trusted code can re-read a value it signed
+ * (`verifyRoutingCookie` is the reader middleware must use). Kept for the
+ * pre-signature tests and tooling that construct a payload directly.
+ */
+export function decodeRoutingCookie(
+  value: string | null | undefined,
+): RoutingCookiePayload | null {
+  if (!value) return null;
+  const dotted = value.indexOf(".");
+  const encoded = dotted > 0 ? value.slice(0, dotted) : value;
+  return parseRoutingPayload(base64UrlDecode(encoded));
+}
+
+/**
+ * Resolve the routing-cookie signing secret from the environment.
+ *
+ * Shared so the API and the Next middleware cannot disagree about which key is
+ * in force. There is no production fallback: the session-secret guard already
+ * refuses to boot an API whose `JWT_SECRET` is a published placeholder, and a
+ * routing key quietly derived from a weak default would reintroduce the same
+ * class of bug for a different cookie. A dedicated `ROUTING_COOKIE_SECRET` is
+ * preferred; when unset the JWT secret is reused (the routing cookie is an
+ * auxiliary hint, and a single-secret deployment stays configurable).
+ * Development only, a fixed dev value keeps `pnpm dev` working with no .env.
+ */
+export function resolveRoutingCookieSecret(env: {
+  ROUTING_COOKIE_SECRET?: string;
+  JWT_SECRET?: string;
+  NODE_ENV?: string;
+}): string {
+  const dedicated = env.ROUTING_COOKIE_SECRET?.trim();
+  if (dedicated) return dedicated;
+  const jwt = env.JWT_SECRET?.trim();
+  if (jwt) return jwt;
+  if (env.NODE_ENV === "production") {
+    throw new Error(
+      "ROUTING_COOKIE_SECRET (or JWT_SECRET) is required in production to sign the routing cookie.",
+    );
+  }
+  return "dev-routing-cookie-secret-not-for-production";
 }
 
 /**

@@ -771,6 +771,109 @@ describe('WbsService Unit Tests', () => {
       expect(prisma.wbsForwardLog.create).not.toHaveBeenCalled();
     });
 
+    it('refuses a UNIT_ADMIN recipient whose role assignment is only in another unit', async () => {
+      // `User.unitId` happens to match the report's unit, but the assignment
+      // that grants the destination role is scoped to a *different* unit. The
+      // token that decides `buildScopeWhere` takes its unit from the active
+      // assignment (`tokenUnitId`), so this recipient could not read the report
+      // — naming them must be refused rather than leaving assignment that the
+      // scope query then hides.
+      (prisma.wbsReport.findFirst as any).mockResolvedValue(reportInScope('unit-sdit'));
+      (prisma.user.findUnique as any).mockResolvedValue(
+        recipient({
+          unitId: 'unit-sdit',
+          userRoles: [{ unitId: 'unit-smpit', role: { code: 'SDIT_ADMIN' } }],
+        })
+      );
+
+      await expect(
+        wbsService.forwardReport(
+          'report-1',
+          { toRole: 'UNIT_ADMIN', reason: 'alasan panjang', toUserId: 'user-target' },
+          actor
+        )
+      ).rejects.toMatchObject({ statusCode: 403 });
+
+      expect(prisma.wbsForwardLog.create).not.toHaveBeenCalled();
+    });
+
+    it('accepts a UNIT_ADMIN recipient when one of several unit assignments matches', async () => {
+      // A person can hold the same unit role in more than one unit through
+      // `UserRoleAssignment.unitId`. Only the matching one should open the
+      // report; the presence of the others must not disqualify them.
+      (prisma.wbsReport.findFirst as any).mockResolvedValue(reportInScope('unit-sdit'));
+      (prisma.wbsReport.findUnique as any).mockResolvedValue(reportInScope('unit-sdit'));
+      (prisma.user.findUnique as any).mockResolvedValue(
+        recipient({
+          unitId: 'unit-smpit',
+          userRoles: [
+            { unitId: 'unit-smpit', role: { code: 'SDIT_ADMIN' } },
+            { unitId: 'unit-sdit', role: { code: 'SDIT_ADMIN' } },
+          ],
+        })
+      );
+      (prisma.wbsReport.update as any).mockResolvedValue({
+        ...reportInScope('unit-sdit'),
+        primaryHandlerRole: 'UNIT_ADMIN',
+        assignedUserId: 'user-target',
+      });
+
+      await wbsService.forwardReport(
+        'report-1',
+        { toRole: 'UNIT_ADMIN', reason: 'alasan panjang', toUserId: 'user-target' },
+        actor
+      );
+
+      expect(prisma.wbsForwardLog.create).toHaveBeenCalled();
+    });
+
+    it('accepts a UNIT_ADMIN recipient whose assignment matches even when the home unit differs', async () => {
+      // The assignment carries the report's unit, so the recipient's token unit
+      // for that role is the report's unit even though their home unit is
+      // elsewhere. The domain model allows this; `User.unitId` must not veto it.
+      (prisma.wbsReport.findFirst as any).mockResolvedValue(reportInScope('unit-sdit'));
+      (prisma.wbsReport.findUnique as any).mockResolvedValue(reportInScope('unit-sdit'));
+      (prisma.user.findUnique as any).mockResolvedValue(
+        recipient({
+          unitId: 'unit-smpit',
+          userRoles: [{ unitId: 'unit-sdit', role: { code: 'SDIT_ADMIN' } }],
+        })
+      );
+      (prisma.wbsReport.update as any).mockResolvedValue({
+        ...reportInScope('unit-sdit'),
+        primaryHandlerRole: 'UNIT_ADMIN',
+        assignedUserId: 'user-target',
+      });
+
+      await wbsService.forwardReport(
+        'report-1',
+        { toRole: 'UNIT_ADMIN', reason: 'alasan panjang', toUserId: 'user-target' },
+        actor
+      );
+
+      expect(prisma.wbsForwardLog.create).toHaveBeenCalled();
+    });
+
+    it('refuses a UNIT_ADMIN recipient whose matching assignment has no unit and home unit differs', async () => {
+      // A unitless assignment falls back to the home unit, so this recipient's
+      // effective unit is unit-smpit, not the report's unit-sdit.
+      (prisma.wbsReport.findFirst as any).mockResolvedValue(reportInScope('unit-sdit'));
+      (prisma.user.findUnique as any).mockResolvedValue(
+        recipient({
+          unitId: 'unit-smpit',
+          userRoles: [{ unitId: null, role: { code: 'SDIT_ADMIN' } }],
+        })
+      );
+
+      await expect(
+        wbsService.forwardReport(
+          'report-1',
+          { toRole: 'UNIT_ADMIN', reason: 'alasan panjang', toUserId: 'user-target' },
+          actor
+        )
+      ).rejects.toMatchObject({ statusCode: 403 });
+    });
+
     it('forwards to a valid foundation recipient and records the assignment', async () => {
       (prisma.wbsReport.findFirst as any).mockResolvedValue(reportInScope());
       (prisma.wbsReport.findUnique as any).mockResolvedValue(reportInScope());

@@ -177,21 +177,17 @@ export async function createInvoice(data: CreateInvoiceDto, tx?: Prisma.Transact
       // Resolve the unit of record at issuance. The issuing unit is the one
       // that owns the payment type — a "SPP SMP IT" bill raised for a pupil
       // belongs to SMP IT's books even if the pupil has since transferred to
-      // SMA. Taking `student.unitId` unconditionally attributed the arrears to
-      // whichever unit the pupil currently sits in, so a cross-unit payment
-      // type silently mis-filed the debt. `student.unitId` remains the fallback
-      // only for the (schema-impossible) case of a payment type with no unit.
-      const [paymentType, student] = await Promise.all([
-        dbClient.paymentType.findUnique({
-          where: { id: paymentTypeId },
-          select: { unitId: true },
-        }),
-        dbClient.student.findUnique({
-          where: { id: studentId },
-          select: { unitId: true },
-        }),
-      ]);
-      const issuingUnitId = paymentType?.unitId ?? student?.unitId ?? null;
+      // SMA. `PaymentType.unitId` is NOT NULL, so this is always resolved; a
+      // missing payment type is a bug, not a case to paper over with the
+      // student's current unit.
+      const paymentType = await dbClient.paymentType.findUnique({
+        where: { id: paymentTypeId },
+        select: { unitId: true },
+      });
+      if (!paymentType) {
+        throw new Error(`Payment type ${paymentTypeId} not found; cannot attribute the invoice`);
+      }
+      const issuingUnitId = paymentType.unitId;
 
       invoice = await dbClient.invoice.create({
         data: {
@@ -1428,9 +1424,9 @@ export async function generateBulkSppInvoices(data: {
           // not relocate this arrears to the pupil's new unit. The unit of
           // record is the one that owns the payment type — a "SPP SMP IT" bill
           // raised for a pupil belongs to SMP IT's books even if the pupil has
-          // since moved to SMA. `student.unitId` is only the legacy fallback
-          // for a payment type with no unit.
-          unitId: paymentType.unitId ?? student.unitId,
+          // since moved to SMA. `PaymentType.unitId` is NOT NULL, so there is
+          // no fallback to the pupil's current unit.
+          unitId: paymentType.unitId,
           notes: `Tagihan ${paymentType.name} untuk ${period}`,
         },
       });
@@ -1522,10 +1518,10 @@ export async function generateRecurringBills() {
             amount: paymentType.amount,
             dueDate,
             period,
-            // Unit of record is the payment type's unit; see
-            // `generateBulkSppInvoices` for why the pupil's unit is only a
-            // legacy fallback.
-            unitId: paymentType.unitId ?? student.unitId,
+            // Unit of record is the payment type's unit, which the filter above
+            // already matched against the pupil's unit; there is no fallback to
+            // the pupil's current unit (`PaymentType.unitId` is NOT NULL).
+            unitId: paymentType.unitId,
             notes: `Tagihan ${paymentType.name} otomatis untuk ${period}`,
           },
         });

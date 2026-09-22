@@ -74,8 +74,8 @@ describe("middleware host split for /public/wbs", () => {
   const request = (host: string, path: string) =>
     new NextRequest(`https://${host}${path}`, { headers: { host } });
 
-  it("redirects a portal request to the canonical public host with 308", () => {
-    const res = middleware(request(PORTAL_HOST, "/public/wbs"));
+  it("redirects a portal request to the canonical public host with 308", async () => {
+    const res = await middleware(request(PORTAL_HOST, "/public/wbs"));
 
     expect(res.status).toBe(308);
     expect(res.headers.get("location")).toBe(
@@ -83,8 +83,8 @@ describe("middleware host split for /public/wbs", () => {
     );
   });
 
-  it("redirects the tracking subroute the same way", () => {
-    const res = middleware(request(PORTAL_HOST, "/public/wbs/track"));
+  it("redirects the tracking subroute the same way", async () => {
+    const res = await middleware(request(PORTAL_HOST, "/public/wbs/track"));
 
     expect(res.status).toBe(308);
     expect(res.headers.get("location")).toBe(
@@ -92,7 +92,7 @@ describe("middleware host split for /public/wbs", () => {
     );
   });
 
-  it("redirects every other /public page from the portal, no regression", () => {
+  it("redirects every other /public page from the portal, no regression", async () => {
     // The matcher fix routes the whole segment through middleware, so the
     // split must keep the canonical-host behaviour for the pages that were
     // previously exempt. A miss here would strand `/public/verify-card` (the
@@ -104,7 +104,7 @@ describe("middleware host split for /public/wbs", () => {
       "/public/spmb",
       "/public/spmb/track",
     ]) {
-      const res = middleware(request(PORTAL_HOST, path));
+      const res = await middleware(request(PORTAL_HOST, path));
       expect(res.status, path).toBe(308);
       expect(res.headers.get("location"), path).toBe(
         `https://${PUBLIC_HOST}${path}`,
@@ -112,23 +112,23 @@ describe("middleware host split for /public/wbs", () => {
     }
   });
 
-  it("forwards an anonymous request on the public host", () => {
+  it("forwards an anonymous request on the public host", async () => {
     // Anonymous is the whole point: no session, so it must not be bounced to
     // /login, and the public host is already the right one.
-    const res = middleware(request(PUBLIC_HOST, "/public/wbs"));
+    const res = await middleware(request(PUBLIC_HOST, "/public/wbs"));
 
     expect(res.headers.get("location")).toBeNull();
     expect(res.status).not.toBe(307);
   });
 
-  it("forwards the tracking subroute on the public host", () => {
-    const res = middleware(request(PUBLIC_HOST, "/public/wbs/track"));
+  it("forwards the tracking subroute on the public host", async () => {
+    const res = await middleware(request(PUBLIC_HOST, "/public/wbs/track"));
 
     expect(res.headers.get("location")).toBeNull();
   });
 
-  it("keeps /public/verify-card reachable on the public host, no regression", () => {
-    const res = middleware(request(PUBLIC_HOST, "/public/verify-card"));
+  it("keeps /public/verify-card reachable on the public host, no regression", async () => {
+    const res = await middleware(request(PUBLIC_HOST, "/public/verify-card"));
 
     expect(res.headers.get("location")).toBeNull();
   });

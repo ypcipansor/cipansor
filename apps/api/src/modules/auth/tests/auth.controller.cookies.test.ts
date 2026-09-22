@@ -69,6 +69,15 @@ function mockReqRes(body: unknown = {}, cookieHeader?: string) {
 
 const TOKENS = { accessToken: 'a.b.c', refreshToken: 'r.e.f' };
 
+/**
+ * `asyncHandler` returns `void` (express 5 ignores the handler's return value),
+ * so a test that awaits the exported handler only knows the synchronous part
+ * ran. The handlers now await the MAC'd routing cookie, whose HMAC is computed
+ * off the event loop, so assertions must run after the pending work settles.
+ * A short real wait is enough and keeps the assertion order readable.
+ */
+const flushAsync = () => new Promise((resolve) => setTimeout(resolve, 50));
+
 describe('auth cookie issuance', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -80,6 +89,7 @@ describe('auth cookie issuance', () => {
     const { req, res, cookies } = mockReqRes({ email: 'a@b.c', password: 'x' });
 
     await login(req, res, () => {});
+    await flushAsync();
 
     const names = cookies().map((c) => c.split('=')[0]);
     expect(names).toEqual([ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE, ROUTING_COOKIE]);
@@ -94,6 +104,7 @@ describe('auth cookie issuance', () => {
     const { req, res, cookies } = mockReqRes({ email: 'a@b.c', password: 'x' });
 
     await login(req, res, () => {});
+    await flushAsync();
 
     for (const c of cookies()) expect(c).toMatch(/;\s*Secure/);
   });
@@ -104,6 +115,7 @@ describe('auth cookie issuance', () => {
     const { req, res, cookies } = mockReqRes({ email: 'a@b.c', password: 'x' });
 
     await login(req, res, () => {});
+    await flushAsync();
 
     for (const c of cookies()) expect(c).not.toMatch(/;\s*Secure/);
   });
@@ -113,6 +125,7 @@ describe('auth cookie issuance', () => {
     const { req, res, cookies } = mockReqRes({}, `${REFRESH_TOKEN_COOKIE}=old-refresh; other=x`);
 
     await refreshTokenHandler(req, res, () => {});
+    await flushAsync();
 
     expect(authService.refreshToken).toHaveBeenCalledWith('old-refresh');
     expect(cookies().map((c) => c.split('=')[0])).toEqual([
@@ -127,6 +140,7 @@ describe('auth cookie issuance', () => {
     // `asyncHandler` forwards the thrown error to `next` rather than rejecting.
     const next = vi.fn();
     await refreshTokenHandler(req, res, next);
+    await flushAsync();
 
     expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 401 }));
   });
@@ -134,6 +148,7 @@ describe('auth cookie issuance', () => {
   it('logout revokes the token and clears all session cookies', async () => {
     const { req, res, cookies } = mockReqRes({}, `${REFRESH_TOKEN_COOKIE}=r; `);
     await logout(req, res, () => {});
+    await flushAsync();
 
     expect(authService.logout).toHaveBeenCalledWith('user-1', 'r');
     const cleared = cookies();
@@ -154,6 +169,7 @@ describe('auth cookie issuance', () => {
     const { req, res, cookies } = mockReqRes({ token: '123456' });
 
     await verifyTwoFactorLogin(req, res, () => {});
+    await flushAsync();
 
     for (const c of cookies()) expect(c).toMatch(/;\s*HttpOnly/);
     expect((res as never as { jsonPayload: any }).jsonPayload.data.accessToken).toBe('a.b.c');

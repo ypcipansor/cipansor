@@ -179,7 +179,7 @@ export class RolesController {
       // and routing hint carry the newly active role, not the previous one. A
       // bug here is exactly the "switched role has a stale scope" class the
       // tokenUnitId comment below guards against.
-      setCookies(res, sessionCookies(tokens));
+      setCookies(res, await sessionCookies(tokens));
 
       res.json({
         success: true,

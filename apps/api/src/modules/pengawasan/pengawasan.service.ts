@@ -538,9 +538,11 @@ export class PengawasanService {
       where: {
         status: { in: ['PENDING', 'PARTIAL', 'OVERDUE'] },
         // Filter on the invoice's own unit of record. `student.unitId` is the
-        // pupil's *current* unit, so a transfer moved old arrears between
-        // units' books; legacy rows with no unit fall back to the student's.
-        ...(unitId ? { OR: [{ unitId }, { unitId: null, student: { unitId } }] } : {}),
+        // pupil's *current* unit, so filtering by it moved a transferred
+        // student's old arrears between units' books. `unitId` is NOT NULL and
+        // backfilled from the issuing payment type, so there is no legacy-row
+        // fallback to the student's unit.
+        ...(unitId ? { unitId } : {}),
       },
       include: {
         student: {
@@ -596,10 +598,11 @@ export class PengawasanService {
       const isOverdue = inv.status === 'OVERDUE' || (inv.dueDate && inv.dueDate < now);
       if (isOverdue) overdueInvoicesCount++;
 
-      // The invoice's own unit when we have one; only rows predating the
-      // column fall back to the student's current unit.
-      const uId = inv.unitId || inv.student.unitId || 'PUSAT';
-      const uName = inv.unit?.name || inv.student.unit?.name || 'Yayasan Pusat';
+      // The invoice's own unit of record. `unitId` is NOT NULL and backfilled
+      // from the issuing payment type, so this is always set; 'PUSAT' remains a
+      // defensive label only.
+      const uId = inv.unitId || 'PUSAT';
+      const uName = inv.unit?.name || 'Yayasan Pusat';
 
       if (!unitMap[uId]) {
         unitMap[uId] = { unitId: uId, unitName: uName, totalUnpaid: 0, count: 0, overdueCount: 0 };

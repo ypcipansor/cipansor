@@ -125,6 +125,12 @@ describe('Finance Service Unit Tests', () => {
       };
 
       vi.mocked(prisma.invoice.findFirst).mockResolvedValue(null);
+      // The invoice's unit of record comes from the payment type that raised
+      // it; there is no fallback to the pupil's current unit.
+      vi.mocked(prisma.paymentType.findUnique).mockResolvedValue({
+        id: 'pt-1',
+        unitId: 'unit-1',
+      } as any);
       vi.mocked(prisma.invoice.create).mockResolvedValue(mockInvoice as any);
       vi.mocked(notificationService.createNotification).mockResolvedValue({} as any);
 
@@ -173,6 +179,10 @@ describe('Finance Service Unit Tests', () => {
           },
         },
       ] as any);
+      vi.mocked(prisma.paymentType.findUnique).mockResolvedValue({
+        id: 'pt-1',
+        unitId: 'unit-1',
+      } as any);
       vi.mocked(prisma.invoice.create).mockResolvedValue({
         id: 'inv-2',
         student: { user: { id: 'u1' }, unit: { id: 'unit-1' } },

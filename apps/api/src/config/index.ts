@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import path from 'path';
+import { resolveRoutingCookieSecret } from '@cipansor/shared';
 import { findSecretIssues } from './assert-secrets';
 import { parseCorsOrigins } from './cors';
 
@@ -99,6 +100,22 @@ export const config = {
     // transparently via /auth/refresh (see apps/web/src/lib/api.ts).
     expiresIn: process.env.JWT_EXPIRES_IN || '15m',
     refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '30d',
+  },
+
+  /**
+   * Dedicated signer for the `cipansor_routing` cookie the web middleware
+   * routes on. Falls back to `JWT_SECRET` when unset, so the two sides cannot
+   * disagree about which key is in force; production refuses to boot when
+   * neither is present. See `resolveRoutingCookieSecret` in `@cipansor/shared`.
+   */
+  routingCookie: {
+    get secret(): string {
+      return resolveRoutingCookieSecret({
+        ROUTING_COOKIE_SECRET: process.env.ROUTING_COOKIE_SECRET,
+        JWT_SECRET: process.env.JWT_SECRET,
+        NODE_ENV: process.env.NODE_ENV,
+      });
+    },
   },
 
   /**
@@ -483,9 +500,7 @@ export const config = {
        * menjadi BATAS ATAS. Untuk sebuah peringatan anggaran, arah galat itu
        * yang benar: ia berbunyi terlalu awal, bukan terlambat.
        */
-      cachedInputPricePerMillionTokens: parsePrice(
-        process.env.CHATBOT_PRICE_CACHED_INPUT_PER_MTOK
-      ),
+      cachedInputPricePerMillionTokens: parsePrice(process.env.CHATBOT_PRICE_CACHED_INPUT_PER_MTOK),
       /** Label only — no conversion happens anywhere. Set it to whatever the invoice is in. */
       currency: process.env.CHATBOT_PRICE_CURRENCY || 'USD',
       /** 0 disables the budget comparison; the monthly volume report still goes out. */

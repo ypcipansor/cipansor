@@ -264,13 +264,18 @@ describe('Pengawasan Service', () => {
 
       await pengawasanService.getFinancialArrears('unit-lama');
 
+      // `unitId` is NOT NULL and backfilled from the issuing payment type, so
+      // there is no `unitId: null` fallback to the pupil's current unit.
       expect(prisma.invoice.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: expect.objectContaining({
-            OR: [{ unitId: 'unit-lama' }, { unitId: null, student: { unitId: 'unit-lama' } }],
-          }),
+          where: expect.objectContaining({ unitId: 'unit-lama' }),
         })
       );
+      const where = vi.mocked(prisma.invoice.findMany).mock.calls[0][0]!.where as Record<
+        string,
+        unknown
+      >;
+      expect(where).not.toHaveProperty('OR');
     });
 
     it("groups a transferred student's old invoice under the issuing unit", async () => {
