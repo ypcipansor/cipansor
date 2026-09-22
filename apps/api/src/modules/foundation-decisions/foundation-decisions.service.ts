@@ -34,6 +34,7 @@ import { evaluateQuorum, type QuorumEvaluation } from '@/utils/foundation-quorum
 import {
   organMayDecide,
   roleCodesForOrgan,
+  rolePriorityForOrgan,
   selectSnapshotAssignments,
   canFinalizeDecision,
   allowedCreateOrgansForRole,
@@ -336,6 +337,30 @@ type VoteWithUser = FoundationDecisionVote & { user: { id: string; name: string 
 type MemberWithUser = FoundationDecisionMember & { user: { id: string; name: string } };
 
 /**
+ * Urutkan anggota snapshot secara DETERMINISTIK, apa pun urutan relasi yang
+ * dikembalikan Prisma/PostgreSQL.
+ *
+ * Kebenaran sidik jari dan byte PDF tidak boleh bergantung pada urutan fisik
+ * baris: dua pembacaan yang setara dapat datang dalam urutan berbeda, dan
+ * urutan yang berbeda membuat `approvalFingerprint` berbeda sehingga artefak
+ * yang sebenarnya masih sah ditolak sebagai basi. `decisionInclude` sudah
+ * meminta `orderBy`; fungsi ini adalah jaring kedua di jalur digest. Tie-break
+ * memakai jabatan, lalu `roleCode`, lalu `userId` yang unik — bukan nama.
+ */
+export function canonicalMembersOf<T extends { userId: string; roleCode: string }>(
+  organType: FoundationOrganType,
+  members: readonly T[]
+): T[] {
+  return [...members].sort((a, b) => {
+    const roleRank = (roleCode: string) => rolePriorityForOrgan(organType, roleCode);
+    const rank = roleRank(a.roleCode) - roleRank(b.roleCode);
+    if (rank !== 0) return rank;
+    if (a.roleCode !== b.roleCode) return a.roleCode < b.roleCode ? -1 : 1;
+    return a.userId < b.userId ? -1 : a.userId > b.userId ? 1 : 0;
+  });
+}
+
+/**
  * Bentuk ringkas suara yang sah, untuk evaluasi kuorum.
  *
  * Dipakai bersama oleh jalur suara (castVote) dan jalur finalisasi/verifikasi
@@ -371,13 +396,17 @@ function voteSummaryOf(
 function approvalFingerprint(d: RichDecision): string {
   const authentic = d.votes.filter((v) => isVoteAuthentic(d, v));
   const snapshot = d.quorumSnapshot as unknown as QuorumSnapshot;
+  // Anggota DAN suara dikanonikalisasi sebelum diikat: urutan relasi bukan
+  // bagian dari isi keputusan, jadi dua pembacaan ekuivalen harus menghasilkan
+  // sidik jari yang sama. Suara diurutkan lewat kunci `userId` yang unik.
+  const members = canonicalMembersOf(d.organType, d.members).map((m) => m.userId);
   return sha256hex(
     JSON.stringify({
       id: d.id,
       subject: d.subject,
       body: d.body,
       decisionType: d.decisionType,
-      members: d.members.map((m) => m.userId),
+      members,
       votes: authentic.map((v) => `${v.userId}:${v.canonicalDigest}`).sort(),
       voteSummary: voteSummaryOf(authentic, snapshot.activeCount),
     })
@@ -482,13 +511,23 @@ type VoteWithTrustedKeyOnly = FoundationDecisionVote & {
 };
 
 const decisionInclude = {
-  members: { include: { user: { select: { id: true, name: true } } } },
+  members: {
+    include: { user: { select: { id: true, name: true } } },
+    // Urutan DETERMINISTIK. `approvalFingerprint` mengikat urutan `userId`
+    // anggota dan `renderPdf` mencetak roster dalam urutan ini; tanpa
+    // `orderBy`, rencana query PostgreSQL bebas mengembalikannya dalam urutan
+    // fisik berbeda antar-pembacaan, sehingga sidik jari berubah dan finalisasi
+    // gagal basi. Tie-break `userId` unik menstabilkan jabatan yang sama.
+    orderBy: [{ roleCode: 'asc' as const }, { userId: 'asc' as const }],
+  },
   votes: {
     include: {
       user: { select: { id: true, name: true } },
       signingKey: { select: trustedKeySelect },
     },
-    orderBy: { signedAt: 'asc' as const },
+    // `id` adalah tie-break: `signedAt` dapat kembar (dua suara pada milidetik
+    // yang sama) dan urutan relasi yang tidak stabil akan mengubah PDF.
+    orderBy: [{ signedAt: 'asc' as const }, { id: 'asc' as const }],
   },
   createdBy: { select: { id: true, name: true } },
   decidedBy: { select: { id: true, name: true } },
@@ -645,6 +684,86 @@ async function lockDecision(client: DbClient, id: string): Promise<void> {
 }
 
 /**
+ * Kunci baris penugasan organ yang menjadi dasar snapshot, lalu baca ULANG.
+ *
+ * `create` membaca penugasan SEBELUM transaksi untuk menyusun snapshot. Antara
+ * pembacaan itu dan komit, `roles.service` dapat mencabut atau mengubah
+ * penugasan tersebut. Tanpa kunci, snapshot immutable dapat membekukan anggota
+ * yang sudah tidak sah beserta hak suaranya.
+ *
+ * `FOR UPDATE` di sini membuat pencabutan/penggantian yang menyentuh baris yang
+ * SAMA menunggu sampai transaksi ini selesai; pencabutan yang menimpa baris
+ * lain tetap tertangkap karena baris dibaca ULANG di dalam transaksi dan
+ * dibandingkan. Baris yang dihapus tidak lagi muncul di hasil baca ulang —
+ * itulah yang membuat `assertSnapshotStillMatches` menolaknya.
+ */
+async function lockAndRereadOrganAssignments(
+  client: DbClient,
+  organType: FoundationOrganType,
+  assignmentIds: string[]
+): Promise<
+  Array<{
+    id: string;
+    userId: string;
+    isPrimary: boolean;
+    user: { id: string; name: string };
+    role: { code: string };
+  }>
+> {
+  if (assignmentIds.length === 0) return [];
+  // `Prisma.join` menyusun daftar parameter yang aman (bukan interpolasi teks).
+  await client.$queryRaw`
+    SELECT "id" FROM "user_role_assignments"
+    WHERE "id" IN (${Prisma.join(assignmentIds)})
+    FOR UPDATE`;
+  return client.userRoleAssignment.findMany({
+    where: {
+      id: { in: assignmentIds },
+      isActive: true,
+      OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      role: { code: { in: roleCodesForOrgan(organType) }, isActive: true },
+      user: { isActive: true, deletedAt: null },
+    },
+    select: {
+      id: true,
+      userId: true,
+      isPrimary: true,
+      user: { select: { id: true, name: true } },
+      role: { select: { code: true } },
+    },
+  });
+}
+
+/**
+ * Bandingkan SNAPSHOT tersusut pra-transaksi dengan hasil baca ulang pasca-lock.
+ *
+ * Yang dibandingkan adalah hasil penyusutan `selectSnapshotAssignments` —
+ * himpunan (userId, roleCode) yang benar-benar masuk ke baris anggota — bukan
+ * daftar penugasan mentah. Perbandingan pada penugasan mentah akan menandai
+ * "berubah" ketika hanya peran ganda yang kalah disusutkan yang dicabut,
+ * padahal roster anggota tidak berubah; membandingkan hasil susutan mengukur
+ * invariant yang tepat. Bila berbeda, `create` membatalkan transaksinya dengan
+ * conflict: menulis snapshot basi berarti membekukan anggota yang telah dicabut
+ * dan memberinya hak suara pada keputusan yang ditandatangani e-seal.
+ */
+function assertSnapshotStillMatches(
+  organType: FoundationOrganType,
+  before: ReadonlyArray<{ userId: string; roleCode: string }>,
+  after: ReadonlyArray<{ userId: string; roleCode: string }>
+): void {
+  const key = (a: { userId: string; roleCode: string }) => `${a.userId}\u0000${a.roleCode}`;
+  const beforeKeys = before.map(key).sort();
+  const afterKeys = after.map(key).sort();
+  const same =
+    beforeKeys.length === afterKeys.length && beforeKeys.every((k, i) => k === afterKeys[i]);
+  if (!same) {
+    throw Errors.conflict(
+      `Keanggotaan organ ${organType} berubah saat keputusan dibuat. Silakan ulangi; snapshot anggota harus mencerminkan susunan yang sah saat pemungutan suara dibuka.`
+    );
+  }
+}
+
+/**
  * Catat percobaan passphrase gagal; dikunci setelah ambang esign tercapai.
  *
  * Penaikan dan penghitungan `locked_until` terjadi dalam SATU pernyataan SQL.
@@ -798,8 +917,32 @@ export const FoundationDecisionService = {
      * verifikasinya acak, tidak ada unique yang mencegah percobaan ulang
      * membuat keputusan DUPLIKAT (dua pemungutan suara, dua PDF, dua e-seal).
      * Di dalam transaksi, kegagalan audit membatalkan pembuatan sekaligus.
+     *
+     * Keanggotaan snapshot divalidasi ULANG di dalam transaksi: baris penugasan
+     * dikunci (`FOR UPDATE`) dan dibaca lagi, sehingga pencabutan/penggantian
+     * peran konkuren tidak dapat membekukan anggota tak sah ke dalam snapshot
+     * beserta hak suaranya. Bila himpunan berubah, operasi dibatalkan atomik.
      */
     const decisionId = await prisma.$transaction(async (tx) => {
+      const lockedRows = await lockAndRereadOrganAssignments(
+        tx,
+        input.organType,
+        assignmentRows.map((a) => a.id)
+      );
+      // Susutkan ulang dengan fungsi produksi yang SAMA, lalu bandingkan hasil
+      // susutan — bukan daftar penugasan mentah.
+      const lockedAssignments = selectSnapshotAssignments(
+        input.organType,
+        lockedRows.map((a) => ({
+          id: a.id,
+          userId: a.userId,
+          isPrimary: a.isPrimary,
+          roleCode: a.role.code,
+          user: a.user,
+        }))
+      );
+      assertSnapshotStillMatches(input.organType, assignments, lockedAssignments);
+
       const decision = await tx.foundationDecision.create({
         data: {
           organType: input.organType,
@@ -813,7 +956,10 @@ export const FoundationDecisionService = {
           createdById: actor.id,
           verificationToken: randomBytes(20).toString('hex'),
           members: {
-            create: assignments.map((a) => ({
+            // Dari hasil baca ULANG pasca-lock, bukan salinan pra-transaksi:
+            // yang lolos `assertSnapshotStillMatches` adalah himpunan yang sah
+            // saat transaksi commit.
+            create: lockedAssignments.map((a) => ({
               userId: a.user.id,
               name: a.user.name,
               roleCode: a.roleCode,
@@ -1976,7 +2122,7 @@ export const FoundationDecisionService = {
       signatureShort: `${v.signature.slice(0, 16)}…`,
       note: v.note,
     }));
-    const members: DecisionPdfMemberRow[] = d.members.map((m) => ({
+    const members: DecisionPdfMemberRow[] = canonicalMembersOf(d.organType, d.members).map((m) => ({
       userId: m.userId,
       name: m.name,
       roleCode: m.roleCode,

@@ -499,6 +499,36 @@ bawaannya PRIVATE (fail closed). Bukti keabsahan (`isValid`, `digest`,
   bukan `sha256(text)`, yang tidak ada di PostgreSQL sebelum 18 — agar
   representasi hexadecimal-nya persis sama dengan aplikasi.
 
+### 7.9 Snapshot anggota yang tahan konkurensi & deterministik
+
+Dua bug aktif dari review Devin diperbaiki di sini, dan rationale-nya
+dipindahkan dari kode karena panjangnya mengubur logika operasional.
+
+- **Snapshot vs perubahan peran konkuren.** `create` menyusun daftar anggota
+  dari `userRoleAssignment` yang dibaca SEBELUM transaksi. Antara pembacaan itu
+  dan komit, `roles.service` dapat mencabut atau mengganti penugasan, dan tanpa
+  jaminan konkurensi snapshot immutable dapat membekukan anggota yang sudah
+  tidak sah beserta hak suaranya. Perbaikan: DI DALAM transaksi, baris penugasan
+  yang menjadi dasar snapshot dikunci (`SELECT … FOR UPDATE`, `Prisma.join`)
+  lalu dibaca ULANG dengan predikat yang sama; hasilnya disusutkan ulang lewat
+  `selectSnapshotAssignments` dan dibandingkan dengan snapshot pra-transaksi.
+  Bila himpunan (userId, roleCode) berubah — pencabutan, penggantian jabatan,
+  atau kedaluwarsa — operasi dibatalkan ATOMIK dengan `Errors.conflict`, dan
+  `decision`, `members`, serta `audit` tidak pernah ter-commit sebagian.
+  Perbandingan memakai hasil susutan, bukan daftar penugasan mentah, supaya
+  mencabut peran ganda yang kalah tidak menandai roster yang sebenarnya sama.
+- **Urutan anggota deterministik.** `approvalFingerprint` mengikat urutan
+  `userId` anggota dan `renderPdf` mencetak roster dalam urutan baca, sedangkan
+  relasi Prisma tanpa `orderBy` tidak menjanjikan urutan. Dua pembacaan yang
+  setara dapat kembali dalam urutan fisik berbeda, sehingga sidik jari artefak
+  preview tidak cocok dengan sidik jari baris terkunci; finalisasi lalu gagal
+  basi dan menghabiskan retry padahal tidak ada pemilih yang menyela. Perbaikan
+  berlapis: `decisionInclude` memakai `orderBy` deterministik
+  (`roleCode`, `userId` untuk anggota; `signedAt`, `id` untuk suara), dan
+  `canonicalMembersOf` menormalkan input di jalur digest/PDF sehingga kebenaran
+  tidak bergantung pada janji urutan pihak ketiga. Tie-break memakai jabatan,
+  `roleCode`, lalu `userId` yang unik — bukan nama, yang tidak unik.
+
 ---
 
 ## 8. Referensi

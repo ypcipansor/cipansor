@@ -48,6 +48,7 @@ vi.mock('@/lib/prisma', () => ({
     auditLog: { create: vi.fn() },
     $transaction: vi.fn((cb: any) => cb(prisma)),
     $executeRaw: vi.fn().mockResolvedValue(1),
+    $queryRaw: vi.fn().mockResolvedValue([]),
   },
 }));
 
@@ -128,7 +129,9 @@ function signedVoteRow(
 
 function memberAssignments(count: number, roleCode = 'YAYASAN_PEMBINA') {
   return Array.from({ length: count }, (_, i) => ({
+    id: `asg-${i}`,
     userId: `user-${i}`,
+    isPrimary: i === 0,
     user: { id: `user-${i}`, name: `Anggota ${i}` },
     role: { code: roleCode },
   }));
@@ -2498,6 +2501,132 @@ describe('FoundationDecisionService.votesOf — verifikasi ulang suara', () => {
  * melempar galat — dan retry membuat keputusan DUPLIKAT (token verifikasinya
  * acak, tidak ada unique yang mencegahnya).
  */
+/**
+ * Regresi BUG — concurrent role changes corrupt member snapshot.
+ *
+ * `create` membaca penugasan calon anggota SEBELUM transaksi. Bila role
+ * dicabut/diubah setelah pembacaan itu tetapi sebelum komit, snapshot
+ * immutable dapat membekukan anggota yang sudah tidak sah, dan orang itu
+ * memperoleh hak suara (`canVote`) pada keputusan yang ditandatangani e-seal.
+ *
+ * Perbaikannya: di dalam transaksi, baris penugasan dikunci (`FOR UPDATE`) dan
+ * dibaca ULANG; snapshot dibandingkan dengan hasil susutan pra-transaksi, dan
+ * perbedaan membatalkan seluruh operasi secara atomik dengan conflict.
+ *
+ * Test ini GAGAL pada implementasi lama: `userRoleAssignment.findMany` hanya
+ * dipanggil sekali (pra-transaksi), `$queryRaw` tidak pernah dipakai, snapshot
+ * basi ditulis, dan tidak ada conflict.
+ */
+describe('FoundationDecisionService.create — snapshot vs perubahan peran konkuren', () => {
+  const input = {
+    organType: 'PEMBINA' as const,
+    kind: 'CIRCULAR' as const,
+    subject: 'Subjek Keputusan',
+    body: 'Isi keputusan yang cukup panjang minimal sepuluh karakter.',
+    decisionType: 'pengesahan-rencana-kerja' as const,
+  };
+  const actor = { id: 'user-0', roleCode: 'YAYASAN_PEMBINA' };
+
+  it('memvalidasi ulang snapshot DI DALAM transaksi (baca + lock baris penugasan)', async () => {
+    dm.userRoleAssignment.findMany
+      .mockResolvedValueOnce(memberAssignments(3)) // pra-transaksi
+      .mockResolvedValueOnce(memberAssignments(3)); // pasca-lock, tidak berubah
+    dm.foundationDecisionRule.findUnique.mockResolvedValue(null);
+    dm.foundationDecision.create.mockResolvedValue({ id: 'dec-new' });
+
+    await FoundationDecisionService.create(actor, input);
+
+    // Sumber assignment dibaca ULANG setelah dibaca pertama kali, dan barisnya
+    // dikunci `FOR UPDATE` di dalam transaksi.
+    expect(dm.userRoleAssignment.findMany).toHaveBeenCalledTimes(2);
+    expect(dm.$queryRaw).toHaveBeenCalledTimes(1);
+    expect((dm.$queryRaw.mock.calls[0][0] as string[]).join('?')).toContain('FOR UPDATE');
+
+    const data = dm.foundationDecision.create.mock.calls[0][0].data;
+    expect(data.members.create.map((m: any) => m.userId)).toEqual([
+      'user-0',
+      'user-1',
+      'user-2',
+    ]);
+  });
+
+  it('membatalkan atomik bila assignment dicabut antara query awal dan commit', async () => {
+    dm.userRoleAssignment.findMany
+      .mockResolvedValueOnce(memberAssignments(3)) // pra-transaksi: 3 anggota
+      // pasca-lock: user-2 sudah dicabut (baris tidak lagi aktif).
+      .mockResolvedValueOnce(memberAssignments(2));
+    dm.foundationDecisionRule.findUnique.mockResolvedValue(null);
+    dm.foundationDecision.create.mockResolvedValue({ id: 'dec-new' });
+
+    await expect(FoundationDecisionService.create(actor, input)).rejects.toThrow(
+      /Keanggotaan organ .* berubah/
+    );
+
+    // Tidak ada keputusan, tidak ada audit: pembatalan benar-benar atomik.
+    expect(dm.foundationDecision.create).not.toHaveBeenCalled();
+    expect(dm.auditLog.create).not.toHaveBeenCalled();
+  });
+
+  it('snapshot TIDAK menyimpan anggota yang dicabut, dan ia tidak dapat memberi suara', async () => {
+    // Setelah conflict, pemanggil mengulang dengan daftar yang sudah segar
+    // (2 anggota). Snapshot akhir hanya boleh memuat anggota yang sah.
+    dm.userRoleAssignment.findMany
+      .mockResolvedValueOnce(memberAssignments(2))
+      .mockResolvedValueOnce(memberAssignments(2));
+    dm.foundationDecisionRule.findUnique.mockResolvedValue(null);
+    dm.foundationDecision.create.mockResolvedValue({ id: 'dec-new' });
+
+    await FoundationDecisionService.create(actor, input);
+
+    const members = dm.foundationDecision.create.mock.calls[0][0].data.members.create;
+    const userIds = members.map((m: any) => m.userId);
+    expect(userIds).toEqual(['user-0', 'user-1']);
+    expect(userIds).not.toContain('user-2');
+
+    // Anggota yang dicabut juga TIDAK dapat memberi suara pada keputusan yang
+    // tak memuatnya. Keanggotaan diperiksa terhadap snapshot, jadi ini mengikat
+    // bahkan bila peran hari ini masih tampak seperti anggota organ.
+    const snapshot = decisionRow({
+      members: userIds.map((userId: string, i: number) => ({
+        id: `m${i}`,
+        userId,
+        name: `Anggota ${i}`,
+        roleCode: 'YAYASAN_PEMBINA',
+        user: { id: userId, name: `Anggota ${i}` },
+      })),
+    });
+    dm.foundationDecision.findUnique.mockResolvedValue(snapshot);
+
+    await expect(
+      FoundationDecisionService.castVote(
+        { id: 'user-2', roleCode: 'YAYASAN_PEMBINA' },
+        'dec-1',
+        { choice: 'APPROVE', passphrase: PASS }
+      )
+    ).rejects.toThrow(/bukan anggota organ/);
+    expect(dm.foundationDecisionVote.create).not.toHaveBeenCalled();
+  });
+
+  it('mengganti jabatan anggota yang berubah juga membatalkan operasi', async () => {
+    // user-1 berubah dari YAYASAN_PEMBINA menjadi YAYASAN_KETUA antara kedua
+    // pembacaan (masih organ yang sama, tetapi jabatan snapshot berbeda).
+    const before = memberAssignments(2);
+    const after = [
+      before[0],
+      { ...before[1], user: { id: 'user-1', name: 'Anggota 1' }, role: { code: 'YAYASAN_KETUA' } },
+    ];
+    dm.userRoleAssignment.findMany.mockResolvedValueOnce(before).mockResolvedValueOnce(after);
+    dm.foundationDecisionRule.findUnique.mockResolvedValue(null);
+    dm.foundationDecision.create.mockResolvedValue({ id: 'dec-new' });
+
+    await expect(FoundationDecisionService.create(actor, input)).rejects.toThrow(
+      /Keanggotaan organ .* berubah/
+    );
+    expect(dm.foundationDecision.create).not.toHaveBeenCalled();
+    expect(dm.auditLog.create).not.toHaveBeenCalled();
+  });
+});
+
 describe('FoundationDecisionService.create — audit dalam transaksi', () => {
   it('audit gagal → create melempar tanpa meninggalkan keputusan ter-commit', async () => {
     dm.userRoleAssignment.findMany.mockResolvedValue(memberAssignments(3));
@@ -3253,5 +3382,122 @@ describe('FoundationDecisionService.loadRule / listRules — normalisasi kuorum 
     expect(rules).toHaveLength(1);
     expect(rules[0].quorumPresentValue).toBeCloseTo(2 / 3, 6);
     expect(rules[0].quorumDecisionValue).toBeCloseTo(3 / 4, 6);
+  });
+});
+
+/**
+ * Regresi BUG — unordered members abort finalization.
+ *
+ * `decisionInclude.members` tidak memakai `orderBy`, sedangkan
+ * `approvalFingerprint` mengikat urutan `userId` anggota dan `renderPdf`
+ * mencetak roster dalam urutan baca. Dua pembacaan relasi yang setara dapat
+ * kembali dalam urutan fisik berbeda, sehingga sidik jari artefak preview tidak
+ * cocok dengan sidik jari baris terkunci — finalisasi lalu gagal basi berulang
+ * kali (retry habis) padahal tidak ada pemilih lain yang menyela.
+ *
+ * Test ini memasok anggota yang SAMA dalam urutan yang BERBEDA pada pembacaan
+ * luar-kunci dan dalam-kunci. Dengan kanonikalisasi (orderBy + sort di
+ * `approvalFingerprint`/`renderPdf`), sidik jarinya identik dan finalisasi
+ * berhasil. Test GAGAL pada implementasi lama.
+ */
+describe('feature: urutan anggota deterministik (unordered members)', () => {
+  function reorderMembers(rows: any): any {
+    return {
+      ...rows,
+      members: [...rows.members].reverse(),
+      votes: [...rows.votes].reverse(),
+    };
+  }
+
+  it('finalisasi APPROVED berhasil walau relasi anggota dibaca dalam urutan berbeda', async () => {
+    const d = decisionRow({
+      quorumSnapshot: {
+        organType: 'PEMBINA',
+        kind: 'CIRCULAR',
+        activeCount: 3,
+        presentMode: 'MUTLAK',
+        presentValue: 1,
+        decisionMode: 'MUTLAK',
+        decisionValue: 1,
+      },
+    });
+    d.votes = [
+      signedVoteRow(d, 'user-0', 'APPROVE'),
+      signedVoteRow(d, 'user-1', 'APPROVE'),
+      signedVoteRow(d, 'user-2', 'APPROVE'),
+    ];
+    // Pembacaan luar-kunci dan dalam-kunci mengembalikan himpunan yang sama
+    // tetapi urutan relasi terbalik.
+    let read = 0;
+    dm.foundationDecision.findUnique.mockImplementation(async () => {
+      read += 1;
+      return read === 1 ? d : reorderMembers(d);
+    });
+
+    const sealMat = createSealMaterial(config.foundation.esealPassphrase);
+    dm.foundationEseal.findMany.mockResolvedValue([
+      {
+        id: 'seal-1',
+        ...sealMat,
+        kdfParams: sealMat.kdfParams as never,
+        revokedAt: null,
+        createdAt: new Date(),
+      },
+    ]);
+    dm.foundationDecision.update.mockResolvedValue({ ...d, status: 'APPROVED' });
+    dm.foundationDecisionDocument.create.mockResolvedValue({ id: 'doc-1' });
+    const pdfSpy = vi
+      .spyOn(pdfModule, 'generateDecisionPdf')
+      .mockResolvedValue(Buffer.from('%PDF-1.4 deterministic'));
+    const renderSpy = vi.spyOn(FoundationDecisionService, 'renderPdf');
+
+    try {
+      const res = await FoundationDecisionService.finalize(
+        { id: 'user-0', roleCode: 'YAYASAN_PEMBINA' },
+        'dec-1'
+      );
+      expect(res.outcome).toBe('APPROVED');
+      // Tidak ada stale retry: satu transaksi cukup (satu `findUnique`
+      // pra-transaksi + satu di dalam kunci).
+      expect(dm.$transaction).toHaveBeenCalledTimes(1);
+
+      // Byte PDF yang dirender identik lintas urutan relasi: roster anggota
+      // dicetak dalam urutan kanonis.
+      const rosterOrders = renderSpy.mock.calls.map((call) =>
+        (call[0] as any).members.map((m: any) => m.userId)
+      );
+      expect(rosterOrders.length).toBeGreaterThan(0);
+      for (const order of rosterOrders) {
+        expect(order).toEqual(['user-0', 'user-1', 'user-2']);
+      }
+    } finally {
+      renderSpy.mockRestore();
+      pdfSpy.mockRestore();
+    }
+  });
+
+  it('byte PDF identik ketika anggota yang sama dibaca dalam urutan berbeda', async () => {
+    const d = decisionRow();
+    const pdfSpy = vi
+      .spyOn(pdfModule, 'generateDecisionPdf')
+      .mockResolvedValue(Buffer.from('%PDF-1.4 fingerprint'));
+    try {
+      await FoundationDecisionService.renderPdf(d);
+      const reversed = { ...d, members: [...d.members].reverse() };
+      await FoundationDecisionService.renderPdf(reversed);
+      // Roster yang dirender selalu dalam urutan kanonis yang SAMA, apa pun
+      // urutan relasi masukannya.
+      const [firstCall, secondCall] = pdfSpy.mock.calls;
+      expect((firstCall[0] as any).members.map((m: any) => m.userId)).toEqual(
+        (secondCall[0] as any).members.map((m: any) => m.userId)
+      );
+      expect((firstCall[0] as any).members.map((m: any) => m.userId)).toEqual([
+        'user-0',
+        'user-1',
+        'user-2',
+      ]);
+    } finally {
+      pdfSpy.mockRestore();
+    }
   });
 });

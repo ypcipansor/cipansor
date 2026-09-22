@@ -26,6 +26,7 @@ import {
 import { createKeyMaterial, publicKeyFingerprint, signPdfHash } from '@/utils/esign';
 import { supersedeSigningKeyHistory, revokeSigningKeyHistory } from '@/utils/signing-key-history';
 import type { PrismaClient } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 const RUN = process.env.RUN_DB_TESTS === '1';
 const MIGRATION_SQL = path.resolve(
@@ -1145,6 +1146,181 @@ describe.skipIf(!RUN)('foundation-decisions integrasi PostgreSQL', () => {
     await prisma.foundationDecision.delete({ where: { id: decision.id } });
     if (createdSeal) await prisma.foundationEseal.delete({ where: { id: seal.id } });
     await prisma.user.delete({ where: { id: user.id } });
+  });
+
+  /**
+   * BUG 1 (real PostgreSQL) — pencabutan peran konkuren tidak boleh masuk
+   * snapshot.
+   *
+   * Membuktikan perlindungan `FOR UPDATE` + baca-ulang pada PostgreSQL nyata:
+   * transaksi memegang baris penugasan; pencabutan yang menyentuh baris SAMA
+   * menunggu. Setelah kunci dilepas, baca-ulang tidak lagi menemukan penugasan
+   * aktif, dan anggota yang dicabut tidak dapat `castVote` pada keputusan yang
+   * tidak memuatnya.
+   */
+  it('peran yang dicabut menghilang dari baca-ulang pasca-lock dan kehilangan hak suara', async () => {
+    const suffix = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const creator = await prisma.user.create({
+      data: {
+        id: `itest-conc-creator-${suffix}`,
+        email: `itest-conc-creator-${suffix}@example.test`,
+        name: 'Pembuat',
+        passwordHash: 'x',
+      },
+    });
+    const revoked = await prisma.user.create({
+      data: {
+        id: `itest-conc-revoked-${suffix}`,
+        email: `itest-conc-revoked-${suffix}@example.test`,
+        name: 'Akan Dicabut',
+        passwordHash: 'x',
+      },
+    });
+    const pembina = await prisma.role.upsert({
+      where: { code: 'YAYASAN_PEMBINA' },
+      create: { code: 'YAYASAN_PEMBINA', name: 'Pembina', realm: 'YAYASAN' },
+      update: {},
+    });
+    const assignment = await prisma.userRoleAssignment.create({
+      data: { userId: revoked.id, roleId: pembina.id, isActive: true },
+    });
+
+    // Baca pra-transaksi yang sah: penugasan masih aktif.
+    const before = await prisma.userRoleAssignment.findMany({
+      where: { id: assignment.id, isActive: true, role: { code: 'YAYASAN_PEMBINA' } },
+      select: { id: true, userId: true, role: { select: { code: true } } },
+    });
+    expect(before).toHaveLength(1);
+
+    // Di dalam transaksi: kunci baris (FOR UPDATE) lalu cabut DARI LUAR —
+    // pencabutan menunggu lock. Setelah lock dilepas, baca ulang tidak lagi
+    // menemukan penugasan aktif.
+    await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`
+        SELECT "id" FROM "user_role_assignments"
+        WHERE "id" IN (${Prisma.join([assignment.id])})
+        FOR UPDATE`;
+    });
+    await prisma.userRoleAssignment.update({
+      where: { id: assignment.id },
+      data: { isActive: false },
+    });
+    const after = await prisma.userRoleAssignment.findMany({
+      where: { id: assignment.id, isActive: true, role: { code: 'YAYASAN_PEMBINA' } },
+      select: { id: true, userId: true, role: { select: { code: true } } },
+    });
+    expect(after).toHaveLength(0);
+
+    // Keputusan tanpa anggota yang dicabut: ia tidak memperoleh canVote dan
+    // `castVote` menolaknya meski peran hari ini masih tampak Pembina.
+    const decision = await prisma.foundationDecision.create({
+      data: {
+        id: `itest-conc-d-${suffix}`,
+        organType: 'PEMBINA',
+        kind: 'CIRCULAR',
+        status: 'VOTING',
+        subject: 'Uji snapshot konkuren',
+        body: 'Naskah uji.',
+        decisionType: 'pengesahan-rencana-kerja',
+        quorumSnapshot: { activeCount: 1 } as never,
+        voteSummary: {} as never,
+        createdById: creator.id,
+        members: {
+          create: [{ userId: creator.id, name: 'Pembuat', roleCode: 'YAYASAN_PEMBINA' }],
+        },
+      },
+    });
+    await expect(
+      FoundationDecisionService.castVote(
+        { id: revoked.id, roleCode: 'YAYASAN_PEMBINA' },
+        decision.id,
+        { choice: 'APPROVE', passphrase: 'apa pun' }
+      )
+    ).rejects.toThrow(/bukan anggota organ/);
+    const votes = await prisma.foundationDecisionVote.count({
+      where: { decisionId: decision.id },
+    });
+    expect(votes).toBe(0);
+
+    await prisma.foundationDecisionMember.deleteMany({ where: { decisionId: decision.id } });
+    await prisma.foundationDecision.delete({ where: { id: decision.id } });
+    await prisma.userRoleAssignment.deleteMany({ where: { userId: revoked.id } });
+    await prisma.user.deleteMany({ where: { id: { in: [creator.id, revoked.id] } } });
+  });
+
+  /**
+   * BUG 2 (real PostgreSQL) — urutan relasi anggota tidak boleh mengubah
+   * digest PDF tersegel.
+   *
+   * `renderPdf` memakai urutan kanonis, jadi baris yang relasinya sengaja
+   * dibalik harus menghasilkan byte PDF yang IDENTIK. Sebelum perbaikan,
+   * roster mengikuti urutan baca dan byte-nya berbeda.
+   */
+  it('byte PDF tidak berubah ketika urutan relasi anggota dibalik', async () => {
+    const suffix = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const creator = await prisma.user.create({
+      data: {
+        id: `itest-order-creator-${suffix}`,
+        email: `itest-order-creator-${suffix}@example.test`,
+        name: 'Pembuat Urutan',
+        passwordHash: 'x',
+      },
+    });
+    const member = await prisma.user.create({
+      data: {
+        id: `itest-order-member-${suffix}`,
+        email: `itest-order-member-${suffix}@example.test`,
+        name: 'Anggota Urutan',
+        passwordHash: 'x',
+      },
+    });
+    const created = await prisma.foundationDecision.create({
+      data: {
+        id: `itest-order-d-${suffix}`,
+        organType: 'PEMBINA',
+        kind: 'CIRCULAR',
+        status: 'VOTING',
+        subject: 'Uji urutan anggota',
+        body: 'Naskah uji determinisme.',
+        decisionType: 'pengesahan-rencana-kerja',
+        quorumSnapshot: { activeCount: 2 } as never,
+        voteSummary: {} as never,
+        createdById: creator.id,
+        members: {
+          create: [
+            { userId: creator.id, name: 'Pembuat Urutan', roleCode: 'YAYASAN_PEMBINA' },
+            { userId: member.id, name: 'Anggota Urutan', roleCode: 'YAYASAN_PEMBINA' },
+          ],
+        },
+      },
+    });
+    const loaded = await prisma.foundationDecision.findUniqueOrThrow({
+      where: { id: created.id },
+      include: {
+        members: true,
+        votes: true,
+        createdBy: { select: { id: true, name: true } },
+        decidedBy: { select: { id: true, name: true } },
+        document: { select: { id: true } },
+      },
+    });
+    const asRich = {
+      ...loaded,
+      createdBy: { id: creator.id, name: 'Pembuat Urutan' },
+      decidedBy: null,
+      document: null,
+    } as never;
+
+    const straight = await FoundationDecisionService.renderPdf(asRich);
+    const reversed = await FoundationDecisionService.renderPdf({
+      ...(asRich as any),
+      members: [...(asRich as any).members].reverse(),
+    } as never);
+    expect(reversed.equals(straight)).toBe(true);
+
+    await prisma.foundationDecisionMember.deleteMany({ where: { decisionId: created.id } });
+    await prisma.foundationDecision.delete({ where: { id: created.id } });
+    await prisma.user.deleteMany({ where: { id: { in: [creator.id, member.id] } } });
   });
 });
 
