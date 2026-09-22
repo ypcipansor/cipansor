@@ -210,6 +210,59 @@ describeDb('esign key lifecycle — atomicity on real PostgreSQL', () => {
   });
 
   /**
+   * BUG (D) — two concurrent `revokeKey` calls must not overwrite the first
+   * revocation's history.
+   *
+   * Both requests read the key as not-yet-revoked outside the transaction
+   * (nothing locks the row on read), then both enter their own transaction.
+   * With an unconditional `UPDATE ... WHERE id`, both succeed and both write
+   * an audit row: the loser overwrites the winner's timestamp/reason/actor,
+   * and the first act — the one that answers "since when is this key no longer
+   * trusted" — is lost. A conditional `UPDATE ... WHERE id AND revoked_at IS
+   * NULL` makes exactly one of them claim the transition; the other sees
+   * `count: 0` and gets a deterministic conflict.
+   *
+   * The two calls race on purpose. Their first `findUnique` reads overlap
+   * (each awaits once), then the DB's own row lock serialises the claims.
+   */
+  it('two concurrent revocations: exactly one wins, the loser gets a conflict, first record intact', async () => {
+    const { key, history } = await seedKey();
+
+    const results = await Promise.allSettled([
+      EsignService.revokeKey(owner.id, actor.id, 'Alasan pencabutan pertama'),
+      EsignService.revokeKey(owner.id, actor.id, 'Alasan pencabutan kedua'),
+    ]);
+
+    const fulfilled = results.filter((r) => r.status === 'fulfilled');
+    const rejected = results.filter(
+      (r): r is PromiseRejectedResult => r.status === 'rejected'
+    );
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    // The loser is a client conflict, not a 500 and not a silent success.
+    expect((rejected[0].reason as { statusCode?: number }).statusCode).toBe(409);
+
+    const winner = fulfilled[0] as PromiseFulfilledResult<
+      Awaited<ReturnType<typeof EsignService.revokeKey>>
+    >;
+
+    const afterKey = await prisma.userSigningKey.findUnique({ where: { id: key.id } });
+    const afterHistory = await prisma.userSigningKeyHistory.findUnique({
+      where: { id: history.id },
+    });
+    // The stored record is the WINNER's, and only one audit row exists.
+    expect(afterKey?.revokedAt?.getTime()).toBe(winner.value.revokedAt.getTime());
+    expect(afterKey?.revokedReason).toBe(winner.value.revokedReason);
+    expect(afterHistory?.revokedAt?.getTime()).toBe(winner.value.revokedAt.getTime());
+    const auditCount = await prisma.auditLog.count({
+      where: { entityId: key.id, action: 'REVOKE' },
+    });
+    expect(auditCount).toBe(1);
+
+    await cleanupOwner();
+  });
+
+  /**
    * BUG (C) — the replacement create fails after the old key was superseded
    * and deleted. Before the fix the user was left with NO key.
    */

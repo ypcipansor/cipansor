@@ -1004,10 +1004,32 @@ export const EsignService = {
      * riwayat, dan audit tidak dapat menyimpang satu sama lain.
      */
     const { signedWithThisKey } = await prisma.$transaction(async (tx) => {
-      await tx.userSigningKey.update({
-        where: { id: key.id },
+      /**
+       * UPDATE bersyarat (`revoked_at IS NULL`) — gerbang transisi yang
+       * ATOMIK.
+       *
+       * Kedua permintaan paralel membaca kunci yang belum dicabut di luar
+       * transaksi ini (tidak ada yang mengunci baris saat `findUnique`), lalu
+       * keduanya masuk ke transaksinya sendiri. Bila keduanya memakai
+       * `update({ where: { id } })` tanpa syarat, keduanya menulis dan
+       * masing-masing menulis baris audit "sukses": yang terakhir menimpa
+       * tanggal, alasan, dan pelaku pencabutan yang pertama — dan catatan
+       * pertamalah yang menjawab sejak kapan kunci ini tidak boleh dipercaya.
+       *
+       * UPDATE mengambil kunci baris barisnya sendiri, jadi yang kalah
+       * menunggu, lalu mengevaluasi ulang `revoked_at IS NULL`, tidak
+       * menemukan apa pun, dan mendapat `count: 0`. Hanya pemenang yang
+       * melanjutkan ke cap riwayat dan audit.
+       */
+      const claimed = await tx.userSigningKey.updateMany({
+        where: { id: key.id, revokedAt: null },
         data: { revokedAt, revokedReason: trimmed, revocationCode: code, revokedById: actorId },
       });
+      if (claimed.count === 0) {
+        // Permintaan lain sudah menang transisinya. Deterministik, dan tanpa
+        // menyentuh cap waktu/alasan/pelaku yang sudah tercatat.
+        throw Errors.conflict('Kunci tanda tangan ini sudah dicabut sebelumnya.');
+      }
       // Cap riwayatnya juga. Selama ini hanya `UserSigningKey` yang ditandai,
       // sehingga tabel riwayat — satu-satunya yang dipercaya saat memverifikasi
       // suara keputusan — tetap memperlihatkan kunci ini berlaku. Suara yang

@@ -360,7 +360,8 @@ function voteSummaryOf(
  * Sidik jari isi yang DICETAK ke PDF final: naskah, anggota, dan suara yang
  * sah. Dipakai untuk memastikan artefak yang dirender di luar kunci masih
  * cocok ketika kunci diperoleh — bila seorang pemilih lain menyisipkan suara
- * di sela-selanya, sidik jarinya berbeda dan artefaknya dirender ulang.
+ * di sela-selanya, sidik jarinya berbeda, artefak dibuang, dan seluruh
+ * percobaan diulang dengan artefak yang dihitung dari baris segar.
  *
  * Rekap suara (`voteSummary`) ikut diikat, bukan hanya daftar suara. Tanpa itu,
  * artefak preview yang dirender SEBELUM suara penentu dapat dinyatakan masih
@@ -381,6 +382,21 @@ function approvalFingerprint(d: RichDecision): string {
       voteSummary: voteSummaryOf(authentic, snapshot.activeCount),
     })
   );
+}
+
+/**
+ * Sinyal internal: artefak persetujuan yang disiapkan di luar kunci sudah tidak
+ * cocok dengan baris terkunci (pemilih lain menyisipkan suara, atau rekapnya
+ * berubah), sehingga transaksi dibatalkan dan pemanggil mengulang dengan baris
+ * segar.
+ *
+ * Ini yang memindahkan render PDF + scrypt (e-seal) keluar dari
+ * `SELECT … FOR UPDATE`: jalur yang memegang kunci melempar, bukan merender.
+ */
+class StaleArtifactError extends Error {
+  constructor() {
+    super('stale approval artifact');
+  }
 }
 
 /** Bagian keputusan yang dibutuhkan untuk memeriksa keaslian sebuah suara. */
@@ -427,8 +443,9 @@ interface VoteSignatureRecord {
  * dalam kunci memperpanjang lockout baris dan memblokir suara anggota lain.
  * `fingerprint` mengikat artefak ke isi keputusan + himpunan suara yang
  * dirender; bila di dalam kunci ternyata himpunannya berbeda (pemilih lain
- * masuk di sela-sela), artefak dibuang dan dirender ulang — jadi pemisahan ini
- * tidak melonggarkan jaminan apa pun.
+ * masuk di sela-sela), `applyLocked` melempar `StaleArtifactError` dan
+ * pemanggil mengulang di luar kunci — jadi pemisahan ini tidak melonggarkan
+ * jaminan apa pun tanpa menahan kunci selama render/scrypt.
  */
 interface ApprovalArtifact {
   fingerprint: string;
@@ -935,8 +952,15 @@ export const FoundationDecisionService = {
     // Hak suara mengikuti SNAPSHOT anggota, bukan peran hari ini: orang yang
     // baru diangkat setelah keputusan dibuat bukan bagian dari badan yang
     // memutus saat itu.
+    //
+    // Anggota yang SUDAH memilih juga `canVote: false`: `castVote` menolak
+    // suara ganda, jadi DTO yang tetap menawarkannya membuat UI meminta
+    // tindakan yang peladen pasti tolak.
+    const hasVoted = d.votes.some((v) => v.userId === actor.id);
     const canVote =
-      d.status === FoundationDecisionStatus.VOTING && d.members.some((m) => m.userId === actor.id);
+      d.status === FoundationDecisionStatus.VOTING &&
+      !hasVoted &&
+      d.members.some((m) => m.userId === actor.id);
     // Eligibility finalisasi dihitung dengan definisi yang SAMA dengan
     // `finalize` — bukan dari role saja. UI tidak boleh menawarkan tombol yang
     // peladen pasti tolak (Pengawas membuka keputusan organ lain).
@@ -1097,41 +1121,56 @@ export const FoundationDecisionService = {
       },
       signingKey: keyRecord,
     };
-    // Ringkasan dihitung ULANG dari himpunan suara yang memuat `previewVote`.
-    // Mempertahankan `voteSummary` lama akan membuat artefak preview lolos
-    // pemeriksaan sidik jari sementara PDF-nya mencetak rekap SEBELUM suara
-    // penentu — selisih itu terlihat pada risalah final yang di-e-seal.
-    const previewDecision = {
-      ...d,
-      votes: [...d.votes, previewVote],
-    } as unknown as RichDecision;
-    const previewSummary = voteSummaryOf(
-      this.authenticatedVotesOf(previewDecision),
-      (previewDecision.quorumSnapshot as unknown as QuorumSnapshot).activeCount
-    );
-    previewDecision.voteSummary = previewSummary as unknown as Prisma.JsonValue;
-    const previewEvaluation = evaluateQuorum(
-      previewDecision.quorumSnapshot as unknown as QuorumSnapshot,
-      this.votesOf(previewDecision)
-    );
-    // Kerja mahal (render PDF + buka kunci e-seal) dikerjakan DI LUAR kunci
-    // baris, agar satu finalisasi tidak menahan suara anggota lain selama
-    // kripto berlangsung.
-    let previewArtifact: ApprovalArtifact | null = null;
-    if (
-      previewEvaluation.outcome === 'APPROVED' &&
-      previewDecision.status !== FoundationDecisionStatus.APPROVED
-    ) {
-      previewArtifact = await this.prepareApprovalArtifact(actor, previewDecision);
-    }
+    // Satu percobaan penuh. Semuanya membaca/menulis lewat `bound` — baris yang
+    // dimuat SEGAR di luar kunci — bukan salinan permintaan pertama, sehingga
+    // ulangan tidak pernah memakai himpunan suara yang sudah basi.
+    const attemptCastVote = async (bound: RichDecision) => {
+      // Baris suara sintetis untuk menghitung artefak SEBELUM kunci diambil.
+      // `isVoteAuthentic` akan meloloskannya (tanda tangan ini sah), sehingga
+      // render di sini menghasilkan PDF yang sama persis dengan yang akan
+      // dirender di dalam kunci bila tidak ada pemilih lain yang menyela. Nama
+      // pemilih diambil dari SNAPSHOT anggota — nama itulah yang tercetak di
+      // risalah.
+      const attemptVote: VoteWithTrustedKey = {
+        ...previewVote,
+        signedAt,
+        note: note?.trim() || null,
+      };
+      // Ringkasan dihitung ULANG dari himpunan suara yang memuat `attemptVote`.
+      // Mempertahankan `voteSummary` lama akan membuat artefak preview lolos
+      // pemeriksaan sidik jari sementara PDF-nya mencetak rekap SEBELUM suara
+      // penentu — selisih itu terlihat pada risalah final yang di-e-seal.
+      const attemptDecision = {
+        ...bound,
+        votes: [...bound.votes, attemptVote],
+      } as unknown as RichDecision;
+      const attemptSummary = voteSummaryOf(
+        this.authenticatedVotesOf(attemptDecision),
+        (attemptDecision.quorumSnapshot as unknown as QuorumSnapshot).activeCount
+      );
+      attemptDecision.voteSummary = attemptSummary as unknown as Prisma.JsonValue;
+      const previewEvaluation = evaluateQuorum(
+        attemptDecision.quorumSnapshot as unknown as QuorumSnapshot,
+        this.votesOf(attemptDecision)
+      );
+      // Kerja mahal (render PDF + buka kunci e-seal) dikerjakan DI LUAR kunci
+      // baris, agar satu finalisasi tidak menahan suara anggota lain selama
+      // kripto berlangsung.
+      let previewArtifact: ApprovalArtifact | null = null;
+      if (
+        previewEvaluation.outcome === 'APPROVED' &&
+        attemptDecision.status !== FoundationDecisionStatus.APPROVED
+      ) {
+        previewArtifact = await this.prepareApprovalArtifact(actor, attemptDecision);
+      }
 
-    const result = await prisma.$transaction(async (tx) => {
+      const result = await prisma.$transaction(async (tx) => {
       // Kunci baris keputusan dan periksa ulang status DI DALAM transaksi.
       // Pembuatan suara, pembacaan ulang suara, evaluasi kuorum, dan
       // finalisasi berjalan atomik terhadap pemilih paralel.
-      await lockDecision(tx, d.id);
+      await lockDecision(tx, bound.id);
       const lockedRow = await tx.foundationDecision.findUnique({
-        where: { id: d.id },
+        where: { id: bound.id },
         include: decisionInclude,
       });
       const locked = lockedRow as unknown as RichDecision | null;
@@ -1160,7 +1199,7 @@ export const FoundationDecisionService = {
 
       const vote = await tx.foundationDecisionVote.create({
         data: {
-          decisionId: d.id,
+          decisionId: bound.id,
           userId: actor.id,
           choice,
           canonicalDigest: digest,
@@ -1175,7 +1214,7 @@ export const FoundationDecisionService = {
       });
 
       const votes = await tx.foundationDecisionVote.findMany({
-        where: { decisionId: d.id },
+        where: { decisionId: bound.id },
         include: { signingKey: { select: trustedKeySelect } },
       });
       // Ringkasan dihitung dari suara yang LOLOS verifikasi tanda tangan.
@@ -1186,13 +1225,13 @@ export const FoundationDecisionService = {
       );
       const summary: VoteSummary = voteSummaryOf(authentic, snapshot.activeCount);
       await tx.foundationDecision.update({
-        where: { id: d.id },
+        where: { id: bound.id },
         data: { voteSummary: summary as unknown as Prisma.InputJsonValue },
       });
 
       // Evaluasi atas baris yang sudah memuat suara ini, masih di dalam kunci.
       const freshRow = await tx.foundationDecision.findUnique({
-        where: { id: d.id },
+        where: { id: bound.id },
         include: decisionInclude,
       });
       const fresh = freshRow as unknown as RichDecision;
@@ -1201,8 +1240,10 @@ export const FoundationDecisionService = {
         this.votesOf(fresh)
       );
       // Artefak yang disiapkan di luar kunci hanya dipakai bila sidik jarinya
-      // masih sama. Bila pemilih lain menyisipkan suara di sela-selanya, PDF
-      // dirender ulang di sini supaya himpunan suara yang dicetak tetap benar.
+      // masih sama. Bila pemilih lain menyisipkan suara di sela-selanya,
+      // `applyLocked` melempar `StaleArtifactError` dan percobaan ini
+      // dibatalkan lalu diulang dengan artefak yang dihitung dari baris segar —
+      // tidak ada render di dalam kunci.
       const artifact =
         previewArtifact && previewArtifact.fingerprint === approvalFingerprint(fresh)
           ? previewArtifact
@@ -1220,7 +1261,7 @@ export const FoundationDecisionService = {
           action: 'VOTE',
           entity: 'FoundationDecisionVote',
           entityId: vote.id,
-          newValues: { decisionId: d.id, choice },
+          newValues: { decisionId: bound.id, choice },
         },
       });
 
@@ -1230,6 +1271,25 @@ export const FoundationDecisionService = {
 
       return { vote, summary, outcome };
     });
+      return result;
+    };
+
+    // Bila baris berubah antara penyiapan artefak dan pengambilan kunci,
+    // `applyLocked` melempar `StaleArtifactError` alih-alih merender PDF/scrypt
+    // di dalam kunci. Tangkap sinyal itu, muat ulang baris di LUAR kunci, dan
+    // ulangi (terbatas) supaya penulis yang terus menyisipkan suara tidak
+    // membuat loop tak berujung.
+    let result: Awaited<ReturnType<typeof attemptCastVote>> | undefined;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        result = await attemptCastVote(
+          attempt === 0 ? d : await this.loadWithRelations(decisionId)
+        );
+        break;
+      } catch (err) {
+        if (!(err instanceof StaleArtifactError) || attempt >= 2) throw err;
+      }
+    }
 
     return {
       voteId: result.vote.id,
@@ -1268,21 +1328,23 @@ export const FoundationDecisionService = {
     if (!canFinalizeDecision(actor, d.members)) {
       throw Errors.forbidden('Anda tidak berhak menutup keputusan organ ini.');
     }
-    const previewEvaluation = evaluateQuorum(
-      d.quorumSnapshot as unknown as QuorumSnapshot,
-      this.votesOf(d),
-      { closed: d.kind !== 'CIRCULAR' }
-    );
-    // Sama seperti `castVote`: render PDF + e-seal disiapkan di luar kunci.
-    let previewArtifact: ApprovalArtifact | null = null;
-    if (
-      previewEvaluation.outcome === 'APPROVED' &&
-      d.status !== FoundationDecisionStatus.APPROVED
-    ) {
-      previewArtifact = await this.prepareApprovalArtifact(actor, d);
-    }
-
-    return prisma.$transaction(async (tx) => {
+    const runFinalize = async (bound: RichDecision) => {
+      // Evaluasi + artefak dihitung dari baris `bound` yang segar SETIAP
+      // percobaan, di luar kunci. Memakai artefak lama pada percobaan ulang
+      // akan selamanya basi dan berujung pada kegagalan.
+      const boundEvaluation = evaluateQuorum(
+        bound.quorumSnapshot as unknown as QuorumSnapshot,
+        this.votesOf(bound),
+        { closed: bound.kind !== 'CIRCULAR' }
+      );
+      let artifactForAttempt: ApprovalArtifact | null = null;
+      if (
+        boundEvaluation.outcome === 'APPROVED' &&
+        bound.status !== FoundationDecisionStatus.APPROVED
+      ) {
+        artifactForAttempt = await this.prepareApprovalArtifact(actor, bound);
+      }
+      return prisma.$transaction(async (tx) => {
       await lockDecision(tx, decisionId);
       const lockedRow = await tx.foundationDecision.findUnique({
         where: { id: decisionId },
@@ -1306,11 +1368,22 @@ export const FoundationDecisionService = {
         );
       }
       const artifact =
-        previewArtifact && previewArtifact.fingerprint === approvalFingerprint(locked)
-          ? previewArtifact
+        artifactForAttempt && artifactForAttempt.fingerprint === approvalFingerprint(locked)
+          ? artifactForAttempt
           : null;
       return this.applyLocked(actor, locked, evaluation, tx, artifact ?? undefined);
     });
+    };
+
+    // Sama seperti `castVote`: sinyal basi dibatalkan dan diulang di luar kunci,
+    // tidak pernah dengan merender ulang di dalam `SELECT … FOR UPDATE`.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await runFinalize(attempt === 0 ? d : await this.loadWithRelations(decisionId));
+      } catch (err) {
+        if (!(err instanceof StaleArtifactError) || attempt >= 2) throw err;
+      }
+    }
   },
 
   /**
@@ -1420,19 +1493,24 @@ export const FoundationDecisionService = {
     evaluation: QuorumEvaluation,
     client: DbClient = prisma
   ) {
+    // Artefak disiapkan DI LUAR transaksi sehingga tidak ada jalur yang
+    // merender PDF/scrypt saat transaksi berjalan.
+    let prepared: ApprovalArtifact | undefined;
+    if (evaluation.outcome === 'APPROVED' && d.status !== FoundationDecisionStatus.APPROVED) {
+      prepared = await this.prepareApprovalArtifact(actor, d, client);
+    }
+    const run = async (tx: DbClient) => this.applyLocked(actor, d, evaluation, tx, prepared);
     const ownTransaction = client === prisma;
-    const run = async (tx: DbClient) => this.applyLocked(actor, d, evaluation, tx);
     return ownTransaction ? prisma.$transaction(run) : run(client);
   },
 
   /**
    * Bentuk persetujuan saat baris keputusan terkunci.
    *
-   * Kerja yang memegang kunci sekecil mungkin: hanya penulisan status. PDF
-   * final dan e-seal sudah disiapkan sebelum kunci diambil (atau disiapkan
-   * sekarang bila pemanggil memanggil `applyOutcome` langsung), dan
-   * `prepared.seal` DIREUSE alih-alih memanggil `ensureSeal` lagi — scrypt di
-   * dalam kunci-lah yang memperpanjang lockout baris.
+   * Hanya penulisan status yang terjadi di dalam kunci: `prepared.seal` DIREUSE
+   * alih-alih memanggil `ensureSeal` (scrypt) lagi. Bila `prepared` tidak ada
+   * atau sidik jarinya sudah berbeda, jalur ini melempar `StaleArtifactError`
+   * — bukan merender ulang — sehingga pemanggil mengulang di luar lock.
    */
   async applyLocked(
     actor: Actor,
@@ -1442,10 +1520,10 @@ export const FoundationDecisionService = {
     prepared?: ApprovalArtifact
   ) {
     if (evaluation.outcome === 'APPROVED' && d.status !== FoundationDecisionStatus.APPROVED) {
-      const artifact =
-        prepared && prepared.fingerprint === approvalFingerprint(d)
-          ? prepared
-          : await this.prepareApprovalArtifact(actor, d, client);
+      if (!prepared || prepared.fingerprint !== approvalFingerprint(d)) {
+        throw new StaleArtifactError();
+      }
+      const artifact = prepared;
 
       // Arsip byte PDF apa adanya, lalu tandai keputusan sah + e-seal. Sekali
       // ditulis, `finalPdfDigest` dikunci (immutable) dan diverifikasi e-seal.
@@ -1522,7 +1600,7 @@ export const FoundationDecisionService = {
    * setiap anggota lain yang hendak memberi suara menunggu kripto tersebut
    * selesai. Hasilnya diikat ke `fingerprint` himpunan suara, sehingga bila
    * pemilih lain menyisipkan suara di sela-sela, artefak ini dibuang dan
-   * dirender ulang di dalam kunci.
+   * pemanggil mengulang di luar kunci dengan artefak yang baru dihitung.
    */
   async prepareApprovalArtifact(
     actor: Actor,

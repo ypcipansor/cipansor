@@ -1105,6 +1105,70 @@ describe('FoundationDecisionService.detail — canFinalize pada DTO (audit A)', 
 });
 
 /**
+ * Regresi BUG (finding B) — `canVote` pada DTO detail.
+ *
+ * Sebelumnya `canVote` hanya melihat status VOTING + keanggotaan snapshot,
+ * sehingga anggota yang SUDAH memilih tetap menerima `canVote: true` dan UI
+ * menawarkan tombol yang `castVote` pasti tolak ("sudah memberikan suara").
+ * Kontrak peladen harus benar lebih dulu; menyembunyikan tombol di web adalah
+ * tambahan, bukan penggantinya.
+ */
+describe('FoundationDecisionService.detail — canVote pada DTO (finding B)', () => {
+  it('anggota yang belum memilih pada keputusan VOTING mendapat canVote=true', async () => {
+    const d = decisionRow();
+    dm.foundationDecision.findUnique.mockResolvedValue(d);
+    const detail = await FoundationDecisionService.detail(
+      { id: 'user-1', roleCode: 'YAYASAN_PEMBINA' },
+      'dec-1'
+    );
+    expect(detail.canVote).toBe(true);
+    expect(detail.myVote).toBeNull();
+  });
+
+  it('anggota yang SUDAH memilih mendapat canVote=false dan suaranya terbaca', async () => {
+    const d = decisionRow();
+    d.votes = [signedVoteRow(d, 'user-1', 'APPROVE')];
+    dm.foundationDecision.findUnique.mockResolvedValue(d);
+    const detail = await FoundationDecisionService.detail(
+      { id: 'user-1', roleCode: 'YAYASAN_PEMBINA' },
+      'dec-1'
+    );
+    expect(detail.canVote).toBe(false);
+    expect(detail.myVote).toBe('APPROVE');
+  });
+
+  it('peran READ yang bukan anggota snapshot dapat membaca tetapi canVote=false', async () => {
+    dm.foundationDecision.findUnique.mockResolvedValue(decisionRow());
+    // Peran yayasan boleh MEMBACA seluruh keputusan, tetapi yang bukan anggota
+    // snapshot organ ini bukan pemilih — `castVote` menolaknya sebagai bukan
+    // anggota, jadi DTO harus sepakat.
+    const detail = await FoundationDecisionService.detail(
+      { id: 'user-9', roleCode: 'YAYASAN_PEMBINA' },
+      'dec-1'
+    );
+    expect(detail.canVote).toBe(false);
+    expect(detail.members.some((m) => m.userId === 'user-9')).toBe(false);
+  });
+
+  it('pihak luar tanpa hubungan → detail ditolak', async () => {
+    dm.foundationDecision.findUnique.mockResolvedValue(decisionRow());
+    await expect(
+      FoundationDecisionService.detail({ id: 'guru-9', roleCode: 'GURU' }, 'dec-1')
+    ).rejects.toThrow(/tidak berhak/);
+  });
+
+  it('keputusan terminal (APPROVED) → canVote=false', async () => {
+    const d = decisionRow({ status: 'APPROVED' });
+    dm.foundationDecision.findUnique.mockResolvedValue(d);
+    const detail = await FoundationDecisionService.detail(
+      { id: 'user-1', roleCode: 'YAYASAN_PEMBINA' },
+      'dec-1'
+    );
+    expect(detail.canVote).toBe(false);
+  });
+});
+
+/**
  * Regresi INVESTIGATION D — status publikasi dapat diubah ketika keputusan
  * masih VOTING.
  *
@@ -2569,6 +2633,229 @@ describe('FoundationDecisionService.castVote — kerja mahal di luar kunci', () 
       expect(result.voteId).toBe('vote-1');
     } finally {
       lockSpy.mockRestore();
+    }
+  });
+
+  /**
+   * Regresi D → INVESTIGATION E (stale-preview path).
+   *
+   * `applyLocked` dulu merender ulang PDF (dan `ensureSeal` → scrypt) DI DALAM
+   * transaksi ketika artefak preview basi — persis jalur yang lomba dengan
+   * pemilih paralel. Sekarang jalur itu melempar `StaleArtifactError`, transaksi
+   * dibatalkan, dan `castVote` mengulang dari luar dengan baris segar. Yang
+   * diperiksa di sini: `renderPdf` TIDAK dipanggil saat kunci dipegang, dan
+   * percobaan kedua memakai baris yang dimuat ulang (1 suara sudah ada).
+   *
+   * `decisionRow()` memakai `activeCount: 3` + `MUTLAK 1`, sehingga satu suara
+   * langsung mencapai mufakat dan artefak disiapkan pada tiap percobaan.
+   */
+  it('artefak basi: tidak merender di dalam lock dan mengulang dari luar', async () => {
+    const d = decisionRow({
+      quorumSnapshot: {
+        organType: 'PEMBINA',
+        kind: 'CIRCULAR',
+        activeCount: 1,
+        presentMode: 'MUTLAK',
+        presentValue: 1,
+        decisionMode: 'MUTLAK',
+        decisionValue: 1,
+      },
+    });
+    const existing = signedVoteRow(d, 'user-2', 'APPROVE');
+    // Pemilihan-pemilih yang berarti: baris di luar kunci selalu tidak memuat
+    // suara baru buatan kita (transaksi basi di-rollback), sementara di dalam
+    // kunci himpunannya sudah berubah karena pemilih paralel. Sidik jari preview
+    // tidak pernah cocok, jadi jalur basi terpicu.
+    let n = 0;
+    dm.foundationDecision.findUnique.mockImplementation(async () => {
+      n += 1;
+      return n === 1 ? d : { ...d, votes: [existing] };
+    });
+    dm.foundationDecisionVote.create.mockResolvedValue({ id: 'vote-1' });
+    dm.foundationDecisionVote.findMany.mockResolvedValue([existing]);
+    dm.foundationDecision.update.mockResolvedValue({ ...d, status: 'APPROVED' });
+    dm.userSigningKey.findUnique.mockResolvedValue(signingKeyRow);
+    dm.userSigningKey.update.mockResolvedValue(signingKeyRow);
+    dm.foundationEseal.findMany.mockResolvedValue([
+      {
+        id: 'seal-1',
+        ...createSealMaterial(config.foundation.esealPassphrase),
+        revokedAt: null,
+        activatedAt: new Date(),
+        createdAt: new Date(),
+      },
+    ]);
+    dm.foundationDecisionDocument.create.mockResolvedValue({ id: 'doc-1' });
+
+    const order: string[] = [];
+    // `inTx` menandai "kode sedang berada di dalam transaksi interaktif".
+    // Penanda di-reset saat transaksi selesai, jadi render pada percobaan
+    // BERIKUTNYA (yang sah di luar lock) tidak salah terbaca sebagai
+    // "render di dalam lock".
+    let inTx = false;
+    dm.$executeRaw.mockImplementation(async (strings: any) => {
+      if ((strings as string[]).join('?').includes('FOR UPDATE')) order.push('lock');
+      return 1;
+    });
+    const baseTransaction = dm.$transaction.getMockImplementation();
+    dm.$transaction.mockImplementation((cb: any) => {
+      inTx = true;
+      const result = baseTransaction(cb);
+      return Promise.resolve(result).finally(() => {
+        inTx = false;
+      });
+    });
+
+    const originalRender = FoundationDecisionService.renderPdf;
+    const renderSpy = vi
+      .spyOn(FoundationDecisionService, 'renderPdf')
+      .mockImplementation(async (decision: any) => {
+        order.push(inTx ? 'render-under-lock' : 'render-outside-lock');
+        return originalRender.call(FoundationDecisionService, decision);
+      });
+
+    let thrown: unknown;
+    try {
+      await FoundationDecisionService.castVote(
+        { id: 'user-1', roleCode: 'YAYASAN_PEMBINA' },
+        'dec-1',
+        { choice: 'APPROVE', passphrase: PASS }
+      );
+    } catch (err) {
+      thrown = err;
+    } finally {
+      renderSpy.mockRestore();
+    }
+
+    // Inti finding E: jalur yang memegang kunci TIDAK pernah merender PDF
+    // (atau `ensureSeal` → scrypt). Sebelum perbaikan, artefak basi memicu
+    // `prepareApprovalArtifact` DI DALAM transaksi dan baris ini gagal.
+    expect(order).not.toContain('render-under-lock');
+    // Minimal dua percobaan: render luar-lock sekali per percobaan, dan baris
+    // dimuat ulang di antara percobaan.
+    expect(order.filter((x) => x === 'render-outside-lock').length).toBeGreaterThanOrEqual(2);
+    expect(dm.$transaction.mock.calls.length).toBeGreaterThanOrEqual(2);
+    // Karena mock tidak pernah memasukkan suara baru ke baris `fresh`,
+    // sidik jari tak pernah cocok dan operasi berakhir dengan sinyal basi yang
+    // dikonversi menjadi galat — bukan diam-diam menyegel state basi.
+    expect(thrown).toBeInstanceOf(Error);
+  });
+
+  it('melempar di dalam lock, bukan merender, ketika pemanggil melewati persiapan', async () => {
+    const d = decisionRow();
+    const evaluation = {
+      outcome: 'APPROVED' as const,
+      activeCount: 3,
+      presentCount: 3,
+      approvedCount: 3,
+      rejectedCount: 0,
+      abstainCount: 0,
+      presentRequired: 3,
+      decisionRequired: 3,
+      presentMet: true,
+      decisionMet: true,
+      neededToApprove: 0,
+    };
+    const renderSpy = vi.spyOn(FoundationDecisionService, 'renderPdf');
+    try {
+      await expect(
+        FoundationDecisionService.applyLocked(
+          { id: 'user-0', roleCode: 'YAYASAN_PEMBINA' },
+          d,
+          evaluation as never,
+          dm as never,
+          undefined
+        )
+      ).rejects.toThrow(/stale approval artifact/);
+      expect(renderSpy).not.toHaveBeenCalled();
+    } finally {
+      renderSpy.mockRestore();
+    }
+  });
+
+  /**
+   * Sisi `finalize` dari finding E: percobaan ulang harus menghitung artefak
+   * dari baris yang DIMUAT ULANG, bukan mengulang dengan artefak basi. Sebelum
+   * perbaikan kedua, `finalize` menyiapkan artefak sekali dari `d` lalu
+   * mengulang dengan `previewArtifact` yang sama, sehingga sidik jarinya tak
+   * pernah cocok dan pemanggil selalu mendapat `StaleArtifactError` setelah
+   * lock diambil. Di sini percobaan 1 melihat himpunan suara yang berbeda,
+   * percobaan 2 melihat himpunan final — dan finalisasi harus BERHASIL.
+   */
+  it('finalize: mengulang dengan baris segar dan menyegel, bukan gagal karena artefak basi', async () => {
+    const d = decisionRow({
+      kind: 'CIRCULAR',
+      quorumSnapshot: {
+        organType: 'PEMBINA',
+        kind: 'CIRCULAR',
+        activeCount: 3,
+        presentMode: 'MUTLAK',
+        presentValue: 3,
+        decisionMode: 'MUTLAK',
+        decisionValue: 3,
+      },
+    });
+    const v0 = signedVoteRow(d, 'user-0', 'APPROVE');
+    const v1 = signedVoteRow(d, 'user-1', 'APPROVE');
+    const v2 = signedVoteRow(d, 'user-2', 'APPROVE');
+    // Muat awal: 2 suara (belum mufakat). Penguncian percobaan 1: 3 suara,
+    // sehingga artefak percobaan 1 basi. Percobaan 2 memuat 3 suara di luar dan
+    // di dalam → segel berhasil.
+    let n = 0;
+    dm.foundationDecision.findUnique.mockImplementation(async () => {
+      n += 1;
+      return n === 1 ? { ...d, votes: [v0, v1] } : { ...d, votes: [v0, v1, v2] };
+    });
+    dm.foundationDecisionVote.findMany.mockResolvedValue([v0, v1, v2]);
+    dm.foundationDecision.update.mockResolvedValue({ ...d, status: 'APPROVED' });
+    dm.userSigningKey.findUnique.mockResolvedValue(signingKeyRow);
+    dm.userSigningKey.update.mockResolvedValue(signingKeyRow);
+    dm.foundationEseal.findMany.mockResolvedValue([
+      {
+        id: 'seal-1',
+        ...createSealMaterial(config.foundation.esealPassphrase),
+        revokedAt: null,
+        activatedAt: new Date(),
+        createdAt: new Date(),
+      },
+    ]);
+    dm.foundationDecisionDocument.create.mockResolvedValue({ id: 'doc-1' });
+
+    const order: string[] = [];
+    let inTx = false;
+    dm.$executeRaw.mockImplementation(async (strings: any) => {
+      if ((strings as string[]).join('?').includes('FOR UPDATE')) order.push('lock');
+      return 1;
+    });
+    const baseTransaction = dm.$transaction.getMockImplementation();
+    dm.$transaction.mockImplementation((cb: any) => {
+      inTx = true;
+      return Promise.resolve(baseTransaction(cb)).finally(() => {
+        inTx = false;
+      });
+    });
+    const originalRender = FoundationDecisionService.renderPdf;
+    const renderSpy = vi
+      .spyOn(FoundationDecisionService, 'renderPdf')
+      .mockImplementation(async (decision: any) => {
+        order.push(inTx ? 'render-under-lock' : 'render-outside-lock');
+        return originalRender.call(FoundationDecisionService, decision);
+      });
+
+    try {
+      const res = await FoundationDecisionService.finalize(
+        { id: 'user-0', roleCode: 'YAYASAN_PEMBINA' },
+        'dec-1'
+      );
+      expect(res.outcome).toBe('APPROVED');
+      // Tidak ada render/scrypt di dalam kunci. Percobaan 1 tidak menyiapkan
+      // artefak (baris awalnya belum mufakat) lalu basi di dalam kunci;
+      // percobaan 2 menyiapkannya di luar dan menyegel.
+      expect(order).not.toContain('render-under-lock');
+      expect(order.filter((x) => x === 'render-outside-lock').length).toBeGreaterThanOrEqual(1);
+      expect(dm.$transaction.mock.calls.length).toBeGreaterThanOrEqual(2);
+    } finally {
+      renderSpy.mockRestore();
     }
   });
 });

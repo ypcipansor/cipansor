@@ -22,6 +22,7 @@ vi.mock('../../lib/prisma', () => ({
       findUnique: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
       deleteMany: vi.fn(),
     },
     userSigningKeyHistory: {
@@ -112,6 +113,9 @@ beforeEach(() => {
   // tersendiri di bawah, dan menuntut setiap uji lain menyiapkannya hanya
   // membuat semuanya menguji dua hal sekaligus.
   vi.mocked(prisma.userIdentity.findUnique).mockResolvedValue(verifiedIdentity() as any);
+  // Transisi pencabutan memakai UPDATE bersyarat; bawaan "berhasil" (count 1)
+  // supaya uji jalur bahagia tetap fokus pada perilaku yang diuji.
+  vi.mocked(prisma.userSigningKey.updateMany).mockResolvedValue({ count: 1 } as any);
 });
 
 /**
@@ -957,8 +961,10 @@ describe('mencabut kunci tanda tangan', () => {
 
     await EsignService.revokeKey('ketua', 'admin-1', REASON);
 
-    expect(prisma.userSigningKey.update).toHaveBeenCalledWith({
-      where: { id: 'key-1' },
+    // Transisinya bersyarat (`revokedAt: null`) supaya dua pencabutan paralel
+    // tidak dapat saling menimpa; lihat uji balapan di bawah.
+    expect(prisma.userSigningKey.updateMany).toHaveBeenCalledWith({
+      where: { id: 'key-1', revokedAt: null },
       data: expect.objectContaining({
         revokedAt: expect.any(Date),
         revokedReason: REASON,
@@ -975,7 +981,31 @@ describe('mencabut kunci tanda tangan', () => {
     await expect(EsignService.revokeKey('ketua', 'admin-1', REASON)).rejects.toThrow(
       /sudah dicabut/i
     );
-    expect(prisma.userSigningKey.update).not.toHaveBeenCalled();
+    expect(prisma.userSigningKey.updateMany).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Regresi BUG (finding D) — balapan dua pencabutan paralel.
+   *
+   * Kedua permintaan membaca kunci yang belum dicabut di luar transaksi, lalu
+   * keduanya masuk ke transaksinya. Tanpa UPDATE bersyarat, keduanya menulis
+   * dan masing-masing menulis audit "sukses", sehingga yang terakhir menimpa
+   * tanggal/alasan/pelaku yang pertama. Di sini yang diuji adalah sisi yang
+   * KALAH: `updateMany` mengembalikan `count: 0` (baris sudah diklaim
+   * permintaan lain), dan pemanggilnya harus mendapat konflik deterministik
+   * — bukan sukses palsu.
+   */
+  it('kalah balapan (count: 0) → 409 konflik, tanpa audit/notifikasi sukses', async () => {
+    vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(activeKey() as any);
+    vi.mocked(prisma.userSigningKey.updateMany).mockResolvedValue({ count: 0 } as any);
+
+    await expect(EsignService.revokeKey('ketua', 'admin-1', REASON)).rejects.toMatchObject({
+      statusCode: 409,
+    });
+    // Tidak ada cap riwayat, tidak ada audit sukses, tidak ada notifikasi.
+    expect(prisma.userSigningKeyHistory.updateMany).not.toHaveBeenCalled();
+    expect(prisma.auditLog.create).not.toHaveBeenCalled();
+    expect(emitMock).not.toHaveBeenCalledWith('notification:send', expect.anything());
   });
 
   it('menolak alasan yang hanya berisi spasi', async () => {
@@ -984,7 +1014,7 @@ describe('mencabut kunci tanda tangan', () => {
     await expect(EsignService.revokeKey('ketua', 'admin-1', '              ')).rejects.toThrow(
       /Alasan pencabutan/i
     );
-    expect(prisma.userSigningKey.update).not.toHaveBeenCalled();
+    expect(prisma.userSigningKey.updateMany).not.toHaveBeenCalled();
   });
 
   /**
@@ -1059,8 +1089,8 @@ describe('mencabut kunci tanda tangan', () => {
 
     await EsignService.revokeKey('ketua', 'admin-1', REASON);
 
-    expect(prisma.userSigningKey.update).toHaveBeenCalledWith({
-      where: { id: 'key-1' },
+    expect(prisma.userSigningKey.updateMany).toHaveBeenCalledWith({
+      where: { id: 'key-1', revokedAt: null },
       data: expect.objectContaining({ revocationCode: 'AFFILIATION_CHANGED' }),
     });
   });

@@ -474,10 +474,15 @@ bawaannya PRIVATE (fail closed). Bukti keabsahan (`isValid`, `digest`,
   (scrypt) dikerjakan di luar `SELECT … FOR UPDATE` karena scrypt di dalam kunci
   memperpanjang lockout baris dan memblokir suara anggota lain. `fingerprint`
   mengikat artefak ke isi keputusan + himpunan suara yang dirender; bila pemilih
-  lain menyisipkan suara di sela-sela, sidik jari berbeda dan artefak dirender
-  ulang di dalam kunci, sehingga pemisahan ini tidak melonggarkan jaminan apa
-  pun. Rekap preview dihitung ulang dari himpunan yang memuat suara penentu,
-  agar PDF preview mencetak rekap yang sama dengan basis data.
+  lain menyisipkan suara di sela-sela, sidik jari berbeda dan jalur yang
+  memegang kunci **melempar** `StaleArtifactError` — bukan merender ulang di
+  dalam kunci. Transaksi dibatalkan, baris dimuat ulang di luar kunci, dan
+  percobaan diulang dengan artefak yang dihitung dari baris segar. `castVote`
+  dan `finalize` sama-sama mengulang maksimal tiga kali; `finalize` menghitung
+  ulang artefak per percobaan, karena artefak dari baris awal akan selamanya
+  basi bagi baris yang berubah. Rekap preview dihitung ulang dari himpunan yang
+  memuat suara penentu, agar PDF preview mencetak rekap yang sama dengan basis
+  data.
 - **Lockout percobaan passphrase.** Penaikan `failed_attempts` dan penghitungan
   `locked_until` berada dalam satu pernyataan SQL; bila terpisah, penulis dengan
   hitungan lebih rendah dapat menimpa lockout dengan `null` dan tebakan

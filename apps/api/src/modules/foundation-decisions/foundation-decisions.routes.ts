@@ -1,10 +1,10 @@
-import { Router } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import { RoleCode } from '@prisma/client';
 import { FoundationDecisionController as c } from './foundation-decisions.controller';
 import { authenticate, authorize } from '@/middleware/auth';
 import { FOUNDATION_FINALIZE_ROUTE_ROLES } from '@/utils/foundation-authority';
-import { asyncHandler, validate, validateQuery } from '@/middleware/error';
+import { Errors, asyncHandler, validate, validateQuery } from '@/middleware/error';
 import { requireTurnstile } from '@/middleware/turnstile';
 import { passphraseLimiter, publicVerifyLimiter } from '@/middleware/rate-limit';
 import {
@@ -24,15 +24,47 @@ const router = Router();
  */
 const uploadPdf = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: 10 * 1024 * 1024, files: 1 },
   fileFilter: (_req, file, cb) => {
     if (file.mimetype === 'application/pdf' || file.originalname.toLowerCase().endsWith('.pdf')) {
       cb(null, true);
     } else {
-      cb(new Error('File yang diunggah harus berformat PDF.'));
+      // `Errors.badRequest` (ApiError), BUKAN `Error` telanjang. Sebuah Error
+      // biasa jatuh ke cabang generik penangan galat dan dijawab 500 "Internal
+      // server error": berkas yang salah format dilaporkan sebagai kerusakan
+      // peladen. ApiError membuatnya 400 yang stabil — dan stempel waktu serta
+      // stack internal tidak ikut bocor ke klien publik.
+      cb(Errors.badRequest('File yang diunggah harus berformat PDF.'));
     }
   },
 });
+
+/**
+ * Jalankan multer dan petakan galatnya ke respons klien yang stabil.
+ *
+ * `fileFilter` di atas menangani tipe yang ditolak, tetapi multer juga melempar
+ * `MulterError`-nya sendiri — terutama `LIMIT_FILE_SIZE` untuk berkas melebihi
+ * batas. Tanpa pemetaan di sini galat itu mencapai penangan galat global dan
+ * menjadi 500, sehingga unggahan yang terlalu besar terlihat seperti
+ * kegagalan peladen. 400, bukan 500: permintaannya yang tidak sah.
+ */
+function uploadSinglePdf(req: Request, res: Response, next: NextFunction) {
+  uploadPdf.single('file')(req, res, (err: unknown) => {
+    if (!err) {
+      next();
+      return;
+    }
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        next(Errors.badRequest('Ukuran berkas melebihi batas 10 MB.'));
+        return;
+      }
+      next(Errors.badRequest(err.message));
+      return;
+    }
+    next(err);
+  });
+}
 
 /**
  * Verifikasi publik via token cetak — sengaja TIDAK lewat authenticate, karena
@@ -57,13 +89,13 @@ router.get('/verify', publicVerifyLimiter, asyncHandler(c.verify));
  *
  * Jalur ini yang mengikat keabsahan pada byte berkas yang dipegang pemindai —
  * jalur token hanya memeriksa arsip server. Turnstile dipasang SESUDAH
- * `uploadPdf.single` karena permintaannya multipart: sebelum multer berjalan,
- * `req.body` masih kosong dan tokennya belum dapat dibaca (pola esign).
+ * multer karena permintaannya multipart: sebelum multer berjalan, `req.body`
+ * masih kosong dan tokennya belum dapat dibaca (pola esign).
  */
 router.post(
   '/verify-pdf',
   publicVerifyLimiter,
-  uploadPdf.single('file'),
+  uploadSinglePdf,
   requireTurnstile('verify-decision'),
   asyncHandler(c.verifyPdf)
 );
