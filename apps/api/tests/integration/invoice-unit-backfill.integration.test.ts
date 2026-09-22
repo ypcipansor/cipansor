@@ -140,8 +140,8 @@ describeDb('invoice unit backfill migration (real PostgreSQL)', () => {
       );
       expect(col.rows[0].is_nullable).toBe('NO');
       await expect(
-        db.query(`INSERT INTO invoices (id, student_id, payment_type_id, invoice_number, amount, due_date, unit_id)
-                  VALUES ('inv-null', 's-1', 'pt-sd', 'INV-NULL', 1, now(), NULL)`)
+        db.query(`INSERT INTO invoices (id, student_id, payment_type_id, invoice_number, amount, due_date, unit_id, updated_at)
+                  VALUES ('inv-null', 's-1', 'pt-sd', 'INV-NULL', 1, now(), NULL, now())`)
       ).rejects.toThrow(/null value in column "unit_id"/i);
     });
   });

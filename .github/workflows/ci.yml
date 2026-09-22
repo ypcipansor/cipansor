@@ -142,15 +142,19 @@ jobs:
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter api db:generate
+      # The API config imports `@cipansor/shared` at boot, and
+      # `production-boot.test.ts` loads the real module in a `tsx` subprocess,
+      # which resolves the package's `main` (dist) rather than the vitest `src`
+      # alias. Without this build the boot test fails with "Cannot find module
+      # .../@cipansor/shared/dist/index.js" before it can assert the guard.
+      - run: pnpm --filter @cipansor/shared build
       - name: Push database schema
         run: pnpm --filter api db:push
       - name: Run API tests
         run: pnpm --filter api test
       # The web unit suite (~100 vitest specs, incl. the dead-link and RBAC
       # guards) ran in no workflow at all, so a web regression could only be
-      # caught by a human running it locally. It needs the shared package's
-      # built types but not the database.
-      - run: pnpm --filter @cipansor/shared build
+      # caught by a human running it locally.
       - name: Run Web tests
         run: pnpm --filter web test
 
