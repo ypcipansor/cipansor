@@ -168,6 +168,97 @@ test.describe("Single Sign-On (SSO) Buttons", () => {
     await expect(page).toHaveURL(/\/login/);
   });
 
+  test("the One Tap fallback button stays usable while idle (BUG 3)", async ({
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    // Fake the page clock so idle time passes in an instant. The old
+    // implementation armed a 120s timer when the button was RENDERED; on the
+    // failed button that timer removed it. Advancing past two minutes must leave
+    // the fallback button present and clickable.
+    await page.clock.install();
+
+    // A GIS stub whose `prompt()` reports the One Tap prompt as suppressed
+    // (`isNotDisplayedMoment()`), which is what makes the login page render the
+    // explicit fallback button. `renderButton` injects a real, clickable node.
+    await stubSsoConfig(page, {
+      googleEnabled: true,
+      googleClientId: "google-client-id",
+    });
+    await page.route(
+      "https://accounts.google.com/gsi/client",
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/javascript",
+          body: `
+            window.google = {
+              accounts: {
+                id: {
+                  initialize: function (config) { window.__gisCallback = config.callback; },
+                  prompt: function (listener) {
+                    window.__gisMoment = listener;
+                    listener({ isNotDisplayedMoment: function () { return true; } });
+                  },
+                  renderButton: function (parent) {
+                    var b = document.createElement("button");
+                    b.type = "button";
+                    b.textContent = "Masuk dengan Google";
+                    b.onclick = function () {
+                      window.__gisCallback({ credential: "fallback-id-token" });
+                    };
+                    parent.appendChild(b);
+                  }
+                }
+              }
+            };
+          `,
+        });
+      },
+    );
+
+    await page.goto("/login");
+    await page.getByRole("button", { name: /Google Workspace/i }).click();
+
+    const fallback = page.getByTestId("google-sso-fallback");
+    await expect(fallback).toBeVisible({ timeout: 10000 });
+    const button = fallback.getByRole("button", { name: /Masuk dengan Google/i });
+    await expect(button).toBeVisible();
+
+    // A real sign-in after the idle period: the stub's credential callback runs
+    // the page's own handler, which posts to the SSO endpoint. Answering "2FA
+    // required" makes the resulting navigation observable and deterministic.
+    await page.route("**/api/auth/sso/login", async (route) => {
+      const body = route.request().postDataJSON();
+      expect(body).toEqual({
+        provider: "google",
+        idToken: "fallback-id-token",
+      });
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          success: true,
+          data: {
+            requiresTwoFactor: true,
+            tempToken: "temp_2fa_idle_token",
+          },
+        }),
+      });
+    });
+
+    // Simulate a user who opens the login page, is called away, and comes back.
+    // 150s of idle time is well past the old two-minute RENDER timer; the
+    // no-timeout implementation must leave the button intact and clickable.
+    await page.clock.fastForward("02:30");
+    await expect(button).toBeVisible();
+    await button.click();
+
+    await expect(
+      page.getByText(/Two-Factor Authentication/i).first(),
+    ).toBeVisible({ timeout: 10000 });
+  });
+
   test("should start the Microsoft flow with the configured client id", async ({
     page,
   }) => {

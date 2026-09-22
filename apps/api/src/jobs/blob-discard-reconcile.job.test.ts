@@ -16,17 +16,22 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  * quarantined — so a backlog bigger than `limit` can never pin the same oldest
  * rows forever and starve the newer ones.
  */
-const { findManyMock, updateMock, auditCreateMock, warnMock } = vi.hoisted(() => ({
+const { findManyMock, updateMock, auditCreateMock, warnMock, queryRawMock } = vi.hoisted(() => ({
   findManyMock: vi.fn(),
   updateMock: vi.fn(),
   auditCreateMock: vi.fn(),
   warnMock: vi.fn(),
+  // The worker lease is taken with `$queryRaw` (a conditional UPDATE). The
+  // default is "lease granted"; a test that proves mutual exclusion makes it
+  // return no rows.
+  queryRawMock: vi.fn().mockResolvedValue([{ id: 'leased' }]),
 }));
 
 vi.mock('@/lib/prisma', () => ({
   prisma: {
     blobClaim: { findMany: findManyMock, update: updateMock },
     auditLog: { create: auditCreateMock },
+    $queryRaw: queryRawMock,
   },
 }));
 
@@ -39,7 +44,7 @@ vi.mock('@/utils/cloud-storage', () => ({
     url.startsWith('https://store.blob.core.windows.net/cipansor-documents/')
       ? { containerName: 'cipansor-documents', blobName: url.split('/').pop() as string }
       : null,
-  deleteFromCloudStorage: vi.fn(),
+  deleteBlobFromCloudStorage: vi.fn(),
 }));
 
 vi.mock('@/utils/local-upload-store', () => ({
@@ -47,17 +52,19 @@ vi.mock('@/utils/local-upload-store', () => ({
   removeLocalUpload: vi.fn(),
 }));
 
-import { deleteFromCloudStorage } from '@/utils/cloud-storage';
+import { deleteBlobFromCloudStorage } from '@/utils/cloud-storage';
 import { removeLocalUpload, resolveLocalUploadPath } from '@/utils/local-upload-store';
 import {
   reconcileDiscardedBlobs,
   BLOB_DISCARD_RECONCILE_AUDIT_ACTION,
   BLOB_DISCARD_RECONCILE_LIMIT,
   BLOB_DISCARD_MAX_ATTEMPTS,
+  BLOB_DISCARD_RETRY_MAX_MS,
+  BLOB_DISCARD_WORKER_ID,
 } from './blob-discard-reconcile.job';
 import { BlobReconcileStatus } from '@prisma/client';
 
-const deleteMock = vi.mocked(deleteFromCloudStorage);
+const deleteMock = vi.mocked(deleteBlobFromCloudStorage);
 const OLD = new Date(Date.now() - 10 * 60 * 1000);
 const BLOB = 'https://store.blob.core.windows.net/cipansor-documents/gone.pdf';
 const FOREIGN = 'https://elsewhere.example.com/x/y.pdf';
@@ -65,9 +72,10 @@ const FOREIGN = 'https://elsewhere.example.com/x/y.pdf';
 describe('reconcileDiscardedBlobs (BUG 7 / flag 11)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    deleteMock.mockResolvedValue(undefined);
+    deleteMock.mockResolvedValue('deleted');
     updateMock.mockResolvedValue({});
     auditCreateMock.mockResolvedValue({});
+    queryRawMock.mockResolvedValue([{ id: 'leased' }]);
     (resolveLocalUploadPath as any).mockResolvedValue(null);
   });
 
@@ -142,6 +150,131 @@ describe('reconcileDiscardedBlobs (BUG 7 / flag 11)', () => {
         }),
       })
     );
+  });
+
+  // ── Regression: missing credentials must NOT look like a successful delete ──
+
+  it('does NOT mark a row DONE when storage credentials are unavailable; reschedules and reports failure', async () => {
+    findManyMock.mockResolvedValue([{ id: 'c1', blobUrl: BLOB, reconcileAttempts: 0 }]);
+    // The old contract resolved `undefined` with no credentials, so the job
+    // stamped DONE and the blob was never retried once credentials returned.
+    deleteMock.mockResolvedValueOnce('unavailable');
+
+    const summary = await reconcileDiscardedBlobs();
+
+    expect(summary).toMatchObject({
+      examined: 1,
+      deleted: 0,
+      failed: 1,
+      unavailable: 1,
+    });
+    // The row must stay retryable, not terminal.
+    expect(updateMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ reconcileStatus: BlobReconcileStatus.DONE }),
+      })
+    );
+    expect(updateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'c1' },
+        data: expect.objectContaining({
+          reconcileAttempts: 1,
+          lastReconcileAt: expect.any(Date),
+          nextReconcileAt: expect.any(Date),
+        }),
+      })
+    );
+    // A warning is logged, and it must not leak the connection string.
+    expect(warnMock).toHaveBeenCalledWith(
+      expect.stringContaining('credentials unavailable'),
+      expect.not.objectContaining({ error: expect.anything() })
+    );
+    const warned = JSON.stringify(warnMock.mock.calls);
+    expect(warned).not.toMatch(/AccountKey|DefaultEndpointsProtocol|sig=/);
+  });
+
+  it('keeps a credentials-unavailable row eligible across runs (never DONE)', async () => {
+    findManyMock.mockResolvedValue([{ id: 'c1', blobUrl: BLOB, reconcileAttempts: 1 }]);
+    deleteMock.mockResolvedValue('unavailable');
+
+    await reconcileDiscardedBlobs();
+    updateMock.mockClear();
+    findManyMock.mockResolvedValue([{ id: 'c1', blobUrl: BLOB, reconcileAttempts: 2 }]);
+    await reconcileDiscardedBlobs();
+
+    // Both runs reschedule; neither writes a terminal status.
+    for (const call of updateMock.mock.calls) {
+      expect(call[0].data.reconcileStatus).toBeUndefined();
+    }
+  });
+
+  it('never quarantines a credentials-unavailable row, even past the retry cap', async () => {
+    // A long outage must not permanently stop retrying: the save-after-outage
+    // guarantee only holds if the row is still PENDING when credentials return.
+    findManyMock.mockResolvedValue([
+      { id: 'c1', blobUrl: BLOB, reconcileAttempts: BLOB_DISCARD_MAX_ATTEMPTS + 10 },
+    ]);
+    deleteMock.mockResolvedValueOnce('unavailable');
+
+    const summary = await reconcileDiscardedBlobs();
+
+    expect(summary).toMatchObject({ unavailable: 1, failed: 1, deleted: 0 });
+    expect(updateMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          reconcileStatus: BlobReconcileStatus.QUARANTINED,
+        }),
+      })
+    );
+    // Backoff is capped so recovery is still attempted within the hour.
+    const scheduled = updateMock.mock.calls.at(-1)![0];
+    expect(scheduled.data.nextReconcileAt.getTime() - Date.now()).toBeLessThanOrEqual(
+      BLOB_DISCARD_RETRY_MAX_MS + 1000
+    );
+  });
+
+  it('treats an already-absent blob (404) as a terminal success (idempotent)', async () => {
+    findManyMock.mockResolvedValue([{ id: 'c1', blobUrl: BLOB, reconcileAttempts: 0 }]);
+    deleteMock.mockResolvedValueOnce('already-absent');
+
+    const summary = await reconcileDiscardedBlobs();
+
+    expect(summary).toMatchObject({ examined: 1, deleted: 1, failed: 0, unavailable: 0 });
+    expect(updateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'c1' },
+        data: expect.objectContaining({ reconcileStatus: BlobReconcileStatus.DONE }),
+      })
+    );
+  });
+
+  // ── Finding 4: one worker owns a row at a time ──
+
+  it('takes a worker lease before deleting, keyed to this worker', async () => {
+    findManyMock.mockResolvedValue([{ id: 'c1', blobUrl: BLOB, reconcileAttempts: 0 }]);
+
+    await reconcileDiscardedBlobs();
+
+    expect(queryRawMock).toHaveBeenCalledTimes(1);
+    // `Prisma.sql` passes one tagged-template object; its SQL text and bound
+    // values carry the lease target and the worker identity.
+    const serialized = JSON.stringify(queryRawMock.mock.calls[0][0]);
+    expect(serialized).toContain('lease');
+    expect(serialized).toContain(BLOB_DISCARD_WORKER_ID);
+    expect(serialized).toContain('c1');
+  });
+
+  it('skips (busy) a row another worker holds instead of racing its delete', async () => {
+    findManyMock.mockResolvedValue([{ id: 'c1', blobUrl: BLOB, reconcileAttempts: 0 }]);
+    // Another replica already holds the lease: the conditional UPDATE matches
+    // no row, so this worker must not delete, retry-count or audit the row.
+    queryRawMock.mockResolvedValueOnce([]);
+
+    const summary = await reconcileDiscardedBlobs();
+
+    expect(deleteMock).not.toHaveBeenCalled();
+    expect(updateMock).not.toHaveBeenCalled();
+    expect(summary).toMatchObject({ examined: 0, deleted: 0, failed: 0, busy: 1 });
   });
 
   it('quarantines a row after the bounded retry cap, so it cannot retry forever', async () => {

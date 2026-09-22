@@ -302,10 +302,11 @@ export function initializeScheduler(): void {
       logger.debug('[Scheduler] Running blob discard reconciliation');
       try {
         const summary = await reconcileDiscardedBlobs();
-        if (summary.failed > 0) {
+        if (summary.failed > 0 || summary.unavailable > 0) {
           logger.warn(
             `[Scheduler] Blob reconcile: ${summary.deleted} deleted, ` +
-              `${summary.failed} failed, ${summary.skipped} skipped`
+              `${summary.failed} failed (${summary.unavailable} missing credentials), ` +
+              `${summary.skipped} skipped, ${summary.busy} busy`
           );
         }
       } catch (error) {

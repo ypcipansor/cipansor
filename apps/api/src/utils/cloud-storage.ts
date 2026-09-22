@@ -261,26 +261,46 @@ function isBlobNotFoundError(error: unknown): boolean {
 }
 
 /**
- * Delete a blob from Cloud Storage.
+ * Thrown when a remote delete cannot even be attempted because the storage
+ * credentials are not configured.
  *
- * Wired into record-delete paths so removing a record does not leave its
- * private document (HR records, letters, student docs) stored forever. When
- * Azure is not configured there is no remote blob to remove; the function
- * resolves successfully (the local staging file, if any, is the caller's
- * concern).
- *
- * A 404 / `BlobNotFound` counts as success: the blob is already gone, which is
- * exactly what the caller wanted, and treating it as an error made every later
- * reconciliation attempt fail too. Auth/throttling/server errors still throw.
+ * This is deliberately NOT a silent success. A caller that reads "no
+ * credentials" as "the blob is gone" marks the delete DONE and never retries it
+ * once the credentials are restored, leaving a live blob behind forever — the
+ * exact bug this class closes.
  */
-export async function deleteFromCloudStorage(
+export class StorageUnavailableError extends Error {
+  constructor(message = 'Kredensial Azure Storage belum dikonfigurasi.') {
+    super(message);
+    this.name = 'StorageUnavailableError';
+  }
+}
+
+/** The explicit result of a delete attempt, so callers never infer it. */
+export type BlobDeleteOutcome = 'deleted' | 'already-absent' | 'unavailable';
+
+/**
+ * Delete a blob from Cloud Storage and report the outcome explicitly.
+ *
+ * The three outcomes are distinct for a reason:
+ *
+ *  - `deleted` — the blob was removed now;
+ *  - `already-absent` — a 404 / `BlobNotFound`; already gone, so an idempotent
+ *    success for every caller;
+ *  - `unavailable` — storage credentials are not configured, so NO remote
+ *    request was made. A reconciler MUST reschedule this rather than treat it
+ *    as a successful delete, or the blob is never retried.
+ *
+ * Any other Azure failure (auth, throttling, 5xx) still throws, exactly as
+ * before, so the caller's retry/backoff machinery runs.
+ */
+export async function deleteBlobFromCloudStorage(
   containerName: string,
   blobName: string
-): Promise<void> {
+): Promise<BlobDeleteOutcome> {
   const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
   if (!connectionString) {
-    // Local-only deployment: nothing remote to delete.
-    return;
+    return 'unavailable';
   }
 
   try {
@@ -288,6 +308,7 @@ export async function deleteFromCloudStorage(
     const containerClient = blobServiceClient.getContainerClient(containerName);
     await containerClient.deleteBlob(blobName, { deleteSnapshots: 'include' });
     logger.info('Blob deleted from Azure Blob Storage', { container: containerName, blobName });
+    return 'deleted';
   } catch (error) {
     if (isBlobNotFoundError(error)) {
       // Idempotent: the blob is already absent, so the delete succeeded.
@@ -295,12 +316,35 @@ export async function deleteFromCloudStorage(
         container: containerName,
         blobName,
       });
-      return;
+      return 'already-absent';
     }
     logger.error('Azure Blob Storage delete failed', { container: containerName, blobName, error });
     throw new Error(
       `Gagal menghapus berkas dari Azure Blob Storage: ${error instanceof Error ? error.message : String(error)}`
     );
+  }
+}
+
+/**
+ * Delete a blob from Cloud Storage, throwing when no remote delete was
+ * performed.
+ *
+ * Record-delete paths and the discard protocol use this: they must be able to
+ * tell a real delete from a no-op, so a missing connection string is a failure
+ * (`StorageUnavailableError`), not a silent success. On a genuinely local-only
+ * deployment this path is unreachable for a cloud blob: `parseBlobUrl` returns
+ * null unless the configured account is ours, so callers never reach here.
+ *
+ * A 404 / `BlobNotFound` still counts as success (already gone). Auth,
+ * throttling and server errors still throw.
+ */
+export async function deleteFromCloudStorage(
+  containerName: string,
+  blobName: string
+): Promise<void> {
+  const outcome = await deleteBlobFromCloudStorage(containerName, blobName);
+  if (outcome === 'unavailable') {
+    throw new StorageUnavailableError();
   }
 }
 

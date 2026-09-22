@@ -97,31 +97,35 @@ export function loadGoogleIdentityServices(): Promise<void> {
   if (window.google?.accounts?.id) return Promise.resolve();
   if (gisScriptPromise) return gisScriptPromise;
 
-  gisScriptPromise = new Promise<void>((resolve, reject) => {
-    const existing = document.querySelector<HTMLScriptElement>(
-      `script[src="${GIS_SCRIPT_SRC}"]`,
-    );
-    if (existing) {
-      existing.addEventListener("load", () => resolve());
-      existing.addEventListener("error", () =>
-        reject(new Error("Gagal memuat Google Identity Services")),
-      );
-      return;
-    }
+  // Only ever attach to a script THIS module created. A `<script>` injected by
+  // something else may have already fired `load`/`error`; attaching a fresh
+  // listener to it would then never settle, which is exactly the retry hang.
+  const existing = document.querySelector<HTMLScriptElement>(
+    `script[src="${GIS_SCRIPT_SRC}"]`,
+  );
+  existing?.remove();
 
+  const promise = new Promise<void>((resolve, reject) => {
     const script = document.createElement("script");
     script.src = GIS_SCRIPT_SRC;
     script.async = true;
     script.defer = true;
-    script.onload = () => resolve();
-    script.onerror = () => {
-      gisScriptPromise = null;
-      reject(new Error("Gagal memuat Google Identity Services"));
+    // A failed script must not linger: a later retry would find it, attach a
+    // listener to an event that already happened, and hang. Reset the cached
+    // promise only if it is still OUR promise, so a stale failure cannot clear
+    // the state of a newer attempt.
+    const fail = (error: Error) => {
+      script.remove();
+      if (gisScriptPromise === promise) gisScriptPromise = null;
+      reject(error);
     };
+    script.onload = () => resolve();
+    script.onerror = () => fail(new Error("Gagal memuat Google Identity Services"));
     document.head.appendChild(script);
   });
 
-  return gisScriptPromise;
+  gisScriptPromise = promise;
+  return promise;
 }
 
 /**
@@ -245,8 +249,20 @@ export async function loginWithGoogle(
  * that flow reports `isNotDisplayedMoment()` — i.e. once the browser has told
  * us the prompt cannot be shown.
  *
- * Resolves with the ID token from the first credential the rendered button
- * yields.
+ * ## The button must survive idle (BUG 3)
+ *
+ * A GIS-rendered button has no promise of its own: `renderButton` returns
+ * immediately and the credential callback may not fire for minutes, or at all.
+ * The previous version armed the timeout as soon as the button was RENDERED, so
+ * on a login page left open for two minutes the button was removed and the user
+ * could no longer start a sign-in at all — the timeout was timing the button's
+ * display life rather than an authentication.
+ *
+ * The timeout is now armed by the user's own CLICK on the rendered button (a
+ * capture-phase listener on `container`, where GIS injects its DOM), so it
+ * bounds an authentication that has actually started and leaves an untouched
+ * button usable indefinitely. `settle` removes the listener, so a settled flow
+ * cannot leave a timer behind.
  */
 export async function loginWithGoogleButton(
   clientId: string,
@@ -265,10 +281,19 @@ export async function loginWithGoogleButton(
     const state: { settled: boolean; timer?: ReturnType<typeof setTimeout> } = {
       settled: false,
     };
+    const armTimeout = () => {
+      if (state.settled || state.timer) return;
+      state.timer = setTimeout(() => {
+        settle(() =>
+          reject(new Error("Waktu masuk Google habis. Silakan coba lagi.")),
+        );
+      }, timeoutMs);
+    };
     const settle = (fn: () => void) => {
       if (state.settled) return;
       state.settled = true;
       if (state.timer) clearTimeout(state.timer);
+      container.removeEventListener("click", armTimeout, true);
       container.replaceChildren();
       fn();
     };
@@ -288,6 +313,8 @@ export async function loginWithGoogleButton(
     });
 
     container.replaceChildren();
+    // `capture: true` sees the click even though GIS's own element handles it.
+    container.addEventListener("click", armTimeout, true);
     gis.accounts.id.renderButton(container, {
       type: "standard",
       theme: "outline",
@@ -295,12 +322,6 @@ export async function loginWithGoogleButton(
       text: "signin_with",
       shape: "rectangular",
     });
-
-    state.timer = setTimeout(() => {
-      settle(() =>
-        reject(new Error("Waktu masuk Google habis. Silakan coba lagi.")),
-      );
-    }, timeoutMs);
   });
 }
 

@@ -2253,6 +2253,14 @@ model BlobClaim {
   /// Terminal disposition for rows that must never be retried (malformed URL,
   /// foreign storage account), so they stop consuming the bounded batch.
   reconcileStatus   BlobReconcileStatus @default(PENDING) @map("reconcile_status")
+  /// Worker lease: the replica currently reconciling this row, and when its
+  /// lease lapses. The scheduler can run on several API replicas, so a worker
+  /// takes a short-lived lease with one conditional UPDATE before deleting; a
+  /// replica that cannot take it skips the row instead of racing the delete,
+  /// the retry counter and the audit trail. The lease is never renewed, so a
+  /// crashed worker's rows become eligible again on the next run.
+  reconcileLeaseOwner     String?   @map("reconcile_lease_owner")
+  reconcileLeaseExpiresAt DateTime? @map("reconcile_lease_expires_at")
 
   @@index([expiresAt])
   @@index([discardedAt])

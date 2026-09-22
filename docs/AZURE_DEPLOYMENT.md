@@ -155,6 +155,25 @@ az webapp config appsettings set --resource-group rg-cipansor-prod --name app-ci
 
 ## 3b. PRE-CHECK MIGRASI E-MAIL (WAJIB SEBELUM `migrate deploy`)
 
+Perubahan ini membawa **enam** migrasi. Urutan nama file adalah urutan terapkan
+(Prisma yang menjalankannya). Daftar lengkapnya:
+
+| # | Migrasi | Isi | Rollback |
+|---|---------|-----|----------|
+| 1 | `20260915055343_add_identity_providers` | Tabel `identity_providers` (enum `SSOProvider`, unik `(provider, provider_subject_id)`, FK ke `users`). | Aditif; hapus tabel. |
+| 2 | `20260915060000_users_email_lower_unique` | Normalisasi e-mail ke `lower(trim(email))`, lalu UNIQUE index ekspresi tersebut. **Fail-closed** bila ada tabrakan akun. | Jalankan pre-check di bawah. **Tidak** aman dibalik otomatis — `UPDATE` sudah menulis ulang alamat. |
+| 3 | `20260915070000_blob_claims` | Tabel `blob_claims` (handshake upload→discard; unik `blob_url`). | Aditif; hapus tabel. |
+| 4 | `20260917000000_blob_claims_discarded_tombstone` | Kolom tombstone terminal `blob_claims.discarded_at`. | Aditif; boleh dibiarkan. |
+| 5 | `20260921170000_blob_claim_operation_token_and_reconcile` | `operation_token` + siklus rekonsiliasi (`reconcile_status`, `reconcile_attempts`, `next/last_reconcile_at`, `reconciled_at`) dan indeksnya. | Aditif; boleh dibiarkan. |
+| 6 | `20260922120000_blob_claim_reconcile_lease` | Lease worker rekonsiliasi (`reconcile_lease_owner`, `reconcile_lease_expires_at`) agar satu baris hanya dihapus satu replica API. | Aditif dan nullable; boleh dibiarkan. |
+
+> **Rollback.** Untuk migrasi aditif: hapus kolom/tabel yang ditambahkan secara
+> manual, lalu `npx prisma migrate resolve --rolled-back <nama>` supaya bisa
+> diterapkan ulang. Migrasi #2 menulis ulang data dan **tidak** aman dibalik
+> dengan cara itu — pulihkan dari backup sebelum deploy. Migrasi #6 memperbaiki
+> race antar-replica, jadi setelah rollback `main` lama (satu replica) masih
+> benar; jangan jalankan >1 replica API pada kode lama.
+
 Migrasi `20260915060000_users_email_lower_unique` menormalkan setiap e-mail
 (`lower(trim(email))`) lalu membuat UNIQUE index. Bila dua akun menormalkan ke
 alamat yang sama, migrasi **gagal secara sengaja** (fail-closed) dan menyebutkan

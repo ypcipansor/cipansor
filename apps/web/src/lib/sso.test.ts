@@ -172,6 +172,63 @@ describe("loadGoogleIdentityServices", () => {
       /Gagal memuat Google Identity Services/,
     );
   });
+
+  it("retries cleanly after a failed load: new element, no hang (BUG 2)", async () => {
+    const { loadGoogleIdentityServices } = await import("./sso");
+
+    // 1. The first load fails.
+    const first = loadGoogleIdentityServices();
+    const firstScript = document.querySelector("script")!;
+    firstScript.dispatchEvent(new Event("error"));
+
+    // 2. The first promise rejects.
+    await expect(first).rejects.toThrow(/Gagal memuat Google Identity Services/);
+
+    // The failed element must be gone, so a retry cannot attach to an event
+    // that already fired and hang forever.
+    expect(document.querySelector("script")).toBeNull();
+
+    // 3. A second call inserts a NEW script element.
+    const second = loadGoogleIdentityServices();
+    const secondScript = document.querySelector("script")!;
+    expect(secondScript).not.toBe(firstScript);
+    expect(secondScript.isConnected).toBe(true);
+
+    // 4. A `load` on the new script settles the second promise.
+    secondScript.dispatchEvent(new Event("load"));
+    await expect(second).resolves.toBeUndefined();
+  });
+
+  it("resolves a retry even when a stale failed script element is left in the DOM (BUG 2)", async () => {
+    const { loadGoogleIdentityServices } = await import("./sso");
+
+    // Simulate a script injected by another origin/path that has ALREADY failed
+    // and whose `load`/`error` will never fire again. Attaching a listener to it
+    // would hang the retry; the loader must replace it.
+    const stale = document.createElement("script");
+    stale.src = "https://accounts.google.com/gsi/client";
+    document.head.appendChild(stale);
+
+    const promise = loadGoogleIdentityServices();
+    const script = document.querySelector("script")!;
+    expect(script).not.toBe(stale);
+    script.dispatchEvent(new Event("load"));
+
+    await expect(promise).resolves.toBeUndefined();
+  });
+
+  it("does not remove a script it is not managing once the SDK is present", async () => {
+    const { loadGoogleIdentityServices } = await import("./sso");
+    const script = document.createElement("script");
+    script.src = "https://accounts.google.com/gsi/client";
+    document.head.appendChild(script);
+    (window as unknown as { google: unknown }).google = {
+      accounts: { id: {} },
+    };
+
+    await expect(loadGoogleIdentityServices()).resolves.toBeUndefined();
+    expect(script.isConnected).toBe(true);
+  });
 });
 
 describe("loginWithGoogle", () => {
@@ -393,5 +450,83 @@ describe("loginWithGoogleButton (FLAG 6 fallback)", () => {
     script?.dispatchEvent(new Event("load"));
 
     await expect(attempt).rejects.toThrow(/tidak tersedia/);
+  });
+
+  // ── BUG 3: an idle fallback button must not expire before it is used ──
+
+  it("keeps the rendered button alive while idle past the timeout (BUG 3)", async () => {
+    vi.useFakeTimers();
+    try {
+      const { loginWithGoogleButton } = await import("./sso");
+      const container = document.createElement("div");
+      document.body.appendChild(container);
+      (window as unknown as { google: unknown }).google = {
+        accounts: {
+          id: {
+            initialize: () => {},
+            prompt: () => {},
+            renderButton: (parent: HTMLElement) => {
+              const button = document.createElement("button");
+              button.textContent = "Sign in with Google";
+              parent.appendChild(button);
+            },
+          },
+        },
+      };
+
+      const promise = loginWithGoogleButton("client-id", container, 120_000);
+      await vi.waitFor(() => expect(container.childElementCount).toBe(1));
+
+      // Well past the old two-minute render timer. The button must still be
+      // present and the promise must not have rejected.
+      await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
+      expect(container.childElementCount).toBe(1);
+
+      let rejected: unknown;
+      promise.catch((error) => {
+        rejected = error;
+      });
+      await Promise.resolve();
+      expect(rejected).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("arms the timeout once the button is clicked, bounding an in-flight sign-in (BUG 3)", async () => {
+    vi.useFakeTimers();
+    try {
+      const { loginWithGoogleButton } = await import("./sso");
+      const container = document.createElement("div");
+      document.body.appendChild(container);
+      (window as unknown as { google: unknown }).google = {
+        accounts: {
+          id: {
+            initialize: () => {},
+            prompt: () => {},
+            renderButton: (parent: HTMLElement) => {
+              const button = document.createElement("button");
+              button.textContent = "Sign in with Google";
+              parent.appendChild(button);
+            },
+          },
+        },
+      };
+
+      const promise = loginWithGoogleButton("client-id", container, 5_000);
+      await vi.waitFor(() => expect(container.childElementCount).toBe(1));
+
+      // Idle time does not count against the authentication.
+      await vi.advanceTimersByTimeAsync(60_000);
+      container.querySelector("button")!.click();
+
+      const assertion = expect(promise).rejects.toThrow(/Waktu masuk Google habis/);
+      await vi.advanceTimersByTimeAsync(5_000);
+      await assertion;
+      // The settled flow clears the container.
+      expect(container.childElementCount).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

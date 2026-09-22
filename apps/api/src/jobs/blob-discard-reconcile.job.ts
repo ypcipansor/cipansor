@@ -1,8 +1,8 @@
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger';
-import { parseBlobUrl, deleteFromCloudStorage } from '@/utils/cloud-storage';
+import { parseBlobUrl, deleteBlobFromCloudStorage } from '@/utils/cloud-storage';
 import { resolveLocalUploadPath, removeLocalUpload } from '@/utils/local-upload-store';
-import { BlobReconcileStatus } from '@prisma/client';
+import { BlobReconcileStatus, Prisma } from '@prisma/client';
 
 /**
  * Reconciliation for discarded (`blob_claims.discarded_at IS NOT NULL`) blobs
@@ -32,6 +32,18 @@ import { BlobReconcileStatus } from '@prisma/client';
  *    consuming the batch.
  *  - Only `PENDING` rows past `nextReconcileAt` are selected, so every row
  *    eventually gets a turn.
+ *  - Storage credentials missing is NOT a success: the delete was never
+ *    attempted, so the row is rescheduled (`unavailable`) rather than stamped
+ *    `DONE` — otherwise restoring the credentials would never reclaim the blob.
+ *
+ * ## One worker per row
+ *
+ * The scheduler can run on several API replicas, so a run takes a short-lived
+ * lease on each row (`reconcile_lease_owner` / `reconcile_lease_expires_at`, a
+ * single conditional UPDATE) before touching it. A replica that cannot take the
+ * lease skips the row, so the physical delete, the retry counter and the audit
+ * trail are never raced. The lease is not renewed: it expires well within the
+ * hourly schedule, so a crashed worker's rows return on the next run.
  */
 
 /** `audit_logs.action` written by each run. */
@@ -48,6 +60,20 @@ export const BLOB_DISCARD_MAX_ATTEMPTS = 5;
 /** Base backoff between retries, doubled per attempt. */
 export const BLOB_DISCARD_RETRY_BASE_MS = 5 * 60 * 1000;
 
+/** Ceiling on the exponential backoff, so a long outage still retries hourly. */
+export const BLOB_DISCARD_RETRY_MAX_MS = 60 * 60 * 1000;
+
+/**
+ * How long a worker's lease on a row lasts. The scheduler runs hourly, so a
+ * lease that outlives the run but is shorter than the schedule guarantees a
+ * crashed replica's rows become eligible again on the next run.
+ */
+export const BLOB_DISCARD_LEASE_MS = 5 * 60 * 1000;
+
+/** Identifies this worker process in `blob_claims.reconcile_lease_owner`. */
+export const BLOB_DISCARD_WORKER_ID =
+  `${process.env.HOSTNAME ?? 'worker'}:${process.pid}:${Math.random().toString(36).slice(2, 10)}`;
+
 export interface BlobDiscardReconcileSummary {
   /** Tombstoned claims considered this run. */
   examined: number;
@@ -57,6 +83,17 @@ export interface BlobDiscardReconcileSummary {
   failed: number;
   /** Rows quarantined as malformed/foreign URLs. */
   skipped: number;
+  /**
+   * Rows reevaluated but not attempted because storage credentials are not
+   * configured. Kept separate from `failed` so an operator can tell "Azure is
+   * unreachable" from "Azure credentials are missing" at a glance.
+   */
+  unavailable: number;
+  /**
+   * Rows already locked by another worker (another replica) this run. They are
+   * neither processed nor counted as failures; the owning worker does the work.
+   */
+  busy: number;
 }
 
 export interface BlobDiscardReconcileOptions {
@@ -64,6 +101,28 @@ export interface BlobDiscardReconcileOptions {
   limit?: number;
   /** When true, report what would happen without deleting anything. */
   dryRun?: boolean;
+}
+
+/**
+ * Atomically take a short-lived lease on a due `PENDING` row for reconciliation.
+ *
+ * Exposed so the multi-replica mutual exclusion can be proven against a real
+ * Postgres (a mocked conditional UPDATE proves nothing about row locking):
+ * exactly one caller may hold a row at a time.
+ */
+export async function claimRowForReconcile(id: string): Promise<boolean> {
+  const rows = await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+    UPDATE "blob_claims"
+    SET "reconcile_lease_owner" = ${BLOB_DISCARD_WORKER_ID},
+        "reconcile_lease_expires_at" = now() + (${BLOB_DISCARD_LEASE_MS}::int * interval '1 millisecond')
+    WHERE "id" = ${id}
+      AND "reconcile_status" = 'PENDING'::"BlobReconcileStatus"
+      AND "discarded_at" IS NOT NULL
+      AND ("reconcile_lease_expires_at" IS NULL OR "reconcile_lease_expires_at" < now())
+      AND ("next_reconcile_at" IS NULL OR "next_reconcile_at" <= now())
+    RETURNING "id"
+  `);
+  return rows.length > 0;
 }
 
 /**
@@ -95,13 +154,33 @@ export async function reconcileDiscardedBlobs(
   });
 
   const summary: BlobDiscardReconcileSummary = {
-    examined: rows.length,
+    examined: 0,
     deleted: 0,
     failed: 0,
     skipped: 0,
+    unavailable: 0,
+    busy: 0,
   };
 
   for (const row of rows) {
+    // Dry run takes nothing and touches nothing; report and move on.
+    if (dryRun) {
+      summary.examined += 1;
+      const parsed = parseBlobUrl(row.blobUrl);
+      const localPath = parsed ? null : await resolveLocalUploadPath(row.blobUrl).catch(() => null);
+      if (parsed || localPath) summary.deleted += 1;
+      else summary.skipped += 1;
+      continue;
+    }
+
+    // One worker per row. Another replica that fails to take the lease skips it
+    // entirely rather than racing the same delete, retry counter and audit trail.
+    if (!(await claimRowForReconcile(row.id))) {
+      summary.busy += 1;
+      continue;
+    }
+    summary.examined += 1;
+
     const parsed = parseBlobUrl(row.blobUrl);
 
     if (!parsed) {
@@ -111,11 +190,7 @@ export async function reconcileDiscardedBlobs(
       const localPath = await resolveLocalUploadPath(row.blobUrl).catch(() => null);
       if (!localPath) {
         summary.skipped += 1;
-        if (!dryRun) await quarantineRow(row.id);
-        continue;
-      }
-      if (dryRun) {
-        summary.deleted += 1;
+        await quarantineRow(row.id);
         continue;
       }
       try {
@@ -133,15 +208,25 @@ export async function reconcileDiscardedBlobs(
       continue;
     }
 
-    if (dryRun) {
-      summary.deleted += 1;
-      continue;
-    }
-
     try {
-      // `deleteFromCloudStorage` treats 404/BlobNotFound as success, so an
-      // already-absent blob terminates here instead of retrying forever.
-      await deleteFromCloudStorage(parsed.containerName, parsed.blobName);
+      // The explicit outcome is what makes "credentials missing" impossible to
+      // mistake for "deleted": `unavailable` means no remote request ran, so the
+      // row is rescheduled (never marked DONE) and a later run — after the
+      // credentials are restored — retries it.
+      const outcome = await deleteBlobFromCloudStorage(parsed.containerName, parsed.blobName);
+      if (outcome === 'unavailable') {
+        summary.unavailable += 1;
+        summary.failed += 1;
+        // A missing connection string is a deploy/configuration condition, not
+        // a poison row: it WILL recover, so this must never quarantine. Just
+        // reschedule and keep the retry counter for observability.
+        await scheduleRetry(row.id, row.reconcileAttempts, { quarantineAtCap: false });
+        logger.warn(
+          '[BlobReconcile] Azure credentials unavailable; delete not attempted, rescheduled',
+          { blobUrl: row.blobUrl }
+        );
+        continue;
+      }
       summary.deleted += 1;
       await markDone(row.id);
     } catch (error) {
@@ -183,13 +268,23 @@ async function quarantineRow(id: string): Promise<void> {
 }
 
 /** Bounded exponential backoff; gives up into quarantine after the cap. */
-async function scheduleRetry(id: string, attempts: number): Promise<void> {
+async function scheduleRetry(
+  id: string,
+  attempts: number,
+  opts: { quarantineAtCap?: boolean } = {}
+): Promise<void> {
+  const quarantineAtCap = opts.quarantineAtCap ?? true;
   const nextAttempt = attempts + 1;
-  if (nextAttempt >= BLOB_DISCARD_MAX_ATTEMPTS) {
+  if (quarantineAtCap && nextAttempt >= BLOB_DISCARD_MAX_ATTEMPTS) {
     await quarantineRow(id);
     return;
   }
-  const backoffMs = BLOB_DISCARD_RETRY_BASE_MS * 2 ** attempts;
+  // Cap the wait so a transmission that may recover soon (missing credentials)
+  // is still retried within the hour rather than doubling unbounded.
+  const backoffMs = Math.min(
+    BLOB_DISCARD_RETRY_BASE_MS * 2 ** attempts,
+    BLOB_DISCARD_RETRY_MAX_MS
+  );
   await prisma.blobClaim.update({
     where: { id },
     data: {
@@ -221,6 +316,8 @@ async function recordReconcileAudit(
           deleted: summary.deleted,
           failed: summary.failed,
           skipped: summary.skipped,
+          unavailable: summary.unavailable,
+          busy: summary.busy,
         },
       },
     });

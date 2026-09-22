@@ -5,6 +5,8 @@ import {
   getStorageConfig,
   parseBlobUrl,
   deleteFromCloudStorage,
+  deleteBlobFromCloudStorage,
+  StorageUnavailableError,
   isAllowedContainer,
   cleanupBlobBestEffort,
 
@@ -460,13 +462,47 @@ describe('deleteFromCloudStorage', () => {
     process.env = originalEnv;
   });
 
-  it('no-ops (resolves) when Azure is not configured', async () => {
+  it('throws StorageUnavailableError (never a silent success) when Azure is not configured', async () => {
+    delete process.env.AZURE_STORAGE_CONNECTION_STRING;
+
+    // The old contract resolved here, so reconciliation marked the blob DONE
+    // and never retried it after credentials were restored. A missing
+    // credential is "no remote delete happened", which is a failure.
+    await expect(
+      deleteFromCloudStorage('e-office-documents', 'naskah.pdf')
+    ).rejects.toBeInstanceOf(StorageUnavailableError);
+    expect(mockDeleteBlob).not.toHaveBeenCalled();
+  });
+
+  it('reports `unavailable` from the explicit-outcome helper without touching Azure', async () => {
     delete process.env.AZURE_STORAGE_CONNECTION_STRING;
 
     await expect(
-      deleteFromCloudStorage('e-office-documents', 'naskah.pdf')
-    ).resolves.toBeUndefined();
+      deleteBlobFromCloudStorage('e-office-documents', 'naskah.pdf')
+    ).resolves.toBe('unavailable');
     expect(mockDeleteBlob).not.toHaveBeenCalled();
+  });
+
+  it('reports `deleted` from the explicit-outcome helper when Azure is configured', async () => {
+    process.env.AZURE_STORAGE_CONNECTION_STRING = CONNECTION_STRING;
+
+    await expect(
+      deleteBlobFromCloudStorage('e-office-documents', 'naskah.pdf')
+    ).resolves.toBe('deleted');
+    expect(mockDeleteBlob).toHaveBeenCalledWith('naskah.pdf', {
+      deleteSnapshots: 'include',
+    });
+  });
+
+  it('reports `already-absent` from the explicit-outcome helper for a 404', async () => {
+    process.env.AZURE_STORAGE_CONNECTION_STRING = CONNECTION_STRING;
+    mockDeleteBlob.mockRejectedValueOnce(
+      Object.assign(new Error('The specified blob does not exist.'), { code: 'BlobNotFound' })
+    );
+
+    await expect(
+      deleteBlobFromCloudStorage('e-office-documents', 'already-gone.pdf')
+    ).resolves.toBe('already-absent');
   });
 
   it('deletes the blob including its snapshots when Azure is configured', async () => {
@@ -657,6 +693,18 @@ describe('cleanupBlobBestEffort', () => {
     await expect(
       cleanupBlobBestEffort('https://cipansorstore.blob.core.windows.net/cipansor-documents/a.pdf')
     ).resolves.toBe(false);
+  });
+
+  it('reports false when credentials are missing (not a phantom cleanup)', async () => {
+    delete process.env.AZURE_STORAGE_CONNECTION_STRING;
+
+    // The cloud URL is only parsed when the configured account matches, so this
+    // reaches the delete path. With no connection string there is no remote
+    // delete, and the caller must be told the blob was not cleaned.
+    await expect(
+      cleanupBlobBestEffort('https://cipansorstore.blob.core.windows.net/cipansor-documents/a.pdf')
+    ).resolves.toBe(false);
+    expect(mockDeleteBlob).not.toHaveBeenCalled();
   });
 
   it('swallows a reference-probe failure after the record delete (BUG 2)', async () => {
