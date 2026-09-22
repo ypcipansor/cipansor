@@ -57,7 +57,7 @@ test.describe("session guard against forged cookies", () => {
     // The routing cookie must exist and be HttpOnly (JS cannot read it).
     expect(routing?.httpOnly).toBe(true);
 
-    await page.goto("/teacher/dashboard");
+    await page.goto("/teacher");
     await expect(page).toHaveURL(/\/teacher/, { timeout: 15000 });
     // Not bounced to the login screen.
     expect(page.url()).not.toContain("/login");
@@ -66,7 +66,7 @@ test.describe("session guard against forged cookies", () => {
   test("the routing cookie is not readable from JavaScript", async ({ page }) => {
     const session = await apiLogin(SEED_USERS.teacher);
     await injectSession(page, session);
-    await page.goto("/teacher/dashboard");
+    await page.goto("/teacher");
 
     const readable = await page.evaluate(() =>
       document.cookie

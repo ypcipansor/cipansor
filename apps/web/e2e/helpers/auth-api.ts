@@ -197,8 +197,17 @@ export async function injectSession(page: Page, session: AuthSession) {
   // Mint the server-signed routing cookie, then copy it into the browser
   // context so it is present before the first navigation.
   const cookies = await serverSessionCookies(session.accessToken);
+  // Preserve the Set-Cookie attributes we asserted on: re-adding without
+  // `httpOnly` would make the routing cookie readable from `document.cookie`
+  // in the test browser, falsely failing the "not readable from JS" spec.
   await page.context().addCookies(
-    cookies.map(({ name, value }) => ({ name, value, url: BASE_URL })),
+    cookies.map(({ name, value }) => ({
+      name,
+      value,
+      url: BASE_URL,
+      httpOnly: true,
+      sameSite: "Lax" as const,
+    })),
   );
 
   // localStorage so the store rehydrates authenticated and the axios interceptor
