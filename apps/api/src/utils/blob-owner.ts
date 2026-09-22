@@ -948,4 +948,3 @@ export function blobReferenceCandidates(url: string): string[] {
   // external link, a malformed string) returns itself unchanged.
   return Array.from(new Set(azureBlobReferenceCandidates(url)));
 }
-

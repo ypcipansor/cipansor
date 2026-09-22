@@ -245,6 +245,67 @@ describe("login — navigation must not race session creation", () => {
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
     expect(localStorage.getItem("accessToken")).toBeNull();
   });
+
+  it("fails the login on a 200 { session: false } (no cookie was minted)", async () => {
+    // The mint endpoint answers `200 {session:false}` whenever it did NOT sign
+    // a cookie. Reading only `response.ok` treated that as a completed login,
+    // so the user was "authenticated locally" while the Proxy had no session
+    // and every navigation bounced to /login. It must fail closed.
+    authApiMock.login.mockResolvedValue(LOGIN_RESPONSE);
+    fetchMock.mockResolvedValue(jsonResponse(200, { session: false }));
+
+    await expect(
+      useAuthStore.getState().login({ email: "x", password: "y" })
+    ).rejects.toThrow();
+
+    expect(useAuthStore.getState().isAuthenticated).toBe(false);
+    expect(useAuthStore.getState().user).toBeNull();
+    expect(useAuthStore.getState().error).toBeTruthy();
+    // No half-login: the tokens are gone so the session cannot be routed but
+    // also cannot be mistaken for signed in.
+    expect(localStorage.getItem("accessToken")).toBeNull();
+    expect(localStorage.getItem("refreshToken")).toBeNull();
+  });
+
+  it("fails the login on a 200 malformed / non-JSON body", async () => {
+    authApiMock.login.mockResolvedValue(LOGIN_RESPONSE);
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => {
+        throw new SyntaxError("Unexpected end of JSON input");
+      },
+    } as unknown as Response);
+
+    await expect(
+      useAuthStore.getState().login({ email: "x", password: "y" })
+    ).rejects.toThrow();
+    expect(useAuthStore.getState().isAuthenticated).toBe(false);
+    expect(localStorage.getItem("accessToken")).toBeNull();
+  });
+
+  it("fails the login on a 200 body that is not an object", async () => {
+    authApiMock.login.mockResolvedValue(LOGIN_RESPONSE);
+    fetchMock.mockResolvedValue(jsonResponse(200, "ok"));
+
+    await expect(
+      useAuthStore.getState().login({ email: "x", password: "y" })
+    ).rejects.toThrow();
+    expect(useAuthStore.getState().isAuthenticated).toBe(false);
+  });
+
+  it("completes the login only on a 200 { session: true }", async () => {
+    authApiMock.login.mockResolvedValue(LOGIN_RESPONSE);
+    fetchMock.mockResolvedValue(jsonResponse(200, { session: true }));
+
+    await expect(
+      useAuthStore.getState().login({ email: "x", password: "y" })
+    ).resolves.toBeUndefined();
+
+    expect(useAuthStore.getState().isAuthenticated).toBe(true);
+    expect(useAuthStore.getState().user).toEqual(USER);
+    expect(localStorage.getItem("accessToken")).toBe("new-access");
+  });
 });
 
 describe("ssoLogin / verifyTwoFactor — same awaited session contract", () => {

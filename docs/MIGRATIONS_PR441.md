@@ -1,5 +1,9 @@
 # Migration & rollback guide — PR #441 (nonprofit integration + upload/auth hardening)
 
+> Subsystem-level rollout order, config flags, health check and per-subsystem
+> rollback points live in [`ROLLOUT_ROLLBACK_PR441.md`](ROLLOUT_ROLLBACK_PR441.md).
+> This file is the migration-specific detail.
+
 This documents the six migrations shipped by
 `feat/nonprofit-tech-optimization-2625167508293250836` and how to deploy and
 roll them back. It exists because the PR description originally named three of

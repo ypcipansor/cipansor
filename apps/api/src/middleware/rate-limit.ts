@@ -33,6 +33,16 @@ export const defaultLimiter: RateLimitRequestHandler = rateLimit({
   skip: (req) => {
     // Health checks are never limited.
     if (req.path === '/health') return true;
+    // `/uploads` is counted once by the mount of this same limiter on the
+    // uploads route in app.ts. `express.static` answers a served file and
+    // falls through for a missing one, and this global mount runs after it, so
+    // without this skip a missing-path read was counted twice — halving the
+    // effective read quota in production. Express strips the mount prefix from
+    // `req.path` INSIDE the mount (so the route mount sees `/a.png` and is not
+    // skipped) and leaves it whole OUTSIDE (so the global mount sees
+    // `/uploads/a.png` and stands down). `/uploads` itself arrives as `/`
+    // inside the mount and `/uploads` here, hence both spellings.
+    if (req.path === '/uploads' || req.path.startsWith('/uploads/')) return true;
     // Development and test are deliberately unlimited: a dashboard full of
     // student photos is normal there, and a 429 on the 101st image is a false
     // failure that teaches nothing. The exemption lives HERE rather than in the

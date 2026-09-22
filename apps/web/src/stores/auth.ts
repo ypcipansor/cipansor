@@ -59,13 +59,22 @@ const ROUTING_SESSION_ERROR =
 /**
  * Ask the server to mint (or, on logout, clear) the signed routing session.
  *
- * Resolves to whether the server confirmed the operation. Two details matter:
+ * Resolves to whether the server confirmed the operation. Three details matter:
  *
  *  - `fetch()` does NOT reject on a non-2xx status, so the status is checked
  *    explicitly. A `500` from the mint endpoint (e.g. a missing signing secret)
  *    must never be mistaken for a created cookie.
- *  - A network failure resolves `false` instead of rejecting, so a caller can
- *    `await` it without risking an unhandled rejection.
+ *  - The BODY is checked too, not just the status. `POST /api/session` answers
+ *    `200 { session: false }` whenever it did NOT sign a cookie (no bearer, the
+ *    API did not confirm the token, `{clear:true}`, or a missing secret). A 2xx
+ *    alone therefore says nothing: treating it as success completed the login
+ *    while no cookie existed, so the next navigation hit the Proxy with no
+ *    session and bounced to `/login`. Only `session === true` is success on the
+ *    mint path; a `DELETE` (logout) is a clear, where `session: false` is the
+ *    expected, successful outcome.
+ *  - A network failure, a non-JSON body, or a malformed payload resolves
+ *    `false` instead of rejecting, so a caller can `await` it without risking
+ *    an unhandled rejection.
  *
  * Await this before treating a login as navigable. The Next Proxy only sees the
  * session once this `POST` has committed its `Set-Cookie`; navigating first
@@ -80,7 +89,22 @@ async function syncRoutingSession(clear = false): Promise<boolean> {
       method: clear ? "DELETE" : "POST",
       headers: token ? { authorization: `Bearer ${token}` } : undefined,
     });
-    return response.ok;
+    if (!response.ok) return false;
+    // A clear is confirmed by the status; a mint additionally requires the
+    // server to say it actually issued a session. Read the body leniently —
+    // a malformed/empty body is NOT a confirmed session.
+    if (clear) return true;
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch {
+      return false;
+    }
+    return (
+      typeof body === "object" &&
+      body !== null &&
+      (body as { session?: unknown }).session === true
+    );
   } catch {
     return false;
   }

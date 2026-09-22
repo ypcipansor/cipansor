@@ -158,13 +158,16 @@ app.use(compression());
 // them requires a valid access token — via Authorization header or ?token=
 // (see uploadsAuth). Directory listing stays off; static only serves files.
 //
-// The rate limiter is mounted unconditionally and follows the same environment
-// policy as the global mount below: `defaultLimiter` counts every read here, but
-// skips development and test internally, so a dashboard full of uploads is
-// normal there while production stays limited. The exemption lives in the
-// limiter (middleware/rate-limit.ts), not in the mount — a conditional spread
-// here both hid the protection from static analysis and let the uploads route
-// drift from the global policy.
+// The read limiter is mounted unconditionally and visibly, the way CodeQL and a
+// reader both expect; its dev/test exemption lives inside `defaultLimiter.skip`
+// (middleware/rate-limit.ts), not in a conditional spread that could hide the
+// protection. It counts each read exactly ONCE: the global `defaultLimiter`
+// below skips `/uploads` (see its `skip`), because `express.static` answers a
+// served file and falls through for a missing one, and the global mount would
+// otherwise count that fall-through a second time — halving the effective read
+// quota in production while dev/test hid it. The skip keys on `req.path`, which
+// Express strips to the sub-path inside the mount and leaves whole outside it,
+// so the route mount counts and the global mount stands down.
 //
 // `uploadsAuth` already authorizes the caller against the owning record, so the
 // browser only ever fetches a file it is allowed to read. But helmet's default
@@ -177,9 +180,6 @@ app.use(compression());
 // this route opts out of CORP while the rest of the API keeps the default.
 import path from 'path';
 import { uploadsAuth } from './middleware/upload';
-// The limiter is mounted unconditionally; `defaultLimiter` itself skips dev and
-// test (see middleware/rate-limit.ts), so a reader and CodeQL can both see the
-// route is rate-limited while the deliberate dev/test exemption is preserved.
 app.use(
   '/uploads',
   defaultLimiter,
@@ -192,7 +192,8 @@ app.use(
 );
 
 // Rate limiting - apply to all routes except health check.
-// `defaultLimiter` skips test/development internally.
+// `defaultLimiter` skips test/development and `/uploads` internally (the latter
+// is already counted once by the mount above).
 app.use(defaultLimiter);
 
 // Logging

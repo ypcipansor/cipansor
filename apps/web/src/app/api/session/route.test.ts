@@ -35,6 +35,10 @@ describe("POST /api/session", () => {
     const setCookie = setCookieOf(res);
     expect(setCookie).toContain(`${SESSION_COOKIE}=;`);
     expect(setCookie).toContain("Max-Age=0");
+    // The body contract the web store depends on: no cookie minted means
+    // `session:false`. The store treats only `{session:true}` as success, so
+    // this must stay false whenever the Set-Cookie above is a clear.
+    await expect(res.clone().json()).resolves.toEqual({ session: false });
   });
 
   it("does not mint a cookie when the API rejects the bearer", async () => {
@@ -50,6 +54,24 @@ describe("POST /api/session", () => {
       })
     );
     expect(setCookieOf(res)).toContain("Max-Age=0");
+    await expect(res.clone().json()).resolves.toEqual({ session: false });
+  });
+
+  it("does not mint a cookie when the API confirms no user id", async () => {
+    // A 200 from `/auth/me` without a user id must not become a session.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ data: {} }), { status: 200 }))
+    );
+    const res = await POST(
+      new Request("http://localhost:3000/api/session", {
+        method: "POST",
+        headers: { authorization: "Bearer real" },
+        body: "{}",
+      })
+    );
+    expect(setCookieOf(res)).toContain("Max-Age=0");
+    await expect(res.clone().json()).resolves.toEqual({ session: false });
   });
 
   it("mints a signed, HttpOnly cookie for an API-confirmed session", async () => {
@@ -89,6 +111,8 @@ describe("POST /api/session", () => {
     const value = setCookie.slice(setCookie.indexOf("=") + 1, setCookie.indexOf(";"));
     const payload = await verifySession(value, SECRET);
     expect(payload).toMatchObject({ sub: "user-1", role: "TEACHER", roleCode: "TEACHER" });
+    // The store only completes a login on this exact body.
+    await expect(res.clone().json()).resolves.toEqual({ session: true });
   });
 
   it("clears the cookie on {clear:true}", async () => {

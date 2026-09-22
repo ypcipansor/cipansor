@@ -23,7 +23,7 @@ async function loadLimiter(env: string, name: 'defaultLimiter' | 'uploadLimiter'
 }
 
 /** Minimal express-ish req/res/next triple for one limiter pass. */
-function makeReq(path = '/uploads/a.png') {
+function makeReq(path = '/api/students') {
   const headers: Record<string, string> = {};
   return {
     ip: '127.0.0.1',
@@ -76,7 +76,7 @@ function makeRes() {
  * express-rate-limit invokes `next`/the handler asynchronously, so each pass is
  * awaited before the result is read.
  */
-async function run(limiter: any, n: number, path = '/uploads/a.png') {
+async function run(limiter: any, n: number, path = '/api/students') {
   let blocked = 0;
   for (let i = 0; i < n; i++) {
     const req = makeReq(path);
@@ -116,6 +116,15 @@ describe('defaultLimiter environment policy (behavioral)', () => {
   it('never limits /health, even in production', async () => {
     const limiter = await loadLimiter('production');
     expect(await run(limiter, 500, '/health')).toBe(0);
+  });
+
+  it('skips /uploads in production so the route mount owns the single count', async () => {
+    // The global limiter must stand down for `/uploads/*`: the uploads mount
+    // already counted the request, and counting it here again is the bug (a
+    // missing-path read would spend two hits). `req.path` is whole here.
+    const limiter = await loadLimiter('production');
+    expect(await run(limiter, 500, '/uploads/a.png')).toBe(0);
+    expect(await run(limiter, 500, '/uploads')).toBe(0);
   });
 });
 
