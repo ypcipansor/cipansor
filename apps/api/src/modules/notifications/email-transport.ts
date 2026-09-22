@@ -235,7 +235,7 @@ function isHtmlWhitespace(code: number): boolean {
  * everything from an opening quote to its match is marked. A quote opens a
  * value only directly after `=` (whitespace allowed around it), so a stray quote
  * in a tag name or between attributes cannot mask later markup. A quote that is
- * never closed runs to end-of-input. Comments carry no attributes, so they are
+ * never closed masks nothing (see below). Comments carry no attributes, so they are
  * skipped whole to their `-->` (or EOF) — a quote in a comment body is not a
  * value and must not mask later markup — while doctypes and processing
  * instructions (`<!…`/`<?…`) run to the next `>`. Each character is visited a
@@ -297,9 +297,12 @@ function quotedAttributeMask(text: string): Uint8Array {
       }
       if (!isHtmlWhitespace(code)) canOpenQuote = code === 0x3d /* = */;
     }
-    if (quote !== 0) {
-      for (let k = quoteStart; k < text.length; k++) quoted[k] = 1;
-    }
+    // A quote that is never closed quotes nothing. Masking it to end-of-input
+    // would hide every later `<!--`/`<style`/`<head` from the element scan and
+    // let `stripTags` keep the whole tail verbatim — `<a title="<script>…`
+    // survived untouched that way (2,189 of 300k random inputs leaked live
+    // markup). Leaving it unmasked matches `stripTags`, which re-reads such a
+    // tail without quote handling.
     i = j + 1;
   }
 
@@ -428,9 +431,10 @@ function stripHiddenElements(text: string): string {
  * `>` close the run; this mirrors the mask `stripHiddenElements` uses and keeps
  * the two passes consistent on the same input.
  */
-function stripTags(text: string): string {
+function stripTags(text: string, quoteAware = true): string {
   const out: string[] = [];
   let openStart = -1;
+  let openSource = -1;
   let quote = '';
   let canOpenQuote = false;
 
@@ -438,7 +442,10 @@ function stripTags(text: string): string {
     const ch = text[i];
     out.push(ch);
     if (openStart === -1) {
-      if (ch === '<') openStart = out.length - 1;
+      if (ch === '<') {
+        openStart = out.length - 1;
+        openSource = i;
+      }
       continue;
     }
     if (quote !== '') {
@@ -452,11 +459,22 @@ function stripTags(text: string): string {
       out.length = openStart;
       openStart = -1;
       canOpenQuote = false;
-    } else if (ch === '"' || ch === "'") {
+    } else if (quoteAware && (ch === '"' || ch === "'")) {
       if (canOpenQuote) quote = ch;
     } else if (ch !== ' ' && ch !== '\t' && ch !== '\n' && ch !== '\f' && ch !== '\r') {
       canOpenQuote = ch === '=';
     }
+  }
+
+  // A run still open at end-of-input never became a tag, so its quotes were
+  // never attribute values: honouring them kept every `<…>` after the first
+  // quote verbatim (`<a title="<script>x</script>` survived untouched, and so
+  // did `<a x="-x>y="` once its quotes happened to pair up). Nothing was deleted
+  // since the run opened, so `out` from `openStart` equals the source from
+  // `openSource`; re-read that tail once without quote handling. The second
+  // pass cannot recurse, so the whole strip stays linear.
+  if (quoteAware && openStart !== -1) {
+    return out.slice(0, openStart).join('') + stripTags(text.slice(openSource), false);
   }
 
   return out.join('');

@@ -482,8 +482,11 @@ interface CertificateNumber {
  * than one pending timer and none leaks. The timer is scheduled from an effect,
  * so no browser API is touched during render.
  *
- * The value is a display convenience, not an authoritative identifier; the
- * backend issues the recorded certificate number.
+ * NOTHING RECORDS THIS NUMBER. It is drawn in the browser and printed, and no
+ * table, endpoint or log keeps it, so a printed certificate cannot be looked up
+ * or verified by it and two certificates can share one (1 in 10,000 per type
+ * per month). Treat it as a display label until issuance is recorded
+ * server-side.
  */
 export function useCertificateNumber(
   type: CertificateType,

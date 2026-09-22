@@ -7,7 +7,12 @@ import request from 'supertest';
 vi.mock('@/lib/prisma', () => ({ prisma: {} }));
 vi.mock('@/lib/redis', () => ({ redis: {} }));
 
-import { rateLimitEnabled, defaultLimiter } from './rate-limit';
+import {
+  rateLimitEnabled,
+  defaultLimiter,
+  uploadsServeLimiter,
+  UPLOADS_SERVE_MAX_PER_MINUTE,
+} from './rate-limit';
 import { buildUploadsMiddleware, buildGlobalLimiter } from '../app';
 import { uploadsAuth } from './upload';
 import { generateAccessToken } from '@/lib/jwt';
@@ -22,8 +27,13 @@ import { config } from '@/config';
  * It was then fixed to mount the limiter only where rate limiting applies, but
  * the same limiter instance was *also* still mounted globally. A `/uploads`
  * request that `express.static` missed fell through to the global pass, so a
- * missing/stale upload consumed two slots instead of one. These tests pin the
- * predicate, the chain, and — through real requests — the slot accounting.
+ * missing/stale upload consumed two slots instead of one.
+ *
+ * Even one slot of `defaultLimiter` was too many: before #522 a served file
+ * never reached a limiter, so photo-heavy pages cost the API budget nothing.
+ * `/uploads` now has its own budget (`uploadsServeLimiter`). These tests pin
+ * the predicate, the chain, and — through real requests — the slot accounting
+ * of both budgets.
  */
 describe('rateLimitEnabled', () => {
   it('is off in test and development', () => {
@@ -42,13 +52,15 @@ describe('buildUploadsMiddleware', () => {
     for (const env of ['development', 'test']) {
       const chain = buildUploadsMiddleware(env);
       expect(chain).not.toContain(defaultLimiter);
+      expect(chain).not.toContain(uploadsServeLimiter);
       expect(chain).toContain(uploadsAuth); // private in every environment
     }
   });
 
-  it('runs the limiter first, then auth, in production', () => {
+  it('runs its own limiter first, then auth, in production', () => {
     const chain = buildUploadsMiddleware('production');
-    expect(chain[0]).toBe(defaultLimiter);
+    expect(chain[0]).toBe(uploadsServeLimiter);
+    expect(chain).not.toContain(defaultLimiter);
     expect(chain[1]).toBe(uploadsAuth);
   });
 });
@@ -56,6 +68,7 @@ describe('buildUploadsMiddleware', () => {
 describe('request-level rate-limit accounting', () => {
   const uploadDir = path.join(process.cwd(), 'public/uploads');
   const max = config.rateLimit.maxRequests;
+  const uploadsMax = UPLOADS_SERVE_MAX_PER_MINUTE;
 
   const token = generateAccessToken({
     id: 'u1',
@@ -99,9 +112,9 @@ describe('request-level rate-limit accounting', () => {
       .set('X-Forwarded-For', nextIp())
       .set('Authorization', `Bearer ${token}`);
 
-    // Fall-through to the terminal handler, and a single slot consumed.
+    // Fall-through to the terminal handler, and a single uploads slot consumed.
     expect(res.status).toBe(404);
-    expect(remainingOf(res)).toBe(max - 1);
+    expect(remainingOf(res)).toBe(uploadsMax - 1);
   });
 
   it('counts a served /uploads request exactly once', async () => {
@@ -114,10 +127,25 @@ describe('request-level rate-limit accounting', () => {
         .set('Authorization', `Bearer ${token}`);
 
       expect(res.status).toBe(200);
-      expect(remainingOf(res)).toBe(max - 1);
+      expect(remainingOf(res)).toBe(uploadsMax - 1);
     } finally {
       fs.rmSync(file, { force: true });
     }
+  });
+
+  it('does not spend the API budget on /uploads requests', async () => {
+    // Same client: five photo requests (one missing), then an API call. The API
+    // call must see a full API budget — photos are counted elsewhere.
+    const ip = nextIp();
+    const a = app('production');
+    for (let n = 0; n < 5; n++) {
+      await request(a).get(`/uploads/missing-${n}.png`).set('X-Forwarded-For', ip).set('Authorization', `Bearer ${token}`);
+    }
+    const photo = await request(a).get('/uploads/missing-last.png').set('X-Forwarded-For', ip).set('Authorization', `Bearer ${token}`);
+    expect(remainingOf(photo)).toBe(uploadsMax - 6);
+
+    const api = await request(a).get('/api/something').set('X-Forwarded-For', ip);
+    expect(remainingOf(api)).toBe(max - 1);
   });
 
   it('counts a non-upload request exactly once', async () => {
@@ -167,8 +195,8 @@ describe('request-level rate-limit accounting', () => {
 
     expect(res.status).toBe(401);
     // The route limiter runs before auth, so even the rejected request is one
-    // slot — not two.
-    expect(remainingOf(res)).toBe(max - 1);
+    // uploads slot — not two.
+    expect(remainingOf(res)).toBe(uploadsMax - 1);
   });
 
   it('still requires auth on /uploads in development and test', async () => {

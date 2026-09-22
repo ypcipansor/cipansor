@@ -1,6 +1,7 @@
 "use client";
 import { useState, useRef } from "react";
 import { safeFormat } from "@/lib/date";
+import { escapeHtml } from "@/lib/string";
 import { MainLayout } from "@/components/layout/main-layout";
 import {
   Card,
@@ -154,12 +155,17 @@ export default function CertificateGeneratorPage() {
     }
 
     const printContent = printRef.current?.innerHTML || "";
+    // The print window is same-origin (`about:blank`), so anything written into
+    // it runs with the app's session. `printContent` is React-rendered and
+    // already escaped; the title is raw data — a student name comes from SPMB
+    // registration, i.e. from the public — so it must be escaped here.
+    const printTitle = escapeHtml(`Sertifikat - ${selectedStudent.name}`);
 
     printWindow.document.write(`
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Sertifikat - ${selectedStudent.name}</title>
+          <title>${printTitle}</title>
           <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Great+Vibes&family=Noto+Serif:wght@400;600;700&display=swap" rel="stylesheet">
           <style>
             @page {

@@ -526,6 +526,37 @@ describe('htmlToText', () => {
       expect(text).not.toContain('title');
     });
 
+    it('does not let an unterminated quote keep markup alive', () => {
+      // Audit of #522: a quote opened after `=` and never closed was read as an
+      // attribute value running to end-of-input, so every tag after it was
+      // copied through verbatim. The pre-#522 regex strip returned `alert(1)`.
+      expect(htmlToText('<a title="<script>alert(1)</script>')).toBe('alert(1)');
+      expect(htmlToText("<a href='x>y</a> teks")).toBe('y teks');
+      // A quote pair that only closes because of a later quote, in a run that
+      // never ends in a `>`, is not an attribute either.
+      expect(htmlToText('a</head>i<title="-x>title="<!--lt-->')).not.toMatch(/<[a-z]/i);
+      // A real attribute with a `>` in its value is still honoured.
+      expect(htmlToText('<a title="a > b">link</a>')).toBe('link');
+    });
+
+    it('never leaves live markup behind on random fragment soup', () => {
+      // Property check over a fixed pseudo-random corpus built from the pieces
+      // every fusion case above is made of. 2,189 of 300k such inputs leaked a
+      // `<tag>` before the unterminated-quote fix; the suite pins zero.
+      const pieces = ['<', '>', '!', '-', '/', '"', "'", '=', ' ', 'a', 's', 't', 'y', 'l', 'e', 'h', 'd',
+        'x', '<style', '</style>', '<head', '</head>', '<!--', '-->', '<script>', 'title="'];
+      let seed = 522;
+      const next = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+      const leaks: string[] = [];
+      for (let n = 0; n < 20_000; n++) {
+        let input = '';
+        const len = 1 + Math.floor(next() * 20);
+        for (let k = 0; k < len; k++) input += pieces[Math.floor(next() * pieces.length)];
+        if (/<[a-zA-Z/!?][^<>]*>/.test(htmlToText(input))) leaks.push(input);
+      }
+      expect(leaks).toEqual([]);
+    });
+
     it('stays linear with quoted attributes scattered through the input', () => {
       const input = '<a title="<!--">'.repeat(100_000);
       const start = Date.now();
