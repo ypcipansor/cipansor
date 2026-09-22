@@ -51,11 +51,12 @@ function dockerAvailable(): boolean {
 /** Run a docker subcommand, transparently handling the sudo prefix. */
 function docker(
   args: string[],
-  opts: { timeout?: number; encoding?: 'utf8' } = {}
+  opts: { timeout?: number; encoding?: 'utf8'; cwd?: string } = {}
 ): { status: number | null; stdout: string; stderr: string } {
   const r = spawnSync(DOCKER[0], [...DOCKER.slice(1), ...args], {
     encoding: opts.encoding ?? 'utf8',
     timeout: opts.timeout,
+    cwd: opts.cwd,
   });
   return { status: r.status, stdout: String(r.stdout ?? ''), stderr: String(r.stderr ?? '') };
 }
@@ -91,10 +92,13 @@ async function withAdmin<T>(fn: (c: Client) => Promise<T>): Promise<T> {
 const created: string[] = [];
 
 function buildMigrateImage(): void {
+  // Dockerfile path and context are relative to the repo root; vitest's cwd is
+  // apps/api, so pin the build there or it resolves `apps/api/...` twice.
   const r = docker(
     ['build', '-f', 'apps/api/Dockerfile', '--target', 'migrate', '-t', IMAGE, '.'],
     {
       timeout: 15 * 60_000,
+      cwd: REPO_ROOT,
     }
   );
   if (r.status !== 0) throw new Error(`docker build failed (${r.status}):\n${r.stderr}`);
