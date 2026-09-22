@@ -1556,14 +1556,16 @@ function PengawasanPageContent() {
                           <SelectItem value="__none__">
                             — Tidak menunjuk Plh/Plt —
                           </SelectItem>
-                          {plhCandidates?.map((c) => (
-                            <SelectItem key={c.id} value={c.id}>
-                              {c.name} — {c.email}
-                              {c.roleCodes.length
-                                ? ` (${c.roleCodes.join(", ")})`
-                                : ""}
-                            </SelectItem>
-                          ))}
+                          {plhCandidates
+                            ?.filter((c) => c.plhEligible)
+                            .map((c) => (
+                              <SelectItem key={c.id} value={c.id}>
+                                {c.name} — {c.email}
+                                {c.roleCodes.length
+                                  ? ` (${c.roleCodes.join(", ")})`
+                                  : ""}
+                              </SelectItem>
+                            ))}
                         </SelectContent>
                       </Select>
                       <FormMessage />

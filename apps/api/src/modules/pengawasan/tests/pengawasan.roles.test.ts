@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { RoleCode } from '@prisma/client';
+import { yayasanOrganOf } from '@/utils/role-eligibility';
 import {
   BENDAHARA_ROLE_CODES,
   PENGAWASAN_ARREARS_ROLES,
@@ -7,6 +9,9 @@ import {
   PENGAWASAN_SUSPENSION_ISSUE_ROLES,
   PENGAWASAN_SUSPENSION_READ_ROLES,
   PENGAWASAN_SUSPENSION_ROLES,
+  PLH_INELIGIBLE_ROLE_CODES,
+  PLH_ROLE_CODES,
+  isPlhEligible,
   pengawasanAccessOf,
 } from '@cipansor/shared';
 
@@ -80,6 +85,61 @@ describe('pengawasan governance role groups', () => {
     for (const code of PENGAWASAN_SUSPENSION_ROLES) {
       expect(typeof code).toBe('string');
       expect(code.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+/**
+ * The Plh/Plt eligibility rule is a shared contract: the candidate query, the
+ * service preflight, the transactional re-check and the web picker all read
+ * `isPlhEligible`. These assertions pin the rule itself and its agreement with
+ * the database organ-exclusivity invariant in `utils/role-eligibility.ts`.
+ */
+describe('Plh/Plt eligibility policy', () => {
+  it('excludes every role that is not part of the Pengurus organ', () => {
+    // Both non-Pengurus organs, the system administrator, and the external
+    // roles: none may be handed a Pengurus office.
+    for (const code of [
+      'YAYASAN_PEMBINA',
+      'YAYASAN_PENGAWAS',
+      'SUPER_ADMIN',
+      'SDIT_SISWA',
+      'SMPIT_SISWA',
+      'SDIT_ORANG_TUA',
+      'SDIT_KOMITE',
+      'SMPIT_ALUMNI',
+      'SMAQ_ALUMNI',
+    ]) {
+      expect(PLH_INELIGIBLE_ROLE_CODES, `${code} must be ineligible`).toContain(code);
+    }
+  });
+
+  it('accepts an account holding no role and an account holding a Pengurus role', () => {
+    expect(isPlhEligible([])).toBe(true);
+    for (const code of PLH_ROLE_CODES) {
+      expect(isPlhEligible([code])).toBe(true);
+      expect(isPlhEligible(['SDIT_GURU', code])).toBe(true);
+    }
+  });
+
+  it('refuses any combination that includes an ineligible role', () => {
+    expect(isPlhEligible(['YAYASAN_PEMBINA'])).toBe(false);
+    expect(isPlhEligible(['YAYASAN_KETUA', 'YAYASAN_PENGAWAS'])).toBe(false);
+    expect(isPlhEligible(['SUPER_ADMIN', 'YAYASAN_BENDAHARA'])).toBe(false);
+  });
+
+  it('agrees with the organ-exclusivity rule the database enforces', () => {
+    // Every role the database trigger would treat as a non-Pengurus yayasan
+    // organ must be ineligible; otherwise the service could attempt a grant the
+    // trigger refuses.
+    for (const code of Object.values(RoleCode)) {
+      const organ = yayasanOrganOf(code);
+      if (organ && organ !== 'PENGURUS') {
+        expect(
+          PLH_INELIGIBLE_ROLE_CODES,
+          `${code} is organ ${organ} and must be ineligible`
+        ).toContain(code);
+      }
     }
   });
 });

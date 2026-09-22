@@ -2,9 +2,11 @@ import { prisma } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
 import { BoardSuspensionStatus, Prisma } from '@prisma/client';
 import {
+  PLH_INELIGIBLE_ROLE_CODES,
+  PLH_ROLE_CODES,
   PENGAWASAN_SUSPENSION_ISSUE_ROLES,
   PENGURUS_ROLE_CODES,
-  PLH_ROLE_CODES,
+  isPlhEligible,
   type CreateBoardSuspensionInput,
   type PengawasanCandidateDto,
 } from '@cipansor/shared';
@@ -21,6 +23,15 @@ export type { CreateBoardSuspensionInput };
  * so the E-Sign service can recognise (and refuse to clear) it without importing
  * this module. Re-exported here because the suspension tests and callers expect
  * it from the service.
+ *
+ * Product decision (final): a board suspension imposes a *temporary signing
+ * prohibition*, not a formal key revocation. The suspension invoice and the
+ * audit trail say "dibekukan/dikunci sementara", never "dicabut"; the audited
+ * `UserSigningKey.revokedAt` field is deliberately left untouched, because a
+ * revocation is permanent and a suspension is not, and the e-sign lifecycle has
+ * no "un-revoke". A lift restores the prior `lockedUntil`. If the yayasan later
+ * requires formal, permanent revocation on suspension, that is a product change
+ * that must issue a fresh key on lift — do not repurpose the sentinel.
  */
 export { SIGNING_KEY_SUSPENSION_LOCK, isSuspensionSigningLock } from '@/utils/esign-suspension-lock';
 
@@ -91,6 +102,32 @@ async function releasePlhAssignment(
 }
 
 export class BoardSuspensionService {
+  /**
+   * The Plh/Plt eligibility rule, in one place, for every caller.
+   *
+   * `listPlhCandidates` and `suspendBoardMember` used to answer this question
+   * differently: the picker excluded only `SUPER_ADMIN` and the legacy
+   * `STUDENT`/`PARENT` enum values, while the service granted a Pengurus role to
+   * whoever was named. A Pembina or Pengawas offered by the picker therefore
+   * reached the grant, where the `trg_yayasan_organ_exclusive` trigger rejected
+   * the insert with SQLSTATE 23514 — surfacing as an internal error *after* the
+   * target had been deactivated in the same transaction. Both sides now read
+   * `isPlhEligible` from `@cipansor/shared`.
+   *
+   * Holding no role at all is eligible: the grant is the first office the
+   * person holds, and there is no organ to conflict with.
+   */
+  private assertPlhDelegateEligible(roleCodes: readonly string[]): void {
+    if (isPlhEligible(roleCodes)) return;
+    const blocked = roleCodes.filter((code) => PLH_INELIGIBLE_ROLE_CODES.includes(code));
+    throw Errors.badRequest(
+      `Pengguna yang ditunjuk sebagai Plh/Plt memegang peran ${blocked.join(', ')}. ` +
+        `Plh/Plt menggantikan organ Pengurus, sehingga Pembina, Pengawas, Super Admin, ` +
+        `dan peran di luar struktur yayasan tidak dapat merangkap jabatan tersebut ` +
+        `(UU 16/2001 Pasal 29).`
+    );
+  }
+
   /**
    * Suspend a Board Member / Pengurus due to audit findings or investigation.
    *
@@ -219,7 +256,21 @@ export class BoardSuspensionService {
 
       const plhUser = await prisma.user.findUnique({
         where: { id: data.plhUserId },
-        select: { id: true, isActive: true, deletedAt: true },
+        select: {
+          id: true,
+          isActive: true,
+          deletedAt: true,
+          // The delegate's *effective* roles are what the grant conflicts with.
+          // Reading them here gives the operator a readable 400 instead of the
+          // database trigger's 23514, which surfaced as a 500.
+          userRoles: {
+            where: {
+              isActive: true,
+              OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+            },
+            select: { role: { select: { code: true } } },
+          },
+        },
       });
 
       if (!plhUser || plhUser.deletedAt) {
@@ -233,6 +284,8 @@ export class BoardSuspensionService {
           'Pengguna yang ditunjuk sebagai Plh/Plt tidak aktif dan tidak dapat didelegasikan.'
         );
       }
+
+      this.assertPlhDelegateEligible(plhUser.userRoles.map((ur) => ur.role.code));
     }
 
     try {
@@ -431,6 +484,31 @@ export class BoardSuspensionService {
             );
           }
 
+          // The delegate's roles are re-read *inside* the transaction and under
+          // a lock on their assignment rows, immediately before the grant.
+          //
+          // The pre-flight check above is a courtesy that cannot be the
+          // decision: a `UserRoleAssignment` inserted between it and this point
+          // (an admin granting the delegate Pembina or Pengawas, say) would make
+          // the Pengurus grant conflict with the organ-exclusivity trigger —
+          // which then aborts the transaction *after* the target was switched
+          // off. Locking the delegate's assignment rows serialises against a
+          // concurrent update to them; a concurrent *insert* cannot be locked,
+          // so the trigger remains the database guarantee and the outer catch
+          // maps its violation to the same 4xx this check raises.
+          await tx.$queryRaw(
+            Prisma.sql`SELECT id FROM "user_role_assignments" WHERE user_id = ${data.plhUserId} ORDER BY id FOR UPDATE`
+          );
+          const delegateRoles = await tx.userRoleAssignment.findMany({
+            where: {
+              userId: data.plhUserId,
+              isActive: true,
+              OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+            },
+            select: { role: { select: { code: true } } },
+          });
+          this.assertPlhDelegateEligible(delegateRoles.map((ur) => ur.role.code));
+
           // The delegate must not be the officer being suspended. The
           // pre-flight guard covers the same ground, but the target's
           // `deletedAt` is re-read under lock here anyway; keeping the pair
@@ -441,72 +519,92 @@ export class BoardSuspensionService {
             );
           }
 
+          // Fail closed when the requested role does not exist.
+          //
+          // This used to be `if (role) { … }`: a missing or renamed role skipped
+          // the grant entirely, yet the suspension was still created with
+          // `plhUserId`/`plhRoleCode` metadata. The target was left deactivated
+          // with no replacement holding the office — a suspension that looks
+          // like a delegation and is not one. A named pair must either be
+          // granted in full or abort the whole transaction; the pre-flight Zod
+          // schema cannot be relied on here because internal callers reach the
+          // service directly.
+          if (!(PLH_ROLE_CODES as readonly string[]).includes(data.plhRoleCode)) {
+            throw Errors.badRequest(
+              `Peran Plh/Plt tidak sah: ${data.plhRoleCode}. Hanya peran Pengurus (${PLH_ROLE_CODES.join(', ')}) yang dapat didelegasikan.`
+            );
+          }
+
           const role = await tx.role.findFirst({ where: { code: data.plhRoleCode } });
+          if (!role) {
+            throw Errors.badRequest(
+              `Peran Plh/Plt ${data.plhRoleCode} tidak ditemukan pada konfigurasi peran sistem. ` +
+                `Pembekuan dibatalkan agar pengurus tidak dinonaktifkan tanpa pengganti yang sah.`
+            );
+          }
 
-          if (role) {
-            const existingAssign = await tx.userRoleAssignment.findFirst({
-              // The delegation the suspension grants is foundation-wide, so it
-              // owns the unitless row. Matching `unitId: null` explicitly keeps
-              // this from "reusing" an unrelated unit-scoped assignment for the
-              // same role — which would record provenance against a row the lift
-              // must not touch — and pairs with the partial unique index on
-              // (user, role) WHERE unit_id IS NULL. Ordered by id so the row
-              // picked is the same one the migration keeps when it collapses
-              // historical duplicates.
-              where: { userId: data.plhUserId, roleId: role.id, unitId: null },
-              orderBy: { id: 'asc' },
+          const existingAssign = await tx.userRoleAssignment.findFirst({
+            // The delegation the suspension grants is foundation-wide, so it
+            // owns the unitless row. Matching `unitId: null` explicitly keeps
+            // this from "reusing" an unrelated unit-scoped assignment for the
+            // same role — which would record provenance against a row the lift
+            // must not touch — and pairs with the partial unique index on
+            // (user, role) WHERE unit_id IS NULL. Ordered by id so the row
+            // picked is the same one the migration keeps when it collapses
+            // historical duplicates.
+            where: { userId: data.plhUserId, roleId: role.id, unitId: null },
+            orderBy: { id: 'asc' },
+          });
+
+          if (!existingAssign) {
+            const created = await tx.userRoleAssignment.create({
+              data: {
+                userId: data.plhUserId,
+                roleId: role.id,
+                isPrimary: false,
+              },
             });
+            plhDependency = {
+              assignmentId: created.id,
+              roleCode: data.plhRoleCode,
+              created: true,
+              restore: null,
+            };
+          } else {
+            // Only an assignment that is *currently effective* can be left
+            // as it is. An inactive or expired row must be reactivated — a
+            // replacement officer with no live delegation is not a Plh — and
+            // the prior state recorded so the last dependent can restore it.
+            const isEffective =
+              existingAssign.isActive &&
+              (!existingAssign.expiresAt || existingAssign.expiresAt > new Date());
 
-            if (!existingAssign) {
-              const created = await tx.userRoleAssignment.create({
-                data: {
-                  userId: data.plhUserId,
-                  roleId: role.id,
-                  isPrimary: false,
-                },
-              });
+            if (isEffective) {
+              // Reuse a live delegation. It stays; this suspension just
+              // records that it depends on it, so a lift of the *other*
+              // suspension cannot remove it underneath us either.
               plhDependency = {
-                assignmentId: created.id,
+                assignmentId: existingAssign.id,
                 roleCode: data.plhRoleCode,
-                created: true,
+                created: false,
                 restore: null,
               };
             } else {
-              // Only an assignment that is *currently effective* can be left
-              // as it is. An inactive or expired row must be reactivated — a
-              // replacement officer with no live delegation is not a Plh — and
-              // the prior state recorded so the last dependent can restore it.
-              const isEffective =
-                existingAssign.isActive &&
-                (!existingAssign.expiresAt || existingAssign.expiresAt > new Date());
-
-              if (isEffective) {
-                // Reuse a live delegation. It stays; this suspension just
-                // records that it depends on it, so a lift of the *other*
-                // suspension cannot remove it underneath us either.
-                plhDependency = {
-                  assignmentId: existingAssign.id,
-                  roleCode: data.plhRoleCode,
-                  created: false,
-                  restore: null,
-                };
-              } else {
-                plhDependency = {
-                  assignmentId: existingAssign.id,
-                  roleCode: data.plhRoleCode,
-                  created: false,
-                  restore: {
-                    isActive: existingAssign.isActive,
-                    expiresAt: existingAssign.expiresAt
-                      ? existingAssign.expiresAt.toISOString()
-                      : null,
-                  },
-                };
-                await tx.userRoleAssignment.update({
-                  where: { id: existingAssign.id },
-                  data: { isActive: true, expiresAt: null },
-                });
-              }
+              plhDependency = {
+                assignmentId: existingAssign.id,
+                roleCode: data.plhRoleCode,
+                created: false,
+                restore: {
+                  isActive: existingAssign.isActive,
+                  expiresAt: existingAssign.expiresAt
+                    ? existingAssign.expiresAt.toISOString()
+                    : null,
+                },
+              };
+              await tx.userRoleAssignment.update({
+                where: { id: existingAssign.id },
+                data: { isActive: true, expiresAt: null },
+              });
             }
           }
         }
@@ -583,6 +681,27 @@ export class BoardSuspensionService {
       // suspension; surface it as the same conflict the pre-check raises.
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         throw Errors.conflict('Pengurus ini telah memiliki Surat Keputusan Pembekuan Aktif');
+      }
+      // The organ-exclusivity trigger is the last line of defence, and it is a
+      // *database* guarantee: a concurrent `UserRoleAssignment` insert between
+      // the in-transaction check and the grant cannot be locked out. Postgres
+      // raises SQLSTATE 23514, which the Prisma driver adapter surfaces as
+      // `P2039` with the original code in `meta.driverAdapterError`. Translating
+      // it keeps the failure a stable 4xx domain error (and a clean rollback)
+      // rather than the 500 an unmapped Prisma error becomes. The message names
+      // the invariant, not the SQL, so the operator knows what to change.
+      const driverCode = (
+        error as { meta?: { driverAdapterError?: { cause?: { originalCode?: string } } } }
+      )?.meta?.driverAdapterError?.cause?.originalCode;
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        (error.code === 'P2039' || driverCode === '23514')
+      ) {
+        throw Errors.badRequest(
+          'Penunjukan Plh/Plt melanggar pemisahan organ yayasan (UU 16/2001 Pasal 29): ' +
+            'satu orang tidak boleh merangkap dua organ (Pembina, Pengawas, Pengurus). ' +
+            'Pembekuan dibatalkan seluruhnya.'
+        );
       }
       throw error;
     }
@@ -937,23 +1056,37 @@ export class BoardSuspensionService {
       orderBy: { name: 'asc' },
     });
 
-    return users.map((user) => ({
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      roleCodes: user.userRoles.map((ur) => ur.role.code),
-      unit: user.unit,
-    }));
+    return users.map((user) => {
+      const roleCodes = user.userRoles.map((ur) => ur.role.code);
+      return {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        roleCodes,
+        unit: user.unit,
+        // Suspension eligibility is a different question from Plh eligibility;
+        // these entries are all Pengurus by construction.
+        plhEligible: isPlhEligible(roleCodes),
+      };
+    });
   }
 
   /**
-   * Accounts that may serve as Plh/Plt for the given role.
+   * Accounts that may serve as Plh/Plt.
    *
-   * Eligible: active, undeleted, not the suspended officer, not a system
-   * administrator (a Plh stands in for the Pengurus organ, never the
-   * administrator), and not a pure student/parent/alumni account. The optional
-   * `excludeUserId` is how the form omits the person being suspended, so a
-   * self-delegation cannot even be selected.
+   * Eligibility is the shared `isPlhEligible` rule — the *same* one
+   * `suspendBoardMember` enforces before the grant — applied here in the query,
+   * so the picker cannot offer a Pembina or Pengawas the service would reject
+   * (the previous filter excluded only `SUPER_ADMIN` and the legacy
+   * `STUDENT`/`PARENT` enum values, which let the two non-Pengurus organs
+   * through). The optional `excludeUserId` is how the form omits the person
+   * being suspended, so a self-delegation cannot even be selected.
+   *
+   * The legacy enum pre-narrow is kept, but expressed as an explicit `OR` with
+   * `role: null`: `notIn` alone evaluates to NULL for a row whose legacy column
+   * is unset, so the old form silently dropped every account created without a
+   * legacy role from the picker. The authoritative rule is the assignment-based
+   * `none` clause below.
    */
   async listPlhCandidates(excludeUserId?: string): Promise<PengawasanCandidateDto[]> {
     const users = await prisma.user.findMany({
@@ -961,7 +1094,14 @@ export class BoardSuspensionService {
         isActive: true,
         deletedAt: null,
         ...(excludeUserId ? { id: { not: excludeUserId } } : {}),
-        role: { notIn: ['STUDENT', 'PARENT'] },
+        OR: [{ role: null }, { role: { notIn: ['STUDENT', 'PARENT'] } }],
+        userRoles: {
+          none: {
+            isActive: true,
+            OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+            role: { code: { in: [...PLH_INELIGIBLE_ROLE_CODES] } },
+          },
+        },
       },
       select: {
         id: true,
@@ -979,15 +1119,17 @@ export class BoardSuspensionService {
       orderBy: { name: 'asc' },
     });
 
-    return users
-      .filter((user) => !user.userRoles.some((ur) => ur.role.code === 'SUPER_ADMIN'))
-      .map((user) => ({
+    return users.map((user) => {
+      const roleCodes = user.userRoles.map((ur) => ur.role.code);
+      return {
         id: user.id,
         name: user.name,
         email: user.email,
-        roleCodes: user.userRoles.map((ur) => ur.role.code),
+        roleCodes,
         unit: user.unit,
-      }));
+        plhEligible: isPlhEligible(roleCodes),
+      };
+    });
   }
 }
 

@@ -24,6 +24,7 @@ vi.mock('@/lib/prisma', () => ({
     user: {
       findUnique: vi.fn(),
       findFirst: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
       update: vi.fn(),
       updateMany: vi.fn(),
     },
@@ -36,6 +37,7 @@ vi.mock('@/lib/prisma', () => ({
     role: { findFirst: vi.fn() },
     userRoleAssignment: {
       findFirst: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
       create: vi.fn(),
       deleteMany: vi.fn(),
       update: vi.fn(),
@@ -68,6 +70,13 @@ vi.mock('@/utils/user-suspension', () => ({
 describe('BoardSuspensionService Unit Tests', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // `clearAllMocks` does not drain a `mockResolvedValueOnce` queue, so an
+    // unconsumed `$queryRaw`/`findUnique` value leaks into the next test and
+    // shifts every subsequent raw query by one. Reset them here and re-establish
+    // the defaults the factory installed.
+    (prisma.$queryRaw as any).mockReset();
+    (prisma.$queryRaw as any).mockResolvedValue([{ deleted_at: null, is_active: true }]);
+    (prisma.user.findUnique as any).mockReset();
     // The lift claims the row with a conditional update; one caller wins.
     (prisma.boardMemberSuspension.updateMany as any).mockResolvedValue({ count: 1 });
     // E-Sign soft-locks are claimed per key with a conditional update; one
@@ -401,7 +410,18 @@ describe('BoardSuspensionService Unit Tests', () => {
         accountStateWriter: null,
         userRoles: [{ isActive: true, expiresAt: null, role: { code: 'YAYASAN_KETUA' } }],
       })
-      .mockResolvedValueOnce({ id: 'user-sekretaris', isActive: true, deletedAt: null });
+      .mockResolvedValueOnce({
+        id: 'user-sekretaris',
+        isActive: true,
+        deletedAt: null,
+        userRoles: [{ role: { code: 'YAYASAN_SEKRETARIS' } }],
+      })
+      // The transactional re-read of the *target*: the Plh check runs after it.
+      .mockResolvedValueOnce({
+        isActive: true,
+        accountStateWriter: null,
+        userRoles: [{ isActive: true, expiresAt: null, role: { code: 'YAYASAN_KETUA' } }],
+      });
     (prisma.boardMemberSuspension.findFirst as any).mockResolvedValue(null);
     // Target lock first, then the Plh lock — which sees the new state.
     (prisma.$queryRaw as any)
@@ -435,7 +455,18 @@ describe('BoardSuspensionService Unit Tests', () => {
         accountStateWriter: null,
         userRoles: [{ isActive: true, expiresAt: null, role: { code: 'YAYASAN_KETUA' } }],
       })
-      .mockResolvedValueOnce({ id: 'user-sekretaris', isActive: true, deletedAt: null });
+      .mockResolvedValueOnce({
+        id: 'user-sekretaris',
+        isActive: true,
+        deletedAt: null,
+        userRoles: [{ role: { code: 'YAYASAN_SEKRETARIS' } }],
+      })
+      // The transactional re-read of the *target*: the Plh check runs after it.
+      .mockResolvedValueOnce({
+        isActive: true,
+        accountStateWriter: null,
+        userRoles: [{ isActive: true, expiresAt: null, role: { code: 'YAYASAN_KETUA' } }],
+      });
     (prisma.boardMemberSuspension.findFirst as any).mockResolvedValue(null);
     (prisma.$queryRaw as any)
       .mockResolvedValueOnce([{ is_active: true, deleted_at: null }])
@@ -1448,6 +1479,250 @@ describe('BoardSuspensionService Unit Tests', () => {
       await boardSuspensionService.liftBoardSuspension('susp-11', 'lifter', 'Pulih');
 
       expect(invalidateUserSuspensionCache).toHaveBeenCalledWith('user-pengurus', expect.any(Number));
+    });
+  });
+
+  describe('Plh/Plt organ-exclusivity (cross-organ delegation)', () => {
+    /**
+     * The candidate query and the service used to answer "may this account be
+     * Plh?" differently. The picker excluded only SUPER_ADMIN and the legacy
+     * STUDENT/PARENT enum values, so a Pembina or Pengawas was offered and then
+     * reached the grant, where the `trg_yayasan_organ_exclusive` trigger
+     * rejected the insert with SQLSTATE 23514 — a 500, after the target had been
+     * switched off. Both now read `isPlhEligible` from `@cipansor/shared`.
+     */
+    it('filters ineligible roles out of the candidate query', async () => {
+      (prisma.user.findMany as any).mockResolvedValue([]);
+
+      await boardSuspensionService.listPlhCandidates();
+
+      const where = (prisma.user.findMany as any).mock.calls[0][0].where;
+      const ineligible = where.userRoles.none.role.code.in;
+      // Both non-Pengurus organs are excluded, as is the system administrator.
+      expect(ineligible).toContain('YAYASAN_PEMBINA');
+      expect(ineligible).toContain('YAYASAN_PENGAWAS');
+      expect(ineligible).toContain('SUPER_ADMIN');
+      // The legacy enum is expressed as an OR with `role: null`, because
+      // `notIn` alone evaluates NULL and silently dropped accounts without a
+      // legacy role.
+      expect(where.OR).toEqual([
+        { role: null },
+        { role: { notIn: ['STUDENT', 'PARENT'] } },
+      ]);
+    });
+
+    it('marks each candidate with its resolved plhEligible flag', async () => {
+      (prisma.user.findMany as any).mockResolvedValue([
+        {
+          id: 'u-ok',
+          name: 'Bendahara',
+          email: 'b@e.com',
+          unit: null,
+          userRoles: [{ role: { code: 'YAYASAN_BENDAHARA' } }],
+        },
+        {
+          id: 'u-pembina',
+          name: 'Pembina',
+          email: 'p@e.com',
+          unit: null,
+          userRoles: [{ role: { code: 'YAYASAN_PEMBINA' } }],
+        },
+      ]);
+
+      const candidates = await boardSuspensionService.listPlhCandidates();
+
+      expect(candidates.find((c) => c.id === 'u-ok')?.plhEligible).toBe(true);
+      expect(candidates.find((c) => c.id === 'u-pembina')?.plhEligible).toBe(false);
+    });
+
+    it.each(['YAYASAN_PEMBINA', 'YAYASAN_PENGAWAS', 'SUPER_ADMIN'])(
+      'refuses %s as a delegate even when the service is called directly',
+      async (roleCode) => {
+        // Preflight sees an otherwise-valid candidate holding the ineligible
+        // role. The rejection must come from eligibility, before any write.
+        (prisma.user.findUnique as any)
+          .mockResolvedValueOnce({
+            id: 'user-pengurus',
+            isActive: true,
+            deletedAt: null,
+            userRoles: [{ isActive: true, expiresAt: null, role: { code: 'YAYASAN_KETUA' } }],
+          })
+          .mockResolvedValueOnce({
+            id: 'user-delegate',
+            isActive: true,
+            deletedAt: null,
+            userRoles: [{ role: { code: roleCode } }],
+          });
+
+        await expect(
+          boardSuspensionService.suspendBoardMember(
+            {
+              userId: 'user-pengurus',
+              skNumber: 'SK/1',
+              auditReason: 'alasan audit yang panjang',
+              plhUserId: 'user-delegate',
+              plhRoleCode: 'YAYASAN_ANGGOTA',
+            },
+            'issuer-pengawas',
+            'YAYASAN_PENGAWAS'
+          )
+        ).rejects.toMatchObject({ statusCode: 400 });
+
+        // The whole transaction must be untouched: no account deactivation, no
+        // suspension row, no refresh-token purge, no E-Sign lock, no Plh grant.
+        expect(prisma.user.updateMany).not.toHaveBeenCalled();
+        expect(prisma.boardMemberSuspension.create).not.toHaveBeenCalled();
+        expect(prisma.refreshToken.deleteMany).not.toHaveBeenCalled();
+        expect(prisma.userSigningKey.updateMany).not.toHaveBeenCalled();
+        expect(prisma.userRoleAssignment.create).not.toHaveBeenCalled();
+      }
+    );
+
+    it('re-checks eligibility inside the transaction when a role change lands after preflight', async () => {
+      // Preflight read an eligible delegate, then an admin granted them a
+      // Pembina assignment before the grant ran. The locked re-read sees it and
+      // aborts, so no cross-organ grant is attempted.
+      (prisma.user.findUnique as any)
+        .mockResolvedValueOnce({
+          id: 'user-pengurus',
+          isActive: true,
+          deletedAt: null,
+          userRoles: [{ isActive: true, expiresAt: null, role: { code: 'YAYASAN_KETUA' } }],
+        })
+        .mockResolvedValueOnce({
+          id: 'user-delegate',
+          isActive: true,
+          deletedAt: null,
+          userRoles: [{ role: { code: 'YAYASAN_SEKRETARIS' } }],
+        })
+        .mockResolvedValueOnce({
+          isActive: true,
+          accountStateWriter: null,
+          userRoles: [{ isActive: true, expiresAt: null, role: { code: 'YAYASAN_KETUA' } }],
+        });
+      (prisma.boardMemberSuspension.findFirst as any).mockResolvedValue(null);
+      (prisma.$queryRaw as any).mockResolvedValue([{ is_active: true, deleted_at: null }]);
+      (prisma.userRoleAssignment.findMany as any).mockResolvedValue([
+        { role: { code: 'YAYASAN_PEMBINA' } },
+      ]);
+
+      await expect(
+        boardSuspensionService.suspendBoardMember(
+          {
+            userId: 'user-pengurus',
+            skNumber: 'SK/1',
+            auditReason: 'alasan audit yang panjang',
+            plhUserId: 'user-delegate',
+            plhRoleCode: 'YAYASAN_ANGGOTA',
+          },
+          'issuer-pengawas',
+          'YAYASAN_PENGAWAS'
+        )
+      ).rejects.toMatchObject({ statusCode: 400 });
+
+      expect(prisma.userRoleAssignment.create).not.toHaveBeenCalled();
+      expect(prisma.boardMemberSuspension.create).not.toHaveBeenCalled();
+    });
+
+    it('maps a database organ-exclusivity violation to a stable 4xx, not a 500', async () => {
+      // The trigger is the final guarantee; a concurrent insert it refuses
+      // surfaces through the driver adapter as code P2039 (originalCode 23514).
+      // A real `PrismaClientKnownRequestError` is constructed so the service's
+      // `instanceof` mapping is exercised for real.
+      const { Prisma } = await import('@prisma/client');
+      const triggerError = new Prisma.PrismaClientKnownRequestError(
+        'Database error. Code: `23514`. Message: `Yayasan organ conflict`',
+        {
+          code: 'P2039',
+          clientVersion: '7.10.0',
+          meta: { driverAdapterError: { cause: { originalCode: '23514' } } },
+        }
+      );
+
+      (prisma.user.findUnique as any)
+        .mockResolvedValueOnce({
+          id: 'user-pengurus',
+          isActive: true,
+          deletedAt: null,
+          userRoles: [{ isActive: true, expiresAt: null, role: { code: 'YAYASAN_KETUA' } }],
+        })
+        .mockResolvedValueOnce({
+          id: 'user-delegate',
+          isActive: true,
+          deletedAt: null,
+          userRoles: [{ role: { code: 'YAYASAN_SEKRETARIS' } }],
+        })
+        .mockResolvedValueOnce({
+          isActive: true,
+          accountStateWriter: null,
+          userRoles: [{ isActive: true, expiresAt: null, role: { code: 'YAYASAN_KETUA' } }],
+        });
+      (prisma.boardMemberSuspension.findFirst as any).mockResolvedValue(null);
+      (prisma.$queryRaw as any).mockResolvedValue([{ is_active: true, deleted_at: null }]);
+      (prisma.userRoleAssignment.findMany as any).mockResolvedValue([]);
+      (prisma.role.findFirst as any).mockResolvedValue({ id: 'role-anggota', code: 'YAYASAN_ANGGOTA' });
+      (prisma.userRoleAssignment.findFirst as any).mockResolvedValue(null);
+      (prisma.userRoleAssignment.create as any).mockRejectedValue(triggerError);
+
+      await expect(
+        boardSuspensionService.suspendBoardMember(
+          {
+            userId: 'user-pengurus',
+            skNumber: 'SK/1',
+            auditReason: 'alasan audit yang panjang',
+            plhUserId: 'user-delegate',
+            plhRoleCode: 'YAYASAN_ANGGOTA',
+          },
+          'issuer-pengawas',
+          'YAYASAN_PENGAWAS'
+        )
+      ).rejects.toMatchObject({ statusCode: 400, code: 'BAD_REQUEST' });
+    });
+
+    it('aborts when a named Plh role no longer exists (fail closed, not a silent no-grant)', async () => {
+      // The old `if (role) { … }` skipped the grant but still created the
+      // suspension with plh metadata — a deactivated target and no replacement.
+      (prisma.user.findUnique as any)
+        .mockResolvedValueOnce({
+          id: 'user-pengurus',
+          isActive: true,
+          deletedAt: null,
+          userRoles: [{ isActive: true, expiresAt: null, role: { code: 'YAYASAN_KETUA' } }],
+        })
+        .mockResolvedValueOnce({
+          id: 'user-delegate',
+          isActive: true,
+          deletedAt: null,
+          userRoles: [{ role: { code: 'YAYASAN_SEKRETARIS' } }],
+        })
+        .mockResolvedValueOnce({
+          isActive: true,
+          accountStateWriter: null,
+          userRoles: [{ isActive: true, expiresAt: null, role: { code: 'YAYASAN_KETUA' } }],
+        });
+      (prisma.boardMemberSuspension.findFirst as any).mockResolvedValue(null);
+      (prisma.$queryRaw as any).mockResolvedValue([{ is_active: true, deleted_at: null }]);
+      (prisma.userRoleAssignment.findMany as any).mockResolvedValue([]);
+      (prisma.role.findFirst as any).mockResolvedValue(null);
+
+      await expect(
+        boardSuspensionService.suspendBoardMember(
+          {
+            userId: 'user-pengurus',
+            skNumber: 'SK/1',
+            auditReason: 'alasan audit yang panjang',
+            plhUserId: 'user-delegate',
+            plhRoleCode: 'YAYASAN_ANGGOTA',
+          },
+          'issuer-pengawas',
+          'YAYASAN_PENGAWAS'
+        )
+      ).rejects.toMatchObject({ statusCode: 400 });
+
+      expect(prisma.boardMemberSuspension.create).not.toHaveBeenCalled();
+      expect(prisma.userRoleAssignment.create).not.toHaveBeenCalled();
+      expect(prisma.refreshToken.deleteMany).not.toHaveBeenCalled();
+      expect(prisma.userSigningKey.updateMany).not.toHaveBeenCalled();
     });
   });
 });

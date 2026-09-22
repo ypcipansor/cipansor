@@ -14,8 +14,12 @@
 
 import {
   ADMIN_ROLE_CODES,
+  ALUMNI_ROLE_CODES,
+  KOMITE_ROLE_CODES,
+  PARENT_ROLE_CODES,
   PESANTREN_LEADER_ROLE_CODES,
   PRINCIPAL_ROLE_CODES,
+  STUDENT_ROLE_CODES,
 } from "../roles";
 
 export const WBS_CATEGORIES = [
@@ -92,6 +96,49 @@ export const PLH_ROLE_CODES = [
 ] as const;
 
 export type PlhRoleCode = (typeof PLH_ROLE_CODES)[number];
+
+/**
+ * Roles that may NEVER stand in as Plh/Plt, because granting a Pengurus role to
+ * their holder would break the yayasan's organ separation.
+ *
+ * The three organs of a yayasan are mutually exclusive (UU 16/2001 jo. UU
+ * 28/2004 Pasal 29; enforced in `apps/api/src/utils/role-eligibility.ts` and by
+ * the `trg_yayasan_organ_exclusive` database trigger). A Plh grant *is* a
+ * Pengurus role, so the delegate must not already hold Pembina or Pengawas —
+ * the insert/update would raise `check_violation` (23514) and the suspension
+ * would fail as an internal error, after the account had already been switched
+ * off in the same transaction.
+ *
+ * The list is the union of the two non-Pengurus organs (Pembina, Pengawas), the
+ * system administrator (whose authority is never delegated through an oversight
+ * SK) and the external roles (students, parents, committee, alumni) that cannot
+ * hold a foundation office at all. This is the source of truth for all three
+ * consumers — the candidate query, the service preflight/transactional check and
+ * the web picker — so the picker cannot offer someone the service would reject.
+ */
+export const PLH_INELIGIBLE_ROLE_CODES: readonly string[] = [
+  // Pembina and Pengawas: the organ-exclusivity rule made explicit.
+  "YAYASAN_PEMBINA",
+  "YAYASAN_PENGAWAS",
+  // The system administrator, never a Pengurus stand-in.
+  "SUPER_ADMIN",
+  // External roles with no foundation office.
+  ...STUDENT_ROLE_CODES,
+  ...PARENT_ROLE_CODES,
+  ...KOMITE_ROLE_CODES,
+  ...ALUMNI_ROLE_CODES,
+];
+
+/**
+ * True when an account holding exactly `roleCodes` may serve as Plh/Plt.
+ *
+ * The delegate must hold no ineligible role *and* must not be blocked by the
+ * organ-exclusivity rule. Holding an existing Pengurus role is fine — that is
+ * the same organ the grant belongs to.
+ */
+export function isPlhEligible(roleCodes: readonly string[]): boolean {
+  return !roleCodes.some((code) => PLH_INELIGIBLE_ROLE_CODES.includes(code));
+}
 
 /**
  * The roles a WBS report may be forwarded to.
@@ -400,6 +447,14 @@ export interface PengawasanCandidateDto {
   email: string;
   roleCodes: string[];
   unit: { id: string; name: string } | null;
+  /**
+   * Whether this account may serve as Plh/Plt, resolved by the server from
+   * {@link isPlhEligible}. The suspension picker filters on this rather than
+   * re-deriving the rule from `roleCodes`, so the list it shows and the check
+   * the service enforces cannot drift apart. Always `true` for entries from the
+   * *suspendable* picker, where eligibility is a different question.
+   */
+  plhEligible: boolean;
 }
 
 /**
