@@ -459,6 +459,14 @@ interface CertificateNumber {
  * tied to `type`, `unitCode` and the current month, changing only when one of
  * those genuinely changes.
  *
+ * `value` reports the minted number only while it belongs to the `type`/
+ * `unitCode` passed in *this* render. An identity change is not visible to
+ * render until the re-render it triggers, and the mint effect that draws the
+ * new number runs after that render commits — so for one render the old number
+ * would otherwise still be truthy. During that window `value` is `null`
+ * (pending), which is exactly what the page gates printing on, so a new
+ * template can never be printed under the previous identity's number.
+ *
  * The month is part of the identity because the number embeds a `YYYYMM`
  * segment: a page left open across midnight on the last day of a month would
  * otherwise keep issuing a number stamped with the old month. One self-arming
@@ -474,10 +482,18 @@ export function useCertificateNumber(
   type: CertificateType,
   unitCode: string = "CPN",
 ): CertificateNumber {
-  const [value, setValue] = useState<string | null>(null);
-  // The bucket the current `value` was minted in, so a rollover is detected by
-  // comparison rather than by reading a second piece of state.
+  // `value` is paired with the identity it was minted for, so render can tell
+  // whether it belongs to the `type`/`unitCode` currently in flight. Both are
+  // state — not a ref — because reading a ref during render is disallowed.
+  const [minted, setMinted] = useState<{
+    value: string | null;
+    identity: string | null;
+  }>({ value: null, identity: null });
+  // The bucket the current value was minted in, so a rollover is detected by
+  // comparison rather than by reading a second piece of state. Read only from
+  // effects, so a ref is safe here.
   const monthBucketRef = useRef(currentMonthBucket());
+  const identity = `${type}\u0000${unitCode}`;
 
   // Mint the initial number after mount. Reading the clock and the random
   // source here (not during render) is what removes the divergence.
@@ -487,8 +503,8 @@ export function useCertificateNumber(
   // discarded, because the first cleanup also tore down its rollover timer.
   useEffect(() => {
     monthBucketRef.current = currentMonthBucket();
-    setValue(generateCertificateNumber(type, unitCode));
-  }, [type, unitCode]);
+    setMinted({ value: generateCertificateNumber(type, unitCode), identity });
+  }, [type, unitCode, identity]);
 
   useEffect(() => {
     // A chain that has already fired can still be queued when the identity
@@ -497,36 +513,47 @@ export function useCertificateNumber(
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
     const arm = () => {
-      timer = setTimeout(() => {
-        if (cancelled) return;
-        const next = currentMonthBucket();
-        if (monthBucketRef.current !== next) {
-          monthBucketRef.current = next;
-          // Re-mint so the displayed number carries the new `YYYYMM` segment;
-          // this runs only at a real boundary, not on unrelated re-renders.
-          setValue(generateCertificateNumber(type, unitCode));
-        }
-        // Same bucket after an early (clamped) wake-up: keep the value, but
-        // re-arm so the real boundary is still reached.
-        arm();
-      }, Math.min(msUntilNextMonth(), MAX_TIMEOUT_MS));
+      timer = setTimeout(
+        () => {
+          if (cancelled) return;
+          const next = currentMonthBucket();
+          if (monthBucketRef.current !== next) {
+            monthBucketRef.current = next;
+            // Re-mint so the displayed number carries the new `YYYYMM` segment;
+            // this runs only at a real boundary, not on unrelated re-renders.
+            setMinted({
+              value: generateCertificateNumber(type, unitCode),
+              identity,
+            });
+          }
+          // Same bucket after an early (clamped) wake-up: keep the value, but
+          // re-arm so the real boundary is still reached.
+          arm();
+        },
+        Math.min(msUntilNextMonth(), MAX_TIMEOUT_MS),
+      );
     };
     arm();
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-    // `type`/`unitCode` re-arm the chain on an identity change (the ref is
-    // re-aligned by the mint effect above); the bucket is not a dependency
-    // because the chain re-arms itself.
-  }, [type, unitCode]);
+    // `type`/`unitCode` re-arm the chain on an identity change (the identity
+    // state is re-aligned by the mint effect above); the bucket is not a
+    // dependency because the chain re-arms itself.
+  }, [type, unitCode, identity]);
 
-  return useMemo(
-    () => ({
-      value,
+  return useMemo(() => {
+    // `value` is only offered once it was minted for the identity in flight.
+    // On the render after an identity change the stored identity still names
+    // the old pair, so this reports `null` (pending) instead of the stale
+    // number; the mint effect then stamps the new identity. Any value minted
+    // for a different identity is hidden, never printed.
+    const current = minted.identity === identity ? minted.value : null;
+    return {
+      value: current,
       // Derived from the value itself, so the two can never disagree.
-      monthBucket: value === null ? null : value.split("/")[2],
-    }),
-    [value],
-  );
+      monthBucket: current === null ? null : current.split("/")[2],
+    };
+  }, [minted, identity]);
 }

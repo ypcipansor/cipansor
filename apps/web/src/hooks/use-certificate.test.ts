@@ -454,4 +454,129 @@ describe("useCertificateNumber", () => {
     expect(text("preview")).toBe(preview);
     expect(text("printed")).toBe(preview);
   });
+
+  it("never reports the previous identity's number as ready after the identity changes", () => {
+    mockSamples(4, 8);
+    const renders: Array<{ type: "SANAD" | "TAHFIDZ"; value: string | null }> =
+      [];
+
+    const { rerender } = renderHook(
+      ({ type }: { type: "SANAD" | "TAHFIDZ" }) => {
+        const { value } = useCertificateNumber(type, "CPN");
+        // Record *every* render, including the synchronous one React performs
+        // the instant the props change and before the mint effect flushes.
+        renders.push({ type, value });
+        return value;
+      },
+      { initialProps: { type: "SANAD" as "SANAD" | "TAHFIDZ" } },
+    );
+
+    const first = renders[renders.length - 1].value;
+    expect(first).toMatch(CERTIFICATE_NUMBER_PATTERN);
+    expect(first).toContain("/SAN/");
+
+    renders.length = 0;
+    rerender({ type: "TAHFIDZ" });
+
+    const newIdentityRenders = renders.filter((r) => r.type === "TAHFIDZ");
+    expect(newIdentityRenders.length).toBeGreaterThan(0);
+
+    // The page derives `numberReady` exactly as `value !== null`, so every
+    // render for the new identity must either be pending or carry a number
+    // minted for that identity. A stale `value` here is what let a new
+    // template print under the old number.
+    for (const render of newIdentityRenders) {
+      if (render.value !== null) {
+        expect(render.value).toContain("/TAH/");
+        expect(render.value).not.toBe(first);
+      }
+    }
+  });
+
+  it("the page never pairs a template with a number minted for another identity", () => {
+    mockSamples(4, 8);
+    const frames: Array<{
+      template: "SANAD" | "TAHFIDZ";
+      number: string | null;
+    }> = [];
+
+    // Mirrors the render body of `apps/web/src/app/students/certificates/page.tsx`:
+    // the same hook value labels the template *and* the printed number, so a
+    // stale value would be printed beside the new template.
+    function Page({ type }: { type: "SANAD" | "TAHFIDZ" }) {
+      const { value } = useCertificateNumber(type, "CPN");
+      frames.push({ template: type, number: value });
+      return createElement(
+        "span",
+        { "data-label": "certificate" },
+        `${type}:${value ?? PENDING_CERTIFICATE_NUMBER}`,
+      );
+    }
+
+    const { rerender } = render(
+      createElement(Page, { type: "SANAD" as const }),
+    );
+    expect(frames[frames.length - 1].number).toContain("/SAN/");
+
+    frames.length = 0;
+    rerender(createElement(Page, { type: "TAHFIDZ" as const }));
+
+    for (const frame of frames) {
+      if (frame.number !== null) {
+        expect(frame.number).toContain(`/${frame.template.substring(0, 3)}/`);
+      }
+    }
+  });
+
+  it("disables printing the new template until the new identity's number exists", () => {
+    mockSamples(4, 8);
+    const frames: Array<{
+      template: "SANAD" | "TAHFIDZ";
+      printDisabled: boolean;
+      shown: string;
+    }> = [];
+
+    // Mirrors `page.tsx`: `numberReady = value !== null` gates the print
+    // button, and the preview/print subtree renders `value`. A stale value
+    // would both label the new template and leave the button enabled.
+    function Page({ type }: { type: "SANAD" | "TAHFIDZ" }) {
+      const { value } = useCertificateNumber(type, "CPN");
+      const numberReady = value !== null;
+      frames.push({
+        template: type,
+        printDisabled: !numberReady,
+        shown: numberReady ? value! : PENDING_CERTIFICATE_NUMBER,
+      });
+      return createElement(
+        "button",
+        { "data-label": "print", disabled: !numberReady },
+        "print",
+      );
+    }
+
+    const { rerender } = render(
+      createElement(Page, { type: "SANAD" as const }),
+    );
+    expect(frames[frames.length - 1].shown).toContain("/SAN/");
+
+    frames.length = 0;
+    rerender(createElement(Page, { type: "TAHFIDZ" as const }));
+
+    // Every render for the new template either shows the placeholder with
+    // printing disabled, or shows a TAH number with printing enabled — never a
+    // SAN number, and never print enabled with the placeholder or the old
+    // number.
+    expect(frames.length).toBeGreaterThan(0);
+    const firstFrame = frames[0];
+    expect(firstFrame.printDisabled).toBe(true);
+    expect(firstFrame.shown).toBe(PENDING_CERTIFICATE_NUMBER);
+    for (const frame of frames) {
+      expect(frame.shown).not.toContain("/SAN/");
+      if (frame.printDisabled) {
+        expect(frame.shown).toBe(PENDING_CERTIFICATE_NUMBER);
+      } else {
+        expect(frame.shown).toContain("/TAH/");
+      }
+    }
+  });
 });
