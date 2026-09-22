@@ -150,6 +150,17 @@ export function describeEmailTransport(): EmailTransportStatus {
  * rounds of an O(n) scan is quadratic. Both strip passes below build the same
  * fixed point in a single left-to-right stack scan instead, which is O(n).
  *
+ * The destructive passes are NOT independent, so applying them one after the
+ * other is not enough. Removing a `<head>` fragment can fuse `<sty` with a
+ * later `le>` into a fresh `<style>` opener, and vice versa; if the `style` pass
+ * has already run, that new element is never processed and its contents leak
+ * into the plain-text body (`<sty<head>h</head>le>css</style>` -> `css`). The
+ * two element patterns are therefore stripped by a SINGLE interleaved scan
+ * (`stripHiddenElements`) that reaches the joint fixed point of both passes at
+ * once, rather than a local fixed point per pass. The generic tag strip that
+ * follows cannot re-introduce `<` or `>` — it only deletes — so no later pass
+ * can re-open the hole the element scan just closed.
+ *
  * Every pass is a hand-written left-to-right scan, not a regex: a `<...>` body
  * is bounded by the next `<`, and each character is visited a constant number
  * of times. The `<style>`/`<head>` and generic patterns used to be regexes that
@@ -161,8 +172,7 @@ export function describeEmailTransport(): EmailTransportStatus {
  * inert only while the consumer does not re-embed it as HTML without escaping.
  */
 export function htmlToText(html: string): string {
-  let text = stripElement(html, 'style');
-  text = stripElement(text, 'head');
+  let text = stripHiddenElements(html);
   text = text.replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|tr|h1|h2|h3|li)>/gi, '\n');
   text = stripTags(text);
 
@@ -188,36 +198,62 @@ function endsWith(out: string[], pattern: string): boolean {
 }
 
 /**
- * Remove `<name …> … </name>` runs (contents included) to a fixed point, in one
- * linear stack scan.
+ * Remove `<style>`/`<head>` elements (contents included) to the JOINT fixed
+ * point of both, in one linear interleaved scan.
  *
- * The reference behaviour (`/<name[\s\S]*?<\/name>/gi` re-applied until the
- * string stops changing) deletes, on its first pass, the earliest open plus the
- * *first* close after it, then repeats. That fixed point is the greedy rule:
- * whenever a close arrives while an open is unmatched, delete from the
- * *earliest* unmatched open through the close. Retiring the whole unmatched run
- * at once is safe because every open after the earliest is either swallowed by
- * the same truncation or would only be matched by a later close that has not
- * been reached yet, so one truncation reaches the same state the next pass
- * would — no re-scan, no per-layer pass.
+ * The two element passes are not independent. A `</head>` removal can fuse an
+ * earlier `<sty` with a later `le>` into a fresh `<style` opener, and a
+ * `</style>` removal can do the mirror image for `head`; a sequential
+ * `stripElement(x,'style')` then `stripElement(x,'head')` leaves that freshly
+ * formed element — and the text it hides — in the output.
  *
- * The open token is the literal `<name` (no `>` required, no name boundary),
- * matching the lazy regex; an open with no later close is no match and is left
- * for the generic tag strip. Amortised linear: a character is pushed once and
- * dropped at most once.
+ * One scan sees every such fusion as it happens, because it only ever looks at
+ * the *current tail* of the growing output. Detection and deletion are the
+ * element passes' own greedy rules, applied per pattern:
+ *
+ *   - An opener is the literal `<name` (no `>` needed), tracked by that
+ *     pattern's earliest still-unmatched position.
+ *   - When a close arrives while its pattern has an unmatched opener, delete
+ *     from that earliest opener through the close. Every opener at or after it
+ *     — of EITHER pattern, since all sit inside the deleted span — is retired
+ *     too. Because each pattern's earliest unmatched opener is always the one
+ *     that would fire next, this is exactly what re-applying the two passes to
+ *     a shared fixed point would do, but without rescanning: a character is
+ *     appended once and dropped at most once, so the scan is O(n).
+ *
+ * This is order-independent by construction: the earliest pending opener across
+ * the live tail determines each truncation regardless of which pass you imagine
+ * running. A pattern with an opener but no close is left for the generic tag
+ * strip, and input stutters near an already-deleted prefix (detection is
+ * tail-based, deletion is global) are normalised by that strip, which cannot
+ * re-create `<` or `>`.
  */
-function stripElement(text: string, tagName: string): string {
-  const open = `<${tagName}`.toLowerCase();
-  const close = `</${tagName}>`.toLowerCase();
+function stripHiddenElements(text: string): string {
+  const patterns = ['style', 'head'].map((name) => ({
+    open: `<${name}`.toLowerCase(),
+    close: `</${name}>`.toLowerCase(),
+  }));
   const out: string[] = [];
-  let openStart = -1;
+  const openStart: number[] = patterns.map(() => -1);
 
   for (let i = 0; i < text.length; i++) {
     out.push(text[i]);
-    if (openStart === -1 && endsWith(out, open)) openStart = out.length - open.length;
-    if (openStart !== -1 && endsWith(out, close)) {
-      out.length = openStart;
-      openStart = -1;
+
+    for (let p = 0; p < patterns.length; p++) {
+      if (openStart[p] === -1 && endsWith(out, patterns[p].open)) {
+        openStart[p] = out.length - patterns[p].open.length;
+      }
+    }
+
+    for (let p = 0; p < patterns.length; p++) {
+      if (openStart[p] !== -1 && endsWith(out, patterns[p].close)) {
+        const start = openStart[p];
+        out.length = start;
+        for (let q = 0; q < patterns.length; q++) {
+          if (openStart[q] >= start) openStart[q] = -1;
+        }
+        break;
+      }
     }
   }
 

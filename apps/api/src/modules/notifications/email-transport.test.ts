@@ -340,6 +340,65 @@ describe('htmlToText', () => {
       expect(htmlToText('<st<style>X</style>y<style>Y</style>le>Z</style>')).toBe('');
     });
 
+    it('does not leak a style element that removing a head element fuses into being', () => {
+      // Regression for code scanning alert 27's class on the SECOND element
+      // pass. `htmlToText` strips `style` before `head`; removing `<head>h</head>`
+      // from the middle of this input fuses the surrounding `<sty` and `le>`
+      // into a fresh `<style>` opener that the finished `style` pass never sees,
+      // so its contents (`css`) leaked into the plain-text body. The joint
+      // element scan consumes it in the same pass.
+      const html = '<sty<head>h</head>le>css</style>';
+      const text = htmlToText(html);
+
+      expect(text).toBe('');
+      expect(text).not.toMatch(/<\/?(style|head)/i);
+      expect(text).not.toContain('css');
+      // An opener with no matching close is not an element, so only the tag
+      // goes and the trailing text stays visible — the old behaviour here.
+      expect(htmlToText('<sty<head>h</head>le>css')).toBe('css');
+    });
+
+    it('does not leak a head element that removing a style element fuses into being', () => {
+      // The mirror image, and the direction that would be missed if the passes
+      // were merely reordered: deleting `<style>…</style>` fuses the enclosing
+      // `<hea` and `d>` into a new `<head>`, whose contents (`secret`) must not
+      // survive.
+      const html = '<hea<style>p{color:red}</style>d>secret</head>';
+      const text = htmlToText(html);
+
+      expect(text).toBe('');
+      expect(text).not.toMatch(/<\/?(style|head)/i);
+      expect(text).not.toContain('secret');
+      expect(text).not.toContain('color:red');
+      // No close: not an element, so the text after the fused tag remains.
+      expect(htmlToText('<hea<style>p{color:red}</style>d>secret')).toBe('secret');
+    });
+
+    it('strips fused style/head elements nested several layers deep', () => {
+      // Removing the inner `<head>` and `<style>` fragments re-forms an outer
+      // `<style>` (and a second `<style>` layer) around text that must not
+      // escape. A per-pass fixed point peels one layer per round; the joint
+      // scan removes all of them at once.
+      expect(
+        htmlToText('<sty<head>x</head>le>Y<sty<head>z</head>le>W</style></style>')
+      ).toBe('');
+      expect(htmlToText('<sty<head>x</head>le>Y<sty<head>z</head>le>W</style>')).toBe('');
+      // Text after the fully closed element still comes through.
+      expect(htmlToText('<sty<head>one</head>le>css1</style>after')).toBe('after');
+      expect(htmlToText('<sty<head>one</head>le>css1</style>after')).not.toContain('css1');
+    });
+
+    it('retires a head opener and a style opener when one close spans both', () => {
+      // A `</head>` whose earliest unmatched opener is a `<head`, but which also
+      // encloses a `<style` opener, must retire both patterns' pending opens —
+      // otherwise the swallowed `<style` would later pair with a stale close.
+      const text = htmlToText('<he<head>a</head>ad>secret</head>');
+      expect(text).toBe('');
+      expect(text).not.toMatch(/<\/?(style|head)/i);
+
+      expect(htmlToText('<he<style>a</style>ad>secret</head>')).toBe('');
+    });
+
     it('removes comments, declarations/doctype and processing instructions', () => {
       expect(htmlToText('before<!-- note -->after')).toBe('beforeafter');
       expect(htmlToText('before<!DOCTYPE html>after')).toBe('beforeafter');
@@ -402,16 +461,23 @@ describe('htmlToText', () => {
         for (let i = 1; i < d; i++) s = `<he${s}ad>Y</head>`;
         return s;
       };
+      // Alternating layers: a fused `head` deletion can re-form a `style`
+      // element and vice versa, so the joint element scan must terminate on the
+      // two-way interaction too, not just on one pattern's own layering.
+      const interLayer = (d: number): string => {
+        let s = '<style>Z</style>';
+        for (let i = 1; i < d; i++) s = i % 2 ? `<he${s}ad>Y</head>` : `<sty${s}le>Y</style>`;
+        return s;
+      };
 
-      for (const [name, build] of [
-        ['style', styleLayer],
-        ['head', headLayer],
+      for (const [name, build, residue] of [
+        ['style', styleLayer, /<\/?style/i],
+        ['head', headLayer, /<\/?head/i],
+        ['interleaved', interLayer, /<\/?(style|head)/i],
       ] as const) {
         // Correctness: every layer is element markup, so nothing survives.
         expect(htmlToText(build(2000)), `${name} correctness`).toBe('');
-        expect(htmlToText(build(2000)), `${name} residue`).not.toMatch(
-          new RegExp(`</?${name}`, 'i')
-        );
+        expect(htmlToText(build(2000)), `${name} residue`).not.toMatch(residue);
 
         // Complexity: doubling the depth must not quadruple the time.
         const timed = (d: number): number => {
