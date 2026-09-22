@@ -10,7 +10,11 @@ vi.mock('@/lib/prisma', () => ({
 
 import { prisma } from '@/lib/prisma';
 import { ApiError } from '@/middleware/error';
-import { MAX_BULK_CREATE_RECORDS } from '../sanad-certificate.schema';
+import {
+  MIN_BULK_CREATE_RECORDS,
+  MAX_BULK_CREATE_RECORDS,
+  bulkCreateSanadSchema,
+} from '../sanad-certificate.schema';
 import { bulkCreateSanadRecords, createSanadRecord } from '../sanad-certificate.service';
 
 const db = prisma as unknown as {
@@ -50,6 +54,25 @@ describe('bulkCreateSanadRecords', () => {
     const result = await bulkCreateSanadRecords(input(MAX_BULK_CREATE_RECORDS), context);
 
     expect(result.success).toBe(MAX_BULK_CREATE_RECORDS);
+    expect(result.failed).toBe(0);
+  });
+
+  it('rejects an empty array with a 400 instead of reporting a no-op success', async () => {
+    // Regression: `records: []` used to skip the loop and return
+    // `{ success: 0, failed: 0 }` as a 201 — a success response for a request
+    // that created nothing. The schema requires at least one record, so the
+    // service must refuse an empty payload too.
+    const promise = bulkCreateSanadRecords(input(0), context);
+
+    await expect(promise).rejects.toBeInstanceOf(ApiError);
+    await expect(promise).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    expect(db.sanadRecord.create).not.toHaveBeenCalled();
+  });
+
+  it('accepts exactly one record (the minimum)', async () => {
+    const result = await bulkCreateSanadRecords(input(MIN_BULK_CREATE_RECORDS), context);
+
+    expect(result.success).toBe(MIN_BULK_CREATE_RECORDS);
     expect(result.failed).toBe(0);
   });
 
@@ -99,6 +122,22 @@ describe('schema/service limit alignment', () => {
     const promise = bulkCreateSanadRecords(input(MAX_BULK_CREATE_RECORDS + 1), context);
     await expect(promise).rejects.toMatchObject({
       message: expect.stringContaining(String(MAX_BULK_CREATE_RECORDS)),
+    });
+  });
+
+  it('shares the minimum between schema and service', async () => {
+    // Both sides must refuse the same empty payload: the schema because Zod
+    // rejects it, the service because an internal caller can skip Zod.
+    expect(bulkCreateSanadSchema.safeParse({ records: [] }).success).toBe(false);
+
+    const empty = { records: [] } as unknown as Parameters<
+      typeof bulkCreateSanadRecords
+    >[0];
+    await expect(bulkCreateSanadRecords(empty, context)).rejects.toMatchObject({
+      code: 'BAD_REQUEST',
+    });
+    await expect(bulkCreateSanadRecords(empty, context)).rejects.toMatchObject({
+      message: expect.stringContaining(String(MIN_BULK_CREATE_RECORDS)),
     });
   });
 

@@ -10,7 +10,11 @@ import type {
   BulkCreateSanadInput,
   SanadGrade,
 } from './sanad-certificate.schema';
-import { GRADE_LABELS, MAX_BULK_CREATE_RECORDS } from './sanad-certificate.schema';
+import {
+  GRADE_LABELS,
+  MIN_BULK_CREATE_RECORDS,
+  MAX_BULK_CREATE_RECORDS,
+} from './sanad-certificate.schema';
 import { certificateVerificationUrl } from '@/utils/verification-url';
 import { Errors } from '@/middleware/error';
 
@@ -288,6 +292,12 @@ export async function bulkCreateSanadRecords(
 
   if (!Array.isArray(input.records)) {
     throw Errors.badRequest('Invalid records payload');
+  }
+
+  if (input.records.length < MIN_BULK_CREATE_RECORDS) {
+    throw Errors.badRequest(
+      `At least ${MIN_BULK_CREATE_RECORDS} record is required`
+    );
   }
 
   if (input.records.length > MAX_BULK_CREATE_RECORDS) {

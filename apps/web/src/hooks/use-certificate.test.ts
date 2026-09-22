@@ -579,4 +579,103 @@ describe("useCertificateNumber", () => {
       }
     }
   });
+
+  it("changes the number when the identity key changes, even for the same type and unit", () => {
+    // Regression: the identity used to be `${type}\0${unitCode}` only. Two
+    // students receiving the same certificate type share both, so selecting a
+    // different student reused the number displayed for the previous one.
+    mockSamples(4, 8);
+    const { result, rerender } = renderHook(
+      ({ studentId }: { studentId: string }) =>
+        useCertificateNumber("SANAD", "CPN", studentId),
+      { initialProps: { studentId: "student-a" } },
+    );
+
+    const first = result.current.value;
+    expect(first).toMatch(CERTIFICATE_NUMBER_PATTERN);
+
+    rerender({ studentId: "student-b" });
+
+    expect(result.current.value).not.toBe(first);
+    expect(result.current.value).toMatch(CERTIFICATE_NUMBER_PATTERN);
+  });
+
+  it("keeps the number stable across re-renders when only the identity key is repeated", () => {
+    const spy = mockSamples(4, 8, 12);
+    const { result, rerender } = renderHook(
+      ({ studentId }: { studentId: string }) =>
+        useCertificateNumber("SANAD", "CPN", studentId),
+      { initialProps: { studentId: "student-a" } },
+    );
+
+    const first = result.current.value;
+    rerender({ studentId: "student-a" });
+    rerender({ studentId: "student-a" });
+
+    expect(result.current.value).toBe(first);
+    // One sample consumed: an unrelated re-render must not mint.
+    expect(spy.mock.calls.length).toBe(1);
+  });
+
+  it("scopes the number to the identity key, so a different student mints a fresh number", () => {
+    // Two students, same type and unit: only the identity key separates them.
+    // `mockSamples` pins the random sequence, so a shared identity would also
+    // share the number — the assertion is not satisfied by randomness alone.
+    mockSamples(4, 8);
+    const { result, rerender } = renderHook(
+      ({ studentId }: { studentId: string }) =>
+        useCertificateNumber("SANAD", "CPN", studentId),
+      { initialProps: { studentId: "student-a" } },
+    );
+    const studentA = result.current.value;
+    expect(studentA).toContain("/0004");
+
+    rerender({ studentId: "student-b" });
+    expect(result.current.value).toContain("/0008");
+    expect(result.current.value).not.toBe(studentA);
+  });
+
+  it("never exposes the previous student's number on the first render for a new student", () => {
+    mockSamples(4, 8, 12);
+    const frames: Array<{
+      student: string;
+      type: "SANAD";
+      value: string | null;
+    }> = [];
+
+    // Mirrors the render body of `page.tsx`: the hook result labels the
+    // document, and the page passes `selectedStudent?.id` as the identity.
+    const { rerender } = renderHook(
+      ({ studentId }: { studentId: string }) => {
+        const { value } = useCertificateNumber("SANAD", "CPN", studentId);
+        // Record *every* render, including the synchronous one React performs
+        // the instant the student changes and before the mint effect flushes.
+        frames.push({ student: studentId, type: "SANAD", value });
+        return value;
+      },
+      { initialProps: { studentId: "student-a" } },
+    );
+
+    const first = frames[frames.length - 1].value;
+    expect(first).toMatch(CERTIFICATE_NUMBER_PATTERN);
+
+    frames.length = 0;
+    rerender({ studentId: "student-b" });
+
+    const newStudentFrames = frames.filter((f) => f.student === "student-b");
+    expect(newStudentFrames.length).toBeGreaterThan(0);
+
+    // The first frame for the new student must be pending: the page gates
+    // printing on `value !== null`, so a stale value here is exactly what let
+    // student A's number be printed for student B.
+    expect(newStudentFrames[0].value).toBeNull();
+    for (const frame of newStudentFrames) {
+      // No frame may ever carry student A's number for student B.
+      expect(frame.value).not.toBe(first);
+      if (frame.value !== null) {
+        expect(frame.value).toMatch(CERTIFICATE_NUMBER_PATTERN);
+        expect(frame.value).not.toBe(first);
+      }
+    }
+  });
 });

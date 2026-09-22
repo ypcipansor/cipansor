@@ -456,16 +456,23 @@ interface CertificateNumber {
  *
  * The initial state is therefore `null` on both server and client, so the two
  * renders agree; the number is minted from an effect once mounted, and then
- * tied to `type`, `unitCode` and the current month, changing only when one of
- * those genuinely changes.
+ * tied to `type`, `unitCode`, `identityKey` and the current month, changing
+ * only when one of those genuinely changes.
  *
- * `value` reports the minted number only while it belongs to the `type`/
- * `unitCode` passed in *this* render. An identity change is not visible to
- * render until the re-render it triggers, and the mint effect that draws the
- * new number runs after that render commits — so for one render the old number
- * would otherwise still be truthy. During that window `value` is `null`
- * (pending), which is exactly what the page gates printing on, so a new
- * template can never be printed under the previous identity's number.
+ * `identityKey` is the caller's stable identifier for whatever the number
+ * belongs to (the page passes the student id). `type`/`unitCode` alone do not
+ * identify a *document*: two students receiving the same certificate type share
+ * both, so without the key, selecting a different student would reuse the
+ * number minted for the previous one. Pass the student id, never the display
+ * name — a name is neither stable nor unique.
+ *
+ * `value` reports the minted number only while it belongs to the identity
+ * passed in *this* render. An identity change is not visible to render until
+ * the re-render it triggers, and the mint effect that draws the new number runs
+ * after that render commits — so for one render the old number would otherwise
+ * still be truthy. During that window `value` is `null` (pending), which is
+ * exactly what the page gates printing on, so a new student/template can never
+ * be printed under the previous identity's number.
  *
  * The month is part of the identity because the number embeds a `YYYYMM`
  * segment: a page left open across midnight on the last day of a month would
@@ -481,10 +488,12 @@ interface CertificateNumber {
 export function useCertificateNumber(
   type: CertificateType,
   unitCode: string = "CPN",
+  identityKey: string = "",
 ): CertificateNumber {
   // `value` is paired with the identity it was minted for, so render can tell
-  // whether it belongs to the `type`/`unitCode` currently in flight. Both are
-  // state — not a ref — because reading a ref during render is disallowed.
+  // whether it belongs to the `type`/`unitCode`/`identityKey` currently in
+  // flight. Both are state — not a ref — because reading a ref during render is
+  // disallowed.
   const [minted, setMinted] = useState<{
     value: string | null;
     identity: string | null;
@@ -493,7 +502,7 @@ export function useCertificateNumber(
   // comparison rather than by reading a second piece of state. Read only from
   // effects, so a ref is safe here.
   const monthBucketRef = useRef(currentMonthBucket());
-  const identity = `${type}\u0000${unitCode}`;
+  const identity = `${type}\u0000${unitCode}\u0000${identityKey}`;
 
   // Mint the initial number after mount. Reading the clock and the random
   // source here (not during render) is what removes the divergence.
@@ -538,9 +547,9 @@ export function useCertificateNumber(
       cancelled = true;
       clearTimeout(timer);
     };
-    // `type`/`unitCode` re-arm the chain on an identity change (the identity
-    // state is re-aligned by the mint effect above); the bucket is not a
-    // dependency because the chain re-arms itself.
+    // `type`/`unitCode`/`identity` re-arm the chain on an identity change (the
+    // identity state is re-aligned by the mint effect above); the bucket is not
+    // a dependency because the chain re-arms itself.
   }, [type, unitCode, identity]);
 
   return useMemo(() => {

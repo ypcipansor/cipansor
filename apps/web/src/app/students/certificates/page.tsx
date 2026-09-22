@@ -105,6 +105,7 @@ export default function CertificateGeneratorPage() {
   const { value: certificateNumber } = useCertificateNumber(
     formData.type,
     "CPN",
+    selectedStudent?.id ?? "",
   );
   const numberReady = certificateNumber !== null;
 
@@ -647,18 +648,29 @@ export default function CertificateGeneratorPage() {
           <TabsContent value="select-type" className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <FileText className="h-5 w-5" />
-                  Pilih Jenis Sertifikat
-                </CardTitle>
-                <CardDescription>
-                  {selectedStudent && (
-                    <span>
-                      Untuk: <strong>{selectedStudent.name}</strong> (
-                      {selectedStudent.nis})
-                    </span>
-                  )}
-                </CardDescription>
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <FileText className="h-5 w-5" />
+                      Pilih Jenis Sertifikat
+                    </CardTitle>
+                    <CardDescription>
+                      {selectedStudent && (
+                        <span>
+                          Untuk: <strong>{selectedStudent.name}</strong> (
+                          {selectedStudent.nis})
+                        </span>
+                      )}
+                    </CardDescription>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setActiveTab("select-student")}
+                  >
+                    Ganti Siswa
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

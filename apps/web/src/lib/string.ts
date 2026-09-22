@@ -106,175 +106,163 @@ export function slugify(str: string): string {
  * neighbours into a new one (`<<script>script>` -> `<script>`). Entities are
  * left alone, so `a &lt; b` stays `a &lt; b`.
  *
- * The scan is a hand-written left-to-right pass, not a regex. Every character
- * is consumed once and no alternative backtracks, so the cost is linear in the
- * input length. The regexes this replaced were polynomial: the generic
- * `<[^>]*>` body rescanned to end-of-string from every unmatched `<`, and
- * `<!--(?:[^-]|-(?!->))*-->` restarted its body scan at every `<!--`; both are
- * gone (code scanning alert 49).
+ * The scan is a single left-to-right pass that never re-reads a dropped
+ * character, so the cost is linear in the input length. That is the fix for
+ * code scanning alert 49 and for the quadratic re-strip the alert-27 fix first
+ * introduced: the earlier `stripMarkupToFixedPoint` looped `stripMarkupOnce`
+ * until the string stopped changing, and stacked tag fragments such as
+ * `"<a".repeat(n) + ">".repeat(n)` took one round per layer and therefore O(n²)
+ * time. Here one `>` drops the whole `<a…>` run in one move.
  *
  * The result is text, not HTML-safe markup. Do not interpolate it into HTML
  * without escaping — call `escapeHtml` at that call site for that.
  */
 export function stripHtml(html: string): string {
   if (!html) return "";
-  return stripMarkupToFixedPoint(html);
+  return stripMarkup(html);
 }
 
 /**
- * One linear pass that drops a tag-shaped run and copies everything else.
+ * Single left-to-right pass that drops markup runs.
  *
- * A run starts at `<` and is one of:
- *   - `<!-- ... -->`  comment
- *   - `<! ... >`      declaration / doctype
- *   - `<? ... ?>`     processing instruction
+ * Runs are recognised by their terminator as it arrives, and the output buffer
+ * doubles as the state machine. Two indexes track, for the output produced so
+ * far, the most recent still-unterminated `<` and `>`; when a terminator
+ * arrives it drops back to the corresponding `<`, which removes the whole run
+ * in one move instead of re-scanning the string. This is what makes the pass
+ * linear and what reaches the fixed point directly: dropping a run can glue its
+ * neighbours into a fresh tag, but that glue is recognised from the output that
+ * is already there, so no second round is needed.
+ *
+ * The run kinds are the ones documented on `stripHtml`:
+ *   - `<!-- ... -->`  comment (may contain `<`), or `<! ... >`
+ *   - `<? ... ?>`     processing instruction (body free of `<`/`>`)
  *   - `</?name ... >` opening/closing element tag (name starts a letter)
- * A `<` that starts none of these is plain text and is copied as-is.
+ * A `<` that starts none of these is plain text.
  */
-function stripMarkupOnce(text: string): string {
-  const parts: string[] = [];
-  const comments: ForwardSearch = { from: -1, found: -1 };
-  let copiedUpTo = 0;
-  let i = 0;
+function stripMarkup(text: string): string {
+  const out: string[] = [];
+  const lessThans: number[] = [];
+  const greaterThans: number[] = [];
+  // Starts of `<!--` runs that are still open in `out` (a fused pair such as
+  // `<scr` + `ipt>` closes an element at the *later* `<`; a fused comment is
+  // closed by the `-->` its neighbours supplied).
+  const openComments: number[] = [];
+  let searchFrom = -1;
+  let searchFound = -1;
 
-  while (i < text.length) {
-    if (text.charCodeAt(i) !== 60 /* < */) {
-      i++;
+  const truncateTo = (size: number): void => {
+    out.length = size;
+    while (lessThans.length && lessThans[lessThans.length - 1] >= size) {
+      lessThans.pop();
+    }
+    while (greaterThans.length && greaterThans[greaterThans.length - 1] >= size) {
+      greaterThans.pop();
+    }
+    while (
+      openComments.length &&
+      openComments[openComments.length - 1] >= size
+    ) {
+      openComments.pop();
+    }
+  };
+
+  // Memoised search for `-->` across the whole pass: the cursor only moves
+  // forward, so a long run of comment starters costs one scan in total.
+  const findCommentClose = (from: number): number => {
+    const stale = searchFrom === -1 || from < searchFrom;
+    const behind = searchFound !== -1 && searchFound < from;
+    if (stale || behind) {
+      searchFrom = from;
+      searchFound = text.indexOf("-->", from);
+    }
+    return searchFound;
+  };
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+
+    if (char === "<") {
+      if (text.startsWith("<!--", i)) {
+        const close = findCommentClose(i + 4);
+        if (close !== -1) {
+          // A comment run started in the source is removed whole, exactly like
+          // the single pass this replaces. Its characters never entered `out`,
+          // so consuming the source range is the whole removal.
+          i = close + 2;
+          continue;
+        }
+        // No `-->`: fall through. `<!-->` (and `<!-- x >`) are still
+        // declaration-shaped and are removed via `<! ... >` below.
+      }
+      lessThans.push(out.length);
+      out.push("<");
       continue;
     }
 
-    const end = tagEnd(text, i, comments);
-    if (end === -1) {
-      // Not markup: leave this `<` in place and keep scanning after it.
-      i++;
+    if (char === ">") {
+      const size = out.length;
+
+      // A fused comment: `--` sits immediately before this `>`.
+      if (
+        size >= 2 &&
+        out[size - 1] === "-" &&
+        out[size - 2] === "-" &&
+        openComments.length
+      ) {
+        const firstDash = size - 2;
+        if (firstDash >= openComments[0] + 4) {
+          truncateTo(openComments[0]);
+          continue;
+        }
+      }
+
+      const openLt = lessThans.length ? lessThans[lessThans.length - 1] : -1;
+      const openGt = greaterThans.length
+        ? greaterThans[greaterThans.length - 1]
+        : -1;
+
+      if (openLt >= 0 && openGt < openLt) {
+        const next = out[openLt + 1];
+        if (next === "?") {
+          // `<? ... ?>`: the `>` only closes it when a `?` precedes it.
+          if (size - 1 >= openLt + 2 && out[size - 1] === "?") {
+            truncateTo(openLt);
+            continue;
+          }
+        } else if (next === "!") {
+          truncateTo(openLt);
+          continue;
+        } else {
+          let nameStart = openLt + 1;
+          if (next === "/") nameStart++;
+          const first = out[nameStart];
+          if (first !== undefined && /[a-z]/i.test(first)) {
+            truncateTo(openLt);
+            continue;
+          }
+        }
+      }
+
+      greaterThans.push(out.length);
+      out.push(">");
       continue;
     }
 
-    parts.push(text.slice(copiedUpTo, i));
-    copiedUpTo = end;
-    i = end;
-  }
-
-  parts.push(text.slice(copiedUpTo));
-  return parts.join("");
-}
-
-/**
- * Memoised forward search for a fixed needle, shared across the `<` positions
- * of one pass.
- *
- * A comment body may contain `<`, so its `-->` search cannot be bounded by the
- * next `<` the way a tag body is. Without memoising, every `<!--` in a long run
- * of comment starters would rescan to end-of-string — quadratic. `from` is the
- * last position searched and `found` its result (or -1). A later caller reuses
- * it when `found` is still ahead of its own search start, or when the earlier
- * search already reached end-of-string and found nothing. Re-searches only
- * happen when `found` fell behind, and then `from` strictly advances, so the
- * total work stays linear.
- */
-interface ForwardSearch {
-  from: number;
-  found: number;
-}
-
-function findForward(
-  text: string,
-  needle: string,
-  searchFrom: number,
-  state: ForwardSearch,
-): number {
-  const stale = state.from === -1 || searchFrom < state.from;
-  const behind = state.found !== -1 && state.found < searchFrom;
-  if (stale || behind) {
-    state.from = searchFrom;
-    state.found = text.indexOf(needle, searchFrom);
-  }
-  return state.found;
-}
-
-/**
- * End index (exclusive) of the markup run starting at `start`, or -1 when the
- * text at `start` does not begin markup. Never scans backwards.
- *
- * A tag body stops at the first `<` as well as its terminator, matching the
- * `[^<>]*` bodies this replaced, so a run can never swallow a second tag. Each
- * scan is bounded by the next `<` or terminator, so the whole pass stays linear.
- */
-function tagEnd(text: string, start: number, comments: ForwardSearch): number {
-  const next = text[start + 1];
-
-  if (next === "!") {
-    if (text.startsWith("<!--", start)) {
-      // Comments may contain `<`, so this one scans to `-->`.
-      const close = findForward(text, "-->", start + 4, comments);
-      if (close !== -1) return close + 3;
-      // No `-->`: fall through. `<!-->` (and `<!-- x >`) are still
-      // declaration-shaped, and the pattern this replaced removed them via
-      // `<! ... >`. An unterminated comment with no `>` stays literal.
+    out.push(char);
+    const size = out.length;
+    if (
+      size >= 4 &&
+      out[size - 1] === "-" &&
+      out[size - 2] === "-" &&
+      out[size - 3] === "!" &&
+      out[size - 4] === "<"
+    ) {
+      openComments.push(size - 4);
     }
-    const close = indexOfBeforeLt(text, start + 2, ">");
-    return close === -1 ? -1 : close + 1;
   }
 
-  if (next === "?") {
-    // `<? ... ?>` — body may not contain `<` or `>` (the committed
-    // `<\?[^<>]*\?>`), so stop at either, not just at `<`.
-    const close = indexOfStoppingAtBrackets(text, start + 2, "?>");
-    return close === -1 ? -1 : close + 2;
-  }
-
-  // `</name ...>` / `<name ...>`; anything else is a literal `<`.
-  let nameStart = start + 1;
-  if (next === "/") nameStart++;
-  const first = text[nameStart];
-  if (first === undefined || !/[a-z]/i.test(first)) return -1;
-
-  const close = indexOfBeforeLt(text, nameStart, ">");
-  return close === -1 ? -1 : close + 1;
-}
-
-/**
- * Index of `target` at or after `from`, or -1 if a `<` comes first. The `<`
- * stop is what keeps a tag body from spanning two tags.
- */
-function indexOfBeforeLt(text: string, from: number, target: string): number {
-  for (let i = from; i < text.length; i++) {
-    if (text[i] === "<") return -1;
-    if (text.startsWith(target, i)) return i;
-  }
-  return -1;
-}
-
-/**
- * Index of `target` at or after `from`, or -1 if a `<` or `>` comes first.
- * Used for `<? ... ?>`, whose body the committed pattern bounded with `[^<>]`.
- */
-function indexOfStoppingAtBrackets(
-  text: string,
-  from: number,
-  target: string,
-): number {
-  for (let i = from; i < text.length; i++) {
-    const ch = text[i];
-    if (ch === "<" || ch === ">") return -1;
-    if (text.startsWith(target, i)) return i;
-  }
-  return -1;
-}
-
-/**
- * Apply `stripMarkupOnce` until the string stops changing. Removing one run can
- * concatenate its neighbours into a new one (`<<script>script>` -> `<script>`),
- * so a single pass is not enough for tag-shaped input. Each round removes at
- * least one character or the string is returned, so the loop terminates.
- */
-function stripMarkupToFixedPoint(text: string): string {
-  let current = text;
-  for (;;) {
-    const next = stripMarkupOnce(current);
-    if (next === current) return current;
-    current = next;
-  }
+  return out.join("");
 }
 
 /**

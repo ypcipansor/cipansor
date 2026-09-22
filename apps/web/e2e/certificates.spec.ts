@@ -147,4 +147,60 @@ test.describe("Generator Sertifikat — stabilitas nomor", () => {
       previewText!,
     );
   });
+
+  test("memilih siswa lain menghasilkan nomor baru, dan preview/print tetap sinkron", async ({
+    page,
+    context,
+  }) => {
+    test.setTimeout(120_000);
+
+    await loginAs(page, "superAdmin");
+    await page.goto("/students/certificates");
+    await waitForLoadingComplete(page);
+
+    const studentCards = page.locator("div.cursor-pointer.rounded-lg.border");
+    // Need at least two seeded students to exercise the transition.
+    await expect(studentCards.nth(1)).toBeVisible({ timeout: 60_000 });
+
+    await studentCards.nth(0).click();
+    await pickTemplate(page, /Ijazah \/ Surat Kelulusan/i);
+
+    const number = await waitForFinalNumber(page);
+    const studentANumber = (await number.textContent())?.trim();
+
+    // Walk back to the type step (the "Ganti Siswa" action lives there), then
+    // pick a *different* student with the same certificate type and unit.
+    // Before the identity fix this reused student A's number.
+    await page.getByRole("button", { name: /^Kembali$/ }).click();
+    await page.getByRole("button", { name: /Ganti Siswa/i }).click();
+    await expect(studentCards.nth(1)).toBeVisible({ timeout: 60_000 });
+    await studentCards.nth(1).click();
+    await pickTemplate(page, /Ijazah \/ Surat Kelulusan/i);
+
+    // BUG GUARD: the first frame for student B must never show student A's
+    // number. `waitForFinalNumber` waits for a final-shaped number, so an
+    // immediate read must not equal A's.
+    const immediate = (await number.textContent())?.trim();
+    expect(immediate).not.toBe(studentANumber);
+
+    const studentBNumber = (await waitForFinalNumber(page)).textContent();
+    const finalB = (await studentBNumber)?.trim();
+    expect(finalB).not.toBe(studentANumber);
+    expect(finalB).toMatch(/^No: [A-Z]+\/[A-Z]{3}\/\d{6}\/\d{4}$/);
+
+    // Preview and print must still agree for student B.
+    await context.addInitScript(() => {
+      window.print = () => {};
+    });
+    const popupPromise = context.waitForEvent("page");
+    await page
+      .getByRole("button", { name: /Cetak Sertifikat/i })
+      .first()
+      .click();
+    const popup = await popupPromise;
+    await popup.waitForLoadState("domcontentloaded");
+    await expect(popup.locator("text=/No: [A-Z]+\\//").first()).toHaveText(
+      finalB!,
+    );
+  });
 });
