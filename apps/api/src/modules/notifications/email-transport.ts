@@ -142,19 +142,25 @@ export function describeEmailTransport(): EmailTransportStatus {
  *     `&lt;code&gt;` becomes the literal text `<code>` rather than being
  *     mistaken for a tag and deleted.
  *
- * Each destructive pattern is re-applied until the string stops changing. A
+ * Each destructive pass is re-applied until the string stops changing. A
  * single pass over `<<script>script>` leaves `<script>` behind, because the
- * regex consumes the inner tag and the two halves join into a new one.
+ * inner tag is consumed and the two halves join into a new one.
+ *
+ * Every pass is a hand-written left-to-right scan, not a regex: a `<...>` body
+ * is bounded by the next `<`, and each character is visited a constant number
+ * of times. The `<style>`/`<head>` and generic patterns used to be regexes that
+ * backtracked quadratically on input such as `<a` repeated (code scanning
+ * alert 49's class), so the whole function is linear in the input length.
  *
  * The result is plain text, NOT HTML-safe markup. A decoded entity can produce
  * a literal `<script>` in the output (e.g. from `&lt;script&gt;`), which is
  * inert only while the consumer does not re-embed it as HTML without escaping.
  */
 export function htmlToText(html: string): string {
-  let text = stripUntilStable(html, /<style[\s\S]*?<\/style>/gi, '');
-  text = stripUntilStable(text, /<head[\s\S]*?<\/head>/gi, '');
+  let text = stripElementToFixedPoint(html, 'style');
+  text = stripElementToFixedPoint(text, 'head');
   text = text.replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|tr|h1|h2|h3|li)>/gi, '\n');
-  text = stripUntilStable(text, /<[^>]*>/g, '');
+  text = stripTagsToFixedPoint(text);
 
   return decodeBasicEntities(text)
     .replace(/[ \t]+/g, ' ')
@@ -163,19 +169,122 @@ export function htmlToText(html: string): string {
 }
 
 /**
- * Apply `pattern` until it stops changing the string.
+ * Apply `transform` until it stops changing the string.
  *
- * The terminating condition is the fixed point, so the loop is bounded by the
- * string shrinking a whole match each round — it cannot spin on input that the
- * pattern matches but does not shorten.
+ * The terminating condition is the fixed point. Each round must remove at least
+ * one character or the string is returned, so the loop cannot spin.
  */
-function stripUntilStable(text: string, pattern: RegExp, replacement: string): string {
+function stripToFixedPoint(text: string, transform: (input: string) => string): string {
   let current = text;
   for (;;) {
-    const next = current.replace(pattern, replacement);
+    const next = transform(current);
     if (next === current) return current;
     current = next;
   }
+}
+
+/** Remove `<name ...> ... </name>` (with its contents) to a fixed point. */
+function stripElementToFixedPoint(text: string, tagName: string): string {
+  return stripToFixedPoint(text, (input) => stripElementOnce(input, tagName));
+}
+
+/**
+ * Remove one pass of `<name ...> ... </name>` runs, contents included.
+ *
+ * This reproduces `/<name[\s\S]*?<\/name>/gi` exactly: the open token is the
+ * literal `<name` (no `>` required, no name boundary) and the match ends at the
+ * *earliest* `</name>` after it. An open with no later close is no match, so it
+ * is left for the generic tag strip to remove as a plain tag — the behaviour
+ * the lazy regex had. The close search is memoised, so a run of open tags with
+ * no close never rescans to end-of-string per open (which is what made the
+ * regex quadratic); the ranges scanned by successive searches do not overlap,
+ * so one pass is linear.
+ */
+function stripElementOnce(text: string, tagName: string): string {
+  const lower = text.toLowerCase();
+  const open = `<${tagName}`;
+  const close = `</${tagName}>`;
+  const parts: string[] = [];
+  let copiedUpTo = 0;
+  let from = 0;
+  let searchedFrom = -1;
+  let found = -1;
+
+  // Earliest `close` at or after `from`, memoised across the loop.
+  const findClose = (searchFrom: number): number => {
+    if (found !== -1 && found >= searchFrom) return found;
+    // A previous search reached end-of-string with no match; anything at or
+    // after that start is likewise a miss.
+    if (found === -1 && searchedFrom !== -1 && searchFrom >= searchedFrom) return -1;
+    searchedFrom = searchFrom;
+    found = lower.indexOf(close, searchFrom);
+    return found;
+  };
+
+  for (;;) {
+    const start = lower.indexOf(open, from);
+    if (start === -1) break;
+    const closeAt = findClose(start + open.length);
+    if (closeAt === -1) break;
+    const end = closeAt + close.length;
+
+    parts.push(text.slice(copiedUpTo, start));
+    copiedUpTo = end;
+    from = end;
+  }
+
+  parts.push(text.slice(copiedUpTo));
+  return parts.join('');
+}
+
+/** Remove every `<...>` run to a fixed point. */
+function stripTagsToFixedPoint(text: string): string {
+  return stripToFixedPoint(text, stripTagsOnce);
+}
+
+/**
+ * One pass that drops `<...>` runs and copies everything else.
+ *
+ * A run is `<`, then any characters that are neither `<` nor... nothing: the
+ * committed regex was `<[^>]*>`, whose body may cross `<`. It is reproduced
+ * exactly here (a `<` runs to the next `>`), but linearly: a "next `>`" table is
+ * built once per pass, so a `<` with no following `>` costs O(1) instead of the
+ * O(n) rescan the regex paid — the quadratic blow-up code scanning alert 49
+ * flagged on input such as `<a` repeated. Removing one run can concatenate its
+ * neighbours into a new one, which is why the caller repeats this to a fixed
+ * point.
+ */
+function stripTagsOnce(text: string): string {
+  const parts: string[] = [];
+  let copiedUpTo = 0;
+  let i = 0;
+  const n = text.length;
+
+  // nextGt[i] = index of the first `>` at or after i, or -1.
+  const nextGt = new Int32Array(n + 1);
+  nextGt[n] = -1;
+  for (let k = n - 1; k >= 0; k--) {
+    nextGt[k] = text[k] === '>' ? k : nextGt[k + 1];
+  }
+
+  while (i < n) {
+    if (text[i] !== '<') {
+      i++;
+      continue;
+    }
+    const gt = nextGt[i + 1];
+    if (gt === -1) {
+      // No `>` after this `<`: not a tag, leave it as literal text.
+      i++;
+      continue;
+    }
+    parts.push(text.slice(copiedUpTo, i));
+    copiedUpTo = gt + 1;
+    i = gt + 1;
+  }
+
+  parts.push(text.slice(copiedUpTo));
+  return parts.join('');
 }
 
 /**

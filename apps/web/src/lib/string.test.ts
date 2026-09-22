@@ -30,6 +30,17 @@ describe("stripHtml", () => {
     expect(stripHtml("<scr<!--x-->ipt>alert(1)")).not.toMatch(/<\/?script/i);
   });
 
+  it("matches the markup boundaries of the pattern it replaced", () => {
+    // A `<!-- ... -->` run is matched as a comment; `<!-->` has no `-->`, so it
+    // falls back to the declaration form `<! ... >` and is removed.
+    expect(stripHtml("<!-->")).toBe("");
+    expect(stripHtml("a<!-- x >b")).toBe("ab");
+    // A processing instruction needs `?>` AND a body free of `<`/`>`. `<?xml>`
+    // has neither terminator nor a legal body, so it stays literal text.
+    expect(stripHtml("<?xml>")).toBe("<?xml>");
+    expect(stripHtml("<?xml a>b?>")).toBe("<?xml a>b?>");
+  });
+
   it("keeps a bare less-than that begins no markup", () => {
     expect(stripHtml("a < b")).toBe("a < b");
     expect(stripHtml("1 < 2 and 3 > 2")).toBe("1 < 2 and 3 > 2");
@@ -46,6 +57,27 @@ describe("stripHtml", () => {
     expect(typeof out).toBe("string");
     // Idempotent: a second pass changes nothing (fixed point already reached).
     expect(stripHtml(out)).toBe(out);
+  });
+
+  it("stays linear on a long run of comment starters", () => {
+    // Regression for code scanning alert 49: the old comment alternative
+    // `(?:[^-]|-(?!->))*` branched at every non-`-` character, so `<!--`
+    // repeated made it exponential (80k took ~39s). The scanner must be linear.
+    // None of these is a closed comment, so the text survives verbatim.
+    const input = "<!--".repeat(200_000);
+    const start = Date.now();
+    const out = stripHtml(input);
+    expect(Date.now() - start).toBeLessThan(1000);
+    expect(out).toBe(input);
+  });
+
+  it("stays linear on a long run of closed comments", () => {
+    // Every `<!--` is closed, so each is a comment and all are removed.
+    const input = "<!--x-->".repeat(100_000);
+    const start = Date.now();
+    const out = stripHtml(input);
+    expect(Date.now() - start).toBeLessThan(1000);
+    expect(out).toBe("");
   });
 
   it("returns plain text unchanged when there is no markup", () => {

@@ -129,6 +129,17 @@ describe('request-level rate-limit accounting', () => {
     expect(remainingOf(res)).toBe(max - 1);
   });
 
+  it('does not exempt a look-alike prefix from the global limiter', async () => {
+    // Only `/uploads` and `/uploads/...` are skipped. A route such as
+    // `/uploads-archive` must still be rate-limited once by the global pass.
+    const res = await request(app('production'))
+      .get('/uploads-archive/x.png')
+      .set('X-Forwarded-For', nextIp());
+
+    expect(res.status).toBe(404);
+    expect(remainingOf(res)).toBe(max - 1);
+  });
+
   it('does not rate-limit /uploads in development or test', async () => {
     for (const env of ['development', 'test']) {
       const res = await request(app(env))

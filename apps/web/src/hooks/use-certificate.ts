@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api, { ApiResponse, PaginatedResponse } from "@/lib/api";
 
@@ -382,8 +382,9 @@ export function generateCertificateNumber(
   type: CertificateType,
   unitCode: string = "CPN",
 ): string {
-  const year = new Date().getFullYear();
-  const month = String(new Date().getMonth() + 1).padStart(2, "0");
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
 
   // Use rejection sampling to avoid modulo bias when generating 0..9999
   const maxUnbiasedValue = 60000; // largest multiple of 10000 less than 65536
@@ -397,13 +398,46 @@ export function generateCertificateNumber(
   return `${unitCode}/${typeCode}/${year}${month}/${random}`;
 }
 
+/** The `YYYYMM` bucket `generateCertificateNumber` embeds in a number. */
+function currentMonthBucket(now: Date = new Date()): string {
+  return `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
 /**
- * A certificate number that is stable for a given identity.
+ * Milliseconds from `now` until the next calendar month begins.
+ *
+ * Computed by constructing the 1st of the following month rather than adding a
+ * fixed 30 days, so months of different lengths (and DST shifts) still land on
+ * the real boundary.
+ */
+function msUntilNextMonth(now: Date = new Date()): number {
+  const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1, 0, 0, 0, 0);
+  return nextMonth.getTime() - now.getTime();
+}
+
+// `setTimeout` treats a delay above the signed 32-bit maximum as an overflow and
+// fires after ~1ms instead, so a timer aimed at the next month from the 1st of
+// a 31-day month (2.68e9 ms) would fire at once, find the bucket unchanged, and
+// never re-arm — the rollover would be silently lost. Clamping keeps the timer
+// honest: it fires a little early, then re-arms for the remainder.
+const MAX_TIMEOUT_MS = 2 ** 31 - 1;
+
+/**
+ * A certificate number that is stable for a given identity and calendar month.
  *
  * `generateCertificateNumber` is random, so calling it in a component body gave
  * a new number on every render — an unrelated state update redrew the printed
  * certificate with a different number. `useMemo` ties the value to its real
- * inputs: it changes only when `type` or `unitCode` changes, not on a re-render.
+ * inputs: it changes only when `type`, `unitCode` or the current month changes,
+ * not on a re-render.
+ *
+ * The month is part of the identity because the number embeds a `YYYYMM`
+ * segment: a page left open across midnight on the last day of a month would
+ * otherwise keep issuing a number stamped with the old month. One self-arming
+ * timeout fires at the next month boundary to advance the bucket; it is cleared
+ * on unmount and re-armed when the identity changes, so there is never more
+ * than one pending timer and none leaks. The timer is scheduled from an effect,
+ * so no browser API is touched during render (SSR-safe).
  *
  * The value is a display convenience, not an authoritative identifier; the
  * backend issues the recorded certificate number.
@@ -412,8 +446,30 @@ export function useCertificateNumber(
   type: CertificateType,
   unitCode: string = "CPN",
 ): string {
+  const [monthBucket, setMonthBucket] = useState(() => currentMonthBucket());
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const arm = () => {
+      timer = setTimeout(() => {
+        const next = currentMonthBucket();
+        // Same bucket after an early (clamped) wake-up: keep the value, but
+        // re-arm so the real boundary is still reached.
+        setMonthBucket((prev) => (prev === next ? prev : next));
+        arm();
+      }, Math.min(msUntilNextMonth(), MAX_TIMEOUT_MS));
+    };
+    arm();
+    return () => clearTimeout(timer);
+    // `monthBucket` is deliberately absent: the chain re-arms itself, so adding
+    // it would tear down and rebuild the timer on every rollover for no gain.
+  }, [type, unitCode]);
+
   return useMemo(
     () => generateCertificateNumber(type, unitCode),
-    [type, unitCode],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- monthBucket is
+    // the re-key signal: it is not read here, but advancing it must mint a
+    // number carrying the new month.
+    [type, unitCode, monthBucket],
   );
 }

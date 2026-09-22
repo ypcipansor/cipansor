@@ -292,6 +292,17 @@ describe('htmlToText', () => {
       expect(text).not.toContain('color:red');
     });
 
+    it('treats an unclosed element as a plain tag, not as consuming the rest', () => {
+      // `<style/>` and a `<head>` with no close are not elements; only the tag
+      // itself goes, and the text after it survives. The lazy regex behaved the
+      // same way, so this pins the replacement to it.
+      expect(htmlToText('<style/>hello')).toBe('hello');
+      expect(htmlToText('<head>only open')).toBe('only open');
+      expect(htmlToText('a<style>b')).toBe('ab');
+      // A longer name sharing the prefix is a different element entirely.
+      expect(htmlToText('<stylesheet>keep</stylesheet>')).toBe('keep');
+    });
+
     it('turns br and closing block tags into line breaks', () => {
       expect(htmlToText('<p>satu</p><div>dua</div>')).toBe('satu\ndua');
       expect(htmlToText('satu<br>dua<br/>tiga')).toBe('satu\ndua\ntiga');
@@ -320,6 +331,27 @@ describe('htmlToText', () => {
       const out = htmlToText(input);
       expect(Date.now() - start).toBeLessThan(2000);
       expect(typeof out).toBe('string');
+    });
+
+    it('stays linear on repeated element and comment starters', () => {
+      // Regression for code scanning alert 49: the `<style[\s\S]*?<\/style>`
+      // and `<[^>]*>` regexes backtracked quadratically — 80k `<a` took ~8s,
+      // 80k `<style` ~12s. The hand-written scans must stay linear.
+      for (const input of ['<a'.repeat(200_000), '<style'.repeat(200_000), '<!--'.repeat(200_000)]) {
+        const start = Date.now();
+        htmlToText(input);
+        expect(Date.now() - start).toBeLessThan(1000);
+      }
+    });
+
+    it('stays linear on many open elements with no matching close', () => {
+      // A run of `<style>`/`<head>` opens with no close must not rescan to the
+      // end of the string once per open tag.
+      for (const input of ['<style>'.repeat(200_000), '<head>'.repeat(200_000)]) {
+        const start = Date.now();
+        htmlToText(input);
+        expect(Date.now() - start).toBeLessThan(1000);
+      }
     });
   });
 
