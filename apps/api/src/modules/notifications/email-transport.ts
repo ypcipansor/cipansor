@@ -129,23 +129,384 @@ export function describeEmailTransport(): EmailTransportStatus {
  * scores worse with spam filters and is unreadable in text-only clients, and
  * every template here is a table of labelled facts, so dropping the tags and
  * collapsing whitespace gives a usable fallback.
+ *
+ * Markup is stripped BEFORE entities are decoded, and nothing strips tags
+ * afterwards. That ordering is the whole point:
+ *
+ *   - Real `<script>`/`<style>`/tags are removed while still markup, so they
+ *     can never survive into the result. Decoding first would turn an escaped
+ *     `&lt;script&gt;` into a `<script>` the tag regex is then expected to
+ *     remove — an inherently incomplete second pass that leaves an injection
+ *     aperture.
+ *   - Entities are decoded once, on a string that is already markup-free, so
+ *     `&lt;code&gt;` becomes the literal text `<code>` rather than being
+ *     mistaken for a tag and deleted.
+ *
+ * A single tag-strip pass over `<<script>script>` leaves `<script>` behind,
+ * because the inner tag is consumed and the two halves join into a new one.
+ * Re-applying the pass to a fixed point closes that hole, but a fixed-point
+ * loop is not free: a tag split across many layers (closing an inner `</style>`
+ * re-fuses an outer `<sty…` into `<style`) peels one layer per round, so O(n)
+ * rounds of an O(n) scan is quadratic. Both strip passes below build the same
+ * fixed point in a single left-to-right stack scan instead, which is O(n).
+ *
+ * The destructive passes are NOT independent, so applying them one after the
+ * other is not enough. Removing a `<head>` fragment can fuse `<sty` with a
+ * later `le>` into a fresh `<style>` opener, and vice versa; if the `style` pass
+ * has already run, that new element is never processed and its contents leak
+ * into the plain-text body (`<sty<head>h</head>le>css</style>` -> `css`). The
+ * two element patterns are therefore stripped by a SINGLE interleaved scan
+ * (`stripHiddenElements`) that reaches the joint fixed point of both passes at
+ * once, rather than a local fixed point per pass. The generic tag strip that
+ * follows cannot re-introduce `<` or `>` — it only deletes — so no later pass
+ * can re-open the hole the element scan just closed.
+ *
+ * HTML comments are handled by the SAME joint scan, not by a separate
+ * pre-pass. A comment body may contain `<` and `>`, so the generic tag strip
+ * below — which bounds a run at the next `>` — cannot tell
+ * `<!-- note > hidden -->` from a tag and would stop at the first `>` and leak
+ * the rest of the comment (code scanning alert 27's class). A separate
+ * `comment-strip` pass would itself be vulnerable to the same fusion this
+ * function exists to close: deleting a comment can glue a stray `<!-` and a
+ * `-` into a fresh `<!--`, and deleting a `<style>`/`<head>` element can glue
+ * a comment's own `<!--` back together, so the newly formed comment (with a
+ * `>` in its body) would survive every later pass. Folding the pattern into
+ * the joint scan lets a fusion re-fire in the same pass, so the fixed point is
+ * reached without rescanning.
+ *
+ * Every pass is a hand-written left-to-right scan, not a regex: a `<...>` body
+ * is bounded by the next `<`, and each character is visited a constant number
+ * of times. The `<style>`/`<head>` and generic patterns used to be regexes that
+ * backtracked quadratically on input such as `<a` repeated (code scanning
+ * alert 49's class), so the whole function is linear in the input length.
+ *
+ * The result is plain text, NOT HTML-safe markup. A decoded entity can produce
+ * a literal `<script>` in the output (e.g. from `&lt;script&gt;`), which is
+ * inert only while the consumer does not re-embed it as HTML without escaping.
  */
 export function htmlToText(html: string): string {
-  return html
-    .replace(/<style[\s\S]*?<\/style>/gi, '')
-    .replace(/<head[\s\S]*?<\/head>/gi, '')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/(p|div|tr|h1|h2|h3|li)>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#039;/g, "'")
-    .replace(/&amp;/g, '&')
+  let text = stripHiddenElements(html);
+  text = text.replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|tr|h1|h2|h3|li)>/gi, '\n');
+  text = stripTags(text);
+
+  return decodeBasicEntities(text)
     .replace(/[ \t]+/g, ' ')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
+
+/**
+ * True when `out` ends with `pattern`, compared case-insensitively.
+ *
+ * `out` is a plain array of single characters, so a character is a single
+ * UTF-16 code unit and its length equals the number of appended elements.
+ */
+function endsWith(out: string[], pattern: string): boolean {
+  if (out.length < pattern.length) return false;
+  const base = out.length - pattern.length;
+  for (let k = 0; k < pattern.length; k++) {
+    if (out[base + k].toLowerCase() !== pattern[k]) return false;
+  }
+  return true;
+}
+
+/** True for the ASCII letters HTML tag and attribute names are built from. */
+function isAsciiLetter(code: number): boolean {
+  return (code >= 0x41 && code <= 0x5a) || (code >= 0x61 && code <= 0x7a);
+}
+
+/** True for HTML whitespace (space, tab, LF, FF, CR). */
+function isHtmlWhitespace(code: number): boolean {
+  return code === 0x20 || code === 0x09 || code === 0x0a || code === 0x0c || code === 0x0d;
+}
+
+/**
+ * Mark, per source position, whether it sits inside a quoted attribute value of
+ * a tag (`Uint8Array`, `1` for yes).
+ *
+ * `stripHiddenElements` recognises its patterns from the current output tail, so
+ * a `<!--` that is merely the text of a quoted attribute (`<a title="<!--">`)
+ * looks exactly like a real comment opener there. This mask tells them apart: a
+ * `<` inside a quoted value starts no markup, so the tail scan ignores any
+ * candidate opener whose `<` is masked.
+ *
+ * One left-to-right pass. A tag starts at `<` followed by a name character
+ * (optionally after `/`) and runs to the first `>` outside a `'…'`/`"…"` value;
+ * everything from an opening quote to its match is marked. A quote opens a
+ * value only directly after `=` (whitespace allowed around it), so a stray quote
+ * in a tag name or between attributes cannot mask later markup. A quote that is
+ * never closed masks nothing (see below). Comments carry no attributes, so they are
+ * skipped whole to their `-->` (or EOF) — a quote in a comment body is not a
+ * value and must not mask later markup — while doctypes and processing
+ * instructions (`<!…`/`<?…`) run to the next `>`. Each character is visited a
+ * constant number of times, so the mask is O(n).
+ */
+function quotedAttributeMask(text: string): Uint8Array {
+  const quoted = new Uint8Array(text.length);
+  let i = 0;
+
+  while (i < text.length) {
+    if (text.charCodeAt(i) !== 0x3c /* < */) {
+      i++;
+      continue;
+    }
+
+    const next = text.charCodeAt(i + 1);
+    if (next === 0x21 /* ! */ || next === 0x3f /* ? */) {
+      // A comment runs to its `-->` (or EOF), not the first `>`; a quote in the
+      // body after a `>` must not be read as a value and mask later markup.
+      let skip: number;
+      if (text.startsWith('<!--', i)) {
+        const end = text.indexOf('-->', i + 4);
+        skip = end === -1 ? text.length : end + 3;
+      } else {
+        const gt = text.indexOf('>', i + 2);
+        skip = gt === -1 ? text.length : gt + 1;
+      }
+      i = skip;
+      continue;
+    }
+
+    const afterSlash = text.charCodeAt(i + 2);
+    if (!isAsciiLetter(next) && !(next === 0x2f /* / */ && isAsciiLetter(afterSlash))) {
+      i++;
+      continue;
+    }
+
+    let j = i + 1;
+    let quote = 0;
+    let quoteStart = -1;
+    let canOpenQuote = false;
+    for (; j < text.length; j++) {
+      const code = text.charCodeAt(j);
+      if (quote !== 0) {
+        if (code === quote) {
+          for (let k = quoteStart; k <= j; k++) quoted[k] = 1;
+          quote = 0;
+          canOpenQuote = false;
+        }
+        continue;
+      }
+      if (code === 0x3e /* > */) break;
+      if (code === 0x22 /* " */ || code === 0x27 /* ' */) {
+        if (canOpenQuote) {
+          quote = code;
+          quoteStart = j;
+        }
+        continue;
+      }
+      if (!isHtmlWhitespace(code)) canOpenQuote = code === 0x3d /* = */;
+    }
+    // A quote that is never closed quotes nothing. Masking it to end-of-input
+    // would hide every later `<!--`/`<style`/`<head` from the element scan and
+    // let `stripTags` keep the whole tail verbatim — `<a title="<script>…`
+    // survived untouched that way (2,189 of 300k random inputs leaked live
+    // markup). Leaving it unmasked matches `stripTags`, which re-reads such a
+    // tail without quote handling.
+    i = j + 1;
+  }
+
+  return quoted;
+}
+
+/**
+ * Remove `<style>`/`<head>` elements (contents included) and HTML comments to
+ * the JOINT fixed point of all three, in one linear interleaved scan.
+ *
+ * The passes are not independent. A `</head>` removal can fuse an earlier
+ * `<sty` with a later `le>` into a fresh `<style` opener, and a `</style>`
+ * removal can do the mirror image for `head`; a sequential
+ * `stripElement(x,'style')` then `stripElement(x,'head')` leaves that freshly
+ * formed element — and the text it hides — in the output. Comments fuse the
+ * same way: deleting a `<style>` element can glue a comment's own `<!--` back
+ * together, and deleting a comment can glue a stray `<!-` and `-` into a fresh
+ * `<!--`. A comment processed by a separate pass would carry its body's `>`
+ * past every later pass.
+ *
+ * One scan sees every such fusion as it happens, because it only ever looks at
+ * the *current tail* of the growing output. Detection and deletion are each
+ * pattern's own greedy rule:
+ *
+ *   - An opener is tracked by that pattern's earliest still-unmatched position.
+ *     For `style`/`head` the opener is the literal `<name` (no `>` needed); for
+ *     comments it is the full `<!--`, since the terminator is `-->` and the
+ *     body must not be split on `>`.
+ *   - When a close arrives while its pattern has an unmatched opener, delete
+ *     from that earliest opener through the close. Every opener at or after it
+ *     — of ANY pattern, since all sit inside the deleted span — is retired
+ *     too. Because each pattern's earliest unmatched opener is always the one
+ *     that would fire next, this is exactly what re-applying the three passes
+ *     to a shared fixed point would do, but without rescanning: a character is
+ *     appended once and dropped at most once, so the scan is O(n).
+ *
+ * This is order-independent by construction: the earliest pending opener across
+ * the live tail determines each truncation regardless of which pass you imagine
+ * running. A `style`/`head` opener with no close is left for the generic tag
+ * strip, and input stutters near an already-deleted prefix (detection is
+ * tail-based, deletion is global) are normalised by that strip, which cannot
+ * re-create `<` or `>`.
+ *
+ * A tail match alone does not make an opener real: `<!--` (and `<style`/`<head`)
+ * can appear *as text* inside a quoted attribute value — `<a title="<!--">` —
+ * where it opens nothing, and a `>` inside such a value ends no tag. The
+ * scanner therefore consults `quotedAttributeMask` and refuses an opener whose
+ * `<` is masked, and refuses a `>` that is masked as a close. Treating the
+ * masked `<!--` as a real comment made the unclosed-comment rule below truncate
+ * the whole output at the attribute, deleting the visible `link</a>…` that
+ * followed (code scanning alert 27 regression). A masked `<` is copied through
+ * untouched; the mask is computed from the raw input up front so a fusion later
+ * in the scan can never move a boundary.
+ *
+ * A comment opener that is still pending when the input ends has no `-->`, so
+ * per HTML's comment parsing rule it runs to end-of-input: everything from
+ * `<!--` onward is dropped. This applies only to a `<!--` that the mask does
+ * NOT consider attribute text; leaving an unmasked one to the generic tag
+ * strip instead would bound it at the first `>` and leak the rest of the body,
+ * which is the incomplete-sanitization class this scan exists to close.
+ */
+function stripHiddenElements(text: string): string {
+  const patterns = [
+    { open: '<!--', close: '-->' },
+    { open: '<style', close: '</style>' },
+    { open: '<head', close: '</head>' },
+  ].map((p) => ({ open: p.open.toLowerCase(), close: p.close.toLowerCase() }));
+  const quoted = quotedAttributeMask(text);
+  const isLiveOpen = (start: number) => !quoted[start];
+  const out: string[] = [];
+  const outPos: number[] = [];
+  const openStart: number[] = patterns.map(() => -1);
+
+  for (let i = 0; i < text.length; i++) {
+    out.push(text[i]);
+    outPos.push(i);
+
+    for (let p = 0; p < patterns.length; p++) {
+      if (openStart[p] === -1 && endsWith(out, patterns[p].open)) {
+        const start = out.length - patterns[p].open.length;
+        if (isLiveOpen(outPos[start])) openStart[p] = start;
+      }
+    }
+
+    for (let p = 0; p < patterns.length; p++) {
+      if (openStart[p] === -1 || !endsWith(out, patterns[p].close)) continue;
+      // A `>` inside a quoted attribute value ends no tag; a masked close must
+      // not be allowed to terminate a real element.
+      if (quoted[outPos[out.length - 1]]) continue;
+      const start = openStart[p];
+      out.length = start;
+      outPos.length = start;
+      for (let q = 0; q < patterns.length; q++) {
+        if (openStart[q] >= start) openStart[q] = -1;
+      }
+      break;
+    }
+  }
+
+  // patterns[0] is the comment; an unclosed one swallows the rest of the input.
+  if (openStart[0] !== -1) {
+    out.length = openStart[0];
+    outPos.length = openStart[0];
+  }
+
+  return out.join('');
+}
+
+/**
+ * Remove every `<…>` run to a fixed point, in one linear stack scan.
+ *
+ * The run regex is `<[^>]*>`'s committed shape: a `<` runs to the next `>` even
+ * across other `<`. Re-applying it deletes the earliest open plus the first
+ * close after it, then repeats; that fixed point is the greedy rule, so
+ * whenever a `>` is seen with a `<` still unmatched, delete from the *earliest*
+ * unmatched `<` through the `>`. Retiring the whole run at once is what makes
+ * one scan suffice, and a `<` with no following `>` is left as literal text,
+ * exactly as the regex'd single pass did.
+ *
+ * Comments are NOT handled here — a `<!-- … > … -->` body would break the
+ * "next `>`" rule — so `stripHiddenElements` removes every comment first; this
+ * pass cannot re-create a comment either, since it only deletes.
+ *
+ * A `>` inside a quoted attribute value (`<a title="a > b">`) ends no tag, so a
+ * quote opens inside an unmatched run and only its matching quote lets a later
+ * `>` close the run; this mirrors the mask `stripHiddenElements` uses and keeps
+ * the two passes consistent on the same input.
+ */
+function stripTags(text: string, quoteAware = true): string {
+  const out: string[] = [];
+  let openStart = -1;
+  let openSource = -1;
+  let quote = '';
+  let canOpenQuote = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    out.push(ch);
+    if (openStart === -1) {
+      if (ch === '<') {
+        openStart = out.length - 1;
+        openSource = i;
+      }
+      continue;
+    }
+    if (quote !== '') {
+      if (ch === quote) {
+        quote = '';
+        canOpenQuote = false;
+      }
+      continue;
+    }
+    if (ch === '>') {
+      out.length = openStart;
+      openStart = -1;
+      canOpenQuote = false;
+    } else if (quoteAware && (ch === '"' || ch === "'")) {
+      if (canOpenQuote) quote = ch;
+    } else if (ch !== ' ' && ch !== '\t' && ch !== '\n' && ch !== '\f' && ch !== '\r') {
+      canOpenQuote = ch === '=';
+    }
+  }
+
+  // A run still open at end-of-input never became a tag, so its quotes were
+  // never attribute values: honouring them kept every `<…>` after the first
+  // quote verbatim (`<a title="<script>x</script>` survived untouched, and so
+  // did `<a x="-x>y="` once its quotes happened to pair up). Nothing was deleted
+  // since the run opened, so `out` from `openStart` equals the source from
+  // `openSource`; re-read that tail once without quote handling. The second
+  // pass cannot recurse, so the whole strip stays linear.
+  if (quoteAware && openStart !== -1) {
+    return out.slice(0, openStart).join('') + stripTags(text.slice(openSource), false);
+  }
+
+  return out.join('');
+}
+
+/**
+ * Decode the handful of entities the mail templates use, in a single pass that
+ * runs each entity exactly once.
+ *
+ * The one-pass walk is what keeps a nested escape literal: `&amp;quot;` yields
+ * `&quot;`, not `"`. A sequential `.replace()` chain cannot do that, because
+ * after `&amp;` decodes to `&` the remainder is then decoded a second time by
+ * whichever specific-entity replacement runs later in the chain.
+ */
+function decodeBasicEntities(text: string): string {
+  const named: Record<string, string> = {
+    '&nbsp;': ' ',
+    '&lt;': '<',
+    '&gt;': '>',
+    '&quot;': '"',
+    '&apos;': "'",
+    '&amp;': '&',
+  };
+
+  return text.replace(
+    /&#0*(39|38);|&(?:nbsp|lt|gt|quot|apos|amp);/g,
+    (match, numericCode?: string) => {
+      if (numericCode === '39') return "'";
+      if (numericCode === '38') return '&';
+      return named[match] ?? match;
+    }
+  );
 }
 
 /**
@@ -316,7 +677,7 @@ export async function deliverEmail(input: DeliverEmailInput): Promise<DeliverEma
 
   logger.warn(
     'Email transport not configured (no Gmail service account, no SMTP_HOST) — message logged only.',
-    { to: input.to, subject: input.subject },
+    { to: input.to, subject: input.subject }
   );
 
   return { kind: 'log', delivered: false, messageId: `log_${Date.now()}` };

@@ -75,8 +75,24 @@ export const verifyCertificateSchema = z.object({
 export type VerifyCertificateInput = z.infer<typeof verifyCertificateSchema>;
 
 // Bulk create sanad schema
+//
+// The canonical size bounds for a bulk request. The endpoint schema enforces
+// them at the edge and the service re-checks them as defence in depth (the
+// service is also callable from internal code paths that skip Zod). Both must
+// use these same constants — a service cap of 1000 against an endpoint cap of
+// 50 means the larger number can never be reached through the API, which is a
+// limit that looks enforced but is not. The minimum matters for the same
+// reason: without a service-side floor, an empty `records: []` would skip the
+// loop and be reported as `{ success: 0, failed: 0 }` — a success response for
+// a request that created nothing.
+export const MIN_BULK_CREATE_RECORDS = 1;
+export const MAX_BULK_CREATE_RECORDS = 50;
+
 export const bulkCreateSanadSchema = z.object({
-  records: z.array(createSanadSchema).min(1).max(50),
+  records: z
+    .array(createSanadSchema)
+    .min(MIN_BULK_CREATE_RECORDS)
+    .max(MAX_BULK_CREATE_RECORDS),
 });
 
 export type BulkCreateSanadInput = z.infer<typeof bulkCreateSanadSchema>;
