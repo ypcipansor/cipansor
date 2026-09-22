@@ -25,6 +25,36 @@
 -- data pengembangan yang sudah ter-`db push`, DENGAN preflight yang memeriksa
 -- bentuk objek yang sudah ada alih-alih menerimanya apa pun.
 
+/**
+ * Dependensi digest: `pg_catalog.sha256(bytea)`.
+ *
+ * `sha256` adalah fungsi BAWAAN PostgreSQL (core sejak 11; bukan bagian dari
+ * ekstensi `pgcrypto`), sehingga tidak dibutuhkan `CREATE EXTENSION` — dan
+ * karena itu pula migrasi ini TIDAK boleh memanggilnya tanpa kualifikasi.
+ *
+ * Nama yang tidak terkualifikasi diselesaikan lewat `search_path` lebih dulu
+ * ke `pg_catalog`, tetapi skema pengguna yang mendahului `pg_catalog` di
+ * `search_path` dapat menaungi `sha256` dengan fungsi lain. Panggilan tanpa
+ * kualifikasi di backfill akan diam-diam memakai fungsi asing itu, dan migrasi
+ * yang "berhasil" menghasilkan fingerprint yang BERBEDA dari
+ * `publicKeyFingerprint()` aplikasi — fitur mati tanpa satu pun galat. Karena
+ * itu seluruh panggilan di bawah dikualifikasi `pg_catalog.sha256`, dan
+ * preflight ini menolak lebih awal bila fungsinya tak dapat diselesaikan.
+ *
+ * Perhatikan PostgreSQL 18: ia menambahkan `sha256(text)` di `pg_catalog`,
+ * sehingga `sha256(k."public_key")` (tanpa `convert_to`) kebetulan berhasil
+ * pada baseline itu tetapi `function sha256(text) does not exist` pada
+ * PostgreSQL 16 — produksi. Bentuk `bytea` dengan `convert_to(..., 'UTF8')`
+ * dipakai justru karena ia setara di SEMUA versi yang didukung.
+ */
+DO $$
+BEGIN
+  IF to_regprocedure('pg_catalog.sha256(bytea)') IS NULL THEN
+    RAISE EXCEPTION
+      'Migrasi foundation_decision_vote_key_binding membutuhkan fungsi bawaan pg_catalog.sha256(bytea) untuk menghitung fingerprint kunci publik, tetapi fungsi itu tidak dapat diselesaikan pada peladen ini.';
+  END IF;
+END $$;
+
 -- Preflight: objek milik migrasi ini yang sudah ada harus kompatibel.
 DO $$
 DECLARE
@@ -225,7 +255,7 @@ SELECT
   k."user_id",
   k."algorithm",
   k."public_key",
-  encode(sha256(convert_to(k."public_key", 'UTF8')), 'hex'),
+  encode(pg_catalog.sha256(pg_catalog.convert_to(k."public_key", 'UTF8')), 'hex'),
   k."created_at"
 FROM "user_signing_keys" k
 ON CONFLICT ("user_id", "fingerprint") DO NOTHING;
@@ -278,7 +308,7 @@ BEGIN
       AND NOT EXISTS (
         SELECT 1 FROM "user_signing_key_history" h
         WHERE h."user_id" = v."user_id"
-          AND h."fingerprint" = encode(sha256(convert_to(v."public_key", 'UTF8')), 'hex')
+          AND h."fingerprint" = encode(pg_catalog.sha256(pg_catalog.convert_to(v."public_key", 'UTF8')), 'hex')
       );
 
     IF unbound_votes > 0 THEN

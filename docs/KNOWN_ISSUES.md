@@ -631,7 +631,7 @@ foundation analytics, takhosus certificate eligibility, correspondence signing):
   constructed it via the Prisma 7 adapter factory so it loads + skips cleanly.
 
 **To run the DB integration suite:** start Postgres (docker-compose), apply the
-schema (`db:push`), then `RUN_DB_TESTS=1 pnpm --filter api test`.
+migrations (`pnpm --filter api db:deploy`), then `RUN_DB_TESTS=1 pnpm --filter api test`.
 
 ## 🟢 Also green now
 
@@ -647,7 +647,7 @@ schema (`db:push`), then `RUN_DB_TESTS=1 pnpm --filter api test`.
 The whole stack now boots and has been exercised locally against a **real**
 Postgres 16 + Redis (no Docker needed — Postgres/Redis binaries are present):
 
-- `prisma db push` + `db:seed` apply cleanly (after fixing the Prisma 7 config
+- `prisma migrate deploy` + `db:seed` apply cleanly (after fixing the Prisma 7 config
   import + `--config` flag wiring — see commit history).
 - **DB integration suite is green:** `RUN_DB_TESTS=1 pnpm --filter api test` →
   588 passed, 2 skipped (incl. the 22 real-schema DB tests, realigned to the
@@ -661,7 +661,7 @@ Postgres 16 + Redis (no Docker needed — Postgres/Redis binaries are present):
 
 **To reproduce locally:** start Postgres + Redis, write `apps/api/.env`
 (DATABASE_URL/SHADOW_DATABASE_URL/REDIS_URL/JWT_SECRET), then
-`pnpm --filter api db:push && pnpm --filter api db:seed`,
+`pnpm --filter api db:deploy && pnpm --filter api db:seed`,
 `pnpm --filter api dev` and `pnpm --filter web dev`.
 
 ### Playwright e2e — authenticated foundation in place

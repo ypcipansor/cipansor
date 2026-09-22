@@ -168,6 +168,79 @@ export async function ensureSigningKeyHistory(
   });
 }
 
+/** Alasan penolakan suara karena kunci bergerak di tengah penandatanganan. */
+export const SIGNING_KEY_CONTENDED =
+  'Kunci tanda tangan Anda berubah atau tidak lagi berlaku saat suara diproses. Silakan coba lagi dengan kunci terkini.';
+
+/**
+ * Buktikan ULANG, di dalam transaksi suara, bahwa kunci yang benar-benar
+ * menandatangani masih kunci yang berlaku bagi pemiliknya.
+ *
+ * ### Cacat yang diperbaiki
+ *
+ * `castVote` membaca `UserSigningKey`, menandatangani, lalu membuka transaksi.
+ * Antara pembacaan dan `INSERT` suara, jalur lain dapat merotasi
+ * (`esign.activateKey`) atau mencabut (`esign.revokeKey`) kunci itu — keduanya
+ * berjalan di transaksi mereka sendiri. Bila rotasi menang, baris suara yang
+ * sudah terlanjur ditulis akan ditolak `isVoteAuthentic` karena
+ * `supersededAt`/`revokedAt` berada pada/sebelum `signedAt`. Akibatnya:
+ *  - `voteSummary` dihitung dari suara yang LOLOS verifikasi, sehingga suara
+ *    yang tidak autentik itu tidak masuk rekap — padahal baris suaranya tetap
+ *    ada;
+ *  - percobaan ulang pengguna ditolak "sudah memberikan suara", sehingga suara
+ *    yang gagal tidak dapat digantikan. Pengguna terkunci tanpa suara dan tanpa
+ *    jalan pulih.
+ *
+ * ### Mengapa pemeriksaan ini cukup tanpa lock baru
+ *
+ * Segmen kritis jalur rotasi (`design.activateKey` — cap `supersededAt` pada
+ * riwayat + hapus kunci lama + buat kunci baru) dan jalur pencabutan
+ * (`esign.revokeKey` — `userSigningKey.update` + cap `revokedAt` pada riwayat)
+ * seluruhnya berjalan dalam satu transaksi. Karena itu tidak ada keadaan
+ * antara yang dapat terlihat: pembacaan ulang di dalam transaksi suara
+ * mengembalikan keadaan SEBELUM atau SESUDAH, bukan di tengahnya.
+ *
+ * Bila rotasi sudah commit lebih dulu, pembacaan ini melihat kunci/riwayat
+ * yang baru (atau baris `UserSigningKey` yang hilang sama sekali → fail
+ * closed), dan suara dibatalkan SEBELUM `INSERT` — sehingga pengguna dapat
+ * mencoba lagi dengan kunci baru. Bila suara menang, ia commit dengan kunci
+ * yang belum tersentuh, dan `signedAt` (yang dihitung klien di sini) mendahului
+ * cap rotasi yang datang kemudian, sehingga suara itu sah menurut
+ * `keyUsableAt`.
+ *
+ * `signedAt` sengaja dipilih sebelum penandatanganan. Bila ditetapkan SESUDAH
+ * rotasi menang, cap rotasi akan jatuh sebelum `signedAt` dan suara yang
+ * terlanjur commit menjadi tidak autentik — persis cacat yang dicegah.
+ */
+async function assertSigningKeyStillCurrent(
+  tx: DbClient,
+  userId: string,
+  material: { publicKey: string; algorithm: string },
+  signedAt: Date
+): Promise<void> {
+  const current = await tx.userSigningKey.findUnique({ where: { userId } });
+  if (!current) throw Errors.conflict(SIGNING_KEY_CONTENDED);
+
+  // Kunci pada baris kunci harus kunci yang SAMA dengan yang menandatangani.
+  if (
+    signingKeyToMaterial(current).publicKey !== material.publicKey ||
+    current.algorithm !== material.algorithm
+  ) {
+    throw Errors.conflict(SIGNING_KEY_CONTENDED);
+  }
+
+  // Riwayat tepercaya: barisnya harus sudah ada (kita baru meng-upsert di luar
+  // transaksi), dimiliki pemilih yang sama, fingerprint-nya cocok, dan kunci
+  // masih berlaku pada `signedAt`. Rotasi/pencabutan yang commit di sela-sela
+  // membuat salah satu syarat ini gagal.
+  const fingerprint = publicKeyFingerprint(material.publicKey);
+  const record = await tx.userSigningKeyHistory.findUnique({
+    where: { userId_fingerprint: { userId, fingerprint } },
+  });
+  if (!record) throw Errors.conflict(SIGNING_KEY_CONTENDED);
+  if (!keyUsableAt(record, signedAt)) throw Errors.conflict(SIGNING_KEY_CONTENDED);
+}
+
 /**
  * Hitung ulang digest kanonis yang SEHARUSNYA untuk sebuah suara.
  *
@@ -282,6 +355,11 @@ function keyUsableAt(record: UserSigningKeyHistory, at: Date): boolean {
   if (record.supersededAt && at >= record.supersededAt) return false;
   return true;
 }
+
+/**
+ * Apakah rekaman kunci berhak menandatangani pada `at`? Diekspor untuk test.
+ */
+export const keyUsableAtForTest = keyUsableAt;
 
 /**
  * Rekaman kunci tepercaya yang berhak menandatangani atas nama pemilih ini.
@@ -1162,6 +1240,19 @@ export const FoundationDecisionService = {
         throw Errors.badRequest('Anda sudah memberikan suara pada keputusan ini.');
       }
 
+      // Anti-TOCTOU (audit B): buktikan ULANG bahwa kunci yang menandatangani
+      // masih kunci yang berlaku, DI DALAM transaksi dan SEBELUM `INSERT`.
+      // Tanpa ini, rotasi/pencabutan paralel dapat meninggalkan baris suara
+      // yang ditolak `isVoteAuthentic` sekaligus memblokir percobaan ulang.
+      // Bila rotasi menang, transaksi ini dibatalkan sehingga TIDAK ada baris
+      // suara yang tercommit dan pengguna dapat mencoba lagi dengan kunci baru.
+      await assertSigningKeyStillCurrent(
+        tx,
+        actor.id,
+        { publicKey: material.publicKey, algorithm: material.algorithm },
+        signedAt
+      );
+
       const vote = await tx.foundationDecisionVote.create({
         data: {
           decisionId: d.id,
@@ -1257,6 +1348,26 @@ export const FoundationDecisionService = {
    * kuorum hadir terpenuhi, pemimpin rapat bebas menutupnya sebagai APPROVED
    * atau REJECTED tanpa menunggu anggota yang absen — anggota absen tidak boleh
    * membuat keputusan menggantung selamanya.
+   *
+   * **CIRCULAR: tidak ada penutupan dini (audit D).** Untuk sirkuler, `closed`
+   * sengaja TIDAK diteruskan (`closed: d.kind !== 'CIRCULAR'`). Sirkuler tidak
+   * punya "rapat" yang perlu ditutup: kolam keputusannya adalah seluruh anggota
+   * aktif yang jumlahnya tetap, sehingga hasil akhirnya hanya bergantung pada
+   * himpunan suara — bukan pada siapa yang menekan tombol lebih dulu.
+   * Konsekuensinya:
+   *  - sirkuler baru APPROVED ketika ambang mufakat tercapai (biasanya 100%);
+   *  - sirkuler baru REJECTED ketika mufakat terbukti MUSTAHIL (ada REJECT/
+   *    ABSTAIN, atau sisa anggota tak cukup untuk mencapai ambang);
+   *  - selama mufakat masih mungkin, `finalize` menolak ("belum dapat ditutup")
+   *    dan statusnya tetap VOTING — pimpinan TIDAK boleh menggugurkan sirkuler
+   *    yang hasilnya masih dapat berubah.
+   *
+   * Itu sejalan dengan UU 16/2001 jo. 28/2004 & PP 63/2008 (keputusan organ
+   * diambil secara musyawarah/mufakat) dan dengan makna "sirkuler" di repo:
+   * persetujuan diedarkan tanpa rapat, jadi setiap anggota berhak menyatakan
+   * sikapnya sebelum hasil ditetapkan. `finalize` pada sirkuler karenanya
+   * efektif hanya sebagai penyegel untuk kasus yang sudah pasti, bukan sebagai
+   * alat menutup lebih awal.
    */
   async finalize(actor: Actor, decisionId: string) {
     const d = await this.loadWithRelations(decisionId);
@@ -1276,7 +1387,7 @@ export const FoundationDecisionService = {
     const previewEvaluation = evaluateQuorum(
       d.quorumSnapshot as unknown as QuorumSnapshot,
       this.votesOf(d),
-      { closed: true }
+      { closed: d.kind !== 'CIRCULAR' }
     );
     // Sama seperti `castVote`: render PDF + e-seal disiapkan di luar kunci.
     let previewArtifact: ApprovalArtifact | null = null;
@@ -1303,7 +1414,7 @@ export const FoundationDecisionService = {
       const evaluation = evaluateQuorum(
         locked.quorumSnapshot as unknown as QuorumSnapshot,
         this.votesOf(locked),
-        { closed: true }
+        { closed: locked.kind !== 'CIRCULAR' }
       );
       if (evaluation.outcome === 'OPEN') {
         throw Errors.badRequest(
@@ -1338,6 +1449,13 @@ export const FoundationDecisionService = {
    * yang layak dipublikasikan, dan menerbitkannya membocorkan metadata tata
    * kelola tanpa dasar. Perubahan kembali ke `PRIVATE` selalu boleh, kapan pun,
    * sebagai jalan keluar darurat.
+   *
+   * **Serialisasi & audit (audit C):** baris keputusan DIKUNCI lebih dulu,
+   * `publication` dibaca setelah lock, dan audit memakai nilai sebelum-update
+   * dari pembacaan terkunci itu. Dua request paralel karena itu tidak dapat
+   * mencatat `oldValues` yang sama. Publikasi yang TIDAK berubah tidak menulis
+   * audit (no-op), supaya jejak hanya memuat perubahan yang benar-benar
+   * terjadi.
    */
   async setPublication(
     actor: Actor,
@@ -1357,29 +1475,51 @@ export const FoundationDecisionService = {
     }
 
     const at = new Date();
-    await prisma.$transaction(async (tx) => {
-      // Update bersyarat ATOMIK: status & artefak diperiksa ulang di dalam
-      // transaksi, sehingga finalisasi yang berjalan bersamaan tidak dapat
-      // membuat kondisi berubah di antara pemeriksaan dan penulisan.
-      const updated = await tx.foundationDecision.updateMany({
-        where:
-          publication === FoundationDecisionPublication.PUBLIC
-            ? {
-                id: decisionId,
-                status: FoundationDecisionStatus.APPROVED,
-                finalPdfDigest: { not: null },
-                finalPdfSealSignature: { not: null },
-                esealId: { not: null },
-                document: { isNot: null },
-              }
-            : { id: decisionId },
-        data: { publication },
-      });
-      if (updated.count === 0) {
-        throw Errors.badRequest(
-          'Hanya keputusan yang sudah disahkan dengan dokumen final dan e-seal lengkap yang dapat diterbitkan.'
-        );
+    const result = await prisma.$transaction(async (tx) => {
+      // SERIALISASI (audit C): kunci baris keputusan lebih dulu, lalu baca
+      // `publication` AKTUAL setelah lock. Sebelumnya `d.publication` dibaca di
+      // luar transaksi dan ditulis apa adanya sebagai `oldValues`, sehingga dua
+      // request paralel dapat mencatat nilai sebelumnya yang sama — audit lalu
+      // memuat urutan yang tidak pernah terjadi.
+      await lockDecision(tx, decisionId);
+      const locked = await tx.foundationDecision.findUnique({ where: { id: decisionId } });
+      if (!locked) throw Errors.notFound('Keputusan tidak ditemukan.');
+
+      // Syarat publication divalidasi terhadap STATE TERKUNCI, bukan snapshot
+      // pra-lock. `updateMany` bersyarat tetap dipakai sebagai jaring kedua.
+      if (publication === FoundationDecisionPublication.PUBLIC) {
+        const lockedComplete =
+          locked.status === FoundationDecisionStatus.APPROVED &&
+          !!locked.finalPdfDigest &&
+          !!locked.finalPdfSealSignature &&
+          !!locked.esealId;
+        if (!lockedComplete) {
+          throw Errors.badRequest(
+            'Hanya keputusan yang sudah disahkan dengan dokumen final dan e-seal lengkap yang dapat diterbitkan.'
+          );
+        }
       }
+
+      // No-op semantics: publikasi yang TIDAK berubah bukan peristiwa audit.
+      // Menulis baris audit `oldValues === newValues` akan mengisi jejak dengan
+      // perubahan yang tidak pernah terjadi, dan justru menyamarkan perubahan
+      // sungguhan di sekitarnya. Baris keputusan tetap "disentuh" (updatedAt
+      // ikut berubah), jadi kembalikan tanggal itu.
+      if (locked.publication === publication) {
+        const touched = await tx.foundationDecision.update({
+          where: { id: decisionId },
+          data: { publication },
+          select: { updatedAt: true },
+        });
+        return { noop: true, updatedAt: touched.updatedAt };
+      }
+
+      const previous = locked.publication;
+      const updated = await tx.foundationDecision.update({
+        where: { id: decisionId },
+        data: { publication },
+        select: { updatedAt: true },
+      });
       // Audit berada di transaksi yang SAMA: kegagalan mencatat membatalkan
       // perubahan, sehingga tidak ada perubahan publikasi tanpa jejak.
       await tx.auditLog.create({
@@ -1388,12 +1528,13 @@ export const FoundationDecisionService = {
           action: 'UPDATE',
           entity: 'FoundationDecision',
           entityId: decisionId,
-          oldValues: { publication: d.publication },
+          oldValues: { publication: previous },
           newValues: { publication },
         },
       });
+      return { noop: false, updatedAt: updated.updatedAt };
     });
-    return { id: decisionId, publication, updatedAt: at.toISOString() };
+    return { id: decisionId, publication, updatedAt: result.updatedAt.toISOString() };
   },
 
   /**

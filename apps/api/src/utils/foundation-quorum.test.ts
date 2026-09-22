@@ -99,6 +99,46 @@ describe('evaluateQuorum — CIRCULAR (mufakat 100% aktif)', () => {
   });
 
   /**
+   * Audit D — `closed` TIDAK mengubah hasil sirkuler (tidak ada penutupan dini).
+   *
+   * Sirkuler tidak punya rapat yang ditutup: kolamnya tetap, jadi hasilnya
+   * hanya bergantung pada himpunan suara. `closed: true` yang keliru diteruskan
+   * tidak boleh mengubah sirkuler yang masih bisa berubah menjadi APPROVED.
+   */
+  it('closed:true tidak memaksa APPROVED pada sirkuler yang mufakatnya belum tercapai', () => {
+    const open = evaluateQuorum(circ, votes(['APPROVE', 'APPROVE', 'APPROVE']));
+    const withClosed = evaluateQuorum(circ, votes(['APPROVE', 'APPROVE', 'APPROVE']), {
+      closed: true,
+    });
+    expect(open.outcome).toBe('OPEN');
+    expect(withClosed.outcome).toBe('OPEN');
+  });
+
+  it('closed:true tidak mengubah REJECTED yang sudah mustahil menjadi apa pun', () => {
+    const e = evaluateQuorum(circ, votes(['APPROVE', 'REJECT']), { closed: true });
+    expect(e.outcome).toBe('REJECTED');
+  });
+
+  /**
+   * Audit D — sirkuler yang MASIH dapat dibalik oleh suara tersisa tetap OPEN.
+   *
+   * Inilah test yang diminta: berapa pun sisa suara, selama sisa itu cukup
+   * untuk mencapai ambang, hasil belum final.
+   */
+  it('sirkuler tetap OPEN selama suara tersisa masih dapat membalik hasil', () => {
+    // 5 anggota, 4 setuju (1 belum) → ambang 5 masih mungkin dicapai.
+    const nearly = evaluateQuorum(circ, votes(['APPROVE', 'APPROVE', 'APPROVE', 'APPROVE']));
+    expect(nearly.approvedCount).toBe(4);
+    expect(nearly.outcome).toBe('OPEN');
+
+    // Sisa satu suara lagi: maximal 5 = ambang → masih OPEN, bukan APPROVED.
+    const allButOne = evaluateQuorum(circ, votes(['APPROVE', 'APPROVE', 'APPROVE', 'APPROVE']), {
+      closed: true,
+    });
+    expect(allButOne.outcome).toBe('OPEN');
+  });
+
+  /**
    * Regresi: ambang 0 tak boleh mengesahkan keputusan tanpa satu suara pun.
    *
    * `requiredCount(mode, 0, pool)` menghasilkan 0, sehingga `approvedCount (0)

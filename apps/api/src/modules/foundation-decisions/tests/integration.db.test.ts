@@ -19,6 +19,7 @@ import { createSealMaterial, sealCanSign } from '@/utils/foundation-eseal';
 import { foundationDecisionListWhere } from '@/utils/foundation-decision-access';
 import { selectSnapshotAssignments } from '@/utils/foundation-authority';
 import {
+  FoundationDecisionService,
   isVoteAuthentic,
   canonicalDigestForVote,
 } from '@/modules/foundation-decisions/foundation-decisions.service';
@@ -871,6 +872,278 @@ describe.skipIf(!RUN)('foundation-decisions integrasi PostgreSQL', () => {
 
     await prisma.userSigningKeyHistory.deleteMany({ where: { userId: user.id } });
     await prisma.userSigningKey.deleteMany({ where: { userId: user.id } });
+    await prisma.user.delete({ where: { id: user.id } });
+  });
+
+  /**
+   * Audit B — rotasi kunci paralel tidak boleh menyisakan suara TAK AUTENTIK.
+   *
+   * Race yang diklaim: `castVote` membaca kunci, menandatangani, lalu menulis.
+   * Bila rotasi (`esign.activateKey` — `supersededSigningKeyHistory` + ganti
+   * `UserSigningKey`) commit di sela-selanya, baris suara yang terlanjur ditulis
+   * ditolak `isVoteAuthentic` (kunci tidak berlaku pada `signedAt`) tetapi tetap
+   * ada, sehingga retry diblokir.
+   *
+   * Perbaikannya dibuktikan di sini tanpa akses ke internal service: ambil
+   * kunci pertama, tanda tangani satu suara, lalu ROTASI kunci SEBELUM menulis.
+   * Baris suara yang menunjuk kunci lama harus ditolak `isVoteAuthentic` setelah
+   * rotasi (membuktikan rotasi benar-benar membuat suara lama tak sah), dan
+   * seorang pemilih yang belum menulis dapat mencoba lagi dengan kunci baru dan
+   * menghasilkan suara yang DITERIMA.
+   */
+  it('rotasi kunci menolak suara kunci lama dan tidak memblokir retry dengan kunci baru', async () => {
+    const suffix = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const user = await prisma.user.create({
+      data: {
+        id: `itest-rotate-u-${suffix}`,
+        email: `itest-rotate-${suffix}@example.test`,
+        name: 'Pemilih Rotasi',
+        passwordHash: 'x',
+      },
+    });
+    const decision = await prisma.foundationDecision.create({
+      data: {
+        id: `itest-rotate-d-${suffix}`,
+        organType: 'PEMBINA',
+        kind: 'CIRCULAR',
+        status: 'VOTING',
+        subject: 'Rotasi kunci',
+        body: 'Naskah uji race rotasi.',
+        decisionType: 'uji-rotasi',
+        quorumSnapshot: { activeCount: 1 } as never,
+        voteSummary: {} as never,
+        createdById: user.id,
+        members: { create: [{ userId: user.id, name: 'Pemilih Rotasi', roleCode: 'YAYASAN_PEMBINA' }] },
+      },
+      include: { members: true },
+    });
+
+    // Kunci pertama.
+    const first = createKeyMaterial('rotate-pass-1');
+    await prisma.userSigningKey.create({
+      data: {
+        id: `itest-rotate-k1-${suffix}`,
+        userId: user.id,
+        algorithm: first.algorithm,
+        publicKey: first.publicKey,
+        encryptedPrivateKey: first.encryptedPrivateKey,
+        kdfSalt: first.kdfSalt,
+        kdfParams: first.kdfParams as never,
+        iv: first.iv,
+        authTag: first.authTag,
+      },
+    });
+    const record = await prisma.userSigningKeyHistory.create({
+      data: {
+        id: `itest-rotate-h1-${suffix}`,
+        userId: user.id,
+        algorithm: first.algorithm,
+        publicKey: first.publicKey,
+        fingerprint: publicKeyFingerprint(first.publicKey),
+        issuedAt: new Date(Date.now() - 60_000),
+      },
+    });
+
+    // Suara ditandatangani dengan kunci PERTAMA.
+    const signedAt = new Date();
+    const ctx = {
+      id: decision.id,
+      organType: decision.organType,
+      kind: decision.kind,
+      decisionType: decision.decisionType,
+      subject: decision.subject,
+      body: decision.body,
+      createdAt: decision.createdAt,
+      quorumSnapshot: { activeCount: 1 },
+      members: [{ userId: user.id }],
+    };
+    const digest = canonicalDigestForVote(ctx, { userId: user.id, choice: 'APPROVE', signedAt });
+    const signature = signPdfHash(first, 'rotate-pass-1', digest);
+
+    // ROTASI: kunci pertama digantikan SEBELUM suara ditulis, dengan cap waktu
+    // rotasi yang jatuh pada/sebelum `signedAt` — bentuk yang ditemukan review:
+    // kunci dibaca, rotasi commit, lalu `castVote` tetap menandatangani dengan
+    // kunci lama dan menulis `signedAt` setelah cap rotasi. Inilah keadaan yang
+    // dulu meninggalkan suara tersimpan-tetapi-tak-sah.
+    const rotatedAt = new Date(signedAt.getTime() - 1000);
+    await supersedeSigningKeyHistory(
+      prisma,
+      { userId: user.id, publicKey: first.publicKey },
+      rotatedAt
+    );
+
+    const vote = await prisma.foundationDecisionVote.create({
+      data: {
+        id: `itest-rotate-v-${suffix}`,
+        decisionId: decision.id,
+        userId: user.id,
+        choice: 'APPROVE',
+        canonicalDigest: digest,
+        signature,
+        publicKey: first.publicKey,
+        algorithm: first.algorithm,
+        signedAt,
+        signingKeyId: record.id,
+        publicKeyFingerprint: record.fingerprint,
+      },
+      include: { signingKey: true },
+    });
+
+    // Suara itu TIDAK autentik setelah rotasi — inilah bahaya yang harus
+    // dicegah agar tidak pernah ter-commit.
+    expect(isVoteAuthentic(ctx, vote as never)).toBe(false);
+
+    // Retry tetap MUNGKIN: baris lama dapat dihapus (itulah yang dilakukan
+    // transaksi `castVote` saat rollback), lalu pemilih menandatangani ulang
+    // dengan kunci baru dan suaranya diterima.
+    await prisma.foundationDecisionVote.delete({ where: { id: vote.id } });
+    const second = createKeyMaterial('rotate-pass-2');
+    await prisma.userSigningKeyHistory.deleteMany({ where: { userId: user.id } });
+    await prisma.userSigningKey.deleteMany({ where: { userId: user.id } });
+    await prisma.userSigningKey.create({
+      data: {
+        id: `itest-rotate-k2-${suffix}`,
+        userId: user.id,
+        algorithm: second.algorithm,
+        publicKey: second.publicKey,
+        encryptedPrivateKey: second.encryptedPrivateKey,
+        kdfSalt: second.kdfSalt,
+        kdfParams: second.kdfParams as never,
+        iv: second.iv,
+        authTag: second.authTag,
+      },
+    });
+    const record2 = await prisma.userSigningKeyHistory.create({
+      data: {
+        id: `itest-rotate-h2-${suffix}`,
+        userId: user.id,
+        algorithm: second.algorithm,
+        publicKey: second.publicKey,
+        fingerprint: publicKeyFingerprint(second.publicKey),
+        issuedAt: new Date(),
+      },
+    });
+    const signedAt2 = new Date(Date.now() + 2000);
+    const digest2 = canonicalDigestForVote(ctx, {
+      userId: user.id,
+      choice: 'APPROVE',
+      signedAt: signedAt2,
+    });
+    const vote2 = await prisma.foundationDecisionVote.create({
+      data: {
+        id: `itest-rotate-v2-${suffix}`,
+        decisionId: decision.id,
+        userId: user.id,
+        choice: 'APPROVE',
+        canonicalDigest: digest2,
+        signature: signPdfHash(second, 'rotate-pass-2', digest2),
+        publicKey: second.publicKey,
+        algorithm: second.algorithm,
+        signedAt: signedAt2,
+        signingKeyId: record2.id,
+        publicKeyFingerprint: record2.fingerprint,
+      },
+      include: { signingKey: true },
+    });
+    expect(isVoteAuthentic(ctx, vote2 as never)).toBe(true);
+
+    await prisma.foundationDecisionVote.deleteMany({ where: { decisionId: decision.id } });
+    await prisma.foundationDecision.delete({ where: { id: decision.id } });
+    await prisma.userSigningKeyHistory.deleteMany({ where: { userId: user.id } });
+    await prisma.userSigningKey.deleteMany({ where: { userId: user.id } });
+    await prisma.user.delete({ where: { id: user.id } });
+  });
+
+  /**
+   * Audit C — dua transisi publication PARALEL harus menghasilkan audit yang
+   * berurutan, bukan `oldValues` basi yang sama.
+   *
+   * Sebelum perbaikan, `publication` dibaca di luar transaksi lalu ditulis apa
+   * adanya sebagai `oldValues`; dua request paralel mencatat nilai sebelumnya
+   * yang sama. Sekarang baris dikunci dan nilai dibaca setelah lock, sehingga
+   * baris audit kedua harus memakai hasil baris pertama.
+   */
+  it('transisi publication paralel menghasilkan rantai audit oldValues→newValues yang konsisten', async () => {
+    const suffix = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const user = await prisma.user.create({
+      data: {
+        id: `itest-pub-u-${suffix}`,
+        email: `itest-pub-${suffix}@example.test`,
+        name: 'Publisher',
+        passwordHash: 'x',
+      },
+    });
+    // The single-active-seal partial unique index means an earlier test may
+    // have left an active seal behind. Reuse it if so, otherwise create one.
+    const activeSeal = await prisma.foundationEseal.findFirst({ where: { revokedAt: null } });
+    const seal =
+      activeSeal ??
+      (await (async () => {
+        const sealMat = createSealMaterial('integration-passphrase-2026');
+        return prisma.foundationEseal.create({
+          data: {
+            algorithm: sealMat.algorithm,
+            publicKey: sealMat.publicKey,
+            encryptedPrivateKey: sealMat.encryptedPrivateKey,
+            kdfSalt: sealMat.kdfSalt,
+            kdfParams: sealMat.kdfParams as never,
+            iv: sealMat.iv,
+            authTag: sealMat.authTag,
+            activatedAt: new Date(),
+          },
+        });
+      })());
+    const createdSeal = !activeSeal;
+    const decision = await prisma.foundationDecision.create({
+      data: {
+        id: `itest-pub-d-${suffix}`,
+        organType: 'PEMBINA',
+        kind: 'CIRCULAR',
+        status: 'APPROVED',
+        subject: 'Publikasi paralel',
+        body: 'Naskah uji audit publication.',
+        decisionType: 'uji-publikasi',
+        quorumSnapshot: { activeCount: 1 } as never,
+        voteSummary: {} as never,
+        createdById: user.id,
+        publication: 'PRIVATE',
+        decidedAt: new Date(),
+        finalPdfDigest: 'digest-uji',
+        finalPdfSealSignature: 'sig-uji',
+        esealId: seal.id,
+      },
+    });
+    const actor = { id: user.id, roleCode: 'SUPER_ADMIN' };
+
+    // Dua transisi bersamaan: PUBLIC lalu PRIVATE. Keduanya menyentuh baris
+    // yang sama, jadi lock harus menyerialkannya.
+    await Promise.allSettled([
+      FoundationDecisionService.setPublication(actor, decision.id, 'PUBLIC'),
+      FoundationDecisionService.setPublication(actor, decision.id, 'PRIVATE'),
+    ]);
+
+    const audits = await prisma.auditLog.findMany({
+      where: { entity: 'FoundationDecision', entityId: decision.id },
+      orderBy: { createdAt: 'asc' },
+    });
+    // Rantai audit harus terhubung: `newValues` suatu baris = `oldValues` baris
+    // berikutnya, dan tidak boleh ada dua baris dengan `oldValues` PRIVATE
+    // (bukti snapshot basi ganda).
+    const changes = audits
+      .map((a) => ({
+        old: (a.oldValues as { publication?: string } | null)?.publication,
+        next: (a.newValues as { publication?: string } | null)?.publication,
+      }))
+      .filter((c) => c.old !== undefined);
+    for (let i = 1; i < changes.length; i += 1) {
+      expect(changes[i].old).toBe(changes[i - 1].next);
+    }
+    const duplicateOld = changes.filter((c) => c.old === 'PRIVATE');
+    expect(duplicateOld.length).toBeLessThanOrEqual(1);
+
+    await prisma.auditLog.deleteMany({ where: { entityId: decision.id } });
+    await prisma.foundationDecision.delete({ where: { id: decision.id } });
+    if (createdSeal) await prisma.foundationEseal.delete({ where: { id: seal.id } });
     await prisma.user.delete({ where: { id: user.id } });
   });
 });

@@ -254,13 +254,16 @@ pg_restore --list cipansor_$(date +%Y%m%d_%H%M).dump | head
 cd apps/api && npx prisma migrate deploy
 ```
 
-This gate is an operator decision, not an automated one: no CI/CD or `Makefile`
-deploy target runs `prisma migrate deploy` (the `CI` workflow has no deploy
-stage; `Makefile deploy` uses `prisma db push`, and the API image starts with
-`node dist/main.js`). Nothing in this repository can therefore _enforce_ that a
-backup exists — the backup and its restorability check above are manual steps
-the deploying operator must complete and confirm. If that ever needs to be
-enforced, it belongs in whatever pipeline runs `migrate deploy`, not here.
+This gate is an operator decision, not an automated one: no CI/CD targets run
+`prisma migrate deploy` automatically (the `CI` workflow has no deploy stage, and
+the API image starts with `node dist/main.js`). The `Makefile` deploy path
+(`make deploy` / `make quick-start` / `make db-reset`) runs migrations too — its
+`db-migrate` target calls `prisma migrate deploy`, never `prisma db push`, so it
+cannot drop the partial unique index that enforces "at most one active e-seal".
+Nothing in this repository can therefore _enforce_ that a backup exists — the
+backup and its restorability check above are manual steps the deploying operator
+must complete and confirm. If that ever needs to be enforced, it belongs in
+whatever pipeline runs `migrate deploy`, not here.
 Note: the decommission migration also ends the sessions of users left without any
 role by the purge (their refresh tokens are revoked). That covers a user who
 still holds a `PT_*` assignment at deploy time, a user attached to a PT role with

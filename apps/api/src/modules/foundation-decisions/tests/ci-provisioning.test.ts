@@ -138,4 +138,26 @@ describe('penyediaan basis data lokal memakai migrasi (Flag C)', () => {
       expect(text, `${rel} masih menyuruh db:push`).not.toMatch(/\bdb:push\b/);
     }
   });
+
+  /**
+   * Audit E — Makefile adalah jalur operasional (`make deploy`,
+   * `make quick-start`, `make db-reset`) yang sebelumnya menjalankan
+   * `prisma db push`. `db push` membuang indeks unik parsial, sehingga basis
+   * data hasil `make deploy` TIDAK punya invariant "paling banyak satu e-seal
+   * aktif" — perilaku berbeda dari CI/produksi. Target `db-migrate` menggantinya
+   * dengan `prisma migrate deploy`. `docs/DEPLOYMENT.md` yang menyebut
+   * `Makefile deploy` memakai `db push` ikut dijaga.
+   */
+  it('Makefile tidak menjalankan `prisma db push`; memakai `migrate deploy`', () => {
+    const text = commandLines(read('Makefile'));
+    expect(text).toMatch(/\bmigrate deploy\b/);
+    // Target `db-push` (dan pemanggil `$(MAKE) db-push`) tidak boleh kembali.
+    expect(text).not.toMatch(/db-push/);
+    expect(text).not.toMatch(/prisma\s+db\s+push/);
+  });
+
+  it('DEPLOYMENT.md tidak lagi mengklaim Makefile deploy memakai db push', () => {
+    const text = commandLines(read('docs/DEPLOYMENT.md'));
+    expect(text).not.toMatch(/Makefile[\s\S]{0,80}prisma db push/);
+  });
 });

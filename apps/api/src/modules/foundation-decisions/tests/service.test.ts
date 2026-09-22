@@ -211,6 +211,19 @@ beforeEach(() => {
     supersededAt: null,
     revokedAt: null,
   }));
+  // Anti-TOCTOU (audit B): `castVote` membaca ULANG rekaman riwayat di dalam
+  // transaksi. Default-nya adalah rekaman yang masih berlaku; test yang
+  // menguji rotasi menimpanya dengan `revokedAt`/`supersededAt`.
+  dm.userSigningKeyHistory.findUnique.mockImplementation(async () => ({
+    id: 'kh-user-1',
+    userId: 'user-1',
+    algorithm: material.algorithm,
+    publicKey: material.publicKey,
+    fingerprint: publicKeyFingerprint(material.publicKey),
+    issuedAt: new Date('2026-01-01T00:00:00Z'),
+    supersededAt: null,
+    revokedAt: null,
+  }));
 });
 
 describe('sha256bytes', () => {
@@ -652,6 +665,95 @@ describe('FoundationDecisionService.castVote', () => {
     expect(result.outcome.outcome).toBe('OPEN');
     expect(result.outcome.status).toBe('VOTING');
   });
+
+  /**
+   * Regresi audit B — rotasi kunci paralel TIDAK boleh meninggalkan suara
+   * invalid yang memblokir percobaan ulang.
+   *
+   * `castVote` membaca kunci, menandatangani, lalu membuka transaksi. Bila
+   * `esign.activateKey`/`revokeKey` commit di sela-selanya, baris suara yang
+   * terlanjur ditulis ditolak `isVoteAuthentic` (kunci tidak berlaku pada
+   * `signedAt`) TETAPI tetap ada — sehingga rekap tidak memuat suara itu dan
+   * percobaan ulang ditolak "sudah memberikan suara". Perbaikannya: buktikan
+   * ulang kunci DI DALAM transaksi, SEBELUM insert. Test ini mensimulasikan
+   * rotasi yang menang dengan membuat riwayat kunci sudah di-supersede saat
+   * pembacaan di dalam transaksi.
+   */
+  it('rotasi kunci yang menang membatalkan suara TANPA menyisakan baris (bisa retry)', async () => {
+    const d = decisionRow();
+    dm.foundationDecision.findUnique.mockResolvedValue(d);
+    dm.foundationDecisionVote.create.mockResolvedValue({ id: 'vote-1' });
+    dm.userSigningKey.findUnique.mockResolvedValue(signingKeyRow);
+    dm.userSigningKey.update.mockResolvedValue(signingKeyRow);
+    dm.foundationEseal.findFirst.mockResolvedValue(null);
+
+    // Kunci yang menandatangani sudah DIGANTIKAN sebelum transaksi suara
+    // membaca ulang riwayatnya (rotasi menang).
+    dm.userSigningKeyHistory.upsert.mockImplementation((args: any) => ({
+      id: `kh-${args.create.userId}`,
+      userId: args.create.userId,
+      algorithm: args.create.algorithm,
+      publicKey: args.create.publicKey,
+      fingerprint: args.create.fingerprint,
+      issuedAt: new Date('2026-01-01T00:00:00Z'),
+      supersededAt: null,
+      revokedAt: null,
+    }));
+    dm.userSigningKeyHistory.findUnique.mockResolvedValue({
+      id: 'kh-user-1',
+      userId: 'user-1',
+      algorithm: material.algorithm,
+      publicKey: material.publicKey,
+      fingerprint: publicKeyFingerprint(material.publicKey),
+      issuedAt: new Date('2026-01-01T00:00:00Z'),
+      // Rotasi jatuh TEPAT SEBELUM signedAt → keyUsableAt false.
+      supersededAt: new Date('2026-01-01T12:00:00Z'),
+      revokedAt: null,
+    });
+
+    await expect(
+      FoundationDecisionService.castVote(
+        { id: 'user-1', roleCode: 'YAYASAN_PEMBINA' },
+        'dec-1',
+        { choice: 'APPROVE', passphrase: PASS }
+      )
+    ).rejects.toThrow(/berubah atau tidak lagi berlaku/);
+
+    // Tidak ada baris suara yang ditulis → pengguna dapat mencoba lagi.
+    expect(dm.foundationDecisionVote.create).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Kunci yang hilang sama sekali di dalam transaksi (rotasi sudah menghapus
+   * baris lama, penggantinya belum/sudah beda) juga fail closed tanpa insert.
+   */
+  it('kunci hilang/berbeda di dalam transaksi → batal tanpa insert', async () => {
+    const d = decisionRow();
+    dm.foundationDecision.findUnique.mockResolvedValue(d);
+    dm.userSigningKey.findUnique.mockResolvedValue(signingKeyRow);
+    dm.userSigningKey.update.mockResolvedValue(signingKeyRow);
+    dm.foundationEseal.findFirst.mockResolvedValue(null);
+
+    const other = createKeyMaterial('kunci-baru-pengganti-2026');
+    // Pembacaan PERTAMA (di luar transaksi) memakai kunci lama; pembacaan
+    // KEDUA (di dalam transaksi) mendapati kunci sudah diganti.
+    dm.userSigningKey.findUnique
+      .mockResolvedValueOnce(signingKeyRow)
+      .mockResolvedValueOnce({
+        ...signingKeyRow,
+        publicKey: other.publicKey,
+        algorithm: other.algorithm,
+      });
+
+    await expect(
+      FoundationDecisionService.castVote(
+        { id: 'user-1', roleCode: 'YAYASAN_PEMBINA' },
+        'dec-1',
+        { choice: 'APPROVE', passphrase: PASS }
+      )
+    ).rejects.toThrow(/berubah atau tidak lagi berlaku/);
+    expect(dm.foundationDecisionVote.create).not.toHaveBeenCalled();
+  });
 });
 
 describe('FoundationDecisionService.finalize', () => {
@@ -717,6 +819,154 @@ describe('FoundationDecisionService.finalize', () => {
       FoundationDecisionService.finalize({ id: 'user-0', roleCode: 'YAYASAN_PEMBINA' }, 'dec-1')
     ).rejects.toThrow(/belum dapat ditutup/);
     expect(dm.foundationDecision.update).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Audit D — TIDAK ada penutupan dini untuk CIRCULAR.
+   *
+   * Sirkuler yang mufakatnya masih mungkin TIDAK boleh digugurkan hanya karena
+   * `finalize` dipanggil: hasilnya masih dapat berubah oleh anggota yang belum
+   * bersuara. Sebelum perbaikan, `finalize` meneruskan `closed: true` ke mesin
+   * kuorum; untuk sirkuler itu keliru dan (pada aturan non-mufakat, mis.
+   * MAYORITY) dapat menutup REJECTED lebih awal.
+   */
+  it('CIRCULAR: finalize ditolak selama mufakat masih mungkin (tanpa penutupan dini)', async () => {
+    // 3 anggota aktif; 2 setuju, 1 belum bersuara → mufakat 3 masih mungkin.
+    const d = decisionRow({
+      kind: 'CIRCULAR',
+      status: 'VOTING',
+      quorumSnapshot: {
+        organType: 'PEMBINA',
+        kind: 'CIRCULAR',
+        activeCount: 3,
+        presentMode: 'MUTLAK',
+        presentValue: 1,
+        decisionMode: 'MUTLAK',
+        decisionValue: 1,
+      },
+    });
+    d.votes = [signedVoteRow(d, 'user-0', 'APPROVE'), signedVoteRow(d, 'user-1', 'APPROVE')];
+    dm.foundationDecision.findUnique.mockResolvedValue(d);
+
+    await expect(
+      FoundationDecisionService.finalize({ id: 'user-0', roleCode: 'YAYASAN_PEMBINA' }, 'dec-1')
+    ).rejects.toThrow(/belum dapat ditutup/);
+    expect(dm.foundationDecision.update).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Audit D — CIRCULAR dengan aturan non-mufakat (MAJORITY) TIDAK boleh
+   * digugurkan dini. Inilah bentuk di mana `closed: true` paling berbahaya:
+   * mesin kuorum akan menutup REJECTED padahal sisa suara masih dapat mencapai
+   * ambang.
+   */
+  it('CIRCULAR mayoritas: finalize ditolak selama ambang masih dapat dicapai', async () => {
+    const d = decisionRow({
+      kind: 'CIRCULAR',
+      status: 'VOTING',
+      quorumSnapshot: {
+        organType: 'PEMBINA',
+        kind: 'CIRCULAR',
+        activeCount: 5,
+        presentMode: 'MUTLAK',
+        presentValue: 1,
+        decisionMode: 'MAJORITY',
+        decisionValue: 0.5,
+      },
+    });
+    // 3 anggota: 1 setuju, 1 menolak, 1 abstain. Ambang mayoritas = 3 (+1 dari
+    // 5 > 2.5). Sisa 2 anggota masih dapat menyetujui → belum mustahil.
+    d.votes = [
+      signedVoteRow(d, 'user-0', 'APPROVE'),
+      signedVoteRow(d, 'user-1', 'REJECT'),
+      signedVoteRow(d, 'user-2', 'ABSTAIN'),
+    ];
+    dm.foundationDecision.findUnique.mockResolvedValue(d);
+
+    await expect(
+      FoundationDecisionService.finalize({ id: 'user-0', roleCode: 'YAYASAN_PEMBINA' }, 'dec-1')
+    ).rejects.toThrow(/belum dapat ditutup/);
+    expect(dm.foundationDecision.update).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Audit D — CIRCULAR yang mufakat sudah MUSTAHIL tetap dapat difinalkan
+   * sebagai REJECTED (fail-closed pada outcome mesin, bukan penutupan paksa).
+   */
+  it('CIRCULAR: finalize menyegel REJECTED yang sudah mustahil', async () => {
+    const d = decisionRow({
+      kind: 'CIRCULAR',
+      status: 'VOTING',
+      quorumSnapshot: {
+        organType: 'PEMBINA',
+        kind: 'CIRCULAR',
+        activeCount: 3,
+        presentMode: 'MUTLAK',
+        presentValue: 1,
+        decisionMode: 'MUTLAK',
+        decisionValue: 1,
+      },
+    });
+    d.votes = [signedVoteRow(d, 'user-0', 'REJECT'), signedVoteRow(d, 'user-1', 'APPROVE')];
+    dm.foundationDecision.findUnique.mockResolvedValue(d);
+    dm.foundationDecision.update.mockResolvedValue({ ...d, status: 'REJECTED' });
+
+    const res = await FoundationDecisionService.finalize(
+      { id: 'user-0', roleCode: 'YAYASAN_PEMBINA' },
+      'dec-1'
+    );
+    expect(res.outcome).toBe('REJECTED');
+  });
+
+  /**
+   * Audit D — CIRCULAR yang seluruh anggotanya sudah setuju tetap APPROVED
+   * lewat `finalize`, sehingga perilaku lama (menyegel mufakat penuh) utuh.
+   */
+  it('CIRCULAR: finalize menyegel APPROVED saat mufakat tercapai', async () => {
+    const d = decisionRow({
+      kind: 'CIRCULAR',
+      status: 'VOTING',
+      quorumSnapshot: {
+        organType: 'PEMBINA',
+        kind: 'CIRCULAR',
+        activeCount: 3,
+        presentMode: 'MUTLAK',
+        presentValue: 1,
+        decisionMode: 'MUTLAK',
+        decisionValue: 1,
+      },
+    });
+    d.votes = [
+      signedVoteRow(d, 'user-0', 'APPROVE'),
+      signedVoteRow(d, 'user-1', 'APPROVE'),
+      signedVoteRow(d, 'user-2', 'APPROVE'),
+    ];
+    dm.foundationDecision.findUnique.mockResolvedValue(d);
+
+    // e-seal aktif yang dapat dipakai dengan passphrase test saat ini, supaya
+    // jalur APPROVED (render PDF + bubuh e-seal) benar-benar berjalan.
+    const sealMat = createSealMaterial(config.foundation.esealPassphrase);
+    dm.foundationEseal.findMany.mockResolvedValue([
+      {
+        id: 'seal-1',
+        ...sealMat,
+        kdfParams: sealMat.kdfParams as never,
+        revokedAt: null,
+        createdAt: new Date(),
+      },
+    ]);
+
+    vi.spyOn(pdfModule, 'generateDecisionPdf').mockResolvedValue(
+      Buffer.from('%PDF-1.4 test')
+    );
+    dm.foundationDecision.update.mockResolvedValue({ ...d, status: 'APPROVED' });
+    dm.foundationDecisionDocument.create.mockResolvedValue({ id: 'doc-1' });
+
+    const res = await FoundationDecisionService.finalize(
+      { id: 'user-0', roleCode: 'YAYASAN_PEMBINA' },
+      'dec-1'
+    );
+    expect(res.outcome).toBe('APPROVED');
   });
 
   /**
@@ -864,7 +1114,7 @@ describe('FoundationDecisionService.detail — canFinalize pada DTO (audit A)', 
 describe('FoundationDecisionService.setPublication (audit D)', () => {
   beforeEach(() => {
     dm.auditLog.create.mockResolvedValue({ id: 'audit-1' });
-    dm.foundationDecision.updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    dm.foundationDecision.update = vi.fn().mockResolvedValue({ updatedAt: new Date() });
   });
 
   it('menolak PUBLIC untuk keputusan VOTING', async () => {
@@ -878,7 +1128,7 @@ describe('FoundationDecisionService.setPublication (audit D)', () => {
         'PUBLIC'
       )
     ).rejects.toThrow(/disahkan/);
-    expect(dm.foundationDecision.updateMany).not.toHaveBeenCalled();
+    expect(dm.foundationDecision.update).not.toHaveBeenCalled();
   });
 
   it('menolak PUBLIC untuk keputusan REJECTED', async () => {
@@ -938,18 +1188,86 @@ describe('FoundationDecisionService.setPublication (audit D)', () => {
     expect(res.publication).toBe('PRIVATE');
   });
 
-  it('update bersyarat atomik: nol baris → ditolak tanpa audit', async () => {
-    dm.foundationDecision.findUnique.mockResolvedValue(
-      decisionRow({
-        status: 'APPROVED',
-        finalPdfDigest: 'd',
-        finalPdfSealSignature: 's',
-        esealId: 'e',
-        document: { id: 'doc' },
-      })
+  /**
+   * Regresi audit C — audit memakai `oldValues` dari PEMBACAAN TERKUNCI.
+   *
+   * Versi lama membaca `d.publication` di luar transaksi. Dua request paralel
+   * dapat mencatat nilai sebelumnya yang sama. Di sini pembacaan pra-lock
+   * sengaja dibuat BASI (mengklaim `PUBLIC`) sedangkan pembacaan di dalam kunci
+   * mengembalikan `PRIVATE`; audit harus memakai yang terkunci.
+   */
+  it('audit memakai publication hasil pembacaan TERKUNCI, bukan snapshot pra-lock', async () => {
+    dm.foundationDecision.findUnique
+      .mockResolvedValueOnce(
+        decisionRow({
+          status: 'APPROVED',
+          publication: 'PUBLIC',
+          finalPdfDigest: 'd',
+          finalPdfSealSignature: 's',
+          esealId: 'e',
+          document: { id: 'doc' },
+        })
+      )
+      .mockResolvedValueOnce(
+        decisionRow({
+          status: 'APPROVED',
+          publication: 'PRIVATE',
+          finalPdfDigest: 'd',
+          finalPdfSealSignature: 's',
+          esealId: 'e',
+          document: { id: 'doc' },
+        })
+      );
+
+    await FoundationDecisionService.setPublication(
+      { id: 'super', roleCode: 'SUPER_ADMIN' },
+      'dec-1',
+      'PUBLIC'
     );
-    // Race: baris berubah (mis. e-seal dicabut) antara baca dan tulis.
-    dm.foundationDecision.updateMany.mockResolvedValue({ count: 0 });
+
+    expect(dm.foundationDecision.update).toHaveBeenCalledTimes(1);
+    const audit = dm.auditLog.create.mock.calls[0][0].data;
+    expect(audit.oldValues).toEqual({ publication: 'PRIVATE' });
+    expect(audit.newValues).toEqual({ publication: 'PUBLIC' });
+  });
+
+  /**
+   * No-op semantics (audit C): publikasi yang TIDAK berubah tidak menulis
+   * audit. Baris audit `oldValues === newValues` mengisi jejak dengan
+   * perubahan yang tidak pernah terjadi.
+   */
+  it('tidak menulis audit bila publication tidak berubah (no-op)', async () => {
+    dm.foundationDecision.findUnique.mockResolvedValue(
+      decisionRow({ status: 'VOTING', publication: 'PRIVATE' })
+    );
+    const res = await FoundationDecisionService.setPublication(
+      { id: 'super', roleCode: 'SUPER_ADMIN' },
+      'dec-1',
+      'PRIVATE'
+    );
+    expect(res.publication).toBe('PRIVATE');
+    expect(dm.auditLog.create).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Syarat PUBLIC divalidasi terhadap STATE TERKUNCI: baris yang berubah
+   * (mis. e-seal dicabut) antara baca pra-lock dan baca terkunci ditolak, dan
+   * tidak ada audit yang ditulis.
+   */
+  it('menolak bila artefak hilang pada pembacaan terkunci (race finalisasi/e-seal)', async () => {
+    dm.foundationDecision.findUnique
+      .mockResolvedValueOnce(
+        decisionRow({
+          status: 'APPROVED',
+          finalPdfDigest: 'd',
+          finalPdfSealSignature: 's',
+          esealId: 'e',
+          document: { id: 'doc' },
+        })
+      )
+      .mockResolvedValueOnce(
+        decisionRow({ status: 'APPROVED', finalPdfDigest: null, finalPdfSealSignature: null, esealId: null })
+      );
     await expect(
       FoundationDecisionService.setPublication(
         { id: 'super', roleCode: 'SUPER_ADMIN' },
