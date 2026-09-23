@@ -155,6 +155,19 @@ export const SYSTEM_USER_ID = '00000000-0000-0000-0000-000000000000';
 const prisma = createPrismaClient();
 
 async function main() {
+  // This seed wipes every table (TRUNCATE … CASCADE below) before loading demo
+  // data, so pointing it at a live database destroys it — and `prisma db seed`
+  // or a stray DATABASE_URL is all it takes. Demand an explicit opt-in that
+  // only dev, CI and the demo-only staging database ever set.
+  if (process.env.ALLOW_DESTRUCTIVE_SEED !== '1') {
+    console.error(
+      'Refusing to seed: prisma/seed.ts TRUNCATEs every table before loading demo data.\n' +
+        'Set ALLOW_DESTRUCTIVE_SEED=1 to run it against a development, CI or staging database.\n' +
+        'Never set it for production.'
+    );
+    process.exit(1);
+  }
+
   console.log('🌱 Seeding database...');
 
   // Clean up existing data.

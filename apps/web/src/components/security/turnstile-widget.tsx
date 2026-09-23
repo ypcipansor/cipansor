@@ -8,7 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * Site key dibaca dari `NEXT_PUBLIC_TURNSTILE_SITE_KEY`, yang **dibakar ke
  * dalam bundel pada waktu build**, bukan dibaca saat halaman dijalankan.
  * Menyuntingnya di `.env` produksi tidak mengubah apa pun sampai image web
- * dibangun ulang — sama seperti `NEXT_PUBLIC_SHOW_DEMO_LOGIN`.
+ * dibangun ulang.
  *
  * `??`, bukan `||`: site key yang sengaja dikosongkan berarti "matikan
  * gerbangnya", dan `||` akan melipat string kosong itu menjadi nilai bawaan.

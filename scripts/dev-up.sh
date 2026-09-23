@@ -32,7 +32,7 @@ export E2E_FIXED_2FA=1 TWO_FACTOR_RATE_LIMIT_MAX=100000 LOG_LEVEL=error
 USERS=$(su pgrunner -c "$PGBIN/psql -h 127.0.0.1 -U postgres -d cipansor -tc 'SELECT count(*) FROM users;'" 2>/dev/null | tr -d ' ')
 if ! [ "${USERS:-0}" -gt 0 ] 2>/dev/null; then
   echo "Seeding DB..."
-  (cd apps/api && pnpm db:generate && pnpm db:push && E2E_FIXED_2FA=1 pnpm db:seed) >/tmp/seed.log 2>&1 \
+  (cd apps/api && pnpm db:generate && pnpm db:push && E2E_FIXED_2FA=1 ALLOW_DESTRUCTIVE_SEED=1 pnpm db:seed) >/tmp/seed.log 2>&1 \
     && echo "seeded" || { echo "SEED FAILED"; tail -5 /tmp/seed.log; }
 else
   (cd apps/api && pnpm db:generate >/tmp/gen.log 2>&1) || true

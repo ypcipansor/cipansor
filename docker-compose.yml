@@ -94,12 +94,15 @@ services:
       TURNSTILE_ALLOWED_HOSTNAMES: ${TURNSTILE_ALLOWED_HOSTNAMES:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
-      # Marks the whole deployment as a demo, lifting the mandatory 2FA wall so
-      # the seeded accounts can be opened at all — none has an authenticator
-      # enrolled. It no longer keys off an email suffix; the accounts now live on
-      # @cipansor.or.id like everything else. Must be false for a real launch —
-      # set it together with NEXT_PUBLIC_SHOW_DEMO_LOGIN.
-      DEMO_MODE: ${DEMO_MODE:-false}
+      # Staging switches (see config.scheduler / config.outboundMessages). ON for
+      # this production stack; a staging copy sets both to false so it neither
+      # runs the cron jobs nor sends e-mail/SMS/WhatsApp to real wali.
+      SCHEDULER_ENABLED: ${SCHEDULER_ENABLED:-true}
+      OUTBOUND_MESSAGES_ENABLED: ${OUTBOUND_MESSAGES_ENABLED:-true}
+      # Apply pending migrations at container start (docker-entrypoint.sh). Off
+      # here: releases on this VM run `prisma migrate deploy` by hand after the
+      # pre-checks in the deploy runbook. Azure App Service sets it to true.
+      MIGRATE_ON_START: ${MIGRATE_ON_START:-false}
       # Public customer-service chatbot. This service enumerates its environment
       # explicitly, so a variable absent from this block does not reach the API
       # no matter what .env holds — which is how the assistant shipped inert.
@@ -210,9 +213,6 @@ services:
         # `-` not `:-` — an empty value is meaningful here (it makes the API
         # base relative), and `:-` would silently replace it with the default.
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL-http://localhost:3001}
-        # "true" shows the demo-login credential panel on /login. Enable for
-        # demo deployments, leave unset for a real launch.
-        NEXT_PUBLIC_SHOW_DEMO_LOGIN: ${NEXT_PUBLIC_SHOW_DEMO_LOGIN:-false}
         # Site key Turnstile. Dibakar ke dalam bundel klien di sini dan hanya
         # di sini — menyuntingnya di .env produksi tidak berpengaruh sampai
         # image web dibangun ulang. Kosong = widget tidak dirender sama sekali,

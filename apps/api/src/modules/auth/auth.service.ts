@@ -185,26 +185,14 @@ export class AuthService {
       role: deriveLegacyRole(roleCode),
     };
 
-    // A demo deployment is exempt from 2FA: without it the privileged roles
-    // cannot be opened at all, since no seeded account has an authenticator
-    // enrolled. DEMO_MODE is the whole condition.
-    //
-    // It used to also require the address to end in `@demo.cipansor.or.id`.
-    // That made an email address load-bearing for security, which is why the
-    // accounts could not be renamed onto the institution's own domain without
-    // silently locking every privileged login out behind a 2FA wall it has no
-    // authenticator for. A deployment is a demo or it is not; the address of
-    // the person signing in does not decide that.
-    //
-    // This is a LOOSENING while DEMO_MODE=true: accounts that were outside the
-    // old suffix — the seeded staff and student logins — are now exempt too.
-    // Acceptable only because the flag marks the entire deployment as demo, and
-    // production has no real accounts yet. `DEMO_MODE=false` restores the wall
-    // for everyone, and that is the switch to throw at launch.
-    const isDemoAccount = process.env.DEMO_MODE === 'true';
+    // There is no demo exemption from 2FA any more (DEMO_MODE was removed
+    // 2026-09-23): it waived the second factor for every account, Super Admin
+    // included, on a deployment whose seeded passwords are published in the
+    // repository. Test environments pre-enrol admins with a fixed TOTP secret
+    // instead (seed.ts, E2E_FIXED_2FA=1).
 
     // Check for 2FA
-    if (user.isTwoFactorEnabled && !isDemoAccount) {
+    if (user.isTwoFactorEnabled) {
       const tempToken = generateAccessToken({ ...basePayload, isTemp: true }, TWO_FACTOR_TEMP_TTL);
 
       return {
@@ -220,7 +208,7 @@ export class AuthService {
     }
 
     // Force 2FA setup for Admin/Super Admin
-    if (isUserAdmin && !user.isTwoFactorEnabled && !isDemoAccount) {
+    if (isUserAdmin && !user.isTwoFactorEnabled) {
       const tempToken = generateAccessToken({ ...basePayload, isTemp: true }, TWO_FACTOR_SETUP_TTL);
 
       return {

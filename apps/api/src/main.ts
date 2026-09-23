@@ -64,9 +64,14 @@ async function bootstrap() {
       logger.info(`🔌 WebSocket: ws://localhost:${PORT}`);
     });
 
-    // Initialize scheduled jobs
+    // Initialize scheduled jobs — unless this copy is a staging environment that
+    // switched them off (SCHEDULER_ENABLED=false; see config.scheduler).
     if (config.env !== 'test') {
-      initializeScheduler();
+      if (config.scheduler.enabled) {
+        initializeScheduler();
+      } else {
+        logger.warn('⏸️  Scheduler disabled (SCHEDULER_ENABLED=false): no cron jobs run in this process');
+      }
     }
 
     // Graceful shutdown

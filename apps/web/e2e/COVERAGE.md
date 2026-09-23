@@ -22,7 +22,7 @@ _Headline count + spec-inventory table re-audited 2026-07-20 from source; the ro
 ## Verified full-suite run (chromium, real seeded stack — 2026-07-16)
 
 Stack: local Postgres 16 + Redis (`scripts/dev-stack.sh`), `db:push` +
-`E2E_FIXED_2FA=1 db:seed`, API dev server + web **production** build
+`E2E_FIXED_2FA=1 ALLOW_DESTRUCTIVE_SEED=1 db:seed`, API dev server + web **production** build
 (`next start`; dev-mode Turbopack compile-on-demand times out Playwright's
 240s webServer wait — use `pnpm build && pnpm start` locally).
 
@@ -1009,7 +1009,7 @@ old addresses, and `spmb.spec.ts` asserts that redirect still lands on `/spmb`.
 
 ## How to move a cell to ✅
 
-1. Bring up the real stack: `scripts/dev-stack.sh` then seed with `E2E_FIXED_2FA=1 pnpm --filter api db:seed`.
+1. Bring up the real stack: `scripts/dev-stack.sh` then seed with `E2E_FIXED_2FA=1 ALLOW_DESTRUCTIVE_SEED=1 pnpm --filter api db:seed`.
 2. Authenticate via `await loginAs(page, role)` (`e2e/helpers/auth-api.ts`) — never `page.route` interception.
 3. Cover the dimension: **Nav** (route renders w/o crash for an allowed role), **CRUD** (create→read→update→delete persisted via UI/API), **Buttons** (every visible action), **Fields** (valid + invalid submit w/ validation assertions), **RBAC** (allowed role sees it; forbidden role is blocked).
 4. Flip the cell in this file in the same PR as the spec.
