@@ -587,12 +587,12 @@ function sealMaterial(seal: FoundationEseal): EncryptedKeyMaterial {
  * Pastikan e-seal Yayasan yang AKTIF dan DAPAT DIPAKAI tersedia; buat satu
  * baris bila belum ada.
  *
- * Tidak mengambil "seal tertua" (mungkin sudah dicabut), dan menyaring kandidat
- * dengan probe kemampuan menandatangani memakai passphrase SEKARANG — pasca
- * rotasi passphrase, seal lama masih aktif tetapi kuncinya tersegel dengan
- * passphrase lama. **Invariant satu seal aktif ditegakkan basis data** lewat
- * indeks unik parsial `foundation_eseals_single_active_key`; find-then-create di
- * bawah memiliki balapan nyata (dua approval paralel). Lihat §7.4 dokumen review.
+ * Kandidat disaring dengan probe kemampuan menandatangani memakai passphrase
+ * SEKARANG: pasca rotasi, seal lama masih `revokedAt: null` tetapi kuncinya
+ * tersegel dengan passphrase lama. **Invariant satu seal aktif ditegakkan basis
+ * data** lewat indeks unik parsial `foundation_eseals_single_active_key`;
+ * find-then-create di bawah memiliki balapan nyata (dua approval paralel).
+ * Lihat §7.4 dokumen review.
  */
 async function ensureSeal(client: DbClient = prisma): Promise<FoundationEseal> {
   const candidates = await client.foundationEseal.findMany({
@@ -684,23 +684,22 @@ async function lockDecision(client: DbClient, id: string): Promise<void> {
 }
 
 /**
- * Kunci baris penugasan organ yang menjadi dasar snapshot, lalu baca ULANG.
+ * Serialisasi seluruh mutasi penugasan peran, lalu baca ULANG himpunan anggota
+ * organ secara LENGKAP.
  *
- * `create` membaca penugasan SEBELUM transaksi untuk menyusun snapshot. Antara
- * pembacaan itu dan komit, `roles.service` dapat mencabut atau mengubah
- * penugasan tersebut. Tanpa kunci, snapshot immutable dapat membekukan anggota
- * yang sudah tidak sah beserta hak suaranya.
- *
- * `FOR UPDATE` di sini membuat pencabutan/penggantian yang menyentuh baris yang
- * SAMA menunggu sampai transaksi ini selesai; pencabutan yang menimpa baris
- * lain tetap tertangkap karena baris dibaca ULANG di dalam transaksi dan
- * dibandingkan. Baris yang dihapus tidak lagi muncul di hasil baca ulang —
- * itulah yang membuat `assertSnapshotStillMatches` menolaknya.
+ * `create` membaca penugasan SEBELUM transaksi; di sela itu penugasan dapat
+ * ditambah, dicabut, atau diubah. `FOR UPDATE` atas ID hasil pembacaan awal
+ * TIDAK cukup — ia tidak mengunci baris yang belum ada, sehingga pengangkatan
+ * yang commit di sela lolos dan kuorum dihitung di atas anggota yang terlalu
+ * sedikit. Kunci LEVEL TABEL `SHARE ROW EXCLUSIVE` berbenturan dengan
+ * `ROW EXCLUSIVE` milik setiap INSERT/UPDATE/DELETE (termasuk baris BARU),
+ * sehingga semua mutasi konkuren menunggu dan snapshot selalu linier. Baca
+ * ulang memakai predikat penuh agar anggota baru ikut dibandingkan. Detail:
+ * `docs/REVIEW_GEMINI_RISALAH_DIGITAL_SIGNATURE.md` §7.9.
  */
 async function lockAndRereadOrganAssignments(
   client: DbClient,
-  organType: FoundationOrganType,
-  assignmentIds: string[]
+  organType: FoundationOrganType
 ): Promise<
   Array<{
     id: string;
@@ -710,15 +709,9 @@ async function lockAndRereadOrganAssignments(
     role: { code: string };
   }>
 > {
-  if (assignmentIds.length === 0) return [];
-  // `Prisma.join` menyusun daftar parameter yang aman (bukan interpolasi teks).
-  await client.$queryRaw`
-    SELECT "id" FROM "user_role_assignments"
-    WHERE "id" IN (${Prisma.join(assignmentIds)})
-    FOR UPDATE`;
+  await lockAssignmentTableForSnapshot(client);
   return client.userRoleAssignment.findMany({
     where: {
-      id: { in: assignmentIds },
       isActive: true,
       OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
       role: { code: { in: roleCodesForOrgan(organType) }, isActive: true },
@@ -735,16 +728,66 @@ async function lockAndRereadOrganAssignments(
 }
 
 /**
- * Bandingkan SNAPSHOT tersusut pra-transaksi dengan hasil baca ulang pasca-lock.
+ * Ambil kunci serialisasi tabel penugasan peran, menyerialkan `create` terhadap
+ * SETIAP mutasi `user_role_assignments` (INSERT, UPDATE, DELETE).
  *
- * Yang dibandingkan adalah hasil penyusutan `selectSnapshotAssignments` —
- * himpunan (userId, roleCode) yang benar-benar masuk ke baris anggota — bukan
- * daftar penugasan mentah. Perbandingan pada penugasan mentah akan menandai
- * "berubah" ketika hanya peran ganda yang kalah disusutkan yang dicabut,
- * padahal roster anggota tidak berubah; membandingkan hasil susutan mengukur
- * invariant yang tepat. Bila berbeda, `create` membatalkan transaksinya dengan
- * conflict: menulis snapshot basi berarti membekukan anggota yang telah dicabut
- * dan memberinya hak suara pada keputusan yang ditandatangani e-seal.
+ * `SHARE ROW EXCLUSIVE` berbenturan dengan `ROW EXCLUSIVE` yang dipegang
+ * otomatis oleh setiap penulisan baris — termasuk `INSERT` baris yang belum ada
+ * — sehingga tidak ada penugasan baru yang dapat commit di sela pembacaan
+ * snapshot dan komitnya; `FOR UPDATE` atas baris hasil pembacaan awal tidak
+ * sanggup itu. `lock_timeout` 5 detik dipasang lokal ke transaksi: penunggu yang
+ * kehabisan waktu gagal 55P03 (dipetakan ke 409) alih-alih menggantung.
+ * `lock_timeout` tidak membatalkan transaksi, berbeda dengan
+ * `statement_timeout`. Terverifikasi di PostgreSQL nyata: kunci yang ditahan 20
+ * detik tetap berakhir dengan 55P03, bukan timeout transaksi Prisma.
+ */
+export async function lockAssignmentTableForSnapshot(client: DbClient): Promise<void> {
+  await client.$executeRaw`SELECT set_config('lock_timeout', '5000', true)`;
+  await client.$executeRaw`LOCK TABLE "user_role_assignments" IN SHARE ROW EXCLUSIVE MODE`;
+}
+
+/**
+ * True bila galat adalah lock_timeout atau deadlock PostgreSQL.
+ *
+ * SQLSTATE-nya TIDAK selalu di `err.code`: dengan driver adapter
+ * (`@prisma/adapter-pg`) Prisma membungkus galat PostgreSQL menjadi
+ * `PrismaClientKnownRequestError` berkode `P2010` dan menyimpan kode aslinya di
+ * `meta.driverAdapterError.cause.originalCode`. Memeriksa `err.code` saja
+ * membuat lock_timeout lolos sebagai 500, bukan 409. Pohon galatnya ditelusuri
+ * (dengan batas kedalaman) agar kedua bentuk tertangkap.
+ */
+const LOCK_CONFLICT_SQLSTATES = new Set(['55P03', '40P01']);
+
+export function isLockConflictError(err: unknown): boolean {
+  const seen = new Set<unknown>();
+  const scan = (node: unknown, depth: number): boolean => {
+    if (depth > 6 || !node || typeof node !== 'object' || seen.has(node)) return false;
+    seen.add(node);
+    for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+      if (
+        (key === 'code' || key === 'originalCode') &&
+        typeof value === 'string' &&
+        LOCK_CONFLICT_SQLSTATES.has(value)
+      ) {
+        return true;
+      }
+      if (scan(value, depth + 1)) return true;
+    }
+    return false;
+  };
+  return scan(err, 0);
+}
+
+/**
+ * Bandingkan hasil susutan pra-transaksi dengan hasil baca ulang pasca-lock.
+ *
+ * Dibandingkan hasil `selectSnapshotAssignments` — himpunan (userId, roleCode)
+ * yang benar-benar masuk baris anggota — bukan penugasan mentah: mencabut peran
+ * ganda yang kalah tidak mengubah roster, jadi membandingkan penugasan mentah
+ * akan menghasilkan konflik palsu. Bila berbeda, `create` membatalkan
+ * transaksinya: menulis snapshot basi berarti membekukan anggota yang telah
+ * dicabut, atau menghilangkan anggota baru dari kuorum, pada keputusan
+ * ber-e-seal.
  */
 function assertSnapshotStillMatches(
   organType: FoundationOrganType,
@@ -844,19 +887,16 @@ export const FoundationDecisionService = {
     }
 
     const now = new Date();
-    // Snapshot hanya memuat anggota yang benar-benar berhak HARI INI: peran
-    // aktif, penugasan belum kedaluwarsa, dan akunnya sendiri masih aktif.
-    // Anggota yang sudah habis masa tugasnya tidak boleh menggelembungkan
-    // kuorum yang terkunci selamanya.
+    // Snapshot hanya memuat anggota yang berhak HARI INI: peran aktif,
+    // penugasan belum kedaluwarsa, akun masih aktif — anggota yang habis masa
+    // tugasnya tidak boleh menggelembungkan kuorum yang terkunci selamanya.
     //
-    // SATU orang dapat memegang lebih dari satu peran dalam organ yang sama
-    // (Sekretaris merangkap Bendahara, dsb.), sedangkan snapshot menyimpan satu
-    // jabatan per orang. Penyusutan memakai FUNGSI MURNI
-    // `selectSnapshotAssignments`: penugasan `isPrimary` menang, lalu senioritas
-    // jabatan per organ, lalu tie-break leksikografis. Urutannya harus
-    // ditetapkan eksplisit — `distinct` tanpa kriteria tidak menjanjikan
-    // jabatan mana yang bertahan, sehingga jabatan pada PDF ber-e-seal dapat
-    // berubah mengikuti rencana query, bukan kebijakan organ.
+    // SATU orang dapat memegang beberapa peran di organ yang sama, sedangkan
+    // snapshot menyimpan satu jabatan per orang. Penyusutan memakai
+    // `selectSnapshotAssignments`: `isPrimary` menang, lalu senioritas jabatan,
+    // lalu tie-break leksikografis. Urutannya harus eksplisit — `distinct`
+    // tanpa kriteria tidak menjanjikan baris mana yang bertahan, sehingga
+    // jabatan pada PDF ber-e-seal dapat berubah mengikuti rencana query.
     const assignmentRows = await prisma.userRoleAssignment.findMany({
       where: {
         isActive: true,
@@ -910,82 +950,86 @@ export const FoundationDecisionService = {
     };
 
     /**
-     * Pembuatan keputusan dan baris auditnya berbagi SATU transaksi.
+     * Pembuatan keputusan dan baris auditnya berbagi SATU transaksi: kegagalan
+     * audit harus membatalkan pembuatan, atau retry menghasilkan keputusan
+     * DUPLIKAT (token verifikasi acak, tidak ada unique penahan).
      *
-     * Bila audit ditulis di luar transaksi dan gagal, keputusan sudah
-     * ter-commit tetapi permintaan melempar galat — dan karena token
-     * verifikasinya acak, tidak ada unique yang mencegah percobaan ulang
-     * membuat keputusan DUPLIKAT (dua pemungutan suara, dua PDF, dua e-seal).
-     * Di dalam transaksi, kegagalan audit membatalkan pembuatan sekaligus.
-     *
-     * Keanggotaan snapshot divalidasi ULANG di dalam transaksi: baris penugasan
-     * dikunci (`FOR UPDATE`) dan dibaca lagi, sehingga pencabutan/penggantian
-     * peran konkuren tidak dapat membekukan anggota tak sah ke dalam snapshot
-     * beserta hak suaranya. Bila himpunan berubah, operasi dibatalkan atomik.
+     * Snapshot divalidasi ULANG di dalam transaksi di bawah kunci serialisasi
+     * tabel, sehingga penambahan/pencabutan/penggantian peran yang konkuren
+     * tidak dapat membekukan himpunan anggota yang salah beserta hak suaranya.
+     * Bila himpunan berubah, operasi dibatalkan atomik.
      */
-    const decisionId = await prisma.$transaction(async (tx) => {
-      const lockedRows = await lockAndRereadOrganAssignments(
-        tx,
-        input.organType,
-        assignmentRows.map((a) => a.id)
-      );
-      // Susutkan ulang dengan fungsi produksi yang SAMA, lalu bandingkan hasil
-      // susutan — bukan daftar penugasan mentah.
-      const lockedAssignments = selectSnapshotAssignments(
-        input.organType,
-        lockedRows.map((a) => ({
-          id: a.id,
-          userId: a.userId,
-          isPrimary: a.isPrimary,
-          roleCode: a.role.code,
-          user: a.user,
-        }))
-      );
-      assertSnapshotStillMatches(input.organType, assignments, lockedAssignments);
+    const decisionId = await prisma
+      .$transaction(async (tx) => {
+        const lockedRows = await lockAndRereadOrganAssignments(tx, input.organType);
+        // Susutkan ulang dengan fungsi produksi yang SAMA, lalu bandingkan hasil
+        // susutan — bukan daftar penugasan mentah.
+        const lockedAssignments = selectSnapshotAssignments(
+          input.organType,
+          lockedRows.map((a) => ({
+            id: a.id,
+            userId: a.userId,
+            isPrimary: a.isPrimary,
+            roleCode: a.role.code,
+            user: a.user,
+          }))
+        );
+        assertSnapshotStillMatches(input.organType, assignments, lockedAssignments);
 
-      const decision = await tx.foundationDecision.create({
-        data: {
-          organType: input.organType,
-          kind: input.kind,
-          subject: input.subject,
-          body: input.body,
-          decisionType: input.decisionType,
-          quorumSnapshot: snapshot as unknown as Prisma.InputJsonValue,
-          voteSummary: emptySummary as unknown as Prisma.InputJsonValue,
-          status: FoundationDecisionStatus.VOTING,
-          createdById: actor.id,
-          verificationToken: randomBytes(20).toString('hex'),
-          members: {
-            // Dari hasil baca ULANG pasca-lock, bukan salinan pra-transaksi:
-            // yang lolos `assertSnapshotStillMatches` adalah himpunan yang sah
-            // saat transaksi commit.
-            create: lockedAssignments.map((a) => ({
-              userId: a.user.id,
-              name: a.user.name,
-              roleCode: a.roleCode,
-            })),
-          },
-        },
-      });
-
-      await tx.auditLog.create({
-        data: {
-          userId: actor.id,
-          action: 'CREATE',
-          entity: 'FoundationDecision',
-          entityId: decision.id,
-          newValues: {
+        const decision = await tx.foundationDecision.create({
+          data: {
             organType: input.organType,
             kind: input.kind,
             subject: input.subject,
+            body: input.body,
             decisionType: input.decisionType,
-            activeCount: snapshot.activeCount,
+            quorumSnapshot: snapshot as unknown as Prisma.InputJsonValue,
+            voteSummary: emptySummary as unknown as Prisma.InputJsonValue,
+            status: FoundationDecisionStatus.VOTING,
+            createdById: actor.id,
+            verificationToken: randomBytes(20).toString('hex'),
+            members: {
+              // Dari hasil baca ULANG pasca-lock, bukan salinan pra-transaksi:
+              // yang lolos `assertSnapshotStillMatches` adalah himpunan yang sah
+              // saat transaksi commit.
+              create: lockedAssignments.map((a) => ({
+                userId: a.user.id,
+                name: a.user.name,
+                roleCode: a.roleCode,
+              })),
+            },
           },
-        },
-      });
+        });
 
-      return decision.id;
-    });
+        await tx.auditLog.create({
+          data: {
+            userId: actor.id,
+            action: 'CREATE',
+            entity: 'FoundationDecision',
+            entityId: decision.id,
+            newValues: {
+              organType: input.organType,
+              kind: input.kind,
+              subject: input.subject,
+              decisionType: input.decisionType,
+              activeCount: snapshot.activeCount,
+            },
+          },
+        });
+
+        return decision.id;
+      })
+      .catch((err) => {
+        // Pembuatan keputusan serial terhadap SEMUA mutasi penugasan. Bila
+        // penugasan lain menahan kunci lebih lama dari `lock_timeout`, ini
+        // dilaporkan sebagai konflik yang dapat diulang — bukan 500.
+        if (isLockConflictError(err)) {
+          throw Errors.conflict(
+            'Keanggotaan organ sedang berubah saat keputusan dibuat. Silakan ulangi.'
+          );
+        }
+        throw err;
+      });
 
     return decisionId;
   },
@@ -1110,9 +1154,13 @@ export const FoundationDecisionService = {
       d.members.some((m) => m.userId === actor.id);
     // Eligibility finalisasi dihitung dengan definisi yang SAMA dengan
     // `finalize` — bukan dari role saja. UI tidak boleh menawarkan tombol yang
-    // peladen pasti tolak (Pengawas membuka keputusan organ lain).
+    // peladen pasti tolak (Pengawas membuka keputusan organ lain). Sirkuler
+    // DIKECUALIKAN karena hasilnya tidak dapat dikunci manual, jadi `finalize`
+    // selalu menolaknya — lihat `finalize`.
     const canFinalize =
-      d.status === FoundationDecisionStatus.VOTING && canFinalizeDecision(actor, d.members);
+      d.status === FoundationDecisionStatus.VOTING &&
+      d.kind !== 'CIRCULAR' &&
+      canFinalizeDecision(actor, d.members);
     // Syarat publikasi dihitung dengan definisi yang SAMA dengan
     // `setPublication`, sehingga UI tidak menawarkan "Terbitkan" pada
     // draf/VOTING yang peladen tolak.
@@ -1312,111 +1360,111 @@ export const FoundationDecisionService = {
       }
 
       const result = await prisma.$transaction(async (tx) => {
-      // Kunci baris keputusan dan periksa ulang status DI DALAM transaksi.
-      // Pembuatan suara, pembacaan ulang suara, evaluasi kuorum, dan
-      // finalisasi berjalan atomik terhadap pemilih paralel.
-      await lockDecision(tx, bound.id);
-      const lockedRow = await tx.foundationDecision.findUnique({
-        where: { id: bound.id },
-        include: decisionInclude,
-      });
-      const locked = lockedRow as unknown as RichDecision | null;
-      if (!locked) throw Errors.notFound('Keputusan tidak ditemukan.');
-      if (locked.status !== FoundationDecisionStatus.VOTING) {
-        throw Errors.badRequest(
-          `Keputusan berstatus ${locked.status} dan tidak lagi menerima suara.`
+        // Kunci baris keputusan dan periksa ulang status DI DALAM transaksi.
+        // Pembuatan suara, pembacaan ulang suara, evaluasi kuorum, dan
+        // finalisasi berjalan atomik terhadap pemilih paralel.
+        await lockDecision(tx, bound.id);
+        const lockedRow = await tx.foundationDecision.findUnique({
+          where: { id: bound.id },
+          include: decisionInclude,
+        });
+        const locked = lockedRow as unknown as RichDecision | null;
+        if (!locked) throw Errors.notFound('Keputusan tidak ditemukan.');
+        if (locked.status !== FoundationDecisionStatus.VOTING) {
+          throw Errors.badRequest(
+            `Keputusan berstatus ${locked.status} dan tidak lagi menerima suara.`
+          );
+        }
+        if (locked.votes.some((v) => v.userId === actor.id)) {
+          throw Errors.badRequest('Anda sudah memberikan suara pada keputusan ini.');
+        }
+
+        // TOCTOU: buktikan ULANG, DI DALAM transaksi dan SEBELUM `INSERT`, bahwa
+        // kunci yang menandatangani masih berlaku. Bila rotasi/pencabutan commit
+        // di sela-sela, transaksi ini dibatalkan sehingga TIDAK ada baris suara
+        // yang tercommit — bukan baris yang ditolak `isVoteAuthentic` sekaligus
+        // memblokir percobaan ulang.
+        await assertSigningKeyStillCurrent(
+          tx,
+          actor.id,
+          { publicKey: material.publicKey, algorithm: material.algorithm },
+          signedAt
         );
-      }
-      if (locked.votes.some((v) => v.userId === actor.id)) {
-        throw Errors.badRequest('Anda sudah memberikan suara pada keputusan ini.');
-      }
 
-      // TOCTOU: buktikan ULANG, DI DALAM transaksi dan SEBELUM `INSERT`, bahwa
-      // kunci yang menandatangani masih berlaku. Bila rotasi/pencabutan commit
-      // di sela-sela, transaksi ini dibatalkan sehingga TIDAK ada baris suara
-      // yang tercommit — bukan baris yang ditolak `isVoteAuthentic` sekaligus
-      // memblokir percobaan ulang.
-      await assertSigningKeyStillCurrent(
-        tx,
-        actor.id,
-        { publicKey: material.publicKey, algorithm: material.algorithm },
-        signedAt
-      );
+        const vote = await tx.foundationDecisionVote.create({
+          data: {
+            decisionId: bound.id,
+            userId: actor.id,
+            choice,
+            canonicalDigest: digest,
+            signature,
+            publicKey: material.publicKey,
+            algorithm: material.algorithm,
+            note: note?.trim() || null,
+            signedAt,
+            signingKeyId: keyRecord.id,
+            publicKeyFingerprint: keyRecord.fingerprint,
+          },
+        });
 
-      const vote = await tx.foundationDecisionVote.create({
-        data: {
-          decisionId: bound.id,
-          userId: actor.id,
-          choice,
-          canonicalDigest: digest,
-          signature,
-          publicKey: material.publicKey,
-          algorithm: material.algorithm,
-          note: note?.trim() || null,
-          signedAt,
-          signingKeyId: keyRecord.id,
-          publicKeyFingerprint: keyRecord.fingerprint,
-        },
+        const votes = await tx.foundationDecisionVote.findMany({
+          where: { decisionId: bound.id },
+          include: { signingKey: { select: trustedKeySelect } },
+        });
+        // Ringkasan dihitung dari suara yang LOLOS verifikasi tanda tangan.
+        // Baris suara yang disisipkan/diubah langsung di basis data tidak boleh
+        // muncul di rekap maupun di PDF final yang di-e-seal.
+        const authentic = votes.filter((v) =>
+          isVoteAuthentic(locked, v as unknown as VoteSignatureRecord)
+        );
+        const summary: VoteSummary = voteSummaryOf(authentic, snapshot.activeCount);
+        await tx.foundationDecision.update({
+          where: { id: bound.id },
+          data: { voteSummary: summary as unknown as Prisma.InputJsonValue },
+        });
+
+        // Evaluasi atas baris yang sudah memuat suara ini, masih di dalam kunci.
+        const freshRow = await tx.foundationDecision.findUnique({
+          where: { id: bound.id },
+          include: decisionInclude,
+        });
+        const fresh = freshRow as unknown as RichDecision;
+        const evaluation = evaluateQuorum(
+          fresh.quorumSnapshot as unknown as QuorumSnapshot,
+          this.votesOf(fresh)
+        );
+        // Artefak yang disiapkan di luar kunci hanya dipakai bila sidik jarinya
+        // masih sama. Bila pemilih lain menyisipkan suara di sela-selanya,
+        // `applyLocked` melempar `StaleArtifactError` dan percobaan ini
+        // dibatalkan lalu diulang dengan artefak yang dihitung dari baris segar —
+        // tidak ada render di dalam kunci.
+        const artifact =
+          previewArtifact && previewArtifact.fingerprint === approvalFingerprint(fresh)
+            ? previewArtifact
+            : null;
+        const outcome = await this.applyLocked(actor, fresh, evaluation, tx, artifact ?? undefined);
+
+        // Audit VOTE ditulis DI DALAM transaksi yang sama dengan suaranya. Bila
+        // di luar, kegagalan `auditLog.create` membuat suara sudah tercommit
+        // tetapi `castVote` melempar galat — retry ditolak sebagai suara ganda
+        // dan suara sah kehilangan baris auditnya. Di sini keduanya rollback
+        // bersama.
+        await tx.auditLog.create({
+          data: {
+            userId: actor.id,
+            action: 'VOTE',
+            entity: 'FoundationDecisionVote',
+            entityId: vote.id,
+            newValues: { decisionId: bound.id, choice },
+          },
+        });
+
+        // Passphrase benar: buka hitungan gagal, juga di dalam transaksi agar
+        // tidak ada pembaruan kunci yang lolos ketika suaranya gagal.
+        await clearFailedAttempts(signingKey!.id, tx);
+
+        return { vote, summary, outcome };
       });
-
-      const votes = await tx.foundationDecisionVote.findMany({
-        where: { decisionId: bound.id },
-        include: { signingKey: { select: trustedKeySelect } },
-      });
-      // Ringkasan dihitung dari suara yang LOLOS verifikasi tanda tangan.
-      // Baris suara yang disisipkan/diubah langsung di basis data tidak boleh
-      // muncul di rekap maupun di PDF final yang di-e-seal.
-      const authentic = votes.filter((v) =>
-        isVoteAuthentic(locked, v as unknown as VoteSignatureRecord)
-      );
-      const summary: VoteSummary = voteSummaryOf(authentic, snapshot.activeCount);
-      await tx.foundationDecision.update({
-        where: { id: bound.id },
-        data: { voteSummary: summary as unknown as Prisma.InputJsonValue },
-      });
-
-      // Evaluasi atas baris yang sudah memuat suara ini, masih di dalam kunci.
-      const freshRow = await tx.foundationDecision.findUnique({
-        where: { id: bound.id },
-        include: decisionInclude,
-      });
-      const fresh = freshRow as unknown as RichDecision;
-      const evaluation = evaluateQuorum(
-        fresh.quorumSnapshot as unknown as QuorumSnapshot,
-        this.votesOf(fresh)
-      );
-      // Artefak yang disiapkan di luar kunci hanya dipakai bila sidik jarinya
-      // masih sama. Bila pemilih lain menyisipkan suara di sela-selanya,
-      // `applyLocked` melempar `StaleArtifactError` dan percobaan ini
-      // dibatalkan lalu diulang dengan artefak yang dihitung dari baris segar —
-      // tidak ada render di dalam kunci.
-      const artifact =
-        previewArtifact && previewArtifact.fingerprint === approvalFingerprint(fresh)
-          ? previewArtifact
-          : null;
-      const outcome = await this.applyLocked(actor, fresh, evaluation, tx, artifact ?? undefined);
-
-      // Audit VOTE ditulis DI DALAM transaksi yang sama dengan suaranya. Bila
-      // di luar, kegagalan `auditLog.create` membuat suara sudah tercommit
-      // tetapi `castVote` melempar galat — retry ditolak sebagai suara ganda
-      // dan suara sah kehilangan baris auditnya. Di sini keduanya rollback
-      // bersama.
-      await tx.auditLog.create({
-        data: {
-          userId: actor.id,
-          action: 'VOTE',
-          entity: 'FoundationDecisionVote',
-          entityId: vote.id,
-          newValues: { decisionId: bound.id, choice },
-        },
-      });
-
-      // Passphrase benar: buka hitungan gagal, juga di dalam transaksi agar
-      // tidak ada pembaruan kunci yang lolos ketika suaranya gagal.
-      await clearFailedAttempts(signingKey!.id, tx);
-
-      return { vote, summary, outcome };
-    });
       return result;
     };
 
@@ -1452,12 +1500,12 @@ export const FoundationDecisionService = {
    * Kuorum hadir tetap wajib; setelah terpenuhi pimpinan bebas memilih APPROVED
    * atau REJECTED tanpa menunggu anggota absen.
    *
-   * **CIRCULAR: tidak ada penutupan dini.** `closed` sengaja tidak diteruskan
-   * (`closed: d.kind !== 'CIRCULAR'`) karena sirkuler tidak punya rapat untuk
-   * ditutup — hasilnya hanya bergantung pada himpunan suara. Sirkuler baru
-   * APPROVED saat ambang mufakat tercapai, REJECTED saat mufakat terbukti
-   * mustahil, dan selama masih mungkin statusnya tetap VOTING. Lihat §7.6
-   * dokumen review.
+   * **CIRCULAR tidak dapat difinalisasi manual.** Sirkuler tidak punya rapat
+   * untuk ditutup: keputusan terminalnya sudah ditutup otomatis oleh `castVote`,
+   * dan selama masih mungkin ia tetap VOTING. Aksi manual karena itu tidak punya
+   * kondisi sukses yang sah dan ditolak eksplisit; DTO detail mengirim
+   * `canFinalize=false` agar UI tidak menawarkan tombol yang pasti ditolak.
+   * Lihat §7.6 dokumen review.
    */
   async finalize(actor: Actor, decisionId: string) {
     const d = await this.loadWithRelations(decisionId);
@@ -1474,14 +1522,22 @@ export const FoundationDecisionService = {
     if (!canFinalizeDecision(actor, d.members)) {
       throw Errors.forbidden('Anda tidak berhak menutup keputusan organ ini.');
     }
+    // Otorisasi diperiksa lebih dulu supaya aktor terlarang tetap menerima 403
+    // (bukan petunjuk bentuk keputusan). Setelah lolos, sirkuler ditolak
+    // eksplisit: hasilnya tidak dapat dikunci manual, jadi aksi ini tidak punya
+    // kondisi sukses yang sah.
+    if (d.kind === 'CIRCULAR') {
+      throw Errors.badRequest(
+        'Keputusan sirkuler tidak difinalisasi manual: hasilnya ditutup otomatis saat pemungutan suara (APPROVED bila mufakat tercapai, REJECTED bila mufakat mustahil).'
+      );
+    }
     const runFinalize = async (bound: RichDecision) => {
-      // Evaluasi + artefak dihitung dari baris `bound` yang segar SETIAP
-      // percobaan, di luar kunci. Memakai artefak lama pada percobaan ulang
-      // akan selamanya basi dan berujung pada kegagalan.
+      // Jalur ini MEETING-only (CIRCULAR sudah ditolak di atas), jadi menutup
+      // rapat selalu tepat: hasil dihitung sekali terhadap himpunan suara tetap.
       const boundEvaluation = evaluateQuorum(
         bound.quorumSnapshot as unknown as QuorumSnapshot,
         this.votesOf(bound),
-        { closed: bound.kind !== 'CIRCULAR' }
+        { closed: true }
       );
       let artifactForAttempt: ApprovalArtifact | null = null;
       if (
@@ -1491,34 +1547,34 @@ export const FoundationDecisionService = {
         artifactForAttempt = await this.prepareApprovalArtifact(actor, bound);
       }
       return prisma.$transaction(async (tx) => {
-      await lockDecision(tx, decisionId);
-      const lockedRow = await tx.foundationDecision.findUnique({
-        where: { id: decisionId },
-        include: decisionInclude,
+        await lockDecision(tx, decisionId);
+        const lockedRow = await tx.foundationDecision.findUnique({
+          where: { id: decisionId },
+          include: decisionInclude,
+        });
+        const locked = lockedRow as unknown as RichDecision | null;
+        if (!locked) throw Errors.notFound('Keputusan tidak ditemukan.');
+        if (locked.status !== FoundationDecisionStatus.VOTING) {
+          throw Errors.badRequest(
+            `Keputusan berstatus ${locked.status} dan tidak lagi menerima suara.`
+          );
+        }
+        const evaluation = evaluateQuorum(
+          locked.quorumSnapshot as unknown as QuorumSnapshot,
+          this.votesOf(locked),
+          { closed: true }
+        );
+        if (evaluation.outcome === 'OPEN') {
+          throw Errors.badRequest(
+            `Kuorum belum terpenuhi (hadir ${evaluation.presentCount}/${evaluation.presentRequired}, butuh ${evaluation.neededToApprove} setuju lagi); rapat belum dapat ditutup.`
+          );
+        }
+        const artifact =
+          artifactForAttempt && artifactForAttempt.fingerprint === approvalFingerprint(locked)
+            ? artifactForAttempt
+            : null;
+        return this.applyLocked(actor, locked, evaluation, tx, artifact ?? undefined);
       });
-      const locked = lockedRow as unknown as RichDecision | null;
-      if (!locked) throw Errors.notFound('Keputusan tidak ditemukan.');
-      if (locked.status !== FoundationDecisionStatus.VOTING) {
-        throw Errors.badRequest(
-          `Keputusan berstatus ${locked.status} dan tidak lagi menerima suara.`
-        );
-      }
-      const evaluation = evaluateQuorum(
-        locked.quorumSnapshot as unknown as QuorumSnapshot,
-        this.votesOf(locked),
-        { closed: locked.kind !== 'CIRCULAR' }
-      );
-      if (evaluation.outcome === 'OPEN') {
-        throw Errors.badRequest(
-          `Kuorum belum terpenuhi (hadir ${evaluation.presentCount}/${evaluation.presentRequired}, butuh ${evaluation.neededToApprove} setuju lagi); rapat belum dapat ditutup.`
-        );
-      }
-      const artifact =
-        artifactForAttempt && artifactForAttempt.fingerprint === approvalFingerprint(locked)
-          ? artifactForAttempt
-          : null;
-      return this.applyLocked(actor, locked, evaluation, tx, artifact ?? undefined);
-    });
     };
 
     // Sama seperti `castVote`: sinyal basi dibatalkan dan diulang di luar kunci,

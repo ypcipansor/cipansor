@@ -259,14 +259,16 @@ export default function FoundationDecisionDetailPage() {
                 <Button
                   variant="outline"
                   onClick={() => {
-                    // Sirkuler tidak punya rapat yang ditutup lebih awal:
-                    // server menolak finalisasi selama mufakat masih mungkin,
-                    // jadi konfirmasinya menjelaskan konsekuensi yang berbeda.
-                    const message =
-                      d.kind === "CIRCULAR"
-                        ? "Kunci hasil sirkuler sekarang? Ini hanya berhasil bila mufakat sudah tercapai atau sudah pasti mustahil; selama masih ada anggota yang belum bersuara dan hasilnya masih dapat berubah, server akan menolak."
-                        : "Tutup rapat/pemungutan sekarang? Hasil dihitung dari suara yang sudah masuk dan tidak dapat diubah lagi.";
-                    if (window.confirm(message)) finalize.mutate();
+                    // Hanya rapat yang dapat difinalisasi manual: sirkuler
+                    // ditutup otomatis saat pemungutan suara, sehingga server
+                    // mengirim `canFinalize=false` untuknya dan tombol ini
+                    // tidak pernah tampil padanya.
+                    if (
+                      window.confirm(
+                        "Tutup rapat/pemungutan sekarang? Hasil dihitung dari suara yang sudah masuk dan tidak dapat diubah lagi.",
+                      )
+                    )
+                      finalize.mutate();
                   }}
                   disabled={finalize.isPending}
                 >

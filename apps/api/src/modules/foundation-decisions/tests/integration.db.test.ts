@@ -26,7 +26,7 @@ import {
 import { createKeyMaterial, publicKeyFingerprint, signPdfHash } from '@/utils/esign';
 import { supersedeSigningKeyHistory, revokeSigningKeyHistory } from '@/utils/signing-key-history';
 import type { PrismaClient } from '@prisma/client';
-import { Prisma } from '@prisma/client';
+import pg from 'pg';
 
 const RUN = process.env.RUN_DB_TESTS === '1';
 const MIGRATION_SQL = path.resolve(
@@ -37,6 +37,32 @@ const MIGRATION_SQL_VOTE_KEY_BINDING = path.resolve(
   __dirname,
   '../../../../prisma/migrations/20260917000000_foundation_decision_vote_key_binding/migration.sql'
 );
+
+/**
+ * Tunggu sampai ADA transaksi yang menunggu kunci pada `user_role_assignments`.
+ *
+ * Dibaca dari `pg_locks` (level kunci, bukan teks query), sehingga probe ini
+ * tidak bergantung pada kalimat SQL yang dipakai implementasi — `FOR UPDATE`
+ * baris maupun `LOCK TABLE … SHARE ROW EXCLUSIVE` sama-sama terlihat sebagai
+ * `granted = false` pada relasi yang sama.
+ */
+async function waitForLockWaiterOnAssignments(
+  client: PrismaClient,
+  timeoutMs: number
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const rows = await client.$queryRaw<Array<{ n: number }>>`
+      SELECT count(*)::int AS n
+      FROM pg_locks l
+      JOIN pg_class c ON c.oid = l.relation
+      WHERE c.relname = 'user_role_assignments'
+        AND l.granted = false`;
+    if (rows[0]?.n) return true;
+    await new Promise((r) => setTimeout(r, 25));
+  }
+  return false;
+}
 
 describe.skipIf(!RUN)('foundation-decisions integrasi PostgreSQL', () => {
   let prisma: PrismaClient;
@@ -693,7 +719,10 @@ describe.skipIf(!RUN)('foundation-decisions integrasi PostgreSQL', () => {
     });
 
     const sql = fs.readFileSync(MIGRATION_SQL_VOTE_KEY_BINDING, 'utf8');
-    const guard = parseDoBlockContaining(sql, 'tidak dapat dibuktikan berasal dari penerbitan resmi');
+    const guard = parseDoBlockContaining(
+      sql,
+      'tidak dapat dibuktikan berasal dari penerbitan resmi'
+    );
 
     // (a) Migrasi MENOLAK: baris suara ber-kunci arbitrer tidak boleh ada.
     await expect(prisma.$executeRawUnsafe(guard)).rejects.toThrowError(
@@ -793,7 +822,10 @@ describe.skipIf(!RUN)('foundation-decisions integrasi PostgreSQL', () => {
     });
 
     const sql = fs.readFileSync(MIGRATION_SQL_VOTE_KEY_BINDING, 'utf8');
-    const guard = parseDoBlockContaining(sql, 'tidak dapat dibuktikan berasal dari penerbitan resmi');
+    const guard = parseDoBlockContaining(
+      sql,
+      'tidak dapat dibuktikan berasal dari penerbitan resmi'
+    );
     // `$executeRawUnsafe` returns a command tag/count for a `DO` block, not
     // `undefined`, so assert only that it does NOT throw.
     await expect(prisma.$executeRawUnsafe(guard)).resolves.not.toThrow();
@@ -830,10 +862,16 @@ describe.skipIf(!RUN)('foundation-decisions integrasi PostgreSQL', () => {
   it('backfill migrasi merekonstruksi fingerprint yang sama dengan aplikasi', async () => {
     const sql = fs.readFileSync(MIGRATION_SQL_VOTE_KEY_BINDING, 'utf8');
     const insertStart = sql.indexOf('INSERT INTO "user_signing_key_history"');
-    const insertEnd = sql.indexOf('ON CONFLICT ("user_id", "fingerprint") DO NOTHING;', insertStart);
+    const insertEnd = sql.indexOf(
+      'ON CONFLICT ("user_id", "fingerprint") DO NOTHING;',
+      insertStart
+    );
     expect(insertStart).toBeGreaterThan(-1);
     expect(insertEnd).toBeGreaterThan(insertStart);
-    const backfill = sql.slice(insertStart, insertEnd + 'ON CONFLICT ("user_id", "fingerprint") DO NOTHING;'.length);
+    const backfill = sql.slice(
+      insertStart,
+      insertEnd + 'ON CONFLICT ("user_id", "fingerprint") DO NOTHING;'.length
+    );
 
     const suffix = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
     const user = await prisma.user.create({
@@ -914,7 +952,9 @@ describe.skipIf(!RUN)('foundation-decisions integrasi PostgreSQL', () => {
         quorumSnapshot: { activeCount: 1 } as never,
         voteSummary: {} as never,
         createdById: user.id,
-        members: { create: [{ userId: user.id, name: 'Pemilih Rotasi', roleCode: 'YAYASAN_PEMBINA' }] },
+        members: {
+          create: [{ userId: user.id, name: 'Pemilih Rotasi', roleCode: 'YAYASAN_PEMBINA' }],
+        },
       },
       include: { members: true },
     });
@@ -1149,29 +1189,143 @@ describe.skipIf(!RUN)('foundation-decisions integrasi PostgreSQL', () => {
   });
 
   /**
-   * BUG 1 (real PostgreSQL) — pencabutan peran konkuren tidak boleh masuk
-   * snapshot.
+   * BUG SEVERE (real PostgreSQL) — pengangkatan konkuren TIDAK boleh hilang dari
+   * snapshot keputusan.
    *
-   * Membuktikan perlindungan `FOR UPDATE` + baca-ulang pada PostgreSQL nyata:
-   * transaksi memegang baris penugasan; pencabutan yang menyentuh baris SAMA
-   * menunggu. Setelah kunci dilepas, baca-ulang tidak lagi menemukan penugasan
-   * aktif, dan anggota yang dicabut tidak dapat `castVote` pada keputusan yang
-   * tidak memuatnya.
+   * Bentuk balapan yang sebenarnya, dengan DUA transaksi yang benar-benar
+   * tumpang tindih pada koneksi BERBEDA:
+   *
+   *  1. Koneksi B membuka transaksi dan meng-INSERT pengangkatan baru, lalu
+   *     DITAHAN (belum commit) — memegang `ROW EXCLUSIVE` pada
+   *     `user_role_assignments`.
+   *  2. `FoundationDecisionService.create` membaca penugasan pra-transaksi
+   *     (pengangkatan B belum terlihat), lalu mencoba kunci tabel → MEMBLOKIR.
+   *  3. Test memastikan pemblokiran itu lewat `pg_stat_activity`
+   *     (`wait_event_type = 'Lock'`), bukan sekadar sleep.
+   *  4. B commit; create lanjut, membaca ULANG himpunan penuh, melihat himpunan
+   *     berubah, dan menolaknya sebagai konflik — snapshot basi tidak pernah
+   *     ditulis. Percobaan ulang sesudahnya memasukkan anggota baru.
+   *
+   * Pada implementasi lama (`FOR UPDATE` atas daftar ID hasil pembacaan awal),
+   * langkah 2 TIDAK memblokir dan create berhasil dengan snapshot yang kehilangan
+   * anggota baru — test gagal pada assertion pemblokiran maupun konflik.
    */
-  it('peran yang dicabut menghilang dari baca-ulang pasca-lock dan kehilangan hak suara', async () => {
+  it('pengangkatan konkuren: create memblokir lalu menolak snapshot basi', async () => {
     const suffix = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
     const creator = await prisma.user.create({
       data: {
-        id: `itest-conc-creator-${suffix}`,
-        email: `itest-conc-creator-${suffix}@example.test`,
+        id: `itest-appt-creator-${suffix}`,
+        email: `itest-appt-creator-${suffix}@example.test`,
         name: 'Pembuat',
         passwordHash: 'x',
       },
     });
-    const revoked = await prisma.user.create({
+    const appointee = await prisma.user.create({
       data: {
-        id: `itest-conc-revoked-${suffix}`,
-        email: `itest-conc-revoked-${suffix}@example.test`,
+        id: `itest-appt-new-${suffix}`,
+        email: `itest-appt-new-${suffix}@example.test`,
+        name: 'Diangkat Kemudian',
+        passwordHash: 'x',
+      },
+    });
+    const pembina = await prisma.role.upsert({
+      where: { code: 'YAYASAN_PEMBINA' },
+      create: { code: 'YAYASAN_PEMBINA', name: 'Pembina', realm: 'YAYASAN' },
+      update: {},
+    });
+    await prisma.userRoleAssignment.create({
+      data: { userId: creator.id, roleId: pembina.id, isActive: true, isPrimary: true },
+    });
+
+    // Koneksi B: transaksi terbuka yang meng-INSERT anggota baru lalu DITAHAN.
+    const b = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    await b.connect();
+    await b.query('BEGIN');
+    await b.query(
+      `INSERT INTO "user_role_assignments"
+         (id, user_id, role_id, is_active, is_primary, assigned_at, created_at, updated_at)
+       VALUES ($1, $2, $3, true, false, NOW(), NOW(), NOW())`,
+      [`itest-appt-asg-${suffix}`, appointee.id, pembina.id]
+    );
+
+    let decisionId: string | null = null;
+    try {
+      const input = {
+        organType: 'PEMBINA' as const,
+        kind: 'CIRCULAR' as const,
+        subject: 'Uji pengangkatan konkuren',
+        body: 'Naskah uji pengangkatan konkuren saat keputusan dibuat.',
+        decisionType: 'pengesahan-rencana-kerja' as const,
+      };
+      const createPromise = FoundationDecisionService.create(
+        { id: creator.id, roleCode: 'YAYASAN_PEMBINA' },
+        input
+      );
+
+      // Tunggu deterministik sampai create benar-benar terblokir (bukan sleep:
+      // kita membaca pg_locks). Diuji pada LEVEL KUNCI, bukan teks SQL-nya,
+      // supaya probe ini mengukur perilaku (transaksi create menunggu) dan tidak
+      // terikat pada kalimat `LOCK TABLE` yang kebetulan dipakai implementasi.
+      const blocked = await waitForLockWaiterOnAssignments(prisma, 8000);
+      expect(blocked).toBe(true);
+
+      // Lepas kunci dari koneksi B. create lanjut dan menolak snapshot basi.
+      await b.query('COMMIT');
+      await expect(createPromise).rejects.toThrow(/Keanggotaan organ .* berubah/);
+
+      // Percobaan ulang sesudah B commit: snapshot MEMUAT anggota baru.
+      decisionId = await FoundationDecisionService.create(
+        { id: creator.id, roleCode: 'YAYASAN_PEMBINA' },
+        input
+      );
+      const members = await prisma.foundationDecisionMember.findMany({
+        where: { decisionId },
+        select: { userId: true },
+      });
+      const memberIds = members.map((m) => m.userId).sort();
+      // Inti invariant: anggota BARU ikut ke dalam snapshot. Anggota seed lain
+      // boleh ada, jadi yang dipaku adalah kehadiran keduanya, bukan panjang
+      // persisnya.
+      expect(memberIds).toContain(appointee.id);
+      expect(memberIds).toContain(creator.id);
+      expect(memberIds.length).toBeGreaterThanOrEqual(2);
+    } finally {
+      await b.end().catch(() => {});
+      if (decisionId) {
+        await prisma.foundationDecisionMember.deleteMany({ where: { decisionId } });
+        await prisma.auditLog.deleteMany({ where: { entityId: decisionId } });
+        await prisma.foundationDecision.delete({ where: { id: decisionId } });
+      }
+      await prisma.userRoleAssignment.deleteMany({
+        where: { userId: { in: [creator.id, appointee.id] } },
+      });
+      await prisma.user.deleteMany({ where: { id: { in: [creator.id, appointee.id] } } });
+    }
+  });
+
+  /**
+   * BUG SEVERE (real PostgreSQL) — pencabutan konkuren tidak boleh membuat
+   * snapshot kedaluwarsa.
+   *
+   * Cerminan test pengangkatan, arah sebaliknya: koneksi B meng-UPDATE
+   * penugasan menjadi non-aktif lalu DITAHAN sebelum commit (memegang
+   * `ROW EXCLUSIVE`); create memblokir, lalu setelah B commit ia membaca ulang
+   * himpunan tanpa anggota yang dicabut dan menolak snapshot basi.
+   */
+  it('pencabutan konkuren: create memblokir lalu menolak snapshot basi', async () => {
+    const suffix = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const creator = await prisma.user.create({
+      data: {
+        id: `itest-rev-creator-${suffix}`,
+        email: `itest-rev-creator-${suffix}@example.test`,
+        name: 'Pembuat',
+        passwordHash: 'x',
+      },
+    });
+    const leaving = await prisma.user.create({
+      data: {
+        id: `itest-rev-leaving-${suffix}`,
+        email: `itest-rev-leaving-${suffix}@example.test`,
         name: 'Akan Dicabut',
         passwordHash: 'x',
       },
@@ -1181,71 +1335,70 @@ describe.skipIf(!RUN)('foundation-decisions integrasi PostgreSQL', () => {
       create: { code: 'YAYASAN_PEMBINA', name: 'Pembina', realm: 'YAYASAN' },
       update: {},
     });
-    const assignment = await prisma.userRoleAssignment.create({
-      data: { userId: revoked.id, roleId: pembina.id, isActive: true },
+    const leavingAssignment = await prisma.userRoleAssignment.create({
+      data: { userId: leaving.id, roleId: pembina.id, isActive: true },
+    });
+    await prisma.userRoleAssignment.create({
+      data: { userId: creator.id, roleId: pembina.id, isActive: true, isPrimary: true },
     });
 
-    // Baca pra-transaksi yang sah: penugasan masih aktif.
-    const before = await prisma.userRoleAssignment.findMany({
-      where: { id: assignment.id, isActive: true, role: { code: 'YAYASAN_PEMBINA' } },
-      select: { id: true, userId: true, role: { select: { code: true } } },
-    });
-    expect(before).toHaveLength(1);
+    const b = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    await b.connect();
+    await b.query('BEGIN');
+    await b.query(
+      `UPDATE "user_role_assignments" SET "is_active" = false, "updated_at" = NOW()
+       WHERE "id" = $1`,
+      [leavingAssignment.id]
+    );
 
-    // Di dalam transaksi: kunci baris (FOR UPDATE) lalu cabut DARI LUAR —
-    // pencabutan menunggu lock. Setelah lock dilepas, baca ulang tidak lagi
-    // menemukan penugasan aktif.
-    await prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`
-        SELECT "id" FROM "user_role_assignments"
-        WHERE "id" IN (${Prisma.join([assignment.id])})
-        FOR UPDATE`;
-    });
-    await prisma.userRoleAssignment.update({
-      where: { id: assignment.id },
-      data: { isActive: false },
-    });
-    const after = await prisma.userRoleAssignment.findMany({
-      where: { id: assignment.id, isActive: true, role: { code: 'YAYASAN_PEMBINA' } },
-      select: { id: true, userId: true, role: { select: { code: true } } },
-    });
-    expect(after).toHaveLength(0);
+    let decisionId: string | null = null;
+    try {
+      const input = {
+        organType: 'PEMBINA' as const,
+        kind: 'CIRCULAR' as const,
+        subject: 'Uji pencabutan konkuren',
+        body: 'Naskah uji pencabutan konkuren saat keputusan dibuat.',
+        decisionType: 'pengesahan-rencana-kerja' as const,
+      };
+      const createPromise = FoundationDecisionService.create(
+        { id: creator.id, roleCode: 'YAYASAN_PEMBINA' },
+        input
+      );
 
-    // Keputusan tanpa anggota yang dicabut: ia tidak memperoleh canVote dan
-    // `castVote` menolaknya meski peran hari ini masih tampak Pembina.
-    const decision = await prisma.foundationDecision.create({
-      data: {
-        id: `itest-conc-d-${suffix}`,
-        organType: 'PEMBINA',
-        kind: 'CIRCULAR',
-        status: 'VOTING',
-        subject: 'Uji snapshot konkuren',
-        body: 'Naskah uji.',
-        decisionType: 'pengesahan-rencana-kerja',
-        quorumSnapshot: { activeCount: 1 } as never,
-        voteSummary: {} as never,
-        createdById: creator.id,
-        members: {
-          create: [{ userId: creator.id, name: 'Pembuat', roleCode: 'YAYASAN_PEMBINA' }],
-        },
-      },
-    });
-    await expect(
-      FoundationDecisionService.castVote(
-        { id: revoked.id, roleCode: 'YAYASAN_PEMBINA' },
-        decision.id,
-        { choice: 'APPROVE', passphrase: 'apa pun' }
-      )
-    ).rejects.toThrow(/bukan anggota organ/);
-    const votes = await prisma.foundationDecisionVote.count({
-      where: { decisionId: decision.id },
-    });
-    expect(votes).toBe(0);
+      // Tunggu deterministik sampai create benar-benar terblokir (bukan sleep:
+      // kita membaca pg_locks). Diuji pada LEVEL KUNCI, bukan teks SQL-nya,
+      // supaya probe ini mengukur perilaku (transaksi create menunggu) dan tidak
+      // terikat pada kalimat `LOCK TABLE` yang kebetulan dipakai implementasi.
+      const blocked = await waitForLockWaiterOnAssignments(prisma, 8000);
+      expect(blocked).toBe(true);
 
-    await prisma.foundationDecisionMember.deleteMany({ where: { decisionId: decision.id } });
-    await prisma.foundationDecision.delete({ where: { id: decision.id } });
-    await prisma.userRoleAssignment.deleteMany({ where: { userId: revoked.id } });
-    await prisma.user.deleteMany({ where: { id: { in: [creator.id, revoked.id] } } });
+      await b.query('COMMIT');
+      await expect(createPromise).rejects.toThrow(/Keanggotaan organ .* berubah/);
+
+      // Percobaan ulang: snapshot TIDAK memuat anggota yang sudah dicabut.
+      decisionId = await FoundationDecisionService.create(
+        { id: creator.id, roleCode: 'YAYASAN_PEMBINA' },
+        input
+      );
+      const members = await prisma.foundationDecisionMember.findMany({
+        where: { decisionId },
+        select: { userId: true },
+      });
+      const memberIds = members.map((m) => m.userId);
+      expect(memberIds).toContain(creator.id);
+      expect(memberIds).not.toContain(leaving.id);
+    } finally {
+      await b.end().catch(() => {});
+      if (decisionId) {
+        await prisma.foundationDecisionMember.deleteMany({ where: { decisionId } });
+        await prisma.auditLog.deleteMany({ where: { entityId: decisionId } });
+        await prisma.foundationDecision.delete({ where: { id: decisionId } });
+      }
+      await prisma.userRoleAssignment.deleteMany({
+        where: { userId: { in: [creator.id, leaving.id] } },
+      });
+      await prisma.user.deleteMany({ where: { id: { in: [creator.id, leaving.id] } } });
+    }
   });
 
   /**

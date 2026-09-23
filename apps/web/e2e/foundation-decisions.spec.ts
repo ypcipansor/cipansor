@@ -167,14 +167,18 @@ test.describe("daftar keputusan", () => {
     // Halaman 1 menampilkan pager dan menyatakan total seluruh hasil, bukan
     // hanya sepuluh baris yang kebetulan muat.
     await expect(page.getByText(/Page 1 of \d+/)).toBeVisible();
-    await expect(page.getByText(/Showing 1 to 10 of 1[1-9]|Showing 1 to 10 of [2-9]\d/)).toBeVisible();
+    await expect(
+      page.getByText(/Showing 1 to 10 of 1[1-9]|Showing 1 to 10 of [2-9]\d/),
+    ).toBeVisible();
 
     // Tombol "next page" membawa ke halaman 2 — barisnya benar-benar dimuat,
     // bukan sekadar label halaman. Keputusan terbaru (yang dibuat di atas)
     // berada di halaman 1 karena urutannya `createdAt desc`, jadi halaman 2
     // harus memuat baris LAMA yang tak terlihat di halaman 1.
     await page.getByRole("button", { name: /Go to next page/i }).click();
-    await expect(page.getByText(/Page 2 of \d+/)).toBeVisible({ timeout: 20000 });
+    await expect(page.getByText(/Page 2 of \d+/)).toBeVisible({
+      timeout: 20000,
+    });
     await expect(
       page.getByRole("link", { name: /Keputusan/ }).first(),
     ).toBeVisible({ timeout: 20000 });
@@ -880,7 +884,9 @@ test.describe("audit PR #509 — eligibility server & policy publikasi", () => {
       }),
     });
     expect(createRes.status).toBe(201);
-    const created = (await createRes.json()) as Envelope<{ decisionId: string }>;
+    const created = (await createRes.json()) as Envelope<{
+      decisionId: string;
+    }>;
 
     const pengawas = await apiLogin(SEED_USERS.pengawas);
     const detail = await apiRequest<Envelope<{ canFinalize: boolean }>>(
@@ -975,23 +981,88 @@ test.describe("audit PR #509 — eligibility server & policy publikasi", () => {
       }),
     });
     expect(createRes.status).toBe(201);
-    const created = (await createRes.json()) as Envelope<{ decisionId: string }>;
+    const created = (await createRes.json()) as Envelope<{
+      decisionId: string;
+    }>;
 
-    const detail = await apiRequest<Envelope<{ canFinalize: boolean; canVote: boolean }>>(
-      pengawas,
-      "GET",
-      `/foundation/decisions/${created.data.decisionId}`,
-    );
+    const detail = await apiRequest<
+      Envelope<{ canFinalize: boolean; canVote: boolean }>
+    >(pengawas, "GET", `/foundation/decisions/${created.data.decisionId}`);
     expect(detail.data.canFinalize).toBe(true);
 
     await signIn(page, "pengawas");
     await page.goto(`/foundation/decisions/${created.data.decisionId}`);
     await expect(
-      page.getByRole("heading", { level: 1, name: /Rapat Pengawas Uji Finalizer/ }),
+      page.getByRole("heading", {
+        level: 1,
+        name: /Rapat Pengawas Uji Finalizer/,
+      }),
     ).toBeVisible({ timeout: 20000 });
     await expect(page.getByRole("button", { name: "Finalisasi" })).toBeVisible({
       timeout: 20000,
     });
+  });
+
+  /**
+   * Regresi BUG NON-SEVERE — sirkuler tidak boleh menawarkan aksi finalisasi
+   * yang peladen selalu tolak.
+   *
+   * Sirkuler ditutup otomatis saat voting, jadi `finalize` menolaknya eksplisit
+   * (tidak ada kondisi sukses yang sah). DTO harus mengirim `canFinalize=false`
+   * bahkan kepada pimpinan/anggota snapshot — dulu `canFinalize` bernilai true
+   * untuk sirkuler, sehingga tombol tampil tetapi klik-nya selalu gagal.
+   */
+  test("sirkuler tidak menawarkan tombol Finalisasi walau pemanggil berhak", async ({
+    page,
+  }) => {
+    const pengawas = await apiLogin(SEED_USERS.pengawas);
+    const createRes = await fetch(`${API_URL}/foundation/decisions`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${pengawas.accessToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        organType: "PENGAWAS",
+        kind: "CIRCULAR",
+        subject: `Sirkuler Pengawas Uji Finalize ${Date.now()}`,
+        body: "Isi sirkuler Pengawas yang cukup panjang untuk lolos validasi.",
+        decisionType: "pemberhentian-sementara-pengurus",
+      }),
+    });
+    expect(createRes.status).toBe(201);
+    const created = (await createRes.json()) as Envelope<{
+      decisionId: string;
+    }>;
+
+    const detail = await apiRequest<Envelope<{ canFinalize: boolean }>>(
+      pengawas,
+      "GET",
+      `/foundation/decisions/${created.data.decisionId}`,
+    );
+    expect(detail.data.canFinalize).toBe(false);
+
+    // Peladen juga menolak finalisasi manual (bukan hanya menyembunyikan tombol).
+    const finalizeRes = await fetch(
+      `${API_URL}/foundation/decisions/${created.data.decisionId}/finalize`,
+      {
+        method: "POST",
+        headers: { authorization: `Bearer ${pengawas.accessToken}` },
+      },
+    );
+    expect([400, 409]).toContain(finalizeRes.status);
+
+    await signIn(page, "pengawas");
+    await page.goto(`/foundation/decisions/${created.data.decisionId}`);
+    await expect(
+      page.getByRole("heading", {
+        level: 1,
+        name: /Sirkuler Pengawas Uji Finalize/,
+      }),
+    ).toBeVisible({ timeout: 20000 });
+    await expect(page.getByRole("button", { name: "Finalisasi" })).toHaveCount(
+      0,
+    );
   });
 
   /**
@@ -1021,7 +1092,9 @@ test.describe("audit PR #509 — eligibility server & policy publikasi", () => {
       }),
     });
     expect(createRes.status).toBe(201);
-    const created = (await createRes.json()) as Envelope<{ decisionId: string }>;
+    const created = (await createRes.json()) as Envelope<{
+      decisionId: string;
+    }>;
 
     const bendahara = await apiLogin(SEED_USERS.bendahara);
     const detail = await apiRequest<Envelope<{ canFinalize: boolean }>>(
@@ -1034,7 +1107,10 @@ test.describe("audit PR #509 — eligibility server & policy publikasi", () => {
     await signIn(page, "bendahara");
     await page.goto(`/foundation/decisions/${created.data.decisionId}`);
     await expect(
-      page.getByRole("heading", { level: 1, name: /Rapat Pengurus Uji Bendahara/ }),
+      page.getByRole("heading", {
+        level: 1,
+        name: /Rapat Pengurus Uji Bendahara/,
+      }),
     ).toBeVisible({ timeout: 20000 });
     await expect(page.getByRole("button", { name: "Finalisasi" })).toHaveCount(
       0,
@@ -1052,7 +1128,9 @@ test.describe("audit PR #509 — eligibility server & policy publikasi", () => {
     });
     await page.goto("/foundation/decisions/new");
     // Halaman akses ditolak, bukan form kosong.
-    await expect(page.getByText(/Akses Ditolak/)).toBeVisible({ timeout: 20000 });
+    await expect(page.getByText(/Akses Ditolak/)).toBeVisible({
+      timeout: 20000,
+    });
     expect(requests).toHaveLength(0);
   });
 
@@ -1068,7 +1146,9 @@ test.describe("audit PR #509 — eligibility server & policy publikasi", () => {
       if (r.url().includes("/foundation/rules")) requests.push(r.url());
     });
     await page.goto("/foundation/decisions/rules");
-    await expect(page.getByText(/Akses Ditolak/)).toBeVisible({ timeout: 20000 });
+    await expect(page.getByText(/Akses Ditolak/)).toBeVisible({
+      timeout: 20000,
+    });
     expect(
       requests.filter((u) => u.includes("/foundation/rules")),
     ).toHaveLength(0);

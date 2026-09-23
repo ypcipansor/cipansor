@@ -441,13 +441,17 @@ sah (fail closed).
 
 ### 7.6 Rapat vs sirkuler & finalisasi
 
-Rapat ditutup lewat `finalize` dengan `closed: true` setelah kuorum hadir
-terpenuhi. Sirkuler tidak punya "rapat": `closed` sengaja tidak diteruskan
-(`closed: d.kind !== 'CIRCULAR'`), sehingga hasilnya hanya bergantung pada
-himpunan suara. Konsekuensinya: sirkuler APPROVED hanya saat ambang mufakat
-tercapai, REJECTED hanya saat mufakat terbukti mustahil, dan selama masih
-mungkin statusnya tetap VOTING — pimpinan tidak boleh menggugurkannya lebih
-awal.
+Rapat (MEETING) ditutup lewat `finalize` dengan `closed: true` setelah kuorum
+hadir terpenuhi.
+
+Sirkuler (`CIRCULAR`) **tidak memiliki finalisasi manual sama sekali**:
+hasilnya ditutup otomatis oleh `castVote`. Sirkuler APPROVED hanya saat ambang
+mufakat tercapai, REJECTED hanya saat mufakat terbukti mustahil, dan selama
+masih mungkin statusnya tetap VOTING. Karena tidak ada kondisi sukses yang sah
+untuk `finalize` pada sirkuler, endpoint menolaknya eksplisit dan DTO detail
+mengirim `canFinalize=false` — UI tidak menawarkan tombol yang peladen pasti
+tolak. (Sebelum koreksi, DTO masih memberi `canFinalize=true` untuk sirkuler
+padahal `finalize` selalu menolaknya; itu bug "aksi yang selalu gagal".)
 
 ### 7.7 Publikasi metadata & sensor verifikasi publik
 
@@ -506,17 +510,67 @@ dipindahkan dari kode karena panjangnya mengubur logika operasional.
 
 - **Snapshot vs perubahan peran konkuren.** `create` menyusun daftar anggota
   dari `userRoleAssignment` yang dibaca SEBELUM transaksi. Antara pembacaan itu
-  dan komit, `roles.service` dapat mencabut atau mengganti penugasan, dan tanpa
-  jaminan konkurensi snapshot immutable dapat membekukan anggota yang sudah
-  tidak sah beserta hak suaranya. Perbaikan: DI DALAM transaksi, baris penugasan
-  yang menjadi dasar snapshot dikunci (`SELECT … FOR UPDATE`, `Prisma.join`)
-  lalu dibaca ULANG dengan predikat yang sama; hasilnya disusutkan ulang lewat
-  `selectSnapshotAssignments` dan dibandingkan dengan snapshot pra-transaksi.
-  Bila himpunan (userId, roleCode) berubah — pencabutan, penggantian jabatan,
-  atau kedaluwarsa — operasi dibatalkan ATOMIK dengan `Errors.conflict`, dan
-  `decision`, `members`, serta `audit` tidak pernah ter-commit sebagian.
-  Perbandingan memakai hasil susutan, bukan daftar penugasan mentah, supaya
-  mencabut peran ganda yang kalah tidak menandai roster yang sebenarnya sama.
+  dan komit, penugasan dapat DITAMBAH, dicabut, atau diganti; tanpa jaminan
+  konkurensi, snapshot immutable dapat membekukan himpunan anggota yang salah
+  (anggota tak sah masuk, atau anggota baru hilang sehingga kuorum terlalu
+  kecil) beserta hak suaranya.
+
+  **Kenapa `FOR UPDATE` tidak cukup (percobaan pertama).** Perbaikan awal
+  mengunci baris penugasan hasil pembacaan awal dengan
+  `SELECT … FOR UPDATE WHERE id IN (…)`. Itu tidak sanggup menahan penugasan
+  BARU: baris yang belum ada tidak muncul di `SELECT … FOR UPDATE` mana pun, dan
+  `ROW EXCLUSIVE` yang dipegang `INSERT` pengangkatan tidak berbenturan dengan
+  kunci baris atas baris lama. Pengangkatan yang commit di sela pembacaan dan
+  komit tetap lolos dari snapshot, sehingga kuorum dihitung di atas anggota yang
+  terlalu sedikit dan keputusan dapat disahkan beserta e-seal.
+
+  **Perbaikan final: kunci tabel `SHARE ROW EXCLUSIVE`.** Di dalam transaksi,
+  kunci diambil pada LEVEL TABEL — `SELECT set_config('lock_timeout','5000',true)`
+  lalu `LOCK TABLE "user_role_assignments" IN SHARE ROW EXCLUSIVE MODE`. Mode
+  itu berbenturan dengan `ROW EXCLUSIVE` yang otomatis dipegang SETIAP
+  INSERT/UPDATE/DELETE (termasuk baris BARU), jadi setiap mutasi penugasan
+  konkuren menunggu sampai transaksi ini selesai; mutasi yang sudah commit
+  sebelum kunci diperoleh terlihat di baca ulang. Himpunan penuh kemudian dibaca
+  ULANG dengan predikat yang sama (bukan daftar ID), disusutkan ulang lewat
+  `selectSnapshotAssignments`, dan dibandingkan dengan snapshot pra-transaksi.
+  Bila himpunan (userId, roleCode) berubah, operasi dibatalkan ATOMIK dengan
+  `Errors.conflict`, dan `decision`, `members`, serta `audit` tidak pernah
+  ter-commit sebagian. Perbandingan memakai hasil susutan, bukan penugasan
+  mentah, supaya mencabut peran ganda yang kalah tidak menandai roster yang
+  sebenarnya sama.
+
+  `lock_timeout` dipilih ketimbang `statement_timeout` karena ia tidak
+  membatalkan transaksi di PostgreSQL: penunggu yang kehabisan waktu gagal kode
+  `55P03`. `pg_advisory_xact_lock` dari percobaan
+  sebelumnya dibuang karena hanya jalur ini yang memakainya — tanpa mutasi lain
+  mengambilnya, ia tidak menyerialkan apa pun.
+
+  **Bukti konkurensi nyata.** Dua test di
+  `apps/api/src/modules/foundation-decisions/tests/integration.db.test.ts`
+  (pengangkatan dan pencabutan) menjalankan DUA transaksi yang benar-benar
+  overlap pada koneksi berbeda: koneksi B meng-INSERT/UPDATE penugasan lalu
+  ditahan tanpa commit, `create` dijalankan, dan test menunggu sampai ADA
+  penunggu kunci pada `user_role_assignments` — dibaca dari `pg_locks`
+  (`granted = false`) di level kunci, bukan dari teks SQL, sehingga probe-nya
+  tidak terikat pada kalimat `LOCK TABLE` yang kebetulan dipakai. Setelah B
+  commit, `create` membaca ulang himpunan penuh, menolak snapshot basi sebagai
+  konflik, dan percobaan ulang memasukkan anggota baru. Kedua test GAGAL pada
+  implementasi `FOR UPDATE` lama (create tidak memblokir sama sekali).
+
+  **Deteksi `55P03` harus menelusuri pohon galat.** Pemetaan ke 409 sempat TIDAK
+  berjalan: dengan driver adapter (`@prisma/adapter-pg`) Prisma 7 membungkus
+  galat PostgreSQL menjadi `PrismaClientKnownRequestError` berkode `P2010` dan
+  menyimpan SQLSTATE aslinya di
+  `meta.driverAdapterError.cause.originalCode`. Pemeriksaan `err.code === '55P03'`
+  karena itu meleset, kontensi lolos ke handler galat umum, dan pemanggil
+  menerima **500** alih-alih konflik yang dapat diulang. `isLockConflictError`
+  sekarang menelusuri pohon galat (dengan batas kedalaman) dan menerima kode
+  pada `code` maupun `originalCode`. Bukti:
+  `apps/api/src/modules/foundation-decisions/tests/lock-contention.db.test.ts`
+  memegang kunci dari transaksi kedua yang benar-benar overlap lalu memaku
+  respons 409, dan `isLockConflictError` diuji langsung atas bentuk galat
+  terbungkus itu.
+
 - **Urutan anggota deterministik.** `approvalFingerprint` mengikat urutan
   `userId` anggota dan `renderPdf` mencetak roster dalam urutan baca, sedangkan
   relasi Prisma tanpa `orderBy` tidak menjanjikan urutan. Dua pembacaan yang
