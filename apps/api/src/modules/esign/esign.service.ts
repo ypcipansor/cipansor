@@ -76,6 +76,35 @@ import {
 } from '@/utils/esign-lifecycle';
 import { revokeSigningKeyHistory, supersedeSigningKeyHistory } from '@/utils/signing-key-history';
 
+/**
+ * Serialisasi transisi `UserSigningKey` PER PENGGUNA.
+ *
+ * `activateKey` melakukan pola baca-lalu-tulis (findUnique → deleteMany → create)
+ * yang tidak aman terhadap balapan: dua permintaan yang berjalan bersamaan
+ * sama-sama membaca "tidak ada kunci aktif", lalu sama-sama menulis. Yang kalah
+ * menghapus kunci yang baru saja dibuat pemenangnya, sehingga kunci yang
+ * dikembalikan pemenang ke pemanggilnya sudah tidak berlaku sebelum responsnya
+ * sampai.
+ *
+ * Kunci baris biasa tidak cukup: baris `UserSigningKey` seorang pengguna bisa
+ * BELUM ADA (penerbitan pertama) sehingga tak ada apa pun untuk dikunci.
+ * Advisory lock transaksi (`pg_advisory_xact_lock`) berlaku atas NILAI kunci,
+ * bukan baris, dan dilepas otomatis saat transaksi berakhir. Kuncinya memakai
+ * `hashtextextended("userId")` agar seluruh pengguna dapat diserialkan tanpa
+ * tabel tambahan; bentrok hash antara dua pengguna hanya menambah tunggu, tidak
+ * pernah menggabungkan dua transisi yang sah.
+ *
+ * Jalur lain yang mengubah kunci pengguna yang sama (`decideRequest`,
+ * `revokeKey`) mengambil kunci ini juga, sehingga pemeriksaan status di dalam
+ * lock selalu melihat keadaan yang sudah final.
+ */
+async function lockSigningKeyTransition(
+  tx: Prisma.TransactionClient,
+  userId: string
+): Promise<void> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${userId}, 0))`;
+}
+
 /** Baris kunci → bahan kriptografi yang dimengerti utils/esign. */
 function toMaterial(key: {
   algorithm: string;
@@ -686,6 +715,11 @@ export const EsignService = {
     }
 
     const result = await prisma.$transaction(async (tx) => {
+      // Serialkan terhadap `activateKey` untuk pengguna yang sama: penerbitan
+      // ulang yang konkuren tidak boleh menghapus kunci yang baru saja
+      // diperpanjang/diselesaikan keputusannya.
+      await lockSigningKeyTransition(tx, request.userId);
+
       if (identityVerification) {
         await tx.userIdentity.update({
           where: { userId: request.userId },
@@ -759,51 +793,55 @@ export const EsignService = {
    *
    * Kunci baru dibuat di sini — bukan saat disetujui — karena passphrase-nya
    * hanya boleh diketahui pemiliknya.
+   *
+   * Transisi `UserSigningKey` per pengguna diserialisasi oleh advisory lock
+   * transaksi pada kunci `userId` (`lockSigningKeyTransition`), sehingga dua
+   * permintaan `activateKey` yang berjalan bersamaan tidak dapat sama-sama
+   * lolos pemeriksaan "belum ada kunci aktif" lalu saling menghapus hasil.
+   * Pemeriksaan status hidup SATU baris (tanpa riwayat) tetap dilakukan di
+   * dalam lock terhadap kunci yang `id`-nya tersimpan di advisory key, sehingga
+   * `decideRequest`/`revokeKey` juga menunggu sebelum mengganti/mencabut kunci
+   * yang sama.
    */
   async activateKey(userId: string, passphrase: string) {
-    const approved = await prisma.signingKeyRequest.findFirst({
-      where: {
-        userId,
-        status: SigningKeyRequestStatus.APPROVED,
-        kind: SigningKeyRequestKind.ENROLLMENT,
-      },
-      orderBy: { decidedAt: 'desc' },
-    });
-    if (!approved) {
-      throw Errors.badRequest('Belum ada persetujuan penerbitan kunci tanda tangan untuk Anda.');
-    }
-
-    const existing = await prisma.userSigningKey.findUnique({ where: { userId } });
-    if (existing && !needsNewIssuance(existing)) {
-      throw Errors.badRequest('Anda sudah memiliki kunci tanda tangan yang aktif.');
-    }
-
-    const material = createKeyMaterial(passphrase);
-    const days = approved.grantedDays ?? DEFAULT_VALIDITY_DAYS;
-    const now = new Date();
-
     /**
-     * Semua penulisan daur hidup kunci dalam SATU transaksi.
-     *
-     * Sebelumnya cap `supersededAt` pada riwayat dan `deleteMany` kunci lama
-     * dijalankan di luar transaksi, sebelum `create` penggantinya. Bila
-     * pembuatan pengganti gagal (atau salah satu penulisan sebelumnya gagal),
-     * pengguna ditinggalkan tanpa kunci sama sekali: kunci lama sudah dihapus,
-     * riwayat sudah ditandai digantikan, sementara penggantinya tidak pernah
-     * ada — dan ia kehilangan akses tanda tangan tanpa jalan pulih selain
-     * penerbitan ulang oleh Super Admin. Di dalam transaksi, kegagalan mana pun
-     * mengembalikan kunci lama beserta status riwayatnya.
+     * SATU transaksi memegang advisory lock sejak sebelum membaca keadaan
+     * kunci, lalu melakukan seluruh penulisan daur hidup kuncinya. Bila cap
+     * `supersededAt` pada riwayat dan `deleteMany` kunci lama dijalankan di
+     * luar transaksi — atau sebelum lock — kegagalan di tengah meninggalkan
+     * pengguna tanpa kunci sama sekali, dan transisi konkuren dapat menimpa
+     * hasil yang sudah dijanjikan ke pemanggil.
      */
     return prisma.$transaction(async (tx) => {
-      const previous = await tx.userSigningKey.findUnique({ where: { userId } });
-      if (previous) {
+      await lockSigningKeyTransition(tx, userId);
+
+      // Dibaca di dalam lock: keputusan approval dapat berubah antara precheck
+      // dan commit, dan transisi yang diizinkan harus yang paling baru.
+      const approved = await tx.signingKeyRequest.findFirst({
+        where: {
+          userId,
+          status: SigningKeyRequestStatus.APPROVED,
+          kind: SigningKeyRequestKind.ENROLLMENT,
+        },
+        orderBy: { decidedAt: 'desc' },
+      });
+      if (!approved) {
+        throw Errors.badRequest('Belum ada persetujuan penerbitan kunci tanda tangan untuk Anda.');
+      }
+
+      const existing = await tx.userSigningKey.findUnique({ where: { userId } });
+      if (existing && !needsNewIssuance(existing)) {
+        throw Errors.badRequest('Anda sudah memiliki kunci tanda tangan yang aktif.');
+      }
+
+      const material = createKeyMaterial(passphrase);
+      const days = approved.grantedDays ?? DEFAULT_VALIDITY_DAYS;
+      const now = new Date();
+
+      if (existing) {
         // Kunci lama digantikan: cap riwayatnya SEBELUM baris kuncinya dihapus,
         // dengan cap waktu yang sama untuk kedua sisi peristiwa.
-        await supersedeSigningKeyHistory(
-          tx,
-          { userId, publicKey: previous.publicKey },
-          now
-        );
+        await supersedeSigningKeyHistory(tx, { userId, publicKey: existing.publicKey }, now);
       }
       await tx.userSigningKey.deleteMany({ where: { userId } });
       const key = await tx.userSigningKey.create({
@@ -1004,6 +1042,12 @@ export const EsignService = {
      * riwayat, dan audit tidak dapat menyimpang satu sama lain.
      */
     const { signedWithThisKey } = await prisma.$transaction(async (tx) => {
+      // Serialkan terhadap transisi kunci lain pengguna ini. `updateMany`
+      // bersyarat di bawah sudah atomik terhadap pencabutan paralel, tetapi
+      // tanpa lock `activateKey` dapat menyisipkan kunci pengganti di sela
+      // pembacaan dan menulis, sehingga cap riwayat menunjuk kunci yang salah.
+      await lockSigningKeyTransition(tx, userId);
+
       /**
        * UPDATE bersyarat (`revoked_at IS NULL`) — gerbang transisi yang
        * ATOMIK.

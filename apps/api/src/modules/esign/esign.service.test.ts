@@ -458,6 +458,58 @@ describe('pengajuan kunci', () => {
   });
 });
 
+describe('aktivasi kunci tidak balapan', () => {
+  /**
+   * Regresi finding: dua `activateKey` paralel sama-sama membaca "tidak ada
+   * kunci" lalu yang kalah menghapus kunci pemenang. Serialisasi diperoleh dari
+   * advisory lock transaksi per pengguna, jadi transaksi aktivasi HARUS
+   * memanggilnya SEBELUM membaca keadaan kunci. Urutan panggilan inilah yang
+   * diuji di sini (perilaku balapan sesungguhnya diuji dengan PostgreSQL nyata
+   * di `esign-activation.db.test.ts`).
+   */
+  it('mengambil advisory lock per pengguna sebelum membaca kunci', async () => {
+    const calls: string[] = [];
+    vi.mocked(prisma.$executeRaw).mockImplementation((async () => {
+      calls.push('lock');
+      return 1;
+    }) as never);
+    vi.mocked(prisma.signingKeyRequest.findFirst).mockImplementation((async () => {
+      calls.push('readApproval');
+      return { decidedById: 'admin', decidedAt: new Date(), grantedDays: 365 };
+    }) as never);
+    vi.mocked(prisma.userSigningKey.findUnique).mockImplementation((async () => {
+      calls.push('readKey');
+      return null;
+    }) as never);
+    vi.mocked(prisma.userSigningKey.create).mockResolvedValue({
+      id: 'new-key',
+      expiresAt: new Date(Date.now() + 365 * DAY),
+    } as any);
+
+    await EsignService.activateKey('ketua', 'passphrase-yang-cukup-panjang');
+
+    expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
+    // Lock diambil lebih dulu, baru keadaan kunci dibaca DI DALAM lock.
+    expect(calls[0]).toBe('lock');
+    expect(calls.indexOf('readApproval')).toBeGreaterThan(0);
+    expect(calls.indexOf('readKey')).toBeGreaterThan(calls.indexOf('readApproval'));
+  });
+
+  it('menolak aktivasi ulang bila kunci aktif masih ada (di dalam lock)', async () => {
+    vi.mocked(prisma.$executeRaw).mockResolvedValue(1 as never);
+    vi.mocked(prisma.signingKeyRequest.findFirst).mockResolvedValue({
+      decidedById: 'admin',
+      decidedAt: new Date(),
+      grantedDays: 365,
+    } as any);
+    vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(activeKey() as any);
+
+    await expect(EsignService.activateKey('ketua', 'passphrase-yang-cukup-panjang')).rejects.toThrow(
+      /sudah memiliki kunci tanda tangan yang aktif/i
+    );
+  });
+});
+
 describe('putusan Super Admin', () => {
   it('menolak masa berlaku di luar batas', async () => {
     vi.mocked(prisma.signingKeyRequest.findUnique).mockResolvedValue({
