@@ -331,6 +331,21 @@ describe('Socket.IO authorization boundary', () => {
     socket.disconnect();
   });
 
+  it('sends no foundation-wide recent records to a foundation role whose Role is disabled', async () => {
+    // Regression: `sendRecentEvents` decided the foundation scope from the
+    // token's `roleCode`, so a `YAYASAN_PENGAWAS` token kept receiving every
+    // unit's students and payment amounts on connect even after the
+    // administration disabled the Pengawas `Role` (an empty live assignment
+    // set). The decision must use the effective role, which no longer names it.
+    assignmentFindMany.mockResolvedValue([]);
+    const socket = await connect(port, accessToken({ roleCode: 'YAYASAN_PENGAWAS', unitId: null }));
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    expect(attendanceFindMany).not.toHaveBeenCalled();
+    expect(paymentFindMany).not.toHaveBeenCalled();
+    socket.disconnect();
+  });
+
   it('scopes a unit-bound actor recent records to its own unit', async () => {
     assignmentFindMany.mockResolvedValue([{ unitId: 'unit-sdit', role: { code: 'SDIT_ADMIN' } }]);
     const socket = await connect(

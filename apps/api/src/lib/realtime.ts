@@ -692,7 +692,11 @@ export function broadcastTahfidz(event: TahfidzEvent & { unitId?: string }): voi
 async function sendRecentEvents(socket: Socket, identity: SocketIdentity): Promise<void> {
   try {
     const units = allowedUnitIds(identity);
-    const foundationWide = isFoundationWideRole(identity.roleCode);
+    // The *effective* role, not the token snapshot: a foundation-wide role
+    // whose `Role` was disabled must not keep receiving every unit's students
+    // and payment amounts on connect. `identity.roleCode` alone would still
+    // name the withdrawn role and scope the query to the whole foundation.
+    const foundationWide = isFoundationWideRole(effectiveRoleCode(identity));
 
     // Fail closed for a non-foundation actor with no verified unit. The empty
     // scope below (`{}`) means "every unit" — the whole-foundation query — so a
