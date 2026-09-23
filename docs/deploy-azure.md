@@ -59,7 +59,11 @@ outgrow it, they belong in Blob Storage, which the api cannot write to yet.
 
 **Staging holds demo data only — never a copy of real data.** It is reachable
 by anyone who knows the name: there is no Cloudflare Access in front of it (the
-Zero Trust plan could not be activated). It is seeded from `prisma/seed.ts`.
+Zero Trust plan could not be activated). It is seeded from `prisma/seed.ts`
+(`ALLOW_DESTRUCTIVE_SEED=1`, the seed wipes every table first) **without**
+`E2E_FIXED_2FA`, so it behaves like production: admin accounts are sent to 2FA
+setup at their first login and must enrol an authenticator; there is no demo
+mode to waive it.
 Testing a migration against real data happens on a throwaway database restored
 from the backup, as the VM runbook describes, not on staging.
 

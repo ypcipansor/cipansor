@@ -23,9 +23,9 @@ Panduan deployment sistem Cipansor untuk production.
 
 ### System Requirements
 
-- **Node.js**: v20 LTS atau lebih baru
+- **Node.js**: v22 (semua image memakai `node:22-alpine`)
 - **PostgreSQL**: v14 atau lebih baru
-- **pnpm**: v10 atau lebih baru
+- **pnpm**: 9.15.9 (dipaku lewat `packageManager` di `package.json`; CI memakai `--frozen-lockfile`)
 - **Docker** (opsional): v24 atau lebih baru
 - **RAM**: Minimum 2GB, recommended 4GB
 - **Disk**: Minimum 20GB
@@ -163,10 +163,12 @@ docker compose exec api sh
 
 # Jalankan migration
 npx prisma migrate deploy
-
-# Jalankan seed (untuk data awal)
-npx prisma db seed
 ```
+
+> **Jangan menjalankan seed ke produksi.** `prisma/seed.ts` men-`TRUNCATE`
+> hampir seluruh tabel sebelum mengisi data contoh, dan kini menolak berjalan
+> tanpa `ALLOW_DESTRUCTIVE_SEED=1` — variabel yang hanya boleh diset untuk basis
+> data pengembangan, CI, atau staging.
 
 ---
 

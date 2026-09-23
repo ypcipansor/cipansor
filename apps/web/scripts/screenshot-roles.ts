@@ -42,10 +42,11 @@ interface RoleAccount {
 }
 
 // Drive the sweep off the canonical DEMO_ACCOUNTS — the single list that the API
-// seed (apps/api/prisma/seed.ts) provisions and the login page advertises, one
-// login per RoleCode. Using it here guarantees every account we try to log in as
-// actually exists in a freshly seeded database. Demo logins do not carry 2FA, so
-// the TOTP branch in `login()` below stays as a harmless fallback.
+// seed (apps/api/prisma/seed.ts) provisions, one login per RoleCode. Using it
+// here guarantees every account we try to log in as actually exists in a freshly
+// seeded database. Admin accounts are always behind 2FA (there is no demo
+// exemption any more): seed with E2E_FIXED_2FA=1 and the TOTP branch in
+// `login()` below answers the challenge from the fixed secret.
 const ACCOUNTS: RoleAccount[] = DEMO_ACCOUNTS.map((acc) => ({
   label: acc.roleCode.toLowerCase().replace(/_/g, "-"),
   roleCode: acc.roleCode,

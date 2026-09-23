@@ -1,18 +1,18 @@
 /**
  * Canonical demo accounts — one per RoleCode in the system.
  *
- * This single list is the source of truth consumed by BOTH:
- *   - the API seed (apps/api/prisma/seed.ts) which creates the login users, and
- *   - the web login page (apps/web/src/app/login/page.tsx) which lists them.
- * Keeping them in one place is what guarantees every advertised credential
- * actually logs in — edit accounts here, never in the two consumers.
+ * This single list is the source of truth for the API seed
+ * (apps/api/prisma/seed.ts), which creates the login users, and for the tools
+ * that log in as them (the e2e suite, scripts/screenshot-roles.ts). Edit
+ * accounts here, never in the consumers. The login page no longer lists them:
+ * the demo credential panel was removed with DEMO_MODE (2026-09-23).
  *
  * Real names + photos are used for the six leaders of Yayasan Pesantren
  * Cipansor. All other names are representative demo data.
  */
 
 export interface DemoAccount {
-  /** Tab/group key — must match a DEMO_TABS entry. */
+  /** Realm the account belongs to (YAYASAN, PESANTREN, SD_IT, …). */
   group: string;
   /** Must match the Prisma RoleCode enum exactly. */
   roleCode: string;
@@ -24,24 +24,8 @@ export interface DemoAccount {
   photo?: string;
 }
 
-export interface DemoTab {
-  key: string;
-  label: string;
-}
-
-/** Every demo account shares one password, shown on each card. */
+/** Every seeded demo account shares one password. */
 export const DEMO_PASSWORD = "Cipansor123!";
-
-/** Tabs in display order — one per realm, plus support/business. */
-export const DEMO_TABS: DemoTab[] = [
-  { key: "YAYASAN", label: "Global & Yayasan" },
-  { key: "PESANTREN", label: "Pesantren" },
-  { key: "TK_QURAN", label: "TK Qur'an" },
-  { key: "SD_IT", label: "SD IT" },
-  { key: "SMP_IT", label: "SMP IT" },
-  { key: "SMA_QURAN", label: "SMA Qur'an" },
-  { key: "SARANA_USAHA", label: "Sarana & Unit Usaha" },
-];
 
 const P = DEMO_PASSWORD;
 
