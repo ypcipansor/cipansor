@@ -9,7 +9,12 @@ import { config } from '@/config';
 import { buildCorsOptions } from '@/config/cors';
 import { logger } from '@/lib/logger';
 import { errorHandler, notFoundHandler } from '@/middleware/error';
-import { defaultLimiter, authLimiter } from '@/middleware/rate-limit';
+import {
+  defaultLimiter,
+  authLimiter,
+  rateLimitEnabled,
+  uploadsServeLimiter,
+} from '@/middleware/rate-limit';
 import { normalizePagination } from '@/middleware/normalize-pagination';
 import { swaggerSpec } from '@/config/swagger';
 
@@ -159,15 +164,13 @@ app.use(compression());
 // (see uploadsAuth). Directory listing stays off; static only serves files.
 //
 // The read limiter is mounted unconditionally and visibly, the way CodeQL and a
-// reader both expect; its dev/test exemption lives inside `defaultLimiter.skip`
-// (middleware/rate-limit.ts), not in a conditional spread that could hide the
-// protection. It counts each read exactly ONCE: the global `defaultLimiter`
-// below skips `/uploads` (see its `skip`), because `express.static` answers a
-// served file and falls through for a missing one, and the global mount would
-// otherwise count that fall-through a second time — halving the effective read
-// quota in production while dev/test hid it. The skip keys on `req.path`, which
-// Express strips to the sub-path inside the mount and leaves whole outside it,
-// so the route mount counts and the global mount stands down.
+// reader both expect; its dev/test exemption lives inside the limiter's own
+// `skip` (middleware/rate-limit.ts), not in a conditional spread that could hide
+// the protection. `/uploads` carries its OWN budget (`uploadsServeLimiter`,
+// sized for image-heavy pages) ahead of auth, and is excluded from the global
+// limiter below, so every read costs exactly one slot of the uploads budget and
+// none of the API budget — a missing file that `express.static` passes on
+// included. Auth still gates it in every environment.
 //
 // `uploadsAuth` already authorizes the caller against the owning record, so the
 // browser only ever fetches a file it is allowed to read. But helmet's default
@@ -180,21 +183,54 @@ app.use(compression());
 // this route opts out of CORP while the rest of the API keeps the default.
 import path from 'path';
 import { uploadsAuth } from './middleware/upload';
-app.use(
-  '/uploads',
-  defaultLimiter,
-  uploadsAuth,
-  (_req, res, next) => {
-    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-    next();
-  },
-  express.static(path.join(process.cwd(), 'public/uploads'))
-);
 
-// Rate limiting - apply to all routes except health check.
-// `defaultLimiter` skips test/development and `/uploads` internally (the latter
-// is already counted once by the mount above).
-app.use(defaultLimiter);
+/**
+ * The `/uploads` middleware chain.
+ *
+ * Rate limiting is mounted UNCONDITIONALLY (its dev/test exemption is inside
+ * `uploadsServeLimiter.skip`), so the protection is visible to a reader and to
+ * static analysis rather than hidden behind a conditional spread. Authentication
+ * (`uploadsAuth`) is unconditional too: stored uploads are private in every
+ * environment.
+ */
+export function buildUploadsMiddleware() {
+  return [
+    uploadsServeLimiter,
+    uploadsAuth,
+    // Private *by authorization*, not by same-origin: the browser must be able
+    // to render an authorized file even when the web app and the API are on
+    // different origins (see the comment above).
+    (_req: express.Request, res: express.Response, next: express.NextFunction) => {
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      next();
+    },
+    express.static(path.join(process.cwd(), 'public/uploads')),
+  ];
+}
+
+app.use('/uploads', ...buildUploadsMiddleware());
+
+/**
+ * The global default limiter.
+ *
+ * `buildUploadsMiddleware` already limits `/uploads` with its own budget; the
+ * global pass must not touch that prefix, or a missing file that falls through
+ * `express.static` would also spend an API slot. Every non-upload route still
+ * gets the limiter once. Inactive entirely in development and test.
+ */
+export function buildGlobalLimiter(env: string): express.RequestHandler {
+  if (!rateLimitEnabled(env)) {
+    return (_req, _res, next) => next();
+  }
+  return (req, res, next) => {
+    if (req.path === '/uploads' || req.path.startsWith('/uploads/')) {
+      return next();
+    }
+    return defaultLimiter(req, res, next);
+  };
+}
+
+app.use(buildGlobalLimiter(config.env));
 
 // Logging
 if (config.env !== 'test') {

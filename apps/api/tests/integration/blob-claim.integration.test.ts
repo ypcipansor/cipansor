@@ -37,6 +37,17 @@ const KEY_A = canonicalBlobClaimKey(URL_A);
 const KEY_B = canonicalBlobClaimKey(URL_B);
 const KEY_C = canonicalBlobClaimKey(URL_C);
 
+// SEVERE BUG regression fixtures: `a/./b` and `a/b` are physically DIFFERENT
+// Azure blobs (a blob name is an object key), but the WHATWG URL parser used to
+// collapse the first to the second, so a claim/delete for one serialized against
+// — and could destroy — the other.
+const URL_DOT = 'https://store.blob.core.windows.net/cipansor-documents/a/./b.pdf';
+const URL_PLAIN = 'https://store.blob.core.windows.net/cipansor-documents/a/b.pdf';
+const KEY_DOT = canonicalBlobClaimKey(URL_DOT);
+const KEY_PLAIN = canonicalBlobClaimKey(URL_PLAIN);
+
+const CLEANUP_KEYS = [KEY_A, KEY_B, KEY_C, KEY_DOT, KEY_PLAIN];
+
 function openClient(): Client {
   return new Client({ connectionString: process.env.DATABASE_URL });
 }
@@ -59,17 +70,11 @@ describeDb('BlobClaim protocol', () => {
   beforeAll(async () => {
     clientA = openClient();
     await clientA.connect();
-    await clientA.query(
-      `DELETE FROM "blob_claims" WHERE "blob_url" = ANY($1)`,
-      [[KEY_A, KEY_B, KEY_C]]
-    );
+    await clientA.query(`DELETE FROM "blob_claims" WHERE "blob_url" = ANY($1)`, [CLEANUP_KEYS]);
   });
 
   afterAll(async () => {
-    await clientA.query(
-      `DELETE FROM "blob_claims" WHERE "blob_url" = ANY($1)`,
-      [[KEY_A, KEY_B, KEY_C]]
-    );
+    await clientA.query(`DELETE FROM "blob_claims" WHERE "blob_url" = ANY($1)`, [CLEANUP_KEYS]);
     await clientA.end();
   });
 
@@ -169,7 +174,7 @@ describeDb('BlobClaim protocol', () => {
 
   // ── Finding D: same-user operations must not take each other over ──────────
 
-  it('a same-user DISCARD cannot take over that user\'s live RECORD claim', async () => {
+  it("a same-user DISCARD cannot take over that user's live RECORD claim", async () => {
     const record = await claimBlobForRecord(URL_A, 'same-user');
     expect(record).not.toBeNull();
     // Identical holder id, different operation kind: this must NOT be a takeover.
@@ -178,7 +183,7 @@ describeDb('BlobClaim protocol', () => {
     await releaseBlobClaimById(record as BlobClaimHandle);
   });
 
-  it('a same-user RECORD cannot take over that user\'s live DISCARD claim', async () => {
+  it("a same-user RECORD cannot take over that user's live DISCARD claim", async () => {
     const discard = await claimBlobForDiscard(URL_A, 'same-user');
     expect(discard).not.toBeNull();
     // The create must refuse (or wait out) the same user's own discard.
@@ -197,10 +202,9 @@ describeDb('BlobClaim protocol', () => {
     expect(second).not.toBeNull();
     // Releasing the stale handle again must be a no-op against the new claim.
     await releaseBlobClaimById(first as BlobClaimHandle);
-    const { rows } = await clientA.query(
-      'SELECT id FROM "blob_claims" WHERE "blob_url" = $1',
-      [KEY_A]
-    );
+    const { rows } = await clientA.query('SELECT id FROM "blob_claims" WHERE "blob_url" = $1', [
+      KEY_A,
+    ]);
     expect(rows[0].id).toBe(second!.id);
     await releaseBlobClaimById(second as BlobClaimHandle);
   });
@@ -233,9 +237,7 @@ describeDb('BlobClaim protocol', () => {
     expect(discard).not.toBeNull();
 
     // A mismatched token cannot tombstone.
-    expect(
-      await markBlobDiscarded({ ...discard!, operationToken: 'wrong-token' })
-    ).toBe(false);
+    expect(await markBlobDiscarded({ ...discard!, operationToken: 'wrong-token' })).toBe(false);
     // The holder's first call wins...
     expect(await markBlobDiscarded(discard as BlobClaimHandle)).toBe(true);
     // ...and a second is a no-op: the row is already terminal.
@@ -256,9 +258,7 @@ describeDb('BlobClaim protocol', () => {
       })
     ).toBe(false);
 
-    await clientA.query(`DELETE FROM "blob_claims" WHERE "blob_url" = ANY($1)`, [
-      [KEY_A, KEY_B],
-    ]);
+    await clientA.query(`DELETE FROM "blob_claims" WHERE "blob_url" = ANY($1)`, [[KEY_A, KEY_B]]);
   });
 
   it('a tombstone cannot be reclaimed, not even by the same operation (finding D.5)', async () => {
@@ -323,6 +323,56 @@ describeDb('BlobClaim protocol', () => {
     await clientA.query(`DELETE FROM "blob_claims" WHERE "blob_url" = $1`, [KEY_A]);
   });
 
+  // ── SEVERE BUG: distinct blobs must not share a claim row ──────────────────
+
+  it('does NOT collapse `a/./b` onto `a/b` — distinct blobs hold distinct claims', async () => {
+    // A blob name is an object key, not a filesystem path: `a/./b` and `a/b` are
+    // two physical objects. The URL parser used to remove the `.` segment, giving
+    // both the same `azure://…` key; a claim (and the discard behind it) then
+    // serialized against, and could delete, the WRONG blob.
+    expect(KEY_DOT).not.toBe(KEY_PLAIN);
+    expect(KEY_DOT).toBe('azure://store/cipansor-documents/a/./b.pdf');
+    expect(KEY_PLAIN).toBe('azure://store/cipansor-documents/a/b.pdf');
+
+    const dotClaim = await claimBlobForRecord(URL_DOT, 'author-dot');
+    expect(dotClaim).not.toBeNull();
+    const plainClaim = await claimBlobForRecord(URL_PLAIN, 'author-plain');
+    expect(plainClaim).not.toBeNull();
+    expect(plainClaim!.id).not.toBe(dotClaim!.id);
+
+    const { rows } = await clientA.query(
+      'SELECT count(*)::int AS count FROM "blob_claims" WHERE "blob_url" = ANY($1)',
+      [[KEY_DOT, KEY_PLAIN]]
+    );
+    expect(rows[0].count).toBe(2);
+
+    await releaseBlobClaimById(dotClaim as BlobClaimHandle);
+    await releaseBlobClaimById(plainClaim as BlobClaimHandle);
+    await clientA.query(`DELETE FROM "blob_claims" WHERE "blob_url" = ANY($1)`, [
+      [KEY_DOT, KEY_PLAIN],
+    ]);
+  });
+
+  it('a discard for `a/./b` does not touch the claim on `a/b`', async () => {
+    // The discard's mutual exclusion must key on the exact blob it is deleting.
+    // Before the fix it keyed on the collapsed `a/b`, so it would either block on
+    // (and then be free to delete) the unrelated `a/b` blob.
+    const plainClaim = await claimBlobForRecord(URL_PLAIN, 'author-plain');
+    expect(plainClaim).not.toBeNull();
+
+    const dotDiscard = await claimBlobForDiscard(URL_DOT, 'discard-holder');
+    expect(dotDiscard).not.toBeNull();
+    await releaseBlobClaimById(dotDiscard as BlobClaimHandle);
+
+    // The unrelated `a/b` claim is untouched.
+    expect(await assertBlobClaimHeld(plainClaim as BlobClaimHandle)).toBe(true);
+
+    await releaseBlobClaimById(plainClaim as BlobClaimHandle);
+    await clientA.query(`DELETE FROM "blob_claims" WHERE "blob_url" = ANY($1)`, [
+      [KEY_DOT, KEY_PLAIN],
+    ]);
+  });
+
   // ── Finding 4: terminal DONE after a successful physical delete ────────────
 
   it('marks a tombstoned claim DONE for the exact operation that holds it (finding 4a)', async () => {
@@ -358,9 +408,7 @@ describeDb('BlobClaim protocol', () => {
     // Tombstoned by the true owner...
     expect(await markBlobDiscarded(discard as BlobClaimHandle)).toBe(true);
     // ...but a mismatched token cannot resolve it.
-    expect(
-      await markBlobReconcileDone({ ...discard!, operationToken: 'stale-token' })
-    ).toBe(false);
+    expect(await markBlobReconcileDone({ ...discard!, operationToken: 'stale-token' })).toBe(false);
 
     // The true owner still can.
     expect(await markBlobReconcileDone(discard as BlobClaimHandle)).toBe(true);

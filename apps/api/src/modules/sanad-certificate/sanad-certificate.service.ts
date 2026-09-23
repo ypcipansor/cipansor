@@ -10,12 +10,13 @@ import type {
   BulkCreateSanadInput,
   SanadGrade,
 } from './sanad-certificate.schema';
-import { GRADE_LABELS } from './sanad-certificate.schema';
+import {
+  GRADE_LABELS,
+  MIN_BULK_CREATE_RECORDS,
+  MAX_BULK_CREATE_RECORDS,
+} from './sanad-certificate.schema';
 import { certificateVerificationUrl } from '@/utils/verification-url';
-
-// ============================================
-// CONSTANTS
-// ============================================
+import { Errors } from '@/middleware/error';
 
 const JUZ_NAMES: Record<number, string> = {
   1: 'Juz Amma',
@@ -289,9 +290,25 @@ export async function bulkCreateSanadRecords(
     errors: [] as { index: number; error: string }[],
   };
 
-  for (let i = 0; i < input.records.length; i++) {
+  if (!Array.isArray(input.records)) {
+    throw Errors.badRequest('Invalid records payload');
+  }
+
+  if (input.records.length < MIN_BULK_CREATE_RECORDS) {
+    throw Errors.badRequest(`At least ${MIN_BULK_CREATE_RECORDS} record is required`);
+  }
+
+  if (input.records.length > MAX_BULK_CREATE_RECORDS) {
+    throw Errors.badRequest(
+      `Cannot create more than ${MAX_BULK_CREATE_RECORDS} records in one request`
+    );
+  }
+
+  const records = input.records;
+
+  for (let i = 0; i < records.length; i++) {
     try {
-      await createSanadRecord(input.records[i], context);
+      await createSanadRecord(records[i], context);
       results.success++;
     } catch (error) {
       results.failed++;
@@ -792,11 +809,7 @@ export async function getSanadTree(): Promise<SanadTreeNode[]> {
     }
   }
 
-  const buildNode = (
-    userId: string,
-    visited: Set<string>,
-    edge?: Edge
-  ): SanadTreeNode => {
+  const buildNode = (userId: string, visited: Set<string>, edge?: Edge): SanadTreeNode => {
     const childEdges = edges.get(userId);
     const children: SanadTreeNode[] = [];
     if (childEdges && !visited.has(userId)) {

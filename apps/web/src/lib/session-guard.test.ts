@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeAll } from "vitest";
+import fs from "fs";
+import path from "path";
 import { NextRequest } from "next/server";
 import { middleware } from "../../middleware";
 import { SESSION_COOKIE, SESSION_TTL_SECONDS, signSession } from "./session";
@@ -26,7 +28,10 @@ beforeAll(() => {
   process.env.JWT_SECRET = SECRET;
 });
 
-function request(url: string, opts: { cookie?: string; authorization?: string; host?: string } = {}) {
+function request(
+  url: string,
+  opts: { cookie?: string; authorization?: string; host?: string } = {},
+) {
   const headers: Record<string, string> = {};
   if (opts.cookie) headers.cookie = opts.cookie;
   if (opts.authorization) headers.authorization = opts.authorization;
@@ -41,15 +46,24 @@ function location(res: Response): string | null {
 async function validCookies(role: string, roleCode = role) {
   const now = Math.floor(Date.now() / 1000);
   const token = await signSession(
-    { v: 1, sub: "u1", role, roleCode, iat: now, exp: now + SESSION_TTL_SECONDS },
-    SECRET
+    {
+      v: 1,
+      sub: "u1",
+      role,
+      roleCode,
+      iat: now,
+      exp: now + SESSION_TTL_SECONDS,
+    },
+    SECRET,
   );
   return `${SESSION_COOKIE}=${token}`;
 }
 
 describe("middleware session guard", () => {
   it("redirects an anonymous visitor on a protected route to /login", async () => {
-    const res = await middleware(request("https://portal.cipansor.or.id/dashboard"));
+    const res = await middleware(
+      request("https://portal.cipansor.or.id/dashboard"),
+    );
     expect(res.status).toBe(307);
     expect(location(res)).toContain("/login");
   });
@@ -59,14 +73,19 @@ describe("middleware session guard", () => {
       JSON.stringify({
         state: {
           isAuthenticated: true,
-          user: { role: "SUPER_ADMIN", userRoles: [{ role: { code: "SUPER_ADMIN" }, isPrimary: true }] },
+          user: {
+            role: "SUPER_ADMIN",
+            userRoles: [{ role: { code: "SUPER_ADMIN" }, isPrimary: true }],
+          },
         },
         version: 0,
-      })
+      }),
     );
     // /users is admin-only; a forged profile cookie must not open it.
     const res = await middleware(
-      request("https://portal.cipansor.or.id/users", { cookie: `auth-storage=${forged}` })
+      request("https://portal.cipansor.or.id/users", {
+        cookie: `auth-storage=${forged}`,
+      }),
     );
     expect(res.status).toBe(307);
     expect(location(res)).toContain("/login");
@@ -74,10 +93,15 @@ describe("middleware session guard", () => {
 
   it("REJECTS a forged `auth-storage` even for a plain authenticated route", async () => {
     const forged = encodeURIComponent(
-      JSON.stringify({ state: { isAuthenticated: true, user: { role: "TEACHER" } }, version: 0 })
+      JSON.stringify({
+        state: { isAuthenticated: true, user: { role: "TEACHER" } },
+        version: 0,
+      }),
     );
     const res = await middleware(
-      request("https://portal.cipansor.or.id/dashboard", { cookie: `auth-storage=${forged}` })
+      request("https://portal.cipansor.or.id/dashboard", {
+        cookie: `auth-storage=${forged}`,
+      }),
     );
     expect(location(res)).toContain("/login");
   });
@@ -86,14 +110,18 @@ describe("middleware session guard", () => {
     // A browser does not attach this to a document navigation; only a script
     // could, so it must not be a way past the guard.
     const res = await middleware(
-      request("https://portal.cipansor.or.id/users", { authorization: "Bearer anything" })
+      request("https://portal.cipansor.or.id/users", {
+        authorization: "Bearer anything",
+      }),
     );
     expect(location(res)).toContain("/login");
   });
 
   it("REJECTS an unsigned / garbage session cookie", async () => {
     const res = await middleware(
-      request("https://portal.cipansor.or.id/users", { cookie: `${SESSION_COOKIE}=forged.value` })
+      request("https://portal.cipansor.or.id/users", {
+        cookie: `${SESSION_COOKIE}=forged.value`,
+      }),
     );
     expect(location(res)).toContain("/login");
   });
@@ -101,32 +129,47 @@ describe("middleware session guard", () => {
   it("REJECTS a session cookie signed with the wrong secret", async () => {
     const now = Math.floor(Date.now() / 1000);
     const token = await signSession(
-      { v: 1, sub: "u1", role: "SUPER_ADMIN", roleCode: "SUPER_ADMIN", iat: now, exp: now + 3600 },
-      "attacker-secret"
+      {
+        v: 1,
+        sub: "u1",
+        role: "SUPER_ADMIN",
+        roleCode: "SUPER_ADMIN",
+        iat: now,
+        exp: now + 3600,
+      },
+      "attacker-secret",
     );
     const res = await middleware(
-      request("https://portal.cipansor.or.id/users", { cookie: `${SESSION_COOKIE}=${token}` })
+      request("https://portal.cipansor.or.id/users", {
+        cookie: `${SESSION_COOKIE}=${token}`,
+      }),
     );
     expect(location(res)).toContain("/login");
   });
 
   it("ACCEPTS a valid signed cookie and lets the route through", async () => {
     const res = await middleware(
-      request("https://portal.cipansor.or.id/dashboard", { cookie: await validCookies("SUPER_ADMIN") })
+      request("https://portal.cipansor.or.id/dashboard", {
+        cookie: await validCookies("SUPER_ADMIN"),
+      }),
     );
     expect(location(res)).toBeNull();
   });
 
   it("routes a valid admin cookie on the admin-only route (role honoured)", async () => {
     const res = await middleware(
-      request("https://portal.cipansor.or.id/users", { cookie: await validCookies("SUPER_ADMIN") })
+      request("https://portal.cipansor.or.id/users", {
+        cookie: await validCookies("SUPER_ADMIN"),
+      }),
     );
     expect(location(res)).toBeNull();
   });
 
   it("redirects a valid non-admin cookie away from an admin-only route", async () => {
     const res = await middleware(
-      request("https://portal.cipansor.or.id/users", { cookie: await validCookies("STUDENT") })
+      request("https://portal.cipansor.or.id/users", {
+        cookie: await validCookies("STUDENT"),
+      }),
     );
     // Not 200 — the RBAC table sends them to their own dashboard.
     expect(res.status).toBe(307);
@@ -135,7 +178,9 @@ describe("middleware session guard", () => {
   it("leaves public routes accessible to anonymous visitors (not bounced to /login)", async () => {
     // The host split sends a marketing path to the public apex, not to login;
     // either way the guard must not require a session for a public prefix.
-    const res = await middleware(request("https://portal.cipansor.or.id/profil"));
+    const res = await middleware(
+      request("https://portal.cipansor.or.id/profil"),
+    );
     expect(location(res)).not.toContain("/login");
   });
 
@@ -147,7 +192,7 @@ describe("middleware session guard", () => {
     const res = await middleware(
       request("https://portal.cipansor.or.id/finance", {
         cookie: await validCookies("SUPER_ADMIN", "SDIT_GURU"),
-      })
+      }),
     );
     expect(res.status).toBe(307);
     expect(location(res)).not.toBeNull();
@@ -159,7 +204,7 @@ describe("middleware session guard", () => {
     const res = await middleware(
       request("https://portal.cipansor.or.id/finance", {
         cookie: await validCookies("STUDENT", "SDIT_ADMIN"),
-      })
+      }),
     );
     expect(location(res)).toBeNull();
   });
@@ -168,12 +213,12 @@ describe("middleware session guard", () => {
     const now = Math.floor(Date.now() / 1000);
     const token = await signSession(
       { v: 1, sub: "u1", iat: now, exp: now + SESSION_TTL_SECONDS },
-      SECRET
+      SECRET,
     );
     const res = await middleware(
       request("https://portal.cipansor.or.id/dashboard", {
         cookie: `${SESSION_COOKIE}=${token}`,
-      })
+      }),
     );
     expect(res.status).toBe(307);
     expect(location(res)).toContain("/login");
@@ -186,8 +231,81 @@ describe("middleware session guard", () => {
     const res = await middleware(
       request("https://portal.cipansor.or.id/reports", {
         cookie: await validCookies("STAFF", "SDIT_KOMITE"),
-      })
+      }),
     );
     expect(location(res)).toBeNull();
+  });
+});
+
+/**
+ * Finding 2 — the routing cookie must be a ROUTING signal only.
+ *
+ * `cipansor-session` is signed, but it is still minted with a fixed 24h TTL that
+ * is independent of the bearer's own lifetime and revocation, so it can outlive
+ * the token it was derived from. That is safe ONLY while no server-side code
+ * treats it as authorization. If a Server Component, a route handler, or an API
+ * proxy ever reads it to decide what to render/fetch, a stale cookie becomes a
+ * data-access grant.
+ *
+ * This guard pins the architecture so that cannot creep in silently: the cookie
+ * is verified in exactly one place (the page guard) and the access token is
+ * never placed in a cookie at all.
+ */
+describe("routing cookie is not an authorization source (finding 2)", () => {
+  const srcDir = path.join(process.cwd(), "src");
+  const SKIP = new Set([
+    "session.ts",
+    "session-cookie.ts",
+    "session-guard.test.ts",
+  ]);
+
+  function sourceFiles(dir: string): string[] {
+    const out: string[] = [];
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        out.push(...sourceFiles(full));
+      } else if (
+        /\.(ts|tsx)$/.test(entry.name) &&
+        !entry.name.endsWith(".test.ts") &&
+        !entry.name.endsWith(".test.tsx")
+      ) {
+        out.push(full);
+      }
+    }
+    return out;
+  }
+
+  it("no `src/**` module verifies the routing cookie except the guard test", () => {
+    // `verifySession` must never be called from a Server Component or a route
+    // handler: doing so turns the routing cookie into an authorization decision.
+    const offenders = sourceFiles(srcDir)
+      .filter((f) => !SKIP.has(path.basename(f)))
+      .filter((f) => fs.readFileSync(f, "utf8").includes("verifySession"));
+    expect(offenders).toEqual([]);
+  });
+
+  it("reads the SESSION_COOKIE name in exactly one place: the minting route", () => {
+    // Only `POST /api/session` (which MINTS/CLEARS the cookie) may name it. A
+    // Server Component or another route handler referencing it is how the
+    // routing cookie would start being trusted for authorization.
+    const readers = sourceFiles(srcDir)
+      .filter((f) => !SKIP.has(path.basename(f)))
+      .filter((f) => fs.readFileSync(f, "utf8").includes("SESSION_COOKIE"))
+      .map((f) => path.relative(process.cwd(), f));
+    expect(readers).toEqual(["src/app/api/session/route.ts"]);
+  });
+
+  it("never stores a bearer/access token in any cookie", () => {
+    // Finding F: the access token stays in localStorage and goes per-request as
+    // `Authorization`. Writing it to a cookie would make it JS-readable and
+    // turn the routing cookie into a credential.
+    const offenders = sourceFiles(srcDir).filter((f) => {
+      const src = fs.readFileSync(f, "utf8");
+      return /cookies\(\)[\s\S]{0,200}(accessToken|refreshToken|Bearer)/.test(
+        src,
+      );
+    });
+    expect(offenders).toEqual([]);
   });
 });

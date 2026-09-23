@@ -192,14 +192,46 @@ function resolveStoredUploadPath(file: Express.Multer.File): string | null {
  * Read the stored file's first bytes and verify they match the declared MIME
  * type. Deletes the file and returns false on mismatch, so nothing that fails
  * the check survives on disk.
+ *
+ * The on-disk path is rebuilt from the trusted upload dir + multer's generated
+ * `filename` ({@link resolveStoredUploadPath}), never the request-supplied
+ * `file.path`, so lexical containment is inherent. The `realpath` check then
+ * rejects a symlink inside the upload directory that points outside it — which
+ * the lexical check cannot see — and the `stat` guard refuses anything that is
+ * not a regular file (the upload directory itself, a FIFO) before `open`. A path
+ * that fails any check is never opened or unlinked.
  */
 export async function verifyStoredFile(file: Express.Multer.File): Promise<boolean> {
   const storedPath = resolveStoredUploadPath(file);
   if (!storedPath) return false;
+
+  // `storedPath` was rebuilt from the trusted upload dir + multer's generated
+  // filename, so the lexical containment is already enforced. The `realpath`
+  // check then rejects a symlink inside the upload directory that points outside
+  // it, which the lexical check cannot see. A path that fails either is never
+  // opened or unlinked.
+  let realPath: string;
+  try {
+    realPath = await fs.promises.realpath(storedPath);
+  } catch {
+    return false;
+  }
+  if (!isPathWithinUploadDir(realPath) || realPath === uploadDirResolved) return false;
+
+  // Only a regular file may be read: the upload dir itself (or a FIFO/device a
+  // symlink could point at) is refused before `open`, so a read cannot throw.
+  let stat;
+  try {
+    stat = await fs.promises.stat(realPath);
+  } catch {
+    return false;
+  }
+  if (!stat.isFile()) return false;
+
   const head = Buffer.alloc(16);
   let fd;
   try {
-    fd = await fs.promises.open(storedPath, 'r');
+    fd = await fs.promises.open(realPath, 'r');
   } catch {
     // The file vanished (or is unreadable) between multer and this check; fail
     // closed rather than surfacing a 500 for a path the request cannot control.
@@ -213,7 +245,7 @@ export async function verifyStoredFile(file: Express.Multer.File): Promise<boole
   } finally {
     await fd.close();
   }
-  await fs.promises.unlink(storedPath).catch(() => undefined);
+  await fs.promises.unlink(realPath).catch(() => undefined);
   return false;
 }
 

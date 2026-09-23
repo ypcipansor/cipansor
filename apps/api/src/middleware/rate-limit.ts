@@ -8,6 +8,18 @@ import { config } from '@/config';
 import { logger } from '@/lib/logger';
 
 /**
+ * Whether rate limiting applies in this environment.
+ *
+ * Policy: active everywhere except development and test (see app.ts). Kept as a
+ * named predicate so the decision is asserted in one place instead of being
+ * duplicated by two `if (env !== 'test' && env !== 'development')` branches that
+ * can drift apart.
+ */
+export function rateLimitEnabled(env: string): boolean {
+  return env !== 'test' && env !== 'development';
+}
+
+/**
  * Default rate limiter for general API endpoints
  */
 export const defaultLimiter: RateLimitRequestHandler = rateLimit({
@@ -33,15 +45,11 @@ export const defaultLimiter: RateLimitRequestHandler = rateLimit({
   skip: (req) => {
     // Health checks are never limited.
     if (req.path === '/health') return true;
-    // `/uploads` is counted once by the mount of this same limiter on the
-    // uploads route in app.ts. `express.static` answers a served file and
-    // falls through for a missing one, and this global mount runs after it, so
-    // without this skip a missing-path read was counted twice — halving the
-    // effective read quota in production. Express strips the mount prefix from
-    // `req.path` INSIDE the mount (so the route mount sees `/a.png` and is not
-    // skipped) and leaves it whole OUTSIDE (so the global mount sees
-    // `/uploads/a.png` and stands down). `/uploads` itself arrives as `/`
-    // inside the mount and `/uploads` here, hence both spellings.
+    // `/uploads` is counted by `uploadsServeLimiter` on the uploads route in
+    // app.ts, which owns its own budget. This global pass must stand down for
+    // the prefix or a read that `express.static` misses would spend an API slot
+    // as well — one request, two budgets. `/uploads` itself arrives as
+    // `/uploads` here (and `/uploads/<file>` for a file), so both spellings.
     if (req.path === '/uploads' || req.path.startsWith('/uploads/')) return true;
     // Development and test are deliberately unlimited: a dashboard full of
     // student photos is normal there, and a 429 on the 101st image is a false
@@ -51,6 +59,40 @@ export const defaultLimiter: RateLimitRequestHandler = rateLimit({
     // static analysis alike. Production always limits.
     return config.env === 'test' || config.env === 'development';
   },
+});
+
+/**
+ * Limiter for SERVING stored uploads (`GET /uploads/...`).
+ *
+ * Deliberately not `defaultLimiter`. Before #522 a served file never reached a
+ * limiter at all (`express.static` answered before the global pass), so a page
+ * showing a class roster of photos cost the API budget nothing. Mounting
+ * `defaultLimiter` on the route made every photo spend one of the same 100
+ * per-minute slots the page's API calls need — a roster of 40 photos plus its
+ * queries could 429 the whole screen. Its own store keeps file serving bounded
+ * (CodeQL js/missing-rate-limiting) without starving the API, and the ceiling
+ * is sized for image-heavy pages, not for JSON calls.
+ */
+export const UPLOADS_SERVE_MAX_PER_MINUTE = 600;
+
+export const uploadsServeLimiter: RateLimitRequestHandler = rateLimit({
+  windowMs: 60 * 1000,
+  max: UPLOADS_SERVE_MAX_PER_MINUTE,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    error: {
+      code: 'RATE_LIMIT_EXCEEDED',
+      message: 'Too many file requests, please try again later.',
+    },
+  },
+  // Development and test are deliberately unlimited, for the same reason as
+  // `defaultLimiter`: a dashboard full of student photos is normal there. The
+  // exemption lives HERE rather than in a conditional mount so the limiter is
+  // always mounted and visible to a reader and to static analysis (CodeQL's
+  // js/missing-rate-limiting). Production always limits.
+  skip: () => config.env === 'test' || config.env === 'development',
 });
 
 /**

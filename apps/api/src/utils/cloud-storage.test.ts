@@ -9,7 +9,6 @@ import {
   StorageUnavailableError,
   isAllowedContainer,
   cleanupBlobBestEffort,
-
   getBlobUploaderId,
   containerForDestination,
   isUploadDestination,
@@ -166,12 +165,7 @@ describe('Cloud Storage Utility (Azure Blob Storage Provider)', () => {
     mockCreateIfNotExists.mockResolvedValueOnce({ succeeded: false });
     mockGetProperties.mockResolvedValueOnce({ blobPublicAccess: undefined });
 
-    await uploadToCloudStorage(
-      '/tmp/dummy.pdf',
-      'dummy.pdf',
-      'application/pdf',
-      'media-public'
-    );
+    await uploadToCloudStorage('/tmp/dummy.pdf', 'dummy.pdf', 'application/pdf', 'media-public');
 
     expect(mockSetAccessPolicy).toHaveBeenCalledWith('blob');
   });
@@ -181,12 +175,7 @@ describe('Cloud Storage Utility (Azure Blob Storage Provider)', () => {
     mockCreateIfNotExists.mockResolvedValueOnce({ succeeded: false });
     mockGetProperties.mockResolvedValueOnce({ blobPublicAccess: 'blob' });
 
-    await uploadToCloudStorage(
-      '/tmp/dummy.pdf',
-      'dummy.pdf',
-      'application/pdf',
-      'media-public'
-    );
+    await uploadToCloudStorage('/tmp/dummy.pdf', 'dummy.pdf', 'application/pdf', 'media-public');
 
     expect(mockSetAccessPolicy).not.toHaveBeenCalled();
   });
@@ -403,6 +392,23 @@ describe('parseBlobUrl', () => {
     ).toEqual({ containerName: 'e-office-documents', blobName: 'a.pdf' });
   });
 
+  it('preserves literal `.`/`..` blob-name segments (SEVERE BUG: distinct blobs)', () => {
+    process.env.AZURE_STORAGE_ACCOUNT = 'cipansorstore';
+
+    // An Azure blob name is an opaque object key. The WHATWG URL parser would
+    // have collapsed these to `a/b`, so a delete for `a/./b` would target a
+    // DIFFERENT blob. `parseBlobUrl` must keep the literal name.
+    expect(
+      parseBlobUrl('https://cipansorstore.blob.core.windows.net/cipansor-documents/a/./b.pdf')
+    ).toEqual({ containerName: 'cipansor-documents', blobName: 'a/./b.pdf' });
+    expect(
+      parseBlobUrl('https://cipansorstore.blob.core.windows.net/cipansor-documents/a/x/../b.pdf')
+    ).toEqual({ containerName: 'cipansor-documents', blobName: 'a/x/../b.pdf' });
+    expect(
+      parseBlobUrl('https://cipansorstore.blob.core.windows.net/cipansor-documents/a/b.pdf')
+    ).toEqual({ containerName: 'cipansor-documents', blobName: 'a/b.pdf' });
+  });
+
   it('returns null for a local /uploads URL', () => {
     process.env.AZURE_STORAGE_ACCOUNT = 'cipansorstore';
 
@@ -469,27 +475,27 @@ describe('deleteFromCloudStorage', () => {
     // The old contract resolved here, so reconciliation marked the blob DONE
     // and never retried it after credentials were restored. A missing
     // credential is "no remote delete happened", which is a failure.
-    await expect(
-      deleteFromCloudStorage('e-office-documents', 'naskah.pdf')
-    ).rejects.toBeInstanceOf(StorageUnavailableError);
+    await expect(deleteFromCloudStorage('e-office-documents', 'naskah.pdf')).rejects.toBeInstanceOf(
+      StorageUnavailableError
+    );
     expect(mockDeleteBlob).not.toHaveBeenCalled();
   });
 
   it('reports `unavailable` from the explicit-outcome helper without touching Azure', async () => {
     delete process.env.AZURE_STORAGE_CONNECTION_STRING;
 
-    await expect(
-      deleteBlobFromCloudStorage('e-office-documents', 'naskah.pdf')
-    ).resolves.toBe('unavailable');
+    await expect(deleteBlobFromCloudStorage('e-office-documents', 'naskah.pdf')).resolves.toBe(
+      'unavailable'
+    );
     expect(mockDeleteBlob).not.toHaveBeenCalled();
   });
 
   it('reports `deleted` from the explicit-outcome helper when Azure is configured', async () => {
     process.env.AZURE_STORAGE_CONNECTION_STRING = CONNECTION_STRING;
 
-    await expect(
-      deleteBlobFromCloudStorage('e-office-documents', 'naskah.pdf')
-    ).resolves.toBe('deleted');
+    await expect(deleteBlobFromCloudStorage('e-office-documents', 'naskah.pdf')).resolves.toBe(
+      'deleted'
+    );
     expect(mockDeleteBlob).toHaveBeenCalledWith('naskah.pdf', {
       deleteSnapshots: 'include',
     });

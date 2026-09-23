@@ -7,6 +7,7 @@ import {
 } from '@azure/storage-blob';
 import { logger } from '@/lib/logger';
 import { isBlobStillReferenced, blobReferenceCandidates } from '@/utils/blob-owner';
+import { parseAzureBlobIdentity } from '@/utils/blob-identity';
 import { discardUnderClaim } from '@/utils/blob-discard';
 import { resolveLocalUploadPath, removeLocalUpload } from '@/utils/local-upload-store';
 import {
@@ -537,37 +538,19 @@ export function configuredStorageAccount(): string | null {
  * turning "mint a link for my document" into "mint a link for anything on any
  * account whose URL you can guess". Returning null for a foreign host makes the
  * caller refuse it instead (see `resolveSasForBlob`).
+ *
+ * The path is resolved through {@link parseAzureBlobIdentity} so this parser and
+ * the claim/reference code always name the SAME physical blob. Reading
+ * `parsed.pathname` would apply the WHATWG URL parser's dot-segment removal and
+ * send a delete for `a/./b` to `a/b` — a different blob, because an Azure name
+ * is an opaque object key, not a filesystem path.
  */
 export function parseBlobUrl(url: string): { containerName: string; blobName: string } | null {
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return null;
-  }
-  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null;
-
-  const host = parsed.hostname.match(/^([^.]+)\.blob\.core\.windows\.net$/i);
-  if (!host) return null;
+  const identity = parseAzureBlobIdentity(url);
+  if (!identity) return null;
 
   const account = configuredStorageAccount();
-  if (!account || host[1].toLowerCase() !== account) return null;
+  if (!account || identity.account !== account) return null;
 
-  // Container: the first path segment; blob: the remainder. A query string or
-  // fragment that a SAS may have carried is dropped by URL parsing.
-  const segments = parsed.pathname.replace(/^\/+/, '').split('/');
-  if (segments.length < 2) return null;
-  // `decodeURIComponent` throws URIError on a broken escape (e.g. `%zz`). It
-  // used to sit outside any try/catch, so a malformed stored URL turned
-  // /upload/sas and /upload/discard into 500s instead of a clean refusal.
-  let containerName: string;
-  let blobName: string;
-  try {
-    containerName = decodeURIComponent(segments[0]);
-    blobName = decodeURIComponent(segments.slice(1).join('/'));
-  } catch {
-    return null;
-  }
-  if (!containerName || !blobName) return null;
-  return { containerName, blobName };
+  return { containerName: identity.container, blobName: identity.blobPath };
 }
