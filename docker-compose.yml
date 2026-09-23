@@ -88,6 +88,15 @@ services:
       # @cipansor.or.id like everything else. Must be false for a real launch —
       # set it together with NEXT_PUBLIC_SHOW_DEMO_LOGIN.
       DEMO_MODE: ${DEMO_MODE:-false}
+      # Staging switches (see config.scheduler / config.outboundMessages). ON for
+      # this production stack; a staging copy sets both to false so it neither
+      # runs the cron jobs nor sends e-mail/SMS/WhatsApp to real wali.
+      SCHEDULER_ENABLED: ${SCHEDULER_ENABLED:-true}
+      OUTBOUND_MESSAGES_ENABLED: ${OUTBOUND_MESSAGES_ENABLED:-true}
+      # Apply pending migrations at container start (docker-entrypoint.sh). Off
+      # here: releases on this VM run `prisma migrate deploy` by hand after the
+      # pre-checks in the deploy runbook. Azure App Service sets it to true.
+      MIGRATE_ON_START: ${MIGRATE_ON_START:-false}
       # Public customer-service chatbot. This service enumerates its environment
       # explicitly, so a variable absent from this block does not reach the API
       # no matter what .env holds — which is how the assistant shipped inert.
