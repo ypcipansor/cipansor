@@ -165,6 +165,16 @@ export const WBS_MAX = {
   ticketCode: 64,
   trackingToken: 200,
   attachmentUrl: 2048,
+  /**
+   * Authenticated handler free text. The public surface already had domain
+   * maxima; the handler endpoints did not, so an authenticated caller could
+   * store an arbitrarily large `resolution` / note / forward reason into a
+   * `Text` column that the audit screen and every list render. Same reasoning
+   * as the public caps above — the transport limit is not a domain limit.
+   */
+  resolution: 10_000,
+  handlerNote: 10_000,
+  forwardReason: 2_000,
 } as const;
 
 export const createPublicWbsSchema = z.object({
@@ -209,24 +219,54 @@ export type AddPublicWbsCommentInput = z.infer<
 // Authenticated WBS handlers
 // ---------------------------------------------------------------------------
 
-export const updateWbsStatusSchema = z.object({
-  status: z.enum(WBS_STATUSES),
-  resolution: z.string().optional(),
-  handlerNote: z.string().optional(),
-});
+/**
+ * The statuses a case may be closed *into* through this endpoint.
+ *
+ * A terminal status ends the case, and a closed case is immutable — the
+ * resolution can never be written afterwards. So the resolution has to arrive
+ * *with* the closure, which is why the schema requires it below rather than
+ * accepting an empty close and leaving the outcome unrecorded forever.
+ */
+const TERMINAL_WBS_STATUSES: readonly string[] = [
+  "SELESAI",
+  "TIDAK_DAPAT_DITINDAKLANJUTI",
+];
+
+export const updateWbsStatusSchema = z
+  .object({
+    status: z.enum(WBS_STATUSES),
+    resolution: z.string().max(WBS_MAX.resolution).optional(),
+    handlerNote: z.string().max(WBS_MAX.handlerNote).optional(),
+  })
+  // A terminal status is a one-way door: `updateReportStatus` refuses every
+  // later write (including terminal → terminal), so a close submitted without a
+  // resolution leaves a closed case whose outcome can never be recorded. The
+  // requirement is enforced here at the edge AND in the service, because
+  // internal callers reach the service directly.
+  .superRefine((data, ctx) => {
+    if (!TERMINAL_WBS_STATUSES.includes(data.status)) return;
+    if (!data.resolution || data.resolution.trim().length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["resolution"],
+        message:
+          "Penyelesaian (resolution) wajib diisi ketika laporan ditutup sebagai SELESAI atau TIDAK_DAPAT_DITINDAKLANJUTI.",
+      });
+    }
+  });
 
 export type UpdateWbsStatusInput = z.infer<typeof updateWbsStatusSchema>;
 
 export const forwardWbsReportSchema = z.object({
   toRole: z.enum(WBS_FORWARD_ROLE_CODES),
   toUserId: z.string().uuid().optional(),
-  reason: z.string().min(5),
+  reason: z.string().min(5).max(WBS_MAX.forwardReason),
 });
 
 export type ForwardWbsReportInput = z.infer<typeof forwardWbsReportSchema>;
 
 export const addWbsHandlerCommentSchema = z.object({
-  message: z.string().min(1),
+  message: z.string().min(1).max(WBS_MAX.message),
   attachments: attachmentsSchema,
 });
 
@@ -288,12 +328,21 @@ export const createBoardSuspensionSchema = z
 
     // An end that precedes the start describes a window that can never exist.
     // `projectedEndDate` is the field the operator edits, so the issue is
-    // reported there; equality is allowed (a same-day is still valid). Only
-    // checked when both dates are present — each is optional on its own.
-    if (data.startDate && data.projectedEndDate) {
-      const start = Date.parse(data.startDate);
+    // reported there; equality is allowed (a same-day is still valid).
+    //
+    // The start is the *effective* start, which is `now` when the operator omits
+    // `startDate`: the service applies a suspension on issuance, so an omitted
+    // start means "effective now", not "nothing to compare against". Validating
+    // only when both fields were supplied let a `projectedEndDate` in the past
+    // (or before the effective start) through — an estimate describing a window
+    // already over, which reads as "ended" on the register while the row is in
+    // fact ACTIVE.
+    const effectiveStart = data.startDate
+      ? Date.parse(data.startDate)
+      : Date.now();
+    if (data.projectedEndDate) {
       const end = Date.parse(data.projectedEndDate);
-      if (!isNaN(start) && !isNaN(end) && end < start) {
+      if (!isNaN(effectiveStart) && !isNaN(end) && end < effectiveStart) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ["projectedEndDate"],

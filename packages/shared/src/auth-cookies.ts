@@ -41,6 +41,25 @@ export const TWO_FACTOR_TOKEN_COOKIE = "two_factor_token";
 /** Server-set routing hint read by `apps/web/middleware.ts`. */
 export const ROUTING_COOKIE = "cipansor_routing";
 
+/**
+ * A short-lived, *client-readable* marker that the session is known to be dead.
+ *
+ * The routing cookie is `HttpOnly`, so only the server can clear it — but the
+ * server that learns the session is dead is the API, and the browser learns it
+ * from a failed refresh. Between the two, `middleware.ts` still sees a signed,
+ * unexpired routing cookie and treats the visitor as authenticated, so it
+ * redirects `/login` to the role dashboard: the user cannot reach the sign-in
+ * form to recover, and every protected page bounces back to `/login`. The
+ * marker is the one piece of state the client can write to say "do not trust
+ * the routing hint for this navigation".
+ *
+ * It is deliberately NOT a credential: it grants nothing, carries no identity,
+ * and its presence can only *reduce* authority (the middleware stops routing on
+ * the stale hint). A forged marker is therefore harmless — it can at worst send
+ * its own author to the login page.
+ */
+export const SESSION_DEAD_COOKIE = "cipansor_session_dead";
+
 /** The cookie-header names that must never appear in client-readable storage. */
 export const AUTH_COOKIE_NAMES = [
   ACCESS_TOKEN_COOKIE,
@@ -48,6 +67,9 @@ export const AUTH_COOKIE_NAMES = [
   TWO_FACTOR_TOKEN_COOKIE,
   ROUTING_COOKIE,
 ] as const;
+
+/** How long the client's "session is dead" marker lives, in seconds. */
+export const SESSION_DEAD_COOKIE_MAX_AGE_SECONDS = 300;
 
 export interface AuthCookieOptions {
   /**

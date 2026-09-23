@@ -410,4 +410,74 @@ describeDb('board suspension concurrency (real PostgreSQL)', () => {
       ).rejects.toMatchObject({ code: '23505' });
     });
   });
+
+  it('refuses a suspension whose target Pengurus role is revoked first (roles write wins)', async () => {
+    // Review item 4: a revocation of `UserRoleAssignment` is a different row
+    // from `users`, so locking the user row alone does NOT serialise it. The
+    // suspension must take the assignment rows too, so a revocation that
+    // commits first is visible to its locked re-read and the suspension aborts
+    // rather than switching off someone who is no longer a Pengurus.
+    //
+    // The blocker holds ONLY the target's assignment row — the row a revoking
+    // `RolesService.removeRoleAssignment` updates — and does not touch the user
+    // row. That is deliberate: if the suspension acquired only the user-row
+    // lock (the pre-fix code), it would not block here, would read the still-
+    // active Pengurus assignment before the revocation commits, and would then
+    // commit a suspension for a target who is no longer a Pengurus. Taking the
+    // assignment-row lock in the suspension makes it wait for the revocation to
+    // commit, so its post-lock read sees the revocation and aborts.
+    await withClient(targetUrl, async (db) => {
+      await db.query(`DELETE FROM board_suspension_plh_assignments`);
+      await db.query(`DELETE FROM board_member_suspensions`);
+      await db.query(`DELETE FROM user_role_assignments WHERE user_id = 'u-delegate'`);
+      await db.query(
+        `UPDATE users SET is_active = true, account_state_writer = NULL WHERE id = 'u-target-a'`
+      );
+      await db.query(
+        `INSERT INTO user_role_assignments (id, user_id, role_id, is_primary, is_active, updated_at)
+         VALUES ('a-target-a', 'u-target-a', 'role-ketua', true, true, now())
+         ON CONFLICT (id) DO UPDATE SET is_active = true`
+      );
+    });
+
+    const { service, previousUrl } = await loadService();
+    const blocker = new Client({ connectionString: targetUrl });
+    await blocker.connect();
+    try {
+      await blocker.query('BEGIN');
+      await blocker.query(
+        `SELECT id FROM user_role_assignments WHERE user_id = 'u-target-a' ORDER BY id FOR UPDATE`
+      );
+
+      const pending = suspend(service, 'u-target-a', 'SK/REVOKE-RACE');
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      // The revocation wins the lock and commits while the suspension waits.
+      await blocker.query(
+        `UPDATE user_role_assignments SET is_active = false, updated_at = now() WHERE id = 'a-target-a'`
+      );
+      await blocker.query('COMMIT');
+
+      await expect(pending).rejects.toMatchObject({ statusCode: 403 });
+
+      await withClient(targetUrl, async (db) => {
+        const suspensions = await db.query(
+          `SELECT count(*)::int AS n FROM board_member_suspensions WHERE user_id = 'u-target-a'`
+        );
+        expect(
+          suspensions.rows[0].n,
+          'no SK may be issued once the target is no longer an effective Pengurus'
+        ).toBe(0);
+
+        const account = await db.query(`SELECT is_active FROM users WHERE id = 'u-target-a'`);
+        expect(
+          account.rows[0].is_active,
+          'a refused suspension must not have switched the account off'
+        ).toBe(true);
+      });
+    } finally {
+      await blocker.end();
+      await unloadService(previousUrl);
+    }
+  });
 });

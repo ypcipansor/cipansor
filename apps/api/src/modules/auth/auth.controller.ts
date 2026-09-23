@@ -20,6 +20,7 @@ import {
   signedRoutingCookieValue,
   twoFactorCookie,
 } from '@/utils/auth-cookies';
+import { verifyToken } from '@/lib/jwt';
 import { ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE } from '@cipansor/shared';
 
 /**
@@ -46,7 +47,16 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
   }
 
   if ('tempToken' in result && result.tempToken) {
-    setCookies(res, [twoFactorCookie(result.tempToken)]);
+    // Derive the cookie's Max-Age from the token's own TTL, not from the
+    // function default. The two used to be independent: the mandatory-setup
+    // flow minted a 10-minute token but the cookie defaulted to 5 minutes, so
+    // the browser dropped the credential while the server would still have
+    // accepted it. `tempTokenExpiresIn` is the one value the service used.
+    const ttl =
+      'tempTokenExpiresIn' in result && typeof result.tempTokenExpiresIn === 'string'
+        ? result.tempTokenExpiresIn
+        : '5m';
+    setCookies(res, [twoFactorCookie(result.tempToken, ttl)]);
   }
 
   res.json({
@@ -86,7 +96,32 @@ export const refreshToken = asyncHandler(async (req: Request, res: Response) => 
     throw Errors.unauthorized('No refresh token provided');
   }
 
-  const tokens = await authService.refreshToken(refresh);
+  let tokens;
+  try {
+    tokens = await authService.refreshToken(refresh);
+  } catch (error) {
+    // A refresh that cannot succeed must also end the session *server-side*.
+    //
+    // The failed refresh answers 401 but used to leave every cookie in place,
+    // including the `HttpOnly` `cipansor_routing` hint. The web client clears
+    // them through `/auth/session/clear`, but that is a second round trip and
+    // only one of the clients: a native client, or a browser that hit
+    // `/auth/refresh` directly, kept the stale routing cookie — and the
+    // middleware keeps treating its holder as authenticated, so `/login`
+    // bounces straight back to a dashboard the expired session cannot load.
+    // Clearing here makes the server the authority on a dead session: the 401
+    // response itself carries the deletions.
+    //
+    // Only for a definitive rejection. A 5xx, a rate-limit or a dropped
+    // connection says nothing about the token, and clearing on one would end a
+    // working session over a transient failure — the same distinction the web
+    // interceptor draws.
+    const status = (error as { statusCode?: number })?.statusCode;
+    if (status === 400 || status === 401 || status === 403) {
+      setCookies(res, clearedSessionCookies());
+    }
+    throw error;
+  }
 
   // Rotation is server-side: the replacement pair is written straight back as
   // new cookies, so the browser never handles the raw token.
@@ -285,4 +320,47 @@ export const resetPassword = asyncHandler(async (req: Request, res: Response) =>
   const result = await authService.resetPassword(token, newPassword);
 
   res.json({ success: true, data: result });
+});
+
+/**
+ * Terminate a session from the browser, unconditionally.
+ *
+ * POST /api/auth/session/clear — deliberately NOT behind `authenticate`.
+ *
+ * The problem this solves: a session can be *already dead* while the browser
+ * still holds a `cipansor_routing` cookie. `authenticate` refuses the access
+ * token (expired, suspended, revoked), the web interceptor tries a refresh, and
+ * if the refresh is refused too the client must end the session. But clearing
+ * the `HttpOnly` cookies is a server-only act — `document.cookie` cannot touch
+ * them. Without an unauthenticated path to do it, the stale routing cookie
+ * survives, `apps/web/middleware.ts` keeps treating the visitor as
+ * authenticated, and it redirects `/login` back to the role dashboard: a login
+ * loop the user cannot escape.
+ *
+ * So this door is open on purpose. It performs no privileged action — it only
+ * clears cookies, and clearing cookies you already hold is never an escalation.
+ * The refresh token, if presented, is revoked best-effort so a stolen one does
+ * not outlive the logout; a missing or invalid token is not an error, because
+ * the whole point is that the credential may already be invalid.
+ */
+export const clearSession = asyncHandler(async (req: Request, res: Response) => {
+  const refreshToken = readCookie(req, REFRESH_TOKEN_COOKIE);
+  if (refreshToken) {
+    try {
+      const payload = verifyToken(refreshToken);
+      if (payload.type === 'refresh' && payload.sub) {
+        await authService.logout(payload.sub, refreshToken);
+      }
+    } catch {
+      // The token is invalid/expired — nothing to revoke. The cookies are
+      // cleared below regardless, which is the only outcome that matters here.
+    }
+  }
+
+  setCookies(res, clearedSessionCookies());
+
+  res.json({
+    success: true,
+    data: { message: 'Session cleared' },
+  });
 });

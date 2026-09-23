@@ -175,7 +175,15 @@ describeDb('WBS closed-case immutability race (real PostgreSQL)', () => {
       // Serialise deliberately: the close commits first, then the reopen runs.
       // Because the reopen reads the *locked* status it must be refused — the
       // reverse interleaving of the race above, with a deterministic order.
-      await service.updateReportStatus('r-race', { status: 'SELESAI' }, actor);
+      //
+      // A terminal status now requires a non-empty resolution (the close is a
+      // one-way door), so the closure carries one; without it the service
+      // refuses the close at the edge and the case never becomes terminal.
+      await service.updateReportStatus(
+        'r-race',
+        { status: 'SELESAI', resolution: 'Selesai ditindaklanjuti.' },
+        actor
+      );
 
       await expect(
         service.updateReportStatus('r-race', { status: 'DALAM_PENYELIDIKAN' }, actor)

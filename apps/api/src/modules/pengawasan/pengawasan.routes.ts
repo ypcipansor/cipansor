@@ -95,11 +95,6 @@ router.get(
   authorize(...PENGAWASAN_WBS_HANDLER_ROLES),
   pengawasanController.listWbsReports
 );
-router.get(
-  '/wbs/reports/:id',
-  authorize(...PENGAWASAN_WBS_HANDLER_ROLES),
-  pengawasanController.getWbsReportById
-);
 router.patch(
   '/wbs/reports/:id/status',
   authorize(...PENGAWASAN_WBS_HANDLER_ROLES),

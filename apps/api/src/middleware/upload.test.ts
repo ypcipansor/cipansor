@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -6,6 +6,12 @@ import type { Request, Response, NextFunction } from 'express';
 
 vi.mock('@/lib/prisma', () => ({ prisma: {} }));
 vi.mock('@/lib/redis', () => ({ redis: {} }));
+// `uploadsAuth` now re-asserts the persistent account state, not just the
+// token signature. The real validator reads Postgres; here it is stubbed so
+// these cases stay focused on token parsing, and the suspended-account case
+// below pins the new gate.
+const { isUserSuspendedMock } = vi.hoisted(() => ({ isUserSuspendedMock: vi.fn() }));
+vi.mock('@/utils/user-suspension', () => ({ isUserSuspended: isUserSuspendedMock }));
 
 import { matchesMagicBytes, verifyStoredFile, uploadsAuth } from './upload';
 import { generateAccessToken } from '@/lib/jwt';
@@ -198,6 +204,21 @@ describe('uploadsAuth', () => {
     return next;
   }
 
+  beforeEach(() => {
+    isUserSuspendedMock.mockReset();
+    isUserSuspendedMock.mockResolvedValue(false);
+  });
+
+  it('refuses a valid token whose account is suspended or deactivated', async () => {
+    // Signature validity is not authorization: a suspension must close the
+    // upload door too, exactly as it closes `authenticate`.
+    isUserSuspendedMock.mockResolvedValue(true);
+    const token = generateAccessToken(payload);
+    const next = run({ headers: { authorization: `Bearer ${token}` } });
+    await vi.waitFor(() => expect(next).toHaveBeenCalled());
+    expect((next.mock.calls[0][0] as ApiError).statusCode).toBe(401);
+  });
+
   it('rejects requests without any token with 401', () => {
     const next = run({});
     const err = next.mock.calls[0][0];
@@ -210,15 +231,17 @@ describe('uploadsAuth', () => {
     expect((next.mock.calls[0][0] as ApiError).statusCode).toBe(401);
   });
 
-  it('accepts a valid access token via Authorization header', () => {
+  it('accepts a valid access token via Authorization header', async () => {
     const token = generateAccessToken(payload);
     const next = run({ headers: { authorization: `Bearer ${token}` } });
+    await vi.waitFor(() => expect(next).toHaveBeenCalled());
     expect(next).toHaveBeenCalledWith();
   });
 
-  it('accepts a valid access token via ?token= (for <img>/<a> fetches)', () => {
+  it('accepts a valid access token via ?token= (for <img>/<a> fetches)', async () => {
     const token = generateAccessToken(payload);
     const next = run({ query: { token } as Request['query'] });
+    await vi.waitFor(() => expect(next).toHaveBeenCalled());
     expect(next).toHaveBeenCalledWith();
   });
 

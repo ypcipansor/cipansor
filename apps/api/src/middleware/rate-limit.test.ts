@@ -6,6 +6,11 @@ import request from 'supertest';
 
 vi.mock('@/lib/prisma', () => ({ prisma: {} }));
 vi.mock('@/lib/redis', () => ({ redis: {} }));
+// `uploadsAuth` re-asserts the persistent account state; the real validator
+// reads Postgres. Stub it so these cases measure slot accounting only.
+vi.mock('@/utils/user-suspension', () => ({
+  isUserSuspended: vi.fn().mockResolvedValue(false),
+}));
 
 import {
   rateLimitEnabled,
@@ -139,9 +144,15 @@ describe('request-level rate-limit accounting', () => {
     const ip = nextIp();
     const a = app('production');
     for (let n = 0; n < 5; n++) {
-      await request(a).get(`/uploads/missing-${n}.png`).set('X-Forwarded-For', ip).set('Authorization', `Bearer ${token}`);
+      await request(a)
+        .get(`/uploads/missing-${n}.png`)
+        .set('X-Forwarded-For', ip)
+        .set('Authorization', `Bearer ${token}`);
     }
-    const photo = await request(a).get('/uploads/missing-last.png').set('X-Forwarded-For', ip).set('Authorization', `Bearer ${token}`);
+    const photo = await request(a)
+      .get('/uploads/missing-last.png')
+      .set('X-Forwarded-For', ip)
+      .set('Authorization', `Bearer ${token}`);
     expect(remainingOf(photo)).toBe(uploadsMax - 6);
 
     const api = await request(a).get('/api/something').set('X-Forwarded-For', ip);

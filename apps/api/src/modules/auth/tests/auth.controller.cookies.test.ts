@@ -84,6 +84,26 @@ describe('auth cookie issuance', () => {
     delete process.env.AUTH_COOKIE_SECURE;
   });
 
+  it('sets the 2FA temp cookie Max-Age from the token TTL, never a shorter default', async () => {
+    // Finding 5: the mandatory-setup flow minted a 10-minute token while the
+    // cookie defaulted to 5 minutes, so the browser dropped a credential the
+    // server still accepted. The controller must derive Max-Age from the
+    // service's `tempTokenExpiresIn`; this asserts the 10-minute setup case.
+    vi.mocked(authService.login).mockResolvedValue({
+      requiresTwoFactorSetup: true,
+      tempToken: 'temp.setup.token',
+      tempTokenExpiresIn: '10m',
+    } as never);
+    const { req, res, cookies } = mockReqRes({ email: 'a@b.c', password: 'x' });
+
+    await login(req, res, () => {});
+    await flushAsync();
+
+    const temp = cookies().find((c) => c.startsWith(`${TWO_FACTOR_TOKEN_COOKIE}=`));
+    expect(temp).toBeDefined();
+    expect(temp).toMatch(/Max-Age=600/);
+  });
+
   it('login sets HttpOnly session cookies and keeps the bearer fields', async () => {
     vi.mocked(authService.login).mockResolvedValue({ user: { id: 'user-1' }, ...TOKENS } as never);
     const { req, res, cookies } = mockReqRes({ email: 'a@b.c', password: 'x' });

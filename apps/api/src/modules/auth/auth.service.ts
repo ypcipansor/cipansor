@@ -12,6 +12,18 @@ import * as qrcode from 'qrcode';
 import crypto from 'crypto';
 
 /**
+ * Lifetime of the 2FA temporary token, in one place.
+ *
+ * The cookie that carries the token is set for exactly this long. They used to
+ * be independent literals — a 5-minute cookie default against a 10-minute token
+ * for the mandatory-setup flow — so an admin part-way through enrolling an
+ * authenticator had the cookie vanish under a token the server still accepted.
+ * The token TTL is the source of truth; the cookie is derived from it.
+ */
+const TWO_FACTOR_TEMP_TTL = '5m';
+const TWO_FACTOR_SETUP_TTL = '10m';
+
+/**
  * Resolve a legacy UserRole value (e.g. 'TEACHER', 'STAFF') into the correct
  * per-unit RoleCode (e.g. 'TKQ_GURU', 'SDIT_GURU') based on the target Unit's
  * type. For SUPER_ADMIN and UNIT_ADMIN the mapping is unit-agnostic.
@@ -193,42 +205,78 @@ export class AuthService {
 
     // Check for 2FA
     if (user.isTwoFactorEnabled && !isDemoAccount) {
-      const tempToken = generateAccessToken({ ...basePayload, isTemp: true }, '5m');
+      const tempToken = generateAccessToken({ ...basePayload, isTemp: true }, TWO_FACTOR_TEMP_TTL);
 
       return {
         requiresTwoFactor: true,
         tempToken,
+        // The cookie that carries this token must not outlive it, nor expire
+        // before it. Both are derived from the one constant, so the two cannot
+        // disagree: the mandatory-setup token used to be minted for 10 minutes
+        // while its cookie was capped at 5, and the user hit a "session
+        // expired" wall with a token still valid in the browser.
+        tempTokenExpiresIn: TWO_FACTOR_TEMP_TTL,
       };
     }
 
     // Force 2FA setup for Admin/Super Admin
     if (isUserAdmin && !user.isTwoFactorEnabled && !isDemoAccount) {
-      const tempToken = generateAccessToken({ ...basePayload, isTemp: true }, '10m');
+      const tempToken = generateAccessToken({ ...basePayload, isTemp: true }, TWO_FACTOR_SETUP_TTL);
 
       return {
         requiresTwoFactorSetup: true,
         tempToken,
+        tempTokenExpiresIn: TWO_FACTOR_SETUP_TTL,
       };
     }
 
     // Generate tokens
     const tokens = generateTokenPair(basePayload);
 
-    // Store refresh token & update last login in parallel
-    const [, , activeAcademicYearId] = await Promise.all([
-      prisma.refreshToken.create({
+    // Issue the refresh token inside a transaction that re-asserts the account
+    // state under a row lock, then writes the token in the same commit.
+    //
+    // The password check above and the insert below are separated by a round
+    // trip; a suspension that commits in between switches the account off and
+    // deletes the refresh tokens it can see � but a token created *after* that
+    // delete survives it and would authenticate away the suspension. Locking
+    // the user row for the re-check and the insert serialises the two: a
+    // suspension cannot commit between them, and one that already committed is
+    // visible to the locked re-read. The lock order (user row first) matches
+    // `refreshToken`, the 2FA completion, and `BoardSuspensionService`, so the
+    // paths are compatible rather than a new cycle.
+    const activeAcademicYearId = await prisma.$transaction(async (tx) => {
+      const claimed = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM "users"
+        WHERE id = ${user.id} AND is_active = true AND deleted_at IS NULL
+        FOR UPDATE
+      `;
+      if (claimed.length !== 1) {
+        throw Errors.unauthorized('Account is deactivated');
+      }
+
+      const blockingSuspension = await tx.boardMemberSuspension.findFirst({
+        where: { userId: user.id, status: BoardSuspensionStatus.ACTIVE },
+        select: { id: true },
+      });
+      if (blockingSuspension) {
+        throw Errors.unauthorized('Account is deactivated');
+      }
+
+      await tx.refreshToken.create({
         data: {
           token: tokens.refreshToken,
           userId: user.id,
           expiresAt: getExpirationDate(config.jwt.refreshExpiresIn),
         },
-      }),
-      prisma.user.update({
+      });
+      await tx.user.update({
         where: { id: user.id },
         data: { lastLoginAt: new Date() },
-      }),
-      this.getActiveAcademicYearId(),
-    ]);
+      });
+
+      return this.getActiveAcademicYearId();
+    });
 
     // Return user without sensitive fields
     const userWithoutPassword = this.stripSensitiveFields(user);
@@ -514,8 +562,25 @@ export class AuthService {
         throw Errors.unauthorized('Account is deactivated');
       }
 
-      // Delete old refresh token
-      await tx.refreshToken.delete({ where: { id: storedToken.id } });
+      // Consume the presented token with a conditional delete, not `delete`.
+      //
+      // `delete({ where: { id } })` throws Prisma `P2025` when the row is gone,
+      // which the error handler maps to 500. Two parallel refreshes with the
+      // same token both pass the read above; the first deletes the row and mints
+      // a replacement, and the second then hit P2025 — so a perfectly ordinary
+      // concurrent refresh surfaced as an internal error instead of the 401 that
+      // means "this token is already spent". `deleteMany` reports a rowcount, so
+      // the loser is identified rather than crashing: zero rows affected means
+      // someone else rotated first, and that is a replay, which fails closed.
+      //
+      // Rotation and replay protection are unchanged: exactly one caller
+      // consumes the row, and every later use of the same token is refused.
+      const consumed = await tx.refreshToken.deleteMany({
+        where: { id: storedToken.id, token: refreshToken },
+      });
+      if (consumed.count !== 1) {
+        throw Errors.unauthorized('Refresh token not found or expired');
+      }
 
       const tokens = generateTokenPair({
         id: storedToken.user.id,

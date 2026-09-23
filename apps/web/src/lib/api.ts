@@ -11,6 +11,8 @@ declare module "axios" {
   }
 }
 import {
+  SESSION_DEAD_COOKIE,
+  SESSION_DEAD_COOKIE_MAX_AGE_SECONDS,
   User,
   LoginRequest,
   LoginResponse,
@@ -177,7 +179,12 @@ api.interceptors.response.use(
 
     // Auth endpoints that should NEVER trigger token refresh —
     // their 401 means "wrong credentials", not "expired token".
-    const authPaths = ["/auth/login", "/auth/register", "/auth/refresh"];
+    const authPaths = [
+      "/auth/login",
+      "/auth/register",
+      "/auth/refresh",
+      "/auth/session/clear",
+    ];
     const requestUrl = originalRequest?.url ?? "";
     const isAuthEndpoint = authPaths.some((p) => requestUrl.includes(p));
 
@@ -217,13 +224,53 @@ api.interceptors.response.use(
           return Promise.reject(error);
         }
 
-        // Clear the non-credential user blob; the server cleared its cookies on
-        // the failed refresh. Best-effort legacy cleanup too.
+        // End the session server-side before dropping the client blob.
+        //
+        // Clearing the `HttpOnly` access/refresh/routing cookies is a
+        // server-only act. The failed refresh did NOT clear them — it answers
+        // 401 and leaves every cookie in place. Without this call the stale
+        // `cipansor_routing` cookie survives, `middleware.ts` keeps treating
+        // the visitor as authenticated, and it redirects `/login` back to the
+        // role dashboard: a loop the user cannot escape. `session/clear` is
+        // unauthenticated on purpose, so it works precisely when the
+        // credentials are already invalid, and it is deliberately not routed
+        // through this interceptor's refresh logic (it is an auth path below),
+        // so a failure cannot recurse.
+        //
+        // Best-effort: if the network is down the client state is still
+        // cleared and the cookies expire on their own.
+        try {
+          await axios.post(
+            `${API_URL}/auth/session/clear`,
+            {},
+            { withCredentials: true },
+          );
+        } catch {
+          // Ignored — see above.
+        }
+
+        // Clear the non-credential user blob; the server cleared the HttpOnly
+        // cookies above. Best-effort legacy cleanup too.
         localStorage.removeItem("auth-storage");
         localStorage.removeItem("accessToken");
         localStorage.removeItem("refreshToken");
         document.cookie = "accessToken=; path=/; max-age=0";
         document.cookie = "auth-storage=; path=/; max-age=0";
+
+        // Tell `middleware.ts` not to trust the routing hint for the next
+        // navigation. The server's `session/clear` above deletes the `HttpOnly`
+        // cookies, but the browser can still send the *old* routing cookie on
+        // the `/login` request if it races that response — and the middleware
+        // would then redirect the now-signed-out user straight back to a
+        // dashboard they cannot load, an inescapable loop. This marker is
+        // readable, carries no credential, and can only reduce authority, so it
+        // is safe for the client to write. The middleware consumes (deletes) it
+        // on the next request, so a subsequent sign-in is judged on the cookies
+        // it just set.
+        if (typeof document !== "undefined") {
+          document.cookie = `${SESSION_DEAD_COOKIE}=1; path=/; max-age=${SESSION_DEAD_COOKIE_MAX_AGE_SECONDS}`;
+        }
+
         if (
           typeof window !== "undefined" &&
           !window.location.pathname.includes("/login")

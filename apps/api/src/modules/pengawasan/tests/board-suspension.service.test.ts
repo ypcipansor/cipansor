@@ -598,6 +598,55 @@ describe('BoardSuspensionService Unit Tests', () => {
     );
   });
 
+  it('extends a time-boxed Plh assignment that would expire mid-suspension', async () => {
+    // Finding 6: reusing an effective assignment "as is" left a time-boxed one
+    // to expire before the SK is lifted — the officer stays suspended, the Plh
+    // loses the role, and the office is vacant with no record. The expiry must
+    // be pushed to the suspension's projected end, and the prior expiry
+    // recorded so the lift restores exactly it.
+    const priorExpiry = new Date('2026-10-01T00:00:00.000Z');
+    const projectedEnd = new Date('2027-01-01T00:00:00.000Z');
+
+    (prisma.user.findUnique as any).mockResolvedValue({
+      id: 'user-pengurus',
+      isActive: true,
+      userRoles: [{ isActive: true, expiresAt: null, role: { code: 'YAYASAN_ANGGOTA' } }],
+    });
+    (prisma.boardMemberSuspension.findFirst as any).mockResolvedValue(null);
+    (prisma.boardMemberSuspension.create as any).mockResolvedValue({ id: 'susp-1' });
+    (prisma.userSigningKey.findMany as any).mockResolvedValue([]);
+    (prisma.role.findFirst as any).mockResolvedValue({ id: 'role-ketua-id' });
+    (prisma.userRoleAssignment.findFirst as any).mockResolvedValue({
+      id: 'assign-short',
+      isActive: true,
+      expiresAt: priorExpiry,
+    });
+
+    await boardSuspensionService.suspendBoardMember(
+      {
+        userId: 'user-pengurus',
+        skNumber: 'SK/1',
+        auditReason: 'alasan audit yang panjang',
+        plhUserId: 'user-sekretaris',
+        plhRoleCode: 'YAYASAN_KETUA',
+        projectedEndDate: projectedEnd.toISOString(),
+      },
+      'issuer-pengawas',
+      'YAYASAN_PENGAWAS'
+    );
+
+    expect(prisma.userRoleAssignment.update).toHaveBeenCalledWith({
+      where: { id: 'assign-short' },
+      data: { expiresAt: projectedEnd },
+    });
+    const createCall = (prisma.boardMemberSuspension.create as any).mock.calls[0][0];
+    expect(createCall.data.plhAssignmentCreated).toBe(false);
+    expect(createCall.data.plhAssignmentRestore).toMatchObject({
+      isActive: true,
+      expiresAt: priorExpiry.toISOString(),
+    });
+  });
+
   it('lifts suspension, reactivates account, restores captured e-sign lockouts and removes the Plh it created', async () => {
     const mockSuspension = {
       id: 'susp-1',

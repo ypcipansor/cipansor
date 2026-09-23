@@ -333,30 +333,56 @@ test.describe
     reportId = stored.id;
   });
 
-  test("the Yayasan Pengawas can read and act on the report in scope", async () => {
-    const detail = await apiRequest<Envelope<WbsReport>>(
+  test("the Yayasan Pengawas can read the report in scope", async () => {
+    const list = await apiRequest<Envelope<WbsReport[]>>(
       pengawas,
       "GET",
-      `/pengawasan/wbs/reports/${reportId}`,
+      "/pengawasan/wbs/reports",
     );
-    expect(detail.data.id).toBe(reportId);
+    expect(list.data.some((r) => r.id === reportId)).toBe(true);
   });
 
   test("the same report is refused to a role outside its scope", async () => {
     // A UNIT_ADMIN (SD IT) has no business in a foundation-level WBS chain.
     // The ID alone used to be enough — this is the regression that let any
-    // handler read or mutate any report by UUID.
+    // handler read or mutate any report by UUID. The list endpoint is the
+    // read path; a write is the authoritative refusal.
     const adminSdit = await apiLogin(SEED_USERS.adminSdit);
+
+    const list = await apiRequest<Envelope<WbsReport[]>>(
+      adminSdit,
+      "GET",
+      "/pengawasan/wbs/reports",
+    );
+    expect(list.data.some((r) => r.id === reportId)).toBe(false);
+
     const res = await fetch(
-      `${process.env.API_URL || "http://localhost:3001/api"}/pengawasan/wbs/reports/${reportId}`,
-      { headers: { authorization: `Bearer ${adminSdit.accessToken}` } },
+      `${process.env.API_URL || "http://localhost:3001/api"}/pengawasan/wbs/reports/${reportId}/forward`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${adminSdit.accessToken}`,
+        },
+        body: JSON.stringify({
+          toRole: "YAYASAN_KETUA",
+          reason: "Di luar wewenang",
+        }),
+      },
     );
 
     expect(res.status).toBe(403);
   });
 
   for (const [action, body] of [
-    ["status", () => ({ status: "SELESAI", handlerNote: "Ditutup" })],
+    [
+      "status",
+      () => ({
+        status: "SELESAI",
+        resolution: "Ditutup.",
+        handlerNote: "Ditutup",
+      }),
+    ],
     [
       "forward",
       () => ({ toRole: "YAYASAN_KETUA", reason: "Bukan wewenang kami" }),
@@ -482,13 +508,6 @@ test.describe
       "/pengawasan/wbs/reports",
     );
     expect(list.data.some((r) => r.id === reportId)).toBe(true);
-
-    const detail = await apiRequest<Envelope<WbsReport>>(
-      adminSdit,
-      "GET",
-      `/pengawasan/wbs/reports/${reportId}`,
-    );
-    expect(detail.data.id).toBe(reportId);
   });
 });
 
@@ -729,6 +748,33 @@ test.describe.serial("Scoped account pickers and WBS handler replies", () => {
   test("a terminal case is immutable for the handler too, and the reply button is hidden", async ({
     page,
   }) => {
+    // Finding 2: a terminal close must carry its resolution, because the case
+    // is immutable afterwards and the outcome could never be recorded. The
+    // edge refuses the close here, before the immutable-state check.
+    const refusal = await fetch(
+      `${process.env.API_URL || "http://localhost:3001/api"}/pengawasan/wbs/reports/${reportId}/status`,
+      {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${pengawas.accessToken}`,
+        },
+        body: JSON.stringify({
+          status: "SELESAI",
+          handlerNote: "Tanpa penyelesaian",
+        }),
+      },
+    );
+    expect(refusal.status).toBe(400);
+
+    // The resolution-less close is refused, so the case is still open and the
+    // handler can still reply. With the required resolution the close lands.
+    const stillOpen = await apiRequest<Envelope<WbsReport[]>>(
+      pengawas,
+      "GET",
+      `/pengawasan/wbs/reports`,
+    );
+    expect(stillOpen.data.some((r) => r.id === reportId)).toBe(true);
     // Closing the case ends the thread for both sides: the handler's note is
     // rendered on the reporter's public tracking page, so admitting one after
     // closure would mutate a case the reporter can no longer answer and could
@@ -740,6 +786,7 @@ test.describe.serial("Scoped account pickers and WBS handler replies", () => {
       `/pengawasan/wbs/reports/${reportId}/status`,
       {
         status: "SELESAI",
+        resolution: "Kasus ditutup setelah pemeriksaan.",
         handlerNote: "Kasus ditutup.",
       },
     );

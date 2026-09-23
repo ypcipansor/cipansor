@@ -334,8 +334,7 @@ export class WbsService {
    *
    * Used for the list AND for the per-report authorization below, so the two
    * can never disagree — a report hidden from the list must also be refused by
-   * `getReportById`, or the ID becomes a skeleton key into every unit.
-   *
+   * `loadReportInScope`, or the ID becomes a skeleton key into every unit.
    * Governance roles see the foundation; unit-scoped handlers see only reports
    * whose unit is their own.
    *
@@ -474,14 +473,12 @@ export class WbsService {
    * to another unit's chain of handling — the caller cannot otherwise tell a
    * typo from a probe, and the ID alone must never be enough.
    */
-  private async loadReportInScope<T extends Prisma.WbsReportInclude | undefined = undefined>(
+  private async loadReportInScope(
     id: string,
-    actor: { id?: string; roleCode?: string; unitId?: string | null },
-    include?: T
+    actor: { id?: string; roleCode?: string; unitId?: string | null }
   ) {
     const report = await prisma.wbsReport.findFirst({
       where: { id, ...this.buildScopeWhere(actor) },
-      ...(include ? { include } : {}),
     });
 
     if (!report) {
@@ -540,32 +537,6 @@ export class WbsService {
   }
 
   /**
-   * Get WBS report details by ID for handler.
-   */
-  async getReportById(
-    id: string,
-    actor: { id?: string; roleCode?: string; unitId?: string | null }
-  ) {
-    return this.loadReportInScope(id, actor, {
-      unit: { select: { id: true, name: true } },
-      assignedUser: { select: { id: true, name: true, email: true } },
-      comments: {
-        orderBy: { createdAt: 'asc' },
-        include: {
-          sender: { select: { id: true, name: true } },
-        },
-      },
-      forwardLogs: {
-        orderBy: { createdAt: 'asc' },
-        include: {
-          forwardedBy: { select: { id: true, name: true } },
-          toUser: { select: { id: true, name: true } },
-        },
-      },
-    });
-  }
-
-  /**
    * Update report status (DIAJUKAN, DALAM_PENYELIDIKAN, DITINDAKLANJUTI, SELESAI, TIDAK_DAPAT_DITINDAKLANJUTI).
    */
   async updateReportStatus(id: string, data: UpdateWbsStatusInput, actor: WbsActor) {
@@ -587,6 +558,18 @@ export class WbsService {
       // commit the closure between the check and the update, and the reopen
       // would land anyway.
       const scope = await this.assertReportInScopeTx(tx, id, actor);
+
+      // A terminal status is a one-way door, so the resolution has to arrive
+      // with the closure. `updateReportStatus` refuses every later write once
+      // closed (including terminal → terminal), so a close submitted without a
+      // resolution leaves a closed case whose outcome can never be recorded.
+      // The edge schema requires it for HTTP callers; this is the same guard
+      // for internal callers that reach the service directly.
+      if (isClosedWbsStatus(data.status) && !data.resolution?.trim()) {
+        throw Errors.badRequest(
+          'Penyelesaian (resolution) wajib diisi ketika laporan ditutup sebagai SELESAI atau TIDAK_DAPAT_DITINDAKLANJUTI.'
+        );
+      }
 
       // A terminal case is immutable. Once `SELESAI` /
       // `TIDAK_DAPAT_DITINDAKLANJUTI`, the status, the resolution and the

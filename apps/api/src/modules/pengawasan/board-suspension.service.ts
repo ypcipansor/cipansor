@@ -13,6 +13,8 @@ import {
 import { invalidateUserSuspensionCache, markUserSuspended } from '@/utils/user-suspension';
 import { activationState, deactivationState } from '@/utils/account-state';
 import { SIGNING_KEY_SUSPENSION_LOCK } from '@/utils/esign-suspension-lock';
+import { disconnectUserSockets } from '@/lib/realtime';
+import { lockUserAssignmentRows } from '@/utils/role-assignment-lock';
 
 // The payload is the shared contract the controller validates with; a local
 // restatement of the same fields is exactly how the two drift apart.
@@ -33,7 +35,10 @@ export type { CreateBoardSuspensionInput };
  * requires formal, permanent revocation on suspension, that is a product change
  * that must issue a fresh key on lift — do not repurpose the sentinel.
  */
-export { SIGNING_KEY_SUSPENSION_LOCK, isSuspensionSigningLock } from '@/utils/esign-suspension-lock';
+export {
+  SIGNING_KEY_SUSPENSION_LOCK,
+  isSuspensionSigningLock,
+} from '@/utils/esign-suspension-lock';
 
 /**
  * Prior `lockedUntil` per signing-key id, so a lift can undo exactly what the
@@ -329,6 +334,15 @@ export class BoardSuspensionService {
         >`
           SELECT is_active, deleted_at FROM "users" WHERE id = ${data.userId} FOR UPDATE
         `;
+        // Then the target's role-assignment rows, in the shared protocol's
+        // order (user row, then assignments). Locking the user row alone does
+        // NOT serialise a concurrent revocation: a revocation updates
+        // `user_role_assignments`, which are different rows, so it could delete
+        // the Pengurus assignment between the eligibility read below and this
+        // transaction's commit — the suspension would then switch off an
+        // account that is no longer a Pengurus. `RolesService` takes these same
+        // locks, so the two writers now serialise.
+        await lockUserAssignmentRows(tx, [data.userId]);
         if (!lockedTarget[0]) {
           throw Errors.notFound(`Pengurus / Pengguna dengan ID ${data.userId} tidak ditemukan`);
         }
@@ -589,16 +603,53 @@ export class BoardSuspensionService {
               existingAssign.isActive &&
               (!existingAssign.expiresAt || existingAssign.expiresAt > new Date());
 
+            // How long the delegation must remain effective: through the
+            // suspension's projected end, or indefinitely when none is stated.
+            //
+            // Reusing an effective assignment "as is" left a time-boxed one to
+            // expire mid-suspension: the officer stays suspended, but their Plh
+            // loses the role before the SK is lifted, and the office is vacant
+            // with no record saying so. The window is the suspension's own
+            // horizon, so the expiry is pushed to it — `null` (unbounded) when
+            // the suspension is open-ended.
+            const requiredUntil = data.projectedEndDate ? new Date(data.projectedEndDate) : null;
+
             if (isEffective) {
-              // Reuse a live delegation. It stays; this suspension just
-              // records that it depends on it, so a lift of the *other*
-              // suspension cannot remove it underneath us either.
-              plhDependency = {
-                assignmentId: existingAssign.id,
-                roleCode: data.plhRoleCode,
-                created: false,
-                restore: null,
-              };
+              const currentExpiry = existingAssign.expiresAt;
+              const expiryFallsShort =
+                currentExpiry != null && (requiredUntil == null || currentExpiry < requiredUntil);
+
+              if (expiryFallsShort && currentExpiry) {
+                // The row is extended, not replaced, and the expiry it had is
+                // recorded so the last dependent restores exactly it. That is
+                // ownership-safe: the lift only writes back a state this
+                // suspension is the one that changed, and the heir transfer in
+                // `liftBoardSuspension` carries the earliest prior expiry to a
+                // surviving dependent when another suspension still needs it.
+                plhDependency = {
+                  assignmentId: existingAssign.id,
+                  roleCode: data.plhRoleCode,
+                  created: false,
+                  restore: {
+                    isActive: existingAssign.isActive,
+                    expiresAt: currentExpiry.toISOString(),
+                  },
+                };
+                await tx.userRoleAssignment.update({
+                  where: { id: existingAssign.id },
+                  data: { expiresAt: requiredUntil },
+                });
+              } else {
+                // Reuse a live delegation. It stays; this suspension just
+                // records that it depends on it, so a lift of the *other*
+                // suspension cannot remove it underneath us either.
+                plhDependency = {
+                  assignmentId: existingAssign.id,
+                  roleCode: data.plhRoleCode,
+                  created: false,
+                  restore: null,
+                };
+              }
             } else {
               plhDependency = {
                 assignmentId: existingAssign.id,
@@ -685,6 +736,16 @@ export class BoardSuspensionService {
       // the meantime (bumping it again) outranks this prime instead of being
       // overwritten by it.
       await markUserSuspended(data.userId, suspensionAccountStateVersion);
+
+      // The suspension has committed, so close the sockets the officer already
+      // holds. Authentication happens at the handshake, and a JWT does not
+      // expire because the account did — without this the suspended user's
+      // already-open realtime session keeps receiving every broadcast its rooms
+      // carry until the token's own TTL lapses. Best-effort: the socket layer
+      // also re-checks account state on every join and subscription, so a
+      // missed disconnect cannot widen access, it can only delay the cut-off.
+      disconnectUserSockets(data.userId);
+
       return suspension;
     } catch (error) {
       // The partial unique index is what actually prevents a second ACTIVE

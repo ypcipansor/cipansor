@@ -373,7 +373,10 @@ describe('AuthService', () => {
         type: 'refresh',
       });
       mockPrisma.refreshToken.findFirst.mockResolvedValue(mockStoredToken);
-      mockPrisma.refreshToken.delete.mockResolvedValue({});
+      // Rotation consumes the presented row with a conditional `deleteMany`, so
+      // the loser of a concurrent refresh is identified by rowcount rather than
+      // crashing on P2025.
+      mockPrisma.refreshToken.deleteMany.mockResolvedValue({ count: 1 });
       mockPrisma.refreshToken.create.mockResolvedValue({});
 
       const result = await authService.refreshToken('valid-refresh-token');
@@ -413,7 +416,7 @@ describe('AuthService', () => {
           userRoles: [],
         },
       });
-      mockPrisma.refreshToken.delete.mockResolvedValue({});
+      mockPrisma.refreshToken.deleteMany.mockResolvedValue({ count: 1 });
 
       await expect(authService.refreshToken('pt-refresh-token')).rejects.toThrow(
         'No active role assignment found'

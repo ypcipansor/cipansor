@@ -1,9 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
 import { rolesService } from './roles.service';
-import { generateTokenPair, getExpirationDate } from '@/lib/jwt';
-import { prisma } from '@/lib/prisma';
-import { config } from '@/config';
-import { tokenUnitId } from '@/utils/resolve-unit-id';
 import { sessionCookies, setCookies } from '@/utils/auth-cookies';
 import type { Realm } from '@prisma/client';
 import type {
@@ -145,41 +141,17 @@ export class RolesController {
       const userId = req.user!.sub;
       const input = req.body as SwitchRoleInput;
 
-      const result = await rolesService.switchRole(userId, input.roleAssignmentId);
-
-      // Generate new tokens with the new active role and its assigned unit
-      const tokens = generateTokenPair({
-        id: result.user.id,
-        sub: result.user.id,
-        email: result.user.email,
-        role: result.user.role ?? '',
-        roleCode: result.activeRole.role.code,
-        roleId: result.activeRole.roleId,
-        // Same rule as login, 2FA and refresh (tokenUnitId): only a foundation
-        // role may carry no unit. Deciding it differently here gave a switched
-        // role one scope until the next refresh and another after it.
-        unitId: tokenUnitId(
-          result.activeRole.unitId,
-          result.activeRole.role.code,
-          result.user.unitId
-        ),
-        permissions: (result.activeRole.role.permissions as string[]) ?? [],
-      });
-
-      // Store refresh token
-      await prisma.refreshToken.create({
-        data: {
-          token: tokens.refreshToken,
-          userId: result.user.id,
-          expiresAt: getExpirationDate(config.jwt.refreshExpiresIn),
-        },
-      });
+      // Switch, re-validate account state, mint the pair and store the refresh
+      // token in one transaction — see `switchRoleAndIssueSession`. Doing the
+      // token insert here, outside the lock, let a suspension that committed in
+      // the gap delete every token it could see while this one survived.
+      const result = await rolesService.switchRoleAndIssueSession(userId, input.roleAssignmentId);
 
       // Re-issue the session cookies so the browser's `HttpOnly` access token
       // and routing hint carry the newly active role, not the previous one. A
       // bug here is exactly the "switched role has a stale scope" class the
       // tokenUnitId comment below guards against.
-      setCookies(res, await sessionCookies(tokens));
+      setCookies(res, await sessionCookies(result.tokens));
 
       res.json({
         success: true,
@@ -190,7 +162,7 @@ export class RolesController {
             role: result.activeRole.role,
             unit: result.activeRole.unit,
           },
-          ...tokens,
+          ...result.tokens,
         },
       });
     } catch (error) {

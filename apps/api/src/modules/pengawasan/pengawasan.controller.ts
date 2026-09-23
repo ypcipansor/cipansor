@@ -283,11 +283,6 @@ export const listWbsReports = asyncHandler(async (req: Request, res: Response) =
   res.json(ApiResponse.success(reports));
 });
 
-export const getWbsReportById = asyncHandler(async (req: Request, res: Response) => {
-  const report = await wbsService.getReportById(req.params.id, wbsActor(req));
-  res.json(ApiResponse.success(report));
-});
-
 export const updateWbsStatus = asyncHandler(async (req: Request, res: Response) => {
   const body = updateWbsStatusSchema.parse(req.body);
   const updated = await wbsService.updateReportStatus(req.params.id, body, wbsActor(req));

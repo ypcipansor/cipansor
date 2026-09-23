@@ -508,7 +508,7 @@ describe('WbsService Unit Tests', () => {
 
     await wbsService.updateReportStatus(
       'report-1',
-      { status: WbsStatus.SELESAI },
+      { status: WbsStatus.SELESAI, resolution: 'Ditutup dengan temuan.' },
       { id: 'actor-1', name: 'Aktor', roleCode: 'YAYASAN_PENGAWAS', unitId: null }
     );
 
@@ -544,7 +544,11 @@ describe('WbsService Unit Tests', () => {
     await expect(
       wbsService.updateReportStatus(
         'report-1',
-        { status: WbsStatus.SELESAI, handlerNote: 'Catatan pemeriksa' },
+        {
+          status: WbsStatus.SELESAI,
+          resolution: 'Ditutup dengan temuan.',
+          handlerNote: 'Catatan pemeriksa',
+        },
         { id: 'actor-1', name: 'Aktor', roleCode: 'YAYASAN_PENGAWAS', unitId: null }
       )
     ).rejects.toThrow('comment write failed');
@@ -1292,7 +1296,7 @@ describe('WbsService Unit Tests', () => {
 
         const updated = await wbsService.updateReportStatus(
           'report-1',
-          { status: WbsStatus.SELESAI },
+          { status: WbsStatus.SELESAI, resolution: 'Ditutup dengan temuan.' },
           actor
         );
 
@@ -1304,6 +1308,29 @@ describe('WbsService Unit Tests', () => {
         );
       }
     );
+
+    it('refuses to close an open case with no resolution at the service, not only at the edge', async () => {
+      // The service is reachable without the HTTP edge (internal callers),
+      // so the "a terminal status carries its resolution" rule is enforced
+      // here too — otherwise a close with no resolution freezes the row and
+      // the outcome can never be recorded.
+      inScope(WbsStatus.DIAJUKAN);
+
+      await expect(
+        wbsService.updateReportStatus('report-1', { status: WbsStatus.SELESAI }, actor)
+      ).rejects.toMatchObject({ statusCode: 400 });
+
+      await expect(
+        wbsService.updateReportStatus(
+          'report-1',
+          { status: WbsStatus.TIDAK_DAPAT_DITINDAKLANJUTI, resolution: '   ' },
+          actor
+        )
+      ).rejects.toMatchObject({ statusCode: 400 });
+
+      expect(prisma.wbsReport.update).not.toHaveBeenCalled();
+      expect(prisma.wbsComment.create).not.toHaveBeenCalled();
+    });
 
     it('reads the terminal status under the row lock before deciding', async () => {
       // The decisive read must be the locked one; an unlocked pre-read would
@@ -1404,9 +1431,13 @@ describe('WbsService Unit Tests', () => {
       (prisma.wbsReport.findFirst as any).mockResolvedValue(null);
       (prisma.wbsReport.findUnique as any).mockResolvedValue({ id: 'report-9' });
 
-      await expect(wbsService.getReportById('report-9', actor)).rejects.toMatchObject({
-        statusCode: 403,
-      });
+      await expect(
+        wbsService.forwardReport(
+          'report-9',
+          { toRole: 'YAYASAN_KETUA', reason: 'alasan panjang' },
+          actor
+        )
+      ).rejects.toMatchObject({ statusCode: 403 });
       expect(prisma.wbsReport.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({ where: expect.objectContaining({ id: 'report-9' }) })
       );
@@ -1416,9 +1447,13 @@ describe('WbsService Unit Tests', () => {
       (prisma.wbsReport.findFirst as any).mockResolvedValue(null);
       (prisma.wbsReport.findUnique as any).mockResolvedValue(null);
 
-      await expect(wbsService.getReportById('missing', actor)).rejects.toMatchObject({
-        statusCode: 404,
-      });
+      await expect(
+        wbsService.forwardReport(
+          'missing',
+          { toRole: 'YAYASAN_KETUA', reason: 'alasan panjang' },
+          actor
+        )
+      ).rejects.toMatchObject({ statusCode: 404 });
     });
 
     it('scopes an out-of-unit handler to their own unit in the where clause', async () => {
@@ -1474,12 +1509,17 @@ describe('WbsService Unit Tests', () => {
       expect(prisma.wbsComment.create).not.toHaveBeenCalled();
     });
 
-    it('lets a Super Admin read any report by id', async () => {
+    it('lets a Super Admin resolve any report by id', async () => {
       (prisma.wbsReport.findFirst as any).mockResolvedValue({ id: 'report-9' });
-      const result = await wbsService.getReportById('report-9', {
-        roleCode: 'SUPER_ADMIN',
-        unitId: null,
+      (prisma.wbsReport.update as any).mockResolvedValue({
+        id: 'report-9',
+        primaryHandlerRole: 'YAYASAN_KETUA',
       });
+      const result = await wbsService.forwardReport(
+        'report-9',
+        { toRole: 'YAYASAN_KETUA', reason: 'alasan panjang' },
+        { id: 'super-1', name: 'Super', roleCode: 'SUPER_ADMIN', unitId: null }
+      );
       expect(result.id).toBe('report-9');
     });
 
@@ -1574,6 +1614,7 @@ describe('WbsService Unit Tests', () => {
       // "nothing to do".
       const unitActor = {
         id: 'unit-admin-sdit',
+        name: 'Admin SDIT',
         roleCode: 'SDIT_ADMIN',
         unitId: 'unit-sdit',
       };
@@ -1657,8 +1698,16 @@ describe('WbsService Unit Tests', () => {
           id: 'report-kepala-unit',
           unitId: 'unit-sdit',
         });
+        (prisma.wbsReport.update as any).mockResolvedValue({
+          id: 'report-kepala-unit',
+          primaryHandlerRole: 'YAYASAN_KETUA',
+        });
 
-        const detail = await wbsService.getReportById('report-kepala-unit', unitActor);
+        const detail = await wbsService.forwardReport(
+          'report-kepala-unit',
+          { toRole: 'YAYASAN_KETUA', reason: 'alasan panjang' },
+          unitActor
+        );
         expect(detail.id).toBe('report-kepala-unit');
       });
     });
@@ -1705,7 +1754,6 @@ describe('WbsService Unit Tests', () => {
       );
 
       it.each([
-        ['getReportById', (actor: unknown) => wbsService.getReportById('report-1', actor as any)],
         [
           'updateReportStatus',
           (actor: unknown) =>

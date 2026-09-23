@@ -271,9 +271,21 @@ export async function authenticate2FA(req: Request, res: Response, next: NextFun
 }
 
 /**
- * Optional authentication - doesn't fail if no token
+ * Optional authentication - doesn't fail if no token.
+ *
+ * "Optional" is about the *absence* of a credential, not about its validity. A
+ * present-but-unusable token must not be attached as a principal: a suspended,
+ * deactivated, deleted or missing user is not "somewhat signed in", and any
+ * handler that branches on `req.user` would treat them as the person the token
+ * names. The account-state gate is the same one `authenticate` applies, so the
+ * two doors agree on who is a user.
+ *
+ * An unusable credential is treated as anonymous rather than 401, because that
+ * is what the endpoint contract says: these routes serve both signed-in and
+ * anonymous callers, and an expired cookie on a public page should not turn the
+ * page into an error. Handlers that need a principal still use `authenticate`.
  */
-export function optionalAuth(req: Request, res: Response, next: NextFunction) {
+export async function optionalAuth(req: Request, res: Response, next: NextFunction) {
   try {
     const token = bearerFromHeader(req) || readCookie(req, ACCESS_TOKEN_COOKIE);
 
@@ -283,6 +295,9 @@ export function optionalAuth(req: Request, res: Response, next: NextFunction) {
 
     const payload = verifyToken(token);
     if (payload.type === 'access' && !payload.isTemp) {
+      if (await isUserSuspended(payload.sub)) {
+        return next();
+      }
       req.user = buildReqUser(payload);
     }
 

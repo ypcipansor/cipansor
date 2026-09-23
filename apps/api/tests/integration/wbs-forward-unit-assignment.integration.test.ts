@@ -13,8 +13,8 @@
  *
  * A mock cannot show this: it is the *assignment* row the scope query joins, and
  * the decision and the write must share one locked read. This suite drives the
- * real `wbsService.forwardReport` and the real `getReportsForUser` /
- * `getReportById` against a real PostgreSQL.
+ * real `wbsService.forwardReport` and the real `getReportsForUser` against a
+ * real PostgreSQL.
  *
  * Opt-in via RUN_DB_TESTS=1, like the other DB suites.
  */
@@ -249,11 +249,12 @@ describeDb('WBS forward recipient unit-assignment eligibility (real PostgreSQL)'
       // matching assignment), even though their home unit is unit-smpit.
       const recipient = recipientActor('unit-sdit');
 
+      // A forward to a named recipient is proven reachable by the list query,
+      // which is the endpoint the web actually consumes. The per-report
+      // `GET /wbs/reports/:id` endpoint was removed as orphaned, so the list
+      // query is the contract this proves.
       const listed = await service.getReportsForUser(recipient);
       expect(listed.map((r) => r.id)).toContain('r-unit');
-
-      const detail = await service.getReportById('r-unit', recipient);
-      expect(detail.id).toBe('r-unit');
 
       const updated = await service.updateReportStatus(
         'r-unit',
@@ -324,11 +325,10 @@ describeDb('WBS forward recipient unit-assignment eligibility (real PostgreSQL)'
         unitId: 'unit-sdit',
       };
 
+      // The routed report is reachable by the unit's list query — the
+      // per-report endpoint was removed as orphaned.
       const listed = await service.getReportsForUser(unitHandler);
       expect(listed.map((r) => r.id)).toContain('r-unit');
-
-      const detail = await service.getReportById('r-unit', unitHandler);
-      expect(detail.id).toBe('r-unit');
     } finally {
       await unloadService(previousUrl);
     }

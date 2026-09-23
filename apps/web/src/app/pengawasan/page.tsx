@@ -475,6 +475,16 @@ function PengawasanPageContent() {
     useState<boolean>(false);
   const [handlerComment, setHandlerComment] = useState<string>("");
   const [replyTargetId, setReplyTargetId] = useState<string | null>(null);
+  // Closing a case is a one-way door: the API refuses any later write, so the
+  // resolution has to be captured *with* the closure. The status Select alone
+  // sent only `{ status }`, which the API now rejects for a terminal status —
+  // the dialog below collects the required resolution (and an optional note)
+  // before the close is submitted.
+  const [statusDialogOpen, setStatusDialogOpen] = useState<boolean>(false);
+  const [statusTarget, setStatusTarget] = useState<WbsReportDto | null>(null);
+  const [statusValue, setStatusValue] = useState<WbsStatusCode>("DIAJUKAN");
+  const [resolutionText, setResolutionText] = useState<string>("");
+  const [statusNote, setStatusNote] = useState<string>("");
 
   // Board Suspension States
   const [suspensionDialogOpen, setSuspensionDialogOpen] =
@@ -601,6 +611,36 @@ function PengawasanPageContent() {
     await handlerCommentMutation.mutateAsync({ id: reportId, message });
     setHandlerComment("");
     setReplyTargetId(null);
+  };
+
+  /**
+   * Open the status dialog pre-filled with the report's current status.
+   *
+   * A transition into a terminal status requires a resolution, so it is
+   * collected here rather than sent straight from the Select.
+   */
+  const openStatusDialog = (report: WbsReportDto) => {
+    setStatusTarget(report);
+    setStatusValue(report.status as WbsStatusCode);
+    setResolutionText(report.resolution ?? "");
+    setStatusNote("");
+    setStatusDialogOpen(true);
+  };
+
+  const handleStatusSubmit = async () => {
+    if (!statusTarget) return;
+    const closing = isClosedWbsStatus(statusValue);
+    if (closing && !resolutionText.trim()) return;
+    await updateWbsStatusMutation.mutateAsync({
+      id: statusTarget.id,
+      status: statusValue,
+      ...(resolutionText.trim() ? { resolution: resolutionText.trim() } : {}),
+      ...(statusNote.trim() ? { handlerNote: statusNote.trim() } : {}),
+    });
+    setStatusDialogOpen(false);
+    setStatusTarget(null);
+    setResolutionText("");
+    setStatusNote("");
   };
 
   const handlePeriodicReportSubmit = async (
@@ -942,36 +982,14 @@ function PengawasanPageContent() {
                         <div className="flex items-center gap-2">
                           {access.canHandleWbs && (
                             <>
-                              <Select
-                                value={report.status}
-                                onValueChange={(status) =>
-                                  updateWbsStatusMutation.mutate({
-                                    id: report.id,
-                                    status: status as WbsStatusCode,
-                                  })
-                                }
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-8 text-xs gap-1"
+                                onClick={() => openStatusDialog(report)}
                               >
-                                <SelectTrigger className="w-[180px] h-8 text-xs">
-                                  <SelectValue placeholder="Ubah Status" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="DIAJUKAN">
-                                    Diajukan
-                                  </SelectItem>
-                                  <SelectItem value="DALAM_PENYELIDIKAN">
-                                    Dalam Penyelidikan
-                                  </SelectItem>
-                                  <SelectItem value="DITINDAKLANJUTI">
-                                    Ditindaklanjuti
-                                  </SelectItem>
-                                  <SelectItem value="SELESAI">
-                                    Selesai
-                                  </SelectItem>
-                                  <SelectItem value="TIDAK_DAPAT_DITINDAKLANJUTI">
-                                    Tidak Dapat Ditindaklanjuti
-                                  </SelectItem>
-                                </SelectContent>
-                              </Select>
+                                Ubah Status
+                              </Button>
 
                               <Button
                                 size="sm"
@@ -1380,6 +1398,93 @@ function PengawasanPageContent() {
             onClose={() => setFindingAuditId(null)}
           />
         )}
+      </Dialog>
+
+      {/* WBS Status Dialog — a terminal status is a one-way door, so the
+          required resolution is collected here before the close is sent. */}
+      <Dialog open={statusDialogOpen} onOpenChange={setStatusDialogOpen}>
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle>Ubah Status Laporan WBS</DialogTitle>
+            <DialogDescription>
+              {statusTarget?.ticketCode} — pilih status baru. Menutup laporan
+              (Selesai / Tidak Dapat Ditindaklanjuti) mewajibkan penyelesaian
+              karena laporan yang ditutup tidak dapat diubah lagi.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label>Status Baru</Label>
+              <Select
+                value={statusValue}
+                onValueChange={(v) => setStatusValue(v as WbsStatusCode)}
+              >
+                <SelectTrigger className="bg-white">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="DIAJUKAN">Diajukan</SelectItem>
+                  <SelectItem value="DALAM_PENYELIDIKAN">
+                    Dalam Penyelidikan
+                  </SelectItem>
+                  <SelectItem value="DITINDAKLANJUTI">
+                    Ditindaklanjuti
+                  </SelectItem>
+                  <SelectItem value="SELESAI">Selesai</SelectItem>
+                  <SelectItem value="TIDAK_DAPAT_DITINDAKLANJUTI">
+                    Tidak Dapat Ditindaklanjuti
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>
+                Penyelesaian (resolution){" "}
+                {isClosedWbsStatus(statusValue) ? "*" : ""}
+              </Label>
+              <Textarea
+                rows={3}
+                placeholder="Tuliskan hasil penyelesaian atau alasan tidak dapat ditindaklanjuti..."
+                value={resolutionText}
+                onChange={(e) => setResolutionText(e.target.value)}
+              />
+              {isClosedWbsStatus(statusValue) && !resolutionText.trim() && (
+                <p className="text-xs text-red-600 mt-1">
+                  Penyelesaian wajib diisi untuk menutup laporan.
+                </p>
+              )}
+            </div>
+            <div>
+              <Label>Catatan Pemeriksa (opsional)</Label>
+              <Textarea
+                rows={2}
+                placeholder="Catatan internal untuk riwayat penanganan..."
+                value={statusNote}
+                onChange={(e) => setStatusNote(e.target.value)}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setStatusDialogOpen(false)}
+              >
+                Batal
+              </Button>
+              <Button
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+                disabled={
+                  updateWbsStatusMutation.isPending ||
+                  (isClosedWbsStatus(statusValue) && !resolutionText.trim())
+                }
+                onClick={handleStatusSubmit}
+              >
+                {updateWbsStatusMutation.isPending
+                  ? "Menyimpan…"
+                  : "Simpan Status"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
       </Dialog>
 
       {/* Forward WBS Dialog */}

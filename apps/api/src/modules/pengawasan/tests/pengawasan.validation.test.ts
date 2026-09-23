@@ -9,6 +9,7 @@ import {
   createPublicWbsSchema,
   addPublicWbsCommentSchema,
   addWbsHandlerCommentSchema,
+  updateWbsStatusSchema,
   trackPublicWbsSchema,
   WBS_MAX,
 } from '@cipansor/shared';
@@ -200,14 +201,27 @@ describe('pengawasan validation contracts', () => {
       ).toBe(true);
     });
 
-    it('accepts each date on its own', () => {
+    it('accepts startDate on its own, but not a projected end already in the past', () => {
       expect(
         createBoardSuspensionSchema.safeParse({ ...baseSuspension, startDate: start }).success
       ).toBe(true);
+
+      // No `startDate` means "effective now": the suspension applies on
+      // issuance, so a projected end before now describes a window that is
+      // already over while the row would still be ACTIVE.
+      const past = createBoardSuspensionSchema.safeParse({
+        ...baseSuspension,
+        projectedEndDate: after,
+      });
+      expect(past.success).toBe(false);
+      if (!past.success) {
+        expect(past.error.issues.some((i) => i.path[0] === 'projectedEndDate')).toBe(true);
+      }
+
       expect(
         createBoardSuspensionSchema.safeParse({
           ...baseSuspension,
-          projectedEndDate: after,
+          projectedEndDate: new Date(Date.now() + 30 * 86_400_000).toISOString(),
         }).success
       ).toBe(true);
     });
@@ -435,6 +449,73 @@ describe('public WBS field maxima', () => {
       trackingToken: 'a-tracking-token',
       message: 'Pesan',
       attachments: [atLimit + 'a'],
+    });
+    expect(over.success).toBe(false);
+  });
+});
+
+/**
+ * Review item 2 (terminal closure requires a resolution) and item 9
+ * (authenticated handler free text needs a domain maximum). Both are edge
+ * contracts, so they belong on the schema rather than only on the service — the
+ * service guard cannot fail the request with a stable 400 the way Zod can.
+ */
+describe('authenticated WBS handler contracts', () => {
+  it.each(['SELESAI', 'TIDAK_DAPAT_DITINDAKLANJUTI'])(
+    'refuses a %s close with no resolution',
+    (status) => {
+      // A terminal status is a one-way door: `updateReportStatus` freezes the
+      // row, so a close submitted without a resolution leaves a closed case
+      // whose outcome can never be recorded.
+      expect(updateWbsStatusSchema.safeParse({ status }).success).toBe(false);
+      expect(updateWbsStatusSchema.safeParse({ status, resolution: '   ' }).success).toBe(false);
+      expect(updateWbsStatusSchema.safeParse({ status, resolution: '' }).success).toBe(false);
+    }
+  );
+
+  it('accepts a terminal close that carries a resolution', () => {
+    for (const status of ['SELESAI', 'TIDAK_DAPAT_DITINDAKLANJUTI']) {
+      expect(
+        updateWbsStatusSchema.safeParse({ status, resolution: 'Ditutup dengan temuan.' }).success
+      ).toBe(true);
+    }
+  });
+
+  it('still allows a non-terminal transition without a resolution', () => {
+    for (const status of ['DIAJUKAN', 'DALAM_PENYELIDIKAN', 'DITINDAKLANJUTI']) {
+      expect(updateWbsStatusSchema.safeParse({ status }).success).toBe(true);
+    }
+  });
+
+  it.each([
+    ['resolution', updateWbsStatusSchema, WBS_MAX.resolution],
+    ['handlerNote', updateWbsStatusSchema, WBS_MAX.handlerNote],
+  ] as const)('bounds the handler %s at its limit', (field, schema, limit) => {
+    const base = { status: 'SELESAI', resolution: 'Ditutup dengan temuan.' };
+    const at = schema.safeParse({ ...base, [field]: 'a'.repeat(limit) });
+    expect(at.success, `${field} at limit`).toBe(true);
+    const over = schema.safeParse({ ...base, [field]: 'a'.repeat(limit + 1) });
+    expect(over.success, `${field} over limit`).toBe(false);
+  });
+
+  it('bounds the forward reason', () => {
+    const at = forwardWbsReportSchema.safeParse({
+      toRole: 'YAYASAN_KETUA',
+      reason: 'a'.repeat(WBS_MAX.forwardReason),
+    });
+    expect(at.success).toBe(true);
+    const over = forwardWbsReportSchema.safeParse({
+      toRole: 'YAYASAN_KETUA',
+      reason: 'a'.repeat(WBS_MAX.forwardReason + 1),
+    });
+    expect(over.success).toBe(false);
+  });
+
+  it('bounds the handler comment message', () => {
+    const at = addWbsHandlerCommentSchema.safeParse({ message: 'a'.repeat(WBS_MAX.message) });
+    expect(at.success).toBe(true);
+    const over = addWbsHandlerCommentSchema.safeParse({
+      message: 'a'.repeat(WBS_MAX.message + 1),
     });
     expect(over.success).toBe(false);
   });

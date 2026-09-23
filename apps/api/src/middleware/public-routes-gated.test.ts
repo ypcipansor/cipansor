@@ -35,13 +35,18 @@ const DELIBERATELY_UNGATED: Record<string, string> = {
     'Dipanggil peramban di latar belakang tanpa antarmuka, dan refresh token ITU SENDIRI kredensialnya. ' +
     'Tantangan tidak dapat diselesaikan di dalam XHR senyap, jadi memasang gerbang di sini akan memutus ' +
     'setiap perpanjangan sesi. Dijaga authLimiter.',
+  'auth.routes.ts POST /session/clear':
+    'Logout. Satu-satunya keadaan yang memanggilnya adalah peramban yang kredensialnya SUDAH tidak sah — ' +
+    'itu justru kasus yang harus selalu bisa keluar. Memasang Turnstile akan gagal-tertutup tepat pada ' +
+    'pengguna yang perlu dibersihkan, dan endpoint ini tidak membaca apa pun yang sensitif: ia hanya ' +
+    'menghapus cookie sesi (refresh token dicabut bila masih dapat diverifikasi). Tidak menulis data domain.',
   'student.routes.ts POST /id-cards/verify':
     'Endpoint pemindai QR untuk petugas, tanpa halaman web yang memanggilnya — captcha adalah alat yang ' +
     'salah untuk konsumen mesin dan akan mematikannya. Dijaga defaultLimiter.',
   'admissions.routes.ts POST /public/registrants/:registrantId/documents':
     'Unggah dokumen pasca-pendaftaran. Izinnya adalah `registrationToken` bertanda-tangan HMAC (kadaluarsa ' +
     '2 jam) yang hanya dicetak peladen di `/public/registrants` — permukaan yang SUDAH dijaga ' +
-    '`requireTurnstile(\'spmb-daftar\')`. Jadi permintaan ini hanya dapat muncul dari pendaftaran yang sudah ' +
+    "`requireTurnstile('spmb-daftar')`. Jadi permintaan ini hanya dapat muncul dari pendaftaran yang sudah " +
     'lulus Turnstile, dan menyelesaikan tantangan kedua tepat setelah menyerahkan formulir yang sudah tervet ' +
     'adalah permusuhan tanpa tambahan perlindungan. Dijaga registrationToken + documentUploadLimiter.',
   'admissions.routes.ts POST /public/parse-document':

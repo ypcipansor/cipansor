@@ -13,6 +13,7 @@ import {
 import { hostSplitActionFor, isPortalHost } from "@/lib/host-split";
 import {
   ROUTING_COOKIE,
+  SESSION_DEAD_COOKIE,
   resolveRoutingCookieSecret,
   verifyRoutingCookie,
   type RoutingCookiePayload,
@@ -130,7 +131,19 @@ async function getAuthState(request: NextRequest): Promise<{
   } catch {
     routing = null;
   }
-  if (routing) {
+  // A signed, unexpired routing cookie is *usually* proof of a live session —
+  // but not when the client has just been told the session is dead. The API's
+  // refresh endpoint answers 401 and clears the `HttpOnly` cookies, yet the
+  // browser may still present this request with the old routing hint (the
+  // clearing response and this navigation race), and the user is then trapped:
+  // `/login` redirects to a dashboard the dead session cannot load. The client
+  // sets `SESSION_DEAD_COOKIE` (readable, credential-free) precisely so this
+  // one navigation stops trusting the hint. Ignoring it here would leave the
+  // loop in place for the one client that knows the session is gone.
+  const sessionMarkedDead =
+    request.cookies.get(SESSION_DEAD_COOKIE)?.value === "1";
+
+  if (routing && !sessionMarkedDead) {
     return {
       isAuthenticated: true,
       role: routing.role as LegacyRole,
@@ -147,7 +160,7 @@ async function getAuthState(request: NextRequest): Promise<{
     request.cookies.get("access_token")?.value ||
     request.headers.get("authorization")?.replace("Bearer ", "");
 
-  if (token) {
+  if (token && !sessionMarkedDead) {
     return { isAuthenticated: true };
   }
 
@@ -200,11 +213,25 @@ export async function middleware(request: NextRequest) {
   // Get authentication state
   const { isAuthenticated, role, roleCode } = await getAuthState(request);
 
+  // The "session is dead" marker is single-use. It exists so the one navigation
+  // that follows a failed refresh stops trusting the stale routing hint; if it
+  // lingered, a successful sign-in on the next page load would still be treated
+  // as unauthenticated and the user could never leave `/login`. Deleting it here
+  // means the very next request is judged on the cookies the sign-in just set.
+  const sessionMarkedDead =
+    request.cookies.get(SESSION_DEAD_COOKIE)?.value === "1";
+  const consumeDeadMarker = <T extends NextResponse>(response: T): T => {
+    if (sessionMarkedDead) {
+      response.cookies.set(SESSION_DEAD_COOKIE, "", { path: "/", maxAge: 0 });
+    }
+    return response;
+  };
+
   // Redirect unauthenticated users to login
   if (!isPublicRoute && !isAuthenticated) {
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("redirect", pathname);
-    return NextResponse.redirect(loginUrl);
+    return consumeDeadMarker(NextResponse.redirect(loginUrl));
   }
 
   // Redirect authenticated users from login to their role-specific dashboard.
@@ -213,7 +240,9 @@ export async function middleware(request: NextRequest) {
   // login page is the one place they can re-establish a resolvable session.
   if (pathname === "/login" && isAuthenticated && role) {
     const dashboard = getDashboardForRole(role, roleCode);
-    return NextResponse.redirect(new URL(dashboard, request.url));
+    return consumeDeadMarker(
+      NextResponse.redirect(new URL(dashboard, request.url)),
+    );
   }
 
   // Redirect from root to appropriate page
@@ -250,7 +279,9 @@ export async function middleware(request: NextRequest) {
   // we cannot pick a dashboard to land them on, and guessing is how the hole
   // opened the first time. Public routes still pass.
   if (isAuthenticated && !role && !isPublicRoute) {
-    return NextResponse.redirect(new URL("/login", request.url));
+    return consumeDeadMarker(
+      NextResponse.redirect(new URL("/login", request.url)),
+    );
   }
 
   if (isAuthenticated && role && !isPublicRoute) {
@@ -261,7 +292,7 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  return NextResponse.next();
+  return consumeDeadMarker(NextResponse.next());
 }
 
 export const config = {

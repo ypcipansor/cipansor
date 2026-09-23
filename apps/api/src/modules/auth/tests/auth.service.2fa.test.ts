@@ -13,7 +13,7 @@ const { prismaMock, verifyOtp } = vi.hoisted(() => {
   const prismaMock: any = {
     user: { findUnique: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
     boardMemberSuspension: { findFirst: vi.fn() },
-    refreshToken: { create: vi.fn(), delete: vi.fn(), findFirst: vi.fn() },
+    refreshToken: { create: vi.fn(), delete: vi.fn(), deleteMany: vi.fn(), findFirst: vi.fn() },
     academicYear: { findFirst: vi.fn() },
     $queryRaw: vi.fn(),
     $executeRaw: vi.fn(),
@@ -66,6 +66,10 @@ describe('AuthService.verifyTwoFactorLogin — suspension race', () => {
     prismaMock.boardMemberSuspension.findFirst.mockResolvedValue(null);
     prismaMock.$queryRaw.mockResolvedValue([{ id: 'user-1' }]);
     prismaMock.refreshToken.create.mockResolvedValue({});
+    // The rotation consumes the presented token with a conditional delete
+    // (`deleteMany`), whose rowcount identifies the race loser; the mock must
+    // report one row consumed for the happy path.
+    prismaMock.refreshToken.deleteMany.mockResolvedValue({ count: 1 });
     prismaMock.user.update.mockResolvedValue({});
   });
 
@@ -238,7 +242,9 @@ describe('AuthService.refreshToken — rotation under suspension', () => {
     expect(tokens).toMatchObject({ accessToken: 'a', refreshToken: 'r' });
     const sql = (prismaMock.$queryRaw as any).mock.calls[0][0].join(' ');
     expect(sql).toMatch(/FOR UPDATE/i);
-    expect(prismaMock.refreshToken.delete).toHaveBeenCalledWith({ where: { id: 'rt-1' } });
+    expect(prismaMock.refreshToken.deleteMany).toHaveBeenCalledWith({
+      where: { id: 'rt-1', token: 'refresh-token' },
+    });
     expect(prismaMock.refreshToken.create).toHaveBeenCalledTimes(1);
   });
 
@@ -255,12 +261,23 @@ describe('AuthService.refreshToken — rotation under suspension', () => {
     prismaMock.$queryRaw.mockResolvedValueOnce([]);
 
     await expect(service.refreshToken('refresh-token')).rejects.toMatchObject({ statusCode: 401 });
-    expect(prismaMock.refreshToken.delete).not.toHaveBeenCalled();
+    expect(prismaMock.refreshToken.deleteMany).not.toHaveBeenCalled();
     expect(prismaMock.refreshToken.create).not.toHaveBeenCalled();
   });
 
   it('refuses when an ACTIVE suspension exists at rotation time', async () => {
     prismaMock.boardMemberSuspension.findFirst.mockResolvedValueOnce({ id: 'susp-1' });
+
+    await expect(service.refreshToken('refresh-token')).rejects.toMatchObject({ statusCode: 401 });
+    expect(prismaMock.refreshToken.create).not.toHaveBeenCalled();
+  });
+
+  it('answers 401, not 500, when a parallel refresh already consumed the token', async () => {
+    // Finding 7: after the first request deletes the row, the second request
+    // reaches the conditional `deleteMany` and affects zero rows. That is a
+    // replay/spent token, so it must surface as a plain 401 — the old plain
+    // `delete` threw Prisma P2025, which the error handler mapped to 500.
+    prismaMock.refreshToken.deleteMany.mockResolvedValueOnce({ count: 0 });
 
     await expect(service.refreshToken('refresh-token')).rejects.toMatchObject({ statusCode: 401 });
     expect(prismaMock.refreshToken.create).not.toHaveBeenCalled();

@@ -3,6 +3,7 @@ import { NextRequest } from "next/server";
 import { middleware } from "../../middleware";
 import {
   ROUTING_COOKIE,
+  SESSION_DEAD_COOKIE,
   encodeRoutingCookie,
   resolveRoutingCookieSecret,
   signRoutingCookie,
@@ -264,5 +265,42 @@ describe("middleware rejects a forged or stale routing cookie", () => {
 
     expect(await verifyRoutingCookie(value, SECRET)).toEqual(payload);
     expect(await verifyRoutingCookie(value, "wrong-key")).toBeNull();
+  });
+
+  it("stops trusting a valid routing cookie once the client marks the session dead", async () => {
+    // Finding 3: a failed refresh clears the HttpOnly cookies server-side, but
+    // the stale routing cookie can still ride the racing navigation to /login.
+    // The credential-free dead marker must make the middleware treat that
+    // request as unauthenticated so /login is served instead of bouncing the
+    // user back to a dashboard the dead session cannot load.
+    const res = await middleware(
+      request("/login", {
+        [ROUTING_COOKIE]: await routingCookieFor(
+          "UNIT_ADMIN",
+          "YAYASAN_PENGAWAS",
+        ),
+        [SESSION_DEAD_COOKIE]: "1",
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("location")).toBeNull();
+  });
+
+  it("without the marker the same cookie still routes to a dashboard", async () => {
+    // The counterpart, proving the previous test's outcome is caused by the
+    // marker rather than a broken cookie: with the marker absent, /login with a
+    // valid routing cookie redirects to the role dashboard.
+    const res = await middleware(
+      request("/login", {
+        [ROUTING_COOKIE]: await routingCookieFor(
+          "UNIT_ADMIN",
+          "YAYASAN_PENGAWAS",
+        ),
+      }),
+    );
+
+    expect(res.headers.get("location")).toBeTruthy();
+    expect(res.headers.get("location")).not.toContain("/login");
   });
 });
