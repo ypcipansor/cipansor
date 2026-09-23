@@ -2,6 +2,10 @@
 
 Panduan deployment sistem Cipansor untuk production.
 
+> **Azure App Service:** the move off the single VM (sidecar apps, private
+> PostgreSQL, releases from GitHub Actions) is described in
+> [`deploy-azure.md`](./deploy-azure.md). This guide covers the VM until the cutover.
+
 ## Table of Contents
 
 - [Prerequisites](#prerequisites)

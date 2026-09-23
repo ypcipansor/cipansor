@@ -145,6 +145,12 @@ RUN mkdir -p /app/apps/api/logs /app/apps/api/public/uploads /app/apps/api/priva
       /app/apps/api/private /app/apps/api/private/identity \
  && chmod 700 /app/apps/api/private /app/apps/api/private/identity
 
+# The commit this image was built from, reported by GET /health. Declared this
+# late because it changes on every commit and would otherwise invalidate every
+# layer above it.
+ARG GIT_COMMIT_SHA=
+ENV GIT_COMMIT_SHA=${GIT_COMMIT_SHA}
+
 USER expressjs
 WORKDIR /app/apps/api
 EXPOSE 3001
