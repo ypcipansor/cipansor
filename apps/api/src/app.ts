@@ -9,7 +9,12 @@ import { config } from '@/config';
 import { buildCorsOptions } from '@/config/cors';
 import { logger } from '@/lib/logger';
 import { errorHandler, notFoundHandler } from '@/middleware/error';
-import { defaultLimiter, authLimiter } from '@/middleware/rate-limit';
+import {
+  defaultLimiter,
+  authLimiter,
+  rateLimitEnabled,
+  uploadsServeLimiter,
+} from '@/middleware/rate-limit';
 import { normalizePagination } from '@/middleware/normalize-pagination';
 import { swaggerSpec } from '@/config/swagger';
 
@@ -158,15 +163,55 @@ app.use(compression());
 // Stored uploads hold personal data (student photos/documents), so serving
 // them requires a valid access token — via Authorization header or ?token=
 // (see uploadsAuth). Directory listing stays off; static only serves files.
+//
+// `/uploads` carries its OWN limiter ahead of auth (see buildUploadsMiddleware
+// and `uploadsServeLimiter`) and is excluded from the global limiter below, so
+// every `/uploads` request costs exactly one slot of the uploads budget and
+// none of the API budget — a missing file that `express.static` passes on
+// included. Auth still gates it in every environment. In development and test
+// no limiter is mounted at all.
 import path from 'path';
 import { uploadsAuth } from './middleware/upload';
-app.use('/uploads', uploadsAuth, express.static(path.join(process.cwd(), 'public/uploads')));
 
-// Rate limiting - apply to all routes except health check
-// Active in all environments except test and development
-if (config.env !== 'test' && config.env !== 'development') {
-  app.use(defaultLimiter);
+/**
+ * Build the `/uploads` middleware chain for an environment.
+ *
+ * Rate limiting is prepended only where it is in force (`rateLimitEnabled`), so
+ * development and test are not silently throttled by the production limiter.
+ * Authentication (`uploadsAuth`) is unconditional: stored uploads are private
+ * in every environment.
+ */
+export function buildUploadsMiddleware(env: string) {
+  return [
+    ...(rateLimitEnabled(env) ? [uploadsServeLimiter] : []),
+    uploadsAuth,
+    express.static(path.join(process.cwd(), 'public/uploads')),
+  ];
 }
+
+app.use('/uploads', ...buildUploadsMiddleware(config.env));
+
+/**
+ * The global default limiter.
+ *
+ * `buildUploadsMiddleware` already limits `/uploads` with its own budget; the
+ * global pass must not touch that prefix, or a missing file that falls through
+ * `express.static` would also spend an API slot. Every non-upload route still
+ * gets the limiter once. Inactive entirely in development and test.
+ */
+export function buildGlobalLimiter(env: string): express.RequestHandler {
+  if (!rateLimitEnabled(env)) {
+    return (_req, _res, next) => next();
+  }
+  return (req, res, next) => {
+    if (req.path === '/uploads' || req.path.startsWith('/uploads/')) {
+      return next();
+    }
+    return defaultLimiter(req, res, next);
+  };
+}
+
+app.use(buildGlobalLimiter(config.env));
 
 // Logging
 if (config.env !== 'test') {
