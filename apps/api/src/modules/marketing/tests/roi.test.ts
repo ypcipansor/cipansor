@@ -28,8 +28,10 @@ describe('Marketing ROI Service', () => {
 
     vi.mocked(prisma.marketingCampaign.findMany).mockResolvedValue(mockCampaigns as any);
     vi.mocked(prisma.registrant.groupBy).mockResolvedValue([{ campaignId: 'c1', _count: { _all: 20 } }] as any);
+    // Satu santri kini boleh punya beberapa pendaftaran (progresi internal
+    // antarunit), jadi relasinya jamak.
     vi.mocked(prisma.invoice.findMany).mockResolvedValue([
-      { paidAmount: 5000, student: { registrant: { campaignId: 'c1' } } }
+      { paidAmount: 5000, student: { registrants: [{ campaignId: 'c1' }] } }
     ] as any);
 
     const result = await calculateCampaignROI();
@@ -37,6 +39,27 @@ describe('Marketing ROI Service', () => {
     expect(result).toHaveLength(1);
     expect(result[0].metrics.roi).toBe(400);
     expect(result[0].metrics.conversionRate).toBe(20);
+  });
+
+  it('mengakui pendapatan pada kampanye yang PERTAMA membawa santri itu masuk', async () => {
+    vi.mocked(prisma.marketingCampaign.findMany).mockResolvedValue([
+      { id: 'c1', name: 'Facebook Ads', code: 'FB01', budget: 1000, _count: { registrants: 100 } },
+    ] as any);
+    vi.mocked(prisma.registrant.groupBy).mockResolvedValue([
+      { campaignId: 'c1', _count: { _all: 20 } },
+    ] as any);
+    vi.mocked(prisma.invoice.findMany).mockResolvedValue([] as any);
+
+    await calculateCampaignROI();
+
+    // Tanpa `take: 1` yang berurutan, santri dengan dua pendaftaran membuat
+    // pendapatan yang sama dihitung di dua kampanye.
+    const pilih = vi.mocked(prisma.invoice.findMany).mock.calls[0][0] as any;
+    expect(pilih.select.student.select.registrants).toMatchObject({
+      take: 1,
+      orderBy: { createdAt: 'asc' },
+    });
+    expect(pilih.where.student.registrants.some).toBeDefined();
   });
 
   it('should return empty array when no campaigns exist', async () => {

@@ -1,6 +1,6 @@
 # Roadmap — outstanding work, most urgent first
 
-Ordered backlog as of **2026-09-04**. Companion to
+Ordered backlog as of **2026-09-20**. Companion to
 [`KNOWN_ISSUES.md`](./KNOWN_ISSUES.md) (which records _defects_ in detail); this
 file records _what to do next and in what order_.
 
@@ -11,13 +11,28 @@ a visitor sees, then correctness work, then deliverables, then tidiness.
 
 ## Current deployment state
 
-- As of **2026-09-04** production runs `main @ ae62be89`, rolled in two steps
-  that day. First `deploy-images.sh` rebuilt **both** containers from
-  `main @ 84b44c16`, carrying the Turnstile fixes (§15). Then `deploy-web.sh`
-  rebuilt the **web image only** from `ae62be89` for the BIMI logo asset
-  (§13.1) — the API was untouched because
-  `git diff --name-only 84b44c16..HEAD` matched nothing under `apps/api/` or
-  `packages/shared/`. Production and `main` are level.
+- As of **2026-09-21** production runs `main @ d1fdc9b0`. The latest roll
+  (00.36 UTC) shipped #504 (System Secrets removed) and #505 (Perguruan Tinggi
+  and Litbang decommissioned) together: backup first — and that backup was
+  *restored into a throwaway Postgres to prove it works*, because #505 drops
+  tables and deletes rows — then `prisma migrate deploy`
+  (`20260915120000_decommission_higher_ed_litbang`, then
+  `20260920160000_drop_system_secrets`), then `deploy-images.sh`, then
+  `verify-504-505.js` inside the API container: 11/11. The STAI Cipansor unit
+  and the nine `pt.*` accounts are gone by owner decision (units 5 → 4,
+  users 107 → 98).
+- Before that, on **2026-09-20**, the same host rolled `46d3755c` in two steps
+  with `deploy-images.sh`: first #513 (19.04 UTC), then #514 + #515 (22.17 UTC).
+  Each roll applied its migrations with `prisma migrate deploy` **before**
+  swapping the images, and each was verified inside the running container
+  (`verify-3b1.js`, `verify-3b2.js`, `verify-d.js`) rather than from the
+  outside.
+- **The two migrations #504/#505 shipped are order-sensitive on purpose.**
+  `drop_system_secrets` is timestamped *after* `decommission_higher_ed_litbang`
+  so that `system_secrets` still exists when the decommission's FK-catalog rule
+  runs — which is why its documented blast radius is 233 tables, not 232.
+  Renaming that folder earlier would silently invalidate the published numbers;
+  `decommissioned-modules.guard.test.ts` now pins the ordering.
 - **A merge is not a deploy, and this section is how that gets caught.** Until
   the 2026-09-04 roll, production was still serving a build that predated #462
   — the containers were created 2026-09-03 23:49 UTC and both Turnstile PRs
@@ -31,6 +46,26 @@ a visitor sees, then correctness work, then deliverables, then tidiness.
   for a stale image. The markers that actually discriminate are the copy #462
   removed (`Anda tetap dapat melanjutkan`, must be **0** occurrences) and the
   string #464 added (`hostname di luar daftar`, must be **≥1**).
+- `NEXT_PUBLIC_SHOW_DEMO_LOGIN` is **false** and built that way — the demo
+  credential panel is gone from `/login`. `DEMO_MODE` is still `true` in the api
+  container, so the 2FA wall is still bypassed (§1).
+- The two containers can therefore hold *different* commits. Before assuming
+  production runs what `main` says, check the running image itself — e.g.
+  `docker exec cipansor-api grep -o "<snippet>" /app/apps/api/dist/…/<file>.js`.
+  This is not hypothetical: reseeding for §7 while the API image predated the
+  matching controller fix would have left the site *differently* broken.
+- **Production DB has a migration history since #480 (2026-09-05):
+  `_prisma_migrations` exists and every roll runs `prisma migrate deploy`.**
+  `db push` is no longer used against production; the note that said otherwise
+  was stale for two weeks. `prisma migrate diff` remains useful as a pre-flight,
+  but it is blind to triggers, functions and views — see
+  [`KNOWN_ISSUES.md`](./KNOWN_ISSUES.md) and the migration-history memory.
+- Backups: `pg_dump | gzip` into `~/cipansor-deploy/backups/` before every
+  migration. A shrinking dump is not automatically data loss — `dashboard_history`
+  is pruned to the last 24 hours by the `cleanupOldSnapshots` job, which
+  accounted for a 45% size drop on 2026-09-20; compare per-table row counts
+  between dumps before raising an alarm.
+
 - The 2026-09-02 roll before that came from `main @ b81c8ae4` (through #413) and
   carried the Gmail API transport, the password-reset flow and the honest
   mail-status card (§13), verified live: a real message left through `gmail_api`
@@ -43,14 +78,6 @@ a visitor sees, then correctness work, then deliverables, then tidiness.
 - Prior state, for the record: the 2026-07-31 roll from `main @ 41ee99e2`
   (through #381/#382) carried the CORS fix (§2), the public i18n work (§5) and
   the chatbot markdown fix.
-- The two containers can therefore hold _different_ commits. Before assuming
-  production runs what `main` says, check the running image itself — e.g.
-  `docker exec cipansor-api grep -o "<snippet>" /app/apps/api/dist/…/<file>.js`.
-  This is not hypothetical: reseeding for §7 while the API image predated the
-  matching controller fix would have left the site _differently_ broken.
-- Production DB is managed by `db push`, **not** Prisma Migrate — there is no
-  `_prisma_migrations` table. Verify every deploy with a non-destructive
-  `prisma migrate diff` before building (see §3).
 
 ---
 
@@ -319,9 +346,9 @@ unstarted. Decisions already taken with the user still hold:
 **Progress 2026-09-17** (branch `docs/readme-overhaul-visual-qa`):
 
 - **Screenshots regenerated and verified.** A full per-role sweep
-  (`apps/web/scripts/screenshot-roles.ts`) visited **1358 pages across 75 role
+  (`apps/web/scripts/screenshot-roles.ts`) visited **1.200 pages across 66 role
   accounts** with **0 failures** (blank/bounce/error/overflow). A per-path sweep
-  (`screenshot-all.ts`) covered **758 unique routes** (784 captures, counting the
+  (`screenshot-all.ts`) covered **755 unique routes** (781 captures, counting the
   public-host reads) as `SUPER_ADMIN`, also **0 failures**. A pixel-level
   blank/white audit of both sweeps (`scripts/audit-screenshots.py`) came back
   clean. `docs/images/*` was rebuilt from the fresh shots by
@@ -863,6 +890,28 @@ ajaran menghasilkan dua baris pada tahun yang sama. Query "pada tanggal X" sudah
 benar untuk itu; query "sepanjang tahun ajaran Y" akan menghitungnya di dua unit.
 Untuk laporan tahunan per unit, putuskan mana yang dipakai — keadaan pada tanggal
 potong (mis. akhir semester) atau keduanya — dan tulis keputusannya di sini.
+
+## ❓ 17. Menunggu keputusan yayasan (dibuka 2026-09-20)
+
+Bukan pekerjaan yang tertunda karena sulit — tiga hal yang **tidak boleh**
+diputuskan sendiri karena mengubah wewenang atau membuka data pribadi. Bukti
+dan kalimat pertanyaannya ada di
+[`KNOWN_ISSUES.md`](./KNOWN_ISSUES.md) → "Menunggu keputusan pengguna".
+
+1. **Tata Usaha dan tombol Luluskan.** API mengizinkan TU (#500); halaman detail
+   santri tidak (`allowedRoles` lama). Melonggarkannya membuka seluruh data
+   pribadi santri untuk TU.
+2. **Kolom `students.nis`.** #515 membuang indeks uniknya dan mempertahankan
+   kolomnya demi jendela rollback. Membuangnya = rilis tersendiri setelah satu
+   rilis penuh tanpa penulis lama.
+3. **Siapa yang boleh memutuskan penerimaan SPMB.** `canManageDecisions`
+   membandingkan peran utama dengan `"UNIT_ADMIN"` yang tak pernah cocok, jadi
+   admin unit melihat tombol keputusan dalam keadaan nonaktif.
+
+Setelah dijawab: kerjakan, lalu hapus butirnya dari sini dan dari
+`KNOWN_ISSUES.md`, dan catat keputusannya di memori keputusan yang sesuai.
+
+---
 
 ## Operating notes that keep costing time when forgotten
 

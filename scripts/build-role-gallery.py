@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate a per-role gallery for the README from the role visual-QA sweep.
 
-Each of the 75 demo accounts gets a section showing the pages its menu actually
+Each of the 66 demo accounts gets a section showing the pages its menu actually
 opens, as captured by `apps/web/scripts/screenshot-roles.ts`. Output:
 `docs/_roles-gallery.md`.
 
@@ -51,7 +51,7 @@ def main() -> int:
     lines = [
         "## Galeri Per Peran",
         "",
-        "Setiap dari **75 akun demo** (`RoleCode`) beserta halaman yang benar-benar "
+        "Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar "
         "dibuka oleh menunya, ditangkap dengan sesi login peran tersebut. Halaman "
         "yang sengaja hanya menampilkan pesan RBAC tidak dihitung sebagai kegagalan.",
         "",

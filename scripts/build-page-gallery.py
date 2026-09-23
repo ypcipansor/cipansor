@@ -99,7 +99,6 @@ GROUPS: list[tuple[str, str]] = [
     ("settings", "Pengaturan"),
     ("reception", "Resepsionis"),
     ("project", "Proyek"),
-    ("litbang", "Litbang"),
     ("wilayah", "Wilayah"),
     ("daily-report", "Laporan Harian"),
     ("unit", "Situs Unit"),

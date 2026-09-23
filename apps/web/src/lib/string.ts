@@ -97,14 +97,6 @@ export function slugify(str: string): string {
 }
 
 /**
- * Remove HTML tags
- */
-export function stripHtml(html: string): string {
-  if (!html) return "";
-  return html.replace(/<[^>]*>/g, "");
-}
-
-/**
  * Escape HTML special characters
  */
 export function escapeHtml(str: string): string {

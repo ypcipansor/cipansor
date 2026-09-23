@@ -43,6 +43,10 @@ import { StudentIbadahTab } from "@/components/students/student-ibadah-tab";
 import { StudentKitabTab } from "@/components/students/student-kitab-tab";
 import { StudentTakhosusTab } from "@/components/students/student-takhosus-tab";
 import { studentStatusOption } from "@/lib/constants";
+import { GraduateStudentDialog } from "@/components/students/graduate-student-dialog";
+import { useAuthStore } from "@/stores/auth";
+import { alumniAccessOf } from "@/lib/alumni-access";
+import { STUDENT_STATUS } from "@cipansor/shared";
 
 const genderLabels: Record<string, string> = {
   MALE: "Laki-laki",
@@ -65,6 +69,9 @@ export default function StudentDetailPage() {
 
   // Only use useStudent here
   const { data: student, isLoading } = useStudent(studentId);
+  const { user } = useAuthStore();
+  // Meluluskan = menulis data alumni: peran yang sama dengan API (admin, TU).
+  const { canManage: canGraduate } = alumniAccessOf(user);
 
   if (isLoading) {
     return (
@@ -106,6 +113,14 @@ export default function StudentDetailPage() {
               Back
             </Link>
           </Button>
+          {canGraduate && student.status === STUDENT_STATUS.ACTIVE && (
+            <GraduateStudentDialog
+              studentId={student.id}
+              studentName={student.name}
+              unitName={student.unit?.name}
+              className={student.currentClass?.name}
+            />
+          )}
           <Button asChild>
             <Link href={`/students/${student.id}/edit`}>
               <Pencil className="mr-2 h-4 w-4" />

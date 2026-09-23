@@ -3,7 +3,7 @@
 Setiap halaman App Router (**758** rute) yang berhasil dirender pada sweep visual-QA terakhir. Semua tangkapan layar diverifikasi tidak kosong, tidak _error_, dan tidak _overflow_ horizontal. Klik modul untuk membuka galerinya.
 
 <details>
-<summary><strong>Dashboard</strong> — 5 halaman</summary>
+<summary><strong>Dashboard</strong> — 4 halaman</summary>
 
 | Halaman                                                                                                                     | Rute                                 |
 | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
@@ -11,7 +11,6 @@ Setiap halaman App Router (**758** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/dashboard.webp" width="420" alt="/dashboard">                                                   | `/dashboard`                         |
 | <img src="docs/images/pages/dashboard__comparison.webp" width="420" alt="/dashboard/comparison">                            | `/dashboard/comparison`              |
 | <img src="docs/images/pages/dashboard__executive.webp" width="420" alt="/dashboard/executive">                              | `/dashboard/executive`               |
-| <img src="docs/images/pages/dashboard__settings__system-secrets.webp" width="420" alt="/dashboard/settings/system-secrets"> | `/dashboard/settings/system-secrets` |
 
 </details>
 
@@ -1245,16 +1244,6 @@ Setiap halaman App Router (**758** rute) yang berhasil dirender pada sweep visua
 | ------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------- |
 | <img src="docs/images/pages/project.webp" width="420" alt="/project">                                                                            | `/project`                                      |
 | <img src="docs/images/pages/project__b632b81d-9137-43c5-abd0-64210e283334.webp" width="420" alt="/project/b632b81d-9137-43c5-abd0-64210e283334"> | `/project/b632b81d-9137-43c5-abd0-64210e283334` |
-
-</details>
-
-<details>
-<summary><strong>Litbang</strong> — 2 halaman</summary>
-
-| Halaman                                                                                                                                          | Rute                                            |
-| ------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------- |
-| <img src="docs/images/pages/litbang.webp" width="420" alt="/litbang">                                                                            | `/litbang`                                      |
-| <img src="docs/images/pages/litbang__3017d5d4-aa9a-4cac-857f-544a07a13e65.webp" width="420" alt="/litbang/3017d5d4-aa9a-4cac-857f-544a07a13e65"> | `/litbang/3017d5d4-aa9a-4cac-857f-544a07a13e65` |
 
 </details>
 

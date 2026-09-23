@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api, { ApiResponse, PaginatedResponse } from "@/lib/api";
 
@@ -381,11 +382,190 @@ export function generateCertificateNumber(
   type: CertificateType,
   unitCode: string = "CPN",
 ): string {
-  const year = new Date().getFullYear();
-  const month = String(new Date().getMonth() + 1).padStart(2, "0");
-  const random = Math.floor(Math.random() * 10000)
-    .toString()
-    .padStart(4, "0");
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+
+  // Use rejection sampling to avoid modulo bias when generating 0..9999
+  const maxUnbiasedValue = 60000; // largest multiple of 10000 less than 65536
+  let value: number;
+  do {
+    value = globalThis.crypto.getRandomValues(new Uint16Array(1))[0];
+  } while (value >= maxUnbiasedValue);
+
+  const random = (value % 10000).toString().padStart(4, "0");
   const typeCode = type.substring(0, 3).toUpperCase();
   return `${unitCode}/${typeCode}/${year}${month}/${random}`;
+}
+
+/** The `YYYYMM` bucket `generateCertificateNumber` embeds in a number. */
+function currentMonthBucket(now: Date = new Date()): string {
+  return `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/**
+ * Milliseconds from `now` until the next calendar month begins.
+ *
+ * Computed by constructing the 1st of the following month rather than adding a
+ * fixed 30 days, so months of different lengths (and DST shifts) still land on
+ * the real boundary.
+ */
+function msUntilNextMonth(now: Date = new Date()): number {
+  const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1, 0, 0, 0, 0);
+  return nextMonth.getTime() - now.getTime();
+}
+
+// `setTimeout` treats a delay above the signed 32-bit maximum as an overflow and
+// fires after ~1ms instead, so a timer aimed at the next month from the 1st of
+// a 31-day month (2.68e9 ms) would fire at once, find the bucket unchanged, and
+// never re-arm — the rollover would be silently lost. Clamping keeps the timer
+// honest: it fires a little early, then re-arms for the remainder.
+const MAX_TIMEOUT_MS = 2 ** 31 - 1;
+
+/**
+ * Shown until the client has mounted, in place of a certificate number.
+ *
+ * The number is random and must not be drawn during render: the page is a
+ * Client Component but Next still renders it on the server and hydrates it in
+ * the browser, and two independent `generateCertificateNumber` calls produce
+ * two different numbers — a hydration mismatch. This placeholder is itself the
+ * initial state on both sides, so the first client render matches the server's
+ * byte for byte, and the real number is minted in an effect after mount.
+ *
+ * It cannot be mistaken for a number the student received: it is not
+ * `unit/type/YYYYMM/NNNN`, and the page suppresses printing until the number
+ * is available.
+ */
+export const PENDING_CERTIFICATE_NUMBER = "Memuat nomor...";
+
+interface CertificateNumber {
+  /** `null` until the post-mount effect mints a number. */
+  value: string | null;
+  /** The localised `YYYYMM` segment of `value`, or `null` while pending. */
+  monthBucket: string | null;
+}
+
+/**
+ * A certificate number that is stable for a given identity and calendar month.
+ *
+ * `generateCertificateNumber` is random, so calling it during render gave a
+ * different value on the server and on the client (`generateCertificateNumber`
+ * is not pure), and a different one again on every re-render — React reports a
+ * hydration mismatch and an unrelated state update redrew the printed
+ * certificate under a number the student never received.
+ *
+ * The initial state is therefore `null` on both server and client, so the two
+ * renders agree; the number is minted from an effect once mounted, and then
+ * tied to `type`, `unitCode`, `identityKey` and the current month, changing
+ * only when one of those genuinely changes.
+ *
+ * `identityKey` is the caller's stable identifier for whatever the number
+ * belongs to (the page passes the student id). `type`/`unitCode` alone do not
+ * identify a *document*: two students receiving the same certificate type share
+ * both, so without the key, selecting a different student would reuse the
+ * number minted for the previous one. Pass the student id, never the display
+ * name — a name is neither stable nor unique.
+ *
+ * `value` reports the minted number only while it belongs to the identity
+ * passed in *this* render. An identity change is not visible to render until
+ * the re-render it triggers, and the mint effect that draws the new number runs
+ * after that render commits — so for one render the old number would otherwise
+ * still be truthy. During that window `value` is `null` (pending), which is
+ * exactly what the page gates printing on, so a new student/template can never
+ * be printed under the previous identity's number.
+ *
+ * The month is part of the identity because the number embeds a `YYYYMM`
+ * segment: a page left open across midnight on the last day of a month would
+ * otherwise keep issuing a number stamped with the old month. One self-arming
+ * timeout fires at the next month boundary to advance the bucket; it is cleared
+ * on unmount and re-armed when the identity changes, so there is never more
+ * than one pending timer and none leaks. The timer is scheduled from an effect,
+ * so no browser API is touched during render.
+ *
+ * NOTHING RECORDS THIS NUMBER. It is drawn in the browser and printed, and no
+ * table, endpoint or log keeps it, so a printed certificate cannot be looked up
+ * or verified by it and two certificates can share one (1 in 10,000 per type
+ * per month). Treat it as a display label until issuance is recorded
+ * server-side.
+ */
+export function useCertificateNumber(
+  type: CertificateType,
+  unitCode: string = "CPN",
+  identityKey: string = "",
+): CertificateNumber {
+  // `value` is paired with the identity it was minted for, so render can tell
+  // whether it belongs to the `type`/`unitCode`/`identityKey` currently in
+  // flight. Both are state — not a ref — because reading a ref during render is
+  // disallowed.
+  const [minted, setMinted] = useState<{
+    value: string | null;
+    identity: string | null;
+  }>({ value: null, identity: null });
+  // The bucket the current value was minted in, so a rollover is detected by
+  // comparison rather than by reading a second piece of state. Read only from
+  // effects, so a ref is safe here.
+  const monthBucketRef = useRef(currentMonthBucket());
+  const identity = `${type}\u0000${unitCode}\u0000${identityKey}`;
+
+  // Mint the initial number after mount. Reading the clock and the random
+  // source here (not during render) is what removes the divergence.
+  //
+  // StrictMode runs this effect twice on mount (setup → cleanup → setup).
+  // Re-minting on the second pass is intentional: the first number must be
+  // discarded, because the first cleanup also tore down its rollover timer.
+  useEffect(() => {
+    monthBucketRef.current = currentMonthBucket();
+    setMinted({ value: generateCertificateNumber(type, unitCode), identity });
+  }, [type, unitCode, identity]);
+
+  useEffect(() => {
+    // A chain that has already fired can still be queued when the identity
+    // changes; without this flag its callback would re-arm *after* cleanup and
+    // leave a second, orphaned timer running alongside the new chain.
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const arm = () => {
+      timer = setTimeout(
+        () => {
+          if (cancelled) return;
+          const next = currentMonthBucket();
+          if (monthBucketRef.current !== next) {
+            monthBucketRef.current = next;
+            // Re-mint so the displayed number carries the new `YYYYMM` segment;
+            // this runs only at a real boundary, not on unrelated re-renders.
+            setMinted({
+              value: generateCertificateNumber(type, unitCode),
+              identity,
+            });
+          }
+          // Same bucket after an early (clamped) wake-up: keep the value, but
+          // re-arm so the real boundary is still reached.
+          arm();
+        },
+        Math.min(msUntilNextMonth(), MAX_TIMEOUT_MS),
+      );
+    };
+    arm();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    // `type`/`unitCode`/`identity` re-arm the chain on an identity change (the
+    // identity state is re-aligned by the mint effect above); the bucket is not
+    // a dependency because the chain re-arms itself.
+  }, [type, unitCode, identity]);
+
+  return useMemo(() => {
+    // `value` is only offered once it was minted for the identity in flight.
+    // On the render after an identity change the stored identity still names
+    // the old pair, so this reports `null` (pending) instead of the stale
+    // number; the mint effect then stamps the new identity. Any value minted
+    // for a different identity is hidden, never printed.
+    const current = minted.identity === identity ? minted.value : null;
+    return {
+      value: current,
+      // Derived from the value itself, so the two can never disagree.
+      monthBucket: current === null ? null : current.split("/")[2],
+    };
+  }, [minted, identity]);
 }

@@ -9,7 +9,12 @@ import { config } from '@/config';
 import { buildCorsOptions } from '@/config/cors';
 import { logger } from '@/lib/logger';
 import { errorHandler, notFoundHandler } from '@/middleware/error';
-import { defaultLimiter, authLimiter } from '@/middleware/rate-limit';
+import {
+  defaultLimiter,
+  authLimiter,
+  rateLimitEnabled,
+  uploadsServeLimiter,
+} from '@/middleware/rate-limit';
 import { normalizePagination } from '@/middleware/normalize-pagination';
 import { swaggerSpec } from '@/config/swagger';
 
@@ -69,7 +74,6 @@ import raporPesantrenRoutes from '@/modules/rapor-pesantren/rapor-pesantren.rout
 import { procurementRoutes } from '@/modules/procurement/procurement.routes';
 import { supplierRoutes } from '@/modules/suppliers/suppliers.routes';
 import { uploadRoutes } from '@/modules/upload/upload.routes';
-import secretsRoutes from '@/modules/system-secrets/secrets.routes';
 
 // Phase 12 routes
 import extracurricularRoutes from '@/modules/extracurricular/extracurricular.routes';
@@ -93,7 +97,6 @@ import { studentOrgRoutes } from '@/modules/student-org/student-org.routes';
 import { researchRoutes } from '@/modules/research/research.routes';
 import nonFormalRoutes from '@/modules/non-formal';
 import socialServiceRoutes from '@/modules/social-service';
-import higherEducationRoutes from '@/modules/higher-education/higher-education.routes';
 import performanceAgreementRoutes from '@/modules/performance-management/pk.routes';
 
 // Enhancement module routes
@@ -119,7 +122,6 @@ import lingkunganRoutes from '@/modules/lingkungan/lingkungan.routes';
 import talentaRoutes from '@/modules/talenta/talenta.routes';
 import organisasiRoutes from '@/modules/organisasi/organisasi.routes';
 import tataLaksanaRoutes from '@/modules/tatalaksana/tatalaksana.routes';
-import litbangRoutes from '@/modules/litbang/litbang.routes';
 import businessUnitRoutes from '@/modules/business-unit/business-unit.routes';
 
 // Create Express app
@@ -161,15 +163,55 @@ app.use(compression());
 // Stored uploads hold personal data (student photos/documents), so serving
 // them requires a valid access token — via Authorization header or ?token=
 // (see uploadsAuth). Directory listing stays off; static only serves files.
+//
+// `/uploads` carries its OWN limiter ahead of auth (see buildUploadsMiddleware
+// and `uploadsServeLimiter`) and is excluded from the global limiter below, so
+// every `/uploads` request costs exactly one slot of the uploads budget and
+// none of the API budget — a missing file that `express.static` passes on
+// included. Auth still gates it in every environment. In development and test
+// no limiter is mounted at all.
 import path from 'path';
 import { uploadsAuth } from './middleware/upload';
-app.use('/uploads', uploadsAuth, express.static(path.join(process.cwd(), 'public/uploads')));
 
-// Rate limiting - apply to all routes except health check
-// Active in all environments except test and development
-if (config.env !== 'test' && config.env !== 'development') {
-  app.use(defaultLimiter);
+/**
+ * Build the `/uploads` middleware chain for an environment.
+ *
+ * Rate limiting is prepended only where it is in force (`rateLimitEnabled`), so
+ * development and test are not silently throttled by the production limiter.
+ * Authentication (`uploadsAuth`) is unconditional: stored uploads are private
+ * in every environment.
+ */
+export function buildUploadsMiddleware(env: string) {
+  return [
+    ...(rateLimitEnabled(env) ? [uploadsServeLimiter] : []),
+    uploadsAuth,
+    express.static(path.join(process.cwd(), 'public/uploads')),
+  ];
 }
+
+app.use('/uploads', ...buildUploadsMiddleware(config.env));
+
+/**
+ * The global default limiter.
+ *
+ * `buildUploadsMiddleware` already limits `/uploads` with its own budget; the
+ * global pass must not touch that prefix, or a missing file that falls through
+ * `express.static` would also spend an API slot. Every non-upload route still
+ * gets the limiter once. Inactive entirely in development and test.
+ */
+export function buildGlobalLimiter(env: string): express.RequestHandler {
+  if (!rateLimitEnabled(env)) {
+    return (_req, _res, next) => next();
+  }
+  return (req, res, next) => {
+    if (req.path === '/uploads' || req.path.startsWith('/uploads/')) {
+      return next();
+    }
+    return defaultLimiter(req, res, next);
+  };
+}
+
+app.use(buildGlobalLimiter(config.env));
 
 // Logging
 if (config.env !== 'test') {
@@ -286,7 +328,6 @@ apiRouter.use('/rapor-pesantren', raporPesantrenRoutes);
 apiRouter.use('/procurement', procurementRoutes);
 apiRouter.use('/suppliers', supplierRoutes);
 apiRouter.use('/upload', uploadRoutes);
-apiRouter.use('/secrets', secretsRoutes);
 
 // Phase 12 routes
 apiRouter.use('/extracurricular', extracurricularRoutes);
@@ -310,7 +351,6 @@ apiRouter.use('/student-org', studentOrgRoutes);
 apiRouter.use('/research', researchRoutes);
 apiRouter.use('/non-formal', nonFormalRoutes);
 apiRouter.use('/social-service', socialServiceRoutes);
-apiRouter.use('/higher-education', higherEducationRoutes);
 apiRouter.use('/performance-agreements', performanceAgreementRoutes);
 
 // Enhancement modules
@@ -335,7 +375,6 @@ apiRouter.use('/lingkungan', lingkunganRoutes);
 apiRouter.use('/talenta', talentaRoutes);
 apiRouter.use('/organisasi', organisasiRoutes);
 apiRouter.use('/tata-laksana', tataLaksanaRoutes);
-apiRouter.use('/litbang', litbangRoutes);
 apiRouter.use('/business-units', businessUnitRoutes);
 
 // API info
@@ -401,7 +440,6 @@ apiRouter.get('/', (_req, res) => {
       ibadah: '/api/ibadah',
       raporPesantren: '/api/rapor-pesantren',
       reception: '/api/reception',
-      secrets: '/api/secrets',
       // New modules
       perencanaan: '/api/perencanaan',
       pengawasan: '/api/pengawasan',
@@ -410,7 +448,6 @@ apiRouter.get('/', (_req, res) => {
       talenta: '/api/talenta',
       organisasi: '/api/organisasi',
       tataLaksana: '/api/tata-laksana',
-      litbang: '/api/litbang',
       businessUnits: '/api/business-units',
     },
   });

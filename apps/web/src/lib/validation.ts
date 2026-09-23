@@ -400,26 +400,3 @@ export const maxFileSize = (
     message || `Ukuran file maksimal ${(maxBytes / 1024 / 1024).toFixed(1)}MB`,
 });
 
-/**
- * File type validation
- */
-export const fileType = (
-  allowedTypes: string[],
-  message?: string,
-): ValidationRule => ({
-  validate: (value) => {
-    if (!value) return true;
-    if (value instanceof File) {
-      return allowedTypes.some((type) => {
-        if (type.startsWith(".")) {
-          return value.name.toLowerCase().endsWith(type.toLowerCase());
-        }
-        return (
-          value.type === type || value.type.startsWith(type.replace("*", ""))
-        );
-      });
-    }
-    return true;
-  },
-  message: message || `Format file yang diizinkan: ${allowedTypes.join(", ")}`,
-});

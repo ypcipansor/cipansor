@@ -59,10 +59,10 @@ Atau pakai PostgreSQL/Redis yang sudah terpasang di mesin Anda, lalu sesuaikan
 ```bash
 pnpm --filter api db:generate   # generate Prisma client (wajib setelah edit schema)
 pnpm --filter api db:push       # terapkan schema ke DB dev
-pnpm --filter api db:seed       # admin + data referensi + 75 akun demo
+pnpm --filter api db:seed       # admin + data referensi + 66 akun demo
 ```
 
-`db:seed` juga membuat **satu akun per `RoleCode`** (75 akun) dengan kata sandi
+`db:seed` juga membuat **satu akun per `RoleCode`** (66 akun) dengan kata sandi
 sama, yang muncul sebagai kartu di halaman `/login`.
 
 ---
@@ -176,7 +176,7 @@ cd apps/web
 ../api/node_modules/.bin/tsx scripts/resolve-dynamic-routes.ts   # sekali, mengisi URL detail
 ../api/node_modules/.bin/tsx scripts/screenshot-all.ts .qa-all
 
-# Setiap item menu untuk setiap peran (75 akun demo)
+# Setiap item menu untuk setiap peran (66 akun demo)
 ../api/node_modules/.bin/tsx scripts/screenshot-roles.ts .qa-screens
 ```
 

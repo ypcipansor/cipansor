@@ -60,23 +60,23 @@ Angka-angka berikut diambil langsung dari basis kode (per September 2026):
 
 | Metrik                               | Jumlah    |
 | ------------------------------------ | --------- |
-| Modul API (`apps/api/src/modules`)   | **97**    |
-| Model Prisma                         | **298**   |
-| Enum Prisma                          | **154**   |
-| Halaman web (`page.tsx`)             | **449**   |
-| Peran (`RoleCode`)                   | **75**    |
-| Akun demo (satu per peran)           | **75**    |
+| Modul API (`apps/api/src/modules`)   | **94**    |
+| Model Prisma                         | **287**   |
+| Enum Prisma                          | **152**   |
+| Halaman web (`page.tsx`)             | **446**   |
+| Peran (`RoleCode`)                   | **66**    |
+| Akun demo (satu per peran)           | **66**    |
 | Spesifikasi Playwright e2e           | **84**    |
-| Berkas test API (vitest)             | **278**   |
-| Berkas test web (vitest)             | **25**    |
-| Halaman terverifikasi visual (sweep) | **758**   |
-| Halaman per peran terverifikasi      | **1.358** |
+| Berkas test API (vitest)             | **282**   |
+| Berkas test web (vitest)             | **28**    |
+| Halaman terverifikasi visual (sweep) | **755**   |
+| Halaman per peran terverifikasi      | **1.200** |
 
 > Angka dapat bergeser seiring perubahan; skrip verifikasi
 > (`pnpm --filter web test` dan gate di bawah) adalah sumber kebenaran, bukan
-> tabel ini. Dua baris terakhir berasal dari sweep visual-QA: **758 rute** unik
+> tabel ini. Dua baris terakhir berasal dari sweep visual-QA: **755 rute** unik
 > dirender sebagai SUPER_ADMIN (784 tangkapan, termasuk pembacaan host publik)
-> dan **1.358 halaman** dibuka lewat menu tiap peran, seluruhnya tanpa halaman
+> dan **1.200 halaman** dibuka lewat menu tiap peran, seluruhnya tanpa halaman
 > kosong/error (lihat [Visual QA](#visual-qa)).
 
 ---
@@ -107,7 +107,7 @@ Rincian lengkap ada di [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Peran Pengguna
 
-Sistem mengenali **75 `RoleCode`** yang dikelompokkan menjadi delapan realm.
+Sistem mengenali **66 `RoleCode`** yang dikelompokkan menjadi delapan realm.
 Setiap peran memiliki akun demo dengan kata sandi yang sama, dan **setiap akun
 dijamin bisa login** karena daftar akun adalah satu sumber kebenaran
 (`packages/shared/src/types/demo-accounts.ts`) yang dipakai bersama oleh seed API
@@ -121,7 +121,6 @@ dan halaman login.
 | **SD IT**               | `SDIT_ADMIN`, `SDIT_KEPALA_SEKOLAH`, `SDIT_WAKASEK`, `SDIT_GURU`, `SDIT_WALI_KELAS`, `SDIT_TATA_USAHA`, `SDIT_BENDAHARA`, `SDIT_KOMITE`, `SDIT_ORANG_TUA`, `SDIT_SISWA` |
 | **SMP IT**              | `SMPIT_*` (admin, kepala sekolah, wakasek, guru, wali kelas, guru BK, tata usaha, bendahara, komite, orang tua, siswa, alumni)                                          |
 | **SMA Qur'an**          | `SMAQ_*` (idem dengan SMP IT)                                                                                                                                           |
-| **Perguruan Tinggi**    | `PT_REKTOR`, `PT_WAKIL_REKTOR`, `PT_DEKAN`, `PT_KAPRODI`, `PT_DOSEN`, `PT_MAHASISWA`, `PT_STAF_AKADEMIK`, `PT_TATA_USAHA`, `PT_ALUMNI`                                  |
 | **Sarana & Unit Usaha** | `PUSTAKAWAN`, `PERAWAT`, `KEAMANAN`, `LABORAN`, `BUSINESS_MANAGER`, `BUSINESS_STAFF`                                                                                    |
 
 Akses dijaga berlapis: `middleware.ts` memblokir rute, `config/navigation.ts`
@@ -320,10 +319,10 @@ Semua gambar diverifikasi tidak kosong/error sebelum ditampilkan.
 
 ## Galeri Lengkap Halaman
 
-Setiap halaman App Router (**758** rute) yang berhasil dirender pada sweep visual-QA terakhir. Semua tangkapan layar diverifikasi tidak kosong, tidak _error_, dan tidak _overflow_ horizontal. Klik modul untuk membuka galerinya.
+Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visual-QA terakhir. Semua tangkapan layar diverifikasi tidak kosong, tidak _error_, dan tidak _overflow_ horizontal. Klik modul untuk membuka galerinya.
 
 <details>
-<summary><strong>Dashboard</strong> — 5 halaman</summary>
+<summary><strong>Dashboard</strong> — 4 halaman</summary>
 
 | Halaman                                                                                                                     | Rute                                 |
 | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
@@ -331,7 +330,6 @@ Setiap halaman App Router (**758** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/dashboard.webp" width="420" alt="/dashboard">                                                   | `/dashboard`                         |
 | <img src="docs/images/pages/dashboard__comparison.webp" width="420" alt="/dashboard/comparison">                            | `/dashboard/comparison`              |
 | <img src="docs/images/pages/dashboard__executive.webp" width="420" alt="/dashboard/executive">                              | `/dashboard/executive`               |
-| <img src="docs/images/pages/dashboard__settings__system-secrets.webp" width="420" alt="/dashboard/settings/system-secrets"> | `/dashboard/settings/system-secrets` |
 
 </details>
 
@@ -1569,16 +1567,6 @@ Setiap halaman App Router (**758** rute) yang berhasil dirender pada sweep visua
 </details>
 
 <details>
-<summary><strong>Litbang</strong> — 2 halaman</summary>
-
-| Halaman                                                                                                                                          | Rute                                            |
-| ------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------- |
-| <img src="docs/images/pages/litbang.webp" width="420" alt="/litbang">                                                                            | `/litbang`                                      |
-| <img src="docs/images/pages/litbang__3017d5d4-aa9a-4cac-857f-544a07a13e65.webp" width="420" alt="/litbang/3017d5d4-aa9a-4cac-857f-544a07a13e65"> | `/litbang/3017d5d4-aa9a-4cac-857f-544a07a13e65` |
-
-</details>
-
-<details>
 <summary><strong>Wilayah</strong> — 1 halaman</summary>
 
 | Halaman                                                               | Rute       |
@@ -1848,7 +1836,7 @@ Setiap halaman App Router (**758** rute) yang berhasil dirender pada sweep visua
 
 ## Galeri Per Peran
 
-Setiap dari **75 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuka oleh menunya, ditangkap dengan sesi login peran tersebut. Halaman yang sengaja hanya menampilkan pesan RBAC tidak dihitung sebagai kegagalan.
+Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuka oleh menunya, ditangkap dengan sesi login peran tersebut. Halaman yang sengaja hanya menampilkan pesan RBAC tidak dihitung sebagai kegagalan.
 
 <details>
 <summary><code>business-manager</code> — 12 halaman</summary>
@@ -2199,236 +2187,6 @@ Setiap dari **75 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/pesantren-tata-usaha__violations.webp" width="360" alt="pesantren-tata-usaha /violations">                  | `/violations`         |
 | <img src="docs/images/roles/pesantren-tata-usaha__announcements.webp" width="360" alt="pesantren-tata-usaha /announcements">            | `/announcements`      |
 | <img src="docs/images/roles/pesantren-tata-usaha__quality__complaints.webp" width="360" alt="pesantren-tata-usaha /quality/complaints"> | `/quality/complaints` |
-
-</details>
-
-<details>
-<summary><code>pt-alumni</code> — 8 halaman</summary>
-
-| Halaman                                                                                                           | Rute                  |
-| ----------------------------------------------------------------------------------------------------------------- | --------------------- |
-| <img src="docs/images/roles/pt-alumni__alumni.webp" width="360" alt="pt-alumni /alumni">                          | `/alumni`             |
-| <img src="docs/images/roles/pt-alumni__donation.webp" width="360" alt="pt-alumni /donation">                      | `/donation`           |
-| <img src="docs/images/roles/pt-alumni__portfolio.webp" width="360" alt="pt-alumni /portfolio">                    | `/portfolio`          |
-| <img src="docs/images/roles/pt-alumni__alumni__sanad.webp" width="360" alt="pt-alumni /alumni/sanad">             | `/alumni/sanad`       |
-| <img src="docs/images/roles/pt-alumni__certificates.webp" width="360" alt="pt-alumni /certificates">              | `/certificates`       |
-| <img src="docs/images/roles/pt-alumni__announcements.webp" width="360" alt="pt-alumni /announcements">            | `/announcements`      |
-| <img src="docs/images/roles/pt-alumni__alumni__placement.webp" width="360" alt="pt-alumni /alumni/placement">     | `/alumni/placement`   |
-| <img src="docs/images/roles/pt-alumni__quality__complaints.webp" width="360" alt="pt-alumni /quality/complaints"> | `/quality/complaints` |
-
-</details>
-
-<details>
-<summary><code>pt-dekan</code> — 23 halaman</summary>
-
-| Halaman                                                                                                         | Rute                  |
-| --------------------------------------------------------------------------------------------------------------- | --------------------- |
-| <img src="docs/images/roles/pt-dekan__alumni.webp" width="360" alt="pt-dekan /alumni">                          | `/alumni`             |
-| <img src="docs/images/roles/pt-dekan__classes.webp" width="360" alt="pt-dekan /classes">                        | `/classes`            |
-| <img src="docs/images/roles/pt-dekan__library.webp" width="360" alt="pt-dekan /library">                        | `/library`            |
-| <img src="docs/images/roles/pt-dekan__litbang.webp" width="360" alt="pt-dekan /litbang">                        | `/litbang`            |
-| <img src="docs/images/roles/pt-dekan__quality.webp" width="360" alt="pt-dekan /quality">                        | `/quality`            |
-| <img src="docs/images/roles/pt-dekan__reports.webp" width="360" alt="pt-dekan /reports">                        | `/reports`            |
-| <img src="docs/images/roles/pt-dekan__teacher.webp" width="360" alt="pt-dekan /teacher">                        | `/teacher`            |
-| <img src="docs/images/roles/pt-dekan__e-office.webp" width="360" alt="pt-dekan /e-office">                      | `/e-office`           |
-| <img src="docs/images/roles/pt-dekan__research.webp" width="360" alt="pt-dekan /research">                      | `/research`           |
-| <img src="docs/images/roles/pt-dekan__schedule.webp" width="360" alt="pt-dekan /schedule">                      | `/schedule`           |
-| <img src="docs/images/roles/pt-dekan__students.webp" width="360" alt="pt-dekan /students">                      | `/students`           |
-| <img src="docs/images/roles/pt-dekan__analytics.webp" width="360" alt="pt-dekan /analytics">                    | `/analytics`          |
-| <img src="docs/images/roles/pt-dekan__practicum.webp" width="360" alt="pt-dekan /practicum">                    | `/practicum`          |
-| <img src="docs/images/roles/pt-dekan__assessment.webp" width="360" alt="pt-dekan /assessment">                  | `/assessment`         |
-| <img src="docs/images/roles/pt-dekan__attendance.webp" width="360" alt="pt-dekan /attendance">                  | `/attendance`         |
-| <img src="docs/images/roles/pt-dekan__counseling.webp" width="360" alt="pt-dekan /counseling">                  | `/counseling`         |
-| <img src="docs/images/roles/pt-dekan__curriculum.webp" width="360" alt="pt-dekan /curriculum">                  | `/curriculum`         |
-| <img src="docs/images/roles/pt-dekan__student-org.webp" width="360" alt="pt-dekan /student-org">                | `/student-org`        |
-| <img src="docs/images/roles/pt-dekan__certificates.webp" width="360" alt="pt-dekan /certificates">              | `/certificates`       |
-| <img src="docs/images/roles/pt-dekan__announcements.webp" width="360" alt="pt-dekan /announcements">            | `/announcements`      |
-| <img src="docs/images/roles/pt-dekan__extracurricular.webp" width="360" alt="pt-dekan /extracurricular">        | `/extracurricular`    |
-| <img src="docs/images/roles/pt-dekan__alumni__placement.webp" width="360" alt="pt-dekan /alumni/placement">     | `/alumni/placement`   |
-| <img src="docs/images/roles/pt-dekan__quality__complaints.webp" width="360" alt="pt-dekan /quality/complaints"> | `/quality/complaints` |
-
-</details>
-
-<details>
-<summary><code>pt-dosen</code> — 16 halaman</summary>
-
-| Halaman                                                                                                         | Rute                  |
-| --------------------------------------------------------------------------------------------------------------- | --------------------- |
-| <img src="docs/images/roles/pt-dosen__classes.webp" width="360" alt="pt-dosen /classes">                        | `/classes`            |
-| <img src="docs/images/roles/pt-dosen__kinerja.webp" width="360" alt="pt-dosen /kinerja">                        | `/kinerja`            |
-| <img src="docs/images/roles/pt-dosen__library.webp" width="360" alt="pt-dosen /library">                        | `/library`            |
-| <img src="docs/images/roles/pt-dosen__teacher.webp" width="360" alt="pt-dosen /teacher">                        | `/teacher`            |
-| <img src="docs/images/roles/pt-dosen__e-office.webp" width="360" alt="pt-dosen /e-office">                      | `/e-office`           |
-| <img src="docs/images/roles/pt-dosen__research.webp" width="360" alt="pt-dosen /research">                      | `/research`           |
-| <img src="docs/images/roles/pt-dosen__schedule.webp" width="360" alt="pt-dosen /schedule">                      | `/schedule`           |
-| <img src="docs/images/roles/pt-dosen__students.webp" width="360" alt="pt-dosen /students">                      | `/students`           |
-| <img src="docs/images/roles/pt-dosen__portfolio.webp" width="360" alt="pt-dosen /portfolio">                    | `/portfolio`          |
-| <img src="docs/images/roles/pt-dosen__practicum.webp" width="360" alt="pt-dosen /practicum">                    | `/practicum`          |
-| <img src="docs/images/roles/pt-dosen__assessment.webp" width="360" alt="pt-dosen /assessment">                  | `/assessment`         |
-| <img src="docs/images/roles/pt-dosen__attendance.webp" width="360" alt="pt-dosen /attendance">                  | `/attendance`         |
-| <img src="docs/images/roles/pt-dosen__counseling.webp" width="360" alt="pt-dosen /counseling">                  | `/counseling`         |
-| <img src="docs/images/roles/pt-dosen__assignments.webp" width="360" alt="pt-dosen /assignments">                | `/assignments`        |
-| <img src="docs/images/roles/pt-dosen__announcements.webp" width="360" alt="pt-dosen /announcements">            | `/announcements`      |
-| <img src="docs/images/roles/pt-dosen__quality__complaints.webp" width="360" alt="pt-dosen /quality/complaints"> | `/quality/complaints` |
-
-</details>
-
-<details>
-<summary><code>pt-kaprodi</code> — 23 halaman</summary>
-
-| Halaman                                                                                                             | Rute                  |
-| ------------------------------------------------------------------------------------------------------------------- | --------------------- |
-| <img src="docs/images/roles/pt-kaprodi__alumni.webp" width="360" alt="pt-kaprodi /alumni">                          | `/alumni`             |
-| <img src="docs/images/roles/pt-kaprodi__classes.webp" width="360" alt="pt-kaprodi /classes">                        | `/classes`            |
-| <img src="docs/images/roles/pt-kaprodi__library.webp" width="360" alt="pt-kaprodi /library">                        | `/library`            |
-| <img src="docs/images/roles/pt-kaprodi__litbang.webp" width="360" alt="pt-kaprodi /litbang">                        | `/litbang`            |
-| <img src="docs/images/roles/pt-kaprodi__quality.webp" width="360" alt="pt-kaprodi /quality">                        | `/quality`            |
-| <img src="docs/images/roles/pt-kaprodi__reports.webp" width="360" alt="pt-kaprodi /reports">                        | `/reports`            |
-| <img src="docs/images/roles/pt-kaprodi__teacher.webp" width="360" alt="pt-kaprodi /teacher">                        | `/teacher`            |
-| <img src="docs/images/roles/pt-kaprodi__e-office.webp" width="360" alt="pt-kaprodi /e-office">                      | `/e-office`           |
-| <img src="docs/images/roles/pt-kaprodi__research.webp" width="360" alt="pt-kaprodi /research">                      | `/research`           |
-| <img src="docs/images/roles/pt-kaprodi__schedule.webp" width="360" alt="pt-kaprodi /schedule">                      | `/schedule`           |
-| <img src="docs/images/roles/pt-kaprodi__students.webp" width="360" alt="pt-kaprodi /students">                      | `/students`           |
-| <img src="docs/images/roles/pt-kaprodi__analytics.webp" width="360" alt="pt-kaprodi /analytics">                    | `/analytics`          |
-| <img src="docs/images/roles/pt-kaprodi__practicum.webp" width="360" alt="pt-kaprodi /practicum">                    | `/practicum`          |
-| <img src="docs/images/roles/pt-kaprodi__assessment.webp" width="360" alt="pt-kaprodi /assessment">                  | `/assessment`         |
-| <img src="docs/images/roles/pt-kaprodi__attendance.webp" width="360" alt="pt-kaprodi /attendance">                  | `/attendance`         |
-| <img src="docs/images/roles/pt-kaprodi__counseling.webp" width="360" alt="pt-kaprodi /counseling">                  | `/counseling`         |
-| <img src="docs/images/roles/pt-kaprodi__curriculum.webp" width="360" alt="pt-kaprodi /curriculum">                  | `/curriculum`         |
-| <img src="docs/images/roles/pt-kaprodi__student-org.webp" width="360" alt="pt-kaprodi /student-org">                | `/student-org`        |
-| <img src="docs/images/roles/pt-kaprodi__certificates.webp" width="360" alt="pt-kaprodi /certificates">              | `/certificates`       |
-| <img src="docs/images/roles/pt-kaprodi__announcements.webp" width="360" alt="pt-kaprodi /announcements">            | `/announcements`      |
-| <img src="docs/images/roles/pt-kaprodi__extracurricular.webp" width="360" alt="pt-kaprodi /extracurricular">        | `/extracurricular`    |
-| <img src="docs/images/roles/pt-kaprodi__alumni__placement.webp" width="360" alt="pt-kaprodi /alumni/placement">     | `/alumni/placement`   |
-| <img src="docs/images/roles/pt-kaprodi__quality__complaints.webp" width="360" alt="pt-kaprodi /quality/complaints"> | `/quality/complaints` |
-
-</details>
-
-<details>
-<summary><code>pt-mahasiswa</code> — 16 halaman</summary>
-
-| Halaman                                                                                                                 | Rute                  |
-| ----------------------------------------------------------------------------------------------------------------------- | --------------------- |
-| <img src="docs/images/roles/pt-mahasiswa__wallet.webp" width="360" alt="pt-mahasiswa /wallet">                          | `/wallet`             |
-| <img src="docs/images/roles/pt-mahasiswa__classes.webp" width="360" alt="pt-mahasiswa /classes">                        | `/classes`            |
-| <img src="docs/images/roles/pt-mahasiswa__library.webp" width="360" alt="pt-mahasiswa /library">                        | `/library`            |
-| <img src="docs/images/roles/pt-mahasiswa__student.webp" width="360" alt="pt-mahasiswa /student">                        | `/student`            |
-| <img src="docs/images/roles/pt-mahasiswa__research.webp" width="360" alt="pt-mahasiswa /research">                      | `/research`           |
-| <img src="docs/images/roles/pt-mahasiswa__schedule.webp" width="360" alt="pt-mahasiswa /schedule">                      | `/schedule`           |
-| <img src="docs/images/roles/pt-mahasiswa__portfolio.webp" width="360" alt="pt-mahasiswa /portfolio">                    | `/portfolio`          |
-| <img src="docs/images/roles/pt-mahasiswa__practicum.webp" width="360" alt="pt-mahasiswa /practicum">                    | `/practicum`          |
-| <img src="docs/images/roles/pt-mahasiswa__assessment.webp" width="360" alt="pt-mahasiswa /assessment">                  | `/assessment`         |
-| <img src="docs/images/roles/pt-mahasiswa__attendance.webp" width="360" alt="pt-mahasiswa /attendance">                  | `/attendance`         |
-| <img src="docs/images/roles/pt-mahasiswa__counseling.webp" width="360" alt="pt-mahasiswa /counseling">                  | `/counseling`         |
-| <img src="docs/images/roles/pt-mahasiswa__assignments.webp" width="360" alt="pt-mahasiswa /assignments">                | `/assignments`        |
-| <img src="docs/images/roles/pt-mahasiswa__student-org.webp" width="360" alt="pt-mahasiswa /student-org">                | `/student-org`        |
-| <img src="docs/images/roles/pt-mahasiswa__announcements.webp" width="360" alt="pt-mahasiswa /announcements">            | `/announcements`      |
-| <img src="docs/images/roles/pt-mahasiswa__extracurricular.webp" width="360" alt="pt-mahasiswa /extracurricular">        | `/extracurricular`    |
-| <img src="docs/images/roles/pt-mahasiswa__quality__complaints.webp" width="360" alt="pt-mahasiswa /quality/complaints"> | `/quality/complaints` |
-
-</details>
-
-<details>
-<summary><code>pt-rektor</code> — 23 halaman</summary>
-
-| Halaman                                                                                                           | Rute                  |
-| ----------------------------------------------------------------------------------------------------------------- | --------------------- |
-| <img src="docs/images/roles/pt-rektor__alumni.webp" width="360" alt="pt-rektor /alumni">                          | `/alumni`             |
-| <img src="docs/images/roles/pt-rektor__classes.webp" width="360" alt="pt-rektor /classes">                        | `/classes`            |
-| <img src="docs/images/roles/pt-rektor__library.webp" width="360" alt="pt-rektor /library">                        | `/library`            |
-| <img src="docs/images/roles/pt-rektor__litbang.webp" width="360" alt="pt-rektor /litbang">                        | `/litbang`            |
-| <img src="docs/images/roles/pt-rektor__quality.webp" width="360" alt="pt-rektor /quality">                        | `/quality`            |
-| <img src="docs/images/roles/pt-rektor__reports.webp" width="360" alt="pt-rektor /reports">                        | `/reports`            |
-| <img src="docs/images/roles/pt-rektor__teacher.webp" width="360" alt="pt-rektor /teacher">                        | `/teacher`            |
-| <img src="docs/images/roles/pt-rektor__e-office.webp" width="360" alt="pt-rektor /e-office">                      | `/e-office`           |
-| <img src="docs/images/roles/pt-rektor__research.webp" width="360" alt="pt-rektor /research">                      | `/research`           |
-| <img src="docs/images/roles/pt-rektor__schedule.webp" width="360" alt="pt-rektor /schedule">                      | `/schedule`           |
-| <img src="docs/images/roles/pt-rektor__students.webp" width="360" alt="pt-rektor /students">                      | `/students`           |
-| <img src="docs/images/roles/pt-rektor__analytics.webp" width="360" alt="pt-rektor /analytics">                    | `/analytics`          |
-| <img src="docs/images/roles/pt-rektor__practicum.webp" width="360" alt="pt-rektor /practicum">                    | `/practicum`          |
-| <img src="docs/images/roles/pt-rektor__assessment.webp" width="360" alt="pt-rektor /assessment">                  | `/assessment`         |
-| <img src="docs/images/roles/pt-rektor__attendance.webp" width="360" alt="pt-rektor /attendance">                  | `/attendance`         |
-| <img src="docs/images/roles/pt-rektor__counseling.webp" width="360" alt="pt-rektor /counseling">                  | `/counseling`         |
-| <img src="docs/images/roles/pt-rektor__curriculum.webp" width="360" alt="pt-rektor /curriculum">                  | `/curriculum`         |
-| <img src="docs/images/roles/pt-rektor__student-org.webp" width="360" alt="pt-rektor /student-org">                | `/student-org`        |
-| <img src="docs/images/roles/pt-rektor__certificates.webp" width="360" alt="pt-rektor /certificates">              | `/certificates`       |
-| <img src="docs/images/roles/pt-rektor__announcements.webp" width="360" alt="pt-rektor /announcements">            | `/announcements`      |
-| <img src="docs/images/roles/pt-rektor__extracurricular.webp" width="360" alt="pt-rektor /extracurricular">        | `/extracurricular`    |
-| <img src="docs/images/roles/pt-rektor__alumni__placement.webp" width="360" alt="pt-rektor /alumni/placement">     | `/alumni/placement`   |
-| <img src="docs/images/roles/pt-rektor__quality__complaints.webp" width="360" alt="pt-rektor /quality/complaints"> | `/quality/complaints` |
-
-</details>
-
-<details>
-<summary><code>pt-staf-akademik</code> — 13 halaman</summary>
-
-| Halaman                                                                                                                         | Rute                  |
-| ------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
-| <img src="docs/images/roles/pt-staf-akademik__spmb.webp" width="360" alt="pt-staf-akademik /spmb">                              | `/spmb`               |
-| <img src="docs/images/roles/pt-staf-akademik__staff.webp" width="360" alt="pt-staf-akademik /staff">                            | `/staff`              |
-| <img src="docs/images/roles/pt-staf-akademik__health.webp" width="360" alt="pt-staf-akademik /health">                          | `/health`             |
-| <img src="docs/images/roles/pt-staf-akademik__finance.webp" width="360" alt="pt-staf-akademik /finance">                        | `/finance`            |
-| <img src="docs/images/roles/pt-staf-akademik__kinerja.webp" width="360" alt="pt-staf-akademik /kinerja">                        | `/kinerja`            |
-| <img src="docs/images/roles/pt-staf-akademik__permits.webp" width="360" alt="pt-staf-akademik /permits">                        | `/permits`            |
-| <img src="docs/images/roles/pt-staf-akademik__rewards.webp" width="360" alt="pt-staf-akademik /rewards">                        | `/rewards`            |
-| <img src="docs/images/roles/pt-staf-akademik__e-office.webp" width="360" alt="pt-staf-akademik /e-office">                      | `/e-office`           |
-| <img src="docs/images/roles/pt-staf-akademik__students.webp" width="360" alt="pt-staf-akademik /students">                      | `/students`           |
-| <img src="docs/images/roles/pt-staf-akademik__lingkungan.webp" width="360" alt="pt-staf-akademik /lingkungan">                  | `/lingkungan`         |
-| <img src="docs/images/roles/pt-staf-akademik__violations.webp" width="360" alt="pt-staf-akademik /violations">                  | `/violations`         |
-| <img src="docs/images/roles/pt-staf-akademik__announcements.webp" width="360" alt="pt-staf-akademik /announcements">            | `/announcements`      |
-| <img src="docs/images/roles/pt-staf-akademik__quality__complaints.webp" width="360" alt="pt-staf-akademik /quality/complaints"> | `/quality/complaints` |
-
-</details>
-
-<details>
-<summary><code>pt-tata-usaha</code> — 13 halaman</summary>
-
-| Halaman                                                                                                                   | Rute                  |
-| ------------------------------------------------------------------------------------------------------------------------- | --------------------- |
-| <img src="docs/images/roles/pt-tata-usaha__spmb.webp" width="360" alt="pt-tata-usaha /spmb">                              | `/spmb`               |
-| <img src="docs/images/roles/pt-tata-usaha__staff.webp" width="360" alt="pt-tata-usaha /staff">                            | `/staff`              |
-| <img src="docs/images/roles/pt-tata-usaha__health.webp" width="360" alt="pt-tata-usaha /health">                          | `/health`             |
-| <img src="docs/images/roles/pt-tata-usaha__finance.webp" width="360" alt="pt-tata-usaha /finance">                        | `/finance`            |
-| <img src="docs/images/roles/pt-tata-usaha__kinerja.webp" width="360" alt="pt-tata-usaha /kinerja">                        | `/kinerja`            |
-| <img src="docs/images/roles/pt-tata-usaha__permits.webp" width="360" alt="pt-tata-usaha /permits">                        | `/permits`            |
-| <img src="docs/images/roles/pt-tata-usaha__rewards.webp" width="360" alt="pt-tata-usaha /rewards">                        | `/rewards`            |
-| <img src="docs/images/roles/pt-tata-usaha__e-office.webp" width="360" alt="pt-tata-usaha /e-office">                      | `/e-office`           |
-| <img src="docs/images/roles/pt-tata-usaha__students.webp" width="360" alt="pt-tata-usaha /students">                      | `/students`           |
-| <img src="docs/images/roles/pt-tata-usaha__lingkungan.webp" width="360" alt="pt-tata-usaha /lingkungan">                  | `/lingkungan`         |
-| <img src="docs/images/roles/pt-tata-usaha__violations.webp" width="360" alt="pt-tata-usaha /violations">                  | `/violations`         |
-| <img src="docs/images/roles/pt-tata-usaha__announcements.webp" width="360" alt="pt-tata-usaha /announcements">            | `/announcements`      |
-| <img src="docs/images/roles/pt-tata-usaha__quality__complaints.webp" width="360" alt="pt-tata-usaha /quality/complaints"> | `/quality/complaints` |
-
-</details>
-
-<details>
-<summary><code>pt-wakil-rektor</code> — 23 halaman</summary>
-
-| Halaman                                                                                                                       | Rute                  |
-| ----------------------------------------------------------------------------------------------------------------------------- | --------------------- |
-| <img src="docs/images/roles/pt-wakil-rektor__alumni.webp" width="360" alt="pt-wakil-rektor /alumni">                          | `/alumni`             |
-| <img src="docs/images/roles/pt-wakil-rektor__classes.webp" width="360" alt="pt-wakil-rektor /classes">                        | `/classes`            |
-| <img src="docs/images/roles/pt-wakil-rektor__library.webp" width="360" alt="pt-wakil-rektor /library">                        | `/library`            |
-| <img src="docs/images/roles/pt-wakil-rektor__litbang.webp" width="360" alt="pt-wakil-rektor /litbang">                        | `/litbang`            |
-| <img src="docs/images/roles/pt-wakil-rektor__quality.webp" width="360" alt="pt-wakil-rektor /quality">                        | `/quality`            |
-| <img src="docs/images/roles/pt-wakil-rektor__reports.webp" width="360" alt="pt-wakil-rektor /reports">                        | `/reports`            |
-| <img src="docs/images/roles/pt-wakil-rektor__teacher.webp" width="360" alt="pt-wakil-rektor /teacher">                        | `/teacher`            |
-| <img src="docs/images/roles/pt-wakil-rektor__e-office.webp" width="360" alt="pt-wakil-rektor /e-office">                      | `/e-office`           |
-| <img src="docs/images/roles/pt-wakil-rektor__research.webp" width="360" alt="pt-wakil-rektor /research">                      | `/research`           |
-| <img src="docs/images/roles/pt-wakil-rektor__schedule.webp" width="360" alt="pt-wakil-rektor /schedule">                      | `/schedule`           |
-| <img src="docs/images/roles/pt-wakil-rektor__students.webp" width="360" alt="pt-wakil-rektor /students">                      | `/students`           |
-| <img src="docs/images/roles/pt-wakil-rektor__analytics.webp" width="360" alt="pt-wakil-rektor /analytics">                    | `/analytics`          |
-| <img src="docs/images/roles/pt-wakil-rektor__practicum.webp" width="360" alt="pt-wakil-rektor /practicum">                    | `/practicum`          |
-| <img src="docs/images/roles/pt-wakil-rektor__assessment.webp" width="360" alt="pt-wakil-rektor /assessment">                  | `/assessment`         |
-| <img src="docs/images/roles/pt-wakil-rektor__attendance.webp" width="360" alt="pt-wakil-rektor /attendance">                  | `/attendance`         |
-| <img src="docs/images/roles/pt-wakil-rektor__counseling.webp" width="360" alt="pt-wakil-rektor /counseling">                  | `/counseling`         |
-| <img src="docs/images/roles/pt-wakil-rektor__curriculum.webp" width="360" alt="pt-wakil-rektor /curriculum">                  | `/curriculum`         |
-| <img src="docs/images/roles/pt-wakil-rektor__student-org.webp" width="360" alt="pt-wakil-rektor /student-org">                | `/student-org`        |
-| <img src="docs/images/roles/pt-wakil-rektor__certificates.webp" width="360" alt="pt-wakil-rektor /certificates">              | `/certificates`       |
-| <img src="docs/images/roles/pt-wakil-rektor__announcements.webp" width="360" alt="pt-wakil-rektor /announcements">            | `/announcements`      |
-| <img src="docs/images/roles/pt-wakil-rektor__extracurricular.webp" width="360" alt="pt-wakil-rektor /extracurricular">        | `/extracurricular`    |
-| <img src="docs/images/roles/pt-wakil-rektor__alumni__placement.webp" width="360" alt="pt-wakil-rektor /alumni/placement">     | `/alumni/placement`   |
-| <img src="docs/images/roles/pt-wakil-rektor__quality__complaints.webp" width="360" alt="pt-wakil-rektor /quality/complaints"> | `/quality/complaints` |
 
 </details>
 
@@ -3963,8 +3721,8 @@ Keduanya memerlukan stack lokal yang sudah di-seed. Hasil terakhir:
 
 | Sweep              | Cakupan                                     | Kegagalan |
 | ------------------ | ------------------------------------------- | --------- |
-| `screenshot-all`   | 784 tangkapan (758 rute unik + host publik) | **0**     |
-| `screenshot-roles` | 1.358 halaman di 75 peran                   | **0**     |
+| `screenshot-all`   | 781 tangkapan (755 rute unik + host publik) | **0**     |
+| `screenshot-roles` | 1.200 halaman di 66 peran                   | **0**     |
 
 Skrip juga menghapus toast Sonner sebelum menangkap gambar, sehingga banner
 "akses ditolak" yang bersifat sementara tidak menutupi halaman yang sebenarnya
@@ -3978,8 +3736,8 @@ Setelah sweep, dua skrip membangun galeri di README dan
 python3 scripts/audit-screenshots.py apps/web/.qa-all      # deteksi halaman kosong
 python3 scripts/audit-screenshots.py apps/web/.qa-screens
 python3 scripts/build-doc-images.py       # gambar utama docs/images
-python3 scripts/build-page-gallery.py     # galeri lengkap (758 halaman)
-python3 scripts/build-role-gallery.py     # galeri per peran (75 peran)
+python3 scripts/build-page-gallery.py     # galeri lengkap (755 halaman)
+python3 scripts/build-role-gallery.py     # galeri per peran (66 peran)
 python3 scripts/check-doc-refs.py         # gagal bila ada gambar yatim
 ```
 

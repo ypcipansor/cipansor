@@ -305,9 +305,9 @@ export async function deleteRoom(id: string) {
  * `dormitory.unitId`; now that they read occupancy, TK Qur'an would have
  * reported an asrama it does not have.
  *
- * PERGURUAN_TINGGI and OTHER are OPTIONAL rather than NONE deliberately: the
- * foundation has not said, and refusing something it never forbade would be the
- * worse guess — a ma'had for mahasiswa then needs no code change.
+ * OTHER is OPTIONAL rather than NONE deliberately: the foundation has not
+ * said, and refusing something it never forbade would be the worse guess — a
+ * future unit type then needs no code change.
  */
 export type BoardingPolicy = 'NONE' | 'OPTIONAL' | 'MANDATORY';
 
@@ -317,7 +317,6 @@ export const BOARDING_POLICY: Record<UnitType, BoardingPolicy> = {
   [UnitType.SMP_IT]: 'MANDATORY',
   [UnitType.SMA_QURAN]: 'MANDATORY',
   [UnitType.PESANTREN]: 'MANDATORY',
-  [UnitType.PERGURUAN_TINGGI]: 'OPTIONAL',
   // Kantin, laundry, koperasi — no santri of their own.
   [UnitType.UNIT_USAHA]: 'NONE',
   [UnitType.OTHER]: 'OPTIONAL',

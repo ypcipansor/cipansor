@@ -66,6 +66,15 @@ monorepo**:
      web side, purely presentational/static pages with no data needs. When you
      take an exemption, it should be obvious why from the code — otherwise wire
      the other side.
+9. **Two open PRs that touch the same ground: merge them together in a worktree
+   and run the gate before you merge the second one.** Each PR's CI only ever
+   sees its own base, so a pair that is individually green can still redden
+   `main`. Measured on 2026-09-21: #504 (removed the System Secrets module) and
+   #505 (decommissioned Perguruan Tinggi/Litbang) were both fully green, and
+   merging them together failed 3 of 2,346 API tests — #505's guard pinned the
+   very files #504 deleted. `git worktree add --detach <dir> origin/main`, merge
+   both heads into it, run the gate there; it costs one gate run and it is the
+   only thing that catches this class.
 
 ## Commands
 

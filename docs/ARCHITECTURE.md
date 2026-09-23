@@ -97,8 +97,8 @@ Access is enforced in **three places**, and they must agree:
 3. **The API** — `authenticate` + `authorize(RoleCode.X)` / `hasPermission(...)`
    per route. This is the authority; the client-side checks are UX, not security.
 
-The canonical role list is the `RoleCode` enum in `schema.prisma` (75 codes), and
-the same 75 accounts are seeded for local login from
+The canonical role list is the `RoleCode` enum in `schema.prisma` (66 codes), and
+the same 66 accounts are seeded for local login from
 `packages/shared/src/types/demo-accounts.ts` — the single list consumed by both
 the API seed and the login page.
 

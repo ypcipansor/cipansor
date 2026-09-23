@@ -74,7 +74,6 @@ const groupColor: Record<string, string> = {
   SD_IT: "bg-green-600",
   SMP_IT: "bg-blue-600",
   SMA_QURAN: "bg-teal-600",
-  PERGURUAN_TINGGI: "bg-indigo-600",
   SARANA_USAHA: "bg-slate-600",
 };
 

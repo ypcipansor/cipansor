@@ -318,7 +318,6 @@ export class EmisService {
       SD_IT: 'SD',
       SMP_IT: 'SMP',
       SMA_QURAN: 'SMA',
-      PERGURUAN_TINGGI: 'Perguruan Tinggi',
       UNIT_USAHA: 'Unit Usaha',
       OTHER: 'Lainnya',
     };

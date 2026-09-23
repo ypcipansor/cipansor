@@ -45,6 +45,12 @@ export const onboardRegistrantSchema = z.object({
   nis: z.string().optional(),
   nisn: nisnSchema,
   academicYearId: z.string().optional(),
+  /**
+   * Santri lama (berstatus alumni) yang melanjutkan ke unit ini. Bila diisi,
+   * pendaftaran ini ditautkan ke baris santri itu — tanpa akun baru dan tanpa
+   * santri kedua (audit #489 bagian 3b-2).
+   */
+  existingStudentId: z.string().uuid("existingStudentId tidak valid").optional(),
 });
 
 export interface RegistrantDTO {
@@ -148,6 +154,8 @@ export interface TrackedRegistrantDTO {
 
 export interface OnboardRegistrantPayload {
   registrantId: string;
+  /** Santri lama (alumni) yang melanjutkan ke unit ini — audit #489 bagian 3b-2. */
+  existingStudentId?: string;
   unitId?: string;
   classId?: string;
   assignedClassId?: string;

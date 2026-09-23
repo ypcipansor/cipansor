@@ -180,7 +180,7 @@ export function useSwitchRole() {
 }
 
 // Role realm display names. Keys mirror the `Realm` enum in schema.prisma — all
-// nine values are listed so a new realm renders its own name instead of falling
+// eight values are listed so a new realm renders its own name instead of falling
 // through to a raw code.
 export const realmDisplayNames: Record<string, string> = {
   GLOBAL: "Global",
@@ -190,7 +190,6 @@ export const realmDisplayNames: Record<string, string> = {
   SMP_IT: "SMP IT",
   SMA_QURAN: "SMA Qur'an",
   PESANTREN: "Pesantren",
-  PERGURUAN_TINGGI: "Perguruan Tinggi",
   UNIT_USAHA: "Sarana & Unit Usaha",
 };
 
@@ -203,7 +202,6 @@ export const realmColors: Record<string, string> = {
   SMP_IT: "bg-blue-500 hover:bg-blue-600",
   SMA_QURAN: "bg-emerald-500 hover:bg-emerald-600",
   PESANTREN: "bg-orange-500 hover:bg-orange-600",
-  PERGURUAN_TINGGI: "bg-cyan-500 hover:bg-cyan-600",
   UNIT_USAHA: "bg-teal-500 hover:bg-teal-600",
 };
 
