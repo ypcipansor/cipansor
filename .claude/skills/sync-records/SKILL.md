@@ -62,6 +62,12 @@ Memory lives in `~/.claude/projects/-home-cipansoradm-cipansor/memory/`.
    (git HEAD + working tree), not elapsed time, so it stays valid until
    something new actually happens.
 
+   It also records this session's id (`CLAUDE_CODE_SESSION_ID`), and that is
+   the ONLY thing that releases a held auto-compaction. When
+   `context-sync-warn.sh` says the context is nearing or past the window, this
+   pass is what it is asking for: run it at the nearest stopping point, before
+   carrying on with the task.
+
    Skip it only when the pass found nothing AND wrote nothing.
 
 7. **Say what you did**, briefly, so the user can disagree before the transcript
