@@ -13,8 +13,8 @@
 #   2. <base-url>/manifest.json goes nginx -> web. A 200 means the web container
 #      answers too; nginx alone would return 502.
 # The apps accept traffic from Cloudflare only, so this is also the only way a
-# GitHub runner can reach them. On staging, Cloudflare Access must let these two
-# paths through (docs/deploy-azure.md, "Cloudflare").
+# GitHub runner can reach them. If Cloudflare Access is ever put in front of a
+# host, it must let these two paths through.
 set -uo pipefail
 
 base=${1%/}
