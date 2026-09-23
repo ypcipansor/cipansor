@@ -24,9 +24,13 @@
 --   * primary key: harus ada dan berkolom tunggal `id`;
 --   * indeks unik: harus ada dan benar-benar UNIQUE;
 --   * foreign key: nama, tabel sumber, tabel tujuan, dan aksi ON DELETE;
---   * enum: himpunan label harus SAMA PERSIS dengan yang dijanjikan —
---     label yang kurang MAUPUN berlebih ditolak, sebab keduanya berarti
---     Prisma akan membandingkan label yang tidak sepakat dengan basis data;
+--   * enum: harus memuat SELURUH label dasar yang dijanjikan. Label yang
+--     KURANG selalu ditolak; label yang BERLEBIH ditolak kecuali namanya
+--     memang ditambahkan migrasi lanjutan dalam rangkaian ini (mis.
+--     `CANCELLED`, dari `20260922000000_...`). Basis data yang ter-`db push`
+--     dari skema FINAL sah memiliki label lanjutan itu, sehingga menuntut
+--     himpunan dasar secara persis justru menolak basis data yang kompatibel
+--     dan mencegah migrasi pemilik label mengadopsinya;
 --   * semuanya dibatasi pada `current_schema()`, supaya objek bernama sama di
 --     skema lain tidak pernah dianggap memenuhi syarat.
 --
@@ -149,11 +153,11 @@ DECLARE
     ARRAY['foundation_decision_documents_decision_id_fkey', 'foundation_decision_documents', 'foundation_decisions', 'c']
   ];
   expected_enums text[][] := ARRAY[
-    ARRAY['FoundationOrganType', 'PEMBINA,PENGURUS,PENGAWAS,GABUNGAN'],
-    ARRAY['FoundationDecisionKind', 'CIRCULAR,MEETING'],
-    ARRAY['FoundationDecisionStatus', 'DRAFT,VOTING,APPROVED,REJECTED'],
-    ARRAY['FoundationVoteChoice', 'APPROVE,REJECT,ABSTAIN'],
-    ARRAY['FoundationQuorumMode', 'MAJORITY,TWO_THIRDS,THREE_QUARTERS,MUTLAK']
+    ARRAY['FoundationOrganType', 'PEMBINA,PENGURUS,PENGAWAS,GABUNGAN', ''],
+    ARRAY['FoundationDecisionKind', 'CIRCULAR,MEETING', ''],
+    ARRAY['FoundationDecisionStatus', 'DRAFT,VOTING,APPROVED,REJECTED', 'CANCELLED'],
+    ARRAY['FoundationVoteChoice', 'APPROVE,REJECT,ABSTAIN', ''],
+    ARRAY['FoundationQuorumMode', 'MAJORITY,TWO_THIRDS,THREE_QUARTERS,MUTLAK', '']
   ];
   spec text[];
   actual_type text;
@@ -164,6 +168,9 @@ DECLARE
   actual_def text;
   actual_labels text[];
   expected_labels text[];
+  allowed_labels text[];
+  missing_labels text[];
+  extra_labels text[];
 BEGIN
   -- Kolom: keberadaan, tipe, nullability.
   FOREACH spec SLICE 1 IN ARRAY expected_columns LOOP
@@ -259,7 +266,22 @@ BEGIN
     END IF;
   END LOOP;
 
-  -- Enum: himpunan label harus sama persis (kurang ATAU lebih ditolak).
+  -- Enum: harus memuat SELURUH label dasar, dan label tambahan hanya boleh
+  -- dari himpunan yang memang ditambahkan migrasi lanjutan dalam rangkaian ini.
+  --
+  -- Sebuah basis data pengembangan yang sudah ter-`db push` dari skema FINAL
+  -- memiliki label yang juga disumbangkan migrasi berikutnya — misalnya
+  -- `FoundationDecisionStatus` sudah memuat `CANCELLED` (dari
+  -- `20260922000000_foundation_decision_cancelled_and_circular_mufakat`).
+  -- Menuntut himpunan dasar secara PERSIS membuat `migrate deploy` menolak
+  -- basis data yang sebenarnya kompatibel, dan migrasi lanjutan yang menjadi
+  -- pemilik label itu tidak pernah mendapat kesempatan mengadopsinya.
+  --
+  -- Karena itu: label yang HILANG selalu ditolak (skema berbeda), dan label
+  -- TAMBAHAN ditolak kecuali namanya memang label yang ditambahkan migrasi
+  -- lanjutan yang menyertai rangkaian ini (`spec[3]`, dipisah koma). Label
+  -- asing tetap tertangkap; himpunan dasar tetap tertangkap; urutan label
+  -- tetap tidak dipaku.
   FOREACH spec SLICE 1 IN ARRAY expected_enums LOOP
     IF EXISTS (SELECT 1 FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
                WHERE n.nspname = current_schema() AND t.typname = spec[1]) THEN
@@ -273,11 +295,31 @@ BEGIN
       SELECT array_agg(l ORDER BY l) INTO expected_labels
       FROM unnest(string_to_array(spec[2], ',')) AS l;
 
-      IF actual_labels IS DISTINCT FROM expected_labels THEN
+      allowed_labels := NULL;
+      IF spec[3] <> '' THEN
+        SELECT array_agg(l ORDER BY l) INTO allowed_labels
+        FROM unnest(string_to_array(spec[3], ',')) AS l;
+      END IF;
+
+      -- Label dasar yang hilang.
+      SELECT array_agg(l ORDER BY l) INTO missing_labels
+      FROM unnest(expected_labels) AS l
+      WHERE NOT (l = ANY (actual_labels));
+      IF missing_labels IS NOT NULL THEN
         RAISE EXCEPTION
-          'Migrasi foundation_decisions: label enum % adalah (%) tetapi skema mengharapkan (%).',
-          spec[1], COALESCE(array_to_string(actual_labels, ', '), 'kosong'),
-          array_to_string(expected_labels, ', ');
+          'Migrasi foundation_decisions: enum % tidak memuat label dasar (%).',
+          spec[1], array_to_string(missing_labels, ', ');
+      END IF;
+
+      -- Label tambahan yang bukan berasal dari rangkaian migrasi ini.
+      SELECT array_agg(l ORDER BY l) INTO extra_labels
+      FROM unnest(actual_labels) AS l
+      WHERE NOT (l = ANY (expected_labels))
+        AND NOT (l = ANY (COALESCE(allowed_labels, ARRAY[]::text[])));
+      IF extra_labels IS NOT NULL THEN
+        RAISE EXCEPTION
+          'Migrasi foundation_decisions: enum % memuat label tidak dikenal (%). Skema menyimpang dari rangkaian migrasi ini — label asing berarti basis data dibentuk dari skema yang berbeda.',
+          spec[1], array_to_string(extra_labels, ', ');
       END IF;
     END IF;
   END LOOP;

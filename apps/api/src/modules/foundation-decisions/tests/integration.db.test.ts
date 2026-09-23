@@ -25,6 +25,7 @@ import {
 } from '@/modules/foundation-decisions/foundation-decisions.service';
 import { createKeyMaterial, publicKeyFingerprint, signPdfHash } from '@/utils/esign';
 import { supersedeSigningKeyHistory, revokeSigningKeyHistory } from '@/utils/signing-key-history';
+import { userService } from '@/modules/users/user.service';
 import type { PrismaClient } from '@prisma/client';
 import pg from 'pg';
 
@@ -1599,6 +1600,181 @@ describe.skipIf(!RUN)('foundation-decisions integrasi PostgreSQL', () => {
       await prisma.userRoleAssignment.deleteMany({
         where: { userId: { in: [creator.id, leaving.id] } },
       });
+      await prisma.user.deleteMany({ where: { id: { in: [creator.id, leaving.id] } } });
+    }
+  });
+
+  /**
+   * SECURITY CRITICAL (real PostgreSQL) — "token lama" tidak boleh bertahan
+   * setelah offboarding.
+   *
+   * Token AKSES stateless tak dapat dicabut, jadi jalur yang HARUS ditutup
+   * adalah refresh: bila `refresh_tokens` masih hidup setelah akun
+   * dinonaktifkan/dihapus, pemegangnya memperpanjang sesi tanpa batas.
+   * `userService.update(isActive:false)` dan `userService.delete` mencabut
+   * seluruh refresh token DI DALAM transaksi yang sama dengan perubahan status.
+   * Uji ini memakai `userService` NYATA terhadap PostgreSQL nyata dan
+   * membuktikan token hilang, bukan hanya bahwa kode memanggil mock.
+   */
+  it('deaktivasi & soft-delete mencabut refresh token (token lama mati)', async () => {
+    const suffix = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const deactivated = await prisma.user.create({
+      data: {
+        id: `itest-rt-deact-${suffix}`,
+        email: `itest-rt-deact-${suffix}@example.test`,
+        name: 'Akan Dinonaktifkan',
+        passwordHash: 'x',
+      },
+    });
+    const deleted = await prisma.user.create({
+      data: {
+        id: `itest-rt-del-${suffix}`,
+        email: `itest-rt-del-${suffix}@example.test`,
+        name: 'Akan Dihapus',
+        passwordHash: 'x',
+      },
+    });
+    await prisma.refreshToken.createMany({
+      data: [
+        {
+          token: `itest-rt-deact-token-${suffix}`,
+          userId: deactivated.id,
+          expiresAt: new Date(Date.now() + 30 * 24 * 3600 * 1000),
+        },
+        {
+          token: `itest-rt-del-token-${suffix}`,
+          userId: deleted.id,
+          expiresAt: new Date(Date.now() + 30 * 24 * 3600 * 1000),
+        },
+      ],
+    });
+    // Prasyarat: token memang ada sebelum mutasi.
+    expect(await prisma.refreshToken.count({ where: { userId: deactivated.id } })).toBe(1);
+    expect(await prisma.refreshToken.count({ where: { userId: deleted.id } })).toBe(1);
+
+    try {
+      await userService.update(
+        deactivated.id,
+        { isActive: false },
+        { roleCode: 'SUPER_ADMIN', unitId: null, sub: 'itest-admin' }
+      );
+      expect(await prisma.refreshToken.count({ where: { userId: deactivated.id } })).toBe(0);
+
+      await userService.delete(deleted.id);
+      expect(await prisma.refreshToken.count({ where: { userId: deleted.id } })).toBe(0);
+      // Soft-delete menandai, bukan menghapus baris user.
+      const row = await prisma.user.findUnique({ where: { id: deleted.id } });
+      expect(row?.deletedAt).not.toBeNull();
+    } finally {
+      await prisma.refreshToken.deleteMany({
+        where: { userId: { in: [deactivated.id, deleted.id] } },
+      });
+      await prisma.userRoleAssignment.deleteMany({
+        where: { userId: { in: [deactivated.id, deleted.id] } },
+      });
+      await prisma.user.deleteMany({ where: { id: { in: [deactivated.id, deleted.id] } } });
+    }
+  });
+
+  /**
+   * BUG SEVERE (real PostgreSQL) — SOFT-DELETE akun anggota tidak boleh lolos
+   * dari kunci snapshot.
+   *
+   * `users.deleted_at` mengeluarkan anggota dari organ, tetapi ia TIDAK
+   * menyentuh `user_role_assignments` maupun `roles`, sehingga kunci tabel
+   * penugasan/peran saja melewatkannya. `lockOrganMemberRowsForSnapshot`
+   * (`FOR SHARE` atas baris `users`) menahan `UPDATE users` yang konkuren;
+   * baca ulang setelahnya melihat `deleted_at IS NOT NULL` dan pembuatan
+   * dibatalkan, bukan membekukan anggota yang sudah dihapus.
+   *
+   * Deaktivasi (`is_active`) sudah punya uji sendiri; penghapusan lunak adalah
+   * kelas mutasi yang BERBEDA (kolom berbeda, jalur service berbeda —
+   * `userService.delete`), jadi ia butuh uji yang benar-benar overlap sendiri.
+   */
+  it('soft-delete akun konkuren: create memblokir lalu menolak snapshot basi', async () => {
+    const suffix = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const creator = await prisma.user.create({
+      data: {
+        id: `itest-del-creator-${suffix}`,
+        email: `itest-del-creator-${suffix}@example.test`,
+        name: 'Pembuat Hapus',
+        passwordHash: 'x',
+      },
+    });
+    const leaving = await prisma.user.create({
+      data: {
+        id: `itest-del-leaving-${suffix}`,
+        email: `itest-del-leaving-${suffix}@example.test`,
+        name: 'Akan Dihapus',
+        passwordHash: 'x',
+      },
+    });
+    const pembina = await prisma.role.upsert({
+      where: { code: 'YAYASAN_PEMBINA' },
+      create: { code: 'YAYASAN_PEMBINA', name: 'Pembina', realm: 'YAYASAN' },
+      update: {},
+    });
+    await prisma.userRoleAssignment.create({
+      data: { userId: leaving.id, roleId: pembina.id, isActive: true },
+    });
+    await prisma.userRoleAssignment.create({
+      data: { userId: creator.id, roleId: pembina.id, isActive: true, isPrimary: true },
+    });
+
+    const b = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    await b.connect();
+    await b.query('BEGIN');
+    // Soft-delete nyata: HANYA `deleted_at` (bukan `is_active`), persis seperti
+    // `userService.delete`. `is_active` tetap true supaya pemeriksaan yang
+    // keliru hanya melihat status aktif tidak akan lolos.
+    await b.query(`UPDATE "users" SET "deleted_at" = NOW(), "updated_at" = NOW() WHERE "id" = $1`, [
+      leaving.id,
+    ]);
+
+    let decisionId: string | null = null;
+    try {
+      const input = {
+        organType: 'PEMBINA' as const,
+        kind: 'CIRCULAR' as const,
+        subject: 'Uji soft-delete konkuren',
+        body: 'Naskah uji penghapusan lunak akun konkuren saat keputusan dibuat.',
+        decisionType: 'pengesahan-rencana-kerja' as const,
+      };
+      const createPromise = FoundationDecisionService.create(
+        { id: creator.id, roleCode: 'YAYASAN_PEMBINA' },
+        input
+      );
+
+      // Deterministik: `create` menunggu kunci baris `users` yang dipegang B.
+      const blocked = await waitForLockWaiterOnUsers(prisma, 8000);
+      expect(blocked).toBe(true);
+
+      await b.query('COMMIT');
+      // B menang → snapshot pasca-lock kehilangan anggota terhapus itu.
+      await expect(createPromise).rejects.toThrow(/Keanggotaan organ .* berubah/);
+
+      decisionId = await FoundationDecisionService.create(
+        { id: creator.id, roleCode: 'YAYASAN_PEMBINA' },
+        input
+      );
+      const members = await prisma.foundationDecisionMember.findMany({
+        where: { decisionId },
+        select: { userId: true },
+      });
+      const memberIds = members.map((m) => m.userId);
+      expect(memberIds).toContain(creator.id);
+      expect(memberIds).not.toContain(leaving.id);
+    } finally {
+      await b.end().catch(() => {});
+      if (decisionId) {
+        await prisma.foundationDecisionMember.deleteMany({ where: { decisionId } });
+        await prisma.auditLog.deleteMany({ where: { entityId: decisionId } });
+        await prisma.foundationDecision.delete({ where: { id: decisionId } });
+      }
+      await prisma.userRoleAssignment.deleteMany({
+        where: { userId: { in: [creator.id, leaving.id] } },
+      });
+      // Hard delete to clear the soft-deleted row too.
       await prisma.user.deleteMany({ where: { id: { in: [creator.id, leaving.id] } } });
     }
   });

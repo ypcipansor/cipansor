@@ -65,8 +65,10 @@ describe('migrasi foundation_decisions — guard drift skema', () => {
 
   it('memuat pemeriksaan label enum yang sudah ada', () => {
     expect(sql).toContain('pg_enum');
-    // Label berlebih MAUPUN kurang ditolak lewat perbandingan himpunan.
-    expect(sql).toMatch(/label enum % adalah/);
+    // Label dasar yang KURANG ditolak, dan label TAMBAHAN yang bukan milik
+    // rangkaian migrasi ini juga ditolak.
+    expect(sql).toMatch(/tidak memuat label dasar/);
+    expect(sql).toMatch(/memuat label tidak dikenal/);
   });
 
   it('preflight mendahului CREATE TABLE pertama', () => {
