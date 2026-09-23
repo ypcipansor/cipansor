@@ -604,6 +604,12 @@ class NotificationService {
     const redactedMessage = message.replace(/\b\d{4,8}\b/g, '****');
     logger.info(`[SMS] To: ${recipientPhone}, Message: ${redactedMessage}`);
 
+    // Outbound messages switched off (staging): log only, whatever is configured.
+    if (!config.outboundMessages.enabled) {
+      logger.info(`SMS not sent (OUTBOUND_MESSAGES_ENABLED=false) to ${recipientPhone}`);
+      return { success: true, channel: 'SMS', messageId: `log_${Date.now()}` };
+    }
+
     // Check if Twilio is configured
     const { accountSid, authToken, phoneNumber } = config.twilio;
 

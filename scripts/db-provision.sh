@@ -52,7 +52,10 @@ if [ -z "$USERS" ]; then
   echo "Cannot determine user count; skipping seed."
 elif [ "$USERS" -eq 0 ] 2>/dev/null; then
   echo "Seeding DB..."
-  E2E_FIXED_2FA=1 pnpm --filter api db:seed
+  # `prisma/seed.ts` TRUNCATEs every table, so it demands an explicit opt-in.
+  # This branch only runs when the database is empty, and this script is
+  # local-dev/CI only, so the opt-in is correct here — never in production.
+  E2E_FIXED_2FA=1 ALLOW_DESTRUCTIVE_SEED=1 pnpm --filter api db:seed
 else
   echo "DB already has $USERS users"
 fi

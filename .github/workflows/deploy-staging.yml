@@ -1,0 +1,127 @@
+# Build the release images once and put them on staging.
+#
+# Runs after CI has passed on a push to main (never for pull requests, and
+# never for a CI run that failed). The three images are tagged with the commit
+# SHA and pushed to Azure Container Registry; production later runs these exact
+# images (deploy-production.yml), so what reaches wali is what staging tested.
+#
+# Signs in to Azure with OIDC — no stored Azure password. The federated
+# credential only trusts jobs running in this repository's `staging`
+# environment, and that identity can push images and update the staging app,
+# nothing else.
+name: Deploy staging
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+env:
+  ACR: cipansoracr
+  RESOURCE_GROUP: cipansor-prod
+  APP: cipansor-staging
+  URL: https://staging.cipansor.or.id
+  SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+jobs:
+  build:
+    name: Build ${{ matrix.image }}
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    environment: staging
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - image: api
+            context: .
+            file: apps/api/Dockerfile
+          - image: web
+            context: .
+            file: apps/web/Dockerfile
+          - image: nginx
+            context: deploy/azure/nginx
+            file: deploy/azure/nginx/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - run: az acr login --name "$ACR"
+
+      - uses: docker/setup-buildx-action@v3
+
+      # NEXT_PUBLIC_* are baked into the web bundle at build time. The API base
+      # is deliberately empty (same-origin through nginx), which is what lets
+      # one web image serve both staging and production. The Turnstile site key
+      # is public by design; its widget lists both hosts.
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          push: true
+          tags: ${{ env.ACR }}.azurecr.io/cipansor-${{ matrix.image }}:${{ env.SHA }}
+          # GIT_COMMIT_SHA is reported by the api's /health; the deploy job
+          # waits for it (only the api image uses it).
+          build-args: |
+            GIT_COMMIT_SHA=${{ env.SHA }}
+            NEXT_PUBLIC_API_URL=
+            NEXT_PUBLIC_TURNSTILE_SITE_KEY=${{ vars.TURNSTILE_SITE_KEY }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+
+  deploy:
+    name: Update staging
+    needs: build
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
+          sparse-checkout: deploy/azure
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Point the staging containers at ${{ env.SHA }}
+        run: |
+          # --target-port every time: `az webapp sitecontainers update` (CLI
+          # 2.90) writes whatever --target-port holds, so omitting it would
+          # erase the port and App Service could no longer reach nginx.
+          declare -A port=([api]=3001 [web]=3000 [nginx]=80)
+          for c in api web nginx; do
+            az webapp sitecontainers update -g "$RESOURCE_GROUP" -n "$APP" \
+              --container-name "$c" --image "$ACR.azurecr.io/cipansor-$c:$SHA" \
+              --target-port "${port[$c]}" -o none
+          done
+          az webapp restart -g "$RESOURCE_GROUP" -n "$APP"
+
+      # The api container applies pending migrations before it starts
+      # (MIGRATE_ON_START=true on staging), so a migration that fails shows up
+      # here as a release that never answers — on staging, before any release
+      # to production.
+      - name: Wait until ${{ env.SHA }} answers at ${{ env.URL }}
+        run: bash deploy/azure/wait-for-release.sh "$URL" "$SHA"

@@ -56,6 +56,7 @@ describe('NotificationService - SMS', () => {
     // Mock config to be empty
     vi.doMock('../src/config', () => ({
       config: {
+        outboundMessages: { enabled: true },
         twilio: {
           accountSid: undefined,
           authToken: undefined,
@@ -85,6 +86,7 @@ describe('NotificationService - SMS', () => {
     // Mock config to have values
     vi.doMock('../src/config', () => ({
       config: {
+        outboundMessages: { enabled: true },
         twilio: {
           accountSid: 'AC123',
           authToken: 'token',
@@ -119,6 +121,7 @@ describe('NotificationService - SMS', () => {
     // Mock config to have values
     vi.doMock('../src/config', () => ({
       config: {
+        outboundMessages: { enabled: true },
         twilio: {
           accountSid: 'AC123',
           authToken: 'token',

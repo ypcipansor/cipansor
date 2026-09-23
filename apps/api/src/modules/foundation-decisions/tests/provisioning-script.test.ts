@@ -65,7 +65,7 @@ beforeAll(() => {
   writeExec(
     path.join(binDir, 'pnpm'),
     `#!/usr/bin/env bash
-echo "pnpm $*" >> "$STUB_LOG"
+echo "pnpm $* ALLOW_DESTRUCTIVE_SEED=\${ALLOW_DESTRUCTIVE_SEED:-}" >> "$STUB_LOG"
 if [ "$*" = "--filter api db:deploy" ] && [ "\${FAIL_DEPLOY:-}" = "1" ]; then
   echo "simulated migration failure" >&2
   exit 1
@@ -149,6 +149,21 @@ describe('db-provision.sh — generate, migrasi selalu, seed hanya bila kosong',
     const seedAt = calls.indexOf('db:seed');
     expect(deployAt).toBeGreaterThan(-1);
     expect(seedAt).toBeGreaterThan(deployAt);
+  });
+
+  /**
+   * `prisma/seed.ts` (main) now refuses to run without
+   * `ALLOW_DESTRUCTIVE_SEED=1` because it TRUNCATEs every table. `db-provision.sh`
+   * seeds only when the database is empty, so it must pass that opt-in — without
+   * it a fresh local/CI database never seeds and every e2e login fails.
+   */
+  it('meneruskan ALLOW_DESTRUCTIVE_SEED=1 saat seed (kebijakan seed main)', () => {
+    const { status } = run(DB_PROVISION, { ...stubPath(), STUB_USERS: '0' });
+    expect(status).toBe(0);
+    const seedLine = readCalls()
+      .split('\n')
+      .find((l) => l.includes('db:seed'));
+    expect(seedLine).toMatch(/ALLOW_DESTRUCTIVE_SEED=1/);
   });
 
   it('mengembalikan exit non-zero ketika migrasi gagal (regresi D)', () => {

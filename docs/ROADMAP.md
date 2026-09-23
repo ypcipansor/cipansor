@@ -46,9 +46,9 @@ a visitor sees, then correctness work, then deliverables, then tidiness.
   for a stale image. The markers that actually discriminate are the copy #462
   removed (`Anda tetap dapat melanjutkan`, must be **0** occurrences) and the
   string #464 added (`hostname di luar daftar`, must be **≥1**).
-- `NEXT_PUBLIC_SHOW_DEMO_LOGIN` is **false** and built that way — the demo
-  credential panel is gone from `/login`. `DEMO_MODE` is still `true` in the api
-  container, so the 2FA wall is still bypassed (§1).
+- `DEMO_MODE` and `NEXT_PUBLIC_SHOW_DEMO_LOGIN` no longer exist in the code
+  (2026-09-23, §1); until that roll reaches production the running api still
+  honours the old `DEMO_MODE=true` and bypasses the 2FA wall.
 - The two containers can therefore hold *different* commits. Before assuming
   production runs what `main` says, check the running image itself — e.g.
   `docker exec cipansor-api grep -o "<snippet>" /app/apps/api/dist/…/<file>.js`.
@@ -72,29 +72,25 @@ a visitor sees, then correctness work, then deliverables, then tidiness.
   with `delivered: true`.
 - Verified live 2026-09-02, and worth keeping straight because an earlier
   version of this section was months stale:
-  `NEXT_PUBLIC_SHOW_DEMO_LOGIN` is **false** and built that way — the demo
-  credential panel is gone from `/login`. `DEMO_MODE` is still `true` in the api
-  container, so the 2FA wall is still bypassed (§1).
+  `NEXT_PUBLIC_SHOW_DEMO_LOGIN` was **false** and built that way — the demo
+  credential panel was gone from `/login`, while `DEMO_MODE=true` still bypassed
+  the 2FA wall (§1).
 - Prior state, for the record: the 2026-07-31 roll from `main @ 41ee99e2`
   (through #381/#382) carried the CORS fix (§2), the public i18n work (§5) and
   the chatbot markdown fix.
 ---
 
-## 🟠 1. Before any real launch — half closed
+## 🟠 1. Before any real launch — demo switches removed, credentials remain
 
-**Closed:** `NEXT_PUBLIC_SHOW_DEMO_LOGIN` is `false` and the web image is built
-with it, so the demo credential panel no longer appears on `/login`. Verified
-against the live page 2026-09-02 (zero occurrences of the panel's markers).
-
-**Still open:** `DEMO_MODE=true` in the api container. Every account skips the
-mandatory-2FA wall, including both `SUPER_ADMIN`s, neither of which has an
-authenticator enrolled. Flipping it locks out testing until someone enrols, so
-it belongs on the launch checklist rather than being flipped casually.
-
-Note the asymmetry that made the first half easy to get wrong:
-`NEXT_PUBLIC_SHOW_DEMO_LOGIN` is inlined at **build** time, so changing `.env`
-alone does nothing — the web image has to be rebuilt. `DEMO_MODE` is read at
-runtime and only needs a restart.
+**Closed (2026-09-23): demo mode is gone from the code.** The credential panel
+(`NEXT_PUBLIC_SHOW_DEMO_LOGIN`, already `false` in production since 2026-09-02)
+and `DEMO_MODE` — which waived mandatory 2FA for every account, both
+`SUPER_ADMIN`s included — were deleted rather than left as switches. Staging and
+production show the real login page; what stays "demo" is only the *data* (the
+seed), until real users are onboarded. Once that roll is live, an admin without
+an authenticator is sent to 2FA setup at the next login; enrol then. The seed
+now refuses to run without `ALLOW_DESTRUCTIVE_SEED=1` (it TRUNCATEs every table),
+which must never be set for production.
 
 **Seeded credentials are still the only credentials.** All 107 accounts come
 from the seed, and the live values have **drifted twice** — do not derive them

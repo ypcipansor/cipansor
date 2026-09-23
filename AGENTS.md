@@ -86,7 +86,7 @@ pnpm --filter @cipansor/shared build  # build shared package (consumed by both a
 # Local stack (Postgres + Redis) for running/testing end-to-end
 docker compose -f docker-compose.dev.yml up -d
 pnpm --filter api db:deploy           # apply MIGRATIONS (never db:push — see note)
-pnpm --filter api db:seed             # seed admin + reference data
+ALLOW_DESTRUCTIVE_SEED=1 E2E_FIXED_2FA=1 pnpm --filter api db:seed  # WIPES every table, then demo data
 
 pnpm dev                              # turbo: run api + web in watch mode
 

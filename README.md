@@ -354,7 +354,8 @@ Ikuti langkah berikut untuk menjalankan proyek di lingkungan lokal Anda:
 
     ```bash
     pnpm db:deploy
-    pnpm db:seed
+    # Seed mengosongkan SEMUA tabel sebelum mengisi data contoh - jangan pernah ke produksi.
+    ALLOW_DESTRUCTIVE_SEED=1 E2E_FIXED_2FA=1 pnpm db:seed
     ```
 
 5.  **Jalankan Aplikasi**

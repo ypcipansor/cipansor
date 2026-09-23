@@ -88,9 +88,42 @@ function parsePrice(raw: string | undefined): number {
   return Number.isFinite(value) && value > 0 ? value : 0;
 }
 
+/**
+ * An on/off switch that defaults to ON.
+ *
+ * Only an explicit "off" word turns it off — `false`, `0`, `off` or `no`, in any
+ * case. Unset, empty, or anything unrecognised leaves it on, because every switch
+ * read through here guards behaviour production relies on, and a typo must never
+ * be the thing that silently stops tagihan reminders going out.
+ */
+export function switchEnabled(raw: string | undefined): boolean {
+  return !['false', '0', 'off', 'no'].includes((raw ?? '').trim().toLowerCase());
+}
+
 export const config = {
   env: process.env.NODE_ENV || 'development',
   port: parseInt(process.env.PORT || '3001', 10),
+
+  /**
+   * Switches that make a second copy of the system (staging) safe to run next to
+   * production. Both are ON unless an environment turns them off, so production
+   * behaves exactly as it did before they existed.
+   *
+   * `scheduler` — the nine node-cron jobs in `jobs/scheduler.ts` (auto-billing,
+   * SPP reminders, identity purge, …). A staging copy running them works on a
+   * copy of real data and would bill and remind as if it were live.
+   *
+   * `outboundMessages` — every channel that leaves the system: e-mail (Gmail API
+   * and SMTP), SMS and WhatsApp. When off, each falls back to the log-only /
+   * simulator path it already uses when no credentials are configured, so a
+   * staging copy that inherits real credentials by mistake still sends nothing.
+   */
+  scheduler: {
+    enabled: switchEnabled(process.env.SCHEDULER_ENABLED),
+  },
+  outboundMessages: {
+    enabled: switchEnabled(process.env.OUTBOUND_MESSAGES_ENABLED),
+  },
 
   jwt: {
     secret: resolveJwtSecret(process.env.JWT_SECRET, process.env.NODE_ENV),

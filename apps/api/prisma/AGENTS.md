@@ -38,7 +38,7 @@ pnpm --filter api db:deploy           # apply committed MIGRATIONS (fresh + CI +
 # for a tracked change, create the migration first:
 pnpm --filter api db:migrate          # create + apply a migration
 
-pnpm --filter api db:seed             # tsx prisma/seed.ts (uses createPrismaClient)
+ALLOW_DESTRUCTIVE_SEED=1 pnpm --filter api db:seed  # TRUNCATEs every table first; refuses without the flag
 ```
 
 ## Files

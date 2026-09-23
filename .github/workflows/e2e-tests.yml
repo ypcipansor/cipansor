@@ -115,6 +115,7 @@ jobs:
         run: pnpm --filter api db:seed
         env:
           E2E_FIXED_2FA: '1'
+          ALLOW_DESTRUCTIVE_SEED: '1'
 
       - name: Build shared + API + Web
         run: |
@@ -261,6 +262,7 @@ jobs:
         run: pnpm --filter api db:seed
         env:
           E2E_FIXED_2FA: '1'
+          ALLOW_DESTRUCTIVE_SEED: '1'
 
       - name: Build shared + API + Web
         run: |
