@@ -4,35 +4,22 @@ Status of production-readiness work and the remaining roadmap. Updated as part o
 the production-readiness / architecture-standardization effort. For the system
 overview see [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 
-## 🔴 OPEN — `docs/DEPLOYMENT.md` menyuruh operator menghapus data produksi (2026-09-21)
+## ✅ CLOSED — `docs/DEPLOYMENT.md` menyuruh operator menghapus data produksi (2026-09-21 → 2026-09-23)
 
-Bagian **Database Migration → Production Migration** memuat, berurutan:
+Bagian **Database Migration dengan Docker** dulu memuat `npx prisma db seed`
+tepat sesudah `migrate deploy`, padahal `apps/api/prisma/seed.ts` membuka
+pekerjaannya dengan `TRUNCATE TABLE … RESTART IDENTITY CASCADE` atas hampir
+seluruh tabel. Ditutup dua lapis: baris itu diganti peringatan, dan `seed.ts`
+sendiri kini **menolak berjalan** tanpa `ALLOW_DESTRUCTIVE_SEED=1` — variabel
+yang hanya diset CI (`e2e-tests.yml`), `scripts/dev-up.sh`, dan perintah seed di
+dokumen pengembangan. Versi Node (22) dan pnpm (9.15.9) di berkas itu juga sudah
+dibetulkan.
 
-```bash
-npx prisma migrate deploy
-npx prisma db seed          # ← ini yang berbahaya
-```
-
-`apps/api/prisma/seed.ts` membuka pekerjaannya dengan
-`TRUNCATE TABLE … RESTART IDENTITY CASCADE` atas hampir seluruh tabel. Seorang
-operator yang mengikuti runbook ini apa adanya akan mengosongkan basis data
-produksi. Tidak ada pagar apa pun di berkas itu yang memperingatkannya.
-
-Dua ketidakcocokan lain di berkas yang sama, lebih ringan tapi tetap menyesatkan:
-
-- **"pnpm: v10 atau lebih baru"** — repo ini dipaku ke `pnpm@9.15.9` lewat
-  `packageManager` di `package.json`, dan CI memakai `--frozen-lockfile`.
-- **"Node.js v20 LTS"** — seluruh image dan kontainer gerbang memakai `node:22`.
-- **`docker compose exec api sh` lalu `npx prisma migrate deploy`** tidak bisa
-  jalan di host ini: image produksi sengaja tidak memuat Prisma CLI maupun
-  `tsx` (lihat [[docker-image-size-traps]] soal closure `--prod`). Jalur yang
-  benar-benar dipakai adalah kontainer `node:22-alpine` sekali pakai dengan repo
-  di-mount, lalu `deploy-images.sh` — seperti pada penggelaran 2026-09-21.
-
-Yang **benar** di berkas itu dan jangan ikut dibuang saat memperbaikinya:
-bagian "Irreversible migrations — backup is a hard prerequisite" yang ditambahkan
-#505, termasuk kewajiban memverifikasi bahwa dump-nya memang bisa dipulihkan
-sebelum `migrate deploy` dijalankan.
+Yang masih benar dan jangan ikut dibuang: `docker compose exec api sh` lalu
+`npx prisma …` tidak bisa jalan di image produksi lama (tanpa Prisma CLI); di
+App Service migrasi berjalan sendiri saat kontainer start (`MIGRATE_ON_START`),
+dan bagian "Irreversible migrations — backup is a hard prerequisite" dari #505
+tetap berlaku.
 
 ## 🔴 OPEN — empat PR terbuka akan MELINDAS pekerjaan yang sudah tergelar (2026-09-05)
 
@@ -454,13 +441,17 @@ genuinely two different people holding the same approval rights in one unit.
 That is an authority question for the yayasan, not a data-cleanup task. Prefer
 `is_active = false` over deletion so the audit trail survives.
 
-**6. `DEMO_MODE=true` is still set on production.** Every account skips the
-mandatory-2FA wall, including both active `SUPER_ADMIN`s, neither of which has
-2FA enrolled. Flipping it is part of launch, and it locks out testing until
-someone enrols — see the launch checklist rather than treating it as a bug.
-Re-confirmed in the container 2026-09-02. Its sibling is closed:
-`NEXT_PUBLIC_SHOW_DEMO_LOGIN` is now `false` and built that way, so the
-credential panel is gone from `/login`.
+**6. ~~`DEMO_MODE=true` is still set on production.~~ Removed from the code
+(2026-09-23).** It waived the mandatory-2FA wall for every account, both active
+`SUPER_ADMIN`s included, on a deployment whose seeded passwords are published in
+this repository. The switch, the credential panel it travelled with
+(`NEXT_PUBLIC_SHOW_DEMO_LOGIN`, already `false` in production) and the build arg
+are gone; a leftover `DEMO_MODE` variable in any environment is now ignored.
+Consequence once deployed: an admin without 2FA is sent to 2FA *setup* at the
+next login instead of receiving a session — enrol an authenticator then. Tests
+and the screenshot sweep seed admins with a fixed TOTP secret
+(`E2E_FIXED_2FA=1`). The seed itself now refuses to run without
+`ALLOW_DESTRUCTIVE_SEED=1`, because it TRUNCATEs every table first.
 
 **7. `#2` above is now half-solved, in the direction that matters.**
 `/reset-password` is public, portal-only and reachable with no session (#413),
