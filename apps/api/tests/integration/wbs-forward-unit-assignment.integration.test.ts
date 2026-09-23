@@ -174,7 +174,11 @@ describeDb('WBS forward recipient unit-assignment eligibility (real PostgreSQL)'
       await expect(
         service.forwardReport(
           'r-unit',
-          { toRole: 'UNIT_ADMIN', reason: 'Terkait pelanggaran kepala unit.', toUserId: 'user-elsewhere' },
+          {
+            toRole: 'UNIT_ADMIN',
+            reason: 'Terkait pelanggaran kepala unit.',
+            toUserId: 'user-elsewhere',
+          },
           actor
         )
       ).rejects.toMatchObject({ statusCode: 403 });
@@ -197,7 +201,11 @@ describeDb('WBS forward recipient unit-assignment eligibility (real PostgreSQL)'
       await expect(
         service.forwardReport(
           'r-unit',
-          { toRole: 'UNIT_ADMIN', reason: 'Terkait pelanggaran kepala unit.', toUserId: 'user-home-match' },
+          {
+            toRole: 'UNIT_ADMIN',
+            reason: 'Terkait pelanggaran kepala unit.',
+            toUserId: 'user-home-match',
+          },
           actor
         )
       ).rejects.toMatchObject({ statusCode: 403 });
@@ -211,7 +219,11 @@ describeDb('WBS forward recipient unit-assignment eligibility (real PostgreSQL)'
     try {
       const updated = await service.forwardReport(
         'r-unit',
-        { toRole: 'UNIT_ADMIN', reason: 'Terkait pelanggaran kepala unit.', toUserId: 'user-multi' },
+        {
+          toRole: 'UNIT_ADMIN',
+          reason: 'Terkait pelanggaran kepala unit.',
+          toUserId: 'user-multi',
+        },
         actor
       );
       expect(updated.assignedUserId).toBe('user-multi');
@@ -225,7 +237,11 @@ describeDb('WBS forward recipient unit-assignment eligibility (real PostgreSQL)'
     try {
       await service.forwardReport(
         'r-unit',
-        { toRole: 'UNIT_ADMIN', reason: 'Terkait pelanggaran kepala unit.', toUserId: 'user-multi' },
+        {
+          toRole: 'UNIT_ADMIN',
+          reason: 'Terkait pelanggaran kepala unit.',
+          toUserId: 'user-multi',
+        },
         actor
       );
 
@@ -262,10 +278,57 @@ describeDb('WBS forward recipient unit-assignment eligibility (real PostgreSQL)'
       await expect(
         service.forwardReport(
           'r-unit',
-          { toRole: 'UNIT_ADMIN', reason: 'Terkait pelanggaran kepala unit.', toUserId: 'user-multi' },
+          {
+            toRole: 'UNIT_ADMIN',
+            reason: 'Terkait pelanggaran kepala unit.',
+            toUserId: 'user-multi',
+          },
           actor
         )
       ).rejects.toMatchObject({ statusCode: 403 });
+    } finally {
+      await unloadService(previousUrl);
+    }
+  });
+
+  it('keeps a KEPALA_UNIT report readable by the unit after a role-level forward', async () => {
+    // `forwardReport` with `toRole: 'UNIT_ADMIN'` and no `toUserId` routes the
+    // report to the unit queue without naming a person. It sets
+    // `primaryHandlerRole` but leaves `targetLevel` alone, so the unit scope
+    // branch must match the routing — otherwise a KEPALA_UNIT report routed
+    // this way is readable by nobody in the unit it was sent to.
+    const { service, previousUrl } = await loadService();
+    try {
+      await withClient(targetUrl, async (db) => {
+        await db.query(
+          `UPDATE wbs_reports
+           SET unit_id = 'unit-sdit', target_level = 'KEPALA_UNIT',
+               status = 'DALAM_PENYELIDIKAN',
+               assigned_user_id = 'user-pengawas',
+               primary_handler_role = 'YAYASAN_KETUA'
+           WHERE id = 'r-unit'`
+        );
+      });
+
+      const forwarded = await service.forwardReport(
+        'r-unit',
+        { toRole: 'UNIT_ADMIN', reason: 'Diteruskan ke kepala unit terkait.' },
+        actor
+      );
+      expect(forwarded.assignedUserId).toBeNull();
+
+      const unitHandler: WbsActor = {
+        id: 'user-multi',
+        name: 'Multi',
+        roleCode: 'SDIT_ADMIN',
+        unitId: 'unit-sdit',
+      };
+
+      const listed = await service.getReportsForUser(unitHandler);
+      expect(listed.map((r) => r.id)).toContain('r-unit');
+
+      const detail = await service.getReportById('r-unit', unitHandler);
+      expect(detail.id).toBe('r-unit');
     } finally {
       await unloadService(previousUrl);
     }

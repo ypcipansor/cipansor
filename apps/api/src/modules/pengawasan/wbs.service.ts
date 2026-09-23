@@ -450,9 +450,20 @@ export class WbsService {
       return { id: { in: [] } };
     }
 
+    // The unit branch matches the report's *routing* as well as its default
+    // target level. `forwardReport` can route any report to the unit bucket
+    // (`toRole: 'UNIT_ADMIN'`) without naming a person, and that sets
+    // `primaryHandlerRole` while leaving `targetLevel` untouched — so a
+    // `KEPALA_UNIT` report forwarded to the unit queue matched neither clause
+    // and became invisible to the very unit it was routed into. Matching
+    // `primaryHandlerRole` is what makes the role-level destination readable;
+    // the target-level clause keeps the default STAF/SISWA routing visible.
     return withAssignment({
-      targetLevel: { in: [WbsTargetLevel.STAF_PEGAWAI, WbsTargetLevel.SISWA_SANTRI] },
       unitId,
+      OR: [
+        { primaryHandlerRole: 'UNIT_ADMIN' },
+        { targetLevel: { in: [WbsTargetLevel.STAF_PEGAWAI, WbsTargetLevel.SISWA_SANTRI] } },
+      ],
     });
   }
 

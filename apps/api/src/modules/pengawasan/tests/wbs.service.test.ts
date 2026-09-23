@@ -8,6 +8,42 @@ import { hashWbsTrackingToken, verifyWbsTrackingToken } from '@/utils/wbs-token'
 /** A digest as the service would store it, for fixtures that must verify. */
 const digestOf = (raw: string) => hashWbsTrackingToken(raw);
 
+/**
+ * Evaluate a `buildScopeWhere` predicate against a report's identifying fields.
+ *
+ * The scope is nested `OR` clauses over `unitId`, `primaryHandlerRole`,
+ * `targetLevel`, `assignedUserId` and the fail-closed `id IN ()` set. This
+ * interprets exactly those shapes, so a test can assert which reports a scope
+ * admits without a database.
+ */
+function matchesReport(
+  where: any,
+  report: {
+    id?: string;
+    unitId?: string | null;
+    primaryHandlerRole?: string;
+    targetLevel?: string;
+    assignedUserId?: string | null;
+  }
+): boolean {
+  if (!where || Object.keys(where).length === 0) return true;
+  return Object.entries(where).every(([key, value]) => {
+    if (key === 'OR') return (value as any[]).some((clause) => matchesReport(clause, report));
+    if (key === 'id') return !!report.id && ((value as any).in ?? []).includes(report.id);
+    if (key === 'assignedUserId') return report.assignedUserId === value;
+    if (key === 'unitId') return report.unitId === value;
+    if (key === 'primaryHandlerRole') {
+      const allowed = typeof value === 'string' ? [value] : ((value as any).in ?? []);
+      return allowed.includes(report.primaryHandlerRole);
+    }
+    if (key === 'targetLevel') {
+      const allowed = (value as any).in ?? [value];
+      return allowed.includes(report.targetLevel);
+    }
+    return true;
+  });
+}
+
 vi.mock('@/lib/prisma', () => ({
   prisma: {
     wbsReport: {
@@ -1526,6 +1562,105 @@ describe('WbsService Unit Tests', () => {
         unitId: null,
       }) as any;
       expect(where).toEqual({ id: { in: [] } });
+    });
+
+    describe('a role-level UNIT_ADMIN forward stays readable by the unit', () => {
+      // `forwardReport` accepts `toRole: 'UNIT_ADMIN'` with no `toUserId`: the
+      // report is routed to the unit queue, `primaryHandlerRole` becomes
+      // `UNIT_ADMIN` and `targetLevel` is left alone. The unit branch used to
+      // key only on the default STAF/SISWA target levels, so a KEPALA_UNIT
+      // report routed this way matched no clause and vanished from the very
+      // unit it was sent to — readable by nobody, indistinguishable from
+      // "nothing to do".
+      const unitActor = {
+        id: 'unit-admin-sdit',
+        roleCode: 'SDIT_ADMIN',
+        unitId: 'unit-sdit',
+      };
+
+      it('lists a KEPALA_UNIT report routed to the unit bucket', () => {
+        const where = (wbsService as any).buildScopeWhere(unitActor) as any;
+
+        expect(
+          matchesReport(where, {
+            unitId: 'unit-sdit',
+            primaryHandlerRole: 'UNIT_ADMIN',
+            targetLevel: 'KEPALA_UNIT',
+          })
+        ).toBe(true);
+      });
+
+      it('still lists the default STAF/SISWA routing in the same unit', () => {
+        const where = (wbsService as any).buildScopeWhere(unitActor) as any;
+
+        expect(
+          matchesReport(where, {
+            unitId: 'unit-sdit',
+            primaryHandlerRole: 'UNIT_ADMIN',
+            targetLevel: 'STAF_PEGAWAI',
+          })
+        ).toBe(true);
+        expect(
+          matchesReport(where, {
+            unitId: 'unit-sdit',
+            primaryHandlerRole: 'UNIT_ADMIN',
+            targetLevel: 'SISWA_SANTRI',
+          })
+        ).toBe(true);
+      });
+
+      it('does not widen the unit scope to another unit', () => {
+        const where = (wbsService as any).buildScopeWhere(unitActor) as any;
+
+        expect(
+          matchesReport(where, {
+            unitId: 'unit-smaq',
+            primaryHandlerRole: 'UNIT_ADMIN',
+            targetLevel: 'KEPALA_UNIT',
+          })
+        ).toBe(false);
+      });
+
+      it('does not expose a foundation-routed report to the unit handler', () => {
+        const where = (wbsService as any).buildScopeWhere(unitActor) as any;
+
+        // A report still routed to the foundation is not this unit's. The
+        // target level is deliberately one the unit branch does not cover by
+        // default, so the routing clause is the only thing that could admit it.
+        expect(
+          matchesReport(where, {
+            unitId: 'unit-sdit',
+            primaryHandlerRole: 'YAYASAN_PENGAWAS',
+            targetLevel: 'KEPALA_UNIT',
+          })
+        ).toBe(false);
+      });
+
+      it('keeps a unitless unit-scoped actor failing closed on a routed report', () => {
+        const where = (wbsService as any).buildScopeWhere({
+          id: 'unit-admin-sdit',
+          roleCode: 'SDIT_ADMIN',
+          unitId: null,
+        }) as any;
+
+        expect(where).toEqual({ id: { in: [] } });
+      });
+
+      it('lets the unit handler reach the routed report by id', async () => {
+        (prisma.wbsReport.findFirst as any).mockResolvedValue({
+          id: 'report-kepala-unit',
+          unitId: 'unit-sdit',
+          primaryHandlerRole: 'UNIT_ADMIN',
+          targetLevel: 'KEPALA_UNIT',
+        });
+        (prisma.wbsReport.findUnique as any).mockResolvedValue({
+          id: 'report-kepala-unit',
+          unitId: 'unit-sdit',
+        });
+
+        const detail = await wbsService.getReportById('report-kepala-unit', unitActor);
+        expect(detail.id).toBe('report-kepala-unit');
+      });
     });
 
     it('re-checks scope inside the mutation transaction, under the row lock', () => {

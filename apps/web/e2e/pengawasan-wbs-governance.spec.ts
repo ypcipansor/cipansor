@@ -37,6 +37,8 @@ type WbsReport = {
   status: string;
   category: string;
   targetLevel: string;
+  subject: string;
+  assignedUserId?: string | null;
   isAnonymous?: boolean;
   reporterName?: string | null;
   reporterContact?: string | null;
@@ -406,6 +408,87 @@ test.describe
       "/pengawasan/wbs/reports",
     );
     expect(ketuaList.data.some((r) => r.id === reportId)).toBe(true);
+  });
+});
+
+test.describe
+  .serial("A role-level forward into a unit queue stays readable", () => {
+  // `forwardReport` accepts `toRole: 'UNIT_ADMIN'` with no `toUserId`: the
+  // report moves to the unit queue without naming a person. That sets
+  // `primaryHandlerRole` but leaves `targetLevel` alone, and the unit scope
+  // branch used to match only the default STAF/SISWA target levels — so a
+  // KEPALA_UNIT report routed this way was readable by nobody in the unit it
+  // was sent to. The regression is only visible end to end: the Pengawas
+  // routes it, and the unit's own admin must then find it in their list.
+  const seed = `${Date.now()}-role-forward`;
+  let reportId = "";
+
+  test.beforeAll(async () => {
+    const pengawas = await apiLogin(SEED_USERS.pengawas);
+
+    const units = await apiRequest<
+      Envelope<Array<{ id: string; name: string }>>
+    >(pengawas, "GET", "/units");
+    const sdIt = units.data.find((u) => u.name.includes("SD IT"));
+    if (!sdIt)
+      throw new Error("the seeded SD IT unit is required for this test");
+
+    const res = await fetch(
+      `${process.env.API_URL || "http://localhost:3001/api"}/pengawasan/public/wbs/reports`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          unitId: sdIt.id,
+          category: "SOP_TATA_KELOLA",
+          targetLevel: "KEPALA_UNIT",
+          subject: `E2E WBS unit forward ${seed}`,
+          description:
+            "Laporan uji untuk memastikan penerusan tingkat peran ke antrean unit tetap terbaca oleh admin unit.",
+        }),
+      },
+    );
+    expect(res.status, "public WBS submission should be accepted").toBe(201);
+
+    const list = await apiRequest<Envelope<WbsReport[]>>(
+      pengawas,
+      "GET",
+      "/pengawasan/wbs/reports",
+    );
+    const stored = list.data.find(
+      (r) => r.subject === `E2E WBS unit forward ${seed}`,
+    );
+    if (!stored) throw new Error("the Pengawas cannot see the report to route");
+    reportId = stored.id;
+
+    const forwarded = await apiRequest<Envelope<WbsReport>>(
+      pengawas,
+      "POST",
+      `/pengawasan/wbs/reports/${reportId}/forward`,
+      {
+        toRole: "UNIT_ADMIN",
+        reason: "Subjek ada di unit SD IT, diteruskan ke kepala unit.",
+      },
+    );
+    expect(forwarded.data.assignedUserId ?? null).toBeNull();
+  });
+
+  test("the unit admin finds the report routed to their unit queue", async () => {
+    const adminSdit = await apiLogin(SEED_USERS.adminSdit);
+
+    const list = await apiRequest<Envelope<WbsReport[]>>(
+      adminSdit,
+      "GET",
+      "/pengawasan/wbs/reports",
+    );
+    expect(list.data.some((r) => r.id === reportId)).toBe(true);
+
+    const detail = await apiRequest<Envelope<WbsReport>>(
+      adminSdit,
+      "GET",
+      `/pengawasan/wbs/reports/${reportId}`,
+    );
+    expect(detail.data.id).toBe(reportId);
   });
 });
 
