@@ -12,7 +12,7 @@ Everything lives in resource group `cipansor-prod` (Indonesia Central).
 |---|---|---|
 | App hosting | App Service plan `cipansor-plan` (Linux B2) | Holds both apps below |
 | Production | Web app `cipansor-produksi` | `cipansor.or.id`, `www.`, `portal.` |
-| Staging | Web app `cipansor-staging` | `staging.cipansor.or.id`, behind Cloudflare Access |
+| Staging | Web app `cipansor-staging` | `staging.cipansor.or.id`, public (noindex), **demo data only** |
 | Database | PostgreSQL Flexible `cipansor-pg` (B1ms, 32 GB) | Private network only; databases `cipansor` and `cipansor_staging` |
 | Images | Container Registry `cipansoracr` (Basic) | `cipansor-{api,web,nginx}:<commit sha>` |
 | Files | Each app's own `/home` (App Service storage) | Uploads and identity documents; see [Files](#files) |
@@ -50,11 +50,18 @@ outgrow it, they belong in Blob Storage, which the api cannot write to yet.
 
 | Setting | Production | Staging | Why |
 |---|---|---|---|
-| `SCHEDULER_ENABLED` | unset (on) | `false` | Staging must not bill or send reminders from a copy of real data |
+| `SCHEDULER_ENABLED` | unset (on) | `false` | Staging must not bill, remind or escalate, even from demo data |
 | `OUTBOUND_MESSAGES_ENABLED` | unset (on) | `false` | E-mail, SMS and WhatsApp are logged, never sent — even if real credentials leak into staging |
 | `MIGRATE_ON_START` | `true` | `true` | The database is private; CI cannot reach it |
 | `PERSISTENT_DIR` | `/home/data` | `/home/data` | Uploads and identity documents survive restarts ([Files](#files)) |
 | Gmail / SMTP / WhatsApp credentials | Key Vault references | none | Second line of defence behind the switch above |
+| `TURNSTILE_SECRET_KEY` | Key Vault reference | none | Without it the api's Turnstile check is off; no production secret is copied to staging |
+
+**Staging holds demo data only — never a copy of real data.** It is reachable
+by anyone who knows the name: there is no Cloudflare Access in front of it (the
+Zero Trust plan could not be activated). It is seeded from `prisma/seed.ts`.
+Testing a migration against real data happens on a throwaway database restored
+from the backup, as the VM runbook describes, not on staging.
 
 ## How a change is released
 
@@ -102,12 +109,13 @@ Set up by hand in the Cloudflare dashboard, once:
 
 - DNS: `staging` CNAME to `cipansor-staging.azurewebsites.net`, proxied; the
   production names move to `cipansor-produksi.azurewebsites.net` at cutover.
-- Cloudflare Access application on `staging.cipansor.or.id`, allowing only the
-  yayasan's own accounts, plus a **Bypass** application for
-  `staging.cipansor.or.id/healthz` and `staging.cipansor.or.id/manifest.json`
-  so the deploy workflow can verify a release. Both paths are public on
-  production anyway.
-- SSL/TLS "Full (strict)" and an Origin CA certificate (see Access below).
+- A `TXT` record `asuid.staging` with the app's custom-domain verification ID,
+  so Azure accepts the host name even though the proxied CNAME resolves to
+  Cloudflare.
+- SSL/TLS "Full (strict)" and an Origin CA certificate. The key pair is
+  generated inside Key Vault (`cipansor-kv-stg/origin-staging`, issuer
+  "Unknown"); only its CSR is signed in the Cloudflare dashboard and merged
+  back, so the private key never leaves the vault.
 - Turnstile: add `staging.cipansor.or.id` to the widget's hostnames.
 
 ## Access
@@ -122,11 +130,49 @@ Set up by hand in the Cloudflare dashboard, once:
   user-assigned identities, one per GitHub environment:
   `staging` may push images and update `cipansor-staging`; `production` may
   read the registry and update `cipansor-produksi`. Each environment's
-  `AZURE_CLIENT_ID` variable names its identity.
+  `AZURE_CLIENT_ID` variable names its identity. This repository uses GitHub's
+  **immutable subject claims**, so each federated credential's subject is
+  `repo:ypcipansor@312987445/cipansor@1109587728:environment:<name>` — the
+  name-only form `repo:ypcipansor/cipansor:…` is rejected with `AADSTS700213`.
+  `gh api repos/ypcipansor/cipansor/actions/oidc/customization/sub` shows the
+  prefix.
 - **Pulling images:** each app pulls from the registry with its own managed
   identity (`AcrPull`); the registry's admin user is disabled.
 - **Secrets:** each app reads its own Key Vault with its managed identity
   (`Key Vault Secrets User`); staging cannot read production secrets.
+
+## Reading logs
+
+The SCM (Kudu) site admits Cloudflare only, so `az webapp log tail` and the
+portal's Log stream do not work from elsewhere. Container output goes to Log
+Analytics `cipansor-logs` instead (diagnostic setting `ke-log-analytics`):
+
+```
+az monitor log-analytics query -w <workspace id> --analytics-query \
+  "AppServiceConsoleLogs | where _ResourceId endswith 'cipansor-staging' | top 100 by TimeGenerated"
+```
+
+Ingestion lags a few minutes.
+
+## Creating a database on the server
+
+Each environment has its own database and login role (`cipansor_staging`;
+production's at cutover). On Azure Database for PostgreSQL the `public` schema
+of a new database belongs to `azure_pg_admin`, **not** to the database owner,
+so the owner cannot create tables and the first `prisma migrate deploy` fails
+with `permission denied for schema public`. After `CREATE DATABASE … OWNER
+<role>`, connect to it as the admin and run
+`ALTER SCHEMA public OWNER TO <role>;`.
+
+## Settings the CLI insists on
+
+- Every `environmentVariables[].value` of a sitecontainer must name an app
+  setting that exists, or `az webapp sitecontainers update` refuses to run.
+  That is why `NEXT_PUBLIC_API_URL` exists as an app setting with an empty
+  value (the web image is built for a same-origin API).
+- web, nginx and redis have `inheritAppSettingsAndConnectionStrings=false`;
+  otherwise every app setting — database URL and JWT secret included — is
+  handed to every container.
 
 ## GitHub settings this relies on
 
