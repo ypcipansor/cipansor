@@ -87,11 +87,16 @@ export interface DeliverEmailResult {
   messageId: string;
 }
 
+// With outbound messages switched off (staging), neither transport counts as
+// configured even when its credentials are present, so every path below lands on
+// the log-only transport — the same one an unconfigured deployment uses.
 function gmailApiConfigured(): boolean {
+  if (!config.outboundMessages.enabled) return false;
   return Boolean(config.gmail.serviceAccountEmail && config.gmail.serviceAccountKey);
 }
 
 function smtpConfigured(): boolean {
+  if (!config.outboundMessages.enabled) return false;
   return Boolean(config.smtp.host);
 }
 
