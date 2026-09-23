@@ -3,6 +3,7 @@ import {
   canJoinRoleRoom,
   canJoinUnitRoom,
   canSubscribeGlobalDashboard,
+  effectiveRoleCode,
   isFoundationWideRole,
   resolveDashboardUnit,
   type SocketIdentity,
@@ -99,5 +100,41 @@ describe('realtime room authorization', () => {
 
     expect(resolveDashboardUnit(actor, undefined)).toBeUndefined();
     expect(resolveDashboardUnit(actor, 'unit-smpit')).toBe('unit-smpit');
+  });
+
+  it('withdraws every grant the moment the backing role is disabled', () => {
+    // The token still names YAYASAN_PENGAWAS, but the live assignment set no
+    // longer carries it: the administration disabled the role.
+    const actor = identity({
+      roleCode: 'YAYASAN_PENGAWAS',
+      unitId: null,
+      effectiveUnitIds: [],
+      activeRoleCodes: [],
+    });
+
+    expect(effectiveRoleCode(actor)).toBeNull();
+    expect(canJoinRoleRoom(actor, 'YAYASAN_PENGAWAS')).toBe(false);
+    expect(canSubscribeGlobalDashboard(actor)).toBe(false);
+    expect(resolveDashboardUnit(actor, undefined)).toBeNull();
+    expect(canJoinUnitRoom(actor, 'unit-smpit')).toBe(false);
+  });
+
+  it('keeps the token role in force when a live assignment still backs it', () => {
+    const actor = identity({
+      roleCode: 'SDIT_ADMIN',
+      unitId: 'unit-sdit',
+      effectiveUnitIds: ['unit-sdit'],
+      activeRoleCodes: ['SDIT_ADMIN'],
+    });
+
+    expect(effectiveRoleCode(actor)).toBe('SDIT_ADMIN');
+    expect(canJoinRoleRoom(actor, 'SDIT_ADMIN')).toBe(true);
+    expect(canJoinUnitRoom(actor, 'unit-sdit')).toBe(true);
+  });
+
+  it('treats an absent live role set as the token role (pure-function usage)', () => {
+    const actor = identity({ roleCode: 'SDIT_ADMIN', unitId: 'unit-sdit' });
+
+    expect(effectiveRoleCode(actor)).toBe('SDIT_ADMIN');
   });
 });

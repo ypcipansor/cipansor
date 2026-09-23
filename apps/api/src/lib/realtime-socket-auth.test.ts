@@ -164,6 +164,18 @@ describe('Socket.IO authorization boundary', () => {
     paymentFindMany.mockReset().mockResolvedValue([]);
   });
 
+  it('refuses the handshake for a temporary 2FA token', async () => {
+    // A temp 2FA token is minted with `type: 'access'` too, so the type check
+    // alone admitted it. It is a half-authenticated challenge token and must
+    // not open a realtime session.
+    const { socket, connected } = await connectionOutcome(
+      port,
+      accessToken({ isTemp: true })
+    );
+    expect(connected).toBe(false);
+    socket.disconnect();
+  });
+
   it('refuses the handshake for a suspended account', async () => {
     suspensionFindFirst.mockResolvedValue({ id: 'susp-1' });
 
@@ -244,6 +256,12 @@ describe('Socket.IO authorization boundary', () => {
   });
 
   it('allows the global dashboard for a foundation-wide role', async () => {
+    // A live, active assignment must back the token's role: the handshake
+    // resolves the role set from the database, not from the point-in-time
+    // token alone.
+    assignmentFindMany.mockResolvedValue([
+      { unitId: null, role: { code: 'YAYASAN_PENGAWAS' } },
+    ]);
     const socket = await connect(port, accessToken({ roleCode: 'YAYASAN_PENGAWAS', unitId: null }));
     let refused = false;
     socket.on('error', () => {
@@ -254,6 +272,30 @@ describe('Socket.IO authorization boundary', () => {
     await new Promise((resolve) => setTimeout(resolve, 150));
 
     expect(refused).toBe(false);
+    socket.disconnect();
+  });
+
+  it('refuses a governance role room after the role has been disabled', async () => {
+    // The token still carries YAYASAN_PENGAWAS, but no active assignment backs
+    // it — the administration disabled the role. The socket must not join.
+    assignmentFindMany.mockResolvedValue([]);
+    const socket = await connect(port, accessToken({ roleCode: 'YAYASAN_PENGAWAS', unitId: null }));
+    const forbidden = nextEvent<{ code: string }>(socket, 'error');
+
+    socket.emit('join-role', 'YAYASAN_PENGAWAS');
+
+    expect((await forbidden).code).toBe('FORBIDDEN');
+    socket.disconnect();
+  });
+
+  it('refuses the global dashboard after the foundation role was disabled', async () => {
+    assignmentFindMany.mockResolvedValue([]);
+    const socket = await connect(port, accessToken({ roleCode: 'YAYASAN_PENGAWAS', unitId: null }));
+    const forbidden = nextEvent<{ code: string }>(socket, 'error');
+
+    socket.emit('subscribe:dashboard', {});
+
+    expect((await forbidden).code).toBe('FORBIDDEN');
     socket.disconnect();
   });
 
@@ -290,7 +332,7 @@ describe('Socket.IO authorization boundary', () => {
   });
 
   it('scopes a unit-bound actor recent records to its own unit', async () => {
-    assignmentFindMany.mockResolvedValue([{ unitId: 'unit-sdit' }]);
+    assignmentFindMany.mockResolvedValue([{ unitId: 'unit-sdit', role: { code: 'SDIT_ADMIN' } }]);
     const socket = await connect(
       port,
       accessToken({ roleCode: 'SDIT_ADMIN', unitId: 'unit-sdit' })

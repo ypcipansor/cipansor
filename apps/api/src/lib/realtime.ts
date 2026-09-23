@@ -18,6 +18,7 @@ import {
   canJoinUnitRoom,
   canJoinRoleRoom,
   canSubscribeGlobalDashboard,
+  effectiveRoleCode,
   isFoundationWideRole,
   resolveDashboardUnit,
 } from '@/lib/realtime-scope';
@@ -33,6 +34,7 @@ export interface AttendanceEvent {
   studentId: string;
   studentName: string;
   status: 'present' | 'absent' | 'late' | 'excused';
+  unitId?: string;
   unitName: string;
   className: string;
   time: string;
@@ -43,6 +45,7 @@ export interface PaymentEvent {
   studentName: string;
   amount: number;
   type: string;
+  unitId?: string;
   unitName: string;
   time: string;
 }
@@ -52,6 +55,7 @@ export interface TahfidzEvent {
   studentName: string;
   surah: string;
   ayahCount: number;
+  unitId?: string;
   unitName: string;
   time: string;
 }
@@ -59,6 +63,17 @@ export interface TahfidzEvent {
 let io: SocketIOServer | null = null;
 let redisPublisher: Redis | null = null;
 let redisSubscriber: Redis | null = null;
+
+/**
+ * Redis channel carrying "disconnect this user's sockets" to every replica.
+ *
+ * A Socket.IO Redis *adapter* (`@socket.io/redis-adapter`) would fan out
+ * broadcasts and room joins across replicas, but it is a new runtime
+ * dependency and a heavier change than the one defect needs. A plain pub/sub
+ * message on a dedicated connection is enough to propagate a targeted
+ * disconnect, and it degrades to the local-only behaviour when Redis is down.
+ */
+export const SOCKET_DISCONNECT_CHANNEL = 'realtime:disconnect-user';
 
 export type { DashboardMetrics, DashboardAlert };
 
@@ -100,6 +115,17 @@ export function initializeSocketIO(httpServer: HTTPServer): SocketIOServer {
     }
   });
 
+  // Subscribe to the cross-replica socket-disconnect channel. A suspension is
+  // handled by exactly one replica; every other replica must still tear down
+  // the suspended user's sockets, which a local `disconnectSockets` cannot do.
+  redisSubscriber.subscribe(SOCKET_DISCONNECT_CHANNEL, (err) => {
+    if (err) {
+      logger.error('Failed to subscribe to socket disconnect channel:', err);
+    } else {
+      logger.info('Subscribed to cross-replica socket disconnect channel');
+    }
+  });
+
   // Handle Redis messages
   redisSubscriber.on('message', (channel, message) => {
     try {
@@ -111,6 +137,16 @@ export function initializeSocketIO(httpServer: HTTPServer): SocketIOServer {
         const alert = JSON.parse(message) as DashboardAlert;
         io?.to('dashboard').emit('alert:new', alert);
         logger.info(`Broadcasted alert: ${alert.title}`);
+      } else if (channel === SOCKET_DISCONNECT_CHANNEL) {
+        // A suspension committed on some replica. Tear down the target's
+        // sockets *on this replica*; the publishing replica already did its
+        // own. The payload is a bare user id, not JSON.
+        if (io && message) {
+          io.in(`user:${message}`).disconnectSockets(true);
+          logger.info('Disconnected sockets after cross-replica suspension signal', {
+            userId: message,
+          });
+        }
       }
     } catch (error) {
       logger.error(`Error handling Redis message from ${channel}:`, error);
@@ -156,10 +192,18 @@ export function initializeSocketIO(httpServer: HTTPServer): SocketIOServer {
     try {
       const payload = verifyToken(token);
 
-      if (payload.type !== 'access') {
+      // Reject anything that is not a fully-established access token. A
+      // temporary 2FA token is also minted with `type: 'access'` (so the 2FA
+      // controller can read `req.user`), which means the type check alone
+      // admitted it — a half-authenticated challenge token could open a
+      // realtime session, join the user's rooms and receive the initial data
+      // payload, past the second factor. The REST `authenticate` gate refuses
+      // `isTemp`; the socket handshake must use the same contract.
+      if (payload.type !== 'access' || payload.isTemp) {
         logger.warn('Invalid token type for WebSocket', {
           socketId: socket.id,
           tokenType: payload.type,
+          isTemp: payload.isTemp ?? false,
         });
         return null;
       }
@@ -216,17 +260,26 @@ export function initializeSocketIO(httpServer: HTTPServer): SocketIOServer {
    * assignments, under the same active/unexpired predicate the rest of the
    * auth code uses.
    */
-  async function effectiveUnitIdsOf(userId: string): Promise<string[]> {
+  async function effectiveAccessOf(
+    userId: string
+  ): Promise<{ unitIds: string[]; roleCodes: string[] }> {
     const assignments = await prisma.userRoleAssignment.findMany({
       where: {
         userId,
         isActive: true,
         OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
-        unitId: { not: null },
+        // A revoked role's assignment must grant nothing. Disabling the role
+        // (`Role.isActive = false`) is the administration's way to withdraw a
+        // capability from everyone holding it; an assignment row that survived
+        // the change would otherwise keep handing out the unit room, the role
+        // room and the scoped initial data.
+        role: { isActive: true },
       },
-      select: { unitId: true },
+      select: { unitId: true, role: { select: { code: true } } },
     });
-    return [...new Set(assignments.map((a) => a.unitId as string))];
+    const unitIds = [...new Set(assignments.map((a) => a.unitId).filter(Boolean) as string[])];
+    const roleCodes = [...new Set(assignments.map((a) => a.role.code))];
+    return { unitIds, roleCodes };
   }
 
   /**
@@ -270,13 +323,16 @@ export function initializeSocketIO(httpServer: HTTPServer): SocketIOServer {
     }
 
     // The identity every room grant below is decided against. The effective
-    // units are read from live assignments, not from the token alone, so a
-    // user holding roles in several units can reach all of them.
+    // units and roles are read from live assignments, not from the token alone,
+    // so a user holding roles in several units can reach all of them while a
+    // role the administration has since disabled grants nothing.
+    const effectiveAccess = await effectiveAccessOf(user.sub);
     const identity: SocketIdentity = {
       userId: user.sub,
       roleCode: user.roleCode,
       unitId: user.unitId,
-      effectiveUnitIds: await effectiveUnitIdsOf(user.sub),
+      effectiveUnitIds: effectiveAccess.unitIds,
+      activeRoleCodes: effectiveAccess.roleCodes,
     };
 
     // Attach user context to socket
@@ -330,12 +386,15 @@ export function initializeSocketIO(httpServer: HTTPServer): SocketIOServer {
       logger.debug(`Socket auto-joined unit room`, { socketId: socket.id, unitId });
     }
 
-    // Auto-join the active role's room only.
-    if (user.roleCode) {
-      socket.join(`role:${user.roleCode}`);
+    // Auto-join the active role's room only, and only while that role is still
+    // active in the database. The token's `roleCode` alone is a point-in-time
+    // snapshot; a role the administration has since disabled grants nothing.
+    const activeRole = effectiveRoleCode(identity);
+    if (activeRole) {
+      socket.join(`role:${activeRole}`);
       logger.debug(`Socket auto-joined role room`, {
         socketId: socket.id,
-        role: user.roleCode,
+        role: activeRole,
       });
     }
 
@@ -507,20 +566,53 @@ export function getIO(): SocketIOServer | null {
 }
 
 /**
- * Disconnect every open socket belonging to a user.
+ * Disconnect every open socket belonging to a user, across every replica.
  *
  * Called after a suspension commits. Authentication happens at the handshake,
  * so a socket opened before the suspension keeps its JWT and its room
  * memberships: the account-state gate on `join-*`/`subscribe:*` stops it
  * *widening* its reach, but the rooms it already holds would keep delivering
- * broadcasts. Disconnecting closes that window. Best-effort — if the realtime
- * server is not running there is nothing to disconnect, and the next event the
- * socket tries will fail the account check anyway.
+ * broadcasts. Disconnecting closes that window.
+ *
+ * `io.in(room).disconnectSockets()` only reaches sockets on *this* process.
+ * The API can run more than one instance behind a load balancer, and a socket
+ * is pinned to the instance that accepted its handshake — so a suspension
+ * handled by replica A cannot close a socket held by replica B with a local
+ * call alone, and the suspended officer would keep receiving that replica's
+ * broadcasts. The disconnect is therefore published on a Redis channel every
+ * replica subscribes to; each replica disconnects locally on receipt.
+ *
+ * Ordering: published *after* the suspension transaction commits (the caller
+ * invokes this after its `$transaction` resolves), so no replica can act on a
+ * suspension that later rolls back, and every replica's own account-state
+ * re-check reads the committed state.
+ *
+ * Best-effort by contract: if Redis is unavailable the local disconnect still
+ * runs, and the per-event `refuseIfUnusable` account re-check remains the
+ * backstop — a missed cross-replica disconnect can only delay the cut-off, it
+ * cannot let the socket widen its reach.
  */
 export function disconnectUserSockets(userId: string): void {
-  if (!io) return;
-  io.in(`user:${userId}`).disconnectSockets(true);
-  logger.info('Disconnected sockets for user', { userId });
+  // Local sockets first — this is the synchronous, always-available half.
+  if (io) {
+    io.in(`user:${userId}`).disconnectSockets(true);
+    logger.info('Disconnected local sockets for user', { userId });
+  }
+
+  // Then tell the other replicas. `redisPublisher` is separate from the
+  // subscriber connection, so publishing here cannot re-enter this replica's
+  // own subscriber callback (Redis does not deliver to the publishing
+  // connection) and the local pass above is not duplicated.
+  if (redisPublisher) {
+    redisPublisher
+      .publish(SOCKET_DISCONNECT_CHANNEL, userId)
+      .catch((error) =>
+        logger.error('Failed to publish socket disconnect to replicas', {
+          userId,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      );
+  }
 }
 
 /**

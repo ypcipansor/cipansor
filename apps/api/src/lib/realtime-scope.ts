@@ -42,6 +42,16 @@ export interface SocketIdentity {
    * layer must honour all of them, not just the token's active one.
    */
   effectiveUnitIds?: string[];
+  /**
+   * Role codes the account holds on an active, unexpired assignment whose
+   * `Role` is itself active.
+   *
+   * A `Role.isActive = false` is how the administration withdraws a capability
+   * from every holder at once; an assignment row that outlived that change must
+   * grant nothing. This set is the authoritative live role list, read from the
+   * database at handshake, rather than the token's point-in-time `roleCode`.
+   */
+  activeRoleCodes?: string[];
 }
 
 /** All units an identity may act on: the token unit plus every active assignment. */
@@ -52,6 +62,24 @@ export function allowedUnitIds(identity: SocketIdentity): Set<string> {
     if (unitId) units.add(unitId);
   }
   return units;
+}
+
+/**
+ * The identity's active role code, honoured only while its `Role` is active.
+ *
+ * When `activeRoleCodes` is present (the realtime handshake always sets it from
+ * the database), the token's `roleCode` counts only if a live, active
+ * assignment still carries it. A token minted before the role was disabled
+ * would otherwise keep granting that role's rooms and dashboard scope after the
+ * role was withdrawn. An absent `activeRoleCodes` leaves the token's role in
+ * force, which keeps these predicates usable as pure functions in tests.
+ */
+export function effectiveRoleCode(identity: SocketIdentity): string | null | undefined {
+  if (identity.activeRoleCodes === undefined) return identity.roleCode;
+  if (identity.roleCode && identity.activeRoleCodes.includes(identity.roleCode)) {
+    return identity.roleCode;
+  }
+  return null;
 }
 
 /**
@@ -66,7 +94,7 @@ export function canJoinUnitRoom(
   unitId: string | null | undefined
 ): boolean {
   if (!unitId) return false;
-  if (isFoundationWideRole(identity.roleCode)) return true;
+  if (isFoundationWideRole(effectiveRoleCode(identity))) return true;
   return allowedUnitIds(identity).has(unitId);
 }
 
@@ -82,7 +110,7 @@ export function canJoinRoleRoom(
   identity: SocketIdentity,
   roleCode: string | null | undefined
 ): boolean {
-  return !!roleCode && roleCode === identity.roleCode;
+  return !!roleCode && roleCode === effectiveRoleCode(identity);
 }
 
 /**
@@ -92,7 +120,7 @@ export function canJoinRoleRoom(
  * seeing them, so this is foundation-wide only.
  */
 export function canSubscribeGlobalDashboard(identity: SocketIdentity): boolean {
-  return isFoundationWideRole(identity.roleCode);
+  return isFoundationWideRole(effectiveRoleCode(identity));
 }
 
 /**
@@ -108,7 +136,7 @@ export function resolveDashboardUnit(
   identity: SocketIdentity,
   requestedUnitId: string | null | undefined
 ): string | undefined | null {
-  if (isFoundationWideRole(identity.roleCode)) {
+  if (isFoundationWideRole(effectiveRoleCode(identity))) {
     return requestedUnitId ?? undefined;
   }
   const units = allowedUnitIds(identity);

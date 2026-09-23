@@ -3,6 +3,27 @@ import { eventBus, initializeEventBus } from './event-bus';
 import { notificationService } from '@/modules/notifications/email-sms.service';
 import { prisma } from '@/lib/prisma';
 import { shouldSendNotification, isInQuietHours, getPreferences } from '@/modules/notifications/preferences.service';
+import {
+  broadcastAttendance,
+  broadcastPayment,
+  broadcastTahfidz,
+} from '@/lib/realtime';
+
+// The broadcasts are unit-scoped: `emitUnitScoped` routes an event to its
+// `unit:<id>` room plus the foundation-wide `dashboard` room. That routing is
+// decided entirely by the `unitId` the payload *carries*, so a handler that
+// builds its websocket payload without it silently drops the event for every
+// unit-scoped subscriber. Mocking the broadcast lets this suite assert the
+// payload's `unitId` without a live Socket.IO server.
+vi.mock('@/lib/realtime', () => ({
+  broadcastAttendance: vi.fn(),
+  broadcastPayment: vi.fn(),
+  broadcastTahfidz: vi.fn(),
+  publishDashboardMetrics: vi.fn().mockResolvedValue(undefined),
+  publishDashboardAlert: vi.fn().mockResolvedValue(undefined),
+  invalidateDashboardCache: vi.fn().mockResolvedValue(undefined),
+  getCurrentDashboardMetrics: vi.fn().mockResolvedValue({}),
+}));
 
 vi.mock('@/lib/prisma', () => ({
   prisma: {
@@ -259,6 +280,75 @@ describe('Event bus — payment received', () => {
       expect(prisma.notification.create).toHaveBeenCalled();
     });
     expect(notificationService.sendPaymentReceipt).not.toHaveBeenCalled();
+  });
+});
+
+describe('Event bus — unit-scoped broadcast payloads', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(shouldSendNotification).mockResolvedValue(true);
+    vi.mocked(isInQuietHours).mockReturnValue(false);
+    vi.mocked(getPreferences).mockResolvedValue({} as never);
+    (prisma.student.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(
+      studentWith([]) as never
+    );
+    eventBus.removeAllListeners();
+    initializeEventBus();
+  });
+
+  it('forwards unitId into the attendance broadcast payload', async () => {
+    // Regression: the handler dropped `event.unitId`, so `emitUnitScoped`
+    // could not route the event to `unit:<id>` and unit-scoped staff never
+    // received their own unit's live attendance.
+    eventBus.emit('attendance:created', {
+      id: 'att-1',
+      studentId: 'student-1',
+      studentName: 'Santri Ahmad',
+      classId: 'class-1',
+      className: '1A',
+      unitId: 'unit-1',
+      unitName: 'SMA',
+      status: 'PRESENT',
+      date: new Date(),
+      recordedById: 'teacher-1',
+    });
+
+    await vi.waitFor(() => {
+      expect(broadcastAttendance).toHaveBeenCalledWith(
+        expect.objectContaining({ unitId: 'unit-1' })
+      );
+    });
+  });
+
+  it('forwards unitId into the payment broadcast payload', async () => {
+    eventBus.emit('finance:payment-received', {
+      id: 'pay-1',
+      invoiceId: 'inv-1',
+      studentId: 'student-1',
+      studentName: 'Santri Ahmad',
+      amount: 500000,
+      paymentMethod: 'TRANSFER',
+      paidAt: new Date(),
+      unitId: 'unit-1',
+      unitName: 'SMA',
+      processedById: 'bendahara-1',
+    });
+
+    await vi.waitFor(() => {
+      expect(broadcastPayment).toHaveBeenCalledWith(
+        expect.objectContaining({ unitId: 'unit-1' })
+      );
+    });
+  });
+
+  it('forwards unitId into the tahfidz broadcast payload', async () => {
+    eventBus.emit('tahfidz:created', tahfidzEvent);
+
+    await vi.waitFor(() => {
+      expect(broadcastTahfidz).toHaveBeenCalledWith(
+        expect.objectContaining({ unitId: 'unit-1' })
+      );
+    });
   });
 });
 
