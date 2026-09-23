@@ -588,3 +588,110 @@ describe.skipIf(!RUN)('finding C — migrate deploy di atas database berisi data
     }
   });
 });
+
+/**
+ * Migration `20260922000000_foundation_decision_cancelled_and_circular_mufakat`.
+ *
+ * Two things it must do, neither provable from a mocked Prisma or a fresh
+ * deployment alone:
+ *
+ *  - add the `CANCELLED` label to `FoundationDecisionStatus`; and
+ *  - normalise EXISTING `decision_kind = 'CIRCULAR'` rule rows to mufakat
+ *    (MUTLAK). That second half only bites when the table already holds a
+ *    deviant row, so a fresh database would pass vacuously. A majority circular
+ *    rule could otherwise be read from data written before the contract banned
+ *    it — the UI hides the option now, but the quorum engine reads the row.
+ *
+ * `MEETING` rows must be left untouched: the migration is not a blanket write.
+ */
+describe.skipIf(!RUN)('migrasi CANCELLED + normalisasi sirkuler', () => {
+  const databases: string[] = [];
+  const tempDirs: string[] = [];
+
+  afterAll(async () => {
+    for (const db of databases) {
+      await dropDatabase(db);
+    }
+    for (const dir of tempDirs) {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('menambah label CANCELLED dan menyelaraskan aturan sirkuler lama ke MUTLAK', async () => {
+    const name = `cipansor_mig_cancel_${randomBytes(4).toString('hex')}`;
+    databases.push(name);
+    await createDatabase(name);
+    const url = urlForDatabase(name);
+
+    const base = stagedMigrations((n) => n <= '20260916000000_foundation_decisions');
+    tempDirs.push(base.dir);
+    migrateDeployWithMigrations(url, path.join(base.dir, 'migrations'), base.configPath);
+
+    const suffix = randomBytes(4).toString('hex');
+    const admin = new Client({ connectionString: url });
+    await admin.connect();
+    try {
+      const { rows: before } = await admin.query<{ enumlabel: string }>(
+        `SELECT enumlabel FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid
+          WHERE t.typname = 'FoundationDecisionStatus' ORDER BY enumlabel`
+      );
+      expect(before.map((r) => r.enumlabel)).not.toContain('CANCELLED');
+
+      await admin.query(
+        `INSERT INTO "foundation_decision_rules"
+           (id, organ_type, decision_kind, quorum_present_mode, quorum_present_value,
+            quorum_decision_mode, quorum_decision_value, updated_at)
+         VALUES
+           ($1, 'PEMBINA', 'CIRCULAR', 'MAJORITY', 0.5, 'MAJORITY', 0.5, NOW()),
+           ($2, 'PEMBINA', 'MEETING', 'TWO_THIRDS', 0.6667, 'TWO_THIRDS', 0.6667, NOW())`,
+        [`mig-circ-${suffix}`, `mig-meet-${suffix}`]
+      );
+    } finally {
+      await admin.end();
+    }
+
+    const rest = stagedMigrations((n) => n > '20260916000000_foundation_decisions');
+    tempDirs.push(rest.dir);
+    const second = migrateDeployWithMigrations(
+      url,
+      path.join(rest.dir, 'migrations'),
+      rest.configPath
+    );
+    expect(second).toMatch(/migrations have been successfully applied/);
+
+    const client = new Client({ connectionString: url });
+    await client.connect();
+    try {
+      const { rows: after } = await client.query<{ enumlabel: string }>(
+        `SELECT enumlabel FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid
+          WHERE t.typname = 'FoundationDecisionStatus' ORDER BY enumlabel`
+      );
+      expect(after.map((r) => r.enumlabel)).toContain('CANCELLED');
+
+      const { rows: rules } = await client.query<{
+        decision_kind: string;
+        quorum_present_mode: string;
+        quorum_decision_mode: string;
+        quorum_present_value: number;
+        quorum_decision_value: number;
+      }>(
+        `SELECT decision_kind, quorum_present_mode, quorum_decision_mode,
+                quorum_present_value, quorum_decision_value
+           FROM "foundation_decision_rules"
+          WHERE id = ANY($1::text[]) ORDER BY decision_kind`,
+        [[`mig-circ-${suffix}`, `mig-meet-${suffix}`]]
+      );
+      const circular = rules.find((r) => r.decision_kind === 'CIRCULAR')!;
+      expect(circular.quorum_present_mode).toBe('MUTLAK');
+      expect(circular.quorum_decision_mode).toBe('MUTLAK');
+      expect(circular.quorum_present_value).toBe(1);
+      expect(circular.quorum_decision_value).toBe(1);
+
+      const meeting = rules.find((r) => r.decision_kind === 'MEETING')!;
+      expect(meeting.quorum_present_mode).toBe('TWO_THIRDS');
+      expect(meeting.quorum_decision_mode).toBe('TWO_THIRDS');
+    } finally {
+      await client.end();
+    }
+  });
+});

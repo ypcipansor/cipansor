@@ -50,14 +50,43 @@ async function waitForLockWaiterOnAssignments(
   client: PrismaClient,
   timeoutMs: number
 ): Promise<boolean> {
+  return waitForLockWaiterOnRelation(client, 'user_role_assignments', timeoutMs);
+}
+
+/** Sama seperti di atas, untuk kunci baris `users` (offboarding). */
+async function waitForLockWaiterOnUsers(
+  client: PrismaClient,
+  timeoutMs: number
+): Promise<boolean> {
+  return waitForLockWaiterOnRelation(client, 'users', timeoutMs);
+}
+
+/** Sama seperti di atas, untuk kunci tabel `foundation_decision_rules`. */
+async function waitForLockWaiterOnRules(
+  client: PrismaClient,
+  timeoutMs: number
+): Promise<boolean> {
+  return waitForLockWaiterOnRelation(client, 'foundation_decision_rules', timeoutMs);
+}
+
+async function waitForLockWaiterOnRelation(
+  client: PrismaClient,
+  relation: string,
+  timeoutMs: number
+): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
+    // `pg_locks` saja tidak cukup: menunggu kunci BARIS (`FOR SHARE` melawan
+    // `UPDATE` yang sudah menulis) muncul sebagai `transactionid` tanpa
+    // `relation`, jadi ia tak terlihat lewat `pg_class`. `pg_stat_activity`
+    // menangkap kedua bentuk — penunggu kunci ditandai `wait_event_type =
+    // 'Lock'` dan `query`-nya memuat nama relasinya.
     const rows = await client.$queryRaw<Array<{ n: number }>>`
       SELECT count(*)::int AS n
-      FROM pg_locks l
-      JOIN pg_class c ON c.oid = l.relation
-      WHERE c.relname = 'user_role_assignments'
-        AND l.granted = false`;
+      FROM pg_stat_activity
+      WHERE wait_event_type = 'Lock'
+        AND query ILIKE ${'%' + relation + '%'}
+        AND pid <> pg_backend_pid()`;
     if (rows[0]?.n) return true;
     await new Promise((r) => setTimeout(r, 25));
   }
@@ -1474,6 +1503,549 @@ describe.skipIf(!RUN)('foundation-decisions integrasi PostgreSQL', () => {
     await prisma.foundationDecisionMember.deleteMany({ where: { decisionId: created.id } });
     await prisma.foundationDecision.delete({ where: { id: created.id } });
     await prisma.user.deleteMany({ where: { id: { in: [creator.id, member.id] } } });
+  });
+
+  /**
+   * SECURITY CRITICAL (real PostgreSQL) — deaktivasi konkuren tidak boleh
+   * membekukan anggota ke dalam snapshot.
+   *
+   * Deaktivasi akun (`UPDATE users SET is_active = false`) TIDAK menyentuh
+   * `user_role_assignments`, sehingga kunci tabel penugasan melewatkannya.
+   * Sebelum `lockOrganMemberRowsForSnapshot`, anggota yang dinonaktifkan tepat
+   * sebelum `create` commit tetap masuk snapshot beserta hak suaranya.
+   *
+   * Koneksi B menonaktifkan anggota lalu DITAHAN; `create` harus memblokir pada
+   * kunci baris `users` (terlihat di `pg_locks`), lalu setelah B commit menolak
+   * snapshot basi.
+   */
+  it('deaktivasi konkuren: create memblokir lalu menolak snapshot basi', async () => {
+    const suffix = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const creator = await prisma.user.create({
+      data: {
+        id: `itest-off-creator-${suffix}`,
+        email: `itest-off-creator-${suffix}@example.test`,
+        name: 'Pembuat Offboard',
+        passwordHash: 'x',
+      },
+    });
+    const leaving = await prisma.user.create({
+      data: {
+        id: `itest-off-leaving-${suffix}`,
+        email: `itest-off-leaving-${suffix}@example.test`,
+        name: 'Akan Dinonaktifkan',
+        passwordHash: 'x',
+      },
+    });
+    const pembina = await prisma.role.upsert({
+      where: { code: 'YAYASAN_PEMBINA' },
+      create: { code: 'YAYASAN_PEMBINA', name: 'Pembina', realm: 'YAYASAN' },
+      update: {},
+    });
+    await prisma.userRoleAssignment.create({
+      data: { userId: leaving.id, roleId: pembina.id, isActive: true },
+    });
+    await prisma.userRoleAssignment.create({
+      data: { userId: creator.id, roleId: pembina.id, isActive: true, isPrimary: true },
+    });
+
+    const b = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    await b.connect();
+    await b.query('BEGIN');
+    await b.query(`UPDATE "users" SET "is_active" = false, "updated_at" = NOW() WHERE "id" = $1`, [
+      leaving.id,
+    ]);
+
+    let decisionId: string | null = null;
+    try {
+      const input = {
+        organType: 'PEMBINA' as const,
+        kind: 'CIRCULAR' as const,
+        subject: 'Uji deaktivasi konkuren',
+        body: 'Naskah uji deaktivasi akun konkuren saat keputusan dibuat.',
+        decisionType: 'pengesahan-rencana-kerja' as const,
+      };
+      const createPromise = FoundationDecisionService.create(
+        { id: creator.id, roleCode: 'YAYASAN_PEMBINA' },
+        input
+      );
+
+      // Deterministik: `create` menunggu kunci baris `users` yang dipegang B.
+      const blocked = await waitForLockWaiterOnUsers(prisma, 8000);
+      expect(blocked).toBe(true);
+
+      await b.query('COMMIT');
+      // B menang lebih dulu → snapshot pasca-lock kehilangan anggota itu dan
+      // operasi dibatalkan, bukan membekukannya.
+      await expect(createPromise).rejects.toThrow(/Keanggotaan organ .* berubah/);
+
+      decisionId = await FoundationDecisionService.create(
+        { id: creator.id, roleCode: 'YAYASAN_PEMBINA' },
+        input
+      );
+      const members = await prisma.foundationDecisionMember.findMany({
+        where: { decisionId },
+        select: { userId: true },
+      });
+      const memberIds = members.map((m) => m.userId);
+      expect(memberIds).toContain(creator.id);
+      expect(memberIds).not.toContain(leaving.id);
+    } finally {
+      await b.end().catch(() => {});
+      if (decisionId) {
+        await prisma.foundationDecisionMember.deleteMany({ where: { decisionId } });
+        await prisma.auditLog.deleteMany({ where: { entityId: decisionId } });
+        await prisma.foundationDecision.delete({ where: { id: decisionId } });
+      }
+      await prisma.userRoleAssignment.deleteMany({
+        where: { userId: { in: [creator.id, leaving.id] } },
+      });
+      await prisma.user.deleteMany({ where: { id: { in: [creator.id, leaving.id] } } });
+    }
+  });
+
+  /**
+   * BUG SEVERE (real PostgreSQL) — mematikan PERAN organ tidak boleh lolos dari
+   * kunci snapshot.
+   *
+   * `roles.is_active = false` mengeluarkan SELURUH pemegang peran itu dari organ,
+   * tetapi ia tidak menyentuh `user_role_assignments` sama sekali — sehingga
+   * kunci tabel penugasan saja melewatkannya. Snapshot yang membaca sebelum
+   * commit `roles` lalu menulis setelahnya akan membekukan anggota yang sudah
+   * tidak lagi memegang peran. `lockOrganRoleRowsForSnapshot` (`FOR SHARE`)
+   * menahan `UPDATE roles` yang konkuren; baca ulang setelahnya melihat
+   * `is_active = false` dan pembuatan dibatalkan.
+   */
+  it('deaktivasi PERAN konkuren: create memblokir lalu menolak snapshot basi', async () => {
+    const suffix = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const creator = await prisma.user.create({
+      data: {
+        id: `itest-roledeact-creator-${suffix}`,
+        email: `itest-roledeact-creator-${suffix}@example.test`,
+        name: 'Pembuat Peran',
+        passwordHash: 'x',
+      },
+    });
+    const member = await prisma.user.create({
+      data: {
+        id: `itest-roledeact-member-${suffix}`,
+        email: `itest-roledeact-member-${suffix}@example.test`,
+        name: 'Pemegang Peran',
+        passwordHash: 'x',
+      },
+    });
+    const pembina = await prisma.role.upsert({
+      where: { code: 'YAYASAN_PEMBINA' },
+      create: { code: 'YAYASAN_PEMBINA', name: 'Pembina', realm: 'YAYASAN' },
+      update: { isActive: true },
+    });
+    await prisma.userRoleAssignment.create({
+      data: { userId: member.id, roleId: pembina.id, isActive: true },
+    });
+    await prisma.userRoleAssignment.create({
+      data: { userId: creator.id, roleId: pembina.id, isActive: true, isPrimary: true },
+    });
+
+    const b = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    await b.connect();
+    await b.query('BEGIN');
+    // Matikan peran organ. Tidak ada `user_role_assignments` yang tersentuh,
+    // sehingga kunci tabel penugasan saja tidak akan menahan ini.
+    await b.query(`UPDATE "roles" SET "is_active" = false, "updated_at" = NOW() WHERE "id" = $1`, [
+      pembina.id,
+    ]);
+
+    try {
+      const input = {
+        organType: 'PEMBINA' as const,
+        kind: 'MEETING' as const,
+        subject: 'Uji deaktivasi peran konkuren',
+        body: 'Naskah uji peran organ dimatikan saat keputusan dibuat.',
+        decisionType: 'pengesahan-rencana-kerja' as const,
+      };
+      const createPromise = FoundationDecisionService.create(
+        { id: creator.id, roleCode: 'YAYASAN_PEMBINA' },
+        input
+      );
+
+      // `create` menunggu kunci baris `roles` (`FOR SHARE`) milik B.
+      const blocked = await waitForLockWaiterOnRelation(prisma, 'roles', 8000);
+      expect(blocked).toBe(true);
+
+      await b.query('COMMIT');
+      // B menang → peran mati → snapshot pasca-lock kehilangan seluruh anggota,
+      // operasi dibatalkan alih-alih membekukan pemegang peran yang dicabut.
+      await expect(createPromise).rejects.toThrow(/Keanggotaan organ .* berubah/);
+      expect(
+        await prisma.foundationDecision.count({ where: { subject: input.subject } })
+      ).toBe(0);
+    } finally {
+      await b.end().catch(() => {});
+      await prisma.role.update({ where: { id: pembina.id }, data: { isActive: true } });
+      await prisma.userRoleAssignment.deleteMany({
+        where: { userId: { in: [creator.id, member.id] } },
+      });
+      await prisma.user.deleteMany({ where: { id: { in: [creator.id, member.id] } } });
+    }
+  });
+
+  /**
+   * SECURITY CRITICAL (real PostgreSQL) — akun yang dinonaktifkan/dihapus TIDAK
+   * dapat memberi suara, walau token akses stateless-nya masih berlaku dan
+   * namanya masih ada di snapshot.
+   *
+   * `castVote` memeriksa status hidup akun DI DALAM transaksi
+   * (`assertUserActiveInTx`). Snapshot immutable tetap memuat anggota itu,
+   * sehingga tanpa pemeriksaan ini ia masih dapat menandatangani suara dan
+   * memicu e-seal Yayasan setelah offboarding.
+   */
+  it('akun non-aktif dan soft-deleted ditolak saat memberi suara', async () => {
+    const suffix = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const creator = await prisma.user.create({
+      data: {
+        id: `itest-vote-creator-${suffix}`,
+        email: `itest-vote-creator-${suffix}@example.test`,
+        name: 'Pembuat Suara',
+        passwordHash: 'x',
+      },
+    });
+    const member = await prisma.user.create({
+      data: {
+        id: `itest-vote-member-${suffix}`,
+        email: `itest-vote-member-${suffix}@example.test`,
+        name: 'Anggota Suara',
+        passwordHash: 'x',
+      },
+    });
+    const pembina = await prisma.role.upsert({
+      where: { code: 'YAYASAN_PEMBINA' },
+      create: { code: 'YAYASAN_PEMBINA', name: 'Pembina', realm: 'YAYASAN' },
+      update: {},
+    });
+    await prisma.userRoleAssignment.create({
+      data: { userId: creator.id, roleId: pembina.id, isActive: true, isPrimary: true },
+    });
+    await prisma.userRoleAssignment.create({
+      data: { userId: member.id, roleId: pembina.id, isActive: true },
+    });
+    // Kunci tanda tangan nyata dan SUDAH DISETUJUI untuk KEDUA anggota: tanpa
+    // `approvedAt`/`expiresAt`, `assertCanSign` menolaknya sebagai
+    // PENDING_APPROVAL dan penolakan offboarding tidak pernah dievaluasi.
+    const memberKey = createKeyMaterial('offboard-vote-pass');
+    const creatorKey = createKeyMaterial('offboard-control-pass');
+    await prisma.userSigningKey.create({
+      data: {
+        id: `itest-vote-key-${suffix}`,
+        userId: member.id,
+        algorithm: memberKey.algorithm,
+        publicKey: memberKey.publicKey,
+        encryptedPrivateKey: memberKey.encryptedPrivateKey,
+        kdfSalt: memberKey.kdfSalt,
+        kdfParams: memberKey.kdfParams as never,
+        iv: memberKey.iv,
+        authTag: memberKey.authTag,
+        approvedAt: new Date(),
+        expiresAt: new Date(Date.now() + 365 * 24 * 3600 * 1000),
+      },
+    });
+    await prisma.userSigningKey.create({
+      data: {
+        id: `itest-control-key-${suffix}`,
+        userId: creator.id,
+        algorithm: creatorKey.algorithm,
+        publicKey: creatorKey.publicKey,
+        encryptedPrivateKey: creatorKey.encryptedPrivateKey,
+        kdfSalt: creatorKey.kdfSalt,
+        kdfParams: creatorKey.kdfParams as never,
+        iv: creatorKey.iv,
+        authTag: creatorKey.authTag,
+        approvedAt: new Date(),
+        expiresAt: new Date(Date.now() + 365 * 24 * 3600 * 1000),
+      },
+    });
+
+    let decisionId: string | null = null;
+    try {
+      decisionId = await FoundationDecisionService.create(
+        { id: creator.id, roleCode: 'YAYASAN_PEMBINA' },
+        {
+          organType: 'PEMBINA',
+          // MEETING, bukan CIRCULAR: sirkuler menutup dirinya otomatis begitu
+          // mufakat mustahil, sehingga kendali positif di bawah akan mengubah
+          // status dan penolakan offboarding tidak lagi dievaluasi. Rapat tetap
+          // VOTING sampai difinalisasi manual.
+          kind: 'MEETING',
+          subject: 'Uji suara akun non-aktif',
+          body: 'Naskah uji penolakan suara akun yang sudah dinonaktifkan.',
+          decisionType: 'pengesahan-rencana-kerja',
+        }
+      );
+      const snapshot = await prisma.foundationDecisionMember.findMany({
+        where: { decisionId },
+        select: { userId: true },
+      });
+      // Prasyarat: anggota itu MEMANG ada di snapshot — jadi penolakan di bawah
+      // datang dari pemeriksaan status hidup, bukan dari ketiadaan keanggotaan.
+      expect(snapshot.map((m) => m.userId)).toContain(member.id);
+
+      // Kendali positif: akun aktif + kunci sah memang DAPAT memberi suara,
+      // sehingga penolakan setelah offboarding di bawah benar-benar disebabkan
+      // oleh status akun, bukan sebab lain.
+      const controlVote = await FoundationDecisionService.castVote(
+        { id: creator.id, roleCode: 'YAYASAN_PEMBINA' },
+        decisionId,
+        { choice: 'ABSTAIN', passphrase: 'offboard-control-pass' }
+      );
+      expect(controlVote).toBeTruthy();
+
+      await prisma.user.update({ where: { id: member.id }, data: { isActive: false } });
+      await expect(
+        FoundationDecisionService.castVote(
+          { id: member.id, roleCode: 'YAYASAN_PEMBINA' },
+          decisionId,
+          { choice: 'APPROVE', passphrase: 'offboard-vote-pass' }
+        )
+      ).rejects.toThrow(/tidak aktif atau telah dihapus/);
+      expect(
+        await prisma.foundationDecisionVote.count({ where: { decisionId, userId: member.id } })
+      ).toBe(0);
+
+      // Soft-delete: jalur kedua, hasil yang sama.
+      await prisma.user.update({
+        where: { id: member.id },
+        data: { isActive: true, deletedAt: new Date() },
+      });
+      await expect(
+        FoundationDecisionService.castVote(
+          { id: member.id, roleCode: 'YAYASAN_PEMBINA' },
+          decisionId,
+          { choice: 'APPROVE', passphrase: 'offboard-vote-pass' }
+        )
+      ).rejects.toThrow(/tidak aktif atau telah dihapus/);
+      expect(
+        await prisma.foundationDecisionVote.count({ where: { decisionId, userId: member.id } })
+      ).toBe(0);
+    } finally {
+      if (decisionId) {
+        await prisma.foundationDecisionVote.deleteMany({ where: { decisionId } });
+        await prisma.foundationDecisionMember.deleteMany({ where: { decisionId } });
+        await prisma.auditLog.deleteMany({ where: { entityId: decisionId } });
+        await prisma.foundationDecision.delete({ where: { id: decisionId } });
+      }
+      await prisma.userSigningKeyHistory.deleteMany({
+        where: { userId: { in: [creator.id, member.id] } },
+      });
+      await prisma.userSigningKey.deleteMany({ where: { userId: { in: [creator.id, member.id] } } });
+      await prisma.userRoleAssignment.deleteMany({
+        where: { userId: { in: [creator.id, member.id] } },
+      });
+      await prisma.user.deleteMany({ where: { id: { in: [creator.id, member.id] } } });
+    }
+  });
+
+  /**
+   * SECURITY CRITICAL (real PostgreSQL) — race suara melawan offboarding.
+   *
+   * Koneksi B menonaktifkan pemilih lalu DITAHAN (memegang kunci baris
+   * `users`); suara dari pemilih itu harus MEMBLOKIR pada kunci baris tersebut,
+   * lalu DITOLAK setelah B commit. Bukti bahwa suara tidak pernah ter-commit
+   * setelah offboarding menang.
+   */
+  it('race suara melawan offboarding: suara ditolak setelah deaktivasi commit', async () => {
+    const suffix = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const creator = await prisma.user.create({
+      data: {
+        id: `itest-race-creator-${suffix}`,
+        email: `itest-race-creator-${suffix}@example.test`,
+        name: 'Pembuat Race',
+        passwordHash: 'x',
+      },
+    });
+    const voter = await prisma.user.create({
+      data: {
+        id: `itest-race-voter-${suffix}`,
+        email: `itest-race-voter-${suffix}@example.test`,
+        name: 'Pemilih Race',
+        passwordHash: 'x',
+      },
+    });
+    const pembina = await prisma.role.upsert({
+      where: { code: 'YAYASAN_PEMBINA' },
+      create: { code: 'YAYASAN_PEMBINA', name: 'Pembina', realm: 'YAYASAN' },
+      update: {},
+    });
+    await prisma.userRoleAssignment.create({
+      data: { userId: creator.id, roleId: pembina.id, isActive: true, isPrimary: true },
+    });
+    await prisma.userRoleAssignment.create({
+      data: { userId: voter.id, roleId: pembina.id, isActive: true },
+    });
+    // Kunci tanda tangan nyata dan sudah disetujui, supaya `castVote` sampai ke
+    // pemeriksaan status hidup akun alih-alih berhenti pada lifecycle kunci.
+    const voterKey = createKeyMaterial('race-vote-pass');
+    await prisma.userSigningKey.create({
+      data: {
+        id: `itest-race-key-${suffix}`,
+        userId: voter.id,
+        algorithm: voterKey.algorithm,
+        publicKey: voterKey.publicKey,
+        encryptedPrivateKey: voterKey.encryptedPrivateKey,
+        kdfSalt: voterKey.kdfSalt,
+        kdfParams: voterKey.kdfParams as never,
+        iv: voterKey.iv,
+        authTag: voterKey.authTag,
+        approvedAt: new Date(),
+        expiresAt: new Date(Date.now() + 365 * 24 * 3600 * 1000),
+      },
+    });
+
+    let decisionId: string | null = null;
+    const b = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    try {
+      decisionId = await FoundationDecisionService.create(
+        { id: creator.id, roleCode: 'YAYASAN_PEMBINA' },
+        {
+          organType: 'PEMBINA',
+          kind: 'MEETING',
+          subject: 'Uji race offboarding',
+          body: 'Naskah uji balapan antara pemberian suara dan penonaktifan akun.',
+          decisionType: 'pengesahan-rencana-kerja',
+        }
+      );
+
+      await b.connect();
+      await b.query('BEGIN');
+      await b.query(
+        `UPDATE "users" SET "is_active" = false, "updated_at" = NOW() WHERE "id" = $1`,
+        [voter.id]
+      );
+
+      // Suara dijalankan pada koneksi Prisma lain; ia akan memblokir di kunci
+      // baris `users` milik B saat masuk transaksi.
+      const votePromise = FoundationDecisionService.castVote(
+        { id: voter.id, roleCode: 'YAYASAN_PEMBINA' },
+        decisionId,
+        { choice: 'APPROVE', passphrase: 'race-vote-pass' }
+      );
+      const blocked = await waitForLockWaiterOnUsers(prisma, 8000);
+      expect(blocked).toBe(true);
+
+      await b.query('COMMIT');
+      await expect(votePromise).rejects.toThrow(/tidak aktif atau telah dihapus/);
+      expect(await prisma.foundationDecisionVote.count({ where: { decisionId } })).toBe(0);
+    } finally {
+      await b.end().catch(() => {});
+      if (decisionId) {
+        await prisma.foundationDecisionVote.deleteMany({ where: { decisionId } });
+        await prisma.foundationDecisionMember.deleteMany({ where: { decisionId } });
+        await prisma.auditLog.deleteMany({ where: { entityId: decisionId } });
+        await prisma.foundationDecision.delete({ where: { id: decisionId } });
+      }
+      await prisma.userSigningKeyHistory.deleteMany({ where: { userId: voter.id } });
+      await prisma.userSigningKey.deleteMany({ where: { userId: voter.id } });
+      await prisma.userRoleAssignment.deleteMany({
+        where: { userId: { in: [creator.id, voter.id] } },
+      });
+      await prisma.user.deleteMany({ where: { id: { in: [creator.id, voter.id] } } });
+    }
+  });
+
+  /**
+   * BUG SEVERE (real PostgreSQL) — aturan kuorum yang diganti secara konkuren
+   * tidak boleh disimpan basi oleh `create`.
+   *
+   * Koneksi B meng-UPDATE baris aturan lalu DITAHAN (memegang `ROW EXCLUSIVE`);
+   * `create` harus memblokir pada kunci TABEL `foundation_decision_rules`, lalu
+   * setelah B commit membaca ulang nilai BARU dan membekukannya di snapshot —
+   * bukan ambang yang sudah diganti. Snapshot yang diuji adalah
+   * `quorumSnapshot.presentValue`, satu-satunya tempat ambang disimpan.
+   */
+  it('perubahan aturan kuorum konkuren: snapshot memakai nilai pasca-commit, bukan basi', async () => {
+    const suffix = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const creator = await prisma.user.create({
+      data: {
+        id: `itest-rule-creator-${suffix}`,
+        email: `itest-rule-creator-${suffix}@example.test`,
+        name: 'Pembuat Aturan',
+        passwordHash: 'x',
+      },
+    });
+    const pembina = await prisma.role.upsert({
+      where: { code: 'YAYASAN_PEMBINA' },
+      create: { code: 'YAYASAN_PEMBINA', name: 'Pembina', realm: 'YAYASAN' },
+      update: {},
+    });
+    await prisma.userRoleAssignment.create({
+      data: { userId: creator.id, roleId: pembina.id, isActive: true, isPrimary: true },
+    });
+    // Aturan MEETING awal: mayoritas 0.5 (nilai default legal untuk rapat).
+    await prisma.foundationDecisionRule.upsert({
+      where: { organType_decisionKind: { organType: 'PEMBINA', decisionKind: 'MEETING' } },
+      create: {
+        organType: 'PEMBINA',
+        decisionKind: 'MEETING',
+        quorumPresentMode: 'MAJORITY',
+        quorumPresentValue: 0.5,
+        quorumDecisionMode: 'MAJORITY',
+        quorumDecisionValue: 0.5,
+      },
+      update: {
+        quorumPresentMode: 'MAJORITY',
+        quorumPresentValue: 0.5,
+        quorumDecisionMode: 'MAJORITY',
+        quorumDecisionValue: 0.5,
+      },
+    });
+
+    const b = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    await b.connect();
+    await b.query('BEGIN');
+    await b.query(
+      `UPDATE "foundation_decision_rules"
+         SET "quorum_present_mode" = 'MUTLAK', "quorum_present_value" = 1,
+             "quorum_decision_mode" = 'MUTLAK', "quorum_decision_value" = 1,
+             "updated_at" = NOW()
+       WHERE "organ_type" = 'PEMBINA' AND "decision_kind" = 'MEETING'`
+    );
+
+    let decisionId: string | null = null;
+    try {
+      const createPromise = FoundationDecisionService.create(
+        { id: creator.id, roleCode: 'YAYASAN_PEMBINA' },
+        {
+          organType: 'PEMBINA',
+          kind: 'MEETING',
+          subject: 'Uji aturan konkuren',
+          body: 'Naskah uji perubahan aturan kuorum yang konkuren.',
+          decisionType: 'pengesahan-rencana-kerja',
+        }
+      );
+
+      const blocked = await waitForLockWaiterOnRules(prisma, 8000);
+      expect(blocked).toBe(true);
+
+      await b.query('COMMIT');
+      decisionId = await createPromise;
+      const row = await prisma.foundationDecision.findUniqueOrThrow({
+        where: { id: decisionId },
+        select: { quorumSnapshot: true },
+      });
+      const snap = row.quorumSnapshot as { presentMode: string; decisionMode: string };
+      // Nilai pasca-commit (MUTLAK), bukan 0.5 yang basi.
+      expect(snap.presentMode).toBe('MUTLAK');
+      expect(snap.decisionMode).toBe('MUTLAK');
+    } finally {
+      await b.end().catch(() => {});
+      if (decisionId) {
+        await prisma.foundationDecisionMember.deleteMany({ where: { decisionId } });
+        await prisma.auditLog.deleteMany({ where: { entityId: decisionId } });
+        await prisma.foundationDecision.delete({ where: { id: decisionId } });
+      }
+      await prisma.foundationDecisionRule.deleteMany({
+        where: { organType: 'PEMBINA', decisionKind: 'MEETING' },
+      });
+      await prisma.userRoleAssignment.deleteMany({ where: { userId: creator.id } });
+      await prisma.user.deleteMany({ where: { id: creator.id } });
+    }
   });
 });
 

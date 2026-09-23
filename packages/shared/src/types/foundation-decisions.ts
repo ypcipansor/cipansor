@@ -239,6 +239,18 @@ export const FoundationDecisionStatus = {
   VOTING: "VOTING",
   APPROVED: "APPROVED",
   REJECTED: "REJECTED",
+  /**
+   * Rapat dibatalkan karena kuorum HADIR tidak pernah tercapai.
+   *
+   * DIBEDAKAN dari REJECTED dengan sengaja. Rapat yang gagal kuorum tidak
+   * pernah memutus materi apa pun — menandainya REJECTED berarti menyatakan
+   * materi "ditolak" tanpa dasar, dan itu keliru secara hukum maupun operasional
+   * (rapat yang gagal kuorum umumnya ditunda dan dijadwalkan ulang, bukan
+   * berarti materi ditolak). Status ini menutup rapat yang tidak dapat
+   * dilanjutkan TANPA mengesahkan maupun menolak isinya, dan tetap dapat
+   * diverifikasi publik sebagai dokumen yang sah-formatnya.
+   */
+  CANCELLED: "CANCELLED",
 } as const;
 export type FoundationDecisionStatus =
   (typeof FoundationDecisionStatus)[keyof typeof FoundationDecisionStatus];
@@ -416,7 +428,26 @@ export interface FoundationDecisionDetailDTO extends FoundationDecisionSummaryDT
    * UI tidak menawarkan "Terbitkan" pada draf/VOTING yang peladen tolak.
    */
   publishable: boolean;
+  /**
+   * Bolehkah aktor membatalkan rapat ini (kuorum hadir belum tercapai)?
+   *
+   * Dihitung server dengan syarat yang SAMA dengan `cancel`, sehingga UI tidak
+   * menawarkan tombol yang peladen tolak — dan tidak pula menyembunyikan satu-
+   * satunya jalan keluar dari rapat yang gagal kuorum.
+   */
+  canCancel: boolean;
   myVote: FoundationVoteChoice | null;
+  /**
+   * Jumlah baris suara yang GAGAL verifikasi tanda tangan (tidak autentik).
+   *
+   * Seluruh angka resmi (`votedCount`, `voteSummary`, rekap verifikasi publik,
+   * PDF) dihitung HANYA dari suara autentik, sehingga baris yang disisipkan
+   * langsung ke basis data tidak pernah memengaruhi hasil. Field ini adalah
+   * DIAGNOSTIK terpisah dan hanya diisi untuk aktor berwenang (SUPER_ADMIN);
+   * bagi peran lain nilainya `undefined` — angka mentah yang mengungkap adanya
+   * manipulasi basis data tidak perlu bocor ke setiap anggota.
+   */
+  invalidVoteCount?: number;
 }
 
 /**

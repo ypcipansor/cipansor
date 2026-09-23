@@ -280,16 +280,36 @@ export class UserService {
     }
 
     // Update user
-    const updated = await prisma.user.update({
-      where: { id },
-      data: {
-        name: input.name,
-        email: input.email,
-        role: input.role as UserRole | undefined,
-        unitId: input.unitId,
-        isActive: input.isActive,
-      },
-      include: { unit: true },
+    const updated = await prisma.$transaction(async (tx) => {
+      const row = await tx.user.update({
+        where: { id },
+        data: {
+          name: input.name,
+          email: input.email,
+          role: input.role as UserRole | undefined,
+          unitId: input.unitId,
+          isActive: input.isActive,
+        },
+        include: { unit: true },
+      });
+
+      /**
+       * Deaktivasi harus mencabut sesi, bukan hanya menandai akun.
+       *
+       * `refreshToken` disimpan di basis data, jadi ia DAPAT dicabut — dan
+       * harus: tanpa ini, akun yang dinonaktifkan tetap dapat memperpanjang
+       * sesinya lewat `POST /auth/refresh`. Token AKSES stateless tidak dapat
+       * dicabut; jalur itu ditutup oleh pemeriksaan `assertUserActiveInTx`
+       * pada setiap aksi tata kelola.
+       *
+       * Berada di transaksi yang SAMA dengan perubahan status: tidak ada
+       * jendela antara "akun mati" dan "token masih hidup".
+       */
+      if (input.isActive === false) {
+        await tx.refreshToken.deleteMany({ where: { userId: id } });
+      }
+
+      return row;
     });
 
     const { passwordHash, ...userWithoutPassword } = updated;
@@ -298,6 +318,15 @@ export class UserService {
 
   /**
    * Delete user (soft delete)
+   *
+   * Satu transaksi: penandaan `deleted_at` dan pencabutan seluruh refresh token
+   * harus terlihat bersama. Bila pencabutan token dilakukan sebagai pernyataan
+   * terpisah dan gagal, akun sudah "dihapus" tetapi sesinya masih dapat
+   * diperpanjang — dan karena pemeriksaan `assertUserActiveInTx` menolak
+   * `deleted_at != null`, satu-satunya sisa jalurnya adalah refresh. Transaksi
+   * yang sama juga membuat `UPDATE users` menahan kunci baris, sehingga
+   * snapshot foundation yang sedang dibentuk (`FOR SHARE`) terserialisasi
+   * terhadap soft-delete ini.
    */
   async delete(id: string) {
     const user = await prisma.user.findFirst({
@@ -308,15 +337,17 @@ export class UserService {
       throw Errors.notFound('User');
     }
 
-    // Soft delete
-    await prisma.user.update({
-      where: { id },
-      data: { deletedAt: new Date() },
-    });
+    await prisma.$transaction(async (tx) => {
+      // Soft delete
+      await tx.user.update({
+        where: { id },
+        data: { deletedAt: new Date() },
+      });
 
-    // Also delete refresh tokens
-    await prisma.refreshToken.deleteMany({
-      where: { userId: id },
+      // Also delete refresh tokens
+      await tx.refreshToken.deleteMany({
+        where: { userId: id },
+      });
     });
 
     return { message: 'User deleted successfully' };

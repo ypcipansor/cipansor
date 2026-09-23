@@ -10294,6 +10294,7 @@ enum FoundationDecisionStatus {
   VOTING // Sedang menerima suara
   APPROVED // Kuorum sah terpenuhi; PDF final + e-seal dibubuhkan
   REJECTED // Kuorum tidak terpenuhi / ada dissent yang mematikan (sirkuler)
+  CANCELLED // Rapat dibatalkan karena kuorum HADIR tak tercapai (bukan penolakan materi)
 }
 
 enum FoundationVoteChoice {

@@ -202,6 +202,10 @@ beforeEach(() => {
   vi.clearAllMocks();
   dm.$executeRaw.mockResolvedValue(1);
   dm.$transaction.mockImplementation((cb: any) => cb(prisma));
+  // `assertUserActiveInTx` membaca status hidup akun DI DALAM transaksi dengan
+  // `FOR UPDATE`. Default-nya: akun aktif dan belum dihapus, sehingga uji yang
+  // bukan tentang offboarding tidak ikut gagal. Uji offboarding menimpanya.
+  dm.$queryRaw.mockResolvedValue([{ is_active: true, deleted_at: null }]);
   // `ensureSigningKeyHistory` meng-upsert rekaman kunci tepercaya; kembalikan
   // baris yang dibentuk dari argumennya supaya suara yang dibuat terikat ke
   // rekaman milik pemilih yang benar.
@@ -354,17 +358,11 @@ describe('FoundationDecisionService.castVote', () => {
   });
 
   it('menolak bila sudah pernah memberi suara', async () => {
-    const d = decisionRow({
-      votes: [
-        {
-          id: 'v',
-          userId: 'user-1',
-          choice: 'APPROVE',
-          signedAt: new Date(),
-          user: { id: 'user-1', name: 'Anggota 1' },
-        },
-      ],
-    });
+    // Suara lama yang BENAR-BENAR bertanda tangan: itulah yang menghalangi
+    // suara kedua. Baris mentah tanpa tanda tangan tidak dihitung (lihat uji
+    // "baris suara tidak sah" di bawah), sehingga memakai baris kosong di sini
+    // justru menguji jalur yang berbeda dari yang dimaksud.
+    const d = decisionRow({ votes: [signedVoteRow(decisionRow(), 'user-1', 'APPROVE')] });
     dm.foundationDecision.findUnique.mockResolvedValue(d);
 
     await expect(
@@ -2556,9 +2554,15 @@ describe('FoundationDecisionService.create — snapshot vs perubahan peran konku
       .join('|');
     expect(lockSql).toContain('SHARE ROW EXCLUSIVE MODE');
     expect(lockSql).toContain('user_role_assignments');
-    // Kunci baris berbasis daftar ID lama TIDAK dipakai lagi: ia tidak sanggup
-    // mengunci penugasan baru yang belum ada.
-    expect(dm.$queryRaw).not.toHaveBeenCalled();
+    // Kunci baris `users` anggota diambil lewat JOIN (bukan daftar id hasil
+    // baca awal) supaya himpunan kunci stabil dan tidak ada jendela antara
+    // pembacaan dan penguncian. Deaktivasi akun menyentuh `users` saja, jadi
+    // kunci tabel penugasan tidak menahannya.
+    const memberLockSql = dm.$queryRaw.mock.calls
+      .map((c: any[]) => (c[0] as string[]).join('?'))
+      .join('|');
+    expect(memberLockSql).toContain('FOR SHARE');
+    expect(memberLockSql).toContain('users');
 
     const data = dm.foundationDecision.create.mock.calls[0][0].data;
     expect(data.members.create.map((m: any) => m.userId)).toEqual(['user-0', 'user-1', 'user-2']);

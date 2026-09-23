@@ -23,6 +23,17 @@ PGHOST="${PGHOST:-127.0.0.1}"
 PGPORT="${PGPORT:-5432}"
 PGUSER="${PGUSER:-postgres}"
 
+# Generate the Prisma Client from the CURRENT schema BEFORE anything touches the
+# database. `migrate deploy` does NOT regenerate the client, so a checkout whose
+# `schema.prisma` gained models (e.g. the foundation-decision tables) would start
+# the API against a STALE client: every `prisma.foundationDecision.*` call would
+# fail at runtime while the database itself looked correctly migrated. Generation
+# is cheap and idempotent, so it runs unconditionally.
+#
+# Still migration-only: this does NOT introduce `prisma db push`.
+echo "Generating Prisma Client..."
+pnpm --filter api db:generate
+
 # Apply every pending migration. Idempotent: `migrate deploy` is a no-op when the
 # schema is current, which is why it can (and must) run on every startup rather
 # than only on a fresh database.

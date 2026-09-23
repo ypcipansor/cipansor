@@ -225,6 +225,18 @@ router.post(
 );
 
 /**
+ * Pembatalan rapat yang kuorum hadirnya tak pernah tercapai.
+ *
+ * Memakai gerbang `FINALIZE` yang sama: siapa pun yang boleh menutup rapat
+ * organ itu boleh menyatakannya batal, dan service memperketatnya dengan
+ * definisi yang sama (`canFinalizeDecision` + kuorum hadir memang belum
+ * terpenuhi). Tanpa aksi ini, rapat yang gagal kuorum tergantung VOTING tanpa
+ * akhir — satu-satunya "jalan keluar" adalah menandainya REJECTED, yang
+ * menyatakan materi ditolak padahal rapat tidak memutus apa pun.
+ */
+router.post('/decisions/:id/cancel', authorize(...FINALIZE), asyncHandler(c.cancel));
+
+/**
  * Publikasi metadata â€” HANYA Super Admin.
  *
  * Rute terpisah dari finalisasi, dan itu disengaja: menerbitkan metadata

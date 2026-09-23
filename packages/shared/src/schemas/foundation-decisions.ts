@@ -127,6 +127,48 @@ export const upsertFoundationRuleSchema = z
         });
       }
     }
+
+    /**
+     * **Sirkuler wajib mufakat (MUTLAK), bukan mayoritas.**
+     *
+     * Keputusan sirkuler adalah keputusan TANPA rapat: seluruh anggota
+     * menandatangani satu naskah yang sama, dan sejak awal hanya sah bila
+     * disetujui SELURUH anggota (mufakat). Karena tidak ada rapat, tidak ada
+     * "kuorum hadir" yang dapat dipakai sebagai dasar alternatif, sehingga
+     * ambang mayoritas pada sirkuler tidak punya dasar hukum — dan lebih buruk,
+     * ia dapat mengesahkan keputusan atas dasar suara sebagian anggota
+     * sementara sisanya menolak, yang justru bertentangan dengan sifat sirkuler.
+     *
+     * Sebelum ini, halaman pengelolaan aturan hanya MENYEMBUNYIKAN opsi
+     * non-mufakat di frontend. Penyembunyian UI bukan penegakan: aturan
+     * mayoritas untuk sirkuler tetap dapat disimpan lewat API, disisipkan
+     * langsung ke basis data, atau tetap terbaca dari data lama — dan mesin
+     * kuorum akan mengevaluasinya. Karena itu larangannya ditegakkan di KONTRAK
+     * (di sini), bukan hanya di UI, sehingga API dan web memakai aturan yang
+     * sama persis.
+     *
+     * `DEFAULT_FOUNDATION_RULE.CIRCULAR` memang sudah MUTLAK; penegakan ini
+     * hanya menutup jalur yang menyimpang darinya.
+     */
+    if (rule.decisionKind === "CIRCULAR") {
+      const mutlak = FoundationQuorumMode.MUTLAK;
+      if (rule.quorumPresentMode !== mutlak) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["quorumPresentMode"],
+          message:
+            "Keputusan sirkuler wajib mufakat: kuorum hadir harus MUTLAK (seluruh anggota).",
+        });
+      }
+      if (rule.quorumDecisionMode !== mutlak) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["quorumDecisionMode"],
+          message:
+            "Keputusan sirkuler wajib mufakat: kuorum keputusan harus MUTLAK (seluruh anggota).",
+        });
+      }
+    }
   });
 
 export type UpsertFoundationRuleInput = z.infer<
@@ -136,7 +178,7 @@ export type UpsertFoundationRuleInput = z.infer<
 /** Query list keputusan (paginated). */
 export const listFoundationDecisionsQuerySchema = z.object({
   organType: z.enum(FOUNDATION_ORGAN_TYPES).optional(),
-  status: z.enum(["DRAFT", "VOTING", "APPROVED", "REJECTED"]).optional(),
+  status: z.enum(["DRAFT", "VOTING", "APPROVED", "REJECTED", "CANCELLED"]).optional(),
   page: z.coerce.number().int().min(1).optional().default(1),
   limit: z.coerce.number().int().min(1).max(50).optional().default(10),
 });

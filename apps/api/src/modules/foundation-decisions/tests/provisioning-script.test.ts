@@ -96,7 +96,7 @@ function run(script: string, env: NodeJS.ProcessEnv): { status: number; out: str
   return { status: r.status ?? -1, out: `${r.stdout ?? ''}${r.stderr ?? ''}` };
 }
 
-describe('db-provision.sh — migrasi selalu, seed hanya bila kosong', () => {
+describe('db-provision.sh — generate, migrasi selalu, seed hanya bila kosong', () => {
   it('menjalankan db:deploy walaupun database SUDAH berisi user (regresi B)', () => {
     const { status } = run(DB_PROVISION, { ...stubPath(), STUB_USERS: '5' });
     expect(status).toBe(0);
@@ -104,6 +104,41 @@ describe('db-provision.sh — migrasi selalu, seed hanya bila kosong', () => {
     expect(calls).toMatch(/--filter api db:deploy/);
     // Seeded database: seed must NOT run (it TRUNCATEs everything).
     expect(calls).not.toMatch(/db:seed/);
+  });
+
+  /**
+   * Regresi finding 4 — Prisma Client harus digenerate dari schema TERKINI
+   * sebelum API dijalankan.
+   *
+   * `migrate deploy` TIDAK meregenerasi client. Sebelum ini `db-provision.sh`
+   * hanya menjalankan `db:deploy`, sehingga checkout yang `schema.prisma`-nya
+   * bertambah model (tabel foundation-decisions) memulai API dengan client
+   * BASI: basis data tampak termigrasi, tetapi setiap panggilan
+   * `prisma.foundationDecision.*` gagal saat runtime. Uji ini menuntut
+   * `db:generate` benar-benar DIJALANKAN, dan dijalankan SEBELUM `db:deploy`
+   * (urutan penting: generate tidak butuh basis data, tetapi klien harus siap
+   * sebelum API memakainya).
+   */
+  it('menjalankan db:generate SEBELUM db:deploy (regresi finding 4)', () => {
+    const { status } = run(DB_PROVISION, { ...stubPath(), STUB_USERS: '5' });
+    expect(status).toBe(0);
+    const calls = readCalls();
+    const generateAt = calls.indexOf('db:generate');
+    const deployAt = calls.indexOf('db:deploy');
+    expect(generateAt).toBeGreaterThan(-1);
+    expect(deployAt).toBeGreaterThan(generateAt);
+  });
+
+  it('tidak kembali memakai `prisma db push` (invariant migrasi-only)', () => {
+    const source = fs.readFileSync(DB_PROVISION, 'utf8');
+    // Hanya baris yang benar-benar dijalankan; komentar yang MENYEBUT db push
+    // (menjelaskan mengapa ia dihindari) bukan pelanggaran.
+    const executable = source
+      .split('\n')
+      .filter((l) => !/^\s*#/.test(l))
+      .join('\n');
+    expect(executable).not.toMatch(/\bdb:push\b/);
+    expect(executable).not.toMatch(/\bdb push\b/);
   });
 
   it('menjalankan db:deploy lalu db:seed pada database kosong', () => {

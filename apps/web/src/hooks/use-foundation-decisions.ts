@@ -33,6 +33,7 @@ export const FOUNDATION_STATUS_LABEL: Record<FoundationDecisionStatus, string> =
     VOTING: "Menunggu Suara",
     APPROVED: "Disahkan",
     REJECTED: "Ditolak",
+    CANCELLED: "Rapat Dibatalkan",
   };
 
 export const FOUNDATION_KIND_LABEL: Record<string, string> = {
@@ -148,6 +149,25 @@ export function useFinalizeFoundationDecision(decisionId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => api.post(`/foundation/decisions/${decisionId}/finalize`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["foundation-decision", decisionId] });
+      qc.invalidateQueries({ queryKey: ["foundation-decisions"] });
+    },
+  });
+}
+
+/**
+ * Batalkan rapat yang kuorum hadirnya tak pernah tercapai.
+ *
+ * Pasangan dari `useFinalizeFoundationDecision`: rapat yang kuorumnya tidak
+ * tercapai tidak dapat difinalisasi, jadi tanpa hook ini satu-satunya jalan
+ * keluar adalah menandainya REJECTED — menyatakan materi ditolak padahal rapat
+ * tidak memutus apa pun.
+ */
+export function useCancelFoundationDecision(decisionId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post(`/foundation/decisions/${decisionId}/cancel`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["foundation-decision", decisionId] });
       qc.invalidateQueries({ queryKey: ["foundation-decisions"] });

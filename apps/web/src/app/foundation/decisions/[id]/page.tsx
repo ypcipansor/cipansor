@@ -7,6 +7,7 @@ import {
   useFoundationDecision,
   useCastFoundationVote,
   useFinalizeFoundationDecision,
+  useCancelFoundationDecision,
   useDownloadFoundationDecisionDocument,
   useSetFoundationPublication,
   FOUNDATION_ORGAN_LABEL,
@@ -50,14 +51,17 @@ import {
   Fingerprint,
   Lock,
   ShieldCheck,
+  Ban,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { getPrimaryRoleCode } from "@/lib/rbac";
+import { parseApiError } from "@/lib/api-error";
 
 const statusColor: Record<string, string> = {
   VOTING: "bg-amber-100 text-amber-700",
   APPROVED: "bg-emerald-100 text-emerald-700",
   REJECTED: "bg-red-100 text-red-700",
+  CANCELLED: "bg-gray-100 text-gray-700",
 };
 
 const choiceLabel: Record<string, string> = {
@@ -74,9 +78,10 @@ const choiceColor: Record<string, string> = {
 
 export default function FoundationDecisionDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const { data: d, isLoading } = useFoundationDecision(id);
+  const { data: d, isLoading, error, refetch } = useFoundationDecision(id);
   const castVote = useCastFoundationVote(id);
   const finalize = useFinalizeFoundationDecision(id);
+  const cancelDecision = useCancelFoundationDecision(id);
   const downloadDoc = useDownloadFoundationDecisionDocument();
 
   // Finalisasi adalah aksi TULIS, dan eligibility-nya TIDAK dapat disimpulkan
@@ -121,6 +126,47 @@ export default function FoundationDecisionDetailPage() {
         <div className="space-y-4 p-4">
           <Skeleton className="h-8 w-1/2" />
           <Skeleton className="h-40 w-full" />
+        </div>
+      </MainLayout>
+    );
+  }
+  // Kegagalan dibedakan, TIDAK semuanya "tidak ditemukan". Dulu `!d` tunggal
+  // menampilkan "Keputusan tidak ditemukan" untuk 403, 5xx, dan putus jaringan
+  // sekaligus: anggota yang ditolak membaca diberi tahu datanya tidak ada (dan
+  // mencoba lagi dengan URL lain), sementara gangguan peladen sesaat tampak
+  // seperti keputusan yang dihapus. 404 → not-found; 403 → akses ditolak;
+  // sisanya → galat + tombol coba lagi.
+  if (error && !d) {
+    const parsed = parseApiError(error);
+    if (parsed.isNotFound) {
+      return (
+        <MainLayout>
+          <div className="p-10 text-center text-muted-foreground">
+            Keputusan tidak ditemukan.
+          </div>
+        </MainLayout>
+      );
+    }
+    if (parsed.isForbidden) {
+      return (
+        <MainLayout>
+          <div className="p-10 text-center">
+            <p className="font-medium text-foreground">Akses ditolak</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Anda tidak berhak membaca keputusan ini.
+            </p>
+          </div>
+        </MainLayout>
+      );
+    }
+    return (
+      <MainLayout>
+        <div className="p-10 text-center">
+          <p className="font-medium text-foreground">{parsed.title}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{parsed.message}</p>
+          <Button variant="outline" className="mt-4" onClick={() => refetch()}>
+            Coba lagi
+          </Button>
         </div>
       </MainLayout>
     );
@@ -273,6 +319,26 @@ export default function FoundationDecisionDetailPage() {
                   disabled={finalize.isPending}
                 >
                   <CheckCircle2 className="mr-2 h-4 w-4" /> Finalisasi
+                </Button>
+              )}
+              {d.status === "VOTING" && d.canCancel && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    // Satu-satunya jalan keluar dari rapat yang kuorum
+                    // HADIR-nya tak pernah tercapai. Server memverifikasi
+                    // ulang bahwa kuorum memang belum terpenuhi, jadi tombol
+                    // ini tidak tampil pada rapat yang sudah sah bersidang.
+                    if (
+                      window.confirm(
+                        "Batalkan rapat ini? Gunakan hanya bila kuorum hadir tidak tercapai — materi TIDAK ditolak, hanya rapatnya ditutup.",
+                      )
+                    )
+                      cancelDecision.mutate();
+                  }}
+                  disabled={cancelDecision.isPending}
+                >
+                  <Ban className="mr-2 h-4 w-4" /> Batalkan Rapat
                 </Button>
               )}
             </>

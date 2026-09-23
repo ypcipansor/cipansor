@@ -1217,3 +1217,155 @@ test.describe("audit PR #509 — eligibility server & policy publikasi", () => {
     });
   });
 });
+
+/**
+ * Kebijakan rapat gagal kuorum (INVESTIGATION F).
+ *
+ * Sebuah rapat yang kuorum HADIR-nya tidak pernah tercapai sebelumnya tidak
+ * punya status terminal yang benar: `finalize` menolaknya, sehingga keputusan
+ * tergantung VOTING tanpa akhir, dan satu-satunya "jalan keluar" adalah
+ * menandainya REJECTED — yang berarti menyatakan materi ditolak padahal
+ * rapatnya tidak pernah memutus apa pun. Kebijakannya sekarang: `CANCELLED`,
+ * status khusus yang menutup rapat tanpa mengesahkan maupun menolak isinya.
+ *
+ * Sirkuler TIDAK memakai jalur ini (ia tidak punya rapat), jadi keputusan
+ * MEETING dipakai di sini.
+ */
+test.describe("rapat gagal kuorum ditutup sebagai CANCELLED", () => {
+  test("rapat tanpa kuorum hadir dibatalkan → CANCELLED, bukan REJECTED", async ({
+    page,
+  }) => {
+    const admin = await apiLogin(SEED_USERS.superAdmin);
+    const created = await apiRequest<Envelope<{ decisionId: string }>>(
+      admin,
+      "POST",
+      "/foundation/decisions",
+      {
+        organType: "PEMBINA",
+        kind: "MEETING",
+        subject: `Rapat Tanpa Kuorum ${Date.now()}`,
+        body: "Rapat yang tidak pernah mencapai kuorum hadir, sehingga dibatalkan tanpa menolak materinya.",
+        decisionType: "pengesahan-rencana-kerja",
+      },
+    );
+    const id = created.data.decisionId;
+
+    // Belum ada suara: kuorum hadir tak terpenuhi → detail menawarkan
+    // pembatalan (canCancel). Super Admin tetap boleh memfinalisasi (ia
+    // mengelola sistem), tetapi pembatalan adalah jalur yang benar di sini.
+    const before = await apiRequest<
+      Envelope<{ canCancel: boolean; canFinalize: boolean; status: string }>
+    >(admin, "GET", `/foundation/decisions/${id}`);
+    expect(before.data.status).toBe("VOTING");
+    expect(before.data.canCancel).toBe(true);
+
+    // Sirkuler tidak boleh dibatalkan manual — hanya sirkuler MEETING yang
+    // masuk jalur ini.
+    const cancelling = await fetch(
+      `${API_URL}/foundation/decisions/${id}/cancel`,
+      {
+        method: "POST",
+        headers: { authorization: `Bearer ${admin.accessToken}` },
+      },
+    );
+    expect(cancelling.status).toBe(200);
+    const cancelled = (await cancelling.json()) as Envelope<{ status: string }>;
+    expect(cancelled.data.status).toBe("CANCELLED");
+
+    // Terminal: finalisasi dan penerbitan publikasi ditolak setelahnya.
+    const finalizeRes = await fetch(
+      `${API_URL}/foundation/decisions/${id}/finalize`,
+      {
+        method: "POST",
+        headers: { authorization: `Bearer ${admin.accessToken}` },
+      },
+    );
+    expect(finalizeRes.status).toBe(400);
+
+    const publishRes = await fetch(
+      `${API_URL}/foundation/decisions/${id}/publication`,
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${admin.accessToken}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ publication: "PUBLIC" }),
+      },
+    );
+    // CANCELLED bukan hasil yang sah untuk diterbitkan.
+    expect(publishRes.status).toBe(400);
+
+    // Detail memakai status terminal: tidak ada lagi tombol finalisasi atau
+    // pembatalan, dan UI menampilkan label "Dibatalkan" (CANCELLED).
+    const after = await apiRequest<
+      Envelope<{ canCancel: boolean; canFinalize: boolean }>
+    >(admin, "GET", `/foundation/decisions/${id}`);
+    expect(after.data.canCancel).toBe(false);
+    expect(after.data.canFinalize).toBe(false);
+
+    await signIn(page, "superAdmin");
+    await page.goto(`/foundation/decisions/${id}`);
+    await expect(page.getByText("Rapat Dibatalkan", { exact: true })).toBeVisible({
+      timeout: 20000,
+    });
+    await expect(
+      page.getByRole("button", { name: "Batalkan Rapat" }),
+    ).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Finalisasi" })).toHaveCount(
+      0,
+    );
+  });
+
+  test("pembatalan ditolak bila kuorum hadir SUDAH terpenuhi", async () => {
+    // Rapat PENGAWAS: seed hanya punya SATU anggota Pengawas aktif, sehingga
+    // satu suara APPROVE sudah memenuhi kuorum hadir MAJORITY (floor(1×0.5)+1
+    // = 1). Rapat yang sah bersidang harus DITETAPKAN lewat finalisasi, bukan
+    // dibuang lewat pembatalan — jadi `cancel` menjawab 400.
+    const pengawas = await apiLogin(SEED_USERS.pengawas);
+    const admin = await apiLogin(SEED_USERS.superAdmin);
+    await ensureSigningKey(pengawas, admin, PASSPHRASE);
+
+    const created = await apiRequest<Envelope<{ decisionId: string }>>(
+      admin,
+      "POST",
+      "/foundation/decisions",
+      {
+        organType: "PENGAWAS",
+        kind: "MEETING",
+        subject: `Rapat Kuorum Penuh ${Date.now()}`,
+        body: "Rapat yang kuorum hadirnya sudah terpenuhi, sehingga tidak boleh dibatalkan.",
+        decisionType: "pemberhentian-sementara-pengurus",
+      },
+    );
+    const id = created.data.decisionId;
+
+    const vote = await fetch(`${API_URL}/foundation/decisions/${id}/vote`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${pengawas.accessToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        choice: "APPROVE",
+        passphrase: PASSPHRASE,
+        note: "Menghadiri rapat.",
+      }),
+    });
+    expect(vote.status).toBe(200);
+
+    const before = await apiRequest<Envelope<{ canCancel: boolean }>>(
+      admin,
+      "GET",
+      `/foundation/decisions/${id}`,
+    );
+    // Kuorum hadir terpenuhi → tombol pembatalan tidak ditawarkan.
+    expect(before.data.canCancel).toBe(false);
+
+    const cancelRes = await fetch(`${API_URL}/foundation/decisions/${id}/cancel`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${admin.accessToken}` },
+    });
+    expect(cancelRes.status).toBe(400);
+  });
+});

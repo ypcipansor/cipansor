@@ -71,6 +71,15 @@ export const FoundationDecisionController = {
     return res.json(ApiResponse.success(result, 'Keputusan difinalisasi.'));
   },
 
+  /** Batalkan rapat yang kuorum hadirnya tak pernah tercapai. */
+  async cancel(req: Request, res: Response) {
+    const result = await FoundationDecisionService.cancel(
+      { id: req.user!.id, roleCode: req.user!.roleCode },
+      req.params.id
+    );
+    return res.json(ApiResponse.success(result, 'Rapat dibatalkan karena kuorum tidak tercapai.'));
+  },
+
   /**
    * Ubah klasifikasi publikasi metadata (SUPER_ADMIN).
    *

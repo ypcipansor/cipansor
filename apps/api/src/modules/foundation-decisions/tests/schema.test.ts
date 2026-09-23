@@ -18,7 +18,10 @@ import {
 describe('upsertFoundationRuleSchema — ambang kuorum wajib > 0', () => {
   const base = {
     organType: 'PEMBINA' as const,
-    decisionKind: 'CIRCULAR' as const,
+    // MEETING: sirkuler dikunci ke MUTLAK oleh kontrak (lihat describe di
+    // bawah), sehingga uji ambang di sini memakai rapat agar mode non-mutlak
+    // tetap dapat diuji.
+    decisionKind: 'MEETING' as const,
   };
 
   it('menolak quorumPresentValue = 0', () => {
@@ -34,6 +37,9 @@ describe('upsertFoundationRuleSchema — ambang kuorum wajib > 0', () => {
   it('menerima nilai yang KONSISTEN dengan modenya', () => {
     const res = upsertFoundationRuleSchema.safeParse({
       ...base,
+      // MEETING, bukan CIRCULAR: sirkuler dikunci ke MUTLAK (lihat describe di
+      // bawah), sehingga mode non-mutlak hanya sah untuk rapat.
+      decisionKind: 'MEETING',
       quorumPresentMode: 'TWO_THIRDS',
       quorumPresentValue: 2 / 3,
       quorumDecisionMode: 'THREE_QUARTERS',
@@ -75,6 +81,63 @@ describe('upsertFoundationRuleSchema — ambang kuorum wajib > 0', () => {
       expect(res.data.quorumPresentValue).toBe(0.5);
       expect(res.data.quorumDecisionValue).toBe(0.5);
     }
+  });
+
+  /**
+   * Finding 8 — sirkuler wajib mufakat, dan itu ditegakkan di KONTRAK.
+   *
+   * Default `base` di atas memakai `decisionKind: 'CIRCULAR'` dengan mode
+   * MAJORITY 0.5; uji ini mengunci bahwa kombinasi itu DITOLAK. Sebelumnya
+   * hanya UI yang menyembunyikan opsi non-mufakat, sehingga aturan mayoritas
+   * untuk sirkuler tetap dapat disimpan lewat API — dan mesin kuorum
+   * mengevaluasinya, mengesahkan sirkuler tanpa mufakat.
+   */
+  it('menolak sirkuler dengan mode mayoritas (harus MUTLAK)', () => {
+    const res = upsertFoundationRuleSchema.safeParse({
+      organType: 'PEMBINA',
+      decisionKind: 'CIRCULAR',
+      quorumPresentMode: 'MAJORITY',
+      quorumPresentValue: 0.5,
+      quorumDecisionMode: 'MAJORITY',
+      quorumDecisionValue: 0.5,
+    });
+    expect(res.success).toBe(false);
+    if (!res.success) {
+      expect(JSON.stringify(res.error.issues)).toMatch(/sirkuler wajib mufakat/i);
+    }
+  });
+
+  it('menolak sirkuler yang hanya salah satu sisi non-MUTLAK', () => {
+    const present = upsertFoundationRuleSchema.safeParse({
+      organType: 'PEMBINA',
+      decisionKind: 'CIRCULAR',
+      quorumPresentMode: 'MAJORITY',
+      quorumPresentValue: 0.5,
+      quorumDecisionMode: 'MUTLAK',
+      quorumDecisionValue: 1,
+    });
+    expect(present.success).toBe(false);
+    const decision = upsertFoundationRuleSchema.safeParse({
+      organType: 'PEMBINA',
+      decisionKind: 'CIRCULAR',
+      quorumPresentMode: 'MUTLAK',
+      quorumPresentValue: 1,
+      quorumDecisionMode: 'MAJORITY',
+      quorumDecisionValue: 0.5,
+    });
+    expect(decision.success).toBe(false);
+  });
+
+  it('menerima sirkuler dengan MUTLAK di kedua sisi', () => {
+    const res = upsertFoundationRuleSchema.safeParse({
+      organType: 'PEMBINA',
+      decisionKind: 'CIRCULAR',
+      quorumPresentMode: 'MUTLAK',
+      quorumPresentValue: 1,
+      quorumDecisionMode: 'MUTLAK',
+      quorumDecisionValue: 1,
+    });
+    expect(res.success).toBe(true);
   });
 
   it('menolak nilai di atas 1', () => {

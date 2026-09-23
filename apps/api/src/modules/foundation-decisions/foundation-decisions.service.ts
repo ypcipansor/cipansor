@@ -8,6 +8,7 @@ import {
   FoundationDecisionVote,
   FoundationEseal,
   Prisma,
+  RoleCode,
   UserSigningKeyHistory,
 } from '@prisma/client';
 import type {
@@ -25,6 +26,7 @@ import type {
 import {
   DEFAULT_FOUNDATION_RULE,
   decisionTypesForOrgan,
+  FoundationQuorumMode,
   quorumValueForMode,
 } from '@cipansor/shared';
 import { prisma } from '@/lib/prisma';
@@ -678,9 +680,58 @@ function isUniqueConstraintError(err: unknown): boolean {
  * Tanpa ini, dua permintaan suara paralel dapat sama-sama membaca status
  * VOTING, lalu salah satunya menutup keputusan setelah yang lain menghitung
  * kuorum — sehingga suara yang sah tidak pernah masuk ke PDF final.
+ *
+ * URUTAN KUNCI (global, mencegah deadlock): (1) tabel
+ * `foundation_decision_rules`, (2) baris `foundation_decisions` di sini,
+ * (3) `user_role_assignments` → `roles` → `users` saat snapshot, (4) baris
+ * `users` aktor. Semua jalur foundation memakai urutan ini; `upsertRule`
+ * (1→4) dan `create` (1→3→4) tidak pernah berputar, dan mengambil 4 sebelum 1
+ * DILARANG. Rinciannya di dokumen review §7.11.
  */
 async function lockDecision(client: DbClient, id: string): Promise<void> {
   await client.$executeRaw`SELECT id FROM foundation_decisions WHERE id = ${id} FOR UPDATE`;
+}
+
+/**
+ * Kunci baris `users` aktor (`FOR SHARE`), lalu PASTIKAN akunnya masih aktif
+ * dan belum dihapus — DI DALAM transaksi, sebelum aksi tata kelola ditulis.
+ *
+ * Snapshot immutable menjawab "siapa yang berhak saat keputusan dibuka", bukan
+ * "siapa yang masih boleh bertindak sekarang": anggota yang dinonaktifkan atau
+ * dihapus tetap tercatat pada snapshot dan tanpa pemeriksaan ini masih dapat
+ * menandatangani suara serta memicu e-seal Yayasan.
+ *
+ * `FOR SHARE`, bukan `FOR UPDATE`: kunci bersama sudah menahan `UPDATE users`
+ * milik deaktivasi/soft-delete, sedangkan `FOR UPDATE` membuka deadlock karena
+ * `create` sudah memegang `FOR SHARE` atas baris seluruh anggota. Token akses
+ * stateless tak dapat dicabut, jadi pemeriksaan inilah yang menutupnya (§7.10).
+ */
+async function assertUserActiveInTx(client: DbClient, userId: string): Promise<void> {
+  const rows = await client.$queryRaw<Array<{ is_active: boolean; deleted_at: Date | null }>>`
+    SELECT "is_active", "deleted_at" FROM "users" WHERE "id" = ${userId} FOR SHARE`;
+  const row = rows[0];
+  if (!row || !row.is_active || row.deleted_at !== null) {
+    throw Errors.forbidden(
+      'Akun Anda tidak aktif atau telah dihapus, sehingga tidak dapat melakukan tindakan tata kelola ini.'
+    );
+  }
+}
+
+/**
+ * Serialisasi pembuatan keputusan terhadap SETIAP perubahan aturan kuorum.
+ *
+ * Bila `upsertRule` commit di sela antara pembacaan aturan dan commit `create`,
+ * keputusan membekukan ambang yang SUDAH DIGANTI — dan ambang itulah yang
+ * mengesahkan keputusan ber-e-seal. `LOCK TABLE … SHARE ROW EXCLUSIVE`
+ * berbenturan dengan `ROW EXCLUSIVE` milik setiap INSERT/UPDATE/DELETE,
+ * termasuk baris aturan yang BELUM ada (yang tak dapat ditahan `FOR UPDATE`
+ * mana pun); `upsertRule` mengambil kunci yang sama sehingga kedua jalur
+ * memakai satu protokol. `lock_timeout` membuat penunggu yang kehabisan waktu
+ * gagal `55P03` → 409, bukan menggantung.
+ */
+export async function lockRuleTableForSnapshot(client: DbClient): Promise<void> {
+  await client.$executeRaw`SELECT set_config('lock_timeout', '5000', true)`;
+  await client.$executeRaw`LOCK TABLE "foundation_decision_rules" IN SHARE ROW EXCLUSIVE MODE`;
 }
 
 /**
@@ -710,6 +761,19 @@ async function lockAndRereadOrganAssignments(
   }>
 > {
   await lockAssignmentTableForSnapshot(client);
+  // Peran yang dinonaktifkan juga mengeluarkan anggotanya, dan `roles.isActive`
+  // tidak tersentuh kunci tabel penugasan. Kunci baris peran organ `FOR SHARE`
+  // agar perubahan `isActive` menunggu sampai snapshot commit — baca ulang di
+  // bawah akan melihat nilai terbaru, bukan nilai sebelum lock.
+  await lockOrganRoleRowsForSnapshot(client, organType);
+  // Kunci baris `users` anggota organ `FOR SHARE`, LANGSUNG dari penugasan yang
+  // sah (satu query, bukan baca-lalu-kunci). Deaktivasi/soft-delete akun TIDAK
+  // menyentuh `user_role_assignments`, jadi kunci tabel di atas melewatkannya:
+  // tanpa kunci baris ini, anggota yang dinonaktifkan tepat sebelum commit
+  // tetap membeku di snapshot beserta hak suaranya. `FOR SHARE` membuat
+  // `UPDATE users` menunggu, dan baca ulang di bawah melihat status terbaru —
+  // perbedaannya ditangkap `assertSnapshotStillMatches`.
+  await lockOrganMemberRowsForSnapshot(client, organType);
   return client.userRoleAssignment.findMany({
     where: {
       isActive: true,
@@ -744,6 +808,53 @@ async function lockAndRereadOrganAssignments(
 export async function lockAssignmentTableForSnapshot(client: DbClient): Promise<void> {
   await client.$executeRaw`SELECT set_config('lock_timeout', '5000', true)`;
   await client.$executeRaw`LOCK TABLE "user_role_assignments" IN SHARE ROW EXCLUSIVE MODE`;
+}
+
+/**
+ * Kunci baris `roles` organ `FOR SHARE` selama snapshot dibentuk.
+ *
+ * `roles.isActive` dapat dimatikan kapan saja lewat `PUT /roles/:id`, dan itu
+ * mengeluarkan seluruh pemegang peran tersebut dari daftar anggota organ —
+ * namun perubahan itu TIDAK menyentuh `user_role_assignments`, sehingga kunci
+ * tabel penugasan tidak menahannya. `FOR SHARE` membuat `UPDATE roles` yang
+ * konkuren menunggu sampai transaksi snapshot commit, lalu baca ulang di
+ * `lockAndRereadOrganAssignments` melihat `is_active = false` dan membatalkan
+ * pembuatan dengan konflik yang dapat diulang. `FOR SHARE` (bukan `FOR UPDATE`)
+ * karena snapshot hanya perlu menahan penulis.
+ */
+async function lockOrganRoleRowsForSnapshot(
+  client: DbClient,
+  organType: FoundationOrganType
+): Promise<void> {
+  const codes = roleCodesForOrgan(organType);
+  if (codes.length === 0) return;
+  await client.$queryRaw`
+    SELECT id FROM "roles" WHERE code IN (${Prisma.join(codes)}) ORDER BY id FOR SHARE`;
+}
+
+/**
+ * Kunci baris `users` anggota organ `FOR SHARE` selama snapshot dibentuk.
+ *
+ * Deaktivasi (`is_active = false`) dan soft-delete (`deleted_at`) TIDAK
+ * menyentuh `user_role_assignments`, sehingga kunci tabel penugasan di atas
+ * melewatkannya: anggota yang dinonaktifkan tepat sebelum `create` commit tetap
+ * membeku di snapshot beserta hak suaranya. `FOR SHARE` membuat `UPDATE users`
+ * menunggu, dan baca ulang setelah kunci melihat status terbaru. Urutan id
+ * eksplisit (`ORDER BY id`) mencegah deadlock antar dua snapshot organ yang
+ * beririsan. Penugasan non-aktif sengaja diikutkan demi himpunan kunci stabil.
+ */
+async function lockOrganMemberRowsForSnapshot(
+  client: DbClient,
+  organType: FoundationOrganType
+): Promise<void> {
+  const codes = roleCodesForOrgan(organType);
+  if (codes.length === 0) return;
+  await client.$queryRaw`
+    SELECT u.id FROM "users" u
+    JOIN "user_role_assignments" a ON a."user_id" = u.id
+    JOIN "roles" r ON r.id = a."role_id"
+    WHERE r.code IN (${Prisma.join(codes)})
+    ORDER BY u.id FOR SHARE OF u`;
 }
 
 /**
@@ -851,10 +962,45 @@ async function clearFailedAttempts(keyId: string, client: DbClient = prisma): Pr
  * yang ditampilkan sama dengan yang dievaluasi, tanpa menyentuh basis data.
  */
 export function normalizeRule(rule: FoundationDecisionRule): FoundationDecisionRule {
+  // Sirkuler wajib mufakat: baris lama (atau sisipan langsung ke basis data)
+  // yang menyimpan mode mayoritas untuk CIRCULAR ditampilkan DAN dievaluasi
+  // sebagai MUTLAK. Penegakan ini sejalan dengan kontrak Zod
+  // (`upsertFoundationRuleSchema`) dan migrasi normalisasi, sehingga tidak ada
+  // jalur yang membuat aturan sirkuler non-mufakat tetap berlaku.
+  if (rule.decisionKind === 'CIRCULAR') {
+    return {
+      ...rule,
+      quorumPresentMode: FoundationQuorumMode.MUTLAK,
+      quorumPresentValue: 1,
+      quorumDecisionMode: FoundationQuorumMode.MUTLAK,
+      quorumDecisionValue: 1,
+    };
+  }
   return {
     ...rule,
+    quorumPresentMode: rule.quorumPresentMode,
     quorumPresentValue: quorumValueForMode(rule.quorumPresentMode),
+    quorumDecisionMode: rule.quorumDecisionMode,
     quorumDecisionValue: quorumValueForMode(rule.quorumDecisionMode),
+  };
+}
+
+/**
+ * Paksa aturan sirkuler menjadi mufakat sebelum disimpan.
+ *
+ * Kontrak Zod sudah menolak mode non-MUTLAK untuk CIRCULAR di edge, tetapi
+ * service juga harus aman bila dipanggil internal tanpa validasi edge.
+ */
+function normalizeRuleInput(
+  input: UpsertFoundationRuleInput
+): UpsertFoundationRuleInput {
+  if (input.decisionKind !== 'CIRCULAR') return input;
+  return {
+    ...input,
+    quorumPresentMode: FoundationQuorumMode.MUTLAK,
+    quorumPresentValue: 1,
+    quorumDecisionMode: FoundationQuorumMode.MUTLAK,
+    quorumDecisionValue: 1,
   };
 }
 
@@ -930,37 +1076,28 @@ export const FoundationDecisionService = {
       );
     }
 
-    const rule = await this.loadRule(input.organType, input.kind);
-    const snapshot: QuorumSnapshot = {
-      organType: input.organType,
-      kind: input.kind,
-      activeCount: assignments.length,
-      presentMode: rule.quorumPresentMode,
-      presentValue: rule.quorumPresentValue,
-      decisionMode: rule.quorumDecisionMode,
-      decisionValue: rule.quorumDecisionValue,
-    };
-    const emptySummary: VoteSummary = {
-      approve: 0,
-      reject: 0,
-      abstain: 0,
-      present: 0,
-      active: assignments.length,
-      totalVotes: 0,
-    };
-
     /**
      * Pembuatan keputusan dan baris auditnya berbagi SATU transaksi: kegagalan
      * audit harus membatalkan pembuatan, atau retry menghasilkan keputusan
      * DUPLIKAT (token verifikasi acak, tidak ada unique penahan).
      *
-     * Snapshot divalidasi ULANG di dalam transaksi di bawah kunci serialisasi
-     * tabel, sehingga penambahan/pencabutan/penggantian peran yang konkuren
-     * tidak dapat membekukan himpunan anggota yang salah beserta hak suaranya.
-     * Bila himpunan berubah, operasi dibatalkan atomik.
+     * Snapshot anggota divalidasi ULANG di dalam transaksi di bawah kunci
+     * serialisasi tabel, sehingga penambahan/pencabutan/penggantian peran yang
+     * konkuren tidak dapat membekukan himpunan anggota yang salah beserta hak
+     * suaranya. Snapshot KUORUM dibaca di sini juga, di bawah kunci tabel
+     * aturan, supaya ambang yang dibekukan tidak dapat digantikan oleh
+     * `upsertRule` yang commit di sela. Bila himpunan anggota berubah, operasi
+     * dibatalkan atomik.
      */
     const decisionId = await prisma
       .$transaction(async (tx) => {
+        // URUTAN KUNCI (lihat `LOCK ORDER` di atas `lockDecision`): tabel aturan
+        // lebih dulu, baru penugasan/peran/pengguna. `upsertRule` mengambil
+        // kunci tabel aturan lalu baris `users` aktornya; bila `create` mengambil
+        // `users` lebih dulu dan baru tabel aturan, keduanya dapat saling
+        // menunggu (deadlock) ketika aktor `upsertRule` adalah anggota organ.
+        // Satu urutan global menutupnya.
+        await lockRuleTableForSnapshot(tx);
         const lockedRows = await lockAndRereadOrganAssignments(tx, input.organType);
         // Susutkan ulang dengan fungsi produksi yang SAMA, lalu bandingkan hasil
         // susutan — bukan daftar penugasan mentah.
@@ -975,6 +1112,36 @@ export const FoundationDecisionService = {
           }))
         );
         assertSnapshotStillMatches(input.organType, assignments, lockedAssignments);
+
+        // Aktor yang dinonaktifkan/dihapus setelah login masih memegang token
+        // akses stateless. Membuka keputusan adalah tindakan tata kelola:
+        // status hidup akun diperiksa DI DALAM transaksi, di bawah kunci baris
+        // `users`, sehingga deaktivasi yang konkuren tidak dapat menyelinap.
+        await assertUserActiveInTx(tx, actor.id);
+
+        // Aturan kuorum dibaca DI DALAM transaksi, di bawah kunci tabel aturan
+        // yang sudah diambil di awal (sama dengan `upsertRule`), lalu snapshot
+        // dibentuk dari nilai itu. Membaca aturan di luar transaksi (seperti
+        // sebelumnya) membuat ambang yang mengesahkan keputusan ber-e-seal
+        // dapat berasal dari aturan yang sudah diganti.
+        const lockedRule = await this.loadRule(input.organType, input.kind, tx);
+        const snapshot: QuorumSnapshot = {
+          organType: input.organType,
+          kind: input.kind,
+          activeCount: lockedAssignments.length,
+          presentMode: lockedRule.quorumPresentMode,
+          presentValue: lockedRule.quorumPresentValue,
+          decisionMode: lockedRule.quorumDecisionMode,
+          decisionValue: lockedRule.quorumDecisionValue,
+        };
+        const emptySummary: VoteSummary = {
+          approve: 0,
+          reject: 0,
+          abstain: 0,
+          present: 0,
+          active: lockedAssignments.length,
+          totalVotes: 0,
+        };
 
         const decision = await tx.foundationDecision.create({
           data: {
@@ -1020,12 +1187,13 @@ export const FoundationDecisionService = {
         return decision.id;
       })
       .catch((err) => {
-        // Pembuatan keputusan serial terhadap SEMUA mutasi penugasan. Bila
-        // penugasan lain menahan kunci lebih lama dari `lock_timeout`, ini
-        // dilaporkan sebagai konflik yang dapat diulang — bukan 500.
+        // Pembuatan keputusan serial terhadap SEMUA mutasi penugasan dan
+        // perubahan aturan kuorum. Bila salah satunya menahan kunci lebih lama
+        // dari `lock_timeout`, ini dilaporkan sebagai konflik yang dapat
+        // diulang — bukan 500.
         if (isLockConflictError(err)) {
           throw Errors.conflict(
-            'Keanggotaan organ sedang berubah saat keputusan dibuat. Silakan ulangi.'
+            'Keanggotaan organ atau aturan kuorum sedang berubah saat keputusan dibuat. Silakan ulangi.'
           );
         }
         throw err;
@@ -1056,9 +1224,10 @@ export const FoundationDecisionService = {
   /** Aturan kuorum untuk (organ × cara), dengan default legal bila tak diset. */
   async loadRule(
     organType: FoundationOrganType,
-    kind: FoundationDecisionKind
+    kind: FoundationDecisionKind,
+    client: DbClient = prisma
   ): Promise<FoundationDecisionRule> {
-    const found = await prisma.foundationDecisionRule.findUnique({
+    const found = await client.foundationDecisionRule.findUnique({
       where: { organType_decisionKind: { organType, decisionKind: kind } },
     });
     if (found) return normalizeRule(found);
@@ -1097,7 +1266,10 @@ export const FoundationDecisionService = {
         take: query.limit,
         include: {
           createdBy: { select: { id: true, name: true } },
-          _count: { select: { members: true, votes: true } },
+          members: { select: { userId: true } },
+          votes: {
+            include: { signingKey: { select: trustedKeySelect } },
+          },
         },
       }),
     ]);
@@ -1115,8 +1287,13 @@ export const FoundationDecisionService = {
       decidedAt: r.decidedAt,
       createdAt: r.createdAt,
       createdByName: r.createdBy.name,
-      memberCount: r._count.members,
-      votedCount: r._count.votes,
+      memberCount: r.members.length,
+      // `votedCount` pada daftar harus sama dengan `votedCount` pada detail dan
+      // dengan angka yang mengesahkan keputusan: suara yang gagal verifikasi
+      // tanda tangan TIDAK dihitung. `_count.votes` menghitung seluruh baris
+      // mentah, sehingga daftar dapat menampilkan "3 dari 3" untuk keputusan
+      // yang baru dua suaranya sah.
+      votedCount: r.votes.filter((v) => isVoteAuthentic(r as unknown as RichDecision, v)).length,
     }));
 
     return { items, total, page: query.page, limit: query.limit };
@@ -1147,7 +1324,7 @@ export const FoundationDecisionService = {
     // Anggota yang SUDAH memilih juga `canVote: false`: `castVote` menolak
     // suara ganda, jadi DTO yang tetap menawarkannya membuat UI meminta
     // tindakan yang peladen pasti tolak.
-    const hasVoted = d.votes.some((v) => v.userId === actor.id);
+    const hasVoted = this.authenticatedVotesOf(d).some((v) => v.userId === actor.id);
     const canVote =
       d.status === FoundationDecisionStatus.VOTING &&
       !hasVoted &&
@@ -1161,6 +1338,20 @@ export const FoundationDecisionService = {
       d.status === FoundationDecisionStatus.VOTING &&
       d.kind !== 'CIRCULAR' &&
       canFinalizeDecision(actor, d.members);
+    // Pembatalan hanya masuk akal bila rapat masih VOTING, bukan sirkuler,
+    // aktor berwenang, DAN kuorum hadir belum tercapai. Kuorum yang sudah
+    // terpenuhi harus ditetapkan hasilnya, bukan dibatalkan — jadi tombolnya
+    // juga tidak ditawarkan pada keadaan itu.
+    const presentMet = evaluateQuorum(
+      d.quorumSnapshot as unknown as QuorumSnapshot,
+      this.votesOf(d),
+      { closed: true }
+    ).presentMet;
+    const canCancel =
+      d.status === FoundationDecisionStatus.VOTING &&
+      d.kind !== 'CIRCULAR' &&
+      !presentMet &&
+      canFinalizeDecision(actor, d.members);
     // Syarat publikasi dihitung dengan definisi yang SAMA dengan
     // `setPublication`, sehingga UI tidak menawarkan "Terbitkan" pada
     // draf/VOTING yang peladen tolak.
@@ -1170,7 +1361,7 @@ export const FoundationDecisionService = {
       !!d.finalPdfSealSignature &&
       !!d.esealId &&
       !!d.document;
-    const mine = d.votes.find((v) => v.userId === actor.id);
+    const mine = this.authenticatedVotesOf(d).find((v) => v.userId === actor.id);
     return this.toDetailDTO(
       d,
       snapshot,
@@ -1178,8 +1369,10 @@ export const FoundationDecisionService = {
       canVote,
       canFinalize,
       publishable,
+      canCancel,
       mine?.choice ?? null,
-      actor.id
+      actor.id,
+      actor.roleCode
     );
   },
 
@@ -1220,7 +1413,12 @@ export const FoundationDecisionService = {
     if (d.status !== FoundationDecisionStatus.VOTING) {
       throw Errors.badRequest(`Keputusan berstatus ${d.status} dan tidak lagi menerima suara.`);
     }
-    if (d.votes.some((v) => v.userId === actor.id)) {
+    // Duplikat diperiksa atas suara yang AUTENTIK: baris yang disisipkan
+    // langsung ke basis data dan tidak lolos verifikasi tanda tangan tidak
+    // boleh memblokir suara sah anggota. Bila baris mentah tetap ada, `INSERT`
+    // akan ditolak indeks unik `(decisionId, userId)` dan dipetakan ke pesan
+    // yang jelas — lihat penanganan P2002 di bawah.
+    if (this.authenticatedVotesOf(d).some((v) => v.userId === actor.id)) {
       throw Errors.badRequest('Anda sudah memberikan suara pada keputusan ini.');
     }
     // Keanggotaan diperiksa terhadap SNAPSHOT yang terkunci, bukan peran saat
@@ -1375,9 +1573,18 @@ export const FoundationDecisionService = {
             `Keputusan berstatus ${locked.status} dan tidak lagi menerima suara.`
           );
         }
-        if (locked.votes.some((v) => v.userId === actor.id)) {
+        // Sama seperti pra-cek: duplikat dihitung dari suara AUTENTIK.
+        if (this.authenticatedVotesOf(locked).some((v) => v.userId === actor.id)) {
           throw Errors.badRequest('Anda sudah memberikan suara pada keputusan ini.');
         }
+
+        // Keanggotaan snapshot bersifat immutable, tetapi BUKAN berarti tetap
+        // berhak selamanya: anggota yang dinonaktifkan/dihapus setelah
+        // keputusan dibuka masih tercatat pada snapshot. Periksa status hidup
+        // akun DI DALAM transaksi, di bawah kunci baris user, sehingga
+        // deaktivasi yang konkuren tidak dapat menyelinap di antara pembacaan
+        // dan `INSERT` suara.
+        await assertUserActiveInTx(tx, actor.id);
 
         // TOCTOU: buktikan ULANG, DI DALAM transaksi dan SEBELUM `INSERT`, bahwa
         // kunci yang menandatangani masih berlaku. Bila rotasi/pencabutan commit
@@ -1481,7 +1688,20 @@ export const FoundationDecisionService = {
         );
         break;
       } catch (err) {
-        if (!(err instanceof StaleArtifactError) || attempt >= 2) throw err;
+        if (!(err instanceof StaleArtifactError) || attempt >= 2) {
+          // Indeks unik `(decisionId, userId)` menahan baris suara KEDUA untuk
+          // pemilih yang sama. Pra-cek di atas hanya menghitung suara AUTENTIK,
+          // sehingga bila baris lama yang tidak autentik (sisipan langsung ke
+          // basis data) memakai slot pemilih ini, `INSERT` gagal P2002 di sini.
+          // Laporkan sebagai konflik data yang dapat ditindak, bukan 500 —
+          // baris itu harus direkonsiliasi administrator, bukan didiamkan.
+          if (isUniqueConstraintError(err)) {
+            throw Errors.conflict(
+              'Ada baris suara lama yang tidak sah untuk akun ini pada keputusan tersebut. Hubungi administrator untuk merekonsiliasinya sebelum memberikan suara.'
+            );
+          }
+          throw err;
+        }
       }
     }
 
@@ -1494,18 +1714,102 @@ export const FoundationDecisionService = {
   },
 
   /**
+   * Batalkan rapat yang kuorum HADIR-nya tidak pernah tercapai.
+   *
+   * **Kebijakan (finding 6).** Rapat yang gagal kuorum hadir TIDAK ditutup
+   * sebagai `REJECTED`: itu menyatakan materi "ditolak" padahal rapat tidak
+   * pernah memutus apa pun. UU 16/2001 jo. UU 28/2004 jo. PP 63/2008
+   * mensyaratkan kuorum untuk keabsahan keputusan rapat, jadi hasil yang benar
+   * saat kuorum tak tercapai adalah menunda/menjadwalkan ulang — `CANCELLED`
+   * menutup rapat itu secara terminal tanpa memalsukan hasil.
+   *
+   * Hanya `MEETING` berstatus `VOTING` oleh aktor yang berhak memfinalisasi,
+   * DAN kuorum hadir memang belum terpenuhi; rapat yang kuorumnya sudah
+   * terpenuhi harus diselesaikan lewat `finalize`, bukan dibuang.
+   */
+  async cancel(actor: Actor, decisionId: string) {
+    const d = await this.loadWithRelations(decisionId);
+    if (!canFinalizeDecision(actor, d.members)) {
+      throw Errors.forbidden('Anda tidak berhak membatalkan keputusan organ ini.');
+    }
+    if (d.kind === 'CIRCULAR') {
+      throw Errors.badRequest(
+        'Keputusan sirkuler tidak dibatalkan manual: keputusan terminalnya ditutup otomatis saat pemungutan suara.'
+      );
+    }
+
+    const runCancel = async (bound: RichDecision) =>
+      prisma.$transaction(async (tx) => {
+        await lockDecision(tx, decisionId);
+        const lockedRow = await tx.foundationDecision.findUnique({
+          where: { id: decisionId },
+          include: decisionInclude,
+        });
+        const locked = lockedRow as unknown as RichDecision | null;
+        if (!locked) throw Errors.notFound('Keputusan tidak ditemukan.');
+        if (locked.status !== FoundationDecisionStatus.VOTING) {
+          throw Errors.badRequest(`Keputusan berstatus ${locked.status} dan tidak dapat dibatalkan.`);
+        }
+        // Pembatalan adalah tindakan tata kelola: status hidup aktor diperiksa
+        // di dalam transaksi, di bawah kunci baris `users`.
+        await assertUserActiveInTx(tx, actor.id);
+        const evaluation = evaluateQuorum(
+          locked.quorumSnapshot as unknown as QuorumSnapshot,
+          this.votesOf(locked),
+          { closed: true }
+        );
+        // Kuorum hadir TERPENUHI berarti rapat sah bersidang: hasilnya harus
+        // ditetapkan lewat `finalize`, bukan dibuang lewat pembatalan.
+        if (evaluation.presentMet) {
+          throw Errors.badRequest(
+            'Kuorum rapat sudah terpenuhi, sehingga tidak dapat dibatalkan — tetapkan hasilnya lewat finalisasi.'
+          );
+        }
+        await tx.foundationDecision.update({
+          where: { id: decisionId },
+          data: {
+            status: FoundationDecisionStatus.CANCELLED,
+            decidedById: actor.id,
+            decidedAt: new Date(),
+          },
+        });
+        await tx.auditLog.create({
+          data: {
+            userId: actor.id,
+            action: 'CANCEL',
+            entity: 'FoundationDecision',
+            entityId: decisionId,
+            newValues: {
+              reason: 'kuorum-hadir-tidak-tercapai',
+              evaluation: { ...evaluation },
+            },
+          },
+        });
+        return { outcome: 'CANCELLED' as const, status: FoundationDecisionStatus.CANCELLED };
+      });
+
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await runCancel(attempt === 0 ? d : await this.loadWithRelations(decisionId));
+      } catch (err) {
+        if (!(err instanceof StaleArtifactError) || attempt >= 2) throw err;
+      }
+    }
+  },
+
+  /**
    * Finalisasi manual oleh pimpinan/kepala rapat.
    *
    * Finalisasi **menutup** rapat: hasil dihitung SEKALI dengan `closed: true`.
    * Kuorum hadir tetap wajib; setelah terpenuhi pimpinan bebas memilih APPROVED
-   * atau REJECTED tanpa menunggu anggota absen.
+   * atau REJECTED tanpa menunggu anggota absen. Rapat yang kuorum HADIR-nya
+   * tidak pernah tercapai dibatalkan lewat `cancel` menjadi `CANCELLED`, bukan
+   * dipaksa menjadi `REJECTED` (lihat `cancel`).
    *
-   * **CIRCULAR tidak dapat difinalisasi manual.** Sirkuler tidak punya rapat
-   * untuk ditutup: keputusan terminalnya sudah ditutup otomatis oleh `castVote`,
-   * dan selama masih mungkin ia tetap VOTING. Aksi manual karena itu tidak punya
-   * kondisi sukses yang sah dan ditolak eksplisit; DTO detail mengirim
-   * `canFinalize=false` agar UI tidak menawarkan tombol yang pasti ditolak.
-   * Lihat §7.6 dokumen review.
+   * **CIRCULAR tidak dapat difinalisasi manual:** hasilnya ditutup otomatis
+   * oleh `castVote`, jadi aksi manual tak punya kondisi sukses yang sah dan
+   * ditolak eksplisit; DTO detail mengirim `canFinalize=false`. Lihat §7.6
+   * dokumen review.
    */
   async finalize(actor: Actor, decisionId: string) {
     const d = await this.loadWithRelations(decisionId);
@@ -1559,6 +1863,10 @@ export const FoundationDecisionService = {
             `Keputusan berstatus ${locked.status} dan tidak lagi menerima suara.`
           );
         }
+        // Menutup rapat adalah tindakan tata kelola: aktor yang dinonaktifkan
+        // atau dihapus setelah login tidak boleh lagi memicunya lewat token
+        // akses stateless yang masih berlaku.
+        await assertUserActiveInTx(tx, actor.id);
         const evaluation = evaluateQuorum(
           locked.quorumSnapshot as unknown as QuorumSnapshot,
           this.votesOf(locked),
@@ -1626,6 +1934,11 @@ export const FoundationDecisionService = {
       await lockDecision(tx, decisionId);
       const locked = await tx.foundationDecision.findUnique({ where: { id: decisionId } });
       if (!locked) throw Errors.notFound('Keputusan tidak ditemukan.');
+
+      // Mengubah klasifikasi publikasi adalah tindakan tata kelola: aktor yang
+      // dinonaktifkan/dihapus setelah login tidak boleh lagi menerbitkan atau
+      // menarik metadata lewat token akses stateless yang masih berlaku.
+      await assertUserActiveInTx(tx, actor.id);
 
       // Syarat publication divalidasi terhadap STATE TERKUNCI, bukan snapshot
       // pra-lock. `updateMany` bersyarat tetap dipakai sebagai jaring kedua.
@@ -1835,16 +2148,28 @@ export const FoundationDecisionService = {
   /** Atur aturan kuorum (SUPER_ADMIN). */
   async upsertRule(actor: Actor, input: UpsertFoundationRuleInput) {
     return prisma.$transaction(async (tx) => {
+      // Kunci yang SAMA dengan `create`: perubahan aturan menyerialkan dirinya
+      // terhadap pembuatan keputusan, sehingga keputusan tidak dapat membekukan
+      // ambang yang sudah diganti. `SHARE ROW EXCLUSIVE` juga menahan
+      // `INSERT` baris aturan yang belum ada, yang tak dapat ditahan `FOR UPDATE`.
+      await lockRuleTableForSnapshot(tx);
+      // Sirkuler WAJIB mufakat — ditegakkan juga di kontrak Zod
+      // (`upsertFoundationRuleSchema`); penegakan di sini menutup pemanggil
+      // internal yang melewati validasi edge.
+      const normalized = normalizeRuleInput(input);
+      // Mengubah aturan kuorum adalah tindakan tata kelola: aktor yang
+      // dinonaktifkan/dihapus setelah login tidak boleh lagi menulisnya.
+      await assertUserActiveInTx(tx, actor.id);
       const saved = await tx.foundationDecisionRule.upsert({
         where: {
-          organType_decisionKind: { organType: input.organType, decisionKind: input.decisionKind },
+          organType_decisionKind: { organType: normalized.organType, decisionKind: normalized.decisionKind },
         },
-        create: { ...input, updatedById: actor.id },
+        create: { ...normalized, updatedById: actor.id },
         update: {
-          quorumPresentMode: input.quorumPresentMode,
-          quorumPresentValue: input.quorumPresentValue,
-          quorumDecisionMode: input.quorumDecisionMode,
-          quorumDecisionValue: input.quorumDecisionValue,
+          quorumPresentMode: normalized.quorumPresentMode,
+          quorumPresentValue: normalized.quorumPresentValue,
+          quorumDecisionMode: normalized.quorumDecisionMode,
+          quorumDecisionValue: normalized.quorumDecisionValue,
           updatedById: actor.id,
         },
       });
@@ -1858,7 +2183,10 @@ export const FoundationDecisionService = {
           action: 'UPSERT',
           entity: 'FoundationDecisionRule',
           entityId: saved.id,
-          newValues: { organType: input.organType, decisionKind: input.decisionKind },
+          newValues: {
+            organType: normalized.organType,
+            decisionKind: normalized.decisionKind,
+          },
         },
       });
       return saved;
@@ -1912,6 +2240,24 @@ export const FoundationDecisionService = {
     },
     opts: { checkedBytes?: Buffer; uploaded?: boolean }
   ): Promise<FoundationDecisionVerificationDTO> {
+    if (d.status === FoundationDecisionStatus.CANCELLED) {
+      // Rapat yang gagal kuorum dibatalkan: formatnya sah, tetapi TIDAK ada
+      // keputusan yang disahkan maupun ditolak. Ia dilaporkan sebagai
+      // "ditemukan" dengan `isValid=false` dan sebab eksplisit, bukan
+      // `not found` — supaya pemindai tahu dokumen ini memang ada dan apa
+      // artinya, alih-alih menyimpulkan tokennya palsu.
+      const cancelled = emptyVerification(
+        'Rapat ini dibatalkan karena kuorum hadir tidak tercapai, sehingga tidak ada keputusan yang disahkan maupun ditolak.'
+      );
+      return {
+        ...cancelled,
+        found: true,
+        decisionId: d.id,
+        publication:
+          (d.publication as FoundationDecisionPublication | undefined) ??
+          FoundationDecisionPublication.PRIVATE,
+      };
+    }
     if (d.status !== FoundationDecisionStatus.APPROVED) {
       return emptyVerification();
     }
@@ -2219,8 +2565,10 @@ export const FoundationDecisionService = {
     canVote: boolean,
     canFinalize: boolean,
     publishable: boolean,
+    canCancel: boolean,
     myVote: 'APPROVE' | 'REJECT' | 'ABSTAIN' | null,
-    myId: string
+    myId: string,
+    myRoleCode: string
   ) {
     const roleByUserId = new Map(d.members.map((m) => [m.userId, m.roleCode]));
     // Nama pemilih diambil dari SNAPSHOT anggota, bukan profil pengguna hidup —
@@ -2228,6 +2576,12 @@ export const FoundationDecisionService = {
     // terjadi, jadi mengganti nama profil setelahnya tidak boleh mengubah
     // identitas yang tercatat di dalamnya.
     const nameByUserId = new Map(d.members.map((m) => [m.userId, m.name]));
+    // Tampilan resmi memakai suara AUTENTIK saja, himpunan yang sama dengan
+    // yang dipakai kuorum, PDF, dan rekap verifikasi publik. Menampilkan baris
+    // mentah membuat tabel di UI (dan `votedCount`) bertentangan dengan angka
+    // yang benar-benar mengesahkan keputusan.
+    const authenticVotes = this.authenticatedVotesOf(d);
+    const invalidVoteCount = d.votes.length - authenticVotes.length;
     return {
       id: d.id,
       organType: d.organType,
@@ -2247,13 +2601,17 @@ export const FoundationDecisionService = {
       createdByName: d.createdBy.name,
       decidedByName: d.decidedBy?.name ?? null,
       memberCount: d.members.length,
-      votedCount: d.votes.length,
+      votedCount: authenticVotes.length,
       canVote,
       canFinalize,
       publishable,
+      canCancel,
       myVote,
+      // Diagnostik manipulasi hanya untuk aktor berwenang; peran lain tidak
+      // perlu tahu ada baris mentah yang tidak sah.
+      invalidVoteCount: myRoleCode === RoleCode.SUPER_ADMIN ? invalidVoteCount : undefined,
       members: d.members.map((m) => ({ userId: m.userId, name: m.name, roleCode: m.roleCode })),
-      votes: d.votes.map((v) => ({
+      votes: authenticVotes.map((v) => ({
         id: v.id,
         userId: v.userId,
         userName: nameByUserId.get(v.userId) ?? v.user.name,

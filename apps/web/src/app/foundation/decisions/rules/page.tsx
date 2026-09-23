@@ -107,6 +107,11 @@ export default function FoundationRulesPage() {
     (r) => r.organType === organType && r.decisionKind === kind,
   );
 
+  // Sirkuler WAJIB mufakat: server menolak mode lain (kontrak Zod + service),
+  // jadi form pun tidak boleh menawarkannya. Ini penegakan UX yang mencerminkan
+  // boundary peladen — bukan sekadar menyembunyikan opsi.
+  const circularLocked = kind === "CIRCULAR";
+
   // Muat nilai tersimpan (atau default legal) setiap kali pilihan berubah.
   useEffect(() => {
     setSaved(false);
@@ -127,6 +132,16 @@ export default function FoundationRulesPage() {
       quorumDecisionValue: d.quorumDecisionValue,
     });
   }, [stored, kind]);
+
+  /**
+   * Mode yang boleh dipilih untuk pasangan organ × cara saat ini.
+   *
+   * Untuk sirkuler hanya MUTLAK: mengunci di UI mencegah pengguna memilih mode
+   * yang submission-nya pasti ditolak, dan sekaligus menjelaskan mengapa.
+   */
+  const selectableModes = circularLocked
+    ? (["MUTLAK"] as FoundationQuorumMode[])
+    : FOUNDATION_QUORUM_MODES;
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -229,6 +244,7 @@ export default function FoundationRulesPage() {
                     <Label>Mode Kuorum Hadir</Label>
                     <Select
                       value={form.quorumPresentMode}
+                      disabled={circularLocked}
                       onValueChange={(v) => {
                         const mode = v as FoundationQuorumMode;
                         setForm((f) => ({
@@ -247,7 +263,7 @@ export default function FoundationRulesPage() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {FOUNDATION_QUORUM_MODES.map((m) => (
+                        {selectableModes.map((m) => (
                           <SelectItem key={m} value={m}>
                             {QUORUM_MODE_LABEL[m]}
                           </SelectItem>
@@ -266,6 +282,7 @@ export default function FoundationRulesPage() {
                     <Label>Mode Kuorum Sah</Label>
                     <Select
                       value={form.quorumDecisionMode}
+                      disabled={circularLocked}
                       onValueChange={(v) => {
                         const mode = v as FoundationQuorumMode;
                         setForm((f) => ({
@@ -279,7 +296,7 @@ export default function FoundationRulesPage() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {FOUNDATION_QUORUM_MODES.map((m) => (
+                        {selectableModes.map((m) => (
                           <SelectItem key={m} value={m}>
                             {QUORUM_MODE_LABEL[m]}
                           </SelectItem>
@@ -295,6 +312,12 @@ export default function FoundationRulesPage() {
                     />
                   </div>
                 </div>
+                {circularLocked && (
+                  <p className="text-xs text-muted-foreground">
+                    Keputusan sirkuler hanya sah bila diambil dengan mufakat
+                    (mutlak): cara lain dikunci oleh sistem.
+                  </p>
+                )}
                 <div className="flex flex-wrap items-center gap-3">
                   <Button type="submit" disabled={upsert.isPending}>
                     <Save className="mr-2 h-4 w-4" /> Simpan Aturan
