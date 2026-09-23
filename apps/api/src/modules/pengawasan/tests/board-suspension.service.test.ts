@@ -1134,6 +1134,89 @@ describe('BoardSuspensionService Unit Tests', () => {
       expect(prisma.userRoleAssignment.updateMany).not.toHaveBeenCalled();
     });
 
+    it('hands the earliest prior expiry to the heir when both dependents extended the same row', async () => {
+      // A reused an effective row and extended it to A's deadline, recording the
+      // row's original expiry (01-01). B then reused the *already extended* row
+      // and recorded A's extended expiry (03-01) as its own "prior state". If B
+      // lifts first and its payload is copied verbatim, A's later lift would
+      // restore the row to 03-01 — a suspension deadline — instead of 01-01.
+      // The transfer must keep the earliest of the two snapshots.
+      const b = suspension('susp-b', false);
+      (prisma.boardMemberSuspension.findUnique as any).mockResolvedValue(b);
+      (prisma.boardMemberSuspension.findUniqueOrThrow as any).mockResolvedValue({
+        ...b,
+        status: 'LIFTED',
+      });
+      (prisma.user.findUnique as any).mockResolvedValue({
+        isActive: false,
+        deletedAt: null,
+        accountStateWriter: 'asw_test',
+      });
+      const bRestore = { isActive: true, expiresAt: '2026-03-01T00:00:00.000Z' };
+      (prisma.boardSuspensionPlhAssignment.findMany as any).mockResolvedValue([
+        { id: 'dep-b', assignmentId: sharedAssignmentId, created: false, restore: bRestore },
+      ]);
+      (prisma.boardSuspensionPlhAssignment.count as any).mockResolvedValue(1);
+      // The heir (A) recorded the assignment's true pre-suspension expiry.
+      (prisma.boardSuspensionPlhAssignment.findFirst as any).mockResolvedValue({
+        id: 'dep-a',
+        created: false,
+        restore: { isActive: true, expiresAt: '2026-01-01T00:00:00.000Z' },
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      });
+
+      await boardSuspensionService.liftBoardSuspension('susp-b', 'lifter', 'Pulih');
+
+      expect(prisma.boardSuspensionPlhAssignment.update).toHaveBeenCalledWith({
+        where: { id: 'dep-a' },
+        data: {
+          created: false,
+          restore: { isActive: true, expiresAt: '2026-01-01T00:00:00.000Z' },
+        },
+      });
+    });
+
+    it('treats a null (unbounded) expiry as the latest when merging snapshots', async () => {
+      // `expiresAt: null` means the row never expired, so it is the LATER state;
+      // the earliest-expiry rule must keep a dated snapshot over a null one.
+      const b = suspension('susp-b', false);
+      (prisma.boardMemberSuspension.findUnique as any).mockResolvedValue(b);
+      (prisma.boardMemberSuspension.findUniqueOrThrow as any).mockResolvedValue({
+        ...b,
+        status: 'LIFTED',
+      });
+      (prisma.user.findUnique as any).mockResolvedValue({
+        isActive: false,
+        deletedAt: null,
+        accountStateWriter: 'asw_test',
+      });
+      (prisma.boardSuspensionPlhAssignment.findMany as any).mockResolvedValue([
+        {
+          id: 'dep-b',
+          assignmentId: sharedAssignmentId,
+          created: false,
+          restore: { isActive: true, expiresAt: null },
+        },
+      ]);
+      (prisma.boardSuspensionPlhAssignment.count as any).mockResolvedValue(1);
+      (prisma.boardSuspensionPlhAssignment.findFirst as any).mockResolvedValue({
+        id: 'dep-a',
+        created: false,
+        restore: { isActive: true, expiresAt: '2026-02-01T00:00:00.000Z' },
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      });
+
+      await boardSuspensionService.liftBoardSuspension('susp-b', 'lifter', 'Pulih');
+
+      expect(prisma.boardSuspensionPlhAssignment.update).toHaveBeenCalledWith({
+        where: { id: 'dep-a' },
+        data: {
+          created: false,
+          restore: { isActive: true, expiresAt: '2026-02-01T00:00:00.000Z' },
+        },
+      });
+    });
+
     it('releases the shared assignment when the last dependent lifts (creator first)', async () => {
       const b = suspension('susp-b', false);
       (prisma.boardMemberSuspension.findUnique as any).mockResolvedValue(b);

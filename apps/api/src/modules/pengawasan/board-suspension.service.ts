@@ -52,6 +52,39 @@ interface PlhAssignmentRestore {
   expiresAt: string | null;
 }
 
+/**
+ * Merge two restore snapshots for the same reused assignment, keeping the
+ * *earliest* prior expiry.
+ *
+ * A shared assignment can be extended by more than one suspension: A reuses an
+ * effective row and pushes its expiry to A's deadline, recording the row's
+ * original (earliest) expiry; B then reuses the *already extended* row and
+ * records A's extended expiry as "the prior state it changed". If B lifts first
+ * and hands its payload to A verbatim, A — the last lifter — restores the row to
+ * B's horizon instead of the expiry it had before either suspension. Taking the
+ * earliest of the two snapshots yields the assignment's true pre-suspension
+ * expiry. `null` means unbounded and is therefore the latest, not the earliest.
+ */
+function mergeRestorePreferringEarliest(
+  a: PlhAssignmentRestore,
+  b: PlhAssignmentRestore | null
+): PlhAssignmentRestore {
+  if (!b) return a;
+  return {
+    // Both snapshots describe a reused, effective row, so `isActive` is true;
+    // `&&` keeps a reactivated-from-inactive row's original `false`.
+    isActive: a.isActive && b.isActive,
+    expiresAt: earliestExpiry(a.expiresAt, b.expiresAt),
+  };
+}
+
+function earliestExpiry(a: string | null, b: string | null): string | null {
+  if (a == null) return b;
+  if (b == null) return a;
+  // Both are ISO 8601 UTC strings, so lexicographic order is chronological.
+  return a <= b ? a : b;
+}
+
 /** A Plh delegate's effective assignment, as resolved at suspension time. */
 interface PlhDependency {
   assignmentId: string;
@@ -1024,14 +1057,28 @@ export class BoardSuspensionService {
             orderBy: { createdAt: 'asc' },
           });
           if (heir) {
+            // The dying row's restore payload and the heir's describe the same
+            // reused assignment. Hand them over merged — earliest expiry wins —
+            // rather than replacing the heir's snapshot: the heir may have
+            // recorded the assignment's true pre-suspension expiry before this
+            // suspension extended it further, and overwriting it with the
+            // later, already-extended expiry would leave the row parked at a
+            // suspension deadline after the last lift.
+            const heirRestore = (heir.restore ?? null) as PlhAssignmentRestore | null;
+            const dyingRestore = (dependency.restore ?? null) as PlhAssignmentRestore | null;
+            const mergedRestore =
+              dyingRestore && heirRestore
+                ? mergeRestorePreferringEarliest(dyingRestore, heirRestore)
+                : (dyingRestore ?? heirRestore);
+
             await tx.boardSuspensionPlhAssignment.update({
               where: { id: heir.id },
               data: {
                 created: dependency.created || heir.created,
-                // Only copy a restore payload the dying row actually owns; a
-                // null there means "the heir's own restore, if any, stands".
-                ...(dependency.restore != null
-                  ? { restore: dependency.restore as unknown as Prisma.InputJsonValue }
+                // `null`/`undefined` means "the heir's own restore, if any,
+                // stands".
+                ...(mergedRestore != null
+                  ? { restore: mergedRestore as unknown as Prisma.InputJsonValue }
                   : {}),
               },
             });

@@ -314,6 +314,7 @@ export class WbsService {
             senderType: true,
             senderName: true,
             message: true,
+            attachments: true,
             createdAt: true,
           },
         },

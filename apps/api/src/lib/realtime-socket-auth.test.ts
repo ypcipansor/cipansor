@@ -22,14 +22,16 @@ import jwt from 'jsonwebtoken';
 const userFindUnique = vi.fn();
 const suspensionFindFirst = vi.fn();
 const assignmentFindMany = vi.fn();
+const attendanceFindMany = vi.fn().mockResolvedValue([]);
+const paymentFindMany = vi.fn().mockResolvedValue([]);
 
 vi.mock('@/lib/prisma', () => ({
   prisma: {
     user: { findUnique: (...args: unknown[]) => userFindUnique(...args) },
     boardMemberSuspension: { findFirst: (...args: unknown[]) => suspensionFindFirst(...args) },
     userRoleAssignment: { findMany: (...args: unknown[]) => assignmentFindMany(...args) },
-    attendance: { findMany: vi.fn().mockResolvedValue([]) },
-    payment: { findMany: vi.fn().mockResolvedValue([]) },
+    attendance: { findMany: (...args: unknown[]) => attendanceFindMany(...args) },
+    payment: { findMany: (...args: unknown[]) => paymentFindMany(...args) },
     student: { count: vi.fn().mockResolvedValue(0) },
     teacher: { count: vi.fn().mockResolvedValue(0) },
     hafidzStudent: { count: vi.fn().mockResolvedValue(0) },
@@ -158,6 +160,8 @@ describe('Socket.IO authorization boundary', () => {
     userFindUnique.mockReset().mockResolvedValue({ isActive: true, deletedAt: null });
     suspensionFindFirst.mockReset().mockResolvedValue(null);
     assignmentFindMany.mockReset().mockResolvedValue([]);
+    attendanceFindMany.mockReset().mockResolvedValue([]);
+    paymentFindMany.mockReset().mockResolvedValue([]);
   });
 
   it('refuses the handshake for a suspended account', async () => {
@@ -268,6 +272,36 @@ describe('Socket.IO authorization boundary', () => {
     // delivering. The server-side `disconnect(true)` lands a moment later.
     await new Promise((resolve) => setTimeout(resolve, 150));
     expect(socket.connected).toBe(false);
+    socket.disconnect();
+  });
+
+  it('sends a unitless non-foundation actor no foundation-wide recent records', async () => {
+    // Regression: `sendRecentEvents` scoped the initial payload to every unit
+    // when an actor had no verified unit, so a unitless teacher/unit-admin was
+    // handed other units' students and payment amounts on connect. The query
+    // must not run at all for such an actor.
+    assignmentFindMany.mockResolvedValue([]);
+    const socket = await connect(port, accessToken({ roleCode: 'SDIT_ADMIN', unitId: null }));
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    expect(attendanceFindMany).not.toHaveBeenCalled();
+    expect(paymentFindMany).not.toHaveBeenCalled();
+    socket.disconnect();
+  });
+
+  it('scopes a unit-bound actor recent records to its own unit', async () => {
+    assignmentFindMany.mockResolvedValue([{ unitId: 'unit-sdit' }]);
+    const socket = await connect(
+      port,
+      accessToken({ roleCode: 'SDIT_ADMIN', unitId: 'unit-sdit' })
+    );
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    expect(attendanceFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ student: { unitId: { in: ['unit-sdit'] } } }),
+      })
+    );
     socket.disconnect();
   });
 });

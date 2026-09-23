@@ -1467,6 +1467,18 @@ describe('WbsService Unit Tests', () => {
       );
     });
 
+    it('returns comment attachments on the handler list, not just the public tracker', async () => {
+      // Regression: `getReportsForUser` selected every comment field except
+      // `attachments`, so evidence a reporter or handler attached vanished from
+      // the staff list while the public tracking page kept it. The two surfaces
+      // read the same `WbsComment` rows and must expose the same evidence.
+      (prisma.wbsReport.findMany as any).mockResolvedValue([]);
+      await wbsService.getReportsForUser({ roleCode: 'YAYASAN_PENGAWAS', unitId: null });
+
+      const call = (prisma.wbsReport.findMany as any).mock.calls[0][0];
+      expect(call.include.comments.select).toMatchObject({ attachments: true });
+    });
+
     it('lets a specifically assigned handler reach their assigned report', async () => {
       (prisma.wbsReport.findMany as any).mockResolvedValue([]);
       await wbsService.getReportsForUser({

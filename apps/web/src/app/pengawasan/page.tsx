@@ -1061,6 +1061,22 @@ function PengawasanPageContent() {
                               <p className="text-slate-800 whitespace-pre-line">
                                 {c.message}
                               </p>
+                              {(c.attachments?.length ?? 0) > 0 && (
+                                <ul className="mt-1 space-y-1">
+                                  {c.attachments!.map((url, index) => (
+                                    <li key={`${c.id}-att-${index}`}>
+                                      <a
+                                        href={url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-blue-600 hover:underline break-all"
+                                      >
+                                        Lampiran {index + 1}
+                                      </a>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
                             </div>
                           ))}
                         </div>

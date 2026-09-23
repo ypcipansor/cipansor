@@ -601,7 +601,15 @@ async function sendRecentEvents(socket: Socket, identity: SocketIdentity): Promi
   try {
     const units = allowedUnitIds(identity);
     const foundationWide = isFoundationWideRole(identity.roleCode);
-    const unitScope = foundationWide || units.size === 0 ? {} : { unitId: { in: [...units] } };
+
+    // Fail closed for a non-foundation actor with no verified unit. The empty
+    // scope below (`{}`) means "every unit" — the whole-foundation query — so a
+    // unitless teacher/admin would otherwise be handed other units' students and
+    // payment amounts the moment they connect. A foundation-wide role is the
+    // only identity whose REST view is already every unit.
+    if (!foundationWide && units.size === 0) return;
+
+    const unitScope = foundationWide ? {} : { unitId: { in: [...units] } };
 
     // Get recent attendance (last 10)
     const recentAttendance = await prisma.attendance.findMany({

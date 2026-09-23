@@ -48,11 +48,14 @@ describe('same-site helpers', () => {
   });
 });
 
+const API = ['https://cipansor.or.id', 'https://portal.cipansor.or.id'];
+
 describe('assertSameSiteDeployment', () => {
   it('accepts a same-site multi-host allowlist in production', () => {
     expect(() =>
       assertSameSiteDeployment({
         env: 'production',
+        apiOrigins: API,
         origins: [
           'https://cipansor.or.id',
           'https://www.cipansor.or.id',
@@ -62,22 +65,66 @@ describe('assertSameSiteDeployment', () => {
     ).not.toThrow();
   });
 
-  it('rejects origins on different registrable sites in production', () => {
+  it('rejects a SINGLE browser origin that is cross-site from the API', () => {
+    // The regression this finding is about: one entry on a different site used
+    // to pass because the old check only counted distinct sites in the list.
     expect(() =>
       assertSameSiteDeployment({
         env: 'production',
+        apiOrigins: API,
+        origins: ['https://cipansor-app.vercel.app'],
+      })
+    ).toThrow(/different site from the API/);
+  });
+
+  it('rejects origins on several sites, naming the offenders', () => {
+    expect(() =>
+      assertSameSiteDeployment({
+        env: 'production',
+        apiOrigins: API,
         origins: ['https://cipansor.or.id', 'https://cipansor-api.vercel.app'],
       })
-    ).toThrow(/different sites/);
+    ).toThrow(/cipansor-api\.vercel\.app/);
+  });
+
+  it('accepts distinct origins that are all same-site with the API', () => {
+    expect(() =>
+      assertSameSiteDeployment({
+        env: 'production',
+        apiOrigins: API,
+        origins: ['https://api.cipansor.or.id', 'https://admin.cipansor.or.id'],
+      })
+    ).not.toThrow();
   });
 
   it('ignores loopback entries in a production allowlist', () => {
     expect(() =>
       assertSameSiteDeployment({
         env: 'production',
+        apiOrigins: API,
         origins: ['https://cipansor.or.id', 'http://localhost:3000'],
       })
     ).not.toThrow();
+  });
+
+  it('fails closed when browser origins exist but the API site is undeterminable', () => {
+    expect(() =>
+      assertSameSiteDeployment({
+        env: 'production',
+        origins: ['https://cipansor.or.id'],
+        apiOrigins: ['http://localhost:3000', 'not a url'],
+      })
+    ).toThrow(/could not be determined/);
+  });
+
+  it('fails closed when the API itself spans more than one site', () => {
+    expect(() =>
+      assertSameSiteDeployment({
+        env: 'production',
+        origins: ['https://cipansor.or.id'],
+        apiOrigins: ['https://cipansor.or.id', 'https://cipansor.example.com'],
+      })
+    ).toThrow(/more than one registrable site/);
   });
 
   it('does not enforce the constraint outside production', () => {
@@ -95,9 +142,10 @@ describe('assertSameSiteDeployment', () => {
     try {
       expect(() =>
         assertSameSiteDeployment({
-          origins: ['https://a.example.com', 'https://b.example.net'],
+          apiOrigins: ['https://a.example.com'],
+          origins: ['https://b.example.net'],
         })
-      ).toThrow(/different sites/);
+      ).toThrow(/different site from the API/);
     } finally {
       process.env.NODE_ENV = previous;
     }
