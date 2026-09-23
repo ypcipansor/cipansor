@@ -1,6 +1,7 @@
 "use client";
 import { useState, useRef } from "react";
 import { safeFormat } from "@/lib/date";
+import { escapeHtml } from "@/lib/string";
 import { MainLayout } from "@/components/layout/main-layout";
 import {
   Card,
@@ -30,7 +31,8 @@ import { useClasses } from "@/hooks/use-classes";
 import {
   CERTIFICATE_TEMPLATES,
   CertificateType,
-  generateCertificateNumber,
+  PENDING_CERTIFICATE_NUMBER,
+  useCertificateNumber,
 } from "@/hooks/use-certificate";
 import {
   Award,
@@ -101,7 +103,12 @@ export default function CertificateGeneratorPage() {
   const selectedTemplate = CERTIFICATE_TEMPLATES.find(
     (t) => t.type === formData.type,
   );
-  const certificateNumber = generateCertificateNumber(formData.type, "CPN");
+  const { value: certificateNumber } = useCertificateNumber(
+    formData.type,
+    "CPN",
+    selectedStudent?.id ?? "",
+  );
+  const numberReady = certificateNumber !== null;
 
   const handleSelectStudent = (student: Student) => {
     setSelectedStudent(student);
@@ -134,6 +141,12 @@ export default function CertificateGeneratorPage() {
       toast.error("Pilih siswa terlebih dahulu");
       return;
     }
+    // Never print the pending placeholder — the document would carry a number
+    // the student did not receive.
+    if (!numberReady) {
+      toast.error("Nomor sertifikat belum siap. Coba lagi sebentar.");
+      return;
+    }
 
     const printWindow = window.open("", "_blank");
     if (!printWindow) {
@@ -142,12 +155,17 @@ export default function CertificateGeneratorPage() {
     }
 
     const printContent = printRef.current?.innerHTML || "";
+    // The print window is same-origin (`about:blank`), so anything written into
+    // it runs with the app's session. `printContent` is React-rendered and
+    // already escaped; the title is raw data — a student name comes from SPMB
+    // registration, i.e. from the public — so it must be escaped here.
+    const printTitle = escapeHtml(`Sertifikat - ${selectedStudent.name}`);
 
     printWindow.document.write(`
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Sertifikat - ${selectedStudent.name}</title>
+          <title>${printTitle}</title>
           <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Great+Vibes&family=Noto+Serif:wght@400;600;700&display=swap" rel="stylesheet">
           <style>
             @page {
@@ -291,7 +309,11 @@ export default function CertificateGeneratorPage() {
           </div>
 
           {/* Certificate Number */}
-          <p className="text-xs opacity-60 mb-4">No: {certificateNumber}</p>
+          <p className="text-xs opacity-60 mb-4" data-testid="certificate-number">
+            {numberReady
+              ? `No: ${certificateNumber}`
+              : PENDING_CERTIFICATE_NUMBER}
+          </p>
 
           {/* Main Text */}
           <div className="text-center mb-6">
@@ -455,7 +477,7 @@ export default function CertificateGeneratorPage() {
             <Button
               variant="default"
               onClick={handlePrint}
-              disabled={!selectedStudent}
+              disabled={!selectedStudent || !numberReady}
               className="transition-all hover:shadow-md hover:-translate-y-0.5"
             >
               <Printer className="h-4 w-4 mr-2" />
@@ -632,18 +654,29 @@ export default function CertificateGeneratorPage() {
           <TabsContent value="select-type" className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <FileText className="h-5 w-5" />
-                  Pilih Jenis Sertifikat
-                </CardTitle>
-                <CardDescription>
-                  {selectedStudent && (
-                    <span>
-                      Untuk: <strong>{selectedStudent.name}</strong> (
-                      {selectedStudent.nis})
-                    </span>
-                  )}
-                </CardDescription>
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <FileText className="h-5 w-5" />
+                      Pilih Jenis Sertifikat
+                    </CardTitle>
+                    <CardDescription>
+                      {selectedStudent && (
+                        <span>
+                          Untuk: <strong>{selectedStudent.name}</strong> (
+                          {selectedStudent.nis})
+                        </span>
+                      )}
+                    </CardDescription>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setActiveTab("select-student")}
+                  >
+                    Ganti Siswa
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -804,7 +837,11 @@ export default function CertificateGeneratorPage() {
                     >
                       Kembali
                     </Button>
-                    <Button onClick={handlePrint} className="flex-1">
+                    <Button
+                      onClick={handlePrint}
+                      disabled={!numberReady}
+                      className="flex-1"
+                    >
                       <Printer className="h-4 w-4 mr-2" />
                       Cetak Sertifikat
                     </Button>
