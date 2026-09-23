@@ -19,6 +19,10 @@ vi.mock('@/modules/auth/auth.service', () => ({
     verifyTwoFactorLogin: vi.fn(),
   },
 }));
+vi.mock('@/lib/jwt', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/jwt')>()),
+  verifyToken: vi.fn(),
+}));
 vi.mock('@/lib/event-bus', () => ({ eventBus: { emit: vi.fn() } }));
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -29,8 +33,10 @@ import {
   login,
   refreshToken as refreshTokenHandler,
   logout,
+  clearSession,
   verifyTwoFactorLogin,
 } from '@/modules/auth/auth.controller';
+import { verifyToken } from '@/lib/jwt';
 import {
   ACCESS_TOKEN_COOKIE,
   REFRESH_TOKEN_COOKIE,
@@ -179,6 +185,69 @@ describe('auth cookie issuance', () => {
       ROUTING_COOKIE,
     ]);
     for (const c of cleared) expect(c).toMatch(/Max-Age=0/);
+  });
+
+  it('session/clear deletes every session cookie and survives an invalid refresh token', async () => {
+    // Finding 3: the client must be able to end a session server-side even
+    // when the refresh credential is already invalid — that is the exact state
+    // that leaves a stale `cipansor_routing` cookie trapping the user in a
+    // login loop. The endpoint is unauthenticated on purpose and must clear
+    // access, refresh, 2FA and routing regardless, without throwing.
+    vi.mocked(verifyToken).mockImplementation(() => {
+      throw new Error('jwt expired');
+    });
+    const { req, res, cookies } = mockReqRes({}, `${REFRESH_TOKEN_COOKIE}=rotten; `);
+    const next = vi.fn();
+
+    await clearSession(req, res, next);
+    await flushAsync();
+
+    expect(next).not.toHaveBeenCalled();
+    const cleared = cookies();
+    expect(cleared.map((c) => c.split('=')[0])).toEqual([
+      ACCESS_TOKEN_COOKIE,
+      REFRESH_TOKEN_COOKIE,
+      TWO_FACTOR_TOKEN_COOKIE,
+      ROUTING_COOKIE,
+    ]);
+    for (const c of cleared) expect(c).toMatch(/Max-Age=0/);
+    // An invalid token is not revocable and must not be attempted.
+    expect(authService.logout).not.toHaveBeenCalled();
+  });
+
+  it('session/clear revokes a presented refresh token before clearing', async () => {
+    vi.mocked(verifyToken).mockReturnValue({ type: 'refresh', sub: 'user-1' } as never);
+    const { req, res, cookies } = mockReqRes({}, `${REFRESH_TOKEN_COOKIE}=live; `);
+
+    await clearSession(req, res, () => {});
+    await flushAsync();
+
+    expect(authService.logout).toHaveBeenCalledWith('user-1', 'live');
+    expect(cookies().every((c) => /Max-Age=0/.test(c))).toBe(true);
+  });
+
+  it('refresh answers a definitive rejection by clearing every session cookie', async () => {
+    // Finding 3's server half: the 401 that tells the client a refresh failed
+    // must carry the cookie deletions itself, so no client has to remember a
+    // second call to avoid the stale-routing login loop.
+    vi.mocked(authService.refreshToken).mockRejectedValue(
+      Object.assign(new Error('Refresh token not found or expired'), { statusCode: 401 }),
+    );
+    const { req, res, cookies } = mockReqRes({ refreshToken: 'spent' });
+    const next = vi.fn();
+
+    await refreshTokenHandler(req, res, next);
+    await flushAsync();
+
+    const cleared = cookies();
+    expect(cleared.map((c) => c.split('=')[0])).toEqual([
+      ACCESS_TOKEN_COOKIE,
+      REFRESH_TOKEN_COOKIE,
+      TWO_FACTOR_TOKEN_COOKIE,
+      ROUTING_COOKIE,
+    ]);
+    for (const c of cleared) expect(c).toMatch(/Max-Age=0/);
+    expect(next).toHaveBeenCalled();
   });
 
   it('2FA login replaces the temp cookie with the full HttpOnly session', async () => {
