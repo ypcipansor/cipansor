@@ -718,6 +718,51 @@ async function assertUserActiveInTx(client: DbClient, userId: string): Promise<v
 }
 
 /**
+ * Buktikan, DI DALAM transaksi dan di bawah kunci yang SAMA dengan mutasi
+ * penugasan, bahwa aktor masih memegang penugasan organ yang SAAT INI aktif.
+ *
+ * Snapshot immutable menjawab "siapa yang berhak saat keputusan dibuka",
+ * BUKAN "siapa yang masih berhak memilih sekarang". Mantan anggota yang
+ * perannya dicabut/dinonaktifkan/kedaluwarsa, atau akunnya dinonaktifkan/
+ * dihapus, tetap tercatat pada snapshot — tanpa pemeriksaan ini mereka masih
+ * dapat menandatangani suara yang terhitung ke kuorum dan memicu e-seal.
+ *
+ * Urutan kunci sama dengan `create`/`castVote` (tabel penugasan → baris
+ * `roles` → baris `users`): pencabutan peran konkuren ditunggu sampai
+ * transaksi ini melihat hasil finalnya, jadi tidak ada TOCTOU.
+ */
+async function assertActorHasCurrentOrganAssignmentInTx(
+  client: DbClient,
+  userId: string,
+  organType: FoundationOrganType
+): Promise<void> {
+  // Urutan kunci mengikuti protokol global (lihat `LOCK ORDER` di `lockDecision`):
+  // tabel penugasan → baris `roles` → baris `users`. `create` memakai urutan
+  // yang sama, jadi keduanya tidak dapat saling menunggu.
+  await lockAssignmentTableForSnapshot(client);
+  await lockOrganRoleRowsForSnapshot(client, organType);
+  // Sekaligus mengunci baris `users` aktor (`FOR SHARE`) dan menolak akun yang
+  // tidak aktif/di-soft-delete — pemeriksaan hidup akun yang sama dengan
+  // tindakan tata kelola lain, kini selalu menyertai hak suara.
+  await assertUserActiveInTx(client, userId);
+
+  const current = await client.userRoleAssignment.findFirst({
+    where: {
+      userId,
+      isActive: true,
+      OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      role: { isActive: true, code: { in: roleCodesForOrgan(organType) } },
+    },
+    select: { id: true },
+  });
+  if (!current) {
+    throw Errors.forbidden(
+      'Anda tidak lagi memegang peran organ yang aktif pada keputusan ini, sehingga tidak dapat memberikan suara.'
+    );
+  }
+}
+
+/**
  * Serialisasi pembuatan keputusan terhadap SETIAP perubahan aturan kuorum.
  *
  * Bila `upsertRule` commit di sela antara pembacaan aturan dan commit `create`,
@@ -991,9 +1036,7 @@ export function normalizeRule(rule: FoundationDecisionRule): FoundationDecisionR
  * Kontrak Zod sudah menolak mode non-MUTLAK untuk CIRCULAR di edge, tetapi
  * service juga harus aman bila dipanggil internal tanpa validasi edge.
  */
-function normalizeRuleInput(
-  input: UpsertFoundationRuleInput
-): UpsertFoundationRuleInput {
+function normalizeRuleInput(input: UpsertFoundationRuleInput): UpsertFoundationRuleInput {
   if (input.decisionKind !== 'CIRCULAR') return input;
   return {
     ...input,
@@ -1325,10 +1368,34 @@ export const FoundationDecisionService = {
     // suara ganda, jadi DTO yang tetap menawarkannya membuat UI meminta
     // tindakan yang peladen pasti tolak.
     const hasVoted = this.authenticatedVotesOf(d).some((v) => v.userId === actor.id);
+    // Hak suara mengikuti SNAPSHOT anggota, bukan peran hari ini: orang yang
+    // baru diangkat setelah keputusan dibuat bukan bagian dari badan yang
+    // memutus saat itu.
+    //
+    // Tetapi snapshot saja TIDAK cukup untuk MENAWARKAN suara: `castVote`
+    // (F1) juga mensyaratkan penugasan organ yang SAAT INI aktif di bawah
+    // kunci. Menghitungnya di sini dengan predikat yang sama persis membuat UI
+    // tidak pernah menawarkan tombol yang peladen pasti tolak — mantan anggota
+    // yang seluruh peran organnya dicabut, atau yang perannya
+    // dinonaktifkan/kedaluwarsa. Perbedaan kecil antara "tampil" dan "diterima"
+    // adalah bug yang sulit terlihat, jadi keduanya memakai satu definisi.
+    const isSnapshotMember = d.members.some((m) => m.userId === actor.id);
+    const holdsCurrentAssignment = isSnapshotMember
+      ? !!(await prisma.userRoleAssignment.findFirst({
+          where: {
+            userId: actor.id,
+            isActive: true,
+            OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+            role: { isActive: true, code: { in: roleCodesForOrgan(d.organType) } },
+          },
+          select: { id: true },
+        }))
+      : false;
+    // Anggota yang SUDAH memilih juga `canVote: false`: `castVote` menolak
+    // suara ganda, jadi DTO yang tetap menawarkannya membuat UI meminta
+    // tindakan yang peladen pasti tolak.
     const canVote =
-      d.status === FoundationDecisionStatus.VOTING &&
-      !hasVoted &&
-      d.members.some((m) => m.userId === actor.id);
+      d.status === FoundationDecisionStatus.VOTING && !hasVoted && holdsCurrentAssignment;
     // Eligibility finalisasi dihitung dengan definisi yang SAMA dengan
     // `finalize` — bukan dari role saja. UI tidak boleh menawarkan tombol yang
     // peladen pasti tolak (Pengawas membuka keputusan organ lain). Sirkuler
@@ -1584,7 +1651,14 @@ export const FoundationDecisionService = {
         // akun DI DALAM transaksi, di bawah kunci baris user, sehingga
         // deaktivasi yang konkuren tidak dapat menyelinap di antara pembacaan
         // dan `INSERT` suara.
-        await assertUserActiveInTx(tx, actor.id);
+        //
+        // F1 (SECURITY): snapshot saja tidak cukup. Buktikan JUGA, di bawah
+        // kunci penugasan yang sama dengan seluruh mutasi eligibility, bahwa
+        // aktor masih memegang penugasan organ yang SAAT INI aktif — bukan
+        // sekadar pernah tercatat. Pencabutan/penggantian/kedaluwarsa peran
+        // yang konkuren menunggu kunci ini, sehingga tidak ada suara sah yang
+        // ditulis setelah hak pilihnya hilang.
+        await assertActorHasCurrentOrganAssignmentInTx(tx, actor.id, locked.organType);
 
         // TOCTOU: buktikan ULANG, DI DALAM transaksi dan SEBELUM `INSERT`, bahwa
         // kunci yang menandatangani masih berlaku. Bila rotasi/pencabutan commit
@@ -1748,7 +1822,9 @@ export const FoundationDecisionService = {
         const locked = lockedRow as unknown as RichDecision | null;
         if (!locked) throw Errors.notFound('Keputusan tidak ditemukan.');
         if (locked.status !== FoundationDecisionStatus.VOTING) {
-          throw Errors.badRequest(`Keputusan berstatus ${locked.status} dan tidak dapat dibatalkan.`);
+          throw Errors.badRequest(
+            `Keputusan berstatus ${locked.status} dan tidak dapat dibatalkan.`
+          );
         }
         // Pembatalan adalah tindakan tata kelola: status hidup aktor diperiksa
         // di dalam transaksi, di bawah kunci baris `users`.
@@ -2162,7 +2238,10 @@ export const FoundationDecisionService = {
       await assertUserActiveInTx(tx, actor.id);
       const saved = await tx.foundationDecisionRule.upsert({
         where: {
-          organType_decisionKind: { organType: normalized.organType, decisionKind: normalized.decisionKind },
+          organType_decisionKind: {
+            organType: normalized.organType,
+            decisionKind: normalized.decisionKind,
+          },
         },
         create: { ...normalized, updatedById: actor.id },
         update: {

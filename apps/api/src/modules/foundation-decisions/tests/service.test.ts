@@ -42,7 +42,7 @@ vi.mock('@/lib/prisma', () => ({
       updateMany: vi.fn(),
     },
     foundationDecisionDocument: { create: vi.fn(), findUnique: vi.fn() },
-    userRoleAssignment: { findMany: vi.fn() },
+    userRoleAssignment: { findMany: vi.fn(), findFirst: vi.fn() },
     userSigningKey: { findUnique: vi.fn(), update: vi.fn() },
     userSigningKeyHistory: { upsert: vi.fn(), findMany: vi.fn(), findUnique: vi.fn() },
     auditLog: { create: vi.fn() },
@@ -206,6 +206,11 @@ beforeEach(() => {
   // `FOR UPDATE`. Default-nya: akun aktif dan belum dihapus, sehingga uji yang
   // bukan tentang offboarding tidak ikut gagal. Uji offboarding menimpanya.
   dm.$queryRaw.mockResolvedValue([{ is_active: true, deleted_at: null }]);
+  // `assertActorHasCurrentOrganAssignmentInTx` (F1) menuntut penugasan organ
+  // yang saat ini aktif untuk SETIAP suara. Default-nya: satu penugasan aktif,
+  // sehingga uji yang bukan tentang pencabutan peran tidak ikut gagal. Uji
+  // pencabutan/kedaluwarsa peran menimpanya dengan `null`.
+  dm.userRoleAssignment.findFirst.mockResolvedValue({ id: 'asg-current' });
   // `ensureSigningKeyHistory` meng-upsert rekaman kunci tepercaya; kembalikan
   // baris yang dibentuk dari argumennya supaya suara yang dibuat terikat ke
   // rekaman milik pemilih yang benar.
@@ -337,7 +342,16 @@ describe('FoundationDecisionService.castVote', () => {
       { choice: 'APPROVE', passphrase: PASS }
     );
 
-    expect(dm.$executeRaw).toHaveBeenCalledTimes(1);
+    // F1 memperkuat protokol kunci: `castVote` kini mengunci baris keputusan
+    // DAN tabel penugasan (agar pemeriksaan hak pilih hari ini tidak balapan
+    // dengan pencabutan peran). Assertion menghitung jumlah panggilan menjadi
+    // rapuh; yang penting adalah kedua kunci yang menjamin anti-balapan itu
+    // BENAR-BENAR diambil, dan tetap di dalam SATU transaksi.
+    const lockSql = dm.$executeRaw.mock.calls
+      .map((c: unknown[]) => (Array.isArray(c[0]) ? (c[0] as string[]).join('') : String(c[0])))
+      .join('\n');
+    expect(lockSql).toMatch(/foundation_decisions/);
+    expect(lockSql).toMatch(/user_role_assignments/);
     expect(dm.$transaction).toHaveBeenCalledTimes(1);
   });
 
@@ -401,6 +415,49 @@ describe('FoundationDecisionService.castVote', () => {
 
     const result = await FoundationDecisionService.castVote(
       { id: 'user-1', roleCode: 'STAFF' },
+      'dec-1',
+      { choice: 'APPROVE', passphrase: PASS }
+    );
+    expect(result.voteId).toBe('vote-1');
+  });
+
+  /**
+   * F1 (SECURITY CRITICAL) — mantan anggota organ kehilangan hak suara.
+   *
+   * Snapshot keanggotaan bersifat immutable sebagai catatan historis, tetapi
+   * hak suara baru harus mengikuti penugasan organ yang SAAT INI aktif.
+   * `castVote` memeriksanya di dalam transaksi, di bawah kunci penugasan yang
+   * sama dengan seluruh mutasi eligibility.
+   */
+  it('menolak pemilih yang seluruh peran organnya sudah dicabut', async () => {
+    const d = decisionRow();
+    dm.foundationDecision.findUnique.mockResolvedValue(d);
+    // Masih anggota snapshot, akun aktif, kunci sah — tetapi TIDAK ada
+    // penugasan organ yang aktif hari ini.
+    dm.userRoleAssignment.findFirst.mockResolvedValue(null);
+
+    await expect(
+      FoundationDecisionService.castVote({ id: 'user-1', roleCode: 'YAYASAN_PEMBINA' }, 'dec-1', {
+        choice: 'APPROVE',
+        passphrase: PASS,
+      })
+    ).rejects.toThrow(/tidak lagi memegang peran organ yang aktif/);
+    expect(dm.foundationDecisionVote.create).not.toHaveBeenCalled();
+  });
+
+  it('menerima pemilih yang masih memegang penugasan organ aktif', async () => {
+    const d = decisionRow();
+    dm.foundationDecision.findUnique.mockResolvedValue(d);
+    dm.foundationDecisionVote.create.mockResolvedValue({ id: 'vote-1' });
+    dm.foundationDecisionVote.findMany.mockResolvedValue([signedVoteRow(d, 'user-1', 'APPROVE')]);
+    dm.foundationDecision.update.mockResolvedValue({ ...d, status: 'VOTING' });
+    dm.userSigningKey.findUnique.mockResolvedValue(signingKeyRow);
+    dm.userSigningKey.update.mockResolvedValue(signingKeyRow);
+    dm.foundationEseal.findFirst.mockResolvedValue(null);
+    dm.userRoleAssignment.findFirst.mockResolvedValue({ id: 'asg-current' });
+
+    const result = await FoundationDecisionService.castVote(
+      { id: 'user-1', roleCode: 'YAYASAN_PEMBINA' },
       'dec-1',
       { choice: 'APPROVE', passphrase: PASS }
     );
@@ -1126,6 +1183,19 @@ describe('FoundationDecisionService.detail — canVote pada DTO (finding B)', ()
     );
     expect(detail.canVote).toBe(false);
     expect(detail.myVote).toBe('APPROVE');
+  });
+
+  it('anggota snapshot yang peran organnya sudah dicabut → canVote=false', async () => {
+    // F1: peladen menolak suara mantan anggota yang seluruh peran organnya
+    // dicabut, jadi DTO juga tidak boleh menawarkannya.
+    dm.foundationDecision.findUnique.mockResolvedValue(decisionRow());
+    dm.userRoleAssignment.findFirst.mockResolvedValue(null);
+    const detail = await FoundationDecisionService.detail(
+      { id: 'user-1', roleCode: 'YAYASAN_PEMBINA' },
+      'dec-1'
+    );
+    expect(detail.members.some((m) => m.userId === 'user-1')).toBe(true);
+    expect(detail.canVote).toBe(false);
   });
 
   it('peran READ yang bukan anggota snapshot dapat membaca tetapi canVote=false', async () => {
