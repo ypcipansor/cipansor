@@ -51,7 +51,15 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Pencil, Trash2, AlertTriangle, ShieldCheck, Filter, X } from "lucide-react";
+import {
+  Plus,
+  Pencil,
+  Trash2,
+  AlertTriangle,
+  ShieldCheck,
+  Filter,
+  X,
+} from "lucide-react";
 
 // ─── Schemas ────────────────────────────────────────
 const auditFormSchema = z.object({
@@ -94,10 +102,22 @@ const severityColor: Record<string, string> = {
   CRITICAL: "bg-red-100 text-red-700",
 };
 
-const auditTypes = ["Akademik", "Keuangan", "Operasional", "Kepatuhan", "Tata Kelola"];
+const auditTypes = [
+  "Akademik",
+  "Keuangan",
+  "Operasional",
+  "Kepatuhan",
+  "Tata Kelola",
+];
 
 // ─── Create Audit Dialog ────────────────────────────
-function AuditFormDialog({ editData, onClose }: { editData?: any; onClose: () => void }) {
+function AuditFormDialog({
+  editData,
+  onClose,
+}: {
+  editData?: any;
+  onClose: () => void;
+}) {
   const createAudit = useCreateAudit();
   const updateAudit = useUpdateAudit();
   const isEdit = !!editData;
@@ -117,7 +137,10 @@ function AuditFormDialog({ editData, onClose }: { editData?: any; onClose: () =>
   });
 
   const onSubmit = async (values: AuditFormValues) => {
-    const payload = { ...values, plannedDate: new Date(values.plannedDate).toISOString() };
+    const payload = {
+      ...values,
+      plannedDate: new Date(values.plannedDate).toISOString(),
+    };
     if (isEdit) {
       await updateAudit.mutateAsync({ id: editData.id, ...payload });
     } else {
@@ -131,57 +154,110 @@ function AuditFormDialog({ editData, onClose }: { editData?: any; onClose: () =>
   return (
     <DialogContent className="sm:max-w-[560px]">
       <DialogHeader>
-        <DialogTitle>{isEdit ? "Edit Audit" : "Jadwalkan Audit Baru"}</DialogTitle>
+        <DialogTitle>
+          {isEdit ? "Edit Audit" : "Jadwalkan Audit Baru"}
+        </DialogTitle>
         <DialogDescription>
-          {isEdit ? "Perbarui jadwal audit internal." : "Isi data audit internal yang akan dijadwalkan."}
+          {isEdit
+            ? "Perbarui jadwal audit internal."
+            : "Isi data audit internal yang akan dijadwalkan."}
         </DialogDescription>
       </DialogHeader>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-          <FormField control={form.control} name="title" render={({ field }) => (
-            <FormItem>
-              <FormLabel>Judul Audit</FormLabel>
-              <FormControl><Input placeholder="cth: Audit Keuangan Q1 2025" {...field} /></FormControl>
-              <FormMessage />
-            </FormItem>
-          )} />
+          <FormField
+            control={form.control}
+            name="title"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Judul Audit</FormLabel>
+                <FormControl>
+                  <Input placeholder="cth: Audit Keuangan Q1 2025" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
           <div className="grid grid-cols-2 gap-4">
-            <FormField control={form.control} name="auditType" render={({ field }) => (
-              <FormItem>
-                <FormLabel>Tipe Audit</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
-                  <FormControl><SelectTrigger><SelectValue placeholder="Pilih tipe" /></SelectTrigger></FormControl>
-                  <SelectContent>
-                    {auditTypes.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-                <FormMessage />
-              </FormItem>
-            )} />
-            <FormField control={form.control} name="plannedDate" render={({ field }) => (
-              <FormItem>
-                <FormLabel>Tanggal Rencana</FormLabel>
-                <FormControl><Input type="date" {...field} /></FormControl>
-                <FormMessage />
-              </FormItem>
-            )} />
+            <FormField
+              control={form.control}
+              name="auditType"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Tipe Audit</FormLabel>
+                  <Select
+                    onValueChange={field.onChange}
+                    defaultValue={field.value}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Pilih tipe" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {auditTypes.map((t) => (
+                        <SelectItem key={t} value={t}>
+                          {t}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="plannedDate"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Tanggal Rencana</FormLabel>
+                  <FormControl>
+                    <Input type="date" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
           </div>
-          <FormField control={form.control} name="scope" render={({ field }) => (
-            <FormItem>
-              <FormLabel>Ruang Lingkup (Opsional)</FormLabel>
-              <FormControl><Textarea placeholder="Ruang lingkup audit…" rows={2} {...field} /></FormControl>
-              <FormMessage />
-            </FormItem>
-          )} />
-          <FormField control={form.control} name="description" render={({ field }) => (
-            <FormItem>
-              <FormLabel>Catatan (Opsional)</FormLabel>
-              <FormControl><Textarea placeholder="Catatan tambahan…" rows={2} {...field} /></FormControl>
-              <FormMessage />
-            </FormItem>
-          )} />
+          <FormField
+            control={form.control}
+            name="scope"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Ruang Lingkup (Opsional)</FormLabel>
+                <FormControl>
+                  <Textarea
+                    placeholder="Ruang lingkup audit…"
+                    rows={2}
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="description"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Catatan (Opsional)</FormLabel>
+                <FormControl>
+                  <Textarea
+                    placeholder="Catatan tambahan…"
+                    rows={2}
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={onClose}>Batal</Button>
+            <Button type="button" variant="outline" onClick={onClose}>
+              Batal
+            </Button>
             <Button type="submit" disabled={isPending}>
               {isPending ? "Menyimpan…" : isEdit ? "Perbarui" : "Simpan"}
             </Button>
@@ -193,11 +269,24 @@ function AuditFormDialog({ editData, onClose }: { editData?: any; onClose: () =>
 }
 
 // ─── Add Finding Dialog ─────────────────────────────
-function AddFindingDialog({ auditId, onClose }: { auditId: string; onClose: () => void }) {
+function AddFindingDialog({
+  auditId,
+  onClose,
+}: {
+  auditId: string;
+  onClose: () => void;
+}) {
   const createFinding = useCreateFinding();
   const form = useForm<z.infer<typeof findingFormSchema>>({
     resolver: zodResolver(findingFormSchema),
-    defaultValues: { findingNumber: "", title: "", description: "", severity: "MINOR", category: "", recommendation: "" },
+    defaultValues: {
+      findingNumber: "",
+      title: "",
+      description: "",
+      severity: "MINOR",
+      category: "",
+      recommendation: "",
+    },
   });
 
   const onSubmit = async (values: z.infer<typeof findingFormSchema>) => {
@@ -209,64 +298,120 @@ function AddFindingDialog({ auditId, onClose }: { auditId: string; onClose: () =
     <DialogContent className="sm:max-w-[560px]">
       <DialogHeader>
         <DialogTitle>Tambah Temuan</DialogTitle>
-        <DialogDescription>Catat temuan audit beserta tingkat keparahan.</DialogDescription>
+        <DialogDescription>
+          Catat temuan audit beserta tingkat keparahan.
+        </DialogDescription>
       </DialogHeader>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
-            <FormField control={form.control} name="findingNumber" render={({ field }) => (
-              <FormItem>
-                <FormLabel>Nomor Temuan</FormLabel>
-                <FormControl><Input placeholder="TM-001" {...field} /></FormControl>
-                <FormMessage />
-              </FormItem>
-            )} />
-            <FormField control={form.control} name="severity" render={({ field }) => (
-              <FormItem>
-                <FormLabel>Tingkat</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
-                  <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                  <SelectContent>
-                    <SelectItem value="OBSERVATION">Observasi</SelectItem>
-                    <SelectItem value="MINOR">Minor</SelectItem>
-                    <SelectItem value="MAJOR">Major</SelectItem>
-                    <SelectItem value="CRITICAL">Kritikal</SelectItem>
-                  </SelectContent>
-                </Select>
-                <FormMessage />
-              </FormItem>
-            )} />
+            <FormField
+              control={form.control}
+              name="findingNumber"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Nomor Temuan</FormLabel>
+                  <FormControl>
+                    <Input placeholder="TM-001" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="severity"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Tingkat</FormLabel>
+                  <Select
+                    onValueChange={field.onChange}
+                    defaultValue={field.value}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="OBSERVATION">Observasi</SelectItem>
+                      <SelectItem value="MINOR">Minor</SelectItem>
+                      <SelectItem value="MAJOR">Major</SelectItem>
+                      <SelectItem value="CRITICAL">Kritikal</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
           </div>
-          <FormField control={form.control} name="title" render={({ field }) => (
-            <FormItem>
-              <FormLabel>Judul Temuan</FormLabel>
-              <FormControl><Input placeholder="cth: Pengelolaan kas tidak sesuai SOP" {...field} /></FormControl>
-              <FormMessage />
-            </FormItem>
-          )} />
-          <FormField control={form.control} name="category" render={({ field }) => (
-            <FormItem>
-              <FormLabel>Kategori</FormLabel>
-              <FormControl><Input placeholder="cth: Keuangan" {...field} /></FormControl>
-              <FormMessage />
-            </FormItem>
-          )} />
-          <FormField control={form.control} name="description" render={({ field }) => (
-            <FormItem>
-              <FormLabel>Deskripsi</FormLabel>
-              <FormControl><Textarea placeholder="Deskripsi temuan…" rows={3} {...field} /></FormControl>
-              <FormMessage />
-            </FormItem>
-          )} />
-          <FormField control={form.control} name="recommendation" render={({ field }) => (
-            <FormItem>
-              <FormLabel>Rekomendasi (Opsional)</FormLabel>
-              <FormControl><Textarea placeholder="Rekomendasi perbaikan…" rows={2} {...field} /></FormControl>
-              <FormMessage />
-            </FormItem>
-          )} />
+          <FormField
+            control={form.control}
+            name="title"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Judul Temuan</FormLabel>
+                <FormControl>
+                  <Input
+                    placeholder="cth: Pengelolaan kas tidak sesuai SOP"
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="category"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Kategori</FormLabel>
+                <FormControl>
+                  <Input placeholder="cth: Keuangan" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="description"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Deskripsi</FormLabel>
+                <FormControl>
+                  <Textarea
+                    placeholder="Deskripsi temuan…"
+                    rows={3}
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="recommendation"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Rekomendasi (Opsional)</FormLabel>
+                <FormControl>
+                  <Textarea
+                    placeholder="Rekomendasi perbaikan…"
+                    rows={2}
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={onClose}>Batal</Button>
+            <Button type="button" variant="outline" onClick={onClose}>
+              Batal
+            </Button>
             <Button type="submit" disabled={createFinding.isPending}>
               {createFinding.isPending ? "Menyimpan…" : "Simpan Temuan"}
             </Button>
@@ -286,22 +431,37 @@ function PengawasanPageContent() {
   const [findingAuditId, setFindingAuditId] = useState<string | null>(null);
 
   const { data: audits, isLoading } = useAudits(
-    filterStatus ? { status: filterStatus } : undefined
+    filterStatus ? { status: filterStatus } : undefined,
   );
   const deleteAudit = useDeleteAudit();
 
-  const totalFindings = audits?.reduce(
-    (sum: number, a: any) => sum + (a.findings?.length || 0), 0
-  ) || 0;
-  const criticalFindings = audits?.reduce(
-    (sum: number, a: any) =>
-      sum + (a.findings?.filter((f: any) => f.severity === "CRITICAL" || f.severity === "MAJOR").length || 0),
-    0
-  ) || 0;
+  const totalFindings =
+    audits?.reduce(
+      (sum: number, a: any) => sum + (a.findings?.length || 0),
+      0,
+    ) || 0;
+  const criticalFindings =
+    audits?.reduce(
+      (sum: number, a: any) =>
+        sum +
+        (a.findings?.filter(
+          (f: any) => f.severity === "CRITICAL" || f.severity === "MAJOR",
+        ).length || 0),
+      0,
+    ) || 0;
 
-  const handleEdit = (audit: any) => { setEditItem(audit); setDialogOpen(true); };
-  const handleCreate = () => { setEditItem(null); setDialogOpen(true); };
-  const handleDialogClose = () => { setDialogOpen(false); setEditItem(null); };
+  const handleEdit = (audit: any) => {
+    setEditItem(audit);
+    setDialogOpen(true);
+  };
+  const handleCreate = () => {
+    setEditItem(null);
+    setDialogOpen(true);
+  };
+  const handleDialogClose = () => {
+    setDialogOpen(false);
+    setEditItem(null);
+  };
 
   return (
     <div className="container mx-auto py-6 space-y-8">
@@ -327,7 +487,11 @@ function PengawasanPageContent() {
           <CardHeader className="pb-2">
             <CardDescription>Total Audit</CardDescription>
             <CardTitle className="text-3xl">
-              {isLoading ? <Skeleton className="h-9 w-12" /> : audits?.length || 0}
+              {isLoading ? (
+                <Skeleton className="h-9 w-12" />
+              ) : (
+                audits?.length || 0
+              )}
             </CardTitle>
           </CardHeader>
         </Card>
@@ -335,14 +499,21 @@ function PengawasanPageContent() {
           <CardHeader className="pb-2">
             <CardDescription>Sedang Berjalan</CardDescription>
             <CardTitle className="text-3xl text-yellow-600">
-              {isLoading ? <Skeleton className="h-9 w-12" /> : audits?.filter((a: any) => a.status === "IN_PROGRESS").length || 0}
+              {isLoading ? (
+                <Skeleton className="h-9 w-12" />
+              ) : (
+                audits?.filter((a: any) => a.status === "IN_PROGRESS").length ||
+                0
+              )}
             </CardTitle>
           </CardHeader>
         </Card>
         <Card className="border-l-4 border-l-orange-500">
           <CardHeader className="pb-2">
             <CardDescription>Total Temuan</CardDescription>
-            <CardTitle className="text-3xl">{isLoading ? <Skeleton className="h-9 w-12" /> : totalFindings}</CardTitle>
+            <CardTitle className="text-3xl">
+              {isLoading ? <Skeleton className="h-9 w-12" /> : totalFindings}
+            </CardTitle>
           </CardHeader>
         </Card>
         <Card className="border-l-4 border-l-red-500">
@@ -373,7 +544,11 @@ function PengawasanPageContent() {
           </SelectContent>
         </Select>
         {filterStatus && (
-          <Button variant="ghost" size="sm" onClick={() => setFilterStatus(undefined)}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setFilterStatus(undefined)}
+          >
             <X className="h-3 w-3 mr-1" /> Reset
           </Button>
         )}
@@ -383,24 +558,34 @@ function PengawasanPageContent() {
       <div className="space-y-4">
         <h2 className="text-xl font-semibold">Daftar Audit</h2>
         {isLoading ? (
-          <div className="space-y-3">{[1, 2, 3].map((i) => <Skeleton key={i} className="h-32 w-full" />)}</div>
+          <div className="space-y-3">
+            {[1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-32 w-full" />
+            ))}
+          </div>
         ) : audits?.length === 0 ? (
           <Card>
             <CardContent className="py-12 text-center text-muted-foreground">
               <ShieldCheck className="h-12 w-12 mx-auto mb-3 text-muted-foreground/40" />
               <p className="text-lg mb-1">Belum ada audit terjadwal.</p>
-              <p className="text-sm">Klik &quot;Jadwalkan Audit&quot; untuk membuat jadwal baru.</p>
+              <p className="text-sm">
+                Klik &quot;Jadwalkan Audit&quot; untuk membuat jadwal baru.
+              </p>
             </CardContent>
           </Card>
         ) : (
           audits?.map((audit: any) => (
-            <Card key={audit.id} className="hover:shadow-md transition-shadow group">
+            <Card
+              key={audit.id}
+              className="hover:shadow-md transition-shadow group"
+            >
               <CardHeader>
                 <div className="flex items-start justify-between">
                   <div>
                     <CardTitle className="text-lg">{audit.title}</CardTitle>
                     <CardDescription>
-                      Tipe: {audit.auditType} • Auditor: {audit.leadAuditor?.name} •{" "}
+                      Tipe: {audit.auditType} • Auditor:{" "}
+                      {audit.leadAuditor?.name} •{" "}
                       {new Date(audit.plannedDate).toLocaleDateString("id-ID")}
                     </CardDescription>
                     {audit.scope && (
@@ -410,12 +595,26 @@ function PengawasanPageContent() {
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge className={statusColor[audit.status]}>{audit.status}</Badge>
+                    <Badge className={statusColor[audit.status]}>
+                      {audit.status}
+                    </Badge>
                     <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
-                      <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => handleEdit(audit)} title="Edit">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8"
+                        onClick={() => handleEdit(audit)}
+                        title="Edit"
+                      >
                         <Pencil className="h-4 w-4" />
                       </Button>
-                      <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => setDeleteId(audit.id)} title="Hapus">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8 text-destructive"
+                        onClick={() => setDeleteId(audit.id)}
+                        title="Hapus"
+                      >
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
@@ -424,25 +623,44 @@ function PengawasanPageContent() {
               </CardHeader>
               <CardContent>
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium">Temuan ({audit.findings?.length || 0})</span>
-                  <Dialog open={findingAuditId === audit.id} onOpenChange={(open) => !open && setFindingAuditId(null)}>
+                  <span className="text-sm font-medium">
+                    Temuan ({audit.findings?.length || 0})
+                  </span>
+                  <Dialog
+                    open={findingAuditId === audit.id}
+                    onOpenChange={(open) => !open && setFindingAuditId(null)}
+                  >
                     <DialogTrigger asChild>
-                      <Button size="sm" variant="outline" className="gap-1 h-7" onClick={() => setFindingAuditId(audit.id)}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1 h-7"
+                        onClick={() => setFindingAuditId(audit.id)}
+                      >
                         <Plus className="h-3 w-3" /> Tambah Temuan
                       </Button>
                     </DialogTrigger>
-                    <AddFindingDialog auditId={audit.id} onClose={() => setFindingAuditId(null)} />
+                    <AddFindingDialog
+                      auditId={audit.id}
+                      onClose={() => setFindingAuditId(null)}
+                    />
                   </Dialog>
                 </div>
                 <div className="flex gap-2 flex-wrap">
                   {audit.findings?.map((f: any) => (
-                    <Badge key={f.id} variant="outline" className={severityColor[f.severity]}>
+                    <Badge
+                      key={f.id}
+                      variant="outline"
+                      className={severityColor[f.severity]}
+                    >
                       <AlertTriangle className="h-3 w-3 mr-1" />
                       {f.severity}: {f.title}
                     </Badge>
                   ))}
                   {(!audit.findings || audit.findings.length === 0) && (
-                    <span className="text-sm text-muted-foreground italic">Belum ada temuan</span>
+                    <span className="text-sm text-muted-foreground italic">
+                      Belum ada temuan
+                    </span>
                   )}
                 </div>
               </CardContent>
@@ -460,7 +678,12 @@ function PengawasanPageContent() {
         confirmLabel="Hapus"
         cancelLabel="Batal"
         variant="destructive"
-        onConfirm={async () => { if (deleteId) { await deleteAudit.mutateAsync(deleteId); setDeleteId(null); } }}
+        onConfirm={async () => {
+          if (deleteId) {
+            await deleteAudit.mutateAsync(deleteId);
+            setDeleteId(null);
+          }
+        }}
         isLoading={deleteAudit.isPending}
       />
     </div>

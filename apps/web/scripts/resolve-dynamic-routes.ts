@@ -46,7 +46,10 @@ interface Hint {
    */
   custom?: (bearer: string) => Promise<string | null>;
   /** Nested params: resolved from the parent detail response. */
-  nested?: Record<string, { path: string; pick: (row: any) => string | undefined }>;
+  nested?: Record<
+    string,
+    { path: string; pick: (row: any) => string | undefined }
+  >;
 }
 
 const HINTS: Record<string, Hint> = {
@@ -154,7 +157,10 @@ const HINTS: Record<string, Hint> = {
     // exposes `data.attempts[].id`, so walk an exam's monitoring payload.
     custom: async (bearer) => {
       for (const exam of await fetchRows("/cbt/exams", bearer)) {
-        const payload = await getJson(`/cbt/exams/${exam.id}/monitoring`, bearer);
+        const payload = await getJson(
+          `/cbt/exams/${exam.id}/monitoring`,
+          bearer,
+        );
         const attempts = unwrap(payload)?.attempts;
         if (Array.isArray(attempts) && attempts[0]?.id) {
           return `/cbt/attempts/${attempts[0].id}/grading`;
@@ -190,7 +196,10 @@ const HINTS: Record<string, Hint> = {
   "/hr/payroll/periods/[id]": { list: "/payroll/periods" },
   "/inventory/[id]": { list: "/inventory" },
   "/inventory/[id]/edit": { list: "/inventory" },
-  "/inventory/audits/[id]": { list: "/inventory/audits", query: { unitId: "unitId", academicYearId: "activeAcademicYear" } },
+  "/inventory/audits/[id]": {
+    list: "/inventory/audits",
+    query: { unitId: "unitId", academicYearId: "activeAcademicYear" },
+  },
   // The kinerja screens read the performance-agreement module; the evaluation
   // list is nested under it, so both hint at their real list paths.
   "/kinerja/evaluasi/[id]": { list: "/performance-agreements/evaluations" },
@@ -222,7 +231,9 @@ const HINTS: Record<string, Hint> = {
   // (`/curriculum/curriculums`), which now exists; the old `/curriculum/subjects`
   // hint handed the detail page a subject id, so it rendered the 404 guard.
   "/curriculum/curriculums/[id]": { list: "/curriculum/curriculums" },
-  "/curriculum/curriculums/[id]/add-subject": { list: "/curriculum/curriculums" },
+  "/curriculum/curriculums/[id]/add-subject": {
+    list: "/curriculum/curriculums",
+  },
   "/curriculum/curriculums/[id]/edit": { list: "/curriculum/curriculums" },
   "/curriculum/merdeka/p5/[id]": { list: "/kurikulum-merdeka/p5-projects" },
   "/finance/bills/[id]": { list: "/finance/invoices" },
@@ -243,7 +254,10 @@ const HINTS: Record<string, Hint> = {
   "/tahfidz/simaan/[id]/edit": { list: "/simaan" },
   // News articles are a closed static set in `content.ts` (`getArticle`), not
   // marketing CMS rows — a campaign id renders the 404 page.
-  "/berita/[slug]": { list: "/marketing/campaigns", pick: () => "osn-kecamatan-kadipaten-2026" },
+  "/berita/[slug]": {
+    list: "/marketing/campaigns",
+    pick: () => "osn-kecamatan-kadipaten-2026",
+  },
 };
 
 function walk(dir: string): string[] {
@@ -321,9 +335,9 @@ function withListQuery(
       v === "activeAcademicYear"
         ? activeAcademicYearId
         : v === "unitWithRow"
-          ? unitId ?? ""
+          ? (unitId ?? "")
           : v === "unitId"
-            ? unitId ?? firstUnitId
+            ? (unitId ?? firstUnitId)
             : v;
     if (value) params.set(k, value);
   }
@@ -338,7 +352,10 @@ let firstUnitId = "";
 /** All seeded unit ids, tried in order for unit-scoped list queries. */
 let unitIds: string[] = [];
 
-async function resolveOne(pattern: string, bearer: string): Promise<string | null> {
+async function resolveOne(
+  pattern: string,
+  bearer: string,
+): Promise<string | null> {
   const hint = HINTS[pattern] ?? {};
   const segments = pattern.split("/").filter(Boolean);
   const out: string[] = [];
@@ -431,7 +448,11 @@ async function resolveOne(pattern: string, bearer: string): Promise<string | nul
       }
       const payload = await getJson(endpoint, bearer);
       const list = unwrap(payload);
-      const arr = Array.isArray(list) ? list : Array.isArray(list?.data) ? list.data : [];
+      const arr = Array.isArray(list)
+        ? list
+        : Array.isArray(list?.data)
+          ? list.data
+          : [];
       const id = arr[0]?.id;
       if (!id) return null;
       out.push(id);
@@ -442,7 +463,9 @@ async function resolveOne(pattern: string, bearer: string): Promise<string | nul
 
   const base = out.length ? "/" + out.join("/") : null;
   if (!base) return null;
-  return hint.query ? base + "?" + buildQuery(hint.query, resolvedUnitId) : base;
+  return hint.query
+    ? base + "?" + buildQuery(hint.query, resolvedUnitId)
+    : base;
 }
 
 /** The unit id a unit-scoped list actually answered for; used in the final URL. */
@@ -455,7 +478,7 @@ function buildQuery(query: Record<string, string>, unitId?: string): string {
       v === "activeAcademicYear"
         ? activeAcademicYearId
         : v === "unitWithRow"
-          ? unitId ?? firstUnitId
+          ? (unitId ?? firstUnitId)
           : v === "unitId"
             ? firstUnitId
             : v;
@@ -476,11 +499,17 @@ async function run() {
   if (!bearer) throw new Error("login failed: " + JSON.stringify(login));
 
   const years = unwrap(await getJson("/academic-years", bearer));
-  const activeYear = (Array.isArray(years) ? years : []).find((y: any) => y.isActive);
+  const activeYear = (Array.isArray(years) ? years : []).find(
+    (y: any) => y.isActive,
+  );
   activeAcademicYearId = activeYear?.id ?? "";
 
   const units = unwrap(await getJson("/units", bearer));
-  const unitList = Array.isArray(units) ? units : Array.isArray(units?.data) ? units.data : [];
+  const unitList = Array.isArray(units)
+    ? units
+    : Array.isArray(units?.data)
+      ? units.data
+      : [];
   firstUnitId = unitList[0]?.id ?? "";
   unitIds = unitList.map((u: any) => u?.id).filter(Boolean);
 
@@ -498,7 +527,9 @@ async function run() {
   const fresh = resolved;
   const outFile = path.join(__dirname, "dynamic-routes.json");
   fs.writeFileSync(outFile, JSON.stringify(fresh, null, 2));
-  console.log(`${Object.keys(fresh).length}/${patterns.length} patterns resolved -> ${outFile}`);
+  console.log(
+    `${Object.keys(fresh).length}/${patterns.length} patterns resolved -> ${outFile}`,
+  );
   if (unresolved.length) {
     console.log("\nUnresolved:");
     for (const u of unresolved) console.log("  " + u);

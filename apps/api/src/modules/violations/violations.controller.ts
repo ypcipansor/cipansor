@@ -1,6 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 import * as violationService from './violations.service';
-import { createViolationSchema, updateViolationSchema, queryViolationSchema } from './violations.schema';
+import {
+  createViolationSchema,
+  updateViolationSchema,
+  queryViolationSchema,
+} from './violations.schema';
 import { Errors } from '../../middleware/error';
 
 export async function createViolation(req: Request, res: Response, next: NextFunction) {

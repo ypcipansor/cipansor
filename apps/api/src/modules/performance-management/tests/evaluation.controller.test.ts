@@ -42,8 +42,14 @@ function mockReqRes(overrides: Partial<Request> = {}) {
   const res = {
     statusCode: 200,
     jsonPayload: undefined as unknown,
-    status(code: number) { (this as any).statusCode = code; return this; },
-    json(payload: unknown) { (this as any).jsonPayload = payload; return this; },
+    status(code: number) {
+      (this as any).statusCode = code;
+      return this;
+    },
+    json(payload: unknown) {
+      (this as any).jsonPayload = payload;
+      return this;
+    },
   } as unknown as Response & { statusCode: number; jsonPayload: any };
 
   return { req, res };
@@ -73,7 +79,7 @@ describe('evaluationController.createEvaluation — unit scope', () => {
 
     expect(pkService.assertUnitScope).toHaveBeenCalledWith(
       { pkId: 'pk-lain' },
-      expect.objectContaining({ roleCode: 'SDIT_GURU', unitId: 'unit-sd' }),
+      expect.objectContaining({ roleCode: 'SDIT_GURU', unitId: 'unit-sd' })
     );
     expect(evaluationService.createEvaluation).toHaveBeenCalledTimes(1);
   });

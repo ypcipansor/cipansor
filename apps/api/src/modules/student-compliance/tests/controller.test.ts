@@ -17,8 +17,14 @@ function mockReqRes(overrides: Partial<Request> = {}) {
   const res = {
     statusCode: 200,
     jsonPayload: undefined as unknown,
-    status(code: number) { (this as any).statusCode = code; return this; },
-    json(payload: unknown) { (this as any).jsonPayload = payload; return this; },
+    status(code: number) {
+      (this as any).statusCode = code;
+      return this;
+    },
+    json(payload: unknown) {
+      (this as any).jsonPayload = payload;
+      return this;
+    },
   } as unknown as Response & { statusCode: number; jsonPayload: any };
   return { req, res };
 }
@@ -59,9 +65,15 @@ describe('student-compliance controller', () => {
   });
 
   it('update: galat service (mis. 409 NISN terpakai) diteruskan ke middleware galat', async () => {
-    const galat = Object.assign(new Error('NISN ini sudah tercatat pada santri lain.'), { code: 'CONFLICT' });
+    const galat = Object.assign(new Error('NISN ini sudah tercatat pada santri lain.'), {
+      code: 'CONFLICT',
+    });
     (service.updateCompliance as any).mockRejectedValue(galat);
-    const { req, res } = mockReqRes({ params: { studentId: 's1' } as any, body: { nisn: '0099999999' } as any, user: tu as any });
+    const { req, res } = mockReqRes({
+      params: { studentId: 's1' } as any,
+      body: { nisn: '0099999999' } as any,
+      user: tu as any,
+    });
     const next = await run(controller.update, req, res);
     await vi.waitFor(() => expect(next).toHaveBeenCalledWith(galat));
   });
@@ -71,7 +83,10 @@ describe('student-compliance controller', () => {
       successful: [{ studentId: 's1', success: true }],
       failed: [{ studentId: 's2', error: 'NISN ini sudah tercatat pada santri lain.' }],
     });
-    const updates = [{ studentId: 's1', rt: '001' }, { studentId: 's2', nisn: '0012345678' }];
+    const updates = [
+      { studentId: 's1', rt: '001' },
+      { studentId: 's2', nisn: '0012345678' },
+    ];
     const { req, res } = mockReqRes({ body: { updates } as any, user: tu as any });
     await run(controller.bulkUpdate, req, res);
     expect(service.bulkUpdate).toHaveBeenCalledWith(updates, tu);

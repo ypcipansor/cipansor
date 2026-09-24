@@ -133,7 +133,10 @@ describe('Organisasi Service', () => {
 
     it('should resolve the parent position through the org chart, or null at the root', async () => {
       vi.mocked(prisma.orgUnit.findUnique).mockResolvedValue({ parentId: 'org-parent' } as any);
-      vi.mocked(prisma.orgPosition.findFirst).mockResolvedValue({ id: 'pos-parent', title: 'Direktur' } as any);
+      vi.mocked(prisma.orgPosition.findFirst).mockResolvedValue({
+        id: 'pos-parent',
+        title: 'Direktur',
+      } as any);
 
       expect(await organisasiService.getParentPosition('org-1')).toEqual({
         id: 'pos-parent',

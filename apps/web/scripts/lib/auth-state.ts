@@ -83,7 +83,10 @@ export function storageStateFor(session: Session) {
       mk(
         "auth-storage",
         encodeURIComponent(
-          JSON.stringify({ state: { user: slimUser, isAuthenticated: true }, version: 0 }),
+          JSON.stringify({
+            state: { user: slimUser, isAuthenticated: true },
+            version: 0,
+          }),
         ),
       ),
     ],

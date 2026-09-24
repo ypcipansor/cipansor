@@ -430,13 +430,21 @@ export function useCashFlowForecast(unitId?: string, months: number = 6) {
 
 // ==================== BUDGETS ====================
 
-export function useBudgets(filters: { unitId?: string; academicYearId?: string; page?: number; limit?: number } = {}) {
+export function useBudgets(
+  filters: {
+    unitId?: string;
+    academicYearId?: string;
+    page?: number;
+    limit?: number;
+  } = {},
+) {
   return useQuery({
     queryKey: ["budgets", filters],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (filters.unitId) params.append("unitId", filters.unitId);
-      if (filters.academicYearId) params.append("academicYearId", filters.academicYearId);
+      if (filters.academicYearId)
+        params.append("academicYearId", filters.academicYearId);
       if (filters.page) params.append("page", String(filters.page));
       if (filters.limit) params.append("limit", String(filters.limit));
 

@@ -71,7 +71,6 @@ import { MessageCategory, Message } from "@cipansor/shared";
 // TYPES
 // ========================================
 
-
 interface WeeklyProgress {
   week: string;
   attendance: {
@@ -371,8 +370,7 @@ export default function BukuPenghubungPage() {
               <DialogHeader>
                 <DialogTitle>Kirim Pesan ke Guru</DialogTitle>
                 <DialogDescription>
-                  Kirim pesan kepada wali kelas atau guru{" "}
-                  {selectedChild?.name}
+                  Kirim pesan kepada wali kelas atau guru {selectedChild?.name}
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
@@ -456,16 +454,15 @@ export default function BukuPenghubungPage() {
                 </AvatarFallback>
               </Avatar>
               <div className="flex-1">
-                <h3 className="text-lg font-semibold">
-                  {selectedChild.name}
-                </h3>
+                <h3 className="text-lg font-semibold">{selectedChild.name}</h3>
                 <p className="text-sm text-muted-foreground">
                   NIS: {selectedChild.nis} • Kelas:{" "}
                   {selectedChild.currentClass?.name || "-"}
                 </p>
                 <p className="text-sm text-muted-foreground">
                   Wali Kelas:{" "}
-                  {selectedChild.currentClass?.homeroomTeacher?.user?.name || "-"}
+                  {selectedChild.currentClass?.homeroomTeacher?.user?.name ||
+                    "-"}
                 </p>
               </div>
               {/* Quran Map Link */}
@@ -852,8 +849,7 @@ export default function BukuPenghubungPage() {
                     {weeklyProgress.week}
                   </CardTitle>
                   <CardDescription>
-                    Ringkasan perkembangan {selectedChild?.name} minggu
-                    ini
+                    Ringkasan perkembangan {selectedChild?.name} minggu ini
                   </CardDescription>
                 </CardHeader>
               </Card>

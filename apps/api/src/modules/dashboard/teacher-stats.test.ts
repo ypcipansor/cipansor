@@ -36,19 +36,21 @@ const USER = 'user-1';
  * homeroom class ids, once to build the class summaries — so the two have to
  * be queued in order rather than given a single resolved value.
  */
-function arrange(opts: {
-  homeroom?: Array<{ id: string }>;
-  scheduled?: Array<{ classId: string }>;
-  assigned?: Array<{ classId: string }>;
-  enrolled?: Array<{ studentId: string }>;
-  counts?: [number, number, number, number];
-  classSummaries?: unknown[];
-  todaySchedule?: unknown[];
-  recentSetoran?: unknown[];
-  activeYear?: { id: string } | null;
-  targets?: Array<{ studentId: string; targetJuz: number }>;
-  juzRecords?: Array<{ studentId: string; juz: number }>;
-} = {}) {
+function arrange(
+  opts: {
+    homeroom?: Array<{ id: string }>;
+    scheduled?: Array<{ classId: string }>;
+    assigned?: Array<{ classId: string }>;
+    enrolled?: Array<{ studentId: string }>;
+    counts?: [number, number, number, number];
+    classSummaries?: unknown[];
+    todaySchedule?: unknown[];
+    recentSetoran?: unknown[];
+    activeYear?: { id: string } | null;
+    targets?: Array<{ studentId: string; targetJuz: number }>;
+    juzRecords?: Array<{ studentId: string; juz: number }>;
+  } = {}
+) {
   const [today, yesterday, week, month] = opts.counts ?? [0, 0, 0, 0];
 
   mocked.class.findMany
@@ -220,8 +222,20 @@ describe('dashboardService.getTeacherStats — shape', () => {
       homeroom: [{ id: 'c1' }],
       scheduled: [{ classId: 'c2' }],
       classSummaries: [
-        { id: 'c1', name: '1A', level: '1', homeroomTeacherId: TEACHER, _count: { enrollments: 12 } },
-        { id: 'c2', name: '2B', level: '2', homeroomTeacherId: 'other', _count: { enrollments: 9 } },
+        {
+          id: 'c1',
+          name: '1A',
+          level: '1',
+          homeroomTeacherId: TEACHER,
+          _count: { enrollments: 12 },
+        },
+        {
+          id: 'c2',
+          name: '2B',
+          level: '2',
+          homeroomTeacherId: 'other',
+          _count: { enrollments: 9 },
+        },
       ],
     });
 

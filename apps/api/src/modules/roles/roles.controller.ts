@@ -160,7 +160,7 @@ export class RolesController {
         unitId: tokenUnitId(
           result.activeRole.unitId,
           result.activeRole.role.code,
-          result.user.unitId,
+          result.user.unitId
         ),
         permissions: (result.activeRole.role.permissions as string[]) ?? [],
       });

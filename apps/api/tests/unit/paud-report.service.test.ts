@@ -196,7 +196,16 @@ describe('PAUD Report Service - CRUD Operations', () => {
 
       await expect(
         paudReportService.createReport(
-          { studentId: 'student-1', unitId: 'unit-1', academicYearId: 'year-1', semester: 'GANJIL' as const, totalDays: 100, presentDays: 90, sickDays: 5, excusedDays: 5 },
+          {
+            studentId: 'student-1',
+            unitId: 'unit-1',
+            academicYearId: 'year-1',
+            semester: 'GANJIL' as const,
+            totalDays: 100,
+            presentDays: 90,
+            sickDays: 5,
+            excusedDays: 5,
+          },
           teacherContext
         )
       ).rejects.toThrow('Student not found');

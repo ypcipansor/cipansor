@@ -66,16 +66,12 @@ describe('hari WIB', () => {
   // mungkin berjalan, dan justru itu yang membuat laporan hariannya menyesatkan.
   it('menempatkan dini hari WIB pada tanggal WIB-nya, bukan tanggal UTC', () => {
     // 2026-09-04T20:30Z = 2026-09-05 03:30 WIB
-    expect(wibDay(new Date('2026-09-04T20:30:00Z')).toISOString()).toBe(
-      '2026-09-05T00:00:00.000Z'
-    );
+    expect(wibDay(new Date('2026-09-04T20:30:00Z')).toISOString()).toBe('2026-09-05T00:00:00.000Z');
   });
 
   it('masih menghitung 23:59 WIB sebagai hari yang sama', () => {
     // 2026-09-04T16:59Z = 2026-09-04 23:59 WIB
-    expect(wibDay(new Date('2026-09-04T16:59:00Z')).toISOString()).toBe(
-      '2026-09-04T00:00:00.000Z'
-    );
+    expect(wibDay(new Date('2026-09-04T16:59:00Z')).toISOString()).toBe('2026-09-04T00:00:00.000Z');
   });
 
   it('memotong bulan pada pergantian bulan WIB', () => {
@@ -164,7 +160,13 @@ describe('monthToDateUsage', () => {
   it('menjumlahkan seluruh bulan dan merinci per model', async () => {
     db.chatbotUsageDaily.findMany.mockResolvedValue([
       row({ model: 'a', requests: 2, promptTokens: 100, completionTokens: 40 }),
-      row({ model: 'a', requests: 3, promptTokens: 150, completionTokens: 60, unmeteredRequests: 1 }),
+      row({
+        model: 'a',
+        requests: 3,
+        promptTokens: 150,
+        completionTokens: 60,
+        unmeteredRequests: 1,
+      }),
       row({ model: 'b', requests: 1, promptTokens: 10, completionTokens: 5 }),
     ]);
 

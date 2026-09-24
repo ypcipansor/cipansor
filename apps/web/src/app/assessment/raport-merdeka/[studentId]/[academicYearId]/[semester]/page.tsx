@@ -253,7 +253,9 @@ function RaportMerdekaPrintPageContent({
                     <td className="border-cell">{projek.tema}</td>
                   </tr>
                   <tr>
-                    <td className="border-cell header-cell">Deskripsi Projek</td>
+                    <td className="border-cell header-cell">
+                      Deskripsi Projek
+                    </td>
                     <td className="border-cell">{projek.deskripsiProyek}</td>
                   </tr>
                 </tbody>

@@ -289,7 +289,9 @@ function AssignRoomPageContent({
   );
 }
 
-export default function AssignRoomPage(props: Parameters<typeof AssignRoomPageContent>[0]) {
+export default function AssignRoomPage(
+  props: Parameters<typeof AssignRoomPageContent>[0],
+) {
   return (
     <MainLayout>
       <AssignRoomPageContent {...props} />

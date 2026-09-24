@@ -95,7 +95,10 @@ describe('CBT Service', () => {
     });
 
     it('should add question to bank if authorized', async () => {
-      vi.mocked(prisma.questionBank.findUnique).mockResolvedValue({ id: 'bank-1', teacher: { userId: 'user-1' } } as any);
+      vi.mocked(prisma.questionBank.findUnique).mockResolvedValue({
+        id: 'bank-1',
+        teacher: { userId: 'user-1' },
+      } as any);
       vi.mocked(prisma.question.create).mockResolvedValue({ id: 'q-1' } as any);
 
       const dto = {
@@ -119,7 +122,10 @@ describe('CBT Service', () => {
     });
 
     it('should throw error if unauthorized to add question', async () => {
-      vi.mocked(prisma.questionBank.findUnique).mockResolvedValue({ id: 'bank-1', teacher: { userId: 'user-2' } } as any);
+      vi.mocked(prisma.questionBank.findUnique).mockResolvedValue({
+        id: 'bank-1',
+        teacher: { userId: 'user-2' },
+      } as any);
 
       await expect(
         CBTService.addQuestion(
@@ -132,7 +138,11 @@ describe('CBT Service', () => {
 
   describe('Exam Scheduling & Grading', () => {
     it('should create an exam if authorized', async () => {
-      vi.mocked(prisma.questionBank.findUnique).mockResolvedValue({ id: 'bank-1', isActive: true, teacher: { userId: 'user-1' } } as any);
+      vi.mocked(prisma.questionBank.findUnique).mockResolvedValue({
+        id: 'bank-1',
+        isActive: true,
+        teacher: { userId: 'user-1' },
+      } as any);
       vi.mocked(prisma.exam.create).mockResolvedValue({ id: 'exam-1' } as any);
 
       const dto = {
@@ -180,7 +190,7 @@ describe('CBT Service', () => {
       } as any);
 
       await expect(
-        CBTService.deleteExam('exam-1', { id: 'admin', role: 'SUPER_ADMIN', unitId: null }),
+        CBTService.deleteExam('exam-1', { id: 'admin', role: 'SUPER_ADMIN', unitId: null })
       ).rejects.toThrow(/attempts/i);
       expect(prisma.exam.delete).not.toHaveBeenCalled();
     });
@@ -258,12 +268,18 @@ describe('CBT Service', () => {
               {
                 questionId: 'q1',
                 score: 10,
-                question: { points: 10, learningObjective: { id: 'tp1', code: 'TP1', description: 'Desc' } },
+                question: {
+                  points: 10,
+                  learningObjective: { id: 'tp1', code: 'TP1', description: 'Desc' },
+                },
               },
               {
                 questionId: 'q2',
                 score: 5,
-                question: { points: 10, learningObjective: { id: 'tp1', code: 'TP1', description: 'Desc' } },
+                question: {
+                  points: 10,
+                  learningObjective: { id: 'tp1', code: 'TP1', description: 'Desc' },
+                },
               },
             ],
           },
@@ -305,12 +321,18 @@ describe('CBT Service', () => {
               {
                 questionId: 'q1',
                 score: 10,
-                question: { points: 10, learningObjective: { id: 'tp1', code: 'TP1', description: 'Desc' } },
+                question: {
+                  points: 10,
+                  learningObjective: { id: 'tp1', code: 'TP1', description: 'Desc' },
+                },
               }, // MC auto-graded
               {
                 questionId: 'q2',
                 score: null,
-                question: { points: 20, learningObjective: { id: 'tp2', code: 'TP2', description: 'Desc' } },
+                question: {
+                  points: 20,
+                  learningObjective: { id: 'tp2', code: 'TP2', description: 'Desc' },
+                },
               }, // Essay ungraded
             ],
           },
@@ -321,12 +343,18 @@ describe('CBT Service', () => {
               {
                 questionId: 'q1',
                 score: 10,
-                question: { points: 10, learningObjective: { id: 'tp1', code: 'TP1', description: 'Desc' } },
+                question: {
+                  points: 10,
+                  learningObjective: { id: 'tp1', code: 'TP1', description: 'Desc' },
+                },
               },
               {
                 questionId: 'q2',
                 score: 15,
-                question: { points: 20, learningObjective: { id: 'tp2', code: 'TP2', description: 'Desc' } },
+                question: {
+                  points: 20,
+                  learningObjective: { id: 'tp2', code: 'TP2', description: 'Desc' },
+                },
               },
             ],
           },
@@ -358,7 +386,7 @@ describe('CBT Service', () => {
         id: 'exam-1',
         questionBank: {},
       } as any);
-      
+
       vi.mocked(prisma.examAttempt.findUnique).mockResolvedValue(null);
       vi.mocked(prisma.examAttempt.create).mockResolvedValue({ id: 'attempt-1' } as any);
 
@@ -400,9 +428,9 @@ describe('CBT Service', () => {
         exam: { questionBankId: null },
       } as any);
 
-      await expect(
-        CBTService.submitAnswer('attempt-1', 'q-1', 'opt-B', 'std-1')
-      ).rejects.toThrow('not configured for CBT');
+      await expect(CBTService.submitAnswer('attempt-1', 'q-1', 'opt-B', 'std-1')).rejects.toThrow(
+        'not configured for CBT'
+      );
     });
 
     it('should submit an answer using upsert', async () => {
@@ -486,9 +514,7 @@ describe('CBT Service', () => {
       } as any);
       vi.mocked(prisma.examAttempt.update).mockResolvedValue({} as any);
 
-      await expect(
-        CBTService.finishExamAttempt('attempt-late', 'std-1')
-      ).resolves.toBeDefined();
+      await expect(CBTService.finishExamAttempt('attempt-late', 'std-1')).resolves.toBeDefined();
 
       expect(prisma.examAnswer.update).toHaveBeenCalledWith({
         where: { id: 'ans-1' },
@@ -814,9 +840,9 @@ describe('CBT Service', () => {
       vi.mocked(prisma.examAttempt.findUnique).mockResolvedValue(lateAttempt as any);
       vi.mocked(prisma.examAttempt.update).mockResolvedValue({} as any);
 
-      await expect(
-        CBTService.submitAnswer('attempt-1', 'q-1', 'opt-A', 'std-1')
-      ).rejects.toThrow('Waktu pengerjaan ujian telah habis.');
+      await expect(CBTService.submitAnswer('attempt-1', 'q-1', 'opt-A', 'std-1')).rejects.toThrow(
+        'Waktu pengerjaan ujian telah habis.'
+      );
 
       // Jawaban yang sudah tersimpan tetap dinilai…
       expect(prisma.examAnswer.update).toHaveBeenCalledWith({
@@ -995,7 +1021,10 @@ describe('CBT Service', () => {
               id: 'q1',
               type: 'MULTIPLE_CHOICE',
               content: 'What is 2+2?',
-              options: [{ id: 'opt1', text: '4' }, { id: 'opt2', text: '5' }],
+              options: [
+                { id: 'opt1', text: '4' },
+                { id: 'opt2', text: '5' },
+              ],
             },
           ],
         },

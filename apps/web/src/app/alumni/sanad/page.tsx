@@ -64,9 +64,7 @@ function mapApiNode(node: ApiSanadTreeNode): SanadNode {
     name: node.name,
     title: node.role === "TEACHER" ? "Muhafidz" : "Hafizh",
     year: node.certifiedYear ? `Ijazah ${node.certifiedYear}` : "—",
-    specialty: node.juzCount
-      ? `${node.juzCount} Juz bi Sanad`
-      : "Guru Sanad",
+    specialty: node.juzCount ? `${node.juzCount} Juz bi Sanad` : "Guru Sanad",
     children: node.children.map(mapApiNode),
   };
 }
@@ -263,7 +261,9 @@ export default function AlumniSanadPage() {
   const totalAlumni = alumniWithSanad.length;
 
   return (
-    <MainLayout allowedRoles={["SUPER_ADMIN", "UNIT_ADMIN", "TEACHER", "STUDENT"]}>
+    <MainLayout
+      allowedRoles={["SUPER_ADMIN", "UNIT_ADMIN", "TEACHER", "STUDENT"]}
+    >
       <div className="space-y-6">
         <PageHeader
           title="Sanad Alumni"

@@ -27,13 +27,17 @@ test.describe("Password reset link", () => {
     // `exact` matters: getByLabel matches substrings, and "Ulangi password
     // baru" contains "Password baru", so the loose form resolves to two
     // elements and fails on strict mode rather than on anything real.
-    await expect(page.getByLabel("Password baru", { exact: true })).toBeVisible();
+    await expect(
+      page.getByLabel("Password baru", { exact: true }),
+    ).toBeVisible();
     await expect(
       page.getByRole("button", { name: /Simpan password baru/i }),
     ).toBeVisible();
   });
 
-  test("asks for a new link when the URL carries no token", async ({ page }) => {
+  test("asks for a new link when the URL carries no token", async ({
+    page,
+  }) => {
     await page.context().clearCookies();
     await page.goto("/reset-password");
 

@@ -385,7 +385,9 @@ function EditCurriculumPageContent({
   );
 }
 
-export default function EditCurriculumPage(props: Parameters<typeof EditCurriculumPageContent>[0]) {
+export default function EditCurriculumPage(
+  props: Parameters<typeof EditCurriculumPageContent>[0],
+) {
   return (
     <MainLayout>
       <EditCurriculumPageContent {...props} />

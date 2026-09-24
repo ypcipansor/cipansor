@@ -56,7 +56,10 @@ import { redactAlumniFor } from './alumni-access';
 import * as service from './alumni.service';
 
 const db = prisma as unknown as {
-  alumni: Record<'findMany' | 'findFirst' | 'count' | 'create' | 'update', ReturnType<typeof vi.fn>>;
+  alumni: Record<
+    'findMany' | 'findFirst' | 'count' | 'create' | 'update',
+    ReturnType<typeof vi.fn>
+  >;
   student: Record<'findFirst' | 'update', ReturnType<typeof vi.fn>>;
   alumniDonation: Record<'findMany' | 'count' | 'aggregate', ReturnType<typeof vi.fn>>;
   alumniEvent: Record<'create' | 'findFirst' | 'update', ReturnType<typeof vi.fn>>;
@@ -137,7 +140,16 @@ describe('akun santri (SDIT_SISWA) di modul alumni', () => {
     expect(res.status).toBe(200);
     const [baris] = res.body.data;
     expect(baris).toMatchObject({ name: 'Fulanah', graduationYear: 2025, city: 'Depok' });
-    for (const kolom of ['email', 'phone', 'address', 'birthPlace', 'birthDate', 'notes', 'student', 'studentId']) {
+    for (const kolom of [
+      'email',
+      'phone',
+      'address',
+      'birthPlace',
+      'birthDate',
+      'notes',
+      'student',
+      'studentId',
+    ]) {
       expect(baris[kolom], kolom).toBeNull();
     }
     expect(baris.donations).toEqual([]);
@@ -148,7 +160,10 @@ describe('pengelola alumni', () => {
   it('tata usaha SMP IT membaca data diri alumni unitnya', async () => {
     const res = await sebagai('SMPIT_TATA_USAHA', SMP)(request(app).get('/alumni'));
     expect(res.status).toBe(200);
-    expect(res.body.data[0]).toMatchObject({ email: 'fulanah@contoh.id', student: { nis: '2025SMP1' } });
+    expect(res.body.data[0]).toMatchObject({
+      email: 'fulanah@contoh.id',
+      student: { nis: '2025SMP1' },
+    });
   });
 
   it('admin SD IT TIDAK membaca data diri alumni SMP IT (baris tetap tampil di direktori)', async () => {
@@ -159,9 +174,10 @@ describe('pengelola alumni', () => {
 
   it('admin SD IT meluluskan santri SMP IT → 404, statusnya tidak disentuh', async () => {
     db.student.findFirst.mockResolvedValue({ id: SANTRI_SMP, unitId: SMP, user: { name: 'X' } });
-    const res = await sebagai('SDIT_ADMIN', SD)(
-      request(app).post(`/alumni/from-student/${SANTRI_SMP}`).send({})
-    );
+    const res = await sebagai(
+      'SDIT_ADMIN',
+      SD
+    )(request(app).post(`/alumni/from-student/${SANTRI_SMP}`).send({}));
     expect(res.status).toBe(404);
     expect(db.$transaction).not.toHaveBeenCalled();
     expect(db.student.update).not.toHaveBeenCalled();
@@ -169,15 +185,19 @@ describe('pengelola alumni', () => {
 
   it('admin SD IT mengubah alumni SMP IT → 404', async () => {
     db.alumni.findFirst.mockResolvedValue({ id: ALUMNI_SMP, unitId: SMP });
-    const res = await sebagai('SDIT_ADMIN', SD)(
-      request(app).put(`/alumni/${ALUMNI_SMP}`).send({ name: 'Diganti' })
-    );
+    const res = await sebagai(
+      'SDIT_ADMIN',
+      SD
+    )(request(app).put(`/alumni/${ALUMNI_SMP}`).send({ name: 'Diganti' }));
     expect(res.status).toBe(404);
     expect(db.alumni.update).not.toHaveBeenCalled();
   });
 
   it('admin SD IT membuat alumni untuk unit SMP IT → 403', async () => {
-    const res = await sebagai('SDIT_ADMIN', SD)(
+    const res = await sebagai(
+      'SDIT_ADMIN',
+      SD
+    )(
       request(app)
         .post('/alumni')
         .send({ unitId: SMP, name: 'Titipan', gender: 'MALE', graduationYear: 2020 })
@@ -198,9 +218,10 @@ describe('pengelola alumni', () => {
     });
     db.alumni.count.mockResolvedValue(0);
     db.$transaction.mockResolvedValue([{ id: 'baru', unitId: SMP }]);
-    const res = await sebagai('SMPIT_TATA_USAHA', SMP)(
-      request(app).post(`/alumni/from-student/${SANTRI_SMP}`).send({})
-    );
+    const res = await sebagai(
+      'SMPIT_TATA_USAHA',
+      SMP
+    )(request(app).post(`/alumni/from-student/${SANTRI_SMP}`).send({}));
     expect(res.status).toBe(201);
     expect(db.$transaction).toHaveBeenCalledTimes(1);
   });
@@ -225,7 +246,11 @@ describe('lingkup unit di service', () => {
     db.alumniDonation.findMany.mockResolvedValue([]);
     db.alumniDonation.count.mockResolvedValue(0);
     db.alumniDonation.aggregate.mockResolvedValue({ _sum: { amount: null }, _count: 0 });
-    await service.getDonations({ page: 1, limit: 10 } as never, { roleCode: 'SDIT_ADMIN', role: 'UNIT_ADMIN', unitId: SD });
+    await service.getDonations({ page: 1, limit: 10 } as never, {
+      roleCode: 'SDIT_ADMIN',
+      role: 'UNIT_ADMIN',
+      unitId: SD,
+    });
     expect(db.alumniDonation.findMany.mock.calls[0][0].where.OR).toEqual([
       { unitId: SD },
       { alumni: { unitId: SD } },

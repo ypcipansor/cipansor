@@ -470,13 +470,9 @@ export default function EmployeeDetailPage() {
                         Tanggal Bergabung
                       </dt>
                       <dd>
-                        {safeFormat(
-                          employee.joinDate,
-                          "d MMMM yyyy",
-                          {
-                            locale: idLocale,
-                          },
-                        )}
+                        {safeFormat(employee.joinDate, "d MMMM yyyy", {
+                          locale: idLocale,
+                        })}
                       </dd>
                     </div>
                     {employee.resignDate && (

@@ -224,12 +224,19 @@ if (config.env !== 'test') {
   );
 }
 
-// Health check endpoint (not rate limited)
+// Health check endpoint (not rate limited).
+//
+// `commit` is the git SHA the image was built from (GIT_COMMIT_SHA, baked in by
+// the Azure release workflows). Those workflows poll this endpoint through the
+// public address until it reports the SHA they released, so "deployed" means
+// the new code is answering, not just that a container was started. Null for
+// images built without it, such as the VM's own builds.
 app.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
     version: process.env.npm_package_version || '1.0.0',
+    commit: process.env.GIT_COMMIT_SHA || null,
     environment: config.env,
   });
 });

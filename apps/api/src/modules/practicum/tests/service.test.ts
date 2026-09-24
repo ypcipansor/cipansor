@@ -27,7 +27,14 @@ describe('PracticumService', () => {
 
   describe('createLessonPlan', () => {
     it('should create a lesson plan with DRAFT status', async () => {
-      const mockData = { subject: 'Arabic', topic: 'Nahwu', method: 'Direct', materials: 'Book', objectives: 'Understand', steps: {} };
+      const mockData = {
+        subject: 'Arabic',
+        topic: 'Nahwu',
+        method: 'Direct',
+        materials: 'Book',
+        objectives: 'Understand',
+        steps: {},
+      };
       const mockResult = { id: 'lp1', ...mockData, studentId: 's1', status: 'DRAFT' };
       (prisma.practicumLessonPlan.create as any).mockResolvedValue(mockResult);
 

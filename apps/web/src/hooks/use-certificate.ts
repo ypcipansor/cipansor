@@ -411,7 +411,15 @@ function currentMonthBucket(now: Date = new Date()): string {
  * the real boundary.
  */
 function msUntilNextMonth(now: Date = new Date()): number {
-  const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1, 0, 0, 0, 0);
+  const nextMonth = new Date(
+    now.getFullYear(),
+    now.getMonth() + 1,
+    1,
+    0,
+    0,
+    0,
+    0,
+  );
   return nextMonth.getTime() - now.getTime();
 }
 

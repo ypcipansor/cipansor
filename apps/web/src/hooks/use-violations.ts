@@ -141,7 +141,10 @@ export function useCreateViolationType() {
       points: number;
       isActive?: boolean;
     }) => {
-      const response = await api.post<ViolationType>("/violations/categories", data);
+      const response = await api.post<ViolationType>(
+        "/violations/categories",
+        data,
+      );
       return response.data;
     },
     onSuccess: () => {
@@ -232,9 +235,7 @@ export function useStudentViolations(studentId: string) {
   return useQuery({
     queryKey: ["violations", "student", studentId],
     queryFn: async () => {
-      const response = await api.get<any>(
-        `/violations/student/${studentId}`,
-      );
+      const response = await api.get<any>(`/violations/student/${studentId}`);
       return (response.data.data ?? []).map(normalizeViolation);
     },
     enabled: !!studentId,

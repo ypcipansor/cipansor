@@ -207,7 +207,10 @@ describe('Student Onboarding & Wave Quota Unit Tests', () => {
         academicYearId: 'ay-2026',
       } as any);
       vi.mocked(prisma.unit.findUnique).mockResolvedValue({ id: 'unit-1', type: 'SMP_IT' } as any);
-      (vi.mocked(prisma.user.create) as any).mockResolvedValue({ id: 'u-2', name: 'Santri Kembar' });
+      (vi.mocked(prisma.user.create) as any).mockResolvedValue({
+        id: 'u-2',
+        name: 'Santri Kembar',
+      });
       (vi.mocked(prisma.student.findFirst) as any).mockResolvedValueOnce({ id: 's-lain' });
 
       await expect(
@@ -250,8 +253,14 @@ describe('Student Onboarding & Wave Quota Unit Tests', () => {
           registrationFee: 250000,
           academicYearId: 'ay-2026',
         } as any);
-        vi.mocked(prisma.unit.findUnique).mockResolvedValue({ id: 'unit-1', type: 'SMP_IT' } as any);
-        (vi.mocked(prisma.user.create) as any).mockResolvedValue({ id: 'u-3', name: 'Yusuf Naik Kelas' });
+        vi.mocked(prisma.unit.findUnique).mockResolvedValue({
+          id: 'unit-1',
+          type: 'SMP_IT',
+        } as any);
+        (vi.mocked(prisma.user.create) as any).mockResolvedValue({
+          id: 'u-3',
+          name: 'Yusuf Naik Kelas',
+        });
         (vi.mocked(prisma.student.update) as any).mockImplementation(async ({ data }: any) => ({
           id: 's-lama',
           ...data,
@@ -268,9 +277,14 @@ describe('Student Onboarding & Wave Quota Unit Tests', () => {
         });
         (vi.mocked(prisma.studentUnitIdentifier.findUnique) as any).mockResolvedValueOnce(null);
 
-        const hasil = await StudentOnboardingOrchestrator.processEnrollment('reg-3', 'unit-1', 'admin-1', {
-          academicYearId: 'ay-2026',
-        });
+        const hasil = await StudentOnboardingOrchestrator.processEnrollment(
+          'reg-3',
+          'unit-1',
+          'admin-1',
+          {
+            academicYearId: 'ay-2026',
+          }
+        );
 
         const tulis = (vi.mocked(prisma.student.update) as any).mock.calls[0][0].data;
         expect(tulis.unitId).toBe('unit-1');
@@ -291,13 +305,17 @@ describe('Student Onboarding & Wave Quota Unit Tests', () => {
           nis: 'SD-2020-07',
           nisn: null,
         });
-        (vi.mocked(prisma.studentUnitIdentifier.findUnique) as any).mockResolvedValueOnce({ nis: 'SMP-2019-03' });
+        (vi.mocked(prisma.studentUnitIdentifier.findUnique) as any).mockResolvedValueOnce({
+          nis: 'SMP-2019-03',
+        });
 
         await StudentOnboardingOrchestrator.processEnrollment('reg-3', 'unit-1', 'admin-1', {
           academicYearId: 'ay-2026',
         });
 
-        expect((vi.mocked(prisma.student.update) as any).mock.calls[0][0].data.nis).toBe('SMP-2019-03');
+        expect((vi.mocked(prisma.student.update) as any).mock.calls[0][0].data.nis).toBe(
+          'SMP-2019-03'
+        );
       });
 
       it('penomoran baru menghitung NIS yang pernah terbit di unit itu, termasuk santri yang sudah pindah', async () => {
@@ -305,7 +323,9 @@ describe('Student Onboarding & Wave Quota Unit Tests', () => {
           path.join(__dirname, '../../../services/integration/student-onboarding.orchestrator.ts'),
           'utf-8'
         );
-        expect(sumber).toMatch(/FROM "student_unit_identifiers" WHERE "unit_id" = \$\{effectiveUnitId\}/);
+        expect(sumber).toMatch(
+          /FROM "student_unit_identifiers" WHERE "unit_id" = \$\{effectiveUnitId\}/
+        );
       });
     });
 
@@ -858,7 +878,10 @@ describe('Student Onboarding & Wave Quota Unit Tests', () => {
       await waveService.update('w-1', { quota: 30 } as any);
 
       expect(prisma.admissionWave.update).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { id: 'w-1' }, data: expect.objectContaining({ quota: 30 }) })
+        expect.objectContaining({
+          where: { id: 'w-1' },
+          data: expect.objectContaining({ quota: 30 }),
+        })
       );
     });
   });

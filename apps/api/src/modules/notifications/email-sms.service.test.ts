@@ -1,6 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { Twilio } from 'twilio';
+import { config } from '../../config';
 import { notificationService, templates } from './email-sms.service';
 import { deliverEmail } from './email-transport';
+
+// The SMS path constructs a Twilio client when credentials are present; mocking
+// the class lets a test prove it was never built. A `function`, not an arrow:
+// the service calls it with `new`, and an arrow cannot be constructed.
+vi.mock('twilio', () => ({
+  Twilio: vi.fn(function () {
+    return { messages: { create: vi.fn().mockResolvedValue({ sid: 'SM1' }) } };
+  }),
+}));
 
 // Mocked as a module rather than spied on the namespace: the service imports
 // `deliverEmail` as a binding, so a namespace spy would not be the function it
@@ -27,9 +38,7 @@ vi.mock('../../lib/prisma', () => ({
     user: {
       findMany: vi
         .fn()
-        .mockResolvedValue([
-          { id: 'user-1', email: 'test@cipansor.or.id', phone: '08123456789' },
-        ]),
+        .mockResolvedValue([{ id: 'user-1', email: 'test@cipansor.or.id', phone: '08123456789' }]),
     },
   },
 }));
@@ -74,7 +83,7 @@ describe('NotificationService email dispatch', () => {
         to: 'santri@cipansor.or.id',
         subject: 'Akun Anda di Sistem Cipansor sudah aktif',
         html: expect.stringContaining('Ahmad Santri'),
-      }),
+      })
     );
 
     /**
@@ -129,7 +138,7 @@ describe('NotificationService email dispatch', () => {
 
     expect(result.success).toBe(true);
     expect(deliverEmailMock).toHaveBeenCalledWith(
-      expect.objectContaining({ to: 'orang-luar@example.test' }),
+      expect.objectContaining({ to: 'orang-luar@example.test' })
     );
   });
 
@@ -169,7 +178,7 @@ describe('NotificationService email dispatch', () => {
         data: expect.objectContaining({
           message: expect.stringContaining('Fauzan'),
         }),
-      }),
+      })
     );
   });
 });
@@ -255,5 +264,53 @@ describe('email templates', () => {
     expect(html).not.toContain('<script>');
     expect(html).toContain('&lt;script&gt;');
     expect(html).toContain('&lt;b&gt;tebal&lt;/b&gt;');
+  });
+});
+
+describe('outbound messages switch (staging)', () => {
+  const twilio = config.twilio as { accountSid?: string; authToken?: string; phoneNumber?: string };
+
+  afterEach(() => {
+    (config.outboundMessages as { enabled: boolean }).enabled = true;
+    twilio.accountSid = undefined;
+    twilio.authToken = undefined;
+    twilio.phoneNumber = undefined;
+    vi.clearAllMocks();
+  });
+
+  it('logs an SMS instead of sending it, even with Twilio credentials present', async () => {
+    twilio.accountSid = 'AC-test';
+    twilio.authToken = 'token-test';
+    twilio.phoneNumber = '+10000000000';
+    (config.outboundMessages as { enabled: boolean }).enabled = false;
+
+    const result = await notificationService.send({
+      channel: 'SMS',
+      type: 'PAYMENT_REMINDER',
+      title: 'Tagihan',
+      message: 'Tagihan SPP bulan ini',
+      recipientPhone: '08123456789',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.messageId).toMatch(/^log_/);
+    expect(vi.mocked(Twilio)).not.toHaveBeenCalled();
+  });
+
+  it('still sends through Twilio when the switch is on (production default)', async () => {
+    twilio.accountSid = 'AC-test';
+    twilio.authToken = 'token-test';
+    twilio.phoneNumber = '+10000000000';
+
+    const result = await notificationService.send({
+      channel: 'SMS',
+      type: 'PAYMENT_REMINDER',
+      title: 'Tagihan',
+      message: 'Tagihan SPP bulan ini',
+      recipientPhone: '08123456789',
+    });
+
+    expect(vi.mocked(Twilio)).toHaveBeenCalledTimes(1);
+    expect(result.messageId).toBe('SM1');
   });
 });

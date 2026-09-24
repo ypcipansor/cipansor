@@ -123,7 +123,7 @@ describe('FinanceEnhancementService', () => {
         debit: 1000,
         credit: 0,
         createdById: input.createdById,
-        account: { normalBalance: 'DEBIT' }
+        account: { normalBalance: 'DEBIT' },
       });
 
       const result = await service.createJournalEntry(input);

@@ -43,10 +43,11 @@ interface RoleAccount {
 }
 
 // Drive the sweep off the canonical DEMO_ACCOUNTS — the single list that the API
-// seed (apps/api/prisma/seed.ts) provisions and the login page advertises, one
-// login per RoleCode. Using it here guarantees every account we try to log in as
-// actually exists in a freshly seeded database. Demo logins do not carry 2FA, so
-// the TOTP branch in `login()` below stays as a harmless fallback.
+// seed (apps/api/prisma/seed.ts) provisions, one login per RoleCode. Using it
+// here guarantees every account we try to log in as actually exists in a freshly
+// seeded database. Admin accounts are always behind 2FA (there is no demo
+// exemption any more): seed with E2E_FIXED_2FA=1 and the TOTP branch in
+// `login()` below answers the challenge from the fixed secret.
 const ACCOUNTS: RoleAccount[] = DEMO_ACCOUNTS.map((acc) => ({
   label: acc.roleCode.toLowerCase().replace(/_/g, "-"),
   roleCode: acc.roleCode,
@@ -78,18 +79,29 @@ async function login(account: RoleAccount): Promise<Session> {
     password: account.password,
   });
   const data = login?.data as Record<string, unknown> | undefined;
-  if (!data) throw new Error(`Login failed for ${account.email}: ${JSON.stringify(login)}`);
+  if (!data)
+    throw new Error(
+      `Login failed for ${account.email}: ${JSON.stringify(login)}`,
+    );
 
   if (data.requiresTwoFactor) {
     const token = await generateTotp({ secret: FIXED_2FA_SECRET });
-    const verified = await postJson("/auth/2fa/login", { token }, data.tempToken as string);
+    const verified = await postJson(
+      "/auth/2fa/login",
+      { token },
+      data.tempToken as string,
+    );
     if (!verified?.data?.accessToken) {
-      throw new Error(`2FA failed for ${account.email}: ${JSON.stringify(verified)}`);
+      throw new Error(
+        `2FA failed for ${account.email}: ${JSON.stringify(verified)}`,
+      );
     }
     return verified.data as unknown as Session;
   }
   if (!data.accessToken) {
-    throw new Error(`Unexpected login response for ${account.email}: ${JSON.stringify(data)}`);
+    throw new Error(
+      `Unexpected login response for ${account.email}: ${JSON.stringify(data)}`,
+    );
   }
   return data as unknown as Session;
 }
@@ -119,7 +131,12 @@ interface PageResult {
  * `warnings` (a real nav/API contract mismatch worth fixing) so the failure
  * count keeps meaning "this screenshot is unusable".
  */
-async function checkPage(page: Page, role: string, target: string, outDir: string): Promise<PageResult> {
+async function checkPage(
+  page: Page,
+  role: string,
+  target: string,
+  outDir: string,
+): Promise<PageResult> {
   const problems: string[] = [];
   const warnings: string[] = [];
   const consoleErrors: string[] = [];
@@ -131,7 +148,8 @@ async function checkPage(page: Page, role: string, target: string, outDir: strin
     if (res.status() < 400) return;
     try {
       const u = new URL(res.url());
-      if (u.pathname.includes("/api/")) refused.push(`${res.status()} ${u.pathname}`);
+      if (u.pathname.includes("/api/"))
+        refused.push(`${res.status()} ${u.pathname}`);
     } catch {
       /* non-URL response */
     }
@@ -140,7 +158,10 @@ async function checkPage(page: Page, role: string, target: string, outDir: strin
   page.on("response", onResponse);
 
   try {
-    await page.goto(`${BASE_URL}${target}`, { waitUntil: "domcontentloaded", timeout: 45000 });
+    await page.goto(`${BASE_URL}${target}`, {
+      waitUntil: "domcontentloaded",
+      timeout: 45000,
+    });
     await page.waitForTimeout(1800);
   } catch (e) {
     problems.push(`navigation failed: ${(e as Error).message.split("\n")[0]}`);
@@ -157,7 +178,9 @@ async function checkPage(page: Page, role: string, target: string, outDir: strin
   // toast live outside it.
   const main = page.locator("main").first();
   const hasMain = (await main.count()) > 0;
-  const mainText = (hasMain ? await main.innerText().catch(() => "") : "").slice(0, 4000);
+  const mainText = (
+    hasMain ? await main.innerText().catch(() => "") : ""
+  ).slice(0, 4000);
 
   for (const marker of [
     "Application error",
@@ -173,7 +196,8 @@ async function checkPage(page: Page, role: string, target: string, outDir: strin
 
   // The access-denied page is a real failure: the page itself refused the
   // visitor. The API's `Insufficient permissions` toast is NOT — see above.
-  if (/Akses Ditolak/i.test(mainText)) problems.push("rendered access-denied page");
+  if (/Akses Ditolak/i.test(mainText))
+    problems.push("rendered access-denied page");
 
   // Blank / near-empty render: no content text, or a content area with no
   // visible child nodes (a white screen still has a <main> element).
@@ -185,46 +209,58 @@ async function checkPage(page: Page, role: string, target: string, outDir: strin
   // "blank", which is exactly how a whole sweep produced 180 false failures.
   const visibleChildren = hasMain
     ? await main
-        .evaluate(`(() => {
+        .evaluate(
+          `(() => {
           const isVisible = (n) => {
             const r = n.getBoundingClientRect();
             const s = getComputedStyle(n);
             return r.width > 0 && r.height > 0 && s.visibility !== "hidden" && s.display !== "none";
           };
           return Array.from(document.querySelector("main").children).filter(isVisible).length;
-        })()`)
+        })()`,
+        )
         .then((n: unknown) => Number(n) || 0)
         .catch(() => -1)
     : -1;
-  if (mainText.replace(/\s/g, "").length < 40) problems.push("near-empty page text");
-  if (hasMain && visibleChildren === 0) problems.push("blank content area (no visible children)");
+  if (mainText.replace(/\s/g, "").length < 40)
+    problems.push("near-empty page text");
+  if (hasMain && visibleChildren === 0)
+    problems.push("blank content area (no visible children)");
 
   // See apps/web/AGENTS.md: the shell's <main> is a scroll container, so
   // document.scrollWidth hides real horizontal overflow. Measure <main>.
   // String form for the same `__name` reason as above — and a thrown
   // predicate must be distinguishable from "no overflow", not swallowed.
   const overflow = await page
-    .evaluate(`(() => {
+    .evaluate(
+      `(() => {
       const main = document.querySelector("main");
       if (!main) return null;
       const dx = main.scrollWidth - main.clientWidth;
       return dx > 8 ? { dx: dx, clientWidth: main.clientWidth } : null;
-    })()`)
+    })()`,
+    )
     .then((r: unknown) => r as { dx: number; clientWidth: number } | null)
     .catch(() => null);
   if (overflow) {
-    problems.push(`horizontal overflow: main content ${overflow.dx}px wider than ${overflow.clientWidth}px`);
+    problems.push(
+      `horizontal overflow: main content ${overflow.dx}px wider than ${overflow.clientWidth}px`,
+    );
   }
 
   const relevantConsole = consoleErrors.filter(
     (t) => !t.includes("Failed to load resource"),
   );
   if (relevantConsole.length > 0) {
-    problems.push(`console errors: ${relevantConsole.slice(0, 2).join(" | ").slice(0, 200)}`);
+    problems.push(
+      `console errors: ${relevantConsole.slice(0, 2).join(" | ").slice(0, 200)}`,
+    );
   }
 
   if (refused.length > 0) {
-    warnings.push(`API refused: ${[...new Set(refused)].join(", ").slice(0, 300)}`);
+    warnings.push(
+      `API refused: ${[...new Set(refused)].join(", ").slice(0, 300)}`,
+    );
   }
 
   // Sonner error toasts are transient overlays: they portal to the body, so a
@@ -239,10 +275,21 @@ async function checkPage(page: Page, role: string, target: string, outDir: strin
     )
     .catch(() => undefined);
 
-  const file = path.join(outDir, `${target === "/" ? "root" : target.slice(1).replace(/\//g, "__")}.png`);
+  const file = path.join(
+    outDir,
+    `${target === "/" ? "root" : target.slice(1).replace(/\//g, "__")}.png`,
+  );
   await page.screenshot({ path: file, fullPage: false }).catch(() => undefined);
 
-  return { role, path: target, finalPath, ok: problems.length === 0, problems, warnings, screenshot: file };
+  return {
+    role,
+    path: target,
+    finalPath,
+    ok: problems.length === 0,
+    problems,
+    warnings,
+    screenshot: file,
+  };
 }
 
 async function run() {
@@ -268,8 +315,13 @@ async function run() {
     } catch (e) {
       console.error(`✗ LOGIN ${account.label}: ${(e as Error).message}`);
       results.push({
-        role: account.label, path: "(login)", finalPath: "", ok: false,
-        problems: [(e as Error).message], warnings: [], screenshot: "",
+        role: account.label,
+        path: "(login)",
+        finalPath: "",
+        ok: false,
+        problems: [(e as Error).message],
+        warnings: [],
+        screenshot: "",
       });
       continue;
     }
@@ -293,7 +345,9 @@ async function run() {
     for (const target of targets) {
       const r = await checkPage(page, account.label, target, roleDir);
       results.push(r);
-      console.log(`${r.ok ? "✓" : "✗"} [${account.label}] ${target}${r.ok ? "" : " — " + r.problems.join("; ")}`);
+      console.log(
+        `${r.ok ? "✓" : "✗"} [${account.label}] ${target}${r.ok ? "" : " — " + r.problems.join("; ")}`,
+      );
     }
 
     await context.close();
@@ -303,11 +357,17 @@ async function run() {
 
   const failures = results.filter((r) => !r.ok);
   const warned = results.filter((r) => r.ok && r.warnings.length > 0);
-  fs.writeFileSync(path.join(OUT_DIR, "report.json"), JSON.stringify(results, null, 2));
-  console.log(`\n${results.length} pages checked, ${failures.length} failures.`);
+  fs.writeFileSync(
+    path.join(OUT_DIR, "report.json"),
+    JSON.stringify(results, null, 2),
+  );
+  console.log(
+    `\n${results.length} pages checked, ${failures.length} failures.`,
+  );
   if (failures.length > 0) {
     console.log("\nFailures:");
-    for (const f of failures) console.log(`  [${f.role}] ${f.path}: ${f.problems.join("; ")}`);
+    for (const f of failures)
+      console.log(`  [${f.role}] ${f.path}: ${f.problems.join("; ")}`);
   }
   // Warnings are the nav/API contract mismatches: the page rendered, so it is
   // not a failure, but a role that was shown a menu item whose data it cannot
@@ -319,8 +379,12 @@ async function run() {
       e.roles.push(w.role);
       byPath.set(w.path, e);
     }
-    console.log(`\n${warned.length} pages rendered but had refused API requests (${byPath.size} distinct paths):`);
-    for (const [p, e] of [...byPath].sort((a, b) => b[1].roles.length - a[1].roles.length)) {
+    console.log(
+      `\n${warned.length} pages rendered but had refused API requests (${byPath.size} distinct paths):`,
+    );
+    for (const [p, e] of [...byPath].sort(
+      (a, b) => b[1].roles.length - a[1].roles.length,
+    )) {
       console.log(`  ${p} (${e.roles.length} roles): ${e.warning}`);
     }
   }

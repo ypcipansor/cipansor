@@ -21,7 +21,12 @@ import { EsignService } from './esign.service';
 
 vi.mock('../../lib/prisma', () => ({
   prisma: {
-    signingKeyRequest: { findFirst: vi.fn(), findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
+    signingKeyRequest: {
+      findFirst: vi.fn(),
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+    },
     userSigningKey: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn(), deleteMany: vi.fn() },
     userIdentity: { findUnique: vi.fn(), update: vi.fn() },
     auditLog: { create: vi.fn() },
@@ -57,9 +62,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(prisma.signingKeyRequest.findFirst).mockResolvedValue(null as any);
   vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(null as any);
-  vi.mocked(prisma.userIdentity.findUnique).mockResolvedValue(
-    freshlyDocumentedIdentity() as any
-  );
+  vi.mocked(prisma.userIdentity.findUnique).mockResolvedValue(freshlyDocumentedIdentity() as any);
 });
 
 describe('dari mengisi identitas sampai kunci disetujui', () => {
@@ -116,8 +119,8 @@ describe('dari mengisi identitas sampai kunci disetujui', () => {
       kind: 'ENROLLMENT',
     } as any);
 
-    await expect(
-      EsignService.decideRequest('req-1', 'superadmin', true, 365)
-    ).rejects.toThrow(/belum diverifikasi/);
+    await expect(EsignService.decideRequest('req-1', 'superadmin', true, 365)).rejects.toThrow(
+      /belum diverifikasi/
+    );
   });
 });

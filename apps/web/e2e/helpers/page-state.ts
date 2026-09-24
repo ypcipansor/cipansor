@@ -16,7 +16,10 @@ import type { Page } from "@playwright/test";
  * assertion. Nothing here weakens an assertion; it only stops reading the DOM
  * at a moment Playwright cannot serve.
  */
-export async function settledContent(page: Page, timeout = 15_000): Promise<string> {
+export async function settledContent(
+  page: Page,
+  timeout = 15_000,
+): Promise<string> {
   const deadline = Date.now() + timeout;
   let lastError: unknown;
 

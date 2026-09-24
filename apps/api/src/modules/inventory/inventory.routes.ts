@@ -17,14 +17,26 @@ router.get(
   authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER, UserRole.STAFF),
   controller.getCategories
 );
-router.post('/categories', authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN), controller.createCategory);
+router.post(
+  '/categories',
+  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
+  controller.createCategory
+);
 router.get(
   '/categories/:id',
   authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER, UserRole.STAFF),
   controller.getCategoryById
 );
-router.put('/categories/:id', authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN), controller.updateCategory);
-router.delete('/categories/:id', authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN), controller.deleteCategory);
+router.put(
+  '/categories/:id',
+  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
+  controller.updateCategory
+);
+router.delete(
+  '/categories/:id',
+  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
+  controller.deleteCategory
+);
 
 // Stats
 router.get(
@@ -39,9 +51,21 @@ router.get(
 );
 
 // Settings & Automation (Before dynamic :id)
-router.get('/settings', authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN), controller.getInventorySettings);
-router.put('/settings', authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN), controller.updateInventorySettings);
-router.post('/depreciation/run', authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN), controller.runMonthlyDepreciation);
+router.get(
+  '/settings',
+  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
+  controller.getInventorySettings
+);
+router.put(
+  '/settings',
+  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
+  controller.updateInventorySettings
+);
+router.post(
+  '/depreciation/run',
+  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
+  controller.runMonthlyDepreciation
+);
 
 // Assignments
 router.get(
@@ -62,10 +86,26 @@ router.post(
 
 // Audits
 router.get('/audits', authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN), controller.getAudits);
-router.post('/audits', authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN), controller.createAudit);
-router.get('/audits/:id', authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN), controller.getAuditById);
-router.put('/audits/items/:itemId', authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN), controller.updateAuditItem);
-router.patch('/audits/:id/complete', authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN), controller.completeAudit);
+router.post(
+  '/audits',
+  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
+  controller.createAudit
+);
+router.get(
+  '/audits/:id',
+  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
+  controller.getAuditById
+);
+router.put(
+  '/audits/items/:itemId',
+  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
+  controller.updateAuditItem
+);
+router.patch(
+  '/audits/:id/complete',
+  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
+  controller.completeAudit
+);
 
 // Maintenance
 router.get(
@@ -103,10 +143,18 @@ router.patch(
   authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.STAFF),
   controller.completeMaintenance
 );
-router.delete('/maintenance/:id', authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN), controller.deleteMaintenance);
+router.delete(
+  '/maintenance/:id',
+  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
+  controller.deleteMaintenance
+);
 
 // Depreciation (Moved before :id routes)
-router.post('/depreciation/run', authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN), controller.runDepreciation);
+router.post(
+  '/depreciation/run',
+  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
+  controller.runDepreciation
+);
 
 // Items
 router.get(
@@ -114,7 +162,11 @@ router.get(
   authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER, UserRole.STAFF),
   controller.getItems
 );
-router.post('/', authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.STAFF), controller.createItem);
+router.post(
+  '/',
+  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.STAFF),
+  controller.createItem
+);
 router.get(
   '/items/:id/qrcode',
   authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER, UserRole.STAFF),
@@ -130,8 +182,16 @@ router.get(
   authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER, UserRole.STAFF),
   controller.getItemById
 );
-router.put('/:id', authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.STAFF), controller.updateItem);
+router.put(
+  '/:id',
+  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.STAFF),
+  controller.updateItem
+);
 router.delete('/:id', authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN), controller.deleteItem);
-router.post('/:id/dispose', authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN), controller.disposeAsset);
+router.post(
+  '/:id/dispose',
+  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
+  controller.disposeAsset
+);
 
 export default router;

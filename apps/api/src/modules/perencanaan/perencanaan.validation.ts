@@ -83,14 +83,18 @@ export const updateActivitySchema = z.object({
   endDate: z.string().datetime().optional(),
   budget: z.number().positive().optional(),
   budgetId: z.string().uuid().nullable().optional(),
-  status: z.enum(['DRAFT', 'PROPOSED', 'APPROVED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED']).optional(),
+  status: z
+    .enum(['DRAFT', 'PROPOSED', 'APPROVED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'])
+    .optional(),
   priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']).optional(),
   notes: z.string().optional(),
 });
 
 export const listPlanQuerySchema = z.object({
   type: z.enum(['RPJP', 'RENSTRA', 'RKA']).optional(),
-  status: z.enum(['DRAFT', 'PROPOSED', 'APPROVED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED']).optional(),
+  status: z
+    .enum(['DRAFT', 'PROPOSED', 'APPROVED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'])
+    .optional(),
   unitId: z.string().uuid().optional(),
 });
 

@@ -2,10 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
 
 export type PaymentVerificationStatus =
-  | "PENDING_VERIFICATION"
-  | "TU_APPROVED"
-  | "FINAL_APPROVED"
-  | "REJECTED";
+  "PENDING_VERIFICATION" | "TU_APPROVED" | "FINAL_APPROVED" | "REJECTED";
 
 export interface VerifiablePayment {
   id: string;

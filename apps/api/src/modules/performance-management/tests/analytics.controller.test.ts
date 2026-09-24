@@ -24,8 +24,14 @@ function mockReqRes(overrides: Partial<Request> = {}) {
   const res = {
     statusCode: 200,
     jsonPayload: undefined as unknown,
-    status(code: number) { (this as any).statusCode = code; return this; },
-    json(payload: unknown) { (this as any).jsonPayload = payload; return this; },
+    status(code: number) {
+      (this as any).statusCode = code;
+      return this;
+    },
+    json(payload: unknown) {
+      (this as any).jsonPayload = payload;
+      return this;
+    },
   } as unknown as Response & { statusCode: number; jsonPayload: any };
 
   return { req, res };
@@ -55,14 +61,20 @@ describe('analytics controller unit tests', () => {
     });
 
     it('should scope unit-level leadership to req.user.unitId', async () => {
-      vi.mocked(pkAnalyticsService.getUnitPerformanceDashboard).mockResolvedValue({ totalAgreements: 5 } as any);
-      const { req, res } = mockReqRes({ user: { sub: 'u1', roleCode: 'SDIT_KEPALA_SEKOLAH', unitId: 'unit-sd' } as any });
+      vi.mocked(pkAnalyticsService.getUnitPerformanceDashboard).mockResolvedValue({
+        totalAgreements: 5,
+      } as any);
+      const { req, res } = mockReqRes({
+        user: { sub: 'u1', roleCode: 'SDIT_KEPALA_SEKOLAH', unitId: 'unit-sd' } as any,
+      });
       await run(analyticsController.getDashboard, req, res);
       expect(pkAnalyticsService.getUnitPerformanceDashboard).toHaveBeenCalledWith('unit-sd');
     });
 
     it('should allow foundation global leadership to query any or all units', async () => {
-      vi.mocked(pkAnalyticsService.getUnitPerformanceDashboard).mockResolvedValue({ totalAgreements: 20 } as any);
+      vi.mocked(pkAnalyticsService.getUnitPerformanceDashboard).mockResolvedValue({
+        totalAgreements: 20,
+      } as any);
       const { req, res } = mockReqRes({
         user: { sub: 'u1', roleCode: 'YAYASAN_KETUA' } as any,
         query: { unitId: 'unit-smp' } as any,
@@ -72,7 +84,9 @@ describe('analytics controller unit tests', () => {
     });
 
     it('should reject unit-level leadership without unitId', async () => {
-      const { req, res } = mockReqRes({ user: { sub: 'u1', roleCode: 'SDIT_KEPALA_SEKOLAH' } as any });
+      const { req, res } = mockReqRes({
+        user: { sub: 'u1', roleCode: 'SDIT_KEPALA_SEKOLAH' } as any,
+      });
       await expect(run(analyticsController.getDashboard, req, res)).rejects.toThrow(
         'User does not belong to a specific unit and lacks global analytics access'
       );
@@ -91,7 +105,9 @@ describe('analytics controller unit tests', () => {
     });
 
     it('should allow foundation global leadership to view drilldown of any unit', async () => {
-      vi.mocked(pkAnalyticsService.getUnitDrilldown).mockResolvedValue({ unit: { id: 'unit-smp', name: 'SMP IT' } } as any);
+      vi.mocked(pkAnalyticsService.getUnitDrilldown).mockResolvedValue({
+        unit: { id: 'unit-smp', name: 'SMP IT' },
+      } as any);
       const { req, res } = mockReqRes({
         user: { sub: 'u1', roleCode: 'YAYASAN_KETUA' } as any,
         params: { unitId: 'unit-smp' } as any,

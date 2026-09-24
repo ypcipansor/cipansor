@@ -62,7 +62,13 @@ describe('Finance Scheduler Unit Tests - Auto Billing', () => {
       ]);
 
       vi.mocked(prisma.paymentType.findMany).mockResolvedValue([
-        { id: 'pt-spp', code: 'SPP', amount: new Prisma.Decimal(500000), unitId: 'unit-1', name: 'SPP' } as any,
+        {
+          id: 'pt-spp',
+          code: 'SPP',
+          amount: new Prisma.Decimal(500000),
+          unitId: 'unit-1',
+          name: 'SPP',
+        } as any,
       ]);
 
       // Mock that invoice doesn't exist yet for this month
@@ -81,7 +87,7 @@ describe('Finance Scheduler Unit Tests - Auto Billing', () => {
       expect(createCall.data.studentId).toBe('student-1');
       expect(createCall.data.paymentTypeId).toBe('pt-spp');
       expect(createCall.data.amount.toString()).toBe('500000');
-      
+
       expect(result.processed).toBe(1);
       expect(result.created).toBe(1);
     });
@@ -92,7 +98,13 @@ describe('Finance Scheduler Unit Tests - Auto Billing', () => {
       ]);
 
       vi.mocked(prisma.paymentType.findMany).mockResolvedValue([
-        { id: 'pt-spp', code: 'SPP', amount: new Prisma.Decimal(500000), unitId: 'unit-1', name: 'SPP' } as any,
+        {
+          id: 'pt-spp',
+          code: 'SPP',
+          amount: new Prisma.Decimal(500000),
+          unitId: 'unit-1',
+          name: 'SPP',
+        } as any,
       ]);
 
       // Mock that invoice ALREADY exists for this month
@@ -101,7 +113,7 @@ describe('Finance Scheduler Unit Tests - Auto Billing', () => {
       const result = await generateRecurringBills();
 
       expect(prisma.invoice.findFirst).toHaveBeenCalledTimes(1);
-      
+
       // Should NOT create
       expect(prisma.invoice.create).not.toHaveBeenCalled();
 

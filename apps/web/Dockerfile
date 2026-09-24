@@ -36,8 +36,6 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV BUILD_STANDALONE=1
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
-ARG NEXT_PUBLIC_SHOW_DEMO_LOGIN=false
-ENV NEXT_PUBLIC_SHOW_DEMO_LOGIN=${NEXT_PUBLIC_SHOW_DEMO_LOGIN}
 # Site key Cloudflare Turnstile. Bawaannya kosong dengan sengaja: build yang
 # tidak menyebutkannya menghasilkan halaman tanpa widget, bukan halaman dengan
 # widget yang site key-nya salah.

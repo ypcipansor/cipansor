@@ -24,8 +24,14 @@ function mockReqRes(overrides: Partial<Request> = {}) {
   const res = {
     statusCode: 200,
     jsonPayload: undefined as unknown,
-    status(code: number) { (this as any).statusCode = code; return this; },
-    json(payload: unknown) { (this as any).jsonPayload = payload; return this; },
+    status(code: number) {
+      (this as any).statusCode = code;
+      return this;
+    },
+    json(payload: unknown) {
+      (this as any).jsonPayload = payload;
+      return this;
+    },
   } as unknown as Response & { statusCode: number; jsonPayload: any };
   return { req, res };
 }
@@ -60,7 +66,7 @@ describe('wilayah controller', () => {
     const { req, res } = mockReqRes({ query: { page: '2' } as any });
     await run(controller.listVillages, req, res);
     expect(service.listVillages).toHaveBeenCalledWith(
-      expect.objectContaining({ page: 2, limit: 50 }),
+      expect.objectContaining({ page: 2, limit: 50 })
     );
     expect((res as any).jsonPayload.pagination.page).toBe(2);
   });

@@ -8,9 +8,9 @@ import { admissionFeeSettled, assertAdmissionFeeSettled } from './admission-fee-
  */
 describe('admission fee gate', () => {
   it('refuses an accepted registrant who has not paid', () => {
-    expect(
-      admissionFeeSettled({ registrationFee: 500_000, registrationFeePaidAt: null })
-    ).toBe(false);
+    expect(admissionFeeSettled({ registrationFee: 500_000, registrationFeePaidAt: null })).toBe(
+      false
+    );
 
     expect(() =>
       assertAdmissionFeeSettled({ registrationFee: 500_000, registrationFeePaidAt: null })
@@ -39,9 +39,9 @@ describe('admission fee gate', () => {
   it('handles a Prisma Decimal amount', () => {
     const decimal = { toNumber: () => 750_000 };
 
-    expect(
-      admissionFeeSettled({ registrationFee: decimal, registrationFeePaidAt: null })
-    ).toBe(false);
+    expect(admissionFeeSettled({ registrationFee: decimal, registrationFeePaidAt: null })).toBe(
+      false
+    );
     expect(
       admissionFeeSettled({ registrationFee: decimal, registrationFeePaidAt: new Date() })
     ).toBe(true);

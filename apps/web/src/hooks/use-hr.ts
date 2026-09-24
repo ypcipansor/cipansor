@@ -3,11 +3,7 @@ import api from "@/lib/api";
 
 // Types
 export type EmployeeStatus =
-  | "ACTIVE"
-  | "INACTIVE"
-  | "ON_LEAVE"
-  | "RESIGNED"
-  | "RETIRED";
+  "ACTIVE" | "INACTIVE" | "ON_LEAVE" | "RESIGNED" | "RETIRED";
 export type EmployeeType = "PERMANENT" | "CONTRACT" | "PART_TIME" | "INTERN";
 type Gender = "MALE" | "FEMALE";
 
@@ -149,7 +145,8 @@ export function normalizeEmployee(raw: any): Employee {
   const profile = staff ?? teacher ?? {};
   const user = raw?.user ?? raw ?? {};
 
-  const employmentStatus = profile.employmentStatus ?? teacher?.employmentStatus;
+  const employmentStatus =
+    profile.employmentStatus ?? teacher?.employmentStatus;
 
   return {
     ...profile,
@@ -174,7 +171,8 @@ export function normalizeEmployee(raw: any): Employee {
     joinDate: profile.joinDate ?? undefined,
 
     position: staff?.position ?? (teacher ? "Guru" : "Pegawai"),
-    employeeType: EMPLOYEE_TYPE_BY_EMPLOYMENT_STATUS[employmentStatus] ?? "PERMANENT",
+    employeeType:
+      EMPLOYEE_TYPE_BY_EMPLOYMENT_STATUS[employmentStatus] ?? "PERMANENT",
     status: user.isActive === false ? "INACTIVE" : "ACTIVE",
     role: raw?.role,
     createdAt: raw?.createdAt,
@@ -841,10 +839,7 @@ export function useProcessPayroll() {
 
   return useMutation({
     mutationFn: async (data: { periodId: string; staffIds: string[] }) => {
-      const response = await api.post(
-        `/payroll/process`,
-        data
-      );
+      const response = await api.post(`/payroll/process`, data);
       return response.data.data;
     },
     onSuccess: () => {

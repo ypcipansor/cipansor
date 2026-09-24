@@ -129,8 +129,6 @@ const SHIFT_CONFIG: Record<DutyShift, { label: string; color: string }> = {
   EVENING: { label: "Sore/Malam", color: "bg-purple-100 text-purple-800" },
 };
 
-
-
 function DutyRosterDetailPageContent() {
   const params = useParams();
   const router = useRouter();
@@ -156,7 +154,12 @@ function DutyRosterDetailPageContent() {
       status?: UIStatus;
       completedAt?: string | null;
       notes?: string | null;
-      dutyType?: { name?: string; location?: string | null; startTime?: string | null; endTime?: string | null };
+      dutyType?: {
+        name?: string;
+        location?: string | null;
+        startTime?: string | null;
+        endTime?: string | null;
+      };
       student?: {
         id: string;
         nis: string;
@@ -193,7 +196,9 @@ function DutyRosterDetailPageContent() {
                 class: student.class ?? { id: "", name: "-" },
               },
               status: (r.status ?? "PENDING") as UIStatus,
-              checkInTime: r.completedAt ? r.completedAt.slice(11, 16) : undefined,
+              checkInTime: r.completedAt
+                ? r.completedAt.slice(11, 16)
+                : undefined,
               checkOutTime: undefined,
               rating: undefined,
               points: undefined,

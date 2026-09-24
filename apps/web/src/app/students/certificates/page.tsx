@@ -309,7 +309,10 @@ export default function CertificateGeneratorPage() {
           </div>
 
           {/* Certificate Number */}
-          <p className="text-xs opacity-60 mb-4" data-testid="certificate-number">
+          <p
+            className="text-xs opacity-60 mb-4"
+            data-testid="certificate-number"
+          >
             {numberReady
               ? `No: ${certificateNumber}`
               : PENDING_CERTIFICATE_NUMBER}

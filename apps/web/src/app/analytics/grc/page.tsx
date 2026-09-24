@@ -3,10 +3,34 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { PageHeader } from "@/components/shared/page-header";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ShieldAlert, ClipboardCheck, Award, TrendingUp, AlertTriangle, CheckCircle, Info } from "lucide-react";
-import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip, Cell, Pie, PieChart } from "recharts";
+import {
+  ShieldAlert,
+  ClipboardCheck,
+  Award,
+  TrendingUp,
+  AlertTriangle,
+  CheckCircle,
+  Info,
+} from "lucide-react";
+import {
+  Bar,
+  BarChart,
+  ResponsiveContainer,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Cell,
+  Pie,
+  PieChart,
+} from "recharts";
 import { MainLayout } from "@/components/layout";
 
 function GRCDashboardPageContent() {
@@ -39,22 +63,53 @@ function GRCDashboardPageContent() {
 
   // Process Risk Data
   const riskLevels = [
-    { name: "Extreme", count: risks?.filter((r: any) => r.riskLevel === "EXTREME").length || 0, color: "#e11d48" },
-    { name: "High", count: risks?.filter((r: any) => r.riskLevel === "HIGH").length || 0, color: "#f59e0b" },
-    { name: "Medium", count: risks?.filter((r: any) => r.riskLevel === "MEDIUM").length || 0, color: "#3b82f6" },
-    { name: "Low", count: risks?.filter((r: any) => r.riskLevel === "LOW").length || 0, color: "#10b981" },
+    {
+      name: "Extreme",
+      count: risks?.filter((r: any) => r.riskLevel === "EXTREME").length || 0,
+      color: "#e11d48",
+    },
+    {
+      name: "High",
+      count: risks?.filter((r: any) => r.riskLevel === "HIGH").length || 0,
+      color: "#f59e0b",
+    },
+    {
+      name: "Medium",
+      count: risks?.filter((r: any) => r.riskLevel === "MEDIUM").length || 0,
+      color: "#3b82f6",
+    },
+    {
+      name: "Low",
+      count: risks?.filter((r: any) => r.riskLevel === "LOW").length || 0,
+      color: "#10b981",
+    },
   ];
 
   // Process Audit Data
   const auditStatus = [
-    { name: "Completed", value: audits?.filter((a: any) => a.status === "COMPLETED").length || 0, color: "#10b981" },
-    { name: "Ongoing", value: audits?.filter((a: any) => a.status === "IN_PROGRESS").length || 0, color: "#3b82f6" },
-    { name: "Planned", value: audits?.filter((a: any) => a.status === "PLANNED").length || 0, color: "#94a3b8" },
+    {
+      name: "Completed",
+      value: audits?.filter((a: any) => a.status === "COMPLETED").length || 0,
+      color: "#10b981",
+    },
+    {
+      name: "Ongoing",
+      value: audits?.filter((a: any) => a.status === "IN_PROGRESS").length || 0,
+      color: "#3b82f6",
+    },
+    {
+      name: "Planned",
+      value: audits?.filter((a: any) => a.status === "PLANNED").length || 0,
+      color: "#94a3b8",
+    },
   ];
 
   const totalAudits = audits?.length || 0;
   const totalRisks = risks?.length || 0;
-  const criticalRisks = risks?.filter((r: any) => r.riskLevel === "EXTREME" || r.riskLevel === "HIGH").length || 0;
+  const criticalRisks =
+    risks?.filter(
+      (r: any) => r.riskLevel === "EXTREME" || r.riskLevel === "HIGH",
+    ).length || 0;
 
   if (isLoading) {
     return (
@@ -90,7 +145,8 @@ function GRCDashboardPageContent() {
           </CardHeader>
           <CardContent>
             <p className="text-xs text-muted-foreground">
-              <span className="text-rose-600 font-bold">{criticalRisks}</span> risiko level tinggi/ekstrim
+              <span className="text-rose-600 font-bold">{criticalRisks}</span>{" "}
+              risiko level tinggi/ekstrim
             </p>
           </CardContent>
         </Card>
@@ -104,7 +160,8 @@ function GRCDashboardPageContent() {
           </CardHeader>
           <CardContent>
             <p className="text-xs text-muted-foreground">
-              {audits?.filter((a: any) => a.status === "COMPLETED").length || 0} dari {totalAudits} selesai
+              {audits?.filter((a: any) => a.status === "COMPLETED").length || 0}{" "}
+              dari {totalAudits} selesai
             </p>
           </CardContent>
         </Card>
@@ -128,9 +185,12 @@ function GRCDashboardPageContent() {
         <Card>
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5 text-amber-500" /> Distribusi Level Risiko
+              <AlertTriangle className="w-5 h-5 text-amber-500" /> Distribusi
+              Level Risiko
             </CardTitle>
-            <CardDescription>Visualisasi tingkat keparahan risiko yang teridentifikasi.</CardDescription>
+            <CardDescription>
+              Visualisasi tingkat keparahan risiko yang teridentifikasi.
+            </CardDescription>
           </CardHeader>
           <CardContent className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
@@ -151,9 +211,12 @@ function GRCDashboardPageContent() {
         <Card>
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
-              <CheckCircle className="w-5 h-5 text-emerald-500" /> Status Pelaksanaan Audit
+              <CheckCircle className="w-5 h-5 text-emerald-500" /> Status
+              Pelaksanaan Audit
             </CardTitle>
-            <CardDescription>Progres penyelesaian jadwal audit internal unit.</CardDescription>
+            <CardDescription>
+              Progres penyelesaian jadwal audit internal unit.
+            </CardDescription>
           </CardHeader>
           <CardContent className="h-[300px] flex items-center justify-center">
             <ResponsiveContainer width="100%" height="100%">
@@ -177,8 +240,13 @@ function GRCDashboardPageContent() {
             <div className="space-y-2 ml-4">
               {auditStatus.map((s) => (
                 <div key={s.name} className="flex items-center gap-2 text-sm">
-                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: s.color }} />
-                  <span>{s.name}: {s.value}</span>
+                  <div
+                    className="w-3 h-3 rounded-full"
+                    style={{ backgroundColor: s.color }}
+                  />
+                  <span>
+                    {s.name}: {s.value}
+                  </span>
                 </div>
               ))}
             </div>
@@ -191,20 +259,30 @@ function GRCDashboardPageContent() {
           <CardTitle className="text-lg flex items-center gap-2">
             <TrendingUp className="w-5 h-5" /> Temuan Audit & Tindak Lanjut
           </CardTitle>
-          <CardDescription>Ringkasan temuan yang memerlukan perhatian manajemen.</CardDescription>
+          <CardDescription>
+            Ringkasan temuan yang memerlukan perhatian manajemen.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
             {audits?.slice(0, 3).map((audit: any) => (
-              <div key={audit.id} className="flex items-center justify-between p-3 border rounded-lg hover:bg-slate-50 transition-colors">
+              <div
+                key={audit.id}
+                className="flex items-center justify-between p-3 border rounded-lg hover:bg-slate-50 transition-colors"
+              >
                 <div className="space-y-1">
                   <p className="font-medium text-sm">{audit.title}</p>
-                  <p className="text-xs text-muted-foreground">Tipe: {audit.auditType} • Tanggal: {new Date(audit.plannedDate).toLocaleDateString()}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Tipe: {audit.auditType} • Tanggal:{" "}
+                    {new Date(audit.plannedDate).toLocaleDateString()}
+                  </p>
                 </div>
                 <div className="flex items-center gap-4">
                   <div className="text-right">
                     <p className="text-xs text-muted-foreground">Temuan</p>
-                    <p className="text-sm font-bold">{audit.findings?.length || 0}</p>
+                    <p className="text-sm font-bold">
+                      {audit.findings?.length || 0}
+                    </p>
                   </div>
                   <div className="text-right">
                     <p className="text-xs text-muted-foreground">Status</p>

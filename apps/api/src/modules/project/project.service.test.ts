@@ -124,7 +124,7 @@ describe('Project Service', () => {
   describe('updateTaskPosition', () => {
     it('should reorder tasks in the same column', async () => {
       const mockTask = { id: 'task-1', columnId: 'col-1', order: 0 };
-      
+
       vi.mocked(prisma.projectTask.findUnique).mockResolvedValue(mockTask as any);
       vi.mocked(prisma.projectTask.updateMany).mockResolvedValue({ count: 1 } as any);
       vi.mocked(prisma.projectTask.update).mockResolvedValue({ ...mockTask, order: 2 } as any);

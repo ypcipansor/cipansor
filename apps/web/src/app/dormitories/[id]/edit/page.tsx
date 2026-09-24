@@ -122,9 +122,7 @@ function EditDormitoryPageContent({
         data: {
           ...data,
           unitId:
-            !data.unitId || data.unitId === FOUNDATION_RUN
-              ? null
-              : data.unitId,
+            !data.unitId || data.unitId === FOUNDATION_RUN ? null : data.unitId,
           supervisorId: data.supervisorId || undefined,
           description: data.description || undefined,
           facilities: data.facilities || undefined,
@@ -423,7 +421,9 @@ function EditDormitoryPageContent({
   );
 }
 
-export default function EditDormitoryPage(props: Parameters<typeof EditDormitoryPageContent>[0]) {
+export default function EditDormitoryPage(
+  props: Parameters<typeof EditDormitoryPageContent>[0],
+) {
   return (
     <MainLayout>
       <EditDormitoryPageContent {...props} />

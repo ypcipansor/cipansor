@@ -2,9 +2,29 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Request, Response } from 'express';
 
 vi.mock('../canteen.service', () => ({
-  categoryService: { getAll: vi.fn(), getById: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), getBusinessEfficiency: vi.fn() },
-  itemService: { getAll: vi.fn(), getById: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), getLowStockItems: vi.fn() },
-  transactionService: { getAll: vi.fn(), getById: vi.fn(), create: vi.fn(), updateStatus: vi.fn(), getStats: vi.fn() },
+  categoryService: {
+    getAll: vi.fn(),
+    getById: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+    getBusinessEfficiency: vi.fn(),
+  },
+  itemService: {
+    getAll: vi.fn(),
+    getById: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+    getLowStockItems: vi.fn(),
+  },
+  transactionService: {
+    getAll: vi.fn(),
+    getById: vi.fn(),
+    create: vi.fn(),
+    updateStatus: vi.fn(),
+    getStats: vi.fn(),
+  },
   stockMovementService: { getAll: vi.fn(), create: vi.fn() },
 }));
 
@@ -18,12 +38,24 @@ import { categoryService, transactionService } from '../canteen.service';
 import { resolveUnitId, isSuperAdminUser } from '../../../utils/resolve-unit-id';
 
 function mockReqRes(overrides: Partial<Request> = {}) {
-  const req = { query: {}, params: {}, body: {}, user: { sub: 'user-1' }, ...overrides } as unknown as Request;
+  const req = {
+    query: {},
+    params: {},
+    body: {},
+    user: { sub: 'user-1' },
+    ...overrides,
+  } as unknown as Request;
   const res = {
     statusCode: 200,
     jsonPayload: undefined as unknown,
-    status(code: number) { (this as any).statusCode = code; return this; },
-    json(payload: unknown) { (this as any).jsonPayload = payload; return this; },
+    status(code: number) {
+      (this as any).statusCode = code;
+      return this;
+    },
+    json(payload: unknown) {
+      (this as any).jsonPayload = payload;
+      return this;
+    },
   } as unknown as Response & { statusCode: number; jsonPayload: any };
   return { req, res };
 }

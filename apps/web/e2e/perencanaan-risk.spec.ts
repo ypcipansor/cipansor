@@ -3,7 +3,9 @@ import { loginAs } from "./helpers/auth-api";
 import { findStrategicPlan } from "./helpers/seed-data";
 
 test.describe("Perencanaan & Risk Management Integration", () => {
-  test("can navigate to create risk from a strategic plan", async ({ page }) => {
+  test("can navigate to create risk from a strategic plan", async ({
+    page,
+  }) => {
     const session = await loginAs(page, "superAdmin");
     const plan = await findStrategicPlan(session);
 
@@ -16,10 +18,14 @@ test.describe("Perencanaan & Risk Management Integration", () => {
     await page.getByRole("tab", { name: /Faktor Risiko/ }).click();
 
     // Verify the tab content is visible
-    await expect(page.locator("text=Identifikasi & Pemetaan Risiko")).toBeVisible();
+    await expect(
+      page.locator("text=Identifikasi & Pemetaan Risiko"),
+    ).toBeVisible();
 
     // Click on the 'Identifikasi Risiko Baru' button
-    const identifyBtn = page.getByRole("button", { name: "Identifikasi Risiko Baru" });
+    const identifyBtn = page.getByRole("button", {
+      name: "Identifikasi Risiko Baru",
+    });
     await expect(identifyBtn).toBeVisible();
     await identifyBtn.click();
 
@@ -29,6 +35,8 @@ test.describe("Perencanaan & Risk Management Integration", () => {
     );
 
     // Verify the alert indicating the risk will be linked to a strategic plan
-    await expect(page.locator("text=Ditautkan ke Perencanaan Strategis")).toBeVisible();
+    await expect(
+      page.locator("text=Ditautkan ke Perencanaan Strategis"),
+    ).toBeVisible();
   });
 });

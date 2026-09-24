@@ -17,7 +17,8 @@ export const useRisks = (filters?: RiskListFilters) => {
       if (filters?.unitId) params.append("unitId", filters.unitId);
       if (filters?.category) params.append("category", filters.category);
       if (filters?.riskLevel) params.append("riskLevel", filters.riskLevel);
-      if (filters?.strategicPlanId) params.append("strategicPlanId", filters.strategicPlanId);
+      if (filters?.strategicPlanId)
+        params.append("strategicPlanId", filters.strategicPlanId);
 
       const res = await api.get(`/risk?${params}`);
       return res.data.data;
@@ -104,7 +105,9 @@ export const useCreateMitigation = () => {
       queryClient.invalidateQueries({ queryKey: ["risk", variables.riskId] });
     },
     onError: (error: any) => {
-      toast.error(error.response?.data?.message || "Failed to add mitigation plan");
+      toast.error(
+        error.response?.data?.message || "Failed to add mitigation plan",
+      );
     },
   });
 };
@@ -121,7 +124,9 @@ export const useDeleteMitigation = () => {
       queryClient.invalidateQueries({ queryKey: ["risk", variables.riskId] });
     },
     onError: (error: any) => {
-      toast.error(error.response?.data?.message || "Failed to delete mitigation plan");
+      toast.error(
+        error.response?.data?.message || "Failed to delete mitigation plan",
+      );
     },
   });
 };

@@ -476,7 +476,9 @@ function BookDetailPageContent({
   );
 }
 
-export default function BookDetailPage(props: Parameters<typeof BookDetailPageContent>[0]) {
+export default function BookDetailPage(
+  props: Parameters<typeof BookDetailPageContent>[0],
+) {
   return (
     <MainLayout>
       <BookDetailPageContent {...props} />

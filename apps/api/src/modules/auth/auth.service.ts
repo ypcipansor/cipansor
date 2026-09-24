@@ -21,21 +21,26 @@ import crypto from 'crypto';
  */
 export function resolveLegacyRoleToRoleCode(
   legacyRole: string,
-  unitType: UnitType | null | undefined,
+  unitType: UnitType | null | undefined
 ): RoleCode | null {
   // Unit-agnostic mappings
   if (legacyRole === 'SUPER_ADMIN') return RoleCode.SUPER_ADMIN;
   if (legacyRole === 'UNIT_ADMIN') {
     switch (unitType) {
-      case UnitType.TK_QURAN: return RoleCode.TKQ_ADMIN;
-      case UnitType.SD_IT: return RoleCode.SDIT_ADMIN;
-      case UnitType.SMP_IT: return RoleCode.SMPIT_ADMIN;
-      case UnitType.SMA_QURAN: return RoleCode.SMAQ_ADMIN;
+      case UnitType.TK_QURAN:
+        return RoleCode.TKQ_ADMIN;
+      case UnitType.SD_IT:
+        return RoleCode.SDIT_ADMIN;
+      case UnitType.SMP_IT:
+        return RoleCode.SMPIT_ADMIN;
+      case UnitType.SMA_QURAN:
+        return RoleCode.SMAQ_ADMIN;
       // PESANTREN / OTHER / unknown: no dedicated per-unit admin RoleCode exists.
       // Do NOT silently fall back to a foundation-level role — that would be a privilege
       // escalation (foundation-level governance) for a unit-level admin.
       // Caller must supply `roleCode` explicitly for these unit types.
-      default: return null;
+      default:
+        return null;
     }
   }
 
@@ -91,10 +96,7 @@ export function resolveLegacyRoleToRoleCode(
 function activeRoleWhere() {
   return {
     isActive: true,
-    OR: [
-      { expiresAt: null },
-      { expiresAt: { gt: new Date() } },
-    ],
+    OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
   };
 }
 
@@ -171,30 +173,15 @@ export class AuthService {
       role: deriveLegacyRole(roleCode),
     };
 
-    // A demo deployment is exempt from 2FA: without it the privileged roles
-    // cannot be opened at all, since no seeded account has an authenticator
-    // enrolled. DEMO_MODE is the whole condition.
-    //
-    // It used to also require the address to end in `@demo.cipansor.or.id`.
-    // That made an email address load-bearing for security, which is why the
-    // accounts could not be renamed onto the institution's own domain without
-    // silently locking every privileged login out behind a 2FA wall it has no
-    // authenticator for. A deployment is a demo or it is not; the address of
-    // the person signing in does not decide that.
-    //
-    // This is a LOOSENING while DEMO_MODE=true: accounts that were outside the
-    // old suffix — the seeded staff and student logins — are now exempt too.
-    // Acceptable only because the flag marks the entire deployment as demo, and
-    // production has no real accounts yet. `DEMO_MODE=false` restores the wall
-    // for everyone, and that is the switch to throw at launch.
-    const isDemoAccount = process.env.DEMO_MODE === 'true';
+    // There is no demo exemption from 2FA any more (DEMO_MODE was removed
+    // 2026-09-23): it waived the second factor for every account, Super Admin
+    // included, on a deployment whose seeded passwords are published in the
+    // repository. Test environments pre-enrol admins with a fixed TOTP secret
+    // instead (seed.ts, E2E_FIXED_2FA=1).
 
     // Check for 2FA
-    if (user.isTwoFactorEnabled && !isDemoAccount) {
-      const tempToken = generateAccessToken(
-        { ...basePayload, isTemp: true },
-        '5m'
-      );
+    if (user.isTwoFactorEnabled) {
+      const tempToken = generateAccessToken({ ...basePayload, isTemp: true }, '5m');
 
       return {
         requiresTwoFactor: true,
@@ -203,11 +190,8 @@ export class AuthService {
     }
 
     // Force 2FA setup for Admin/Super Admin
-    if (isUserAdmin && !user.isTwoFactorEnabled && !isDemoAccount) {
-      const tempToken = generateAccessToken(
-        { ...basePayload, isTemp: true },
-        '10m'
-      );
+    if (isUserAdmin && !user.isTwoFactorEnabled) {
+      const tempToken = generateAccessToken({ ...basePayload, isTemp: true }, '10m');
 
       return {
         requiresTwoFactorSetup: true,
@@ -280,7 +264,7 @@ export class AuthService {
       if (!mapped) {
         throw Errors.badRequest(
           `Cannot resolve legacy role '${input.role}' for unit type '${unitType ?? 'unknown'}'. ` +
-          `Please send 'roleCode' instead.`
+            `Please send 'roleCode' instead.`
         );
       }
       resolvedRoleCode = mapped;
@@ -364,12 +348,19 @@ export class AuthService {
     // `role = NULL` would break any downstream consumer (BI tools, audit
     // queries, raw SQL reports) that assumes `role IS NOT NULL`. We would
     // rather fail loudly here than silently create unmapped rows.
-    const VALID_LEGACY_ROLES = ['SUPER_ADMIN', 'UNIT_ADMIN', 'TEACHER', 'STAFF', 'STUDENT', 'PARENT'];
+    const VALID_LEGACY_ROLES = [
+      'SUPER_ADMIN',
+      'UNIT_ADMIN',
+      'TEACHER',
+      'STAFF',
+      'STUDENT',
+      'PARENT',
+    ];
     const legacyRole = deriveLegacyRole(resolvedRoleCode);
     if (!VALID_LEGACY_ROLES.includes(legacyRole)) {
       throw Errors.badRequest(
         `RoleCode '${resolvedRoleCode}' has no legacy UserRole mapping. ` +
-        `Add a mapping to LEGACY_ROLE_EXPANSION in middleware/auth.ts or use an existing mapped role.`
+          `Add a mapping to LEGACY_ROLE_EXPANSION in middleware/auth.ts or use an existing mapped role.`
       );
     }
     const legacyRoleValue = legacyRole;
@@ -658,7 +649,9 @@ export class AuthService {
     }
 
     if (!user.isActive) {
-      throw Errors.badRequest('Akun ini nonaktif — aktifkan lebih dulu sebelum mengirim tautan reset');
+      throw Errors.badRequest(
+        'Akun ini nonaktif — aktifkan lebih dulu sebelum mengirim tautan reset'
+      );
     }
 
     // An identity row with no login cannot have its password reset.
@@ -1049,8 +1042,6 @@ export class AuthService {
     } = user;
     return safe;
   }
-
-
 }
 
 export const authService = new AuthService();

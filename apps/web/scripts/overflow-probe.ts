@@ -14,7 +14,8 @@ async function main() {
   const body = await r.json();
   const session = body?.data;
   const token = session?.accessToken ?? session?.token;
-  if (!token) throw new Error("no token: " + JSON.stringify(body).slice(0, 300));
+  if (!token)
+    throw new Error("no token: " + JSON.stringify(body).slice(0, 300));
 
   const origin = new URL(WEB).origin;
   const u = session.user;
@@ -50,7 +51,15 @@ async function main() {
     storageState: {
       cookies: [
         mk("accessToken", session.accessToken),
-        mk("auth-storage", encodeURIComponent(JSON.stringify({ state: { user: slimUser, isAuthenticated: true }, version: 0 }))),
+        mk(
+          "auth-storage",
+          encodeURIComponent(
+            JSON.stringify({
+              state: { user: slimUser, isAuthenticated: true },
+              version: 0,
+            }),
+          ),
+        ),
       ],
       origins: [
         {

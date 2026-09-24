@@ -60,14 +60,28 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  Plus, Trash2, Users, GraduationCap, Star, TrendingUp, ClipboardList,
+  Plus,
+  Trash2,
+  Users,
+  GraduationCap,
+  Star,
+  TrendingUp,
+  ClipboardList,
 } from "lucide-react";
 
 // ─── Schemas ────────────────────────────────────────
 const profileFormSchema = z.object({
   userId: z.string().min(1, "User wajib dipilih"),
   currentRole: z.string().min(1, "Role wajib"),
-  category: z.enum(["HIGH_POTENTIAL", "KEY_TALENT", "EMERGING", "SOLID_PERFORMER", "NEEDS_DEVELOPMENT"]).optional(),
+  category: z
+    .enum([
+      "HIGH_POTENTIAL",
+      "KEY_TALENT",
+      "EMERGING",
+      "SOLID_PERFORMER",
+      "NEEDS_DEVELOPMENT",
+    ])
+    .optional(),
   potentialRole: z.string().optional(),
   strengths: z.string().optional(),
   developmentAreas: z.string().optional(),
@@ -77,8 +91,20 @@ const profileFormSchema = z.object({
 const assessmentFormSchema = z.object({
   talentId: z.string().min(1, "Talent wajib"),
   period: z.string().min(1, "Periode wajib"),
-  performanceRating: z.enum(["OUTSTANDING", "EXCEEDS", "MEETS", "BELOW", "UNSATISFACTORY"]),
-  potentialRating: z.enum(["OUTSTANDING", "EXCEEDS", "MEETS", "BELOW", "UNSATISFACTORY"]),
+  performanceRating: z.enum([
+    "OUTSTANDING",
+    "EXCEEDS",
+    "MEETS",
+    "BELOW",
+    "UNSATISFACTORY",
+  ]),
+  potentialRating: z.enum([
+    "OUTSTANDING",
+    "EXCEEDS",
+    "MEETS",
+    "BELOW",
+    "UNSATISFACTORY",
+  ]),
   overallScore: z.string().min(1, "Skor wajib"),
   feedback: z.string().optional(),
   developmentPlan: z.string().optional(),
@@ -137,8 +163,15 @@ const ratingOptions = [
 ];
 
 const trainingCategories = [
-  "Pedagogik", "Manajerial", "Teknologi", "Kurikulum", "Soft Skills",
-  "Kepemimpinan", "Sosial", "Profesional", "Lainnya",
+  "Pedagogik",
+  "Manajerial",
+  "Teknologi",
+  "Kurikulum",
+  "Soft Skills",
+  "Kepemimpinan",
+  "Sosial",
+  "Profesional",
+  "Lainnya",
 ];
 
 // ─── Profile Dialog ─────────────────────────────────
@@ -146,7 +179,15 @@ function ProfileFormDialog({ onClose }: { onClose: () => void }) {
   const createProfile = useCreateProfile();
   const form = useForm<z.infer<typeof profileFormSchema>>({
     resolver: zodResolver(profileFormSchema),
-    defaultValues: { userId: "", currentRole: "", category: undefined, potentialRole: "", strengths: "", developmentAreas: "", careerAspiration: "" },
+    defaultValues: {
+      userId: "",
+      currentRole: "",
+      category: undefined,
+      potentialRole: "",
+      strengths: "",
+      developmentAreas: "",
+      careerAspiration: "",
+    },
   });
 
   const onSubmit = async (values: z.infer<typeof profileFormSchema>) => {
@@ -158,42 +199,117 @@ function ProfileFormDialog({ onClose }: { onClose: () => void }) {
     <DialogContent className="sm:max-w-[520px]">
       <DialogHeader>
         <DialogTitle>Tambah Profil Talenta</DialogTitle>
-        <DialogDescription>Daftarkan SDM ke dalam manajemen talenta.</DialogDescription>
+        <DialogDescription>
+          Daftarkan SDM ke dalam manajemen talenta.
+        </DialogDescription>
       </DialogHeader>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-          <FormField control={form.control} name="userId" render={({ field }) => (
-            <FormItem><FormLabel>User ID</FormLabel><FormControl><Input placeholder="UUID user" {...field} /></FormControl><FormMessage /></FormItem>
-          )} />
-          <div className="grid grid-cols-2 gap-4">
-            <FormField control={form.control} name="currentRole" render={({ field }) => (
-              <FormItem><FormLabel>Role Saat Ini</FormLabel><FormControl><Input placeholder="cth: Guru" {...field} /></FormControl><FormMessage /></FormItem>
-            )} />
-            <FormField control={form.control} name="category" render={({ field }) => (
+          <FormField
+            control={form.control}
+            name="userId"
+            render={({ field }) => (
               <FormItem>
-                <FormLabel>Kategori</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
-                  <FormControl><SelectTrigger><SelectValue placeholder="Opsional" /></SelectTrigger></FormControl>
-                  <SelectContent>
-                    {Object.entries(categoryLabel).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <FormLabel>User ID</FormLabel>
+                <FormControl>
+                  <Input placeholder="UUID user" {...field} />
+                </FormControl>
                 <FormMessage />
               </FormItem>
-            )} />
+            )}
+          />
+          <div className="grid grid-cols-2 gap-4">
+            <FormField
+              control={form.control}
+              name="currentRole"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Role Saat Ini</FormLabel>
+                  <FormControl>
+                    <Input placeholder="cth: Guru" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="category"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Kategori</FormLabel>
+                  <Select
+                    onValueChange={field.onChange}
+                    defaultValue={field.value}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Opsional" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {Object.entries(categoryLabel).map(([v, l]) => (
+                        <SelectItem key={v} value={v}>
+                          {l}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
           </div>
-          <FormField control={form.control} name="potentialRole" render={({ field }) => (
-            <FormItem><FormLabel>Potensi Jabatan (Opsional)</FormLabel><FormControl><Input placeholder="cth: Kepala Sekolah" {...field} /></FormControl><FormMessage /></FormItem>
-          )} />
-          <FormField control={form.control} name="strengths" render={({ field }) => (
-            <FormItem><FormLabel>Kekuatan (Opsional)</FormLabel><FormControl><Textarea rows={2} placeholder="Kekuatan utama…" {...field} /></FormControl><FormMessage /></FormItem>
-          )} />
-          <FormField control={form.control} name="developmentAreas" render={({ field }) => (
-            <FormItem><FormLabel>Area Pengembangan (Opsional)</FormLabel><FormControl><Textarea rows={2} placeholder="Area yang perlu dikembangkan…" {...field} /></FormControl><FormMessage /></FormItem>
-          )} />
+          <FormField
+            control={form.control}
+            name="potentialRole"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Potensi Jabatan (Opsional)</FormLabel>
+                <FormControl>
+                  <Input placeholder="cth: Kepala Sekolah" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="strengths"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Kekuatan (Opsional)</FormLabel>
+                <FormControl>
+                  <Textarea rows={2} placeholder="Kekuatan utama…" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="developmentAreas"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Area Pengembangan (Opsional)</FormLabel>
+                <FormControl>
+                  <Textarea
+                    rows={2}
+                    placeholder="Area yang perlu dikembangkan…"
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={onClose}>Batal</Button>
-            <Button type="submit" disabled={createProfile.isPending}>{createProfile.isPending ? "Menyimpan…" : "Simpan"}</Button>
+            <Button type="button" variant="outline" onClick={onClose}>
+              Batal
+            </Button>
+            <Button type="submit" disabled={createProfile.isPending}>
+              {createProfile.isPending ? "Menyimpan…" : "Simpan"}
+            </Button>
           </div>
         </form>
       </Form>
@@ -202,11 +318,26 @@ function ProfileFormDialog({ onClose }: { onClose: () => void }) {
 }
 
 // ─── Assessment Dialog ──────────────────────────────
-function AssessmentFormDialog({ profiles, onClose }: { profiles?: any[]; onClose: () => void }) {
+function AssessmentFormDialog({
+  profiles,
+  onClose,
+}: {
+  profiles?: any[];
+  onClose: () => void;
+}) {
   const createAssessment = useCreateAssessment();
   const form = useForm<z.infer<typeof assessmentFormSchema>>({
     resolver: zodResolver(assessmentFormSchema),
-    defaultValues: { talentId: "", period: "", performanceRating: "MEETS", potentialRating: "MEETS", overallScore: "", feedback: "", developmentPlan: "", assessedAt: "" },
+    defaultValues: {
+      talentId: "",
+      period: "",
+      performanceRating: "MEETS",
+      potentialRating: "MEETS",
+      overallScore: "",
+      feedback: "",
+      developmentPlan: "",
+      assessedAt: "",
+    },
   });
 
   const onSubmit = async (values: z.infer<typeof assessmentFormSchema>) => {
@@ -222,61 +353,157 @@ function AssessmentFormDialog({ profiles, onClose }: { profiles?: any[]; onClose
     <DialogContent className="sm:max-w-[560px]">
       <DialogHeader>
         <DialogTitle>Tambah Penilaian Talenta</DialogTitle>
-        <DialogDescription>Catat penilaian kinerja dan potensi SDM. Kategori talent akan diperbarui otomatis.</DialogDescription>
+        <DialogDescription>
+          Catat penilaian kinerja dan potensi SDM. Kategori talent akan
+          diperbarui otomatis.
+        </DialogDescription>
       </DialogHeader>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-          <FormField control={form.control} name="talentId" render={({ field }) => (
-            <FormItem>
-              <FormLabel>Talenta</FormLabel>
-              <Select onValueChange={field.onChange} defaultValue={field.value}>
-                <FormControl><SelectTrigger><SelectValue placeholder="Pilih talenta" /></SelectTrigger></FormControl>
-                <SelectContent>
-                  {profiles?.map((p) => <SelectItem key={p.id} value={p.id}>{p.user?.name} — {p.currentRole}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <FormMessage />
-            </FormItem>
-          )} />
+          <FormField
+            control={form.control}
+            name="talentId"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Talenta</FormLabel>
+                <Select
+                  onValueChange={field.onChange}
+                  defaultValue={field.value}
+                >
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Pilih talenta" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {profiles?.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.user?.name} — {p.currentRole}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
           <div className="grid grid-cols-2 gap-4">
-            <FormField control={form.control} name="period" render={({ field }) => (
-              <FormItem><FormLabel>Periode</FormLabel><FormControl><Input placeholder="2025 Semester 1" {...field} /></FormControl><FormMessage /></FormItem>
-            )} />
-            <FormField control={form.control} name="assessedAt" render={({ field }) => (
-              <FormItem><FormLabel>Tanggal</FormLabel><FormControl><Input type="date" {...field} /></FormControl><FormMessage /></FormItem>
-            )} />
+            <FormField
+              control={form.control}
+              name="period"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Periode</FormLabel>
+                  <FormControl>
+                    <Input placeholder="2025 Semester 1" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="assessedAt"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Tanggal</FormLabel>
+                  <FormControl>
+                    <Input type="date" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
           </div>
           <div className="grid grid-cols-3 gap-4">
-            <FormField control={form.control} name="performanceRating" render={({ field }) => (
-              <FormItem>
-                <FormLabel>Kinerja</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
-                  <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                  <SelectContent>{ratingOptions.map((r) => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}</SelectContent>
-                </Select>
-                <FormMessage />
-              </FormItem>
-            )} />
-            <FormField control={form.control} name="potentialRating" render={({ field }) => (
-              <FormItem>
-                <FormLabel>Potensi</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
-                  <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                  <SelectContent>{ratingOptions.map((r) => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}</SelectContent>
-                </Select>
-                <FormMessage />
-              </FormItem>
-            )} />
-            <FormField control={form.control} name="overallScore" render={({ field }) => (
-              <FormItem><FormLabel>Skor (0-100)</FormLabel><FormControl><Input type="number" min={0} max={100} {...field} /></FormControl><FormMessage /></FormItem>
-            )} />
+            <FormField
+              control={form.control}
+              name="performanceRating"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Kinerja</FormLabel>
+                  <Select
+                    onValueChange={field.onChange}
+                    defaultValue={field.value}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {ratingOptions.map((r) => (
+                        <SelectItem key={r.value} value={r.value}>
+                          {r.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="potentialRating"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Potensi</FormLabel>
+                  <Select
+                    onValueChange={field.onChange}
+                    defaultValue={field.value}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {ratingOptions.map((r) => (
+                        <SelectItem key={r.value} value={r.value}>
+                          {r.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="overallScore"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Skor (0-100)</FormLabel>
+                  <FormControl>
+                    <Input type="number" min={0} max={100} {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
           </div>
-          <FormField control={form.control} name="feedback" render={({ field }) => (
-            <FormItem><FormLabel>Feedback (Opsional)</FormLabel><FormControl><Textarea rows={2} {...field} /></FormControl><FormMessage /></FormItem>
-          )} />
+          <FormField
+            control={form.control}
+            name="feedback"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Feedback (Opsional)</FormLabel>
+                <FormControl>
+                  <Textarea rows={2} {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={onClose}>Batal</Button>
-            <Button type="submit" disabled={createAssessment.isPending}>{createAssessment.isPending ? "Menyimpan…" : "Simpan"}</Button>
+            <Button type="button" variant="outline" onClick={onClose}>
+              Batal
+            </Button>
+            <Button type="submit" disabled={createAssessment.isPending}>
+              {createAssessment.isPending ? "Menyimpan…" : "Simpan"}
+            </Button>
           </div>
         </form>
       </Form>
@@ -289,15 +516,30 @@ function TrainingFormDialog({ onClose }: { onClose: () => void }) {
   const createTraining = useCreateTraining();
   const form = useForm<z.infer<typeof trainingFormSchema>>({
     resolver: zodResolver(trainingFormSchema),
-    defaultValues: { title: "", description: "", category: "", trainer: "", startDate: "", endDate: "", maxParticipants: "", location: "" },
+    defaultValues: {
+      title: "",
+      description: "",
+      category: "",
+      trainer: "",
+      startDate: "",
+      endDate: "",
+      maxParticipants: "",
+      location: "",
+    },
   });
 
   const onSubmit = async (values: z.infer<typeof trainingFormSchema>) => {
     await createTraining.mutateAsync({
       ...values,
-      startDate: values.startDate ? new Date(values.startDate).toISOString() : undefined,
-      endDate: values.endDate ? new Date(values.endDate).toISOString() : undefined,
-      maxParticipants: values.maxParticipants ? Number(values.maxParticipants) : undefined,
+      startDate: values.startDate
+        ? new Date(values.startDate).toISOString()
+        : undefined,
+      endDate: values.endDate
+        ? new Date(values.endDate).toISOString()
+        : undefined,
+      maxParticipants: values.maxParticipants
+        ? Number(values.maxParticipants)
+        : undefined,
     });
     onClose();
   };
@@ -306,47 +548,133 @@ function TrainingFormDialog({ onClose }: { onClose: () => void }) {
     <DialogContent className="sm:max-w-[520px]">
       <DialogHeader>
         <DialogTitle>Tambah Program Pelatihan</DialogTitle>
-        <DialogDescription>Buat program pelatihan dan pengembangan SDM.</DialogDescription>
+        <DialogDescription>
+          Buat program pelatihan dan pengembangan SDM.
+        </DialogDescription>
       </DialogHeader>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-          <FormField control={form.control} name="title" render={({ field }) => (
-            <FormItem><FormLabel>Judul</FormLabel><FormControl><Input placeholder="cth: Pelatihan Kurikulum Merdeka" {...field} /></FormControl><FormMessage /></FormItem>
-          )} />
-          <div className="grid grid-cols-2 gap-4">
-            <FormField control={form.control} name="category" render={({ field }) => (
+          <FormField
+            control={form.control}
+            name="title"
+            render={({ field }) => (
               <FormItem>
-                <FormLabel>Kategori</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
-                  <FormControl><SelectTrigger><SelectValue placeholder="Pilih" /></SelectTrigger></FormControl>
-                  <SelectContent>{trainingCategories.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
-                </Select>
+                <FormLabel>Judul</FormLabel>
+                <FormControl>
+                  <Input
+                    placeholder="cth: Pelatihan Kurikulum Merdeka"
+                    {...field}
+                  />
+                </FormControl>
                 <FormMessage />
               </FormItem>
-            )} />
-            <FormField control={form.control} name="trainer" render={({ field }) => (
-              <FormItem><FormLabel>Trainer (Opsional)</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
-            )} />
+            )}
+          />
+          <div className="grid grid-cols-2 gap-4">
+            <FormField
+              control={form.control}
+              name="category"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Kategori</FormLabel>
+                  <Select
+                    onValueChange={field.onChange}
+                    defaultValue={field.value}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Pilih" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {trainingCategories.map((c) => (
+                        <SelectItem key={c} value={c}>
+                          {c}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="trainer"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Trainer (Opsional)</FormLabel>
+                  <FormControl>
+                    <Input {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <FormField control={form.control} name="startDate" render={({ field }) => (
-              <FormItem><FormLabel>Mulai</FormLabel><FormControl><Input type="date" {...field} /></FormControl><FormMessage /></FormItem>
-            )} />
-            <FormField control={form.control} name="endDate" render={({ field }) => (
-              <FormItem><FormLabel>Selesai</FormLabel><FormControl><Input type="date" {...field} /></FormControl><FormMessage /></FormItem>
-            )} />
+            <FormField
+              control={form.control}
+              name="startDate"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Mulai</FormLabel>
+                  <FormControl>
+                    <Input type="date" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="endDate"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Selesai</FormLabel>
+                  <FormControl>
+                    <Input type="date" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <FormField control={form.control} name="maxParticipants" render={({ field }) => (
-              <FormItem><FormLabel>Max Peserta</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>
-            )} />
-            <FormField control={form.control} name="location" render={({ field }) => (
-              <FormItem><FormLabel>Lokasi</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
-            )} />
+            <FormField
+              control={form.control}
+              name="maxParticipants"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Max Peserta</FormLabel>
+                  <FormControl>
+                    <Input type="number" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="location"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Lokasi</FormLabel>
+                  <FormControl>
+                    <Input {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={onClose}>Batal</Button>
-            <Button type="submit" disabled={createTraining.isPending}>{createTraining.isPending ? "Menyimpan…" : "Simpan"}</Button>
+            <Button type="button" variant="outline" onClick={onClose}>
+              Batal
+            </Button>
+            <Button type="submit" disabled={createTraining.isPending}>
+              {createTraining.isPending ? "Menyimpan…" : "Simpan"}
+            </Button>
           </div>
         </form>
       </Form>
@@ -355,12 +683,18 @@ function TrainingFormDialog({ onClose }: { onClose: () => void }) {
 }
 
 // ─── Succession Dialog ──────────────────────────────
-function SuccessionFormDialog({ onClose, initialData }: { onClose: () => void; initialData?: any }) {
+function SuccessionFormDialog({
+  onClose,
+  initialData,
+}: {
+  onClose: () => void;
+  initialData?: any;
+}) {
   const createSuccession = useCreateSuccession();
   const updateSuccession = useUpdateSuccession();
 
   const [selectedSuccessorId, setSelectedSuccessorId] = useState<string | null>(
-    initialData?.successorId || null
+    initialData?.successorId || null,
   );
 
   const isEdit = !!initialData;
@@ -373,13 +707,19 @@ function SuccessionFormDialog({ onClose, initialData }: { onClose: () => void; i
       priority: initialData?.priority || undefined,
       readinessLevel: initialData?.readinessLevel || "",
       notes: initialData?.notes || "",
-      targetDate: initialData?.targetDate ? new Date(initialData.targetDate).toISOString().split('T')[0] : ""
+      targetDate: initialData?.targetDate
+        ? new Date(initialData.targetDate).toISOString().split("T")[0]
+        : "",
     },
   });
 
   const { user } = useAuth();
-  const positionTitle = useWatch({ control: form.control, name: "positionTitle" });
-  const { data: suggestions, isLoading: loadingSuggestions } = useSuccessorSuggestions(positionTitle, user?.unitId);
+  const positionTitle = useWatch({
+    control: form.control,
+    name: "positionTitle",
+  });
+  const { data: suggestions, isLoading: loadingSuggestions } =
+    useSuccessorSuggestions(positionTitle, user?.unitId);
 
   useEffect(() => {
     form.reset({
@@ -387,7 +727,9 @@ function SuccessionFormDialog({ onClose, initialData }: { onClose: () => void; i
       priority: initialData?.priority || undefined,
       readinessLevel: initialData?.readinessLevel || "",
       notes: initialData?.notes || "",
-      targetDate: initialData?.targetDate ? new Date(initialData.targetDate).toISOString().split('T')[0] : ""
+      targetDate: initialData?.targetDate
+        ? new Date(initialData.targetDate).toISOString().split("T")[0]
+        : "",
     });
     setSelectedSuccessorId(initialData?.successorId || null);
   }, [initialData, form]);
@@ -396,7 +738,9 @@ function SuccessionFormDialog({ onClose, initialData }: { onClose: () => void; i
     const payload = {
       ...values,
       successorId: selectedSuccessorId,
-      targetDate: values.targetDate ? new Date(values.targetDate).toISOString() : undefined,
+      targetDate: values.targetDate
+        ? new Date(values.targetDate).toISOString()
+        : undefined,
     };
 
     if (isEdit) {
@@ -410,14 +754,29 @@ function SuccessionFormDialog({ onClose, initialData }: { onClose: () => void; i
   return (
     <DialogContent className="sm:max-w-[600px]">
       <DialogHeader>
-        <DialogTitle>{isEdit ? "Edit Rencana Suksesi" : "Tambah Rencana Suksesi"}</DialogTitle>
-        <DialogDescription>{isEdit ? "Perbarui" : "Buat"} rencana suksesi untuk posisi kunci di lembaga.</DialogDescription>
+        <DialogTitle>
+          {isEdit ? "Edit Rencana Suksesi" : "Tambah Rencana Suksesi"}
+        </DialogTitle>
+        <DialogDescription>
+          {isEdit ? "Perbarui" : "Buat"} rencana suksesi untuk posisi kunci di
+          lembaga.
+        </DialogDescription>
       </DialogHeader>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-          <FormField control={form.control} name="positionTitle" render={({ field }) => (
-            <FormItem><FormLabel>Jabatan</FormLabel><FormControl><Input placeholder="cth: Kepala Sekolah" {...field} /></FormControl><FormMessage /></FormItem>
-          )} />
+          <FormField
+            control={form.control}
+            name="positionTitle"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Jabatan</FormLabel>
+                <FormControl>
+                  <Input placeholder="cth: Kepala Sekolah" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
 
           {/*
             Kandidat dari mesin saran yang sama dengan /talenta/succession:
@@ -445,58 +804,118 @@ function SuccessionFormDialog({ onClose, initialData }: { onClose: () => void; i
                       }`}
                       onClick={() => {
                         setSelectedSuccessorId(s.talentProfileId);
-                        if (s.readiness === "READY_NOW") form.setValue("readinessLevel", "Siap Sekarang");
-                        else if (s.readiness === "READY_IN_1_YEAR") form.setValue("readinessLevel", "Siap 1-2 Tahun");
+                        if (s.readiness === "READY_NOW")
+                          form.setValue("readinessLevel", "Siap Sekarang");
+                        else if (s.readiness === "READY_IN_1_YEAR")
+                          form.setValue("readinessLevel", "Siap 1-2 Tahun");
                       }}
                     >
                       <div className="flex flex-col">
                         <span className="font-bold flex items-center gap-1">
                           {s.name}
-                          {s.shariaMatch && <CheckCircle2 className="h-3 w-3 text-green-600" />}
+                          {s.shariaMatch && (
+                            <CheckCircle2 className="h-3 w-3 text-green-600" />
+                          )}
                         </span>
-                        <span className="text-muted-foreground">{s.currentRole} • {s.category}</span>
+                        <span className="text-muted-foreground">
+                          {s.currentRole} • {s.category}
+                        </span>
                       </div>
-                      <Badge variant={selectedSuccessorId === s.talentProfileId ? "default" : "outline"} className="text-[10px]">
+                      <Badge
+                        variant={
+                          selectedSuccessorId === s.talentProfileId
+                            ? "default"
+                            : "outline"
+                        }
+                        className="text-[10px]"
+                      >
                         {s.matchScore}% Match
                       </Badge>
                     </div>
                   ))
                 ) : (
-                  <div className="text-[10px] text-muted-foreground italic text-center py-2">Belum ada kandidat yang cocok</div>
+                  <div className="text-[10px] text-muted-foreground italic text-center py-2">
+                    Belum ada kandidat yang cocok
+                  </div>
                 )}
               </div>
             </div>
           )}
 
           <div className="grid grid-cols-2 gap-4">
-            <FormField control={form.control} name="priority" render={({ field }) => (
+            <FormField
+              control={form.control}
+              name="priority"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Prioritas</FormLabel>
+                  <Select
+                    onValueChange={field.onChange}
+                    defaultValue={field.value}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Opsional" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="LOW">Rendah</SelectItem>
+                      <SelectItem value="MEDIUM">Sedang</SelectItem>
+                      <SelectItem value="HIGH">Tinggi</SelectItem>
+                      <SelectItem value="CRITICAL">Kritikal</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="targetDate"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Target Waktu</FormLabel>
+                  <FormControl>
+                    <Input type="date" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
+          <FormField
+            control={form.control}
+            name="readinessLevel"
+            render={({ field }) => (
               <FormItem>
-                <FormLabel>Prioritas</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
-                  <FormControl><SelectTrigger><SelectValue placeholder="Opsional" /></SelectTrigger></FormControl>
-                  <SelectContent>
-                    <SelectItem value="LOW">Rendah</SelectItem>
-                    <SelectItem value="MEDIUM">Sedang</SelectItem>
-                    <SelectItem value="HIGH">Tinggi</SelectItem>
-                    <SelectItem value="CRITICAL">Kritikal</SelectItem>
-                  </SelectContent>
-                </Select>
+                <FormLabel>Tingkat Kesiapan (Opsional)</FormLabel>
+                <FormControl>
+                  <Input placeholder="cth: Siap dalam 1 tahun" {...field} />
+                </FormControl>
                 <FormMessage />
               </FormItem>
-            )} />
-            <FormField control={form.control} name="targetDate" render={({ field }) => (
-              <FormItem><FormLabel>Target Waktu</FormLabel><FormControl><Input type="date" {...field} /></FormControl><FormMessage /></FormItem>
-            )} />
-          </div>
-          <FormField control={form.control} name="readinessLevel" render={({ field }) => (
-            <FormItem><FormLabel>Tingkat Kesiapan (Opsional)</FormLabel><FormControl><Input placeholder="cth: Siap dalam 1 tahun" {...field} /></FormControl><FormMessage /></FormItem>
-          )} />
-          <FormField control={form.control} name="notes" render={({ field }) => (
-            <FormItem><FormLabel>Catatan (Opsional)</FormLabel><FormControl><Textarea rows={2} {...field} /></FormControl><FormMessage /></FormItem>
-          )} />
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="notes"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Catatan (Opsional)</FormLabel>
+                <FormControl>
+                  <Textarea rows={2} {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={onClose}>Batal</Button>
-            <Button type="submit" disabled={isPending}>{isPending ? "Menyimpan…" : "Simpan"}</Button>
+            <Button type="button" variant="outline" onClick={onClose}>
+              Batal
+            </Button>
+            <Button type="submit" disabled={isPending}>
+              {isPending ? "Menyimpan…" : "Simpan"}
+            </Button>
           </div>
         </form>
       </Form>
@@ -511,7 +930,10 @@ function TalentaPageContent() {
   const [trainingDialogOpen, setTrainingDialogOpen] = useState(false);
   const [successionDialogOpen, setSuccessionDialogOpen] = useState(false);
   const [editingSuccession, setEditingSuccession] = useState<any>(null);
-  const [deleteState, setDeleteState] = useState<{ type: string; id: string } | null>(null);
+  const [deleteState, setDeleteState] = useState<{
+    type: string;
+    id: string;
+  } | null>(null);
 
   const { data: profiles, isLoading: loadingProfiles } = useTalentProfiles();
   const { data: trainings } = useTrainings();
@@ -529,7 +951,11 @@ function TalentaPageContent() {
     setDeleteState(null);
   };
 
-  const highPotentialCount = profiles?.filter((p: any) => p.category === "HIGH_POTENTIAL" || p.category === "KEY_TALENT").length || 0;
+  const highPotentialCount =
+    profiles?.filter(
+      (p: any) =>
+        p.category === "HIGH_POTENTIAL" || p.category === "KEY_TALENT",
+    ).length || 0;
 
   return (
     <div className="container mx-auto py-6 space-y-8">
@@ -542,26 +968,46 @@ function TalentaPageContent() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card className="border-l-4 border-l-blue-500">
           <CardHeader className="pb-2">
-            <CardDescription className="flex items-center gap-1"><Users className="h-3 w-3" /> Total Talenta</CardDescription>
-            <CardTitle className="text-3xl">{loadingProfiles ? <Skeleton className="h-9 w-12" /> : profiles?.length || 0}</CardTitle>
+            <CardDescription className="flex items-center gap-1">
+              <Users className="h-3 w-3" /> Total Talenta
+            </CardDescription>
+            <CardTitle className="text-3xl">
+              {loadingProfiles ? (
+                <Skeleton className="h-9 w-12" />
+              ) : (
+                profiles?.length || 0
+              )}
+            </CardTitle>
           </CardHeader>
         </Card>
         <Card className="border-l-4 border-l-purple-500">
           <CardHeader className="pb-2">
-            <CardDescription className="flex items-center gap-1"><Star className="h-3 w-3" /> High Potential + Key Talent</CardDescription>
-            <CardTitle className="text-3xl text-purple-600">{highPotentialCount}</CardTitle>
+            <CardDescription className="flex items-center gap-1">
+              <Star className="h-3 w-3" /> High Potential + Key Talent
+            </CardDescription>
+            <CardTitle className="text-3xl text-purple-600">
+              {highPotentialCount}
+            </CardTitle>
           </CardHeader>
         </Card>
         <Card className="border-l-4 border-l-green-500">
           <CardHeader className="pb-2">
-            <CardDescription className="flex items-center gap-1"><GraduationCap className="h-3 w-3" /> Program Pelatihan</CardDescription>
-            <CardTitle className="text-3xl text-green-600">{trainings?.length || 0}</CardTitle>
+            <CardDescription className="flex items-center gap-1">
+              <GraduationCap className="h-3 w-3" /> Program Pelatihan
+            </CardDescription>
+            <CardTitle className="text-3xl text-green-600">
+              {trainings?.length || 0}
+            </CardTitle>
           </CardHeader>
         </Card>
         <Card className="border-l-4 border-l-amber-500">
           <CardHeader className="pb-2">
-            <CardDescription className="flex items-center gap-1"><TrendingUp className="h-3 w-3" /> Rencana Suksesi</CardDescription>
-            <CardTitle className="text-3xl text-amber-600">{successions?.length || 0}</CardTitle>
+            <CardDescription className="flex items-center gap-1">
+              <TrendingUp className="h-3 w-3" /> Rencana Suksesi
+            </CardDescription>
+            <CardTitle className="text-3xl text-amber-600">
+              {successions?.length || 0}
+            </CardTitle>
           </CardHeader>
         </Card>
       </div>
@@ -577,37 +1023,63 @@ function TalentaPageContent() {
         {/* Profiles Tab */}
         <TabsContent value="profiles" className="space-y-4">
           <div className="flex justify-end gap-2">
-            <Dialog open={assessmentDialogOpen} onOpenChange={setAssessmentDialogOpen}>
+            <Dialog
+              open={assessmentDialogOpen}
+              onOpenChange={setAssessmentDialogOpen}
+            >
               <DialogTrigger asChild>
-                <Button variant="outline" className="gap-1"><ClipboardList className="h-4 w-4" /> Penilaian</Button>
+                <Button variant="outline" className="gap-1">
+                  <ClipboardList className="h-4 w-4" /> Penilaian
+                </Button>
               </DialogTrigger>
-              <AssessmentFormDialog profiles={profiles} onClose={() => setAssessmentDialogOpen(false)} />
+              <AssessmentFormDialog
+                profiles={profiles}
+                onClose={() => setAssessmentDialogOpen(false)}
+              />
             </Dialog>
-            <Dialog open={profileDialogOpen} onOpenChange={setProfileDialogOpen}>
+            <Dialog
+              open={profileDialogOpen}
+              onOpenChange={setProfileDialogOpen}
+            >
               <DialogTrigger asChild>
-                <Button className="gap-1"><Plus className="h-4 w-4" /> Tambah Profil</Button>
+                <Button className="gap-1">
+                  <Plus className="h-4 w-4" /> Tambah Profil
+                </Button>
               </DialogTrigger>
               <ProfileFormDialog onClose={() => setProfileDialogOpen(false)} />
             </Dialog>
           </div>
           {loadingProfiles ? (
-            <div className="space-y-3">{[1, 2, 3].map((i) => <Skeleton key={i} className="h-24 w-full" />)}</div>
+            <div className="space-y-3">
+              {[1, 2, 3].map((i) => (
+                <Skeleton key={i} className="h-24 w-full" />
+              ))}
+            </div>
           ) : profiles?.length === 0 ? (
-            <Card><CardContent className="py-12 text-center text-muted-foreground">
-              <Users className="h-12 w-12 mx-auto mb-3 text-muted-foreground/40" />
-              <p>Belum ada profil talenta.</p>
-            </CardContent></Card>
+            <Card>
+              <CardContent className="py-12 text-center text-muted-foreground">
+                <Users className="h-12 w-12 mx-auto mb-3 text-muted-foreground/40" />
+                <p>Belum ada profil talenta.</p>
+              </CardContent>
+            </Card>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {profiles?.map((profile: any) => {
                 const latestAssessment = profile.assessments?.[0];
                 return (
-                  <Card key={profile.id} className="hover:shadow-md transition-shadow group">
+                  <Card
+                    key={profile.id}
+                    className="hover:shadow-md transition-shadow group"
+                  >
                     <CardHeader>
                       <div className="flex items-start justify-between">
                         <div>
-                          <CardTitle className="text-lg">{profile.user?.name}</CardTitle>
-                          <CardDescription>{profile.currentRole} • {profile.unitRel?.name}</CardDescription>
+                          <CardTitle className="text-lg">
+                            {profile.user?.name}
+                          </CardTitle>
+                          <CardDescription>
+                            {profile.currentRole} • {profile.unitRel?.name}
+                          </CardDescription>
                         </div>
                         <div className="flex items-center gap-2">
                           {profile.category && (
@@ -616,8 +1088,17 @@ function TalentaPageContent() {
                             </Badge>
                           )}
                           <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-                            <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive"
-                              onClick={() => setDeleteState({ type: "profile", id: profile.id })}>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-8 w-8 text-destructive"
+                              onClick={() =>
+                                setDeleteState({
+                                  type: "profile",
+                                  id: profile.id,
+                                })
+                              }
+                            >
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
@@ -627,12 +1108,18 @@ function TalentaPageContent() {
                     <CardContent>
                       {latestAssessment ? (
                         <div className="flex gap-4 text-xs text-muted-foreground">
-                          <span>Kinerja: {latestAssessment.performanceRating}</span>
-                          <span>Potensi: {latestAssessment.potentialRating}</span>
+                          <span>
+                            Kinerja: {latestAssessment.performanceRating}
+                          </span>
+                          <span>
+                            Potensi: {latestAssessment.potentialRating}
+                          </span>
                           <span>Skor: {latestAssessment.overallScore}</span>
                         </div>
                       ) : (
-                        <span className="text-xs text-muted-foreground italic">Belum ada penilaian</span>
+                        <span className="text-xs text-muted-foreground italic">
+                          Belum ada penilaian
+                        </span>
                       )}
                       {profile.potentialRole && (
                         <div className="text-xs text-muted-foreground mt-1">
@@ -650,29 +1137,59 @@ function TalentaPageContent() {
         {/* Trainings Tab */}
         <TabsContent value="trainings" className="space-y-4">
           <div className="flex justify-end">
-            <Dialog open={trainingDialogOpen} onOpenChange={setTrainingDialogOpen}>
+            <Dialog
+              open={trainingDialogOpen}
+              onOpenChange={setTrainingDialogOpen}
+            >
               <DialogTrigger asChild>
-                <Button className="gap-1"><Plus className="h-4 w-4" /> Tambah Pelatihan</Button>
+                <Button className="gap-1">
+                  <Plus className="h-4 w-4" /> Tambah Pelatihan
+                </Button>
               </DialogTrigger>
-              <TrainingFormDialog onClose={() => setTrainingDialogOpen(false)} />
+              <TrainingFormDialog
+                onClose={() => setTrainingDialogOpen(false)}
+              />
             </Dialog>
           </div>
           {trainings?.length === 0 || !trainings ? (
-            <Card><CardContent className="py-8 text-center text-muted-foreground">Belum ada program pelatihan.</CardContent></Card>
+            <Card>
+              <CardContent className="py-8 text-center text-muted-foreground">
+                Belum ada program pelatihan.
+              </CardContent>
+            </Card>
           ) : (
             trainings?.map((training: any) => (
-              <Card key={training.id} className="hover:shadow-md transition-shadow group">
+              <Card
+                key={training.id}
+                className="hover:shadow-md transition-shadow group"
+              >
                 <CardHeader>
                   <div className="flex items-start justify-between">
                     <div>
-                      <CardTitle className="text-lg">{training.title}</CardTitle>
-                      <CardDescription>{training.category} {training.trainer && `• Trainer: ${training.trainer}`}</CardDescription>
+                      <CardTitle className="text-lg">
+                        {training.title}
+                      </CardTitle>
+                      <CardDescription>
+                        {training.category}{" "}
+                        {training.trainer && `• Trainer: ${training.trainer}`}
+                      </CardDescription>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Badge className="bg-blue-100 text-blue-700">{training.status || "PLANNED"}</Badge>
+                      <Badge className="bg-blue-100 text-blue-700">
+                        {training.status || "PLANNED"}
+                      </Badge>
                       <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive"
-                          onClick={() => setDeleteState({ type: "training", id: training.id })}>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8 text-destructive"
+                          onClick={() =>
+                            setDeleteState({
+                              type: "training",
+                              id: training.id,
+                            })
+                          }
+                        >
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
@@ -682,8 +1199,12 @@ function TalentaPageContent() {
                 <CardContent>
                   <div className="flex gap-4 text-xs text-muted-foreground">
                     <span>{training.enrollments?.length || 0} peserta</span>
-                    {training.maxParticipants && <span>Max: {training.maxParticipants}</span>}
-                    {training.location && <span>Lokasi: {training.location}</span>}
+                    {training.maxParticipants && (
+                      <span>Max: {training.maxParticipants}</span>
+                    )}
+                    {training.location && (
+                      <span>Lokasi: {training.location}</span>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -694,45 +1215,81 @@ function TalentaPageContent() {
         {/* Succession Tab */}
         <TabsContent value="succession" className="space-y-4">
           <div className="flex justify-end">
-            <Dialog open={successionDialogOpen} onOpenChange={(open) => {
-              if (!open) setEditingSuccession(null);
-              setSuccessionDialogOpen(open);
-            }}>
+            <Dialog
+              open={successionDialogOpen}
+              onOpenChange={(open) => {
+                if (!open) setEditingSuccession(null);
+                setSuccessionDialogOpen(open);
+              }}
+            >
               <DialogTrigger asChild>
-                <Button className="gap-1" onClick={() => setEditingSuccession(null)}><Plus className="h-4 w-4" /> Tambah Suksesi</Button>
+                <Button
+                  className="gap-1"
+                  onClick={() => setEditingSuccession(null)}
+                >
+                  <Plus className="h-4 w-4" /> Tambah Suksesi
+                </Button>
               </DialogTrigger>
               <SuccessionFormDialog
-                onClose={() => { setSuccessionDialogOpen(false); setEditingSuccession(null); }}
+                onClose={() => {
+                  setSuccessionDialogOpen(false);
+                  setEditingSuccession(null);
+                }}
                 initialData={editingSuccession}
               />
             </Dialog>
           </div>
           {successions?.length === 0 || !successions ? (
-            <Card><CardContent className="py-8 text-center text-muted-foreground">Belum ada rencana suksesi.</CardContent></Card>
+            <Card>
+              <CardContent className="py-8 text-center text-muted-foreground">
+                Belum ada rencana suksesi.
+              </CardContent>
+            </Card>
           ) : (
             successions?.map((succ: any) => (
-              <Card key={succ.id} className="hover:shadow-md transition-shadow group">
+              <Card
+                key={succ.id}
+                className="hover:shadow-md transition-shadow group"
+              >
                 <CardHeader>
                   <div className="flex items-start justify-between">
                     <div>
-                      <CardTitle className="text-lg">{succ.positionTitle}</CardTitle>
+                      <CardTitle className="text-lg">
+                        {succ.positionTitle}
+                      </CardTitle>
                       <CardDescription>
-                        {succ.currentHolder && `Pemegang: ${succ.currentHolder.name}`}
-                        {succ.successor?.user && ` → Kandidat: ${succ.successor.user.name}`}
+                        {succ.currentHolder &&
+                          `Pemegang: ${succ.currentHolder.name}`}
+                        {succ.successor?.user &&
+                          ` → Kandidat: ${succ.successor.user.name}`}
                       </CardDescription>
                     </div>
                     <div className="flex items-center gap-2">
-                      {succ.priority && <Badge className={priorityColor[succ.priority]}>{succ.priority}</Badge>}
+                      {succ.priority && (
+                        <Badge className={priorityColor[succ.priority]}>
+                          {succ.priority}
+                        </Badge>
+                      )}
                       <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
-                        <Button size="icon" variant="ghost" className="h-8 w-8 text-blue-500"
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8 text-blue-500"
                           onClick={() => {
                             setEditingSuccession(succ);
                             setSuccessionDialogOpen(true);
-                          }}>
+                          }}
+                        >
                           <Edit className="h-4 w-4" />
                         </Button>
-                        <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive"
-                          onClick={() => setDeleteState({ type: "succession", id: succ.id })}>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8 text-destructive"
+                          onClick={() =>
+                            setDeleteState({ type: "succession", id: succ.id })
+                          }
+                        >
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
@@ -742,8 +1299,17 @@ function TalentaPageContent() {
                 {(succ.readinessLevel || succ.targetDate) && (
                   <CardContent>
                     <div className="flex gap-4 text-xs text-muted-foreground">
-                      {succ.readinessLevel && <span>Kesiapan: {succ.readinessLevel}</span>}
-                      {succ.targetDate && <span>Target: {new Date(succ.targetDate).toLocaleDateString("id-ID")}</span>}
+                      {succ.readinessLevel && (
+                        <span>Kesiapan: {succ.readinessLevel}</span>
+                      )}
+                      {succ.targetDate && (
+                        <span>
+                          Target:{" "}
+                          {new Date(succ.targetDate).toLocaleDateString(
+                            "id-ID",
+                          )}
+                        </span>
+                      )}
                     </div>
                   </CardContent>
                 )}
@@ -762,7 +1328,11 @@ function TalentaPageContent() {
         cancelLabel="Batal"
         variant="destructive"
         onConfirm={handleDelete}
-        isLoading={deleteProfile.isPending || deleteTraining.isPending || deleteSuccession.isPending}
+        isLoading={
+          deleteProfile.isPending ||
+          deleteTraining.isPending ||
+          deleteSuccession.isPending
+        }
       />
     </div>
   );

@@ -56,7 +56,9 @@ export const createMedicationSchema = z.object({
   notes: z.string().optional(),
 });
 
-export const updateMedicationSchema = partialUpdateSchema(createMedicationSchema).omit({ unitId: true });
+export const updateMedicationSchema = partialUpdateSchema(createMedicationSchema).omit({
+  unitId: true,
+});
 
 export const queryMedicationSchema = z.object({
   page: z.coerce.number().int().positive().default(1),

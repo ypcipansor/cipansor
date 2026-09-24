@@ -53,9 +53,7 @@ router.post(
       const enrollment = await courseService.enroll(req.body);
       res.status(httpStatus.CREATED).send(enrollment);
     } catch (error) {
-      res
-        .status(httpStatus.BAD_REQUEST)
-        .send({ message: (error as Error).message });
+      res.status(httpStatus.BAD_REQUEST).send({ message: (error as Error).message });
     }
   }
 );

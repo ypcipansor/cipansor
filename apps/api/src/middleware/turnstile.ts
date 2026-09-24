@@ -82,5 +82,5 @@ export function requireTurnstile(action: string) {
         );
       })
       .catch((error) => next(error));
-  }
+  };
 }

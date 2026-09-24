@@ -89,10 +89,7 @@ export async function deleteCurriculum(id: string) {
   });
 }
 
-export async function addCurriculumSubject(
-  curriculumId: string,
-  data: AddCurriculumSubjectInput,
-) {
+export async function addCurriculumSubject(curriculumId: string, data: AddCurriculumSubjectInput) {
   return prisma.curriculumSubject.create({
     data: { curriculumId, ...data },
     include: { subject: { select: { id: true, code: true, name: true, type: true } } },
@@ -325,8 +322,17 @@ export async function markLessonPlanComplete(id: string) {
 // =====================================
 
 export async function getSchedules(query: ScheduleQuery) {
-  const { page, limit, unitId, academicYearId, classId, teacherId, studentId, dayOfWeek, isActive } =
-    query;
+  const {
+    page,
+    limit,
+    unitId,
+    academicYearId,
+    classId,
+    teacherId,
+    studentId,
+    dayOfWeek,
+    isActive,
+  } = query;
   const skip = (page - 1) * limit;
 
   const where: Prisma.ScheduleWhereInput = {};

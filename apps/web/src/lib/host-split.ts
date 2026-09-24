@@ -147,8 +147,7 @@ function underPublicPrefix(pathname: string): boolean {
  * single-host behaviour, so `pnpm dev` is unaffected.
  */
 export type HostSplitAction =
-  | { kind: "redirect"; host: string }
-  | { kind: "notFound" };
+  { kind: "redirect"; host: string } | { kind: "notFound" };
 
 export function hostSplitActionFor(
   host: string | null | undefined,

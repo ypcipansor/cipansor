@@ -690,11 +690,7 @@ router.post(
   validate(createEmployeeSchema),
   controller.createEmployee
 );
-router.get(
-  '/employees/:id',
-  authorize(...EMPLOYEE_READ_ROLES),
-  controller.getEmployeeById
-);
+router.get('/employees/:id', authorize(...EMPLOYEE_READ_ROLES), controller.getEmployeeById);
 router.put(
   '/employees/:id',
   authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),

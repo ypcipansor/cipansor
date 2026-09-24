@@ -371,7 +371,8 @@ export const transactionService = {
             tx
           );
 
-          const paymentAccount = data.paymentMethod === 'WALLET' ? walletLiabilityAccount : cashAccount;
+          const paymentAccount =
+            data.paymentMethod === 'WALLET' ? walletLiabilityAccount : cashAccount;
 
           if (salesAccount && paymentAccount) {
             await tx.journalEntry.create({
@@ -644,7 +645,8 @@ export const transactionService = {
           tx
         );
 
-        const paymentAccount = data.paymentMethod === 'WALLET' ? walletLiabilityAccount : cashAccount;
+        const paymentAccount =
+          data.paymentMethod === 'WALLET' ? walletLiabilityAccount : cashAccount;
 
         if (salesAccount && paymentAccount) {
           await tx.journalEntry.create({

@@ -261,9 +261,8 @@ export class CounselingService {
 
     // PSYCHOLOGICAL_OBSERVATION sessions default to confidential regardless
     // of the caller's input, since they contain sensitive mental health data.
-    const isConfidential = input.category === 'PSYCHOLOGICAL_OBSERVATION'
-      ? true
-      : (input.isConfidential ?? true);
+    const isConfidential =
+      input.category === 'PSYCHOLOGICAL_OBSERVATION' ? true : (input.isConfidential ?? true);
 
     const session = await prisma.counselingSession.create({
       data: {
@@ -359,9 +358,12 @@ export class CounselingService {
       // Reclassifying away from PO (e.g. PO → ACADEMIC) and setting
       // isConfidential=false would trigger a parent notification linking to
       // those historical sensitive notes. Once PO, always confidential.
-      const effectiveCategory = (input.category as CounselingCategory | undefined) || session.category;
-      const wasPsychologicalObservation = session.category === CounselingCategory.PSYCHOLOGICAL_OBSERVATION;
-      const isPsychologicalObservation = effectiveCategory === CounselingCategory.PSYCHOLOGICAL_OBSERVATION;
+      const effectiveCategory =
+        (input.category as CounselingCategory | undefined) || session.category;
+      const wasPsychologicalObservation =
+        session.category === CounselingCategory.PSYCHOLOGICAL_OBSERVATION;
+      const isPsychologicalObservation =
+        effectiveCategory === CounselingCategory.PSYCHOLOGICAL_OBSERVATION;
       if ((isPsychologicalObservation || wasPsychologicalObservation) && !input.isConfidential) {
         throw Errors.badRequest(
           'Sessions that are or were classified as PSYCHOLOGICAL_OBSERVATION cannot be marked as non-confidential'
@@ -373,7 +375,10 @@ export class CounselingService {
     // If the category is being changed TO PSYCHOLOGICAL_OBSERVATION, force
     // confidentiality regardless of whether isConfidential was provided.
     // This mirrors the create-time enforcement at createSession().
-    if (input.category === 'PSYCHOLOGICAL_OBSERVATION' && session.category !== CounselingCategory.PSYCHOLOGICAL_OBSERVATION) {
+    if (
+      input.category === 'PSYCHOLOGICAL_OBSERVATION' &&
+      session.category !== CounselingCategory.PSYCHOLOGICAL_OBSERVATION
+    ) {
       updateData.isConfidential = true;
     }
 
@@ -393,7 +398,7 @@ export class CounselingService {
         student: {
           include: {
             user: { select: { name: true } },
-          }
+          },
         },
         counselor: { include: { user: { select: { name: true } } } },
       },
@@ -405,7 +410,11 @@ export class CounselingService {
     // to avoid leaking parent relationship data in confidential sessions.
     // Wrapped in try/catch so a non-critical notification failure
     // does not cause the already-persisted session update to appear failed.
-    if (updated.status === CounselingStatus.COMPLETED && session.status !== CounselingStatus.COMPLETED && !updated.isConfidential) {
+    if (
+      updated.status === CounselingStatus.COMPLETED &&
+      session.status !== CounselingStatus.COMPLETED &&
+      !updated.isConfidential
+    ) {
       try {
         const studentWithParents = await prisma.student.findUnique({
           where: { id: updated.studentId },
@@ -413,7 +422,8 @@ export class CounselingService {
             parents: { select: { parentId: true, isPrimary: true } },
           },
         });
-        const primaryParent = studentWithParents?.parents.find(p => p.isPrimary) || studentWithParents?.parents[0];
+        const primaryParent =
+          studentWithParents?.parents.find((p) => p.isPrimary) || studentWithParents?.parents[0];
         if (primaryParent) {
           await createNotification({
             userId: primaryParent.parentId,
@@ -506,7 +516,10 @@ export class CounselingService {
       throw Errors.notFound('Note not found');
     }
 
-    if (currentUser.roleCode !== RoleCode.SUPER_ADMIN && note.session.unitId !== currentUser.unitId) {
+    if (
+      currentUser.roleCode !== RoleCode.SUPER_ADMIN &&
+      note.session.unitId !== currentUser.unitId
+    ) {
       throw Errors.forbidden('Access denied');
     }
 
@@ -537,7 +550,10 @@ export class CounselingService {
       throw Errors.notFound('Note not found');
     }
 
-    if (currentUser.roleCode !== RoleCode.SUPER_ADMIN && note.session.unitId !== currentUser.unitId) {
+    if (
+      currentUser.roleCode !== RoleCode.SUPER_ADMIN &&
+      note.session.unitId !== currentUser.unitId
+    ) {
       throw Errors.forbidden('Access denied');
     }
 

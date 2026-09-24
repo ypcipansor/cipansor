@@ -86,11 +86,7 @@ export async function addCurriculumSubject(req: Request, res: Response, next: Ne
   }
 }
 
-export async function removeCurriculumSubject(
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) {
+export async function removeCurriculumSubject(req: Request, res: Response, next: NextFunction) {
   try {
     const { id, subjectId } = req.params;
     const removed = await curriculumService.removeCurriculumSubject(id, subjectId);

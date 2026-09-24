@@ -10,10 +10,7 @@ import {
   roleRouteAccess,
   type LegacyRole,
 } from "./rbac";
-import {
-  getNavigationForRoleCode,
-  type NavGroup,
-} from "@/config/navigation";
+import { getNavigationForRoleCode, type NavGroup } from "@/config/navigation";
 import { DEMO_ACCOUNTS } from "@cipansor/shared";
 
 /**
@@ -59,7 +56,12 @@ describe("navigasi — filter roleCodes berjalan rekursif ke submenu", () => {
     // menangkapnya, karena super admin masih melihatnya. (Yayasan juga
     // menampung anak SUPER_ADMIN, tetapi induknya sendiri SUPER_ADMIN, jadi
     // admin unit memang tidak pernah melihatnya.)
-    for (const role of ["TKQ_ADMIN", "SDIT_ADMIN", "SMPIT_ADMIN", "SMAQ_ADMIN"]) {
+    for (const role of [
+      "TKQ_ADMIN",
+      "SDIT_ADMIN",
+      "SMPIT_ADMIN",
+      "SMAQ_ADMIN",
+    ]) {
       const hrefs = navHrefs(role);
       for (const parent of ["/settings", "/users"]) {
         expect(hrefs, `${role} kehilangan ${parent}`).toContain(parent);
@@ -154,7 +156,9 @@ describe("rbac — getEffectiveRole", () => {
       userRoles: [{ isPrimary: true, role: { code: "YAYASAN_KETUA" } }],
     };
     expect(getEffectiveRole(ketua)).toBe("UNIT_ADMIN");
-    expect(canAccessRoute(getEffectiveRole(ketua), "/perencanaan/abc")).toBe(true);
+    expect(canAccessRoute(getEffectiveRole(ketua), "/perencanaan/abc")).toBe(
+      true,
+    );
   });
 
   it("follows a role switch — the primary assignment moves, so does the bucket", () => {
@@ -259,9 +263,7 @@ describe("rbac — canAccessRoute", () => {
   });
 
   it("every non-super role has a non-empty allow list", () => {
-    (
-      Object.keys(roleRouteAccess) as LegacyRole[]
-    ).forEach((role) => {
+    (Object.keys(roleRouteAccess) as LegacyRole[]).forEach((role) => {
       expect(roleRouteAccess[role].length).toBeGreaterThan(0);
     });
   });
@@ -379,18 +381,21 @@ describe("navigation — every menu link is one its own role may open", () => {
   // Note this iterates ALL RoleCodes, not a sample. The sampled guards above
   // never covered a unit admin, so the admin navigation was only ever
   // exercised as SUPER_ADMIN, whose allowlist is ["*"] and cannot fail.
-  it.each(ALL_ROLE_CODES)("%s can open every link in its own menu", (roleCode) => {
-    const legacy = deriveLegacyRole(roleCode);
-    if (!legacy) return; // komite/alumni reach the app via user.role, not a bucket
+  it.each(ALL_ROLE_CODES)(
+    "%s can open every link in its own menu",
+    (roleCode) => {
+      const legacy = deriveLegacyRole(roleCode);
+      if (!legacy) return; // komite/alumni reach the app via user.role, not a bucket
 
-    const unopenable = [
-      ...new Set(
-        navHrefs(roleCode).filter((href) => !canAccessRoute(legacy, href)),
-      ),
-    ];
+      const unopenable = [
+        ...new Set(
+          navHrefs(roleCode).filter((href) => !canAccessRoute(legacy, href)),
+        ),
+      ];
 
-    expect(unopenable).toEqual([]);
-  });
+      expect(unopenable).toEqual([]);
+    },
+  );
 });
 
 describe("navigation — every app page is reachable from some menu", () => {
@@ -438,7 +443,8 @@ describe("navigation — every app page is reachable from some menu", () => {
         const isGroup = entry.name.startsWith("(") && entry.name.endsWith(")");
         const next = isGroup ? segments : [...segments, entry.name];
         const page = path.join(child, "page.tsx");
-        if (fs.existsSync(page)) found.push({ route: `/${next.join("/")}`, file: page });
+        if (fs.existsSync(page))
+          found.push({ route: `/${next.join("/")}`, file: page });
         walk(child, next);
       }
     };
@@ -447,9 +453,7 @@ describe("navigation — every app page is reachable from some menu", () => {
   }
 
   const menuHrefs = new Set(
-    ALL_ROLE_CODES.flatMap((roleCode) =>
-      navHrefs(roleCode),
-    ),
+    ALL_ROLE_CODES.flatMap((roleCode) => navHrefs(roleCode)),
   );
 
   it("no authenticated page is orphaned from every role's menu", () => {
@@ -459,9 +463,14 @@ describe("navigation — every app page is reachable from some menu", () => {
       .filter(({ route }) => !(route in NO_MENU_BY_DESIGN))
       .filter(({ route }) => !menuHrefs.has(route))
       // a sub-page is reachable as a tab/section of the hub above it
-      .filter(({ route }) => !menuHrefs.has(route.slice(0, route.lastIndexOf("/")) || "/"))
+      .filter(
+        ({ route }) =>
+          !menuHrefs.has(route.slice(0, route.lastIndexOf("/")) || "/"),
+      )
       // only pages that render the authenticated shell are menu candidates
-      .filter(({ file }) => fs.readFileSync(file, "utf8").includes("MainLayout"))
+      .filter(({ file }) =>
+        fs.readFileSync(file, "utf8").includes("MainLayout"),
+      )
       // ...or a page links straight to it, menu or no menu
       .filter(({ route }) => !linkedFrom(route))
       .map(({ route }) => route);
@@ -569,7 +578,8 @@ describe("navigation — every page renders the app shell", () => {
    * which the first version of this test skipped.
    */
   const NO_SHELL_BY_DESIGN: Record<string, string> = {
-    "/login": "the page you reach when you have no session to build a shell for",
+    "/login":
+      "the page you reach when you have no session to build a shell for",
     "/reset-password":
       "reached from an emailed link with no session — same reason as /login",
     "/unauthorized": "an error page; its own link back is the way out",
@@ -716,30 +726,34 @@ describe("a11y — exactly one <main> landmark, and the skip link reaches it", (
     );
   });
 
-  it("every page renders exactly one <main id=\"main-content\">", { timeout: 15000 }, () => {
-    // Zero means the skip link has no target and silently does nothing.
-    // Two means nested or duplicated landmarks and a duplicate id, so
-    // getElementById picks whichever comes first in the document.
-    const wrong = pageFiles(APP_DIR)
-      .filter((page) => !isRedirectStub(fs.readFileSync(page, "utf8")))
-      .map((page) => {
-        let count = landmarkCount(page);
-        let dir = path.dirname(page);
-        for (;;) {
-          const layout = path.join(dir, "layout.tsx");
-          if (layout !== ROOT_LAYOUT) count += landmarkCount(layout);
-          if (dir === APP_DIR) break;
-          dir = path.dirname(dir);
-        }
-        return { page: path.relative(APP_DIR, page), count };
-      })
-      .filter(({ count }) => count !== 1);
-    expect(wrong).toEqual([]);
-    // This test walks the whole src/app tree and follows every page's imports,
-    // so it can exceed vitest's default 5s timeout on larger route trees.
-  });
+  it(
+    'every page renders exactly one <main id="main-content">',
+    { timeout: 15000 },
+    () => {
+      // Zero means the skip link has no target and silently does nothing.
+      // Two means nested or duplicated landmarks and a duplicate id, so
+      // getElementById picks whichever comes first in the document.
+      const wrong = pageFiles(APP_DIR)
+        .filter((page) => !isRedirectStub(fs.readFileSync(page, "utf8")))
+        .map((page) => {
+          let count = landmarkCount(page);
+          let dir = path.dirname(page);
+          for (;;) {
+            const layout = path.join(dir, "layout.tsx");
+            if (layout !== ROOT_LAYOUT) count += landmarkCount(layout);
+            if (dir === APP_DIR) break;
+            dir = path.dirname(dir);
+          }
+          return { page: path.relative(APP_DIR, page), count };
+        })
+        .filter(({ count }) => count !== 1);
+      expect(wrong).toEqual([]);
+      // This test walks the whole src/app tree and follows every page's imports,
+      // so it can exceed vitest's default 5s timeout on larger route trees.
+    },
+  );
 
-  it("every <main> carries id=\"main-content\"", () => {
+  it('every <main> carries id="main-content"', () => {
     // The count above only sees landmarks that have the id, so a bare <main>
     // nested inside an id'd one would slip past it — which is what
     // spmb-form.tsx and donation-portal.tsx were doing. A <main> without the
@@ -775,7 +789,9 @@ describe("a11y — exactly one <main> landmark, and the skip link reaches it", (
       });
     const handRolled = walk(srcDir)
       .filter((f) =>
-        /href=\{?["'`]#main-content/.test(uncomment(fs.readFileSync(f, "utf8"))),
+        /href=\{?["'`]#main-content/.test(
+          uncomment(fs.readFileSync(f, "utf8")),
+        ),
       )
       .map((f) => path.relative(srcDir, f));
     expect(handRolled).toEqual([]);
@@ -785,12 +801,24 @@ describe("a11y — exactly one <main> landmark, and the skip link reaches it", (
     // The guard above only proves there is one skip link. This proves it
     // points somewhere: its default target and the id MainLayout renders.
     const skip = fs.readFileSync(
-      path.join(process.cwd(), "src", "components", "shared", "accessibility.tsx"),
+      path.join(
+        process.cwd(),
+        "src",
+        "components",
+        "shared",
+        "accessibility.tsx",
+      ),
       "utf8",
     );
     expect(skip).toMatch(/targetId\s*=\s*"main-content"/);
     const shell = fs.readFileSync(
-      path.join(process.cwd(), "src", "components", "layout", "main-layout.tsx"),
+      path.join(
+        process.cwd(),
+        "src",
+        "components",
+        "layout",
+        "main-layout.tsx",
+      ),
       "utf8",
     );
     expect(shell).toMatch(/<main\b[\s\S]{0,120}?id="main-content"/);
@@ -831,7 +859,13 @@ describe("a11y — the app shell leaves the <h1> to the page", () => {
     // Guards the other direction: demoting the header's heading only helps if
     // the page still has one, otherwise the pages have no <h1> at all.
     const src = fs.readFileSync(
-      path.join(process.cwd(), "src", "components", "shared", "page-header.tsx"),
+      path.join(
+        process.cwd(),
+        "src",
+        "components",
+        "shared",
+        "page-header.tsx",
+      ),
       "utf8",
     );
     expect(src).toMatch(/<h1[\s>]/);
@@ -851,7 +885,10 @@ describe("e2e selectors — no loose text= selector can collide with the sidebar
   const navTitles = ALL_ROLE_CODES.flatMap((rc) =>
     getNavigationForRoleCode(rc).flatMap((g) => [
       g.title,
-      ...g.items.flatMap((i) => [i.title, ...(i.children ?? []).map((c) => c.title)]),
+      ...g.items.flatMap((i) => [
+        i.title,
+        ...(i.children ?? []).map((c) => c.title),
+      ]),
     ]),
   )
     .filter((t): t is string => Boolean(t))
@@ -899,11 +936,15 @@ describe("e2e selectors — no loose text= selector can collide with the sidebar
     // Both had only ever passed because no label happened to match. Scope such
     // selectors to page.getByRole("main").
     const navs = ALL_ROLE_CODES.map((rc) => getNavigationForRoleCode(rc));
-    const groupTitles = [...new Set(navs.flatMap((groups) => groups.map((g) => g.title)))];
+    const groupTitles = [
+      ...new Set(navs.flatMap((groups) => groups.map((g) => g.title))),
+    ];
     const submenuTitles = [
       ...new Set(
         navs.flatMap((groups) =>
-          groups.flatMap((g) => g.items.flatMap((i) => (i.children ?? []).map((c) => c.title))),
+          groups.flatMap((g) =>
+            g.items.flatMap((i) => (i.children ?? []).map((c) => c.title)),
+          ),
         ),
       ),
     ];
@@ -937,7 +978,10 @@ describe("e2e selectors — no loose text= selector can collide with the sidebar
         for (const m of src.matchAll(re)) {
           let rx: RegExp;
           try {
-            rx = new RegExp(m[1].replace(/\\\//g, "/"), m[2].includes("i") ? "i" : "");
+            rx = new RegExp(
+              m[1].replace(/\\\//g, "/"),
+              m[2].includes("i") ? "i" : "",
+            );
           } catch {
             continue;
           }
@@ -1023,7 +1067,8 @@ describe("e-office menu coverage", () => {
    * user clicks their own sidebar and lands on /unauthorized.
    */
   it.each(INTERNAL)("%s is also allowed through to /e-office", (roleCode) => {
-    const legacy = roleCode === "SUPER_ADMIN" ? "SUPER_ADMIN" : deriveLegacyRole(roleCode);
+    const legacy =
+      roleCode === "SUPER_ADMIN" ? "SUPER_ADMIN" : deriveLegacyRole(roleCode);
     expect(legacy, `${roleCode} has no legacy role mapping`).toBeTruthy();
     expect(canAccessRoute(legacy as never, "/e-office")).toBe(true);
   });

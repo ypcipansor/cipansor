@@ -87,8 +87,12 @@ export function ActivityDialog({
       picId: editData?.picId || "none",
       budgetId: editData?.budgetId || "none",
       priority: editData?.priority || "MEDIUM",
-      startDate: editData?.startDate ? new Date(editData.startDate).toISOString().split("T")[0] : "",
-      endDate: editData?.endDate ? new Date(editData.endDate).toISOString().split("T")[0] : "",
+      startDate: editData?.startDate
+        ? new Date(editData.startDate).toISOString().split("T")[0]
+        : "",
+      endDate: editData?.endDate
+        ? new Date(editData.endDate).toISOString().split("T")[0]
+        : "",
       budget: editData?.budget ? String(editData.budget) : "",
     },
   });
@@ -98,10 +102,15 @@ export function ActivityDialog({
       ...values,
       objectiveId,
       picId: values.picId && values.picId !== "none" ? values.picId : null,
-      budgetId: values.budgetId && values.budgetId !== "none" ? values.budgetId : null,
+      budgetId:
+        values.budgetId && values.budgetId !== "none" ? values.budgetId : null,
       budget: values.budget ? Number(values.budget) : undefined,
-      startDate: values.startDate ? new Date(values.startDate).toISOString() : undefined,
-      endDate: values.endDate ? new Date(values.endDate).toISOString() : undefined,
+      startDate: values.startDate
+        ? new Date(values.startDate).toISOString()
+        : undefined,
+      endDate: values.endDate
+        ? new Date(values.endDate).toISOString()
+        : undefined,
     };
 
     if (isEdit) {
@@ -117,7 +126,9 @@ export function ActivityDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle>{isEdit ? "Edit Kegiatan" : "Tambah Kegiatan"}</DialogTitle>
+          <DialogTitle>
+            {isEdit ? "Edit Kegiatan" : "Tambah Kegiatan"}
+          </DialogTitle>
           <DialogDescription>
             Tentukan detail program atau kegiatan untuk sasaran ini.
           </DialogDescription>
@@ -132,7 +143,10 @@ export function ActivityDialog({
                 <FormItem>
                   <FormLabel>Nama Kegiatan</FormLabel>
                   <FormControl>
-                    <Input placeholder="cth: Pelatihan Guru Tahfidz" {...field} />
+                    <Input
+                      placeholder="cth: Pelatihan Guru Tahfidz"
+                      {...field}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -145,7 +159,10 @@ export function ActivityDialog({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Prioritas</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <Select
+                    onValueChange={field.onChange}
+                    defaultValue={field.value}
+                  >
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="Pilih prioritas" />
@@ -169,7 +186,10 @@ export function ActivityDialog({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Penanggung Jawab (PIC)</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <Select
+                    onValueChange={field.onChange}
+                    defaultValue={field.value}
+                  >
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="Pilih PIC" />
@@ -195,17 +215,23 @@ export function ActivityDialog({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Link ke Anggaran Keuangan (Finance)</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <Select
+                    onValueChange={field.onChange}
+                    defaultValue={field.value}
+                  >
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="Pilih anggaran" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="none">Tanpa Anggaran Keuangan</SelectItem>
+                      <SelectItem value="none">
+                        Tanpa Anggaran Keuangan
+                      </SelectItem>
                       {budgets?.map((b: any) => (
                         <SelectItem key={b.id} value={b.id}>
-                          {b.account?.code} - {b.account?.name} (Tersedia: Rp {Number(b.amount || 0).toLocaleString('id-ID')})
+                          {b.account?.code} - {b.account?.name} (Tersedia: Rp{" "}
+                          {Number(b.amount || 0).toLocaleString("id-ID")})
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -243,10 +269,17 @@ export function ActivityDialog({
             </div>
 
             <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+              >
                 Batal
               </Button>
-              <Button type="submit" disabled={createActivity.isPending || updateActivity.isPending}>
+              <Button
+                type="submit"
+                disabled={createActivity.isPending || updateActivity.isPending}
+              >
                 Simpan
               </Button>
             </div>

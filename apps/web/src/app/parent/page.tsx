@@ -189,9 +189,7 @@ export default function ParentDashboardPage() {
                     {child.name.charAt(0)}
                   </div>
                   <div className="flex-1">
-                    <CardTitle className="text-lg">
-                      {child.name}
-                    </CardTitle>
+                    <CardTitle className="text-lg">{child.name}</CardTitle>
                     <CardDescription>
                       <div className="flex flex-wrap gap-2 mt-1">
                         <Badge variant="secondary">{child.nis}</Badge>
@@ -267,12 +265,20 @@ export default function ParentDashboardPage() {
                 {/* Enhanced Analytics Section */}
                 <div className="mt-4 grid grid-cols-2 gap-2">
                   <div className="p-2 rounded-lg bg-indigo-50 border border-indigo-100 flex flex-col items-center justify-center">
-                    <p className="text-[10px] text-indigo-700 font-bold uppercase">Skor Holistik</p>
-                    <p className="text-lg font-black text-indigo-900">{summary?.holisticScore || '—'}</p>
+                    <p className="text-[10px] text-indigo-700 font-bold uppercase">
+                      Skor Holistik
+                    </p>
+                    <p className="text-lg font-black text-indigo-900">
+                      {summary?.holisticScore || "—"}
+                    </p>
                   </div>
                   <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-100 flex flex-col items-center justify-center">
-                    <p className="text-[10px] text-emerald-700 font-bold uppercase">Harmony Asrama</p>
-                    <p className="text-lg font-black text-emerald-900">{summary?.boardingHarmonyScore || '—'}%</p>
+                    <p className="text-[10px] text-emerald-700 font-bold uppercase">
+                      Harmony Asrama
+                    </p>
+                    <p className="text-lg font-black text-emerald-900">
+                      {summary?.boardingHarmonyScore || "—"}%
+                    </p>
                   </div>
                 </div>
 

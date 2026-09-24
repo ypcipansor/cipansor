@@ -12,7 +12,8 @@ export class TalentaService {
     userId: string;
     unitId: string;
     currentRole: string;
-    category?: 'HIGH_POTENTIAL' | 'KEY_TALENT' | 'EMERGING' | 'SOLID_PERFORMER' | 'NEEDS_DEVELOPMENT';
+    category?:
+      'HIGH_POTENTIAL' | 'KEY_TALENT' | 'EMERGING' | 'SOLID_PERFORMER' | 'NEEDS_DEVELOPMENT';
     potentialRole?: string;
     readinessLevel?: string;
     strengths?: string;
@@ -50,7 +51,12 @@ export class TalentaService {
         assessments: {
           orderBy: { assessedAt: 'desc' },
           take: 1,
-          select: { performanceRating: true, potentialRating: true, overallScore: true, assessedAt: true },
+          select: {
+            performanceRating: true,
+            potentialRating: true,
+            overallScore: true,
+            assessedAt: true,
+          },
         },
       },
       orderBy: { createdAt: 'desc' },
@@ -293,7 +299,11 @@ export class TalentaService {
    * Enhanced algorithm that considers keyword matches, training completion,
    * Sharia certification bonuses, and organizational position requirements.
    */
-  async suggestSuccessors(positionTitle: string, unitId: string | undefined, targetPositionId?: string) {
+  async suggestSuccessors(
+    positionTitle: string,
+    unitId: string | undefined,
+    targetPositionId?: string
+  ) {
     // 1. Fetch target position requirements if provided
     let targetRequirements: string[] = [];
     let targetRequirementLevels: Record<string, number> = {};
@@ -301,22 +311,22 @@ export class TalentaService {
     if (targetPositionId) {
       const position = await prisma.orgPosition.findUnique({
         where: { id: targetPositionId },
-        select: { requirements: true }
+        select: { requirements: true },
       });
 
       if (position?.requirements) {
         try {
           const parsed = JSON.parse(position.requirements);
           if (Array.isArray(parsed)) {
-            targetRequirements = parsed.map(r => String(r).trim());
+            targetRequirements = parsed.map((r) => String(r).trim());
           } else if (typeof parsed === 'object' && parsed !== null) {
-            targetRequirements = Object.keys(parsed).map(r => r.trim());
+            targetRequirements = Object.keys(parsed).map((r) => r.trim());
             targetRequirementLevels = Object.fromEntries(
               Object.entries(parsed).map(([k, v]) => [k.trim(), Number(v) || 4])
             );
           }
         } catch {
-          targetRequirements = position.requirements.split(',').map(r => r.trim());
+          targetRequirements = position.requirements.split(',').map((r) => r.trim());
         }
       }
     }
@@ -341,8 +351,8 @@ export class TalentaService {
         assessments: {
           orderBy: { assessedAt: 'desc' },
           take: 1,
-          select: { competencies: true, overallScore: true }
-        }
+          select: { competencies: true, overallScore: true },
+        },
       },
       orderBy: { updatedAt: 'desc' },
     });
@@ -353,132 +363,136 @@ export class TalentaService {
       .split(/\s+/)
       .filter((w) => w.length > 2);
 
-    return topTalents.map((t) => {
-      // a. Keyword Match Score (up to 10 pts)
-      const roleWords = (t.currentRole || '').toLowerCase();
-      const keywordMatches = positionKeywords.filter((kw) => roleWords.includes(kw)).length;
-      const keywordBonus = positionKeywords.length > 0
-        ? Math.round((keywordMatches / positionKeywords.length) * 10)
-        : 0;
+    return topTalents
+      .map((t) => {
+        // a. Keyword Match Score (up to 10 pts)
+        const roleWords = (t.currentRole || '').toLowerCase();
+        const keywordMatches = positionKeywords.filter((kw) => roleWords.includes(kw)).length;
+        const keywordBonus =
+          positionKeywords.length > 0
+            ? Math.round((keywordMatches / positionKeywords.length) * 10)
+            : 0;
 
-      // b. Training Bonus (up to 15 pts)
-      const completedTrainings = t.user.trainingEnrollments?.length || 0;
-      const trainingBonus = Math.min(15, completedTrainings * 5);
+        // b. Training Bonus (up to 15 pts)
+        const completedTrainings = t.user.trainingEnrollments?.length || 0;
+        const trainingBonus = Math.min(15, completedTrainings * 5);
 
-      // c. Sharia Match Bonus (10 pts)
-      const hasShariaTraining = t.user.trainingEnrollments?.some((te: any) =>
-        te.program?.category?.toLowerCase().includes('syariah') ||
-        te.program?.title?.toLowerCase().includes('syariah')
-      );
-      const shariaBonus = hasShariaTraining ? 10 : 0;
+        // c. Sharia Match Bonus (10 pts)
+        const hasShariaTraining = t.user.trainingEnrollments?.some(
+          (te: any) =>
+            te.program?.category?.toLowerCase().includes('syariah') ||
+            te.program?.title?.toLowerCase().includes('syariah')
+        );
+        const shariaBonus = hasShariaTraining ? 10 : 0;
 
-      // d. Competency Gap Score (up to 25 pts)
-      let competencyScore = 0;
-      if (targetRequirements.length > 0) {
-        const userCompetencies = (t.assessments[0]?.competencies as any) || {};
-        const gaps = targetRequirements.map(req => {
-          const userLevel = userCompetencies[req] ?? 0;
-          const targetLevel = targetRequirementLevels[req] || 4;
-          return Math.max(0, targetLevel - userLevel);
-        });
-        const averageGap = gaps.reduce((sum, g) => sum + g, 0) / gaps.length;
-        competencyScore = Math.max(0, 25 - (averageGap * 5));
-      }
+        // d. Competency Gap Score (up to 25 pts)
+        let competencyScore = 0;
+        if (targetRequirements.length > 0) {
+          const userCompetencies = (t.assessments[0]?.competencies as any) || {};
+          const gaps = targetRequirements.map((req) => {
+            const userLevel = userCompetencies[req] ?? 0;
+            const targetLevel = targetRequirementLevels[req] || 4;
+            return Math.max(0, targetLevel - userLevel);
+          });
+          const averageGap = gaps.reduce((sum, g) => sum + g, 0) / gaps.length;
+          competencyScore = Math.max(0, 25 - averageGap * 5);
+        }
 
-      // e. Base Score by Category - aligned with organization standards
-      const baseScore = t.category === 'HIGH_POTENTIAL' ? 80 : t.category === 'KEY_TALENT' ? 70 : 60;
+        // e. Base Score by Category - aligned with organization standards
+        const baseScore =
+          t.category === 'HIGH_POTENTIAL' ? 80 : t.category === 'KEY_TALENT' ? 70 : 60;
 
-      const totalMatchScore = Math.min(
-        100,
-        baseScore + keywordBonus + trainingBonus + shariaBonus + (competencyScore || 0)
-      );
+        const totalMatchScore = Math.min(
+          100,
+          baseScore + keywordBonus + trainingBonus + shariaBonus + (competencyScore || 0)
+        );
 
-      // Show the working. Every component except the base was silently zero in
-      // production — no completed trainings, no position requirements on
-      // record — so the total was just the category base and came back
-      // identical for "Kepala Sekolah", "Tukang Kebun" and a nonsense string
-      // alike, under a badge reading "AI Powered Recommendations". A number
-      // that cannot vary with the question is not an answer to it, and a
-      // succession decision is not a place to imply precision that isn't
-      // there. The caller now gets the parts and what was missing, so the UI
-      // can say "belum bisa dinilai" instead of drawing a confident bar.
-      const components = [
-        {
-          key: 'base',
-          label: 'Kategori talenta',
-          points: baseScore,
-          max: 80,
-          basis: t.category.replace(/_/g, ' '),
-          available: true,
-        },
-        {
-          key: 'roleRelevance',
-          label: 'Relevansi peran saat ini',
-          points: keywordBonus,
-          max: 10,
-          basis: t.currentRole || 'peran saat ini belum dicatat',
-          available: Boolean(t.currentRole),
-        },
-        {
-          key: 'training',
-          label: 'Pelatihan diselesaikan',
-          points: trainingBonus,
-          max: 15,
-          basis: `${completedTrainings} pelatihan selesai`,
-          available: completedTrainings > 0,
-        },
-        {
-          key: 'sharia',
-          label: 'Pelatihan syariah',
-          points: shariaBonus,
-          max: 10,
-          basis: hasShariaTraining ? 'terdeteksi' : 'tidak terdeteksi',
-          available: completedTrainings > 0,
-        },
-        {
-          key: 'competency',
-          label: 'Kesesuaian kompetensi',
-          points: Math.round(competencyScore),
-          max: 25,
-          basis:
-            targetRequirements.length > 0
-              ? `${targetRequirements.length} syarat jabatan dinilai`
-              : 'syarat jabatan belum dicatat',
-          available: targetRequirements.length > 0,
-        },
-      ];
+        // Show the working. Every component except the base was silently zero in
+        // production — no completed trainings, no position requirements on
+        // record — so the total was just the category base and came back
+        // identical for "Kepala Sekolah", "Tukang Kebun" and a nonsense string
+        // alike, under a badge reading "AI Powered Recommendations". A number
+        // that cannot vary with the question is not an answer to it, and a
+        // succession decision is not a place to imply precision that isn't
+        // there. The caller now gets the parts and what was missing, so the UI
+        // can say "belum bisa dinilai" instead of drawing a confident bar.
+        const components = [
+          {
+            key: 'base',
+            label: 'Kategori talenta',
+            points: baseScore,
+            max: 80,
+            basis: t.category.replace(/_/g, ' '),
+            available: true,
+          },
+          {
+            key: 'roleRelevance',
+            label: 'Relevansi peran saat ini',
+            points: keywordBonus,
+            max: 10,
+            basis: t.currentRole || 'peran saat ini belum dicatat',
+            available: Boolean(t.currentRole),
+          },
+          {
+            key: 'training',
+            label: 'Pelatihan diselesaikan',
+            points: trainingBonus,
+            max: 15,
+            basis: `${completedTrainings} pelatihan selesai`,
+            available: completedTrainings > 0,
+          },
+          {
+            key: 'sharia',
+            label: 'Pelatihan syariah',
+            points: shariaBonus,
+            max: 10,
+            basis: hasShariaTraining ? 'terdeteksi' : 'tidak terdeteksi',
+            available: completedTrainings > 0,
+          },
+          {
+            key: 'competency',
+            label: 'Kesesuaian kompetensi',
+            points: Math.round(competencyScore),
+            max: 25,
+            basis:
+              targetRequirements.length > 0
+                ? `${targetRequirements.length} syarat jabatan dinilai`
+                : 'syarat jabatan belum dicatat',
+            available: targetRequirements.length > 0,
+          },
+        ];
 
-      const missingInputs = components
-        .filter((c) => !c.available && c.key !== 'base')
-        .map((c) => c.label);
+        const missingInputs = components
+          .filter((c) => !c.available && c.key !== 'base')
+          .map((c) => c.label);
 
-      // True when nothing but the category moved the number, so the total is
-      // the base score wearing a percent sign. Deliberately not called
-      // "meaningful": this states a fact about the arithmetic rather than
-      // passing judgement. The role-keyword part CAN vary with the position —
-      // searching "Guru Tetap" would match this candidate — it simply scored
-      // zero for every title tried against the current data.
-      const scoreReflectsOnlyCategory = !components.some(
-        (c) => c.key !== 'base' && c.points > 0
-      );
+        // True when nothing but the category moved the number, so the total is
+        // the base score wearing a percent sign. Deliberately not called
+        // "meaningful": this states a fact about the arithmetic rather than
+        // passing judgement. The role-keyword part CAN vary with the position —
+        // searching "Guru Tetap" would match this candidate — it simply scored
+        // zero for every title tried against the current data.
+        const scoreReflectsOnlyCategory = !components.some((c) => c.key !== 'base' && c.points > 0);
 
-      return {
-        talentProfileId: t.id,
-        name: t.user.name,
-        currentRole: t.currentRole,
-        category: t.category,
-        // Derived from the category alone — not an independent judgement.
-        readiness: t.category === 'HIGH_POTENTIAL' ? 'READY_NOW' : 'READY_IN_1_YEAR',
-        readinessBasis: 'kategori talenta',
-        matchScore: Math.round(totalMatchScore),
-        scoreReflectsOnlyCategory,
-        components,
-        missingInputs,
-        shariaMatch: hasShariaTraining,
-        competencyMatch:
-          targetRequirements.length > 0 ? Math.round((competencyScore / 25) * 100) : null,
-      };
-    }).sort((a, b) => b.matchScore - a.matchScore).slice(0, 10);
+        return {
+          talentProfileId: t.id,
+          name: t.user.name,
+          currentRole: t.currentRole,
+          category: t.category,
+          // Derived from the category alone — not an independent judgement.
+          readiness: t.category === 'HIGH_POTENTIAL' ? 'READY_NOW' : 'READY_IN_1_YEAR',
+          readinessBasis: 'kategori talenta',
+          matchScore: Math.round(totalMatchScore),
+          scoreReflectsOnlyCategory,
+          components,
+          missingInputs,
+          shariaMatch: hasShariaTraining,
+          competencyMatch:
+            targetRequirements.length > 0 ? Math.round((competencyScore / 25) * 100) : null,
+        };
+      })
+      .sort((a, b) => b.matchScore - a.matchScore)
+      .slice(0, 10);
   }
 
   async updateSuccession(id: string, data: any) {
@@ -636,13 +650,20 @@ export class TalentaService {
 
     const validTotal = Object.values(distribution).reduce((sum, count) => sum + count, 0);
     const total = validTotal;
-    const percentages = Object.keys(distribution).reduce((acc, key) => {
-      acc[key] = validTotal > 0 ? Math.round((distribution[key] / validTotal) * 100) : 0;
-      return acc;
-    }, {} as Record<string, number>);
+    const percentages = Object.keys(distribution).reduce(
+      (acc, key) => {
+        acc[key] = validTotal > 0 ? Math.round((distribution[key] / validTotal) * 100) : 0;
+        return acc;
+      },
+      {} as Record<string, number>
+    );
 
     const ratingToScore: Record<string, number> = {
-      OUTSTANDING: 100, EXCEEDS: 80, MEETS: 60, BELOW: 40, UNSATISFACTORY: 20,
+      OUTSTANDING: 100,
+      EXCEEDS: 80,
+      MEETS: 60,
+      BELOW: 40,
+      UNSATISFACTORY: 20,
     };
 
     const validCategories = new Set(Object.keys(distribution));
@@ -655,8 +676,8 @@ export class TalentaService {
           id: p.id,
           name: p.user.name,
           currentRole: p.currentRole,
-          performanceScore: latest ? (ratingToScore[latest.performanceRating] || 0) : 0,
-          potentialScore: latest ? (ratingToScore[latest.potentialRating] || 0) : 0,
+          performanceScore: latest ? ratingToScore[latest.performanceRating] || 0 : 0,
+          potentialScore: latest ? ratingToScore[latest.potentialRating] || 0 : 0,
           category: p.category || 'SOLID_PERFORMER',
         };
       });
@@ -675,8 +696,10 @@ export class TalentaService {
     performance: string,
     potential: string
   ): 'HIGH_POTENTIAL' | 'KEY_TALENT' | 'EMERGING' | 'SOLID_PERFORMER' | 'NEEDS_DEVELOPMENT' {
-    const perfScore = { OUTSTANDING: 5, EXCEEDS: 4, MEETS: 3, BELOW: 2, UNSATISFACTORY: 1 }[performance] || 3;
-    const potScore = { OUTSTANDING: 5, EXCEEDS: 4, MEETS: 3, BELOW: 2, UNSATISFACTORY: 1 }[potential] || 3;
+    const perfScore =
+      { OUTSTANDING: 5, EXCEEDS: 4, MEETS: 3, BELOW: 2, UNSATISFACTORY: 1 }[performance] || 3;
+    const potScore =
+      { OUTSTANDING: 5, EXCEEDS: 4, MEETS: 3, BELOW: 2, UNSATISFACTORY: 1 }[potential] || 3;
     const combined = perfScore + potScore;
 
     if (combined >= 9) return 'HIGH_POTENTIAL';

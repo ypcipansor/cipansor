@@ -260,7 +260,8 @@ function NotificationDetailPageContent({ params }: PageProps) {
               </div>
               <div className="flex flex-wrap gap-2">
                 {notification.type && getTypeBadge(notification.type)}
-                {notification.priority && getPriorityBadge(notification.priority)}
+                {notification.priority &&
+                  getPriorityBadge(notification.priority)}
               </div>
             </div>
           </CardHeader>
@@ -300,9 +301,10 @@ function NotificationDetailPageContent({ params }: PageProps) {
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Status</span>
                 <Badge variant="outline">
-                  {(notification.status
-                    ? STATUS_LABELS[notification.status] ?? notification.status
-                    : "-")}
+                  {notification.status
+                    ? (STATUS_LABELS[notification.status] ??
+                      notification.status)
+                    : "-"}
                 </Badge>
               </div>
               <div className="flex justify-between text-sm">
@@ -455,7 +457,9 @@ function NotificationDetailPageContent({ params }: PageProps) {
   );
 }
 
-export default function NotificationDetailPage(props: Parameters<typeof NotificationDetailPageContent>[0]) {
+export default function NotificationDetailPage(
+  props: Parameters<typeof NotificationDetailPageContent>[0],
+) {
   return (
     <MainLayout>
       <NotificationDetailPageContent {...props} />

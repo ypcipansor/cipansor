@@ -182,9 +182,8 @@ export default function NewSanadPage() {
                                 key={enrollment.id}
                                 value={enrollment.id}
                               >
-                                {enrollment.student?.user?.name ||
-                                  "Unknown"}{" "}
-                                - {(enrollment.student as any)?.nis || "—"}
+                                {enrollment.student?.user?.name || "Unknown"} -{" "}
+                                {(enrollment.student as any)?.nis || "—"}
                               </SelectItem>
                             ))
                           )}

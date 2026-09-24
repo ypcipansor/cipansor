@@ -1,0 +1,81 @@
+# Release to production — run by hand, only when a release has been approved.
+#
+# Takes a commit SHA whose images the staging workflow already built, tested
+# and pushed, and points the production app at those exact images. Nothing is
+# rebuilt here: production runs byte-for-byte what staging ran.
+#
+# The api container applies pending migrations as it starts
+# (MIGRATE_ON_START=true), so the release procedure in docs/deploy-azure.md —
+# backup and pre-checks against the live data — happens BEFORE this runs.
+#
+#   gh workflow run deploy-production.yml -f sha=<commit>
+#
+# Signs in with OIDC as a separate identity that trusts only this repository's
+# `production` environment and may update only the production app.
+name: Deploy production
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Full 40-character commit SHA to release (its images must already be in the registry)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  ACR: cipansoracr
+  RESOURCE_GROUP: cipansor-prod
+  APP: cipansor-produksi
+  URL: https://cipansor.or.id
+  SHA: ${{ inputs.sha }}
+
+jobs:
+  deploy:
+    name: Release ${{ inputs.sha }}
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha }}
+          sparse-checkout: deploy/azure
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      # The full SHA is the image tag and what /health reports; a short one
+      # would match neither.
+      - name: Refuse a SHA that staging never built
+        run: |
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::sha must be the full 40-character commit SHA"; exit 1; }
+          for c in api web nginx; do
+            az acr repository show -n "$ACR" --image "cipansor-$c:$SHA" -o none \
+              || { echo "::error::cipansor-$c:$SHA is not in $ACR — release only what staging built"; exit 1; }
+          done
+
+      - name: Point the production containers at ${{ inputs.sha }}
+        run: |
+          # --target-port every time: `az webapp sitecontainers update` (CLI
+          # 2.90) writes whatever --target-port holds, so omitting it would
+          # erase the port and App Service could no longer reach nginx.
+          declare -A port=([api]=3001 [web]=3000 [nginx]=80)
+          for c in api web nginx; do
+            az webapp sitecontainers update -g "$RESOURCE_GROUP" -n "$APP" \
+              --container-name "$c" --image "$ACR.azurecr.io/cipansor-$c:$SHA" \
+              --target-port "${port[$c]}" -o none
+          done
+          az webapp restart -g "$RESOURCE_GROUP" -n "$APP"
+
+      - name: Wait until ${{ inputs.sha }} answers at ${{ env.URL }}
+        run: bash deploy/azure/wait-for-release.sh "$URL" "$SHA"

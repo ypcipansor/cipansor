@@ -209,9 +209,9 @@ async function getAttempt(
  */
 async function enterExam(page: Page) {
   await page.getByRole("button", { name: "Mulai Kerjakan" }).click();
-  await expect(
-    page.locator("[class*='select-none']").first(),
-  ).toBeVisible({ timeout: 15000 });
+  await expect(page.locator("[class*='select-none']").first()).toBeVisible({
+    timeout: 15000,
+  });
 }
 
 test.describe("CBT Take Exam (Student)", () => {

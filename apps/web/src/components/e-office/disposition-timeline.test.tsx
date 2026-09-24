@@ -45,8 +45,10 @@ describe("DispositionTimeline", () => {
   it("survives a disposition whose sender never arrived", () => {
     const { container } = render(
       <DispositionTimeline
-        dispositions={[{ ...AS_THE_API_SENDS_IT, sender: null, recipient: null }]}
-      />
+        dispositions={[
+          { ...AS_THE_API_SENDS_IT, sender: null, recipient: null },
+        ]}
+      />,
     );
     expect(container.textContent).toContain("Tidak diketahui");
     expect(container.textContent).toContain(AS_THE_API_SENDS_IT.instruction);
@@ -58,7 +60,7 @@ describe("DispositionTimeline", () => {
    */
   it("distinguishes an outstanding disposition from a finished one", () => {
     const { unmount } = render(
-      <DispositionTimeline dispositions={[AS_THE_API_SENDS_IT]} />
+      <DispositionTimeline dispositions={[AS_THE_API_SENDS_IT]} />,
     );
     expect(screen.getByText(/Menunggu ditindaklanjuti/)).toBeInTheDocument();
     unmount();
@@ -73,7 +75,7 @@ describe("DispositionTimeline", () => {
             notes: "Sudah dijawab dengan surat 440/…",
           },
         ]}
-      />
+      />,
     );
     expect(screen.getByText(/Selesai/)).toBeInTheDocument();
     expect(screen.getByText(/Sudah dijawab dengan surat/)).toBeInTheDocument();
@@ -83,15 +85,19 @@ describe("DispositionTimeline", () => {
   it("marks an overdue deadline, but not on a completed disposition", () => {
     const past = "2020-01-01T00:00:00.000Z";
     const { unmount, container } = render(
-      <DispositionTimeline dispositions={[{ ...AS_THE_API_SENDS_IT, deadline: past }]} />
+      <DispositionTimeline
+        dispositions={[{ ...AS_THE_API_SENDS_IT, deadline: past }]}
+      />,
     );
     expect(container.textContent).toContain("Lewat batas waktu");
     unmount();
 
     const done = render(
       <DispositionTimeline
-        dispositions={[{ ...AS_THE_API_SENDS_IT, deadline: past, status: "COMPLETED" }]}
-      />
+        dispositions={[
+          { ...AS_THE_API_SENDS_IT, deadline: past, status: "COMPLETED" },
+        ]}
+      />,
     );
     expect(done.container.textContent).not.toContain("Lewat batas waktu");
   });

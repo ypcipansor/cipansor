@@ -37,47 +37,50 @@ export function NewsSection({ locale }: { locale: Locale }) {
           {latestNews.map((item) => {
             const text = newsTextFor(locale, item.slug) ?? item;
             return (
-            <Card
-              key={item.slug}
-              className="flex flex-col overflow-hidden border-border bg-card pt-0"
-            >
-              <div className="relative aspect-[16/10]">
-                <Image
-                  src={item.image}
-                  alt={text.title}
-                  fill
-                  sizes="(max-width: 768px) 100vw, 33vw"
-                  className="object-cover"
-                />
-              </div>
-              <CardContent className="flex flex-1 flex-col gap-3 p-6">
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span className="rounded-full bg-primary/10 px-2 py-0.5 font-medium text-primary">
-                    {item.unit}
-                  </span>
-                  <time dateTime={item.date}>
-                    {dateFormatter.format(new Date(item.date))}
-                  </time>
+              <Card
+                key={item.slug}
+                className="flex flex-col overflow-hidden border-border bg-card pt-0"
+              >
+                <div className="relative aspect-[16/10]">
+                  <Image
+                    src={item.image}
+                    alt={text.title}
+                    fill
+                    sizes="(max-width: 768px) 100vw, 33vw"
+                    className="object-cover"
+                  />
                 </div>
-                <h3 className="font-semibold leading-snug text-foreground text-pretty">
-                  <Link href={`/berita/${item.slug}`} className="hover:text-primary">
-                    {text.title}
-                  </Link>
-                </h3>
-                <p className="flex-1 text-sm text-muted-foreground leading-relaxed">
-                  {text.excerpt}
-                </p>
-                {/* Without this the articles were unreachable from the
+                <CardContent className="flex flex-1 flex-col gap-3 p-6">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <span className="rounded-full bg-primary/10 px-2 py-0.5 font-medium text-primary">
+                      {item.unit}
+                    </span>
+                    <time dateTime={item.date}>
+                      {dateFormatter.format(new Date(item.date))}
+                    </time>
+                  </div>
+                  <h3 className="font-semibold leading-snug text-foreground text-pretty">
+                    <Link
+                      href={`/berita/${item.slug}`}
+                      className="hover:text-primary"
+                    >
+                      {text.title}
+                    </Link>
+                  </h3>
+                  <p className="flex-1 text-sm text-muted-foreground leading-relaxed">
+                    {text.excerpt}
+                  </p>
+                  {/* Without this the articles were unreachable from the
                     homepage — the cards showed an excerpt and stopped. */}
-                <Link
-                  href={`/berita/${item.slug}`}
-                  className="inline-flex items-center gap-1 text-sm font-medium text-primary underline-offset-4 hover:underline"
-                >
-                  {copy.readMore}
-                  <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-                </Link>
-              </CardContent>
-            </Card>
+                  <Link
+                    href={`/berita/${item.slug}`}
+                    className="inline-flex items-center gap-1 text-sm font-medium text-primary underline-offset-4 hover:underline"
+                  >
+                    {copy.readMore}
+                    <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+                  </Link>
+                </CardContent>
+              </Card>
             );
           })}
         </div>

@@ -26,7 +26,9 @@ export function DatePickerWithRange({
   setDate,
 }: DatePickerWithRangeProps) {
   return (
-    <div className={cn("grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2", className)}>
+    <div
+      className={cn("grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2", className)}
+    >
       <Popover>
         <PopoverTrigger asChild>
           <Button

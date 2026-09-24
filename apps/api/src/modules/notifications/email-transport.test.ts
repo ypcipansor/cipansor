@@ -33,6 +33,7 @@ function clearTransports() {
   (config.gmail as { serviceAccountEmail: string }).serviceAccountEmail = '';
   (config.gmail as { serviceAccountKey: string }).serviceAccountKey = '';
   (config.smtp as { host: string }).host = '';
+  (config.outboundMessages as { enabled: boolean }).enabled = true;
 }
 
 /**
@@ -97,6 +98,30 @@ describe('email transport selection', () => {
 
     expect(status.kind).toBe('smtp');
     expect(status.host).toBe(`smtp.gmail.com:${config.smtp.port}`);
+  });
+
+  it('sends nothing when outbound messages are switched off, even with both transports configured', async () => {
+    // The staging guard: a copy that inherits real Gmail and SMTP credentials
+    // must still land on the log-only path and never reach the network.
+    setGmailConfig();
+    (config.smtp as { host: string }).host = 'smtp.gmail.com';
+    (config.outboundMessages as { enabled: boolean }).enabled = false;
+    const fetchMock = vi.fn(async () => {
+      throw new Error('network must not be touched');
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    expect(describeEmailTransport().kind).toBe('log');
+    const result = await deliverEmail({
+      to: 'wali@example.test',
+      subject: 'Tagihan SPP',
+      html: '<p>Halo</p>',
+    });
+
+    expect(result.kind).toBe('log');
+    expect(result.delivered).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
   });
 
   it('always separates the From mailbox from the Reply-To mailbox', () => {
@@ -543,8 +568,34 @@ describe('htmlToText', () => {
       // Property check over a fixed pseudo-random corpus built from the pieces
       // every fusion case above is made of. 2,189 of 300k such inputs leaked a
       // `<tag>` before the unterminated-quote fix; the suite pins zero.
-      const pieces = ['<', '>', '!', '-', '/', '"', "'", '=', ' ', 'a', 's', 't', 'y', 'l', 'e', 'h', 'd',
-        'x', '<style', '</style>', '<head', '</head>', '<!--', '-->', '<script>', 'title="'];
+      const pieces = [
+        '<',
+        '>',
+        '!',
+        '-',
+        '/',
+        '"',
+        "'",
+        '=',
+        ' ',
+        'a',
+        's',
+        't',
+        'y',
+        'l',
+        'e',
+        'h',
+        'd',
+        'x',
+        '<style',
+        '</style>',
+        '<head',
+        '</head>',
+        '<!--',
+        '-->',
+        '<script>',
+        'title="',
+      ];
       let seed = 522;
       const next = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
       const leaks: string[] = [];

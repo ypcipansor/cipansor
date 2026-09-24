@@ -440,8 +440,11 @@ export class StudentIdCardService {
     // Kartu terbit atas nama unit santri sekarang, jadi yang tercetak NIS unit
     // itu (student_unit_identifiers), bukan nomor induk sekolah sebelumnya.
     const nisKartu =
-      (await nisForUnit(prisma, { id: student.id, unitId: student.unitId, nis: student.nis }, student.unitId)) ??
-      student.nis;
+      (await nisForUnit(
+        prisma,
+        { id: student.id, unitId: student.unitId, nis: student.nis },
+        student.unitId
+      )) ?? student.nis;
     const cardNumber = opts?.cardNumber ?? this.generateCardNumber(nisKartu, student.unit.type);
 
     // A preview of a student with no issued card must not ship a QR that looks

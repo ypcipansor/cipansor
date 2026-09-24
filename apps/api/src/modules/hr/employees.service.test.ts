@@ -57,7 +57,7 @@ describe('hr getEmployees', () => {
         skip: 10,
         take: 10,
         where: expect.objectContaining({ deletedAt: null }),
-      }),
+      })
     );
   });
 
@@ -70,7 +70,7 @@ describe('hr getEmployees', () => {
     expect(mocked.user.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({ role: 'STAFF' }),
-      }),
+      })
     );
   });
 
@@ -87,7 +87,7 @@ describe('hr getEmployees', () => {
           teacher: true,
           staff: true,
         }),
-      }),
+      })
     );
   });
 
@@ -140,7 +140,7 @@ describe('hr getEmployeeById', () => {
 
     expect(result).toMatchObject({ id: 'u-1' });
     expect(mocked.user.findUnique).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: 'u-1' } }),
+      expect.objectContaining({ where: { id: 'u-1' } })
     );
   });
 
@@ -174,7 +174,7 @@ describe('hr createEmployee', () => {
         role: 'STAFF',
         unitId: 'unit-1',
         position: 'Petugas',
-      }),
+      })
     ).rejects.toThrow(/already exists/i);
 
     expect(mocked.$transaction).not.toHaveBeenCalled();
@@ -188,7 +188,7 @@ describe('hr createEmployee', () => {
         user: { create: vi.fn().mockResolvedValue({ id: 'u-new' }) },
         teacher: { create: vi.fn() },
         staff: { create: txStaffCreate },
-      }),
+      })
     );
 
     await createEmployee({
@@ -206,7 +206,7 @@ describe('hr createEmployee', () => {
           position: 'Petugas Kesehatan',
           department: 'Kesehatan',
         }),
-      }),
+      })
     );
   });
 
@@ -217,7 +217,7 @@ describe('hr createEmployee', () => {
         user: { create: vi.fn().mockResolvedValue({ id: 'u-new' }) },
         teacher: { create: vi.fn() },
         staff: { create: vi.fn() },
-      }),
+      })
     );
 
     await expect(
@@ -226,7 +226,7 @@ describe('hr createEmployee', () => {
         email: 'sri@x.id',
         role: 'STAFF',
         unitId: 'unit-1',
-      }),
+      })
     ).rejects.toThrow(/position/i);
   });
 
@@ -239,7 +239,7 @@ describe('hr createEmployee', () => {
         user: { create: vi.fn().mockResolvedValue({ id: 'u-new' }) },
         teacher: { create: txTeacherCreate },
         staff: { create: txStaffCreate },
-      }),
+      })
     );
 
     await createEmployee({
@@ -275,7 +275,7 @@ describe('hr updateEmployee / deleteEmployee', () => {
         user: { update: txUserUpdate },
         teacher: { update: txTeacherUpdate },
         staff: { update: txStaffUpdate },
-      }),
+      })
     );
 
     await deleteEmployee('u-1');
@@ -284,21 +284,25 @@ describe('hr updateEmployee / deleteEmployee', () => {
       expect.objectContaining({
         where: { id: 'u-1' },
         data: expect.objectContaining({ deletedAt: expect.any(Date), isActive: false }),
-      }),
+      })
     );
     // NIP is released too, or a later employee cannot reuse the number.
     expect(txTeacherUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ nip: null }) }),
+      expect.objectContaining({ data: expect.objectContaining({ nip: null }) })
     );
     expect(txStaffUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ nip: null }) }),
+      expect.objectContaining({ data: expect.objectContaining({ nip: null }) })
     );
   });
 
   it('frees the email so the address can be reused', async () => {
     const txUserUpdate = vi.fn().mockResolvedValue({ id: 'u-1' });
     mocked.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) =>
-      fn({ user: { update: txUserUpdate }, teacher: { update: vi.fn() }, staff: { update: vi.fn() } }),
+      fn({
+        user: { update: txUserUpdate },
+        teacher: { update: vi.fn() },
+        staff: { update: vi.fn() },
+      })
     );
 
     await deleteEmployee('u-1');

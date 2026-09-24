@@ -75,9 +75,7 @@ export async function getEnrollmentForecast(unitId?: string): Promise<ForecastRe
 
   // Conditional fragments must be composed with Prisma.sql / Prisma.empty —
   // nesting prisma.$queryRaw inside another template produces invalid SQL.
-  const unitFilter = unitId
-    ? Prisma.sql`AND unit_id = ${unitId}`
-    : Prisma.empty;
+  const unitFilter = unitId ? Prisma.sql`AND unit_id = ${unitId}` : Prisma.empty;
   const monthlyEnrollments = await prisma.$queryRaw<Array<{ month: string; count: bigint }>>`
     SELECT
       TO_CHAR(created_at, 'YYYY-MM') as month,
@@ -310,9 +308,7 @@ export async function getTahfidzCompletionForecast(unitId?: string): Promise<{
   // who passed a `unitId`. The join goes through `students` because
   // `tahfidz_records` only carries `student_id`.
   const monthlyProgress = unitId
-    ? await prisma.$queryRaw<
-        Array<{ month: string; total_ayah: bigint; student_count: bigint }>
-      >`
+    ? await prisma.$queryRaw<Array<{ month: string; total_ayah: bigint; student_count: bigint }>>`
         SELECT 
           TO_CHAR(tr.recorded_at, 'YYYY-MM') as month,
           COALESCE(SUM(tr.total_ayah), 0)::bigint as total_ayah,
@@ -325,9 +321,7 @@ export async function getTahfidzCompletionForecast(unitId?: string): Promise<{
         GROUP BY TO_CHAR(tr.recorded_at, 'YYYY-MM')
         ORDER BY month
       `
-    : await prisma.$queryRaw<
-        Array<{ month: string; total_ayah: bigint; student_count: bigint }>
-      >`
+    : await prisma.$queryRaw<Array<{ month: string; total_ayah: bigint; student_count: bigint }>>`
         SELECT 
           TO_CHAR(recorded_at, 'YYYY-MM') as month,
           COALESCE(SUM(total_ayah), 0)::bigint as total_ayah,
@@ -413,7 +407,7 @@ export async function calculateCashFlowForecast(unitId?: string) {
       })
     : [];
 
-  const expenseBudgets = activeBudgets.filter(b => b.account.type === 'EXPENSE');
+  const expenseBudgets = activeBudgets.filter((b) => b.account.type === 'EXPENSE');
 
   // Aggregate overdue (past-due) outstanding amounts separately so they don't
   // silently fall outside the 6-month forecast window. Without this, an
@@ -440,9 +434,12 @@ export async function calculateCashFlowForecast(unitId?: string) {
     const monthStr = projectionDate.toISOString().slice(0, 7);
 
     const monthlyIncome = pendingInvoices
-      .filter(inv => {
+      .filter((inv) => {
         const d = new Date(inv.dueDate);
-        return d.getFullYear() === projectionDate.getFullYear() && d.getMonth() === projectionDate.getMonth();
+        return (
+          d.getFullYear() === projectionDate.getFullYear() &&
+          d.getMonth() === projectionDate.getMonth()
+        );
       })
       .reduce((sum, inv) => sum + (Number(inv.amount) - Number(inv.paidAmount)), 0);
 

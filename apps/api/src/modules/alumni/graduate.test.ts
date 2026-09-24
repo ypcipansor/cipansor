@@ -54,8 +54,13 @@ beforeEach(() => {
   db.student.findFirst.mockResolvedValue(santriSd());
   db.alumni.findFirst.mockResolvedValue(null);
   db.alumni.count.mockResolvedValue(3);
-  db.alumni.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'a1', ...data }));
-  db.studentUnitEnrollment.findMany.mockResolvedValue([{ id: 'sue-sd-2025', entryDate: new Date('2025-07-14') }]);
+  db.alumni.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
+    id: 'a1',
+    ...data,
+  }));
+  db.studentUnitEnrollment.findMany.mockResolvedValue([
+    { id: 'sue-sd-2025', entryDate: new Date('2025-07-14') },
+  ]);
 });
 
 afterEach(() => {
@@ -67,9 +72,18 @@ afterEach(() => {
 
 describe('meluluskan santri dari unitnya sekarang', () => {
   it('tahun lulus dari tanggal lulus, bukan students.graduate_year lama; kelas terakhir dari rombel aktif', async () => {
-    const alumni = await convertFromStudent('s1', { graduationDate: '2026-06-20T12:00:00.000Z' }, tuSd);
+    const alumni = await convertFromStudent(
+      's1',
+      { graduationDate: '2026-06-20T12:00:00.000Z' },
+      tuSd
+    );
 
-    expect(alumni).toMatchObject({ unitId: SD, graduationYear: 2026, lastClass: '6A', registrationNo: 'ALM-2026-0004' });
+    expect(alumni).toMatchObject({
+      unitId: SD,
+      graduationYear: 2026,
+      lastClass: '6A',
+      registrationNo: 'ALM-2026-0004',
+    });
     expect(db.student.update).toHaveBeenCalledWith({
       where: { id: 's1' },
       data: { status: 'alumni', graduateYear: 2026 },
@@ -113,7 +127,9 @@ describe('satu pintu kelulusan', () => {
   it('rute yang dipanggil tombol Luluskan ada dan dijaga peran pengelola alumni', () => {
     // Pasangannya di web: apps/web/src/hooks/use-students.test.tsx.
     const rute = fs.readFileSync(path.join(__dirname, 'alumni.routes.ts'), 'utf-8');
-    expect(rute).toMatch(/router\.post\('\/from-student\/:studentId', manageAlumni, controller\.convertFromStudent\)/);
+    expect(rute).toMatch(
+      /router\.post\('\/from-student\/:studentId', manageAlumni, controller\.convertFromStudent\)/
+    );
   });
 
   it('tidak ada jalur kelulusan massal tanpa penjaga lingkup unit dan riwayat', async () => {
@@ -124,7 +140,10 @@ describe('satu pintu kelulusan', () => {
 
 describe('basis data mengizinkan satu kelulusan per unit per tahun', () => {
   const schema = fs.readFileSync(path.join(__dirname, '../../../prisma/schema.prisma'), 'utf-8');
-  const modelAlumni = schema.slice(schema.indexOf('model Alumni {'), schema.indexOf('}', schema.indexOf('model Alumni {')));
+  const modelAlumni = schema.slice(
+    schema.indexOf('model Alumni {'),
+    schema.indexOf('}', schema.indexOf('model Alumni {'))
+  );
 
   it('schema: studentId tidak lagi unik sendirian; unik (studentId, unitId, graduationYear)', () => {
     const baris = modelAlumni.split('\n').find((l) => /^\s*studentId\s/.test(l)) ?? '';
@@ -134,11 +153,16 @@ describe('basis data mengizinkan satu kelulusan per unit per tahun', () => {
 
   it('migrasi membuang indeks unik lama dan membuat yang baru dengan nama yang dikira Prisma', () => {
     const sql = fs.readFileSync(
-      path.join(__dirname, '../../../prisma/migrations/20260914020000_alumni_per_unit/migration.sql'),
+      path.join(
+        __dirname,
+        '../../../prisma/migrations/20260914020000_alumni_per_unit/migration.sql'
+      ),
       'utf-8'
     );
     expect(sql).toMatch(/DROP INDEX IF EXISTS "alumni_student_id_key"/);
-    expect(sql).toMatch(/CREATE UNIQUE INDEX IF NOT EXISTS "alumni_student_id_unit_id_graduation_year_key"/);
+    expect(sql).toMatch(
+      /CREATE UNIQUE INDEX IF NOT EXISTS "alumni_student_id_unit_id_graduation_year_key"/
+    );
     // Hanya menambah/melonggarkan: image :rollback tetap jalan.
     expect(sql).not.toMatch(/DROP (TABLE|COLUMN)/i);
   });

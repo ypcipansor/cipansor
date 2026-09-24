@@ -9,9 +9,9 @@ vi.mock('@/utils/identity-document-store', async () => {
   // `orphanedIdentityDocuments` sengaja TIDAK dipalsukan: aturan yatimnya —
   // termasuk masa tenggang sehari — adalah bagian dari yang diuji di sini,
   // bukan latar yang boleh diganti.
-  const actual = await vi.importActual<
-    typeof import('@/utils/identity-document-store')
-  >('@/utils/identity-document-store');
+  const actual = await vi.importActual<typeof import('@/utils/identity-document-store')>(
+    '@/utils/identity-document-store'
+  );
   return {
     ...actual,
     deleteIdentityDocument: deleteMock,
@@ -19,10 +19,7 @@ vi.mock('@/utils/identity-document-store', async () => {
   };
 });
 
-import {
-  purgeIdentityDocuments,
-  IDENTITY_PURGE_AUDIT_ACTION,
-} from './identity-purge.job';
+import { purgeIdentityDocuments, IDENTITY_PURGE_AUDIT_ACTION } from './identity-purge.job';
 
 const DAY = 24 * 60 * 60 * 1000;
 const lama = () => new Date(Date.now() - 3 * DAY);
@@ -53,18 +50,12 @@ function fakeDisk(files: Array<{ fileName: string; modifiedAt: Date }>) {
  * panggilan. Menjawab menurut urutan akan tetap lulus walaupun kedua kueri itu
  * tertukar.
  */
-function fakePrisma(opts: {
-  expired?: any[];
-  referenced?: string[];
-  auditThrows?: boolean;
-}) {
+function fakePrisma(opts: { expired?: any[]; referenced?: string[]; auditThrows?: boolean }) {
   const referenced = new Set(opts.referenced ?? []);
-  const auditCreate = vi.fn(
-    async (_args: { data: Record<string, unknown> }) => {
-      if (opts.auditThrows) throw new Error('audit_logs tidak dapat ditulis');
-      return { id: 'a1' };
-    }
-  );
+  const auditCreate = vi.fn(async (_args: { data: Record<string, unknown> }) => {
+    if (opts.auditThrows) throw new Error('audit_logs tidak dapat ditulis');
+    return { id: 'a1' };
+  });
   const update = vi.fn(async ({ where }: any) => {
     for (const row of opts.expired ?? []) {
       if (row.userId === where.userId) referenced.delete(row.ktpFileName);
@@ -159,9 +150,7 @@ describe('purgeIdentityDocuments', () => {
   });
 
   it('berkas yang baru ditulis tidak disapu walau tidak dirujuk', async () => {
-    fakeDisk([
-      { fileName: 'baru-diunggah.jpg', modifiedAt: new Date() },
-    ]);
+    fakeDisk([{ fileName: 'baru-diunggah.jpg', modifiedAt: new Date() }]);
     const { prisma } = fakePrisma({ referenced: [] });
 
     const summary = await purgeIdentityDocuments(prisma);

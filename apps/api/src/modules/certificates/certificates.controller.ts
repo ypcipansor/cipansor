@@ -51,6 +51,6 @@ export const downloadCertificate = asyncHandler(async (req, res) => {
       pdfUrl: certificate.pdfUrl,
       verificationUrl: certificate.verificationUrl,
       downloadCount: updated.downloadCount,
-    }),
+    })
   );
 });

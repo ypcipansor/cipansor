@@ -3,7 +3,9 @@ import { z } from 'zod';
 export const createTalentProfileSchema = z.object({
   userId: z.string().uuid(),
   currentRole: z.string().min(1),
-  category: z.enum(['HIGH_POTENTIAL', 'KEY_TALENT', 'EMERGING', 'SOLID_PERFORMER', 'NEEDS_DEVELOPMENT']).optional(),
+  category: z
+    .enum(['HIGH_POTENTIAL', 'KEY_TALENT', 'EMERGING', 'SOLID_PERFORMER', 'NEEDS_DEVELOPMENT'])
+    .optional(),
   potentialRole: z.string().optional(),
   readinessLevel: z.string().optional(),
   strengths: z.string().optional(),
@@ -14,7 +16,9 @@ export const createTalentProfileSchema = z.object({
 
 export const updateTalentProfileSchema = z.object({
   currentRole: z.string().optional(),
-  category: z.enum(['HIGH_POTENTIAL', 'KEY_TALENT', 'EMERGING', 'SOLID_PERFORMER', 'NEEDS_DEVELOPMENT']).optional(),
+  category: z
+    .enum(['HIGH_POTENTIAL', 'KEY_TALENT', 'EMERGING', 'SOLID_PERFORMER', 'NEEDS_DEVELOPMENT'])
+    .optional(),
   potentialRole: z.string().nullable().optional(),
   readinessLevel: z.string().nullable().optional(),
   strengths: z.string().optional(),

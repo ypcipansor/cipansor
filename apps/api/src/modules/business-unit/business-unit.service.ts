@@ -98,14 +98,18 @@ export const businessUnitService = {
     });
   },
 
-  async update(id: string, unitId: string | undefined, data: Partial<{
-    name: string;
-    code: string;
-    type: BusinessUnitType;
-    description: string;
-    managerId: string;
-    isActive: boolean;
-  }>) {
+  async update(
+    id: string,
+    unitId: string | undefined,
+    data: Partial<{
+      name: string;
+      code: string;
+      type: BusinessUnitType;
+      description: string;
+      managerId: string;
+      isActive: boolean;
+    }>
+  ) {
     // Verify the business unit exists (and belongs to this unit when unitId is provided)
     const where: Prisma.BusinessUnitWhereInput = { id };
     if (unitId) where.unitId = unitId;
@@ -154,8 +158,14 @@ export const businessUnitService = {
       throw Errors.badRequest('Cannot delete business unit with existing transactions');
     }
 
-    if (bu._count.canteenCategories > 0 || bu._count.canteenItems > 0 || bu._count.laundryPricings > 0) {
-      throw Errors.badRequest('Cannot delete business unit with linked categories, items, or pricings. Remove them first.');
+    if (
+      bu._count.canteenCategories > 0 ||
+      bu._count.canteenItems > 0 ||
+      bu._count.laundryPricings > 0
+    ) {
+      throw Errors.badRequest(
+        'Cannot delete business unit with linked categories, items, or pricings. Remove them first.'
+      );
     }
 
     return prisma.businessUnit.delete({ where: { id } });
@@ -244,9 +254,10 @@ export const businessUnitService = {
         };
       });
 
-      const avgEfficiency = itemEfficiency.length > 0
-        ? itemEfficiency.reduce((sum, i) => sum + i.efficiencyScore, 0) / itemEfficiency.length
-        : 0;
+      const avgEfficiency =
+        itemEfficiency.length > 0
+          ? itemEfficiency.reduce((sum, i) => sum + i.efficiencyScore, 0) / itemEfficiency.length
+          : 0;
 
       return {
         unitId: bu.unitId,
@@ -261,7 +272,7 @@ export const businessUnitService = {
       unitId: bu.unitId,
       type: bu.type,
       overallEfficiency: 100,
-      message: 'Efficiency metrics currently only available for CANTEEN'
+      message: 'Efficiency metrics currently only available for CANTEEN',
     };
-  }
+  },
 };

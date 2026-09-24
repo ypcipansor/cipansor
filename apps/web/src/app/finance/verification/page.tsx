@@ -16,12 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ExternalLink, CheckCircle2, XCircle, ShieldCheck } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import {
@@ -214,7 +209,9 @@ function Queue({
 
 export default function PaymentVerificationPage() {
   const { user } = useAuthStore();
-  const isAdmin = ["SUPER_ADMIN", "UNIT_ADMIN"].includes(getEffectiveRole(user) || "");
+  const isAdmin = ["SUPER_ADMIN", "UNIT_ADMIN"].includes(
+    getEffectiveRole(user) || "",
+  );
 
   return (
     <MainLayout allowedRoles={["SUPER_ADMIN", "UNIT_ADMIN", "STAFF"]}>

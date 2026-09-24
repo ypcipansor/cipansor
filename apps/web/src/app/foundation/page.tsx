@@ -731,9 +731,7 @@ export default function FoundationPage() {
                   </div>
                   <p className="text-xs text-muted-foreground">
                     Bulan lalu:{" "}
-                    {formatCurrency(
-                      financialSummary?.lastMonth?.revenue || 0,
-                    )}
+                    {formatCurrency(financialSummary?.lastMonth?.revenue || 0)}
                   </p>
                 </CardContent>
               </Card>
@@ -752,9 +750,7 @@ export default function FoundationPage() {
                   </div>
                   <p className="text-xs text-muted-foreground">
                     Bulan lalu:{" "}
-                    {formatCurrency(
-                      financialSummary?.lastMonth?.expense || 0,
-                    )}
+                    {formatCurrency(financialSummary?.lastMonth?.expense || 0)}
                   </p>
                 </CardContent>
               </Card>
@@ -769,9 +765,7 @@ export default function FoundationPage() {
                   <div
                     className={`text-2xl font-bold ${(financialSummary?.currentMonth?.net || 0) >= 0 ? "text-green-600" : "text-red-600"}`}
                   >
-                    {formatCurrency(
-                      financialSummary?.currentMonth?.net || 0,
-                    )}
+                    {formatCurrency(financialSummary?.currentMonth?.net || 0)}
                   </div>
                   <p className="text-xs text-muted-foreground">
                     Selisih pemasukan dan pengeluaran

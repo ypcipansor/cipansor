@@ -29,9 +29,7 @@ describe('RolesService.switchRole', () => {
       expiresAt: new Date(Date.now() - 1000),
     } as any);
 
-    await expect(service.switchRole('u-1', 'assign-1')).rejects.toThrow(
-      /expired/i,
-    );
+    await expect(service.switchRole('u-1', 'assign-1')).rejects.toThrow(/expired/i);
 
     expect(mocked.userRoleAssignment.updateMany).not.toHaveBeenCalled();
     expect(mocked.userRoleAssignment.update).not.toHaveBeenCalled();

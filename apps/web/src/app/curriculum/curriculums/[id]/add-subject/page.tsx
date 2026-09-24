@@ -377,7 +377,9 @@ function AddSubjectToCurriculumPageContent({
   );
 }
 
-export default function AddSubjectToCurriculumPage(props: Parameters<typeof AddSubjectToCurriculumPageContent>[0]) {
+export default function AddSubjectToCurriculumPage(
+  props: Parameters<typeof AddSubjectToCurriculumPageContent>[0],
+) {
   return (
     <MainLayout>
       <AddSubjectToCurriculumPageContent {...props} />

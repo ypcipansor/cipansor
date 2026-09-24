@@ -24,10 +24,7 @@ import { resolveUnitId, seesAllUnits } from '@/utils/resolve-unit-id';
  * exists. Foundation-scoped roles are allowed through; everyone else stays
  * pinned to their own unit.
  */
-function canAccessProject(
-  req: Request,
-  project: { unitId: string } | null,
-): boolean {
+function canAccessProject(req: Request, project: { unitId: string } | null): boolean {
   if (!project) return false;
   if (seesAllUnits({ roleCode: req.user?.roleCode, role: req.user?.role })) {
     return true;

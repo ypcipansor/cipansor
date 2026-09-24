@@ -16,10 +16,7 @@ export type ExtracurricularCategory =
 export type ExtracurricularStatus = "ACTIVE" | "INACTIVE" | "ARCHIVED";
 
 export type EnrollmentStatus =
-  | "PENDING"
-  | "APPROVED"
-  | "REJECTED"
-  | "WITHDRAWN";
+  "PENDING" | "APPROVED" | "REJECTED" | "WITHDRAWN";
 
 export interface Extracurricular {
   id: string;

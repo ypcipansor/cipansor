@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -97,7 +103,11 @@ const useStatementOfActivities = (
 };
 
 // PSAK 109 — Laporan Sumber dan Penyaluran Dana ZISWAF
-const useZiswafReport = (unitId: string, startDate: string, endDate: string) => {
+const useZiswafReport = (
+  unitId: string,
+  startDate: string,
+  endDate: string,
+) => {
   return useQuery({
     queryKey: ["ziswaf-report", unitId, startDate, endDate],
     queryFn: async () => {
@@ -367,35 +377,33 @@ function FinanceReportsPageContent() {
                         </tr>
                       </thead>
                       <tbody>
-                        {realization.items.map(
-                          (item: any) => (
-                            <tr
-                              key={item.accountId}
-                              className="border-b hover:bg-muted/10"
+                        {realization.items.map((item: any) => (
+                          <tr
+                            key={item.accountId}
+                            className="border-b hover:bg-muted/10"
+                          >
+                            <td className="p-3 font-mono">{item.code}</td>
+                            <td className="p-3">{item.name}</td>
+                            <td className="p-3 text-right">
+                              {formatCurrency(item.budgetAmount)}
+                            </td>
+                            <td className="p-3 text-right">
+                              {formatCurrency(item.actualAmount)}
+                            </td>
+                            <td
+                              className={`p-3 text-right font-medium ${item.variance < 0 ? "text-red-600" : "text-green-600"}`}
                             >
-                              <td className="p-3 font-mono">{item.code}</td>
-                              <td className="p-3">{item.name}</td>
-                              <td className="p-3 text-right">
-                                {formatCurrency(item.budgetAmount)}
-                              </td>
-                              <td className="p-3 text-right">
-                                {formatCurrency(item.actualAmount)}
-                              </td>
-                              <td
-                                className={`p-3 text-right font-medium ${item.variance < 0 ? "text-red-600" : "text-green-600"}`}
+                              {formatCurrency(item.variance)}
+                            </td>
+                            <td className="p-3 text-center">
+                              <span
+                                className={`px-2 py-1 rounded text-xs ${item.percentage > 90 ? "bg-yellow-100 text-yellow-800" : "bg-green-100 text-green-800"}`}
                               >
-                                {formatCurrency(item.variance)}
-                              </td>
-                              <td className="p-3 text-center">
-                                <span
-                                  className={`px-2 py-1 rounded text-xs ${item.percentage > 90 ? "bg-yellow-100 text-yellow-800" : "bg-green-100 text-green-800"}`}
-                                >
-                                  {item.percentage.toFixed(1)}%
-                                </span>
-                              </td>
-                            </tr>
-                          ),
-                        )}
+                                {item.percentage.toFixed(1)}%
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
                       </tbody>
                     </table>
                   </div>

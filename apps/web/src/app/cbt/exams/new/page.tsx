@@ -36,7 +36,17 @@ import { getEffectiveRole } from "@/lib/rbac";
 const examSchema = z.object({
   title: z.string().min(3, "Judul minimal 3 karakter"),
   description: z.string().optional(),
-  type: z.enum(["DAILY_TEST", "QUIZ", "MIDTERM", "FINAL", "PRACTICAL", "PROJECT", "TAHFIDZ_TEST"]).default("MIDTERM"),
+  type: z
+    .enum([
+      "DAILY_TEST",
+      "QUIZ",
+      "MIDTERM",
+      "FINAL",
+      "PRACTICAL",
+      "PROJECT",
+      "TAHFIDZ_TEST",
+    ])
+    .default("MIDTERM"),
   unitId: z.string().min(1, "Unit harus diisi"),
   academicYearId: z.string().min(1, "Tahun Ajaran harus diisi"),
   subjectId: z.string().min(1, "Mata Pelajaran harus diisi"),
@@ -53,7 +63,9 @@ const examSchema = z.object({
 export default function NewExamPage() {
   const router = useRouter();
   const { user } = useAuthStore();
-  const isAdmin = getEffectiveRole(user) === "SUPER_ADMIN" || getEffectiveRole(user) === "UNIT_ADMIN";
+  const isAdmin =
+    getEffectiveRole(user) === "SUPER_ADMIN" ||
+    getEffectiveRole(user) === "UNIT_ADMIN";
 
   const createExam = useCreateExam();
   const { data: banksRes } = useQuestionBanks();
@@ -65,9 +77,13 @@ export default function NewExamPage() {
   const { data: teachersRes } = useTeachers({ limit: 100 });
 
   const banks = banksRes?.data || [];
-  const units = Array.isArray(unitsRes) ? unitsRes : ((unitsRes as any)?.data || []);
+  const units = Array.isArray(unitsRes)
+    ? unitsRes
+    : (unitsRes as any)?.data || [];
   const academicYears = academicYearsRes?.data || [];
-  const subjects = Array.isArray(subjectsRes) ? subjectsRes : ((subjectsRes as any)?.data || []);
+  const subjects = Array.isArray(subjectsRes)
+    ? subjectsRes
+    : (subjectsRes as any)?.data || [];
   const classes = classesRes?.data || [];
   const teachers = teachersRes?.data || [];
 
@@ -136,7 +152,10 @@ export default function NewExamPage() {
                       <FormItem>
                         <FormLabel>Judul Ujian</FormLabel>
                         <FormControl>
-                          <Input placeholder="Contoh: UTS Matematika Ganjil" {...field} />
+                          <Input
+                            placeholder="Contoh: UTS Matematika Ganjil"
+                            {...field}
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -149,20 +168,31 @@ export default function NewExamPage() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Tipe Ujian</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <Select
+                          onValueChange={field.onChange}
+                          defaultValue={field.value}
+                        >
                           <FormControl>
                             <SelectTrigger>
                               <SelectValue placeholder="Pilih Tipe Ujian" />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="DAILY_TEST">Ulangan Harian</SelectItem>
+                            <SelectItem value="DAILY_TEST">
+                              Ulangan Harian
+                            </SelectItem>
                             <SelectItem value="QUIZ">Kuis</SelectItem>
-                            <SelectItem value="MIDTERM">Ujian Tengah Semester (UTS)</SelectItem>
-                            <SelectItem value="FINAL">Ujian Akhir Semester (UAS)</SelectItem>
+                            <SelectItem value="MIDTERM">
+                              Ujian Tengah Semester (UTS)
+                            </SelectItem>
+                            <SelectItem value="FINAL">
+                              Ujian Akhir Semester (UAS)
+                            </SelectItem>
                             <SelectItem value="PRACTICAL">Praktik</SelectItem>
                             <SelectItem value="PROJECT">Proyek</SelectItem>
-                            <SelectItem value="TAHFIDZ_TEST">Ujian Tahfidz</SelectItem>
+                            <SelectItem value="TAHFIDZ_TEST">
+                              Ujian Tahfidz
+                            </SelectItem>
                           </SelectContent>
                         </Select>
                         <FormMessage />
@@ -178,7 +208,10 @@ export default function NewExamPage() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Unit</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <Select
+                          onValueChange={field.onChange}
+                          defaultValue={field.value}
+                        >
                           <FormControl>
                             <SelectTrigger>
                               <SelectValue placeholder="Pilih Unit" />
@@ -186,7 +219,9 @@ export default function NewExamPage() {
                           </FormControl>
                           <SelectContent>
                             {units.map((item: any) => (
-                              <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>
+                              <SelectItem key={item.id} value={item.id}>
+                                {item.name}
+                              </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
@@ -201,7 +236,10 @@ export default function NewExamPage() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Tahun Ajaran</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <Select
+                          onValueChange={field.onChange}
+                          defaultValue={field.value}
+                        >
                           <FormControl>
                             <SelectTrigger>
                               <SelectValue placeholder="Pilih Tahun Ajaran" />
@@ -209,7 +247,9 @@ export default function NewExamPage() {
                           </FormControl>
                           <SelectContent>
                             {academicYears.map((item: any) => (
-                              <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>
+                              <SelectItem key={item.id} value={item.id}>
+                                {item.name}
+                              </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
@@ -224,7 +264,10 @@ export default function NewExamPage() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Mata Pelajaran</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <Select
+                          onValueChange={field.onChange}
+                          defaultValue={field.value}
+                        >
                           <FormControl>
                             <SelectTrigger>
                               <SelectValue placeholder="Pilih Mata Pelajaran" />
@@ -232,7 +275,9 @@ export default function NewExamPage() {
                           </FormControl>
                           <SelectContent>
                             {subjects.map((item: any) => (
-                              <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>
+                              <SelectItem key={item.id} value={item.id}>
+                                {item.name}
+                              </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
@@ -247,7 +292,10 @@ export default function NewExamPage() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Kelas</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <Select
+                          onValueChange={field.onChange}
+                          defaultValue={field.value}
+                        >
                           <FormControl>
                             <SelectTrigger>
                               <SelectValue placeholder="Pilih Kelas" />
@@ -255,7 +303,9 @@ export default function NewExamPage() {
                           </FormControl>
                           <SelectContent>
                             {classes.map((item: any) => (
-                              <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>
+                              <SelectItem key={item.id} value={item.id}>
+                                {item.name}
+                              </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
@@ -271,7 +321,10 @@ export default function NewExamPage() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Guru Pengampu (Admin Only)</FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <Select
+                            onValueChange={field.onChange}
+                            defaultValue={field.value}
+                          >
                             <FormControl>
                               <SelectTrigger>
                                 <SelectValue placeholder="Pilih Guru" />

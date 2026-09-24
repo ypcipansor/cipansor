@@ -1,5 +1,5 @@
-import { Page } from '@playwright/test';
-import { apiLogin, injectSession, SEED_USERS, type SeedRole } from './auth-api';
+import { Page } from "@playwright/test";
+import { apiLogin, injectSession, SEED_USERS, type SeedRole } from "./auth-api";
 
 /**
  * Legacy auth helpers, now backed by REAL API authentication.
@@ -15,14 +15,14 @@ import { apiLogin, injectSession, SEED_USERS, type SeedRole } from './auth-api';
 
 /** Map the RoleCode strings the legacy specs pass to seed roles. */
 const ROLE_CODE_TO_SEED: Record<string, SeedRole> = {
-  SUPER_ADMIN: 'superAdmin',
-  UNIT_ADMIN: 'adminSdit',
-  SDIT_ADMIN: 'adminSdit',
-  TEACHER: 'teacher',
-  SDIT_GURU: 'teacher',
-  SDIT_SISWA: 'student',
-  PARENT: 'parent',
-  STUDENT: 'student',
+  SUPER_ADMIN: "superAdmin",
+  UNIT_ADMIN: "adminSdit",
+  SDIT_ADMIN: "adminSdit",
+  TEACHER: "teacher",
+  SDIT_GURU: "teacher",
+  SDIT_SISWA: "student",
+  PARENT: "parent",
+  STUDENT: "student",
 };
 
 function seedRoleFor(roleCode: string): SeedRole {
@@ -39,10 +39,13 @@ function seedRoleFor(roleCode: string): SeedRole {
  * Authenticate as the seed user for the given role code and land on the app
  * root. Kept for the legacy specs; equivalent to loginAs + goto('/').
  */
-export async function setupAuthenticatedPage(page: Page, roleCode: string = 'SUPER_ADMIN') {
+export async function setupAuthenticatedPage(
+  page: Page,
+  roleCode: string = "SUPER_ADMIN",
+) {
   const session = await apiLogin(SEED_USERS[seedRoleFor(roleCode)]);
   await injectSession(page, session);
-  await page.goto('/');
+  await page.goto("/");
 }
 
 /**
@@ -51,9 +54,16 @@ export async function setupAuthenticatedPage(page: Page, roleCode: string = 'SUP
  */
 export async function setupMockAuth(
   page: Page,
-  options: { roleCode?: string; role?: string; name?: string; realm?: string } = {},
+  options: {
+    roleCode?: string;
+    role?: string;
+    name?: string;
+    realm?: string;
+  } = {},
 ) {
-  const session = await apiLogin(SEED_USERS[seedRoleFor(options.roleCode ?? 'SUPER_ADMIN')]);
+  const session = await apiLogin(
+    SEED_USERS[seedRoleFor(options.roleCode ?? "SUPER_ADMIN")],
+  );
   await injectSession(page, session);
 }
 

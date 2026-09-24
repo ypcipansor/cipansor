@@ -97,7 +97,12 @@ export function ProtectedRoute({
     if (!user) return false;
 
     // If no restrictions, allow access
-    if (!allowedRoles && !allowedRoleCodes && !allowedRealms && !allowedPermissions) {
+    if (
+      !allowedRoles &&
+      !allowedRoleCodes &&
+      !allowedRealms &&
+      !allowedPermissions
+    ) {
       return true;
     }
 
@@ -152,7 +157,14 @@ export function ProtectedRoute({
     }
 
     return false;
-  }, [user, activeRole, allowedRoles, allowedRoleCodes, allowedRealms, allowedPermissions]);
+  }, [
+    user,
+    activeRole,
+    allowedRoles,
+    allowedRoleCodes,
+    allowedRealms,
+    allowedPermissions,
+  ]);
 
   useEffect(() => {
     if (user && !hasAccess) {

@@ -20,8 +20,14 @@ function mockReqRes(overrides: Partial<Request> = {}) {
   const res = {
     statusCode: 200,
     jsonPayload: undefined as unknown,
-    status(code: number) { (this as any).statusCode = code; return this; },
-    json(payload: unknown) { (this as any).jsonPayload = payload; return this; },
+    status(code: number) {
+      (this as any).statusCode = code;
+      return this;
+    },
+    json(payload: unknown) {
+      (this as any).jsonPayload = payload;
+      return this;
+    },
   } as unknown as Response & { statusCode: number; jsonPayload: any };
   return { req, res };
 }
@@ -43,7 +49,10 @@ describe('teacher-compliance controller', () => {
   it('update: 400 when the new NIK belongs to another teacher', async () => {
     (service.findTeacherById as any).mockResolvedValue({ id: 't1', nik: 'old' });
     (service.isNikTaken as any).mockResolvedValue(true);
-    const { req, res } = mockReqRes({ params: { teacherId: 't1' } as any, body: { nik: 'dupe' } as any });
+    const { req, res } = mockReqRes({
+      params: { teacherId: 't1' } as any,
+      body: { nik: 'dupe' } as any,
+    });
     await run(controller.update, req, res);
     expect((res as any).statusCode).toBe(400);
     expect((res as any).jsonPayload.message).toBe('NIK already exists');
@@ -53,7 +62,10 @@ describe('teacher-compliance controller', () => {
   it('update: persists and echoes the updated record', async () => {
     (service.findTeacherById as any).mockResolvedValue({ id: 't1', nik: 'n' });
     (service.updateCompliance as any).mockResolvedValue({ id: 't1', pangkat: 'IIIa' });
-    const { req, res } = mockReqRes({ params: { teacherId: 't1' } as any, body: { pangkat: 'IIIa' } as any });
+    const { req, res } = mockReqRes({
+      params: { teacherId: 't1' } as any,
+      body: { pangkat: 'IIIa' } as any,
+    });
     await run(controller.update, req, res);
     expect(service.updateCompliance).toHaveBeenCalledWith('t1', { pangkat: 'IIIa' });
     expect((res as any).jsonPayload.data).toEqual({ id: 't1', pangkat: 'IIIa' });

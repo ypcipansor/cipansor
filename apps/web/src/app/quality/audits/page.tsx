@@ -88,7 +88,10 @@ export default function QualityAuditsPage() {
           <div className="flex items-center gap-2">
             {isFoundationUser && (
               <Select value={selectedUnitId} onValueChange={setSelectedUnitId}>
-                <SelectTrigger className="w-full md:w-56" aria-label="Pilih unit">
+                <SelectTrigger
+                  className="w-full md:w-56"
+                  aria-label="Pilih unit"
+                >
                   <SelectValue placeholder="Pilih unit" />
                 </SelectTrigger>
                 <SelectContent>

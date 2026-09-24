@@ -7,7 +7,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
 } from "@/components/ui/dialog";
 import { useRequestRevocation, useRevokeLetter } from "@/hooks/use-esign";
 import { AlertTriangle, Send, Undo2 } from "lucide-react";
@@ -88,7 +92,7 @@ export function RevokeLetterDialog({
       toast.error(
         e?.response?.data?.error?.message ??
           e?.response?.data?.message ??
-          (canRevoke ? "Gagal mencabut naskah" : "Gagal mengirim permohonan")
+          (canRevoke ? "Gagal mencabut naskah" : "Gagal mengirim permohonan"),
       );
     }
   }
@@ -103,8 +107,14 @@ export function RevokeLetterDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-orange-700">
-            {canRevoke ? <Undo2 className="h-5 w-5" /> : <Send className="h-5 w-5" />}
-            {canRevoke ? "Pencabutan Naskah Dinas" : "Ajukan Pencabutan Naskah Dinas"}
+            {canRevoke ? (
+              <Undo2 className="h-5 w-5" />
+            ) : (
+              <Send className="h-5 w-5" />
+            )}
+            {canRevoke
+              ? "Pencabutan Naskah Dinas"
+              : "Ajukan Pencabutan Naskah Dinas"}
           </DialogTitle>
           <DialogDescription>
             {canRevoke ? (
@@ -115,7 +125,8 @@ export function RevokeLetterDialog({
               </>
             ) : (
               <>
-                Anda tidak berwenang mencabut naskah ini sendiri. {whoMayRevokeText}
+                Anda tidak berwenang mencabut naskah ini sendiri.{" "}
+                {whoMayRevokeText}
               </>
             )}
           </DialogDescription>
@@ -127,10 +138,10 @@ export function RevokeLetterDialog({
             <div className="space-y-1">
               <p className="font-medium">Alasan ini dibaca publik.</p>
               <p>
-                Siapa pun yang mengunggah berkas naskah ini ke halaman verifikasi
-                akan membacanya apa adanya. Tulislah keterangan yang memang
-                pantas dibaca umum — jangan memuat data pribadi atau hal yang
-                bersifat rahasia.
+                Siapa pun yang mengunggah berkas naskah ini ke halaman
+                verifikasi akan membacanya apa adanya. Tulislah keterangan yang
+                memang pantas dibaca umum — jangan memuat data pribadi atau hal
+                yang bersifat rahasia.
               </p>
             </div>
           </div>
@@ -174,7 +185,9 @@ export function RevokeLetterDialog({
             </div>
           ) : (
             <div className="space-y-1.5">
-              <Label htmlFor="revoke-attachment">Tautan berkas pendukung (opsional)</Label>
+              <Label htmlFor="revoke-attachment">
+                Tautan berkas pendukung (opsional)
+              </Label>
               <Input
                 id="revoke-attachment"
                 value={attachmentUrl}

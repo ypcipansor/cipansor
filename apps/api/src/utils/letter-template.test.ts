@@ -69,10 +69,7 @@ describe('konsep awal surat', () => {
    * menimbang.
    */
   it('surat keputusan menyusun konsideran sebelum diktum', () => {
-    const draft = renderTemplateDraft(
-      LetterType.SURAT_KEPUTUSAN,
-      LetterNature.PUBLIC
-    );
+    const draft = renderTemplateDraft(LetterType.SURAT_KEPUTUSAN, LetterNature.PUBLIC);
     const at = (re: RegExp) => draft.search(re);
 
     expect(at(/Menimbang/)).toBeGreaterThanOrEqual(0);
@@ -94,10 +91,7 @@ describe('konsep awal surat', () => {
    * kata itu. Menempelkannya ke baris lain membuatnya kembali rata kiri.
    */
   it('menempatkan MEMUTUSKAN sebagai alinea tersendiri', () => {
-    const draft = renderTemplateDraft(
-      LetterType.SURAT_KEPUTUSAN,
-      LetterNature.PUBLIC
-    );
+    const draft = renderTemplateDraft(LetterType.SURAT_KEPUTUSAN, LetterNature.PUBLIC);
     const paragraphs = draft.split(/\n\s*\n/).map((p) => p.trim());
     expect(paragraphs).toContain('MEMUTUSKAN:');
   });
@@ -114,10 +108,7 @@ describe('konsep awal surat', () => {
     expect(t.addressed).toBe(false);
     expect(t.title).toMatch(/^SURAT KEPUTUSAN KETUA YAYASAN/);
 
-    const draft = renderTemplateDraft(
-      LetterType.SURAT_KEPUTUSAN,
-      LetterNature.PUBLIC
-    );
+    const draft = renderTemplateDraft(LetterType.SURAT_KEPUTUSAN, LetterNature.PUBLIC);
     expect(draft).not.toMatch(/Yang bertanda tangan di bawah ini/);
   });
 
@@ -165,10 +156,7 @@ describe('konsep awal surat', () => {
   // a letter that goes up the ladder with "[NAMA]" in it wastes everyone's
   // turn and comes straight back down as a revision.
   it('melaporkan placeholder yang belum diisi', () => {
-    const draft = renderTemplateDraft(
-      LetterType.SURAT_KETERANGAN,
-      LetterNature.PUBLIC
-    );
+    const draft = renderTemplateDraft(LetterType.SURAT_KETERANGAN, LetterNature.PUBLIC);
     const left = remainingPlaceholders(draft);
     expect(left.length).toBeGreaterThan(0);
 

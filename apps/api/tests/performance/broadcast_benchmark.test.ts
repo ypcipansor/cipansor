@@ -34,7 +34,8 @@ vi.mock('../../src/modules/notifications/whatsapp.service', () => ({
 }));
 
 vi.mock('../../src/modules/notifications/notifications.service', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../src/modules/notifications/notifications.service')>();
+  const actual =
+    await importOriginal<typeof import('../../src/modules/notifications/notifications.service')>();
   return {
     ...actual,
     createNotification: vi.fn(),

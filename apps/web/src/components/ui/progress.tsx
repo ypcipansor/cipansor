@@ -34,7 +34,10 @@ const Progress = React.forwardRef<
       // "Received NaN for the children attribute". Clamp to 0-100.
       style={{
         transform: `translateX(-${
-          100 - (Number.isFinite(value) ? Math.min(100, Math.max(0, value as number)) : 0)
+          100 -
+          (Number.isFinite(value)
+            ? Math.min(100, Math.max(0, value as number))
+            : 0)
         }%)`,
       }}
     />

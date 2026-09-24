@@ -63,7 +63,13 @@ const assessmentSchema = z.object({
   period: z.string().min(1, "Periode wajib diisi (misal: Q1 2024)"),
   score: z.number().min(1).max(100),
   competencies: z.string().min(5, "Kompetensi wajib diisi"),
-  potential: z.enum(["OUTSTANDING", "EXCEEDS", "MEETS", "BELOW", "UNSATISFACTORY"]),
+  potential: z.enum([
+    "OUTSTANDING",
+    "EXCEEDS",
+    "MEETS",
+    "BELOW",
+    "UNSATISFACTORY",
+  ]),
   recommendation: z.string().optional(),
 });
 

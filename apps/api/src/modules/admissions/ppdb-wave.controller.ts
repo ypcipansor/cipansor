@@ -193,7 +193,8 @@ export const waveController = {
   async onboardRegistrant(req: Request, res: Response, next: NextFunction) {
     try {
       // Lazy load to avoid circular dependencies if any
-      const { StudentOnboardingOrchestrator } = await import('@/services/integration/student-onboarding.orchestrator');
+      const { StudentOnboardingOrchestrator } =
+        await import('@/services/integration/student-onboarding.orchestrator');
 
       // The route already validates the body with `onboardRegistrantSchema`
       // (see ppdb-wave.routes.ts), so `req.body` is fully shaped here.
@@ -233,7 +234,14 @@ export const waveController = {
           existingStudentId: data.existingStudentId,
         }
       );
-      res.status(200).json(ApiResponse.success(result, 'Registrant onboarded successfully (E2E Integration complete)'));
+      res
+        .status(200)
+        .json(
+          ApiResponse.success(
+            result,
+            'Registrant onboarded successfully (E2E Integration complete)'
+          )
+        );
     } catch (error: any) {
       next(error);
     }

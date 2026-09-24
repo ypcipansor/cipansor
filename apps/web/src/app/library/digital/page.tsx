@@ -19,10 +19,7 @@ export default function DigitalLibraryPage() {
     limit: 100,
     isDigital: true,
   });
-  const books = useMemo(
-    () => booksResponse?.data || [],
-    [booksResponse?.data],
-  );
+  const books = useMemo(() => booksResponse?.data || [], [booksResponse?.data]);
 
   // Real per-category counts derived from the loaded collection.
   const categoryCounts = useMemo(() => {
@@ -61,8 +58,8 @@ export default function DigitalLibraryPage() {
                 <Skeleton className="h-24" />
               ) : categoryCounts.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  Belum ada koleksi digital. Tandai buku sebagai digital dan
-                  isi tautan berkasnya dari modul Perpustakaan.
+                  Belum ada koleksi digital. Tandai buku sebagai digital dan isi
+                  tautan berkasnya dari modul Perpustakaan.
                 </p>
               ) : (
                 categoryCounts.map(([name, count]) => (

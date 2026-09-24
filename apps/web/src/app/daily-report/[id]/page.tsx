@@ -30,11 +30,7 @@ import { Separator } from "@/components/ui/separator";
 import { useDailyReport } from "@/hooks/use-daily-report";
 
 import { MainLayout } from "@/components/layout";
-function DailyReportDetailPageContent({
-  params,
-}: {
-  params: { id: string };
-}) {
+function DailyReportDetailPageContent({ params }: { params: { id: string } }) {
   const router = useRouter();
   const { data: report, isLoading } = useDailyReport(params.id);
 

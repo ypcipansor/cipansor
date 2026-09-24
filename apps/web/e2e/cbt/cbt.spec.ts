@@ -1,5 +1,10 @@
 import { test, expect } from "@playwright/test";
-import { apiLogin, apiRequest, injectSession, SEED_USERS } from "../helpers/auth-api";
+import {
+  apiLogin,
+  apiRequest,
+  injectSession,
+  SEED_USERS,
+} from "../helpers/auth-api";
 
 interface SeedExam {
   id: string;
@@ -23,8 +28,12 @@ test.describe("CBT Exams & Grading", () => {
     expect(exam, "seed should provide at least one exam").toBeTruthy();
 
     await page.goto("/cbt/exams");
-    await expect(page.getByRole("heading", { name: /jadwal ujian/i })).toBeVisible();
-    await expect(page.getByText(exam!.title).first()).toBeVisible({ timeout: 15000 });
+    await expect(
+      page.getByRole("heading", { name: /jadwal ujian/i }),
+    ).toBeVisible();
+    await expect(page.getByText(exam!.title).first()).toBeVisible({
+      timeout: 15000,
+    });
   });
 
   test("Should be able to create and delete an exam", async ({ page }) => {
@@ -34,11 +43,17 @@ test.describe("CBT Exams & Grading", () => {
     const title = `UTS E2E ${Date.now()}`;
 
     await page.goto("/cbt/exams/new");
-    await expect(page.getByRole("heading", { name: /buat ujian baru/i })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: /buat ujian baru/i }),
+    ).toBeVisible();
 
-    await page.getByLabel(/Nama Ujian|Judul/i).first().fill(title).catch(async () => {
-      await page.locator('input[name="title"]').fill(title);
-    });
+    await page
+      .getByLabel(/Nama Ujian|Judul/i)
+      .first()
+      .fill(title)
+      .catch(async () => {
+        await page.locator('input[name="title"]').fill(title);
+      });
 
     // The form's selects are independent Radix comboboxes rendered in order:
     // 0=Tipe Ujian (prefilled), 1=Unit, 2=Tahun Ajaran, 3=Mapel, 4=Kelas,
@@ -62,7 +77,10 @@ test.describe("CBT Exams & Grading", () => {
     }
 
     await page.locator('input[name="scheduledAt"]').fill("2026-12-10T08:00");
-    await page.getByRole("button", { name: /Simpan|Buat|Jadwalkan/i }).first().click();
+    await page
+      .getByRole("button", { name: /Simpan|Buat|Jadwalkan/i })
+      .first()
+      .click();
 
     // Persisted through the real API — redirect back to the list
     await page.waitForURL("**/cbt/exams", { timeout: 15000 });
@@ -96,14 +114,18 @@ test.describe("CBT Exams & Grading", () => {
     if (!exam) return;
 
     const monitoring = await apiRequest<{
-      data: { attempts: Array<{ id: string; student?: { user?: { name: string } } }> };
+      data: {
+        attempts: Array<{ id: string; student?: { user?: { name: string } } }>;
+      };
     }>(session, "GET", `/cbt/exams/${exam.id}/monitoring`);
     const attempt = monitoring.data.attempts?.[0];
     expect(attempt, "monitoring should list the attempt").toBeTruthy();
     const studentName = attempt?.student?.user?.name;
 
     await page.goto(`/cbt/exams/${exam.id}/monitoring`);
-    await expect(page.getByRole("heading", { name: /monitoring ujian/i })).toBeVisible({
+    await expect(
+      page.getByRole("heading", { name: /monitoring ujian/i }),
+    ).toBeVisible({
       timeout: 15000,
     });
     if (studentName) {
@@ -112,7 +134,9 @@ test.describe("CBT Exams & Grading", () => {
 
     // The grading page loads the real attempt
     await page.goto(`/cbt/attempts/${attempt!.id}/grading`);
-    await expect(page.getByRole("heading", { name: /penilaian manual/i })).toBeVisible({
+    await expect(
+      page.getByRole("heading", { name: /penilaian manual/i }),
+    ).toBeVisible({
       timeout: 15000,
     });
   });

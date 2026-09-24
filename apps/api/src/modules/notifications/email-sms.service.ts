@@ -125,10 +125,7 @@ const templates = {
               'Jumlah',
               `<span style="color:${BRAND.greenDeep};font-size:16px;">${escapeHtml(data.amount)}</span>`,
             ],
-            [
-              'Jatuh tempo',
-              `<span style="color:${BRAND.red};">${escapeHtml(data.dueDate)}</span>`,
-            ],
+            ['Jatuh tempo', `<span style="color:${BRAND.red};">${escapeHtml(data.dueDate)}</span>`],
           ]) +
           emailParagraph(
             'Pembayaran dapat dilakukan melalui Portal Wali atau rekening resmi yayasan sebelum tanggal jatuh tempo.'
@@ -198,10 +195,7 @@ const templates = {
             ['Nama santri', escapeHtml(data.studentName)],
             ['Kategori', escapeHtml(data.violationType)],
             ['Uraian', escapeHtml(data.description)],
-            [
-              'Poin',
-              `<span style="color:${BRAND.red};">+${data.points} poin</span>`,
-            ],
+            ['Poin', `<span style="color:${BRAND.red};">+${data.points} poin</span>`],
             ['Tanggal', escapeHtml(data.date)],
           ]) +
           emailParagraph(
@@ -289,9 +283,7 @@ const templates = {
         bodyHtml:
           emailHeading('Laporan perkembangan tahfidz') +
           emailParagraph(`Yth. Bapak/Ibu <strong>${escapeHtml(data.parentName)}</strong>,`) +
-          emailParagraph(
-            'Berikut catatan setoran hafalan Al-Qur&rsquo;an putra/putri Bapak/Ibu.'
-          ) +
+          emailParagraph('Berikut catatan setoran hafalan Al-Qur&rsquo;an putra/putri Bapak/Ibu.') +
           emailPanel([
             ['Nama santri', escapeHtml(data.studentName)],
             ['Surah / ayat', `${escapeHtml(data.surah)} (${escapeHtml(data.verses)})`],
@@ -361,12 +353,7 @@ export type ServiceNotificationType =
 
 // Prisma NotificationType enum values
 type PrismaNotificationType =
-  | 'INFO'
-  | 'ANNOUNCEMENT'
-  | 'REMINDER'
-  | 'ALERT'
-  | 'PAYMENT'
-  | 'ACADEMIC';
+  'INFO' | 'ANNOUNCEMENT' | 'REMINDER' | 'ALERT' | 'PAYMENT' | 'ACADEMIC';
 
 interface SendNotificationOptions {
   userId?: string;
@@ -567,7 +554,7 @@ class NotificationService {
       logger.info(
         result.delivered
           ? `Email sent to ${recipientEmail} via ${result.kind}: ${result.messageId}`
-          : `Email NOT sent (transport=${result.kind}) to ${recipientEmail}: ${subject}`,
+          : `Email NOT sent (transport=${result.kind}) to ${recipientEmail}: ${subject}`
       );
 
       return {
@@ -603,6 +590,12 @@ class NotificationService {
     // Redact potential sensitive info in message
     const redactedMessage = message.replace(/\b\d{4,8}\b/g, '****');
     logger.info(`[SMS] To: ${recipientPhone}, Message: ${redactedMessage}`);
+
+    // Outbound messages switched off (staging): log only, whatever is configured.
+    if (!config.outboundMessages.enabled) {
+      logger.info(`SMS not sent (OUTBOUND_MESSAGES_ENABLED=false) to ${recipientPhone}`);
+      return { success: true, channel: 'SMS', messageId: `log_${Date.now()}` };
+    }
 
     // Check if Twilio is configured
     const { accountSid, authToken, phoneNumber } = config.twilio;

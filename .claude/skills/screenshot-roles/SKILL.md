@@ -12,9 +12,9 @@ exits non-zero if any page fails.
 
 ## Prerequisites
 
-1. The local stack must be up and seeded, with **`DEMO_MODE=true`** on the API
-   (see the `stack` skill) — otherwise admin roles are stuck in 2FA setup and
-   cannot log in.
+1. The local stack must be up and seeded with **`E2E_FIXED_2FA=1`** (see the
+   `stack` skill) — admins are then pre-enrolled with the fixed TOTP secret the
+   script answers; otherwise admin roles are stuck in 2FA setup and cannot log in.
 2. A Chromium binary. The pinned Playwright build is often absent in sandboxes;
    point at the preinstalled one instead of running `playwright install`.
 

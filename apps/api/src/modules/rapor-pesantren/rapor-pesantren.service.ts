@@ -291,7 +291,7 @@ export async function getTakhosusSummary(
     const avgScore = sessions > 0 ? sessionScores / sessions : 0;
 
     return {
-      halaqohName: enr.halaqoh?.name ?? "-",
+      halaqohName: enr.halaqoh?.name ?? '-',
       status: enr.status,
       progress: enr.targetJuz ? Math.round((enr.completedJuz / enr.targetJuz) * 100) : 0,
       latestGrade: getGradeFromScore(avgScore, config.gradeThresholds),
@@ -302,10 +302,13 @@ export async function getTakhosusSummary(
   const averageScore = totalSessions > 0 ? totalSanadScores / totalSessions : 0;
 
   // Fallback to progress if no sanad tests exist in period
-  const baseScore = totalSessions > 0
-    ? averageScore
-    : takhosusEnrollments.reduce((sum, e) => sum + (e.targetJuz ? Math.round((e.completedJuz / e.targetJuz) * 100) : 0), 0) /
-      enrolledHalaqoh;
+  const baseScore =
+    totalSessions > 0
+      ? averageScore
+      : takhosusEnrollments.reduce(
+          (sum, e) => sum + (e.targetJuz ? Math.round((e.completedJuz / e.targetJuz) * 100) : 0),
+          0
+        ) / enrolledHalaqoh;
 
   // Simaan bonus: Each passed simaan exam adds to the score (capped at 20 points).
   // Only apply when the student has a non-zero base score to prevent inflating
@@ -830,18 +833,27 @@ export async function generateRaporPesantren(query: GetRaporQuery): Promise<Rapo
   const config = await getRaporConfig(unitId || student.unitId);
 
   // Generate all summaries in parallel
-  const [tahfidz, takhosus, ibadah, muhadhoroh, muhadatsah, kitabProgress, akhlak, attendance, academic] =
-    await Promise.all([
-      getTahfidzSummary(studentId, startDate, endDate, config),
-      getTakhosusSummary(studentId, startDate, endDate, config),
-      getIbadahSummary(studentId, startDate, endDate, config),
-      getMuhadhorohSummary(studentId, startDate, endDate, config),
-      getMuhadatsahSummary(studentId, startDate, endDate, config),
-      getKitabProgressSummary(studentId, startDate, endDate, config),
-      getAkhlakSummary(studentId, startDate, endDate, config),
-      getAttendanceSummary(studentId, startDate, endDate, config),
-      getAcademicSummary(studentId, startDate, endDate, config),
-    ]);
+  const [
+    tahfidz,
+    takhosus,
+    ibadah,
+    muhadhoroh,
+    muhadatsah,
+    kitabProgress,
+    akhlak,
+    attendance,
+    academic,
+  ] = await Promise.all([
+    getTahfidzSummary(studentId, startDate, endDate, config),
+    getTakhosusSummary(studentId, startDate, endDate, config),
+    getIbadahSummary(studentId, startDate, endDate, config),
+    getMuhadhorohSummary(studentId, startDate, endDate, config),
+    getMuhadatsahSummary(studentId, startDate, endDate, config),
+    getKitabProgressSummary(studentId, startDate, endDate, config),
+    getAkhlakSummary(studentId, startDate, endDate, config),
+    getAttendanceSummary(studentId, startDate, endDate, config),
+    getAcademicSummary(studentId, startDate, endDate, config),
+  ]);
 
   // Calculate overall score
   const weights = config.componentWeights;
@@ -905,7 +917,10 @@ export async function generateRaporPesantren(query: GetRaporQuery): Promise<Rapo
     semester,
     status: rapor.status as RaporPesantren['status'],
     // NIS unit yang menerbitkan rapor, bukan NIS unit santri sekarang.
-    student: { ...formatStudentInfo(student), nis: (await nisForUnit(prisma, student, rapor.unitId)) ?? '-' },
+    student: {
+      ...formatStudentInfo(student),
+      nis: (await nisForUnit(prisma, student, rapor.unitId)) ?? '-',
+    },
     academicYear: {
       id: academicYear.id,
       name: academicYear.name,
@@ -985,7 +1000,11 @@ export async function listRaporPesantren(query: ListRaporQuery) {
   const nisPerRapor = new Map<string, string | null>();
   for (const unit of new Set(rapors.map((r) => r.unitId))) {
     const milikUnit = rapors.filter((r) => r.unitId === unit);
-    const peta = await nisMapForUnit(prisma, unit, milikUnit.map((r) => r.student));
+    const peta = await nisMapForUnit(
+      prisma,
+      unit,
+      milikUnit.map((r) => r.student)
+    );
     for (const r of milikUnit) nisPerRapor.set(r.id, peta.get(r.student.id) ?? null);
   }
 

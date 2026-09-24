@@ -195,7 +195,8 @@ const TEMPLATES: Record<LetterType, LetterTemplate> = {
     subjectHeading: true,
     opening: "Dengan hormat,",
     signerFields: [],
-    transition: "Sehubungan dengan [LATAR], dengan ini disampaikan hal-hal sebagai berikut:",
+    transition:
+      "Sehubungan dengan [LATAR], dengan ini disampaikan hal-hal sebagai berikut:",
     subjectFields: [],
     body: "1. [POIN PERTAMA];\n2. [POIN KEDUA];\n3. [POIN KETIGA].",
     closing:

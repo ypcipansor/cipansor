@@ -1,35 +1,17 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import api, {
-  ApiResponse,
-  SharedPaginatedResponse,
-} from "@/lib/api";
+import api, { ApiResponse, SharedPaginatedResponse } from "@/lib/api";
 
 // ======================
 // TYPES & ENUMS
 // ======================
 
 export type IbadahCategory =
-  | "SHOLAT"
-  | "TILAWAH"
-  | "DZIKIR"
-  | "PUASA"
-  | "SEDEKAH"
-  | "SUNNAH"
-  | "OTHER";
+  "SHOLAT" | "TILAWAH" | "DZIKIR" | "PUASA" | "SEDEKAH" | "SUNNAH" | "OTHER";
 export type TargetType = "DAILY" | "WEEKLY" | "MONTHLY";
 export type TargetUnit =
-  | "TIMES"
-  | "MINUTES"
-  | "PAGES"
-  | "JUZ"
-  | "AMOUNT"
-  | "COUNT";
+  "TIMES" | "MINUTES" | "PAGES" | "JUZ" | "AMOUNT" | "COUNT";
 export type LeaderboardPeriod =
-  | "DAILY"
-  | "WEEKLY"
-  | "MONTHLY"
-  | "SEMESTER"
-  | "YEARLY";
+  "DAILY" | "WEEKLY" | "MONTHLY" | "SEMESTER" | "YEARLY";
 export type VerificationStatus = "PENDING" | "VERIFIED" | "REJECTED";
 
 export interface IbadahTarget {

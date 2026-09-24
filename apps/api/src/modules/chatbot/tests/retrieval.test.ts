@@ -115,7 +115,9 @@ describe('Bm25Retriever', () => {
     });
 
     it('answers an English donation question', () => {
-      const ids = defaultRetriever.search('How can I donate to the pesantren?').map((r) => r.entry.id);
+      const ids = defaultRetriever
+        .search('How can I donate to the pesantren?')
+        .map((r) => r.entry.id);
       expect(ids).toContain('donasi-rekening');
     });
 

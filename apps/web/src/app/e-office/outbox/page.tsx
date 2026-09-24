@@ -13,7 +13,11 @@ import { LetterDirection } from "@cipansor/shared";
  */
 export default function OutboxPage() {
   return (
-    <Suspense fallback={<div className="p-6 text-muted-foreground">Memuat daftar surat…</div>}>
+    <Suspense
+      fallback={
+        <div className="p-6 text-muted-foreground">Memuat daftar surat…</div>
+      }
+    >
       <LetterList direction={LetterDirection.OUTGOING} />
     </Suspense>
   );

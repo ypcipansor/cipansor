@@ -123,7 +123,7 @@ export default function EditSimaanPage({
           simaanType: data.examType as any, // Map to correct enum value
           // startSurah, etc. might not be in the update type directly if they are virtual or mapped
           juzStart: 1, // Placeholder
-          juzEnd: (data.totalJuz || 1), // Placeholder
+          juzEnd: data.totalJuz || 1, // Placeholder
           notes: data.notes,
           // status is not typically updated here directly unless exposed in UpdateSimaanData
         },

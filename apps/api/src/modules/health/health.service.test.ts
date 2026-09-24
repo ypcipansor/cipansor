@@ -91,9 +91,12 @@ describe('Health Service', () => {
 
       expect(prisma.medicalRecord.create).toHaveBeenCalled();
       expect(attendanceService.create).not.toHaveBeenCalled();
-      
+
       // eventBus.emit is always called for dashboard update
-      expect(eventBus.emit).toHaveBeenCalledWith('health:medical-record-created', expect.any(Object));
+      expect(eventBus.emit).toHaveBeenCalledWith(
+        'health:medical-record-created',
+        expect.any(Object)
+      );
       expect(result).toHaveProperty('id', 'med-1');
     });
 
@@ -106,7 +109,10 @@ describe('Health Service', () => {
         createAttendance: true,
       };
 
-      vi.mocked(prisma.medicalRecord.create).mockResolvedValue({ id: 'med-2', student: { id: 'std-2', user: { name: 'Test User' } } } as any);
+      vi.mocked(prisma.medicalRecord.create).mockResolvedValue({
+        id: 'med-2',
+        student: { id: 'std-2', user: { name: 'Test User' } },
+      } as any);
       vi.mocked(prisma.classEnrollment.findFirst).mockResolvedValue({ classId: 'cls-1' } as any);
 
       await healthService.createMedicalRecord(dto, 'user-1');
@@ -138,10 +144,8 @@ describe('Health Service', () => {
         id: 'med-3',
         student: { user: { name: 'Budi' } },
       } as any);
-      
-      vi.mocked(prisma.studentParent.findMany).mockResolvedValue([
-        { parentId: 'parent-1' },
-      ] as any);
+
+      vi.mocked(prisma.studentParent.findMany).mockResolvedValue([{ parentId: 'parent-1' }] as any);
 
       await healthService.createMedicalRecord(dto, 'user-1');
 
@@ -150,10 +154,13 @@ describe('Health Service', () => {
         include: { parent: true },
       });
 
-      expect(eventBus.emit).toHaveBeenCalledWith('notification:send', expect.objectContaining({
-        userId: 'parent-1',
-        type: 'HEALTH',
-      }));
+      expect(eventBus.emit).toHaveBeenCalledWith(
+        'notification:send',
+        expect.objectContaining({
+          userId: 'parent-1',
+          type: 'HEALTH',
+        })
+      );
     });
   });
 
@@ -166,7 +173,10 @@ describe('Health Service', () => {
         reason: 'Sakit kepala',
       };
 
-      vi.mocked(prisma.medication.findUnique).mockResolvedValue({ id: 'med-1', quantity: 10 } as any);
+      vi.mocked(prisma.medication.findUnique).mockResolvedValue({
+        id: 'med-1',
+        quantity: 10,
+      } as any);
       vi.mocked(prisma.medicationUsageLog.create).mockResolvedValue({ id: 'log-1' } as any);
       vi.mocked(prisma.medication.update).mockResolvedValue({} as any);
 
@@ -194,15 +204,22 @@ describe('Health Service', () => {
         reason: 'Sakit kepala',
       };
 
-      vi.mocked(prisma.medication.findUnique).mockResolvedValue({ id: 'med-1', quantity: 2 } as any);
+      vi.mocked(prisma.medication.findUnique).mockResolvedValue({
+        id: 'med-1',
+        quantity: 2,
+      } as any);
 
-      await expect(healthService.createMedicationUsage(dto, 'user-1')).rejects.toThrow('Insufficient medication stock');
+      await expect(healthService.createMedicationUsage(dto, 'user-1')).rejects.toThrow(
+        'Insufficient medication stock'
+      );
     });
   });
 
   describe('getHealthStats', () => {
     it('should return aggregated stats', async () => {
-      vi.mocked(prisma.medication.findMany).mockResolvedValue([{ quantity: 5, minStock: 10 }] as any);
+      vi.mocked(prisma.medication.findMany).mockResolvedValue([
+        { quantity: 5, minStock: 10 },
+      ] as any);
       vi.mocked(prisma.medication.count).mockResolvedValue(2);
       vi.mocked(prisma.medicalRecord.count).mockResolvedValue(15);
       vi.mocked(prisma.medicalRecord.groupBy).mockResolvedValue([

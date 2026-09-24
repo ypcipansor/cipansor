@@ -1,20 +1,25 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api } from '@/lib/api';
-import { ResearchTheme, ResearchSubmission } from '@cipansor/shared';
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { api } from "@/lib/api";
+import { ResearchTheme, ResearchSubmission } from "@cipansor/shared";
 
-export function useResearchThemes(params?: { unitId?: string; academicYearId?: string }) {
+export function useResearchThemes(params?: {
+  unitId?: string;
+  academicYearId?: string;
+}) {
   return useQuery({
-    queryKey: ['research-themes', params],
+    queryKey: ["research-themes", params],
     queryFn: async () => {
-      const { data } = await api.get('/research/themes', { params });
-      return data.data as (ResearchTheme & { _count: { submissions: number } })[];
+      const { data } = await api.get("/research/themes", { params });
+      return data.data as (ResearchTheme & {
+        _count: { submissions: number };
+      })[];
     },
   });
 }
 
 export function useResearchSubmission(id: string) {
   return useQuery({
-    queryKey: ['research-submission', id],
+    queryKey: ["research-submission", id],
     queryFn: async () => {
       const { data } = await api.get(`/research/submissions/${id}`);
       return data.data as ResearchSubmission & {
@@ -30,12 +35,17 @@ export function useResearchSubmission(id: string) {
 export function useCreateResearchSubmission() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (payload: { themeId: string; title: string; abstract?: string; content?: string }) => {
-      const { data } = await api.post('/research/submissions', payload);
+    mutationFn: async (payload: {
+      themeId: string;
+      title: string;
+      abstract?: string;
+      content?: string;
+    }) => {
+      const { data } = await api.post("/research/submissions", payload);
       return data.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['research-submissions'] });
+      queryClient.invalidateQueries({ queryKey: ["research-submissions"] });
     },
   });
 }
@@ -43,12 +53,21 @@ export function useCreateResearchSubmission() {
 export function useAddReference() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (payload: { submissionId: string; bookTitle: string; author?: string; volume?: string; page?: string; contentQuote?: string }) => {
-      const { data } = await api.post('/research/references', payload);
+    mutationFn: async (payload: {
+      submissionId: string;
+      bookTitle: string;
+      author?: string;
+      volume?: string;
+      page?: string;
+      contentQuote?: string;
+    }) => {
+      const { data } = await api.post("/research/references", payload);
       return data.data;
     },
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['research-submission', variables.submissionId] });
+      queryClient.invalidateQueries({
+        queryKey: ["research-submission", variables.submissionId],
+      });
     },
   });
 }

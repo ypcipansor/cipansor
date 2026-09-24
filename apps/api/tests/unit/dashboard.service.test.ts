@@ -286,11 +286,24 @@ describe('DashboardService', () => {
         _sum: { totalAyah: 3000 },
       } as any);
 
-      vi.mocked(prisma.tahfidzRecord.groupBy).mockResolvedValue([
-        { studentId: 's-1', _sum: { totalAyah: 1500 } },
-        { studentId: 's-2', _sum: { totalAyah: 1200 } },
-        { studentId: 's-3', _sum: { totalAyah: 300 } },
-      ] as any);
+      // Two groupBy calls: per student (the top-5 ranking) and per student
+      // per juz (juz counted against each juz's own size).
+      vi.mocked(prisma.tahfidzRecord.groupBy).mockImplementation((({ by }: { by: string[] }) =>
+        Promise.resolve(
+          by.includes('juz')
+            ? [
+                { studentId: 's-1', juz: 30, _sum: { totalAyah: 564 } },
+                { studentId: 's-1', juz: 29, _sum: { totalAyah: 431 } },
+                { studentId: 's-1', juz: 28, _sum: { totalAyah: 137 } },
+                { studentId: 's-2', juz: 30, _sum: { totalAyah: 564 } },
+                { studentId: 's-3', juz: 30, _sum: { totalAyah: 300 } },
+              ]
+            : [
+                { studentId: 's-1', _sum: { totalAyah: 1132 } },
+                { studentId: 's-2', _sum: { totalAyah: 564 } },
+                { studentId: 's-3', _sum: { totalAyah: 300 } },
+              ]
+        )) as any);
 
       vi.mocked(prisma.student.findMany).mockResolvedValue([
         { id: 's-1', user: { name: 'Ahmad' }, unit: { name: 'SMA Quran' } },
@@ -305,8 +318,9 @@ describe('DashboardService', () => {
       expect(result).toMatchObject({
         totalMemorized: 3000,
       });
-      expect(result.averageJuz).toBeGreaterThan(0);
-      expect(result.topStudents).toBeDefined();
+      // (3 + 1 + 300/564) / 3 = 1.51 → 1.5
+      expect(result.averageJuz).toBe(1.5);
+      expect(result.topStudents.map((s) => s.totalJuz)).toEqual([3, 1, 0.5]);
     });
 
     it('should handle empty tahfidz records', async () => {

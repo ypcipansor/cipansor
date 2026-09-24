@@ -56,11 +56,7 @@ import Link from "next/link";
 import { ActivityDialog } from "./activity-dialog";
 import { ObjectiveDialog } from "./objective-dialog";
 import { MainLayout } from "@/components/layout";
-import {
-  IndicatorRow,
-  ActivityCard,
-  FundingSection,
-} from "./plan-sections";
+import { IndicatorRow, ActivityCard, FundingSection } from "./plan-sections";
 import { ReviewPanel } from "./review-panel";
 
 function PerencanaanDetailPageContent() {
@@ -372,7 +368,11 @@ function PerencanaanDetailPageContent() {
               <CardTitle className="text-lg">
                 Daftar Sasaran Strategis
               </CardTitle>
-              <Button size="sm" variant="outline" onClick={() => setObjectiveDialogOpen(true)}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setObjectiveDialogOpen(true)}
+              >
                 + Tambah Sasaran
               </Button>
             </CardHeader>
@@ -588,8 +588,8 @@ function PerencanaanDetailPageContent() {
           <Card className="border-indigo-100 shadow-sm">
             <CardHeader className="bg-indigo-50/50 border-b pb-4">
               <CardTitle className="text-lg flex items-center gap-2 text-indigo-800">
-                <LayoutDashboard className="w-5 h-5" /> Balanced Scorecard
-                Peta Strategi
+                <LayoutDashboard className="w-5 h-5" /> Balanced Scorecard Peta
+                Strategi
               </CardTitle>
               <CardDescription>
                 Visualisasi aliran strategi dari pembelajaran hingga hasil

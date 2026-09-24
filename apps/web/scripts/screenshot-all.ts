@@ -14,12 +14,7 @@ import fs from "fs";
 import path from "path";
 import { chromium, type Browser, type Page } from "@playwright/test";
 import { DEMO_ACCOUNTS } from "@cipansor/shared";
-import {
-  API_URL,
-  BASE_URL,
-  loginAs,
-  storageStateFor,
-} from "./lib/auth-state";
+import { API_URL, BASE_URL, loginAs, storageStateFor } from "./lib/auth-state";
 
 const OUT_DIR = process.argv[2] || path.join(__dirname, "../.qa-all");
 const ONLY = process.argv[3];
@@ -68,7 +63,9 @@ const DYNAMIC_PATTERNS = ALL_ROUTES.filter((r) => r.includes("["));
 const RESOLVED_DYNAMIC: string[] = (() => {
   try {
     const file = path.join(__dirname, "dynamic-routes.json");
-    return Object.values(JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, string>);
+    return Object.values(
+      JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, string>,
+    );
   } catch {
     return [];
   }
@@ -80,7 +77,9 @@ function matchesPattern(routePath: string, pattern: string): boolean {
       pattern
         .split("/")
         .map((seg) =>
-          /^\[.*\]$/.test(seg) ? "[^/]+" : seg.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+          /^\[.*\]$/.test(seg)
+            ? "[^/]+"
+            : seg.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
         )
         .join("/") +
       "/?$",
@@ -100,7 +99,8 @@ function isKnownRoute(p: string): boolean {
 
 function slug(p: string): string {
   const [pathname, query] = p.split("?");
-  const base = pathname === "/" ? "root" : pathname.slice(1).replace(/\//g, "__");
+  const base =
+    pathname === "/" ? "root" : pathname.slice(1).replace(/\//g, "__");
   if (!query) return base;
   // A resolved URL may carry a query string (`?academicYearId=…&semester=1`);
   // fold it into the filename so the two variants don't collide.
@@ -157,7 +157,10 @@ async function capture(
   page.on("console", onConsole);
 
   try {
-    await page.goto(`${BASE_URL}${target}`, { waitUntil: "domcontentloaded", timeout: 45000 });
+    await page.goto(`${BASE_URL}${target}`, {
+      waitUntil: "domcontentloaded",
+      timeout: 45000,
+    });
     // Wait for the page to actually settle, not just for a fixed 1.4s. Client
     // pages fetch their data after hydration; a flat wait sampled the loading
     // spinner on any slow tick and reported "near-empty main content" for pages
@@ -202,7 +205,11 @@ async function capture(
   };
   const targetPathname = target.split("?")[0];
   const expected = EXPECTED_REDIRECTS[targetPathname];
-  if (finalPath && finalPath !== targetPathname && !finalPath.startsWith(`${targetPathname}/`)) {
+  if (
+    finalPath &&
+    finalPath !== targetPathname &&
+    !finalPath.startsWith(`${targetPathname}/`)
+  ) {
     if (expected && finalPath === expected) {
       // fine — deliberate alias, keep the screenshot of the destination
     } else {
@@ -210,7 +217,10 @@ async function capture(
     }
   }
 
-  const bodyText = await page.locator("body").innerText().catch(() => "");
+  const bodyText = await page
+    .locator("body")
+    .innerText()
+    .catch(() => "");
   const short = bodyText.slice(0, 6000);
   const dense = short.replace(/\s/g, "").length;
   for (const marker of [
@@ -262,7 +272,12 @@ async function capture(
   const mainText = (await page.evaluate(WALK_MAIN).catch(() => "")) as string;
   const mainDense = mainText.replace(/\s/g, "").length;
   if (mainDense > 0 && mainDense < 260) {
-    for (const marker of ["tidak ditemukan", "not found", "Gagal memuat", "Gagal mengambil data"]) {
+    for (const marker of [
+      "tidak ditemukan",
+      "not found",
+      "Gagal memuat",
+      "Gagal mengambil data",
+    ]) {
       if (mainText.includes(marker)) problems.push(`error text: ${marker}`);
     }
   }
@@ -283,7 +298,10 @@ async function capture(
   // A page stuck on its loading state after the settle wait means the request
   // never resolved (or 404'd) — the spinner is the whole page. Measured against
   // `main`, since the sidebar's menu labels alone exceed any body-text threshold.
-  if (/memuat\s+data|loading\.\.\.|memuat\.\.\./i.test(mainText) && mainDense < 200) {
+  if (
+    /memuat\s+data|loading\.\.\.|memuat\.\.\./i.test(mainText) &&
+    mainDense < 200
+  ) {
     problems.push("stuck on loading state");
   }
 
@@ -303,14 +321,18 @@ async function capture(
     clientWidth: number;
   } | null;
   if (overflow) {
-    problems.push(`horizontal overflow: main content ${overflow.dx}px wider than ${overflow.clientWidth}px viewport`);
+    problems.push(
+      `horizontal overflow: main content ${overflow.dx}px wider than ${overflow.clientWidth}px viewport`,
+    );
   }
 
   const relevantConsole = consoleErrors.filter(
     (t) => !t.includes("Failed to load resource") && !t.includes("favicon"),
   );
   if (relevantConsole.length > 0) {
-    problems.push(`console errors: ${relevantConsole.slice(0, 2).join(" | ").slice(0, 200)}`);
+    problems.push(
+      `console errors: ${relevantConsole.slice(0, 2).join(" | ").slice(0, 200)}`,
+    );
   }
   page.off("console", onConsole);
 
@@ -336,14 +358,25 @@ async function capture(
     )
     .catch(() => [] as string[]);
   const internal = links
-    .filter((h) => h.startsWith("/") && !h.startsWith("//") && !h.startsWith("/api"))
+    .filter(
+      (h) => h.startsWith("/") && !h.startsWith("//") && !h.startsWith("/api"),
+    )
     .map((h) => h.split("#")[0].split("?")[0])
     .filter((h) => h.length > 1);
   collectLinks(internal);
 
-  results.push({ path: target, finalPath, ok: problems.length === 0, problems, screenshot: file, hasAuth });
+  results.push({
+    path: target,
+    finalPath,
+    ok: problems.length === 0,
+    problems,
+    screenshot: file,
+    hasAuth,
+  });
   const status = problems.length === 0 ? "✓" : "✗";
-  console.log(`${status} ${hasAuth ? "[auth]" : "[pub] "} ${target}${problems.length ? " — " + problems.join("; ") : ""}`);
+  console.log(
+    `${status} ${hasAuth ? "[auth]" : "[pub] "} ${target}${problems.length ? " — " + problems.join("; ") : ""}`,
+  );
 }
 
 async function run() {
@@ -358,7 +391,8 @@ async function run() {
     password: superAdmin.password,
   });
   const session = login?.data;
-  if (!session?.accessToken) throw new Error("super-admin login failed: " + JSON.stringify(login));
+  if (!session?.accessToken)
+    throw new Error("super-admin login failed: " + JSON.stringify(login));
 
   // -------- authenticated crawl --------
   const ctx = await browser.newContext({
@@ -370,7 +404,8 @@ async function run() {
   const queue: string[] = [];
   const queued = new Set<string>();
   const enqueue = (p: string) => {
-    if (!p || p === "#" || p.startsWith("/_next") || p.startsWith("/api")) return;
+    if (!p || p === "#" || p.startsWith("/_next") || p.startsWith("/api"))
+      return;
     // `/parent/*` is read as a PARENT in its own pass below; the SUPER_ADMIN
     // session can't read its API, so sweeping it here only invents failures.
     if (p === "/parent" || p.startsWith("/parent/")) return;
@@ -397,7 +432,9 @@ async function run() {
   // `/parent/*` is guarded by `authorize(PARENT)` on the API, so sweeping it as
   // SUPER_ADMIN only ever produced "Insufficient permissions" — an artifact of
   // the visitor, not a broken page. Visit it as a real parent instead.
-  const parentAccount = DEMO_ACCOUNTS.find((a) => a.roleCode.endsWith("_ORANG_TUA"));
+  const parentAccount = DEMO_ACCOUNTS.find((a) =>
+    a.roleCode.endsWith("_ORANG_TUA"),
+  );
   if (parentAccount) {
     const parentLogin = await postJson("/auth/login", {
       email: parentAccount.email,
@@ -436,7 +473,9 @@ async function run() {
   }
 
   // -------- public crawl (anonymous) --------
-  const pubCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const pubCtx = await browser.newContext({
+    viewport: { width: 1440, height: 900 },
+  });
   const pubPage = await pubCtx.newPage();
   const pubQueue: string[] = [];
   const pubQueued = new Set<string>();
@@ -447,7 +486,9 @@ async function run() {
     pubQueue.push(p);
   };
   for (const r of PUBLIC_ROUTES) enqueuePub(r);
-  for (const r of STATIC_ROUTES) if (PUBLIC_PREFIXES.some((pre) => r === pre || r.startsWith(pre + "/"))) enqueuePub(r);
+  for (const r of STATIC_ROUTES)
+    if (PUBLIC_PREFIXES.some((pre) => r === pre || r.startsWith(pre + "/")))
+      enqueuePub(r);
 
   const collectPub = (links: string[]) =>
     links.forEach((l) => {
@@ -463,11 +504,17 @@ async function run() {
   await browser.close();
 
   const failures = results.filter((r) => !r.ok);
-  fs.writeFileSync(path.join(OUT_DIR, "report.json"), JSON.stringify(results, null, 2));
-  console.log(`\n${results.length} pages captured, ${failures.length} failures.`);
+  fs.writeFileSync(
+    path.join(OUT_DIR, "report.json"),
+    JSON.stringify(results, null, 2),
+  );
+  console.log(
+    `\n${results.length} pages captured, ${failures.length} failures.`,
+  );
   if (failures.length) {
     console.log("\nFailures:");
-    for (const f of failures) console.log(`  ${f.path}: ${f.problems.join("; ")}`);
+    for (const f of failures)
+      console.log(`  ${f.path}: ${f.problems.join("; ")}`);
   }
   // Show dynamic patterns we never reached (candidate gaps).
   const reached = new Set(results.map((r) => r.path));

@@ -262,20 +262,24 @@ export default function TakhosusPage() {
         <TabsContent value="dashboard" className="space-y-6">
           <TakhosusDashboard stats={dashboardStats} isLoading={statsLoading} />
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-             <div className="lg:col-span-2">
-                <TahfidzProgressChartWrapper />
-             </div>
-             <div>
-                <Card className="h-full">
-                   <CardHeader>
-                      <CardTitle className="text-base">Target Hafalan Unit</CardTitle>
-                   </CardHeader>
-                   <CardContent>
-                      <p className="text-sm text-muted-foreground italic">Target unit ditetapkan berdasarkan tahun ajaran aktif.</p>
-                      {/* Additional unit-specific target info could go here */}
-                   </CardContent>
-                </Card>
-             </div>
+            <div className="lg:col-span-2">
+              <TahfidzProgressChartWrapper />
+            </div>
+            <div>
+              <Card className="h-full">
+                <CardHeader>
+                  <CardTitle className="text-base">
+                    Target Hafalan Unit
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground italic">
+                    Target unit ditetapkan berdasarkan tahun ajaran aktif.
+                  </p>
+                  {/* Additional unit-specific target info could go here */}
+                </CardContent>
+              </Card>
+            </div>
           </div>
         </TabsContent>
 
@@ -729,10 +733,12 @@ function TahfidzProgressChartWrapper() {
 
   // Map analytics data to chart format
   // Only count newMemorization as "total ayat" — murajaah (review) is not new memorization
-  const chartData = (progressData?.data?.monthlyProgress || []).map((item: any) => ({
-    date: item.month,
-    totalAyah: item.newMemorization || 0,
-  }));
+  const chartData = (progressData?.data?.monthlyProgress || []).map(
+    (item: any) => ({
+      date: item.month,
+      totalAyah: item.newMemorization || 0,
+    }),
+  );
 
   return <TahfidzProgressChart data={chartData} />;
 }

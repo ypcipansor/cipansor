@@ -21,7 +21,7 @@ export const listCompliances = asyncHandler(async (req: Request, res: Response) 
   const isPrivilegedUser = isPrivileged(req.user?.role as UserRole);
   if (!unitId && !isPrivilegedUser) throw Errors.unauthorized('Unit ID required');
   const targetUnitId =
-    isPrivilegedUser && req.query.unitId ? String(req.query.unitId) : unitId ?? undefined;
+    isPrivilegedUser && req.query.unitId ? String(req.query.unitId) : (unitId ?? undefined);
   // A global SUPER_ADMIN (no assigned unit) gets the cross-unit view
   if (!targetUnitId && req.user?.role !== UserRole.SUPER_ADMIN) {
     throw Errors.badRequest('Unit ID required');
@@ -65,7 +65,11 @@ export const updateCompliance = asyncHandler(async (req: Request, res: Response)
   }
 
   const body = updateComplianceSchema.parse(req.body);
-  const compliance = await syariahService.updateCompliance(req.params.id as string, body, req.user?.sub);
+  const compliance = await syariahService.updateCompliance(
+    req.params.id as string,
+    body,
+    req.user?.sub
+  );
   res.json({ success: true, data: compliance });
 });
 
@@ -93,7 +97,7 @@ export const getSummary = asyncHandler(async (req: Request, res: Response) => {
   const isPrivilegedUser = isPrivileged(req.user?.role as UserRole);
   if (!unitId && !isPrivilegedUser) throw Errors.unauthorized('Unit ID required');
   const targetUnitId =
-    isPrivilegedUser && req.query.unitId ? String(req.query.unitId) : unitId ?? undefined;
+    isPrivilegedUser && req.query.unitId ? String(req.query.unitId) : (unitId ?? undefined);
   // A global SUPER_ADMIN (no assigned unit) gets the cross-unit view
   if (!targetUnitId && req.user?.role !== UserRole.SUPER_ADMIN) {
     throw Errors.badRequest('Unit ID required');

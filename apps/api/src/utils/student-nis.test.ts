@@ -2,7 +2,12 @@ import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('@/lib/prisma', () => ({ prisma: {} }));
 
-import { assignStudentNis, findStudentIdByNisInUnit, nisForUnit, nisMapForUnit } from './student-nis';
+import {
+  assignStudentNis,
+  findStudentIdByNisInUnit,
+  nisForUnit,
+  nisMapForUnit,
+} from './student-nis';
 
 /**
  * NIS diterbitkan satuan pendidikan. Rapor SD IT memuat NIS SD IT walau
@@ -15,10 +20,14 @@ function dbPalsu(baris: { studentId: string; unitId: string; nis: string }[]) {
       findMany: vi.fn(async ({ where }: any) =>
         baris.filter((b) => where.studentId.in.includes(b.studentId))
       ),
-      findFirst: vi.fn(async ({ where }: any) =>
-        baris.find(
-          (b) => b.unitId === where.unitId && b.nis === where.nis && b.studentId !== where.studentId.not
-        ) ?? null
+      findFirst: vi.fn(
+        async ({ where }: any) =>
+          baris.find(
+            (b) =>
+              b.unitId === where.unitId &&
+              b.nis === where.nis &&
+              b.studentId !== where.studentId.not
+          ) ?? null
       ),
       upsert: vi.fn(async () => ({})),
     },
@@ -95,7 +104,9 @@ describe('assignStudentNis — unik per unit, bukan lintas yayasan', () => {
     const db = dbPalsu([]);
     await assignStudentNis(db, { studentId: 's', unitId: SD, nis: '  2024009 ' });
     expect(db.studentUnitIdentifier.upsert.mock.calls[0][0].create.nis).toBe('2024009');
-    await expect(assignStudentNis(db, { studentId: 's', unitId: SD, nis: '   ' })).rejects.toMatchObject({
+    await expect(
+      assignStudentNis(db, { studentId: 's', unitId: SD, nis: '   ' })
+    ).rejects.toMatchObject({
       code: 'BAD_REQUEST',
     });
   });
@@ -106,16 +117,18 @@ describe('mencari santri lewat NIS di satu unit', () => {
   const dbDuaUnit = (santriLama: { nis: string; unitId: string; id: string }[] = []) =>
     ({
       studentUnitIdentifier: {
-        findFirst: vi.fn(async ({ where }: any) =>
-          [
-            { studentId: 'sd-anak', unitId: SD, nis: '2024001' },
-            { studentId: 'smp-anak', unitId: SMP, nis: '2024001' },
-          ].find((b) => b.unitId === where.unitId && b.nis === where.nis) ?? null
+        findFirst: vi.fn(
+          async ({ where }: any) =>
+            [
+              { studentId: 'sd-anak', unitId: SD, nis: '2024001' },
+              { studentId: 'smp-anak', unitId: SMP, nis: '2024001' },
+            ].find((b) => b.unitId === where.unitId && b.nis === where.nis) ?? null
         ),
       },
       student: {
-        findFirst: vi.fn(async ({ where }: any) =>
-          santriLama.find((b) => b.unitId === where.unitId && b.nis === where.nis) ?? null
+        findFirst: vi.fn(
+          async ({ where }: any) =>
+            santriLama.find((b) => b.unitId === where.unitId && b.nis === where.nis) ?? null
         ),
       },
     }) as any;
@@ -131,7 +144,10 @@ describe('mencari santri lewat NIS di satu unit', () => {
     const db = dbDuaUnit([{ id: 'lama', unitId: SMP, nis: '9999' }]);
 
     expect(await findStudentIdByNisInUnit(db, { unitId: SMP, nis: '9999' })).toBe('lama');
-    expect(db.student.findFirst.mock.calls[0][0].where).toMatchObject({ unitId: SMP, deletedAt: null });
+    expect(db.student.findFirst.mock.calls[0][0].where).toMatchObject({
+      unitId: SMP,
+      deletedAt: null,
+    });
     expect(await findStudentIdByNisInUnit(db, { unitId: SD, nis: '9999' })).toBeNull();
   });
 

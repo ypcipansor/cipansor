@@ -1,12 +1,12 @@
-'use client';
+"use client";
 import { MainLayout } from "@/components/layout";
 
-import { useStudentOrgs } from '@/hooks/student-org/use-student-org';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
-import { EmptyState } from '@/components/shared/empty-state';
-import { Users } from 'lucide-react';
-import Link from 'next/link';
+import { useStudentOrgs } from "@/hooks/student-org/use-student-org";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/shared/empty-state";
+import { Users } from "lucide-react";
+import Link from "next/link";
 
 /**
  * The `/student-org` endpoint returns each org with its positions and the
@@ -48,8 +48,12 @@ function StudentOrgPageContent() {
                 <CardTitle>{org.name}</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-sm text-muted-foreground mb-4">{org.description}</p>
-                <h4 className="font-semibold mb-2 text-sm">Positions & Members:</h4>
+                <p className="text-sm text-muted-foreground mb-4">
+                  {org.description}
+                </p>
+                <h4 className="font-semibold mb-2 text-sm">
+                  Positions & Members:
+                </h4>
                 <div className="space-y-2">
                   {(org.positions as OrgPosition[]).map((pos) => (
                     <div key={pos.id} className="text-sm border-l-2 pl-2">
@@ -57,7 +61,10 @@ function StudentOrgPageContent() {
                       <ul className="list-disc list-inside ml-2">
                         {pos.members.map((m) => (
                           <li key={m.id}>
-                            <Link href={`/student-org/members/${m.id}`} className="text-primary hover:underline">
+                            <Link
+                              href={`/student-org/members/${m.id}`}
+                              className="text-primary hover:underline"
+                            >
                               {m.student.user.name}
                             </Link>
                           </li>

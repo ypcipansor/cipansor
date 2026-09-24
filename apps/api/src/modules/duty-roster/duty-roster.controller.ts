@@ -16,7 +16,12 @@ export class DutyRosterController {
         page: parseInt(req.query.page as string) || 1,
         limit: parseInt(req.query.limit as string) || 20,
       };
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const result = await dutyRosterService.listTypes(query, user);
       res.json(result);
     } catch (error) {
@@ -27,7 +32,12 @@ export class DutyRosterController {
   async getTypeById(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const type = await dutyRosterService.getTypeById(id, user);
       res.json({ data: type });
     } catch (error) {
@@ -37,7 +47,12 @@ export class DutyRosterController {
 
   async createType(req: Request, res: Response, next: NextFunction) {
     try {
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const type = await dutyRosterService.createType(req.body, user);
       res.status(201).json({ data: type });
     } catch (error) {
@@ -48,7 +63,12 @@ export class DutyRosterController {
   async updateType(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const type = await dutyRosterService.updateType(id, req.body, user);
       res.json({ data: type });
     } catch (error) {
@@ -59,7 +79,12 @@ export class DutyRosterController {
   async deleteType(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       await dutyRosterService.deleteType(id, user);
       res.json({ success: true, message: 'Duty type deleted successfully' });
     } catch (error) {
@@ -84,7 +109,12 @@ export class DutyRosterController {
         page: parseInt(req.query.page as string) || 1,
         limit: parseInt(req.query.limit as string) || 50,
       };
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const result = await dutyRosterService.listRosters(query, user);
       res.json(result);
     } catch (error) {
@@ -95,7 +125,12 @@ export class DutyRosterController {
   async getRosterById(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const roster = await dutyRosterService.getRosterById(id, user);
       res.json({ data: roster });
     } catch (error) {
@@ -105,7 +140,12 @@ export class DutyRosterController {
 
   async createRoster(req: Request, res: Response, next: NextFunction) {
     try {
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const roster = await dutyRosterService.createRoster(req.body, user);
       res.status(201).json({ data: roster });
     } catch (error) {
@@ -116,7 +156,12 @@ export class DutyRosterController {
   async bulkCreateRosters(req: Request, res: Response, next: NextFunction) {
     try {
       const { rosters } = req.body;
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const result = await dutyRosterService.bulkCreateRosters(rosters, user);
       res.json({ data: result });
     } catch (error) {
@@ -127,7 +172,12 @@ export class DutyRosterController {
   async updateRoster(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const roster = await dutyRosterService.updateRoster(id, req.body, user);
       res.json({ data: roster });
     } catch (error) {
@@ -138,7 +188,12 @@ export class DutyRosterController {
   async deleteRoster(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       await dutyRosterService.deleteRoster(id, user);
       res.json({ success: true, message: 'Roster deleted successfully' });
     } catch (error) {
@@ -153,7 +208,12 @@ export class DutyRosterController {
   async completeDuty(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const roster = await dutyRosterService.completeDuty(id, user);
       res.json({ data: roster });
     } catch (error) {
@@ -165,7 +225,12 @@ export class DutyRosterController {
     try {
       const { id } = req.params;
       const { notes } = req.body;
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const roster = await dutyRosterService.markAbsent(id, notes || '', user);
       res.json({ data: roster });
     } catch (error) {
@@ -177,7 +242,12 @@ export class DutyRosterController {
     try {
       const { id } = req.params;
       const { substituteId } = req.body;
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const roster = await dutyRosterService.assignSubstitute(id, substituteId, user);
       res.json({ data: roster });
     } catch (error) {
@@ -188,7 +258,12 @@ export class DutyRosterController {
   async verifyDuty(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const roster = await dutyRosterService.verifyDuty(id, user);
       res.json({ data: roster });
     } catch (error) {
@@ -203,7 +278,12 @@ export class DutyRosterController {
   async getTodayDuties(req: Request, res: Response, next: NextFunction) {
     try {
       const { unitId } = req.params;
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const rosters = await dutyRosterService.getTodayDuties(unitId, user);
       res.json({ data: rosters });
     } catch (error) {
@@ -214,7 +294,12 @@ export class DutyRosterController {
   async getStudentHistory(req: Request, res: Response, next: NextFunction) {
     try {
       const { studentId } = req.params;
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const limit = parseInt(req.query.limit as string) || 30;
       const history = await dutyRosterService.getStudentHistory(studentId, user, limit);
       res.json({ data: history });

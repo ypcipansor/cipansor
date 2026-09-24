@@ -274,8 +274,8 @@ export default function EOfficeMainPage() {
                 <BarChart3 className="h-8 w-8 opacity-40" aria-hidden="true" />
                 <p className="text-sm font-medium">Belum ada data tren</p>
                 <p className="text-xs">
-                  Grafik muncul setelah ada surat masuk atau keluar yang tercatat
-                  dalam enam bulan terakhir.
+                  Grafik muncul setelah ada surat masuk atau keluar yang
+                  tercatat dalam enam bulan terakhir.
                 </p>
               </div>
             ) : (

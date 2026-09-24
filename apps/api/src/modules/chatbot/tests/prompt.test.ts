@@ -103,7 +103,7 @@ describe('buildMessages', () => {
           entries: [entry],
           liveFacts: [],
           persona: 'Jawab singkat dan formal.',
-        }),
+        })
       );
       expect(system).toContain('Jawab singkat dan formal.');
       expect(system).not.toContain('Ada lagi yang ingin');
@@ -112,7 +112,7 @@ describe('buildMessages', () => {
     it('appears after the safety rules, never before them', () => {
       const system = systemOf(buildMessages({ question: 'halo', entries: [entry], liveFacts: [] }));
       expect(system.indexOf('ATURAN YANG TIDAK BOLEH DILANGGAR')).toBeLessThan(
-        system.indexOf('GAYA KOMUNIKASI'),
+        system.indexOf('GAYA KOMUNIKASI')
       );
     });
 

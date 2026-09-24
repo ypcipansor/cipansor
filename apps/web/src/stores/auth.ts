@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { AxiosError } from "axios";
 import { User, authApi, rolesApi, LoginRequest } from "@/lib/api";
+import { middlewareAuthCookieValue } from "@/lib/auth-cookie";
 
 interface AuthState {
   user: User | null;
@@ -22,21 +23,30 @@ interface AuthState {
 }
 
 // Custom storage that syncs with cookies for middleware
+/**
+ * Mirror the persisted auth state into the cookie the middleware reads — the
+ * slim form only (see `lib/auth-cookie.ts`: the full user overflowed 4 KB and
+ * the browser dropped it silently). An unreadable value clears the cookie
+ * instead of leaving a stale or oversized one behind.
+ */
+function syncMiddlewareCookie(name: string, persisted: string) {
+  const slim = middlewareAuthCookieValue(persisted);
+  document.cookie = slim
+    ? `${name}=${encodeURIComponent(slim)}; path=/; max-age=86400; samesite=lax`
+    : `${name}=; path=/; max-age=0`;
+}
+
 const customStorage = {
   getItem: (name: string) => {
     if (typeof window === "undefined") return null;
     const item = localStorage.getItem(name);
-    // Also sync to cookie for middleware
-    if (item) {
-      document.cookie = `${name}=${encodeURIComponent(item)}; path=/; max-age=86400; samesite=lax`;
-    }
+    if (item) syncMiddlewareCookie(name, item);
     return item;
   },
   setItem: (name: string, value: string) => {
     if (typeof window === "undefined") return;
     localStorage.setItem(name, value);
-    // Also sync to cookie for middleware
-    document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=86400; samesite=lax`;
+    syncMiddlewareCookie(name, value);
   },
   removeItem: (name: string) => {
     if (typeof window === "undefined") return;
@@ -115,7 +125,9 @@ export const useAuthStore = create<AuthState>()(
           const message =
             error instanceof Error ? error.message : "Login failed";
           const axiosError = error as {
-            response?: { data?: { error?: { message?: string }; message?: string } };
+            response?: {
+              data?: { error?: { message?: string }; message?: string };
+            };
           };
           set({
             error:
@@ -161,7 +173,9 @@ export const useAuthStore = create<AuthState>()(
           const message =
             error instanceof Error ? error.message : "2FA Verification failed";
           const axiosError = error as {
-            response?: { data?: { error?: { message?: string }; message?: string } };
+            response?: {
+              data?: { error?: { message?: string }; message?: string };
+            };
           };
           set({
             error:
@@ -260,7 +274,9 @@ export const useAuthStore = create<AuthState>()(
           const message =
             error instanceof Error ? error.message : "Failed to switch role";
           const axiosError = error as {
-            response?: { data?: { error?: { message?: string }; message?: string } };
+            response?: {
+              data?: { error?: { message?: string }; message?: string };
+            };
           };
           set({
             error:

@@ -64,11 +64,7 @@ const formSchema = z.object({
 
 type FormData = z.infer<typeof formSchema>;
 
-function EditInventoryPageContent({
-  params,
-}: {
-  params: { id: string };
-}) {
+function EditInventoryPageContent({ params }: { params: { id: string } }) {
   const router = useRouter();
   const itemId = params.id;
   const updateMutation = useUpdateInventoryItem();

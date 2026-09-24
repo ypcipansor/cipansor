@@ -3,11 +3,7 @@ import api, { PaginatedResponse } from "@/lib/api";
 
 // Types
 export type RewardCategory =
-  | "ACADEMIC"
-  | "RELIGIOUS"
-  | "EXTRACURRICULAR"
-  | "SOCIAL"
-  | "OTHER";
+  "ACADEMIC" | "RELIGIOUS" | "EXTRACURRICULAR" | "SOCIAL" | "OTHER";
 
 export interface RewardType {
   id: string;
@@ -179,7 +175,10 @@ export function useUpdateRewardType() {
         isActive?: boolean;
       };
     }) => {
-      const response = await api.put<RewardType>(`/rewards/categories/${id}`, data);
+      const response = await api.put<RewardType>(
+        `/rewards/categories/${id}`,
+        data,
+      );
       return response.data;
     },
     onSuccess: () => {

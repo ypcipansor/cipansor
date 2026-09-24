@@ -15,7 +15,9 @@ import { AnswerText } from "./answer-text";
 describe("AnswerText", () => {
   it("renders bold instead of printing its asterisks", () => {
     const { container } = render(
-      <AnswerText>{"Kami membuka **TK Qur'an** dan **SD Qur'an**."}</AnswerText>,
+      <AnswerText>
+        {"Kami membuka **TK Qur'an** dan **SD Qur'an**."}
+      </AnswerText>,
     );
 
     expect(container.textContent).not.toContain("**");
@@ -57,7 +59,9 @@ describe("AnswerText", () => {
   it("links only to schemes we allow", () => {
     render(
       <AnswerText>
-        {"Lihat [halaman SPMB](https://cipansor.or.id/admissions) untuk detail."}
+        {
+          "Lihat [halaman SPMB](https://cipansor.or.id/admissions) untuk detail."
+        }
       </AnswerText>,
     );
 
@@ -103,7 +107,9 @@ describe("AnswerText", () => {
   });
 
   it("renders a heading line as emphasised text, without the hashes", () => {
-    const { container } = render(<AnswerText>{"### Biaya\nRp 500.000"}</AnswerText>);
+    const { container } = render(
+      <AnswerText>{"### Biaya\nRp 500.000"}</AnswerText>,
+    );
 
     expect(container.textContent).not.toContain("#");
     expect(container.querySelector("p")?.className).toContain("font-semibold");

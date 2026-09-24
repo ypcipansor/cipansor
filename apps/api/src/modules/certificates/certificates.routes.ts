@@ -17,13 +17,49 @@ router.get('/verify/:code', controller.verifyCertificate);
 
 router.use(authenticate);
 
-router.get('/', authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER), validateQuery(queryCertificateSchema), controller.listCertificates);
-router.get('/student/:studentId', authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER, UserRole.PARENT), controller.getStudentCertificates);
-router.get('/:id', authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER, UserRole.PARENT), controller.getCertificate);
-router.get('/:id/download', authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER, UserRole.PARENT), controller.downloadCertificate);
-router.post('/', authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER), validate(createCertificateSchema), controller.createCertificate);
-router.put('/:id', authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN), validate(updateCertificateSchema), controller.updateCertificate);
-router.patch('/:id', authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN), validate(updateCertificateSchema), controller.updateCertificate);
-router.delete('/:id', authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN), controller.deleteCertificate);
+router.get(
+  '/',
+  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  validateQuery(queryCertificateSchema),
+  controller.listCertificates
+);
+router.get(
+  '/student/:studentId',
+  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER, UserRole.PARENT),
+  controller.getStudentCertificates
+);
+router.get(
+  '/:id',
+  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER, UserRole.PARENT),
+  controller.getCertificate
+);
+router.get(
+  '/:id/download',
+  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER, UserRole.PARENT),
+  controller.downloadCertificate
+);
+router.post(
+  '/',
+  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  validate(createCertificateSchema),
+  controller.createCertificate
+);
+router.put(
+  '/:id',
+  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
+  validate(updateCertificateSchema),
+  controller.updateCertificate
+);
+router.patch(
+  '/:id',
+  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
+  validate(updateCertificateSchema),
+  controller.updateCertificate
+);
+router.delete(
+  '/:id',
+  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
+  controller.deleteCertificate
+);
 
 export default router;

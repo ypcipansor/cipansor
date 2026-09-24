@@ -10,9 +10,9 @@ import { requiredParentRoles } from './parent-scope';
  */
 describe('requiredParentRoles', () => {
   it('gives one role for a single child', () => {
-    expect(
-      requiredParentRoles([{ unitId: 'u-sd', unitType: UnitType.SD_IT }])
-    ).toEqual([{ unitId: 'u-sd', roleCode: RoleCode.SDIT_ORANG_TUA }]);
+    expect(requiredParentRoles([{ unitId: 'u-sd', unitType: UnitType.SD_IT }])).toEqual([
+      { unitId: 'u-sd', roleCode: RoleCode.SDIT_ORANG_TUA },
+    ]);
   });
 
   it('spans every unit the children study in', () => {
@@ -24,11 +24,7 @@ describe('requiredParentRoles', () => {
 
     expect(roles).toHaveLength(3);
     expect(roles.map((r) => r.roleCode).sort()).toEqual(
-      [
-        RoleCode.SDIT_ORANG_TUA,
-        RoleCode.SMPIT_ORANG_TUA,
-        RoleCode.TKQ_ORANG_TUA,
-      ].sort()
+      [RoleCode.SDIT_ORANG_TUA, RoleCode.SMPIT_ORANG_TUA, RoleCode.TKQ_ORANG_TUA].sort()
     );
   });
 

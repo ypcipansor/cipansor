@@ -63,7 +63,10 @@ describe('Lingkungan Service', () => {
         picId: 'user-1',
       };
 
-      vi.mocked(prisma.environmentProgram.create).mockResolvedValue({ id: 'prog-1', ...dto } as any);
+      vi.mocked(prisma.environmentProgram.create).mockResolvedValue({
+        id: 'prog-1',
+        ...dto,
+      } as any);
 
       const result = await lingkunganService.createProgram(dto as any);
 
@@ -139,8 +142,11 @@ describe('Lingkungan Service', () => {
         unitId: 'unit-1',
       };
 
-      vi.mocked(prisma.greenCampusIndicator.create).mockResolvedValue({ id: 'ind-1', ...dto } as any);
-      
+      vi.mocked(prisma.greenCampusIndicator.create).mockResolvedValue({
+        id: 'ind-1',
+        ...dto,
+      } as any);
+
       await lingkunganService.createIndicator(dto);
 
       expect(prisma.greenCampusIndicator.create).toHaveBeenCalledWith({

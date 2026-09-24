@@ -59,7 +59,8 @@ export function normalizeBill(raw: any): Bill {
       : "OTHER") as BillType,
     amount: Number(raw.amount ?? 0),
     paidAmount: Number(raw.paidAmount ?? 0),
-    description: raw.description ?? raw.notes ?? raw.paymentType?.name ?? undefined,
+    description:
+      raw.description ?? raw.notes ?? raw.paymentType?.name ?? undefined,
   };
 }
 
@@ -90,11 +91,7 @@ export const BILL_TYPES: { value: BillType; label: string }[] = [
 ];
 
 export type BillStatus =
-  | "PENDING"
-  | "PARTIAL"
-  | "PAID"
-  | "OVERDUE"
-  | "CANCELLED";
+  "PENDING" | "PARTIAL" | "PAID" | "OVERDUE" | "CANCELLED";
 
 export const BILL_STATUSES: {
   value: BillStatus;
@@ -137,11 +134,7 @@ export interface Payment {
 }
 
 export type PaymentMethod =
-  | "CASH"
-  | "BANK_TRANSFER"
-  | "VIRTUAL_ACCOUNT"
-  | "EWALLET"
-  | "OTHER";
+  "CASH" | "BANK_TRANSFER" | "VIRTUAL_ACCOUNT" | "EWALLET" | "OTHER";
 
 // Values mirror the Prisma `PaymentMethod` enum exactly: the filter dropdown
 // sends its value straight to `GET /finance/payments?method=`, so a UI-only
@@ -194,13 +187,23 @@ export function normalizePayment(raw: any): Payment {
     ...raw,
     billId: raw.billId ?? invoice.id ?? raw.invoiceId ?? "",
     bill,
-    invoice: invoice.id ? { ...invoice, student: { ...student, name: user.name ?? student.name ?? "" } } : raw.invoice,
+    invoice: invoice.id
+      ? {
+          ...invoice,
+          student: { ...student, name: user.name ?? student.name ?? "" },
+        }
+      : raw.invoice,
     amount: Number(raw.amount ?? 0),
     paymentMethod: (raw.paymentMethod ?? raw.method ?? "CASH") as PaymentMethod,
     paymentDate: raw.paymentDate ?? raw.paidAt ?? raw.createdAt ?? "",
     receiptNumber: raw.receiptNumber ?? raw.referenceNo ?? raw.id ?? "",
-    verifiedBy: raw.verifiedBy ?? raw.finalVerifiedById ?? raw.tuVerifiedById ?? undefined,
-    verifiedAt: raw.verifiedAt ?? raw.finalVerifiedAt ?? raw.tuVerifiedAt ?? undefined,
+    verifiedBy:
+      raw.verifiedBy ??
+      raw.finalVerifiedById ??
+      raw.tuVerifiedById ??
+      undefined,
+    verifiedAt:
+      raw.verifiedAt ?? raw.finalVerifiedAt ?? raw.tuVerifiedAt ?? undefined,
   } as Payment;
 }
 
@@ -218,9 +221,12 @@ export function useBills(params: BillParams = {}) {
   return useQuery({
     queryKey: ["bills", params],
     queryFn: async () => {
-      const response = await api.get<PaginatedResponse<unknown>>("/finance/invoices", {
-        params,
-      });
+      const response = await api.get<PaginatedResponse<unknown>>(
+        "/finance/invoices",
+        {
+          params,
+        },
+      );
       return normalizeBillList(response.data);
     },
   });
@@ -230,7 +236,9 @@ export function useBill(id: string) {
   return useQuery({
     queryKey: ["bills", id],
     queryFn: async () => {
-      const response = await api.get<ApiResponse<unknown>>(`/finance/invoices/${id}`);
+      const response = await api.get<ApiResponse<unknown>>(
+        `/finance/invoices/${id}`,
+      );
       return normalizeBill(response.data.data);
     },
     enabled: !!id,
@@ -264,7 +272,10 @@ export function useCreateBill() {
 
   return useMutation({
     mutationFn: async (data: CreateBillData) => {
-      const response = await api.post<ApiResponse<Bill>>("/finance/invoices", data);
+      const response = await api.post<ApiResponse<Bill>>(
+        "/finance/invoices",
+        data,
+      );
       return response.data.data;
     },
     onSuccess: (_, variables) => {
@@ -288,7 +299,10 @@ export function useCreateBulkBills() {
       dueDate: string;
       description?: string;
     }) => {
-      const response = await api.post<ApiResponse<Bill[]>>("/finance/invoices/bulk", data);
+      const response = await api.post<ApiResponse<Bill[]>>(
+        "/finance/invoices/bulk",
+        data,
+      );
       return response.data.data;
     },
     onSuccess: () => {
@@ -308,7 +322,10 @@ export function useUpdateBill() {
       id: string;
       data: Partial<CreateBillData>;
     }) => {
-      const response = await api.patch<ApiResponse<Bill>>(`/finance/invoices/${id}`, data);
+      const response = await api.patch<ApiResponse<Bill>>(
+        `/finance/invoices/${id}`,
+        data,
+      );
       return response.data.data;
     },
     onSuccess: (_, variables) => {
@@ -347,9 +364,12 @@ export function usePayments(params: PaymentParams = {}) {
     queryFn: async () => {
       // The API filters by `invoiceId`, not the UI's `billId`.
       const { billId, paymentMethod, ...rest } = params;
-      const response = await api.get<PaginatedResponse<unknown>>("/finance/payments", {
-        params: { ...rest, invoiceId: billId, method: paymentMethod },
-      });
+      const response = await api.get<PaginatedResponse<unknown>>(
+        "/finance/payments",
+        {
+          params: { ...rest, invoiceId: billId, method: paymentMethod },
+        },
+      );
       return {
         ...response.data,
         data: (response.data.data ?? []).map(normalizePayment),
@@ -362,7 +382,9 @@ export function usePayment(id: string) {
   return useQuery({
     queryKey: ["payments", id],
     queryFn: async () => {
-      const response = await api.get<ApiResponse<unknown>>(`/finance/payments/${id}`);
+      const response = await api.get<ApiResponse<unknown>>(
+        `/finance/payments/${id}`,
+      );
       return normalizePayment(response.data.data);
     },
     enabled: !!id,
@@ -375,9 +397,12 @@ export function useBillPayments(billId: string) {
     queryFn: async () => {
       // There is no `/finance/invoices/:id/payments` route; the payments list
       // filtered by invoice is the same data.
-      const response = await api.get<PaginatedResponse<unknown>>("/finance/payments", {
-        params: { invoiceId: billId, limit: 100 },
-      });
+      const response = await api.get<PaginatedResponse<unknown>>(
+        "/finance/payments",
+        {
+          params: { invoiceId: billId, limit: 100 },
+        },
+      );
       return (response.data.data ?? []).map(normalizePayment);
     },
     enabled: !!billId,
@@ -399,12 +424,15 @@ export function useCreatePayment() {
     mutationFn: async (data: CreatePaymentData) => {
       // The API expects `invoiceId` + `method` (see createPaymentSchema); posting
       // the UI field names returned 400 "Invalid invoice ID".
-      const response = await api.post<ApiResponse<unknown>>("/finance/payments", {
-        invoiceId: data.billId,
-        amount: data.amount,
-        method: data.paymentMethod,
-        notes: data.notes,
-      });
+      const response = await api.post<ApiResponse<unknown>>(
+        "/finance/payments",
+        {
+          invoiceId: data.billId,
+          amount: data.amount,
+          method: data.paymentMethod,
+          notes: data.notes,
+        },
+      );
       return normalizePayment(response.data.data);
     },
     onSuccess: (_, variables) => {

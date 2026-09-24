@@ -6,10 +6,12 @@ export class OrganisasiService {
     return prisma.orgUnit.findMany({
       where: { unitId },
       include: {
-        children: { include: { positions: { include: { holder: { select: { id: true, name: true } } } } } },
+        children: {
+          include: { positions: { include: { holder: { select: { id: true, name: true } } } } },
+        },
         positions: { include: { holder: { select: { id: true, name: true } } } },
       },
-      orderBy: [{ level: "asc" }, { sortOrder: "asc" }],
+      orderBy: [{ level: 'asc' }, { sortOrder: 'asc' }],
     });
   }
 
@@ -29,10 +31,10 @@ export class OrganisasiService {
               },
             },
           },
-          orderBy: { sortOrder: "asc" },
+          orderBy: { sortOrder: 'asc' },
         },
       },
-      orderBy: { sortOrder: "asc" },
+      orderBy: { sortOrder: 'asc' },
     });
   }
 
@@ -40,7 +42,7 @@ export class OrganisasiService {
     return prisma.orgUnit.findUniqueOrThrow({
       where: { id },
       include: {
-        children: { orderBy: { sortOrder: "asc" } },
+        children: { orderBy: { sortOrder: 'asc' } },
         positions: { include: { holder: { select: { id: true, name: true } } } },
         parent: true,
       },
@@ -59,14 +61,17 @@ export class OrganisasiService {
     return prisma.orgUnit.create({ data });
   }
 
-  async updateOrgUnit(id: string, data: Partial<{
-    name: string;
-    code: string;
-    description: string;
-    parentId: string;
-    level: number;
-    sortOrder: number;
-  }>) {
+  async updateOrgUnit(
+    id: string,
+    data: Partial<{
+      name: string;
+      code: string;
+      description: string;
+      parentId: string;
+      level: number;
+      sortOrder: number;
+    }>
+  ) {
     return prisma.orgUnit.update({ where: { id }, data });
   }
 
@@ -79,7 +84,7 @@ export class OrganisasiService {
     return prisma.orgPosition.findMany({
       where: { orgUnitId },
       include: { holder: { select: { id: true, name: true } } },
-      orderBy: { level: "asc" },
+      orderBy: { level: 'asc' },
     });
   }
 
@@ -107,7 +112,7 @@ export class OrganisasiService {
     const parent = await prisma.orgPosition.findFirst({
       where: { orgUnitId: orgUnit.parentId },
       select: { id: true, title: true },
-      orderBy: { level: "asc" },
+      orderBy: { level: 'asc' },
     });
     return parent;
   }
@@ -126,7 +131,7 @@ export class OrganisasiService {
         holder: { select: { id: true, name: true } },
         orgUnit: { select: { id: true, name: true } },
       },
-      orderBy: [{ level: "asc" }, { title: "asc" }],
+      orderBy: [{ level: 'asc' }, { title: 'asc' }],
     });
   }
 
@@ -143,15 +148,18 @@ export class OrganisasiService {
     return prisma.orgPosition.create({ data });
   }
 
-  async updatePosition(id: string, data: Partial<{
-    title: string;
-    code: string;
-    level: number;
-    status: any;
-    holderId: string;
-    description: string;
-    requirements: string;
-  }>) {
+  async updatePosition(
+    id: string,
+    data: Partial<{
+      title: string;
+      code: string;
+      level: number;
+      status: any;
+      holderId: string;
+      description: string;
+      requirements: string;
+    }>
+  ) {
     return prisma.orgPosition.update({ where: { id }, data });
   }
 

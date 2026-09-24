@@ -11,9 +11,7 @@ import { ApiResponse } from '../../utils/response';
 export const list = asyncHandler(async (req: Request, res: Response) => {
   const query = listWalletsQuerySchema.parse(req.query);
   const result = await walletService.listWallets(query);
-  return res.json(
-    ApiResponse.success(result.data, 'Daftar wallet berhasil diambil', result.meta),
-  );
+  return res.json(ApiResponse.success(result.data, 'Daftar wallet berhasil diambil', result.meta));
 });
 
 /**
@@ -34,7 +32,7 @@ export const listTransactions = asyncHandler(async (req: Request, res: Response)
   const query = listTransactionsQuerySchema.parse(req.query);
   const result = await walletService.listTransactions(query);
   return res.json(
-    ApiResponse.success(result.data, 'Daftar transaksi berhasil diambil', result.meta),
+    ApiResponse.success(result.data, 'Daftar transaksi berhasil diambil', result.meta)
   );
 });
 
@@ -57,7 +55,7 @@ export const getStudentTransactions = asyncHandler(async (req: Request, res: Res
   const query = listTransactionsQuerySchema.parse({ ...req.query, studentId });
   const result = await walletService.listTransactions(query);
   return res.json(
-    ApiResponse.success(result.data, 'Transaksi wallet berhasil diambil', result.meta),
+    ApiResponse.success(result.data, 'Transaksi wallet berhasil diambil', result.meta)
   );
 });
 

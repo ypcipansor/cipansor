@@ -414,13 +414,19 @@ function normalizeRapor(raw: Partial<RaporPesantren>): RaporPesantren {
     : undefined;
   const mappedIbadah = raw.ibadah
     ? {
-        score: numberOr(raw.ibadah.score, legacy.ibadah?.sholatFardhuPercentage),
+        score: numberOr(
+          raw.ibadah.score,
+          legacy.ibadah?.sholatFardhuPercentage,
+        ),
         grade: stringOr(raw.ibadah.grade, undefined),
       }
     : undefined;
   const mappedMuhadhoroh = raw.muhadhoroh
     ? {
-        score: numberOr(raw.muhadhoroh.score, legacy.muhadhoroh?.speechSkillScore),
+        score: numberOr(
+          raw.muhadhoroh.score,
+          legacy.muhadhoroh?.speechSkillScore,
+        ),
         grade: stringOr(raw.muhadhoroh.grade, legacy.muhadhoroh?.speechGrade),
       }
     : undefined;
@@ -444,12 +450,18 @@ function normalizeRapor(raw: Partial<RaporPesantren>): RaporPesantren {
   };
 }
 
-function numberOr(primary: number | undefined, fallback: unknown): number | undefined {
+function numberOr(
+  primary: number | undefined,
+  fallback: unknown,
+): number | undefined {
   if (typeof primary === "number") return primary;
   return typeof fallback === "number" ? fallback : undefined;
 }
 
-function stringOr(primary: string | undefined, fallback: unknown): string | undefined {
+function stringOr(
+  primary: string | undefined,
+  fallback: unknown,
+): string | undefined {
   if (primary) return primary;
   return typeof fallback === "string" ? fallback : undefined;
 }

@@ -201,107 +201,107 @@ export default function ParentChildIbadahPage() {
 
           {/* Summary Stats */}
           {stats && (
-        <div className="grid gap-4 md:grid-cols-3">
-          <Card className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-950 dark:to-emerald-950">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Persentase
-              </CardTitle>
-              <TrendingUp className="h-4 w-4 text-green-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-700">
-                {stats.summary.completionRate}%
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                Keterlaksanaan Ibadah
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-gradient-to-br from-orange-50 to-amber-50 dark:from-orange-950 dark:to-amber-950">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Streak (Maksimal)
-              </CardTitle>
-              <Flame className="h-4 w-4 text-orange-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-orange-700">
-                {stats.summary.maxStreak} Hari
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                Rekor konsistensi terbaik
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950 dark:to-indigo-950">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Total Poin
-              </CardTitle>
-              <Star className="h-4 w-4 text-blue-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-blue-700">
-                {stats.summary.totalPoints}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                Poin terkumpul bulan ini
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* Category Breakdown */}
-      {stats && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Award className="h-5 w-5 text-primary" />
-              Detail Kategori
-            </CardTitle>
-            <CardDescription>
-              Capaian ibadah berdasarkan kategori
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-6">
-              {stats.byCategory.map((cat) => (
-                <div key={cat.category} className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="font-medium">
-                      {CATEGORY_LABELS[cat.category] || cat.category}
-                    </span>
-                    <span className="text-muted-foreground">
-                      {cat.completed} / {cat.total} ({cat.completionRate}%)
-                    </span>
+            <div className="grid gap-4 md:grid-cols-3">
+              <Card className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-950 dark:to-emerald-950">
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Persentase
+                  </CardTitle>
+                  <TrendingUp className="h-4 w-4 text-green-600" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-green-700">
+                    {stats.summary.completionRate}%
                   </div>
-                  <Progress
-                    value={cat.completionRate}
-                    className="h-2"
-                    // Dynamic color based on score
-                    indicatorClassName={
-                      cat.completionRate >= 80
-                        ? "bg-green-500"
-                        : cat.completionRate >= 60
-                          ? "bg-yellow-500"
-                          : "bg-red-500"
-                    }
-                  />
-                </div>
-              ))}
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Keterlaksanaan Ibadah
+                  </p>
+                </CardContent>
+              </Card>
 
-              {stats.byCategory.length === 0 && (
-                <div className="text-center py-8 text-muted-foreground">
-                  Belum ada data ibadah untuk periode ini.
-                </div>
-              )}
+              <Card className="bg-gradient-to-br from-orange-50 to-amber-50 dark:from-orange-950 dark:to-amber-950">
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Streak (Maksimal)
+                  </CardTitle>
+                  <Flame className="h-4 w-4 text-orange-600" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-orange-700">
+                    {stats.summary.maxStreak} Hari
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Rekor konsistensi terbaik
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950 dark:to-indigo-950">
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Total Poin
+                  </CardTitle>
+                  <Star className="h-4 w-4 text-blue-600" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-blue-700">
+                    {stats.summary.totalPoints}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Poin terkumpul bulan ini
+                  </p>
+                </CardContent>
+              </Card>
             </div>
-          </CardContent>
-        </Card>
+          )}
+
+          {/* Category Breakdown */}
+          {stats && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Award className="h-5 w-5 text-primary" />
+                  Detail Kategori
+                </CardTitle>
+                <CardDescription>
+                  Capaian ibadah berdasarkan kategori
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-6">
+                  {stats.byCategory.map((cat) => (
+                    <div key={cat.category} className="space-y-2">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="font-medium">
+                          {CATEGORY_LABELS[cat.category] || cat.category}
+                        </span>
+                        <span className="text-muted-foreground">
+                          {cat.completed} / {cat.total} ({cat.completionRate}%)
+                        </span>
+                      </div>
+                      <Progress
+                        value={cat.completionRate}
+                        className="h-2"
+                        // Dynamic color based on score
+                        indicatorClassName={
+                          cat.completionRate >= 80
+                            ? "bg-green-500"
+                            : cat.completionRate >= 60
+                              ? "bg-yellow-500"
+                              : "bg-red-500"
+                        }
+                      />
+                    </div>
+                  ))}
+
+                  {stats.byCategory.length === 0 && (
+                    <div className="text-center py-8 text-muted-foreground">
+                      Belum ada data ibadah untuk periode ini.
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
           )}
         </>
       )}

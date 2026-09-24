@@ -28,7 +28,7 @@ router.put(
   authenticate,
   authorize('SUPER_ADMIN', 'UNIT_ADMIN'),
   validate(raporConfigSchema),
-  controller.saveConfig,
+  controller.saveConfig
 );
 router.post('/generate', authenticate, validate(getRaporQuerySchema), controller.generate);
 router.post(
@@ -36,14 +36,14 @@ router.post(
   authenticate,
   authorize('SUPER_ADMIN', 'UNIT_ADMIN'),
   validate(generateBatchRaporSchema),
-  controller.generateBatch,
+  controller.generateBatch
 );
 router.get(
   '/leger',
   authenticate,
   authorize('SUPER_ADMIN', 'UNIT_ADMIN', 'TEACHER'),
   validate(getLegerQuerySchema),
-  controller.getLeger,
+  controller.getLeger
 );
 router.get('/', authenticate, controller.list);
 

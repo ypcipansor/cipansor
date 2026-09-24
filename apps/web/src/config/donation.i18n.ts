@@ -49,7 +49,10 @@ export interface DonationContent {
     exampleLabel: string;
     whatsappCta: string;
   };
-  steps: { heading: string; items: Array<{ title: string; description: string }> };
+  steps: {
+    heading: string;
+    items: Array<{ title: string; description: string }>;
+  };
   commitment: { title: string; text: string };
   /** Shown above the hadith and the closing verse when they are not in the
    *  reader's language. `null` for Indonesian, which is what they are in. */
@@ -117,7 +120,8 @@ const ID: DonationContent = {
     subheading: "Transfer donasi ke rekening resmi Yayasan Pesantren Cipansor",
     accountHolderPrefix: "a.n.",
     confirmHeading: "Konfirmasi Donasi",
-    confirmIntro: "Setelah transfer, kirim bukti melalui WhatsApp dengan format",
+    confirmIntro:
+      "Setelah transfer, kirim bukti melalui WhatsApp dengan format",
     exampleLabel: "Contoh:",
     whatsappCta: "Konfirmasi via WhatsApp",
   },
@@ -225,8 +229,7 @@ const EN: DonationContent = {
       "Transfer your donation to the official account of Yayasan Pesantren Cipansor",
     accountHolderPrefix: "in the name of",
     confirmHeading: "Confirming Your Donation",
-    confirmIntro:
-      "After transferring, send proof by WhatsApp in the format",
+    confirmIntro: "After transferring, send proof by WhatsApp in the format",
     exampleLabel: "For example:",
     whatsappCta: "Confirm on WhatsApp",
   },
@@ -336,8 +339,7 @@ const AR: DonationContent = {
       },
       INFAK: {
         title: "الإنفاق على التشغيل اليومي",
-        description:
-          "دعمٌ لسير التعليم اليومي ولصيانة مرافق المعهد.",
+        description: "دعمٌ لسير التعليم اليومي ولصيانة مرافق المعهد.",
       },
     },
   },
@@ -377,8 +379,7 @@ const AR: DonationContent = {
     "الحديث والآية الواردان في هذه الصفحة معروضان بصياغة المعهد لهما بالإندونيسية، دون ترجمة.",
   form: {
     title: "استمارة التبرّع",
-    description:
-      "أدخل بيانات تبرّعك. يُعتمد التبرّع بعد تأكيد الدفع.",
+    description: "أدخل بيانات تبرّعك. يُعتمد التبرّع بعد تأكيد الدفع.",
     amountLabel: "مبلغ التبرّع",
     amountPlaceholder: "أو أدخل مبلغاً آخر",
     typeLabel: "نوع التبرّع",

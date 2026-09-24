@@ -111,9 +111,7 @@ export default function RaporConfigPage() {
     return (
       <MainLayout>
         <div className="flex justify-center items-center min-h-[400px]">
-          <p className="text-muted-foreground">
-            Belum ada unit yang tersedia.
-          </p>
+          <p className="text-muted-foreground">Belum ada unit yang tersedia.</p>
         </div>
       </MainLayout>
     );

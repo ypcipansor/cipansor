@@ -13,11 +13,7 @@ import type {
 } from "./types";
 
 export type AttendanceStatus =
-  | "PRESENT"
-  | "ABSENT"
-  | "LATE"
-  | "EXCUSED"
-  | "SICK";
+  "PRESENT" | "ABSENT" | "LATE" | "EXCUSED" | "SICK";
 
 export interface AttendanceRecord {
   id: string;

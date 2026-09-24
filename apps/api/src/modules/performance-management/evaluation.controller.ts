@@ -87,7 +87,12 @@ export const approveEvaluation = asyncHandler(async (req: Request, res: Response
   const { id, isAdmin } = user;
   await pkService.assertUnitScope({ evaluationId: req.params.id }, user);
   const body = approveEvaluationSchema.parse(req.body || {});
-  const evaluation = await evaluationService.approveEvaluation(req.params.id, id, isAdmin, body.feedback);
+  const evaluation = await evaluationService.approveEvaluation(
+    req.params.id,
+    id,
+    isAdmin,
+    body.feedback
+  );
   res.json(ApiResponse.success(evaluation));
 });
 

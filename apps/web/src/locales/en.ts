@@ -50,7 +50,8 @@ export const en = {
     password: "Password",
     signIn: "Sign In",
     demoCredentials: "Demo Credentials",
-    demoDescription: "Click any role to try the demo. Each role has different access levels.",
+    demoDescription:
+      "Click any role to try the demo. Each role has different access levels.",
     quickDemoLogin: "Quick Demo Login",
     note: "Note: This is a demo environment. All data is sample data and will be reset periodically.",
   },
@@ -235,7 +236,8 @@ export const en = {
     account: {
       title: "Account Security",
       description: "Update password and secure your login credentials",
-      alert: "Account security is managed centrally by the administrator. Contact IT Support for credentials reset.",
+      alert:
+        "Account security is managed centrally by the administrator. Contact IT Support for credentials reset.",
     },
     about: {
       title: "About System",

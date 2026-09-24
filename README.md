@@ -3656,9 +3656,10 @@ cp apps/web/.env.example apps/web/.env.local
 pnpm --filter @cipansor/shared build
 
 # 4. Siapkan database
+# Seed mengosongkan SEMUA tabel sebelum mengisi data contoh — jangan pernah ke produksi.
 pnpm --filter api db:generate
 pnpm --filter api db:push
-pnpm --filter api db:seed
+ALLOW_DESTRUCTIVE_SEED=1 E2E_FIXED_2FA=1 pnpm --filter api db:seed
 
 # 5. Jalankan (API + Web)
 pnpm dev
@@ -3674,7 +3675,7 @@ Akses:
 ```bash
 docker compose -f docker-compose.dev.yml up -d   # Postgres + Redis
 pnpm --filter api db:push
-pnpm --filter api db:seed
+ALLOW_DESTRUCTIVE_SEED=1 E2E_FIXED_2FA=1 pnpm --filter api db:seed
 pnpm dev
 ```
 

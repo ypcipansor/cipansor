@@ -132,8 +132,8 @@ export default function CreateSimaanPage() {
         ...data,
         examDate: format(data.examDate, "yyyy-MM-dd"),
         simaanType: data.examType,
-        juzStart: data.examType === "CUSTOM" ? (data.startJuz || 1) : 1, // Logic to determine juz
-        juzEnd: data.examType === "CUSTOM" ? (data.endJuz || 1) : 1, // Logic to determine juz
+        juzStart: data.examType === "CUSTOM" ? data.startJuz || 1 : 1, // Logic to determine juz
+        juzEnd: data.examType === "CUSTOM" ? data.endJuz || 1 : 1, // Logic to determine juz
         sessionNumber: 1, // Default or add to form
         totalSessions: 1, // Default or add to form
       });
@@ -433,7 +433,9 @@ export default function CreateSimaanPage() {
                                 </span>
                               </div>
                               <div>
-                                <p className="font-medium">{teacher.user?.name}</p>
+                                <p className="font-medium">
+                                  {teacher.user?.name}
+                                </p>
                                 <p className="text-xs text-muted-foreground">
                                   Pengajar
                                 </p>

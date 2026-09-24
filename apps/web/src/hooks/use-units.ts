@@ -71,8 +71,9 @@ export function usePublicUnits() {
   return useQuery({
     queryKey: ["units", "public"],
     queryFn: async () => {
-      const response =
-        await api.get<ApiResponse<Unit[]>>("/admissions/public/units");
+      const response = await api.get<ApiResponse<Unit[]>>(
+        "/admissions/public/units",
+      );
       return response.data.data;
     },
     staleTime: 60 * 60 * 1000,

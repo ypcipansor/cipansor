@@ -78,13 +78,20 @@ const ID: Record<string, NewsText> = Object.fromEntries(
   articles.map((a) => [a.slug, { title: a.title, excerpt: a.excerpt }]),
 );
 
-const BY_LOCALE: Record<Locale, Record<string, NewsText>> = { id: ID, en: EN, ar: AR };
+const BY_LOCALE: Record<Locale, Record<string, NewsText>> = {
+  id: ID,
+  en: EN,
+  ar: AR,
+};
 
 /**
  * Falls back to the Indonesian headline for a slug with no translation yet, so
  * a newly published article appears everywhere instead of vanishing from the
  * English and Arabic homepages.
  */
-export function newsTextFor(locale: Locale, slug: string): NewsText | undefined {
+export function newsTextFor(
+  locale: Locale,
+  slug: string,
+): NewsText | undefined {
   return (BY_LOCALE[locale] ?? ID)[slug] ?? ID[slug];
 }
