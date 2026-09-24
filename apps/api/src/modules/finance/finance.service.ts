@@ -1349,9 +1349,13 @@ export async function generateBulkSppInvoices(data: {
     throw new Error('Payment type not found');
   }
 
-  // Get students
+  // Only santri who are still enrolled. With no status filter the monthly job
+  // (finance-billing.job.ts) billed alumni, and santri who had transferred out,
+  // every month.
   const students = await prisma.student.findMany({
     where: {
+      status: STUDENT_STATUS.ACTIVE,
+      deletedAt: null,
       ...(unitId && { unitId }),
       ...(classId && {
         enrollments: {

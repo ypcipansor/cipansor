@@ -7,6 +7,7 @@ import { shouldSendNotification, isInQuietHours, getPreferences } from '@/module
 vi.mock('@/lib/prisma', () => ({
   prisma: {
     student: { findUnique: vi.fn() },
+    tahfidzRecord: { groupBy: vi.fn().mockResolvedValue([]) },
     notification: { create: vi.fn().mockResolvedValue({ id: 'notif-1' }) },
     setting: { findFirst: vi.fn() },
   },
@@ -311,5 +312,54 @@ describe('Event bus — password reset e-mail', () => {
       expect(link).toContain('/reset-password?token=');
       expect(link).toContain('b'.repeat(64));
     });
+  });
+});
+
+describe('Event bus — tahfidz milestones', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(shouldSendNotification).mockResolvedValue(true);
+    vi.mocked(isInQuietHours).mockReturnValue(false);
+    vi.mocked(getPreferences).mockResolvedValue({} as never);
+    eventBus.removeAllListeners();
+    initializeEventBus();
+    (prisma.setting.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({ value: { EMAIL: false } });
+    (prisma.student.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ...studentWith([]),
+      user: { id: 'u-student', name: 'Santri Ahmad', email: 'student@cipansor.or.id' },
+      unit: { name: 'SMA' },
+    });
+  });
+
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
+  const milestoneNotifications = () =>
+    (prisma.notification.create as ReturnType<typeof vi.fn>).mock.calls
+      .map(([args]) => args.data)
+      .filter((data) => data.type === 'TAHFIDZ');
+
+  it('notifies the santri’s USER when a setoran completes a juz', async () => {
+    (prisma as unknown as { tahfidzRecord: { groupBy: ReturnType<typeof vi.fn> } }).tahfidzRecord.groupBy.mockResolvedValue([
+      { juz: 30, _sum: { totalAyah: 564 } },
+    ]);
+
+    eventBus.emit('tahfidz:created', { ...tahfidzEvent, juz: 30, totalAyah: 40 });
+    await settle();
+
+    const sent = milestoneNotifications();
+    expect(sent).toHaveLength(1);
+    expect(sent[0].userId).toBe('u-student'); // the User id, never the Student id
+    expect(sent[0].message).toContain('Juz 30');
+  });
+
+  it('says nothing for a setoran that leaves the juz incomplete, or for murojaah', async () => {
+    (prisma as unknown as { tahfidzRecord: { groupBy: ReturnType<typeof vi.fn> } }).tahfidzRecord.groupBy.mockResolvedValue([
+      { juz: 30, _sum: { totalAyah: 640 } },
+    ]);
+
+    eventBus.emit('tahfidz:created', { ...tahfidzEvent, juz: 30, totalAyah: 40 }); // 600 → 640: complete already
+    eventBus.emit('tahfidz:created', { ...tahfidzEvent, activityType: 'MUROJAAH', juz: 30, totalAyah: 564 });
+    await settle();
+
+    expect(milestoneNotifications()).toHaveLength(0);
   });
 });

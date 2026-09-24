@@ -788,7 +788,13 @@ export class DashboardService {
    * CBT (online exam) summary for the dashboard.
    */
   async getCBTSummary(context: DashboardServiceContext): Promise<CBTStats> {
-    const unitFilter = context.unitId ? { unitId: context.unitId } : {};
+    // A CBT exam is one delivered from a question bank (the CBT module refuses to
+    // create one without `questionBankId`). Written exams share the table, and
+    // counting them made the card report every ulangan as an online exam.
+    const unitFilter = {
+      ...(context.unitId ? { unitId: context.unitId } : {}),
+      questionBankId: { not: null },
+    };
     const now = new Date();
 
     const [totalExams, ongoingExams, upcomingExams, totalAttempts, avgScoreResult] =

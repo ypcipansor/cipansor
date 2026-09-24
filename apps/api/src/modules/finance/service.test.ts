@@ -26,6 +26,9 @@ vi.mock('../../lib/prisma', () => {
       count: vi.fn(),
       findUnique: vi.fn(),
     },
+    student: {
+      findMany: vi.fn(async () => []),
+    },
     scholarshipRecipient: {
       // No active scholarships by default — invoice amount stays as-is.
       findMany: vi.fn(async () => []),
@@ -172,6 +175,26 @@ describe('Finance Service Unit Tests', () => {
 
       const createArgs = vi.mocked(prisma.invoice.create).mock.calls[0][0];
       expect(Number(createArgs.data.amount)).toBe(250000);
+    });
+  });
+});
+
+describe('generateBulkSppInvoices', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('bills only santri who are still enrolled, never alumni or those who left', async () => {
+    (prisma.paymentType.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'pt-spp',
+      name: 'SPP',
+      amount: new Prisma.Decimal(350000),
+    });
+    const findStudents = (prisma as unknown as { student: { findMany: ReturnType<typeof vi.fn> } }).student.findMany;
+    findStudents.mockResolvedValue([]);
+
+    await financeService.generateBulkSppInvoices({ unitId: 'unit-1', paymentTypeId: 'pt-spp', year: 2026, month: 9 });
+
+    expect(findStudents).toHaveBeenCalledWith({
+      where: expect.objectContaining({ unitId: 'unit-1', status: 'active', deletedAt: null }),
     });
   });
 });
