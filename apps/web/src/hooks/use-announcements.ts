@@ -96,24 +96,6 @@ export function useAnnouncementStats(unitId?: string) {
   });
 }
 
-// Get recent announcements
-export function useRecentAnnouncements(unitId?: string, limit: number = 5) {
-  return useQuery({
-    queryKey: ["announcements", "recent", unitId, limit],
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      if (unitId) params.append("unitId", unitId);
-      params.append("limit", String(limit));
-
-      const response = await api.get<{
-        success: boolean;
-        data: Announcement[];
-      }>(`/announcements/recent?${params.toString()}`);
-      return response.data.data;
-    },
-  });
-}
-
 // Get single announcement
 export function useAnnouncement(id: string) {
   return useQuery({

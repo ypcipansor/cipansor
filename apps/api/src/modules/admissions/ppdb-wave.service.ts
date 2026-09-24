@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { Prisma, WaveStatus } from '@prisma/client';
 import { Errors } from '@/middleware/error';
 import { CreateWaveInput, UpdateWaveInput } from './ppdb-wave.schema';
+import { readsAllUnits } from './admissions.access';
 
 type AuthUser = { id: string; role: string; roleCode?: string; unitId?: string | null };
 
@@ -65,8 +66,9 @@ export const waveService = {
       ...(periodId && { periodId }),
       ...(status && { status: status as WaveStatus }),
     };
-    // A non-SUPER_ADMIN may only list waves for their own unit.
-    where = scopeWavesByUnit(where, actor);
+    // A non-SUPER_ADMIN may only list waves for their own unit; the yayasan
+    // board reads every unit's (readsAllUnits).
+    if (!actor || !readsAllUnits(actor)) where = scopeWavesByUnit(where, actor);
 
     const [data, total] = await Promise.all([
       prisma.admissionWave.findMany({
@@ -140,7 +142,8 @@ export const waveService = {
    * Get wave by ID
    */
   async findById(id: string, actor?: AuthUser) {
-    await assertWaveUnitAccess(id, actor);
+    // A read: the board may look (readsAllUnits); update/delete keep the check.
+    if (!actor || !readsAllUnits(actor)) await assertWaveUnitAccess(id, actor);
     const wave = await prisma.admissionWave.findUnique({
       where: { id },
       include: {
@@ -327,7 +330,7 @@ export const waveService = {
       where: { id: periodId },
       select: { unitId: true },
     });
-    if (periodUnit && actor && !isSuperAdmin(actor)) {
+    if (periodUnit && actor && !readsAllUnits(actor)) {
       if (!actor.unitId) {
         throw Errors.forbidden('Access to this unit is not allowed');
       }
@@ -522,7 +525,7 @@ export const waveService = {
     },
     actor?: AuthUser
   ) {
-    await assertWaveUnitAccess(waveId, actor);
+    if (!actor || !readsAllUnits(actor)) await assertWaveUnitAccess(waveId, actor);
     const { page, limit, status } = params;
     const skip = (page - 1) * limit;
 

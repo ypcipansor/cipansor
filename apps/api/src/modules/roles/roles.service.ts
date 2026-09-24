@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { redis } from '@/lib/redis';
 import { Errors } from '@/middleware/error';
 import { BoardSuspensionStatus, Realm, RoleCode } from '@prisma/client';
+import { SUPPORT_ROLE_CODES } from '@cipansor/shared';
 import type { CreateRoleInput, UpdateRoleInput } from './roles.schema';
 import { findOrganConflict } from '@/utils/role-eligibility';
 import { isParentRole } from '@/utils/parent-scope';
@@ -11,6 +12,23 @@ import { config } from '@/config';
 import { tokenUnitId } from '@/utils/resolve-unit-id';
 import { lockUserAndAssignments, lockUserRows } from '@/utils/role-assignment-lock';
 import { disconnectUserSockets } from '@/lib/realtime';
+
+/** Who is changing someone's roles: the verified token, never the request body. */
+export interface RoleActor {
+  sub: string;
+  roleCode: string;
+  unitId?: string | null;
+}
+
+/**
+ * Roles only Super Admin may hand out or take away: Super Admin itself, the
+ * per-school admins, and the yayasan organs. Register already refuses these
+ * to anyone but Super Admin (auth.service); assignment has to agree with it,
+ * or register's rule is one request away from meaningless.
+ */
+function isSuperAdminOnlyRole(code: string): boolean {
+  return code === RoleCode.SUPER_ADMIN || isAdminRoleCode(code) || isGovernanceRoleCode(code);
+}
 
 export class RolesService {
   /**
@@ -154,14 +172,55 @@ export class RolesService {
   }
 
   /**
+   * A unit admin manages the roles of THEIR OWN unit, below their own level,
+   * and never their own. Super Admin is unrestricted.
+   *
+   * Until this check, any admin-bucket account (the unit admins and, through
+   * the legacy UNIT_ADMIN bucket, every yayasan organ) could assign any role,
+   * SUPER_ADMIN included, to any user at any unit: themselves too.
+   */
+  private async assertMayManage(
+    actor: RoleActor,
+    target: { userId: string; roleCode: string; roleRealm: Realm; unitId: string | null }
+  ) {
+    if (actor.roleCode === RoleCode.SUPER_ADMIN) return;
+
+    if (!isAdminRoleCode(actor.roleCode) || !actor.unitId) {
+      throw Errors.forbidden('Hanya admin yang dapat mengatur peran pengguna');
+    }
+    if (target.userId === actor.sub) {
+      throw Errors.forbidden('Peran Anda sendiri hanya dapat diubah oleh Super Admin');
+    }
+    if (isSuperAdminOnlyRole(target.roleCode)) {
+      throw Errors.forbidden('Peran ini hanya dapat diatur oleh Super Admin');
+    }
+    if (target.unitId !== actor.unitId) {
+      throw Errors.forbidden('Anda hanya dapat mengatur peran di unit Anda sendiri');
+    }
+
+    // The school's own roles, plus the support staff (librarian, nurse,
+    // security, lab) who serve a school but are defined once for all of them.
+    const actorRole = await prisma.role.findUnique({
+      where: { code: actor.roleCode },
+      select: { realm: true },
+    });
+    if (
+      !actorRole ||
+      (target.roleRealm !== actorRole.realm && !SUPPORT_ROLE_CODES.includes(target.roleCode))
+    ) {
+      throw Errors.forbidden('Peran ini bukan peran unit Anda');
+    }
+  }
+
+  /**
    * Assign role to user
    */
   async assignRoleToUser(
+    actor: RoleActor,
     userId: string,
     roleId: string,
     unitId?: string,
-    isPrimary = false,
-    actorRoleCode?: string
+    isPrimary = false
   ) {
     // Check if user exists
     const user = await prisma.user.findUnique({ where: { id: userId } });
@@ -175,25 +234,17 @@ export class RolesService {
       throw Errors.notFound('Role');
     }
 
-    // Privilege-escalation guard, mirroring `AuthService.createUser`.
-    //
-    // `POST /roles/assign` is guarded by `authorize(SUPER_ADMIN, UNIT_ADMIN)`,
-    // so a unit admin can reach it — and without this check the only rule was
-    // `findOrganConflict`, which stops a person holding two yayasan organs but
-    // says nothing about *who may grant which role*. A unit admin could
-    // therefore mint SUPER_ADMIN, another unit's admin, or a governance role
-    // (PEMBINA, PENGAWAS, …) for any account, which is the same escalation the
-    // create-account path already refuses. The two doors must agree: only a
-    // Super Admin may grant an admin-level or governance-level role.
-    if (
-      actorRoleCode !== undefined &&
-      actorRoleCode !== RoleCode.SUPER_ADMIN &&
-      (isAdminRoleCode(role.code) || isGovernanceRoleCode(role.code))
-    ) {
-      throw Errors.forbidden(
-        'Hanya Super Admin yang dapat memberikan peran admin atau governance.'
-      );
+    // A unit admin's assignment lands in their own unit unless they say so;
+    // anything else is refused by assertMayManage.
+    if (!unitId && actor.roleCode !== RoleCode.SUPER_ADMIN && actor.unitId) {
+      unitId = actor.unitId;
     }
+    await this.assertMayManage(actor, {
+      userId,
+      roleCode: role.code,
+      roleRealm: role.realm,
+      unitId: unitId ?? null,
+    });
 
     // A guardian role without a child at that unit produces an account with an
     // empty parent portal, scoped to a school it has no business seeing.
@@ -271,6 +322,9 @@ export class RolesService {
           unitId,
           isPrimary,
           isActive: true,
+          // Who granted it. The column existed but was never filled: all 429
+          // assignments in production (2026-09-24) had no author.
+          assignedBy: actor.sub,
         },
         include: {
           role: true,
@@ -283,14 +337,22 @@ export class RolesService {
   /**
    * Remove role assignment
    */
-  async removeRoleAssignment(assignmentId: string) {
+  async removeRoleAssignment(actor: RoleActor, assignmentId: string) {
     const assignment = await prisma.userRoleAssignment.findUnique({
       where: { id: assignmentId },
+      include: { role: { select: { code: true, realm: true } } },
     });
 
     if (!assignment) {
       throw Errors.notFound('Role assignment');
     }
+
+    await this.assertMayManage(actor, {
+      userId: assignment.userId,
+      roleCode: assignment.role.code,
+      roleRealm: assignment.role.realm,
+      unitId: assignment.unitId,
+    });
 
     // Revoke under the shared protocol: the user row first, then the
     // assignment rows.
@@ -376,7 +438,7 @@ export class RolesService {
   /**
    * Set primary role for user
    */
-  async setPrimaryRole(userId: string, assignmentId: string) {
+  async setPrimaryRole(actor: RoleActor, userId: string, assignmentId: string) {
     // "Exactly one primary" is a read-then-write invariant across two rows, so
     // the whole swap runs under the shared protocol rather than as two
     // independent statements that a concurrent writer can interleave.
@@ -386,11 +448,19 @@ export class RolesService {
       // Check if assignment exists and belongs to user
       const assignment = await tx.userRoleAssignment.findFirst({
         where: { id: assignmentId, userId },
+        include: { role: { select: { code: true, realm: true } } },
       });
 
       if (!assignment) {
         throw Errors.notFound('Role assignment');
       }
+
+      await this.assertMayManage(actor, {
+        userId,
+        roleCode: assignment.role.code,
+        roleRealm: assignment.role.realm,
+        unitId: assignment.unitId,
+      });
 
       // Unset all primary roles for user
       await tx.userRoleAssignment.updateMany({

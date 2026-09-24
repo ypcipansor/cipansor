@@ -362,6 +362,33 @@ export function hasPermission(permission: string) {
 }
 
 /**
+ * Admits a request that passes EITHER a legacy role list (as authorize()) OR
+ * holds one permission (as hasPermission()).
+ *
+ * For read routes moving onto the permission model without taking access
+ * away from anyone the legacy list admits today. The SPMB reads needed it:
+ * `ADMISSION_VIEW` is what the Kepala Sekolah and the yayasan board hold, but
+ * the bendahara, who records registration fees, reaches registrants only
+ * through the legacy STAFF bucket.
+ */
+export function authorizeOrPermission(allowedRoleCodes: string[], permission: string) {
+  const expanded = expandRoleCodes(allowedRoleCodes);
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (!req.user) {
+      return next(Errors.unauthorized());
+    }
+    if (
+      req.user.roleCode === RoleCode.SUPER_ADMIN ||
+      expanded.includes(req.user.roleCode) ||
+      (req.user.permissions || []).includes(permission)
+    ) {
+      return next();
+    }
+    return next(Errors.forbidden('Insufficient permissions'));
+  };
+}
+
+/**
  * Check if user is Super Admin
  */
 export function isSuperAdmin(req: Request, res: Response, next: NextFunction) {

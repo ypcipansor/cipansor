@@ -29,25 +29,31 @@ import {
 } from "@/components/ui/table";
 import { Pagination } from "@/components/shared";
 import { MainLayout } from "@/components/layout";
+import { Badge } from "@/components/ui/badge";
 import {
   usePayments,
   PAYMENT_METHODS,
-  BILL_TYPES,
   PaymentMethod,
   Payment,
+  Money,
+  VERIFICATION_LABELS,
+  paymentMethodLabel,
 } from "@/hooks/use-finance";
 
-function formatCurrency(amount: number) {
+function formatCurrency(amount: Money) {
   return new Intl.NumberFormat("id-ID", {
     style: "currency",
     currency: "IDR",
     minimumFractionDigits: 0,
-  }).format(amount);
+  }).format(Number(amount));
 }
 
 function PaymentsPageContent() {
   const [page, setPage] = useState(1);
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | "">("");
+  // "ALL", not "": Radix Select refuses an item whose value is the empty string.
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | "ALL">(
+    "ALL",
+  );
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const limit = 20;
@@ -55,7 +61,7 @@ function PaymentsPageContent() {
   const { data: paymentsData, isLoading } = usePayments({
     page,
     limit,
-    paymentMethod: paymentMethod || undefined,
+    method: paymentMethod === "ALL" ? undefined : paymentMethod,
     startDate: startDate || undefined,
     endDate: endDate || undefined,
   });
@@ -91,13 +97,16 @@ function PaymentsPageContent() {
           <div className="flex flex-col gap-4 sm:flex-row">
             <Select
               value={paymentMethod}
-              onValueChange={(v) => setPaymentMethod(v as PaymentMethod | "")}
+              onValueChange={(v) => {
+                setPaymentMethod(v as PaymentMethod | "ALL");
+                setPage(1);
+              }}
             >
               <SelectTrigger className="w-full sm:w-[180px]">
                 <SelectValue placeholder="Metode" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Semua Metode</SelectItem>
+                <SelectItem value="ALL">Semua Metode</SelectItem>
                 {PAYMENT_METHODS.map((method) => (
                   <SelectItem key={method.value} value={method.value}>
                     {method.label}
@@ -124,11 +133,11 @@ function PaymentsPageContent() {
               />
             </div>
 
-            {(paymentMethod || startDate || endDate) && (
+            {(paymentMethod !== "ALL" || startDate || endDate) && (
               <Button
                 variant="ghost"
                 onClick={() => {
-                  setPaymentMethod("");
+                  setPaymentMethod("ALL");
                   setStartDate("");
                   setEndDate("");
                 }}
@@ -162,7 +171,7 @@ function PaymentsPageContent() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>No. Kuitansi</TableHead>
+                    <TableHead>No. Tagihan</TableHead>
                     <TableHead>Tanggal</TableHead>
                     <TableHead>Santri</TableHead>
                     <TableHead>Jenis Tagihan</TableHead>
@@ -175,35 +184,58 @@ function PaymentsPageContent() {
                   {paymentsData?.data.map((payment: Payment) => (
                     <TableRow key={payment.id}>
                       <TableCell className="font-mono text-sm">
-                        {payment.receiptNumber}
+                        {payment.invoice?.invoiceNumber ?? "-"}
+                        {payment.referenceNo && (
+                          <p className="text-xs text-muted-foreground">
+                            Ref. {payment.referenceNo}
+                          </p>
+                        )}
                       </TableCell>
                       <TableCell>
-                        {new Date(payment.paymentDate).toLocaleDateString(
-                          "id-ID",
-                        )}
+                        {new Date(payment.paidAt).toLocaleDateString("id-ID")}
                       </TableCell>
                       <TableCell>
                         <div>
                           <p className="font-medium">
-                            {payment.bill?.student?.name}
+                            {payment.invoice?.student?.user?.name ?? "-"}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            {payment.bill?.student?.nis}
+                            {payment.invoice?.student?.nis}
                           </p>
                         </div>
                       </TableCell>
                       <TableCell>
-                        {BILL_TYPES.find(
-                          (t) => t.value === payment.bill?.billType,
-                        )?.label || payment.bill?.billType}
+                        {payment.invoice?.paymentType?.name ?? "-"}
+                        {payment.invoice?.period && (
+                          <p className="text-xs text-muted-foreground">
+                            {payment.invoice.period}
+                          </p>
+                        )}
                       </TableCell>
                       <TableCell>
-                        {PAYMENT_METHODS.find(
-                          (m) => m.value === payment.paymentMethod,
-                        )?.label || payment.paymentMethod}
+                        {paymentMethodLabel(payment.method)}
                       </TableCell>
-                      <TableCell className="text-right font-medium text-green-600">
-                        {formatCurrency(payment.amount)}
+                      <TableCell className="text-right">
+                        {/* A parent's uploaded proof is listed here too; it
+                            only counts toward the bill once FINAL_APPROVED. */}
+                        {payment.verificationStatus === "FINAL_APPROVED" ? (
+                          <span className="font-medium text-green-600">
+                            {formatCurrency(payment.amount)}
+                          </span>
+                        ) : (
+                          <div className="space-y-1">
+                            <span className="text-muted-foreground">
+                              {formatCurrency(payment.amount)}
+                            </span>
+                            <div>
+                              <Badge variant="outline">
+                                {VERIFICATION_LABELS[
+                                  payment.verificationStatus
+                                ] ?? payment.verificationStatus}
+                              </Badge>
+                            </div>
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-2">
@@ -220,7 +252,7 @@ function PaymentsPageContent() {
                             </Link>
                           </Button>
                           <Button variant="outline" size="sm" asChild>
-                            <Link href={`/finance/bills/${payment.billId}`}>
+                            <Link href={`/finance/bills/${payment.invoiceId}`}>
                               Detail
                             </Link>
                           </Button>

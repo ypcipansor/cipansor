@@ -29,8 +29,7 @@ import {
 import { MoreHorizontal, Eye, Pencil, Trash2 } from "lucide-react";
 import { safeFormat } from "@/lib/date";
 import { toast } from "sonner";
-import { useAuthStore } from "@/stores/auth";
-import { getEffectiveRole } from "@/lib/rbac";
+import { usePermission } from "@/hooks/use-permission";
 import { STUDENT_STATUS_OPTIONS, studentStatusOption } from "@/lib/constants";
 
 const genderLabels: Record<string, string> = {
@@ -40,7 +39,11 @@ const genderLabels: Record<string, string> = {
 
 export default function StudentsPage() {
   const router = useRouter();
-  const { user } = useAuthStore();
+  // Actions follow the API's permissions, not the legacy bucket: teachers
+  // hold STUDENT_VIEW only, and TU (in STAFF) holds CREATE and UPDATE.
+  const canCreate = usePermission("STUDENT_CREATE");
+  const canUpdate = usePermission("STUDENT_UPDATE");
+  const canDelete = usePermission("STUDENT_DELETE");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [search, setSearch] = useState("");
@@ -52,7 +55,9 @@ export default function StudentsPage() {
     limit: pageSize,
     search: search || undefined,
     status: statusFilter === "ALL" ? undefined : statusFilter,
-    unitId: getEffectiveRole(user) !== "SUPER_ADMIN" ? user?.unitId : undefined,
+    // No unitId: the API scopes the roster itself (seesAllUnits). Sending the
+    // user's home unit narrowed cross-unit roles such as the musyrif back to
+    // one unit.
   });
 
   const deleteMutation = useDeleteStudent();
@@ -152,19 +157,23 @@ export default function StudentsPage() {
               <Eye className="mr-2 h-4 w-4" />
               View
             </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() => router.push(`/students/${row.original.id}/edit`)}
-            >
-              <Pencil className="mr-2 h-4 w-4" />
-              Edit
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() => setDeleteId(row.original.id)}
-              className="text-red-600"
-            >
-              <Trash2 className="mr-2 h-4 w-4" />
-              Delete
-            </DropdownMenuItem>
+            {canUpdate && (
+              <DropdownMenuItem
+                onClick={() => router.push(`/students/${row.original.id}/edit`)}
+              >
+                <Pencil className="mr-2 h-4 w-4" />
+                Edit
+              </DropdownMenuItem>
+            )}
+            {canDelete && (
+              <DropdownMenuItem
+                onClick={() => setDeleteId(row.original.id)}
+                className="text-red-600"
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete
+              </DropdownMenuItem>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       ),
@@ -172,15 +181,20 @@ export default function StudentsPage() {
   ];
 
   return (
-    <MainLayout allowedRoles={["SUPER_ADMIN", "UNIT_ADMIN", "TEACHER"]}>
+    // STAFF too: rbac.ts and the sidebar give TU "Data Siswa", and the API
+    // grants STUDENT_VIEW; this page alone sent them to /unauthorized.
+    <MainLayout
+      allowedRoles={["SUPER_ADMIN", "UNIT_ADMIN", "TEACHER", "STAFF"]}
+    >
       <div className="space-y-6">
         <PageHeader
           title="Students"
           description="Manage student records"
-          action={{
-            label: "Add Student",
-            href: "/students/new",
-          }}
+          action={
+            canCreate
+              ? { label: "Add Student", href: "/students/new" }
+              : undefined
+          }
         />
 
         {/* Filters */}

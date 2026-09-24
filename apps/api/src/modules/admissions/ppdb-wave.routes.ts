@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import waveController from './ppdb-wave.controller';
 import { authenticate, authorize } from '@/middleware/auth';
+import { viewAdmissions } from './admissions.access';
 import { validate } from '@/middleware/validate';
 import { RoleCode } from '@prisma/client';
 import { onboardRegistrantSchema } from '@cipansor/shared';
@@ -30,7 +31,7 @@ router.use(authenticate);
  * @desc Get all waves
  * @access Private - Admin, Staff
  */
-router.get('/', authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'STAFF'), waveController.list);
+router.get('/', viewAdmissions(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'STAFF'), waveController.list);
 
 /**
  * @route GET /api/ppdb-wave/stats/:periodId
@@ -39,7 +40,7 @@ router.get('/', authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'STAFF'), waveCont
  */
 router.get(
   '/stats/:periodId',
-  authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'STAFF'),
+  viewAdmissions(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'STAFF'),
   waveController.getStats
 );
 
@@ -48,7 +49,11 @@ router.get(
  * @desc Get wave by ID
  * @access Private - Admin, Staff
  */
-router.get('/:id', authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'STAFF'), waveController.getById);
+router.get(
+  '/:id',
+  viewAdmissions(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'STAFF'),
+  waveController.getById
+);
 
 /**
  * @route GET /api/ppdb-wave/:id/registrants
@@ -57,7 +62,7 @@ router.get('/:id', authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'STAFF'), waveC
  */
 router.get(
   '/:id/registrants',
-  authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'STAFF'),
+  viewAdmissions(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'STAFF'),
   waveController.getRegistrants
 );
 

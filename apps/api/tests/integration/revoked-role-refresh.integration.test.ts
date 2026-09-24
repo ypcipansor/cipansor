@@ -147,7 +147,10 @@ describeDb('revoked role vs refresh (real PostgreSQL)', () => {
 
     const roles = await load<any>('../../src/modules/roles/roles.service', 'RolesService');
     try {
-      await roles.instance.removeRoleAssignment('a-revoked');
+      await roles.instance.removeRoleAssignment(
+        { sub: 'u-admin', roleCode: 'SUPER_ADMIN', unitId: null },
+        'a-revoked'
+      );
     } finally {
       await unload(roles.prev);
     }

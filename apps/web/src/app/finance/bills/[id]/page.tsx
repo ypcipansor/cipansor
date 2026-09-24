@@ -44,22 +44,23 @@ import { toast } from "sonner";
 import { MainLayout } from "@/components/layout";
 import {
   useBill,
-  useBillPayments,
   useCreatePayment,
   useDeletePayment,
   useDeleteBill,
-  BILL_TYPES,
   BILL_STATUSES,
   PAYMENT_METHODS,
   PaymentMethod,
+  Money,
+  VERIFICATION_LABELS,
+  paymentMethodLabel,
 } from "@/hooks/use-finance";
 
-function formatCurrency(amount: number) {
+function formatCurrency(amount: Money) {
   return new Intl.NumberFormat("id-ID", {
     style: "currency",
     currency: "IDR",
     minimumFractionDigits: 0,
-  }).format(amount);
+  }).format(Number(amount));
 }
 
 function BillDetailPageContent({
@@ -83,13 +84,17 @@ function BillDetailPageContent({
   const [paymentNotes, setPaymentNotes] = useState("");
 
   const { data: bill, isLoading } = useBill(id);
-  const { data: payments } = useBillPayments(id);
+  // GET /finance/invoices/:id carries its payments; there is no separate
+  // /invoices/:id/payments route (the old hook called one and got a 404).
+  const payments = bill?.payments;
 
   const createPaymentMutation = useCreatePayment();
   const deletePaymentMutation = useDeletePayment();
   const deleteBillMutation = useDeleteBill();
 
-  const remainingAmount = bill ? bill.amount - bill.paidAmount : 0;
+  const remainingAmount = bill
+    ? Number(bill.amount) - Number(bill.paidAmount)
+    : 0;
 
   const handleCreatePayment = async () => {
     if (paymentAmount <= 0) {
@@ -187,7 +192,7 @@ function BillDetailPageContent({
               {getStatusBadge(bill.status)}
             </div>
             <p className="text-muted-foreground font-mono">
-              #{bill.id.slice(0, 8).toUpperCase()}
+              {bill.invoiceNumber}
             </p>
           </div>
         </div>
@@ -307,14 +312,11 @@ function BillDetailPageContent({
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <p className="text-sm text-muted-foreground">Jenis Tagihan</p>
-                <p className="font-medium">
-                  {BILL_TYPES.find((t) => t.value === bill.billType)?.label ||
-                    bill.billType}
-                </p>
+                <p className="font-medium">{bill.paymentType?.name ?? "-"}</p>
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Tahun Ajaran</p>
-                <p className="font-medium">{bill.academicYear?.name || "-"}</p>
+                <p className="text-sm text-muted-foreground">Periode</p>
+                <p className="font-medium">{bill.period || "-"}</p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Jatuh Tempo</p>
@@ -334,10 +336,10 @@ function BillDetailPageContent({
                 </p>
               </div>
             </div>
-            {bill.description && (
+            {bill.notes && (
               <div>
                 <p className="text-sm text-muted-foreground">Keterangan</p>
-                <p className="font-medium">{bill.description}</p>
+                <p className="font-medium">{bill.notes}</p>
               </div>
             )}
           </CardContent>
@@ -351,11 +353,15 @@ function BillDetailPageContent({
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <p className="text-sm text-muted-foreground">Nama</p>
-                <p className="font-medium">{bill.student?.name}</p>
+                <p className="font-medium">{bill.student?.user?.name ?? "-"}</p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">NIS</p>
                 <p className="font-medium font-mono">{bill.student?.nis}</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Unit</p>
+                <p className="font-medium">{bill.student?.unit?.name ?? "-"}</p>
               </div>
             </div>
             <Button variant="outline" size="sm" asChild>
@@ -407,10 +413,10 @@ function BillDetailPageContent({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>No. Kuitansi</TableHead>
                   <TableHead>Tanggal</TableHead>
                   <TableHead>Metode</TableHead>
                   <TableHead>Jumlah</TableHead>
+                  <TableHead>Status</TableHead>
                   <TableHead>Catatan</TableHead>
                   <TableHead className="text-right">Aksi</TableHead>
                 </TableRow>
@@ -418,21 +424,37 @@ function BillDetailPageContent({
               <TableBody>
                 {payments.map((payment) => (
                   <TableRow key={payment.id}>
-                    <TableCell className="font-mono text-sm">
-                      {payment.receiptNumber}
+                    <TableCell>
+                      {new Date(payment.paidAt).toLocaleDateString("id-ID")}
                     </TableCell>
                     <TableCell>
-                      {new Date(payment.paymentDate).toLocaleDateString(
-                        "id-ID",
+                      {paymentMethodLabel(payment.method)}
+                      {payment.referenceNo && (
+                        <p className="font-mono text-xs text-muted-foreground">
+                          {payment.referenceNo}
+                        </p>
                       )}
                     </TableCell>
-                    <TableCell>
-                      {PAYMENT_METHODS.find(
-                        (m) => m.value === payment.paymentMethod,
-                      )?.label || payment.paymentMethod}
-                    </TableCell>
-                    <TableCell className="font-medium text-green-600">
+                    <TableCell
+                      className={
+                        payment.verificationStatus === "FINAL_APPROVED"
+                          ? "font-medium text-green-600"
+                          : "text-muted-foreground"
+                      }
+                    >
                       {formatCurrency(payment.amount)}
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={
+                          payment.verificationStatus === "FINAL_APPROVED"
+                            ? "secondary"
+                            : "outline"
+                        }
+                      >
+                        {VERIFICATION_LABELS[payment.verificationStatus] ??
+                          payment.verificationStatus}
+                      </Badge>
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {payment.notes || "-"}

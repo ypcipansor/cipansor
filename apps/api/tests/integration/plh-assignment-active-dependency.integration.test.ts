@@ -169,7 +169,12 @@ describeDb('Plh delegation active-dependency guard (real PostgreSQL)', () => {
         return res.rows[0].id as string;
       });
 
-      await expect(roles.removeRoleAssignment(delegation)).rejects.toMatchObject({
+      await expect(
+        roles.removeRoleAssignment(
+          { sub: 'u-admin', roleCode: 'SUPER_ADMIN', unitId: null },
+          delegation
+        )
+      ).rejects.toMatchObject({
         statusCode: 409,
       });
 
@@ -268,7 +273,12 @@ describeDb('Plh delegation active-dependency guard (real PostgreSQL)', () => {
              VALUES ('a-free', 'u-delegate', 'role-anggota', false, true, now())`
           );
         });
-        await expect(fresh.roles.removeRoleAssignment('a-free')).resolves.toBeDefined();
+        await expect(
+          fresh.roles.removeRoleAssignment(
+            { sub: 'u-admin', roleCode: 'SUPER_ADMIN', unitId: null },
+            'a-free'
+          )
+        ).resolves.toBeDefined();
         await withClient(targetUrl, async (db) => {
           const res = await db.query(`SELECT id FROM user_role_assignments WHERE id = 'a-free'`);
           expect(res.rows).toHaveLength(0);

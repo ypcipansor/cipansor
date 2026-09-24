@@ -33,9 +33,14 @@ vi.mock('@/lib/jwt', () => ({
 }));
 vi.mock('@/lib/realtime', () => ({ disconnectUserSockets: vi.fn() }));
 
-import { RolesService } from '../roles.service';
+import { RolesService, type RoleActor } from '../roles.service';
 
 const service = new RolesService();
+
+// The revoke path is authorized from the verified token; a Super Admin actor
+// keeps this suite focused on the legacy-column sweep (the RBAC matrix lives in
+// `role-assignment-scope.test.ts`).
+const superAdmin: RoleActor = { sub: 'actor-sa', roleCode: 'SUPER_ADMIN', unitId: null };
 
 describe('RolesService.removeRoleAssignment legacy-column sweep', () => {
   beforeEach(() => {
@@ -43,6 +48,7 @@ describe('RolesService.removeRoleAssignment legacy-column sweep', () => {
     prismaMock.userRoleAssignment.findUnique.mockResolvedValue({
       id: 'assign-1',
       userId: 'user-1',
+      role: { code: 'SMPIT_GURU', realm: 'SMP_IT' },
     });
     prismaMock.boardSuspensionPlhAssignment.findFirst.mockResolvedValue(null);
     prismaMock.userRoleAssignment.deleteMany.mockResolvedValue({ count: 1 });
@@ -51,7 +57,7 @@ describe('RolesService.removeRoleAssignment legacy-column sweep', () => {
   it('clears the deprecated users.role when the last assignment is revoked', async () => {
     prismaMock.userRoleAssignment.count.mockResolvedValue(0);
 
-    await service.removeRoleAssignment('assign-1');
+    await service.removeRoleAssignment(superAdmin, 'assign-1');
 
     expect(prismaMock.user.update).toHaveBeenCalledWith({
       where: { id: 'user-1' },
@@ -62,7 +68,7 @@ describe('RolesService.removeRoleAssignment legacy-column sweep', () => {
   it('keeps the deprecated users.role while other assignments remain', async () => {
     prismaMock.userRoleAssignment.count.mockResolvedValue(1);
 
-    await service.removeRoleAssignment('assign-1');
+    await service.removeRoleAssignment(superAdmin, 'assign-1');
 
     expect(prismaMock.user.update).not.toHaveBeenCalled();
   });
