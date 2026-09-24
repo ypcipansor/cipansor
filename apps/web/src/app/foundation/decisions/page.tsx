@@ -33,8 +33,8 @@ import {
 } from "@/components/ui/table";
 import { FileText, Plus } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
-import { getPrimaryRoleCode } from "@/lib/rbac";
-import { canManageFoundationDecisions } from "@/lib/yayasan-organ";
+import { getActiveRoleCodes } from "@/lib/rbac";
+import { userCanCreateFoundationDecisions } from "@/lib/yayasan-organ";
 import { FOUNDATION_DECISIONS_PAGE_SIZE_OPTIONS } from "@cipansor/shared";
 
 const statusColor: Record<string, string> = {
@@ -66,9 +66,10 @@ export default function FoundationDecisionsPage() {
 
   // Bendahara & Anggota hanya boleh MEMBACA; peladen menolak POST /decisions
   // untuk mereka. Tombol "Buat Keputusan" dulu dirender ke semua pembaca,
-  // sehingga klik mereka berakhir 403.
+  // sehingga klik mereka berakhir 403. Gate membaca SELURUH peran aktif (primary
+  // + sekunder) karena peladen (`authorizeAnyRole`) menerima salah satunya.
   const { user } = useAuthStore();
-  const canWrite = canManageFoundationDecisions(getPrimaryRoleCode(user));
+  const canWrite = userCanCreateFoundationDecisions(getActiveRoleCodes(user));
 
   const items = data?.items ?? [];
   const total = data?.total ?? 0;

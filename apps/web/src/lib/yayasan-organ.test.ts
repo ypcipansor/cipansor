@@ -3,6 +3,10 @@ import {
   yayasanOrganOf,
   yayasanOrganConflict,
   YAYASAN_ORGAN_BY_ROLE,
+  canCreateFoundationDecisions,
+  userCanCreateFoundationDecisions,
+  userCanFinalizeFoundationDecisions,
+  userCanManageFoundationRules,
 } from "./yayasan-organ";
 
 /**
@@ -74,5 +78,59 @@ describe("yayasan organ exclusivity (UI mirror)", () => {
 
   it("allows the first yayasan role a person is given", () => {
     expect(yayasanOrganConflict("YAYASAN_PEMBINA", [])).toBeNull();
+  });
+});
+
+/**
+ * Regresi — gate peran SEKUNDER.
+ *
+ * Ketiga halaman tulis (daftar, form, aturan kuorum) dulu memanggil predikat
+ * peran PRIMER saja. Peladen, lewat `authorizeAnyRole`, menerima aksi bila
+ * SALAH SATU peran aktif diizinkan — jadi pejabat yang peran utamanya GURU
+ * tetapi memegang YAYASAN_PEMBINA sebagai penugasan sekunder kehilangan tombol
+ * yang justru peladen izinkan. Predikat multi-peran inilah yang menutupnya.
+ */
+describe("gate tulis foundation — SELURUH peran aktif (primary + sekunder)", () => {
+  it("create: mengizinkan peran organ sebagai penugasan SEKUNDER", () => {
+    // Peran utama GURU, sekunder YAYASAN_PEMBINA — peladen mengizinkan.
+    expect(userCanCreateFoundationDecisions(["GURU", "YAYASAN_PEMBINA"])).toBe(
+      true,
+    );
+    expect(userCanCreateFoundationDecisions(["GURU", "YAYASAN_PENGAWAS"])).toBe(
+      true,
+    );
+  });
+
+  /**
+   * Bukti "gagal-sebelum": predikat LAMA hanya melihat peran utama, sehingga
+   * pejabat ini (utama GURU, sekunder YAYASAN_PEMBINA) dinyatakan TIDAK boleh —
+   * persis kebalikan dari jawaban peladen. Baris ini gagal bila gerbang kembali
+   * ke peran primer saja.
+   */
+  it("create: predikat peran-primer LAMA menolak pejabat ini (gagal-sebelum)", () => {
+    expect(canCreateFoundationDecisions("GURU")).toBe(false);
+  });
+
+  it("create: menolak saat TIDAK SATU pun peran aktif diizinkan", () => {
+    expect(
+      userCanCreateFoundationDecisions(["GURU", "YAYASAN_BENDAHARA"]),
+    ).toBe(false);
+    // Peran sudah dicabut (hanya peran non-organ yang tersisa).
+    expect(userCanCreateFoundationDecisions(["GURU"])).toBe(false);
+    expect(userCanCreateFoundationDecisions([])).toBe(false);
+    expect(userCanCreateFoundationDecisions(null)).toBe(false);
+  });
+
+  it("finalize: mengizinkan peran organ sebagai penugasan SEKUNDER", () => {
+    expect(
+      userCanFinalizeFoundationDecisions(["SISWA", "YAYASAN_PENGAWAS"]),
+    ).toBe(true);
+  });
+
+  it("rules/publikasi: SUPER_ADMIN sebagai peran mana pun", () => {
+    expect(userCanManageFoundationRules(["GURU", "SUPER_ADMIN"])).toBe(true);
+    expect(userCanManageFoundationRules(["SUPER_ADMIN"])).toBe(true);
+    expect(userCanManageFoundationRules(["GURU"])).toBe(false);
+    expect(userCanManageFoundationRules([])).toBe(false);
   });
 });

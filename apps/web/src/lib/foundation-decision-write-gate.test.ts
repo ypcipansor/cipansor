@@ -136,9 +136,44 @@ describe("halaman keputusan memakai gerbang tulis", () => {
 
   it("daftar menyembunyikan 'Buat Keputusan' dari peran non-tulis", () => {
     const src = read("foundation/decisions/page.tsx");
-    expect(src).toContain("canManageFoundationDecisions");
+    expect(src).toContain("userCanCreateFoundationDecisions");
     // Tombol harus berada di balik gerbang, bukan dirender tanpa syarat.
     expect(src).toMatch(/canWrite\s*\?/);
+  });
+
+  /**
+   * Regresi — gate peran SEKUNDER.
+   *
+   * Peladen menerima aksi bila SALAH SATU peran aktif diizinkan
+   * (`authorizeAnyRole`), tetapi ketiga halaman tulis dulu membaca hanya
+   * `getPrimaryRoleCode(user)`. Pejabat yayasan yang peran utamanya GURU tetapi
+   * memegang YAYASAN_PEMBINA/YAYASAN_PENGAWAS sebagai penugasan sekunder
+   * kehilangan tombol yang justru diizinkan peladen. Gerbang kini membaca
+   * `getActiveRoleCodes`, dan tidak boleh kembali ke peran primer saja.
+   */
+  it("gate tulis memakai SELURUH peran aktif, bukan hanya peran primer", () => {
+    for (const rel of [
+      "foundation/decisions/page.tsx",
+      "foundation/decisions/new/page.tsx",
+      "foundation/decisions/rules/page.tsx",
+      "foundation/decisions/[id]/page.tsx",
+    ]) {
+      const src = read(rel);
+      expect(src, rel).toContain("getActiveRoleCodes");
+      expect(src, rel).not.toContain("getPrimaryRoleCode");
+    }
+  });
+
+  it("new page memakai gerbang multi-peran untuk form create", () => {
+    const src = read("foundation/decisions/new/page.tsx");
+    expect(src).toContain("userCanCreateFoundationDecisions");
+    expect(src).toMatch(/getActiveRoleCodes\(user\)/);
+  });
+
+  it("rules page memakai gerbang SUPER_ADMIN multi-peran", () => {
+    const src = read("foundation/decisions/rules/page.tsx");
+    expect(src).toContain("userCanManageFoundationRules");
+    expect(src).toMatch(/getActiveRoleCodes\(user\)/);
   });
 
   it("detail menyembunyikan 'Finalisasi' kecuali server menyatakan canFinalize", () => {
@@ -161,6 +196,8 @@ describe("halaman keputusan memakai gerbang tulis", () => {
   it("kontrol publikasi hanya tampil saat server menyatakan publishable", () => {
     const src = read("foundation/decisions/[id]/page.tsx");
     expect(src).toMatch(/d\.publishable/);
+    // Publikasi = gerbang SUPER_ADMIN multi-peran, bukan peran primer.
+    expect(src).toContain("userCanManageFoundationRules");
   });
 });
 
@@ -205,7 +242,7 @@ describe("skema create tidak diduplikasi di web (#8)", () => {
     expect(page).toContain("allowedOrgans");
     // Peran non-create memperoleh akses ditolak, bukan form operasional.
     expect(page).toContain("AccessDenied");
-    expect(page).toContain("canCreateFoundationDecisions");
+    expect(page).toContain("userCanCreateFoundationDecisions");
   });
 });
 
@@ -263,7 +300,7 @@ describe("hook aturan kuorum punya halaman (#7)", () => {
       ),
       "utf8",
     );
-    expect(src).toContain('=== "SUPER_ADMIN"');
+    expect(src).toContain("userCanManageFoundationRules");
     // Prettier formats the object argument across lines; assert the gate
     // property regardless of line breaks rather than pinning one layout.
     expect(src).toMatch(

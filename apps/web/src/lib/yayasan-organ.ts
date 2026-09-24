@@ -114,6 +114,38 @@ export function canFinalizeFoundationDecisions(
 }
 
 /**
+ * Multi-role variants — ANY active role (primary OR secondary) may grant.
+ *
+ * The single-role predicates above only ever saw `getPrimaryRoleCode(user)`,
+ * so an officer whose sign-in role is `GURU` while holding `YAYASAN_PEMBINA`
+ * as a SECONDARY assignment was hidden the controls the API admits through
+ * `authorizeAnyRole`. These read every active role instead. Prefer them at
+ * call sites that have the whole user.
+ */
+export function userCanCreateFoundationDecisions(
+  roleCodes: readonly string[] | null | undefined,
+): boolean {
+  return (roleCodes ?? []).some((r) =>
+    FOUNDATION_DECISION_CREATE_ROLES.includes(r),
+  );
+}
+
+export function userCanFinalizeFoundationDecisions(
+  roleCodes: readonly string[] | null | undefined,
+): boolean {
+  return (roleCodes ?? []).some((r) =>
+    FOUNDATION_DECISION_FINALIZE_ROLES.includes(r),
+  );
+}
+
+/** SUPER_ADMIN gate (publication, rules) over ALL active roles, not just primary. */
+export function userCanManageFoundationRules(
+  roleCodes: readonly string[] | null | undefined,
+): boolean {
+  return (roleCodes ?? []).includes("SUPER_ADMIN");
+}
+
+/**
  * Peran yang melihat tombol tulis pada daftar keputusan.
  *
  * Halaman daftar hanya menawarkan "Buat Keputusan", jadi gerbangnya adalah

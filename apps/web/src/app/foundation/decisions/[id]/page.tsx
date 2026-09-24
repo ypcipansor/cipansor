@@ -54,7 +54,8 @@ import {
   Ban,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
-import { getPrimaryRoleCode } from "@/lib/rbac";
+import { getActiveRoleCodes } from "@/lib/rbac";
+import { userCanManageFoundationRules } from "@/lib/yayasan-organ";
 import { parseApiError } from "@/lib/api-error";
 
 const statusColor: Record<string, string> = {
@@ -91,9 +92,11 @@ export default function FoundationDecisionDetailPage() {
   // `d.canFinalize` — definisi yang sama persis dengan `finalize` — sehingga UI
   // tidak pernah menawarkan tombol yang peladen pasti tolak.
   const { user } = useAuthStore();
-  const roleCode = getPrimaryRoleCode(user);
   const canFinalize = d?.canFinalize ?? false;
-  const canPublish = roleCode === "SUPER_ADMIN";
+  // Publikasi & aturan kuorum adalah gerbang SUPER_ADMIN; baca SELURUH peran
+  // aktif agar admin dengan SUPER_ADMIN sebagai peran sekunder tidak kehilangan
+  // kontrol yang peladen (`authorizeAnyRole`) izinkan.
+  const canPublish = userCanManageFoundationRules(getActiveRoleCodes(user));
   const setPublication = useSetFoundationPublication(id);
 
   const handleDownload = async () => {

@@ -48,7 +48,8 @@ import {
 import { AccessDenied } from "@/components/shared";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuthStore } from "@/stores/auth";
-import { getPrimaryRoleCode } from "@/lib/rbac";
+import { getActiveRoleCodes } from "@/lib/rbac";
+import { userCanManageFoundationRules } from "@/lib/yayasan-organ";
 
 const QUORUM_MODE_LABEL: Record<FoundationQuorumMode, string> = {
   MUTLAK: "Mutlak (seluruh kolam)",
@@ -82,8 +83,10 @@ export default function FoundationRulesPage() {
   // pasti 403 dan hanya melihat form kosong + toast. Gerbang ini hanyalah UX —
   // otorisasi backend tetap boundary utama.
   const { user, isAuthenticated, isLoading: authLoading } = useAuthStore();
-  const roleCode = getPrimaryRoleCode(user);
-  const isSuperAdmin = roleCode === "SUPER_ADMIN";
+  // SUPER_ADMIN sebagai peran AKTIF mana pun (primary atau sekunder), selaras
+  // dengan `authorizeAnyRole(SUPER_ADMIN)` di rute. Membaca peran primer saja
+  // menyembunyikan halaman ini dari admin yang peran utamanya bukan SUPER_ADMIN.
+  const isSuperAdmin = userCanManageFoundationRules(getActiveRoleCodes(user));
 
   // Tahan query sampai status auth siap DAN peran terbukti SUPER_ADMIN, agar
   // permintaan yang pasti gagal tidak pernah dikirim.

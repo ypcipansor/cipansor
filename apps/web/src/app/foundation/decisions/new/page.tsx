@@ -37,8 +37,8 @@ import {
 } from "@/components/ui/select";
 import { AccessDenied } from "@/components/shared";
 import { useAuthStore } from "@/stores/auth";
-import { getPrimaryRoleCode } from "@/lib/rbac";
-import { canCreateFoundationDecisions } from "@/lib/yayasan-organ";
+import { getActiveRoleCodes } from "@/lib/rbac";
+import { userCanCreateFoundationDecisions } from "@/lib/yayasan-organ";
 
 /**
  * Skema create adalah milik bersama: validasi di edge (API) dan tipe di web
@@ -61,7 +61,11 @@ export default function NewFoundationDecisionPage() {
   const create = useCreateFoundationDecision();
   const [error, setError] = useState<string | null>(null);
   const { user, isAuthenticated, isLoading: authLoading } = useAuthStore();
-  const canCreate = canCreateFoundationDecisions(getPrimaryRoleCode(user));
+  // Gerbang memakai SELURUH peran aktif (primary + sekunder): peladen
+  // (`authorizeAnyRole`) menerima salah satunya, jadi UI tidak boleh
+  // menyembunyikan form dari pejabat yang memegang peran organ sebagai
+  // penugasan sekunder.
+  const canCreate = userCanCreateFoundationDecisions(getActiveRoleCodes(user));
   // Organ yang boleh dibuat aktor datang dari PELADEN, bukan default statis.
   // Sebelumnya form selalu membuka dengan `PEMBINA` dan menawarkan seluruh
   // organ, sehingga Pengawas/Pengurus dapat mengisi form yang submission-nya
