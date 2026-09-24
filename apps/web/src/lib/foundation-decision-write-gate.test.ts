@@ -266,7 +266,9 @@ describe("hook aturan kuorum punya halaman (#7)", () => {
     expect(src).toContain('=== "SUPER_ADMIN"');
     // Prettier formats the object argument across lines; assert the gate
     // property regardless of line breaks rather than pinning one layout.
-    expect(src).toMatch(/useFoundationRules\(\{\s*enabled:\s*isSuperAdmin,?\s*\}\)/);
+    expect(src).toMatch(
+      /useFoundationRules\(\{\s*enabled:\s*isSuperAdmin,?\s*\}\)/,
+    );
     expect(src).toContain("AccessDenied");
   });
 });
