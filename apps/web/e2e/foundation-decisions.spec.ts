@@ -40,6 +40,7 @@ type DecisionRow = { id: string; subject: string; status: string };
 type VerifyResult = {
   found: boolean;
   isValid: boolean;
+  decisionId: string | null;
   publication: string | null;
   subject: string | null;
   organType: string | null;
