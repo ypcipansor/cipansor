@@ -99,6 +99,87 @@ function sanitizeForFallbackFont(text: string): string {
   return [...text].map((ch) => (isWinAnsiEncodable(ch) ? ch : '?')).join('');
 }
 
+/**
+ * Field teks bebas yang harus selamat cetak apa adanya.
+ *
+ * Dipakai untuk MENOLAK render ketika font Unicode absen dan ada aksara di
+ * luar WinAnsi: menyensor diam-diam menjadi "?" berarti dokumen resmi
+ * kehilangan karakter (nama, perihal, naskah) lalu tetap disegel e-seal —
+ * arsip permanen yang isinya salah. Lebih baik gagal terang-terangan di
+ * persiapan artefak (di luar kunci keputusan, sehingga suara tidak ter-rollback
+ * dan keputusan tetap dapat difinalisasi ulang setelah font dipulihkan).
+ */
+export function unencodableDecisionPdfFields(
+  data: DecisionPdfData
+): Array<{ field: string; chars: string[] }> {
+  const targets: Array<[string, string]> = [
+    ['subject', data.subject],
+    ['decisionType', data.decisionType],
+    ['body', data.body],
+    ['organType', data.organType],
+    ['kind', data.kind],
+    ['status', data.status],
+    ...data.members.map(
+      (m, i): [string, string] => [`members[${i}].name`, m.name]
+    ),
+    ...data.votes.map(
+      (v, i): [string, string] => [`votes[${i}].name`, v.name]
+    ),
+    ...data.votes
+      .filter((v) => !!v.note)
+      .map((v, i): [string, string] => [`votes[${i}].note`, v.note as string]),
+    ...(data.verificationUrl ? [['verificationUrl', data.verificationUrl] as [string, string]] : []),
+    ...(data.verificationToken
+      ? [['verificationToken', data.verificationToken] as [string, string]]
+      : []),
+  ];
+  const offenders: Array<{ field: string; chars: string[] }> = [];
+  for (const [field, value] of targets) {
+    const chars = [...new Set([...value].filter((ch) => !isWinAnsiEncodable(ch)))];
+    if (chars.length > 0) offenders.push({ field, chars });
+  }
+  return offenders;
+}
+
+/**
+ * Apakah berkas font Unicode tersedia di salah satu kandidat jalur.
+ *
+ * Dipisah agar gerbang boot dapat memeriksanya TANPA merender PDF, dan agar
+ * tidak bergantung pada cache `unicodeFontBytes` (yang terisi setelah render
+ * pertama).
+ */
+export function unicodeFontPath(): string | null {
+  for (const candidate of FONT_CANDIDATE_PATHS) {
+    try {
+      if (fs.existsSync(candidate)) return candidate;
+    } catch {
+      // Coba kandidat berikutnya.
+    }
+  }
+  return null;
+}
+
+/**
+ * Refuse to start a PRODUCTION boot without the Unicode font asset.
+ *
+ * Bila asetnya hilang di produksi, setiap render yang memuat aksara di luar
+ * WinAnsi gagal (lihat `generateDecisionPdf`) — artinya keputusan ber-Arab/emoji
+ * tidak pernah dapat disahkan. Kegagalan itu lebih baik muncul saat boot
+ * daripada saat rapat yayasan menutup keputusan. Non-produksi dibiarkan jalan
+ * supaya pengembangan & tes tidak terhalang aset yang belum disalin.
+ */
+export function assertDecisionPdfFontAvailable(env: string | undefined = process.env.NODE_ENV): void {
+  if (env !== 'production') return;
+  if (unicodeFontPath()) return;
+  throw new Error(
+    'Font Unicode untuk risalah keputusan tidak ditemukan di salah satu jalur: ' +
+      FONT_CANDIDATE_PATHS.join(', ') +
+      '. Tanpa font ini, keputusan yang memuat aksara di luar WinAnsi (Arab, emoji) tidak dapat dirender ' +
+      'dan e-seal tidak boleh dibubuhkan. Salin assets/fonts/Amiri-Regular.ttf ke image produksi.'
+  );
+}
+
+
 /** Byte TTF font Unicode, dibaca sekali. Instance PDFFont terikat ke satu
  * dokumen, jadi hanya BYTE-nya yang di-cache (pola generate-raport-merdeka-pdf). */
 let unicodeFontBytes: Buffer | null = null;
@@ -298,6 +379,25 @@ export async function generateDecisionPdf(data: DecisionPdfData): Promise<Buffer
   let page = pdfDoc.addPage([pageW, 842]); // A4 portrait
   const unicodeFont = await embedUnicodeFont(pdfDoc);
   const keepUnicode = unicodeFont !== null;
+  // Font Unicode absen + ada aksara di luar WinAnsi: JANGAN sensor jadi "?".
+  // Dokumen resmi yang kehilangan karakter lalu disegel e-seal adalah arsip
+  // permanen yang salah. Lempar di sini — persiapan artefak berjalan DI LUAR
+  // kunci keputusan (`prepareApprovalArtifact`), jadi suara anggota tidak
+  // ter-rollback dan keputusan tetap dapat difinalisasi ulang setelah font
+  // dipulihkan.
+  if (!keepUnicode) {
+    const offenders = unencodableDecisionPdfFields(data);
+    if (offenders.length > 0) {
+      const detail = offenders
+        .map((o) => `${o.field} (${o.chars.join(' ')})`)
+        .join(', ');
+      throw new Error(
+        `Font Unicode untuk risalah tidak tersedia, dan naskah memuat aksara yang tidak dapat dicetak ` +
+          `tanpa kehilangan karakter: ${detail}. Pasang assets/fonts/Amiri-Regular.ttf lalu finalisasi ulang; ` +
+          `dokumen tidak disegel agar tidak ada arsip resmi yang kehilangan karakter.`
+      );
+    }
+  }
   const font = unicodeFont ?? (await pdfDoc.embedFont(StandardFonts.Helvetica));
   const bold = unicodeFont ?? (await pdfDoc.embedFont(StandardFonts.HelveticaBold));
 

@@ -479,8 +479,13 @@ mencatat `oldValues` yang sama; perubahan no-op tidak menulis audit.
 
 `verifyByToken`/`verifyPdf` adalah endpoint anonim: metadata tata kelola
 (subject, organ, tanggal, rekap suara) hanya keluar bila keputusannya `PUBLIC`,
-bawaannya PRIVATE (fail closed). Bukti keabsahan (`isValid`, `digest`,
-`digestOk`, `sealVerified`, `reason`, `decisionId`) tetap dikembalikan.
+bawaannya PRIVATE (fail closed). Untuk keputusan PRIVATE, `decisionId` dan
+digest (`digest`, `archiveDigest`) juga disensor — `null`. Ketiganya adalah
+penunjuk yang dapat dipakai mengorelasikan token/dokumen dengan entitas
+internal, sehingga endpoint anonim tidak boleh menjadi oracle yang
+membocorkannya. Yang tetap dikembalikan hanyalah putusan keabsahan
+(`isValid`, `digestOk`, `sealVerified`, `reason`), yang cukup untuk membuktikan
+dokumen asli tanpa mengungkap apa pun tentang isinya.
 
 ### 7.8 Rationale lain yang dipindahkan dari kode
 

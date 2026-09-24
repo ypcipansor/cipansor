@@ -239,4 +239,25 @@ describe('bootstrap wiring', () => {
         'traffic signed by a published key is worse than not serving at all.'
     ).toBe(true);
   });
+
+  /**
+   * F8 — gerbang font harus benar-benar TERPASANG, bukan hanya ada sebagai
+   * fungsi. Tanpa panggilan ini, image produksi yang kehilangan
+   * `assets/fonts/Amiri-Regular.ttf` tetap boot dan baru gagal saat rapat
+   * yayasan menutup keputusan ber-Arab/emoji.
+   */
+  it('memanggil assertDecisionPdfFontAvailable sebelum server mendengarkan (F8)', () => {
+    const source = fs.readFileSync(path.join(API_ROOT, 'src', 'main.ts'), 'utf8');
+    const callIndex = source.indexOf('assertDecisionPdfFontAvailable(');
+    const listenIndex = source.indexOf('.listen(');
+
+    expect(
+      callIndex,
+      'main.ts no longer calls assertDecisionPdfFontAvailable().'
+    ).toBeGreaterThan(-1);
+    expect(
+      listenIndex === -1 || callIndex < listenIndex,
+      'assertDecisionPdfFontAvailable() must run before the port opens.'
+    ).toBe(true);
+  });
 });

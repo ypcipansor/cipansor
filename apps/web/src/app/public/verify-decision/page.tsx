@@ -446,8 +446,8 @@ function VerificationResult({
               {uploaded
                 ? "Berkas yang Anda unggah cocok byte-per-byte"
                 : "Arsip server cocok"}{" "}
-              dengan digest yang ditandatangani (SHA-256{" "}
-              {data.digest?.slice(0, 16)}…).
+              dengan digest yang ditandatangani
+              {data.digest ? ` (SHA-256 ${data.digest.slice(0, 16)}…)` : "."}
             </span>
           </div>
         )}

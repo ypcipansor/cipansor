@@ -9,6 +9,7 @@ import { prisma } from '@/lib/prisma';
 import { comparePassword } from '@/lib/password';
 import { Errors } from '@/middleware/error';
 import { eventBus } from '@/lib/event-bus';
+import { logger } from '@/lib/logger';
 import {
   assertIdentityReadyToRequest,
   IdentityError,
@@ -617,11 +618,6 @@ export const EsignService = {
     }
 
     if (!approve) {
-      // Ditolak berarti tidak ada kunci yang terbit, jadi foto KTP-nya tidak
-      // lagi membuktikan apa pun — dan data pribadi yang disimpan tanpa
-      // keperluan adalah kewajiban tanpa manfaat.
-      await discardIdentityDocument(request.userId);
-
       /**
        * Finding A4 — status PENDING diperiksa ULANG di dalam lock transisi
        * kunci, dan UPDATE tidak memakai guard `status` sendiri.
@@ -635,14 +631,24 @@ export const EsignService = {
        * dan `castVote` foundation — sehingga keempatnya linier per pengguna.
        * Status dibaca di bawah lock, dan `updateMany` dengan guard `status`
        * menjadi jaring kedua bila lock ini kelak dilepas.
+       *
+       * Finding — penghapusan foto KTP WAJIB terjadi SETELAH keputusan ini
+       * benar-benar ter-commit. Sebelumnya `discardIdentityDocument` dipanggil
+       * lebih dulu, di luar transaksi: bila persetujuan konkuren menang balapan
+       * (lock per-pengguna yang sama), transaksi penolakan ini di-ROLLBACK —
+       * tetapi berkasnya sudah terhapus dan barisnya sudah dinolkan. Kuncinya
+       * lalu terbit untuk pemohon yang foto KTP-nya sudah lenyap, tanpa jejak
+       * bahwa hal itu terjadi. Menghapus setelah commit membuat operasi
+       * destruktif mengikuti nasib keputusan: rollback → tidak ada yang
+       * terhapus.
        */
-      return prisma.$transaction(async (tx) => {
+      const rejected = await prisma.$transaction(async (tx) => {
         await lockSigningKeyTransition(tx, request.userId);
         const current = await tx.signingKeyRequest.findUnique({ where: { id: requestId } });
         if (!current || current.status !== SigningKeyRequestStatus.PENDING) {
           throw Errors.badRequest('Pengajuan ini sudah diputuskan.');
         }
-        const rejected = await tx.signingKeyRequest.updateMany({
+        const claimed = await tx.signingKeyRequest.updateMany({
           where: { id: requestId, status: SigningKeyRequestStatus.PENDING },
           data: {
             status: SigningKeyRequestStatus.REJECTED,
@@ -651,7 +657,7 @@ export const EsignService = {
             decisionNote: note,
           },
         });
-        if (rejected.count !== 1) {
+        if (claimed.count !== 1) {
           throw Errors.badRequest('Pengajuan ini sudah diputuskan.');
         }
         eventBus.emit('notification:send', {
@@ -663,6 +669,23 @@ export const EsignService = {
         });
         return tx.signingKeyRequest.findUniqueOrThrow({ where: { id: requestId } });
       });
+
+      // Ditolak berarti tidak ada kunci yang terbit, jadi foto KTP-nya tidak
+      // lagi membuktikan apa pun — dan data pribadi yang disimpan tanpa
+      // keperluan adalah kewajiban tanpa manfaat. Kegagalan menghapus TIDAK
+      // menggagalkan keputusan yang sudah ter-commit: yang tersisa hanyalah
+      // berkas di disk yang masih dapat disapu penyapu retensi, sedangkan
+      // melempar galat di sini akan membuat penolakan yang sah tampak gagal.
+      try {
+        await discardIdentityDocument(request.userId);
+      } catch (err) {
+        logger.warn('Gagal menghapus dokumen identitas setelah penolakan pengajuan kunci', {
+          requestId,
+          userId: request.userId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      return rejected;
     }
 
     const days = grantedDays ?? DEFAULT_VALIDITY_DAYS;

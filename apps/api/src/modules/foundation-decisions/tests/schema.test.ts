@@ -144,6 +144,52 @@ describe('upsertFoundationRuleSchema — ambang kuorum wajib > 0', () => {
     const res = upsertFoundationRuleSchema.safeParse({ ...base, quorumDecisionValue: 1.5 });
     expect(res.success).toBe(false);
   });
+
+  /**
+   * Finding 3 (regresi) — nilai yang HILANG harus DITURUNKAN dari mode, bukan
+   * dipaksa ke default tetap `0.5`.
+   *
+   * Sebelum perbaikan, `{ quorumPresentMode: 'TWO_THIRDS' }` mengisi
+   * `quorumPresentValue` dengan `.default(0.5)`, sehingga pasangan mode/nilai
+   * bertentangan dan `superRefine` menolaknya — padahal pemanggil hanya
+   * bermaksud "dua pertiga". Mode mengikat, jadi nilai yang mengikutinya adalah
+   * perilaku yang benar.
+   */
+  it('menurunkan nilai dari mode bila tidak diberikan (TWO_THIRDS → 2/3)', () => {
+    const res = upsertFoundationRuleSchema.safeParse({
+      ...base,
+      quorumPresentMode: 'TWO_THIRDS',
+      quorumDecisionMode: 'THREE_QUARTERS',
+    });
+    expect(res.success).toBe(true);
+    if (res.success) {
+      expect(res.data.quorumPresentValue).toBeCloseTo(2 / 3, 6);
+      expect(res.data.quorumDecisionValue).toBe(0.75);
+    }
+  });
+
+  it('mode MUTLAK tanpa nilai menurunkan 1, bukan 0.5', () => {
+    const res = upsertFoundationRuleSchema.safeParse({
+      organType: 'PEMBINA',
+      decisionKind: 'CIRCULAR',
+      quorumPresentMode: 'MUTLAK',
+      quorumDecisionMode: 'MUTLAK',
+    });
+    expect(res.success).toBe(true);
+    if (res.success) {
+      expect(res.data.quorumPresentValue).toBe(1);
+      expect(res.data.quorumDecisionValue).toBe(1);
+    }
+  });
+
+  it('nilai yang EXPLISIT dan bertentangan tetap ditolak', () => {
+    const res = upsertFoundationRuleSchema.safeParse({
+      ...base,
+      quorumPresentMode: 'TWO_THIRDS',
+      quorumPresentValue: 0.5,
+    });
+    expect(res.success).toBe(false);
+  });
 });
 
 /**

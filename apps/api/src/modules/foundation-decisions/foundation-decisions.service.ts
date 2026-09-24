@@ -44,6 +44,7 @@ import {
 import {
   canReadFoundationDecision,
   foundationDecisionListWhere,
+  actorRoleCodes,
   type FoundationActorLike,
 } from '@/utils/foundation-decision-access';
 import {
@@ -753,6 +754,56 @@ async function assertUserActiveInTx(client: DbClient, userId: string): Promise<v
 }
 
 /**
+ * Buktikan, DI DALAM transaksi dan di bawah kunci yang SAMA dengan snapshot
+ * serta seluruh mutasi eligibility, bahwa aktor masih memegang hak SPESIFIK
+ * operasi ini.
+ *
+ * `refreshActorRoles` berjalan DI LUAR transaksi (middleware rute). Antara
+ * penyegaran itu dan penulisan tata kelola, peran aktor dapat dicabut secara
+ * konkuren — dan token akses stateless tidak membawa perubahan itu.
+ * `assertUserActiveInTx` saja hanya menutup status AKUN, bukan peran.
+ *
+ * Urutan kunci: tabel `user_role_assignments` -> baris `roles` -> baris
+ * `users` (lihat `LOCK ORDER` di `lockDecision`), sama seperti semua penulis
+ * eligibility, sehingga pembacaan di sini tidak dapat melihat peran yang basi.
+ */
+async function assertActorAuthorizedInTx(
+  client: DbClient,
+  actorId: string,
+  authorize: (roles: readonly string[]) => boolean,
+  message: string
+): Promise<void> {
+  // Langkah (3a): serialkan terhadap SETIAP mutasi penugasan peran, termasuk
+  // baris yang belum ada (`SHARE ROW EXCLUSIVE` berbenturan dengan `ROW
+  // EXCLUSIVE` milik INSERT/UPDATE/DELETE).
+  await lockAssignmentTableForSnapshot(client);
+  const rows = await client.userRoleAssignment.findMany({
+    where: {
+      userId: actorId,
+      isActive: true,
+      OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      role: { isActive: true },
+    },
+    select: { role: { select: { code: true } } },
+  });
+  const roles = rows.map((r) => r.role.code);
+  // Langkah (3b): kunci baris `roles` yang dirujuk agar `roles.isActive=false`
+  // yang konkuren menunggu sampai pembacaan ini commit. Diurutkan eksplisit
+  // supaya dua transaksi yang mengunci peran sama mengambil kunci dalam urutan
+  // yang sama (anti-deadlock).
+  if (roles.length > 0) {
+    await client.$queryRaw`
+      SELECT id FROM "roles" WHERE code IN (${Prisma.join(roles)}) ORDER BY id FOR SHARE`;
+  }
+  // Langkah (4): kunci baris `users` aktor (`FOR SHARE`) dan tolak akun yang
+  // tidak aktif/di-soft-delete.
+  await assertUserActiveInTx(client, actorId);
+  if (!authorize(roles)) {
+    throw Errors.forbidden(message);
+  }
+}
+
+/**
  * Buktikan, DI DALAM transaksi dan di bawah kunci yang SAMA dengan mutasi
  * penugasan, bahwa aktor masih memegang penugasan organ yang SAAT INI aktif.
  *
@@ -1111,7 +1162,7 @@ export const FoundationDecisionService = {
     // yang bukan wewenang organ ini adalah kesalahan yang tidak bisa diperbaiki
     // setelah suara mulai masuk.
     if (
-      !organMayDecide(input.organType, input.decisionType, actor.roleCode, {
+      !organMayDecide(input.organType, input.decisionType, actorRoleCodes(actor), {
         allowSuperAdmin: true,
       })
     ) {
@@ -1205,7 +1256,17 @@ export const FoundationDecisionService = {
         // akses stateless. Membuka keputusan adalah tindakan tata kelola:
         // status hidup akun diperiksa DI DALAM transaksi, di bawah kunci baris
         // `users`, sehingga deaktivasi yang konkuren tidak dapat menyelinap.
-        await assertUserActiveInTx(tx, actor.id);
+        // F4 (SECURITY): `refreshActorRoles` berjalan DI LUAR transaksi, jadi
+        // peran yang dicabut secara konkuren juga harus dibuktikan ULANG di
+        // sini, di bawah protokol kunci yang sama dengan seluruh mutasi
+        // eligibility — bukan sekadar status akun.
+        await assertActorAuthorizedInTx(
+          tx,
+          actor.id,
+          (roles) =>
+            organMayDecide(input.organType, input.decisionType, roles, { allowSuperAdmin: true }),
+          `Organ ${input.organType} tidak berwenang memutus "${input.decisionType}".`
+        );
 
         // Aturan kuorum dibaca DI DALAM transaksi, di bawah kunci tabel aturan
         // yang sudah diambil di awal (sama dengan `upsertRule`), lalu snapshot
@@ -1300,7 +1361,9 @@ export const FoundationDecisionService = {
    * read-only tidak pernah sampai ke sini.
    */
   async createOptions(actor: Actor): Promise<FoundationCreateOptionsDTO> {
-    const organs = allowedCreateOrgansForRole(actor.roleCode, { allowSuperAdmin: true });
+    const organs = allowedCreateOrgansForRole(actorRoleCodes(actor), {
+      allowSuperAdmin: true,
+    });
     return {
       allowedOrgans: organs.map((organType) => ({
         organType,
@@ -1484,7 +1547,7 @@ export const FoundationDecisionService = {
       canCancel,
       mine?.choice ?? null,
       actor.id,
-      actor.roleCode
+      actorRoleCodes(actor)
     );
   },
 
@@ -1883,7 +1946,16 @@ export const FoundationDecisionService = {
         }
         // Pembatalan adalah tindakan tata kelola: status hidup aktor diperiksa
         // di dalam transaksi, di bawah kunci baris `users`.
-        await assertUserActiveInTx(tx, actor.id);
+        // F4 (SECURITY): peran aktor juga dibuktikan ULANG di dalam transaksi,
+        // dengan definisi otorisasi yang SAMA dengan gerbang rute/finalisasi —
+        // peran yang dicabut secara konkuren tidak dapat membatalkan rapat.
+        await assertActorAuthorizedInTx(
+          tx,
+          actor.id,
+          (roles) =>
+            canFinalizeDecision({ id: actor.id, roleCode: '', roleCodes: roles }, locked.members),
+          'Anda tidak berhak membatalkan keputusan organ ini.'
+        );
         const evaluation = evaluateQuorum(
           locked.quorumSnapshot as unknown as QuorumSnapshot,
           this.votesOf(locked),
@@ -1997,7 +2069,16 @@ export const FoundationDecisionService = {
         // Menutup rapat adalah tindakan tata kelola: aktor yang dinonaktifkan
         // atau dihapus setelah login tidak boleh lagi memicunya lewat token
         // akses stateless yang masih berlaku.
-        await assertUserActiveInTx(tx, actor.id);
+        // F4 (SECURITY): peran aktor juga dibuktikan ULANG di dalam transaksi
+        // (`refreshActorRoles` berjalan di luar), memakai definisi otorisasi
+        // yang SAMA dengan gerbang rute (`canFinalizeDecision`) sehingga mantan
+        // Ketua yang perannya dicabut secara konkuren tidak dapat menutup rapat.
+        await assertActorAuthorizedInTx(
+          tx,
+          actor.id,
+          (roles) => canFinalizeDecision({ id: actor.id, roleCode: '', roleCodes: roles }, locked.members),
+          'Anda tidak berhak memfinalisasi keputusan organ ini.'
+        );
         const evaluation = evaluateQuorum(
           locked.quorumSnapshot as unknown as QuorumSnapshot,
           this.votesOf(locked),
@@ -2069,7 +2150,16 @@ export const FoundationDecisionService = {
       // Mengubah klasifikasi publikasi adalah tindakan tata kelola: aktor yang
       // dinonaktifkan/dihapus setelah login tidak boleh lagi menerbitkan atau
       // menarik metadata lewat token akses stateless yang masih berlaku.
-      await assertUserActiveInTx(tx, actor.id);
+      // F4 (SECURITY): rute menuntut SUPER_ADMIN, dan tuntutan itu dibuktikan
+      // ULANG di sini di bawah protokol kunci yang sama dengan mutasi
+      // eligibility — peran yang dicabut secara konkuren tidak dapat mengubah
+      // klasifikasi publikasi.
+      await assertActorAuthorizedInTx(
+        tx,
+        actor.id,
+        (roles) => roles.includes(RoleCode.SUPER_ADMIN),
+        'Hanya Super Admin yang dapat mengubah klasifikasi publikasi keputusan.'
+      );
 
       // Syarat publication divalidasi terhadap STATE TERKUNCI, bukan snapshot
       // pra-lock. `updateMany` bersyarat tetap dipakai sebagai jaring kedua.
@@ -2290,7 +2380,15 @@ export const FoundationDecisionService = {
       const normalized = normalizeRuleInput(input);
       // Mengubah aturan kuorum adalah tindakan tata kelola: aktor yang
       // dinonaktifkan/dihapus setelah login tidak boleh lagi menulisnya.
-      await assertUserActiveInTx(tx, actor.id);
+      // F4 (SECURITY): rute menuntut SUPER_ADMIN, dan tuntutan itu dibuktikan
+      // ULANG di dalam transaksi — peran yang dicabut secara konkuren tidak
+      // dapat mengubah ambang yang mengesahkan keputusan ber-e-seal.
+      await assertActorAuthorizedInTx(
+        tx,
+        actor.id,
+        (roles) => roles.includes(RoleCode.SUPER_ADMIN),
+        'Hanya Super Admin yang dapat mengubah aturan kuorum.'
+      );
       const saved = await tx.foundationDecisionRule.upsert({
         where: {
           organType_decisionKind: {
@@ -2383,10 +2481,14 @@ export const FoundationDecisionService = {
       const cancelled = emptyVerification(
         'Rapat ini dibatalkan karena kuorum hadir tidak tercapai, sehingga tidak ada keputusan yang disahkan maupun ditolak.'
       );
+      const cancelledPublic =
+        d.publication === FoundationDecisionPublication.PUBLIC;
       return {
         ...cancelled,
         found: true,
-        decisionId: d.id,
+        // `decisionId` hanya untuk keputusan PUBLIC — sama seperti jalur utama:
+        // endpoint anonim tidak boleh menjadi oracle penunjuk entitas internal.
+        decisionId: cancelledPublic ? d.id : null,
         publication:
           (d.publication as FoundationDecisionPublication | undefined) ??
           FoundationDecisionPublication.PRIVATE,
@@ -2471,8 +2573,12 @@ export const FoundationDecisionService = {
      *
      * Endpoint ini anonim dan `subject`/organ/tanggal/rekap dapat mengungkap
      * personalia, jadi metadata hanya keluar bila `PUBLIC` — bawaannya PRIVATE
-     * (fail closed). Bukti keabsahan (`isValid`, `digest`, `digestOk`,
-     * `sealVerified`, `reason`, `decisionId`) tidak disensor; lihat §7.7 dokumen
+     * (fail closed). Untuk keputusan PRIVATE, `decisionId` dan digest juga
+     * disensor: ketiganya adalah penunjuk yang dapat dipakai untuk mengorelasikan
+     * token/dokumen dengan entitas internal, dan endpoint ini tidak boleh
+     * menjadi oracle yang membocorkannya. Yang tersisa hanya putusan keabsahan
+     * (`isValid`, `digestOk`, `sealVerified`, `reason`) — cukup untuk membuktikan
+     * dokumen asli tanpa mengungkap apa pun tentang isinya. Lihat §7.7 dokumen
      * review.
      */
     const isPublic = d.publication === FoundationDecisionPublication.PUBLIC;
@@ -2480,7 +2586,7 @@ export const FoundationDecisionService = {
     return {
       found: true,
       isValid,
-      decisionId: d.id,
+      decisionId: isPublic ? d.id : null,
       publication:
         (d.publication as FoundationDecisionPublication | undefined) ??
         FoundationDecisionPublication.PRIVATE,
@@ -2489,8 +2595,8 @@ export const FoundationDecisionService = {
       kind: isPublic ? (d.kind as FoundationDecisionVerificationDTO['kind']) : null,
       status: isPublic ? (d.status as FoundationDecisionVerificationDTO['status']) : null,
       decidedAt: isPublic && d.decidedAt ? d.decidedAt.toISOString() : null,
-      digest: d.finalPdfDigest,
-      archiveDigest,
+      digest: isPublic ? d.finalPdfDigest : null,
+      archiveDigest: isPublic ? archiveDigest : null,
       digestOk,
       sealVerified,
       reason,
@@ -2723,7 +2829,7 @@ export const FoundationDecisionService = {
     canCancel: boolean,
     myVote: 'APPROVE' | 'REJECT' | 'ABSTAIN' | null,
     myId: string,
-    myRoleCode: string
+    myRoleCodes: readonly string[]
   ) {
     const roleByUserId = new Map(d.members.map((m) => [m.userId, m.roleCode]));
     // Nama pemilih diambil dari SNAPSHOT anggota, bukan profil pengguna hidup —
@@ -2764,7 +2870,7 @@ export const FoundationDecisionService = {
       myVote,
       // Diagnostik manipulasi hanya untuk aktor berwenang; peran lain tidak
       // perlu tahu ada baris mentah yang tidak sah.
-      invalidVoteCount: myRoleCode === RoleCode.SUPER_ADMIN ? invalidVoteCount : undefined,
+      invalidVoteCount: myRoleCodes.includes(RoleCode.SUPER_ADMIN) ? invalidVoteCount : undefined,
       members: d.members.map((m) => ({ userId: m.userId, name: m.name, roleCode: m.roleCode })),
       votes: authenticVotes.map((v) => ({
         id: v.id,

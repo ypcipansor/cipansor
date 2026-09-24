@@ -299,7 +299,7 @@ export default function NewFoundationDecisionPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="CIRCULAR">
-                      Sirkuler (mufakat / mayoritas)
+                      Sirkuler (mufakat - seluruh anggota)
                     </SelectItem>
                     <SelectItem value="MEETING">Rapat (mayoritas)</SelectItem>
                   </SelectContent>

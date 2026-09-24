@@ -404,3 +404,64 @@ describe('roleCodesForOrgan identik dengan FOUNDATION_ORGAN_ROLE_CODES', () => {
     }
   });
 });
+
+describe('organMayDecide — himpunan peran (Finding 2)', () => {
+  /**
+   * Regresi: pemegang jabatan yayasan yang perannya BUKAN peran primer harus
+   * tetap dinilai berwenang. Middleware `refreshActorRoles` mengisi
+   * `roleCodes`; service dulu memakai `actor.roleCode` tunggal saja sehingga
+   * `GURU` + `YAYASAN_KETUA` (peran utama GURU) ditolak membuka rapat organ.
+   */
+  it('menerima seluruh peran: GURU utama + YAYASAN_KETUA sekunder ≠ ditolak', () => {
+    expect(
+      organMayDecide('PENGURUS', 'keputusan-operasional', [RoleCode.SDIT_GURU, RoleCode.YAYASAN_KETUA])
+    ).toBe(true);
+  });
+
+  it('peran sekunder yang TIDAK tergolong organ tetap ditolak', () => {
+    expect(
+      organMayDecide('PENGURUS', 'keputusan-operasional', [RoleCode.SDIT_GURU, RoleCode.SDIT_SISWA])
+    ).toBe(false);
+  });
+
+  it('Super Admin via peran sekunder tetap lolos bila allowSuperAdmin', () => {
+    expect(
+      organMayDecide('PENGURUS', 'keputusan-operasional', [RoleCode.SDIT_GURU, RoleCode.SUPER_ADMIN], {
+        allowSuperAdmin: true,
+      })
+    ).toBe(true);
+  });
+});
+
+describe('canFinalizeDecision — himpunan peran (Finding 2)', () => {
+  it('Ketua sebagai peran SEKUNDER boleh memfinalisasi', () => {
+    expect(
+      canFinalizeDecision(
+        { id: 'u1', roleCode: RoleCode.SDIT_GURU, roleCodes: [RoleCode.SDIT_GURU, RoleCode.YAYASAN_KETUA] },
+        []
+      )
+    ).toBe(true);
+  });
+
+  it('tanpa peran finalisasi tetap ditolak walau anggota snapshot', () => {
+    expect(
+      canFinalizeDecision(
+        { id: 'u1', roleCode: RoleCode.YAYASAN_ANGGOTA, roleCodes: [RoleCode.YAYASAN_ANGGOTA] },
+        [{ userId: 'u1' }]
+      )
+    ).toBe(false);
+  });
+});
+
+describe('allowedCreateOrgansForRole — himpunan peran (Finding 2)', () => {
+  it('Ketua sebagai peran sekunder mendapat pilihan organ Pengurus', () => {
+    const organs = allowedCreateOrgansForRole([RoleCode.SDIT_GURU, RoleCode.YAYASAN_KETUA], {
+      allowSuperAdmin: true,
+    });
+    expect(organs).toContain('PENGURUS');
+  });
+
+  it('peran tunggal yang tidak tergolong organ tidak mendapat apa pun', () => {
+    expect(allowedCreateOrgansForRole([RoleCode.SDIT_GURU])).toEqual([]);
+  });
+});

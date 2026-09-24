@@ -164,8 +164,12 @@ export function isRoleCodeMemberOfOrgan(
 }
 
 /**
- * Apakah seorang pemegang `roleCode` berwenang ikut serta pada keputusan
+ * Apakah seorang pemegang peran berwenang ikut serta pada keputusan
  * ber-`organType` dengan jenis `decisionType`?
+ *
+ * `roleOrRoles` menerima SATU `roleCode` maupun SELURUH peran aktif pengguna,
+ * supaya pengguna yang jabatan yayasannya bukan peran PRIMER tetap dinilai
+ * atas seluruh perannya (bukan ditolak karena `roleCode` tunggal).
  *
  * Matriks kewenangan organ×jenis diperiksa LEBIH DULU dan tidak pernah
  * dilonggarkan — termasuk oleh `allowSuperAdmin`. Cabang itu hanya melewati
@@ -175,12 +179,13 @@ export function isRoleCodeMemberOfOrgan(
 export function organMayDecideByRoleCode(
   organType: FoundationOrganType,
   decisionType: string,
-  roleCode: string,
+  roleOrRoles: string | readonly string[],
   opts: { allowSuperAdmin?: boolean } = {},
 ): boolean {
+  const roles = typeof roleOrRoles === "string" ? [roleOrRoles] : roleOrRoles;
   if (!organAuthorizedForDecisionType(organType, decisionType)) return false;
-  if (opts.allowSuperAdmin && roleCode === "SUPER_ADMIN") return true;
-  return isRoleCodeMemberOfOrgan(organType, roleCode);
+  if (opts.allowSuperAdmin && roles.includes("SUPER_ADMIN")) return true;
+  return roles.some((code) => isRoleCodeMemberOfOrgan(organType, code));
 }
 
 /**
@@ -190,16 +195,19 @@ export function organMayDecideByRoleCode(
  * representasi; bila aktor berwenang atas representasi itu (dan, bagi
  * non-admin, tergolong anggotanya), organ tsb dapat dibuat. Jenis keputusan
  * yang benar-benar boleh dipilih pada organ itu tetap `decisionTypesForOrgan`.
+ *
+ * `roleOrRoles` menerima himpunan seluruh peran aktif, agar pemegang jabatan
+ * yayasan sekunder tidak kehilangan pilihan organnya.
  */
 export function allowedCreateOrgansForRole(
-  roleCode: string,
+  roleOrRoles: string | readonly string[],
   opts: { allowSuperAdmin?: boolean } = {},
 ): FoundationOrganType[] {
   return FOUNDATION_ORGAN_TYPES.filter((organ) => {
     const type = FOUNDATION_DECISION_TYPES.find((t) =>
       FOUNDATION_DECISION_AUTHORITY[t].includes(organ),
     );
-    return !!type && organMayDecideByRoleCode(organ, type, roleCode, opts);
+    return !!type && organMayDecideByRoleCode(organ, type, roleOrRoles, opts);
   });
 }
 
@@ -491,6 +499,11 @@ export interface FoundationDecisionVerificationDTO {
    * "tidak diperiksa" bukan "aman".
    */
   isValid: boolean;
+  /**
+   * Penunjuk internal keputusan — HANYA diisi bila `publication` adalah
+   * `PUBLIC`. Endpoint verifikasi anonim tidak boleh menjadi oracle yang
+   * membocorkan `decisionId`/digest milik keputusan yang belum diterbitkan.
+   */
   decisionId: string | null;
   /**
    * Klasifikasi publikasi keputusan. `PRIVATE` (bawaan) menyensor field
@@ -503,11 +516,15 @@ export interface FoundationDecisionVerificationDTO {
   kind: FoundationDecisionKind | null;
   status: FoundationDecisionStatus | null;
   decidedAt: string | null;
-  /** Digest yang di-tanda-tangani e-seal (hash byte PDF final). */
+  /**
+   * Digest yang di-tanda-tangani e-seal (hash byte PDF final). HANYA diisi
+   * untuk keputusan `PUBLIC`; `null` pada keputusan PRIVATE.
+   */
   digest: string | null;
   /**
    * Hash dari byte yang benar-benar diperiksa: arsip tersimpan pada jalur
-   * token, atau berkas yang diunggah pemindai pada jalur unggahan.
+   * token, atau berkas yang diunggah pemindai pada jalur unggahan. HANYA
+   * diisi untuk keputusan `PUBLIC`; `null` pada keputusan PRIVATE.
    */
   archiveDigest: string | null;
   /** Benarkah byte yang diperiksa sama dengan digest yang ditandatangani? */

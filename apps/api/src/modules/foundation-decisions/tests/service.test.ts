@@ -211,6 +211,16 @@ beforeEach(() => {
   // sehingga uji yang bukan tentang pencabutan peran tidak ikut gagal. Uji
   // pencabutan/kedaluwarsa peran menimpanya dengan `null`.
   dm.userRoleAssignment.findFirst.mockResolvedValue({ id: 'asg-current' });
+  // `assertActorAuthorizedInTx` (F4) membaca ulang peran AKTIF aktor di dalam
+  // transaksi lewat `userRoleAssignment.findMany`. Mock yang sama juga melayani
+  // pembacaan snapshot anggota `create`, jadi dibedakan dari `where.userId`
+  // (hanya pembacaan peran aktor yang memfilter per pengguna). Default SUPER
+  // ADMIN membuat uji yang bukan tentang pencabutan peran lolos otorisasi;
+  // uji F4 menimpanya. Uji yang mengeset `mockResolvedValue` sendiri tetap
+  // menang atas implementasi ini.
+  dm.userRoleAssignment.findMany.mockImplementation(async (args: any) =>
+    args?.where?.userId ? [{ role: { code: 'SUPER_ADMIN' } }] : []
+  );
   // `ensureSigningKeyHistory` meng-upsert rekaman kunci tepercaya; kembalikan
   // baris yang dibentuk dari argumennya supaya suara yang dibuat terikat ke
   // rekaman milik pemilih yang benar.
@@ -2073,7 +2083,7 @@ describe('FoundationDecisionService.verifyByToken', () => {
   it('menghitung ulang hash byte arsip dan menandai byte yang diubah', async () => {
     const bytes = Buffer.from('%PDF-1.7 arsip asli');
     dm.foundationDecision.findUnique.mockResolvedValue({
-      ...decisionRow({ status: 'APPROVED' }),
+      ...decisionRow({ status: 'APPROVED', publication: 'PUBLIC' }),
       finalPdfDigest: sha256bytes(bytes),
       finalPdfSealSignature: null,
       esealId: null,
@@ -2090,7 +2100,7 @@ describe('FoundationDecisionService.verifyByToken', () => {
     const signed = Buffer.from('%PDF-1.7 arsip asli');
     const tampered = Buffer.from('%PDF-1.7 arsip yang diubah');
     dm.foundationDecision.findUnique.mockResolvedValue({
-      ...decisionRow({ status: 'APPROVED' }),
+      ...decisionRow({ status: 'APPROVED', publication: 'PUBLIC' }),
       finalPdfDigest: sha256bytes(signed),
       finalPdfSealSignature: null,
       esealId: null,
@@ -2196,10 +2206,52 @@ describe('FoundationDecisionService.verifyByToken', () => {
     expect(res.decidedAt).toBeNull();
     expect(res.voteCount).toBe(0);
     expect(res.approveCount).toBe(0);
-    // Keabsahan tetap dapat diperiksa, dan referensi non-sensitif tetap ada.
-    expect(res.decisionId).toBe('dec-1');
+    // F5: penunjuk internal (decisionId + digest) juga disensor untuk PRIVATE.
+    expect(res.decisionId).toBeNull();
+    expect(res.digest).toBeNull();
+    expect(res.archiveDigest).toBeNull();
+    // Keabsahan tetap dapat diperiksa tanpa penunjuk internal.
     expect(res.digestOk).toBeNull(); // jalur token tanpa byte pembanding
     expect(res.publication).toBe('PRIVATE');
+    expect(res.sealVerified).not.toBeNull();
+  });
+
+  /**
+   * F5 (SECURITY) — keputusan PRIVATE tidak boleh membocorkan `decisionId` atau
+   * digest lewat endpoint verifikasi anonim.
+   *
+   * `decisionId` dan `digest` adalah penunjuk yang dapat dipakai mengorelasikan
+   * token/dokumen dengan entitas internal (mis. menyambungkannya ke berkas lain
+   * atau ke daftar internal). Yang diperlukan pemindai hanyalah putusan
+   * keabsahan; ia tidak perlu — dan tidak boleh — mengetahui identitas internal
+   * keputusan yang belum diterbitkan.
+   */
+  it('menyensor decisionId & digest untuk PRIVATE (F5)', async () => {
+    const d = decisionRow({ status: 'APPROVED', publication: 'PRIVATE' });
+    const bytes = Buffer.from('%PDF-1.7 rahasia');
+    dm.foundationDecision.findUnique.mockResolvedValue({
+      ...d,
+      finalPdfDigest: sha256bytes(bytes),
+      finalPdfSealSignature: 'sig-abc',
+      esealId: 'seal-1',
+      document: { bytes: new Uint8Array(bytes) },
+      votes: [signedVoteRow(d, 'user-0', 'APPROVE')],
+    });
+    dm.foundationEseal.findUnique.mockResolvedValue({
+      id: 'seal-1',
+      publicKey: 'pk',
+      algorithm: 'Ed25519',
+    });
+
+    const res = await FoundationDecisionService.verifyByToken('tok-1');
+    expect(res.found).toBe(true);
+    expect(res.publication).toBe('PRIVATE');
+    // Tidak ada penunjuk internal sama sekali.
+    expect(res.decisionId).toBeNull();
+    expect(res.digest).toBeNull();
+    expect(res.archiveDigest).toBeNull();
+    // Putusan keabsahan tetap ada.
+    expect(res.digestOk).toBe(true);
     expect(res.sealVerified).not.toBeNull();
   });
 
@@ -2216,6 +2268,8 @@ describe('FoundationDecisionService.verifyByToken', () => {
     expect(res.organType).toBe('PEMBINA');
     expect(res.publication).toBe('PUBLIC');
     expect(res.voteCount).toBe(1);
+    // PUBLIC: penunjuk internal BOLEH keluar.
+    expect(res.decisionId).toBe('dec-1');
   });
 });
 
@@ -2678,8 +2732,13 @@ describe('FoundationDecisionService.create — snapshot vs perubahan peran konku
     await FoundationDecisionService.create(actor, input);
 
     // Sumber assignment dibaca ULANG setelah dibaca pertama kali, di bawah
-    // kunci tabel yang menyerialkan INSERT/UPDATE/DELETE penugasan.
-    expect(dm.userRoleAssignment.findMany).toHaveBeenCalledTimes(2);
+    // kunci tabel yang menyerialkan INSERT/UPDATE/DELETE penugasan. Yang
+    // dihitung hanya pembacaan SNAPSHOT (tanpa filter `userId`); pembacaan
+    // peran aktor F4 memakai `where.userId` dan bukan bagian dari klaim ini.
+    const snapshotReads = dm.userRoleAssignment.findMany.mock.calls.filter(
+      (c: any[]) => !c[0]?.where?.userId
+    );
+    expect(snapshotReads).toHaveLength(2);
     const lockSql = dm.$executeRaw.mock.calls
       .map((c: any[]) => (c[0] as string[]).join('?'))
       .join('|');
@@ -3673,5 +3732,127 @@ describe('feature: urutan anggota deterministik (unordered members)', () => {
     } finally {
       pdfSpy.mockRestore();
     }
+  });
+});
+
+/**
+ * F4 (SECURITY critical) — otorisasi peran dibuktikan ULANG DI DALAM transaksi.
+ *
+ * `refreshActorRoles` berjalan di luar transaksi, dan token akses stateless
+ * tidak membawa pencabutan peran. Tanpa pembacaan ulang di dalam transaksi,
+ * aktor yang perannya dicabut/dinonaktifkan/kedaluwarsa secara konkuren tetap
+ * dapat menuliskan tindakan tata kelola (create/finalize/cancel/publication/
+ * rules) — inilah celah yang ditutup `assertActorAuthorizedInTx`.
+ */
+describe('FoundationDecisionService — otorisasi peran ulang di dalam transaksi (F4)', () => {
+  const input = {
+    organType: 'PEMBINA' as const,
+    kind: 'MEETING' as const,
+    subject: 'Subjek Keputusan',
+    body: 'Isi keputusan yang cukup panjang minimal sepuluh karakter.',
+    decisionType: 'pengesahan-rencana-kerja' as const,
+  };
+
+  it('create DITOLAK bila peran organ aktor sudah dicabut di dalam transaksi', async () => {
+    // Aktor lolos pemeriksaan pra-transaksi (peran masih di klaim token), lalu
+    // pembacaan ulang di dalam transaksi menunjukkan tidak ada peran organ lagi.
+    dm.userRoleAssignment.findMany.mockImplementation(async (args: any) =>
+      args?.where?.userId ? [] : memberAssignments(3)
+    );
+    dm.foundationDecisionRule.findUnique.mockResolvedValue(null);
+    dm.foundationDecision.create.mockResolvedValue({ id: 'dec-new' });
+
+    await expect(
+      FoundationDecisionService.create({ id: 'user-0', roleCode: 'YAYASAN_PEMBINA' }, input)
+    ).rejects.toThrow(/tidak berwenang memutus/);
+
+    // Tidak ada keputusan maupun audit yang tertulis: penolakan benar-benar
+    // membatalkan transaksi.
+    expect(dm.foundationDecision.create).not.toHaveBeenCalled();
+    expect(dm.auditLog.create).not.toHaveBeenCalled();
+  });
+
+  it('finalize DITOLAK bila peran finalisasi aktor sudah dicabut di dalam transaksi', async () => {
+    const d = decisionRow({
+      kind: 'MEETING',
+      quorumSnapshot: {
+        organType: 'PEMBINA',
+        kind: 'MEETING',
+        activeCount: 3,
+        presentMode: 'MAJORITY',
+        presentValue: 0.5,
+        decisionMode: 'MAJORITY',
+        decisionValue: 0.5,
+      },
+    });
+    d.votes = [signedVoteRow(d, 'user-0', 'APPROVE'), signedVoteRow(d, 'user-1', 'APPROVE')];
+    dm.foundationDecision.findUnique.mockResolvedValue(d);
+    dm.userRoleAssignment.findMany.mockImplementation(async (args: any) =>
+      args?.where?.userId ? [{ role: { code: 'YAYASAN_BENDAHARA' } }] : []
+    );
+
+    await expect(
+      FoundationDecisionService.finalize({ id: 'user-0', roleCode: 'YAYASAN_PEMBINA' }, 'dec-1')
+    ).rejects.toThrow(/tidak berhak memfinalisasi/);
+    expect(dm.foundationDecision.update).not.toHaveBeenCalled();
+  });
+
+  it('setPublication DITOLAK bila SUPER_ADMIN sudah dicabut di dalam transaksi', async () => {
+    dm.foundationDecision.findUnique.mockResolvedValue(
+      decisionRow({ status: 'VOTING', publication: 'PRIVATE' })
+    );
+    dm.userRoleAssignment.findMany.mockImplementation(async (args: any) =>
+      args?.where?.userId ? [{ role: { code: 'YAYASAN_KETUA' } }] : []
+    );
+
+    await expect(
+      FoundationDecisionService.setPublication(
+        { id: 'super', roleCode: 'SUPER_ADMIN' },
+        'dec-1',
+        'PRIVATE'
+      )
+    ).rejects.toThrow(/Hanya Super Admin/);
+    expect(dm.foundationDecision.update).not.toHaveBeenCalled();
+  });
+
+  it('upsertRule DITOLAK bila SUPER_ADMIN sudah dicabut di dalam transaksi', async () => {
+    dm.userRoleAssignment.findMany.mockImplementation(async (args: any) =>
+      args?.where?.userId ? [{ role: { code: 'YAYASAN_KETUA' } }] : []
+    );
+
+    await expect(
+      FoundationDecisionService.upsertRule(
+        { id: 'super', roleCode: 'SUPER_ADMIN' },
+        {
+          organType: 'PEMBINA',
+          decisionKind: 'MEETING',
+          quorumPresentMode: 'MAJORITY',
+          quorumPresentValue: 0.5,
+          quorumDecisionMode: 'MAJORITY',
+          quorumDecisionValue: 0.5,
+        }
+      )
+    ).rejects.toThrow(/Hanya Super Admin/);
+    expect(dm.foundationDecisionRule.upsert).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Aktor yang tetap memegang peran yang sah TIDAK terpengaruh: perbaikan ini
+   * menambah pembuktian, bukan mempersempit siapa yang boleh bertindak.
+   */
+  it('create tetap lolos bila peran organ masih aktif di dalam transaksi', async () => {
+    dm.userRoleAssignment.findMany.mockImplementation(async (args: any) =>
+      args?.where?.userId
+        ? [{ role: { code: 'YAYASAN_PEMBINA' } }]
+        : memberAssignments(3)
+    );
+    dm.foundationDecisionRule.findUnique.mockResolvedValue(null);
+    dm.foundationDecision.create.mockResolvedValue({ id: 'dec-new' });
+
+    const id = await FoundationDecisionService.create(
+      { id: 'user-0', roleCode: 'YAYASAN_PEMBINA' },
+      input
+    );
+    expect(id).toBe('dec-new');
   });
 });

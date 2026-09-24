@@ -401,6 +401,42 @@ describe('persetujuan menyatakan siapa orangnya', () => {
     );
   });
 
+  /**
+   * Finding 1 (regresi) — persetujuan konkuren yang MENANG tidak boleh
+   * kehilangan foto KTP miliknya karena penolakan yang kalah balapan.
+   *
+   * Sebelumnya `discardIdentityDocument` dipanggil di luar transaksi dan
+   * SEBELUM status dicek ulang. Ketika persetujuan konkuren menyelesaikan
+   * pengajuan lebih dulu, transaksi penolakan ini di-rollback — tetapi berkas
+   * KTP sudah telanjur dihapus dan barisnya dinolkan. Kuncinya lalu terbit
+   * untuk pemohon yang dokumen identitasnya sudah lenyap.
+   *
+   * Gagal sebelum perbaikan: penghapusan terjadi walau keputusan ditolak.
+   * Lulus sesudah: tidak ada `userIdentity.update` yang menolkan `ktpFileName`.
+   */
+  it('tidak menghapus foto KTP bila penolakan kalah balapan dengan persetujuan', async () => {
+    // Pra-cek di luar transaksi melihat PENDING; pembacaan ULANG di dalam lock
+    // melihat APPROVED — persetujuan konkuren menang lebih dulu.
+    vi.mocked(prisma.signingKeyRequest.findUnique)
+      .mockResolvedValueOnce(pending as any)
+      .mockResolvedValueOnce({ ...pending, status: 'APPROVED' } as any);
+    vi.mocked(prisma.userIdentity.findUnique).mockResolvedValue(verifiedIdentity() as any);
+
+    await expect(
+      EsignService.decideRequest('req-1', 'superadmin', false, undefined, 'Belum perlu.')
+    ).rejects.toThrow(/sudah diputuskan/i);
+
+    // Bukti fail-before: jalur lama menghapus berkas di luar transaksi, jadi
+    // `userIdentity.update` tetap terpanggil. Sesudah perbaikan, rollback
+    // transaksi berarti tak ada penghapusan sama sekali.
+    const erased = vi
+      .mocked(prisma.userIdentity.update)
+      .mock.calls.some(
+        ([args]) => (args as { data?: { ktpFileName?: unknown } }).data?.ktpFileName === null
+      );
+    expect(erased).toBe(false);
+  });
+
   it('tidak menuntut verifikasi ulang untuk identitas yang sudah terverifikasi', async () => {
     vi.mocked(prisma.signingKeyRequest.findUnique).mockResolvedValue(pending as any);
     vi.mocked(prisma.signingKeyRequest.update).mockResolvedValue({ id: 'req-1' } as any);

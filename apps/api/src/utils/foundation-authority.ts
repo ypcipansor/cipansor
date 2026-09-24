@@ -57,19 +57,28 @@ export function organForDecisionType(decisionType: string): FoundationOrganType[
 }
 
 /**
- * Apakah seorang pemegang `roleCode` berwenang ikut serta pada keputusan
+ * Apakah seorang pemegang peran berwenang ikut serta pada keputusan
  * ber-`organType` dengan jenis `decisionType`?
  *
+ * `roleOrRoles` menerima SATU `roleCode` maupun SELURUH peran aktif pengguna.
+ * Bentuk jamak itu penting: middleware `refreshActorRoles` mengisi
+ * `roleCodes` dari basis data, dan pengguna yang peran yayasannya bukan peran
+ * PRIMER (mis. `GURU` utama, `YAYASAN_KETUA` sekunder) harus dinilai atas
+ * SELURUH perannya — kalau tidak, ia ditolak hanya karena jabatan yayasannya
+ * bukan yang dijadikan `roleCode` tunggal.
+ *
  * `allowSuperAdmin` dibiarkan param agar pemanggil (service) memutuskan:
- * pembuatan draf membolehkan SUPER_ADMIN; pemberian suara TIDAK — karena SUper
+ * pembuatan draf membolehkan SUPER_ADMIN; pemberian suara TIDAK — karena Super
  * Admin mungkin mengelola sistem, tetapi bukan anggota organ yang memutus.
  */
 export function organMayDecide(
   organType: FoundationOrganType,
   decisionType: string,
-  roleCode: string,
+  roleOrRoles: string | readonly string[],
   opts: { allowSuperAdmin?: boolean } = {}
 ): boolean {
+  const roles: readonly string[] =
+    typeof roleOrRoles === 'string' ? [roleOrRoles] : roleOrRoles;
   // Matriks kewenangan organ×jenis diperiksa LEBIH DULU dan TIDAK PERNAH
   // dilewati siapa pun — termasuk Super Admin. Cabang `allowSuperAdmin` dulu
   // mengembalikan `true` sebelum pemeriksaan ini, sehingga Super Admin dapat
@@ -81,8 +90,8 @@ export function organMayDecide(
   // Pengecualian Super Admin HANYA melewati syarat bahwa pembuat harus anggota
   // organ — ia mengelola sistem, tetapi bukan anggota organ yang memutus.
   // Kewenangan organ tidak pernah dilonggarkan oleh peran sistem.
-  if (opts.allowSuperAdmin && roleCode === RoleCode.SUPER_ADMIN) return true;
-  return isMemberOfOrgan(organType, roleCode);
+  if (opts.allowSuperAdmin && roles.includes(RoleCode.SUPER_ADMIN)) return true;
+  return roles.some((code) => isMemberOfOrgan(organType, code));
 }
 
 /**
@@ -160,11 +169,12 @@ export const FOUNDATION_FINALIZE_ANY_ROLES: readonly string[] = [
  *     snapshot.
  */
 export function canFinalizeDecision(
-  actor: { id: string; roleCode: string },
+  actor: { id: string; roleCode: string; roleCodes?: readonly string[] },
   members: ReadonlyArray<{ userId: string }>
 ): boolean {
-  if (!FOUNDATION_FINALIZE_ROUTE_ROLES.includes(actor.roleCode)) return false;
-  if (FOUNDATION_FINALIZE_ANY_ROLES.includes(actor.roleCode)) return true;
+  const roles = actor.roleCodes && actor.roleCodes.length > 0 ? actor.roleCodes : [actor.roleCode];
+  if (!roles.some((code) => FOUNDATION_FINALIZE_ROUTE_ROLES.includes(code))) return false;
+  if (roles.some((code) => FOUNDATION_FINALIZE_ANY_ROLES.includes(code))) return true;
   return members.some((m) => m.userId === actor.id);
 }
 

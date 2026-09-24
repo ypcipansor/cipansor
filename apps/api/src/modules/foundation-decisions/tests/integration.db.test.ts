@@ -1882,6 +1882,163 @@ describe.skipIf(!RUN)('foundation-decisions integrasi PostgreSQL', () => {
   });
 
   /**
+   * F4 (SECURITY critical, real PostgreSQL) — peran aktor dibuktikan ULANG di
+   * dalam transaksi, di bawah protokol kunci yang sama dengan snapshot.
+   *
+   * Skenario yang TIDAK dapat ditangkap `assertSnapshotStillMatches`: aktor
+   * adalah SUPER_ADMIN yang membuat keputusan organ PEMBINA (diizinkan lewat
+   * `allowSuperAdmin`). Pencabutan peran SUPER_ADMIN-nya TIDAK mengubah snapshot
+   * anggota PEMBINA, jadi konflik snapshot tidak menyala — hanya pembacaan ulang
+   * peran di dalam transaksi yang dapat menolaknya. Tanpa F4, mantan Super Admin
+   * tetap dapat membuka keputusan (dan menutup rapat) lewat token lama.
+   */
+  it('pencabutan peran SUPER_ADMIN konkuren: create memblokir lalu menolak 403', async () => {
+    const suffix = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const superAdmin = await prisma.user.create({
+      data: {
+        id: `itest-f4-super-${suffix}`,
+        email: `itest-f4-super-${suffix}@example.test`,
+        name: 'Super Admin Konkuren',
+        passwordHash: 'x',
+      },
+    });
+    const member = await prisma.user.create({
+      data: {
+        id: `itest-f4-member-${suffix}`,
+        email: `itest-f4-member-${suffix}@example.test`,
+        name: 'Anggota Pembina',
+        passwordHash: 'x',
+      },
+    });
+    const pembina = await prisma.role.upsert({
+      where: { code: 'YAYASAN_PEMBINA' },
+      create: { code: 'YAYASAN_PEMBINA', name: 'Pembina', realm: 'YAYASAN' },
+      update: { isActive: true },
+    });
+    const superRole = await prisma.role.upsert({
+      where: { code: 'SUPER_ADMIN' },
+      create: { code: 'SUPER_ADMIN', name: 'Super Admin', realm: 'GLOBAL' },
+      update: { isActive: true },
+    });
+    // Snapshot PEMBINA harus non-kosong, tetapi TIDAK memuat Super Admin.
+    await prisma.userRoleAssignment.create({
+      data: { userId: member.id, roleId: pembina.id, isActive: true },
+    });
+    const superAssignment = await prisma.userRoleAssignment.create({
+      data: { userId: superAdmin.id, roleId: superRole.id, isActive: true, isPrimary: true },
+    });
+
+    const b = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    await b.connect();
+    await b.query('BEGIN');
+    await b.query(
+      `UPDATE "user_role_assignments" SET "is_active" = false, "updated_at" = NOW()
+       WHERE "id" = $1`,
+      [superAssignment.id]
+    );
+
+    let decisionId: string | null = null;
+    try {
+      const input = {
+        organType: 'PEMBINA' as const,
+        kind: 'CIRCULAR' as const,
+        subject: 'Uji pencabutan super admin konkuren',
+        body: 'Naskah uji peran super admin dicabut saat keputusan dibuat.',
+        decisionType: 'pengesahan-rencana-kerja' as const,
+      };
+      const createPromise = FoundationDecisionService.create(
+        { id: superAdmin.id, roleCode: 'SUPER_ADMIN' },
+        input
+      );
+
+      // create menunggu kunci tabel penugasan yang ditahan koneksi B.
+      const blocked = await waitForLockWaiterOnAssignments(prisma, 8000);
+      expect(blocked).toBe(true);
+
+      await b.query('COMMIT');
+      // Snapshot PEMBINA tidak berubah (Super Admin bukan anggotanya), jadi
+      // yang menolak adalah pembacaan ulang PERAN — 403, bukan konflik snapshot.
+      await expect(createPromise).rejects.toThrow(/tidak berwenang memutus/);
+      expect(await prisma.foundationDecision.count({ where: { subject: input.subject } })).toBe(0);
+      void decisionId;
+    } finally {
+      await b.end().catch(() => {});
+      // Sapu juga keputusan yang mungkin LOLOS saat guard dinonaktifkan untuk
+      // membuktikan gagal-sebelum: baris itu akan membuat eksekusi berikutnya
+      // (dengan guard aktif) gagal `count === 0` karena polusi, bukan regresi.
+      await prisma.foundationDecision.deleteMany({
+        where: { subject: 'Uji pencabutan super admin konkuren' },
+      });
+      await prisma.userRoleAssignment.deleteMany({
+        where: { userId: { in: [superAdmin.id, member.id] } },
+      });
+      await prisma.user.deleteMany({ where: { id: { in: [superAdmin.id, member.id] } } });
+    }
+  });
+
+  /**
+   * F4 (SECURITY critical, real PostgreSQL) — `upsertRule` juga membuktikan
+   * ulang peran SUPER_ADMIN di dalam transaksi. Pencabutan peran konkuren
+   * menahan transaksi (kunci tabel penugasan) lalu menolaknya 403, dan tidak
+   * ada baris aturan yang tertulis.
+   */
+  it('pencabutan peran SUPER_ADMIN konkuren: upsertRule memblokir lalu menolak 403', async () => {
+    const suffix = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const superAdmin = await prisma.user.create({
+      data: {
+        id: `itest-f4-rule-super-${suffix}`,
+        email: `itest-f4-rule-super-${suffix}@example.test`,
+        name: 'Super Admin Aturan',
+        passwordHash: 'x',
+      },
+    });
+    const superRole = await prisma.role.upsert({
+      where: { code: 'SUPER_ADMIN' },
+      create: { code: 'SUPER_ADMIN', name: 'Super Admin', realm: 'GLOBAL' },
+      update: { isActive: true },
+    });
+    const superAssignment = await prisma.userRoleAssignment.create({
+      data: { userId: superAdmin.id, roleId: superRole.id, isActive: true, isPrimary: true },
+    });
+
+    const b = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    await b.connect();
+    await b.query('BEGIN');
+    await b.query(
+      `UPDATE "user_role_assignments" SET "is_active" = false, "updated_at" = NOW()
+       WHERE "id" = $1`,
+      [superAssignment.id]
+    );
+
+    try {
+      const upsertPromise = FoundationDecisionService.upsertRule(
+        { id: superAdmin.id, roleCode: 'SUPER_ADMIN' },
+        {
+          organType: 'PEMBINA' as const,
+          decisionKind: 'MEETING' as const,
+          quorumPresentMode: 'MAJORITY' as const,
+          quorumPresentValue: 0.5,
+          quorumDecisionMode: 'MAJORITY' as const,
+          quorumDecisionValue: 0.5,
+        }
+      );
+
+      const blocked = await waitForLockWaiterOnAssignments(prisma, 8000);
+      expect(blocked).toBe(true);
+
+      await b.query('COMMIT');
+      await expect(upsertPromise).rejects.toThrow(/Hanya Super Admin/);
+    } finally {
+      await b.end().catch(() => {});
+      await prisma.foundationDecisionRule.deleteMany({
+        where: { organType: 'PEMBINA', decisionKind: 'MEETING' },
+      });
+      await prisma.userRoleAssignment.deleteMany({ where: { userId: superAdmin.id } });
+      await prisma.user.deleteMany({ where: { id: superAdmin.id } });
+    }
+  });
+
+  /**
    * SECURITY CRITICAL (real PostgreSQL) — akun yang dinonaktifkan/dihapus TIDAK
    * dapat memberi suara, walau token akses stateless-nya masih berlaku dan
    * namanya masih ada di snapshot.

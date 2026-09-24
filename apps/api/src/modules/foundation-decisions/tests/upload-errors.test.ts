@@ -150,4 +150,62 @@ describe('foundation-decisions POST /verify-pdf — pemetaan galat unggahan', ()
 
     expect(res.status).toBe(400);
   });
+
+  /**
+   * F6 (SECURITY warning) — `fileFilter` dulu memakai OR, sehingga SATU sinyal
+   * sudah cukup: `text/plain` bernama `x.pdf` lolos lewat akhiran nama, dan
+   * `application/pdf` bernama `x.txt` lolos lewat mimetype. Berkas dengan isi
+   * `%PDF-` asli tetap melewati penjaga magic-byte di controller, sehingga ia
+   * sampai ke service. Regresi ini memakai byte yang SAH-sah saja sebagai PDF
+   * justru untuk membuktikan yang menolak adalah `fileFilter`, bukan penjaga
+   * magic-byte.
+   */
+  it('mimetype text/plain + nama .pdf ditolak di fileFilter → 400, service TIDAK dipanggil (F6)', async () => {
+    const spy = vi
+      .spyOn(FoundationDecisionService, 'verifyByPdfBuffer')
+      .mockResolvedValue({ found: false } as never);
+
+    const res = await request(buildApp())
+      .post('/verify-pdf')
+      .attach('file', Buffer.from('%PDF-1.7 isi yang sebenarnya sah'), {
+        filename: 'x.pdf',
+        contentType: 'text/plain',
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body?.error?.code).toBe('BAD_REQUEST');
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('mimetype application/pdf + nama .txt ditolak (wajib berakhiran .pdf) → 400 (F6)', async () => {
+    const spy = vi
+      .spyOn(FoundationDecisionService, 'verifyByPdfBuffer')
+      .mockResolvedValue({ found: false } as never);
+
+    const res = await request(buildApp())
+      .post('/verify-pdf')
+      .attach('file', Buffer.from('%PDF-1.7 isi yang sebenarnya sah'), {
+        filename: 'x.txt',
+        contentType: 'application/pdf',
+      });
+
+    expect(res.status).toBe(400);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('application/octet-stream + nama .pdf tetap diterima (klien mengirim tipe generik)', async () => {
+    const spy = vi
+      .spyOn(FoundationDecisionService, 'verifyByPdfBuffer')
+      .mockResolvedValue({ found: false } as never);
+
+    const res = await request(buildApp())
+      .post('/verify-pdf')
+      .attach('file', Buffer.from('%PDF-1.7 isi'), {
+        filename: 'risalah.pdf',
+        contentType: 'application/octet-stream',
+      });
+
+    expect(res.status).toBe(200);
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
 });

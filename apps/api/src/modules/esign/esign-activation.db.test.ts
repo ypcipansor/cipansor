@@ -22,10 +22,16 @@
  * Di-skip kecuali `RUN_DB_TESTS=1`, konsisten dengan suite integrasi lain.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import fs from 'fs';
+import path from 'path';
 import { createPrismaClient } from '../../../prisma/client';
 import { EsignService } from './esign.service';
 import { SigningKeyRequestKind, SigningKeyRequestStatus } from '@prisma/client';
 import type { PrismaClient } from '@prisma/client';
+import {
+  IDENTITY_STORE_RELATIVE_DIR,
+  storeIdentityDocument,
+} from '../../utils/identity-document-store';
 import pg from 'pg';
 
 const RUN = process.env.RUN_DB_TESTS === '1';
@@ -171,6 +177,153 @@ describe.skipIf(!RUN)('esign activateKey — balapan aktivasi (PostgreSQL nyata)
         where: { userId, supersededAt: { not: null } },
       });
       expect(superseded).toBe(0);
+    },
+    30000
+  );
+});
+
+/**
+ * Finding 1 — penolakan yang kalah balapan dengan persetujuan tidak boleh
+ * menghapus foto KTP pemenang (PostgreSQL NYATA).
+ *
+ * `decideRequest(false)` dulu memanggil `discardIdentityDocument` SEBELUM lock
+ * dan sebelum status dibaca ulang. Kalau persetujuan konkuren (pengguna yang
+ * sama → advisory lock yang sama) menang lebih dulu, transaksi penolakan
+ * di-ROLLBACK tetapi berkasnya sudah telanjur lenyap — kunci terbit untuk
+ * pemohon yang dokumen identitasnya sudah hilang, tanpa jejak.
+ *
+ * Barrier-nya adalah table lock `ACCESS EXCLUSIVE` pada `signing_key_requests`
+ * yang ditahan koneksi kontrol, sehingga KEDUA permintaan benar-benar overlap
+ * pada titik pembacaan pengajuan — bukan `Promise.all` yang bisa berurutan.
+ * Di-skip kecuali `RUN_DB_TESTS=1`.
+ */
+describe.skipIf(!RUN)('esign decideRequest — balapan setuju vs tolak (PostgreSQL nyata)', () => {
+  let prisma: PrismaClient;
+  const created: string[] = [];
+  const createdFiles: string[] = [];
+  let deciderId = '';
+
+  beforeAll(async () => {
+    prisma = createPrismaClient();
+    await prisma.$connect();
+    // Penyetus keputusan harus pengguna nyata (FK decided_by_id).
+    deciderId = `itest-decider-${Date.now()}`;
+    await prisma.user.create({
+      data: { id: deciderId, email: `${deciderId}@example.test`, name: 'Decider', passwordHash: 'x' },
+    });
+  });
+
+  afterAll(async () => {
+    for (const userId of created) {
+      await prisma.userSigningKeyHistory.deleteMany({ where: { userId } });
+      await prisma.userSigningKey.deleteMany({ where: { userId } });
+      await prisma.signingKeyRequest.deleteMany({ where: { userId } });
+      await prisma.userIdentity.deleteMany({ where: { userId } });
+      await prisma.user.deleteMany({ where: { id: userId } });
+    }
+    await prisma.user.deleteMany({ where: { id: deciderId } });
+    const dir = path.join(process.cwd(), IDENTITY_STORE_RELATIVE_DIR);
+    for (const f of createdFiles) {
+      await fs.promises.unlink(path.join(dir, f)).catch(() => {});
+    }
+    await prisma.$disconnect();
+  });
+
+  /** Pengguna dengan identitas terverifikasi + berkas KTP nyata di disk. */
+  async function pendingUserWithKtp(prefix: string): Promise<{ userId: string; requestId: string; fileName: string }> {
+    const suffix = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const userId = `itest-${prefix}-${suffix}`;
+    await prisma.user.create({
+      data: { id: userId, email: `${userId}@example.test`, name: `KTP ${prefix}`, passwordHash: 'x' },
+    });
+    const stored = await storeIdentityDocument(
+      Buffer.from('%PDF-1.4 fake identity document for test'),
+      'application/pdf'
+    );
+    createdFiles.push(stored.fileName);
+    await prisma.userIdentity.create({
+      data: {
+        userId,
+        legalName: 'Uji Balapan',
+        nik: `9${`${Date.now()}${Math.floor(Math.random() * 1e6)}`}`.padEnd(16, '0').slice(0, 16),
+        birthPlace: 'Tasikmalaya',
+        birthDate: new Date('1975-05-12T00:00:00.000Z'),
+        verifiedAt: new Date(),
+        // FK `verified_by_id` menunjuk pengguna; pakai akun penyetus uji
+        // supaya tidak bergantung pada akun Super Admin hasil seed.
+        verifiedById: deciderId,
+        ktpFileName: stored.fileName,
+        ktpSha256: stored.sha256,
+        ktpUploadedAt: new Date(),
+      },
+    });
+    const request = await prisma.signingKeyRequest.create({
+      data: {
+        userId,
+        kind: SigningKeyRequestKind.ENROLLMENT,
+        status: SigningKeyRequestStatus.PENDING,
+      },
+    });
+    created.push(userId);
+    return { userId, requestId: request.id, fileName: stored.fileName };
+  }
+
+  it(
+    'persetujuan yang menang meninggalkan berkas KTP utuh meski penolakan overlap',
+    async () => {
+      const { requestId, fileName } = await pendingUserWithKtp('race-ktp');
+      const dir = path.join(process.cwd(), IDENTITY_STORE_RELATIVE_DIR);
+      const filePath = path.join(dir, fileName);
+      expect(fs.existsSync(filePath)).toBe(true);
+
+      /**
+       * Urutan ditentukan oleh advisory lock `lockSigningKeyTransition` yang
+       * dipegang koneksi kontrol. Persetujuan diantrekan LEBIH DULU di kunci
+       * itu; penolakan menyusul di belakangnya. Ketika kunci dilepas,
+       * PostgreSQL melayani pengantre secara FIFO, sehingga persetujuan
+       * menyelesaikan pengajuan dan penolakan membaca ulang status APPROVED.
+       *
+       * Inilah balapan yang sesungguhnya: keduanya benar-benar terparkir pada
+       * lock yang sama sebelum salah satunya berjalan. Yang membedakan
+       * implementasi lama hanyalah bahwa penolakan sudah menghapus berkas
+       * SEBELUM sempat mengantre.
+       */
+      const control = new pg.Client({ connectionString: process.env.DATABASE_URL });
+      await control.connect();
+      await control.query('BEGIN');
+      await control.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
+        (
+          await prisma.signingKeyRequest.findUniqueOrThrow({ where: { id: requestId } })
+        ).userId,
+      ]);
+
+      const approving = EsignService.decideRequest(requestId, deciderId, true, 30);
+      expect(await waitForBlocked(prisma, 1, 8000)).toBe(true);
+      const rejecting = EsignService.decideRequest(requestId, deciderId, false, undefined, 'tidak');
+      expect(await waitForBlocked(prisma, 2, 8000)).toBe(true);
+
+      await control.query('COMMIT');
+      await control.end().catch(() => {});
+
+      const results = await Promise.allSettled([approving, rejecting]);
+      const ok = results.filter((r) => r.status === 'fulfilled');
+      // Persis satu yang menang, dan arahnya deterministik: persetujuan.
+      const dbg = JSON.stringify(
+        results.map((r) => (r.status === 'rejected' ? String(r.reason?.message ?? r.reason) : 'OK'))
+      );
+      expect(ok.length, dbg).toBe(1);
+
+      const finalReq = await prisma.signingKeyRequest.findUniqueOrThrow({ where: { id: requestId } });
+      // Arah harus deterministik; kalau tidak, uji ini bisa lulus secara palsu
+      // lewat cabang penolakan.
+      expect(finalReq.status).toBe(SigningKeyRequestStatus.APPROVED);
+
+      const identity = await prisma.userIdentity.findUniqueOrThrow({
+        where: { userId: finalReq.userId },
+      });
+      // Persetujuan menang: berkas dan nama berkasnya HARUS tetap ada.
+      expect(identity.ktpFileName).toBe(fileName);
+      expect(fs.existsSync(filePath)).toBe(true);
     },
     30000
   );

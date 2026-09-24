@@ -16,12 +16,26 @@ function looksLikePdf(buffer: Buffer): boolean {
   return buffer.length >= PDF_MAGIC.length && buffer.subarray(0, PDF_MAGIC.length).equals(PDF_MAGIC);
 }
 
-/** Semua peran yang boleh membaca daftar/detail keputusan (halaman internal). */
+/**
+ * Finding 2 — bentuk aktor yang diteruskan ke service.
+ *
+ *  mengisi  dengan SELURUH peran aktif
+ * dari basis data, tetapi handler dulu hanya meneruskan `{ id, roleCode }`
+ * (peran PRIMER saja), sehingga pengguna yang jabatan yayasannya bukan peran
+ * utama (mis. `roleCode=GURU` utama + `YAYASAN_KETUA` sekunder) ditolak di
+ * list/detail/download — dan, bila service menilai lewat `actorRoleCodes`,
+ * juga di create/finalize/cancel. Helper ini meneruskan keduanya supaya
+ * keputusan otorisasi dinilai atas seluruh peran, bukan satu klaim.
+ */
+function actorFrom(req: Request) {
+  return { id: req.user!.id, roleCode: req.user!.roleCode, roleCodes: req.user!.roleCodes };
+}
+
 export const FoundationDecisionController = {
   /** Buat draf keputusan (buka voting). */
   async create(req: Request, res: Response) {
     const decisionId = await FoundationDecisionService.create(
-      { id: req.user!.id, roleCode: req.user!.roleCode },
+      actorFrom(req),
       req.body
     );
     return res
@@ -33,7 +47,7 @@ export const FoundationDecisionController = {
   async list(req: Request, res: Response) {
     const query = (res.locals.validatedQuery || req.query) as ListFoundationDecisionsQuery;
     const result = await FoundationDecisionService.list(
-      { id: req.user!.id, roleCode: req.user!.roleCode },
+      actorFrom(req),
       query
     );
     return res.json(
@@ -48,17 +62,14 @@ export const FoundationDecisionController = {
 
   /** Organ & jenis keputusan yang boleh dibuat aktor (gerbang form create). */
   async createOptions(req: Request, res: Response) {
-    const result = await FoundationDecisionService.createOptions({
-      id: req.user!.id,
-      roleCode: req.user!.roleCode,
-    });
+    const result = await FoundationDecisionService.createOptions(actorFrom(req));
     return res.json(ApiResponse.success(result));
   },
 
   /** Detail keputusan. */
   async detail(req: Request, res: Response) {
     const result = await FoundationDecisionService.detail(
-      { id: req.user!.id, roleCode: req.user!.roleCode },
+      actorFrom(req),
       req.params.id
     );
     return res.json(ApiResponse.success(result));
@@ -67,7 +78,7 @@ export const FoundationDecisionController = {
   /** Memberi suara + tanda tangan digital. */
   async castVote(req: Request, res: Response) {
     const result = await FoundationDecisionService.castVote(
-      { id: req.user!.id, roleCode: req.user!.roleCode },
+      actorFrom(req),
       req.params.id,
       req.body
     );
@@ -77,7 +88,7 @@ export const FoundationDecisionController = {
   /** Finalisasi manual bila kuorum sudah tercapai. */
   async finalize(req: Request, res: Response) {
     const result = await FoundationDecisionService.finalize(
-      { id: req.user!.id, roleCode: req.user!.roleCode },
+      actorFrom(req),
       req.params.id
     );
     return res.json(ApiResponse.success(result, 'Keputusan difinalisasi.'));
@@ -86,7 +97,7 @@ export const FoundationDecisionController = {
   /** Batalkan rapat yang kuorum hadirnya tak pernah tercapai. */
   async cancel(req: Request, res: Response) {
     const result = await FoundationDecisionService.cancel(
-      { id: req.user!.id, roleCode: req.user!.roleCode },
+      actorFrom(req),
       req.params.id
     );
     return res.json(ApiResponse.success(result, 'Rapat dibatalkan karena kuorum tidak tercapai.'));
@@ -101,7 +112,7 @@ export const FoundationDecisionController = {
    */
   async setPublication(req: Request, res: Response) {
     const result = await FoundationDecisionService.setPublication(
-      { id: req.user!.id, roleCode: req.user!.roleCode },
+      actorFrom(req),
       req.params.id,
       req.body.publication
     );
@@ -117,7 +128,7 @@ export const FoundationDecisionController = {
   /** Ubah aturan kuorum (SUPER_ADMIN). */
   async upsertRule(req: Request, res: Response) {
     const result = await FoundationDecisionService.upsertRule(
-      { id: req.user!.id, roleCode: req.user!.roleCode },
+      actorFrom(req),
       req.body
     );
     return res.json(ApiResponse.success(result, 'Aturan kuorum disimpan.'));
@@ -164,7 +175,7 @@ export const FoundationDecisionController = {
   /** Unduh PDF risalah final (keputusan sah). */
   async download(req: Request, res: Response) {
     const doc = await FoundationDecisionService.getFinalDocument(
-      { id: req.user!.id, roleCode: req.user!.roleCode },
+      actorFrom(req),
       req.params.id
     );
     res.setHeader('Content-Type', 'application/pdf');

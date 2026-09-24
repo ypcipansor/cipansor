@@ -27,7 +27,17 @@ const uploadPdf = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024, files: 1 },
   fileFilter: (_req, file, cb) => {
-    if (file.mimetype === 'application/pdf' || file.originalname.toLowerCase().endsWith('.pdf')) {
+    // DUA syarat, bukan OR. Versi OR menerima berkas yang mengaku PDF hanya
+    // dari SALAH satu sinyal: `text/plain` bernama `x.pdf` lolos lewat akhiran
+    // nama, dan `application/pdf` bernama `x.txt` lolos lewat mimetype.
+    // `application/octet-stream` tetap diterima karena banyak peramban/klien
+    // mengirim tipe generik untuk PDF yang sah - cek magic bytes `%PDF-` di
+    // controller yang menjadi penentu akhirnya.
+    const mimetype = (file.mimetype || '').toLowerCase();
+    const mimetypeOk =
+      mimetype === '' || mimetype === 'application/pdf' || mimetype === 'application/octet-stream';
+    const nameOk = file.originalname.toLowerCase().endsWith('.pdf');
+    if (mimetypeOk && nameOk) {
       cb(null, true);
     } else {
       // `Errors.badRequest` (ApiError), BUKAN `Error` telanjang. Sebuah Error

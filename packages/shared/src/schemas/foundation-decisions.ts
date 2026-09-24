@@ -81,24 +81,40 @@ export type SetFoundationDecisionPublicationInput = z.infer<
 >;
 
 /** Mengelola aturan kuorum (SUPER_ADMIN). */
-export const upsertFoundationRuleSchema = z
-  .object({
-    organType: z.enum(FOUNDATION_ORGAN_TYPES),
-    decisionKind: z.enum(FOUNDATION_DECISION_KINDS),
-    quorumPresentMode: z
-      .enum(FOUNDATION_QUORUM_MODES)
-      .default(FoundationQuorumMode.MAJORITY),
-    /**
-     * Wajib > 0, karena ambang nol berarti "kuorum terpenuhi tanpa satu pun
-     * suara" — keputusan dapat disahkan tanpa ada yang menyetujui.
-     */
-    quorumPresentValue: z.number().gt(0).max(1).default(0.5),
-    quorumDecisionMode: z
-      .enum(FOUNDATION_QUORUM_MODES)
-      .default(FoundationQuorumMode.MAJORITY),
-    /** Wajib > 0 — alasannya sama dengan `quorumPresentValue`. */
-    quorumDecisionValue: z.number().gt(0).max(1).default(0.5),
-  })
+const upsertFoundationRuleBaseSchema = z.object({
+  organType: z.enum(FOUNDATION_ORGAN_TYPES),
+  decisionKind: z.enum(FOUNDATION_DECISION_KINDS),
+  quorumPresentMode: z
+    .enum(FOUNDATION_QUORUM_MODES)
+    .default(FoundationQuorumMode.MAJORITY),
+  /**
+   * Ambang hadir. OPSIONAL: bila tak diisi, nilainya DITURUNKAN dari mode,
+   * bukan dari default tetap `0.5`. Default lama `0.5` membuat
+   * `{ quorumPresentMode: 'TWO_THIRDS' }` tanpa nilai menghasilkan pasangan
+   * mode/nilai yang bertentangan, yang lalu ditolak `superRefine` — padahal
+   * pemanggil hanya bermaksud "dua pertiga". Mode-lah yang mengikat, jadi
+   * nilai yang mengikutinya adalah perilaku yang benar.
+   */
+  quorumPresentValue: z.number().gt(0).max(1).optional(),
+  quorumDecisionMode: z
+    .enum(FOUNDATION_QUORUM_MODES)
+    .default(FoundationQuorumMode.MAJORITY),
+  /** Opsional — alasannya sama dengan `quorumPresentValue`. */
+  quorumDecisionValue: z.number().gt(0).max(1).optional(),
+});
+
+export const upsertFoundationRuleSchema = upsertFoundationRuleBaseSchema
+  /**
+   * Turunkan nilai yang tidak diberikan dari mode-nya SEBELUM validasi akhir,
+   * sehingga "mode mengikat, nilai mengikutinya" berlaku pada jalur yang
+   * mengisi mode saja.
+   */
+  .transform((rule) => ({
+    ...rule,
+    quorumPresentValue: rule.quorumPresentValue ?? quorumValueForMode(rule.quorumPresentMode),
+    quorumDecisionValue:
+      rule.quorumDecisionValue ?? quorumValueForMode(rule.quorumDecisionMode),
+  }))
   /**
    * **Mode mengikat, nilai harus mengikutinya.** `TWO_THIRDS` dengan value 0.5
    * adalah aturan yang menyamar: labelnya menjanjikan dua pertiga sementara

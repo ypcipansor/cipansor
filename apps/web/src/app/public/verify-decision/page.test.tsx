@@ -162,6 +162,40 @@ describe("halaman verifikasi keputusan publik", () => {
   });
 
   /**
+   * Regresi F5 — keputusan PRIVATE tidak boleh menampilkan digest ke pemindai.
+   *
+   * Server kini menyensor `decisionId`/`digest`/`archiveDigest` untuk keputusan
+   * yang belum diterbitkan. UI dulu selalu menuliskan potongan digest pada baris
+   * "cocok byte-per-byte"; dengan digest yang kini `null`, ia harus tetap
+   * menyatakan keabsahan tanpa menampilkan potongan apa pun (dan tanpa
+   * mencetak "undefined").
+   */
+  it("tidak menampilkan potongan digest untuk keputusan PRIVATE (F5)", () => {
+    tokenState.data = dto({
+      publication: "PRIVATE",
+      subject: null,
+      organType: null,
+      kind: null,
+      status: null,
+      decidedAt: null,
+      digest: null,
+      archiveDigest: null,
+      voteCount: 0,
+      approveCount: 0,
+      rejectCount: 0,
+      abstainCount: 0,
+    });
+    const { container } = render(<PublicVerifyDecisionPage />);
+
+    expect(screen.getByText(/Dokumen Sah & Terverifikasi/)).toBeTruthy();
+    // Keabsahan byte tetap dinyatakan…
+    expect(screen.getByText(/Arsip server cocok/)).toBeTruthy();
+    // …tetapi tanpa potongan digest, dan tanpa "undefined".
+    expect(container.textContent).not.toContain("SHA-256");
+    expect(container.textContent).not.toContain("undefined");
+  });
+
+  /**
    * Regresi: memilih berkas BARU harus membuang hasil berkas LAMA.
    *
    * `handleFileChange` dulu tidak menyentuh `uploadResult`. Berkas pertama

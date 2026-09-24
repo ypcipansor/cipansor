@@ -4,6 +4,7 @@ import type { Request, Response } from 'express';
 vi.mock('../foundation-decisions.service', () => ({
   FoundationDecisionService: {
     create: vi.fn(),
+    createOptions: vi.fn(),
     list: vi.fn(),
     detail: vi.fn(),
     castVote: vi.fn(),
@@ -221,5 +222,70 @@ describe('foundation-decisions controller', () => {
     await run(controller.verifyPdf, req, res);
     expect(FoundationDecisionService.verifyByPdfBuffer).toHaveBeenCalledWith(buffer);
     expect((res as any).jsonPayload?.data?.isValid).toBe(true);
+  });
+
+  /**
+   * Finding 2 (regresi) — `refreshActorRoles` mengisi `req.user.roleCodes`
+   * dengan SELURUH peran aktif, tetapi handler dulu hanya meneruskan
+   * `{ id, roleCode }` (peran PRIMER saja). Pengguna yang jabatan yayasannya
+   * bukan peran utama (mis. `GURU` utama + `YAYASAN_KETUA` sekunder) lalu
+   * ditolak di list/detail/download karena service menilai hanya `roleCode`.
+   *
+   * Gagal sebelum perbaikan: `roleCodes` hilang dari argumen service.
+   * Lulus sesudah: seluruh peran diteruskan apa adanya.
+   */
+  it('list/detail/download: meneruskan SELURUH roleCodes aktor, bukan hanya peran primer', async () => {
+    (FoundationDecisionService.list as any).mockResolvedValue({
+      items: [],
+      total: 0,
+      page: 1,
+      limit: 10,
+    });
+    (FoundationDecisionService.detail as any).mockResolvedValue({ id: 'd1' });
+    (FoundationDecisionService.getFinalDocument as any).mockResolvedValue({
+      bytes: Buffer.from('%PDF-1.7'),
+    });
+    const user = { id: 'u9', roleCode: 'GURU', roleCodes: ['GURU', 'YAYASAN_KETUA'] } as any;
+
+    const list = mockReqRes({ user } as any);
+    await run(controller.list, list.req, list.res);
+    expect(FoundationDecisionService.list).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'u9', roleCodes: ['GURU', 'YAYASAN_KETUA'] }),
+      expect.anything()
+    );
+
+    const detail = mockReqRes({ user, params: { id: 'd1' } as any });
+    await run(controller.detail, detail.req, detail.res);
+    expect(FoundationDecisionService.detail).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'u9', roleCodes: ['GURU', 'YAYASAN_KETUA'] }),
+      'd1'
+    );
+
+    const download = mockReqRes({ user, params: { id: 'd1' } as any });
+    await run(controller.download, download.req, download.res);
+    expect(FoundationDecisionService.getFinalDocument).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'u9', roleCodes: ['GURU', 'YAYASAN_KETUA'] }),
+      'd1'
+    );
+  });
+
+  it('createOptions/create/finalize: meneruskan SELURUH roleCodes aktor', async () => {
+    (FoundationDecisionService.createOptions as any).mockResolvedValue({ allowedOrgans: [] });
+    (FoundationDecisionService.create as any).mockResolvedValue('d1');
+    (FoundationDecisionService.finalize as any).mockResolvedValue({ outcome: 'APPROVED' });
+    const user = { id: 'u9', roleCode: 'GURU', roleCodes: ['GURU', 'YAYASAN_KETUA'] } as any;
+
+    const opts = mockReqRes({ user } as any);
+    await run(controller.createOptions, opts.req, opts.res);
+    expect(FoundationDecisionService.createOptions).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'u9', roleCodes: ['GURU', 'YAYASAN_KETUA'] })
+    );
+
+    const create = mockReqRes({ user, body: { organType: 'PENGURUS' } } as any);
+    await run(controller.create, create.req, create.res);
+    expect(FoundationDecisionService.create).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'u9', roleCodes: ['GURU', 'YAYASAN_KETUA'] }),
+      expect.anything()
+    );
   });
 });
