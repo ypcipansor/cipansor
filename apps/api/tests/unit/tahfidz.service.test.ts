@@ -22,6 +22,8 @@ vi.mock('@/lib/prisma', () => ({
   },
 }));
 
+const superAdmin = { sub: 'u-sa', roleCode: 'SUPER_ADMIN', unitId: null };
+
 describe('TahfidzService', () => {
   let tahfidzService: TahfidzService;
 
@@ -136,7 +138,7 @@ describe('TahfidzService', () => {
         .mockResolvedValueOnce(mockSurahCovered as any) // Surah covered
         .mockResolvedValueOnce(mockRecentRecords as any); // Recent records
 
-      const result = await tahfidzService.getStudentSummary(studentId);
+      const result = await tahfidzService.getStudentSummary(studentId, superAdmin);
 
       expect(result.student).toEqual(mockStudent);
       expect(result.summary.totalRecords).toBe(mockTotalRecords);
@@ -148,7 +150,7 @@ describe('TahfidzService', () => {
 
     it('should throw error if student not found', async () => {
       (prisma.student.findFirst as any).mockResolvedValue(null);
-      await expect(tahfidzService.getStudentSummary('unknown')).rejects.toThrow();
+      await expect(tahfidzService.getStudentSummary('unknown', superAdmin)).rejects.toThrow();
     });
   });
 });

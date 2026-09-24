@@ -54,7 +54,7 @@ describe('AttendanceService', () => {
 
       const result = await service.findAll(
         { page: 1, limit: 10 },
-        { role: UserRole.SUPER_ADMIN, unitId: null }
+        { sub: 'u-sa', roleCode: 'SUPER_ADMIN', unitId: null }
       );
 
       expect(result.records).toHaveLength(1);
@@ -109,7 +109,7 @@ describe('AttendanceService', () => {
 
       const result = await service.getSummary(
         { startDate: '2023-01-01', endDate: '2023-01-31' },
-        { role: UserRole.SUPER_ADMIN, unitId: null }
+        { sub: 'u-sa', roleCode: 'SUPER_ADMIN', unitId: null }
       );
 
       expect(result.counts.total).toBe(100);
@@ -129,7 +129,7 @@ describe('AttendanceService', () => {
 
       const result = await service.getSummary(
         { startDate: '2023-01-01', endDate: '2023-01-31' },
-        { role: UserRole.SUPER_ADMIN, unitId: null }
+        { sub: 'u-sa', roleCode: 'SUPER_ADMIN', unitId: null }
       );
 
       expect(result.counts.total).toBe(0);

@@ -84,7 +84,11 @@ describe('AttendanceService', () => {
       (prisma.attendance.findMany as any).mockResolvedValue(mockRecords);
       (prisma.attendance.count as any).mockResolvedValue(1);
 
-      const result = await service.findAll(query, { role: UserRole.TEACHER, unitId: 'unit1' });
+      const result = await service.findAll(query, {
+        sub: 'u-guru',
+        roleCode: 'SMPIT_GURU',
+        unitId: 'unit1',
+      });
 
       expect(result.records).toHaveLength(1);
       expect(result.records[0].status).toBe(AttendanceStatus.PRESENT);
@@ -114,7 +118,11 @@ describe('AttendanceService', () => {
       (prisma.attendance.groupBy as any).mockResolvedValue(mockGroupBy);
       (prisma.attendance.count as any).mockResolvedValue(25);
 
-      const result = await service.getSummary(query, { role: UserRole.TEACHER, unitId: 'unit1' });
+      const result = await service.getSummary(query, {
+        sub: 'u-guru',
+        roleCode: 'SMPIT_GURU',
+        unitId: 'unit1',
+      });
 
       expect(result.counts.total).toBe(25);
       expect(result.counts.present).toBe(20);
@@ -133,7 +141,11 @@ describe('AttendanceService', () => {
       (prisma.attendance.groupBy as any).mockResolvedValue(mockGroupBy);
       (prisma.attendance.count as any).mockResolvedValue(3);
 
-      const result = await service.getSummary(query, { role: UserRole.TEACHER, unitId: 'unit1' });
+      const result = await service.getSummary(query, {
+        sub: 'u-guru',
+        roleCode: 'SMPIT_GURU',
+        unitId: 'unit1',
+      });
 
       expect(result.counts.excused).toBe(3);
       expect(result.percentages.excused).toBe('100.0');
@@ -150,7 +162,11 @@ describe('AttendanceService', () => {
       (prisma.attendance.groupBy as any).mockResolvedValue(mockGroupBy);
       (prisma.attendance.count as any).mockResolvedValue(5);
 
-      const result = await service.getSummary(query, { role: UserRole.TEACHER, unitId: 'unit1' });
+      const result = await service.getSummary(query, {
+        sub: 'u-guru',
+        roleCode: 'SMPIT_GURU',
+        unitId: 'unit1',
+      });
 
       expect(result.counts.excused).toBe(5); // 2 + 3
     });

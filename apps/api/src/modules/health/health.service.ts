@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { onlyScopedStudents, STUDENT_SAFE_SELECT } from '@/utils/student-scope';
 import { prisma } from '../../lib/prisma';
 import { attendanceService } from '../attendance/attendance.service';
 import { eventBus } from '../../lib/event-bus';
@@ -20,11 +21,15 @@ import { Errors } from '../../middleware/error';
 
 // ==================== MEDICAL RECORD ====================
 
-export async function getMedicalRecords(query: QueryMedicalRecordInput & { status?: string }) {
+export async function getMedicalRecords(
+  query: QueryMedicalRecordInput & { status?: string },
+  scope: Prisma.StudentWhereInput
+) {
   const { page = 1, limit = 20, studentId, type, startDate, endDate, status } = query;
   const skip = (page - 1) * limit;
 
   const where: Prisma.MedicalRecordWhereInput = {
+    ...onlyScopedStudents(scope),
     ...(studentId && { studentId }),
     ...(type && { type: type as unknown as import('@prisma/client').MedicalRecordType }),
     ...(startDate &&
@@ -81,9 +86,9 @@ export async function getMedicalRecords(query: QueryMedicalRecordInput & { statu
   };
 }
 
-export async function getMedicalRecordById(id: string) {
-  const record = await prisma.medicalRecord.findUnique({
-    where: { id },
+export async function getMedicalRecordById(id: string, scope: Prisma.StudentWhereInput) {
+  const record = await prisma.medicalRecord.findFirst({
+    where: { id, ...onlyScopedStudents(scope) },
     include: {
       student: {
         select: {
@@ -244,7 +249,21 @@ export async function createMedicalRecord(data: CreateMedicalRecordInput, record
   } as unknown as MedicalRecord;
 }
 
-export async function updateMedicalRecord(id: string, data: UpdateMedicalRecordInput) {
+/** A record id outside the caller's santri reads as not found, not forbidden. */
+async function assertRecordInScope(id: string, scope: Prisma.StudentWhereInput) {
+  const found = await prisma.medicalRecord.findFirst({
+    where: { id, ...onlyScopedStudents(scope) },
+    select: { id: true },
+  });
+  if (!found) throw Errors.notFound('Medical record');
+}
+
+export async function updateMedicalRecord(
+  id: string,
+  data: UpdateMedicalRecordInput,
+  scope: Prisma.StudentWhereInput
+) {
+  await assertRecordInScope(id, scope);
   const { status, temperature, bloodPressure, heartRate, weight, height, ...mainData } = data;
 
   const record = await prisma.medicalRecord.update({
@@ -286,13 +305,14 @@ export async function updateMedicalRecord(id: string, data: UpdateMedicalRecordI
   } as unknown as MedicalRecord;
 }
 
-export async function deleteMedicalRecord(id: string) {
+export async function deleteMedicalRecord(id: string, scope: Prisma.StudentWhereInput) {
+  await assertRecordInScope(id, scope);
   return prisma.medicalRecord.delete({ where: { id } });
 }
 
-export async function getStudentMedicalHistory(studentId: string) {
+export async function getStudentMedicalHistory(studentId: string, scope: Prisma.StudentWhereInput) {
   const records = await prisma.medicalRecord.findMany({
-    where: { studentId },
+    where: { studentId, ...onlyScopedStudents(scope) },
     include: {
       recordedBy: { select: { id: true, name: true } },
     },
@@ -419,11 +439,15 @@ export async function addMedicationStock(id: string, quantity: number) {
 
 // ==================== MEDICATION USAGE LOG ====================
 
-export async function getMedicationUsageLogs(query: QueryMedicationUsageInput) {
+export async function getMedicationUsageLogs(
+  query: QueryMedicationUsageInput,
+  scope: Prisma.StudentWhereInput
+) {
   const { page = 1, limit = 20, medicationId, studentId, startDate, endDate } = query;
   const skip = (page - 1) * limit;
 
   const where: Prisma.MedicationUsageLogWhereInput = {
+    ...onlyScopedStudents(scope),
     ...(medicationId && { medicationId }),
     ...(studentId && { studentId }),
     ...(startDate &&
@@ -597,14 +621,17 @@ export async function getPatients(query: { page: number; limit: number; search?:
   return { data, meta: { page: query.page, limit: query.limit, total } };
 }
 
-export async function getClinicAppointments(query: {
-  page: number;
-  limit: number;
-  unitId?: string;
-  date?: Date;
-  status?: string;
-}) {
-  const where: Record<string, unknown> = {};
+export async function getClinicAppointments(
+  query: {
+    page: number;
+    limit: number;
+    unitId?: string;
+    date?: Date;
+    status?: string;
+  },
+  scope: Prisma.StudentWhereInput
+) {
+  const where: Record<string, unknown> = { ...onlyScopedStudents(scope) };
   if (query.unitId) where.unitId = query.unitId;
   if (query.status) where.status = query.status;
   if (query.date) {
@@ -620,7 +647,7 @@ export async function getClinicAppointments(query: {
       where,
       include: {
         patient: { select: { id: true, name: true } },
-        student: { include: { user: { select: { id: true, name: true } } } },
+        student: { select: STUDENT_SAFE_SELECT },
       },
       orderBy: [{ appointmentDate: 'desc' }, { queueNumber: 'asc' }],
       skip: (query.page - 1) * query.limit,
@@ -632,14 +659,17 @@ export async function getClinicAppointments(query: {
   return { data, meta: { page: query.page, limit: query.limit, total } };
 }
 
-export async function getPrescriptions(query: {
-  page: number;
-  limit: number;
-  studentId?: string;
-  patientId?: string;
-  status?: string;
-}) {
-  const where: Record<string, unknown> = {};
+export async function getPrescriptions(
+  query: {
+    page: number;
+    limit: number;
+    studentId?: string;
+    patientId?: string;
+    status?: string;
+  },
+  scope: Prisma.StudentWhereInput
+) {
+  const where: Record<string, unknown> = { ...onlyScopedStudents(scope) };
   if (query.studentId) where.studentId = query.studentId;
   if (query.patientId) where.patientId = query.patientId;
   if (query.status) where.status = query.status;
@@ -654,7 +684,7 @@ export async function getPrescriptions(query: {
           },
         },
         patient: { select: { id: true, name: true } },
-        student: { include: { user: { select: { id: true, name: true } } } },
+        student: { select: STUDENT_SAFE_SELECT },
         doctor: { select: { id: true, name: true } },
       },
       orderBy: { createdAt: 'desc' },
@@ -878,11 +908,15 @@ export async function createGrowthRecord(data: CreateGrowthRecordInput, recorded
   });
 }
 
-export async function getGrowthRecords(query: QueryGrowthRecordInput) {
+export async function getGrowthRecords(
+  query: QueryGrowthRecordInput,
+  scope: Prisma.StudentWhereInput
+) {
   const { page = 1, limit = 20, studentId, unitId, startDate, endDate } = query;
   const skip = (page - 1) * limit;
 
   const where: Prisma.GrowthRecordWhereInput = {
+    ...onlyScopedStudents(scope),
     ...(studentId && { studentId }),
     ...(unitId && { unitId }),
     ...(startDate &&

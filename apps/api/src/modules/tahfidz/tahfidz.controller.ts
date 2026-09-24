@@ -4,6 +4,9 @@ import { CreateTahfidzInput, UpdateTahfidzInput } from '@cipansor/shared';
 import { generateCertificateSchema, listTahfidzQuerySchema } from './tahfidz.schema';
 import { getQuranProgressMap } from './tahfidz.analytics';
 import { requireUser } from '../../middleware/auth';
+import { seesAllUnits } from '@/utils/resolve-unit-id';
+import { assertStudentInScope } from '@/utils/student-scope';
+import { Errors } from '@/middleware/error';
 
 export class TahfidzController {
   private service: TahfidzService;
@@ -34,7 +37,7 @@ export class TahfidzController {
 
   findById = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const result = await this.service.findById(req.params.id);
+      const result = await this.service.findById(req.params.id, requireUser(req));
       res.json({ success: true, data: result });
     } catch (error) {
       next(error);
@@ -76,7 +79,7 @@ export class TahfidzController {
   getStudentSummary = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { studentId } = req.params;
-      const result = await this.service.getStudentSummary(studentId);
+      const result = await this.service.getStudentSummary(studentId, requireUser(req));
       res.json({ success: true, data: result });
     } catch (error) {
       next(error);
@@ -85,7 +88,13 @@ export class TahfidzController {
 
   getDashboardStats = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const unitId = req.query.unitId as string;
+      // A unit's staff see their own unit; only a cross-unit account (the
+      // yayasan board, the muhafidz) may pick one or see all of them.
+      const user = requireUser(req);
+      const unitId = seesAllUnits(user)
+        ? (req.query.unitId as string | undefined)
+        : (user.unitId ?? undefined);
+      if (!unitId && !seesAllUnits(user)) throw Errors.forbidden('No unit on this account');
       const year = req.query.year ? parseInt(req.query.year as string) : undefined;
       const month = req.query.month ? parseInt(req.query.month as string) : undefined;
 
@@ -110,6 +119,7 @@ export class TahfidzController {
   getQuranMap = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { studentId } = req.params;
+      await assertStudentInScope(studentId, requireUser(req));
       const result = await getQuranProgressMap(studentId);
       res.json({ success: true, data: result });
     } catch (error) {

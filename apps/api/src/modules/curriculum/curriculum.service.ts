@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { TEACHER_SAFE_SELECT } from '@/utils/student-scope';
 import { Prisma } from '@prisma/client';
 import type {
   CreateSubjectInput,
@@ -64,9 +65,7 @@ export async function getSubjectById(id: string) {
       unit: { select: { id: true, name: true } },
       teacherSubjects: {
         include: {
-          teacher: {
-            include: { user: { select: { id: true, name: true } } },
-          },
+          teacher: { select: TEACHER_SAFE_SELECT },
         },
       },
       _count: { select: { lessonPlans: true, schedules: true, exams: true, grades: true } },
@@ -110,7 +109,7 @@ export async function assignTeacherToSubject(data: AssignTeacherSubjectInput) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     data: data as any,
     include: {
-      teacher: { include: { user: { select: { id: true, name: true } } } },
+      teacher: { select: TEACHER_SAFE_SELECT },
       subject: { select: { id: true, name: true, code: true } },
       class: { select: { id: true, name: true } },
     },
@@ -156,7 +155,7 @@ export async function getLessonPlans(query: LessonPlanQuery) {
       take: limit,
       include: {
         subject: { select: { id: true, name: true, code: true } },
-        teacher: { include: { user: { select: { id: true, name: true } } } },
+        teacher: { select: TEACHER_SAFE_SELECT },
         class: { select: { id: true, name: true } },
       },
       orderBy: { plannedDate: 'desc' },
@@ -180,7 +179,7 @@ export async function getLessonPlanById(id: string) {
     where: { id },
     include: {
       subject: { select: { id: true, name: true, code: true } },
-      teacher: { include: { user: { select: { id: true, name: true } } } },
+      teacher: { select: TEACHER_SAFE_SELECT },
       class: { select: { id: true, name: true } },
     },
   });
@@ -195,7 +194,7 @@ export async function createLessonPlan(data: CreateLessonPlanInput) {
     } as any,
     include: {
       subject: { select: { id: true, name: true, code: true } },
-      teacher: { include: { user: { select: { id: true, name: true } } } },
+      teacher: { select: TEACHER_SAFE_SELECT },
     },
   });
 }
@@ -209,7 +208,7 @@ export async function updateLessonPlan(id: string, data: UpdateLessonPlanInput) 
     },
     include: {
       subject: { select: { id: true, name: true, code: true } },
-      teacher: { include: { user: { select: { id: true, name: true } } } },
+      teacher: { select: TEACHER_SAFE_SELECT },
     },
   });
 }
@@ -272,7 +271,7 @@ export async function getSchedules(query: ScheduleQuery) {
         academicYear: { select: { id: true, name: true } },
         class: { select: { id: true, name: true, level: true } },
         subject: { select: { id: true, name: true, code: true } },
-        teacher: { include: { user: { select: { id: true, name: true } } } },
+        teacher: { select: TEACHER_SAFE_SELECT },
       },
       orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }],
     }),
@@ -298,7 +297,7 @@ export async function getScheduleById(id: string) {
       academicYear: { select: { id: true, name: true } },
       class: { select: { id: true, name: true, level: true } },
       subject: { select: { id: true, name: true, code: true } },
-      teacher: { include: { user: { select: { id: true, name: true } } } },
+      teacher: { select: TEACHER_SAFE_SELECT },
     },
   });
 }
@@ -354,7 +353,7 @@ export async function createSchedule(data: CreateScheduleInput) {
     include: {
       class: { select: { id: true, name: true } },
       subject: { select: { id: true, name: true, code: true } },
-      teacher: { include: { user: { select: { id: true, name: true } } } },
+      teacher: { select: TEACHER_SAFE_SELECT },
     },
   });
 }
@@ -366,7 +365,7 @@ export async function updateSchedule(id: string, data: UpdateScheduleInput) {
     include: {
       class: { select: { id: true, name: true } },
       subject: { select: { id: true, name: true, code: true } },
-      teacher: { include: { user: { select: { id: true, name: true } } } },
+      teacher: { select: TEACHER_SAFE_SELECT },
     },
   });
 }
@@ -383,7 +382,7 @@ export async function getClassSchedule(classId: string, academicYearId?: string)
     where,
     include: {
       subject: { select: { id: true, name: true, code: true } },
-      teacher: { include: { user: { select: { id: true, name: true } } } },
+      teacher: { select: TEACHER_SAFE_SELECT },
     },
     orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }],
   });

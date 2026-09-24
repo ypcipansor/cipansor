@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { TahfidzController } from './tahfidz.controller';
-import { authenticate, authorize } from '@/middleware/auth';
+import { authenticate, authorize, isStaffMember, isTeacherOrAbove } from '@/middleware/auth';
 import { validate } from '@/middleware/validate';
 import {
   createTahfidzSchema,
@@ -14,8 +14,8 @@ const controller = new TahfidzController();
 
 router.use(authenticate);
 
-// Dashboard stats
-router.get('/stats', controller.getDashboardStats);
+// Dashboard stats — a school-wide leaderboard, for staff only.
+router.get('/stats', isStaffMember, controller.getDashboardStats);
 
 // Student Summary (Specific route must come before generic ID route)
 router.get('/summary/:studentId', controller.getStudentSummary);
@@ -26,9 +26,9 @@ router.get('/map/:studentId', controller.getQuranMap);
 // CRUD
 router.get('/', controller.findAll);
 router.get('/:id', controller.findById);
-router.post('/', validate(createTahfidzSchema), controller.create);
-router.put('/:id', validate(updateTahfidzSchema), controller.update);
-router.delete('/:id', controller.delete);
+router.post('/', isTeacherOrAbove, validate(createTahfidzSchema), controller.create);
+router.put('/:id', isTeacherOrAbove, validate(updateTahfidzSchema), controller.update);
+router.delete('/:id', isTeacherOrAbove, controller.delete);
 
 // Certificates
 router.post(

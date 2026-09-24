@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma';
-import { seesAllUnits } from '@/utils/resolve-unit-id';
-import { Prisma, MurojaahType, TahfidzMistakeType, RoleCode } from '@prisma/client';
+import { studentScope, type ScopeActor } from '@/utils/student-scope';
+import { Prisma, MurojaahType, TahfidzMistakeType } from '@prisma/client';
 import type {
   ListMurojaahQuery,
   CreateMurojaahInput,
@@ -9,12 +9,6 @@ import type {
   StudentMurojaahSummaryQuery,
   HalaqohMurojaahQuery,
 } from './murojaah.schema';
-
-interface AuthContext {
-  role: string;
-  roleCode?: string | null;
-  unitId?: string | null;
-}
 
 // ============================================
 // Murojaah Service
@@ -25,7 +19,7 @@ export const murojaahService = {
   // LIST & READ
   // ============================================
 
-  async findAll(query: ListMurojaahQuery, context: AuthContext) {
+  async findAll(query: ListMurojaahQuery, context: ScopeActor) {
     const {
       page = 1,
       limit = 20,
@@ -40,17 +34,14 @@ export const murojaahService = {
       search,
     } = query;
 
-    const where: Prisma.MurojaahRecordWhereInput = {};
-
-    // Unit scoping. This method took an AuthContext and never read it, so
-    // murojaah records were the one tahfidz surface with no unit filter at
-    // all: any caller who could reach the endpoint saw every unit's records.
-    // Scoping it the same way as tahfidz.findAll closes that, while
-    // seesAllUnits keeps the yayasan board and the boarding staff — whose
-    // santri span units — seeing everything they are supposed to.
-    if (!seesAllUnits(context)) {
-      where.student = { unitId: context.unitId || 'none' };
-    }
+    // Scoped like tahfidz.findAll: staff their unit (the yayasan board and the
+    // boarding staff, whose santri span units, all of them), a santri their
+    // own records, a wali their children's. The `unitId` filter below narrows
+    // within that scope; it used to replace it, so `?unitId=` reopened any unit.
+    const scope = studentScope(context);
+    const where: Prisma.MurojaahRecordWhereInput = {
+      student: unitId ? { AND: [scope, { unitId }] } : scope,
+    };
 
     // Filter by student
     if (studentId) where.studentId = studentId;
@@ -60,9 +51,6 @@ export const murojaahService = {
 
     // Filter by halaqoh
     if (halaqohId) where.halaqohId = halaqohId;
-
-    // Filter by unit
-    if (unitId) where.student = { unitId };
 
     // Filter by murojaah type
     if (murojaahType) where.murojaahType = murojaahType as MurojaahType;
@@ -128,9 +116,9 @@ export const murojaahService = {
     };
   },
 
-  async findById(id: string) {
-    const record = await prisma.murojaahRecord.findUniqueOrThrow({
-      where: { id },
+  async findById(id: string, context: ScopeActor) {
+    const record = await prisma.murojaahRecord.findFirstOrThrow({
+      where: { id, student: studentScope(context) },
       include: {
         student: {
           select: {
@@ -291,14 +279,10 @@ export const murojaahService = {
   // STUDENT HISTORY & SUMMARY
   // ============================================
 
-  async getStudentHistory(studentId: string, query: ListMurojaahQuery) {
-    // One student's own history: studentId is the whole filter, so unit
-    // scoping would only ever narrow it further. The caller has already been
-    // authorised for this student, hence the deliberate bypass.
-    return this.findAll(
-      { ...query, studentId },
-      { role: RoleCode.SUPER_ADMIN, roleCode: RoleCode.SUPER_ADMIN, unitId: null }
-    );
+  async getStudentHistory(studentId: string, query: ListMurojaahQuery, context: ScopeActor) {
+    // This used to run as SUPER_ADMIN on the claim that the caller had been
+    // authorised for the student; nothing had. The caller's own scope applies.
+    return this.findAll({ ...query, studentId }, context);
   },
 
   async getStudentSummary(query: StudentMurojaahSummaryQuery) {

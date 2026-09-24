@@ -20,6 +20,11 @@ import {
 } from '@cipansor/shared';
 import { Prisma } from '@prisma/client';
 import type { ExamQuery, GradeQuery, ReportCardQuery } from './assessment.schema';
+import {
+  onlyScopedStudents,
+  STUDENT_SAFE_SELECT,
+  TEACHER_SAFE_SELECT,
+} from '@/utils/student-scope';
 import { ExamAnalyticsData } from '@cipansor/shared';
 
 // =====================================
@@ -64,7 +69,7 @@ export async function getExams(query: ExamQuery): Promise<SharedPaginatedRespons
       include: {
         subject: { select: { id: true, name: true, code: true } },
         class: { select: { id: true, name: true, level: true } },
-        teacher: { include: { user: { select: { id: true, name: true } } } },
+        teacher: { select: TEACHER_SAFE_SELECT },
         _count: { select: { grades: true } },
       },
       orderBy: { scheduledAt: 'desc' },
@@ -86,7 +91,10 @@ export async function getExams(query: ExamQuery): Promise<SharedPaginatedRespons
   };
 }
 
-export async function getExamById(id: string): Promise<Exam | null> {
+export async function getExamById(
+  id: string,
+  scope: Prisma.StudentWhereInput
+): Promise<Exam | null> {
   const exam = await prisma.exam.findUnique({
     where: { id },
     include: {
@@ -94,10 +102,12 @@ export async function getExamById(id: string): Promise<Exam | null> {
       academicYear: { select: { id: true, name: true } },
       subject: { select: { id: true, name: true, code: true } },
       class: { select: { id: true, name: true, level: true } },
-      teacher: { include: { user: { select: { id: true, name: true } } } },
+      teacher: { select: TEACHER_SAFE_SELECT },
+      // A santri opening an exam to take it must not receive the class's scores.
       grades: {
+        where: onlyScopedStudents(scope),
         include: {
-          student: { include: { user: { select: { id: true, name: true } } } },
+          student: { select: STUDENT_SAFE_SELECT },
         },
         orderBy: { score: 'desc' },
       },
@@ -130,7 +140,7 @@ export async function createExam(data: CreateExamInput): Promise<Exam> {
     include: {
       subject: { select: { id: true, name: true, code: true } },
       class: { select: { id: true, name: true, level: true } },
-      teacher: { include: { user: { select: { id: true, name: true } } } },
+      teacher: { select: TEACHER_SAFE_SELECT },
     },
   });
 
@@ -143,13 +153,7 @@ export async function getExamAnalytics(id: string): Promise<ExamAnalyticsData | 
     include: {
       grades: {
         include: {
-          student: {
-            include: {
-              user: {
-                select: { id: true, name: true },
-              },
-            },
-          },
+          student: { select: STUDENT_SAFE_SELECT },
         },
       },
       class: {
@@ -284,7 +288,7 @@ export async function updateExam(id: string, data: UpdateExamInput): Promise<Exa
     include: {
       subject: { select: { id: true, name: true, code: true } },
       class: { select: { id: true, name: true, level: true } },
-      teacher: { include: { user: { select: { id: true, name: true } } } },
+      teacher: { select: TEACHER_SAFE_SELECT },
     },
   });
 
@@ -310,11 +314,14 @@ export async function updateExamStatus(id: string, status: string): Promise<Exam
 // GRADE SERVICES
 // =====================================
 
-export async function getGrades(query: GradeQuery): Promise<SharedPaginatedResponse<Grade>> {
+export async function getGrades(
+  query: GradeQuery,
+  scope: Prisma.StudentWhereInput
+): Promise<SharedPaginatedResponse<Grade>> {
   const { page, limit, studentId, subjectId, examId, academicYearId, type } = query;
   const skip = (page - 1) * limit;
 
-  const where: Prisma.GradeWhereInput = {};
+  const where: Prisma.GradeWhereInput = { ...onlyScopedStudents(scope) };
   if (studentId) where.studentId = studentId;
   if (subjectId) where.subjectId = subjectId;
   if (examId) where.examId = examId;
@@ -327,7 +334,7 @@ export async function getGrades(query: GradeQuery): Promise<SharedPaginatedRespo
       skip,
       take: limit,
       include: {
-        student: { include: { user: { select: { id: true, name: true } } } },
+        student: { select: STUDENT_SAFE_SELECT },
         subject: { select: { id: true, name: true, code: true } },
         exam: { select: { id: true, title: true, type: true } },
         gradedBy: { select: { id: true, name: true } },
@@ -351,11 +358,14 @@ export async function getGrades(query: GradeQuery): Promise<SharedPaginatedRespo
   };
 }
 
-export async function getGradeById(id: string): Promise<Grade | null> {
-  const grade = await prisma.grade.findUnique({
-    where: { id },
+export async function getGradeById(
+  id: string,
+  scope: Prisma.StudentWhereInput
+): Promise<Grade | null> {
+  const grade = await prisma.grade.findFirst({
+    where: { id, ...onlyScopedStudents(scope) },
     include: {
-      student: { include: { user: { select: { id: true, name: true } } } },
+      student: { select: STUDENT_SAFE_SELECT },
       subject: { select: { id: true, name: true, code: true } },
       exam: { select: { id: true, title: true, type: true } },
       gradedBy: { select: { id: true, name: true } },
@@ -385,7 +395,7 @@ export async function createGrade(data: CreateGradeInput): Promise<Grade> {
   };
 
   const includeRelations = {
-    student: { include: { user: { select: { id: true, name: true } } } },
+    student: { select: STUDENT_SAFE_SELECT },
     subject: { select: { id: true, name: true, code: true } },
     exam: { select: { id: true, title: true, type: true } },
     gradedBy: { select: { id: true, name: true } },
@@ -447,7 +457,7 @@ export async function updateGrade(id: string, data: UpdateGradeInput): Promise<G
     where: { id },
     data: updateData,
     include: {
-      student: { include: { user: { select: { id: true, name: true } } } },
+      student: { select: STUDENT_SAFE_SELECT },
       subject: { select: { id: true, name: true, code: true } },
       exam: { select: { id: true, title: true, type: true } },
       gradedBy: { select: { id: true, name: true } },
@@ -531,9 +541,10 @@ export async function bulkCreateGrades(data: BulkCreateGradesInput): Promise<num
 
 export async function getStudentGrades(
   studentId: string,
+  scope: Prisma.StudentWhereInput,
   academicYearId?: string
 ): Promise<Grade[]> {
-  const where: Prisma.GradeWhereInput = { studentId };
+  const where: Prisma.GradeWhereInput = { studentId, ...onlyScopedStudents(scope) };
   if (academicYearId) where.academicYearId = academicYearId;
 
   const grades = await prisma.grade.findMany({
@@ -549,15 +560,14 @@ export async function getStudentGrades(
   return grades.map(mapToGrade);
 }
 
-export async function getExamGrades(examId: string): Promise<Grade[]> {
+export async function getExamGrades(
+  examId: string,
+  scope: Prisma.StudentWhereInput
+): Promise<Grade[]> {
   const grades = await prisma.grade.findMany({
-    where: { examId },
+    where: { examId, ...onlyScopedStudents(scope) },
     include: {
-      student: {
-        include: {
-          user: { select: { id: true, name: true } },
-        },
-      },
+      student: { select: STUDENT_SAFE_SELECT },
       subject: { select: { id: true, name: true, code: true } },
       exam: { select: { id: true, title: true, type: true } },
       gradedBy: { select: { id: true, name: true } },
@@ -573,12 +583,13 @@ export async function getExamGrades(examId: string): Promise<Grade[]> {
 // =====================================
 
 export async function getReportCards(
-  query: ReportCardQuery
+  query: ReportCardQuery,
+  scope: Prisma.StudentWhereInput
 ): Promise<SharedPaginatedResponse<ReportCard>> {
   const { page, limit, studentId, classId, academicYearId, semester, isPublished } = query;
   const skip = (page - 1) * limit;
 
-  const where: Prisma.ReportCardWhereInput = {};
+  const where: Prisma.ReportCardWhereInput = { ...onlyScopedStudents(scope) };
   if (studentId) where.studentId = studentId;
   if (classId) where.classId = classId;
   if (academicYearId) where.academicYearId = academicYearId;
@@ -591,7 +602,7 @@ export async function getReportCards(
       skip,
       take: limit,
       include: {
-        student: { include: { user: { select: { id: true, name: true } } } },
+        student: { select: STUDENT_SAFE_SELECT },
         class: { select: { id: true, name: true, level: true } },
         academicYear: { select: { id: true, name: true } },
         _count: { select: { details: true } },
@@ -615,11 +626,14 @@ export async function getReportCards(
   };
 }
 
-export async function getReportCardById(id: string): Promise<ReportCard | null> {
-  const reportCard = await prisma.reportCard.findUnique({
-    where: { id },
+export async function getReportCardById(
+  id: string,
+  scope: Prisma.StudentWhereInput
+): Promise<ReportCard | null> {
+  const reportCard = await prisma.reportCard.findFirst({
+    where: { id, ...onlyScopedStudents(scope) },
     include: {
-      student: { include: { user: { select: { id: true, name: true } } } },
+      student: { select: STUDENT_SAFE_SELECT },
       class: { select: { id: true, name: true, level: true } },
       academicYear: { select: { id: true, name: true } },
       details: { orderBy: { subjectName: 'asc' } },
@@ -641,7 +655,7 @@ export async function createReportCard(data: CreateReportCardInput): Promise<Rep
       principalNotes: data.principalNotes,
     },
     include: {
-      student: { include: { user: { select: { id: true, name: true } } } },
+      student: { select: STUDENT_SAFE_SELECT },
       class: { select: { id: true, name: true, level: true } },
       academicYear: { select: { id: true, name: true } },
     },
@@ -671,7 +685,7 @@ export async function updateReportCard(
     where: { id },
     data: updateData,
     include: {
-      student: { include: { user: { select: { id: true, name: true } } } },
+      student: { select: STUDENT_SAFE_SELECT },
       class: { select: { id: true, name: true, level: true } },
       academicYear: { select: { id: true, name: true } },
       details: true,
@@ -836,7 +850,7 @@ export async function generateReportCard(
         updatedAt: new Date(),
       },
       include: {
-        student: { include: { user: { select: { id: true, name: true } } } },
+        student: { select: STUDENT_SAFE_SELECT },
         class: { select: { id: true, name: true, level: true } },
         academicYear: { select: { id: true, name: true } },
       },
@@ -865,8 +879,9 @@ export async function generateReportCard(
     return rc;
   });
 
-  // Re-fetch with details to return full object
-  return getReportCardById(reportCard.id);
+  // Re-fetch with details to return full object. The caller just wrote this
+  // card (a teacher-only route), so no santri scope applies.
+  return getReportCardById(reportCard.id, {});
 }
 
 export async function generateClassReportCards(
