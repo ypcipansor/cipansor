@@ -45,29 +45,31 @@ import { TunggakanPanel } from "@/components/finance/tunggakan-panel";
 import {
   useBills,
   useFinancialSummary,
-  BILL_TYPES,
+  usePaymentTypeOptions,
   BILL_STATUSES,
-  BillType,
   BillStatus,
   Bill,
+  Money,
 } from "@/hooks/use-finance";
+import { useDebounce } from "@/hooks/use-debounce";
 import {
   useAcademicYears,
   useActiveAcademicYear,
 } from "@/hooks/use-academic-years";
 
-function formatCurrency(amount: number) {
+function formatCurrency(amount: Money) {
   return new Intl.NumberFormat("id-ID", {
     style: "currency",
     currency: "IDR",
     minimumFractionDigits: 0,
-  }).format(amount);
+  }).format(Number(amount));
 }
 
 function FinancePageContent() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
-  const [billType, setBillType] = useState<BillType | "ALL">("ALL");
+  const debouncedSearch = useDebounce(search.trim(), 400);
+  const [paymentTypeCode, setPaymentTypeCode] = useState<string>("ALL");
   const [status, setStatus] = useState<BillStatus | "ALL">("ALL");
   const [academicYearId, setAcademicYearId] = useState<string>("ACTIVE");
   const limit = 20;
@@ -80,12 +82,18 @@ function FinancePageContent() {
     page,
     limit,
     academicYearId: selectedYearId,
-    billType: billType === "ALL" ? undefined : billType,
+    paymentTypeCode: paymentTypeCode === "ALL" ? undefined : paymentTypeCode,
+    search: debouncedSearch || undefined,
     status: status === "ALL" ? undefined : status,
   });
 
   const { data: summary } = useFinancialSummary(selectedYearId);
   const { data: academicYears } = useAcademicYears({ limit: 20 });
+  const { data: paymentTypeOptions } = usePaymentTypeOptions();
+  const selectedYearName =
+    academicYearId === "ACTIVE"
+      ? activeYear?.name
+      : academicYears?.data.find((y) => y.id === academicYearId)?.name;
 
   const getStatusBadge = (billStatus: BillStatus) => {
     const statusInfo = BILL_STATUSES.find((s) => s.value === billStatus);
@@ -170,7 +178,11 @@ function FinancePageContent() {
             <div className="text-2xl font-bold">
               {formatCurrency(summary?.totalBilled || 0)}
             </div>
-            <p className="text-xs text-muted-foreground">tahun ajaran aktif</p>
+            <p className="text-xs text-muted-foreground">
+              {selectedYearName
+                ? `tahun ajaran ${selectedYearName}`
+                : "semua tahun ajaran"}
+            </p>
           </CardContent>
         </Card>
 
@@ -237,13 +249,19 @@ function FinancePageContent() {
                     placeholder="Cari nama/NIS santri..."
                     className="pl-10"
                     value={search}
-                    onChange={(e) => setSearch(e.target.value)}
+                    onChange={(e) => {
+                      setSearch(e.target.value);
+                      setPage(1);
+                    }}
                   />
                 </div>
 
                 <Select
                   value={academicYearId}
-                  onValueChange={setAcademicYearId}
+                  onValueChange={(v) => {
+                    setAcademicYearId(v);
+                    setPage(1);
+                  }}
                 >
                   <SelectTrigger className="w-full sm:w-[200px]">
                     <SelectValue placeholder="Tahun Ajaran" />
@@ -259,17 +277,20 @@ function FinancePageContent() {
                 </Select>
 
                 <Select
-                  value={billType}
-                  onValueChange={(v) => setBillType(v as BillType | "ALL")}
+                  value={paymentTypeCode}
+                  onValueChange={(v) => {
+                    setPaymentTypeCode(v);
+                    setPage(1);
+                  }}
                 >
                   <SelectTrigger className="w-full sm:w-[180px]">
                     <SelectValue placeholder="Jenis Tagihan" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="ALL">Semua Jenis</SelectItem>
-                    {BILL_TYPES.map((type) => (
-                      <SelectItem key={type.value} value={type.value}>
-                        {type.label}
+                    {paymentTypeOptions?.map((type) => (
+                      <SelectItem key={type.code} value={type.code}>
+                        {type.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -277,7 +298,10 @@ function FinancePageContent() {
 
                 <Select
                   value={status}
-                  onValueChange={(v) => setStatus(v as BillStatus | "ALL")}
+                  onValueChange={(v) => {
+                    setStatus(v as BillStatus | "ALL");
+                    setPage(1);
+                  }}
                 >
                   <SelectTrigger className="w-full sm:w-40">
                     <SelectValue placeholder="Status" />
@@ -331,12 +355,12 @@ function FinancePageContent() {
                       {billsData?.data.map((bill: Bill) => (
                         <TableRow key={bill.id}>
                           <TableCell className="font-mono text-sm">
-                            {bill.id.slice(0, 8).toUpperCase()}
+                            {bill.invoiceNumber}
                           </TableCell>
                           <TableCell>
                             <div>
                               <p className="font-medium">
-                                {bill.student?.name}
+                                {bill.student?.user?.name ?? "-"}
                               </p>
                               <p className="text-xs text-muted-foreground">
                                 {bill.student?.nis}
@@ -344,15 +368,21 @@ function FinancePageContent() {
                             </div>
                           </TableCell>
                           <TableCell>
-                            {BILL_TYPES.find((t) => t.value === bill.billType)
-                              ?.label || bill.billType}
+                            <div>
+                              <p>{bill.paymentType?.name ?? "-"}</p>
+                              {bill.period && (
+                                <p className="text-xs text-muted-foreground">
+                                  {bill.period}
+                                </p>
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell className="font-medium">
                             {formatCurrency(bill.amount)}
                           </TableCell>
                           <TableCell
                             className={
-                              bill.paidAmount > 0
+                              Number(bill.paidAmount) > 0
                                 ? "text-green-600 font-medium"
                                 : ""
                             }
@@ -408,7 +438,10 @@ function FinancePageContent() {
             <CardHeader>
               <CardTitle>Ringkasan per Jenis Tagihan</CardTitle>
               <CardDescription>
-                Rekapitulasi tagihan berdasarkan jenis untuk tahun ajaran aktif
+                Rekapitulasi tagihan berdasarkan jenis untuk{" "}
+                {selectedYearName
+                  ? `tahun ajaran ${selectedYearName}`
+                  : "semua tahun ajaran"}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -431,8 +464,7 @@ function FinancePageContent() {
                     {summary.billsByType.map((item) => (
                       <TableRow key={item.type}>
                         <TableCell className="font-medium">
-                          {BILL_TYPES.find((t) => t.value === item.type)
-                            ?.label || item.type}
+                          {item.type}
                         </TableCell>
                         <TableCell className="text-right">
                           {formatCurrency(item.total)}
