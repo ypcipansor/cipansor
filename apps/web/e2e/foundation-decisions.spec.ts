@@ -663,9 +663,13 @@ test.describe("verifikasi publik", () => {
     expect(body.data.voteCount).toBe(0);
     expect(body.data.approveCount).toBe(0);
     expect(body.data.publication).toBe("PRIVATE");
-    // Bukti keabsahan tak ikut disensor.
-    expect(body.data.digest).toBeTruthy();
-    expect(body.data.archiveDigest).toBe(body.data.digest);
+    // F5: penunjuk internal (decisionId + digest) JUGA disensor untuk PRIVATE —
+    // endpoint anonim tidak boleh menjadi oracle yang mengorelasikan token
+    // dengan entitas internal.
+    expect(body.data.decisionId).toBeNull();
+    expect(body.data.digest).toBeNull();
+    expect(body.data.archiveDigest).toBeNull();
+    // Putusan keabsahan tetap ada, tanpa penunjuk internal.
     expect(body.data.digestOk).toBe(true);
     expect(body.data.sealVerified).toBe(true);
   });
@@ -701,6 +705,10 @@ test.describe("verifikasi publik", () => {
     expect(body.data.organType).toBe("PENGAWAS");
     expect(body.data.status).toBe("APPROVED");
     expect(body.data.approveCount).toBe(1);
+    // Penunjuk internal tampil kembali HANYA karena sudah diterbitkan.
+    expect(body.data.decisionId).toBe(decisionId);
+    expect(body.data.digest).toBeTruthy();
+    expect(body.data.archiveDigest).toBe(body.data.digest);
 
     await page.goto(`/public/verify-decision?token=${verificationToken}`);
     await expect(page.getByText(subject)).toBeVisible({ timeout: 20000 });
