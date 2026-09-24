@@ -40,6 +40,11 @@ vi.mock("@/stores/auth", () => ({
   useAuthStore: () => ({ user: null }),
 }));
 
+const { toastInfo } = vi.hoisted(() => ({ toastInfo: vi.fn() }));
+vi.mock("sonner", () => ({
+  toast: { info: toastInfo, success: vi.fn(), error: vi.fn() },
+}));
+
 import FoundationDecisionDetailPage from "./page";
 
 function renderPage() {
@@ -239,5 +244,29 @@ describe("halaman detail keputusan — pesan galat pemberian suara", () => {
     await waitFor(() =>
       expect(screen.queryByPlaceholderText(/Passphrase pribadi/)).toBeNull(),
     );
+  });
+
+  /**
+   * Finding 3 (BUG severe) — bila suara tercatat tetapi e-seal DITUNDA
+   * (penyiapan artefak gagal), UI harus memberi tahu pemilih bahwa suaranya
+   * sudah sah dan TIDAK boleh diulang. Sebelum perbaikan tidak ada sinyal ini,
+   * sehingga pemilih mengulang dan suaranya ditolak sebagai duplikat.
+   */
+  it("sealDeferred → toast 'suara tercatat, e-seal ditunda', bukan pesan galat", async () => {
+    toastInfo.mockClear();
+    post.mockResolvedValue({
+      data: {
+        data: {
+          voteId: "v1",
+          choice: "APPROVE",
+          outcome: "VOTING",
+          sealDeferred: true,
+        },
+      },
+    });
+    await openVoteAndSubmit();
+    await waitFor(() => expect(toastInfo).toHaveBeenCalledTimes(1));
+    expect(toastInfo.mock.calls[0][0]).toMatch(/Suara Anda tercatat/);
+    expect(screen.queryByText(/Passphrase salah atau kunci/)).toBeNull();
   });
 });
