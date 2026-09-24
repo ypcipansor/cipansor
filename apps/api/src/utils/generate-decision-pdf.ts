@@ -187,6 +187,29 @@ export function unglyphableDecisionPdfFields(
 }
 
 /**
+ * Field yang akan KEHILANGAN karakter saat dirender, dihitung dengan jalur
+ * yang SAMA dengan `generateDecisionPdf`.
+ *
+ * Dipakai di `FoundationDecisionService.create` SEBELUM voting dibuka, dan di
+ * `cancel` untuk mengenali keputusan yang artefaknya gagal permanen.
+ * Pemeriksaan saat approval saja sudah terlambat: suara penentu sudah tercatat,
+ * naskah tidak dapat diedit, dan satu emoji di perihal/naskah membuat keputusan
+ * tergantung `VOTING` selamanya. Menolak di pintu masuk mengembalikan 400 yang
+ * menyebut field + aksara.
+ *
+ * Jalur mana yang dipakai harus mencerminkan `generateDecisionPdf`: bila font
+ * Unicode tidak termuat, batasnya WinAnsi (`unencodable…`); bila termuat,
+ * cakupan glyph font itulah yang menentukan (`unglyphable…`).
+ */
+export function decisionPdfGlyphOffenders(
+  data: DecisionPdfData
+): Array<{ field: string; chars: string[] }> {
+  return unicodeFontPath() !== null
+    ? unglyphableDecisionPdfFields(data, unicodeFontHasGlyph)
+    : unencodableDecisionPdfFields(data);
+}
+
+/**
  * Apakah berkas font Unicode tersedia di salah satu kandidat jalur.
  *
  * Dipisah agar gerbang boot dapat memeriksanya TANPA merender PDF, dan agar
@@ -329,6 +352,12 @@ export function membersWithoutVote(
  * logis dibungkus SENDIRI; baris kosong menjadi elemen `''` (pemisah paragraf),
  * dan penanda daftar tetap di awal barisnya.
  *
+ * **Spasi adalah bagian dari naskah.** Indentasi awal baris dan spasi beruntun
+ * dalam baris dipertahankan: tokenisasi menyimpan run spasi sebagai token
+ * tersendiri, bukan menyusutkannya menjadi satu spasi. Tab diperluas ke
+ * `TAB_WIDTH` spasi tetap dengan aturan yang sama saat mengukur lebar, sehingga
+ * tata letak kolom tidak berubah antara penulisan dan pencetakan.
+ *
  * Pembungkusan VISUAL per baris tetap dilakukan, jadi teks panjang tak meluber.
  *
  * Satu kata yang lebih lebar dari `maxWidth` TIDAK boleh dibiarkan utuh:
@@ -349,35 +378,68 @@ export function membersWithoutVote(
  * muat" DAN "struktur tidak berubah", dan sifat itu tidak dapat diperiksa dari
  * byte PDF (pdf-lib tidak menyediakan pembacaan teks).
  */
+/**
+ * Lebar tab, dalam spasi, saat naskah disusun.
+ *
+ * Tab adalah karakter TATA LETAK yang tidak dicetak sebagai glyph, tetapi ia
+ * memisahkan kolom: `- Nama<TAB>Jabatan` adalah tabel dua kolom di mata
+ * penulisnya. Menyusutkannya menjadi satu spasi (atau membuangnya) mengubah
+ * tata letak yang disetujui penandatangan. Nilai tetap membuat lebar dapat
+ * diprediksi dan PDF tetap deterministik.
+ */
+const TAB_WIDTH = 4;
+
+/** Ganti setiap tab dengan sejumlah spasi tetap. */
+function expandTabs(text: string): string {
+  return text.replace(/\t/g, ' '.repeat(TAB_WIDTH));
+}
+
 export function wrap(font: PDFFont, size: number, text: string, maxWidth: number): string[] {
   const lines: string[] = [];
-  for (const logical of text.split(/\r\n|\r|\n/)) {
-    const words = logical.split(/[^\S\n]+/).filter((w) => w.length > 0);
-    if (words.length === 0) {
-      // Baris kosong: pemisah paragraf/daftar. Pertahankan sebagai elemen
-      // kosong, bukan dibuang — membuangnya menyatukan dua paragraf. Baris
-      // kosong beruntun runtuh jadi satu, dan yang di ujung dibuang nanti.
+  for (const logicalRaw of text.split(/\r\n|\r|\n/)) {
+    const logical = expandTabs(logicalRaw);
+    // Baris kosong: pemisah paragraf/daftar. Pertahankan sebagai elemen
+    // kosong, bukan dibuang — membuangnya menyatukan dua paragraf. Baris
+    // kosong beruntun runtuh jadi satu, dan yang di ujung dibuang nanti.
+    if (logical.trim().length === 0) {
       if (lines.length > 0 && lines[lines.length - 1] !== '') lines.push('');
       continue;
     }
+    // TOKENISASI mempertahankan run spasi sebagai token tersendiri, bukan
+    // menyusutkannya dengan `/\s+/` lalu menyambung ulang dengan satu spasi.
+    // Versi lama membuang indentasi awal baris ("    - item" menjadi "- item")
+    // dan spasi beruntun dalam baris ("a  b" menjadi "a b"), sehingga arsip
+    // yang di-e-seal tidak sama dengan naskah yang ditandatangani. Spasi
+    // adalah bagian dari naskah.
+    const tokens = logical.match(/ +|[^ ]+/g) ?? [];
     let cur = '';
-    for (const word of words) {
-      const trial = cur ? `${cur} ${word}` : word;
+    // Spasi di ujung baris tidak digambar dan tidak dipindah ke baris
+    // berikutnya (itu menambah indentasi yang tidak ditulis penandatangan);
+    // ia dibuang HANYA di titik pembungkusan, bukan dari naskah itu sendiri.
+    const flush = () => {
+      const line = cur.replace(/ +$/, '');
+      if (line) lines.push(line);
+      cur = '';
+    };
+    for (const token of tokens) {
+      const trial = cur + token;
       if (font.widthOfTextAtSize(trial, size) <= maxWidth) {
         cur = trial;
         continue;
       }
-      if (cur) {
-        lines.push(cur);
-        cur = '';
-      }
-      if (font.widthOfTextAtSize(word, size) <= maxWidth) {
-        cur = word;
+      // Token spasi yang tidak muat: jadikan akhir baris, lalu lanjut.
+      if (token[0] === ' ') {
+        flush();
         continue;
       }
-      // Kata itu sendiri lebih lebar dari satu baris: pecah per grapheme.
+      if (cur) flush();
+      if (font.widthOfTextAtSize(token, size) <= maxWidth) {
+        cur = token;
+        continue;
+      }
+      // Token itu sendiri lebih lebar dari satu baris: pecah per grapheme.
       let chunk = '';
-      for (const cluster of graphemeClusters(word)) {
+      for (const cluster of graphemeClusters(token)) {
         const next = chunk + cluster;
         // `chunk` kosong berarti satu cluster pun sudah melebihi lebar baris;
         // tetap dimasukkan agar pemecahan tidak berputar tanpa henti.
@@ -390,7 +452,7 @@ export function wrap(font: PDFFont, size: number, text: string, maxWidth: number
       }
       cur = chunk;
     }
-    if (cur) lines.push(cur);
+    flush();
   }
   // Baris kosong yang tersisa di ujung adalah sisa line break akhir naskah,
   // bukan pemisah paragraf — jangan menggambar jarak kosong di ujung halaman.

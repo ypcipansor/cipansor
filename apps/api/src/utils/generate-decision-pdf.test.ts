@@ -396,6 +396,37 @@ describe('wrap — pemecahan token panjang', () => {
     const font = await realFont();
     expect(wrap(font, size, '\n\nA\n\n', maxWidth)).toEqual(['A']);
   });
+
+  /**
+   * Regresi BUG — spasi/indentasi naskah hilang di PDF tersegel.
+   *
+   * `wrap` lama memecah dengan `/\s+/` lalu menyambung ulang dengan SATU spasi,
+   * sehingga indentasi awal baris ("    - item" menjadi "- item") dan spasi
+   * beruntun dalam baris ("a   b" menjadi "a b") lenyap. PDF ber-e-seal yang
+   * menyatakan tata letak yang berbeda dari naskah yang ditandatangani adalah
+   * arsip yang tidak setia. Tab diperluas ke lebar tetap, bukan dibuang.
+   */
+  it('mempertahankan indentasi dan spasi beruntun', async () => {
+    const font = await realFont();
+    const lines = wrap(font, size, '    - Butir terjorok\nNama   Jabatan', maxWidth);
+    expect(lines[0]).toBe('    - Butir terjorok');
+    expect(lines.some((l) => l.includes('Nama   Jabatan'))).toBe(true);
+  });
+
+  it('memperluas tab ke lebar kolom tetap', async () => {
+    const font = await realFont();
+    const lines = wrap(font, size, 'Nama\tJabatan', maxWidth);
+    expect(lines).toEqual(['Nama    Jabatan']);
+  });
+
+  it('spasi di ujung baris tidak terbawa atau menambah indentasi baris baru', async () => {
+    const font = await realFont();
+    const lines = wrap(font, size, 'kata pertama yang cukup panjang   kata kedua', 60);
+    expect(lines.length).toBeGreaterThan(1);
+    for (const line of lines) {
+      expect(line).not.toMatch(/^\s|\s$/);
+    }
+  });
 });
 
 describe('QR verifikasi di dalam PDF', () => {

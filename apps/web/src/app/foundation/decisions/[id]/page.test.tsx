@@ -332,3 +332,99 @@ describe("halaman detail keputusan — tombol finalisasi sirkuler tertunda", () 
     );
   });
 });
+
+/**
+ * Finding 4 (BUG) — kegagalan mengunduh risalah TIDAK boleh ditelan diam-diam.
+ *
+ * `handleDownload` dulu menangkap tanpa argumen dan mengabaikannya ("Blob error
+ * path: report inline is fine") — padahal tidak ada yang dilaporkan inline.
+ * Sesi yang berakhir, arsip yang hilang, atau 5xx tampak seperti tombol yang
+ * tidak bereaksi, sehingga anggota mengklik berulang tanpa tahu sebabnya.
+ */
+function approvedDecision() {
+  return {
+    id: "dec-1",
+    subject: "Keputusan Sah",
+    body: "Isi",
+    organType: "PEMBINA",
+    kind: "CIRCULAR",
+    decisionType: "RAPAT",
+    status: "APPROVED",
+    quorumSnapshot: {
+      activeCount: 3,
+      quorumMode: "UNANIMOUS",
+      presentRequired: 3,
+      approveRequired: 3,
+      snapshotAt: new Date().toISOString(),
+    },
+    voteSummary: { approve: 3, reject: 0, abstain: 0, total: 3 },
+    finalPdfDigest: "a".repeat(64),
+    decidedAt: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
+    createdByName: "Admin",
+    decidedByName: "Admin",
+    memberCount: 3,
+    votedCount: 3,
+    members: [],
+    votes: [],
+    verificationToken: "tok",
+    publication: "PRIVATE",
+    canVote: false,
+    canFinalize: false,
+    canCancel: false,
+    publishable: true,
+    myVote: null,
+  };
+}
+
+describe("halaman detail keputusan — unduh risalah", () => {
+  beforeEach(() => {
+    get.mockReset();
+    // jsdom tidak menyediakan createObjectURL; kita hanya perlu memastikan
+    // unduhan benar-benar dipicu, bukan menulis berkas.
+    vi.stubGlobal("URL", {
+      ...URL,
+      createObjectURL: vi.fn(() => "blob:mock"),
+      revokeObjectURL: vi.fn(),
+    });
+  });
+
+  it("sukses → objek URL dibuat dan tidak ada galat yang tampil", async () => {
+    get.mockImplementation((url: string) => {
+      if (url.includes("/document")) {
+        return Promise.resolve({ data: new Blob(["%PDF-1.7"]) });
+      }
+      return Promise.resolve({ data: { data: approvedDecision() } });
+    });
+    renderPage();
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Unduh Risalah/ }),
+    );
+    await waitFor(() =>
+      expect(URL.createObjectURL).toHaveBeenCalledTimes(1),
+    );
+    expect(screen.queryByTestId("download-error")).toBeNull();
+  });
+
+  it("gagal (5xx/404/jaringan) → pesan galat ditampilkan, tidak ditelan", async () => {
+    get.mockImplementation((url: string) => {
+      if (url.includes("/document")) {
+        return Promise.reject(
+          axiosError(404, { success: false, message: "Arsip tidak ditemukan." }),
+        );
+      }
+      return Promise.resolve({ data: { data: approvedDecision() } });
+    });
+    renderPage();
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Unduh Risalah/ }),
+    );
+    expect(
+      await screen.findByTestId("download-error"),
+    ).toBeTruthy();
+    expect(screen.getByTestId("download-error").textContent).toMatch(
+      /Gagal mengunduh risalah/,
+    );
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
+  });
+});

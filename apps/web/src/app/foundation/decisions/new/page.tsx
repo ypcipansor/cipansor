@@ -39,6 +39,8 @@ import { AccessDenied } from "@/components/shared";
 import { useAuthStore } from "@/stores/auth";
 import { getActiveRoleCodes } from "@/lib/rbac";
 import { userCanCreateFoundationDecisions } from "@/lib/yayasan-organ";
+import { getErrorMessage } from "@/lib/api-error";
+import { suspiciousPdfChars } from "@/lib/foundation-decision-text";
 
 /**
  * Skema create adalah milik bersama: validasi di edge (API) dan tipe di web
@@ -148,10 +150,27 @@ export default function NewFoundationDecisionPage() {
           ? `/foundation/decisions/${decisionId}`
           : "/foundation/decisions",
       );
-    } catch {
-      setError("Gagal menyimpan keputusan. Periksa kembali isian Anda.");
+    } catch (err) {
+      // Pesan PELADEN ditampilkan apa adanya: 400 pra-voting menyebut field +
+      // aksara yang tidak dapat dicetak (mis. emoji), dan kalimat generik
+      // "Gagal menyimpan" menyembunyikan justru bagian yang dapat diperbaiki
+      // pengguna. Hanya bila peladen tidak memberi pesan kita jatuh ke teks
+      // cadangan.
+      setError(
+        getErrorMessage(err) ||
+          "Gagal menyimpan keputusan. Periksa kembali isian Anda.",
+      );
     }
   };
+
+  // Aksara yang berisiko hilang dari risalah PDF (emoji, aksara non-Latin).
+  // Ini PETUNJUK, bukan gerbang: server tetap menolak/menerima. Ditampilkan
+  // lebih awal supaya pengguna tidak menulis naskah panjang lalu ditolak 400.
+  const riskyChars = useMemo(
+    () => suspiciousPdfChars(`${watch("subject") ?? ""}${watch("body") ?? ""}`),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [watch("subject"), watch("body")],
+  );
 
   // Gerbang auth/peran: sebelum status auth siap jangan menebak; setelah siap,
   // peran yang rute-nya tolak langsung memperoleh halaman akses ditolak, bukan
@@ -384,6 +403,18 @@ export default function NewFoundationDecisionPage() {
             </div>
 
             {error && <p className="text-sm text-destructive">{error}</p>}
+
+            {riskyChars.length > 0 && (
+              <p
+                data-testid="pdf-glyph-hint"
+                className="text-xs text-amber-600 dark:text-amber-500"
+              >
+                Teks Anda memuat aksara yang mungkin tidak dapat dicetak ke
+                risalah PDF: {riskyChars.join(" ")}. Risalah yang di-e-seal
+                harus sama dengan naskahnya, jadi aksara tanpa glyph akan
+                ditolak peladen. Hapus aksara tersebut sebelum membuka voting.
+              </p>
+            )}
 
             <div className="flex justify-end gap-2">
               <Button

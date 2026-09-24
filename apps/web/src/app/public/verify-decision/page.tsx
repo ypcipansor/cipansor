@@ -19,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { FoundationDecisionVerificationDTO } from "@cipansor/shared";
+import { isPdfCandidate } from "@/lib/pdf-file";
 import {
   ShieldCheck,
   ShieldX,
@@ -97,7 +98,14 @@ function VerifyContent() {
     // dipilih lagi, dan berkas kedua belum diperiksa sama sekali.
     verifyGeneration.current += 1;
     setUploadResult(null);
-    if (file.type !== "application/pdf") {
+    // MIME dilaporkan peramban TIDAK dapat dipercaya: berkas yang diunduh dari
+    // arsip surel/aplikasi pemindai sering tiba dengan tipe kosong atau
+    // "application/octet-stream", sehingga memeriksa `type === "application/pdf"`
+    // saja menolak PDF yang justru akan peladen terima. Terima bila tipenya
+    // PDF, tipenya generik/kosong, ATAU namanya berakhiran `.pdf`. Server tetap
+    // memeriksa magic bytes `%PDF-` terhadap byte unggahan, jadi longgarnya
+    // gerbang klien ini tidak melonggarkan keamanan.
+    if (!isPdfCandidate(file)) {
       setUploadError("Format berkas harus PDF.");
       setSelectedFile(null);
       return;

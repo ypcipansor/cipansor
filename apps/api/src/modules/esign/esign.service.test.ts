@@ -87,6 +87,23 @@ const PASS = 'passphrase-tanda-tangan-2026';
 const DAY = 24 * 60 * 60 * 1000;
 
 /**
+ * SQL kenaikan penghitung percobaan gagal yang BENAR-BENAR dijalankan.
+ *
+ * Regresi finding 5: `recordFailedAttempt` dulu `update({ failedAttempts:
+ * current + 1 })` dari nilai yang dibaca sebelum menulis — dua percobaan gagal
+ * paralel membaca nilai yang sama dan menulis nilai yang sama, sehingga lockout
+ * tertunda tanpa batas (atau `lockedUntil` ditimpa `null`). Sekarang kenaikan
+ * dihitung DI basis data dalam satu pernyataan. Membaca SQL-nya membuat uji
+ * gagal bila seseorang mengembalikan ke bentuk baca-lalu-tulis.
+ */
+function incrementSql(): string {
+  return (prisma.$executeRaw as unknown as { mock: { calls: unknown[][] } }).mock.calls
+    .map((c) => (c[0] as TemplateStringsArray).join?.('') ?? String(c[0]))
+    .filter((sql: string) => sql.includes('"failed_attempts" = "failed_attempts" + 1'))
+    .join('\n');
+}
+
+/**
  * Identitas yang lengkap dan sudah diverifikasi.
  *
  * Bawaan untuk hampir setiap uji di berkas ini, karena kebanyakan menguji
@@ -836,10 +853,10 @@ describe('ganti passphrase', () => {
       )
     ).rejects.toThrow();
 
-    expect(prisma.userSigningKey.update).toHaveBeenCalledWith({
-      where: { id: 'key-1' },
-      data: expect.objectContaining({ failedAttempts: 1 }),
-    });
+    // Failure 5 — kenaikan ATOMIK di basis data, bukan `update` dua-langkah
+    // yang membaca `failedAttempts` lalu menulis `current + 1`. Lihat
+    // `incrementSql`.
+    expect(incrementSql()).toMatch(/"failed_attempts" = "failed_attempts" \+ 1/);
   });
 
   /**
@@ -921,10 +938,10 @@ describe('menandatangani surat', () => {
 
     expect(prisma.letterSignature.create).not.toHaveBeenCalled();
     expect(prisma.letter.update).not.toHaveBeenCalled();
-    expect(prisma.userSigningKey.update).toHaveBeenCalledWith({
-      where: { id: 'key-1' },
-      data: expect.objectContaining({ failedAttempts: 1 }),
-    });
+    // Finding 5 — kenaikan atomik di basis data (bukan update baca-lalu-tulis).
+    expect(incrementSql()).toMatch(/"failed_attempts" = "failed_attempts" \+ 1/);
+    // Lockout dihitung dari `failed_attempts + 1` dalam pernyataan yang SAMA.
+    expect(incrementSql()).toMatch(/"failed_attempts" \+ 1 >=/);
   });
 
   it('menandatangani, menandai surat SIGNED, dan mencatat riwayat', async () => {
@@ -1544,10 +1561,8 @@ describe('mencabut naskah dinas', () => {
     ).rejects.toThrow(/Passphrase/i);
 
     expect(prisma.letterSignature.update).not.toHaveBeenCalled();
-    expect(prisma.userSigningKey.update).toHaveBeenCalledWith({
-      where: { id: 'key-ketua' },
-      data: expect.objectContaining({ failedAttempts: 1 }),
-    });
+    // Finding 5 — pencacah pencabut juga naik secara atomik di basis data.
+    expect(incrementSql()).toMatch(/"failed_attempts" = "failed_attempts" \+ 1/);
   });
 
   it('menyimpan tanda tangan Ed25519 atas pernyataan pencabutannya', async () => {

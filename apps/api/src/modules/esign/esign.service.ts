@@ -28,7 +28,7 @@ import {
 import crypto from 'crypto';
 import {
   createKeyMaterial,
-  lockoutUntil,
+  LOCKOUT_MINUTES,
   newVerificationToken,
   rewrapKeyMaterial,
   signPayload,
@@ -109,12 +109,31 @@ function toMaterial(key: {
  * Dilakukan di luar transaksi penandatanganan supaya hitungannya tetap
  * bertambah walaupun operasi utamanya dibatalkan — kalau tidak, menebak
  * passphrase menjadi gratis.
+ *
+ * **Finding 5 (BUG) — increment ATOMIK.** Versi lama menerima `current` yang
+ * dibaca pemanggil lalu menulis `current + 1`; dua percobaan gagal yang
+ * berjalan bersamaan membaca nilai yang SAMA, menulis nilai yang sama, dan
+ * lockout tercapai jauh lebih lambat daripada yang seharusnya (atau `lockedUntil`
+ * ditimpa `null` oleh penulis dengan hitungan lebih rendah). Sekarang kenaikan
+ * dihitung DI basis data (`failed_attempts + 1`) dalam satu pernyataan, di
+ * bawah `lockSigningKeyTransition` yang SAMA dengan jalur transisi kunci lain
+ * (`activateKey`, `decideRequest`, `revokeKey`, `castVote`), sehingga transisi
+ * kunci yang konkuren tidak dapat menyelip dan tidak ada pembaruan yang hilang.
  */
-async function recordFailedAttempt(keyId: string, current: number) {
-  const failed = current + 1;
-  await prisma.userSigningKey.update({
-    where: { id: keyId },
-    data: { failedAttempts: failed, lockedUntil: lockoutUntil(failed) },
+async function recordFailedAttempt(userId: string, keyId: string): Promise<number> {
+  return prisma.$transaction(async (tx) => {
+    await lockSigningKeyTransition(tx, userId);
+    await tx.$executeRaw`
+      UPDATE "user_signing_keys"
+      SET "failed_attempts" = "failed_attempts" + 1,
+          "locked_until" = CASE
+            WHEN "failed_attempts" + 1 >= ${MAX_PASSPHRASE_ATTEMPTS}
+              THEN NOW() + (${LOCKOUT_MINUTES} * INTERVAL '1 minute')
+            ELSE "locked_until"
+          END
+      WHERE "id" = ${keyId}`;
+    const updated = await tx.userSigningKey.findUnique({ where: { id: keyId } });
+    return updated?.failedAttempts ?? MAX_PASSPHRASE_ATTEMPTS;
   });
 }
 
@@ -965,7 +984,6 @@ export const EsignService = {
     }
 
     let failedKeyId: string | null = null;
-    let failedCount = 0;
     try {
       return await prisma.$transaction(async (tx) => {
         await lockSigningKeyTransition(tx, userId);
@@ -979,7 +997,6 @@ export const EsignService = {
         } catch (error) {
           if (error instanceof EsignError) {
             failedKeyId = key.id;
-            failedCount = key.failedAttempts;
           }
           throw error;
         }
@@ -1001,7 +1018,9 @@ export const EsignService = {
       });
     } catch (error) {
       if (failedKeyId) {
-        await recordFailedAttempt(failedKeyId, failedCount);
+        // Kenaikan dihitung di basis data; transaksi ini mengambil lock yang
+        // SAMA, sehingga percobaan gagal paralel tidak saling menimpa.
+        await recordFailedAttempt(userId, failedKeyId);
       }
       throw error;
     }
@@ -1348,8 +1367,8 @@ export const EsignService = {
       signedRevocation = signRevocation(toMaterial(key!), passphrase, statement);
     } catch (error) {
       if (error instanceof EsignError) {
-        await recordFailedAttempt(key!.id, key!.failedAttempts);
-        const left = MAX_PASSPHRASE_ATTEMPTS - (key!.failedAttempts + 1);
+        const failed = await recordFailedAttempt(actor.id, key!.id);
+        const left = MAX_PASSPHRASE_ATTEMPTS - failed;
         throw Errors.unauthorized(
           left > 0
             ? `Passphrase tanda tangan salah. Sisa percobaan: ${left}.`
@@ -1503,8 +1522,8 @@ export const EsignService = {
       signed = signPayload(toMaterial(key!), passphrase, payload);
     } catch (error) {
       if (error instanceof EsignError) {
-        await recordFailedAttempt(key!.id, key!.failedAttempts);
-        const left = MAX_PASSPHRASE_ATTEMPTS - (key!.failedAttempts + 1);
+        const failed = await recordFailedAttempt(userId, key!.id);
+        const left = MAX_PASSPHRASE_ATTEMPTS - failed;
         throw Errors.unauthorized(
           left > 0
             ? `Passphrase tanda tangan salah. Sisa percobaan: ${left}.`

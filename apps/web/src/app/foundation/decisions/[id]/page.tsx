@@ -57,7 +57,7 @@ import {
 import { useAuthStore } from "@/stores/auth";
 import { getActiveRoleCodes } from "@/lib/rbac";
 import { userCanManageFoundationRules } from "@/lib/yayasan-organ";
-import { parseApiError } from "@/lib/api-error";
+import { getErrorMessage, parseApiError } from "@/lib/api-error";
 
 const statusColor: Record<string, string> = {
   VOTING: "bg-amber-100 text-amber-700",
@@ -101,6 +101,7 @@ export default function FoundationDecisionDetailPage() {
   const setPublication = useSetFoundationPublication(id);
 
   const handleDownload = async () => {
+    setDownloadError(null);
     try {
       const blob = await downloadDoc.mutateAsync(id);
       const url = window.URL.createObjectURL(blob);
@@ -111,12 +112,18 @@ export default function FoundationDecisionDetailPage() {
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
-    } catch {
-      // Blob error path: report inline is fine.
+    } catch (err) {
+      // Kegagalan unduh DULU ditelan diam-diam ("Blob error path: report
+      // inline is fine") — tidak ada yang dilaporkan inline, jadi penyebab
+      // yang dapat ditindak (sesi berakhir, arsip tidak ada, gangguan server)
+      // tak pernah sampai ke pengguna. Sekarang pesannya ditampilkan; unduhan
+      // bukan aksi destruktif sehingga ini tidak menyesatkan.
+      setDownloadError(getErrorMessage(err));
     }
   };
 
   const [open, setOpen] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const [choice, setChoice] = useState<"APPROVE" | "REJECT" | "ABSTAIN">(
     "APPROVE",
   );
@@ -367,6 +374,16 @@ export default function FoundationDecisionDetailPage() {
             </>
           }
         />
+
+        {downloadError && (
+          <p
+            data-testid="download-error"
+            className="text-sm text-destructive"
+            role="alert"
+          >
+            Gagal mengunduh risalah: {downloadError}
+          </p>
+        )}
 
         <div className="grid gap-6 lg:grid-cols-3">
           <Card>

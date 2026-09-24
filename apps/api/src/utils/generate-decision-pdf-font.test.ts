@@ -20,6 +20,7 @@ describe('generateDecisionPdf tanpa font Unicode (F8)', () => {
   let generateDecisionPdf: typeof import('./generate-decision-pdf').generateDecisionPdf;
   let unencodableDecisionPdfFields: typeof import('./generate-decision-pdf').unencodableDecisionPdfFields;
   let assertDecisionPdfFontAvailable: typeof import('./generate-decision-pdf').assertDecisionPdfFontAvailable;
+  let decisionPdfGlyphOffenders: typeof import('./generate-decision-pdf').decisionPdfGlyphOffenders;
 
   const data = {
     shortId: 'DEC-1A2B',
@@ -62,6 +63,7 @@ describe('generateDecisionPdf tanpa font Unicode (F8)', () => {
     generateDecisionPdf = mod.generateDecisionPdf;
     unencodableDecisionPdfFields = mod.unencodableDecisionPdfFields;
     assertDecisionPdfFontAvailable = mod.assertDecisionPdfFontAvailable;
+    decisionPdfGlyphOffenders = mod.decisionPdfGlyphOffenders;
   });
 
   afterEach(() => {
@@ -103,6 +105,30 @@ describe('generateDecisionPdf tanpa font Unicode (F8)', () => {
 
   it('unencodableDecisionPdfFields kosong untuk data ASCII', () => {
     expect(unencodableDecisionPdfFields(data)).toEqual([]);
+  });
+
+  /**
+   * Regresi finding 1 (BUG severe) — gerbang pra-voting memakai jalur fallback
+   * yang SAMA dengan render.
+   *
+   * Bila font Unicode tidak termuat, `generateDecisionPdf` memakai batas
+   * WinAnsi. `decisionPdfGlyphOffenders` harus melaporkan field yang sama,
+   * supaya `create` dapat menolak naskah yang pasti gagal disegel — bukan
+   * membiarkan keputusan terdampar VOTING setelah suara penentu masuk.
+   */
+  it('decisionPdfGlyphOffenders menandai aksara non-WinAnsi saat font absen', () => {
+    const offenders = decisionPdfGlyphOffenders({
+      ...data,
+      subject: 'Pengesahan 🎉',
+      body: 'Naskah بِسْمِ اللَّهِ',
+    });
+    const fields = offenders.map((o) => o.field);
+    expect(fields).toContain('subject');
+    expect(fields).toContain('body');
+  });
+
+  it('decisionPdfGlyphOffenders kosong untuk naskah ASCII', () => {
+    expect(decisionPdfGlyphOffenders(data)).toEqual([]);
   });
 
   it('assertDecisionPdfFontAvailable menolak boot produksi tanpa font', () => {

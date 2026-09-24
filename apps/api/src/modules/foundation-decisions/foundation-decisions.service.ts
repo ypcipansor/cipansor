@@ -66,8 +66,12 @@ import {
   toSealMaterial,
 } from '@/utils/foundation-eseal';
 import { decisionVerificationUrl } from '@/utils/verification-url';
-import { generateDecisionPdf } from '@/utils/generate-decision-pdf';
-import type { DecisionPdfVoteRow, DecisionPdfMemberRow } from '@/utils/generate-decision-pdf';
+import { generateDecisionPdf, decisionPdfGlyphOffenders } from '@/utils/generate-decision-pdf';
+import type {
+  DecisionPdfVoteRow,
+  DecisionPdfMemberRow,
+  DecisionPdfData,
+} from '@/utils/generate-decision-pdf';
 
 // Default legal hidup di `@cipansor/shared` supaya halaman pengelolaan aturan
 // menampilkan nilai yang benar-benar berlaku, bukan salinan yang bisa basi.
@@ -1350,6 +1354,48 @@ export const FoundationDecisionService = {
           totalVotes: 0,
         };
 
+        /**
+         * Finding 1 (BUG severe) — tolak naskah yang tidak dapat dicetak
+         * SEBELUM voting dibuka.
+         *
+         * Pemeriksaan glyph dulu hanya berjalan saat approval, setelah suara
+         * penentu tercatat. Bila naskah memuat aksara tanpa glyph (emoji) atau
+         * di luar WinAnsi (font Unicode absen), keputusan tidak pernah dapat
+         * disegel, naskahnya tidak dapat diedit, dan `cancel` menolaknya —
+         * keputusan tergantung `VOTING` selamanya. Di sini pintu masuknya yang
+         * ditutup: 400 menyebut field + aksara, memakai fungsi yang SAMA dengan
+         * `generateDecisionPdf`. Nama anggota snapshot ikut diperiksa karena
+         * nama merekalah yang tercetak di risalah.
+         */
+        const glyphOffenders = decisionPdfGlyphOffenders({
+          shortId: '',
+          subject: input.subject,
+          decisionType: input.decisionType,
+          body: input.body,
+          organType: input.organType,
+          kind: input.kind,
+          status: FoundationDecisionStatus.VOTING,
+          createdAt: now,
+          decidedAt: null,
+          members: lockedAssignments.map((a) => ({
+            userId: a.user.id,
+            name: a.user.name,
+            roleCode: a.roleCode,
+          })),
+          votes: [],
+          voteSummary: emptySummary,
+        });
+        if (glyphOffenders.length > 0) {
+          const detail = glyphOffenders
+            .map((o) => `${o.field} (${o.chars.join(' ')})`)
+            .join(', ');
+          throw Errors.badRequest(
+            `Naskah memuat aksara yang tidak dapat dicetak ke risalah: ${detail}. ` +
+              `Aksara itu akan hilang dari PDF yang di-e-seal, sehingga arsip berbeda dari naskah yang ` +
+              `ditandatangani. Hapus aksara tersebut lalu buat ulang keputusan.`
+          );
+        }
+
         const decision = await tx.foundationDecision.create({
           data: {
             organType: input.organType,
@@ -1578,16 +1624,25 @@ export const FoundationDecisionService = {
     // Pembatalan hanya masuk akal bila rapat masih VOTING, bukan sirkuler,
     // aktor berwenang, DAN kuorum hadir belum tercapai. Kuorum yang sudah
     // terpenuhi harus ditetapkan hasilnya, bukan dibatalkan — jadi tombolnya
-    // juga tidak ditawarkan pada keadaan itu.
+    // juga tidak ditawarkan pada keadaan itu. Pengecualian finding 1: naskah
+    // yang tidak dapat dirender tidak punya terminal lain (`finalize` gagal
+    // permanen), jadi pembatalan tetap ditawarkan walau kuorum hadir terpenuhi
+    // — termasuk sirkuler yang penyegelannya tertunda karena alasan yang sama.
     const presentMet = evaluateQuorum(
       d.quorumSnapshot as unknown as QuorumSnapshot,
       this.votesOf(d),
       { closed: true }
     ).presentMet;
+    const unrenderable =
+      d.status === FoundationDecisionStatus.VOTING && this.decisionGlyphOffenders(d).length > 0;
+    // Sirkuler yang penyegelannya TERTUNDA tidak lagi punya suara yang bisa
+    // masuk; bila pemulihan e-seal tak pernah berhasil, ia juga terdampar.
+    // Pembatalan oleh aktor berwenang adalah jalan keluar terminalnya.
+    const deferredCircular = d.kind === 'CIRCULAR' && this.isDeferredCircular(d);
     const canCancel =
       d.status === FoundationDecisionStatus.VOTING &&
-      d.kind !== 'CIRCULAR' &&
-      !presentMet &&
+      (d.kind !== 'CIRCULAR' || deferredCircular) &&
+      (deferredCircular || !presentMet || unrenderable) &&
       canFinalizeDecision(actor, d.members);
     // Syarat publikasi dihitung dengan definisi yang SAMA dengan
     // `setPublication`, sehingga UI tidak menawarkan "Terbitkan" pada
@@ -2024,25 +2079,30 @@ export const FoundationDecisionService = {
   },
 
   /**
-   * Batalkan rapat yang kuorum HADIR-nya tidak pernah tercapai.
+   * Batalkan keputusan VOTING: kuorum HADIR tak tercapai, naskah tak dapat
+   * dirender, atau sirkuler yang penyegelannya tertunda permanen.
    *
-   * **Kebijakan (finding 6).** Rapat yang gagal kuorum hadir TIDAK ditutup
-   * sebagai `REJECTED`: itu menyatakan materi "ditolak" padahal rapat tidak
-   * pernah memutus apa pun. UU 16/2001 jo. UU 28/2004 jo. PP 63/2008
-   * mensyaratkan kuorum untuk keabsahan keputusan rapat, jadi hasil yang benar
-   * saat kuorum tak tercapai adalah menunda/menjadwalkan ulang — `CANCELLED`
-   * menutup rapat itu secara terminal tanpa memalsukan hasil.
-   *
-   * Hanya `MEETING` berstatus `VOTING` oleh aktor yang berhak memfinalisasi,
-   * DAN kuorum hadir memang belum terpenuhi; rapat yang kuorumnya sudah
-   * terpenuhi harus diselesaikan lewat `finalize`, bukan dibuang.
+   * Rapat gagal kuorum TIDAK ditutup `REJECTED` — itu menyatakan materi
+   * "ditolak" padahal tak ada yang diputus; UU 16/2001 jo. 28/2004 jo. PP
+   * 63/2008 mensyaratkan kuorum, jadi `CANCELLED` menutupnya tanpa memalsukan
+   * hasil. Kuorum yang sudah terpenuhi biasanya harus lewat `finalize`,
+   * kecuali dua keadaan "terdampar" (finding 1): naskah tak-tercetak yang
+   * membuat finalisasi gagal permanen, dan sirkuler yang mufakatnya penuh
+   * tetapi penyegelannya tertunda. Menahan `VOTING` selamanya lebih buruk
+   * daripada menutupnya; aktornya tetap wajib berwenang memfinalisasi.
    */
   async cancel(actor: Actor, decisionId: string) {
     const d = await this.loadWithRelations(decisionId);
     if (!canFinalizeDecision(actor, d.members)) {
       throw Errors.forbidden('Anda tidak berhak membatalkan keputusan organ ini.');
     }
-    if (d.kind === 'CIRCULAR') {
+    // Sirkuler normal menutup dirinya sendiri saat pemungutan suara; yang
+    // boleh dibatalkan hanyalah sirkuler yang penyegelannya TERTUNDA dan tak
+    // dapat dipulihkan (naskah tak-tercetak) — jalan keluar terminalnya.
+    if (
+      d.kind === 'CIRCULAR' &&
+      !(this.isDeferredCircular(d) && d.status === FoundationDecisionStatus.VOTING)
+    ) {
       throw Errors.badRequest(
         'Keputusan sirkuler tidak dibatalkan manual: keputusan terminalnya ditutup otomatis saat pemungutan suara.'
       );
@@ -2079,9 +2139,16 @@ export const FoundationDecisionService = {
           this.votesOf(locked),
           { closed: true }
         );
-        // Kuorum hadir TERPENUHI berarti rapat sah bersidang: hasilnya harus
-        // ditetapkan lewat `finalize`, bukan dibuang lewat pembatalan.
-        if (evaluation.presentMet) {
+        // Kuorum hadir TERPENUHI biasanya TIDAK boleh dibatalkan: rapat sah
+        // bersidang, hasilnya harus ditetapkan lewat `finalize`. Dua
+        // pengecualian finding 1, keduanya keadaan "terdampar":
+        //  - naskah/nama tidak dapat dirender → `finalize` gagal permanen;
+        //  - sirkuler dengan penyegelan TERTUNDA → tidak ada suara baru yang
+        //    bisa masuk, jadi menunggu tidak akan menyelesaikannya.
+        const glyphOffenders = this.decisionGlyphOffenders(locked);
+        const deferredCircular = locked.kind === 'CIRCULAR' && this.isDeferredCircular(locked);
+        const stranded = glyphOffenders.length > 0 || deferredCircular;
+        if (evaluation.presentMet && !stranded) {
           throw Errors.badRequest(
             'Kuorum rapat sudah terpenuhi, sehingga tidak dapat dibatalkan — tetapkan hasilnya lewat finalisasi.'
           );
@@ -2101,8 +2168,21 @@ export const FoundationDecisionService = {
             entity: 'FoundationDecision',
             entityId: decisionId,
             newValues: {
-              reason: 'kuorum-hadir-tidak-tercapai',
+              reason:
+                glyphOffenders.length > 0
+                  ? 'naskah-tidak-dapat-dirender'
+                  : deferredCircular
+                    ? 'sirkuler-penyegelan-tertunda'
+                    : 'kuorum-hadir-tidak-tercapai',
               evaluation: { ...evaluation },
+              ...(glyphOffenders.length > 0
+                ? {
+                    glyphOffenders: glyphOffenders.map((o) => ({
+                      field: o.field,
+                      chars: o.chars,
+                    })),
+                  }
+                : {}),
             },
           },
         });
@@ -2991,6 +3071,19 @@ export const FoundationDecisionService = {
 
   /** Render PDF risalah/keputusan final dari baris + relasinya. */
   async renderPdf(d: RichDecision): Promise<Buffer> {
+    return generateDecisionPdf(this.buildPdfData(d));
+  },
+
+  /**
+   * Bentuk data PDF untuk sebuah keputusan — SATU definisi dengan `renderPdf`.
+   *
+   * Dipisah supaya pemeriksaan glyph (`decisionPdfGlyphOffenders`) memakai
+   * field yang persis sama dengan yang akan dicetak: judul, isi, nama anggota
+   * snapshot, jenis, organ, dan catatan suara. Memeriksa field yang berbeda
+   * dari yang dirender berarti gerbang bisa meloloskan naskah yang tetap gagal
+   * dicetak, atau menolak naskah yang sebenarnya aman.
+   */
+  buildPdfData(d: RichDecision): DecisionPdfData {
     const roleByUserId = new Map(d.members.map((m) => [m.userId, m.roleCode]));
     // Nama diambil dari SNAPSHOT anggota (`FoundationDecisionMember.name`),
     // bukan dari profil pengguna hidup. Roster anggota adalah snapshot
@@ -3023,7 +3116,7 @@ export const FoundationDecisionService = {
       (d.quorumSnapshot as unknown as QuorumSnapshot).activeCount
     );
 
-    return generateDecisionPdf({
+    return {
       shortId: d.id.slice(0, 8).toUpperCase(),
       subject: d.subject,
       decisionType: d.decisionType,
@@ -3038,7 +3131,20 @@ export const FoundationDecisionService = {
       voteSummary: summary,
       verificationToken: d.verificationToken,
       verificationUrl: d.verificationToken ? decisionVerificationUrl() : null,
-    });
+    };
+  },
+
+  /**
+   * Apakah keputusan ini TIDAK DAPAT dirender ke PDF utuh — memuat aksara yang
+   * akan hilang dari arsip ber-e-seal.
+   *
+   * Dipakai `cancel` untuk memberi jalan keluar terminal atas keputusan yang
+   * SUDAH terdampar (dibuat sebelum gerbang `create` ada): tanpa ini, satu
+   * emoji membuat keputusan tergantung `VOTING` selamanya karena approval
+   * selalu gagal dan pembatalan menolaknya.
+   */
+  decisionGlyphOffenders(d: RichDecision) {
+    return decisionPdfGlyphOffenders(this.buildPdfData(d));
   },
 
   /** Bentuk DTO detail keputusan. */

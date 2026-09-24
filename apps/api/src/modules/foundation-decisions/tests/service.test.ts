@@ -1245,6 +1245,141 @@ describe('FoundationDecisionService.finalize', () => {
 });
 
 /**
+ * Regresi finding 1 (BUG severe) — keputusan yang naskahnya TIDAK DAPAT
+ * dirender harus punya terminal.
+ *
+ * Sebelum gerbang `create` ada, keputusan dengan emoji dapat terlanjur dibuat.
+ * `finalize`/penyegelan gagal permanen, dan `cancel` dulu menolaknya karena
+ * kuorum hadir sudah terpenuhi — sehingga keputusan tergantung `VOTING`
+ * selamanya. Sekarang `cancel` meloloskan pembatalan justru ketika naskahnya
+ * tidak dapat dirender, dengan alasan audit yang berbeda.
+ */
+describe('FoundationDecisionService.cancel — jalan keluar naskah tak-tercetak', () => {
+  it('membatalkan rapat VOTING yang kuorumnya penuh bila naskah tak dapat dirender', async () => {
+    const d = decisionRow({
+      kind: 'MEETING',
+      status: 'VOTING',
+      subject: 'Pengesahan 🎉 rencana kerja',
+      quorumSnapshot: {
+        organType: 'PEMBINA',
+        kind: 'MEETING',
+        activeCount: 3,
+        presentMode: 'MAJORITY',
+        presentValue: 0.5,
+        decisionMode: 'MAJORITY',
+        decisionValue: 0.5,
+      },
+    });
+    // Kuorum hadir terpenuhi (2 dari 3).
+    d.votes = [signedVoteRow(d, 'user-0', 'APPROVE'), signedVoteRow(d, 'user-1', 'APPROVE')];
+    dm.foundationDecision.findUnique.mockResolvedValue(d);
+    dm.foundationDecision.update.mockResolvedValue({ ...d, status: 'CANCELLED' });
+
+    const res = await FoundationDecisionService.cancel(
+      { id: 'user-0', roleCode: 'YAYASAN_PEMBINA' },
+      'dec-1'
+    );
+    expect(res.outcome).toBe('CANCELLED');
+    const audit = dm.auditLog.create.mock.calls.at(-1)![0].data;
+    expect(audit.action).toBe('CANCEL');
+    expect(audit.newValues.reason).toBe('naskah-tidak-dapat-dirender');
+    expect(audit.newValues.glyphOffenders.length).toBeGreaterThan(0);
+  });
+
+  it('TETAP menolak pembatalan bila kuorum penuh dan naskah dapat dirender', async () => {
+    const d = decisionRow({
+      kind: 'MEETING',
+      status: 'VOTING',
+      quorumSnapshot: {
+        organType: 'PEMBINA',
+        kind: 'MEETING',
+        activeCount: 3,
+        presentMode: 'MAJORITY',
+        presentValue: 0.5,
+        decisionMode: 'MAJORITY',
+        decisionValue: 0.5,
+      },
+    });
+    d.votes = [signedVoteRow(d, 'user-0', 'APPROVE'), signedVoteRow(d, 'user-1', 'APPROVE')];
+    dm.foundationDecision.findUnique.mockResolvedValue(d);
+
+    await expect(
+      FoundationDecisionService.cancel({ id: 'user-0', roleCode: 'YAYASAN_PEMBINA' }, 'dec-1')
+    ).rejects.toThrow(/Kuorum rapat sudah terpenuhi/);
+    expect(dm.foundationDecision.update).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Regresi finding 1 — sirkuler dengan penyegelan TERTUNDA juga terdampar.
+   *
+   * Sirkuler menutup dirinya pada suara penentu; bila penyegelan gagal pada
+   * suara itu, tidak ada suara baru yang bisa masuk (`castVote` menolak suara
+   * ganda) dan `finalize` pun gagal permanen bila penyebabnya font. Tanpa
+   * pembatalan, keputusan itu tergantung `VOTING` selamanya. Pembatalan oleh
+   * aktor berwenang adalah jalan keluar terminalnya.
+   */
+  it('membatalkan sirkuler yang penyegelannya tertunda permanen', async () => {
+    const d = decisionRow({
+      kind: 'CIRCULAR',
+      status: 'VOTING',
+      subject: 'Pengesahan rencana kerja',
+      body: 'Rencana kerja tahunan disetujui seluruh anggota.',
+      quorumSnapshot: {
+        organType: 'PEMBINA',
+        kind: 'CIRCULAR',
+        activeCount: 3,
+        presentMode: 'MUTLAK',
+        presentValue: 1,
+        decisionMode: 'MUTLAK',
+        decisionValue: 1,
+      },
+    });
+    // Seluruh anggota menyetujui → mufakat penuh, tetapi status masih VOTING:
+    // definisi `isDeferredCircular`.
+    d.votes = [
+      signedVoteRow(d, 'user-0', 'APPROVE'),
+      signedVoteRow(d, 'user-1', 'APPROVE'),
+      signedVoteRow(d, 'user-2', 'APPROVE'),
+    ];
+    dm.foundationDecision.findUnique.mockResolvedValue(d);
+    dm.foundationDecision.update.mockResolvedValue({ ...d, status: 'CANCELLED' });
+
+    const res = await FoundationDecisionService.cancel(
+      { id: 'user-0', roleCode: 'YAYASAN_PEMBINA' },
+      'dec-1'
+    );
+    expect(res.outcome).toBe('CANCELLED');
+    const audit = dm.auditLog.create.mock.calls.at(-1)![0].data;
+    expect(audit.newValues.reason).toBe('sirkuler-penyegelan-tertunda');
+  });
+
+  it('TETAP menolak pembatalan sirkuler VOTING yang bukan deferred', async () => {
+    const d = decisionRow({
+      kind: 'CIRCULAR',
+      status: 'VOTING',
+      quorumSnapshot: {
+        organType: 'PEMBINA',
+        kind: 'CIRCULAR',
+        activeCount: 3,
+        presentMode: 'MUTLAK',
+        presentValue: 1,
+        decisionMode: 'MUTLAK',
+        decisionValue: 1,
+      },
+    });
+    // Baru satu suara setuju: mufakat belum tercapai, jadi sirkuler masih bisa
+    // menutup sendiri saat anggota lain bersuara — pembatalan manual ditolak.
+    d.votes = [signedVoteRow(d, 'user-0', 'APPROVE')];
+    dm.foundationDecision.findUnique.mockResolvedValue(d);
+
+    await expect(
+      FoundationDecisionService.cancel({ id: 'user-0', roleCode: 'YAYASAN_PEMBINA' }, 'dec-1')
+    ).rejects.toThrow(/tidak dibatalkan manual/);
+    expect(dm.foundationDecision.update).not.toHaveBeenCalled();
+  });
+});
+
+/**
  * Regresi BUG — tombol finalisasi ditawarkan kepada pengguna yang peladen
  * tolak (audit A).
  *
@@ -1780,6 +1915,64 @@ describe('FoundationDecisionService.create', () => {
         }
       )
     ).rejects.toThrow(/tidak berwenang/);
+  });
+
+  /**
+   * Regresi finding 1 (BUG severe) — keputusan dengan aksara yang tidak dapat
+   * dicetak DITOLAK sebelum voting dibuka.
+   *
+   * Dulu pemeriksaan glyph hanya berjalan saat approval. Bila naskah memuat
+   * emoji, `prepareApprovalArtifact` gagal setelah suara penentu tercatat; naskah
+   * tidak dapat diedit dan `cancel` menolaknya, sehingga keputusan tergantung
+   * `VOTING` selamanya. Gerbang di `create` memakai jalur ketercetakan yang sama
+   * dan mengembalikan 400 yang menyebut field — tidak ada keputusan dibuat.
+   */
+  it('menolak naskah beraksara tak-tercetak SEBELUM voting dibuka', async () => {
+    dm.userRoleAssignment.findMany.mockResolvedValue(memberAssignments(2));
+    dm.foundationDecisionRule.findUnique.mockResolvedValue(null);
+
+    await expect(
+      FoundationDecisionService.create(
+        { id: 'user-0', roleCode: 'YAYASAN_PEMBINA' },
+        {
+          organType: 'PEMBINA',
+          kind: 'CIRCULAR',
+          subject: 'Pengesahan 🎉 rencana kerja',
+          body: 'Isi keputusan yang cukup panjang minimal sepuluh karakter.',
+          decisionType: 'pengesahan-rencana-kerja',
+        }
+      )
+    ).rejects.toThrow(/tidak dapat dicetak|subjekt|subject/i);
+
+    expect(dm.foundationDecision.create).not.toHaveBeenCalled();
+  });
+
+  it('menolak nama anggota yang tidak dapat dicetak ke risalah', async () => {
+    dm.userRoleAssignment.findMany.mockResolvedValue([
+      {
+        id: 'asg-1',
+        userId: 'user-1',
+        isPrimary: true,
+        user: { id: 'user-1', name: 'Nama 🎉 Anggota' },
+        role: { code: 'YAYASAN_PEMBINA' },
+      },
+    ]);
+    dm.foundationDecisionRule.findUnique.mockResolvedValue(null);
+
+    await expect(
+      FoundationDecisionService.create(
+        { id: 'user-0', roleCode: 'YAYASAN_PEMBINA' },
+        {
+          organType: 'PEMBINA',
+          kind: 'CIRCULAR',
+          subject: 'Pengesahan rencana kerja',
+          body: 'Isi keputusan yang cukup panjang minimal sepuluh karakter.',
+          decisionType: 'pengesahan-rencana-kerja',
+        }
+      )
+    ).rejects.toThrow(/tidak dapat dicetak/i);
+
+    expect(dm.foundationDecision.create).not.toHaveBeenCalled();
   });
 
   /**

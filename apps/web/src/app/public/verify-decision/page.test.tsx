@@ -387,4 +387,29 @@ describe("halaman verifikasi keputusan publik", () => {
     );
     expect(screen.getByText(/Format berkas harus PDF\./)).toBeTruthy();
   });
+
+  it("menerima PDF ber-MIME generik (octet-stream) — regresi finding 3", async () => {
+    // Berkas dari arsip surel/aplikasi pemindai sering tiba tanpa tipe PDF
+    // yang benar. Gerbang lama menolaknya di klien; sekarang diteruskan ke
+    // peladen, yang memeriksa magic bytes terhadap byte unggahan.
+    pdfState.mutateAsync.mockResolvedValue(dto({ isValid: true }));
+    const { container } = render(<PublicVerifyDecisionPage />);
+
+    const input = container.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement;
+    fireEvent.change(input, {
+      target: {
+        files: [
+          new File(["%PDF-1.7 x"], "risalah-scan.pdf", {
+            type: "application/octet-stream",
+          }),
+        ],
+      },
+    });
+
+    expect(screen.queryByText(/Format berkas harus PDF\./)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Verifikasi Berkas/ }));
+    expect(await screen.findByText(/Dokumen Sah & Terverifikasi/)).toBeTruthy();
+  });
 });
