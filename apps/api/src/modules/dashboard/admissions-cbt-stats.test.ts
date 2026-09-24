@@ -108,6 +108,20 @@ describe('dashboardService.getCBTSummary', () => {
     );
   });
 
+  it('counts only question-bank (CBT) exams, not written ones sharing the table', async () => {
+    mocked.exam.count.mockResolvedValue(0);
+    mocked.examAttempt.count.mockResolvedValue(0);
+    mocked.examAttempt.aggregate.mockResolvedValue({ _avg: { score: null } });
+
+    await dashboardService.getCBTSummary({ unitId: 'unit-1' });
+
+    for (const [args] of mocked.exam.count.mock.calls) {
+      expect(args.where).toMatchObject({ unitId: 'unit-1', questionBankId: { not: null } });
+    }
+    expect(mocked.exam.count).toHaveBeenCalledTimes(3);
+    expect(mocked.examAttempt.count.mock.calls[0][0].where.exam).toMatchObject({ questionBankId: { not: null } });
+  });
+
   it('returns 0 average when no attempts are scored', async () => {
     mocked.exam.count.mockResolvedValue(0);
     mocked.examAttempt.count.mockResolvedValue(0);
