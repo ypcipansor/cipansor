@@ -17,7 +17,12 @@ export class MealsController {
         page: parseInt(req.query.page as string) || 1,
         limit: parseInt(req.query.limit as string) || 20,
       };
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const result = await mealsService.listMenus(query, user);
       res.json(result);
     } catch (error) {
@@ -28,7 +33,12 @@ export class MealsController {
   async getMenuById(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const menu = await mealsService.getMenuById(id, user);
       res.json({ data: menu });
     } catch (error) {
@@ -38,7 +48,12 @@ export class MealsController {
 
   async createMenu(req: Request, res: Response, next: NextFunction) {
     try {
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const menu = await mealsService.createMenu(req.body, user);
       res.status(201).json({ data: menu });
     } catch (error) {
@@ -49,7 +64,12 @@ export class MealsController {
   async updateMenu(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const menu = await mealsService.updateMenu(id, req.body, user);
       res.json({ data: menu });
     } catch (error) {
@@ -60,7 +80,12 @@ export class MealsController {
   async deleteMenu(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       await mealsService.deleteMenu(id, user);
       res.json({ success: true, message: 'Menu deleted successfully' });
     } catch (error) {
@@ -71,7 +96,12 @@ export class MealsController {
   async getTodayMenu(req: Request, res: Response, next: NextFunction) {
     try {
       const { unitId } = req.params;
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const menus = await mealsService.getTodayMenu(unitId, user);
       res.json({ data: menus });
     } catch (error) {
@@ -82,7 +112,12 @@ export class MealsController {
   async bulkCreateMenus(req: Request, res: Response, next: NextFunction) {
     try {
       const { menus } = req.body;
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const results = { success: 0, failed: 0, errors: [] as string[] };
 
       for (const menuInput of menus) {
@@ -138,7 +173,12 @@ export class MealsController {
         page: parseInt(req.query.page as string) || 1,
         limit: parseInt(req.query.limit as string) || 50,
       };
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const result = await mealsService.listAttendance(query, user);
       res.json(result);
     } catch (error) {
@@ -148,7 +188,12 @@ export class MealsController {
 
   async recordAttendance(req: Request, res: Response, next: NextFunction) {
     try {
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const attendance = await mealsService.recordAttendance(req.body, user);
       res.status(201).json({ data: attendance });
     } catch (error) {
@@ -159,7 +204,12 @@ export class MealsController {
   async bulkRecordAttendance(req: Request, res: Response, next: NextFunction) {
     try {
       const { menuId, records } = req.body;
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const result = await mealsService.bulkRecordAttendance(menuId, records, user);
       res.json({ data: result });
     } catch (error) {
@@ -170,7 +220,12 @@ export class MealsController {
   async updateAttendance(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const attendance = await mealsService.updateAttendance(id, req.body, user);
       res.json({ data: attendance });
     } catch (error) {
@@ -197,7 +252,12 @@ export class MealsController {
   async getStudentHistory(req: Request, res: Response, next: NextFunction) {
     try {
       const { studentId } = req.params;
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const limit = parseInt(req.query.limit as string) || 30;
       const history = await mealsService.getStudentHistory(studentId, user, limit);
       res.json({ data: history });

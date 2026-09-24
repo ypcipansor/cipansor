@@ -397,7 +397,10 @@ describe('DailyReportService', () => {
       vi.mocked(prisma.dailyStudentReport.create).mockResolvedValue(mockReport as any);
 
       // 'HABIS' (finished) and 'SETENGAH' (half) map to hadBreakfast=true.
-      await dailyReportService.create({ ...createInput, breakfastConsumption: 'HABIS' }, mockUserId);
+      await dailyReportService.create(
+        { ...createInput, breakfastConsumption: 'HABIS' },
+        mockUserId
+      );
 
       const calledWith = vi.mocked(prisma.dailyStudentReport.create).mock.calls[0]![0] as any;
       expect(calledWith.data.hadBreakfast).toBe(true);

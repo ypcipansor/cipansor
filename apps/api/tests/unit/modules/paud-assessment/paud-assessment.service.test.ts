@@ -95,9 +95,9 @@ describe('PAUD Assessment Service', () => {
     it('should throw error if class does not belong to unit', async () => {
       mockFindUnique.mockResolvedValue({ id: 'class-1', unitId: 'other-unit' });
 
-      await expect(paudAssessmentService.createClassAssessment(mockInput as any, userId)).rejects.toThrow(
-        'Class not found or does not belong to this unit'
-      );
+      await expect(
+        paudAssessmentService.createClassAssessment(mockInput as any, userId)
+      ).rejects.toThrow('Class not found or does not belong to this unit');
     });
   });
 });

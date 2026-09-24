@@ -164,10 +164,7 @@ export const queryTeachersSchema = z.object({
   page: z.coerce.number().min(1).default(1),
   limit: z.coerce.number().min(1).max(100).default(20),
   // Some callers send an empty string while their unit filter hydrates
-  unitId: z.preprocess(
-    (value) => (value === '' ? undefined : value),
-    z.string().uuid().optional()
-  ),
+  unitId: z.preprocess((value) => (value === '' ? undefined : value), z.string().uuid().optional()),
   status: z.enum(['ACTIVE', 'INACTIVE', 'ON_LEAVE']).optional(),
   search: z.string().optional(),
 });

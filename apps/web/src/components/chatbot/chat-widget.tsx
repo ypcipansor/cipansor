@@ -56,7 +56,9 @@ const SUGGESTIONS = [
  * yang rusak.
  */
 function isBusyError(error: unknown): boolean {
-  const body = (error as { response?: { data?: { error?: { code?: string } } } })?.response?.data;
+  const body = (
+    error as { response?: { data?: { error?: { code?: string } } } }
+  )?.response?.data;
   return body?.error?.code === "CHATBOT_BUSY";
 }
 
@@ -172,7 +174,10 @@ export function ChatWidget() {
       // `build:strict`, maupun satu pun uji.
       setEscalate(
         result.refused
-          ? { question: trimmed, conversationId: conversationId.current || undefined }
+          ? {
+              question: trimmed,
+              conversationId: conversationId.current || undefined,
+            }
           : null,
       );
     } catch (error) {

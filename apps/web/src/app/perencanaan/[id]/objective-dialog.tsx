@@ -202,7 +202,13 @@ export function ObjectiveDialog({
                 <FormItem>
                   <FormLabel>Bobot (%)</FormLabel>
                   <FormControl>
-                    <Input type="number" min={0} max={100} step={1} {...field} />
+                    <Input
+                      type="number"
+                      min={0}
+                      max={100}
+                      step={1}
+                      {...field}
+                    />
                   </FormControl>
                   <FormDescription>
                     Porsi sasaran ini terhadap keseluruhan dokumen.

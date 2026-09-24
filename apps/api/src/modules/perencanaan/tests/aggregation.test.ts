@@ -38,9 +38,11 @@ describe('PerencanaanService - Aggregation', () => {
     // Indicator 1: 50/100 = 50%
     // Indicator 2: 150/200 = 75%
     // Average: (50 + 75) / 2 = 62.5%
-    expect(prisma.planObjective.update).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: 'obj-1' },
-      data: { progress: 62.5 },
-    }));
+    expect(prisma.planObjective.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'obj-1' },
+        data: { progress: 62.5 },
+      })
+    );
   });
 });

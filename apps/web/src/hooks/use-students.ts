@@ -402,10 +402,9 @@ export function useGraduateStudent() {
       tahfidzLevel?: string;
       notes?: string;
     }) => {
-      const response = await api.post<ApiResponse<{ id: string; graduationYear: number }>>(
-        `/alumni/from-student/${studentId}`,
-        body,
-      );
+      const response = await api.post<
+        ApiResponse<{ id: string; graduationYear: number }>
+      >(`/alumni/from-student/${studentId}`, body);
       return response.data.data;
     },
     onSuccess: (_, variables) => {

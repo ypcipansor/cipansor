@@ -316,7 +316,9 @@ function SubjectDetailPageContent({
   );
 }
 
-export default function SubjectDetailPage(props: Parameters<typeof SubjectDetailPageContent>[0]) {
+export default function SubjectDetailPage(
+  props: Parameters<typeof SubjectDetailPageContent>[0],
+) {
   return (
     <MainLayout>
       <SubjectDetailPageContent {...props} />

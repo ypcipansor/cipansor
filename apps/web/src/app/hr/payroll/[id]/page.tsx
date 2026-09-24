@@ -207,7 +207,9 @@ function PayrollDetailPageContent({
   );
 }
 
-export default function PayrollDetailPage(props: Parameters<typeof PayrollDetailPageContent>[0]) {
+export default function PayrollDetailPage(
+  props: Parameters<typeof PayrollDetailPageContent>[0],
+) {
   return (
     <MainLayout>
       <PayrollDetailPageContent {...props} />

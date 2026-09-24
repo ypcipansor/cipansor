@@ -49,7 +49,7 @@ function VerifyCardContent() {
     try {
       const response = await api.get<{ data: VerificationResponse }>(
         `/students/id-cards/verify`,
-        { params: { q: query } }
+        { params: { q: query } },
       );
       const resData = response.data.data;
       if (resData) {
@@ -64,7 +64,7 @@ function VerifyCardContent() {
       };
       setError(
         axiosError.response?.data?.message ||
-          "Gagal memproses verifikasi Kartu Santri."
+          "Gagal memproses verifikasi Kartu Santri.",
       );
     } finally {
       setIsLoading(false);
@@ -89,13 +89,19 @@ function VerifyCardContent() {
           Verifikasi Kartu Santri / Pelajar
         </h1>
         <p className="text-muted-foreground mt-2 text-pretty">
-          Pemeriksaan keaslian Kartu Santri dan Identitas Pelajar bertanda tangan kriptografis HMAC Yayasan Pesantren Cipansor.
+          Pemeriksaan keaslian Kartu Santri dan Identitas Pelajar bertanda
+          tangan kriptografis HMAC Yayasan Pesantren Cipansor.
         </p>
       </div>
 
       <div className="mb-8 space-y-4 text-muted-foreground">
         <p className="leading-relaxed">
-          Kartu Santri resmi Cipansor dilengkapi dengan <strong className="text-foreground">QR Code Kriptografis HMAC-SHA256</strong> bertanda tangan kunci rahasia server. Sistem ini menjamin keaslian data identitas santri agar tidak dapat dipalsukan.
+          Kartu Santri resmi Cipansor dilengkapi dengan{" "}
+          <strong className="text-foreground">
+            QR Code Kriptografis HMAC-SHA256
+          </strong>{" "}
+          bertanda tangan kunci rahasia server. Sistem ini menjamin keaslian
+          data identitas santri agar tidak dapat dipalsukan.
         </p>
       </div>
 
@@ -103,7 +109,8 @@ function VerifyCardContent() {
         <CardHeader>
           <CardTitle>Cek Kode QR Kartu Santri</CardTitle>
           <CardDescription>
-            Pindai QR code pada Kartu Santri atau masukkan string QR Code di bawah.
+            Pindai QR code pada Kartu Santri atau masukkan string QR Code di
+            bawah.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -154,7 +161,9 @@ function VerifyCardContent() {
                 <div className="flex items-center gap-3">
                   <User className="h-5 w-5 text-muted-foreground" />
                   <div>
-                    <p className="text-xs text-muted-foreground">Nama Santri / Pelajar</p>
+                    <p className="text-xs text-muted-foreground">
+                      Nama Santri / Pelajar
+                    </p>
                     <p className="font-medium text-lg">{result.student.name}</p>
                   </div>
                 </div>
@@ -171,7 +180,9 @@ function VerifyCardContent() {
                   <div className="flex items-center gap-3">
                     <School className="h-5 w-5 text-muted-foreground" />
                     <div>
-                      <p className="text-xs text-muted-foreground">Unit Pendidikan</p>
+                      <p className="text-xs text-muted-foreground">
+                        Unit Pendidikan
+                      </p>
                       <p className="font-medium">{result.student.unit}</p>
                     </div>
                   </div>
@@ -181,8 +192,13 @@ function VerifyCardContent() {
                   <div className="flex items-center gap-3">
                     <Calendar className="h-5 w-5 text-muted-foreground" />
                     <div>
-                      <p className="text-xs text-muted-foreground">Kelas Aktif</p>
-                      <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20">
+                      <p className="text-xs text-muted-foreground">
+                        Kelas Aktif
+                      </p>
+                      <Badge
+                        variant="outline"
+                        className="bg-primary/5 text-primary border-primary/20"
+                      >
                         {result.student.currentClass}
                       </Badge>
                     </div>
@@ -191,8 +207,12 @@ function VerifyCardContent() {
                   <div className="flex items-center gap-3">
                     <Calendar className="h-5 w-5 text-muted-foreground" />
                     <div>
-                      <p className="text-xs text-muted-foreground">Tahun Ajaran</p>
-                      <p className="font-medium">{result.student.academicYear}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Tahun Ajaran
+                      </p>
+                      <p className="font-medium">
+                        {result.student.academicYear}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -204,7 +224,9 @@ function VerifyCardContent() {
             <div className="mt-6 p-4 bg-yellow-50 text-yellow-800 border border-yellow-200 rounded-lg flex items-start gap-3">
               <AlertTriangle className="h-5 w-5 mt-0.5 text-yellow-600 shrink-0" />
               <div>
-                <p className="font-semibold text-lg text-yellow-700">Kartu Kedaluwarsa (Expired)</p>
+                <p className="font-semibold text-lg text-yellow-700">
+                  Kartu Kedaluwarsa (Expired)
+                </p>
                 <p className="text-sm">{result.message}</p>
               </div>
             </div>

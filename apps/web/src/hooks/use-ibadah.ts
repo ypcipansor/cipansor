@@ -6,27 +6,12 @@ import api, { ApiResponse, PaginatedResponse } from "@/lib/api";
 // ======================
 
 export type IbadahCategory =
-  | "SHOLAT"
-  | "TILAWAH"
-  | "DZIKIR"
-  | "PUASA"
-  | "SEDEKAH"
-  | "SUNNAH"
-  | "OTHER";
+  "SHOLAT" | "TILAWAH" | "DZIKIR" | "PUASA" | "SEDEKAH" | "SUNNAH" | "OTHER";
 export type TargetType = "DAILY" | "WEEKLY" | "MONTHLY";
 export type TargetUnit =
-  | "TIMES"
-  | "MINUTES"
-  | "PAGES"
-  | "JUZ"
-  | "AMOUNT"
-  | "COUNT";
+  "TIMES" | "MINUTES" | "PAGES" | "JUZ" | "AMOUNT" | "COUNT";
 export type LeaderboardPeriod =
-  | "DAILY"
-  | "WEEKLY"
-  | "MONTHLY"
-  | "SEMESTER"
-  | "YEARLY";
+  "DAILY" | "WEEKLY" | "MONTHLY" | "SEMESTER" | "YEARLY";
 export type VerificationStatus = "PENDING" | "VERIFIED" | "REJECTED";
 
 export interface IbadahTarget {

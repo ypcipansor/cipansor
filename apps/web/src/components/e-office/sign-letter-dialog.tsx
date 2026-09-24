@@ -7,7 +7,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
 } from "@/components/ui/dialog";
 import { useSignLetter } from "@/hooks/use-esign";
 import { getPublicVerifyUrl } from "@/config/site";
@@ -52,9 +56,7 @@ export function SignLetterDialog({
       toast.success("Surat berhasil ditandatangani.");
     } catch (e: any) {
       setPassphrase("");
-      toast.error(
-        e?.response?.data?.message ?? "Gagal menandatangani surat"
-      );
+      toast.error(e?.response?.data?.message ?? "Gagal menandatangani surat");
     }
   }
 
@@ -124,12 +126,17 @@ export function SignLetterDialog({
                 </p>
                 <p className="text-xs text-muted-foreground">
                   QR ini sudah tercetak pada naskah suratnya — cukup unduh
-                  PDF-nya. Untuk memverifikasi keaslian, unggah file PDF pada portal {publicVerifyUrl}.
+                  PDF-nya. Untuk memverifikasi keaslian, unggah file PDF pada
+                  portal {publicVerifyUrl}.
                 </p>
               </>
             )}
 
-            <Button variant="outline" className="w-full" onClick={() => close(false)}>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => close(false)}
+            >
               Selesai
             </Button>
           </div>

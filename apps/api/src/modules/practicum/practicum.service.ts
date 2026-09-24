@@ -47,7 +47,11 @@ export class PracticumService {
     });
   }
 
-  async reviewLessonPlan(id: string, reviewerId: string, data: { status: PracticumStatus; reviewNotes?: string }) {
+  async reviewLessonPlan(
+    id: string,
+    reviewerId: string,
+    data: { status: PracticumStatus; reviewNotes?: string }
+  ) {
     return prisma.practicumLessonPlan.update({
       where: { id },
       data: {
@@ -95,7 +99,8 @@ export class PracticumService {
 
   // Evaluations
   async createEvaluation(evaluatorId: string, data: any) {
-    const totalScore = (data.methodScore + data.contentScore + data.languageScore + data.performanceScore) / 4;
+    const totalScore =
+      (data.methodScore + data.contentScore + data.languageScore + data.performanceScore) / 4;
 
     return prisma.practicumEvaluation.create({
       data: {

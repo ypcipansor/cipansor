@@ -12,11 +12,7 @@ import { api } from "@/lib/api";
  */
 
 export type SigningKeyState =
-  | "PENDING_APPROVAL"
-  | "ACTIVE"
-  | "EXPIRING_SOON"
-  | "EXPIRED"
-  | "REVOKED";
+  "PENDING_APPROVAL" | "ACTIVE" | "EXPIRING_SOON" | "EXPIRED" | "REVOKED";
 
 /**
  * Keadaan identitas pemohon.
@@ -128,7 +124,14 @@ export function useEsign() {
     onSuccess: invalidate,
   });
 
-  return { status, saveIdentity, uploadKtp, requestKey, activate, changePassphrase };
+  return {
+    status,
+    saveIdentity,
+    uploadKtp,
+    requestKey,
+    activate,
+    changePassphrase,
+  };
 }
 
 /** Antrean pengajuan — hanya Super Admin yang dilayani server. */
@@ -242,7 +245,8 @@ export function useEsignKeys() {
     { userId: string; reason: string; code: SigningKeyRevocationCode }
   >({
     mutationFn: async ({ userId, reason, code }) =>
-      (await api.post(`/esign/keys/${userId}/revoke`, { reason, code })).data.data,
+      (await api.post(`/esign/keys/${userId}/revoke`, { reason, code })).data
+        .data,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["esign", "keys"] });
       queryClient.invalidateQueries({ queryKey: ["esign", "me"] });
@@ -264,7 +268,11 @@ export function useEsignKeys() {
 export function useRevokeLetter() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (input: { letterId: string; reason: string; passphrase: string }) =>
+    mutationFn: async (input: {
+      letterId: string;
+      reason: string;
+      passphrase: string;
+    }) =>
       (
         await api.post(`/esign/letters/${input.letterId}/revoke`, {
           reason: input.reason,
@@ -319,7 +327,9 @@ export function useDecideRevocation() {
       reason?: string;
     }) => {
       const { requestId, letterId: _letterId, ...body } = input;
-      return (await api.post(`/esign/revocation-requests/${requestId}/decide`, body)).data.data;
+      return (
+        await api.post(`/esign/revocation-requests/${requestId}/decide`, body)
+      ).data.data;
     },
     onSuccess: (_d, v) => {
       queryClient.invalidateQueries({ queryKey: ["letters"] });
@@ -332,7 +342,8 @@ export function useWithdrawRevocationRequest() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (input: { requestId: string; letterId: string }) =>
-      (await api.post(`/esign/revocation-requests/${input.requestId}/withdraw`)).data.data,
+      (await api.post(`/esign/revocation-requests/${input.requestId}/withdraw`))
+        .data.data,
     onSuccess: (_d, v) => {
       queryClient.invalidateQueries({ queryKey: ["letter", v.letterId] });
     },

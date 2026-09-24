@@ -44,7 +44,8 @@ export const listPrograms = asyncHandler(async (req: Request, res: Response) => 
 export const getProgram = asyncHandler(async (req: Request, res: Response) => {
   const program = await lingkunganService.getProgramById(req.params.id);
   if (!program) throw Errors.notFound('Program not found');
-  if (!isPrivileged(req.user?.role) && program.unitId !== req.user?.unitId) throw Errors.forbidden('Access denied');
+  if (!isPrivileged(req.user?.role) && program.unitId !== req.user?.unitId)
+    throw Errors.forbidden('Access denied');
   res.json({ success: true, data: program });
 });
 
@@ -59,7 +60,8 @@ export const createProgram = asyncHandler(async (req: Request, res: Response) =>
 export const updateProgram = asyncHandler(async (req: Request, res: Response) => {
   const existing = await lingkunganService.getProgramById(req.params.id);
   if (!existing) throw Errors.notFound('Program not found');
-  if (!isPrivileged(req.user?.role) && existing.unitId !== req.user?.unitId) throw Errors.forbidden('Access denied');
+  if (!isPrivileged(req.user?.role) && existing.unitId !== req.user?.unitId)
+    throw Errors.forbidden('Access denied');
   const body = updateProgramSchema.parse(req.body);
   const program = await lingkunganService.updateProgram(req.params.id, body);
   res.json({ success: true, data: program });
@@ -68,7 +70,8 @@ export const updateProgram = asyncHandler(async (req: Request, res: Response) =>
 export const deleteProgram = asyncHandler(async (req: Request, res: Response) => {
   const existing = await lingkunganService.getProgramById(req.params.id);
   if (!existing) throw Errors.notFound('Program not found');
-  if (!isPrivileged(req.user?.role) && existing.unitId !== req.user?.unitId) throw Errors.forbidden('Access denied');
+  if (!isPrivileged(req.user?.role) && existing.unitId !== req.user?.unitId)
+    throw Errors.forbidden('Access denied');
   await lingkunganService.deleteProgram(req.params.id);
   res.json({ success: true, message: 'Program deleted' });
 });
@@ -85,7 +88,11 @@ export const createWaste = asyncHandler(async (req: Request, res: Response) => {
   if (!userId) throw Errors.unauthorized('User context missing');
   const body = createWasteSchema.parse(req.body);
   const unitId = resolveUnitId(req, body.unitId);
-  const record = await lingkunganService.createWasteRecord({ ...body, unitId, recordedById: userId });
+  const record = await lingkunganService.createWasteRecord({
+    ...body,
+    unitId,
+    recordedById: userId,
+  });
   res.status(201).json({ success: true, data: record });
 });
 

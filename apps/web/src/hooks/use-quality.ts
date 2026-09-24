@@ -42,9 +42,8 @@ export const useQualityStandards = () => {
   return useQuery({
     queryKey: ["quality", "standards"],
     queryFn: async () => {
-      const response = await api.get<ApiResponse<QualityStandard[]>>(
-        "/quality/standards",
-      );
+      const response =
+        await api.get<ApiResponse<QualityStandard[]>>("/quality/standards");
       return response.data.data;
     },
   });
@@ -178,10 +177,7 @@ export const useUpdateAuditItem = () => {
       itemId: string;
       data: UpdateAuditItemInput;
     }) => {
-      const response = await api.patch(
-        `/quality/audits/items/${itemId}`,
-        data,
-      );
+      const response = await api.patch(`/quality/audits/items/${itemId}`, data);
       return response.data.data;
     },
     onSuccess: () => {

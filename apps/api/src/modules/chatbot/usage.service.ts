@@ -36,9 +36,7 @@ const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
  */
 export function wibDay(now: Date): Date {
   const shifted = new Date(now.getTime() + WIB_OFFSET_MS);
-  return new Date(
-    Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate())
-  );
+  return new Date(Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate()));
 }
 
 /** Tanggal pertama bulan WIB yang memuat `now`, dalam bentuk yang sama. */

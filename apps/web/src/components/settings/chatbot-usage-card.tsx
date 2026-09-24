@@ -131,9 +131,7 @@ export function ChatbotUsageCard() {
           <Tile
             label="Taksiran biaya"
             value={
-              cost.priced
-                ? uang(cost.amount, cost.currency)
-                : "belum berharga"
+              cost.priced ? uang(cost.amount, cost.currency) : "belum berharga"
             }
             hint={
               data.monthlyBudget > 0

@@ -21,23 +21,33 @@ test("Risk - Audit Integration", async ({ page }) => {
   const stamp = Date.now();
   const plan = await findStrategicPlan(session);
 
-  const risk = await apiRequest<{ data: { id: string } }>(session, "POST", "/risk", {
-    code: `RSK-E2E-${stamp}`,
-    description: "E2E: potential cash leak in canteen operations",
-    category: "FINANCIAL",
-    likelihood: "POSSIBLE",
-    impact: "MAJOR",
-    unitId: plan.unitId,
-    strategicPlanId: plan.id,
-  });
+  const risk = await apiRequest<{ data: { id: string } }>(
+    session,
+    "POST",
+    "/risk",
+    {
+      code: `RSK-E2E-${stamp}`,
+      description: "E2E: potential cash leak in canteen operations",
+      category: "FINANCIAL",
+      likelihood: "POSSIBLE",
+      impact: "MAJOR",
+      unitId: plan.unitId,
+      strategicPlanId: plan.id,
+    },
+  );
 
-  const audit = await apiRequest<{ data: { id: string } }>(session, "POST", "/pengawasan", {
-    title: `Audit Operasional E2E ${stamp}`,
-    auditType: "OPERATIONAL",
-    plannedDate: new Date().toISOString(),
-    unitId: plan.unitId,
-    riskId: risk.data.id,
-  });
+  const audit = await apiRequest<{ data: { id: string } }>(
+    session,
+    "POST",
+    "/pengawasan",
+    {
+      title: `Audit Operasional E2E ${stamp}`,
+      auditType: "OPERATIONAL",
+      plannedDate: new Date().toISOString(),
+      unitId: plan.unitId,
+      riskId: risk.data.id,
+    },
+  );
 
   const finding = await apiRequest<{ data: { id: string } }>(
     session,
@@ -69,8 +79,16 @@ test("Risk - Audit Integration", async ({ page }) => {
     await expect(page.locator("text=MAJOR").first()).toBeVisible();
   } finally {
     // Leave the seeded data as we found it
-    await apiRequest(session, "DELETE", `/pengawasan/findings/${finding.data.id}`).catch(() => {});
-    await apiRequest(session, "DELETE", `/pengawasan/${audit.data.id}`).catch(() => {});
-    await apiRequest(session, "DELETE", `/risk/${risk.data.id}`).catch(() => {});
+    await apiRequest(
+      session,
+      "DELETE",
+      `/pengawasan/findings/${finding.data.id}`,
+    ).catch(() => {});
+    await apiRequest(session, "DELETE", `/pengawasan/${audit.data.id}`).catch(
+      () => {},
+    );
+    await apiRequest(session, "DELETE", `/risk/${risk.data.id}`).catch(
+      () => {},
+    );
   }
 });

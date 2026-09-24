@@ -230,8 +230,17 @@ export async function markLessonPlanComplete(id: string) {
 // =====================================
 
 export async function getSchedules(query: ScheduleQuery) {
-  const { page, limit, unitId, academicYearId, classId, teacherId, studentId, dayOfWeek, isActive } =
-    query;
+  const {
+    page,
+    limit,
+    unitId,
+    academicYearId,
+    classId,
+    teacherId,
+    studentId,
+    dayOfWeek,
+    isActive,
+  } = query;
   const skip = (page - 1) * limit;
 
   const where: Prisma.ScheduleWhereInput = {};

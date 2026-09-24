@@ -142,11 +142,7 @@ export async function getGRCStats(
   }
 }
 
-export async function getRiskMatrix(
-  req: Request,
-  res: Response,
-  next: NextFunction
-) {
+export async function getRiskMatrix(req: Request, res: Response, next: NextFunction) {
   try {
     const { unitId } = req.query;
     const matrix = await getRiskMatrixService(unitId as string | undefined);

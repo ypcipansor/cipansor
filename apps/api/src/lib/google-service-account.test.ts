@@ -29,7 +29,7 @@ describe('buildAssertion', () => {
       'RSA-SHA256',
       Buffer.from(`${header}.${claims}`),
       publicKey,
-      Buffer.from(signature, 'base64url'),
+      Buffer.from(signature, 'base64url')
     );
 
     expect(verified).toBe(true);
@@ -66,7 +66,7 @@ describe('ServiceAccountTokenSource', () => {
   it('caches the token instead of buying one per message', async () => {
     const fetchMock = vi.fn(
       async () =>
-        new Response(JSON.stringify({ access_token: 'tok-1', expires_in: 3600 }), { status: 200 }),
+        new Response(JSON.stringify({ access_token: 'tok-1', expires_in: 3600 }), { status: 200 })
     );
     vi.stubGlobal('fetch', fetchMock);
 
@@ -82,14 +82,12 @@ describe('ServiceAccountTokenSource', () => {
     // and without the in-flight promise each one opens its own token request.
     const fetchMock = vi.fn(
       async () =>
-        new Response(JSON.stringify({ access_token: 'tok-1', expires_in: 3600 }), { status: 200 }),
+        new Response(JSON.stringify({ access_token: 'tok-1', expires_in: 3600 }), { status: 200 })
     );
     vi.stubGlobal('fetch', fetchMock);
 
     const source = new ServiceAccountTokenSource(credentials);
-    const tokens = await Promise.all(
-      Array.from({ length: 20 }, () => source.getAccessToken()),
-    );
+    const tokens = await Promise.all(Array.from({ length: 20 }, () => source.getAccessToken()));
 
     expect(new Set(tokens)).toEqual(new Set(['tok-1']));
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -105,7 +103,7 @@ describe('ServiceAccountTokenSource', () => {
         return new Response(JSON.stringify({ access_token: `tok-${issued}`, expires_in: 30 }), {
           status: 200,
         });
-      }),
+      })
     );
 
     const source = new ServiceAccountTokenSource(credentials);
@@ -125,9 +123,9 @@ describe('ServiceAccountTokenSource', () => {
               error_description:
                 'Client is unauthorized to retrieve access tokens using this method',
             }),
-            { status: 401 },
-          ),
-      ),
+            { status: 401 }
+          )
+      )
     );
 
     const source = new ServiceAccountTokenSource(credentials);

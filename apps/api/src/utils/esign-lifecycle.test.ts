@@ -81,9 +81,9 @@ describe('boleh menandatangani?', () => {
   });
 
   it('belum disetujui: diarahkan menunggu Super Admin', () => {
-    expect(() =>
-      assertCanSign(key({ approvedAt: null, expiresAt: null }), NOW)
-    ).toThrow(/belum disetujui/i);
+    expect(() => assertCanSign(key({ approvedAt: null, expiresAt: null }), NOW)).toThrow(
+      /belum disetujui/i
+    );
   });
 
   it('kedaluwarsa: diarahkan mengajukan penerbitan ulang', () => {

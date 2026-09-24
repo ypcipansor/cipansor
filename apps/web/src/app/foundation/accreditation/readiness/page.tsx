@@ -208,7 +208,9 @@ export default function AccreditationReadinessPage() {
                             {getGradeBadge(unit.currentGrade)}
                           </CardTitle>
                           <CardDescription>
-                            {unit.npsn ? `NPSN: ${unit.npsn}` : "NPSN belum terdaftar"}
+                            {unit.npsn
+                              ? `NPSN: ${unit.npsn}`
+                              : "NPSN belum terdaftar"}
                           </CardDescription>
                         </div>
                       </div>

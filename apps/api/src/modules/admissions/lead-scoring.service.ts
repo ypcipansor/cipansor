@@ -9,17 +9,17 @@ export async function calculateLeadScores(registrantIds: string[]) {
     where: { id: { in: registrantIds } },
     include: {
       interactions: true,
-      _count: { select: { documents: true } }
+      _count: { select: { documents: true } },
     },
   });
 
-  return registrants.map(reg => {
+  return registrants.map((reg) => {
     let score = 0;
 
     // 1. Interaction History
     const interactionCount = reg.interactions.length;
     score += Math.min(20, interactionCount * 5);
-    if (reg.interactions.some(i => i.type === 'VISIT')) score += 15;
+    if (reg.interactions.some((i) => i.type === 'VISIT')) score += 15;
 
     // 2. Test Scores
     if (reg.testScore) score += Number(reg.testScore) * 0.4;
@@ -48,10 +48,10 @@ export async function getPriorityLeads(unitId?: string) {
 
   if (registrants.length === 0) return [];
 
-  const scores = await calculateLeadScores(registrants.map(r => r.id));
-  const scoreMap = new Map(scores.map(s => [s.registrantId, s.leadScore]));
+  const scores = await calculateLeadScores(registrants.map((r) => r.id));
+  const scoreMap = new Map(scores.map((s) => [s.registrantId, s.leadScore]));
 
   return registrants
-    .map(reg => ({ ...reg, leadScore: scoreMap.get(reg.id) || 0 }))
+    .map((reg) => ({ ...reg, leadScore: scoreMap.get(reg.id) || 0 }))
     .sort((a, b) => b.leadScore - a.leadScore);
 }

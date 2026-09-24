@@ -30,13 +30,13 @@ router.post(
   '/components',
   authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
   validate(createSalaryComponentSchema),
-  controller.createComponent,
+  controller.createComponent
 );
 router.put(
   '/components/:id',
   authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
   validate(updateSalaryComponentSchema),
-  controller.updateComponent,
+  controller.updateComponent
 );
 router.delete('/components/:id', authorize(UserRole.SUPER_ADMIN), controller.deleteComponent);
 router.post('/components/seed', authorize(UserRole.SUPER_ADMIN), controller.seedComponents);
@@ -50,13 +50,13 @@ router.post(
   '/salaries',
   authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
   validate(createEmployeeSalarySchema),
-  controller.createSalary,
+  controller.createSalary
 );
 router.put(
   '/salaries/:staffId',
   authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
   validate(updateEmployeeSalarySchema),
-  controller.updateSalary,
+  controller.updateSalary
 );
 router.delete('/salaries/:staffId', authorize(UserRole.SUPER_ADMIN), controller.deleteSalary);
 
@@ -69,25 +69,25 @@ router.post(
   '/periods',
   authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
   validate(createPayrollPeriodSchema),
-  controller.createPeriod,
+  controller.createPeriod
 );
 router.put(
   '/periods/:id',
   authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
   validate(updatePayrollPeriodSchema),
-  controller.updatePeriod,
+  controller.updatePeriod
 );
 router.post(
   '/periods/:id/approve',
   authorize(UserRole.SUPER_ADMIN),
   validate(approvePayrollPeriodSchema),
-  controller.approvePeriod,
+  controller.approvePeriod
 );
 router.post(
   '/periods/:id/pay',
   authorize(UserRole.SUPER_ADMIN),
   validate(payPayrollPeriodSchema),
-  controller.payPeriod,
+  controller.payPeriod
 );
 router.post('/periods/:id/cancel', authorize(UserRole.SUPER_ADMIN), controller.cancelPeriod);
 router.delete('/periods/:id', authorize(UserRole.SUPER_ADMIN), controller.deletePeriod);
@@ -102,13 +102,13 @@ router.post(
   '/generate',
   authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
   validate(generatePayrollSchema),
-  controller.generate,
+  controller.generate
 );
 router.put(
   '/slips/:id/adjust',
   authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
   validate(payrollItemAdjustmentSchema),
-  controller.adjustSlip,
+  controller.adjustSlip
 );
 
 export default router;

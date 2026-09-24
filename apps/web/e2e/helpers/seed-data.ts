@@ -19,7 +19,9 @@ export interface SeededPlan {
  * path. Walk the units and return the first plan whose unitId matches the unit
  * it was listed under, i.e. a genuinely unit-owned plan.
  */
-export async function findStrategicPlan(session: AuthSession): Promise<SeededPlan> {
+export async function findStrategicPlan(
+  session: AuthSession,
+): Promise<SeededPlan> {
   const units = await apiRequest<{ data: Array<{ id: string; name: string }> }>(
     session,
     "GET",

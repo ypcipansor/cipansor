@@ -134,9 +134,9 @@ export class ClassService {
       studentCount: c._count.enrollments,
       homeroomTeacher: c.homeroomTeacher
         ? {
-          id: c.homeroomTeacher.id,
-          user: c.homeroomTeacher.user,
-        }
+            id: c.homeroomTeacher.id,
+            user: c.homeroomTeacher.user,
+          }
         : null,
       unit: {
         id: c.unit.id,
@@ -205,9 +205,9 @@ export class ClassService {
       studentCount: classData._count.enrollments,
       homeroomTeacher: classData.homeroomTeacher
         ? {
-          id: classData.homeroomTeacher.id,
-          user: classData.homeroomTeacher.user,
-        }
+            id: classData.homeroomTeacher.id,
+            user: classData.homeroomTeacher.user,
+          }
         : null,
       unit: {
         id: classData.unit.id,

@@ -37,11 +37,7 @@ vi.mock('../payroll.service', () => ({
 }));
 
 import * as controller from '../payroll.controller';
-import {
-  salaryComponentService,
-  payrollPeriodService,
-  payrollService,
-} from '../payroll.service';
+import { salaryComponentService, payrollPeriodService, payrollService } from '../payroll.service';
 
 function mockReqRes(overrides: Partial<Request> = {}) {
   const req = {

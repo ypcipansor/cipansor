@@ -28,7 +28,7 @@ vi.mock('@/lib/prisma', () => ({
     simaanExam: {
       findMany: vi.fn(),
       count: vi.fn(),
-    }
+    },
   },
 }));
 
@@ -108,7 +108,7 @@ describe('RaporPesantrenService - Kepesantrenan Terpadu', () => {
           completedJuz: 2,
           halaqoh: { name: 'Takhosus A' },
           sanadRecords: mockSanads,
-        }
+        },
       ];
 
       (prisma.takhosusEnrollment.findMany as any).mockResolvedValue(mockEnrollments);
@@ -127,7 +127,7 @@ describe('RaporPesantrenService - Kepesantrenan Terpadu', () => {
       expect(result.enrolledHalaqoh).toBe(1);
       expect(result.totalSessions).toBe(2);
       expect(result.grade).toBe('MUMTAZ'); // 90 is Mumtaz
-      
+
       const detail = result.halaqohDetails[0];
       expect(detail.progress).toBe(40);
       expect(detail.sessionsCount).toBe(2);
@@ -187,9 +187,7 @@ describe('RaporPesantrenService - Kepesantrenan Terpadu', () => {
         },
       } as any;
 
-      const mockSanads = [
-        { id: 's1', enrollmentId: 'enr1', score: 75, grade: 'JAYYID' },
-      ];
+      const mockSanads = [{ id: 's1', enrollmentId: 'enr1', score: 75, grade: 'JAYYID' }];
 
       const mockEnrollments = [
         {

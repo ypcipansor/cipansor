@@ -13,6 +13,8 @@ test.describe("Marketing ROI & Boarding Command Center", () => {
     await expect(page.getByText("All Zones Active")).toBeVisible();
     // Real seeded dormitory served by /api/dormitories
     await expect(page.getByText("Asrama Putra Al-Hikmah")).toBeVisible();
-    await expect(page.getByText("Social Harmony Score", { exact: true }).first()).toBeVisible();
+    await expect(
+      page.getByText("Social Harmony Score", { exact: true }).first(),
+    ).toBeVisible();
   });
 });

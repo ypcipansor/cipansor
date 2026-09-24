@@ -31,7 +31,6 @@ async function resolveStudentId(userId: string): Promise<string> {
   return student.id;
 }
 
-
 // Lesson Plans
 router.post(
   '/lesson-plans',
@@ -79,7 +78,11 @@ router.post(
   authorize(RoleCode.SUPER_ADMIN, RoleCode.SMAQ_GURU, RoleCode.SMPIT_GURU),
   validate(ReviewLessonPlanSchema),
   asyncHandler(async (req, res) => {
-    const data = await practicumService.reviewLessonPlan(req.params.id, (req.user as any).sub, req.body);
+    const data = await practicumService.reviewLessonPlan(
+      req.params.id,
+      (req.user as any).sub,
+      req.body
+    );
     res.json(ApiResponse.success(data));
   })
 );

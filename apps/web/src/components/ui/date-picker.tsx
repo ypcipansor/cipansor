@@ -34,7 +34,7 @@ export function DatePicker({
           className={cn(
             "w-[280px] justify-start text-left font-normal",
             !date && "text-muted-foreground",
-            className
+            className,
           )}
         >
           <CalendarIcon className="mr-2 h-4 w-4" />
@@ -42,12 +42,7 @@ export function DatePicker({
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-auto p-0">
-        <Calendar
-          mode="single"
-          selected={date}
-          onSelect={setDate}
-          autoFocus
-        />
+        <Calendar mode="single" selected={date} onSelect={setDate} autoFocus />
       </PopoverContent>
     </Popover>
   );

@@ -18,32 +18,62 @@ router.use(authenticate);
 const teacherAndAbove = () =>
   authorize(
     RoleCode.SUPER_ADMIN,
-    RoleCode.TKQ_ADMIN, RoleCode.SDIT_ADMIN, RoleCode.SMPIT_ADMIN, RoleCode.SMAQ_ADMIN,
-    RoleCode.TKQ_GURU, RoleCode.SDIT_GURU, RoleCode.SMPIT_GURU, RoleCode.SMAQ_GURU,
-    RoleCode.TKQ_KEPALA_SEKOLAH, RoleCode.SDIT_KEPALA_SEKOLAH,
-    RoleCode.SMPIT_KEPALA_SEKOLAH, RoleCode.SMAQ_KEPALA_SEKOLAH,
-    RoleCode.MUSYRIF, RoleCode.MUHAFIDZ, RoleCode.MURABBI, RoleCode.WALI_KAMAR,
-    'UNIT_ADMIN', 'TEACHER', // Legacy pre-migration token values
+    RoleCode.TKQ_ADMIN,
+    RoleCode.SDIT_ADMIN,
+    RoleCode.SMPIT_ADMIN,
+    RoleCode.SMAQ_ADMIN,
+    RoleCode.TKQ_GURU,
+    RoleCode.SDIT_GURU,
+    RoleCode.SMPIT_GURU,
+    RoleCode.SMAQ_GURU,
+    RoleCode.TKQ_KEPALA_SEKOLAH,
+    RoleCode.SDIT_KEPALA_SEKOLAH,
+    RoleCode.SMPIT_KEPALA_SEKOLAH,
+    RoleCode.SMAQ_KEPALA_SEKOLAH,
+    RoleCode.MUSYRIF,
+    RoleCode.MUHAFIDZ,
+    RoleCode.MURABBI,
+    RoleCode.WALI_KAMAR,
+    'UNIT_ADMIN',
+    'TEACHER' // Legacy pre-migration token values
   );
 
 const adminOnly = () =>
   authorize(
     RoleCode.SUPER_ADMIN,
-    RoleCode.TKQ_ADMIN, RoleCode.SDIT_ADMIN, RoleCode.SMPIT_ADMIN, RoleCode.SMAQ_ADMIN,
-    'UNIT_ADMIN', // Legacy pre-migration token value
+    RoleCode.TKQ_ADMIN,
+    RoleCode.SDIT_ADMIN,
+    RoleCode.SMPIT_ADMIN,
+    RoleCode.SMAQ_ADMIN,
+    'UNIT_ADMIN' // Legacy pre-migration token value
   );
 
 const teacherOrParent = () =>
   authorize(
     RoleCode.SUPER_ADMIN,
-    RoleCode.TKQ_ADMIN, RoleCode.SDIT_ADMIN, RoleCode.SMPIT_ADMIN, RoleCode.SMAQ_ADMIN,
-    RoleCode.TKQ_GURU, RoleCode.SDIT_GURU, RoleCode.SMPIT_GURU, RoleCode.SMAQ_GURU,
-    RoleCode.TKQ_KEPALA_SEKOLAH, RoleCode.SDIT_KEPALA_SEKOLAH,
-    RoleCode.SMPIT_KEPALA_SEKOLAH, RoleCode.SMAQ_KEPALA_SEKOLAH,
-    RoleCode.MUSYRIF, RoleCode.MUHAFIDZ, RoleCode.MURABBI, RoleCode.WALI_KAMAR,
-    RoleCode.TKQ_ORANG_TUA, RoleCode.SDIT_ORANG_TUA,
-    RoleCode.SMPIT_ORANG_TUA, RoleCode.SMAQ_ORANG_TUA,
-    'UNIT_ADMIN', 'TEACHER', 'PARENT', // Legacy pre-migration token values
+    RoleCode.TKQ_ADMIN,
+    RoleCode.SDIT_ADMIN,
+    RoleCode.SMPIT_ADMIN,
+    RoleCode.SMAQ_ADMIN,
+    RoleCode.TKQ_GURU,
+    RoleCode.SDIT_GURU,
+    RoleCode.SMPIT_GURU,
+    RoleCode.SMAQ_GURU,
+    RoleCode.TKQ_KEPALA_SEKOLAH,
+    RoleCode.SDIT_KEPALA_SEKOLAH,
+    RoleCode.SMPIT_KEPALA_SEKOLAH,
+    RoleCode.SMAQ_KEPALA_SEKOLAH,
+    RoleCode.MUSYRIF,
+    RoleCode.MUHAFIDZ,
+    RoleCode.MURABBI,
+    RoleCode.WALI_KAMAR,
+    RoleCode.TKQ_ORANG_TUA,
+    RoleCode.SDIT_ORANG_TUA,
+    RoleCode.SMPIT_ORANG_TUA,
+    RoleCode.SMAQ_ORANG_TUA,
+    'UNIT_ADMIN',
+    'TEACHER',
+    'PARENT' // Legacy pre-migration token values
   );
 
 // ======================
@@ -72,11 +102,7 @@ router.get(
 );
 
 // List all sessions
-router.get(
-  '/',
-  teacherAndAbove(),
-  counselingController.getSessions.bind(counselingController)
-);
+router.get('/', teacherAndAbove(), counselingController.getSessions.bind(counselingController));
 
 // Get session by ID
 router.get(
@@ -86,11 +112,7 @@ router.get(
 );
 
 // Create session
-router.post(
-  '/',
-  teacherAndAbove(),
-  counselingController.createSession.bind(counselingController)
-);
+router.post('/', teacherAndAbove(), counselingController.createSession.bind(counselingController));
 
 // Update session
 router.put(

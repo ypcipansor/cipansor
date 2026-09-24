@@ -171,10 +171,7 @@ const KOMITE_ROLES = [
   "SMAQ_KOMITE",
 ];
 
-const ALUMNI_ROLES = [
-  "SMPIT_ALUMNI",
-  "SMAQ_ALUMNI",
-];
+const ALUMNI_ROLES = ["SMPIT_ALUMNI", "SMAQ_ALUMNI"];
 
 // Teacher-specific navigation
 const teacherNavigation: NavGroup[] = [
@@ -1898,7 +1895,11 @@ const alumniNavigation: NavGroup[] = [
     title: "Alumni",
     items: [
       { title: "Direktori Alumni", href: "/alumni", icon: Users },
-      { title: "Penempatan Karier", href: "/alumni/placement", icon: Briefcase },
+      {
+        title: "Penempatan Karier",
+        href: "/alumni/placement",
+        icon: Briefcase,
+      },
       { title: "Sanad Keilmuan", href: "/alumni/sanad", icon: ScrollText },
     ],
   },
@@ -1979,7 +1980,10 @@ export interface ActiveRole {
  * its children took Settings and Users & Roles out of every unit admin's menu
  * once their SUPER_ADMIN-only screens were nested under them.
  */
-function filterNavItemsByRoleCode(items: NavItem[], roleCode: string): NavItem[] {
+function filterNavItemsByRoleCode(
+  items: NavItem[],
+  roleCode: string,
+): NavItem[] {
   return items
     .filter((item) => !item.roleCodes || item.roleCodes.includes(roleCode))
     .map((item) => {

@@ -111,7 +111,7 @@ export async function checkPeriodStatus(unitId: string, date: Date) {
 export async function isPeriodOpen(
   unitId: string,
   date: Date,
-  tx: TransactionClient | typeof prisma = prisma,
+  tx: TransactionClient | typeof prisma = prisma
 ): Promise<boolean> {
   const period = await tx.financialPeriod.findFirst({
     where: {

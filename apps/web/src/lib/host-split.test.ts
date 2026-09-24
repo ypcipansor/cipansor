@@ -35,10 +35,14 @@ describe("the two public-path lists agree", () => {
     );
     const block = src.match(/const publicPrefixes\s*=\s*\[([\s\S]*?)\n\];/);
     if (!block) throw new Error("publicPrefixes not found in middleware.ts");
-    const fromMiddleware = [...block[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+    const fromMiddleware = [...block[1].matchAll(/"([^"]+)"/g)].map(
+      (m) => m[1],
+    );
 
     expect(fromMiddleware.length).toBeGreaterThan(0);
-    expect([...PUBLIC_PATH_PREFIXES].sort()).toEqual([...fromMiddleware].sort());
+    expect([...PUBLIC_PATH_PREFIXES].sort()).toEqual(
+      [...fromMiddleware].sort(),
+    );
   });
 });
 
@@ -108,10 +112,13 @@ describe("hostSplitActionFor", () => {
   });
 
   describe("portal host", () => {
-    it.each(PUBLIC_PATH_PREFIXES)("sends %s back to the public host", (prefix) => {
-      expect(target(PORTAL_HOST, prefix)).toBe(PUBLIC_HOST);
-      expect(target(PORTAL_HOST, `${prefix}/anak`)).toBe(PUBLIC_HOST);
-    });
+    it.each(PUBLIC_PATH_PREFIXES)(
+      "sends %s back to the public host",
+      (prefix) => {
+        expect(target(PORTAL_HOST, prefix)).toBe(PUBLIC_HOST);
+        expect(target(PORTAL_HOST, `${prefix}/anak`)).toBe(PUBLIC_HOST);
+      },
+    );
 
     it("keeps the root, which is the way in to the application", () => {
       // Not a marketing page here: middleware turns it into the dashboard or
@@ -143,9 +150,7 @@ describe("hostSplitActionFor", () => {
   });
 
   it("is case-insensitive and port-insensitive about the host", () => {
-    expect(target("Portal.Cipansor.Or.Id:443", "/profil")).toBe(
-      PUBLIC_HOST,
-    );
+    expect(target("Portal.Cipansor.Or.Id:443", "/profil")).toBe(PUBLIC_HOST);
     expect(target("CIPANSOR.OR.ID", "/dashboard")).toBe("404");
   });
 
@@ -155,9 +160,9 @@ describe("hostSplitActionFor", () => {
     for (const host of [PUBLIC_HOST, PORTAL_HOST, "localhost:3000"]) {
       for (const path of ["/", "/profil", "/dashboard"]) {
         const a = hostSplitActionFor(host, path);
-        expect(a === null || a.kind === "redirect" || a.kind === "notFound").toBe(
-          true,
-        );
+        expect(
+          a === null || a.kind === "redirect" || a.kind === "notFound",
+        ).toBe(true);
       }
     }
   });

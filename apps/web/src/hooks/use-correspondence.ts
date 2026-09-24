@@ -14,7 +14,9 @@ import {
   ListParticipantsQueryInput,
 } from "@cipansor/shared";
 
-export function useCorrespondenceParticipants(params?: ListParticipantsQueryInput) {
+export function useCorrespondenceParticipants(
+  params?: ListParticipantsQueryInput,
+) {
   return useQuery({
     queryKey: ["correspondenceParticipants", params],
     queryFn: async () => {
@@ -118,7 +120,13 @@ export function useCorrespondence(unitId?: string) {
 
   // Update Letter
   const updateLetter = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: UpdateLetterInput }) => {
+    mutationFn: async ({
+      id,
+      data,
+    }: {
+      id: string;
+      data: UpdateLetterInput;
+    }) => {
       const response = await api.patch(`/correspondence/letters/${id}`, data);
       return response.data;
     },
@@ -130,7 +138,15 @@ export function useCorrespondence(unitId?: string) {
 
   // Submit DRAFT for Review
   const submitForReview = useMutation({
-    mutationFn: async ({ id, note, reviewerIds }: { id: string; note?: string; reviewerIds?: string[] }) => {
+    mutationFn: async ({
+      id,
+      note,
+      reviewerIds,
+    }: {
+      id: string;
+      note?: string;
+      reviewerIds?: string[];
+    }) => {
       const response = await api.post(`/correspondence/letters/${id}/submit`, {
         note,
         reviewerIds,
@@ -220,7 +236,10 @@ export function useCorrespondence(unitId?: string) {
    */
   const resubmitLetter = useMutation({
     mutationFn: async ({ id, note }: { id: string; note?: string }) => {
-      const response = await api.post(`/correspondence/letters/${id}/resubmit`, { note });
+      const response = await api.post(
+        `/correspondence/letters/${id}/resubmit`,
+        { note },
+      );
       return response.data;
     },
     onSuccess: (_d, v) => {
@@ -238,7 +257,10 @@ export function useCorrespondence(unitId?: string) {
    * tidak dapat dituliskan di mana pun.
    */
   const dispatchLetter = useMutation({
-    mutationFn: async ({ id, ...body }: DispatchLetterInput & { id: string }) => {
+    mutationFn: async ({
+      id,
+      ...body
+    }: DispatchLetterInput & { id: string }) => {
       const response = await api.post(
         `/correspondence/letters/${id}/dispatch`,
         body,
@@ -265,10 +287,9 @@ export function useCorrespondence(unitId?: string) {
       id: string;
       ccRecipients: LetterCcInput[];
     }) => {
-      const response = await api.put(
-        `/correspondence/letters/${id}/tembusan`,
-        { ccRecipients },
-      );
+      const response = await api.put(`/correspondence/letters/${id}/tembusan`, {
+        ccRecipients,
+      });
       return response.data;
     },
     onSuccess: (_d, v) => {

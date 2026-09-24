@@ -10,11 +10,7 @@ export type EventCategory =
   | "EXAM"
   | "OTHER";
 export type EventRecurrence =
-  | "NONE"
-  | "DAILY"
-  | "WEEKLY"
-  | "MONTHLY"
-  | "YEARLY";
+  "NONE" | "DAILY" | "WEEKLY" | "MONTHLY" | "YEARLY";
 
 export interface CalendarEvent {
   id: string;

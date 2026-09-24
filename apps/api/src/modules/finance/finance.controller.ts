@@ -335,7 +335,11 @@ export async function getUnitFinanceStats(req: Request, res: Response, next: Nex
   }
 }
 
-export async function getStudentOutstandingBalances(req: Request, res: Response, next: NextFunction) {
+export async function getStudentOutstandingBalances(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
   try {
     const { unitId } = req.params;
     const data = await financeService.getStudentOutstandingBalances(unitId);

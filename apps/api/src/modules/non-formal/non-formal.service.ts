@@ -60,10 +60,7 @@ export const courseService = {
       });
 
       if (!course) throw new Error('Course not found');
-      if (
-        course.maxParticipants != null &&
-        course._count.enrollments >= course.maxParticipants
-      ) {
+      if (course.maxParticipants != null && course._count.enrollments >= course.maxParticipants) {
         throw new Error('Kuota peserta kursus sudah penuh');
       }
 

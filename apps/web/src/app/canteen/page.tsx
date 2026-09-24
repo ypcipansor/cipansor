@@ -230,9 +230,10 @@ function CanteenPageContent() {
   const { data: categories } = useQuery({
     queryKey: ["canteen-categories", selectedBUId],
     queryFn: async () => {
-      const url = selectedBUId !== "ALL"
-        ? `/api/canteen/categories?businessUnitId=${selectedBUId}`
-        : "/api/canteen/categories";
+      const url =
+        selectedBUId !== "ALL"
+          ? `/api/canteen/categories?businessUnitId=${selectedBUId}`
+          : "/api/canteen/categories";
       const res = await fetch(url);
       if (!res.ok) throw new Error("Failed to fetch categories");
       const json = await res.json();
@@ -250,8 +251,7 @@ function CanteenPageContent() {
             : undefined,
         search: search || undefined,
         isAvailable: "true",
-        businessUnitId:
-          selectedBUId !== "ALL" ? selectedBUId : undefined,
+        businessUnitId: selectedBUId !== "ALL" ? selectedBUId : undefined,
       }),
   });
 
@@ -268,9 +268,10 @@ function CanteenPageContent() {
   const { data: efficiencyData } = useQuery({
     queryKey: ["canteen-efficiency", selectedBUId],
     queryFn: async () => {
-      const url = selectedBUId !== "ALL"
-        ? `/api/canteen/efficiency?businessUnitId=${selectedBUId}`
-        : "/api/canteen/efficiency";
+      const url =
+        selectedBUId !== "ALL"
+          ? `/api/canteen/efficiency?businessUnitId=${selectedBUId}`
+          : "/api/canteen/efficiency";
       const res = await fetch(url);
       if (!res.ok) return null;
       const json = await res.json();
@@ -444,19 +445,32 @@ function CanteenPageContent() {
       <div className="flex items-center gap-4 bg-muted/30 p-4 rounded-xl border">
         <Store className="h-5 w-5 text-primary" />
         <div className="flex-1">
-          <Label htmlFor="bu-select" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Pilih Unit Usaha / Kantin</Label>
-          <Select value={selectedBUId} onValueChange={(val) => {
-            setSelectedBUId(val);
-            setSelectedCategory("ALL");
-            setCart([]);
-          }}>
-            <SelectTrigger id="bu-select" className="border-none bg-transparent p-0 h-auto focus:ring-0 text-lg font-semibold">
+          <Label
+            htmlFor="bu-select"
+            className="text-xs font-bold uppercase tracking-wider text-muted-foreground"
+          >
+            Pilih Unit Usaha / Kantin
+          </Label>
+          <Select
+            value={selectedBUId}
+            onValueChange={(val) => {
+              setSelectedBUId(val);
+              setSelectedCategory("ALL");
+              setCart([]);
+            }}
+          >
+            <SelectTrigger
+              id="bu-select"
+              className="border-none bg-transparent p-0 h-auto focus:ring-0 text-lg font-semibold"
+            >
               <SelectValue placeholder="Pilih Unit Usaha" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="ALL">Semua Kantin (Global)</SelectItem>
               {businessUnits?.map((bu: any) => (
-                <SelectItem key={bu.id} value={bu.id}>{bu.name}</SelectItem>
+                <SelectItem key={bu.id} value={bu.id}>
+                  {bu.name}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -803,57 +817,83 @@ function CanteenPageContent() {
           <Card>
             <CardHeader>
               <CardTitle>Analisis Efisiensi Operasional</CardTitle>
-              <CardDescription>Kecepatan perputaran stok (Turnover) dan efisiensi produk</CardDescription>
+              <CardDescription>
+                Kecepatan perputaran stok (Turnover) dan efisiensi produk
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="flex items-center gap-4 p-6 bg-indigo-50 rounded-2xl border border-indigo-100">
                 <div className="h-16 w-16 rounded-full bg-white flex items-center justify-center border-4 border-indigo-200">
-                   <span className="text-2xl font-black text-indigo-700">{efficiencyData?.overallEfficiency || 0}%</span>
+                  <span className="text-2xl font-black text-indigo-700">
+                    {efficiencyData?.overallEfficiency || 0}%
+                  </span>
                 </div>
                 <div>
-                   <h3 className="font-bold text-indigo-900">Skor Efisiensi Global</h3>
-                   <p className="text-sm text-indigo-700">Rata-rata kecepatan stok keluar dibandingkan ketersediaan</p>
+                  <h3 className="font-bold text-indigo-900">
+                    Skor Efisiensi Global
+                  </h3>
+                  <p className="text-sm text-indigo-700">
+                    Rata-rata kecepatan stok keluar dibandingkan ketersediaan
+                  </p>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                 <div className="space-y-3">
-                    <h4 className="text-sm font-bold flex items-center gap-2 text-emerald-700">
-                       <TrendingUp className="h-4 w-4" /> Produk Paling Cepat (Fast Moving)
-                    </h4>
-                    <div className="space-y-2">
-                       {efficiencyData?.topItems?.map((item: any) => (
-                         <div key={item.id} className="p-3 border rounded-lg bg-white flex justify-between items-center">
-                            <div>
-                               <p className="text-sm font-medium">{item.name}</p>
-                               <p className="text-[10px] text-muted-foreground">Stok: {item.stock} • Keluar: {item.turnover}</p>
-                            </div>
-                            <Badge variant="outline" className="text-emerald-700 border-emerald-200 bg-emerald-50">
-                               {item.efficiencyScore}%
-                            </Badge>
-                         </div>
-                       ))}
-                    </div>
-                 </div>
+                <div className="space-y-3">
+                  <h4 className="text-sm font-bold flex items-center gap-2 text-emerald-700">
+                    <TrendingUp className="h-4 w-4" /> Produk Paling Cepat (Fast
+                    Moving)
+                  </h4>
+                  <div className="space-y-2">
+                    {efficiencyData?.topItems?.map((item: any) => (
+                      <div
+                        key={item.id}
+                        className="p-3 border rounded-lg bg-white flex justify-between items-center"
+                      >
+                        <div>
+                          <p className="text-sm font-medium">{item.name}</p>
+                          <p className="text-[10px] text-muted-foreground">
+                            Stok: {item.stock} • Keluar: {item.turnover}
+                          </p>
+                        </div>
+                        <Badge
+                          variant="outline"
+                          className="text-emerald-700 border-emerald-200 bg-emerald-50"
+                        >
+                          {item.efficiencyScore}%
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                </div>
 
-                 <div className="space-y-3">
-                    <h4 className="text-sm font-bold flex items-center gap-2 text-rose-700">
-                       <AlertTriangle className="h-4 w-4" /> Produk Lambat (Slow Moving)
-                    </h4>
-                    <div className="space-y-2">
-                       {efficiencyData?.lowItems?.map((item: any) => (
-                         <div key={item.id} className="p-3 border rounded-lg bg-white flex justify-between items-center">
-                            <div>
-                               <p className="text-sm font-medium">{item.name}</p>
-                               <p className="text-[10px] text-muted-foreground">Stok: {item.stock} • Keluar: {item.turnover}</p>
-                            </div>
-                            <Badge variant="outline" className="text-rose-700 border-rose-200 bg-rose-50">
-                               {item.efficiencyScore}%
-                            </Badge>
-                         </div>
-                       ))}
-                    </div>
-                 </div>
+                <div className="space-y-3">
+                  <h4 className="text-sm font-bold flex items-center gap-2 text-rose-700">
+                    <AlertTriangle className="h-4 w-4" /> Produk Lambat (Slow
+                    Moving)
+                  </h4>
+                  <div className="space-y-2">
+                    {efficiencyData?.lowItems?.map((item: any) => (
+                      <div
+                        key={item.id}
+                        className="p-3 border rounded-lg bg-white flex justify-between items-center"
+                      >
+                        <div>
+                          <p className="text-sm font-medium">{item.name}</p>
+                          <p className="text-[10px] text-muted-foreground">
+                            Stok: {item.stock} • Keluar: {item.turnover}
+                          </p>
+                        </div>
+                        <Badge
+                          variant="outline"
+                          className="text-rose-700 border-rose-200 bg-rose-50"
+                        >
+                          {item.efficiencyScore}%
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>

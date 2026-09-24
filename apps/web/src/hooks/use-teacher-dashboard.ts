@@ -126,7 +126,7 @@ interface TeacherDashboardResponse {
  * mounted first decide what the cached value looks like.
  */
 function useTeacherDashboardQuery<T>(
-  select: (data: TeacherDashboardResponse) => T
+  select: (data: TeacherDashboardResponse) => T,
 ) {
   const { user } = useAuthStore();
 
@@ -214,7 +214,7 @@ export function useTeacherTodaySchedule() {
         status,
         type: "TAHFIDZ" as const,
       };
-    })
+    }),
   );
 }
 
@@ -238,7 +238,7 @@ export function useTeacherRecentSetoran(limit: number = 5) {
       score: record.score,
       createdAt: record.recordedAt,
       className: record.className ?? undefined,
-    }))
+    })),
   );
 }
 
@@ -254,7 +254,7 @@ export function useTeacherClasses() {
       level: cls.level,
       studentCount: cls.studentCount,
       isHomeroom: cls.isHomeroom,
-    }))
+    })),
   );
 }
 
@@ -317,9 +317,12 @@ export function getScoreDisplay(score: number | null): {
   if (score === null) {
     return { label: "Belum dinilai", color: "bg-gray-100 text-gray-700" };
   }
-  if (score >= 90) return { label: String(score), color: "bg-green-100 text-green-800" };
-  if (score >= 75) return { label: String(score), color: "bg-blue-100 text-blue-800" };
-  if (score >= 60) return { label: String(score), color: "bg-yellow-100 text-yellow-800" };
+  if (score >= 90)
+    return { label: String(score), color: "bg-green-100 text-green-800" };
+  if (score >= 75)
+    return { label: String(score), color: "bg-blue-100 text-blue-800" };
+  if (score >= 60)
+    return { label: String(score), color: "bg-yellow-100 text-yellow-800" };
   return { label: String(score), color: "bg-red-100 text-red-800" };
 }
 

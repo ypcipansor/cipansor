@@ -84,3 +84,21 @@ touched since the session began. One reminder per session, then never again.
 Both `Stop` and `PreCompact` fail open on everything else — unreadable input, an
 unreadable git tree, an unwritable stamp directory. A hook that breaks a session
 is worse than a hook that misses a reminder.
+
+**Why pushes are format-checked** (added 2026-09-24, the user's rule: "format
+before push; if it is not formatted, send it back to be formatted first").
+The repo had a `pnpm format` script and nobody ran it: 686 of ~1,890
+`.ts`/`.tsx` files had drifted from Prettier, so it was normalised in one
+commit (listed in `.git-blame-ignore-revs`) and CI's Lint job now runs
+`pnpm format:check`. That check comes minutes after a push, so
+`format-before-push.sh` answers first. It finds the repo the push runs in the
+way a shell would (`NAME=value` assignments, `cd`, `git -C`), checks only the
+`.ts`/`.tsx` files changed between the merge-base with `origin/main` and
+`HEAD`, and exits 2 with the list and the exact `--write` command. Prettier
+comes from `node_modules` when node is on PATH, else from Docker at the version
+pinned in `package.json` (an exact pin is required, or the hook could disagree
+with CI). With neither, or on any error, the push is allowed: CI still checks.
+The user considered, and chose against, a CI bot that commits formatting back
+to the branch: commits pushed with `GITHUB_TOKEN` do not trigger CI, and a bot
+pushing into branches that agents are pushing to makes their next push fail.
+`CLAUDE_SKIP_FORMAT_CHECK=1` turns the hook off.

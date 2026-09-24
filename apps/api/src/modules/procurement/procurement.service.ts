@@ -345,7 +345,8 @@ export const procurementService = {
 
         // Accounting Integration: Every purchase must be recorded in the General Ledger.
         // Best Practice: If no budget is linked, fallback to a unit-level mapped expense account.
-        let debitAccountId = prItem.budgetId && prItem.budget?.accountId ? prItem.budget.accountId : null;
+        let debitAccountId =
+          prItem.budgetId && prItem.budget?.accountId ? prItem.budget.accountId : null;
 
         if (prItem.budgetId) {
           await tx.budget.update({
@@ -395,7 +396,9 @@ export const procurementService = {
             },
           });
         } else {
-          console.warn(`[Procurement] No debit account found for PR Item ${prItem.id}. Journal entries skipped.`);
+          console.warn(
+            `[Procurement] No debit account found for PR Item ${prItem.id}. Journal entries skipped.`
+          );
         }
       }
 

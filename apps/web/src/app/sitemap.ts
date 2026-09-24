@@ -23,17 +23,37 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://cipansor.or.id";
 const STATIC_PAGES = [
   { url: SITE_URL, changeFrequency: "weekly", priority: 1 },
   { url: `${SITE_URL}/profil`, changeFrequency: "monthly", priority: 0.8 },
-  { url: `${SITE_URL}/profil/pimpinan`, changeFrequency: "monthly", priority: 0.6 },
-  { url: `${SITE_URL}/profil/legalitas`, changeFrequency: "yearly", priority: 0.6 },
-  { url: `${SITE_URL}/program-unggulan`, changeFrequency: "monthly", priority: 0.8 },
+  {
+    url: `${SITE_URL}/profil/pimpinan`,
+    changeFrequency: "monthly",
+    priority: 0.6,
+  },
+  {
+    url: `${SITE_URL}/profil/legalitas`,
+    changeFrequency: "yearly",
+    priority: 0.6,
+  },
+  {
+    url: `${SITE_URL}/program-unggulan`,
+    changeFrequency: "monthly",
+    priority: 0.8,
+  },
   { url: `${SITE_URL}/unit`, changeFrequency: "monthly", priority: 0.8 },
   { url: `${SITE_URL}/berita`, changeFrequency: "weekly", priority: 0.9 },
   { url: `${SITE_URL}/galeri`, changeFrequency: "monthly", priority: 0.7 },
   { url: `${SITE_URL}/wakaf-infaq`, changeFrequency: "weekly", priority: 0.9 },
   { url: `${SITE_URL}/kontak`, changeFrequency: "yearly", priority: 0.6 },
   { url: `${SITE_URL}/public/spmb`, changeFrequency: "weekly", priority: 0.9 },
-  { url: `${SITE_URL}/public/spmb/track`, changeFrequency: "monthly", priority: 0.5 },
-  { url: `${SITE_URL}/public/verify-sanad`, changeFrequency: "monthly", priority: 0.5 },
+  {
+    url: `${SITE_URL}/public/spmb/track`,
+    changeFrequency: "monthly",
+    priority: 0.5,
+  },
+  {
+    url: `${SITE_URL}/public/verify-sanad`,
+    changeFrequency: "monthly",
+    priority: 0.5,
+  },
 ] satisfies MetadataRoute.Sitemap;
 
 export default function sitemap(): MetadataRoute.Sitemap {

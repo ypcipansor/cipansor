@@ -14,12 +14,7 @@
 
 import { config } from '@/config';
 import { logger } from '@/lib/logger';
-import {
-  isRetryableStatus,
-  parseRetryAfter,
-  TransientUpstreamError,
-  withRetry,
-} from '../retry';
+import { isRetryableStatus, parseRetryAfter, TransientUpstreamError, withRetry } from '../retry';
 import type { LlmCompletionRequest, LlmCompletionResult, LlmProvider, LlmUsage } from './types';
 
 interface ChatCompletionResponse {
@@ -133,12 +128,13 @@ export class OpenAiCompatibleProvider implements LlmProvider {
       // penanya, dan mengulanginya berarti memintanya menunggu dua kali lipat
       // untuk panggilan yang memang terlalu lambat. Putus jaringan yang lain —
       // DNS, koneksi ditolak, sambungan terpotong — memang layak diulang.
-      if (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
+      if (
+        error instanceof Error &&
+        (error.name === 'AbortError' || error.name === 'TimeoutError')
+      ) {
         throw error;
       }
-      throw new TransientUpstreamError(
-        error instanceof Error ? error.message : String(error)
-      );
+      throw new TransientUpstreamError(error instanceof Error ? error.message : String(error));
     }
 
     if (!response.ok) {

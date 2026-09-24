@@ -24,7 +24,8 @@ function assignment(code: string, isPrimary: boolean) {
       id: "unit-sdit",
       code: "SDIT",
       name: "SD Islam Terpadu Cipansor",
-      address: "Jl. Raya Cipansor No. 1, Desa Cipansor, Kecamatan Contoh, Kabupaten Contoh, Jawa Barat 40000",
+      address:
+        "Jl. Raya Cipansor No. 1, Desa Cipansor, Kecamatan Contoh, Kabupaten Contoh, Jawa Barat 40000",
     },
   };
 }
@@ -36,7 +37,8 @@ function persisted(user: unknown, isAuthenticated = true) {
 /** What middleware.ts does with the cookie value, minus the NextRequest. */
 function middlewareReads(cookieValue: string) {
   const parsed = JSON.parse(cookieValue);
-  if (parsed.state?.isAuthenticated !== true || !parsed.state?.user) return null;
+  if (parsed.state?.isAuthenticated !== true || !parsed.state?.user)
+    return null;
   return {
     role: getEffectiveRole(parsed.state.user),
     roleCode: getPrimaryRoleCode(parsed.state.user),
@@ -62,26 +64,39 @@ describe("middlewareAuthCookieValue", () => {
     ["the primary assignment is not the first", fatUser],
     [
       "no assignment is marked primary — the first one decides",
-      { ...fatUser, userRoles: fatUser.userRoles.map((a) => ({ ...a, isPrimary: false })) },
+      {
+        ...fatUser,
+        userRoles: fatUser.userRoles.map((a) => ({ ...a, isPrimary: false })),
+      },
     ],
     ["legacy role only", { id: "u-2", role: "PARENT" }],
-    ["a raw RoleCode in the legacy column", { id: "u-3", role: "SMPIT_KEPALA_SEKOLAH", userRoles: [] }],
+    [
+      "a raw RoleCode in the legacy column",
+      { id: "u-3", role: "SMPIT_KEPALA_SEKOLAH", userRoles: [] },
+    ],
     [
       "the primary assignment has no role code",
-      { id: "u-4", role: "STAFF", userRoles: [{ isPrimary: true, role: null }] },
+      {
+        id: "u-4",
+        role: "STAFF",
+        userRoles: [{ isPrimary: true, role: null }],
+      },
     ],
     ["signed out", null],
   ];
 
-  it.each(cases)("the middleware reads the same role from the slim cookie: %s", (_, user) => {
-    const full = persisted(user);
-    const slim = middlewareAuthCookieValue(full);
-    expect(slim).not.toBeNull();
-    expect(middlewareReads(slim!)).toEqual(middlewareReads(full));
-    if (user) {
-      expect(getEffectiveRole(user as RbacUser)).toBeDefined();
-    }
-  });
+  it.each(cases)(
+    "the middleware reads the same role from the slim cookie: %s",
+    (_, user) => {
+      const full = persisted(user);
+      const slim = middlewareAuthCookieValue(full);
+      expect(slim).not.toBeNull();
+      expect(middlewareReads(slim!)).toEqual(middlewareReads(full));
+      if (user) {
+        expect(getEffectiveRole(user as RbacUser)).toBeDefined();
+      }
+    },
+  );
 
   it("keeps isAuthenticated false when the store says so", () => {
     const slim = middlewareAuthCookieValue(persisted(fatUser, false));
@@ -92,10 +107,14 @@ describe("middlewareAuthCookieValue", () => {
   it("stays far below the 4 KB browsers silently drop, however fat the user", () => {
     const fatter = {
       ...fatUser,
-      userRoles: Array.from({ length: 30 }, (_, i) => assignment(`ROLE_${i}`, i === 17)),
+      userRoles: Array.from({ length: 30 }, (_, i) =>
+        assignment(`ROLE_${i}`, i === 17),
+      ),
     };
     const full = encodeURIComponent(persisted(fatter));
-    const slim = encodeURIComponent(middlewareAuthCookieValue(persisted(fatter))!);
+    const slim = encodeURIComponent(
+      middlewareAuthCookieValue(persisted(fatter))!,
+    );
     // The bug: the full value is what the browser used to throw away.
     expect(full.length).toBeGreaterThan(4096);
     expect(slim.length).toBeLessThan(400);
@@ -110,7 +129,10 @@ describe("middlewareAuthCookieValue", () => {
     // The slim value only holds what getEffectiveRole/getPrimaryRoleCode read.
     // A field read straight off the cookie's user (parsed.state.user.<x>) would
     // silently come back undefined in production.
-    const src = fs.readFileSync(path.resolve(__dirname, "../../middleware.ts"), "utf8");
+    const src = fs.readFileSync(
+      path.resolve(__dirname, "../../middleware.ts"),
+      "utf8",
+    );
     const direct = src.match(/parsed\.state\??\.user\??\.\w+/g) ?? [];
     expect(direct).toEqual([]);
     const passedOn = src.match(/\w+\(parsed\.state\??\.user\)/g) ?? [];

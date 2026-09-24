@@ -67,9 +67,7 @@ export function assertMayReview(
   reviewerId: string
 ): ReviewerRung {
   if (!OPEN_FOR_REVIEW.includes(letterStatus)) {
-    throw new WorkflowError(
-      `Surat berstatus ${letterStatus} tidak sedang dalam tahap verifikasi.`
-    );
+    throw new WorkflowError(`Surat berstatus ${letterStatus} tidak sedang dalam tahap verifikasi.`);
   }
 
   const mine = reviewers.find((r) => r.reviewerId === reviewerId);
@@ -187,14 +185,10 @@ export function assertMayDispatch(
     );
   }
   if (signatureRevoked) {
-    throw new WorkflowError(
-      'Naskah ini sudah dicabut dan tidak boleh dikirimkan lagi.'
-    );
+    throw new WorkflowError('Naskah ini sudah dicabut dan tidak boleh dikirimkan lagi.');
   }
   if (letterStatus === LetterStatus.ARCHIVED) {
-    throw new WorkflowError(
-      'Surat ini sudah diarsipkan; pengirimannya tidak dapat dicatat lagi.'
-    );
+    throw new WorkflowError('Surat ini sudah diarsipkan; pengirimannya tidak dapat dicatat lagi.');
   }
   if (letterStatus !== LetterStatus.SIGNED && letterStatus !== LetterStatus.SENT) {
     throw new WorkflowError(

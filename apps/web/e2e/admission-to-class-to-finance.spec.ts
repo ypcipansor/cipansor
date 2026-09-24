@@ -1,8 +1,15 @@
 import { test, expect } from "@playwright/test";
-import { apiLogin, apiRequest, injectSession, SEED_USERS } from "./helpers/auth-api";
+import {
+  apiLogin,
+  apiRequest,
+  injectSession,
+  SEED_USERS,
+} from "./helpers/auth-api";
 
 test.describe("End-to-End: PPDB Registration to Finance & Medical", () => {
-  test("should execute the integrated student onboarding orchestrator", async ({ page }) => {
+  test("should execute the integrated student onboarding orchestrator", async ({
+    page,
+  }) => {
     const session = await apiLogin(SEED_USERS.superAdmin);
     await injectSession(page, session);
 
@@ -19,30 +26,32 @@ test.describe("End-to-End: PPDB Registration to Finance & Medical", () => {
     // so reused contact details would collide across runs.
     const stamp = Date.now();
     const fullName = `Budi Onboard E2E ${stamp}`;
-    const created = await apiRequest<{ data: { id: string; registrationNo: string } }>(
-      session,
-      "POST",
-      "/admissions/registrants",
-      {
-        admissionPeriodId: period.id,
-        fullName,
-        gender: "MALE",
-        birthPlace: "Tasikmalaya",
-        birthDate: "2015-05-01T00:00:00.000Z",
-        address: "Jl. Pendaftaran E2E No. 1",
-        fatherName: `Bapak Budi ${stamp}`,
-        motherName: `Ibu Budi ${stamp}`,
-        parentName: `Bapak Budi ${stamp}`,
-        parentPhone: `0813${String(stamp).slice(-8)}`,
-        parentEmail: `wali.e2e.${stamp}@example.com`,
-        email: `budi.e2e.${stamp}@example.com`,
-      },
-    );
+    const created = await apiRequest<{
+      data: { id: string; registrationNo: string };
+    }>(session, "POST", "/admissions/registrants", {
+      admissionPeriodId: period.id,
+      fullName,
+      gender: "MALE",
+      birthPlace: "Tasikmalaya",
+      birthDate: "2015-05-01T00:00:00.000Z",
+      address: "Jl. Pendaftaran E2E No. 1",
+      fatherName: `Bapak Budi ${stamp}`,
+      motherName: `Ibu Budi ${stamp}`,
+      parentName: `Bapak Budi ${stamp}`,
+      parentPhone: `0813${String(stamp).slice(-8)}`,
+      parentEmail: `wali.e2e.${stamp}@example.com`,
+      email: `budi.e2e.${stamp}@example.com`,
+    });
     const registrantId = created.data.id;
     // The integrated onboarding button only shows for ACCEPTED registrants.
-    await apiRequest(session, "PATCH", `/admissions/registrants/${registrantId}/status`, {
-      status: "ACCEPTED",
-    });
+    await apiRequest(
+      session,
+      "PATCH",
+      `/admissions/registrants/${registrantId}/status`,
+      {
+        status: "ACCEPTED",
+      },
+    );
 
     // Acceptance is an academic decision, not daftar ulang. Enrolment is gated
     // on the fee being settled, so record it — this is the step a clerk does
@@ -59,12 +68,20 @@ test.describe("End-to-End: PPDB Registration to Finance & Medical", () => {
       // /ppdb was renamed to /spmb in #439 (next.config.ts still redirects the
       // old path, but a test should name the route it means).
       await page.goto("/spmb/registrations");
-      await expect(page.getByRole("heading", { name: /Pendaftar/i })).toBeVisible();
+      await expect(
+        page.getByRole("heading", { name: /Pendaftar/i }),
+      ).toBeVisible();
 
-      await page.getByPlaceholder(/cari|search/i).first().fill(fullName).catch(() => {});
+      await page
+        .getByPlaceholder(/cari|search/i)
+        .first()
+        .fill(fullName)
+        .catch(() => {});
       await page.getByRole("link", { name: fullName }).first().click();
 
-      await expect(page.getByRole("heading", { name: fullName })).toBeVisible({ timeout: 15000 });
+      await expect(page.getByRole("heading", { name: fullName })).toBeVisible({
+        timeout: 15000,
+      });
 
       // The integrated onboarding button is present because status is ACCEPTED.
       const onboardButton = page.getByRole("button", {
@@ -86,11 +103,18 @@ test.describe("End-to-End: PPDB Registration to Finance & Medical", () => {
         data: { status: string; studentId?: string | null };
       }>(session, "GET", `/admissions/registrants/${registrantId}`);
       expect(detail.data.status).toBe("ENROLLED");
-      expect(detail.data.studentId, "onboarding should link a created student").toBeTruthy();
+      expect(
+        detail.data.studentId,
+        "onboarding should link a created student",
+      ).toBeTruthy();
     } finally {
       // Best-effort cleanup of the throwaway registrant (the created student is
       // cleared by the next full-suite reseed).
-      await apiRequest(session, "DELETE", `/admissions/registrants/${registrantId}`).catch(() => {});
+      await apiRequest(
+        session,
+        "DELETE",
+        `/admissions/registrants/${registrantId}`,
+      ).catch(() => {});
     }
   });
 });

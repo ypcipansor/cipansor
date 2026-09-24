@@ -95,8 +95,7 @@ function inspect(variable: string, value: string | undefined, issues: SecretIssu
     issues.push({
       variable,
       reason:
-        'is still a leaked/default value from this public repository — that ' +
-        'key is public',
+        'is still a leaked/default value from this public repository — that ' + 'key is public',
     });
     return;
   }
@@ -135,8 +134,7 @@ export function assertProductionSecrets(input: SecretCheckInput = {}): void {
   const issues = findSecretIssues({
     env,
     jwtSecret: input.jwtSecret ?? process.env.JWT_SECRET,
-    studentCardHmacSecret:
-      input.studentCardHmacSecret ?? process.env.STUDENT_CARD_HMAC_SECRET,
+    studentCardHmacSecret: input.studentCardHmacSecret ?? process.env.STUDENT_CARD_HMAC_SECRET,
   });
 
   if (issues.length === 0) return;

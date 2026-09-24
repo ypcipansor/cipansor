@@ -81,9 +81,7 @@ describe('sendMonthlySppReminders', () => {
 
   it('keeps going when one parent notification fails', async () => {
     mockFindMany.mockResolvedValue([invoice()]);
-    mockCreateNotification
-      .mockRejectedValueOnce(new Error('boom'))
-      .mockResolvedValue({ id: 'n2' });
+    mockCreateNotification.mockRejectedValueOnce(new Error('boom')).mockResolvedValue({ id: 'n2' });
 
     const result = await sendMonthlySppReminders(new Date('2026-07-01'));
     expect(result.notified).toBe(1);

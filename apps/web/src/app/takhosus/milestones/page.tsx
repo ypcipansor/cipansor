@@ -116,42 +116,48 @@ export default function TakhosusMilestonePage() {
   const { data: apiProgress, isLoading } = useMyProgress();
 
   // Transform API data to component format
-  const progress = apiProgress ? {
-    studentId: apiProgress.student.id,
-    studentName: apiProgress.student.user.name,
-    class: apiProgress.halaqoh.name,
-    currentLevel: 1, // Default or calculated
-    currentJuz: apiProgress.enrollment.currentJuz,
-    totalAyahMemorized: 0, // Not available in API
-    startDate: apiProgress.enrollment.enrolledAt,
-    expectedCompletion: apiProgress.enrollment.targetCompletionDate || new Date().toISOString(),
-    weeklyTarget: 0, // Not available in API
-    lastWeekProgress: 0, // Not available in API
-    streakDays: 0, // Not available in API
-    sanadCount: apiProgress.juzProgress.filter(j => j.certified).length,
-    milestones: TAKHOSUS_LEVELS.map((level) => {
-      const isCompleted = apiProgress.enrollment.currentJuz >= level.juzTarget;
-      // Calculate progress percentage for this level
-      let levelProgress = 0;
-      if (isCompleted) {
-        levelProgress = 100;
-      } else {
-        // Logic to calculate progress within this level could be added here
-        // For now simplifying
-        levelProgress = (apiProgress.enrollment.currentJuz / level.juzTarget) * 100;
-      }
-
-      return {
-        level: level.level,
-        completed: isCompleted,
-        progress: levelProgress,
+  const progress = apiProgress
+    ? {
+        studentId: apiProgress.student.id,
+        studentName: apiProgress.student.user.name,
+        class: apiProgress.halaqoh.name,
+        currentLevel: 1, // Default or calculated
         currentJuz: apiProgress.enrollment.currentJuz,
-        targetJuz: level.juzTarget,
-        completedDate: undefined, // Not easily available per level without more logic
-        sanadId: undefined
-      };
-    }),
-  } : fallbackProgress;
+        totalAyahMemorized: 0, // Not available in API
+        startDate: apiProgress.enrollment.enrolledAt,
+        expectedCompletion:
+          apiProgress.enrollment.targetCompletionDate ||
+          new Date().toISOString(),
+        weeklyTarget: 0, // Not available in API
+        lastWeekProgress: 0, // Not available in API
+        streakDays: 0, // Not available in API
+        sanadCount: apiProgress.juzProgress.filter((j) => j.certified).length,
+        milestones: TAKHOSUS_LEVELS.map((level) => {
+          const isCompleted =
+            apiProgress.enrollment.currentJuz >= level.juzTarget;
+          // Calculate progress percentage for this level
+          let levelProgress = 0;
+          if (isCompleted) {
+            levelProgress = 100;
+          } else {
+            // Logic to calculate progress within this level could be added here
+            // For now simplifying
+            levelProgress =
+              (apiProgress.enrollment.currentJuz / level.juzTarget) * 100;
+          }
+
+          return {
+            level: level.level,
+            completed: isCompleted,
+            progress: levelProgress,
+            currentJuz: apiProgress.enrollment.currentJuz,
+            targetJuz: level.juzTarget,
+            completedDate: undefined, // Not easily available per level without more logic
+            sanadId: undefined,
+          };
+        }),
+      }
+    : fallbackProgress;
 
   const totalProgress = (progress.currentJuz / 30) * 100;
 

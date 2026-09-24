@@ -27,8 +27,15 @@ import {
 import { prisma } from '@/lib/prisma';
 import { tahfidzMilestones } from '@/modules/tahfidz/quran-surahs';
 import { notificationService } from '@/modules/notifications/email-sms.service';
-import { getChannelPolicy, type ChannelPolicy } from '@/modules/notifications/notifications.service';
-import { shouldSendNotification, isInQuietHours, getPreferences } from '@/modules/notifications/preferences.service';
+import {
+  getChannelPolicy,
+  type ChannelPolicy,
+} from '@/modules/notifications/notifications.service';
+import {
+  shouldSendNotification,
+  isInQuietHours,
+  getPreferences,
+} from '@/modules/notifications/preferences.service';
 import { config } from '@/config';
 
 /**
@@ -67,10 +74,7 @@ async function getSafeChannelPolicy(): Promise<ChannelPolicy> {
 type GuardianContact = { id: string; name: string | null; email: string | null };
 
 type FamilyPreferenceType =
-  | 'tahfidzProgress'
-  | 'paymentReminders'
-  | 'attendanceAlerts'
-  | 'academicUpdates';
+  'tahfidzProgress' | 'paymentReminders' | 'attendanceAlerts' | 'academicUpdates';
 
 async function resolveGuardian(studentId: string): Promise<GuardianContact | null> {
   const student = await prisma.student.findUnique({
@@ -110,7 +114,7 @@ async function resolveGuardian(studentId: string): Promise<GuardianContact | nul
  */
 async function guardianAcceptsEmail(
   guardian: GuardianContact,
-  preferenceType: FamilyPreferenceType,
+  preferenceType: FamilyPreferenceType
 ): Promise<boolean> {
   if (!guardian.email) return false;
 
@@ -670,7 +674,7 @@ export function initializeEventBus(): void {
   eventBus.on('email:send_reset_token', async (event) => {
     logger.info('Email dispatch requested for password reset token', {
       userId: event.userId,
-      email: event.email
+      email: event.email,
     });
 
     try {
@@ -762,7 +766,10 @@ async function checkTahfidzMilestones(event: TahfidzCreatedEvent): Promise<void>
     const ayahByJuz = new Map(perJuz.map((row) => [row.juz, row._sum.totalAyah ?? 0] as const));
     const totalAyah = [...ayahByJuz.values()].reduce((sum, ayah) => sum + ayah, 0);
 
-    for (const milestone of tahfidzMilestones(ayahByJuz, { juz: event.juz, totalAyah: event.totalAyah })) {
+    for (const milestone of tahfidzMilestones(ayahByJuz, {
+      juz: event.juz,
+      totalAyah: event.totalAyah,
+    })) {
       eventBus.emit('tahfidz:milestone', {
         studentId: event.studentId,
         studentUserId: student.user.id,

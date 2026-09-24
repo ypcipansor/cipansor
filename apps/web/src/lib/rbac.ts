@@ -17,12 +17,7 @@
 
 /** The six coarse buckets the route/dashboard maps are keyed on. */
 export type LegacyRole =
-  | "SUPER_ADMIN"
-  | "UNIT_ADMIN"
-  | "TEACHER"
-  | "STAFF"
-  | "STUDENT"
-  | "PARENT";
+  "SUPER_ADMIN" | "UNIT_ADMIN" | "TEACHER" | "STAFF" | "STUDENT" | "PARENT";
 
 const LEGACY_ROLES: readonly LegacyRole[] = [
   "SUPER_ADMIN",

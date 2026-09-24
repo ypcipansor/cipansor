@@ -343,7 +343,7 @@ describe('Perencanaan Service', () => {
       };
 
       vi.mocked(prisma.planObjective.create).mockResolvedValue({ id: 'obj-1', ...objData } as any);
-      
+
       // Mocks for progress recalculation
       vi.mocked(prisma.planObjective.findMany).mockResolvedValue([
         { weight: 60, progress: 50 },
@@ -468,25 +468,27 @@ describe('Perencanaan Service', () => {
                 budget: { toNumber: () => 1000000 },
                 budgetRel: {
                   accountId: 'acc-1',
-                  account: { normalBalance: 'DEBIT' }
-                }
-              }
-            ]
-          }
-        ]
+                  account: { normalBalance: 'DEBIT' },
+                },
+              },
+            ],
+          },
+        ],
       };
 
       vi.mocked(prisma.strategicPlan.findUnique).mockResolvedValue(mockPlan as any);
       vi.mocked(prisma.journalEntry.aggregate).mockResolvedValue({
-        _sum: { debit: { toNumber: () => 500000 }, credit: { toNumber: () => 100000 } }
+        _sum: { debit: { toNumber: () => 500000 }, credit: { toNumber: () => 100000 } },
       } as any);
 
       const result = (await perencanaanService.getPlanById(planId))!;
       expect(result.totalRealization).toBe(400000); // 500k - 100k
       expect(result.financialProgress).toBe(40); // 400k / 1m
-      expect(prisma.journalEntry.aggregate).toHaveBeenCalledWith(expect.objectContaining({
-        where: expect.objectContaining({ accountId: 'acc-1' })
-      }));
+      expect(prisma.journalEntry.aggregate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ accountId: 'acc-1' }),
+        })
+      );
     });
 
     it('should not double-count realization when activities share the same budget account', async () => {
@@ -505,25 +507,25 @@ describe('Perencanaan Service', () => {
                 budget: { toNumber: () => 600000 },
                 budgetRel: {
                   accountId: 'acc-shared',
-                  account: { normalBalance: 'DEBIT' }
-                }
+                  account: { normalBalance: 'DEBIT' },
+                },
               },
               {
                 id: 'act-2',
                 budget: { toNumber: () => 400000 },
                 budgetRel: {
                   accountId: 'acc-shared',
-                  account: { normalBalance: 'DEBIT' }
-                }
-              }
-            ]
-          }
-        ]
+                  account: { normalBalance: 'DEBIT' },
+                },
+              },
+            ],
+          },
+        ],
       };
 
       vi.mocked(prisma.strategicPlan.findUnique).mockResolvedValue(mockPlan as any);
       vi.mocked(prisma.journalEntry.aggregate).mockResolvedValue({
-        _sum: { debit: { toNumber: () => 500000 }, credit: { toNumber: () => 0 } }
+        _sum: { debit: { toNumber: () => 500000 }, credit: { toNumber: () => 0 } },
       } as any);
 
       const result = (await perencanaanService.getPlanById(planId))!;
@@ -705,5 +707,4 @@ describe('Perencanaan Service', () => {
       });
     });
   });
-
 });

@@ -399,4 +399,3 @@ export const maxFileSize = (
   message:
     message || `Ukuran file maksimal ${(maxBytes / 1024 / 1024).toFixed(1)}MB`,
 });
-

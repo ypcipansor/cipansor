@@ -90,7 +90,7 @@ export function cacheKeyFor(
    * production caller never passes it — the default is the hash of the corpus
    * this process was built with.
    */
-  corpusHash: string = CORPUS_HASH,
+  corpusHash: string = CORPUS_HASH
 ): string | null {
   const tokens = [...new Set(tokenize(question))].sort();
   // Nothing to key on. Such a question retrieves nothing and refuses anyway.

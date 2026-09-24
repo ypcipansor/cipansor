@@ -219,7 +219,6 @@ export function orphanedIdentityDocuments(
   const keep = new Set(referenced);
   return onDisk.filter(
     (f) =>
-      !keep.has(f.fileName) &&
-      now.getTime() - f.modifiedAt.getTime() >= IDENTITY_ORPHAN_GRACE_MS
+      !keep.has(f.fileName) && now.getTime() - f.modifiedAt.getTime() >= IDENTITY_ORPHAN_GRACE_MS
   );
 }

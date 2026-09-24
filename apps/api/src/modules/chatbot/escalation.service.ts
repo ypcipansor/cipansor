@@ -79,7 +79,10 @@ export async function createEscalation(
 
 /** Baris ringkas untuk badan surat; kosongnya dilewati, tidak dicetak kosong. */
 function detailLines(row: ChatbotEscalation): Array<[string, string]> {
-  const lines: Array<[string, string]> = [['Nama', row.name], ['Email', row.email]];
+  const lines: Array<[string, string]> = [
+    ['Nama', row.name],
+    ['Email', row.email],
+  ];
   if (row.phone) lines.push(['Telepon', row.phone]);
   if (row.whatsapp) lines.push(['WhatsApp', row.whatsapp]);
   lines.push(['Nomor rujukan', referenceOf(row.id)]);

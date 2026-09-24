@@ -46,7 +46,7 @@ describe('user.service unit scoping (one admin per unit)', () => {
     ).rejects.toMatchObject({ statusCode: 403 });
   });
 
-  it("rejects a unit admin creating a user in another unit", async () => {
+  it('rejects a unit admin creating a user in another unit', async () => {
     const input = { role: 'TEACHER', unitId: unitB } as CreateUserInput;
     await expect(
       userService.create(input, { roleCode: 'SDIT_ADMIN', unitId: unitA })
@@ -115,20 +115,20 @@ describe('user.service unit scoping (one admin per unit)', () => {
   it('scopes findAll to the unit for unit admins', async () => {
     mock.user.findMany.mockResolvedValue([]);
     mock.user.count.mockResolvedValue(0);
-    await userService.findAll(
-      { page: 1, limit: 10 } as Parameters<typeof userService.findAll>[0],
-      { roleCode: 'SDIT_ADMIN', unitId: unitA }
-    );
+    await userService.findAll({ page: 1, limit: 10 } as Parameters<typeof userService.findAll>[0], {
+      roleCode: 'SDIT_ADMIN',
+      unitId: unitA,
+    });
     expect(mock.user.findMany.mock.calls[0][0].where.unitId).toBe(unitA);
   });
 
   it('does not scope findAll for SUPER_ADMIN', async () => {
     mock.user.findMany.mockResolvedValue([]);
     mock.user.count.mockResolvedValue(0);
-    await userService.findAll(
-      { page: 1, limit: 10 } as Parameters<typeof userService.findAll>[0],
-      { roleCode: 'SUPER_ADMIN', unitId: null }
-    );
+    await userService.findAll({ page: 1, limit: 10 } as Parameters<typeof userService.findAll>[0], {
+      roleCode: 'SUPER_ADMIN',
+      unitId: null,
+    });
     expect(mock.user.findMany.mock.calls[0][0].where.unitId).toBeUndefined();
   });
 });

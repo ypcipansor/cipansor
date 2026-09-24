@@ -14,12 +14,7 @@
 
 export type Ekspektasi = 'DI_ATAS' | 'SESUAI' | 'DI_BAWAH';
 
-export type Predikat =
-  | 'SANGAT_BAIK'
-  | 'BAIK'
-  | 'BUTUH_PERBAIKAN'
-  | 'KURANG'
-  | 'SANGAT_KURANG';
+export type Predikat = 'SANGAT_BAIK' | 'BAIK' | 'BUTUH_PERBAIKAN' | 'KURANG' | 'SANGAT_KURANG';
 
 /**
  * Ambang terhadap ekspektasi. Angka ini adalah kebijakan yayasan, bukan
@@ -74,10 +69,7 @@ const LABEL: Record<Predikat, string> = {
   SANGAT_KURANG: 'Sangat Kurang',
 };
 
-export function predikatKinerja(
-  performanceScore: number,
-  behaviorScore: number
-): PredikatKinerja {
+export function predikatKinerja(performanceScore: number, behaviorScore: number): PredikatKinerja {
   const hasilKerja = ratingOf(performanceScore);
   const perilakuKerja = ratingOf(behaviorScore);
   const predikat = KUADRAN[hasilKerja][perilakuKerja];

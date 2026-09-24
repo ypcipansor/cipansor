@@ -10,7 +10,9 @@ import { settledContent } from "./helpers/page-state";
  * so the failure is reproducible instead of load-dependent.
  */
 test.describe("e2e helper: settledContent", () => {
-  test("reading the DOM straight through a redirect is what breaks", async ({ page }) => {
+  test("reading the DOM straight through a redirect is what breaks", async ({
+    page,
+  }) => {
     const nav = page.goto("/inventory", { waitUntil: "commit" });
     let error: unknown;
     try {
@@ -22,10 +24,15 @@ test.describe("e2e helper: settledContent", () => {
     }
     await nav.catch(() => {});
 
-    expect(error, "page.content() should fail during a navigation").toBeDefined();
+    expect(
+      error,
+      "page.content() should fail during a navigation",
+    ).toBeDefined();
   });
 
-  test("settledContent reads the same moment without failing", async ({ page }) => {
+  test("settledContent reads the same moment without failing", async ({
+    page,
+  }) => {
     const nav = page.goto("/inventory", { waitUntil: "commit" });
     const html = await settledContent(page);
     await nav.catch(() => {});

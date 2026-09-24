@@ -130,9 +130,7 @@ describe('schema/service limit alignment', () => {
     // rejects it, the service because an internal caller can skip Zod.
     expect(bulkCreateSanadSchema.safeParse({ records: [] }).success).toBe(false);
 
-    const empty = { records: [] } as unknown as Parameters<
-      typeof bulkCreateSanadRecords
-    >[0];
+    const empty = { records: [] } as unknown as Parameters<typeof bulkCreateSanadRecords>[0];
     await expect(bulkCreateSanadRecords(empty, context)).rejects.toMatchObject({
       code: 'BAD_REQUEST',
     });

@@ -35,9 +35,7 @@ async function main() {
     const summary = await purgeIdentityDocuments(prisma, { dryRun });
     const suffix = dryRun ? ' (dry run — tidak menghapus apa pun)' : '';
 
-    console.log(
-      `${summary.expired.length} berkas identitas melewati masa simpannya${suffix}.`
-    );
+    console.log(`${summary.expired.length} berkas identitas melewati masa simpannya${suffix}.`);
     for (const row of summary.expired) {
       const until = row.retainUntil?.toISOString().slice(0, 10) ?? '-';
       console.log(`  ${row.ownerName} — batas simpan ${until}`);

@@ -46,7 +46,11 @@ export default function CashFlowPage() {
     endDate,
   });
 
-  const renderSection = (title: string, total: number, items: CashFlowItem[]) => (
+  const renderSection = (
+    title: string,
+    total: number,
+    items: CashFlowItem[],
+  ) => (
     <div className="space-y-4">
       <div className="flex justify-between items-center border-b pb-2">
         <h3 className="text-lg font-semibold">{title}</h3>

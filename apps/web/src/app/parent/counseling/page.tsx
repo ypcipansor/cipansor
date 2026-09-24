@@ -24,7 +24,6 @@ import { api } from "@/lib/api";
 import type { ParentChild } from "@/hooks/use-parent-portal";
 import { HeartHandshake, Calendar, User } from "lucide-react";
 
-
 interface CounselingSummary {
   id: string;
   scheduledAt: string;

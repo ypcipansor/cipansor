@@ -35,7 +35,13 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 /** A labelled fact. The value is never translated — see the note below. */
-function Fact({ label, children }: { label: string; children: React.ReactNode }) {
+function Fact({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="border-b border-border py-3 last:border-b-0 sm:grid sm:grid-cols-[14rem_1fr] sm:gap-4">
       <dt className="text-sm text-muted-foreground">{label}</dt>
@@ -67,12 +73,17 @@ export default async function LegalitasPage() {
           this page against the yayasan's akta is comparing strings.
          --------------------------------------------------------------- */}
       <section aria-labelledby="identitas" className="max-w-4xl">
-        <h2 id="identitas" className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
+        <h2
+          id="identitas"
+          className="flex items-center gap-2 text-2xl font-semibold tracking-tight"
+        >
           <Landmark className="h-5 w-5 text-primary" aria-hidden="true" />
           {copy.identity.heading}
         </h2>
         <dl className="mt-6 rounded-lg border border-border px-5">
-          <Fact label={copy.identity.legalNameLabel}>{siteConfig.legalName}</Fact>
+          <Fact label={copy.identity.legalNameLabel}>
+            {siteConfig.legalName}
+          </Fact>
           <Fact label={copy.identity.legalFormLabel}>
             {copy.identity.legalFormValue}
           </Fact>
@@ -107,7 +118,10 @@ export default async function LegalitasPage() {
           The official domain section.
          --------------------------------------------------------------- */}
       <section aria-labelledby="domain" className="mt-14 max-w-4xl">
-        <h2 id="domain" className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
+        <h2
+          id="domain"
+          className="flex items-center gap-2 text-2xl font-semibold tracking-tight"
+        >
           <Globe className="h-5 w-5 text-primary" aria-hidden="true" />
           {copy.domains.heading}
         </h2>

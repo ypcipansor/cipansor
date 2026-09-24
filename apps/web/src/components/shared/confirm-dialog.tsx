@@ -45,8 +45,7 @@ interface TriggerConfirmDialogProps {
 }
 
 export type ConfirmDialogProps =
-  | ControlledConfirmDialogProps
-  | TriggerConfirmDialogProps;
+  ControlledConfirmDialogProps | TriggerConfirmDialogProps;
 
 export function ConfirmDialog(props: ConfirmDialogProps) {
   const {

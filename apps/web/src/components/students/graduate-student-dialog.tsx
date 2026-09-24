@@ -56,7 +56,9 @@ export function GraduateStudentDialog({
         studentId,
         // Tengah hari UTC: tanggal yang dipilih tidak bergeser ke hari
         // sebelumnya di zona waktu mana pun.
-        graduationDate: new Date(`${graduationDate}T12:00:00.000Z`).toISOString(),
+        graduationDate: new Date(
+          `${graduationDate}T12:00:00.000Z`,
+        ).toISOString(),
         lastClass: lastClass.trim() || undefined,
         notes: notes.trim() || undefined,
       });

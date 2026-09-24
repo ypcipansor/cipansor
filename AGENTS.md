@@ -43,6 +43,9 @@ monorepo**:
    **draft** PR until it is marked ready. **A file a test reads is code:** add
    it to the first branch of `is_code()` (a guard test enforces this for
    markdown). Staging deploys only after CI **and** E2E pass on `main`.
+   **Format before pushing** (`pnpm format`): every `.ts`/`.tsx` is kept in
+   Prettier's format, CI's Lint job fails otherwise, and for Claude a
+   pre-push hook refuses the push and names the files and the fix command.
 6. **Develop on the feature branch, commit with clear messages, never push to
    `main`.**
 7. **Ship tests with the code — no behavior change merges untested.** Every
@@ -103,7 +106,7 @@ pnpm --filter api test                # vitest (API)
 pnpm --filter web build               # next build
 pnpm --filter web test                # vitest (web)
 pnpm --filter web test:e2e            # Playwright e2e (needs the local stack up)
-pnpm format                           # prettier
+pnpm format                           # prettier --write every .ts/.tsx (not .md); CI fails on `pnpm format:check`
 pnpm lint                             # eslint (api + web)
 ```
 
@@ -170,6 +173,7 @@ before removing anything, prove it is unused — grep for callers, check
 | `skills/screenshot-roles` | render real components for before/after shots |
 | `skills/sync-records` | move findings out of the transcript and into files |
 | `hooks/guard.sh` | PreToolUse — blocks a full-file Write to `schema.prisma` and a push to `main` |
+| `hooks/format-before-push.sh` | PreToolUse — refuses a `git push` whose commits carry `.ts`/`.tsx` files Prettier would change, and prints the command that fixes them |
 | `hooks/session-bootstrap.sh` | SessionStart — installs deps, generates the Prisma client, builds shared |
 | `hooks/pre-compact-sync.sh` | PreCompact — pauses a manual `/compact` when there is new work the durable records do not yet reflect; *holds* an auto-compaction until this session has run `sync-records` |
 | `hooks/context-sync-warn.sh` | PostToolUse + UserPromptSubmit — tells the model, before the auto-compaction window, to run `sync-records` (the only channel that reaches it) |

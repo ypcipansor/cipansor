@@ -8,7 +8,9 @@ export const EsignController = {
   async myStatus(req: Request, res: Response, next: NextFunction) {
     try {
       res.json({ success: true, data: await EsignService.myStatus(req.user!.id) });
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   },
 
   /** Identitas yang mendasari kunci — diisi pemohon, dinyatakan benar orang lain. */
@@ -16,7 +18,9 @@ export const EsignController = {
     try {
       const data = await EsignService.saveMyIdentity(req.user!.id, req.body);
       res.json({ success: true, data });
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   },
 
   /** Foto KTP pemohon — satu-satunya jalur pembuktian identitas. */
@@ -25,7 +29,9 @@ export const EsignController = {
       if (!req.file) throw Errors.badRequest('Berkas foto KTP wajib diunggah.');
       const data = await EsignService.uploadIdentityDocument(req.user!.id, req.file);
       res.status(201).json({ success: true, data });
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   },
 
   /**
@@ -45,63 +51,90 @@ export const EsignController = {
       res.setHeader('Content-Disposition', 'inline; filename="ktp"');
       res.setHeader('Cache-Control', 'no-store, private');
       res.send(buffer);
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   },
 
   async requestKey(req: Request, res: Response, next: NextFunction) {
     try {
       const data = await EsignService.requestKey(req.user!.id, req.body?.reason);
       res.status(201).json({ success: true, data });
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   },
 
   async activate(req: Request, res: Response, next: NextFunction) {
     try {
       const data = await EsignService.activateKey(req.user!.id, req.body.passphrase);
       res.json({ success: true, data });
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   },
 
   async changePassphrase(req: Request, res: Response, next: NextFunction) {
     try {
       const { currentPassphrase, accountPassword, newPassphrase } = req.body;
       const data = await EsignService.changePassphrase(
-        req.user!.id, currentPassphrase, accountPassword, newPassphrase
+        req.user!.id,
+        currentPassphrase,
+        accountPassword,
+        newPassphrase
       );
       res.json({ success: true, data });
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   },
 
   async listRequests(req: Request, res: Response, next: NextFunction) {
     try {
       const status = req.query.status as SigningKeyRequestStatus | undefined;
       res.json({ success: true, data: await EsignService.listRequests(status) });
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   },
 
   async decide(req: Request, res: Response, next: NextFunction) {
     try {
       const { approve, grantedDays, note, identityVerification } = req.body;
       const data = await EsignService.decideRequest(
-        req.params.id, req.user!.id, approve, grantedDays, note, identityVerification
+        req.params.id,
+        req.user!.id,
+        approve,
+        grantedDays,
+        note,
+        identityVerification
       );
       res.json({ success: true, data });
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   },
 
   async listKeys(_req: Request, res: Response, next: NextFunction) {
     try {
       res.json({ success: true, data: await EsignService.listKeys() });
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   },
 
   async revoke(req: Request, res: Response, next: NextFunction) {
     try {
       const data = await EsignService.revokeKey(
-        req.params.userId, req.user!.id, req.body.reason, req.body.code
+        req.params.userId,
+        req.user!.id,
+        req.body.reason,
+        req.body.code
       );
       res.json({ success: true, data });
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   },
 
   /** Cabut tanda tangan pada surat — penandatangannya sendiri atau Super Admin. */
@@ -114,7 +147,9 @@ export const EsignController = {
         req.body.passphrase
       );
       res.json({ success: true, data });
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   },
 
   /** Ajukan pencabutan — siapa pun yang boleh membaca suratnya. */
@@ -127,7 +162,9 @@ export const EsignController = {
         req.body.attachmentUrl
       );
       res.status(201).json({ success: true, data });
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   },
 
   /** Antrean permohonan — disaring pada kewenangan pemanggilnya. */
@@ -138,7 +175,9 @@ export const EsignController = {
         req.query.status as never
       );
       res.json({ success: true, data });
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   },
 
   async decideRevocation(req: Request, res: Response, next: NextFunction) {
@@ -151,23 +190,32 @@ export const EsignController = {
         { note, passphrase, reason }
       );
       res.json({ success: true, data });
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   },
 
   async withdrawRevocationRequest(req: Request, res: Response, next: NextFunction) {
     try {
       const data = await EsignService.withdrawRevocationRequest(req.params.id, req.user!.id);
       res.json({ success: true, data });
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   },
 
   async signLetter(req: Request, res: Response, next: NextFunction) {
     try {
       const data = await EsignService.signLetter(
-        req.params.letterId, req.user!.id, req.body.passphrase, req.user!.roleCode
+        req.params.letterId,
+        req.user!.id,
+        req.body.passphrase,
+        req.user!.roleCode
       );
       res.status(201).json({ success: true, data });
-    } catch (e) { next(e); }
+    } catch (e) {
+      next(e);
+    }
   },
 
   /** Publik: dipanggil halaman verifikasi setelah QR dipindai. */

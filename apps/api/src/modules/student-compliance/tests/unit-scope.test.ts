@@ -30,17 +30,26 @@ const tanpaUnit = { roleCode: 'SDIT_TATA_USAHA', role: 'STAFF', unitId: null };
 describe('lingkup unit data kelengkapan', () => {
   beforeEach(() => {
     vi.mocked(prisma.student.findFirst).mockReset().mockResolvedValue(null);
-    vi.mocked(prisma.student.findMany).mockReset().mockResolvedValue([] as never);
-    vi.mocked(prisma.student.count).mockReset().mockResolvedValue(0 as never);
+    vi.mocked(prisma.student.findMany)
+      .mockReset()
+      .mockResolvedValue([] as never);
+    vi.mocked(prisma.student.count)
+      .mockReset()
+      .mockResolvedValue(0 as never);
     vi.mocked(prisma.student.update).mockReset();
   });
 
   const whereFindFirst = () =>
-    (vi.mocked(prisma.student.findFirst).mock.calls[0][0] as { where: Record<string, unknown> }).where;
+    (vi.mocked(prisma.student.findFirst).mock.calls[0][0] as { where: Record<string, unknown> })
+      .where;
 
   it('baca per santri: petugas unit hanya menemukan santri unitnya sendiri', async () => {
     await getComplianceByStudent('santri-smpit', tuSdit);
-    expect(whereFindFirst()).toMatchObject({ id: 'santri-smpit', unitId: 'unit-sdit', deletedAt: null });
+    expect(whereFindFirst()).toMatchObject({
+      id: 'santri-smpit',
+      unitId: 'unit-sdit',
+      deletedAt: null,
+    });
   });
 
   it('simpan: santri unit lain dijawab 404, tidak ditulis', async () => {
@@ -64,9 +73,15 @@ describe('lingkup unit data kelengkapan', () => {
   it('laporan: ?unitId= milik unit lain diabaikan untuk petugas unit', async () => {
     await getCompletenessReport({ unitId: 'unit-smpit' }, tuSdit);
     await getDapodikReady({ unitId: 'unit-smpit' }, tuSdit);
-    const lengkap = vi.mocked(prisma.student.findMany).mock.calls[0][0] as { where: { unitId?: string } };
-    const siap = vi.mocked(prisma.student.findMany).mock.calls[1][0] as { where: { unitId?: string } };
-    const belum = vi.mocked(prisma.student.count).mock.calls[0][0] as { where: { unitId?: string } };
+    const lengkap = vi.mocked(prisma.student.findMany).mock.calls[0][0] as {
+      where: { unitId?: string };
+    };
+    const siap = vi.mocked(prisma.student.findMany).mock.calls[1][0] as {
+      where: { unitId?: string };
+    };
+    const belum = vi.mocked(prisma.student.count).mock.calls[0][0] as {
+      where: { unitId?: string };
+    };
     expect([lengkap.where.unitId, siap.where.unitId, belum.where.unitId]).toEqual([
       'unit-sdit',
       'unit-sdit',
@@ -76,7 +91,9 @@ describe('lingkup unit data kelengkapan', () => {
 
   it('laporan: yayasan boleh memilih unit', async () => {
     await getCompletenessReport({ unitId: 'unit-smpit' }, ketuaYayasan);
-    const arg = vi.mocked(prisma.student.findMany).mock.calls[0][0] as { where: { unitId?: string } };
+    const arg = vi.mocked(prisma.student.findMany).mock.calls[0][0] as {
+      where: { unitId?: string };
+    };
     expect(arg.where.unitId).toBe('unit-smpit');
   });
 });
@@ -85,7 +102,9 @@ describe('rute kelengkapan: setiap rute memeriksa peran', () => {
   const rute = readFileSync(join(__dirname, '../student-compliance.routes.ts'), 'utf-8');
 
   it('tidak ada rute yang hanya bergantung pada authenticate', () => {
-    const tanpaPeran = [...rute.matchAll(/router\.(get|put|post|patch|delete)\(\s*'([^']+)'([^;]*);/g)]
+    const tanpaPeran = [
+      ...rute.matchAll(/router\.(get|put|post|patch|delete)\(\s*'([^']+)'([^;]*);/g),
+    ]
       .filter(([, , , isi]) => !/authorize\(|hasPermission\(/.test(isi))
       .map(([, metode, jalur]) => `${metode.toUpperCase()} ${jalur}`);
     expect(tanpaPeran).toEqual([]);

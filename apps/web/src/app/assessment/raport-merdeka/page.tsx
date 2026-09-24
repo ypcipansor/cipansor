@@ -101,18 +101,19 @@ export default function RaportMerdekaPage() {
   const [semester, setSemester] = useState<string>("1");
   const [studentSearch, setStudentSearch] = useState<string>("");
 
-  const { data: p5Dimensions, isLoading: p5Loading } = useRaportMerdekaP5Dimensions();
+  const { data: p5Dimensions, isLoading: p5Loading } =
+    useRaportMerdekaP5Dimensions();
 
-  const { data: studentReportData, isLoading: reportLoading } = useRaportMerdekaStudentData(
-    selectedStudentId,
-    academicYearId,
-    semester
-  );
+  const { data: studentReportData, isLoading: reportLoading } =
+    useRaportMerdekaStudentData(selectedStudentId, academicYearId, semester);
 
   const { data: cpMtk } = useRaportMerdekaCpMapping("MTK", "7-9");
   const { data: cpThf } = useRaportMerdekaCpMapping("THF", "7-9");
 
-  const { data: students } = useRaportMerdekaStudentsList(currentUnit?.id, studentSearch);
+  const { data: students } = useRaportMerdekaStudentsList(
+    currentUnit?.id,
+    studentSearch,
+  );
   const { data: academicYears } = useRaportMerdekaAcademicYears();
   const exportPdfMutation = useExportRaportMerdekaPdf();
 
@@ -144,7 +145,10 @@ export default function RaportMerdekaPage() {
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.setAttribute("download", `Raport_Merdeka_${studentName.replace(/\s+/g, "_")}.pdf`);
+      link.setAttribute(
+        "download",
+        `Raport_Merdeka_${studentName.replace(/\s+/g, "_")}.pdf`,
+      );
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -661,7 +665,10 @@ export default function RaportMerdekaPage() {
                       value={studentSearch}
                       onChange={(e) => setStudentSearch(e.target.value)}
                     />
-                    <Select value={selectedStudentId} onValueChange={setSelectedStudentId}>
+                    <Select
+                      value={selectedStudentId}
+                      onValueChange={setSelectedStudentId}
+                    >
                       <SelectTrigger>
                         <SelectValue placeholder="Pilih Siswa" />
                       </SelectTrigger>
@@ -678,7 +685,10 @@ export default function RaportMerdekaPage() {
 
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Tahun Ajaran</label>
-                    <Select value={academicYearId} onValueChange={setAcademicYearId}>
+                    <Select
+                      value={academicYearId}
+                      onValueChange={setAcademicYearId}
+                    >
                       <SelectTrigger>
                         <SelectValue placeholder="Pilih Tahun" />
                       </SelectTrigger>
@@ -754,11 +764,21 @@ export default function RaportMerdekaPage() {
                   <div className="grid grid-cols-2 gap-x-8 gap-y-1 text-xs mb-6">
                     <div className="grid grid-cols-[100px_1fr]">
                       <div>Nama Peserta Didik</div>
-                      <div className="font-semibold">: {studentReportData?.siswa?.nama || "-"}</div>
+                      <div className="font-semibold">
+                        : {studentReportData?.siswa?.nama || "-"}
+                      </div>
                       <div>NIS / NISN</div>
-                      <div>: {studentReportData?.siswa?.nis || "-"} / {studentReportData?.siswa?.nisn || "-"}</div>
+                      <div>
+                        : {studentReportData?.siswa?.nis || "-"} /{" "}
+                        {studentReportData?.siswa?.nisn || "-"}
+                      </div>
                       <div>Sekolah</div>
-                      <div>: {studentReportData?.siswa?.unit || currentUnit?.name || "-"}</div>
+                      <div>
+                        :{" "}
+                        {studentReportData?.siswa?.unit ||
+                          currentUnit?.name ||
+                          "-"}
+                      </div>
                     </div>
                     <div className="grid grid-cols-[100px_1fr]">
                       <div>Kelas</div>
@@ -766,9 +786,13 @@ export default function RaportMerdekaPage() {
                       <div>Fase</div>
                       <div>: {studentReportData?.siswa?.fase || "-"}</div>
                       <div>Semester</div>
-                      <div>: {semester} ({semester === "1" ? "Ganjil" : "Genap"})</div>
+                      <div>
+                        : {semester} ({semester === "1" ? "Ganjil" : "Genap"})
+                      </div>
                       <div>Tahun Pelajaran</div>
-                      <div>: {studentReportData?.tahunAjaran?.tahun || "-"}</div>
+                      <div>
+                        : {studentReportData?.tahunAjaran?.tahun || "-"}
+                      </div>
                     </div>
                   </div>
 
@@ -799,24 +823,37 @@ export default function RaportMerdekaPage() {
                         <tbody>
                           {(() => {
                             const allSubjects = [
-                              ...(studentReportData?.intrakurikuler?.kelompokUmum || []),
-                              ...(studentReportData?.intrakurikuler?.kelompokPesantren || []),
+                              ...(studentReportData?.intrakurikuler
+                                ?.kelompokUmum || []),
+                              ...(studentReportData?.intrakurikuler
+                                ?.kelompokPesantren || []),
                             ];
 
                             if (allSubjects.length > 0) {
                               return allSubjects.map((item, idx) => (
                                 <tr key={idx} className="align-top">
-                                  <td className="border border-black p-2 text-center">{idx + 1}</td>
-                                  <td className="border border-black p-2 font-medium">{item.subjectName}</td>
-                                  <td className="border border-black p-2 text-center font-bold">{item.nilaiAkhir}</td>
-                                  <td className="border border-black p-2"><p>{item.deskripsi}</p></td>
+                                  <td className="border border-black p-2 text-center">
+                                    {idx + 1}
+                                  </td>
+                                  <td className="border border-black p-2 font-medium">
+                                    {item.subjectName}
+                                  </td>
+                                  <td className="border border-black p-2 text-center font-bold">
+                                    {item.nilaiAkhir}
+                                  </td>
+                                  <td className="border border-black p-2">
+                                    <p>{item.deskripsi}</p>
+                                  </td>
                                 </tr>
                               ));
                             }
 
                             return (
                               <tr>
-                                <td colSpan={4} className="border border-black p-4 text-center text-muted-foreground">
+                                <td
+                                  colSpan={4}
+                                  className="border border-black p-4 text-center text-muted-foreground"
+                                >
                                   {selectedStudentId
                                     ? "Belum ada data nilai intrakurikuler untuk siswa dan semester ini."
                                     : "Pilih siswa dan tahun ajaran di atas untuk melihat preview nilai."}
@@ -848,18 +885,32 @@ export default function RaportMerdekaPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {studentReportData?.ekstrakurikuler && studentReportData.ekstrakurikuler.length > 0 ? (
-                          studentReportData.ekstrakurikuler.map((ekstra, idx) => (
-                            <tr key={idx}>
-                              <td className="border border-black p-2 text-center">{idx + 1}</td>
-                              <td className="border border-black p-2">{ekstra.nama}</td>
-                              <td className="border border-black p-2 text-center">{ekstra.predikat}</td>
-                              <td className="border border-black p-2">{ekstra.keterangan}</td>
-                            </tr>
-                          ))
+                        {studentReportData?.ekstrakurikuler &&
+                        studentReportData.ekstrakurikuler.length > 0 ? (
+                          studentReportData.ekstrakurikuler.map(
+                            (ekstra, idx) => (
+                              <tr key={idx}>
+                                <td className="border border-black p-2 text-center">
+                                  {idx + 1}
+                                </td>
+                                <td className="border border-black p-2">
+                                  {ekstra.nama}
+                                </td>
+                                <td className="border border-black p-2 text-center">
+                                  {ekstra.predikat}
+                                </td>
+                                <td className="border border-black p-2">
+                                  {ekstra.keterangan}
+                                </td>
+                              </tr>
+                            ),
+                          )
                         ) : (
                           <tr>
-                            <td colSpan={4} className="border border-black p-4 text-center text-muted-foreground">
+                            <td
+                              colSpan={4}
+                              className="border border-black p-4 text-center text-muted-foreground"
+                            >
                               {selectedStudentId
                                 ? "Tidak ada kegiatan ekstrakurikuler terdaftar."
                                 : "Pilih siswa di atas untuk melihat kegiatan ekstrakurikuler."}
@@ -940,7 +991,8 @@ export default function RaportMerdekaPage() {
                   {/* Student Info Review */}
                   <div className="border-b pb-2 mb-4">
                     <p className="font-semibold">
-                      Nama: {studentReportData?.siswa?.nama || "-"} (Kelas: {studentReportData?.siswa?.kelas || "-"})
+                      Nama: {studentReportData?.siswa?.nama || "-"} (Kelas:{" "}
+                      {studentReportData?.siswa?.kelas || "-"})
                     </p>
                   </div>
 
@@ -951,7 +1003,8 @@ export default function RaportMerdekaPage() {
                         D. Tahfidz Al-Qur'an
                       </h4>
                       <Badge className="bg-green-600">
-                        Target: {studentReportData?.tahfidz?.targetCapaian ?? "-"}
+                        Target:{" "}
+                        {studentReportData?.tahfidz?.targetCapaian ?? "-"}
                       </Badge>
                     </div>
 
@@ -964,7 +1017,8 @@ export default function RaportMerdekaPage() {
                           {studentReportData?.tahfidz?.totalJuz ?? "-"} Juz
                         </div>
                         <p className="text-sm">
-                          Terakhir: {studentReportData?.tahfidz?.surahTerakhir ?? "-"}
+                          Terakhir:{" "}
+                          {studentReportData?.tahfidz?.surahTerakhir ?? "-"}
                         </p>
                       </div>
                       <div className="border rounded p-4 space-y-2">

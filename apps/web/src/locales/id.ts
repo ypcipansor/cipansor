@@ -55,7 +55,8 @@ export const id = {
     password: "Kata Sandi",
     signIn: "Masuk",
     demoCredentials: "Kredensial Demo",
-    demoDescription: "Klik pada peran apa pun untuk mencoba demo. Setiap peran memiliki tingkat akses berbeda.",
+    demoDescription:
+      "Klik pada peran apa pun untuk mencoba demo. Setiap peran memiliki tingkat akses berbeda.",
     quickDemoLogin: "Masuk Demo Cepat",
     note: "Catatan: Ini adalah lingkungan demo. Semua data adalah contoh dan akan direset secara berkala.",
   },
@@ -208,7 +209,8 @@ export const id = {
       language: "Bahasa",
       languageDescription: "Pilih bahasa untuk antarmuka aplikasi",
       compactMode: "Mode Compact",
-      compactDescription: "Tampilkan lebih banyak konten dengan ukuran lebih kecil",
+      compactDescription:
+        "Tampilkan lebih banyak konten dengan ukuran lebih kecil",
     },
     notifications: {
       title: "Notifikasi",
@@ -240,7 +242,8 @@ export const id = {
     account: {
       title: "Keamanan Akun",
       description: "Update password dan keamanan akun",
-      alert: "Fitur keamanan akun dikelola oleh administrator pusat. Hubungi IT Support untuk reset password.",
+      alert:
+        "Fitur keamanan akun dikelola oleh administrator pusat. Hubungi IT Support untuk reset password.",
     },
     about: {
       title: "Tentang Aplikasi",

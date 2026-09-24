@@ -77,7 +77,9 @@ export async function parseAndVerifyDocument(
     }
   }
 
-  notes.push('Berkas foto/PDF tidak dipindai otomatis (OCR visual tidak tersedia). Dokumen akan diverifikasi manual oleh petugas panitia SPMB.');
+  notes.push(
+    'Berkas foto/PDF tidak dipindai otomatis (OCR visual tidak tersedia). Dokumen akan diverifikasi manual oleh petugas panitia SPMB.'
+  );
 
   const status: DocumentOcrResult['validation']['status'] = isMismatch ? 'MISMATCH' : 'WARNING';
   const matchScore = isMismatch ? 0 : 50;

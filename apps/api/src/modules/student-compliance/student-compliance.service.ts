@@ -88,7 +88,10 @@ async function resolveWilayah(input: UpdateStudentComplianceInput) {
 
   const village = await prisma.village.findUnique({
     where: { id: input.villageId },
-    select: { districtId: true, district: { select: { regencyId: true, regency: { select: { provinceId: true } } } } },
+    select: {
+      districtId: true,
+      district: { select: { regencyId: true, regency: { select: { provinceId: true } } } },
+    },
   });
   if (!village) {
     throw Errors.badRequest('Kelurahan/desa tidak dikenal. Pilih ulang dari daftar wilayah.');

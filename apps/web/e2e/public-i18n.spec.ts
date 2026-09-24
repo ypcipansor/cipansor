@@ -49,7 +49,9 @@ async function switchTo(page: import("@playwright/test").Page, locale: Locale) {
     (response) => {
       const url = new URL(response.url());
       return (
-        url.pathname === pathname && url.searchParams.has("_rsc") && response.ok()
+        url.pathname === pathname &&
+        url.searchParams.has("_rsc") &&
+        response.ok()
       );
     },
     { timeout: 15_000 },
@@ -59,7 +61,9 @@ async function switchTo(page: import("@playwright/test").Page, locale: Locale) {
   await expect(page.locator("html")).toHaveAttribute("lang", locale);
 }
 
-test("the public header offers a language switcher at all", async ({ page }) => {
+test("the public header offers a language switcher at all", async ({
+  page,
+}) => {
   await page.goto("/");
   const trigger = page
     .getByTestId("language-switcher")
@@ -78,7 +82,9 @@ test("switching language changes the menu and the server-rendered prose", async 
 
   // Indonesian to begin with.
   await expect(
-    page.getByRole("heading", { name: publicContentFor("id").profilePage.title }),
+    page.getByRole("heading", {
+      name: publicContentFor("id").profilePage.title,
+    }),
   ).toBeVisible();
 
   await switchTo(page, "en");
@@ -92,7 +98,9 @@ test("switching language changes the menu and the server-rendered prose", async 
   // cookie write is dropped — the heading comes from a server component, so
   // nothing but a new server render can change it.
   await expect(
-    page.getByRole("heading", { name: publicContentFor("en").profilePage.title }),
+    page.getByRole("heading", {
+      name: publicContentFor("en").profilePage.title,
+    }),
   ).toBeVisible();
 
   // And the document direction, which the root layout stamps server-side.
@@ -109,7 +117,9 @@ test("Arabic switches the document to RTL and translates the prose", async ({
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   await expect(page.locator("html")).toHaveAttribute("lang", "ar");
   await expect(
-    page.getByRole("heading", { name: publicContentFor("ar").profilePage.title }),
+    page.getByRole("heading", {
+      name: publicContentFor("ar").profilePage.title,
+    }),
   ).toBeVisible();
   await expect(
     page.getByRole("link", { name: ar.public.nav.news, exact: true }).first(),
@@ -122,13 +132,17 @@ test("the choice survives a reload and follows to another page", async ({
   await page.goto("/profil");
   await switchTo(page, "en");
   await expect(
-    page.getByRole("heading", { name: publicContentFor("en").profilePage.title }),
+    page.getByRole("heading", {
+      name: publicContentFor("en").profilePage.title,
+    }),
   ).toBeVisible();
 
   // A cookie, not component state: a fresh document must come back in English.
   await page.reload();
   await expect(
-    page.getByRole("heading", { name: publicContentFor("en").profilePage.title }),
+    page.getByRole("heading", {
+      name: publicContentFor("en").profilePage.title,
+    }),
   ).toBeVisible();
 
   await page.goto("/");

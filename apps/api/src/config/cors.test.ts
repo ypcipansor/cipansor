@@ -10,8 +10,7 @@ import { parseCorsOrigins, buildCorsOptions } from './cors';
  */
 
 /** The value production has been running. */
-const PRODUCTION_LIST =
-  'https://cipansor.or.id,https://www.cipansor.or.id,http://localhost:3000';
+const PRODUCTION_LIST = 'https://cipansor.or.id,https://www.cipansor.or.id,http://localhost:3000';
 
 interface FakeResponse {
   statusCode: number;

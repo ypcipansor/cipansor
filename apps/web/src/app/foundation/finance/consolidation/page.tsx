@@ -48,7 +48,14 @@ import {
 import { Loader2 } from "lucide-react";
 import { useFoundationFinancialOverview } from "@/hooks/use-foundation";
 
-const UNIT_COLORS = ["#22c55e", "#6366f1", "#f59e0b", "#ec4899", "#14b8a6", "#0ea5e9"];
+const UNIT_COLORS = [
+  "#22c55e",
+  "#6366f1",
+  "#f59e0b",
+  "#ec4899",
+  "#14b8a6",
+  "#0ea5e9",
+];
 
 const formatCurrency = (value: number) => {
   if (value >= 1000000000) {
@@ -89,7 +96,9 @@ export default function FinanceConsolidationPage() {
 
   const revenueGrowth =
     data.previousMonthRevenue > 0
-      ? ((data.totalRevenue - data.previousMonthRevenue) / data.previousMonthRevenue) * 100
+      ? ((data.totalRevenue - data.previousMonthRevenue) /
+          data.previousMonthRevenue) *
+        100
       : 0;
 
   if (isLoading) {

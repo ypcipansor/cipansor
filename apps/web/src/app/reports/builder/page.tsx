@@ -53,12 +53,7 @@ import Link from "next/link";
 
 // Types
 type ReportType =
-  | "students"
-  | "attendance"
-  | "finance"
-  | "tahfidz"
-  | "academic"
-  | "teachers";
+  "students" | "attendance" | "finance" | "tahfidz" | "academic" | "teachers";
 
 interface ReportField {
   key: string;

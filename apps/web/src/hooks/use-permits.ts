@@ -47,11 +47,7 @@ export const PERMIT_TYPES: { value: PermitType; label: string }[] = [
 ];
 
 export type PermitStatus =
-  | "PENDING"
-  | "APPROVED"
-  | "REJECTED"
-  | "CANCELLED"
-  | "RETURNED";
+  "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED" | "RETURNED";
 
 export const PERMIT_STATUSES: {
   value: PermitStatus;

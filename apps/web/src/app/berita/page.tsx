@@ -40,44 +40,44 @@ export default async function BeritaPage() {
         {sorted.map((article) => {
           const text = newsTextFor(locale, article.slug) ?? article;
           return (
-          <Card key={article.slug} className="h-full overflow-hidden">
-            <Link href={`/berita/${article.slug}`} className="block">
-              <div className="relative aspect-[16/10]">
-                <Image
-                  src={article.image}
-                  alt=""
-                  fill
-                  sizes="(max-width: 768px) 100vw, 33vw"
-                  className="object-cover"
-                />
-              </div>
-            </Link>
-            <CardContent className="flex flex-col p-6">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Badge variant="secondary">{article.unit}</Badge>
-                <time dateTime={article.date}>
-                  {dateFormatter.format(new Date(article.date))}
-                </time>
-              </div>
-              <h2 className="mt-3 text-lg font-semibold leading-snug text-balance">
+            <Card key={article.slug} className="h-full overflow-hidden">
+              <Link href={`/berita/${article.slug}`} className="block">
+                <div className="relative aspect-[16/10]">
+                  <Image
+                    src={article.image}
+                    alt=""
+                    fill
+                    sizes="(max-width: 768px) 100vw, 33vw"
+                    className="object-cover"
+                  />
+                </div>
+              </Link>
+              <CardContent className="flex flex-col p-6">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Badge variant="secondary">{article.unit}</Badge>
+                  <time dateTime={article.date}>
+                    {dateFormatter.format(new Date(article.date))}
+                  </time>
+                </div>
+                <h2 className="mt-3 text-lg font-semibold leading-snug text-balance">
+                  <Link
+                    href={`/berita/${article.slug}`}
+                    className="hover:text-primary"
+                  >
+                    {text.title}
+                  </Link>
+                </h2>
+                <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+                  {text.excerpt}
+                </p>
                 <Link
                   href={`/berita/${article.slug}`}
-                  className="hover:text-primary"
+                  className="mt-4 text-sm font-medium text-primary underline underline-offset-4"
                 >
-                  {text.title}
+                  {copy.readMore}
                 </Link>
-              </h2>
-              <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-                {text.excerpt}
-              </p>
-              <Link
-                href={`/berita/${article.slug}`}
-                className="mt-4 text-sm font-medium text-primary underline underline-offset-4"
-              >
-                {copy.readMore}
-              </Link>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
           );
         })}
       </div>

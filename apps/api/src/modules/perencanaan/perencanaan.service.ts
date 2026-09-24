@@ -59,9 +59,7 @@ export class PerencanaanService {
         select: { id: true },
       });
       if (clash) {
-        throw Errors.badRequest(
-          `Sudah ada RKA Yayasan aktif untuk tahun ${year}.`
-        );
+        throw Errors.badRequest(`Sudah ada RKA Yayasan aktif untuk tahun ${year}.`);
       }
     }
 
@@ -362,7 +360,7 @@ export class PerencanaanService {
         // Only include activities with a budgetRel link in the total budget
         // so that untracked activities don't dilute the financial progress.
         const totalBudget = activitiesWithRealization.reduce(
-          (sum, act) => sum + (act.budgetRel ? (act.budget?.toNumber() || 0) : 0),
+          (sum, act) => sum + (act.budgetRel ? act.budget?.toNumber() || 0 : 0),
           0
         );
         const totalRealization = activitiesWithRealization.reduce(
@@ -375,11 +373,15 @@ export class PerencanaanService {
           activities: activitiesWithRealization,
           totalBudget,
           totalRealization,
-          financialProgress: totalBudget > 0 ? Math.min((totalRealization / totalBudget) * 100, 100) : 0,
+          financialProgress:
+            totalBudget > 0 ? Math.min((totalRealization / totalBudget) * 100, 100) : 0,
         };
       });
 
-      const totalPlanBudget = objectivesWithRealization.reduce((sum, obj) => sum + obj.totalBudget, 0);
+      const totalPlanBudget = objectivesWithRealization.reduce(
+        (sum, obj) => sum + obj.totalBudget,
+        0
+      );
       const totalPlanRealization = objectivesWithRealization.reduce(
         (sum, obj) => sum + obj.totalRealization,
         0
@@ -390,15 +392,22 @@ export class PerencanaanService {
         objectives: objectivesWithRealization,
         totalBudget: totalPlanBudget,
         totalRealization: totalPlanRealization,
-        financialProgress: totalPlanBudget > 0 ? Math.min((totalPlanRealization / totalPlanBudget) * 100, 100) : 0,
+        financialProgress:
+          totalPlanBudget > 0 ? Math.min((totalPlanRealization / totalPlanBudget) * 100, 100) : 0,
       };
     } catch (err: any) {
-      console.error('[Perencanaan] Journal aggregation failed, returning plan without financial data:', err?.message || err);
+      console.error(
+        '[Perencanaan] Journal aggregation failed, returning plan without financial data:',
+        err?.message || err
+      );
       // Return the plan with zero realization so the page still renders
       const fallbackObjectives = plan.objectives.map((obj) => ({
         ...obj,
         activities: obj.activities.map((act) => ({ ...act, realization: 0 })),
-        totalBudget: obj.activities.reduce((sum, act) => sum + (act.budgetRel ? (act.budget?.toNumber() || 0) : 0), 0),
+        totalBudget: obj.activities.reduce(
+          (sum, act) => sum + (act.budgetRel ? act.budget?.toNumber() || 0 : 0),
+          0
+        ),
         totalRealization: 0,
         financialProgress: 0,
       }));
@@ -493,9 +502,7 @@ export class PerencanaanService {
       status: true,
       type: true,
       reviewStage: true,
-      ...(userId
-        ? { collaborators: { where: { userId }, select: { userId: true } } }
-        : {}),
+      ...(userId ? { collaborators: { where: { userId }, select: { userId: true } } } : {}),
     };
   }
 
@@ -538,7 +545,12 @@ export class PerencanaanService {
   async getObjectivePlanForAuth(
     objectiveId: string,
     userId?: string
-  ): Promise<{ id: string; unitId: string | null; status: string; isCollaborator: boolean } | null> {
+  ): Promise<{
+    id: string;
+    unitId: string | null;
+    status: string;
+    isCollaborator: boolean;
+  } | null> {
     const objective = await prisma.planObjective.findUnique({
       where: { id: objectiveId },
       select: { plan: { select: this.planAuthSelect(userId) } },
@@ -554,14 +566,18 @@ export class PerencanaanService {
   async getIndicatorPlanForAuth(
     indicatorId: string,
     userId?: string
-  ): Promise<{ id: string; unitId: string | null; status: string; isCollaborator: boolean } | null> {
+  ): Promise<{
+    id: string;
+    unitId: string | null;
+    status: string;
+    isCollaborator: boolean;
+  } | null> {
     const indicator = await prisma.planIndicator.findUnique({
       where: { id: indicatorId },
       select: { objectiveId: true, activityId: true },
     });
     if (!indicator) return null;
-    if (indicator.objectiveId)
-      return this.getObjectivePlanForAuth(indicator.objectiveId, userId);
+    if (indicator.objectiveId) return this.getObjectivePlanForAuth(indicator.objectiveId, userId);
     if (indicator.activityId) return this.getActivityPlanForAuth(indicator.activityId, userId);
     return null;
   }
@@ -574,7 +590,12 @@ export class PerencanaanService {
   async getActivityPlanForAuth(
     activityId: string,
     userId?: string
-  ): Promise<{ id: string; unitId: string | null; status: string; isCollaborator: boolean } | null> {
+  ): Promise<{
+    id: string;
+    unitId: string | null;
+    status: string;
+    isCollaborator: boolean;
+  } | null> {
     const activity = await prisma.planActivity.findUnique({
       where: { id: activityId },
       select: { objectiveId: true, parentId: true },
@@ -642,9 +663,7 @@ export class PerencanaanService {
         data: {
           reviewStage: params.to,
           status: params.status,
-          ...(params.approve
-            ? { approvedById: params.event.actorId, approvedAt: new Date() }
-            : {}),
+          ...(params.approve ? { approvedById: params.event.actorId, approvedAt: new Date() } : {}),
         },
       });
       if (count !== 1) {
@@ -854,7 +873,7 @@ export class PerencanaanService {
 
     if (rest.startDate) updateData.startDate = new Date(rest.startDate);
     if (rest.endDate) updateData.endDate = new Date(rest.endDate);
-    if (rest.budget !== undefined) updateData.budget = (rest.budget as any);
+    if (rest.budget !== undefined) updateData.budget = rest.budget as any;
 
     return prisma.planActivity.update({
       where: { id },

@@ -314,14 +314,17 @@ export default function EditStudentPage() {
               <div className="space-y-2 md:w-1/2">
                 <Label>Status</Label>
                 <div>
-                  <Badge className={studentStatusOption(student?.status)?.badge}>
-                    {studentStatusOption(student?.status)?.label ?? student?.status}
+                  <Badge
+                    className={studentStatusOption(student?.status)?.badge}
+                  >
+                    {studentStatusOption(student?.status)?.label ??
+                      student?.status}
                   </Badge>
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  Status tidak diubah dari sini. Santri yang lulus dicatat lewat menu
-                  Data Alumni, supaya data alumni dan pendaftaran kelasnya ikut
-                  diperbarui.
+                  Status tidak diubah dari sini. Santri yang lulus dicatat lewat
+                  menu Data Alumni, supaya data alumni dan pendaftaran kelasnya
+                  ikut diperbarui.
                 </p>
               </div>
             </CardContent>

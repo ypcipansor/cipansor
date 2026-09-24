@@ -26,7 +26,11 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
-import { useRegistrants, useAdmissionPeriods, useActiveAdmissionWaves } from "@/hooks/use-admissions";
+import {
+  useRegistrants,
+  useAdmissionPeriods,
+  useActiveAdmissionWaves,
+} from "@/hooks/use-admissions";
 
 export default function SPMBPage() {
   const router = useRouter();
@@ -35,17 +39,24 @@ export default function SPMBPage() {
   const { data: registrantsData } = useRegistrants();
   const { data: acceptedData } = useRegistrants({ status: "ACCEPTED" });
   const { data: pendingData } = useRegistrants({ status: "DOCUMENT_CHECK" });
-  const { data: testScheduledData } = useRegistrants({ status: "TEST_SCHEDULED" });
+  const { data: testScheduledData } = useRegistrants({
+    status: "TEST_SCHEDULED",
+  });
   const { data: periodsData } = useAdmissionPeriods();
   const { data: activeWavesData } = useActiveAdmissionWaves();
 
-  const totalRegistrants = registrantsData?.meta?.total ?? registrantsData?.data?.length ?? 0;
-  const acceptedCount = acceptedData?.meta?.total ?? acceptedData?.data?.length ?? 0;
-  const pendingCount = pendingData?.meta?.total ?? pendingData?.data?.length ?? 0;
+  const totalRegistrants =
+    registrantsData?.meta?.total ?? registrantsData?.data?.length ?? 0;
+  const acceptedCount =
+    acceptedData?.meta?.total ?? acceptedData?.data?.length ?? 0;
+  const pendingCount =
+    pendingData?.meta?.total ?? pendingData?.data?.length ?? 0;
   const testScheduledCount =
     testScheduledData?.meta?.total ?? testScheduledData?.data?.length ?? 0;
-  const totalPeriods = periodsData?.meta?.total ?? periodsData?.data?.length ?? 0;
-  const activeWavesCount = activeWavesData?.pagination?.total ?? activeWavesData?.data?.length ?? 0;
+  const totalPeriods =
+    periodsData?.meta?.total ?? periodsData?.data?.length ?? 0;
+  const activeWavesCount =
+    activeWavesData?.pagination?.total ?? activeWavesData?.data?.length ?? 0;
 
   const menuItems = [
     {
@@ -132,7 +143,8 @@ export default function SPMBPage() {
             SPMB - Sistem Penerimaan Murid Baru
           </h1>
           <p className="text-muted-foreground">
-            Pusat kendali penerimaan, verifikasi berkas, seleksi, dan onboarding santri baru
+            Pusat kendali penerimaan, verifikasi berkas, seleksi, dan onboarding
+            santri baru
           </p>
         </div>
 
@@ -275,7 +287,9 @@ export default function SPMBPage() {
                   </ul>
                 </div>
                 <Link href="/spmb/registrations?status=TEST_SCHEDULED">
-                  <Button className="w-full">Lihat Peserta yang Dijadwalkan Tes</Button>
+                  <Button className="w-full">
+                    Lihat Peserta yang Dijadwalkan Tes
+                  </Button>
                 </Link>
               </CardContent>
             </Card>

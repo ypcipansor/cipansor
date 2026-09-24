@@ -342,7 +342,9 @@ function CurriculumDetailPageContent({
   );
 }
 
-export default function CurriculumDetailPage(props: Parameters<typeof CurriculumDetailPageContent>[0]) {
+export default function CurriculumDetailPage(
+  props: Parameters<typeof CurriculumDetailPageContent>[0],
+) {
   return (
     <MainLayout>
       <CurriculumDetailPageContent {...props} />

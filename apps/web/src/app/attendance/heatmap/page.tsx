@@ -18,13 +18,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Calendar,
-  Users,
-  TrendingDown,
-  AlertTriangle,
-} from "lucide-react";
-import type { AttendanceCalendarResponse, AttendanceCalendarDay } from "@cipansor/shared";
+import { Calendar, Users, TrendingDown, AlertTriangle } from "lucide-react";
+import type {
+  AttendanceCalendarResponse,
+  AttendanceCalendarDay,
+} from "@cipansor/shared";
 import { useClasses } from "@/hooks/use-classes";
 import { useAuthStore } from "@/stores/auth";
 import api from "@/lib/api";
@@ -52,7 +50,10 @@ export default function AttendanceHeatmapPage() {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
       opts.push({
         value: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
-        label: d.toLocaleDateString("id-ID", { month: "long", year: "numeric" }),
+        label: d.toLocaleDateString("id-ID", {
+          month: "long",
+          year: "numeric",
+        }),
       });
     }
     return opts;
@@ -100,8 +101,7 @@ export default function AttendanceHeatmapPage() {
     })),
   });
 
-  const isLoading =
-    classesLoading || calendarQueries.some((q) => q.isLoading);
+  const isLoading = classesLoading || calendarQueries.some((q) => q.isLoading);
 
   // Per-class day lookup keyed by day-of-month.
   const calendars = useMemo(
@@ -161,8 +161,10 @@ export default function AttendanceHeatmapPage() {
     classItem: { id: string; name: string },
     byDay: Map<number, AttendanceCalendarDay>,
   ) => {
-    const calendarDays: ({ day: number; data?: AttendanceCalendarDay } | null)[] =
-      [];
+    const calendarDays: ({
+      day: number;
+      data?: AttendanceCalendarDay;
+    } | null)[] = [];
     for (let i = 0; i < firstDayOfMonth; i++) calendarDays.push(null);
     for (let day = 1; day <= daysInMonth; day++) {
       calendarDays.push({ day, data: byDay.get(day) });
