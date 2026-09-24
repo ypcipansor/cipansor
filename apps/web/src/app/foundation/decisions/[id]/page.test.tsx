@@ -400,9 +400,7 @@ describe("halaman detail keputusan — unduh risalah", () => {
     fireEvent.click(
       await screen.findByRole("button", { name: /Unduh Risalah/ }),
     );
-    await waitFor(() =>
-      expect(URL.createObjectURL).toHaveBeenCalledTimes(1),
-    );
+    await waitFor(() => expect(URL.createObjectURL).toHaveBeenCalledTimes(1));
     expect(screen.queryByTestId("download-error")).toBeNull();
   });
 
@@ -410,7 +408,10 @@ describe("halaman detail keputusan — unduh risalah", () => {
     get.mockImplementation((url: string) => {
       if (url.includes("/document")) {
         return Promise.reject(
-          axiosError(404, { success: false, message: "Arsip tidak ditemukan." }),
+          axiosError(404, {
+            success: false,
+            message: "Arsip tidak ditemukan.",
+          }),
         );
       }
       return Promise.resolve({ data: { data: approvedDecision() } });
@@ -419,9 +420,7 @@ describe("halaman detail keputusan — unduh risalah", () => {
     fireEvent.click(
       await screen.findByRole("button", { name: /Unduh Risalah/ }),
     );
-    expect(
-      await screen.findByTestId("download-error"),
-    ).toBeTruthy();
+    expect(await screen.findByTestId("download-error")).toBeTruthy();
     expect(screen.getByTestId("download-error").textContent).toMatch(
       /Gagal mengunduh risalah/,
     );

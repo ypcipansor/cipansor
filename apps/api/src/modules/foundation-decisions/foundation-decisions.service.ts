@@ -1386,9 +1386,7 @@ export const FoundationDecisionService = {
           voteSummary: emptySummary,
         });
         if (glyphOffenders.length > 0) {
-          const detail = glyphOffenders
-            .map((o) => `${o.field} (${o.chars.join(' ')})`)
-            .join(', ');
+          const detail = glyphOffenders.map((o) => `${o.field} (${o.chars.join(' ')})`).join(', ');
           throw Errors.badRequest(
             `Naskah memuat aksara yang tidak dapat dicetak ke risalah: ${detail}. ` +
               `Aksara itu akan hilang dari PDF yang di-e-seal, sehingga arsip berbeda dari naskah yang ` +

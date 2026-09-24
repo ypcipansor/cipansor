@@ -18,7 +18,10 @@ const GENERIC_TYPES = new Set([
   "binary/octet-stream",
 ]);
 
-export function isPdfCandidate(file: { type?: string; name?: string }): boolean {
+export function isPdfCandidate(file: {
+  type?: string;
+  name?: string;
+}): boolean {
   const type = (file.type ?? "").toLowerCase();
   const namedPdf = (file.name ?? "").toLowerCase().endsWith(".pdf");
   if (type === "application/pdf") return true;

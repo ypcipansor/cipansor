@@ -13,7 +13,9 @@ import { isPdfCandidate } from "./pdf-file";
  */
 describe("isPdfCandidate", () => {
   it("menerima tipe application/pdf apa pun namanya", () => {
-    expect(isPdfCandidate({ type: "application/pdf", name: "risalah" })).toBe(true);
+    expect(isPdfCandidate({ type: "application/pdf", name: "risalah" })).toBe(
+      true,
+    );
   });
 
   it("menerima tipe kosong bila nama berakhiran .pdf", () => {
@@ -22,7 +24,7 @@ describe("isPdfCandidate", () => {
 
   it("menerima application/octet-stream bila nama berakhiran .pdf", () => {
     expect(
-      isPdfCandidate({ type: "application/octet-stream", name: "scan.PDF" })
+      isPdfCandidate({ type: "application/octet-stream", name: "scan.PDF" }),
     ).toBe(true);
   });
 
@@ -31,13 +33,15 @@ describe("isPdfCandidate", () => {
   });
 
   it("menolak octet-stream yang bukan .pdf", () => {
-    expect(isPdfCandidate({ type: "application/octet-stream", name: "data.bin" })).toBe(
-      false
-    );
+    expect(
+      isPdfCandidate({ type: "application/octet-stream", name: "data.bin" }),
+    ).toBe(false);
   });
 
   it("menolak tipe eksplisit non-PDF meski ekstensinya .pdf", () => {
-    expect(isPdfCandidate({ type: "image/png", name: "palsu.pdf" })).toBe(false);
+    expect(isPdfCandidate({ type: "image/png", name: "palsu.pdf" })).toBe(
+      false,
+    );
   });
 
   it("tahan terhadap field yang hilang", () => {
