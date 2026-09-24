@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+    # ready_for_review: a draft skips the suite (see `scope`), so marking it
+    # ready has to start a run that does not.
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch: # Allow manual trigger
 
 # Cancel superseded runs on the same ref to save CI minutes.
@@ -20,10 +23,53 @@ env:
   PNPM_VERSION: '9.15.9'
 
 jobs:
+  # Does this run need the suite at all? The suite is most of the pipeline's
+  # minutes, and two kinds of pull request gain nothing from it: a DRAFT (still
+  # being pushed to; the suite runs when it is marked ready) and one that
+  # touches only documentation or agent tooling (`*.md`, `docs/`, `.claude/`).
+  # A push to main and a manual run always test — staging deploys only after
+  # this workflow passes on main.
+  #
+  # Skipping is done with a job-level `if:` on purpose. A job skipped by its
+  # condition reports success, so the required check "E2E Tests (Chromium)"
+  # is satisfied; a `paths:` filter on the trigger would skip the whole
+  # workflow instead and leave that required check pending forever.
+  scope:
+    name: E2E scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+    steps:
+      - id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          DRAFT: ${{ github.event.pull_request.draft }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          decide() { echo "run=$1" >> "$GITHUB_OUTPUT"; echo "E2E: $1 — $2"; }
+          if [ "$EVENT" != "pull_request" ]; then decide true "$EVENT always tests"; exit 0; fi
+          if [ "$DRAFT" = "true" ]; then decide false "draft pull request; runs when marked ready"; exit 0; fi
+          # Fail open: if the file list cannot be read, test.
+          files=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --jq '.[].filename') \
+            || { decide true "could not list changed files"; exit 0; }
+          code=$(printf '%s\n' "$files" | grep -Ev '(\.md$|^docs/|^\.claude/)' | grep -c . || true)
+          if [ "$code" -eq 0 ]; then
+            decide false "only documentation / agent tooling changed"
+          else
+            decide true "$code changed file(s) outside documentation"
+          fi
+
   # Primary gate: the full Playwright suite on Chromium against a real,
   # seeded backend (the app's primary target browser).
   e2e:
     name: E2E Tests (Chromium)
+    needs: scope
+    if: needs.scope.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     permissions:

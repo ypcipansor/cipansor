@@ -1,7 +1,9 @@
 # CI Workflow for Cipansor
 # Lint, build, test, and security-scan on pull requests and pushes to main.
-# There is no deploy stage here (the docker-build job only proves the images
-# build), so this is CI, not CD.
+# There is no deploy stage here, and no image build: the Docker images are
+# built once, by deploy-staging.yml, after both this workflow and E2E Tests
+# pass on main. (A "Docker Build" job here used to build both images a second
+# time on every push to main and threw them away — 13 of CI's 19 minutes.)
 
 name: CI
 
@@ -180,40 +182,3 @@ jobs:
       # endpoint directly — see scripts/audit-deps.mjs.
       - name: Audit dependencies
         run: pnpm run audit:deps
-
-  # Docker build sanity check (main only).
-  docker-build:
-    name: Docker Build
-    runs-on: ubuntu-latest
-    needs: build
-    timeout-minutes: 30
-    if: github.ref == 'refs/heads/main'
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-      - name: Build API Docker image
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: ./apps/api/Dockerfile
-          push: false
-          tags: cipansor-api:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-      - name: Build Web Docker image
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: ./apps/web/Dockerfile
-          push: false
-          tags: cipansor-web:latest
-          build-args: |
-            NEXT_PUBLIC_API_URL=http://localhost:3001
-          cache-from: type=gha
-          cache-to: type=gha,mode=max

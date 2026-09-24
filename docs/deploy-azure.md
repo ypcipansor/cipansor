@@ -69,8 +69,13 @@ from the backup, as the VM runbook describes, not on staging.
 
 ## How a change is released
 
-1. **Pull request** — CI (`ci.yml`) must be green before merging.
-2. **Merge to `main`** — after CI passes on `main`, `deploy-staging.yml` builds
+1. **Pull request** — CI (`ci.yml`) and E2E (`e2e-tests.yml`) must be green
+   before merging (the ruleset requires Build, Lint, Tests, Security and
+   E2E Tests (Chromium)). E2E skips itself on a draft and on a
+   documentation-only change; a skipped job counts as passed.
+2. **Merge to `main`** — after CI **and** E2E Tests pass on `main`,
+   `deploy-staging.yml` (triggered by E2E, which first confirms CI passed on
+   the same commit) builds
    the three images once, tags them with the commit SHA, pushes them to the
    registry, points `cipansor-staging` at them and waits until
    `https://staging.cipansor.or.id/healthz` reports that SHA (see
