@@ -3,7 +3,7 @@ import multer from 'multer';
 import { RoleCode } from '@prisma/client';
 import { FoundationDecisionController as c } from './foundation-decisions.controller';
 import { FoundationDecisionService } from './foundation-decisions.service';
-import { authenticate, authorize } from '@/middleware/auth';
+import { authenticate, expandRoleCodes } from '@/middleware/auth';
 import { FOUNDATION_FINALIZE_ROUTE_ROLES } from '@/utils/foundation-authority';
 import { Errors, asyncHandler, validate, validateQuery } from '@/middleware/error';
 import { requireTurnstile } from '@/middleware/turnstile';
@@ -160,21 +160,54 @@ const CREATE = [
 const FINALIZE = [...FOUNDATION_FINALIZE_ROUTE_ROLES];
 
 /**
- * Finding B2/B3 — `authorize(...)` hanya memercayai klaim token.
+ * Gerbang peran untuk rute TULIS: lolos bila SALAH SATU peran AKTUAL aktor
+ * (hasil `refreshActorRoles` dari basis data) ada di daftar yang diizinkan.
+ *
+ * `authorize(...)` global hanya memeriksa `req.user.roleCode` â€” peran PRIMER.
+ * Pejabat yang jabatan yayasannya BUKAN peran utama (mis. `GURU` primer +
+ * `YAYASAN_KETUA` sekunder) ditolak walaupun `refreshActorRoles` sudah mengisi
+ * seluruh perannya di `req.user.roleCodes`. Peran organ adalah properti
+ * keanggotaan, bukan properti "jabatan utama": seseorang yang memegang
+ * `YAYASAN_PENGAWAS` sebagai peran sekunder tetap Pengawas dan berhak
+ * menandatangani, memfinalisasi, dan membatalkan rapat organnya.
+ *
+ * Middleware ini SENGAJA lokal (tidak mengubah `authorize` global, yang dipakai
+ * puluhan modul lain) dan memakai ulang `expandRoleCodes` yang sama sehingga
+ * benturan nama peran legacy tetap tertangani. Bila `roleCodes` belum diisi
+ * (rute tanpa `refreshActorRoles`) ia JATUH KEMBALI ke `roleCode` tunggal â€”
+ * tidak pernah melonggarkan gerbang yang tidak menyegarkan peran.
+ */
+function authorizeAnyRole(...allowedRoleCodes: string[]) {
+  const expanded = expandRoleCodes(allowedRoleCodes);
+  return (req: Request, _res: Response, next: NextFunction) => {
+    if (!req.user) return next(Errors.unauthorized());
+    const roles =
+      req.user.roleCodes && req.user.roleCodes.length > 0
+        ? req.user.roleCodes
+        : [req.user.roleCode];
+    if (!roles.some((code) => expanded.includes(code))) {
+      return next(Errors.forbidden('Insufficient permissions'));
+    }
+    next();
+  };
+}
+
+/**
+ * Finding B2/B3 â€” `authorize(...)` hanya memercayai klaim token.
  *
  * `req.user.roleCode` disematkan di token AKSES saat login/refresh dan TIDAK
  * dicabut saat peran orang dicabut, dinonaktifkan, atau kedaluwarsa. Token
  * akses hidup 15 menit (produksi), jadi selama jendela itu mantan Ketua
  * Yayasan masih lolos `authorize(YAYASAN_KETUA)` di rute tulis, dan mantan
- * Pembina masih lolos cek peran READ global di service — tanpa menyentuh basis
+ * Pembina masih lolos cek peran READ global di service â€” tanpa menyentuh basis
  * data lagi.
  *
  * Middleware ini menyegarkan peran dari basis data pada SETIAP permintaan tulis
  * dan MENGGANTI `req.user.roleCode`/`roleCodes` dengan keadaan terkini. Bila
  * akun telah dinonaktifkan/dihapus, atau tak lagi memegang peran aktif mana
- * pun, ia menolak lebih dulu. Dengan begitu seluruh gerbang di bawahnya —
+ * pun, ia menolak lebih dulu. Dengan begitu seluruh gerbang di bawahnya â€”
  * `authorize` di rute maupun `canFinalizeDecision`/`canReadFoundationDecision`
- * di service — menilai peran HARI INI, bukan peran yang dibekukan di token.
+ * di service â€” menilai peran HARI INI, bukan peran yang dibekukan di token.
  *
  * Dipasang pada rute TULIS (create, vote, finalize, cancel, publication,
  * rules). Rute BACA sengaja tidak memakainya: hak baca memakai jalur SNAPSHOT
@@ -226,13 +259,13 @@ router.get(
 router.get(
   '/decisions/create-options',
   refreshActorRoles,
-  authorize(...CREATE),
+  authorizeAnyRole(...CREATE),
   asyncHandler(c.createOptions)
 );
 router.post(
   '/decisions',
   refreshActorRoles,
-  authorize(...CREATE),
+  authorizeAnyRole(...CREATE),
   validate(createFoundationDecisionSchema),
   asyncHandler(c.create)
 );
@@ -278,7 +311,7 @@ router.post(
 router.post(
   '/decisions/:id/finalize',
   refreshActorRoles,
-  authorize(...FINALIZE),
+  authorizeAnyRole(...FINALIZE),
   validate(finalizeFoundationDecisionSchema),
   asyncHandler(c.finalize)
 );
@@ -290,13 +323,13 @@ router.post(
  * organ itu boleh menyatakannya batal, dan service memperketatnya dengan
  * definisi yang sama (`canFinalizeDecision` + kuorum hadir memang belum
  * terpenuhi). Tanpa aksi ini, rapat yang gagal kuorum tergantung VOTING tanpa
- * akhir — satu-satunya "jalan keluar" adalah menandainya REJECTED, yang
+ * akhir â€” satu-satunya "jalan keluar" adalah menandainya REJECTED, yang
  * menyatakan materi ditolak padahal rapat tidak memutus apa pun.
  */
 router.post(
   '/decisions/:id/cancel',
   refreshActorRoles,
-  authorize(...FINALIZE),
+  authorizeAnyRole(...FINALIZE),
   asyncHandler(c.cancel)
 );
 
@@ -311,16 +344,21 @@ router.post(
 router.post(
   '/decisions/:id/publication',
   refreshActorRoles,
-  authorize(RoleCode.SUPER_ADMIN),
+  authorizeAnyRole(RoleCode.SUPER_ADMIN),
   validate(setFoundationDecisionPublicationSchema),
   asyncHandler(c.setPublication)
 );
 
-router.get('/rules', refreshActorRoles, authorize(RoleCode.SUPER_ADMIN), asyncHandler(c.listRules));
+router.get(
+  '/rules',
+  refreshActorRoles,
+  authorizeAnyRole(RoleCode.SUPER_ADMIN),
+  asyncHandler(c.listRules)
+);
 router.put(
   '/rules',
   refreshActorRoles,
-  authorize(RoleCode.SUPER_ADMIN),
+  authorizeAnyRole(RoleCode.SUPER_ADMIN),
   validate(upsertFoundationRuleSchema),
   asyncHandler(c.upsertRule)
 );

@@ -3,8 +3,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('@/lib/prisma', () => ({ prisma: {} }));
 vi.mock('@/lib/redis', () => ({ redis: {} }));
 
+import express from 'express';
+import request from 'supertest';
+import type { NextFunction, Request, Response } from 'express';
 import router from '../foundation-decisions.routes';
 import { FoundationDecisionService } from '../foundation-decisions.service';
+import { generateAccessToken } from '@/lib/jwt';
 
 interface RouteLayer {
   route?: {
@@ -155,5 +159,127 @@ describe('foundation-decisions.routes — refreshActorRoles (B2/B3)', () => {
     const { forwarded, user } = await run('get', '/decisions/:id', 'YAYASAN_KETUA');
     expect(forwarded).toBe(true);
     expect(user.roleCode).toBe('');
+  });
+});
+
+/**
+ * Finding #2 (BUG severe) — pejabat yang jabatan yayasannya BUKAN peran PRIMER
+ * harus lolos gerbang rute TULIS.
+ *
+ * `authorize(...)` global hanya menilai `req.user.roleCode`, yang diisi dengan
+ * peran PRIMER hasil `refreshActorRoles`. Akun dengan `GURU` primer +
+ * `YAYASAN_KETUA` sekunder ditolak 403 di semua rute tulis meski peran
+ * yayasannya sah. Uji ini menjalankan router Express SUNGGUHAN dengan token
+ * ber-`roleCode=GURU`, sehingga membuktikan perilaku middleware, bukan teks.
+ * Diperbaiki oleh `authorizeAnyRole` yang menilai seluruh `roleCodes`.
+ */
+describe('foundation-decisions.routes — authorizeAnyRole (finding #2)', () => {
+  function buildApp() {
+    const app = express();
+    app.use(express.json());
+    app.use(router);
+    app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+      const e = err as { statusCode?: number; status?: number; message?: string };
+      res.status(e.statusCode ?? e.status ?? 500).json({ error: e.message });
+    });
+    return app;
+  }
+
+  function token(roleCode: string) {
+    return generateAccessToken({
+      id: 'u1',
+      sub: 'u1',
+      email: 'pejabat@cipansor.or.id',
+      roleId: 'r1',
+      roleCode,
+      unitId: null,
+      permissions: [],
+      role: 'TEACHER',
+    });
+  }
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it.each([
+    [
+      'post',
+      '/decisions',
+      { organType: 'PENGURUS', kind: 'MEETING', subject: 'Uji', body: 'naskah uji sekunder' },
+    ],
+    ['post', '/decisions/dec-1/finalize', {}],
+    ['post', '/decisions/dec-1/cancel', {}],
+  ])(
+    '%s %s mengizinkan peran yayasan SEKUNDER (primer non-yayasan)',
+    async (method, path, body) => {
+      // Refresh dari basis data: primer GURU, sekunder YAYASAN_KETUA.
+      vi.spyOn(FoundationDecisionService, 'currentActiveRoleCodes').mockResolvedValue({
+        primary: 'GURU',
+        all: ['GURU', 'YAYASAN_KETUA'],
+      });
+      // Service-nya distub supaya yang diuji benar-benar middleware, bukan
+      // kegagalan Prisma tiruan.
+      vi.spyOn(FoundationDecisionService, 'create').mockResolvedValue('dec-1');
+      vi.spyOn(FoundationDecisionService, 'finalize').mockResolvedValue({} as never);
+      vi.spyOn(FoundationDecisionService, 'cancel').mockResolvedValue({} as never);
+
+      const app = buildApp();
+      const res = await request(app)
+        .post(path)
+        .set('authorization', `Bearer ${token('GURU')}`)
+        .send(body);
+
+      // Bukan 403 — peran sekunder YAYASAN_KETUA lolos gerbang.
+      expect(res.status, `${method.toUpperCase()} ${path}`).not.toBe(403);
+    }
+  );
+
+  it.each([
+    ['post', '/decisions/dec-1/publication', { publication: 'PUBLIC' }],
+    ['put', '/rules', { threshold: 1 }],
+  ])(
+    '%s %s mengizinkan peran SUPER_ADMIN SEKUNDER (primer non-yayasan)',
+    async (method, path, body) => {
+      // Rute publikasi/aturan hanya Super Admin; yang diuji adalah Super Admin
+      // sebagai peran SEKUNDER.
+      vi.spyOn(FoundationDecisionService, 'currentActiveRoleCodes').mockResolvedValue({
+        primary: 'GURU',
+        all: ['GURU', 'SUPER_ADMIN'],
+      });
+      vi.spyOn(FoundationDecisionService, 'setPublication').mockResolvedValue({} as never);
+      vi.spyOn(FoundationDecisionService, 'upsertRule').mockResolvedValue({} as never);
+
+      const app = buildApp();
+      const res = await (method === 'post' ? request(app).post(path) : request(app).put(path))
+        .set('authorization', `Bearer ${token('GURU')}`)
+        .send(body);
+
+      expect(res.status, `${method.toUpperCase()} ${path}`).not.toBe(403);
+    }
+  );
+
+  it.each([
+    [
+      'post',
+      '/decisions',
+      { organType: 'PENGURUS', kind: 'MEETING', subject: 'Uji', body: 'naskah uji' },
+    ],
+    ['post', '/decisions/dec-1/finalize', {}],
+    ['put', '/rules', { threshold: 1 }],
+  ])('%s %s TETAP menolak aktor tanpa peran yang diizinkan', async (method, path, body) => {
+    // Tidak ada peran tata kelola sama sekali — hanya GURU. Gerbang tidak boleh
+    // dilonggarkan hanya karena kini memeriksa banyak peran.
+    vi.spyOn(FoundationDecisionService, 'currentActiveRoleCodes').mockResolvedValue({
+      primary: 'GURU',
+      all: ['GURU'],
+    });
+
+    const app = buildApp();
+    const res = await (method === 'post' ? request(app).post(path) : request(app).put(path))
+      .set('authorization', `Bearer ${token('GURU')}`)
+      .send(body);
+
+    expect(res.status, `${method.toUpperCase()} ${path}`).toBe(403);
   });
 });

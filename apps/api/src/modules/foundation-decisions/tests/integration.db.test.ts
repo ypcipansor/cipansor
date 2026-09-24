@@ -2751,6 +2751,148 @@ describe.skipIf(!RUN)('foundation-decisions integrasi PostgreSQL', () => {
       await prisma.user.deleteMany({ where: { id: { in: [creator.id, voter.id] } } });
     }
   });
+
+  /**
+   * Finding #1 (SECURITY critical, CWE-367) — pencabutan yang menstempel
+   * `revokedAt` SETELAH `signedAt` tetapi SEBELUM suara menulis tetap harus
+   * menolak suara, bukan menyimpannya sebagai baris yang tak lagi autentik.
+   *
+   * Bentuk jendela TOCTOU yang tepat: `assertCanSign` di LUAR transaksi sudah
+   * melewati kunci (masih aktif), lalu penguji menahan advisory lock pemilih
+   * supaya transaksi suara berhenti TEPAT setelah pra-cek tetapi sebelum lock —
+   * dan menstempel `revokedAt = NOW()` (LEBIH BESAR dari `signedAt`). Dengan
+   * pemeriksaan lama (`keyUsableAt(history, signedAt)` saja) suara itu LOLOS
+   * (karena `signedAt < revokedAt`) dan ter-commit sebagai baris tak autentik.
+   * Perbaikan membaca ulang status kunci di dalam lock dan menolak bila riwayat
+   * sudah dicabut pada waktu mana pun.
+   */
+  it('revokedAt setelah signedAt tetap menolak suara (CWE-367)', async () => {
+    const suffix = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const creator = await prisma.user.create({
+      data: {
+        id: `itest-krev2-creator-${suffix}`,
+        email: `itest-krev2-creator-${suffix}@example.test`,
+        name: 'Pembuat Cabut 2',
+        passwordHash: 'x',
+      },
+    });
+    const voter = await prisma.user.create({
+      data: {
+        id: `itest-krev2-voter-${suffix}`,
+        email: `itest-krev2-voter-${suffix}@example.test`,
+        name: 'Pemilih Cabut 2',
+        passwordHash: 'x',
+      },
+    });
+    const pembina = await prisma.role.upsert({
+      where: { code: 'YAYASAN_PEMBINA' },
+      create: { code: 'YAYASAN_PEMBINA', name: 'Pembina', realm: 'YAYASAN' },
+      update: {},
+    });
+    await prisma.userRoleAssignment.create({
+      data: { userId: creator.id, roleId: pembina.id, isActive: true, isPrimary: true },
+    });
+    await prisma.userRoleAssignment.create({
+      data: { userId: voter.id, roleId: pembina.id, isActive: true },
+    });
+    const voterKey = createKeyMaterial('krev2-vote-pass');
+    const key = await prisma.userSigningKey.create({
+      data: {
+        id: `itest-krev2-key-${suffix}`,
+        userId: voter.id,
+        algorithm: voterKey.algorithm,
+        publicKey: voterKey.publicKey,
+        encryptedPrivateKey: voterKey.encryptedPrivateKey,
+        kdfSalt: voterKey.kdfSalt,
+        kdfParams: voterKey.kdfParams as never,
+        iv: voterKey.iv,
+        authTag: voterKey.authTag,
+        approvedAt: new Date(),
+        expiresAt: new Date(Date.now() + 365 * 24 * 3600 * 1000),
+      },
+    });
+    await prisma.userSigningKeyHistory.create({
+      data: {
+        id: `itest-krev2-hist-${suffix}`,
+        userId: voter.id,
+        algorithm: voterKey.algorithm,
+        publicKey: voterKey.publicKey,
+        fingerprint: publicKeyFingerprint(voterKey.publicKey),
+        issuedAt: new Date(Date.now() - 60_000),
+      },
+    });
+
+    let decisionId: string | null = null;
+    const b = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    try {
+      decisionId = await FoundationDecisionService.create(
+        { id: creator.id, roleCode: 'YAYASAN_PEMBINA' },
+        {
+          organType: 'PEMBINA',
+          kind: 'MEETING',
+          subject: 'Uji race pencabutan setelah signedAt',
+          body: 'Naskah uji balapan antara pemberian suara dan pencabutan kunci pasca signedAt.',
+          decisionType: 'pengesahan-rencana-kerja',
+        }
+      );
+
+      // Koneksi B memegang advisory lock pemilih SEBELUM `castVote` masuk ke
+      // transaksinya, sehingga transaksi suara berhenti tepat setelah pra-cek
+      // `assertCanSign` (yang masih melihat kunci aktif).
+      await b.connect();
+      await b.query('BEGIN');
+      await b.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [voter.id]);
+
+      const votePromise = FoundationDecisionService.castVote(
+        { id: voter.id, roleCode: 'YAYASAN_PEMBINA' },
+        decisionId,
+        { choice: 'APPROVE', passphrase: 'krev2-vote-pass' }
+      );
+      const blocked = await waitForAdvisoryLockWaiter(prisma, 8000);
+      expect(blocked).toBe(true);
+
+      // Pencabutan dengan cap waktu = SEKARANG: LEBIH BESAR dari `signedAt`
+      // yang sudah dibekukan `castVote` saat pra-cek. Inilah jendela yang dulu
+      // lolos — `keyUsableAt` menerima karena `signedAt < revokedAt`.
+      //
+      // `clock_timestamp()`, BUKAN `NOW()`: `NOW()` adalah waktu MULAI transaksi
+      // B, yang sudah lebih awal dari `signedAt` sehingga jalur pemeriksaan lama
+      // kebetulan ikut menolaknya. Cap waktu harus benar-benar jatuh SETELAH
+      // `signedAt` agar tepat mereproduksi pencabutan yang commit di sela.
+      await b.query(
+        `UPDATE "user_signing_keys" SET "revoked_at" = clock_timestamp() WHERE "id" = $1`,
+        [key.id]
+      );
+      await b.query(
+        `UPDATE "user_signing_key_history" SET "revoked_at" = clock_timestamp() WHERE "user_id" = $1`,
+        [voter.id]
+      );
+      await b.query('COMMIT');
+
+      // Suara ditolak sebagai konflik — bukan tersimpan sebagai baris yang tak
+      // lagi autentik (dan sekaligus mengunci pemilih dari percobaan ulang).
+      await expect(votePromise).rejects.toThrow();
+      expect(await prisma.foundationDecisionVote.count({ where: { decisionId } })).toBe(0);
+      // Tidak ada e-seal yang dibubuhkan (keputusan tetap VOTING, bukan APPROVED).
+      const decision = await prisma.foundationDecision.findUnique({ where: { id: decisionId } });
+      expect(decision?.status).toBe('VOTING');
+      expect(decision?.esealId).toBeNull();
+    } finally {
+      await b.end().catch(() => {});
+      if (decisionId) {
+        await prisma.foundationDecisionVote.deleteMany({ where: { decisionId } });
+        await prisma.foundationDecisionMember.deleteMany({ where: { decisionId } });
+        await prisma.auditLog.deleteMany({ where: { entityId: decisionId } });
+        await prisma.foundationDecision.delete({ where: { id: decisionId } });
+      }
+      await prisma.userSigningKeyHistory.deleteMany({ where: { userId: voter.id } });
+      await prisma.userSigningKey.deleteMany({ where: { userId: voter.id } });
+      await prisma.userRoleAssignment.deleteMany({
+        where: { userId: { in: [creator.id, voter.id] } },
+      });
+      await prisma.user.deleteMany({ where: { id: { in: [creator.id, voter.id] } } });
+    }
+  });
 });
 
 /** Ambil blok `DO $$ ... $$;` pertama dari SQL migrasi. */

@@ -178,23 +178,24 @@ export const SIGNING_KEY_CONTENDED =
   'Kunci tanda tangan Anda berubah atau tidak lagi berlaku saat suara diproses. Silakan coba lagi dengan kunci terkini.';
 
 /**
- * Buktikan ULANG, di dalam transaksi suara, bahwa kunci yang benar-benar
- * menandatangani masih kunci yang berlaku bagi pemiliknya.
+ * Buktikan ULANG, di dalam transaksi suara (setelah `lockSigningKeyTransition`),
+ * bahwa kunci yang menandatangani masih berlaku — dan kembalikan rekaman
+ * riwayat tepercaya untuk diikat ke suara.
  *
- * TOCTOU: antara pembacaan kunci oleh `castVote` dan `INSERT` suara, jalur lain
- * dapat merotasi/mencabut kunci. Bila rotasi menang, suara yang terlanjur
- * ditulis ditolak `isVoteAuthentic` — ia tidak masuk rekap tetapi barisnya tetap
- * ada, dan percobaan ulang ditolak "sudah memberikan suara". Pemeriksaan ini
- * adalah jaring KEDUA: `castVote` dan seluruh transisi kunci esign memakai
- * advisory lock per-pengguna yang sama (`lockSigningKeyTransition`, langkah
- * pertama transaksi), sehingga rotasi konkuren terserialkan. §7.2 dokumen review.
+ * TOCTOU (CWE-367): `assertCanSign` di LUAR transaksi tidak menutup jendela
+ * antara pembacaan kunci dan `INSERT`. Pencabutan yang commit SETELAH
+ * `signedAt` tetapi SEBELUM lock tetap lolos `keyUsableAt` (yang hanya menolak
+ * bila `signedAt >= revokedAt`), sehingga suara ter-commit dengan kunci mati —
+ * tak masuk rekap tetapi menempati slot unik `(decisionId, userId)`, mengunci
+ * pemilih dari percobaan ulang. Karena itu status kunci dibaca SEGAR di dalam
+ * lock dan `assertCanSign` dijalankan ulang atasnya. §7.2 dokumen review.
  */
 async function assertSigningKeyStillCurrent(
   tx: DbClient,
   userId: string,
   material: { publicKey: string; algorithm: string },
   signedAt: Date
-): Promise<void> {
+): Promise<UserSigningKeyHistory> {
   const current = await tx.userSigningKey.findUnique({ where: { userId } });
   if (!current) throw Errors.conflict(SIGNING_KEY_CONTENDED);
 
@@ -206,16 +207,32 @@ async function assertSigningKeyStillCurrent(
     throw Errors.conflict(SIGNING_KEY_CONTENDED);
   }
 
-  // Riwayat tepercaya: barisnya harus sudah ada (kita baru meng-upsert di luar
-  // transaksi), dimiliki pemilih yang sama, fingerprint-nya cocok, dan kunci
-  // masih berlaku pada `signedAt`. Rotasi/pencabutan yang commit di sela-sela
-  // membuat salah satu syarat ini gagal.
+  // Baca ulang status di DALAM lock: pencabutan/kedaluwarsa/lockout yang commit
+  // setelah `signedAt` tetapi sebelum lock membuat kunci tak lagi berhak
+  // menandatangani, dan suara BARU harus ditolak — bukan disimpan lalu ditolak
+  // verifikasi di kemudian hari.
+  try {
+    assertCanSign(current as never);
+  } catch {
+    throw Errors.conflict(SIGNING_KEY_CONTENDED);
+  }
+
+  // Rekaman riwayat dibaca ULANG DI DALAM transaksi (setelah lock), bukan
+  // dipakai dari salinan luar yang mungkin basi. Barisnya sudah di-upsert
+  // idempoten sebelum transaksi (`ensureSigningKeyHistory`), jadi pembacaan ini
+  // selalu menemukan keadaan final pada `(userId, fingerprint)`.
   const fingerprint = publicKeyFingerprint(material.publicKey);
   const record = await tx.userSigningKeyHistory.findUnique({
     where: { userId_fingerprint: { userId, fingerprint } },
   });
   if (!record) throw Errors.conflict(SIGNING_KEY_CONTENDED);
+  // Pencabutan pada waktu mana pun menutup hak menandatangani BARU. Suara
+  // historis tetap sah lewat `isVoteAuthentic`/`keyUsableAt` yang membandingkan
+  // `signedAt`, tetapi suara yang baru ditulis tidak boleh memakai kunci yang
+  // sudah dicabut.
+  if (record.revokedAt) throw Errors.conflict(SIGNING_KEY_CONTENDED);
   if (!keyUsableAt(record, signedAt)) throw Errors.conflict(SIGNING_KEY_CONTENDED);
+  return record;
 }
 
 /**
@@ -1777,11 +1794,13 @@ export const FoundationDecisionService = {
         await assertActorHasCurrentOrganAssignmentInTx(tx, actor.id, locked.organType);
 
         // TOCTOU: buktikan ULANG, DI DALAM transaksi dan SEBELUM `INSERT`, bahwa
-        // kunci yang menandatangani masih berlaku. Bila rotasi/pencabutan commit
-        // di sela-sela, transaksi ini dibatalkan sehingga TIDAK ada baris suara
-        // yang tercommit — bukan baris yang ditolak `isVoteAuthentic` sekaligus
+        // kunci yang menandatangani masih berlaku — dan ikat suara ke rekaman
+        // riwayat yang dibaca/di-upsert DI DALAM lock, bukan ke salinan luar
+        // yang mungkin sudah basi. Bila rotasi/pencabutan commit di sela-sela,
+        // transaksi ini dibatalkan sehingga TIDAK ada baris suara yang
+        // tercommit — bukan baris yang ditolak `isVoteAuthentic` sekaligus
         // memblokir percobaan ulang.
-        await assertSigningKeyStillCurrent(
+        const lockedKeyRecord = await assertSigningKeyStillCurrent(
           tx,
           actor.id,
           { publicKey: material.publicKey, algorithm: material.algorithm },
@@ -1799,8 +1818,8 @@ export const FoundationDecisionService = {
             algorithm: material.algorithm,
             note: note?.trim() || null,
             signedAt,
-            signingKeyId: keyRecord.id,
-            publicKeyFingerprint: keyRecord.fingerprint,
+            signingKeyId: lockedKeyRecord.id,
+            publicKeyFingerprint: lockedKeyRecord.fingerprint,
           },
         });
 
