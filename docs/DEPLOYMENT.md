@@ -157,12 +157,13 @@ CHATBOT_MODEL=DeepSeek-V4-Flash
 
 ### Database Migration dengan Docker
 
-Migrations run as a **one-shot `migrate` service**, not inside the API
-container. The runtime image deliberately deletes the Prisma CLI cluster
-(`prisma`, `@prisma/studio-core`, `effect`, `@typescript-eslint`, …), so
-`docker compose exec api npx prisma migrate deploy` resolves to nothing and
-exits _without applying a single migration_ — a deploy that looks green against
-a stale schema.
+Migrations run as a **one-shot `migrate` service**. The runtime image also keeps
+the Prisma CLI (since 2026-09-23 its strip step removes only the CLI's dev-only
+weight — `@electric-sql/pglite` and `typescript` — and `prisma` is a production
+`dependency`), so `MIGRATE_ON_START=true` applies migrations from inside the
+running container; that is the Azure path, where the database is on a private
+network CI cannot reach. Compose instead uses this one-shot service so the
+migration is a discrete step that `api` waits on.
 
 ```bash
 # Apply migrations (manual re-run / entry point).
@@ -186,7 +187,8 @@ pnpm --filter api db:seed
 > "at most one active e-seal"; a `db push` database silently lacks it. Use
 > `prisma migrate deploy` (deployment) or `prisma migrate dev` (authoring).
 
-# Jalankan migration
+```bash
+# Jalankan migration (dari host, saat mengarang migrasi baru)
 npx prisma migrate deploy
 ```
 

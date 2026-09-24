@@ -330,7 +330,7 @@ function VerificationResult({
           <div>
             <p className="font-medium">
               {uploaded
-                ? "Berkas ini tidak terdaftar sebagai keputusan resmi."
+                ? "Berkas tidak cocok dengan arsip ber-e-seal mana pun."
                 : "Keputusan tidak ditemukan atau belum final."}
             </p>
             <p className="text-sm text-muted-foreground">

@@ -191,11 +191,14 @@ describe('penyediaan basis data lokal memakai migrasi (Flag C)', () => {
    * Audit A — jalur deployment produksi harus benar-benar dapat menjalankan
    * migrasi.
    *
-   * Runtime image (`apps/api/Dockerfile` stage `runner`) menghapus cluster
-   * Prisma CLI, sehingga `docker exec cipansor-api npx prisma migrate deploy`
-   * tidak menjalankan apa pun. Makefile harus memakai service `migrate`
-   * (stage `migrate` di image yang sama) dan TIDAK boleh kembali ke `exec ģ
-   * npx`. Sisi perilakunya diuji terhadap image nyata oleh
+   * Dua jalur yang SAH: Compose memakai service `migrate` (stage `migrate` di
+   * image yang sama), sedangkan runtime image dapat menjalankan migrasi sendiri
+   * lewat `MIGRATE_ON_START=true` — CLI Prisma TETAP ADA di runner (yang dibuang
+   * hanya pglite + typescript), dan `docker-entrypoint.sh` memanggilnya. Yang
+   * DILARANG adalah `docker exec cipansor-api npx prisma migrate deploy`:
+   * `npx` di runner tidak menjangkau biner lokal seperti pemanggilan langsung.
+   * Makefile harus memakai service `migrate` dan TIDAK boleh kembali ke
+   * `exec … npx`. Sisi perilakunya diuji terhadap image nyata oleh
    * `deployment-migration.db.test.ts`, yang membangun stage `migrate` dan
    * menjalankannya terhadap PostgreSQL kosong nyata.
    */
@@ -203,6 +206,29 @@ describe('penyediaan basis data lokal memakai migrasi (Flag C)', () => {
     const text = commandLines(read('Makefile'));
     expect(text).toMatch(/compose run[\s\S]{0,120}\bmigrate\b/);
     expect(text).not.toMatch(/docker exec cipansor-api[\s\S]{0,120}prisma migrate/);
+  });
+
+  /**
+   * Audit A (konsistensi) — dokumentasi jalur migrasi TIDAK boleh saling
+   * bertentangan. Sebelumnya stage `migrate` dan `docs/DEPLOYMENT.md`
+   * mengklaim runtime image "menghapus cluster Prisma CLI" dan `npx` di sana
+   * "canceled", padahal `docker-entrypoint.sh` justru menjalankan CLI itu saat
+   * `MIGRATE_ON_START=true`. Kasus nyata ditentukan kode: CLI bertahan (hanya
+   * pglite/typescript yang dibuang) dan entrypoint memakainya.
+   */
+  it('docs/compose tidak mengklaim ulang bahwa runner menghapus Prisma CLI', () => {
+    for (const rel of ['apps/api/Dockerfile', 'docker-compose.yml', 'docs/DEPLOYMENT.md']) {
+      const text = read(rel);
+      expect(text, `${rel} mengklaim CLI dihapus`).not.toMatch(
+        /npx canceled|menghapus cluster Prisma CLI|deliberately deletes the Prisma CLI/
+      );
+    }
+  });
+
+  it('entrypoint menjalankan migrasi dari runner saat MIGRATE_ON_START=true', () => {
+    const entry = read('apps/api/docker-entrypoint.sh');
+    expect(entry).toMatch(/MIGRATE_ON_START/);
+    expect(entry).toMatch(/prisma migrate deploy/);
   });
 
   it('docker-compose mendefinisikan service migrate yang dijalankan sebelum api', () => {

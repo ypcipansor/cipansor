@@ -43,12 +43,14 @@ services:
 
   # One-shot release job: apply Prisma migrations before the API starts.
   #
-  # Migrations cannot run in the runtime image — it strips the Prisma CLI (see
-  # apps/api/Dockerfile). This service builds the `migrate` target and runs
+  # This service builds the `migrate` target (full dependency closure) and runs
   # `prisma migrate deploy`; `api` waits for it to exit 0, so a failed migration
-  # aborts the deploy instead of booting an API against a stale schema. Migrations
-  # from multiple API replicas are safe regardless: Prisma takes an advisory lock
-  # around `migrate deploy`, and compose only starts `api` after this exits.
+  # aborts the deploy instead of booting an API against a stale schema.
+  # Migrations from multiple API replicas are safe regardless: Prisma takes an
+  # advisory lock around `migrate deploy`, and compose only starts `api` after
+  # this exits. (The runtime image can also migrate — it keeps the Prisma CLI
+  # and does so when MIGRATE_ON_START=true, the Azure path — but Compose uses
+  # this one-shot service instead so migrations are a discrete, observed step.)
   migrate:
     build:
       context: .

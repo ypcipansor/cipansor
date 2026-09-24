@@ -2430,6 +2430,27 @@ describe('FoundationDecisionService.verifyByPdfBuffer', () => {
     );
   });
 
+  /**
+   * Finding 5 — berkas yang DIUBAH berakhir di cabang `!d` yang SAMA dengan
+   * berkas asing, sebab digest-nya berbeda. Pesan `reason` karena itu tidak
+   * boleh memastikan dokumen "tidak terdaftar": itu menyesatkan pemegang
+   * salinan sah yang termodifikasi sekaligus membocorkan keberadaan keputusan
+   * privat lewat selisih kata. Ia harus menyebut KEDUA kemungkinan netral.
+   */
+  it('pesan found:false menyebut "tidak terdaftar ATAU diubah", tanpa klaim sepihak (finding 5)', async () => {
+    dm.foundationDecision.findUnique.mockResolvedValue(null);
+    dm.foundationDecision.findFirst.mockResolvedValue(null);
+
+    const altered = Buffer.from('%PDF-1.7 berkas sah yang diubah satu byte');
+    const res = await FoundationDecisionService.verifyByPdfBuffer(altered);
+
+    expect(res.found).toBe(false);
+    expect(res.reason).toMatch(/tidak cocok dengan arsip ber-e-seal/i);
+    expect(res.reason).toMatch(/tidak terdaftar ATAU telah diubah/i);
+    // Tidak boleh lagi hanya menyatakan "tidak terdaftar".
+    expect(res.reason).not.toMatch(/tidak terdaftar sebagai risalah\/keputusan resmi/i);
+  });
+
   it('menerima berkas unggahan yang byte-nya persis sama dengan arsip tersegel', async () => {
     const bytes = Buffer.from('%PDF-1.7 arsip asli yang di-e-seal');
     const digest = sha256bytes(bytes);

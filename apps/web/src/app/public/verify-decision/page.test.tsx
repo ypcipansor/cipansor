@@ -131,6 +131,47 @@ describe("halaman verifikasi keputusan publik", () => {
   });
 
   /**
+   * Finding 5 — berkas yang DIUBAH tidak boleh dijawab "dokumen tidak dikenal".
+   *
+   * Jalur unggahan menghitung digest byte unggahan; berkas yang dimodifikasi
+   * menghasilkan digest berbeda dan berakhir di `found: false` yang sama dengan
+   * berkas asing. Menyebutnya "tidak terdaftar" saja (a) menyesatkan pemegang
+   * salinan yang sah namun termodifikasi, dan (b) membocorkan keberadaan
+   * keputusan privat lewat selisih kata. Pesannya harus menyebut KEDUA
+   * kemungkinan tanpa memihak.
+   */
+  it("berkas unggahan yang tidak cocok menyebut 'tidak terdaftar ATAU diubah' (finding 5)", async () => {
+    pdfState.mutateAsync.mockResolvedValue(
+      dto({
+        found: false,
+        isValid: false,
+        subject: null,
+        reason:
+          "Berkas tidak cocok dengan arsip ber-e-seal mana pun — dokumen tidak terdaftar ATAU telah diubah (verifikasi memerlukan berkas byte-identik).",
+      }),
+    );
+    const { container } = render(<PublicVerifyDecisionPage />);
+    const input = container.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement;
+    fireEvent.change(input, {
+      target: {
+        files: [new File(["a"], "diubah.pdf", { type: "application/pdf" })],
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Verifikasi Berkas/ }));
+
+    expect(
+      await screen.findAllByText(/tidak cocok dengan arsip ber-e-seal/i),
+    ).not.toHaveLength(0);
+    // Bukan lagi klaim satu arah "tidak terdaftar sebagai keputusan resmi".
+    expect(
+      screen.queryByText(/tidak terdaftar sebagai keputusan resmi/i),
+    ).toBeNull();
+    expect(screen.getByText(/ATAU telah diubah/i)).toBeTruthy();
+  });
+
+  /**
    * Regresi SECURITY CRITICAL — verifikasi anonim membocorkan metadata.
    *
    * Server menyensor `subject`/organ/tanggal/rekap suara untuk keputusan

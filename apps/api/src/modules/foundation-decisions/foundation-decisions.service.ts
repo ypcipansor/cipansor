@@ -2710,8 +2710,15 @@ export const FoundationDecisionService = {
       // Tidak ada keputusan yang mengenal byte ini. Bentuk DTO tetap penuh,
       // sehingga halaman publik dapat menampilkan pesan yang benar alih-alih
       // galat bentuk.
+      //
+      // Finding 5 — kata-katanya TIDAK boleh memastikan dokumen "tidak
+      // terdaftar". Berkas yang diubah menghasilkan digest yang berbeda, jadi
+      // ia sampai di sini JUGA; menyebutnya "tidak dikenal" saja akan
+      // membocorkan keberadaan (atau ketiadaan) keputusan privat lewat selisih
+      // pesan, dan menyesatkan orang yang memegang salinan yang sah namun
+      // termodifikasi. Pesannya menyebut KEDUA kemungkinan tanpa memihak.
       return emptyVerification(
-        'Berkas PDF ini tidak terdaftar sebagai risalah/keputusan resmi Yayasan, atau isinya telah berubah sejak disahkan.'
+        'Berkas tidak cocok dengan arsip ber-e-seal mana pun — dokumen tidak terdaftar ATAU telah diubah (verifikasi memerlukan berkas byte-identik).'
       );
     }
 
