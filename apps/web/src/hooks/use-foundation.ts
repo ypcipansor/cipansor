@@ -1,8 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type {
-  FoundationExecutiveSummary,
-  FoundationFinancialOverview,
-} from "@cipansor/shared";
+import type { FoundationFinancialOverview } from "@cipansor/shared";
 import api from "@/lib/api";
 
 // Types
@@ -116,58 +113,6 @@ export function useUpdateFoundation() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["foundation"] });
-    },
-  });
-}
-
-// Financial Summary Types and Hooks
-export interface FoundationFinancialSummary {
-  currentMonth: {
-    revenue: number;
-    expense: number;
-    net: number;
-  };
-  lastMonth: {
-    revenue: number;
-    expense: number;
-    net: number;
-  };
-  byUnit: {
-    unitId: string;
-    unitName: string;
-    revenue: number;
-    expense: number;
-  }[];
-  units?: {
-    unitId: string;
-    unitName: string;
-    revenue: number;
-    expense: number;
-    netIncome: number;
-  }[];
-  expenseComposition?: {
-    name: string;
-    value: number;
-  }[];
-}
-
-export function useFoundationFinancialSummary(foundationId?: string) {
-  return useQuery({
-    queryKey: ["foundation", "financial-summary", foundationId],
-    queryFn: async () => {
-      const response = await api.get("/foundation/stats/financial");
-      return response.data.data as FoundationFinancialSummary;
-    },
-    enabled: !!foundationId,
-  });
-}
-
-export function useFoundationExecutiveSummary() {
-  return useQuery({
-    queryKey: ["foundation", "executive-summary"],
-    queryFn: async () => {
-      const response = await api.get("/foundation/stats/executive");
-      return response.data.data as FoundationExecutiveSummary;
     },
   });
 }
