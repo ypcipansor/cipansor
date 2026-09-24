@@ -12,9 +12,7 @@ vi.mock("@/lib/api", () => {
 import { useSettings } from "./use-settings";
 
 describe("useSettings", () => {
-  it("falls back to the yayasan's real identity, not an invented one", async () => {
-    // There is no GET /settings route; this is what callers really get.
-    get.mockRejectedValue(new Error("404"));
+  it("is the yayasan's real identity, not an invented one", async () => {
     const client = new QueryClient();
     const { result } = renderHook(() => useSettings(), {
       wrapper: ({ children }: { children: ReactNode }) => (
@@ -30,5 +28,7 @@ describe("useSettings", () => {
     expect(JSON.stringify(s)).not.toMatch(
       /Al-Hidayah|Pendidikan No\. 123|1234567/,
     );
+    // No request to a route that does not exist (it raised an error toast).
+    expect(get).not.toHaveBeenCalled();
   });
 });

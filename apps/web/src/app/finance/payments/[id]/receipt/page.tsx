@@ -219,25 +219,25 @@ export default function PaymentReceiptPage({ params }: ReceiptPageProps) {
 
               {/* Receipt Details */}
               <div className="space-y-3 text-sm">
-                <div className="grid grid-cols-[140px,1fr] gap-2">
+                <div className="grid grid-cols-[140px_1fr] gap-2">
                   <span>Telah Diterima Dari</span>
                   <span>
                     : <strong>{student?.user?.name || "-"}</strong>
                   </span>
                 </div>
-                <div className="grid grid-cols-[140px,1fr] gap-2">
+                <div className="grid grid-cols-[140px_1fr] gap-2">
                   <span>NIS</span>
                   <span>: {student?.nis || "-"}</span>
                 </div>
-                <div className="grid grid-cols-[140px,1fr] gap-2">
+                <div className="grid grid-cols-[140px_1fr] gap-2">
                   <span>Kelas</span>
                   <span>: {student?.enrollments?.[0]?.class.name || "-"}</span>
                 </div>
-                <div className="grid grid-cols-[140px,1fr] gap-2">
+                <div className="grid grid-cols-[140px_1fr] gap-2">
                   <span>No. Tagihan</span>
                   <span>: {payment.invoice?.invoiceNumber || "-"}</span>
                 </div>
-                <div className="grid grid-cols-[140px,1fr] gap-2">
+                <div className="grid grid-cols-[140px_1fr] gap-2">
                   <span>Uang Sebesar</span>
                   <span>
                     :{" "}
@@ -246,20 +246,20 @@ export default function PaymentReceiptPage({ params }: ReceiptPageProps) {
                     </strong>
                   </span>
                 </div>
-                <div className="grid grid-cols-[140px,1fr] gap-2">
+                <div className="grid grid-cols-[140px_1fr] gap-2">
                   <span>Terbilang</span>
                   <span className="italic">
                     : {terbilang(Number(payment.amount)).trim()} Rupiah
                   </span>
                 </div>
-                <div className="grid grid-cols-[140px,1fr] gap-2">
+                <div className="grid grid-cols-[140px_1fr] gap-2">
                   <span>Untuk Pembayaran</span>
                   <span>
                     : {payment.invoice?.paymentType?.name || "-"}
                     {payment.invoice?.period && ` - ${payment.invoice.period}`}
                   </span>
                 </div>
-                <div className="grid grid-cols-[140px,1fr] gap-2">
+                <div className="grid grid-cols-[140px_1fr] gap-2">
                   <span>Metode Pembayaran</span>
                   <span>
                     : {paymentMethodLabel(payment.method)}
@@ -267,7 +267,7 @@ export default function PaymentReceiptPage({ params }: ReceiptPageProps) {
                   </span>
                 </div>
                 {payment.notes && (
-                  <div className="grid grid-cols-[140px,1fr] gap-2">
+                  <div className="grid grid-cols-[140px_1fr] gap-2">
                     <span>Catatan</span>
                     <span>: {payment.notes}</span>
                   </div>
