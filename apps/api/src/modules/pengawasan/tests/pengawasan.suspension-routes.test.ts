@@ -78,7 +78,9 @@ describe('POST /pengawasan/board-suspensions (issuance)', () => {
   it.each(['SUPER_ADMIN', 'YAYASAN_PENGAWAS'])(
     'allows %s to issue an SK Pembekuan',
     async (role) => {
-      const res = await sebagai(role)(request(app).post('/pengawasan/board-suspensions').send(BODY));
+      const res = await sebagai(role)(
+        request(app).post('/pengawasan/board-suspensions').send(BODY)
+      );
       expect(res.status).toBe(201);
       expect(service.suspendBoardMember).toHaveBeenCalledTimes(1);
     }
@@ -87,7 +89,9 @@ describe('POST /pengawasan/board-suspensions (issuance)', () => {
   it.each(['YAYASAN_PEMBINA', 'YAYASAN_SEKRETARIS', 'SDIT_ADMIN'])(
     'refuses %s and never reaches the service',
     async (role) => {
-      const res = await sebagai(role)(request(app).post('/pengawasan/board-suspensions').send(BODY));
+      const res = await sebagai(role)(
+        request(app).post('/pengawasan/board-suspensions').send(BODY)
+      );
       expect(res.status).toBe(403);
       expect(service.suspendBoardMember).not.toHaveBeenCalled();
     }
@@ -117,7 +121,9 @@ describe('candidate pickers (issuance-level read)', () => {
     'refuses %s the candidate lists',
     async (role) => {
       const a = await sebagai(role)(request(app).get('/pengawasan/board-suspensions/candidates'));
-      const b = await sebagai(role)(request(app).get('/pengawasan/board-suspensions/plh-candidates'));
+      const b = await sebagai(role)(
+        request(app).get('/pengawasan/board-suspensions/plh-candidates')
+      );
       expect(a.status).toBe(403);
       expect(b.status).toBe(403);
       expect(service.listSuspendableCandidates).not.toHaveBeenCalled();

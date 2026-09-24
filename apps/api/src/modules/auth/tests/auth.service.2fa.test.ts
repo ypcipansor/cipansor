@@ -14,7 +14,7 @@ const { prismaMock, verifyOtp } = vi.hoisted(() => {
     user: { findUnique: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
     boardMemberSuspension: { findFirst: vi.fn() },
     refreshToken: { create: vi.fn(), delete: vi.fn(), deleteMany: vi.fn(), findFirst: vi.fn() },
-    userRoleAssignment: { findMany: vi.fn() },
+    userRoleAssignment: { findMany: vi.fn(), count: vi.fn() },
     academicYear: { findFirst: vi.fn() },
     $queryRaw: vi.fn(),
     $executeRaw: vi.fn(),
@@ -76,6 +76,7 @@ describe('AuthService.verifyTwoFactorLogin — suspension race', () => {
         role: { code: 'YAYASAN_KETUA', permissions: [] },
       },
     ]);
+    prismaMock.userRoleAssignment.count.mockResolvedValue(1);
     prismaMock.refreshToken.create.mockResolvedValue({});
     // The rotation consumes the presented token with a conditional delete
     // (`deleteMany`), whose rowcount identifies the race loser; the mock must
@@ -148,6 +149,7 @@ describe('AuthService.verifyTwoFactorLogin — recovery codes are consumed atomi
         role: { code: 'YAYASAN_KETUA', permissions: [] },
       },
     ]);
+    prismaMock.userRoleAssignment.count.mockResolvedValue(1);
     prismaMock.refreshToken.create.mockResolvedValue({});
     prismaMock.user.update.mockResolvedValue({});
     verifyOtp.mockResolvedValue({ valid: false });
@@ -257,6 +259,7 @@ describe('AuthService.refreshToken — rotation under suspension', () => {
         role: { code: 'YAYASAN_KETUA', permissions: [] },
       },
     ]);
+    prismaMock.userRoleAssignment.count.mockResolvedValue(1);
     prismaMock.refreshToken.create.mockResolvedValue({});
     prismaMock.refreshToken.delete.mockResolvedValue({});
     prismaMock.academicYear.findFirst.mockResolvedValue(null);

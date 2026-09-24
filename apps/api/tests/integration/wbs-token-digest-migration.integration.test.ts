@@ -81,18 +81,14 @@ describeDb('wbs tracking-token digest migration (real PostgreSQL)', () => {
 
   it('replaces a raw legacy token with an unusable marker', async () => {
     await withClient(targetUrl, async (db) => {
-      const row = await db.query(
-        `SELECT tracking_token FROM wbs_reports WHERE id = 'r-legacy'`
-      );
+      const row = await db.query(`SELECT tracking_token FROM wbs_reports WHERE id = 'r-legacy'`);
       expect(row.rows[0].tracking_token).toBe('LEGACY-INVALIDATED');
     });
   });
 
   it('leaves an already-digested token untouched', async () => {
     await withClient(targetUrl, async (db) => {
-      const row = await db.query(
-        `SELECT tracking_token FROM wbs_reports WHERE id = 'r-digest'`
-      );
+      const row = await db.query(`SELECT tracking_token FROM wbs_reports WHERE id = 'r-digest'`);
       expect(row.rows[0].tracking_token).toBe(DIGEST);
     });
   });

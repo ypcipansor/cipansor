@@ -2553,7 +2553,14 @@ async function tagihanDanPembayaran(ctx: Ctx, roster: StudentRef[]): Promise<voi
   const { db, rng } = ctx;
   const types = new Map<
     SchoolUnit,
-    Array<{ id: string; code: string; name: string; amount: number; recurring: boolean; unitId: string }>
+    Array<{
+      id: string;
+      code: string;
+      name: string;
+      amount: number;
+      recurring: boolean;
+      unitId: string;
+    }>
   >();
   for (const unitType of Object.keys(PAYMENT_PLAN) as SchoolUnit[]) {
     const unitId = ctx.units[unitType].id;

@@ -652,10 +652,14 @@ describe('menandatangani surat', () => {
     vi.mocked(prisma.letter.findUnique).mockResolvedValue(letter() as any);
     vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(activeKey() as any);
     vi.mocked(prisma.letterSignature.create).mockResolvedValue({
-      id: 'sig-1', verificationToken: 'tok', signedAt: new Date(),
+      id: 'sig-1',
+      verificationToken: 'tok',
+      signedAt: new Date(),
     } as any);
     vi.mocked(prisma.letterSignature.update).mockResolvedValue({
-      id: 'sig-1', verificationToken: 'tok', signedAt: new Date(),
+      id: 'sig-1',
+      verificationToken: 'tok',
+      signedAt: new Date(),
     } as any);
 
     await EsignService.signLetter('letter-1', 'ketua', PASS);
@@ -1377,7 +1381,9 @@ describe('kunci dibekukan pembekuan Pengurus (sentinel)', () => {
       content: 'Isi.',
       unitId: 'unit-1',
       status: 'READY_TO_SIGN',
-      reviewers: [{ id: 'rev-1', reviewerId: 'ketua', isSigner: true, order: 1, status: 'PENDING' }],
+      reviewers: [
+        { id: 'rev-1', reviewerId: 'ketua', isSigner: true, order: 1, status: 'PENDING' },
+      ],
     };
   }
 

@@ -146,8 +146,17 @@ describe('user.service suspension-cache invalidation', () => {
   const superUser = { roleCode: 'SUPER_ADMIN', unitId: null, sub: 'me' };
 
   it('primes the suspension cache when an admin deactivates an account', async () => {
-    mock.user.findFirst.mockResolvedValue({ id: 'u1', unitId: null, email: 'x@y.z', isActive: true });
-    mock.user.update.mockResolvedValue({ id: 'u1', passwordHash: 'hashed', accountStateVersion: 5 });
+    mock.user.findFirst.mockResolvedValue({
+      id: 'u1',
+      unitId: null,
+      email: 'x@y.z',
+      isActive: true,
+    });
+    mock.user.update.mockResolvedValue({
+      id: 'u1',
+      passwordHash: 'hashed',
+      accountStateVersion: 5,
+    });
 
     await userService.update('u1', { isActive: false } as UpdateUserInput, superUser);
 
@@ -158,8 +167,17 @@ describe('user.service suspension-cache invalidation', () => {
   });
 
   it('drops the cached answer when an account is reactivated', async () => {
-    mock.user.findFirst.mockResolvedValue({ id: 'u1', unitId: null, email: 'x@y.z', isActive: false });
-    mock.user.update.mockResolvedValue({ id: 'u1', passwordHash: 'hashed', accountStateVersion: 6 });
+    mock.user.findFirst.mockResolvedValue({
+      id: 'u1',
+      unitId: null,
+      email: 'x@y.z',
+      isActive: false,
+    });
+    mock.user.update.mockResolvedValue({
+      id: 'u1',
+      passwordHash: 'hashed',
+      accountStateVersion: 6,
+    });
 
     await userService.update('u1', { isActive: true } as UpdateUserInput, superUser);
 
@@ -168,7 +186,12 @@ describe('user.service suspension-cache invalidation', () => {
   });
 
   it('leaves the cache alone when the update touches neither state', async () => {
-    mock.user.findFirst.mockResolvedValue({ id: 'u1', unitId: null, email: 'x@y.z', isActive: true });
+    mock.user.findFirst.mockResolvedValue({
+      id: 'u1',
+      unitId: null,
+      email: 'x@y.z',
+      isActive: true,
+    });
     mock.user.update.mockResolvedValue({ id: 'u1', passwordHash: 'hashed' });
 
     await userService.update('u1', { name: 'New Name' } as UpdateUserInput, superUser);

@@ -170,7 +170,11 @@ describeDb('WBS forward vs role revocation race (real PostgreSQL)', () => {
 
       const pending = service.forwardReport(
         'r-fwd',
-        { toRole: 'YAYASAN_KETUA', reason: 'Terkait pelanggaran oleh kepala sekolah.', toUserId: 'user-ketua' },
+        {
+          toRole: 'YAYASAN_KETUA',
+          reason: 'Terkait pelanggaran oleh kepala sekolah.',
+          toUserId: 'user-ketua',
+        },
         actor
       );
 
@@ -210,7 +214,11 @@ describeDb('WBS forward vs role revocation race (real PostgreSQL)', () => {
     try {
       const updated = await service.forwardReport(
         'r-fwd',
-        { toRole: 'YAYASAN_KETUA', reason: 'Terkait pelanggaran oleh kepala sekolah.', toUserId: 'user-ketua' },
+        {
+          toRole: 'YAYASAN_KETUA',
+          reason: 'Terkait pelanggaran oleh kepala sekolah.',
+          toUserId: 'user-ketua',
+        },
         actor
       );
       expect(updated.assignedUserId).toBe('user-ketua');
@@ -240,7 +248,11 @@ describeDb('WBS forward vs role revocation race (real PostgreSQL)', () => {
       await expect(
         service.forwardReport(
           'r-fwd',
-          { toRole: 'YAYASAN_KETUA', reason: 'Terkait pelanggaran oleh kepala sekolah.', toUserId: 'user-ketua' },
+          {
+            toRole: 'YAYASAN_KETUA',
+            reason: 'Terkait pelanggaran oleh kepala sekolah.',
+            toUserId: 'user-ketua',
+          },
           actor
         )
       ).rejects.toMatchObject({ statusCode: 400 });
@@ -269,7 +281,11 @@ describeDb('WBS forward vs role revocation race (real PostgreSQL)', () => {
 
       const pending = service.forwardReport(
         'r-fwd',
-        { toRole: 'YAYASAN_KETUA', reason: 'Terkait pelanggaran oleh kepala sekolah.', toUserId: 'user-ketua' },
+        {
+          toRole: 'YAYASAN_KETUA',
+          reason: 'Terkait pelanggaran oleh kepala sekolah.',
+          toUserId: 'user-ketua',
+        },
         actor
       );
 

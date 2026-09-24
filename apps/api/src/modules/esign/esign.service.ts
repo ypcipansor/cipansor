@@ -1269,59 +1269,61 @@ export const EsignService = {
       throw error;
     }
 
-    const updated = await prisma.$transaction(async (tx) => {
-      // A revocation is signed with the actor's key, so it is a signing
-      // operation and must obey the same suspension gate as `signLetter`.
-      // `assertCanSign` ran before the crypto work; a suspension that committed
-      // since then would otherwise still let this produce a valid revocation
-      // statement. The key lock is taken first, before the signature/letter
-      // writes, so the order matches `signLetter` and the two cannot deadlock.
-      await assertSigningKeyNotSuspendedTx(tx, key!.id);
+    const updated = await prisma
+      .$transaction(async (tx) => {
+        // A revocation is signed with the actor's key, so it is a signing
+        // operation and must obey the same suspension gate as `signLetter`.
+        // `assertCanSign` ran before the crypto work; a suspension that committed
+        // since then would otherwise still let this produce a valid revocation
+        // statement. The key lock is taken first, before the signature/letter
+        // writes, so the order matches `signLetter` and the two cannot deadlock.
+        await assertSigningKeyNotSuspendedTx(tx, key!.id);
 
-      const sig = await tx.letterSignature.update({
-        where: { id: target!.id },
-        data: {
-          revokedAt,
-          revokedReason: trimmed,
-          revokedById: actor.id,
-          revokedByRoleCode: actor.roleCode,
-          revocationDigest: signedRevocation.digest,
-          revocationSignature: signedRevocation.signature,
-          revocationPublicKey: signedRevocation.publicKey,
-        },
-      });
-
-      await tx.letterFlowEvent.create({
-        data: {
-          letterId: letter.id,
-          actorId: actor.id,
-          action: LetterFlowAction.SIGNATURE_REVOKED,
-          fromStatus: letter.status,
-          toStatus: letter.status,
-          note: `Naskah dinas dicabut: ${trimmed}`,
-        },
-      });
-
-      await tx.auditLog.create({
-        data: {
-          userId: actor.id,
-          action: 'REVOKE',
-          entity: 'LetterSignature',
-          entityId: sig.id,
-          newValues: {
-            revokedAt: revokedAt.toISOString(),
+        const sig = await tx.letterSignature.update({
+          where: { id: target!.id },
+          data: {
+            revokedAt,
             revokedReason: trimmed,
-            letterId: letter.id,
-            letterNumber: letter.letterNumber,
+            revokedById: actor.id,
+            revokedByRoleCode: actor.roleCode,
+            revocationDigest: signedRevocation.digest,
+            revocationSignature: signedRevocation.signature,
+            revocationPublicKey: signedRevocation.publicKey,
           },
-        },
-      });
+        });
 
-      return sig;
-    }).catch((error) => {
-      // A suspension that landed mid-revocation is a refusal, not a 500.
-      throw asSuspensionRefusal(error);
-    });
+        await tx.letterFlowEvent.create({
+          data: {
+            letterId: letter.id,
+            actorId: actor.id,
+            action: LetterFlowAction.SIGNATURE_REVOKED,
+            fromStatus: letter.status,
+            toStatus: letter.status,
+            note: `Naskah dinas dicabut: ${trimmed}`,
+          },
+        });
+
+        await tx.auditLog.create({
+          data: {
+            userId: actor.id,
+            action: 'REVOKE',
+            entity: 'LetterSignature',
+            entityId: sig.id,
+            newValues: {
+              revokedAt: revokedAt.toISOString(),
+              revokedReason: trimmed,
+              letterId: letter.id,
+              letterNumber: letter.letterNumber,
+            },
+          },
+        });
+
+        return sig;
+      })
+      .catch((error) => {
+        // A suspension that landed mid-revocation is a refusal, not a 500.
+        throw asSuspensionRefusal(error);
+      });
 
     await clearFailedAttempts(key!.id);
 

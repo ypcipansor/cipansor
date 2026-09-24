@@ -1,8 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  SIGNING_KEY_SUSPENSION_LOCK,
-  isSuspensionSigningLock,
-} from './esign-suspension-lock';
+import { SIGNING_KEY_SUSPENSION_LOCK, isSuspensionSigningLock } from './esign-suspension-lock';
 import { assertCanSign, effectiveState, isLocked, SigningKeyState } from './esign-lifecycle';
 
 /**

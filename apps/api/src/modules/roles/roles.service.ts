@@ -339,6 +339,25 @@ export class RolesService {
         if (deleted.count !== 1) {
           throw Errors.notFound('Role assignment');
         }
+
+        // Revoking the last assignment must also clear the deprecated legacy
+        // column. `refreshToken` (and the 2FA completion) fall back to
+        // `users.role` only for an account that never held an assignment, but
+        // that column lives on the *user* row, which an assignment delete does
+        // not otherwise touch — so without this a revoked Super Admin kept
+        // renewing sessions through refresh. Nulling it here makes the
+        // revocation durable and lets the issuance paths tell "never migrated"
+        // from "revoked its last role".
+        const remaining = await tx.userRoleAssignment.count({
+          where: { userId: assignment.userId },
+        });
+        if (remaining === 0) {
+          await tx.user.update({
+            where: { id: assignment.userId },
+            data: { role: null },
+          });
+        }
+
         return assignment;
       })
       .then((assignment) => {

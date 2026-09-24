@@ -7,7 +7,9 @@ import { pengawasanAccessOf } from "@cipansor/shared";
  * mounting the whole page. Order is load-bearing: the first entry is the tab an
  * account lands on, and it must be one the account can see.
  */
-export function visiblePengawasanTabs(roleCode: string | null | undefined): string[] {
+export function visiblePengawasanTabs(
+  roleCode: string | null | undefined,
+): string[] {
   const access = pengawasanAccessOf(roleCode);
   const tabs: string[] = [];
   if (access.canReadAudits) tabs.push("audits");

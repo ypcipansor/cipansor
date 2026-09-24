@@ -51,6 +51,9 @@ const {
         // assignment-row lock, so every issuance test needs this query.
         findMany: vi.fn(),
         findFirst: vi.fn(),
+        // The legacy-role fallback only applies to an account with no
+        // assignment *rows at all*, so issuance counts them too.
+        count: vi.fn(),
       },
       boardMemberSuspension: {
         findFirst: vi.fn(),
@@ -183,6 +186,9 @@ describe('AuthService', () => {
         role: { code: 'STUDENT', permissions: [] },
       },
     ]);
+    // The happy-path account holds an assignment, so the legacy-role fallback
+    // never applies. Tests that exercise the fallback override this.
+    (mockPrisma.userRoleAssignment.count as any).mockResolvedValue(1);
   });
 
   describe('login', () => {
@@ -486,12 +492,105 @@ describe('AuthService', () => {
       mockPrisma.refreshToken.deleteMany.mockResolvedValue({ count: 1 });
       // The decommission purge removed the assignment as well; nothing qualifies.
       (mockPrisma.userRoleAssignment.findMany as any).mockResolvedValueOnce([]);
+      (mockPrisma.userRoleAssignment.count as any).mockResolvedValueOnce(0);
 
       await expect(authService.refreshToken('pt-refresh-token')).rejects.toThrow(
         'No active role assignment found'
       );
       // The token is consumed, but no new one is minted.
       expect(mockPrisma.refreshToken.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects a user whose assignment rows remain but are all inactive, despite a live legacy role', async () => {
+      // CWE-863: `removeRoleAssignment` used to delete only the assignment row,
+      // leaving the deprecated `users.role` column behind. Refresh fell back to
+      // it and re-minted the very role that was revoked — a revoked SUPER_ADMIN
+      // kept renewing sessions. The fallback is now gated on the account holding
+      // no assignment rows at all; an inactive row keeps the count above zero,
+      // so the role fails closed.
+      mockVerifyToken.mockReturnValue({ sub: 'user-revoked', type: 'refresh' });
+      mockPrisma.refreshToken.findFirst.mockResolvedValue({
+        id: 'token-revoked',
+        token: 'revoked-refresh-token',
+        userId: 'user-revoked',
+        expiresAt: new Date(Date.now() + 86400000),
+        user: {
+          id: 'user-revoked',
+          email: 'revoked@example.com',
+          role: UserRole.SUPER_ADMIN,
+          unitId: null,
+          isActive: true,
+          userRoles: [],
+        },
+      });
+      mockPrisma.refreshToken.deleteMany.mockResolvedValue({ count: 1 });
+      (mockPrisma.userRoleAssignment.findMany as any).mockResolvedValueOnce([]);
+      // A revoked-but-not-deleted row is still a row.
+      (mockPrisma.userRoleAssignment.count as any).mockResolvedValueOnce(1);
+
+      await expect(authService.refreshToken('revoked-refresh-token')).rejects.toThrow(
+        'No active role assignment found'
+      );
+      expect(mockPrisma.refreshToken.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects a user whose assignments all expired, despite a live legacy role', async () => {
+      // An assignment that expired is not "no assignment ever held": the
+      // fallback must not resurrect the coarse legacy role. The count is of
+      // *all* rows, so the expired row keeps it above zero.
+      mockVerifyToken.mockReturnValue({ sub: 'user-expired', type: 'refresh' });
+      mockPrisma.refreshToken.findFirst.mockResolvedValue({
+        id: 'token-expired',
+        token: 'expired-refresh-token',
+        userId: 'user-expired',
+        expiresAt: new Date(Date.now() + 86400000),
+        user: {
+          id: 'user-expired',
+          email: 'expired@example.com',
+          role: UserRole.SUPER_ADMIN,
+          unitId: null,
+          isActive: true,
+          userRoles: [],
+        },
+      });
+      mockPrisma.refreshToken.deleteMany.mockResolvedValue({ count: 1 });
+      (mockPrisma.userRoleAssignment.findMany as any).mockResolvedValueOnce([]);
+      (mockPrisma.userRoleAssignment.count as any).mockResolvedValueOnce(1);
+
+      await expect(authService.refreshToken('expired-refresh-token')).rejects.toThrow(
+        'No active role assignment found'
+      );
+      expect(mockPrisma.refreshToken.create).not.toHaveBeenCalled();
+    });
+
+    it('still refreshes a genuine legacy account that never held an assignment', async () => {
+      // The fallback has to keep working for the unmigrated case it exists for:
+      // zero assignment rows, no active assignment, but a legacy `users.role`.
+      mockVerifyToken.mockReturnValue({ sub: 'user-legacy', type: 'refresh' });
+      mockPrisma.refreshToken.findFirst.mockResolvedValue({
+        id: 'token-legacy',
+        token: 'legacy-refresh-token',
+        userId: 'user-legacy',
+        expiresAt: new Date(Date.now() + 86400000),
+        user: {
+          id: 'user-legacy',
+          email: 'legacy@example.com',
+          role: UserRole.SUPER_ADMIN,
+          unitId: null,
+          isActive: true,
+          userRoles: [],
+        },
+      });
+      mockPrisma.refreshToken.deleteMany.mockResolvedValue({ count: 1 });
+      mockPrisma.refreshToken.create.mockResolvedValue({});
+      (mockPrisma.userRoleAssignment.findMany as any).mockResolvedValueOnce([]);
+      (mockPrisma.userRoleAssignment.count as any).mockResolvedValueOnce(0);
+
+      const result = await authService.refreshToken('legacy-refresh-token');
+
+      expect(result).toHaveProperty('accessToken');
+      expect(result).toHaveProperty('refreshToken');
+      expect(mockPrisma.refreshToken.create).toHaveBeenCalled();
     });
   });
 

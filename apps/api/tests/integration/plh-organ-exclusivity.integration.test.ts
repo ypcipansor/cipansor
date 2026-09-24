@@ -180,9 +180,7 @@ describeDb('Plh/Plt organ-exclusivity (real PostgreSQL)', () => {
         expect(error.statusCode).toBe(400);
 
         await withClient(targetUrl, async (db) => {
-          const user = await db.query(
-            `SELECT is_active FROM users WHERE id = 'u-target'`
-          );
+          const user = await db.query(`SELECT is_active FROM users WHERE id = 'u-target'`);
           expect(user.rows[0].is_active, 'target must not be deactivated').toBe(true);
 
           const suspension = await db.query(
@@ -203,7 +201,8 @@ describeDb('Plh/Plt organ-exclusivity (real PostgreSQL)', () => {
 
           const delegations = await db.query(
             `SELECT count(*)::int AS n FROM user_role_assignments
-             WHERE user_id = $1`, [plhUserId]
+             WHERE user_id = $1`,
+            [plhUserId]
           );
           expect(delegations.rows[0].n, 'no Plh grant may survive').toBe(1);
         });

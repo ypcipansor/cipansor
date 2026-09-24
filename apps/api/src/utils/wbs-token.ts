@@ -28,9 +28,7 @@ function hmacKey(): Buffer {
   if (dedicated) return Buffer.from(dedicated, 'utf8');
   // HKDF gives a domain-separated key from the session signer without a second
   // secret to distribute. `info` is the separation.
-  return Buffer.from(
-    crypto.hkdfSync('sha256', config.jwt.secret, '', CONTEXT, 32)
-  );
+  return Buffer.from(crypto.hkdfSync('sha256', config.jwt.secret, '', CONTEXT, 32));
 }
 
 /** The stored digest of a raw tracking token. */

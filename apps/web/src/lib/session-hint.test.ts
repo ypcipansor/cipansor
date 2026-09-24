@@ -24,7 +24,10 @@ describe("hasSessionHint", () => {
   it("is false for the persisted empty state an anonymous visitor leaves behind", () => {
     localStorage.setItem(
       "auth-storage",
-      JSON.stringify({ state: { user: null, isAuthenticated: false }, version: 0 }),
+      JSON.stringify({
+        state: { user: null, isAuthenticated: false },
+        version: 0,
+      }),
     );
     expect(hasSessionHint()).toBe(false);
   });

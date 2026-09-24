@@ -913,7 +913,15 @@ export class WbsService {
         data: {
           reportId: id,
           forwardedById: actor.id,
-          fromRole: actor.roleCode || lockedReport.primaryHandlerRole,
+          // `fromRole` is the queue the case is leaving — the role that owned
+          // it (`primaryHandlerRole`) — not the role of whoever pressed
+          // "forward". The two differ whenever a reviewer (e.g. a Pengawas
+          // overseeing the unit queue) forwards on behalf of a bucket they do
+          // not themselves hold; the UI renders this as "<from> → <to>", so
+          // stamping the actor there would show a transition that never
+          // happened. The actor is already recorded on the row via
+          // `forwardedById`.
+          fromRole: lockedReport.primaryHandlerRole,
           toRole: data.toRole,
           toUserId: data.toUserId || null,
           reason: data.reason,

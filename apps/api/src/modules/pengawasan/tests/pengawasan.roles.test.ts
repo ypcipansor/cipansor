@@ -76,9 +76,7 @@ describe('pengawasan governance role groups', () => {
   it('keeps the deprecated alias pointing at the read list', () => {
     // Any consumer that only gates visibility keeps compiling; the write routes
     // no longer read this constant.
-    expect([...PENGAWASAN_SUSPENSION_ROLES]).toEqual([
-      ...PENGAWASAN_SUSPENSION_READ_ROLES,
-    ]);
+    expect([...PENGAWASAN_SUSPENSION_ROLES]).toEqual([...PENGAWASAN_SUSPENSION_READ_ROLES]);
   });
 
   it('lists only roles the suspension policy actually admits', () => {

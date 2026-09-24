@@ -60,7 +60,12 @@ describe('hr employee suspension-cache invalidation', () => {
 
   it('marks a deleted employee suspended so the token stops working', async () => {
     mock.user.findUnique.mockResolvedValue({ id: 'u1', role: 'STAFF', staff: { id: 'st1' } });
-    mock.user.update.mockResolvedValue({ id: 'u1', teacher: null, staff: { id: 'st1' }, accountStateVersion: 9 });
+    mock.user.update.mockResolvedValue({
+      id: 'u1',
+      teacher: null,
+      staff: { id: 'st1' },
+      accountStateVersion: 9,
+    });
     // The transaction body reads `user.teacher`/`user.staff` off the update result.
     mock.$transaction.mockImplementation((cb: any) => cb(mock));
 

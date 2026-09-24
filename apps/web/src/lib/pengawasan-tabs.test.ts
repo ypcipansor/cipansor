@@ -17,7 +17,13 @@ describe("visiblePengawasanTabs", () => {
 
   it("gives a Pengawas the audit, WBS, suspension and reports tabs", () => {
     const tabs = visiblePengawasanTabs("YAYASAN_PENGAWAS");
-    expect(tabs).toEqual(["audits", "wbs", "suspensions", "arrears", "eoffice"]);
+    expect(tabs).toEqual([
+      "audits",
+      "wbs",
+      "suspensions",
+      "arrears",
+      "eoffice",
+    ]);
   });
 
   it("gives a unit treasurer the audit and arrears tabs, never eoffice", () => {
@@ -48,7 +54,9 @@ describe("resolvePengawasanTab", () => {
 
   it("falls back to the first visible tab, never eoffice, when the selection is hidden", () => {
     // The delayed-auth case: mount resolves to "" and the role has no eoffice.
-    expect(resolvePengawasanTab(["audits", "wbs", "suspensions"], "")).toBe("audits");
+    expect(resolvePengawasanTab(["audits", "wbs", "suspensions"], "")).toBe(
+      "audits",
+    );
   });
 
   it("re-selects when access shrinks after a role switch", () => {

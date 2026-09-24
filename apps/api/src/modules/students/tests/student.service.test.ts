@@ -600,7 +600,11 @@ describe('delete — soft delete stops authentication immediately', () => {
   it('marks the linked user suspended right after the soft delete', async () => {
     const svc = new StudentService();
     const { markUserSuspended } = await import('@/utils/user-suspension');
-    (prisma.student.findFirst as any).mockResolvedValue({ id: 's1', userId: 'u1', unitId: 'unit-1' });
+    (prisma.student.findFirst as any).mockResolvedValue({
+      id: 's1',
+      userId: 'u1',
+      unitId: 'unit-1',
+    });
     (prisma.student.update as any).mockResolvedValue({ id: 's1' });
     // `$transaction` resolves in array order, so the user write is the second
     // element — the version it produced must reach the cache prime.

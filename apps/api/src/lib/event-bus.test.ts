@@ -7,11 +7,7 @@ import {
   isInQuietHours,
   getPreferences,
 } from '@/modules/notifications/preferences.service';
-import {
-  broadcastAttendance,
-  broadcastPayment,
-  broadcastTahfidz,
-} from '@/lib/realtime';
+import { broadcastAttendance, broadcastPayment, broadcastTahfidz } from '@/lib/realtime';
 
 // The broadcasts are unit-scoped: `emitUnitScoped` routes an event to its
 // `unit:<id>` room plus the foundation-wide `dashboard` room. That routing is
@@ -351,9 +347,7 @@ describe('Event bus — unit-scoped broadcast payloads', () => {
     });
 
     await vi.waitFor(() => {
-      expect(broadcastPayment).toHaveBeenCalledWith(
-        expect.objectContaining({ unitId: 'unit-1' })
-      );
+      expect(broadcastPayment).toHaveBeenCalledWith(expect.objectContaining({ unitId: 'unit-1' }));
     });
   });
 
@@ -361,9 +355,7 @@ describe('Event bus — unit-scoped broadcast payloads', () => {
     eventBus.emit('tahfidz:created', tahfidzEvent);
 
     await vi.waitFor(() => {
-      expect(broadcastTahfidz).toHaveBeenCalledWith(
-        expect.objectContaining({ unitId: 'unit-1' })
-      );
+      expect(broadcastTahfidz).toHaveBeenCalledWith(expect.objectContaining({ unitId: 'unit-1' }));
     });
   });
 });

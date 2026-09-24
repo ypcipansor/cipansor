@@ -667,6 +667,47 @@ describe('WbsService Unit Tests', () => {
     expect(updated.primaryHandlerRole).toBe('YAYASAN_KETUA');
   });
 
+  it('records the queue being left as fromRole, not the forwarding actor', async () => {
+    // `fromRole` names the hand-off edge rendered as "<from> → <to>". A
+    // reviewer may forward a case out of a bucket they do not themselves hold
+    // (e.g. a Pengawas moving a UNIT_ADMIN case onward). Stamping
+    // `actor.roleCode` there showed a transition that never happened; the actor
+    // is already on the row as `forwardedById`.
+    const mockReport = {
+      id: 'report-1',
+      ticketCode: 'WBS-202603-ABC123',
+      primaryHandlerRole: 'UNIT_ADMIN',
+    };
+
+    (prisma.wbsReport.findFirst as any).mockResolvedValue(mockReport);
+    // The locked re-read inside the transaction supplies the routing edge.
+    (prisma.wbsReport.findUnique as any).mockResolvedValue({
+      unitId: null,
+      assignedUserId: null,
+      primaryHandlerRole: 'UNIT_ADMIN',
+    });
+    (prisma.wbsReport.update as any).mockResolvedValue({
+      ...mockReport,
+      primaryHandlerRole: 'YAYASAN_PENGAWAS',
+    });
+
+    await wbsService.forwardReport(
+      'report-1',
+      { toRole: 'YAYASAN_PENGAWAS', reason: 'Diteruskan ke pengawas yayasan' },
+      { id: 'user-pengawas', name: 'Pengawas', roleCode: 'YAYASAN_PENGAWAS', unitId: null }
+    );
+
+    expect(prisma.wbsForwardLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          fromRole: 'UNIT_ADMIN',
+          toRole: 'YAYASAN_PENGAWAS',
+          forwardedById: 'user-pengawas',
+        }),
+      })
+    );
+  });
+
   it('refuses to forward a report to an unrecognised role', async () => {
     // A typo such as `primaryHandlerRole` passes the shared schema only if it
     // is not validated; the service is the last gate before the report lands in

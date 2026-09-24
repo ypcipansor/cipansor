@@ -598,6 +598,17 @@ export class AuthService {
       });
       const primaryAssignment = assignments.find((r) => r.isPrimary) || assignments[0];
 
+      // The legacy fallback below is for an account that *never* held an
+      // assignment — an unmigrated user, or one whose module was decommissioned
+      // and whose `users.role` was nulled. An account whose assignments all
+      // expired, went inactive, or were revoked is *not* that: counting every
+      // row (not just the active ones) is what separates the two, so a revoked
+      // or expired assignment can never reinstate `users.role`'s coarse
+      // privilege — the exact escalation this guard closes.
+      const totalAssignments = await tx.userRoleAssignment.count({
+        where: { userId: payload.sub },
+      });
+
       let refreshRoleCode: string;
       let permissions: string[];
       let refreshRoleId: string | undefined;
@@ -608,9 +619,9 @@ export class AuthService {
         permissions = (primaryAssignment.role.permissions as string[]) || [];
         refreshRoleId = primaryAssignment.roleId;
         refreshUnitId = primaryAssignment.unitId;
-      } else if (storedToken.user.role) {
-        // Legacy fallback — only when the user holds no qualifying assignment
-        // at all, never as a substitute for one that was just revoked.
+      } else if (storedToken.user.role && totalAssignments === 0) {
+        // Legacy fallback — only when the user holds no assignment row at all,
+        // never as a substitute for one that was just revoked or has expired.
         refreshRoleCode = storedToken.user.role;
         permissions = [];
         refreshRoleId = undefined;
@@ -1087,6 +1098,12 @@ export class AuthService {
       });
       const primaryAssignment = assignments.find((r) => r.isPrimary) || assignments[0];
 
+      // Distinguish "never held an assignment" (unmigrated legacy account) from
+      // "every assignment expired, went inactive, or was revoked". The legacy
+      // column must only rescue the former; counting all rows, not just the
+      // active ones, is what makes the check meaningful.
+      const totalAssignments = await tx.userRoleAssignment.count({ where: { userId } });
+
       let twoFaRoleCode: string;
       let permissions: string[];
       let twoFaRoleId: string | undefined;
@@ -1097,9 +1114,10 @@ export class AuthService {
         permissions = (primaryAssignment.role.permissions as string[]) || [];
         twoFaRoleId = primaryAssignment.roleId;
         twoFaUnitId = primaryAssignment.unitId;
-      } else if (user.userRoles.length === 0 && user.role) {
+      } else if (totalAssignments === 0 && user.role) {
         // Legacy fallback only for an account that never held an assignment.
-        // A revoked assignment must not fall back to the coarse legacy role.
+        // A revoked or expired assignment must not fall back to the coarse
+        // legacy role.
         twoFaRoleCode = user.role;
         permissions = [];
         twoFaRoleId = undefined;

@@ -231,7 +231,7 @@ describe('auth cookie issuance', () => {
     // must carry the cookie deletions itself, so no client has to remember a
     // second call to avoid the stale-routing login loop.
     vi.mocked(authService.refreshToken).mockRejectedValue(
-      Object.assign(new Error('Refresh token not found or expired'), { statusCode: 401 }),
+      Object.assign(new Error('Refresh token not found or expired'), { statusCode: 401 })
     );
     const { req, res, cookies } = mockReqRes({ refreshToken: 'spent' });
     const next = vi.fn();
