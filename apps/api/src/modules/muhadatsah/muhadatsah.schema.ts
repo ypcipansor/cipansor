@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { uploadedFileRefSchema } from '@cipansor/shared';
 
 // =====================================
 // MUHADATSAH (CONVERSATION PRACTICE) SCHEMAS
@@ -98,7 +99,7 @@ export const evaluateMuhadatsahSchema = z.object({
     .min(0, 'Score must be at least 0')
     .max(100, 'Score must be at most 100'),
   feedback: z.string().max(2000, 'Feedback too long').optional(),
-  recordingUrl: z.string().url('Invalid URL format').optional().or(z.literal('')),
+  recordingUrl: uploadedFileRefSchema.optional().or(z.literal('')),
   duration: z.coerce.number().min(1).max(60).optional(), // Actual duration in minutes
 });
 

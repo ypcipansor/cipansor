@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { uploadedFileRefSchema } from "./upload";
 import {
   LetterDirection,
   LetterDispatchChannel,
@@ -80,7 +81,7 @@ export const createLetterSchema = z.object({
     }),
   subject: z.string().min(1),
   content: z.string().optional(),
-  fileUrl: z.string().url().optional(),
+  fileUrl: uploadedFileRefSchema.optional(),
   urgency: z.nativeEnum(LetterUrgency),
   nature: z.nativeEnum(LetterNature),
   status: z.nativeEnum(LetterStatus),
@@ -198,7 +199,7 @@ export const updateLetterSchema = z.object({
     }),
   subject: z.string().min(1).optional(),
   content: z.string().optional(),
-  fileUrl: z.string().url().optional().nullable(),
+  fileUrl: uploadedFileRefSchema.optional().nullable(),
   urgency: z.nativeEnum(LetterUrgency).optional(),
   nature: z.nativeEnum(LetterNature).optional(),
   senderName: z.string().optional().nullable(),

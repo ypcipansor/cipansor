@@ -63,6 +63,19 @@ vi.mock('../../../../src/modules/notifications/notifications.service', () => ({
 
 import { createNotification } from '../../../../src/modules/notifications/notifications.service';
 
+// The maintenance invoice is a client-uploaded blob: the service claims it
+// before writing the row (BUG 4 / flag 9). The claim protocol itself has its
+// own unit + integration tests; here the claim is stubbed.
+vi.mock('../../../../src/utils/blob-claim', () => ({
+  claimBlobForRecord: vi.fn().mockResolvedValue({
+    id: 'claim-1',
+    operationToken: 'token-1',
+    kind: 'RECORD',
+  }),
+  releaseBlobClaimById: vi.fn().mockResolvedValue(undefined),
+}));
+import { claimBlobForRecord, releaseBlobClaimById } from '../../../../src/utils/blob-claim';
+
 describe('Inventory Service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -146,6 +159,45 @@ describe('Inventory Service', () => {
           data: expect.objectContaining({ status: AssetMaintenanceStatus.COMPLETED }),
         })
       );
+    });
+
+    it('claims the invoice blob before writing and releases it after (BUG 4)', async () => {
+      const maintenanceId = 'm-invoice';
+      prismaMock.assetMaintenance.findUnique.mockResolvedValue({
+        id: maintenanceId,
+        assetId: 'asset-1',
+        status: AssetMaintenanceStatus.IN_PROGRESS,
+      });
+      prismaMock.assetMaintenance.update.mockResolvedValue({ id: maintenanceId });
+
+      await updateMaintenanceStatus(
+        maintenanceId,
+        { status: AssetMaintenanceStatus.IN_PROGRESS, invoiceUrl: 'https://cdn.test/inv.pdf' },
+        'admin-1'
+      );
+
+      // Claimed before the row write so a discard cannot race the update.
+      expect(claimBlobForRecord).toHaveBeenCalledWith('https://cdn.test/inv.pdf', 'admin-1');
+      expect(releaseBlobClaimById).toHaveBeenCalledWith(expect.objectContaining({ id: 'claim-1' }));
+    });
+
+    it('refuses the update when the invoice blob is claimed elsewhere (BUG 4)', async () => {
+      prismaMock.assetMaintenance.findUnique.mockResolvedValue({
+        id: 'm-busy',
+        assetId: 'asset-1',
+        status: AssetMaintenanceStatus.IN_PROGRESS,
+      });
+      vi.mocked(claimBlobForRecord).mockResolvedValueOnce(null);
+
+      await expect(
+        updateMaintenanceStatus(
+          'm-busy',
+          { status: AssetMaintenanceStatus.IN_PROGRESS, invoiceUrl: 'https://cdn.test/busy.pdf' },
+          'admin-1'
+        )
+      ).rejects.toThrow(/sedang diproses pihak lain/);
+
+      expect(prismaMock.assetMaintenance.update).not.toHaveBeenCalled();
     });
   });
 

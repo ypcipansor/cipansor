@@ -29,6 +29,12 @@ import {
 } from '@/utils/letter-access';
 import { seesAllUnits } from '@/utils/resolve-unit-id';
 import {
+  claimBlobForRecord,
+  claimBlobsForRecord,
+  releaseBlobClaimById,
+  releaseBlobClaims,
+} from '@/utils/blob-claim';
+import {
   assertMayArchive,
   assertMayDispatch,
   assertMayResubmit,
@@ -361,6 +367,22 @@ export const CorrespondenceService = {
     const academicYearId = activeYear?.id || 'DEFAULT';
 
     const result = await prisma.$transaction(async (tx) => {
+      // Claim every blob this letter will reference before writing it (BUG 4).
+      // A concurrent discard of one of these URLs holds a `DISCARD` claim and
+      // would otherwise be free to delete the blob between its probe and its
+      // delete while we are committing. Claim, insert the letter + attachments,
+      // then release in the SAME transaction: the committed record is the
+      // durable protection, and the claim only needs to serialize the two
+      // writers. If any URL is already claimed, the create fails rather than
+      // saving a reference to a blob someone else may be deleting.
+      const letterBlobUrls = [data.fileUrl, ...(data.attachments ?? []).map((att) => att.fileUrl)];
+      const claims = await claimBlobsForRecord(letterBlobUrls, userId, tx);
+      if (!claims) {
+        throw Errors.conflict(
+          'Berkas lampiran sedang diproses pihak lain; unggah ulang berkas tersebut'
+        );
+      }
+
       // Generate number inside transaction so rollback cancels increment on failure
       let agendaNumber = data.agendaNumber;
       let letterNumber = data.letterNumber;
@@ -527,6 +549,11 @@ export const CorrespondenceService = {
         }
       }
 
+      // The letter and its attachments are written; release the claims so the
+      // blob URLs become claimable again. In the same transaction, so either the
+      // records and the release both commit, or neither does.
+      await releaseBlobClaims(claims, tx);
+
       return { letter, createdDispositionsToNotify };
     });
 
@@ -669,6 +696,21 @@ export const CorrespondenceService = {
       const targetType = (data.type as DbLetterType | undefined) ?? letter.type;
       const targetNature = (data.nature as DbLetterNature | undefined) ?? letter.nature;
       assertNatureAllowed(targetType, targetNature);
+
+      // Every blob URL this update will reference — the replacement letter file
+      // and each replacement attachment. Claim them before any write so a
+      // concurrent discard cannot delete one between its reference probe and
+      // this update (BUG 4 / flag 9). Claimed inside the transaction so a failed
+      // update rolls the claims back with it.
+      const updateBlobUrls = [
+        ...(data.fileUrl !== undefined ? [data.fileUrl] : []),
+        ...(data.attachments ?? []).map((att) => att.fileUrl),
+      ];
+      const updateClaims =
+        updateBlobUrls.length > 0 ? await claimBlobsForRecord(updateBlobUrls, userId, tx) : [];
+      if (updateClaims === null) {
+        throw Errors.conflict('Berkas sedang diproses pihak lain; unggah ulang berkas tersebut');
+      }
 
       // Build update payload. Tracks whether the request actually changes
       // anything, so an empty PATCH is not recorded as a fake "EDITED" audit
@@ -838,6 +880,10 @@ export const CorrespondenceService = {
           note: 'Naskah surat diperbarui',
         });
       }
+
+      // Records referencing these blobs are written; release the claims in the
+      // same transaction so the rows and the release commit together (BUG 4).
+      await releaseBlobClaims(updateClaims, tx);
 
       return await tx.letter.findUnique({
         where: { id: letterId },
@@ -1738,6 +1784,17 @@ export const CorrespondenceService = {
       const latestSignature = letter.signatures.at(-1) ?? null;
       assertMayDispatch(letter.direction, letter.status, !!latestSignature?.revokedAt);
 
+      // Claim the receipt blob before the dispatch row references it, so a
+      // concurrent discard cannot delete it between its reference probe and this
+      // insert (BUG 4 / flag 9). Claimed inside the transaction, so a rolled-back
+      // dispatch leaves no claim behind.
+      const receiptClaim = input.receiptUrl
+        ? await claimBlobForRecord(input.receiptUrl, actor.id, tx)
+        : null;
+      if (input.receiptUrl && !receiptClaim) {
+        throw Errors.conflict('Bukti tanda terima sedang diproses pihak lain; unggah ulang berkas');
+      }
+
       const dispatch = await tx.letterDispatch.create({
         data: {
           letterId,
@@ -1774,6 +1831,10 @@ export const CorrespondenceService = {
           ? `Dikirim lewat ${channelLabel}, diterima ${input.receivedByName}.`
           : `Dikirim lewat ${channelLabel}.`,
       });
+
+      // The dispatch row now references the receipt; release its claim in the
+      // same transaction (BUG 4 / flag 9).
+      if (receiptClaim) await releaseBlobClaimById(receiptClaim, tx);
 
       return { letter, dispatch, sentAt: letter.sentAt ?? dispatchedAt };
     });

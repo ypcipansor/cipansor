@@ -5,10 +5,12 @@ import { linkGuardian, type GuardianClient } from '@/utils/link-guardian';
 import { prisma } from '@/lib/prisma';
 import { hashPassword } from '@/lib/password';
 import { Errors } from '@/middleware/error';
+import { claimBlobForRecord, releaseBlobClaimById, type BlobClaimHandle } from '@/utils/blob-claim';
 import { assertStudentIdentifiersAvailable } from './student-identifiers';
 import { assignStudentNis, findStudentIdByNisInUnit } from '@/utils/student-nis';
 import { UserRole, Gender, Prisma } from '@prisma/client';
 import type { ListStudentsQuery, CreateStudentInput, UpdateStudentInput } from './student.schema';
+import { normalizeEmail } from '@/utils/email';
 import { recordUnitEnrollmentFromClass, ensureUnitEnrollment } from '@/utils/student-unit-history';
 
 export class StudentService {
@@ -388,7 +390,7 @@ export class StudentService {
    */
   async create(input: CreateStudentInput) {
     // Check if email exists (if provided)
-    const emailToCheck = input.email || `${input.nis}@student.cipansor.local`;
+    const emailToCheck = normalizeEmail(input.email || `${input.nis}@student.cipansor.local`);
     const existingEmail = await prisma.user.findFirst({
       where: { email: emailToCheck },
     });
@@ -424,7 +426,7 @@ export class StudentService {
     }
 
     // Generate email if not provided
-    const email = input.email || `${input.nis}@student.cipansor.local`;
+    const email = normalizeEmail(input.email || `${input.nis}@student.cipansor.local`);
 
     // Whether this pupil gets an account at all. TK Qur'an pupils never do —
     // they are four to six years old — so the row created below is an identity
@@ -535,7 +537,7 @@ export class StudentService {
   /**
    * Update student
    */
-  async update(id: string, input: UpdateStudentInput) {
+  async update(id: string, input: UpdateStudentInput, actorId?: string) {
     const student = await prisma.student.findFirst({
       where: { id, deletedAt: null },
       include: { user: true },
@@ -543,6 +545,18 @@ export class StudentService {
 
     if (!student) {
       throw Errors.notFound('Student');
+    }
+
+    // A photo replaced by this update is a new blob reference, so it takes the
+    // claim protocol (BUG 4 / flag 9). The holder is the acting user, falling
+    // back to the student's own login when no actor was supplied.
+    const holderId = actorId ?? student.userId;
+    let claim: BlobClaimHandle | null = null;
+    if (input.photoUrl) {
+      claim = await claimBlobForRecord(input.photoUrl, holderId);
+      if (!claim) {
+        throw Errors.conflict('Foto santri sedang diproses pihak lain; unggah ulang berkas');
+      }
     }
 
     // Nomor kembar hanya dilarang di unit yang sama (lihat `create`).
@@ -559,53 +573,60 @@ export class StudentService {
     await assertStudentIdentifiersAvailable({ nisn: input.nisn }, student);
 
     // Update in transaction
-    const updated = await prisma.$transaction(async (tx) => {
-      // Update user name if provided
-      if (input.name) {
-        await tx.user.update({
-          where: { id: student.userId },
-          data: { name: input.name },
+    let updated;
+    try {
+      updated = await prisma.$transaction(async (tx) => {
+        // Update user name if provided
+        if (input.name) {
+          await tx.user.update({
+            where: { id: student.userId },
+            data: { name: input.name },
+          });
+        }
+
+        // NIS yang diubah adalah NIS unit santri SEKARANG; NIS di unit-unit
+        // lamanya (dokumen yang sudah terbit) tidak disentuh.
+        if (input.nis && input.nis !== student.nis) {
+          await assignStudentNis(tx, { studentId: id, unitId: student.unitId, nis: input.nis });
+        }
+
+        // Update student
+        return tx.student.update({
+          where: { id },
+          data: {
+            nis: input.nis,
+            nisn: input.nisn,
+            gender: input.gender as Gender | undefined,
+            birthPlace: input.birthPlace,
+            birthDate: input.birthDate,
+            address: input.address,
+            parentName: input.parentName,
+            parentPhone: input.parentPhone,
+            parentEmail: input.parentEmail,
+            photoUrl: input.photoUrl,
+          },
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+              },
+            },
+            unit: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
         });
-      }
-
-      // NIS yang diubah adalah NIS unit santri SEKARANG; NIS di unit-unit
-      // lamanya (dokumen yang sudah terbit) tidak disentuh.
-      if (input.nis && input.nis !== student.nis) {
-        await assignStudentNis(tx, { studentId: id, unitId: student.unitId, nis: input.nis });
-      }
-
-      // Update student
-      return tx.student.update({
-        where: { id },
-        data: {
-          nis: input.nis,
-          nisn: input.nisn,
-          gender: input.gender as Gender | undefined,
-          birthPlace: input.birthPlace,
-          birthDate: input.birthDate,
-          address: input.address,
-          parentName: input.parentName,
-          parentPhone: input.parentPhone,
-          parentEmail: input.parentEmail,
-          photoUrl: input.photoUrl,
-        },
-        include: {
-          user: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-            },
-          },
-          unit: {
-            select: {
-              id: true,
-              name: true,
-            },
-          },
-        },
       });
-    });
+    } finally {
+      if (input.photoUrl) {
+        if (claim) await releaseBlobClaimById(claim).catch(() => undefined);
+      }
+    }
 
     return updated;
   }

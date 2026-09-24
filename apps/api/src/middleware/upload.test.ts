@@ -4,11 +4,22 @@ import os from 'os';
 import path from 'path';
 import type { Request, Response, NextFunction } from 'express';
 
-vi.mock('@/lib/prisma', () => ({ prisma: {} }));
+vi.mock('@/lib/prisma', () => ({
+  prisma: {
+    user: { findUnique: vi.fn().mockResolvedValue({ id: 'u1', isActive: true, userRoles: [] }) },
+  },
+}));
 vi.mock('@/lib/redis', () => ({ redis: {} }));
 
-import { matchesMagicBytes, verifyStoredFile, uploadsAuth } from './upload';
+import {
+  matchesMagicBytes,
+  verifyStoredFile,
+  uploadsAuth,
+  uploadFilenameFor,
+  getSafeUploadPathForCleanup,
+} from './upload';
 import { generateAccessToken } from '@/lib/jwt';
+import { generateFileAccessToken } from '@/utils/file-token';
 import { ApiError } from './error';
 
 const png = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
@@ -54,39 +65,76 @@ describe('matchesMagicBytes', () => {
   });
 });
 
-describe('verifyStoredFile', () => {
-  // verifyStoredFile only touches paths inside the configured upload directory,
-  // so fixtures must live there too (upload.ts creates it on import).
-  const uploadDir = path.join(process.cwd(), 'public/uploads');
+describe('uploadFilenameFor', () => {
+  it('derives the extension from the MIME table, never the client filename', () => {
+    expect(uploadFilenameFor('image/png')).toMatch(/^[0-9a-f-]{36}\.png$/);
+    expect(uploadFilenameFor('application/pdf')).toMatch(/^[0-9a-f-]{36}\.pdf$/);
+    expect(uploadFilenameFor('audio/webm')).toMatch(/^[0-9a-f-]{36}\.webm$/);
+  });
 
-  function tmpFile(content: Buffer): string {
-    const p = path.join(uploadDir, `upload-test-${Date.now()}-${Math.random()}`);
+  it('never trusts a caller-declared extension for a known MIME type', () => {
+    // There is no client filename in the signature at all — the only input is
+    // the declared MIME type, which the magic-byte check then has to back up.
+    const name = uploadFilenameFor('image/jpeg');
+    expect(name.endsWith('.jpg')).toBe(true);
+    expect(name).not.toContain('.php');
+    expect(name).not.toContain('.html');
+  });
+
+  it('falls back to .bin for a MIME type outside the allow-list', () => {
+    expect(uploadFilenameFor('application/x-php')).toMatch(/^[0-9a-f-]{36}\.bin$/);
+  });
+
+  it('mints a distinct crypto-random name for every upload (blob uniqueness)', () => {
+    // This uniqueness is what lets `cleanupBlobBestEffort` reclaim a record's
+    // blob without asking whether another record shares the URL (BUG 3).
+    const names = new Set(Array.from({ length: 200 }, () => uploadFilenameFor('image/png')));
+
+    expect(names.size).toBe(200);
+    for (const name of names) {
+      expect(name).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.png$/);
+    }
+  });
+});
+
+describe('verifyStoredFile', () => {
+  // verifyStoredFile rebuilds the on-disk path from the trusted upload dir +
+  // multer's generated `filename` — never the request-supplied `file.path` — so
+  // fixtures carry a generated name and live in the upload dir.
+  const uploadDir = path.join(process.cwd(), 'public/uploads');
+  const uuid = '123e4567-e89b-42d3-a456-426614174000';
+
+  /** Write a real upload-dir file and return the multer-style file object. */
+  function storedFile(content: Buffer, mimetype: string, name = `${uuid}.png`) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+    const p = path.join(uploadDir, name);
     fs.writeFileSync(p, content);
-    return p;
+    return { filename: name, path: p, mimetype } as Express.Multer.File;
   }
 
   it('keeps a file whose bytes match its declared type', async () => {
-    const p = tmpFile(png);
-    const ok = await verifyStoredFile({ path: p, mimetype: 'image/png' } as Express.Multer.File);
+    const file = storedFile(png, 'image/png');
+    const ok = await verifyStoredFile(file);
     expect(ok).toBe(true);
-    expect(fs.existsSync(p)).toBe(true);
-    fs.unlinkSync(p);
+    expect(fs.existsSync(file.path)).toBe(true);
+    fs.unlinkSync(file.path);
   });
 
   it('deletes a file whose bytes do not match (renamed script as image)', async () => {
-    const p = tmpFile(phpScript);
-    const ok = await verifyStoredFile({ path: p, mimetype: 'image/png' } as Express.Multer.File);
+    const file = storedFile(phpScript, 'image/png');
+    const ok = await verifyStoredFile(file);
     expect(ok).toBe(false);
-    expect(fs.existsSync(p)).toBe(false);
+    expect(fs.existsSync(file.path)).toBe(false);
   });
 
-  it('rejects a path outside the upload directory without touching it', async () => {
-    // A traversal attempt must fail before any read or unlink, so a file the
-    // app does not own is left alone.
-    const outside = path.join(os.tmpdir(), `upload-test-outside-${Date.now()}-${Math.random()}`);
+  it('refuses a path that escapes the upload dir, without touching the target', async () => {
+    // A crafted `filename` (the only file field that reaches the path builder)
+    // must not let verification read or delete a file outside the uploads dir.
+    const outside = path.join(os.tmpdir(), `escape-${uuid}.png`);
     fs.writeFileSync(outside, png);
     try {
       const ok = await verifyStoredFile({
+        filename: `../../../${path.basename(outside)}`,
         path: outside,
         mimetype: 'image/png',
       } as Express.Multer.File);
@@ -97,42 +145,55 @@ describe('verifyStoredFile', () => {
     }
   });
 
-  it('rejects a sibling directory whose path shares the upload prefix', async () => {
-    // `public/uploads-evil` starts with `public/uploads` but is not inside it.
-    const siblingDir = `${uploadDir}-evil`;
-    const sibling = path.join(siblingDir, `upload-test-sibling-${Date.now()}`);
-    fs.mkdirSync(siblingDir, { recursive: true });
-    fs.writeFileSync(sibling, png);
+  it('reads the trusted upload-dir file and ignores a forged `file.path`', async () => {
+    // The request cannot redirect the read to a file it does not own: the path
+    // is rebuilt from the generated `filename`, so an outside `path` is inert.
+    const inside = storedFile(png, 'image/png');
+    const outside = path.join(os.tmpdir(), `upload-test-forged-${Date.now()}-${Math.random()}`);
+    fs.writeFileSync(outside, phpScript);
     try {
       const ok = await verifyStoredFile({
+        filename: inside.filename,
+        path: outside,
+        mimetype: 'image/png',
+      } as Express.Multer.File);
+      expect(ok).toBe(true);
+      expect(fs.existsSync(outside)).toBe(true);
+    } finally {
+      fs.unlinkSync(inside.path);
+      fs.unlinkSync(outside);
+    }
+  });
+
+  it('rejects a sibling directory whose path shares the upload prefix', async () => {
+    // `public/uploads-evil` starts with `public/uploads` but is not inside it.
+    // `path.basename` strips the directory, so the candidate stays inside the
+    // real upload dir and the sibling file is never touched.
+    const siblingDir = `${uploadDir}-evil`;
+    const sibling = path.join(siblingDir, `${uuid}.png`);
+    fs.mkdirSync(siblingDir, { recursive: true });
+    fs.writeFileSync(sibling, png);
+    const inside = storedFile(png, 'image/png');
+    try {
+      const ok = await verifyStoredFile({
+        filename: `../uploads-evil/${uuid}.png`,
         path: sibling,
         mimetype: 'image/png',
       } as Express.Multer.File);
-      expect(ok).toBe(false);
+      // Resolves to the inside file (valid bytes), never the sibling.
+      expect(ok).toBe(true);
       expect(fs.existsSync(sibling)).toBe(true);
     } finally {
+      fs.unlinkSync(inside.path);
       fs.rmSync(siblingDir, { recursive: true, force: true });
     }
   });
 
-  it('rejects a `..` traversal that escapes the upload directory', async () => {
-    const escaping = path.join(uploadDir, '..', '..', `upload-test-escape-${Date.now()}`);
-    const resolvedOutside = path.resolve(escaping);
-    fs.writeFileSync(resolvedOutside, png);
-    try {
-      const ok = await verifyStoredFile({
-        path: escaping,
-        mimetype: 'image/png',
-      } as Express.Multer.File);
-      expect(ok).toBe(false);
-      expect(fs.existsSync(resolvedOutside)).toBe(true);
-    } finally {
-      fs.unlinkSync(resolvedOutside);
-    }
-  });
-
   it('rejects the upload directory itself as a path', async () => {
+    // `filename: '.'` resolves to the directory; it is not a regular file and
+    // must be refused before `open` (reading a directory throws EISDIR).
     const ok = await verifyStoredFile({
+      filename: '.',
       path: uploadDir,
       mimetype: 'image/png',
     } as Express.Multer.File);
@@ -140,33 +201,26 @@ describe('verifyStoredFile', () => {
     expect(fs.existsSync(uploadDir)).toBe(true);
   });
 
-  it('accepts a genuine file given as a path relative to the cwd', async () => {
-    const abs = tmpFile(png);
-    const relative = path.relative(process.cwd(), abs);
-    try {
-      const ok = await verifyStoredFile({
-        path: relative,
-        mimetype: 'image/png',
-      } as Express.Multer.File);
-      expect(ok).toBe(true);
-      expect(fs.existsSync(abs)).toBe(true);
-    } finally {
-      if (fs.existsSync(abs)) fs.unlinkSync(abs);
-    }
-  });
-
   it('rejects a symlink inside the upload directory that points outside it', async () => {
     // Lexical containment cannot see this; the realpath check must, and the
     // target must survive untouched.
+    fs.mkdirSync(uploadDir, { recursive: true });
     const outside = path.join(
       os.tmpdir(),
       `upload-test-link-target-${Date.now()}-${Math.random()}`
     );
     fs.writeFileSync(outside, png);
-    const link = path.join(uploadDir, `upload-test-link-${Date.now()}`);
+    const link = path.join(uploadDir, `${uuid}.png`);
     try {
-      fs.symlinkSync(outside, link);
+      try {
+        fs.symlinkSync(outside, link);
+      } catch {
+        // Symlinks unavailable on this platform/filesystem; nothing to assert.
+        fs.unlinkSync(outside);
+        return;
+      }
       const ok = await verifyStoredFile({
+        filename: `${uuid}.png`,
         path: link,
         mimetype: 'image/png',
       } as Express.Multer.File);
@@ -174,7 +228,7 @@ describe('verifyStoredFile', () => {
       expect(fs.existsSync(outside)).toBe(true);
     } finally {
       fs.rmSync(link, { force: true });
-      fs.unlinkSync(outside);
+      fs.rmSync(outside, { force: true });
     }
   });
 });
@@ -194,7 +248,7 @@ describe('uploadsAuth', () => {
 
   function run(req: Partial<Request>) {
     const next = vi.fn() as unknown as NextFunction & ReturnType<typeof vi.fn>;
-    uploadsAuth({ headers: {}, query: {}, ...req } as Request, res, next);
+    uploadsAuth({ path: '/uploads/abc.pdf', headers: {}, query: {}, ...req } as Request, res, next);
     return next;
   }
 
@@ -210,21 +264,71 @@ describe('uploadsAuth', () => {
     expect((next.mock.calls[0][0] as ApiError).statusCode).toBe(401);
   });
 
-  it('accepts a valid access token via Authorization header', () => {
-    const token = generateAccessToken(payload);
-    const next = run({ headers: { authorization: `Bearer ${token}` } });
-    expect(next).toHaveBeenCalledWith();
-  });
-
-  it('accepts a valid access token via ?token= (for <img>/<a> fetches)', () => {
-    const token = generateAccessToken(payload);
+  // The Authorization-header path and the accepted query-token path (session
+  // token + object-level authorisation) are covered end-to-end in
+  // upload-auth.test.ts, where the owner probe is mocked; the module-level
+  // prisma stub here cannot answer it.
+  it('rejects a file token minted for a different path', () => {
+    const token = generateFileAccessToken('/uploads/other.pdf', 'u1');
     const next = run({ query: { token } as Request['query'] });
-    expect(next).toHaveBeenCalledWith();
+    expect((next.mock.calls[0][0] as ApiError).statusCode).toBe(403);
   });
 
   it('rejects temporary 2FA tokens', () => {
     const token = generateAccessToken({ ...payload, isTemp: true });
     const next = run({ query: { token } as Request['query'] });
     expect((next.mock.calls[0][0] as ApiError).statusCode).toBe(401);
+  });
+});
+
+describe('getSafeUploadPathForCleanup', () => {
+  // The cleanup guard added UUID-name + symlink checks with no regression test;
+  // this pins both halves. It only ever returns a real path inside the upload
+  // directory, so a crafted value from a request cannot delete anything else.
+  const uploadDir = path.join(process.cwd(), 'public/uploads');
+  const uuid = '123e4567-e89b-42d3-a456-426614174000';
+
+  it('accepts a generated UUID filename that exists inside the upload dir', async () => {
+    fs.mkdirSync(uploadDir, { recursive: true });
+    const p = path.join(uploadDir, `${uuid}.png`);
+    fs.writeFileSync(p, png);
+    try {
+      await expect(getSafeUploadPathForCleanup(p)).resolves.toBe(fs.realpathSync(p));
+      // A bare filename (what a stored URL carries) resolves against the dir.
+      await expect(getSafeUploadPathForCleanup(`${uuid}.png`)).resolves.toBe(fs.realpathSync(p));
+    } finally {
+      fs.unlinkSync(p);
+    }
+  });
+
+  it('rejects a non-UUID or extension-less name', async () => {
+    await expect(getSafeUploadPathForCleanup('/etc/passwd')).resolves.toBeNull();
+    await expect(getSafeUploadPathForCleanup('../../etc/passwd')).resolves.toBeNull();
+    await expect(getSafeUploadPathForCleanup(`${uuid}`)).resolves.toBeNull();
+    await expect(getSafeUploadPathForCleanup('not-a-uuid.png')).resolves.toBeNull();
+  });
+
+  it('rejects a symlink that escapes the upload directory', async () => {
+    fs.mkdirSync(uploadDir, { recursive: true });
+    const outside = path.join(os.tmpdir(), `escape-${uuid}.txt`);
+    fs.writeFileSync(outside, 'secret');
+    const link = path.join(uploadDir, `${uuid}.png`);
+    try {
+      fs.symlinkSync(outside, link);
+    } catch {
+      // Symlinks unavailable on this platform/filesystem; nothing to assert.
+      fs.unlinkSync(outside);
+      return;
+    }
+    try {
+      await expect(getSafeUploadPathForCleanup(link)).resolves.toBeNull();
+    } finally {
+      fs.unlinkSync(link);
+      fs.unlinkSync(outside);
+    }
+  });
+
+  it('returns null for a file that no longer exists', async () => {
+    await expect(getSafeUploadPathForCleanup(`${uuid}.png`)).resolves.toBeNull();
   });
 });

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { uploadedFileRefSchema } from '@cipansor/shared';
 
 // =====================================
 // MUHADHOROH (SPEECH PRACTICE) SCHEMAS
@@ -84,7 +85,7 @@ export const evaluateMuhadhorohSchema = z.object({
     .min(0, 'Score must be at least 0')
     .max(100, 'Score must be at most 100'),
   feedback: z.string().max(2000, 'Feedback too long').optional(),
-  videoUrl: z.string().url('Invalid URL format').optional().or(z.literal('')),
+  videoUrl: uploadedFileRefSchema.optional().or(z.literal('')),
   duration: z.coerce.number().min(1).max(120).optional(), // Duration in minutes
 });
 

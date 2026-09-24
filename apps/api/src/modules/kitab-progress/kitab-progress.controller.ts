@@ -36,7 +36,7 @@ export class KitabProgressController {
 
   async createKitab(req: Request, res: Response, next: NextFunction) {
     try {
-      const kitab = await kitabProgressService.createKitab(req.body);
+      const kitab = await kitabProgressService.createKitab(req.body, req.user?.sub);
       res.status(201).json({ data: kitab });
     } catch (error) {
       next(error);
@@ -46,7 +46,7 @@ export class KitabProgressController {
   async updateKitab(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
-      const kitab = await kitabProgressService.updateKitab(id, req.body);
+      const kitab = await kitabProgressService.updateKitab(id, req.body, req.user?.sub);
       res.json({ data: kitab });
     } catch (error) {
       next(error);

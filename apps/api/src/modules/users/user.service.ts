@@ -4,6 +4,7 @@ import { Errors } from '@/middleware/error';
 import { UserRole, Prisma, type Unit } from '@prisma/client';
 import { resolveLegacyRoleToRoleCode } from '@/modules/auth/auth.service';
 import type { ListUsersQuery, CreateUserInput, UpdateUserInput } from './user.schema';
+import { normalizeEmail } from '@/utils/email';
 
 export class UserService {
   /**
@@ -165,9 +166,13 @@ export class UserService {
       throw Errors.forbidden('Unit admins can only create users in their own unit');
     }
 
-    // Check if email exists
+    // Check if email exists. Normalise here as well as at the Zod edge: the
+    // functional unique index on lower(email) is the backstop, but a write
+    // path that skips the schema (internal callers) must not be the one that
+    // trips it.
+    const email = normalizeEmail(input.email);
     const existing = await prisma.user.findFirst({
-      where: { email: input.email },
+      where: { email },
     });
 
     if (existing) {
@@ -210,7 +215,7 @@ export class UserService {
     const user = await prisma.user.create({
       data: {
         name: input.name,
-        email: input.email,
+        email,
         passwordHash,
         role: input.role as UserRole,
         unitId: input.unitId || null,
@@ -264,9 +269,10 @@ export class UserService {
     }
 
     // Check email uniqueness if changing
-    if (input.email && input.email !== user.email) {
+    const email = input.email ? normalizeEmail(input.email) : undefined;
+    if (email && email !== user.email) {
       const existing = await prisma.user.findFirst({
-        where: { email: input.email, id: { not: id } },
+        where: { email, id: { not: id } },
       });
       if (existing) {
         throw Errors.conflict('Email already in use');
@@ -278,7 +284,7 @@ export class UserService {
       where: { id },
       data: {
         name: input.name,
-        email: input.email,
+        email,
         role: input.role as UserRole | undefined,
         unitId: input.unitId,
         isActive: input.isActive,

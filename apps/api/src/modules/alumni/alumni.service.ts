@@ -21,6 +21,7 @@ import { Prisma } from '@prisma/client';
 import { Errors } from '@/middleware/error';
 import { CLASS_ENROLLMENT_STATUS, STUDENT_STATUS } from '@cipansor/shared';
 import { closeUnitEnrollments } from '@/utils/student-unit-history';
+import { claimBlobForRecord, releaseBlobClaimById } from '@/utils/blob-claim';
 import {
   AlumniActor,
   alumniUnitScope,
@@ -251,17 +252,33 @@ export async function createAlumni(data: CreateAlumniInput, actor: AlumniActor) 
   });
   const registrationNo = `ALM-${year}-${String(count + 1).padStart(4, '0')}`;
 
-  return prisma.alumni.create({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    data: {
-      ...data,
-      registrationNo,
-      birthDate: data.birthDate ? new Date(data.birthDate) : undefined,
-      graduationDate: data.graduationDate ? new Date(data.graduationDate) : undefined,
-    } as any,
-    include: {
-      unit: { select: { id: true, name: true, type: true } },
-    },
+  // A photo uploaded for this record is a blob reference; claim it before the
+  // row points at it so a discard cannot delete it mid-commit (BUG 4 / flag 9).
+  const photoUrl = typeof data.photo === 'string' ? data.photo : undefined;
+  return prisma.$transaction(async (tx) => {
+    let claim = null;
+    if (photoUrl) {
+      claim = await claimBlobForRecord(photoUrl, actor.id ?? 'alumni', tx);
+      if (!claim) {
+        throw Errors.conflict('Foto alumni sedang diproses pihak lain; unggah ulang berkas');
+      }
+    }
+
+    const alumni = await tx.alumni.create({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      data: {
+        ...data,
+        registrationNo,
+        birthDate: data.birthDate ? new Date(data.birthDate) : undefined,
+        graduationDate: data.graduationDate ? new Date(data.graduationDate) : undefined,
+      } as any,
+      include: {
+        unit: { select: { id: true, name: true, type: true } },
+      },
+    });
+
+    if (claim) await releaseBlobClaimById(claim, tx);
+    return alumni;
   });
 }
 
@@ -269,16 +286,34 @@ export async function updateAlumni(id: string, data: UpdateAlumniInput, actor: A
   await alumniInScope(id, actor);
   if (data.unitId) assertAlumniTargetUnitInScope(actor, data.unitId);
 
-  return prisma.alumni.update({
-    where: { id },
-    data: {
-      ...data,
-      birthDate: data.birthDate ? new Date(data.birthDate) : undefined,
-      graduationDate: data.graduationDate ? new Date(data.graduationDate) : undefined,
-    },
-    include: {
-      unit: { select: { id: true, name: true, type: true } },
-    },
+  // A replaced photo is a NEW blob reference: claim it before the update commits
+  // (flag 9). The previous URL is unreferenced once this commits, so a discard
+  // of it can then proceed — the commit removes the reference, not an early
+  // delete.
+  const photoUrl = typeof data.photo === 'string' ? data.photo : undefined;
+  return prisma.$transaction(async (tx) => {
+    let claim = null;
+    if (photoUrl) {
+      claim = await claimBlobForRecord(photoUrl, actor.id ?? 'alumni', tx);
+      if (!claim) {
+        throw Errors.conflict('Foto alumni sedang diproses pihak lain; unggah ulang berkas');
+      }
+    }
+
+    const alumni = await tx.alumni.update({
+      where: { id },
+      data: {
+        ...data,
+        birthDate: data.birthDate ? new Date(data.birthDate) : undefined,
+        graduationDate: data.graduationDate ? new Date(data.graduationDate) : undefined,
+      },
+      include: {
+        unit: { select: { id: true, name: true, type: true } },
+      },
+    });
+
+    if (claim) await releaseBlobClaimById(claim, tx);
+    return alumni;
   });
 }
 

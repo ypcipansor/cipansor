@@ -1,5 +1,17 @@
 import { Router } from 'express';
-import { UserRole } from '@prisma/client';
+import {
+  ADMIN_ROLE_CODES,
+  GOVERNANCE_ROLE_CODES,
+  PRINCIPAL_ROLE_CODES,
+  VICE_PRINCIPAL_ROLE_CODES,
+  SCHOOL_TEACHER_ROLE_CODES,
+  PESANTREN_LEADER_ROLE_CODES,
+  PESANTREN_EDUCATOR_ROLE_CODES,
+  TATA_USAHA_ROLE_CODES,
+  BENDAHARA_ROLE_CODES,
+  SUPPORT_ROLE_CODES,
+  BUSINESS_ROLE_CODES,
+} from '@cipansor/shared';
 import * as controller from './hr.controller';
 import { departmentController } from './departments.controller';
 import { contractController } from './contracts.controller';
@@ -13,9 +25,47 @@ import {
   queryLeaveSchema,
   queryStaffSchema,
   queryTeachersSchema,
+  queryEmployeesSchema,
 } from './hr.schema';
 
 const router = Router();
+
+/**
+ * Explicit RoleCode groups for the HR module, replacing the deprecated legacy
+ * `UserRole` enum the routes were written against.
+ *
+ * The lists are written out rather than imported as re-exports so the check is
+ * grep-able at each route: ADMIN_ROLE_CODES is intentionally narrower than the
+ * legacy `UNIT_ADMIN` bucket (which also expanded to governance). These groups
+ * are not identical to LEGACY_ROLE_EXPANSION — this is a deliberate narrowing
+ * of who may read/write personnel data, not a mechanical rename.
+ *
+ * READ vs WRITE is split deliberately. Governance roles (pembina, pengawas,
+ * treasurer, …) have legitimate *oversight* of personnel data — they may read
+ * the directory, attendance, leave and contracts to supervise the yayasan —
+ * but they are not the office that runs HR. Granting them the write routes
+ * (creating attendance, approving leave, editing contracts/departments,
+ * deleting documents) turned a supervisory role into a personnel administrator,
+ * which is broader than oversight. Writes are therefore unit/system admins
+ * only; governance keeps read. `GOVERNANCE_ROLE_CODES`' own doc says it is
+ * "deliberately NOT system administrators", so this restores that boundary.
+ */
+const HR_READ_ROLES = [...ADMIN_ROLE_CODES, ...GOVERNANCE_ROLE_CODES];
+const HR_WRITE_ROLES = [...ADMIN_ROLE_CODES];
+const ADMIN_ROLES = HR_READ_ROLES;
+const TEACHER_ROLES = [
+  ...SCHOOL_TEACHER_ROLE_CODES,
+  ...PRINCIPAL_ROLE_CODES,
+  ...VICE_PRINCIPAL_ROLE_CODES,
+  ...PESANTREN_LEADER_ROLE_CODES,
+  ...PESANTREN_EDUCATOR_ROLE_CODES,
+];
+const STAFF_ROLES = [
+  ...TATA_USAHA_ROLE_CODES,
+  ...BENDAHARA_ROLE_CODES,
+  ...SUPPORT_ROLE_CODES,
+  ...BUSINESS_ROLE_CODES,
+];
 
 router.use(authenticate);
 
@@ -51,8 +101,44 @@ router.use(authenticate);
  *         description: List of staff members
  */
 router.get(
+  '/employees',
+  authorize(...ADMIN_ROLES, ...TEACHER_ROLES, ...STAFF_ROLES),
+  validateQuery(queryEmployeesSchema),
+  controller.getEmployees
+);
+
+/**
+ * @swagger
+ * /api/hr/employees/{id}:
+ *   get:
+ *     summary: Get one employee (teacher or staff) by user id
+ *     tags: [HR]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Employee detail
+ *       404:
+ *         description: Employee not found
+ */
+// Registered before `/employees/:userId/documents` for readability; Express
+// matches on the full path, so the sibling document/history routes are
+// unaffected by the order.
+router.get(
+  '/employees/:id',
+  authorize(...ADMIN_ROLES, ...TEACHER_ROLES, ...STAFF_ROLES),
+  controller.getEmployeeById
+);
+
+router.get(
   '/staff',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
+  authorize(...ADMIN_ROLES),
   validateQuery(queryStaffSchema),
   controller.getStaffList
 );
@@ -85,7 +171,7 @@ router.get(
  */
 router.get(
   '/teachers',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER, UserRole.STAFF),
+  authorize(...ADMIN_ROLES, ...TEACHER_ROLES, ...STAFF_ROLES),
   validateQuery(queryTeachersSchema),
   controller.getTeachers
 );
@@ -108,11 +194,7 @@ router.get(
  *       200:
  *         description: Staff member details
  */
-router.get(
-  '/staff/:id',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  controller.getStaffById
-);
+router.get('/staff/:id', authorize(...ADMIN_ROLES), controller.getStaffById);
 
 // ==================== STAFF ATTENDANCE ====================
 
@@ -153,7 +235,7 @@ router.get(
  */
 router.get(
   '/attendance',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
+  authorize(...ADMIN_ROLES),
   validateQuery(queryStaffAttendanceSchema),
   controller.getStaffAttendance
 );
@@ -195,11 +277,7 @@ router.get(
  *       201:
  *         description: Attendance recorded
  */
-router.post(
-  '/attendance',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  controller.createStaffAttendance
-);
+router.post('/attendance', authorize(...HR_WRITE_ROLES), controller.createStaffAttendance);
 
 /**
  * @swagger
@@ -235,11 +313,7 @@ router.post(
  *       201:
  *         description: Bulk attendance recorded
  */
-router.post(
-  '/attendance/bulk',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  controller.recordBulkAttendance
-);
+router.post('/attendance/bulk', authorize(...HR_WRITE_ROLES), controller.recordBulkAttendance);
 
 /**
  * @swagger
@@ -259,11 +333,7 @@ router.post(
  *       200:
  *         description: Attendance record details
  */
-router.get(
-  '/attendance/:id',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  controller.getStaffAttendanceById
-);
+router.get('/attendance/:id', authorize(...ADMIN_ROLES), controller.getStaffAttendanceById);
 
 /**
  * @swagger
@@ -283,11 +353,7 @@ router.get(
  *       200:
  *         description: Attendance updated
  */
-router.put(
-  '/attendance/:id',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  controller.updateStaffAttendance
-);
+router.put('/attendance/:id', authorize(...HR_WRITE_ROLES), controller.updateStaffAttendance);
 
 /**
  * @swagger
@@ -307,11 +373,7 @@ router.put(
  *       204:
  *         description: Attendance deleted
  */
-router.delete(
-  '/attendance/:id',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  controller.deleteStaffAttendance
-);
+router.delete('/attendance/:id', authorize(...HR_WRITE_ROLES), controller.deleteStaffAttendance);
 
 /**
  * @swagger
@@ -341,7 +403,7 @@ router.delete(
  */
 router.get(
   '/staff/:staffId/attendance/summary',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.STAFF),
+  authorize(...ADMIN_ROLES, ...STAFF_ROLES),
   controller.getStaffAttendanceSummary
 );
 
@@ -384,7 +446,7 @@ router.get(
  */
 router.get(
   '/leaves',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER, UserRole.STAFF),
+  authorize(...ADMIN_ROLES, ...TEACHER_ROLES, ...STAFF_ROLES),
   validateQuery(queryLeaveSchema),
   controller.getLeaves
 );
@@ -430,7 +492,7 @@ router.get(
  */
 router.post(
   '/leaves',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER, UserRole.STAFF),
+  authorize(...HR_WRITE_ROLES, ...TEACHER_ROLES, ...STAFF_ROLES),
   controller.createLeave
 );
 
@@ -454,7 +516,7 @@ router.post(
  */
 router.get(
   '/leaves/:id',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER, UserRole.STAFF),
+  authorize(...ADMIN_ROLES, ...TEACHER_ROLES, ...STAFF_ROLES),
   controller.getLeaveById
 );
 
@@ -478,7 +540,7 @@ router.get(
  */
 router.put(
   '/leaves/:id',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER, UserRole.STAFF),
+  authorize(...HR_WRITE_ROLES, ...TEACHER_ROLES, ...STAFF_ROLES),
   controller.updateLeave
 );
 
@@ -514,11 +576,7 @@ router.put(
  *       200:
  *         description: Leave request approved/rejected
  */
-router.patch(
-  '/leaves/:id/approve',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  controller.approveLeave
-);
+router.patch('/leaves/:id/approve', authorize(...HR_WRITE_ROLES), controller.approveLeave);
 
 /**
  * @swagger
@@ -540,7 +598,7 @@ router.patch(
  */
 router.patch(
   '/leaves/:id/cancel',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER, UserRole.STAFF),
+  authorize(...HR_WRITE_ROLES, ...TEACHER_ROLES, ...STAFF_ROLES),
   controller.cancelLeave
 );
 
@@ -562,11 +620,7 @@ router.patch(
  *       204:
  *         description: Leave request deleted
  */
-router.delete(
-  '/leaves/:id',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  controller.deleteLeave
-);
+router.delete('/leaves/:id', authorize(...HR_WRITE_ROLES), controller.deleteLeave);
 
 /**
  * @swagger
@@ -588,119 +642,71 @@ router.delete(
  */
 router.get(
   '/staff/:staffId/leave-balance',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER, UserRole.STAFF),
+  authorize(...ADMIN_ROLES, ...TEACHER_ROLES, ...STAFF_ROLES),
   controller.getLeaveBalance
 );
 
-router.get(
-  '/analytics/retention-risk',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  controller.getRetentionRisk
-);
+router.get('/analytics/retention-risk', authorize(...ADMIN_ROLES), controller.getRetentionRisk);
 
 // ==================== DEPARTMENTS ====================
 
-router.post(
-  '/departments',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  departmentController.create
-);
+router.post('/departments', authorize(...HR_WRITE_ROLES), departmentController.create);
 router.get(
   '/departments',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER, UserRole.STAFF),
+  authorize(...ADMIN_ROLES, ...TEACHER_ROLES, ...STAFF_ROLES),
   departmentController.findAll
 );
 router.get(
   '/departments/:id',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER, UserRole.STAFF),
+  authorize(...ADMIN_ROLES, ...TEACHER_ROLES, ...STAFF_ROLES),
   departmentController.findOne
 );
-router.patch(
-  '/departments/:id',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  departmentController.update
-);
-router.delete(
-  '/departments/:id',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  departmentController.delete
-);
+router.patch('/departments/:id', authorize(...HR_WRITE_ROLES), departmentController.update);
+router.delete('/departments/:id', authorize(...HR_WRITE_ROLES), departmentController.delete);
 
 // ==================== CONTRACTS ====================
 
-router.post(
-  '/contracts',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  contractController.create
-);
-router.get(
-  '/contracts',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  contractController.findAll
-);
-router.get(
-  '/contracts/expiring',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  contractController.getExpiring
-);
+router.post('/contracts', authorize(...HR_WRITE_ROLES), contractController.create);
+router.get('/contracts', authorize(...ADMIN_ROLES), contractController.findAll);
+router.get('/contracts/expiring', authorize(...ADMIN_ROLES), contractController.getExpiring);
 router.get(
   '/contracts/user/:userId',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER, UserRole.STAFF),
+  authorize(...ADMIN_ROLES, ...TEACHER_ROLES, ...STAFF_ROLES),
   contractController.findByUser
 );
-router.patch(
-  '/contracts/:id',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  contractController.update
-);
+router.patch('/contracts/:id', authorize(...HR_WRITE_ROLES), contractController.update);
 
 // ==================== EMPLOYEE DOCUMENTS ====================
 
 router.get(
   '/employees/:userId/documents',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER, UserRole.STAFF),
+  authorize(...ADMIN_ROLES, ...TEACHER_ROLES, ...STAFF_ROLES),
   employeeDocumentController.findAll
 );
-router.post(
-  '/documents',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  employeeDocumentController.create
-);
-router.delete(
-  '/documents/:id',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  employeeDocumentController.delete
-);
+router.post('/documents', authorize(...HR_WRITE_ROLES), employeeDocumentController.create);
+router.delete('/documents/:id', authorize(...HR_WRITE_ROLES), employeeDocumentController.delete);
 
 // ==================== EMPLOYMENT HISTORY ====================
 
 router.get(
   '/employees/:userId/history',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER, UserRole.STAFF),
+  authorize(...ADMIN_ROLES, ...TEACHER_ROLES, ...STAFF_ROLES),
   employmentHistoryController.findAll
 );
-router.post(
-  '/history',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  employmentHistoryController.create
-);
+router.post('/history', authorize(...HR_WRITE_ROLES), employmentHistoryController.create);
 
 // ==================== LEAVE BALANCES (ENHANCED) ====================
 
 router.get(
   '/leave-balances/user/:userId',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER, UserRole.STAFF),
+  authorize(...ADMIN_ROLES, ...TEACHER_ROLES, ...STAFF_ROLES),
   leaveBalanceController.getBalances
 );
 router.post(
   '/leave-balances/initialize',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
+  authorize(...HR_WRITE_ROLES),
   leaveBalanceController.initialize
 );
-router.patch(
-  '/leave-balances/:id',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  leaveBalanceController.update
-);
+router.patch('/leave-balances/:id', authorize(...HR_WRITE_ROLES), leaveBalanceController.update);
 
 export default router;

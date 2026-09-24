@@ -559,6 +559,9 @@ model User {
   // Business Unit Management
   managedBusinessUnits BusinessUnit[]        @relation("BusinessUnitManager")
 
+  // SSO identity links (Google Workspace / Microsoft Entra ID)
+  identityProviders IdentityProvider[]
+
   @@index([email])
   @@index([role])
   @@index([unitId])
@@ -2151,6 +2154,135 @@ model AuditLog {
   @@index([entity])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+/// SSO provider a user has linked. An enum (not a String) because AGENTS.md
+/// makes Prisma the source of truth for DB enums, and the set is closed:
+/// the API's `ssoLoginSchema` accepts exactly these two values.
+enum SSOProvider {
+  GOOGLE
+  MICROSOFT
+}
+
+/// IdentityProvider - an SSO subject (Google `sub`, Microsoft `oid`) linked to
+/// a local User.
+///
+/// The link is by provider subject, not by e-mail: a provider-side address
+/// change must not break an established login, and two addresses must never
+/// resolve to the same account by accident.
+model IdentityProvider {
+  id                 String      @id @default(uuid())
+  userId             String      @map("user_id")
+  provider           SSOProvider
+  providerSubjectId  String      @map("provider_subject_id")
+  providerEmail      String?     @map("provider_email")
+  linkedAt           DateTime    @default(now()) @map("linked_at")
+  lastLoginAt        DateTime?   @map("last_login_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerSubjectId])
+  @@index([userId])
+  @@map("identity_providers")
+}
+/// BlobClaim — the durable handshake that makes "discard an orphan upload" safe.
+///
+/// An upload and the record that references it are two requests: the browser
+/// PUTs bytes (or POSTs them to `/upload`) and only afterwards saves the record
+/// that points at them. If that second request fails, the blob is unreachable —
+/// no row references it, so no read path can authorize it — yet it lives in
+/// private storage forever. `/upload/discard` reclaims such a blob.
+///
+/// The hazard is the race: a discard that reads "no record references this"
+/// at the instant a create is committing would destroy a blob the new record
+/// just started pointing at. Two delayed re-probes, however many, only narrow
+/// the window — they cannot close a TOCTOU between the last probe and Azure's
+/// delete. A claim row closes it, because both sides take a row lock:
+///
+///  - **Create-record** claims the blob (`claimBlobForRecord`): at most one
+///    live claim per blob URL (`blobUrl` is UNIQUE), so a discard sees the
+///    claim and refuses. The claim is deleted in the same DB transaction that
+///    inserts the record.
+///  - **Discard** claims the blob too (`claimBlobForDiscard`): it flips a
+///    still-live `RECORD` claim to `DISCARD` only with a conditional update,
+///    which serializes against the create that is deleting its own claim.
+///    Whichever commits first wins; the loser sees no row and backs off.
+///
+/// A blob's claim is `expiresAt`-bounded. A create that crashes before saving
+/// its record leaves a claim that expires, so the orphan can still be reclaimed
+/// later rather than being pinned forever.
+model BlobClaim {
+  id        String          @id @default(uuid())
+  /// The stable blob URL, exactly as persisted on the owning record. Unique:
+  /// one blob, one live claim, which is what makes the mutual exclusion work.
+  blobUrl   String          @unique @map("blob_url")
+  kind      BlobClaimKind
+  /// Who initiated the operation. Audit only — never an identity or an
+  /// authorization key. Two operations by the same user must remain mutually
+  /// exclusive, so `holderId` alone can never be used to take a claim over.
+  holderId  String          @map("holder_id")
+  /// Cryptographically random per-operation secret. Every claim is identified
+  /// by `(id, operationToken, kind)`; a refresh, release, tombstone or
+  /// commit-time ownership check must match all three. Without it a same-user
+  /// RECORD could silently assume a DISCARD (or a stale release could delete a
+  /// newer claim), which is the takeover this column closes.
+  operationToken String      @map("operation_token")
+  /// Set once a record claim has been materialized into a saved record, so the
+  /// caller can tell "I still hold it" from "it was retired under me".
+  recordId  String?         @map("record_id")
+  createdAt DateTime        @default(now()) @map("created_at")
+  /// After this instant the claim no longer blocks a discard: a crashed create
+  /// must not pin its orphan forever.
+  expiresAt DateTime        @map("expires_at")
+  /// Terminal tombstone. Set atomically immediately before the irreversible
+  /// Azure delete; from then on NO create may ever take this row over, so a
+  /// create that was waiting out the discard's delete cannot claim a blob that
+  /// is about to vanish. The row is deliberately kept after a successful delete
+  /// (not released), because releasing it would reopen the very window the
+  /// tombstone closes.
+  discardedAt DateTime?   @map("discarded_at")
+  /// Reconciliation bookkeeping (BUG 7 / flag 11). A successful (or
+  /// already-absent) physical delete stamps `reconciledAt` so the row is never
+  /// selected again; a failure bumps `reconcileAttempts` and schedules
+  /// `nextReconcileAt` with backoff so one poison row cannot starve the queue.
+  reconciledAt      DateTime?  @map("reconciled_at")
+  reconcileAttempts Int        @default(0) @map("reconcile_attempts")
+  lastReconcileAt   DateTime?  @map("last_reconcile_at")
+  nextReconcileAt   DateTime?  @map("next_reconcile_at")
+  /// Terminal disposition for rows that must never be retried (malformed URL,
+  /// foreign storage account), so they stop consuming the bounded batch.
+  reconcileStatus   BlobReconcileStatus @default(PENDING) @map("reconcile_status")
+  /// Worker lease: the replica currently reconciling this row, and when its
+  /// lease lapses. The scheduler can run on several API replicas, so a worker
+  /// takes a short-lived lease with one conditional UPDATE before deleting; a
+  /// replica that cannot take it skips the row instead of racing the delete,
+  /// the retry counter and the audit trail. The lease is never renewed, so a
+  /// crashed worker's rows become eligible again on the next run.
+  reconcileLeaseOwner     String?   @map("reconcile_lease_owner")
+  reconcileLeaseExpiresAt DateTime? @map("reconcile_lease_expires_at")
+
+  @@index([expiresAt])
+  @@index([discardedAt])
+  @@index([reconcileStatus, nextReconcileAt])
+  @@map("blob_claims")
+}
+
+/// Reconciliation lifecycle of a tombstoned claim whose delete outcome is not
+/// yet known. `PENDING` is eligible (subject to `nextReconcileAt`); `DONE` and
+/// `QUARANTINED` are terminal and never selected again.
+enum BlobReconcileStatus {
+  PENDING
+  DONE
+  QUARANTINED
+}
+
+/// The two sides of the handshake. `RECORD` is a create that is about to
+/// persist a reference; `DISCARD` is a reclamation that has taken ownership of
+/// an orphan and is about to delete it.
+enum BlobClaimKind {
+  RECORD
+  DISCARD
 }
 
 // =====================================

@@ -3,6 +3,12 @@ import { Prisma } from '@prisma/client';
 import { JournalReferenceType } from '@cipansor/shared';
 import { getAccountOrFallback, ACCOUNT_MAPPING_KEYS } from '../finance/accounting-config.service';
 import { isPeriodOpen } from '../finance-enhancement/period.service';
+import { Errors } from '../../middleware/error';
+import {
+  claimBlobForRecord,
+  releaseBlobClaimById,
+  type BlobClaimHandle,
+} from '../../utils/blob-claim';
 import type {
   CreateCategoryInput,
   UpdateCategoryInput,
@@ -263,31 +269,49 @@ export const itemService = {
     `;
   },
 
-  async create(unitId: string, data: CreateItemInput) {
-    return prisma.canteenItem.create({
-      data: {
-        unitRel: { connect: { id: unitId } },
-        category: { connect: { id: data.categoryId } },
-        ...(data.businessUnitId && { businessUnit: { connect: { id: data.businessUnitId } } }),
-        code: data.code,
-        name: data.name,
-        description: data.description,
-        price: new Prisma.Decimal(data.price),
-        costPrice: data.costPrice ? new Prisma.Decimal(data.costPrice) : null,
-        stock: data.stock,
-        minStock: data.minStock,
-        unit: data.unit,
-        imageUrl: data.imageUrl,
-        isAvailable: data.isAvailable,
-        isActive: data.isActive,
-      },
-      include: {
-        category: true,
-      },
-    });
+  async create(unitId: string, data: CreateItemInput, actorId?: string) {
+    const holderId = actorId ?? 'canteen';
+    // Claim the item image before the row references it, so a concurrent
+    // discard of a just-uploaded image cannot delete it between its reference
+    // probe and this insert (BUG 4 / flag 9).
+    let claim: BlobClaimHandle | null = null;
+    if (data.imageUrl) {
+      claim = await claimBlobForRecord(data.imageUrl, holderId);
+      if (!claim) {
+        throw Errors.conflict('Foto item sedang diproses pihak lain; unggah ulang berkas tersebut');
+      }
+    }
+    try {
+      return await prisma.canteenItem.create({
+        data: {
+          unitRel: { connect: { id: unitId } },
+          category: { connect: { id: data.categoryId } },
+          ...(data.businessUnitId && { businessUnit: { connect: { id: data.businessUnitId } } }),
+          code: data.code,
+          name: data.name,
+          description: data.description,
+          price: new Prisma.Decimal(data.price),
+          costPrice: data.costPrice ? new Prisma.Decimal(data.costPrice) : null,
+          stock: data.stock,
+          minStock: data.minStock,
+          unit: data.unit,
+          imageUrl: data.imageUrl,
+          isAvailable: data.isAvailable,
+          isActive: data.isActive,
+        },
+        include: {
+          category: true,
+        },
+      });
+    } finally {
+      if (data.imageUrl) {
+        if (claim) await releaseBlobClaimById(claim).catch(() => undefined);
+      }
+    }
   },
 
-  async update(id: string, unitId: string, data: UpdateItemInput) {
+  async update(id: string, unitId: string, data: UpdateItemInput, actorId?: string) {
+    const holderId = actorId ?? 'canteen';
     // Verify ownership before updating
     const existing = await prisma.canteenItem.findFirst({ where: { id, unitId } });
     if (!existing) {
@@ -315,13 +339,28 @@ export const itemService = {
     if (data.isAvailable !== undefined) updateData.isAvailable = data.isAvailable;
     if (data.isActive !== undefined) updateData.isActive = data.isActive;
 
-    return prisma.canteenItem.update({
-      where: { id },
-      data: updateData,
-      include: {
-        category: true,
-      },
-    });
+    // A replaced image is a new blob reference, so it takes the same claim as
+    // create (flag 9).
+    let claim: BlobClaimHandle | null = null;
+    if (data.imageUrl) {
+      claim = await claimBlobForRecord(data.imageUrl, holderId);
+      if (!claim) {
+        throw Errors.conflict('Foto item sedang diproses pihak lain; unggah ulang berkas tersebut');
+      }
+    }
+    try {
+      return await prisma.canteenItem.update({
+        where: { id },
+        data: updateData,
+        include: {
+          category: true,
+        },
+      });
+    } finally {
+      if (data.imageUrl) {
+        if (claim) await releaseBlobClaimById(claim).catch(() => undefined);
+      }
+    }
   },
 
   async delete(id: string, unitId: string) {

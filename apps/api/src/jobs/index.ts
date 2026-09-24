@@ -27,3 +27,10 @@ export {
   runChatbotEscalationRetry,
   type EscalationRetrySummary,
 } from './chatbot-escalation-retry.job';
+export {
+  reconcileDiscardedBlobs,
+  BLOB_DISCARD_RECONCILE_AUDIT_ACTION,
+  BLOB_DISCARD_RECONCILE_AUDIT_ENTITY,
+  BLOB_DISCARD_RECONCILE_LIMIT,
+  type BlobDiscardReconcileSummary,
+} from './blob-discard-reconcile.job';

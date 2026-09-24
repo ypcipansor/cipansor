@@ -22,12 +22,22 @@ vi.mock('@/lib/prisma', () => ({
     classEnrollment: {
       findMany: vi.fn(),
     },
+    $transaction: vi.fn(),
   },
+}));
+
+vi.mock('@/utils/blob-claim', () => ({
+  claimBlobsForRecord: vi.fn().mockResolvedValue([]),
+  releaseBlobClaims: vi.fn().mockResolvedValue(undefined),
 }));
 
 describe('AssignmentsService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // The create/update paths wrap claim+write in one transaction. The unit
+    // test exercises the write shape, so run the callback against the same
+    // mocked client the pre-existing tests already stub.
+    (prisma.$transaction as any).mockImplementation(async (fn: any) => fn(prisma));
   });
 
   describe('create', () => {

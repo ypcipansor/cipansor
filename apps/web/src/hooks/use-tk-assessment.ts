@@ -218,8 +218,15 @@ export function useAddEvidence() {
       assessmentId: string;
       data: FormData;
     }) => {
+      // The API exposes a single collection route, `POST /paud-assessment/
+      // evidences`; `assessmentId` travels in the multipart body (the schema
+      // requires it). The old URL-shaped path `.../assessments/:id/evidences`
+      // did not exist, so every evidence upload 404'd.
+      if (!data.has("assessmentId")) {
+        data.append("assessmentId", assessmentId);
+      }
       const response = await api.post<ApiResponse<TKEvidence>>(
-        `/paud-assessment/assessments/${assessmentId}/evidences`,
+        `/paud-assessment/evidences`,
         data,
         { headers: { "Content-Type": "multipart/form-data" } },
       );

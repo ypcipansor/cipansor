@@ -1,7 +1,9 @@
 "use client";
-import { useState } from "react";
+import { useMemo } from "react";
 import { safeFormat } from "@/lib/date";
-import { useRouter } from "next/navigation";
+import { useResolvedFileUrls } from "@/hooks/use-resolved-file-url";
+import { displayableResolvedUrl } from "@/lib/files";
+import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
   Edit2,
@@ -30,9 +32,27 @@ import { Separator } from "@/components/ui/separator";
 import { useDailyReport } from "@/hooks/use-daily-report";
 
 import { MainLayout } from "@/components/layout";
-function DailyReportDetailPageContent({ params }: { params: { id: string } }) {
+function DailyReportDetailPageContent() {
+  const params = useParams<{ id: string }>();
   const router = useRouter();
   const { data: report, isLoading } = useDailyReport(params.id);
+
+  // Persisted daily-report photo URLs are stable references (raw blob URL or a
+  // local /uploads path, no expiring credential). The browser cannot attach an
+  // Authorization header when loading them, so resolve each to a short-lived
+  // SAS/file token — and keep refreshing before it expires, so a report left
+  // open does not lose its photos.
+  const reportPhotos = report?.photos;
+  const photoUrls = useMemo(
+    () =>
+      (reportPhotos ?? [])
+        .map((p) => p.photoUrl)
+        .filter((u): u is string => !!u),
+    [reportPhotos],
+  );
+  const resolvedPhotos = useResolvedFileUrls(photoUrls);
+  const photoSrc = (url: string): string | null =>
+    displayableResolvedUrl(url, resolvedPhotos);
 
   if (isLoading) {
     return (
@@ -299,7 +319,7 @@ function DailyReportDetailPageContent({ params }: { params: { id: string } }) {
                 <PhotoGallery
                   photos={report.photos.map((p) => ({
                     id: p.id,
-                    url: p.photoUrl,
+                    url: photoSrc(p.photoUrl),
                     uploadedAt: new Date(p.createdAt),
                     caption: p.caption,
                     category: "Kegiatan",
@@ -394,12 +414,10 @@ function DailyReportDetailPageContent({ params }: { params: { id: string } }) {
   );
 }
 
-export default function DailyReportDetailPage(
-  props: Parameters<typeof DailyReportDetailPageContent>[0],
-) {
+export default function DailyReportDetailPage() {
   return (
     <MainLayout>
-      <DailyReportDetailPageContent {...props} />
+      <DailyReportDetailPageContent />
     </MainLayout>
   );
 }

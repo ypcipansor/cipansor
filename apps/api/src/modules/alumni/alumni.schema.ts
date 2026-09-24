@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { uploadedFileRefSchema } from '@cipansor/shared';
+
 import { partialUpdateSchema } from '@/lib/partial';
 
 // ==================== ALUMNI ====================
@@ -20,7 +22,7 @@ export const createAlumniSchema = z.object({
   city: z.string().max(100).optional(),
   province: z.string().max(100).optional(),
   country: z.string().max(100).default('Indonesia'),
-  photo: z.string().url().optional(),
+  photo: uploadedFileRefSchema.optional(),
   status: z.enum(['ACTIVE', 'INACTIVE', 'DECEASED']).default('ACTIVE'),
   notes: z.string().optional(),
 });

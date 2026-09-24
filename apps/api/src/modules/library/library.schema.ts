@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { BookStatus, BorrowingStatus } from '@cipansor/shared';
+import { BookStatus, BorrowingStatus, uploadedFileRefSchema } from '@cipansor/shared';
 import { partialUpdateSchema } from '@/lib/partial';
 
 // Book Category schemas
@@ -25,11 +25,11 @@ export const createBookSchema = z.object({
   pageCount: z.number().int().positive().optional(),
   shelfLocation: z.string().optional(),
   quantity: z.number().int().positive().default(1),
-  coverUrl: z.string().url().optional(),
+  coverUrl: uploadedFileRefSchema.optional(),
   description: z.string().optional(),
   // Maktabah digital collection
   isDigital: z.boolean().default(false),
-  fileUrl: z.string().url().optional(),
+  fileUrl: uploadedFileRefSchema.optional(),
   fileType: z.string().max(20).optional(),
 });
 

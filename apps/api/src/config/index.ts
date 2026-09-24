@@ -205,6 +205,15 @@ export const config = {
       windowMs: parseInt(process.env.RATE_LIMIT_AUTH_WINDOW_MS || '60000', 10),
       maxRequests: parseInt(process.env.RATE_LIMIT_AUTH_MAX_REQUESTS || '5', 10),
     },
+    // Upload (multipart POST /upload) limiter. Guards the one endpoint that
+    // writes a file and consumes bandwidth; deliberately NOT applied to
+    // `/upload/sas` or `/upload/discard`, which are cheap read/cleanup calls a
+    // gallery would otherwise exhaust. Raised for CI/e2e via env, never by
+    // weakening the production default of 10/min.
+    upload: {
+      windowMs: parseInt(process.env.RATE_LIMIT_UPLOAD_WINDOW_MS || '60000', 10),
+      maxRequests: parseInt(process.env.RATE_LIMIT_UPLOAD_MAX_REQUESTS || '10', 10),
+    },
   },
 
   /**

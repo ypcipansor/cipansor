@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { STUDENT_STATUS_VALUES } from "../types/student-status";
 import { nisnSchema } from "./student-compliance";
+import { uploadedFileRefSchema } from "./upload";
 
 // ==================== QUERY PARAMS ====================
 
@@ -63,7 +64,7 @@ export const updateStudentSchema = z.object({
   parentName: z.string().min(2).optional(),
   parentPhone: z.string().min(10).optional(),
   parentEmail: z.string().email().optional().nullable(),
-  photoUrl: z.string().url().optional().nullable(),
+  photoUrl: uploadedFileRefSchema.optional().nullable(),
   // `status` SENGAJA tidak ada di sini. Ia dulu dideklarasikan dan
   // `student.service.update` tidak pernah menuliskannya, jadi klien mendapat
   // 200 sementara santrinya tidak berubah. Dan memang tidak boleh bisa:

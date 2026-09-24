@@ -4,7 +4,8 @@ import {
   QualityDashboardSummary,
   QualityStandardType,
 } from '@cipansor/shared';
-import { ApiError, ErrorCode } from '@/middleware/error';
+import { ApiError, ErrorCode, Errors } from '@/middleware/error';
+import { claimBlobForRecord, releaseBlobClaimById, type BlobClaimHandle } from '@/utils/blob-claim';
 
 // Define inputs locally if not in shared
 interface CreateAuditInput {
@@ -68,17 +69,31 @@ export const qualityService = {
 
   // Upload evidence
   createEvidence: async (data: CreateQualityEvidenceInput, userId: string) => {
-    return prisma.qualityEvidence.create({
-      data: {
-        unitId: data.unitId,
-        indicatorId: data.indicatorId,
-        academicYearId: data.academicYearId,
-        name: data.name,
-        fileUrl: data.fileUrl,
-        description: data.description,
-        uploadedById: userId,
-      },
-    });
+    // Claim the evidence blob before the row references it, so a concurrent
+    // discard of a just-uploaded file cannot delete it between its reference
+    // probe and this insert (BUG 4 / flag 9).
+    const claim = await claimBlobForRecord(data.fileUrl, userId);
+    if (!claim) {
+      throw Errors.conflict(
+        'Berkas bukti sedang diproses pihak lain; unggah ulang berkas tersebut'
+      );
+    }
+    try {
+      return await prisma.qualityEvidence.create({
+        data: {
+          unitId: data.unitId,
+          indicatorId: data.indicatorId,
+          academicYearId: data.academicYearId,
+          name: data.name,
+          fileUrl: data.fileUrl,
+          description: data.description,
+          uploadedById: userId,
+        },
+      });
+    } finally {
+      // The row (or the failure) is now durable; the reference is the claim.
+      if (claim) await releaseBlobClaimById(claim).catch(() => undefined);
+    }
   },
 
   // Delete evidence

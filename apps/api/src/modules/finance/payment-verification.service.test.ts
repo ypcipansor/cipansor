@@ -28,6 +28,16 @@ vi.mock('./accounting-config.service', () => ({
   getAccountOrFallback: vi.fn().mockResolvedValue({ id: 'acc-bank' }),
 }));
 
+// The proof submit path claims the blob before inserting the record (BUG 4).
+// The protocol has its own unit + DB integration tests; here the claim always
+// succeeds so the behaviour under test is unchanged.
+vi.mock('@/utils/blob-claim', () => ({
+  claimBlobForRecord: vi
+    .fn()
+    .mockResolvedValue({ id: 'claim-1', operationToken: 'tok-1', kind: 'RECORD' }),
+  releaseBlobClaimById: vi.fn().mockResolvedValue(undefined),
+}));
+
 import { prisma } from '../../lib/prisma';
 import { submitPaymentProof, verifyPayment } from './finance.service';
 

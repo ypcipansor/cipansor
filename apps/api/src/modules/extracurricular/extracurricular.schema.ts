@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { uploadedFileRefSchema } from '@cipansor/shared';
+
 import { partialUpdateSchema } from '@/lib/partial';
 
 // Enums matching Prisma
@@ -57,7 +59,7 @@ export const createExtracurricularSchema = z.object({
   assistantCoachId: z.string().uuid().optional(),
   isCompulsory: z.boolean().default(false),
   academicYearId: z.string().uuid(),
-  imageUrl: z.string().url().optional(),
+  imageUrl: uploadedFileRefSchema.optional(),
 });
 
 export type CreateExtracurricularInput = z.infer<typeof createExtracurricularSchema>;
@@ -122,8 +124,8 @@ export const createAchievementSchema = z.object({
   rank: z.string().optional(), // Juara 1, 2, 3, Harapan, Peserta
   organizer: z.string().optional(),
   eventDate: z.string().datetime().or(z.date()),
-  certificateUrl: z.string().url().optional(),
-  photoUrl: z.string().url().optional(),
+  certificateUrl: uploadedFileRefSchema.optional(),
+  photoUrl: uploadedFileRefSchema.optional(),
 });
 
 export type CreateAchievementInput = z.infer<typeof createAchievementSchema>;

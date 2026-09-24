@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
 import { UserRole, Prisma } from '@prisma/client';
 import { seesAllUnits } from '@/utils/resolve-unit-id';
+import { claimBlobForRecord, releaseBlobClaimById, type BlobClaimHandle } from '@/utils/blob-claim';
 import { CLASS_ENROLLMENT_STATUS } from '@cipansor/shared';
 
 // Status enum
@@ -319,23 +320,40 @@ export class MuhadatsahService {
       where: { userId: currentUser.sub },
     });
 
-    const updated = await prisma.muhadatsah.update({
-      where: { id },
-      data: {
-        fluencyScore: input.fluencyScore,
-        grammarScore: input.grammarScore,
-        vocabularyScore: input.vocabularyScore,
-        pronunciationScore: input.pronunciationScore,
-        totalScore,
-        grade,
-        feedback: input.feedback,
-        recordingUrl: input.recordingUrl,
-        duration: input.duration,
-        evaluatorId: teacher?.id || null,
-        evaluatedAt: new Date(),
-        status: 'COMPLETED',
-      },
-    });
+    // A recording added by an evaluation is a new blob reference, so it takes
+    // the claim protocol (BUG 4 / flag 9).
+    let claim: BlobClaimHandle | null = null;
+    if (input.recordingUrl) {
+      claim = await claimBlobForRecord(input.recordingUrl, currentUser.sub);
+      if (!claim) {
+        throw Errors.conflict('Rekaman audio sedang diproses pihak lain; unggah ulang berkas');
+      }
+    }
+
+    let updated;
+    try {
+      updated = await prisma.muhadatsah.update({
+        where: { id },
+        data: {
+          fluencyScore: input.fluencyScore,
+          grammarScore: input.grammarScore,
+          vocabularyScore: input.vocabularyScore,
+          pronunciationScore: input.pronunciationScore,
+          totalScore,
+          grade,
+          feedback: input.feedback,
+          recordingUrl: input.recordingUrl,
+          duration: input.duration,
+          evaluatorId: teacher?.id || null,
+          evaluatedAt: new Date(),
+          status: 'COMPLETED',
+        },
+      });
+    } finally {
+      if (input.recordingUrl) {
+        if (claim) await releaseBlobClaimById(claim).catch(() => undefined);
+      }
+    }
 
     return updated;
   }

@@ -181,6 +181,16 @@ export default defineConfig({
     // `next start` honours the PORT env var. In CI the job sets PORT=3001 for
     // the API, which would make the web server try to bind 3001 too
     // (EADDRINUSE). Pin the web server to 3000 regardless of the inherited PORT.
-    env: { PORT: "3000" },
+    // `SESSION_SECRET`/`JWT_SECRET` are required by the server-signed routing
+    // cookie (`lib/session.ts`, `POST /api/session`). Without them the Proxy
+    // cannot verify the cookie and every authenticated spec would bounce to
+    // /login. CI sets JWT_SECRET for the API but not for the web server, so pin
+    // a deterministic test secret here (never used outside tests).
+    env: {
+      PORT: "3000",
+      SESSION_SECRET:
+        process.env.SESSION_SECRET || "e2e-routing-session-secret",
+      JWT_SECRET: process.env.JWT_SECRET || "e2e-routing-session-secret",
+    },
   },
 });

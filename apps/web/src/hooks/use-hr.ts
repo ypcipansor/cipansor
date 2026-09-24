@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import type { HrEmployee, HrEmployeeListResult } from "@cipansor/shared";
 import api from "@/lib/api";
 
 // Types
@@ -36,87 +37,12 @@ export const EMPLOYEE_TYPE_LABELS: Record<EmployeeType, string> = {
   INTERN: "Magang",
 };
 
-export interface Employee {
-  id: string;
-  nip: string;
-  userId?: string;
-  user?: {
-    id: string;
-    name: string;
-    email: string;
-  };
-  unitId: string;
-  unit?: {
-    id: string;
-    name: string;
-  };
-  departmentId?: string;
-  department?: {
-    id: string;
-    name: string;
-  };
-
-  // Personal info
-  fullName: string;
-  gender: Gender;
-  birthPlace: string;
-  birthDate: string;
-  nationalId?: string;
-  nik?: string;
-  taxId?: string;
-  npwp?: string;
-  maritalStatus: string;
-  religion: string;
-
-  // Contact
-  phone: string;
-  email?: string;
-  address: string;
-  city?: string;
-  province?: string;
-  postalCode?: string;
-
-  // Employment
-  position: string;
-  employeeType: EmployeeType;
-  status: EmployeeStatus;
-  joinDate: string;
-  endDate?: string;
-  resignDate?: string;
-
-  // Education
-  lastEducation?: string;
-  educationMajor?: string;
-  educationInstitution?: string;
-  graduationYear?: number;
-
-  // Bank info
-  bankName?: string;
-  bankAccount?: string;
-  bankAccountNumber?: string;
-  bankAccountName?: string;
-
-  // Insurance
-  bpjsKesehatan?: string;
-  bpjsKetenagakerjaan?: string;
-
-  // Leave
-  leaveBalance?: number;
-
-  // Documents
-  photoUrl?: string;
-  cvUrl?: string;
-  contractUrl?: string;
-  documents?: {
-    name: string;
-    url: string;
-    type?: string;
-    uploadedAt?: string;
-  }[];
-
-  createdAt: string;
-  updatedAt: string;
-}
+/**
+ * The employee DTO is owned by `@cipansor/shared` (`HrEmployee`) — the same
+ * contract the API returns from `GET /hr/employees` and `GET /hr/employees/:id`.
+ * It is re-exported under the local name the pages already import.
+ */
+export type Employee = HrEmployee;
 
 export interface Department {
   id: string;
@@ -428,15 +354,7 @@ export function useEmployees(params?: {
     queryKey: ["employees", params],
     queryFn: async () => {
       const response = await api.get("/hr/employees", { params });
-      return response.data as {
-        data: Employee[];
-        meta: {
-          total: number;
-          page: number;
-          limit: number;
-          totalPages: number;
-        };
-      };
+      return response.data as HrEmployeeListResult;
     },
   });
 }

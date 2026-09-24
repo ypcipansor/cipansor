@@ -29,6 +29,7 @@ export const manageAlumni = authorize(...ALUMNI_WRITE_ROLES);
 export const readAlumniPersonalData = authorize(...ALUMNI_PERSONAL_DATA_ROLES);
 
 export interface AlumniActor {
+  id?: string | null;
   role?: string | null;
   roleCode?: string | null;
   unitId?: string | null;

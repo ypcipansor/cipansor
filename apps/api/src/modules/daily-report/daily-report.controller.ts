@@ -108,7 +108,7 @@ export const bulkCreateDailyReports = asyncHandler(async (req: Request, res: Res
 export const updateDailyReport = asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params;
   const input = cleanInput(req.body) as UpdateDailyReportInput;
-  const report = await dailyReportService.update(id, input);
+  const report = await dailyReportService.update(id, input, req.user!.sub);
 
   res.json({
     success: true,

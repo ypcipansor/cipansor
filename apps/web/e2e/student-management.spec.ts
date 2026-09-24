@@ -160,15 +160,14 @@ test.describe("Student Management - List & View", () => {
   });
 
   test("should paginate through students", async ({ page }) => {
-    // Look for pagination controls
-    const nextButton = page.getByRole("button", {
-      name: /next|selanjutnya|>/i,
-    });
+    // The pager is icon-only; it exposes Indonesian aria-labels, so target the
+    // next-page control by its accessible name rather than a glyph.
+    const nextButton = page.getByRole("button", { name: "Halaman berikutnya" });
 
-    if (await nextButton.isEnabled({ timeout: 3000 }).catch(() => false)) {
+    if (await nextButton.isEnabled({ timeout: 5000 }).catch(() => false)) {
       // Get first student name
       const firstStudent = await page
-        .locator('table tbody tr, [role="row"]')
+        .locator("table tbody tr")
         .first()
         .textContent();
 
@@ -178,7 +177,7 @@ test.describe("Student Management - List & View", () => {
 
       // Should show different students
       const newFirstStudent = await page
-        .locator('table tbody tr, [role="row"]')
+        .locator("table tbody tr")
         .first()
         .textContent();
       expect(newFirstStudent).not.toBe(firstStudent);

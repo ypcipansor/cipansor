@@ -73,7 +73,8 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
  * PATCH /api/announcements/:id
  */
 export const update = asyncHandler(async (req: Request, res: Response) => {
-  const announcement = await announcementService.update(req.params.id, req.body);
+  const actorId = (req.user as any)?.id || (req.user as any)?.userId || (req.user as any)?.sub;
+  const announcement = await announcementService.update(req.params.id, req.body, actorId);
   res.json({ success: true, data: announcement });
 });
 

@@ -2,7 +2,6 @@ import * as fs from "fs";
 import * as path from "path";
 import type { Page } from "@playwright/test";
 import { generate as generateTotp } from "otplib";
-import { middlewareAuthCookieValue } from "../../src/lib/auth-cookie";
 
 /**
  * API-based authentication for e2e tests.
@@ -180,9 +179,14 @@ async function apiLoginUncached(user: SeedUser): Promise<AuthSession> {
 }
 
 /**
- * Inject a session into the page's origin, mirroring the zustand persist store
- * (`auth-storage`) and the raw `accessToken`/`refreshToken` items + cookies the
- * middleware checks. Call before navigating to a protected route.
+ * Inject a session into the page's origin.
+ *
+ * SECURITY: the Next Proxy now trusts ONLY the server-signed, HttpOnly
+ * `cipansor-session` cookie — `auth-storage` is no longer a routing credential
+ * (a client could forge it). So we mint the real cookie by asking
+ * `POST /api/session` with the test's bearer token, exactly as the app does
+ * after login. The bearer/refresh tokens still go to localStorage for the
+ * axios interceptor; the profile blob is left for the store to rehydrate.
  */
 export async function injectSession(page: Page, session: AuthSession) {
   const authStorage = JSON.stringify({
@@ -190,21 +194,21 @@ export async function injectSession(page: Page, session: AuthSession) {
     version: 0,
   });
 
-  // Cookies for the Next middleware (it JSON.parses the encoded auth-storage and
-  // falls back to accessToken). Mirror the app: the slim value, encoded — the
-  // full user overflows 4 KB for some accounts and Playwright rejects it.
-  await page.context().addCookies([
-    {
-      name: "accessToken",
-      value: session.accessToken,
+  // Mint the server-signed routing cookie, then copy it into the browser
+  // context so it is present before the first navigation.
+  const cookies = await serverSessionCookies(session.accessToken);
+  // Preserve the Set-Cookie attributes we asserted on: re-adding without
+  // `httpOnly` would make the routing cookie readable from `document.cookie`
+  // in the test browser, falsely failing the "not readable from JS" spec.
+  await page.context().addCookies(
+    cookies.map(({ name, value }) => ({
+      name,
+      value,
       url: BASE_URL,
-    },
-    {
-      name: "auth-storage",
-      value: encodeURIComponent(middlewareAuthCookieValue(authStorage) ?? ""),
-      url: BASE_URL,
-    },
-  ]);
+      httpOnly: true,
+      sameSite: "Lax" as const,
+    })),
+  );
 
   // localStorage so the store rehydrates authenticated and the axios interceptor
   // finds the bearer token. addInitScript runs before app JS on every load.
@@ -216,6 +220,40 @@ export async function injectSession(page: Page, session: AuthSession) {
     },
     [session.accessToken, session.refreshToken, authStorage] as const,
   );
+}
+
+/**
+ * Call the web app's `POST /api/session` with a bearer token and return the
+ * `Set-Cookie` pairs it mints (the signed `cipansor-session` plus any clear).
+ *
+ * Throws when the route does not mint a session, so a spec fails loudly rather
+ * than proceeding as an anonymous visitor and asserting against /login.
+ */
+export async function serverSessionCookies(
+  accessToken: string,
+): Promise<Array<{ name: string; value: string }>> {
+  const res = await fetch(`${BASE_URL}/api/session`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({}),
+  });
+  const setCookie = res.headers.getSetCookie?.() ?? [];
+  const cookies: Array<{ name: string; value: string }> = [];
+  for (const header of setCookie) {
+    const pair = header.split(";")[0];
+    const eq = pair.indexOf("=");
+    if (eq <= 0) continue;
+    cookies.push({ name: pair.slice(0, eq), value: pair.slice(eq + 1) });
+  }
+  if (!cookies.some((c) => c.name === "cipansor-session")) {
+    throw new Error(
+      `POST /api/session did not mint a session cookie (status ${res.status}); is the web app running with SESSION_SECRET/JWT_SECRET set?`,
+    );
+  }
+  return cookies;
 }
 
 /**
@@ -242,6 +280,9 @@ export async function apiRequest<T = unknown>(
       `${method} ${apiPath} → ${res.status}: ${text.slice(0, 200)}`,
     );
   }
+  // 204 No Content (e.g. removing a role assignment) has an empty body; there is
+  // nothing to parse and `JSON.parse("")` would throw a misleading non-JSON error.
+  if (text.length === 0) return undefined as T;
   try {
     return JSON.parse(text) as T;
   } catch {
@@ -266,25 +307,22 @@ export async function loginAs(
  * (cookies the middleware reads + the zustand-persisted localStorage). Used by
  * global-setup to write `.auth/<role>.json` so specs can `test.use({ storageState })`.
  */
-export function buildStorageState(session: AuthSession) {
+export async function buildStorageState(session: AuthSession) {
   const origin = new URL(BASE_URL).origin;
   const authStorage = JSON.stringify({
     state: { user: session.user, isAuthenticated: true },
     version: 0,
   });
+  // The routing cookie is server-signed; mint it rather than forging an
+  // `auth-storage` blob the Proxy no longer trusts.
+  const sessionCookies = await serverSessionCookies(session.accessToken);
   return {
-    cookies: [
-      { name: "accessToken", value: session.accessToken },
-      {
-        name: "auth-storage",
-        value: encodeURIComponent(middlewareAuthCookieValue(authStorage) ?? ""),
-      },
-    ].map((c) => ({
+    cookies: sessionCookies.map((c) => ({
       ...c,
       domain: new URL(BASE_URL).hostname,
       path: "/",
       expires: Math.floor(Date.now() / 1000) + 86400,
-      httpOnly: false,
+      httpOnly: true,
       secure: false,
       sameSite: "Lax" as const,
     })),

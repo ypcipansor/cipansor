@@ -44,7 +44,7 @@ export const getById = asyncHandler(async (req: Request, res: Response) => {
  */
 export const create = asyncHandler(async (req: Request, res: Response) => {
   const input: CreateUnitInput = req.body;
-  const unit = await unitService.create(input);
+  const unit = await unitService.create(input, req.user?.sub);
 
   res.status(201).json({
     success: true,
@@ -59,7 +59,7 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
 export const update = asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params;
   const input: UpdateUnitInput = req.body;
-  const unit = await unitService.update(id, input);
+  const unit = await unitService.update(id, input, req.user?.sub);
 
   res.json({
     success: true,

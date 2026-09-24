@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { uploadedFileRefSchema } from '@cipansor/shared';
+
 import { PaymentStatus, PaymentMethod } from '@prisma/client';
 import { partialUpdateSchema } from '@/lib/partial';
 
@@ -95,7 +97,7 @@ export const submitPaymentProofSchema = z.object({
   amount: z.number().positive('Amount must be positive'),
   method: z.nativeEnum(PaymentMethod),
   referenceNo: z.string().max(100).optional(),
-  proofUrl: z.string().url('Invalid proof URL'),
+  proofUrl: uploadedFileRefSchema,
   notes: z.string().max(500).optional(),
 });
 export type SubmitPaymentProofDto = z.infer<typeof submitPaymentProofSchema>;

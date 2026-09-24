@@ -54,6 +54,7 @@ export * from "./use-perencanaan";
 // Utility hooks
 export * from "./use-url-filters";
 export * from "./use-debounce";
+export * from "./use-resolved-file-url";
 export * from "./use-unsaved-changes";
 export * from "./use-keyboard-shortcuts";
 export * from "./use-online-status";

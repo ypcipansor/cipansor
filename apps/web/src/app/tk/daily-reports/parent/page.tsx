@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { safeFormat } from "@/lib/date";
 import { MainLayout } from "@/components/layout";
 import { PageHeader } from "@/components/shared";
@@ -22,6 +22,8 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { useDailyReports } from "@/hooks/use-daily-report";
+import { useResolvedFileUrls } from "@/hooks/use-resolved-file-url";
+import { displayableResolvedUrl } from "@/lib/files";
 import { format } from "date-fns";
 import { id } from "date-fns/locale";
 import { cn } from "@/lib/utils";
@@ -75,6 +77,19 @@ export default function ParentDailyReportsPage() {
   });
 
   const reports = data?.data || [];
+
+  // Report photos live in the private container, so a raw URL 403s once Azure
+  // is enabled; resolve them like every other private viewer.
+  const photoUrls = useMemo(
+    () =>
+      reports.flatMap((r: { photos?: Array<{ photoUrl: string }> }) =>
+        (r.photos ?? []).map((p) => p.photoUrl),
+      ),
+    [reports],
+  );
+  const resolvedPhotos = useResolvedFileUrls(photoUrls);
+  const photoSrc = (url: string): string | null =>
+    displayableResolvedUrl(url, resolvedPhotos);
 
   return (
     <MainLayout>
@@ -279,7 +294,7 @@ export default function ParentDailyReportsPage() {
                               className="w-20 h-20 rounded-lg bg-muted flex-shrink-0 overflow-hidden"
                             >
                               <img
-                                src={photo.photoUrl}
+                                src={photoSrc(photo.photoUrl) ?? undefined}
                                 alt={photo.caption || `Photo ${idx + 1}`}
                                 className="w-full h-full object-cover"
                               />

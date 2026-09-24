@@ -1,4 +1,7 @@
 import { prisma } from '@/lib/prisma';
+import { Errors } from '@/middleware/error';
+import { claimBlobsForRecord, releaseBlobClaims } from '@/utils/blob-claim';
+import { extractBlobUrlsFromAttachmentValue } from '@/utils/blob-attachments';
 import {
   ListLearningOutcomesQueryInput,
   CreateLearningOutcomeInput,
@@ -321,25 +324,41 @@ export async function getTeachingModuleById(id: string) {
 }
 
 export async function createTeachingModule(data: CreateTeachingModuleInput) {
-  return prisma.teachingModule.create({
-    data: {
-      learningObjectiveId: data.learningObjectiveId,
-      teacherId: data.teacherId,
-      classId: data.classId,
-      title: data.title,
-      topic: data.topic,
-      duration: data.duration,
-      objectives: data.objectives,
-      prerequisites: data.prerequisites,
-      targetLearners: data.targetLearners,
-      materials: data.materials,
-      activities: data.activities,
-      assessmentPlan: data.assessmentPlan,
-      differentiation: data.differentiation,
-      reflection: data.reflection,
-      attachments: data.attachments,
-      isPublished: data.isPublished,
-    },
+  // Attachments are opaque JSON today, but any upload reference inside is a
+  // blob this record will point at; claim those before the insert so a discard
+  // cannot delete one mid-commit (BUG 4 / flag 9).
+  const blobUrls = extractBlobUrlsFromAttachmentValue(data.attachments);
+  return prisma.$transaction(async (tx) => {
+    const claims = await claimBlobsForRecord(blobUrls, 'kurikulum', tx);
+    if (!claims) {
+      throw Errors.conflict(
+        'Lampiran modul sedang diproses pihak lain; unggah ulang berkas tersebut'
+      );
+    }
+
+    const module = await tx.teachingModule.create({
+      data: {
+        learningObjectiveId: data.learningObjectiveId,
+        teacherId: data.teacherId,
+        classId: data.classId,
+        title: data.title,
+        topic: data.topic,
+        duration: data.duration,
+        objectives: data.objectives,
+        prerequisites: data.prerequisites,
+        targetLearners: data.targetLearners,
+        materials: data.materials,
+        activities: data.activities,
+        assessmentPlan: data.assessmentPlan,
+        differentiation: data.differentiation,
+        reflection: data.reflection,
+        attachments: data.attachments,
+        isPublished: data.isPublished,
+      },
+    });
+
+    await releaseBlobClaims(claims, tx);
+    return module;
   });
 }
 
@@ -364,9 +383,26 @@ export async function updateTeachingModule(id: string, data: UpdateTeachingModul
   if (data.classId !== undefined)
     updateData.class = data.classId ? { connect: { id: data.classId } } : { disconnect: true };
 
-  return prisma.teachingModule.update({
-    where: { id },
-    data: updateData,
+  // Replacement attachments are new blob references; claim them before the row
+  // can point at them (flag 9). The submitter's old URLs simply stop being
+  // referenced once this update commits, so a discard of those is then safe.
+  const blobUrls =
+    data.attachments === undefined ? [] : extractBlobUrlsFromAttachmentValue(data.attachments);
+  return prisma.$transaction(async (tx) => {
+    const claims = await claimBlobsForRecord(blobUrls, 'kurikulum', tx);
+    if (!claims) {
+      throw Errors.conflict(
+        'Lampiran modul sedang diproses pihak lain; unggah ulang berkas tersebut'
+      );
+    }
+
+    const module = await tx.teachingModule.update({
+      where: { id },
+      data: updateData,
+    });
+
+    await releaseBlobClaims(claims, tx);
+    return module;
   });
 }
 
@@ -805,17 +841,32 @@ export async function getMerdekaResultById(id: string) {
 }
 
 export async function createMerdekaResult(data: CreateMerdekaResultInput) {
-  return prisma.merdekaAssessmentResult.create({
-    data: {
-      assessmentId: data.assessmentId,
-      studentId: data.studentId,
-      score: data.score,
-      percentage: data.percentage,
-      grade: data.grade,
-      feedback: data.feedback,
-      attachments: data.attachments,
-      gradedById: data.gradedById,
-    },
+  // Attachments may carry upload references; claim them before the row
+  // references them (BUG 4 / flag 9).
+  const blobUrls = extractBlobUrlsFromAttachmentValue(data.attachments);
+  return prisma.$transaction(async (tx) => {
+    const claims = await claimBlobsForRecord(blobUrls, 'kurikulum', tx);
+    if (!claims) {
+      throw Errors.conflict(
+        'Lampiran hasil penilaian sedang diproses pihak lain; unggah ulang berkas tersebut'
+      );
+    }
+
+    const result = await tx.merdekaAssessmentResult.create({
+      data: {
+        assessmentId: data.assessmentId,
+        studentId: data.studentId,
+        score: data.score,
+        percentage: data.percentage,
+        grade: data.grade,
+        feedback: data.feedback,
+        attachments: data.attachments,
+        gradedById: data.gradedById,
+      },
+    });
+
+    await releaseBlobClaims(claims, tx);
+    return result;
   });
 }
 
@@ -830,9 +881,27 @@ export async function updateMerdekaResult(id: string, data: UpdateMerdekaResultI
     updateData.attachments = data.attachments === null ? { unset: true } : data.attachments;
   }
 
-  return prisma.merdekaAssessmentResult.update({
-    where: { id },
-    data: updateData,
+  // A replacement attachment set introduces new blob references: claim them
+  // before the update commits (flag 9).
+  const blobUrls =
+    data.attachments === undefined || data.attachments === null
+      ? []
+      : extractBlobUrlsFromAttachmentValue(data.attachments);
+  return prisma.$transaction(async (tx) => {
+    const claims = await claimBlobsForRecord(blobUrls, 'kurikulum', tx);
+    if (!claims) {
+      throw Errors.conflict(
+        'Lampiran hasil penilaian sedang diproses pihak lain; unggah ulang berkas tersebut'
+      );
+    }
+
+    const result = await tx.merdekaAssessmentResult.update({
+      where: { id },
+      data: updateData,
+    });
+
+    await releaseBlobClaims(claims, tx);
+    return result;
   });
 }
 

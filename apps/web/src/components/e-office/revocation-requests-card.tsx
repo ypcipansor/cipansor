@@ -20,6 +20,7 @@ import {
   useDecideRevocation,
   useWithdrawRevocationRequest,
 } from "@/hooks/use-esign";
+import { useResolvedFileUrl } from "@/hooks/use-resolved-file-url";
 import type { LetterRevocationRequestDetail } from "@cipansor/shared";
 import { AlertTriangle, FileText, Gavel } from "lucide-react";
 
@@ -50,6 +51,38 @@ const STATUS: Record<string, { label: string; tone: string }> = {
     tone: "border-slate-400 bg-slate-50 text-slate-600",
   },
 };
+
+/**
+ * The supporting document is a private blob; mint a SAS before rendering the
+ * link. Extracted so the hook runs at component level, not inside the
+ * `requests.map` callback.
+ *
+ * While the SAS is in flight the hook returns `null`. The raw private reference
+ * is deliberately NOT used as a fallback: it 403s and would flash a broken link
+ * (and, for the refresh window, surface an uncredentialised URL to the browser).
+ */
+function RevocationAttachmentLink({ url }: { url: string }) {
+  const resolved = useResolvedFileUrl(url);
+  if (!resolved) {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+        <FileText className="h-3 w-3" />
+        Berkas pendukung
+      </span>
+    );
+  }
+  return (
+    <a
+      href={resolved}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+    >
+      <FileText className="h-3 w-3" />
+      Berkas pendukung
+    </a>
+  );
+}
 
 export function RevocationRequestsCard({
   letterId,
@@ -137,15 +170,7 @@ export function RevocationRequestsCard({
               <p className="rounded-md bg-muted/50 p-2">{r.reason}</p>
 
               {r.attachmentUrl && (
-                <a
-                  href={r.attachmentUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                >
-                  <FileText className="h-3 w-3" />
-                  Berkas pendukung
-                </a>
+                <RevocationAttachmentLink url={r.attachmentUrl} />
               )}
 
               {r.decidedBy && (

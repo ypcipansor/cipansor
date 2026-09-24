@@ -3,6 +3,7 @@ import { CorrespondenceService } from '../correspondence.service';
 import { prisma } from '@/lib/prisma';
 import { LETTER_PDF_RELATIONS } from '@/utils/generate-letter-pdf';
 import { LetterType } from '@cipansor/shared';
+import { claimBlobsForRecord, releaseBlobClaims } from '@/utils/blob-claim';
 
 // Mock dependencies
 vi.mock('@/lib/prisma', () => ({
@@ -56,6 +57,20 @@ vi.mock('@/lib/prisma', () => ({
     $executeRaw: vi.fn().mockResolvedValue(1),
     $transaction: vi.fn((callback) => callback(prisma)),
   },
+}));
+
+// The create path claims each referenced blob before writing the letter (BUG 4).
+// The protocol has its own unit + DB integration tests; here the default claim
+// always succeeds, and the conflict path is asserted explicitly below.
+vi.mock('@/utils/blob-claim', () => ({
+  claimBlobForRecord: vi.fn().mockResolvedValue({
+    id: 'claim-1',
+    operationToken: 'token-1',
+    kind: 'RECORD',
+  }),
+  claimBlobsForRecord: vi.fn().mockResolvedValue([]),
+  releaseBlobClaimById: vi.fn().mockResolvedValue(undefined),
+  releaseBlobClaims: vi.fn().mockResolvedValue(undefined),
 }));
 
 describe('CorrespondenceService', () => {
@@ -546,6 +561,64 @@ describe('CorrespondenceService', () => {
         where: { id: 'letter-edit-1' },
         data: expect.objectContaining({ subject: 'Judul Setelah Revisi' }),
       });
+    });
+
+    it('claims the replacement blobs before writing, and releases after (BUG 4)', async () => {
+      vi.mocked(prisma.letter.findUnique).mockResolvedValue({
+        ...draftLetter(),
+        signatures: [],
+        recipients: [],
+        dispositions: [],
+      } as any);
+      vi.mocked(prisma.letter.update).mockResolvedValue({} as any);
+      vi.mocked(claimBlobsForRecord).mockResolvedValueOnce([
+        { id: 'c1', operationToken: 't1', kind: 'RECORD' },
+      ] as any);
+
+      await CorrespondenceService.updateLetter(
+        'letter-edit-1',
+        {
+          fileUrl: 'https://cdn.test/letters/new.pdf',
+          attachments: [{ name: 'Lampiran', fileUrl: 'https://cdn.test/letters/att.pdf' }],
+        },
+        'tu-1',
+        adminActor as any
+      );
+
+      // The claim runs before the row is written so a discard cannot delete the
+      // blob between its probe and this update.
+      expect(claimBlobsForRecord).toHaveBeenCalledWith(
+        ['https://cdn.test/letters/new.pdf', 'https://cdn.test/letters/att.pdf'],
+        'tu-1',
+        expect.anything()
+      );
+      expect(releaseBlobClaims).toHaveBeenCalledWith(
+        [expect.objectContaining({ id: 'c1' })],
+        expect.anything()
+      );
+    });
+
+    it('refuses the update when a blob is claimed by another operation (BUG 4)', async () => {
+      vi.mocked(prisma.letter.findUnique).mockResolvedValue({
+        ...draftLetter(),
+        signatures: [],
+        recipients: [],
+        dispositions: [],
+      } as any);
+      vi.mocked(claimBlobsForRecord).mockResolvedValueOnce(null);
+
+      await expect(
+        CorrespondenceService.updateLetter(
+          'letter-edit-1',
+          { fileUrl: 'https://cdn.test/letters/busy.pdf' },
+          'tu-1',
+          adminActor as any
+        )
+      ).rejects.toThrow(/sedang diproses pihak lain/);
+
+      // Never write a reference to a blob another operation owns.
+      expect(prisma.letter.update).not.toHaveBeenCalled();
+      expect(releaseBlobClaims).not.toHaveBeenCalled();
     });
 
     it('rejects update if letter is in SIGNED or PENDING_REVIEW status', async () => {

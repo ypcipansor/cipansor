@@ -122,3 +122,39 @@ export interface AssignRoleRequest {
   unitId?: string;
   isPrimary?: boolean;
 }
+
+/**
+ * Single SSO-login contract, derived from the shared Zod schema in
+ * `../schemas/auth.ts` so the backend edge and the web client can never
+ * drift apart.
+ */
+export type SSOLoginRequest = import("../schemas/auth").SSOLoginInput;
+
+export interface SSOConfigResponse {
+  domain: string;
+  googleEnabled: boolean;
+  googleClientId: string | null;
+  microsoftEnabled: boolean;
+  microsoftClientId: string | null;
+  /**
+   * The Microsoft Entra ID tenant authority the login page must use when
+   * building the authorize URL. When the backend enforces a single tenant
+   * (MICROSOFT_TENANT_ID names one directory/domain) this is that tenant id,
+   * so the browser targets it directly instead of the multi-tenant `common`
+   * authority. Falls back to `common` when the backend is multi-tenant.
+   */
+  microsoftTenantId: string;
+}
+
+export interface SSOTwoFactorResponse {
+  requiresTwoFactor: true;
+  tempToken: string;
+}
+
+export interface SSOTwoFactorSetupResponse {
+  requiresTwoFactorSetup: true;
+  tempToken: string;
+}
+
+export type SSOLoginResult =
+  LoginResponse | SSOTwoFactorResponse | SSOTwoFactorSetupResponse;

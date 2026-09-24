@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { uploadedFileRefListSchema } from '@cipansor/shared';
+
 import { partialUpdateSchema } from '@/lib/partial';
 
 // ======================
@@ -92,7 +94,7 @@ export const createEventSchema = z.object({
     .optional(),
   isImportant: z.boolean().default(false),
   reminderMinutes: z.number().int().positive().optional(),
-  attachments: z.array(z.string().url()).optional(),
+  attachments: uploadedFileRefListSchema.optional(),
   externalLink: z.string().url().optional(),
 
   // Metadata

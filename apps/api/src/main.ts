@@ -12,7 +12,11 @@ Sentry.init({
 
 import { app } from './app';
 import { config } from '@/config';
-import { assertProductionSecrets } from '@/config/assert-secrets';
+import {
+  assertProductionSecrets,
+  assertProductionMicrosoftTenant,
+  warnOnLooseMicrosoftTenant,
+} from '@/config/assert-secrets';
 import { logger } from '@/lib/logger';
 import { prisma } from '@/lib/prisma';
 import { initializeScheduler, stopScheduler } from '@/jobs';
@@ -27,6 +31,16 @@ async function bootstrap() {
     // Before anything else, and before the port opens. Serving traffic signed
     // by a key published in .env.example is worse than not serving at all.
     assertProductionSecrets();
+
+    // Refuse to serve in production with multi-tenant Microsoft sign-in that no
+    // one explicitly opted into. A warning is absorbed by the deploy log; the
+    // default is the hole, so the safe failure is not to start.
+    assertProductionMicrosoftTenant();
+
+    // Reached only when multi-tenant sign-in was explicitly allowed, or the
+    // tenant is a concrete GUID/domain. In the former case say so, at every boot.
+    const tenantWarning = warnOnLooseMicrosoftTenant();
+    if (tenantWarning) logger.warn(tenantWarning);
 
     // Test database connection
     logger.info('Connecting to database...');

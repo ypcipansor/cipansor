@@ -1,7 +1,7 @@
 "use client";
 
 import { use, useEffect, useState } from "react";
-import { authFileUrl } from "@/lib/files";
+import { useResolvedFileUrl } from "@/hooks/use-resolved-file-url";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
@@ -70,6 +70,8 @@ function EditDocumentPageContent({ params }: PageProps) {
   const [file, setFile] = useState<File | null>(null);
 
   const { data: document, isLoading } = useFoundationDocument(documentId);
+  // The stored file is a private upload; resolve (and keep fresh) its link.
+  const resolvedDocumentUrl = useResolvedFileUrl(document?.fileUrl);
   const updateDocument = useUpdateFoundationDocument();
 
   const form = useForm<FormData>({
@@ -293,7 +295,7 @@ function EditDocumentPageContent({ params }: PageProps) {
                           {document.fileUrl.split("/").pop()}
                         </p>
                         <a
-                          href={authFileUrl(document.fileUrl)}
+                          href={resolvedDocumentUrl || undefined}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-xs text-primary hover:underline"

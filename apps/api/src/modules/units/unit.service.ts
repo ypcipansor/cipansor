@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
+import { claimBlobForRecord, releaseBlobClaimById, type BlobClaimHandle } from '@/utils/blob-claim';
 import { UnitType, Prisma } from '@prisma/client';
 import { isFoundationScopedRole } from '@/utils/resolve-unit-id';
 import type { ListUnitsQuery, CreateUnitInput, UpdateUnitInput } from './unit.schema';
@@ -107,25 +108,42 @@ export class UnitService {
   /**
    * Create new unit
    */
-  async create(input: CreateUnitInput) {
-    const unit = await prisma.unit.create({
-      data: {
-        name: input.name,
-        type: input.type as UnitType,
-        address: input.address,
-        phone: input.phone,
-        email: input.email,
-        logoUrl: input.logoUrl,
-      },
-    });
+  async create(input: CreateUnitInput, actorId?: string) {
+    // Claim the unit logo before the row references it, so a concurrent discard
+    // of a just-uploaded file cannot delete it between its reference probe and
+    // this insert (BUG 4 / flag 9).
+    const holderId = actorId ?? 'unit';
+    let claim: BlobClaimHandle | null = null;
+    if (input.logoUrl) {
+      claim = await claimBlobForRecord(input.logoUrl, holderId);
+      if (!claim) {
+        throw Errors.conflict('Logo unit sedang diproses pihak lain; unggah ulang berkas');
+      }
+    }
+    try {
+      const unit = await prisma.unit.create({
+        data: {
+          name: input.name,
+          type: input.type as UnitType,
+          address: input.address,
+          phone: input.phone,
+          email: input.email,
+          logoUrl: input.logoUrl,
+        },
+      });
 
-    return unit;
+      return unit;
+    } finally {
+      if (input.logoUrl) {
+        if (claim) await releaseBlobClaimById(claim).catch(() => undefined);
+      }
+    }
   }
 
   /**
    * Update unit
    */
-  async update(id: string, input: UpdateUnitInput) {
+  async update(id: string, input: UpdateUnitInput, actorId?: string) {
     const unit = await prisma.unit.findFirst({
       where: { id, deletedAt: null },
     });
@@ -134,19 +152,33 @@ export class UnitService {
       throw Errors.notFound('Unit');
     }
 
-    const updated = await prisma.unit.update({
-      where: { id },
-      data: {
-        name: input.name,
-        type: input.type as UnitType | undefined,
-        address: input.address,
-        phone: input.phone,
-        email: input.email,
-        logoUrl: input.logoUrl,
-      },
-    });
+    const holderId = actorId ?? 'unit';
+    let claim: BlobClaimHandle | null = null;
+    if (input.logoUrl) {
+      claim = await claimBlobForRecord(input.logoUrl, holderId);
+      if (!claim) {
+        throw Errors.conflict('Logo unit sedang diproses pihak lain; unggah ulang berkas');
+      }
+    }
+    try {
+      const updated = await prisma.unit.update({
+        where: { id },
+        data: {
+          name: input.name,
+          type: input.type as UnitType | undefined,
+          address: input.address,
+          phone: input.phone,
+          email: input.email,
+          logoUrl: input.logoUrl,
+        },
+      });
 
-    return updated;
+      return updated;
+    } finally {
+      if (input.logoUrl) {
+        if (claim) await releaseBlobClaimById(claim).catch(() => undefined);
+      }
+    }
   }
 
   /**

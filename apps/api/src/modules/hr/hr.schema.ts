@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { normalizeEmail } from '@/utils/email';
 import {
   LeaveType,
   LeaveStatus,
@@ -100,7 +101,10 @@ export const queryLeaveSchema = z.object({
 // Staff/Employee Management Schemas
 export const createEmployeeSchema = z.object({
   name: z.string().min(2),
-  email: z.string().email(),
+  email: z
+    .string()
+    .email()
+    .transform((v) => normalizeEmail(v)),
   password: z.string().min(6).optional(), // Defaults to 'password123' if empty
   role: z.enum([UserRole.TEACHER, UserRole.STAFF]),
   unitId: z.string().uuid(),
@@ -128,7 +132,11 @@ export const createEmployeeSchema = z.object({
 
 export const updateEmployeeSchema = z.object({
   name: z.string().min(2).optional(),
-  email: z.string().email().optional(),
+  email: z
+    .string()
+    .email()
+    .transform((v) => normalizeEmail(v))
+    .optional(),
   unitId: z.string().uuid().optional(),
   phone: z.string().optional(),
   isActive: z.boolean().optional(),
@@ -151,6 +159,16 @@ export const updateEmployeeSchema = z.object({
   position: z.string().optional(),
   department: z.string().optional(),
 });
+
+/**
+ * Query for `GET /hr/employees` — the flat employee directory.
+ *
+ * The contract is owned by `@cipansor/shared` so the web client parses the
+ * same query the same way; re-exported here under the name the HR routes and
+ * services already import.
+ */
+export { queryEmployeesSchema } from '@cipansor/shared';
+export type { QueryEmployeesInput } from '@cipansor/shared';
 
 export const queryStaffSchema = z.object({
   page: z.coerce.number().min(1).default(1),

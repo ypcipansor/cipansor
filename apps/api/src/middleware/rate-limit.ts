@@ -43,8 +43,21 @@ export const defaultLimiter: RateLimitRequestHandler = rateLimit({
     res.status(options.statusCode).json(options.message);
   },
   skip: (req) => {
-    // Skip rate limiting for health checks
-    return req.path === '/health';
+    // Health checks are never limited.
+    if (req.path === '/health') return true;
+    // `/uploads` is counted by `uploadsServeLimiter` on the uploads route in
+    // app.ts, which owns its own budget. This global pass must stand down for
+    // the prefix or a read that `express.static` misses would spend an API slot
+    // as well — one request, two budgets. `/uploads` itself arrives as
+    // `/uploads` here (and `/uploads/<file>` for a file), so both spellings.
+    if (req.path === '/uploads' || req.path.startsWith('/uploads/')) return true;
+    // Development and test are deliberately unlimited: a dashboard full of
+    // student photos is normal there, and a 429 on the 101st image is a false
+    // failure that teaches nothing. The exemption lives HERE rather than in the
+    // mount condition so every route can be mounted with `defaultLimiter`
+    // statically — a conditional spread hid the protection from readers and
+    // static analysis alike. Production always limits.
+    return config.env === 'test' || config.env === 'development';
   },
 });
 
@@ -74,6 +87,12 @@ export const uploadsServeLimiter: RateLimitRequestHandler = rateLimit({
       message: 'Too many file requests, please try again later.',
     },
   },
+  // Development and test are deliberately unlimited, for the same reason as
+  // `defaultLimiter`: a dashboard full of student photos is normal there. The
+  // exemption lives HERE rather than in a conditional mount so the limiter is
+  // always mounted and visible to a reader and to static analysis (CodeQL's
+  // js/missing-rate-limiting). Production always limits.
+  skip: () => config.env === 'test' || config.env === 'development',
 });
 
 /**
@@ -122,11 +141,24 @@ export const passwordResetLimiter: RateLimitRequestHandler = rateLimit({
 });
 
 /**
- * Rate limiter for file uploads
+ * Rate limiter for file uploads — the multipart write endpoint only.
+ *
+ * This limiter existed but was mounted on nothing (flag: "upload limiter
+ * appears unused"), while a write endpoint consumed bandwidth and billed Azure
+ * storage with no ceiling of its own. It is now applied to `POST /upload`
+ * (see `modules/upload/upload.routes.ts`) and NOWHERE ELSE on purpose:
+ * `/upload/sas` is a read (mint a short-lived link) and `/upload/discard` is a
+ * cleanup, and a gallery that legitimately renders hundreds of images must not
+ * hit a *write* cap on either.
+ *
+ * Development and test are exempt for the same reason as `defaultLimiter`: a
+ * dashboard full of uploads is normal there and a 429 on a legitimate write is
+ * a false failure. The exemption lives inside `skip`, so the mount stays
+ * visible to a reader and to static analysis. Production always limits.
  */
 export const uploadLimiter: RateLimitRequestHandler = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  max: 10, // 10 uploads per minute
+  windowMs: config.rateLimit.upload.windowMs,
+  max: config.rateLimit.upload.maxRequests,
   standardHeaders: true,
   legacyHeaders: false,
   message: {
@@ -136,6 +168,15 @@ export const uploadLimiter: RateLimitRequestHandler = rateLimit({
       message: 'Too many file uploads, please try again later.',
     },
   },
+  handler: (req, res, _next, options) => {
+    logger.warn('Upload rate limit exceeded', {
+      ip: req.ip,
+      path: req.path,
+      method: req.method,
+    });
+    res.status(options.statusCode).json(options.message);
+  },
+  skip: () => config.env === 'test' || config.env === 'development',
 });
 
 /**

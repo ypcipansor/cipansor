@@ -16,6 +16,7 @@ import {
 } from "@/hooks/use-tk-assessment";
 import { useStudents } from "@/hooks/use-students";
 import { useAcademicYears } from "@/hooks/use-academic-years";
+import { evidenceFileType } from "@/lib/files";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -182,11 +183,10 @@ export default function CreateTKAssessmentPage() {
         for (const file of files) {
           const formData = new FormData();
           formData.append("file", file);
-          // Use uppercase for fileType to match potential DB constraints/Enums
-          formData.append(
-            "fileType",
-            file.type.startsWith("image") ? "IMAGE" : "VIDEO",
-          );
+          // The API schema only accepts `image | video | document`; the old
+          // uppercase "IMAGE"/"VIDEO" bucket failed validation, so every
+          // evidence upload 400'd.
+          formData.append("fileType", evidenceFileType(file));
           await addEvidenceMutation.mutateAsync({
             assessmentId: result.id,
             data: formData,
@@ -195,7 +195,7 @@ export default function CreateTKAssessmentPage() {
       }
 
       toast.success("Penilaian berhasil disimpan");
-      router.push("/paud/assessment");
+      router.push("/tk/assessment");
     } catch (error) {
       toast.error("Gagal menyimpan penilaian");
     }
@@ -221,7 +221,7 @@ export default function CreateTKAssessmentPage() {
         <PageHeader
           title="Tambah Penilaian Baru"
           description="Isi form untuk mencatat perkembangan anak"
-          backHref="/paud/assessment"
+          backHref="/tk/assessment"
         />
 
         {/* Progress Bar */}

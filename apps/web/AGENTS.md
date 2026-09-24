@@ -69,6 +69,32 @@ a route or `src/config/navigation.ts`.
 - Realtime: `src/providers/socket-provider.tsx` (Socket.IO).
 - Auth state: `src/stores/auth.ts`.
 
+### Auth is server-signed, never a client-writable cookie
+
+The Next Proxy (`middleware.ts`, exported as `Proxy` in Next 16) must never read
+`auth-storage`, localStorage, the zustand persist blob, or the
+`Authorization` header. All are client-controlled, so trusting any of them makes
+the page guard self-certifying: a visitor can forge `isAuthenticated`/role and
+open restricted pages. (That was a shipped vulnerability; the regression is
+guarded by `src/lib/session-guard.test.ts`.)
+
+- The guard reads ONE cookie: `cipansor-session`, minted by `POST /api/session`
+  and signed with `SESSION_SECRET` (falling back to `JWT_SECRET`). It is
+  `HttpOnly`, `Secure` in production, `SameSite=Lax`, and verified with
+  HMAC-SHA-256 (`lib/session.ts`) before `isAuthenticated`/role is believed.
+- `POST /api/session` contacts the API's `/auth/me` with the bearer and only
+  signs a cookie for a session the SERVER confirmed. The bearer itself is never
+  put in a cookie; it stays in localStorage and goes per-request in
+  `Authorization`.
+- `syncRoutingSession()` in `stores/auth.ts` calls that endpoint after login /
+  SSO / 2FA and on logout (clear). `lib/session-cookie.ts` clears legacy
+  `accessToken`/`auth-storage` cookies at bootstrap.
+- The routing payload is a ROUTING signal only (userId + legacy role + RoleCode),
+  never an authorization one — every API call re-authenticates from the bearer.
+- Compose/production must set `SESSION_SECRET` (or `JWT_SECRET`) on the **web**
+  container; the compose file enumerates it explicitly. Without it the guard
+  fails closed (no session), which is safe but breaks every authenticated page.
+
 ## Testing
 
 - **Mandatory (golden rule #7):** every new/changed **route/page or user flow**

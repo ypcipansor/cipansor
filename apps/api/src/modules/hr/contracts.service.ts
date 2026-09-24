@@ -1,6 +1,8 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { SharedPaginatedResponse } from '@cipansor/shared';
+import { Errors } from '@/middleware/error';
+import { claimBlobForRecord, releaseBlobClaimById, type BlobClaimHandle } from '@/utils/blob-claim';
 
 export const contractService = {
   async create(data: {
@@ -11,18 +13,38 @@ export const contractService = {
     endDate?: Date;
     documentUrl?: string;
     notes?: string;
+    /** The actor creating the reference, used to claim the blob (flag 9). */
+    actorId?: string;
   }) {
-    return prisma.employmentContract.create({
-      data: {
-        user: { connect: { id: data.userId } },
-        contractNumber: data.contractNumber,
-        type: data.type,
-        startDate: data.startDate,
-        endDate: data.endDate,
-        documentUrl: data.documentUrl,
-        notes: data.notes,
-      },
-    });
+    // Claim the contract document before the row references it, so a concurrent
+    // discard of a just-uploaded file cannot delete it between its reference
+    // probe and this insert (BUG 4 / flag 9).
+    let claim: BlobClaimHandle | null = null;
+    if (data.documentUrl) {
+      claim = await claimBlobForRecord(data.documentUrl, data.actorId ?? data.userId);
+      if (!claim) {
+        throw Errors.conflict(
+          'Dokumen kontrak sedang diproses pihak lain; unggah ulang berkas tersebut'
+        );
+      }
+    }
+    try {
+      return await prisma.employmentContract.create({
+        data: {
+          user: { connect: { id: data.userId } },
+          contractNumber: data.contractNumber,
+          type: data.type,
+          startDate: data.startDate,
+          endDate: data.endDate,
+          documentUrl: data.documentUrl,
+          notes: data.notes,
+        },
+      });
+    } finally {
+      if (data.documentUrl) {
+        if (claim) await releaseBlobClaimById(claim).catch(() => undefined);
+      }
+    }
   },
 
   async update(
@@ -34,12 +56,31 @@ export const contractService = {
       status?: any;
       documentUrl?: string;
       notes?: string;
+      /** The actor updating, used to claim a new blob (flag 9). */
+      actorId?: string;
     }
   ) {
-    return prisma.employmentContract.update({
-      where: { id },
-      data,
-    });
+    const holderId = data.actorId ?? 'hr-contract';
+    let claim: BlobClaimHandle | null = null;
+    if (data.documentUrl) {
+      claim = await claimBlobForRecord(data.documentUrl, holderId);
+      if (!claim) {
+        throw Errors.conflict(
+          'Dokumen kontrak sedang diproses pihak lain; unggah ulang berkas tersebut'
+        );
+      }
+    }
+    const { actorId: _actorId, ...updateData } = data;
+    try {
+      return await prisma.employmentContract.update({
+        where: { id },
+        data: updateData,
+      });
+    } finally {
+      if (data.documentUrl) {
+        if (claim) await releaseBlobClaimById(claim).catch(() => undefined);
+      }
+    }
   },
 
   async findAll(

@@ -33,7 +33,7 @@
 
 ```bash
 # Ensure you have:
-- Node.js 20+
+- Node.js 22+
 - pnpm 8+
 - PostgreSQL 15+
 - Redis 7+ (for WebSocket features)

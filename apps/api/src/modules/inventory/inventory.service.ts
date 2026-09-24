@@ -11,6 +11,12 @@ import { prisma } from '../../lib/prisma';
 import { config } from '../../config';
 import { createNotification } from '../notifications/notifications.service';
 import { createPurchaseJournal } from './asset-accounting.service';
+import { Errors } from '../../middleware/error';
+import {
+  claimBlobForRecord,
+  releaseBlobClaimById,
+  type BlobClaimHandle,
+} from '../../utils/blob-claim';
 import type {
   CreateInventoryCategoryInput,
   UpdateInventoryCategoryInput,
@@ -164,56 +170,88 @@ export async function getItemById(id: string) {
 }
 
 export async function createItem(data: CreateInventoryItemInput, userId?: string) {
-  return prisma.$transaction(async (tx) => {
-    const asset = await tx.asset.create({
-      data: {
-        unitId: data.unitId,
-        categoryId: data.categoryId,
-        code: data.code,
-        name: data.name,
-        brand: data.brand,
-        model: data.model,
-        serialNumber: data.serialNumber,
-        purchaseDate: data.purchaseDate,
-        purchasePrice: data.purchasePrice,
-        supplier: data.supplier,
-        location: data.location,
-        roomId: data.roomId,
-        purchaseOrderNo: data.purchaseOrderNo,
-        usefulLife: data.usefulLife,
-        residualValue: data.residualValue,
-        condition: data.condition,
-        status: data.status,
-        warrantyExpiry: data.warrantyExpiry,
-        notes: data.notes,
-        photoUrl: data.photoUrl,
-      },
+  const holderId = userId ?? 'inventory';
+  // Claim the asset photo before the row references it, so a concurrent discard
+  // of a just-uploaded photo cannot delete it between its reference probe and
+  // this insert (BUG 4 / flag 9).
+  let claim: BlobClaimHandle | null = null;
+  if (data.photoUrl) {
+    claim = await claimBlobForRecord(data.photoUrl, holderId);
+    if (!claim) {
+      throw Errors.conflict('Foto aset sedang diproses pihak lain; unggah ulang berkas tersebut');
+    }
+  }
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const asset = await tx.asset.create({
+        data: {
+          unitId: data.unitId,
+          categoryId: data.categoryId,
+          code: data.code,
+          name: data.name,
+          brand: data.brand,
+          model: data.model,
+          serialNumber: data.serialNumber,
+          purchaseDate: data.purchaseDate,
+          purchasePrice: data.purchasePrice,
+          supplier: data.supplier,
+          location: data.location,
+          roomId: data.roomId,
+          purchaseOrderNo: data.purchaseOrderNo,
+          usefulLife: data.usefulLife,
+          residualValue: data.residualValue,
+          condition: data.condition,
+          status: data.status,
+          warrantyExpiry: data.warrantyExpiry,
+          notes: data.notes,
+          photoUrl: data.photoUrl,
+        },
+        include: {
+          category: { select: { id: true, name: true, code: true } },
+          unit: { select: { id: true, name: true } },
+          room: { select: { id: true, name: true } },
+        },
+      });
+
+      if (userId) {
+        // Propagate error to rollback transaction if journaling fails
+        await createPurchaseJournal(asset, userId, tx);
+      }
+
+      return asset;
+    });
+  } finally {
+    if (data.photoUrl) {
+      if (claim) await releaseBlobClaimById(claim).catch(() => undefined);
+    }
+  }
+}
+
+export async function updateItem(id: string, data: UpdateInventoryItemInput, userId?: string) {
+  const holderId = userId ?? 'inventory';
+  // A photo added or replaced by an update is a new blob reference (flag 9).
+  let claim: BlobClaimHandle | null = null;
+  if (data.photoUrl) {
+    claim = await claimBlobForRecord(data.photoUrl, holderId);
+    if (!claim) {
+      throw Errors.conflict('Foto aset sedang diproses pihak lain; unggah ulang berkas tersebut');
+    }
+  }
+  try {
+    return await prisma.asset.update({
+      where: { id },
+      data,
       include: {
         category: { select: { id: true, name: true, code: true } },
         unit: { select: { id: true, name: true } },
         room: { select: { id: true, name: true } },
       },
     });
-
-    if (userId) {
-      // Propagate error to rollback transaction if journaling fails
-      await createPurchaseJournal(asset, userId, tx);
+  } finally {
+    if (data.photoUrl) {
+      if (claim) await releaseBlobClaimById(claim).catch(() => undefined);
     }
-
-    return asset;
-  });
-}
-
-export async function updateItem(id: string, data: UpdateInventoryItemInput) {
-  return prisma.asset.update({
-    where: { id },
-    data,
-    include: {
-      category: { select: { id: true, name: true, code: true } },
-      unit: { select: { id: true, name: true } },
-      room: { select: { id: true, name: true } },
-    },
-  });
+  }
 }
 
 export async function deleteItem(id: string) {
@@ -387,7 +425,11 @@ export async function updateMaintenance(id: string, data: UpdateMaintenanceInput
   });
 }
 
-export async function updateMaintenanceStatus(id: string, data: UpdateMaintenanceStatusInput) {
+export async function updateMaintenanceStatus(
+  id: string,
+  data: UpdateMaintenanceStatusInput,
+  actorId?: string
+) {
   const maintenance = await prisma.assetMaintenance.findUnique({ where: { id } });
   if (!maintenance) throw new Error('Maintenance record not found');
 
@@ -403,28 +445,43 @@ export async function updateMaintenanceStatus(id: string, data: UpdateMaintenanc
     invoiceUrl: data.invoiceUrl,
   };
 
-  if (data.status === AssetMaintenanceStatus.COMPLETED) {
-    await prisma.asset.update({
-      where: { id: maintenance.assetId },
-      data: { status: AssetStatus.ACTIVE },
-    });
-    if (!updateData.completionDate) {
-      updateData.completionDate = new Date();
-    }
-  } else if (data.status === AssetMaintenanceStatus.IN_PROGRESS) {
-    await prisma.asset.update({
-      where: { id: maintenance.assetId },
-      data: { status: AssetStatus.MAINTENANCE },
-    });
+  // Claim the invoice blob before the row references it, so a concurrent
+  // discard cannot delete it between its reference probe and this update
+  // (BUG 4 / flag 9).
+  const invoiceClaim =
+    data.invoiceUrl !== undefined
+      ? await claimBlobForRecord(data.invoiceUrl, actorId ?? 'inventory-maintenance')
+      : null;
+  if (data.invoiceUrl !== undefined && !invoiceClaim) {
+    throw Errors.conflict('Faktur pemeliharaan sedang diproses pihak lain; unggah ulang berkas');
   }
 
-  return prisma.assetMaintenance.update({
-    where: { id },
-    data: updateData,
-    include: {
-      asset: true,
-    },
-  });
+  try {
+    if (data.status === AssetMaintenanceStatus.COMPLETED) {
+      await prisma.asset.update({
+        where: { id: maintenance.assetId },
+        data: { status: AssetStatus.ACTIVE },
+      });
+      if (!updateData.completionDate) {
+        updateData.completionDate = new Date();
+      }
+    } else if (data.status === AssetMaintenanceStatus.IN_PROGRESS) {
+      await prisma.asset.update({
+        where: { id: maintenance.assetId },
+        data: { status: AssetStatus.MAINTENANCE },
+      });
+    }
+
+    return await prisma.assetMaintenance.update({
+      where: { id },
+      data: updateData,
+      include: {
+        asset: true,
+      },
+    });
+  } finally {
+    if (invoiceClaim) await releaseBlobClaimById(invoiceClaim).catch(() => undefined);
+  }
 }
 
 export async function completeMaintenance(id: string) {

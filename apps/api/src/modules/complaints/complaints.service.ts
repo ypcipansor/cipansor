@@ -6,6 +6,8 @@ import {
   Prisma,
   UserRole,
 } from '@prisma/client';
+import { Errors } from '@/middleware/error';
+import { claimBlobsForRecord, releaseBlobClaims } from '@/utils/blob-claim';
 
 export const complaintsService = {
   getComplaintUnit: async (id: string) => {
@@ -28,22 +30,40 @@ export const complaintsService = {
     isAnonymous?: boolean;
     attachments?: string[];
   }) => {
-    return prisma.complaint.create({
-      data: {
-        unitId: data.unitId,
-        userId: data.userId,
-        category: data.category,
-        subject: data.subject,
-        description: data.description,
-        location: data.location,
-        buildingId: data.buildingId,
-        roomId: data.roomId,
-        assetId: data.assetId,
-        isAnonymous: data.isAnonymous || false,
-        attachments: data.attachments || [],
-        status: 'PENDING',
-        priority: 'NORMAL',
-      },
+    // Claim every attachment before the row references it, so a concurrent
+    // discard of a just-uploaded file cannot delete it between its reference
+    // probe and this insert (BUG 4 / flag 9). All-or-nothing: if any blob is
+    // held by another live operation the create fails rather than save a
+    // reference to a file a discard may already own.
+    const attachments = data.attachments ?? [];
+    return prisma.$transaction(async (tx) => {
+      const claims = await claimBlobsForRecord(attachments, data.userId, tx);
+      if (!claims) {
+        throw Errors.conflict(
+          'Lampiran aduan sedang diproses pihak lain; unggah ulang berkas tersebut'
+        );
+      }
+
+      const complaint = await tx.complaint.create({
+        data: {
+          unitId: data.unitId,
+          userId: data.userId,
+          category: data.category,
+          subject: data.subject,
+          description: data.description,
+          location: data.location,
+          buildingId: data.buildingId,
+          roomId: data.roomId,
+          assetId: data.assetId,
+          isAnonymous: data.isAnonymous || false,
+          attachments: attachments,
+          status: 'PENDING',
+          priority: 'NORMAL',
+        },
+      });
+
+      await releaseBlobClaims(claims, tx);
+      return complaint;
     });
   },
 

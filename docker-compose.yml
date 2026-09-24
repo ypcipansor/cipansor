@@ -139,6 +139,21 @@ services:
       GOOGLE_SERVICE_ACCOUNT_EMAIL: ${GOOGLE_SERVICE_ACCOUNT_EMAIL:-}
       GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: ${GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY:-}
       GMAIL_SENDER: ${GMAIL_SENDER:-noreply@cipansor.or.id}
+      # Single Sign-On (Google Workspace & Microsoft 365 Entra ID)
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:-}
+      MICROSOFT_TENANT_ID: ${MICROSOFT_TENANT_ID:-common}
+      # Opt-in for multi-tenant Entra sign-in. Off by default (fail-closed): a
+      # production boot with MICROSOFT_TENANT_ID=common refuses to start unless
+      # this is explicitly `true`. It MUST be enumerated here — Compose passes
+      # only the names it lists, so a value living solely in `.env` never
+      # reaches the container and the single-tenant guard could never be lifted
+      # deliberately (it would look like the flag was ignored). Verified with
+      # `docker exec cipansor-api sh -c 'env | grep ^MICROSOFT_ALLOW_MULTI_TENANT='`.
+      MICROSOFT_ALLOW_MULTI_TENANT: ${MICROSOFT_ALLOW_MULTI_TENANT:-false}
+      # Azure Blob Storage Grant Provider
+      AZURE_STORAGE_CONNECTION_STRING: ${AZURE_STORAGE_CONNECTION_STRING:-}
+      AZURE_STORAGE_ACCOUNT: ${AZURE_STORAGE_ACCOUNT:-}
       # SMTP fallback, used only when the Gmail credentials above are absent.
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
@@ -234,6 +249,14 @@ services:
       # value present only in .env never reaches the container. Adding a
       # variable means editing both files.
       API_INTERNAL_URL: ${API_INTERNAL_URL:-http://api:3001}
+      # Server-side only: signs the HttpOnly `cipansor-session` routing cookie
+      # that the Next Proxy verifies (lib/session.ts). Falls back to JWT_SECRET
+      # when empty, so leaving it blank keeps working; set it to rotate the
+      # routing identity independently of API tokens.
+      SESSION_SECRET: ${SESSION_SECRET:-}
+      # Required for the signed routing cookie when SESSION_SECRET is empty.
+      # Must match the API's JWT_SECRET.
+      JWT_SECRET: ${JWT_SECRET}
     volumes:
       # next/image resizes on first request and caches the result here. Without
       # a volume that cache dies with every redeploy, so the next visitor — very

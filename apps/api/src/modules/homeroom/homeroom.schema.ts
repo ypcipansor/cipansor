@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { uploadedFileRefListSchema } from '@cipansor/shared';
+
 import { partialUpdateSchema } from '@/lib/partial';
 
 // ======================
@@ -67,7 +69,7 @@ export const createStudentNoteSchema = z.object({
   visibility: NoteVisibility.default('HOMEROOM_ONLY'),
   requiresFollowUp: z.boolean().default(false),
   followUpDate: z.string().datetime().optional(),
-  attachments: z.array(z.string().url()).optional(),
+  attachments: uploadedFileRefListSchema.optional(),
   tags: z.array(z.string()).optional(),
 });
 
@@ -111,7 +113,7 @@ export const createParentMessageSchema = z.object({
   message: z.string().min(1).max(5000),
   priority: NotePriority.default('MEDIUM'),
   requiresResponse: z.boolean().default(false),
-  attachments: z.array(z.string().url()).optional(),
+  attachments: uploadedFileRefListSchema.optional(),
 });
 
 export const listParentMessagesQuerySchema = z.object({

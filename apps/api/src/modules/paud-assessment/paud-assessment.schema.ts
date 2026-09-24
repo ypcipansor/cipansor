@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import { PAUDAspect, PAUDAchievementLevel, PAUDReportPeriod } from '@cipansor/shared';
+import {
+  PAUDAspect,
+  PAUDAchievementLevel,
+  PAUDReportPeriod,
+  uploadedFileRefSchema,
+} from '@cipansor/shared';
 
 // PAUD Aspect enum
 export const PAUDAspectEnum = z.nativeEnum({
@@ -162,7 +167,7 @@ export const bulkCreateClassAssessmentSchema = z.object({
 
 export const createEvidenceSchema = z.object({
   assessmentId: z.string().uuid('Invalid assessment ID'),
-  fileUrl: z.string().url('Invalid file URL'),
+  fileUrl: uploadedFileRefSchema,
   fileType: z.enum(['image', 'video', 'document']),
   fileName: z.string().max(255).optional().nullable(),
   caption: z.string().max(500).optional().nullable(),

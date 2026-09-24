@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { MainLayout } from "@/components/layout/main-layout";
 import { useActiveAcademicYear } from "@/hooks/use-academic-years";
 import { useAuth } from "@/hooks/use-auth";
@@ -33,7 +34,8 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { EvidenceUploadDialog } from "@/components/quality/evidence-upload-dialog";
-import { authFileUrl } from "@/lib/files";
+import { useResolvedFileUrls } from "@/hooks/use-resolved-file-url";
+import { displayableResolvedUrl } from "@/lib/files";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 export default function StandardDetailPage() {
@@ -48,6 +50,20 @@ export default function StandardDetailPage() {
     unitId || "",
     activeAcademicYear?.id || "",
   );
+
+  // Evidence files are private uploads: a raw URL 403s. Resolve every indicator
+  // evidence through one batch resolver that also keeps each link fresh.
+  const evidenceUrls = useMemo(
+    () =>
+      (standard?.indicators ?? [])
+        .flatMap((indicator) => indicator.evidences ?? [])
+        .map((evidence) => evidence.fileUrl)
+        .filter((u): u is string => !!u),
+    [standard],
+  );
+  const resolvedEvidence = useResolvedFileUrls(evidenceUrls);
+  const evidenceUrl = (u?: string | null): string | null =>
+    displayableResolvedUrl(u, resolvedEvidence);
 
   const deleteEvidence = useDeleteEvidence();
 
@@ -167,7 +183,10 @@ export default function StandardDetailPage() {
                                 <div className="flex items-center gap-2">
                                   <Button variant="ghost" size="icon" asChild>
                                     <a
-                                      href={authFileUrl(evidence.fileUrl)}
+                                      href={
+                                        evidenceUrl(evidence.fileUrl) ??
+                                        undefined
+                                      }
                                       target="_blank"
                                       rel="noopener noreferrer"
                                     >

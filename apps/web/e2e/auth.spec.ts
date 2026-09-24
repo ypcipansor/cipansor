@@ -117,6 +117,37 @@ test.describe("Authentication", () => {
     await expect(page).toHaveURL(/dashboard/);
   });
 
+  test("should not complete a login when /api/session mints no cookie", async ({
+    page,
+  }) => {
+    // Regression: a 200 `{session:false}` from the mint endpoint used to be
+    // read as success (`response.ok`), so the store set isAuthenticated with no
+    // routing cookie and the user was bounced back to /login on the next
+    // navigation — "authenticated locally but unroutable". The store must now
+    // fail the login, clear the tokens, and surface an error.
+    await page.route("**/api/session", async (route) => {
+      if (route.request().method() === "POST") {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ session: false }),
+        });
+        return;
+      }
+      await route.continue();
+    });
+
+    await loginPage.login("fatimah@cipansor.or.id", "Teacher123!");
+    await page.waitForTimeout(1000);
+
+    // Still on the login page, no half-login token left behind.
+    await expect(page).toHaveURL(/login/);
+    const token = await page.evaluate(() =>
+      localStorage.getItem("accessToken"),
+    );
+    expect(token).toBeNull();
+  });
+
   test("should logout successfully and clear session", async ({ page }) => {
     const loginPage = new LoginPage(page);
 

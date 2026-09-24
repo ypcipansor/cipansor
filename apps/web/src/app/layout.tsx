@@ -8,6 +8,7 @@ import { I18nProvider } from "@/providers/i18n-provider";
 import { dirFor, isLocale, LOCALE_COOKIE, type Locale } from "@/locales";
 import { Toaster } from "@/components/ui/sonner";
 import { SkipLink, OfflineBanner } from "@/components/shared";
+import { SessionCookieHygiene } from "@/components/auth/session-cookie-hygiene";
 import { ServiceWorkerRegister } from "@/components/pwa/service-worker-register";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { pwaEnabledForHost, indexableHost } from "@/lib/host-split";
@@ -163,6 +164,7 @@ export default async function RootLayout({
               since the host split — with a navigation-intercepting worker that
               nothing ever takes away.
             */}
+            <SessionCookieHygiene />
             <ServiceWorkerRegister enabled={pwa} />
             {pwa && <InstallPrompt />}
           </QueryProvider>

@@ -163,32 +163,52 @@ app.use(compression());
 // them requires a valid access token — via Authorization header or ?token=
 // (see uploadsAuth). Directory listing stays off; static only serves files.
 //
-// `/uploads` carries its OWN limiter ahead of auth (see buildUploadsMiddleware
-// and `uploadsServeLimiter`) and is excluded from the global limiter below, so
-// every `/uploads` request costs exactly one slot of the uploads budget and
+// The read limiter is mounted unconditionally and visibly, the way CodeQL and a
+// reader both expect; its dev/test exemption lives inside the limiter's own
+// `skip` (middleware/rate-limit.ts), not in a conditional spread that could hide
+// the protection. `/uploads` carries its OWN budget (`uploadsServeLimiter`,
+// sized for image-heavy pages) ahead of auth, and is excluded from the global
+// limiter below, so every read costs exactly one slot of the uploads budget and
 // none of the API budget — a missing file that `express.static` passes on
-// included. Auth still gates it in every environment. In development and test
-// no limiter is mounted at all.
+// included. Auth still gates it in every environment.
+//
+// `uploadsAuth` already authorizes the caller against the owning record, so the
+// browser only ever fetches a file it is allowed to read. But helmet's default
+// `Cross-Origin-Resource-Policy: same-origin` still refuses the response when
+// the web app and the API are on different origins — the normal split-origin
+// deployment (web on :3000 / portal.cipansor.or.id, API on :3001 / api.*). The
+// browser reports that as `ERR_BLOCKED_BY_RESPONSE.NotSameOrigin` and every
+// authorized `<img>`, `<audio>` and `<a download>` stays broken even though the
+// API said 200. The file is private *by authorization*, not by same-origin, so
+// this route opts out of CORP while the rest of the API keeps the default.
 import path from 'path';
 import { uploadsAuth } from './middleware/upload';
 
 /**
- * Build the `/uploads` middleware chain for an environment.
+ * The `/uploads` middleware chain.
  *
- * Rate limiting is prepended only where it is in force (`rateLimitEnabled`), so
- * development and test are not silently throttled by the production limiter.
- * Authentication (`uploadsAuth`) is unconditional: stored uploads are private
- * in every environment.
+ * Rate limiting is mounted UNCONDITIONALLY (its dev/test exemption is inside
+ * `uploadsServeLimiter.skip`), so the protection is visible to a reader and to
+ * static analysis rather than hidden behind a conditional spread. Authentication
+ * (`uploadsAuth`) is unconditional too: stored uploads are private in every
+ * environment.
  */
-export function buildUploadsMiddleware(env: string) {
+export function buildUploadsMiddleware() {
   return [
-    ...(rateLimitEnabled(env) ? [uploadsServeLimiter] : []),
+    uploadsServeLimiter,
     uploadsAuth,
+    // Private *by authorization*, not by same-origin: the browser must be able
+    // to render an authorized file even when the web app and the API are on
+    // different origins (see the comment above).
+    (_req: express.Request, res: express.Response, next: express.NextFunction) => {
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      next();
+    },
     express.static(path.join(process.cwd(), 'public/uploads')),
   ];
 }
 
-app.use('/uploads', ...buildUploadsMiddleware(config.env));
+app.use('/uploads', ...buildUploadsMiddleware());
 
 /**
  * The global default limiter.
@@ -278,6 +298,7 @@ apiRouter.use(normalizePagination);
 // (2fa/enable, 2fa/login and 2fa/disable carry their own twoFactorLimiter.)
 if (config.env !== 'test' && config.env !== 'development') {
   apiRouter.use('/auth/login', authLimiter);
+  apiRouter.use('/auth/sso/login', authLimiter);
   apiRouter.use('/auth/register', authLimiter);
   apiRouter.use('/auth/refresh', authLimiter);
   apiRouter.use('/auth/password', authLimiter);

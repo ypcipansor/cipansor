@@ -8,6 +8,7 @@ export const contractController = {
     try {
       const result = await contractService.create({
         ...req.body,
+        actorId: req.user?.sub,
         startDate: new Date(req.body.startDate),
         endDate: req.body.endDate ? new Date(req.body.endDate) : undefined,
       });
@@ -22,6 +23,7 @@ export const contractController = {
       const { id } = req.params;
       const result = await contractService.update(id, {
         ...req.body,
+        actorId: req.user?.sub,
         startDate: req.body.startDate ? new Date(req.body.startDate) : undefined,
         endDate: req.body.endDate ? new Date(req.body.endDate) : undefined,
       });

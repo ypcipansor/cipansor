@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { uploadedFileRefSchema } from '@cipansor/shared';
+
 import { partialUpdateSchema } from '@/lib/partial';
 import {
   AssetStatus,
@@ -47,7 +49,7 @@ export const createInventoryItemSchema = z.object({
   supplier: z.string().max(255).optional(),
   warrantyExpiry: z.coerce.date().optional(),
   notes: z.string().optional(),
-  photoUrl: z.string().url().optional(),
+  photoUrl: uploadedFileRefSchema.optional(),
 });
 
 export const updateInventoryItemSchema = partialUpdateSchema(createInventoryItemSchema).omit({
@@ -104,7 +106,7 @@ export const updateMaintenanceSchema = z.object({
   notes: z.string().optional(),
   status: AssetMaintenanceStatusEnum.optional(),
   completionDate: z.coerce.date().optional(),
-  invoiceUrl: z.string().url().optional(),
+  invoiceUrl: uploadedFileRefSchema.optional(),
 });
 
 // Specific status update
@@ -113,7 +115,7 @@ export const updateMaintenanceStatusSchema = z.object({
   notes: z.string().optional(),
   cost: z.number().optional(),
   completionDate: z.coerce.date().optional(),
-  invoiceUrl: z.string().url().optional(),
+  invoiceUrl: uploadedFileRefSchema.optional(),
 });
 
 export const queryMaintenanceSchema = z.object({

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { uploadedFileRefSchema } from '@cipansor/shared';
 
 const portfolioType = z.enum([
   'ACADEMIC',
@@ -41,7 +42,7 @@ export const updatePortfolioSchema = z.object({
 export const addFileSchema = z.object({
   body: z.object({
     fileName: z.string().min(1),
-    fileUrl: z.string().url(),
+    fileUrl: uploadedFileRefSchema,
     fileType: z.string().min(1),
     fileSize: z.number().optional(),
     isCover: z.boolean().optional(),

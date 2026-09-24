@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { uploadedFileRefSchema } from '@cipansor/shared';
 
 // =====================================
 // DONATION ENUMS (matching Prisma schema)
@@ -48,7 +49,7 @@ export const createCampaignSchema = z.object({
     .regex(/^[a-z0-9-]+$/, 'Slug must be lowercase alphanumeric with hyphens'),
   description: z.string().min(10, 'Description must be at least 10 characters'),
   targetAmount: z.number().min(0),
-  imageUrl: z.string().url().optional(),
+  imageUrl: uploadedFileRefSchema.optional(),
   startDate: z.string(),
   endDate: z.string().optional(),
   status: CampaignStatusEnum.default('DRAFT'),
@@ -64,7 +65,7 @@ export const updateCampaignSchema = z.object({
     .optional(),
   description: z.string().min(10).optional(),
   targetAmount: z.number().min(0).optional(),
-  imageUrl: z.string().url().optional(),
+  imageUrl: uploadedFileRefSchema.optional(),
   startDate: z.string().optional(),
   endDate: z.string().optional(),
   status: CampaignStatusEnum.optional(),
@@ -102,7 +103,7 @@ export const createDonationSchema = z.object({
   purpose: z.string().optional(),
   isAnonymous: z.boolean().default(false),
   paymentMethod: DonationPaymentMethodEnum,
-  paymentProof: z.string().url().optional(),
+  paymentProof: uploadedFileRefSchema.optional(),
   receiptNumber: z.string().optional(),
 });
 
@@ -126,7 +127,7 @@ export const verifyDonationSchema = z.object({
 });
 
 export const updateDonationSchema = z.object({
-  paymentProof: z.string().url().optional(),
+  paymentProof: uploadedFileRefSchema.optional(),
   receiptNumber: z.string().optional(),
   message: z.string().max(500).optional(),
   notes: z.string().optional(),

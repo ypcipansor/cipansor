@@ -10,6 +10,7 @@ import {
   changePasswordSchema,
   sendPasswordResetSchema,
   resetPasswordSchema,
+  ssoLoginSchema,
 } from './auth.schema';
 import rateLimit from 'express-rate-limit';
 
@@ -58,6 +59,58 @@ const twoFactorLimiter = rateLimit({
 // seluruh portal, dan `authLimiter` di app.ts membatasi per-IP: sebuah botnet
 // yang tersebar di ribuan IP tidak pernah menyentuh batas itu.
 router.post('/login', requireTurnstile('login'), validate(loginSchema), controller.login);
+
+/**
+ * @swagger
+ * /api/auth/sso/login:
+ *   post:
+ *     summary: SSO login via Google Workspace or Microsoft 365
+ *     tags: [Auth]
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [provider]
+ *             properties:
+ *               provider:
+ *                 type: string
+ *                 enum: [google, microsoft]
+ *               email:
+ *                 type: string
+ *               idToken:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: SSO Login successful
+ */
+router.post(
+  '/sso/login',
+  // The SSO endpoint is as unauthenticated as `/login` — it accepts a bearer
+  // ID token and mints a session — so it carries the SAME Turnstile gate. It
+  // used to rely on the per-IP `authLimiter` alone, which a botnet spread
+  // across thousands of addresses never touches. Its own `action` binds the
+  // token to this surface (see turnstile-actions.contract.test.ts); the gate
+  // sits BEFORE `validate`, which would strip the token from `req.body`.
+  requireTurnstile('sso-login'),
+  validate(ssoLoginSchema),
+  controller.ssoLogin
+);
+
+/**
+ * @swagger
+ * /api/auth/sso/config:
+ *   get:
+ *     summary: Get SSO configuration (Google and Microsoft integration details)
+ *     tags: [Auth]
+ *     security: []
+ *     responses:
+ *       200:
+ *         description: Configuration details
+ */
+router.get('/sso/config', controller.getSSOConfig);
 
 /**
  * @swagger

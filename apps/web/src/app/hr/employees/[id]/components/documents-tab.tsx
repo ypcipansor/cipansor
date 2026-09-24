@@ -1,6 +1,7 @@
 "use client";
-import { useState } from "react";
-import { authFileUrl } from "@/lib/files";
+import { useMemo, useState } from "react";
+import { useResolvedFileUrls } from "@/hooks/use-resolved-file-url";
+import { displayableResolvedUrl } from "@/lib/files";
 import { safeFormat } from "@/lib/date";
 import {
   useEmployeeDocuments,
@@ -35,7 +36,9 @@ import {
 } from "@/components/ui/select";
 import { Trash2, FileText, Upload } from "lucide-react";
 
-import api from "@/lib/api";
+import api, { uploadApi } from "@/lib/api";
+import { useAuth } from "@/hooks/use-auth";
+import { mayAdministerHr } from "@/lib/rbac";
 
 const DOCUMENT_TYPES: EmployeeDocumentType[] = [
   "KTP",
@@ -51,11 +54,34 @@ const DOCUMENT_TYPES: EmployeeDocumentType[] = [
 ];
 
 export function DocumentsTab({ userId }: { userId: string }) {
+  const { user } = useAuth();
+  // Governance roles reach this tab (oversight of the employee record) but the
+  // API refuses their document writes — hide the controls rather than let them
+  // 403. Same boundary as `HR_WRITE_ROLES` in hr.routes.ts.
+  const canWrite = mayAdministerHr(user);
   const { data: documents, isLoading } = useEmployeeDocuments(userId);
   const createDocument = useCreateEmployeeDocument();
   const deleteDocument = useDeleteEmployeeDocument();
   const [isOpen, setIsOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
+
+  // Persisted upload references stay stable (no expiring SAS) while private
+  // blobs and local uploads need a short-lived credential. One batch resolver
+  // handles every document and refreshes each link before it expires, so an
+  // open list keeps working.
+  const documentUrls = useMemo(() => {
+    return (documents ?? [])
+      .map((d) => d.fileUrl)
+      .filter((u): u is string => !!u);
+  }, [documents]);
+  const resolvedFiles = useResolvedFileUrls(documentUrls);
+
+  /**
+   * Prefer the on-demand SAS/file token; return null (not the raw private
+   * reference) until it is minted, so a protected URL never reaches the browser.
+   */
+  const displayable = (u?: string | null): string | null =>
+    displayableResolvedUrl(u, resolvedFiles);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -87,16 +113,22 @@ export function DocumentsTab({ userId }: { userId: string }) {
       // Handle response structure { success: true, data: { url: ... } }
       const fileUrl = uploadRes.data.data.url;
 
-      // 2. Create Record
-      await createDocument.mutateAsync({
-        userId,
-        name: formData.name,
-        type: formData.type,
-        fileUrl,
-        expiryDate: formData.expiryDate
-          ? new Date(formData.expiryDate).toISOString()
-          : undefined,
-      });
+      // 2. Create Record. If this fails, the just-uploaded blob is orphaned —
+      //    discard it so a failed save does not leave a file forever.
+      try {
+        await createDocument.mutateAsync({
+          userId,
+          name: formData.name,
+          type: formData.type,
+          fileUrl,
+          expiryDate: formData.expiryDate
+            ? new Date(formData.expiryDate).toISOString()
+            : undefined,
+        });
+      } catch (recordError) {
+        await uploadApi.discard(fileUrl).catch(() => undefined);
+        throw recordError;
+      }
 
       setIsOpen(false);
       setFormData({ name: "", type: "LAINNYA", expiryDate: "", file: null });
@@ -114,71 +146,73 @@ export function DocumentsTab({ userId }: { userId: string }) {
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h3 className="text-lg font-medium">Dokumen Kepegawaian</h3>
-        <Dialog open={isOpen} onOpenChange={setIsOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Upload className="w-4 h-4 mr-2" /> Upload Dokumen
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Upload Dokumen</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <Label>Nama Dokumen</Label>
-                <Input
-                  value={formData.name}
-                  onChange={(e) =>
-                    setFormData({ ...formData, name: e.target.value })
-                  }
-                  placeholder="Contoh: Ijazah S1"
-                  required
-                />
-              </div>
-              <div>
-                <Label>Jenis Dokumen</Label>
-                <Select
-                  value={formData.type}
-                  onValueChange={(val) =>
-                    setFormData({
-                      ...formData,
-                      type: val as EmployeeDocumentType,
-                    })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {DOCUMENT_TYPES.map((type) => (
-                      <SelectItem key={type} value={type}>
-                        {type}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Tanggal Kadaluarsa (Opsional)</Label>
-                <Input
-                  type="date"
-                  value={formData.expiryDate}
-                  onChange={(e) =>
-                    setFormData({ ...formData, expiryDate: e.target.value })
-                  }
-                />
-              </div>
-              <div>
-                <Label>File</Label>
-                <Input type="file" onChange={handleFileChange} required />
-              </div>
-              <Button type="submit" disabled={uploading} className="w-full">
-                {uploading ? "Mengunggah..." : "Simpan"}
+        {canWrite && (
+          <Dialog open={isOpen} onOpenChange={setIsOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Upload className="w-4 h-4 mr-2" /> Upload Dokumen
               </Button>
-            </form>
-          </DialogContent>
-        </Dialog>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Upload Dokumen</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <Label>Nama Dokumen</Label>
+                  <Input
+                    value={formData.name}
+                    onChange={(e) =>
+                      setFormData({ ...formData, name: e.target.value })
+                    }
+                    placeholder="Contoh: Ijazah S1"
+                    required
+                  />
+                </div>
+                <div>
+                  <Label>Jenis Dokumen</Label>
+                  <Select
+                    value={formData.type}
+                    onValueChange={(val) =>
+                      setFormData({
+                        ...formData,
+                        type: val as EmployeeDocumentType,
+                      })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {DOCUMENT_TYPES.map((type) => (
+                        <SelectItem key={type} value={type}>
+                          {type}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Tanggal Kadaluarsa (Opsional)</Label>
+                  <Input
+                    type="date"
+                    value={formData.expiryDate}
+                    onChange={(e) =>
+                      setFormData({ ...formData, expiryDate: e.target.value })
+                    }
+                  />
+                </div>
+                <div>
+                  <Label>File</Label>
+                  <Input type="file" onChange={handleFileChange} required />
+                </div>
+                <Button type="submit" disabled={uploading} className="w-full">
+                  {uploading ? "Mengunggah..." : "Simpan"}
+                </Button>
+              </form>
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
 
       <div className="border rounded-md">
@@ -207,7 +241,7 @@ export function DocumentsTab({ userId }: { userId: string }) {
               <TableRow key={doc.id}>
                 <TableCell className="font-medium">
                   <a
-                    href={authFileUrl(doc.fileUrl)}
+                    href={displayable(doc.fileUrl) ?? undefined}
                     target="_blank"
                     rel="noreferrer"
                     className="flex items-center hover:underline text-blue-600"
@@ -226,16 +260,18 @@ export function DocumentsTab({ userId }: { userId: string }) {
                   {safeFormat(new Date(doc.createdAt), "dd MMM yyyy")}
                 </TableCell>
                 <TableCell className="text-right">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => {
-                      if (confirm("Hapus dokumen ini?"))
-                        deleteDocument.mutate(doc.id);
-                    }}
-                  >
-                    <Trash2 className="w-4 h-4 text-red-500" />
-                  </Button>
+                  {canWrite && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => {
+                        if (confirm("Hapus dokumen ini?"))
+                          deleteDocument.mutate(doc.id);
+                      }}
+                    >
+                      <Trash2 className="w-4 h-4 text-red-500" />
+                    </Button>
+                  )}
                 </TableCell>
               </TableRow>
             ))}

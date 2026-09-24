@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { authFileUrl } from "@/lib/files";
+import { useResolvedFileUrls } from "@/hooks/use-resolved-file-url";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -20,6 +20,11 @@ import {
 } from "@/hooks/use-tk-assessment";
 import { useStudents } from "@/hooks/use-students";
 import { useAcademicYears } from "@/hooks/use-academic-years";
+import {
+  displayableResolvedUrl,
+  evidenceFileType,
+  isImageEvidence,
+} from "@/lib/files";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -60,7 +65,7 @@ import { format } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
 import { toast } from "sonner";
 import { useAuthStore } from "@/stores/auth";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { Progress } from "@/components/ui/progress";
 import { STUDENT_STATUS } from "@cipansor/shared";
@@ -155,6 +160,19 @@ export default function EditTKAssessmentPage() {
   const [previews, setPreviews] = useState<string[]>([]);
   const [existingEvidences, setExistingEvidences] = useState<any[]>([]);
 
+  // Existing evidence is a private upload; resolve it (and keep it fresh) the
+  // same way the detail page does, instead of rendering a raw URL that 403s.
+  const existingEvidenceUrls = useMemo(
+    () =>
+      existingEvidences
+        .map((e) => e.fileUrl as string | undefined)
+        .filter((u): u is string => !!u),
+    [existingEvidences],
+  );
+  const resolvedEvidence = useResolvedFileUrls(existingEvidenceUrls);
+  const evidenceUrl = (u?: string | null): string | null =>
+    displayableResolvedUrl(u, resolvedEvidence);
+
   const updateMutation = useUpdateTKAssessment();
   const addEvidenceMutation = useAddEvidence();
   const deleteEvidenceMutation = useDeleteEvidence();
@@ -218,10 +236,10 @@ export default function EditTKAssessmentPage() {
         for (const file of files) {
           const formData = new FormData();
           formData.append("file", file);
-          formData.append(
-            "fileType",
-            file.type.startsWith("image/") ? "IMAGE" : "VIDEO",
-          );
+          // The API schema only accepts `image | video | document`; the old
+          // uppercase "IMAGE"/"VIDEO" bucket failed validation, so every
+          // evidence upload 400'd.
+          formData.append("fileType", evidenceFileType(file));
           await addEvidenceMutation.mutateAsync({
             assessmentId: id,
             data: formData,
@@ -230,7 +248,7 @@ export default function EditTKAssessmentPage() {
       }
 
       toast.success("Penilaian berhasil diperbarui");
-      router.push("/paud/assessment");
+      router.push("/tk/assessment");
     } catch (error: unknown) {
       const message =
         error instanceof Error ? error.message : "Gagal memperbarui penilaian";
@@ -670,11 +688,19 @@ export default function EditTKAssessmentPage() {
                               key={evidence.id}
                               className="relative aspect-square rounded-md overflow-hidden border group"
                             >
-                              <img
-                                src={authFileUrl(evidence.fileUrl)}
-                                alt="Evidence"
-                                className="object-cover w-full h-full"
-                              />
+                              {isImageEvidence(evidence.fileType) ? (
+                                <img
+                                  src={
+                                    evidenceUrl(evidence.fileUrl) ?? undefined
+                                  }
+                                  alt="Evidence"
+                                  className="object-cover w-full h-full"
+                                />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center text-xs font-medium text-muted-foreground uppercase">
+                                  {evidence.fileType}
+                                </div>
+                              )}
                               <button
                                 type="button"
                                 onClick={() =>
@@ -766,11 +792,16 @@ export default function EditTKAssessmentPage() {
 
               <div className="flex gap-3">
                 {step < 4 ? (
-                  <Button type="button" onClick={nextStep}>
+                  // Distinct `key`s matter: without them React reuses this DOM
+                  // node for the step-4 submit button, flipping `type` to
+                  // "submit" while the click's default action is still pending —
+                  // so "Lanjut" on step 3 saved the form and navigated away.
+                  <Button key="next" type="button" onClick={nextStep}>
                     Lanjut
                   </Button>
                 ) : (
                   <Button
+                    key="submit"
                     type="submit"
                     disabled={
                       updateMutation.isPending || addEvidenceMutation.isPending

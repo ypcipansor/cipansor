@@ -24,7 +24,6 @@ export async function setupMockUser(
     version: 0,
   });
   await page.context().addCookies([
-    { name: "accessToken", value: "mock-jwt-token", url: baseURL },
     {
       name: "auth-storage",
       value: encodeURIComponent(cookieAuth),
@@ -56,13 +55,7 @@ export async function setupMockUser(
  * Fakes a login action.
  */
 export async function login(page: Page) {
-  // Can just go directly to a protected page since localstorage is seeded
-  await page.context().addCookies([
-    {
-      name: "accessToken",
-      value: "mock-jwt-token",
-      domain: "localhost",
-      path: "/",
-    },
-  ]);
+  // No credential cookie is set (finding F); `setupMockUser` seeds the
+  // non-credential `auth-storage` cookie and the localStorage session.
+  void page;
 }

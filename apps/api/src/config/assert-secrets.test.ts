@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { assertProductionSecrets, findSecretIssues } from './assert-secrets';
+import fs from 'fs';
+import path from 'path';
+import {
+  assertProductionSecrets,
+  assertProductionMicrosoftTenant,
+  findSecretIssues,
+  microsoftMultiTenantAllowed,
+  warnOnLooseMicrosoftTenant,
+} from './assert-secrets';
 
 /** A key of the shape `openssl rand -hex 48` produces. */
 const GOOD = 'a'.repeat(96);
@@ -149,5 +157,185 @@ describe('production secret guard', () => {
     } catch (error) {
       expect((error as Error).message).not.toContain(SHIPPED);
     }
+  });
+});
+
+describe('loose Microsoft tenant warning', () => {
+  it('warns in production when the tenant is left at common', () => {
+    const warning = warnOnLooseMicrosoftTenant('production', 'common');
+    expect(warning).toContain('MICROSOFT_TENANT_ID');
+    expect(warning).toContain('ANY Entra tenant');
+  });
+
+  it('warns when the tenant is unset in production (defaults to common)', () => {
+    expect(warnOnLooseMicrosoftTenant('production', undefined)).not.toBeNull();
+  });
+
+  it('is case-insensitive about the common default', () => {
+    expect(warnOnLooseMicrosoftTenant('production', 'COMMON')).not.toBeNull();
+  });
+
+  it('stays quiet once a real tenant GUID or domain is configured', () => {
+    expect(
+      warnOnLooseMicrosoftTenant('production', '99999999-9999-9999-9999-999999999999')
+    ).toBeNull();
+    expect(warnOnLooseMicrosoftTenant('production', 'cipansor.or.id')).toBeNull();
+  });
+
+  it('stays quiet outside production', () => {
+    for (const env of ['development', 'test', undefined]) {
+      expect(warnOnLooseMicrosoftTenant(env, 'common')).toBeNull();
+    }
+  });
+});
+
+describe('production Microsoft tenant fail-fast (BUG 10)', () => {
+  const clientId = 'microsoft-client-id';
+
+  it('refuses to start in production when Microsoft SSO is configured and the tenant is common', () => {
+    expect(() =>
+      assertProductionMicrosoftTenant({
+        env: 'production',
+        clientId,
+        tenantId: 'common',
+        allowMultiTenant: false,
+      })
+    ).toThrow(/Refusing to start the API in production/);
+  });
+
+  it('refuses when the tenant is unset in production (defaults to common)', () => {
+    expect(() =>
+      assertProductionMicrosoftTenant({
+        env: 'production',
+        clientId,
+        tenantId: undefined,
+        allowMultiTenant: false,
+      })
+    ).toThrow(/MICROSOFT_TENANT_ID/);
+  });
+
+  it('refuses for organizations/consumers too, not only common', () => {
+    for (const tenantId of ['organizations', 'consumers', 'COMMON']) {
+      expect(() =>
+        assertProductionMicrosoftTenant({
+          env: 'production',
+          clientId,
+          tenantId,
+          allowMultiTenant: false,
+        })
+      ).toThrow(/Refusing to start/);
+    }
+  });
+
+  it('starts when a concrete tenant GUID or domain is configured', () => {
+    for (const tenantId of ['99999999-9999-9999-9999-999999999999', 'cipansor.or.id']) {
+      expect(() =>
+        assertProductionMicrosoftTenant({
+          env: 'production',
+          clientId,
+          tenantId,
+          allowMultiTenant: false,
+        })
+      ).not.toThrow();
+    }
+  });
+
+  it('allows the explicit multi-tenant opt-in', () => {
+    expect(() =>
+      assertProductionMicrosoftTenant({
+        env: 'production',
+        clientId,
+        tenantId: 'common',
+        allowMultiTenant: true,
+      })
+    ).not.toThrow();
+  });
+
+  it('leaves development and test alone', () => {
+    for (const env of ['development', 'test', undefined]) {
+      expect(() =>
+        assertProductionMicrosoftTenant({
+          env,
+          clientId,
+          tenantId: 'common',
+          allowMultiTenant: false,
+        })
+      ).not.toThrow();
+    }
+  });
+
+  it('does not block a deployment that never configured Microsoft SSO', () => {
+    // Microsoft login is off; the unused tenant default is not a hole.
+    expect(() =>
+      assertProductionMicrosoftTenant({
+        env: 'production',
+        clientId: undefined,
+        tenantId: 'common',
+        allowMultiTenant: false,
+      })
+    ).not.toThrow();
+  });
+
+  it('names the escape hatch in the failure message', () => {
+    try {
+      assertProductionMicrosoftTenant({
+        env: 'production',
+        clientId,
+        tenantId: 'common',
+        allowMultiTenant: false,
+      });
+      throw new Error('should have thrown');
+    } catch (error) {
+      expect((error as Error).message).toContain('MICROSOFT_ALLOW_MULTI_TENANT');
+    }
+  });
+
+  it('reads the opt-in flag from the environment, case-insensitively', () => {
+    const previous = process.env.MICROSOFT_ALLOW_MULTI_TENANT;
+    try {
+      process.env.MICROSOFT_ALLOW_MULTI_TENANT = 'TRUE';
+      expect(microsoftMultiTenantAllowed()).toBe(true);
+      expect(() =>
+        assertProductionMicrosoftTenant({ env: 'production', clientId, tenantId: 'common' })
+      ).not.toThrow();
+
+      process.env.MICROSOFT_ALLOW_MULTI_TENANT = 'no';
+      expect(microsoftMultiTenantAllowed()).toBe(false);
+      expect(() =>
+        assertProductionMicrosoftTenant({ env: 'production', clientId, tenantId: 'common' })
+      ).toThrow();
+    } finally {
+      if (previous === undefined) delete process.env.MICROSOFT_ALLOW_MULTI_TENANT;
+      else process.env.MICROSOFT_ALLOW_MULTI_TENANT = previous;
+    }
+  });
+});
+
+/**
+ * The opt-in flag has to actually reach the container. Compose enumerates the
+ * environment by name — a variable only in `.env` and missing from
+ * `docker-compose.yml` is silently dropped, and `MICROSOFT_ALLOW_MULTI_TENANT`
+ * would then look ignored: production would keep refusing to boot with
+ * `common` even though an operator set the flag. Pin the forwarding, and the
+ * safe default for deployments that never set it.
+ */
+describe('MICROSOFT_ALLOW_MULTI_TENANT reaches the API container (BUG: not forwarded)', () => {
+  const compose = fs.readFileSync(
+    path.resolve(__dirname, '..', '..', '..', '..', 'docker-compose.yml'),
+    'utf8'
+  );
+
+  it('is enumerated in the api service environment', () => {
+    expect(compose).toMatch(/MICROSOFT_ALLOW_MULTI_TENANT:\s*\$\{MICROSOFT_ALLOW_MULTI_TENANT:-/);
+  });
+
+  it('defaults to a non-multi-tenant value when unset', () => {
+    // The default must not read as "multi-tenant allowed": an unset flag is the
+    // fail-closed single-tenant path, so `true` as a default would invert it.
+    const match = compose.match(
+      /MICROSOFT_ALLOW_MULTI_TENANT:\s*\$\{MICROSOFT_ALLOW_MULTI_TENANT:-([^}]*)\}/
+    );
+    expect(match, 'MICROSOFT_ALLOW_MULTI_TENANT not found in docker-compose.yml').not.toBeNull();
+    expect(match![1].trim().toLowerCase()).not.toBe('true');
   });
 });

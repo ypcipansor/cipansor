@@ -144,7 +144,7 @@ function CreateDailyReportPageContent() {
         behaviorNotes,
         parentNotes: teacherNotes,
         homeworkSuggestion: homework,
-        photoUrls: photos.map((p) => p.url),
+        photoUrls: photos.map((p) => p.url).filter((u): u is string => !!u),
       });
 
       toast.success("Laporan berhasil dibuat");
@@ -162,7 +162,10 @@ function CreateDailyReportPageContent() {
 
       const newPhotos: PhotoGalleryItem[] = responses.map((res, index) => ({
         id: `temp-${Date.now()}-${index}`,
+        // Persist the STABLE reference (never a short-lived SAS); the SAS is
+        // only used for the immediate preview below.
         url: res.data.data.url,
+        thumbnail: res.data.data.downloadUrl || res.data.data.url,
         uploadedAt: new Date(),
         category: "Kegiatan", // Default category
       }));

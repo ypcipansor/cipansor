@@ -1,5 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { Prisma, NotificationType } from '@prisma/client';
+import { Errors } from '@/middleware/error';
+import { claimBlobForRecord, releaseBlobClaimById, type BlobClaimHandle } from '@/utils/blob-claim';
 
 interface CreateAnnouncementInput {
   unitId?: string;
@@ -107,43 +109,78 @@ export class AnnouncementService {
   }
 
   async create(data: CreateAnnouncementInput) {
-    return prisma.announcement.create({
-      data: {
-        unitId: data.unitId,
-        title: data.title,
-        content: data.content,
-        type: data.type || 'ANNOUNCEMENT',
-        priority: data.priority || 0,
-        attachmentUrl: data.attachmentUrl,
-        publishedAt: data.publishedAt || new Date(),
-        expiresAt: data.expiresAt,
-        targetRoles: data.targetRoles || [],
-        createdById: data.createdById,
-      },
-      include: {
-        unit: {
-          select: { id: true, name: true },
+    // Claim the attachment blob before the row references it, so a concurrent
+    // discard of a just-uploaded file cannot delete it between its reference
+    // probe and this insert (BUG 4 / flag 9).
+    let claim: BlobClaimHandle | null = null;
+    if (data.attachmentUrl) {
+      claim = await claimBlobForRecord(data.attachmentUrl, data.createdById);
+      if (!claim) {
+        throw Errors.conflict(
+          'Lampiran pengumuman sedang diproses pihak lain; unggah ulang berkas tersebut'
+        );
+      }
+    }
+    try {
+      return await prisma.announcement.create({
+        data: {
+          unitId: data.unitId,
+          title: data.title,
+          content: data.content,
+          type: data.type || 'ANNOUNCEMENT',
+          priority: data.priority || 0,
+          attachmentUrl: data.attachmentUrl,
+          publishedAt: data.publishedAt || new Date(),
+          expiresAt: data.expiresAt,
+          targetRoles: data.targetRoles || [],
+          createdById: data.createdById,
         },
-        createdBy: {
-          select: { id: true, name: true },
+        include: {
+          unit: {
+            select: { id: true, name: true },
+          },
+          createdBy: {
+            select: { id: true, name: true },
+          },
         },
-      },
-    });
+      });
+    } finally {
+      if (data.attachmentUrl) {
+        if (claim) await releaseBlobClaimById(claim).catch(() => undefined);
+      }
+    }
   }
 
-  async update(id: string, data: UpdateAnnouncementInput) {
-    return prisma.announcement.update({
-      where: { id },
-      data,
-      include: {
-        unit: {
-          select: { id: true, name: true },
+  async update(id: string, data: UpdateAnnouncementInput, actorId: string) {
+    // An attachment added by an update is a new blob reference, so it takes the
+    // same claim as create (flag 9).
+    let claim: BlobClaimHandle | null = null;
+    if (data.attachmentUrl) {
+      claim = await claimBlobForRecord(data.attachmentUrl, actorId);
+      if (!claim) {
+        throw Errors.conflict(
+          'Lampiran pengumuman sedang diproses pihak lain; unggah ulang berkas tersebut'
+        );
+      }
+    }
+    try {
+      return await prisma.announcement.update({
+        where: { id },
+        data,
+        include: {
+          unit: {
+            select: { id: true, name: true },
+          },
+          createdBy: {
+            select: { id: true, name: true },
+          },
         },
-        createdBy: {
-          select: { id: true, name: true },
-        },
-      },
-    });
+      });
+    } finally {
+      if (data.attachmentUrl) {
+        if (claim) await releaseBlobClaimById(claim).catch(() => undefined);
+      }
+    }
   }
 
   async delete(id: string) {

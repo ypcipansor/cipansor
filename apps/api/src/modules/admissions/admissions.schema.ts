@@ -1,6 +1,19 @@
 import { z } from 'zod';
+import { uploadedFileRefSchema } from '@cipansor/shared';
+
 import { AdmissionStatus } from '@prisma/client';
 import { partialUpdateSchema } from '@/lib/partial';
+import { normalizeEmail } from '@/utils/email';
+
+// Optional e-mail that accepts an empty string to clear the field, and
+// lower-cases whatever non-empty value it receives so the same mailbox always
+// reaches the database spelled the same way.
+const optionalEmail = z
+  .string()
+  .email()
+  .optional()
+  .or(z.literal(''))
+  .transform((v) => (v ? normalizeEmail(v) : v));
 
 // Admission Period schemas
 export const createAdmissionPeriodSchema = z.object({
@@ -53,7 +66,7 @@ export const createRegistrantSchema = z.object({
 
   // Contact
   phone: z.string().max(20).optional(),
-  email: z.string().email().optional().or(z.literal('')),
+  email: optionalEmail,
 
   // Education
   previousSchool: z.string().max(200).optional(),
@@ -64,7 +77,7 @@ export const createRegistrantSchema = z.object({
   fatherName: z.string().min(1).max(100),
   fatherOccupation: z.string().optional(),
   fatherPhone: z.string().optional(),
-  fatherEmail: z.string().email().optional().or(z.literal('')),
+  fatherEmail: optionalEmail,
 
   motherName: z.string().min(1).max(100),
   motherOccupation: z.string().optional(),
@@ -87,7 +100,7 @@ export const updateRegistrantSchema = z.object({
   // Accept empty string to clear the field, mirroring `createRegistrantSchema`.
   // Without `.or(z.literal(''))` a registrant created with an empty email
   // cannot round-trip the same value back through PUT /registrants/:id.
-  email: z.string().email().optional().or(z.literal('')),
+  email: optionalEmail,
   address: z.string().min(5).optional(),
   previousSchool: z.string().max(200).optional(),
   // Parents
@@ -138,7 +151,7 @@ export const createRegistrantDocumentSchema = z.object({
   registrantId: z.string().uuid(),
   name: z.string().min(2).max(200),
   type: z.enum(['akta', 'ijazah', 'kk', 'foto', 'rapor', 'lainnya']),
-  fileUrl: z.string().url().optional(),
+  fileUrl: uploadedFileRefSchema.optional(),
   notes: z.string().optional(),
 });
 

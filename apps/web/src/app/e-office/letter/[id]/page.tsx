@@ -1,6 +1,7 @@
 "use client";
-import { useRouter } from "next/navigation";
-import { authFileUrl } from "@/lib/files";
+import { useParams, useRouter } from "next/navigation";
+import { useResolvedFileUrls } from "@/hooks/use-resolved-file-url";
+import { displayableResolvedUrl } from "@/lib/files";
 import { safeFormat } from "@/lib/date";
 import { useCorrespondence } from "@/hooks/use-correspondence";
 import { useAuth } from "@/hooks/use-auth";
@@ -32,7 +33,7 @@ import {
 } from "lucide-react";
 
 import { id } from "date-fns/locale";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 /*
  * Tidak ada html2canvas dan jsPDF di sini lagi.
  *
@@ -94,11 +95,8 @@ const REVIEWER_STATUS_LABEL: Record<string, string> = {
   REVISION_NEEDED: "Minta revisi",
 };
 
-export default function LetterDetailPage({
-  params,
-}: {
-  params: { id: string };
-}) {
+export default function LetterDetailPage() {
+  const params = useParams<{ id: string }>();
   const router = useRouter();
   const { user } = useAuth();
   const {
@@ -118,6 +116,27 @@ export default function LetterDetailPage({
     limit: 100,
   });
   const { data: letter, isLoading } = useLetter(params.id);
+
+  // Persisted upload references stay stable (no expiring SAS) while private
+  // blobs and local uploads need a short-lived credential to render. One batch
+  // resolver handles the naskah and every attachment, refreshing each link
+  // before its credential expires so an open letter keeps its files.
+  const letterFileUrls = useMemo(
+    () =>
+      [
+        letter?.fileUrl,
+        ...(letter?.attachments ?? []).map((a) => a.fileUrl),
+      ].filter((u): u is string => !!u),
+    [letter],
+  );
+  const resolvedFiles = useResolvedFileUrls(letterFileUrls);
+
+  /**
+   * Prefer the on-demand SAS/file token; return null (not the raw private
+   * reference) until it is minted, so a protected URL never reaches the browser.
+   */
+  const displayable = (u?: string | null): string | null =>
+    displayableResolvedUrl(u, resolvedFiles);
 
   const [notes, setNotes] = useState("");
   const [dispositionOpen, setDispositionOpen] = useState(false);
@@ -1118,7 +1137,7 @@ export default function LetterDetailPage({
                     </span>
                     <Button variant="ghost" size="sm" asChild>
                       <a
-                        href={authFileUrl(letter.fileUrl)}
+                        href={displayable(letter.fileUrl) ?? undefined}
                         target="_blank"
                         rel="noopener noreferrer"
                       >
@@ -1155,7 +1174,7 @@ export default function LetterDetailPage({
                         </span>
                         <Button variant="ghost" size="sm" asChild>
                           <a
-                            href={authFileUrl(att.fileUrl)}
+                            href={displayable(att.fileUrl) ?? undefined}
                             target="_blank"
                             rel="noopener noreferrer"
                           >
@@ -1286,7 +1305,7 @@ export default function LetterDetailPage({
               </CardHeader>
               <CardContent>
                 <object
-                  data={authFileUrl(letter.fileUrl)}
+                  data={displayable(letter.fileUrl) ?? undefined}
                   type="application/pdf"
                   className="w-full h-[600px] rounded border bg-muted"
                 >
@@ -1295,7 +1314,7 @@ export default function LetterDetailPage({
                     <p className="mb-2">Pratinjau tidak tersedia.</p>
                     <Button variant="outline" size="sm" asChild>
                       <a
-                        href={authFileUrl(letter.fileUrl)}
+                        href={displayable(letter.fileUrl) ?? undefined}
                         target="_blank"
                         rel="noopener noreferrer"
                       >

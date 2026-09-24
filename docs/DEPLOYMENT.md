@@ -23,7 +23,7 @@ Panduan deployment sistem Cipansor untuk production.
 
 ### System Requirements
 
-- **Node.js**: v22 (semua image memakai `node:22-alpine`)
+- **Node.js**: v22 LTS atau lebih baru (wajib — `@azure/storage-blob@12.33.0` mensyaratkan Node >= 22)
 - **PostgreSQL**: v14 atau lebih baru
 - **pnpm**: 9.15.9 (dipaku lewat `packageManager` di `package.json`; CI memakai `--frozen-lockfile`)
 - **Docker** (opsional): v24 atau lebih baru
@@ -293,8 +293,45 @@ design and does not query the database per request.
 
 ### Production Migration
 
+The nonprofit-tech change ships **six** migrations. Deploy them in filename
+order (Prisma does this); the two with preconditions are called out.
+
+| # | Migration | What it does | Precondition / rollback |
+|---|-----------|--------------|-------------------------|
+| 1 | `20260915055343_add_identity_providers` | Creates `identity_providers` (`SSOProvider` enum, unique `(provider, provider_subject_id)`, FK to `users`). | Additive. Drop the table to roll back. |
+| 2 | `20260915060000_users_email_lower_unique` | Normalizes every e-mail to `lower(trim(email))`, then adds a UNIQUE index on that expression. **Fails closed** if two accounts collide (header names the addresses and ids). | Run the e-mail pre-check below first. **Not** safely auto-reversible: the `UPDATE` has already rewritten stored addresses. |
+| 3 | `20260915070000_blob_claims` | Creates `blob_claims` (upload→discard handshake; unique `blob_url`). | Additive. |
+| 4 | `20260917000000_blob_claims_discarded_tombstone` | Adds the terminal `blob_claims.discarded_at` tombstone. | Additive; safe to leave in place. |
+| 5 | `20260921170000_blob_claim_operation_token_and_reconcile` | Adds `operation_token` (random per-operation secret), the reconciliation lifecycle (`reconcile_status` enum, `reconcile_attempts`, `next/last_reconcile_at`, `reconciled_at`) and its index. | Additive; safe to leave in place. |
+| 6 | `20260922120000_blob_claim_reconcile_lease` | Adds the reconciliation worker lease (`reconcile_lease_owner`, `reconcile_lease_expires_at`) so only one API replica deletes a given row. | Additive and nullable; safe to leave in place. |
+
+`npx prisma migrate deploy` applies all six. Rolling back an additive migration
+means manually dropping the added columns/table and then
+`npx prisma migrate resolve --rolled-back <name>`, so the migration can replay.
+Migrations #2 rewrites data in place and is **not** safely reversible by that
+route: restore from the pre-deploy backup instead.
+
+#### Pre-check: e-mail uniqueness (migration #2)
+
 ```bash
 cd apps/api
+
+# Pre-check: e-mail uniqueness migration
+# `20260915060000_users_email_lower_unique` first checks for collisions on
+# `lower(trim(email))` and RAISES with the colliding addresses and account ids
+# BEFORE any row is updated. Only if that check passes does it lowercase every
+# stored e-mail and create a UNIQUE index on lower(trim(email)). So a collision
+# stops the deploy early, with a clear message, instead of surfacing later as an
+# opaque `unique_violation`. Resolve any collision BEFORE deploying:
+#
+#   1. Back up the database (pg_dump, below).
+#   2. `pnpm --filter api db:normalize-emails --dry-run` — report only, no writes.
+#   3. Decide per colliding pair: merge the accounts (move references to the one
+#      you keep) or change one address. The script never merges for you.
+#   4. Re-run the dry-run until it reports no collisions.
+#   5. `pnpm --filter api db:normalize-emails`   # apply the normalization
+#   6. `npx prisma migrate deploy`
+pnpm --filter api db:normalize-emails --dry-run
 
 # Deploy pending migrations
 npx prisma migrate deploy

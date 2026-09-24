@@ -7,6 +7,7 @@ import {
   getDashboardForRole,
   getEffectiveRole,
   isLegacyRole,
+  mayAdministerHr,
   roleRouteAccess,
   type LegacyRole,
 } from "./rbac";
@@ -1070,5 +1071,46 @@ describe("e-office menu coverage", () => {
       roleCode === "SUPER_ADMIN" ? "SUPER_ADMIN" : deriveLegacyRole(roleCode);
     expect(legacy, `${roleCode} has no legacy role mapping`).toBeTruthy();
     expect(canAccessRoute(legacy as never, "/e-office")).toBe(true);
+  });
+});
+
+/**
+ * Governance oversight vs HR administration (API finding #8).
+ *
+ * Every governance role collapses to the legacy `UNIT_ADMIN` bucket, so gating
+ * an HR write on `getEffectiveRole(user) === "UNIT_ADMIN" offered pembina and
+ * pengawas the leave-approval buttons the API now refuses with 403. The web
+ * gate must read the RoleCode, not the bucket.
+ */
+describe("rbac — mayAdministerHr hanya untuk admin HR", () => {
+  const asUser = (roleCode: string) => ({
+    userRoles: [{ isPrimary: true, role: { code: roleCode } }],
+  });
+
+  it.each([
+    "SUPER_ADMIN",
+    "SDIT_ADMIN",
+    "TKQ_ADMIN",
+    "SMPIT_ADMIN",
+    "SMAQ_ADMIN",
+  ])("%s boleh menulis HR", (roleCode) => {
+    expect(mayAdministerHr(asUser(roleCode))).toBe(true);
+  });
+
+  it.each([
+    "YAYASAN_PEMBINA",
+    "YAYASAN_KETUA",
+    "YAYASAN_SEKRETARIS",
+    "YAYASAN_BENDAHARA",
+    "YAYASAN_ANGGOTA",
+    "YAYASAN_PENGAWAS",
+  ])("%s hanya boleh mengawasi, bukan menulis HR", (roleCode) => {
+    expect(mayAdministerHr(asUser(roleCode))).toBe(false);
+  });
+
+  it("menolak pengguna tanpa assignment selain legacy SUPER_ADMIN", () => {
+    expect(mayAdministerHr(null)).toBe(false);
+    expect(mayAdministerHr({ role: "UNIT_ADMIN" })).toBe(false);
+    expect(mayAdministerHr({ role: "SUPER_ADMIN" })).toBe(true);
   });
 });

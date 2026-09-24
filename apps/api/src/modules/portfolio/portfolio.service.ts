@@ -11,6 +11,9 @@
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/client';
+import { cleanupBlobBestEffort, cleanupBlobsBestEffort } from '@/utils/cloud-storage';
+import { Errors } from '@/middleware/error';
+import { claimBlobForRecord, releaseBlobClaimById, type BlobClaimHandle } from '@/utils/blob-claim';
 
 // Portfolio types and categories
 export const PORTFOLIO_TYPES = [
@@ -205,10 +208,20 @@ export async function updatePortfolio(id: string, data: Partial<CreatePortfolioD
 }
 
 export async function deletePortfolio(id: string) {
+  // Snapshot the file URLs before the rows go, so their blobs can be reclaimed
+  // after the delete succeeds (best-effort — never blocks the delete).
+  const files = await prisma.portfolioFile.findMany({
+    where: { portfolioId: id },
+    select: { fileUrl: true },
+  });
+
   // Delete files first
   await prisma.portfolioFile.deleteMany({ where: { portfolioId: id } });
   await prisma.portfolioComment.deleteMany({ where: { portfolioId: id } });
-  return prisma.portfolio.delete({ where: { id } });
+  const deleted = await prisma.portfolio.delete({ where: { id } });
+
+  await cleanupBlobsBestEffort(files.map((f) => f.fileUrl));
+  return deleted;
 }
 
 // =====================================
@@ -222,28 +235,44 @@ export async function addPortfolioFile(data: {
   fileType: string;
   fileSize?: number;
   isCover?: boolean;
+  /** The actor creating the reference, used to claim the blob (flag 9). */
+  holderId: string;
 }) {
+  // Claim the file blob before the row references it, so a concurrent discard
+  // of a just-uploaded file cannot delete it between its reference probe and
+  // this insert (BUG 4 / flag 9).
+  const { holderId, ...file } = data;
+  const claim = await claimBlobForRecord(file.fileUrl, holderId);
+  if (!claim) {
+    throw Errors.conflict('Berkas portofolio sedang diproses pihak lain; unggah ulang berkas');
+  }
+
   // If setting as cover, unset other covers
-  if (data.isCover) {
+  if (file.isCover) {
     await prisma.portfolioFile.updateMany({
-      where: { portfolioId: data.portfolioId, isCover: true },
+      where: { portfolioId: file.portfolioId, isCover: true },
       data: { isCover: false },
     });
   }
 
   // Get next sort order
   const lastFile = await prisma.portfolioFile.findFirst({
-    where: { portfolioId: data.portfolioId },
+    where: { portfolioId: file.portfolioId },
     orderBy: { sortOrder: 'desc' },
   });
   const sortOrder = (lastFile?.sortOrder || 0) + 1;
 
-  return prisma.portfolioFile.create({
-    data: {
-      ...data,
-      sortOrder,
-    },
-  });
+  try {
+    return await prisma.portfolioFile.create({
+      data: {
+        ...file,
+        sortOrder,
+      },
+    });
+  } finally {
+    // The row (or the failure) is now durable; the reference is the claim.
+    if (claim) await releaseBlobClaimById(claim).catch(() => undefined);
+  }
 }
 
 export async function updatePortfolioFile(
@@ -266,7 +295,13 @@ export async function updatePortfolioFile(
 }
 
 export async function deletePortfolioFile(id: string) {
-  return prisma.portfolioFile.delete({ where: { id } });
+  const file = await prisma.portfolioFile.findUnique({
+    where: { id },
+    select: { fileUrl: true },
+  });
+  const deleted = await prisma.portfolioFile.delete({ where: { id } });
+  await cleanupBlobBestEffort(file?.fileUrl);
+  return deleted;
 }
 
 // =====================================

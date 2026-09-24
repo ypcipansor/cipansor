@@ -1,12 +1,14 @@
 import { prisma } from '../../lib/prisma';
+import { Prisma, LeaveStatus, StaffAttendanceStatus, LeaveType, UserRole } from '@prisma/client';
 import {
-  Prisma,
-  LeaveStatus,
-  StaffAttendanceStatus,
-  LeaveType,
-  UserRole,
-  User,
-} from '@prisma/client';
+  mayAdministerEmployeeDocuments,
+  hrEmployeeRoleFor,
+  HR_EMPLOYEE_ROLE_CODES,
+  HR_TEACHER_ROLE_CODES,
+  HR_STAFF_ROLE_CODES,
+} from '@cipansor/shared';
+import type { HrEmployee } from '@cipansor/shared';
+import { seesAllUnits, isFoundationScopedRole } from '../../utils/resolve-unit-id';
 import {
   CreateStaffAttendanceInput,
   UpdateStaffAttendanceInput,
@@ -19,6 +21,8 @@ import {
 } from './hr.schema';
 import bcrypt from 'bcryptjs';
 import { Errors } from '../../middleware/error';
+import { normalizeEmail } from '../../utils/email';
+import { activeUserRoleWhere } from '../../utils/active-role';
 
 // =====================================
 // EMPLOYEE SERVICE (UNIFIED TEACHER & STAFF)
@@ -119,14 +123,313 @@ export async function getTeachers(params: {
   };
 }
 
-export async function getEmployeeById(id: string) {
-  return prisma.user.findUnique({
-    where: { id },
-    include: {
+/**
+ * Flatten a User + Teacher/Staff profile into the shared `HrEmployee` DTO.
+ *
+ * The database has no `Employee` table — a teacher and a tendik are separate
+ * profile models — so the list and detail pages get one shape from here instead
+ * of each page re-deriving it from whichever profile it happened to load.
+ * Fields with no column (`employeeType`, `position`, `status`) are derived and
+ * deliberately default to the neutral value rather than guessing.
+ *
+ * `includeSensitive` gates NIK and the bank columns. They are personal data:
+ * a colleague in the same unit may need the directory and still has no business
+ * reading anyone's KTP number or account details. When false the keys are
+ * omitted rather than blanked, so a caller cannot mistake "hidden" for "empty".
+ */
+function toHrEmployee(
+  user: HrEmployeeRow,
+  { includeSensitive = false }: { includeSensitive?: boolean } = {}
+): HrEmployee {
+  const teacher = user.teacher;
+  const staff = user.staff;
+  // Label from the live assignment (the include above returns only active HR
+  // role codes, primary first); the profile is the tie-breaker for a user whose
+  // HR assignment was revoked but whose directory row an admin still expects.
+  const directoryRole =
+    hrEmployeeRoleFor(user.userRoles?.[0]?.role.code) ?? (teacher ? 'TEACHER' : 'STAFF');
+
+  const employee: HrEmployee = {
+    id: user.id,
+    userId: user.id,
+    nip: teacher?.nip ?? staff?.nip ?? '-',
+    user: { id: user.id, name: user.name, email: user.email },
+    unitId: directoryUnitOf(user) ?? '',
+    unit: directoryUnitRelation(user) ?? { id: '', name: '' },
+    departmentId: teacher?.departmentId ?? staff?.departmentId ?? undefined,
+    department:
+      teacher?.department ??
+      staff?.departmentRel ??
+      (staff?.department ? { id: '', name: staff.department } : undefined),
+
+    fullName: user.name,
+    gender: teacher?.gender ?? null,
+    birthPlace: teacher?.birthPlace ?? null,
+    birthDate: teacher?.birthDate?.toISOString() ?? null,
+    religion: teacher?.religion ?? null,
+    maritalStatus: null,
+
+    phone: user.phone,
+    email: user.email,
+    address: teacher?.address ?? null,
+
+    role: directoryRole,
+    position: teacher ? 'Guru' : (staff?.position ?? ''),
+    // Neither the Teacher nor the Staff table records a contract type or a
+    // lifecycle status. PERMANENT/ACTIVE are the neutral defaults the pages
+    // already assume; inventing a status from `isActive` would mislabel a
+    // teacher on leave as inactive.
+    employeeType: 'PERMANENT',
+    status: user.isActive ? 'ACTIVE' : 'INACTIVE',
+    joinDate: (teacher?.joinDate ?? staff?.joinDate ?? user.createdAt).toISOString(),
+
+    lastEducation: teacher?.lastEducation ?? null,
+    educationMajor: teacher?.lastEducationMajor ?? null,
+    educationInstitution: teacher?.lastEducationInstitution ?? null,
+    graduationYear: null,
+
+    createdAt: user.createdAt.toISOString(),
+    updatedAt: user.updatedAt.toISOString(),
+  };
+
+  if (includeSensitive) {
+    employee.nik = teacher?.nik ?? null;
+    employee.bankName = teacher?.bankName ?? null;
+    employee.bankAccountNumber = teacher?.bankAccountNumber ?? null;
+    employee.bankAccountName = teacher?.bankAccountName ?? null;
+  }
+
+  return employee;
+}
+
+/** The profile + live role selection every employee read shares. */
+const HR_EMPLOYEE_INCLUDE = {
+  unit: { select: { id: true, name: true } },
+  teacher: { include: { department: { select: { id: true, name: true } } } },
+  staff: { include: { departmentRel: { select: { id: true, name: true } } } },
+  // The DTO's TEACHER/STAFF label and the directory's unit scope both come from
+  // the live assignment (primary first), not the deprecated `User.role` column
+  // or the home unit. The assignment's own unit rides along so the row reports
+  // the unit the person actually serves — the same one the scope filtered on —
+  // rather than their home unit, which legitimately differs after a reassignment.
+  userRoles: {
+    where: { ...activeUserRoleWhere(), role: { code: { in: [...HR_EMPLOYEE_ROLE_CODES] } } },
+    orderBy: { isPrimary: 'desc' },
+    take: 1,
+    select: {
+      role: { select: { code: true } },
+      unitId: true,
       unit: { select: { id: true, name: true } },
-      teacher: true,
-      staff: true,
     },
+  },
+} satisfies Prisma.UserInclude;
+
+/** A User row with exactly the relations {@link toHrEmployee} reads. */
+type HrEmployeeRow = Prisma.UserGetPayload<{ include: typeof HR_EMPLOYEE_INCLUDE }>;
+
+/**
+ * The unit that decides an employee's directory scope *and* is reported in the
+ * row: their primary live role assignment's unit, falling back to the home unit.
+ * Mirrors `tokenUnitId` and `assignmentUnit` in `utils/blob-owner.ts`, so the
+ * directory, the SAS owner check and the token all agree on which unit a person
+ * belongs to. Reporting the home unit here while filtering on the assignment
+ * unit made a reassigned employee's row carry a different unit than the one the
+ * scope selected them for.
+ */
+function directoryUnitOf(user: HrEmployeeRow): string | null {
+  return user.userRoles?.[0]?.unitId ?? user.unitId;
+}
+
+/** The unit relation a directory row reports, tracking {@link directoryUnitOf}. */
+function directoryUnitRelation(user: HrEmployeeRow): { id: string; name: string } | undefined {
+  const assignment = user.userRoles?.[0];
+  if (assignment?.unit) return assignment.unit;
+  if (assignment?.unitId) return { id: assignment.unitId, name: '' };
+  return user.unit ?? undefined;
+}
+
+/**
+ * The caller of an employee read, used to scope the directory and decide
+ * whether personal fields are visible.
+ */
+export interface EmployeeDirectoryActor {
+  id: string;
+  roleCode?: string | null;
+  unitId?: string | null;
+}
+
+/**
+ * True when `actor` may read the personal columns (NIK, bank) of an employee
+ * in `targetUnitId`: the person themselves, a personnel administrator for that
+ * unit, or a foundation role.
+ */
+function mayReadSensitiveFields(
+  actor: EmployeeDirectoryActor,
+  targetUserId: string,
+  targetUnitId: string | null | undefined
+): boolean {
+  if (actor.id === targetUserId) return true;
+  // Foundation roles own personnel data yayasan-wide; cross-unit service roles
+  // (ustadz, perawat, …) do NOT — their breadth covers where people work, not
+  // their KTP number and bank account.
+  if (isFoundationScopedRole(actor.roleCode)) return true;
+  return (
+    mayAdministerEmployeeDocuments(actor.roleCode) &&
+    !!actor.unitId &&
+    targetUnitId === actor.unitId
+  );
+}
+
+/**
+ * True when `actor` may read the employee record at all — possibly with the
+ * personal columns masked. Own record, the whole yayasan for a foundation
+ * role, or a colleague in the same unit.
+ */
+function mayReadEmployee(
+  actor: EmployeeDirectoryActor,
+  targetUserId: string,
+  targetUnitId: string | null | undefined
+): boolean {
+  if (actor.id === targetUserId) return true;
+  if (seesAllUnits(actor)) return true;
+  return !!actor.unitId && targetUnitId === actor.unitId;
+}
+
+/**
+ * List employees (a User with a Teacher or Staff profile) as the flat
+ * `HrEmployee` DTO. Backs `GET /hr/employees` for the HR directory, the
+ * department head picker and the Merdeka supervisor picker.
+ *
+ * The directory is personnel data, so `actor` decides two things and neither is
+ * optional:
+ *
+ *  - **Scope.** Only a caller who sees all units (`seesAllUnits`) may choose a
+ *    unit; a `unitId` query parameter from anyone else is ignored and the
+ *    query is pinned to their own unit, because trusting it let a unit admin
+ *    read the whole roster of a different unit and let any teacher read the
+ *    whole yayasan. A unit-less non-admin is narrowed to their own record
+ *    rather than left unfiltered (an undefined `unitId` filter would match
+ *    every row).
+ *  - **Columns.** NIK and the bank fields are only emitted for a caller who may
+ *    read them (see {@link mayReadSensitiveFields}).
+ */
+export async function getEmployeeDirectory(
+  params: {
+    page: number;
+    limit: number;
+    unitId?: string;
+    role?: 'TEACHER' | 'STAFF';
+    status?: 'ACTIVE' | 'INACTIVE';
+    search?: string;
+  },
+  actor?: EmployeeDirectoryActor
+) {
+  const { page, limit, status, search } = params;
+  const skip = (page - 1) * limit;
+
+  const memberRoleCodes = params.role
+    ? params.role === 'TEACHER'
+      ? HR_TEACHER_ROLE_CODES
+      : HR_STAFF_ROLE_CODES
+    : HR_EMPLOYEE_ROLE_CODES;
+
+  const where: Prisma.UserWhereInput = {
+    deletedAt: null,
+    // Membership comes from the live assignment, not the legacy `role` column.
+    // "Live" means active AND not past `expiresAt`: an expired assignment left
+    // the former holder in the directory (and able to shape unit scope).
+    userRoles: {
+      some: { ...activeUserRoleWhere(), role: { code: { in: [...memberRoleCodes] } } },
+    },
+    ...(status ? { isActive: status === 'ACTIVE' } : {}),
+  };
+
+  if (actor) {
+    // Pin the roster to a unit the actor's token actually covers. Foundation
+    // roles (and other `seesAllUnits` roles) may narrow to any unit they ask
+    // for; everyone else is narrowed to their own unit — the client's
+    // `params.unitId` is ignored — because trusting it verbatim let an
+    // SDIT_ADMIN read the whole roster of a different unit even though the
+    // token only scopes one. A caller with no unit at all is narrowed to their
+    // own record (an absent `unitId` filter would match every row).
+    //
+    // The scope names the ASSIGNMENT unit, matching `tokenUnitId` /
+    // `activeUserRoleWhere`, and is applied to the employee's live role
+    // assignment rather than to `User.unitId` (their home unit). The two
+    // legitimately disagree when someone is reassigned: filtering the home unit
+    // dropped a person from the roster of the unit they actually serve, and
+    // their token is scoped to the assignment.
+    const scopeUnitId = seesAllUnits(actor) ? params.unitId : actor.unitId;
+    if (scopeUnitId) {
+      (where.userRoles as Prisma.UserRoleAssignmentListRelationFilter).some = {
+        ...activeUserRoleWhere(),
+        unitId: scopeUnitId,
+        role: { code: { in: [...memberRoleCodes] } },
+      };
+    } else if (!seesAllUnits(actor)) {
+      where.id = actor.id;
+    }
+  }
+
+  if (search) {
+    where.OR = [
+      { name: { contains: search, mode: 'insensitive' } },
+      { email: { contains: search, mode: 'insensitive' } },
+      { teacher: { nip: { contains: search, mode: 'insensitive' } } },
+      { staff: { nip: { contains: search, mode: 'insensitive' } } },
+    ];
+  }
+
+  const [data, total] = await Promise.all([
+    prisma.user.findMany({
+      where,
+      skip,
+      take: limit,
+      orderBy: { name: 'asc' },
+      include: HR_EMPLOYEE_INCLUDE,
+    }),
+    prisma.user.count({ where }),
+  ]);
+
+  return {
+    data: data.map((user) =>
+      toHrEmployee(user, {
+        includeSensitive: actor
+          ? mayReadSensitiveFields(actor, user.id, directoryUnitOf(user))
+          : false,
+      })
+    ),
+    meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
+  };
+}
+
+/**
+ * Fetch one employee by user id as the flat `HrEmployee` DTO, or null when the
+ * id names no teacher/staff user (the caller turns that into a 404).
+ *
+ * `actor` scopes the read the same way the directory does: someone who may not
+ * administer personnel and does not see all units only reaches employees in
+ * their own unit. Out-of-scope ids return null (a 404) rather than a 403, so
+ * the response cannot be used to probe which user ids exist.
+ */
+export async function getEmployeeById(id: string, actor?: EmployeeDirectoryActor) {
+  const user = await prisma.user.findFirst({
+    where: {
+      id,
+      deletedAt: null,
+      userRoles: {
+        some: { ...activeUserRoleWhere(), role: { code: { in: [...HR_EMPLOYEE_ROLE_CODES] } } },
+      },
+    },
+    include: HR_EMPLOYEE_INCLUDE,
+  });
+  if (!user) return null;
+
+  const targetUnitId = directoryUnitOf(user);
+  if (actor && !mayReadEmployee(actor, user.id, targetUnitId)) return null;
+
+  return toHrEmployee(user, {
+    includeSensitive: actor ? mayReadSensitiveFields(actor, user.id, targetUnitId) : false,
   });
 }
 
@@ -232,8 +535,11 @@ export async function getRetentionRiskAnalytics(unitId: string) {
 }
 
 export async function createEmployee(data: CreateEmployeeInput) {
-  // Validate unique email
-  const existingUser = await prisma.user.findUnique({ where: { email: data.email } });
+  // Validate unique email. Normalised here too, because the schema that
+  // lower-cases is only the HTTP edge — this function is also called
+  // internally.
+  const email = normalizeEmail(data.email);
+  const existingUser = await prisma.user.findUnique({ where: { email } });
   if (existingUser) {
     throw Errors.badRequest('Email already exists');
   }
@@ -247,7 +553,7 @@ export async function createEmployee(data: CreateEmployeeInput) {
     const user = await tx.user.create({
       data: {
         name: data.name,
-        email: data.email,
+        email,
         passwordHash,
         role: data.role as UserRole,
         unitId: data.unitId,
@@ -310,7 +616,7 @@ export async function updateEmployee(id: string, data: UpdateEmployeeInput) {
       where: { id },
       data: {
         name: data.name,
-        email: data.email,
+        email: data.email ? normalizeEmail(data.email) : undefined,
         unitId: data.unitId,
         phone: data.phone,
         isActive: data.isActive,

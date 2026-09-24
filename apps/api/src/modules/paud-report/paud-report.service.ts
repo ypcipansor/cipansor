@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
+import { claimBlobForRecord, releaseBlobClaimById, type BlobClaimHandle } from '@/utils/blob-claim';
 import { Prisma, PAUDAspect, PAUDAchievementLevel, UserRole } from '@prisma/client';
 import type {
   ListReportsQuery,
@@ -682,14 +683,26 @@ export async function addPhoto(
     throw Errors.badRequest('Maximum 10 photos allowed per report');
   }
 
-  return prisma.pAUDReportPhoto.create({
-    data: {
-      reportId,
-      photoUrl: input.photoUrl,
-      caption: input.caption,
-      orderNumber: input.orderNumber,
-    },
-  });
+  // Claim the photo before the row references it, so a concurrent discard of a
+  // just-uploaded file cannot delete it between its reference probe and this
+  // insert (BUG 4 / flag 9).
+  const claim = await claimBlobForRecord(input.photoUrl, context.userId);
+  if (!claim) {
+    throw Errors.conflict('Foto sedang diproses pihak lain; unggah ulang berkas tersebut');
+  }
+
+  try {
+    return await prisma.pAUDReportPhoto.create({
+      data: {
+        reportId,
+        photoUrl: input.photoUrl,
+        caption: input.caption,
+        orderNumber: input.orderNumber,
+      },
+    });
+  } finally {
+    if (claim) await releaseBlobClaimById(claim).catch(() => undefined);
+  }
 }
 
 export async function updatePhoto(

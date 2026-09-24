@@ -1,13 +1,14 @@
 "use client";
 
-import React, { useState } from "react";
+import { useMemo, useState } from "react";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Search, FileText, Download, Eye } from "lucide-react";
 import type { Book } from "@cipansor/shared";
-import { authFileUrl } from "@/lib/files";
+import { useResolvedFileUrls } from "@/hooks/use-resolved-file-url";
+import { displayableResolvedUrl } from "@/lib/files";
 
 interface DigitalLibraryViewerProps {
   books: Book[];
@@ -20,6 +21,19 @@ interface DigitalLibraryViewerProps {
  */
 export function DigitalLibraryViewer({ books }: DigitalLibraryViewerProps) {
   const [searchTerm, setSearchTerm] = useState("");
+
+  // Book files and covers are private uploads; resolve them (and keep each link
+  // fresh) instead of opening a raw URL that 403s.
+  const bookUrls = useMemo(
+    () =>
+      books
+        .flatMap((b) => [b.fileUrl, b.coverUrl])
+        .filter((u): u is string => !!u),
+    [books],
+  );
+  const resolvedBookFiles = useResolvedFileUrls(bookUrls);
+  const bookFileUrl = (u?: string | null): string | null =>
+    displayableResolvedUrl(u, resolvedBookFiles);
 
   const filteredBooks = books.filter(
     (book) =>
@@ -49,7 +63,7 @@ export function DigitalLibraryViewer({ books }: DigitalLibraryViewerProps) {
               {book.coverUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={book.coverUrl}
+                  src={bookFileUrl(book.coverUrl) ?? undefined}
                   alt={book.title}
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                 />
@@ -65,7 +79,10 @@ export function DigitalLibraryViewer({ books }: DigitalLibraryViewerProps) {
                     size="sm"
                     variant="secondary"
                     onClick={() =>
-                      window.open(authFileUrl(book.fileUrl), "_blank")
+                      window.open(
+                        bookFileUrl(book.fileUrl) ?? undefined,
+                        "_blank",
+                      )
                     }
                   >
                     <Eye className="w-4 h-4 mr-2" /> Baca
@@ -74,7 +91,10 @@ export function DigitalLibraryViewer({ books }: DigitalLibraryViewerProps) {
                     size="sm"
                     variant="secondary"
                     onClick={() =>
-                      window.open(authFileUrl(book.fileUrl), "_blank")
+                      window.open(
+                        bookFileUrl(book.fileUrl) ?? undefined,
+                        "_blank",
+                      )
                     }
                     title="Unduh"
                   >

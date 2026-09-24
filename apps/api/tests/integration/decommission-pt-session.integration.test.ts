@@ -926,14 +926,19 @@ describeDb('decommission migration — legacy PT sessions end', () => {
       const { rows } = await db.query<{ id: string; unit_id: string | null }>(
         `SELECT id, unit_id FROM users WHERE id LIKE 'user-pt%' ORDER BY id`
       );
-      expect(rows.map((r) => r.id)).toEqual([
-        'user-pthome-foundation',
-        'user-pthome-nullscoped',
-        'user-pthome-unitvalid',
-        'user-pt-noassign',
-        'user-pt-only',
-        'user-pt-only2',
-      ]);
+      // Sort in JS: the surviving-user SET is the invariant, and the database's
+      // collation (C vs en_US/ICU, where `-` is ignorable) decides the row order.
+      const ids = rows.map((r) => r.id).sort();
+      expect(ids).toEqual(
+        [
+          'user-pthome-foundation',
+          'user-pthome-nullscoped',
+          'user-pthome-unitvalid',
+          'user-pt-noassign',
+          'user-pt-only',
+          'user-pt-only2',
+        ].sort()
+      );
       for (const row of rows) {
         expect(row.unit_id).toBeNull();
       }

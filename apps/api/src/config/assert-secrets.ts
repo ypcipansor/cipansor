@@ -149,3 +149,96 @@ export function assertProductionSecrets(input: SecretCheckInput = {}): void {
       'unreadable.'
   );
 }
+
+/**
+ * A production `MICROSOFT_TENANT_ID` of `common` is a hole, not a default.
+ *
+ * `common` accepts a token minted in *any* Entra directory whose mailbox
+ * matches a local account, which is a wide net for a single-tenant deployment.
+ * The account still has to exist locally, so it is not an outright bypass — but
+ * it means an attacker who controls *any* Entra tenant can mint a token for a
+ * mailbox they claim, and the only thing between that and a staff account is
+ * the local e-mail match. For a yayasan that runs one directory there is no
+ * reason to accept a token from someone else's, and a warning at boot is
+ * something a deploy log absorbs silently.
+ *
+ * It therefore refuses to start in production. A deployment that genuinely
+ * needs multi-tenant sign-in (several partner directories, say) must say so
+ * explicitly with `MICROSOFT_ALLOW_MULTI_TENANT=true`, which turns the failure
+ * back into a warning — a written, auditable decision rather than a default.
+ */
+export const MICROSOFT_ALLOW_MULTI_TENANT_ENV = 'MICROSOFT_ALLOW_MULTI_TENANT';
+
+/** The tenant values that accept tokens from more than one directory. */
+const MULTI_TENANT_VALUES = new Set(['common', 'organizations', 'consumers']);
+
+function isMultiTenant(tenantId: string | undefined): boolean {
+  return MULTI_TENANT_VALUES.has((tenantId ?? 'common').toLowerCase());
+}
+
+/** True when the deployment has explicitly opted into multi-tenant sign-in. */
+export function microsoftMultiTenantAllowed(
+  flag: string | undefined = process.env[MICROSOFT_ALLOW_MULTI_TENANT_ENV]
+): boolean {
+  return (flag ?? '').trim().toLowerCase() === 'true';
+}
+
+/**
+ * Refuse to boot in production with multi-tenant Microsoft sign-in that no one
+ * explicitly asked for.
+ *
+ * Only enforced when Microsoft SSO is actually configured (`MICROSOFT_CLIENT_ID`
+ * set): a deployment that never uses Microsoft login has no tenant to tighten,
+ * and blocking its startup over an unused default would be a self-inflicted
+ * outage.
+ */
+export function assertProductionMicrosoftTenant(
+  input: {
+    env?: string;
+    tenantId?: string;
+    clientId?: string;
+    allowMultiTenant?: boolean;
+  } = {}
+): void {
+  const env = input.env ?? process.env.NODE_ENV;
+  if (env !== 'production') return;
+
+  const clientId = input.clientId ?? process.env.MICROSOFT_CLIENT_ID;
+  if (!clientId) return;
+
+  const tenantId = input.tenantId ?? process.env.MICROSOFT_TENANT_ID;
+  if (!isMultiTenant(tenantId)) return;
+
+  const allowMultiTenant = input.allowMultiTenant ?? microsoftMultiTenantAllowed();
+  if (allowMultiTenant) return;
+
+  throw new Error(
+    'Refusing to start the API in production with MICROSOFT_TENANT_ID=' +
+      `"${tenantId ?? 'common'}" (multi-tenant): Microsoft SSO would accept a ` +
+      "token minted in ANY Entra tenant, not only the yayasan's. Set it to " +
+      'the directory GUID or verified domain (Entra portal → Overview → ' +
+      `Tenant ID), or set ${MICROSOFT_ALLOW_MULTI_TENANT_ENV}=true to accept ` +
+      'multi-tenant sign-in deliberately.'
+  );
+}
+
+/**
+ * The non-fatal half, kept for the explicit opt-out path: a deployment that set
+ * {@link MICROSOFT_ALLOW_MULTI_TENANT_ENV} still gets told what it chose.
+ */
+export function warnOnLooseMicrosoftTenant(
+  env: string | undefined = process.env.NODE_ENV,
+  tenantId: string | undefined = process.env.MICROSOFT_TENANT_ID
+): string | null {
+  if (env !== 'production') return null;
+  if (!isMultiTenant(tenantId)) return null;
+
+  return (
+    'MICROSOFT_TENANT_ID is "' +
+    (tenantId ?? 'common') +
+    '" in production: Microsoft SSO will accept ' +
+    "a token minted in ANY Entra tenant, not only the yayasan's. Set it to " +
+    'the directory GUID or verified domain (Entra portal → Overview → ' +
+    'Tenant ID) to restrict sign-in to this organisation.'
+  );
+}

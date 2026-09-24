@@ -84,6 +84,7 @@ export const addFile = asyncHandler(async (req: Request, res: Response) => {
   const file = await portfolioService.addPortfolioFile({
     portfolioId: req.params.id,
     ...req.body,
+    holderId: req.user!.sub,
   });
   res.status(201).json(ApiResponse.success(file, 'File berhasil ditambahkan'));
 });
