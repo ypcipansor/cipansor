@@ -1,9 +1,14 @@
 import { Router } from 'express';
 import * as controller from './inventory.controller';
-import { authorize } from '../../middleware/auth';
+import { authenticate, authorize } from '../../middleware/auth';
 import { UserRole } from '@prisma/client';
 
 const router = Router();
+
+// This router never called authenticate, so `req.user` was always empty and
+// every authorize() below answered 401 — the whole inventory module refused
+// everyone, admins included, from at least 2026-07-20 until 2026-09-24.
+router.use(authenticate);
 
 // Categories (Static routes first)
 router.get(
