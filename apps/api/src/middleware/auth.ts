@@ -516,3 +516,14 @@ const GOVERNANCE_ROLE_CODES: string[] = [...SHARED_GOVERNANCE_ROLE_CODES];
 export function isGovernanceRoleCode(roleCode: string): boolean {
   return GOVERNANCE_ROLE_CODES.includes(roleCode);
 }
+
+/**
+ * Accounts that must use a second factor: anyone holding an admin role or a
+ * yayasan organ role (Pembina, Pengurus, Pengawas) in **any** active
+ * assignment — not only the primary one, or an account could sign in on a
+ * teaching role and switch into its Pembina role without 2FA (the yayasan
+ * decided on 2026-09-24 that the Kiai is both pimpinan pesantren and Pembina).
+ */
+export function requiresSecondFactor(roleCodes: Array<string | null | undefined>): boolean {
+  return roleCodes.some((c) => !!c && (isAdminRoleCode(c) || isGovernanceRoleCode(c)));
+}

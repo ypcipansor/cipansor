@@ -137,6 +137,7 @@ import { PERMISSIONS, permissionsForRoleCode } from '../src/modules/roles/permis
 // can't leave the seeded demo logins out of sync with what the web login page
 // lists. This is the single source of truth for the per-role demo accounts.
 import { DEMO_ACCOUNTS, DEMO_PASSWORD } from '../../../packages/shared/src/types/demo-accounts';
+import { ADMIN_ROLE_CODES, GOVERNANCE_ROLE_CODES } from '../../../packages/shared/src/roles';
 
 // RoleCode comes straight from the generated Prisma client — do NOT keep a
 // local copy here. A shadow copy previously drifted out of sync with the
@@ -8086,8 +8087,17 @@ async function main() {
   // fixed secret never lands in a real environment's seed.
   if (process.env.E2E_FIXED_2FA === '1') {
     const fixedSecret = process.env.E2E_2FA_SECRET || 'NTGHH5U5LDHIYARFFNGFQKQHARJU7GBE';
+    // Everyone login forces through 2FA: the legacy admin column, plus any
+    // active admin or yayasan-organ assignment (the organs' legacy column is
+    // STAFF on some accounts, e.g. ketua@).
+    const secondFactorCodes = [...ADMIN_ROLE_CODES, ...GOVERNANCE_ROLE_CODES] as RoleCode[];
     const updated = await prisma.user.updateMany({
-      where: { role: { in: [UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN] } },
+      where: {
+        OR: [
+          { role: { in: [UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN] } },
+          { userRoles: { some: { isActive: true, role: { code: { in: secondFactorCodes } } } } },
+        ],
+      },
       data: {
         isTwoFactorEnabled: true,
         twoFactorSecret: fixedSecret,
