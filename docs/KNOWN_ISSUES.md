@@ -44,6 +44,13 @@ Diperbaiki sesudahnya (2026-09-24):
   orang tua hanya bisa membuka pembayaran anaknya sendiri, dan kuitansi tidak
   terbit untuk bukti transfer yang belum disahkan. Kop kuitansi tadinya
   "Yayasan Pendidikan Islam Al-Hidayah, Jl. Pendidikan No. 123" (karangan).
+- **Daftar santri "0 of 0 results"** (PR ini): bukan sebagian peran, tetapi
+  SEMUA — `GET /students` mengirim `meta.pagination`, halaman membaca
+  `meta.total`, jadi total 0 dan hanya satu halaman: siapa pun hanya bisa
+  menjangkau 10 santri pertama. Sekaligus: TU (yang di sidebar-nya ada "Data
+  Siswa" dan di API memegang `STUDENT_VIEW/CREATE/UPDATE`) tadinya dilempar ke
+  `/unauthorized` oleh gerbang halaman itu sendiri; tombol Tambah/Edit/Hapus
+  kini mengikuti izin API (guru tidak lagi melihat tombol yang pasti ditolak).
 
 Yang masih terbuka:
 
@@ -53,7 +60,6 @@ Yang masih terbuka:
 - **`/foundation/dashboard`**: Net Income Rp 0 karena akuntansi belum
   tersambung (akun bersifat global, sedangkan pencarian dilakukan per unit).
   Legenda grafik talenta menampilkan "value".
-- **Daftar santri**: "0 of 0 results" untuk sebagian peran.
 - **Layar TULIS Tagihan & SPP** masih memakai kontrak khayalan yang sama:
   "Buat Tagihan" mengirim `billType` (API menolak — butuh `paymentTypeId`),
   "Tagihan Massal" memanggil `POST /finance/invoices/bulk` (tidak ada), "Catat
@@ -63,6 +69,12 @@ Yang masih terbuka:
 - **Siapa boleh membuka Tagihan & SPP**: `STAFF` lama mencakup perawat,
   pustakawan, keamanan, dan peran usaha; semuanya bisa membuka daftar tagihan
   unitnya. Perlu keputusan apakah dipersempit ke TU + bendahara.
+- **Gerbang per halaman (`allowedRoles`) lawan `rbac.ts`**: 23 halaman
+  menolak peran yang diizinkan `rbac.ts`. Sebagian besar disengaja (prefiks
+  `/settings` untuk profil sendiri, `/settings/roles` khusus Super Admin), tapi
+  beberapa perlu ditinjau: `/homeroom/performance` dan
+  `/rapor-pesantren/config` untuk TEACHER (wali kelas),
+  `/analytics/parent-engagement` untuk TEACHER/STAFF.
 - **Kop raport merdeka** (`assessment/raport-merdeka`) tertulis mati "SMP
   Cipansor, Jl. Pendidikan No. 123, Kabupaten Bogor" untuk semua unit.
 - **Ringkasan SPMB**: 0 untuk Ketua dan Kepala karena API hanya mengizinkan
