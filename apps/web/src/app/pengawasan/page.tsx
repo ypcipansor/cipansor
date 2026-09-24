@@ -105,6 +105,10 @@ import type {
 } from "@cipansor/shared";
 import { useAuthStore } from "@/stores/auth";
 import { getPrimaryRoleCode } from "@/lib/rbac";
+import {
+  resolvePengawasanTab,
+  visiblePengawasanTabs,
+} from "@/lib/pengawasan-tabs";
 import { useUnits } from "@/hooks/use-units";
 import {
   boardSuspensionFormDefaults,
@@ -706,17 +710,24 @@ function PengawasanPageContent() {
     periodicForm.reset();
   };
 
-  // Land on the first tab the role may actually use: `defaultValue` pointing at
-  // a hidden `TabsContent` renders an empty panel.
-  const defaultTab = access.canReadAudits
-    ? "audits"
-    : access.canHandleWbs
-      ? "wbs"
-      : access.canReadSuspensions
-        ? "suspensions"
-        : access.canViewArrears
-          ? "arrears"
-          : "eoffice";
+  // Land on the first tab the role may actually use. `Tabs` is controlled —
+  // `defaultValue` is read once at mount, and `authUser` arrives asynchronously
+  // (the persisted blob, then `/auth/me`), so an uncontrolled `defaultValue`
+  // computed while the user is still null latched onto `eoffice`, a panel a
+  // non-reporting role never renders: a blank page with no way back.
+  const visibleTabs = React.useMemo(
+    () => visiblePengawasanTabs(getPrimaryRoleCode(authUser)),
+    [authUser],
+  );
+
+  const [activeTab, setActiveTab] = useState<string>("");
+
+  // Keep the selection on a visible tab: the first one until the user picks,
+  // and whenever access shrinks (a role switch, or the user object loading in)
+  // so the panel can never point at a tab that is no longer rendered.
+  React.useEffect(() => {
+    setActiveTab((previous) => resolvePengawasanTab(visibleTabs, previous));
+  }, [visibleTabs]);
 
   return (
     <div className="container mx-auto py-6 space-y-8">
@@ -748,7 +759,7 @@ function PengawasanPageContent() {
         </div>
       </div>
 
-      <Tabs defaultValue={defaultTab} className="space-y-6">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         {/*
           Each tab is shown only to a role the API would answer. A tab whose
           endpoint returns 403 is a dead end the user only discovers after
