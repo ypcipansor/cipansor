@@ -180,9 +180,7 @@ export function unglyphableDecisionPdfFields(
   for (const [field, value] of decisionPdfTextFieldTargets(data)) {
     // Karakter tata letak (`\n`/`\r`/`\t`) dilewati: ia tidak pernah digambar
     // sebagai glyph, jadi ketiadaan glyph-nya bukan karakter yang hilang.
-    const chars = [
-      ...new Set([...value].filter((ch) => !isLayoutOnlyChar(ch) && !hasGlyph(ch))),
-    ];
+    const chars = [...new Set([...value].filter((ch) => !isLayoutOnlyChar(ch) && !hasGlyph(ch)))];
     if (chars.length > 0) offenders.push({ field, chars });
   }
   return offenders;

@@ -139,10 +139,7 @@ describe('generateDecisionPdf', () => {
   it('merender catatan suara multibaris (regresi finding 2)', async () => {
     const buf = await generateDecisionPdf({
       ...data,
-      votes: [
-        { ...data.votes[0], note: 'baris1\nbaris2\r\nbaris3' },
-        data.votes[1],
-      ],
+      votes: [{ ...data.votes[0], note: 'baris1\nbaris2\r\nbaris3' }, data.votes[1]],
     });
     expect(buf.length).toBeGreaterThan(0);
   });
@@ -156,9 +153,9 @@ describe('generateDecisionPdf', () => {
   });
 
   it('TETAP menolak emoji walau ada baris baru (pemeriksaan glyph tidak melemah)', async () => {
-    await expect(
-      generateDecisionPdf({ ...data, body: 'baris1\nbaris2 🎉' })
-    ).rejects.toThrow(/glyph/i);
+    await expect(generateDecisionPdf({ ...data, body: 'baris1\nbaris2 🎉' })).rejects.toThrow(
+      /glyph/i
+    );
   });
 
   it('MELEMPAR ketika nama anggota memuat emoji (regresi #2)', async () => {

@@ -201,7 +201,7 @@ export default function FoundationDecisionDetailPage() {
       // justru akan ditolak sebagai duplikat.
       if (result.sealDeferred) {
         toast.info(
-          "Suara Anda tercatat. E-seal belum dapat dibubuhkan saat ini; suara Anda tetap sah dan keputusan akan disegel setelah masalah dokumen diselesaikan."
+          "Suara Anda tercatat. E-seal belum dapat dibubuhkan saat ini; suara Anda tetap sah dan keputusan akan disegel setelah masalah dokumen diselesaikan.",
         );
       }
     } catch (error) {

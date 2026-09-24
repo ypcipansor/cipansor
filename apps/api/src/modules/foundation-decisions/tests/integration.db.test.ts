@@ -2960,9 +2960,7 @@ describe.skipIf(!RUN)('foundation-decisions integrasi PostgreSQL', () => {
       },
     });
     // PENTING: TIDAK ada UserSigningKeyHistory di sini — itulah inti temuan.
-    expect(
-      await prisma.userSigningKeyHistory.count({ where: { userId: voter.id } })
-    ).toBe(0);
+    expect(await prisma.userSigningKeyHistory.count({ where: { userId: voter.id } })).toBe(0);
 
     let decisionId: string | null = null;
     try {

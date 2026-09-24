@@ -1918,8 +1918,7 @@ export const FoundationDecisionService = {
             ? previewArtifact
             : null;
         const needsApproval =
-          evaluation.outcome === 'APPROVED' &&
-          fresh.status !== FoundationDecisionStatus.APPROVED;
+          evaluation.outcome === 'APPROVED' && fresh.status !== FoundationDecisionStatus.APPROVED;
         // Finding 3 (BUG severe): bila penyiapan artefak GAGAL (bukan sekadar
         // basi karena penyisipan suara lain), suara penentu tetap harus
         // tersimpan. Sebelumnya kegagalan itu merambat keluar transaksi,
