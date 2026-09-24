@@ -76,6 +76,13 @@ function VerifyContent() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    // Hasil lama untuk berkas LAIN harus dibuang. Tanpa ini, memilih berkas
+    // kedua tepat setelah berkas pertama dinyatakan "sah" meninggalkan judul
+    // "Dokumen Sah & Terverifikasi" di layar — padahal yang dinyatakan sah
+    // adalah berkas yang sudah tidak dipilih lagi, dan berkas kedua belum
+    // diperiksa sama sekali. Judul keabsahan yang menempel pada berkas yang
+    // salah adalah persis klaim palsu yang halaman ini ada untuk mencegahnya.
+    setUploadResult(null);
     if (file.type !== "application/pdf") {
       setUploadError("Format berkas harus PDF.");
       setSelectedFile(null);

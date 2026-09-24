@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import type { FoundationDecisionVerificationDTO } from "@cipansor/shared";
 
 /**
@@ -20,16 +20,18 @@ const tokenState = {
   error: null as unknown,
 };
 
+const pdfState = {
+  mutateAsync: vi.fn(),
+  isPending: false,
+};
+
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams("token=tok-1"),
 }));
 
 vi.mock("@/hooks/use-foundation-decisions", () => ({
   useVerifyFoundationDecision: () => tokenState,
-  useVerifyFoundationDecisionPdf: () => ({
-    mutateAsync: vi.fn(),
-    isPending: false,
-  }),
+  useVerifyFoundationDecisionPdf: () => pdfState,
   FOUNDATION_ORGAN_LABEL: { PEMBINA: "Dewan Pembina" },
   FOUNDATION_STATUS_LABEL: { APPROVED: "Disahkan" },
   FOUNDATION_KIND_LABEL: { CIRCULAR: "Sirkuler" },
@@ -154,5 +156,74 @@ describe("halaman verifikasi keputusan publik", () => {
     // Keabsahan TETAP dinyatakan — itu satu-satunya hal yang boleh dibaca anonim.
     expect(screen.getByText(/Dokumen Sah & Terverifikasi/)).toBeTruthy();
     expect(screen.getByText(/tidak dipublikasikan/)).toBeTruthy();
+  });
+
+  /**
+   * Regresi: memilih berkas BARU harus membuang hasil berkas LAMA.
+   *
+   * `handleFileChange` dulu tidak menyentuh `uploadResult`. Berkas pertama
+   * diverifikasi "sah", lalu pengguna memilih berkas kedua — judul "Dokumen Sah
+   * & Terverifikasi" milik berkas pertama tetap terpampang di atas berkas yang
+   * kini terpilih dan belum diperiksa. Itu jaminan keabsahan pada dokumen yang
+   * salah, tepat yang halaman ini ada untuk mencegahnya.
+   */
+  it("membuang hasil verifikasi berkas sebelumnya saat berkas baru dipilih", async () => {
+    pdfState.mutateAsync.mockResolvedValue(dto({ isValid: true }));
+    const { container } = render(<PublicVerifyDecisionPage />);
+
+    const input = container.querySelector(
+      'input[type="file"]'
+    ) as HTMLInputElement;
+
+    const fileA = new File(["a"], "risalah-a.pdf", {
+      type: "application/pdf",
+    });
+    fireEvent.change(input, { target: { files: [fileA] } });
+    fireEvent.click(screen.getByRole("button", { name: /Verifikasi Berkas/ }));
+
+    // Berkas pertama dinyatakan sah.
+    expect(
+      await screen.findByText(/Dokumen Sah & Terverifikasi/)
+    ).toBeTruthy();
+
+    // Pilih berkas KEDUA yang belum diverifikasi: hasil lama wajib hilang.
+    const fileB = new File(["b"], "risalah-b.pdf", {
+      type: "application/pdf",
+    });
+    fireEvent.change(input, { target: { files: [fileB] } });
+
+    await waitFor(() =>
+      expect(screen.queryByText(/Dokumen Sah & Terverifikasi/)).toBeNull()
+    );
+    expect(screen.getByText(/risalah-b\.pdf/)).toBeTruthy();
+  });
+
+  it("memilih berkas non-PDF juga membuang hasil lama dan menampilkan galat", async () => {
+    pdfState.mutateAsync.mockResolvedValue(dto({ isValid: true }));
+    const { container } = render(<PublicVerifyDecisionPage />);
+
+    const input = container.querySelector(
+      'input[type="file"]'
+    ) as HTMLInputElement;
+    fireEvent.change(input, {
+      target: {
+        files: [new File(["a"], "risalah-a.pdf", { type: "application/pdf" })],
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Verifikasi Berkas/ }));
+    expect(
+      await screen.findByText(/Dokumen Sah & Terverifikasi/)
+    ).toBeTruthy();
+
+    fireEvent.change(input, {
+      target: {
+        files: [new File(["x"], "gambar.png", { type: "image/png" })],
+      },
+    });
+
+    await waitFor(() =>
+      expect(screen.queryByText(/Dokumen Sah & Terverifikasi/)).toBeNull()
+    );
+    expect(screen.getByText(/Format berkas harus PDF\./)).toBeTruthy();
   });
 });
