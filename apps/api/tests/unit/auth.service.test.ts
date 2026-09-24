@@ -729,6 +729,10 @@ describe('AuthService', () => {
       // pre-lock snapshot — the web derives its primary role from this field.
       expect(result.user.userRoles).toEqual(liveAssignments);
       expect(result.user.userRoles[0].role.code).toBe('SDIT_GURU');
+      // The token and the response describe the same role.
+      expect(mockGenerateTokenPair).toHaveBeenCalledWith(
+        expect.objectContaining({ roleCode: 'SDIT_GURU', roleId: 'role-id-1' })
+      );
     });
   });
 
