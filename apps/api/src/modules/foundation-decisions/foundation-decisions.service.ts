@@ -56,6 +56,7 @@ import {
   type ScryptParams,
 } from '@/utils/esign';
 import { assertCanSign } from '@/utils/esign-lifecycle';
+import { lockSigningKeyTransition } from '@/utils/signing-key-lock';
 import {
   createSealMaterial,
   sealCanSign,
@@ -681,12 +682,11 @@ function isUniqueConstraintError(err: unknown): boolean {
  * VOTING, lalu salah satunya menutup keputusan setelah yang lain menghitung
  * kuorum — sehingga suara yang sah tidak pernah masuk ke PDF final.
  *
- * URUTAN KUNCI (global, mencegah deadlock): (1) tabel
- * `foundation_decision_rules`, (2) baris `foundation_decisions` di sini,
- * (3) `user_role_assignments` → `roles` → `users` saat snapshot, (4) baris
- * `users` aktor. Semua jalur foundation memakai urutan ini; `upsertRule`
- * (1→4) dan `create` (1→3→4) tidak pernah berputar, dan mengambil 4 sebelum 1
- * DILARANG. Rinciannya di dokumen review §7.11.
+ * URUTAN KUNCI (global, anti-deadlock): (0) advisory per-pengguna transisi
+ * `UserSigningKey` bila menulis suara, (1) `foundation_decision_rules`,
+ * (2) baris `foundation_decisions`, (3) `user_role_assignments` → `roles` →
+ * `users`, (4) baris `users` aktor; 4 sebelum 1 DILARANG; (0) selalu pertama
+ * (dipakai `castVote` + seluruh transisi kunci esign) — §7.2, §7.11.
  */
 async function lockDecision(client: DbClient, id: string): Promise<void> {
   await client.$executeRaw`SELECT id FROM foundation_decisions WHERE id = ${id} FOR UPDATE`;
@@ -1625,6 +1625,16 @@ export const FoundationDecisionService = {
       }
 
       const result = await prisma.$transaction(async (tx) => {
+        // Serialkan terhadap SELURUH transisi kunci tanda tangan pengguna ini
+        // (`esign.activateKey`/`decideRequest`/`revokeKey`) sebelum status kunci
+        // dibaca ulang dan suara ditulis. Semua jalur itu memakai advisory lock
+        // per-pengguna yang SAMA (`utils/signing-key-lock`). Tanpa lock ini,
+        // rotasi/pencabutan yang commit di antara `findUnique` dan `INSERT`
+        // meninggalkan baris suara tersimpan yang tak lagi autentik —
+        // `applyLocked`/`isVoteAuthentic` menolaknya, tetapi barisnya menempati
+        // slot unik pemilih sehingga percobaan ulang dijawab "sudah memilih".
+        // Lihat §7.2 dokumen review.
+        await lockSigningKeyTransition(tx, actor.id);
         // Kunci baris keputusan dan periksa ulang status DI DALAM transaksi.
         // Pembuatan suara, pembacaan ulang suara, evaluasi kuorum, dan
         // finalisasi berjalan atomik terhadap pemilih paralel.

@@ -75,35 +75,7 @@ import {
   renewedExpiry,
 } from '@/utils/esign-lifecycle';
 import { revokeSigningKeyHistory, supersedeSigningKeyHistory } from '@/utils/signing-key-history';
-
-/**
- * Serialisasi transisi `UserSigningKey` PER PENGGUNA.
- *
- * `activateKey` melakukan pola baca-lalu-tulis (findUnique → deleteMany → create)
- * yang tidak aman terhadap balapan: dua permintaan yang berjalan bersamaan
- * sama-sama membaca "tidak ada kunci aktif", lalu sama-sama menulis. Yang kalah
- * menghapus kunci yang baru saja dibuat pemenangnya, sehingga kunci yang
- * dikembalikan pemenang ke pemanggilnya sudah tidak berlaku sebelum responsnya
- * sampai.
- *
- * Kunci baris biasa tidak cukup: baris `UserSigningKey` seorang pengguna bisa
- * BELUM ADA (penerbitan pertama) sehingga tak ada apa pun untuk dikunci.
- * Advisory lock transaksi (`pg_advisory_xact_lock`) berlaku atas NILAI kunci,
- * bukan baris, dan dilepas otomatis saat transaksi berakhir. Kuncinya memakai
- * `hashtextextended("userId")` agar seluruh pengguna dapat diserialkan tanpa
- * tabel tambahan; bentrok hash antara dua pengguna hanya menambah tunggu, tidak
- * pernah menggabungkan dua transisi yang sah.
- *
- * Jalur lain yang mengubah kunci pengguna yang sama (`decideRequest`,
- * `revokeKey`) mengambil kunci ini juga, sehingga pemeriksaan status di dalam
- * lock selalu melihat keadaan yang sudah final.
- */
-async function lockSigningKeyTransition(
-  tx: Prisma.TransactionClient,
-  userId: string
-): Promise<void> {
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${userId}, 0))`;
-}
+import { lockSigningKeyTransition } from '@/utils/signing-key-lock';
 
 /** Baris kunci → bahan kriptografi yang dimengerti utils/esign. */
 function toMaterial(key: {
@@ -1023,8 +995,6 @@ export const EsignService = {
       throw asHttpError(e);
     }
 
-    const revokedAt = new Date();
-
     /**
      * Pencabutan — update kunci, cap riwayat, temuan surat, dan audit — dalam
      * SATU transaksi.
@@ -1041,12 +1011,19 @@ export const EsignService = {
      * Satu `revokedAt` dipakai untuk seluruh baris, sehingga cap waktu kunci,
      * riwayat, dan audit tidak dapat menyimpang satu sama lain.
      */
-    const { signedWithThisKey } = await prisma.$transaction(async (tx) => {
+    const { signedWithThisKey, revokedAt } = await prisma.$transaction(async (tx) => {
       // Serialkan terhadap transisi kunci lain pengguna ini. `updateMany`
       // bersyarat di bawah sudah atomik terhadap pencabutan paralel, tetapi
       // tanpa lock `activateKey` dapat menyisipkan kunci pengganti di sela
       // pembacaan dan menulis, sehingga cap riwayat menunjuk kunci yang salah.
       await lockSigningKeyTransition(tx, userId);
+
+      // Cap waktu diambil DI DALAM lock, bukan sebelum: `castVote` mengambil
+      // advisory lock yang sama sebelum menulis suara, sehingga pencabutan yang
+      // menunggu di sini tidak dapat menstempel `revokedAt` mendahului suara
+      // yang sudah menandatangani di bawah lock — yang akan membuat suara itu
+      // tersimpan tetapi tak lagi autentik.
+      const revokedAt = new Date();
 
       /**
        * UPDATE bersyarat (`revoked_at IS NULL`) — gerbang transisi yang
@@ -1113,7 +1090,7 @@ export const EsignService = {
         },
       });
 
-      return { signedWithThisKey: affected };
+      return { signedWithThisKey: affected, revokedAt };
     });
 
     eventBus.emit('notification:send', {

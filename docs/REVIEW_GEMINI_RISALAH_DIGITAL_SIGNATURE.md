@@ -407,6 +407,22 @@ atau SESUDAH, bukan di tengahnya. `signedAt` sengaja ditetapkan sebelum
 penandatanganan: bila ditetapkan sesudah, cap rotasi akan jatuh mendahuluinya
 dan suara yang sudah commit menjadi tidak autentik.
 
+**Koreksi (audit ulang).** Klaim "cukup tanpa lock baru" di atas TIDAK benar
+untuk `revokeKey`. Cap `revokedAt` dulu diambil SEBELUM advisory lock, dan
+`castVote` tidak mengambil advisory lock itu — jadi `revokeKey` dapat membaca
+kunci, tertunda, sementara `castVote` menandatangani dan menulis suara, lalu
+`revokeKey` commit dengan `revokedAt` yang jatuh mendahului `signedAt` suara.
+Hasilnya: suara tersimpan-tetapi-tak-autentik yang menempati slot unik
+`(decisionId, userId)` sehingga pemilih terkunci dari percobaan ulang.
+
+Perbaikannya: (a) cap `revokedAt` diambil DI DALAM advisory lock; (b) `castVote`
+mengambil advisory per-pengguna yang SAMA
+(`utils/signing-key-lock.ts`, `pg_advisory_xact_lock(hashtextextended(userId, 0))`)
+sebagai langkah PERTAMA transaksinya, sebelum kunci tanda tangan dibaca ulang
+dan sebelum suara ditulis. Kedua keluarga transaksi kini menunggu satu sama lain
+di langkah pertama, sehingga tidak ada deadlock; bukti overlap nyata ada di
+`integration.db.test.ts` (`race suara melawan pencabutan kunci`).
+
 ### 7.3 Masa berlaku kunci pada `vote.signedAt`
 
 `keyUsableAt` membaca `issuedAt`, `revokedAt`, dan `supersededAt` terhadap

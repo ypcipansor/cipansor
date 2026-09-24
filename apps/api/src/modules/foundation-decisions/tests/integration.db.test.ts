@@ -64,6 +64,31 @@ async function waitForLockWaiterOnRules(client: PrismaClient, timeoutMs: number)
   return waitForLockWaiterOnRelation(client, 'foundation_decision_rules', timeoutMs);
 }
 
+/**
+ * Tunggu sampai ADA backend yang menunggu ADVISORY LOCK (`granted = false`).
+ *
+ * Dipakai untuk membuktikan `castVote` benar-benar memakai protokol lock
+ * transisi kunci yang SAMA dengan `revokeKey`/`activateKey`: bila pemeriksa
+ * hanya melihat transaksi mana pun yang terparkir, penunggu kunci BARIS
+ * (mis. `ensureSigningKeyHistory`) akan salah dihitung sebagai bukti. Probe ini
+ * spesifik pada `locktype = 'advisory'`.
+ */
+async function waitForAdvisoryLockWaiter(
+  client: PrismaClient,
+  timeoutMs: number
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const rows = await client.$queryRaw<Array<{ n: number }>>`
+      SELECT count(*)::int AS n
+      FROM pg_locks
+      WHERE locktype = 'advisory' AND granted = false AND pid <> pg_backend_pid()`;
+    if (rows[0]?.n) return true;
+    await new Promise((r) => setTimeout(r, 25));
+  }
+  return false;
+}
+
 async function waitForLockWaiterOnRelation(
   client: PrismaClient,
   relation: string,
@@ -2413,6 +2438,145 @@ describe.skipIf(!RUN)('foundation-decisions integrasi PostgreSQL', () => {
 
       await b.query('COMMIT');
       await expect(votePromise).rejects.toThrow(/tidak lagi memegang peran organ yang aktif/);
+      expect(await prisma.foundationDecisionVote.count({ where: { decisionId } })).toBe(0);
+    } finally {
+      await b.end().catch(() => {});
+      if (decisionId) {
+        await prisma.foundationDecisionVote.deleteMany({ where: { decisionId } });
+        await prisma.foundationDecisionMember.deleteMany({ where: { decisionId } });
+        await prisma.auditLog.deleteMany({ where: { entityId: decisionId } });
+        await prisma.foundationDecision.delete({ where: { id: decisionId } });
+      }
+      await prisma.userSigningKeyHistory.deleteMany({ where: { userId: voter.id } });
+      await prisma.userSigningKey.deleteMany({ where: { userId: voter.id } });
+      await prisma.userRoleAssignment.deleteMany({
+        where: { userId: { in: [creator.id, voter.id] } },
+      });
+      await prisma.user.deleteMany({ where: { id: { in: [creator.id, voter.id] } } });
+    }
+  });
+
+  /**
+   * SECURITY (real PostgreSQL) — race suara melawan PENCABUTAN KUNCI.
+   *
+   * `castVote` membaca `UserSigningKey` dan menandatangani SEBELUM transaksi.
+   * `esign.revokeKey` menstempel `revokedAt` lalu menulis riwayat. Sebelum
+   * perbaikan, `revokedAt` diambil SEBELUM advisory lock dan `castVote` tidak
+   * mengambil lock itu, sehingga transaksi suara dapat berjalan di antara
+   * pembacaan dan penulisan `revokedAt` yang tertunda: suara ter-commit dengan
+   * `signedAt >= revokedAt`, menjadi TIDAK autentik sesudahnya, dan—karena
+   * menempati slot unik `(decisionId, userId)`—mengunci pemilih dari percobaan
+   * ulang.
+   *
+   * Bukti overlap: koneksi B memegang advisory lock pemilih (mensimulasikan
+   * `revokeKey` yang sedang berjalan), `castVote` harus MEMBLOKIR pada advisory
+   * lock itu (`waitForAdvisoryLockWaiter`), lalu setelah B menstempel
+   * `revokedAt` pada baris kunci/riwayat dan COMMIT, suara DITOLAK sebagai
+   * konflik — bukan ter-commit sebagai baris tak autentik.
+   */
+  it('race suara melawan pencabutan kunci: suara ditolak, bukan tersimpan tak autentik', async () => {
+    const suffix = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const creator = await prisma.user.create({
+      data: {
+        id: `itest-krev-creator-${suffix}`,
+        email: `itest-krev-creator-${suffix}@example.test`,
+        name: 'Pembuat Cabut',
+        passwordHash: 'x',
+      },
+    });
+    const voter = await prisma.user.create({
+      data: {
+        id: `itest-krev-voter-${suffix}`,
+        email: `itest-krev-voter-${suffix}@example.test`,
+        name: 'Pemilih Cabut',
+        passwordHash: 'x',
+      },
+    });
+    const pembina = await prisma.role.upsert({
+      where: { code: 'YAYASAN_PEMBINA' },
+      create: { code: 'YAYASAN_PEMBINA', name: 'Pembina', realm: 'YAYASAN' },
+      update: {},
+    });
+    await prisma.userRoleAssignment.create({
+      data: { userId: creator.id, roleId: pembina.id, isActive: true, isPrimary: true },
+    });
+    await prisma.userRoleAssignment.create({
+      data: { userId: voter.id, roleId: pembina.id, isActive: true },
+    });
+    const voterKey = createKeyMaterial('krev-vote-pass');
+    const key = await prisma.userSigningKey.create({
+      data: {
+        id: `itest-krev-key-${suffix}`,
+        userId: voter.id,
+        algorithm: voterKey.algorithm,
+        publicKey: voterKey.publicKey,
+        encryptedPrivateKey: voterKey.encryptedPrivateKey,
+        kdfSalt: voterKey.kdfSalt,
+        kdfParams: voterKey.kdfParams as never,
+        iv: voterKey.iv,
+        authTag: voterKey.authTag,
+        approvedAt: new Date(),
+        expiresAt: new Date(Date.now() + 365 * 24 * 3600 * 1000),
+      },
+    });
+    await prisma.userSigningKeyHistory.create({
+      data: {
+        id: `itest-krev-hist-${suffix}`,
+        userId: voter.id,
+        algorithm: voterKey.algorithm,
+        publicKey: voterKey.publicKey,
+        fingerprint: publicKeyFingerprint(voterKey.publicKey),
+        issuedAt: new Date(Date.now() - 60_000),
+      },
+    });
+
+    let decisionId: string | null = null;
+    // Koneksi B: memegang advisory lock yang SAMA dengan `lockSigningKeyTransition`
+    // (hashtextextended(userId, 0)) supaya `castVote` benar-benar terparkir.
+    const b = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    try {
+      decisionId = await FoundationDecisionService.create(
+        { id: creator.id, roleCode: 'YAYASAN_PEMBINA' },
+        {
+          organType: 'PEMBINA',
+          kind: 'MEETING',
+          subject: 'Uji race pencabutan kunci',
+          body: 'Naskah uji balapan antara pemberian suara dan pencabutan kunci.',
+          decisionType: 'pengesahan-rencana-kerja',
+        }
+      );
+
+      await b.connect();
+      await b.query('BEGIN');
+      await b.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [voter.id]);
+
+      // Suara dijalankan pada koneksi Prisma lain; ia harus MEMBLOKIR di
+      // advisory lock yang dipegang B sebelum menulis apa pun.
+      const votePromise = FoundationDecisionService.castVote(
+        { id: voter.id, roleCode: 'YAYASAN_PEMBINA' },
+        decisionId,
+        { choice: 'APPROVE', passphrase: 'krev-vote-pass' }
+      );
+      const blocked = await waitForAdvisoryLockWaiter(prisma, 8000);
+      expect(blocked).toBe(true);
+
+      // B mencabut kunci pada baris + riwayat dengan cap waktu jauh di masa
+      // lalu, sehingga begitu lock dilepas suara ini PASTI tidak boleh ditulis
+      // (bukan sekadar "tidak autentik"), lalu melepas lock.
+      await b.query(
+        `UPDATE "user_signing_keys" SET "revoked_at" = NOW() - INTERVAL '60 seconds' WHERE "id" = $1`,
+        [key.id]
+      );
+      await b.query(
+        `UPDATE "user_signing_key_history" SET "revoked_at" = NOW() - INTERVAL '60 seconds' WHERE "user_id" = $1`,
+        [voter.id]
+      );
+      await b.query('COMMIT');
+
+      // Serialisasi terjamin: suara ditolak sebagai konflik, dan TIDAK ada baris
+      // tersimpan yang menempati slot unik sekaligus tak autentik. Inilah yang
+      // mencegah "tersimpan-tetapi-tak-sah lalu terkunci dari percobaan ulang".
+      await expect(votePromise).rejects.toThrow();
       expect(await prisma.foundationDecisionVote.count({ where: { decisionId } })).toBe(0);
     } finally {
       await b.end().catch(() => {});
