@@ -193,9 +193,16 @@ export const usePublicAddWbsComment = () => {
   });
 };
 
-export const useWbsReports = () => {
+/**
+ * The WBS register. `enabled` gates the request on the same permission the
+ * page uses to render the tab (`access.canHandleWbs`): without it a role that
+ * only holds audit access fired this request anyway and took a 403 toast for a
+ * panel it cannot see.
+ */
+export const useWbsReports = (enabled = true) => {
   return useQuery({
     queryKey: ["wbs-reports"],
+    enabled,
     queryFn: async () => {
       const res = await api.get("/pengawasan/wbs/reports");
       return res.data.data as WbsReportDto[];
@@ -262,9 +269,14 @@ export const useAddWbsHandlerComment = () => {
 
 // ==================== BOARD SUSPENSIONS HOOKS ====================
 
-export const useBoardSuspensions = () => {
+/**
+ * The board-suspension register. `enabled` mirrors `access.canReadSuspensions`
+ * so a role without register access does not request it and toast a 403.
+ */
+export const useBoardSuspensions = (enabled = true) => {
   return useQuery({
     queryKey: ["board-suspensions"],
+    enabled,
     queryFn: async () => {
       const res = await api.get("/pengawasan/board-suspensions");
       return res.data.data as BoardSuspensionDto[];
@@ -347,9 +359,14 @@ export const useLiftBoardSuspension = () => {
 
 // ==================== FINANCIAL ARREARS & PERIODIC OVERSIGHT HOOKS ====================
 
-export const useFinancialArrears = (unitId?: string) => {
+/**
+ * The arrears oversight report. `enabled` mirrors `access.canViewArrears` so
+ * the request is only made for a role the API would accept.
+ */
+export const useFinancialArrears = (unitId?: string, enabled = true) => {
   return useQuery({
     queryKey: ["financial-arrears", unitId],
+    enabled,
     queryFn: async () => {
       const res = await api.get("/pengawasan/financial-arrears", {
         params: { unitId },

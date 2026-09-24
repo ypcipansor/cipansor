@@ -313,9 +313,13 @@ describe('BoardSuspensionService Unit Tests', () => {
       userRoles: [{ isActive: true, expiresAt: null, role: { code: 'YAYASAN_KETUA' } }],
     });
     (prisma.boardMemberSuspension.findFirst as any).mockResolvedValue(null);
-    (prisma.$queryRaw as any).mockResolvedValueOnce([
-      { deleted_at: new Date('2026-04-01T00:00:00.000Z') },
-    ]);
+    (prisma.$queryRaw as any)
+      // Up-front `{target, delegate}` lock pass: no delegate here, so one
+      // `users` SELECT and one `user_role_assignments` SELECT.
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      // Then the target-state read sees the soft-delete.
+      .mockResolvedValue([{ deleted_at: new Date('2026-04-01T00:00:00.000Z') }]);
 
     await expect(
       boardSuspensionService.suspendBoardMember(
@@ -343,7 +347,13 @@ describe('BoardSuspensionService Unit Tests', () => {
       userRoles: [{ isActive: true, expiresAt: null, role: { code: 'YAYASAN_KETUA' } }],
     });
     (prisma.boardMemberSuspension.findFirst as any).mockResolvedValue(null);
-    (prisma.$queryRaw as any).mockResolvedValueOnce([{ is_active: false, deleted_at: null }]);
+    (prisma.$queryRaw as any)
+      // Up-front `{target, delegate}` lock pass: users, then assignments.
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      // Target-state read sees the concurrent deactivation and aborts before the
+      // delegate is ever inspected.
+      .mockResolvedValue([{ is_active: false, deleted_at: null }]);
 
     await expect(
       boardSuspensionService.suspendBoardMember(
@@ -423,8 +433,11 @@ describe('BoardSuspensionService Unit Tests', () => {
         userRoles: [{ isActive: true, expiresAt: null, role: { code: 'YAYASAN_KETUA' } }],
       });
     (prisma.boardMemberSuspension.findFirst as any).mockResolvedValue(null);
-    // Target lock first, then the Plh lock — which sees the new state.
+    // Up-front `{target, delegate}` lock pass (users, then assignments), then
+    // the target-state read, then the Plh lock — which sees the new state.
     (prisma.$queryRaw as any)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ is_active: true, deleted_at: null }])
       .mockResolvedValueOnce([{ is_active: false, deleted_at: null }]);
 
@@ -468,7 +481,11 @@ describe('BoardSuspensionService Unit Tests', () => {
         userRoles: [{ isActive: true, expiresAt: null, role: { code: 'YAYASAN_KETUA' } }],
       });
     (prisma.boardMemberSuspension.findFirst as any).mockResolvedValue(null);
+    // Up-front `{target, delegate}` lock pass (users, then assignments), then
+    // the target-state read, then the Plh lock — which sees the soft-delete.
     (prisma.$queryRaw as any)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ is_active: true, deleted_at: null }])
       .mockResolvedValueOnce([{ is_active: true, deleted_at: new Date('2026-04-01') }]);
 

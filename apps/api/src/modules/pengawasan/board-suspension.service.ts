@@ -14,7 +14,7 @@ import { invalidateUserSuspensionCache, markUserSuspended } from '@/utils/user-s
 import { activationState, deactivationState } from '@/utils/account-state';
 import { SIGNING_KEY_SUSPENSION_LOCK } from '@/utils/esign-suspension-lock';
 import { disconnectUserSockets } from '@/lib/realtime';
-import { lockUserAssignmentRows } from '@/utils/role-assignment-lock';
+import { lockUserAssignmentRows, lockUserRows } from '@/utils/role-assignment-lock';
 
 // The payload is the shared contract the controller validates with; a local
 // restatement of the same fields is exactly how the two drift apart.
@@ -362,20 +362,37 @@ export class BoardSuspensionService {
         // account deactivated or soft-deleted in the gap still passed them, and
         // without this re-read the suspension went on to switch off an
         // already-dead account and mint a Plh for an officer who cannot act.
+        // Lock the {target, delegate} user rows in uuid order FIRST, then their
+        // assignment rows, in the shared protocol's order (users, then
+        // assignments).
+        //
+        // Locking the target's user row alone does NOT serialise a concurrent
+        // revocation: a revocation updates `user_role_assignments`, which are
+        // different rows, so it could delete the Pengurus assignment between the
+        // eligibility read below and this transaction's commit — the suspension
+        // would then switch off an account that is no longer a Pengurus.
+        // `RolesService` takes these same locks, so the two writers serialise.
+        //
+        // Both user ids are taken in ONE sorted pass. Two suspensions can name
+        // each other (A's Plh is B, B's Plh is A); locking the target first and
+        // the delegate later let each acquire its own target before the other's,
+        // so the pair deadlocked with PostgreSQL 40P01. `ORDER BY id` over the
+        // whole {target, delegate} set means a mutual pair acquires the same two
+        // rows in the same order and simply serialises. The advisory grant lock
+        // and the eligibility re-read below still run.
+        const lockUserIds = [data.userId, data.plhUserId ?? ''].filter(Boolean);
+        await lockUserRows(tx, lockUserIds);
+        await lockUserAssignmentRows(tx, lockUserIds);
+
+        // Read the target's state now that its row is held. No `FOR UPDATE`:
+        // the lock above already serialises this moment, and a second lock
+        // statement here would reintroduce an unsorted acquisition.
         const lockedTarget = await tx.$queryRaw<
           Array<{ is_active: boolean; deleted_at: Date | null }>
         >`
-          SELECT is_active, deleted_at FROM "users" WHERE id = ${data.userId} FOR UPDATE
+          SELECT is_active, deleted_at FROM "users" WHERE id = ${data.userId}
         `;
-        // Then the target's role-assignment rows, in the shared protocol's
-        // order (user row, then assignments). Locking the user row alone does
-        // NOT serialise a concurrent revocation: a revocation updates
-        // `user_role_assignments`, which are different rows, so it could delete
-        // the Pengurus assignment between the eligibility read below and this
-        // transaction's commit — the suspension would then switch off an
-        // account that is no longer a Pengurus. `RolesService` takes these same
-        // locks, so the two writers now serialise.
-        await lockUserAssignmentRows(tx, [data.userId]);
+
         if (!lockedTarget[0]) {
           throw Errors.notFound(`Pengurus / Pengguna dengan ID ${data.userId} tidak ditemukan`);
         }
@@ -541,8 +558,11 @@ export class BoardSuspensionService {
             );
           }
 
-          // The delegate's roles are re-read *inside* the transaction and under
-          // a lock on their assignment rows, immediately before the grant.
+          // The delegate's roles are re-read *inside* the transaction. Their
+          // assignment rows were already locked in the up-front
+          // `lockUserAssignmentRows(tx, {target, delegate})` pass, so no second
+          // `FOR UPDATE` is taken here — a re-lock would re-introduce an
+          // unsorted acquisition and buy nothing.
           //
           // The pre-flight check above is a courtesy that cannot be the
           // decision: a `UserRoleAssignment` inserted between it and this point
@@ -553,9 +573,6 @@ export class BoardSuspensionService {
           // concurrent update to them; a concurrent *insert* cannot be locked,
           // so the trigger remains the database guarantee and the outer catch
           // maps its violation to the same 4xx this check raises.
-          await tx.$queryRaw(
-            Prisma.sql`SELECT id FROM "user_role_assignments" WHERE user_id = ${data.plhUserId} ORDER BY id FOR UPDATE`
-          );
           const delegateRoles = await tx.userRoleAssignment.findMany({
             where: {
               userId: data.plhUserId,

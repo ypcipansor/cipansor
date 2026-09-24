@@ -411,6 +411,72 @@ describeDb('board suspension concurrency (real PostgreSQL)', () => {
     });
   });
 
+  it('two suspensions naming each other as Plh/Plt must not deadlock', async () => {
+    // Review item 2. A is frozen with Plh=B and B is frozen with Plh=A, run
+    // together. Before the fix each transaction locked its own target's user
+    // row first and the delegate's later, so the pair acquired the two `users`
+    // rows in opposite order and PostgreSQL aborted one with 40P01. The service
+    // now locks the whole {target, delegate} set in uuid order before anything
+    // else, so the two serialise. The accepted outcomes are: exactly one
+    // suspension succeeds and the other is refused with a defined 4xx (the
+    // loser names an already-frozen officer, who can no longer act as Plh), or
+    // both succeed sequentially — never a 500 and never 40P01.
+    await withClient(targetUrl, async (db) => {
+      await db.query(`DELETE FROM board_suspension_plh_assignments`);
+      await db.query(`DELETE FROM board_member_suspensions`);
+      await db.query(
+        `UPDATE users SET is_active = true, account_state_writer = NULL WHERE id LIKE 'u-target-%'`
+      );
+    });
+
+    const { service, previousUrl } = await loadService();
+    try {
+      const mutual = (target: string, plh: string, sk: string) =>
+        service.suspendBoardMember(
+          {
+            userId: target,
+            skNumber: sk,
+            auditReason: 'Temuan audit independen untuk pengujian deadlock Plh silang.',
+            plhUserId: plh,
+            plhRoleCode: 'YAYASAN_KETUA',
+          },
+          'u-issuer',
+          'YAYASAN_PENGAWAS'
+        );
+
+      const results = await Promise.allSettled([
+        mutual('u-target-a', 'u-target-b', 'SK/MUTUAL-A'),
+        mutual('u-target-b', 'u-target-a', 'SK/MUTUAL-B'),
+      ]);
+
+      const deadlocks = results.filter(
+        (r): r is PromiseRejectedResult =>
+          r.status === 'rejected' &&
+          (r.reason?.meta?.code === '40P01' || /deadlock detected/i.test(String(r.reason?.message)))
+      );
+      expect(deadlocks, 'a mutual Plh pair must serialise, never abort with 40P01').toEqual([]);
+
+      const fulfilled = results.filter((r) => r.status === 'fulfilled');
+      expect(
+        fulfilled.length,
+        'at least one suspension must land; the other may be refused once its Plh is already frozen'
+      ).toBeGreaterThanOrEqual(1);
+
+      // Any loser must be a defined client error, never a 500.
+      for (const r of results) {
+        if (r.status === 'rejected') {
+          expect(
+            r.reason?.statusCode,
+            `a losing suspension must be a 4xx, got: ${r.reason?.message}`
+          ).toBeGreaterThanOrEqual(400);
+          expect(r.reason?.statusCode).toBeLessThan(500);
+        }
+      }
+    } finally {
+      await unloadService(previousUrl);
+    }
+  });
+
   it('refuses a suspension whose target Pengurus role is revoked first (roles write wins)', async () => {
     // Review item 4: a revocation of `UserRoleAssignment` is a different row
     // from `users`, so locking the user row alone does NOT serialise it. The

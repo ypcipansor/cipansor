@@ -566,18 +566,23 @@ function PengawasanPageContent() {
   );
   const deleteAudit = useDeleteAudit();
 
-  const { data: wbsReports, isLoading: isWbsLoading } = useWbsReports();
+  // Each register request is gated on the same permission that renders its
+  // tab. A role with audit access only never fires these, so it sees no 403
+  // toast for a panel it was never shown.
+  const { data: wbsReports, isLoading: isWbsLoading } = useWbsReports(
+    access.canHandleWbs,
+  );
   const updateWbsStatusMutation = useUpdateWbsStatus();
   const forwardWbsMutation = useForwardWbsReport();
 
   const { data: boardSuspensions, isLoading: isSuspensionsLoading } =
-    useBoardSuspensions();
+    useBoardSuspensions(access.canReadSuspensions);
   const createSuspensionMutation = useCreateBoardSuspension();
   const liftSuspensionMutation = useLiftBoardSuspension();
   const handlerCommentMutation = useAddWbsHandlerComment();
 
   const { data: arrearsData, isLoading: isArrearsLoading } =
-    useFinancialArrears();
+    useFinancialArrears(undefined, access.canViewArrears);
   const draftPeriodicReportMutation = useDraftPeriodicReportToEOffice();
 
   // Forms
