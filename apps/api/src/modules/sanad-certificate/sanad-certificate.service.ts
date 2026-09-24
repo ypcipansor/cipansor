@@ -16,6 +16,7 @@ import {
   MAX_BULK_CREATE_RECORDS,
 } from './sanad-certificate.schema';
 import { certificateVerificationUrl } from '@/utils/verification-url';
+import { escapeHtml } from '@/utils/html';
 import { Errors } from '@/middleware/error';
 
 const JUZ_NAMES: Record<number, string> = {
@@ -458,7 +459,7 @@ export function generateCertificateHtml(
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sertifikat Sanad - ${certificateData.studentName}</title>
+  <title>Sertifikat Sanad - ${escapeHtml(certificateData.studentName)}</title>
   <style>
     @page { size: A4 landscape; margin: 0; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -613,31 +614,31 @@ export function generateCertificateHtml(
     <div class="border-inner">
       <div class="header">
         <h1>Sertifikat Sanad</h1>
-        <h2>${certificateData.unitName}</h2>
+        <h2>${escapeHtml(certificateData.unitName)}</h2>
       </div>
 
       <div class="bismillah">بِسْمِ اللَّهِ الرَّحْمَنِ الرَّحِيمِ</div>
 
       <div class="content">
         <p>Dengan ini menyatakan bahwa:</p>
-        <div class="student-name">${certificateData.studentName}</div>
-        <p>NIS: ${certificateData.studentNis}</p>
+        <div class="student-name">${escapeHtml(certificateData.studentName)}</div>
+        <p>NIS: ${escapeHtml(certificateData.studentNis)}</p>
         
         <p style="margin-top: 20px;">Telah menyelesaikan hafalan Al-Qur'an</p>
-        <div class="juz-info">${certificateData.juzName} (Juz ${certificateData.juz})</div>
+        <div class="juz-info">${escapeHtml(certificateData.juzName)} (Juz ${certificateData.juz})</div>
         
         <p>dengan predikat:</p>
-        <div class="grade">${certificateData.gradeLabel}</div>
+        <div class="grade">${escapeHtml(certificateData.gradeLabel)}</div>
 
         <div class="details">
           <div class="detail-item">
-            <strong>Halaqoh:</strong> ${certificateData.halaqohName || '-'}
+            <strong>Halaqoh:</strong> ${escapeHtml(certificateData.halaqohName || '-')}
           </div>
           <div class="detail-item">
             <strong>Program:</strong> Tahfidz Al-Qur'an
           </div>
           <div class="detail-item">
-            <strong>Pengajar:</strong> ${certificateData.teacherName}
+            <strong>Pengajar:</strong> ${escapeHtml(certificateData.teacherName)}
           </div>
           <div class="detail-item">
             <strong>Tanggal:</strong> ${certDate}
@@ -649,14 +650,14 @@ export function generateCertificateHtml(
         <div class="signature-box">
           <p style="font-size: 10pt;">Pengajar/Mushohih</p>
           <div class="signature-line"></div>
-          <p class="signature-name">${certificateData.teacherName}</p>
+          <p class="signature-name">${escapeHtml(certificateData.teacherName)}</p>
           <p class="signature-title">Guru Tahfidz</p>
         </div>
         <div class="signature-box">
           <p style="font-size: 10pt;">Mengetahui</p>
           <div class="signature-line"></div>
-          <p class="signature-name">${certificateData.signedBy || '____________________'}</p>
-          <p class="signature-title">${certificateData.signedByTitle || 'Kepala Madrasah'}</p>
+          <p class="signature-name">${escapeHtml(certificateData.signedBy || '____________________')}</p>
+          <p class="signature-title">${escapeHtml(certificateData.signedByTitle || 'Kepala Madrasah')}</p>
         </div>
       </div>
 
@@ -672,9 +673,9 @@ export function generateCertificateHtml(
       }
 
       <div class="footer">
-        <p>No. Sertifikat: <span class="cert-number">${certificateData.certificateNumber}</span></p>
-        <p>Kode Verifikasi: ${certificateData.verificationCode}</p>
-        <p>Sertifikat ini dapat diverifikasi di: ${certificateVerificationUrl(certificateData.certificateNumber)}</p>
+        <p>No. Sertifikat: <span class="cert-number">${escapeHtml(certificateData.certificateNumber)}</span></p>
+        <p>Kode Verifikasi: ${escapeHtml(certificateData.verificationCode)}</p>
+        <p>Sertifikat ini dapat diverifikasi di: ${escapeHtml(certificateVerificationUrl(certificateData.certificateNumber))}</p>
       </div>
     </div>
   </div>

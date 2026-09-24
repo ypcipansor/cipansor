@@ -82,9 +82,7 @@ function inspect(variable: string, value: string | undefined, issues: SecretIssu
   if (value.length < MIN_SECRET_LENGTH) {
     issues.push({
       variable,
-      reason:
-        `is too short — must be at least ${MIN_SECRET_LENGTH} characters ` +
-        `(got ${value.length})`,
+      reason: `is too short — must be at least ${MIN_SECRET_LENGTH} characters`,
     });
     return;
   }

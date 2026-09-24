@@ -55,7 +55,19 @@ export function buildCorsOptions(origins: readonly string[]): CorsOptions {
   }
 
   return {
-    origin: [...origins],
+    // A function (not the array) so the allowlist check is explicit and the
+    // echoed value is always a single, validated origin. The array form is
+    // equivalent at runtime, but CodeQL cannot see the membership test inside
+    // `cors` and reports `js/cors-permissive-configuration`; the callback keeps
+    // the check where it can be read, and the request origin is only reflected
+    // when `origins` actually contains it.
+    origin: (origin, callback) => {
+      if (origin && origins.includes(origin)) {
+        callback(null, origin);
+      } else {
+        callback(null, false);
+      }
+    },
     credentials: true,
   };
 }

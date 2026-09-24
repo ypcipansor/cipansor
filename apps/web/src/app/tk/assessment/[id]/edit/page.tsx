@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { authFileUrl } from "@/lib/files";
+import { authFileUrl, objectUrlForFile } from "@/lib/files";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -183,7 +183,7 @@ export default function EditTKAssessmentPage() {
       const newFiles = Array.from(e.target.files);
       setFiles((prev) => [...prev, ...newFiles]);
 
-      const newPreviews = newFiles.map((file) => URL.createObjectURL(file));
+      const newPreviews = newFiles.map((file) => objectUrlForFile(file));
       setPreviews((prev) => [...prev, ...newPreviews]);
     }
   };

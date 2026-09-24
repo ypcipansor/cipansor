@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { EMAIL_PATTERN, escapeHtml, isEmail } from "./string";
+import { EMAIL_PATTERN, escapeHtml, isEmail, slugify } from "./string";
 import { email } from "./validation";
 
 describe("escapeHtml", () => {
@@ -47,5 +47,30 @@ describe("isEmail / EMAIL_PATTERN", () => {
   it("is the pattern the form validator uses", () => {
     expect(email().validate("a@b..id")).toBe(false);
     expect(email().validate("santri@cipansor.or.id")).toBe(true);
+  });
+});
+
+describe("slugify", () => {
+  it("lowercases, collapses separators and trims the dashes", () => {
+    expect(slugify("  Berita  Terbaru  ")).toBe("berita-terbaru");
+    expect(slugify("Halo, Dunia!")).toBe("halo-dunia");
+    expect(slugify("Tahun 2026/2027")).toBe("tahun-20262027");
+    expect(slugify("---abc---")).toBe("abc");
+    expect(slugify("_under_score_")).toBe("under-score");
+  });
+
+  it("returns an empty string for empty, blank and all-dash input", () => {
+    expect(slugify("")).toBe("");
+    expect(slugify("  ")).toBe("");
+    expect(slugify("---")).toBe("");
+  });
+
+  it("stays fast on a long dash run (#18 js/polynomial-redos)", () => {
+    // The old trailing /-+$/ was reported as polynomial on dash runs. Feed it
+    // the pattern CodeQL names and assert it completes promptly.
+    const hostile = "a" + "-".repeat(200000);
+    const started = performance.now();
+    expect(slugify(hostile)).toBe("a");
+    expect(performance.now() - started).toBeLessThan(200);
   });
 });

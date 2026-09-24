@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { authFileUrl } from "./files";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { authFileUrl, objectUrlForFile } from "./files";
 
 describe("authFileUrl", () => {
   beforeEach(() => {
@@ -42,5 +42,21 @@ describe("authFileUrl", () => {
     expect(authFileUrl("http://localhost:3001/uploads/a.pdf")).toBe(
       "http://localhost:3001/uploads/a.pdf",
     );
+  });
+});
+
+describe("objectUrlForFile", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("returns the blob URL createObjectURL produced", () => {
+    vi.spyOn(URL, "createObjectURL").mockReturnValue(
+      "blob:http://localhost/abc-123",
+    );
+    expect(objectUrlForFile({} as File)).toBe("blob:http://localhost/abc-123");
+  });
+
+  it("drops anything that is not a blob: URL", () => {
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("javascript:alert(1)");
+    expect(objectUrlForFile({} as File)).toBe("");
   });
 });

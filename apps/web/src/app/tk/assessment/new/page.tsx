@@ -50,6 +50,7 @@ import { useAuthStore } from "@/stores/auth";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Progress } from "@/components/ui/progress";
+import { objectUrlForFile } from "@/lib/files";
 import { useAddEvidence } from "@/hooks/use-tk-assessment";
 import {
   ImagePlus,
@@ -160,7 +161,7 @@ export default function CreateTKAssessmentPage() {
       const newFiles = Array.from(e.target.files);
       setFiles((prev) => [...prev, ...newFiles]);
 
-      const newPreviews = newFiles.map((file) => URL.createObjectURL(file));
+      const newPreviews = newFiles.map((file) => objectUrlForFile(file));
       setPreviews((prev) => [...prev, ...newPreviews]);
     }
   };
@@ -512,17 +513,14 @@ export default function CreateTKAssessmentPage() {
                                     "flex flex-col items-center justify-between rounded-xl border-2 border-muted bg-card p-4 hover:scale-[1.02] transition-all cursor-pointer h-full relative overflow-hidden group shadow-sm hover:shadow-md",
                                     "peer-data-[state=checked]:border-primary peer-data-[state=checked]:shadow-lg",
                                     field.value === option.value &&
-                                      option.color.replace(
-                                        "border-",
-                                        "border-",
-                                      ) + " bg-accent/20",
+                                      option.color + " bg-accent/20",
                                   )}
                                 >
                                   {/* Color Indicator Strip */}
                                   <div
                                     className={cn(
                                       "absolute top-0 left-0 w-full h-1.5",
-                                      option.color.replace("border-", "bg-"),
+                                      option.color.replace(/^border-/, "bg-"),
                                     )}
                                   />
 

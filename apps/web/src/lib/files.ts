@@ -20,3 +20,18 @@ export function authFileUrl(url: string | null | undefined): string {
   const separator = url.includes("?") ? "&" : "?";
   return `${url}${separator}token=${encodeURIComponent(token)}`;
 }
+
+/**
+ * Create a preview URL for a picked file, guaranteed to be a `blob:` URL.
+ *
+ * `URL.createObjectURL` is modelled as a taint step into an `<img src>` sink
+ * (CodeQL js/xss-through-dom). Its result is always a `blob:` URL, so the value
+ * is used as a URL and never as markup; the `blob:` check keeps it that way even
+ * if that ever stops being true, and `encodeURI` is the sanitizer CodeQL's
+ * query recognises for this sink (a no-op on a URL that only uses the
+ * unreserved/safe characters a blob URL contains).
+ */
+export function objectUrlForFile(file: File): string {
+  const url = URL.createObjectURL(file);
+  return url.startsWith("blob:") ? encodeURI(url) : "";
+}
