@@ -44,7 +44,7 @@ Diperbaiki sesudahnya (2026-09-24):
   orang tua hanya bisa membuka pembayaran anaknya sendiri, dan kuitansi tidak
   terbit untuk bukti transfer yang belum disahkan. Kop kuitansi tadinya
   "Yayasan Pendidikan Islam Al-Hidayah, Jl. Pendidikan No. 123" (karangan).
-- **Daftar santri "0 of 0 results"** (PR ini): bukan sebagian peran, tetapi
+- **Daftar santri "0 of 0 results"** (#541): bukan sebagian peran, tetapi
   SEMUA — `GET /students` mengirim `meta.pagination`, halaman membaca
   `meta.total`, jadi total 0 dan hanya satu halaman: siapa pun hanya bisa
   menjangkau 10 santri pertama. Sekaligus: TU (yang di sidebar-nya ada "Data
