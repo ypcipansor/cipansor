@@ -109,6 +109,7 @@ watched = [
     os.path.join(root, "apps", "api", "AGENTS.md"),
     os.path.join(root, "apps", "web", "AGENTS.md"),
     os.path.join(root, "packages", "shared", "AGENTS.md"),
+    os.path.join(root, ".claude", "README.md"),
 ]
 try:
     for name in os.listdir(memory):

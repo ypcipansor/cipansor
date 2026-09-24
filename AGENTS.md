@@ -178,78 +178,8 @@ before removing anything, prove it is unused — grep for callers, check
 | `hooks/stop-sync-baseline.sh` | SessionStart — records the HEAD sha the session started from, so the Stop hook has something to compare against |
 | `hooks/stop-sync-records.sh` | Stop — asks for a `sync-records` pass once, at the first resting point after the session has produced commits |
 
-**Why the compaction hook exists.** Compaction discards the transcript, and only
-files survive it. Findings were reaching `memory/`, the plan and the ROADMAP
-only because the user remembered to ask, every single time. The hook asks
-instead: it exits 2, which hands control back for a `sync-records` pass, and
-lets the retry through — so it can nag but can never wedge a session.
-`/compact skip-sync` bypasses it deliberately.
-
-**What "level" means is work, not time** (corrected 2026-09-05). The stamp used
-to expire after thirty minutes, which asked for a second pass over a session
-that had produced nothing new. `sync_stamp.py` now compares git HEAD plus the
-working tree, so `/compact` is quiet until something actually changes; a
-six-hour ceiling remains for findings that never touch git. The
-`sync-records` skill writes the stamp itself as its last step — before that, a
-pass the user ran directly did nothing to quiet the next `/compact`, which was
-backwards.
-
-**Auto-compaction is held, and the warning comes from a different hook**
-(rebuilt 2026-09-23). The first design assumed auto worked like manual: block
-once, the model reads the message, runs the pass, the retry goes through. It
-never did. For an *automatic* compaction Claude Code writes the block reason to
-its debug log only — the model never sees it — and because the hook wrote the
-stamp while blocking, the retry one tool call later went through. Measured in a
-session transcript: nine auto-compactions, zero passes caused by the hook.
-
-What reaches the model is `additionalContext` from PostToolUse and
-UserPromptSubmit (tested live with a probe hook). So `context-sync-warn.sh`
-reads the current context size from the transcript (`usage` of the last
-main-chain reply) and warns twice per round: at `autoCompactWindow` − 120k
-("run `sync-records` now") and at − 60k ("compaction is due and held").
-`pre-compact-sync.sh` holds the auto-compaction in that band without writing
-any stamp; only a `sync-records` pass by *this* session since the round began
-releases it (`sync_stamp.py` run from the skill records
-`CLAUDE_CODE_SESSION_ID`). A "round" runs from the last SessionStart, which
-`stop-sync-baseline.sh` records.
-
-Safety rails: nothing is held unless `autoCompactWindow` is set at or below
-800k (unset = the model's own window = never held); a compaction far below the
-window — a smaller model, a reactive retry — is never held; and the hold lets
-go at window + 150k (at most 900k), so the worst case is a late compaction
-without a pass, never a session stranded at the context wall.
-`CLAUDE_SKIP_CONTEXT_SYNC=1` silences the warning.
-
-**Why `main` is watched too** (added 2026-09-24, the user's proposal). A
-failing PR is visible — it has checks, and a session can subscribe to it. After
-the merge nobody was looking, and that is where the expensive failures hide:
-#504 and #505 were green alone and red together, `audit:deps` can turn `main`
-red with a newly published CVE and no diff at all, and Deploy staging only runs
-after the merge. `main-ci-watch.sh` looks at the latest *completed* run of each
-workflow on `main` (`cancelled` is ignored — concurrency cancels runs on
-purpose) and tells the model once per failing run, and once when it goes green
-again. `gh run list` costs about a second, so tool calls read a cache and a
-stale cache (over three minutes) is refreshed by a detached background process;
-only SessionStart waits for a fresh answer (8 s cap), so a new session knows at
-once that `main` is red. Without `gh` or a network it stays silent.
-`CLAUDE_SKIP_MAIN_CI_WATCH=1` turns it off. It is a backstop, not a
-replacement: after merging, still follow the merge commit's runs to the end
-before releasing it.
-
-**Why there is a `Stop` hook too.** The compaction hook only guards the
-compaction door. A session that finishes without ever being compacted never
-passes through it — and those are exactly the sessions that leave findings in
-the transcript alone. `stop-sync-records.sh` closes that gap.
-
-It is deliberately hard to trigger, because `Stop` fires at the end of *every*
-turn and a reminder that appears every turn teaches everyone to ignore hook
-messages. It stays quiet unless all five hold: not already continuing from its
-own block (`stop_hook_active` — this is what makes a loop impossible), not yet
-asked this session, at least one commit since the session began, no pending
-changes to tracked files (a resting point, not mid-edit), and no durable record
-touched since the session began. One reminder per session, then never again.
-`CLAUDE_SKIP_STOP_SYNC=1` turns it off.
-
-Both `Stop` and `PreCompact` fail open on everything else — unreadable input, an
-unreadable git tree, an unwritable stamp directory. A hook that breaks a session
-is worse than a hook that misses a reminder.
+**Why each hook works the way it does** — what went wrong before, what was
+measured, and the safety rails — is in [`.claude/README.md`](./.claude/README.md).
+It matters only to whoever changes a hook, so it is kept out of this file,
+which every agent loads whole. Read it before touching a hook: most of these
+designs replaced an earlier one that looked right and did nothing.
