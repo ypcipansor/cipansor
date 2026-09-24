@@ -57,6 +57,7 @@ INSERT INTO users (id, name, email, is_active, updated_at) VALUES
   ('u-issuer',   'Pengawas',         'pengawas@example.com',   true, now()),
   ('u-target-a', 'Ketua Target A',   'targeta@example.com',    true, now()),
   ('u-target-b', 'Ketua Target B',   'targetb@example.com',    true, now()),
+  ('u-target-c', 'Ketua Target C',   'targetc@example.com',    true, now()),
   ('u-delegate', 'Anggota Delegasi', 'delegate@example.com',   true, now());
 `;
 
@@ -138,6 +139,7 @@ describeDb('Shared Plh delegation expiry restoration (real PostgreSQL)', () => {
          VALUES
            ('a-target-a', 'u-target-a', 'role-ketua',   true,  true, NULL, now()),
            ('a-target-b', 'u-target-b', 'role-ketua',   true,  true, NULL, now()),
+           ('a-target-c', 'u-target-c', 'role-ketua',   true,  true, NULL, now()),
            ('a-delegate', 'u-delegate', 'role-anggota', false, true, $1, now())
          ON CONFLICT (id) DO UPDATE SET
            is_active = EXCLUDED.is_active,
@@ -257,6 +259,101 @@ describeDb('Shared Plh delegation expiry restoration (real PostgreSQL)', () => {
       const row = await delegateRow();
       expect(row.expires_at, 'an originally unbounded delegation stays unbounded').toBeNull();
       expect(row.is_active).toBe(true);
+    } finally {
+      await unloadService(previousUrl);
+    }
+  });
+
+  it('keeps the delegation effective when the projected end has passed but the suspension is still ACTIVE', async () => {
+    // Finding 1: `projectedEndDate` is a forecast, not a timer — only a Pembina
+    // lift ends a suspension. Anchoring the delegation's expiry to it meant that
+    // once the date passed the Plh silently lost the role while the officer was
+    // still suspended. The expiry must stay cleared for the whole suspension.
+    await resetState();
+    const { suspension, previousUrl } = await loadService();
+    try {
+      const a = await suspend(suspension, 'u-target-a', 'SK/PAST-1', HORIZON_A);
+
+      // The projection has now elapsed, but the suspension is untouched.
+      await withClient(targetUrl, async (db) => {
+        await db.query(
+          `UPDATE board_member_suspensions SET projected_end_date = now() - interval '1 day' WHERE id = $1`,
+          [a.id]
+        );
+      });
+
+      const live = await delegateRow();
+      expect(
+        live.expires_at,
+        'the delegation stays unbounded while the suspension is ACTIVE'
+      ).toBeNull();
+      expect(live.is_active).toBe(true);
+
+      const stillActive = await withClient(targetUrl, async (db) => {
+        const res = await db.query(`SELECT status FROM board_member_suspensions WHERE id = $1`, [
+          a.id,
+        ]);
+        return res.rows[0].status;
+      });
+      expect(stillActive, 'no scheduled job lifts the suspension').toBe('ACTIVE');
+
+      await suspension.liftBoardSuspension(a.id, 'u-issuer', 'Pemulihan status A.');
+      const after = await delegateRow();
+      expect(
+        new Date(after.expires_at).toISOString(),
+        'the original expiry returns once the last dependency lifts'
+      ).toBe(DELEGATE_EXPIRY);
+    } finally {
+      await unloadService(previousUrl);
+    }
+  });
+
+  it('keeps the delegation while any of three suspensions is ACTIVE and restores after the last lift', async () => {
+    // Finding 1, multi-dependency: three suspensions share one delegate. The
+    // assignment must survive every intermediate lift and only return to its
+    // original expiry when the final ACTIVE dependency disappears.
+    await resetState();
+    const { suspension, previousUrl } = await loadService();
+    try {
+      const a = await suspend(suspension, 'u-target-a', 'SK/MULTI-1', HORIZON_A);
+      const b = await suspend(suspension, 'u-target-b', 'SK/MULTI-2', HORIZON_B);
+      const c = await suspend(suspension, 'u-target-c', 'SK/MULTI-3', HORIZON_A);
+
+      await suspension.liftBoardSuspension(a.id, 'u-issuer', 'Pemulihan status A.');
+      await suspension.liftBoardSuspension(b.id, 'u-issuer', 'Pemulihan status B.');
+
+      const mid = await delegateRow();
+      expect(mid.expires_at, 'the row stays unbounded while C is still ACTIVE').toBeNull();
+      expect(mid.is_active).toBe(true);
+
+      await suspension.liftBoardSuspension(c.id, 'u-issuer', 'Pemulihan status C.');
+      const after = await delegateRow();
+      expect(new Date(after.expires_at).toISOString()).toBe(DELEGATE_EXPIRY);
+      expect(after.is_active).toBe(true);
+    } finally {
+      await unloadService(previousUrl);
+    }
+  });
+
+  it('leaves the delegation effective after an intermediate lift in a different order', async () => {
+    // Same three-way share, lifted middle-first: the row must not be released
+    // until the last ACTIVE dependency is gone, whichever order the lifts take.
+    await resetState();
+    const { suspension, previousUrl } = await loadService();
+    try {
+      const a = await suspend(suspension, 'u-target-a', 'SK/ORDER-1', HORIZON_A);
+      const b = await suspend(suspension, 'u-target-b', 'SK/ORDER-2', HORIZON_B);
+      const c = await suspend(suspension, 'u-target-c', 'SK/ORDER-3', HORIZON_A);
+
+      await suspension.liftBoardSuspension(b.id, 'u-issuer', 'Pemulihan status B.');
+      await suspension.liftBoardSuspension(c.id, 'u-issuer', 'Pemulihan status C.');
+
+      const mid = await delegateRow();
+      expect(mid.expires_at, 'A still depends on the delegation').toBeNull();
+
+      await suspension.liftBoardSuspension(a.id, 'u-issuer', 'Pemulihan status A.');
+      const after = await delegateRow();
+      expect(new Date(after.expires_at).toISOString()).toBe(DELEGATE_EXPIRY);
     } finally {
       await unloadService(previousUrl);
     }

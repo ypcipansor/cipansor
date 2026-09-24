@@ -598,12 +598,13 @@ describe('BoardSuspensionService Unit Tests', () => {
     );
   });
 
-  it('extends a time-boxed Plh assignment that would expire mid-suspension', async () => {
-    // Finding 6: reusing an effective assignment "as is" left a time-boxed one
-    // to expire before the SK is lifted — the officer stays suspended, the Plh
-    // loses the role, and the office is vacant with no record. The expiry must
-    // be pushed to the suspension's projected end, and the prior expiry
-    // recorded so the lift restores exactly it.
+  it('keeps a time-boxed Plh delegation effective for the whole suspension', async () => {
+    // Finding 1: a suspension ends only when a Pembina lifts it, so the Plh
+    // must hold the role until then. Reusing the effective assignment "as is"
+    // — or, worse, pushing its expiry to the projected end — left a time-boxed
+    // delegation to lapse while the officer was still suspended and the office
+    // vacant. The expiry is cleared for the suspension's duration and the prior
+    // expiry recorded so the last lift restores exactly it.
     const priorExpiry = new Date('2026-10-01T00:00:00.000Z');
     const projectedEnd = new Date('2027-01-01T00:00:00.000Z');
 
@@ -635,9 +636,11 @@ describe('BoardSuspensionService Unit Tests', () => {
       'YAYASAN_PENGAWAS'
     );
 
+    // The row is made unbounded — not extended to `projectedEnd`, which would
+    // let it lapse mid-suspension because nothing lifts on that date.
     expect(prisma.userRoleAssignment.update).toHaveBeenCalledWith({
       where: { id: 'assign-short' },
-      data: { expiresAt: projectedEnd },
+      data: { expiresAt: null },
     });
     const createCall = (prisma.boardMemberSuspension.create as any).mock.calls[0][0];
     expect(createCall.data.plhAssignmentCreated).toBe(false);
@@ -645,6 +648,44 @@ describe('BoardSuspensionService Unit Tests', () => {
       isActive: true,
       expiresAt: priorExpiry.toISOString(),
     });
+  });
+
+  it('reuses an unbounded Plh delegation without recording a restore', async () => {
+    // The mirror of the case above: an effective assignment with no expiry is
+    // already good for the whole suspension, so it is reused untouched and the
+    // last lift must not write anything back to it.
+    (prisma.user.findUnique as any).mockResolvedValue({
+      id: 'user-pengurus',
+      isActive: true,
+      userRoles: [{ isActive: true, expiresAt: null, role: { code: 'YAYASAN_ANGGOTA' } }],
+    });
+    (prisma.boardMemberSuspension.findFirst as any).mockResolvedValue(null);
+    (prisma.boardMemberSuspension.create as any).mockResolvedValue({ id: 'susp-1' });
+    (prisma.userSigningKey.findMany as any).mockResolvedValue([]);
+    (prisma.role.findFirst as any).mockResolvedValue({ id: 'role-ketua-id' });
+    (prisma.userRoleAssignment.findFirst as any).mockResolvedValue({
+      id: 'assign-open',
+      isActive: true,
+      expiresAt: null,
+    });
+
+    await boardSuspensionService.suspendBoardMember(
+      {
+        userId: 'user-pengurus',
+        skNumber: 'SK/1',
+        auditReason: 'alasan audit yang panjang',
+        plhUserId: 'user-sekretaris',
+        plhRoleCode: 'YAYASAN_KETUA',
+        projectedEndDate: new Date('2027-01-01T00:00:00.000Z').toISOString(),
+      },
+      'issuer-pengawas',
+      'YAYASAN_PENGAWAS'
+    );
+
+    expect(prisma.userRoleAssignment.update).not.toHaveBeenCalled();
+    const createCall = (prisma.boardMemberSuspension.create as any).mock.calls[0][0];
+    expect(createCall.data.plhAssignmentCreated).toBe(false);
+    expect(createCall.data.plhAssignmentRestore).toBeUndefined();
   });
 
   it('lifts suspension, reactivates account, restores captured e-sign lockouts and removes the Plh it created', async () => {

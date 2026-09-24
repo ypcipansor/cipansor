@@ -636,24 +636,24 @@ export class BoardSuspensionService {
               existingAssign.isActive &&
               (!existingAssign.expiresAt || existingAssign.expiresAt > new Date());
 
-            // How long the delegation must remain effective: through the
-            // suspension's projected end, or indefinitely when none is stated.
+            // How long the delegation must remain effective: for as long as the
+            // suspension lasts, and a suspension ends only when a Pembina lifts
+            // it — `projectedEndDate` is a forecast, not a timer (see
+            // `createBoardSuspensionSchema`). The horizon is therefore *not* the
+            // projected end.
             //
-            // Reusing an effective assignment "as is" left a time-boxed one to
-            // expire mid-suspension: the officer stays suspended, but their Plh
-            // loses the role before the SK is lifted, and the office is vacant
-            // with no record saying so. The window is the suspension's own
-            // horizon, so the expiry is pushed to it — `null` (unbounded) when
-            // the suspension is open-ended.
-            const requiredUntil = data.projectedEndDate ? new Date(data.projectedEndDate) : null;
-
+            // Pushing the expiry to `projectedEndDate` was the earlier shape, and
+            // it was wrong in the one direction that matters: there is no
+            // scheduled lift, so once that date passed the Plh lost the role while
+            // the officer was still suspended and the office sat vacant, with
+            // nothing recording it. The row is left unbounded instead, and any
+            // expiry it carried is recorded so the last dependent restores
+            // exactly it.
             if (isEffective) {
               const currentExpiry = existingAssign.expiresAt;
-              const expiryFallsShort =
-                currentExpiry != null && (requiredUntil == null || currentExpiry < requiredUntil);
 
-              if (expiryFallsShort && currentExpiry) {
-                // The row is extended, not replaced, and the expiry it had is
+              if (currentExpiry) {
+                // The row is cleared, not replaced, and the expiry it had is
                 // recorded so the last dependent restores exactly it. That is
                 // ownership-safe: the lift only writes back a state this
                 // suspension is the one that changed, and the heir transfer in
@@ -670,11 +670,11 @@ export class BoardSuspensionService {
                 };
                 await tx.userRoleAssignment.update({
                   where: { id: existingAssign.id },
-                  data: { expiresAt: requiredUntil },
+                  data: { expiresAt: null },
                 });
               } else {
-                // Reuse a live delegation. It stays; this suspension just
-                // records that it depends on it, so a lift of the *other*
+                // Reuse a live, unbounded delegation. It stays; this suspension
+                // just records that it depends on it, so a lift of the *other*
                 // suspension cannot remove it underneath us either.
                 plhDependency = {
                   assignmentId: existingAssign.id,
