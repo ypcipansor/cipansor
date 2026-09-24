@@ -34,7 +34,7 @@ Diperbaiki sesudahnya (2026-09-24):
   bukan ke id Student yang ditolak foreign key.
 - **Regex e-mail lambat** (#537, CodeQL #18): pola linear yang sama untuk
   `isEmail()` dan validator formulir.
-- **Daftar tagihan: kolom "Jenis" kosong, santri hanya NIS** (PR ini): layar
+- **Daftar tagihan: kolom "Jenis" kosong, santri hanya NIS** (#540): layar
   baca Tagihan & SPP (daftar, detail, riwayat pembayaran, kuitansi) ditulis
   untuk kontrak `Bill` yang tidak pernah dikirim API. Sekaligus: daftar
   tagihan/pembayaran kini **dibatasi unit tagihan** (sebelumnya TU SMP IT
