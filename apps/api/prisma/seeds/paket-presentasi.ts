@@ -1748,7 +1748,10 @@ const FINANCE_OFFICERS: Record<SchoolUnit, { tu: string; bendahara: string }> = 
 
 async function tagihanDanPembayaran(ctx: Ctx, roster: StudentRef[]): Promise<void> {
   const { db, rng } = ctx;
-  const types = new Map<SchoolUnit, Array<{ id: string; code: string; name: string; amount: number; recurring: boolean }>>();
+  const types = new Map<
+    SchoolUnit,
+    Array<{ id: string; code: string; name: string; amount: number; recurring: boolean; unitId: string }>
+  >();
   for (const unitType of Object.keys(PAYMENT_PLAN) as SchoolUnit[]) {
     const unitId = ctx.units[unitType].id;
     const list = [];
@@ -1766,7 +1769,18 @@ async function tagihanDanPembayaran(ctx: Ctx, roster: StudentRef[]): Promise<voi
         },
         update: {},
       });
-      list.push({ id: row.id, code: row.code, name: row.name, amount: Number(row.amount), recurring: row.isRecurring });
+      list.push({
+        id: row.id,
+        code: row.code,
+        name: row.name,
+        amount: Number(row.amount),
+        recurring: row.isRecurring,
+        // The invoice's unit of record is the unit that issued the payment
+        // type, not the student's current unit — see `model Invoice` in
+        // `schema.prisma`. `Invoice.unitId` is NOT NULL since
+        // `20260922100000_invoice_unit_backfill`.
+        unitId,
+      });
     }
     types.set(unitType, list);
   }
@@ -1929,6 +1943,7 @@ async function tagihanDanPembayaran(ctx: Ctx, roster: StudentRef[]): Promise<voi
         id,
         studentId: st.id,
         paymentTypeId: d.type.id,
+        unitId: d.type.unitId,
         invoiceNumber: await nextNumber(d.y, d.m),
         amount: new Prisma.Decimal(amount),
         dueDate: d.dueDate,
