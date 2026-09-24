@@ -61,6 +61,26 @@ describe('dashboardService.getAdmissionsStats', () => {
       where: { admissionPeriod: { unitId: 'unit-1' } },
     });
   });
+
+  it('counts a period as active only while it is switched on AND open today', async () => {
+    mocked.registrant.count.mockResolvedValue(0);
+    mocked.registrant.groupBy.mockResolvedValue([]);
+    mocked.admissionPeriod.count.mockResolvedValue(4);
+    mocked.registrant.findMany.mockResolvedValue([]);
+
+    const before = Date.now();
+    await dashboardService.getAdmissionsStats({});
+    const after = Date.now();
+
+    // Same rule as the registration gate: a closed wave or one opening next
+    // month is not an "active period", even with isActive still true.
+    const where = mocked.admissionPeriod.count.mock.calls[0][0].where;
+    expect(where.isActive).toBe(true);
+    expect(where.startDate.lte.getTime()).toBeGreaterThanOrEqual(before);
+    expect(where.startDate.lte.getTime()).toBeLessThanOrEqual(after);
+    expect(where.endDate.gte.getTime()).toBeGreaterThanOrEqual(before);
+    expect(where.endDate.gte.getTime()).toBeLessThanOrEqual(after);
+  });
 });
 
 describe('dashboardService.getCBTSummary', () => {

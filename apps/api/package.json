@@ -18,6 +18,7 @@
     "db:migrate": "prisma migrate dev --config prisma/prisma.config.ts",
     "db:deploy": "prisma migrate deploy --config prisma/prisma.config.ts",
     "db:seed": "tsx prisma/seed.ts",
+    "db:seed:presentasi": "tsx prisma/seed-presentasi.ts",
     "db:archive-letters": "tsx prisma/scripts/archive-signed-letters.ts",
     "db:purge-identity-documents": "tsx prisma/scripts/purge-identity-documents.ts",
     "db:studio": "prisma studio --config prisma/prisma.config.ts",

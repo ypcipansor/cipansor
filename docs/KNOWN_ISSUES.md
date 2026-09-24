@@ -4,6 +4,41 @@ Status of production-readiness work and the remaining roadmap. Updated as part o
 the production-readiness / architecture-standardization effort. For the system
 overview see [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 
+## 🔴 OPEN — cacat tampilan yang terlihat begitu datanya lengkap (2026-09-24)
+
+Paket data presentasi (`db:seed:presentasi`) mengisi satu tahun ajaran utuh.
+Dengan data selengkap itu, beberapa layar ternyata salah hitung atau salah
+sambung. Kesalahan itu dulu tersembunyi karena datanya nyaris kosong. Yang
+sudah diperbaiki bersama paket itu:
+
+- Juz hafalan di dasbor dihitung `ayat ÷ 600`, padahal ukuran juz berkisar
+  137–564 ayat. Sekarang dihitung per juz menurut ukurannya sendiri
+  (`memorizedJuz`).
+- "Kelas" menghitung rombel semua tahun ajaran. Sekarang hanya tahun aktif.
+- "Periode Aktif" SPMB menghitung periode ber-`isActive`, termasuk gelombang
+  yang sudah tutup atau belum buka. Sekarang aturannya sama dengan gerbang
+  pendaftaran.
+
+Yang masih terbuka:
+
+- **`/dashboard/executive`**: nama bidang tidak cocok dengan API ("0 AKTIF",
+  Kehadiran 0%). Tren pendaftaran membaca `unit.realm`, nama unit kosong, dan
+  sesekali 504. Untuk presentasi, pakai `/dashboard` dengan akun Ketua.
+- **`/foundation/dashboard`**: Net Income Rp 0 karena akuntansi belum
+  tersambung (akun bersifat global, sedangkan pencarian dilakukan per unit).
+  Legenda grafik talenta menampilkan "value".
+- **Daftar santri**: "0 of 0 results" untuk sebagian peran.
+- **Daftar tagihan**: kolom "Jenis" kosong, dan kolom santri hanya berisi NIS.
+- **Ringkasan SPMB**: 0 untuk Ketua dan Kepala karena API hanya mengizinkan
+  TU/admin unit. Pakai `smpit.tu@` atau `smpit.admin@`.
+- **Kartu CBT** di dasbor ikut menghitung ujian tertulis.
+- **Tagihan otomatis** ikut menagih alumni.
+- **`lib/event-bus.ts`** masih memakai `ayat ÷ 600` untuk notifikasi "tuntas
+  satu juz".
+- **Takhosus sebagai unit kelima** (`UnitType.PESANTREN`, keputusan
+  2026-09-13) belum diterapkan. Paket ini menaruh halaqoh takhosus di bawah
+  SMA.
+
 ## ✅ CLOSED — `docs/DEPLOYMENT.md` menyuruh operator menghapus data produksi (2026-09-21 → 2026-09-23)
 
 Bagian **Database Migration dengan Docker** dulu memuat `npx prisma db seed`
