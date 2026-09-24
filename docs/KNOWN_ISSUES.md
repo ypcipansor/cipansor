@@ -34,6 +34,16 @@ Diperbaiki sesudahnya (2026-09-24):
   bukan ke id Student yang ditolak foreign key.
 - **Regex e-mail lambat** (#537, CodeQL #18): pola linear yang sama untuk
   `isEmail()` dan validator formulir.
+- **Daftar tagihan: kolom "Jenis" kosong, santri hanya NIS** (PR ini): layar
+  baca Tagihan & SPP (daftar, detail, riwayat pembayaran, kuitansi) ditulis
+  untuk kontrak `Bill` yang tidak pernah dikirim API. Sekaligus: daftar
+  tagihan/pembayaran kini **dibatasi unit tagihan** (sebelumnya TU SMP IT
+  melihat 1.271 tagihan semua unit), **tidak lagi mengirim seluruh kolom
+  santri** (NIK, No. KK, NIK dan penghasilan orang tua), filter tahun ajaran
+  dan pencarian benar-benar bekerja, kartu ringkasan mengikuti unit dan tahun,
+  orang tua hanya bisa membuka pembayaran anaknya sendiri, dan kuitansi tidak
+  terbit untuk bukti transfer yang belum disahkan. Kop kuitansi tadinya
+  "Yayasan Pendidikan Islam Al-Hidayah, Jl. Pendidikan No. 123" (karangan).
 
 Yang masih terbuka:
 
@@ -44,7 +54,17 @@ Yang masih terbuka:
   tersambung (akun bersifat global, sedangkan pencarian dilakukan per unit).
   Legenda grafik talenta menampilkan "value".
 - **Daftar santri**: "0 of 0 results" untuk sebagian peran.
-- **Daftar tagihan**: kolom "Jenis" kosong, dan kolom santri hanya berisi NIS.
+- **Layar TULIS Tagihan & SPP** masih memakai kontrak khayalan yang sama:
+  "Buat Tagihan" mengirim `billType` (API menolak — butuh `paymentTypeId`),
+  "Tagihan Massal" memanggil `POST /finance/invoices/bulk` (tidak ada), "Catat
+  Pembayaran" mengirim `billId`/`paymentMethod` (API: `invoiceId`/`method`), dan
+  tombol hapus pembayaran memanggil `DELETE /finance/payments/:id` (tidak ada).
+  PR berikutnya.
+- **Siapa boleh membuka Tagihan & SPP**: `STAFF` lama mencakup perawat,
+  pustakawan, keamanan, dan peran usaha; semuanya bisa membuka daftar tagihan
+  unitnya. Perlu keputusan apakah dipersempit ke TU + bendahara.
+- **Kop raport merdeka** (`assessment/raport-merdeka`) tertulis mati "SMP
+  Cipansor, Jl. Pendidikan No. 123, Kabupaten Bogor" untuk semua unit.
 - **Ringkasan SPMB**: 0 untuk Ketua dan Kepala karena API hanya mengizinkan
   TU/admin unit. Pakai `smpit.tu@` atau `smpit.admin@`.
 - **Takhosus sebagai unit kelima** (`UnitType.PESANTREN`, keputusan

@@ -8,6 +8,7 @@ import { validate, validateQuery } from '../../middleware/error';
 import {
   queryPaymentTypeSchema,
   queryInvoiceSchema,
+  financialSummaryQuerySchema,
   queryPaymentSchema,
   createAccountSchema,
   updateAccountSchema,
@@ -593,7 +594,7 @@ router.get(
  * @swagger
  * /api/finance/summary:
  *   get:
- *     summary: Yayasan-wide financial summary
+ *     summary: Billing summary for the caller's unit (all units for foundation roles), optionally one academic year
  *     tags: [Finance]
  *     security:
  *       - bearerAuth: []
@@ -601,9 +602,12 @@ router.get(
  *       200:
  *         description: Totals, breakdown by payment type, and recent payments
  */
+// Same readers as GET /invoices: the summary is those bills added up, scoped
+// the same way, so a TU who can list them can see their totals.
 router.get(
   '/summary',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
+  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.STAFF),
+  validateQuery(financialSummaryQuerySchema),
   controller.getFinancialSummary
 );
 

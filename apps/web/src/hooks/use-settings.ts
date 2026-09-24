@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import api, { ApiResponse } from "@/lib/api";
+import { siteConfig, addressLines } from "@/config/site";
 
 export interface Settings {
   institutionName: string;
@@ -12,12 +13,20 @@ export interface Settings {
   dateFormat: string;
 }
 
-// Default settings
+/**
+ * The yayasan's own identity, from the verified public facts in
+ * `@cipansor/shared` (siteConfig).
+ *
+ * There is no GET /settings route, so this fallback is what every caller
+ * actually gets. It used to be an invented institution — "Yayasan Pendidikan
+ * Islam Al-Hidayah, Jl. Pendidikan No. 123, (021) 1234567" — and the payment
+ * receipt printed it as the letterhead.
+ */
 const defaultSettings: Settings = {
-  institutionName: "Yayasan Pendidikan Islam Al-Hidayah",
-  institutionAddress: "Jl. Pendidikan No. 123, Kota",
-  institutionPhone: "(021) 1234567",
-  institutionEmail: "info@yayasan.sch.id",
+  institutionName: siteConfig.legalName,
+  institutionAddress: addressLines.join(", "),
+  institutionPhone: siteConfig.contact.phone,
+  institutionEmail: siteConfig.contact.email,
   institutionLogo: undefined,
   currency: "IDR",
   timezone: "Asia/Jakarta",

@@ -13,15 +13,25 @@ import { MainLayout } from "@/components/layout/main-layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { usePayment, PAYMENT_METHODS, BILL_TYPES } from "@/hooks/use-finance";
+import {
+  usePayment,
+  paymentMethodLabel,
+  Money,
+  VERIFICATION_LABELS,
+} from "@/hooks/use-finance";
 import { useSettings } from "@/hooks/use-settings";
 
-function formatCurrency(amount: number) {
+function formatCurrency(amount: Money) {
   return new Intl.NumberFormat("id-ID", {
     style: "currency",
     currency: "IDR",
     minimumFractionDigits: 0,
-  }).format(amount);
+  }).format(Number(amount));
+}
+
+/** The payment's id, short enough to print and quote on the phone. */
+function transactionNumber(id: string) {
+  return id.slice(0, 8).toUpperCase();
 }
 
 function terbilang(angka: number): string {
@@ -83,6 +93,10 @@ export default function PaymentReceiptPage({ params }: ReceiptPageProps) {
   const [isPrinting, setIsPrinting] = useState(false);
 
   const { data: payment, isLoading, error } = usePayment(id);
+  // A receipt says the money was received. A parent's transfer proof that is
+  // still in review, or was rejected, must not print as one.
+  const isFinal = payment?.verificationStatus === "FINAL_APPROVED";
+  const student = payment?.invoice?.student;
   const { data: settings } = useSettings();
 
   // Get institution info from settings
@@ -126,7 +140,7 @@ export default function PaymentReceiptPage({ params }: ReceiptPageProps) {
           <div>
             <h1 className="text-2xl font-bold">Kuitansi Pembayaran</h1>
             <p className="text-muted-foreground">
-              {payment?.receiptNumber || "Loading..."}
+              {payment ? payment.invoice?.invoiceNumber : "Memuat..."}
             </p>
           </div>
         </div>
@@ -134,7 +148,7 @@ export default function PaymentReceiptPage({ params }: ReceiptPageProps) {
           <Button
             variant="outline"
             onClick={handlePrint}
-            disabled={isLoading || isPrinting}
+            disabled={isLoading || isPrinting || !isFinal}
           >
             <Printer className="mr-2 h-4 w-4" />
             {isPrinting ? "Mencetak..." : "Cetak"}
@@ -153,6 +167,20 @@ export default function PaymentReceiptPage({ params }: ReceiptPageProps) {
             <Skeleton className="h-4 w-full" />
             <Skeleton className="h-4 w-full" />
             <Skeleton className="h-4 w-full" />
+          </CardContent>
+        </Card>
+      ) : payment && !isFinal ? (
+        <Card>
+          <CardContent className="p-8 text-center space-y-2">
+            <p className="font-semibold">
+              Kuitansi belum dapat dicetak:{" "}
+              {VERIFICATION_LABELS[payment.verificationStatus] ??
+                payment.verificationStatus}
+              .
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Kuitansi hanya terbit untuk pembayaran yang sudah disahkan.
+            </p>
           </CardContent>
         </Card>
       ) : payment ? (
@@ -182,9 +210,9 @@ export default function PaymentReceiptPage({ params }: ReceiptPageProps) {
                   KUITANSI PEMBAYARAN
                 </h2>
                 <p className="text-sm mt-1">
-                  No:{" "}
+                  No. Transaksi:{" "}
                   <span className="font-mono font-bold">
-                    {payment.receiptNumber}
+                    {transactionNumber(payment.id)}
                   </span>
                 </p>
               </div>
@@ -194,20 +222,20 @@ export default function PaymentReceiptPage({ params }: ReceiptPageProps) {
                 <div className="grid grid-cols-[140px,1fr] gap-2">
                   <span>Telah Diterima Dari</span>
                   <span>
-                    : <strong>{payment.bill?.student?.name || "-"}</strong>
+                    : <strong>{student?.user?.name || "-"}</strong>
                   </span>
                 </div>
                 <div className="grid grid-cols-[140px,1fr] gap-2">
                   <span>NIS</span>
-                  <span>: {payment.bill?.student?.nis || "-"}</span>
+                  <span>: {student?.nis || "-"}</span>
                 </div>
                 <div className="grid grid-cols-[140px,1fr] gap-2">
                   <span>Kelas</span>
-                  <span>: {payment.bill?.student?.class?.name || "-"}</span>
+                  <span>: {student?.enrollments?.[0]?.class.name || "-"}</span>
                 </div>
                 <div className="grid grid-cols-[140px,1fr] gap-2">
-                  <span>Tahun Ajaran</span>
-                  <span>: {payment.bill?.academicYear?.name || "-"}</span>
+                  <span>No. Tagihan</span>
+                  <span>: {payment.invoice?.invoiceNumber || "-"}</span>
                 </div>
                 <div className="grid grid-cols-[140px,1fr] gap-2">
                   <span>Uang Sebesar</span>
@@ -221,26 +249,21 @@ export default function PaymentReceiptPage({ params }: ReceiptPageProps) {
                 <div className="grid grid-cols-[140px,1fr] gap-2">
                   <span>Terbilang</span>
                   <span className="italic">
-                    : {terbilang(payment.amount).trim()} Rupiah
+                    : {terbilang(Number(payment.amount)).trim()} Rupiah
                   </span>
                 </div>
                 <div className="grid grid-cols-[140px,1fr] gap-2">
                   <span>Untuk Pembayaran</span>
                   <span>
-                    :{" "}
-                    {BILL_TYPES.find((t) => t.value === payment.bill?.billType)
-                      ?.label || payment.bill?.billType}
-                    {payment.bill?.description &&
-                      ` - ${payment.bill.description}`}
+                    : {payment.invoice?.paymentType?.name || "-"}
+                    {payment.invoice?.period && ` - ${payment.invoice.period}`}
                   </span>
                 </div>
                 <div className="grid grid-cols-[140px,1fr] gap-2">
                   <span>Metode Pembayaran</span>
                   <span>
-                    :{" "}
-                    {PAYMENT_METHODS.find(
-                      (m) => m.value === payment.paymentMethod,
-                    )?.label || payment.paymentMethod}
+                    : {paymentMethodLabel(payment.method)}
+                    {payment.referenceNo && ` (Ref. ${payment.referenceNo})`}
                   </span>
                 </div>
                 {payment.notes && (
@@ -255,14 +278,14 @@ export default function PaymentReceiptPage({ params }: ReceiptPageProps) {
               <div className="flex justify-end pt-8">
                 <div className="text-center">
                   <p className="text-sm">
-                    {safeFormat(new Date(payment.paymentDate), "d MMMM yyyy", {
+                    {safeFormat(new Date(payment.paidAt), "d MMMM yyyy", {
                       locale: localeId,
                     })}
                   </p>
                   <p className="text-sm mt-1">Petugas,</p>
                   <div className="h-20" /> {/* Space for signature */}
                   <p className="text-sm border-t border-black pt-1 min-w-[150px]">
-                    {payment.verifiedBy || "(.........................)"}
+                    (.........................)
                   </p>
                 </div>
               </div>

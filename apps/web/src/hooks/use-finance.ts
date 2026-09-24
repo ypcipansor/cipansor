@@ -2,29 +2,41 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api, { ApiResponse, PaginatedResponse } from "@/lib/api";
 
 // Bill types (tagihan)
+
+/** Prisma Decimal columns (amount, paidAmount) arrive as strings. */
+export type Money = number | string;
+
+/**
+ * A santri bill exactly as GET /finance/invoices and /finance/invoices/:id
+ * return it (Prisma `Invoice`).
+ *
+ * This type used to describe a bill the API never sent (`billType`,
+ * `student.name`, `academicYear`, `description`), so the list's "Jenis"
+ * column was blank and the santri column showed only the NIS. The kind of
+ * bill is its `paymentType`, a per-unit row, not a fixed enum.
+ */
 export interface Bill {
   id: string;
+  invoiceNumber: string;
   studentId: string;
   student?: {
     id: string;
-    name: string;
     nis: string;
-    class?: {
-      id: string;
-      name: string;
-    };
+    unitId: string;
+    user?: { id: string; name: string };
+    unit?: { id: string; name: string };
   };
-  academicYearId: string;
-  academicYear?: {
-    id: string;
-    name: string;
-  };
-  billType: BillType;
-  amount: number;
+  paymentTypeId: string;
+  paymentType?: { id: string; name: string; code: string };
+  amount: Money;
+  paidAmount: Money;
   dueDate: string;
-  paidAmount: number;
   status: BillStatus;
-  description?: string;
+  /** e.g. "September 2026", or "Tahun Ajaran 2026/2027" for a yearly fee. */
+  period?: string | null;
+  notes?: string | null;
+  /** Only on GET /finance/invoices/:id. */
+  payments?: Payment[];
   createdAt: string;
   updatedAt: string;
 }
@@ -76,39 +88,94 @@ export const BILL_STATUSES: {
 ];
 
 // Payment types (pembayaran)
+
+/**
+ * A payment as GET /finance/payments and /finance/payments/:id return it
+ * (Prisma `Payment`). Like `Bill`, this used to describe fields the API never
+ * sent (`billId`, `bill`, `paymentMethod`, `paymentDate`, `receiptNumber`).
+ */
 export interface Payment {
   id: string;
-  billId: string;
-  bill?: Bill;
-  amount: number;
-  paymentMethod: PaymentMethod;
-  paymentDate: string;
-  receiptNumber: string;
-  notes?: string;
-  verifiedBy?: string;
-  verifiedAt?: string;
+  invoiceId: string;
+  invoice?: Bill & {
+    student?: Bill["student"] & {
+      /** Only on GET /finance/payments/:id: the active class, for the receipt. */
+      enrollments?: { class: { id: string; name: string } }[];
+    };
+  };
+  amount: Money;
+  method: PaymentMethod;
+  referenceNo?: string | null;
+  proofUrl?: string | null;
+  paidAt: string;
+  notes?: string | null;
+  verificationStatus: PaymentVerificationStatus;
   createdAt: string;
   updatedAt: string;
 }
 
+/** Only FINAL_APPROVED payments count toward a bill; the others are proofs in review. */
+export type PaymentVerificationStatus =
+  "PENDING_VERIFICATION" | "TU_APPROVED" | "FINAL_APPROVED" | "REJECTED";
+
+export const VERIFICATION_LABELS: Record<PaymentVerificationStatus, string> = {
+  PENDING_VERIFICATION: "Menunggu verifikasi TU",
+  TU_APPROVED: "Menunggu persetujuan akhir",
+  FINAL_APPROVED: "Sah",
+  REJECTED: "Ditolak",
+};
+
+/** Prisma `PaymentMethod`. */
 export type PaymentMethod =
-  "CASH" | "TRANSFER" | "QRIS" | "VIRTUAL_ACCOUNT" | "DEBIT_CARD";
+  "CASH" | "BANK_TRANSFER" | "VIRTUAL_ACCOUNT" | "EWALLET" | "OTHER";
 
 export const PAYMENT_METHODS: { value: PaymentMethod; label: string }[] = [
   { value: "CASH", label: "Tunai" },
-  { value: "TRANSFER", label: "Transfer Bank" },
-  { value: "QRIS", label: "QRIS" },
+  { value: "BANK_TRANSFER", label: "Transfer Bank" },
   { value: "VIRTUAL_ACCOUNT", label: "Virtual Account" },
-  { value: "DEBIT_CARD", label: "Kartu Debit" },
+  { value: "EWALLET", label: "Dompet Digital / QRIS" },
+  { value: "OTHER", label: "Lainnya" },
 ];
+
+export function paymentMethodLabel(method: string): string {
+  return PAYMENT_METHODS.find((m) => m.value === method)?.label ?? method;
+}
+
+/**
+ * The kinds of bill, for a filter: active payment types, one per code.
+ * Payment types are rows per unit, so "SPP" exists once in each unit; the
+ * list filters by code so one choice covers them all.
+ */
+export function usePaymentTypeOptions() {
+  return useQuery({
+    queryKey: ["payment-types", "options"],
+    queryFn: async () => {
+      const response = await api.get<
+        PaginatedResponse<{ id: string; code: string; name: string }>
+      >("/finance/payment-types", { params: { isActive: true, limit: 100 } });
+      const byCode = new Map<string, string>();
+      for (const t of response.data.data) {
+        if (!byCode.has(t.code)) byCode.set(t.code, t.name);
+      }
+      return Array.from(byCode, ([code, name]) => ({ code, name })).sort(
+        (a, b) => a.name.localeCompare(b.name, "id"),
+      );
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+}
 
 // Bill hooks
 export interface BillParams {
   page?: number;
   limit?: number;
   studentId?: string;
+  /** Bills due within this academic year's months. */
   academicYearId?: string;
-  billType?: BillType;
+  /** Payment types are per unit; filter by code to match "SPP" in every unit. */
+  paymentTypeCode?: string;
+  /** Invoice number, NIS or santri name. */
+  search?: string;
   status?: BillStatus;
 }
 
@@ -247,8 +314,8 @@ export function useDeleteBill() {
 export interface PaymentParams {
   page?: number;
   limit?: number;
-  billId?: string;
-  paymentMethod?: PaymentMethod;
+  invoiceId?: string;
+  method?: PaymentMethod;
   startDate?: string;
   endDate?: string;
 }
@@ -278,19 +345,6 @@ export function usePayment(id: string) {
       return response.data.data;
     },
     enabled: !!id,
-  });
-}
-
-export function useBillPayments(billId: string) {
-  return useQuery({
-    queryKey: ["bills", billId, "payments"],
-    queryFn: async () => {
-      const response = await api.get<ApiResponse<Payment[]>>(
-        `/finance/invoices/${billId}/payments`,
-      );
-      return response.data.data;
-    },
-    enabled: !!billId,
   });
 }
 
@@ -344,7 +398,8 @@ export interface FinancialSummary {
   totalOutstanding: number;
   totalOverdue: number;
   billsByType: {
-    type: BillType;
+    /** The payment type's name. */
+    type: string;
     total: number;
     paid: number;
     outstanding: number;
