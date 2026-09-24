@@ -28,6 +28,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
@@ -187,7 +188,7 @@ export default function FoundationDecisionDetailPage() {
   const submitVote = async () => {
     setVoteError(null);
     try {
-      await castVote.mutateAsync({
+      const result = await castVote.mutateAsync({
         choice,
         note: choice === "REJECT" ? note || undefined : undefined,
         passphrase,
@@ -195,6 +196,14 @@ export default function FoundationDecisionDetailPage() {
       setOpen(false);
       setPassphrase("");
       setNote("");
+      // Finding 3: bila e-seal ditunda (penyiapan artefak gagal), suara sudah
+      // SAH dan tersimpan — beri tahu pemilih agar tidak mengulang suara yang
+      // justru akan ditolak sebagai duplikat.
+      if (result.sealDeferred) {
+        toast.info(
+          "Suara Anda tercatat. E-seal belum dapat dibubuhkan saat ini; suara Anda tetap sah dan keputusan akan disegel setelah masalah dokumen diselesaikan."
+        );
+      }
     } catch (error) {
       // Kegagalan TIDAK semuanya "passphrase salah". Dulu `catch {}` menyamakan
       // 403 (bukan anggota organ), 400 (sudah memilih / sirkuler tanpa alasan),

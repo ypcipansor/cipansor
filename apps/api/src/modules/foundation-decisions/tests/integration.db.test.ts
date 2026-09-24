@@ -26,6 +26,7 @@ import {
 import { createKeyMaterial, publicKeyFingerprint, signPdfHash } from '@/utils/esign';
 import { supersedeSigningKeyHistory, revokeSigningKeyHistory } from '@/utils/signing-key-history';
 import { userService } from '@/modules/users/user.service';
+import { EsignService } from '@/modules/esign/esign.service';
 import type { PrismaClient } from '@prisma/client';
 import pg from 'pg';
 
@@ -2877,6 +2878,265 @@ describe.skipIf(!RUN)('foundation-decisions integrasi PostgreSQL', () => {
       const decision = await prisma.foundationDecision.findUnique({ where: { id: decisionId } });
       expect(decision?.status).toBe('VOTING');
       expect(decision?.esealId).toBeNull();
+    } finally {
+      await b.end().catch(() => {});
+      if (decisionId) {
+        await prisma.foundationDecisionVote.deleteMany({ where: { decisionId } });
+        await prisma.foundationDecisionMember.deleteMany({ where: { decisionId } });
+        await prisma.auditLog.deleteMany({ where: { entityId: decisionId } });
+        await prisma.foundationDecision.delete({ where: { id: decisionId } });
+      }
+      await prisma.userSigningKeyHistory.deleteMany({ where: { userId: voter.id } });
+      await prisma.userSigningKey.deleteMany({ where: { userId: voter.id } });
+      await prisma.userRoleAssignment.deleteMany({
+        where: { userId: { in: [creator.id, voter.id] } },
+      });
+      await prisma.user.deleteMany({ where: { id: { in: [creator.id, voter.id] } } });
+    }
+  });
+
+  /**
+   * Finding 1 (SECURITY critical) — riwayat kunci TIDAK boleh dibuat di luar
+   * lock, dan pencabutan atas kunci yang BELUM punya rekaman tidak boleh hilang.
+   *
+   * Skenario: kunci dibuat, tetapi belum pernah menandatangani apa pun sehingga
+   * BELUM ada baris `UserSigningKeyHistory`. `EsignService.revokeKey` dijalankan
+   * sampai commit. Baru sesudah itu pemilih mencoba memberi suara.
+   *
+   * Sebelum perbaikan, `ensureSigningKeyHistory` membuat baris riwayat BARU
+   * (bersih, tanpa `revokedAt`) DI LUAR lock, sehingga kunci yang sudah dicabut
+   * memperoleh rekaman yang tampak berlaku — dan `assertSigningKeyStillCurrent`
+   * hanya memeriksa rekaman yang baru dibuat itu, bukan pencabutan yang sudah
+   * commit. Suara pun lolos menunjuk kunci mati.
+   *
+   * Sesudah perbaikan: `revokeKey` meng-upsert rekaman dengan `revokedAt`
+   * terisi, dan `castVote` membuat/membaca riwayat DI DALAM lock sehingga
+   * `revokedAt` itu terlihat — suara ditolak, dan TIDAK ADA rekaman riwayat
+   * tanpa `revokedAt` untuk kunci tersebut.
+   */
+  it('pencabutan sebelum riwayat lahir: castVote ditolak, tanpa riwayat revokedAt NULL', async () => {
+    const suffix = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const creator = await prisma.user.create({
+      data: {
+        id: `itest-f1b-creator-${suffix}`,
+        email: `itest-f1b-creator-${suffix}@example.test`,
+        name: 'Pembuat F1b',
+        passwordHash: 'x',
+      },
+    });
+    const voter = await prisma.user.create({
+      data: {
+        id: `itest-f1b-voter-${suffix}`,
+        email: `itest-f1b-voter-${suffix}@example.test`,
+        name: 'Pemilih F1b',
+        passwordHash: 'x',
+      },
+    });
+    const pembina = await prisma.role.upsert({
+      where: { code: 'YAYASAN_PEMBINA' },
+      create: { code: 'YAYASAN_PEMBINA', name: 'Pembina', realm: 'YAYASAN' },
+      update: {},
+    });
+    await prisma.userRoleAssignment.create({
+      data: { userId: creator.id, roleId: pembina.id, isActive: true, isPrimary: true },
+    });
+    await prisma.userRoleAssignment.create({
+      data: { userId: voter.id, roleId: pembina.id, isActive: true },
+    });
+    const voterKey = createKeyMaterial('f1b-vote-pass');
+    const key = await prisma.userSigningKey.create({
+      data: {
+        id: `itest-f1b-key-${suffix}`,
+        userId: voter.id,
+        algorithm: voterKey.algorithm,
+        publicKey: voterKey.publicKey,
+        encryptedPrivateKey: voterKey.encryptedPrivateKey,
+        kdfSalt: voterKey.kdfSalt,
+        kdfParams: voterKey.kdfParams as never,
+        iv: voterKey.iv,
+        authTag: voterKey.authTag,
+        approvedAt: new Date(),
+        expiresAt: new Date(Date.now() + 365 * 24 * 3600 * 1000),
+      },
+    });
+    // PENTING: TIDAK ada UserSigningKeyHistory di sini — itulah inti temuan.
+    expect(
+      await prisma.userSigningKeyHistory.count({ where: { userId: voter.id } })
+    ).toBe(0);
+
+    let decisionId: string | null = null;
+    try {
+      decisionId = await FoundationDecisionService.create(
+        { id: creator.id, roleCode: 'YAYASAN_PEMBINA' },
+        {
+          organType: 'PEMBINA',
+          kind: 'MEETING',
+          subject: 'Uji pencabutan sebelum riwayat',
+          body: 'Naskah uji pencabutan kunci yang belum pernah menandatangani.',
+          decisionType: 'pengesahan-rencana-kerja',
+        }
+      );
+
+      // Cabut kunci SEBELUM riwayat apa pun lahir. Ini commit penuh.
+      await EsignService.revokeKey(voter.id, creator.id, 'Pemegang berhenti menjabat');
+
+      // Perbaikan inti: pencabutan atas kunci tanpa riwayat WAJIB meninggalkan
+      // rekaman ber-`revokedAt` — kalau tidak, pencabutannya tak terlihat.
+      const history = await prisma.userSigningKeyHistory.findMany({
+        where: { userId: voter.id },
+      });
+      expect(history.length).toBeGreaterThan(0);
+      for (const rec of history) {
+        expect(rec.revokedAt).not.toBeNull();
+      }
+
+      // Suara ditolak: kunci sudah dicabut. Sebelum perbaikan, suara LOLOS.
+      await expect(
+        FoundationDecisionService.castVote(
+          { id: voter.id, roleCode: 'YAYASAN_PEMBINA' },
+          decisionId,
+          { choice: 'APPROVE', passphrase: 'f1b-vote-pass' }
+        )
+      ).rejects.toThrow();
+      expect(await prisma.foundationDecisionVote.count({ where: { decisionId } })).toBe(0);
+
+      // Invariant paling penting: TIDAK ADA rekaman riwayat tanpa revokedAt
+      // untuk kunci ini. Inilah yang gagal sebelum perbaikan (baris baru dibuat
+      // bersih oleh `ensureSigningKeyHistory` di luar lock).
+      const cleanHistory = await prisma.userSigningKeyHistory.count({
+        where: { userId: voter.id, revokedAt: null },
+      });
+      expect(cleanHistory).toBe(0);
+    } finally {
+      if (decisionId) {
+        await prisma.foundationDecisionVote.deleteMany({ where: { decisionId } });
+        await prisma.foundationDecisionMember.deleteMany({ where: { decisionId } });
+        await prisma.auditLog.deleteMany({ where: { entityId: decisionId } });
+        await prisma.foundationDecision.delete({ where: { id: decisionId } });
+      }
+      await prisma.userSigningKeyHistory.deleteMany({ where: { userId: voter.id } });
+      await prisma.userSigningKey.deleteMany({ where: { userId: voter.id } });
+      await prisma.userRoleAssignment.deleteMany({
+        where: { userId: { in: [creator.id, voter.id] } },
+      });
+      await prisma.user.deleteMany({ where: { id: { in: [creator.id, voter.id] } } });
+    }
+  });
+
+  /**
+   * F4 (BUG non-severe, real PostgreSQL) — pencatatan percobaan gagal
+   * diserialkan oleh advisory lock per-pengguna yang SAMA dengan jalur sukses.
+   *
+   * Sebelum perbaikan, `recordFailedAttempt` menaikkan penghitung TANPA
+   * mengambil `lockSigningKeyTransition`, sedangkan `clearFailedAttempts`
+   * (jalur sukses) berjalan DI DALAM transaksi `castVote` yang memegang lock
+   * itu. Akibatnya penulisan-ulang penghitung dan reset-nya dapat saling
+   * mendahului tanpa urutan yang pasti.
+   *
+   * Test ini membuktikan perilakunya pada LEVEL KUNCI: koneksi B memegang
+   * advisory lock pemilih (persis yang dipakai `activateKey`/`revokeKey`/
+   * `castVote`), lalu panggilan suara dengan passphrase SALAH harus MEMBLOKIR
+   * pada lock yang sama. Sebelum perbaikan tidak ada penunggu advisory sama
+   * sekali, sehingga assertion pemblokiran gagal.
+   */
+  it('percobaan gagal menunggu advisory lock transisi kunci yang sama', async () => {
+    const suffix = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const creator = await prisma.user.create({
+      data: {
+        id: `itest-f4-creator-${suffix}`,
+        email: `itest-f4-creator-${suffix}@example.test`,
+        name: 'Pembuat F4',
+        passwordHash: 'x',
+      },
+    });
+    const voter = await prisma.user.create({
+      data: {
+        id: `itest-f4-voter-${suffix}`,
+        email: `itest-f4-voter-${suffix}@example.test`,
+        name: 'Pemilih F4',
+        passwordHash: 'x',
+      },
+    });
+    const pembina = await prisma.role.upsert({
+      where: { code: 'YAYASAN_PEMBINA' },
+      create: { code: 'YAYASAN_PEMBINA', name: 'Pembina', realm: 'YAYASAN' },
+      update: {},
+    });
+    await prisma.userRoleAssignment.create({
+      data: { userId: creator.id, roleId: pembina.id, isActive: true, isPrimary: true },
+    });
+    await prisma.userRoleAssignment.create({
+      data: { userId: voter.id, roleId: pembina.id, isActive: true },
+    });
+    const voterKey = createKeyMaterial('f4-vote-pass');
+    await prisma.userSigningKey.create({
+      data: {
+        id: `itest-f4-key-${suffix}`,
+        userId: voter.id,
+        algorithm: voterKey.algorithm,
+        publicKey: voterKey.publicKey,
+        encryptedPrivateKey: voterKey.encryptedPrivateKey,
+        kdfSalt: voterKey.kdfSalt,
+        kdfParams: voterKey.kdfParams as never,
+        iv: voterKey.iv,
+        authTag: voterKey.authTag,
+        approvedAt: new Date(),
+        expiresAt: new Date(Date.now() + 365 * 24 * 3600 * 1000),
+      },
+    });
+
+    let decisionId: string | null = null;
+    const b = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    try {
+      decisionId = await FoundationDecisionService.create(
+        { id: creator.id, roleCode: 'YAYASAN_PEMBINA' },
+        {
+          organType: 'PEMBINA',
+          kind: 'MEETING',
+          subject: 'Uji lock pencacah gagal',
+          body: 'Naskah uji serialisasi pencatatan percobaan gagal.',
+          decisionType: 'pengesahan-rencana-kerja',
+        }
+      );
+
+      await b.connect();
+      await b.query('BEGIN');
+      // Ambil advisory lock per-pengguna yang SAMA dengan
+      // `lockSigningKeyTransition` (hashtextextended(userId, 0)).
+      await b.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [voter.id]);
+
+      const wrong = FoundationDecisionService.castVote(
+        { id: voter.id, roleCode: 'YAYASAN_PEMBINA' },
+        decisionId,
+        { choice: 'APPROVE', passphrase: 'passphrase-yang-jelas-salah' }
+      );
+      // Bukti overlap: panggilan itu benar-benar menunggu advisory lock, bukan
+      // sleep. Sebelum perbaikan tidak ada penunggu advisory sama sekali.
+      const blocked = await waitForAdvisoryLockWaiter(prisma, 8000);
+      expect(blocked).toBe(true);
+
+      await b.query('COMMIT');
+      await expect(wrong).rejects.toThrow(/Sisa percobaan: 4/);
+
+      // Pencacah TETAP ter-commit walau suaranya ditolak (tidak gratis).
+      const afterWrong = await prisma.userSigningKey.findUniqueOrThrow({
+        where: { id: `itest-f4-key-${suffix}` },
+      });
+      expect(afterWrong.failedAttempts).toBe(1);
+
+      // Sukses dengan passphrase benar membuka penghitung di bawah lock yang
+      // SAMA; kunci TIDAK boleh tertinggal terkunci.
+      const ok = await FoundationDecisionService.castVote(
+        { id: voter.id, roleCode: 'YAYASAN_PEMBINA' },
+        decisionId,
+        { choice: 'ABSTAIN', passphrase: 'f4-vote-pass' }
+      );
+      expect(ok).toBeTruthy();
+      const afterOk = await prisma.userSigningKey.findUniqueOrThrow({
+        where: { id: `itest-f4-key-${suffix}` },
+      });
+      expect(afterOk.failedAttempts).toBe(0);
+      expect(afterOk.lockedUntil).toBeNull();
     } finally {
       await b.end().catch(() => {});
       if (decisionId) {

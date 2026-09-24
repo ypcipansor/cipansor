@@ -131,13 +131,29 @@ function decisionPdfTextFieldTargets(data: DecisionPdfData): Array<[string, stri
   ];
 }
 
+/**
+ * Karakter yang mengatur TATA LETAK dan tidak pernah dicetak sebagai glyph.
+ *
+ * `wrap()` memecah teks pada `\r\n|\r|\n` dan `drawText` hanya menerima
+ * baris hasil pecahan itu; tab dirender sebagai spasi oleh penyusun kata.
+ * Artinya U+000A/0D/09 tidak pernah sampai ke `drawText`, sehingga
+ * ketidakhadiran glyph-nya BUKAN kehilangan karakter — memeriksanya justru
+ * menolak setiap notulen bernada baris baru.
+ */
+function isLayoutOnlyChar(ch: string): boolean {
+  const code = ch.codePointAt(0)!;
+  return code === 0x0a || code === 0x0d || code === 0x09;
+}
+
 /** Field yang memuat aksara di luar WinAnsi — hanya relevan pada jalur fallback. */
 export function unencodableDecisionPdfFields(
   data: DecisionPdfData
 ): Array<{ field: string; chars: string[] }> {
   const offenders: Array<{ field: string; chars: string[] }> = [];
   for (const [field, value] of decisionPdfTextFieldTargets(data)) {
-    const chars = [...new Set([...value].filter((ch) => !isWinAnsiEncodable(ch)))];
+    const chars = [
+      ...new Set([...value].filter((ch) => !isLayoutOnlyChar(ch) && !isWinAnsiEncodable(ch))),
+    ];
     if (chars.length > 0) offenders.push({ field, chars });
   }
   return offenders;
@@ -162,7 +178,11 @@ export function unglyphableDecisionPdfFields(
 ): Array<{ field: string; chars: string[] }> {
   const offenders: Array<{ field: string; chars: string[] }> = [];
   for (const [field, value] of decisionPdfTextFieldTargets(data)) {
-    const chars = [...new Set([...value].filter((ch) => !hasGlyph(ch)))];
+    // Karakter tata letak (`\n`/`\r`/`\t`) dilewati: ia tidak pernah digambar
+    // sebagai glyph, jadi ketiadaan glyph-nya bukan karakter yang hilang.
+    const chars = [
+      ...new Set([...value].filter((ch) => !isLayoutOnlyChar(ch) && !hasGlyph(ch))),
+    ];
     if (chars.length > 0) offenders.push({ field, chars });
   }
   return offenders;

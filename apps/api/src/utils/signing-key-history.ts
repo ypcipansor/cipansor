@@ -73,6 +73,13 @@ export async function supersedeSigningKeyHistory(
  * `revokedAt` diisi tanpa menyentuh `supersededAt`: kunci yang dicabut bukan
  * kunci yang digantikan. Baris yang sudah `revokedAt` tidak ditimpa, sehingga
  * waktu pencabutan pertama tetap lestari.
+ *
+ * `updateMany` murni akan DIAM bila barisnya belum ada. Kunci yang belum
+ * pernah menandatangani apa pun belum punya rekaman, sehingga pencabutannya
+ * hilang tanpa jejak dan riwayat kemudian memperlihatkan kunci itu berlaku
+ * selamanya. Jalur pencabutan yang tidak boleh terlewat memakai
+ * `upsertRevokedSigningKeyHistory` di bawah, yang MEMBUAT rekamannya bila
+ * belum ada dengan `revokedAt` sudah terisi.
  */
 export async function revokeSigningKeyHistory(
   client: HistoryClient,
@@ -87,5 +94,42 @@ export async function revokeSigningKeyHistory(
       revokedAt: null,
     },
     data: { revokedAt: at },
+  });
+}
+
+/**
+ * Cabut rekaman riwayat, MEMBUAT-nya bila belum ada.
+ *
+ * Dipakai jalur pencabutan yang tidak boleh terlewat: kunci yang dicabut
+ * sebelum pernah menandatangani tidak punya baris riwayat, dan `updateMany`
+ * akan diam. Di sini barisnya di-upsert dengan status pencabutan sekaligus,
+ * sehingga "kunci X dicabut pada waktu T" selalu punya rekaman append-only,
+ * terlepas dari apakah ia sempat dipakai menandatangani.
+ *
+ * Pencabutan PERTAMA tetap lestari: `updateMany` bersyarat `revokedAt: null`
+ * berjalan lebih dulu, lalu `upsert` hanya mengisi kolom lain bila barisnya
+ * sudah ada, atau membuatnya bila belum.
+ */
+export async function upsertRevokedSigningKeyHistory(
+  client: HistoryClient,
+  key: { userId: string; algorithm?: string; publicKey: string },
+  at: Date = new Date()
+): Promise<void> {
+  if (!key.publicKey) return;
+  const fingerprint = signingKeyFingerprint(key.publicKey);
+  await client.userSigningKeyHistory.updateMany({
+    where: { userId: key.userId, fingerprint, revokedAt: null },
+    data: { revokedAt: at },
+  });
+  await client.userSigningKeyHistory.upsert({
+    where: { userId_fingerprint: { userId: key.userId, fingerprint } },
+    create: {
+      userId: key.userId,
+      algorithm: key.algorithm ?? 'Ed25519',
+      publicKey: key.publicKey,
+      fingerprint,
+      revokedAt: at,
+    },
+    update: {},
   });
 }

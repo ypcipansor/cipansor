@@ -113,6 +113,54 @@ describe('generateDecisionPdf', () => {
     ).rejects.toThrow(/tidak memiliki glyph|glyph/i);
   });
 
+  /**
+   * Finding 2 (BUG severe) — risalah bernada BARIS BARU harus tetap bisa
+   * disahkan.
+   *
+   * `decisionPdfTextFieldTargets` menyerahkan teks apa adanya ke pemeriksaan
+   * glyph, termasuk karakter TATA LETAK `\n`/`\r`/`\t` yang TIDAK PERNAH
+   * dirender sebagai glyph: `wrap()` memecah teks pada `\r\n|\r|\n`, dan
+   * `drawText` hanya menerima baris hasil pecahan itu. Karena font Unicode
+   * tidak punya glyph untuk U+000A, body multibaris ditolak sebagai "aksara
+   * tanpa glyph" — sehingga rapat yang notulennya bernada baris baru TIDAK
+   * PERNAH bisa disahkan. Karakter tata letak harus dilewati, bukan dianggap
+   * aksara hilang; emoji tetap DITOLAK.
+   */
+  it('merender body multibaris (regresi finding 2)', async () => {
+    const buf = await generateDecisionPdf({
+      ...data,
+      body: 'baris1\nbaris2\r\nbaris3',
+    });
+    expect(buf.length).toBeGreaterThan(0);
+    const doc = await PDFDocument.load(buf);
+    expect(doc.getPageCount()).toBeGreaterThan(0);
+  });
+
+  it('merender catatan suara multibaris (regresi finding 2)', async () => {
+    const buf = await generateDecisionPdf({
+      ...data,
+      votes: [
+        { ...data.votes[0], note: 'baris1\nbaris2\r\nbaris3' },
+        data.votes[1],
+      ],
+    });
+    expect(buf.length).toBeGreaterThan(0);
+  });
+
+  it('merender teks bertab (regresi finding 2)', async () => {
+    const buf = await generateDecisionPdf({
+      ...data,
+      body: 'kolom1\tkolom2\tkolom3',
+    });
+    expect(buf.length).toBeGreaterThan(0);
+  });
+
+  it('TETAP menolak emoji walau ada baris baru (pemeriksaan glyph tidak melemah)', async () => {
+    await expect(
+      generateDecisionPdf({ ...data, body: 'baris1\nbaris2 🎉' })
+    ).rejects.toThrow(/glyph/i);
+  });
+
   it('MELEMPAR ketika nama anggota memuat emoji (regresi #2)', async () => {
     await expect(
       generateDecisionPdf({

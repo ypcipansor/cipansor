@@ -158,7 +158,8 @@ export function signingKeyToMaterial(key: {
  */
 export async function ensureSigningKeyHistory(
   client: DbClient,
-  key: { userId: string; algorithm: string; publicKey: string }
+  key: { userId: string; algorithm: string; publicKey: string },
+  stamps?: { revokedAt?: Date | null; supersededAt?: Date | null }
 ): Promise<UserSigningKeyHistory> {
   const fingerprint = publicKeyFingerprint(key.publicKey);
   return client.userSigningKeyHistory.upsert({
@@ -168,6 +169,13 @@ export async function ensureSigningKeyHistory(
       algorithm: key.algorithm,
       publicKey: key.publicKey,
       fingerprint,
+      // Status kunci SAAT BARIS DIBUAT ikut dicatat. Baris baru hanya dibuat
+      // untuk kunci yang sedang sah menandatangani (`assertCanSign` di dalam
+      // lock), jadi kedua cap ini normalnya kosong — tetapi mengisinya dari
+      // status nyata berarti sebuah pencabutan tidak pernah bisa menghasilkan
+      // rekaman riwayat yang tampak berlaku selamanya.
+      revokedAt: stamps?.revokedAt ?? null,
+      supersededAt: stamps?.supersededAt ?? null,
     },
     update: {},
   });
@@ -217,21 +225,37 @@ async function assertSigningKeyStillCurrent(
     throw Errors.conflict(SIGNING_KEY_CONTENDED);
   }
 
-  // Rekaman riwayat dibaca ULANG DI DALAM transaksi (setelah lock), bukan
-  // dipakai dari salinan luar yang mungkin basi. Barisnya sudah di-upsert
-  // idempoten sebelum transaksi (`ensureSigningKeyHistory`), jadi pembacaan ini
-  // selalu menemukan keadaan final pada `(userId, fingerprint)`.
+  // F1 (SECURITY): rekaman riwayat DIBACA-ATAU-DIBUAT di SINI, DI DALAM lock,
+  // bukan di-upsert lebih dulu di luar transaksi. Alurnya penting:
+  //   1. baca rekaman pada `(userId, fingerprint)`;
+  //   2. bila SUDAH ADA, hormati statusnya — `revokedAt`/`supersededAt` yang
+  //      sudah tercap berarti pencabutan/penggantian menang, tolak;
+  //   3. bila BELUM ADA, baru buat — dan kunci SUDAH dipastikan sah oleh
+  //      `assertCanSign` di atas, jadi barisnya lahir bersih.
+  // Dengan urutan ini, pencabutan yang commit SEBELUM baris riwayat lahir tetap
+  // mengikat (`upsertRevokedSigningKeyHistory` di jalur esign sudah lebih dulu
+  // membuat baris tercap, jadi langkah 2 menolaknya). Membuat baris lebih dulu
+  // (versi lama) lalu memeriksanya justru membuang cap pencabutan itu.
   const fingerprint = publicKeyFingerprint(material.publicKey);
-  const record = await tx.userSigningKeyHistory.findUnique({
+  let record = await tx.userSigningKeyHistory.findUnique({
     where: { userId_fingerprint: { userId, fingerprint } },
   });
-  if (!record) throw Errors.conflict(SIGNING_KEY_CONTENDED);
-  // Pencabutan pada waktu mana pun menutup hak menandatangani BARU. Suara
-  // historis tetap sah lewat `isVoteAuthentic`/`keyUsableAt` yang membandingkan
-  // `signedAt`, tetapi suara yang baru ditulis tidak boleh memakai kunci yang
-  // sudah dicabut.
-  if (record.revokedAt) throw Errors.conflict(SIGNING_KEY_CONTENDED);
-  if (!keyUsableAt(record, signedAt)) throw Errors.conflict(SIGNING_KEY_CONTENDED);
+  if (record) {
+    // Pencabutan/penggantian pada waktu mana pun menutup hak menandatangani
+    // BARU. Suara historis tetap sah lewat `isVoteAuthentic`/`keyUsableAt` yang
+    // membandingkan `signedAt`, tetapi suara yang baru ditulis tidak boleh
+    // memakai kunci yang sudah tidak berlaku.
+    if (record.revokedAt) throw Errors.conflict(SIGNING_KEY_CONTENDED);
+    if (record.supersededAt) throw Errors.conflict(SIGNING_KEY_CONTENDED);
+    if (!keyUsableAt(record, signedAt)) throw Errors.conflict(SIGNING_KEY_CONTENDED);
+  } else {
+    // Baris baru untuk kunci yang sedang sah (sudah lolos `assertCanSign`).
+    record = await ensureSigningKeyHistory(tx, {
+      userId,
+      algorithm: material.algorithm,
+      publicKey: material.publicKey,
+    });
+  }
   return record;
 }
 
@@ -1068,28 +1092,34 @@ function assertSnapshotStillMatches(
 /**
  * Catat percobaan passphrase gagal; dikunci setelah ambang esign tercapai.
  *
- * Penaikan dan penghitungan `locked_until` terjadi dalam SATU pernyataan SQL.
- * Bila keduanya dua pernyataan terpisah, pada kegagalan paralel penulis dengan
- * hitungan lebih rendah dapat menimpa lockout dengan `null` — kunci justru
- * terbuka tepat ketika ia seharusnya terkunci, dan tebakan passphrase kembali
- * gratis. Menghitung `locked_until` dari `failed_attempts + 1` di dalam basis
- * data menutup celah itu, karena setiap penulis memakai nilai barisnya sendiri,
- * bukan nilai yang dibaca sebelumnya.
+ * Penaikan dan `locked_until` terjadi dalam SATU pernyataan SQL, dihitung dari
+ * `failed_attempts + 1` di basis data. Bila keduanya dua pernyataan terpisah,
+ * penulis paralel dengan hitungan lebih rendah dapat menimpa lockout dengan
+ * `null` dan tebakan passphrase kembali gratis.
+ *
+ * F4: transaksi singkat ini memegang `lockSigningKeyTransition(tx, userId)` —
+ * kunci yang SAMA dengan reset sukses (`clearFailedAttempts`) — sehingga kedua
+ * mutasi tidak dapat saling mendahului tanpa urutan pasti. Transaksinya
+ * terpisah dan tetap ter-commit walau operasi utama dibatalkan; diambil SEBELUM
+ * `castVote` mengunci, jadi urutan lock selalu pencacah-maju (tanpa deadlock).
  */
-async function recordFailedAttempt(keyId: string): Promise<number> {
-  await prisma.$executeRaw`
-    UPDATE "user_signing_keys"
-    SET "failed_attempts" = "failed_attempts" + 1,
-        "locked_until" = CASE
-          WHEN "failed_attempts" + 1 >= ${MAX_PASSPHRASE_ATTEMPTS}
-            THEN NOW() + (${LOCKOUT_MINUTES} * INTERVAL '1 minute')
-          ELSE "locked_until"
-        END
-    WHERE "id" = ${keyId}`;
-  // Baca ulang nilai pasca-increment: pemanggil memakainya untuk memberi tahu
-  // sisa percobaan, dan nilai itu harus yang benar-benar tersimpan.
-  const updated = await prisma.userSigningKey.findUnique({ where: { id: keyId } });
-  return updated?.failedAttempts ?? MAX_PASSPHRASE_ATTEMPTS;
+async function recordFailedAttempt(userId: string, keyId: string): Promise<number> {
+  return prisma.$transaction(async (tx) => {
+    await lockSigningKeyTransition(tx, userId);
+    await tx.$executeRaw`
+      UPDATE "user_signing_keys"
+      SET "failed_attempts" = "failed_attempts" + 1,
+          "locked_until" = CASE
+            WHEN "failed_attempts" + 1 >= ${MAX_PASSPHRASE_ATTEMPTS}
+              THEN NOW() + (${LOCKOUT_MINUTES} * INTERVAL '1 minute')
+            ELSE "locked_until"
+          END
+      WHERE "id" = ${keyId}`;
+    // Baca ulang nilai pasca-increment: pemanggil memakainya untuk memberi tahu
+    // sisa percobaan, dan nilai itu harus yang benar-benar tersimpan.
+    const updated = await tx.userSigningKey.findUnique({ where: { id: keyId } });
+    return updated?.failedAttempts ?? MAX_PASSPHRASE_ATTEMPTS;
+  });
 }
 
 /** Buka blokir setelah passphrase benar — penghitung kembali ke nol. */
@@ -1632,15 +1662,16 @@ export const FoundationDecisionService = {
       throw Errors.badRequest((err as Error).message);
     }
     const material = signingKeyToMaterial(signingKey as never);
-    // Catat kunci publik yang dipakai ke riwayat append-only, dan ikat suara
-    // ini ke rekaman itu. Rekaman inilah yang dipercaya saat verifikasi ulang;
-    // kunci pada baris suara hanya menjadi pembanding. Tanpa langkah ini, suara
-    // yang disisipkan langsung ke basis data dengan kunci karangan akan lolos.
-    const keyRecord = await ensureSigningKeyHistory(prisma, {
-      userId: actor.id,
-      algorithm: material.algorithm,
-      publicKey: material.publicKey,
-    });
+    // Fingerprint kunci yang AKAN menandatangani, dihitung dari kunci publik
+    // yang barusan diverifikasi. Dipakai untuk merakit baris suara sintetis
+    // (preview) dan diverifikasi ULANG terhadap rekaman riwayat DI DALAM lock.
+    //
+    // Rekaman riwayat TIDAK lagi dibuat di sini (di luar lock). F1 (SECURITY):
+    // pencabutan yang commit SEBELUM baris riwayat lahir tidak akan menemukan
+    // apa pun untuk dicap (`updateMany` diam), sehingga riwayat memperlihatkan
+    // kunci itu berlaku selamanya — dan suara yang menunjuk rekaman yang salah
+    // tetap tersimpan. Rekaman dibuat di dalam lock (`assertSigningKeyStillCurrent`).
+    const signingKeyFingerprintValue = publicKeyFingerprint(material.publicKey);
 
     const signedAt = new Date();
     const snapshot = d.quorumSnapshot as unknown as QuorumSnapshot;
@@ -1669,7 +1700,7 @@ export const FoundationDecisionService = {
       signature = signPdfHash(material, passphrase, digest);
     } catch (error) {
       if (error instanceof EsignError) {
-        const failed = await recordFailedAttempt(signingKey!.id);
+        const failed = await recordFailedAttempt(actor.id, signingKey!.id);
         const left = MAX_PASSPHRASE_ATTEMPTS - failed;
         throw Errors.unauthorized(
           left > 0
@@ -1696,13 +1727,26 @@ export const FoundationDecisionService = {
       algorithm: material.algorithm,
       note: note?.trim() || null,
       signedAt,
-      signingKeyId: keyRecord.id,
-      publicKeyFingerprint: keyRecord.fingerprint,
+      signingKeyId: 'preview',
+      publicKeyFingerprint: signingKeyFingerprintValue,
       user: {
         id: actor.id,
         name: d.members.find((m) => m.userId === actor.id)?.name ?? '',
       },
-      signingKey: keyRecord,
+      // Placeholder yang sudah memakai fingerprint BENAR, supaya baris suara
+      // sintetis ini lolos `isVoteAuthentic` saat menghitung artefak preview —
+      // tetapi rekaman NYATA dibaca/dibuat/diverifikasi di dalam lock dan
+      // itulah yang diikat ke baris suara final.
+      signingKey: {
+        id: 'preview',
+        userId: actor.id,
+        algorithm: material.algorithm,
+        publicKey: material.publicKey,
+        fingerprint: signingKeyFingerprintValue,
+        issuedAt: signedAt,
+        supersededAt: null,
+        revokedAt: null,
+      } as UserSigningKeyHistory,
     };
     // Satu percobaan penuh. Semuanya membaca/menulis lewat `bound` — baris yang
     // dimuat SEGAR di luar kunci — bukan salinan permintaan pertama, sehingga
@@ -1739,12 +1783,27 @@ export const FoundationDecisionService = {
       // Kerja mahal (render PDF + buka kunci e-seal) dikerjakan DI LUAR kunci
       // baris, agar satu finalisasi tidak menahan suara anggota lain selama
       // kripto berlangsung.
+      //
+      // Finding 3 (BUG severe): kegagalan menyiapkan artefak TIDAK boleh
+      // membatalkan suara penentu. Sebelumnya `prepareApprovalArtifact` yang
+      // melempar (mis. font Unicode hilang → glyph hilang, atau e-seal tidak
+      // tersedia) merambat keluar dan menggagalkan SELURUH transaksi, sehingga
+      // suara penentu — satu-satunya yang membuat kuorum terpenuhi — hilang,
+      // dan pemilih harus memilih ulang. Di sini kegagalannya DITANGKAP: suara
+      // tetap dicatat dengan status VOTING, artefaknya belum disegel, dan
+      // `finalize` dapat merender ulang setelah penyebabnya pulih tanpa suara
+      // baru.
       let previewArtifact: ApprovalArtifact | null = null;
+      let artifactError: Error | null = null;
       if (
         previewEvaluation.outcome === 'APPROVED' &&
         attemptDecision.status !== FoundationDecisionStatus.APPROVED
       ) {
-        previewArtifact = await this.prepareApprovalArtifact(actor, attemptDecision);
+        try {
+          previewArtifact = await this.prepareApprovalArtifact(actor, attemptDecision);
+        } catch (err) {
+          artifactError = err instanceof Error ? err : new Error(String(err));
+        }
       }
 
       const result = await prisma.$transaction(async (tx) => {
@@ -1858,7 +1917,27 @@ export const FoundationDecisionService = {
           previewArtifact && previewArtifact.fingerprint === approvalFingerprint(fresh)
             ? previewArtifact
             : null;
-        const outcome = await this.applyLocked(actor, fresh, evaluation, tx, artifact ?? undefined);
+        const needsApproval =
+          evaluation.outcome === 'APPROVED' &&
+          fresh.status !== FoundationDecisionStatus.APPROVED;
+        // Finding 3 (BUG severe): bila penyiapan artefak GAGAL (bukan sekadar
+        // basi karena penyisipan suara lain), suara penentu tetap harus
+        // tersimpan. Sebelumnya kegagalan itu merambat keluar transaksi,
+        // me-rollback suara, dan memaksa pemilih memilih ulang — padahal
+        // suaranya yang membuat kuorum terpenuhi. Di sini suara dicatat dengan
+        // status tetap VOTING, penyegelan DITUNDA, dan `finalize` dapat
+        // merender ulang setelah penyebabnya (mis. font Unicode) pulih, tanpa
+        // suara baru. Sinyal `StaleArtifactError` tetap dilempar untuk kasus
+        // basi biasa (artefak ada tetapi sidik jarinya berubah) agar percobaan
+        // ulang di luar kunci tetap terjadi.
+        let outcome: Awaited<ReturnType<typeof this.applyLocked>>;
+        let sealDeferred = false;
+        if (artifactError && needsApproval) {
+          outcome = { outcome: 'OPEN', status: FoundationDecisionStatus.VOTING };
+          sealDeferred = true;
+        } else {
+          outcome = await this.applyLocked(actor, fresh, evaluation, tx, artifact ?? undefined);
+        }
 
         // Audit VOTE ditulis DI DALAM transaksi yang sama dengan suaranya. Bila
         // di luar, kegagalan `auditLog.create` membuat suara sudah tercommit
@@ -1879,7 +1958,7 @@ export const FoundationDecisionService = {
         // tidak ada pembaruan kunci yang lolos ketika suaranya gagal.
         await clearFailedAttempts(signingKey!.id, tx);
 
-        return { vote, summary, outcome };
+        return { vote, summary, outcome, sealDeferred };
       });
       return result;
     };
@@ -1919,6 +1998,11 @@ export const FoundationDecisionService = {
       choice,
       voteSummary: result.summary,
       outcome: result.outcome,
+      // Finding 3: suara tercatat tetapi e-seal belum dibubuhkan karena
+      // penyiapan artefak gagal (mis. font Unicode hilang). UI memakai ini
+      // untuk memberi tahu pemilih bahwa suaranya SAH dan tidak perlu diulang,
+      // sementara penyegelan menunggu `finalize`/pemulihan.
+      sealDeferred: result.sealDeferred,
     };
   },
 

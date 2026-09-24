@@ -75,7 +75,11 @@ import {
   needsNewIssuance,
   renewedExpiry,
 } from '@/utils/esign-lifecycle';
-import { revokeSigningKeyHistory, supersedeSigningKeyHistory } from '@/utils/signing-key-history';
+import {
+  revokeSigningKeyHistory,
+  supersedeSigningKeyHistory,
+  upsertRevokedSigningKeyHistory,
+} from '@/utils/signing-key-history';
 import { lockSigningKeyTransition } from '@/utils/signing-key-lock';
 
 /** Baris kunci → bahan kriptografi yang dimengerti utils/esign. */
@@ -1170,7 +1174,16 @@ export const EsignService = {
       // berhenti menjadi kunci yang berlaku pada tanggal ini" dari "tanda tangan
       // ini masih dapat diverifikasi", dan yang kedua tetap benar lewat kunci
       // publik lamanya.
-      await revokeSigningKeyHistory(tx, { userId, publicKey: key.publicKey }, revokedAt);
+      // Rekaman yang BELUM ADA pun ikut dibuat dengan `revokedAt` terisi.
+      // `revokeSigningKeyHistory` murni `updateMany` tidak berbuat apa-apa bila
+      // kuncinya belum pernah menandatangani (belum ada rekaman), sehingga
+      // pencabutannya hilang dari riwayat. `upsertRevokedSigningKeyHistory`
+      // membuat rekaman itu bila perlu, dengan cap waktu pencabutan yang sama.
+      await upsertRevokedSigningKeyHistory(
+        tx,
+        { userId, algorithm: key.algorithm, publicKey: key.publicKey },
+        revokedAt
+      );
 
       // Surat yang ditandatangani dengan kunci ini — dicocokkan pada salinan
       // kunci publiknya, bukan sekadar pada penandatangannya, karena orang yang

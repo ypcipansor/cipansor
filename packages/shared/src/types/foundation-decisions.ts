@@ -555,6 +555,12 @@ export interface CastFoundationVoteResultDTO {
   choice: FoundationVoteChoice;
   voteSummary: VoteSummary;
   outcome: FoundationVoteOutcomeDTO;
+  /**
+   * Suara TERCATAT tetapi e-seal belum dibubuhkan karena penyiapan artefak
+   * gagal (mis. font Unicode risalah hilang). Suara tetap sah dan TIDAK boleh
+   * diulang; penyegelan menunggu `finalize`/pemulihan aset.
+   */
+  sealDeferred: boolean;
 }
 
 /** Halaman daftar keputusan (paginated). */

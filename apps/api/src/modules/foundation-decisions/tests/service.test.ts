@@ -519,10 +519,19 @@ describe('FoundationDecisionService.castVote', () => {
     ).rejects.toThrow(/Sisa percobaan: 4/);
 
     // Increment + `lockedUntil` ditulis dalam SATU pernyataan SQL, bukan dua
-    // update terpisah yang dapat berjalan terbalik.
-    const rawSql = (dm.$executeRaw.mock.calls[0][0] as string[]).join('?');
-    expect(rawSql).toContain('"failed_attempts" = "failed_attempts" + 1');
-    expect(rawSql).toContain('locked_until');
+    // update terpisah yang dapat berjalan terbalik. (F4: pernyataan pertama
+    // kini advisory lock, jadi increment dicari lewat isinya, bukan indeks.)
+    const increment = dm.$executeRaw.mock.calls
+      .map((c: any[]) => (c[0] as string[]).join('?'))
+      .find((sql: string) => sql.includes('"failed_attempts" = "failed_attempts" + 1'));
+    expect(increment).toBeDefined();
+    expect(increment).toContain('locked_until');
+    // F4: pencacah berjalan di bawah advisory lock per-pengguna yang SAMA
+    // dengan reset saat suara sukses.
+    const lockSql = dm.$executeRaw.mock.calls
+      .map((c: any[]) => (c[0] as string[]).join('?'))
+      .find((sql: string) => sql.includes('pg_advisory_xact_lock'));
+    expect(lockSql).toBeDefined();
     expect(dm.foundationDecisionVote.create).not.toHaveBeenCalled();
   });
 
@@ -542,8 +551,10 @@ describe('FoundationDecisionService.castVote', () => {
 
     // `locked_until` dihitung DI DALAM pernyataan yang sama dari
     // `failed_attempts + 1` — tidak ada update kedua yang dapat menimpanya.
-    const rawSql = (dm.$executeRaw.mock.calls[0][0] as string[]).join('?');
-    expect(rawSql).toContain('"failed_attempts" + 1 >=');
+    const rawSql = dm.$executeRaw.mock.calls
+      .map((c: any[]) => (c[0] as string[]).join('?'))
+      .find((sql: string) => sql.includes('"failed_attempts" + 1 >='));
+    expect(rawSql).toBeDefined();
   });
 
   /**
@@ -568,6 +579,12 @@ describe('FoundationDecisionService.castVote', () => {
     let stored = 0;
     let lockedUntil: Date | null = null;
     dm.$executeRaw.mockImplementation(async (strings: any, ...values: any[]) => {
+      // F4: pencacah kini didahului advisory lock dalam transaksi yang sama.
+      // Hanya pernyataan yang benar-benar menaikkan penghitung yang dihitung;
+      // memakai indeks argumen akan salah, karena advisory lock membawa satu
+      // nilai (userId) sedangkan increment membawa beberapa.
+      const sql = (strings as string[]).join('?');
+      if (sql.includes('pg_advisory_xact_lock')) return 1;
       const keyId = values[values.length - 1];
       stored += 1;
       if (stored >= 5) lockedUntil = new Date(Date.now() + 15 * 60_000);
@@ -820,6 +837,104 @@ describe('FoundationDecisionService.castVote', () => {
     expect(dm.foundationDecisionVote.create).not.toHaveBeenCalled();
   });
 });
+
+  /**
+   * Finding 3 (BUG severe) — kegagalan menyiapkan artefak TIDAK boleh membuang
+   * suara penentu.
+   *
+   * Sebelum perbaikan, `prepareApprovalArtifact` yang melempar (mis. font
+   * Unicode hilang sehingga glyph tak bisa dicetak) merambat keluar transaksi
+   * dan me-rollback suara yang BARU SAJA membuat kuorum terpenuhi. Pemilih
+   * kehilangan suaranya dan harus memilih ulang. Sesudah perbaikan, suaranya
+   * tercatat, penyegelan ditunda (`sealDeferred`), dan status tetap VOTING
+   * sehingga `finalize` dapat merender ulang setelah penyebabnya pulih.
+   */
+  it('artefak gagal → suara TETAP tercatat, penyegelan ditunda (regresi finding 3)', async () => {
+    const d = decisionRow({
+      kind: 'CIRCULAR',
+      status: 'VOTING',
+      quorumSnapshot: {
+        organType: 'PEMBINA',
+        kind: 'CIRCULAR',
+        activeCount: 3,
+        presentMode: 'MUTLAK',
+        presentValue: 1,
+        decisionMode: 'MUTLAK',
+        decisionValue: 1,
+      },
+    });
+    // Dua anggota sudah menyetujui; suara ketiga (user-1) membuat kuorum PENUH.
+    // Pembacaan PERTAMA (di luar lock) hanya memuat dua suara; pembacaan di
+    // DALAM lock memuat suara ketiga yang barusan ditulis.
+    // Tiga pembacaan berurutan: (1) di luar lock, (2) di dalam lock untuk
+    // cek duplikat — keduanya BELUM memuat suara user-1; (3) sesudah insert,
+    // untuk mengevaluasi kuorum — sudah memuat suara user-1.
+    dm.foundationDecision.findUnique
+      .mockResolvedValueOnce({
+        ...d,
+        votes: [signedVoteRow(d, 'user-0', 'APPROVE'), signedVoteRow(d, 'user-2', 'APPROVE')],
+      })
+      .mockResolvedValueOnce({
+        ...d,
+        votes: [signedVoteRow(d, 'user-0', 'APPROVE'), signedVoteRow(d, 'user-2', 'APPROVE')],
+      })
+      .mockResolvedValue({
+        ...d,
+        votes: [
+          signedVoteRow(d, 'user-0', 'APPROVE'),
+          signedVoteRow(d, 'user-1', 'APPROVE'),
+          signedVoteRow(d, 'user-2', 'APPROVE'),
+        ],
+      });
+    dm.foundationDecisionVote.create.mockResolvedValue({
+      id: 'vote-1',
+      decisionId: 'dec-1',
+      userId: 'user-1',
+      choice: 'APPROVE',
+      signedAt: new Date(),
+    });
+    // Ketiga anggota menyetujui → kuorum penuh, sehingga `applyLocked` akan
+    // mencoba menyegel. Tepat di situ penyiapan artefak GAGAL.
+    dm.foundationDecisionVote.findMany.mockResolvedValue([
+      signedVoteRow(d, 'user-0', 'APPROVE'),
+      signedVoteRow(d, 'user-1', 'APPROVE'),
+      signedVoteRow(d, 'user-2', 'APPROVE'),
+    ]);
+    dm.userSigningKey.findUnique.mockResolvedValue(signingKeyRow);
+    dm.userSigningKey.update.mockResolvedValue(signingKeyRow);
+    dm.foundationEseal.findFirst.mockResolvedValue(null);
+
+    const renderSpy = vi
+      .spyOn(FoundationDecisionService, 'renderPdf')
+      .mockRejectedValue(new Error('Naskah memuat aksara yang tidak memiliki glyph pada font risalah'));
+
+    try {
+      const result = await FoundationDecisionService.castVote(
+        { id: 'user-1', roleCode: 'YAYASAN_PEMBINA' },
+        'dec-1',
+        { choice: 'APPROVE', passphrase: PASS }
+      );
+
+      // Suara tercatat — inilah inti perbaikan.
+      expect(dm.foundationDecisionVote.create).toHaveBeenCalledTimes(1);
+      expect(result.voteId).toBe('vote-1');
+      // Penyegelan ditunda, status tetap VOTING, dan pemanggil diberi tahu
+      // supaya UI tidak menyuruh pemilih mengulang suara yang sudah sah.
+      expect(result.sealDeferred).toBe(true);
+      expect(result.outcome.outcome).toBe('OPEN');
+      expect(result.outcome.status).toBe('VOTING');
+      // Tidak ada dokumen final yang diarsipkan tanpa e-seal, dan keputusan
+      // TIDAK pernah ditandai APPROVED tanpa dokumen — penyegelan benar-benar
+      // ditunda, bukan setengah jalan. (Pembaruan `voteSummary` tetap terjadi.)
+      expect(dm.foundationDecisionDocument.create).not.toHaveBeenCalled();
+      const statusWrites = dm.foundationDecision.update.mock.calls
+        .map((c: any[]) => c[0]?.data?.status)
+        .filter(Boolean);
+      expect(statusWrites).not.toContain('APPROVED');
+    } finally {
+      renderSpy.mockRestore();
+    }
+  });
 
 describe('FoundationDecisionService.finalize', () => {
   /**
