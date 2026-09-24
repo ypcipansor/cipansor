@@ -2,6 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import type { Page } from "@playwright/test";
 import { generate as generateTotp } from "otplib";
+import { middlewareAuthCookieValue } from "../../src/lib/auth-cookie";
 
 /**
  * API-based authentication for e2e tests.
@@ -167,7 +168,8 @@ export async function injectSession(page: Page, session: AuthSession) {
   });
 
   // Cookies for the Next middleware (it JSON.parses the encoded auth-storage and
-  // falls back to accessToken). Mirror the app's encodeURIComponent encoding.
+  // falls back to accessToken). Mirror the app: the slim value, encoded — the
+  // full user overflows 4 KB for some accounts and Playwright rejects it.
   await page.context().addCookies([
     {
       name: "accessToken",
@@ -176,7 +178,7 @@ export async function injectSession(page: Page, session: AuthSession) {
     },
     {
       name: "auth-storage",
-      value: encodeURIComponent(authStorage),
+      value: encodeURIComponent(middlewareAuthCookieValue(authStorage) ?? ""),
       url: BASE_URL,
     },
   ]);
@@ -243,7 +245,10 @@ export function buildStorageState(session: AuthSession) {
   return {
     cookies: [
       { name: "accessToken", value: session.accessToken },
-      { name: "auth-storage", value: encodeURIComponent(authStorage) },
+      {
+        name: "auth-storage",
+        value: encodeURIComponent(middlewareAuthCookieValue(authStorage) ?? ""),
+      },
     ].map((c) => ({
       ...c,
       domain: new URL(BASE_URL).hostname,
