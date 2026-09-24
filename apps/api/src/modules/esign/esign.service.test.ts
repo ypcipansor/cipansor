@@ -10,10 +10,21 @@ import {
 } from '@/utils/esign';
 import crypto from 'crypto';
 
-const { emitMock, compareMock } = vi.hoisted(() => ({
+const { emitMock, compareMock, deleteDocMock } = vi.hoisted(() => ({
   emitMock: vi.fn(),
   compareMock: vi.fn(),
+  deleteDocMock: vi.fn(),
 }));
+
+// Finding 2 regression hinges on the FILE side effect, not just the column
+// write: the old cleanup read the CURRENT ktpFileName at cleanup time and
+// unlinked it unconditionally. Asserting only on `updateMany`'s arguments (as
+// the weaker version of this test did) passes even when the compare-and-delete
+// guard is removed, so it proved nothing. Mock the store and assert the unlink.
+vi.mock('@/utils/identity-document-store', async (importActual) => {
+  const actual = await importActual<typeof import('@/utils/identity-document-store')>();
+  return { ...actual, deleteIdentityDocument: deleteDocMock };
+});
 
 vi.mock('../../lib/prisma', () => ({
   prisma: {
@@ -447,6 +458,10 @@ describe('persetujuan menyatakan siapa orangnya', () => {
       expect.objectContaining({ where: { userId: 'ketua', ktpFileName: 'ktp-lama.jpg' } })
     );
     expect(prisma.userIdentity.update).not.toHaveBeenCalled();
+    // Bukti akibat (bukan sekadar bentuk panggilan): count 0 → berkas TIDAK
+    // di-unlink. Sebelum perbaikan (tanpa guard `cleared.count`) nama berkas
+    // tetap dihapus walau klaim barisnya gagal.
+    expect(deleteDocMock).not.toHaveBeenCalled();
   });
 
   /**
