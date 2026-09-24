@@ -196,11 +196,13 @@ export function useRooms(params: RoomParams = {}) {
   return useQuery({
     queryKey: ["rooms", params],
     queryFn: async () => {
+      // Dormitory rooms live on `/dormitories/rooms/list`, not the facilities
+      // module — `/facilities/rooms` is a different table (FacilityRoom, keyed
+      // by building) and its `dormitoryId` filter does not exist, so the
+      // dormitory room pickers always came back empty.
       const response = await api.get<PaginatedResponse<Room>>(
-        "/facilities/rooms",
-        {
-          params,
-        },
+        "/dormitories/rooms/list",
+        { params },
       );
       return response.data;
     },
@@ -212,7 +214,7 @@ export function useRoom(id: string) {
     queryKey: ["rooms", id],
     queryFn: async () => {
       const response = await api.get<ApiResponse<Room>>(
-        `/facilities/rooms/${id}`,
+        `/dormitories/rooms/${id}`,
       );
       return response.data.data;
     },
@@ -224,8 +226,9 @@ export function useDormitoryRooms(dormitoryId: string) {
   return useQuery({
     queryKey: ["dormitories", dormitoryId, "rooms"],
     queryFn: async () => {
-      const response = await api.get<ApiResponse<Room[]>>(
-        `/dormitories/${dormitoryId}/rooms`,
+      const response = await api.get<PaginatedResponse<Room>>(
+        "/dormitories/rooms/list",
+        { params: { dormitoryId, limit: 100 } },
       );
       return response.data.data;
     },
@@ -247,7 +250,7 @@ export function useCreateRoom() {
   return useMutation({
     mutationFn: async (data: CreateRoomData) => {
       const response = await api.post<ApiResponse<Room>>(
-        "/facilities/rooms",
+        "/dormitories/rooms",
         data,
       );
       return response.data.data;
@@ -273,7 +276,7 @@ export function useUpdateRoom() {
       data: Partial<CreateRoomData>;
     }) => {
       const response = await api.patch<ApiResponse<Room>>(
-        `/facilities/rooms/${id}`,
+        `/dormitories/rooms/${id}`,
         data,
       );
       return response.data.data;
@@ -290,7 +293,7 @@ export function useDeleteRoom() {
 
   return useMutation({
     mutationFn: async (id: string) => {
-      await api.delete(`/facilities/rooms/${id}`);
+      await api.delete(`/dormitories/rooms/${id}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["rooms"] });

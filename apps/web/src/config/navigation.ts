@@ -355,6 +355,12 @@ const staffNavigation: NavGroup[] = [
         title: "Data Siswa",
         href: "/students",
         icon: GraduationCap,
+        // Every staff role below holds STUDENT_VIEW except the two unit-usaha
+        // (business) roles, which the API answers with 403. They were shown
+        // the link anyway — the page then bounced them to /unauthorized.
+        roleCodes: STAFF_ROLES.filter(
+          (code) => !["BUSINESS_MANAGER", "BUSINESS_STAFF"].includes(code),
+        ),
       },
       {
         title: "Kesehatan",
@@ -1995,6 +2001,16 @@ function filterNavItemsByRoleCode(
     });
 }
 
+/** Apply the `roleCodes` tags of a whole nav tree and drop groups left empty. */
+function applyRoleFilter(groups: NavGroup[], roleCode: string): NavGroup[] {
+  return groups
+    .map((group) => ({
+      ...group,
+      items: filterNavItemsByRoleCode(group.items, roleCode),
+    }))
+    .filter((group) => group.items.length > 0);
+}
+
 /**
  * Get navigation for a specific role code
  * Uses the new RoleCode-based system
@@ -2052,7 +2068,11 @@ export function getNavigationForRoleCode(roleCode: string): NavGroup[] {
 
   // Staff roles
   if (isStaffRole(roleCode)) {
-    return staffNavigation;
+    // Filtered, not returned raw: `staffNavigation` carries `roleCodes` tags
+    // (e.g. `/students`, which the two business roles cannot read), and a tag
+    // that nothing consults hides nothing — it only documents the intent while
+    // the link is still shown and the page still 403s.
+    return applyRoleFilter(staffNavigation, roleCode);
   }
 
   // Student roles

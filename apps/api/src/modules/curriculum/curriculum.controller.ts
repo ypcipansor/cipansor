@@ -1,6 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 import * as curriculumService from './curriculum.service';
 import {
+  createCurriculumSchema,
+  updateCurriculumSchema,
+  curriculumQuerySchema,
+  addCurriculumSubjectSchema,
   createSubjectSchema,
   updateSubjectSchema,
   subjectQuerySchema,
@@ -12,6 +16,88 @@ import {
   updateScheduleSchema,
   scheduleQuerySchema,
 } from './curriculum.schema';
+
+// =====================================
+// CURRICULUM CONTROLLERS
+// =====================================
+
+export async function getCurriculums(req: Request, res: Response, next: NextFunction) {
+  try {
+    const query = curriculumQuerySchema.parse(req.query);
+    const result = await curriculumService.getCurriculums(query);
+    res.json({ success: true, ...result });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getCurriculumById(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id } = req.params;
+    const curriculum = await curriculumService.getCurriculumById(id);
+    if (!curriculum) {
+      return res.status(404).json({ success: false, error: 'Curriculum not found' });
+    }
+    res.json({ success: true, data: curriculum });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function createCurriculum(req: Request, res: Response, next: NextFunction) {
+  try {
+    const data = createCurriculumSchema.parse(req.body);
+    const curriculum = await curriculumService.createCurriculum(data);
+    res.status(201).json({ success: true, data: curriculum });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function updateCurriculum(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id } = req.params;
+    const data = updateCurriculumSchema.parse(req.body);
+    const curriculum = await curriculumService.updateCurriculum(id, data);
+    res.json({ success: true, data: curriculum });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function deleteCurriculum(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id } = req.params;
+    await curriculumService.deleteCurriculum(id);
+    res.json({ success: true, message: 'Curriculum deleted' });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function addCurriculumSubject(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id } = req.params;
+    const data = addCurriculumSubjectSchema.parse(req.body);
+    const curriculumSubject = await curriculumService.addCurriculumSubject(id, data);
+    res.status(201).json({ success: true, data: curriculumSubject });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function removeCurriculumSubject(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id, subjectId } = req.params;
+    const removed = await curriculumService.removeCurriculumSubject(id, subjectId);
+    if (!removed) {
+      return res.status(404).json({ success: false, error: 'Curriculum subject not found' });
+    }
+    res.json({ success: true, message: 'Subject removed from curriculum' });
+  } catch (error) {
+    next(error);
+  }
+}
 
 // =====================================
 // SUBJECT CONTROLLERS

@@ -7,6 +7,22 @@ const router = Router();
 // All routes require authentication
 router.use(authenticate);
 
+// ==================== CURRICULUMS ====================
+
+router.get('/curriculums', controller.getCurriculums);
+
+router.post('/curriculums', controller.createCurriculum);
+
+router.get('/curriculums/:id', controller.getCurriculumById);
+
+router.put('/curriculums/:id', controller.updateCurriculum);
+
+router.delete('/curriculums/:id', controller.deleteCurriculum);
+
+router.post('/curriculums/:id/subjects', controller.addCurriculumSubject);
+
+router.delete('/curriculums/:id/subjects/:subjectId', controller.removeCurriculumSubject);
+
 // ==================== SUBJECTS ====================
 
 /**

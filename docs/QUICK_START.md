@@ -1,518 +1,225 @@
-# 🚀 Quick Start Guide - Cipansor Enhancement Implementation
+# Quick Start
 
-**Last Updated:** December 11, 2025  
-**Current Phase:** Sprint 1 - Foundation & Analytics
+Orientasi cepat untuk siapa pun yang baru masuk ke repositori Cipansor: apa
+isinya, bagaimana menjalankannya, dan ke mana harus membaca berikutnya.
 
----
-
-## 📦 What's Been Implemented
-
-### ✅ Ready to Use Today
-
-1. **Real-time Dashboard Hook**
-   - Location: `/apps/web/src/hooks/use-realtime-dashboard.ts`
-   - Status: ✅ Complete, needs backend WebSocket server
-
-2. **Murojaah Analytics Dashboard**
-   - Route: `/tahfidz/murojaah/analytics`
-   - Status: ✅ Complete with mock data, needs API integration
-
-3. **Executive Dashboard**
-   - Route: `/dashboard/executive`
-   - Status: ✅ Complete, needs WebSocket backend + live API
-
-4. **PAUD Radar Chart Component**
-   - Location: `/apps/web/src/components/paud/RadarChart.tsx`
-   - Status: ✅ Complete, ready to integrate into student dashboard
+> Dokumen ini menggantikan panduan "Sprint 1" lama yang sudah tidak relevan.
+> Untuk gambaran sistem lihat [`ARCHITECTURE.md`](./ARCHITECTURE.md); untuk
+> cacat & rencana lihat [`KNOWN_ISSUES.md`](./KNOWN_ISSUES.md) dan
+> [`ROADMAP.md`](./ROADMAP.md).
 
 ---
 
-## 🏃 Getting Started
+## 1. Apa ini
 
-### Prerequisites
+Sistem Informasi **Yayasan Pesantren Cipansor**: satu platform untuk TK Qur'an,
+SD IT, SMP IT, SMA Qur'an, dan pesantren (tahfidz + kurikulum kepesantrenan).
+Monorepo pnpm + Turborepo:
+
+| Workspace         | Stack                                                    | Isi                        |
+| ----------------- | -------------------------------------------------------- | -------------------------- |
+| `apps/api`        | Express 5, Prisma 7, PostgreSQL, Socket.IO, Redis        | REST API + realtime        |
+| `apps/web`        | Next.js 16 (App Router), React 19, React Query, Tailwind | Web client + PWA           |
+| `packages/shared` | TypeScript + Zod                                         | Kontrak DTO kedua aplikasi |
+
+---
+
+## 2. Menyiapkan lingkungan
 
 ```bash
-# Ensure you have:
-- Node.js 20+
-- pnpm 8+
-- PostgreSQL 15+
-- Redis 7+ (for WebSocket features)
-```
+# Prasyarat: Node 20+, pnpm 9 (lewat corepack), PostgreSQL 15+ (atau Docker)
 
-### Clone & Setup
-
-```bash
-# If not already cloned
-git clone <repo-url>
-cd cipansor
-
-# Install dependencies
 pnpm install
 
-# Setup environment
+# Environment
 cp apps/api/.env.example apps/api/.env
 cp apps/web/.env.example apps/web/.env.local
+#   apps/api/.env        -> DATABASE_URL, JWT_SECRET, REDIS_URL, dll.
+#   apps/web/.env.local  -> NEXT_PUBLIC_API_URL (kosongkan agar relatif), API_INTERNAL_URL
 
-# Configure .env files (database, redis, etc.)
+# Paket shared harus dibangun lebih dulu (dipakai kedua aplikasi)
+pnpm --filter @cipansor/shared build
 ```
 
-### Run Development Servers
+### Stack lokal (Postgres + Redis) tanpa Docker
 
-**Terminal 1 - Backend API:**
+Jika Docker tersedia, cara tercepat:
 
 ```bash
-cd apps/api
-pnpm dev
-
-# Backend runs on: http://localhost:3001
-# API docs: http://localhost:3001/api/docs
+docker compose -f docker-compose.dev.yml up -d
 ```
 
-**Terminal 2 - Frontend:**
+Atau pakai PostgreSQL/Redis yang sudah terpasang di mesin Anda, lalu sesuaikan
+`DATABASE_URL` / `REDIS_URL` di `apps/api/.env`.
+
+---
+
+## 3. Menyiapkan database
+
+```bash
+pnpm --filter api db:generate   # generate Prisma client (wajib setelah edit schema)
+pnpm --filter api db:push       # terapkan schema ke DB dev
+pnpm --filter api db:seed       # admin + data referensi + 66 akun demo
+```
+
+`db:seed` juga membuat **satu akun per `RoleCode`** (66 akun) dengan kata sandi
+sama, yang muncul sebagai kartu di halaman `/login`.
+
+---
+
+## 4. Menjalankan
+
+```bash
+pnpm dev        # turbo: api + web dalam watch mode
+```
+
+- Web: <http://localhost:3000>
+- API: <http://localhost:3001> (health: `/health`, docs: `/api/docs`)
+
+Untuk menjalankan hanya salah satu:
+
+```bash
+pnpm --filter api dev
+pnpm --filter web dev
+```
+
+### Login
+
+Buka `/login` dan pilih salah satu kartu akun demo (mis. **Super Admin**), atau
+pakai kredensial dari `DEMO_ACCOUNTS` di
+`packages/shared/src/types/demo-accounts.ts`. Kata sandi defaultnya adalah
+`DEMO_PASSWORD` di berkas yang sama.
+
+---
+
+## 5. Peta kode
+
+### Backend — `apps/api`
+
+Setiap fitur adalah satu modul dengan bentuk seragam:
+
+```
+src/modules/<nama>/
+  <nama>.routes.ts       # Router + auth/validate -> controller
+  <nama>.controller.ts   # tipis; asyncHandler; ApiResponse
+  <nama>.service.ts      # logika bisnis; satu-satunya yang menyentuh Prisma
+  <nama>.schema.ts       # skema Zod (tipe via z.infer)
+  index.ts               # ekspor barrel
+  tests/                 # vitest (Prisma dimock)
+```
+
+Modul di-mount di `src/app.ts`. Primitif bersama yang **wajib dipakai ulang**:
+
+- `src/utils/response.ts` — `ApiResponse.success/error/paginated`
+- `src/middleware/error.ts` — `ApiError`, `Errors.*`, `asyncHandler`, `validate`
+- `src/middleware/auth.ts` — `authenticate`, `authorize(RoleCode.X)`, `hasPermission`
+- `src/lib/{prisma,redis,jwt,logger,event-bus,realtime}.ts`
+- `src/jobs/` — pekerjaan terjadwal (node-cron): snapshot, tagihan, pembersihan
+
+Komunikasi antar-modul lewat `eventBus` bertipe (`AppEvents`), bukan memanggil
+service modul lain langsung.
+
+### Frontend — `apps/web`
+
+- Halaman di `src/app/**` (App Router).
+- Data lewat instance Axios tunggal `src/lib/api.ts`, dibungkus hook React Query
+  di `src/hooks/*`.
+- Tipe dari `@cipansor/shared`; jangan deklarasikan ulang atau pakai `any`.
+- UI: Tailwind + primitif Radix di `src/components/ui/*`.
+- Shell aplikasi: `<MainLayout>` (sidebar, header, `ProtectedRoute`).
+
+### Kontrak bersama — `packages/shared`
+
+DTO/skema Zod yang dipakai kedua aplikasi. Ekspor lewat `src/index.ts`. Setelah
+mengubahnya, bangun ulang (`pnpm --filter @cipansor/shared build`) lalu jalankan
+ulang build/test kedua aplikasi.
+
+---
+
+## 6. Alur kerja harian
+
+```bash
+# 1. Buat branch
+git checkout -b feat/fitur-anda
+
+# 2. Kerjakan + tulis test-nya (lihat aturan di AGENTS.md)
+
+# 3. Jalankan gate lengkap sebelum commit
+pnpm --filter @cipansor/shared build
+pnpm --filter api db:generate
+pnpm --filter api build
+pnpm --filter api build:strict
+pnpm --filter api test
+pnpm --filter web build
+pnpm --filter web test
+pnpm --filter web test:e2e
+pnpm format && pnpm lint
+
+# 4. Commit & push, lalu buka PR ke main
+```
+
+Jangan pernah push langsung ke `main`, dan jangan menimpa
+`apps/api/prisma/schema.prisma` secara keseluruhan (edit dengan bedah lalu
+`pnpm --filter api db:generate`).
+
+---
+
+## 7. Verifikasi visual
+
+Dua skrip Playwright menyapu seluruh antarmuka dan menyimpan tangkapan layar,
+sekaligus menandai halaman yang kosong, error, atau meluber ke samping:
 
 ```bash
 cd apps/web
-pnpm dev
 
-# Frontend runs on: http://localhost:3000
+# Seluruh halaman App Router sebagai SUPER_ADMIN
+../api/node_modules/.bin/tsx scripts/resolve-dynamic-routes.ts   # sekali, mengisi URL detail
+../api/node_modules/.bin/tsx scripts/screenshot-all.ts .qa-all
+
+# Setiap item menu untuk setiap peran (66 akun demo)
+../api/node_modules/.bin/tsx scripts/screenshot-roles.ts .qa-screens
 ```
 
-**Terminal 3 - Redis (for real-time features):**
-
-```bash
-# Using Docker
-docker run -d -p 6379:6379 redis:7-alpine
-
-# OR using local Redis
-redis-server
-```
+Hasilnya: berkas PNG per halaman + `report.json`. Ini cara tercepat memastikan
+perubahan UI tidak merusak halaman yang jarang dibuka.
 
 ---
 
-## 🎯 Testing New Features
+## 8. Di mana membaca berikutnya
 
-### 1. Test Murojaah Analytics
-
-```bash
-# Navigate to:
-http://localhost:3000/tahfidz/murojaah/analytics
-
-# What to test:
-✓ Quality distribution pie chart
-✓ Mistake patterns bar chart
-✓ Consistency line chart
-✓ Student ranking table
-✓ Date range filter
-✓ Halaqoh & type filters
-```
-
-**Expected:** Page loads with mock data, all charts render correctly
-
-### 2. Test Executive Dashboard
-
-```bash
-# Navigate to:
-http://localhost:3000/dashboard/executive
-
-# What to test:
-✓ Connection status (will show "Terputus" until WebSocket implemented)
-✓ KPI cards display
-✓ Enrollment trend chart
-✓ Attendance by unit chart
-✓ Unit comparison panel
-✓ Alerts panel
-```
-
-**Expected:** Page loads, shows connection error (normal - backend WebSocket not yet implemented)
-
-### 3. Test PAUD Radar Chart
-
-```bash
-# Navigate to any student progress page:
-http://localhost:3000/paud/assessment/student/[studentId]/progress
-
-# What to test:
-✓ 6-aspect radar visualization
-✓ Score display (0-4 scale)
-✓ Color coding by achievement level
-✓ Average score calculation
-✓ Aspect detail breakdown
-```
-
-**To integrate:** Add `<PAUDRadarChart>` component to student dashboard page
+| Topik                              | Dokumen                                            |
+| ---------------------------------- | -------------------------------------------------- |
+| Konvensi kanonik (wajib dibaca)    | [`AGENTS.md`](../AGENTS.md)                        |
+| Peta sistem & alur request         | [`ARCHITECTURE.md`](./ARCHITECTURE.md)             |
+| Cacat & technical debt             | [`KNOWN_ISSUES.md`](./KNOWN_ISSUES.md)             |
+| Rencana kerja                      | [`ROADMAP.md`](./ROADMAP.md)                       |
+| Deployment produksi                | [`DEPLOYMENT.md`](./DEPLOYMENT.md)                 |
+| Kontrak aplikasi wali (PWA)        | [`MOBILE_API.md`](./MOBILE_API.md)                 |
+| Email keluar                       | [`EMAIL_SETUP.md`](./EMAIL_SETUP.md)               |
+| E-office & tanda tangan elektronik | [`EOFFICE_ESIGN_PLAN.md`](./EOFFICE_ESIGN_PLAN.md) |
 
 ---
 
-## 🔧 Next Development Tasks
-
-### Priority 1: Backend WebSocket Server (8 hours)
-
-**Goal:** Enable real-time dashboard updates
-
-**Steps:**
+## 9. Jika ada yang gagal
 
 ```bash
-cd apps/api
-
-# 1. Install dependencies
-pnpm add socket.io ioredis
-
-# 2. Create WebSocket setup file
-# File: src/lib/websocket.ts
-```
-
-**Implementation:**
-
-```typescript
-// apps/api/src/lib/websocket.ts
-import { Server as HTTPServer } from "http";
-import { Server as SocketServer } from "socket.io";
-import { createClient } from "redis";
-import { verifyJWT } from "./jwt";
-
-export function setupWebSocket(httpServer: HTTPServer) {
-  const io = new SocketServer(httpServer, {
-    cors: {
-      origin: process.env.FRONTEND_URL || "http://localhost:3000",
-      credentials: true,
-    },
-  });
-
-  // Redis for pub/sub
-  const redis = createClient({
-    url: process.env.REDIS_URL || "redis://localhost:6379",
-  });
-  await redis.connect();
-
-  // Auth middleware
-  io.use(async (socket, next) => {
-    const token = socket.handshake.auth.token;
-    try {
-      const user = await verifyJWT(token);
-      socket.data.user = user;
-      next();
-    } catch (error) {
-      next(new Error("Authentication failed"));
-    }
-  });
-
-  // Connection handler
-  io.on("connection", (socket) => {
-    console.log("Client connected:", socket.data.user.id);
-
-    socket.on("dashboard:subscribe", ({ unitIds, metrics }) => {
-      // Join rooms based on subscription
-      unitIds.forEach((id: string) => socket.join(`unit:${id}`));
-    });
-
-    socket.on("disconnect", () => {
-      console.log("Client disconnected");
-    });
-  });
-
-  // Redis subscriber for broadcasting
-  const subscriber = redis.duplicate();
-  await subscriber.connect();
-
-  await subscriber.subscribe("dashboard:metrics:update", (message) => {
-    const data = JSON.parse(message);
-    io.to("yayasan:dashboard").emit("metrics:update", data);
-  });
-
-  return io;
-}
-```
-
-**Update main.ts:**
-
-```typescript
-// apps/api/src/main.ts
-import { setupWebSocket } from "./lib/websocket";
-
-// After app.listen
-const server = app.listen(PORT);
-const io = setupWebSocket(server);
-
-console.log(`WebSocket server ready on port ${PORT}`);
-```
-
-**Test:**
-
-```bash
-# Restart backend
-pnpm dev
-
-# Check frontend dashboard - should connect now
-```
-
----
-
-### Priority 2: Integrate Radar Chart (2 hours)
-
-**Goal:** Add 6-aspect visualization to PAUD student dashboard
-
-**File to edit:** `/apps/web/src/app/paud/assessment/student/[studentId]/page.tsx`
-
-**Steps:**
-
-```typescript
-// 1. Import component
-import { PAUDRadarChart } from '@/components/paud';
-
-// 2. Add to page (around line 100)
-<TabsContent value="overview">
-  <div className="grid gap-4 md:grid-cols-2">
-    {/* Add radar chart */}
-    <PAUDRadarChart
-      data={summary?.aspects || {}}
-      studentName={student?.user?.name}
-    />
-
-    {/* Existing cards */}
-    {ASPECT_ORDER.map((aspect) => (
-      // ... existing aspect cards
-    ))}
-  </div>
-</TabsContent>
-```
-
-**Test:**
-
-```bash
-# Navigate to student progress page
-# Verify radar chart displays with correct colors
-```
-
----
-
-### Priority 3: Murojaah API Integration (4 hours)
-
-**Goal:** Replace mock data with real API
-
-**Backend endpoints needed:**
-
-```typescript
-// apps/api/src/modules/murojaah/murojaah.routes.ts
-
-router.get("/analytics/quality-distribution", async (req, res) => {
-  // Calculate quality distribution from MurojaahRecord
-  // Return: { excellent, good, fair, poor }
-});
-
-router.get("/analytics/mistake-patterns", async (req, res) => {
-  // Aggregate mistake types and counts
-  // Return: [{ type, count, trend }]
-});
-
-router.get("/analytics/consistency-score", async (req, res) => {
-  // Calculate daily quality trend
-  // Return: [{ date, avgQuality, records }]
-});
-
-router.get("/analytics/top-performers", async (req, res) => {
-  // Get top students by quality & consistency
-  // Return: [{ rank, name, avgQuality, consistency, totalRecords }]
-});
-```
-
-**Frontend update:**
-
-```typescript
-// apps/web/src/hooks/use-murojaah-analytics.ts
-import { useQuery } from "@tanstack/react-query";
-import api from "@/lib/api";
-
-export function useMurojaahQualityDistribution(params: FilterParams) {
-  return useQuery({
-    queryKey: ["murojaah-quality-distribution", params],
-    queryFn: () =>
-      api.get("/murojaah/analytics/quality-distribution", { params }),
-  });
-}
-
-// Similar for other endpoints
-```
-
-**Update page:**
-
-```typescript
-// apps/web/src/app/tahfidz/murojaah/analytics/page.tsx
-const { data: qualityData } = useMurojaahQualityDistribution({
-  dateRange,
-  halaqohId: halaqohFilter,
-  type: typeFilter,
-});
-```
-
----
-
-## 📊 Implementation Checklist
-
-### Week 1-2 (Sprint 1)
-
-- [x] Real-time dashboard hook
-- [x] Murojaah analytics dashboard (frontend)
-- [x] Executive dashboard (frontend)
-- [x] PAUD radar chart component
-- [ ] WebSocket backend server
-- [ ] Radar chart integration
-- [ ] Murojaah API endpoints
-- [ ] Metric aggregation background job
-
-### Week 3-4 (Sprint 2)
-
-- [ ] Simaan exam scheduling UI
-- [ ] Sanad certificate generation
-- [ ] PAUD report PDF export
-- [ ] Notification system (WhatsApp, Email)
-
----
-
-## 🐛 Known Issues & Workarounds
-
-### Issue 1: WebSocket Connection Failed
-
-**Symptom:** Executive dashboard shows "Terputus" (disconnected)  
-**Cause:** Backend WebSocket server not implemented yet  
-**Workaround:** Normal behavior, ignore for now  
-**Fix:** Implement Priority 1 task above
-
-### Issue 2: Murojaah Charts Empty
-
-**Symptom:** Charts show but with mock data  
-**Cause:** API endpoints not connected  
-**Workaround:** Mock data displays correctly  
-**Fix:** Implement Priority 3 task above
-
-### Issue 3: Radar Chart Not Visible
-
-**Symptom:** Student dashboard doesn't show radar chart  
-**Cause:** Component not yet integrated  
-**Workaround:** Component exists and works in isolation  
-**Fix:** Implement Priority 2 task above
-
----
-
-## 📚 Documentation References
-
-### Planning Documents
-
-- `docs/planning/requirements.md` - Full requirements
-- `docs/planning/database-design.md` - Database schema
-- `docs/planning/backend-design.md` - API specifications
-- `docs/planning/frontend-design.md` - UI/UX specs
-- `docs/planning/implementation-tasks.md` - Task breakdown
-
-### Code References
-
-- `apps/api/src/modules/` - Backend modules (62 modules)
-- `apps/web/src/app/` - Frontend pages (60+ pages)
-- `apps/web/src/hooks/` - React hooks & API calls
-- `apps/web/src/components/` - Reusable components
-
----
-
-## 🆘 Getting Help
-
-### If Build Fails
-
-```bash
-# Clear cache and reinstall
-pnpm clean
-rm -rf node_modules
+# Build bermasalah — bersihkan lalu ulang
+rm -rf node_modules apps/*/node_modules packages/*/node_modules
 pnpm install
+pnpm --filter @cipansor/shared build
+pnpm --filter api db:generate
 
-# Reset database if needed
-cd apps/api
-pnpm prisma migrate reset
-pnpm prisma generate
+# Prisma client tidak sinkron dengan schema
+pnpm --filter api db:generate
+
+# Test gagal — jalankan verbose untuk satu berkas
+pnpm --filter api test -- <nama-berkas>
+pnpm --filter web test:e2e -- <nama-spec>
+
+# Database dev rusak — reset (menghapus data lokal)
+pnpm --filter api db:push --force-reset
+pnpm --filter api db:seed
 ```
 
-### If Tests Fail
-
-```bash
-# Run tests with verbose output
-cd apps/api
-pnpm test -- --verbose
-
-cd apps/web
-pnpm test -- --verbose
-```
-
-### Common Commands
-
-```bash
-# Backend
-pnpm --filter api dev          # Dev server
-pnpm --filter api test          # Run tests
-pnpm --filter api prisma:studio # Database GUI
-
-# Frontend
-pnpm --filter web dev           # Dev server
-pnpm --filter web test          # Run tests
-pnpm --filter web lint          # Check code quality
-pnpm --filter web build         # Production build
-
-# Both
-pnpm dev                        # Run all in parallel
-pnpm build                      # Build all
-pnpm test                       # Test all
-```
-
----
-
-## 🎯 Success Criteria
-
-### Sprint 1 Success Metrics
-
-- ✅ 3 new pages created
-- ✅ 1 reusable component created
-- ✅ 1 custom hook created
-- ⏳ WebSocket server implemented
-- ⏳ Real-time dashboard connected
-- ⏳ Radar chart integrated
-
-### Quality Gates
-
-- All TypeScript types properly defined ✅
-- No ESLint errors ✅
-- Components properly tested ⏳
-- Documentation updated ✅
-- Code reviewed ⏳
-
----
-
-## 💡 Tips for New Developers
-
-1. **Start with existing pages**: Check `/apps/web/src/app/paud/` for reference implementations
-2. **Use hooks**: All API calls go through React Query hooks in `/hooks/`
-3. **Follow patterns**: Look at existing code before creating new patterns
-4. **TypeScript first**: Define types before implementation
-5. **Test as you go**: Don't wait until the end to test
-
----
-
-## 🚀 Deploy to Production
-
-### When Ready (After all Sprint 1 tasks complete)
-
-```bash
-# 1. Build all apps
-pnpm build
-
-# 2. Run migrations
-cd apps/api
-pnpm prisma migrate deploy
-
-# 3. Start production servers
-pnpm start
-
-# 4. Verify health
-curl http://localhost:3001/api/health
-```
-
----
-
-**Questions?** Check the planning documents or ask the team lead.
-
-**Ready to code?** Pick a task from Priority 1-3 above and start! 🎉
+Kalau masalahnya bertahan, catat di [`KNOWN_ISSUES.md`](./KNOWN_ISSUES.md)
+alih-alih membiarkannya hilang di percakapan.

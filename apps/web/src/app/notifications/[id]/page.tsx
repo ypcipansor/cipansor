@@ -30,6 +30,7 @@ import {
   RECIPIENT_TYPE_LABELS,
   type NotificationType,
   type NotificationPriority,
+  type AppNotification,
 } from "@/hooks";
 import {
   ArrowLeft,
@@ -65,28 +66,63 @@ interface PageProps {
   params: Promise<{ id: string }>;
 }
 
+// `GET /notifications/:id` returns the Notification row (status/readAt/user),
+// not the delivery-report shape the shared `AppNotification` describes. Those
+// DB-only fields are optional here so the detail view can show them when the
+// API sends them without the shared contract having to grow them.
+type NotificationDetail = AppNotification & {
+  status?: string;
+  readAt?: string | null;
+  user?: { id: string; name: string; email?: string };
+};
+
+// The Notification model stores a narrower enum (INFO / ANNOUNCEMENT / REMINDER
+// / ALERT / PAYMENT / ACADEMIC) than the shared UI type, so label maps keyed
+// only on the UI union render blank for the DB values. Cover both.
+const TYPE_LABELS: Record<string, string> = {
+  ...NOTIFICATION_TYPE_LABELS,
+  INFO: "Informasi",
+  REMINDER: "Pengingat",
+  ALERT: "Peringatan",
+  PAYMENT: "Pembayaran",
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  UNREAD: "Belum Dibaca",
+  READ: "Dibaca",
+  ARCHIVED: "Diarsipkan",
+};
+
+const TYPE_COLORS: Record<string, string> = {
+  ANNOUNCEMENT: "bg-blue-100 text-blue-800",
+  ATTENDANCE: "bg-green-100 text-green-800",
+  FINANCE: "bg-yellow-100 text-yellow-800",
+  ACADEMIC: "bg-purple-100 text-purple-800",
+  PERMIT: "bg-indigo-100 text-indigo-800",
+  HEALTH: "bg-pink-100 text-pink-800",
+  VIOLATION: "bg-red-100 text-red-800",
+  REWARD: "bg-emerald-100 text-emerald-800",
+  SYSTEM: "bg-gray-100 text-gray-800",
+  INFO: "bg-gray-100 text-gray-800",
+  REMINDER: "bg-amber-100 text-amber-800",
+  ALERT: "bg-red-100 text-red-800",
+  PAYMENT: "bg-yellow-100 text-yellow-800",
+};
+
 function NotificationDetailPageContent({ params }: PageProps) {
   const { id: notificationId } = use(params);
   const router = useRouter();
 
-  const { data: notification, isLoading } = useNotification(notificationId);
+  const { data: rawNotification, isLoading } = useNotification(notificationId);
+  const notification = rawNotification as NotificationDetail | undefined;
   const sendNotification = useSendNotification();
   const deleteNotification = useDeleteNotification();
 
-  const getTypeBadge = (type: NotificationType) => {
-    const colors: Record<NotificationType, string> = {
-      ANNOUNCEMENT: "bg-blue-100 text-blue-800",
-      ATTENDANCE: "bg-green-100 text-green-800",
-      FINANCE: "bg-yellow-100 text-yellow-800",
-      ACADEMIC: "bg-purple-100 text-purple-800",
-      PERMIT: "bg-indigo-100 text-indigo-800",
-      HEALTH: "bg-pink-100 text-pink-800",
-      VIOLATION: "bg-red-100 text-red-800",
-      REWARD: "bg-emerald-100 text-emerald-800",
-      SYSTEM: "bg-gray-100 text-gray-800",
-    };
+  const getTypeBadge = (type: string) => {
     return (
-      <Badge className={colors[type]}>{NOTIFICATION_TYPE_LABELS[type]}</Badge>
+      <Badge className={TYPE_COLORS[type] ?? "bg-gray-100 text-gray-800"}>
+        {TYPE_LABELS[type] ?? type}
+      </Badge>
     );
   };
 
@@ -223,8 +259,9 @@ function NotificationDetailPageContent({ params }: PageProps) {
                 </CardDescription>
               </div>
               <div className="flex flex-wrap gap-2">
-                {getTypeBadge(notification.type)}
-                {getPriorityBadge(notification.priority)}
+                {notification.type && getTypeBadge(notification.type)}
+                {notification.priority &&
+                  getPriorityBadge(notification.priority)}
               </div>
             </div>
           </CardHeader>
@@ -254,60 +291,59 @@ function NotificationDetailPageContent({ params }: PageProps) {
           </CardContent>
         </Card>
 
-        {/* Stats */}
+        {/* Delivery details */}
         <Card>
           <CardHeader>
-            <CardTitle>Statistik</CardTitle>
+            <CardTitle>Detail</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="p-4 bg-muted rounded-lg text-center">
-                <Users className="h-5 w-5 mx-auto text-muted-foreground" />
-                <p className="text-2xl font-bold mt-1">
-                  {notification.totalRecipients}
-                </p>
-                <p className="text-xs text-muted-foreground">Penerima</p>
-              </div>
-              <div className="p-4 bg-green-50 rounded-lg text-center">
-                <CheckCircle className="h-5 w-5 mx-auto text-green-500" />
-                <p className="text-2xl font-bold mt-1 text-green-600">
-                  {notification.deliveredCount}
-                </p>
-                <p className="text-xs text-muted-foreground">Terkirim</p>
-              </div>
-              <div className="p-4 bg-blue-50 rounded-lg text-center">
-                <Mail className="h-5 w-5 mx-auto text-blue-500" />
-                <p className="text-2xl font-bold mt-1 text-blue-600">
-                  {notification.readCount}
-                </p>
-                <p className="text-xs text-muted-foreground">Dibaca</p>
-              </div>
-              <div className="p-4 bg-red-50 rounded-lg text-center">
-                <XCircle className="h-5 w-5 mx-auto text-red-500" />
-                <p className="text-2xl font-bold mt-1 text-red-600">
-                  {notification.failedCount}
-                </p>
-                <p className="text-xs text-muted-foreground">Gagal</p>
-              </div>
-            </div>
-
-            <Separator />
-
             <div className="space-y-3">
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Tipe Penerima</span>
-                <span>{RECIPIENT_TYPE_LABELS[notification.recipientType]}</span>
+                <span className="text-muted-foreground">Status</span>
+                <Badge variant="outline">
+                  {notification.status
+                    ? (STATUS_LABELS[notification.status] ??
+                      notification.status)
+                    : "-"}
+                </Badge>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Channel</span>
-                <div className="flex gap-1">
-                  {notification.channels.map((channel: string) => (
-                    <Badge key={channel} variant="outline" className="text-xs">
-                      {channel}
-                    </Badge>
-                  ))}
-                </div>
+                <span className="text-muted-foreground">Penerima</span>
+                <span>{notification.user?.name ?? "-"}</span>
               </div>
+              {notification.link && (
+                <div className="flex justify-between gap-2 text-sm">
+                  <span className="text-muted-foreground">Tautan</span>
+                  <Link
+                    href={notification.link}
+                    className="truncate text-primary hover:underline"
+                  >
+                    {notification.link}
+                  </Link>
+                </div>
+              )}
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Dibuat</span>
+                <span>
+                  {format(
+                    new Date(notification.createdAt),
+                    "d MMM yyyy, HH:mm",
+                    { locale: id },
+                  )}
+                </span>
+              </div>
+              {notification.readAt && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Dibaca</span>
+                  <span>
+                    {format(
+                      new Date(notification.readAt),
+                      "d MMM yyyy, HH:mm",
+                      { locale: id },
+                    )}
+                  </span>
+                </div>
+              )}
               {notification.sentAt && (
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Dikirim</span>
@@ -358,7 +394,7 @@ function NotificationDetailPageContent({ params }: PageProps) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {notification.recipients.map((recipient: any) => (
+                {(notification.recipients ?? []).map((recipient: any) => (
                   <TableRow key={recipient.id}>
                     <TableCell>
                       <div>

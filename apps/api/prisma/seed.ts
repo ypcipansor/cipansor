@@ -3285,6 +3285,52 @@ async function main() {
 
   console.log('✅ Subjects created');
 
+  // Create Curriculums (kelompok mata pelajaran per unit + tahun ajaran + tingkat).
+  // The web `/curriculum` screen has always linked to these detail pages; before
+  // the model existed there was nothing to link to, so every curriculum URL 404'd.
+  const curriculumsData = [
+    {
+      code: 'KUR-MERDEKA-SMP-7',
+      name: 'Kurikulum Merdeka SMP Kelas 7',
+      description: 'Struktur kurikulum merdeka untuk tingkat 7 SMP IT.',
+      gradeLevel: 7,
+    },
+    {
+      code: 'KUR-MERDEKA-SMP-8',
+      name: 'Kurikulum Merdeka SMP Kelas 8',
+      description: 'Struktur kurikulum merdeka untuk tingkat 8 SMP IT.',
+      gradeLevel: 8,
+    },
+  ];
+
+  for (const cur of curriculumsData) {
+    const curriculum = await prisma.curriculum.create({
+      data: {
+        unitId: smpIt.id,
+        academicYearId: academicYear.id,
+        code: cur.code,
+        name: cur.name,
+        description: cur.description,
+        gradeLevel: cur.gradeLevel,
+        isActive: true,
+      },
+    });
+
+    // Split the subject list across the two semesters, preserving order.
+    const half = Math.ceil(subjects.length / 2);
+    await prisma.curriculumSubject.createMany({
+      data: subjects.map((subject, index) => ({
+        curriculumId: curriculum.id,
+        subjectId: subject.id,
+        semester: index < half ? 1 : 2,
+        sequence: index % half,
+        isRequired: subject.type !== SubjectType.EXTRACURRICULAR,
+      })),
+    });
+  }
+
+  console.log('✅ Curriculums created');
+
   // Seed Kurikulum Merdeka Learning Outcomes (sekarang subjects sudah ada)
   await seedKurikulumMerdeka(prisma, smpIt.id, academicYear.id);
 

@@ -1,6 +1,10 @@
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 import type {
+  CreateCurriculumInput,
+  UpdateCurriculumInput,
+  CurriculumQuery,
+  AddCurriculumSubjectInput,
   CreateSubjectInput,
   UpdateSubjectInput,
   SubjectQuery,
@@ -12,6 +16,94 @@ import type {
   UpdateScheduleInput,
   ScheduleQuery,
 } from './curriculum.schema';
+
+// =====================================
+// CURRICULUM SERVICES
+// =====================================
+
+const CURRICULUM_INCLUDE: Prisma.CurriculumInclude = {
+  unit: { select: { id: true, name: true } },
+  academicYear: { select: { id: true, name: true } },
+  subjects: {
+    include: {
+      subject: { select: { id: true, code: true, name: true, type: true } },
+    },
+    orderBy: [{ semester: 'asc' }, { sequence: 'asc' }],
+  },
+};
+
+export async function getCurriculums(query: CurriculumQuery) {
+  const { page, limit, unitId, academicYearId, gradeLevel, isActive } = query;
+  const skip = (page - 1) * limit;
+
+  const where: Prisma.CurriculumWhereInput = { deletedAt: null };
+  if (unitId) where.unitId = unitId;
+  if (academicYearId) where.academicYearId = academicYearId;
+  if (gradeLevel !== undefined) where.gradeLevel = gradeLevel;
+  if (isActive !== undefined) where.isActive = isActive;
+
+  const [curriculums, total] = await Promise.all([
+    prisma.curriculum.findMany({
+      where,
+      skip,
+      take: limit,
+      include: CURRICULUM_INCLUDE,
+      orderBy: [{ gradeLevel: 'asc' }, { name: 'asc' }],
+    }),
+    prisma.curriculum.count({ where }),
+  ]);
+
+  return {
+    data: curriculums,
+    meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
+  };
+}
+
+export async function getCurriculumById(id: string) {
+  return prisma.curriculum.findFirst({
+    where: { id, deletedAt: null },
+    include: CURRICULUM_INCLUDE,
+  });
+}
+
+export async function createCurriculum(data: CreateCurriculumInput) {
+  return prisma.curriculum.create({
+    data,
+    include: CURRICULUM_INCLUDE,
+  });
+}
+
+export async function updateCurriculum(id: string, data: UpdateCurriculumInput) {
+  return prisma.curriculum.update({
+    where: { id },
+    data,
+    include: CURRICULUM_INCLUDE,
+  });
+}
+
+/** Soft-delete: keep the row so the subjects' history survives. */
+export async function deleteCurriculum(id: string) {
+  return prisma.curriculum.update({
+    where: { id },
+    data: { deletedAt: new Date(), isActive: false },
+  });
+}
+
+export async function addCurriculumSubject(curriculumId: string, data: AddCurriculumSubjectInput) {
+  return prisma.curriculumSubject.create({
+    data: { curriculumId, ...data },
+    include: { subject: { select: { id: true, code: true, name: true, type: true } } },
+  });
+}
+
+export async function removeCurriculumSubject(curriculumId: string, id: string) {
+  // Scope the delete to the parent so a stray id can't remove another
+  // curriculum's subject.
+  const deleted = await prisma.curriculumSubject.deleteMany({
+    where: { id, curriculumId },
+  });
+  return deleted.count > 0;
+}
 
 // =====================================
 // SUBJECT SERVICES

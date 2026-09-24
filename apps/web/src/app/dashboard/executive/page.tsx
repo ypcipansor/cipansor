@@ -27,6 +27,7 @@ import {
   Line,
   BarChart,
   Bar,
+  Cell,
   AreaChart,
   Area,
   XAxis,
@@ -553,7 +554,7 @@ export default function ExecutiveDashboardPage() {
                         name="Kehadiran"
                       >
                         {displayAttendanceByUnit.map((entry, index) => (
-                          <Bar key={`cell-${index}`} fill={entry.color} />
+                          <Cell key={`cell-${index}`} fill={entry.color} />
                         ))}
                       </Bar>
                     </BarChart>
@@ -572,7 +573,7 @@ export default function ExecutiveDashboardPage() {
             <CardContent>
               <div className="space-y-4">
                 {displayAttendanceByUnit.map((unit) => (
-                  <div key={unit.unit} className="space-y-2">
+                  <div key={unit.unitId} className="space-y-2">
                     <div className="flex items-center justify-between text-sm">
                       <div className="flex items-center gap-2">
                         <div

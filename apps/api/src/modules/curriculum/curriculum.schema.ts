@@ -24,6 +24,35 @@ export const subjectQuerySchema = z.object({
   isActive: z.coerce.boolean().optional(),
 });
 
+// Curriculum schemas
+export const createCurriculumSchema = z.object({
+  unitId: z.string().uuid(),
+  academicYearId: z.string().uuid(),
+  code: z.string().min(1).max(50),
+  name: z.string().min(2).max(150),
+  description: z.string().optional(),
+  gradeLevel: z.coerce.number().int().min(1).max(12),
+  isActive: z.boolean().default(true),
+});
+
+export const updateCurriculumSchema = partialUpdateSchema(createCurriculumSchema);
+
+export const curriculumQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  unitId: z.string().uuid().optional(),
+  academicYearId: z.string().uuid().optional(),
+  gradeLevel: z.coerce.number().int().min(1).max(12).optional(),
+  isActive: z.coerce.boolean().optional(),
+});
+
+export const addCurriculumSubjectSchema = z.object({
+  subjectId: z.string().uuid(),
+  semester: z.coerce.number().int().min(1).max(2),
+  sequence: z.coerce.number().int().min(0).default(0),
+  isRequired: z.boolean().default(true),
+});
+
 // Teacher Subject schemas
 export const assignTeacherSubjectSchema = z.object({
   teacherId: z.string().uuid(),
@@ -95,6 +124,11 @@ export const scheduleQuerySchema = z.object({
 });
 
 // Types
+export type CreateCurriculumInput = z.infer<typeof createCurriculumSchema>;
+export type UpdateCurriculumInput = z.infer<typeof updateCurriculumSchema>;
+export type CurriculumQuery = z.infer<typeof curriculumQuerySchema>;
+export type AddCurriculumSubjectInput = z.infer<typeof addCurriculumSubjectSchema>;
+
 export type CreateSubjectInput = z.infer<typeof createSubjectSchema>;
 export type UpdateSubjectInput = z.infer<typeof updateSubjectSchema>;
 export type SubjectQuery = z.infer<typeof subjectQuerySchema>;

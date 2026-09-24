@@ -37,6 +37,35 @@ export interface Reward {
   givenBy?: { name: string };
 }
 
+/**
+ * The Reward model stores what the UI calls a "reward type" as a free-text
+ * `category` string plus `points`, and the date in `givenAt` — there is no
+ * RewardType table and no `date` column. The list/detail/edit pages were built
+ * against that richer shape, so normalize the API row into the UI shape here:
+ * the pages keep working and every field they read is defined.
+ */
+export function normalizeReward(raw: any): Reward {
+  const category = (raw.category ?? "OTHER") as string;
+  const givenAt = raw.givenAt ?? raw.createdAt ?? new Date().toISOString();
+  const label = category.charAt(0).toUpperCase() + category.slice(1);
+  const points = raw.points ?? 0;
+  return {
+    ...raw,
+    rewardTypeId: raw.rewardTypeId ?? category,
+    date: givenAt,
+    rewardType: raw.rewardType ?? {
+      id: category,
+      name: label,
+      description: raw.description ?? undefined,
+      category: category as RewardCategory,
+      points,
+      isActive: true,
+      createdAt: raw.createdAt,
+      updatedAt: raw.updatedAt,
+    },
+  };
+}
+
 // Constants
 export const REWARD_CATEGORIES: {
   value: RewardCategory;
@@ -59,6 +88,24 @@ export const REWARD_CATEGORIES: {
 ];
 
 // Reward Types Hooks
+//
+// `/rewards/categories` returns bare category strings ("tahfidz", ...), not
+// objects. The picker UI needs `{id, name, points}`; shape them here so the
+// select renders labels instead of blanks.
+function categoryToRewardType(raw: unknown): RewardType {
+  const name = String(raw);
+  const label = name.charAt(0).toUpperCase() + name.slice(1);
+  return {
+    id: name,
+    name: label,
+    category: name.toUpperCase() as RewardCategory,
+    points: 0,
+    isActive: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 export function useRewardTypes(params?: {
   category?: RewardCategory;
   isActive?: boolean;
@@ -66,11 +113,11 @@ export function useRewardTypes(params?: {
   return useQuery({
     queryKey: ["reward-types", params],
     queryFn: async () => {
-      const response = await api.get<{ data: RewardType[] }>(
+      const response = await api.get<{ data: unknown[] }>(
         "/rewards/categories",
         { params },
       );
-      return response.data.data;
+      return (response.data.data ?? []).map(categoryToRewardType);
     },
   });
 }
@@ -79,8 +126,13 @@ export function useRewardType(id: string) {
   return useQuery({
     queryKey: ["reward-types", id],
     queryFn: async () => {
-      const response = await api.get<RewardType>(`/rewards/categories/${id}`);
-      return response.data;
+      // The API wraps the row in `{success, data}`; returning `response.data`
+      // handed the caller the envelope, so every field read off it was
+      // `undefined` and the edit form rendered blank.
+      const response = await api.get<{ data: RewardType }>(
+        `/rewards/categories/${id}`,
+      );
+      return response.data.data;
     },
     enabled: !!id,
   });
@@ -164,7 +216,10 @@ export function useRewards(params?: {
       const response = await api.get<PaginatedResponse<Reward>>("/rewards", {
         params,
       });
-      return response.data;
+      return {
+        ...response.data,
+        data: (response.data.data ?? []).map(normalizeReward),
+      };
     },
   });
 }
@@ -173,8 +228,8 @@ export function useReward(id: string) {
   return useQuery({
     queryKey: ["rewards", id],
     queryFn: async () => {
-      const response = await api.get<Reward>(`/rewards/${id}`);
-      return response.data;
+      const response = await api.get<any>(`/rewards/${id}`);
+      return normalizeReward(response.data.data ?? response.data);
     },
     enabled: !!id,
   });
@@ -184,8 +239,8 @@ export function useStudentRewards(studentId: string) {
   return useQuery({
     queryKey: ["rewards", "student", studentId],
     queryFn: async () => {
-      const response = await api.get<Reward[]>(`/rewards/student/${studentId}`);
-      return response.data;
+      const response = await api.get<any>(`/rewards/student/${studentId}`);
+      return (response.data.data ?? []).map(normalizeReward);
     },
     enabled: !!studentId,
   });
@@ -197,9 +252,10 @@ export function useCreateReward() {
   return useMutation({
     mutationFn: async (data: {
       studentId: string;
-      rewardTypeId: string;
-      date: string;
-      description?: string;
+      category: string;
+      description: string;
+      points?: number;
+      givenAt?: string;
     }) => {
       const response = await api.post<Reward>("/rewards", data);
       return response.data;
@@ -220,9 +276,10 @@ export function useUpdateReward() {
     }: {
       id: string;
       data: {
-        rewardTypeId?: string;
-        date?: string;
+        category?: string;
         description?: string;
+        points?: number;
+        givenAt?: string;
       };
     }) => {
       const response = await api.put<Reward>(`/rewards/${id}`, data);

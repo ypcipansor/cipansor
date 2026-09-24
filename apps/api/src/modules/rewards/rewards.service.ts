@@ -166,6 +166,32 @@ export async function getRewardCategories() {
   return categories.map((c) => c.category);
 }
 
+/**
+ * The UI addresses a "reward type" by the free-text `category` string
+ * (`/rewards/types/tahfidz/edit`), but there is no RewardType table — the
+ * category is just a column on Reward. Aggregate the rows carrying that
+ * category into the `{id, name, category, points}` shape the edit form reads,
+ * so the detail-by-id route answers instead of 404ing. Returns null when no
+ * reward uses the category, which the controller turns into a 404.
+ */
+export async function getRewardCategoryById(category: string) {
+  const agg = await prisma.reward.aggregate({
+    where: { category: { equals: category, mode: 'insensitive' } },
+    _count: true,
+    _sum: { points: true },
+    _max: { points: true },
+  });
+  if (!agg._count) return null;
+  return {
+    id: category,
+    name: category.charAt(0).toUpperCase() + category.slice(1),
+    category: category.toUpperCase(),
+    points: agg._max.points ?? 0,
+    count: agg._count,
+    isActive: true,
+  };
+}
+
 export async function getTopStudentsByPoints(unitId?: string, limit = 10) {
   const where = unitId ? { student: { unitId } } : {};
 

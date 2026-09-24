@@ -585,6 +585,7 @@ describe("navigation — every page renders the app shell", () => {
     "/unauthorized": "an error page; its own link back is the way out",
     "/assessment/raport-merdeka/[studentId]/[academicYearId]/[semester]":
       "print view — sidebar and header must not reach the paper",
+    "/assessment/report-cards/[id]/print": "print view",
     "/assessment/report-cards/[id]/print-merdeka": "print view",
     "/assessment/skhun/[studentId]/[academicYearId]": "print view",
     "/assessment/transcript/[studentId]": "print view",

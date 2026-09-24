@@ -33,6 +33,15 @@ interface ProtectedRouteProps {
   allowedRoles?: string[]; // Legacy role names (SUPER_ADMIN, UNIT_ADMIN, etc.)
   allowedRoleCodes?: string[]; // New role codes (SMPIT_ADMIN, PAUD_GURU, etc.)
   allowedRealms?: string[]; // Realms (GLOBAL, YAYASAN, PAUD, etc.)
+  /**
+   * Permission strings exactly as the API returns them (`user.permissions`,
+   * e.g. "STUDENT_VIEW"). Prefer this over `allowedRoles` for a page whose API
+   * route is gated by `hasPermission(...)`: a legacy role list has to guess
+   * which 60-odd RoleCodes hold the permission, and silently excludes the ones
+   * it forgot. That is how `/students` — linked from every staff menu, served
+   * by the API — bounced 5 staff/comite roles to /unauthorized.
+   */
+  allowedPermissions?: string[];
 }
 
 // Map legacy roles to RoleCode categories
@@ -60,6 +69,7 @@ export function ProtectedRoute({
   allowedRoles,
   allowedRoleCodes,
   allowedRealms,
+  allowedPermissions,
 }: ProtectedRouteProps) {
   const router = useRouter();
   const { isAuthenticated, isLoading, user, fetchUser } = useAuthStore();
@@ -87,7 +97,12 @@ export function ProtectedRoute({
     if (!user) return false;
 
     // If no restrictions, allow access
-    if (!allowedRoles && !allowedRoleCodes && !allowedRealms) {
+    if (
+      !allowedRoles &&
+      !allowedRoleCodes &&
+      !allowedRealms &&
+      !allowedPermissions
+    ) {
       return true;
     }
 
@@ -98,6 +113,17 @@ export function ProtectedRoute({
     // Super Admin always has access
     if (activeRoleCode === "SUPER_ADMIN") {
       return true;
+    }
+
+    // Permission-based access — mirrors the API's hasPermission() gate. This is
+    // the authoritative check for a page whose endpoint requires a permission:
+    // the same permission string, resolved from the same source (`/auth/me`).
+    // Holding any one of the listed permissions is enough.
+    if (allowedPermissions) {
+      const held = (user as { permissions?: string[] }).permissions ?? [];
+      if (allowedPermissions.some((p) => held.includes(p))) {
+        return true;
+      }
     }
 
     // Check realm-based access
@@ -131,7 +157,14 @@ export function ProtectedRoute({
     }
 
     return false;
-  }, [user, activeRole, allowedRoles, allowedRoleCodes, allowedRealms]);
+  }, [
+    user,
+    activeRole,
+    allowedRoles,
+    allowedRoleCodes,
+    allowedRealms,
+    allowedPermissions,
+  ]);
 
   useEffect(() => {
     if (user && !hasAccess) {

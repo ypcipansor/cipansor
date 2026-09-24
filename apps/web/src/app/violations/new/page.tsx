@@ -86,10 +86,13 @@ function NewViolationPageContent() {
   const onSubmit = async (data: FormData) => {
     try {
       await createMutation.mutateAsync({
-        ...data,
-        description: data.description || undefined,
-        witness: data.witness || undefined,
-        actionTaken: data.actionTaken || undefined,
+        studentId: data.studentId,
+        type: "MINOR",
+        category: data.violationTypeId,
+        description: data.description?.trim() || "Pelanggaran dicatat",
+        occurredAt: new Date(data.date).toISOString(),
+        points: selectedType?.points ?? 0,
+        action: data.actionTaken || undefined,
       });
       toast.success("Pelanggaran berhasil dicatat");
       router.push("/violations");

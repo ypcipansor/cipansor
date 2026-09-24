@@ -118,6 +118,19 @@ export async function getRewardCategories(req: Request, res: Response, next: Nex
   }
 }
 
+export async function getRewardCategoryById(req: Request, res: Response, next: NextFunction) {
+  try {
+    const category = await rewardService.getRewardCategoryById(req.params.id);
+    if (!category) throw Errors.notFound('Reward category');
+    res.json({
+      success: true,
+      data: category,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function getTopStudentsByPoints(req: Request, res: Response, next: NextFunction) {
   try {
     const unitId = req.query.unitId as string | undefined;

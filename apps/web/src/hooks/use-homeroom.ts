@@ -257,13 +257,15 @@ export function useHomeroomDashboard(classId: string | undefined) {
  * normally has exactly one.
  */
 export function useMyHomeroomClass() {
-  return useQuery<HomeroomClass | undefined>({
+  return useQuery<HomeroomClass | null>({
     queryKey: ["homeroom", "my-classes", "first"],
     queryFn: async () => {
       const { data } = await api.get<ApiResponse<HomeroomClass[]>>(
         "/homeroom/my-classes",
       );
-      return data.data?.[0];
+      // React Query 5 rejects an `undefined` return: it is reserved for
+      // "no data yet", so a wali kelas with no class must resolve to `null`.
+      return data.data?.[0] ?? null;
     },
   });
 }

@@ -176,7 +176,9 @@ export function useUnitComparison() {
         return {
           unitId: unit.id,
           unitName: unit.name,
-          realm: unit.realm,
+          // `/units` returns `type`, not `realm`; reading only `realm` left the
+          // realm undefined and collapsed every per-unit label to `undefined`.
+          realm: unit.realm ?? unit.type,
           ...response.data.data,
         };
       },
@@ -234,8 +236,9 @@ export function useAttendanceByUnit() {
           excused: 0,
         };
         const total = stats.present + stats.absent + stats.sick + stats.excused;
+        const realm = unit.realm ?? unit.type;
         return {
-          unit: getUnitShortName(unit.realm),
+          unit: getUnitShortName(realm),
           unitId: unit.id,
           rate: total > 0 ? Math.round((stats.present / total) * 100) : 0,
           present: stats.present,
@@ -243,7 +246,7 @@ export function useAttendanceByUnit() {
           sick: stats.sick,
           excused: stats.excused,
           total,
-          color: getUnitColor(unit.realm),
+          color: getUnitColor(realm),
         };
       },
       enabled: !!unit.id,
@@ -396,8 +399,10 @@ export function useExecutiveAlerts() {
       try {
         const response = await apiClient.get("/dashboard/metrics");
         const alerts = response.data.data?.alerts || [];
-        return alerts.map((alert: any) => ({
-          id: alert.id || String(Date.now()),
+        return alerts.map((alert: any, index: number) => ({
+          // `Date.now()` alone is not unique: alerts mapped in the same tick all
+          // collapsed onto one React key and React warned about duplicates.
+          id: alert.id || `alert-${index}`,
           type: alert.severity || alert.type || "INFO",
           message: alert.message,
           unitId: alert.unitId,

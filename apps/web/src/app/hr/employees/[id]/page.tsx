@@ -295,7 +295,7 @@ export default function EmployeeDetailPage() {
             </CardHeader>
             <CardContent>
               <p className="text-xl font-bold">
-                {safeFormat(new Date(employee.joinDate), "d MMM yyyy", {
+                {safeFormat(employee.joinDate, "d MMM yyyy", {
                   locale: idLocale,
                 })}
               </p>
@@ -451,7 +451,7 @@ export default function EmployeeDetailPage() {
                     </div>
                     <div className="flex justify-between">
                       <dt className="text-muted-foreground">Departemen</dt>
-                      <dd>{employee.department?.name ?? "-"}</dd>
+                      <dd>{employee.department ?? "-"}</dd>
                     </div>
                     <div className="flex justify-between">
                       <dt className="text-muted-foreground">Jabatan</dt>
@@ -470,13 +470,9 @@ export default function EmployeeDetailPage() {
                         Tanggal Bergabung
                       </dt>
                       <dd>
-                        {safeFormat(
-                          new Date(employee.joinDate),
-                          "d MMMM yyyy",
-                          {
-                            locale: idLocale,
-                          },
-                        )}
+                        {safeFormat(employee.joinDate, "d MMMM yyyy", {
+                          locale: idLocale,
+                        })}
                       </dd>
                     </div>
                     {employee.resignDate && (

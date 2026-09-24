@@ -1,8 +1,8 @@
 # Roadmap — outstanding work, most urgent first
 
 Ordered backlog as of **2026-09-20**. Companion to
-[`KNOWN_ISSUES.md`](./KNOWN_ISSUES.md) (which records *defects* in detail); this
-file records *what to do next and in what order*.
+[`KNOWN_ISSUES.md`](./KNOWN_ISSUES.md) (which records _defects_ in detail); this
+file records _what to do next and in what order_.
 
 Ordering principle: anything that can harm people or data first, then anything
 a visitor sees, then correctness work, then deliverables, then tidiness.
@@ -36,13 +36,13 @@ a visitor sees, then correctness work, then deliverables, then tidiness.
 - **A merge is not a deploy, and this section is how that gets caught.** Until
   the 2026-09-04 roll, production was still serving a build that predated #462
   — the containers were created 2026-09-03 23:49 UTC and both Turnstile PRs
-  merged after 03:37 UTC the next morning. The mitigation had been *described*
+  merged after 03:37 UTC the next morning. The mitigation had been _described_
   as live for hours while the running image knew nothing about it. Check the
   container's creation time against the merge time before claiming a fix is in
   production.
 - **Pick your in-image marker from what a change DELETED, not what it contains.**
   The first probe for #462 grepped `challenges.cloudflare.com` and `"Coba lagi"`
-  — both of which already existed in the *old* build, so it answered "installed"
+  — both of which already existed in the _old_ build, so it answered "installed"
   for a stale image. The markers that actually discriminate are the copy #462
   removed (`Anda tetap dapat melanjutkan`, must be **0** occurrences) and the
   string #464 added (`hostname di luar daftar`, must be **≥1**).
@@ -78,6 +78,7 @@ a visitor sees, then correctness work, then deliverables, then tidiness.
 - Prior state, for the record: the 2026-07-31 roll from `main @ 41ee99e2`
   (through #381/#382) carried the CORS fix (§2), the public i18n work (§5) and
   the chatbot markdown fix.
+
 ---
 
 ## 🟠 1. Before any real launch — demo switches removed, credentials remain
@@ -96,14 +97,14 @@ which must never be set for production.
 from the seed, and the live values have **drifted twice** — do not derive them
 from `seed.ts`:
 
-| when | `super.admin@` / `superadmin@` | the other 105 |
-|---|---|---|
-| after the 2026-08-14 bulk reset | `Cipansor123!` | `Cipansor123!` |
-| **since 2026-09-03 (current)** | **`SuperAdmin123!`** | `Cipansor123!` |
+| when                            | `super.admin@` / `superadmin@` | the other 105  |
+| ------------------------------- | ------------------------------ | -------------- |
+| after the 2026-08-14 bulk reset | `Cipansor123!`                 | `Cipansor123!` |
+| **since 2026-09-03 (current)**  | **`SuperAdmin123!`**           | `Cipansor123!` |
 
 The 2026-09-03 change was made deliberately, at the user's request, so the
 e-signature chain could be walked end to end in production (§14). The user has
-since decided to leave it as it stands — *"ini belum production sebenarnya"* —
+since decided to leave it as it stands — _"ini belum production sebenarnya"_ —
 so this is a recorded state, not an open action. What changes it is the first
 real santri or wali entering the system.
 
@@ -133,24 +134,24 @@ singly with `Vary: Origin`, and a foreign origin gets no
 basis data kosong (P3006, `relation "complaints" does not exist`) — SQL-nya
 tetap ada di riwayat git. Empat bukti, semuanya dijalankan bukan diperkirakan:
 
-| yang diuji | hasil |
-|---|---|
-| `0_init` di basis data kosong | 294 tabel, sama dengan produksi |
-| hasilnya di-diff balik ke `schema.prisma` | `-- This is an empty migration.` |
-| produksi lawan `schema.prisma` | nol drift — syarat baseline terpenuhi |
-| `migrate deploy` dari kosong | `All migrations have been successfully applied` |
+| yang diuji                                | hasil                                           |
+| ----------------------------------------- | ----------------------------------------------- |
+| `0_init` di basis data kosong             | 294 tabel, sama dengan produksi                 |
+| hasilnya di-diff balik ke `schema.prisma` | `-- This is an empty migration.`                |
+| produksi lawan `schema.prisma`            | nol drift — syarat baseline terpenuhi           |
+| `migrate deploy` dari kosong              | `All migrations have been successfully applied` |
 
 **Produksi sudah di-baseline (#480, 2026-09-05).**
 `migrate resolve --applied 0_init` dijalankan terhadap basis data produksi. Ia
 **menandai, tidak menjalankan** — dan itu terbukti dari angkanya, bukan dari
 janji:
 
-| | sebelum | sesudah |
-|---|---|---|
+|                      | sebelum   | sesudah                             |
+| -------------------- | --------- | ----------------------------------- |
 | `_prisma_migrations` | TIDAK ADA | `0_init`, `applied_steps_count = 0` |
-| tabel | 294 | 294 |
-| pengguna / santri | 107 / 14 | 107 / 14 |
-| trigger | 2 | 2 |
+| tabel                | 294       | 294                                 |
+| pengguna / santri    | 107 / 14  | 107 / 14                            |
+| trigger              | 2         | 2                                   |
 
 Sesudahnya `migrate deploy` di produksi menjawab **"No pending migrations to
 apply."** — jadi mekanismenya hidup, bukan sekadar tabelnya ada.
@@ -179,10 +180,10 @@ Was 1 of 9 pages and 0 of 7 landing sections. Now every public page is
 localized end to end — page titles, meta descriptions and the donation form
 included — guarded by `config/i18n-coverage.test.ts`.
 
-Still Indonesian by design: the news article *bodies* (headlines and
+Still Indonesian by design: the news article _bodies_ (headlines and
 standfirsts are translated; the text is marked `lang="id"` under a line telling
 the reader so), the leaders' mottos and the donation page's scripture, and the
-values that are *recorded* rather than displayed — the anonymous donor name and
+values that are _recorded_ rather than displayed — the anonymous donor name and
 the bank details. Detail in `KNOWN_ISSUES.md`. **Live since the 2026-07-31
 deploy.**
 
@@ -204,7 +205,7 @@ test used to rule out a stale dismissal proved nothing), then the manifest's
 ## ✅ 7. Temporal data was stale — code fixed (#370), production data now current
 
 The seed wrote the calendar as literals (`2024/2025`, a PSB window of
-1 Mar – 31 May 2024), so every reseed reproduced the day the seed was *written*.
+1 Mar – 31 May 2024), so every reseed reproduced the day the seed was _written_.
 By July 2026 the public SPMB page read "Pendaftaran Telah Ditutup — Periode PSB
 2024/2025 Gelombang 1" and rendered no form: nobody could register.
 
@@ -224,7 +225,7 @@ old query -> SPMB 2027/2028 Gelombang 2  [BELUM DIBUKA]
 new query -> SPMB 2027/2028 Gelombang 1  [OPEN]
 ```
 
-So fixing the data alone would have produced a *different* wrong answer. It now
+So fixing the data alone would have produced a _different_ wrong answer. It now
 prefers open → next upcoming → most recently closed, matching the three states
 `apps/web/src/lib/admission-period.ts` (`getPeriodWindow`) already renders.
 `isActive` remains administrative intent; whether registration is open is
@@ -270,7 +271,7 @@ for an actual intake. The values above are demo data from the seed.
    unit and give the board an all-units view via `seesAllUnits()`; foundation
    plans stay writable only by foundation-scoped callers (mutations do not
    widen). **Still owed:** the remaining empty tables, and — a known follow-up
-   — foundation-plan *creation* through the UI (the create flow still requires
+   — foundation-plan _creation_ through the UI (the create flow still requires
    a unit; only the seed writes null-unit plans today).
 4. **Module audit** — every backend module reachable from the frontend and
    vice versa, and reachable by at least one role.
@@ -326,10 +327,10 @@ for an actual intake. The values above are demo data from the seed.
 > route name in a document nobody has updated since July. Verify against the
 > code, then record the result here — this file is the tracker.
 
-## 🟡 9. Documentation deliverable — the branch is gone
+## 🟢 9. Documentation deliverable — README & screenshots refreshed (2026-09-17); user guide still open
 
 **Checked 2026-09-02: `docs/user-guide` does not exist**, on origin or locally.
-Whatever was done on it was never pushed, so this is not "in flight" — it is
+Whatever was done on it was never pushed, so it is not "in flight" — it is
 unstarted. Decisions already taken with the user still hold:
 
 - **Role-first user guide**, where each role's chapter details how that role
@@ -338,9 +339,40 @@ unstarted. Decisions already taken with the user still hold:
   screenshot gallery moving into the guide.
 - `QUICK_START.md` and `docs/screenshots/` already deleted on that branch.
 
-Remaining: regenerate all screenshots into `docs/images` (checking each page
-and fixing what is broken — this doubles as the role/menu audit), write the
-guide with a clickable table of contents, then rewrite the README.
+**Progress 2026-09-17** (branch `docs/readme-overhaul-visual-qa`):
+
+- **Screenshots regenerated and verified.** A full per-role sweep
+  (`apps/web/scripts/screenshot-roles.ts`) visited **1.200 pages across 66 role
+  accounts** with **0 failures** (blank/bounce/error/overflow). A per-path sweep
+  (`screenshot-all.ts`) covered **755 unique routes** (781 captures, counting the
+  public-host reads) as `SUPER_ADMIN`, also **0 failures**. A pixel-level
+  blank/white audit of both sweeps (`scripts/audit-screenshots.py`) came back
+  clean. `docs/images/*` was rebuilt from the fresh shots by
+  `scripts/build-doc-images.py` (79 images; the stale files with no remaining
+  reference were dropped).
+- **Dynamic-route resolver repaired.** Four routes were failing because their
+  resolver hints pointed at seeded ids that no longer exist
+  (`/certificates/[id]`, `/certificates/verify/[code]`,
+  `/curriculum/curriculums/[id]`, `/parent/ibadah/[id]` — the last also needed a
+  real child of the demo parent, since the parent module 403s on others).
+- **Gallery filenames sanitised.** Four resolved routes carry a query string
+  (`?unitId=…&academicYearId=…`); the gallery named files after the raw path, so
+  the `?`/`&` produced images GitHub would not render and
+  `scripts/check-doc-refs.py` reported as dangling. `build-page-gallery.py` now
+  strips the query and appends a short digest when one was present.
+- **Three real page defects found and fixed** by the sweep: `/tahfidz/simaan`
+  horizontal overflow (date-range picker wider than its grid column),
+  `/rapor-pesantren/unified/[id]` overflow (full-width `Alert` + margin), and
+  `/parent/ibadah/[id]` swallowing a 403 into a blank page (now shows the error).
+- **README rewritten** with code-derived statistics, the eight role realms, and
+  the refreshed gallery. **`QUICK_START.md` rewritten** — the old "Sprint 1 /
+  December 2025" guide claimed the WebSocket server was unimplemented and the
+  radar chart unintegrated, both long since shipped.
+- **`ARCHITECTURE.md`** gained the three-layer roles & access model and the
+  corrected quality-gate commands.
+
+Remaining: the **role-first user guide** itself, with a clickable table of
+contents. The README keeps the gallery until the guide exists to host it.
 
 ## 🟡 10. Customer-service chatbot — Phase 1 shipped, four gaps left
 
@@ -399,7 +431,7 @@ What the design asked for and we have not built, in the order it matters:
    the region, both env configuration so the model stays swappable, so any
    default would be an authoritative-looking figure that is simply wrong):
    input **0.19**, output **0.51**, cached input **0.028** USD per 1M tokens for
-   *DeepSeek-V4 Flash Global* on Azure AI Foundry, budget **10 USD/month**,
+   _DeepSeek-V4 Flash Global_ on Azure AI Foundry, budget **10 USD/month**,
    alerts to `halo@cipansor.or.id`. The price page renders its figures
    client-side, so the table's row and its three columns are all a fetch can
    confirm — the values are the user's reading.
@@ -419,7 +451,7 @@ What the design asked for and we have not built, in the order it matters:
    configuration notice once a month, and only in a month the assistant was
    actually used. Deploying requires `db push` (additive table, no reseed) and a
    container restart; `.env` alone changes nothing until then.
-1b. ~~**No record of what visitors actually asked.**~~ **Shipped 2026-09-04.**
+   1b. ~~**No record of what visitors actually asked.**~~ **Shipped 2026-09-04.**
    Every turn is kept in `chatbot_conversations` / `chatbot_messages` and read
    at `/settings/chatbot/percakapan` (SUPER_ADMIN only), with a filter for
    conversations the assistant could not answer — which is the knowledge-base
@@ -434,6 +466,7 @@ What the design asked for and we have not built, in the order it matters:
    because an empty table proves nothing about whether the purge is alive.
    Deploying requires `db push` (two additive tables, no reseed) and a container
    restart.
+
 2. **The eval suite is not in CI** (§5). It exists — 36 golden and 23 red-team
    cases, `pnpm --filter api chatbot:eval` — and runs only when someone
    remembers. A leak regression is caught by nothing else. Real money per run,
@@ -482,7 +515,7 @@ Scope, measured 2026-07-23 — three vocabularies coexist: `ppdb` in 38 files,
 `psb` in 35, `spmb` in 32.
 
 **Frontend half landed in #439 (merged 2026-09-12, `731b7f7e`).** The pages
-moved to `/spmb`, the navigation says *Penerimaan (SPMB)*, the public pages are
+moved to `/spmb`, the navigation says _Penerimaan (SPMB)_, the public pages are
 `/public/spmb`, and `next.config.ts` keeps permanent redirects from `/ppdb/*`
 and `/psb/*` — asserted by `e2e/spmb.spec.ts`, so the promise to printed links
 is a test, not an intention.
@@ -500,13 +533,13 @@ Remaining work:
    rename that 404s a family mid-registration is a real harm, not cosmetic.
 4. Sweep the comments in `schema.prisma` and elsewhere.
 
-Timing note (still worth honouring): running this *after* the role/menu audit
+Timing note (still worth honouring): running this _after_ the role/menu audit
 keeps audit findings attributable to real bugs rather than rename fallout. If
 run before, expect to re-check any page the sweep flags.
 
 ## 🟢 12. Long-tail technical debt
 
-- ~~~14 API services still scope with `unitId || 'none'`.~~ **Closed (PR #363).**
+- ```14 API services still scope with `unitId || 'none'`.~~ **Closed (PR #363).**
   The literal `unitId || 'none'` pattern is gone: eight services (finance,
   extracurricular, homeroom, muhadatsah, muhadhoroh, meals, attendance,
   duty-roster) were migrated to `seesAllUnits()`, joining the four already
@@ -521,6 +554,7 @@ run before, expect to re-check any page the sweep flags.
     deliberately per-unit (it *requires* a unitId, being a Dapodik/EMIS export);
     `paud-report`'s check is an authorization gate, not a read filter. Decide
     these case by case when auditing each module, never by find-and-replace.
+  ```
 - ~210 racy `isVisible({ timeout })` probes in e2e specs.
 - Dependabot PRs still open (re-checked 2026-09-02): **#333** (zod 3→4),
   **#377** and its duplicate **#418** (both eslint 8→10), **#379** (typescript
@@ -548,7 +582,7 @@ Cloud service account with domain-wide delegation scoped to `gmail.send` alone,
 impersonating `noreply@cipansor.or.id`. No password exists to leak, and the
 Workspace admin can revoke it per scope. SMTP remains a fallback; with neither
 configured the transport is `log`, and — this is the part that was wrong before
-— the settings screen now *says so* instead of showing a green badge.
+— the settings screen now _says so_ instead of showing a green badge.
 
 Every automated message leaves as `noreply@cipansor.or.id` with
 `Reply-To: halo@cipansor.or.id`, so a wali who hits Reply reaches a mailbox
@@ -562,7 +596,7 @@ minting reset tokens for months with no endpoint to redeem them and no page to
 present them, so every "set your password" e-mail led to the login wall with
 the token discarded. Both halves shipped in #413. There is deliberately **no
 self-service "lupa password" form**: a reset is started by an admin from
-Pengguna → ⋯ → *Kirim tautan reset password*, so nothing unauthenticated can
+Pengguna → ⋯ → _Kirim tautan reset password_, so nothing unauthenticated can
 make this system send mail, and there is no public form to probe for which
 addresses have accounts.
 
@@ -598,12 +632,12 @@ after the `rua` reports come back clean.
 **Gmail will not display this logo, and no change on our side fixes that.**
 Google's own documentation requires the record to point at a PEM file — a
 VMC/CMC, i.e. the paid path this project chose not to take (the same reasoning
-that deferred PSrE in §14). Providers that *do* honour a self-asserted logo:
+that deferred PSrE in §14). Providers that _do_ honour a self-asserted logo:
 **Yahoo, Fastmail, La Poste**. Test by sending to a Yahoo account, not Gmail.
 
 The logo lives at `apps/web/public/bimi/cipansor.svg` and is **generated**, by
 `scripts/bimi-trace-logo.py` — do not hand-edit it; re-run the generator. Its
-README records the two traps that cost real time (a broken `P` in *KADIPATEN*
+README records the two traps that cost real time (a broken `P` in _KADIPATEN_
 in the source raster, and a morphological closing that then ate the thin outer
 ring on the left). Verified end to end on 2026-09-04: HTTP 200,
 `content-type: image/svg+xml`, **0 redirects**, SHA-256 of the served bytes
@@ -687,8 +721,8 @@ have failed every night in silence.
 **§5b(a) DOCX authoring track — step 1 shipped (#454).** `Letter.authoringTrack`
 now records `GENERATED` vs `UPLOADED` and the public verification page states
 which assurance it is giving, because the two are not the same claim. Building
-it surfaced a defect nobody had reported: the create-letter form offers *"Upload
-File Naskah (PDF)"* on **outgoing** letters, the letter page showed that file as
+it surfaced a defect nobody had reported: the create-letter form offers _"Upload
+File Naskah (PDF)"_ on **outgoing** letters, the letter page showed that file as
 "Berkas naskah" under a "Pratinjau Naskah" heading — and the signing path never
 reads it. `generateLetterPdfBuffer` composes its own naskah from the form
 fields, and those are the bytes that are hashed, signed, archived and matched on
@@ -699,7 +733,7 @@ them) instead of ignoring them, and a pre-filled DOCX template to start from.
 
 Then: PR-5 (PAdES B-B +
 RFC 3161 timestamps — the highest-value remaining feature, since without a
-timestamp there is no answer to *"was the key valid at the time of signing"*,
+timestamp there is no answer to _"was the key valid at the time of signing"_,
 which is exactly what revocation semantics need); the rest of the §5b(a) DOCX
 authoring track, which also answers PR-7 for most cases; PR-6
 (a.n./u.b./Plt./Plh. — blocked on a governance decision); PR-7 (Arabic — needs
@@ -708,9 +742,9 @@ last.
 
 Three things from the audit that still change what you do next:
 
-- **PR #414 must be closed, not merged.** ✅ *Closed 2026-09-02.* The feature it
-  advertised was not in it: a Jules commit titled *"update status assertion …
-  and add mysql2 override"* deleted the +5,112 lines that PR #421 had merged
+- **PR #414 must be closed, not merged.** ✅ _Closed 2026-09-02._ The feature it
+  advertised was not in it: a Jules commit titled _"update status assertion …
+  and add mysql2 override"_ deleted the +5,112 lines that PR #421 had merged
   into that branch seventeen minutes earlier. The work was recovered from commit
   `e93a7cf2` and shipped in #435; a copy also stands at tag `esign-salvage`.
 - **Naskah dinas are rasterised today.** `e-office/letter/[id]/page.tsx:126`
@@ -718,27 +752,27 @@ Three things from the audit that still change what you do next:
   the text is unselectable, unsearchable, and cannot carry a real PAdES
   signature. `raport-merdeka` does the same. The server-side `pdf-lib` generator
   in `e93a7cf2` fixes it, with four defects to repair first.
-- **Revocation is display-only.** ✅ *Fixed in #436.* Key revocation now has a
+- **Revocation is display-only.** ✅ _Fixed in #436._ Key revocation now has a
   UI, letter-signature revocation is a signed statement (passphrase required,
   verifiable on the public page), a request-and-decide flow keeps proposing
   separate from deciding, and the withdrawn naskah prints with a DICABUT stamp
   naming who withdrew it. Super Admin can revoke **keys**, never a signed
   naskah — that boundary is deliberate; see the plan §PR-2b.
-- **Downloads used to re-render the naskah every time.** ✅ *Fixed in #437.*
+- **Downloads used to re-render the naskah every time.** ✅ _Fixed in #437._
   `LetterSignedDocument` archives the exact bytes that were hashed, and
   `resolveLetterPdf` serves them verbatim. Run
   `pnpm --filter api db:archive-letters` after deploying to backfill letters
   signed before the archive existed — it archives only those whose bytes still
   reproduce exactly, and reports the rest rather than storing wrong bytes.
-- **`SENT` meant the opposite of what it says.** ✅ *Fixed in PR-4.* It was
-  applied to *incoming* letters whose review finished with no disposition
+- **`SENT` meant the opposite of what it says.** ✅ _Fixed in PR-4._ It was
+  applied to _incoming_ letters whose review finished with no disposition
   recipients, and never to an outgoing letter at all — so every "surat terkirim"
   figure counted letters that had just arrived. Outgoing letters now get a real
   buku ekspedisi (`LetterDispatch`: date, channel, who received it, resi, tanda
   terima) behind `POST /correspondence/letters/:id/dispatch`, `Letter.sentAt`
   records the first departure, and a finished incoming letter with nobody to
   forward it to is archived, which is what actually happens to it.
-- **Tembusan and lampiran existed only in the schema.** ✅ *Fixed in PR-4.*
+- **Tembusan and lampiran existed only in the schema.** ✅ _Fixed in PR-4._
   `isCC` had exactly one writer in the whole codebase — a hardcoded `false` —
   and there was no attachment table at all, so the naskah's "Lampiran" line was
   permanently "-". Both are now end-to-end: chosen on the form, stored, listed
@@ -746,18 +780,18 @@ Three things from the audit that still change what you do next:
   and a numbered `Tembusan:` block at the foot). A letter with neither renders
   byte-for-byte as before — `generate-letter-pdf.test.ts` pins that hash, since
   changing it would report every previously signed letter as altered.
-- **A letter cannot be edited after it is created.** 🔴 *Found while building
-  PR-4; not fixed.* There is no `PATCH /letters/:id` anywhere — the module's only
+- **A letter cannot be edited after it is created.** 🔴 _Found while building
+  PR-4; not fixed._ There is no `PATCH /letters/:id` anywhere — the module's only
   `router.patch` is `/dispositions/:id/status`, and `UpdateLetterInput` is a DTO
   with no endpoint behind it. The revision loop therefore has no middle step: a
   reviewer returns a draft, the page invites the author to fix it, and the only
   move available is resubmitting the identical text. Lampiran and tembusan are
   likewise fixed at creation. See plan §2.7 (e) for what fixing it involves.
 
-The signing crypto itself is *good* and should not be rebuilt — scrypt-sealed
+The signing crypto itself is _good_ and should not be rebuilt — scrypt-sealed
 Ed25519 keys, a passphrase that is never stored in any form, server-decided
 enrolment vs renewal, and a lifecycle guard that refuses expired, revoked,
-locked and unapproved keys. What it lacks is standards *form*: the signature
+locked and unapproved keys. What it lacks is standards _form_: the signature
 lives in the database rather than inside the PDF, so no external party can
 verify a letter without visiting our site. See §4 of the plan for the mapping to
 UU ITE Pasal 11, PP 71/2019, and PAdES.
@@ -773,14 +807,14 @@ Seven credential-free endpoints are gated, each with its own `action` name —
 - **#462** removed a browser/server asymmetry — the widget could fail on the
   client while the server still accepted the request.
 - **#464** made `siteverify` check **`hostname` and `action`**, not just
-  `success`. A `success: true` response alone proves a token is valid *somewhere*,
+  `success`. A `success: true` response alone proves a token is valid _somewhere_,
   not that it was minted for us.
 
 Verified against production after the roll: a tokenless login returns **400**
-with the new advice, a bogus token returns **400** with *"muat ulang halaman"*,
+with the new advice, a bogus token returns **400** with _"muat ulang halaman"_,
 and the API log splits `reason:"missing-token"` from `reason:"rejected"`
-correctly. A browser with `challenges.cloudflare.com` blocked showed *Masuk*,
-*Verifikasi Dokumen* and *Verifikasi* all locked with a working retry.
+correctly. A browser with `challenges.cloudflare.com` blocked showed _Masuk_,
+_Verifikasi Dokumen_ and _Verifikasi_ all locked with a working retry.
 
 The obvious risk in #464 — a hostname allowlist that rejects every real visitor
 — was closed by **measurement, not assumption**: nginx's TLS blocks serve
@@ -808,7 +842,7 @@ nothing; a wrong secret answers HTTP 400.
 
 **Masalahnya.** `students.unit_id` menyimpan unit **sekarang**. Sekitar **85**
 tempat di API menyaring lewat `student: { unitId }`, dan hampir semuanya
-sebenarnya bertanya *"saat itu unitnya apa?"* — berapa santri TK tahun lalu,
+sebenarnya bertanya _"saat itu unitnya apa?"_ — berapa santri TK tahun lalu,
 siapa yang dirawat di unit itu semester itu, berapa penghargaan yang terbit di
 SD IT. Begitu seorang santri naik dari TK ke SD IT, seluruh riwayat TK-nya ikut
 berpindah ke SD IT di setiap laporan itu. Tidak ada yang mengubah data; yang
@@ -836,7 +870,7 @@ paling sering dilihat dan paling sering salah:
 **Aturan yang harus dipegang saat menukar.** `unitAt()` mengembalikan sumber
 jawabannya (`history` / `current` / `unknown`). Laporan historis
 (akreditasi, angka tahun lalu, rapor) harus memperlakukan `current` sebagai
-*tidak diketahui*, bukan sebagai jawaban — jatuh diam-diam ke unit sekarang
+_tidak diketahui_, bukan sebagai jawaban — jatuh diam-diam ke unit sekarang
 adalah persis kekeliruan yang tabel ini dibuat untuk menghapus. Layar yang
 hanya butuh label boleh memakainya.
 
@@ -902,7 +936,7 @@ Setelah dijawab: kerjakan, lalu hapus butirnya dari sini dan dari
   exit code: a **finding fails closed** (exit 1, even when part of the run never
   answered), while an **exhausted endpoint fails open** (exit 0 plus
   `::warning title=Dependency audit incomplete::N of M packages were NOT
-  audited`). Exit 2 stays reserved for our own bugs. So read the annotation
+audited`). Exit 2 stays reserved for our own bugs. So read the annotation
   before trusting a pass, and set `AUDIT_FAIL_ON_UNREACHABLE=1` when a release
   must not ship on an unverified tree.
 - **Never push to `main`** (also enforced by a repository ruleset requiring PRs)

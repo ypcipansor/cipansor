@@ -739,6 +739,8 @@ model Unit {
   courses             Course[]
   socialServiceOrders SocialServiceOrder[]
 
+  curriculums Curriculum[]
+
   @@index([type])
   @@index([foundationId])
   @@map("units")
@@ -933,6 +935,8 @@ model AcademicYear {
   risks Risk[]
 
   studentUnitEnrollments StudentUnitEnrollment[]
+
+  curriculums Curriculum[]
 
   @@index([isActive])
   @@map("academic_years")
@@ -2738,10 +2742,58 @@ model Subject {
   merdekaAssessments MerdekaAssessment[]
   assignments        Assignment[]
 
+  curriculumSubjects CurriculumSubject[]
+
   @@unique([unitId, code])
   @@index([unitId])
   @@index([type])
   @@map("subjects")
+}
+
+/// Curriculum - Kumpulan mata pelajaran untuk satu unit + tahun ajaran + tingkat
+model Curriculum {
+  id             String    @id @default(uuid())
+  unitId         String    @map("unit_id")
+  academicYearId String    @map("academic_year_id")
+  code           String
+  name           String
+  description    String?   @db.Text
+  gradeLevel     Int       @map("grade_level")
+  isActive       Boolean   @default(true) @map("is_active")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  deletedAt      DateTime? @map("deleted_at")
+
+  // Relations
+  unit             Unit                @relation(fields: [unitId], references: [id])
+  academicYear     AcademicYear        @relation(fields: [academicYearId], references: [id])
+  subjects         CurriculumSubject[]
+
+  @@unique([unitId, academicYearId, gradeLevel, code])
+  @@index([unitId])
+  @@index([academicYearId])
+  @@map("curriculums")
+}
+
+/// CurriculumSubject - Mata pelajaran yang tergabung dalam sebuah kurikulum
+model CurriculumSubject {
+  id           String   @id @default(uuid())
+  curriculumId String   @map("curriculum_id")
+  subjectId    String   @map("subject_id")
+  semester     Int      // 1 atau 2
+  sequence     Int      @default(0)
+  isRequired   Boolean  @default(true) @map("is_required")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  curriculum Curriculum @relation(fields: [curriculumId], references: [id], onDelete: Cascade)
+  subject    Subject    @relation(fields: [subjectId], references: [id])
+
+  @@unique([curriculumId, subjectId, semester])
+  @@index([curriculumId])
+  @@index([subjectId])
+  @@map("curriculum_subjects")
 }
 
 /// TeacherSubject - Guru pengampu mata pelajaran
