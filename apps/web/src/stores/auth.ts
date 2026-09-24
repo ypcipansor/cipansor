@@ -228,14 +228,9 @@ export const useAuthStore = create<AuthState>()(
         try {
           // The API rotates the role and sets fresh cookies itself.
           await rolesApi.switchRole(roleAssignmentId);
-
-          // Fetch updated user data
-          const userResponse = await authApi.me();
-          set({ user: userResponse.data.data, isLoading: false });
-
-          // Reload page to refresh navigation and permissions
-          window.location.reload();
         } catch (error: unknown) {
+          // Only a failed *switch* is reported. The cookies still hold the old
+          // role, so the UI legitimately stays on it.
           const message =
             error instanceof Error ? error.message : "Failed to switch role";
           const axiosError = error as {
@@ -252,6 +247,22 @@ export const useAuthStore = create<AuthState>()(
           });
           throw error;
         }
+
+        // The switch succeeded, so the routing/access cookies already carry the
+        // new role. Refresh the client copy in a best-effort step: a failed
+        // `/auth/me` here must not abort the reload, or the UI would keep
+        // rendering the *old* role from the store while every request already
+        // runs as the new one.
+        try {
+          const userResponse = await authApi.me();
+          set({ user: userResponse.data.data, isLoading: false });
+        } catch {
+          // Ignore — the reload below re-reads the session from the cookie.
+        }
+
+        // Always reload so the shell rebuilds navigation/permissions from the
+        // new cookie, whether or not `/auth/me` answered.
+        window.location.reload();
       },
 
       resetAuth: () => {

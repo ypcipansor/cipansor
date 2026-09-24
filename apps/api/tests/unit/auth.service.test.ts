@@ -657,6 +657,79 @@ describe('AuthService', () => {
       expect(mockGenerateTokenPair).not.toHaveBeenCalled();
       expect(mockPrisma.refreshToken.create).not.toHaveBeenCalled();
     });
+
+    it('login refuses when an admin assignment becomes primary under the lock without 2FA', async () => {
+      // The password step authenticated an ordinary (STUDENT) role, so the
+      // snapshot decided no second factor was required. By commit the lock sees
+      // the SUPER_ADMIN assignment primary and 2FA off. Minting now would hand
+      // out an admin session with no second factor (CWE-287), so it must be
+      // refused and leave no refresh token.
+      mockPrisma.user.findFirst.mockResolvedValue(mockUser);
+      mockComparePassword.mockResolvedValue(true);
+      (mockPrisma.user.findUnique as any).mockResolvedValue({ isTwoFactorEnabled: false });
+      (mockPrisma.userRoleAssignment.findMany as any).mockResolvedValueOnce([
+        {
+          isPrimary: true,
+          // Same row as the snapshot — the role's *code* was edited to an admin
+          // one, so the role-change guard cannot catch this and the 2FA
+          // re-check is the branch that must.
+          roleId: 'role-id-1',
+          unitId: null,
+          role: { id: 'role-id-1', code: 'SUPER_ADMIN', permissions: [] },
+        },
+      ]);
+
+      await expect(authService.login(validLoginInput)).rejects.toMatchObject({
+        statusCode: 409,
+      });
+      expect(mockGenerateTokenPair).not.toHaveBeenCalled();
+      expect(mockPrisma.refreshToken.create).not.toHaveBeenCalled();
+    });
+
+    it('login refuses when the role differs from the password-verified snapshot', async () => {
+      // A role change between the password check and the commit means this
+      // request's authentication no longer describes the session it would mint,
+      // so it is refused for any role — not just admin ones.
+      mockPrisma.user.findFirst.mockResolvedValue(mockUser);
+      mockComparePassword.mockResolvedValue(true);
+      (mockPrisma.user.findUnique as any).mockResolvedValue({ isTwoFactorEnabled: true });
+      (mockPrisma.userRoleAssignment.findMany as any).mockResolvedValueOnce([
+        {
+          isPrimary: true,
+          roleId: 'role-bendahara',
+          unitId: null,
+          role: { id: 'role-bendahara', code: 'YAYASAN_BENDAHARA', permissions: [] },
+        },
+      ]);
+
+      await expect(authService.login(validLoginInput)).rejects.toMatchObject({
+        statusCode: 409,
+      });
+      expect(mockGenerateTokenPair).not.toHaveBeenCalled();
+      expect(mockPrisma.refreshToken.create).not.toHaveBeenCalled();
+    });
+
+    it('returns userRoles from the locked read so the response matches the token', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(mockUser);
+      mockComparePassword.mockResolvedValue(true);
+      (mockPrisma.user.findUnique as any).mockResolvedValue({ isTwoFactorEnabled: false });
+      const liveAssignments = [
+        {
+          isPrimary: true,
+          roleId: 'role-id-1',
+          unitId: 'unit-9',
+          role: { id: 'role-id-1', code: 'SDIT_GURU', permissions: ['x'] },
+        },
+      ];
+      (mockPrisma.userRoleAssignment.findMany as any).mockResolvedValueOnce(liveAssignments);
+
+      const result = (await authService.login(validLoginInput)) as any;
+
+      // The response must advertise the role the token carries, not the
+      // pre-lock snapshot — the web derives its primary role from this field.
+      expect(result.user.userRoles).toEqual(liveAssignments);
+      expect(result.user.userRoles[0].role.code).toBe('SDIT_GURU');
+    });
   });
 
   describe('logout', () => {

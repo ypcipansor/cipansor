@@ -43,13 +43,18 @@ const PASSWORD_HASH = '$2b$10$DiF7tk0FeH3XfovpHZeo5uJVMwufjDKw5WAHxEhcDfpSqIntOL
 
 const SEED = `
 INSERT INTO roles (id, code, name, realm, permissions, updated_at) VALUES
-  ('role-ketua', 'YAYASAN_KETUA', 'Ketua Yayasan', 'YAYASAN', '[]'::jsonb, now());
+  ('role-ketua', 'YAYASAN_KETUA', 'Ketua Yayasan', 'YAYASAN', '[]'::jsonb, now()),
+  ('role-guru', 'SDIT_GURU', 'Guru', 'SD_IT', '[]'::jsonb, now()),
+  ('role-admin', 'SDIT_ADMIN', 'Admin Unit', 'SD_IT', '[]'::jsonb, now());
 
 INSERT INTO users (id, name, email, password_hash, is_active, updated_at) VALUES
-  ('u-stale', 'Ketua Stale', 'stale@example.com', '${PASSWORD_HASH}', true, now());
+  ('u-stale', 'Ketua Stale', 'stale@example.com', '${PASSWORD_HASH}', true, now()),
+  ('u-escalate', 'Guru Eskalasi', 'escalate@example.com', '${PASSWORD_HASH}', true, now());
 
 INSERT INTO user_role_assignments (id, user_id, role_id, is_primary, is_active, updated_at) VALUES
-  ('a-stale', 'u-stale', 'role-ketua', true, true, now());
+  ('a-stale', 'u-stale', 'role-ketua', true, true, now()),
+  ('a-guru', 'u-escalate', 'role-guru', true, true, now()),
+  ('a-admin', 'u-escalate', 'role-admin', false, true, now());
 `;
 
 async function withClient<T>(url: string, fn: (db: Client) => Promise<T>): Promise<T> {
@@ -125,10 +130,19 @@ describeDb('token issuance vs role revocation (real PostgreSQL)', () => {
 
   const resetUser = async () => {
     await withClient(targetUrl, async (db) => {
-      await db.query(`UPDATE users SET is_active = true, deleted_at = NULL WHERE id = 'u-stale'`);
+      await db.query(
+        `UPDATE users SET is_active = true, deleted_at = NULL WHERE id IN ('u-stale', 'u-escalate')`
+      );
+      await db.query(`UPDATE users SET is_two_factor_enabled = false WHERE id = 'u-escalate'`);
       await db.query(`UPDATE user_role_assignments SET is_active = true WHERE id = 'a-stale'`);
-      await db.query(`DELETE FROM board_member_suspensions WHERE user_id = 'u-stale'`);
-      await db.query(`DELETE FROM refresh_tokens WHERE user_id = 'u-stale'`);
+      await db.query(
+        `UPDATE user_role_assignments SET is_primary = (id = 'a-guru'), is_active = true
+         WHERE user_id = 'u-escalate'`
+      );
+      await db.query(
+        `DELETE FROM board_member_suspensions WHERE user_id IN ('u-stale', 'u-escalate')`
+      );
+      await db.query(`DELETE FROM refresh_tokens WHERE user_id IN ('u-stale', 'u-escalate')`);
     });
   };
 
@@ -215,6 +229,46 @@ describeDb('token issuance vs role revocation (real PostgreSQL)', () => {
         expect(
           tokens.rows[0].n,
           'a refresh whose role was revoked under the lock must not mint a replacement'
+        ).toBe(0);
+      });
+    } finally {
+      await blocker.end();
+      await unloadService(previousUrl);
+    }
+  });
+
+  it('login refuses and mints nothing when an admin assignment wins the primary race', async () => {
+    // Reviewer finding 1 (CWE-287). The password step is answered against the
+    // snapshot's ordinary SDIT_GURU role, so no second factor is demanded. A
+    // concurrent grant then makes the SDIT_ADMIN assignment primary and commits
+    // before login's locked re-read. Without a re-check the login would mint an
+    // admin session with no second factor at all � so it must refuse (409) and
+    // leave no refresh token behind.
+    await resetUser();
+    const { service, previousUrl } = await loadAuthService();
+    const blocker = new Client({ connectionString: targetUrl });
+    await blocker.connect();
+    try {
+      await blocker.query('BEGIN');
+      await blocker.query(
+        `UPDATE user_role_assignments SET is_primary = (id = 'a-admin') WHERE user_id = 'u-escalate'`
+      );
+
+      const pending = service.login({ email: 'escalate@example.com', password: 'Password123!' });
+      // Let login reach the assignment lock and block there.
+      await new Promise((resolve) => setTimeout(resolve, 400));
+
+      await blocker.query('COMMIT');
+
+      await expect(pending).rejects.toMatchObject({ statusCode: 409 });
+
+      await withClient(targetUrl, async (db) => {
+        const tokens = await db.query(
+          `SELECT count(*)::int AS n FROM refresh_tokens WHERE user_id = 'u-escalate'`
+        );
+        expect(
+          tokens.rows[0].n,
+          'a login that escalated to an admin role under the lock must not mint a session'
         ).toBe(0);
       });
     } finally {

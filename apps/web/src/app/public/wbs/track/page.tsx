@@ -109,6 +109,12 @@ function PublicWbsTrackContent() {
     if (!ticketCode || !trackingToken) return;
 
     setTrackError(null);
+    // Clear the previous report before the lookup. A failed lookup must not
+    // leave the last ticket's detail on screen: it would then describe a
+    // report that is not the one in the inputs, and the reply form would post
+    // to the *old* ticket/token. The displayed report is always the result of
+    // the current lookup — or nothing while it is pending/failed.
+    setReportData(null);
     try {
       const res = await trackMutation.mutateAsync({
         ticketCode: ticketCode.trim(),
@@ -220,7 +226,10 @@ function PublicWbsTrackContent() {
                     id="ticketCode"
                     placeholder="Contoh: WBS-202603-ABC123"
                     value={ticketCode}
-                    onChange={(e) => setTicketCode(e.target.value)}
+                    onChange={(e) => {
+                      setTicketCode(e.target.value);
+                      setReportData(null);
+                    }}
                     required
                     className="bg-white font-mono"
                   />
@@ -233,7 +242,10 @@ function PublicWbsTrackContent() {
                     id="trackingToken"
                     placeholder="Masukkan token rahasia..."
                     value={trackingToken}
-                    onChange={(e) => setTrackingToken(e.target.value)}
+                    onChange={(e) => {
+                      setTrackingToken(e.target.value);
+                      setReportData(null);
+                    }}
                     required
                     className="bg-white font-mono"
                   />

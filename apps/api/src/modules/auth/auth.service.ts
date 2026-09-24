@@ -290,6 +290,46 @@ export class AuthService {
       const freshRoleCode = effective.role.code;
       const freshPermissions = (effective.role.permissions as string[]) || [];
 
+      // Re-check the second factor against the *locked* account row, and refuse
+      // a session whose role is not the one the password step authenticated.
+      //
+      // The 2FA decision above is taken from the pre-lock snapshot: whether the
+      // account must present a second factor is derived from
+      // `user.isTwoFactorEnabled`, and the account is only challenged when the
+      // snapshot role is an admin without 2FA. Both facts can move between the
+      // password check and this commit — an admin assignment can become primary,
+      // or 2FA can be switched off. Without this re-read, an account whose
+      // snapshot role was an ordinary one reaches this branch, sees a freshly
+      // *admin* `effective`, and is handed an admin session with no second
+      // factor at all (CWE-287). Reading the flag through `tx` under the user
+      // lock makes it the value that holds at commit.
+      //
+      // A role that differs from the snapshot is refused as well, for every
+      // role and not only admin ones: the password step was answered against
+      // the snapshot's role, so a change in between means this request's
+      // authentication no longer describes the session it is about to mint. The
+      // user is asked to authenticate again against the current role — safer
+      // than minting a token for a role that was never password-verified.
+      const freshAccount = await tx.user.findUnique({
+        where: { id: user.id },
+        select: { isTwoFactorEnabled: true },
+      });
+      if (!freshAccount) {
+        throw Errors.unauthorized('Account is deactivated');
+      }
+
+      if (effective.roleId !== roleId) {
+        throw Errors.conflict(
+          'Peran akun berubah saat login. Silakan login ulang untuk memakai peran terbaru.'
+        );
+      }
+
+      if (isAdminRoleCode(freshRoleCode) && !freshAccount.isTwoFactorEnabled) {
+        throw Errors.conflict(
+          'Peran admin memerlukan verifikasi dua faktor. Silakan login ulang untuk menyiapkan 2FA.'
+        );
+      }
+
       const tokens = generateTokenPair({
         id: user.id,
         sub: user.id,
@@ -317,15 +357,24 @@ export class AuthService {
         tokens,
         permissions: freshPermissions,
         academicYearId: await this.getActiveAcademicYearId(),
+        // The live assignment rows, so the response's `userRoles` describes the
+        // same role the token just minted rather than the pre-lock snapshot.
+        userRoles: assignments,
       };
     });
 
-    // Return user without sensitive fields
-    const userWithoutPassword = this.stripSensitiveFields(user);
+    // Return user without sensitive fields. `userRoles` is overridden with the
+    // assignments read under the lock: the snapshot was taken before the
+    // password check, so a role change in between left the response advertising
+    // a role the token no longer carried — and the web derives its primary role
+    // from exactly this field (`getPrimaryRoleCode`), so it would render the
+    // wrong controls. `stripSensitiveFields` still runs over the whole user.
+    const { userRoles: _staleUserRoles, ...userWithoutPassword } = this.stripSensitiveFields(user);
 
     return {
       user: {
         ...userWithoutPassword,
+        userRoles: activeAcademicYearId.userRoles,
         academicYearId: activeAcademicYearId.academicYearId,
         permissions: activeAcademicYearId.permissions,
       },

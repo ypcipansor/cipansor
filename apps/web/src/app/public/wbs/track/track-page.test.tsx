@@ -134,6 +134,48 @@ describe("PublicWbsTrackPage — reply without a stale Turnstile refetch", () =>
       await screen.findByText("Token Turnstile tidak valid."),
     ).toBeDefined();
   });
+
+  it("clears the previous report when a later lookup fails", async () => {
+    // Reviewer finding 3. A successful lookup for ticket A, then a failed
+    // lookup for ticket B must not leave A's detail on screen — it would
+    // describe a report that is not the one being tracked, and the reply form
+    // would post against A's stale ticket/token.
+    const user = userEvent.setup();
+
+    trackMutate.mockResolvedValueOnce(report).mockRejectedValueOnce({
+      response: { data: { message: "Kode tiket atau token tidak valid." } },
+    });
+
+    render(<PublicWbsTrackPage />);
+
+    await user.type(
+      screen.getByLabelText(/Kode Tiket WBS/i),
+      report.ticketCode,
+    );
+    await user.type(
+      screen.getByLabelText(/Token Akses Rahasia/i),
+      report.trackingToken,
+    );
+    await user.click(screen.getByRole("button", { name: /Lacak|Cari|Cek/i }));
+    expect(
+      await screen.findByText(report.ticketCode, { exact: false }),
+    ).toBeDefined();
+
+    // Change the ticket and fail the second lookup.
+    await user.clear(screen.getByLabelText(/Kode Tiket WBS/i));
+    await user.type(
+      screen.getByLabelText(/Kode Tiket WBS/i),
+      "WBS-202601-XXXXXX",
+    );
+    await user.click(screen.getByRole("button", { name: /Lacak|Cari|Cek/i }));
+
+    expect(
+      await screen.findByText("Kode tiket atau token tidak valid."),
+    ).toBeDefined();
+    // The first ticket's detail and its reply form are gone.
+    expect(screen.queryByText(report.ticketCode, { exact: false })).toBeNull();
+    expect(screen.queryByPlaceholderText(/Ketik pesan Anda/i)).toBeNull();
+  });
 });
 
 /**
