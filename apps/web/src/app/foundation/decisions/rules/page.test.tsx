@@ -147,3 +147,43 @@ describe("halaman aturan kuorum — suntingan tidak bocor antar organ", () => {
     );
   });
 });
+
+describe("halaman aturan kuorum — gate tulis menghormati peran SEKUNDER", () => {
+  /**
+   * Regresi: gate dulu membaca `getPrimaryRoleCode(user)` saja, sehingga
+   * petugas yang peran utamanya GURU tetapi memegang SUPER_ADMIN sebagai
+   * assignment SEKUNDER melihat AccessDenied, padahal server
+   * (`authorizeAnyRole(SUPER_ADMIN)`) mengizinkan tulisannya. Gate kini
+   * membaca SELURUH peran aktif.
+   */
+  it("peran sekunder SUPER_ADMIN (primary GURU) tetap boleh mengelola aturan", async () => {
+    userMock.current = {
+      id: "u2",
+      userRoles: [
+        { isPrimary: true, role: { code: "GURU" } },
+        { isPrimary: false, role: { code: "SUPER_ADMIN" } },
+      ],
+    };
+    renderPage();
+
+    // Form aturan tampil; bukan AccessDenied.
+    await waitFor(() =>
+      expect(
+        screen.getAllByText(/Belum ada aturan tersimpan/).length,
+      ).toBeGreaterThan(0),
+    );
+    expect(screen.queryByText(/Akses ditolak/i)).toBeNull();
+  });
+
+  it("tanpa peran SUPER_ADMIN sama sekali → AccessDenied", async () => {
+    userMock.current = {
+      id: "u3",
+      userRoles: [{ isPrimary: true, role: { code: "GURU" } }],
+    };
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText(/Akses ditolak/i)).toBeInTheDocument(),
+    );
+  });
+});
