@@ -1,4 +1,5 @@
-import type { CorsOptions } from 'cors';
+import cors, { type CorsOptions } from 'cors';
+import type { Request, RequestHandler, Response } from 'express';
 
 /**
  * `CORS_ORIGIN` has always held a *list* — production runs
@@ -56,11 +57,11 @@ export function buildCorsOptions(origins: readonly string[]): CorsOptions {
 
   return {
     // A function (not the array) so the allowlist check is explicit and the
-    // echoed value is always a single, validated origin. The array form is
-    // equivalent at runtime, but CodeQL cannot see the membership test inside
-    // `cors` and reports `js/cors-permissive-configuration`; the callback keeps
-    // the check where it can be read, and the request origin is only reflected
-    // when `origins` actually contains it.
+    // echoed value is always a single, validated origin: CodeQL cannot see the
+    // membership test inside `cors` for an array and reports
+    // `js/cors-permissive-configuration`. The callback alone is NOT equivalent
+    // to the array, though — see buildCorsMiddleware(), which is how the app
+    // must mount it.
     origin: (origin, callback) => {
       if (origin && origins.includes(origin)) {
         callback(null, origin);
@@ -69,5 +70,43 @@ export function buildCorsOptions(origins: readonly string[]): CorsOptions {
       }
     },
     credentials: true,
+  };
+}
+
+/** Adds `Origin` to the response's `Vary` list unless it is already there. */
+function varyOnOrigin(res: Response): void {
+  const current = String(res.getHeader('Vary') ?? '');
+  const listed = current.split(',').some((field) => field.trim().toLowerCase() === 'origin');
+  if (!listed) res.setHeader('Vary', current ? `${current}, Origin` : 'Origin');
+}
+
+/**
+ * The CORS middleware the app mounts.
+ *
+ * When the origin callback answers `false`, `cors` skips the request entirely.
+ * With the array form it used to handle every request, so two things changed
+ * with the callback (measured side by side on 2026-09-25) and are restored here:
+ *
+ * - `Vary: Origin` was sent on every response, including those with no Origin
+ *   or a refused one. Without it a shared cache may store the header-less
+ *   response and serve it to a listed origin, which the browser then refuses.
+ * - Every OPTIONS request was answered by `cors` with 204. A refused preflight
+ *   now fell through to the app's middleware and routes instead.
+ */
+export function buildCorsMiddleware(origins: readonly string[]): RequestHandler {
+  const handle = cors(buildCorsOptions(origins));
+  return (req: Request, res: Response, next) => {
+    varyOnOrigin(res);
+    handle(req, res, (err?: unknown) => {
+      if (err) return next(err);
+      if (req.method === 'OPTIONS') {
+        // A preflight `cors` did not answer: refused, so no Allow-* headers.
+        res.statusCode = 204;
+        res.setHeader('Content-Length', '0');
+        res.end();
+        return;
+      }
+      next();
+    });
   };
 }

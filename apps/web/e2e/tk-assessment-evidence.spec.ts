@@ -7,6 +7,7 @@ import {
   SEED_USERS,
 } from "./helpers/auth-api";
 import { gotoAuthedPage, waitForLoadingComplete } from "./helpers/page-helpers";
+import { isProductionApi } from "./helpers/api-env";
 
 /**
  * TK Assessment evidence upload — drives the four-step wizard on
@@ -116,6 +117,14 @@ test.describe("TK Assessment evidence upload", () => {
   test("edit wizard previews an uploaded file from a blob: URL", async ({
     page,
   }) => {
+    // This test creates an assessment to edit. The default API_URL
+    // (localhost:3001) is a live API on this project's own host, so ask the API
+    // which it is, like the other specs that write.
+    test.skip(
+      await isProductionApi(),
+      "API_URL menunjuk API produksi; uji ini menulis data, jadi dilewati",
+    );
+
     const session = await apiLogin(SEED_USERS.superAdmin);
 
     // Resolve a real active student + academic year and create an assessment to
@@ -152,30 +161,42 @@ test.describe("TK Assessment evidence upload", () => {
     );
     const assessmentId = created.data.id;
 
-    await injectSession(page, session);
-    await gotoAuthedPage(
-      page,
-      `/tk/assessment/${assessmentId}/edit`,
-      /edit penilaian tk/i,
-    );
-    await waitForLoadingComplete(page);
+    try {
+      await injectSession(page, session);
+      await gotoAuthedPage(
+        page,
+        `/tk/assessment/${assessmentId}/edit`,
+        /edit penilaian tk/i,
+      );
+      await waitForLoadingComplete(page);
 
-    // The form resets from the fetched assessment in an effect, so wait until
-    // the student select is prefilled (its trigger stops showing the
-    // placeholder) before walking the steps — clicking "Lanjut" on a still-empty
-    // form fails validation and never advances.
-    await expect(comboboxes(page).first()).not.toContainText(/pilih siswa/i, {
-      timeout: 10000,
-    });
+      // The form resets from the fetched assessment in an effect, so wait until
+      // the student select is prefilled (its trigger stops showing the
+      // placeholder) before walking the steps — clicking "Lanjut" on a still-empty
+      // form fails validation and never advances.
+      await expect(comboboxes(page).first()).not.toContainText(/pilih siswa/i, {
+        timeout: 10000,
+      });
 
-    // Steps 1-3 are prefilled from the created assessment, so walk straight to
-    // the evidence step.
-    for (let step = 1; step <= 3; step++) {
-      await page.getByRole("button", { name: /lanjut/i }).click();
+      // Steps 1-3 are prefilled from the created assessment, so walk straight to
+      // the evidence step.
+      for (let step = 1; step <= 3; step++) {
+        await page.getByRole("button", { name: /lanjut/i }).click();
+      }
+      await expect(page.getByText(/bukti & review akhir/i).first()).toBeVisible(
+        {
+          timeout: 10000,
+        },
+      );
+      await uploadAndAssertBlobPreview(page, "Preview");
+    } finally {
+      // The preview is never submitted, so the fixture is the only row this
+      // test leaves behind.
+      await apiRequest(
+        session,
+        "DELETE",
+        `/paud-assessment/assessments/${assessmentId}`,
+      ).catch(() => {});
     }
-    await expect(page.getByText(/bukti & review akhir/i).first()).toBeVisible({
-      timeout: 10000,
-    });
-    await uploadAndAssertBlobPreview(page, "Preview");
   });
 });

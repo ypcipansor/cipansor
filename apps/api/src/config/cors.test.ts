@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import cors from 'cors';
-import { parseCorsOrigins, buildCorsOptions } from './cors';
+import { parseCorsOrigins, buildCorsOptions, buildCorsMiddleware } from './cors';
 
 /**
  * These tests are about the header that actually reaches the browser, not about
@@ -44,7 +43,7 @@ function request(
   origins: readonly string[],
   { origin, method = 'GET' }: { origin?: string; method?: string }
 ) {
-  const middleware = cors(buildCorsOptions(origins));
+  const middleware = buildCorsMiddleware(origins);
   const req = {
     method,
     headers: origin ? { origin } : {},
@@ -134,6 +133,29 @@ describe('the header sent to the browser', () => {
     const { res, next } = request(allowlist, {});
     expect(res.headers['access-control-allow-origin']).toBeUndefined();
     expect(next).toHaveBeenCalled();
+  });
+
+  // The origin callback makes `cors` skip every request it refuses; the array
+  // form it replaced handled them all. buildCorsMiddleware() restores both.
+  it.each([
+    ['no Origin header', undefined],
+    ['an origin that is not listed', 'https://evil.test'],
+  ])('still varies by Origin for %s, so a cache cannot cross-serve it', (_label, origin) => {
+    const { res } = request(allowlist, { origin });
+    expect(String(res.headers['vary'])).toMatch(/(^|,\s*)Origin(\s*,|$)/);
+  });
+
+  it('lists Origin in Vary once, not twice, for a listed origin', () => {
+    const { res } = request(allowlist, { origin: 'https://cipansor.or.id' });
+    expect(String(res.headers['vary']).match(/Origin/g)).toHaveLength(1);
+  });
+
+  it('answers a refused preflight itself instead of passing it to the app', () => {
+    const { res, next } = request(allowlist, { origin: 'https://evil.test', method: 'OPTIONS' });
+    expect(res.statusCode).toBe(204);
+    expect(res.ended).toBe(true);
+    expect(res.headers['access-control-allow-origin']).toBeUndefined();
+    expect(next).not.toHaveBeenCalled();
   });
 
   it('answers a preflight from a listed origin with a single origin', () => {

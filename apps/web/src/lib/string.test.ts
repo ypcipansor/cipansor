@@ -65,9 +65,12 @@ describe("slugify", () => {
     expect(slugify("---")).toBe("");
   });
 
-  it("stays fast on a long dash run (#18 js/polynomial-redos)", () => {
-    // The old trailing /-+$/ was reported as polynomial on dash runs. Feed it
-    // the pattern CodeQL names and assert it completes promptly.
+  it("stays fast on a long dash run (CodeQL js/polynomial-redos #15)", () => {
+    // CodeQL reported the old trailing /-+$/ as polynomial on dash runs. In
+    // practice the earlier /[\s_-]+/ replace had already collapsed every run to
+    // one dash, so the old code was fast too (about 1 ms here): this is a sanity
+    // bound on the index-based trim, not a regression test that the old code
+    // would fail.
     const hostile = "a" + "-".repeat(200000);
     const started = performance.now();
     expect(slugify(hostile)).toBe("a");

@@ -72,7 +72,8 @@ a route or `src/config/navigation.ts`.
 ## Blob preview URLs
 
 Previewing a picked file means `URL.createObjectURL` → `<img src>`. Two traps,
-both of which shipped and were fixed; `src/hooks/use-file-previews.ts` and
+both hit while fixing CodeQL `js/xss-through-dom` in PR #545 (the first only in
+that PR's own first commit); `src/hooks/use-file-previews.ts` and
 `src/lib/files.ts` are the shared answer.
 
 - **Never re-encode the URL.** A blob URL embeds the page origin. On an IPv6 host
@@ -90,9 +91,10 @@ both of which shipped and were fixed; `src/hooks/use-file-previews.ts` and
 
 A blob URL pins its file's bytes until revoked, so whoever creates it must
 release it (`releaseObjectUrl`) on remove **and** on unmount; `useFilePreviews`
-owns both routes. Note that `pnpm dev` does not run under Strict Mode while the
-`next build`/test renderers may, which is why the leak is covered by a
-StrictMode unit test rather than by clicking through the app.
+owns both routes. `next.config.ts` sets `reactStrictMode: true`, and Strict Mode
+double-invokes updaters only in development (`pnpm dev`), never in a production
+build — so the leak shows in dev and in a `<StrictMode>` unit test, and not on
+the deployed site. The StrictMode unit test is what pins it.
 
 ## Testing
 

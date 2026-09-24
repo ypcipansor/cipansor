@@ -149,7 +149,12 @@ export function PhotoUploader({
     onChange(newPhotos.map((p, i) => ({ ...p, order: i })));
   };
 
-  // Revoke every outstanding preview URL on unmount. `removePhoto` only frees
+  // Revoke every outstanding preview URL on unmount. The photos belong to the
+  // parent (this is a controlled component), so this is only right while the
+  // uploader lives exactly as long as the form that owns them — true on
+  // /tk/daily-reports/new. Inside tabs or steps it would revoke previews the
+  // parent still shows; move the cleanup to the owner then.
+  // `removePhoto` only frees
   // the ones the user deletes; the ones still present when the page is
   // navigated away from would otherwise pin their files' bytes for the
   // document's lifetime.
