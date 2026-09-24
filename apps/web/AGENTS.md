@@ -69,6 +69,31 @@ a route or `src/config/navigation.ts`.
 - Realtime: `src/providers/socket-provider.tsx` (Socket.IO).
 - Auth state: `src/stores/auth.ts`.
 
+## Blob preview URLs
+
+Previewing a picked file means `URL.createObjectURL` → `<img src>`. Two traps,
+both of which shipped and were fixed; `src/hooks/use-file-previews.ts` and
+`src/lib/files.ts` are the shared answer.
+
+- **Never re-encode the URL.** A blob URL embeds the page origin. On an IPv6 host
+  the serialized host is bracketed, so `encodeURI` rewrites
+  `blob:http://[::1]:3000/abc` to `blob:http://%5B::1%5D:3000/abc` — a string the
+  browser never registered, and the image silently fails to resolve.
+  `objectUrlForFile` returns the value untouched; the `blob:` prefix guard is
+  what satisfies CodeQL's `js/xss-through-dom` (its `PrefixStringSanitizer`
+  recognizes the guard), not an escaping call.
+- **Never create the URL inside a state updater.** React Strict Mode
+  double-invokes updaters, so `setItems((prev) => [...prev, { url: createObjectURL(f) }])`
+  registers two blobs per file and only the surviving one is ever revoked — the
+  other leaks for the document's lifetime. Build the list once in the event
+  handler, then `setItems`.
+
+A blob URL pins its file's bytes until revoked, so whoever creates it must
+release it (`releaseObjectUrl`) on remove **and** on unmount; `useFilePreviews`
+owns both routes. Note that `pnpm dev` does not run under Strict Mode while the
+`next build`/test renderers may, which is why the leak is covered by a
+StrictMode unit test rather than by clicking through the app.
+
 ## Testing
 
 - **Mandatory (golden rule #7):** every new/changed **route/page or user flow**
