@@ -54,7 +54,14 @@ jobs:
        github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    outputs:
+      deploy: ${{ steps.scope.outputs.deploy }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+
       - env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -74,9 +81,29 @@ jobs:
             fi
           done
 
+      # Nothing to rebuild when no code changed since the commit staging runs:
+      # a documentation-only merge would otherwise cost three image builds and
+      # a restart that serve the same bytes. Staging then keeps reporting that
+      # earlier commit, and that commit is what a release takes (production
+      # releases the SHA staging runs). A manual run always deploys.
+      - id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"; echo "scope: manual run always deploys"; exit 0
+          fi
+          current=$(curl -s --max-time 15 -H 'Cache-Control: no-cache' "$URL/healthz" | jq -r '.commit // empty' 2>/dev/null || true)
+          if [ -z "$current" ]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"; echo "scope: staging did not report its commit — deploying"; exit 0
+          fi
+          echo "staging runs $current"
+          SCOPE_KEY=deploy sh .github/scripts/change-scope.sh between "$current" "$SHA"
+
   build:
     name: Build ${{ matrix.image }}
     needs: gate
+    if: needs.gate.outputs.deploy == 'true'
     runs-on: ubuntu-latest
     environment: staging
     strategy:

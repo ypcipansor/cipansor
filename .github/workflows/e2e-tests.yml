@@ -23,12 +23,14 @@ env:
   PNPM_VERSION: '9.15.9'
 
 jobs:
-  # Does this run need the suite at all? The suite is most of the pipeline's
-  # minutes, and two kinds of pull request gain nothing from it: a DRAFT (still
-  # being pushed to; the suite runs when it is marked ready) and one that
-  # touches only documentation or agent tooling (`*.md`, `docs/`, `.claude/`).
-  # A push to main and a manual run always test — staging deploys only after
-  # this workflow passes on main.
+  # Does this run need the suite at all? It is most of the pipeline's
+  # minutes, and two kinds of change gain nothing from it: a DRAFT pull request
+  # (still being pushed to; the suite runs when it is marked ready) and a
+  # change with no code in it — documentation or agent tooling only, as
+  # .github/scripts/change-scope.sh defines it (shared with CI and the staging
+  # deploy). A push to main is measured against the last commit on which this
+  # workflow passed, not its parent, so a run cancelled by a newer commit is
+  # never silently skipped.
   #
   # Skipping is done with a job-level `if:` on purpose. A job skipped by its
   # condition reports success, so the required check "E2E Tests (Chromium)"
@@ -41,28 +43,31 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+      actions: read
     outputs:
       run: ${{ steps.decide.outputs.run }}
     steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
       - id: decide
         env:
           GH_TOKEN: ${{ github.token }}
-          EVENT: ${{ github.event_name }}
           DRAFT: ${{ github.event.pull_request.draft }}
           PR: ${{ github.event.pull_request.number }}
         run: |
-          decide() { echo "run=$1" >> "$GITHUB_OUTPUT"; echo "E2E: $1 — $2"; }
-          if [ "$EVENT" != "pull_request" ]; then decide true "$EVENT always tests"; exit 0; fi
-          if [ "$DRAFT" = "true" ]; then decide false "draft pull request; runs when marked ready"; exit 0; fi
-          # Fail open: if the file list cannot be read, test.
-          files=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --jq '.[].filename') \
-            || { decide true "could not list changed files"; exit 0; }
-          code=$(printf '%s\n' "$files" | grep -Ev '(\.md$|^docs/|^\.claude/)' | grep -c . || true)
-          if [ "$code" -eq 0 ]; then
-            decide false "only documentation / agent tooling changed"
-          else
-            decide true "$code changed file(s) outside documentation"
-          fi
+          case "$GITHUB_EVENT_NAME" in
+            pull_request)
+              if [ "$DRAFT" = "true" ]; then
+                echo "run=false" >> "$GITHUB_OUTPUT"
+                echo "scope: run=false — draft pull request; runs when marked ready"
+              else
+                sh .github/scripts/change-scope.sh pr "$PR"
+              fi ;;
+            push) sh .github/scripts/change-scope.sh since-pass e2e-tests.yml ;;
+            *) echo "run=true" >> "$GITHUB_OUTPUT"; echo "scope: $GITHUB_EVENT_NAME always runs" ;;
+          esac
 
   # Primary gate: the full Playwright suite on Chromium against a real,
   # seeded backend (the app's primary target browser).
@@ -222,7 +227,8 @@ jobs:
   e2e-cross-browser:
     name: E2E Tests (${{ matrix.browser }})
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+    needs: scope
+    if: ${{ needs.scope.outputs.run == 'true' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}
     timeout-minutes: 45
     continue-on-error: true
     strategy:
