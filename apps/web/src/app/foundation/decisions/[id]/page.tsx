@@ -192,8 +192,16 @@ export default function FoundationDecisionDetailPage() {
       setOpen(false);
       setPassphrase("");
       setNote("");
-    } catch {
-      setVoteError("Passphrase salah atau kunci tidak dapat digunakan.");
+    } catch (error) {
+      // Kegagalan TIDAK semuanya "passphrase salah". Dulu `catch {}` menyamakan
+      // 403 (bukan anggota organ), 400 (sudah memilih / sirkuler tanpa alasan),
+      // 409 (baris suara lama tidak sah) dan 5xx menjadi tuduhan passphrase —
+      // anggota yang sesungguhnya dicabut haknya disuruh menebak ulang
+      // passphrase yang tidak pernah salah. Pesan server adalah sumber yang
+      // benar: hanya 401 dari `signPdfHash`/kunci terkunci yang berarti
+      // passphrase. Jatuh ke pesan generik hanya bila server tak mengirim pesan.
+      const parsed = parseApiError(error);
+      setVoteError(parsed.message);
     }
   };
 

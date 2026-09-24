@@ -35,6 +35,7 @@ import { FileText, Plus } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { getPrimaryRoleCode } from "@/lib/rbac";
 import { canManageFoundationDecisions } from "@/lib/yayasan-organ";
+import { FOUNDATION_DECISIONS_PAGE_SIZE_OPTIONS } from "@cipansor/shared";
 
 const statusColor: Record<string, string> = {
   DRAFT: "bg-gray-100 text-gray-700",
@@ -202,6 +203,7 @@ export default function FoundationDecisionsPage() {
                   totalPages={Math.max(1, Math.ceil(total / limit))}
                   pageSize={limit}
                   total={total}
+                  pageSizeOptions={[...FOUNDATION_DECISIONS_PAGE_SIZE_OPTIONS]}
                   onPageChange={setPage}
                   onPageSizeChange={(size) => {
                     setLimit(size);

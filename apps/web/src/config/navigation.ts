@@ -1469,6 +1469,18 @@ const adminNavigation: NavGroup[] = [
             roleCodes: ["SUPER_ADMIN"],
           },
           {
+            // Daftar keputusan organ (baca/tulis). Dulu hanya "Aturan Kuorum"
+            // yang muncul di menu SUPER_ADMIN — tautan daftar keputusannya
+            // tidak ada, sehingga Super Admin harus mengetik URL untuk
+            // membukanya (dan tak dapat membuka detail untuk menandatangani).
+            // Menu Yayasan biasa (`yayasanNavigation`) sudah memuatnya, tetapi
+            // SUPER_ADMIN memakai `adminNavigation`, bukan menu itu.
+            title: "Keputusan & Notulen",
+            href: "/foundation/decisions",
+            icon: FileSignature,
+            roleCodes: ["SUPER_ADMIN"],
+          },
+          {
             // Mengelola override ambang kuorum Anggaran Dasar. Endpoint
             // `GET/PUT /foundation/rules` hanya untuk SUPER_ADMIN, jadi menunya
             // pun dikunci ke SUPER_ADMIN.

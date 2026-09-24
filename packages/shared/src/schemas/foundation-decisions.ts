@@ -6,6 +6,7 @@ import {
   FOUNDATION_ORGAN_TYPES,
   FOUNDATION_QUORUM_MODES,
   FOUNDATION_VOTE_CHOICES,
+  FOUNDATION_DECISIONS_MAX_PAGE_SIZE,
   FoundationQuorumMode,
   quorumValueForMode,
 } from "../types/foundation-decisions";
@@ -180,7 +181,13 @@ export const listFoundationDecisionsQuerySchema = z.object({
   organType: z.enum(FOUNDATION_ORGAN_TYPES).optional(),
   status: z.enum(["DRAFT", "VOTING", "APPROVED", "REJECTED", "CANCELLED"]).optional(),
   page: z.coerce.number().int().min(1).optional().default(1),
-  limit: z.coerce.number().int().min(1).max(50).optional().default(10),
+  limit: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(FOUNDATION_DECISIONS_MAX_PAGE_SIZE)
+    .optional()
+    .default(10),
 });
 
 export type ListFoundationDecisionsQuery = z.infer<

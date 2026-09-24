@@ -58,6 +58,18 @@ export const FOUNDATION_DECISION_TYPES = [
 export type FoundationDecisionType = (typeof FOUNDATION_DECISION_TYPES)[number];
 
 /**
+ * Ukuran halaman daftar keputusan — satu sumber untuk kedua sisi.
+ *
+ * Schema API membatasi `limit` maksimum 50, tetapi komponen `Pagination`
+ * default-nya menawarkan 100. Dulu halaman daftar tidak menimpanya, sehingga
+ * memilih "100" mengirim `limit=100`, ditolak Zod di edge, dan SELURUH daftar
+ * berubah menjadi galat. Opsi ukuran halaman dan batas atasnya kini berasal
+ * dari kontrak yang sama, sehingga UI tak dapat menawarkan nilai yang API tolak.
+ */
+export const FOUNDATION_DECISIONS_MAX_PAGE_SIZE = 50;
+export const FOUNDATION_DECISIONS_PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
+
+/**
  * Matriks kewenangan organ atas tiap jenis keputusan.
  *
  * Kontrak ini hidup SEKALI di sini karena DUA sisi memakainya: API

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
@@ -37,7 +37,31 @@ vi.mock("@/stores/auth", () => ({
   useAuthStore: () => ({ user: null }),
 }));
 
+/**
+ * Rekam PROP yang halaman teruskan ke `Pagination`, sambil tetap merender
+ * komponen ASLI (tombol halaman sungguhan tetap diuji). Memilih item Radix
+ * Select lewat event pointer tidak deterministik di jsdom, sedangkan yang
+ * diregresikan adalah kontrak yang halaman berikan ke komponen.
+ */
+const paginationProps = vi.hoisted(() => ({
+  last: null as null | { pageSizeOptions?: number[]; onPageSizeChange?: (n: number) => void },
+}));
+vi.mock("@/components/shared/pagination", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/components/shared/pagination")>();
+  return {
+    Pagination: (props: Parameters<typeof actual.Pagination>[0]) => {
+      paginationProps.last = props;
+      return actual.Pagination(props);
+    },
+  };
+});
+
 import FoundationDecisionsPage from "./page";
+import {
+  listFoundationDecisionsQuerySchema,
+  FOUNDATION_DECISIONS_MAX_PAGE_SIZE,
+  FOUNDATION_DECISIONS_PAGE_SIZE_OPTIONS,
+} from "@cipansor/shared";
 
 /** QueryClient segar per render; retry dimatikan agar error state cepat tampil. */
 function renderPage() {
@@ -157,5 +181,58 @@ describe("daftar keputusan — pagination", () => {
     await waitFor(() =>
       expect(screen.getByText(/Gagal memuat daftar keputusan/)).toBeDefined(),
     );
+  });
+
+  /**
+   * Regresi: opsi ukuran halaman terbesar WAJIB valid menurut kontrak API.
+   *
+   * `Pagination` default-nya menawarkan 100, sedangkan
+   * `listFoundationDecisionsQuerySchema` membatasi `limit` maksimum 50. Memilih
+   * "100" dulu mengirim `limit=100`, ditolak Zod di edge, dan SELURUH daftar
+   * berubah menjadi galat. Kontrak ukuran halaman kini berasal dari
+   * `@cipansor/shared`, dan uji ini mengunci bahwa setiap opsi yang ditampilkan
+   * lolos schema.
+   */
+  it("semua opsi ukuran halaman lolos schema API (regresi limit=100)", () => {
+    for (const size of FOUNDATION_DECISIONS_PAGE_SIZE_OPTIONS) {
+      expect(
+        listFoundationDecisionsQuerySchema.safeParse({ page: 1, limit: size })
+          .success,
+        `limit=${size} harus valid`,
+      ).toBe(true);
+    }
+    expect(Math.max(...FOUNDATION_DECISIONS_PAGE_SIZE_OPTIONS)).toBe(
+      FOUNDATION_DECISIONS_MAX_PAGE_SIZE,
+    );
+    // Nilai default lama (100) memang DITOLAK — inilah bug regresinya.
+    expect(
+      listFoundationDecisionsQuerySchema.safeParse({ page: 1, limit: 100 })
+        .success,
+    ).toBe(false);
+  });
+
+  it("memilih ukuran halaman terbesar memuat data tanpa galat", async () => {
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText("Keputusan dec-1-1")).toBeDefined(),
+    );
+
+    const largest = Math.max(...FOUNDATION_DECISIONS_PAGE_SIZE_OPTIONS);
+
+    // Opsi yang halaman teruskan harus lolos schema API (regresi limit=100).
+    const opts = paginationProps.last?.pageSizeOptions ?? [];
+    expect(opts).toEqual([...FOUNDATION_DECISIONS_PAGE_SIZE_OPTIONS]);
+    expect(opts).not.toContain(100);
+
+    // Memilih opsi terbesar benar-benar mengirim `limit` valid ke API.
+    act(() => paginationProps.last?.onPageSizeChange?.(largest));
+
+    await waitFor(() => {
+      const [, config] = get.mock.calls[get.mock.calls.length - 1];
+      expect(config?.params).toMatchObject({ page: 1, limit: largest });
+    });
+    expect(screen.queryByText(/Gagal memuat daftar keputusan/)).toBeNull();
+    expect(await screen.findByText("Keputusan dec-1-1")).toBeDefined();
   });
 });

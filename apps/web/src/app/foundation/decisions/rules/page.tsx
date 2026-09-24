@@ -113,6 +113,14 @@ export default function FoundationRulesPage() {
   const circularLocked = kind === "CIRCULAR";
 
   // Muat nilai tersimpan (atau default legal) setiap kali pilihan berubah.
+  //
+  // `organType` WAJIB ada di daftar dependensi. `stored` sendiri tidak cukup:
+  // ia `undefined` baik untuk "organ ini belum punya aturan" maupun untuk
+  // "masih memuat", dan berpindah antara DUA organ yang dua-duanya belum
+  // punya aturan tidak mengubah identitas `stored` (sama-sama `undefined`) —
+  // sehingga tanpa `organType` efek tak berjalan dan suntingan yang belum
+  // disimpan dari organ sebelumnya tertinggal di form, lalu tersimpan ke
+  // organ yang baru.
   useEffect(() => {
     setSaved(false);
     if (stored) {
@@ -131,7 +139,7 @@ export default function FoundationRulesPage() {
       quorumDecisionMode: d.quorumDecisionMode,
       quorumDecisionValue: d.quorumDecisionValue,
     });
-  }, [stored, kind]);
+  }, [stored, kind, organType]);
 
   /**
    * Mode yang boleh dipilih untuk pasangan organ × cara saat ini.

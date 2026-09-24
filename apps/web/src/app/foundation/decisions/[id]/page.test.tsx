@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
@@ -17,10 +17,13 @@ import type { ReactNode } from "react";
  * sumber.
  */
 
-const { get } = vi.hoisted(() => ({ get: vi.fn() }));
+const { get, post } = vi.hoisted(() => ({
+  get: vi.fn(),
+  post: vi.fn(),
+}));
 
 vi.mock("@/lib/api", () => {
-  const api = { get, post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn() };
+  const api = { get, post, put: vi.fn(), patch: vi.fn(), delete: vi.fn() };
   return { api, default: api };
 });
 
@@ -109,5 +112,136 @@ describe("halaman detail keputusan — pembedaan kegagalan", () => {
       await screen.findByRole("button", { name: /Coba lagi/ })
     ).toBeTruthy();
     expect(screen.queryByText(/Keputusan tidak ditemukan\./)).toBeNull();
+  });
+});
+
+/**
+ * Regresi: kegagalan MEMBERI SUARA tidak boleh semuanya diterjemahkan menjadi
+ * "Passphrase salah".
+ *
+ * `submitVote` dulu menangkap tanpa argumen dan selalu menulis "Passphrase
+ * salah atau kunci tidak dapat digunakan." Akibatnya 403 (bukan anggota organ
+ * / sudah offboard), 400 (sudah memilih, sirkuler tanpa alasan), 409 (baris
+ * suara lama tidak sah) dan 5xx tampak seperti passphrase keliru — anggota
+ * yang haknya sudah dicabut disuruh menebak ulang passphrase yang tidak pernah
+ * salah. Uji ini mengunci bahwa pesan SERVER ditampilkan apa adanya.
+ */
+function votingDecision() {
+  return {
+    id: "dec-1",
+    subject: "Keputusan Uji",
+    body: "Isi",
+    organType: "PEMBINA",
+    kind: "MEETING",
+    decisionType: "RAPAT",
+    status: "VOTING",
+    quorumSnapshot: {
+      activeCount: 3,
+      quorumMode: "MAJORITY",
+      presentRequired: 2,
+      approveRequired: 2,
+      snapshotAt: new Date().toISOString(),
+    },
+    voteSummary: { approve: 0, reject: 0, abstain: 0, total: 0 },
+    finalPdfDigest: null,
+    decidedAt: null,
+    createdAt: new Date().toISOString(),
+    createdByName: "Admin",
+    decidedByName: null,
+    memberCount: 3,
+    votedCount: 0,
+    members: [],
+    votes: [],
+    verificationToken: null,
+    publication: "PRIVATE",
+    canVote: true,
+    canFinalize: true,
+    canCancel: false,
+    publishable: false,
+    myVote: null,
+  };
+}
+
+async function openVoteAndSubmit() {
+  get.mockResolvedValue({ data: { data: votingDecision() } });
+  renderPage();
+  fireEvent.click(
+    await screen.findByRole("button", { name: /Tandatangani & Suara/ })
+  );
+  fireEvent.change(await screen.findByPlaceholderText(/Passphrase pribadi/), {
+    target: { value: "rahasia" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: /^Tandatangani$/ }));
+}
+
+describe("halaman detail keputusan — pesan galat pemberian suara", () => {
+  beforeEach(() => {
+    get.mockReset();
+    post.mockReset();
+  });
+
+  it("401 → pesan passphrase dari server", async () => {
+    post.mockRejectedValue(
+      axiosError(401, {
+        success: false,
+        message: "Passphrase tanda tangan salah. Sisa percobaan: 2.",
+      })
+    );
+    await openVoteAndSubmit();
+    expect(
+      await screen.findByText(/Passphrase tanda tangan salah\. Sisa percobaan: 2\./)
+    ).toBeTruthy();
+  });
+
+  it("403 → pesan 'bukan anggota organ', BUKAN passphrase salah", async () => {
+    post.mockRejectedValue(
+      axiosError(403, {
+        success: false,
+        message: "Anda bukan anggota organ yang berhak memutus keputusan ini.",
+      })
+    );
+    await openVoteAndSubmit();
+    expect(
+      await screen.findByText(/bukan anggota organ/)
+    ).toBeTruthy();
+    expect(screen.queryByText(/Passphrase salah atau kunci/)).toBeNull();
+  });
+
+  it("409 → pesan rekonsiliasi baris suara lama, BUKAN passphrase salah", async () => {
+    post.mockRejectedValue(
+      axiosError(409, {
+        success: false,
+        message:
+          "Ada baris suara lama yang tidak sah untuk akun ini pada keputusan tersebut.",
+      })
+    );
+    await openVoteAndSubmit();
+    expect(
+      await screen.findByText(/baris suara lama yang tidak sah/)
+    ).toBeTruthy();
+    expect(screen.queryByText(/Passphrase salah atau kunci/)).toBeNull();
+  });
+
+  it("500 → pesan server, BUKAN passphrase salah", async () => {
+    post.mockRejectedValue(
+      axiosError(500, { success: false, message: "Terjadi kesalahan server." })
+    );
+    await openVoteAndSubmit();
+    expect(
+      await screen.findByText(/Terjadi kesalahan server\./)
+    ).toBeTruthy();
+    expect(screen.queryByText(/Passphrase salah atau kunci/)).toBeNull();
+  });
+
+  it("sukses → dialog tertutup dan tidak ada pesan galat", async () => {
+    post.mockResolvedValue({
+      data: {
+        data: { voteId: "v1", choice: "APPROVE", outcome: "VOTING" },
+      },
+    });
+    await openVoteAndSubmit();
+    await waitFor(() =>
+      expect(screen.queryByPlaceholderText(/Passphrase pribadi/)).toBeNull()
+    );
   });
 });
