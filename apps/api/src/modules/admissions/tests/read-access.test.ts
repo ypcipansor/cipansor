@@ -127,3 +127,37 @@ describe('SPMB reads by the people who decide', () => {
     );
   });
 });
+
+describe('the SPMB read routes admit the Kepala Sekolah', async () => {
+  const { default: admissionsRouter } = await import('../admissions.routes');
+  const { default: waveRouter } = await import('../ppdb-wave.routes');
+
+  type Layer = {
+    route?: { path: string; methods: Record<string, boolean>; stack: { handle: Function }[] };
+  };
+  // The guard is the route's first handler (authenticate runs router-wide).
+  function guardOf(router: unknown, path: string) {
+    const layer = (router as { stack: Layer[] }).stack.find(
+      (l) => l.route?.path === path && l.route.methods.get
+    );
+    if (!layer?.route) throw new Error(`no GET ${path}`);
+    return layer.route.stack[0].handle as ReturnType<typeof authorizeOrPermission>;
+  }
+
+  const kepalaToken = { roleCode: 'SMPIT_KEPALA_SEKOLAH', permissions: ['ADMISSION_VIEW'] };
+
+  it.each([
+    [admissionsRouter, '/periods'],
+    [admissionsRouter, '/periods/:id'],
+    [admissionsRouter, '/periods/:id/stats'],
+    [admissionsRouter, '/registrants'],
+    [admissionsRouter, '/registrants/:id'],
+    [admissionsRouter, '/registrants/:registrantId/documents'],
+    [waveRouter, '/'],
+    [waveRouter, '/stats/:periodId'],
+    [waveRouter, '/:id'],
+    [waveRouter, '/:id/registrants'],
+  ])('%#: GET %s', (router, path) => {
+    expect(run(guardOf(router, path), kepalaToken)).toBe(undefined);
+  });
+});
