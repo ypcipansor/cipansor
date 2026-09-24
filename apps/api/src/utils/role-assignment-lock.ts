@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { Errors } from '@/middleware/error';
 
 /**
  * The single lock protocol every writer of `user_role_assignments` follows.
@@ -67,4 +68,76 @@ export async function lockUserAndAssignments(
 ): Promise<void> {
   await lockUserRows(tx, [userId]);
   await lockUserAssignmentRows(tx, [userId]);
+}
+
+/** The role codes a user holds through currently-effective assignments. */
+export async function effectiveRoleCodes(
+  tx: Prisma.TransactionClient,
+  userId: string
+): Promise<string[]> {
+  const assignments = await tx.userRoleAssignment.findMany({
+    where: {
+      userId,
+      isActive: true,
+      OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      role: { isActive: true },
+    },
+    select: { role: { select: { code: true } } },
+  });
+  return assignments.map((assignment) => assignment.role.code);
+}
+
+/**
+ * Refuse a governance action unless the actor still holds one of its roles,
+ * read from persistent assignments rather than the access token.
+ *
+ * `authorize(...)` reads `roleCode` off the JWT, which is a snapshot: a role
+ * revoked after the token was minted keeps passing the route guard until the
+ * access token expires — the CWE-863 class where a dismissed Pengawas could
+ * still freeze or restore a Pengurus. This re-resolves the actor's *effective*
+ * assignments inside the mutation's transaction, under the shared lock protocol
+ * (`users` then that user's `user_role_assignments`), so a concurrent
+ * revocation either commits first and is seen here, or waits behind the lock
+ * and lands after the mutation.
+ *
+ * The caller must not have taken the assignment locks yet, or must include the
+ * actor in the same ordered acquisition; the two lock helpers above are called
+ * here and in every role writer, so the order is the single documented one.
+ *
+ * @returns the effective role code that satisfied the check.
+ */
+export async function assertActorHoldsEffectiveRole(
+  tx: Prisma.TransactionClient,
+  actorId: string,
+  allowedRoleCodes: readonly string[]
+): Promise<string> {
+  await lockUserAndAssignments(tx, actorId);
+  const codes = await effectiveRoleCodes(tx, actorId);
+  const matched = codes.find((code) => allowedRoleCodes.includes(code));
+  if (!matched) {
+    throw Errors.forbidden('Peran Anda tidak lagi aktif untuk melakukan tindakan ini.');
+  }
+  return matched;
+}
+
+/**
+ * The request-time (non-locking) twin of {@link assertActorHoldsEffectiveRole},
+ * for read endpoints whose response is not a state change. It closes the same
+ * stale-token hole — a revoked role must not read governance data — without
+ * serialising against writers, which a pure read does not need.
+ */
+export async function assertActorHoldsEffectiveRoleUnlocked(
+  client: Pick<Prisma.TransactionClient, 'userRoleAssignment'>,
+  actorId: string | undefined,
+  allowedRoleCodes: readonly string[]
+): Promise<string> {
+  if (!actorId) {
+    throw Errors.forbidden('Peran Anda tidak lagi aktif untuk melakukan tindakan ini.');
+  }
+  const codes = await effectiveRoleCodes(client as Prisma.TransactionClient, actorId);
+  const matched = codes.find((code) => allowedRoleCodes.includes(code));
+  if (!matched) {
+    throw Errors.forbidden('Peran Anda tidak lagi aktif untuk melakukan tindakan ini.');
+  }
+  return matched;
 }

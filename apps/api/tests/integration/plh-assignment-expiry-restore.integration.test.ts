@@ -51,14 +51,21 @@ const HORIZON_B = new Date(Date.now() + 70 * 86_400_000).toISOString();
 const SEED = `
 INSERT INTO roles (id, code, name, realm, permissions, updated_at) VALUES
   ('role-ketua',   'YAYASAN_KETUA',   'Ketua Yayasan',   'YAYASAN', '[]'::jsonb, now()),
-  ('role-anggota', 'YAYASAN_ANGGOTA', 'Anggota Yayasan', 'YAYASAN', '[]'::jsonb, now());
+  ('role-anggota', 'YAYASAN_ANGGOTA', 'Anggota Yayasan', 'YAYASAN', '[]'::jsonb, now()),
+  ('role-pengawas','YAYASAN_PENGAWAS','Pengawas Yayasan','YAYASAN', '[]'::jsonb, now()),
+  ('role-pembina','YAYASAN_PEMBINA',  'Pembina Yayasan', 'YAYASAN', '[]'::jsonb, now());
 
 INSERT INTO users (id, name, email, is_active, updated_at) VALUES
   ('u-issuer',   'Pengawas',         'pengawas@example.com',   true, now()),
+  ('u-lifter',   'Pembina',          'pembina@example.com',    true, now()),
   ('u-target-a', 'Ketua Target A',   'targeta@example.com',    true, now()),
   ('u-target-b', 'Ketua Target B',   'targetb@example.com',    true, now()),
   ('u-target-c', 'Ketua Target C',   'targetc@example.com',    true, now()),
   ('u-delegate', 'Anggota Delegasi', 'delegate@example.com',   true, now());
+
+INSERT INTO user_role_assignments (id, user_id, role_id, is_primary, is_active, unit_id, updated_at) VALUES
+  ('a-issuer',  'u-issuer',  'role-pengawas', false, true, NULL, now()),
+  ('a-lifter',  'u-lifter',  'role-pembina',  false, true, NULL, now());
 `;
 
 async function withClient<T>(url: string, fn: (db: Client) => Promise<T>): Promise<T> {
@@ -190,8 +197,18 @@ describeDb('Shared Plh delegation expiry restoration (real PostgreSQL)', () => {
 
       // B lifts first — not the last dependent, so its restore payload must be
       // handed to A. Before the fix its (later) expiry overwrote A's snapshot.
-      await suspension.liftBoardSuspension(b.id, 'u-issuer', 'Pemulihan status B.');
-      await suspension.liftBoardSuspension(a.id, 'u-issuer', 'Pemulihan status A.');
+      await suspension.liftBoardSuspension(
+        b.id,
+        'u-lifter',
+        'Pemulihan status B.',
+        'YAYASAN_PEMBINA'
+      );
+      await suspension.liftBoardSuspension(
+        a.id,
+        'u-lifter',
+        'Pemulihan status A.',
+        'YAYASAN_PEMBINA'
+      );
 
       const row = await delegateRow();
       expect(new Date(row.expires_at).toISOString()).toBe(DELEGATE_EXPIRY);
@@ -208,8 +225,18 @@ describeDb('Shared Plh delegation expiry restoration (real PostgreSQL)', () => {
       const b = await suspend(suspension, 'u-target-b', 'SK/REST-4', HORIZON_B);
 
       // A lifts first and passes its (earliest) payload to B; B lifts last.
-      await suspension.liftBoardSuspension(a.id, 'u-issuer', 'Pemulihan status A.');
-      await suspension.liftBoardSuspension(b.id, 'u-issuer', 'Pemulihan status B.');
+      await suspension.liftBoardSuspension(
+        a.id,
+        'u-lifter',
+        'Pemulihan status A.',
+        'YAYASAN_PEMBINA'
+      );
+      await suspension.liftBoardSuspension(
+        b.id,
+        'u-lifter',
+        'Pemulihan status B.',
+        'YAYASAN_PEMBINA'
+      );
 
       const row = await delegateRow();
       expect(new Date(row.expires_at).toISOString()).toBe(DELEGATE_EXPIRY);
@@ -229,7 +256,12 @@ describeDb('Shared Plh delegation expiry restoration (real PostgreSQL)', () => {
       const a = await suspend(suspension, 'u-target-a', 'SK/REST-5', HORIZON_A);
       const b = await suspend(suspension, 'u-target-b', 'SK/REST-6', HORIZON_B);
 
-      await suspension.liftBoardSuspension(b.id, 'u-issuer', 'Pemulihan status B.');
+      await suspension.liftBoardSuspension(
+        b.id,
+        'u-lifter',
+        'Pemulihan status B.',
+        'YAYASAN_PEMBINA'
+      );
       await withClient(targetUrl, async (db) => {
         const rows = await db.query(
           `SELECT id FROM user_role_assignments WHERE user_id = 'u-delegate'`
@@ -237,7 +269,12 @@ describeDb('Shared Plh delegation expiry restoration (real PostgreSQL)', () => {
         expect(rows.rows, 'delegation survives while A still depends on it').toHaveLength(1);
       });
 
-      await suspension.liftBoardSuspension(a.id, 'u-issuer', 'Pemulihan status A.');
+      await suspension.liftBoardSuspension(
+        a.id,
+        'u-lifter',
+        'Pemulihan status A.',
+        'YAYASAN_PEMBINA'
+      );
       await withClient(targetUrl, async (db) => {
         const rows = await db.query(
           `SELECT id FROM user_role_assignments WHERE user_id = 'u-delegate'`
@@ -260,8 +297,18 @@ describeDb('Shared Plh delegation expiry restoration (real PostgreSQL)', () => {
       const a = await suspend(suspension, 'u-target-a', 'SK/REST-7', HORIZON_A);
       const b = await suspend(suspension, 'u-target-b', 'SK/REST-8', HORIZON_B);
 
-      await suspension.liftBoardSuspension(a.id, 'u-issuer', 'Pemulihan status A.');
-      await suspension.liftBoardSuspension(b.id, 'u-issuer', 'Pemulihan status B.');
+      await suspension.liftBoardSuspension(
+        a.id,
+        'u-lifter',
+        'Pemulihan status A.',
+        'YAYASAN_PEMBINA'
+      );
+      await suspension.liftBoardSuspension(
+        b.id,
+        'u-lifter',
+        'Pemulihan status B.',
+        'YAYASAN_PEMBINA'
+      );
 
       const row = await delegateRow();
       expect(row.expires_at, 'an originally unbounded delegation stays unbounded').toBeNull();
@@ -304,7 +351,12 @@ describeDb('Shared Plh delegation expiry restoration (real PostgreSQL)', () => {
       });
       expect(stillActive, 'no scheduled job lifts the suspension').toBe('ACTIVE');
 
-      await suspension.liftBoardSuspension(a.id, 'u-issuer', 'Pemulihan status A.');
+      await suspension.liftBoardSuspension(
+        a.id,
+        'u-lifter',
+        'Pemulihan status A.',
+        'YAYASAN_PEMBINA'
+      );
       const after = await delegateRow();
       expect(
         new Date(after.expires_at).toISOString(),
@@ -326,14 +378,29 @@ describeDb('Shared Plh delegation expiry restoration (real PostgreSQL)', () => {
       const b = await suspend(suspension, 'u-target-b', 'SK/MULTI-2', HORIZON_B);
       const c = await suspend(suspension, 'u-target-c', 'SK/MULTI-3', HORIZON_A);
 
-      await suspension.liftBoardSuspension(a.id, 'u-issuer', 'Pemulihan status A.');
-      await suspension.liftBoardSuspension(b.id, 'u-issuer', 'Pemulihan status B.');
+      await suspension.liftBoardSuspension(
+        a.id,
+        'u-lifter',
+        'Pemulihan status A.',
+        'YAYASAN_PEMBINA'
+      );
+      await suspension.liftBoardSuspension(
+        b.id,
+        'u-lifter',
+        'Pemulihan status B.',
+        'YAYASAN_PEMBINA'
+      );
 
       const mid = await delegateRow();
       expect(mid.expires_at, 'the row stays unbounded while C is still ACTIVE').toBeNull();
       expect(mid.is_active).toBe(true);
 
-      await suspension.liftBoardSuspension(c.id, 'u-issuer', 'Pemulihan status C.');
+      await suspension.liftBoardSuspension(
+        c.id,
+        'u-lifter',
+        'Pemulihan status C.',
+        'YAYASAN_PEMBINA'
+      );
       const after = await delegateRow();
       expect(new Date(after.expires_at).toISOString()).toBe(DELEGATE_EXPIRY);
       expect(after.is_active).toBe(true);
@@ -352,13 +419,28 @@ describeDb('Shared Plh delegation expiry restoration (real PostgreSQL)', () => {
       const b = await suspend(suspension, 'u-target-b', 'SK/ORDER-2', HORIZON_B);
       const c = await suspend(suspension, 'u-target-c', 'SK/ORDER-3', HORIZON_A);
 
-      await suspension.liftBoardSuspension(b.id, 'u-issuer', 'Pemulihan status B.');
-      await suspension.liftBoardSuspension(c.id, 'u-issuer', 'Pemulihan status C.');
+      await suspension.liftBoardSuspension(
+        b.id,
+        'u-lifter',
+        'Pemulihan status B.',
+        'YAYASAN_PEMBINA'
+      );
+      await suspension.liftBoardSuspension(
+        c.id,
+        'u-lifter',
+        'Pemulihan status C.',
+        'YAYASAN_PEMBINA'
+      );
 
       const mid = await delegateRow();
       expect(mid.expires_at, 'A still depends on the delegation').toBeNull();
 
-      await suspension.liftBoardSuspension(a.id, 'u-issuer', 'Pemulihan status A.');
+      await suspension.liftBoardSuspension(
+        a.id,
+        'u-lifter',
+        'Pemulihan status A.',
+        'YAYASAN_PEMBINA'
+      );
       const after = await delegateRow();
       expect(new Date(after.expires_at).toISOString()).toBe(DELEGATE_EXPIRY);
     } finally {
@@ -380,19 +462,22 @@ describeDb('Shared Plh delegation expiry restoration (real PostgreSQL)', () => {
 
       const adminExpiry = new Date(Date.now() + 5 * 86_400_000).toISOString();
       await withClient(targetUrl, async (db) => {
-        await db.query(
-          `UPDATE user_role_assignments SET expires_at = $1 WHERE id = 'a-delegate'`,
-          [adminExpiry]
-        );
+        await db.query(`UPDATE user_role_assignments SET expires_at = $1 WHERE id = 'a-delegate'`, [
+          adminExpiry,
+        ]);
       });
 
-      await suspension.liftBoardSuspension(a.id, 'u-issuer', 'Pemulihan status A.');
+      await suspension.liftBoardSuspension(
+        a.id,
+        'u-lifter',
+        'Pemulihan status A.',
+        'YAYASAN_PEMBINA'
+      );
 
       const row = await delegateRow();
-      expect(
-        new Date(row.expires_at).toISOString(),
-        "the admin's expiry survives the lift"
-      ).toBe(adminExpiry);
+      expect(new Date(row.expires_at).toISOString(), "the admin's expiry survives the lift").toBe(
+        adminExpiry
+      );
 
       // The divergence is recorded so it is visible rather than silent.
       const audit = await withClient(targetUrl, async (db) =>
@@ -422,7 +507,12 @@ describeDb('Shared Plh delegation expiry restoration (real PostgreSQL)', () => {
         );
       });
 
-      await suspension.liftBoardSuspension(a.id, 'u-issuer', 'Pemulihan status A.');
+      await suspension.liftBoardSuspension(
+        a.id,
+        'u-lifter',
+        'Pemulihan status A.',
+        'YAYASAN_PEMBINA'
+      );
 
       const row = await delegateRow();
       expect(row.is_active, 'the admin deactivation survives the lift').toBe(false);
@@ -451,17 +541,17 @@ describeDb('Shared Plh delegation expiry restoration (real PostgreSQL)', () => {
         );
       });
 
-      await suspension.liftBoardSuspension(a.id, 'u-issuer', 'Pemulihan status A.');
+      await suspension.liftBoardSuspension(
+        a.id,
+        'u-lifter',
+        'Pemulihan status A.',
+        'YAYASAN_PEMBINA'
+      );
 
       const rows = await withClient(targetUrl, async (db) =>
-        db.query(
-          `SELECT expires_at FROM user_role_assignments WHERE user_id = 'u-delegate'`
-        )
+        db.query(`SELECT expires_at FROM user_role_assignments WHERE user_id = 'u-delegate'`)
       );
-      expect(
-        rows.rows,
-        'the admin-modified delegation is not deleted by the lift'
-      ).toHaveLength(1);
+      expect(rows.rows, 'the admin-modified delegation is not deleted by the lift').toHaveLength(1);
       expect(new Date(rows.rows[0].expires_at).toISOString()).toBe(adminExpiry);
     } finally {
       await unloadService(previousUrl);
@@ -475,7 +565,12 @@ describeDb('Shared Plh delegation expiry restoration (real PostgreSQL)', () => {
     const { suspension, previousUrl } = await loadService();
     try {
       const a = await suspend(suspension, 'u-target-a', 'SK/RESTORE-OK-1', HORIZON_A);
-      await suspension.liftBoardSuspension(a.id, 'u-issuer', 'Pemulihan status A.');
+      await suspension.liftBoardSuspension(
+        a.id,
+        'u-lifter',
+        'Pemulihan status A.',
+        'YAYASAN_PEMBINA'
+      );
 
       const row = await delegateRow();
       expect(new Date(row.expires_at).toISOString()).toBe(DELEGATE_EXPIRY);

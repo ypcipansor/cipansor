@@ -90,9 +90,13 @@ landed locations.
   (`apps/api/src/utils/auth-cookies.ts`): `HttpOnly`, `SameSite=Lax`, `Secure`
   unless `AUTH_COOKIE_SECURE=false` or non-production, `Path=/`, `Max-Age`
   matching each token's own expiry. `apps/api/src/modules/auth/auth.controller.ts`.
-- Keep the JSON token fields for the mobile client; the bearer path is unchanged
-  and is checked first (`apps/api/src/middleware/auth.ts`,
-  `apps/api/src/utils/auth-cookies.ts` `presentedCredentials`).
+- Strip the raw `accessToken`/`refreshToken`/`tempToken` from the browser JSON
+  body on login, refresh, 2FA-verify and role-switch
+  (`apps/api/src/modules/auth/auth.controller.ts`, `apps/api/src/modules/roles/roles.controller.ts`).
+  A native Bearer client opts back in with `X-Client-Type: native`
+  (`apps/api/src/utils/auth-cookies.ts` `wantsRawTokens`) and keeps the pair in
+  the body; the web never receives it. The bearer auth path itself is unchanged
+  and is checked first (`apps/api/src/middleware/auth.ts`).
 - Clear cookies server-side on `POST /auth/logout`
   (`clearedSessionCookies`), in addition to revoking the refresh token row.
 - Servlet-side identity for middleware: a server-set `cipansor_routing` cookie

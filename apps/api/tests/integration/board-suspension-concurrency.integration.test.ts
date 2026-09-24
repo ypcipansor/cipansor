@@ -47,17 +47,24 @@ vi.setConfig({ testTimeout: 60_000, hookTimeout: 120_000 });
 const SEED = `
 INSERT INTO roles (id, code, name, realm, permissions, updated_at) VALUES
   ('role-ketua', 'YAYASAN_KETUA', 'Ketua Yayasan', 'YAYASAN', '[]'::jsonb, now()),
-  ('role-anggota', 'YAYASAN_ANGGOTA', 'Anggota Yayasan', 'YAYASAN', '[]'::jsonb, now());
+  ('role-anggota', 'YAYASAN_ANGGOTA', 'Anggota Yayasan', 'YAYASAN', '[]'::jsonb, now()),
+  ('role-pengawas', 'YAYASAN_PENGAWAS', 'Pengawas Yayasan', 'YAYASAN', '[]'::jsonb, now()),
+  ('role-pembina', 'YAYASAN_PEMBINA', 'Pembina Yayasan', 'YAYASAN', '[]'::jsonb, now());
 
 INSERT INTO users (id, name, email, is_active, updated_at) VALUES
   ('u-issuer',   'Pengawas',        'pengawas@example.com',   true, now()),
+  ('u-lifter',   'Pembina',         'pembina@example.com',    true, now()),
   ('u-target-a', 'Ketua A',         'ketua-a@example.com',    true, now()),
   ('u-target-b', 'Ketua B',         'ketua-b@example.com',    true, now()),
   ('u-delegate', 'Anggota Delegasi','delegate@example.com',   true, now());
 
--- Both targets are Pengurus, and both name the same delegate for the SAME
--- role, so the second suspension reuses the first's assignment.
+-- The issuing officer is an effective Pengawas and the lifting officer an
+-- effective Pembina: the service re-resolves the actor's persisted assignment
+-- at the commit point (CWE-863), so the JWT role alone is not enough to drive
+-- these paths.
 INSERT INTO user_role_assignments (id, user_id, role_id, is_primary, is_active, updated_at) VALUES
+  ('a-issuer',   'u-issuer',   'role-pengawas', false, true, now()),
+  ('a-lifter',   'u-lifter',   'role-pembina',  false, true, now()),
   ('a-target-a', 'u-target-a', 'role-ketua',   true, true, now()),
   ('a-target-b', 'u-target-b', 'role-ketua',   true, true, now());
 `;
@@ -169,8 +176,18 @@ describeDb('board suspension concurrency (real PostgreSQL)', () => {
 
       // Two lifts, in parallel, on two pooled connections.
       const results = await Promise.allSettled([
-        service.liftBoardSuspension(suspensionA.id, 'u-issuer', 'Pemulihan status A.'),
-        service.liftBoardSuspension(suspensionB.id, 'u-issuer', 'Pemulihan status B.'),
+        service.liftBoardSuspension(
+          suspensionA.id,
+          'u-lifter',
+          'Pemulihan status A.',
+          'YAYASAN_PEMBINA'
+        ),
+        service.liftBoardSuspension(
+          suspensionB.id,
+          'u-lifter',
+          'Pemulihan status B.',
+          'YAYASAN_PEMBINA'
+        ),
       ]);
 
       const rejected = results.filter((r) => r.status === 'rejected');
@@ -225,13 +242,15 @@ describeDb('board suspension concurrency (real PostgreSQL)', () => {
       const results = await Promise.allSettled([
         service.liftBoardSuspension(
           suspensionA.id,
-          'u-issuer',
-          'Pemulihan status A (urutan terbalik).'
+          'u-lifter',
+          'Pemulihan status A (urutan terbalik).',
+          'YAYASAN_PEMBINA'
         ),
         service.liftBoardSuspension(
           suspensionB.id,
-          'u-issuer',
-          'Pemulihan status B (urutan terbalik).'
+          'u-lifter',
+          'Pemulihan status B (urutan terbalik).',
+          'YAYASAN_PEMBINA'
         ),
       ]);
 

@@ -113,6 +113,26 @@ function activeRoleWhere() {
   };
 }
 
+/**
+ * How long a consumed refresh token is remembered as "just rotated".
+ *
+ * Two tabs sharing one `HttpOnly` refresh cookie both present it. The winner
+ * consumes it and sets a fresh pair; the loser must be told to retry with the
+ * now-current cookie — not to log out. The loser may reach its lookup *after*
+ * the winner has committed, so the outcome cannot depend on interleaving: the
+ * consumed row is kept (stamped with `rotatedAt`) instead of deleted, and any
+ * presentation of it within this window is `REFRESH_RACE`. Beyond the window it
+ * is an ordinary spent token and fails closed as a 401, which preserves replay
+ * protection for a token redeemed long after its rotation.
+ */
+const REFRESH_RACE_WINDOW_MS = 30_000;
+
+/** Whether a consumed token was rotated recently enough to be a benign race. */
+function isWithinRefreshRaceWindow(rotatedAt: Date | null | undefined): boolean {
+  if (!rotatedAt) return false;
+  return Date.now() - rotatedAt.getTime() <= REFRESH_RACE_WINDOW_MS;
+}
+
 export class AuthService {
   /**
    * Login user
@@ -576,6 +596,13 @@ export class AuthService {
     // otherwise leave the replacement token stamped with a role the user no
     // longer holds. This read only proves the presented token exists so a
     // missing/expired token stays a 401 before the transaction opens.
+    //
+    // `rotatedAt` is read too. A consumed row is kept for a short window rather
+    // than deleted, so a tab that presents the token *after* its sibling has
+    // already rotated it — and thus reaches this lookup post-commit — can be
+    // told `REFRESH_RACE` instead of being mistaken for an invalid credential
+    // and logged out. This is the case the finding is about: the loser is not a
+    // replay, it is the same browser's other tab.
     const storedToken = await prisma.refreshToken.findFirst({
       where: {
         token: refreshToken,
@@ -586,6 +613,21 @@ export class AuthService {
     });
 
     if (!storedToken) {
+      throw Errors.unauthorized('Refresh token not found or expired');
+    }
+
+    // A row that was already consumed is spent — but *how long ago* decides
+    // which signal the caller gets. Within the short window it is the benign
+    // race (the same browser's other tab, which reached this lookup only after
+    // the winner committed): return `REFRESH_RACE`, whose 409 the web retries
+    // and, crucially, whose response carries no `clearedSessionCookies()` that
+    // could destroy the fresh session the winner just set. Past the window it is
+    // an ordinary replay and fails closed as a 401 — replay protection is
+    // unchanged for a token redeemed long after its rotation.
+    if (storedToken.rotatedAt) {
+      if (isWithinRefreshRaceWindow(storedToken.rotatedAt)) {
+        throw Errors.refreshRace();
+      }
       throw Errors.unauthorized('Refresh token not found or expired');
     }
 
@@ -679,25 +721,41 @@ export class AuthService {
         throw Errors.forbidden('No active role assignment found');
       }
 
-      // Consume the presented token with a conditional delete, not `delete`.
+      // Consume the presented token with a conditional *claim*, not a `delete`
+      // and not an unconditional update.
       //
-      // `delete({ where: { id } })` throws Prisma `P2025` when the row is gone,
-      // which the error handler maps to 500. Two parallel refreshes with the
-      // same token both pass the read above; the first deletes the row and mints
+      // `delete({ where: { id } })` threw Prisma `P2025` when the row was gone,
+      // which the error handler mapped to 500. Two parallel refreshes with the
+      // same token both pass the read above; the first claims the row and mints
       // a replacement, and the second then hit P2025 — so a perfectly ordinary
-      // concurrent refresh surfaced as an internal error instead of the 401 that
-      // means "this token is already spent". `deleteMany` reports a rowcount, so
-      // the loser is identified rather than crashing: zero rows affected means
-      // someone else rotated first, and that is a replay, which fails closed.
+      // concurrent refresh surfaced as an internal error instead of the 409 that
+      // means "another request already rotated this".
       //
-      // Rotation and replay protection are unchanged: exactly one caller
-      // consumes the row, and every later use of the same token is refused.
-      const consumed = await tx.refreshToken.deleteMany({
-        where: { id: storedToken.id, token: refreshToken },
+      // The row is *stamped*, not deleted, so the loser can be identified even
+      // when it reaches the lookup only after the winner has committed: a row
+      // that already carries `rotatedAt` cannot be claimed again (`rotatedAt:
+      // null`), and its rowcount of zero is the race. Replay protection is
+      // unchanged — exactly one caller ever claims the row, and a later
+      // presentation is refused as a race (inside the window) or a spent 401.
+      const consumed = await tx.refreshToken.updateMany({
+        where: { id: storedToken.id, token: refreshToken, rotatedAt: null },
+        data: { rotatedAt: new Date() },
       });
       if (consumed.count !== 1) {
         throw Errors.refreshRace();
       }
+
+      // Prune tombstones whose race window has lapsed. They exist only to label
+      // a racing sibling; once the window is over they are ordinary spent rows
+      // and holding them would make the table grow one row per rotation forever.
+      // Scoped to this user and bounded by the window, so the work is a single
+      // indexed delete on the same transaction that already wrote the row.
+      await tx.refreshToken.deleteMany({
+        where: {
+          userId: storedToken.user.id,
+          rotatedAt: { not: null, lt: new Date(Date.now() - REFRESH_RACE_WINDOW_MS) },
+        },
+      });
 
       const tokens = generateTokenPair({
         id: storedToken.user.id,

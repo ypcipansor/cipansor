@@ -30,6 +30,14 @@ import {
   resolveArrearsUnitId,
   resolveAuditUnitId,
 } from './pengawasan.policy';
+import {
+  PENGAWASAN_ARREARS_ROLES,
+  PENGAWASAN_PERIODIC_REPORT_ROLES,
+  PENGAWASAN_SUSPENSION_ISSUE_ROLES,
+  PENGAWASAN_SUSPENSION_READ_ROLES,
+} from '@cipansor/shared';
+import { assertActorHoldsEffectiveRoleUnlocked } from '@/utils/role-assignment-lock';
+import { prisma } from '@/lib/prisma';
 import type { Prisma } from '@prisma/client';
 
 /** The acting user's role/unit, as the unit policy needs it. */
@@ -327,22 +335,38 @@ export const liftBoardSuspension = asyncHandler(async (req: Request, res: Respon
   const updated = await boardSuspensionService.liftBoardSuspension(
     req.params.id,
     liftedById,
-    body.liftReason
+    body.liftReason,
+    req.user?.roleCode
   );
   res.json(ApiResponse.success(updated));
 });
 
-export const listBoardSuspensions = asyncHandler(async (_req: Request, res: Response) => {
+export const listBoardSuspensions = asyncHandler(async (req: Request, res: Response) => {
+  await assertActorHoldsEffectiveRoleUnlocked(
+    prisma,
+    req.user?.sub,
+    PENGAWASAN_SUSPENSION_READ_ROLES
+  );
   const suspensions = await boardSuspensionService.getBoardSuspensions();
   res.json(ApiResponse.success(suspensions));
 });
 
-export const listSuspendableCandidates = asyncHandler(async (_req: Request, res: Response) => {
+export const listSuspendableCandidates = asyncHandler(async (req: Request, res: Response) => {
+  await assertActorHoldsEffectiveRoleUnlocked(
+    prisma,
+    req.user?.sub,
+    PENGAWASAN_SUSPENSION_ISSUE_ROLES
+  );
   const candidates = await boardSuspensionService.listSuspendableCandidates();
   res.json(ApiResponse.success(candidates));
 });
 
 export const listPlhCandidates = asyncHandler(async (req: Request, res: Response) => {
+  await assertActorHoldsEffectiveRoleUnlocked(
+    prisma,
+    req.user?.sub,
+    PENGAWASAN_SUSPENSION_ISSUE_ROLES
+  );
   const excludeUserId =
     typeof req.query.excludeUserId === 'string' ? req.query.excludeUserId : undefined;
   const candidates = await boardSuspensionService.listPlhCandidates(excludeUserId);
@@ -352,6 +376,7 @@ export const listPlhCandidates = asyncHandler(async (req: Request, res: Response
 // ==================== FINANCIAL OVERSIGHT CONTROLLERS ====================
 
 export const getFinancialArrears = asyncHandler(async (req: Request, res: Response) => {
+  await assertActorHoldsEffectiveRoleUnlocked(prisma, req.user?.sub, PENGAWASAN_ARREARS_ROLES);
   const targetUnitId = resolveArrearsUnitId(
     actorOf(req),
     req.query.unitId ? String(req.query.unitId) : undefined
@@ -367,6 +392,9 @@ export const draftPeriodicReportToEOffice = asyncHandler(async (req: Request, re
   const body = draftPeriodicReportSchema.parse(req.body);
   const userId = req.user?.sub;
   if (!userId) throw Errors.unauthorized('User context missing');
+  // A revoked Pengawas must not file an oversight report on the strength of a
+  // stale access token; re-resolve the effective assignment before drafting.
+  await assertActorHoldsEffectiveRoleUnlocked(prisma, userId, PENGAWASAN_PERIODIC_REPORT_ROLES);
   const actor = wbsActor(req);
 
   const result = await pengawasanService.draftPeriodicReportToEOffice(body, userId, actor);

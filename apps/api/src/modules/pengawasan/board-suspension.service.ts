@@ -5,6 +5,7 @@ import {
   PLH_INELIGIBLE_ROLE_CODES,
   PLH_ROLE_CODES,
   PENGAWASAN_SUSPENSION_ISSUE_ROLES,
+  PENGAWASAN_LIFT_ROLES,
   PENGURUS_ROLE_CODES,
   isPlhEligible,
   type CreateBoardSuspensionInput,
@@ -14,7 +15,12 @@ import { invalidateUserSuspensionCache, markUserSuspended } from '@/utils/user-s
 import { activationState, deactivationState } from '@/utils/account-state';
 import { SIGNING_KEY_SUSPENSION_LOCK } from '@/utils/esign-suspension-lock';
 import { disconnectUserSockets } from '@/lib/realtime';
-import { lockUserAssignmentRows, lockUserRows } from '@/utils/role-assignment-lock';
+import {
+  lockUserAssignmentRows,
+  lockUserRows,
+  lockUserAndAssignments,
+  effectiveRoleCodes,
+} from '@/utils/role-assignment-lock';
 
 // The payload is the shared contract the controller validates with; a local
 // restatement of the same fields is exactly how the two drift apart.
@@ -251,6 +257,14 @@ export class BoardSuspensionService {
       );
     }
 
+    // The token's `roleCode` is a snapshot. `authorize(...)` admitted this
+    // caller at the edge, but a Pengawas dismissed after the access token was
+    // minted would still pass that guard — and could freeze the executive it no
+    // longer supervises (CWE-863). The effective-role check is re-run *inside*
+    // the mutation transaction below, under the shared lock protocol, so a
+    // concurrent revocation either commits first and is seen, or waits and lands
+    // after the suspension.
+
     // Version of the account-state write this suspension performs, carried out of
     // the transaction so the post-commit cache prime can be ordered by it.
     let suspensionAccountStateVersion = 0;
@@ -433,9 +447,31 @@ export class BoardSuspensionService {
         // whole {target, delegate} set means a mutual pair acquires the same two
         // rows in the same order and simply serialises. The advisory grant lock
         // and the eligibility re-read below still run.
-        const lockUserIds = [data.userId, data.plhUserId ?? ''].filter(Boolean);
+        // The actor is locked in the *same sorted pass* as {target, delegate}:
+        // a role writer racing this request takes the actor's user row and
+        // assignment rows too, so including it here is what makes the
+        // effective-role re-check below serialise instead of observing a
+        // half-applied revocation. One ordered acquisition, so no new cycle.
+        const lockUserIds = [data.userId, data.plhUserId ?? '', suspendedById].filter(Boolean);
         await lockUserRows(tx, lockUserIds);
         await lockUserAssignmentRows(tx, lockUserIds);
+
+        // Re-read the actor's *effective* role under the lock. The JWT check
+        // above is a snapshot; a Pengawas whose assignment was revoked after
+        // the token was minted passes it. This is the commit-point authority:
+        // if the revocation already committed, the effective set no longer
+        // matches and the suspension aborts before the target is switched off
+        // or a Plh is granted.
+        const actorEffectiveRoles = await effectiveRoleCodes(tx, suspendedById);
+        if (
+          !actorEffectiveRoles.some((code) =>
+            (PENGAWASAN_SUSPENSION_ISSUE_ROLES as readonly string[]).includes(code)
+          )
+        ) {
+          throw Errors.forbidden(
+            'Peran Anda tidak lagi aktif untuk menerbitkan SK Pembekuan Pengurus.'
+          );
+        }
 
         // Read the target's state now that its row is held. No `FOR UPDATE`:
         // the lock above already serialises this moment, and a second lock
@@ -884,7 +920,12 @@ export class BoardSuspensionService {
   /**
    * Lift a Board Member's suspension (Pemulihan Status oleh Pembina).
    */
-  async liftBoardSuspension(id: string, liftedById: string, liftReason: string) {
+  async liftBoardSuspension(
+    id: string,
+    liftedById: string,
+    liftReason: string,
+    actorRoleCode?: string | null
+  ) {
     // Version of the restored account state, carried out for the cache tombstone.
     let restoredAccountStateVersion = 0;
     const suspension = await prisma.boardMemberSuspension.findUnique({
@@ -899,7 +940,38 @@ export class BoardSuspensionService {
       throw Errors.conflict(`Status pembekuan sudah tidak aktif (${suspension.status})`);
     }
 
+    // Fast fail for a caller whose token never carried a lift role. The route
+    // already refuses this; repeating it keeps an internal caller that passes a
+    // snapshot explicitly honest, and the persistent check below is what
+    // actually decides.
+    if (actorRoleCode && !(PENGAWASAN_LIFT_ROLES as readonly string[]).includes(actorRoleCode)) {
+      throw Errors.forbidden(
+        'Hanya Pembina Yayasan atau Super Admin yang dapat memulihkan status pengurus.'
+      );
+    }
+
     const result = await prisma.$transaction(async (tx) => {
+      // Re-read the actor's *effective* role at the commit point, under the
+      // shared lock protocol. `authorize(...)` admitted the caller from the
+      // access token's snapshot; a Pembina whose assignment was revoked after
+      // the token was minted passes that guard and could restore a Pengurus the
+      // current Pembina still wants suspended (CWE-863). The persistent
+      // assignment is the authority for every caller, internal ones included —
+      // it is re-resolved here rather than trusted from the JWT.
+      //
+      // Lock the actor's user row then its assignment rows — the shared order,
+      // so a concurrent role revocation serialises behind this instead of
+      // slipping a delete in between the read and the commits below.
+      await lockUserAndAssignments(tx, liftedById);
+      const actorEffectiveRoles = await effectiveRoleCodes(tx, liftedById);
+      if (
+        !actorEffectiveRoles.some((code) =>
+          (PENGAWASAN_LIFT_ROLES as readonly string[]).includes(code)
+        )
+      ) {
+        throw Errors.forbidden('Peran Anda tidak lagi aktif untuk memulihkan status pengurus.');
+      }
+
       // 1. Claim the lift transactionally. The ACTIVE check above is only a
       //    courtesy: two callers can both read ACTIVE at READ COMMITTED and both
       //    write, the second silently overwriting the first's `liftedById` and
@@ -1266,31 +1338,45 @@ export class BoardSuspensionService {
    *
    * Eligibility is the shared `isPlhEligible` rule — the *same* one
    * `suspendBoardMember` enforces before the grant — applied here in the query,
-   * so the picker cannot offer a Pembina or Pengawas the service would reject
-   * (the previous filter excluded only `SUPER_ADMIN` and the legacy
-   * `STUDENT`/`PARENT` enum values, which let the two non-Pengurus organs
-   * through). The optional `excludeUserId` is how the form omits the person
-   * being suspended, so a self-delegation cannot even be selected.
+   * so the picker cannot offer a Pembina or Pengawas the service would reject.
    *
-   * The legacy enum pre-narrow is kept, but expressed as an explicit `OR` with
-   * `role: null`: `notIn` alone evaluates to NULL for a row whose legacy column
-   * is unset, so the old form silently dropped every account created without a
-   * legacy role from the picker. The authoritative rule is the assignment-based
-   * `none` clause below.
+   * The legacy `users.role` pre-filter is deliberately gone. It dropped every
+   * account whose legacy column still read `STUDENT`/`PARENT` even when its
+   * *effective* assignment was a Pengurus role — the account `suspendBoardMember`
+   * judges eligible by reading the assignment rows. The service and the picker
+   * must answer the eligibility question from the same source, and that source
+   * is the effective assignments, not the deprecated coarse column. The optional
+   * `excludeUserId` is how the form omits the person being suspended, so a
+   * self-delegation cannot even be selected.
+   *
+   * The `some`/`none` pair is the predicate `assertPlhDelegateEligible`
+   * expresses in code: the account must hold at least one effective, active-role
+   * assignment (`some`), and must hold no effective assignment on an ineligible
+   * role (`none`). Reading the eligible set through the same `isActive` /
+   * `expiresAt` / `role.isActive` filters the other effective-role queries use
+   * keeps this picker from drifting from the grant it previews.
    */
   async listPlhCandidates(excludeUserId?: string): Promise<PengawasanCandidateDto[]> {
+    const effectiveAssignment: Prisma.UserRoleAssignmentWhereInput = {
+      isActive: true,
+      OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      role: { isActive: true },
+    };
+    const ineligibleRoleWhere: Prisma.UserRoleAssignmentWhereInput = {
+      isActive: true,
+      OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      role: { isActive: true, code: { in: [...PLH_INELIGIBLE_ROLE_CODES] } },
+    };
+
     const users = await prisma.user.findMany({
       where: {
         isActive: true,
         deletedAt: null,
         ...(excludeUserId ? { id: { not: excludeUserId } } : {}),
-        OR: [{ role: null }, { role: { notIn: ['STUDENT', 'PARENT'] } }],
+        // At least one effective assignment backs the account.
         userRoles: {
-          none: {
-            isActive: true,
-            OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
-            role: { code: { in: [...PLH_INELIGIBLE_ROLE_CODES] } },
-          },
+          some: effectiveAssignment,
+          none: ineligibleRoleWhere,
         },
       },
       select: {
@@ -1299,10 +1385,7 @@ export class BoardSuspensionService {
         email: true,
         unit: { select: { id: true, name: true } },
         userRoles: {
-          where: {
-            isActive: true,
-            OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
-          },
+          where: effectiveAssignment,
           select: { role: { select: { code: true } } },
         },
       },

@@ -24,10 +24,12 @@ import { deriveLegacyRole } from '@/middleware/auth';
  * could read and replay a 30-day refresh token. The tokens are now issued as
  * `HttpOnly; Secure; SameSite=Lax` cookies, so script cannot see them at all.
  *
- * The JSON token fields are deliberately KEPT in the response. `docs/MOBILE_API.md`
- * documents a native Bearer client and the E-Sign/realtime surfaces still take
- * an `Authorization` header; removing them would break non-browser clients.
- * The web app stops *using* them.
+ * The JSON token fields are STRIPPED for browser clients. A field in the body
+ * is readable by any script on the origin — the exposure this migration exists
+ * to close — so login/refresh/2FA/role-switch return only the profile and the
+ * `routing` hint to a browser. A native client (`docs/MOBILE_API.md`) has no
+ * cookie jar and opts back in with `X-Client-Type: native` (see
+ * `wantsRawTokens`) to keep receiving the pair in the body.
  *
  * `Secure` is conditional on the deployment being https. Production and staging
  * are https; local `pnpm dev` over http would have its cookies silently dropped
@@ -50,6 +52,17 @@ function cookieSecure(): boolean {
 
 function secondsFromExpiry(expiresIn: string): number {
   return Math.max(0, Math.floor((getExpirationDate(expiresIn).getTime() - Date.now()) / 1000));
+}
+
+/**
+ * The access token's own TTL in seconds.
+ *
+ * The browser gets this figure in the body instead of the token itself (see
+ * `sessionBody`); deriving it from the same `config.jwt.expiresIn` the cookie's
+ * `Max-Age` uses keeps the two from drifting.
+ */
+export function accessTokenTtlSeconds(): number {
+  return secondsFromExpiry(config.jwt.expiresIn);
 }
 
 /** The signed `cipansor_routing` cookie value for a freshly minted token pair. */
@@ -127,6 +140,21 @@ export function setCookies(res: Response, cookies: string[]): void {
 /** Read one auth cookie from the request. */
 export function readCookie(req: Request, name: string): string | null {
   return parseCookieHeader(req.headers.cookie ?? null)[name] ?? null;
+}
+
+/**
+ * Whether the caller explicitly identifies as a native Bearer client.
+ *
+ * Browser sessions are cookie-only: the raw `accessToken` / `refreshToken` /
+ * `tempToken` must never reach page JavaScript, where an XSS could read them.
+ * A native client (`docs/MOBILE_API.md`) has no cookie jar and needs the bearer
+ * pair in the body, so it opts in with `X-Client-Type: native`. The default —
+ * anything without that header, including every browser fetch — is the
+ * cookie-only shape.
+ */
+export function wantsRawTokens(req: Request): boolean {
+  const value = req.headers['x-client-type'];
+  return typeof value === 'string' && value.toLowerCase() === 'native';
 }
 
 /**

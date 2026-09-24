@@ -153,8 +153,7 @@ class NoSessionError extends Error {
  */
 export function isRefreshRaceError(error: unknown): boolean {
   const data = (error as AxiosError)?.response?.data as
-    | { error?: { code?: string } }
-    | undefined;
+    { error?: { code?: string } } | undefined;
   return data?.error?.code === "REFRESH_RACE";
 }
 
@@ -291,12 +290,12 @@ api.interceptors.response.use(
         }
 
         // Clear the non-credential user blob; the server cleared the HttpOnly
-        // cookies above. Best-effort legacy cleanup too.
+        // cookies above. There is deliberately no client-side token to purge:
+        // the raw pair never reached JS, and the legacy keys are removed only to
+        // sweep up any value left by the pre-cookie build.
         localStorage.removeItem("auth-storage");
         localStorage.removeItem("accessToken");
         localStorage.removeItem("refreshToken");
-        document.cookie = "accessToken=; path=/; max-age=0";
-        document.cookie = "auth-storage=; path=/; max-age=0";
 
         if (
           typeof window !== "undefined" &&

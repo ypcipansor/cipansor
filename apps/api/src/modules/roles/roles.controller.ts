@@ -1,6 +1,11 @@
 import { Request, Response, NextFunction } from 'express';
 import { rolesService } from './roles.service';
-import { sessionCookies, setCookies } from '@/utils/auth-cookies';
+import {
+  accessTokenTtlSeconds,
+  sessionCookies,
+  setCookies,
+  wantsRawTokens,
+} from '@/utils/auth-cookies';
 import type { Realm } from '@prisma/client';
 import type {
   GetRolesQuery,
@@ -163,7 +168,9 @@ export class RolesController {
             role: result.activeRole.role,
             unit: result.activeRole.unit,
           },
-          ...result.tokens,
+          // The browser's session is the cookie; only a native client gets the
+          // raw pair in the body (`X-Client-Type: native`).
+          ...(wantsRawTokens(req) ? result.tokens : { expiresIn: accessTokenTtlSeconds() }),
         },
       });
     } catch (error) {

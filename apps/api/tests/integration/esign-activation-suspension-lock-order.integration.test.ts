@@ -52,6 +52,7 @@ INSERT INTO users (id, name, email, is_active, updated_at) VALUES
   ('u-susp',   'Ketua',    'ketua@example.com',    true, now());
 
 INSERT INTO user_role_assignments (id, user_id, role_id, is_primary, is_active, updated_at) VALUES
+  ('a-issuer', 'u-issuer', 'role-pengawas', false, true, now()),
   ('a-susp', 'u-susp', 'role-ketua', true, true, now());
 
 -- The account already holds a signing key, so the suspension's soft-lock has a

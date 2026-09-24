@@ -7,8 +7,9 @@ import type { Request, Response } from 'express';
  *
  * This pins the server side of the finding: login, refresh and 2FA-verify issue
  * `HttpOnly`, `SameSite=Lax` cookies, `Secure` when the deployment is https;
- * logout clears them. The bearer fields stay in the JSON body for the native
- * client, but the browser's credential is the cookie.
+ * logout clears them. The raw bearer fields are stripped from a browser's JSON
+ * body (CWE-200) and only restored for a native client that opts in with
+ * `X-Client-Type: native`.
  */
 
 vi.mock('@/modules/auth/auth.service', () => ({
@@ -44,11 +45,15 @@ import {
   TWO_FACTOR_TOKEN_COOKIE,
 } from '@cipansor/shared';
 
-function mockReqRes(body: unknown = {}, cookieHeader?: string) {
+function mockReqRes(
+  body: unknown = {},
+  cookieHeader?: string,
+  extraHeaders: Record<string, string> = {}
+) {
   const headers: Record<string, unknown> = {};
   const req = {
     body,
-    headers: cookieHeader ? { cookie: cookieHeader } : {},
+    headers: { ...(cookieHeader ? { cookie: cookieHeader } : {}), ...extraHeaders },
     user: { sub: 'user-1' },
   } as unknown as Request;
   const res = {
@@ -116,7 +121,7 @@ describe('auth cookie issuance', () => {
     expect(maxAge).toBeLessThanOrEqual(600);
   });
 
-  it('login sets HttpOnly session cookies and keeps the bearer fields', async () => {
+  it('login sets HttpOnly session cookies for a browser', async () => {
     vi.mocked(authService.login).mockResolvedValue({ user: { id: 'user-1' }, ...TOKENS } as never);
     const { req, res, cookies } = mockReqRes({ email: 'a@b.c', password: 'x' });
 
@@ -126,8 +131,58 @@ describe('auth cookie issuance', () => {
     const names = cookies().map((c) => c.split('=')[0]);
     expect(names).toEqual([ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE, ROUTING_COOKIE]);
     for (const c of cookies()) expect(c).toMatch(/;\s*HttpOnly/);
-    // The native client still receives the tokens in the body.
-    expect((res as never as { jsonPayload: any }).jsonPayload.data.accessToken).toBe('a.b.c');
+  });
+
+  it('strips the raw tokens from a browser login body but keeps cookies and routing', async () => {
+    // Finding 4 (CWE-200): a browser must never be able to read the refresh
+    // token from the response JSON — that is the XSS exposure the cookie
+    // migration exists to close. The session arrives as HttpOnly cookies and
+    // the body keeps only the profile + the signed routing hint.
+    vi.mocked(authService.login).mockResolvedValue({ user: { id: 'user-1' }, ...TOKENS } as never);
+    const { req, res, cookies } = mockReqRes({ email: 'a@b.c', password: 'x' });
+
+    await login(req, res, () => {});
+    await flushAsync();
+
+    const body = (res as never as { jsonPayload: any }).jsonPayload.data;
+    expect(body.accessToken).toBeUndefined();
+    expect(body.refreshToken).toBeUndefined();
+    expect(body.user).toEqual({ id: 'user-1' });
+    expect(typeof body.routing).toBe('string');
+    // The credential is still issued — as a cookie.
+    expect(cookies().map((c) => c.split('=')[0])).toContain(ACCESS_TOKEN_COOKIE);
+  });
+
+  it('a native client keeps the raw pair in the login body (X-Client-Type: native)', async () => {
+    vi.mocked(authService.login).mockResolvedValue({ user: { id: 'user-1' }, ...TOKENS } as never);
+    const { req, res } = mockReqRes({ email: 'a@b.c', password: 'x' }, undefined, {
+      'x-client-type': 'native',
+    });
+
+    await login(req, res, () => {});
+    await flushAsync();
+
+    const body = (res as never as { jsonPayload: any }).jsonPayload.data;
+    expect(body.accessToken).toBe('a.b.c');
+    expect(body.refreshToken).toBe('r.e.f');
+  });
+
+  it('strips the 2FA temp token from a browser challenge body but keeps the cookie', async () => {
+    vi.mocked(authService.login).mockResolvedValue({
+      requiresTwoFactor: true,
+      tempToken: 'temp.challenge.token',
+      tempTokenExpiresIn: '5m',
+    } as never);
+    const { req, res, cookies } = mockReqRes({ email: 'a@b.c', password: 'x' });
+
+    await login(req, res, () => {});
+    await flushAsync();
+
+    const body = (res as never as { jsonPayload: any }).jsonPayload.data;
+    expect(body.tempToken).toBeUndefined();
+    expect(body.requiresTwoFactor).toBe(true);
+    expect(body.tempTokenExpiresIn).toBe('5m');
+    expect(cookies().some((c) => c.startsWith(`${TWO_FACTOR_TOKEN_COOKIE}=`))).toBe(true);
   });
 
   it('honours AUTH_COOKIE_SECURE=true for an https deployment', async () => {
@@ -288,6 +343,22 @@ describe('auth cookie issuance', () => {
     await flushAsync();
 
     for (const c of cookies()) expect(c).toMatch(/;\s*HttpOnly/);
+    // The browser body carries no raw token; the session is the cookie.
+    expect((res as never as { jsonPayload: any }).jsonPayload.data.accessToken).toBeUndefined();
+  });
+
+  it('2FA login keeps the raw pair for a native client', async () => {
+    vi.mocked(authService.verifyTwoFactorLogin).mockResolvedValue({
+      user: { id: 'user-1' },
+      ...TOKENS,
+    } as never);
+    const { req, res } = mockReqRes({ token: '123456' }, undefined, {
+      'x-client-type': 'native',
+    });
+
+    await verifyTwoFactorLogin(req, res, () => {});
+    await flushAsync();
+
     expect((res as never as { jsonPayload: any }).jsonPayload.data.accessToken).toBe('a.b.c');
   });
 });

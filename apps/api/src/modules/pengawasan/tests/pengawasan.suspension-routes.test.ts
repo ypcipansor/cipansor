@@ -50,6 +50,18 @@ vi.mock('../board-suspension.service', () => ({ boardSuspensionService: service 
 vi.mock('../pengawasan.service', () => ({ pengawasanService: {} }));
 vi.mock('../wbs.service', () => ({ wbsService: {} }));
 
+// The controller re-resolves the actor's effective assignment before these
+// endpoints run. These route-level tests are about the edge `authorize` gate,
+// so the persistent re-check is stubbed to "actor holds the role"; its own
+// behaviour has dedicated unit/integration tests.
+vi.mock('@/utils/role-assignment-lock', async (importOriginal) => {
+  const asli = await importOriginal<typeof import('@/utils/role-assignment-lock')>();
+  return {
+    ...asli,
+    assertActorHoldsEffectiveRoleUnlocked: vi.fn().mockResolvedValue('YAYASAN_PENGAWAS'),
+  };
+});
+
 import router from '../pengawasan.routes';
 import { errorHandler } from '@/middleware/error';
 

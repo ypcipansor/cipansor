@@ -54,6 +54,7 @@ INSERT INTO users (id, name, email, is_active, updated_at) VALUES
   ('u-anggota',   'Anggota Z',         'anggota@example.com',   true, now());
 
 INSERT INTO user_role_assignments (id, user_id, role_id, is_primary, is_active, updated_at) VALUES
+  ('a-issuer',    'u-issuer',    'role-pengawas', false, true, now()),
   ('a-target',    'u-target',    'role-ketua',    true, true, now()),
   ('a-pembina',   'u-pembina',   'role-pembina',  true, true, now()),
   ('a-pengawas2', 'u-pengawas2', 'role-pengawas', true, true, now()),

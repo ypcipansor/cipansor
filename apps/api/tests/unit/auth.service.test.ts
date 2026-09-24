@@ -36,6 +36,7 @@ const {
         findFirst: vi.fn(),
         delete: vi.fn(),
         deleteMany: vi.fn(),
+        updateMany: vi.fn(),
       },
       unit: {
         findUnique: vi.fn(),
@@ -417,12 +418,21 @@ describe('AuthService', () => {
   });
 
   describe('refreshToken', () => {
+    beforeEach(() => {
+      // Rotation now *claims* the presented row with a conditional `updateMany`
+      // (`rotatedAt: null`), whose rowcount identifies the loser of a concurrent
+      // refresh, instead of a `delete` that threw P2025. The happy-path default
+      // claims one row; tests that exercise the race override it with `count: 0`.
+      mockPrisma.refreshToken.updateMany.mockResolvedValue({ count: 1 });
+    });
+
     it('should refresh tokens with valid refresh token', async () => {
       const mockStoredToken = {
         id: 'token-1',
         token: 'valid-refresh-token',
         userId: 'user-1',
         expiresAt: new Date(Date.now() + 86400000),
+        rotatedAt: null,
         user: {
           id: 'user-1',
           email: 'test@example.com',
@@ -446,10 +456,6 @@ describe('AuthService', () => {
         type: 'refresh',
       });
       mockPrisma.refreshToken.findFirst.mockResolvedValue(mockStoredToken);
-      // Rotation consumes the presented row with a conditional `deleteMany`, so
-      // the loser of a concurrent refresh is identified by rowcount rather than
-      // crashing on P2025.
-      mockPrisma.refreshToken.deleteMany.mockResolvedValue({ count: 1 });
       mockPrisma.refreshToken.create.mockResolvedValue({});
 
       const result = await authService.refreshToken('valid-refresh-token');

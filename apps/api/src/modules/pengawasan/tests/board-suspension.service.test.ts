@@ -67,6 +67,21 @@ vi.mock('@/utils/user-suspension', () => ({
   isUserSuspended: vi.fn().mockResolvedValue(false),
 }));
 
+// The actor's effective-role re-read hits the database; here it is stubbed so
+// these tests exercise the service's control flow. `SUPER_ADMIN` is in both the
+// issue and lift role sets, so it satisfies either without pretending one person
+// holds two governance organs. The real re-read is proven in the PostgreSQL
+// integration suites (`board-suspension-concurrency`, `wbs-revoked-handler-access`).
+vi.mock('@/utils/role-assignment-lock', async (importOriginal) => {
+  const asli = await importOriginal<typeof import('@/utils/role-assignment-lock')>();
+  return {
+    ...asli,
+    effectiveRoleCodes: vi.fn().mockResolvedValue(['SUPER_ADMIN']),
+  };
+});
+
+import { effectiveRoleCodes } from '@/utils/role-assignment-lock';
+
 describe('BoardSuspensionService Unit Tests', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -88,6 +103,8 @@ describe('BoardSuspensionService Unit Tests', () => {
     // Rows written before the dependency table existed have no dependency
     // rows; the legacy single-assignment path is exercised explicitly below.
     (prisma.boardSuspensionPlhAssignment.findMany as any).mockResolvedValue([]);
+    // `clearAllMocks` also empties the effective-role stub; re-establish it.
+    (effectiveRoleCodes as any).mockResolvedValue(['SUPER_ADMIN']);
     (prisma.boardSuspensionPlhAssignment.count as any).mockResolvedValue(0);
     // The lift's compare-and-restore touches the assignment with a conditional
     // delete/update and reads `.count` off the result; default it to a claimed
@@ -1749,10 +1766,25 @@ describe('BoardSuspensionService Unit Tests', () => {
       expect(ineligible).toContain('YAYASAN_PEMBINA');
       expect(ineligible).toContain('YAYASAN_PENGAWAS');
       expect(ineligible).toContain('SUPER_ADMIN');
-      // The legacy enum is expressed as an OR with `role: null`, because
-      // `notIn` alone evaluates NULL and silently dropped accounts without a
-      // legacy role.
-      expect(where.OR).toEqual([{ role: null }, { role: { notIn: ['STUDENT', 'PARENT'] } }]);
+      // The legacy `role` column no longer narrows the query: eligibility comes
+      // from the effective assignment rows, the same source the grant reads. A
+      // stale `STUDENT`/`PARENT` legacy value must not hide an account whose
+      // effective assignment is a Pengurus role.
+      expect(where.OR).toBeUndefined();
+      expect(where.userRoles.some).toBeDefined();
+      expect(where.userRoles.none.role.isActive).toBe(true);
+    });
+
+    it('does not pre-filter by the legacy role column', async () => {
+      // The account holds a stale legacy STUDENT value but an effective Pengurus
+      // assignment. The service judges it eligible; the picker must agree.
+      (prisma.user.findMany as any).mockResolvedValue([]);
+
+      await boardSuspensionService.listPlhCandidates();
+
+      const where = (prisma.user.findMany as any).mock.calls[0][0].where;
+      expect(JSON.stringify(where)).not.toContain('STUDENT');
+      expect(JSON.stringify(where)).not.toContain('PARENT');
     });
 
     it('marks each candidate with its resolved plhEligible flag', async () => {
@@ -1970,6 +2002,107 @@ describe('BoardSuspensionService Unit Tests', () => {
       expect(prisma.userRoleAssignment.create).not.toHaveBeenCalled();
       expect(prisma.refreshToken.deleteMany).not.toHaveBeenCalled();
       expect(prisma.userSigningKey.updateMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('effective-role re-check for the acting officer (CWE-863)', () => {
+    it('refuses issuance when the actor no longer holds a suspension-issue role', async () => {
+      // The JWT said Pengawas, but the persistent assignments no longer back
+      // it: a revocation committed after the token was minted. The token check
+      // above passes; only the effective re-read can stop this.
+      (effectiveRoleCodes as any).mockResolvedValue(['SDIT_ADMIN']);
+      (prisma.user.findUnique as any).mockResolvedValue({
+        id: 'user-pengurus',
+        isActive: true,
+        userRoles: [{ isActive: true, expiresAt: null, role: { code: 'YAYASAN_KETUA' } }],
+      });
+
+      await expect(
+        boardSuspensionService.suspendBoardMember(
+          {
+            userId: 'user-pengurus',
+            skNumber: 'SK/1',
+            auditReason: 'alasan audit yang panjang',
+          },
+          'issuer-pengawas',
+          'YAYASAN_PENGAWAS'
+        )
+      ).rejects.toMatchObject({ statusCode: 403 });
+
+      // The target was never switched off and no SK was written.
+      expect(prisma.boardMemberSuspension.create).not.toHaveBeenCalled();
+      expect(prisma.user.updateMany).not.toHaveBeenCalled();
+      expect(prisma.refreshToken.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('still issues when the effective assignment backs the token role', async () => {
+      (effectiveRoleCodes as any).mockResolvedValue(['YAYASAN_PENGAWAS']);
+      (prisma.user.findUnique as any).mockResolvedValue({
+        id: 'user-pengurus',
+        isActive: true,
+        userRoles: [{ isActive: true, expiresAt: null, role: { code: 'YAYASAN_KETUA' } }],
+      });
+      (prisma.boardMemberSuspension.create as any).mockResolvedValue({
+        id: 'susp-1',
+        status: 'ACTIVE',
+      });
+
+      const result = await boardSuspensionService.suspendBoardMember(
+        {
+          userId: 'user-pengurus',
+          skNumber: 'SK/1',
+          auditReason: 'alasan audit yang panjang',
+        },
+        'issuer-pengawas',
+        'YAYASAN_PENGAWAS'
+      );
+
+      expect(result).toMatchObject({ id: 'susp-1' });
+      expect(prisma.boardMemberSuspension.create).toHaveBeenCalled();
+    });
+
+    it('refuses a lift when the actor no longer holds a lift role', async () => {
+      (effectiveRoleCodes as any).mockResolvedValue(['YAYASAN_PENGAWAS']);
+      (prisma.boardMemberSuspension.findUnique as any).mockResolvedValue({
+        id: 'susp-lift',
+        status: 'ACTIVE',
+        userId: 'user-pengurus',
+      });
+
+      await expect(
+        boardSuspensionService.liftBoardSuspension(
+          'susp-lift',
+          'lifter-pembina',
+          'Pulih',
+          'YAYASAN_PEMBINA'
+        )
+      ).rejects.toMatchObject({ statusCode: 403 });
+
+      expect(prisma.boardMemberSuspension.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('still lifts when the effective assignment backs the token role', async () => {
+      (effectiveRoleCodes as any).mockResolvedValue(['YAYASAN_PEMBINA']);
+      (prisma.boardMemberSuspension.findUnique as any).mockResolvedValue({
+        id: 'susp-lift',
+        status: 'ACTIVE',
+        userId: 'user-pengurus',
+      });
+      (prisma.boardMemberSuspension.updateMany as any).mockResolvedValue({ count: 1 });
+      (prisma.boardMemberSuspension.findUniqueOrThrow as any).mockResolvedValue({
+        id: 'susp-lift',
+        status: 'LIFTED',
+        userId: 'user-pengurus',
+      });
+
+      await boardSuspensionService.liftBoardSuspension(
+        'susp-lift',
+        'lifter-pembina',
+        'Pulih',
+        'YAYASAN_PEMBINA'
+      );
+
+      expect(prisma.boardMemberSuspension.updateMany).toHaveBeenCalled();
     });
   });
 });

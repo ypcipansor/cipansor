@@ -13,15 +13,40 @@ import { eventBus } from '@/lib/event-bus';
 import { logger } from '@/lib/logger';
 import { Errors } from '@/middleware/error';
 import {
+  accessTokenTtlSeconds,
   clearedSessionCookies,
   readCookie,
   sessionCookies,
   setCookies,
   signedRoutingCookieValue,
   twoFactorCookie,
+  wantsRawTokens,
 } from '@/utils/auth-cookies';
 import { verifyToken } from '@/lib/jwt';
 import { ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE } from '@cipansor/shared';
+
+/**
+ * The JSON body for a freshly minted session.
+ *
+ * For a browser the session is delivered as `HttpOnly` cookies; the raw
+ * `accessToken`/`refreshToken` are stripped from the body so page JavaScript —
+ * and any XSS on the origin — can never read them. A native Bearer client opts
+ * in with `X-Client-Type: native` and keeps receiving the pair in the body.
+ * The `routing` hint stays for the web's Playwright `storageState` path.
+ */
+function sessionBody(
+  req: Request,
+  data: Record<string, unknown>,
+  routing: string
+): Record<string, unknown> {
+  if (wantsRawTokens(req)) {
+    return { ...data, routing };
+  }
+  const rest = { ...data };
+  delete rest.accessToken;
+  delete rest.refreshToken;
+  return { ...rest, routing };
+}
 
 /**
  * Login
@@ -41,7 +66,7 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
     // value the cookie carries — a browser ignores the field and uses the cookie.
     res.json({
       success: true,
-      data: { ...result, routing: await signedRoutingCookieValue(tokens) },
+      data: sessionBody(req, result, await signedRoutingCookieValue(tokens)),
     });
     return;
   }
@@ -57,6 +82,14 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
         ? result.tempTokenExpiresIn
         : '5m';
     setCookies(res, [twoFactorCookie(result.tempToken, ttl)]);
+    // The browser carries the temp token in the cookie; only a native client
+    // gets it in the body. Everything else (the `requiresTwoFactor` flags) is
+    // safe to expose.
+    if (!wantsRawTokens(req)) {
+      const { tempToken: _temp, ...rest } = result as Record<string, unknown>;
+      res.json({ success: true, data: rest });
+      return;
+    }
   }
 
   res.json({
@@ -132,12 +165,13 @@ export const refreshToken = asyncHandler(async (req: Request, res: Response) => 
   }
 
   // Rotation is server-side: the replacement pair is written straight back as
-  // new cookies, so the browser never handles the raw token.
+  // new cookies, so the browser never handles the raw token. A browser response
+  // carries no token in the body at all; the native client keeps it.
   setCookies(res, await sessionCookies(tokens));
 
   res.json({
     success: true,
-    data: tokens,
+    data: wantsRawTokens(req) ? tokens : { expiresIn: accessTokenTtlSeconds() },
   });
 });
 
@@ -239,9 +273,10 @@ export const verifyTwoFactorLogin = asyncHandler(async (req: Request, res: Respo
     const tokens = result as { accessToken: string; refreshToken: string };
     setCookies(res, await sessionCookies(tokens));
     // Same routing hint as `login`, for the web's Playwright storageState path.
+    // A browser body carries no raw tokens; the native client keeps them.
     res.json({
       success: true,
-      data: { ...result, routing: await signedRoutingCookieValue(tokens) },
+      data: sessionBody(req, result, await signedRoutingCookieValue(tokens)),
     });
     return;
   }

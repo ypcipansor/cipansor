@@ -15,7 +15,10 @@ vi.mock('../roles.service', () => ({
 }));
 
 vi.mock('@/lib/jwt', () => ({
-  getExpirationDate: vi.fn(() => new Date()),
+  // Default TTL of one hour — the same value `tests/setup.ts` sets for
+  // `JWT_EXPIRES_IN` — so the cookie `Max-Age` and the browser body's
+  // `expiresIn` are both derived and assertable.
+  getExpirationDate: vi.fn(() => new Date(Date.now() + 3_600_000)),
   // `sessionCookies` derives the routing hint from the access token's claims.
   decodeToken: vi.fn(() => null),
 }));
@@ -24,12 +27,16 @@ import { rolesController } from '../roles.controller';
 import { rolesService } from '../roles.service';
 
 function mockReqRes(overrides: Partial<Request> = {}) {
+  const { headers: overrideHeaders, ...rest } = overrides as Partial<Request> & {
+    headers?: Record<string, string>;
+  };
   const req = {
     query: {},
     params: {},
     body: {},
     user: { sub: 'user-1' },
-    ...overrides,
+    ...rest,
+    headers: overrideHeaders ?? {},
   } as unknown as Request;
 
   const headers: Record<string, unknown> = {};
@@ -76,13 +83,14 @@ describe('RolesController.switchRole', () => {
         role: { code: 'SMPIT_ADMIN', permissions: ['PERM_1'] },
         unit: { id: 'unit-active-smp', name: 'SMP IT' },
       },
-      tokens: { accessToken: 'token-123', refreshToken: 'refresh-123' },
+      tokens: { accessToken: 'token-123', refreshToken: 'refresh-123', expiresIn: 900 },
     };
 
     vi.mocked(rolesService.switchRoleAndIssueSession).mockResolvedValue(mockSwitchResult as any);
 
     const { req, res, next } = mockReqRes({
       body: { roleAssignmentId: 'role-assign-1' } as any,
+      headers: { 'x-client-type': 'native' } as any,
     });
 
     await rolesController.switchRole(req, res, next);
@@ -91,6 +99,38 @@ describe('RolesController.switchRole', () => {
     expect(res.jsonPayload.success).toBe(true);
     expect(res.jsonPayload.data.accessToken).toBe('token-123');
     expect(res.jsonPayload.data.activeRole.id).toBe('role-assign-1');
+  });
+
+  it('omits the raw tokens from a browser switch body while setting the cookies', async () => {
+    // CWE-200: a browser must read the new session only from the HttpOnly
+    // cookies, never from the response JSON.
+    const mockSwitchResult = {
+      user: { id: 'u-1', email: 'user@cipansor.or.id', role: 'TEACHER', unitId: 'unit-home-sd' },
+      activeRole: {
+        id: 'role-assign-b',
+        roleId: 'r-global',
+        unitId: null,
+        role: { code: 'YAYASAN_KETUA', permissions: ['PERM_ALL'] },
+        unit: null,
+      },
+      tokens: { accessToken: 'token-123', refreshToken: 'refresh-123', expiresIn: 900 },
+    };
+
+    vi.mocked(rolesService.switchRoleAndIssueSession).mockResolvedValue(mockSwitchResult as any);
+
+    const { req, res, next } = mockReqRes({
+      body: { roleAssignmentId: 'role-assign-b' } as any,
+    });
+
+    await rolesController.switchRole(req, res, next);
+
+    expect(res.jsonPayload.data.accessToken).toBeUndefined();
+    expect(res.jsonPayload.data.refreshToken).toBeUndefined();
+    // The body reports the access token's TTL (derived from the same
+    // `config.jwt.expiresIn` the cookie's Max-Age uses) rather than the token.
+    expect(res.jsonPayload.data.expiresIn).toBe(3600);
+    // The cookie still carries the fresh credential.
+    expect(JSON.stringify(res.headers['Set-Cookie'])).toContain('token-123');
   });
 
   it('sets the session cookies from the freshly minted pair', async () => {

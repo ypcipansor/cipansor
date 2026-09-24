@@ -180,16 +180,18 @@ describeDb('concurrent refresh rotation (real PostgreSQL)', () => {
     }
 
     // Replay protection: the spent token can never be redeemed again, and only
-    // the single winner's replacement exists.
+    // the single winner's replacement is a live row. The consumed original is
+    // retained as a tombstone (`rotated_at`), which is what lets a sibling tab
+    // that reaches its lookup post-commit still be told `REFRESH_RACE`.
     await withClient(targetUrl, async (db) => {
-      const rows = await db.query(
-        `SELECT count(*)::int AS n FROM refresh_tokens WHERE user_id = 'u-refresh'`
+      const liveRows = await db.query(
+        `SELECT count(*)::int AS n FROM refresh_tokens WHERE user_id = 'u-refresh' AND rotated_at IS NULL`
       );
-      expect(rows.rows[0].n, 'the rotation mints exactly one replacement').toBe(1);
+      expect(liveRows.rows[0].n, 'the rotation mints exactly one live replacement').toBe(1);
     });
   });
 
-  it('reusing a consumed refresh token is a plain 401 and never mints a second replacement', async () => {
+  it('reusing a consumed refresh token is a REFRESH_RACE within the window and mints no second replacement', async () => {
     const { service, jwt, previousUrl } = await loadService();
     try {
       const { refreshToken } = jwt.generateTokenPair({
@@ -206,16 +208,17 @@ describeDb('concurrent refresh rotation (real PostgreSQL)', () => {
 
       await service.refreshToken(refreshToken);
 
-      // The row was consumed by the first call, so this second call is a
-      // *sequential replay*, not a benign two-tab race: by the time it reaches
-      // the pre-read the token is already gone, so it is indistinguishable from
-      // any other missing credential and fails closed as a 401. Only a token
-      // that is still present at the pre-read but vanishes before the
-      // conditional delete — an actual parallel rotation — is a `REFRESH_RACE`
-      // (see the two-parallel-refreshes case). Replay protection is unchanged:
-      // the spent token buys nothing and exactly one replacement exists.
+      // A consumed row is retained for a short window as a tombstone
+      // (`rotated_at`), because a sibling tab can reach its lookup only after
+      // the winner already committed — and deleting the row outright made that
+      // sibling indistinguishable from an invalid credential, so the web logged
+      // out a perfectly valid session. Re-presenting the token inside the window
+      // is therefore `REFRESH_RACE` (409, no cookie deletion) rather than a 401.
+      // Replay protection is unchanged: this token buys nothing and exactly one
+      // replacement exists. Past the window the same token is an ordinary 401.
       await expect(service.refreshToken(refreshToken)).rejects.toMatchObject({
-        statusCode: 401,
+        statusCode: 409,
+        code: 'REFRESH_RACE',
       });
     } finally {
       await unloadService(previousUrl);
@@ -225,7 +228,13 @@ describeDb('concurrent refresh rotation (real PostgreSQL)', () => {
       const rows = await db.query(
         `SELECT count(*)::int AS n FROM refresh_tokens WHERE user_id = 'u-refresh'`
       );
-      expect(rows.rows[0].n).toBe(1);
+      // Exactly one live replacement; the consumed row is a tombstone, not a
+      // second session.
+      const live = await db.query(
+        `SELECT count(*)::int AS n FROM refresh_tokens WHERE user_id = 'u-refresh' AND rotated_at IS NULL`
+      );
+      expect(rows.rows[0].n).toBe(2);
+      expect(live.rows[0].n).toBe(1);
     });
   });
 });

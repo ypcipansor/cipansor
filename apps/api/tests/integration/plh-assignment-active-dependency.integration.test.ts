@@ -42,15 +42,20 @@ vi.setConfig({ testTimeout: 60_000, hookTimeout: 120_000 });
 const SEED = `
 INSERT INTO roles (id, code, name, realm, permissions, updated_at) VALUES
   ('role-ketua',   'YAYASAN_KETUA',   'Ketua Yayasan',  'YAYASAN', '[]'::jsonb, now()),
-  ('role-anggota', 'YAYASAN_ANGGOTA', 'Anggota Yayasan','YAYASAN', '[]'::jsonb, now());
+  ('role-anggota', 'YAYASAN_ANGGOTA', 'Anggota Yayasan','YAYASAN', '[]'::jsonb, now()),
+  ('role-pengawas','YAYASAN_PENGAWAS','Pengawas Yayasan','YAYASAN', '[]'::jsonb, now()),
+  ('role-pembina','YAYASAN_PEMBINA',  'Pembina Yayasan', 'YAYASAN', '[]'::jsonb, now());
 
 INSERT INTO users (id, name, email, is_active, updated_at) VALUES
   ('u-issuer',   'Pengawas',        'pengawas@example.com',   true, now()),
+  ('u-lifter',   'Pembina',         'pembina@example.com',    true, now()),
   ('u-target',   'Ketua Target',    'target@example.com',     true, now()),
   ('u-delegate', 'Anggota Delegasi','delegate@example.com',   true, now());
 
 INSERT INTO user_role_assignments (id, user_id, role_id, is_primary, is_active, updated_at) VALUES
-  ('a-target', 'u-target', 'role-ketua', true, true, now());
+  ('a-issuer', 'u-issuer', 'role-pengawas', false, true, now()),
+  ('a-lifter', 'u-lifter', 'role-pembina',  false, true, now()),
+  ('a-target', 'u-target', 'role-ketua',    true,  true, now());
 `;
 
 async function withClient<T>(url: string, fn: (db: Client) => Promise<T>): Promise<T> {
@@ -208,7 +213,12 @@ describeDb('Plh delegation active-dependency guard (real PostgreSQL)', () => {
       // The lift sets status LIFTED before the release deletes the row, so the
       // trigger must not block the suspension's own cleanup.
       await expect(
-        suspension.liftBoardSuspension(created.id, 'u-issuer', 'Pemulihan status.')
+        suspension.liftBoardSuspension(
+          created.id,
+          'u-lifter',
+          'Pemulihan status.',
+          'YAYASAN_PEMBINA'
+        )
       ).resolves.toBeDefined();
 
       await withClient(targetUrl, async (db) => {
@@ -240,7 +250,12 @@ describeDb('Plh delegation active-dependency guard (real PostgreSQL)', () => {
         )`);
       });
 
-      await suspension.liftBoardSuspension(created.id, 'u-issuer', 'Pemulihan status.');
+      await suspension.liftBoardSuspension(
+        created.id,
+        'u-lifter',
+        'Pemulihan status.',
+        'YAYASAN_PEMBINA'
+      );
       await unloadService(previousUrl);
 
       // Re-create a delegate delegation with no suspension behind it, then

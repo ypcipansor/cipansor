@@ -25,7 +25,10 @@ describe("isRefreshRaceError", () => {
   it("recognises the API's REFRESH_RACE envelope", () => {
     expect(
       isRefreshRaceError(
-        axiosErrorWith({ success: false, error: { code: "REFRESH_RACE", message: "x" } }),
+        axiosErrorWith({
+          success: false,
+          error: { code: "REFRESH_RACE", message: "x" },
+        }),
       ),
     ).toBe(true);
   });
@@ -33,7 +36,10 @@ describe("isRefreshRaceError", () => {
   it("does not treat a plain 401 rejection as a race", () => {
     expect(
       isRefreshRaceError(
-        axiosErrorWith({ success: false, error: { code: "UNAUTHORIZED" } }, 401),
+        axiosErrorWith(
+          { success: false, error: { code: "UNAUTHORIZED" } },
+          401,
+        ),
       ),
     ).toBe(false);
   });

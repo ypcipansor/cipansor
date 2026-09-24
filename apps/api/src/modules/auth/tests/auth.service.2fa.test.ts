@@ -13,7 +13,13 @@ const { prismaMock, verifyOtp } = vi.hoisted(() => {
   const prismaMock: any = {
     user: { findUnique: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
     boardMemberSuspension: { findFirst: vi.fn() },
-    refreshToken: { create: vi.fn(), delete: vi.fn(), deleteMany: vi.fn(), findFirst: vi.fn() },
+    refreshToken: {
+      create: vi.fn(),
+      delete: vi.fn(),
+      deleteMany: vi.fn(),
+      updateMany: vi.fn(),
+      findFirst: vi.fn(),
+    },
     userRoleAssignment: { findMany: vi.fn(), count: vi.fn() },
     academicYear: { findFirst: vi.fn() },
     $queryRaw: vi.fn(),
@@ -78,10 +84,12 @@ describe('AuthService.verifyTwoFactorLogin — suspension race', () => {
     ]);
     prismaMock.userRoleAssignment.count.mockResolvedValue(1);
     prismaMock.refreshToken.create.mockResolvedValue({});
-    // The rotation consumes the presented token with a conditional delete
-    // (`deleteMany`), whose rowcount identifies the race loser; the mock must
-    // report one row consumed for the happy path.
-    prismaMock.refreshToken.deleteMany.mockResolvedValue({ count: 1 });
+    // The rotation claims the presented token with a conditional *stamp*
+    // (`updateMany ... rotatedAt: null`), whose rowcount identifies the race
+    // loser; the mock reports one row claimed for the happy path. The tombstone
+    // prune also calls `deleteMany`.
+    prismaMock.refreshToken.updateMany.mockResolvedValue({ count: 1 });
+    prismaMock.refreshToken.deleteMany.mockResolvedValue({ count: 0 });
     prismaMock.user.update.mockResolvedValue({});
   });
 
@@ -229,6 +237,7 @@ describe('AuthService.refreshToken — rotation under suspension', () => {
   const storedToken = {
     id: 'rt-1',
     token: 'refresh-token',
+    rotatedAt: null as Date | null,
     user: {
       id: 'user-1',
       email: 'board@cipansor.or.id',
@@ -272,8 +281,9 @@ describe('AuthService.refreshToken — rotation under suspension', () => {
     expect(tokens).toMatchObject({ accessToken: 'a', refreshToken: 'r' });
     const sql = (prismaMock.$queryRaw as any).mock.calls[0][0].join(' ');
     expect(sql).toMatch(/FOR UPDATE/i);
-    expect(prismaMock.refreshToken.deleteMany).toHaveBeenCalledWith({
-      where: { id: 'rt-1', token: 'refresh-token' },
+    expect(prismaMock.refreshToken.updateMany).toHaveBeenCalledWith({
+      where: { id: 'rt-1', token: 'refresh-token', rotatedAt: null },
+      data: { rotatedAt: expect.any(Date) },
     });
     expect(prismaMock.refreshToken.create).toHaveBeenCalledTimes(1);
   });
@@ -303,19 +313,50 @@ describe('AuthService.refreshToken — rotation under suspension', () => {
   });
 
   it('answers a REFRESH_RACE, not a 500 or a logout, when a parallel refresh already consumed the token', async () => {
-    // Finding 7 (500), superseded by the concurrent-refresh finding: after the
-    // first request deletes the row, the second request reaches the conditional
-    // `deleteMany` and affects zero rows. The old plain `delete` threw Prisma
-    // P2025, which the error handler mapped to 500. A plain 401 then replaced
-    // that, but a 401 is what the web treats as "session dead" and logs out —
-    // wrong for two tabs sharing one cookie, where a winner already rotated and
-    // set fresh cookies. The loser is a spent-but-legitimate token, so it is a
+    // Finding 7 (500), superseded by the concurrent-refresh finding: the first
+    // request now *stamps* the row and mints a replacement; the second reaches
+    // the conditional claim with `rotatedAt: null` and affects zero rows. The
+    // old plain `delete` threw Prisma P2025, which the error handler mapped to
+    // 500, and a plain 401 is what the web treats as "session dead" and logs
+    // out — both wrong for two tabs sharing one cookie. The loser gets a
     // `REFRESH_RACE` the client retries, never a 500 and never a logout.
-    prismaMock.refreshToken.deleteMany.mockResolvedValueOnce({ count: 0 });
+    prismaMock.refreshToken.updateMany.mockResolvedValueOnce({ count: 0 });
 
     await expect(service.refreshToken('refresh-token')).rejects.toMatchObject({
       statusCode: 409,
       code: 'REFRESH_RACE',
+    });
+    expect(prismaMock.refreshToken.create).not.toHaveBeenCalled();
+  });
+
+  it('answers REFRESH_RACE when the lookup sees a token consumed by a sibling moments ago', async () => {
+    // The loser can reach its *pre-read* only after the winner has committed,
+    // so it sees the tombstone (`rotatedAt`) rather than a missing row. That is
+    // still the benign race — two tabs, one cookie — and must be a 409 the web
+    // retries, not a 401 that ends the session the winner just refreshed.
+    prismaMock.refreshToken.findFirst.mockResolvedValueOnce({
+      ...storedToken,
+      rotatedAt: new Date(),
+    });
+
+    await expect(service.refreshToken('refresh-token')).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'REFRESH_RACE',
+    });
+    expect(prismaMock.refreshToken.create).not.toHaveBeenCalled();
+  });
+
+  it('refuses a tombstone older than the race window as a spent-token 401', async () => {
+    // Replay protection is unchanged: a token presented long after its rotation
+    // is not a live two-tab race, so it fails closed as an ordinary 401 and
+    // never mints another replacement.
+    prismaMock.refreshToken.findFirst.mockResolvedValueOnce({
+      ...storedToken,
+      rotatedAt: new Date(Date.now() - 5 * 60_000),
+    });
+
+    await expect(service.refreshToken('refresh-token')).rejects.toMatchObject({
+      statusCode: 401,
     });
     expect(prismaMock.refreshToken.create).not.toHaveBeenCalled();
   });

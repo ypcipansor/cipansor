@@ -25,11 +25,33 @@ vi.mock('../pengawasan.service', () => ({
     getFollowUpAuditUnitId: vi.fn(),
     updateAudit: vi.fn(),
     suggestAuditSchedules: vi.fn(),
+    getFinancialArrears: vi.fn().mockResolvedValue({}),
+    draftPeriodicReportToEOffice: vi.fn().mockResolvedValue({ id: 'letter-1' }),
   },
 }));
 
 vi.mock('../wbs.service', () => ({ wbsService: {} }));
-vi.mock('../board-suspension.service', () => ({ boardSuspensionService: {} }));
+vi.mock('../board-suspension.service', () => ({
+  boardSuspensionService: {
+    getBoardSuspensions: vi.fn().mockResolvedValue([]),
+    listSuspendableCandidates: vi.fn().mockResolvedValue([]),
+    listPlhCandidates: vi.fn().mockResolvedValue([]),
+  },
+}));
+
+// Re-resolve the actor's persistent assignment. Mocked so the controller's
+// *use* of the guard (does it call it for the governance endpoints?) is tested
+// here; the guard's own DB behaviour is proven in the integration suite.
+const lockUtil = vi.hoisted(() => ({
+  assertActorHoldsEffectiveRoleUnlocked: vi.fn().mockResolvedValue('YAYASAN_PENGAWAS'),
+}));
+vi.mock('@/utils/role-assignment-lock', async (importOriginal) => {
+  const asli = await importOriginal<typeof import('@/utils/role-assignment-lock')>();
+  return {
+    ...asli,
+    assertActorHoldsEffectiveRoleUnlocked: lockUtil.assertActorHoldsEffectiveRoleUnlocked,
+  };
+});
 
 import { pengawasanService } from '../pengawasan.service';
 import {
@@ -43,6 +65,11 @@ import {
   deleteFollowUp,
   updateAudit,
   getAuditSuggestions,
+  listBoardSuspensions,
+  listSuspendableCandidates,
+  listPlhCandidates,
+  getFinancialArrears,
+  draftPeriodicReportToEOffice,
 } from '../pengawasan.controller';
 import { RoleCode } from '@prisma/client';
 
@@ -607,5 +634,59 @@ describe('pengawasanController — audit suggestion unit scope', () => {
 
     expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 401 }));
     expect(pengawasanService.suggestAuditSchedules).not.toHaveBeenCalled();
+  });
+});
+
+describe('pengawasanController — governance actor effective-role re-check', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    lockUtil.assertActorHoldsEffectiveRoleUnlocked.mockResolvedValue('YAYASAN_PENGAWAS');
+  });
+
+  it.each([
+    ['listBoardSuspensions', () => listBoardSuspensions, 'PENGAWASAN_SUSPENSION_READ_ROLES'],
+    [
+      'listSuspendableCandidates',
+      () => listSuspendableCandidates,
+      'PENGAWASAN_SUSPENSION_ISSUE_ROLES',
+    ],
+    ['listPlhCandidates', () => listPlhCandidates, 'PENGAWASAN_SUSPENSION_ISSUE_ROLES'],
+    ['getFinancialArrears', () => getFinancialArrears, 'PENGAWASAN_ARREARS_ROLES'],
+    [
+      'draftPeriodicReportToEOffice',
+      () => draftPeriodicReportToEOffice,
+      'PENGAWASAN_PERIODIC_REPORT_ROLES',
+    ],
+  ])('re-resolves the persistent role before %s', async (_name, getHandler, _roles) => {
+    const res = mockResponse();
+    const handler = getHandler();
+    const req =
+      _name === 'draftPeriodicReportToEOffice'
+        ? mockRequest({
+            title: 'Laporan Pengawasan Periodik',
+            period: 'Q1 2026',
+            executiveSummary: 'Ringkasan eksekutif yang cukup panjang untuk lolos validasi.',
+          })
+        : mockRequest();
+
+    await runHandler(handler, req, res);
+
+    expect(lockUtil.assertActorHoldsEffectiveRoleUnlocked).toHaveBeenCalledTimes(1);
+    expect(lockUtil.assertActorHoldsEffectiveRoleUnlocked).toHaveBeenCalledWith(
+      expect.anything(),
+      'actor-1',
+      expect.any(Array)
+    );
+  });
+
+  it('refuses a revoked actor before the read service is reached', async () => {
+    lockUtil.assertActorHoldsEffectiveRoleUnlocked.mockRejectedValueOnce(
+      Object.assign(new Error('forbidden'), { statusCode: 403 })
+    );
+    const res = mockResponse();
+
+    const next = await runHandler(listBoardSuspensions, mockRequest(), res);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 403 }));
   });
 });

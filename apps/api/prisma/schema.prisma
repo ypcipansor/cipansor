@@ -603,11 +603,18 @@ model User {
 
 /// RefreshToken - JWT refresh tokens
 model RefreshToken {
-  id        String   @id @default(uuid())
-  token     String   @unique
-  userId    String   @map("user_id")
-  expiresAt DateTime @map("expires_at")
-  createdAt DateTime @default(now()) @map("created_at")
+  id        String    @id @default(uuid())
+  token     String    @unique
+  userId    String    @map("user_id")
+  expiresAt DateTime  @map("expires_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  /// When this row was consumed by a rotation. A consumed row is normally
+  /// deleted outright; keeping the timestamp lets `refreshToken` tell a benign
+  /// concurrent rotation (two tabs sharing one cookie) from a genuine replay,
+  /// so the loser of the race gets `REFRESH_RACE` instead of a session-ending
+  /// 401. Rows are pruned once the window lapses — see `AuthService.refreshToken`.
+  rotatedAt DateTime? @map("rotated_at")
 
   // Relations
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)

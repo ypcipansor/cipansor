@@ -73,11 +73,17 @@ export interface AuthSession {
   routing?: string;
 }
 
-async function postJson(path: string, body: unknown, bearer?: string) {
+async function postJson(
+  path: string,
+  body: unknown,
+  bearer?: string,
+  headers: Record<string, string> = {},
+) {
   const res = await fetch(`${API_URL}${path}`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
+      ...headers,
       ...(bearer ? { authorization: `Bearer ${bearer}` } : {}),
     },
     body: JSON.stringify(body),
@@ -152,10 +158,20 @@ export async function apiLogin(user: SeedUser): Promise<AuthSession> {
 }
 
 async function apiLoginUncached(user: SeedUser): Promise<AuthSession> {
-  const login = await postJson("/auth/login", {
-    email: user.email,
-    password: user.password,
-  });
+  // The helper acts as the native Bearer client: it needs the raw pair to seed
+  // Playwright's cookie jar and to drive `apiRequest`, which a browser session
+  // no longer exposes in the response body. `X-Client-Type: native` is the
+  // documented opt-in for exactly that (`docs/MOBILE_API.md`).
+  const nativeHeaders = { "X-Client-Type": "native" };
+  const login = await postJson(
+    "/auth/login",
+    {
+      email: user.email,
+      password: user.password,
+    },
+    undefined,
+    nativeHeaders,
+  );
   const data = login?.data;
   if (!data)
     throw new Error(`Login failed for ${user.email}: ${JSON.stringify(login)}`);
@@ -167,6 +183,7 @@ async function apiLoginUncached(user: SeedUser): Promise<AuthSession> {
       "/auth/2fa/login",
       { token },
       data.tempToken,
+      nativeHeaders,
     );
     if (!verified?.data?.accessToken) {
       throw new Error(
