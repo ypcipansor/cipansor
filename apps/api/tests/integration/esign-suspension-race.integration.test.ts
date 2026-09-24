@@ -558,6 +558,38 @@ describeDb('esign suspension race (real PostgreSQL)', () => {
     }
   });
 
+  it('refuses activation for a re-activated account whose suspension is still ACTIVE', async () => {
+    // SECURITY: the guard must not rely on `is_active = false` alone — an
+    // account can be switched active again by some other path while the SK
+    // Pembekuan is still in force, and a key minted then is born unlocked for a
+    // suspended officer. `assertUserNotSuspendedTx` reads the ACTIVE suspension
+    // as well as the flag; this pins that the flag alone is not the gate.
+    await resetState();
+    const { EsignService, previousUrl } = await loadModules();
+    try {
+      await commitSuspensionForEnroll();
+      // The account is active again, but the suspension still stands.
+      await withClient(targetUrl, async (db) => {
+        await db.query(
+          `UPDATE users SET is_active = true, deleted_at = NULL WHERE id = 'u-enroll'`
+        );
+      });
+
+      await expect(EsignService.activateKey('u-enroll', PASS)).rejects.toThrow(
+        /dibekukan|Pembekuan|non-aktif/i
+      );
+
+      await withClient(targetUrl, async (db) => {
+        const key = await db.query(
+          `SELECT count(*)::int AS n FROM user_signing_keys WHERE user_id = 'u-enroll'`
+        );
+        expect(key.rows[0].n).toBe(0);
+      });
+    } finally {
+      await unloadModules(previousUrl);
+    }
+  });
+
   it('normal activation with no suspension still succeeds', async () => {
     await resetState();
     const { EsignService, previousUrl } = await loadModules();

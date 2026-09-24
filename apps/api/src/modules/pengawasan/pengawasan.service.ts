@@ -534,124 +534,137 @@ export class PengawasanService {
   async getFinancialArrears(unitId?: string) {
     const now = new Date();
 
-    const unpaidInvoices = await prisma.invoice.findMany({
-      where: {
-        status: { in: ['PENDING', 'PARTIAL', 'OVERDUE'] },
-        // Filter on the invoice's own unit of record. `student.unitId` is the
-        // pupil's *current* unit, so filtering by it moved a transferred
-        // student's old arrears between units' books. `unitId` is NOT NULL and
-        // backfilled from the issuing payment type, so there is no legacy-row
-        // fallback to the student's unit.
-        ...(unitId ? { unitId } : {}),
-      },
-      include: {
-        student: {
-          select: {
-            id: true,
-            // `Student` has no `name` column — the person's name lives on the
-            // linked `User`. The old select asked for `student.name`, which is
-            // not a field, so the whole endpoint threw at query-build time.
-            nis: true,
-            unitId: true,
-            user: { select: { name: true } },
-            unit: { select: { id: true, name: true } },
-          },
-        },
-        unit: { select: { id: true, name: true } },
-        paymentType: { select: { id: true, name: true, code: true } },
-      },
-      orderBy: { dueDate: 'asc' },
-    });
+    // Arrears are aggregated in the database, not by loading every unpaid
+    // invoice and its relations into Node. The old form fetched the whole
+    // outstanding book — a yayasan-wide unpaid-invoice set is large and grows
+    // without bound — joined student, user, unit and payment type for each row,
+    // then summed in a loop. Only three things are ever needed: the totals, the
+    // per-unit breakdown, and the top 15 debtor rows. Each is a `GROUP BY`, and
+    // only the 15 surviving rows get their names resolved.
+    //
+    // The measure is `amount - paid_amount > 0`: a PENDING invoice that is fully
+    // paid, or an overpaid one, has no outstanding balance and must not inflate
+    // any figure. That predicate is spelled once in `outstanding` and reused by
+    // every query, so the summary, the breakdown and the rows cannot drift.
 
-    let totalUnpaidAmount = 0;
-    let overdueInvoicesCount = 0;
-    // Only invoices with an actual positive balance count. The summary used to
-    // report `unpaidInvoices.length` — the size of the *query* result — while
-    // every other figure (the amount, the per-invoice counter each breakdown
-    // aggregates) skipped invoices whose balance was already settled. A PENDING
-    // row fully paid, or an overpaid one, therefore inflated the headline count
-    // above both the amount and the sum of the per-unit counts.
-    let totalUnpaidInvoicesCount = 0;
+    const outstanding = Prisma.sql`i.amount - i.paid_amount > 0`;
 
-    const unitMap: Record<
-      string,
-      { unitId: string; unitName: string; totalUnpaid: number; count: number; overdueCount: number }
-    > = {};
-    const studentMap: Record<
-      string,
-      {
-        studentId: string;
-        studentName: string;
-        nis: string;
-        unitId: string;
-        unitName: string;
-        totalUnpaid: number;
-        invoiceCount: number;
-      }
-    > = {};
+    const unitCondition = unitId ? Prisma.sql`AND i.unit_id = ${unitId}` : Prisma.empty;
 
-    for (const inv of unpaidInvoices) {
-      const remaining = Number(inv.amount) - Number(inv.paidAmount);
-      if (remaining <= 0) continue;
+    const [summaryRows, unitRows, studentRows] = await Promise.all([
+      prisma.$queryRaw<
+        Array<{ total: number | null; unpaidCount: number; overdueCount: number }>
+      >(Prisma.sql`
+        SELECT
+          COALESCE(SUM(i.amount - i.paid_amount), 0) AS total,
+          COUNT(*)::int AS "unpaidCount",
+          COUNT(*) FILTER (
+            WHERE i.status = 'OVERDUE' OR i.due_date < ${now}
+          )::int AS "overdueCount"
+        FROM invoices i
+        WHERE i.status IN ('PENDING', 'PARTIAL', 'OVERDUE')
+          AND ${outstanding}
+          ${unitCondition}
+      `),
 
-      totalUnpaidAmount += remaining;
-      totalUnpaidInvoicesCount += 1;
-      const isOverdue = inv.status === 'OVERDUE' || (inv.dueDate && inv.dueDate < now);
-      if (isOverdue) overdueInvoicesCount++;
+      // `i.unit_id` is NOT NULL and backfilled from the issuing payment type, so
+      // the LEFT JOIN is defensive: an invoice whose unit was soft-deleted still
+      // appears under a 'PUSAT' label rather than vanishing from the breakdown.
+      prisma.$queryRaw<
+        Array<{
+          unitId: string;
+          unitName: string;
+          totalUnpaid: number;
+          count: number;
+          overdueCount: number;
+        }>
+      >(Prisma.sql`
+        SELECT
+          COALESCE(i.unit_id, 'PUSAT') AS "unitId",
+          COALESCE(u.name, 'Yayasan Pusat') AS "unitName",
+          COALESCE(SUM(i.amount - i.paid_amount), 0) AS "totalUnpaid",
+          COUNT(*)::int AS "count",
+          COUNT(*) FILTER (
+            WHERE i.status = 'OVERDUE' OR i.due_date < ${now}
+          )::int AS "overdueCount"
+        FROM invoices i
+        LEFT JOIN units u ON u.id = i.unit_id
+        WHERE i.status IN ('PENDING', 'PARTIAL', 'OVERDUE')
+          AND ${outstanding}
+          ${unitCondition}
+        GROUP BY COALESCE(i.unit_id, 'PUSAT'), COALESCE(u.name, 'Yayasan Pusat')
+        ORDER BY "totalUnpaid" DESC
+      `),
 
-      // The invoice's own unit of record. `unitId` is NOT NULL and backfilled
-      // from the issuing payment type, so this is always set; 'PUSAT' remains a
-      // defensive label only.
-      const uId = inv.unitId || 'PUSAT';
-      const uName = inv.unit?.name || 'Yayasan Pusat';
+      // Top 15 by (student, invoice unit): a pupil can owe more than one unit
+      // after a transfer, and each debt stays attributed to the unit that raised
+      // it. Only these 15 rows pay for a name/NIS lookup below.
+      prisma.$queryRaw<
+        Array<{
+          studentId: string;
+          unitId: string;
+          unitName: string;
+          totalUnpaid: number;
+          invoiceCount: number;
+          nis: string | null;
+          studentName: string | null;
+          currentUnitId: string | null;
+          currentUnitName: string | null;
+        }>
+      >(Prisma.sql`
+        SELECT
+          i.student_id AS "studentId",
+          COALESCE(i.unit_id, 'PUSAT') AS "unitId",
+          COALESCE(u.name, 'Yayasan Pusat') AS "unitName",
+          SUM(i.amount - i.paid_amount) AS "totalUnpaid",
+          COUNT(*)::int AS "invoiceCount",
+          s.nis AS "nis",
+          su.name AS "studentName",
+          s.unit_id AS "currentUnitId",
+          cu.name AS "currentUnitName"
+        FROM invoices i
+        LEFT JOIN units u ON u.id = i.unit_id
+        JOIN students s ON s.id = i.student_id
+        LEFT JOIN users su ON su.id = s.user_id
+        LEFT JOIN units cu ON cu.id = s.unit_id
+        WHERE i.status IN ('PENDING', 'PARTIAL', 'OVERDUE')
+          AND ${outstanding}
+          ${unitCondition}
+        GROUP BY i.student_id, COALESCE(i.unit_id, 'PUSAT'), COALESCE(u.name, 'Yayasan Pusat'),
+                 s.nis, su.name, s.unit_id, cu.name
+        ORDER BY "totalUnpaid" DESC
+        LIMIT 15
+      `),
+    ]);
 
-      if (!unitMap[uId]) {
-        unitMap[uId] = { unitId: uId, unitName: uName, totalUnpaid: 0, count: 0, overdueCount: 0 };
-      }
-      unitMap[uId].totalUnpaid += remaining;
-      unitMap[uId].count += 1;
-      if (isOverdue) unitMap[uId].overdueCount += 1;
-
-      // Aggregate by student **and invoice unit**, not by student alone.
-      //
-      // A pupil can hold unpaid invoices from more than one unit (attended one,
-      // transferred, still owes the old one). Keying only on `studentId` summed
-      // both units' balances into a single row and stamped it with whichever
-      // invoice happened to come first — so the row claimed a unit that owed
-      // only part of the total, and the other unit's arrears vanished from the
-      // by-unit view. One row per (student, unit-of-record) keeps every rupiah
-      // attributed to the unit that actually raised it.
-      const sId = `${inv.studentId}::${uId}`;
-      if (!studentMap[sId]) {
-        studentMap[sId] = {
-          studentId: inv.studentId,
-          studentName: inv.student.user?.name ?? '-',
-          nis: inv.student.nis || '-',
-          unitId: uId,
-          unitName: uName,
-          totalUnpaid: 0,
-          invoiceCount: 0,
-        };
-      }
-      studentMap[sId].totalUnpaid += remaining;
-      studentMap[sId].invoiceCount += 1;
-    }
-
-    const topArrearsStudents = Object.values(studentMap)
-      .sort((a, b) => b.totalUnpaid - a.totalUnpaid)
-      .slice(0, 15);
+    const summary = summaryRows[0] ?? { total: 0, unpaidCount: 0, overdueCount: 0 };
 
     return {
       summary: {
-        totalUnpaidAmount,
-        totalUnpaidInvoicesCount,
-        overdueInvoicesCount,
+        totalUnpaidAmount: Number(summary.total ?? 0),
+        totalUnpaidInvoicesCount: Number(summary.unpaidCount ?? 0),
+        overdueInvoicesCount: Number(summary.overdueCount ?? 0),
       },
-      unitBreakdown: Object.values(unitMap),
-      topArrearsStudents,
+      unitBreakdown: unitRows.map((row) => ({
+        unitId: row.unitId,
+        unitName: row.unitName,
+        totalUnpaid: Number(row.totalUnpaid),
+        count: Number(row.count),
+        overdueCount: Number(row.overdueCount),
+      })),
+      topArrearsStudents: studentRows.map((row) => ({
+        studentId: row.studentId,
+        studentName: row.studentName ?? '-',
+        nis: row.nis || '-',
+        unitId: row.unitId,
+        unitName: row.unitName,
+        currentUnitId: row.currentUnitId ?? null,
+        currentUnitName: row.currentUnitName ?? null,
+        totalUnpaid: Number(row.totalUnpaid),
+        invoiceCount: Number(row.invoiceCount),
+      })),
     };
   }
-
   // ==================== E-OFFICE PERIODIC OVERSIGHT REPORT ====================
 
   /**

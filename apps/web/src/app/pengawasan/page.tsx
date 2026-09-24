@@ -759,7 +759,11 @@ function PengawasanPageContent() {
         </div>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+      <Tabs
+        value={activeTab}
+        onValueChange={setActiveTab}
+        className="space-y-6"
+      >
         {/*
           Each tab is shown only to a role the API would answer. A tab whose
           endpoint returns 403 is a dead end the user only discovers after
@@ -1446,6 +1450,77 @@ function PengawasanPageContent() {
                           </span>
                         </div>
                       ))}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Top arrears pupils. The row is keyed to the invoice's unit of
+                    record, while `nis` is the pupil's current NIS — so the two
+                    units are shown side by side and the NIS column is labelled
+                    "NIS saat ini" to keep a transferred pupil's old arrears from
+                    reading as if their current NIS belonged to the old unit. */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">
+                      Tunggakan Terbesar per Santri
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="relative w-full overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b text-left text-slate-500">
+                            <th className="py-2 pr-4 font-medium">Nama</th>
+                            <th className="py-2 pr-4 font-medium">
+                              NIS saat ini
+                            </th>
+                            <th className="py-2 pr-4 font-medium">
+                              Unit Penagihan
+                            </th>
+                            <th className="py-2 pr-4 font-medium">
+                              Unit Saat Ini
+                            </th>
+                            <th className="py-2 pr-4 font-medium text-right">
+                              Total Tunggakan
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {arrearsData?.topArrearsStudents?.map((s) => (
+                            <tr
+                              key={`${s.studentId}-${s.unitId}`}
+                              className="border-b last:border-0"
+                            >
+                              <td className="py-2 pr-4 font-medium text-slate-900">
+                                {s.studentName}
+                              </td>
+                              <td className="py-2 pr-4 text-slate-600">
+                                {s.nis}
+                              </td>
+                              <td className="py-2 pr-4 text-slate-600">
+                                {s.unitName}
+                              </td>
+                              <td className="py-2 pr-4 text-slate-600">
+                                {s.currentUnitName ?? "-"}
+                              </td>
+                              <td className="py-2 pr-4 text-right font-bold text-amber-700">
+                                Rp {s.totalUnpaid.toLocaleString("id-ID")}
+                              </td>
+                            </tr>
+                          ))}
+                          {(arrearsData?.topArrearsStudents?.length ?? 0) ===
+                            0 && (
+                            <tr>
+                              <td
+                                colSpan={5}
+                                className="py-4 text-center text-slate-500"
+                              >
+                                Tidak ada tunggakan.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
                     </div>
                   </CardContent>
                 </Card>

@@ -232,20 +232,17 @@ export const deleteFollowUp = asyncHandler(async (req: Request, res: Response) =
 // ==================== SUGGESTIONS ====================
 
 export const getAuditSuggestions = asyncHandler(async (req: Request, res: Response) => {
-  const isPrivilegedUser = isFoundationWide(req.user?.roleCode);
-  const unitId = req.user?.unitId;
-
-  if (!unitId && !isPrivilegedUser) throw Errors.unauthorized('Unit ID required');
-
-  let targetUnitId: string | undefined = unitId ?? undefined;
-  if (isPrivilegedUser) {
-    const queryUnitId = req.query.unitId ? String(req.query.unitId) : undefined;
-    if (queryUnitId === 'all') {
-      targetUnitId = undefined;
-    } else if (queryUnitId) {
-      targetUnitId = queryUnitId;
-    }
-  }
+  // Unit scope is resolved the same way `listAudits` resolves it, so the
+  // suggestions agree with the list the reviewer is looking at. The previous
+  // form started from the actor's own token `unitId` even for a foundation-wide
+  // role, so a Pengawas who carries a unit (the foundation unit) got suggestions
+  // for that one unit only while their audit list showed every unit.
+  //
+  // `resolveArrearsUnitId`'s semantics are exactly right here and reused rather
+  // than re-spelled: a foundation-wide role sees every unit by default and may
+  // narrow with a query, `"all"` is the cross-unit sentinel, and a unit-scoped
+  // actor is confined to its own unit and refused when it has none.
+  const targetUnitId = resolveArrearsUnitId(actorOf(req), req.query.unitId as string | undefined);
 
   const suggestions = await pengawasanService.suggestAuditSchedules(targetUnitId);
   res.json(ApiResponse.success(suggestions));

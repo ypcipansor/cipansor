@@ -1796,6 +1796,117 @@ describe('WbsService Unit Tests', () => {
       });
     });
 
+    describe('an escalated report leaves the originating unit scope', () => {
+      // SECURITY: `buildScopeWhere`'s unit branch used to admit any report whose
+      // `targetLevel` was STAF_PEGAWAI/SISWA_SANTRI, regardless of where it had
+      // been routed. `forwardReport` moves a report up to a yayasan bucket by
+      // overwriting `primaryHandlerRole` and leaving `targetLevel` untouched, so
+      // after an escalation the originating unit could still list the report and
+      // call status/forward/comment on it. The unit branch now keys on the
+      // routing alone.
+      const unitActor = {
+        id: 'unit-admin-sdit',
+        name: 'Admin SDIT',
+        roleCode: 'SDIT_ADMIN',
+        unitId: 'unit-sdit',
+      };
+
+      it('no longer lists a SISWA_SANTRI report escalated to the Pengawas', () => {
+        const where = (wbsService as any).buildScopeWhere(unitActor) as any;
+
+        expect(
+          matchesReport(where, {
+            unitId: 'unit-sdit',
+            primaryHandlerRole: 'YAYASAN_PENGAWAS',
+            targetLevel: 'SISWA_SANTRI',
+          })
+        ).toBe(false);
+        expect(
+          matchesReport(where, {
+            unitId: 'unit-sdit',
+            primaryHandlerRole: 'YAYASAN_KETUA',
+            targetLevel: 'STAF_PEGAWAI',
+          })
+        ).toBe(false);
+      });
+
+      it('refuses status/forward/comment from the originating unit after escalation', async () => {
+        // The report exists in the unit, but its routing is now foundation-wide.
+        // The scoped lookup matches nothing, so every mutation is refused 403.
+        // The unit branch must emit a predicate that does NOT admit the
+        // escalated row — assert that directly, so the test fails if the
+        // `targetLevel` fallback ever returns.
+        const actor: any = {
+          id: 'unit-admin-sdit',
+          name: 'Admin SDIT',
+          roleCode: 'SDIT_ADMIN',
+          unitId: 'unit-sdit',
+        };
+
+        const escalated = {
+          unitId: 'unit-sdit',
+          primaryHandlerRole: 'YAYASAN_PENGAWAS',
+          targetLevel: 'SISWA_SANTRI',
+        };
+        expect(matchesReport((wbsService as any).buildScopeWhere(actor), escalated)).toBe(false);
+
+        (prisma.wbsReport.findFirst as any).mockResolvedValue(null);
+        (prisma.wbsReport.findUnique as any).mockResolvedValue({ id: 'report-escalated' });
+
+        await expect(
+          wbsService.updateReportStatus(
+            'report-escalated',
+            { status: WbsStatus.DALAM_PENYELIDIKAN } as any,
+            actor
+          )
+        ).rejects.toMatchObject({ statusCode: 403 });
+        await expect(
+          wbsService.forwardReport(
+            'report-escalated',
+            { toRole: 'YAYASAN_KETUA', reason: 'alasan panjang' },
+            actor
+          )
+        ).rejects.toMatchObject({ statusCode: 403 });
+        await expect(
+          wbsService.addHandlerComment('report-escalated', 'halo', undefined, actor)
+        ).rejects.toMatchObject({ statusCode: 403 });
+
+        // Every scoped lookup carried the routing-only predicate, not the old
+        // `targetLevel` fallback. The scope may be wrapped in an OR that also
+        // admits a report explicitly assigned to this actor, so the assertion
+        // walks the clauses rather than the top-level object.
+        for (const call of (prisma.wbsReport.findFirst as any).mock.calls) {
+          const where = call[0].where;
+          expect(JSON.stringify(where)).not.toContain('SISWA_SANTRI');
+          const clauses: any[] = where.OR ?? [where];
+          for (const clause of clauses) {
+            if (clause.primaryHandlerRole === 'UNIT_ADMIN') {
+              expect(clause.unitId).toBe('unit-sdit');
+            }
+            if (clause.assignedUserId !== undefined) {
+              expect(clause.assignedUserId).toBe('unit-admin-sdit');
+            }
+          }
+        }
+        expect(prisma.wbsReport.update).not.toHaveBeenCalled();
+        expect(prisma.wbsComment.create).not.toHaveBeenCalled();
+      });
+
+      it('keeps a unit-routed report readable by the unit', () => {
+        // The default STAF/SISWA routing still resolves to `UNIT_ADMIN` at
+        // creation, so the unit branch must still admit it — the fix narrows the
+        // grant to the routing, it does not remove the unit's own queue.
+        const where = (wbsService as any).buildScopeWhere(unitActor) as any;
+        expect(
+          matchesReport(where, {
+            unitId: 'unit-sdit',
+            primaryHandlerRole: 'UNIT_ADMIN',
+            targetLevel: 'SISWA_SANTRI',
+          })
+        ).toBe(true);
+      });
+    });
+
     it('re-checks scope inside the mutation transaction, under the row lock', () => {
       // The pre-transaction load is not enough: a forward that commits in the
       // gap can move the report to a destination the actor's active role may no

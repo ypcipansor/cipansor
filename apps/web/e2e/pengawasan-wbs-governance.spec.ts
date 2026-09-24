@@ -840,3 +840,44 @@ test.describe.serial("Scoped account pickers and WBS handler replies", () => {
     ).toHaveCount(0);
   });
 });
+
+test.describe("Financial arrears oversight tab", () => {
+  test("the arrears panel attributes each row to its invoice unit", async ({
+    page,
+  }) => {
+    // A Pengawas has `canViewArrears`, and the tab is rendered from the live
+    // API — no page.route mocks, so this drives the real aggregate queries.
+    await signIn(page, "pengawas");
+    await page.goto("/pengawasan");
+
+    await page.getByRole("tab", { name: /Tagihan Belum Dibayar/i }).click();
+
+    await expect(
+      page.getByRole("heading", {
+        name: /Laporan Tagihan & Tunggakan Pembayaran/i,
+      }),
+    ).toBeVisible({ timeout: 20000 });
+
+    // The top-pupil table exists and its NIS column is labelled "NIS saat ini",
+    // so the current NIS is never read as belonging to the invoice's unit.
+    const table = page.locator("table").filter({ hasText: "NIS saat ini" });
+    await expect(table).toBeVisible({ timeout: 20000 });
+    await expect(
+      table.getByRole("columnheader", { name: "Unit Penagihan" }),
+    ).toBeVisible();
+    await expect(
+      table.getByRole("columnheader", { name: "Unit Saat Ini" }),
+    ).toBeVisible();
+  });
+
+  test("a role without arrears access never sees the tab", async ({ page }) => {
+    // A teacher has no governance access at all; the tab and its panel must be
+    // absent rather than rendered empty.
+    await signIn(page, "teacher");
+    await page.goto("/pengawasan");
+
+    await expect(
+      page.getByRole("tab", { name: /Tagihan Belum Dibayar/i }),
+    ).toHaveCount(0);
+  });
+});

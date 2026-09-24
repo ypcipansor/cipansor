@@ -432,11 +432,21 @@ export interface FinancialArrearsUnitDto {
 export interface FinancialArrearsStudentDto {
   studentId: string;
   studentName: string;
+  /**
+   * The pupil's **current** NIS, from `Student.nis`. A NIS can be reissued when
+   * a pupil moves unit, so this is labelled "NIS saat ini" wherever it is shown
+   * against a historical invoice — it identifies the person now, not the
+   * invoice's unit of record.
+   */
   nis: string;
   /** The invoice unit this row aggregates. A pupil with unpaid invoices from
    *  several units has one row per unit, never a single conflated row. */
   unitId: string;
   unitName: string;
+  /** The pupil's current unit, which may differ from `unitId` for a transfer.
+   *  Kept beside the invoice unit so the two are never conflated. */
+  currentUnitId: string | null;
+  currentUnitName: string | null;
   totalUnpaid: number;
   invoiceCount: number;
 }

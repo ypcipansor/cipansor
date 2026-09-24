@@ -24,6 +24,7 @@ vi.mock('../pengawasan.service', () => ({
     deleteFollowUp: vi.fn(),
     getFollowUpAuditUnitId: vi.fn(),
     updateAudit: vi.fn(),
+    suggestAuditSchedules: vi.fn(),
   },
 }));
 
@@ -41,6 +42,7 @@ import {
   updateFollowUp,
   deleteFollowUp,
   updateAudit,
+  getAuditSuggestions,
 } from '../pengawasan.controller';
 import { RoleCode } from '@prisma/client';
 
@@ -539,5 +541,71 @@ describe('pengawasanController — createAudit target unit', () => {
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({ success: true, data: { id: AUDIT_UUID } })
     );
+  });
+});
+
+describe('pengawasanController — audit suggestion unit scope', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('defaults a foundation-wide role that carries a unit to every unit', async () => {
+    // BUG: the controller used the actor's token `unitId` as the default even
+    // for a foundation-wide role, so a Pengawas attached to one unit saw
+    // suggestions for that unit only while `listAudits` showed every unit.
+    (pengawasanService.suggestAuditSchedules as any).mockResolvedValue([]);
+    const res = mockResponse();
+
+    const next = await runHandler(
+      getAuditSuggestions,
+      mockRequest({}, {}, { roleCode: RoleCode.YAYASAN_PENGAWAS, unitId: 'unit-yayasan' }),
+      res
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect(pengawasanService.suggestAuditSchedules).toHaveBeenCalledWith(undefined);
+  });
+
+  it('narrows a foundation-wide role when a unit is explicitly requested', async () => {
+    (pengawasanService.suggestAuditSchedules as any).mockResolvedValue([]);
+    const res = mockResponse();
+
+    const req = mockRequest(
+      {},
+      {},
+      { roleCode: RoleCode.YAYASAN_PENGAWAS, unitId: 'unit-yayasan' }
+    );
+    req.query = { unitId: 'unit-sdit' };
+
+    const next = await runHandler(getAuditSuggestions, req, res);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(pengawasanService.suggestAuditSchedules).toHaveBeenCalledWith('unit-sdit');
+  });
+
+  it('keeps a unit-scoped role locked to its own unit and ignores an override', async () => {
+    (pengawasanService.suggestAuditSchedules as any).mockResolvedValue([]);
+    const res = mockResponse();
+
+    const req = mockRequest({}, {}, { roleCode: RoleCode.SDIT_ADMIN, unitId: 'unit-sdit' });
+    req.query = { unitId: 'unit-smpit' };
+
+    await runHandler(getAuditSuggestions, req, res);
+
+    expect(pengawasanService.suggestAuditSchedules).toHaveBeenCalledWith('unit-sdit');
+  });
+
+  it('refuses a unit-scoped role without a unit rather than defaulting to all', async () => {
+    (pengawasanService.suggestAuditSchedules as any).mockResolvedValue([]);
+    const res = mockResponse();
+
+    const next = await runHandler(
+      getAuditSuggestions,
+      mockRequest({}, {}, { roleCode: RoleCode.SDIT_ADMIN, unitId: null }),
+      res
+    );
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 401 }));
+    expect(pengawasanService.suggestAuditSchedules).not.toHaveBeenCalled();
   });
 });

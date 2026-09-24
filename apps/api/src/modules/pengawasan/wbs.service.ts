@@ -450,20 +450,26 @@ export class WbsService {
       return { id: { in: [] } };
     }
 
-    // The unit branch matches the report's *routing* as well as its default
-    // target level. `forwardReport` can route any report to the unit bucket
-    // (`toRole: 'UNIT_ADMIN'`) without naming a person, and that sets
-    // `primaryHandlerRole` while leaving `targetLevel` untouched — so a
-    // `KEPALA_UNIT` report forwarded to the unit queue matched neither clause
-    // and became invisible to the very unit it was routed into. Matching
-    // `primaryHandlerRole` is what makes the role-level destination readable;
-    // the target-level clause keeps the default STAF/SISWA routing visible.
+    // The unit branch is the report's *current routing* and nothing else.
+    //
+    // `primaryHandlerRole` is the single source of truth for who may act: every
+    // new report has it set from creation (`getPrimaryHandlerRole` maps
+    // STAF_PEGAWAI/SISWA_SANTRI to `UNIT_ADMIN` when the report has a unit), and
+    // `forwardReport` overwrites it on every escalation. Matching `targetLevel`
+    // as well looked equivalent — until a unit's report was forwarded *up* to a
+    // yayasan bucket, which leaves `targetLevel` untouched. The old
+    // `targetLevel` clause then kept the report readable by the originating
+    // unit, so an escalated case could still be listed, re-routed and commented
+    // on by the very unit it was escalated away from: the scope check and the
+    // routing disagreed, and routing is what escalates.
+    //
+    // No legacy fallback is needed: `primary_handler_role` has been NOT NULL
+    // since the table's first migration (`20260915160000_wbs_and_board_suspensions`),
+    // so there is no NULL row and no report this branch would otherwise miss.
+    // The column is the whole grant.
     return withAssignment({
       unitId,
-      OR: [
-        { primaryHandlerRole: 'UNIT_ADMIN' },
-        { targetLevel: { in: [WbsTargetLevel.STAF_PEGAWAI, WbsTargetLevel.SISWA_SANTRI] } },
-      ],
+      primaryHandlerRole: 'UNIT_ADMIN',
     });
   }
 

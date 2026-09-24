@@ -335,6 +335,17 @@ function PublicWbsContent() {
                   onChange={(e) => setAttachmentUrl(e.target.value)}
                   className="bg-white"
                 />
+                {/* The evidence link is a link, not an upload: the yayasan
+                    cannot revoke access to a file it does not host, and anyone
+                    with the link can read it. The reporter is told, and is
+                    told not to share credentials. Background and the deferred
+                    managed-upload design: docs/planning/wbs-evidence-attachments.md */}
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Bukti berupa tautan (bukan unggahan) — pastikan tautan hanya
+                  dapat diakses oleh penangan laporan, dan jangan menyertakan
+                  kredensial apa pun di dalamnya. Tautan yang sudah dibagikan
+                  tidak dapat dicabut kembali oleh yayasan.
+                </p>
               </div>
 
               {/* Reporter Identity Toggle */}

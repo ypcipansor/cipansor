@@ -37,6 +37,7 @@ vi.mock('../../lib/prisma', () => ({
     invoice: {
       findMany: vi.fn(),
     },
+    $queryRaw: vi.fn(),
     $transaction: vi.fn((callback) => callback(prisma)),
   },
 }));
@@ -258,161 +259,124 @@ describe('Pengawasan Service', () => {
     });
   });
 
-  describe('Financial arrears — unit of record', () => {
-    it("filters on the invoice unit, not the student's current unit", async () => {
-      vi.mocked(prisma.invoice.findMany).mockResolvedValue([] as any);
+  describe('Financial arrears — database aggregation', () => {
+    /**
+     * `getFinancialArrears` issues three aggregates — summary, per-unit, and
+     * top-15 — through `Promise.all`, in that order. Each mockResolvedValueOnce
+     * below answers one of them, so the tests double as an assertion that the
+     * method no longer loads the whole unpaid book into Node.
+     */
+    const mockAggregates = (summary: any[], units: any[], students: any[]) => {
+      (prisma.$queryRaw as any)
+        .mockResolvedValueOnce(summary)
+        .mockResolvedValueOnce(units)
+        .mockResolvedValueOnce(students);
+    };
 
-      await pengawasanService.getFinancialArrears('unit-lama');
+    const emptyAggregates = () => mockAggregates([], [], []);
 
-      // `unitId` is NOT NULL and backfilled from the issuing payment type, so
-      // there is no `unitId: null` fallback to the pupil's current unit.
-      expect(prisma.invoice.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({ unitId: 'unit-lama' }),
-        })
-      );
-      const where = vi.mocked(prisma.invoice.findMany).mock.calls[0][0]!.where as Record<
-        string,
-        unknown
-      >;
-      expect(where).not.toHaveProperty('OR');
-    });
-
-    it("groups a transferred student's old invoice under the issuing unit", async () => {
-      vi.mocked(prisma.invoice.findMany).mockResolvedValue([
-        {
-          id: 'inv-1',
-          studentId: 'student-1',
-          amount: { toNumber: () => 500000 },
-          paidAmount: { toNumber: () => 0 },
-          dueDate: new Date('2026-01-01'),
-          status: 'PENDING',
-          // Frozen on the invoice: the unit that raised it.
-          unitId: 'unit-lama',
-          unit: { id: 'unit-lama', name: 'SD IT' },
-          student: {
-            id: 'student-1',
-            nis: '123',
-            user: { name: 'Santri Pindah' },
-            // The pupil has since moved.
-            unitId: 'unit-baru',
-            unit: { id: 'unit-baru', name: 'SMP IT' },
+    it('maps the aggregate rows into the response contract', async () => {
+      mockAggregates(
+        [{ total: 200000, unpaidCount: 2, overdueCount: 1 }],
+        [
+          {
+            unitId: 'unit-lama',
+            unitName: 'SD IT',
+            totalUnpaid: 200000,
+            count: 2,
+            overdueCount: 1,
           },
-          paymentType: { id: 'pt-1', name: 'SPP', code: 'SPP' },
-        },
-      ] as any);
+        ],
+        [
+          {
+            studentId: 'student-1',
+            unitId: 'unit-lama',
+            unitName: 'SD IT',
+            totalUnpaid: 200000,
+            invoiceCount: 2,
+            nis: '123',
+            studentName: 'Santri Pindah',
+            currentUnitId: 'unit-baru',
+            currentUnitName: 'SMP IT',
+          },
+        ]
+      );
 
       const result = await pengawasanService.getFinancialArrears();
 
-      const breakdown = result.unitBreakdown as Array<{ unitId: string; unitName: string }>;
-      expect(breakdown).toHaveLength(1);
-      expect(breakdown[0]).toMatchObject({ unitId: 'unit-lama', unitName: 'SD IT' });
-      expect(breakdown.some((u) => u.unitId === 'unit-baru')).toBe(false);
-      // The name comes from the linked User; Student carries no `name`.
-      expect(result.topArrearsStudents[0]).toMatchObject({ studentName: 'Santri Pindah' });
-    });
-  });
-
-  describe('Financial arrears — summary counts only positive balances', () => {
-    const invoice = (
-      over: Partial<{
-        id: string;
-        studentId: string;
-        amount: number;
-        paidAmount: number;
-        dueDate: Date;
-        status: string;
-        unitId: string | null;
-        unitName: string;
-      }> = {}
-    ) => {
-      const {
-        id = 'inv-x',
-        studentId = 'student-1',
-        amount = 100000,
-        paidAmount = 0,
-        dueDate = new Date('2026-01-01'),
-        status = 'PENDING',
-        unitId = 'unit-1',
-        unitName = 'SD IT',
-      } = over;
-      return {
-        id,
-        studentId,
-        // Plain numbers: the service coerces with `Number(...)`, which is NaN
-        // for a `{ toNumber }` stub.
-        amount,
-        paidAmount,
-        dueDate,
-        status,
-        unitId,
-        unit: unitId ? { id: unitId, name: unitName } : null,
-        student: {
-          id: studentId,
-          nis: '123',
-          user: { name: `Santri ${studentId}` },
-          unitId: 'unit-1',
-          unit: { id: 'unit-1', name: 'SD IT' },
-        },
-        paymentType: { id: 'pt-1', name: 'SPP', code: 'SPP' },
-      } as any;
-    };
-
-    const load = async (invoices: any[]) => {
-      vi.mocked(prisma.invoice.findMany).mockResolvedValue(invoices);
-      return pengawasanService.getFinancialArrears();
-    };
-
-    it('excludes a fully paid PENDING invoice from every figure', async () => {
-      const result = await load([
-        invoice({ id: 'settled', amount: 100000, paidAmount: 100000, status: 'PENDING' }),
-        invoice({ id: 'real', amount: 250000, paidAmount: 50000, status: 'PARTIAL' }),
+      expect(result.summary).toEqual({
+        totalUnpaidAmount: 200000,
+        totalUnpaidInvoicesCount: 2,
+        overdueInvoicesCount: 1,
+      });
+      expect(result.unitBreakdown).toEqual([
+        { unitId: 'unit-lama', unitName: 'SD IT', totalUnpaid: 200000, count: 2, overdueCount: 1 },
       ]);
+      // The row is attributed to the issuing unit, while the pupil's current
+      // unit travels beside it so the two are never conflated.
+      expect(result.topArrearsStudents[0]).toMatchObject({
+        studentId: 'student-1',
+        unitId: 'unit-lama',
+        unitName: 'SD IT',
+        currentUnitId: 'unit-baru',
+        currentUnitName: 'SMP IT',
+        nis: '123',
+        studentName: 'Santri Pindah',
+        totalUnpaid: 200000,
+        invoiceCount: 2,
+      });
 
-      expect(result.summary.totalUnpaidInvoicesCount).toBe(1);
-      expect(result.summary.totalUnpaidAmount).toBe(200000);
-      const units = result.unitBreakdown as Array<{ count: number; totalUnpaid: number }>;
-      expect(units.reduce((n, u) => n + u.count, 0)).toBe(1);
-      expect(result.topArrearsStudents[0].invoiceCount).toBe(1);
+      // Three aggregates, not a findMany of every unpaid invoice.
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(3);
+      expect(prisma.invoice.findMany).not.toHaveBeenCalled();
     });
 
-    it('excludes an overpaid invoice (negative balance) from every figure', async () => {
-      const result = await load([
-        invoice({ id: 'over', amount: 100000, paidAmount: 150000, status: 'OVERDUE' }),
-        invoice({ id: 'real', amount: 100000, paidAmount: 0, status: 'OVERDUE' }),
-      ]);
+    it('bounds every aggregate by a positive outstanding balance', async () => {
+      emptyAggregates();
 
-      expect(result.summary.totalUnpaidInvoicesCount).toBe(1);
-      expect(result.summary.overdueInvoicesCount).toBe(1);
-      expect(result.summary.totalUnpaidAmount).toBe(100000);
+      await pengawasanService.getFinancialArrears();
+
+      // Each of the three queries must carry the same balance predicate, so a
+      // fully-paid PENDING or an overpaid invoice can never inflate a figure.
+      for (const call of (prisma.$queryRaw as any).mock.calls) {
+        expect(call[0].sql).toContain('i.amount - i.paid_amount > 0');
+        expect(call[0].sql).toContain("i.status IN ('PENDING', 'PARTIAL', 'OVERDUE')");
+      }
     });
 
-    it('keeps summary, unit breakdown and student counts consistent', async () => {
-      const result = await load([
-        invoice({ id: 'a', studentId: 's1', amount: 300000, paidAmount: 0, status: 'PENDING' }),
-        invoice({
-          id: 'b',
-          studentId: 's1',
-          amount: 100000,
-          paidAmount: 100000,
-          status: 'PENDING',
-        }),
-        invoice({
-          id: 'c',
-          studentId: 's2',
-          amount: 400000,
-          paidAmount: 100000,
-          status: 'OVERDUE',
-        }),
-        invoice({ id: 'd', studentId: 's2', amount: 50000, paidAmount: 80000, status: 'PARTIAL' }),
-      ]);
+    it('scopes every aggregate to the requested invoice unit, not the current unit', async () => {
+      emptyAggregates();
 
-      const units = result.unitBreakdown as Array<{ count: number }>;
-      const unitCount = units.reduce((n, u) => n + u.count, 0);
-      const studentInvoiceCount = result.topArrearsStudents.reduce((n, s) => n + s.invoiceCount, 0);
-      expect(result.summary.totalUnpaidInvoicesCount).toBe(2);
-      expect(unitCount).toBe(result.summary.totalUnpaidInvoicesCount);
-      expect(studentInvoiceCount).toBe(result.summary.totalUnpaidInvoicesCount);
+      await pengawasanService.getFinancialArrears('unit-lama');
+
+      for (const call of (prisma.$queryRaw as any).mock.calls) {
+        expect(call[0].sql).toContain('AND i.unit_id =');
+        expect(call[0].values).toContain('unit-lama');
+      }
+    });
+
+    it('leaves the unit filter out for a foundation-wide read', async () => {
+      emptyAggregates();
+
+      await pengawasanService.getFinancialArrears();
+
+      for (const call of (prisma.$queryRaw as any).mock.calls) {
+        expect(call[0].sql).not.toContain('AND i.unit_id =');
+      }
+    });
+
+    it('returns zeroed summary when there are no outstanding invoices', async () => {
+      emptyAggregates();
+
+      const result = await pengawasanService.getFinancialArrears();
+
+      expect(result.summary).toEqual({
+        totalUnpaidAmount: 0,
+        totalUnpaidInvoicesCount: 0,
+        overdueInvoicesCount: 0,
+      });
+      expect(result.unitBreakdown).toEqual([]);
+      expect(result.topArrearsStudents).toEqual([]);
     });
   });
 });

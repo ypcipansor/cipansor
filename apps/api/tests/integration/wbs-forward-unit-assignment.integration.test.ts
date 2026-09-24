@@ -71,6 +71,11 @@ INSERT INTO wbs_reports
 VALUES
   ('r-unit', 'WBS-202601-UNIT01', '${'c'.repeat(64)}', 'KEUANGAN_ASET', 'KEPALA_UNIT',
    'Subjek', 'Deskripsi laporan yang cukup panjang.', 'unit-sdit', 'YAYASAN_PENGAWAS',
+   'DALAM_PENYELIDIKAN', 'user-pengawas', now()),
+  -- A unit's own STAFF/SISWA report, escalated up to the Pengawas. Its
+  -- target_level is still SISWA_SANTRI but its routing has moved off the unit.
+  ('r-escalated', 'WBS-202601-UNIT02', '${'d'.repeat(64)}', 'ETIKA_PERILAKU', 'SISWA_SANTRI',
+   'Subjek', 'Deskripsi laporan yang cukup panjang.', 'unit-sdit', 'YAYASAN_PENGAWAS',
    'DALAM_PENYELIDIKAN', 'user-pengawas', now());
 `;
 
@@ -329,6 +334,60 @@ describeDb('WBS forward recipient unit-assignment eligibility (real PostgreSQL)'
       // per-report endpoint was removed as orphaned.
       const listed = await service.getReportsForUser(unitHandler);
       expect(listed.map((r) => r.id)).toContain('r-unit');
+    } finally {
+      await unloadService(previousUrl);
+    }
+  });
+
+  it('hides and refuses a STAFF/SISWA report the unit escalated to the Pengawas', async () => {
+    // SECURITY: the unit branch of `buildScopeWhere` matched `targetLevel`
+    // STAF_PEGAWAI/SISWA_SANTRI as well as the routing, so a report the unit
+    // itself forwarded up to a yayasan bucket stayed listable and mutable by the
+    // originating unit — the escalation was cosmetic. The branch now keys on
+    // `primaryHandlerRole` alone, and `forwardReport` overwrites it.
+    const { service, previousUrl } = await loadService();
+    try {
+      const unitHandler: WbsActor = {
+        id: 'user-multi',
+        name: 'Multi',
+        roleCode: 'SDIT_ADMIN',
+        unitId: 'unit-sdit',
+      };
+
+      // Positive control: route the unit's own report back to the unit queue.
+      // That sets `primary_handler_role = 'UNIT_ADMIN'`, so it stays visible —
+      // the fix narrows the grant to the routing, it does not break the unit's
+      // own queue.
+      await service.forwardReport(
+        'r-unit',
+        { toRole: 'UNIT_ADMIN', reason: 'Diteruskan ke kepala unit terkait.' },
+        actor
+      );
+
+      const listed = await service.getReportsForUser(unitHandler);
+      const ids = listed.map((r) => r.id);
+      expect(ids).toContain('r-unit');
+      expect(ids).not.toContain('r-escalated');
+
+      // Every mutation path must refuse the out-of-scope report. It exists, so
+      // the refusal is 403 (not 404).
+      await expect(
+        service.updateReportStatus(
+          'r-escalated',
+          { status: 'DALAM_PENYELIDIKAN', resolution: undefined } as any,
+          unitHandler
+        )
+      ).rejects.toMatchObject({ statusCode: 403 });
+      await expect(
+        service.forwardReport(
+          'r-escalated',
+          { toRole: 'UNIT_ADMIN', reason: 'Diteruskan kembali ke unit.' },
+          unitHandler
+        )
+      ).rejects.toMatchObject({ statusCode: 403 });
+      await expect(
+        service.addHandlerComment('r-escalated', 'halo', undefined, unitHandler)
+      ).rejects.toMatchObject({ statusCode: 403 });
     } finally {
       await unloadService(previousUrl);
     }
