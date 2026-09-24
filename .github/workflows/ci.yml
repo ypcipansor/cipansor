@@ -79,6 +79,17 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
+      # Every .ts/.tsx file is kept in Prettier's format (the repo was
+      # normalised in one commit, listed in .git-blame-ignore-revs). Checked
+      # first because it is the cheapest failure: the fix is `pnpm format`.
+      # Agents are stopped before this: .claude/hooks/format-before-push.sh
+      # refuses a push with unformatted files.
+      - name: Check formatting
+        run: |
+          pnpm format:check || {
+            echo "::error title=Unformatted files::Run \`pnpm format\` and commit the result (the [warn] lines above list the files)."
+            exit 1
+          }
       - run: pnpm --filter api db:generate
       - run: pnpm --filter @cipansor/shared build
       - name: Lint API
