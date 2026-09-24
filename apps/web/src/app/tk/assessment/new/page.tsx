@@ -50,7 +50,7 @@ import { useAuthStore } from "@/stores/auth";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Progress } from "@/components/ui/progress";
-import { objectUrlForFile } from "@/lib/files";
+import { useFilePreviews } from "@/hooks/use-file-previews";
 import { useAddEvidence } from "@/hooks/use-tk-assessment";
 import {
   ImagePlus,
@@ -150,25 +150,13 @@ export default function CreateTKAssessmentPage() {
   });
 
   const [step, setStep] = useState(1);
-  const [files, setFiles] = useState<File[]>([]);
-  const [previews, setPreviews] = useState<string[]>([]);
+  const { files, previews, addFiles, removeAt } = useFilePreviews();
 
   const createMutation = useCreateTKAssessment();
   const addEvidenceMutation = useAddEvidence();
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      const newFiles = Array.from(e.target.files);
-      setFiles((prev) => [...prev, ...newFiles]);
-
-      const newPreviews = newFiles.map((file) => objectUrlForFile(file));
-      setPreviews((prev) => [...prev, ...newPreviews]);
-    }
-  };
-
-  const removeFile = (index: number) => {
-    setFiles((prev) => prev.filter((_, i) => i !== index));
-    setPreviews((prev) => prev.filter((_, i) => i !== index));
+    if (e.target.files) addFiles(Array.from(e.target.files));
   };
 
   const onSubmit = async (values: FormValues) => {
@@ -679,7 +667,7 @@ export default function CreateTKAssessmentPage() {
                             />
                             <button
                               type="button"
-                              onClick={() => removeFile(index)}
+                              onClick={() => removeAt(index)}
                               className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
                             >
                               <X className="h-3 w-3" />

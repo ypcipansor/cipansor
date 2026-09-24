@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { authFileUrl, objectUrlForFile } from "./files";
+import { authFileUrl, objectUrlForFile, releaseObjectUrl } from "./files";
 
 describe("authFileUrl", () => {
   beforeEach(() => {
@@ -58,5 +58,27 @@ describe("objectUrlForFile", () => {
   it("drops anything that is not a blob: URL", () => {
     vi.spyOn(URL, "createObjectURL").mockReturnValue("javascript:alert(1)");
     expect(objectUrlForFile({} as File)).toBe("");
+  });
+});
+
+describe("releaseObjectUrl", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("revokes a blob URL", () => {
+    const revoke = vi
+      .spyOn(URL, "revokeObjectURL")
+      .mockImplementation(() => {});
+    releaseObjectUrl("blob:http://localhost/abc-123");
+    expect(revoke).toHaveBeenCalledWith("blob:http://localhost/abc-123");
+  });
+
+  it("ignores empty and non-blob URLs", () => {
+    const revoke = vi
+      .spyOn(URL, "revokeObjectURL")
+      .mockImplementation(() => {});
+    releaseObjectUrl(null);
+    releaseObjectUrl(undefined);
+    releaseObjectUrl("https://example.com/a.png");
+    expect(revoke).not.toHaveBeenCalled();
   });
 });

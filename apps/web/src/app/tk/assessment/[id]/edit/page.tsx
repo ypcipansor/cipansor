@@ -1,7 +1,8 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { authFileUrl, objectUrlForFile } from "@/lib/files";
+import { authFileUrl } from "@/lib/files";
+import { useFilePreviews } from "@/hooks/use-file-previews";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -151,8 +152,12 @@ export default function EditTKAssessmentPage() {
   });
 
   const [step, setStep] = useState(1);
-  const [files, setFiles] = useState<File[]>([]);
-  const [previews, setPreviews] = useState<string[]>([]);
+  const {
+    files: newFiles,
+    previews,
+    addFiles,
+    removeAt: removeNewFile,
+  } = useFilePreviews();
   const [existingEvidences, setExistingEvidences] = useState<any[]>([]);
 
   const updateMutation = useUpdateTKAssessment();
@@ -179,18 +184,7 @@ export default function EditTKAssessmentPage() {
   }, [assessment, form]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      const newFiles = Array.from(e.target.files);
-      setFiles((prev) => [...prev, ...newFiles]);
-
-      const newPreviews = newFiles.map((file) => objectUrlForFile(file));
-      setPreviews((prev) => [...prev, ...newPreviews]);
-    }
-  };
-
-  const removeNewFile = (index: number) => {
-    setFiles((prev) => prev.filter((_, i) => i !== index));
-    setPreviews((prev) => prev.filter((_, i) => i !== index));
+    if (e.target.files) addFiles(Array.from(e.target.files));
   };
 
   const deleteExistingEvidence = async (evidenceId: string) => {
@@ -214,8 +208,8 @@ export default function EditTKAssessmentPage() {
       });
 
       // Upload new evidence if any
-      if (files.length > 0) {
-        for (const file of files) {
+      if (newFiles.length > 0) {
+        for (const file of newFiles) {
           const formData = new FormData();
           formData.append("file", file);
           formData.append(

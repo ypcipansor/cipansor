@@ -35,3 +35,13 @@ export function objectUrlForFile(file: File): string {
   const url = URL.createObjectURL(file);
   return url.startsWith("blob:") ? encodeURI(url) : "";
 }
+
+/**
+ * Release a preview URL returned by `objectUrlForFile`. A blob URL pins the
+ * file's bytes in memory until it is revoked, so a preview that is replaced or
+ * discarded must be released explicitly; revoking twice is a no-op.
+ */
+export function releaseObjectUrl(url: string | null | undefined): void {
+  if (!url || !url.startsWith("blob:")) return;
+  URL.revokeObjectURL(url);
+}
