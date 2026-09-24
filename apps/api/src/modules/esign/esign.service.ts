@@ -180,18 +180,31 @@ function asHttpError(error: unknown): unknown {
  * `ktpDeletedAt` disimpan justru supaya penghapusannya dapat ditunjukkan:
  * kolom kosong tidak dapat membedakan "sudah dihapus" dari "tidak pernah ada".
  */
-async function discardIdentityDocument(userId: string): Promise<void> {
-  const identity = await prisma.userIdentity.findUnique({
-    where: { userId },
-    select: { ktpFileName: true },
-  });
-  if (!identity?.ktpFileName) return;
+async function discardIdentityDocument(
+  userId: string,
+  expectedFileName: string | null
+): Promise<void> {
+  // Compare-and-delete atas nama berkas yang TERIKAT pada keputusan penolakan.
+  //
+  // Pembacaan `findUnique` lalu `delete` (pola lama) menghapus berkas APA PUN
+  // yang sedang dirujuk kolom saat cleanup berjalan. Bila pemohon sudah
+  // mengunggah scan pengganti di sela antara commit penolakan dan cleanup, scan
+  // BARU yang sah itu ikut terhapus dan kolomnya dinolkan — padahal ia sedang
+  // melengkapi persyaratan untuk mengajukan ulang.
+  //
+  // Guard `ktpFileName = expectedFileName` pada `updateMany` menjadikan klaim
+  // baris dan penghapusan berkas satu operasi: kita hanya meng-unlink nama yang
+  // benar-benar berhasil kita klaim. Kolom yang sudah berubah (unggahan
+  // pengganti) tidak cocok, `count` = 0, dan tak ada yang dihapus.
+  if (!expectedFileName) return;
 
-  await deleteIdentityDocument(identity.ktpFileName);
-  await prisma.userIdentity.update({
-    where: { userId },
+  const cleared = await prisma.userIdentity.updateMany({
+    where: { userId, ktpFileName: expectedFileName },
     data: { ktpFileName: null, ktpDeletedAt: new Date() },
   });
+  if (cleared.count !== 1) return;
+
+  await deleteIdentityDocument(expectedFileName);
 }
 
 export const EsignService = {
@@ -648,6 +661,15 @@ export const EsignService = {
         if (!current || current.status !== SigningKeyRequestStatus.PENDING) {
           throw Errors.badRequest('Pengajuan ini sudah diputuskan.');
         }
+        // Finding 2 — berkas identitas yang TERIKAT pada pengajuan ini dibaca
+        // DI DALAM transaksi (di bawah lock) dan dikembalikan ke pemanggil.
+        // Cleanup setelah commit memakai nama ini sebagai guard: bila pemohon
+        // sudah mengunggah scan pengganti, namanya berbeda dan scan baru itu
+        // tidak boleh dihapus.
+        const boundIdentity = await tx.userIdentity.findUnique({
+          where: { userId: request.userId },
+          select: { ktpFileName: true },
+        });
         const claimed = await tx.signingKeyRequest.updateMany({
           where: { id: requestId, status: SigningKeyRequestStatus.PENDING },
           data: {
@@ -660,14 +682,23 @@ export const EsignService = {
         if (claimed.count !== 1) {
           throw Errors.badRequest('Pengajuan ini sudah diputuskan.');
         }
-        eventBus.emit('notification:send', {
-          userId: request.userId,
-          type: 'WARNING',
-          title: 'Pengajuan Tanda Tangan Ditolak',
-          message: note ? `Pengajuan ditolak: ${note}` : 'Pengajuan tanda tangan Anda ditolak.',
-          data: { requestId },
-        });
-        return tx.signingKeyRequest.findUniqueOrThrow({ where: { id: requestId } });
+        return {
+          rejected: await tx.signingKeyRequest.findUniqueOrThrow({ where: { id: requestId } }),
+          boundFileName: boundIdentity?.ktpFileName ?? null,
+        };
+      });
+
+      // Finding 1 — notifikasi dikirim SETELAH transaksi benar-benar commit.
+      // Dulu `eventBus.emit` dipanggil di DALAM `$transaction`: bila transaksi
+      // di-ROLLBACK (mis. klaim status kalah balapan, atau `findUniqueOrThrow`
+      // melempar), `emit` sudah telanjur berjalan karena bukan operasi DB —
+      // pemohon menerima "pengajuan ditolak" padahal statusnya masih PENDING.
+      eventBus.emit('notification:send', {
+        userId: request.userId,
+        type: 'WARNING',
+        title: 'Pengajuan Tanda Tangan Ditolak',
+        message: note ? `Pengajuan ditolak: ${note}` : 'Pengajuan tanda tangan Anda ditolak.',
+        data: { requestId },
       });
 
       // Ditolak berarti tidak ada kunci yang terbit, jadi foto KTP-nya tidak
@@ -677,7 +708,7 @@ export const EsignService = {
       // berkas di disk yang masih dapat disapu penyapu retensi, sedangkan
       // melempar galat di sini akan membuat penolakan yang sah tampak gagal.
       try {
-        await discardIdentityDocument(request.userId);
+        await discardIdentityDocument(request.userId, rejected.boundFileName);
       } catch (err) {
         logger.warn('Gagal menghapus dokumen identitas setelah penolakan pengajuan kunci', {
           requestId,
@@ -685,7 +716,7 @@ export const EsignService = {
           error: err instanceof Error ? err.message : String(err),
         });
       }
-      return rejected;
+      return rejected.rejected;
     }
 
     const days = grantedDays ?? DEFAULT_VALIDITY_DAYS;

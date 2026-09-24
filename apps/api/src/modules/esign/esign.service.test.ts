@@ -56,7 +56,15 @@ vi.mock('../../lib/prisma', () => ({
     letterSignedDocument: { create: vi.fn(), findUnique: vi.fn() },
     auditLog: { create: vi.fn() },
     user: { findUnique: vi.fn() },
-    userIdentity: { findUnique: vi.fn(), findFirst: vi.fn(), upsert: vi.fn(), update: vi.fn() },
+    userIdentity: {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      upsert: vi.fn(),
+      update: vi.fn(),
+      // Finding 2: rejection cleanup is now a guarded compare-and-delete
+      // (`updateMany where ktpFileName = <bound name>`), not read-then-update.
+      updateMany: vi.fn(),
+    },
     $transaction: vi.fn((cb: any) => cb(prisma)),
   },
 }));
@@ -129,6 +137,9 @@ beforeEach(() => {
     id: 'req-1',
     status: 'APPROVED',
   } as any);
+  // Finding 2: the guarded delete claims the row (count 1) only when the
+  // current file name still matches the one bound to the rejected request.
+  vi.mocked(prisma.userIdentity.updateMany).mockResolvedValue({ count: 1 } as any);
 });
 
 /**
@@ -390,15 +401,52 @@ describe('persetujuan menyatakan siapa orangnya', () => {
   it('menghapus foto KTP setelah pengajuan ditolak', async () => {
     vi.mocked(prisma.signingKeyRequest.findUnique).mockResolvedValue(pending as any);
     vi.mocked(prisma.userIdentity.findUnique).mockResolvedValue(verifiedIdentity() as any);
-    vi.mocked(prisma.signingKeyRequest.update).mockResolvedValue({ id: 'req-1' } as any);
 
     await EsignService.decideRequest('req-1', 'superadmin', false, undefined, 'Belum perlu.');
 
-    expect(prisma.userIdentity.update).toHaveBeenCalledWith(
+    // Compare-and-delete: klaim baris dengan guard nama berkas yang terikat.
+    expect(prisma.userIdentity.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
+        where: { userId: 'ketua', ktpFileName: 'ktp-abc.jpg' },
         data: expect.objectContaining({ ktpFileName: null }),
       })
     );
+  });
+
+  /**
+   * Finding 2 (regresi) — cleanup penolakan TIDAK boleh menghapus scan KTP
+   * pengganti.
+   *
+   * Dulu `discardIdentityDocument` membaca `ktpFileName` saat cleanup berjalan
+   * lalu menghapus APA PUN yang dirujuk kolom. Bila pemohon sudah mengunggah
+   * scan baru di sela antara commit penolakan dan cleanup, berkas baru yang
+   * sah itu ikut terhapus dan kolomnya dinolkan.
+   *
+   * Gagal sebelum perbaikan: `updateMany` (atau `update`) menghapus nama baru.
+   * Lulus sesudah: guard nama berkas lama tidak cocok → count 0 → tak ada
+   * `deleteIdentityDocument`/penghapusan.
+   *
+   * Di sini `updateMany` mengembalikan count 0 karena nama saat ini sudah
+   * berbeda dari nama yang terikat pada penolakan.
+   */
+  it('tidak menghapus scan KTP pengganti yang diunggah setelah penolakan', async () => {
+    vi.mocked(prisma.signingKeyRequest.findUnique).mockResolvedValue(pending as any);
+    // Saat keputusan diambil, yang terikat adalah berkas LAMA.
+    vi.mocked(prisma.userIdentity.findUnique).mockResolvedValue(
+      verifiedIdentity({ ktpFileName: 'ktp-lama.jpg' }) as any
+    );
+    // Namun cleanup berjalan setelah pemohon mengganti berkasnya: guard nama
+    // lama tidak cocok dengan kolom saat ini → count 0.
+    vi.mocked(prisma.userIdentity.updateMany).mockResolvedValue({ count: 0 } as any);
+
+    await EsignService.decideRequest('req-1', 'superadmin', false, undefined, 'Belum perlu.');
+
+    // Guard memakai nama yang TERIKAT (lama), bukan nama apa pun yang kebetulan
+    // ada sekarang — inilah yang mencegah scan baru ikut terhapus.
+    expect(prisma.userIdentity.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { userId: 'ketua', ktpFileName: 'ktp-lama.jpg' } })
+    );
+    expect(prisma.userIdentity.update).not.toHaveBeenCalled();
   });
 
   /**
@@ -435,6 +483,40 @@ describe('persetujuan menyatakan siapa orangnya', () => {
         ([args]) => (args as { data?: { ktpFileName?: unknown } }).data?.ktpFileName === null
       );
     expect(erased).toBe(false);
+  });
+
+  /**
+   * Finding 1 (regresi) — notifikasi penolakan TIDAK boleh terkirim bila
+   * transaksinya gagal/rollback.
+   *
+   * Dulu `eventBus.emit('notification:send', …)` dipanggil DI DALAM
+   * `$transaction`. Karena `emit` bukan operasi database, ia berjalan walau
+   * transaksi kemudian di-ROLLBACK — sehingga pemohon menerima "pengajuan
+   * ditolak" padahal statusnya masih PENDING dan penolakan tidak pernah
+   * tersimpan.
+   *
+   * Di sini transaksi gagal SETELAH klaim status (saat `findUniqueOrThrow`
+   * melempar). Gagal sebelum perbaikan: `emit` tetap terpanggil. Lulus sesudah:
+   * `emit` tidak terpanggil sama sekali.
+   */
+  it('tidak mengirim notifikasi penolakan bila transaksi rollback setelah klaim status', async () => {
+    vi.mocked(prisma.signingKeyRequest.findUnique).mockResolvedValue(pending as any);
+    vi.mocked(prisma.userIdentity.findUnique).mockResolvedValue(verifiedIdentity() as any);
+    // Klaim status berhasil (count 1) — inilah titik setelah `emit` lama.
+    vi.mocked(prisma.signingKeyRequest.updateMany).mockResolvedValue({ count: 1 } as any);
+    // ...lalu transaksi gagal setelah klaim: pembacaan ulang melempar.
+    vi.mocked(prisma.signingKeyRequest.findUniqueOrThrow).mockRejectedValue(
+      new Error('boom setelah klaim') as any
+    );
+
+    await expect(
+      EsignService.decideRequest('req-1', 'superadmin', false, undefined, 'Belum perlu.')
+    ).rejects.toThrow(/boom setelah klaim/);
+
+    // Notifikasi HANYA dikirim setelah commit; rollback → tak ada emit.
+    expect(emitMock).not.toHaveBeenCalled();
+    // Dan cleanup berkas tidak berjalan untuk keputusan yang tidak tersimpan.
+    expect(prisma.userIdentity.updateMany).not.toHaveBeenCalled();
   });
 
   it('tidak menuntut verifikasi ulang untuk identitas yang sudah terverifikasi', async () => {
