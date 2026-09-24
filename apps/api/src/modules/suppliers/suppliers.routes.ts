@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authenticate, authorize } from '@/middleware/auth';
+import { authenticate, authorize, isStaffMember } from '@/middleware/auth';
 import { UserRole } from '@prisma/client';
 import * as controller from './suppliers.controller';
 
@@ -13,8 +13,9 @@ const ALLOWED_ROLES = [
   UserRole.TEACHER, // Teachers might need to see them, but maybe restricted
 ];
 
-router.get('/', authenticate, controller.getSuppliers);
-router.get('/:id', authenticate, controller.getSupplier);
+// Supplier addresses, phones and bank accounts: staff only.
+router.get('/', authenticate, isStaffMember, controller.getSuppliers);
+router.get('/:id', authenticate, isStaffMember, controller.getSupplier);
 
 router.post('/', authenticate, authorize(...ALLOWED_ROLES), controller.createSupplier);
 router.put('/:id', authenticate, authorize(...ALLOWED_ROLES), controller.updateSupplier);
