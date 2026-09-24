@@ -207,9 +207,7 @@ export async function ask(options: AskOptions): Promise<AskResult> {
   // or a deadline that has since changed. The lookup is one indexed query
   // against a database we already run; the model call it may save takes between
   // one and thirty-three seconds.
-  const cacheKey = isCacheable(history.length)
-    ? cacheKeyFor(question, liveFacts, persona)
-    : null;
+  const cacheKey = isCacheable(history.length) ? cacheKeyFor(question, liveFacts, persona) : null;
   if (cacheKey) {
     const hit = await readCached(cacheKey);
     if (hit) {

@@ -175,9 +175,12 @@ export function useStudents(params: StudentListParams = {}) {
   return useQuery({
     queryKey: ["students", params],
     queryFn: async () => {
-      const response = await api.get<SharedPaginatedResponse<Student>>("/students", {
-        params,
-      });
+      const response = await api.get<SharedPaginatedResponse<Student>>(
+        "/students",
+        {
+          params,
+        },
+      );
       // Students carry their display name on the related user record. Normalize
       // it onto `name` so every consumer (list, id-card, certificates, transcript,
       // duty-roster…) has a string — several call `.split`/`.charAt` on it and
@@ -274,14 +277,17 @@ export function useStudentSearch(query: string, unitId?: string) {
   return useQuery({
     queryKey: ["students", "search", query, unitId],
     queryFn: async () => {
-      const response = await api.get<SharedPaginatedResponse<Student>>("/students", {
-        params: {
-          search: query,
-          unitId,
-          limit: 10,
-          status: STUDENT_STATUS.ACTIVE,
+      const response = await api.get<SharedPaginatedResponse<Student>>(
+        "/students",
+        {
+          params: {
+            search: query,
+            unitId,
+            limit: 10,
+            status: STUDENT_STATUS.ACTIVE,
+          },
         },
-      });
+      );
       return response.data.data;
     },
     enabled: query.length >= 2,
@@ -295,9 +301,12 @@ export function useStudentsByClass(classId: string) {
   return useQuery({
     queryKey: ["students", "by-class", classId],
     queryFn: async () => {
-      const response = await api.get<SharedPaginatedResponse<Student>>("/students", {
-        params: { classId, limit: 100 },
-      });
+      const response = await api.get<SharedPaginatedResponse<Student>>(
+        "/students",
+        {
+          params: { classId, limit: 100 },
+        },
+      );
       // Students carry their display name on the related user record; normalize
       // it onto `name` so dropdowns don't render blank labels (see useStudents).
       return (response.data.data ?? []).map((s) => ({
@@ -402,10 +411,9 @@ export function useGraduateStudent() {
       tahfidzLevel?: string;
       notes?: string;
     }) => {
-      const response = await api.post<ApiResponse<{ id: string; graduationYear: number }>>(
-        `/alumni/from-student/${studentId}`,
-        body,
-      );
+      const response = await api.post<
+        ApiResponse<{ id: string; graduationYear: number }>
+      >(`/alumni/from-student/${studentId}`, body);
       return response.data.data;
     },
     onSuccess: (_, variables) => {

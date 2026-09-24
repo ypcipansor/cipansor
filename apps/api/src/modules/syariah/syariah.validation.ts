@@ -13,7 +13,9 @@ export const updateComplianceSchema = z.object({
   title: z.string().min(3).optional(),
   description: z.string().optional(),
   standard: z.string().optional(),
-  status: z.enum(['COMPLIANT', 'PARTIALLY', 'NON_COMPLIANT', 'UNDER_REVIEW', 'NOT_APPLICABLE']).optional(),
+  status: z
+    .enum(['COMPLIANT', 'PARTIALLY', 'NON_COMPLIANT', 'UNDER_REVIEW', 'NOT_APPLICABLE'])
+    .optional(),
   score: z.number().min(0).max(100).optional(),
   notes: z.string().optional(),
   nextReviewAt: z.string().datetime().optional(),
@@ -30,5 +32,7 @@ export const createShariaAuditSchema = z.object({
 
 export const listComplianceQuerySchema = z.object({
   category: z.enum(['MUAMALAH', 'TARBIYAH', 'IBADAH', 'AKHLAQ', 'GOVERNANCE']).optional(),
-  status: z.enum(['COMPLIANT', 'PARTIALLY', 'NON_COMPLIANT', 'UNDER_REVIEW', 'NOT_APPLICABLE']).optional(),
+  status: z
+    .enum(['COMPLIANT', 'PARTIALLY', 'NON_COMPLIANT', 'UNDER_REVIEW', 'NOT_APPLICABLE'])
+    .optional(),
 });

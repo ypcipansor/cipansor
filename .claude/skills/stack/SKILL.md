@@ -34,20 +34,23 @@ su postgres -c "createdb cipansor"
 #   DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:5432/cipansor?schema=public"
 pnpm --filter api db:generate
 pnpm --filter api db:push
-pnpm --filter api db:seed                # creates the 75 DEMO_ACCOUNTS, one per RoleCode
+ALLOW_DESTRUCTIVE_SEED=1 E2E_FIXED_2FA=1 pnpm --filter api db:seed   # wipes, then one DEMO_ACCOUNT per RoleCode; admins get the fixed TOTP secret
 
 # Build once, then run the built output (more stable than dev under a browser sweep):
 pnpm --filter @cipansor/shared build
 pnpm --filter api build && pnpm --filter web build
-DEMO_MODE=true node apps/api/dist/main.js &         # :3001
+node apps/api/dist/main.js &                        # :3001
 ( cd apps/web && node_modules/.bin/next start -p 3000 ) &
 ```
 
 ## Gotchas
 
-- **`DEMO_MODE=true`** on the API is what lets the seeded admin demo accounts log
-  in with a password only. Without it, admin roles are forced through mandatory
-  2FA *setup* and never return a session — the screenshot sweep can't log them in.
+- **Admin accounts always need 2FA** — `DEMO_MODE` (which waived it) was removed
+  2026-09-23. Seed with `E2E_FIXED_2FA=1` so every admin is pre-enrolled with the
+  fixed TOTP secret the e2e helper and the screenshot sweep answer; without it,
+  admin roles are forced through 2FA *setup* and never return a session.
+- **`ALLOW_DESTRUCTIVE_SEED=1`** is required: the seed TRUNCATEs every table
+  first and refuses to run without it. Never set it against production.
 - Demo credentials: every account is `<...>@cipansor.or.id` / `Cipansor123!`
   (see `packages/shared/src/types/demo-accounts.ts`). The local part carries the
   realm — `yayasan.ketua@`, `smpit.guru@` — since the old `@demo.` domain is gone.

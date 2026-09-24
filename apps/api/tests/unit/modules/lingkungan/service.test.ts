@@ -1,24 +1,26 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { mockEnvironmentProgram, mockWasteManagement, mockGreenCampusIndicator } = vi.hoisted(() => ({
-  mockEnvironmentProgram: {
-    findMany: vi.fn(),
-    findUnique: vi.fn(),
-    create: vi.fn(),
-    update: vi.fn(),
-    delete: vi.fn(),
-  },
-  mockWasteManagement: {
-    findMany: vi.fn(),
-    create: vi.fn(),
-  },
-  mockGreenCampusIndicator: {
-    findMany: vi.fn(),
-    create: vi.fn(),
-    update: vi.fn(),
-    delete: vi.fn(),
-  },
-}));
+const { mockEnvironmentProgram, mockWasteManagement, mockGreenCampusIndicator } = vi.hoisted(
+  () => ({
+    mockEnvironmentProgram: {
+      findMany: vi.fn(),
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+    },
+    mockWasteManagement: {
+      findMany: vi.fn(),
+      create: vi.fn(),
+    },
+    mockGreenCampusIndicator: {
+      findMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+    },
+  })
+);
 
 vi.mock('@prisma/client', () => ({
   PrismaClient: class {
@@ -26,7 +28,13 @@ vi.mock('@prisma/client', () => ({
     wasteManagement = mockWasteManagement;
     greenCampusIndicator = mockGreenCampusIndicator;
   },
-  Prisma: { Decimal: class { constructor(v: number) { return v; } } },
+  Prisma: {
+    Decimal: class {
+      constructor(v: number) {
+        return v;
+      }
+    },
+  },
 }));
 
 vi.mock('../../../../src/lib/prisma', () => ({

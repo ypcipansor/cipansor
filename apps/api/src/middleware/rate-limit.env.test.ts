@@ -10,7 +10,10 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
  * `config.env` is captured at module load, so each case resets the module
  * registry and stubs `process.env.NODE_ENV` before importing the limiter.
  */
-async function loadLimiter(env: string, name: 'defaultLimiter' | 'uploadLimiter' = 'defaultLimiter') {
+async function loadLimiter(
+  env: string,
+  name: 'defaultLimiter' | 'uploadLimiter' = 'defaultLimiter'
+) {
   vi.resetModules();
   const saved = process.env.NODE_ENV;
   process.env.NODE_ENV = env;

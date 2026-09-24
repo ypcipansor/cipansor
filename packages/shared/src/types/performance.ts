@@ -60,7 +60,8 @@ export type EkspektasiDTO = "DI_ATAS" | "SESUAI" | "DI_BAWAH";
 export interface PredikatKinerjaDTO {
   hasilKerja: EkspektasiDTO;
   perilakuKerja: EkspektasiDTO;
-  predikat: "SANGAT_BAIK" | "BAIK" | "BUTUH_PERBAIKAN" | "KURANG" | "SANGAT_KURANG";
+  predikat:
+    "SANGAT_BAIK" | "BAIK" | "BUTUH_PERBAIKAN" | "KURANG" | "SANGAT_KURANG";
   label: string;
 }
 
@@ -144,18 +145,24 @@ export interface PerformanceConsolidatedReportDTO {
   units: ConsolidatedUnitReportDTO[];
 }
 
-import { z } from 'zod';
+import { z } from "zod";
 import {
   createPKSchema,
   createEvaluationSchema,
   updateIndicatorRealizationSchema,
   updateBehaviorScoreSchema,
-} from '../schemas/performance';
+} from "../schemas/performance";
 
 export type CreatePKRequestDTO = z.infer<typeof createPKSchema>;
 export type CreateEvaluationRequestDTO = z.infer<typeof createEvaluationSchema>;
-export type UpdateRealizationRequestDTO = Omit<z.infer<typeof updateIndicatorRealizationSchema>, 'indicatorId'>;
-export type UpdateBehaviorScoreRequestDTO = Omit<z.infer<typeof updateBehaviorScoreSchema>, 'behaviorValueId'>;
+export type UpdateRealizationRequestDTO = Omit<
+  z.infer<typeof updateIndicatorRealizationSchema>,
+  "indicatorId"
+>;
+export type UpdateBehaviorScoreRequestDTO = Omit<
+  z.infer<typeof updateBehaviorScoreSchema>,
+  "behaviorValueId"
+>;
 
 export interface CreatePKIndicatorRequestDTO {
   pkId: string;

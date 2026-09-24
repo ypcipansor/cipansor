@@ -30,6 +30,7 @@ trusts it.
 | a decision the yayasan made, or a standard already researched | `docs/EOFFICE_ESIGN_PLAN.md`, and a memory pointer |
 | what is done vs still open | `docs/ROADMAP.md` |
 | a convention future work must follow | `AGENTS.md` (or the per-area one) |
+| why a Claude hook or skill works the way it does | `.claude/README.md` |
 
 Memory lives in `~/.claude/projects/-home-cipansoradm-cipansor/memory/`.
 
@@ -61,6 +62,12 @@ Memory lives in `~/.claude/projects/-home-cipansoradm-cipansor/memory/`.
    which was backwards, and was fixed on 2026-09-05. The stamp measures *work*
    (git HEAD + working tree), not elapsed time, so it stays valid until
    something new actually happens.
+
+   It also records this session's id (`CLAUDE_CODE_SESSION_ID`), and that is
+   the ONLY thing that releases a held auto-compaction. When
+   `context-sync-warn.sh` says the context is nearing or past the window, this
+   pass is what it is asking for: run it at the nearest stopping point, before
+   carrying on with the task.
 
    Skip it only when the pass found nothing AND wrote nothing.
 

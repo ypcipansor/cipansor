@@ -24,7 +24,9 @@ vi.mock('@/lib/prisma', () => ({
 // protocol itself is covered by its own unit + DB integration tests; here we
 // only need a claim that always succeeds.
 vi.mock('@/utils/blob-claim', () => ({
-  claimBlobForRecord: vi.fn().mockResolvedValue({ id: 'claim-1', operationToken: 'tok-1', kind: 'RECORD' }),
+  claimBlobForRecord: vi
+    .fn()
+    .mockResolvedValue({ id: 'claim-1', operationToken: 'tok-1', kind: 'RECORD' }),
   releaseBlobClaimById: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -33,9 +35,8 @@ vi.mock('@/utils/cloud-storage', () => ({
 }));
 
 vi.mock('@/utils/resolve-unit-id', async () => {
-  const actual = await vi.importActual<typeof import('@/utils/resolve-unit-id')>(
-    '@/utils/resolve-unit-id'
-  );
+  const actual =
+    await vi.importActual<typeof import('@/utils/resolve-unit-id')>('@/utils/resolve-unit-id');
   return { ...actual, seesAllUnits: vi.fn(() => false) };
 });
 
@@ -188,7 +189,11 @@ describe('employeeDocumentService.delete', () => {
     (prisma.employeeDocument.delete as any).mockRejectedValue(new Error('P2025'));
 
     await expect(
-      employeeDocumentService.delete('doc-3', { id: 'user-1', roleCode: 'SUPER_ADMIN', unitId: null })
+      employeeDocumentService.delete('doc-3', {
+        id: 'user-1',
+        roleCode: 'SUPER_ADMIN',
+        unitId: null,
+      })
     ).rejects.toThrow('P2025');
 
     expect(cleanupBlobBestEffort).not.toHaveBeenCalled();

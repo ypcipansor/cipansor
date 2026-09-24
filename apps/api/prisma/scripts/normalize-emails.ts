@@ -70,7 +70,10 @@ export async function normalizeEmails(
       HAVING count(*) > 1
     `;
 
-    result.collisions = collisions.map((c) => ({ normalized: c.normalized, count: Number(c.count) }));
+    result.collisions = collisions.map((c) => ({
+      normalized: c.normalized,
+      count: Number(c.count),
+    }));
     if (collisions.length > 0) {
       console.error(`Ditemukan ${collisions.length} alamat yang dimiliki lebih dari satu akun.`);
       for (const row of collisions) {
@@ -104,7 +107,10 @@ export async function normalizeEmails(
       ORDER BY email
     `;
 
-    result.normalized = dirty.map((row) => ({ email: row.email, next: row.email.trim().toLowerCase() }));
+    result.normalized = dirty.map((row) => ({
+      email: row.email,
+      next: row.email.trim().toLowerCase(),
+    }));
 
     if (dirty.length === 0) {
       console.log('Tidak ada e-mail yang perlu dinormalkan.');

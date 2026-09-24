@@ -30,7 +30,10 @@ function setCookieOf(res: Response): string {
 describe("POST /api/session", () => {
   it("does not mint a cookie without a bearer (no client assertion)", async () => {
     const res = await POST(
-      new Request("http://localhost:3000/api/session", { method: "POST", body: "{}" })
+      new Request("http://localhost:3000/api/session", {
+        method: "POST",
+        body: "{}",
+      }),
     );
     const setCookie = setCookieOf(res);
     expect(setCookie).toContain(`${SESSION_COOKIE}=;`);
@@ -44,14 +47,14 @@ describe("POST /api/session", () => {
   it("does not mint a cookie when the API rejects the bearer", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => new Response(JSON.stringify({}), { status: 401 }))
+      vi.fn(async () => new Response(JSON.stringify({}), { status: 401 })),
     );
     const res = await POST(
       new Request("http://localhost:3000/api/session", {
         method: "POST",
         headers: { authorization: "Bearer forged" },
         body: "{}",
-      })
+      }),
     );
     expect(setCookieOf(res)).toContain("Max-Age=0");
     await expect(res.clone().json()).resolves.toEqual({ session: false });
@@ -61,14 +64,16 @@ describe("POST /api/session", () => {
     // A 200 from `/auth/me` without a user id must not become a session.
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => new Response(JSON.stringify({ data: {} }), { status: 200 }))
+      vi.fn(
+        async () => new Response(JSON.stringify({ data: {} }), { status: 200 }),
+      ),
     );
     const res = await POST(
       new Request("http://localhost:3000/api/session", {
         method: "POST",
         headers: { authorization: "Bearer real" },
         body: "{}",
-      })
+      }),
     );
     expect(setCookieOf(res)).toContain("Max-Age=0");
     await expect(res.clone().json()).resolves.toEqual({ session: false });
@@ -87,16 +92,16 @@ describe("POST /api/session", () => {
                 userRoles: [{ isPrimary: true, role: { code: "TEACHER" } }],
               },
             }),
-            { status: 200 }
-          )
-      )
+            { status: 200 },
+          ),
+      ),
     );
     const res = await POST(
       new Request("http://localhost:3000/api/session", {
         method: "POST",
         headers: { authorization: "Bearer real" },
         body: "{}",
-      })
+      }),
     );
     const setCookie = setCookieOf(res);
     expect(setCookie).toContain(`${SESSION_COOKIE}=`);
@@ -108,9 +113,16 @@ describe("POST /api/session", () => {
       expect(setCookie.toLowerCase()).toContain("secure");
     }
 
-    const value = setCookie.slice(setCookie.indexOf("=") + 1, setCookie.indexOf(";"));
+    const value = setCookie.slice(
+      setCookie.indexOf("=") + 1,
+      setCookie.indexOf(";"),
+    );
     const payload = await verifySession(value, SECRET);
-    expect(payload).toMatchObject({ sub: "user-1", role: "TEACHER", roleCode: "TEACHER" });
+    expect(payload).toMatchObject({
+      sub: "user-1",
+      role: "TEACHER",
+      roleCode: "TEACHER",
+    });
     // The store only completes a login on this exact body.
     await expect(res.clone().json()).resolves.toEqual({ session: true });
   });
@@ -121,7 +133,7 @@ describe("POST /api/session", () => {
         method: "POST",
         headers: { authorization: "Bearer real" },
         body: JSON.stringify({ clear: true }),
-      })
+      }),
     );
     expect(setCookieOf(res)).toContain("Max-Age=0");
   });
@@ -130,17 +142,22 @@ describe("POST /api/session", () => {
   async function mintFor(data: unknown) {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => new Response(JSON.stringify({ data }), { status: 200 }))
+      vi.fn(
+        async () => new Response(JSON.stringify({ data }), { status: 200 }),
+      ),
     );
     const res = await POST(
       new Request("http://localhost:3000/api/session", {
         method: "POST",
         headers: { authorization: "Bearer real" },
         body: "{}",
-      })
+      }),
     );
     const setCookie = setCookieOf(res);
-    const value = setCookie.slice(setCookie.indexOf("=") + 1, setCookie.indexOf(";"));
+    const value = setCookie.slice(
+      setCookie.indexOf("=") + 1,
+      setCookie.indexOf(";"),
+    );
     return verifySession(value, SECRET);
   }
 
@@ -163,7 +180,10 @@ describe("POST /api/session", () => {
       role: "STUDENT",
       userRoles: [{ isPrimary: true, role: { code: "SDIT_ADMIN" } }],
     });
-    expect(payload).toMatchObject({ role: "UNIT_ADMIN", roleCode: "SDIT_ADMIN" });
+    expect(payload).toMatchObject({
+      role: "UNIT_ADMIN",
+      roleCode: "SDIT_ADMIN",
+    });
   });
 
   it("reflects a role switch: a re-mint after the assignment changed uses the new RoleCode", async () => {
@@ -181,7 +201,10 @@ describe("POST /api/session", () => {
       role: "TEACHER",
       userRoles: [{ isPrimary: true, role: { code: "SMPIT_ADMIN" } }],
     });
-    expect(after).toMatchObject({ role: "UNIT_ADMIN", roleCode: "SMPIT_ADMIN" });
+    expect(after).toMatchObject({
+      role: "UNIT_ADMIN",
+      roleCode: "SMPIT_ADMIN",
+    });
   });
 
   it("falls back to the legacy role only when the RoleCode is not bucketed (komite/alumni)", async () => {
@@ -204,17 +227,20 @@ describe("POST /api/session", () => {
       "fetch",
       vi.fn(
         async () =>
-          new Response(JSON.stringify({ data: { id: "user-1", role: "TEACHER" } }), {
-            status: 200,
-          })
-      )
+          new Response(
+            JSON.stringify({ data: { id: "user-1", role: "TEACHER" } }),
+            {
+              status: 200,
+            },
+          ),
+      ),
     );
     const res = await POST(
       new Request("http://localhost:3000/api/session", {
         method: "POST",
         headers: { authorization: "Bearer real" },
         body: "{}",
-      })
+      }),
     );
     expect(res.status).toBe(500);
   });

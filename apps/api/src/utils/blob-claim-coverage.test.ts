@@ -107,7 +107,11 @@ function looksLikeUrlIdentifier(node: ts.Expression): boolean {
 /** Does the value derive from a client-supplied URL? */
 function isClientDerivedValue(node: ts.Expression): boolean {
   // Unwrap `x as any`, `(x)`, and `x!` so the shape underneath is examined.
-  if (ts.isAsExpression(node) || ts.isParenthesizedExpression(node) || ts.isNonNullExpression(node)) {
+  if (
+    ts.isAsExpression(node) ||
+    ts.isParenthesizedExpression(node) ||
+    ts.isNonNullExpression(node)
+  ) {
     return isClientDerivedValue(node.expression);
   }
   // `attachments ? (attachments as any) : Prisma.JsonNull` — the conditional

@@ -19,7 +19,9 @@ type ApiErrorShape = {
 };
 
 function apiMessage(error: ApiErrorShape): string | undefined {
-  return error?.response?.data?.error?.message ?? error?.response?.data?.message;
+  return (
+    error?.response?.data?.error?.message ?? error?.response?.data?.message
+  );
 }
 
 /**
@@ -54,7 +56,9 @@ export function planTierLabel(plan: {
 }): string {
   const base = PLAN_TYPE_LABEL[plan.type] ?? plan.type;
   if (plan.type !== "RKA") return `${base} Yayasan`;
-  return plan.unitId ? `${base} ${plan.unit?.name ?? "Unit"}` : `${base} Yayasan`;
+  return plan.unitId
+    ? `${base} ${plan.unit?.name ?? "Unit"}`
+    : `${base} Yayasan`;
 }
 
 /**
@@ -257,7 +261,7 @@ export const useCreateObjective = () => {
       toast.error(
         error.response?.data?.error?.message ||
           apiMessage(error) ||
-          "Gagal membuat sasaran strategis"
+          "Gagal membuat sasaran strategis",
       );
     },
   });

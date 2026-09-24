@@ -3,17 +3,11 @@ import { Prisma } from '@prisma/client';
 
 export class TataLaksanaService {
   // ── SOP ───────────────────────────────────────────
-  async getSOPs(params: {
-    unitId?: string;
-    status?: string;
-    category?: string;
-    search?: string;
-  }) {
+  async getSOPs(params: { unitId?: string; status?: string; category?: string; search?: string }) {
     const where: Prisma.StandardOperatingProcedureWhereInput = {};
     if (params.unitId) where.unitId = params.unitId;
     if (params.status)
-      where.status =
-        params.status as Prisma.StandardOperatingProcedureWhereInput["status"];
+      where.status = params.status as Prisma.StandardOperatingProcedureWhereInput['status'];
     if (params.category) where.category = params.category;
     if (params.search) {
       where.OR = [
@@ -29,7 +23,7 @@ export class TataLaksanaService {
         approvedBy: { select: { id: true, name: true } },
         _count: { select: { revisions: true } },
       },
-      orderBy: { updatedAt: "desc" },
+      orderBy: { updatedAt: 'desc' },
     });
   }
 
@@ -40,7 +34,7 @@ export class TataLaksanaService {
         createdBy: { select: { id: true, name: true } },
         approvedBy: { select: { id: true, name: true } },
         revisions: {
-          orderBy: { version: "desc" },
+          orderBy: { version: 'desc' },
           include: { revisedBy: { select: { id: true, name: true } } },
         },
       },
@@ -63,17 +57,20 @@ export class TataLaksanaService {
     return prisma.standardOperatingProcedure.create({ data });
   }
 
-  async updateSOP(id: string, data: Partial<{
-    title: string;
-    description: string;
-    category: string;
-    content: string;
-    scope: string;
-    responsibility: string;
-    effectiveDate: Date;
-    reviewDate: Date;
-    status: any;
-  }>) {
+  async updateSOP(
+    id: string,
+    data: Partial<{
+      title: string;
+      description: string;
+      category: string;
+      content: string;
+      scope: string;
+      responsibility: string;
+      effectiveDate: Date;
+      reviewDate: Date;
+      status: any;
+    }>
+  ) {
     return prisma.standardOperatingProcedure.update({ where: { id }, data });
   }
 
@@ -81,7 +78,7 @@ export class TataLaksanaService {
     return prisma.standardOperatingProcedure.update({
       where: { id },
       data: {
-        status: "APPROVED",
+        status: 'APPROVED',
         approvedById,
         approvedAt: new Date(),
       },
@@ -91,7 +88,7 @@ export class TataLaksanaService {
   async activateSOP(id: string) {
     return prisma.standardOperatingProcedure.update({
       where: { id },
-      data: { status: "ACTIVE" },
+      data: { status: 'ACTIVE' },
     });
   }
 
@@ -125,7 +122,7 @@ export class TataLaksanaService {
         data: {
           version: newVersion,
           content: data.content || undefined,
-          status: "REVIEW",
+          status: 'REVIEW',
         },
       });
 
@@ -141,14 +138,14 @@ export class TataLaksanaService {
     const where = unitId ? { unitId } : {};
     const [total, active, draft, deprecated] = await Promise.all([
       prisma.standardOperatingProcedure.count({ where }),
-      prisma.standardOperatingProcedure.count({ where: { ...where, status: "ACTIVE" } }),
-      prisma.standardOperatingProcedure.count({ where: { ...where, status: "DRAFT" } }),
-      prisma.standardOperatingProcedure.count({ where: { ...where, status: "DEPRECATED" } }),
+      prisma.standardOperatingProcedure.count({ where: { ...where, status: 'ACTIVE' } }),
+      prisma.standardOperatingProcedure.count({ where: { ...where, status: 'DRAFT' } }),
+      prisma.standardOperatingProcedure.count({ where: { ...where, status: 'DEPRECATED' } }),
     ]);
 
     // Get counts by category
     const byCategory = await prisma.standardOperatingProcedure.groupBy({
-      by: ["category"],
+      by: ['category'],
       where,
       _count: true,
     });
@@ -158,10 +155,13 @@ export class TataLaksanaService {
       active,
       draft,
       deprecated,
-      byCategory: byCategory.reduce((acc, item) => {
-        acc[item.category] = item._count;
-        return acc;
-      }, {} as Record<string, number>),
+      byCategory: byCategory.reduce(
+        (acc, item) => {
+          acc[item.category] = item._count;
+          return acc;
+        },
+        {} as Record<string, number>
+      ),
     };
   }
 }

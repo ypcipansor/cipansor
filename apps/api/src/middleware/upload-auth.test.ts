@@ -26,9 +26,7 @@ function liveUser(roleCode: string, unitId: string | null, isActive = true) {
   return {
     id: 'user-1',
     isActive,
-    userRoles: roleCode
-      ? [{ unitId, role: { code: roleCode, permissions: [] } }]
-      : [],
+    userRoles: roleCode ? [{ unitId, role: { code: roleCode, permissions: [] } }] : [],
   };
 }
 
@@ -95,7 +93,7 @@ function run(req: Request): Promise<{ nextArg: unknown }> {
   return new Promise((resolve) => {
     const res = {} as Response;
     uploadsAuth(req, res, (arg?: unknown) => resolve({ nextArg: arg })).catch(() =>
-      resolve({ nextArg: new Error('unexpected throw') }),
+      resolve({ nextArg: new Error('unexpected throw') })
     );
   });
 }
@@ -136,7 +134,11 @@ describe('uploadsAuth', () => {
 
   it('refuses a session token when the ownership rule denies the file (same-unit peer)', async () => {
     const token = generateAccessToken(SESSION_PAYLOAD);
-    mockFindOwner.mockResolvedValue({ kind: 'user-document', userId: 'someone-else', unitId: 'unit-1' });
+    mockFindOwner.mockResolvedValue({
+      kind: 'user-document',
+      userId: 'someone-else',
+      unitId: 'unit-1',
+    });
     mockActorMayRead.mockResolvedValue(false);
 
     const req = makeReq({ headers: { authorization: `Bearer ${token}` } } as Partial<Request>);

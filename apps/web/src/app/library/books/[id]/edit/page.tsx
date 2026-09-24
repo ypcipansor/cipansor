@@ -73,11 +73,7 @@ const bookSchema = z.object({
 
 type BookFormData = z.infer<typeof bookSchema>;
 
-function EditBookPageContent({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+function EditBookPageContent({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
   const { data: book, isLoading } = useBook(id);
@@ -326,7 +322,7 @@ function EditBookPageContent({
                           <Input type="number" min={1} {...field} />
                         </FormControl>
                         <FormDescription>
-                            Tersedia: {(book as any).available} dari{" "}
+                          Tersedia: {(book as any).available} dari{" "}
                           {book.quantity}
                         </FormDescription>
                         <FormMessage />
@@ -419,7 +415,9 @@ function EditBookPageContent({
   );
 }
 
-export default function EditBookPage(props: Parameters<typeof EditBookPageContent>[0]) {
+export default function EditBookPage(
+  props: Parameters<typeof EditBookPageContent>[0],
+) {
   return (
     <MainLayout>
       <EditBookPageContent {...props} />

@@ -100,9 +100,7 @@ describe("TurnstileWidget — apa yang dilihat pengunjung saat gerbangnya gagal"
   it("mengatakan sebabnya dan menawarkan percobaan ulang, bukan 'muat ulang halaman'", async () => {
     const { TurnstileWidget } = await loadModule(SITE_KEY);
     const onUnavailable = vi.fn();
-    render(
-      <TurnstileWidget onToken={vi.fn()} onUnavailable={onUnavailable} />,
-    );
+    render(<TurnstileWidget onToken={vi.fn()} onUnavailable={onUnavailable} />);
 
     failScript();
 

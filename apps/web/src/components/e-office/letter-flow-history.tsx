@@ -71,7 +71,9 @@ const FLOW: Record<string, FlowStyle> = {
     icon: Undo2,
     label: "Dikembalikan",
     sentence: (a, t) =>
-      t ? `${a} mengembalikan konsep kepada ${t} untuk direvisi` : `${a} meminta revisi`,
+      t
+        ? `${a} mengembalikan konsep kepada ${t} untuk direvisi`
+        : `${a} meminta revisi`,
     tone: "text-amber-600",
   },
   RESUBMITTED: {
@@ -84,7 +86,9 @@ const FLOW: Record<string, FlowStyle> = {
     icon: Share2,
     label: "Disposisi",
     sentence: (a, t) =>
-      t ? `${a} mendisposisikan surat kepada ${t}` : `${a} mendisposisikan surat`,
+      t
+        ? `${a} mendisposisikan surat kepada ${t}`
+        : `${a} mendisposisikan surat`,
     tone: "text-indigo-600",
   },
   DISPOSITION_UPDATED: {
@@ -155,9 +159,7 @@ export function LetterFlowHistory({
               <Icon className="h-4 w-4" />
             </span>
             <div className="flex-1 pt-0.5">
-              <p className="text-sm">
-                {style.sentence(actor, target)}
-              </p>
+              <p className="text-sm">{style.sentence(actor, target)}</p>
               {event.note && (
                 <p className="mt-1 rounded-md bg-muted/50 px-3 py-2 text-sm whitespace-pre-wrap">
                   {event.note}

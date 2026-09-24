@@ -4,7 +4,13 @@ import { Prisma } from '@prisma/client';
 vi.mock('../../lib/prisma', () => {
   const mockPrisma = {
     invoice: { findUnique: vi.fn(), update: vi.fn() },
-    payment: { create: vi.fn(), findUnique: vi.fn(), findMany: vi.fn(), count: vi.fn(), update: vi.fn() },
+    payment: {
+      create: vi.fn(),
+      findUnique: vi.fn(),
+      findMany: vi.fn(),
+      count: vi.fn(),
+      update: vi.fn(),
+    },
     studentParent: { findUnique: vi.fn() },
     journalEntry: { create: vi.fn() },
     $transaction: vi.fn(),
@@ -26,7 +32,9 @@ vi.mock('./accounting-config.service', () => ({
 // The protocol has its own unit + DB integration tests; here the claim always
 // succeeds so the behaviour under test is unchanged.
 vi.mock('@/utils/blob-claim', () => ({
-  claimBlobForRecord: vi.fn().mockResolvedValue({ id: 'claim-1', operationToken: 'tok-1', kind: 'RECORD' }),
+  claimBlobForRecord: vi
+    .fn()
+    .mockResolvedValue({ id: 'claim-1', operationToken: 'tok-1', kind: 'RECORD' }),
   releaseBlobClaimById: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -250,7 +258,9 @@ describe('verifyPayment state machine', () => {
       paymentInStatus('PENDING_VERIFICATION', { invoice: tagihanLama })
     );
 
-    await expect(verifyPayment('pay-1', 'TU_APPROVE', otherUnitAdmin)).rejects.toThrow(/another unit/);
+    await expect(verifyPayment('pay-1', 'TU_APPROVE', otherUnitAdmin)).rejects.toThrow(
+      /another unit/
+    );
     expect(mocked.payment.update).not.toHaveBeenCalled();
   });
 
@@ -265,7 +275,9 @@ describe('verifyPayment state machine', () => {
     });
 
     expect(mocked.payment.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ verificationStatus: 'TU_APPROVED' }) })
+      expect.objectContaining({
+        data: expect.objectContaining({ verificationStatus: 'TU_APPROVED' }),
+      })
     );
   });
 

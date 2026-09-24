@@ -33,7 +33,6 @@ import { useAuthStore } from "@/stores/auth";
 import { getEffectiveRole } from "@/lib/rbac";
 import { STUDENT_STATUS_OPTIONS, studentStatusOption } from "@/lib/constants";
 
-
 const genderLabels: Record<string, string> = {
   MALE: "Laki-laki",
   FEMALE: "Perempuan",
@@ -123,7 +122,8 @@ export default function StudentsPage() {
       header: "Status",
       cell: ({ row }) => (
         <Badge className={studentStatusOption(row.original.status)?.badge}>
-          {studentStatusOption(row.original.status)?.label ?? row.original.status}
+          {studentStatusOption(row.original.status)?.label ??
+            row.original.status}
         </Badge>
       ),
     },

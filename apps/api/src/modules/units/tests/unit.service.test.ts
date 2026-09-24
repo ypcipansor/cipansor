@@ -3,7 +3,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // Unit logo writes take the claim protocol (BUG 4 / flag 9): the logo URL is a
 // client upload, so the row must not reference it until the blob is claimed.
 // Real race behaviour lives in `blob-claim.integration`.
-const claimBlobForRecord = vi.hoisted(() => vi.fn().mockResolvedValue({ id: 'claim-1', operationToken: 'tok-1', kind: 'RECORD' }));
+const claimBlobForRecord = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({ id: 'claim-1', operationToken: 'tok-1', kind: 'RECORD' })
+);
 const releaseBlobClaimById = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const CLAIM = { id: 'claim-1', operationToken: 'tok-1', kind: 'RECORD' };
 
@@ -21,7 +23,11 @@ const createInput = { name: 'SD IT', type: 'SD_IT' } as any;
 describe('UnitService logo claim (BUG 4)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    claimBlobForRecord.mockResolvedValue({ id: 'claim-1', operationToken: 'tok-1', kind: 'RECORD' });
+    claimBlobForRecord.mockResolvedValue({
+      id: 'claim-1',
+      operationToken: 'tok-1',
+      kind: 'RECORD',
+    });
     releaseBlobClaimById.mockResolvedValue(undefined);
   });
 

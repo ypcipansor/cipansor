@@ -27,26 +27,27 @@ const OG_LOCALE: Record<Locale, string> = {
 };
 
 /** Page chrome for /wakaf-infaq. See config/donation.i18n.ts for the body. */
-const META: Record<Locale, { title: string; description: string; og: string }> = {
-  id: {
-    title: "Wakaf & Infaq",
-    description:
-      "Salurkan wakaf dan infaq untuk pembangunan sarana pendidikan, beasiswa santri penghafal Al-Qur'an 30 juz, dan operasional harian Pesantren Cipansor. Dikelola transparan dengan laporan penyaluran berkala.",
-    og: "Dukung pendidikan santri Pesantren Cipansor melalui wakaf sarana pendidikan, beasiswa takhosus, dan infaq operasional.",
-  },
-  en: {
-    title: "Wakaf & Infaq",
-    description:
-      "Give wakaf and infaq towards teaching facilities, scholarships for santri memorising all 30 juz of the Qur'an, and the day-to-day running of Pesantren Cipansor. Managed transparently, with disbursement reports updated regularly.",
-    og: "Support the education of santri at Pesantren Cipansor through wakaf for teaching facilities, Takhosus scholarships, and infaq for daily running.",
-  },
-  ar: {
-    title: "الوقف والإنفاق",
-    description:
-      "تبرّع بالوقف والإنفاق لبناء المرافق التعليمية، ومنح طلاب حفظ الثلاثين جزءاً، والتشغيل اليومي لمعهد سيبانسور. تُدار بشفافية مع تقارير صرف تُحدَّث دورياً.",
-    og: "ادعم تعليم طلاب معهد سيبانسور عبر وقف المرافق التعليمية ومنح التخصّص والإنفاق على التشغيل.",
-  },
-};
+const META: Record<Locale, { title: string; description: string; og: string }> =
+  {
+    id: {
+      title: "Wakaf & Infaq",
+      description:
+        "Salurkan wakaf dan infaq untuk pembangunan sarana pendidikan, beasiswa santri penghafal Al-Qur'an 30 juz, dan operasional harian Pesantren Cipansor. Dikelola transparan dengan laporan penyaluran berkala.",
+      og: "Dukung pendidikan santri Pesantren Cipansor melalui wakaf sarana pendidikan, beasiswa takhosus, dan infaq operasional.",
+    },
+    en: {
+      title: "Wakaf & Infaq",
+      description:
+        "Give wakaf and infaq towards teaching facilities, scholarships for santri memorising all 30 juz of the Qur'an, and the day-to-day running of Pesantren Cipansor. Managed transparently, with disbursement reports updated regularly.",
+      og: "Support the education of santri at Pesantren Cipansor through wakaf for teaching facilities, Takhosus scholarships, and infaq for daily running.",
+    },
+    ar: {
+      title: "الوقف والإنفاق",
+      description:
+        "تبرّع بالوقف والإنفاق لبناء المرافق التعليمية، ومنح طلاب حفظ الثلاثين جزءاً، والتشغيل اليومي لمعهد سيبانسور. تُدار بشفافية مع تقارير صرف تُحدَّث دورياً.",
+      og: "ادعم تعليم طلاب معهد سيبانسور عبر وقف المرافق التعليمية ومنح التخصّص والإنفاق على التشغيل.",
+    },
+  };
 
 export async function generateMetadata(): Promise<Metadata> {
   const locale = await getServerLocale();

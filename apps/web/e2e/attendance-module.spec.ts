@@ -32,13 +32,11 @@ test.describe("Attendance - Daily Marking", () => {
 
     // Check for the date selector. The page uses a custom date-picker button
     // (shows "Pilih tanggal" or a formatted Indonesian date), not input[type=date].
-    const dateInput = page
-      .locator('input[type="date"]')
-      .or(
-        page.getByRole("button", {
-          name: /tanggal|date|januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember/i,
-        }),
-      );
+    const dateInput = page.locator('input[type="date"]').or(
+      page.getByRole("button", {
+        name: /tanggal|date|januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember/i,
+      }),
+    );
     await expect(dateInput.first()).toBeVisible();
   });
 
@@ -264,7 +262,9 @@ test.describe("Attendance - Reports", () => {
     await waitForLoadingComplete(page);
 
     // Should show report page
-    const heading = page.getByRole("main").getByRole("heading", { name: /laporan|report/i });
+    const heading = page
+      .getByRole("main")
+      .getByRole("heading", { name: /laporan|report/i });
     if (await heading.isVisible({ timeout: 5000 }).catch(() => false)) {
       // Select report type
       const reportType = page

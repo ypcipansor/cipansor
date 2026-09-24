@@ -25,9 +25,7 @@ describe('kelengkapan identitas', () => {
       'tanggal lahir',
     ]);
 
-    expect(
-      missingIdentityFields({ ...complete, birthPlace: null })
-    ).toEqual(['tempat lahir']);
+    expect(missingIdentityFields({ ...complete, birthPlace: null })).toEqual(['tempat lahir']);
   });
 
   // Spasi bukan isian. Formulir yang menerima " " menghasilkan identitas yang
@@ -70,9 +68,7 @@ describe('kesiapan mengajukan kunci', () => {
    * terjadi di produksi.
    */
   it('meloloskan identitas lengkap + ada KTP meskipun BELUM diverifikasi', () => {
-    expect(() =>
-      assertIdentityReadyToRequest({ ...withKtp, verifiedAt: null })
-    ).not.toThrow();
+    expect(() => assertIdentityReadyToRequest({ ...withKtp, verifiedAt: null })).not.toThrow();
   });
 
   it('meloloskan identitas yang sudah diverifikasi juga', () => {

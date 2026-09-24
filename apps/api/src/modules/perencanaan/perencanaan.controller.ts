@@ -168,7 +168,9 @@ function requireWritableDraftPlan(plan: PlanAuth | null | undefined, user?: Plan
   if (!plan) throw Errors.notFound('Plan not found');
   if (!canWritePlan(plan, user)) throw Errors.forbidden('Access denied');
   if (!isEditablePlan(plan)) {
-    throw Errors.badRequest('Hanya dapat mengubah subrecord pada rencana berstatus DRAFT/IN_PROGRESS');
+    throw Errors.badRequest(
+      'Hanya dapat mengubah subrecord pada rencana berstatus DRAFT/IN_PROGRESS'
+    );
   }
 }
 
@@ -186,8 +188,7 @@ export const listPlans = asyncHandler(async (req: Request, res: Response) => {
   // A foundation-scoped caller may narrow to one unit with ?unitId=…; that
   // unit's plans plus the foundation-wide ones are returned. Without it they
   // see every unit.
-  const requestedUnit =
-    foundationScope && req.query.unitId ? String(req.query.unitId) : null;
+  const requestedUnit = foundationScope && req.query.unitId ? String(req.query.unitId) : null;
   const targetUnitId = requestedUnit ?? unitId;
 
   const query = listPlanQuerySchema.parse({
@@ -484,7 +485,9 @@ export const createObjective = asyncHandler(async (req: Request, res: Response) 
     throw Errors.forbidden('Access denied');
   }
   if (!isEditablePlan(plan)) {
-    throw Errors.badRequest('Hanya dapat menambah sasaran pada rencana berstatus DRAFT/IN_PROGRESS');
+    throw Errors.badRequest(
+      'Hanya dapat menambah sasaran pada rencana berstatus DRAFT/IN_PROGRESS'
+    );
   }
   const objective = await perencanaanService.createObjective(body);
   res.status(201).json({ success: true, data: objective });

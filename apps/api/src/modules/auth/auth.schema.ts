@@ -6,7 +6,10 @@ import { normalizeEmail } from '@/utils/email';
 // Emails are normalised to lowercase at the edge so that every write site and
 // every lookup agree on one spelling. See utils/email.ts for why.
 const emailField = (message = 'Invalid email format') =>
-  z.string().email(message).transform((v) => normalizeEmail(v));
+  z
+    .string()
+    .email(message)
+    .transform((v) => normalizeEmail(v));
 
 // Login schema
 export const loginSchema = z.object({
@@ -25,30 +28,30 @@ export const loginSchema = z.object({
 // vs SMPIT_GURU vs SMAQ_GURU).  Resolution is deferred to the service
 // layer (see AuthService.register), which has DB access to look up the
 // Unit.type and pick the correct per-unit RoleCode.
-export const registerSchema = z.object({
-  name: z.string().min(2, 'Name must be at least 2 characters'),
-  email: emailField(),
-  password: z
-    .string()
-    .min(8, 'Password must be at least 8 characters')
-    .regex(/[A-Z]/, 'Password must contain uppercase letter')
-    .regex(/[a-z]/, 'Password must contain lowercase letter')
-    .regex(/[0-9]/, 'Password must contain number'),
-  roleCode: z.nativeEnum(RoleCode, { message: 'Invalid role code' }).optional(),
-  // DEPRECATED: Legacy `role` field. Use `roleCode` instead.
-  // Accepted for backward compatibility with pre-migration API clients.
-  // Restricted to the known legacy UserRole enum values so that invalid
-  // strings (e.g. 'admin', 'HACKER') are rejected at schema-validation time
-  // with a clean Zod error, rather than falling through to the service
-  // layer which would produce a less actionable error message.
-  role: z
-    .enum(['SUPER_ADMIN', 'UNIT_ADMIN', 'TEACHER', 'STAFF', 'STUDENT', 'PARENT'])
-    .optional(),
-  unitId: z.string().uuid().optional().nullable(),
-}).refine(
-  (data) => data.roleCode || data.role,
-  { message: 'Either roleCode or role is required', path: ['roleCode'] },
-);
+export const registerSchema = z
+  .object({
+    name: z.string().min(2, 'Name must be at least 2 characters'),
+    email: emailField(),
+    password: z
+      .string()
+      .min(8, 'Password must be at least 8 characters')
+      .regex(/[A-Z]/, 'Password must contain uppercase letter')
+      .regex(/[a-z]/, 'Password must contain lowercase letter')
+      .regex(/[0-9]/, 'Password must contain number'),
+    roleCode: z.nativeEnum(RoleCode, { message: 'Invalid role code' }).optional(),
+    // DEPRECATED: Legacy `role` field. Use `roleCode` instead.
+    // Accepted for backward compatibility with pre-migration API clients.
+    // Restricted to the known legacy UserRole enum values so that invalid
+    // strings (e.g. 'admin', 'HACKER') are rejected at schema-validation time
+    // with a clean Zod error, rather than falling through to the service
+    // layer which would produce a less actionable error message.
+    role: z.enum(['SUPER_ADMIN', 'UNIT_ADMIN', 'TEACHER', 'STAFF', 'STUDENT', 'PARENT']).optional(),
+    unitId: z.string().uuid().optional().nullable(),
+  })
+  .refine((data) => data.roleCode || data.role, {
+    message: 'Either roleCode or role is required',
+    path: ['roleCode'],
+  });
 
 // Refresh token schema
 export const refreshTokenSchema = z.object({

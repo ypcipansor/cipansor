@@ -8,13 +8,14 @@
     "lint": "turbo run lint",
     "test": "turbo run test",
     "clean": "turbo run clean",
-    "format": "prettier --write \"**/*.{ts,tsx,md}\"",
+    "format": "prettier --write \"**/*.{ts,tsx}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx}\"",
     "audit:deps": "node scripts/audit-deps.mjs"
   },
   "devDependencies": {
     "semver": "^7.7.3",
     "turbo": "2.10.13",
-    "prettier": "latest",
+    "prettier": "3.9.8",
     "typescript": "^6.0.3",
     "yaml": "^2.9.1"
   },

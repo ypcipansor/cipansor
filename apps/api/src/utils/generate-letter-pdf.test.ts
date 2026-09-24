@@ -85,9 +85,7 @@ function pdfText(pdf: Buffer): string {
     const end = raw.indexOf('endstream', start);
     if (end === -1) break;
     try {
-      out += zlib
-        .inflateSync(Buffer.from(raw.slice(start, end), 'latin1'))
-        .toString('latin1');
+      out += zlib.inflateSync(Buffer.from(raw.slice(start, end), 'latin1')).toString('latin1');
     } catch {
       // Bukan aliran Flate, atau terpotong — abaikan.
     }

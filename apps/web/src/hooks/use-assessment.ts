@@ -102,33 +102,49 @@ export function useExams(params?: {
   });
 }
 
-export function useUnifiedRaport(studentId: string, academicYearId: string, semester: number) {
+export function useUnifiedRaport(
+  studentId: string,
+  academicYearId: string,
+  semester: number,
+) {
   return useQuery({
     queryKey: ["unified-raport", studentId, academicYearId, semester],
     queryFn: async () => {
-      const response = await api.get(`/assessment/unified-raport/students/${studentId}`, {
-        params: { academicYearId, semester },
-      });
+      const response = await api.get(
+        `/assessment/unified-raport/students/${studentId}`,
+        {
+          params: { academicYearId, semester },
+        },
+      );
       return response.data;
     },
     enabled: !!studentId && !!academicYearId && !!semester,
   });
 }
 
-export function useStudentHolisticAnalytics(studentId: string, academicYearId: string) {
+export function useStudentHolisticAnalytics(
+  studentId: string,
+  academicYearId: string,
+) {
   return useQuery({
     queryKey: ["student-holistic-analytics", studentId, academicYearId],
     queryFn: async () => {
-      const response = await api.get(`/assessment/students/${studentId}/holistic`, {
-        params: { academicYearId },
-      });
+      const response = await api.get(
+        `/assessment/students/${studentId}/holistic`,
+        {
+          params: { academicYearId },
+        },
+      );
       return response.data.data;
     },
     enabled: !!studentId && !!academicYearId,
   });
 }
 
-export function useUnitEducationAnalytics(unitId: string, academicYearId: string) {
+export function useUnitEducationAnalytics(
+  unitId: string,
+  academicYearId: string,
+) {
   return useQuery({
     queryKey: ["unit-education-analytics", unitId, academicYearId],
     queryFn: async () => {
@@ -300,7 +316,9 @@ export function useCreateGrade() {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["grades"] });
       if (variables.examId) {
-        queryClient.invalidateQueries({ queryKey: ["exam-analytics", variables.examId] });
+        queryClient.invalidateQueries({
+          queryKey: ["exam-analytics", variables.examId],
+        });
       } else {
         queryClient.invalidateQueries({ queryKey: ["exam-analytics"] });
       }
@@ -349,7 +367,9 @@ export function useUpdateGrade() {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["grades"] });
       if (variables.data.examId) {
-        queryClient.invalidateQueries({ queryKey: ["exam-analytics", variables.data.examId] });
+        queryClient.invalidateQueries({
+          queryKey: ["exam-analytics", variables.data.examId],
+        });
       } else {
         queryClient.invalidateQueries({ queryKey: ["exam-analytics"] });
       }

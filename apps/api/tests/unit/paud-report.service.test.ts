@@ -59,7 +59,9 @@ vi.mock('@/lib/prisma', () => ({
 // The addPhoto path claims the blob before inserting the row (BUG 4). The
 // protocol has its own unit + DB integration tests; here the claim succeeds.
 vi.mock('@/utils/blob-claim', () => ({
-  claimBlobForRecord: vi.fn().mockResolvedValue({ id: 'claim-1', operationToken: 'tok-1', kind: 'RECORD' }),
+  claimBlobForRecord: vi
+    .fn()
+    .mockResolvedValue({ id: 'claim-1', operationToken: 'tok-1', kind: 'RECORD' }),
   releaseBlobClaimById: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -203,7 +205,16 @@ describe('PAUD Report Service - CRUD Operations', () => {
 
       await expect(
         paudReportService.createReport(
-          { studentId: 'student-1', unitId: 'unit-1', academicYearId: 'year-1', semester: 'GANJIL' as const, totalDays: 100, presentDays: 90, sickDays: 5, excusedDays: 5 },
+          {
+            studentId: 'student-1',
+            unitId: 'unit-1',
+            academicYearId: 'year-1',
+            semester: 'GANJIL' as const,
+            totalDays: 100,
+            presentDays: 90,
+            sickDays: 5,
+            excusedDays: 5,
+          },
           teacherContext
         )
       ).rejects.toThrow('Student not found');

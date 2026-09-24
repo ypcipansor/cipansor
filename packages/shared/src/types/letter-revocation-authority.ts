@@ -101,7 +101,7 @@ const OVERSIGHT_UP_TO: Record<string, RevocationRank> = {
  * Pengurus dan jabatan unit tidak membutuhkannya: jalan buntunya sudah tertutup
  * oleh kewenangan pengawasan di atas.
  */
-const SUCCEEDS_OWN_OFFICE: ReadonlySet<string> = new Set(['YAYASAN_PEMBINA']);
+const SUCCEEDS_OWN_OFFICE: ReadonlySet<string> = new Set(["YAYASAN_PEMBINA"]);
 
 /**
  * Boleh mencabut?
@@ -119,7 +119,7 @@ const SUCCEEDS_OWN_OFFICE: ReadonlySet<string> = new Set(['YAYASAN_PEMBINA']);
  */
 export function mayRevokeSignature(
   signer: RevocationParty,
-  actor: RevocationParty
+  actor: RevocationParty,
 ): boolean {
   if (signer.userId === actor.userId) return true;
 
@@ -131,9 +131,7 @@ export function mayRevokeSignature(
     return true;
   }
 
-  const limit = actor.roleCode
-    ? OVERSIGHT_UP_TO[actor.roleCode]
-    : undefined;
+  const limit = actor.roleCode ? OVERSIGHT_UP_TO[actor.roleCode] : undefined;
   if (limit === undefined) return false;
 
   return rankOf(signer.roleCode) <= limit;
@@ -147,8 +145,8 @@ export function mayRevokeSignature(
  * ditambahkan di luar daftar ini karena jabatannya bisa apa saja.
  */
 export const REVOCATION_DECIDER_ROLES: readonly string[] = [
-  'YAYASAN_PENGAWAS',
-  'YAYASAN_PEMBINA',
+  "YAYASAN_PENGAWAS",
+  "YAYASAN_PEMBINA",
 ];
 
 /**
@@ -160,13 +158,13 @@ export const REVOCATION_DECIDER_ROLES: readonly string[] = [
 export function whoMayRevoke(signer: RevocationParty): string {
   const rank = rankOf(signer.roleCode);
   if (rank >= RevocationRank.PEMBINA) {
-    return 'Naskah yang ditandatangani Pembina hanya dapat dicabut oleh Pembina Yayasan.';
+    return "Naskah yang ditandatangani Pembina hanya dapat dicabut oleh Pembina Yayasan.";
   }
   if (rank >= RevocationRank.PENGAWAS) {
-    return 'Naskah yang ditandatangani Pengawas hanya dapat dicabut oleh penandatangannya sendiri.';
+    return "Naskah yang ditandatangani Pengawas hanya dapat dicabut oleh penandatangannya sendiri.";
   }
   return (
-    'Hanya penandatangan naskah ini atau Pengawas Yayasan yang dapat mencabutnya. ' +
-    'Ajukan permohonan pencabutan bila Anda menemukan alasan untuk itu.'
+    "Hanya penandatangan naskah ini atau Pengawas Yayasan yang dapat mencabutnya. " +
+    "Ajukan permohonan pencabutan bila Anda menemukan alasan untuk itu."
   );
 }

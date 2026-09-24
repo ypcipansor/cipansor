@@ -374,7 +374,10 @@ export class AttendanceService {
   /**
    * Delete attendance record
    */
-  async delete(id: string, currentUser: { role: string; roleCode?: string | null; unitId: string | null }) {
+  async delete(
+    id: string,
+    currentUser: { role: string; roleCode?: string | null; unitId: string | null }
+  ) {
     const attendance = await prisma.attendance.findUnique({
       where: { id },
       include: {

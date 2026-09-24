@@ -3,7 +3,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // The evaluate path claims a new recording blob before writing the reference
 // (BUG 4 / flag 9). The claim protocol has its own unit + real-Postgres
 // integration tests; here we drive the service's own control flow around it.
-const claimBlobForRecord = vi.hoisted(() => vi.fn().mockResolvedValue({ id: 'claim-1', operationToken: 'tok-1', kind: 'RECORD' }));
+const claimBlobForRecord = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({ id: 'claim-1', operationToken: 'tok-1', kind: 'RECORD' })
+);
 const releaseBlobClaimById = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const CLAIM = { id: 'claim-1', operationToken: 'tok-1', kind: 'RECORD' };
 
@@ -43,7 +45,11 @@ const validScores = {
 describe('MuhadatsahService.evaluate — recording blob claim (BUG 4)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    claimBlobForRecord.mockResolvedValue({ id: 'claim-1', operationToken: 'tok-1', kind: 'RECORD' });
+    claimBlobForRecord.mockResolvedValue({
+      id: 'claim-1',
+      operationToken: 'tok-1',
+      kind: 'RECORD',
+    });
     releaseBlobClaimById.mockResolvedValue(undefined);
     mockPrisma.teacher.findFirst.mockResolvedValue({ id: 'teacher-1' });
   });
@@ -110,9 +116,9 @@ describe('MuhadatsahService.evaluate — recording blob claim (BUG 4)', () => {
   it('refuses to evaluate a record from another unit', async () => {
     mockPrisma.muhadatsah.findUnique.mockResolvedValue(scheduledRecord({ unitId: 'unit-2' }));
 
-    await expect(
-      muhadatsahService.evaluate('m-1', { ...validScores }, user)
-    ).rejects.toThrow(/Access denied/);
+    await expect(muhadatsahService.evaluate('m-1', { ...validScores }, user)).rejects.toThrow(
+      /Access denied/
+    );
 
     expect(mockPrisma.muhadatsah.update).not.toHaveBeenCalled();
   });

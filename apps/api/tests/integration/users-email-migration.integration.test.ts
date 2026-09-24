@@ -162,7 +162,9 @@ describeDb('users email normalization migration', () => {
 
   it('rejects a new duplicate that differs only by case or whitespace', async () => {
     await withClient(async (client) => {
-      await client.query(`INSERT INTO "users" ("id", "name", "email") VALUES ('u1', 'A', 'a@b.id')`);
+      await client.query(
+        `INSERT INTO "users" ("id", "name", "email") VALUES ('u1', 'A', 'a@b.id')`
+      );
       await client.query(migrationSql);
 
       await expect(

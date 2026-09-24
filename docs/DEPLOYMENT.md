@@ -2,6 +2,10 @@
 
 Panduan deployment sistem Cipansor untuk production.
 
+> **Azure App Service:** the move off the single VM (sidecar apps, private
+> PostgreSQL, releases from GitHub Actions) is described in
+> [`deploy-azure.md`](./deploy-azure.md). This guide covers the VM until the cutover.
+
 ## Table of Contents
 
 - [Prerequisites](#prerequisites)
@@ -21,7 +25,7 @@ Panduan deployment sistem Cipansor untuk production.
 
 - **Node.js**: v22 LTS atau lebih baru (wajib — `@azure/storage-blob@12.33.0` mensyaratkan Node >= 22)
 - **PostgreSQL**: v14 atau lebih baru
-- **pnpm**: v10 atau lebih baru
+- **pnpm**: 9.15.9 (dipaku lewat `packageManager` di `package.json`; CI memakai `--frozen-lockfile`)
 - **Docker** (opsional): v24 atau lebih baru
 - **RAM**: Minimum 2GB, recommended 4GB
 - **Disk**: Minimum 20GB
@@ -159,10 +163,12 @@ docker compose exec api sh
 
 # Jalankan migration
 npx prisma migrate deploy
-
-# Jalankan seed (untuk data awal)
-npx prisma db seed
 ```
+
+> **Jangan menjalankan seed ke produksi.** `prisma/seed.ts` men-`TRUNCATE`
+> hampir seluruh tabel sebelum mengisi data contoh, dan kini menolak berjalan
+> tanpa `ALLOW_DESTRUCTIVE_SEED=1` — variabel yang hanya boleh diset untuk basis
+> data pengembangan, CI, atau staging.
 
 ---
 

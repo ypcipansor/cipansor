@@ -63,7 +63,12 @@ interface RoleAssignment {
 async function createPublisher(
   admin: AuthSession,
   label: string,
-): Promise<{ userId: string; email: string; password: string; assignmentId: string }> {
+): Promise<{
+  userId: string;
+  email: string;
+  password: string;
+  assignmentId: string;
+}> {
   const email = `e2e-revoke-${label}-${Date.now()}@cipansor.or.id`;
   const password = "RevokeE2e123!";
 
@@ -75,13 +80,18 @@ async function createPublisher(
   const unit = units.data.find((u) => u.type === "SD_IT") ?? units.data[0];
   expect(unit, "a unit must be seeded for the publisher account").toBeTruthy();
 
-  const created = await apiRequest<{ data: { id: string } }>(admin, "POST", "/users", {
-    name: `E2E Revoke ${label}`,
-    email,
-    password,
-    role: "TEACHER",
-    unitId: unit.id,
-  });
+  const created = await apiRequest<{ data: { id: string } }>(
+    admin,
+    "POST",
+    "/users",
+    {
+      name: `E2E Revoke ${label}`,
+      email,
+      password,
+      role: "TEACHER",
+      unitId: unit.id,
+    },
+  );
   const userId = created.data.id;
 
   // TEACHER is not a publisher, so the upload below must be refused; a
@@ -137,7 +147,11 @@ test.describe("public-media live revocation (finding E)", () => {
 
     // Revoke the publisher assignment; the bearer token is deliberately NOT
     // refreshed, so it still claims TATA_USAHA in its snapshot.
-    await apiRequest(admin, "DELETE", `/roles/assignments/${user.assignmentId}`);
+    await apiRequest(
+      admin,
+      "DELETE",
+      `/roles/assignments/${user.assignmentId}`,
+    );
 
     const after = await uploadPublic(publisher.accessToken);
     expect(after.status).toBe(200);
@@ -166,11 +180,9 @@ test.describe("public-media live revocation (finding E)", () => {
       expect(before.data.containerName).toBe("media-public");
     }
 
-    const users = await apiRequest<{ data: Array<{ id: string; email: string }> }>(
-      admin,
-      "GET",
-      `/users?search=${encodeURIComponent(user.email)}`,
-    );
+    const users = await apiRequest<{
+      data: Array<{ id: string; email: string }>;
+    }>(admin, "GET", `/users?search=${encodeURIComponent(user.email)}`);
     const row = users.data.find((u) => u.email === user.email);
     expect(row, "the throwaway account must be listable").toBeTruthy();
     await apiRequest(admin, "PUT", `/users/${row!.id}`, { isActive: false });

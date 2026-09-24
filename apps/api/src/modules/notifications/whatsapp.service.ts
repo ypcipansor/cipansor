@@ -15,10 +15,26 @@
  * - Message status tracking
  */
 
+import { config as appConfig } from '../../config';
 import { logger } from '../../lib/logger';
 
 // WhatsApp provider types
 type WhatsAppProvider = 'META' | 'FONNTE' | 'WATROOP' | 'WHACENTER' | 'SIMULATOR';
+
+/**
+ * The provider this process sends through.
+ *
+ * `WA_PROVIDER` picks it; unset means the simulator. With outbound messages
+ * switched off (staging) it is the simulator regardless, so a staging copy that
+ * inherits a real provider key still reaches no wali's phone.
+ */
+export function resolveWhatsAppProvider(
+  envProvider: string | undefined,
+  outboundEnabled: boolean
+): WhatsAppProvider {
+  if (!outboundEnabled) return 'SIMULATOR';
+  return (envProvider as WhatsAppProvider) || 'SIMULATOR';
+}
 
 interface WhatsAppConfig {
   provider: WhatsAppProvider;
@@ -319,7 +335,10 @@ class WhatsAppService {
   constructor() {
     // Load configuration from environment
     this.config = {
-      provider: (process.env.WA_PROVIDER as WhatsAppProvider) || 'SIMULATOR',
+      provider: resolveWhatsAppProvider(
+        process.env.WA_PROVIDER,
+        appConfig.outboundMessages.enabled
+      ),
       apiKey: process.env.WA_API_KEY,
       phoneNumberId: process.env.WA_PHONE_NUMBER_ID,
       accessToken: process.env.WA_ACCESS_TOKEN,

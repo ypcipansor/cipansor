@@ -218,7 +218,7 @@ describe('rute yang dijaga memasang gerbangnya pada urutan yang benar', () => {
     expect(call.indexOf('upload.single')).toBeLessThan(call.indexOf('requireTurnstile'));
   });
 
-  it('/sso/login memasang requireTurnstile(\'sso-login\') sebelum validate (BUG: SSO tanpa proteksi bot)', () => {
+  it("/sso/login memasang requireTurnstile('sso-login') sebelum validate (BUG: SSO tanpa proteksi bot)", () => {
     // The SSO endpoint mints a session from a bearer idToken, exactly like
     // `/login` does from a password, so it carries the SAME bot gate. Its own
     // action binds the token to this surface, and the gate must precede

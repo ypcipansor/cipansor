@@ -42,7 +42,9 @@ export class AssignmentsService {
         tx
       );
       if (!claims) {
-        throw Errors.conflict('Lampiran tugas sedang diproses pihak lain; unggah ulang berkas tersebut');
+        throw Errors.conflict(
+          'Lampiran tugas sedang diproses pihak lain; unggah ulang berkas tersebut'
+        );
       }
 
       const created = await tx.assignment.create({
@@ -189,7 +191,9 @@ export class AssignmentsService {
         tx
       );
       if (!claims) {
-        throw Errors.conflict('Lampiran tugas sedang diproses pihak lain; unggah ulang berkas tersebut');
+        throw Errors.conflict(
+          'Lampiran tugas sedang diproses pihak lain; unggah ulang berkas tersebut'
+        );
       }
 
       const row = await tx.assignment.update({
@@ -240,7 +244,9 @@ export class AssignmentsService {
         tx
       );
       if (!claims) {
-        throw Errors.conflict('Lampiran pengumpulan sedang diproses pihak lain; unggah ulang berkas tersebut');
+        throw Errors.conflict(
+          'Lampiran pengumpulan sedang diproses pihak lain; unggah ulang berkas tersebut'
+        );
       }
 
       const row = await tx.assignmentSubmission.upsert({

@@ -1,24 +1,24 @@
-'use client';
+"use client";
 
-import { useCreateResearchSubmission } from '@/hooks/research/use-research';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { useState } from 'react';
-import { useForm } from 'react-hook-form';
-import { toast } from 'sonner';
-import { useParams, useRouter } from 'next/navigation';
+import { useCreateResearchSubmission } from "@/hooks/research/use-research";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { toast } from "sonner";
+import { useParams, useRouter } from "next/navigation";
 
 // Mock hook for fetching single theme if not already in use-research.ts
 function useResearchTheme(id: string) {
   const { data: themes } = useResearchThemes();
-  return { data: themes?.find(t => t.id === id) };
+  return { data: themes?.find((t) => t.id === id) };
 }
 
-import { useResearchThemes } from '@/hooks/research/use-research';
+import { useResearchThemes } from "@/hooks/research/use-research";
 
-import { MainLayout } from '@/components/layout';
+import { MainLayout } from "@/components/layout";
 function ThemeDetailPageContent() {
   const { id } = useParams();
   const router = useRouter();
@@ -27,18 +27,21 @@ function ThemeDetailPageContent() {
 
   const form = useForm({
     defaultValues: {
-      title: '',
-      abstract: '',
+      title: "",
+      abstract: "",
     },
   });
 
   const onSubmit = (data: any) => {
-    createSubmission({ ...data, themeId: id as string }, {
-      onSuccess: (res) => {
-        toast.success('Research submission created');
-        router.push(`/research/submissions/${res.id}`);
+    createSubmission(
+      { ...data, themeId: id as string },
+      {
+        onSuccess: (res) => {
+          toast.success("Research submission created");
+          router.push(`/research/submissions/${res.id}`);
+        },
       },
-    });
+    );
   };
 
   return (
@@ -56,14 +59,24 @@ function ThemeDetailPageContent() {
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Research Title</label>
-              <Input {...form.register('title')} placeholder="Enter your specific research title" required />
+              <Input
+                {...form.register("title")}
+                placeholder="Enter your specific research title"
+                required
+              />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Abstract / Introduction</label>
-              <Textarea {...form.register('abstract')} placeholder="Briefly describe your research objective" rows={5} />
+              <label className="text-sm font-medium">
+                Abstract / Introduction
+              </label>
+              <Textarea
+                {...form.register("abstract")}
+                placeholder="Briefly describe your research objective"
+                rows={5}
+              />
             </div>
             <Button type="submit" disabled={isPending}>
-              {isPending ? 'Creating...' : 'Create Submission'}
+              {isPending ? "Creating..." : "Create Submission"}
             </Button>
           </form>
         </CardContent>

@@ -33,7 +33,13 @@ vi.mock('../../lib/prisma', () => ({
     },
     letter: { findUnique: vi.fn(), update: vi.fn() },
     letterReviewer: { update: vi.fn() },
-    letterSignature: { create: vi.fn(), update: vi.fn(), findUnique: vi.fn(), findMany: vi.fn(), findFirst: vi.fn() },
+    letterSignature: {
+      create: vi.fn(),
+      update: vi.fn(),
+      findUnique: vi.fn(),
+      findMany: vi.fn(),
+      findFirst: vi.fn(),
+    },
     letterFlowEvent: { create: vi.fn() },
     letterSignedDocument: { create: vi.fn(), findUnique: vi.fn() },
     auditLog: { create: vi.fn() },
@@ -275,9 +281,9 @@ describe('persetujuan menyatakan siapa orangnya', () => {
       verifiedIdentity({ nik: null }) as any
     );
 
-    await expect(
-      EsignService.decideRequest('req-1', 'superadmin', true, 30)
-    ).rejects.toThrow(/belum lengkap/);
+    await expect(EsignService.decideRequest('req-1', 'superadmin', true, 30)).rejects.toThrow(
+      /belum lengkap/
+    );
     expect(prisma.signingKeyRequest.update).not.toHaveBeenCalled();
   });
 
@@ -287,9 +293,9 @@ describe('persetujuan menyatakan siapa orangnya', () => {
       verifiedIdentity({ verifiedAt: null }) as any
     );
 
-    await expect(
-      EsignService.decideRequest('req-1', 'superadmin', true, 30)
-    ).rejects.toThrow(/nyatakan kecocokannya/);
+    await expect(EsignService.decideRequest('req-1', 'superadmin', true, 30)).rejects.toThrow(
+      /nyatakan kecocokannya/
+    );
   });
 
   it('mencatat siapa yang memverifikasi, kapan, dan dengan cara apa', async () => {
@@ -352,9 +358,7 @@ describe('persetujuan menyatakan siapa orangnya', () => {
     const call = vi.mocked(prisma.userIdentity.update).mock.calls.at(-1)![0] as any;
     expect(call.data.ktpRetainUntil).toBeInstanceOf(Date);
     // Jauh di depan: 30 hari masa kunci ditambah masa retensi bertahun-tahun.
-    expect(call.data.ktpRetainUntil.getTime()).toBeGreaterThan(
-      Date.now() + 365 * DAY
-    );
+    expect(call.data.ktpRetainUntil.getTime()).toBeGreaterThan(Date.now() + 365 * DAY);
     // Dan berkasnya tidak dibuang.
     expect(call.data.ktpFileName).toBeUndefined();
   });
@@ -379,9 +383,7 @@ describe('persetujuan menyatakan siapa orangnya', () => {
     vi.mocked(prisma.signingKeyRequest.update).mockResolvedValue({ id: 'req-1' } as any);
     vi.mocked(prisma.userSigningKey.deleteMany).mockResolvedValue({ count: 0 } as any);
 
-    await expect(
-      EsignService.decideRequest('req-1', 'superadmin', true, 30)
-    ).resolves.toBeTruthy();
+    await expect(EsignService.decideRequest('req-1', 'superadmin', true, 30)).resolves.toBeTruthy();
 
     // Barisnya memang tetap disentuh — batas simpan berkasnya ditetapkan di
     // sini. Yang diuji adalah verifikasinya tidak ditimpa ulang, bukan bahwa
@@ -449,18 +451,24 @@ describe('pengajuan kunci', () => {
 describe('putusan Super Admin', () => {
   it('menolak masa berlaku di luar batas', async () => {
     vi.mocked(prisma.signingKeyRequest.findUnique).mockResolvedValue({
-      id: 'r1', userId: 'ketua', kind: 'ENROLLMENT', status: 'PENDING',
+      id: 'r1',
+      userId: 'ketua',
+      kind: 'ENROLLMENT',
+      status: 'PENDING',
     } as any);
 
-    await expect(
-      EsignService.decideRequest('r1', 'admin', true, 5000)
-    ).rejects.toThrow(/Masa berlaku/i);
+    await expect(EsignService.decideRequest('r1', 'admin', true, 5000)).rejects.toThrow(
+      /Masa berlaku/i
+    );
   });
 
   it('perpanjangan memperpanjang kunci yang ada, tidak menggantinya', async () => {
     const key = activeKey({ expiresAt: new Date(Date.now() + 5 * DAY) });
     vi.mocked(prisma.signingKeyRequest.findUnique).mockResolvedValue({
-      id: 'r1', userId: 'ketua', kind: 'RENEWAL', status: 'PENDING',
+      id: 'r1',
+      userId: 'ketua',
+      kind: 'RENEWAL',
+      status: 'PENDING',
     } as any);
     vi.mocked(prisma.signingKeyRequest.update).mockResolvedValue({ id: 'r1' } as any);
     vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(key as any);
@@ -476,7 +484,10 @@ describe('putusan Super Admin', () => {
 
   it('tidak memutus pengajuan yang sudah diputus', async () => {
     vi.mocked(prisma.signingKeyRequest.findUnique).mockResolvedValue({
-      id: 'r1', userId: 'ketua', kind: 'ENROLLMENT', status: 'APPROVED',
+      id: 'r1',
+      userId: 'ketua',
+      kind: 'ENROLLMENT',
+      status: 'APPROVED',
     } as any);
     await expect(EsignService.decideRequest('r1', 'admin', true)).rejects.toThrow(
       /sudah diputuskan/i
@@ -502,7 +513,12 @@ describe('ganti passphrase', () => {
     vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(activeKey() as any);
 
     await expect(
-      EsignService.changePassphrase('ketua', 'passphrase-salah-sekali', 'pw', 'passphrase-baru-2026')
+      EsignService.changePassphrase(
+        'ketua',
+        'passphrase-salah-sekali',
+        'pw',
+        'passphrase-baru-2026'
+      )
     ).rejects.toThrow();
 
     expect(prisma.userSigningKey.update).toHaveBeenCalledWith({
@@ -575,10 +591,14 @@ describe('menandatangani surat', () => {
     vi.mocked(prisma.letter.findUnique).mockResolvedValue(letter() as any);
     vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(activeKey() as any);
     vi.mocked(prisma.letterSignature.create).mockResolvedValue({
-      id: 'sig-1', verificationToken: 'tok', signedAt: new Date(),
+      id: 'sig-1',
+      verificationToken: 'tok',
+      signedAt: new Date(),
     } as any);
     vi.mocked(prisma.letterSignature.update).mockResolvedValue({
-      id: 'sig-1', verificationToken: 'tok', signedAt: new Date(),
+      id: 'sig-1',
+      verificationToken: 'tok',
+      signedAt: new Date(),
     } as any);
 
     const out = await EsignService.signLetter('letter-1', 'ketua', PASS);
@@ -613,10 +633,14 @@ describe('menandatangani surat', () => {
     vi.mocked(prisma.letter.findUnique).mockResolvedValue(letter() as any);
     vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(activeKey() as any);
     vi.mocked(prisma.letterSignature.create).mockResolvedValue({
-      id: 'sig-1', verificationToken: 'tok', signedAt: new Date(),
+      id: 'sig-1',
+      verificationToken: 'tok',
+      signedAt: new Date(),
     } as any);
     vi.mocked(prisma.letterSignature.update).mockResolvedValue({
-      id: 'sig-1', verificationToken: 'tok', signedAt: new Date(),
+      id: 'sig-1',
+      verificationToken: 'tok',
+      signedAt: new Date(),
     } as any);
 
     await EsignService.signLetter('letter-1', 'ketua', PASS);
@@ -641,7 +665,9 @@ describe('menandatangani surat', () => {
     vi.mocked(prisma.letter.findUnique).mockResolvedValue(letter() as any);
     vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(activeKey() as any);
     vi.mocked(prisma.letterSignature.create).mockResolvedValue({
-      id: 'sig-1', verificationToken: 'tok', signedAt: new Date(),
+      id: 'sig-1',
+      verificationToken: 'tok',
+      signedAt: new Date(),
     } as any);
     vi.mocked(prisma.letterSignature.update).mockResolvedValue({ id: 'sig-1' } as any);
     vi.mocked(prisma.letterSignedDocument.create).mockRejectedValue(
@@ -669,7 +695,9 @@ describe('menandatangani surat', () => {
     );
     vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(activeKey() as any);
     vi.mocked(prisma.letterSignature.create).mockResolvedValue({
-      id: 'sig-1', verificationToken: 'tok', signedAt: new Date(),
+      id: 'sig-1',
+      verificationToken: 'tok',
+      signedAt: new Date(),
     } as any);
 
     await expect(EsignService.signLetter('letter-1', 'ketua', PASS)).rejects.toThrow(
@@ -817,8 +845,7 @@ describe('verifikasi publik', () => {
     'mengembalikan jalur penyusunan naskah (%s)',
     async (track) => {
       vi.mocked(prisma.letterSignature.findUnique).mockResolvedValue(
-        signedFixture('PUBLIC', 'Isi rahasia yang tidak boleh bocor.', track)
-          .fixture as any
+        signedFixture('PUBLIC', 'Isi rahasia yang tidak boleh bocor.', track).fixture as any
       );
       const r: any = await EsignService.verifyByToken('tok');
       expect(r.letter.authoringTrack).toBe(track);
@@ -838,8 +865,7 @@ describe('verifikasi publik', () => {
     'jalur penyusunan tetap disebut walau perihalnya disembunyikan (sifat %s)',
     async (nature) => {
       vi.mocked(prisma.letterSignature.findUnique).mockResolvedValue(
-        signedFixture(nature, 'Isi rahasia yang tidak boleh bocor.', 'UPLOADED')
-          .fixture as any
+        signedFixture(nature, 'Isi rahasia yang tidak boleh bocor.', 'UPLOADED').fixture as any
       );
       const r: any = await EsignService.verifyByToken('tok');
       expect(r.letter.subject).toBeNull();
@@ -915,9 +941,9 @@ describe('mencabut kunci tanda tangan', () => {
   it('menolak alasan yang hanya berisi spasi', async () => {
     vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(activeKey() as any);
 
-    await expect(
-      EsignService.revokeKey('ketua', 'admin-1', '              ')
-    ).rejects.toThrow(/Alasan pencabutan/i);
+    await expect(EsignService.revokeKey('ketua', 'admin-1', '              ')).rejects.toThrow(
+      /Alasan pencabutan/i
+    );
     expect(prisma.userSigningKey.update).not.toHaveBeenCalled();
   });
 
@@ -980,7 +1006,10 @@ describe('mencabut kunci tanda tangan', () => {
 
     vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(activeKey() as any);
     const berhenti = await EsignService.revokeKey(
-      'ketua', 'admin-1', REASON, 'AFFILIATION_CHANGED' as any
+      'ketua',
+      'admin-1',
+      REASON,
+      'AFFILIATION_CHANGED' as any
     );
     expect(berhenti.lettersNeedReview).toBe(false);
   });
@@ -1068,9 +1097,7 @@ describe('mencabut naskah dinas', () => {
    */
   it('Pengawas boleh mencabut naskah Pengurus, dengan kuncinya sendiri', async () => {
     vi.mocked(prisma.letter.findUnique).mockResolvedValue(signedLetter() as any);
-    vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(
-      revokerKey('pengawas-1') as any
-    );
+    vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(revokerKey('pengawas-1') as any);
 
     await EsignService.revokeLetterSignature('letter-1', PENGAWAS, REASON, PASS);
 
@@ -1201,9 +1228,7 @@ describe('mencabut naskah dinas', () => {
 
   it('mencatat pencabutan pada riwayat alur surat', async () => {
     vi.mocked(prisma.letter.findUnique).mockResolvedValue(signedLetter() as any);
-    vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(
-      revokerKey('pengawas-1') as any
-    );
+    vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(revokerKey('pengawas-1') as any);
 
     await EsignService.revokeLetterSignature('letter-1', PENGAWAS, REASON, PASS);
 
@@ -1219,9 +1244,7 @@ describe('mencabut naskah dinas', () => {
 
   it('memberi tahu penandatangan dan pembuat konsep', async () => {
     vi.mocked(prisma.letter.findUnique).mockResolvedValue(signedLetter() as any);
-    vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(
-      revokerKey('pengawas-1') as any
-    );
+    vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(revokerKey('pengawas-1') as any);
 
     await EsignService.revokeLetterSignature('letter-1', PENGAWAS, REASON, PASS);
 

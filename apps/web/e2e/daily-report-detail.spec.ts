@@ -67,9 +67,7 @@ test.describe("Daily report detail", () => {
     // Edit navigates to the nested route (the useParams-derived id must be
     // correct or this lands on a 404).
     await page.getByRole("button", { name: /^Edit$/i }).click();
-    await expect(page).toHaveURL(
-      new RegExp(`/daily-report/${report.id}/edit`),
-    );
+    await expect(page).toHaveURL(new RegExp(`/daily-report/${report.id}/edit`));
   });
 
   test("the tk detail viewer resolves a private report photo instead of using the raw URL (finding 14)", async ({
@@ -79,7 +77,11 @@ test.describe("Daily report detail", () => {
     // fix, so once uploads land in the private container the tile 403s. It must
     // go through the same resolver as every other private viewer.
     const template = await apiRequest<{
-      data: Array<{ studentId: string; unitId: string; academicYearId: string }>;
+      data: Array<{
+        studentId: string;
+        unitId: string;
+        academicYearId: string;
+      }>;
     }>(session, "GET", "/daily-report?limit=1");
     const base = template.data[0];
     if (!base) {
@@ -172,7 +174,11 @@ test.describe("Daily report detail", () => {
 
   test("create → attach photo → remove photo → delete (real stack)", async () => {
     const template = await apiRequest<{
-      data: Array<{ studentId: string; unitId: string; academicYearId: string }>;
+      data: Array<{
+        studentId: string;
+        unitId: string;
+        academicYearId: string;
+      }>;
     }>(session, "GET", "/daily-report?limit=1");
     const base = template.data[0];
     if (!base) {
@@ -190,9 +196,7 @@ test.describe("Daily report detail", () => {
       "GET",
       `/daily-report?studentId=${base.studentId}&limit=100`,
     );
-    const taken = new Set(
-      existing.data.map((r) => r.reportDate.slice(0, 10)),
-    );
+    const taken = new Set(existing.data.map((r) => r.reportDate.slice(0, 10)));
     let reportDate = "";
     for (let offset = 400; offset < 900; offset += 1) {
       const candidate = new Date(Date.now() + offset * 24 * 60 * 60 * 1000)

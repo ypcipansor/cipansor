@@ -560,16 +560,18 @@ export const sanadService = {
     });
 
     // Emit event for RaporPesantren integration (fire-and-forget, outside transaction)
-    import('@/lib/event-bus').then(({ eventBus }) => {
-      eventBus.emit('takhosus:sanad_assessed', {
-        studentId: sanad.enrollment.studentId,
-        studentName: sanad.enrollment.student.user?.name || 'Unknown',
-        halaqohName: sanad.enrollment.halaqoh?.name ?? 'Unknown',
-        juz: sanad.juz,
-        grade: sanad.grade,
-        certifiedAt: sanad.certifiedAt,
-      });
-    }).catch(console.error);
+    import('@/lib/event-bus')
+      .then(({ eventBus }) => {
+        eventBus.emit('takhosus:sanad_assessed', {
+          studentId: sanad.enrollment.studentId,
+          studentName: sanad.enrollment.student.user?.name || 'Unknown',
+          halaqohName: sanad.enrollment.halaqoh?.name ?? 'Unknown',
+          juz: sanad.juz,
+          grade: sanad.grade,
+          certifiedAt: sanad.certifiedAt,
+        });
+      })
+      .catch(console.error);
 
     // Certificate eligibility check: if certain juz count reached
     await this.checkCertificateEligibility(sanad.enrollment.studentId);
@@ -649,16 +651,18 @@ export const sanadService = {
     });
 
     // Emit event for RaporPesantren integration (fire-and-forget, outside transaction)
-    import('@/lib/event-bus').then(({ eventBus }) => {
-      eventBus.emit('takhosus:sanad_assessed', {
-        studentId: sanad.enrollment.studentId,
-        studentName: sanad.enrollment.student.user?.name || 'Unknown',
-        halaqohName: sanad.enrollment.halaqoh?.name ?? 'Unknown',
-        juz: sanad.juz,
-        grade: sanad.grade,
-        certifiedAt: sanad.certifiedAt,
-      });
-    }).catch(console.error);
+    import('@/lib/event-bus')
+      .then(({ eventBus }) => {
+        eventBus.emit('takhosus:sanad_assessed', {
+          studentId: sanad.enrollment.studentId,
+          studentName: sanad.enrollment.student.user?.name || 'Unknown',
+          halaqohName: sanad.enrollment.halaqoh?.name ?? 'Unknown',
+          juz: sanad.juz,
+          grade: sanad.grade,
+          certifiedAt: sanad.certifiedAt,
+        });
+      })
+      .catch(console.error);
 
     return sanad;
   },
@@ -688,17 +692,18 @@ export const sanadService = {
         let status: string = enrollment.status;
 
         // Check once whether a passed 30-juz simaan justifies the COMPLETED state
-        const has30JuzSimaan = enrollment.status === 'COMPLETED'
-          ? await tx.simaanExam.findFirst({
-              where: {
-                studentId: enrollment.studentId,
-                passed: true,
-                juzStart: 1,
-                juzEnd: 30,
-              },
-              select: { id: true },
-            })
-          : null;
+        const has30JuzSimaan =
+          enrollment.status === 'COMPLETED'
+            ? await tx.simaanExam.findFirst({
+                where: {
+                  studentId: enrollment.studentId,
+                  passed: true,
+                  juzStart: 1,
+                  juzEnd: 30,
+                },
+                select: { id: true },
+              })
+            : null;
 
         if (enrollment.status === 'COMPLETED' && enrollment.completedJuz > sanadCount) {
           if (has30JuzSimaan) {
@@ -791,7 +796,7 @@ export const sanadService = {
         data: { studentId, certificateType: target.type },
       });
     }
-  }
+  },
 };
 
 // =====================================

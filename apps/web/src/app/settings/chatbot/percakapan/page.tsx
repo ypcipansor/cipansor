@@ -86,7 +86,8 @@ function ConversationDialog({
         {data && (
           <div className="space-y-4">
             <p className="text-xs text-muted-foreground">
-              Dimulai {formatWaktu(data.startedAt)} · {data.messageCount} giliran
+              Dimulai {formatWaktu(data.startedAt)} · {data.messageCount}{" "}
+              giliran
             </p>
 
             {data.messages.map((message) => (
@@ -179,12 +180,16 @@ function PercakapanContent() {
     );
   }
 
-  const totalPages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
+  const totalPages = data
+    ? Math.max(1, Math.ceil(data.total / data.pageSize))
+    : 1;
 
   return (
     <div className="container mx-auto max-w-5xl space-y-6 py-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Riwayat Percakapan</h1>
+        <h1 className="text-3xl font-bold tracking-tight">
+          Riwayat Percakapan
+        </h1>
         <p className="text-muted-foreground">
           Apa yang ditanyakan pengunjung kepada asisten daring, dan apa yang
           dijawabnya.
@@ -198,8 +203,8 @@ function PercakapanContent() {
         <AlertDescription>
           Isi percakapan dapat memuat nama dan keadaan keluarga yang diketik
           sendiri oleh pengunjung. Halaman ini hanya dapat dibuka Super Admin,
-          tidak ada alamat IP yang disimpan, dan seluruh isinya terhapus otomatis
-          setelah {data?.retentionDays ?? 90} hari.
+          tidak ada alamat IP yang disimpan, dan seluruh isinya terhapus
+          otomatis setelah {data?.retentionDays ?? 90} hari.
         </AlertDescription>
       </Alert>
 

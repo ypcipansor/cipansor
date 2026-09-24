@@ -54,10 +54,7 @@ export async function getIntegratedRiskAlerts(req: Request, res: Response, next:
     // helper and the admissions `getPriorityLeads` controller). All other roles
     // are scoped to their own unit and must not be able to query another unit's
     // integrated risk alerts by passing a different `unitId`.
-    if (
-      user.role !== 'SUPER_ADMIN' &&
-      user.unitId !== unitId
-    ) {
+    if (user.role !== 'SUPER_ADMIN' && user.unitId !== unitId) {
       throw Errors.forbidden('Access to this unit is not allowed');
     }
 

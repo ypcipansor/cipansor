@@ -1,6 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { mockTalentProfile, mockTalentAssessment, mockTrainingProgram, mockTrainingEnrollment, mockSuccessionPlan } = vi.hoisted(() => ({
+const {
+  mockTalentProfile,
+  mockTalentAssessment,
+  mockTrainingProgram,
+  mockTrainingEnrollment,
+  mockSuccessionPlan,
+} = vi.hoisted(() => ({
   mockTalentProfile: {
     findMany: vi.fn(),
     findUnique: vi.fn(),
@@ -36,7 +42,13 @@ vi.mock('@prisma/client', () => ({
     trainingEnrollment = mockTrainingEnrollment;
     successionPlan = mockSuccessionPlan;
   },
-  Prisma: { Decimal: class { constructor(v: number) { return v; } } },
+  Prisma: {
+    Decimal: class {
+      constructor(v: number) {
+        return v;
+      }
+    },
+  },
 }));
 
 vi.mock('../../../../src/lib/prisma', () => ({

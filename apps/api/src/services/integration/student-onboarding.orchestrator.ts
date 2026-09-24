@@ -457,9 +457,7 @@ export class StudentOnboardingOrchestrator {
           select: { nis: true },
         });
         nis =
-          customNis ||
-          nisTercatat?.nis ||
-          (student.unitId === effectiveUnitId ? student.nis : nis);
+          customNis || nisTercatat?.nis || (student.unitId === effectiveUnitId ? student.nis : nis);
 
         student = await tx.student.update({
           where: { id: student.id },

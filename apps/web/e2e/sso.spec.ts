@@ -222,7 +222,9 @@ test.describe("Single Sign-On (SSO) Buttons", () => {
 
     const fallback = page.getByTestId("google-sso-fallback");
     await expect(fallback).toBeVisible({ timeout: 10000 });
-    const button = fallback.getByRole("button", { name: /Masuk dengan Google/i });
+    const button = fallback.getByRole("button", {
+      name: /Masuk dengan Google/i,
+    });
     await expect(button).toBeVisible();
 
     // A real sign-in after the idle period: the stub's credential callback runs

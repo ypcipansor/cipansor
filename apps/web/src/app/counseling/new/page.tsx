@@ -115,9 +115,7 @@ export default function NewCounselingPage() {
               <User className="h-5 w-5" />
               Informasi Siswa
             </CardTitle>
-            <CardDescription>
-              Pilih siswa yang akan dikonseling
-            </CardDescription>
+            <CardDescription>Pilih siswa yang akan dikonseling</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
@@ -199,9 +197,7 @@ export default function NewCounselingPage() {
         <Card>
           <CardHeader>
             <CardTitle>Detail Sesi</CardTitle>
-            <CardDescription>
-              Informasi mengenai sesi konseling
-            </CardDescription>
+            <CardDescription>Informasi mengenai sesi konseling</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
@@ -224,7 +220,11 @@ export default function NewCounselingPage() {
                 <Select
                   defaultValue="ACADEMIC"
                   onValueChange={(v) =>
-                    setValue("category", v as CreateCounselingInput["category"], { shouldValidate: true })
+                    setValue(
+                      "category",
+                      v as CreateCounselingInput["category"],
+                      { shouldValidate: true },
+                    )
                   }
                 >
                   <SelectTrigger>
@@ -276,7 +276,9 @@ export default function NewCounselingPage() {
                 <Input
                   id="scheduledAt"
                   type="datetime-local"
-                  {...register("scheduledAt", { required: "Jadwal wajib diisi" })}
+                  {...register("scheduledAt", {
+                    required: "Jadwal wajib diisi",
+                  })}
                 />
               </div>
               <div className="space-y-2">

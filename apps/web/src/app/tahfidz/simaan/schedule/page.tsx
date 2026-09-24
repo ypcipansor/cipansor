@@ -210,8 +210,7 @@ export default function SimaanSchedulePage() {
                               </div>
                               <div>
                                 <h3 className="font-semibold">
-                                  {exam.student?.user?.name ||
-                                    "Santri"}
+                                  {exam.student?.user?.name || "Santri"}
                                 </h3>
                                 <p className="text-sm text-muted-foreground">
                                   {exam.student?.nis}
@@ -230,8 +229,13 @@ export default function SimaanSchedulePage() {
                               </div>
                             </div>
                             <div className="text-right">
-                              <Badge className={STATUS_COLORS[exam.status || "SCHEDULED"]}>
-                                {STATUS_LABELS[exam.status || "SCHEDULED"] || exam.status}
+                              <Badge
+                                className={
+                                  STATUS_COLORS[exam.status || "SCHEDULED"]
+                                }
+                              >
+                                {STATUS_LABELS[exam.status || "SCHEDULED"] ||
+                                  exam.status}
                               </Badge>
                               {/* {exam.duration && (
                                 <p className="text-sm text-muted-foreground mt-2 flex items-center gap-1">
@@ -304,8 +308,7 @@ export default function SimaanSchedulePage() {
                       </div>
                       <div>
                         <h4 className="font-medium">
-                          {exam.student?.user?.name ||
-                            "Santri"}
+                          {exam.student?.user?.name || "Santri"}
                         </h4>
                         <p className="text-sm text-muted-foreground">
                           {EXAM_TYPE_LABELS[exam.simaanType] || exam.simaanType}

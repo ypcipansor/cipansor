@@ -74,10 +74,9 @@ async function openEditFormReady(
         r.ok(),
       { timeout: 30_000 },
     ),
-    page.waitForResponse(
-      (r) => r.url().includes("/students?") && r.ok(),
-      { timeout: 30_000 },
-    ),
+    page.waitForResponse((r) => r.url().includes("/students?") && r.ok(), {
+      timeout: 30_000,
+    }),
     page.goto(`/tk/assessment/${assessmentId}/edit`),
   ]);
 }
@@ -100,9 +99,9 @@ async function fillStepOne(page: import("@playwright/test").Page) {
 /** Advance one step, asserting it actually moved (validation can block it). */
 async function goNext(page: import("@playwright/test").Page, step: number) {
   await page.getByRole("button", { name: "Lanjut" }).click();
-  await expect(page.getByText(`Langkah ${step}:`, { exact: false })).toBeVisible(
-    { timeout: 10_000 },
-  );
+  await expect(
+    page.getByText(`Langkah ${step}:`, { exact: false }),
+  ).toBeVisible({ timeout: 10_000 });
 }
 
 async function advanceToReviewStep(page: import("@playwright/test").Page) {

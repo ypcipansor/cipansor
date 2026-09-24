@@ -61,9 +61,15 @@ function buatTx(over: Record<string, unknown> = {}) {
       }),
       update: vi.fn().mockResolvedValue({ id: 'reg-1' }),
     },
-    admissionPeriod: { findUnique: vi.fn().mockResolvedValue({ unitId: SMP, academicYearId: 'ay-2027' }) },
+    admissionPeriod: {
+      findUnique: vi.fn().mockResolvedValue({ unitId: SMP, academicYearId: 'ay-2027' }),
+    },
     unit: { findUnique: vi.fn().mockResolvedValue({ type: 'SMP_IT' }) },
-    user: { create: vi.fn(), findUnique: vi.fn().mockResolvedValue(null), findFirst: vi.fn().mockResolvedValue(null) },
+    user: {
+      create: vi.fn(),
+      findUnique: vi.fn().mockResolvedValue(null),
+      findFirst: vi.fn().mockResolvedValue(null),
+    },
     role: { findFirst: vi.fn().mockResolvedValue({ id: 'role-smpit-siswa' }) },
     userRoleAssignment: {
       findMany: vi.fn().mockResolvedValue([]),
@@ -75,7 +81,11 @@ function buatTx(over: Record<string, unknown> = {}) {
       findFirst: vi.fn().mockResolvedValue(alumniSd()),
       findUnique: vi.fn().mockResolvedValue(alumniSd()),
       create: vi.fn(),
-      update: vi.fn().mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ ...alumniSd(), ...data, id: 'stud-1' })),
+      update: vi.fn().mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
+        ...alumniSd(),
+        ...data,
+        id: 'stud-1',
+      })),
     },
     studentUnitIdentifier: {
       findUnique: vi.fn().mockResolvedValue(null),
@@ -84,15 +94,28 @@ function buatTx(over: Record<string, unknown> = {}) {
     },
     studentUnitEnrollment: {
       upsert: vi.fn().mockResolvedValue({}),
-      findMany: vi.fn().mockResolvedValue([
-        { id: 'sue-sd-2025', entryDate: new Date('2025-07-14'), academicYearId: 'ay-2025' },
-      ]),
+      findMany: vi
+        .fn()
+        .mockResolvedValue([
+          { id: 'sue-sd-2025', entryDate: new Date('2025-07-14'), academicYearId: 'ay-2025' },
+        ]),
       update: vi.fn().mockResolvedValue({}),
     },
-    studentParent: { count: vi.fn().mockResolvedValue(1), upsert: vi.fn(), create: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
+    studentParent: {
+      count: vi.fn().mockResolvedValue(1),
+      upsert: vi.fn(),
+      create: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
+    },
     classEnrollment: { create: vi.fn(), updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
     class: { findUnique: vi.fn().mockResolvedValue(null) },
-    academicYear: { findFirst: vi.fn().mockResolvedValue({ id: 'ay-2027', startDate: new Date('2027-07-15'), endDate: new Date('2028-06-30') }) },
+    academicYear: {
+      findFirst: vi.fn().mockResolvedValue({
+        id: 'ay-2027',
+        startDate: new Date('2027-07-15'),
+        endDate: new Date('2028-06-30'),
+      }),
+    },
     medicalRecord: { findFirst: vi.fn().mockResolvedValue({ id: 'med-1' }), create: vi.fn() },
     santriWallet: { findUnique: vi.fn().mockResolvedValue({ id: 'wallet-1' }), create: vi.fn() },
     ...over,
@@ -118,7 +141,12 @@ describe('lulusan yang melanjutkan ke unit berikutnya', () => {
 
     expect(tx.user.create).not.toHaveBeenCalled();
     expect(tx.student.create).not.toHaveBeenCalled();
-    expect(hasil).toMatchObject({ success: true, studentId: 'stud-1', userId: 'user-1', santriLanjutan: true });
+    expect(hasil).toMatchObject({
+      success: true,
+      studentId: 'stud-1',
+      userId: 'user-1',
+      santriLanjutan: true,
+    });
     expect(tx.student.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'stud-1' },
@@ -148,10 +176,15 @@ describe('lulusan yang melanjutkan ke unit berikutnya', () => {
     await onboard();
 
     expect(tx.studentUnitEnrollment.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ exitDate: null, unitId: { not: SMP } }) })
+      expect.objectContaining({
+        where: expect.objectContaining({ exitDate: null, unitId: { not: SMP } }),
+      })
     );
     expect(tx.studentUnitEnrollment.update).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: 'sue-sd-2025' }, data: expect.objectContaining({ exitReason: 'LULUS' }) })
+      expect.objectContaining({
+        where: { id: 'sue-sd-2025' },
+        data: expect.objectContaining({ exitReason: 'LULUS' }),
+      })
     );
   });
 
@@ -235,7 +268,10 @@ describe('basis data mengizinkan satu santri punya beberapa pendaftaran', () => 
 
   it('migrasi membuang indeks unik lama dan hanya melonggarkan', () => {
     const sql = fs.readFileSync(
-      path.join(__dirname, '../../../prisma/migrations/20260920120000_registrant_per_enrollment/migration.sql'),
+      path.join(
+        __dirname,
+        '../../../prisma/migrations/20260920120000_registrant_per_enrollment/migration.sql'
+      ),
       'utf-8'
     );
     expect(sql).toMatch(/DROP INDEX IF EXISTS "registrants_student_id_key"/);

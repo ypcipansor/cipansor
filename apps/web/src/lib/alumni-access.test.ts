@@ -34,7 +34,11 @@ describe("alumniAccessOf", () => {
 
   it("peran penugasan utama yang menentukan, bukan kolom users.role", () => {
     // ketua@ di produksi: STAFF di kolom lama, Ketua Pengurus lewat penugasan.
-    expect(alumniAccessOf(dengan("YAYASAN_KETUA")).canReadPersonalData).toBe(true);
-    expect(alumniAccessOf({ role: "SUPER_ADMIN", userRoles: [] }).canManage).toBe(true);
+    expect(alumniAccessOf(dengan("YAYASAN_KETUA")).canReadPersonalData).toBe(
+      true,
+    );
+    expect(
+      alumniAccessOf({ role: "SUPER_ADMIN", userRoles: [] }).canManage,
+    ).toBe(true);
   });
 });

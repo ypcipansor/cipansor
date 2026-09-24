@@ -1,9 +1,5 @@
 import { test, expect } from "@playwright/test";
-import {
-  loginAs,
-  SEED_USERS,
-  type AuthSession,
-} from "./helpers/auth-api";
+import { loginAs, SEED_USERS, type AuthSession } from "./helpers/auth-api";
 
 const API_URL = process.env.API_URL || "http://localhost:3001/api";
 

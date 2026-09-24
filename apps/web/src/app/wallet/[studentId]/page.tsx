@@ -835,7 +835,9 @@ function WalletDetailPageContent({ params }: PageProps) {
   );
 }
 
-export default function WalletDetailPage(props: Parameters<typeof WalletDetailPageContent>[0]) {
+export default function WalletDetailPage(
+  props: Parameters<typeof WalletDetailPageContent>[0],
+) {
   return (
     <MainLayout>
       <WalletDetailPageContent {...props} />

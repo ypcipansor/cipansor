@@ -25,7 +25,10 @@ vi.mock('../../utils/blob-claim', () => ({
 import { claimBlobsForRecord, releaseBlobClaims } from '../../utils/blob-claim';
 
 const A = '/uploads/tugas.pdf';
-const tx = { assignment: { create: vi.fn(), update: vi.fn() }, assignmentSubmission: { upsert: vi.fn() } };
+const tx = {
+  assignment: { create: vi.fn(), update: vi.fn() },
+  assignmentSubmission: { upsert: vi.fn() },
+};
 const handles = [{ id: 'h1', operationToken: 't1', kind: 'RECORD' }];
 
 const service = new AssignmentsService();

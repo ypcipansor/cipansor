@@ -18,7 +18,8 @@ router.use(authenticate);
 // read-only in Express 5.
 // The write endpoint is the only rate-limited one. `uploadLimiter` skips
 // development/test internally; production caps multipart uploads per minute.
-router.post('/',
+router.post(
+  '/',
   uploadLimiter,
   validateQuery(uploadQuerySchema),
   handleSingleUpload(

@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import { uploadedFileRefSchema } from '@cipansor/shared';
 
-
 export const CourseStatus = z.enum(['DRAFT', 'PUBLISHED', 'ONGOING', 'COMPLETED', 'CANCELLED']);
 
 export const createCourseSchema = z.object({
@@ -21,15 +20,17 @@ export const createCourseSchema = z.object({
 
 export const updateCourseSchema = createCourseSchema.partial();
 
-export const enrollCourseSchema = z.object({
-  courseId: z.string().uuid(),
-  studentId: z.string().uuid().optional(),
-  externalName: z.string().optional(),
-  externalEmail: z.string().email().optional(),
-  externalPhone: z.string().optional(),
-}).refine(data => data.studentId || data.externalName, {
-  message: "Either studentId or externalName must be provided",
-});
+export const enrollCourseSchema = z
+  .object({
+    courseId: z.string().uuid(),
+    studentId: z.string().uuid().optional(),
+    externalName: z.string().optional(),
+    externalEmail: z.string().email().optional(),
+    externalPhone: z.string().optional(),
+  })
+  .refine((data) => data.studentId || data.externalName, {
+    message: 'Either studentId or externalName must be provided',
+  });
 
 export type CreateCourseInput = z.infer<typeof createCourseSchema>;
 export type UpdateCourseInput = z.infer<typeof updateCourseSchema>;

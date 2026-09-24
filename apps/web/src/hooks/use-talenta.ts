@@ -19,7 +19,8 @@ function useDebouncedValue<T>(value: T, delay: number = 300): T {
 export const useTalentProfiles = (params?: { category?: string }) => {
   return useQuery({
     queryKey: ["talenta", "profiles", params],
-    queryFn: async () => (await api.get("/talenta/profiles", { params })).data.data,
+    queryFn: async () =>
+      (await api.get("/talenta/profiles", { params })).data.data,
   });
 };
 
@@ -41,7 +42,8 @@ export const useTalentProfile = (id: string) => {
 export const useTrainings = (params?: { status?: string }) => {
   return useQuery({
     queryKey: ["talenta", "trainings", params],
-    queryFn: async () => (await api.get("/talenta/trainings", { params })).data.data,
+    queryFn: async () =>
+      (await api.get("/talenta/trainings", { params })).data.data,
   });
 };
 
@@ -55,81 +57,139 @@ export const useSuccessions = () => {
 export const useCreateTalentProfile = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (data: any) => (await api.post("/talenta/profiles", data)).data,
-    onSuccess: () => { toast.success("Profil talenta berhasil dibuat"); qc.invalidateQueries({ queryKey: ["talenta"] }); },
-    onError: (e: any) => { toast.error(e.response?.data?.message || "Gagal membuat profil"); },
+    mutationFn: async (data: any) =>
+      (await api.post("/talenta/profiles", data)).data,
+    onSuccess: () => {
+      toast.success("Profil talenta berhasil dibuat");
+      qc.invalidateQueries({ queryKey: ["talenta"] });
+    },
+    onError: (e: any) => {
+      toast.error(e.response?.data?.message || "Gagal membuat profil");
+    },
   });
 };
 
 export const useCreateTalentAssessment = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (data: any) => (await api.post("/talenta/assessments", data)).data,
-    onSuccess: () => { toast.success("Penilaian berhasil dicatat"); qc.invalidateQueries({ queryKey: ["talenta"] }); },
-    onError: (e: any) => { toast.error(e.response?.data?.message || "Gagal mencatat penilaian"); },
+    mutationFn: async (data: any) =>
+      (await api.post("/talenta/assessments", data)).data,
+    onSuccess: () => {
+      toast.success("Penilaian berhasil dicatat");
+      qc.invalidateQueries({ queryKey: ["talenta"] });
+    },
+    onError: (e: any) => {
+      toast.error(e.response?.data?.message || "Gagal mencatat penilaian");
+    },
   });
 };
 
 export const useCreateTraining = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (data: any) => (await api.post("/talenta/trainings", data)).data,
-    onSuccess: () => { toast.success("Program pelatihan berhasil dibuat"); qc.invalidateQueries({ queryKey: ["talenta"] }); },
-    onError: (e: any) => { toast.error(e.response?.data?.message || "Gagal membuat pelatihan"); },
+    mutationFn: async (data: any) =>
+      (await api.post("/talenta/trainings", data)).data,
+    onSuccess: () => {
+      toast.success("Program pelatihan berhasil dibuat");
+      qc.invalidateQueries({ queryKey: ["talenta"] });
+    },
+    onError: (e: any) => {
+      toast.error(e.response?.data?.message || "Gagal membuat pelatihan");
+    },
   });
 };
 
 export const useEnrollTraining = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (data: { programId: string; userId: string }) => (await api.post("/talenta/trainings/enroll", data)).data,
-    onSuccess: () => { toast.success("Peserta berhasil didaftarkan"); qc.invalidateQueries({ queryKey: ["talenta"] }); },
-    onError: (e: any) => { toast.error(e.response?.data?.message || "Gagal mendaftarkan peserta"); },
+    mutationFn: async (data: { programId: string; userId: string }) =>
+      (await api.post("/talenta/trainings/enroll", data)).data,
+    onSuccess: () => {
+      toast.success("Peserta berhasil didaftarkan");
+      qc.invalidateQueries({ queryKey: ["talenta"] });
+    },
+    onError: (e: any) => {
+      toast.error(e.response?.data?.message || "Gagal mendaftarkan peserta");
+    },
   });
 };
 
 export const useCreateSuccession = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (data: any) => (await api.post("/talenta/successions", data)).data,
-    onSuccess: () => { toast.success("Rencana suksesi berhasil dibuat"); qc.invalidateQueries({ queryKey: ["talenta"] }); },
-    onError: (e: any) => { toast.error(e.response?.data?.message || "Gagal membuat rencana suksesi"); },
+    mutationFn: async (data: any) =>
+      (await api.post("/talenta/successions", data)).data,
+    onSuccess: () => {
+      toast.success("Rencana suksesi berhasil dibuat");
+      qc.invalidateQueries({ queryKey: ["talenta"] });
+    },
+    onError: (e: any) => {
+      toast.error(e.response?.data?.message || "Gagal membuat rencana suksesi");
+    },
   });
 };
 
 export const useUpdateSuccession = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: any }) => (await api.put(`/talenta/successions/${id}`, data)).data,
-    onSuccess: () => { toast.success("Rencana suksesi berhasil diperbarui"); qc.invalidateQueries({ queryKey: ["talenta"] }); },
-    onError: (e: any) => { toast.error(e.response?.data?.message || "Gagal memperbarui rencana suksesi"); },
+    mutationFn: async ({ id, data }: { id: string; data: any }) =>
+      (await api.put(`/talenta/successions/${id}`, data)).data,
+    onSuccess: () => {
+      toast.success("Rencana suksesi berhasil diperbarui");
+      qc.invalidateQueries({ queryKey: ["talenta"] });
+    },
+    onError: (e: any) => {
+      toast.error(
+        e.response?.data?.message || "Gagal memperbarui rencana suksesi",
+      );
+    },
   });
 };
 
 export const useDeleteProfile = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (id: string) => (await api.delete(`/talenta/profiles/${id}`)).data,
-    onSuccess: () => { toast.success("Profil talenta berhasil dihapus"); qc.invalidateQueries({ queryKey: ["talenta"] }); },
-    onError: (e: any) => { toast.error(e.response?.data?.message || "Gagal menghapus profil"); },
+    mutationFn: async (id: string) =>
+      (await api.delete(`/talenta/profiles/${id}`)).data,
+    onSuccess: () => {
+      toast.success("Profil talenta berhasil dihapus");
+      qc.invalidateQueries({ queryKey: ["talenta"] });
+    },
+    onError: (e: any) => {
+      toast.error(e.response?.data?.message || "Gagal menghapus profil");
+    },
   });
 };
 
 export const useDeleteTraining = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (id: string) => (await api.delete(`/talenta/trainings/${id}`)).data,
-    onSuccess: () => { toast.success("Program pelatihan berhasil dihapus"); qc.invalidateQueries({ queryKey: ["talenta"] }); },
-    onError: (e: any) => { toast.error(e.response?.data?.message || "Gagal menghapus pelatihan"); },
+    mutationFn: async (id: string) =>
+      (await api.delete(`/talenta/trainings/${id}`)).data,
+    onSuccess: () => {
+      toast.success("Program pelatihan berhasil dihapus");
+      qc.invalidateQueries({ queryKey: ["talenta"] });
+    },
+    onError: (e: any) => {
+      toast.error(e.response?.data?.message || "Gagal menghapus pelatihan");
+    },
   });
 };
 
 export const useDeleteSuccession = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (id: string) => (await api.delete(`/talenta/successions/${id}`)).data,
-    onSuccess: () => { toast.success("Rencana suksesi berhasil dihapus"); qc.invalidateQueries({ queryKey: ["talenta"] }); },
-    onError: (e: any) => { toast.error(e.response?.data?.message || "Gagal menghapus rencana suksesi"); },
+    mutationFn: async (id: string) =>
+      (await api.delete(`/talenta/successions/${id}`)).data,
+    onSuccess: () => {
+      toast.success("Rencana suksesi berhasil dihapus");
+      qc.invalidateQueries({ queryKey: ["talenta"] });
+    },
+    onError: (e: any) => {
+      toast.error(
+        e.response?.data?.message || "Gagal menghapus rencana suksesi",
+      );
+    },
   });
 };
 
@@ -147,7 +207,13 @@ export const useSuccessorSuggestions = (
   // instead of firing a network request on every keystroke.
   const debounced = useDebouncedValue(positionTitle, 300);
   return useQuery({
-    queryKey: ["talenta", "successor-suggestions", debounced, unitId, targetPositionId],
+    queryKey: [
+      "talenta",
+      "successor-suggestions",
+      debounced,
+      unitId,
+      targetPositionId,
+    ],
     queryFn: async () =>
       (
         await api.get("/talenta/successions/suggest", {

@@ -166,11 +166,7 @@ function refHas(column: string, ref: BlobRef): Record<string, unknown> {
  * allow-listed constants supplied by this module, never caller data, so the raw
  * fragment CodeQL cannot trace as parameterized stays safe.
  */
-export function refJsonPredicate(
-  table: string,
-  column: string,
-  ref: BlobRef
-): Prisma.Sql {
+export function refJsonPredicate(table: string, column: string, ref: BlobRef): Prisma.Sql {
   const candidates = Array.isArray(ref) ? ref : [ref];
   const localSuffix = localOriginSuffix(candidates);
   const col = Prisma.raw(`"${table}"."${column}"`);
@@ -943,7 +939,11 @@ const BLOB_REFERENCE_COUNTERS: ReadonlyArray<{
     count: (a) => prisma.book.count(a),
   },
   { label: 'asset', where: (u) => refWhere('photoUrl', u), count: (a) => prisma.asset.count(a) },
-  { label: 'payment', where: (u) => refWhere('proofUrl', u), count: (a) => prisma.payment.count(a) },
+  {
+    label: 'payment',
+    where: (u) => refWhere('proofUrl', u),
+    count: (a) => prisma.payment.count(a),
+  },
   {
     label: 'donation',
     where: (u) => refWhere('paymentProof', u),
@@ -969,7 +969,11 @@ const BLOB_REFERENCE_COUNTERS: ReadonlyArray<{
     where: (u) => refWhere('attachmentUrl', u),
     count: (a) => prisma.letterRevocationRequest.count(a),
   },
-  { label: 'student', where: (u) => refWhere('photoUrl', u), count: (a) => prisma.student.count(a) },
+  {
+    label: 'student',
+    where: (u) => refWhere('photoUrl', u),
+    count: (a) => prisma.student.count(a),
+  },
   {
     label: 'boardMember',
     where: (u) => refWhere('photoUrl', u),
@@ -1039,7 +1043,9 @@ const BLOB_REFERENCE_COUNTERS: ReadonlyArray<{
   },
   {
     label: 'digitalCertificate',
-    where: (u) => ({ OR: [refWhere('pdfUrl', u), refWhere('signatureUrl', u), refWhere('thumbnailUrl', u)] }),
+    where: (u) => ({
+      OR: [refWhere('pdfUrl', u), refWhere('signatureUrl', u), refWhere('thumbnailUrl', u)],
+    }),
     count: (a) => prisma.digitalCertificate.count(a),
   },
   {

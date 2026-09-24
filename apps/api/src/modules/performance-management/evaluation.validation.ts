@@ -5,11 +5,7 @@ import {
   updateBehaviorScoreSchema,
 } from '@cipansor/shared';
 
-export {
-  createEvaluationSchema,
-  updateIndicatorRealizationSchema,
-  updateBehaviorScoreSchema,
-};
+export { createEvaluationSchema, updateIndicatorRealizationSchema, updateBehaviorScoreSchema };
 
 export const createBehavioralValueSchema = z.object({
   name: z.string().min(1),

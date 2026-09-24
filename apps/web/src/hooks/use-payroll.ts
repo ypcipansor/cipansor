@@ -63,11 +63,7 @@ export interface EmployeeSalaryComponent {
 }
 
 export type PayrollStatus =
-  | "DRAFT"
-  | "CALCULATED"
-  | "APPROVED"
-  | "PAID"
-  | "CANCELLED";
+  "DRAFT" | "CALCULATED" | "APPROVED" | "PAID" | "CANCELLED";
 
 export const PAYROLL_STATUS_MAP: Record<
   PayrollStatus,

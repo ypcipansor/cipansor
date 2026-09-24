@@ -141,7 +141,9 @@ function flattenQuery(args: unknown[]): string {
 
 /** Every raw-SQL call issued so far, flattened. */
 function rawCalls(): string[] {
-  return ((prisma as any).$queryRaw as { mock: { calls: unknown[][] } }).mock.calls.map(flattenQuery);
+  return ((prisma as any).$queryRaw as { mock: { calls: unknown[][] } }).mock.calls.map(
+    flattenQuery
+  );
 }
 
 describe('findBlobOwner probe coverage', () => {
@@ -412,12 +414,8 @@ describe('homeroom note attachments (flag 9 audit)', () => {
   });
 });
 
-
 /** Capture the `where` a count mock received for one call. */
-async function captureWhere(
-  model: { count: unknown },
-  fn: () => Promise<unknown>
-): Promise<any> {
+async function captureWhere(model: { count: unknown }, fn: () => Promise<unknown>): Promise<any> {
   const count = model.count as {
     mockClear?: () => void;
     mock: { calls: unknown[][] };

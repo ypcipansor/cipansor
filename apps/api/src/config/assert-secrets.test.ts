@@ -21,8 +21,7 @@ const SHIPPED = 'your-super-secret-key-change-this-in-production-min-32-chars';
  * deliberate-looking, which is why the length and placeholder checks alone
  * would let it through.
  */
-const LEAKED_SEQUENTIAL_HEX =
-  '000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f';
+const LEAKED_SEQUENTIAL_HEX = '000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f';
 
 describe('production secret guard', () => {
   it('refuses the exact value that was live in production', () => {
@@ -98,10 +97,7 @@ describe('production secret guard', () => {
 
   it('reports every problem at once, not just the first', () => {
     const issues = findSecretIssues({ jwtSecret: 'short' });
-    expect(issues.map((i) => i.variable)).toEqual([
-      'JWT_SECRET',
-      'STUDENT_CARD_HMAC_SECRET',
-    ]);
+    expect(issues.map((i) => i.variable)).toEqual(['JWT_SECRET', 'STUDENT_CARD_HMAC_SECRET']);
   });
 
   // The card signer must be its OWN secret, required in production. A missing
@@ -232,10 +228,7 @@ describe('production Microsoft tenant fail-fast (BUG 10)', () => {
   });
 
   it('starts when a concrete tenant GUID or domain is configured', () => {
-    for (const tenantId of [
-      '99999999-9999-9999-9999-999999999999',
-      'cipansor.or.id',
-    ]) {
+    for (const tenantId of ['99999999-9999-9999-9999-999999999999', 'cipansor.or.id']) {
       expect(() =>
         assertProductionMicrosoftTenant({
           env: 'production',
@@ -333,9 +326,7 @@ describe('MICROSOFT_ALLOW_MULTI_TENANT reaches the API container (BUG: not forwa
   );
 
   it('is enumerated in the api service environment', () => {
-    expect(compose).toMatch(
-      /MICROSOFT_ALLOW_MULTI_TENANT:\s*\$\{MICROSOFT_ALLOW_MULTI_TENANT:-/
-    );
+    expect(compose).toMatch(/MICROSOFT_ALLOW_MULTI_TENANT:\s*\$\{MICROSOFT_ALLOW_MULTI_TENANT:-/);
   });
 
   it('defaults to a non-multi-tenant value when unset', () => {

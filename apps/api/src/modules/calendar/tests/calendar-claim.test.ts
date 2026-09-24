@@ -111,8 +111,9 @@ describe('calendarService onlineUrl claim protocol', () => {
     });
     (claimBlobForRecord as any).mockResolvedValue(null);
 
-    await expect(calendarService.update('e1', { onlineUrl: URL } as any, actor as any)).rejects
-      .toThrow();
+    await expect(
+      calendarService.update('e1', { onlineUrl: URL } as any, actor as any)
+    ).rejects.toThrow();
     expect(tx.calendarEvent.update).not.toHaveBeenCalled();
   });
 

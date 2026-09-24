@@ -2,7 +2,7 @@
  * Auth Service Unit Tests
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { UserRole, RoleCode } from '@prisma/client';
 
 // Use vi.hoisted to define mocks that will be available in vi.mock factories
@@ -103,6 +103,8 @@ vi.mock('@/lib/password', () => ({
 }));
 
 vi.mock('@/lib/jwt', () => ({
+  // Short-lived token handed out while the second factor is pending.
+  generateAccessToken: vi.fn(() => 'mock-temp-token'),
   generateTokenPair: mockGenerateTokenPair,
   verifyToken: mockVerifyToken,
   getExpirationDate: mockGetExpirationDate,
@@ -300,6 +302,56 @@ describe('AuthService', () => {
       );
       const call = (mockPrisma.auditLog.create as any).mock.calls.at(-1)[0];
       expect(JSON.stringify(call)).not.toContain('test@example.com');
+    });
+
+    // DEMO_MODE used to waive the second factor for every account, Super Admin
+    // included, while the seeded passwords sat in a public repository. It was
+    // removed; these pin that a stray DEMO_MODE=true no longer opens anything.
+    describe('no demo exemption from 2FA', () => {
+      const original = process.env.DEMO_MODE;
+      beforeEach(() => {
+        process.env.DEMO_MODE = 'true';
+        mockPrisma.academicYear.findFirst.mockResolvedValue({ id: 'ay-1' });
+        mockComparePassword.mockResolvedValue(true);
+        mockPrisma.refreshToken.create.mockResolvedValue({});
+      });
+      afterEach(() => {
+        if (original === undefined) delete process.env.DEMO_MODE;
+        else process.env.DEMO_MODE = original;
+      });
+
+      it('forces 2FA setup on an admin without it, even with DEMO_MODE=true', async () => {
+        const admin = {
+          ...mockUser,
+          role: UserRole.SUPER_ADMIN,
+          isTwoFactorEnabled: false,
+          userRoles: [
+            {
+              ...mockUser.userRoles[0],
+              role: { id: 'role-sa', name: 'Super Admin', code: 'SUPER_ADMIN' },
+            },
+          ],
+        };
+        mockPrisma.user.findFirst.mockResolvedValue(admin);
+        mockPrisma.user.update.mockResolvedValue(admin);
+
+        const result = (await authService.login(validLoginInput)) as any;
+
+        expect(result.requiresTwoFactorSetup).toBe(true);
+        expect(result).not.toHaveProperty('accessToken');
+        expect(result).not.toHaveProperty('refreshToken');
+      });
+
+      it('asks for the second factor when 2FA is enabled, even with DEMO_MODE=true', async () => {
+        const enrolled = { ...mockUser, isTwoFactorEnabled: true, twoFactorSecret: 'SECRET' };
+        mockPrisma.user.findFirst.mockResolvedValue(enrolled);
+        mockPrisma.user.update.mockResolvedValue(enrolled);
+
+        const result = (await authService.login(validLoginInput)) as any;
+
+        expect(result.requiresTwoFactor).toBe(true);
+        expect(result).not.toHaveProperty('accessToken');
+      });
     });
   });
 

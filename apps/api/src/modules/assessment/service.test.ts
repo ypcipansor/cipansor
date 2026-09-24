@@ -84,11 +84,11 @@ describe('Assessment Service - getExamAnalytics', () => {
     expect(result.topStudents[0].score).toBe(95);
 
     // Distribution
-    const d90_100 = result.scoreDistribution.find(d => d.range === '90-100%');
+    const d90_100 = result.scoreDistribution.find((d) => d.range === '90-100%');
     expect(d90_100?.count).toBe(2); // Charlie and David
-    const d60_69 = result.scoreDistribution.find(d => d.range === '60-69%');
+    const d60_69 = result.scoreDistribution.find((d) => d.range === '60-69%');
     expect(d60_69?.count).toBe(1); // Bob
-    const d80_89 = result.scoreDistribution.find(d => d.range === '80-89%');
+    const d80_89 = result.scoreDistribution.find((d) => d.range === '80-89%');
     expect(d80_89?.count).toBe(1); // Alice
   });
 });

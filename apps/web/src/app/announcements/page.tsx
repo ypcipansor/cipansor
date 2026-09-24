@@ -239,7 +239,9 @@ function AnnouncementsPageContent() {
     }
   };
 
-  const isAdmin = getEffectiveRole(user) === "SUPER_ADMIN" || getEffectiveRole(user) === "UNIT_ADMIN";
+  const isAdmin =
+    getEffectiveRole(user) === "SUPER_ADMIN" ||
+    getEffectiveRole(user) === "UNIT_ADMIN";
 
   if (isLoading) {
     return (

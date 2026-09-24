@@ -28,7 +28,12 @@ import {
   type LetterActor,
 } from '@/utils/letter-access';
 import { seesAllUnits } from '@/utils/resolve-unit-id';
-import { claimBlobForRecord, claimBlobsForRecord, releaseBlobClaimById, releaseBlobClaims } from '@/utils/blob-claim';
+import {
+  claimBlobForRecord,
+  claimBlobsForRecord,
+  releaseBlobClaimById,
+  releaseBlobClaims,
+} from '@/utils/blob-claim';
 import {
   assertMayArchive,
   assertMayDispatch,
@@ -370,10 +375,7 @@ export const CorrespondenceService = {
       // durable protection, and the claim only needs to serialize the two
       // writers. If any URL is already claimed, the create fails rather than
       // saving a reference to a blob someone else may be deleting.
-      const letterBlobUrls = [
-        data.fileUrl,
-        ...(data.attachments ?? []).map((att) => att.fileUrl),
-      ];
+      const letterBlobUrls = [data.fileUrl, ...(data.attachments ?? []).map((att) => att.fileUrl)];
       const claims = await claimBlobsForRecord(letterBlobUrls, userId, tx);
       if (!claims) {
         throw Errors.conflict(
@@ -707,9 +709,7 @@ export const CorrespondenceService = {
       const updateClaims =
         updateBlobUrls.length > 0 ? await claimBlobsForRecord(updateBlobUrls, userId, tx) : [];
       if (updateClaims === null) {
-        throw Errors.conflict(
-          'Berkas sedang diproses pihak lain; unggah ulang berkas tersebut'
-        );
+        throw Errors.conflict('Berkas sedang diproses pihak lain; unggah ulang berkas tersebut');
       }
 
       // Build update payload. Tracks whether the request actually changes

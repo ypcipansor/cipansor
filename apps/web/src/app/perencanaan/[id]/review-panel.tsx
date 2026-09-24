@@ -102,7 +102,13 @@ type DialogKind = "submit" | "result" | "propose" | "tetapkan" | "kembalikan";
 
 const DIALOG: Record<
   DialogKind,
-  { title: string; description: string; label: string; required: boolean; confirm: string }
+  {
+    title: string;
+    description: string;
+    label: string;
+    required: boolean;
+    confirm: string;
+  }
 > = {
   submit: {
     title: "Ajukan ke Pengawas",
@@ -203,9 +209,14 @@ export function ReviewPanel({
   const returned = stage === "DIKEMBALIKAN" ? latest("KEMBALIKAN") : undefined;
   const ratified = latest("TETAPKAN");
 
-  const actions: { kind: DialogKind; icon: typeof Send; variant?: "outline" }[] = [];
+  const actions: {
+    kind: DialogKind;
+    icon: typeof Send;
+    variant?: "outline";
+  }[] = [];
   if (!ratifiedEarlier) {
-    if (roleCode === KETUA && step === 0) actions.push({ kind: "submit", icon: Send });
+    if (roleCode === KETUA && step === 0)
+      actions.push({ kind: "submit", icon: Send });
     if (roleCode === PENGAWAS && stage === "DIREVIU_PENGAWAS")
       actions.push({ kind: "result", icon: FileSearch });
     if (roleCode === KETUA && stage === "HASIL_REVIU")
@@ -224,7 +235,9 @@ export function ReviewPanel({
 
   const spec = dialog ? DIALOG[dialog] : null;
   const label =
-    dialog === "propose" && revised === "tidak" ? "Alasan tidak merevisi" : spec?.label;
+    dialog === "propose" && revised === "tidak"
+      ? "Alasan tidak merevisi"
+      : spec?.label;
   const payload = dialog ? buildPayload(dialog, notes.trim(), revised) : null;
   const acceptable =
     payload !== null && REVIEW_SCHEMA[payload.step].safeParse(payload).success;
@@ -262,7 +275,9 @@ export function ReviewPanel({
                   <li
                     key={s.label}
                     className={`flex items-start gap-2 rounded-md border px-3 py-2 ${
-                      current ? "border-amber-400 bg-amber-50 dark:bg-amber-950/40" : ""
+                      current
+                        ? "border-amber-400 bg-amber-50 dark:bg-amber-950/40"
+                        : ""
                     }`}
                   >
                     <Icon
@@ -275,7 +290,9 @@ export function ReviewPanel({
                       }`}
                     />
                     <div className="leading-tight">
-                      <p className={`text-sm font-medium ${done || current ? "" : "text-muted-foreground"}`}>
+                      <p
+                        className={`text-sm font-medium ${done || current ? "" : "text-muted-foreground"}`}
+                      >
                         {s.label}
                       </p>
                       <p className="text-xs text-muted-foreground">{s.organ}</p>
@@ -288,9 +305,12 @@ export function ReviewPanel({
             {returned && (
               <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm dark:border-amber-800 dark:bg-amber-950/40">
                 <p className="font-medium">
-                  Dikembalikan Pembina untuk diperbaiki · {when(returned.createdAt)}
+                  Dikembalikan Pembina untuk diperbaiki ·{" "}
+                  {when(returned.createdAt)}
                 </p>
-                {returned.notes && <p className="mt-1 whitespace-pre-line">{returned.notes}</p>}
+                {returned.notes && (
+                  <p className="mt-1 whitespace-pre-line">{returned.notes}</p>
+                )}
               </div>
             )}
 
@@ -328,10 +348,13 @@ export function ReviewPanel({
               {events.map((e) => (
                 <li key={e.id} className="text-sm">
                   <p>
-                    <span className="font-medium">{PLAN_REVIEW_ACTION_LABEL[e.action]}</span>
+                    <span className="font-medium">
+                      {PLAN_REVIEW_ACTION_LABEL[e.action]}
+                    </span>
                     <span className="text-muted-foreground">
                       {" "}
-                      · {e.actor.name}, {ORGAN_LABEL[e.actorRoleCode] ?? e.actorRoleCode} ·{" "}
+                      · {e.actor.name},{" "}
+                      {ORGAN_LABEL[e.actorRoleCode] ?? e.actorRoleCode} ·{" "}
                       {when(e.createdAt)}
                     </span>
                   </p>
@@ -352,7 +375,10 @@ export function ReviewPanel({
         )}
       </CardContent>
 
-      <Dialog open={dialog !== null} onOpenChange={(open) => !open && setDialog(null)}>
+      <Dialog
+        open={dialog !== null}
+        onOpenChange={(open) => !open && setDialog(null)}
+      >
         {spec && (
           <DialogContent>
             <DialogHeader>
@@ -360,23 +386,29 @@ export function ReviewPanel({
               <DialogDescription>{spec.description}</DialogDescription>
             </DialogHeader>
 
-            {(dialog === "propose" || dialog === "tetapkan" || dialog === "kembalikan") &&
+            {(dialog === "propose" ||
+              dialog === "tetapkan" ||
+              dialog === "kembalikan") &&
               reviewResult?.notes && (
                 <div className="rounded-md bg-muted px-3 py-2 text-sm">
                   <p className="text-xs font-semibold text-muted-foreground">
                     Hasil reviu Pengawas
                   </p>
-                  <p className="mt-1 whitespace-pre-line">{reviewResult.notes}</p>
+                  <p className="mt-1 whitespace-pre-line">
+                    {reviewResult.notes}
+                  </p>
                 </div>
               )}
-            {(dialog === "tetapkan" || dialog === "kembalikan") && response?.notes && (
-              <div className="rounded-md bg-muted px-3 py-2 text-sm">
-                <p className="text-xs font-semibold text-muted-foreground">
-                  Tanggapan Pengurus · {response.revised ? "direvisi" : "tidak direvisi"}
-                </p>
-                <p className="mt-1 whitespace-pre-line">{response.notes}</p>
-              </div>
-            )}
+            {(dialog === "tetapkan" || dialog === "kembalikan") &&
+              response?.notes && (
+                <div className="rounded-md bg-muted px-3 py-2 text-sm">
+                  <p className="text-xs font-semibold text-muted-foreground">
+                    Tanggapan Pengurus ·{" "}
+                    {response.revised ? "direvisi" : "tidak direvisi"}
+                  </p>
+                  <p className="mt-1 whitespace-pre-line">{response.notes}</p>
+                </div>
+              )}
 
             {dialog === "propose" && (
               <RadioGroup
@@ -386,7 +418,9 @@ export function ReviewPanel({
               >
                 <div className="flex items-center gap-2">
                   <RadioGroupItem value="ya" id="revisi-ya" />
-                  <Label htmlFor="revisi-ya">Sudah direvisi sesuai hasil reviu</Label>
+                  <Label htmlFor="revisi-ya">
+                    Sudah direvisi sesuai hasil reviu
+                  </Label>
                 </div>
                 <div className="flex items-center gap-2">
                   <RadioGroupItem value="tidak" id="revisi-tidak" />

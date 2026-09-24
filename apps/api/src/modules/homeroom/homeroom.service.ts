@@ -653,9 +653,7 @@ export class HomeroomService {
    * behavior balance. Unit-scoped for non-super-admins.
    */
   async getPerformanceOverview(currentUser: AuthenticatedUser, unitId?: string) {
-    const effectiveUnitId = seesAllUnits(currentUser)
-      ? unitId
-      : (currentUser.unitId ?? 'none');
+    const effectiveUnitId = seesAllUnits(currentUser) ? unitId : (currentUser.unitId ?? 'none');
 
     const classes = await prisma.class.findMany({
       where: {
@@ -695,39 +693,45 @@ export class HomeroomService {
     const ninetyDaysAgo = new Date();
     ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
 
-    const [attendanceByStatus, attendanceDays, gradeByStudent, tahfidzByStudent, violationByStudent, rewardByStudent] =
-      await Promise.all([
-        prisma.attendance.groupBy({
-          by: ['classId', 'status'],
-          where: { classId: { in: classIds }, date: { gte: thirtyDaysAgo } },
-          _count: { id: true },
-        }),
-        prisma.attendance.groupBy({
-          by: ['classId', 'date'],
-          where: { classId: { in: classIds }, date: { gte: thirtyDaysAgo } },
-          _count: { id: true },
-        }),
-        prisma.grade.groupBy({
-          by: ['studentId'],
-          where: { studentId: { in: studentIds }, gradedAt: { gte: ninetyDaysAgo } },
-          _avg: { percentage: true },
-        }),
-        prisma.tahfidzRecord.groupBy({
-          by: ['studentId'],
-          where: { studentId: { in: studentIds }, recordedAt: { gte: thirtyDaysAgo } },
-          _count: { id: true },
-        }),
-        prisma.violation.groupBy({
-          by: ['studentId'],
-          where: { studentId: { in: studentIds }, occurredAt: { gte: thirtyDaysAgo } },
-          _count: { id: true },
-        }),
-        prisma.reward.groupBy({
-          by: ['studentId'],
-          where: { studentId: { in: studentIds }, givenAt: { gte: thirtyDaysAgo } },
-          _count: { id: true },
-        }),
-      ]);
+    const [
+      attendanceByStatus,
+      attendanceDays,
+      gradeByStudent,
+      tahfidzByStudent,
+      violationByStudent,
+      rewardByStudent,
+    ] = await Promise.all([
+      prisma.attendance.groupBy({
+        by: ['classId', 'status'],
+        where: { classId: { in: classIds }, date: { gte: thirtyDaysAgo } },
+        _count: { id: true },
+      }),
+      prisma.attendance.groupBy({
+        by: ['classId', 'date'],
+        where: { classId: { in: classIds }, date: { gte: thirtyDaysAgo } },
+        _count: { id: true },
+      }),
+      prisma.grade.groupBy({
+        by: ['studentId'],
+        where: { studentId: { in: studentIds }, gradedAt: { gte: ninetyDaysAgo } },
+        _avg: { percentage: true },
+      }),
+      prisma.tahfidzRecord.groupBy({
+        by: ['studentId'],
+        where: { studentId: { in: studentIds }, recordedAt: { gte: thirtyDaysAgo } },
+        _count: { id: true },
+      }),
+      prisma.violation.groupBy({
+        by: ['studentId'],
+        where: { studentId: { in: studentIds }, occurredAt: { gte: thirtyDaysAgo } },
+        _count: { id: true },
+      }),
+      prisma.reward.groupBy({
+        by: ['studentId'],
+        where: { studentId: { in: studentIds }, givenAt: { gte: thirtyDaysAgo } },
+        _count: { id: true },
+      }),
+    ]);
 
     // Weekdays in the last 30 days = expected school days for recording discipline
     let weekdays = 0;
@@ -806,8 +810,7 @@ export class HomeroomService {
         stats && stats.totalAttendance > 0 ? (stats.present / stats.totalAttendance) * 100 : 0;
       const recordingDiscipline =
         stats && weekdays > 0 ? Math.min((stats.recordedDays / weekdays) * 100, 100) : 0;
-      const academicAverage =
-        stats && stats.gradeCount > 0 ? stats.gradeSum / stats.gradeCount : 0;
+      const academicAverage = stats && stats.gradeCount > 0 ? stats.gradeSum / stats.gradeCount : 0;
       const tahfidzActivityPerStudent =
         stats && studentCount > 0 ? stats.tahfidzCount / studentCount : 0;
       const behaviorBalance = stats ? stats.rewards - stats.violations : 0;

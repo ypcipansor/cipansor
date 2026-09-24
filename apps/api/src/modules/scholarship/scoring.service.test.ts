@@ -50,17 +50,15 @@ describe('scholarshipScoringService.assessRecipient', () => {
 
   it('throws when the recipient does not exist', async () => {
     mocked.scholarshipRecipient.findUnique.mockResolvedValue(null);
-    await expect(
-      scholarshipScoringService.assessRecipient('missing')
-    ).rejects.toThrow('Recipient not found');
+    await expect(scholarshipScoringService.assessRecipient('missing')).rejects.toThrow(
+      'Recipient not found'
+    );
   });
 
   it('scores tahfidz criteria from the latest record against targetValue', async () => {
     mocked.scholarshipRecipient.findUnique.mockResolvedValue(
       recipientFixture({
-        criteria: [
-          { id: 'c1', name: 'Hafalan Al-Quran', weight: 1, targetValue: '10' },
-        ],
+        criteria: [{ id: 'c1', name: 'Hafalan Al-Quran', weight: 1, targetValue: '10' }],
         student: { tahfidzRecords: [{ juz: 5 }] },
       })
     );
@@ -91,9 +89,7 @@ describe('scholarshipScoringService.assessRecipient', () => {
   it('averages recent grades for academic criteria', async () => {
     mocked.scholarshipRecipient.findUnique.mockResolvedValue(
       recipientFixture({
-        criteria: [
-          { id: 'c1', name: 'Nilai Akademik', weight: 1, targetValue: '100' },
-        ],
+        criteria: [{ id: 'c1', name: 'Nilai Akademik', weight: 1, targetValue: '100' }],
         student: { grades: [{ score: 80 }, { score: 90 }] },
       })
     );

@@ -4,11 +4,7 @@ import api from "@/lib/api";
 
 // Types
 export type EmployeeStatus =
-  | "ACTIVE"
-  | "INACTIVE"
-  | "ON_LEAVE"
-  | "RESIGNED"
-  | "RETIRED";
+  "ACTIVE" | "INACTIVE" | "ON_LEAVE" | "RESIGNED" | "RETIRED";
 export type EmployeeType = "PERMANENT" | "CONTRACT" | "PART_TIME" | "INTERN";
 type Gender = "MALE" | "FEMALE";
 
@@ -690,10 +686,7 @@ export function useProcessPayroll() {
 
   return useMutation({
     mutationFn: async (data: { periodId: string; staffIds: string[] }) => {
-      const response = await api.post(
-        `/payroll/process`,
-        data
-      );
+      const response = await api.post(`/payroll/process`, data);
       return response.data.data;
     },
     onSuccess: () => {

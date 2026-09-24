@@ -165,7 +165,11 @@ export function LegalIdentity({
     <section aria-labelledby="legalitas" className={compact ? "" : "mt-14"}>
       <h2
         id="legalitas"
-        className={compact ? "text-xl font-semibold" : "text-2xl font-semibold tracking-tight"}
+        className={
+          compact
+            ? "text-xl font-semibold"
+            : "text-2xl font-semibold tracking-tight"
+        }
       >
         {copy.sectionTitle}
       </h2>

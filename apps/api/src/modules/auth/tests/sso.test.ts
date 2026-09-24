@@ -364,7 +364,6 @@ describe('SSO Authentication Security Unit Tests', () => {
     expect(result).toHaveProperty('accessToken');
   });
 
-
   it('should reject Google SSO when the token has no subject (sub)', async () => {
     process.env.GOOGLE_CLIENT_ID = 'expected-google-client-id';
 

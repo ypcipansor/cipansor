@@ -527,7 +527,9 @@ test.describe("Teacher Management - Subject Assignment", () => {
       await waitForLoadingComplete(page);
 
       // Look for class assignment section
-      const classSection = page.getByRole("main").getByText(/wali kelas|class.*teacher|kelas/i);
+      const classSection = page
+        .getByRole("main")
+        .getByText(/wali kelas|class.*teacher|kelas/i);
       if (await classSection.isVisible({ timeout: 3000 }).catch(() => false)) {
         const assignButton = page.getByRole("button", {
           name: /assign|tetapkan|pilih.*kelas/i,

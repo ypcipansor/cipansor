@@ -83,19 +83,13 @@ export const ask = asyncHandler(async (req: Request, res: Response) => {
       // "Sedang tidak tersedia" pada asisten yang sebenarnya hidup dan hanya
       // ramai adalah kabar yang keliru: ia menyuruh penanya menyerah, padahal
       // mencoba lagi sepuluh detik lagi hampir pasti berhasil.
-      res
-        .set('Retry-After', String(error.retryAfterSeconds))
-        .status(503)
-        .json(
-          // Urutannya pesan-dulu-baru-kode (`ApiResponse.error(message, code)`).
-          // Ketiga pemanggilan di berkas ini pernah tertukar, sehingga `code`
-          // berisi kalimat bahasa Indonesia dan `message` berisi konstanta —
-          // yang membalik gunanya: kode itulah yang dibaca mesin.
-          ApiResponse.error(
-            'Asisten sedang ramai. Mohon coba lagi sebentar lagi 🙏',
-            'CHATBOT_BUSY'
-          )
-        );
+      res.set('Retry-After', String(error.retryAfterSeconds)).status(503).json(
+        // Urutannya pesan-dulu-baru-kode (`ApiResponse.error(message, code)`).
+        // Ketiga pemanggilan di berkas ini pernah tertukar, sehingga `code`
+        // berisi kalimat bahasa Indonesia dan `message` berisi konstanta —
+        // yang membalik gunanya: kode itulah yang dibaca mesin.
+        ApiResponse.error('Asisten sedang ramai. Mohon coba lagi sebentar lagi 🙏', 'CHATBOT_BUSY')
+      );
       return;
     }
     if (error instanceof chatbotService.ChatbotUnavailableError) {

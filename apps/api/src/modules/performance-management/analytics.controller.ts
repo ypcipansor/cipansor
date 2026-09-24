@@ -39,7 +39,9 @@ export const getDashboard = asyncHandler(async (req: Request, res: Response) => 
   const unitId = isGlobal ? rawUnitId : (req.user?.unitId ?? undefined);
 
   if (!isGlobal && !unitId) {
-    throw Errors.forbidden('User does not belong to a specific unit and lacks global analytics access');
+    throw Errors.forbidden(
+      'User does not belong to a specific unit and lacks global analytics access'
+    );
   }
 
   const data = await pkAnalyticsService.getUnitPerformanceDashboard(unitId);
@@ -77,9 +79,15 @@ export const getConsolidatedReport = asyncHandler(async (req: Request, res: Resp
   const isGlobal = isFoundationGlobalLeadership(req);
   const scopedUnitId = isGlobal ? undefined : (req.user?.unitId ?? undefined);
   if (!isGlobal && !scopedUnitId) {
-    throw Errors.forbidden('User does not belong to a specific unit and lacks global analytics access');
+    throw Errors.forbidden(
+      'User does not belong to a specific unit and lacks global analytics access'
+    );
   }
 
-  const data = await pkAnalyticsService.getConsolidatedReport({ month, year, unitId: scopedUnitId });
+  const data = await pkAnalyticsService.getConsolidatedReport({
+    month,
+    year,
+    unitId: scopedUnitId,
+  });
   res.json(ApiResponse.success(data));
 });

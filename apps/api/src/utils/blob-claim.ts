@@ -193,7 +193,9 @@ async function claimRecordWithRetry(
     const handle = await upsertClaim(client, blobUrl, 'RECORD', holderId);
     if (handle) return handle;
 
-    const holder = await client.$queryRaw<Array<{ kind: string; discardedAt: Date | null }>>(Prisma.sql`
+    const holder = await client.$queryRaw<
+      Array<{ kind: string; discardedAt: Date | null }>
+    >(Prisma.sql`
       SELECT "kind"::text AS "kind", "discarded_at" AS "discardedAt"
       FROM "blob_claims" WHERE "blob_url" = ${canonicalBlobClaimKey(blobUrl)}
     `);

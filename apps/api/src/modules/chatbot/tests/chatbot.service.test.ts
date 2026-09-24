@@ -393,7 +393,10 @@ describe('ask', () => {
 
   it('stores a fresh answer for the next visitor', async () => {
     await ask({ question: 'apa visi pesantren', provider: new StubProvider() });
-    expect(writeCached).toHaveBeenCalledWith('test-key', expect.objectContaining({ refused: false }));
+    expect(writeCached).toHaveBeenCalledWith(
+      'test-key',
+      expect.objectContaining({ refused: false })
+    );
   });
 
   it('does not consult the cache once a conversation has history', async () => {

@@ -517,7 +517,9 @@ function EditSchedulePageContent({
   );
 }
 
-export default function EditSchedulePage(props: Parameters<typeof EditSchedulePageContent>[0]) {
+export default function EditSchedulePage(
+  props: Parameters<typeof EditSchedulePageContent>[0],
+) {
   return (
     <MainLayout>
       <EditSchedulePageContent {...props} />

@@ -77,24 +77,25 @@ RUN set -e; \
 #   *.map  (66MB)  Source maps belonging to third-party packages. Nothing turns
 #                  on --enable-source-maps, and the api's own dist maps are
 #                  copied separately from `builder`, so they are untouched.
-#   the prisma CLI cluster (158MB): prisma, @prisma/studio-core, effect,
-#                  @electric-sql/pglite, typescript. @prisma/client declares
-#                  `prisma` as an OPTIONAL peer, yet the lockfile pins the
-#                  peer-resolved variant `@prisma/client@7.8.0_prisma@7.8.0_…`,
-#                  so `pnpm install --prod` materialises the peer regardless.
-#                  Nothing in dist/ imports any of the five. Schema work
-#                  (db:push / db:generate / seed) never runs from this image —
-#                  it runs against a full dev install elsewhere.
+#   the prisma CLI's dev-only weight: @electric-sql/pglite (`prisma dev`'s
+#                  embedded Postgres) and typescript. Nothing in dist/ imports
+#                  them and `prisma migrate deploy` runs without them.
+#
+#   The CLI itself STAYS since 2026-09-23 (`prisma` + `effect` + @prisma/
+#   studio-core, ±100MB). On Azure the database sits on a private network that
+#   CI cannot reach, so pending migrations are applied from inside the running
+#   container: with MIGRATE_ON_START=true, docker-entrypoint.sh runs `prisma
+#   migrate deploy` before starting the API. Seeding and db:push still never run
+#   from here. studio-core looks like the `prisma studio` UI only, but the CLI
+#   requires it at startup for every command — removing it fails `migrate
+#   deploy` with "Cannot find module '@prisma/studio-core/data/bff'".
 #
 # Verify after changing this: run the image against a real database and hit an
 # endpoint that queries. A dangling peer symlink only fails when something
 # actually requires it, so a green build proves nothing by itself.
 RUN set -e; \
     find /app/node_modules -type f \( -name '*.d.ts' -o -name '*.map' \) -delete; \
-    rm -rf /app/node_modules/.pnpm/prisma@* \
-           /app/node_modules/.pnpm/@prisma+studio-core@* \
-           /app/node_modules/.pnpm/effect@* \
-           /app/node_modules/.pnpm/@electric-sql+pglite@* \
+    rm -rf /app/node_modules/.pnpm/@electric-sql+pglite@* \
            /app/node_modules/.pnpm/typescript@*
 
 # ---- runner: minimal production image ----
@@ -144,9 +145,18 @@ RUN mkdir -p /app/apps/api/logs /app/apps/api/public/uploads /app/apps/api/priva
       /app/apps/api/private /app/apps/api/private/identity \
  && chmod 700 /app/apps/api/private /app/apps/api/private/identity
 
+# The commit this image was built from, reported by GET /health. Declared this
+# late because it changes on every commit and would otherwise invalidate every
+# layer above it.
+ARG GIT_COMMIT_SHA=
+ENV GIT_COMMIT_SHA=${GIT_COMMIT_SHA}
+
 USER expressjs
 WORKDIR /app/apps/api
 EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
   CMD node -e "require('http').get('http://localhost:3001/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
-CMD ["node", "dist/main.js"]
+# Applies pending migrations first when MIGRATE_ON_START=true, then execs node
+# (so node is PID 1 and receives SIGTERM directly).
+COPY --from=builder --chown=expressjs:nodejs /app/apps/api/docker-entrypoint.sh ./docker-entrypoint.sh
+CMD ["sh", "docker-entrypoint.sh"]

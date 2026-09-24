@@ -30,11 +30,13 @@ const OTHER_LOCALES = LOCALES.filter((l) => l !== "id");
 const KEPT_VERBATIM: Record<string, string> = {
   // Domain vocabulary the portal uses throughout — translating it on the
   // public site alone would make the two disagree. See content.i18n.ts.
-  "en:footer.links.donate": "Wakaf and Infaq are the terms the donation flow uses",
+  "en:footer.links.donate":
+    "Wakaf and Infaq are the terms the donation flow uses",
   "en:cta.donate.title": "Infaq & Shodaqoh is the campaign's own name",
   "en:programs.public-speaking.title": "Already English in the source",
   "en:programs.entrepreneurship.title": "Already English in the source",
-  "en:profileStats[1].label": "Santri is kept and glossed, not translated to 'students'",
+  "en:profileStats[1].label":
+    "Santri is kept and glossed, not translated to 'students'",
   "en:contact.emailHeading": "'Email' is the same word in Indonesian",
   "en:contact.whatsappHeading": "A product name",
   // The donation page. Akad names are the terms the donation record stores and
@@ -43,7 +45,8 @@ const KEPT_VERBATIM: Record<string, string> = {
   "en:donationTypes.ZAKAT_FITRAH": "Akad name",
   "en:donationTypes.WAKAF": "Akad name",
   "en:donationTypes.SEDEKAH_JARIYAH": "Akad name",
-  "en:success.heading": "Jazakallahu Khairan is a supplication, not a phrase to render",
+  "en:success.heading":
+    "Jazakallahu Khairan is a supplication, not a phrase to render",
   "en:campaigns.targetLabel": "'Target' is the same word in Indonesian",
   "en:form.emailLabel": "'Email' is the same word in Indonesian",
   "en:paymentMethods.QRIS": "Indonesia's national QR payment standard",
@@ -64,7 +67,11 @@ const STRUCTURAL = /\.(type|value)$/;
 const ARGS = ["«a»", "«b»", "«c»", "«d»"];
 
 /** Flatten to dot-path → rendered string, calling functions with placeholders. */
-function flatten(value: unknown, prefix = "", out: Record<string, string> = {}) {
+function flatten(
+  value: unknown,
+  prefix = "",
+  out: Record<string, string> = {},
+) {
   if (typeof value === "string") {
     out[prefix] = value;
   } else if (value === null) {
@@ -94,22 +101,28 @@ const SURFACES: Array<{ name: string; of: (l: Locale) => unknown }> = [
 describe.each(SURFACES)("$name content", ({ of }) => {
   const indonesian = flatten(of("id"));
 
-  it.each(OTHER_LOCALES)("%s has every key Indonesian has, and no extras", (locale) => {
-    expect(Object.keys(flatten(of(locale))).sort()).toEqual(
-      Object.keys(indonesian).sort(),
-    );
-  });
+  it.each(OTHER_LOCALES)(
+    "%s has every key Indonesian has, and no extras",
+    (locale) => {
+      expect(Object.keys(flatten(of(locale))).sort()).toEqual(
+        Object.keys(indonesian).sort(),
+      );
+    },
+  );
 
-  it.each(OTHER_LOCALES)("%s leaves nothing in Indonesian by accident", (locale) => {
-    const translated = flatten(of(locale));
-    const untranslated = Object.keys(indonesian).filter(
-      (path) =>
-        translated[path] === indonesian[path] &&
-        !STRUCTURAL.test(path) &&
-        !KEPT_VERBATIM[`${locale}:${path}`],
-    );
-    expect(untranslated).toEqual([]);
-  });
+  it.each(OTHER_LOCALES)(
+    "%s leaves nothing in Indonesian by accident",
+    (locale) => {
+      const translated = flatten(of(locale));
+      const untranslated = Object.keys(indonesian).filter(
+        (path) =>
+          translated[path] === indonesian[path] &&
+          !STRUCTURAL.test(path) &&
+          !KEPT_VERBATIM[`${locale}:${path}`],
+      );
+      expect(untranslated).toEqual([]);
+    },
+  );
 });
 
 describe("news headlines", () => {

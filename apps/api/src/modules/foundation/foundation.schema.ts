@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import { uploadedFileRefSchema } from '@cipansor/shared';
 
-
 // Foundation schemas
 export const createFoundationSchema = z.object({
   name: z.string().min(3).max(200),

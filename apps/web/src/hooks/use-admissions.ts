@@ -289,7 +289,9 @@ export function useOnboardRegistrant() {
       // (via status/enrolledAt). Without invalidating it, the button stays
       // visible after a successful onboarding and a second click fails with a
       // "already enrolled" conflict.
-      queryClient.invalidateQueries({ queryKey: ["admission-registrant", payload.registrantId] });
+      queryClient.invalidateQueries({
+        queryKey: ["admission-registrant", payload.registrantId],
+      });
       queryClient.invalidateQueries({ queryKey: ["students"] });
     },
   });
@@ -337,7 +339,10 @@ export function useUpdateRegistrantStatus() {
       status: RegistrationStatus;
       notes?: string;
     }) => {
-      const response = await api.patch(`/admissions/registrants/${id}/status`, { status, notes });
+      const response = await api.patch(`/admissions/registrants/${id}/status`, {
+        status,
+        notes,
+      });
       return response.data.data;
     },
     onSuccess: (_, { id }) => {
@@ -406,7 +411,10 @@ export function useCreateRegistration() {
       // UNIT_ADMIN, STAFF)` and would reject anonymous visitors submitting
       // the public PPDB form. The public variant validates with the same
       // `createRegistrantSchema` but returns only non-sensitive fields.
-      const response = await api.post("/admissions/public/registrants", payload);
+      const response = await api.post(
+        "/admissions/public/registrants",
+        payload,
+      );
       return response.data.data;
     },
     onSuccess: () => {

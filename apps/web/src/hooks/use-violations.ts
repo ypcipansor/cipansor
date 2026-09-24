@@ -69,7 +69,9 @@ export function useViolationType(id: string) {
   return useQuery({
     queryKey: ["violation-types", id],
     queryFn: async () => {
-      const response = await api.get<ViolationType>(`/violations/categories/${id}`);
+      const response = await api.get<ViolationType>(
+        `/violations/categories/${id}`,
+      );
       return response.data;
     },
     enabled: !!id,
@@ -87,7 +89,10 @@ export function useCreateViolationType() {
       points: number;
       isActive?: boolean;
     }) => {
-      const response = await api.post<ViolationType>("/violations/categories", data);
+      const response = await api.post<ViolationType>(
+        "/violations/categories",
+        data,
+      );
       return response.data;
     },
     onSuccess: () => {

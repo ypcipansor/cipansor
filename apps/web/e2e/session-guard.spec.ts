@@ -13,17 +13,25 @@ import { apiLogin, injectSession, SEED_USERS } from "./helpers/auth-api";
  * These specs drive the real proxy through the browser.
  */
 test.describe("session guard against forged cookies", () => {
-  test("a forged `auth-storage` does not open a protected route", async ({ page, context }) => {
+  test("a forged `auth-storage` does not open a protected route", async ({
+    page,
+    context,
+  }) => {
     const forged = encodeURIComponent(
       JSON.stringify({
         state: {
           isAuthenticated: true,
-          user: { role: "SUPER_ADMIN", userRoles: [{ role: { code: "SUPER_ADMIN" }, isPrimary: true }] },
+          user: {
+            role: "SUPER_ADMIN",
+            userRoles: [{ role: { code: "SUPER_ADMIN" }, isPrimary: true }],
+          },
         },
         version: 0,
       }),
     );
-    await context.addCookies([{ name: "auth-storage", value: forged, url: "http://localhost:3000" }]);
+    await context.addCookies([
+      { name: "auth-storage", value: forged, url: "http://localhost:3000" },
+    ]);
 
     await page.goto("/users");
     // Bounced to the staff login, not rendered.
@@ -35,20 +43,30 @@ test.describe("session guard against forged cookies", () => {
     context,
   }) => {
     const forged = encodeURIComponent(
-      JSON.stringify({ state: { isAuthenticated: true, user: { role: "TEACHER" } }, version: 0 }),
+      JSON.stringify({
+        state: { isAuthenticated: true, user: { role: "TEACHER" } },
+        version: 0,
+      }),
     );
-    await context.addCookies([{ name: "auth-storage", value: forged, url: "http://localhost:3000" }]);
+    await context.addCookies([
+      { name: "auth-storage", value: forged, url: "http://localhost:3000" },
+    ]);
 
     await page.goto("/dashboard");
     await expect(page).toHaveURL(/\/login/, { timeout: 15000 });
   });
 
-  test("no session cookie at all redirects an anonymous visitor to /login", async ({ page }) => {
+  test("no session cookie at all redirects an anonymous visitor to /login", async ({
+    page,
+  }) => {
     await page.goto("/dashboard");
     await expect(page).toHaveURL(/\/login/, { timeout: 15000 });
   });
 
-  test("a valid server-issued session opens the protected route", async ({ page, context }) => {
+  test("a valid server-issued session opens the protected route", async ({
+    page,
+    context,
+  }) => {
     const session = await apiLogin(SEED_USERS.teacher);
     await injectSession(page, session);
 
@@ -63,7 +81,9 @@ test.describe("session guard against forged cookies", () => {
     expect(page.url()).not.toContain("/login");
   });
 
-  test("the routing cookie is not readable from JavaScript", async ({ page }) => {
+  test("the routing cookie is not readable from JavaScript", async ({
+    page,
+  }) => {
     const session = await apiLogin(SEED_USERS.teacher);
     await injectSession(page, session);
     await page.goto("/teacher");
@@ -79,7 +99,11 @@ test.describe("session guard against forged cookies", () => {
 
   test("a garbage session cookie is rejected", async ({ page, context }) => {
     await context.addCookies([
-      { name: "cipansor-session", value: "forged.value", url: "http://localhost:3000" },
+      {
+        name: "cipansor-session",
+        value: "forged.value",
+        url: "http://localhost:3000",
+      },
     ]);
     await page.goto("/dashboard");
     await expect(page).toHaveURL(/\/login/, { timeout: 15000 });

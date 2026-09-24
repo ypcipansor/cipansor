@@ -35,9 +35,10 @@ export const businessUnitController = {
       }
 
       // SUPER_ADMIN can view efficiency without unitId scoping
-      const result = isSuperAdminUser(req) && !unitId
-        ? await businessUnitService.getBusinessEfficiency(req.params.id, undefined)
-        : await businessUnitService.getBusinessEfficiency(req.params.id, unitId!);
+      const result =
+        isSuperAdminUser(req) && !unitId
+          ? await businessUnitService.getBusinessEfficiency(req.params.id, undefined)
+          : await businessUnitService.getBusinessEfficiency(req.params.id, unitId!);
 
       res.json({ success: true, data: result });
     } catch (error) {
@@ -54,9 +55,10 @@ export const businessUnitController = {
       }
 
       // SUPER_ADMIN can view any business unit without unitId scoping
-      const result = isSuperAdminUser(req) && !unitId
-        ? await businessUnitService.getById(req.params.id)
-        : await businessUnitService.getById(req.params.id, unitId);
+      const result =
+        isSuperAdminUser(req) && !unitId
+          ? await businessUnitService.getById(req.params.id)
+          : await businessUnitService.getById(req.params.id, unitId);
 
       res.json({ success: true, data: result });
     } catch (error) {
@@ -94,9 +96,10 @@ export const businessUnitController = {
       }
 
       // SUPER_ADMIN can update any business unit without unitId scoping
-      const result = isSuperAdminUser(req) && !unitId
-        ? await businessUnitService.update(req.params.id, undefined, req.body)
-        : await businessUnitService.update(req.params.id, unitId!, req.body);
+      const result =
+        isSuperAdminUser(req) && !unitId
+          ? await businessUnitService.update(req.params.id, undefined, req.body)
+          : await businessUnitService.update(req.params.id, unitId!, req.body);
 
       res.json({ success: true, data: result });
     } catch (error) {
@@ -143,9 +146,20 @@ export const businessUnitController = {
       }
 
       // SUPER_ADMIN can view performance without unitId scoping
-      const result = isSuperAdminUser(req) && !unitId
-        ? await businessUnitService.getPerformance(req.params.id, undefined, parsedStart, parsedEnd)
-        : await businessUnitService.getPerformance(req.params.id, unitId!, parsedStart, parsedEnd);
+      const result =
+        isSuperAdminUser(req) && !unitId
+          ? await businessUnitService.getPerformance(
+              req.params.id,
+              undefined,
+              parsedStart,
+              parsedEnd
+            )
+          : await businessUnitService.getPerformance(
+              req.params.id,
+              unitId!,
+              parsedStart,
+              parsedEnd
+            );
 
       res.json({ success: true, data: result });
     } catch (error) {

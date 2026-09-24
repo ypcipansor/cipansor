@@ -41,7 +41,9 @@ const PAGES_WITH_PHOTOGRAPHS = [
 
 test.describe("public site — photographs of this pesantren", () => {
   for (const path of PAGES_WITH_PHOTOGRAPHS) {
-    test(`${path} shows at least one photograph of the pesantren`, async ({ page }) => {
+    test(`${path} shows at least one photograph of the pesantren`, async ({
+      page,
+    }) => {
       await page.goto(path, { waitUntil: "domcontentloaded" });
 
       // The logo is chrome, not documentation, so it does not count. What
@@ -76,9 +78,9 @@ test.describe("public site — photographs of this pesantren", () => {
     await page.goto("/galeri", { waitUntil: "domcontentloaded" });
 
     const titles = new Set(galleryItems.map((a) => a.title));
-    const alts = await page.locator("figure img").evaluateAll((imgs) =>
-      imgs.map((i) => (i as HTMLImageElement).alt),
-    );
+    const alts = await page
+      .locator("figure img")
+      .evaluateAll((imgs) => imgs.map((i) => (i as HTMLImageElement).alt));
 
     expect(alts.length).toBeGreaterThan(0);
     for (const alt of alts) {

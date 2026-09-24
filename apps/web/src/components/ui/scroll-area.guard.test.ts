@@ -126,7 +126,9 @@ describe("menu sidebar memakai gulir bawaan peramban", () => {
 
   it("tidak mengimpor atau memakai ScrollArea", () => {
     const source = fs.readFileSync(SIDEBAR, "utf8");
-    const kode = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+    const kode = source
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/[^\n]*/g, "");
 
     expect(kode).not.toContain("<ScrollArea");
     expect(kode).not.toMatch(/import\s*\{[^}]*ScrollArea[^}]*\}/);

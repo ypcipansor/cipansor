@@ -64,7 +64,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-
 interface Invoice {
   id: string;
   invoiceNumber: string;
@@ -310,9 +309,8 @@ export default function FinancePage() {
 
         if (childrenData.length > 0) {
           const defaultChild = selectedStudentId
-            ? childrenData.find(
-                (c: ParentChild) => c.id === selectedStudentId,
-              )?.id
+            ? childrenData.find((c: ParentChild) => c.id === selectedStudentId)
+                ?.id
             : childrenData[0].id;
           setSelectedChild(defaultChild || childrenData[0].id);
         }

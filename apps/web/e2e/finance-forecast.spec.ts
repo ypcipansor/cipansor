@@ -16,7 +16,9 @@ test("Finance Cash Flow Forecast Page", async ({ page }) => {
 
   // Verify structure rendered from the real forecast endpoint (amounts are
   // data-dependent, so assert Rp formatting rather than fixed values)
-  await expect(page.locator("text=Proyeksi Arus Kas")).toBeVisible({ timeout: 20000 });
+  await expect(page.locator("text=Proyeksi Arus Kas")).toBeVisible({
+    timeout: 20000,
+  });
   await expect(page.locator("text=Net Perubahan Kas")).toBeVisible();
   await expect(page.getByText(/Rp\s?[\d.,]+/).first()).toBeVisible();
 

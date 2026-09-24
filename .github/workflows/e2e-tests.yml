@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+    # ready_for_review: a draft skips the suite (see `scope`), so marking it
+    # ready has to start a run that does not.
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch: # Allow manual trigger
 
 # Cancel superseded runs on the same ref to save CI minutes.
@@ -20,10 +23,58 @@ env:
   PNPM_VERSION: '9.15.9'
 
 jobs:
+  # Does this run need the suite at all? It is most of the pipeline's
+  # minutes, and two kinds of change gain nothing from it: a DRAFT pull request
+  # (still being pushed to; the suite runs when it is marked ready) and a
+  # change with no code in it — documentation or agent tooling only, as
+  # .github/scripts/change-scope.sh defines it (shared with CI and the staging
+  # deploy). A push to main is measured against the last commit on which this
+  # workflow passed, not its parent, so a run cancelled by a newer commit is
+  # never silently skipped.
+  #
+  # Skipping is done with a job-level `if:` on purpose. A job skipped by its
+  # condition reports success, so the required check "E2E Tests (Chromium)"
+  # is satisfied; a `paths:` filter on the trigger would skip the whole
+  # workflow instead and leave that required check pending forever.
+  scope:
+    name: E2E scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRAFT: ${{ github.event.pull_request.draft }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          case "$GITHUB_EVENT_NAME" in
+            pull_request)
+              if [ "$DRAFT" = "true" ]; then
+                echo "run=false" >> "$GITHUB_OUTPUT"
+                echo "scope: run=false — draft pull request; runs when marked ready"
+              else
+                sh .github/scripts/change-scope.sh pr "$PR"
+              fi ;;
+            push) sh .github/scripts/change-scope.sh since-pass e2e-tests.yml ;;
+            *) echo "run=true" >> "$GITHUB_OUTPUT"; echo "scope: $GITHUB_EVENT_NAME always runs" ;;
+          esac
+
   # Primary gate: the full Playwright suite on Chromium against a real,
   # seeded backend (the app's primary target browser).
   e2e:
     name: E2E Tests (Chromium)
+    needs: scope
+    if: needs.scope.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     permissions:
@@ -113,6 +164,7 @@ jobs:
         run: pnpm --filter api db:seed
         env:
           E2E_FIXED_2FA: '1'
+          ALLOW_DESTRUCTIVE_SEED: '1'
 
       - name: Build shared + API + Web
         run: |
@@ -175,7 +227,8 @@ jobs:
   e2e-cross-browser:
     name: E2E Tests (${{ matrix.browser }})
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+    needs: scope
+    if: ${{ needs.scope.outputs.run == 'true' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}
     timeout-minutes: 45
     continue-on-error: true
     strategy:
@@ -257,6 +310,7 @@ jobs:
         run: pnpm --filter api db:seed
         env:
           E2E_FIXED_2FA: '1'
+          ALLOW_DESTRUCTIVE_SEED: '1'
 
       - name: Build shared + API + Web
         run: |

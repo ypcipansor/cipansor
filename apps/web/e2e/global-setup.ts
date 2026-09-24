@@ -111,7 +111,9 @@ async function globalSetup() {
           path.join(authDir, `${file}.json`),
           JSON.stringify(await buildStorageState(session), null, 2),
         );
-        console.log(`✅ Saved storageState for ${role}${session === reusable ? " (reused)" : ""}`);
+        console.log(
+          `✅ Saved storageState for ${role}${session === reusable ? " (reused)" : ""}`,
+        );
       } catch (error) {
         console.warn(`⚠️ Failed to pre-authenticate ${role}:`, error);
       }

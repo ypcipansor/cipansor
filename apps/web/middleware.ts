@@ -13,7 +13,11 @@ import {
   type LegacyRole,
 } from "@/lib/rbac";
 import { hostSplitActionFor, isPortalHost } from "@/lib/host-split";
-import { SESSION_COOKIE, resolveSessionSecret, verifySession } from "@/lib/session";
+import {
+  SESSION_COOKIE,
+  resolveSessionSecret,
+  verifySession,
+} from "@/lib/session";
 
 // Public routes that don't require authentication.
 // "/unauthorized" is the access-denied page ProtectedRoute redirects to; it

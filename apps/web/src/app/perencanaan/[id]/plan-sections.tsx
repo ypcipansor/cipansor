@@ -142,7 +142,11 @@ export function IndicatorRow({ indicator }: { indicator: PlanIndicator }) {
 }
 
 /** RAB rinci — uraian × volume × harga satuan = jumlah. */
-function RabTable({ items }: { items: NonNullable<PlanActivity["budgetItems"]> }) {
+function RabTable({
+  items,
+}: {
+  items: NonNullable<PlanActivity["budgetItems"]>;
+}) {
   if (!items || items.length === 0) return null;
   const total = items.reduce((s, i) => s + Number(i.amount ?? 0), 0);
   return (
@@ -166,10 +170,16 @@ function RabTable({ items }: { items: NonNullable<PlanActivity["budgetItems"]> }
             {items.map((i) => (
               <tr key={i.id} className="border-b border-slate-100">
                 <td className="py-1 pr-2">{i.description}</td>
-                <td className="py-1 px-2 text-right tabular-nums">{i.volume}</td>
+                <td className="py-1 px-2 text-right tabular-nums">
+                  {i.volume}
+                </td>
                 <td className="py-1 px-2">{i.unit}</td>
-                <td className="py-1 px-2 text-right tabular-nums">{rp(i.unitPrice)}</td>
-                <td className="py-1 pl-2 text-right tabular-nums">{rp(i.amount)}</td>
+                <td className="py-1 px-2 text-right tabular-nums">
+                  {rp(i.unitPrice)}
+                </td>
+                <td className="py-1 pl-2 text-right tabular-nums">
+                  {rp(i.amount)}
+                </td>
               </tr>
             ))}
             <tr className="font-semibold">
@@ -249,7 +259,9 @@ export function ActivityCard({ act }: { act: PlanActivity }) {
           </Badge>
         )}
         {act.pic && (
-          <span className="inline-flex items-center gap-1">👤 {act.pic.name}</span>
+          <span className="inline-flex items-center gap-1">
+            👤 {act.pic.name}
+          </span>
         )}
       </div>
 
@@ -286,7 +298,10 @@ export function FundingSection({
   sources: PlanFundingSource[];
   totalBelanja: number;
 }) {
-  const totalPendapatan = sources.reduce((s, f) => s + Number(f.amount ?? 0), 0);
+  const totalPendapatan = sources.reduce(
+    (s, f) => s + Number(f.amount ?? 0),
+    0,
+  );
   const surplus = totalPendapatan - totalBelanja;
   return (
     <div className="space-y-4">
@@ -311,9 +326,7 @@ export function FundingSection({
                 </td>
                 <td className="py-2 pl-2 text-right tabular-nums whitespace-nowrap">
                   {f.amount == null ? (
-                    <span className="text-muted-foreground italic">
-                      [Rp …]
-                    </span>
+                    <span className="text-muted-foreground italic">[Rp …]</span>
                   ) : (
                     rp(f.amount)
                   )}

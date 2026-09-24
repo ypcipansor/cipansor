@@ -26,7 +26,9 @@ import { deriveLegacyRole, isLegacyRole, type LegacyRole } from "@/lib/rbac";
  */
 
 const API_URL =
-  process.env.API_INTERNAL_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+  process.env.API_INTERNAL_URL ||
+  process.env.NEXT_PUBLIC_API_URL ||
+  "http://localhost:3001";
 
 interface MeUser {
   id?: string;
@@ -70,7 +72,10 @@ function effectiveLegacyRole(user: MeUser): LegacyRole | undefined {
 }
 
 function clearCookie(response: NextResponse): NextResponse {
-  response.cookies.set(SESSION_COOKIE, "", { ...sessionCookieOptions(), maxAge: 0 });
+  response.cookies.set(SESSION_COOKIE, "", {
+    ...sessionCookieOptions(),
+    maxAge: 0,
+  });
   return response;
 }
 

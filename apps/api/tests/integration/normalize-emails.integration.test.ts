@@ -137,7 +137,9 @@ describeDb('normalize-emails pre-deploy script', () => {
 
   it('--dry-run reports but does not write', async () => {
     await withClient(async (client) => {
-      await client.query(`INSERT INTO "users" ("id", "email") VALUES ('u1', 'Guru@Cipansor.or.id')`);
+      await client.query(
+        `INSERT INTO "users" ("id", "email") VALUES ('u1', 'Guru@Cipansor.or.id')`
+      );
 
       const result = await normalizeEmails(adapter(client), { dryRun: true });
       expect(result.wrote).toBe(false);

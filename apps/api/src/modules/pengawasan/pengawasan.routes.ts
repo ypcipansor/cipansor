@@ -6,9 +6,7 @@ import * as pengawasanController from './pengawasan.controller';
 const router = Router();
 
 router.use(authenticate);
-router.use(
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER, UserRole.STAFF)
-);
+router.use(authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER, UserRole.STAFF));
 
 // Audits
 router.get('/suggestions', pengawasanController.getAuditSuggestions);

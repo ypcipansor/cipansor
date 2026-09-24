@@ -153,65 +153,65 @@ export function DocumentsTab({ userId }: { userId: string }) {
                 <Upload className="w-4 h-4 mr-2" /> Upload Dokumen
               </Button>
             </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Upload Dokumen</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <Label>Nama Dokumen</Label>
-                <Input
-                  value={formData.name}
-                  onChange={(e) =>
-                    setFormData({ ...formData, name: e.target.value })
-                  }
-                  placeholder="Contoh: Ijazah S1"
-                  required
-                />
-              </div>
-              <div>
-                <Label>Jenis Dokumen</Label>
-                <Select
-                  value={formData.type}
-                  onValueChange={(val) =>
-                    setFormData({
-                      ...formData,
-                      type: val as EmployeeDocumentType,
-                    })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {DOCUMENT_TYPES.map((type) => (
-                      <SelectItem key={type} value={type}>
-                        {type}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Tanggal Kadaluarsa (Opsional)</Label>
-                <Input
-                  type="date"
-                  value={formData.expiryDate}
-                  onChange={(e) =>
-                    setFormData({ ...formData, expiryDate: e.target.value })
-                  }
-                />
-              </div>
-              <div>
-                <Label>File</Label>
-                <Input type="file" onChange={handleFileChange} required />
-              </div>
-              <Button type="submit" disabled={uploading} className="w-full">
-                {uploading ? "Mengunggah..." : "Simpan"}
-              </Button>
-            </form>
-          </DialogContent>
-        </Dialog>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Upload Dokumen</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <Label>Nama Dokumen</Label>
+                  <Input
+                    value={formData.name}
+                    onChange={(e) =>
+                      setFormData({ ...formData, name: e.target.value })
+                    }
+                    placeholder="Contoh: Ijazah S1"
+                    required
+                  />
+                </div>
+                <div>
+                  <Label>Jenis Dokumen</Label>
+                  <Select
+                    value={formData.type}
+                    onValueChange={(val) =>
+                      setFormData({
+                        ...formData,
+                        type: val as EmployeeDocumentType,
+                      })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {DOCUMENT_TYPES.map((type) => (
+                        <SelectItem key={type} value={type}>
+                          {type}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Tanggal Kadaluarsa (Opsional)</Label>
+                  <Input
+                    type="date"
+                    value={formData.expiryDate}
+                    onChange={(e) =>
+                      setFormData({ ...formData, expiryDate: e.target.value })
+                    }
+                  />
+                </div>
+                <div>
+                  <Label>File</Label>
+                  <Input type="file" onChange={handleFileChange} required />
+                </div>
+                <Button type="submit" disabled={uploading} className="w-full">
+                  {uploading ? "Mengunggah..." : "Simpan"}
+                </Button>
+              </form>
+            </DialogContent>
+          </Dialog>
         )}
       </div>
 

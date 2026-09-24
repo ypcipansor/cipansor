@@ -146,20 +146,20 @@ export async function getExamAnalytics(id: string): Promise<ExamAnalyticsData | 
           student: {
             include: {
               user: {
-                select: { id: true, name: true }
-              }
-            }
-          }
-        }
+                select: { id: true, name: true },
+              },
+            },
+          },
+        },
       },
       class: {
         include: {
           _count: {
-            select: { enrollments: { where: { status: 'active' } } }
-          }
-        }
-      }
-    }
+            select: { enrollments: { where: { status: 'active' } } },
+          },
+        },
+      },
+    },
   });
 
   if (!exam) {
@@ -191,7 +191,7 @@ export async function getExamAnalytics(id: string): Promise<ExamAnalyticsData | 
         { range: '80-89%', count: 0 },
         { range: '90-100%', count: 0 },
       ],
-      topStudents: []
+      topStudents: [],
     };
   }
 
@@ -229,7 +229,7 @@ export async function getExamAnalytics(id: string): Promise<ExamAnalyticsData | 
     studentScores.push({
       studentId: grade.studentId,
       studentName: grade.student?.user?.name || grade.studentId,
-      score
+      score,
     });
   }
 
@@ -260,7 +260,7 @@ export async function getExamAnalytics(id: string): Promise<ExamAnalyticsData | 
     failCount,
     passRate,
     scoreDistribution,
-    topStudents
+    topStudents,
   };
 }
 

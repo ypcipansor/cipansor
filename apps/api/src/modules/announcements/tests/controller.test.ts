@@ -60,7 +60,7 @@ describe('announcements controller', () => {
     await run(controller.list, req, res);
 
     expect(announcementService.findAll).toHaveBeenCalledWith(
-      expect.objectContaining({ unitId: 'unit-1', published: true, page: 1, limit: 20 }),
+      expect.objectContaining({ unitId: 'unit-1', published: true, page: 1, limit: 20 })
     );
     expect((res as any).jsonPayload).toEqual({
       success: true,
@@ -86,7 +86,7 @@ describe('announcements controller', () => {
     await run(controller.create, req, res);
 
     expect(announcementService.create).toHaveBeenCalledWith(
-      expect.objectContaining({ title: 'Hi', unitId: 'unit-1', createdById: 'user-1' }),
+      expect.objectContaining({ title: 'Hi', unitId: 'unit-1', createdById: 'user-1' })
     );
     expect((res as any).statusCode).toBe(201);
     expect((res as any).jsonPayload).toEqual({ success: true, data: { id: 'new' } });

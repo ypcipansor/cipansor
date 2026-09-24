@@ -492,7 +492,9 @@ function AlumniPageContent() {
                                 </Button>
                               )}
                               <Button size="sm" variant="ghost" asChild>
-                                <Link href={`/alumni/${member.id}`}>Detail</Link>
+                                <Link href={`/alumni/${member.id}`}>
+                                  Detail
+                                </Link>
                               </Button>
                             </div>
                           </TableCell>
@@ -511,13 +513,16 @@ function AlumniPageContent() {
             <CardHeader>
               <CardTitle>Outcome Correlation Analysis</CardTitle>
               <CardDescription>
-                Korelasi antara performa akademik (Rata-rata Nilai) dengan skor outcome alumni (Karir & Pendidikan Lanjut)
+                Korelasi antara performa akademik (Rata-rata Nilai) dengan skor
+                outcome alumni (Karir & Pendidikan Lanjut)
               </CardDescription>
             </CardHeader>
             <CardContent className="h-[400px]">
               {outcomeData && outcomeData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+                  <ScatterChart
+                    margin={{ top: 20, right: 20, bottom: 20, left: 20 }}
+                  >
                     <CartesianGrid />
                     <XAxis
                       type="number"
@@ -532,8 +537,14 @@ function AlumniPageContent() {
                       name="Outcome Score"
                       domain={[0, 100]}
                     />
-                    <ZAxis type="number" dataKey="maxJuz" range={[50, 400]} name="Hafalan" unit=" Juz" />
-                    <RechartsTooltip cursor={{ strokeDasharray: '3 3' }} />
+                    <ZAxis
+                      type="number"
+                      dataKey="maxJuz"
+                      range={[50, 400]}
+                      name="Hafalan"
+                      unit=" Juz"
+                    />
+                    <RechartsTooltip cursor={{ strokeDasharray: "3 3" }} />
                     <Scatter name="Alumni" data={outcomeData} fill="#8884d8" />
                   </ScatterChart>
                 </ResponsiveContainer>

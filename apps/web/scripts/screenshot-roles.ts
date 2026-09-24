@@ -42,10 +42,11 @@ interface RoleAccount {
 }
 
 // Drive the sweep off the canonical DEMO_ACCOUNTS — the single list that the API
-// seed (apps/api/prisma/seed.ts) provisions and the login page advertises, one
-// login per RoleCode. Using it here guarantees every account we try to log in as
-// actually exists in a freshly seeded database. Demo logins do not carry 2FA, so
-// the TOTP branch in `login()` below stays as a harmless fallback.
+// seed (apps/api/prisma/seed.ts) provisions, one login per RoleCode. Using it
+// here guarantees every account we try to log in as actually exists in a freshly
+// seeded database. Admin accounts are always behind 2FA (there is no demo
+// exemption any more): seed with E2E_FIXED_2FA=1 and the TOTP branch in
+// `login()` below answers the challenge from the fixed secret.
 const ACCOUNTS: RoleAccount[] = DEMO_ACCOUNTS.map((acc) => ({
   label: acc.roleCode.toLowerCase().replace(/_/g, "-"),
   roleCode: acc.roleCode,
@@ -77,18 +78,29 @@ async function login(account: RoleAccount): Promise<Session> {
     password: account.password,
   });
   const data = login?.data as Record<string, unknown> | undefined;
-  if (!data) throw new Error(`Login failed for ${account.email}: ${JSON.stringify(login)}`);
+  if (!data)
+    throw new Error(
+      `Login failed for ${account.email}: ${JSON.stringify(login)}`,
+    );
 
   if (data.requiresTwoFactor) {
     const token = await generateTotp({ secret: FIXED_2FA_SECRET });
-    const verified = await postJson("/auth/2fa/login", { token }, data.tempToken as string);
+    const verified = await postJson(
+      "/auth/2fa/login",
+      { token },
+      data.tempToken as string,
+    );
     if (!verified?.data?.accessToken) {
-      throw new Error(`2FA failed for ${account.email}: ${JSON.stringify(verified)}`);
+      throw new Error(
+        `2FA failed for ${account.email}: ${JSON.stringify(verified)}`,
+      );
     }
     return verified.data as unknown as Session;
   }
   if (!data.accessToken) {
-    throw new Error(`Unexpected login response for ${account.email}: ${JSON.stringify(data)}`);
+    throw new Error(
+      `Unexpected login response for ${account.email}: ${JSON.stringify(data)}`,
+    );
   }
   return data as unknown as Session;
 }
@@ -155,7 +167,12 @@ interface PageResult {
   screenshot: string;
 }
 
-async function checkPage(page: Page, role: string, target: string, outDir: string): Promise<PageResult> {
+async function checkPage(
+  page: Page,
+  role: string,
+  target: string,
+  outDir: string,
+): Promise<PageResult> {
   const problems: string[] = [];
   const consoleErrors: string[] = [];
   const onConsole = (msg: { type(): string; text(): string }) => {
@@ -164,7 +181,10 @@ async function checkPage(page: Page, role: string, target: string, outDir: strin
   page.on("console", onConsole);
 
   try {
-    await page.goto(`${BASE_URL}${target}`, { waitUntil: "domcontentloaded", timeout: 45000 });
+    await page.goto(`${BASE_URL}${target}`, {
+      waitUntil: "domcontentloaded",
+      timeout: 45000,
+    });
     await page.waitForTimeout(1200);
   } catch (e) {
     problems.push(`navigation failed: ${(e as Error).message.split("\n")[0]}`);
@@ -176,7 +196,12 @@ async function checkPage(page: Page, role: string, target: string, outDir: strin
     problems.push(`bounced to ${finalPath}`);
   }
 
-  const bodyText = (await page.locator("body").innerText().catch(() => "")).slice(0, 4000);
+  const bodyText = (
+    await page
+      .locator("body")
+      .innerText()
+      .catch(() => "")
+  ).slice(0, 4000);
   for (const marker of [
     "Application error",
     "This page could not be found",
@@ -191,13 +216,25 @@ async function checkPage(page: Page, role: string, target: string, outDir: strin
     (t) => !t.includes("Failed to load resource"),
   );
   if (relevantConsole.length > 0) {
-    problems.push(`console errors: ${relevantConsole.slice(0, 2).join(" | ").slice(0, 200)}`);
+    problems.push(
+      `console errors: ${relevantConsole.slice(0, 2).join(" | ").slice(0, 200)}`,
+    );
   }
 
-  const file = path.join(outDir, `${target === "/" ? "root" : target.slice(1).replace(/\//g, "__")}.png`);
+  const file = path.join(
+    outDir,
+    `${target === "/" ? "root" : target.slice(1).replace(/\//g, "__")}.png`,
+  );
   await page.screenshot({ path: file, fullPage: false }).catch(() => undefined);
 
-  return { role, path: target, finalPath, ok: problems.length === 0, problems, screenshot: file };
+  return {
+    role,
+    path: target,
+    finalPath,
+    ok: problems.length === 0,
+    problems,
+    screenshot: file,
+  };
 }
 
 async function run() {
@@ -223,8 +260,12 @@ async function run() {
     } catch (e) {
       console.error(`✗ LOGIN ${account.label}: ${(e as Error).message}`);
       results.push({
-        role: account.label, path: "(login)", finalPath: "", ok: false,
-        problems: [(e as Error).message], screenshot: "",
+        role: account.label,
+        path: "(login)",
+        finalPath: "",
+        ok: false,
+        problems: [(e as Error).message],
+        screenshot: "",
       });
       continue;
     }
@@ -248,7 +289,9 @@ async function run() {
     for (const target of targets) {
       const r = await checkPage(page, account.label, target, roleDir);
       results.push(r);
-      console.log(`${r.ok ? "✓" : "✗"} [${account.label}] ${target}${r.ok ? "" : " — " + r.problems.join("; ")}`);
+      console.log(
+        `${r.ok ? "✓" : "✗"} [${account.label}] ${target}${r.ok ? "" : " — " + r.problems.join("; ")}`,
+      );
     }
 
     await context.close();
@@ -257,11 +300,17 @@ async function run() {
   await browser.close();
 
   const failures = results.filter((r) => !r.ok);
-  fs.writeFileSync(path.join(OUT_DIR, "report.json"), JSON.stringify(results, null, 2));
-  console.log(`\n${results.length} pages checked, ${failures.length} failures.`);
+  fs.writeFileSync(
+    path.join(OUT_DIR, "report.json"),
+    JSON.stringify(results, null, 2),
+  );
+  console.log(
+    `\n${results.length} pages checked, ${failures.length} failures.`,
+  );
   if (failures.length > 0) {
     console.log("\nFailures:");
-    for (const f of failures) console.log(`  [${f.role}] ${f.path}: ${f.problems.join("; ")}`);
+    for (const f of failures)
+      console.log(`  [${f.role}] ${f.path}: ${f.problems.join("; ")}`);
     process.exit(1);
   }
 }

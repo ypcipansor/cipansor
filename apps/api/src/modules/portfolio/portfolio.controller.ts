@@ -13,7 +13,7 @@ export const getTypes = (_req: Request, res: Response) => {
     ApiResponse.success({
       types: portfolioService.PORTFOLIO_TYPES,
       categories: portfolioService.PORTFOLIO_CATEGORIES,
-    }),
+    })
   );
 };
 
@@ -92,7 +92,10 @@ export const addFile = asyncHandler(async (req: Request, res: Response) => {
 /** PATCH /api/portfolio/files/:fileId */
 export const updateFile = asyncHandler(async (req: Request, res: Response) => {
   const { isCover, sortOrder } = req.body;
-  const file = await portfolioService.updatePortfolioFile(req.params.fileId, { isCover, sortOrder });
+  const file = await portfolioService.updatePortfolioFile(req.params.fileId, {
+    isCover,
+    sortOrder,
+  });
   res.json(ApiResponse.success(file, 'File berhasil diperbarui'));
 });
 

@@ -30,7 +30,9 @@ const prisma = mockPrisma as any;
 describe('TataLaksanaService', () => {
   const service = new TataLaksanaService();
 
-  beforeEach(() => { vi.clearAllMocks(); });
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
   describe('getSOPs', () => {
     it('should return filtered SOPs', async () => {
@@ -63,8 +65,13 @@ describe('TataLaksanaService', () => {
   describe('getSOP', () => {
     it('should return SOP with revisions', async () => {
       const mockSOP = {
-        id: 's1', title: 'SOP A', version: 2,
-        revisions: [{ id: 'r1', version: 2 }, { id: 'r2', version: 1 }],
+        id: 's1',
+        title: 'SOP A',
+        version: 2,
+        revisions: [
+          { id: 'r1', version: 2 },
+          { id: 'r2', version: 1 },
+        ],
         createdBy: { id: 'u1', name: 'Admin' },
       };
       prisma.standardOperatingProcedure.findUniqueOrThrow.mockResolvedValue(mockSOP);
@@ -77,8 +84,11 @@ describe('TataLaksanaService', () => {
   describe('createSOP', () => {
     it('should create a new SOP', async () => {
       const input = {
-        unitId: 'unit1', documentNumber: 'SOP-KEU-001', title: 'SOP Keuangan',
-        category: 'Keuangan', createdById: 'user1',
+        unitId: 'unit1',
+        documentNumber: 'SOP-KEU-001',
+        title: 'SOP Keuangan',
+        category: 'Keuangan',
+        createdById: 'user1',
       };
       const mockCreated = { id: 's1', ...input, version: 1, status: 'DRAFT' };
       prisma.standardOperatingProcedure.create.mockResolvedValue(mockCreated);
@@ -124,7 +134,9 @@ describe('TataLaksanaService', () => {
       prisma.$transaction.mockImplementation(async (fn: any) => {
         const tx = {
           sOPRevision: { create: vi.fn().mockResolvedValue(mockRevision) },
-          standardOperatingProcedure: { update: vi.fn().mockResolvedValue({ ...currentSOP, version: 3 }) },
+          standardOperatingProcedure: {
+            update: vi.fn().mockResolvedValue({ ...currentSOP, version: 3 }),
+          },
         };
         return fn(tx);
       });
@@ -144,7 +156,9 @@ describe('TataLaksanaService', () => {
       prisma.standardOperatingProcedure.delete.mockResolvedValue({ id: 's1' });
 
       await service.deleteSOP('s1');
-      expect(prisma.standardOperatingProcedure.delete).toHaveBeenCalledWith({ where: { id: 's1' } });
+      expect(prisma.standardOperatingProcedure.delete).toHaveBeenCalledWith({
+        where: { id: 's1' },
+      });
     });
   });
 
@@ -153,7 +167,7 @@ describe('TataLaksanaService', () => {
       prisma.standardOperatingProcedure.count
         .mockResolvedValueOnce(20) // total
         .mockResolvedValueOnce(12) // active
-        .mockResolvedValueOnce(5)  // draft
+        .mockResolvedValueOnce(5) // draft
         .mockResolvedValueOnce(3); // deprecated
 
       prisma.standardOperatingProcedure.groupBy.mockResolvedValue([

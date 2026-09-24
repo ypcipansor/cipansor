@@ -93,9 +93,12 @@ export function SuccessionPlanningList({
                   <div className="min-w-0 flex-1 space-y-3 p-4">
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <h4 className="text-base font-bold">{candidate.name}</h4>
+                        <h4 className="text-base font-bold">
+                          {candidate.name}
+                        </h4>
                         <p className="text-sm text-muted-foreground">
-                          {candidate.currentRole || "Peran saat ini belum dicatat"}
+                          {candidate.currentRole ||
+                            "Peran saat ini belum dicatat"}
                         </p>
                       </div>
                       <div className="flex flex-col items-end gap-1">
@@ -117,44 +120,49 @@ export function SuccessionPlanningList({
                       </div>
                     </div>
 
-                    {candidate.components && candidate.components.length > 0 && (
-                      <div className="space-y-1.5 rounded-md border bg-muted/30 p-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                          Rincian penilaian
-                        </p>
-                        {candidate.components.map((c) => (
-                          <div
-                            key={c.key}
-                            className="flex flex-wrap items-baseline justify-between gap-x-3 text-xs"
-                          >
-                            <span
-                              className={
-                                c.available ? "" : "text-muted-foreground italic"
-                              }
+                    {candidate.components &&
+                      candidate.components.length > 0 && (
+                        <div className="space-y-1.5 rounded-md border bg-muted/30 p-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                            Rincian penilaian
+                          </p>
+                          {candidate.components.map((c) => (
+                            <div
+                              key={c.key}
+                              className="flex flex-wrap items-baseline justify-between gap-x-3 text-xs"
                             >
-                              {c.label}
-                            </span>
-                            <span className="tabular-nums">
-                              {c.available ? (
-                                <>
-                                  <span className="font-semibold">{c.points}</span>
-                                  <span className="text-muted-foreground">
-                                    /{c.max}
-                                  </span>
-                                  <span className="ml-2 text-muted-foreground">
+                              <span
+                                className={
+                                  c.available
+                                    ? ""
+                                    : "text-muted-foreground italic"
+                                }
+                              >
+                                {c.label}
+                              </span>
+                              <span className="tabular-nums">
+                                {c.available ? (
+                                  <>
+                                    <span className="font-semibold">
+                                      {c.points}
+                                    </span>
+                                    <span className="text-muted-foreground">
+                                      /{c.max}
+                                    </span>
+                                    <span className="ml-2 text-muted-foreground">
+                                      {c.basis}
+                                    </span>
+                                  </>
+                                ) : (
+                                  <span className="text-muted-foreground italic">
                                     {c.basis}
                                   </span>
-                                </>
-                              ) : (
-                                <span className="text-muted-foreground italic">
-                                  {c.basis}
-                                </span>
-                              )}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                                )}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
 
                     <div className="grid gap-4 sm:grid-cols-2">
                       <div className="space-y-1">

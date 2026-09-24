@@ -64,8 +64,6 @@ import {
   MuhadhorohStatus,
 } from "@/hooks/use-muhadhoroh";
 
-
-
 function MuhadhorohPageContent() {
   // Get user from auth context
   const { user } = useAuthStore();

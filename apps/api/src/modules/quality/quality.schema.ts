@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import { uploadedFileRefSchema } from '@cipansor/shared';
 
-
 export const createEvidenceSchema = z.object({
   unitId: z.string().uuid(),
   indicatorId: z.string().uuid(),

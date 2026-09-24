@@ -1,7 +1,14 @@
 import { prisma } from '../../lib/prisma';
 import { Errors } from '@/middleware/error';
 import { claimBlobForRecord, releaseBlobClaimById, type BlobClaimHandle } from '@/utils/blob-claim';
-import { PaymentStatus, PaymentMethod, PaymentVerificationStatus, Prisma, NotificationType, UserRole } from '@prisma/client';
+import {
+  PaymentStatus,
+  PaymentMethod,
+  PaymentVerificationStatus,
+  Prisma,
+  NotificationType,
+  UserRole,
+} from '@prisma/client';
 import * as notificationService from '../notifications/notifications.service';
 import { eventBus } from '@/lib/event-bus';
 import { AccountType, JournalReferenceType } from '@cipansor/shared';
@@ -105,7 +112,10 @@ export async function deletePaymentType(id: string) {
 // INVOICE SERVICE
 // =====================================
 
-async function generateInvoiceNumber(unitId?: string, tx?: Prisma.TransactionClient): Promise<string> {
+async function generateInvoiceNumber(
+  unitId?: string,
+  tx?: Prisma.TransactionClient
+): Promise<string> {
   const year = new Date().getFullYear();
   const month = String(new Date().getMonth() + 1).padStart(2, '0');
 
@@ -569,7 +579,7 @@ export async function submitPaymentProof(
         studentId_parentId: { studentId: invoice.student.id, parentId: currentUser.sub },
       },
     });
-    if (!link) throw new Error('Access denied: not your child\'s invoice');
+    if (!link) throw new Error("Access denied: not your child's invoice");
   } else if (currentUser.role === UserRole.STUDENT) {
     if (invoice.student.userId !== currentUser.sub) {
       throw new Error('Access denied: not your invoice');
@@ -850,8 +860,7 @@ export async function verifyPayment(
         currency: 'IDR',
         minimumFractionDigits: 0,
       });
-      const isApproved =
-        payment.verificationStatus === PaymentVerificationStatus.FINAL_APPROVED;
+      const isApproved = payment.verificationStatus === PaymentVerificationStatus.FINAL_APPROVED;
       const isRejected = payment.verificationStatus === PaymentVerificationStatus.REJECTED;
       if (isApproved || isRejected) {
         await Promise.allSettled(
@@ -1079,7 +1088,10 @@ export async function getFinancialSummary() {
 
     const name = inv.paymentType?.name ?? 'Lainnya';
     const bucket = byType.get(name) ?? { total: zero, paid: zero };
-    byType.set(name, { total: bucket.total.add(inv.amount), paid: bucket.paid.add(inv.paidAmount) });
+    byType.set(name, {
+      total: bucket.total.add(inv.amount),
+      paid: bucket.paid.add(inv.paidAmount),
+    });
   }
 
   return {
@@ -1364,9 +1376,13 @@ export async function generateBulkSppInvoices(data: {
     throw new Error('Payment type not found');
   }
 
-  // Get students
+  // Only santri who are still enrolled. With no status filter the monthly job
+  // (finance-billing.job.ts) billed alumni, and santri who had transferred out,
+  // every month.
   const students = await prisma.student.findMany({
     where: {
+      status: STUDENT_STATUS.ACTIVE,
+      deletedAt: null,
       ...(unitId && { unitId }),
       ...(classId && {
         enrollments: {
@@ -1481,13 +1497,11 @@ export async function generateRecurringBills() {
   // Process billing for each student matching payment types
   for (const student of activeStudents) {
     // Determine applicable payment types for this student (matching unitId)
-    const applicableTypes = paymentTypes.filter(
-      (pt) => pt.unitId === student.unitId
-    );
+    const applicableTypes = paymentTypes.filter((pt) => pt.unitId === student.unitId);
 
     for (const paymentType of applicableTypes) {
       processed++;
-      
+
       // Check if already billed
       const existing = await prisma.invoice.findFirst({
         where: {
@@ -1536,7 +1550,7 @@ export async function calculateInvoiceAmounts(
   const db = tx || prisma;
   if (studentId) {
     const recipients = await db.scholarshipRecipient.findMany({
-      where: { studentId }
+      where: { studentId },
     });
     // Calculation logic...
   }
@@ -1546,8 +1560,13 @@ export async function calculateInvoiceAmounts(
 // =====================================
 // BUG 2 FIX: Application-level validation for ScholarshipDiscount
 // =====================================
-export function validateScholarshipDiscount(data: { componentId?: string | null; paymentTypeId?: string | null }) {
+export function validateScholarshipDiscount(data: {
+  componentId?: string | null;
+  paymentTypeId?: string | null;
+}) {
   if (!data.componentId && !data.paymentTypeId) {
-    throw new Error("Data Integrity Error: At least one of componentId or paymentTypeId must be set to prevent duplicate orphaned discounts.");
+    throw new Error(
+      'Data Integrity Error: At least one of componentId or paymentTypeId must be set to prevent duplicate orphaned discounts.'
+    );
   }
 }

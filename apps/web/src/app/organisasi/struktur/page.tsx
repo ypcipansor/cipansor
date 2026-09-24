@@ -13,20 +13,26 @@ function OrgChartNode({ node }: { node: any }) {
   return (
     <div className="flex flex-col items-center">
       <div className="w-64 border rounded-xl shadow-lg bg-card text-card-foreground p-4 text-center m-2 hover:shadow-xl transition-shadow relative">
-        <Badge variant="outline" className="mb-2 bg-muted/50">{node.code}</Badge>
+        <Badge variant="outline" className="mb-2 bg-muted/50">
+          {node.code}
+        </Badge>
         <h3 className="font-bold text-sm mb-1">{node.name}</h3>
-        <p className="text-xs text-muted-foreground mb-3 line-clamp-2">{node.description || "Tidak ada deskripsi"}</p>
-        
+        <p className="text-xs text-muted-foreground mb-3 line-clamp-2">
+          {node.description || "Tidak ada deskripsi"}
+        </p>
+
         {node.positions?.length > 0 && (
           <div className="space-y-2 mt-3 pt-3 border-t">
             {node.positions.map((p: any) => (
-              <div 
-                key={p.id} 
+              <div
+                key={p.id}
                 onClick={() => router.push(`/organisasi/posisi/${p.id}`)}
                 className="text-xs p-2 rounded-md bg-secondary/50 hover:bg-primary hover:text-primary-foreground cursor-pointer transition-colors text-left flex justify-between items-center"
               >
                 <span className="font-medium truncate pr-2">{p.title}</span>
-                <span className="opacity-70 text-[10px] shrink-0">{p.holder ? p.holder.name : 'Kosong'}</span>
+                <span className="opacity-70 text-[10px] shrink-0">
+                  {p.holder ? p.holder.name : "Kosong"}
+                </span>
               </div>
             ))}
           </div>
@@ -39,9 +45,12 @@ function OrgChartNode({ node }: { node: any }) {
           <div className="flex relative pt-4">
             {/* Top connecting line for children */}
             <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[calc(100%-16rem)] h-px bg-border hidden md:block"></div>
-            
+
             {node.children.map((child: any, idx: number) => (
-              <div key={child.id} className="flex flex-col items-center relative px-2">
+              <div
+                key={child.id}
+                className="flex flex-col items-center relative px-2"
+              >
                 <div className="absolute top-0 left-1/2 w-px h-4 -mt-4 bg-border"></div>
                 <OrgChartNode node={child} />
               </div>
@@ -58,12 +67,12 @@ function OrgTreeVisualizationPageContent() {
 
   return (
     <div className="container mx-auto py-6 space-y-8">
-      <PageHeader 
-        title="Visualisasi Struktur Organisasi" 
-        description="Peta hierarki unit dan jabatan secara interaktif." 
+      <PageHeader
+        title="Visualisasi Struktur Organisasi"
+        description="Peta hierarki unit dan jabatan secara interaktif."
         breadcrumbs={[
           { label: "Organisasi", href: "/organisasi" },
-          { label: "Struktur Hierarki" }
+          { label: "Struktur Hierarki" },
         ]}
       />
 

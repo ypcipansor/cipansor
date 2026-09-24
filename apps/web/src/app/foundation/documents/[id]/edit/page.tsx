@@ -378,7 +378,9 @@ function EditDocumentPageContent({ params }: PageProps) {
   );
 }
 
-export default function EditDocumentPage(props: Parameters<typeof EditDocumentPageContent>[0]) {
+export default function EditDocumentPage(
+  props: Parameters<typeof EditDocumentPageContent>[0],
+) {
   return (
     <MainLayout>
       <EditDocumentPageContent {...props} />

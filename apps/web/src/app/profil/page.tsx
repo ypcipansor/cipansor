@@ -21,8 +21,13 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function ProfilPage() {
   // Server component: the locale comes from the cookie, not from useI18n.
   const locale = await getServerLocale();
-  const { profilePage, profileSections, profileStats, legalIdentity, transparencyPage } =
-    publicContentFor(locale);
+  const {
+    profilePage,
+    profileSections,
+    profileStats,
+    legalIdentity,
+    transparencyPage,
+  } = publicContentFor(locale);
 
   return (
     <PublicPage
@@ -74,7 +79,10 @@ export default async function ProfilPage() {
 
       <p className="mt-10 max-w-3xl text-muted-foreground">
         {profilePage.leadershipPrompt}{" "}
-        <Link href="/profil/pimpinan" className="font-medium text-primary underline">
+        <Link
+          href="/profil/pimpinan"
+          className="font-medium text-primary underline"
+        >
           {profilePage.leadershipLink}
         </Link>
         .

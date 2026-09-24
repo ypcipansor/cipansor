@@ -17,12 +17,7 @@ export type {
 
 // Re-export specific enums or types that might be needed by consumers
 export type DailyMood =
-  | "HAPPY"
-  | "NEUTRAL"
-  | "SAD"
-  | "TIRED"
-  | "EXCITED"
-  | "SICK";
+  "HAPPY" | "NEUTRAL" | "SAD" | "TIRED" | "EXCITED" | "SICK";
 
 interface DailyReportListResponse {
   data: DailyReport[];

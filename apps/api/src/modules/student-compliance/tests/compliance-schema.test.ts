@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { BloodType, EducationLevel, IncomeRange, OccupationType, TransportMode } from '@prisma/client';
+import {
+  BloodType,
+  EducationLevel,
+  IncomeRange,
+  OccupationType,
+  TransportMode,
+} from '@prisma/client';
 import {
   BLOOD_TYPE_VALUES,
   EDUCATION_LEVEL_VALUES,
@@ -25,7 +31,9 @@ describe('skema kelengkapan data santri', () => {
   const kunciDitolak = (body: unknown) => {
     const r = parse(body);
     expect(r.success).toBe(false);
-    return r.success ? [] : r.error.issues.flatMap((i) => ('keys' in i ? (i.keys as string[]) : []));
+    return r.success
+      ? []
+      : r.error.issues.flatMap((i) => ('keys' in i ? (i.keys as string[]) : []));
   };
 
   describe('menutup penugasan massal', () => {
@@ -49,7 +57,15 @@ describe('skema kelengkapan data santri', () => {
         distance: 3,
       };
       expect(kunciDitolak(lama)).toEqual(
-        expect.arrayContaining(['isKIP', 'isPKH', 'pkhNumber', 'kksNumber', 'hasDisability', 'fatherNIK', 'distance'])
+        expect.arrayContaining([
+          'isKIP',
+          'isPKH',
+          'pkhNumber',
+          'kksNumber',
+          'hasDisability',
+          'fatherNIK',
+          'distance',
+        ])
       );
     });
 
@@ -82,7 +98,11 @@ describe('skema kelengkapan data santri', () => {
     it('string kosong berarti "kosongkan" dan tersimpan sebagai null; spasi tepi dibuang', () => {
       const r = parse({ nisn: '', nik: '  ', noKK: ' 3206071204120001 ' });
       expect(r.success).toBe(true);
-      expect(r.success && r.data).toMatchObject({ nisn: null, nik: null, noKK: '3206071204120001' });
+      expect(r.success && r.data).toMatchObject({
+        nisn: null,
+        nik: null,
+        noKK: '3206071204120001',
+      });
     });
 
     it('alamat (kolom NOT NULL) boleh tidak dikirim, tapi tidak boleh dikosongkan', () => {

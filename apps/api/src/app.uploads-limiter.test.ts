@@ -98,10 +98,16 @@ describe('/uploads read limiter wiring', () => {
 });
 
 describe('upload write limiter is mounted on exactly the write route', () => {
+  // Locate `router.post(<path>` without pinning the exact source text: prettier
+  // may wrap the path onto its own line, and this guard is about which route the
+  // limiter is mounted on, not how the call is formatted.
+  const routeStart = (route: string): number =>
+    UPLOAD_ROUTES_SOURCE.search(new RegExp(`router\\.post\\(\\s*'${route.replace(/\//g, '\\/')}'`));
+
   it('applies uploadLimiter to POST / and to no other upload route', () => {
     // The limiter existed but was mounted on NOTHING, so a write endpoint had no
     // ceiling. It must guard the multipart POST `/`...
-    const writeStart = UPLOAD_ROUTES_SOURCE.indexOf("router.post('/'");
+    const writeStart = routeStart('/');
     expect(writeStart).toBeGreaterThan(-1);
     const writeBlock = UPLOAD_ROUTES_SOURCE.slice(
       writeStart,
@@ -111,9 +117,9 @@ describe('upload write limiter is mounted on exactly the write route', () => {
 
     // ...and must NOT throttle the read (SAS mint) or cleanup (discard), which a
     // gallery rendering many images would otherwise exhaust.
-    for (const route of ["'/sas'", "'/discard'"]) {
-      const start = UPLOAD_ROUTES_SOURCE.indexOf(`router.post(${route}`);
-      expect(start, `router.post(${route}) not found`).toBeGreaterThan(-1);
+    for (const route of ['/sas', '/discard']) {
+      const start = routeStart(route);
+      expect(start, `router.post('${route}') not found`).toBeGreaterThan(-1);
       const block = UPLOAD_ROUTES_SOURCE.slice(start, UPLOAD_ROUTES_SOURCE.indexOf(');', start));
       expect(block).not.toContain('uploadLimiter');
     }

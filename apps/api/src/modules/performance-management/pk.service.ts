@@ -19,7 +19,7 @@ import { pkOwnerUnitId, type PkUnitView } from './pk-unit';
  * independence is kept apart from.
  */
 const SUPERVISOR_CANDIDATE_ROLE_CODES: RoleCode[] = STAFF_ROLE_CODES.filter(
-  (c) => c !== RoleCode.YAYASAN_PEMBINA && c !== RoleCode.YAYASAN_PENGAWAS,
+  (c) => c !== RoleCode.YAYASAN_PEMBINA && c !== RoleCode.YAYASAN_PENGAWAS
 );
 
 /** An RKA a PK may anchor to: ratified, or ratified and under way. */
@@ -41,15 +41,7 @@ const RENCANA_DISAHKAN = new Set<PlanStatus>([PlanStatus.APPROVED, PlanStatus.IN
  * kekeliruan yang paling sering: menjumlahkan persentase bulanan sehingga
  * capaian setahun terbaca 168 persen terhadap target 85 persen.
  */
-const SATUAN_RATA_RATA = new Set([
-  'persen',
-  '%',
-  'persentase',
-  'rasio',
-  'indeks',
-  'nilai',
-  'skor',
-]);
+const SATUAN_RATA_RATA = new Set(['persen', '%', 'persentase', 'rasio', 'indeks', 'nilai', 'skor']);
 
 export function aggregationForUnit(unit: string): IndicatorAggregation {
   return SATUAN_RATA_RATA.has(unit.trim().toLowerCase())
@@ -281,9 +273,7 @@ export class PerformanceAgreementService {
         user: { connect: { id: data.userId } },
         supervisor: data.supervisorId ? { connect: { id: data.supervisorId } } : undefined,
         supervisorPk: supervisorPkId ? { connect: { id: supervisorPkId } } : undefined,
-        strategicPlan: data.strategicPlanId
-          ? { connect: { id: data.strategicPlanId } }
-          : undefined,
+        strategicPlan: data.strategicPlanId ? { connect: { id: data.strategicPlanId } } : undefined,
         periodStart: new Date(data.periodStart),
         periodEnd: new Date(data.periodEnd),
         notes: data.notes,
@@ -356,10 +346,7 @@ export class PerformanceAgreementService {
         userRoles: {
           some: {
             isActive: true,
-            OR: [
-              { expiresAt: null },
-              { expiresAt: { gt: now } },
-            ],
+            OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
             role: {
               code: {
                 in: SUPERVISOR_CANDIDATE_ROLE_CODES,
@@ -401,8 +388,7 @@ export class PerformanceAgreementService {
       roleCodes: (userRoles ?? []).map((r) => r.role.code),
       // Ditandai, bukan dipaksakan — frontend memilihnya lebih dulu dan
       // pengguna tetap bebas menggantinya.
-      suggested:
-        wantedRole !== null && (userRoles ?? []).some((r) => r.role.code === wantedRole),
+      suggested: wantedRole !== null && (userRoles ?? []).some((r) => r.role.code === wantedRole),
     }));
   }
 
@@ -453,8 +439,7 @@ export class PerformanceAgreementService {
   async deletePK(
     id: string,
     caller:
-      | string
-      | { id: string; isAdmin?: boolean; roleCode?: string | null; unitId?: string | null },
+      string | { id: string; isAdmin?: boolean; roleCode?: string | null; unitId?: string | null },
     isAdminLegacy?: boolean
   ) {
     const callerObj =

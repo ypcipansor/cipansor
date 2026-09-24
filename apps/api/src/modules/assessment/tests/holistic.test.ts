@@ -54,7 +54,9 @@ describe('Holistic Student Analytics', () => {
     (prisma.tahfidzRecord.aggregate as any).mockResolvedValue({ _max: { juz: 30 } });
     (prisma.violation.aggregate as any).mockResolvedValue({ _sum: { points: 0 } });
     (prisma.reward.aggregate as any).mockResolvedValue({ _sum: { points: 0 } });
-    (prisma.attendance.groupBy as any).mockResolvedValue([{ status: 'PRESENT', _count: { _all: 10 } }]);
+    (prisma.attendance.groupBy as any).mockResolvedValue([
+      { status: 'PRESENT', _count: { _all: 10 } },
+    ]);
     (prisma.dailyIbadahRecord.aggregate as any).mockResolvedValue({ _sum: { pointsEarned: 3000 } });
 
     // 2. Mock CBT: 1 attempt, score 50/100 (50%)
@@ -62,7 +64,10 @@ describe('Holistic Student Analytics', () => {
       { score: new Decimal(50), exam: { maxScore: new Decimal(100) } },
     ]);
 
-    const result = await AssessmentAnalyticsService.getStudentHolisticAnalytics(studentId, academicYearId);
+    const result = await AssessmentAnalyticsService.getStudentHolisticAnalytics(
+      studentId,
+      academicYearId
+    );
 
     expect(result.breakdown.cbt).toBe(50);
     // Holistic score should be less than 100 because of 50% CBT score

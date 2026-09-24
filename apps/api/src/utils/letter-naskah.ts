@@ -28,10 +28,7 @@ export function naturesFor(type: LetterType): readonly LetterNature[] {
 }
 
 export function isNatureAllowed(type: LetterType, nature: LetterNature): boolean {
-  return isNatureAllowedForType(
-    type as unknown as never,
-    nature as unknown as never
-  );
+  return isNatureAllowedForType(type as unknown as never, nature as unknown as never);
 }
 
 /**

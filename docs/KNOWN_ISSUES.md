@@ -4,35 +4,69 @@ Status of production-readiness work and the remaining roadmap. Updated as part o
 the production-readiness / architecture-standardization effort. For the system
 overview see [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 
-## 🔴 OPEN — `docs/DEPLOYMENT.md` menyuruh operator menghapus data produksi (2026-09-21)
+## 🔴 OPEN — cacat tampilan yang terlihat begitu datanya lengkap (2026-09-24)
 
-Bagian **Database Migration → Production Migration** memuat, berurutan:
+Paket data presentasi (`db:seed:presentasi`) mengisi satu tahun ajaran utuh.
+Dengan data selengkap itu, beberapa layar ternyata salah hitung atau salah
+sambung. Kesalahan itu dulu tersembunyi karena datanya nyaris kosong. Yang
+sudah diperbaiki bersama paket itu:
 
-```bash
-npx prisma migrate deploy
-npx prisma db seed          # ← ini yang berbahaya
-```
+- Juz hafalan di dasbor dihitung `ayat ÷ 600`, padahal ukuran juz berkisar
+  137–564 ayat. Sekarang dihitung per juz menurut ukurannya sendiri
+  (`memorizedJuz`).
+- "Kelas" menghitung rombel semua tahun ajaran. Sekarang hanya tahun aktif.
+- "Periode Aktif" SPMB menghitung periode ber-`isActive`, termasuk gelombang
+  yang sudah tutup atau belum buka. Sekarang aturannya sama dengan gerbang
+  pendaftaran.
 
-`apps/api/prisma/seed.ts` membuka pekerjaannya dengan
-`TRUNCATE TABLE … RESTART IDENTITY CASCADE` atas hampir seluruh tabel. Seorang
-operator yang mengikuti runbook ini apa adanya akan mengosongkan basis data
-produksi. Tidak ada pagar apa pun di berkas itu yang memperingatkannya.
+Diperbaiki sesudahnya (2026-09-24):
 
-Dua ketidakcocokan lain di berkas yang sama, lebih ringan tapi tetap menyesatkan:
+- **Cookie `auth-storage` di atas 4 KB** (#531, tergelar di produksi `0e0d0338`):
+  cookie kini hanya membawa `role` dan penugasan primer (283 byte untuk
+  `fatimah@`, sebelumnya 5.054). Sisa akarnya — middleware membiarkan lewat
+  pengguna tanpa peran — menunggu #508/#523.
+- **Tagihan otomatis menagih alumni** (#535): `generateBulkSppInvoices` kini
+  hanya memilih santri `active` yang tidak dihapus. **Harus sudah di produksi
+  sebelum 1 Oktober 04.00 WIB**, jadwal tagihan bulanan berikutnya.
+- **Kartu CBT menghitung ujian tertulis** (#535): hanya ujian ber-bank soal.
+- **Notifikasi tonggak tahfidz tak pernah sampai** (#535): `ayat ÷ 600`
+  diganti hitungan per juz, dan notifikasi kini dialamatkan ke User santri,
+  bukan ke id Student yang ditolak foreign key.
+- **Regex e-mail lambat** (#537, CodeQL #18): pola linear yang sama untuk
+  `isEmail()` dan validator formulir.
 
-- **"pnpm: v10 atau lebih baru"** — repo ini dipaku ke `pnpm@9.15.9` lewat
-  `packageManager` di `package.json`, dan CI memakai `--frozen-lockfile`.
-- **"Node.js v20 LTS"** — seluruh image dan kontainer gerbang memakai `node:22`.
-- **`docker compose exec api sh` lalu `npx prisma migrate deploy`** tidak bisa
-  jalan di host ini: image produksi sengaja tidak memuat Prisma CLI maupun
-  `tsx` (lihat [[docker-image-size-traps]] soal closure `--prod`). Jalur yang
-  benar-benar dipakai adalah kontainer `node:22-alpine` sekali pakai dengan repo
-  di-mount, lalu `deploy-images.sh` — seperti pada penggelaran 2026-09-21.
+Yang masih terbuka:
 
-Yang **benar** di berkas itu dan jangan ikut dibuang saat memperbaikinya:
-bagian "Irreversible migrations — backup is a hard prerequisite" yang ditambahkan
-#505, termasuk kewajiban memverifikasi bahwa dump-nya memang bisa dipulihkan
-sebelum `migrate deploy` dijalankan.
+- **`/dashboard/executive`**: nama bidang tidak cocok dengan API ("0 AKTIF",
+  Kehadiran 0%). Tren pendaftaran membaca `unit.realm`, nama unit kosong, dan
+  sesekali 504. Untuk presentasi, pakai `/dashboard` dengan akun Ketua.
+- **`/foundation/dashboard`**: Net Income Rp 0 karena akuntansi belum
+  tersambung (akun bersifat global, sedangkan pencarian dilakukan per unit).
+  Legenda grafik talenta menampilkan "value".
+- **Daftar santri**: "0 of 0 results" untuk sebagian peran.
+- **Daftar tagihan**: kolom "Jenis" kosong, dan kolom santri hanya berisi NIS.
+- **Ringkasan SPMB**: 0 untuk Ketua dan Kepala karena API hanya mengizinkan
+  TU/admin unit. Pakai `smpit.tu@` atau `smpit.admin@`.
+- **Takhosus sebagai unit kelima** (`UnitType.PESANTREN`, keputusan
+  2026-09-13) belum diterapkan. Paket ini menaruh halaqoh takhosus di bawah
+  SMA.
+
+## ✅ CLOSED — `docs/DEPLOYMENT.md` menyuruh operator menghapus data produksi (2026-09-21 → 2026-09-23)
+
+Bagian **Database Migration dengan Docker** dulu memuat `npx prisma db seed`
+tepat sesudah `migrate deploy`, padahal `apps/api/prisma/seed.ts` membuka
+pekerjaannya dengan `TRUNCATE TABLE … RESTART IDENTITY CASCADE` atas hampir
+seluruh tabel. Ditutup dua lapis: baris itu diganti peringatan, dan `seed.ts`
+sendiri kini **menolak berjalan** tanpa `ALLOW_DESTRUCTIVE_SEED=1` — variabel
+yang hanya diset CI (`e2e-tests.yml`), `scripts/dev-up.sh`, dan perintah seed di
+dokumen pengembangan. Versi Node (22) dan pnpm (9.15.9) di berkas itu juga sudah
+dibetulkan.
+
+Yang masih benar dan jangan ikut dibuang: `docker compose exec api sh` lalu
+`npx prisma …` tidak bisa jalan di image produksi lama (tanpa Prisma CLI); di
+App Service migrasi berjalan sendiri saat kontainer start (`MIGRATE_ON_START`),
+dan bagian "Irreversible migrations — backup is a hard prerequisite" dari #505
+tetap berlaku.
 
 ## 🔴 OPEN — empat PR terbuka akan MELINDAS pekerjaan yang sudah tergelar (2026-09-05)
 
@@ -454,13 +488,17 @@ genuinely two different people holding the same approval rights in one unit.
 That is an authority question for the yayasan, not a data-cleanup task. Prefer
 `is_active = false` over deletion so the audit trail survives.
 
-**6. `DEMO_MODE=true` is still set on production.** Every account skips the
-mandatory-2FA wall, including both active `SUPER_ADMIN`s, neither of which has
-2FA enrolled. Flipping it is part of launch, and it locks out testing until
-someone enrols — see the launch checklist rather than treating it as a bug.
-Re-confirmed in the container 2026-09-02. Its sibling is closed:
-`NEXT_PUBLIC_SHOW_DEMO_LOGIN` is now `false` and built that way, so the
-credential panel is gone from `/login`.
+**6. ~~`DEMO_MODE=true` is still set on production.~~ Removed from the code
+(2026-09-23).** It waived the mandatory-2FA wall for every account, both active
+`SUPER_ADMIN`s included, on a deployment whose seeded passwords are published in
+this repository. The switch, the credential panel it travelled with
+(`NEXT_PUBLIC_SHOW_DEMO_LOGIN`, already `false` in production) and the build arg
+are gone; a leftover `DEMO_MODE` variable in any environment is now ignored.
+Consequence once deployed: an admin without 2FA is sent to 2FA *setup* at the
+next login instead of receiving a session — enrol an authenticator then. Tests
+and the screenshot sweep seed admins with a fixed TOTP secret
+(`E2E_FIXED_2FA=1`). The seed itself now refuses to run without
+`ALLOW_DESTRUCTIVE_SEED=1`, because it TRUNCATEs every table first.
 
 **7. `#2` above is now half-solved, in the direction that matters.**
 `/reset-password` is public, portal-only and reachable with no session (#413),
@@ -920,7 +958,7 @@ satu PR — kutipan sebelumnya keliru. PR #415 sendiri kini membawa migrasi
 
 ## Follow-up (ditemukan 2026-09-11 pada PR #415)
 
-### Cookie `auth-storage` di atas 4 KB dibuang peramban — middleware tanpa peran
+### ✅ Cookie `auth-storage` di atas 4 KB dibuang peramban — middleware tanpa peran (diperbaiki #531, 2026-09-24)
 
 Objek pengguna kepala sekolah, dengan seluruh izinnya, berukuran 4.308 byte.
 `customStorage` (`apps/web/src/stores/auth.ts`) menuliskannya ke

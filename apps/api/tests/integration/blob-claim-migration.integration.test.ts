@@ -86,9 +86,7 @@ describeDb('blob claim operation-token migration', () => {
     await withClient(async (client) => {
       // Prove the extension is genuinely absent, so the assertion below is not
       // accidentally passing because some other bootstrap created it.
-      const ext = await client.query(
-        `SELECT 1 FROM pg_extension WHERE extname = 'pgcrypto'`
-      );
+      const ext = await client.query(`SELECT 1 FROM pg_extension WHERE extname = 'pgcrypto'`);
       expect(ext.rows).toHaveLength(0);
 
       await expect(client.query(OPERATION_TOKEN_MIGRATION)).resolves.toBeDefined();

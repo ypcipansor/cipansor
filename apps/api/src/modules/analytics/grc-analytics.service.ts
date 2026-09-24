@@ -42,50 +42,54 @@ export interface GRCStats {
 export async function getGRCStats(unitId?: string): Promise<GRCStats> {
   const whereClause = unitId ? { unitId } : {};
 
-  const [plans, risks, findings, resolvedFindings, compliances, auditSuggestions] = await Promise.all([
-    // 1. Strategic Plans
-    prisma.strategicPlan.findMany({
-      where: {
-        ...whereClause,
-        status: { in: [PlanStatus.PROPOSED, PlanStatus.APPROVED, PlanStatus.IN_PROGRESS] as any },
-      },
-      select: { progress: true },
-    }),
+  const [plans, risks, findings, resolvedFindings, compliances, auditSuggestions] =
+    await Promise.all([
+      // 1. Strategic Plans
+      prisma.strategicPlan.findMany({
+        where: {
+          ...whereClause,
+          status: { in: [PlanStatus.PROPOSED, PlanStatus.APPROVED, PlanStatus.IN_PROGRESS] as any },
+        },
+        select: { progress: true },
+      }),
 
-    // 2. Risks
-    prisma.risk.findMany({
-      where: {
-        ...whereClause,
-        status: 'OPEN',
-      },
-      select: { riskLevel: true },
-    }),
+      // 2. Risks
+      prisma.risk.findMany({
+        where: {
+          ...whereClause,
+          status: 'OPEN',
+        },
+        select: { riskLevel: true },
+      }),
 
-    // 3. Audit Findings & Resolved Findings
-    prisma.auditFinding.count({
-      where: {
-        ...(unitId ? { audit: { unitId } } : {}),
-      } as any,
-    }),
-    prisma.auditFinding.count({
-      where: {
-        ...(unitId ? { audit: { unitId } } : {}),
-        followUps: { some: { status: 'VERIFIED' } },
-      } as any,
-    }),
+      // 3. Audit Findings & Resolved Findings
+      prisma.auditFinding.count({
+        where: {
+          ...(unitId ? { audit: { unitId } } : {}),
+        } as any,
+      }),
+      prisma.auditFinding.count({
+        where: {
+          ...(unitId ? { audit: { unitId } } : {}),
+          followUps: { some: { status: 'VERIFIED' } },
+        } as any,
+      }),
 
-    // 4. Sharia Compliance
-    prisma.shariaCompliance.findMany({
-      where: whereClause,
-      select: { score: true, status: true, category: true },
-    }),
+      // 4. Sharia Compliance
+      prisma.shariaCompliance.findMany({
+        where: whereClause,
+        select: { score: true, status: true, category: true },
+      }),
 
-    // 5. Audit Suggestions
-    pengawasanService.suggestAuditSchedules(unitId).catch((err) => {
-      console.error('[GRC] suggestAuditSchedules failed, returning empty suggestions:', err?.message || err);
-      return [];
-    }),
-  ]);
+      // 5. Audit Suggestions
+      pengawasanService.suggestAuditSchedules(unitId).catch((err) => {
+        console.error(
+          '[GRC] suggestAuditSchedules failed, returning empty suggestions:',
+          err?.message || err
+        );
+        return [];
+      }),
+    ]);
 
   // Plans Processing
   const activePlansCount = plans.length;
@@ -135,23 +139,28 @@ export async function getGRCStats(unitId?: string): Promise<GRCStats> {
     const scoredItems = items.filter((i) => i.score != null);
     byCategory[cat] = {
       total: items.length,
-      averageScore: scoredItems.length > 0 ? Math.round(scoredItems.reduce((s, i) => s + (i.score || 0), 0) / scoredItems.length * 100) / 100 : 0,
+      averageScore:
+        scoredItems.length > 0
+          ? Math.round(
+              (scoredItems.reduce((s, i) => s + (i.score || 0), 0) / scoredItems.length) * 100
+            ) / 100
+          : 0,
     };
   }
 
   // Calculate Organizational Health Score
   // Weighted: 40% Compliance Rate, 30% Risk Level (Inverse), 30% Audit Resolution Rate
-  const riskWeightedScore = Math.max(0, 100 - (
-    ((riskDistribution.EXTREME || 0) * 25) +
-    ((riskDistribution.HIGH || 0) * 15) +
-    ((riskDistribution.MEDIUM || 0) * 5)
-  ));
+  const riskWeightedScore = Math.max(
+    0,
+    100 -
+      ((riskDistribution.EXTREME || 0) * 25 +
+        (riskDistribution.HIGH || 0) * 15 +
+        (riskDistribution.MEDIUM || 0) * 5)
+  );
 
   const resolutionRate = findings > 0 ? (resolvedFindings / findings) * 100 : 100;
   const orgHealthScore = Math.round(
-    (avgShariaScore * 0.4) +
-    (riskWeightedScore * 0.3) +
-    (resolutionRate * 0.3)
+    avgShariaScore * 0.4 + riskWeightedScore * 0.3 + resolutionRate * 0.3
   );
 
   return {
@@ -168,7 +177,8 @@ export async function getGRCStats(unitId?: string): Promise<GRCStats> {
       totalFindings: findings,
       resolvedCount: Math.min(resolvedFindings, findings),
       unresolvedCount: Math.max(0, findings - resolvedFindings),
-      resolutionRate: findings > 0 ? Math.min(100, Math.round((resolvedFindings / findings) * 10000) / 100) : 100,
+      resolutionRate:
+        findings > 0 ? Math.min(100, Math.round((resolvedFindings / findings) * 10000) / 100) : 100,
     },
     sharia: {
       complianceRate: Math.round(avgShariaScore * 100) / 100,
@@ -182,17 +192,10 @@ export async function getGRCStats(unitId?: string): Promise<GRCStats> {
   };
 }
 
-
 // ===== Risk matrix (5x5 heatmap data) =====
 
 const LIKELIHOOD_ORDER = ['RARE', 'UNLIKELY', 'POSSIBLE', 'LIKELY', 'ALMOST_CERTAIN'] as const;
-const IMPACT_ORDER = [
-  'INSIGNIFICANT',
-  'MINOR',
-  'MODERATE',
-  'MAJOR',
-  'CATASTROPHIC',
-] as const;
+const IMPACT_ORDER = ['INSIGNIFICANT', 'MINOR', 'MODERATE', 'MAJOR', 'CATASTROPHIC'] as const;
 
 /**
  * Inherent vs residual 5x5 risk matrices (counts per likelihood x impact
@@ -214,8 +217,7 @@ export async function getRiskMatrix(unitId?: string) {
     }),
   ]);
 
-  const emptyMatrix = () =>
-    LIKELIHOOD_ORDER.map(() => IMPACT_ORDER.map(() => 0));
+  const emptyMatrix = () => LIKELIHOOD_ORDER.map(() => IMPACT_ORDER.map(() => 0));
 
   const inherentMatrix = emptyMatrix();
   for (const row of inherent) {

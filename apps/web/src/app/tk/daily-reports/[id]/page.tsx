@@ -115,7 +115,7 @@ export default function DailyReportDetailPage() {
   // Resolve them the same way every other private viewer does.
   const photoUrls = useMemo(
     () => (photos ?? []).map((p: { photoUrl: string }) => p.photoUrl),
-    [photos]
+    [photos],
   );
   const resolvedPhotos = useResolvedFileUrls(photoUrls);
   const photoSrc = (url: string): string | null =>

@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import { uploadedFileRefSchema } from '@cipansor/shared';
 
-
 // Activity type enum
 const TahfidzActivityEnum = z.enum(['ZIYADAH', 'MUROJAAH', 'TASMI', 'ASSESSMENT']);
 

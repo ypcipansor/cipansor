@@ -19,7 +19,8 @@ export class CBTController {
         throw Errors.badRequest('User has no unit assigned');
       }
 
-      const filterUnitId = user.role === 'SUPER_ADMIN' ? (unitId as string) : (user.unitId ?? undefined);
+      const filterUnitId =
+        user.role === 'SUPER_ADMIN' ? (unitId as string) : (user.unitId ?? undefined);
 
       if (user.role !== 'SUPER_ADMIN' && !filterUnitId) {
         throw Errors.badRequest('unitId is required for data isolation');
@@ -45,11 +46,10 @@ export class CBTController {
       // rather than reaching the database and failing its CHECK as a 500.
       const body = recordSecurityLogSchema.parse(req.body);
 
-      const result = await CBTService.recordSecurityLog(
-        req.params.attemptId,
-        user.id,
-        { type: body.eventType, details: body.details }
-      );
+      const result = await CBTService.recordSecurityLog(req.params.attemptId, user.id, {
+        type: body.eventType,
+        details: body.details,
+      });
       res.json({ success: true, data: result });
     } catch (error) {
       next(error);
@@ -221,7 +221,8 @@ export class CBTController {
         throw Errors.badRequest('User has no unit assigned');
       }
 
-      const filterUnitId = user.role === 'SUPER_ADMIN' ? (unitId as string) : (user.unitId ?? undefined);
+      const filterUnitId =
+        user.role === 'SUPER_ADMIN' ? (unitId as string) : (user.unitId ?? undefined);
 
       if (user.role !== 'SUPER_ADMIN' && !filterUnitId) {
         throw Errors.badRequest('unitId is required for data isolation');

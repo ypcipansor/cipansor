@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import { uploadedFileRefListSchema } from '@cipansor/shared';
 
-
 // Daily Mood enum
 export const DailyMoodEnum = z.enum(['HAPPY', 'NEUTRAL', 'SAD', 'SICK', 'TIRED', 'EXCITED']);
 

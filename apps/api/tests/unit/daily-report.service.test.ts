@@ -422,7 +422,10 @@ describe('DailyReportService', () => {
       vi.mocked(prisma.dailyStudentReport.create).mockResolvedValue(mockReport as any);
 
       // 'HABIS' (finished) and 'SETENGAH' (half) map to hadBreakfast=true.
-      await dailyReportService.create({ ...createInput, breakfastConsumption: 'HABIS' }, mockUserId);
+      await dailyReportService.create(
+        { ...createInput, breakfastConsumption: 'HABIS' },
+        mockUserId
+      );
 
       const calledWith = vi.mocked(prisma.dailyStudentReport.create).mock.calls[0]![0] as any;
       expect(calledWith.data.hadBreakfast).toBe(true);
@@ -596,10 +599,14 @@ describe('DailyReportService', () => {
       vi.mocked(prisma.dailyReportPhoto.deleteMany).mockResolvedValue({ count: 2 } as any);
       vi.mocked(prisma.dailyReportPhoto.createMany).mockResolvedValue({ count: 1 } as any);
 
-      await dailyReportService.update(mockReportId, {
-        ...updateInput,
-        photoUrls: ['https://store.blob.core.windows.net/cipansor-documents/kept.jpg'],
-      }, mockUserId);
+      await dailyReportService.update(
+        mockReportId,
+        {
+          ...updateInput,
+          photoUrls: ['https://store.blob.core.windows.net/cipansor-documents/kept.jpg'],
+        },
+        mockUserId
+      );
 
       // Only the blob no longer referenced by any new photo is reclaimed.
       expect(cleanupBlobsBestEffort).toHaveBeenCalledWith([

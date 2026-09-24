@@ -39,7 +39,11 @@ describe("microsoftTenantId", () => {
     // Folding `common` into the app-id fallback pointed MSAL at a directory
     // that does not exist, so every multi-tenant sign-in failed.
     expect(microsoftTenantId(CLIENT_ID, "common")).toBe("common");
-    expect(microsoftAuthorityTenant(`https://login.microsoftonline.com/${microsoftTenantId(CLIENT_ID, "common")}`)).toBe("common");
+    expect(
+      microsoftAuthorityTenant(
+        `https://login.microsoftonline.com/${microsoftTenantId(CLIENT_ID, "common")}`,
+      ),
+    ).toBe("common");
   });
 
   it("passes `organizations` and `consumers` through verbatim (BUG 4)", () => {
@@ -98,7 +102,10 @@ describe("loginWithMicrosoft", () => {
   it("targets the multi-tenant `common` authority, not the appId (BUG 4)", async () => {
     const { loginWithMicrosoft } = await import("./sso");
 
-    await loginWithMicrosoft({ clientId: "app-id.tenant-id", tenantId: "common" });
+    await loginWithMicrosoft({
+      clientId: "app-id.tenant-id",
+      tenantId: "common",
+    });
 
     expect(mockPcaCtor).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -182,7 +189,9 @@ describe("loadGoogleIdentityServices", () => {
     firstScript.dispatchEvent(new Event("error"));
 
     // 2. The first promise rejects.
-    await expect(first).rejects.toThrow(/Gagal memuat Google Identity Services/);
+    await expect(first).rejects.toThrow(
+      /Gagal memuat Google Identity Services/,
+    );
 
     // The failed element must be gone, so a retry cannot attach to an event
     // that already fired and hang forever.
@@ -290,9 +299,7 @@ describe("loginWithGoogle", () => {
       },
     };
 
-    await expect(loginWithGoogle("client-id")).rejects.toThrow(
-      /dibatalkan/,
-    );
+    await expect(loginWithGoogle("client-id")).rejects.toThrow(/dibatalkan/);
   });
 
   it("rejects with a suppression-specific message when the prompt is not displayed (BUG 9, FLAG 6)", async () => {
@@ -301,11 +308,13 @@ describe("loginWithGoogle", () => {
       accounts: {
         id: {
           initialize: () => {},
-          prompt: (cb: (n: {
-            isDismissedMoment: () => boolean;
-            isSkippedMoment: () => boolean;
-            isNotDisplayedMoment: () => boolean;
-          }) => void) =>
+          prompt: (
+            cb: (n: {
+              isDismissedMoment: () => boolean;
+              isSkippedMoment: () => boolean;
+              isNotDisplayedMoment: () => boolean;
+            }) => void,
+          ) =>
             cb({
               isDismissedMoment: () => false,
               isSkippedMoment: () => false,
@@ -337,7 +346,9 @@ describe("loginWithGoogle", () => {
       };
 
       const promise = loginWithGoogle("client-id", 5_000);
-      const assertion = expect(promise).rejects.toThrow(/Waktu masuk Google habis/);
+      const assertion = expect(promise).rejects.toThrow(
+        /Waktu masuk Google habis/,
+      );
       await vi.advanceTimersByTimeAsync(5_000);
       await assertion;
     } finally {
@@ -520,7 +531,9 @@ describe("loginWithGoogleButton (FLAG 6 fallback)", () => {
       await vi.advanceTimersByTimeAsync(60_000);
       container.querySelector("button")!.click();
 
-      const assertion = expect(promise).rejects.toThrow(/Waktu masuk Google habis/);
+      const assertion = expect(promise).rejects.toThrow(
+        /Waktu masuk Google habis/,
+      );
       await vi.advanceTimersByTimeAsync(5_000);
       await assertion;
       // The settled flow clears the container.

@@ -57,8 +57,10 @@ describe('DepreciationService', () => {
       (prisma.journalEntry.findMany as any).mockResolvedValue([]); // No existing journals
 
       (inventoryService.calculateDepreciation as any).mockImplementation((id: string) => {
-        if (id === '1') return Promise.resolve({ monthlyDepreciation: 100, bookValue: 900, residual: 0 });
-        if (id === '2') return Promise.resolve({ monthlyDepreciation: 100, bookValue: 1900, residual: 0 });
+        if (id === '1')
+          return Promise.resolve({ monthlyDepreciation: 100, bookValue: 900, residual: 0 });
+        if (id === '2')
+          return Promise.resolve({ monthlyDepreciation: 100, bookValue: 1900, residual: 0 });
         return Promise.resolve(null);
       });
 

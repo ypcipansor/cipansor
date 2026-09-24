@@ -17,11 +17,7 @@ export type DonationType =
   | "BEASISWA"
   | "OTHERS";
 export type PaymentMethod =
-  | "CASH"
-  | "BANK_TRANSFER"
-  | "QRIS"
-  | "EWALLET"
-  | "OTHERS";
+  "CASH" | "BANK_TRANSFER" | "QRIS" | "EWALLET" | "OTHERS";
 export type DonationStatus = "PENDING" | "VERIFIED" | "CANCELLED";
 
 export interface DonationCampaign {

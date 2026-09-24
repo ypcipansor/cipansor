@@ -6,7 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Loader2, Printer } from "lucide-react";
 import { useAcademicYears } from "@/hooks/use-academic-years";
 import { useClasses } from "@/hooks/use-classes";
@@ -110,7 +116,7 @@ function UnifiedRaportPageContent() {
                 </SelectContent>
               </Select>
             </div>
-            
+
             <div className="space-y-2">
               <Label>Kelas (Rombel)</Label>
               <Select value={classId} onValueChange={handleClassChange}>
@@ -129,7 +135,11 @@ function UnifiedRaportPageContent() {
 
             <div className="space-y-2">
               <Label>Siswa</Label>
-              <Select value={studentId} onValueChange={setStudentId} disabled={!classId || students?.length === 0}>
+              <Select
+                value={studentId}
+                onValueChange={setStudentId}
+                disabled={!classId || students?.length === 0}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Pilih Siswa" />
                 </SelectTrigger>
@@ -145,7 +155,10 @@ function UnifiedRaportPageContent() {
 
             <div className="space-y-2">
               <Label>Semester</Label>
-              <Select value={semester.toString()} onValueChange={(val) => setSemester(Number(val))}>
+              <Select
+                value={semester.toString()}
+                onValueChange={(val) => setSemester(Number(val))}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Pilih Semester" />
                 </SelectTrigger>

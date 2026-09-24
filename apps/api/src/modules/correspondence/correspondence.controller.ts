@@ -3,11 +3,7 @@ import { CorrespondenceService } from './correspondence.service';
 import { asyncHandler, Errors } from '@/middleware/error';
 import { ApiResponse } from '@/utils/response';
 import { resolveLetterPdf } from './signed-pdf';
-import {
-  choosesUnit,
-  handlesUnitCorrespondence,
-  type LetterActor,
-} from '@/utils/letter-access';
+import { choosesUnit, handlesUnitCorrespondence, type LetterActor } from '@/utils/letter-access';
 
 /**
  * The caller, in the shape the access rules expect.
@@ -29,11 +25,7 @@ function actorOf(req: Request): LetterActor {
 
 export const CorrespondenceController = {
   create: asyncHandler(async (req: Request, res: Response) => {
-    const result = await CorrespondenceService.createLetter(
-      req.body,
-      req.user!.id,
-      actorOf(req)
-    );
+    const result = await CorrespondenceService.createLetter(req.body, req.user!.id, actorOf(req));
     res.status(201).json(ApiResponse.success(result));
   }),
 
@@ -223,5 +215,4 @@ export const CorrespondenceController = {
     );
     res.json(ApiResponse.success(result));
   }),
-
 };

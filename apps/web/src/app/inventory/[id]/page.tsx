@@ -83,11 +83,7 @@ function getStatusBadge(status: AssetStatus) {
   );
 }
 
-function InventoryDetailPageContent({
-  params,
-}: {
-  params: { id: string };
-}) {
+function InventoryDetailPageContent({ params }: { params: { id: string } }) {
   const router = useRouter();
   const itemId = params.id;
   const { data: item, isLoading } = useInventoryItem(itemId);
@@ -808,7 +804,9 @@ function InventoryDetailPageContent({
   );
 }
 
-export default function InventoryDetailPage(props: Parameters<typeof InventoryDetailPageContent>[0]) {
+export default function InventoryDetailPage(
+  props: Parameters<typeof InventoryDetailPageContent>[0],
+) {
   return (
     <MainLayout>
       <InventoryDetailPageContent {...props} />

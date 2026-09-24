@@ -4,7 +4,11 @@ import { JournalReferenceType } from '@cipansor/shared';
 import { getAccountOrFallback, ACCOUNT_MAPPING_KEYS } from '../finance/accounting-config.service';
 import { isPeriodOpen } from '../finance-enhancement/period.service';
 import { Errors } from '../../middleware/error';
-import { claimBlobForRecord, releaseBlobClaimById, type BlobClaimHandle } from '../../utils/blob-claim';
+import {
+  claimBlobForRecord,
+  releaseBlobClaimById,
+  type BlobClaimHandle,
+} from '../../utils/blob-claim';
 import type {
   CreateCategoryInput,
   UpdateCategoryInput,
@@ -77,9 +81,7 @@ export const categoryService = {
       data: {
         ...rest,
         ...(businessUnitId !== undefined && {
-          businessUnit: businessUnitId
-            ? { connect: { id: businessUnitId } }
-            : { disconnect: true },
+          businessUnit: businessUnitId ? { connect: { id: businessUnitId } } : { disconnect: true },
         }),
       },
     });
@@ -140,9 +142,10 @@ export const categoryService = {
       };
     });
 
-    const avgEfficiency = itemEfficiency.length > 0
-      ? itemEfficiency.reduce((sum, i) => sum + i.efficiencyScore, 0) / itemEfficiency.length
-      : 0;
+    const avgEfficiency =
+      itemEfficiency.length > 0
+        ? itemEfficiency.reduce((sum, i) => sum + i.efficiencyScore, 0) / itemEfficiency.length
+        : 0;
 
     return {
       unitId,
@@ -402,9 +405,7 @@ export const itemService = {
 // If future requirements introduce per-unit transaction numbering, add a
 // `unitId` parameter AND include it in both the lock key and the WHERE
 // clause of the `findFirst` query — they must stay in sync.
-const generateTransactionNo = async (
-  tx: Prisma.TransactionClient,
-): Promise<string> => {
+const generateTransactionNo = async (tx: Prisma.TransactionClient): Promise<string> => {
   const today = new Date();
   const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
   const prefix = `CNT-${dateStr}`;
@@ -451,7 +452,7 @@ const generateTransactionNo = async (
       // eslint-disable-next-line no-console
       console.warn(
         `[Canteen] Could not parse sequence from transactionNo '${lastTransaction.transactionNo}'. ` +
-        `Falling back to sequence=1 for prefix '${prefix}'.`
+          `Falling back to sequence=1 for prefix '${prefix}'.`
       );
     }
   }
@@ -531,7 +532,11 @@ export const transactionService = {
     });
   },
 
-  async create(unitId: string, cashierId: string, data: CreateTransactionInput & { businessUnitId?: string }) {
+  async create(
+    unitId: string,
+    cashierId: string,
+    data: CreateTransactionInput & { businessUnitId?: string }
+  ) {
     return prisma.$transaction(async (tx) => {
       // Validate businessUnitId belongs to the same unit (multi-tenant isolation)
       if (data.businessUnitId) {
@@ -576,7 +581,9 @@ export const transactionService = {
       });
 
       if (items.length !== itemIds.length) {
-        throw new Error('Beberapa item tidak tersedia atau tidak termasuk dalam unit usaha yang dipilih');
+        throw new Error(
+          'Beberapa item tidak tersedia atau tidak termasuk dalam unit usaha yang dipilih'
+        );
       }
 
       // Aggregate quantities per itemId so that multiple order lines referencing
@@ -750,7 +757,7 @@ export const transactionService = {
         // eslint-disable-next-line no-console
         console.warn(
           `[Canteen Accounting] Skipping journal entries for transaction ${transactionNo} — ` +
-          `financial period for ${journalDate.toISOString()} is closed (unit ${unitId}).`
+            `financial period for ${journalDate.toISOString()} is closed (unit ${unitId}).`
         );
       }
 
@@ -792,13 +799,7 @@ export const transactionService = {
         : null;
 
       const cashAccount = periodOpen
-        ? await getAccountOrFallback(
-            unitId,
-            ACCOUNT_MAPPING_KEYS.CASH,
-            '1101',
-            'Kas',
-            tx
-          )
+        ? await getAccountOrFallback(unitId, ACCOUNT_MAPPING_KEYS.CASH, '1101', 'Kas', tx)
         : null;
 
       const walletLiabilityAccount = periodOpen
@@ -822,8 +823,8 @@ export const transactionService = {
         // eslint-disable-next-line no-console
         console.warn(
           `[Canteen Accounting] Skipping journal entries for transaction ${transactionNo} — ` +
-          `missing account mappings (salesAccount: ${!!salesAccount}, paymentAccount: ${!!paymentAccount}). ` +
-          `Configure chart of accounts for unit ${unitId}.`
+            `missing account mappings (salesAccount: ${!!salesAccount}, paymentAccount: ${!!paymentAccount}). ` +
+            `Configure chart of accounts for unit ${unitId}.`
         );
       }
 
@@ -907,9 +908,9 @@ export const transactionService = {
         // eslint-disable-next-line no-console
         console.warn(
           `[Canteen Accounting] Revenue journals posted but COGS journals skipped for transaction ${transactionNo} — ` +
-          `cogsAccount: ${!!cogsAccount}, inventoryAccount: ${!!inventoryAccount}, totalCogs: ${totalCogs.toString()}. ` +
-          `Income statement for unit ${unitId} will be overstated until adjusting entries are posted. ` +
-          `Configure COGS/Inventory account mappings and ensure item.costPrice is set.`
+            `cogsAccount: ${!!cogsAccount}, inventoryAccount: ${!!inventoryAccount}, totalCogs: ${totalCogs.toString()}. ` +
+            `Income statement for unit ${unitId} will be overstated until adjusting entries are posted. ` +
+            `Configure COGS/Inventory account mappings and ensure item.costPrice is set.`
         );
       }
 
@@ -985,8 +986,8 @@ export const transactionService = {
       const VALID_TRANSITIONS: Record<string, string[]> = {
         PENDING: ['CANCELLED'],
         COMPLETED: ['REFUNDED', 'CANCELLED'],
-        CANCELLED: [],   // Terminal state
-        REFUNDED: [],     // Terminal state
+        CANCELLED: [], // Terminal state
+        REFUNDED: [], // Terminal state
       };
 
       const currentStatus = lockedRows[0].status;
@@ -1003,7 +1004,7 @@ export const transactionService = {
       if (data.status === 'CANCELLED' && currentStatus === 'COMPLETED' && !data.confirmReversal) {
         throw new Error(
           'Pembatalan transaksi yang sudah COMPLETED akan mengembalikan saldo wallet, stok, dan jurnal akuntansi. ' +
-          'Kirim confirmReversal: true untuk mengonfirmasi.'
+            'Kirim confirmReversal: true untuk mengonfirmasi.'
         );
       }
 
@@ -1042,7 +1043,7 @@ export const transactionService = {
             // producing a financial discrepancy that's hard to detect later.
             throw new Error(
               `Wallet (${transaction.walletId}) untuk transaksi #${transaction.transactionNo} tidak ditemukan. ` +
-              `Refund tidak dapat diproses.`
+                `Refund tidak dapat diproses.`
             );
           }
 
@@ -1141,7 +1142,10 @@ export const transactionService = {
       // field so they are distinguishable from the originals.  This prevents a
       // (now-unlikely but still theoretically possible) double-reversal if a
       // second request were to read both originals and prior reversals.
-      if (data.status === 'REFUNDED' || (data.status === 'CANCELLED' && lockedRows[0].status === 'COMPLETED')) {
+      if (
+        data.status === 'REFUNDED' ||
+        (data.status === 'CANCELLED' && lockedRows[0].status === 'COMPLETED')
+      ) {
         const reversalDate = new Date();
         // Refuse to post reversing entries into a closed financial period, but
         // DO NOT block the refund/cancellation itself — the customer-facing
@@ -1154,7 +1158,7 @@ export const transactionService = {
           // eslint-disable-next-line no-console
           console.warn(
             `[Canteen Accounting] Skipping reversing journal entries for transaction ${transaction.transactionNo} — ` +
-            `financial period for ${reversalDate.toISOString()} is closed (unit ${unitId}).`
+              `financial period for ${reversalDate.toISOString()} is closed (unit ${unitId}).`
           );
         }
 

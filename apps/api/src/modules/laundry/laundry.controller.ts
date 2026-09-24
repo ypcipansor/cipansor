@@ -72,7 +72,7 @@ export const listTransactions = asyncHandler(async (req: Request, res: Response)
   const parsedQuery = ListTransactionsQuerySchema.parse(req.query);
   const result = await transactionService.getAll(unitId, parsedQuery);
   return res.json(
-    ApiResponse.success(result.data, 'Berhasil mengambil data transaksi', result.pagination),
+    ApiResponse.success(result.data, 'Berhasil mengambil data transaksi', result.pagination)
   );
 });
 
@@ -91,7 +91,7 @@ export const getReadyForPickup = asyncHandler(async (req: Request, res: Response
   if (!unitId) return;
   const transactions = await transactionService.getReadyForPickup(unitId);
   return res.json(
-    ApiResponse.success(transactions, 'Berhasil mengambil data laundry siap diambil'),
+    ApiResponse.success(transactions, 'Berhasil mengambil data laundry siap diambil')
   );
 });
 
@@ -124,7 +124,9 @@ export const createTransaction = asyncHandler(async (req: Request, res: Response
       .json(ApiResponse.error('Unit ID atau User ID tidak ditemukan', 'REQUIRED'));
   }
   const transaction = await transactionService.create(unitId, userId, req.body);
-  return res.status(201).json(ApiResponse.success(transaction, 'Transaksi laundry berhasil dibuat'));
+  return res
+    .status(201)
+    .json(ApiResponse.success(transaction, 'Transaksi laundry berhasil dibuat'));
 });
 
 /** PATCH /api/laundry/transactions/:id/status */
@@ -136,7 +138,12 @@ export const updateStatus = asyncHandler(async (req: Request, res: Response) => 
       .status(400)
       .json(ApiResponse.error('Unit ID atau User ID tidak ditemukan', 'REQUIRED'));
   }
-  const transaction = await transactionService.updateStatus(req.params.id, unitId, userId, req.body);
+  const transaction = await transactionService.updateStatus(
+    req.params.id,
+    unitId,
+    userId,
+    req.body
+  );
   return res.json(ApiResponse.success(transaction, 'Status laundry berhasil diperbarui'));
 });
 
@@ -149,6 +156,11 @@ export const processPayment = asyncHandler(async (req: Request, res: Response) =
       .status(400)
       .json(ApiResponse.error('Unit ID atau User ID tidak ditemukan', 'REQUIRED'));
   }
-  const transaction = await transactionService.processPayment(req.params.id, unitId, userId, req.body);
+  const transaction = await transactionService.processPayment(
+    req.params.id,
+    unitId,
+    userId,
+    req.body
+  );
   return res.json(ApiResponse.success(transaction, 'Pembayaran laundry berhasil'));
 });

@@ -48,11 +48,7 @@ const formSchema = z.object({
   recommendations: z.string().optional(),
 });
 
-function GradeSimaanPageContent({
-  params,
-}: {
-  params: { id: string };
-}) {
+function GradeSimaanPageContent({ params }: { params: { id: string } }) {
   const router = useRouter();
   const { data: exam, isLoading } = useSimaanExam(params.id);
   const { mutate: submitScores, isPending } = useSubmitSimaanScores();
@@ -135,7 +131,7 @@ function GradeSimaanPageContent({
       <PageHeader
         title="Penilaian Simaan"
         description={`Input nilai untuk ${exam.student?.user?.name || "Santri"}`}
-          backHref="/takhosus/simaan"
+        backHref="/takhosus/simaan"
       />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -353,7 +349,9 @@ function GradeSimaanPageContent({
   );
 }
 
-export default function GradeSimaanPage(props: Parameters<typeof GradeSimaanPageContent>[0]) {
+export default function GradeSimaanPage(
+  props: Parameters<typeof GradeSimaanPageContent>[0],
+) {
   return (
     <MainLayout>
       <GradeSimaanPageContent {...props} />

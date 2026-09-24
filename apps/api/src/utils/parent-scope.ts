@@ -74,14 +74,14 @@ export function isParentRole(roleCode: string): boolean {
  */
 export interface ParentScopeClient {
   studentParent: {
-    findMany(args: unknown): Promise<
-      Array<{ student: { unitId: string; unit: { type: UnitType } } }>
-    >;
+    findMany(
+      args: unknown
+    ): Promise<Array<{ student: { unitId: string; unit: { type: UnitType } } }>>;
   };
   userRoleAssignment: {
-    findMany(args: unknown): Promise<
-      Array<{ roleId: string; unitId: string | null; isPrimary: boolean }>
-    >;
+    findMany(
+      args: unknown
+    ): Promise<Array<{ roleId: string; unitId: string | null; isPrimary: boolean }>>;
     create(args: unknown): Promise<unknown>;
   };
   role: {

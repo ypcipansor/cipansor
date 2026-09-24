@@ -106,7 +106,7 @@ function CreateSimaanPageContent() {
       <PageHeader
         title="Buat Jadwal Simaan"
         description="Jadwalkan ujian simaan baru untuk santri."
-          backHref="/takhosus/simaan"
+        backHref="/takhosus/simaan"
       />
 
       <div className="grid gap-6">

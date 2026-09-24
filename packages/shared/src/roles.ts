@@ -164,7 +164,9 @@ export const HR_EMPLOYEE_ROLE_CODES: readonly string[] = [
 ];
 
 /** Derive the directory's TEACHER/STAFF label from an active RoleCode. */
-export function hrEmployeeRoleFor(roleCode: string | null | undefined): HrDirectoryRole | null {
+export function hrEmployeeRoleFor(
+  roleCode: string | null | undefined,
+): HrDirectoryRole | null {
   if (!roleCode) return null;
   if (HR_TEACHER_ROLE_CODES.includes(roleCode)) return "TEACHER";
   if (HR_STAFF_ROLE_CODES.includes(roleCode)) return "STAFF";
@@ -289,7 +291,9 @@ export const FINANCE_VERIFIER_ROLE_CODES: readonly string[] = [
 ];
 
 /** True when a role may open a payment's transfer proof in its own unit. */
-export function mayVerifyPayments(roleCode: string | null | undefined): boolean {
+export function mayVerifyPayments(
+  roleCode: string | null | undefined,
+): boolean {
   if (!roleCode) return false;
   return FINANCE_VERIFIER_ROLE_CODES.includes(roleCode);
 }

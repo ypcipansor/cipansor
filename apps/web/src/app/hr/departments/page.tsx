@@ -205,7 +205,7 @@ export default function DepartmentsPage() {
                   data: {
                     ...data,
                     managerId: data.managerId || undefined,
-                  }
+                  },
                 });
                 toast.success("Department updated successfully");
               } else {

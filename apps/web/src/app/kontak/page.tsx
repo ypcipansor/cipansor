@@ -37,7 +37,10 @@ export default async function KontakPage() {
         <Card>
           <CardContent className="p-6">
             <div className="flex items-start gap-3">
-              <MapPin className="mt-1 h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
+              <MapPin
+                className="mt-1 h-5 w-5 shrink-0 text-primary"
+                aria-hidden="true"
+              />
               <div>
                 <h2 className="font-semibold">{copy.addressHeading}</h2>
                 <address className="mt-2 not-italic leading-relaxed text-muted-foreground">
@@ -65,7 +68,10 @@ export default async function KontakPage() {
         <Card>
           <CardContent className="space-y-5 p-6">
             <div className="flex items-start gap-3">
-              <Phone className="mt-1 h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
+              <Phone
+                className="mt-1 h-5 w-5 shrink-0 text-primary"
+                aria-hidden="true"
+              />
               <div>
                 <h2 className="font-semibold">{copy.phoneHeading}</h2>
                 <a
@@ -77,7 +83,10 @@ export default async function KontakPage() {
               </div>
             </div>
             <div className="flex items-start gap-3">
-              <Mail className="mt-1 h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
+              <Mail
+                className="mt-1 h-5 w-5 shrink-0 text-primary"
+                aria-hidden="true"
+              />
               <div>
                 <h2 className="font-semibold">{copy.emailHeading}</h2>
                 <a

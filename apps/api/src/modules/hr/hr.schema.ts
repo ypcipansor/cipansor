@@ -101,7 +101,10 @@ export const queryLeaveSchema = z.object({
 // Staff/Employee Management Schemas
 export const createEmployeeSchema = z.object({
   name: z.string().min(2),
-  email: z.string().email().transform((v) => normalizeEmail(v)),
+  email: z
+    .string()
+    .email()
+    .transform((v) => normalizeEmail(v)),
   password: z.string().min(6).optional(), // Defaults to 'password123' if empty
   role: z.enum([UserRole.TEACHER, UserRole.STAFF]),
   unitId: z.string().uuid(),
@@ -129,7 +132,11 @@ export const createEmployeeSchema = z.object({
 
 export const updateEmployeeSchema = z.object({
   name: z.string().min(2).optional(),
-  email: z.string().email().transform((v) => normalizeEmail(v)).optional(),
+  email: z
+    .string()
+    .email()
+    .transform((v) => normalizeEmail(v))
+    .optional(),
   unitId: z.string().uuid().optional(),
   phone: z.string().optional(),
   isActive: z.boolean().optional(),
@@ -175,10 +182,7 @@ export const queryTeachersSchema = z.object({
   page: z.coerce.number().min(1).default(1),
   limit: z.coerce.number().min(1).max(100).default(20),
   // Some callers send an empty string while their unit filter hydrates
-  unitId: z.preprocess(
-    (value) => (value === '' ? undefined : value),
-    z.string().uuid().optional()
-  ),
+  unitId: z.preprocess((value) => (value === '' ? undefined : value), z.string().uuid().optional()),
   status: z.enum(['ACTIVE', 'INACTIVE', 'ON_LEAVE']).optional(),
   search: z.string().optional(),
 });

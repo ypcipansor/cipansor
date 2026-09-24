@@ -25,9 +25,17 @@ import {
   type DashboardAlert,
 } from '@/lib/realtime';
 import { prisma } from '@/lib/prisma';
+import { tahfidzMilestones } from '@/modules/tahfidz/quran-surahs';
 import { notificationService } from '@/modules/notifications/email-sms.service';
-import { getChannelPolicy, type ChannelPolicy } from '@/modules/notifications/notifications.service';
-import { shouldSendNotification, isInQuietHours, getPreferences } from '@/modules/notifications/preferences.service';
+import {
+  getChannelPolicy,
+  type ChannelPolicy,
+} from '@/modules/notifications/notifications.service';
+import {
+  shouldSendNotification,
+  isInQuietHours,
+  getPreferences,
+} from '@/modules/notifications/preferences.service';
 import { config } from '@/config';
 
 /**
@@ -66,10 +74,7 @@ async function getSafeChannelPolicy(): Promise<ChannelPolicy> {
 type GuardianContact = { id: string; name: string | null; email: string | null };
 
 type FamilyPreferenceType =
-  | 'tahfidzProgress'
-  | 'paymentReminders'
-  | 'attendanceAlerts'
-  | 'academicUpdates';
+  'tahfidzProgress' | 'paymentReminders' | 'attendanceAlerts' | 'academicUpdates';
 
 async function resolveGuardian(studentId: string): Promise<GuardianContact | null> {
   const student = await prisma.student.findUnique({
@@ -109,7 +114,7 @@ async function resolveGuardian(studentId: string): Promise<GuardianContact | nul
  */
 async function guardianAcceptsEmail(
   guardian: GuardianContact,
-  preferenceType: FamilyPreferenceType,
+  preferenceType: FamilyPreferenceType
 ): Promise<boolean> {
   if (!guardian.email) return false;
 
@@ -225,6 +230,8 @@ export type TahfidzUpdatedEvent = TahfidzCreatedEvent;
 
 export interface TahfidzMilestoneEvent {
   studentId: string;
+  /** The santri's User id — notifications belong to a User, not a Student row. */
+  studentUserId: string;
   studentName: string;
   unitId: string;
   unitName: string;
@@ -481,7 +488,7 @@ export function initializeEventBus(): void {
     }
 
     // Check for milestones
-    await checkTahfidzMilestones(event.studentId, event.unitId);
+    await checkTahfidzMilestones(event);
 
     // Invalidate dashboard cache
     await invalidateDashboardCache(event.unitId);
@@ -495,7 +502,7 @@ export function initializeEventBus(): void {
 
     // Create notification for the achievement
     eventBus.emit('notification:send', {
-      userId: event.studentId,
+      userId: event.studentUserId,
       type: 'TAHFIDZ',
       title: 'Pencapaian Tahfidz!',
       message: getMilestoneMessage(event),
@@ -667,7 +674,7 @@ export function initializeEventBus(): void {
   eventBus.on('email:send_reset_token', async (event) => {
     logger.info('Email dispatch requested for password reset token', {
       userId: event.userId,
-      email: event.email
+      email: event.email,
     });
 
     try {
@@ -731,87 +738,62 @@ export function initializeEventBus(): void {
 }
 
 /**
- * Check for tahfidz milestones
+ * Tonggak tahfidz yang dicapai oleh setoran ini (lihat `tahfidzMilestones`).
+ *
+ * The old version divided all ziyadah ayat by 600 and guessed the previous total
+ * as "total − 1", so a "juz complete" fired only when the running total happened
+ * to be a multiple of 600, and then addressed the notification to the Student id,
+ * which the notifications foreign key (users.id) rejects. No santri ever
+ * received one.
  */
-async function checkTahfidzMilestones(studentId: string, unitId: string): Promise<void> {
+async function checkTahfidzMilestones(event: TahfidzCreatedEvent): Promise<void> {
+  if (event.activityType !== 'ZIYADAH' || !event.juz) return;
   try {
     const student = await prisma.student.findUnique({
-      where: { id: studentId },
+      where: { id: event.studentId },
       include: {
-        user: { select: { name: true } },
+        user: { select: { id: true, name: true } },
         unit: { select: { name: true } },
       },
     });
-
     if (!student) return;
 
-    // Get total memorized ayah for the student
-    const totalAyah = await prisma.tahfidzRecord.aggregate({
-      where: {
-        studentId,
-        activityType: 'ZIYADAH',
-      },
+    const perJuz = await prisma.tahfidzRecord.groupBy({
+      by: ['juz'],
+      where: { studentId: event.studentId, activityType: 'ZIYADAH' },
       _sum: { totalAyah: true },
     });
+    const ayahByJuz = new Map(perJuz.map((row) => [row.juz, row._sum.totalAyah ?? 0] as const));
+    const totalAyah = [...ayahByJuz.values()].reduce((sum, ayah) => sum + ayah, 0);
 
-    const ayahCount = totalAyah._sum.totalAyah || 0;
-    const AYAH_PER_JUZ = 600;
-    const totalJuz = Math.floor(ayahCount / AYAH_PER_JUZ);
-
-    // Check for juz completion (every complete juz)
-    const previousAyah = ayahCount - 1; // Rough estimate
-    const previousJuz = Math.floor(previousAyah / AYAH_PER_JUZ);
-
-    if (totalJuz > previousJuz && totalJuz > 0) {
+    for (const milestone of tahfidzMilestones(ayahByJuz, {
+      juz: event.juz,
+      totalAyah: event.totalAyah,
+    })) {
       eventBus.emit('tahfidz:milestone', {
-        studentId,
+        studentId: event.studentId,
+        studentUserId: student.user.id,
         studentName: student.user.name,
-        unitId,
+        unitId: event.unitId,
         unitName: student.unit?.name || '',
-        milestoneType: 'juz_complete',
-        juzNumber: totalJuz,
-        totalJuz,
-        totalAyah: ayahCount,
+        milestoneType: milestone.type,
+        ...(milestone.type === 'juz_complete' && { juzNumber: milestone.juz }),
+        totalJuz: milestone.completedJuz,
+        totalAyah,
       });
-    }
-
-    // Check for half Quran (15 juz)
-    if (totalJuz >= 15 && previousJuz < 15) {
-      eventBus.emit('tahfidz:milestone', {
-        studentId,
-        studentName: student.user.name,
-        unitId,
-        unitName: student.unit?.name || '',
-        milestoneType: 'half_quran',
-        totalJuz,
-        totalAyah: ayahCount,
-      });
-    }
-
-    // Check for full Quran (30 juz)
-    if (totalJuz >= 30 && previousJuz < 30) {
-      eventBus.emit('tahfidz:milestone', {
-        studentId,
-        studentName: student.user.name,
-        unitId,
-        unitName: student.unit?.name || '',
-        milestoneType: 'full_quran',
-        totalJuz,
-        totalAyah: ayahCount,
-      });
-
-      // Emit hafidz completed event
-      eventBus.emit('tahfidz:hafidz-completed', {
-        studentId,
-        studentName: student.user.name,
-        unitId,
-        unitName: student.unit?.name || '',
-        completedAt: new Date(),
-        totalDays: 0, // Would calculate from first tahfidz record
-      });
+      if (milestone.type === 'full_quran') {
+        eventBus.emit('tahfidz:hafidz-completed', {
+          studentId: event.studentId,
+          studentName: student.user.name,
+          unitId: event.unitId,
+          unitName: student.unit?.name || '',
+          completedAt: new Date(),
+          totalDays: 0, // Would calculate from first tahfidz record
+        });
+      }
     }
   } catch (error) {
-    logger.error('Error checking tahfidz milestones', { error });
+    logger.error('Error checking tahfidz milestones', { error, studentId: event.studentId });
   }
 }
 

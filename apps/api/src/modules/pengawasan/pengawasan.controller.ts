@@ -27,7 +27,7 @@ export const listAudits = asyncHandler(async (req: Request, res: Response) => {
 
   if (!unitId && !isPrivilegedUser) throw Errors.unauthorized('Unit ID required');
   const targetUnitId =
-    isPrivilegedUser && req.query.unitId ? String(req.query.unitId) : unitId ?? undefined;
+    isPrivilegedUser && req.query.unitId ? String(req.query.unitId) : (unitId ?? undefined);
   // A global SUPER_ADMIN (no assigned unit) gets the cross-unit view
   if (!targetUnitId && req.user?.role !== UserRole.SUPER_ADMIN) {
     throw Errors.badRequest('Unit ID required');

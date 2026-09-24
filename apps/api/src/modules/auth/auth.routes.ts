@@ -184,7 +184,7 @@ router.post(
   // nol dan ia menutup penyapuan token.
   requireTurnstile('reset-password'),
   validate(resetPasswordSchema),
-  controller.resetPassword,
+  controller.resetPassword
 );
 
 // ==========================================
@@ -277,7 +277,7 @@ router.post(
   '/send-password-reset',
   isAdmin,
   validate(sendPasswordResetSchema),
-  controller.sendPasswordReset,
+  controller.sendPasswordReset
 );
 
 /**

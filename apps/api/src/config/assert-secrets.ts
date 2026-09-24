@@ -95,8 +95,7 @@ function inspect(variable: string, value: string | undefined, issues: SecretIssu
     issues.push({
       variable,
       reason:
-        'is still a leaked/default value from this public repository — that ' +
-        'key is public',
+        'is still a leaked/default value from this public repository — that ' + 'key is public',
     });
     return;
   }
@@ -135,8 +134,7 @@ export function assertProductionSecrets(input: SecretCheckInput = {}): void {
   const issues = findSecretIssues({
     env,
     jwtSecret: input.jwtSecret ?? process.env.JWT_SECRET,
-    studentCardHmacSecret:
-      input.studentCardHmacSecret ?? process.env.STUDENT_CARD_HMAC_SECRET,
+    studentCardHmacSecret: input.studentCardHmacSecret ?? process.env.STUDENT_CARD_HMAC_SECRET,
   });
 
   if (issues.length === 0) return;
@@ -194,12 +192,14 @@ export function microsoftMultiTenantAllowed(
  * and blocking its startup over an unused default would be a self-inflicted
  * outage.
  */
-export function assertProductionMicrosoftTenant(input: {
-  env?: string;
-  tenantId?: string;
-  clientId?: string;
-  allowMultiTenant?: boolean;
-} = {}): void {
+export function assertProductionMicrosoftTenant(
+  input: {
+    env?: string;
+    tenantId?: string;
+    clientId?: string;
+    allowMultiTenant?: boolean;
+  } = {}
+): void {
   const env = input.env ?? process.env.NODE_ENV;
   if (env !== 'production') return;
 
@@ -209,14 +209,13 @@ export function assertProductionMicrosoftTenant(input: {
   const tenantId = input.tenantId ?? process.env.MICROSOFT_TENANT_ID;
   if (!isMultiTenant(tenantId)) return;
 
-  const allowMultiTenant =
-    input.allowMultiTenant ?? microsoftMultiTenantAllowed();
+  const allowMultiTenant = input.allowMultiTenant ?? microsoftMultiTenantAllowed();
   if (allowMultiTenant) return;
 
   throw new Error(
     'Refusing to start the API in production with MICROSOFT_TENANT_ID=' +
       `"${tenantId ?? 'common'}" (multi-tenant): Microsoft SSO would accept a ` +
-      'token minted in ANY Entra tenant, not only the yayasan\'s. Set it to ' +
+      "token minted in ANY Entra tenant, not only the yayasan's. Set it to " +
       'the directory GUID or verified domain (Entra portal → Overview → ' +
       `Tenant ID), or set ${MICROSOFT_ALLOW_MULTI_TENANT_ENV}=true to accept ` +
       'multi-tenant sign-in deliberately.'

@@ -183,7 +183,10 @@ export default function StandardDetailPage() {
                                 <div className="flex items-center gap-2">
                                   <Button variant="ghost" size="icon" asChild>
                                     <a
-                                      href={evidenceUrl(evidence.fileUrl) ?? undefined}
+                                      href={
+                                        evidenceUrl(evidence.fileUrl) ??
+                                        undefined
+                                      }
                                       target="_blank"
                                       rel="noopener noreferrer"
                                     >

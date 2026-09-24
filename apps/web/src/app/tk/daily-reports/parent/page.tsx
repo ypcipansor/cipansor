@@ -82,11 +82,10 @@ export default function ParentDailyReportsPage() {
   // is enabled; resolve them like every other private viewer.
   const photoUrls = useMemo(
     () =>
-      reports.flatMap(
-        (r: { photos?: Array<{ photoUrl: string }> }) =>
-          (r.photos ?? []).map((p) => p.photoUrl)
+      reports.flatMap((r: { photos?: Array<{ photoUrl: string }> }) =>
+        (r.photos ?? []).map((p) => p.photoUrl),
       ),
-    [reports]
+    [reports],
   );
   const resolvedPhotos = useResolvedFileUrls(photoUrls);
   const photoSrc = (url: string): string | null =>

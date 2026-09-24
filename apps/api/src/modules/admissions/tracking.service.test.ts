@@ -26,9 +26,7 @@ describe('getRegistrantTrackingInfo', () => {
     // Day-range match, not exact timestamp equality
     expect(args.where.birthDate.gte.getHours()).toBe(0);
     expect(args.where.birthDate.lte.getHours()).toBe(23);
-    expect(args.where.birthDate.gte.toDateString()).toBe(
-      args.where.birthDate.lte.toDateString()
-    );
+    expect(args.where.birthDate.gte.toDateString()).toBe(args.where.birthDate.lte.toDateString());
   });
 
   it('never selects parent contact data or internal notes (public projection)', async () => {

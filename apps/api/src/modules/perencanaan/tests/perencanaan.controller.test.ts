@@ -2,7 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Request, Response } from 'express';
 
 vi.mock('@/utils/resolve-unit-id', () => ({
-  seesAllUnits: vi.fn(({ roleCode }: { roleCode?: string }) => roleCode === 'YAYASAN_KETUA' || roleCode === 'SUPER_ADMIN'),
+  seesAllUnits: vi.fn(
+    ({ roleCode }: { roleCode?: string }) =>
+      roleCode === 'YAYASAN_KETUA' || roleCode === 'SUPER_ADMIN'
+  ),
 }));
 
 vi.mock('../perencanaan.service', () => ({
@@ -59,8 +62,14 @@ function mockReqRes(overrides: Partial<Request> = {}) {
   const res = {
     statusCode: 200,
     jsonPayload: undefined as unknown,
-    status(code: number) { (this as any).statusCode = code; return this; },
-    json(payload: unknown) { (this as any).jsonPayload = payload; return this; },
+    status(code: number) {
+      (this as any).statusCode = code;
+      return this;
+    },
+    json(payload: unknown) {
+      (this as any).jsonPayload = payload;
+      return this;
+    },
   } as unknown as Response & { statusCode: number; jsonPayload: any };
 
   return { req, res };
@@ -82,12 +91,17 @@ describe('perencanaanController.createPlan — dokumen tingkat yayasan', () => {
 
   it('menolak pemanggil unit-scoped yang membuat RPJP (dokumen yayasan)', async () => {
     const { req, res } = mockReqRes({
-      user: { sub: 'user-1', role: 'UNIT_ADMIN', roleCode: 'SDIT_ADMIN', unitId: 'unit-sdit' } as any,
+      user: {
+        sub: 'user-1',
+        role: 'UNIT_ADMIN',
+        roleCode: 'SDIT_ADMIN',
+        unitId: 'unit-sdit',
+      } as any,
       body: { title: 'RPJP 2026-2045', type: 'RPJP' },
     });
 
     await expect(run(perencanaanController.createPlan, req, res)).rejects.toThrowError(
-      /tingkat yayasan/i,
+      /tingkat yayasan/i
     );
 
     expect(perencanaanService.createPlan).not.toHaveBeenCalled();
@@ -103,7 +117,7 @@ describe('perencanaanController.createPlan — dokumen tingkat yayasan', () => {
     await run(perencanaanController.createPlan, req, res);
 
     expect(perencanaanService.createPlan).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'RPJP', unitId: null }),
+      expect.objectContaining({ type: 'RPJP', unitId: null })
     );
   });
 });
@@ -124,7 +138,7 @@ describe('perencanaanController.createObjective — write access', () => {
     });
 
     await expect(run(perencanaanController.createObjective, req, res)).rejects.toThrowError(
-      /403|forbidden|Access denied/i,
+      /403|forbidden|Access denied/i
     );
 
     expect(perencanaanService.createObjective).not.toHaveBeenCalled();
@@ -138,12 +152,17 @@ describe('perencanaanController.createObjective — write access', () => {
     } as any);
 
     const { req, res } = mockReqRes({
-      user: { sub: 'user-1', role: 'UNIT_ADMIN', roleCode: 'SDIT_ADMIN', unitId: 'unit-sdit' } as any,
+      user: {
+        sub: 'user-1',
+        role: 'UNIT_ADMIN',
+        roleCode: 'SDIT_ADMIN',
+        unitId: 'unit-sdit',
+      } as any,
       body: { planId: 'plan-sdit', title: 'Sasaran X' },
     });
 
     await expect(run(perencanaanController.createObjective, req, res)).rejects.toThrowError(
-      /DRAFT/i,
+      /DRAFT/i
     );
 
     expect(perencanaanService.createObjective).not.toHaveBeenCalled();
@@ -158,7 +177,12 @@ describe('perencanaanController.createObjective — write access', () => {
     vi.mocked(perencanaanService.createObjective).mockResolvedValue({ id: 'obj-1' } as any);
 
     const { req, res } = mockReqRes({
-      user: { sub: 'user-1', role: 'UNIT_ADMIN', roleCode: 'SDIT_ADMIN', unitId: 'unit-sdit' } as any,
+      user: {
+        sub: 'user-1',
+        role: 'UNIT_ADMIN',
+        roleCode: 'SDIT_ADMIN',
+        unitId: 'unit-sdit',
+      } as any,
       body: { planId: 'plan-sdit', title: 'Sasaran X' },
     });
 
@@ -196,7 +220,7 @@ describe('perencanaanController — write guard pada subrecord lintas unit (Bug 
     });
 
     await expect(run(perencanaanController.updateObjective, req, res)).rejects.toThrowError(
-      /403|forbidden|Access denied/i,
+      /403|forbidden|Access denied/i
     );
     expect(perencanaanService.updateObjective).not.toHaveBeenCalled();
   });
@@ -215,7 +239,7 @@ describe('perencanaanController — write guard pada subrecord lintas unit (Bug 
     });
 
     await expect(run(perencanaanController.updateObjective, req, res)).rejects.toThrowError(
-      /DRAFT/i,
+      /DRAFT/i
     );
     expect(perencanaanService.updateObjective).not.toHaveBeenCalled();
   });
@@ -241,7 +265,7 @@ describe('perencanaanController — write guard pada subrecord lintas unit (Bug 
     });
 
     await expect(run(perencanaanController.deleteObjective, req, res)).rejects.toThrowError(
-      /403|forbidden|Access denied/i,
+      /403|forbidden|Access denied/i
     );
     expect(perencanaanService.deleteObjective).not.toHaveBeenCalled();
   });
@@ -254,7 +278,7 @@ describe('perencanaanController — write guard pada subrecord lintas unit (Bug 
     });
 
     await expect(run(perencanaanController.createIndicator, req, res)).rejects.toThrowError(
-      /403|forbidden|Access denied/i,
+      /403|forbidden|Access denied/i
     );
     expect(perencanaanService.createIndicator).not.toHaveBeenCalled();
   });
@@ -268,7 +292,7 @@ describe('perencanaanController — write guard pada subrecord lintas unit (Bug 
     });
 
     await expect(run(perencanaanController.updateIndicator, req, res)).rejects.toThrowError(
-      /403|forbidden|Access denied/i,
+      /403|forbidden|Access denied/i
     );
     expect(perencanaanService.updateIndicator).not.toHaveBeenCalled();
   });
@@ -294,7 +318,7 @@ describe('perencanaanController — write guard pada subrecord lintas unit (Bug 
     });
 
     await expect(run(perencanaanController.deleteIndicator, req, res)).rejects.toThrowError(
-      /403|forbidden|Access denied/i,
+      /403|forbidden|Access denied/i
     );
     expect(perencanaanService.deleteIndicator).not.toHaveBeenCalled();
   });
@@ -307,7 +331,7 @@ describe('perencanaanController — write guard pada subrecord lintas unit (Bug 
     });
 
     await expect(run(perencanaanController.createActivity, req, res)).rejects.toThrowError(
-      /403|forbidden|Access denied/i,
+      /403|forbidden|Access denied/i
     );
     expect(perencanaanService.createActivity).not.toHaveBeenCalled();
   });
@@ -321,7 +345,7 @@ describe('perencanaanController — write guard pada subrecord lintas unit (Bug 
     });
 
     await expect(run(perencanaanController.updateActivity, req, res)).rejects.toThrowError(
-      /403|forbidden|Access denied/i,
+      /403|forbidden|Access denied/i
     );
     expect(perencanaanService.updateActivity).not.toHaveBeenCalled();
   });
@@ -334,7 +358,7 @@ describe('perencanaanController — write guard pada subrecord lintas unit (Bug 
     });
 
     await expect(run(perencanaanController.deleteActivity, req, res)).rejects.toThrowError(
-      /403|forbidden|Access denied/i,
+      /403|forbidden|Access denied/i
     );
     expect(perencanaanService.deleteActivity).not.toHaveBeenCalled();
   });
@@ -373,7 +397,9 @@ describe('perencanaanController — write guard pada subrecord lintas unit (Bug 
       body: { objectiveId: 'obj-smpit', title: 'Kegiatan pada plan final' },
     });
 
-    await expect(run(perencanaanController.createActivity, req, res)).rejects.toThrowError(/DRAFT/i);
+    await expect(run(perencanaanController.createActivity, req, res)).rejects.toThrowError(
+      /DRAFT/i
+    );
     expect(perencanaanService.createActivity).not.toHaveBeenCalled();
   });
 
@@ -423,7 +449,7 @@ describe('perencanaanController — rencana PROPOSED beku (Bug regresi #4)', () 
     });
 
     await expect(run(perencanaanController.createObjective, req, res)).rejects.toThrowError(
-      /DRAFT\/IN_PROGRESS/i,
+      /DRAFT\/IN_PROGRESS/i
     );
     expect(perencanaanService.createObjective).not.toHaveBeenCalled();
   });
@@ -442,7 +468,7 @@ describe('perencanaanController — rencana PROPOSED beku (Bug regresi #4)', () 
     });
 
     await expect(run(perencanaanController.updateObjective, req, res)).rejects.toThrowError(
-      /DRAFT\/IN_PROGRESS/i,
+      /DRAFT\/IN_PROGRESS/i
     );
     expect(perencanaanService.updateObjective).not.toHaveBeenCalled();
   });
@@ -494,7 +520,7 @@ describe('perencanaanController — same-unit teacher cannot write (Bug regresi 
     });
 
     await expect(run(perencanaanController.createObjective, req, res)).rejects.toThrowError(
-      /403|forbidden|Access denied/i,
+      /403|forbidden|Access denied/i
     );
     expect(perencanaanService.createObjective).not.toHaveBeenCalled();
   });
@@ -507,7 +533,7 @@ describe('perencanaanController — same-unit teacher cannot write (Bug regresi 
     });
 
     await expect(run(perencanaanController.deleteActivity, req, res)).rejects.toThrowError(
-      /403|forbidden|Access denied/i,
+      /403|forbidden|Access denied/i
     );
     expect(perencanaanService.deleteActivity).not.toHaveBeenCalled();
   });
@@ -596,7 +622,7 @@ describe('perencanaanController — collaborator dapat mengedit subrecord draft 
     // Kolaborator yang sah tetapi pada plan final (APPROVED) tidak boleh
     // menulis: akses tulis kolaborator hanya berlaku selama DRAFT/IN_PROGRESS.
     await expect(run(perencanaanController.updateObjective, req, res)).rejects.toThrowError(
-      /403|forbidden|Access denied/i,
+      /403|forbidden|Access denied/i
     );
     expect(perencanaanService.updateObjective).not.toHaveBeenCalled();
   });
@@ -619,7 +645,7 @@ describe('perencanaanController — collaborator dapat mengedit subrecord draft 
     });
 
     await expect(run(perencanaanController.createObjective, req, res)).rejects.toThrowError(
-      /403|forbidden|Access denied/i,
+      /403|forbidden|Access denied/i
     );
     expect(perencanaanService.createObjective).not.toHaveBeenCalled();
   });
@@ -627,14 +653,25 @@ describe('perencanaanController — collaborator dapat mengedit subrecord draft 
 
 describe('perencanaanController — kepala sekolah menyusun RKA unitnya (keputusan 2026-09-11)', () => {
   beforeEach(() => vi.clearAllMocks());
-  const kepsek = { sub: 'u-kepsek', role: 'TEACHER', roleCode: 'SDIT_KEPALA_SEKOLAH', unitId: 'unit-sdit' };
+  const kepsek = {
+    sub: 'u-kepsek',
+    role: 'TEACHER',
+    roleCode: 'SDIT_KEPALA_SEKOLAH',
+    unitId: 'unit-sdit',
+  };
 
   it('mengizinkan kepala sekolah menambah sasaran pada RKA unitnya sendiri', async () => {
     vi.mocked(perencanaanService.getPlanForAuth).mockResolvedValue({
-      id: 'rka-sdit', unitId: 'unit-sdit', status: 'DRAFT', isCollaborator: false,
+      id: 'rka-sdit',
+      unitId: 'unit-sdit',
+      status: 'DRAFT',
+      isCollaborator: false,
     } as any);
     vi.mocked(perencanaanService.createObjective).mockResolvedValue({ id: 'obj-1' } as any);
-    const { req, res } = mockReqRes({ user: kepsek as any, body: { planId: 'rka-sdit', title: 'Sasaran literasi' } });
+    const { req, res } = mockReqRes({
+      user: kepsek as any,
+      body: { planId: 'rka-sdit', title: 'Sasaran literasi' },
+    });
 
     await run(perencanaanController.createObjective, req, res);
     expect(perencanaanService.createObjective).toHaveBeenCalled();
@@ -642,21 +679,32 @@ describe('perencanaanController — kepala sekolah menyusun RKA unitnya (keputus
 
   it('menolak kepala sekolah menulis RKA unit lain', async () => {
     vi.mocked(perencanaanService.getPlanForAuth).mockResolvedValue({
-      id: 'rka-smpit', unitId: 'unit-smpit', status: 'DRAFT', isCollaborator: false,
+      id: 'rka-smpit',
+      unitId: 'unit-smpit',
+      status: 'DRAFT',
+      isCollaborator: false,
     } as any);
-    const { req, res } = mockReqRes({ user: kepsek as any, body: { planId: 'rka-smpit', title: 'Sasaran X' } });
+    const { req, res } = mockReqRes({
+      user: kepsek as any,
+      body: { planId: 'rka-smpit', title: 'Sasaran X' },
+    });
 
-    await expect(run(perencanaanController.createObjective, req, res)).rejects.toThrowError(/Access denied/);
+    await expect(run(perencanaanController.createObjective, req, res)).rejects.toThrowError(
+      /Access denied/
+    );
     expect(perencanaanService.createObjective).not.toHaveBeenCalled();
   });
 
   it('kepala sekolah membuat RKA untuk unitnya sendiri', async () => {
     vi.mocked(perencanaanService.createPlan).mockResolvedValue({ id: 'rka-sdit' } as any);
-    const { req, res } = mockReqRes({ user: kepsek as any, body: { title: 'RKA SD IT 2027', type: 'RKA' } });
+    const { req, res } = mockReqRes({
+      user: kepsek as any,
+      body: { title: 'RKA SD IT 2027', type: 'RKA' },
+    });
 
     await run(perencanaanController.createPlan, req, res);
     expect(perencanaanService.createPlan).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'RKA', unitId: 'unit-sdit' }),
+      expect.objectContaining({ type: 'RKA', unitId: 'unit-sdit' })
     );
   });
 
@@ -667,7 +715,7 @@ describe('perencanaanController — kepala sekolah menyusun RKA unitnya (keputus
     });
 
     await expect(run(perencanaanController.createPlan, req, res)).rejects.toThrowError(
-      /kepala sekolah dan admin unit/,
+      /kepala sekolah dan admin unit/
     );
     expect(perencanaanService.createPlan).not.toHaveBeenCalled();
   });
@@ -675,16 +723,27 @@ describe('perencanaanController — kepala sekolah menyusun RKA unitnya (keputus
 
 describe('perencanaanController — Pembina dan Pengawas tidak menyusun dokumen', () => {
   beforeEach(() => vi.clearAllMocks());
-  const organ = (roleCode: string) => ({ sub: `u-${roleCode}`, role: 'UNIT_ADMIN', roleCode, unitId: null });
-
-  it.each(['YAYASAN_PEMBINA', 'YAYASAN_PENGAWAS'])('%s tidak dapat membuat RPJP', async (roleCode) => {
-    const { req, res } = mockReqRes({ user: organ(roleCode) as any, body: { title: 'RPJP 2027-2045', type: 'RPJP' } });
-
-    await expect(run(perencanaanController.createPlan, req, res)).rejects.toThrowError(
-      /hanya disusun oleh Pengurus/,
-    );
-    expect(perencanaanService.createPlan).not.toHaveBeenCalled();
+  const organ = (roleCode: string) => ({
+    sub: `u-${roleCode}`,
+    role: 'UNIT_ADMIN',
+    roleCode,
+    unitId: null,
   });
+
+  it.each(['YAYASAN_PEMBINA', 'YAYASAN_PENGAWAS'])(
+    '%s tidak dapat membuat RPJP',
+    async (roleCode) => {
+      const { req, res } = mockReqRes({
+        user: organ(roleCode) as any,
+        body: { title: 'RPJP 2027-2045', type: 'RPJP' },
+      });
+
+      await expect(run(perencanaanController.createPlan, req, res)).rejects.toThrowError(
+        /hanya disusun oleh Pengurus/
+      );
+      expect(perencanaanService.createPlan).not.toHaveBeenCalled();
+    }
+  );
 
   it.each(['YAYASAN_PEMBINA', 'YAYASAN_PENGAWAS'])(
     '%s yang membuat RKA tanpa unit ditolak karena wewenang, bukan karena unitnya kosong',
@@ -701,20 +760,28 @@ describe('perencanaanController — Pembina dan Pengawas tidak menyusun dokumen'
         message: expect.stringMatching(/disusun oleh Pengurus yayasan/),
       });
       expect(perencanaanService.createPlan).not.toHaveBeenCalled();
-    },
+    }
   );
 
   it.each(['YAYASAN_PEMBINA', 'YAYASAN_PENGAWAS'])(
     '%s tidak dapat menambah sasaran pada RKA Yayasan',
     async (roleCode) => {
       vi.mocked(perencanaanService.getPlanForAuth).mockResolvedValue({
-        id: 'rka-yys', unitId: null, status: 'DRAFT', isCollaborator: false,
+        id: 'rka-yys',
+        unitId: null,
+        status: 'DRAFT',
+        isCollaborator: false,
       } as any);
-      const { req, res } = mockReqRes({ user: organ(roleCode) as any, body: { planId: 'rka-yys', title: 'Sasaran' } });
+      const { req, res } = mockReqRes({
+        user: organ(roleCode) as any,
+        body: { planId: 'rka-yys', title: 'Sasaran' },
+      });
 
-      await expect(run(perencanaanController.createObjective, req, res)).rejects.toThrowError(/Access denied/);
+      await expect(run(perencanaanController.createObjective, req, res)).rejects.toThrowError(
+        /Access denied/
+      );
       expect(perencanaanService.createObjective).not.toHaveBeenCalled();
-    },
+    }
   );
 });
 
@@ -722,9 +789,18 @@ describe('perencanaanController.approvePlan', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('menolak dokumen yayasan — penetapannya lewat alur Pengawas → Pembina', async () => {
-    vi.mocked(perencanaanService.getPlanForAuth).mockResolvedValue({ id: 'rka-yys', unitId: null, status: 'DRAFT' } as any);
+    vi.mocked(perencanaanService.getPlanForAuth).mockResolvedValue({
+      id: 'rka-yys',
+      unitId: null,
+      status: 'DRAFT',
+    } as any);
     const { req, res } = mockReqRes({
-      user: { sub: 'u-pembina', role: 'UNIT_ADMIN', roleCode: 'YAYASAN_PEMBINA', unitId: null } as any,
+      user: {
+        sub: 'u-pembina',
+        role: 'UNIT_ADMIN',
+        roleCode: 'YAYASAN_PEMBINA',
+        unitId: null,
+      } as any,
       params: { id: 'rka-yys' } as any,
     });
 
@@ -735,20 +811,33 @@ describe('perencanaanController.approvePlan', () => {
   it.each(['SUPER_ADMIN', 'SDIT_ADMIN', 'SDIT_KEPALA_SEKOLAH', 'YAYASAN_BENDAHARA'])(
     'RKA unit tidak disahkan oleh %s',
     async (roleCode) => {
-      vi.mocked(perencanaanService.getPlanForAuth).mockResolvedValue({ id: 'rka-sdit', unitId: 'unit-sdit', status: 'DRAFT' } as any);
+      vi.mocked(perencanaanService.getPlanForAuth).mockResolvedValue({
+        id: 'rka-sdit',
+        unitId: 'unit-sdit',
+        status: 'DRAFT',
+      } as any);
       const { req, res } = mockReqRes({
         user: { sub: 'u-x', role: 'UNIT_ADMIN', roleCode, unitId: 'unit-sdit' } as any,
         params: { id: 'rka-sdit' } as any,
       });
 
-      await expect(run(perencanaanController.approvePlan, req, res)).rejects.toThrowError(/Ketua Pengurus/);
+      await expect(run(perencanaanController.approvePlan, req, res)).rejects.toThrowError(
+        /Ketua Pengurus/
+      );
       expect(perencanaanService.approvePlan).not.toHaveBeenCalled();
-    },
+    }
   );
 
   it('Ketua Pengurus mengesahkan RKA unit', async () => {
-    vi.mocked(perencanaanService.getPlanForAuth).mockResolvedValue({ id: 'rka-sdit', unitId: 'unit-sdit', status: 'DRAFT' } as any);
-    vi.mocked(perencanaanService.approvePlan).mockResolvedValue({ id: 'rka-sdit', status: 'APPROVED' } as any);
+    vi.mocked(perencanaanService.getPlanForAuth).mockResolvedValue({
+      id: 'rka-sdit',
+      unitId: 'unit-sdit',
+      status: 'DRAFT',
+    } as any);
+    vi.mocked(perencanaanService.approvePlan).mockResolvedValue({
+      id: 'rka-sdit',
+      status: 'APPROVED',
+    } as any);
     const { req, res } = mockReqRes({
       user: { sub: 'u-ketua', role: 'UNIT_ADMIN', roleCode: 'YAYASAN_KETUA', unitId: null } as any,
       params: { id: 'rka-sdit' } as any,
@@ -759,20 +848,37 @@ describe('perencanaanController.approvePlan', () => {
   });
 
   it('RKA unit yang sedang berjalan tidak "disahkan" ulang — itu memundurkannya ke APPROVED', async () => {
-    vi.mocked(perencanaanService.getPlanForAuth).mockResolvedValue({ id: 'rka-sdit', unitId: 'unit-sdit', status: 'IN_PROGRESS' } as any);
+    vi.mocked(perencanaanService.getPlanForAuth).mockResolvedValue({
+      id: 'rka-sdit',
+      unitId: 'unit-sdit',
+      status: 'IN_PROGRESS',
+    } as any);
     const { req, res } = mockReqRes({
       user: { sub: 'u-ketua', role: 'UNIT_ADMIN', roleCode: 'YAYASAN_KETUA', unitId: null } as any,
       params: { id: 'rka-sdit' } as any,
     });
 
-    await expect(run(perencanaanController.approvePlan, req, res)).rejects.toThrowError(/Draft atau Diajukan/);
+    await expect(run(perencanaanController.approvePlan, req, res)).rejects.toThrowError(
+      /Draft atau Diajukan/
+    );
     expect(perencanaanService.approvePlan).not.toHaveBeenCalled();
   });
 });
 
 describe('perencanaanController — alur pengesahan dokumen yayasan', () => {
-  const as = (roleCode: string) => ({ sub: `u-${roleCode}`, role: 'UNIT_ADMIN', roleCode, unitId: null });
-  const plan = { id: 'rka-yys', unitId: null, status: 'DRAFT', reviewStage: null, isCollaborator: false };
+  const as = (roleCode: string) => ({
+    sub: `u-${roleCode}`,
+    role: 'UNIT_ADMIN',
+    roleCode,
+    unitId: null,
+  });
+  const plan = {
+    id: 'rka-yys',
+    unitId: null,
+    status: 'DRAFT',
+    reviewStage: null,
+    isCollaborator: false,
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -781,7 +887,11 @@ describe('perencanaanController — alur pengesahan dokumen yayasan', () => {
   });
 
   const call = (handler: any, roleCode: string, body: any = {}) => {
-    const { req, res } = mockReqRes({ user: as(roleCode) as any, params: { id: 'rka-yys' } as any, body });
+    const { req, res } = mockReqRes({
+      user: as(roleCode) as any,
+      params: { id: 'rka-yys' } as any,
+      body,
+    });
     return run(handler, req, res);
   };
 
@@ -793,30 +903,39 @@ describe('perencanaanController — alur pengesahan dokumen yayasan', () => {
         to: 'DIREVIU_PENGAWAS',
         status: 'DRAFT',
         event: expect.objectContaining({ action: 'AJUKAN_REVIU', actorRoleCode: 'YAYASAN_KETUA' }),
-      }),
+      })
     );
   });
 
   it.each(['YAYASAN_SEKRETARIS', 'YAYASAN_PENGAWAS', 'YAYASAN_PEMBINA', 'SUPER_ADMIN'])(
     '%s tidak dapat mengajukan ke Pengawas',
     async (roleCode) => {
-      await expect(call(perencanaanController.submitForReview, roleCode)).rejects.toThrowError(/Ketua Pengurus/);
+      await expect(call(perencanaanController.submitForReview, roleCode)).rejects.toThrowError(
+        /Ketua Pengurus/
+      );
       expect(perencanaanService.advanceReview).not.toHaveBeenCalled();
-    },
+    }
   );
 
   it('hanya Pengawas yang mengirim hasil reviu', async () => {
     await expect(
-      call(perencanaanController.submitReviewResult, 'YAYASAN_KETUA', { notes: 'Hasil reviu lengkap' }),
+      call(perencanaanController.submitReviewResult, 'YAYASAN_KETUA', {
+        notes: 'Hasil reviu lengkap',
+      })
     ).rejects.toThrowError(/Pengawas/);
 
-    await call(perencanaanController.submitReviewResult, 'YAYASAN_PENGAWAS', { notes: 'Hasil reviu lengkap' });
+    await call(perencanaanController.submitReviewResult, 'YAYASAN_PENGAWAS', {
+      notes: 'Hasil reviu lengkap',
+    });
     expect(perencanaanService.advanceReview).toHaveBeenCalledWith(
       expect.objectContaining({
         from: ['DIREVIU_PENGAWAS'],
         to: 'HASIL_REVIU',
-        event: expect.objectContaining({ action: 'KIRIM_HASIL_REVIU', notes: 'Hasil reviu lengkap' }),
-      }),
+        event: expect.objectContaining({
+          action: 'KIRIM_HASIL_REVIU',
+          notes: 'Hasil reviu lengkap',
+        }),
+      })
     );
   });
 
@@ -831,7 +950,7 @@ describe('perencanaanController — alur pengesahan dokumen yayasan', () => {
         to: 'DIAJUKAN_PEMBINA',
         status: 'PROPOSED',
         event: expect.objectContaining({ action: 'AJUKAN_PENETAPAN', revised: false }),
-      }),
+      })
     );
   });
 
@@ -844,7 +963,7 @@ describe('perencanaanController — alur pengesahan dokumen yayasan', () => {
         status: 'APPROVED',
         approve: true,
         event: expect.objectContaining({ action: 'TETAPKAN', actorRoleCode: 'YAYASAN_PEMBINA' }),
-      }),
+      })
     );
   });
 
@@ -854,61 +973,92 @@ describe('perencanaanController — alur pengesahan dokumen yayasan', () => {
       notes: 'Sasaran kemandirian ekonomi belum punya indikator terukur.',
     });
     expect(perencanaanService.advanceReview).toHaveBeenCalledWith(
-      expect.objectContaining({ to: 'DIKEMBALIKAN', status: 'DRAFT', approve: false }),
+      expect.objectContaining({ to: 'DIKEMBALIKAN', status: 'DRAFT', approve: false })
     );
   });
 
-  it.each(['YAYASAN_KETUA', 'YAYASAN_PENGAWAS', 'SUPER_ADMIN'])('%s tidak dapat menetapkan', async (roleCode) => {
-    await expect(call(perencanaanController.decidePlan, roleCode, { decision: 'TETAPKAN' })).rejects.toThrowError(
-      /Pembina/,
-    );
-    expect(perencanaanService.advanceReview).not.toHaveBeenCalled();
-  });
+  it.each(['YAYASAN_KETUA', 'YAYASAN_PENGAWAS', 'SUPER_ADMIN'])(
+    '%s tidak dapat menetapkan',
+    async (roleCode) => {
+      await expect(
+        call(perencanaanController.decidePlan, roleCode, { decision: 'TETAPKAN' })
+      ).rejects.toThrowError(/Pembina/);
+      expect(perencanaanService.advanceReview).not.toHaveBeenCalled();
+    }
+  );
 
   it('dokumen PROPOSED lama tanpa tahap tetap dapat masuk alur', async () => {
     // Diajukan sebelum alur ini ada: /approve kini menolak semua dokumen
     // yayasan, jadi tanpa jalan masuk ini ia tidak dapat diapa-apakan lagi.
-    vi.mocked(perencanaanService.getPlanForAuth).mockResolvedValue({ ...plan, status: 'PROPOSED' } as any);
+    vi.mocked(perencanaanService.getPlanForAuth).mockResolvedValue({
+      ...plan,
+      status: 'PROPOSED',
+    } as any);
     await call(perencanaanController.submitForReview, 'YAYASAN_KETUA');
     expect(perencanaanService.advanceReview).toHaveBeenCalledWith(
-      expect.objectContaining({ to: 'DIREVIU_PENGAWAS', status: 'DRAFT' }),
+      expect.objectContaining({ to: 'DIREVIU_PENGAWAS', status: 'DRAFT' })
     );
   });
 
   it('dokumen yang sudah berlaku tidak diajukan ulang', async () => {
-    vi.mocked(perencanaanService.getPlanForAuth).mockResolvedValue({ ...plan, status: 'IN_PROGRESS' } as any);
-    await expect(call(perencanaanController.submitForReview, 'YAYASAN_KETUA')).rejects.toThrowError(/Draft/);
+    vi.mocked(perencanaanService.getPlanForAuth).mockResolvedValue({
+      ...plan,
+      status: 'IN_PROGRESS',
+    } as any);
+    await expect(call(perencanaanController.submitForReview, 'YAYASAN_KETUA')).rejects.toThrowError(
+      /Draft/
+    );
     expect(perencanaanService.advanceReview).not.toHaveBeenCalled();
   });
 
   it('alur ini tidak berlaku untuk RKA unit', async () => {
-    vi.mocked(perencanaanService.getPlanForAuth).mockResolvedValue({ ...plan, unitId: 'unit-sdit' } as any);
+    vi.mocked(perencanaanService.getPlanForAuth).mockResolvedValue({
+      ...plan,
+      unitId: 'unit-sdit',
+    } as any);
     await expect(call(perencanaanController.submitForReview, 'YAYASAN_KETUA')).rejects.toThrowError(
-      /hanya untuk dokumen tingkat yayasan/,
+      /hanya untuk dokumen tingkat yayasan/
     );
   });
 
   it('dokumen yang sedang direviu Pengawas tidak dapat diubah', async () => {
-    vi.mocked(perencanaanService.getPlanForAuth).mockResolvedValue({ ...plan, reviewStage: 'DIREVIU_PENGAWAS' } as any);
+    vi.mocked(perencanaanService.getPlanForAuth).mockResolvedValue({
+      ...plan,
+      reviewStage: 'DIREVIU_PENGAWAS',
+    } as any);
     const { req, res } = mockReqRes({
       user: as('YAYASAN_KETUA') as any,
       params: { id: 'rka-yys' } as any,
       body: { title: 'Judul baru' },
     });
-    await expect(run(perencanaanController.updatePlan, req, res)).rejects.toThrowError(/sedang direviu/);
+    await expect(run(perencanaanController.updatePlan, req, res)).rejects.toThrowError(
+      /sedang direviu/
+    );
     expect(perencanaanService.updatePlan).not.toHaveBeenCalled();
   });
 
   it('sasaran tidak dapat ditambah saat dokumen menunggu keputusan Pembina', async () => {
-    vi.mocked(perencanaanService.getPlanForAuth).mockResolvedValue({ ...plan, reviewStage: 'DIAJUKAN_PEMBINA' } as any);
-    const { req, res } = mockReqRes({ user: as('YAYASAN_KETUA') as any, body: { planId: 'rka-yys', title: 'Sasaran' } });
+    vi.mocked(perencanaanService.getPlanForAuth).mockResolvedValue({
+      ...plan,
+      reviewStage: 'DIAJUKAN_PEMBINA',
+    } as any);
+    const { req, res } = mockReqRes({
+      user: as('YAYASAN_KETUA') as any,
+      body: { planId: 'rka-yys', title: 'Sasaran' },
+    });
     await expect(run(perencanaanController.createObjective, req, res)).rejects.toThrow();
     expect(perencanaanService.createObjective).not.toHaveBeenCalled();
   });
 
   it.each([
-    ['dokumen yayasan yang sudah ditetapkan Pembina', { status: 'APPROVED', reviewStage: 'DITETAPKAN' }],
-    ['RKA unit yang sudah disahkan Ketua Pengurus', { unitId: 'unit-sdit', status: 'APPROVED', reviewStage: null }],
+    [
+      'dokumen yayasan yang sudah ditetapkan Pembina',
+      { status: 'APPROVED', reviewStage: 'DITETAPKAN' },
+    ],
+    [
+      'RKA unit yang sudah disahkan Ketua Pengurus',
+      { unitId: 'unit-sdit', status: 'APPROVED', reviewStage: null },
+    ],
   ])('kepala %s tidak dapat ditulis ulang', async (_label, over) => {
     // Subrecord-nya sudah beku sejak dulu; kepalanya (judul, anggaran, visi,
     // misi) tidak — tanda tangan pengesah jadi menutupi teks yang tak ia lihat.
@@ -918,12 +1068,17 @@ describe('perencanaanController — alur pengesahan dokumen yayasan', () => {
       params: { id: 'rka-yys' } as any,
       body: { budget: 999 },
     });
-    await expect(run(perencanaanController.updatePlan, req, res)).rejects.toThrowError(/Draft atau Berjalan/);
+    await expect(run(perencanaanController.updatePlan, req, res)).rejects.toThrowError(
+      /Draft atau Berjalan/
+    );
     expect(perencanaanService.updatePlan).not.toHaveBeenCalled();
   });
 
   it('draf yang dikembalikan Pembina dapat diperbaiki lagi', async () => {
-    vi.mocked(perencanaanService.getPlanForAuth).mockResolvedValue({ ...plan, reviewStage: 'DIKEMBALIKAN' } as any);
+    vi.mocked(perencanaanService.getPlanForAuth).mockResolvedValue({
+      ...plan,
+      reviewStage: 'DIKEMBALIKAN',
+    } as any);
     vi.mocked(perencanaanService.updatePlan).mockResolvedValue({ id: 'rka-yys' } as any);
     const { req, res } = mockReqRes({
       user: as('YAYASAN_KETUA') as any,
@@ -931,7 +1086,9 @@ describe('perencanaanController — alur pengesahan dokumen yayasan', () => {
       body: { description: 'Baseline IKU masuk batang tubuh.' },
     });
     await run(perencanaanController.updatePlan, req, res);
-    expect(perencanaanService.updatePlan).toHaveBeenCalledWith('rka-yys', { description: 'Baseline IKU masuk batang tubuh.' });
+    expect(perencanaanService.updatePlan).toHaveBeenCalledWith('rka-yys', {
+      description: 'Baseline IKU masuk batang tubuh.',
+    });
   });
 
   it.each([
@@ -942,13 +1099,21 @@ describe('perencanaanController — alur pengesahan dokumen yayasan', () => {
   ])('dokumen yang %s tidak dapat dihapus', async (_label, over) => {
     // Menghapusnya ikut menghapus riwayat pengesahannya (onDelete: Cascade).
     vi.mocked(perencanaanService.getPlanForAuth).mockResolvedValue({ ...plan, ...over } as any);
-    const { req, res } = mockReqRes({ user: as('YAYASAN_KETUA') as any, params: { id: 'rka-yys' } as any });
-    await expect(run(perencanaanController.deletePlan, req, res)).rejects.toThrowError(/Hanya draf/);
+    const { req, res } = mockReqRes({
+      user: as('YAYASAN_KETUA') as any,
+      params: { id: 'rka-yys' } as any,
+    });
+    await expect(run(perencanaanController.deletePlan, req, res)).rejects.toThrowError(
+      /Hanya draf/
+    );
     expect(perencanaanService.deletePlan).not.toHaveBeenCalled();
   });
 
   it('draf yang belum diajukan dapat dihapus penyusunnya', async () => {
-    const { req, res } = mockReqRes({ user: as('YAYASAN_KETUA') as any, params: { id: 'rka-yys' } as any });
+    const { req, res } = mockReqRes({
+      user: as('YAYASAN_KETUA') as any,
+      params: { id: 'rka-yys' } as any,
+    });
     await run(perencanaanController.deletePlan, req, res);
     expect(perencanaanService.deletePlan).toHaveBeenCalledWith('rka-yys');
   });

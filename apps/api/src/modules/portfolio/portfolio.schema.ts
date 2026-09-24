@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import { uploadedFileRefSchema } from '@cipansor/shared';
 
-
 const portfolioType = z.enum([
   'ACADEMIC',
   'P5_PROJECT',

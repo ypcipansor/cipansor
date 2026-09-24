@@ -110,15 +110,18 @@ export async function getAlumniOutcomeAnalytics(unitId?: string) {
 
   return alumni.map((alm) => {
     const avgGrade = alm.student?.grades.length
-      ? alm.student.grades.reduce((sum, g) => sum + Number(g.percentage), 0) / alm.student.grades.length
+      ? alm.student.grades.reduce((sum, g) => sum + Number(g.percentage), 0) /
+        alm.student.grades.length
       : null;
 
     const maxJuz = alm.student?.tahfidzRecords.length
-      ? Math.max(...alm.student.tahfidzRecords.map(r => r.juz))
-      : alm.tahfidzLevel ? (parseInt(alm.tahfidzLevel, 10) || 0) : 0;
+      ? Math.max(...alm.student.tahfidzRecords.map((r) => r.juz))
+      : alm.tahfidzLevel
+        ? parseInt(alm.tahfidzLevel, 10) || 0
+        : 0;
 
-    const hasHigherEd = alm.educations.some(e =>
-      e.degree.includes('S1') || e.degree.includes('Bachelor') || e.degree.includes('S2')
+    const hasHigherEd = alm.educations.some(
+      (e) => e.degree.includes('S1') || e.degree.includes('Bachelor') || e.degree.includes('S2')
     );
 
     const hasCareer = alm.careers.length > 0;
@@ -365,7 +368,9 @@ export async function convertFromStudent(
     select: { id: true },
   });
   if (sudah) {
-    throw Errors.conflict(`Santri ini sudah tercatat lulus dari ${student.unit.name} pada ${year}.`);
+    throw Errors.conflict(
+      `Santri ini sudah tercatat lulus dari ${student.unit.name} pada ${year}.`
+    );
   }
 
   // Generate registration number
@@ -485,7 +490,10 @@ export async function updateCareer(id: string, data: UpdateCareerInput, actor: A
 }
 
 export async function deleteCareer(id: string, actor: AlumniActor) {
-  const career = await prisma.alumniCareer.findUnique({ where: { id }, select: { alumniId: true } });
+  const career = await prisma.alumniCareer.findUnique({
+    where: { id },
+    select: { alumniId: true },
+  });
   if (!career) throw Errors.notFound('Career');
   await alumniInScope(career.alumniId, actor);
 

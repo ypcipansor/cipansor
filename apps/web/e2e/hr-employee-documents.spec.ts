@@ -113,11 +113,9 @@ test.describe("HR employee directory + documents", () => {
   test("upload → persist → list → delete a document (real stack)", async ({
     page,
   }) => {
-    const list = await apiRequest<{ data: Array<{ id: string; userId: string }> }>(
-      session,
-      "GET",
-      "/hr/employees?limit=1",
-    );
+    const list = await apiRequest<{
+      data: Array<{ id: string; userId: string }>;
+    }>(session, "GET", "/hr/employees?limit=1");
     const employee = list.data[0];
     if (!employee) throw new Error("seeded stack has no employees");
 
@@ -159,11 +157,9 @@ test.describe("HR employee directory + documents", () => {
     // discard now REFUSES with a 409 (a referenced blob is not an orphan), for
     // the local and Azure providers alike — the old spec expected a silent 200
     // from the pre-hardening local no-op.
-    const list = await apiRequest<{ data: Array<{ id: string; userId: string }> }>(
-      session,
-      "GET",
-      "/hr/employees?limit=1",
-    );
+    const list = await apiRequest<{
+      data: Array<{ id: string; userId: string }>;
+    }>(session, "GET", "/hr/employees?limit=1");
     const employee = list.data[0];
     if (!employee) throw new Error("seeded stack has no employees");
 
@@ -230,13 +226,10 @@ test.describe("HR employee directory + documents", () => {
     );
 
     // The unit admin's DELETE must be refused (403), and the row must survive.
-    const res = await fetch(
-      `${API_URL}/hr/documents/${created.data.id}`,
-      {
-        method: "DELETE",
-        headers: { authorization: `Bearer ${admin.accessToken}` },
-      },
-    );
+    const res = await fetch(`${API_URL}/hr/documents/${created.data.id}`, {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${admin.accessToken}` },
+    });
     expect(res.status).toBe(403);
 
     const stillThere = await apiRequest<{ data: Array<{ id: string }> }>(
@@ -291,7 +284,11 @@ test.describe("HR employee directory access control", () => {
 
     const list = await apiRequest<{
       data: Array<{ unitId: string | null }>;
-    }>(teacher, "GET", "/hr/employees?limit=100&unitId=00000000-0000-0000-0000-000000000000");
+    }>(
+      teacher,
+      "GET",
+      "/hr/employees?limit=100&unitId=00000000-0000-0000-0000-000000000000",
+    );
 
     expect(list.data.length).toBeGreaterThan(0);
     // The spoofed query unitId is ignored; every row stays in the actor's unit.

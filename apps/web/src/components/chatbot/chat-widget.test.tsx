@@ -63,9 +63,7 @@ describe("ChatWidget ketika panggilannya gagal", () => {
 
     await tanya("berapa biaya pendaftaran");
 
-    await waitFor(() =>
-      expect(screen.getByText(/sedang ramai/i)).toBeTruthy(),
-    );
+    await waitFor(() => expect(screen.getByText(/sedang ramai/i)).toBeTruthy());
     expect(screen.queryByText(/hubungi kami di/i)).toBeNull();
   });
 
@@ -102,7 +100,9 @@ describe("ChatWidget ketika panggilannya gagal", () => {
  */
 describe("ChatWidget dan tawaran meneruskan pertanyaan", () => {
   const jawaban = (refused: boolean) => ({
-    answer: refused ? "Mohon maaf, saya belum memiliki informasinya." : "Biayanya Rp 350.000.",
+    answer: refused
+      ? "Mohon maaf, saya belum memiliki informasinya."
+      : "Biayanya Rp 350.000.",
     sources: [],
     refused,
   });

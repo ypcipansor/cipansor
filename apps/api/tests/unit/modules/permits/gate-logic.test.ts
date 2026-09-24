@@ -53,7 +53,11 @@ vi.mock('@prisma/client', () => ({
   },
 }));
 
-import { markDeparted, markReturned, createPermit } from '../../../../src/modules/permits/permits.service';
+import {
+  markDeparted,
+  markReturned,
+  createPermit,
+} from '../../../../src/modules/permits/permits.service';
 import { PermitStatus, PermitType, NotificationType } from '@prisma/client';
 import { createNotification } from '../../../../src/modules/notifications/notifications.service';
 

@@ -117,9 +117,7 @@ export function assertCanSign(key: SigningKeyLike | null, now = new Date()): voi
   const state = effectiveState(key, now);
   switch (state) {
     case SigningKeyState.REVOKED:
-      throw new EsignLifecycleError(
-        'Kunci tanda tangan Anda telah dicabut. Hubungi Super Admin.'
-      );
+      throw new EsignLifecycleError('Kunci tanda tangan Anda telah dicabut. Hubungi Super Admin.');
     case SigningKeyState.PENDING_APPROVAL:
       throw new EsignLifecycleError(
         'Pengajuan kunci tanda tangan Anda belum disetujui Super Admin.'
@@ -162,13 +160,8 @@ export function needsNewIssuance(key: SigningKeyLike | null, now = new Date()): 
  * ini — supaya memperpanjang lebih awal tidak menghanguskan sisa masa berlaku
  * dan tidak pula memberi hadiah bagi yang menunda.
  */
-export function renewedExpiry(
-  key: SigningKeyLike,
-  validityDays: number,
-  now = new Date()
-): Date {
+export function renewedExpiry(key: SigningKeyLike, validityDays: number, now = new Date()): Date {
   assertValidityDays(validityDays);
-  const base =
-    key.expiresAt && key.expiresAt.getTime() > now.getTime() ? key.expiresAt : now;
+  const base = key.expiresAt && key.expiresAt.getTime() > now.getTime() ? key.expiresAt : now;
   return expiryFrom(base, validityDays);
 }

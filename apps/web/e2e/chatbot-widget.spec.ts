@@ -86,7 +86,11 @@ test.describe("public chatbot widget, assistant available", () => {
           data: {
             answer: ANSWER,
             sources: [
-              { id: "spmb-gelombang-aktif", title: "Info SPMB terkini", kind: "live" },
+              {
+                id: "spmb-gelombang-aktif",
+                title: "Info SPMB terkini",
+                kind: "live",
+              },
               {
                 id: "spmb-cara-daftar",
                 title: "Cara mendaftar",

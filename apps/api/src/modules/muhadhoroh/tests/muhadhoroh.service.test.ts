@@ -3,7 +3,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // evaluate() claims a new video blob before writing the reference (BUG 4 /
 // flag 9). The claim protocol itself is covered by `blob-claim.integration`
 // (real Postgres); this drives the service's control flow around it.
-const claimBlobForRecord = vi.hoisted(() => vi.fn().mockResolvedValue({ id: 'claim-1', operationToken: 'tok-1', kind: 'RECORD' }));
+const claimBlobForRecord = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({ id: 'claim-1', operationToken: 'tok-1', kind: 'RECORD' })
+);
 const releaseBlobClaimById = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const CLAIM = { id: 'claim-1', operationToken: 'tok-1', kind: 'RECORD' };
 
@@ -37,7 +39,11 @@ const scores = { contentScore: 90, deliveryScore: 80, languageScore: 70 };
 describe('MuhadhorohService.evaluate — video blob claim (BUG 4)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    claimBlobForRecord.mockResolvedValue({ id: 'claim-1', operationToken: 'tok-1', kind: 'RECORD' });
+    claimBlobForRecord.mockResolvedValue({
+      id: 'claim-1',
+      operationToken: 'tok-1',
+      kind: 'RECORD',
+    });
     releaseBlobClaimById.mockResolvedValue(undefined);
     mockPrisma.teacher.findFirst.mockResolvedValue({ id: 'teacher-1' });
   });

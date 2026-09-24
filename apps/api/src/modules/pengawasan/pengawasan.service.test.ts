@@ -205,12 +205,14 @@ describe('Pengawasan Service', () => {
       const suggestions = await pengawasanService.suggestAuditSchedules('unit-1');
 
       // Existing-audit query must be scoped to the same unitId
-      expect(prisma.internalAudit.findMany).toHaveBeenCalledWith(expect.objectContaining({
-        where: expect.objectContaining({ unitId: 'unit-1' }),
-      }));
+      expect(prisma.internalAudit.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ unitId: 'unit-1' }),
+        })
+      );
 
       expect(suggestions).toHaveLength(1);
-      expect(suggestions.find(s => s.riskId === 'risk-2')).toMatchObject({
+      expect(suggestions.find((s) => s.riskId === 'risk-2')).toMatchObject({
         riskCode: 'RSK-002',
         priority: 'HIGH',
       });
@@ -226,8 +228,8 @@ describe('Pengawasan Service', () => {
           unitId: 'unit-1',
           amount: { toNumber: () => 1000000 },
           accountId: 'acc-1',
-          account: { code: '5101', name: 'Beban Gaji' }
-        }
+          account: { code: '5101', name: 'Beban Gaji' },
+        },
       ] as any);
 
       vi.mocked(prisma.journalEntry.groupBy).mockResolvedValue([
@@ -236,9 +238,9 @@ describe('Pengawasan Service', () => {
           unitId: 'unit-1',
           _sum: {
             debit: { toNumber: () => 950000 },
-            credit: { toNumber: () => 0 }
-          }
-        }
+            credit: { toNumber: () => 0 },
+          },
+        },
       ] as any);
 
       const suggestions = await pengawasanService.suggestAuditSchedules('unit-1');

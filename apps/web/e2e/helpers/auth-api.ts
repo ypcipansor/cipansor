@@ -234,7 +234,10 @@ export async function serverSessionCookies(
 ): Promise<Array<{ name: string; value: string }>> {
   const res = await fetch(`${BASE_URL}/api/session`, {
     method: "POST",
-    headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      "content-type": "application/json",
+    },
     body: JSON.stringify({}),
   });
   const setCookie = res.headers.getSetCookie?.() ?? [];

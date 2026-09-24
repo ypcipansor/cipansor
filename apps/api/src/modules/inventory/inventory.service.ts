@@ -12,7 +12,11 @@ import { config } from '../../config';
 import { createNotification } from '../notifications/notifications.service';
 import { createPurchaseJournal } from './asset-accounting.service';
 import { Errors } from '../../middleware/error';
-import { claimBlobForRecord, releaseBlobClaimById, type BlobClaimHandle } from '../../utils/blob-claim';
+import {
+  claimBlobForRecord,
+  releaseBlobClaimById,
+  type BlobClaimHandle,
+} from '../../utils/blob-claim';
 import type {
   CreateInventoryCategoryInput,
   UpdateInventoryCategoryInput,
@@ -223,11 +227,7 @@ export async function createItem(data: CreateInventoryItemInput, userId?: string
   }
 }
 
-export async function updateItem(
-  id: string,
-  data: UpdateInventoryItemInput,
-  userId?: string
-) {
+export async function updateItem(id: string, data: UpdateInventoryItemInput, userId?: string) {
   const holderId = userId ?? 'inventory';
   // A photo added or replaced by an update is a new blob reference (flag 9).
   let claim: BlobClaimHandle | null = null;
@@ -425,7 +425,11 @@ export async function updateMaintenance(id: string, data: UpdateMaintenanceInput
   });
 }
 
-export async function updateMaintenanceStatus(id: string, data: UpdateMaintenanceStatusInput, actorId?: string) {
+export async function updateMaintenanceStatus(
+  id: string,
+  data: UpdateMaintenanceStatusInput,
+  actorId?: string
+) {
   const maintenance = await prisma.assetMaintenance.findUnique({ where: { id } });
   if (!maintenance) throw new Error('Maintenance record not found');
 

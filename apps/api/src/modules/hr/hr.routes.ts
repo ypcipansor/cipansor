@@ -194,11 +194,7 @@ router.get(
  *       200:
  *         description: Staff member details
  */
-router.get(
-  '/staff/:id',
-  authorize(...ADMIN_ROLES),
-  controller.getStaffById
-);
+router.get('/staff/:id', authorize(...ADMIN_ROLES), controller.getStaffById);
 
 // ==================== STAFF ATTENDANCE ====================
 
@@ -281,11 +277,7 @@ router.get(
  *       201:
  *         description: Attendance recorded
  */
-router.post(
-  '/attendance',
-  authorize(...HR_WRITE_ROLES),
-  controller.createStaffAttendance
-);
+router.post('/attendance', authorize(...HR_WRITE_ROLES), controller.createStaffAttendance);
 
 /**
  * @swagger
@@ -321,11 +313,7 @@ router.post(
  *       201:
  *         description: Bulk attendance recorded
  */
-router.post(
-  '/attendance/bulk',
-  authorize(...HR_WRITE_ROLES),
-  controller.recordBulkAttendance
-);
+router.post('/attendance/bulk', authorize(...HR_WRITE_ROLES), controller.recordBulkAttendance);
 
 /**
  * @swagger
@@ -345,11 +333,7 @@ router.post(
  *       200:
  *         description: Attendance record details
  */
-router.get(
-  '/attendance/:id',
-  authorize(...ADMIN_ROLES),
-  controller.getStaffAttendanceById
-);
+router.get('/attendance/:id', authorize(...ADMIN_ROLES), controller.getStaffAttendanceById);
 
 /**
  * @swagger
@@ -369,11 +353,7 @@ router.get(
  *       200:
  *         description: Attendance updated
  */
-router.put(
-  '/attendance/:id',
-  authorize(...HR_WRITE_ROLES),
-  controller.updateStaffAttendance
-);
+router.put('/attendance/:id', authorize(...HR_WRITE_ROLES), controller.updateStaffAttendance);
 
 /**
  * @swagger
@@ -393,11 +373,7 @@ router.put(
  *       204:
  *         description: Attendance deleted
  */
-router.delete(
-  '/attendance/:id',
-  authorize(...HR_WRITE_ROLES),
-  controller.deleteStaffAttendance
-);
+router.delete('/attendance/:id', authorize(...HR_WRITE_ROLES), controller.deleteStaffAttendance);
 
 /**
  * @swagger
@@ -600,11 +576,7 @@ router.put(
  *       200:
  *         description: Leave request approved/rejected
  */
-router.patch(
-  '/leaves/:id/approve',
-  authorize(...HR_WRITE_ROLES),
-  controller.approveLeave
-);
+router.patch('/leaves/:id/approve', authorize(...HR_WRITE_ROLES), controller.approveLeave);
 
 /**
  * @swagger
@@ -648,11 +620,7 @@ router.patch(
  *       204:
  *         description: Leave request deleted
  */
-router.delete(
-  '/leaves/:id',
-  authorize(...HR_WRITE_ROLES),
-  controller.deleteLeave
-);
+router.delete('/leaves/:id', authorize(...HR_WRITE_ROLES), controller.deleteLeave);
 
 /**
  * @swagger
@@ -678,19 +646,11 @@ router.get(
   controller.getLeaveBalance
 );
 
-router.get(
-  '/analytics/retention-risk',
-  authorize(...ADMIN_ROLES),
-  controller.getRetentionRisk
-);
+router.get('/analytics/retention-risk', authorize(...ADMIN_ROLES), controller.getRetentionRisk);
 
 // ==================== DEPARTMENTS ====================
 
-router.post(
-  '/departments',
-  authorize(...HR_WRITE_ROLES),
-  departmentController.create
-);
+router.post('/departments', authorize(...HR_WRITE_ROLES), departmentController.create);
 router.get(
   '/departments',
   authorize(...ADMIN_ROLES, ...TEACHER_ROLES, ...STAFF_ROLES),
@@ -701,44 +661,20 @@ router.get(
   authorize(...ADMIN_ROLES, ...TEACHER_ROLES, ...STAFF_ROLES),
   departmentController.findOne
 );
-router.patch(
-  '/departments/:id',
-  authorize(...HR_WRITE_ROLES),
-  departmentController.update
-);
-router.delete(
-  '/departments/:id',
-  authorize(...HR_WRITE_ROLES),
-  departmentController.delete
-);
+router.patch('/departments/:id', authorize(...HR_WRITE_ROLES), departmentController.update);
+router.delete('/departments/:id', authorize(...HR_WRITE_ROLES), departmentController.delete);
 
 // ==================== CONTRACTS ====================
 
-router.post(
-  '/contracts',
-  authorize(...HR_WRITE_ROLES),
-  contractController.create
-);
-router.get(
-  '/contracts',
-  authorize(...ADMIN_ROLES),
-  contractController.findAll
-);
-router.get(
-  '/contracts/expiring',
-  authorize(...ADMIN_ROLES),
-  contractController.getExpiring
-);
+router.post('/contracts', authorize(...HR_WRITE_ROLES), contractController.create);
+router.get('/contracts', authorize(...ADMIN_ROLES), contractController.findAll);
+router.get('/contracts/expiring', authorize(...ADMIN_ROLES), contractController.getExpiring);
 router.get(
   '/contracts/user/:userId',
   authorize(...ADMIN_ROLES, ...TEACHER_ROLES, ...STAFF_ROLES),
   contractController.findByUser
 );
-router.patch(
-  '/contracts/:id',
-  authorize(...HR_WRITE_ROLES),
-  contractController.update
-);
+router.patch('/contracts/:id', authorize(...HR_WRITE_ROLES), contractController.update);
 
 // ==================== EMPLOYEE DOCUMENTS ====================
 
@@ -747,16 +683,8 @@ router.get(
   authorize(...ADMIN_ROLES, ...TEACHER_ROLES, ...STAFF_ROLES),
   employeeDocumentController.findAll
 );
-router.post(
-  '/documents',
-  authorize(...HR_WRITE_ROLES),
-  employeeDocumentController.create
-);
-router.delete(
-  '/documents/:id',
-  authorize(...HR_WRITE_ROLES),
-  employeeDocumentController.delete
-);
+router.post('/documents', authorize(...HR_WRITE_ROLES), employeeDocumentController.create);
+router.delete('/documents/:id', authorize(...HR_WRITE_ROLES), employeeDocumentController.delete);
 
 // ==================== EMPLOYMENT HISTORY ====================
 
@@ -765,11 +693,7 @@ router.get(
   authorize(...ADMIN_ROLES, ...TEACHER_ROLES, ...STAFF_ROLES),
   employmentHistoryController.findAll
 );
-router.post(
-  '/history',
-  authorize(...HR_WRITE_ROLES),
-  employmentHistoryController.create
-);
+router.post('/history', authorize(...HR_WRITE_ROLES), employmentHistoryController.create);
 
 // ==================== LEAVE BALANCES (ENHANCED) ====================
 
@@ -783,10 +707,6 @@ router.post(
   authorize(...HR_WRITE_ROLES),
   leaveBalanceController.initialize
 );
-router.patch(
-  '/leave-balances/:id',
-  authorize(...HR_WRITE_ROLES),
-  leaveBalanceController.update
-);
+router.patch('/leave-balances/:id', authorize(...HR_WRITE_ROLES), leaveBalanceController.update);
 
 export default router;

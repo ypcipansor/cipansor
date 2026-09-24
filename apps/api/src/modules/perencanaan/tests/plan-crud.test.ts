@@ -1,34 +1,36 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { mockStrategicPlan, mockPlanObjective, mockPlanIndicator, mockPlanActivity } = vi.hoisted(() => {
-  return {
-    mockStrategicPlan: {
-      findMany: vi.fn(),
-      findUnique: vi.fn(),
-      findFirst: vi.fn(),
-      create: vi.fn(),
-      update: vi.fn(),
-      delete: vi.fn(),
-    },
-    mockPlanObjective: {
-      findMany: vi.fn(),
-      findUnique: vi.fn(),
-      create: vi.fn(),
-      update: vi.fn(),
-      delete: vi.fn(),
-    },
-    mockPlanIndicator: {
-      create: vi.fn(),
-      update: vi.fn(),
-      delete: vi.fn(),
-    },
-    mockPlanActivity: {
-      create: vi.fn(),
-      update: vi.fn(),
-      delete: vi.fn(),
-    },
-  };
-});
+const { mockStrategicPlan, mockPlanObjective, mockPlanIndicator, mockPlanActivity } = vi.hoisted(
+  () => {
+    return {
+      mockStrategicPlan: {
+        findMany: vi.fn(),
+        findUnique: vi.fn(),
+        findFirst: vi.fn(),
+        create: vi.fn(),
+        update: vi.fn(),
+        delete: vi.fn(),
+      },
+      mockPlanObjective: {
+        findMany: vi.fn(),
+        findUnique: vi.fn(),
+        create: vi.fn(),
+        update: vi.fn(),
+        delete: vi.fn(),
+      },
+      mockPlanIndicator: {
+        create: vi.fn(),
+        update: vi.fn(),
+        delete: vi.fn(),
+      },
+      mockPlanActivity: {
+        create: vi.fn(),
+        update: vi.fn(),
+        delete: vi.fn(),
+      },
+    };
+  }
+);
 
 vi.mock('@prisma/client', () => ({
   PrismaClient: class {
@@ -37,7 +39,13 @@ vi.mock('@prisma/client', () => ({
     planIndicator = mockPlanIndicator;
     planActivity = mockPlanActivity;
   },
-  Prisma: { Decimal: class { constructor(v: number) { return v; } } },
+  Prisma: {
+    Decimal: class {
+      constructor(v: number) {
+        return v;
+      }
+    },
+  },
 }));
 
 vi.mock('../../../../src/lib/prisma', () => ({
@@ -131,9 +139,7 @@ describe('PerencanaanService', () => {
       const mockPlan = {
         id: 'plan-1',
         title: 'RENSTRA',
-        objectives: [
-          { id: 'obj-1', indicators: [], activities: [] },
-        ],
+        objectives: [{ id: 'obj-1', indicators: [], activities: [] }],
       };
 
       mockStrategicPlan.findUnique.mockResolvedValue(mockPlan);
@@ -175,7 +181,10 @@ describe('PerencanaanService', () => {
     it('should create an objective and recalculate plan progress', async () => {
       const mockObj = { id: 'obj-1', planId: 'plan-1', title: 'Sasaran 1', plan: { id: 'plan-1' } };
       mockPlanObjective.create.mockResolvedValue(mockObj);
-      mockPlanObjective.findMany.mockResolvedValue([{ weight: 50, progress: 80 }, { weight: 50, progress: 40 }]);
+      mockPlanObjective.findMany.mockResolvedValue([
+        { weight: 50, progress: 80 },
+        { weight: 50, progress: 40 },
+      ]);
       mockStrategicPlan.update.mockResolvedValue({});
 
       const result = await service.createObjective({

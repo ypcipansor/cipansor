@@ -47,7 +47,11 @@ function inScope(actor: AlumniActor, unitId: string | null | undefined): boolean
 
 /** Boleh membaca data diri alumni di unit ini? */
 export function canReadAlumniPersonalData(actor: AlumniActor, unitId: string | null | undefined) {
-  return !!actor.roleCode && ALUMNI_PERSONAL_DATA_ROLES.includes(actor.roleCode) && inScope(actor, unitId);
+  return (
+    !!actor.roleCode &&
+    ALUMNI_PERSONAL_DATA_ROLES.includes(actor.roleCode) &&
+    inScope(actor, unitId)
+  );
 }
 
 /**
@@ -55,11 +59,18 @@ export function canReadAlumniPersonalData(actor: AlumniActor, unitId: string | n
  * (keberadaannya bukan urusan pemanggil); unit yang diminta di badan permintaan
  * dijawab 403.
  */
-export function assertAlumniRecordInScope(actor: AlumniActor, unitId: string | null | undefined, what: string) {
+export function assertAlumniRecordInScope(
+  actor: AlumniActor,
+  unitId: string | null | undefined,
+  what: string
+) {
   if (!inScope(actor, unitId)) throw Errors.notFound(what);
 }
 
-export function assertAlumniTargetUnitInScope(actor: AlumniActor, unitId: string | null | undefined) {
+export function assertAlumniTargetUnitInScope(
+  actor: AlumniActor,
+  unitId: string | null | undefined
+) {
   if (!inScope(actor, unitId)) {
     throw Errors.forbidden('Unit ini di luar lingkup Anda');
   }

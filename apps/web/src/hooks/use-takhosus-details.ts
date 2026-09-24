@@ -1,6 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-export interface PaginatedResponse<T> { data: T[]; meta: any; }
+export interface PaginatedResponse<T> {
+  data: T[];
+  meta: any;
+}
 import {
   MurojaahRecord,
   SimaanExam,

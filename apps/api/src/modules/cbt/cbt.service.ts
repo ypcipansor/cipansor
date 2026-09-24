@@ -190,7 +190,9 @@ export class CBTService {
     if (!bank) throw Errors.notFound('Question Bank');
 
     if (user.role === 'UNIT_ADMIN' && bank.unitId !== user.unitId) {
-      throw Errors.forbidden('You do not have permission to delete Question Banks outside your unit');
+      throw Errors.forbidden(
+        'You do not have permission to delete Question Banks outside your unit'
+      );
     }
 
     if (
@@ -218,7 +220,9 @@ export class CBTService {
     if (!bank) throw Errors.notFound('Question Bank');
 
     if (user.role === 'UNIT_ADMIN' && bank.unitId !== user.unitId) {
-      throw Errors.forbidden('You do not have permission to modify Question Banks outside your unit');
+      throw Errors.forbidden(
+        'You do not have permission to modify Question Banks outside your unit'
+      );
     }
 
     if (
@@ -246,11 +250,7 @@ export class CBTService {
     });
   }
 
-  static async updateQuestion(
-    id: string,
-    data: UpdateQuestionInput,
-    user: AuthUser
-  ) {
+  static async updateQuestion(id: string, data: UpdateQuestionInput, user: AuthUser) {
     const question = await prisma.question.findUnique({
       where: { id },
       include: { bank: { include: { teacher: { select: { userId: true } } } } },
@@ -378,11 +378,7 @@ export class CBTService {
       throw Errors.forbidden('You do not have permission to create exams outside your unit');
     }
 
-    if (
-      user.role !== 'SUPER_ADMIN' &&
-      user.role !== 'UNIT_ADMIN' &&
-      data.unitId !== user.unitId
-    ) {
+    if (user.role !== 'SUPER_ADMIN' && user.role !== 'UNIT_ADMIN' && data.unitId !== user.unitId) {
       throw Errors.forbidden('You do not have permission to create exams outside your unit');
     }
 
@@ -550,7 +546,9 @@ export class CBTService {
     const attempt = await prisma.examAttempt.findUnique({
       where: { id: attemptId },
       include: {
-        exam: { select: { unitId: true, questionBankId: true, teacher: { select: { userId: true } } } },
+        exam: {
+          select: { unitId: true, questionBankId: true, teacher: { select: { userId: true } } },
+        },
       },
     });
 
@@ -584,99 +582,102 @@ export class CBTService {
 
     for (let retryCount = 0; retryCount <= MAX_RETRIES; retryCount++) {
       try {
-        return await prisma.$transaction(async (tx) => {
-          // Re-check status inside the transaction to close the TOCTOU gap:
-          // between the check above and entering this serializable transaction,
-          // a concurrent operation could have changed the attempt's status.
-          const freshAttempt = await tx.examAttempt.findUnique({
-            where: { id: attemptId },
-            select: { status: true },
-          });
-          if (!freshAttempt) throw Errors.notFound('Attempt');
-          if (freshAttempt.status === 'IN_PROGRESS') {
-            throw Errors.badRequest('Cannot grade an attempt that is still in progress');
-          }
-          if (freshAttempt.status === 'EXPIRED') {
-            throw Errors.badRequest('Cannot grade an expired attempt');
-          }
+        return await prisma.$transaction(
+          async (tx) => {
+            // Re-check status inside the transaction to close the TOCTOU gap:
+            // between the check above and entering this serializable transaction,
+            // a concurrent operation could have changed the attempt's status.
+            const freshAttempt = await tx.examAttempt.findUnique({
+              where: { id: attemptId },
+              select: { status: true },
+            });
+            if (!freshAttempt) throw Errors.notFound('Attempt');
+            if (freshAttempt.status === 'IN_PROGRESS') {
+              throw Errors.badRequest('Cannot grade an attempt that is still in progress');
+            }
+            if (freshAttempt.status === 'EXPIRED') {
+              throw Errors.badRequest('Cannot grade an expired attempt');
+            }
 
-          const question = await tx.question.findUnique({ where: { id: questionId } });
-          if (!question) throw Errors.notFound('Question');
+            const question = await tx.question.findUnique({ where: { id: questionId } });
+            if (!question) throw Errors.notFound('Question');
 
-          if (question.bankId !== attempt.exam.questionBankId) {
-            throw Errors.badRequest('Question does not belong to this exam');
-          }
+            if (question.bankId !== attempt.exam.questionBankId) {
+              throw Errors.badRequest('Question does not belong to this exam');
+            }
 
-          if (question.type !== 'ESSAY') {
-            throw Errors.badRequest('Only ESSAY questions can be manually graded');
-          }
+            if (question.type !== 'ESSAY') {
+              throw Errors.badRequest('Only ESSAY questions can be manually graded');
+            }
 
-          if (
-            typeof grading.score !== 'number' ||
-            Number.isNaN(grading.score) ||
-            grading.score < 0 ||
-            grading.score > question.points
-          ) {
-            throw Errors.badRequest(`Score must be a valid number between 0 and ${question.points}`);
-          }
+            if (
+              typeof grading.score !== 'number' ||
+              Number.isNaN(grading.score) ||
+              grading.score < 0 ||
+              grading.score > question.points
+            ) {
+              throw Errors.badRequest(
+                `Score must be a valid number between 0 and ${question.points}`
+              );
+            }
 
-          // Ensure answer exists
-          const existingAnswer = await tx.examAnswer.findUnique({
-            where: { attemptId_questionId: { attemptId, questionId } },
-          });
+            // Ensure answer exists
+            const existingAnswer = await tx.examAnswer.findUnique({
+              where: { attemptId_questionId: { attemptId, questionId } },
+            });
 
-          if (!existingAnswer) {
-            throw Errors.badRequest('Cannot grade an unanswered question');
-          }
+            if (!existingAnswer) {
+              throw Errors.badRequest('Cannot grade an unanswered question');
+            }
 
-          // Update the answer
-          await tx.examAnswer.update({
-            where: {
-              attemptId_questionId: { attemptId, questionId },
-            },
-            data: {
-              isCorrect: grading.isCorrect,
-              score: new Decimal(grading.score),
-            },
-          });
+            // Update the answer
+            await tx.examAnswer.update({
+              where: {
+                attemptId_questionId: { attemptId, questionId },
+              },
+              data: {
+                isCorrect: grading.isCorrect,
+                score: new Decimal(grading.score),
+              },
+            });
 
-          // Recalculate total score for attempt
-          const allAnswers = await tx.examAnswer.findMany({
-            where: { attemptId },
-            include: { question: true },
-          });
+            // Recalculate total score for attempt
+            const allAnswers = await tx.examAnswer.findMany({
+              where: { attemptId },
+              include: { question: true },
+            });
 
-          const totalScore = allAnswers.reduce((sum, ans) => {
-            const s = ans.score !== null ? Number(ans.score) : 0;
-            return sum + s;
-          }, 0);
+            const totalScore = allAnswers.reduce((sum, ans) => {
+              const s = ans.score !== null ? Number(ans.score) : 0;
+              return sum + s;
+            }, 0);
 
-          // Check if any ESSAY answer is still lacking a score to decide status
-          const hasUngradedEssay = allAnswers.some(
-            (ans) => ans.question.type === 'ESSAY' && ans.score === null
-          );
+            // Check if any ESSAY answer is still lacking a score to decide status
+            const hasUngradedEssay = allAnswers.some(
+              (ans) => ans.question.type === 'ESSAY' && ans.score === null
+            );
 
-          const updatedAttempt = await tx.examAttempt.update({
-            where: { id: attemptId },
-            data: {
-              score: new Decimal(totalScore),
-              status: hasUngradedEssay ? 'NEEDS_REVIEW' : 'COMPLETED',
-            },
-          });
+            const updatedAttempt = await tx.examAttempt.update({
+              where: { id: attemptId },
+              data: {
+                score: new Decimal(totalScore),
+                status: hasUngradedEssay ? 'NEEDS_REVIEW' : 'COMPLETED',
+              },
+            });
 
-          if (!hasUngradedEssay) {
-            await CBTService.syncGradeToAcademicGradebook(attemptId, { forceUpdate: true }, tx);
-          }
+            if (!hasUngradedEssay) {
+              await CBTService.syncGradeToAcademicGradebook(attemptId, { forceUpdate: true }, tx);
+            }
 
-          return updatedAttempt;
-        }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+            return updatedAttempt;
+          },
+          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+        );
       } catch (error: any) {
         lastError = error;
         // Retry only on serialization failures (P2034) or deadlocks (40001/40P01)
         const isSerializationError =
-          error?.code === 'P2034' ||
-          error?.meta?.code === '40001' ||
-          error?.meta?.code === '40P01';
+          error?.code === 'P2034' || error?.meta?.code === '40001' || error?.meta?.code === '40P01';
         if (isSerializationError && retryCount < MAX_RETRIES) {
           continue;
         }
@@ -827,7 +828,9 @@ export class CBTService {
     if (attempt.studentId !== student.id) throw Errors.forbidden('Access denied');
 
     if (attempt.status !== 'IN_PROGRESS') {
-      throw Errors.badRequest('Cannot record security events for an attempt that is not in progress');
+      throw Errors.badRequest(
+        'Cannot record security events for an attempt that is not in progress'
+      );
     }
 
     const isTabSwitch = event.type === 'TAB_SWITCH' || event.type === 'FOCUS_LOST';
@@ -869,8 +872,7 @@ export class CBTService {
 
     // Strict time limit check with 2 minute grace period
     if (attempt.startedAt && attempt.exam.duration) {
-      const allowedDurationMs =
-        (attempt.exam.duration + EXAM_GRACE_PERIOD_MINUTES) * 60 * 1000;
+      const allowedDurationMs = (attempt.exam.duration + EXAM_GRACE_PERIOD_MINUTES) * 60 * 1000;
       const elapsedMs = Date.now() - new Date(attempt.startedAt).getTime();
 
       if (elapsedMs > allowedDurationMs) {
@@ -959,14 +961,17 @@ export class CBTService {
     // Warn if the safety limit was hit — analytics may be based on a subset
     const truncated = exam.attempts.length >= 1000;
 
-    const topicMastery: Record<string, {
-      objectiveId: string,
-      code: string,
-      description: string,
-      totalPoints: number,
-      earnedPoints: number,
-      gradedCount: number
-    }> = {};
+    const topicMastery: Record<
+      string,
+      {
+        objectiveId: string;
+        code: string;
+        description: string;
+        totalPoints: number;
+        earnedPoints: number;
+        gradedCount: number;
+      }
+    > = {};
 
     // Group by individual question (each question acts as its own "topic")
     exam.questionBank.questions.forEach((q, idx) => {
@@ -983,8 +988,8 @@ export class CBTService {
     // Aggregate earned points and totalPoints only for graded answers
     // (skip answers with null score to avoid counting ungraded essay
     // questions as 0, which would distort mastery)
-    exam.attempts.forEach(attempt => {
-      attempt.answers.forEach(answer => {
+    exam.attempts.forEach((attempt) => {
+      attempt.answers.forEach((answer) => {
         const entry = topicMastery[answer.questionId];
         if (entry && answer.score !== null) {
           entry.earnedPoints += Number(answer.score);
@@ -996,7 +1001,7 @@ export class CBTService {
     // Compute totalPoints from gradedCount so the denominator only
     // reflects attempts that were actually scored.
     const questions = exam.questionBank.questions;
-    questions.forEach(q => {
+    questions.forEach((q) => {
       const entry = topicMastery[q.id];
       if (entry) {
         entry.totalPoints = q.points * entry.gradedCount;
@@ -1082,9 +1087,13 @@ export class CBTService {
       if (attempt.exam?.questionBank?.questions) {
         attempt.exam.questionBank.questions = attempt.exam.questionBank.questions
           .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-          .map(
-            ({ id, type, content, options, points }) => ({ id, type, content, options, points })
-          ) as unknown as QuestionModel[];
+          .map(({ id, type, content, options, points }) => ({
+            id,
+            type,
+            content,
+            options,
+            points,
+          })) as unknown as QuestionModel[];
       }
 
       // Idempotent catch-up sync: ensure completed attempts have a Grade record created
@@ -1282,7 +1291,13 @@ export class CBTService {
       },
     });
 
-    if (!attempt || attempt.score === null || attempt.status !== 'COMPLETED' || !attempt.exam?.teacherId) return null;
+    if (
+      !attempt ||
+      attempt.score === null ||
+      attempt.status !== 'COMPLETED' ||
+      !attempt.exam?.teacherId
+    )
+      return null;
 
     const teacher = await db.teacher.findUnique({
       where: { id: attempt.exam.teacherId },
@@ -1292,11 +1307,20 @@ export class CBTService {
     if (!teacher) return null;
 
     const questions = attempt.exam.questionBank?.questions || [];
-    const totalPossiblePoints = questions.reduce((sum: number, q: { points?: number | null }) => sum + Number(q.points || 0), 0);
-    const denominator = totalPossiblePoints > 0 ? totalPossiblePoints : (attempt.exam.maxScore ? Number(attempt.exam.maxScore) : 100);
+    const totalPossiblePoints = questions.reduce(
+      (sum: number, q: { points?: number | null }) => sum + Number(q.points || 0),
+      0
+    );
+    const denominator =
+      totalPossiblePoints > 0
+        ? totalPossiblePoints
+        : attempt.exam.maxScore
+          ? Number(attempt.exam.maxScore)
+          : 100;
 
     const numericScore = Number(attempt.score);
-    const percentage = denominator > 0 ? Math.min(100, Math.max(0, (numericScore / denominator) * 100)) : 0;
+    const percentage =
+      denominator > 0 ? Math.min(100, Math.max(0, (numericScore / denominator) * 100)) : 0;
     const letterGrade = calculateLetterGrade(percentage);
 
     const createPayload = {
@@ -1386,8 +1410,7 @@ export class CBTService {
     const lowerGroup = rankedAttempts.slice(-groupSize);
 
     const countCorrect = (group: typeof rankedAttempts, questionId: string) =>
-      group.filter((a) => a.answers.find((ans) => ans.questionId === questionId)?.isCorrect)
-        .length;
+      group.filter((a) => a.answers.find((ans) => ans.questionId === questionId)?.isCorrect).length;
 
     const insights = exam.questionBank.questions.map((q) => {
       const answers = exam.attempts
@@ -1404,8 +1427,7 @@ export class CBTService {
 
       // Best Practice: Distractor analysis for multiple choice questions
       let distractorAnalysis:
-        | Array<{ option: Prisma.JsonValue; count: number; percentage: number }>
-        | undefined;
+        Array<{ option: Prisma.JsonValue; count: number; percentage: number }> | undefined;
       if (q.type === 'MULTIPLE_CHOICE' && Array.isArray(q.options)) {
         // Counted through the same canonical form the grader uses. These two
         // used to normalise differently — the analysis unwrapped `{ id: … }`
@@ -1449,7 +1471,10 @@ export class CBTService {
       examId,
       title: exam.title,
       questionInsights: insights.sort((a, b) => a.successRate - b.successRate),
-      averageSuccessRate: insights.length > 0 ? insights.reduce((sum, i) => sum + i.successRate, 0) / insights.length : 0,
+      averageSuccessRate:
+        insights.length > 0
+          ? insights.reduce((sum, i) => sum + i.successRate, 0) / insights.length
+          : 0,
       totalParticipants: attemptsCount,
       discriminationGroupSize: canDiscriminate ? groupSize : null,
     };

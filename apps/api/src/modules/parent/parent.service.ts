@@ -348,10 +348,7 @@ export class ParentService {
 
     // Academic
     const pct = (g: { percentage: unknown; score: unknown; maxScore: unknown }) =>
-      Number(
-        g.percentage ??
-          (g.maxScore ? (Number(g.score) / Number(g.maxScore)) * 100 : 0)
-      );
+      Number(g.percentage ?? (g.maxScore ? (Number(g.score) / Number(g.maxScore)) * 100 : 0));
     const avg = (arr: typeof weekGrades) =>
       arr.length > 0 ? arr.reduce((a, g) => a + pct(g), 0) / arr.length : null;
     const weekAvg = avg(weekGrades);
@@ -416,8 +413,7 @@ export class ParentService {
 
     const where: Prisma.TahfidzRecordWhereInput = { studentId };
     if (query.activityType) {
-      where.activityType =
-        query.activityType as Prisma.TahfidzRecordWhereInput["activityType"];
+      where.activityType = query.activityType as Prisma.TahfidzRecordWhereInput['activityType'];
     }
 
     const [records, total] = await Promise.all([
@@ -913,7 +909,7 @@ export class ParentService {
 
     const where: Prisma.NotificationWhereInput = { userId: parentId };
     if (query.status) {
-      where.status = query.status as Prisma.NotificationWhereInput["status"];
+      where.status = query.status as Prisma.NotificationWhereInput['status'];
     }
 
     const [notifications, total, unreadCount] = await Promise.all([

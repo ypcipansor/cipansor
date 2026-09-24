@@ -50,9 +50,7 @@ export const getRecent = asyncHandler(async (req: Request, res: Response) => {
 export const getById = asyncHandler(async (req: Request, res: Response) => {
   const announcement = await announcementService.findById(req.params.id);
   if (!announcement) {
-    return res
-      .status(404)
-      .json({ success: false, error: { message: 'Announcement not found' } });
+    return res.status(404).json({ success: false, error: { message: 'Announcement not found' } });
   }
   res.json({ success: true, data: announcement });
 });

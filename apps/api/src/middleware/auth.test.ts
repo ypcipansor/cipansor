@@ -97,44 +97,76 @@ describe('middleware/auth RBAC', () => {
 
   describe('authorize() legacy forward expansion', () => {
     it('allows an exact RoleCode match', () => {
-      authorize(RoleCode.SDIT_ADMIN)(makeReq({ roleCode: RoleCode.SDIT_ADMIN }), makeRes(), next as unknown as NextFunction);
+      authorize(RoleCode.SDIT_ADMIN)(
+        makeReq({ roleCode: RoleCode.SDIT_ADMIN }),
+        makeRes(),
+        next as unknown as NextFunction
+      );
       expect(next).toHaveBeenCalledWith();
     });
 
     it('forward-expands a legacy role: authorize(UNIT_ADMIN) admits a per-unit admin', () => {
-      authorize(UserRole.UNIT_ADMIN)(makeReq({ roleCode: RoleCode.SDIT_ADMIN }), makeRes(), next as unknown as NextFunction);
+      authorize(UserRole.UNIT_ADMIN)(
+        makeReq({ roleCode: RoleCode.SDIT_ADMIN }),
+        makeRes(),
+        next as unknown as NextFunction
+      );
       expect(next).toHaveBeenCalledWith();
     });
 
     it('no reverse expansion: tokens always carry a real RoleCode, so a raw bucket string is denied', () => {
-      authorize(RoleCode.SDIT_ADMIN)(makeReq({ roleCode: 'UNIT_ADMIN' }), makeRes(), next as unknown as NextFunction);
+      authorize(RoleCode.SDIT_ADMIN)(
+        makeReq({ roleCode: 'UNIT_ADMIN' }),
+        makeRes(),
+        next as unknown as NextFunction
+      );
       expect(lastError(next)).toBeDefined();
       expect(lastError(next).statusCode).toBe(403);
     });
 
     it('denies an insufficient role with FORBIDDEN', () => {
-      authorize(RoleCode.SDIT_ADMIN)(makeReq({ roleCode: RoleCode.SDIT_GURU }), makeRes(), next as unknown as NextFunction);
+      authorize(RoleCode.SDIT_ADMIN)(
+        makeReq({ roleCode: RoleCode.SDIT_GURU }),
+        makeRes(),
+        next as unknown as NextFunction
+      );
       expect(lastError(next)).toBeDefined();
       expect(lastError(next).statusCode).toBe(403);
     });
 
     it('rejects an unauthenticated request with UNAUTHORIZED', () => {
-      authorize(RoleCode.SDIT_ADMIN)(makeReq(undefined), makeRes(), next as unknown as NextFunction);
+      authorize(RoleCode.SDIT_ADMIN)(
+        makeReq(undefined),
+        makeRes(),
+        next as unknown as NextFunction
+      );
       expect(lastError(next).statusCode).toBe(401);
     });
   });
 
   describe('role-level guards', () => {
     it('isSuperAdmin only admits SUPER_ADMIN', () => {
-      isSuperAdmin(makeReq({ roleCode: RoleCode.SUPER_ADMIN }), makeRes(), next as unknown as NextFunction);
+      isSuperAdmin(
+        makeReq({ roleCode: RoleCode.SUPER_ADMIN }),
+        makeRes(),
+        next as unknown as NextFunction
+      );
       expect(next).toHaveBeenCalledWith();
       const n2 = vi.fn();
-      isSuperAdmin(makeReq({ roleCode: RoleCode.SDIT_ADMIN }), makeRes(), n2 as unknown as NextFunction);
+      isSuperAdmin(
+        makeReq({ roleCode: RoleCode.SDIT_ADMIN }),
+        makeRes(),
+        n2 as unknown as NextFunction
+      );
       expect(n2.mock.calls[0][0].statusCode).toBe(403);
     });
 
     it('isAdmin admits admin-level roles but not teachers', () => {
-      isAdmin(makeReq({ roleCode: RoleCode.SDIT_ADMIN }), makeRes(), next as unknown as NextFunction);
+      isAdmin(
+        makeReq({ roleCode: RoleCode.SDIT_ADMIN }),
+        makeRes(),
+        next as unknown as NextFunction
+      );
       expect(next).toHaveBeenCalledWith();
       const n2 = vi.fn();
       isAdmin(makeReq({ roleCode: RoleCode.SDIT_GURU }), makeRes(), n2 as unknown as NextFunction);
@@ -142,10 +174,18 @@ describe('middleware/auth RBAC', () => {
     });
 
     it('isTeacherOrAbove admits teachers and admins, denies students', () => {
-      isTeacherOrAbove(makeReq({ roleCode: RoleCode.SDIT_GURU }), makeRes(), next as unknown as NextFunction);
+      isTeacherOrAbove(
+        makeReq({ roleCode: RoleCode.SDIT_GURU }),
+        makeRes(),
+        next as unknown as NextFunction
+      );
       expect(next).toHaveBeenCalledWith();
       const n2 = vi.fn();
-      isTeacherOrAbove(makeReq({ roleCode: RoleCode.SDIT_SISWA }), makeRes(), n2 as unknown as NextFunction);
+      isTeacherOrAbove(
+        makeReq({ roleCode: RoleCode.SDIT_SISWA }),
+        makeRes(),
+        n2 as unknown as NextFunction
+      );
       expect(n2.mock.calls[0][0].statusCode).toBe(403);
     });
 
@@ -164,7 +204,11 @@ describe('middleware/auth RBAC', () => {
         expect(n, code).toHaveBeenCalledWith();
       }
       const denied = vi.fn();
-      isTeacherOrAbove(makeReq({ roleCode: RoleCode.BUSINESS_STAFF }), makeRes(), denied as unknown as NextFunction);
+      isTeacherOrAbove(
+        makeReq({ roleCode: RoleCode.BUSINESS_STAFF }),
+        makeRes(),
+        denied as unknown as NextFunction
+      );
       expect(denied.mock.calls[0][0].statusCode).toBe(403);
     });
   });
@@ -172,7 +216,10 @@ describe('middleware/auth RBAC', () => {
   describe('sameUnit()', () => {
     it('lets SUPER_ADMIN access any unit', () => {
       sameUnit('unitId')(
-        makeReq({ roleCode: RoleCode.SUPER_ADMIN, unitId: 'unit-a' }, { params: { unitId: 'unit-b' } as any }),
+        makeReq(
+          { roleCode: RoleCode.SUPER_ADMIN, unitId: 'unit-a' },
+          { params: { unitId: 'unit-b' } as any }
+        ),
         makeRes(),
         next as unknown as NextFunction
       );
@@ -181,7 +228,10 @@ describe('middleware/auth RBAC', () => {
 
     it('blocks access to a different unit', () => {
       sameUnit('unitId')(
-        makeReq({ roleCode: RoleCode.SDIT_ADMIN, unitId: 'unit-a' }, { params: { unitId: 'unit-b' } as any }),
+        makeReq(
+          { roleCode: RoleCode.SDIT_ADMIN, unitId: 'unit-a' },
+          { params: { unitId: 'unit-b' } as any }
+        ),
         makeRes(),
         next as unknown as NextFunction
       );
@@ -190,7 +240,10 @@ describe('middleware/auth RBAC', () => {
 
     it('allows access to the user own unit', () => {
       sameUnit('unitId')(
-        makeReq({ roleCode: RoleCode.SDIT_ADMIN, unitId: 'unit-a' }, { params: { unitId: 'unit-a' } as any }),
+        makeReq(
+          { roleCode: RoleCode.SDIT_ADMIN, unitId: 'unit-a' },
+          { params: { unitId: 'unit-a' } as any }
+        ),
         makeRes(),
         next as unknown as NextFunction
       );

@@ -21,9 +21,7 @@ export function resolveUnitId(req: Request): string | undefined {
   // a unitId in their JWT (e.g. assigned to a specific unit) can still
   // operate globally by omitting the unitId query param.
   if (req.user?.roleCode === RoleCode.SUPER_ADMIN) {
-    return (req.query.unitId as string | undefined)
-      || req.user?.unitId
-      || undefined;
+    return (req.query.unitId as string | undefined) || req.user?.unitId || undefined;
   }
   // Non-SUPER_ADMIN users: always use JWT unitId (never trust query/body)
   if (req.user?.unitId) {
@@ -187,7 +185,7 @@ export function seesAllUnits(user: {
 export function tokenUnitId(
   assignmentUnitId: string | null | undefined,
   roleCode: string | null | undefined,
-  userUnitId: string | null | undefined,
+  userUnitId: string | null | undefined
 ): string | null {
   if (assignmentUnitId) return assignmentUnitId;
   if (isFoundationScopedRole(roleCode)) return null;

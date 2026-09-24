@@ -31,12 +31,16 @@ describe("resolveFeeOwed", () => {
 describe("canPreviewDocument (SSRF guard)", () => {
   it("allows only self-contained data: URIs", () => {
     expect(canPreviewDocument("data:image/png;base64,iVBORw0KGgo=")).toBe(true);
-    expect(canPreviewDocument("data:application/pdf;base64,JVBERi0=")).toBe(true);
+    expect(canPreviewDocument("data:application/pdf;base64,JVBERi0=")).toBe(
+      true,
+    );
   });
 
   it("refuses remote URLs, http(s)/protocol-relative, and other strings", () => {
     expect(canPreviewDocument("https://evil.example.com/doc.png")).toBe(false);
-    expect(canPreviewDocument("http://169.254.169.254/latest/meta-data")).toBe(false);
+    expect(canPreviewDocument("http://169.254.169.254/latest/meta-data")).toBe(
+      false,
+    );
     expect(canPreviewDocument("//evil.example.com/doc.png")).toBe(false);
     expect(canPreviewDocument("file:///etc/passwd")).toBe(false);
     expect(canPreviewDocument("/local/path/only.png")).toBe(false);

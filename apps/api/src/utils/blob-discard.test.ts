@@ -69,9 +69,9 @@ describe('discardUnderClaim', () => {
 
   it('returns referenced and releases when the final probe finds a live record', async () => {
     const del = vi.fn();
-    await expect(
-      discardUnderClaim('u', 'holder', async () => true, del)
-    ).resolves.toBe('referenced');
+    await expect(discardUnderClaim('u', 'holder', async () => true, del)).resolves.toBe(
+      'referenced'
+    );
     expect(del).not.toHaveBeenCalled();
     expect(markBlobDiscarded).not.toHaveBeenCalled();
     expect(releaseBlobClaimById).toHaveBeenCalledWith(HANDLE);

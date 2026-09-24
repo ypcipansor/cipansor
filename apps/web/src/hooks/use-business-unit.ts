@@ -2,11 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
 
 export type BusinessUnitType =
-  | "CANTEEN"
-  | "LAUNDRY"
-  | "COOPERATIVE"
-  | "BOOKSTORE"
-  | "OTHER";
+  "CANTEEN" | "LAUNDRY" | "COOPERATIVE" | "BOOKSTORE" | "OTHER";
 
 export interface BusinessUnit {
   id: string;

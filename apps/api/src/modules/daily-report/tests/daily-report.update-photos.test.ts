@@ -78,7 +78,7 @@ describe('dailyReportService.update photo replacement', () => {
     tx.dailyReportPhoto.createMany.mockRejectedValue(new Error('insert failed'));
 
     await expect(
-      dailyReportService.update('r1', { photoUrls: ['/uploads/new.png'] } as any, 'user-1'),
+      dailyReportService.update('r1', { photoUrls: ['/uploads/new.png'] } as any, 'user-1')
     ).rejects.toThrow('insert failed');
 
     expect(cleanupBlobsBestEffort).not.toHaveBeenCalled();
@@ -149,7 +149,7 @@ describe('dailyReportService.update homework replacement', () => {
         'r1',
         { homework: [{ subjectName: 'Matematika', description: 'x' }] } as any,
         'user-1'
-      ),
+      )
     ).rejects.toThrow('insert failed');
 
     // No statement escaped the transaction, so the rolled-back delete means the

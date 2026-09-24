@@ -11,10 +11,7 @@ import { assignStudentNis, findStudentIdByNisInUnit } from '@/utils/student-nis'
 import { UserRole, Gender, Prisma } from '@prisma/client';
 import type { ListStudentsQuery, CreateStudentInput, UpdateStudentInput } from './student.schema';
 import { normalizeEmail } from '@/utils/email';
-import {
-  recordUnitEnrollmentFromClass,
-  ensureUnitEnrollment,
-} from '@/utils/student-unit-history';
+import { recordUnitEnrollmentFromClass, ensureUnitEnrollment } from '@/utils/student-unit-history';
 
 export class StudentService {
   /**
@@ -439,9 +436,7 @@ export class StudentService {
 
     // Students are issued a password to reset later rather than choosing one.
     const passwordHash = withLogin
-      ? await hashPassword(
-          input.password ?? `Aa1${randomUUID().replace(/-/g, '').slice(0, 12)}`
-        )
+      ? await hashPassword(input.password ?? `Aa1${randomUUID().replace(/-/g, '').slice(0, 12)}`)
       : null;
 
     // Create user and student in transaction
@@ -581,51 +576,51 @@ export class StudentService {
     let updated;
     try {
       updated = await prisma.$transaction(async (tx) => {
-      // Update user name if provided
-      if (input.name) {
-        await tx.user.update({
-          where: { id: student.userId },
-          data: { name: input.name },
+        // Update user name if provided
+        if (input.name) {
+          await tx.user.update({
+            where: { id: student.userId },
+            data: { name: input.name },
+          });
+        }
+
+        // NIS yang diubah adalah NIS unit santri SEKARANG; NIS di unit-unit
+        // lamanya (dokumen yang sudah terbit) tidak disentuh.
+        if (input.nis && input.nis !== student.nis) {
+          await assignStudentNis(tx, { studentId: id, unitId: student.unitId, nis: input.nis });
+        }
+
+        // Update student
+        return tx.student.update({
+          where: { id },
+          data: {
+            nis: input.nis,
+            nisn: input.nisn,
+            gender: input.gender as Gender | undefined,
+            birthPlace: input.birthPlace,
+            birthDate: input.birthDate,
+            address: input.address,
+            parentName: input.parentName,
+            parentPhone: input.parentPhone,
+            parentEmail: input.parentEmail,
+            photoUrl: input.photoUrl,
+          },
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+              },
+            },
+            unit: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
         });
-      }
-
-      // NIS yang diubah adalah NIS unit santri SEKARANG; NIS di unit-unit
-      // lamanya (dokumen yang sudah terbit) tidak disentuh.
-      if (input.nis && input.nis !== student.nis) {
-        await assignStudentNis(tx, { studentId: id, unitId: student.unitId, nis: input.nis });
-      }
-
-      // Update student
-      return tx.student.update({
-        where: { id },
-        data: {
-          nis: input.nis,
-          nisn: input.nisn,
-          gender: input.gender as Gender | undefined,
-          birthPlace: input.birthPlace,
-          birthDate: input.birthDate,
-          address: input.address,
-          parentName: input.parentName,
-          parentPhone: input.parentPhone,
-          parentEmail: input.parentEmail,
-          photoUrl: input.photoUrl,
-        },
-        include: {
-          user: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-            },
-          },
-          unit: {
-            select: {
-              id: true,
-              name: true,
-            },
-          },
-        },
-      });
       });
     } finally {
       if (input.photoUrl) {

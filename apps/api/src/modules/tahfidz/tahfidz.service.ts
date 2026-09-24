@@ -252,14 +252,14 @@ export class TahfidzService {
           recordedAt: input.recordedAt || new Date(),
           recordedById,
         },
-      include: {
-        student: {
-          include: {
-            user: { select: { id: true, name: true } },
-            unit: { select: { id: true, name: true } },
+        include: {
+          student: {
+            include: {
+              user: { select: { id: true, name: true } },
+              unit: { select: { id: true, name: true } },
+            },
           },
         },
-      },
       });
     } finally {
       // The row (or the failure) is now durable; the reference is the claim.
@@ -466,10 +466,7 @@ export class TahfidzService {
       juzCovered: juzCovered.map((j) => j.juz).sort((a, b) => a - b),
       surahCovered: surahCovered.sort((a, b) => a.surahNumber - b.surahNumber),
       recentRecords,
-      estimation: calculateCompletionEstimate(
-        totalAyahZiyadah._sum?.totalAyah || 0,
-        paceRecords
-      ),
+      estimation: calculateCompletionEstimate(totalAyahZiyadah._sum?.totalAyah || 0, paceRecords),
     };
   }
 

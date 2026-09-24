@@ -129,9 +129,7 @@ describe('getEmployeeDirectory', () => {
   });
 
   it('reports INACTIVE for a disabled user', async () => {
-    (prisma.user.findMany as any).mockResolvedValue([
-      staffUser({ isActive: false }),
-    ]);
+    (prisma.user.findMany as any).mockResolvedValue([staffUser({ isActive: false })]);
 
     const { data } = await getEmployeeDirectory({ page: 1, limit: 20 }, UNIT_ADMIN_ACTOR);
 

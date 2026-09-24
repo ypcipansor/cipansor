@@ -105,7 +105,11 @@ export default defineConfig({
         // PW_CHROMIUM_EXECUTABLE_PATH is set, launch that binary instead of
         // downloading. Unset in CI, so CI behaviour is unchanged.
         ...(process.env.PW_CHROMIUM_EXECUTABLE_PATH
-          ? { launchOptions: { executablePath: process.env.PW_CHROMIUM_EXECUTABLE_PATH } }
+          ? {
+              launchOptions: {
+                executablePath: process.env.PW_CHROMIUM_EXECUTABLE_PATH,
+              },
+            }
           : {}),
       },
       dependencies: ["setup"],
@@ -184,7 +188,8 @@ export default defineConfig({
     // a deterministic test secret here (never used outside tests).
     env: {
       PORT: "3000",
-      SESSION_SECRET: process.env.SESSION_SECRET || "e2e-routing-session-secret",
+      SESSION_SECRET:
+        process.env.SESSION_SECRET || "e2e-routing-session-secret",
       JWT_SECRET: process.env.JWT_SECRET || "e2e-routing-session-secret",
     },
   },

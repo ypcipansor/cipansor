@@ -65,7 +65,13 @@ describe('alumni photo claim protocol', () => {
 
     await expect(
       createAlumni(
-        { unitId: 'unit-1', name: 'Budi', gender: 'MALE', graduationYear: 2024, photo: PHOTO } as any,
+        {
+          unitId: 'unit-1',
+          name: 'Budi',
+          gender: 'MALE',
+          graduationYear: 2024,
+          photo: PHOTO,
+        } as any,
         actor as any
       )
     ).rejects.toThrow(/sedang diproses/);

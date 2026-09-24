@@ -306,10 +306,7 @@ export async function getPrescriptions(req: Request, res: Response, next: NextFu
 
 export async function fulfillPrescription(req: Request, res: Response, next: NextFunction) {
   try {
-    const prescription = await service.fulfillPrescription(
-      req.params.id,
-      req.user!.sub
-    );
+    const prescription = await service.fulfillPrescription(req.params.id, req.user!.sub);
     res.json({ success: true, data: prescription });
   } catch (error) {
     next(error);

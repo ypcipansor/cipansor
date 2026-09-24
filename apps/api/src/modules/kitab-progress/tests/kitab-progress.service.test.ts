@@ -4,7 +4,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // is a client upload, so the row must not reference it until the blob is
 // claimed. Real race behaviour lives in `blob-claim.integration`; this drives
 // the service branches.
-const claimBlobForRecord = vi.hoisted(() => vi.fn().mockResolvedValue({ id: 'claim-1', operationToken: 'tok-1', kind: 'RECORD' }));
+const claimBlobForRecord = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({ id: 'claim-1', operationToken: 'tok-1', kind: 'RECORD' })
+);
 const releaseBlobClaimById = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const CLAIM = { id: 'claim-1', operationToken: 'tok-1', kind: 'RECORD' };
 
@@ -23,7 +25,11 @@ const baseKitab = { title: 'Kitab', author: 'A', category: 'NAHWU', level: 'AWAL
 describe('KitabProgressService kitab cover claim (BUG 4)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    claimBlobForRecord.mockResolvedValue({ id: 'claim-1', operationToken: 'tok-1', kind: 'RECORD' });
+    claimBlobForRecord.mockResolvedValue({
+      id: 'claim-1',
+      operationToken: 'tok-1',
+      kind: 'RECORD',
+    });
     releaseBlobClaimById.mockResolvedValue(undefined);
   });
 
@@ -46,7 +52,10 @@ describe('KitabProgressService kitab cover claim (BUG 4)', () => {
     claimBlobForRecord.mockResolvedValue(null);
 
     await expect(
-      kitabProgressService.createKitab({ ...baseKitab, coverUrl: 'https://store/c.png' } as any, 'actor-1')
+      kitabProgressService.createKitab(
+        { ...baseKitab, coverUrl: 'https://store/c.png' } as any,
+        'actor-1'
+      )
     ).rejects.toThrow(/sedang diproses/);
 
     expect(mockPrisma.kitabKuning.create).not.toHaveBeenCalled();
@@ -65,7 +74,11 @@ describe('KitabProgressService kitab cover claim (BUG 4)', () => {
     mockPrisma.kitabKuning.update.mockRejectedValue(new Error('db down'));
 
     await expect(
-      kitabProgressService.updateKitab('k-1', { coverUrl: 'https://store/new.png' } as any, 'actor-1')
+      kitabProgressService.updateKitab(
+        'k-1',
+        { coverUrl: 'https://store/new.png' } as any,
+        'actor-1'
+      )
     ).rejects.toThrow('db down');
 
     expect(claimBlobForRecord).toHaveBeenCalledWith('https://store/new.png', 'actor-1');

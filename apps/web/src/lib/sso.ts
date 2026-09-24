@@ -61,7 +61,9 @@ interface GoogleIdentityServices {
         auto_select?: boolean;
         use_fedcm_for_prompt?: boolean;
       }) => void;
-      prompt: (momentListener?: (notification: GooglePromptMomentNotification) => void) => void;
+      prompt: (
+        momentListener?: (notification: GooglePromptMomentNotification) => void,
+      ) => void;
       renderButton: (
         parent: HTMLElement,
         options: {
@@ -120,7 +122,8 @@ export function loadGoogleIdentityServices(): Promise<void> {
       reject(error);
     };
     script.onload = () => resolve();
-    script.onerror = () => fail(new Error("Gagal memuat Google Identity Services"));
+    script.onerror = () =>
+      fail(new Error("Gagal memuat Google Identity Services"));
     document.head.appendChild(script);
   });
 
