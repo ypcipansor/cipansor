@@ -6,7 +6,7 @@ import { SUPPORT_ROLE_CODES } from '@cipansor/shared';
 import type { CreateRoleInput, UpdateRoleInput } from './roles.schema';
 import { findOrganConflict } from '@/utils/role-eligibility';
 import { isParentRole } from '@/utils/parent-scope';
-import { isAdminRoleCode, isGovernanceRoleCode } from '@/middleware/auth';
+import { isAdminRoleCode, isGovernanceRoleCode, requiresSecondFactor } from '@/middleware/auth';
 
 /** Who is changing someone's roles: the verified token, never the request body. */
 export interface RoleActor {
@@ -412,6 +412,12 @@ export class RolesService {
     // aktif setelah tanggal akhirnya lewat.
     if (assignment.expiresAt && assignment.expiresAt < new Date()) {
       throw Errors.badRequest('Role assignment has expired');
+    }
+
+    // Login already demands 2FA from anyone holding such a role; this covers
+    // a role granted after the session signed in.
+    if (requiresSecondFactor([assignment.role.code]) && !assignment.user.isTwoFactorEnabled) {
+      throw Errors.forbidden('Enable 2FA before switching to this role');
     }
 
     // Update primary role
