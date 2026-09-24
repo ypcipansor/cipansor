@@ -109,10 +109,8 @@ function sanitizeForFallbackFont(text: string): string {
  * persiapan artefak (di luar kunci keputusan, sehingga suara tidak ter-rollback
  * dan keputusan tetap dapat difinalisasi ulang setelah font dipulihkan).
  */
-export function unencodableDecisionPdfFields(
-  data: DecisionPdfData
-): Array<{ field: string; chars: string[] }> {
-  const targets: Array<[string, string]> = [
+function decisionPdfTextFieldTargets(data: DecisionPdfData): Array<[string, string]> {
+  return [
     ['subject', data.subject],
     ['decisionType', data.decisionType],
     ['body', data.body],
@@ -131,9 +129,40 @@ export function unencodableDecisionPdfFields(
       ? [['verificationToken', data.verificationToken] as [string, string]]
       : []),
   ];
+}
+
+/** Field yang memuat aksara di luar WinAnsi — hanya relevan pada jalur fallback. */
+export function unencodableDecisionPdfFields(
+  data: DecisionPdfData
+): Array<{ field: string; chars: string[] }> {
   const offenders: Array<{ field: string; chars: string[] }> = [];
-  for (const [field, value] of targets) {
+  for (const [field, value] of decisionPdfTextFieldTargets(data)) {
     const chars = [...new Set([...value].filter((ch) => !isWinAnsiEncodable(ch)))];
+    if (chars.length > 0) offenders.push({ field, chars });
+  }
+  return offenders;
+}
+
+/**
+ * Field yang memuat aksara TANPA glyph di font Unicode yang disematkan.
+ *
+ * Memuat font Unicode (Amiri) tidak berarti SEMUA aksara dapat dicetak: font
+ * itu tidak punya glyph emoji, mis. 🎉. `pdf-lib` hanya melewati codepoint tanpa
+ * glyph tanpa melempar, sehingga karakter itu HILANG dari risalah yang disegel
+ * e-seal — padahal digest kanonis yang ditandatangani anggota tetap memuatnya.
+ * Arsip permanen yang berbeda dari naskah yang disetujui adalah arsip yang
+ * salah secara hukum, jadi jalur ini MENOLAK render, bukan menyensor.
+ *
+ * Pemanggil (`prepareApprovalArtifact`) berjalan DI LUAR kunci keputusan,
+ * sehingga penolakan tidak me-rollback suara yang sah.
+ */
+export function unglyphableDecisionPdfFields(
+  data: DecisionPdfData,
+  hasGlyph: (ch: string) => boolean
+): Array<{ field: string; chars: string[] }> {
+  const offenders: Array<{ field: string; chars: string[] }> = [];
+  for (const [field, value] of decisionPdfTextFieldTargets(data)) {
+    const chars = [...new Set([...value].filter((ch) => !hasGlyph(ch)))];
     if (chars.length > 0) offenders.push({ field, chars });
   }
   return offenders;
@@ -183,33 +212,74 @@ export function assertDecisionPdfFontAvailable(
  * dokumen, jadi hanya BYTE-nya yang di-cache (pola generate-raport-merdeka-pdf). */
 let unicodeFontBytes: Buffer | null = null;
 
+/**
+ * Fontkit Font yang sama dengan byte di atas, untuk memeriksa cakupan glyph
+ * (fontkit `glyphForCodePoint`) TANPA merender PDF.
+ */
+let unicodeFontkitFont: { hasGlyphForCodePoint(cp: number): boolean } | null = null;
+
 const FONT_CANDIDATE_PATHS = [
   path.resolve(__dirname, '../assets/fonts/Amiri-Regular.ttf'),
   path.resolve(process.cwd(), 'src/assets/fonts/Amiri-Regular.ttf'),
   path.resolve(process.cwd(), 'apps/api/src/assets/fonts/Amiri-Regular.ttf'),
 ];
 
+function loadUnicodeFontBytes(): Buffer | null {
+  if (unicodeFontBytes) return unicodeFontBytes;
+  for (const candidate of FONT_CANDIDATE_PATHS) {
+    try {
+      if (fs.existsSync(candidate)) {
+        unicodeFontBytes = fs.readFileSync(candidate);
+        break;
+      }
+    } catch {
+      // Coba kandidat berikutnya.
+    }
+  }
+  return unicodeFontBytes;
+}
+
+/**
+ * Apakah font Unicode yang disematkan punya glyph untuk sebuah karakter.
+ *
+ * `true` bila font tidak termuat: jalur itu ditangani terpisah oleh
+ * `unencodableDecisionPdfFields` (fallback WinAnsi), jadi pemeriksaan glyph di
+ * sini tidak boleh ikut menolak aksara yang sebenarnya dapat disanitasi.
+ */
+export function unicodeFontHasGlyph(ch: string): boolean {
+  const bytes = loadUnicodeFontBytes();
+  if (!bytes) return true;
+  if (!unicodeFontkitFont) {
+    try {
+      unicodeFontkitFont = fontkit.create(bytes) as unknown as {
+        hasGlyphForCodePoint(cp: number): boolean;
+      };
+    } catch {
+      // Fontkit gagal mengurai: perlakukan sebagai tanpa-cakupan? Tidak —
+      // kembalikan true agar jalur fallback yang menanganinya, bukan lemparan
+      // tak terduga di sini.
+      return true;
+    }
+  }
+  const cp = ch.codePointAt(0);
+  if (cp === undefined) return true;
+  try {
+    return unicodeFontkitFont.hasGlyphForCodePoint(cp);
+  } catch {
+    return true;
+  }
+}
+
 async function embedUnicodeFont(pdfDoc: PDFDocument): Promise<PDFFont | null> {
   if (!(pdfDoc as unknown as { fontkit?: unknown }).fontkit) {
     pdfDoc.registerFontkit(fontkit);
   }
-  if (!unicodeFontBytes) {
-    for (const candidate of FONT_CANDIDATE_PATHS) {
-      try {
-        if (fs.existsSync(candidate)) {
-          unicodeFontBytes = fs.readFileSync(candidate);
-          break;
-        }
-      } catch {
-        // Coba kandidat berikutnya.
-      }
-    }
-  }
-  if (!unicodeFontBytes) return null;
+  const bytes = loadUnicodeFontBytes();
+  if (!bytes) return null;
   // `subset: true` membuat byte PDF tetap deterministik dan kecil: hanya glyph
   // yang benar-benar dipakai yang disematkan, dalam urutan yang sama setiap
   // kali, sehingga digest arsip dapat direproduksi (uji determinisme).
-  return pdfDoc.embedFont(new Uint8Array(unicodeFontBytes), { subset: true });
+  return pdfDoc.embedFont(new Uint8Array(bytes), { subset: true });
 }
 
 /**
@@ -392,6 +462,22 @@ export async function generateDecisionPdf(data: DecisionPdfData): Promise<Buffer
         `Font Unicode untuk risalah tidak tersedia, dan naskah memuat aksara yang tidak dapat dicetak ` +
           `tanpa kehilangan karakter: ${detail}. Pasang assets/fonts/Amiri-Regular.ttf lalu finalisasi ulang; ` +
           `dokumen tidak disegel agar tidak ada arsip resmi yang kehilangan karakter.`
+      );
+    }
+  } else {
+    // Font Unicode TERMUAT tidak berarti semua aksara dapat dicetak: Amiri tidak
+    // punya glyph emoji, dan `pdf-lib` melewati codepoint tanpa glyph TANPA
+    // melempar, sehingga karakter itu hilang dari risalah yang disegel —
+    // sedangkan digest kanonis yang ditandatangani anggota tetap memuatnya.
+    // Tolak terang-terangan, jangan sensor diam-diam.
+    const offenders = unglyphableDecisionPdfFields(data, unicodeFontHasGlyph);
+    if (offenders.length > 0) {
+      const detail = offenders.map((o) => `${o.field} (${o.chars.join(' ')})`).join(', ');
+      throw new Error(
+        `Naskah memuat aksara yang tidak memiliki glyph pada font risalah (Amiri): ${detail}. ` +
+          `Aksara itu akan hilang dari PDF yang disegel e-seal, sehingga arsip berbeda dari naskah yang ` +
+          `ditandatangani. Hapus aksara tersebut lalu finalisasi ulang; dokumen tidak disegel agar tidak ` +
+          `ada arsip resmi yang kehilangan karakter.`
       );
     }
   }

@@ -88,29 +88,55 @@ describe('generateDecisionPdf', () => {
   });
 
   /**
-   * Regresi: teks Unicode (Arab/emoji) tidak boleh membuat `drawText` melempar.
+   * Regresi finding #2 — memuat font Unicode TIDAK cukup: aksara tanpa glyph
+   * (emoji) hilang DIAM-DIAM dari PDF yang disegel, padahal digest kanonis yang
+   * ditandatangani anggota tetap memuatnya. Jalur ini harus MELEMPAR, bukan
+   * menghasilkan arsip yang berbeda dari naskah yang disetujui.
    *
-   * Font standar pdf-lib (Helvetica) hanya mendukung WinAnsi, dan `drawText`
-   * MELEMPAR untuk karakter di luarnya. Karena render terjadi DI DALAM
-   * transaksi suara yang mencapai kuorum, satu emoji di dalam naskah cukup
-   * untuk me-rollback suara yang sah dan meninggalkan keputusan terbuka
-   * selamanya. PDF harus tetap terbentuk, dengan isinya tetap tercetak.
+   * Sebelum perbaikan, `generateDecisionPdf` TIDAK melempar untuk input ini
+   * (pdf-lib melewati codepoint tanpa glyph tanpa galat) sehingga tes gagal;
+   * sesudah perbaikan ia melempar. Teks Arab/Latin yang DIDUKUNG Amiri tetap
+   * lulus — perbaikan tidak boleh menolak aksara yang benar-benar dapat dicetak.
    */
-  it('menghasilkan PDF walau body memuat Arab dan emoji (font Unicode)', async () => {
+  it('MELEMPAR ketika PERIHAL memuat emoji tanpa glyph di font risalah (regresi #2)', async () => {
+    await expect(generateDecisionPdf({ ...data, subject: 'Rapat 🎉 Pembina' })).rejects.toThrow(
+      /tidak memiliki glyph|glyph/i
+    );
+  });
+
+  it('MELEMPAR ketika body memuat emoji tanpa glyph di font risalah (regresi #2)', async () => {
+    await expect(
+      generateDecisionPdf({
+        ...data,
+        body: 'Keputusan ini ditulis dengan emoji ✅ sebagai penanda.',
+      })
+    ).rejects.toThrow(/tidak memiliki glyph|glyph/i);
+  });
+
+  it('MELEMPAR ketika nama anggota memuat emoji (regresi #2)', async () => {
+    await expect(
+      generateDecisionPdf({
+        ...data,
+        members: [{ userId: 'u0', name: 'Anggota 🎉', roleCode: 'YAYASAN_PEMBINA' }],
+      })
+    ).rejects.toThrow(/tidak memiliki glyph|glyph/i);
+  });
+
+  /** Naskah Arab yang DIDUKUNG Amiri tetap tercetak tanpa kehilangan karakter. */
+  it('tetap menghasilkan PDF untuk teks Arab yang didukung Amiri (font Unicode)', async () => {
     const buf = await generateDecisionPdf({
       ...data,
-      body: 'Keputusan ini ditulis dengan kaligrafi Arab بِسْمِ اللَّهِ الرَّحْمَنِ الرَّحِيم dan emoji ✅🎉 agar tetap aman.',
+      body: 'Keputusan ini ditulis dengan kaligrafi Arab بِسْمِ اللَّهِ الرَّحْمَنِ الرَّحِيم agar tetap aman.',
     });
     expect(buf.slice(0, 4).toString()).toBe('%PDF');
-    // PDF dapat dibuka ulang — bukti byte-nya utuh, bukan sekadar tak melempar.
     const doc = await PDFDocument.load(buf);
     expect(doc.getPageCount()).toBeGreaterThanOrEqual(1);
   });
 
-  it('menghasilkan PDF walau PERIHAL memuat emoji', async () => {
+  it('tetap menghasilkan PDF untuk teks Latin beraksen yang didukung Amiri', async () => {
     const buf = await generateDecisionPdf({
       ...data,
-      subject: 'Pengesahan 🎉 Rencana Kerja ✅',
+      subject: 'Pengesahan Rencana Kerja — café résumé',
     });
     expect(buf.slice(0, 4).toString()).toBe('%PDF');
     expect((await PDFDocument.load(buf)).getPageCount()).toBeGreaterThanOrEqual(1);
