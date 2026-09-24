@@ -112,11 +112,7 @@ describe('POST /chatbot/public/ask', () => {
       cached: true,
     });
 
-    await ask(
-      fakeReq({ message: 'berapa biayanya', conversationId: 'c-1' }),
-      fakeRes(),
-      vi.fn()
-    );
+    await ask(fakeReq({ message: 'berapa biayanya', conversationId: 'c-1' }), fakeRes(), vi.fn());
 
     expect(recordTurn).toHaveBeenCalledWith({
       clientId: 'c-1',

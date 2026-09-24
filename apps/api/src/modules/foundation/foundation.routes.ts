@@ -4,7 +4,11 @@ import * as controller from './foundation.controller';
 import * as accreditationController from './accreditation.controller';
 import { authenticate, authorize } from '../../middleware/auth';
 import { validateQuery } from '../../middleware/error';
-import { queryFoundationSchema, queryBoardMemberSchema, queryDocumentSchema } from './foundation.schema';
+import {
+  queryFoundationSchema,
+  queryBoardMemberSchema,
+  queryDocumentSchema,
+} from './foundation.schema';
 
 const router = Router();
 
@@ -33,11 +37,7 @@ const YAYASAN_READ = [
  * ordinary board member — neither should be able to edit the record they
  * oversee, and bendahara's remit is finance, not governance documents.
  */
-const YAYASAN_WRITE = [
-  RoleCode.SUPER_ADMIN,
-  RoleCode.YAYASAN_KETUA,
-  RoleCode.YAYASAN_SEKRETARIS,
-];
+const YAYASAN_WRITE = [RoleCode.SUPER_ADMIN, RoleCode.YAYASAN_KETUA, RoleCode.YAYASAN_SEKRETARIS];
 
 // ==================== FOUNDATIONS ====================
 
@@ -112,8 +112,6 @@ router.get(
  */
 router.post('/', authorize(...YAYASAN_WRITE), controller.createFoundation);
 
-
-
 // ==================== EXECUTIVE DASHBOARD ANALYTICS ====================
 
 /**
@@ -157,8 +155,6 @@ router.get('/stats/financial', authorize(...YAYASAN_READ), controller.getFinanci
  *         description: Unit comparison with student/teacher ratios
  */
 router.get('/stats/units', authorize(...YAYASAN_READ), controller.getUnitComparison);
-
-
 
 // ==================== BOARD MEMBERS ====================
 
@@ -627,7 +623,6 @@ router.post(
   authorize(...YAYASAN_WRITE),
   accreditationController.submitAssessment
 );
-
 
 // ==================== FOUNDATION BY ID ====================
 //

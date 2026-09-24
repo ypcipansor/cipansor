@@ -111,15 +111,20 @@ const statusColor: Record<string, string> = {
   DRAFT: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
   PROPOSED: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
   APPROVED: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300",
-  IN_PROGRESS: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300",
-  COMPLETED: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300",
+  IN_PROGRESS:
+    "bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300",
+  COMPLETED:
+    "bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300",
   CANCELLED: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300",
 };
 
 // RPJP was in the database enum but absent from this list, so the longest-horizon
 // document was the one plan type the UI could not create.
 const typeOptions = [
-  { value: "RPJP", label: "RPJP — Rencana Pembangunan Jangka Panjang (20 Tahun)" },
+  {
+    value: "RPJP",
+    label: "RPJP — Rencana Pembangunan Jangka Panjang (20 Tahun)",
+  },
   { value: "RENSTRA", label: "Renstra — Rencana Strategis (5 Tahun)" },
   { value: "RKA", label: "RKA — Rencana Kerja dan Anggaran (1 Tahun)" },
 ];
@@ -132,10 +137,12 @@ const levelOptions = [
   { value: "UNIT", label: "Unit — turunan dari RKA Yayasan" },
 ];
 
-const statusOptions = Object.entries(PLAN_STATUS_LABEL).map(([value, label]) => ({
-  value,
-  label,
-}));
+const statusOptions = Object.entries(PLAN_STATUS_LABEL).map(
+  ([value, label]) => ({
+    value,
+    label,
+  }),
+);
 
 // ─── Create/Edit Dialog ─────────────────────────────────────
 function PlanFormDialog({
@@ -197,7 +204,8 @@ function PlanFormDialog({
   // Each tier may only hang off the one directly above it, so the picker only
   // ever offers that tier — a Renstra lists RPJPs, an RKA Yayasan lists
   // Renstras, and a unit RKA lists the consolidated RKAs (unitId null).
-  const parentType = type === "RENSTRA" ? "RPJP" : isUnitRka ? "RKA" : "RENSTRA";
+  const parentType =
+    type === "RENSTRA" ? "RPJP" : isUnitRka ? "RKA" : "RENSTRA";
   const parentOptions = (allPlans ?? []).filter(
     (p) =>
       p.type === parentType &&
@@ -493,15 +501,15 @@ function PerencanaanPageContent() {
   const isKetua = getPrimaryRoleCode(authUser) === "YAYASAN_KETUA";
 
   const approvedCount =
-    plans?.filter(
-      (p) => p.status === "APPROVED" || p.status === "IN_PROGRESS"
-    ).length || 0;
+    plans?.filter((p) => p.status === "APPROVED" || p.status === "IN_PROGRESS")
+      .length || 0;
   const avgProgress = plans?.length
     ? Math.round(plans.reduce((s, p) => s + p.progress, 0) / plans.length)
     : 0;
   // budget is serialized as a string (Prisma Decimal); coerce so the reduce
   // sums numerically instead of concatenating strings.
-  const totalBudget = plans?.reduce((s, p) => s + Number(p.budget || 0), 0) || 0;
+  const totalBudget =
+    plans?.reduce((s, p) => s + Number(p.budget || 0), 0) || 0;
 
   const handleEdit = (plan: any) => {
     setEditItem(plan);

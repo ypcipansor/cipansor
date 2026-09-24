@@ -39,7 +39,7 @@ export const list = asyncHandler(async (req: Request, res: Response) => {
   const query = listRaporQuerySchema.parse(req.query);
   const result = await service.listRaporPesantren(query);
   res.json(
-    ApiResponse.paginated(result.data, result.meta.page, result.meta.limit, result.meta.total),
+    ApiResponse.paginated(result.data, result.meta.page, result.meta.limit, result.meta.total)
   );
 });
 

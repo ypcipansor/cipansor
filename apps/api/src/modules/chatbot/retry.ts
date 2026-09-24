@@ -61,7 +61,10 @@ export class TransientUpstreamError extends Error {
  * Nilai negatif (tanggal yang sudah lewat) menjadi 0, bukan undefined: server
  * sudah menyatakan boleh mencoba lagi, jadi jangan menebak jeda sendiri.
  */
-export function parseRetryAfter(header: string | null | undefined, nowMs: number): number | undefined {
+export function parseRetryAfter(
+  header: string | null | undefined,
+  nowMs: number
+): number | undefined {
   if (!header) return undefined;
 
   const seconds = Number(header.trim());

@@ -166,7 +166,11 @@ export function useStaffDashboardStats() {
         // Active students count
         api
           .get<PaginatedResponse<unknown>>("/students", {
-            params: { status: STUDENT_STATUS.ACTIVE, unitId: user?.unitId, limit: 1 },
+            params: {
+              status: STUDENT_STATUS.ACTIVE,
+              unitId: user?.unitId,
+              limit: 1,
+            },
             skipErrorToast: true,
           })
           .catch(() => ({ data: { meta: { pagination: { total: 0 } } } })),

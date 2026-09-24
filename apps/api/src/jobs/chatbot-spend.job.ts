@@ -135,9 +135,7 @@ function usageRows(usage: MonthToDateUsage): Array<[string, string]> {
   if (usage.byModel.length > 0) {
     rows.push([
       'Model',
-      usage.byModel
-        .map((m) => `${esc(m.model)} (${idNumber.format(m.requests)})`)
-        .join('<br>'),
+      usage.byModel.map((m) => `${esc(m.model)} (${idNumber.format(m.requests)})`).join('<br>'),
     ]);
   }
   return rows;

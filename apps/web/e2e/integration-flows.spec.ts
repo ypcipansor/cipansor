@@ -423,9 +423,10 @@ test.describe("Integration: Finance → Dashboard Sync", () => {
       // still renders an <h4>Keuangan</h4> group heading. Unscoped, this
       // assertion passed on any page that had that sidebar.
       await expect(
-        page
-          .getByRole("main")
-          .getByRole("heading", { level: 1, name: /tagihan|spp|keuangan|finance/i }),
+        page.getByRole("main").getByRole("heading", {
+          level: 1,
+          name: /tagihan|spp|keuangan|finance/i,
+        }),
       ).toBeVisible({ timeout: 5000 });
 
       // Go back to dashboard
@@ -462,8 +463,12 @@ test.describe("Integration: Multi-user Collaboration", () => {
     await navigateTo(page2, "/students");
 
     // Verify both can see the same data
-    const heading1 = page.getByRole("main").getByRole("heading", { name: /santri|students/i });
-    const heading2 = page2.getByRole("main").getByRole("heading", { name: /santri|students/i });
+    const heading1 = page
+      .getByRole("main")
+      .getByRole("heading", { name: /santri|students/i });
+    const heading2 = page2
+      .getByRole("main")
+      .getByRole("heading", { name: /santri|students/i });
 
     await expect(heading1).toBeVisible();
     await expect(heading2).toBeVisible();

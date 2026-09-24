@@ -125,7 +125,10 @@ export function renderInline(text: string, keyPrefix: string) {
     }
     if (part.startsWith("`")) {
       return (
-        <code key={key} className="rounded bg-black/10 px-1 py-0.5 text-[0.9em]">
+        <code
+          key={key}
+          className="rounded bg-black/10 px-1 py-0.5 text-[0.9em]"
+        >
           {part.slice(1, -1)}
         </code>
       );

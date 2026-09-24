@@ -516,7 +516,9 @@ function EditHealthRecordPageContent({ params }: PageProps) {
   );
 }
 
-export default function EditHealthRecordPage(props: Parameters<typeof EditHealthRecordPageContent>[0]) {
+export default function EditHealthRecordPage(
+  props: Parameters<typeof EditHealthRecordPageContent>[0],
+) {
   return (
     <MainLayout>
       <EditHealthRecordPageContent {...props} />

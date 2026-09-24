@@ -226,7 +226,7 @@ export class AuthService {
     //
     // The password check above and the insert below are separated by a round
     // trip; a suspension that commits in between switches the account off and
-    // deletes the refresh tokens it can see — but a token created *after* that
+    // deletes the refresh tokens it can see â€” but a token created *after* that
     // delete survives it and would authenticate away the suspension. Locking
     // the user row for the re-check and the insert serialises the two: a
     // suspension cannot commit between them, and one that already committed is

@@ -76,8 +76,8 @@ describe('Talenta Service', () => {
           user: {
             id: 'user-1',
             name: 'High Potential Trained',
-            trainingEnrollments: [{ id: 'enr-1' }, { id: 'enr-2' }] // 2 completed trainings
-          }
+            trainingEnrollments: [{ id: 'enr-1' }, { id: 'enr-2' }], // 2 completed trainings
+          },
         },
         {
           id: 'prof-2',
@@ -86,9 +86,9 @@ describe('Talenta Service', () => {
           user: {
             id: 'user-2',
             name: 'High Potential Untrained',
-            trainingEnrollments: []
-          }
-        }
+            trainingEnrollments: [],
+          },
+        },
       ];
 
       vi.mocked(prisma.talentProfile.findMany).mockResolvedValue(mockProfiles as any);
@@ -144,7 +144,9 @@ describe('Talenta Service', () => {
           user: {
             id: 'user-1',
             name: 'Ustadz Ahmad',
-            trainingEnrollments: [{ id: 'e1', program: { title: 'Manajemen Sekolah', category: 'LEADERSHIP' } }],
+            trainingEnrollments: [
+              { id: 'e1', program: { title: 'Manajemen Sekolah', category: 'LEADERSHIP' } },
+            ],
           },
           assessments: [],
         },
@@ -163,8 +165,8 @@ describe('Talenta Service', () => {
         talentId: 'prof-1',
         assessorId: 'user-2',
         period: 'Q1 2026',
-        performanceRating: 'OUTSTANDING' as any,   // 5
-        potentialRating: 'EXCEEDS' as any,         // 4 => sum = 9 => HIGH_POTENTIAL
+        performanceRating: 'OUTSTANDING' as any, // 5
+        potentialRating: 'EXCEEDS' as any, // 4 => sum = 9 => HIGH_POTENTIAL
         overallScore: 90,
         assessedAt: new Date().toISOString(),
       };
@@ -192,12 +194,12 @@ describe('Talenta Service', () => {
     });
 
     it('should calculate category based on internal logic', async () => {
-       const dto = {
+      const dto = {
         talentId: 'prof-1',
         assessorId: 'user-2',
         period: 'Q1 2026',
-        performanceRating: 'MEETS' as any,   // 3
-        potentialRating: 'BELOW' as any,     // 2 => sum = 5 => EMERGING
+        performanceRating: 'MEETS' as any, // 3
+        potentialRating: 'BELOW' as any, // 2 => sum = 5 => EMERGING
         overallScore: 70,
         assessedAt: new Date().toISOString(),
       };
@@ -239,7 +241,7 @@ describe('Talenta Service', () => {
       await talentaService.getSuccessions('unit-1');
 
       expect(prisma.successionPlan.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { unitId: 'unit-1' } }),
+        expect.objectContaining({ where: { unitId: 'unit-1' } })
       );
     });
 
@@ -249,7 +251,7 @@ describe('Talenta Service', () => {
       await talentaService.getSuccessions(undefined);
 
       expect(prisma.successionPlan.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: {} }),
+        expect.objectContaining({ where: {} })
       );
     });
 
@@ -259,7 +261,7 @@ describe('Talenta Service', () => {
       await talentaService.getProfiles(undefined, {});
 
       expect(prisma.talentProfile.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: {} }),
+        expect.objectContaining({ where: {} })
       );
     });
 
@@ -269,7 +271,7 @@ describe('Talenta Service', () => {
       await talentaService.getTrainings(undefined, {});
 
       expect(prisma.trainingProgram.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: {} }),
+        expect.objectContaining({ where: {} })
       );
     });
   });
@@ -326,7 +328,10 @@ describe('Talenta Service', () => {
         successorId: null, // this should cause disconnect
       };
 
-      vi.mocked(prisma.successionPlan.update).mockResolvedValue({ id: 'succ-1', ...updateDto } as any);
+      vi.mocked(prisma.successionPlan.update).mockResolvedValue({
+        id: 'succ-1',
+        ...updateDto,
+      } as any);
 
       await talentaService.updateSuccession('succ-1', updateDto);
 

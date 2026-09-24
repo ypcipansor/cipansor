@@ -84,17 +84,25 @@ export class ScholarshipScoringService {
     let score = 0;
 
     // Intelligent scoring logic based on criterion name/type
-    if (criterion.name.toLowerCase().includes('hafalan') || criterion.name.toLowerCase().includes('tahfidz')) {
+    if (
+      criterion.name.toLowerCase().includes('hafalan') ||
+      criterion.name.toLowerCase().includes('tahfidz')
+    ) {
       // Use latest tahfidz record or total juz
       const lastRecord = student.tahfidzRecords[0];
       value = lastRecord ? lastRecord.juz : 0;
       const target = criterion.targetValue ? parseInt(criterion.targetValue) : 30;
       score = Math.min(100, (Number(value) / target) * 100);
-    } else if (criterion.name.toLowerCase().includes('akademik') || criterion.name.toLowerCase().includes('nilai')) {
+    } else if (
+      criterion.name.toLowerCase().includes('akademik') ||
+      criterion.name.toLowerCase().includes('nilai')
+    ) {
       // Use average of recent grades
-      const avgGrade = student.grades.length > 0
-        ? student.grades.reduce((sum: number, g: any) => sum + Number(g.score), 0) / student.grades.length
-        : 0;
+      const avgGrade =
+        student.grades.length > 0
+          ? student.grades.reduce((sum: number, g: any) => sum + Number(g.score), 0) /
+            student.grades.length
+          : 0;
       value = avgGrade;
       const target = criterion.targetValue ? parseFloat(criterion.targetValue) : 100;
       score = Math.min(100, (Number(value) / target) * 100);

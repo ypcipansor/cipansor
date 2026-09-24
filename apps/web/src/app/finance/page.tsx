@@ -105,7 +105,9 @@ function FinancePageContent() {
               the whole finance area while showing only santri billing — and
               the menu entry pointing here was labelled "Laporan Keuangan",
               which it is not. Financial statements are at /finance/accounting. */}
-          <h1 className="text-3xl font-bold tracking-tight">Tagihan &amp; SPP</h1>
+          <h1 className="text-3xl font-bold tracking-tight">
+            Tagihan &amp; SPP
+          </h1>
           <p className="text-muted-foreground">
             Kelola tagihan, tunggakan, dan pembayaran santri
           </p>
@@ -142,7 +144,9 @@ function FinancePageContent() {
       <div className="grid gap-4 md:grid-cols-5">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Collection Ratio</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Collection Ratio
+            </CardTitle>
             <PieChart className="h-4 w-4 text-blue-600" />
           </CardHeader>
           <CardContent>
@@ -151,7 +155,9 @@ function FinancePageContent() {
                 ? `${Math.round((summary.totalPaid / summary.totalBilled) * 100)}%`
                 : "0%"}
             </div>
-            <p className="text-xs text-muted-foreground">Persentase Terkumpul</p>
+            <p className="text-xs text-muted-foreground">
+              Persentase Terkumpul
+            </p>
           </CardContent>
         </Card>
 

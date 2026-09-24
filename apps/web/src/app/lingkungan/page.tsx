@@ -69,7 +69,14 @@ const programFormSchema = z.object({
 });
 
 const wasteFormSchema = z.object({
-  category: z.enum(["ORGANIC", "INORGANIC", "B3", "PAPER", "ELECTRONIC", "OTHER"]),
+  category: z.enum([
+    "ORGANIC",
+    "INORGANIC",
+    "B3",
+    "PAPER",
+    "ELECTRONIC",
+    "OTHER",
+  ]),
   weight: z.string().min(1, "Berat wajib"),
   method: z.string().min(1, "Metode wajib"),
   recordDate: z.string().min(1, "Tanggal wajib"),
@@ -104,12 +111,24 @@ const wasteCategories = [
 ];
 
 const programCategories = [
-  "Penghijauan", "Konservasi Air", "Hemat Energi", "Pengelolaan Sampah",
-  "Edukasi Lingkungan", "Kebersihan", "Daur Ulang", "Lainnya",
+  "Penghijauan",
+  "Konservasi Air",
+  "Hemat Energi",
+  "Pengelolaan Sampah",
+  "Edukasi Lingkungan",
+  "Kebersihan",
+  "Daur Ulang",
+  "Lainnya",
 ];
 
 // ─── Create Program Dialog ──────────────────────────
-function ProgramFormDialog({ editData, onClose }: { editData?: any; onClose: () => void }) {
+function ProgramFormDialog({
+  editData,
+  onClose,
+}: {
+  editData?: any;
+  onClose: () => void;
+}) {
   const createProgram = useCreateProgram();
   const updateProgram = useUpdateProgram();
   const isEdit = !!editData;
@@ -120,8 +139,12 @@ function ProgramFormDialog({ editData, onClose }: { editData?: any; onClose: () 
       title: editData?.title || "",
       description: editData?.description || "",
       category: editData?.category || "",
-      startDate: editData?.startDate ? new Date(editData.startDate).toISOString().split("T")[0] : "",
-      endDate: editData?.endDate ? new Date(editData.endDate).toISOString().split("T")[0] : "",
+      startDate: editData?.startDate
+        ? new Date(editData.startDate).toISOString().split("T")[0]
+        : "",
+      endDate: editData?.endDate
+        ? new Date(editData.endDate).toISOString().split("T")[0]
+        : "",
       budget: editData?.budget ? String(editData.budget) : "",
     },
   });
@@ -129,11 +152,16 @@ function ProgramFormDialog({ editData, onClose }: { editData?: any; onClose: () 
   const onSubmit = async (values: z.infer<typeof programFormSchema>) => {
     const payload = {
       ...values,
-      startDate: values.startDate ? new Date(values.startDate).toISOString() : undefined,
-      endDate: values.endDate ? new Date(values.endDate).toISOString() : undefined,
+      startDate: values.startDate
+        ? new Date(values.startDate).toISOString()
+        : undefined,
+      endDate: values.endDate
+        ? new Date(values.endDate).toISOString()
+        : undefined,
       budget: values.budget ? Number(values.budget) : undefined,
     };
-    if (isEdit) await updateProgram.mutateAsync({ id: editData.id, ...payload });
+    if (isEdit)
+      await updateProgram.mutateAsync({ id: editData.id, ...payload });
     else await createProgram.mutateAsync(payload);
     onClose();
   };
@@ -143,43 +171,119 @@ function ProgramFormDialog({ editData, onClose }: { editData?: any; onClose: () 
   return (
     <DialogContent className="sm:max-w-[520px]">
       <DialogHeader>
-        <DialogTitle>{isEdit ? "Edit Program" : "Tambah Program Lingkungan"}</DialogTitle>
-        <DialogDescription>Kelola program green campus dan lingkungan hidup.</DialogDescription>
+        <DialogTitle>
+          {isEdit ? "Edit Program" : "Tambah Program Lingkungan"}
+        </DialogTitle>
+        <DialogDescription>
+          Kelola program green campus dan lingkungan hidup.
+        </DialogDescription>
       </DialogHeader>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-          <FormField control={form.control} name="title" render={({ field }) => (
-            <FormItem><FormLabel>Judul Program</FormLabel><FormControl><Input placeholder="cth: Penghijauan Area Sekolah" {...field} /></FormControl><FormMessage /></FormItem>
-          )} />
-          <FormField control={form.control} name="category" render={({ field }) => (
-            <FormItem>
-              <FormLabel>Kategori</FormLabel>
-              <Select onValueChange={field.onChange} defaultValue={field.value}>
-                <FormControl><SelectTrigger><SelectValue placeholder="Pilih kategori" /></SelectTrigger></FormControl>
-                <SelectContent>
-                  {programCategories.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <FormMessage />
-            </FormItem>
-          )} />
-          <FormField control={form.control} name="description" render={({ field }) => (
-            <FormItem><FormLabel>Deskripsi (Opsional)</FormLabel><FormControl><Textarea rows={2} {...field} /></FormControl><FormMessage /></FormItem>
-          )} />
+          <FormField
+            control={form.control}
+            name="title"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Judul Program</FormLabel>
+                <FormControl>
+                  <Input
+                    placeholder="cth: Penghijauan Area Sekolah"
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="category"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Kategori</FormLabel>
+                <Select
+                  onValueChange={field.onChange}
+                  defaultValue={field.value}
+                >
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Pilih kategori" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {programCategories.map((c) => (
+                      <SelectItem key={c} value={c}>
+                        {c}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="description"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Deskripsi (Opsional)</FormLabel>
+                <FormControl>
+                  <Textarea rows={2} {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
           <div className="grid grid-cols-2 gap-4">
-            <FormField control={form.control} name="startDate" render={({ field }) => (
-              <FormItem><FormLabel>Mulai</FormLabel><FormControl><Input type="date" {...field} /></FormControl><FormMessage /></FormItem>
-            )} />
-            <FormField control={form.control} name="endDate" render={({ field }) => (
-              <FormItem><FormLabel>Selesai</FormLabel><FormControl><Input type="date" {...field} /></FormControl><FormMessage /></FormItem>
-            )} />
+            <FormField
+              control={form.control}
+              name="startDate"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Mulai</FormLabel>
+                  <FormControl>
+                    <Input type="date" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="endDate"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Selesai</FormLabel>
+                  <FormControl>
+                    <Input type="date" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
           </div>
-          <FormField control={form.control} name="budget" render={({ field }) => (
-            <FormItem><FormLabel>Anggaran (Rp, Opsional)</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>
-          )} />
+          <FormField
+            control={form.control}
+            name="budget"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Anggaran (Rp, Opsional)</FormLabel>
+                <FormControl>
+                  <Input type="number" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={onClose}>Batal</Button>
-            <Button type="submit" disabled={isPending}>{isPending ? "Menyimpan…" : isEdit ? "Perbarui" : "Simpan"}</Button>
+            <Button type="button" variant="outline" onClick={onClose}>
+              Batal
+            </Button>
+            <Button type="submit" disabled={isPending}>
+              {isPending ? "Menyimpan…" : isEdit ? "Perbarui" : "Simpan"}
+            </Button>
           </div>
         </form>
       </Form>
@@ -192,7 +296,13 @@ function WasteFormDialog({ onClose }: { onClose: () => void }) {
   const createWaste = useCreateWasteRecord();
   const form = useForm<z.infer<typeof wasteFormSchema>>({
     resolver: zodResolver(wasteFormSchema),
-    defaultValues: { category: "ORGANIC", weight: "", method: "", recordDate: "", notes: "" },
+    defaultValues: {
+      category: "ORGANIC",
+      weight: "",
+      method: "",
+      recordDate: "",
+      notes: "",
+    },
   });
 
   const onSubmit = async (values: z.infer<typeof wasteFormSchema>) => {
@@ -208,37 +318,103 @@ function WasteFormDialog({ onClose }: { onClose: () => void }) {
     <DialogContent className="sm:max-w-[480px]">
       <DialogHeader>
         <DialogTitle>Catat Pengelolaan Sampah</DialogTitle>
-        <DialogDescription>Rekam data pengelolaan sampah dan metode yang digunakan.</DialogDescription>
+        <DialogDescription>
+          Rekam data pengelolaan sampah dan metode yang digunakan.
+        </DialogDescription>
       </DialogHeader>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
-            <FormField control={form.control} name="category" render={({ field }) => (
+            <FormField
+              control={form.control}
+              name="category"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Kategori</FormLabel>
+                  <Select
+                    onValueChange={field.onChange}
+                    defaultValue={field.value}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {wasteCategories.map((c) => (
+                        <SelectItem key={c.value} value={c.value}>
+                          {c.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="weight"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Berat (kg)</FormLabel>
+                  <FormControl>
+                    <Input type="number" step="0.1" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
+          <FormField
+            control={form.control}
+            name="method"
+            render={({ field }) => (
               <FormItem>
-                <FormLabel>Kategori</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
-                  <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                  <SelectContent>{wasteCategories.map((c) => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}</SelectContent>
-                </Select>
+                <FormLabel>Metode Pengolahan</FormLabel>
+                <FormControl>
+                  <Input
+                    placeholder="cth: Kompos, Daur Ulang, TPA"
+                    {...field}
+                  />
+                </FormControl>
                 <FormMessage />
               </FormItem>
-            )} />
-            <FormField control={form.control} name="weight" render={({ field }) => (
-              <FormItem><FormLabel>Berat (kg)</FormLabel><FormControl><Input type="number" step="0.1" {...field} /></FormControl><FormMessage /></FormItem>
-            )} />
-          </div>
-          <FormField control={form.control} name="method" render={({ field }) => (
-            <FormItem><FormLabel>Metode Pengolahan</FormLabel><FormControl><Input placeholder="cth: Kompos, Daur Ulang, TPA" {...field} /></FormControl><FormMessage /></FormItem>
-          )} />
-          <FormField control={form.control} name="recordDate" render={({ field }) => (
-            <FormItem><FormLabel>Tanggal</FormLabel><FormControl><Input type="date" {...field} /></FormControl><FormMessage /></FormItem>
-          )} />
-          <FormField control={form.control} name="notes" render={({ field }) => (
-            <FormItem><FormLabel>Catatan (Opsional)</FormLabel><FormControl><Textarea rows={2} {...field} /></FormControl><FormMessage /></FormItem>
-          )} />
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="recordDate"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Tanggal</FormLabel>
+                <FormControl>
+                  <Input type="date" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="notes"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Catatan (Opsional)</FormLabel>
+                <FormControl>
+                  <Textarea rows={2} {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={onClose}>Batal</Button>
-            <Button type="submit" disabled={createWaste.isPending}>{createWaste.isPending ? "Menyimpan…" : "Simpan"}</Button>
+            <Button type="button" variant="outline" onClick={onClose}>
+              Batal
+            </Button>
+            <Button type="submit" disabled={createWaste.isPending}>
+              {createWaste.isPending ? "Menyimpan…" : "Simpan"}
+            </Button>
           </div>
         </form>
       </Form>
@@ -251,7 +427,15 @@ function IndicatorFormDialog({ onClose }: { onClose: () => void }) {
   const createIndicator = useCreateIndicator();
   const form = useForm<z.infer<typeof indicatorFormSchema>>({
     resolver: zodResolver(indicatorFormSchema),
-    defaultValues: { name: "", category: "", targetValue: "", currentValue: "0", unit: "", period: "", recordDate: "" },
+    defaultValues: {
+      name: "",
+      category: "",
+      targetValue: "",
+      currentValue: "0",
+      unit: "",
+      period: "",
+      recordDate: "",
+    },
   });
 
   const onSubmit = async (values: z.infer<typeof indicatorFormSchema>) => {
@@ -268,38 +452,114 @@ function IndicatorFormDialog({ onClose }: { onClose: () => void }) {
     <DialogContent className="sm:max-w-[480px]">
       <DialogHeader>
         <DialogTitle>Tambah Indikator Green Campus</DialogTitle>
-        <DialogDescription>Tambahkan indikator pengukuran kinerja lingkungan.</DialogDescription>
+        <DialogDescription>
+          Tambahkan indikator pengukuran kinerja lingkungan.
+        </DialogDescription>
       </DialogHeader>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-          <FormField control={form.control} name="name" render={({ field }) => (
-            <FormItem><FormLabel>Nama Indikator</FormLabel><FormControl><Input placeholder="cth: Konsumsi Energi" {...field} /></FormControl><FormMessage /></FormItem>
-          )} />
-          <FormField control={form.control} name="category" render={({ field }) => (
-            <FormItem><FormLabel>Kategori</FormLabel><FormControl><Input placeholder="cth: Energi, Air, Sampah" {...field} /></FormControl><FormMessage /></FormItem>
-          )} />
+          <FormField
+            control={form.control}
+            name="name"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Nama Indikator</FormLabel>
+                <FormControl>
+                  <Input placeholder="cth: Konsumsi Energi" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="category"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Kategori</FormLabel>
+                <FormControl>
+                  <Input placeholder="cth: Energi, Air, Sampah" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
           <div className="grid grid-cols-3 gap-4">
-            <FormField control={form.control} name="targetValue" render={({ field }) => (
-              <FormItem><FormLabel>Target</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>
-            )} />
-            <FormField control={form.control} name="currentValue" render={({ field }) => (
-              <FormItem><FormLabel>Saat Ini</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>
-            )} />
-            <FormField control={form.control} name="unit" render={({ field }) => (
-              <FormItem><FormLabel>Satuan</FormLabel><FormControl><Input placeholder="kWh, m³" {...field} /></FormControl><FormMessage /></FormItem>
-            )} />
+            <FormField
+              control={form.control}
+              name="targetValue"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Target</FormLabel>
+                  <FormControl>
+                    <Input type="number" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="currentValue"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Saat Ini</FormLabel>
+                  <FormControl>
+                    <Input type="number" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="unit"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Satuan</FormLabel>
+                  <FormControl>
+                    <Input placeholder="kWh, m³" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <FormField control={form.control} name="period" render={({ field }) => (
-              <FormItem><FormLabel>Periode</FormLabel><FormControl><Input placeholder="Bulanan" {...field} /></FormControl><FormMessage /></FormItem>
-            )} />
-            <FormField control={form.control} name="recordDate" render={({ field }) => (
-              <FormItem><FormLabel>Tanggal</FormLabel><FormControl><Input type="date" {...field} /></FormControl><FormMessage /></FormItem>
-            )} />
+            <FormField
+              control={form.control}
+              name="period"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Periode</FormLabel>
+                  <FormControl>
+                    <Input placeholder="Bulanan" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="recordDate"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Tanggal</FormLabel>
+                  <FormControl>
+                    <Input type="date" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={onClose}>Batal</Button>
-            <Button type="submit" disabled={createIndicator.isPending}>{createIndicator.isPending ? "Menyimpan…" : "Simpan"}</Button>
+            <Button type="button" variant="outline" onClick={onClose}>
+              Batal
+            </Button>
+            <Button type="submit" disabled={createIndicator.isPending}>
+              {createIndicator.isPending ? "Menyimpan…" : "Simpan"}
+            </Button>
           </div>
         </form>
       </Form>
@@ -335,7 +595,10 @@ function LingkunganPageContent() {
   const { data: indicators } = useGreenIndicators(selectedUnitId);
   const deleteProgram = useDeleteProgram();
 
-  const handleEditProgram = (prog: any) => { setEditProgram(prog); setProgramDialogOpen(true); };
+  const handleEditProgram = (prog: any) => {
+    setEditProgram(prog);
+    setProgramDialogOpen(true);
+  };
 
   return (
     <div className="container mx-auto py-6 space-y-8">
@@ -364,8 +627,16 @@ function LingkunganPageContent() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card className="border-l-4 border-l-green-500">
           <CardHeader className="pb-2">
-            <CardDescription className="flex items-center gap-1"><Leaf className="h-3 w-3" /> Total Program</CardDescription>
-            <CardTitle className="text-3xl">{loadingPrograms ? <Skeleton className="h-9 w-12" /> : programs?.length || 0}</CardTitle>
+            <CardDescription className="flex items-center gap-1">
+              <Leaf className="h-3 w-3" /> Total Program
+            </CardDescription>
+            <CardTitle className="text-3xl">
+              {loadingPrograms ? (
+                <Skeleton className="h-9 w-12" />
+              ) : (
+                programs?.length || 0
+              )}
+            </CardTitle>
           </CardHeader>
         </Card>
         <Card className="border-l-4 border-l-emerald-500">
@@ -378,14 +649,26 @@ function LingkunganPageContent() {
         </Card>
         <Card className="border-l-4 border-l-blue-500">
           <CardHeader className="pb-2">
-            <CardDescription className="flex items-center gap-1"><Recycle className="h-3 w-3" /> Total Sampah</CardDescription>
-            <CardTitle className="text-3xl">{wasteSummary ? `${wasteSummary.totalWeight.toFixed(1)} kg` : <Skeleton className="h-9 w-16" />}</CardTitle>
+            <CardDescription className="flex items-center gap-1">
+              <Recycle className="h-3 w-3" /> Total Sampah
+            </CardDescription>
+            <CardTitle className="text-3xl">
+              {wasteSummary ? (
+                `${wasteSummary.totalWeight.toFixed(1)} kg`
+              ) : (
+                <Skeleton className="h-9 w-16" />
+              )}
+            </CardTitle>
           </CardHeader>
         </Card>
         <Card className="border-l-4 border-l-indigo-500">
           <CardHeader className="pb-2">
-            <CardDescription className="flex items-center gap-1"><BarChart3 className="h-3 w-3" /> Indikator</CardDescription>
-            <CardTitle className="text-3xl">{indicators?.length || 0}</CardTitle>
+            <CardDescription className="flex items-center gap-1">
+              <BarChart3 className="h-3 w-3" /> Indikator
+            </CardDescription>
+            <CardTitle className="text-3xl">
+              {indicators?.length || 0}
+            </CardTitle>
           </CardHeader>
         </Card>
       </div>
@@ -401,36 +684,74 @@ function LingkunganPageContent() {
         {/* Programs Tab */}
         <TabsContent value="programs" className="space-y-4">
           <div className="flex justify-end">
-            <Dialog open={programDialogOpen} onOpenChange={setProgramDialogOpen}>
+            <Dialog
+              open={programDialogOpen}
+              onOpenChange={setProgramDialogOpen}
+            >
               <DialogTrigger asChild>
                 <Button className="gap-1" onClick={() => setEditProgram(null)}>
                   <Plus className="h-4 w-4" /> Tambah Program
                 </Button>
               </DialogTrigger>
-              <ProgramFormDialog editData={editProgram} onClose={() => { setProgramDialogOpen(false); setEditProgram(null); }} />
+              <ProgramFormDialog
+                editData={editProgram}
+                onClose={() => {
+                  setProgramDialogOpen(false);
+                  setEditProgram(null);
+                }}
+              />
             </Dialog>
           </div>
           {loadingPrograms ? (
-            <div className="space-y-3">{[1, 2, 3].map((i) => <Skeleton key={i} className="h-28 w-full" />)}</div>
+            <div className="space-y-3">
+              {[1, 2, 3].map((i) => (
+                <Skeleton key={i} className="h-28 w-full" />
+              ))}
+            </div>
           ) : programs?.length === 0 ? (
-            <Card><CardContent className="py-12 text-center text-muted-foreground">
-              <Leaf className="h-12 w-12 mx-auto mb-3 text-muted-foreground/40" />
-              <p>Belum ada program lingkungan.</p>
-            </CardContent></Card>
+            <Card>
+              <CardContent className="py-12 text-center text-muted-foreground">
+                <Leaf className="h-12 w-12 mx-auto mb-3 text-muted-foreground/40" />
+                <p>Belum ada program lingkungan.</p>
+              </CardContent>
+            </Card>
           ) : (
             programs?.map((prog: any) => (
-              <Card key={prog.id} className="hover:shadow-md transition-shadow group">
+              <Card
+                key={prog.id}
+                className="hover:shadow-md transition-shadow group"
+              >
                 <CardHeader>
                   <div className="flex items-start justify-between">
                     <div>
                       <CardTitle className="text-lg">{prog.title}</CardTitle>
-                      <CardDescription>{prog.category} {prog.pic && `• PIC: ${prog.pic.name}`}</CardDescription>
+                      <CardDescription>
+                        {prog.category} {prog.pic && `• PIC: ${prog.pic.name}`}
+                      </CardDescription>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Badge className={statusColor[prog.status] || "bg-gray-100"}>{prog.status}</Badge>
+                      <Badge
+                        className={statusColor[prog.status] || "bg-gray-100"}
+                      >
+                        {prog.status}
+                      </Badge>
                       <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
-                        <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => handleEditProgram(prog)}><Pencil className="h-4 w-4" /></Button>
-                        <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => setDeleteId(prog.id)}><Trash2 className="h-4 w-4" /></Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8"
+                          onClick={() => handleEditProgram(prog)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8 text-destructive"
+                          onClick={() => setDeleteId(prog.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </div>
                     </div>
                   </div>
@@ -452,7 +773,9 @@ function LingkunganPageContent() {
           <div className="flex justify-end">
             <Dialog open={wasteDialogOpen} onOpenChange={setWasteDialogOpen}>
               <DialogTrigger asChild>
-                <Button className="gap-1"><Plus className="h-4 w-4" /> Catat Sampah</Button>
+                <Button className="gap-1">
+                  <Plus className="h-4 w-4" /> Catat Sampah
+                </Button>
               </DialogTrigger>
               <WasteFormDialog onClose={() => setWasteDialogOpen(false)} />
             </Dialog>
@@ -460,37 +783,60 @@ function LingkunganPageContent() {
           {wasteSummary && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <Card>
-                <CardHeader><CardTitle className="text-lg">Berdasarkan Kategori</CardTitle></CardHeader>
+                <CardHeader>
+                  <CardTitle className="text-lg">
+                    Berdasarkan Kategori
+                  </CardTitle>
+                </CardHeader>
                 <CardContent className="space-y-3">
-                  {Object.entries(wasteSummary.byCategory || {}).map(([cat, weight]: [string, any]) => {
-                    const pct = wasteSummary.totalWeight > 0 ? (weight / wasteSummary.totalWeight) * 100 : 0;
-                    return (
-                      <div key={cat}>
-                        <div className="flex justify-between text-sm mb-1">
-                          <span>{wasteCategories.find((c) => c.value === cat)?.label || cat}</span>
-                          <span className="font-medium">{weight.toFixed(1)} kg ({pct.toFixed(0)}%)</span>
+                  {Object.entries(wasteSummary.byCategory || {}).map(
+                    ([cat, weight]: [string, any]) => {
+                      const pct =
+                        wasteSummary.totalWeight > 0
+                          ? (weight / wasteSummary.totalWeight) * 100
+                          : 0;
+                      return (
+                        <div key={cat}>
+                          <div className="flex justify-between text-sm mb-1">
+                            <span>
+                              {wasteCategories.find((c) => c.value === cat)
+                                ?.label || cat}
+                            </span>
+                            <span className="font-medium">
+                              {weight.toFixed(1)} kg ({pct.toFixed(0)}%)
+                            </span>
+                          </div>
+                          <Progress value={pct} className="h-2" />
                         </div>
-                        <Progress value={pct} className="h-2" />
-                      </div>
-                    );
-                  })}
+                      );
+                    },
+                  )}
                 </CardContent>
               </Card>
               <Card>
-                <CardHeader><CardTitle className="text-lg">Berdasarkan Metode</CardTitle></CardHeader>
+                <CardHeader>
+                  <CardTitle className="text-lg">Berdasarkan Metode</CardTitle>
+                </CardHeader>
                 <CardContent className="space-y-3">
-                  {Object.entries(wasteSummary.byMethod || {}).map(([method, weight]: [string, any]) => {
-                    const pct = wasteSummary.totalWeight > 0 ? (weight / wasteSummary.totalWeight) * 100 : 0;
-                    return (
-                      <div key={method}>
-                        <div className="flex justify-between text-sm mb-1">
-                          <span>{method}</span>
-                          <span className="font-medium">{weight.toFixed(1)} kg ({pct.toFixed(0)}%)</span>
+                  {Object.entries(wasteSummary.byMethod || {}).map(
+                    ([method, weight]: [string, any]) => {
+                      const pct =
+                        wasteSummary.totalWeight > 0
+                          ? (weight / wasteSummary.totalWeight) * 100
+                          : 0;
+                      return (
+                        <div key={method}>
+                          <div className="flex justify-between text-sm mb-1">
+                            <span>{method}</span>
+                            <span className="font-medium">
+                              {weight.toFixed(1)} kg ({pct.toFixed(0)}%)
+                            </span>
+                          </div>
+                          <Progress value={pct} className="h-2" />
                         </div>
-                        <Progress value={pct} className="h-2" />
-                      </div>
-                    );
-                  })}
+                      );
+                    },
+                  )}
                 </CardContent>
               </Card>
             </div>
@@ -500,25 +846,39 @@ function LingkunganPageContent() {
         {/* Indicators Tab */}
         <TabsContent value="indicators" className="space-y-4">
           <div className="flex justify-end">
-            <Dialog open={indicatorDialogOpen} onOpenChange={setIndicatorDialogOpen}>
+            <Dialog
+              open={indicatorDialogOpen}
+              onOpenChange={setIndicatorDialogOpen}
+            >
               <DialogTrigger asChild>
-                <Button className="gap-1"><Plus className="h-4 w-4" /> Tambah Indikator</Button>
+                <Button className="gap-1">
+                  <Plus className="h-4 w-4" /> Tambah Indikator
+                </Button>
               </DialogTrigger>
-              <IndicatorFormDialog onClose={() => setIndicatorDialogOpen(false)} />
+              <IndicatorFormDialog
+                onClose={() => setIndicatorDialogOpen(false)}
+              />
             </Dialog>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {indicators?.map((ind: any) => {
-              const pct = ind.targetValue > 0 ? Math.min(100, (ind.currentValue / ind.targetValue) * 100) : 0;
+              const pct =
+                ind.targetValue > 0
+                  ? Math.min(100, (ind.currentValue / ind.targetValue) * 100)
+                  : 0;
               return (
                 <Card key={ind.id}>
                   <CardHeader className="pb-2">
-                    <CardDescription>{ind.category} • {ind.period}</CardDescription>
+                    <CardDescription>
+                      {ind.category} • {ind.period}
+                    </CardDescription>
                     <CardTitle className="text-base">{ind.name}</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="flex justify-between text-sm text-muted-foreground mb-1">
-                      <span>{ind.currentValue} / {ind.targetValue} {ind.unit}</span>
+                      <span>
+                        {ind.currentValue} / {ind.targetValue} {ind.unit}
+                      </span>
                       <span className="font-medium">{pct.toFixed(0)}%</span>
                     </div>
                     <Progress value={pct} className="h-2" />
@@ -527,7 +887,11 @@ function LingkunganPageContent() {
               );
             })}
             {(!indicators || indicators.length === 0) && (
-              <Card className="col-span-full"><CardContent className="py-8 text-center text-muted-foreground">Belum ada indikator.</CardContent></Card>
+              <Card className="col-span-full">
+                <CardContent className="py-8 text-center text-muted-foreground">
+                  Belum ada indikator.
+                </CardContent>
+              </Card>
             )}
           </div>
         </TabsContent>
@@ -541,7 +905,12 @@ function LingkunganPageContent() {
         confirmLabel="Hapus"
         cancelLabel="Batal"
         variant="destructive"
-        onConfirm={async () => { if (deleteId) { await deleteProgram.mutateAsync(deleteId); setDeleteId(null); } }}
+        onConfirm={async () => {
+          if (deleteId) {
+            await deleteProgram.mutateAsync(deleteId);
+            setDeleteId(null);
+          }
+        }}
         isLoading={deleteProgram.isPending}
       />
     </div>

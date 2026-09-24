@@ -250,10 +250,7 @@ export async function getTeacherStats(
     const teacherId = await findTeacherIdForUser(user.id);
 
     if (!teacherId) {
-      throw new ApiError(
-        ErrorCode.FORBIDDEN,
-        'This account is not linked to a teacher record'
-      );
+      throw new ApiError(ErrorCode.FORBIDDEN, 'This account is not linked to a teacher record');
     }
 
     const result = await dashboardService.getTeacherStats(teacherId, user.id);

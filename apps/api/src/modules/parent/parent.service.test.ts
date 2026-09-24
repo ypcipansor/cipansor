@@ -40,9 +40,7 @@ describe('ParentService.getChildWeeklyProgress', () => {
 
   it('throws when the parent has no access to the child', async () => {
     mockPrisma.studentParent.findUnique.mockResolvedValue(null);
-    await expect(
-      parentService.getChildWeeklyProgress('p1', 's1'),
-    ).rejects.toThrow();
+    await expect(parentService.getChildWeeklyProgress('p1', 's1')).rejects.toThrow();
   });
 
   it('aggregates attendance, tahfidz, behavior and academic for the week', async () => {
@@ -64,9 +62,7 @@ describe('ParentService.getChildWeeklyProgress', () => {
         { percentage: 90, score: null, maxScore: null },
       ])
       .mockResolvedValueOnce([{ percentage: 80, score: null, maxScore: null }]);
-    mockPrisma.reward.findMany.mockResolvedValue([
-      { description: 'Membantu teman', points: 3 },
-    ]);
+    mockPrisma.reward.findMany.mockResolvedValue([{ description: 'Membantu teman', points: 3 }]);
     mockPrisma.violation.findMany.mockResolvedValue([]);
 
     const result = await parentService.getChildWeeklyProgress('p1', 's1');

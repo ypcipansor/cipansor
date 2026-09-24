@@ -28,9 +28,7 @@ describe('yayasan organ exclusivity', () => {
 
   // The exact case sitting in production.
   it('refuses Pembina for someone who is already Pengurus', () => {
-    const conflict = findOrganConflict(RoleCode.YAYASAN_PEMBINA, [
-      RoleCode.YAYASAN_KETUA,
-    ]);
+    const conflict = findOrganConflict(RoleCode.YAYASAN_PEMBINA, [RoleCode.YAYASAN_KETUA]);
 
     expect(conflict).not.toBeNull();
     expect(conflict?.message).toMatch(/Pembina/);
@@ -39,15 +37,11 @@ describe('yayasan organ exclusivity', () => {
   });
 
   it('refuses it in the other direction too', () => {
-    expect(
-      findOrganConflict(RoleCode.YAYASAN_KETUA, [RoleCode.YAYASAN_PEMBINA])
-    ).not.toBeNull();
+    expect(findOrganConflict(RoleCode.YAYASAN_KETUA, [RoleCode.YAYASAN_PEMBINA])).not.toBeNull();
   });
 
   it('refuses Pengawas alongside either of the others', () => {
-    expect(
-      findOrganConflict(RoleCode.YAYASAN_PENGAWAS, [RoleCode.YAYASAN_PEMBINA])
-    ).not.toBeNull();
+    expect(findOrganConflict(RoleCode.YAYASAN_PENGAWAS, [RoleCode.YAYASAN_PEMBINA])).not.toBeNull();
     expect(
       findOrganConflict(RoleCode.YAYASAN_PENGAWAS, [RoleCode.YAYASAN_BENDAHARA])
     ).not.toBeNull();
@@ -55,9 +49,7 @@ describe('yayasan organ exclusivity', () => {
 
   // Two seats inside one organ are a real arrangement in a small yayasan.
   it('allows two roles within the same organ', () => {
-    expect(
-      findOrganConflict(RoleCode.YAYASAN_BENDAHARA, [RoleCode.YAYASAN_KETUA])
-    ).toBeNull();
+    expect(findOrganConflict(RoleCode.YAYASAN_BENDAHARA, [RoleCode.YAYASAN_KETUA])).toBeNull();
   });
 
   it('allows a yayasan role alongside a school role', () => {

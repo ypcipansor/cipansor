@@ -148,7 +148,10 @@ export function EscalationFlow({ question, conversationId, onDismiss }: Props) {
 
   if (step === "form") {
     return (
-      <form onSubmit={toReview} className="space-y-3 rounded-lg bg-muted/60 p-3 text-sm">
+      <form
+        onSubmit={toReview}
+        className="space-y-3 rounded-lg bg-muted/60 p-3 text-sm"
+      >
         <p>
           Baik. Mohon lengkapi agar tim dapat menghubungi Bapak/Ibu kembali.
         </p>

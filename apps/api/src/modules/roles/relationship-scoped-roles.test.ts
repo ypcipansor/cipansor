@@ -54,12 +54,7 @@ describe('relationship-scoped roles', () => {
 
   it('keeps the routes they depend on free of permission gates', () => {
     for (const moduleName of RELATIONSHIP_SCOPED_MODULES) {
-      const routesPath = path.resolve(
-        __dirname,
-        '..',
-        moduleName,
-        `${moduleName}.routes.ts`
-      );
+      const routesPath = path.resolve(__dirname, '..', moduleName, `${moduleName}.routes.ts`);
 
       expect(fs.existsSync(routesPath), `${routesPath} should exist`).toBe(true);
 

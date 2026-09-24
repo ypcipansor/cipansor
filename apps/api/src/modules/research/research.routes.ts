@@ -30,7 +30,6 @@ async function resolveStudentId(userId: string): Promise<string> {
   return student.id;
 }
 
-
 // Themes
 router.post(
   '/themes',
@@ -99,7 +98,11 @@ router.patch(
   authorize(RoleCode.SMAQ_GURU, RoleCode.SUPER_ADMIN),
   validate(ReviewSubmissionSchema),
   asyncHandler(async (req, res) => {
-    const data = await researchService.reviewSubmission(req.params.id, (req.user as any).sub, req.body);
+    const data = await researchService.reviewSubmission(
+      req.params.id,
+      (req.user as any).sub,
+      req.body
+    );
     res.json(ApiResponse.success(data));
   })
 );

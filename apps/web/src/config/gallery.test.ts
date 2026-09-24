@@ -53,7 +53,9 @@ describe("gallery photographs — the files actually exist", () => {
     for (const album of galleryItems) {
       for (const photo of album.photos) {
         const full = fs.statSync(path.join(PUBLIC_DIR, photo.src)).size;
-        const thumb = fs.statSync(path.join(PUBLIC_DIR, galleryThumb(photo.src))).size;
+        const thumb = fs.statSync(
+          path.join(PUBLIC_DIR, galleryThumb(photo.src)),
+        ).size;
         expect(thumb, photo.src).toBeLessThan(full);
       }
     }
@@ -61,7 +63,10 @@ describe("gallery photographs — the files actually exist", () => {
 
   it("the album cover is one of the album's own photographs", () => {
     for (const album of galleryItems) {
-      expect(album.photos.map((p) => p.src), album.slug).toContain(album.image);
+      expect(
+        album.photos.map((p) => p.src),
+        album.slug,
+      ).toContain(album.image);
     }
   });
 });
@@ -74,7 +79,9 @@ describe("gallery photographs — alt text describes the picture", () => {
       for (const album of galleryItems) {
         const n = alts[album.slug]?.length ?? 0;
         if (n !== album.photos.length) {
-          drift.push(`${locale}/${album.slug}: ${n} alts for ${album.photos.length} photos`);
+          drift.push(
+            `${locale}/${album.slug}: ${n} alts for ${album.photos.length} photos`,
+          );
         }
       }
     }
@@ -91,7 +98,10 @@ describe("gallery photographs — alt text describes the picture", () => {
           expect(alt.trim().toLowerCase(), `${locale}/${album.slug}`).not.toBe(
             "pesantren cipansor",
           );
-          expect(alt.length, `${locale}/${album.slug}: "${alt}"`).toBeGreaterThan(15);
+          expect(
+            alt.length,
+            `${locale}/${album.slug}: "${alt}"`,
+          ).toBeGreaterThan(15);
         }
       }
     }
@@ -154,9 +164,10 @@ describe("public pages — each one shows the pesantren", () => {
   it("the pages claiming their own photography still reference an image", () => {
     for (const rel of Object.keys(OWN_PHOTOGRAPHY)) {
       const src = fs.readFileSync(path.join(APP, rel), "utf8");
-      expect(/\bImage\b|\bphoto\b/.test(src), `${rel} (${OWN_PHOTOGRAPHY[rel]})`).toBe(
-        true,
-      );
+      expect(
+        /\bImage\b|\bphoto\b/.test(src),
+        `${rel} (${OWN_PHOTOGRAPHY[rel]})`,
+      ).toBe(true);
     }
   });
 });

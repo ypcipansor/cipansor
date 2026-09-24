@@ -15,7 +15,10 @@ const ASPECT_KEYS = ["NAM", "FM", "KOG", "BHS", "SE", "SNI"];
 async function login(page: import("@playwright/test").Page) {
   const lp = new LoginPage(page);
   await lp.goto();
-  await lp.loginAndWaitForDashboard("superadmin@cipansor.or.id", "SuperAdmin123!");
+  await lp.loginAndWaitForDashboard(
+    "superadmin@cipansor.or.id",
+    "SuperAdmin123!",
+  );
 }
 
 // Radix Select renders the placeholder via data-placeholder, so `hasText`
@@ -52,7 +55,9 @@ test.describe("TK Assessment", () => {
     await waitForLoadingComplete(page);
   });
 
-  test("should display the assessment input page components", async ({ page }) => {
+  test("should display the assessment input page components", async ({
+    page,
+  }) => {
     await expect(
       page.getByRole("heading", { name: /input penilaian tk/i }),
     ).toBeVisible({ timeout: 10000 });
@@ -143,7 +148,12 @@ test.describe("TK Dashboard", () => {
     await waitForLoadingComplete(page);
 
     const heading = page.getByRole("heading", { name: /tk|paud|dashboard/i });
-    if (await heading.first().isVisible({ timeout: 5000 }).catch(() => false)) {
+    if (
+      await heading
+        .first()
+        .isVisible({ timeout: 5000 })
+        .catch(() => false)
+    ) {
       await expect(heading.first()).toBeVisible();
     } else {
       // Some deployments route the TK overview under /tk; tolerate either.

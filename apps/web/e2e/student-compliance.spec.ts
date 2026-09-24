@@ -27,8 +27,13 @@ test.describe("Kelengkapan Data Santri — simpan", () => {
     const daftar = await apiRequest<{
       data: { id: string; nisn: string | null }[];
     }>(session, "GET", "/students?limit=100");
-    const berNisn = daftar.data.filter((s) => s.nisn && /^\d{10}$/.test(s.nisn));
-    expect(berNisn.length, "seed harus punya ≥2 santri ber-NISN sah").toBeGreaterThanOrEqual(2);
+    const berNisn = daftar.data.filter(
+      (s) => s.nisn && /^\d{10}$/.test(s.nisn),
+    );
+    expect(
+      berNisn.length,
+      "seed harus punya ≥2 santri ber-NISN sah",
+    ).toBeGreaterThanOrEqual(2);
     const [target, lain] = berNisn as { id: string; nisn: string }[];
 
     const putKe = (r: { url(): string; request(): { method(): string } }) =>
@@ -36,7 +41,8 @@ test.describe("Kelengkapan Data Santri — simpan", () => {
       r.url().includes(`/student-compliance/${target.id}`);
     let jumlahPut = 0;
     page.on("request", (r) => {
-      if (r.method() === "PUT" && r.url().includes("/student-compliance/")) jumlahPut++;
+      if (r.method() === "PUT" && r.url().includes("/student-compliance/"))
+        jumlahPut++;
     });
 
     await page.goto(`/students/compliance/${target.id}`);
@@ -56,7 +62,11 @@ test.describe("Kelengkapan Data Santri — simpan", () => {
     const kembar = page.waitForResponse(putKe);
     await simpan.click();
     expect((await kembar).status()).toBe(409);
-    await waitForToast(page, "NISN ini sudah tercatat pada santri lain", "error");
+    await waitForToast(
+      page,
+      "NISN ini sudah tercatat pada santri lain",
+      "error",
+    );
 
     // 3) NISN asli + moda transportasi dari daftar enum → 200, tersimpan, dan
     //    halaman daftar yang dituju sesudahnya memuat laporannya tanpa 500.

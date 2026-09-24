@@ -120,7 +120,9 @@ export default async function UnitDetailPage({
                 className="mt-1 h-4 w-4 shrink-0 text-primary"
                 aria-hidden="true"
               />
-              <span className="leading-relaxed text-muted-foreground">{item}</span>
+              <span className="leading-relaxed text-muted-foreground">
+                {item}
+              </span>
             </li>
           ))}
         </ul>

@@ -86,7 +86,10 @@ describe('naskah yang sudah ditandatangani disajikan dari arsip', () => {
 
     await resolveLetterPdf(
       letter({
-        signatures: [signature({ id: 'sig-1' }), signature({ id: 'sig-2', pdfHash: sha256(signed) })],
+        signatures: [
+          signature({ id: 'sig-1' }),
+          signature({ id: 'sig-2', pdfHash: sha256(signed) }),
+        ],
       })
     );
 

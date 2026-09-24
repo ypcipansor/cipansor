@@ -112,7 +112,8 @@ export default function IbadahLeaderboardPage() {
   const currentUserEntry = ((): { rank: number | string; score: number } => {
     if (!user?.id || !leaderboardData) return { rank: "-", score: 0 };
     const found = leaderboardData.find(
-      (item: any) => item.studentId === user.id || item.student?.userId === user.id,
+      (item: any) =>
+        item.studentId === user.id || item.student?.userId === user.id,
     );
     if (found) {
       return {

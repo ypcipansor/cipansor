@@ -5,7 +5,12 @@ import * as path from 'path';
 
 vi.mock('@/lib/prisma', () => ({
   prisma: {
-    studentUnitEnrollment: { findFirst: vi.fn(), findMany: vi.fn(), upsert: vi.fn(), update: vi.fn() },
+    studentUnitEnrollment: {
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      upsert: vi.fn(),
+      update: vi.fn(),
+    },
     student: { findUnique: vi.fn() },
     class: { findUnique: vi.fn() },
     academicYear: { findFirst: vi.fn() },
@@ -181,7 +186,12 @@ describe('menulis riwayat dari pendaftaran kelas', () => {
       academicYear: { startDate: new Date('2027-07-15'), endDate: new Date('2028-06-30') },
     });
 
-    await recordUnitEnrollmentFromClass(prisma as any, 's-1', 'kelas-depan', new Date('2026-09-12'));
+    await recordUnitEnrollmentFromClass(
+      prisma as any,
+      's-1',
+      'kelas-depan',
+      new Date('2026-09-12')
+    );
 
     const arg = vi.mocked(prisma.studentUnitEnrollment.upsert as any).mock.calls[0][0];
     expect(arg.create.entryDate).toEqual(new Date('2027-07-15'));
@@ -223,7 +233,9 @@ describe('invarian riwayat dijaga basis data', () => {
 
   it('tanggal keluar tidak boleh mendahului tanggal masuk', () => {
     const sql = fs.readFileSync(MIGRASI, 'utf8');
-    expect(sql).toMatch(/CHECK\s*\(\s*"exit_date"\s+IS\s+NULL\s+OR\s+"exit_date"\s*>=\s*"entry_date"\s*\)/i);
+    expect(sql).toMatch(
+      /CHECK\s*\(\s*"exit_date"\s+IS\s+NULL\s+OR\s+"exit_date"\s*>=\s*"entry_date"\s*\)/i
+    );
   });
 
   it('satu baris per santri per unit per tahun ajaran', () => {
@@ -353,11 +365,17 @@ describe('menutup keanggotaan unit (kelulusan)', () => {
 
   it('alasan keluar yang ditulis aplikasi termasuk daftar CHECK migrasinya', () => {
     const migrasi = fs.readFileSync(
-      path.join(__dirname, '../../prisma/migrations/20260912020000_student_unit_enrollment/migration.sql'),
+      path.join(
+        __dirname,
+        '../../prisma/migrations/20260912020000_student_unit_enrollment/migration.sql'
+      ),
       'utf-8'
     );
     const sumber = fs.readFileSync(path.join(__dirname, 'student-unit-history.ts'), 'utf-8');
-    const tipe = sumber.slice(sumber.indexOf('export type UnitExitReason'), sumber.indexOf(';', sumber.indexOf('export type UnitExitReason')));
+    const tipe = sumber.slice(
+      sumber.indexOf('export type UnitExitReason'),
+      sumber.indexOf(';', sumber.indexOf('export type UnitExitReason'))
+    );
     const nilai = [...tipe.matchAll(/'([A-Z_]+)'/g)].map((m) => m[1]);
     expect(nilai.length).toBeGreaterThan(0);
     for (const v of nilai) expect(migrasi, v).toContain(`'${v}'`);

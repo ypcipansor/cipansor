@@ -69,7 +69,7 @@ export class RiskService {
             plannedDate: new Date(),
             leadAuditorId: leadAuditorId,
             riskId: risk.id,
-          }
+          },
         });
 
         // 2. Create an automated Finding under this audit
@@ -82,7 +82,7 @@ export class RiskService {
             severity: 'CRITICAL',
             category: 'RISK_MANAGEMENT',
             riskId: risk.id,
-          }
+          },
         });
       }
 
@@ -114,7 +114,10 @@ export class RiskService {
     }
   }
 
-  async getRisks(unitId: string, query: { category?: any; riskLevel?: any; strategicPlanId?: string }): Promise<Risk[]> {
+  async getRisks(
+    unitId: string,
+    query: { category?: any; riskLevel?: any; strategicPlanId?: string }
+  ): Promise<Risk[]> {
     const where: Prisma.RiskWhereInput = {
       unitId,
     };
@@ -165,7 +168,11 @@ export class RiskService {
     });
   }
 
-  async updateRisk(id: string, data: Prisma.RiskUpdateInput, externalTx?: TransactionClient): Promise<Risk> {
+  async updateRisk(
+    id: string,
+    data: Prisma.RiskUpdateInput,
+    externalTx?: TransactionClient
+  ): Promise<Risk> {
     const perform = async (tx: TransactionClient) => {
       // Read current risk inside the transaction to prevent stale-read race
       // conditions when concurrent updates change likelihood/impact between
@@ -276,7 +283,10 @@ export class RiskService {
   }
 
   // Helpers
-  private async recalculateResidualRisk(riskId: string, tx: TransactionClient | typeof prisma = prisma): Promise<void> {
+  private async recalculateResidualRisk(
+    riskId: string,
+    tx: TransactionClient | typeof prisma = prisma
+  ): Promise<void> {
     const risk = await tx.risk.findUnique({
       where: { id: riskId },
       include: { mitigations: true },
@@ -300,7 +310,8 @@ export class RiskService {
 
     // Logic: Mitigation progress reduces likelihood and impact
     // Avg progress of all mitigations
-    const avgProgress = risk.mitigations.reduce((sum, m) => sum + (m.progress || 0), 0) / risk.mitigations.length;
+    const avgProgress =
+      risk.mitigations.reduce((sum, m) => sum + (m.progress || 0), 0) / risk.mitigations.length;
 
     // Reduction factor: 0% progress = 1.0, 100% progress = 0.4 (capped reduction)
     const factor = 1 - (avgProgress / 100) * 0.6;
@@ -332,25 +343,38 @@ export class RiskService {
   // single map because their string values don't overlap.
   private getEnumWeight(val: string): number {
     const map: Record<string, number> = {
-      RARE: 1, INSIGNIFICANT: 1,
-      UNLIKELY: 2, MINOR: 2,
-      POSSIBLE: 3, MODERATE: 3,
-      LIKELY: 4, MAJOR: 4,
-      ALMOST_CERTAIN: 5, CATASTROPHIC: 5,
+      RARE: 1,
+      INSIGNIFICANT: 1,
+      UNLIKELY: 2,
+      MINOR: 2,
+      POSSIBLE: 3,
+      MODERATE: 3,
+      LIKELY: 4,
+      MAJOR: 4,
+      ALMOST_CERTAIN: 5,
+      CATASTROPHIC: 5,
     };
     return map[val] || 1;
   }
 
   private getWeightToLikelihood(w: number): RiskLikelihood {
     const map: Record<number, RiskLikelihood> = {
-      1: 'RARE', 2: 'UNLIKELY', 3: 'POSSIBLE', 4: 'LIKELY', 5: 'ALMOST_CERTAIN',
+      1: 'RARE',
+      2: 'UNLIKELY',
+      3: 'POSSIBLE',
+      4: 'LIKELY',
+      5: 'ALMOST_CERTAIN',
     };
     return map[w] || 'RARE';
   }
 
   private getWeightToImpact(w: number): RiskImpact {
     const map: Record<number, RiskImpact> = {
-      1: 'INSIGNIFICANT', 2: 'MINOR', 3: 'MODERATE', 4: 'MAJOR', 5: 'CATASTROPHIC',
+      1: 'INSIGNIFICANT',
+      2: 'MINOR',
+      3: 'MODERATE',
+      4: 'MAJOR',
+      5: 'CATASTROPHIC',
     };
     return map[w] || 'INSIGNIFICANT';
   }

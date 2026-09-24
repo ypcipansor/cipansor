@@ -45,11 +45,7 @@ import {
 import { AssetAuditItem } from "@cipansor/shared";
 
 import { MainLayout } from "@/components/layout";
-function AuditDetailPageContent({
-  params,
-}: {
-  params: { id: string };
-}) {
+function AuditDetailPageContent({ params }: { params: { id: string } }) {
   const router = useRouter();
   const auditId = params.id;
   const { data: audit, isLoading } = useAssetAudit(auditId);
@@ -370,7 +366,9 @@ function AuditDetailPageContent({
   );
 }
 
-export default function AuditDetailPage(props: Parameters<typeof AuditDetailPageContent>[0]) {
+export default function AuditDetailPage(
+  props: Parameters<typeof AuditDetailPageContent>[0],
+) {
   return (
     <MainLayout>
       <AuditDetailPageContent {...props} />

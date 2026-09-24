@@ -211,10 +211,7 @@ export class SyariahService {
         const leadAuditor = await prisma.user.findFirst({
           where: {
             isActive: true,
-            OR: [
-              { unitId, role: UserRole.UNIT_ADMIN },
-              { role: UserRole.SUPER_ADMIN },
-            ],
+            OR: [{ unitId, role: UserRole.UNIT_ADMIN }, { role: UserRole.SUPER_ADMIN }],
           },
           select: { id: true },
           orderBy: { createdAt: 'asc' },

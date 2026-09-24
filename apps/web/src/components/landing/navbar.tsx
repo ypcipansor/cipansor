@@ -139,7 +139,10 @@ export function LandingNavbar() {
             <div className="flex items-center gap-2 pl-2 border-l border-border">
               <LanguageSwitcher compact />
               <Link href="/public/spmb">
-                <Button size="sm" className="whitespace-nowrap bg-primary hover:bg-primary/90">
+                <Button
+                  size="sm"
+                  className="whitespace-nowrap bg-primary hover:bg-primary/90"
+                >
                   {t("public.nav.register")}
                 </Button>
               </Link>

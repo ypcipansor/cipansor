@@ -45,10 +45,7 @@ describe('GRCAnalyticsService', () => {
   });
 
   it('should aggregate GRC metrics correctly', async () => {
-    (prisma.strategicPlan.findMany as any).mockResolvedValue([
-      { progress: 50 },
-      { progress: 100 },
-    ]);
+    (prisma.strategicPlan.findMany as any).mockResolvedValue([{ progress: 50 }, { progress: 100 }]);
     (prisma.risk.findMany as any).mockResolvedValue([
       { riskLevel: 'HIGH' },
       { riskLevel: 'EXTREME' },
@@ -59,8 +56,8 @@ describe('GRCAnalyticsService', () => {
     //   2nd call → resolved findings count (with verified follow-up filter)
     // If the Promise.all order changes in grc-analytics.service.ts, update these mocks.
     (prisma.auditFinding.count as any)
-      .mockResolvedValueOnce(10)  // 1st call: total findings
-      .mockResolvedValueOnce(4);  // 2nd call: findings with verified follow-ups
+      .mockResolvedValueOnce(10) // 1st call: total findings
+      .mockResolvedValueOnce(4); // 2nd call: findings with verified follow-ups
     (prisma.shariaCompliance.findMany as any).mockResolvedValue([
       { score: 90, status: 'COMPLIANT', category: 'MUAMALAH' },
       { score: 70, status: 'PARTIALLY', category: 'IBADAH' },
@@ -90,9 +87,7 @@ describe('GRCAnalyticsService', () => {
   it('should handle null sharia scores without deflating compliance rate', async () => {
     (prisma.strategicPlan.findMany as any).mockResolvedValue([]);
     (prisma.risk.findMany as any).mockResolvedValue([]);
-    (prisma.auditFinding.count as any)
-      .mockResolvedValueOnce(0)
-      .mockResolvedValueOnce(0);
+    (prisma.auditFinding.count as any).mockResolvedValueOnce(0).mockResolvedValueOnce(0);
     (prisma.shariaCompliance.findMany as any).mockResolvedValue([
       { score: 90, status: 'COMPLIANT', category: 'MUAMALAH' },
       { score: null, status: 'UNDER_REVIEW', category: 'MUAMALAH' },
@@ -115,9 +110,7 @@ describe('GRCAnalyticsService', () => {
   it('should return 100% resolution rate when there are zero findings', async () => {
     (prisma.strategicPlan.findMany as any).mockResolvedValue([]);
     (prisma.risk.findMany as any).mockResolvedValue([]);
-    (prisma.auditFinding.count as any)
-      .mockResolvedValueOnce(0)
-      .mockResolvedValueOnce(0);
+    (prisma.auditFinding.count as any).mockResolvedValueOnce(0).mockResolvedValueOnce(0);
     (prisma.shariaCompliance.findMany as any).mockResolvedValue([]);
 
     const stats = await getGRCStats();

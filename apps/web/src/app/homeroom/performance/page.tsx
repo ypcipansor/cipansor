@@ -13,12 +13,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Users,
-  AlertCircle,
-  Star,
-  BarChart3,
-} from "lucide-react";
+import { Users, AlertCircle, Star, BarChart3 } from "lucide-react";
 import {
   BarChart,
   Bar,
@@ -59,8 +54,7 @@ const getScoreColor = (score: number) => {
 };
 
 /** Tahfidz activity scaled to 0-100 (20 records/student/month = 100). */
-const tahfidzScore = (perStudent: number) =>
-  Math.min(perStudent / 20, 1) * 100;
+const tahfidzScore = (perStudent: number) => Math.min(perStudent / 20, 1) * 100;
 
 export default function HomeroomPerformancePage() {
   const { data, isLoading } = useHomeroomPerformance();
@@ -80,7 +74,9 @@ export default function HomeroomPerformancePage() {
         { metric: "Akademik", value: current.metrics.academicAverage },
         {
           metric: "Aktivitas Tahfidz",
-          value: Math.round(tahfidzScore(current.metrics.tahfidzActivityPerStudent)),
+          value: Math.round(
+            tahfidzScore(current.metrics.tahfidzActivityPerStudent),
+          ),
         },
       ]
     : [];
@@ -334,7 +330,10 @@ export default function HomeroomPerformancePage() {
                           detail: `${current.metrics.tahfidzActivityPerStudent} setoran/santri`,
                         },
                       ].map((metric) => (
-                        <div key={metric.label} className="p-4 border rounded-lg">
+                        <div
+                          key={metric.label}
+                          className="p-4 border rounded-lg"
+                        >
                           <div className="flex items-center justify-between mb-2">
                             <span className="font-medium text-sm">
                               {metric.label}

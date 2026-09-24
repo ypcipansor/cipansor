@@ -136,9 +136,7 @@ export const listPeriods = asyncHandler(async (req: Request, res: Response) => {
 export const getPeriod = asyncHandler(async (req: Request, res: Response) => {
   const period = await payrollPeriodService.getById(req.params.id);
   if (!period) {
-    return res
-      .status(404)
-      .json({ success: false, message: 'Periode penggajian tidak ditemukan' });
+    return res.status(404).json({ success: false, message: 'Periode penggajian tidak ditemukan' });
   }
   res.json({ success: true, data: period });
 });
@@ -172,7 +170,7 @@ export const payPeriod = asyncHandler(async (req: Request, res: Response) => {
     req.params.id,
     new Date(req.body.payDate),
     req.body.notes,
-    userId,
+    userId
   );
   res.json({
     success: true,

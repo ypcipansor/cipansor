@@ -19,6 +19,22 @@ sudah diperbaiki bersama paket itu:
   yang sudah tutup atau belum buka. Sekarang aturannya sama dengan gerbang
   pendaftaran.
 
+Diperbaiki sesudahnya (2026-09-24):
+
+- **Cookie `auth-storage` di atas 4 KB** (#531, tergelar di produksi `0e0d0338`):
+  cookie kini hanya membawa `role` dan penugasan primer (283 byte untuk
+  `fatimah@`, sebelumnya 5.054). Sisa akarnya — middleware membiarkan lewat
+  pengguna tanpa peran — menunggu #508/#523.
+- **Tagihan otomatis menagih alumni** (#535): `generateBulkSppInvoices` kini
+  hanya memilih santri `active` yang tidak dihapus. **Harus sudah di produksi
+  sebelum 1 Oktober 04.00 WIB**, jadwal tagihan bulanan berikutnya.
+- **Kartu CBT menghitung ujian tertulis** (#535): hanya ujian ber-bank soal.
+- **Notifikasi tonggak tahfidz tak pernah sampai** (#535): `ayat ÷ 600`
+  diganti hitungan per juz, dan notifikasi kini dialamatkan ke User santri,
+  bukan ke id Student yang ditolak foreign key.
+- **Regex e-mail lambat** (#537, CodeQL #18): pola linear yang sama untuk
+  `isEmail()` dan validator formulir.
+
 Yang masih terbuka:
 
 - **`/dashboard/executive`**: nama bidang tidak cocok dengan API ("0 AKTIF",
@@ -31,17 +47,6 @@ Yang masih terbuka:
 - **Daftar tagihan**: kolom "Jenis" kosong, dan kolom santri hanya berisi NIS.
 - **Ringkasan SPMB**: 0 untuk Ketua dan Kepala karena API hanya mengizinkan
   TU/admin unit. Pakai `smpit.tu@` atau `smpit.admin@`.
-- **Kartu CBT** di dasbor ikut menghitung ujian tertulis.
-- **Tagihan otomatis** ikut menagih alumni.
-- **`lib/event-bus.ts`** masih memakai `ayat ÷ 600` untuk notifikasi "tuntas
-  satu juz".
-- **Cookie `auth-storage` melewati 4 KB untuk lebih banyak akun** begitu paket
-  diterapkan. Wali kelas mendapat peran kedua, dan unit kini punya alamat.
-  Contoh terukur: `fatimah@` 5.705 byte, `admin.sdit@` 4.869 byte. Peramban
-  membuang cookie itu tanpa pesan, lalu middleware web jatuh ke `accessToken`
-  saja: pengguna tetap masuk, tetapi tanpa peran, sehingga gerbang rute web
-  tidak berlaku (API tetap menjaga). Perbaikannya adalah menulis cookie ramping
-  yang berisi hanya apa yang dibaca middleware.
 - **Takhosus sebagai unit kelima** (`UnitType.PESANTREN`, keputusan
   2026-09-13) belum diterapkan. Paket ini menaruh halaqoh takhosus di bawah
   SMA.
@@ -991,7 +996,7 @@ satu PR — kutipan sebelumnya keliru. PR #415 sendiri kini membawa migrasi
 
 ## Follow-up (ditemukan 2026-09-11 pada PR #415)
 
-### Cookie `auth-storage` di atas 4 KB dibuang peramban — middleware tanpa peran
+### ✅ Cookie `auth-storage` di atas 4 KB dibuang peramban — middleware tanpa peran (diperbaiki #531, 2026-09-24)
 
 **Selesai (PR #508).** Cookie itu tidak lagi ditulis peramban: kanal peran
 sekarang cookie `cipansor_routing` milik server (base64url, hanya

@@ -65,7 +65,6 @@ export const listAudits = asyncHandler(async (req: Request, res: Response) => {
   // unscoped query — `undefined` means "every unit" to `getAudits`, so that
   // would hand a unitless actor the foundation-wide list.
   if (!unitId && !isPrivilegedUser) throw Errors.unauthorized('Unit ID required');
-
   // Foundation-wide governance sees every unit by default; an explicit
   // `unitId` narrows it to one. `undefined` is a legitimate, intended value
   // here (cross-unit view), so it must not be treated as "missing" — the old

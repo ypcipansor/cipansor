@@ -23,8 +23,16 @@ describe('aturan bentuk NISN/NIK: zod dan CHECK basis data sepakat', () => {
   };
 
   it.each([
-    ['nisn', NISN_PATTERN, ['0012345678', '12345678', '0134SDB1', '00123456789', ' 0012345678', '００１２３４５６７８']],
-    ['nik', NIK_PATTERN, ['3206071204120001', '320607120412000', '32060712041200011', '320607120412000A']],
+    [
+      'nisn',
+      NISN_PATTERN,
+      ['0012345678', '12345678', '0134SDB1', '00123456789', ' 0012345678', '００１２３４５６７８'],
+    ],
+    [
+      'nik',
+      NIK_PATTERN,
+      ['3206071204120001', '320607120412000', '32060712041200011', '320607120412000A'],
+    ],
   ] as const)('%s', (kolom, pola, contoh) => {
     const check = regexCheck(kolom);
     for (const s of contoh) {
@@ -33,8 +41,12 @@ describe('aturan bentuk NISN/NIK: zod dan CHECK basis data sepakat', () => {
   });
 
   it('indeks unik bernama sama dengan yang dikira Prisma (@unique)', () => {
-    expect(sql).toContain('CREATE UNIQUE INDEX IF NOT EXISTS "students_nisn_key" ON "students" ("nisn")');
-    expect(sql).toContain('CREATE UNIQUE INDEX IF NOT EXISTS "students_nik_key" ON "students" ("nik")');
+    expect(sql).toContain(
+      'CREATE UNIQUE INDEX IF NOT EXISTS "students_nisn_key" ON "students" ("nisn")'
+    );
+    expect(sql).toContain(
+      'CREATE UNIQUE INDEX IF NOT EXISTS "students_nik_key" ON "students" ("nik")'
+    );
   });
 
   it('migrasi hanya menambah: tidak ada DROP/RENAME kolom (image :rollback harus tetap jalan)', () => {
@@ -57,10 +69,13 @@ describe('kartu santri tidak pernah memakai NIK', () => {
     expect(berkasKartu.length).toBeGreaterThan(0);
   });
 
-  it.each(berkasKartu.map((f) => [f.split('/').pop()!, f]))('%s tidak menyebut nik', (_nama, berkas) => {
-    const kode = readFileSync(berkas, 'utf-8')
-      .replace(/\/\*[\s\S]*?\*\//g, '')
-      .replace(/\/\/.*$/gm, '');
-    expect(kode).not.toMatch(/\bnik\b|\bNIK\b|noKK|no_kk/);
-  });
+  it.each(berkasKartu.map((f) => [f.split('/').pop()!, f]))(
+    '%s tidak menyebut nik',
+    (_nama, berkas) => {
+      const kode = readFileSync(berkas, 'utf-8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/\/\/.*$/gm, '');
+      expect(kode).not.toMatch(/\bnik\b|\bNIK\b|noKK|no_kk/);
+    }
+  );
 });

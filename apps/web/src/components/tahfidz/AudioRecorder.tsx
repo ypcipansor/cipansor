@@ -61,7 +61,9 @@ export function AudioRecorder({ onUpload, isUploading }: AudioRecorderProps) {
   const stopRecording = () => {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
-      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+      mediaRecorderRef.current.stream
+        .getTracks()
+        .forEach((track) => track.stop());
       setIsRecording(false);
       if (timerRef.current) clearInterval(timerRef.current);
     }
@@ -96,21 +98,38 @@ export function AudioRecorder({ onUpload, isUploading }: AudioRecorderProps) {
       <CardContent className="p-6 flex flex-col items-center justify-center space-y-4">
         {!audioUrl ? (
           <>
-            <div className={`p-4 rounded-full ${isRecording ? 'bg-red-100 animate-pulse' : 'bg-primary/10'}`}>
-              <Mic className={`w-8 h-8 ${isRecording ? 'text-red-600' : 'text-primary'}`} />
+            <div
+              className={`p-4 rounded-full ${isRecording ? "bg-red-100 animate-pulse" : "bg-primary/10"}`}
+            >
+              <Mic
+                className={`w-8 h-8 ${isRecording ? "text-red-600" : "text-primary"}`}
+              />
             </div>
             <div className="text-center">
-              <h3 className="font-semibold">{isRecording ? 'Sedang Merekam...' : 'Rekam Setoran'}</h3>
+              <h3 className="font-semibold">
+                {isRecording ? "Sedang Merekam..." : "Rekam Setoran"}
+              </h3>
               <p className="text-sm text-muted-foreground">
-                {isRecording ? formatDuration(duration) : 'Klik tombol di bawah untuk mulai merekam audio'}
+                {isRecording
+                  ? formatDuration(duration)
+                  : "Klik tombol di bawah untuk mulai merekam audio"}
               </p>
             </div>
             {isRecording ? (
-              <Button variant="destructive" size="lg" onClick={stopRecording} className="rounded-full w-16 h-16 p-0">
+              <Button
+                variant="destructive"
+                size="lg"
+                onClick={stopRecording}
+                className="rounded-full w-16 h-16 p-0"
+              >
                 <Square className="fill-current" />
               </Button>
             ) : (
-              <Button size="lg" onClick={startRecording} className="rounded-full w-16 h-16 p-0">
+              <Button
+                size="lg"
+                onClick={startRecording}
+                className="rounded-full w-16 h-16 p-0"
+              >
                 <Mic className="w-8 h-8" />
               </Button>
             )}
@@ -123,10 +142,20 @@ export function AudioRecorder({ onUpload, isUploading }: AudioRecorderProps) {
               </Button>
               <div className="flex-1">
                 <div className="h-1 bg-primary/20 rounded-full overflow-hidden">
-                  <div className="h-full bg-primary" style={{ width: isPlaying ? '100%' : '0%', transition: isPlaying ? `width ${duration}s linear` : 'none' }} />
+                  <div
+                    className="h-full bg-primary"
+                    style={{
+                      width: isPlaying ? "100%" : "0%",
+                      transition: isPlaying
+                        ? `width ${duration}s linear`
+                        : "none",
+                    }}
+                  />
                 </div>
               </div>
-              <span className="text-sm font-mono">{formatDuration(duration)}</span>
+              <span className="text-sm font-mono">
+                {formatDuration(duration)}
+              </span>
               <audio
                 ref={audioRef}
                 src={audioUrl}
@@ -135,11 +164,21 @@ export function AudioRecorder({ onUpload, isUploading }: AudioRecorderProps) {
               />
             </div>
             <div className="flex space-x-2 w-full">
-              <Button variant="outline" className="flex-1" onClick={deleteRecording} disabled={isUploading}>
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={deleteRecording}
+                disabled={isUploading}
+              >
                 <Trash2 className="w-4 h-4 mr-2" /> Hapus
               </Button>
-              <Button className="flex-1" onClick={() => audioBlob && onUpload(audioBlob)} disabled={isUploading}>
-                <CheckCircle2 className="w-4 h-4 mr-2" /> {isUploading ? "Mengunggah..." : "Unggah Setoran"}
+              <Button
+                className="flex-1"
+                onClick={() => audioBlob && onUpload(audioBlob)}
+                disabled={isUploading}
+              >
+                <CheckCircle2 className="w-4 h-4 mr-2" />{" "}
+                {isUploading ? "Mengunggah..." : "Unggah Setoran"}
               </Button>
             </div>
           </>

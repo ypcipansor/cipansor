@@ -105,7 +105,8 @@ const useCreateBudget = () => {
 const useDeleteBudget = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => api.delete(`/finance-enhancement/budgets/${id}`),
+    mutationFn: (id: string) =>
+      api.delete(`/finance-enhancement/budgets/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["budgets"] });
       toast.success("Budget deleted");
@@ -177,14 +178,18 @@ function BudgetingPageContent() {
             // periodType is optional, defaulting to YEARLY if not present in form
           },
         });
-        toast.success("Success", { description: "Budget updated successfully" });
+        toast.success("Success", {
+          description: "Budget updated successfully",
+        });
       } else {
         await createBudget.mutateAsync({
           unitId: selectedUnitId,
           academicYearId: selectedYearId,
           ...formData,
         });
-        toast.success("Success", { description: "Budget created successfully" });
+        toast.success("Success", {
+          description: "Budget created successfully",
+        });
       }
       setIsDialogOpen(false);
       setFormData({ accountId: "", amount: 0, notes: "" });
@@ -228,7 +233,9 @@ function BudgetingPageContent() {
         <div className="flex gap-2">
           <Button
             variant="outline"
-            disabled={!selectedUnitId || !selectedYearId || recalculateBudget.isPending}
+            disabled={
+              !selectedUnitId || !selectedYearId || recalculateBudget.isPending
+            }
             onClick={() =>
               recalculateBudget.mutate({
                 unitId: selectedUnitId,
@@ -248,66 +255,68 @@ function BudgetingPageContent() {
               </Button>
             </DialogTrigger>
             <DialogContent>
-            <DialogHeader>
-              <DialogTitle>{editingId ? "Edit Anggaran" : "Buat Anggaran Baru"}</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <Label>Akun Beban (Expense)</Label>
-                <Select
-                  value={formData.accountId}
-                  onValueChange={(val) =>
-                    setFormData({ ...formData, accountId: val })
-                  }
-                  disabled={!!editingId}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Pilih Akun" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {accounts?.map((acc: any) => (
-                      <SelectItem key={acc.id} value={acc.id}>
-                        {acc.code} - {acc.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Jumlah Anggaran</Label>
-                <Input
-                  type="number"
-                  value={formData.amount}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      amount: parseFloat(e.target.value),
-                    })
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Catatan</Label>
-                <Input
-                  value={formData.notes}
-                  onChange={(e) =>
-                    setFormData({ ...formData, notes: e.target.value })
-                  }
-                />
-              </div>
-              <DialogFooter>
-                <Button
-                  type="submit"
-                  disabled={!formData.accountId || formData.amount <= 0}
-                >
-                  Simpan
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
+              <DialogHeader>
+                <DialogTitle>
+                  {editingId ? "Edit Anggaran" : "Buat Anggaran Baru"}
+                </DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Akun Beban (Expense)</Label>
+                  <Select
+                    value={formData.accountId}
+                    onValueChange={(val) =>
+                      setFormData({ ...formData, accountId: val })
+                    }
+                    disabled={!!editingId}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Pilih Akun" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {accounts?.map((acc: any) => (
+                        <SelectItem key={acc.id} value={acc.id}>
+                          {acc.code} - {acc.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Jumlah Anggaran</Label>
+                  <Input
+                    type="number"
+                    value={formData.amount}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        amount: parseFloat(e.target.value),
+                      })
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Catatan</Label>
+                  <Input
+                    value={formData.notes}
+                    onChange={(e) =>
+                      setFormData({ ...formData, notes: e.target.value })
+                    }
+                  />
+                </div>
+                <DialogFooter>
+                  <Button
+                    type="submit"
+                    disabled={!formData.accountId || formData.amount <= 0}
+                  >
+                    Simpan
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
-    </div>
 
       <div className="flex gap-4">
         <Select value={selectedUnitId} onValueChange={setSelectedUnitId}>
@@ -411,15 +420,23 @@ function BudgetingPageContent() {
                           </Button>
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
-                              <Button variant="ghost" size="sm" className="text-destructive">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-destructive"
+                              >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
                             </AlertDialogTrigger>
                             <AlertDialogContent>
                               <AlertDialogHeader>
-                                <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                                <AlertDialogTitle>
+                                  Are you sure?
+                                </AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  This action cannot be undone. This will permanently delete the budget for {budget.account?.name}.
+                                  This action cannot be undone. This will
+                                  permanently delete the budget for{" "}
+                                  {budget.account?.name}.
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>

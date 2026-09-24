@@ -121,11 +121,11 @@ export enum ComplaintStatus {
 
 // Sharia Categories
 export const SHARIA_CATEGORIES = [
-  'MUAMALAH',
-  'TARBIYAH',
-  'IBADAH',
-  'AKHLAQ',
-  'GOVERNANCE',
+  "MUAMALAH",
+  "TARBIYAH",
+  "IBADAH",
+  "AKHLAQ",
+  "GOVERNANCE",
 ] as const;
 
 export type ShariaCategory = (typeof SHARIA_CATEGORIES)[number];

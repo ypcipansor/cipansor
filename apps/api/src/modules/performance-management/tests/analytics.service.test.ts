@@ -224,9 +224,7 @@ describe('PKAnalyticsService unit tests', () => {
           behaviorScore: 0,
         }),
       ]);
-      mocked.pKEvaluation.findMany.mockResolvedValue([
-        ev('APPROVED', 'unit-1', 'pk-rated'),
-      ]);
+      mocked.pKEvaluation.findMany.mockResolvedValue([ev('APPROVED', 'unit-1', 'pk-rated')]);
 
       const result = await pkAnalyticsService.getUnitPerformanceDashboard();
 

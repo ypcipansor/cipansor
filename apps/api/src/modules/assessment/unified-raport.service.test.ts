@@ -77,9 +77,9 @@ describe('UnifiedRaportService Integration', () => {
   it('should throw an error if student is not found', async () => {
     (prisma.student.findUnique as any).mockResolvedValue(null);
 
-    await expect(
-      UnifiedRaportService.generateUnifiedRaport('s1', 'ay1', 1)
-    ).rejects.toThrow('Siswa tidak ditemukan');
+    await expect(UnifiedRaportService.generateUnifiedRaport('s1', 'ay1', 1)).rejects.toThrow(
+      'Siswa tidak ditemukan'
+    );
   });
 
   it('should throw an error if enrollment data is missing', async () => {
@@ -88,9 +88,9 @@ describe('UnifiedRaportService Integration', () => {
       enrollments: [],
     });
 
-    await expect(
-      UnifiedRaportService.generateUnifiedRaport('s1', 'ay1', 1)
-    ).rejects.toThrow('Data enrollment tidak ditemukan untuk tahun ajaran ini');
+    await expect(UnifiedRaportService.generateUnifiedRaport('s1', 'ay1', 1)).rejects.toThrow(
+      'Data enrollment tidak ditemukan untuk tahun ajaran ini'
+    );
   });
 
   it('should combine merdeka and pesantren data into a single object', async () => {
@@ -104,9 +104,14 @@ describe('UnifiedRaportService Integration', () => {
       endDate: new Date('2025-06-30'),
     });
     (prisma.grade.aggregate as any).mockResolvedValue({ _avg: { percentage: 85 } });
-    (prisma.tahfidzRecord.aggregate as any).mockResolvedValue({ _sum: { totalAyah: 100 }, _max: { juz: 5 } });
+    (prisma.tahfidzRecord.aggregate as any).mockResolvedValue({
+      _sum: { totalAyah: 100 },
+      _max: { juz: 5 },
+    });
     (prisma.violation.aggregate as any).mockResolvedValue({ _sum: { points: 0 } });
-    (prisma.attendance.groupBy as any).mockResolvedValue([{ status: 'PRESENT', _count: { _all: 10 } }]);
+    (prisma.attendance.groupBy as any).mockResolvedValue([
+      { status: 'PRESENT', _count: { _all: 10 } },
+    ]);
     (prisma.dailyIbadahRecord.aggregate as any).mockResolvedValue({ _sum: { pointsEarned: 1000 } });
 
     const result = await UnifiedRaportService.generateUnifiedRaport('s1', 'ay1', 1);
@@ -129,7 +134,12 @@ describe('UnifiedRaportService Integration', () => {
     expect(result.signatures.homeroomTeacher).toBe('Ustadz Fulan');
 
     // Verify parallel execution with correct parameters
-    expect(RaportMerdekaService.generateRaportMerdeka).toHaveBeenCalledWith('s1', 'ay1', 1, undefined);
+    expect(RaportMerdekaService.generateRaportMerdeka).toHaveBeenCalledWith(
+      's1',
+      'ay1',
+      1,
+      undefined
+    );
     expect(raporPesantrenService.generateRaporPesantren).toHaveBeenCalledWith({
       studentId: 's1',
       academicYearId: 'ay1',

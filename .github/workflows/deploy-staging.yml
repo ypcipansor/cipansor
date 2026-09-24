@@ -1,9 +1,16 @@
 # Build the release images once and put them on staging.
 #
-# Runs after CI has passed on a push to main (never for pull requests, and
-# never for a CI run that failed). The three images are tagged with the commit
-# SHA and pushed to Azure Container Registry; production later runs these exact
-# images (deploy-production.yml), so what reaches wali is what staging tested.
+# Runs after a push to main has passed BOTH CI and E2E Tests (never for pull
+# requests, never for a run that failed). It is triggered by E2E Tests — the
+# slower of the two — and the `gate` job then confirms CI passed on the same
+# commit. Until 2026-09-24 it was triggered by CI alone, so a commit whose E2E
+# suite failed still reached staging (and could be released: production
+# accepts any SHA whose images are in the registry).
+#
+# The three images are tagged with the commit SHA and pushed to Azure Container
+# Registry; production later runs these exact images (deploy-production.yml),
+# so what reaches wali is what staging tested — and an image in the registry
+# now also means its commit passed CI and E2E.
 #
 # Signs in to Azure with OIDC — no stored Azure password. The federated
 # credential only trusts jobs running in this repository's `staging`
@@ -13,7 +20,7 @@ name: Deploy staging
 
 on:
   workflow_run:
-    workflows: [CI]
+    workflows: [E2E Tests]
     types: [completed]
     branches: [main]
   workflow_dispatch:
@@ -21,6 +28,7 @@ on:
 permissions:
   contents: read
   id-token: write
+  actions: read
 
 concurrency:
   group: deploy-staging
@@ -34,12 +42,68 @@ env:
   SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
 
 jobs:
-  build:
-    name: Build ${{ matrix.image }}
+  # Both workflows must have passed on this commit's push to main. Also guards
+  # a manual run, which would otherwise deploy whatever main points at. E2E is
+  # usually the one that finishes last (about 17 minutes against CI's 6), so CI
+  # is normally done; if it is still running, wait for it rather than guess.
+  gate:
+    name: CI and E2E passed on ${{ github.event.workflow_run.head_sha || github.sha }}
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    outputs:
+      deploy: ${{ steps.scope.outputs.deploy }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for wf in ci.yml e2e-tests.yml; do
+            for _ in $(seq 1 40); do
+              read -r status conclusion < <(gh api \
+                "repos/$GITHUB_REPOSITORY/actions/workflows/$wf/runs?head_sha=$SHA&event=push&per_page=1" \
+                --jq '.workflow_runs[0] // {} | "\(.status // "missing") \(.conclusion // "-")"')
+              [ "$status" = "completed" ] && break
+              echo "$wf on $SHA: $status — waiting"
+              sleep 30
+            done
+            echo "$wf on $SHA: $status / $conclusion"
+            if [ "$status" != "completed" ] || [ "$conclusion" != "success" ]; then
+              echo "::error::$wf has not passed on $SHA ($status / $conclusion) — staging keeps its current release"
+              exit 1
+            fi
+          done
+
+      # Nothing to rebuild when no code changed since the commit staging runs:
+      # a documentation-only merge would otherwise cost three image builds and
+      # a restart that serve the same bytes. Staging then keeps reporting that
+      # earlier commit, and that commit is what a release takes (production
+      # releases the SHA staging runs). A manual run always deploys.
+      - id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"; echo "scope: manual run always deploys"; exit 0
+          fi
+          current=$(curl -s --max-time 15 -H 'Cache-Control: no-cache' "$URL/healthz" | jq -r '.commit // empty' 2>/dev/null || true)
+          if [ -z "$current" ]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"; echo "scope: staging did not report its commit — deploying"; exit 0
+          fi
+          echo "staging runs $current"
+          SCOPE_KEY=deploy sh .github/scripts/change-scope.sh between "$current" "$SHA"
+
+  build:
+    name: Build ${{ matrix.image }}
+    needs: gate
+    if: needs.gate.outputs.deploy == 'true'
     runs-on: ubuntu-latest
     environment: staging
     strategy:

@@ -2,7 +2,12 @@ import { Request, Response, NextFunction } from 'express';
 import * as service from './accounting.service';
 import * as reportsService from './reports.service';
 import * as configService from './accounting-config.service';
-import { CreateAccountDto, CreateJournalDto, UpdateAccountDto, saveReportNoteSchema } from './finance.schema';
+import {
+  CreateAccountDto,
+  CreateJournalDto,
+  UpdateAccountDto,
+  saveReportNoteSchema,
+} from './finance.schema';
 
 // =====================================
 // ACCOUNTS

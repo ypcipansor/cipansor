@@ -173,9 +173,17 @@ export const COUNSELING_STATUSES: Array<{
   label: string;
   color: string;
 }> = [
-  { value: "SCHEDULED", label: "Terjadwal", color: "bg-yellow-100 text-yellow-800" },
+  {
+    value: "SCHEDULED",
+    label: "Terjadwal",
+    color: "bg-yellow-100 text-yellow-800",
+  },
   { value: "IN_PROGRESS", label: "Proses", color: "bg-blue-100 text-blue-800" },
-  { value: "COMPLETED", label: "Selesai", color: "bg-green-100 text-green-800" },
+  {
+    value: "COMPLETED",
+    label: "Selesai",
+    color: "bg-green-100 text-green-800",
+  },
   { value: "CANCELLED", label: "Batal", color: "bg-gray-100 text-gray-800" },
   { value: "NO_SHOW", label: "Tidak Hadir", color: "bg-red-100 text-red-800" },
 ];

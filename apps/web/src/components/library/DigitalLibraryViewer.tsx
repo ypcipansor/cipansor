@@ -64,14 +64,18 @@ export function DigitalLibraryViewer({ books }: DigitalLibraryViewerProps) {
                   <Button
                     size="sm"
                     variant="secondary"
-                    onClick={() => window.open(authFileUrl(book.fileUrl), "_blank")}
+                    onClick={() =>
+                      window.open(authFileUrl(book.fileUrl), "_blank")
+                    }
                   >
                     <Eye className="w-4 h-4 mr-2" /> Baca
                   </Button>
                   <Button
                     size="sm"
                     variant="secondary"
-                    onClick={() => window.open(authFileUrl(book.fileUrl), "_blank")}
+                    onClick={() =>
+                      window.open(authFileUrl(book.fileUrl), "_blank")
+                    }
                     title="Unduh"
                   >
                     <Download className="w-4 h-4" />

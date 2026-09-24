@@ -1,28 +1,50 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const { MockDecimal } = vi.hoisted(() => {
-  const Decimal = function(this: any, v: any) {
+  const Decimal = function (this: any, v: any) {
     this.v = Number(v);
   } as any;
-  Decimal.prototype.toNumber = function() { return this.v; };
-  Decimal.prototype.toString = function() { return String(this.v); };
-  Decimal.prototype.add = function(v2: any) { return new Decimal(this.v + (v2.v !== undefined ? v2.v : Number(v2))); };
-  Decimal.prototype.mul = function(v2: any) { return new Decimal(this.v * (v2.v !== undefined ? v2.v : Number(v2))); };
-  Decimal.prototype.sub = function(v2: any) { return new Decimal(this.v - (v2.v !== undefined ? v2.v : Number(v2))); };
-  Decimal.prototype.div = function(v2: any) { return new Decimal(this.v / (v2.v !== undefined ? v2.v : Number(v2))); };
-  Decimal.prototype.greaterThan = function(v2: any) { return this.v > (v2.v !== undefined ? v2.v : Number(v2)); };
-  Decimal.prototype.gt = function(v2: any) { return this.v > (v2.v !== undefined ? v2.v : Number(v2)); };
-  Decimal.prototype.lessThan = function(v2: any) { return this.v < (v2.v !== undefined ? v2.v : Number(v2)); };
-  Decimal.prototype.lt = function(v2: any) { return this.v < (v2.v !== undefined ? v2.v : Number(v2)); };
-  Decimal.prototype.toFixed = function(n: number) { return this.v.toFixed(n); };
+  Decimal.prototype.toNumber = function () {
+    return this.v;
+  };
+  Decimal.prototype.toString = function () {
+    return String(this.v);
+  };
+  Decimal.prototype.add = function (v2: any) {
+    return new Decimal(this.v + (v2.v !== undefined ? v2.v : Number(v2)));
+  };
+  Decimal.prototype.mul = function (v2: any) {
+    return new Decimal(this.v * (v2.v !== undefined ? v2.v : Number(v2)));
+  };
+  Decimal.prototype.sub = function (v2: any) {
+    return new Decimal(this.v - (v2.v !== undefined ? v2.v : Number(v2)));
+  };
+  Decimal.prototype.div = function (v2: any) {
+    return new Decimal(this.v / (v2.v !== undefined ? v2.v : Number(v2)));
+  };
+  Decimal.prototype.greaterThan = function (v2: any) {
+    return this.v > (v2.v !== undefined ? v2.v : Number(v2));
+  };
+  Decimal.prototype.gt = function (v2: any) {
+    return this.v > (v2.v !== undefined ? v2.v : Number(v2));
+  };
+  Decimal.prototype.lessThan = function (v2: any) {
+    return this.v < (v2.v !== undefined ? v2.v : Number(v2));
+  };
+  Decimal.prototype.lt = function (v2: any) {
+    return this.v < (v2.v !== undefined ? v2.v : Number(v2));
+  };
+  Decimal.prototype.toFixed = function (n: number) {
+    return this.v.toFixed(n);
+  };
 
   return { MockDecimal: Decimal };
 });
 
 vi.mock('@prisma/client', () => ({
   Prisma: {
-    Decimal: MockDecimal
-  }
+    Decimal: MockDecimal,
+  },
 }));
 
 import { transactionService } from '../laundry.service';
@@ -123,13 +145,23 @@ describe('Laundry Accounting Integration', () => {
 
     // Mock existing journal entries
     (prisma.journalEntry.findMany as any).mockResolvedValue([
-      { accountId: 'acc-wallet', debit: new MockDecimal(20000), credit: new MockDecimal(0), description: 'Pendapatan Laundry' },
-      { accountId: 'acc-revenue', debit: new MockDecimal(0), credit: new MockDecimal(20000), description: 'Pendapatan Laundry' },
+      {
+        accountId: 'acc-wallet',
+        debit: new MockDecimal(20000),
+        credit: new MockDecimal(0),
+        description: 'Pendapatan Laundry',
+      },
+      {
+        accountId: 'acc-revenue',
+        debit: new MockDecimal(0),
+        credit: new MockDecimal(20000),
+        description: 'Pendapatan Laundry',
+      },
     ]);
 
     await transactionService.updateStatus(transactionId, unitId, userId, {
       status: 'CANCELLED',
-      notes: 'Cancel test'
+      notes: 'Cancel test',
     });
 
     // Verify reversing journal entries

@@ -103,13 +103,15 @@ export async function getMedicalRecordById(id: string) {
 
   return {
     ...record,
-    student: record.student ? {
-      id: record.student.id,
-      nis: record.student.nis,
-      name: record.student?.user?.name,
-      user: record.student.user,
-      unit: record.student.unit,
-    } : undefined,
+    student: record.student
+      ? {
+          id: record.student.id,
+          nis: record.student.nis,
+          name: record.student?.user?.name,
+          user: record.student.user,
+          unit: record.student.unit,
+        }
+      : undefined,
     recordedBy: record.recordedBy,
   } as unknown as MedicalRecord;
 }
@@ -231,12 +233,14 @@ export async function createMedicalRecord(data: CreateMedicalRecordInput, record
 
   return {
     ...record,
-    student: record.student ? {
-      id: record.student.id,
-      nis: record.student.nis,
-      name: record.student?.user?.name,
-      user: record.student.user,
-    } : undefined,
+    student: record.student
+      ? {
+          id: record.student.id,
+          nis: record.student.nis,
+          name: record.student?.user?.name,
+          user: record.student.user,
+        }
+      : undefined,
   } as unknown as MedicalRecord;
 }
 
@@ -271,12 +275,14 @@ export async function updateMedicalRecord(id: string, data: UpdateMedicalRecordI
 
   return {
     ...record,
-    student: record.student ? {
-      id: record.student.id,
-      nis: record.student.nis,
-      name: record.student?.user?.name,
-      user: record.student.user,
-    } : undefined,
+    student: record.student
+      ? {
+          id: record.student.id,
+          nis: record.student.nis,
+          name: record.student?.user?.name,
+          user: record.student.user,
+        }
+      : undefined,
   } as unknown as MedicalRecord;
 }
 

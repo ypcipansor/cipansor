@@ -1,0 +1,6 @@
+# Commits that only reformat code. `git blame` skips them with
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+# (GitHub's blame view reads this file by itself.)
+
+# style: format every .ts/.tsx with prettier 3.9.8 (2026-09-24)
+a51a687ac62a14b36820f3c7ba9ea4beec1b61d9

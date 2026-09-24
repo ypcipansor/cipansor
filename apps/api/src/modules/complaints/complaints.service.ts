@@ -84,9 +84,7 @@ export const complaintsService = {
     const hasFullAccess =
       role === UserRole.SUPER_ADMIN ||
       (!!unitId &&
-        (role === UserRole.UNIT_ADMIN ||
-          role === UserRole.STAFF ||
-          role === UserRole.TEACHER));
+        (role === UserRole.UNIT_ADMIN || role === UserRole.STAFF || role === UserRole.TEACHER));
 
     // Students/Parents only see their own
     if (!hasFullAccess) {

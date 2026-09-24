@@ -373,7 +373,8 @@ export default function NotificationSettingsPage() {
                     )}
                     {transport.kind === "smtp" && (
                       <>
-                        Metode: <code>SMTP</code> — <code>{transport.host}</code>
+                        Metode: <code>SMTP</code> —{" "}
+                        <code>{transport.host}</code>
                       </>
                     )}
                     {transport.kind === "log" && (

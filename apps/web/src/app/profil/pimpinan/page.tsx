@@ -55,7 +55,9 @@ export default async function PimpinanPage() {
               <p className="text-xs font-semibold uppercase tracking-wide text-primary">
                 {copy.positions[leader.slug] ?? leader.position}
               </p>
-              <h2 className="mt-2 text-lg font-bold text-balance">{leader.name}</h2>
+              <h2 className="mt-2 text-lg font-bold text-balance">
+                {leader.name}
+              </h2>
               <blockquote
                 lang="id"
                 className="mt-4 border-l-2 border-primary/30 pl-4 text-sm italic leading-relaxed text-muted-foreground"

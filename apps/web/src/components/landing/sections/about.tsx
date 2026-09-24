@@ -14,7 +14,8 @@ export function AboutSection({ locale }: { locale: Locale }) {
   // The caption belongs to the photograph, so it is looked up by slug rather
   // than read off the item — the Indonesian title is the fallback if a
   // translation for a newly added photo has not been written yet.
-  const caption = (slug: string, fallback: string) => site.gallery[slug] ?? fallback;
+  const caption = (slug: string, fallback: string) =>
+    site.gallery[slug] ?? fallback;
 
   return (
     <section id="about" className="py-20 bg-background">

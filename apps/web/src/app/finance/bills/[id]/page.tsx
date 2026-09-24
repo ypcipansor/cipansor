@@ -486,7 +486,9 @@ function BillDetailPageContent({
   );
 }
 
-export default function BillDetailPage(props: Parameters<typeof BillDetailPageContent>[0]) {
+export default function BillDetailPage(
+  props: Parameters<typeof BillDetailPageContent>[0],
+) {
   return (
     <MainLayout>
       <BillDetailPageContent {...props} />

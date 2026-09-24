@@ -52,11 +52,15 @@ export default function LeadDetailPage() {
               </div>
               <div className="grid grid-cols-3">
                 <span className="text-muted-foreground">Email</span>
-                <span className="col-span-2">{(lead as any).parentEmail || "-"}</span>
+                <span className="col-span-2">
+                  {(lead as any).parentEmail || "-"}
+                </span>
               </div>
               <div className="grid grid-cols-3">
                 <span className="text-muted-foreground">Alamat</span>
-                <span className="col-span-2">{(lead as any).address || "-"}</span>
+                <span className="col-span-2">
+                  {(lead as any).address || "-"}
+                </span>
               </div>
             </CardContent>
           </Card>

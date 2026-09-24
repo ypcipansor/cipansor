@@ -9,6 +9,7 @@ AGENTS.md requires the full gate to pass locally before pushing — CI is only a
 backstop. Run these in order from the repo root and stop at the first failure.
 
 ```bash
+pnpm format:check                     # prettier, every .ts/.tsx — `pnpm format` fixes it
 pnpm --filter api db:generate         # Prisma client (needed if schema changed)
 pnpm --filter @cipansor/shared build  # shared types, consumed by both apps
 pnpm --filter api lint                # eslint — CI fails on errors, not warnings

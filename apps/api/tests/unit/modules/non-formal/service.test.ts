@@ -38,9 +38,11 @@ describe('CourseService', () => {
     const result = await courseService.findAll();
 
     expect(result).toEqual(mockCourses);
-    expect(prisma.course.findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { status: 'PUBLISHED' }
-    }));
+    expect(prisma.course.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { status: 'PUBLISHED' },
+      })
+    );
   });
 
   it('should create a new course', async () => {

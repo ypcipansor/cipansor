@@ -53,8 +53,12 @@ vi.mock('@prisma/client', async (importOriginal) => {
       ...actual.Prisma,
       Decimal: class {
         val: number;
-        constructor(v: any) { this.val = Number(v); }
-        toNumber() { return this.val; }
+        constructor(v: any) {
+          this.val = Number(v);
+        }
+        toNumber() {
+          return this.val;
+        }
       },
       PrismaClientKnownRequestError: class extends Error {},
     },
@@ -68,14 +72,18 @@ describe('Admissions Service', () => {
   });
 
   it('should reject document upload when registration token is registrant id or non-timestamped token', async () => {
-    vi.mocked(prisma.registrant.findUnique).mockResolvedValue({ id: 'reg123', registrationNo: 'REG-001' } as any);
+    vi.mocked(prisma.registrant.findUnique).mockResolvedValue({
+      id: 'reg123',
+      registrationNo: 'REG-001',
+    } as any);
 
     // Rejecting registrant.id as token
     await expect(
       service.createPublicRegistrantDocumentService({
         registrantId: 'reg123',
         type: 'PHOTO',
-        base64: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+        base64:
+          'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
         registrationToken: 'reg123',
       })
     ).rejects.toThrow('Invalid registration token');
@@ -83,13 +91,18 @@ describe('Admissions Service', () => {
     // Rejecting non-timestamped simple HMAC token
     const crypto = await import('crypto');
     const { config } = await import('../../../config');
-    const simpleHmac = crypto.createHmac('sha256', config.jwt.secret).update('reg123').digest('hex').slice(0, 16);
+    const simpleHmac = crypto
+      .createHmac('sha256', config.jwt.secret)
+      .update('reg123')
+      .digest('hex')
+      .slice(0, 16);
 
     await expect(
       service.createPublicRegistrantDocumentService({
         registrantId: 'reg123',
         type: 'PHOTO',
-        base64: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+        base64:
+          'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
         registrationToken: simpleHmac,
       })
     ).rejects.toThrow('Invalid registration token');
@@ -98,18 +111,26 @@ describe('Admissions Service', () => {
   it('should reject document upload when timestamped registration token is expired (> 2 hours)', async () => {
     const crypto = await import('crypto');
     const { config } = await import('../../../config');
-    const oldTimestamp = Date.now() - (3 * 60 * 60 * 1000); // 3 hours ago
+    const oldTimestamp = Date.now() - 3 * 60 * 60 * 1000; // 3 hours ago
     const tsHex = oldTimestamp.toString(16);
-    const hmacHex = crypto.createHmac('sha256', config.jwt.secret).update(`reg123:${tsHex}`).digest('hex').slice(0, 16);
+    const hmacHex = crypto
+      .createHmac('sha256', config.jwt.secret)
+      .update(`reg123:${tsHex}`)
+      .digest('hex')
+      .slice(0, 16);
     const expiredToken = `${tsHex}.${hmacHex}`;
 
-    vi.mocked(prisma.registrant.findUnique).mockResolvedValue({ id: 'reg123', registrationNo: 'REG-001' } as any);
+    vi.mocked(prisma.registrant.findUnique).mockResolvedValue({
+      id: 'reg123',
+      registrationNo: 'REG-001',
+    } as any);
 
     await expect(
       service.createPublicRegistrantDocumentService({
         registrantId: 'reg123',
         type: 'PHOTO',
-        base64: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+        base64:
+          'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
         registrationToken: expiredToken,
       })
     ).rejects.toThrow('Invalid registration token');
@@ -119,10 +140,17 @@ describe('Admissions Service', () => {
     const crypto = await import('crypto');
     const { config } = await import('../../../config');
     const tsHex = Date.now().toString(16);
-    const hmacHex = crypto.createHmac('sha256', config.jwt.secret).update(`reg123:${tsHex}`).digest('hex').slice(0, 16);
+    const hmacHex = crypto
+      .createHmac('sha256', config.jwt.secret)
+      .update(`reg123:${tsHex}`)
+      .digest('hex')
+      .slice(0, 16);
     const validToken = `${tsHex}.${hmacHex}`;
 
-    vi.mocked(prisma.registrant.findUnique).mockResolvedValue({ id: 'reg123', registrationNo: 'REG-001' } as any);
+    vi.mocked(prisma.registrant.findUnique).mockResolvedValue({
+      id: 'reg123',
+      registrationNo: 'REG-001',
+    } as any);
 
     const hugeUrlDataUri = 'data:image/png;base64,' + 'A'.repeat(3000000);
 
@@ -280,7 +308,7 @@ describe('Admissions Service', () => {
       academicYear: { name: '2024/2025' },
       unit: { name: 'SD IT' },
       unitId: 'u1',
-      registrationFee: 100000
+      registrationFee: 100000,
     };
 
     vi.mocked(prisma.admissionPeriod.findUnique).mockResolvedValue(mockPeriod as any);
@@ -291,16 +319,19 @@ describe('Admissions Service', () => {
     ]);
 
     await expect(
-      service.createRegistrant({
-        admissionPeriodId: 'p1',
-        fullName: 'Test Student',
-        gender: 'MALE',
-        birthPlace: 'Jakarta',
-        birthDate: new Date().toISOString(),
-        address: 'Test Address',
-        fatherName: 'Father',
-        motherName: 'Mother',
-      } as any, false)
+      service.createRegistrant(
+        {
+          admissionPeriodId: 'p1',
+          fullName: 'Test Student',
+          gender: 'MALE',
+          birthPlace: 'Jakarta',
+          birthDate: new Date().toISOString(),
+          address: 'Test Address',
+          fatherName: 'Father',
+          motherName: 'Mother',
+        } as any,
+        false
+      )
     ).rejects.toThrow('Semua gelombang pendaftaran pada periode ini telah penuh atau ditutup');
   });
 
@@ -310,12 +341,14 @@ describe('Admissions Service', () => {
       academicYear: { name: '2024/2025' },
       unit: { name: 'SD IT' },
       unitId: 'u1',
-      registrationFee: 100000
+      registrationFee: 100000,
     };
 
     vi.mocked(prisma.admissionPeriod.findUnique).mockResolvedValue(mockPeriod as any);
     vi.mocked(prisma.registrant.count).mockResolvedValue(10);
-    (vi.mocked(prisma.registrant.create) as any).mockImplementation(({ data }: any) => Promise.resolve({ ...data, id: 'r1' }));
+    (vi.mocked(prisma.registrant.create) as any).mockImplementation(({ data }: any) =>
+      Promise.resolve({ ...data, id: 'r1' })
+    );
     // REG_FEE payment type already exists, so no need to create one.
     vi.mocked(prisma.paymentType.findFirst).mockResolvedValue({ id: 'pt1' } as any);
 
@@ -471,10 +504,17 @@ describe('Admissions Service', () => {
     const { config } = await import('../../../config');
     const registrantId = '11111111-1111-4111-8111-111111111111';
     const tsHex = Date.now().toString(16);
-    const hmacHex = crypto.createHmac('sha256', config.jwt.secret).update(`${registrantId}:${tsHex}`).digest('hex').slice(0, 16);
+    const hmacHex = crypto
+      .createHmac('sha256', config.jwt.secret)
+      .update(`${registrantId}:${tsHex}`)
+      .digest('hex')
+      .slice(0, 16);
     const validToken = `${tsHex}.${hmacHex}`;
 
-    vi.mocked(prisma.registrant.findUnique).mockResolvedValue({ id: registrantId, registrationNo: 'REG-001' } as any);
+    vi.mocked(prisma.registrant.findUnique).mockResolvedValue({
+      id: registrantId,
+      registrationNo: 'REG-001',
+    } as any);
     vi.mocked(prisma.registrantDocument.count as any).mockResolvedValue(0);
     vi.mocked(prisma.registrantDocument.create as any).mockImplementation(({ data }: any) =>
       Promise.resolve({ id: 'doc-1', ...data })
@@ -505,11 +545,16 @@ describe('Admissions Service', () => {
       admissionPeriod: { unitId: 'unit-1' },
     } as any);
 
-    const crossUnitAdmin = { id: 'admin-2', role: 'UNIT_ADMIN', roleCode: 'SDIT_ADMIN', unitId: 'unit-2' };
+    const crossUnitAdmin = {
+      id: 'admin-2',
+      role: 'UNIT_ADMIN',
+      roleCode: 'SDIT_ADMIN',
+      unitId: 'unit-2',
+    };
 
-    await expect(
-      service.getRegistrantById('reg-1', crossUnitAdmin)
-    ).rejects.toThrow('Access to this unit is not allowed');
+    await expect(service.getRegistrantById('reg-1', crossUnitAdmin)).rejects.toThrow(
+      'Access to this unit is not allowed'
+    );
   });
 
   it('should refuse a cross-unit UNIT_ADMIN from updating a registrant status (403)', async () => {
@@ -518,7 +563,12 @@ describe('Admissions Service', () => {
       admissionPeriod: { unitId: 'unit-1' },
     } as any);
 
-    const crossUnitAdmin = { id: 'admin-2', role: 'UNIT_ADMIN', roleCode: 'SDIT_ADMIN', unitId: 'unit-2' };
+    const crossUnitAdmin = {
+      id: 'admin-2',
+      role: 'UNIT_ADMIN',
+      roleCode: 'SDIT_ADMIN',
+      unitId: 'unit-2',
+    };
 
     await expect(
       service.updateRegistrantStatus('reg-1', { status: 'REJECTED' }, crossUnitAdmin)
@@ -526,7 +576,12 @@ describe('Admissions Service', () => {
   });
 
   it('should refuse non-SUPER_ADMIN with a missing unitId from listing registrants (403, never unscoped)', async () => {
-    const unitlessActor = { id: 'usr-nounit', role: 'UNIT_ADMIN', roleCode: 'SDIT_ADMIN', unitId: null };
+    const unitlessActor = {
+      id: 'usr-nounit',
+      role: 'UNIT_ADMIN',
+      roleCode: 'SDIT_ADMIN',
+      unitId: null,
+    };
 
     await expect(
       service.getRegistrants({ page: 1, limit: 10 }, unitlessActor as any)
@@ -539,7 +594,12 @@ describe('Admissions Service', () => {
   });
 
   it('should refuse a cross-unit UNIT_ADMIN from creating an admission period (403)', async () => {
-    const crossUnitAdmin = { id: 'admin-2', role: 'UNIT_ADMIN', roleCode: 'SDIT_ADMIN', unitId: 'unit-2' };
+    const crossUnitAdmin = {
+      id: 'admin-2',
+      role: 'UNIT_ADMIN',
+      roleCode: 'SDIT_ADMIN',
+      unitId: 'unit-2',
+    };
 
     await expect(
       service.createAdmissionPeriod(
@@ -560,8 +620,16 @@ describe('Admissions Service', () => {
   });
 
   it('should refuse a cross-unit UNIT_ADMIN from creating a registrant in another unit period (403)', async () => {
-    const crossUnitAdmin = { id: 'admin-2', role: 'UNIT_ADMIN', roleCode: 'SDIT_ADMIN', unitId: 'unit-2' };
-    vi.mocked(prisma.admissionPeriod.findUnique).mockResolvedValue({ id: 'p-1', unitId: 'unit-1' } as any);
+    const crossUnitAdmin = {
+      id: 'admin-2',
+      role: 'UNIT_ADMIN',
+      roleCode: 'SDIT_ADMIN',
+      unitId: 'unit-2',
+    };
+    vi.mocked(prisma.admissionPeriod.findUnique).mockResolvedValue({
+      id: 'p-1',
+      unitId: 'unit-1',
+    } as any);
 
     await expect(
       service.createRegistrant(

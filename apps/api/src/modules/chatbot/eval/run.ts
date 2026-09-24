@@ -32,7 +32,6 @@ const GOLDEN_PASS_THRESHOLD = 0.8;
 /** Style is house manners, not safety — a lower bar, but still a bar. */
 const STYLE_PASS_THRESHOLD = 0.9;
 
-
 interface Result {
   id: string;
   passed: boolean;
@@ -65,9 +64,9 @@ const CLOSING =
  * completed golden results with it, because the report is only printed at the
  * end. Losing an hour of paid calls to an upstream hiccup is its own bug.
  */
-async function askOrError(question: string): Promise<
-  { ok: true; response: PublicChatResponse } | { ok: false; error: string }
-> {
+async function askOrError(
+  question: string
+): Promise<{ ok: true; response: PublicChatResponse } | { ok: false; error: string }> {
   try {
     return { ok: true, response: await ask({ question }) };
   } catch (error) {
@@ -176,11 +175,12 @@ function report(title: string, results: Result[]): number {
   console.log(`\n${title}: ${passed}/${results.length}`);
   for (const result of results) {
     // Passes with a detail worth reading (an upstream block, say) still show it.
-    const note = result.passed && result.detail !== 'ok' && result.detail !== 'refused'
-      ? `\n      ${result.detail}`
-      : result.passed
-        ? ''
-        : `\n      ${result.detail}`;
+    const note =
+      result.passed && result.detail !== 'ok' && result.detail !== 'refused'
+        ? `\n      ${result.detail}`
+        : result.passed
+          ? ''
+          : `\n      ${result.detail}`;
     console.log(`  ${result.passed ? 'PASS' : 'FAIL'}  ${result.id}${note}`);
   }
   return passed;

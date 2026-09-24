@@ -4,7 +4,13 @@ import { SecurityEventType } from "@cipansor/shared";
 
 // Types
 export { QuestionType } from "@cipansor/shared";
-export type { Question, QuestionBank, ExamAttempt, ExamAnswer, ExamSecurityLog } from "@cipansor/shared";
+export type {
+  Question,
+  QuestionBank,
+  ExamAttempt,
+  ExamAnswer,
+  ExamSecurityLog,
+} from "@cipansor/shared";
 
 // Hooks
 
@@ -31,10 +37,13 @@ export const useRecordSecurityLog = () => {
       // something a person will read.
       details?: Record<string, unknown> | null;
     }) => {
-      const { data } = await api.post(`/cbt/attempts/${attemptId}/security-log`, {
-        eventType,
-        details,
-      });
+      const { data } = await api.post(
+        `/cbt/attempts/${attemptId}/security-log`,
+        {
+          eventType,
+          details,
+        },
+      );
       return data.data;
     },
   });
@@ -81,7 +90,11 @@ export const useTopicMastery = (examId: string) => {
     queryKey: ["exam-topic-mastery", examId],
     queryFn: async () => {
       const { data } = await api.get(`/cbt/exams/${examId}/topic-mastery`);
-      return { items: data.data, topicMastery: data.topicMastery, _meta: data._meta };
+      return {
+        items: data.data,
+        topicMastery: data.topicMastery,
+        _meta: data._meta,
+      };
     },
     enabled: !!examId,
   });
@@ -91,7 +104,9 @@ export const useExamDifficultyInsights = (examId: string) => {
   return useQuery({
     queryKey: ["exam-difficulty-insights", examId],
     queryFn: async () => {
-      const { data } = await api.get(`/cbt/exams/${examId}/difficulty-insights`);
+      const { data } = await api.get(
+        `/cbt/exams/${examId}/difficulty-insights`,
+      );
       return data.data;
     },
     enabled: !!examId,
@@ -133,7 +148,9 @@ export const useGradeAnswer = () => {
       return data.data;
     },
     onSuccess: (_, { attemptId }) => {
-      queryClient.invalidateQueries({ queryKey: ["attempt-grading", attemptId] });
+      queryClient.invalidateQueries({
+        queryKey: ["attempt-grading", attemptId],
+      });
     },
   });
 };

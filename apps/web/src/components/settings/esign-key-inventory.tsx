@@ -8,10 +8,18 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Card, CardContent, CardDescription, CardHeader, CardTitle,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
 } from "@/components/ui/card";
 import {
-  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
 } from "@/components/ui/dialog";
 import { StateBadge } from "@/components/settings/esign-panel";
 import {
@@ -22,7 +30,11 @@ import {
   type SigningKeyRevocationCode,
 } from "@/hooks/use-esign";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
 import { safeFormat } from "@/lib/date";
 import { id as idLocale } from "date-fns/locale";
@@ -58,7 +70,9 @@ export function EsignKeyInventory() {
   const { keys, revokeKey } = useEsignKeys();
   const [target, setTarget] = useState<EsignKeyRow | null>(null);
   const [reason, setReason] = useState("");
-  const [code, setCode] = useState<SigningKeyRevocationCode>("AFFILIATION_CHANGED");
+  const [code, setCode] = useState<SigningKeyRevocationCode>(
+    "AFFILIATION_CHANGED",
+  );
   const [affected, setAffected] = useState<AffectedLetter[] | null>(null);
   const [needsReview, setNeedsReview] = useState(false);
 
@@ -87,7 +101,7 @@ export function EsignKeyInventory() {
       toast.error(
         e?.response?.data?.error?.message ??
           e?.response?.data?.message ??
-          "Gagal mencabut kunci tanda tangan"
+          "Gagal mencabut kunci tanda tangan",
       );
     }
   }
@@ -107,7 +121,9 @@ export function EsignKeyInventory() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          {keys.isLoading && <p className="text-sm text-muted-foreground">Memuat…</p>}
+          {keys.isLoading && (
+            <p className="text-sm text-muted-foreground">Memuat…</p>
+          )}
           {!keys.isLoading && rows.length === 0 && (
             <p className="text-sm text-muted-foreground">
               Belum ada kunci tanda tangan yang diterbitkan.
@@ -121,7 +137,10 @@ export function EsignKeyInventory() {
                 <span className="text-sm text-muted-foreground">{k.email}</span>
                 <StateBadge state={k.state} />
                 {k.lockedUntil && new Date(k.lockedUntil) > new Date() && (
-                  <Badge variant="outline" className="border-amber-600 bg-amber-50 text-amber-700">
+                  <Badge
+                    variant="outline"
+                    className="border-amber-600 bg-amber-50 text-amber-700"
+                  >
                     Terkunci sementara
                   </Badge>
                 )}
@@ -134,12 +153,17 @@ export function EsignKeyInventory() {
                 </span>
                 <span>
                   Berlaku sampai: {fmt(k.expiresAt)}
-                  {typeof k.daysUntilExpiry === "number" && k.daysUntilExpiry >= 0
+                  {typeof k.daysUntilExpiry === "number" &&
+                  k.daysUntilExpiry >= 0
                     ? ` (${k.daysUntilExpiry} hari lagi)`
                     : ""}
                 </span>
-                <span>Disetujui: {fmt(k.approvedAt)} oleh {k.approvedByName ?? "—"}</span>
-                <span>Terakhir dipakai: {fmt(k.lastUsedAt, "dd MMM yyyy HH:mm")}</span>
+                <span>
+                  Disetujui: {fmt(k.approvedAt)} oleh {k.approvedByName ?? "—"}
+                </span>
+                <span>
+                  Terakhir dipakai: {fmt(k.lastUsedAt, "dd MMM yyyy HH:mm")}
+                </span>
               </div>
 
               <Button
@@ -168,7 +192,9 @@ export function EsignKeyInventory() {
                   className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground"
                 >
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-medium text-foreground">{k.name}</span>
+                    <span className="font-medium text-foreground">
+                      {k.name}
+                    </span>
                     <StateBadge state={k.state} />
                     <span className="ml-auto text-xs">
                       {fmt(k.revokedAt, "dd MMM yyyy HH:mm")}
@@ -221,13 +247,18 @@ export function EsignKeyInventory() {
                   menjadi meragukan, dan tanpa membedakannya petugas hanya punya
                   dua pilihan yang sama-sama keliru — mencabut semuanya, atau
                   tidak mencabut satu pun. */}
-              <Select value={code} onValueChange={(v) => setCode(v as SigningKeyRevocationCode)}>
+              <Select
+                value={code}
+                onValueChange={(v) => setCode(v as SigningKeyRevocationCode)}
+              >
                 <SelectTrigger id="revoke-key-code">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   {(
-                    Object.keys(REVOCATION_CODE_LABEL) as SigningKeyRevocationCode[]
+                    Object.keys(
+                      REVOCATION_CODE_LABEL,
+                    ) as SigningKeyRevocationCode[]
                   ).map((c) => (
                     <SelectItem key={c} value={c}>
                       {REVOCATION_CODE_LABEL[c]}

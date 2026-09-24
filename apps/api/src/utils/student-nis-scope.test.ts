@@ -38,7 +38,10 @@ describe('pencarian santri lewat NIS selalu berlingkup unit', () => {
 
   it('schema: students.nis tidak lagi unik seluruh yayasan, tapi tetap terindeks', () => {
     const schema = fs.readFileSync(path.join(__dirname, '../../prisma/schema.prisma'), 'utf-8');
-    const model = schema.slice(schema.indexOf('model Student {'), schema.indexOf('\n}', schema.indexOf('model Student {')));
+    const model = schema.slice(
+      schema.indexOf('model Student {'),
+      schema.indexOf('\n}', schema.indexOf('model Student {'))
+    );
     const baris = model.split('\n').find((l) => /^\s*nis\s+String/.test(l)) ?? '';
     expect(baris).not.toContain('@unique');
     expect(model).toContain('@@index([nis])');
@@ -48,7 +51,10 @@ describe('pencarian santri lewat NIS selalu berlingkup unit', () => {
 
   it('migrasi membuang indeks unik lama dan hanya melonggarkan', () => {
     const sql = fs.readFileSync(
-      path.join(__dirname, '../../prisma/migrations/20260920140000_students_nis_not_globally_unique/migration.sql'),
+      path.join(
+        __dirname,
+        '../../prisma/migrations/20260920140000_students_nis_not_globally_unique/migration.sql'
+      ),
       'utf-8'
     );
     expect(sql).toMatch(/DROP INDEX IF EXISTS "students_nis_key"/);

@@ -1,7 +1,21 @@
 "use client";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+} from "recharts";
 import { Medal } from "lucide-react";
 
 interface TahfidzProgressChartProps {
@@ -21,7 +35,9 @@ export function TahfidzProgressChart({ data }: TahfidzProgressChartProps) {
               <Medal className="h-5 w-5" />
               Kurva Capaian Tahfidz
             </CardTitle>
-            <CardDescription>Visualisasi pertumbuhan jumlah ayat yang dihafal</CardDescription>
+            <CardDescription>
+              Visualisasi pertumbuhan jumlah ayat yang dihafal
+            </CardDescription>
           </div>
         </div>
       </CardHeader>
@@ -38,39 +54,60 @@ export function TahfidzProgressChart({ data }: TahfidzProgressChartProps) {
             >
               <defs>
                 <linearGradient id="colorAyah" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                  <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#ecfdf5" />
+              <CartesianGrid
+                strokeDasharray="3 3"
+                vertical={false}
+                stroke="#ecfdf5"
+              />
               <XAxis
                 dataKey="date"
-                tick={{fontSize: 10, fill: '#64748b'}}
+                tick={{ fontSize: 10, fill: "#64748b" }}
                 axisLine={false}
                 tickLine={false}
                 tickFormatter={(str) => {
                   try {
                     // monthlyProgress data uses "YYYY-MM" format — parse as month/year only
-                    const [year, month] = str.split('-');
+                    const [year, month] = str.split("-");
                     if (year && month) {
                       const d = new Date(Number(year), Number(month) - 1);
-                      return d.toLocaleDateString('id-ID', { month: 'short', year: 'numeric' });
+                      return d.toLocaleDateString("id-ID", {
+                        month: "short",
+                        year: "numeric",
+                      });
                     }
-                    return new Date(str).toLocaleDateString('id-ID', { month: 'short', year: 'numeric' });
+                    return new Date(str).toLocaleDateString("id-ID", {
+                      month: "short",
+                      year: "numeric",
+                    });
                   } catch {
                     return str;
                   }
                 }}
               />
-              <YAxis tick={{fontSize: 10, fill: '#64748b'}} axisLine={false} tickLine={false} />
+              <YAxis
+                tick={{ fontSize: 10, fill: "#64748b" }}
+                axisLine={false}
+                tickLine={false}
+              />
               <Tooltip
-                contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                contentStyle={{
+                  borderRadius: "8px",
+                  border: "none",
+                  boxShadow: "0 10px 15px -3px rgb(0 0 0 / 0.1)",
+                }}
                 labelFormatter={(label) => {
                   try {
-                    const [year, month] = String(label).split('-');
+                    const [year, month] = String(label).split("-");
                     if (year && month) {
                       const d = new Date(Number(year), Number(month) - 1);
-                      return d.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
+                      return d.toLocaleDateString("id-ID", {
+                        month: "long",
+                        year: "numeric",
+                      });
                     }
                     return String(label);
                   } catch {

@@ -46,8 +46,10 @@ const features = tableFeatures({
 
 type TableFeatures = typeof features;
 
-export type ColumnDef<TData extends RowData, TValue = unknown> =
-  TanStackColumnDef<TableFeatures, TData, TValue>;
+export type ColumnDef<
+  TData extends RowData,
+  TValue = unknown,
+> = TanStackColumnDef<TableFeatures, TData, TValue>;
 
 interface DataTableProps<TData extends RowData> {
   columns: ColumnDef<TData>[];

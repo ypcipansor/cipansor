@@ -32,8 +32,7 @@ export const BRAND = {
   paper: '#FFFFFF',
 } as const;
 
-const FONT =
-  "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
+const FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
 
 /** Content-ID the header <img> points at. */
 export const EMAIL_LOGO_CID = 'lambang-cipansor';

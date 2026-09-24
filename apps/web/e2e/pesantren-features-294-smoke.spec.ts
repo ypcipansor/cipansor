@@ -32,15 +32,15 @@ test.describe("Pesantren features (#294 rebuild)", () => {
     page,
   }) => {
     await page.goto("/alumni/placement");
-    await expect(
-      page.getByRole("heading", { name: /Si-Taka/i }),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Si-Taka/i })).toBeVisible();
     await expect(page.getByText(/Total Penempatan/i)).toBeVisible();
   });
 
   test("E-Simaan page shows recorder and setoran form", async ({ page }) => {
     await page.goto("/tahfidz/e-simaan");
-    await expect(page.getByRole("heading", { name: /E-Simaan/i })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: /E-Simaan/i }),
+    ).toBeVisible();
     await expect(page.getByText(/Rekam Setoran/i)).toBeVisible();
   });
 });

@@ -568,8 +568,34 @@ describe('htmlToText', () => {
       // Property check over a fixed pseudo-random corpus built from the pieces
       // every fusion case above is made of. 2,189 of 300k such inputs leaked a
       // `<tag>` before the unterminated-quote fix; the suite pins zero.
-      const pieces = ['<', '>', '!', '-', '/', '"', "'", '=', ' ', 'a', 's', 't', 'y', 'l', 'e', 'h', 'd',
-        'x', '<style', '</style>', '<head', '</head>', '<!--', '-->', '<script>', 'title="'];
+      const pieces = [
+        '<',
+        '>',
+        '!',
+        '-',
+        '/',
+        '"',
+        "'",
+        '=',
+        ' ',
+        'a',
+        's',
+        't',
+        'y',
+        'l',
+        'e',
+        'h',
+        'd',
+        'x',
+        '<style',
+        '</style>',
+        '<head',
+        '</head>',
+        '<!--',
+        '-->',
+        '<script>',
+        'title="',
+      ];
       let seed = 522;
       const next = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
       const leaks: string[] = [];

@@ -67,8 +67,6 @@ import {
 } from "@/hooks/use-muhadatsah";
 import { useAuthStore } from "@/stores/auth";
 
-
-
 function MuhadatsahPageContent() {
   const { user } = useAuthStore();
   const unitId = user?.unitId || user?.unit?.id;

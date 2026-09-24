@@ -205,11 +205,7 @@ export class PKAnalyticsService {
     // sekadar RKA terbaru menurut createdAt, yang bisa berasal dari periode
     // berbeda atau masih DRAFT/PROPOSED sehingga progress-nya belum sah.
     const referencedPlanIds = [
-      ...new Set(
-        scoped
-          .map((a) => a.strategicPlan?.id ?? null)
-          .filter((id): id is string => !!id)
-      ),
+      ...new Set(scoped.map((a) => a.strategicPlan?.id ?? null).filter((id): id is string => !!id)),
     ];
     let strategicPlan: { id: string; title: string; progress: number } | null = null;
     if (referencedPlanIds.length > 0) {

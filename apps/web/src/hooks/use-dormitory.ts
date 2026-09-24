@@ -105,7 +105,9 @@ export function useRoomSocialAnalytics(id: string) {
   return useQuery({
     queryKey: ["room-social-analytics", id],
     queryFn: async () => {
-      const response = await api.get(`/dormitories/rooms/${id}/social-analytics`);
+      const response = await api.get(
+        `/dormitories/rooms/${id}/social-analytics`,
+      );
       return response.data.data;
     },
     enabled: !!id,
@@ -194,9 +196,12 @@ export function useRooms(params: RoomParams = {}) {
   return useQuery({
     queryKey: ["rooms", params],
     queryFn: async () => {
-      const response = await api.get<PaginatedResponse<Room>>("/facilities/rooms", {
-        params,
-      });
+      const response = await api.get<PaginatedResponse<Room>>(
+        "/facilities/rooms",
+        {
+          params,
+        },
+      );
       return response.data;
     },
   });
@@ -206,7 +211,9 @@ export function useRoom(id: string) {
   return useQuery({
     queryKey: ["rooms", id],
     queryFn: async () => {
-      const response = await api.get<ApiResponse<Room>>(`/facilities/rooms/${id}`);
+      const response = await api.get<ApiResponse<Room>>(
+        `/facilities/rooms/${id}`,
+      );
       return response.data.data;
     },
     enabled: !!id,
@@ -239,7 +246,10 @@ export function useCreateRoom() {
 
   return useMutation({
     mutationFn: async (data: CreateRoomData) => {
-      const response = await api.post<ApiResponse<Room>>("/facilities/rooms", data);
+      const response = await api.post<ApiResponse<Room>>(
+        "/facilities/rooms",
+        data,
+      );
       return response.data.data;
     },
     onSuccess: (_, variables) => {
@@ -262,7 +272,10 @@ export function useUpdateRoom() {
       id: string;
       data: Partial<CreateRoomData>;
     }) => {
-      const response = await api.patch<ApiResponse<Room>>(`/facilities/rooms/${id}`, data);
+      const response = await api.patch<ApiResponse<Room>>(
+        `/facilities/rooms/${id}`,
+        data,
+      );
       return response.data.data;
     },
     onSuccess: (_, variables) => {

@@ -57,7 +57,9 @@ export default function CreateComplaintPage() {
   // Si-Peka: room options depend on the chosen building.
   const watchedBuildingId = form.watch("buildingId");
   const { data: rooms } = useRooms(
-    watchedBuildingId ? { buildingId: watchedBuildingId, limit: 100 } : undefined,
+    watchedBuildingId
+      ? { buildingId: watchedBuildingId, limit: 100 }
+      : undefined,
   );
 
   const onSubmit = (values: z.infer<typeof complaintSchema>) => {

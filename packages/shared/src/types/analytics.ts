@@ -11,11 +11,7 @@ export type ReportType =
   | "PSB_STATISTICS";
 
 export type TimeRange =
-  | "WEEKLY"
-  | "MONTHLY"
-  | "QUARTERLY"
-  | "YEARLY"
-  | "CUSTOM";
+  "WEEKLY" | "MONTHLY" | "QUARTERLY" | "YEARLY" | "CUSTOM";
 
 export interface ReportFilter {
   reportType?: ReportType;

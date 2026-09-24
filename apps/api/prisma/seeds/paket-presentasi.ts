@@ -123,32 +123,156 @@ interface ClassPlan {
 
 const CLASS_PLAN: Record<SchoolUnit, ClassPlan[]> = {
   TK_QURAN: [
-    { name: 'TK A', level: 'A', grade: 0, size: 10, age: 4, homeroom: 'tkq.walikelas@cipansor.or.id' },
+    {
+      name: 'TK A',
+      level: 'A',
+      grade: 0,
+      size: 10,
+      age: 4,
+      homeroom: 'tkq.walikelas@cipansor.or.id',
+    },
     { name: 'TK B', level: 'B', grade: 1, size: 10, age: 5, homeroom: 'tkq.guru@cipansor.or.id' },
   ],
   SD_IT: [
     { name: '1A', level: '1', grade: 0, size: 8, age: 6, homeroom: 'fatimah@cipansor.or.id' },
-    { name: '2A', level: '2', grade: 1, size: 8, age: 7, homeroom: 'sdit.walikelas@cipansor.or.id' },
+    {
+      name: '2A',
+      level: '2',
+      grade: 1,
+      size: 8,
+      age: 7,
+      homeroom: 'sdit.walikelas@cipansor.or.id',
+    },
     { name: '3A', level: '3', grade: 2, size: 8, age: 8, homeroom: 'sdit.guru@cipansor.or.id' },
     { name: '4A', level: '4', grade: 3, size: 8, age: 9, homeroom: 'guru.sdit.pkn@cipansor.or.id' },
-    { name: '5A', level: '5', grade: 4, size: 8, age: 10, homeroom: 'guru.sdit.arb@cipansor.or.id' },
-    { name: '6A', level: '6', grade: 5, size: 8, age: 11, homeroom: 'guru.sdit.big@cipansor.or.id' },
+    {
+      name: '5A',
+      level: '5',
+      grade: 4,
+      size: 8,
+      age: 10,
+      homeroom: 'guru.sdit.arb@cipansor.or.id',
+    },
+    {
+      name: '6A',
+      level: '6',
+      grade: 5,
+      size: 8,
+      age: 11,
+      homeroom: 'guru.sdit.big@cipansor.or.id',
+    },
   ],
   SMP_IT: [
-    { name: '7A', level: '7', grade: 0, size: 8, gender: Gender.MALE, age: 12, homeroom: 'ahmad@cipansor.or.id' },
-    { name: '7B', level: '7', grade: 0, size: 8, gender: Gender.FEMALE, age: 12, homeroom: 'smpit.walikelas@cipansor.or.id' },
-    { name: '8A', level: '8', grade: 1, size: 8, gender: Gender.MALE, age: 13, homeroom: 'smpit.guru@cipansor.or.id' },
-    { name: '8B', level: '8', grade: 1, size: 8, gender: Gender.FEMALE, age: 13, homeroom: 'guru.smpit.big@cipansor.or.id' },
-    { name: '9A', level: '9', grade: 2, size: 8, gender: Gender.MALE, age: 14, homeroom: 'guru.smpit.qhd@cipansor.or.id' },
-    { name: '9B', level: '9', grade: 2, size: 8, gender: Gender.FEMALE, age: 14, homeroom: 'guru.smpit.ips@cipansor.or.id' },
+    {
+      name: '7A',
+      level: '7',
+      grade: 0,
+      size: 8,
+      gender: Gender.MALE,
+      age: 12,
+      homeroom: 'ahmad@cipansor.or.id',
+    },
+    {
+      name: '7B',
+      level: '7',
+      grade: 0,
+      size: 8,
+      gender: Gender.FEMALE,
+      age: 12,
+      homeroom: 'smpit.walikelas@cipansor.or.id',
+    },
+    {
+      name: '8A',
+      level: '8',
+      grade: 1,
+      size: 8,
+      gender: Gender.MALE,
+      age: 13,
+      homeroom: 'smpit.guru@cipansor.or.id',
+    },
+    {
+      name: '8B',
+      level: '8',
+      grade: 1,
+      size: 8,
+      gender: Gender.FEMALE,
+      age: 13,
+      homeroom: 'guru.smpit.big@cipansor.or.id',
+    },
+    {
+      name: '9A',
+      level: '9',
+      grade: 2,
+      size: 8,
+      gender: Gender.MALE,
+      age: 14,
+      homeroom: 'guru.smpit.qhd@cipansor.or.id',
+    },
+    {
+      name: '9B',
+      level: '9',
+      grade: 2,
+      size: 8,
+      gender: Gender.FEMALE,
+      age: 14,
+      homeroom: 'guru.smpit.ips@cipansor.or.id',
+    },
   ],
   SMA_QURAN: [
-    { name: '10A', level: '10', grade: 0, size: 8, gender: Gender.MALE, age: 15, homeroom: 'smaq.guru@cipansor.or.id' },
-    { name: '10B', level: '10', grade: 0, size: 8, gender: Gender.FEMALE, age: 15, homeroom: 'smaq.walikelas@cipansor.or.id' },
-    { name: '11A', level: '11', grade: 1, size: 8, gender: Gender.MALE, age: 16, homeroom: 'guru.smaq.pai@cipansor.or.id' },
-    { name: '11B', level: '11', grade: 1, size: 8, gender: Gender.FEMALE, age: 16, homeroom: 'guru.smaq.bio@cipansor.or.id' },
-    { name: '12A', level: '12', grade: 2, size: 8, gender: Gender.MALE, age: 17, homeroom: 'guru.smaq.fis@cipansor.or.id' },
-    { name: '12B', level: '12', grade: 2, size: 8, gender: Gender.FEMALE, age: 17, homeroom: 'guru.smaq.kim@cipansor.or.id' },
+    {
+      name: '10A',
+      level: '10',
+      grade: 0,
+      size: 8,
+      gender: Gender.MALE,
+      age: 15,
+      homeroom: 'smaq.guru@cipansor.or.id',
+    },
+    {
+      name: '10B',
+      level: '10',
+      grade: 0,
+      size: 8,
+      gender: Gender.FEMALE,
+      age: 15,
+      homeroom: 'smaq.walikelas@cipansor.or.id',
+    },
+    {
+      name: '11A',
+      level: '11',
+      grade: 1,
+      size: 8,
+      gender: Gender.MALE,
+      age: 16,
+      homeroom: 'guru.smaq.pai@cipansor.or.id',
+    },
+    {
+      name: '11B',
+      level: '11',
+      grade: 1,
+      size: 8,
+      gender: Gender.FEMALE,
+      age: 16,
+      homeroom: 'guru.smaq.bio@cipansor.or.id',
+    },
+    {
+      name: '12A',
+      level: '12',
+      grade: 2,
+      size: 8,
+      gender: Gender.MALE,
+      age: 17,
+      homeroom: 'guru.smaq.fis@cipansor.or.id',
+    },
+    {
+      name: '12B',
+      level: '12',
+      grade: 2,
+      size: 8,
+      gender: Gender.FEMALE,
+      age: 17,
+      homeroom: 'guru.smaq.kim@cipansor.or.id',
+    },
   ],
 };
 
@@ -168,32 +292,164 @@ interface NewTeacher {
 const NEW_TEACHERS: Record<SchoolUnit, NewTeacher[]> = {
   TK_QURAN: [],
   SD_IT: [
-    { email: 'guru.sdit.pkn@cipansor.or.id', name: 'Ustadzah Rina Nurlaela, S.Pd.', gender: Gender.FEMALE, education: EducationLevel.S1, major: 'PGSD' },
-    { email: 'guru.sdit.sbd@cipansor.or.id', name: 'Ustadzah Lia Amalia, S.Pd.', gender: Gender.FEMALE, education: EducationLevel.S1, major: 'Pendidikan Seni' },
-    { email: 'guru.sdit.pjok@cipansor.or.id', name: 'Ustadz Rendi Firmansyah, S.Pd.', gender: Gender.MALE, education: EducationLevel.S1, major: 'Pendidikan Jasmani' },
-    { email: 'guru.sdit.big@cipansor.or.id', name: 'Ustadzah Nisa Khairunnisa, S.Pd.', gender: Gender.FEMALE, education: EducationLevel.S1, major: 'Pendidikan Bahasa Inggris' },
-    { email: 'guru.sdit.arb@cipansor.or.id', name: 'Ustadz Irfan Maulana, S.Pd.I.', gender: Gender.MALE, education: EducationLevel.S1, major: 'Pendidikan Bahasa Arab' },
-    { email: 'guru.sdit.thf@cipansor.or.id', name: 'Ustadz Fikri Haikal, Al-Hafidz', gender: Gender.MALE, education: EducationLevel.S1, major: "Ilmu Al-Qur'an dan Tafsir" },
+    {
+      email: 'guru.sdit.pkn@cipansor.or.id',
+      name: 'Ustadzah Rina Nurlaela, S.Pd.',
+      gender: Gender.FEMALE,
+      education: EducationLevel.S1,
+      major: 'PGSD',
+    },
+    {
+      email: 'guru.sdit.sbd@cipansor.or.id',
+      name: 'Ustadzah Lia Amalia, S.Pd.',
+      gender: Gender.FEMALE,
+      education: EducationLevel.S1,
+      major: 'Pendidikan Seni',
+    },
+    {
+      email: 'guru.sdit.pjok@cipansor.or.id',
+      name: 'Ustadz Rendi Firmansyah, S.Pd.',
+      gender: Gender.MALE,
+      education: EducationLevel.S1,
+      major: 'Pendidikan Jasmani',
+    },
+    {
+      email: 'guru.sdit.big@cipansor.or.id',
+      name: 'Ustadzah Nisa Khairunnisa, S.Pd.',
+      gender: Gender.FEMALE,
+      education: EducationLevel.S1,
+      major: 'Pendidikan Bahasa Inggris',
+    },
+    {
+      email: 'guru.sdit.arb@cipansor.or.id',
+      name: 'Ustadz Irfan Maulana, S.Pd.I.',
+      gender: Gender.MALE,
+      education: EducationLevel.S1,
+      major: 'Pendidikan Bahasa Arab',
+    },
+    {
+      email: 'guru.sdit.thf@cipansor.or.id',
+      name: 'Ustadz Fikri Haikal, Al-Hafidz',
+      gender: Gender.MALE,
+      education: EducationLevel.S1,
+      major: "Ilmu Al-Qur'an dan Tafsir",
+    },
   ],
   SMP_IT: [
-    { email: 'guru.smpit.big@cipansor.or.id', name: 'Ustadzah Salma Nabila, S.Pd.', gender: Gender.FEMALE, education: EducationLevel.S1, major: 'Pendidikan Bahasa Inggris' },
-    { email: 'guru.smpit.ips@cipansor.or.id', name: 'Ustadzah Rahmi Fauziah, S.Pd.', gender: Gender.FEMALE, education: EducationLevel.S1, major: 'Pendidikan IPS' },
-    { email: 'guru.smpit.pjok@cipansor.or.id', name: 'Ustadz Yogi Pratama, S.Pd.', gender: Gender.MALE, education: EducationLevel.S1, major: 'Pendidikan Jasmani' },
-    { email: 'guru.smpit.qhd@cipansor.or.id', name: 'Ustadz Hasan Mubarok, Lc.', gender: Gender.MALE, education: EducationLevel.S1, major: 'Hadits' },
-    { email: 'guru.smpit.pkn@cipansor.or.id', name: 'Ustadz Dani Ramdani, S.Pd.', gender: Gender.MALE, education: EducationLevel.S1, major: 'Pendidikan Pancasila dan Kewarganegaraan' },
-    { email: 'guru.smpit.inf@cipansor.or.id', name: 'Ustadzah Nadia Rahmawati, S.Kom.', gender: Gender.FEMALE, education: EducationLevel.S1, major: 'Teknik Informatika' },
+    {
+      email: 'guru.smpit.big@cipansor.or.id',
+      name: 'Ustadzah Salma Nabila, S.Pd.',
+      gender: Gender.FEMALE,
+      education: EducationLevel.S1,
+      major: 'Pendidikan Bahasa Inggris',
+    },
+    {
+      email: 'guru.smpit.ips@cipansor.or.id',
+      name: 'Ustadzah Rahmi Fauziah, S.Pd.',
+      gender: Gender.FEMALE,
+      education: EducationLevel.S1,
+      major: 'Pendidikan IPS',
+    },
+    {
+      email: 'guru.smpit.pjok@cipansor.or.id',
+      name: 'Ustadz Yogi Pratama, S.Pd.',
+      gender: Gender.MALE,
+      education: EducationLevel.S1,
+      major: 'Pendidikan Jasmani',
+    },
+    {
+      email: 'guru.smpit.qhd@cipansor.or.id',
+      name: 'Ustadz Hasan Mubarok, Lc.',
+      gender: Gender.MALE,
+      education: EducationLevel.S1,
+      major: 'Hadits',
+    },
+    {
+      email: 'guru.smpit.pkn@cipansor.or.id',
+      name: 'Ustadz Dani Ramdani, S.Pd.',
+      gender: Gender.MALE,
+      education: EducationLevel.S1,
+      major: 'Pendidikan Pancasila dan Kewarganegaraan',
+    },
+    {
+      email: 'guru.smpit.inf@cipansor.or.id',
+      name: 'Ustadzah Nadia Rahmawati, S.Kom.',
+      gender: Gender.FEMALE,
+      education: EducationLevel.S1,
+      major: 'Teknik Informatika',
+    },
   ],
   SMA_QURAN: [
-    { email: 'guru.smaq.pai@cipansor.or.id', name: 'Ustadz Abdul Aziz, Lc.', gender: Gender.MALE, education: EducationLevel.S1, major: 'Syariah' },
-    { email: 'guru.smaq.pkn@cipansor.or.id', name: 'Ustadzah Ai Nurhasanah, S.Pd.', gender: Gender.FEMALE, education: EducationLevel.S1, major: 'Pendidikan Pancasila dan Kewarganegaraan' },
-    { email: 'guru.smaq.fis@cipansor.or.id', name: 'Ustadz Galih Pratama, S.Pd.', gender: Gender.MALE, education: EducationLevel.S1, major: 'Pendidikan Fisika' },
-    { email: 'guru.smaq.kim@cipansor.or.id', name: 'Ustadzah Yulia Rahman, S.Si.', gender: Gender.FEMALE, education: EducationLevel.S1, major: 'Kimia' },
-    { email: 'guru.smaq.bio@cipansor.or.id', name: 'Ustadzah Intan Permatasari, S.Pd.', gender: Gender.FEMALE, education: EducationLevel.S1, major: 'Pendidikan Biologi' },
-    { email: 'guru.smaq.sej@cipansor.or.id', name: 'Ustadz Fajar Nugraha, S.Pd.', gender: Gender.MALE, education: EducationLevel.S1, major: 'Pendidikan Sejarah' },
-    { email: 'guru.smaq.big@cipansor.or.id', name: 'Ustadzah Mira Lestari, S.Pd.', gender: Gender.FEMALE, education: EducationLevel.S1, major: 'Pendidikan Bahasa Inggris' },
-    { email: 'guru.smaq.thf@cipansor.or.id', name: 'Ustadz Zaki Mubarak, Al-Hafidz', gender: Gender.MALE, education: EducationLevel.S1, major: "Ilmu Al-Qur'an dan Tafsir" },
-    { email: 'guru.smaq.thfp@cipansor.or.id', name: 'Ustadzah Hilyah Fauziyyah, Al-Hafidzah', gender: Gender.FEMALE, education: EducationLevel.S1, major: "Ilmu Al-Qur'an dan Tafsir" },
-    { email: 'guru.smaq.tfs@cipansor.or.id', name: 'Ustadz Ihsan Nurdin, Lc.', gender: Gender.MALE, education: EducationLevel.S1, major: 'Tafsir' },
+    {
+      email: 'guru.smaq.pai@cipansor.or.id',
+      name: 'Ustadz Abdul Aziz, Lc.',
+      gender: Gender.MALE,
+      education: EducationLevel.S1,
+      major: 'Syariah',
+    },
+    {
+      email: 'guru.smaq.pkn@cipansor.or.id',
+      name: 'Ustadzah Ai Nurhasanah, S.Pd.',
+      gender: Gender.FEMALE,
+      education: EducationLevel.S1,
+      major: 'Pendidikan Pancasila dan Kewarganegaraan',
+    },
+    {
+      email: 'guru.smaq.fis@cipansor.or.id',
+      name: 'Ustadz Galih Pratama, S.Pd.',
+      gender: Gender.MALE,
+      education: EducationLevel.S1,
+      major: 'Pendidikan Fisika',
+    },
+    {
+      email: 'guru.smaq.kim@cipansor.or.id',
+      name: 'Ustadzah Yulia Rahman, S.Si.',
+      gender: Gender.FEMALE,
+      education: EducationLevel.S1,
+      major: 'Kimia',
+    },
+    {
+      email: 'guru.smaq.bio@cipansor.or.id',
+      name: 'Ustadzah Intan Permatasari, S.Pd.',
+      gender: Gender.FEMALE,
+      education: EducationLevel.S1,
+      major: 'Pendidikan Biologi',
+    },
+    {
+      email: 'guru.smaq.sej@cipansor.or.id',
+      name: 'Ustadz Fajar Nugraha, S.Pd.',
+      gender: Gender.MALE,
+      education: EducationLevel.S1,
+      major: 'Pendidikan Sejarah',
+    },
+    {
+      email: 'guru.smaq.big@cipansor.or.id',
+      name: 'Ustadzah Mira Lestari, S.Pd.',
+      gender: Gender.FEMALE,
+      education: EducationLevel.S1,
+      major: 'Pendidikan Bahasa Inggris',
+    },
+    {
+      email: 'guru.smaq.thf@cipansor.or.id',
+      name: 'Ustadz Zaki Mubarak, Al-Hafidz',
+      gender: Gender.MALE,
+      education: EducationLevel.S1,
+      major: "Ilmu Al-Qur'an dan Tafsir",
+    },
+    {
+      email: 'guru.smaq.thfp@cipansor.or.id',
+      name: 'Ustadzah Hilyah Fauziyyah, Al-Hafidzah',
+      gender: Gender.FEMALE,
+      education: EducationLevel.S1,
+      major: "Ilmu Al-Qur'an dan Tafsir",
+    },
+    {
+      email: 'guru.smaq.tfs@cipansor.or.id',
+      name: 'Ustadz Ihsan Nurdin, Lc.',
+      gender: Gender.MALE,
+      education: EducationLevel.S1,
+      major: 'Tafsir',
+    },
   ],
 };
 
@@ -208,13 +464,33 @@ interface SubjectPlan {
 
 const SUBJECT_PLAN: Record<Exclude<SchoolUnit, 'TK_QURAN'>, SubjectPlan[]> = {
   SD_IT: [
-    { code: 'PAI', name: 'Pendidikan Agama Islam dan Budi Pekerti', credits: 4, teacher: 'sdit.guru@cipansor.or.id' },
-    { code: 'PKN', name: 'Pendidikan Pancasila', credits: 3, teacher: 'guru.sdit.pkn@cipansor.or.id' },
+    {
+      code: 'PAI',
+      name: 'Pendidikan Agama Islam dan Budi Pekerti',
+      credits: 4,
+      teacher: 'sdit.guru@cipansor.or.id',
+    },
+    {
+      code: 'PKN',
+      name: 'Pendidikan Pancasila',
+      credits: 3,
+      teacher: 'guru.sdit.pkn@cipansor.or.id',
+    },
     { code: 'BIN', name: 'Bahasa Indonesia', credits: 5, teacher: 'fatimah@cipansor.or.id' },
     { code: 'MTK', name: 'Matematika', credits: 5, teacher: 'sdit.walikelas@cipansor.or.id' },
-    { code: 'IPAS', name: 'Ilmu Pengetahuan Alam dan Sosial', credits: 4, teacher: 'sdit.wakasek@cipansor.or.id' },
+    {
+      code: 'IPAS',
+      name: 'Ilmu Pengetahuan Alam dan Sosial',
+      credits: 4,
+      teacher: 'sdit.wakasek@cipansor.or.id',
+    },
     { code: 'SBD', name: 'Seni Budaya', credits: 2, teacher: 'guru.sdit.sbd@cipansor.or.id' },
-    { code: 'PJOK', name: 'Pendidikan Jasmani, Olahraga, dan Kesehatan', credits: 2, teacher: 'guru.sdit.pjok@cipansor.or.id' },
+    {
+      code: 'PJOK',
+      name: 'Pendidikan Jasmani, Olahraga, dan Kesehatan',
+      credits: 2,
+      teacher: 'guru.sdit.pjok@cipansor.or.id',
+    },
     { code: 'BIG', name: 'Bahasa Inggris', credits: 2, teacher: 'guru.sdit.big@cipansor.or.id' },
     { code: 'ARB', name: 'Bahasa Arab', credits: 2, teacher: 'guru.sdit.arb@cipansor.or.id' },
     { code: 'THF', name: "Tahfidz Al-Qur'an", credits: 4, teacher: 'guru.sdit.thf@cipansor.or.id' },
@@ -223,16 +499,46 @@ const SUBJECT_PLAN: Record<Exclude<SchoolUnit, 'TK_QURAN'>, SubjectPlan[]> = {
     { code: 'AQD', name: 'Akidah Akhlak', credits: 2, teacher: 'pesantren.ustadz@cipansor.or.id' },
     { code: 'QHD', name: "Al-Qur'an Hadis", credits: 2, teacher: 'guru.smpit.qhd@cipansor.or.id' },
     { code: 'FIQ', name: 'Fikih', credits: 2, teacher: 'ahmad@cipansor.or.id' },
-    { code: 'SKI', name: 'Sejarah Kebudayaan Islam', credits: 2, teacher: 'pesantren.murabbi@cipansor.or.id' },
-    { code: 'PKN', name: 'Pendidikan Pancasila', credits: 2, teacher: 'guru.smpit.pkn@cipansor.or.id' },
-    { code: 'BIN', name: 'Bahasa Indonesia', credits: 4, teacher: 'smpit.walikelas@cipansor.or.id' },
+    {
+      code: 'SKI',
+      name: 'Sejarah Kebudayaan Islam',
+      credits: 2,
+      teacher: 'pesantren.murabbi@cipansor.or.id',
+    },
+    {
+      code: 'PKN',
+      name: 'Pendidikan Pancasila',
+      credits: 2,
+      teacher: 'guru.smpit.pkn@cipansor.or.id',
+    },
+    {
+      code: 'BIN',
+      name: 'Bahasa Indonesia',
+      credits: 4,
+      teacher: 'smpit.walikelas@cipansor.or.id',
+    },
     { code: 'MTK', name: 'Matematika', credits: 4, teacher: 'smpit.guru@cipansor.or.id' },
-    { code: 'IPA', name: 'Ilmu Pengetahuan Alam', credits: 4, teacher: 'smpit.wakasek@cipansor.or.id' },
-    { code: 'IPS', name: 'Ilmu Pengetahuan Sosial', credits: 3, teacher: 'guru.smpit.ips@cipansor.or.id' },
+    {
+      code: 'IPA',
+      name: 'Ilmu Pengetahuan Alam',
+      credits: 4,
+      teacher: 'smpit.wakasek@cipansor.or.id',
+    },
+    {
+      code: 'IPS',
+      name: 'Ilmu Pengetahuan Sosial',
+      credits: 3,
+      teacher: 'guru.smpit.ips@cipansor.or.id',
+    },
     { code: 'BIG', name: 'Bahasa Inggris', credits: 3, teacher: 'guru.smpit.big@cipansor.or.id' },
     { code: 'ARB', name: 'Bahasa Arab', credits: 3, teacher: 'smpit.kepala@cipansor.or.id' },
     { code: 'INF', name: 'Informatika', credits: 2, teacher: 'guru.smpit.inf@cipansor.or.id' },
-    { code: 'PJK', name: 'Pendidikan Jasmani, Olahraga, dan Kesehatan', credits: 2, teacher: 'guru.smpit.pjok@cipansor.or.id' },
+    {
+      code: 'PJK',
+      name: 'Pendidikan Jasmani, Olahraga, dan Kesehatan',
+      credits: 2,
+      teacher: 'guru.smpit.pjok@cipansor.or.id',
+    },
     {
       code: 'THF',
       name: "Tahfidz Al-Qur'an",
@@ -242,9 +548,19 @@ const SUBJECT_PLAN: Record<Exclude<SchoolUnit, 'TK_QURAN'>, SubjectPlan[]> = {
     },
   ],
   SMA_QURAN: [
-    { code: 'PAI', name: 'Pendidikan Agama Islam dan Budi Pekerti', credits: 3, teacher: 'guru.smaq.pai@cipansor.or.id' },
+    {
+      code: 'PAI',
+      name: 'Pendidikan Agama Islam dan Budi Pekerti',
+      credits: 3,
+      teacher: 'guru.smaq.pai@cipansor.or.id',
+    },
     { code: 'TFS', name: 'Tafsir', credits: 2, teacher: 'guru.smaq.tfs@cipansor.or.id' },
-    { code: 'PKN', name: 'Pendidikan Pancasila', credits: 2, teacher: 'guru.smaq.pkn@cipansor.or.id' },
+    {
+      code: 'PKN',
+      name: 'Pendidikan Pancasila',
+      credits: 2,
+      teacher: 'guru.smaq.pkn@cipansor.or.id',
+    },
     { code: 'BIN', name: 'Bahasa Indonesia', credits: 4, teacher: 'smaq.walikelas@cipansor.or.id' },
     { code: 'MTK', name: 'Matematika', credits: 4, teacher: 'smaq.wakasek@cipansor.or.id' },
     { code: 'FIS', name: 'Fisika', credits: 3, teacher: 'guru.smaq.fis@cipansor.or.id' },
@@ -264,7 +580,10 @@ const SUBJECT_PLAN: Record<Exclude<SchoolUnit, 'TK_QURAN'>, SubjectPlan[]> = {
 };
 
 /** Tarif contoh per bulan / sekali bayar. Bukan tarif yayasan. */
-const PAYMENT_PLAN: Record<SchoolUnit, Array<{ code: string; name: string; amount: number; recurring: boolean }>> = {
+const PAYMENT_PLAN: Record<
+  SchoolUnit,
+  Array<{ code: string; name: string; amount: number; recurring: boolean }>
+> = {
   TK_QURAN: [
     { code: 'SPP', name: 'SPP Bulanan', amount: 200_000, recurring: true },
     { code: 'DU', name: 'Daftar Ulang & Uang Pangkal', amount: 750_000, recurring: false },
@@ -295,68 +614,327 @@ function subjectTypeOf(code: string): SubjectType {
 }
 
 const MONTHS_ID = [
-  'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-  'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
+  'Januari',
+  'Februari',
+  'Maret',
+  'April',
+  'Mei',
+  'Juni',
+  'Juli',
+  'Agustus',
+  'September',
+  'Oktober',
+  'November',
+  'Desember',
 ];
 
 const BOY_NAMES = [
-  'Muhammad', 'Ahmad', 'Abdullah', 'Umar', 'Ali', 'Hasan', 'Husain', 'Fathan', 'Rafka', 'Azka',
-  'Daffa', 'Rayyan', 'Fariz', 'Hanif', 'Zaki', 'Naufal', 'Fikri', 'Haikal', 'Alif', 'Ilham',
-  'Rizki', 'Faiz', 'Arkan', 'Ghifari', 'Syauqi', 'Rasyid', 'Nabil', 'Yusuf', 'Ibrahim', 'Ismail',
-  'Khalid', 'Salman', 'Faqih', 'Rafi', 'Aqil', 'Irsyad', 'Luthfi', 'Zidan', 'Hilmi', 'Raihan',
+  'Muhammad',
+  'Ahmad',
+  'Abdullah',
+  'Umar',
+  'Ali',
+  'Hasan',
+  'Husain',
+  'Fathan',
+  'Rafka',
+  'Azka',
+  'Daffa',
+  'Rayyan',
+  'Fariz',
+  'Hanif',
+  'Zaki',
+  'Naufal',
+  'Fikri',
+  'Haikal',
+  'Alif',
+  'Ilham',
+  'Rizki',
+  'Faiz',
+  'Arkan',
+  'Ghifari',
+  'Syauqi',
+  'Rasyid',
+  'Nabil',
+  'Yusuf',
+  'Ibrahim',
+  'Ismail',
+  'Khalid',
+  'Salman',
+  'Faqih',
+  'Rafi',
+  'Aqil',
+  'Irsyad',
+  'Luthfi',
+  'Zidan',
+  'Hilmi',
+  'Raihan',
 ];
 const BOY_SECOND = [
-  'Al-Fatih', 'Ramadhan', 'Firdaus', 'Hidayat', 'Maulana', 'Syahputra', 'Rahman', 'Hakim', 'Nugraha',
-  'Pratama', 'Ramdani', 'Hamdani', 'Fauzan', 'Mubarok', 'Al-Ghifari', 'Khairul Anam', 'Ihsan', 'Saputra',
-  'Permana', 'Kurniawan', 'Abdurrahman', 'Zulfikar', 'Hafizhan', 'Taqiyuddin',
+  'Al-Fatih',
+  'Ramadhan',
+  'Firdaus',
+  'Hidayat',
+  'Maulana',
+  'Syahputra',
+  'Rahman',
+  'Hakim',
+  'Nugraha',
+  'Pratama',
+  'Ramdani',
+  'Hamdani',
+  'Fauzan',
+  'Mubarok',
+  'Al-Ghifari',
+  'Khairul Anam',
+  'Ihsan',
+  'Saputra',
+  'Permana',
+  'Kurniawan',
+  'Abdurrahman',
+  'Zulfikar',
+  'Hafizhan',
+  'Taqiyuddin',
 ];
 const GIRL_NAMES = [
-  'Aisyah', 'Fatimah', 'Khadijah', 'Zahra', 'Nayla', 'Salma', 'Hana', 'Nabila', 'Syifa', 'Alya',
-  'Kayla', 'Aqila', 'Maryam', 'Zainab', 'Azzahra', 'Najwa', 'Safira', 'Tsabita', 'Hilya', 'Nadhira',
-  'Qonita', 'Shafa', 'Rania', 'Annisa', 'Farah', 'Khalisa', 'Luthfiyah', 'Mutiara', 'Rahma', 'Sakinah',
-  'Sausan', 'Zulfa', 'Azkia', 'Dzakira', 'Kamila', 'Latifa', 'Meisya', 'Hasna', 'Humaira', 'Nurul',
+  'Aisyah',
+  'Fatimah',
+  'Khadijah',
+  'Zahra',
+  'Nayla',
+  'Salma',
+  'Hana',
+  'Nabila',
+  'Syifa',
+  'Alya',
+  'Kayla',
+  'Aqila',
+  'Maryam',
+  'Zainab',
+  'Azzahra',
+  'Najwa',
+  'Safira',
+  'Tsabita',
+  'Hilya',
+  'Nadhira',
+  'Qonita',
+  'Shafa',
+  'Rania',
+  'Annisa',
+  'Farah',
+  'Khalisa',
+  'Luthfiyah',
+  'Mutiara',
+  'Rahma',
+  'Sakinah',
+  'Sausan',
+  'Zulfa',
+  'Azkia',
+  'Dzakira',
+  'Kamila',
+  'Latifa',
+  'Meisya',
+  'Hasna',
+  'Humaira',
+  'Nurul',
 ];
 const GIRL_SECOND = [
-  'Nur Aini', 'Putri', 'Rahmawati', 'Fitriani', 'Salsabila', 'Humaira', 'Khairunnisa', 'Nurhaliza',
-  'Aulia', 'Ramadhani', 'Fadhilah', 'Maharani', 'Kamila', 'Nuraeni', 'Anggraeni', 'Septiani',
-  'Rizqiyah', 'Hasanah', 'Az-Zahra', 'Mardhiyah', 'Qurrota Ayun', 'Syakira', 'Zakiyyah', 'Hanifah',
+  'Nur Aini',
+  'Putri',
+  'Rahmawati',
+  'Fitriani',
+  'Salsabila',
+  'Humaira',
+  'Khairunnisa',
+  'Nurhaliza',
+  'Aulia',
+  'Ramadhani',
+  'Fadhilah',
+  'Maharani',
+  'Kamila',
+  'Nuraeni',
+  'Anggraeni',
+  'Septiani',
+  'Rizqiyah',
+  'Hasanah',
+  'Az-Zahra',
+  'Mardhiyah',
+  'Qurrota Ayun',
+  'Syakira',
+  'Zakiyyah',
+  'Hanifah',
 ];
 const FATHER_NAMES = [
-  'Asep Saepudin', 'Ujang Rahmat', 'Dede Kurnia', 'Deden Hermawan', 'Iwan Setiawan', 'Yayan Suryana',
-  'Cecep Supriatna', 'Dadang Sudrajat', 'Agus Rustandi', 'Wawan Kurniawan', 'Heri Hidayat', 'Ade Mulyana',
-  'Endang Sopandi', 'Jajang Nurjaman', 'Nandang Suherman', 'Oman Abdurahman', 'Tatang Ruhimat',
-  'Engkus Kusnadi', 'Budi Permana', 'Yusuf Firmansyah', 'Ridwan Saputra', 'Aan Anwar', 'Iman Nurjaman',
-  'Dodi Ruswandi', 'Lukman Hakim', 'Usep Mulyadi', 'Taufik Rahman', 'Ikin Sodikin', 'Maman Suparman',
-  'Ahmad Hidayatullah', 'Yana Mulyana', 'Sopian Hadi', 'Dian Hardiana', 'Eman Sulaeman', 'Opik Taufik',
-  'Encep Hidayat', 'Aep Saepuloh', 'Didin Wahyudin', 'Mamat Rahmat', 'Undang Sunarya', 'Wahyu Hidayat',
-  'Rahmat Hidayat', 'Ayi Kurniawan', 'Ogi Suganda', 'Jaja Sukmara', 'Enjang Kurnia', 'Ruhiyat Hidayat',
-  'Mulyadi Saputra', 'Hamdan Nurdin', 'Kosasih Permana', 'Nana Suryana', 'Ujang Solihin', 'Atep Supriadi',
-  'Asep Kurnia', 'Deni Ruhiyat', 'Irwan Gunawan', 'Ade Suparman', 'Tedi Rustandi', 'Oding Sukanda',
-  'Gugun Gunawan', 'Endi Suhendi', 'Cahya Permana', 'Sukma Wijaya', 'Hendi Hermawan',
+  'Asep Saepudin',
+  'Ujang Rahmat',
+  'Dede Kurnia',
+  'Deden Hermawan',
+  'Iwan Setiawan',
+  'Yayan Suryana',
+  'Cecep Supriatna',
+  'Dadang Sudrajat',
+  'Agus Rustandi',
+  'Wawan Kurniawan',
+  'Heri Hidayat',
+  'Ade Mulyana',
+  'Endang Sopandi',
+  'Jajang Nurjaman',
+  'Nandang Suherman',
+  'Oman Abdurahman',
+  'Tatang Ruhimat',
+  'Engkus Kusnadi',
+  'Budi Permana',
+  'Yusuf Firmansyah',
+  'Ridwan Saputra',
+  'Aan Anwar',
+  'Iman Nurjaman',
+  'Dodi Ruswandi',
+  'Lukman Hakim',
+  'Usep Mulyadi',
+  'Taufik Rahman',
+  'Ikin Sodikin',
+  'Maman Suparman',
+  'Ahmad Hidayatullah',
+  'Yana Mulyana',
+  'Sopian Hadi',
+  'Dian Hardiana',
+  'Eman Sulaeman',
+  'Opik Taufik',
+  'Encep Hidayat',
+  'Aep Saepuloh',
+  'Didin Wahyudin',
+  'Mamat Rahmat',
+  'Undang Sunarya',
+  'Wahyu Hidayat',
+  'Rahmat Hidayat',
+  'Ayi Kurniawan',
+  'Ogi Suganda',
+  'Jaja Sukmara',
+  'Enjang Kurnia',
+  'Ruhiyat Hidayat',
+  'Mulyadi Saputra',
+  'Hamdan Nurdin',
+  'Kosasih Permana',
+  'Nana Suryana',
+  'Ujang Solihin',
+  'Atep Supriadi',
+  'Asep Kurnia',
+  'Deni Ruhiyat',
+  'Irwan Gunawan',
+  'Ade Suparman',
+  'Tedi Rustandi',
+  'Oding Sukanda',
+  'Gugun Gunawan',
+  'Endi Suhendi',
+  'Cahya Permana',
+  'Sukma Wijaya',
+  'Hendi Hermawan',
 ];
 const MOTHER_NAMES = [
-  'Euis Komariah', 'Neneng Hasanah', 'Iis Aisyah', 'Lilis Suryani', 'Siti Rohmah', 'Tati Sumiati',
-  'Eti Rohaeti', 'Nining Suningsih', 'Ai Rosita', 'Enok Nurhayati', 'Popon Rosmiati', 'Wiwin Winarti',
-  'Ela Nurlaela', 'Imas Masitoh', 'Yuyun Yuniarti', 'Heni Herlina', 'Cucu Sumiati', 'Ani Suryani',
-  'Irma Suryani', 'Lina Marlina', 'Eneng Maryam', 'Rika Rostika', 'Mimin Mintarsih', 'Titin Kartini',
-  'Nani Rohaeni', 'Oom Komariah', 'Iin Inayah', 'Yati Rohayati', 'Wati Hermawati', 'Evi Nurlaela',
-  'Dedeh Kurniasih', 'Elis Sulastri', 'Aas Asiah', 'Rini Andriani', 'Nurjanah Hasanah', 'Lela Nurlela',
-  'Ipah Saripah', 'Enung Nurhayati', 'Uum Umiyati', 'Nenden Sulastri', 'Rosmiati Hasanah', 'Yeti Suryati',
-  'Nia Rahmawati', 'Anih Kurniasih', 'Ika Rostika', 'Rina Herlina', 'Sri Mulyani', 'Neni Hendrawati',
-  'Dewi Kurniasih', 'Tini Suhartini', 'Omah Maryamah', 'Ucu Nurhayati', 'Ening Suningsih', 'Ros Rosita',
-  'Lia Yuliani', 'Tuti Alawiyah', 'Ika Nurhayati', 'Mira Rostiani', 'Yani Maryani', 'Eka Nurjanah',
-  'Leni Marlina', 'Ita Rosita', 'Fitri Handayani', 'Siti Maesaroh',
+  'Euis Komariah',
+  'Neneng Hasanah',
+  'Iis Aisyah',
+  'Lilis Suryani',
+  'Siti Rohmah',
+  'Tati Sumiati',
+  'Eti Rohaeti',
+  'Nining Suningsih',
+  'Ai Rosita',
+  'Enok Nurhayati',
+  'Popon Rosmiati',
+  'Wiwin Winarti',
+  'Ela Nurlaela',
+  'Imas Masitoh',
+  'Yuyun Yuniarti',
+  'Heni Herlina',
+  'Cucu Sumiati',
+  'Ani Suryani',
+  'Irma Suryani',
+  'Lina Marlina',
+  'Eneng Maryam',
+  'Rika Rostika',
+  'Mimin Mintarsih',
+  'Titin Kartini',
+  'Nani Rohaeni',
+  'Oom Komariah',
+  'Iin Inayah',
+  'Yati Rohayati',
+  'Wati Hermawati',
+  'Evi Nurlaela',
+  'Dedeh Kurniasih',
+  'Elis Sulastri',
+  'Aas Asiah',
+  'Rini Andriani',
+  'Nurjanah Hasanah',
+  'Lela Nurlela',
+  'Ipah Saripah',
+  'Enung Nurhayati',
+  'Uum Umiyati',
+  'Nenden Sulastri',
+  'Rosmiati Hasanah',
+  'Yeti Suryati',
+  'Nia Rahmawati',
+  'Anih Kurniasih',
+  'Ika Rostika',
+  'Rina Herlina',
+  'Sri Mulyani',
+  'Neni Hendrawati',
+  'Dewi Kurniasih',
+  'Tini Suhartini',
+  'Omah Maryamah',
+  'Ucu Nurhayati',
+  'Ening Suningsih',
+  'Ros Rosita',
+  'Lia Yuliani',
+  'Tuti Alawiyah',
+  'Ika Nurhayati',
+  'Mira Rostiani',
+  'Yani Maryani',
+  'Eka Nurjanah',
+  'Leni Marlina',
+  'Ita Rosita',
+  'Fitri Handayani',
+  'Siti Maesaroh',
 ];
 const BIRTH_PLACES = [
-  'Tasikmalaya', 'Tasikmalaya', 'Tasikmalaya', 'Tasikmalaya', 'Tasikmalaya', 'Garut', 'Ciamis',
-  'Bandung', 'Majalengka', 'Sumedang',
+  'Tasikmalaya',
+  'Tasikmalaya',
+  'Tasikmalaya',
+  'Tasikmalaya',
+  'Tasikmalaya',
+  'Garut',
+  'Ciamis',
+  'Bandung',
+  'Majalengka',
+  'Sumedang',
 ];
 const KAMPUNG = [
-  'Nyalindung', 'Cipansor', 'Babakan', 'Sukamaju', 'Cibeureum', 'Pasirkaler', 'Cikoneng', 'Sindangsari',
-  'Legok', 'Pangkalan', 'Cisalak', 'Sukahurip', 'Margaluyu', 'Cilumpang',
+  'Nyalindung',
+  'Cipansor',
+  'Babakan',
+  'Sukamaju',
+  'Cibeureum',
+  'Pasirkaler',
+  'Cikoneng',
+  'Sindangsari',
+  'Legok',
+  'Pangkalan',
+  'Cisalak',
+  'Sukahurip',
+  'Margaluyu',
+  'Cilumpang',
 ];
 /** Kecamatan di Kabupaten Tasikmalaya di sekitar Kadipaten. */
-const KECAMATAN = ['Kadipaten', 'Kadipaten', 'Kadipaten', 'Pagerageung', 'Ciawi', 'Rajapolah', 'Jamanis', 'Sukaresik'];
+const KECAMATAN = [
+  'Kadipaten',
+  'Kadipaten',
+  'Kadipaten',
+  'Pagerageung',
+  'Ciawi',
+  'Rajapolah',
+  'Jamanis',
+  'Sukaresik',
+];
 
 /** Satu potong hafalan: rentang ayat di dalam SATU surah dan SATU juz. */
 interface QuranPiece {
@@ -404,7 +982,11 @@ const YEAR_PROGRAM: Record<string, QuranPiece[]> = {
   ],
 };
 /** Tingkat masuk tiap unit: hafalan dari tingkat sebelum ini dibawa dari sekolah asal. */
-const ENTRY_LEVEL: Record<Exclude<SchoolUnit, 'TK_QURAN'>, string> = { SD_IT: '1', SMP_IT: '7', SMA_QURAN: '10' };
+const ENTRY_LEVEL: Record<Exclude<SchoolUnit, 'TK_QURAN'>, string> = {
+  SD_IT: '1',
+  SMP_IT: '7',
+  SMA_QURAN: '10',
+};
 
 /** Juz dari (surah, ayat) — cukup untuk surah yang dipakai paket ini. */
 function juzOf(surah: number, ayah: number): number {
@@ -605,7 +1187,13 @@ export async function seedPaketPresentasi(
     rng: createRng(20260715),
     now,
     today: utcDate(todayWib.getUTCFullYear(), todayWib.getUTCMonth(), todayWib.getUTCDate()),
-    ay: { id: ayRow.id, name: ayRow.name, startDate: ayRow.startDate, endDate: ayRow.endDate, startYear: spec.startYear },
+    ay: {
+      id: ayRow.id,
+      name: ayRow.name,
+      startDate: ayRow.startDate,
+      endDate: ayRow.endDate,
+      startYear: spec.startYear,
+    },
     prevAy: {
       id: prevAyRow.id,
       name: prevAyRow.name,
@@ -710,7 +1298,12 @@ async function rapikanIdentitas(ctx: Ctx): Promise<void> {
       if (existing) await db.boardMember.update({ where: { id: existing.id }, data });
       else
         await db.boardMember.create({
-          data: { ...data, foundationId: foundation.id, name: acc.name, startDate: utcDate(2022, 0, 1) },
+          data: {
+            ...data,
+            foundationId: foundation.id,
+            name: acc.name,
+            startDate: utcDate(2022, 0, 1),
+          },
         });
     }
     await db.boardMember.updateMany({
@@ -723,7 +1316,9 @@ async function rapikanIdentitas(ctx: Ctx): Promise<void> {
 
   // Akun ganda: nonaktifkan, dan pindahkan jejaknya di dokumen perencanaan ke
   // pemegang jabatan yang sebenarnya dipakai aplikasi.
-  const remap = LEGACY_DUPLICATES.filter((p) => ctx.users.has(p.legacy) && ctx.users.has(p.replacement));
+  const remap = LEGACY_DUPLICATES.filter(
+    (p) => ctx.users.has(p.legacy) && ctx.users.has(p.replacement)
+  );
   const kepalaSma = ctx.users.get('smaq.kepala@cipansor.or.id');
   const adminSmp = ctx.users.get('admin.smpit@cipansor.or.id');
   const planColumns = await db.$queryRaw<Array<{ table_name: string; column_name: string }>>`
@@ -751,7 +1346,10 @@ async function rapikanIdentitas(ctx: Ctx): Promise<void> {
     }
   }
   const legacyIds = remap.map((p) => userId(ctx, p.legacy));
-  await db.userRoleAssignment.updateMany({ where: { userId: { in: legacyIds } }, data: { isActive: false } });
+  await db.userRoleAssignment.updateMany({
+    where: { userId: { in: legacyIds } },
+    data: { isActive: false },
+  });
   await db.user.updateMany({ where: { id: { in: legacyIds } }, data: { isActive: false } });
 
   // Lokasi: seed dasar menaruh yayasan di Sukabumi. Tabel wilayah (rujukan
@@ -813,7 +1411,10 @@ async function rapikanDataLama(ctx: Ctx): Promise<void> {
   // Tagihan tahun ajaran yang sudah lewat yang belum lunas: santrinya masih
   // aktif dan naik kelas, jadi di gambaran ini tagihannya diselesaikan saat itu.
   const stale = await db.invoice.findMany({
-    where: { dueDate: { lt: ctx.prevAy.startDate }, status: { notIn: [PaymentStatus.PAID, PaymentStatus.CANCELLED] } },
+    where: {
+      dueDate: { lt: ctx.prevAy.startDate },
+      status: { notIn: [PaymentStatus.PAID, PaymentStatus.CANCELLED] },
+    },
   });
   for (const inv of stale) {
     const remaining = inv.amount.sub(inv.paidAmount);
@@ -831,7 +1432,10 @@ async function rapikanDataLama(ctx: Ctx): Promise<void> {
         notes: 'Dibayar tunai di loket TU',
       },
     });
-    await db.invoice.update({ where: { id: inv.id }, data: { paidAmount: inv.amount, status: PaymentStatus.PAID } });
+    await db.invoice.update({
+      where: { id: inv.id },
+      data: { paidAmount: inv.amount, status: PaymentStatus.PAID },
+    });
   }
   const overdue = await db.invoice.updateMany({
     where: { status: PaymentStatus.PENDING, dueDate: { lt: ctx.today } },
@@ -872,7 +1476,11 @@ async function siapkanGuru(ctx: Ctx): Promise<TeacherMap> {
           isActive: true,
           createdAt: utcDate(2024, 6, 1),
           userRoles: {
-            create: { roleId: roleId(ctx, `${ROLE_PREFIX[unitType]}_GURU`), unitId, isPrimary: true },
+            create: {
+              roleId: roleId(ctx, `${ROLE_PREFIX[unitType]}_GURU`),
+              unitId,
+              isPrimary: true,
+            },
           },
         },
       });
@@ -899,7 +1507,9 @@ async function siapkanGuru(ctx: Ctx): Promise<TeacherMap> {
       created++;
     }
   }
-  const rows = await db.teacher.findMany({ select: { id: true, userId: true, user: { select: { email: true, name: true } } } });
+  const rows = await db.teacher.findMany({
+    select: { id: true, userId: true, user: { select: { email: true, name: true } } },
+  });
   const map: TeacherMap = new Map(
     rows.map((r) => [r.user.email, { teacherId: r.id, userId: r.userId, name: r.user.name }])
   );
@@ -924,7 +1534,14 @@ async function siapkanMapel(ctx: Ctx, teachers: TeacherMap): Promise<SubjectMap>
     for (const s of SUBJECT_PLAN[unitType]) {
       const row = await db.subject.upsert({
         where: { unitId_code: { unitId, code: s.code } },
-        create: { unitId, code: s.code, name: s.name, type: subjectTypeOf(s.code), credits: s.credits, isActive: true },
+        create: {
+          unitId,
+          code: s.code,
+          name: s.name,
+          type: subjectTypeOf(s.code),
+          credits: s.credits,
+          isActive: true,
+        },
         update: { isActive: true },
       });
       list.push({ ...s, id: row.id });
@@ -934,13 +1551,15 @@ async function siapkanMapel(ctx: Ctx, teachers: TeacherMap): Promise<SubjectMap>
           where: { teacherId: t.teacherId, subjectId: row.id, classId: null },
         });
         if (!exists) {
-          await db.teacherSubject.create({ data: { teacherId: t.teacherId, subjectId: row.id, isActive: true } });
+          await db.teacherSubject.create({
+            data: { teacherId: t.teacherId, subjectId: row.id, isActive: true },
+          });
         }
       }
     }
     out.set(unitType, list);
   }
-  console.log('   ✅ Mata pelajaran + pengampu untuk SD IT, SMP IT, SMA Qur\'an');
+  console.log("   ✅ Mata pelajaran + pengampu untuk SD IT, SMP IT, SMA Qur'an");
   return out;
 }
 
@@ -972,7 +1591,10 @@ async function siapkanRombel(ctx: Ctx, teachers: TeacherMap): Promise<ClassRef[]
       const row = existing
         ? await db.class.update({
             where: { id: existing.id },
-            data: { level: plan.level, homeroomTeacherId: existing.homeroomTeacherId ?? wali.teacherId },
+            data: {
+              level: plan.level,
+              homeroomTeacherId: existing.homeroomTeacherId ?? wali.teacherId,
+            },
           })
         : await db.class.create({
             data: {
@@ -985,7 +1607,8 @@ async function siapkanRombel(ctx: Ctx, teachers: TeacherMap): Promise<ClassRef[]
               createdAt: addDays(ctx.ay.startDate, -14),
             },
           });
-      const homeroom = [...teachers.values()].find((t) => t.teacherId === row.homeroomTeacherId) ?? wali;
+      const homeroom =
+        [...teachers.values()].find((t) => t.teacherId === row.homeroomTeacherId) ?? wali;
       // Wali kelas mendapat peran wali kelas unitnya bila belum punya.
       const waliRole = roleId(ctx, `${ROLE_PREFIX[unitType]}_WALI_KELAS`);
       const has = await db.userRoleAssignment.findFirst({
@@ -993,7 +1616,13 @@ async function siapkanRombel(ctx: Ctx, teachers: TeacherMap): Promise<ClassRef[]
       });
       if (!has) {
         await db.userRoleAssignment.create({
-          data: { userId: homeroom.userId, roleId: waliRole, unitId, isPrimary: false, isActive: true },
+          data: {
+            userId: homeroom.userId,
+            roleId: waliRole,
+            unitId,
+            isPrimary: false,
+            isActive: true,
+          },
         });
       }
       out.push({ ...plan, id: row.id, unitType, unitId, index, homeroomUserId: homeroom.userId });
@@ -1091,30 +1720,52 @@ async function siapkanSantri(ctx: Ctx, classes: ClassRef[]): Promise<StudentRef[
     );
     let current = s.enrollments.map((e) => classes.find((c) => c.id === e.classId)).find(Boolean);
     if (current && current.gender && current.gender !== s.gender) {
-      const twin = byUnitName.get(`${unitType}|${current.level}${s.gender === Gender.FEMALE ? 'B' : 'A'}`);
+      const twin = byUnitName.get(
+        `${unitType}|${current.level}${s.gender === Gender.FEMALE ? 'B' : 'A'}`
+      );
       if (twin) {
         // Dicatat sebagai perpindahan, bukan ditimpa: nilai dan presensinya di
         // rombel lama tetap punya rombel.
-        await db.classEnrollment.update({ where: { id: s.enrollments[0].id }, data: { status: 'transferred' } });
+        await db.classEnrollment.update({
+          where: { id: s.enrollments[0].id },
+          data: { status: 'transferred' },
+        });
         await db.classEnrollment.create({
-          data: { studentId: s.id, classId: twin.id, status: 'active', enrolledAt: ctx.ay.startDate },
+          data: {
+            studentId: s.id,
+            classId: twin.id,
+            status: 'active',
+            enrolledAt: ctx.ay.startDate,
+          },
         });
         current = twin;
         moved++;
       }
     }
     if (!current) {
-      current = [...unitClasses].sort((a, b) => (members.get(a.id) ?? 0) - (members.get(b.id) ?? 0))[0];
+      current = [...unitClasses].sort(
+        (a, b) => (members.get(a.id) ?? 0) - (members.get(b.id) ?? 0)
+      )[0];
       await db.classEnrollment.create({
-        data: { studentId: s.id, classId: current.id, status: 'active', enrolledAt: ctx.ay.startDate },
+        data: {
+          studentId: s.id,
+          classId: current.id,
+          status: 'active',
+          enrolledAt: ctx.ay.startDate,
+        },
       });
       placed++;
     }
     members.set(current.id, (members.get(current.id) ?? 0) + 1);
     // Seed dasar memberi santri kelas 1 SD tanggal lahir 2012 (14 tahun).
-    const age = ctx.ay.startYear - s.birthDate.getUTCFullYear() - (s.birthDate.getUTCMonth() >= 6 ? 1 : 0);
+    const age =
+      ctx.ay.startYear - s.birthDate.getUTCFullYear() - (s.birthDate.getUTCMonth() >= 6 ? 1 : 0);
     if (Math.abs(age - current.age) > 1) {
-      const fixed = utcDate(ctx.ay.startYear - current.age, rng.int(0, 5), s.birthDate.getUTCDate());
+      const fixed = utcDate(
+        ctx.ay.startYear - current.age,
+        rng.int(0, 5),
+        s.birthDate.getUTCDate()
+      );
       await db.student.update({ where: { id: s.id }, data: { birthDate: fixed } });
       reborn++;
     }
@@ -1139,7 +1790,11 @@ async function siapkanSantri(ctx: Ctx, classes: ClassRef[]): Promise<StudentRef[
     });
     await db.studentUnitEnrollment.upsert({
       where: {
-        studentId_unitId_academicYearId: { studentId: s.id, unitId: s.unitId, academicYearId: ctx.ay.id },
+        studentId_unitId_academicYearId: {
+          studentId: s.id,
+          unitId: s.unitId,
+          academicYearId: ctx.ay.id,
+        },
       },
       create: {
         studentId: s.id,
@@ -1154,7 +1809,9 @@ async function siapkanSantri(ctx: Ctx, classes: ClassRef[]): Promise<StudentRef[
 
   // --- nomor unik yang sudah terpakai -----------------------------------------
   const usedNis = new Set(
-    (await db.studentUnitIdentifier.findMany({ select: { unitId: true, nis: true } })).map((r) => `${r.unitId}|${r.nis}`)
+    (await db.studentUnitIdentifier.findMany({ select: { unitId: true, nis: true } })).map(
+      (r) => `${r.unitId}|${r.nis}`
+    )
   );
   const idRows = await db.student.findMany({ select: { nisn: true, nik: true } });
   const usedNisn = new Set(idRows.map((r) => r.nisn).filter((v): v is string => !!v));
@@ -1238,7 +1895,11 @@ async function siapkanSantri(ctx: Ctx, classes: ClassRef[]): Promise<StudentRef[
 
       const bornBeforeJuly = rng.chance(0.55);
       const birthYear = ctx.ay.startYear - c.age - (bornBeforeJuly ? 0 : 1);
-      const birthDate = utcDate(birthYear, bornBeforeJuly ? rng.int(0, 5) : rng.int(6, 11), rng.int(1, 28));
+      const birthDate = utcDate(
+        birthYear,
+        bornBeforeJuly ? rng.int(0, 5) : rng.int(6, 11),
+        rng.int(1, 28)
+      );
       let nisn: string;
       do nisn = `${pad(birthYear % 1000, 3)}${pad(rng.int(0, 9_999_999), 7)}`;
       while (usedNisn.has(nisn));
@@ -1278,8 +1939,13 @@ async function siapkanSantri(ctx: Ctx, classes: ClassRef[]): Promise<StudentRef[
         },
       });
       const fatherOccupation = rng.pick([
-        OccupationType.WIRASWASTA, OccupationType.PEDAGANG, OccupationType.PETANI,
-        OccupationType.PEGAWAI_SWASTA, OccupationType.PNS, OccupationType.GURU, OccupationType.BURUH,
+        OccupationType.WIRASWASTA,
+        OccupationType.PEDAGANG,
+        OccupationType.PETANI,
+        OccupationType.PEGAWAI_SWASTA,
+        OccupationType.PNS,
+        OccupationType.GURU,
+        OccupationType.BURUH,
       ]);
       const student = await db.student.create({
         data: {
@@ -1302,7 +1968,11 @@ async function siapkanSantri(ctx: Ctx, classes: ClassRef[]): Promise<StudentRef[
           religion: 'ISLAM',
           transportMode: boarding
             ? TransportMode.ANTAR_JEMPUT
-            : rng.pick([TransportMode.ANTAR_JEMPUT, TransportMode.SEPEDA_MOTOR, TransportMode.JALAN_KAKI]),
+            : rng.pick([
+                TransportMode.ANTAR_JEMPUT,
+                TransportMode.SEPEDA_MOTOR,
+                TransportMode.JALAN_KAKI,
+              ]),
           distanceToSchool: new Prisma.Decimal(rng.int(5, 250) / 10),
           travelTime: rng.int(5, 45),
           bloodType: rng.pick([BloodType.A, BloodType.B, BloodType.AB, BloodType.O, BloodType.O]),
@@ -1313,20 +1983,53 @@ async function siapkanSantri(ctx: Ctx, classes: ClassRef[]): Promise<StudentRef[
           livingWith: boarding ? 'Asrama' : 'Orang tua',
           fatherName: fam.father,
           fatherOccupation,
-          fatherEducation: rng.pick([EducationLevel.SMA, EducationLevel.SMA, EducationLevel.S1, EducationLevel.SMP, EducationLevel.D3]),
-          fatherIncome: rng.pick([IncomeRange.RANGE_2JT_5JT, IncomeRange.RANGE_2JT_5JT, IncomeRange.RANGE_1JT_2JT, IncomeRange.RANGE_5JT_10JT]),
+          fatherEducation: rng.pick([
+            EducationLevel.SMA,
+            EducationLevel.SMA,
+            EducationLevel.S1,
+            EducationLevel.SMP,
+            EducationLevel.D3,
+          ]),
+          fatherIncome: rng.pick([
+            IncomeRange.RANGE_2JT_5JT,
+            IncomeRange.RANGE_2JT_5JT,
+            IncomeRange.RANGE_1JT_2JT,
+            IncomeRange.RANGE_5JT_10JT,
+          ]),
           fatherPhone: fam.phone,
           motherName: fam.mother,
-          motherOccupation: rng.pick([OccupationType.IBU_RUMAH_TANGGA, OccupationType.IBU_RUMAH_TANGGA, OccupationType.GURU, OccupationType.PEDAGANG, OccupationType.WIRASWASTA]),
-          motherEducation: rng.pick([EducationLevel.SMA, EducationLevel.S1, EducationLevel.SMP, EducationLevel.D3]),
-          motherIncome: rng.pick([IncomeRange.TIDAK_BERPENGHASILAN, IncomeRange.RANGE_1JT_2JT, IncomeRange.RANGE_500K_1JT]),
+          motherOccupation: rng.pick([
+            OccupationType.IBU_RUMAH_TANGGA,
+            OccupationType.IBU_RUMAH_TANGGA,
+            OccupationType.GURU,
+            OccupationType.PEDAGANG,
+            OccupationType.WIRASWASTA,
+          ]),
+          motherEducation: rng.pick([
+            EducationLevel.SMA,
+            EducationLevel.S1,
+            EducationLevel.SMP,
+            EducationLevel.D3,
+          ]),
+          motherIncome: rng.pick([
+            IncomeRange.TIDAK_BERPENGHASILAN,
+            IncomeRange.RANGE_1JT_2JT,
+            IncomeRange.RANGE_500K_1JT,
+          ]),
           createdAt: entryDate,
         },
       });
       await db.classEnrollment.create({
-        data: { studentId: student.id, classId: c.id, status: 'active', enrolledAt: ctx.ay.startDate },
+        data: {
+          studentId: student.id,
+          classId: c.id,
+          status: 'active',
+          enrolledAt: ctx.ay.startDate,
+        },
       });
-      await db.studentUnitIdentifier.create({ data: { studentId: student.id, unitId: c.unitId, nis } });
+      await db.studentUnitIdentifier.create({
+        data: { studentId: student.id, unitId: c.unitId, nis },
+      });
       await db.studentUnitEnrollment.create({
         data: {
           studentId: student.id,
@@ -1337,7 +2040,12 @@ async function siapkanSantri(ctx: Ctx, classes: ClassRef[]): Promise<StudentRef[
         },
       });
       await db.studentParent.create({
-        data: { studentId: student.id, parentId: fam.parentUserId, relation: 'father', isPrimary: true },
+        data: {
+          studentId: student.id,
+          parentId: fam.parentUserId,
+          relation: 'father',
+          isPrimary: true,
+        },
       });
       members.set(c.id, (members.get(c.id) ?? 0) + 1);
       roster.push({
@@ -1377,19 +2085,34 @@ async function siapkanSantri(ctx: Ctx, classes: ClassRef[]): Promise<StudentRef[
 // ============================================================================
 
 const SLOTS_SD: Array<[string, string]> = [
-  ['07:30', '08:05'], ['08:05', '08:40'], ['08:40', '09:15'],
-  ['09:30', '10:05'], ['10:05', '10:40'], ['10:40', '11:15'],
+  ['07:30', '08:05'],
+  ['08:05', '08:40'],
+  ['08:40', '09:15'],
+  ['09:30', '10:05'],
+  ['10:05', '10:40'],
+  ['10:40', '11:15'],
 ];
 const SLOTS_MENENGAH: Array<[string, string]> = [
-  ['07:00', '07:40'], ['07:40', '08:20'], ['08:20', '09:00'], ['09:15', '09:55'],
-  ['09:55', '10:35'], ['10:35', '11:15'], ['12:30', '13:10'], ['13:10', '13:50'],
+  ['07:00', '07:40'],
+  ['07:40', '08:20'],
+  ['08:20', '09:00'],
+  ['09:15', '09:55'],
+  ['09:55', '10:35'],
+  ['10:35', '11:15'],
+  ['12:30', '13:10'],
+  ['13:10', '13:50'],
 ];
 
 function teacherForClass(teachers: TeacherMap, s: SubjectPlan, c: ClassRef): TeacherRef {
   return teacherOf(teachers, c.gender === Gender.FEMALE && s.female ? s.female : s.teacher);
 }
 
-async function susunJadwal(ctx: Ctx, classes: ClassRef[], subjects: SubjectMap, teachers: TeacherMap): Promise<void> {
+async function susunJadwal(
+  ctx: Ctx,
+  classes: ClassRef[],
+  subjects: SubjectMap,
+  teachers: TeacherMap
+): Promise<void> {
   const { db } = ctx;
   const rows: Prisma.ScheduleCreateManyInput[] = [];
   for (const [unitType, list] of subjects) {
@@ -1424,7 +2147,9 @@ async function susunJadwal(ctx: Ctx, classes: ClassRef[], subjects: SubjectMap, 
       }
     }
   }
-  await createManyChunked('Jadwal pelajaran (slot)', rows, (b) => db.schedule.createMany({ data: b }));
+  await createManyChunked('Jadwal pelajaran (slot)', rows, (b) =>
+    db.schedule.createMany({ data: b })
+  );
 }
 
 // ============================================================================
@@ -1434,7 +2159,11 @@ async function susunJadwal(ctx: Ctx, classes: ClassRef[], subjects: SubjectMap, 
 /** studentId|YYYY-MM-DD → status; dipakai lagi oleh setoran tahfidz. */
 type AttendanceLog = Map<string, AttendanceStatus>;
 
-async function catatPresensi(ctx: Ctx, classes: ClassRef[], roster: StudentRef[]): Promise<AttendanceLog> {
+async function catatPresensi(
+  ctx: Ctx,
+  classes: ClassRef[],
+  roster: StudentRef[]
+): Promise<AttendanceLog> {
   const { db, rng } = ctx;
   const days = schoolDays(ctx);
   const log: AttendanceLog = new Map();
@@ -1450,7 +2179,12 @@ async function catatPresensi(ctx: Ctx, classes: ClassRef[], roster: StudentRef[]
         const r = rng.next();
         if (r < 0.4) {
           status = AttendanceStatus.SICK;
-          notes = rng.pick(['Demam, surat dari orang tua', 'Sakit perut', 'Batuk pilek', 'Dirawat di UKS']);
+          notes = rng.pick([
+            'Demam, surat dari orang tua',
+            'Sakit perut',
+            'Batuk pilek',
+            'Dirawat di UKS',
+          ]);
         } else if (r < 0.7) {
           status = AttendanceStatus.EXCUSED;
           notes = rng.pick(['Acara keluarga', 'Izin keperluan keluarga', 'Mengikuti lomba']);
@@ -1480,7 +2214,10 @@ async function catatPresensi(ctx: Ctx, classes: ClassRef[], roster: StudentRef[]
   // Presensi guru. staff_attendance unik pada (staff_id, teacher_id, date), dan
   // staff_id NULL membuat keunikan itu tidak berlaku — jadi disaring di sini.
   const unitIds = Object.values(ctx.units).map((u) => u.id);
-  const teacherRows = await db.teacher.findMany({ where: { unitId: { in: unitIds } }, select: { id: true } });
+  const teacherRows = await db.teacher.findMany({
+    where: { unitId: { in: unitIds } },
+    select: { id: true },
+  });
   const taken = new Set(
     (
       await db.staffAttendance.findMany({
@@ -1513,12 +2250,26 @@ async function catatPresensi(ctx: Ctx, classes: ClassRef[], roster: StudentRef[]
         notes = 'Cuti';
       } else if (r < 0.085) {
         status = StaffAttendanceStatus.DUTY;
-        notes = rng.pick(['Pelatihan Kurikulum Merdeka', 'Rapat KKG/MGMP', 'Mendampingi lomba santri']);
+        notes = rng.pick([
+          'Pelatihan Kurikulum Merdeka',
+          'Rapat KKG/MGMP',
+          'Mendampingi lomba santri',
+        ]);
       }
-      staffRows.push({ teacherId: t.id, date: day, status, checkIn, checkOut, notes, createdAt: checkIn ?? atWib(day, 7) });
+      staffRows.push({
+        teacherId: t.id,
+        date: day,
+        status,
+        checkIn,
+        checkOut,
+        notes,
+        createdAt: checkIn ?? atWib(day, 7),
+      });
     }
   }
-  await createManyChunked('Presensi guru (hari × guru)', staffRows, (b) => db.staffAttendance.createMany({ data: b }));
+  await createManyChunked('Presensi guru (hari × guru)', staffRows, (b) =>
+    db.staffAttendance.createMany({ data: b })
+  );
   return log;
 }
 
@@ -1536,9 +2287,29 @@ function schoolDayFrom(ctx: Ctx, offset: number): Date {
 /** Selisih kemampuan per mapel, supaya nilai tidak seragam antar-mapel. */
 function subjectOffset(code: string): number {
   const table: Record<string, number> = {
-    MTK: -4, FIS: -5, KIM: -4, IPA: -2, IPAS: -1, BIG: -2, ARB: -3, INF: 1,
-    PAI: 3, AQD: 3, FIQ: 2, QHD: 2, SKI: 2, THF: 4, TFS: 1, BIN: 1, PKN: 2,
-    SBD: 4, PJOK: 5, PJK: 5, SEJ: 0, IPS: 0, BIO: -1,
+    MTK: -4,
+    FIS: -5,
+    KIM: -4,
+    IPA: -2,
+    IPAS: -1,
+    BIG: -2,
+    ARB: -3,
+    INF: 1,
+    PAI: 3,
+    AQD: 3,
+    FIQ: 2,
+    QHD: 2,
+    SKI: 2,
+    THF: 4,
+    TFS: 1,
+    BIN: 1,
+    PKN: 2,
+    SBD: 4,
+    PJOK: 5,
+    PJK: 5,
+    SEJ: 0,
+    IPS: 0,
+    BIO: -1,
   };
   return table[code] ?? 0;
 }
@@ -1551,10 +2322,22 @@ async function ulanganDanNilai(
   teachers: TeacherMap
 ): Promise<void> {
   const { db, rng } = ctx;
-  const plan: Array<{ offset: number; type: ExamType; label: string; weight: number; duration: number }> = [
+  const plan: Array<{
+    offset: number;
+    type: ExamType;
+    label: string;
+    weight: number;
+    duration: number;
+  }> = [
     { offset: 21, type: ExamType.DAILY_TEST, label: 'Ulangan Harian 1', weight: 1, duration: 60 },
     { offset: 49, type: ExamType.DAILY_TEST, label: 'Ulangan Harian 2', weight: 1, duration: 60 },
-    { offset: 84, type: ExamType.MIDTERM, label: 'Penilaian Tengah Semester', weight: 2, duration: 90 },
+    {
+      offset: 84,
+      type: ExamType.MIDTERM,
+      label: 'Penilaian Tengah Semester',
+      weight: 2,
+      duration: 90,
+    },
   ];
   const exams: Prisma.ExamCreateManyInput[] = [];
   const grades: Prisma.GradeCreateManyInput[] = [];
@@ -1584,9 +2367,13 @@ async function ulanganDanNilai(
             createdAt: atWib(addDays(day, -7), 10),
           });
           if (!done) continue;
-          const gradedAt = new Date(Math.min(addDays(day, 3).getTime(), addDays(ctx.today, -1).getTime()));
+          const gradedAt = new Date(
+            Math.min(addDays(day, 3).getTime(), addDays(ctx.today, -1).getTime())
+          );
           for (const st of students) {
-            const score = Math.round(clamp(rng.normal(st.ability + subjectOffset(s.code), 7), 40, 100));
+            const score = Math.round(
+              clamp(rng.normal(st.ability + subjectOffset(s.code), 7), 40, 100)
+            );
             grades.push({
               studentId: st.id,
               subjectId: s.id,
@@ -1606,8 +2393,12 @@ async function ulanganDanNilai(
       }
     }
   }
-  await createManyChunked('Ulangan (UH1, UH2, PTS per mapel × rombel)', exams, (b) => db.exam.createMany({ data: b }));
-  await createManyChunked('Nilai ulangan', grades, (b) => db.grade.createMany({ data: b, skipDuplicates: true }));
+  await createManyChunked('Ulangan (UH1, UH2, PTS per mapel × rombel)', exams, (b) =>
+    db.exam.createMany({ data: b })
+  );
+  await createManyChunked('Nilai ulangan', grades, (b) =>
+    db.grade.createMany({ data: b, skipDuplicates: true })
+  );
 }
 
 const DESKRIPSI: Record<string, string> = {
@@ -1661,15 +2452,26 @@ async function raporSemesterLalu(
       results.sort((a, b) => b.average - a.average);
       for (const [rank, r] of results.entries()) {
         const { st } = r;
-        const hasEnrollment = await db.classEnrollment.findFirst({ where: { studentId: st.id, classId: prev.id } });
+        const hasEnrollment = await db.classEnrollment.findFirst({
+          where: { studentId: st.id, classId: prev.id },
+        });
         if (!hasEnrollment) {
           await db.classEnrollment.create({
-            data: { studentId: st.id, classId: prev.id, status: 'completed', enrolledAt: ctx.prevAy.startDate },
+            data: {
+              studentId: st.id,
+              classId: prev.id,
+              status: 'completed',
+              enrolledAt: ctx.prevAy.startDate,
+            },
           });
         }
         await db.studentUnitEnrollment.upsert({
           where: {
-            studentId_unitId_academicYearId: { studentId: st.id, unitId: st.unitId, academicYearId: ctx.prevAy.id },
+            studentId_unitId_academicYearId: {
+              studentId: st.id,
+              unitId: st.unitId,
+              academicYearId: ctx.prevAy.id,
+            },
           },
           create: {
             studentId: st.id,
@@ -1701,7 +2503,8 @@ async function raporSemesterLalu(
             totalStudents: results.length,
             attendance: { present: 100 - sick - excused - absent, sick, excused, absent },
             tahfidzSummary: {
-              totalJuz: unitType === 'SD_IT' ? 0 : unitType === 'SMP_IT' ? c.grade * 2 : 2 + c.grade * 3,
+              totalJuz:
+                unitType === 'SD_IT' ? 0 : unitType === 'SMP_IT' ? c.grade * 2 : 2 + c.grade * 3,
               targetTercapai: r.average >= 75,
             },
             teacherNotes:
@@ -1765,7 +2568,9 @@ async function tagihanDanPembayaran(ctx: Ctx, roster: StudentRef[]): Promise<voi
           amount: new Prisma.Decimal(p.amount),
           isRecurring: p.recurring,
           isActive: true,
-          description: p.recurring ? 'Ditagihkan setiap bulan, jatuh tempo tanggal 10' : 'Dibayar sekali saat masuk',
+          description: p.recurring
+            ? 'Ditagihkan setiap bulan, jatuh tempo tanggal 10'
+            : 'Dibayar sekali saat masuk',
         },
         update: {},
       });
@@ -1789,7 +2594,8 @@ async function tagihanDanPembayaran(ctx: Ctx, roster: StudentRef[]): Promise<voi
   const months: Array<{ y: number; m: number }> = [];
   for (
     let y = ctx.ay.startDate.getUTCFullYear(), m = ctx.ay.startDate.getUTCMonth();
-    y < ctx.today.getUTCFullYear() || (y === ctx.today.getUTCFullYear() && m <= ctx.today.getUTCMonth());
+    y < ctx.today.getUTCFullYear() ||
+    (y === ctx.today.getUTCFullYear() && m <= ctx.today.getUTCMonth());
     m === 11 ? ((m = 0), y++) : m++
   ) {
     months.push({ y, m });
@@ -1797,11 +2603,17 @@ async function tagihanDanPembayaran(ctx: Ctx, roster: StudentRef[]): Promise<voi
 
   // Tagihan yang sudah ada (mis. dari job tagihan otomatis) tidak diduplikasi.
   const existing = await db.invoice.findMany({
-    where: { studentId: { in: roster.map((s) => s.id) }, dueDate: { gte: addDays(ctx.ay.startDate, -31) } },
+    where: {
+      studentId: { in: roster.map((s) => s.id) },
+      dueDate: { gte: addDays(ctx.ay.startDate, -31) },
+    },
     select: { studentId: true, paymentTypeId: true, dueDate: true },
   });
   const have = new Set(
-    existing.map((i) => `${i.studentId}|${i.paymentTypeId}|${i.dueDate.getUTCFullYear()}-${i.dueDate.getUTCMonth()}`)
+    existing.map(
+      (i) =>
+        `${i.studentId}|${i.paymentTypeId}|${i.dueDate.getUTCFullYear()}-${i.dueDate.getUTCMonth()}`
+    )
   );
   const seqByPrefix = new Map<string, number>();
   const nextNumber = async (y: number, m: number): Promise<string> => {
@@ -1827,7 +2639,8 @@ async function tagihanDanPembayaran(ctx: Ctx, roster: StudentRef[]): Promise<voi
   const decide = (st: StudentRef, dueDate: Date, idx: number, code: string, amount: number) => {
     const y = dueDate.getUTCFullYear();
     const m = dueDate.getUTCMonth();
-    const firstMonth = m === ctx.ay.startDate.getUTCMonth() && y === ctx.ay.startDate.getUTCFullYear();
+    const firstMonth =
+      m === ctx.ay.startDate.getUTCMonth() && y === ctx.ay.startDate.getUTCFullYear();
     let paidAt: Date | null = null;
     let paidAmount = amount;
     if (st.payer === 'tertib') {
@@ -1842,7 +2655,8 @@ async function tagihanDanPembayaran(ctx: Ctx, roster: StudentRef[]): Promise<voi
     }
     if (paidAt && paidAt >= ctx.now) paidAt = null;
     // Sebagian pembayaran bulan ini baru diunggah wali dan menunggu diperiksa TU.
-    const awaiting = paidAt !== null && paidAt >= addDays(yesterday, -4) && code === 'SPP' && rng.chance(0.5);
+    const awaiting =
+      paidAt !== null && paidAt >= addDays(yesterday, -4) && code === 'SPP' && rng.chance(0.5);
     return { paidAt, paidAmount, awaiting };
   };
   const statusFor = (settled: number, amount: number, dueDate: Date): PaymentStatus =>
@@ -1862,7 +2676,10 @@ async function tagihanDanPembayaran(ctx: Ctx, roster: StudentRef[]): Promise<voi
   ): Prisma.PaymentCreateManyInput => {
     const officers = FINANCE_OFFICERS[st.unitType];
     const method = rng.pick([
-      PaymentMethod.BANK_TRANSFER, PaymentMethod.BANK_TRANSFER, PaymentMethod.VIRTUAL_ACCOUNT, PaymentMethod.CASH,
+      PaymentMethod.BANK_TRANSFER,
+      PaymentMethod.BANK_TRANSFER,
+      PaymentMethod.VIRTUAL_ACCOUNT,
+      PaymentMethod.CASH,
     ]);
     const verified = !awaiting;
     if (awaiting) pendingVerification++;
@@ -1871,11 +2688,19 @@ async function tagihanDanPembayaran(ctx: Ctx, roster: StudentRef[]): Promise<voi
       amount: new Prisma.Decimal(paidAmount),
       method,
       referenceNo:
-        method === PaymentMethod.CASH ? null : `TRF${isoDay(paidAt).replace(/-/g, '')}${pad(rng.int(0, 9999), 4)}`,
-      verificationStatus: verified ? PaymentVerificationStatus.FINAL_APPROVED : PaymentVerificationStatus.PENDING_VERIFICATION,
-      tuVerifiedAt: verified ? new Date(Math.min(paidAt.getTime() + DAY_MS, ctx.now.getTime())) : null,
+        method === PaymentMethod.CASH
+          ? null
+          : `TRF${isoDay(paidAt).replace(/-/g, '')}${pad(rng.int(0, 9999), 4)}`,
+      verificationStatus: verified
+        ? PaymentVerificationStatus.FINAL_APPROVED
+        : PaymentVerificationStatus.PENDING_VERIFICATION,
+      tuVerifiedAt: verified
+        ? new Date(Math.min(paidAt.getTime() + DAY_MS, ctx.now.getTime()))
+        : null,
       tuVerifiedById: verified ? (ctx.users.get(officers.tu)?.id ?? null) : null,
-      finalVerifiedAt: verified ? new Date(Math.min(paidAt.getTime() + 2 * DAY_MS, ctx.now.getTime())) : null,
+      finalVerifiedAt: verified
+        ? new Date(Math.min(paidAt.getTime() + 2 * DAY_MS, ctx.now.getTime()))
+        : null,
       finalVerifiedById: verified ? (ctx.users.get(officers.bendahara)?.id ?? null) : null,
       paidAt,
       createdAt: paidAt,
@@ -1905,7 +2730,13 @@ async function tagihanDanPembayaran(ctx: Ctx, roster: StudentRef[]): Promise<voi
     const st = rosterById.get(inv.studentId);
     if (!st) continue;
     const amount = Number(inv.amount);
-    const { paidAt, paidAmount, awaiting } = decide(st, inv.dueDate, idx, inv.paymentType.code, amount);
+    const { paidAt, paidAmount, awaiting } = decide(
+      st,
+      inv.dueDate,
+      idx,
+      inv.paymentType.code,
+      amount
+    );
     const settled = paidAt && !awaiting ? paidAmount : 0;
     if (paidAt) {
       payments.push(paymentRow(st, inv.id, paidAt, paidAmount, awaiting));
@@ -1913,13 +2744,22 @@ async function tagihanDanPembayaran(ctx: Ctx, roster: StudentRef[]): Promise<voi
     }
     await db.invoice.update({
       where: { id: inv.id },
-      data: { paidAmount: new Prisma.Decimal(settled), status: statusFor(settled, amount, inv.dueDate) },
+      data: {
+        paidAmount: new Prisma.Decimal(settled),
+        status: statusFor(settled, amount, inv.dueDate),
+      },
     });
   }
 
   for (const st of roster) {
     const unitTypes = types.get(st.unitType) ?? [];
-    const due: Array<{ type: (typeof unitTypes)[number]; dueDate: Date; y: number; m: number; period: string }> = [];
+    const due: Array<{
+      type: (typeof unitTypes)[number];
+      dueDate: Date;
+      y: number;
+      m: number;
+      period: string;
+    }> = [];
     for (const { y, m } of months) {
       for (const t of unitTypes.filter((x) => x.recurring)) {
         due.push({ type: t, dueDate: utcDate(y, m, 10), y, m, period: `${MONTHS_ID[m]} ${y}` });
@@ -1929,7 +2769,13 @@ async function tagihanDanPembayaran(ctx: Ctx, roster: StudentRef[]): Promise<voi
     if (st.isNew && du) {
       const y = ctx.ay.startDate.getUTCFullYear();
       const m = ctx.ay.startDate.getUTCMonth();
-      due.push({ type: du, dueDate: ctx.ay.startDate, y, m, period: `Tahun Ajaran ${ctx.ay.name}` });
+      due.push({
+        type: du,
+        dueDate: ctx.ay.startDate,
+        y,
+        m,
+        period: `Tahun Ajaran ${ctx.ay.name}`,
+      });
     }
     for (const [idx, d] of due.entries()) {
       const key = `${st.id}|${d.type.id}|${d.dueDate.getUTCFullYear()}-${d.dueDate.getUTCMonth()}`;
@@ -2015,7 +2861,7 @@ async function setoranTahfidz(
   const chunked = (pieces: QuranPiece[], size: () => number): QuranPiece[] => {
     const out: QuranPiece[] = [];
     for (const p of pieces) {
-      for (let from = p.from; from <= p.to; ) {
+      for (let from = p.from; from <= p.to;) {
         const to = Math.min(p.to, from + size() - 1);
         out.push({ surah: p.surah, from, to });
         from = to + 1;
@@ -2066,7 +2912,8 @@ async function setoranTahfidz(
       const status = attendance.get(`${st.id}|${isoDay(d)}`);
       return status !== undefined && !PRESENT_LIKE.has(status);
     };
-    while ([0, 6].includes(verifyDay.getUTCDay()) || absent(verifyDay)) verifyDay = addDays(verifyDay, 1);
+    while ([0, 6].includes(verifyDay.getUTCDay()) || absent(verifyDay))
+      verifyDay = addDays(verifyDay, 1);
     for (const [i, piece] of carriedPieces.entries()) {
       record(
         st,
@@ -2082,13 +2929,24 @@ async function setoranTahfidz(
     for (let k = entryIdx; k < levelIdx; k++) {
       const yearStart = ctx.ay.startYear - (levelIdx - k);
       const yearDays: Date[] = [];
-      for (let d = utcDate(yearStart, 6, 15); d < utcDate(yearStart + 1, 5, 10); d = addDays(d, 1)) {
+      for (
+        let d = utcDate(yearStart, 6, 15);
+        d < utcDate(yearStart + 1, 5, 10);
+        d = addDays(d, 1)
+      ) {
         if (setoranDays.includes(d.getUTCDay())) yearDays.push(d);
       }
       const pieces = chunked(YEAR_PROGRAM[LEVEL_ORDER[k]], size);
       for (const [i, piece] of pieces.entries()) {
         const day = yearDays[Math.floor((i * yearDays.length) / pieces.length)];
-        record(st, TahfidzActivityType.ZIYADAH, piece, atWib(day, 6, rng.int(0, 59)), muhafidz.userId, null);
+        record(
+          st,
+          TahfidzActivityType.ZIYADAH,
+          piece,
+          atWib(day, 6, rng.int(0, 59)),
+          muhafidz.userId,
+          null
+        );
         earlier++;
       }
       memorized.push(...YEAR_PROGRAM[LEVEL_ORDER[k]]);
@@ -2112,7 +2970,12 @@ async function setoranTahfidz(
           atWib(day, 6, rng.int(0, 59)),
           muhafidz.userId,
           rng.chance(0.2)
-            ? rng.pick(['Lancar', 'Perbaiki panjang pendek (mad)', 'Makharijul huruf baik', 'Perlu diulang di asrama'])
+            ? rng.pick([
+                'Lancar',
+                'Perbaiki panjang pendek (mad)',
+                'Makharijul huruf baik',
+                'Perlu diulang di asrama',
+              ])
             : null
         );
         if (end >= piece.to) {
@@ -2129,7 +2992,14 @@ async function setoranTahfidz(
         const p = rng.pick(memorized);
         const from = p.to - p.from > 30 ? rng.int(p.from, p.to - 19) : p.from;
         const to = p.to - p.from > 30 ? from + 19 : p.to;
-        record(st, TahfidzActivityType.MUROJAAH, { surah: p.surah, from, to }, atWib(day, 15, rng.int(30, 59)), muhafidz.userId, null);
+        record(
+          st,
+          TahfidzActivityType.MUROJAAH,
+          { surah: p.surah, from, to },
+          atWib(day, 15, rng.int(30, 59)),
+          muhafidz.userId,
+          null
+        );
       }
     }
   }
@@ -2137,14 +3007,20 @@ async function setoranTahfidz(
   // SD, misalnya) harus ikut aturan kurikulum yang sama.
   for (const t of targets) {
     await db.tahfidzTarget.upsert({
-      where: { studentId_academicYearId: { studentId: t.studentId, academicYearId: t.academicYearId } },
+      where: {
+        studentId_academicYearId: { studentId: t.studentId, academicYearId: t.academicYearId },
+      },
       create: t,
       update: { targetJuz: t.targetJuz, notes: t.notes },
     });
   }
   console.log(`   ✅ Target hafalan kumulatif: ${targets.length}`);
-  await createManyChunked('Setoran tahfidz (riwayat + tahun ini)', records, (b) => db.tahfidzRecord.createMany({ data: b }));
-  console.log(`   ✅ Riwayat hafalan: ${carried} surah dari sekolah asal (tes penempatan), ${earlier} setoran tahun-tahun lalu`);
+  await createManyChunked('Setoran tahfidz (riwayat + tahun ini)', records, (b) =>
+    db.tahfidzRecord.createMany({ data: b })
+  );
+  console.log(
+    `   ✅ Riwayat hafalan: ${carried} surah dari sekolah asal (tes penempatan), ${earlier} setoran tahun-tahun lalu`
+  );
 }
 
 async function takhosus(
@@ -2154,13 +3030,37 @@ async function takhosus(
   attendance: AttendanceLog
 ): Promise<void> {
   const { db, rng } = ctx;
-  const already = new Set((await db.takhosusEnrollment.findMany({ select: { studentId: true } })).map((r) => r.studentId));
+  const already = new Set(
+    (await db.takhosusEnrollment.findMany({ select: { studentId: true } })).map((r) => r.studentId)
+  );
   const eligible = roster
-    .filter((s) => (s.unitType === 'SMA_QURAN' || (s.unitType === 'SMP_IT' && s.grade >= 1)) && !already.has(s.id))
+    .filter(
+      (s) =>
+        (s.unitType === 'SMA_QURAN' || (s.unitType === 'SMP_IT' && s.grade >= 1)) &&
+        !already.has(s.id)
+    )
     .sort((a, b) => b.ability - a.ability);
-  const groups: Array<{ gender: Gender; code: string; name: string; teacher: string; location: string }> = [
-    { gender: Gender.MALE, code: 'HLQ-TKH-PA', name: 'Halaqoh Takhosus Putra', teacher: 'pesantren.muhafidz@cipansor.or.id', location: 'Masjid Pesantren' },
-    { gender: Gender.FEMALE, code: 'HLQ-TKH-PI', name: 'Halaqoh Takhosus Putri', teacher: 'pesantren.muhafidzah@cipansor.or.id', location: 'Aula Asrama Putri' },
+  const groups: Array<{
+    gender: Gender;
+    code: string;
+    name: string;
+    teacher: string;
+    location: string;
+  }> = [
+    {
+      gender: Gender.MALE,
+      code: 'HLQ-TKH-PA',
+      name: 'Halaqoh Takhosus Putra',
+      teacher: 'pesantren.muhafidz@cipansor.or.id',
+      location: 'Masjid Pesantren',
+    },
+    {
+      gender: Gender.FEMALE,
+      code: 'HLQ-TKH-PI',
+      name: 'Halaqoh Takhosus Putri',
+      teacher: 'pesantren.muhafidzah@cipansor.or.id',
+      location: 'Aula Asrama Putri',
+    },
   ];
   const days = schoolDays(ctx);
   const murojaah: Prisma.MurojaahRecordCreateManyInput[] = [];
@@ -2179,7 +3079,8 @@ async function takhosus(
         capacity: 10,
         scheduleTime: '04:30-06:00',
         location: g.location,
-        description: 'Program takhosus tahfidz: target 30 juz bersanad, setoran dan murojaah setiap hari.',
+        description:
+          'Program takhosus tahfidz: target 30 juz bersanad, setoran dan murojaah setiap hari.',
         isActive: true,
       },
       update: {},
@@ -2227,19 +3128,26 @@ async function takhosus(
     }
   }
   console.log(`   ✅ Peserta takhosus: ${enrolled}`);
-  await createManyChunked('Murojaah takhosus', murojaah, (b) => db.murojaahRecord.createMany({ data: b }));
+  await createManyChunked('Murojaah takhosus', murojaah, (b) =>
+    db.murojaahRecord.createMany({ data: b })
+  );
 }
 
 async function asrama(ctx: Ctx, roster: StudentRef[]): Promise<void> {
   const { db } = ctx;
   const boarders = roster.filter((s) => s.unitType === 'SMP_IT' || s.unitType === 'SMA_QURAN');
   const active = new Set(
-    (await db.roomAssignment.findMany({ where: { isActive: true }, select: { studentId: true } })).map((r) => r.studentId)
+    (
+      await db.roomAssignment.findMany({ where: { isActive: true }, select: { studentId: true } })
+    ).map((r) => r.studentId)
   );
   let assigned = 0;
   let roomsAdded = 0;
   for (const gender of [Gender.MALE, Gender.FEMALE]) {
-    const dorm = await db.dormitory.findFirst({ where: { gender, deletedAt: null }, orderBy: { code: 'asc' } });
+    const dorm = await db.dormitory.findFirst({
+      where: { gender, deletedAt: null },
+      orderBy: { code: 'asc' },
+    });
     if (!dorm) continue;
     const prefix = gender === Gender.MALE ? 'P' : 'W';
     const need = boarders
@@ -2256,7 +3164,13 @@ async function asrama(ctx: Ctx, roster: StudentRef[]): Promise<void> {
     while (free < need.length) {
       n++;
       const room = await db.room.create({
-        data: { dormitoryId: dorm.id, name: `Kamar ${prefix}${n}`, floor: Math.ceil(n / 3), capacity: 8, isActive: true },
+        data: {
+          dormitoryId: dorm.id,
+          name: `Kamar ${prefix}${n}`,
+          floor: Math.ceil(n / 3),
+          capacity: 8,
+          isActive: true,
+        },
       });
       rooms.push({ ...room, _count: { assignments: 0 } });
       free += 8;
@@ -2267,7 +3181,13 @@ async function asrama(ctx: Ctx, roster: StudentRef[]): Promise<void> {
       const room = rooms.find((r) => (occupancy.get(r.id) ?? 0) < r.capacity);
       if (!room) break;
       await db.roomAssignment.create({
-        data: { studentId: st.id, roomId: room.id, assignedAt: ctx.ay.startDate, isActive: true, createdAt: ctx.ay.startDate },
+        data: {
+          studentId: st.id,
+          roomId: room.id,
+          assignedAt: ctx.ay.startDate,
+          isActive: true,
+          createdAt: ctx.ay.startDate,
+        },
       });
       occupancy.set(room.id, (occupancy.get(room.id) ?? 0) + 1);
       assigned++;
@@ -2283,30 +3203,111 @@ async function asrama(ctx: Ctx, roster: StudentRef[]): Promise<void> {
 /** Median tinggi (cm) dan berat (kg) per usia, dibulatkan dari standar WHO. */
 const BODY_MEDIAN: Record<Gender, Record<number, [number, number]>> = {
   [Gender.MALE]: {
-    4: [103, 16], 5: [110, 18], 6: [116, 21], 7: [122, 23], 8: [128, 26], 9: [133, 29], 10: [138, 32], 11: [143, 36],
-    12: [149, 40], 13: [156, 45], 14: [163, 51], 15: [169, 56], 16: [173, 60], 17: [175, 63], 18: [176, 65],
+    4: [103, 16],
+    5: [110, 18],
+    6: [116, 21],
+    7: [122, 23],
+    8: [128, 26],
+    9: [133, 29],
+    10: [138, 32],
+    11: [143, 36],
+    12: [149, 40],
+    13: [156, 45],
+    14: [163, 51],
+    15: [169, 56],
+    16: [173, 60],
+    17: [175, 63],
+    18: [176, 65],
   },
   [Gender.FEMALE]: {
-    4: [102, 16], 5: [109, 18], 6: [115, 20], 7: [121, 23], 8: [127, 26], 9: [133, 29], 10: [138, 33], 11: [144, 37],
-    12: [151, 41], 13: [156, 45], 14: [159, 48], 15: [161, 51], 16: [162, 53], 17: [163, 54], 18: [163, 55],
+    4: [102, 16],
+    5: [109, 18],
+    6: [115, 20],
+    7: [121, 23],
+    8: [127, 26],
+    9: [133, 29],
+    10: [138, 33],
+    11: [144, 37],
+    12: [151, 41],
+    13: [156, 45],
+    14: [159, 48],
+    15: [161, 51],
+    16: [162, 53],
+    17: [163, 54],
+    18: [163, 55],
   },
 };
 
-const ILLNESSES: Array<{ complaint: string; diagnosis: string; treatment: string; fever: boolean }> = [
-  { complaint: 'Demam dan badan lemas sejak malam', diagnosis: 'Febris, suspek ISPA', treatment: 'Paracetamol 500 mg 3×1, kompres hangat, istirahat di ruang UKS', fever: true },
-  { complaint: 'Batuk dan pilek, tenggorokan sakit', diagnosis: 'ISPA ringan', treatment: 'Obat batuk sirup 3×1, vitamin C, banyak minum air hangat', fever: false },
-  { complaint: 'Nyeri ulu hati dan mual setelah makan', diagnosis: 'Dispepsia', treatment: 'Antasida 3×1 sebelum makan, makan teratur', fever: false },
-  { complaint: 'Buang air besar cair lebih dari tiga kali', diagnosis: 'Diare akut tanpa dehidrasi', treatment: 'Oralit, zinc 1×1 selama 10 hari, pantau asupan cairan', fever: false },
-  { complaint: 'Pusing dan kurang tidur', diagnosis: 'Cephalgia', treatment: 'Paracetamol 500 mg bila perlu, istirahat', fever: false },
-  { complaint: 'Gatal-gatal di sela jari dan lipatan badan', diagnosis: 'Suspek skabies', treatment: 'Salep permetrin 5%, seprai dan pakaian kamar dicuci air panas', fever: false },
+const ILLNESSES: Array<{
+  complaint: string;
+  diagnosis: string;
+  treatment: string;
+  fever: boolean;
+}> = [
+  {
+    complaint: 'Demam dan badan lemas sejak malam',
+    diagnosis: 'Febris, suspek ISPA',
+    treatment: 'Paracetamol 500 mg 3×1, kompres hangat, istirahat di ruang UKS',
+    fever: true,
+  },
+  {
+    complaint: 'Batuk dan pilek, tenggorokan sakit',
+    diagnosis: 'ISPA ringan',
+    treatment: 'Obat batuk sirup 3×1, vitamin C, banyak minum air hangat',
+    fever: false,
+  },
+  {
+    complaint: 'Nyeri ulu hati dan mual setelah makan',
+    diagnosis: 'Dispepsia',
+    treatment: 'Antasida 3×1 sebelum makan, makan teratur',
+    fever: false,
+  },
+  {
+    complaint: 'Buang air besar cair lebih dari tiga kali',
+    diagnosis: 'Diare akut tanpa dehidrasi',
+    treatment: 'Oralit, zinc 1×1 selama 10 hari, pantau asupan cairan',
+    fever: false,
+  },
+  {
+    complaint: 'Pusing dan kurang tidur',
+    diagnosis: 'Cephalgia',
+    treatment: 'Paracetamol 500 mg bila perlu, istirahat',
+    fever: false,
+  },
+  {
+    complaint: 'Gatal-gatal di sela jari dan lipatan badan',
+    diagnosis: 'Suspek skabies',
+    treatment: 'Salep permetrin 5%, seprai dan pakaian kamar dicuci air panas',
+    fever: false,
+  },
 ];
 
 const MINOR_VISITS: Array<{ type: MedicalRecordType; complaint: string; treatment: string }> = [
-  { type: MedicalRecordType.FIRST_AID, complaint: 'Lutut lecet terjatuh saat olahraga', treatment: 'Luka dibersihkan, diberi antiseptik dan plester' },
-  { type: MedicalRecordType.INJURY, complaint: 'Pergelangan kaki terkilir saat bermain bola', treatment: 'Kompres dingin, dibalut elastis, istirahat dari olahraga 3 hari' },
-  { type: MedicalRecordType.FIRST_AID, complaint: 'Mimisan di kelas', treatment: 'Posisi duduk condong ke depan, hidung ditekan 10 menit' },
-  { type: MedicalRecordType.FIRST_AID, complaint: 'Pusing saat upacara', treatment: 'Istirahat di UKS, teh manis hangat' },
-  { type: MedicalRecordType.FIRST_AID, complaint: 'Jari tergores saat praktik prakarya', treatment: 'Luka dibersihkan dan diplester' },
+  {
+    type: MedicalRecordType.FIRST_AID,
+    complaint: 'Lutut lecet terjatuh saat olahraga',
+    treatment: 'Luka dibersihkan, diberi antiseptik dan plester',
+  },
+  {
+    type: MedicalRecordType.INJURY,
+    complaint: 'Pergelangan kaki terkilir saat bermain bola',
+    treatment: 'Kompres dingin, dibalut elastis, istirahat dari olahraga 3 hari',
+  },
+  {
+    type: MedicalRecordType.FIRST_AID,
+    complaint: 'Mimisan di kelas',
+    treatment: 'Posisi duduk condong ke depan, hidung ditekan 10 menit',
+  },
+  {
+    type: MedicalRecordType.FIRST_AID,
+    complaint: 'Pusing saat upacara',
+    treatment: 'Istirahat di UKS, teh manis hangat',
+  },
+  {
+    type: MedicalRecordType.FIRST_AID,
+    complaint: 'Jari tergores saat praktik prakarya',
+    treatment: 'Luka dibersihkan dan diplester',
+  },
 ];
 
 /**
@@ -2315,13 +3316,19 @@ const MINOR_VISITS: Array<{ type: MedicalRecordType; complaint: string; treatmen
  * "sakit" (santri harian sakit di rumah, jadi tidak ke UKS), dan pertolongan
  * pertama sesekali di semua unit.
  */
-async function kesehatanUks(ctx: Ctx, roster: StudentRef[], attendance: AttendanceLog): Promise<void> {
+async function kesehatanUks(
+  ctx: Ctx,
+  roster: StudentRef[],
+  attendance: AttendanceLog
+): Promise<void> {
   const { db, rng } = ctx;
   const nurse = ctx.users.get('sarana.perawat@cipansor.or.id')?.id ?? ctx.superAdminId;
   const days = schoolDays(ctx);
   const rows: Prisma.MedicalRecordCreateManyInput[] = [];
   const vitals = (fever: boolean) => ({
-    temperature: fever ? Math.round((37.8 + rng.next() * 1.2) * 10) / 10 : Math.round((36.4 + rng.next() * 0.8) * 10) / 10,
+    temperature: fever
+      ? Math.round((37.8 + rng.next() * 1.2) * 10) / 10
+      : Math.round((36.4 + rng.next() * 0.8) * 10) / 10,
     bloodPressure: `${rng.int(100, 120)}/${rng.int(65, 80)}`,
     heartRate: rng.int(fever ? 90 : 72, fever ? 110 : 92),
   });
@@ -2362,7 +3369,11 @@ async function kesehatanUks(ctx: Ctx, roster: StudentRef[], attendance: Attendan
         continue;
       }
       let j = i;
-      while (j + 1 < days.length && attendance.get(`${st.id}|${isoDay(days[j + 1])}`) === AttendanceStatus.SICK) j++;
+      while (
+        j + 1 < days.length &&
+        attendance.get(`${st.id}|${isoDay(days[j + 1])}`) === AttendanceStatus.SICK
+      )
+        j++;
       const length = j - i + 1;
       const ill = rng.pick(ILLNESSES);
       const visitDate = atWib(days[i], rng.int(5, 7), rng.int(0, 59));
@@ -2381,7 +3392,12 @@ async function kesehatanUks(ctx: Ctx, roster: StudentRef[], attendance: Attendan
           : `Istirahat di UKS ${length} hari, izin tidak masuk kelas`,
         followUpDate: addDays(days[j], 1),
         recordedById: nurse,
-        status: endsAgo <= 1 ? HealthStatus.SICK : endsAgo <= 4 ? HealthStatus.RECOVERING : HealthStatus.HEALTHY,
+        status:
+          endsAgo <= 1
+            ? HealthStatus.SICK
+            : endsAgo <= 4
+              ? HealthStatus.RECOVERING
+              : HealthStatus.HEALTHY,
         ...vitals(ill.fever),
         createdAt: visitDate,
       });
@@ -2433,22 +3449,78 @@ async function kesehatanUks(ctx: Ctx, roster: StudentRef[], attendance: Attendan
 async function bersihkanCacheDasbor(ctx: Ctx): Promise<void> {
   const history = await ctx.db.dashboardHistory.deleteMany({});
   const snapshots = await ctx.db.dashboardMetricSnapshot.deleteMany({});
-  console.log(`   ✅ Cache dasbor dikosongkan: ${history.count} riwayat, ${snapshots.count} snapshot`);
+  console.log(
+    `   ✅ Cache dasbor dikosongkan: ${history.count} riwayat, ${snapshots.count} snapshot`
+  );
 }
 
 // ============================================================================
 // 9. Kedisiplinan dan perizinan
 // ============================================================================
 
-const VIOLATIONS: Array<{ type: ViolationType; category: string; description: string; points: number; action: string }> = [
-  { type: ViolationType.MINOR, category: 'ibadah', description: 'Terlambat hadir salat Subuh berjamaah', points: 5, action: 'Teguran lisan dan istighfar 100 kali' },
-  { type: ViolationType.MINOR, category: 'kebersihan', description: 'Kamar tidak rapi saat pemeriksaan pagi', points: 3, action: 'Membersihkan area kamar' },
-  { type: ViolationType.MINOR, category: 'ketertiban', description: 'Terlambat masuk kelas setelah istirahat', points: 3, action: 'Teguran lisan' },
-  { type: ViolationType.MINOR, category: 'bahasa', description: 'Tidak memakai bahasa Arab pada hari bahasa', points: 2, action: 'Menghafal 10 mufradat baru' },
-  { type: ViolationType.MINOR, category: 'ketertiban', description: 'Membawa makanan ke dalam kamar', points: 3, action: 'Teguran lisan' },
-  { type: ViolationType.MODERATE, category: 'ketertiban', description: 'Keluar lingkungan pesantren tanpa izin', points: 15, action: 'Pemanggilan orang tua' },
-  { type: ViolationType.MODERATE, category: 'akhlak', description: 'Berkata kasar kepada teman', points: 10, action: 'Pembinaan oleh murabbi' },
-  { type: ViolationType.MODERATE, category: 'ketertiban', description: 'Membawa telepon genggam ke asrama', points: 15, action: 'Telepon disita dan diserahkan kepada orang tua' },
+const VIOLATIONS: Array<{
+  type: ViolationType;
+  category: string;
+  description: string;
+  points: number;
+  action: string;
+}> = [
+  {
+    type: ViolationType.MINOR,
+    category: 'ibadah',
+    description: 'Terlambat hadir salat Subuh berjamaah',
+    points: 5,
+    action: 'Teguran lisan dan istighfar 100 kali',
+  },
+  {
+    type: ViolationType.MINOR,
+    category: 'kebersihan',
+    description: 'Kamar tidak rapi saat pemeriksaan pagi',
+    points: 3,
+    action: 'Membersihkan area kamar',
+  },
+  {
+    type: ViolationType.MINOR,
+    category: 'ketertiban',
+    description: 'Terlambat masuk kelas setelah istirahat',
+    points: 3,
+    action: 'Teguran lisan',
+  },
+  {
+    type: ViolationType.MINOR,
+    category: 'bahasa',
+    description: 'Tidak memakai bahasa Arab pada hari bahasa',
+    points: 2,
+    action: 'Menghafal 10 mufradat baru',
+  },
+  {
+    type: ViolationType.MINOR,
+    category: 'ketertiban',
+    description: 'Membawa makanan ke dalam kamar',
+    points: 3,
+    action: 'Teguran lisan',
+  },
+  {
+    type: ViolationType.MODERATE,
+    category: 'ketertiban',
+    description: 'Keluar lingkungan pesantren tanpa izin',
+    points: 15,
+    action: 'Pemanggilan orang tua',
+  },
+  {
+    type: ViolationType.MODERATE,
+    category: 'akhlak',
+    description: 'Berkata kasar kepada teman',
+    points: 10,
+    action: 'Pembinaan oleh murabbi',
+  },
+  {
+    type: ViolationType.MODERATE,
+    category: 'ketertiban',
+    description: 'Membawa telepon genggam ke asrama',
+    points: 15,
+    action: 'Telepon disita dan diserahkan kepada orang tua',
+  },
 ];
 
 async function kedisiplinan(ctx: Ctx, roster: StudentRef[], classes: ClassRef[]): Promise<void> {
@@ -2461,11 +3533,16 @@ async function kedisiplinan(ctx: Ctx, roster: StudentRef[], classes: ClassRef[])
   const classById = new Map(classes.map((c) => [c.id, c]));
 
   // Santri yang sering absen juga lebih sering tercatat melanggar.
-  const weighted = boarders.flatMap((s) => (s.absenceRisk > 0.1 ? [s, s, s, s] : s.absenceRisk > 0.05 ? [s, s] : [s]));
+  const weighted = boarders.flatMap((s) =>
+    s.absenceRisk > 0.1 ? [s, s, s, s] : s.absenceRisk > 0.05 ? [s, s] : [s]
+  );
   const violations: Prisma.ViolationCreateManyInput[] = [];
   for (let i = 0; i < 28 && weighted.length; i++) {
     const st = rng.pick(weighted);
-    const v = i % 5 === 4 ? rng.pick(VIOLATIONS.filter((x) => x.type === ViolationType.MODERATE)) : rng.pick(VIOLATIONS.filter((x) => x.type === ViolationType.MINOR));
+    const v =
+      i % 5 === 4
+        ? rng.pick(VIOLATIONS.filter((x) => x.type === ViolationType.MODERATE))
+        : rng.pick(VIOLATIONS.filter((x) => x.type === ViolationType.MINOR));
     violations.push({
       studentId: st.id,
       type: v.type,
@@ -2478,20 +3555,40 @@ async function kedisiplinan(ctx: Ctx, roster: StudentRef[], classes: ClassRef[])
     });
     violations[violations.length - 1].createdAt = violations[violations.length - 1].occurredAt;
   }
-  await createManyChunked('Catatan pelanggaran', violations, (b) => db.violation.createMany({ data: b }));
+  await createManyChunked('Catatan pelanggaran', violations, (b) =>
+    db.violation.createMany({ data: b })
+  );
 
   const rewardsList: Array<{ category: string; description: string; points: number }> = [
-    { category: 'tahfidz', description: 'Menuntaskan setoran satu surah dengan predikat mumtaz', points: 10 },
-    { category: 'akademik', description: 'Nilai tertinggi Ulangan Harian 1 di rombelnya', points: 10 },
+    {
+      category: 'tahfidz',
+      description: 'Menuntaskan setoran satu surah dengan predikat mumtaz',
+      points: 10,
+    },
+    {
+      category: 'akademik',
+      description: 'Nilai tertinggi Ulangan Harian 1 di rombelnya',
+      points: 10,
+    },
     { category: 'akhlak', description: 'Membantu petugas kebersihan tanpa diminta', points: 5 },
-    { category: 'kebersihan', description: 'Kamar terbersih pada pemeriksaan pekan ini', points: 5 },
+    {
+      category: 'kebersihan',
+      description: 'Kamar terbersih pada pemeriksaan pekan ini',
+      points: 5,
+    },
     { category: 'prestasi', description: 'Juara lomba MHQ tingkat kecamatan', points: 20 },
   ];
   const rewards: Prisma.RewardCreateManyInput[] = [];
-  const pool = roster.filter((s) => s.unitType !== 'TK_QURAN').sort((a, b) => b.ability - a.ability);
+  const pool = roster
+    .filter((s) => s.unitType !== 'TK_QURAN')
+    .sort((a, b) => b.ability - a.ability);
   for (let i = 0; i < 40 && pool.length; i++) {
-    const st = pool[Math.min(pool.length - 1, Math.floor(Math.abs(rng.normal(0, pool.length / 3))))];
-    const r = st.unitType === 'SD_IT' ? rng.pick(rewardsList.filter((x) => x.category !== 'kebersihan')) : rng.pick(rewardsList);
+    const st =
+      pool[Math.min(pool.length - 1, Math.floor(Math.abs(rng.normal(0, pool.length / 3))))];
+    const r =
+      st.unitType === 'SD_IT'
+        ? rng.pick(rewardsList.filter((x) => x.category !== 'kebersihan'))
+        : rng.pick(rewardsList);
     const c = classById.get(st.classId);
     rewards.push({
       studentId: st.id,
@@ -2514,9 +3611,24 @@ async function kedisiplinan(ctx: Ctx, roster: StudentRef[], classes: ClassRef[])
     const st = rng.pick(boarders);
     const approver = st.gender === Gender.MALE ? musyrif : musyrifah;
     const kind = rng.pick([
-      { type: PermitType.PULANG, reason: 'Pulang akhir pekan bulanan', destination: 'Rumah orang tua', span: 2 },
-      { type: PermitType.SAKIT, reason: 'Berobat ke puskesmas didampingi wali kamar', destination: 'Puskesmas Kadipaten', span: 0 },
-      { type: PermitType.KELUARGA, reason: 'Menghadiri pernikahan kakak', destination: 'Rumah orang tua', span: 1 },
+      {
+        type: PermitType.PULANG,
+        reason: 'Pulang akhir pekan bulanan',
+        destination: 'Rumah orang tua',
+        span: 2,
+      },
+      {
+        type: PermitType.SAKIT,
+        reason: 'Berobat ke puskesmas didampingi wali kamar',
+        destination: 'Puskesmas Kadipaten',
+        span: 0,
+      },
+      {
+        type: PermitType.KELUARGA,
+        reason: 'Menghadiri pernikahan kakak',
+        destination: 'Rumah orang tua',
+        span: 1,
+      },
     ]);
     let status: PermitStatus;
     let start: Date;
@@ -2545,22 +3657,31 @@ async function kedisiplinan(ctx: Ctx, roster: StudentRef[], classes: ClassRef[])
       status,
       approvedById: decided ? approver : null,
       approvedAt: decided ? atWib(addDays(start, -1), 20) : null,
-      rejectionNote: status === PermitStatus.REJECTED ? 'Bertepatan dengan Penilaian Tengah Semester' : null,
+      rejectionNote:
+        status === PermitStatus.REJECTED ? 'Bertepatan dengan Penilaian Tengah Semester' : null,
       departedAt: status === PermitStatus.COMPLETED ? atWib(start, 13, 30) : null,
       returnedAt: status === PermitStatus.COMPLETED ? atWib(end, 16, 45) : null,
       code: `IZN-${yy}${pad(seq++, 4)}`,
       // Diajukan wali/santri beberapa hari sebelum berangkat (paling lambat kemarin).
-      createdAt: atWib(new Date(Math.min(addDays(start, -3).getTime(), addDays(ctx.today, -1).getTime())), 19),
+      createdAt: atWib(
+        new Date(Math.min(addDays(start, -3).getTime(), addDays(ctx.today, -1).getTime())),
+        19
+      ),
     });
   }
-  await createManyChunked('Perizinan santri', permits, (b) => db.permit.createMany({ data: b, skipDuplicates: true }));
+  await createManyChunked('Perizinan santri', permits, (b) =>
+    db.permit.createMany({ data: b, skipDuplicates: true })
+  );
 }
 
 // ============================================================================
 // 10. SPMB tahun ajaran berikutnya
 // ============================================================================
 
-const SPMB_PLAN: Record<SchoolUnit, { quota: [number, number]; fee: number; count: number; requirements: string[]; from: string[] }> = {
+const SPMB_PLAN: Record<
+  SchoolUnit,
+  { quota: [number, number]; fee: number; count: number; requirements: string[]; from: string[] }
+> = {
   TK_QURAN: {
     quota: [20, 10],
     fee: 150_000,
@@ -2572,22 +3693,55 @@ const SPMB_PLAN: Record<SchoolUnit, { quota: [number, number]; fee: number; coun
     quota: [28, 12],
     fee: 250_000,
     count: 12,
-    requirements: ['Fotokopi Akta Kelahiran', 'Fotokopi Kartu Keluarga', 'Surat keterangan dari TK/RA', 'Pas foto 3x4 (2 lembar)'],
-    from: ["TK Qur'an Cipansor", "TK Qur'an Cipansor", 'RA di Kec. Kadipaten', 'TK di Kec. Pagerageung'],
+    requirements: [
+      'Fotokopi Akta Kelahiran',
+      'Fotokopi Kartu Keluarga',
+      'Surat keterangan dari TK/RA',
+      'Pas foto 3x4 (2 lembar)',
+    ],
+    from: [
+      "TK Qur'an Cipansor",
+      "TK Qur'an Cipansor",
+      'RA di Kec. Kadipaten',
+      'TK di Kec. Pagerageung',
+    ],
   },
   SMP_IT: {
     quota: [50, 20],
     fee: 350_000,
     count: 14,
-    requirements: ['Fotokopi Akta Kelahiran', 'Fotokopi Kartu Keluarga', 'Ijazah SD/MI atau Surat Keterangan Lulus', 'Pas foto 3x4 (4 lembar)', 'Surat keterangan sehat'],
-    from: ['SD IT Cipansor', 'SD IT Cipansor', 'MI di Kec. Kadipaten', 'SD Negeri di Kec. Ciawi', 'SD Negeri di Kec. Rajapolah'],
+    requirements: [
+      'Fotokopi Akta Kelahiran',
+      'Fotokopi Kartu Keluarga',
+      'Ijazah SD/MI atau Surat Keterangan Lulus',
+      'Pas foto 3x4 (4 lembar)',
+      'Surat keterangan sehat',
+    ],
+    from: [
+      'SD IT Cipansor',
+      'SD IT Cipansor',
+      'MI di Kec. Kadipaten',
+      'SD Negeri di Kec. Ciawi',
+      'SD Negeri di Kec. Rajapolah',
+    ],
   },
   SMA_QURAN: {
     quota: [32, 16],
     fee: 350_000,
     count: 12,
-    requirements: ['Ijazah SMP/MTs atau Surat Keterangan Lulus', 'Rapor SMP/MTs kelas 7–9', 'Syahadah hafalan (bila ada)', 'Pas foto 3x4 (4 lembar)', 'Surat keterangan sehat'],
-    from: ['SMP IT Cipansor', 'SMP IT Cipansor', 'MTs di Kec. Kadipaten', 'SMP Negeri di Kec. Jamanis'],
+    requirements: [
+      'Ijazah SMP/MTs atau Surat Keterangan Lulus',
+      'Rapor SMP/MTs kelas 7–9',
+      'Syahadah hafalan (bila ada)',
+      'Pas foto 3x4 (4 lembar)',
+      'Surat keterangan sehat',
+    ],
+    from: [
+      'SMP IT Cipansor',
+      'SMP IT Cipansor',
+      'MTs di Kec. Kadipaten',
+      'SMP Negeri di Kec. Jamanis',
+    ],
   },
 };
 
@@ -2597,16 +3751,29 @@ async function spmb(ctx: Ctx): Promise<void> {
   const intakeRow =
     (await db.academicYear.findUnique({ where: { name: intake.name } })) ??
     (await db.academicYear.create({
-      data: { name: intake.name, startDate: intake.startDate, endDate: intake.endDate, isActive: false },
+      data: {
+        name: intake.name,
+        startDate: intake.startDate,
+        endDate: intake.endDate,
+        isActive: false,
+      },
     }));
   const windows = admissionWindows(ctx.now);
   const statuses: AdmissionStatus[] = [
-    AdmissionStatus.REGISTERED, AdmissionStatus.REGISTERED, AdmissionStatus.REGISTERED,
-    AdmissionStatus.DOCUMENT_CHECK, AdmissionStatus.DOCUMENT_CHECK,
-    AdmissionStatus.TEST_SCHEDULED, AdmissionStatus.TEST_SCHEDULED,
-    AdmissionStatus.TEST_COMPLETED, AdmissionStatus.TEST_COMPLETED,
-    AdmissionStatus.ACCEPTED, AdmissionStatus.ACCEPTED, AdmissionStatus.ACCEPTED,
-    AdmissionStatus.REJECTED, AdmissionStatus.ACCEPTED,
+    AdmissionStatus.REGISTERED,
+    AdmissionStatus.REGISTERED,
+    AdmissionStatus.REGISTERED,
+    AdmissionStatus.DOCUMENT_CHECK,
+    AdmissionStatus.DOCUMENT_CHECK,
+    AdmissionStatus.TEST_SCHEDULED,
+    AdmissionStatus.TEST_SCHEDULED,
+    AdmissionStatus.TEST_COMPLETED,
+    AdmissionStatus.TEST_COMPLETED,
+    AdmissionStatus.ACCEPTED,
+    AdmissionStatus.ACCEPTED,
+    AdmissionStatus.ACCEPTED,
+    AdmissionStatus.REJECTED,
+    AdmissionStatus.ACCEPTED,
   ];
   const tuByUnit: Record<SchoolUnit, string> = {
     TK_QURAN: FINANCE_OFFICERS.TK_QURAN.tu,
@@ -2646,7 +3813,11 @@ async function spmb(ctx: Ctx): Promise<void> {
     const waves = [];
     for (const [w, period] of periods.entries()) {
       const open = period.startDate <= ctx.now && ctx.now <= period.endDate;
-      const status = open ? WaveStatus.OPEN : period.startDate > ctx.now ? WaveStatus.UPCOMING : WaveStatus.CLOSED;
+      const status = open
+        ? WaveStatus.OPEN
+        : period.startDate > ctx.now
+          ? WaveStatus.UPCOMING
+          : WaveStatus.CLOSED;
       const wave = await db.admissionWave.upsert({
         where: { periodId_waveNumber: { periodId: period.id, waveNumber: 1 } },
         create: {
@@ -2671,12 +3842,20 @@ async function spmb(ctx: Ctx): Promise<void> {
           notes: null,
         },
       });
-      const stale = await db.admissionWave.findMany({ where: { periodId: period.id, waveNumber: { not: 1 } } });
+      const stale = await db.admissionWave.findMany({
+        where: { periodId: period.id, waveNumber: { not: 1 } },
+      });
       if (stale.length) {
-        await db.registrant.updateMany({ where: { waveId: { in: stale.map((s) => s.id) } }, data: { waveId: wave.id } });
+        await db.registrant.updateMany({
+          where: { waveId: { in: stale.map((s) => s.id) } },
+          data: { waveId: wave.id },
+        });
         await db.admissionWave.deleteMany({ where: { id: { in: stale.map((s) => s.id) } } });
       }
-      await db.registrant.updateMany({ where: { admissionPeriodId: period.id, waveId: null }, data: { waveId: wave.id } });
+      await db.registrant.updateMany({
+        where: { admissionPeriodId: period.id, waveId: null },
+        data: { waveId: wave.id },
+      });
       waves.push(wave);
     }
 
@@ -2686,14 +3865,21 @@ async function spmb(ctx: Ctx): Promise<void> {
     const tuId = ctx.users.get(tuByUnit[unitType])?.id ?? null;
     const minDay = period1.startDate.getTime();
     const span = Math.max(1, ctx.now.getTime() - minDay);
-    const age = unitType === 'TK_QURAN' ? 4 : unitType === 'SD_IT' ? 6 : unitType === 'SMP_IT' ? 12 : 15;
+    const age =
+      unitType === 'TK_QURAN' ? 4 : unitType === 'SD_IT' ? 6 : unitType === 'SMP_IT' ? 12 : 15;
     const rows: Prisma.RegistrantCreateManyInput[] = [];
     for (let i = 0; i < plan.count; i++) {
       const gender = i % 2 === 0 ? Gender.MALE : Gender.FEMALE;
       const name = `${gender === Gender.MALE ? rng.pick(BOY_NAMES) : rng.pick(GIRL_NAMES)} ${gender === Gender.MALE ? rng.pick(BOY_SECOND) : rng.pick(GIRL_SECOND)}`;
       const status = statuses[i % statuses.length];
       const createdAt = new Date(minDay + Math.floor(rng.next() * span * 0.9));
-      const tested = ([AdmissionStatus.TEST_COMPLETED, AdmissionStatus.ACCEPTED, AdmissionStatus.REJECTED] as AdmissionStatus[]).includes(status);
+      const tested = (
+        [
+          AdmissionStatus.TEST_COMPLETED,
+          AdmissionStatus.ACCEPTED,
+          AdmissionStatus.REJECTED,
+        ] as AdmissionStatus[]
+      ).includes(status);
       const accepted = status === AdmissionStatus.ACCEPTED;
       const feePaid = accepted && i % 2 === 1;
       const secondary = unitType === 'SMP_IT' || unitType === 'SMA_QURAN';
@@ -2706,11 +3892,18 @@ async function spmb(ctx: Ctx): Promise<void> {
         name,
         gender,
         birthPlace: rng.pick(BIRTH_PLACES),
-        birthDate: utcDate(intake.startYear - age - (rng.chance(0.5) ? 0 : 1), rng.int(0, 11), rng.int(1, 28)),
+        birthDate: utcDate(
+          intake.startYear - age - (rng.chance(0.5) ? 0 : 1),
+          rng.int(0, 11),
+          rng.int(1, 28)
+        ),
         address: `Kp. ${rng.pick(KAMPUNG)}, Kec. ${rng.pick(KECAMATAN)}, Kab. Tasikmalaya`,
         previousSchool: rng.pick(plan.from),
-        quranAbility: secondary ? rng.pick(['LANCAR', 'TARTIL', 'TAHFIDZ']) : rng.pick(['BELUM_BISA', 'IQRA', 'LANCAR']),
-        memorizedJuz: unitType === 'SMA_QURAN' ? rng.int(2, 6) : unitType === 'SMP_IT' ? rng.int(0, 2) : 0,
+        quranAbility: secondary
+          ? rng.pick(['LANCAR', 'TARTIL', 'TAHFIDZ'])
+          : rng.pick(['BELUM_BISA', 'IQRA', 'LANCAR']),
+        memorizedJuz:
+          unitType === 'SMA_QURAN' ? rng.int(2, 6) : unitType === 'SMP_IT' ? rng.int(0, 2) : 0,
         parentName: father,
         parentPhone: `0800${pad(9_000_000 + total + i, 7)}`,
         parentOccupation: rng.pick(['Wiraswasta', 'Petani', 'Pegawai swasta', 'Guru', 'Pedagang']),
@@ -2718,11 +3911,18 @@ async function spmb(ctx: Ctx): Promise<void> {
         testScore: tested ? new Prisma.Decimal(rng.int(62, 95)) : null,
         interviewScore: tested ? new Prisma.Decimal(rng.int(70, 95)) : null,
         tahfidzScore: tested && secondary ? new Prisma.Decimal(rng.int(65, 98)) : null,
-        acceptedAt: accepted ? new Date(Math.min(createdAt.getTime() + 14 * DAY_MS, ctx.now.getTime())) : null,
-        registrationFeePaidAt: feePaid ? new Date(Math.min(createdAt.getTime() + 18 * DAY_MS, ctx.now.getTime())) : null,
+        acceptedAt: accepted
+          ? new Date(Math.min(createdAt.getTime() + 14 * DAY_MS, ctx.now.getTime()))
+          : null,
+        registrationFeePaidAt: feePaid
+          ? new Date(Math.min(createdAt.getTime() + 18 * DAY_MS, ctx.now.getTime()))
+          : null,
         registrationFeeAmount: feePaid ? period1.registrationFee : null,
         registrationFeeVerifiedById: feePaid ? tuId : null,
-        notes: status === AdmissionStatus.REJECTED ? 'Belum memenuhi batas minimal tes baca Al-Qur\'an' : null,
+        notes:
+          status === AdmissionStatus.REJECTED
+            ? "Belum memenuhi batas minimal tes baca Al-Qur'an"
+            : null,
         source: rng.pick(['Website', 'Media sosial', 'Rekomendasi wali santri', 'Alumni']),
         createdAt,
       });
@@ -2733,11 +3933,18 @@ async function spmb(ctx: Ctx): Promise<void> {
     for (const wave of waves) {
       const registered = await db.registrant.count({ where: { waveId: wave.id } });
       const acceptedCount = await db.registrant.count({
-        where: { waveId: wave.id, status: { in: [AdmissionStatus.ACCEPTED, AdmissionStatus.ENROLLED] } },
+        where: {
+          waveId: wave.id,
+          status: { in: [AdmissionStatus.ACCEPTED, AdmissionStatus.ENROLLED] },
+        },
       });
       await db.admissionWave.update({
         where: { id: wave.id },
-        data: { quota: Math.max(wave.quota, registered, 1), registeredCount: registered, acceptedCount },
+        data: {
+          quota: Math.max(wave.quota, registered, 1),
+          registeredCount: registered,
+          acceptedCount,
+        },
       });
     }
   }
@@ -2753,17 +3960,71 @@ async function kalenderDanPengumuman(ctx: Ctx): Promise<void> {
   const y = ctx.ay.startYear;
   const creator = ctx.users.get('yayasan.sekretaris@cipansor.or.id')?.id ?? ctx.superAdminId;
   const pts = schoolDayFrom(ctx, 84);
-  const events: Array<{ title: string; description: string; type: EventType; start: Date; end: Date }> = [
-    { title: 'Masa Pengenalan Lingkungan Sekolah (MPLS)', description: 'Pengenalan sekolah dan asrama bagi santri baru semua jenjang.', type: EventType.ACADEMIC, start: ctx.ay.startDate, end: addDays(ctx.ay.startDate, 2) },
-    { title: `Upacara HUT ke-${y - 1945} Kemerdekaan RI`, description: 'Upacara bendera bersama seluruh unit. Kegiatan belajar diliburkan.', type: EventType.CEREMONY, start: utcDate(y, 7, 17), end: utcDate(y, 7, 17) },
-    { title: 'Penilaian Tengah Semester Ganjil', description: 'PTS untuk SD IT, SMP IT, dan SMA Qur\'an sesuai jadwal masing-masing rombel.', type: EventType.ACADEMIC, start: pts, end: addDays(pts, 4) },
-    { title: 'Pembagian Hasil PTS Ganjil', description: 'Wali kelas menyampaikan hasil PTS kepada orang tua/wali santri.', type: EventType.MEETING, start: addDays(pts, 12), end: addDays(pts, 12) },
+  const events: Array<{
+    title: string;
+    description: string;
+    type: EventType;
+    start: Date;
+    end: Date;
+  }> = [
+    {
+      title: 'Masa Pengenalan Lingkungan Sekolah (MPLS)',
+      description: 'Pengenalan sekolah dan asrama bagi santri baru semua jenjang.',
+      type: EventType.ACADEMIC,
+      start: ctx.ay.startDate,
+      end: addDays(ctx.ay.startDate, 2),
+    },
+    {
+      title: `Upacara HUT ke-${y - 1945} Kemerdekaan RI`,
+      description: 'Upacara bendera bersama seluruh unit. Kegiatan belajar diliburkan.',
+      type: EventType.CEREMONY,
+      start: utcDate(y, 7, 17),
+      end: utcDate(y, 7, 17),
+    },
+    {
+      title: 'Penilaian Tengah Semester Ganjil',
+      description: "PTS untuk SD IT, SMP IT, dan SMA Qur'an sesuai jadwal masing-masing rombel.",
+      type: EventType.ACADEMIC,
+      start: pts,
+      end: addDays(pts, 4),
+    },
+    {
+      title: 'Pembagian Hasil PTS Ganjil',
+      description: 'Wali kelas menyampaikan hasil PTS kepada orang tua/wali santri.',
+      type: EventType.MEETING,
+      start: addDays(pts, 12),
+      end: addDays(pts, 12),
+    },
     // Tanggal PAS dan libur mengikuti pengumuman yang sudah ada (10–18 Desember,
     // libur 20 Desember s.d. 5 Januari) supaya kalender dan pengumuman sepakat.
-    { title: 'Penilaian Akhir Semester Ganjil', description: 'PAS semester ganjil semua jenjang.', type: EventType.ACADEMIC, start: utcDate(y, 11, 10), end: utcDate(y, 11, 18) },
-    { title: 'Pembagian Rapor Semester Ganjil', description: 'Rapor dibagikan melalui aplikasi dan pertemuan wali kelas.', type: EventType.ACADEMIC, start: utcDate(y, 11, 19), end: utcDate(y, 11, 19) },
-    { title: 'Libur Semester Ganjil', description: 'Santri pulang ke rumah masing-masing.', type: EventType.HOLIDAY, start: utcDate(y, 11, 20), end: utcDate(y + 1, 0, 5) },
-    { title: 'Rapat Evaluasi Semester Ganjil Yayasan', description: 'Pengurus yayasan bersama kepala unit mengevaluasi capaian semester ganjil.', type: EventType.MEETING, start: utcDate(y, 11, 21), end: utcDate(y, 11, 21) },
+    {
+      title: 'Penilaian Akhir Semester Ganjil',
+      description: 'PAS semester ganjil semua jenjang.',
+      type: EventType.ACADEMIC,
+      start: utcDate(y, 11, 10),
+      end: utcDate(y, 11, 18),
+    },
+    {
+      title: 'Pembagian Rapor Semester Ganjil',
+      description: 'Rapor dibagikan melalui aplikasi dan pertemuan wali kelas.',
+      type: EventType.ACADEMIC,
+      start: utcDate(y, 11, 19),
+      end: utcDate(y, 11, 19),
+    },
+    {
+      title: 'Libur Semester Ganjil',
+      description: 'Santri pulang ke rumah masing-masing.',
+      type: EventType.HOLIDAY,
+      start: utcDate(y, 11, 20),
+      end: utcDate(y + 1, 0, 5),
+    },
+    {
+      title: 'Rapat Evaluasi Semester Ganjil Yayasan',
+      description: 'Pengurus yayasan bersama kepala unit mengevaluasi capaian semester ganjil.',
+      type: EventType.MEETING,
+      start: utcDate(y, 11, 21),
+      end: utcDate(y, 11, 21),
+    },
   ];
   let added = 0;
   for (const e of events) {
@@ -2796,13 +4057,15 @@ async function kalenderDanPengumuman(ctx: Ctx): Promise<void> {
     },
     {
       title: 'Pembayaran SPP melalui Virtual Account',
-      content: 'Pembayaran SPP, biaya asrama, dan biaya makan dapat dilakukan melalui virtual account atau transfer bank. Unggah bukti transfer di menu Tagihan & Pembayaran; TU akan memverifikasi dalam 1×24 jam kerja.',
+      content:
+        'Pembayaran SPP, biaya asrama, dan biaya makan dapat dilakukan melalui virtual account atau transfer bank. Unggah bukti transfer di menu Tagihan & Pembayaran; TU akan memverifikasi dalam 1×24 jam kerja.',
       priority: 0,
       publishedAt: addDays(ctx.now, -20),
     },
     {
       title: `Pendaftaran SPMB ${nextAcademicYear(ctx.now).name} Gelombang 1 Dibuka`,
-      content: "Pendaftaran santri baru untuk TK Qur'an, SD IT, SMP IT, dan SMA Qur'an telah dibuka. Informasi persyaratan dan formulir tersedia di situs cipansor.or.id.",
+      content:
+        "Pendaftaran santri baru untuk TK Qur'an, SD IT, SMP IT, dan SMA Qur'an telah dibuka. Informasi persyaratan dan formulir tersedia di situs cipansor.or.id.",
       priority: 1,
       publishedAt: windows[0].startDate,
     },
@@ -2827,8 +4090,16 @@ async function kalenderDanPengumuman(ctx: Ctx): Promise<void> {
   for (const a of stale) {
     await db.announcement.update({
       where: { id: a.id },
-      data: { content: a.content.split(String(y - 1)).join(String(y + 1)).split(String(y - 2)).join(String(y)) },
+      data: {
+        content: a.content
+          .split(String(y - 1))
+          .join(String(y + 1))
+          .split(String(y - 2))
+          .join(String(y)),
+      },
     });
   }
-  console.log(`   ✅ Kalender & pengumuman: ${added}; ${stale.length} pengumuman lama disesuaikan ke ${ctx.ay.name}`);
+  console.log(
+    `   ✅ Kalender & pengumuman: ${added}; ${stale.length} pengumuman lama disesuaikan ke ${ctx.ay.name}`
+  );
 }

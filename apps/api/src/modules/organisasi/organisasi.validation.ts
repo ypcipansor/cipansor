@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from 'zod';
 
 // ── OrgUnit ─────────────────────────────────────────
 export const createOrgUnitSchema = z.object({
@@ -32,7 +32,7 @@ export const createPositionSchema = z.object({
     title: z.string().min(2),
     code: z.string().optional(),
     level: z.number().int().min(0).optional(),
-    status: z.enum(["ACTIVE", "INACTIVE", "VACANT"]).optional(),
+    status: z.enum(['ACTIVE', 'INACTIVE', 'VACANT']).optional(),
     holderId: z.string().uuid().optional(),
     description: z.string().optional(),
     requirements: z.string().optional(),
@@ -45,7 +45,7 @@ export const updatePositionSchema = z.object({
     title: z.string().min(2).optional(),
     code: z.string().optional(),
     level: z.number().int().min(0).optional(),
-    status: z.enum(["ACTIVE", "INACTIVE", "VACANT"]).optional(),
+    status: z.enum(['ACTIVE', 'INACTIVE', 'VACANT']).optional(),
     holderId: z.string().uuid().nullable().optional(),
     description: z.string().optional(),
     requirements: z.string().optional(),

@@ -50,11 +50,15 @@ describe('OrganisasiService', () => {
 
   describe('getOrgTree', () => {
     it('should return root-level units with nested children', async () => {
-      const mockTree = [{
-        id: 'root1', name: 'Yayasan', parentId: null,
-        children: [{ id: 'c1', name: 'SD', children: [] }],
-        positions: [],
-      }];
+      const mockTree = [
+        {
+          id: 'root1',
+          name: 'Yayasan',
+          parentId: null,
+          children: [{ id: 'c1', name: 'SD', children: [] }],
+          positions: [],
+        },
+      ];
       (prisma.orgUnit.findMany as any).mockResolvedValue(mockTree);
 
       const result = await service.getOrgTree('unit1');

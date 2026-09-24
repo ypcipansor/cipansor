@@ -73,7 +73,10 @@ export default function DashboardPage() {
   const { data: violationData, isLoading: violationLoading } =
     useViolationRewardStats({ period: "month" });
   const { data: healthData } = useHealthSummary();
-  const { data: recentStudents } = useStudents({ limit: 5, status: STUDENT_STATUS.ACTIVE }); // Assume default sort is filtered by new/active
+  const { data: recentStudents } = useStudents({
+    limit: 5,
+    status: STUDENT_STATUS.ACTIVE,
+  }); // Assume default sort is filtered by new/active
   const { data: donationStats } = useDonationStats();
   const { data: recentDonations } = useRecentDonations();
 

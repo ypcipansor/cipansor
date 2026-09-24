@@ -13,10 +13,19 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from "@/components/ui/table";
 import { LetterStatusBadge } from "@/components/e-office/letter-status-badge";
 import {
@@ -96,7 +105,8 @@ const NATURE_TONE: Record<LetterNature, string> = {
   [LetterNature.PUBLIC]: "border-slate-200 bg-slate-50 text-slate-600",
   [LetterNature.LIMITED]: "border-amber-300 bg-amber-50 text-amber-700",
   [LetterNature.CONFIDENTIAL]: "border-rose-300 bg-rose-50 text-rose-700",
-  [LetterNature.STRICTLY_CONFIDENTIAL]: "border-rose-500 bg-rose-100 text-rose-800",
+  [LetterNature.STRICTLY_CONFIDENTIAL]:
+    "border-rose-500 bg-rose-100 text-rose-800",
 };
 
 const COPY = {
@@ -141,18 +151,23 @@ export function LetterList({
 
   const initialStatus = searchParams.get("status")?.toUpperCase() ?? "ALL";
   const [status, setStatus] = useState<string>(
-    STATUSES[direction].includes(initialStatus as LetterStatus) ? initialStatus : "ALL"
+    STATUSES[direction].includes(initialStatus as LetterStatus)
+      ? initialStatus
+      : "ALL",
   );
   const [page, setPage] = useState(1);
   // `?scope=personal` is what the dashboard's "Disposisi" tile asks for: the
   // letters this official personally has to act on.
   const [scope, setScope] = useState<"ALL" | "PERSONAL">(
-    searchParams.get("scope")?.toUpperCase() === "PERSONAL" ? "PERSONAL" : "ALL"
+    searchParams.get("scope")?.toUpperCase() === "PERSONAL"
+      ? "PERSONAL"
+      : "ALL",
   );
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
 
-  const effectiveStatus = fixedStatus ?? (status === "ALL" ? undefined : (status as LetterStatus));
+  const effectiveStatus =
+    fixedStatus ?? (status === "ALL" ? undefined : (status as LetterStatus));
 
   // One request when the typing stops, not one per keystroke.
   useEffect(() => {
@@ -207,7 +222,13 @@ export function LetterList({
               </Link>
             </Button>
           )}
-          <Button onClick={() => router.push(`/e-office/create?direction=${direction.toLowerCase()}`)}>
+          <Button
+            onClick={() =>
+              router.push(
+                `/e-office/create?direction=${direction.toLowerCase()}`,
+              )
+            }
+          >
             <Plus className="mr-2 h-4 w-4" />
             Buat Surat
           </Button>
@@ -216,7 +237,10 @@ export function LetterList({
 
       {/* Disposisi hanya ada pada surat masuk, jadi penyaringnya pun begitu. */}
       {direction === LetterDirection.INCOMING && !fixedStatus && (
-        <Tabs value={scope} onValueChange={(v) => setScope(v as "ALL" | "PERSONAL")}>
+        <Tabs
+          value={scope}
+          onValueChange={(v) => setScope(v as "ALL" | "PERSONAL")}
+        >
           <TabsList>
             <TabsTrigger value="ALL">Semua surat unit</TabsTrigger>
             <TabsTrigger value="PERSONAL">Disposisi untuk saya</TabsTrigger>
@@ -237,7 +261,10 @@ export function LetterList({
         </div>
         {!fixedStatus && (
           <Select value={status} onValueChange={setStatus}>
-            <SelectTrigger className="w-full sm:w-56" aria-label="Saring menurut status">
+            <SelectTrigger
+              className="w-full sm:w-56"
+              aria-label="Saring menurut status"
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -251,7 +278,9 @@ export function LetterList({
           </Select>
         )}
         {range && (
-          <span className="text-sm text-muted-foreground sm:ml-auto">{range} surat</span>
+          <span className="text-sm text-muted-foreground sm:ml-auto">
+            {range} surat
+          </span>
         )}
       </div>
 
@@ -284,7 +313,10 @@ export function LetterList({
                   </TableRow>
                 ) : rows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
+                    <TableCell
+                      colSpan={6}
+                      className="h-24 text-center text-muted-foreground"
+                    >
                       {search || effectiveStatus
                         ? "Tidak ada surat yang cocok dengan penyaring ini."
                         : copy.empty}
@@ -299,7 +331,9 @@ export function LetterList({
                       <TableRow
                         key={letter.id}
                         className="cursor-pointer hover:bg-muted/50"
-                        onClick={() => router.push(`/e-office/letter/${letter.id}`)}
+                        onClick={() =>
+                          router.push(`/e-office/letter/${letter.id}`)
+                        }
                       >
                         <TableCell className="font-medium whitespace-nowrap">
                           {letter.letterNumber || letter.agendaNumber || "—"}
@@ -318,18 +352,26 @@ export function LetterList({
                         <TableCell>
                           {direction === LetterDirection.INCOMING
                             ? letter.senderName || letter.senderInstance || "—"
-                            : letter.recipientName || letter.recipientInstance || "—"}
+                            : letter.recipientName ||
+                              letter.recipientInstance ||
+                              "—"}
                         </TableCell>
                         <TableCell className="whitespace-nowrap">
-                          {safeFormat(new Date(letter.date), "dd MMM yyyy", { locale: localeId })}
+                          {safeFormat(new Date(letter.date), "dd MMM yyyy", {
+                            locale: localeId,
+                          })}
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-wrap gap-1">
                             <Badge
                               variant="outline"
-                              className={NATURE_TONE[letter.nature] ?? NATURE_TONE[LetterNature.PUBLIC]}
+                              className={
+                                NATURE_TONE[letter.nature] ??
+                                NATURE_TONE[LetterNature.PUBLIC]
+                              }
                             >
-                              {LETTER_NATURE_LABELS[letter.nature] ?? letter.nature}
+                              {LETTER_NATURE_LABELS[letter.nature] ??
+                                letter.nature}
                             </Badge>
                             {/* Urgensi Biasa tidak dicetak: menandai setiap
                                 surat "Biasa" membuat yang sungguh mendesak
@@ -337,9 +379,13 @@ export function LetterList({
                             {letter.urgency !== LetterUrgency.NORMAL && (
                               <Badge
                                 variant="outline"
-                                className={URGENCY_TONE[letter.urgency] ?? URGENCY_TONE[LetterUrgency.NORMAL]}
+                                className={
+                                  URGENCY_TONE[letter.urgency] ??
+                                  URGENCY_TONE[LetterUrgency.NORMAL]
+                                }
                               >
-                                {LETTER_URGENCY_LABELS[letter.urgency] ?? letter.urgency}
+                                {LETTER_URGENCY_LABELS[letter.urgency] ??
+                                  letter.urgency}
                               </Badge>
                             )}
                           </div>

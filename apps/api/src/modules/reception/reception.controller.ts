@@ -43,7 +43,6 @@ function requireUnitId(req: Request): string {
   return unitId;
 }
 
-
 // --- Stats ---
 
 export const getStats = async (

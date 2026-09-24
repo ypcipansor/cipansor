@@ -10,7 +10,6 @@ import { Prisma } from '@prisma/client';
 
 import { QURAN_SURAHS } from './quran-surahs';
 
-
 export const getQuranProgressMap = async (studentId: string): Promise<QuranProgressMap> => {
   // Execute queries in parallel for optimization
   const [ziyadahRecords, assessmentRecords, murojaahRecords] = await Promise.all([

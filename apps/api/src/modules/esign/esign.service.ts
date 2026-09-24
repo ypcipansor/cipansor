@@ -206,10 +206,7 @@ async function clearFailedAttempts(keyId: string) {
  * ditanam di kode: jabatan berpindah orang, dan permohonan harus sampai ke
  * mejanya yang sekarang.
  */
-async function deciderIdsFor(
-  signerId: string,
-  signerRoleCode: string | null
-): Promise<string[]> {
+async function deciderIdsFor(signerId: string, signerRoleCode: string | null): Promise<string[]> {
   const candidates = await prisma.userRoleAssignment.findMany({
     where: {
       isActive: true,
@@ -477,16 +474,12 @@ export const EsignService = {
    */
   async uploadIdentityDocument(userId: string, file: Express.Multer.File) {
     if (!isAcceptedIdentityDocument(file.mimetype)) {
-      throw Errors.badRequest(
-        'Berkas harus berupa gambar (JPG, PNG, WebP) atau PDF.'
-      );
+      throw Errors.badRequest('Berkas harus berupa gambar (JPG, PNG, WebP) atau PDF.');
     }
 
     const identity = await prisma.userIdentity.findUnique({ where: { userId } });
     if (!identity) {
-      throw Errors.badRequest(
-        'Lengkapi dulu data identitas Anda sebelum mengunggah foto KTP.'
-      );
+      throw Errors.badRequest('Lengkapi dulu data identitas Anda sebelum mengunggah foto KTP.');
     }
     if (identity.verifiedAt) {
       throw Errors.badRequest(
@@ -851,9 +844,7 @@ export const EsignService = {
       orderBy: { decidedAt: 'desc' },
     });
     if (!approved) {
-      throw Errors.badRequest(
-        'Belum ada persetujuan penerbitan kunci tanda tangan untuk Anda.'
-      );
+      throw Errors.badRequest('Belum ada persetujuan penerbitan kunci tanda tangan untuk Anda.');
     }
 
     const existing = await prisma.userSigningKey.findUnique({ where: { userId } });
@@ -1392,9 +1383,7 @@ export const EsignService = {
       throw Errors.forbidden('Anda bukan penandatangan surat ini.');
     }
     if (letter.status !== LetterStatus.READY_TO_SIGN) {
-      throw Errors.badRequest(
-        `Surat belum siap ditandatangani (status: ${letter.status}).`
-      );
+      throw Errors.badRequest(`Surat belum siap ditandatangani (status: ${letter.status}).`);
     }
 
     // Verify that caller is the current pending reviewer in turn order and no non-signer reviewers remain pending
@@ -1448,179 +1437,182 @@ export const EsignService = {
 
     let result;
     try {
-      result = await prisma.$transaction(async (tx) => {
-      // Re-assert the signing key is not held by a board suspension, on the same
-      // row and in the same transaction as the signature write.
-      //
-      // `assertCanSign` above ran before the crypto work and before this
-      // transaction opened. A suspension that commits in between would otherwise
-      // still produce a valid signature and a SIGNED letter for an officer the
-      // board just froze. The check re-reads `lockedUntil` under a row lock
-      // (transaction-scoped advisory lock + `FOR UPDATE`), and because the key
-      // lock is taken before the letter lock — matching the order in
-      // `revokeLetterSignature` — two signing paths cannot deadlock. A lost race
-      // throws, the transaction rolls back, and no signature is written.
-      await assertSigningKeyNotSuspendedTx(tx, key!.id);
+      result = await prisma.$transaction(
+        async (tx) => {
+          // Re-assert the signing key is not held by a board suspension, on the
+          // same row and in the same transaction as the signature write.
+          //
+          // `assertCanSign` above ran before the crypto work and before this
+          // transaction opened. A suspension that commits in between would
+          // otherwise still produce a valid signature and a SIGNED letter for an
+          // officer the board just froze. The check re-reads `lockedUntil` under
+          // a row lock (transaction-scoped advisory lock + `FOR UPDATE`), and
+          // because the key lock is taken before the letter lock — matching the
+          // order in `revokeLetterSignature` — two signing paths cannot
+          // deadlock. A lost race throws, the transaction rolls back, and no
+          // signature is written.
+          await assertSigningKeyNotSuspendedTx(tx, key!.id);
 
-      // Lock letter row and re-verify reviewer state under concurrency
-      await tx.$executeRaw`SELECT id FROM letters WHERE id = ${letterId} FOR UPDATE`;
+          // Lock letter row and re-verify reviewer state under concurrency
+          await tx.$executeRaw`SELECT id FROM letters WHERE id = ${letterId} FOR UPDATE`;
 
-      const txLetter = await tx.letter.findUnique({
-        where: { id: letterId },
-        include: { reviewers: { orderBy: { order: 'asc' } } },
-      });
-      if (!txLetter) throw Errors.notFound('Surat tidak ditemukan');
+          const txLetter = await tx.letter.findUnique({
+            where: { id: letterId },
+            include: { reviewers: { orderBy: { order: 'asc' } } },
+          });
+          if (!txLetter) throw Errors.notFound('Surat tidak ditemukan');
 
-      const txMine = txLetter.reviewers.find((r) => r.reviewerId === userId);
-      if (!txMine?.isSigner) {
-        throw Errors.forbidden('Anda bukan penandatangan surat ini.');
-      }
-      if (txLetter.status !== LetterStatus.READY_TO_SIGN) {
-        throw Errors.badRequest(
-          `Surat belum siap ditandatangani (status: ${txLetter.status}).`
-        );
-      }
+          const txMine = txLetter.reviewers.find((r) => r.reviewerId === userId);
+          if (!txMine?.isSigner) {
+            throw Errors.forbidden('Anda bukan penandatangan surat ini.');
+          }
+          if (txLetter.status !== LetterStatus.READY_TO_SIGN) {
+            throw Errors.badRequest(
+              `Surat belum siap ditandatangani (status: ${txLetter.status}).`
+            );
+          }
 
-      const pendingReviewers = txLetter.reviewers.filter((r) => r.status !== 'APPROVED');
-      const pendingNonSigners = pendingReviewers.filter((r) => !r.isSigner);
-      if (pendingNonSigners.length > 0) {
-        throw Errors.forbidden(
-          'Surat belum selesai ditinjau oleh seluruh pemeriksa/paraf sebelum ditandatangani.'
-        );
-      }
+          const pendingReviewers = txLetter.reviewers.filter((r) => r.status !== 'APPROVED');
+          const pendingNonSigners = pendingReviewers.filter((r) => !r.isSigner);
+          if (pendingNonSigners.length > 0) {
+            throw Errors.forbidden(
+              'Surat belum selesai ditinjau oleh seluruh pemeriksa/paraf sebelum ditandatangani.'
+            );
+          }
 
-      const currentTurn = pendingReviewers[0];
-      if (currentTurn && currentTurn.reviewerId !== userId) {
-        throw Errors.forbidden(
-          `Belum giliran Anda. Menunggu verifikator urutan ${currentTurn.order} terlebih dahulu.`
-        );
-      }
+          const currentTurn = pendingReviewers[0];
+          if (currentTurn && currentTurn.reviewerId !== userId) {
+            throw Errors.forbidden(
+              `Belum giliran Anda. Menunggu verifikator urutan ${currentTurn.order} terlebih dahulu.`
+            );
+          }
 
-      const signature = await tx.letterSignature.create({
-        data: {
-          letterId: txLetter.id,
-          signerId: userId,
-          algorithm: signed.algorithm,
-          publicKey: signed.publicKey,
-          digest: signed.digest,
-          signature: signed.signature,
-          verificationToken: newVerificationToken(),
-          signedAt,
-          // Jabatan saat menandatangani, bukan jabatan orang itu hari ini:
-          // kewenangan mencabut diukur terhadap naskah siapa ini, dan sebuah SK
-          // yang ditandatangani Ketua tetap naskah Ketua walaupun
-          // penandatangannya kemudian menjabat yang lain.
-          signerRoleCode: signerRoleCode ?? null,
-        },
-      });
+          const signature = await tx.letterSignature.create({
+            data: {
+              letterId: txLetter.id,
+              signerId: userId,
+              algorithm: signed.algorithm,
+              publicKey: signed.publicKey,
+              digest: signed.digest,
+              signature: signed.signature,
+              verificationToken: newVerificationToken(),
+              signedAt,
+              // Jabatan saat menandatangani, bukan jabatan orang itu hari ini:
+              // kewenangan mencabut diukur terhadap naskah siapa ini, dan sebuah SK
+              // yang ditandatangani Ketua tetap naskah Ketua walaupun
+              // penandatangannya kemudian menjabat yang lain.
+              signerRoleCode: signerRoleCode ?? null,
+            },
+          });
 
-      await tx.letterReviewer.update({
-        where: { id: txMine.id },
-        data: { status: 'APPROVED', reviewedAt: signedAt },
-      });
-      await tx.letter.update({
-        where: { id: txLetter.id },
-        data: { status: LetterStatus.SIGNED },
-      });
-      await tx.letterFlowEvent.create({
-        data: {
-          letterId: txLetter.id,
-          actorId: userId,
-          action: LetterFlowAction.SIGNED,
-          fromStatus: txLetter.status,
-          toStatus: LetterStatus.SIGNED,
-          note: 'Ditandatangani secara elektronik.',
-        },
-      });
+          await tx.letterReviewer.update({
+            where: { id: txMine.id },
+            data: { status: 'APPROVED', reviewedAt: signedAt },
+          });
+          await tx.letter.update({
+            where: { id: txLetter.id },
+            data: { status: LetterStatus.SIGNED },
+          });
+          await tx.letterFlowEvent.create({
+            data: {
+              letterId: txLetter.id,
+              actorId: userId,
+              action: LetterFlowAction.SIGNED,
+              fromStatus: txLetter.status,
+              toStatus: LetterStatus.SIGNED,
+              note: 'Ditandatangani secara elektronik.',
+            },
+          });
 
-      /**
-       * The PDF hash is part of signing, not an afterthought to it.
-       *
-       * This used to sit after the transaction inside a `try/catch` whose body
-       * was a single `console.error`. When PDF generation failed for any
-       * reason the letter was still committed as SIGNED with `pdfHash = NULL`
-       * — and because uploading the PDF is the only supported way to verify a
-       * letter, that letter could never be proven genuine again. Worse, the
-       * public page does not say "our system had a problem"; it says the
-       * document "tidak terdaftar dalam sistem resmi ... atau telah mengalami
-       * perubahan". A genuine letter was publicly accused of being forged, and
-       * nothing surfaced it.
-       *
-       * Generating inside the transaction means a failure rolls the signature
-       * back and the signer sees an error, which is the honest outcome: either
-       * a letter is signed and verifiable, or it is not signed at all.
-       */
-      const fullLetter = await tx.letter.findUnique({
-        where: { id: letterId },
-        include: {
           /**
-           * Relasi yang dibaca penghasil PDF, dari satu tetapan bersama.
+           * The PDF hash is part of signing, not an afterthought to it.
            *
-           * Jalur ini dan jalur pengunduhan (`correspondence/signed-pdf`)
-           * merender naskah yang sama, dan hash byte inilah yang menjadi dasar
-           * verifikasi publik. Ketika `unit`, `attachments`, atau `recipients`
-           * hanya diambil salah satunya, yang satu mencetak baris Lampiran dan
-           * blok Tembusan sedangkan yang lain tidak — byte-nya berbeda, dan
-           * surat yang sah dilaporkan kepada publik sebagai berubah.
+           * This used to sit after the transaction inside a `try/catch` whose body
+           * was a single `console.error`. When PDF generation failed for any
+           * reason the letter was still committed as SIGNED with `pdfHash = NULL`
+           * — and because uploading the PDF is the only supported way to verify a
+           * letter, that letter could never be proven genuine again. Worse, the
+           * public page does not say "our system had a problem"; it says the
+           * document "tidak terdaftar dalam sistem resmi ... atau telah mengalami
+           * perubahan". A genuine letter was publicly accused of being forged, and
+           * nothing surfaced it.
+           *
+           * Generating inside the transaction means a failure rolls the signature
+           * back and the signer sees an error, which is the honest outcome: either
+           * a letter is signed and verifiable, or it is not signed at all.
            */
-          ...LETTER_PDF_RELATIONS,
-          signatures: {
+          const fullLetter = await tx.letter.findUnique({
+            where: { id: letterId },
             include: {
-              signer: {
-                // Nama saja: naskah tidak lagi mencetak NIP, dan mengambil
-                // yang tidak dicetak hanya menyebarkannya lebih jauh.
-                select: { name: true },
+              /**
+               * Relasi yang dibaca penghasil PDF, dari satu tetapan bersama.
+               *
+               * Jalur ini dan jalur pengunduhan (`correspondence/signed-pdf`)
+               * merender naskah yang sama, dan hash byte inilah yang menjadi dasar
+               * verifikasi publik. Ketika `unit`, `attachments`, atau `recipients`
+               * hanya diambil salah satunya, yang satu mencetak baris Lampiran dan
+               * blok Tembusan sedangkan yang lain tidak — byte-nya berbeda, dan
+               * surat yang sah dilaporkan kepada publik sebagai berubah.
+               */
+              ...LETTER_PDF_RELATIONS,
+              signatures: {
+                include: {
+                  signer: {
+                    // Nama saja: naskah tidak lagi mencetak NIP, dan mengambil
+                    // yang tidak dicetak hanya menyebarkannya lebih jauh.
+                    select: { name: true },
+                  },
+                },
               },
             },
-          },
+          });
+          if (!fullLetter) throw Errors.notFound('Surat tidak ditemukan');
+
+          const pdfBuffer = await generateLetterPdfBuffer(fullLetter);
+          const pdfHash = crypto.createHash('sha256').update(pdfBuffer).digest('hex');
+          const pdfSignature = signPdfHash(toMaterial(key!), passphrase, pdfHash);
+
+          const withPdf = await tx.letterSignature.update({
+            where: { id: signature.id },
+            data: { pdfHash, pdfSignature },
+          });
+
+          /**
+           * Byte-nya diarsipkan, bukan dijanjikan dapat dibuat ulang.
+           *
+           * `pdfHash` adalah SHA-256 dari byte ini, dan verifikasi publik bekerja
+           * dengan menghitung ulang hash berkas yang diunggah. Sebelum ini tidak
+           * ada berkas yang disimpan: setiap unduhan membuat ulang naskahnya, jadi
+           * seluruh sistem verifikasi bertumpu pada janji bahwa penghasil PDF akan
+           * mengeluarkan byte yang identik selamanya. Kenaikan versi `pdf-lib`,
+           * satu spasi di kop surat, atau build ICU yang berbeda cukup untuk
+           * membatalkan seluruh surat yang pernah ditandatangani sekaligus.
+           *
+           * Menaruhnya di dalam transaksi ini disengaja, dengan alasan yang sama
+           * seperti hash-nya: sebuah surat SIGNED yang arsipnya gagal ditulis
+           * adalah surat yang tidak dapat dicetak sesuai aslinya, dan itu bukan
+           * keadaan yang boleh dibiarkan lolos diam-diam.
+           */
+          await tx.letterSignedDocument.create({
+            data: {
+              signatureId: signature.id,
+              // Prisma `Bytes` menerima Uint8Array; Buffer Node tidak menyempit
+              // ke `Uint8Array<ArrayBuffer>` karena bisa saja beralas
+              // SharedArrayBuffer. Menyalinnya sekali jauh lebih murah daripada
+              // sebuah `as`.
+              bytes: new Uint8Array(pdfBuffer),
+              sha256: pdfHash,
+              byteSize: pdfBuffer.length,
+              generator: LETTER_PDF_GENERATOR,
+            },
+          });
+
+          return withPdf;
         },
-      });
-      if (!fullLetter) throw Errors.notFound('Surat tidak ditemukan');
-
-      const pdfBuffer = await generateLetterPdfBuffer(fullLetter);
-      const pdfHash = crypto.createHash('sha256').update(pdfBuffer).digest('hex');
-      const pdfSignature = signPdfHash(toMaterial(key!), passphrase, pdfHash);
-
-      const withPdf = await tx.letterSignature.update({
-        where: { id: signature.id },
-        data: { pdfHash, pdfSignature },
-      });
-
-      /**
-       * Byte-nya diarsipkan, bukan dijanjikan dapat dibuat ulang.
-       *
-       * `pdfHash` adalah SHA-256 dari byte ini, dan verifikasi publik bekerja
-       * dengan menghitung ulang hash berkas yang diunggah. Sebelum ini tidak
-       * ada berkas yang disimpan: setiap unduhan membuat ulang naskahnya, jadi
-       * seluruh sistem verifikasi bertumpu pada janji bahwa penghasil PDF akan
-       * mengeluarkan byte yang identik selamanya. Kenaikan versi `pdf-lib`,
-       * satu spasi di kop surat, atau build ICU yang berbeda cukup untuk
-       * membatalkan seluruh surat yang pernah ditandatangani sekaligus.
-       *
-       * Menaruhnya di dalam transaksi ini disengaja, dengan alasan yang sama
-       * seperti hash-nya: sebuah surat SIGNED yang arsipnya gagal ditulis
-       * adalah surat yang tidak dapat dicetak sesuai aslinya, dan itu bukan
-       * keadaan yang boleh dibiarkan lolos diam-diam.
-       */
-      await tx.letterSignedDocument.create({
-        data: {
-          signatureId: signature.id,
-          // Prisma `Bytes` menerima Uint8Array; Buffer Node tidak menyempit
-          // ke `Uint8Array<ArrayBuffer>` karena bisa saja beralas
-          // SharedArrayBuffer. Menyalinnya sekali jauh lebih murah daripada
-          // sebuah `as`.
-          bytes: new Uint8Array(pdfBuffer),
-          sha256: pdfHash,
-          byteSize: pdfBuffer.length,
-          generator: LETTER_PDF_GENERATOR,
-        },
-      });
-
-      return withPdf;
-    },
-      // Rendering the naskah is part of this transaction now; the default 5s
-      // ceiling is tight for a multi-page letter on a cold container.
-      { timeout: 20_000 });
+        // Rendering the naskah is part of this transaction now; the default 5s
+        // ceiling is tight for a multi-page letter on a cold container.
+        { timeout: 20_000 }
+      );
     } catch (e) {
       // An unrenderable naskah is the author's to fix, not a server fault.
       if (e instanceof LetterPdfError) throw Errors.badRequest(e.message);
@@ -1748,7 +1740,11 @@ export const EsignService = {
     // klausa WHERE yang tersebar.
     return requests.filter((r) =>
       actorMayRevoke(
-        { signerId: r.signature.signerId, signerRoleCode: r.signature.signerRoleCode, revokedAt: null },
+        {
+          signerId: r.signature.signerId,
+          signerRoleCode: r.signature.signerRoleCode,
+          revokedAt: null,
+        },
         actor
       )
     );
@@ -1906,7 +1902,8 @@ export const EsignService = {
         found: false as const,
         isValid: false,
         isRevoked: false,
-        reason: 'Dokumen PDF tidak terdaftar dalam sistem resmi Yayasan Pesantren Cipansor atau telah mengalami perubahan.',
+        reason:
+          'Dokumen PDF tidak terdaftar dalam sistem resmi Yayasan Pesantren Cipansor atau telah mengalami perubahan.',
         letter: null,
         signer: null,
       };

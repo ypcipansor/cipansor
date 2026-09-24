@@ -83,11 +83,7 @@ export async function getStatementOfActivities(query: {
  * Accounts are tagged with AccountCode.ziswafFundType; receipts come from
  * REVENUE-type accounts, distributions from EXPENSE-type accounts.
  */
-export async function getZiswafReport(query: {
-  unitId?: string;
-  startDate: Date;
-  endDate: Date;
-}) {
+export async function getZiswafReport(query: { unitId?: string; startDate: Date; endDate: Date }) {
   const trialBalance = await getTrialBalance(query);
 
   const accounts = await prisma.accountCode.findMany({
@@ -122,10 +118,7 @@ export async function getZiswafReport(query: {
 /**
  * Laporan Perbandingan Anggaran (Budget vs Actual) per account.
  */
-export async function getBudgetVsActualReport(query: {
-  unitId: string;
-  academicYearId: string;
-}) {
+export async function getBudgetVsActualReport(query: { unitId: string; academicYearId: string }) {
   const budgets = await prisma.budget.findMany({
     where: {
       unitId: query.unitId,

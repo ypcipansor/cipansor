@@ -174,57 +174,63 @@ export async function getRetentionRiskAnalytics(unitId: string) {
     },
   });
 
-  return employees.map((emp) => {
-    let riskScore = 0;
-    const riskFactors = [];
+  return employees
+    .map((emp) => {
+      let riskScore = 0;
+      const riskFactors = [];
 
-    // 1. Performance Factor
-    const latestAssessment = emp.talentProfile?.assessments[0];
-    if (latestAssessment) {
-      if (latestAssessment.performanceRating === 'BELOW' || latestAssessment.performanceRating === 'UNSATISFACTORY') {
-        riskScore += 40;
-        riskFactors.push('Performa Rendah');
+      // 1. Performance Factor
+      const latestAssessment = emp.talentProfile?.assessments[0];
+      if (latestAssessment) {
+        if (
+          latestAssessment.performanceRating === 'BELOW' ||
+          latestAssessment.performanceRating === 'UNSATISFACTORY'
+        ) {
+          riskScore += 40;
+          riskFactors.push('Performa Rendah');
+        }
       }
-    }
 
-    // 2. Leave Pattern Factor (High unplanned leaves).
-    // Leaves are recorded against the Teacher/Staff profile, not the User.
-    const empLeaves = [...(emp.teacher?.leaves ?? []), ...(emp.staff?.leaves ?? [])];
-    const totalLeaveDays = empLeaves.reduce((sum, l) => sum + l.totalDays, 0);
-    if (totalLeaveDays > 15) {
-      riskScore += 20;
-      riskFactors.push('Absensi Tinggi');
-    }
+      // 2. Leave Pattern Factor (High unplanned leaves).
+      // Leaves are recorded against the Teacher/Staff profile, not the User.
+      const empLeaves = [...(emp.teacher?.leaves ?? []), ...(emp.staff?.leaves ?? [])];
+      const totalLeaveDays = empLeaves.reduce((sum, l) => sum + l.totalDays, 0);
+      if (totalLeaveDays > 15) {
+        riskScore += 20;
+        riskFactors.push('Absensi Tinggi');
+      }
 
-    // 3. Training/Development Factor (Low engagement)
-    if (emp.trainingEnrollments.length === 0) {
-      riskScore += 15;
-      riskFactors.push('Kurang Pengembangan Diri');
-    }
-
-    // 4. Tenure Factor (Stagnation - simplified)
-    const joinDate = emp.teacher?.joinDate || emp.staff?.joinDate;
-    if (joinDate) {
-      const years = (new Date().getTime() - new Date(joinDate).getTime()) / (1000 * 60 * 60 * 24 * 365);
-      if (years > 5 && (!emp.talentProfile || emp.talentProfile.category === 'SOLID_PERFORMER')) {
+      // 3. Training/Development Factor (Low engagement)
+      if (emp.trainingEnrollments.length === 0) {
         riskScore += 15;
-        riskFactors.push('Stagnasi Karir Potensial');
+        riskFactors.push('Kurang Pengembangan Diri');
       }
-    }
 
-    let riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' = 'LOW';
-    if (riskScore >= 60) riskLevel = 'HIGH';
-    else if (riskScore >= 30) riskLevel = 'MEDIUM';
+      // 4. Tenure Factor (Stagnation - simplified)
+      const joinDate = emp.teacher?.joinDate || emp.staff?.joinDate;
+      if (joinDate) {
+        const years =
+          (new Date().getTime() - new Date(joinDate).getTime()) / (1000 * 60 * 60 * 24 * 365);
+        if (years > 5 && (!emp.talentProfile || emp.talentProfile.category === 'SOLID_PERFORMER')) {
+          riskScore += 15;
+          riskFactors.push('Stagnasi Karir Potensial');
+        }
+      }
 
-    return {
-      userId: emp.id,
-      name: emp.name,
-      role: emp.role,
-      riskScore,
-      riskLevel,
-      factors: riskFactors,
-    };
-  }).sort((a, b) => b.riskScore - a.riskScore);
+      let riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' = 'LOW';
+      if (riskScore >= 60) riskLevel = 'HIGH';
+      else if (riskScore >= 30) riskLevel = 'MEDIUM';
+
+      return {
+        userId: emp.id,
+        name: emp.name,
+        role: emp.role,
+        riskScore,
+        riskLevel,
+        factors: riskFactors,
+      };
+    })
+    .sort((a, b) => b.riskScore - a.riskScore);
 }
 
 export async function createEmployee(data: CreateEmployeeInput) {
@@ -783,9 +789,7 @@ async function validateLeaveRequest(
       }
 
       // Helper to check for leaves overlapping with AY
-      const getOverlappingLeaveQuery = (
-        statusFilter: LeaveStatus
-      ): Prisma.LeaveWhereInput => ({
+      const getOverlappingLeaveQuery = (statusFilter: LeaveStatus): Prisma.LeaveWhereInput => ({
         type: LeaveType.ANNUAL,
         status: statusFilter,
         OR: [

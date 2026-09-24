@@ -439,7 +439,11 @@ export async function createPublicRegistrantService(data: CreateRegistrantExtend
 
   const crypto = await import('crypto');
   const timestampHex = Date.now().toString(16);
-  const hmacHex = crypto.createHmac('sha256', config.jwt.secret).update(`${registrant.id}:${timestampHex}`).digest('hex').slice(0, 16);
+  const hmacHex = crypto
+    .createHmac('sha256', config.jwt.secret)
+    .update(`${registrant.id}:${timestampHex}`)
+    .digest('hex')
+    .slice(0, 16);
   const registrationToken = `${timestampHex}.${hmacHex}`;
 
   return {
@@ -563,7 +567,8 @@ async function createRegistrantOnce(
 
       if ((tx as any).$executeRaw) {
         // Acquire row-level locks on candidate waves to prevent concurrent quota race conditions
-        await (tx as any).$executeRaw`SELECT id FROM "admission_waves" WHERE "period_id" = ${data.admissionPeriodId} FOR UPDATE`;
+        await (tx as any)
+          .$executeRaw`SELECT id FROM "admission_waves" WHERE "period_id" = ${data.admissionPeriodId} FOR UPDATE`;
       }
 
       let waveClaimed = false;
@@ -594,7 +599,11 @@ async function createRegistrantOnce(
             select: { id: true, registeredCount: true, quota: true, status: true },
           });
 
-          if (updatedWave && updatedWave.registeredCount >= updatedWave.quota && updatedWave.status !== 'FULL') {
+          if (
+            updatedWave &&
+            updatedWave.registeredCount >= updatedWave.quota &&
+            updatedWave.status !== 'FULL'
+          ) {
             await tx.admissionWave.update({
               where: { id: wave.id },
               // Capacity-driven closure: the wave fills up because of enrolment,
@@ -611,7 +620,9 @@ async function createRegistrantOnce(
       }
 
       if (!waveClaimed && !isAdmin) {
-        throw Errors.badRequest('Semua gelombang pendaftaran pada periode ini telah penuh atau ditutup');
+        throw Errors.badRequest(
+          'Semua gelombang pendaftaran pada periode ini telah penuh atau ditutup'
+        );
       }
     }
 
@@ -718,7 +729,11 @@ export async function updateRegistrant(id: string, data: UpdateRegistrantInput, 
   });
 }
 
-export async function updateRegistrantScore(id: string, data: UpdateRegistrantScoreInput, actor?: AuthUser) {
+export async function updateRegistrantScore(
+  id: string,
+  data: UpdateRegistrantScoreInput,
+  actor?: AuthUser
+) {
   if (actor) await assertRegistrantUnitAccess(id, actor);
   // Only advance status to TEST_COMPLETED when:
   //   1. At least one actual score (test/interview/tahfidz) was provided, AND
@@ -815,7 +830,11 @@ export async function recordRegistrationFee(
   });
 }
 
-export async function updateRegistrantStatus(id: string, data: UpdateRegistrantStatusInput, actor?: AuthUser) {
+export async function updateRegistrantStatus(
+  id: string,
+  data: UpdateRegistrantStatusInput,
+  actor?: AuthUser
+) {
   if (actor) await assertRegistrantUnitAccess(id, actor);
   // Guard: ENROLLED is a terminal status that must only be reached through
   // `enrollRegistrant`, which atomically creates the User + Student records,
@@ -968,9 +987,8 @@ export async function enrollRegistrant(
     }
   }
 
-  const { StudentOnboardingOrchestrator } = await import(
-    '../../services/integration/student-onboarding.orchestrator'
-  );
+  const { StudentOnboardingOrchestrator } =
+    await import('../../services/integration/student-onboarding.orchestrator');
 
   const result = await StudentOnboardingOrchestrator.processEnrollment(
     registrantId,
@@ -1074,7 +1092,10 @@ export async function getRegistrantDocuments(registrantId: string, actor?: AuthU
   });
 }
 
-export async function createRegistrantDocument(data: CreateRegistrantDocumentInput, actor?: AuthUser) {
+export async function createRegistrantDocument(
+  data: CreateRegistrantDocumentInput,
+  actor?: AuthUser
+) {
   if (actor) await assertRegistrantUnitAccess(data.registrantId, actor);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return prisma.registrantDocument.create({ data: data as any });
@@ -1083,7 +1104,8 @@ export async function createRegistrantDocument(data: CreateRegistrantDocumentInp
 export async function createPublicRegistrantDocumentService(
   data: CreatePublicRegistrantDocumentRequest & { registrantId: string }
 ) {
-  const { registrantId, type, url, base64, fileName, registrationToken, ocrNotes, ocrStatus } = data;
+  const { registrantId, type, url, base64, fileName, registrationToken, ocrNotes, ocrStatus } =
+    data;
 
   const registrant = await prisma.registrant.findUnique({
     where: { id: registrantId },
@@ -1108,8 +1130,12 @@ export async function createPublicRegistrantDocumentService(
     const timestamp = parseInt(tsHex, 16);
     if (!isNaN(timestamp)) {
       const now = Date.now();
-      const expectedHmac = crypto.createHmac('sha256', config.jwt.secret).update(`${registrant.id}:${tsHex}`).digest('hex').slice(0, 16);
-      if (hmacHex === expectedHmac && now >= timestamp && (now - timestamp) <= TWO_HOURS_MS) {
+      const expectedHmac = crypto
+        .createHmac('sha256', config.jwt.secret)
+        .update(`${registrant.id}:${tsHex}`)
+        .digest('hex')
+        .slice(0, 16);
+      if (hmacHex === expectedHmac && now >= timestamp && now - timestamp <= TWO_HOURS_MS) {
         isTokenValid = true;
       }
     }
@@ -1165,7 +1191,9 @@ export async function createPublicRegistrantDocumentService(
     }
     const mimeMatch = docUrl.match(/^data:(image\/(jpeg|jpg|png|webp)|application\/pdf);base64,/i);
     if (!mimeMatch) {
-      throw Errors.badRequest('Tipe berkas tidak didukung. Hanya gambar (JPEG/PNG/WebP) dan PDF yang diperbolehkan');
+      throw Errors.badRequest(
+        'Tipe berkas tidak didukung. Hanya gambar (JPEG/PNG/WebP) dan PDF yang diperbolehkan'
+      );
     }
   } else {
     try {
@@ -1191,7 +1219,8 @@ export async function createPublicRegistrantDocumentService(
         throw Errors.badRequest('URL dokumen tidak diizinkan (host privat atau internal)');
       }
     } catch (err: any) {
-      if (err instanceof Errors.badRequest('').constructor || err?.name === 'ApiError' || err?.code) throw err;
+      if (err instanceof Errors.badRequest('').constructor || err?.name === 'ApiError' || err?.code)
+        throw err;
       throw Errors.badRequest('URL dokumen tidak valid (harus diawali http:// atau https://)');
     }
   }
@@ -1215,7 +1244,8 @@ export async function createPublicRegistrantDocumentService(
     ocrSummaryNote = `[Hasil Verifikasi: ${ocrStatus || 'WARNING'}] ${ocrNotes.join(' | ')}`;
   }
 
-  const createRegistrantDocumentSchema = (await import('./admissions.schema')).createRegistrantDocumentSchema;
+  const createRegistrantDocumentSchema = (await import('./admissions.schema'))
+    .createRegistrantDocumentSchema;
   const docData = createRegistrantDocumentSchema.parse({
     registrantId,
     name: fileName || `${schemaType}_${Date.now()}`,
@@ -1227,7 +1257,8 @@ export async function createPublicRegistrantDocumentService(
   // Execute count check and document creation within a row-locked transaction to prevent race conditions
   return prisma.$transaction(async (tx) => {
     if ((tx as any).$executeRaw) {
-      await (tx as any).$executeRaw`SELECT id FROM "registrants" WHERE id = ${registrantId} FOR UPDATE`;
+      await (tx as any)
+        .$executeRaw`SELECT id FROM "registrants" WHERE id = ${registrantId} FOR UPDATE`;
     }
 
     const existingDocCount = await tx.registrantDocument.count({
@@ -1235,14 +1266,21 @@ export async function createPublicRegistrantDocumentService(
     });
 
     if (existingDocCount >= 10) {
-      throw Errors.badRequest('Jumlah dokumen pendaftar telah mencapai batas maksimum (10 dokumen)');
+      throw Errors.badRequest(
+        'Jumlah dokumen pendaftar telah mencapai batas maksimum (10 dokumen)'
+      );
     }
 
     return tx.registrantDocument.create({ data: docData as any });
   });
 }
 
-export async function verifyDocument(id: string, isVerified: boolean, notes?: string, actor?: AuthUser) {
+export async function verifyDocument(
+  id: string,
+  isVerified: boolean,
+  notes?: string,
+  actor?: AuthUser
+) {
   if (actor) await assertDocumentUnitAccess(id, actor);
   return prisma.registrantDocument.update({
     where: { id },

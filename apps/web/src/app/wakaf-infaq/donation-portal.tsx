@@ -92,12 +92,14 @@ const paymentIcons: Record<
  * HandHeart, so the icons distinguished nothing and were pure decoration —
  * the same flaw that made the old eight-card "Jenis Donasi" grid useless.
  */
-const programIcons: Record<string, React.ComponentType<{ className?: string }>> =
-  {
-    WAKAF: Building2,
-    BEASISWA: GraduationCap,
-    INFAK: HandHeart,
-  };
+const programIcons: Record<
+  string,
+  React.ComponentType<{ className?: string }>
+> = {
+  WAKAF: Building2,
+  BEASISWA: GraduationCap,
+  INFAK: HandHeart,
+};
 
 export function DonationPortal({
   photo,
@@ -166,7 +168,9 @@ export function DonationPortal({
       await createDonation.mutateAsync({
         turnstileToken: turnstile.token ?? undefined,
         campaignId: selectedCampaignId || undefined,
-        donorName: formData.isAnonymous ? ANONYMOUS_DONOR_NAME : formData.donorName,
+        donorName: formData.isAnonymous
+          ? ANONYMOUS_DONOR_NAME
+          : formData.donorName,
         donorPhone: formData.donorPhone || undefined,
         donorEmail: formData.donorEmail || undefined,
         donorAddress: formData.donorAddress || undefined,
@@ -178,7 +182,9 @@ export function DonationPortal({
       });
 
       setSuccessData({
-        donorName: formData.isAnonymous ? ANONYMOUS_DONOR_NAME : formData.donorName,
+        donorName: formData.isAnonymous
+          ? ANONYMOUS_DONOR_NAME
+          : formData.donorName,
         amount: parseInt(formData.amount),
       });
 
@@ -209,7 +215,6 @@ export function DonationPortal({
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-white">
-
       {/* Hero. Copy follows the yayasan's own "Investasi Akhirat" campaign
           material rather than generic donation wording. */}
       <section className="bg-emerald-600 text-white pb-20 pt-16">
@@ -290,7 +295,9 @@ export function DonationPortal({
         */}
         {(isLoading || activeCampaigns.length > 0) && (
           <section className="mb-12">
-            <h2 className="text-2xl font-bold mb-6">{copy.campaigns.heading}</h2>
+            <h2 className="text-2xl font-bold mb-6">
+              {copy.campaigns.heading}
+            </h2>
 
             {isLoading ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -341,42 +348,45 @@ export function DonationPortal({
               const ProgramIcon = programIcons[program.type] ?? HandHeart;
               const text = copy.programs.byType[program.type];
               return (
-              <Card
-                key={program.type}
-                className="flex flex-col bg-white transition-shadow hover:shadow-lg"
-              >
-                <CardHeader>
-                  <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center mb-2">
-                    <ProgramIcon className="h-5 w-5 text-emerald-600" aria-hidden="true" />
-                  </div>
-                  <CardTitle className="text-lg">
-                    {text?.title ?? program.title}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="flex flex-1 flex-col">
-                  <CardDescription className="flex-1 text-base leading-relaxed">
-                    {text?.description ?? program.description}
-                  </CardDescription>
-                  {/* "Pilih Program" is step 1 of Cara Berdonasi — so it has to
+                <Card
+                  key={program.type}
+                  className="flex flex-col bg-white transition-shadow hover:shadow-lg"
+                >
+                  <CardHeader>
+                    <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center mb-2">
+                      <ProgramIcon
+                        className="h-5 w-5 text-emerald-600"
+                        aria-hidden="true"
+                      />
+                    </div>
+                    <CardTitle className="text-lg">
+                      {text?.title ?? program.title}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="flex flex-1 flex-col">
+                    <CardDescription className="flex-1 text-base leading-relaxed">
+                      {text?.description ?? program.description}
+                    </CardDescription>
+                    {/* "Pilih Program" is step 1 of Cara Berdonasi — so it has to
                       be clickable. These cards were inert text while a
                       different grid was the interactive one. */}
-                  <Button
-                    variant="outline"
-                    className="mt-5 w-full"
-                    onClick={() => {
-                      setFormData({
-                        ...formData,
-                        type: program.type as DonationType,
-                      });
-                      setSelectedCampaignId(null);
-                      setShowForm(true);
-                    }}
-                  >
-                    {copy.programs.chooseCta}
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
-                </CardContent>
-              </Card>
+                    <Button
+                      variant="outline"
+                      className="mt-5 w-full"
+                      onClick={() => {
+                        setFormData({
+                          ...formData,
+                          type: program.type as DonationType,
+                        });
+                        setSelectedCampaignId(null);
+                        setShowForm(true);
+                      }}
+                    >
+                      {copy.programs.chooseCta}
+                      <ArrowRight className="ml-2 h-4 w-4" />
+                    </Button>
+                  </CardContent>
+                </Card>
               );
             })}
           </div>

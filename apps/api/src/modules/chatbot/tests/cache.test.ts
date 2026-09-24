@@ -33,7 +33,7 @@ describe('cacheKeyFor', () => {
 
   it('ignores colloquial particles, which real visitors type constantly', () => {
     expect(cacheKeyFor('biaya pendaftaran berapa sih pak', [])).toBe(
-      cacheKeyFor('berapa biaya pendaftaran', []),
+      cacheKeyFor('berapa biaya pendaftaran', [])
     );
   });
 
@@ -44,13 +44,13 @@ describe('cacheKeyFor', () => {
     // merge costs a visitor the truth. If this ever becomes a hit-rate problem,
     // this test is the place the decision gets revisited.
     expect(cacheKeyFor('brp biyaya pndaftaran nya', [])).not.toBe(
-      cacheKeyFor('berapa biaya pendaftaran', []),
+      cacheKeyFor('berapa biaya pendaftaran', [])
     );
   });
 
   it('separates genuinely different questions', () => {
     expect(cacheKeyFor('di mana alamat pesantren', [])).not.toBe(
-      cacheKeyFor('berapa biaya pendaftaran', []),
+      cacheKeyFor('berapa biaya pendaftaran', [])
     );
   });
 
@@ -60,19 +60,19 @@ describe('cacheKeyFor', () => {
     // fee must produce a different key, so the stale entry is simply never
     // looked up again — no flush, no TTL race.
     expect(cacheKeyFor('berapa biaya pendaftaran', fee350)).not.toBe(
-      cacheKeyFor('berapa biaya pendaftaran', fee500),
+      cacheKeyFor('berapa biaya pendaftaran', fee500)
     );
   });
 
   it('is stable while the live facts are unchanged', () => {
     expect(cacheKeyFor('berapa biaya pendaftaran', fee350)).toBe(
-      cacheKeyFor('berapa biaya pendaftaran', fee350),
+      cacheKeyFor('berapa biaya pendaftaran', fee350)
     );
   });
 
   it('distinguishes an answer with live facts from one without', () => {
     expect(cacheKeyFor('berapa biaya pendaftaran', fee350)).not.toBe(
-      cacheKeyFor('berapa biaya pendaftaran', []),
+      cacheKeyFor('berapa biaya pendaftaran', [])
     );
   });
 
@@ -83,7 +83,7 @@ describe('cacheKeyFor', () => {
     // no flush step, nothing for anyone to remember. Without this, a corrected
     // phone number would keep being read out of Redis for up to a day.
     expect(cacheKeyFor('di mana alamat pesantren', [], '', 'corpus-lama')).not.toBe(
-      cacheKeyFor('di mana alamat pesantren', [], '', 'corpus-baru'),
+      cacheKeyFor('di mana alamat pesantren', [], '', 'corpus-baru')
     );
   });
 
@@ -93,13 +93,13 @@ describe('cacheKeyFor', () => {
     // re-fills in the new voice rather than serving a stale answer in the old —
     // the same staleness guarantee the corpus hash gives for public content.
     expect(cacheKeyFor('di mana alamat pesantren', [], 'persona lama')).not.toBe(
-      cacheKeyFor('di mana alamat pesantren', [], 'persona baru'),
+      cacheKeyFor('di mana alamat pesantren', [], 'persona baru')
     );
   });
 
   it('is stable while the persona is unchanged', () => {
     expect(cacheKeyFor('di mana alamat pesantren', [], 'persona X')).toBe(
-      cacheKeyFor('di mana alamat pesantren', [], 'persona X'),
+      cacheKeyFor('di mana alamat pesantren', [], 'persona X')
     );
   });
 
@@ -157,14 +157,14 @@ describe('writeCached', () => {
       'k',
       expect.stringContaining('"answer":"a"'),
       'EX',
-      config.chatbot.cacheTtlSeconds,
+      config.chatbot.cacheTtlSeconds
     );
   });
 
   it('swallows a write failure', async () => {
     mockRedis.set.mockRejectedValue(new Error('down'));
     await expect(
-      writeCached('k', { answer: 'a', sources: [], refused: false }),
+      writeCached('k', { answer: 'a', sources: [], refused: false })
     ).resolves.toBeUndefined();
   });
 });

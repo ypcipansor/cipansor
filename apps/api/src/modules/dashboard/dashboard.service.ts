@@ -297,7 +297,9 @@ export class DashboardService {
    * Get finance statistics
    */
   async getFinanceStats(context: DashboardServiceContext): Promise<FinanceStats> {
-    const unitFilter = context.unitId ? { student: studentInUnitAt(context.unitId, new Date()) } : {};
+    const unitFilter = context.unitId
+      ? { student: studentInUnitAt(context.unitId, new Date()) }
+      : {};
 
     const [totalBilled, totalPaid, totalUnpaid, recentPaymentsRaw] = await Promise.all([
       prisma.invoice.aggregate({
@@ -367,7 +369,9 @@ export class DashboardService {
         periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
     }
 
-    const unitFilter = context.unitId ? { student: studentInUnitAt(context.unitId, new Date()) } : {};
+    const unitFilter = context.unitId
+      ? { student: studentInUnitAt(context.unitId, new Date()) }
+      : {};
 
     // Get total memorized ayah across all students
     const totalMemorizedResult = await prisma.tahfidzRecord.aggregate({
@@ -479,7 +483,9 @@ export class DashboardService {
         periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
     }
 
-    const unitFilter = context.unitId ? { student: studentInUnitAt(context.unitId, new Date()) } : {};
+    const unitFilter = context.unitId
+      ? { student: studentInUnitAt(context.unitId, new Date()) }
+      : {};
 
     const [totalViolations, totalRewards, recentViolationsRaw, recentRewardsRaw] =
       await Promise.all([
@@ -552,7 +558,9 @@ export class DashboardService {
     context: DashboardServiceContext,
     since: Date
   ): Promise<Array<{ month: string; ayahCount: number; studentCount: number }>> {
-    const unitFilter = context.unitId ? { student: studentInUnitAt(context.unitId, new Date()) } : {};
+    const unitFilter = context.unitId
+      ? { student: studentInUnitAt(context.unitId, new Date()) }
+      : {};
 
     const records = await prisma.tahfidzRecord.findMany({
       where: {
@@ -735,36 +743,33 @@ export class DashboardService {
    * unitId; unit scoping goes through their admission period.
    */
   async getAdmissionsStats(context: DashboardServiceContext): Promise<AdmissionsStats> {
-    const registrantFilter = context.unitId
-      ? { admissionPeriod: { unitId: context.unitId } }
-      : {};
+    const registrantFilter = context.unitId ? { admissionPeriod: { unitId: context.unitId } } : {};
 
-    const [totalRegistrants, statusCounts, activePeriods, recentRegistrants] =
-      await Promise.all([
-        prisma.registrant.count({ where: registrantFilter }),
-        prisma.registrant.groupBy({
-          by: ['status'],
-          where: registrantFilter,
-          _count: true,
-        }),
-        // Sama dengan gerbang pendaftaran (admissions.service): isActive adalah
-        // saklar, tanggal adalah jadwalnya. Gelombang yang sudah tutup atau baru
-        // buka bulan depan bukan "periode aktif".
-        prisma.admissionPeriod.count({
-          where: {
-            ...(context.unitId ? { unitId: context.unitId } : {}),
-            isActive: true,
-            startDate: { lte: new Date() },
-            endDate: { gte: new Date() },
-          },
-        }),
-        prisma.registrant.findMany({
-          where: registrantFilter,
-          orderBy: { createdAt: 'desc' },
-          take: 5,
-          select: { id: true, fullName: true, status: true, createdAt: true },
-        }),
-      ]);
+    const [totalRegistrants, statusCounts, activePeriods, recentRegistrants] = await Promise.all([
+      prisma.registrant.count({ where: registrantFilter }),
+      prisma.registrant.groupBy({
+        by: ['status'],
+        where: registrantFilter,
+        _count: true,
+      }),
+      // Sama dengan gerbang pendaftaran (admissions.service): isActive adalah
+      // saklar, tanggal adalah jadwalnya. Gelombang yang sudah tutup atau baru
+      // buka bulan depan bukan "periode aktif".
+      prisma.admissionPeriod.count({
+        where: {
+          ...(context.unitId ? { unitId: context.unitId } : {}),
+          isActive: true,
+          startDate: { lte: new Date() },
+          endDate: { gte: new Date() },
+        },
+      }),
+      prisma.registrant.findMany({
+        where: registrantFilter,
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+        select: { id: true, fullName: true, status: true, createdAt: true },
+      }),
+    ]);
 
     const byStatus: Record<string, number> = {};
     for (const row of statusCounts) {
@@ -788,7 +793,13 @@ export class DashboardService {
    * CBT (online exam) summary for the dashboard.
    */
   async getCBTSummary(context: DashboardServiceContext): Promise<CBTStats> {
-    const unitFilter = context.unitId ? { unitId: context.unitId } : {};
+    // A CBT exam is one delivered from a question bank (the CBT module refuses to
+    // create one without `questionBankId`). Written exams share the table, and
+    // counting them made the card report every ulangan as an online exam.
+    const unitFilter = {
+      ...(context.unitId ? { unitId: context.unitId } : {}),
+      questionBankId: { not: null },
+    };
     const now = new Date();
 
     const [totalExams, ongoingExams, upcomingExams, totalAttempts, avgScoreResult] =
@@ -926,10 +937,7 @@ export class DashboardService {
    * /tahfidz list with a `teacherId` param that endpoint does not accept, so
    * it showed whatever records the caller could see.
    */
-  private async getTeacherRecentSetoran(
-    userId: string,
-    limit = 5
-  ): Promise<TeacherSetoranItem[]> {
+  private async getTeacherRecentSetoran(userId: string, limit = 5): Promise<TeacherSetoranItem[]> {
     const records = await prisma.tahfidzRecord.findMany({
       where: { recordedById: userId },
       orderBy: { recordedAt: 'desc' },

@@ -300,7 +300,7 @@ function quotedAttributeMask(text: string): Uint8Array {
         }
         continue;
       }
-      if (!isHtmlWhitespace(code)) canOpenQuote = code === 0x3d /* = */;
+      if (!isHtmlWhitespace(code)) canOpenQuote = code === 0x3d; /* = */
     }
     // A quote that is never closed quotes nothing. Masking it to end-of-input
     // would hide every later `<!--`/`<style`/`<head` from the element scan and

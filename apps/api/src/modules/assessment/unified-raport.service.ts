@@ -49,12 +49,16 @@ export class UnifiedRaportService {
 
     const enrollment = student.enrollments[0];
     if (!enrollment) {
-      throw new ApiError(ErrorCode.NOT_FOUND, 'Data enrollment tidak ditemukan untuk tahun ajaran ini');
+      throw new ApiError(
+        ErrorCode.NOT_FOUND,
+        'Data enrollment tidak ditemukan untuk tahun ajaran ini'
+      );
     }
 
     // 2. Run Generators and Holistic Analytics in Parallel for efficiency
     // These services handle their own internal data aggregation
-    const genericRecommendation = "Pertahankan prestasi dan terus kembangkan potensi diri di segala aspek.";
+    const genericRecommendation =
+      'Pertahankan prestasi dan terus kembangkan potensi diri di segala aspek.';
     const holisticFallback = {
       holisticScore: 0,
       breakdown: { academic: null, tahfidz: null, behavior: null, attendance: null, ibadah: null },
@@ -66,11 +70,15 @@ export class UnifiedRaportService {
       RaportMerdekaService.generateRaportMerdeka(studentId, academicYearId, semester, user),
       generateRaporPesantren({ studentId, academicYearId, semester, unitId: student.unitId }),
       // Holistic analytics failure should not block raport generation
-      AssessmentAnalyticsService.getStudentHolisticAnalytics(studentId, academicYearId)
-        .catch((err) => {
-          console.error('[UnifiedRaport] Holistic analytics failed, using fallback:', err?.message || err);
+      AssessmentAnalyticsService.getStudentHolisticAnalytics(studentId, academicYearId).catch(
+        (err) => {
+          console.error(
+            '[UnifiedRaport] Holistic analytics failed, using fallback:',
+            err?.message || err
+          );
           return holisticFallback;
-        }),
+        }
+      ),
     ]);
 
     // 3. Structure the Unified Data

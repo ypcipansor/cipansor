@@ -6,7 +6,13 @@ import {
   TurnstileWidget,
   useTurnstile,
 } from "@/components/security/turnstile-widget";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -43,7 +49,10 @@ const LETTER_STATUS_LABEL: Record<string, string> = {
   ARCHIVED: "Diarsipkan",
 };
 
-function formatWibTimestamp(dateInput?: Date | string | null, includeSeconds = false) {
+function formatWibTimestamp(
+  dateInput?: Date | string | null,
+  includeSeconds = false,
+) {
   if (!dateInput) return "-";
   try {
     const d = new Date(dateInput);
@@ -64,7 +73,9 @@ function formatWibTimestamp(dateInput?: Date | string | null, includeSeconds = f
 
 function PublicVerifyContent() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [result, setResult] = useState<PublicLetterVerificationResult | null>(null);
+  const [result, setResult] = useState<PublicLetterVerificationResult | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
 
   /**
@@ -139,19 +150,24 @@ function PublicVerifyContent() {
     } catch (err: any) {
       turnstile.refresh();
       if (err?.response?.status === 429) {
-        setError("Terlalu banyak permintaan verifikasi. Silakan tunggu beberapa saat.");
+        setError(
+          "Terlalu banyak permintaan verifikasi. Silakan tunggu beberapa saat.",
+        );
       } else {
         setError(
           err?.response?.data?.error?.message ||
             err?.response?.data?.message ||
-            "Terjadi kesalahan saat memverifikasi dokumen PDF."
+            "Terjadi kesalahan saat memverifikasi dokumen PDF.",
         );
       }
     }
   };
 
   return (
-    <main id="main-content" className="min-h-screen bg-slate-50 py-12 px-4 sm:px-6 lg:px-8">
+    <main
+      id="main-content"
+      className="min-h-screen bg-slate-50 py-12 px-4 sm:px-6 lg:px-8"
+    >
       <div className="max-w-2xl mx-auto space-y-6">
         {/* Header */}
         <div className="text-center space-y-2">
@@ -162,7 +178,8 @@ function PublicVerifyContent() {
             Verifikasi Tanda Tangan Elektronik (TTE)
           </h1>
           <p className="text-slate-600 text-sm">
-            Portal Resmi Verifikasi Keabsahan Naskah Dinas & Surat Resmi Yayasan Pesantren Cipansor
+            Portal Resmi Verifikasi Keabsahan Naskah Dinas & Surat Resmi Yayasan
+            Pesantren Cipansor
           </p>
         </div>
 
@@ -174,7 +191,8 @@ function PublicVerifyContent() {
               Unggah File PDF Surat / Naskah Dinas
             </CardTitle>
             <CardDescription>
-              Unggah berkas PDF dokumen resmi untuk memverifikasi keabsahan tanda tangan elektronik.
+              Unggah berkas PDF dokumen resmi untuk memverifikasi keabsahan
+              tanda tangan elektronik.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -192,7 +210,11 @@ function PublicVerifyContent() {
               {selectedFile && (
                 <p className="text-xs text-slate-600 flex items-center gap-1 mt-1">
                   <FileUp className="h-3.5 w-3.5 text-blue-600" />
-                  File terpilih: <span className="font-semibold text-slate-800">{selectedFile.name}</span> ({(selectedFile.size / 1024).toFixed(1)} KB)
+                  File terpilih:{" "}
+                  <span className="font-semibold text-slate-800">
+                    {selectedFile.name}
+                  </span>{" "}
+                  ({(selectedFile.size / 1024).toFixed(1)} KB)
                 </p>
               )}
             </div>
@@ -248,8 +270,8 @@ function PublicVerifyContent() {
               result.isValid
                 ? "border-green-500 bg-white"
                 : result.isRevoked
-                ? "border-orange-500 bg-orange-50/20"
-                : "border-red-500 bg-red-50/20"
+                  ? "border-orange-500 bg-orange-50/20"
+                  : "border-red-500 bg-red-50/20"
             }`}
           >
             <CardHeader className="pb-4 border-b">
@@ -277,15 +299,15 @@ function PublicVerifyContent() {
                     result.isValid
                       ? "bg-green-100 text-green-800 hover:bg-green-100 text-sm py-1"
                       : result.isRevoked
-                      ? "bg-orange-100 text-orange-800 hover:bg-orange-100 text-sm py-1"
-                      : "bg-red-100 text-red-800 hover:bg-red-100 text-sm py-1"
+                        ? "bg-orange-100 text-orange-800 hover:bg-orange-100 text-sm py-1"
+                        : "bg-red-100 text-red-800 hover:bg-red-100 text-sm py-1"
                   }
                 >
                   {result.isValid
                     ? "RESMI"
                     : result.isRevoked
-                    ? "DICABUT"
-                    : "INVALID"}
+                      ? "DICABUT"
+                      : "INVALID"}
                 </Badge>
               </div>
             </CardHeader>
@@ -298,13 +320,15 @@ function PublicVerifyContent() {
                     Keterangan Pencabutan:
                   </p>
                   <p className="mt-1">
-                    Surat ini telah resmi dicabut oleh penerbit/penandatangan pada{" "}
+                    Surat ini telah resmi dicabut oleh penerbit/penandatangan
+                    pada{" "}
                     <strong>
                       {result.revokedAt
                         ? `${formatWibTimestamp(result.revokedAt, true)} WIB`
                         : "tanggal yang ditentukan"}
                     </strong>
-                    . Dokumen ini tidak lagi berlaku untuk keperluan administratif.
+                    . Dokumen ini tidak lagi berlaku untuk keperluan
+                    administratif.
                   </p>
                   {/* The reason is the whole point of asking for one. Without
                       it the page can only say "dicabut" and leave the reader
@@ -315,7 +339,9 @@ function PublicVerifyContent() {
                     <p className="mt-3 border-t border-orange-300 pt-3">
                       <span className="block text-xs uppercase tracking-wider text-orange-700">
                         Alasan pencabutan
-                        {result.revokedByName ? ` · oleh ${result.revokedByName}` : ""}
+                        {result.revokedByName
+                          ? ` · oleh ${result.revokedByName}`
+                          : ""}
                       </span>
                       <span className="font-medium whitespace-pre-line">
                         {result.revokedReason}
@@ -344,46 +370,67 @@ function PublicVerifyContent() {
               {result.letter && (
                 <div className="space-y-3">
                   <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-2">
-                    <FileText className="h-4 w-4 text-blue-600" /> Detail Naskah Dinas / Surat
+                    <FileText className="h-4 w-4 text-blue-600" /> Detail Naskah
+                    Dinas / Surat
                   </h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 bg-slate-50 rounded-lg border text-sm">
                     <div>
-                      <span className="text-xs text-slate-500 block">Nomor Surat</span>
-                      <span className="font-bold text-slate-900">{result.letter.letterNumber}</span>
+                      <span className="text-xs text-slate-500 block">
+                        Nomor Surat
+                      </span>
+                      <span className="font-bold text-slate-900">
+                        {result.letter.letterNumber}
+                      </span>
                     </div>
                     <div>
-                      <span className="text-xs text-slate-500 block">Unit Penerbit</span>
+                      <span className="text-xs text-slate-500 block">
+                        Unit Penerbit
+                      </span>
                       <span className="font-medium text-slate-900 flex items-center gap-1">
                         <Building className="h-3.5 w-3.5 text-slate-400" />
                         {result.letter.unitName}
                       </span>
                     </div>
                     <div className="sm:col-span-2">
-                      <span className="text-xs text-slate-500 block">Perihal</span>
+                      <span className="text-xs text-slate-500 block">
+                        Perihal
+                      </span>
                       {result.letter.subject ? (
-                        <span className="font-medium text-slate-900">{result.letter.subject}</span>
+                        <span className="font-medium text-slate-900">
+                          {result.letter.subject}
+                        </span>
                       ) : (
                         <span className="font-medium text-slate-500 italic flex items-center gap-1">
                           <Lock className="h-3.5 w-3.5" />
-                          Perihal dan isi surat tidak ditampilkan (Sifat Surat Rahasia/Terbatas)
+                          Perihal dan isi surat tidak ditampilkan (Sifat Surat
+                          Rahasia/Terbatas)
                         </span>
                       )}
                     </div>
                     <div>
-                      <span className="text-xs text-slate-500 block">Tanggal Surat</span>
+                      <span className="text-xs text-slate-500 block">
+                        Tanggal Surat
+                      </span>
                       <span className="font-medium text-slate-900 flex items-center gap-1">
                         <Calendar className="h-3.5 w-3.5 text-slate-400" />
-                        {safeFormat(new Date(result.letter.date), "dd MMMM yyyy", {
-                          locale: localeId,
-                        })}
+                        {safeFormat(
+                          new Date(result.letter.date),
+                          "dd MMMM yyyy",
+                          {
+                            locale: localeId,
+                          },
+                        )}
                       </span>
                     </div>
                     <div>
-                      <span className="text-xs text-slate-500 block">Status Dokumen</span>
+                      <span className="text-xs text-slate-500 block">
+                        Status Dokumen
+                      </span>
                       {/* Was the raw enum — "SIGNED", "ARCHIVED" — on the one
                           page in the system read by people outside it. */}
                       <span className="font-medium text-slate-900">
-                        {LETTER_STATUS_LABEL[result.letter.status] ?? result.letter.status}
+                        {LETTER_STATUS_LABEL[result.letter.status] ??
+                          result.letter.status}
                       </span>
                     </div>
                     {/*
@@ -413,7 +460,10 @@ function PublicVerifyContent() {
                           {LETTER_AUTHORING_TRACK_LABELS[authoringTrack].label}
                         </span>
                         <span className="mt-1 block text-xs leading-relaxed text-slate-600">
-                          {LETTER_AUTHORING_TRACK_LABELS[authoringTrack].assurance}
+                          {
+                            LETTER_AUTHORING_TRACK_LABELS[authoringTrack]
+                              .assurance
+                          }
                         </span>
                       </div>
                     )}
@@ -424,23 +474,34 @@ function PublicVerifyContent() {
               {result.signer && (
                 <div className="space-y-3">
                   <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-2">
-                    <User className="h-4 w-4 text-blue-600" /> Informasi Penandatangan Elektronik (TTE)
+                    <User className="h-4 w-4 text-blue-600" /> Informasi
+                    Penandatangan Elektronik (TTE)
                   </h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 bg-slate-50 rounded-lg border text-sm">
                     {/* Nama dan jabatan — bukan NIP. Halaman ini terbuka untuk
                         umum dan hanya perlu menjawab siapa yang menandatangani,
                         bukan nomor induk kepegawaiannya. */}
                     <div>
-                      <span className="text-xs text-slate-500 block">Nama Penandatangan</span>
-                      <span className="font-bold text-slate-900">{result.signer.name}</span>
+                      <span className="text-xs text-slate-500 block">
+                        Nama Penandatangan
+                      </span>
+                      <span className="font-bold text-slate-900">
+                        {result.signer.name}
+                      </span>
                     </div>
                     <div className="sm:col-span-2">
-                      <span className="text-xs text-slate-500 block">Jabatan / Wewenang</span>
-                      <span className="font-medium text-slate-900">{result.signer.position}</span>
+                      <span className="text-xs text-slate-500 block">
+                        Jabatan / Wewenang
+                      </span>
+                      <span className="font-medium text-slate-900">
+                        {result.signer.position}
+                      </span>
                     </div>
                     {result.signedAt && (
                       <div className="sm:col-span-2">
-                        <span className="text-xs text-slate-500 block">Waktu Penandatanganan</span>
+                        <span className="text-xs text-slate-500 block">
+                          Waktu Penandatanganan
+                        </span>
                         <span className="font-medium text-slate-900">
                           {formatWibTimestamp(result.signedAt, true)} WIB
                         </span>
@@ -448,7 +509,9 @@ function PublicVerifyContent() {
                     )}
                     {result.digest && (
                       <div className="sm:col-span-2">
-                        <span className="text-xs text-slate-500 block">Digital Digest SHA-256</span>
+                        <span className="text-xs text-slate-500 block">
+                          Digital Digest SHA-256
+                        </span>
                         <span className="font-mono text-xs text-slate-600 truncate block">
                           {result.digest}
                         </span>
@@ -482,17 +545,19 @@ function PublicVerifyContent() {
                     </p>
                     <ul className="mt-2 list-disc space-y-1 pl-5">
                       <li>
-                        Berkas yang diunggah harus <strong>berkas PDF asli</strong> yang
-                        diterima dari Yayasan — bukan hasil pindai, foto, tangkapan layar,
+                        Berkas yang diunggah harus{" "}
+                        <strong>berkas PDF asli</strong> yang diterima dari
+                        Yayasan — bukan hasil pindai, foto, tangkapan layar,
                         atau cetak ulang menjadi PDF baru.
                       </li>
                       <li>
-                        Berkas yang dikirim ulang lewat aplikasi pesan kadang dipadatkan
-                        sehingga isinya berubah sedikit. Mintalah berkas aslinya.
+                        Berkas yang dikirim ulang lewat aplikasi pesan kadang
+                        dipadatkan sehingga isinya berubah sedikit. Mintalah
+                        berkas aslinya.
                       </li>
                       <li>
-                        Surat yang terbit sebelum sistem tanda tangan elektronik ini berlaku
-                        memang tidak terdaftar di sini.
+                        Surat yang terbit sebelum sistem tanda tangan elektronik
+                        ini berlaku memang tidak terdaftar di sini.
                       </li>
                     </ul>
                     <p className="mt-3">
@@ -503,7 +568,8 @@ function PublicVerifyContent() {
                       >
                         halo@cipansor.or.id
                       </a>{" "}
-                      — sebutkan nomor suratnya, dan petugas kami akan memeriksakannya.
+                      — sebutkan nomor suratnya, dan petugas kami akan
+                      memeriksakannya.
                     </p>
                   </div>
                 </div>
@@ -518,7 +584,11 @@ function PublicVerifyContent() {
 
 export default function PublicVerifyLetterPage() {
   return (
-    <Suspense fallback={<div className="p-8 text-center">Memuat halaman verifikasi...</div>}>
+    <Suspense
+      fallback={
+        <div className="p-8 text-center">Memuat halaman verifikasi...</div>
+      }
+    >
       <PublicVerifyContent />
     </Suspense>
   );

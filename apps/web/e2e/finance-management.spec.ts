@@ -229,15 +229,17 @@ test.describe("Finance - Reports", () => {
 
     // The income-statement (Laba Rugi) report card renders with its activity
     // title regardless of the loaded data.
-    await expect(
-      page.getByText(/laporan aktivitas/i).first(),
-    ).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText(/laporan aktivitas/i).first()).toBeVisible({
+      timeout: 10000,
+    });
   });
 
   test("should export report to Excel", async ({ page }) => {
     await navigateTo(page, "/finance/reports");
 
-    const heading = page.getByRole("main").getByRole("heading", { name: /laporan|report/i });
+    const heading = page
+      .getByRole("main")
+      .getByRole("heading", { name: /laporan|report/i });
     if (await heading.isVisible({ timeout: 5000 }).catch(() => false)) {
       const exportButton = page.getByRole("button", {
         name: /export|unduh|download/i,
@@ -259,7 +261,9 @@ test.describe("Finance - Reports", () => {
   test("should filter report by unit", async ({ page }) => {
     await navigateTo(page, "/finance/reports");
 
-    const heading = page.getByRole("main").getByRole("heading", { name: /laporan|report/i });
+    const heading = page
+      .getByRole("main")
+      .getByRole("heading", { name: /laporan|report/i });
     if (await heading.isVisible({ timeout: 5000 }).catch(() => false)) {
       const unitSelect = page
         .locator('button[role="combobox"]')

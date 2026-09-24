@@ -611,8 +611,18 @@ const BADGE_RULES: {
   { id: 'mubtadi', name: 'Mubtadi', icon: '🌱', earned: (s) => s.totalPoints >= 100 },
   { id: 'mutawassith', name: 'Mutawassith', icon: '📿', earned: (s) => s.totalPoints >= 1000 },
   { id: 'mutaqaddim', name: 'Mutaqaddim', icon: '🕌', earned: (s) => s.totalPoints >= 5000 },
-  { id: 'weekly-istiqomah', name: 'Istiqomah Sepekan', icon: '🔥', earned: (s) => s.currentStreak >= 7 },
-  { id: 'monthly-istiqomah', name: 'Istiqomah Sebulan', icon: '🏆', earned: (s) => s.currentStreak >= 30 },
+  {
+    id: 'weekly-istiqomah',
+    name: 'Istiqomah Sepekan',
+    icon: '🔥',
+    earned: (s) => s.currentStreak >= 7,
+  },
+  {
+    id: 'monthly-istiqomah',
+    name: 'Istiqomah Sebulan',
+    icon: '🏆',
+    earned: (s) => s.currentStreak >= 30,
+  },
 ];
 
 /**

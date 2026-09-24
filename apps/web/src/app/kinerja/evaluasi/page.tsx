@@ -74,7 +74,10 @@ function PeriodicEvaluationListPageContent() {
       const evalDate = new Date(Number(year), Number(month) - 1, 1);
       const start = new Date(pk.periodStart);
       const end = new Date(pk.periodEnd);
-      if (evalDate < new Date(start.getFullYear(), start.getMonth(), 1) || evalDate > new Date(end.getFullYear(), end.getMonth(), 1)) {
+      if (
+        evalDate < new Date(start.getFullYear(), start.getMonth(), 1) ||
+        evalDate > new Date(end.getFullYear(), end.getMonth(), 1)
+      ) {
         alert("Bulan/Tahun evaluasi di luar periode Perjanjian Kinerja!");
         return;
       }
@@ -89,8 +92,18 @@ function PeriodicEvaluationListPageContent() {
   };
 
   const monthNames = [
-    "Januari", "Februari", "Maret", "April", "Mei", "Juni",
-    "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+    "Januari",
+    "Februari",
+    "Maret",
+    "April",
+    "Mei",
+    "Juni",
+    "Juli",
+    "Agustus",
+    "September",
+    "Oktober",
+    "November",
+    "Desember",
   ];
 
   return (
@@ -98,9 +111,12 @@ function PeriodicEvaluationListPageContent() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Evaluasi Kinerja Periodik Bulanan</h1>
+          <h1 className="text-2xl font-bold tracking-tight">
+            Evaluasi Kinerja Periodik Bulanan
+          </h1>
           <p className="text-muted-foreground text-sm">
-            Input realisasi capaian indikator bulanan dan penilaian Perilaku Kerja <b>SAFTI</b> (*Siddiq, Amanah, Fathonah, Tabligh, Istiqomah*)
+            Input realisasi capaian indikator bulanan dan penilaian Perilaku
+            Kerja <b>SAFTI</b> (*Siddiq, Amanah, Fathonah, Tabligh, Istiqomah*)
           </p>
         </div>
 
@@ -115,7 +131,8 @@ function PeriodicEvaluationListPageContent() {
               <DialogHeader>
                 <DialogTitle>Buat Evaluasi Bulanan Baru</DialogTitle>
                 <DialogDescription>
-                  Pilih Perjanjian Kinerja (PK) yang sudah disetujui serta bulan & tahun evaluasi.
+                  Pilih Perjanjian Kinerja (PK) yang sudah disetujui serta bulan
+                  & tahun evaluasi.
                 </DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 py-4">
@@ -139,7 +156,8 @@ function PeriodicEvaluationListPageContent() {
                     <SelectContent>
                       {pks?.map((pk) => (
                         <SelectItem key={pk.id} value={pk.id}>
-                          {pk.user?.name} (Periode {new Date(pk.periodStart).getFullYear()})
+                          {pk.user?.name} (Periode{" "}
+                          {new Date(pk.periodStart).getFullYear()})
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -149,7 +167,10 @@ function PeriodicEvaluationListPageContent() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-2">
                     <Label>Bulan Evaluasi</Label>
-                    <Select value={String(month)} onValueChange={(val) => setMonth(Number(val))}>
+                    <Select
+                      value={String(month)}
+                      onValueChange={(val) => setMonth(Number(val))}
+                    >
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
@@ -175,10 +196,18 @@ function PeriodicEvaluationListPageContent() {
                 </div>
               </div>
               <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setOpenCreate(false)}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setOpenCreate(false)}
+                >
                   Batal
                 </Button>
-                <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700" disabled={createEvaluation.isPending}>
+                <Button
+                  type="submit"
+                  className="bg-emerald-600 hover:bg-emerald-700"
+                  disabled={createEvaluation.isPending}
+                >
                   Mulai Evaluasi
                 </Button>
               </DialogFooter>
@@ -191,11 +220,15 @@ function PeriodicEvaluationListPageContent() {
       <Card className="border-purple-200 bg-purple-50/50 dark:bg-purple-950/20">
         <CardHeader className="pb-3">
           <CardTitle className="text-base text-purple-900 dark:text-purple-300 flex items-center gap-2">
-            <ShieldCheck className="w-5 h-5 text-purple-600" /> Nilai Perilaku SAFTI (Kultur Pesantren Cipansor)
+            <ShieldCheck className="w-5 h-5 text-purple-600" /> Nilai Perilaku
+            SAFTI (Kultur Pesantren Cipansor)
           </CardTitle>
           <CardDescription className="text-purple-950 dark:text-purple-200 text-xs">
-            Komponen penilaian gabungan: <b>60% Nilai Hasil Kerja (KPI Target)</b> + <b>40% Nilai Perilaku SAFTI</b>:
-            Siddiq (Integritas/Jujur), Amanah (Tanggung Jawab), Fathonah (Profesional/Cerdas), Tabligh (Komunikasi/Transparan), Istiqomah (Konsistensi).
+            Komponen penilaian gabungan:{" "}
+            <b>60% Nilai Hasil Kerja (KPI Target)</b> +{" "}
+            <b>40% Nilai Perilaku SAFTI</b>: Siddiq (Integritas/Jujur), Amanah
+            (Tanggung Jawab), Fathonah (Profesional/Cerdas), Tabligh
+            (Komunikasi/Transparan), Istiqomah (Konsistensi).
           </CardDescription>
         </CardHeader>
       </Card>
@@ -203,11 +236,14 @@ function PeriodicEvaluationListPageContent() {
       {/* Evaluation Records Table per PK */}
       <div className="space-y-6">
         {isLoading ? (
-          <div className="py-8 text-center text-sm text-muted-foreground">Memuat daftar evaluasi...</div>
+          <div className="py-8 text-center text-sm text-muted-foreground">
+            Memuat daftar evaluasi...
+          </div>
         ) : pks?.length === 0 ? (
           <Card>
             <CardContent className="py-12 text-center text-sm text-muted-foreground">
-              Belum ada Perjanjian Kinerja (PK) yang berstatus APPROVED untuk dievaluasi. Susun dan ajukan PK terlebih dahulu.
+              Belum ada Perjanjian Kinerja (PK) yang berstatus APPROVED untuk
+              dievaluasi. Susun dan ajukan PK terlebih dahulu.
             </CardContent>
           </Card>
         ) : (
@@ -220,7 +256,8 @@ function PeriodicEvaluationListPageContent() {
                     Evaluasi PK: {pk.user?.name}
                   </CardTitle>
                   <CardDescription className="text-xs">
-                    Atasan Penilai: {pk.supervisor?.name || "-"} | RKA Unit: {pk.strategicPlan?.title || "Mandiri"}
+                    Atasan Penilai: {pk.supervisor?.name || "-"} | RKA Unit:{" "}
+                    {pk.strategicPlan?.title || "Mandiri"}
                   </CardDescription>
                 </div>
                 <Badge className="bg-emerald-500">APPROVED</Badge>
@@ -259,15 +296,26 @@ function PeriodicEvaluationListPageContent() {
                           </TableCell>
                           <TableCell>
                             {ev.status === "APPROVED" ? (
-                              <Badge className="bg-emerald-500"><CheckCircle2 className="w-3 h-3 mr-1" /> Disetujui</Badge>
+                              <Badge className="bg-emerald-500">
+                                <CheckCircle2 className="w-3 h-3 mr-1" />{" "}
+                                Disetujui
+                              </Badge>
                             ) : (
-                              <Badge variant="secondary"><Clock className="w-3 h-3 mr-1" /> Draf / Menunggu</Badge>
+                              <Badge variant="secondary">
+                                <Clock className="w-3 h-3 mr-1" /> Draf /
+                                Menunggu
+                              </Badge>
                             )}
                           </TableCell>
                           <TableCell className="text-right">
                             <Link href={`/kinerja/evaluasi/${ev.id}`}>
-                              <Button size="sm" variant="outline" className="border-emerald-200 hover:bg-emerald-50 text-emerald-700">
-                                <Eye className="w-4 h-4 mr-1" /> Input & Verifikasi Evaluasi
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="border-emerald-200 hover:bg-emerald-50 text-emerald-700"
+                              >
+                                <Eye className="w-4 h-4 mr-1" /> Input &
+                                Verifikasi Evaluasi
                               </Button>
                             </Link>
                           </TableCell>

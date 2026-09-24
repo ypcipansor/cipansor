@@ -13,11 +13,7 @@ import type {
 } from "./types";
 
 export type InvoiceStatus =
-  | "PENDING"
-  | "PARTIAL"
-  | "PAID"
-  | "OVERDUE"
-  | "CANCELLED";
+  "PENDING" | "PARTIAL" | "PAID" | "OVERDUE" | "CANCELLED";
 export type PaymentMethod = "CASH" | "TRANSFER" | "WALLET" | "VIRTUAL_ACCOUNT";
 
 export interface Invoice {

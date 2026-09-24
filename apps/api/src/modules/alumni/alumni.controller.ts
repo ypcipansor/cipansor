@@ -51,7 +51,10 @@ export async function getOutcomeAnalytics(req: Request, res: Response, next: Nex
     const scope = alumniUnitScope(user);
     const requested = typeof unitId === 'string' && unitId ? unitId : undefined;
     if (scope !== null && requested && requested !== scope) {
-      return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Access to this unit is not allowed' } });
+      return res.status(403).json({
+        success: false,
+        error: { code: 'FORBIDDEN', message: 'Access to this unit is not allowed' },
+      });
     }
     const effectiveUnitId = scope ?? requested;
 

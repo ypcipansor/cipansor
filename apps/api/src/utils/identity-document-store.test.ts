@@ -13,10 +13,7 @@ import {
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
 const COMPOSE = fs.readFileSync(path.join(REPO_ROOT, 'docker-compose.yml'), 'utf8');
-const DOCKERFILE = fs.readFileSync(
-  path.join(REPO_ROOT, 'apps', 'api', 'Dockerfile'),
-  'utf8'
-);
+const DOCKERFILE = fs.readFileSync(path.join(REPO_ROOT, 'apps', 'api', 'Dockerfile'), 'utf8');
 
 /** `private/identity` di mesin mana pun, termasuk yang pemisah jalurnya `\`. */
 const storePath = IDENTITY_STORE_RELATIVE_DIR.split(path.sep).join('/');
@@ -47,12 +44,8 @@ describe('tempat penyimpanan bertahan melewati penerapan ulang', () => {
    * volumenya menempel.
    */
   it('direktorinya sudah dibuat dan dimiliki di dalam image', () => {
-    expect(DOCKERFILE).toMatch(
-      new RegExp(`mkdir[^\\n]*${storePath}`, 'm')
-    );
-    expect(DOCKERFILE).toMatch(
-      new RegExp(`chown[\\s\\S]*?${storePath}`, 'm')
-    );
+    expect(DOCKERFILE).toMatch(new RegExp(`mkdir[^\\n]*${storePath}`, 'm'));
+    expect(DOCKERFILE).toMatch(new RegExp(`chown[\\s\\S]*?${storePath}`, 'm'));
   });
 
   /**
@@ -156,11 +149,7 @@ describe('menemukan berkas yatim dari arah disk', () => {
 
     const sejamLalu = new Date(sekarang.getTime() - 60 * 60 * 1000);
     expect(
-      orphanedIdentityDocuments(
-        [{ fileName: 'sejam.jpg', modifiedAt: sejamLalu }],
-        [],
-        sekarang
-      )
+      orphanedIdentityDocuments([{ fileName: 'sejam.jpg', modifiedAt: sejamLalu }], [], sekarang)
     ).toEqual([]);
 
     const seharisatuDetikLalu = new Date(sekarang.getTime() - HARI - 1000);

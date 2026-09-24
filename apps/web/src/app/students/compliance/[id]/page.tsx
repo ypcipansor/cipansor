@@ -253,7 +253,10 @@ function FormulirKelengkapan({ student }: { student: StudentComplianceData }) {
     setGalat({});
 
     try {
-      await updateCompliance.mutateAsync({ studentId: student.id, data: isian });
+      await updateCompliance.mutateAsync({
+        studentId: student.id,
+        data: isian,
+      });
       toast.success("Data kelengkapan tersimpan");
       router.push("/students/compliance");
     } catch {
@@ -402,7 +405,10 @@ function FormulirKelengkapan({ student }: { student: StudentComplianceData }) {
                   id="provinceId"
                   label="Provinsi *"
                   value={isian.provinceId}
-                  options={(provinces ?? []).map((p) => ({ value: p.id, label: p.name }))}
+                  options={(provinces ?? []).map((p) => ({
+                    value: p.id,
+                    label: p.name,
+                  }))}
                   placeholder="Pilih provinsi"
                   onChange={(val) =>
                     setIsian((prev) => ({
@@ -418,7 +424,10 @@ function FormulirKelengkapan({ student }: { student: StudentComplianceData }) {
                   id="regencyId"
                   label="Kabupaten/Kota *"
                   value={isian.regencyId}
-                  options={(regencies ?? []).map((r) => ({ value: r.id, label: r.name }))}
+                  options={(regencies ?? []).map((r) => ({
+                    value: r.id,
+                    label: r.name,
+                  }))}
                   placeholder="Pilih kabupaten/kota"
                   disabled={!isian.provinceId}
                   onChange={(val) =>
@@ -434,18 +443,28 @@ function FormulirKelengkapan({ student }: { student: StudentComplianceData }) {
                   id="districtId"
                   label="Kecamatan *"
                   value={isian.districtId}
-                  options={(districts ?? []).map((d) => ({ value: d.id, label: d.name }))}
+                  options={(districts ?? []).map((d) => ({
+                    value: d.id,
+                    label: d.name,
+                  }))}
                   placeholder="Pilih kecamatan"
                   disabled={!isian.regencyId}
                   onChange={(val) =>
-                    setIsian((prev) => ({ ...prev, districtId: val, villageId: null }))
+                    setIsian((prev) => ({
+                      ...prev,
+                      districtId: val,
+                      villageId: null,
+                    }))
                   }
                 />
                 <PilihanDaftar
                   id="villageId"
                   label="Kelurahan/Desa *"
                   value={isian.villageId}
-                  options={(villages ?? []).map((v) => ({ value: v.id, label: v.name }))}
+                  options={(villages ?? []).map((v) => ({
+                    value: v.id,
+                    label: v.name,
+                  }))}
                   placeholder="Pilih kelurahan/desa"
                   disabled={!isian.districtId}
                   onChange={(val) => ubah("villageId", val)}
@@ -476,7 +495,9 @@ function FormulirKelengkapan({ student }: { student: StudentComplianceData }) {
                   onChange={(val) => ubah("transportMode", val)}
                 />
                 <div className="space-y-2">
-                  <Label htmlFor="distanceToSchool">Jarak ke Sekolah (km)</Label>
+                  <Label htmlFor="distanceToSchool">
+                    Jarak ke Sekolah (km)
+                  </Label>
                   <Input
                     id="distanceToSchool"
                     type="number"
@@ -538,7 +559,9 @@ function FormulirKelengkapan({ student }: { student: StudentComplianceData }) {
                   <Checkbox
                     id="isPkh"
                     checked={isian.isPkh ?? false}
-                    onCheckedChange={(checked) => ubah("isPkh", checked === true)}
+                    onCheckedChange={(checked) =>
+                      ubah("isPkh", checked === true)
+                    }
                   />
                   <Label htmlFor="isPkh">Penerima PKH</Label>
                 </div>
@@ -546,7 +569,9 @@ function FormulirKelengkapan({ student }: { student: StudentComplianceData }) {
                   <Checkbox
                     id="isKks"
                     checked={isian.isKks ?? false}
-                    onCheckedChange={(checked) => ubah("isKks", checked === true)}
+                    onCheckedChange={(checked) =>
+                      ubah("isKks", checked === true)
+                    }
                   />
                   <Label htmlFor="isKks">Penerima KKS</Label>
                 </div>
@@ -577,7 +602,9 @@ function FormulirKelengkapan({ student }: { student: StudentComplianceData }) {
                     placeholder="0"
                     aria-invalid={!!galat.height}
                     value={isian.height ?? ""}
-                    onChange={(e) => ubah("height", angkaDariInput(e.target.value))}
+                    onChange={(e) =>
+                      ubah("height", angkaDariInput(e.target.value))
+                    }
                   />
                   <PesanGalat pesan={galat.height} />
                 </div>
@@ -591,7 +618,9 @@ function FormulirKelengkapan({ student }: { student: StudentComplianceData }) {
                     placeholder="0"
                     aria-invalid={!!galat.weight}
                     value={isian.weight ?? ""}
-                    onChange={(e) => ubah("weight", angkaDariInput(e.target.value))}
+                    onChange={(e) =>
+                      ubah("weight", angkaDariInput(e.target.value))
+                    }
                   />
                   <PesanGalat pesan={galat.weight} />
                 </div>
@@ -606,7 +635,9 @@ function FormulirKelengkapan({ student }: { student: StudentComplianceData }) {
               </div>
               <Separator />
               <div className="space-y-2">
-                <Label htmlFor="specialNeeds">Kebutuhan Khusus / Disabilitas</Label>
+                <Label htmlFor="specialNeeds">
+                  Kebutuhan Khusus / Disabilitas
+                </Label>
                 <Input
                   id="specialNeeds"
                   placeholder="Kosongkan bila tidak ada"

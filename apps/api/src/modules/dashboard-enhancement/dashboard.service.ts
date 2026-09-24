@@ -35,7 +35,9 @@ export const dashboardService = {
         prisma.student.count({ where: studentWhere }),
         prisma.student.count({ where: { ...studentWhere, status: 'active' } }),
         prisma.teacher.count({ where: teacherWhere }),
-        prisma.class.count({ where: { ...(unitId ? { unitId } : {}), academicYear: { isActive: true } } }),
+        prisma.class.count({
+          where: { ...(unitId ? { unitId } : {}), academicYear: { isActive: true } },
+        }),
         prisma.unit.count(),
       ]);
 
@@ -510,7 +512,9 @@ export const dashboardService = {
     const [students, teachers, classes] = await Promise.all([
       prisma.student.count({ where: { ...studentWhere, status: 'active' } }),
       prisma.teacher.count({ where: unitId ? { unitId } : {} }),
-      prisma.class.count({ where: { ...(unitId ? { unitId } : {}), academicYear: { isActive: true } } }),
+      prisma.class.count({
+        where: { ...(unitId ? { unitId } : {}), academicYear: { isActive: true } },
+      }),
     ]);
 
     // Today's attendance

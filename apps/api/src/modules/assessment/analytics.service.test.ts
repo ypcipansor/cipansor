@@ -44,7 +44,7 @@ describe('AssessmentAnalyticsService', () => {
     // Mock Tahfidz (15 juz = 50% relative to 30 juz)
     (prisma.tahfidzRecord.aggregate as any).mockResolvedValue({
       _sum: { totalAyah: 1000 },
-      _max: { juz: 15 }
+      _max: { juz: 15 },
     });
 
     // Mock Behavior (20 points violation, 0 rewards = 80%)
@@ -54,7 +54,7 @@ describe('AssessmentAnalyticsService', () => {
     // Mock Attendance (9/10 days = 90%)
     (prisma.attendance.groupBy as any).mockResolvedValue([
       { status: 'PRESENT', _count: { _all: 9 } },
-      { status: 'ABSENT', _count: { _all: 1 } }
+      { status: 'ABSENT', _count: { _all: 1 } },
     ]);
 
     // Mock Ibadah (1500 points / 3000 target = 50%)
@@ -62,10 +62,13 @@ describe('AssessmentAnalyticsService', () => {
 
     // Mock CBT (100% since no attempts mocked by default, but let's mock one)
     (prisma.examAttempt.findMany as any).mockResolvedValue([
-        { score: 100, exam: { maxScore: 100 } }
+      { score: 100, exam: { maxScore: 100 } },
     ]);
 
-    const result = await AssessmentAnalyticsService.getStudentHolisticAnalytics(studentId, academicYearId);
+    const result = await AssessmentAnalyticsService.getStudentHolisticAnalytics(
+      studentId,
+      academicYearId
+    );
 
     // Expected Calculation with new weights:
     // Academic: 80 * 0.25 = 20
@@ -98,7 +101,7 @@ describe('AssessmentAnalyticsService', () => {
     // Mock Tahfidz (15 juz = 50%)
     (prisma.tahfidzRecord.aggregate as any).mockResolvedValue({
       _sum: { totalAyah: 1000 },
-      _max: { juz: 15 }
+      _max: { juz: 15 },
     });
 
     // Mock Behavior: zero violations/rewards
@@ -107,7 +110,7 @@ describe('AssessmentAnalyticsService', () => {
 
     // Mock Attendance (10/10 days = 100%)
     (prisma.attendance.groupBy as any).mockResolvedValue([
-      { status: 'PRESENT', _count: { _all: 10 } }
+      { status: 'PRESENT', _count: { _all: 10 } },
     ]);
 
     // Mock Ibadah (1500 points / 3000 target = 50%)
@@ -116,7 +119,10 @@ describe('AssessmentAnalyticsService', () => {
     // No CBT data
     (prisma.examAttempt.findMany as any).mockResolvedValue([]);
 
-    const result = await AssessmentAnalyticsService.getStudentHolisticAnalytics(studentId, academicYearId);
+    const result = await AssessmentAnalyticsService.getStudentHolisticAnalytics(
+      studentId,
+      academicYearId
+    );
 
     // Behavior should be 100 (clean record)
     expect(result.breakdown.behavior).toBe(100);
@@ -143,14 +149,20 @@ describe('AssessmentAnalyticsService', () => {
     });
 
     (prisma.grade.aggregate as any).mockResolvedValue({ _avg: { percentage: null } });
-    (prisma.tahfidzRecord.aggregate as any).mockResolvedValue({ _sum: { totalAyah: null }, _max: { juz: null } });
+    (prisma.tahfidzRecord.aggregate as any).mockResolvedValue({
+      _sum: { totalAyah: null },
+      _max: { juz: null },
+    });
     (prisma.violation.aggregate as any).mockResolvedValue({ _sum: { points: null } });
     (prisma.reward.aggregate as any).mockResolvedValue({ _sum: { points: null } });
     (prisma.attendance.groupBy as any).mockResolvedValue([]);
     (prisma.dailyIbadahRecord.aggregate as any).mockResolvedValue({ _sum: { pointsEarned: null } });
     (prisma.examAttempt.findMany as any).mockResolvedValue([]);
 
-    const result = await AssessmentAnalyticsService.getStudentHolisticAnalytics(studentId, academicYearId);
+    const result = await AssessmentAnalyticsService.getStudentHolisticAnalytics(
+      studentId,
+      academicYearId
+    );
 
     expect(result.holisticScore).toBe(0);
     expect(result.dataCompleteness).toBe('INSUFFICIENT');
@@ -176,11 +188,14 @@ describe('AssessmentAnalyticsService', () => {
     ]);
     (prisma.tahfidzRecord.aggregate as any).mockResolvedValue({
       _avg: { juz: 12.4 },
-      _count: { id: 150 }
+      _count: { id: 150 },
     });
     (prisma.student.count as any).mockResolvedValue(200);
 
-    const result = await AssessmentAnalyticsService.getUnitEducationAnalytics(unitId, academicYearId);
+    const result = await AssessmentAnalyticsService.getUnitEducationAnalytics(
+      unitId,
+      academicYearId
+    );
 
     expect(result.studentCount).toBe(200);
     expect(result.averageJuz).toBe(12.4);

@@ -16,7 +16,9 @@ import { settledContent } from "./helpers/page-state";
  */
 
 test.describe("SPMB — portal pengelola", () => {
-  test("portal renders its own heading, not a not-found page", async ({ page }) => {
+  test("portal renders its own heading, not a not-found page", async ({
+    page,
+  }) => {
     await loginAs(page, "superAdmin");
 
     const res = await page.goto("/spmb");
@@ -39,7 +41,9 @@ test.describe("SPMB — portal pengelola", () => {
     expect(new URL(page.url()).pathname).toBe("/spmb");
   });
 
-  test("portal shows the intake figures and links that exist", async ({ page }) => {
+  test("portal shows the intake figures and links that exist", async ({
+    page,
+  }) => {
     await loginAs(page, "superAdmin");
 
     await page.goto("/spmb");
@@ -57,19 +61,25 @@ test.describe("SPMB — portal pengelola", () => {
       .getByRole("main")
       .locator("a[href^='/']")
       .evaluateAll((els) => [
-        ...new Set(els.map((e) => (e.getAttribute("href") || "").split("?")[0])),
+        ...new Set(
+          els.map((e) => (e.getAttribute("href") || "").split("?")[0]),
+        ),
       ]);
     expect(hrefs.length).toBeGreaterThan(0);
 
     for (const href of hrefs) {
       const res = await page.request.get(href);
-      expect(res.status(), `tautan mati di portal SPMB: ${href}`).toBeLessThan(400);
+      expect(res.status(), `tautan mati di portal SPMB: ${href}`).toBeLessThan(
+        400,
+      );
     }
   });
 });
 
 test.describe("SPMB — pendaftar", () => {
-  test("registrant list renders and honours the status filter in the URL", async ({ page }) => {
+  test("registrant list renders and honours the status filter in the URL", async ({
+    page,
+  }) => {
     await loginAs(page, "superAdmin");
 
     const res = await page.goto("/spmb/registrations?status=ACCEPTED");
@@ -77,7 +87,10 @@ test.describe("SPMB — pendaftar", () => {
     await page.waitForLoadState("domcontentloaded", { timeout: 10000 });
 
     await expect(
-      page.getByRole("main").getByRole("heading", { name: /Pendaftar/i }).first(),
+      page
+        .getByRole("main")
+        .getByRole("heading", { name: /Pendaftar/i })
+        .first(),
     ).toBeVisible({ timeout: 10000 });
     expect(page.url()).toContain("status=ACCEPTED");
   });
